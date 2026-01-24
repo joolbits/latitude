@@ -40,6 +40,10 @@ public final class CompassHudConfig {
     public int textAlpha = 255; // 0..255
     public boolean shadow = true;
 
+    // Latitude display
+    public Boolean showLatitude = true;
+    public Integer latitudeDecimals = 0;
+
     // Hotbar attach
     public boolean attachToHotbarCompass = false;
 
@@ -108,6 +112,10 @@ public final class CompassHudConfig {
         if (directionMode == null) directionMode = DirectionMode.CARDINAL_8;
         if (hAnchor == null) hAnchor = HAnchor.CENTER;
         if (vAnchor == null) vAnchor = VAnchor.TOP;
+        if (showLatitude == null) showLatitude = true;
+        if (latitudeDecimals == null) latitudeDecimals = 0;
+        if (latitudeDecimals < 0) latitudeDecimals = 0;
+        if (latitudeDecimals > 3) latitudeDecimals = 3;
         if (scale < 0.25f) scale = 0.25f;
         if (scale > 4.0f) scale = 4.0f;
         if (padding < 0) padding = 0;

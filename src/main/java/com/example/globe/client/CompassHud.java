@@ -11,6 +11,8 @@ import net.minecraft.item.Items;
 import net.minecraft.text.Text;
 import net.minecraft.util.math.MathHelper;
 
+import java.util.Locale;
+
 public final class CompassHud {
     private static long lastCheckWorldTime = Long.MIN_VALUE;
     private static boolean cachedHasCompass = false;
@@ -90,30 +92,30 @@ public final class CompassHud {
             case DEGREES -> degrees(client.player.getYaw());
         };
 
-        LatitudeConfig.get();
-        if (LatitudeConfig.showLatitudeDegreesOnCompass) {
-            String latText = LatitudeMath.formatLatitudeDeg(client.player.getZ(), client.world.getWorldBorder());
-            directionText = directionText + " " + latText;
+        String[] lines;
+        if (Boolean.TRUE.equals(cfg.showLatitude)) {
+            String latText = formatLatitudeDeg(client.player.getZ(), client.world.getWorldBorder(), cfg.latitudeDecimals != null ? cfg.latitudeDecimals : 0);
+            lines = new String[]{directionText, latText};
+        } else {
+            lines = new String[]{directionText};
         }
 
-        Text text = Text.literal(directionText);
-
-        HudBounds b = computeBounds(screenW, screenH, client, cfg, text);
-        renderAt(ctx, client, cfg, text, b.x, b.y, forceVisible);
+        HudBounds b = computeBounds(screenW, screenH, client, cfg, lines);
+        renderAt(ctx, client, cfg, lines, b.x, b.y, forceVisible);
     }
 
     public static HudBounds computeBounds(MinecraftClient client, CompassHudConfig cfg) {
-        return computeBounds(client, cfg, Text.literal(sampleText(cfg)));
+        return computeBounds(client, cfg, sampleLines(cfg));
     }
 
     public static HudPoint computeBasePosition(MinecraftClient client, CompassHudConfig cfg) {
-        Text text = Text.literal(sampleText(cfg));
+        String[] lines = sampleLines(cfg);
         int screenW = client.getWindow().getScaledWidth();
         int screenH = client.getWindow().getScaledHeight();
 
         int pad = cfg.padding;
-        int textW = client.textRenderer.getWidth(text);
-        int textH = client.textRenderer.fontHeight;
+        int textW = maxLineWidth(client, lines);
+        int textH = client.textRenderer.fontHeight * lines.length;
 
         int boxW = textW + pad * 2;
         int boxH = textH + pad * 2;
@@ -150,14 +152,20 @@ public final class CompassHud {
     public static HudBounds computeBounds(MinecraftClient client, CompassHudConfig cfg, Text text) {
         int screenW = client.getWindow().getScaledWidth();
         int screenH = client.getWindow().getScaledHeight();
-        return computeBounds(screenW, screenH, client, cfg, text);
+        return computeBounds(screenW, screenH, client, cfg, new String[]{text.getString()});
     }
 
-    private static HudBounds computeBounds(int screenW, int screenH, MinecraftClient client, CompassHudConfig cfg, Text text) {
+    public static HudBounds computeBounds(MinecraftClient client, CompassHudConfig cfg, String[] lines) {
+        int screenW = client.getWindow().getScaledWidth();
+        int screenH = client.getWindow().getScaledHeight();
+        return computeBounds(screenW, screenH, client, cfg, lines);
+    }
+
+    private static HudBounds computeBounds(int screenW, int screenH, MinecraftClient client, CompassHudConfig cfg, String[] lines) {
 
         int pad = cfg.padding;
-        int textW = client.textRenderer.getWidth(text);
-        int textH = client.textRenderer.fontHeight;
+        int textW = maxLineWidth(client, lines);
+        int textH = client.textRenderer.fontHeight * lines.length;
 
         int boxW = textW + pad * 2;
         int boxH = textH + pad * 2;
@@ -195,14 +203,13 @@ public final class CompassHud {
     }
 
     public static void renderPreview(DrawContext ctx, MinecraftClient client, CompassHudConfig cfg, int x, int y) {
-        Text text = Text.literal(sampleText(cfg));
-        renderAt(ctx, client, cfg, text, x, y, true);
+        renderAt(ctx, client, cfg, sampleLines(cfg), x, y, true);
     }
 
-    private static void renderAt(DrawContext ctx, MinecraftClient client, CompassHudConfig cfg, Text text, int x, int y, boolean isPreview) {
+    private static void renderAt(DrawContext ctx, MinecraftClient client, CompassHudConfig cfg, String[] lines, int x, int y, boolean isPreview) {
         int pad = cfg.padding;
-        int textW = client.textRenderer.getWidth(text);
-        int textH = client.textRenderer.fontHeight;
+        int textW = maxLineWidth(client, lines);
+        int textH = client.textRenderer.fontHeight * lines.length;
 
         int boxW = textW + pad * 2;
         int boxH = textH + pad * 2;
@@ -237,22 +244,63 @@ public final class CompassHud {
             int tx = pad;
             int ty = pad;
 
-            if (cfg.shadow) {
-                ctx.drawTextWithShadow(client.textRenderer, text, tx, ty, color);
-            } else {
-                ctx.drawText(client.textRenderer, text, tx, ty, color, false);
+            for (int i = 0; i < lines.length; i++) {
+                int lineY = ty + i * client.textRenderer.fontHeight;
+                Text line = Text.literal(lines[i]);
+                if (cfg.shadow) {
+                    ctx.drawTextWithShadow(client.textRenderer, line, tx, lineY, color);
+                } else {
+                    ctx.drawText(client.textRenderer, line, tx, lineY, color, false);
+                }
             }
         } finally {
             m.popMatrix();
         }
     }
 
-    private static String sampleText(CompassHudConfig cfg) {
-        return switch (cfg.directionMode) {
+    private static String[] sampleLines(CompassHudConfig cfg) {
+        String dir = switch (cfg.directionMode) {
             case CARDINAL_8 -> "NW";
             case CARDINAL_4 -> "W";
             case DEGREES -> "360\u00b0";
         };
+
+        if (Boolean.TRUE.equals(cfg.showLatitude)) {
+            return new String[]{dir, "45\u00b0N"};
+        }
+        return new String[]{dir};
+    }
+
+    private static int maxLineWidth(MinecraftClient client, String[] lines) {
+        int w = 0;
+        for (String s : lines) {
+            w = Math.max(w, client.textRenderer.getWidth(s));
+        }
+        return w;
+    }
+
+    private static String formatLatitudeDeg(double playerZ, net.minecraft.world.border.WorldBorder border, int decimals) {
+        if (border == null) return "0\u00b0";
+
+        double radius = border.getSize() * 0.5;
+        if (radius <= 0.0001) return "0\u00b0";
+
+        double frac = Math.min(1.0, Math.abs(playerZ) / radius);
+        double degRaw = frac * 90.0;
+
+        if (degRaw == 0.0) return "0\u00b0";
+
+        String hemi = (playerZ < 0) ? "N" : "S";
+        if (decimals <= 0) {
+            int deg = (int) Math.round(degRaw);
+            if (deg == 0) return "0\u00b0";
+            return deg + "\u00b0" + hemi;
+        }
+
+        double pow = Math.pow(10.0, decimals);
+        double deg = Math.round(degRaw * pow) / pow;
+        if (deg == 0.0) return "0\u00b0";
+        return String.format(Locale.ROOT, "%1$." + decimals + "f\u00b0" + hemi, deg);
     }
 
     private static int clamp(int v, int lo, int hi) {
