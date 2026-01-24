@@ -12,6 +12,7 @@ import net.minecraft.util.math.MathHelper;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Consumer;
 
 public class LatitudeSettingsScreen extends Screen {
     private final Screen parent;
@@ -127,7 +128,7 @@ public class LatitudeSettingsScreen extends Screen {
         baseY = y;
         var wHAnchor = this.addDrawableChild(CyclingButtonWidget.builder(v -> Text.literal(v.name()), cfg.hAnchor)
                 .values(CompassHudConfig.HAnchor.values())
-                .build(columnX, y, w, h, Text.literal("H Anchor"), (btn, value) -> cfg.hAnchor = value));
+                .build(columnX, y, w, h, Text.literal("H Anchor"), (btn, value) -> retargetCompassPosition(cfg, c -> c.hAnchor = value)));
         layoutWidgets.add(wHAnchor);
         layoutBaseYs.add(baseY);
         y += 24;
@@ -135,7 +136,7 @@ public class LatitudeSettingsScreen extends Screen {
         baseY = y;
         var wVAnchor = this.addDrawableChild(CyclingButtonWidget.builder(v -> Text.literal(v.name()), cfg.vAnchor)
                 .values(CompassHudConfig.VAnchor.values())
-                .build(columnX, y, w, h, Text.literal("V Anchor"), (btn, value) -> cfg.vAnchor = value));
+                .build(columnX, y, w, h, Text.literal("V Anchor"), (btn, value) -> retargetCompassPosition(cfg, c -> c.vAnchor = value)));
         layoutWidgets.add(wVAnchor);
         layoutBaseYs.add(baseY);
         y += 24;
@@ -143,7 +144,7 @@ public class LatitudeSettingsScreen extends Screen {
         baseY = y;
         var wAttach = this.addDrawableChild(CyclingButtonWidget.builder(v -> Text.literal(v ? "ON" : "OFF"), cfg.attachToHotbarCompass)
                 .values(true, false)
-                .build(columnX, y, w, h, Text.literal("Attach To Hotbar Compass"), (btn, value) -> cfg.attachToHotbarCompass = value));
+                .build(columnX, y, w, h, Text.literal("Attach To Hotbar Compass"), (btn, value) -> retargetCompassPosition(cfg, c -> c.attachToHotbarCompass = value)));
         layoutWidgets.add(wAttach);
         layoutBaseYs.add(baseY);
         y += 24;
@@ -278,6 +279,36 @@ public class LatitudeSettingsScreen extends Screen {
 
     private static int clamp(int v, int lo, int hi) {
         return Math.max(lo, Math.min(hi, v));
+    }
+
+    private void retargetCompassPosition(CompassHudConfig cfg, Consumer<CompassHudConfig> change) {
+        MinecraftClient mc = MinecraftClient.getInstance();
+        if (mc == null || mc.getWindow() == null) {
+            change.accept(cfg);
+            return;
+        }
+
+        boolean wasAttached = cfg.attachToHotbarCompass;
+        var before = CompassHud.computeBounds(mc, cfg);
+        int absX = before.x();
+        int absY = before.y();
+
+        change.accept(cfg);
+
+        boolean nowAttached = cfg.attachToHotbarCompass;
+        if (!wasAttached && nowAttached) {
+            cfg.offsetX = 0;
+            cfg.offsetY = 0;
+            return;
+        }
+
+        var base = CompassHud.computeBasePosition(mc, cfg);
+        cfg.offsetX = absX - base.x();
+        cfg.offsetY = absY - base.y();
+
+        var after = CompassHud.computeBounds(mc, cfg);
+        cfg.offsetX = after.x() - base.x();
+        cfg.offsetY = after.y() - base.y();
     }
 
     private static void drawOutline(DrawContext ctx, int x, int y, int w, int h, int argb) {

@@ -158,19 +158,9 @@ public class LatitudeHudAdjustScreen extends Screen {
             targetX = clamp(targetX, 0, Math.max(0, screenW - boxW));
             targetY = clamp(targetY, 0, Math.max(0, screenH - boxH));
 
-            int baseX = switch (cfg.hAnchor) {
-                case LEFT -> 4;
-                case CENTER -> (screenW - boxW) / 2;
-                case RIGHT -> screenW - boxW - 4;
-            };
-            int baseY = switch (cfg.vAnchor) {
-                case TOP -> 4;
-                case CENTER -> (screenH - boxH) / 2;
-                case BOTTOM -> screenH - boxH - 4;
-            };
-
-            cfg.offsetX = targetX - baseX;
-            cfg.offsetY = targetY - baseY;
+            var base = CompassHud.computeBasePosition(mc, cfg);
+            cfg.offsetX = targetX - base.x();
+            cfg.offsetY = targetY - base.y();
 
             if (LatitudeConfig.hudSnapEnabled) {
                 cfg.offsetX = snap(cfg.offsetX, LatitudeConfig.hudSnapPixels);
