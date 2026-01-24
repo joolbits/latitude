@@ -21,6 +21,9 @@ public final class CompassHud {
         }
     }
 
+    public record HudPoint(int x, int y) {
+    }
+
     private CompassHud() {}
 
     // Keep for compatibility with existing GlobeModClient init call.
@@ -101,6 +104,47 @@ public final class CompassHud {
 
     public static HudBounds computeBounds(MinecraftClient client, CompassHudConfig cfg) {
         return computeBounds(client, cfg, Text.literal(sampleText(cfg)));
+    }
+
+    public static HudPoint computeBasePosition(MinecraftClient client, CompassHudConfig cfg) {
+        Text text = Text.literal(sampleText(cfg));
+        int screenW = client.getWindow().getScaledWidth();
+        int screenH = client.getWindow().getScaledHeight();
+
+        int pad = cfg.padding;
+        int textW = client.textRenderer.getWidth(text);
+        int textH = client.textRenderer.fontHeight;
+
+        int boxW = textW + pad * 2;
+        int boxH = textH + pad * 2;
+
+        float s = cfg.scale;
+        int scaledBoxW = (int) Math.ceil(boxW * s);
+        int scaledBoxH = (int) Math.ceil(boxH * s);
+
+        int x;
+        int y;
+        if (cfg.attachToHotbarCompass && client.player != null) {
+            int slotIndex = findHotbarCompassSlot(client.player);
+            if (slotIndex >= 0) {
+                int hotbarLeft = screenW / 2 - 91;
+                int slotX = hotbarLeft + slotIndex * 20 + 2;
+                int slotY = screenH - 22 + 3;
+                x = slotX;
+                y = slotY - (scaledBoxH + 6);
+            } else {
+                x = anchoredX(cfg, screenW, scaledBoxW);
+                y = anchoredY(cfg, screenH, scaledBoxH);
+            }
+        } else {
+            x = anchoredX(cfg, screenW, scaledBoxW);
+            y = anchoredY(cfg, screenH, scaledBoxH);
+        }
+
+        x = clamp(x, 0, Math.max(0, screenW - scaledBoxW));
+        y = clamp(y, 0, Math.max(0, screenH - scaledBoxH));
+
+        return new HudPoint(x, y);
     }
 
     public static HudBounds computeBounds(MinecraftClient client, CompassHudConfig cfg, Text text) {
