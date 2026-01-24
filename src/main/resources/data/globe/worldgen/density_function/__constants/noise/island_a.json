@@ -1,0 +1,9 @@
+{
+  "type": "minecraft:shifted_noise",
+  "noise": "globe:island/continents_a",
+  "xz_scale": 1,
+  "y_scale": 0,
+  "shift_x": 0,
+  "shift_y": 0,
+  "shift_z": 0
+}

@@ -1,0 +1,9 @@
+{
+  "type": "minecraft:add",
+  "argument1": "globe:mountain_ridges/noiseshift/base",
+  "argument2": {
+    "type": "minecraft:mul",
+    "argument1": -1,
+    "argument2": "globe:mountain_ridges/noiseshift/shiftx"
+  }
+}

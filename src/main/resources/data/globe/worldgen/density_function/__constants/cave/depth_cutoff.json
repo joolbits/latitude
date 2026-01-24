@@ -1,0 +1,27 @@
+{
+  "type": "minecraft:clamp",
+  "input": {
+    "type": "minecraft:mul",
+    "argument1": {
+      "type": "minecraft:mul",
+      "argument1": -1,
+      "argument2": {
+        "type": "minecraft:clamp",
+        "input": 16,
+        "min": 0.001,
+        "max": 64
+      }
+    },
+    "argument2": {
+      "type": "minecraft:add",
+      "argument1": "globe:depth",
+      "argument2": {
+        "type": "minecraft:mul",
+        "argument1": -1,
+        "argument2": 0
+      }
+    }
+  },
+  "min": 0,
+  "max": 1
+}

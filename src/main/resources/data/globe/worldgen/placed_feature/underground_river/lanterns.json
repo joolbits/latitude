@@ -1,0 +1,36 @@
+{
+  "feature": "globe:underground_river/lanterns",
+  "placement": [
+    {
+      "type": "minecraft:rarity_filter",
+      "chance": 4
+    },
+    {
+      "type": "minecraft:in_square"
+    },
+    {
+      "type": "minecraft:height_range",
+      "height": {
+        "absolute": 64
+      }
+    },
+    {
+      "type": "minecraft:environment_scan",
+      "direction_of_search": "up",
+      "max_steps": 30,
+      "target_condition": {
+        "type": "minecraft:has_sturdy_face",
+        "offset": [
+          0,
+          1,
+          0
+        ],
+        "direction": "down"
+      },
+      "allowed_search_condition": {
+        "type": "minecraft:matching_blocks",
+        "blocks": "minecraft:air"
+      }
+    }
+  ]
+}

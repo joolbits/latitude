@@ -1,0 +1,23 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "com.example.globe.mixin",
+  "refmap": "globe.refmap.json",
+  "compatibilityLevel": "JAVA_21",
+  "mixins": [
+    "access.NoiseChunkGeneratorAccessor",
+    "ChunkGeneratorPopulateBiomesMixin",
+    "NoiseChunkGeneratorCarveMixin"
+  ],
+  "client": [
+    "client.FogRendererMixin",
+    "client.CreateWorldScreenSpawnZoneMixin",
+    "client.CreateWorldScreenMixin",
+    "client.WorldCreatorMixin",
+    "client.InGameHudMixin",
+    "HandledScreenCompassToggleMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

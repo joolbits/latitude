@@ -1,0 +1,12 @@
+.gradle/
+build/
+run/
+.idea/
+.vscode/
+*.iml
+bin/
+logs/
+crash-reports/
+gradle-8.8/
+gradle-8.8-bin.zip
+temp_tectonic_extract/

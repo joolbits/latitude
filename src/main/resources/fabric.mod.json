@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "id": "globe",
+  "version": "${version}",
+  "name": "Latitude",
+  "description": "A globe-style world + latitude-based biome bands with a customizable compass HUD and warnings.",
+  "authors": [
+    "jscho"
+  ],
+  "license": "MIT",
+  "icon": "assets/globe/icon.png",
+  "environment": "*",
+  "entrypoints": {
+    "main": [
+      "com.example.globe.GlobeMod"
+    ],
+    "client": [
+      "com.example.globe.GlobeModClient"
+    ]
+  },
+  "mixins": [
+    "globe.mixins.json"
+  ],
+  "depends": {
+    "fabricloader": ">=0.17.3",
+    "minecraft": "~1.21.11",
+    "java": ">=21",
+    "fabric-api": "*"
+  },
+  "suggests": {
+    "tectonic": "*",
+    "lithostitched": "*",
+    "modmenu": "*",
+    "cloth-config": "*"
+  }
+}

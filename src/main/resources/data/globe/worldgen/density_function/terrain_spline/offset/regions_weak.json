@@ -1,0 +1,88 @@
+{
+  "type": "minecraft:flat_cache",
+  "argument": {
+    "type": "minecraft:cache_2d",
+    "argument": {
+      "type": "minecraft:spline",
+      "spline": {
+        "coordinate": "globe:noise/continent/erosion",
+        "points": [
+          {
+            "location": -0.02,
+            "derivative": 0,
+            "value": {
+              "coordinate": "globe:noise/region_selector",
+              "points": [
+                {
+                  "location": -0.04,
+                  "derivative": 0,
+                  "value": {
+                    "coordinate": "globe:region/club",
+                    "points": [
+                      {
+                        "location": 0,
+                        "derivative": 1,
+                        "value": 0
+                      }
+                    ]
+                  }
+                },
+                {
+                  "location": 0.04,
+                  "derivative": 0,
+                  "value": {
+                    "coordinate": "globe:region/heart",
+                    "points": [
+                      {
+                        "location": 0,
+                        "derivative": 1,
+                        "value": 0
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "location": 0.04,
+            "derivative": 0,
+            "value": {
+              "coordinate": "globe:noise/region_selector",
+              "points": [
+                {
+                  "location": -0.02,
+                  "derivative": 0,
+                  "value": {
+                    "coordinate": "globe:region/spade",
+                    "points": [
+                      {
+                        "location": 0,
+                        "derivative": 1,
+                        "value": 0
+                      }
+                    ]
+                  }
+                },
+                {
+                  "location": 0.04,
+                  "derivative": 0,
+                  "value": {
+                    "coordinate": "globe:region/diamond",
+                    "points": [
+                      {
+                        "location": 0,
+                        "derivative": 1,
+                        "value": 0
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  }
+}
