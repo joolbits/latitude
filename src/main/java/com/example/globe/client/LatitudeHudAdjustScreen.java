@@ -5,6 +5,10 @@ import net.minecraft.client.gui.Click;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.ButtonWidget;
+import net.minecraft.client.gui.widget.ClickableWidget;
+import net.minecraft.client.gui.widget.CyclingButtonWidget;
+import net.minecraft.client.gui.widget.SliderWidget;
+import net.minecraft.client.util.InputUtil;
 import net.minecraft.text.Text;
 import net.minecraft.util.math.MathHelper;
 
@@ -22,6 +26,17 @@ public class LatitudeHudAdjustScreen extends Screen {
     private int compassGrabDx;
     private int compassGrabDy;
 
+    private boolean showSettings = true;
+    private ClickableWidget settingsScale;
+    private ClickableWidget settingsTextColor;
+    private ClickableWidget settingsBackgroundColor;
+    private ClickableWidget settingsBackground;
+    private ClickableWidget settingsTransparency;
+    private ClickableWidget settingsShowLatitude;
+    private ClickableWidget settingsCompactHud;
+
+    private boolean wasLDown = false;
+
     public LatitudeHudAdjustScreen(Screen parent) {
         super(Text.literal("Adjust HUD Position"));
         this.parent = parent;
@@ -33,6 +48,47 @@ public class LatitudeHudAdjustScreen extends Screen {
         int bh = 20;
         int x = (this.width - bw) / 2;
         int y = this.height - 28;
+
+        int panelX = 8;
+        int panelY = 52;
+        int panelW = 170;
+        int rowH = 20;
+        int rowGap = 4;
+
+        var cfg = CompassHudConfig.get();
+
+        int py = panelY;
+        this.settingsScale = this.addDrawableChild(new FloatSlider(panelX, py, panelW, rowH, Text.literal("Scale"), 0.5f, 3.0f, cfg.scale, v -> cfg.scale = v));
+        py += rowH + rowGap;
+
+        this.settingsTransparency = this.addDrawableChild(new IntSlider(panelX, py, panelW, rowH, Text.literal("Transparency"), 0, 255, cfg.backgroundAlpha, v -> cfg.backgroundAlpha = v));
+        py += rowH + rowGap;
+
+        this.settingsBackground = this.addDrawableChild(CyclingButtonWidget.<Boolean>builder(v -> Text.literal(v ? "ON" : "OFF"), () -> cfg.showBackground)
+                .values(true, false)
+                .build(panelX, py, panelW, rowH, Text.literal("Background"), (btn, value) -> cfg.showBackground = value));
+        py += rowH + rowGap;
+
+        this.settingsShowLatitude = this.addDrawableChild(CyclingButtonWidget.<Boolean>builder(v -> Text.literal(v ? "ON" : "OFF"), () -> Boolean.TRUE.equals(cfg.showLatitude))
+                .values(true, false)
+                .build(panelX, py, panelW, rowH, Text.literal("Show Latitude"), (btn, value) -> cfg.showLatitude = value));
+        py += rowH + rowGap;
+
+        this.settingsCompactHud = this.addDrawableChild(CyclingButtonWidget.<Boolean>builder(v -> Text.literal(v ? "ON" : "OFF"), () -> cfg.compactHud)
+                .values(true, false)
+                .build(panelX, py, panelW, rowH, Text.literal("Compact HUD"), (btn, value) -> cfg.compactHud = value));
+        py += rowH + rowGap;
+
+        this.settingsBackgroundColor = this.addDrawableChild(CyclingButtonWidget.<String>builder(this::bgColorLabel, () -> bgColorName(cfg.backgroundRgb))
+                .values("BLACK", "DARK_GRAY", "BLUE")
+                .build(panelX, py, panelW, rowH, Text.literal("Background Color"), (btn, value) -> cfg.backgroundRgb = bgColorRgb(value)));
+        py += rowH + rowGap;
+
+        this.settingsTextColor = this.addDrawableChild(CyclingButtonWidget.<String>builder(this::textColorLabel, () -> textColorName(cfg.textRgb))
+                .values("WHITE", "YELLOW", "RED", "CYAN")
+                .build(panelX, py, panelW, rowH, Text.literal("Text Color"), (btn, value) -> cfg.textRgb = textColorRgb(value)));
+
+        updateSettingsVisibility();
 
         this.addDrawableChild(ButtonWidget.builder(Text.literal("Adjust: BOTH"), btn -> {
                     mode = switch (mode) {
@@ -58,6 +114,16 @@ public class LatitudeHudAdjustScreen extends Screen {
     public void render(DrawContext ctx, int mouseX, int mouseY, float delta) {
         this.renderInGameBackground(ctx);
         ctx.fill(0, 0, this.width, this.height, 0x66000000);
+
+        if (showSettings) {
+            int px = 6;
+            int py = 46;
+            int pw = 174;
+            int ph = 7 * 24 + 10;
+            ctx.fill(px, py, px + pw, py + ph, 0xAA000000);
+            ctx.drawTextWithShadow(this.textRenderer, "HUD Settings", px + 6, py + 6, 0xFFFFFFFF);
+            ctx.drawTextWithShadow(this.textRenderer, "Press L to hide/show settings", px + 6, py + 18, 0xFFCCCCCC);
+        }
 
         ctx.drawText(this.textRenderer,
                 "Drag the zone title to reposition. Click Done when finished.",
@@ -93,7 +159,25 @@ public class LatitudeHudAdjustScreen extends Screen {
     }
 
     @Override
+    public void tick() {
+        super.tick();
+        var mc = MinecraftClient.getInstance();
+        if (mc == null || mc.getWindow() == null) return;
+
+        boolean lDown = InputUtil.isKeyPressed(mc.getWindow(), InputUtil.GLFW_KEY_L);
+        if (lDown && !wasLDown) {
+            showSettings = !showSettings;
+            updateSettingsVisibility();
+        }
+        wasLDown = lDown;
+    }
+
+    @Override
     public boolean mouseClicked(Click click, boolean doubleClick) {
+        if (super.mouseClicked(click, doubleClick)) {
+            return true;
+        }
+
         double mouseX = click.x();
         double mouseY = click.y();
         int button = click.button();
@@ -117,6 +201,10 @@ public class LatitudeHudAdjustScreen extends Screen {
 
     @Override
     public boolean mouseDragged(Click click, double deltaX, double deltaY) {
+        if (super.mouseDragged(click, deltaX, deltaY)) {
+            return true;
+        }
+
         double mouseX = click.x();
         double mouseY = click.y();
         int button = click.button();
@@ -173,6 +261,139 @@ public class LatitudeHudAdjustScreen extends Screen {
         }
 
         return super.mouseDragged(click, deltaX, deltaY);
+    }
+
+    private void updateSettingsVisibility() {
+        setVisible(settingsScale, showSettings);
+        setVisible(settingsTextColor, showSettings);
+        setVisible(settingsBackgroundColor, showSettings);
+        setVisible(settingsBackground, showSettings);
+        setVisible(settingsTransparency, showSettings);
+        setVisible(settingsShowLatitude, showSettings);
+        setVisible(settingsCompactHud, showSettings);
+    }
+
+    private static void setVisible(ClickableWidget w, boolean v) {
+        if (w == null) return;
+        w.visible = v;
+        w.active = v;
+    }
+
+    private Text textColorLabel(String v) {
+        return Text.literal(v);
+    }
+
+    private static String textColorName(int rgb) {
+        int c = rgb & 0xFFFFFF;
+        if (c == 0xFFFF00) return "YELLOW";
+        if (c == 0xFF0000) return "RED";
+        if (c == 0x00FFFF) return "CYAN";
+        return "WHITE";
+    }
+
+    private static int textColorRgb(String name) {
+        return switch (name) {
+            case "YELLOW" -> 0xFFFF00;
+            case "RED" -> 0xFF0000;
+            case "CYAN" -> 0x00FFFF;
+            default -> 0xFFFFFF;
+        };
+    }
+
+    private Text bgColorLabel(String v) {
+        return Text.literal(v);
+    }
+
+    private static String bgColorName(int rgb) {
+        int c = rgb & 0xFFFFFF;
+        if (c == 0x111111) return "DARK_GRAY";
+        if (c == 0x0B1B3A) return "BLUE";
+        return "BLACK";
+    }
+
+    private static int bgColorRgb(String name) {
+        return switch (name) {
+            case "DARK_GRAY" -> 0x111111;
+            case "BLUE" -> 0x0B1B3A;
+            default -> 0x000000;
+        };
+    }
+
+    private interface IntConsumer {
+        void accept(int v);
+    }
+
+    private interface FloatConsumer {
+        void accept(float v);
+    }
+
+    private static final class IntSlider extends SliderWidget {
+        private final int min;
+        private final int max;
+        private final IntConsumer onChange;
+
+        private IntSlider(int x, int y, int w, int h, Text label, int min, int max, int value, IntConsumer onChange) {
+            super(x, y, w, h, label, 0.0);
+            this.min = min;
+            this.max = max;
+            this.onChange = onChange;
+            setValue(value);
+            updateMessage();
+        }
+
+        private void setValue(int v) {
+            int clamped = Math.max(min, Math.min(max, v));
+            this.value = (clamped - min) / (double) (max - min);
+        }
+
+        private int getIntValue() {
+            return (int) Math.round(min + this.value * (max - min));
+        }
+
+        @Override
+        protected void updateMessage() {
+            this.setMessage(Text.literal(this.getMessage().getString().split(":")[0] + ": " + getIntValue()));
+        }
+
+        @Override
+        protected void applyValue() {
+            onChange.accept(getIntValue());
+        }
+    }
+
+    private static final class FloatSlider extends SliderWidget {
+        private final float min;
+        private final float max;
+        private final FloatConsumer onChange;
+
+        private FloatSlider(int x, int y, int w, int h, Text label, float min, float max, float value, FloatConsumer onChange) {
+            super(x, y, w, h, label, 0.0);
+            this.min = min;
+            this.max = max;
+            this.onChange = onChange;
+            setValue(value);
+            updateMessage();
+        }
+
+        private void setValue(float v) {
+            float clamped = Math.max(min, Math.min(max, v));
+            this.value = (clamped - min) / (double) (max - min);
+        }
+
+        private float getFloatValue() {
+            return (float) (min + this.value * (max - min));
+        }
+
+        @Override
+        protected void updateMessage() {
+            float v = getFloatValue();
+            this.setMessage(Text.literal(this.getMessage().getString().split(":")[0] + ": " + String.format("%.2f", v)));
+        }
+
+        @Override
+        protected void applyValue() {
+            onChange.accept(getFloatValue());
+        }
     }
 
     @Override

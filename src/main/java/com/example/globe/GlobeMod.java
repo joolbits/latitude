@@ -9,6 +9,10 @@ import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.server.command.CommandManager;
 import net.minecraft.entity.effect.StatusEffectInstance;
 import net.minecraft.entity.effect.StatusEffects;
+import net.minecraft.component.DataComponentTypes;
+import net.minecraft.component.type.BundleContentsComponent;
+import net.minecraft.item.ItemStack;
+import net.minecraft.item.Items;
 import net.minecraft.registry.RegistryKey;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ServerPlayerEntity;
@@ -103,6 +107,20 @@ public class GlobeMod implements ModInitializer {
             ServerPlayNetworking.send(handler.player, new GlobeNet.GlobeStatePayload(isGlobe));
 
             String pendingZone = server.isDedicated() ? null : GlobePending.consume();
+
+            boolean startWithCompass = !server.isDedicated() && GlobePending.startWithCompass;
+            if (isGlobe && !server.isDedicated() && !StartCompass.hasReceived(handler.player)) {
+                if (!startWithCompass) {
+                    StartCompass.markReceived(handler.player);
+                } else if (hasCompassAnywhere(handler.player)) {
+                    StartCompass.markReceived(handler.player);
+                } else {
+                    boolean given = handler.player.giveItemStack(new ItemStack(Items.COMPASS));
+                    if (given) {
+                        StartCompass.markReceived(handler.player);
+                    }
+                }
+            }
 
             if (isGlobe && !handler.player.getCommandTags().contains(SPAWN_CHOSEN_TAG)) {
                 if (pendingZone != null) {
@@ -301,5 +319,32 @@ public class GlobeMod implements ModInitializer {
         world.setSpawnPoint(WorldProperties.SpawnPoint.create(world.getRegistryKey(), spawn, 0.0f, 0.0f));
         player.teleport(world, spawn.getX() + 0.5, spawn.getY(), spawn.getZ() + 0.5, EnumSet.noneOf(PositionFlag.class), player.getYaw(), player.getPitch(), true);
         player.addCommandTag(SPAWN_CHOSEN_TAG);
+    }
+
+    private static boolean hasCompassAnywhere(ServerPlayerEntity player) {
+        if (player == null) return false;
+        var inv = player.getInventory();
+        for (int i = 0; i < inv.size(); i++) {
+            if (containsCompass(inv.getStack(i), 0)) return true;
+        }
+        return false;
+    }
+
+    private static boolean containsCompass(ItemStack stack, int depth) {
+        if (stack == null || stack.isEmpty()) return false;
+        if (stack.isOf(Items.COMPASS)) return true;
+
+        if (depth >= 6) return false;
+
+        if (stack.isOf(Items.BUNDLE)) {
+            BundleContentsComponent contents = stack.get(DataComponentTypes.BUNDLE_CONTENTS);
+            if (contents != null) {
+                for (ItemStack inside : contents.iterate()) {
+                    if (containsCompass(inside, depth + 1)) return true;
+                }
+            }
+        }
+
+        return false;
     }
 }

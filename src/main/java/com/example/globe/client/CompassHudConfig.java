@@ -26,7 +26,7 @@ public final class CompassHudConfig {
     public HAnchor hAnchor = HAnchor.CENTER;
     public VAnchor vAnchor = VAnchor.TOP;
     public int offsetX = 0;
-    public int offsetY = 6; // push it down a bit from top
+    public int offsetY = 0;
 
     // Sizing
     public float scale = 1.0f; // 0.5 .. 3.0 recommended
@@ -35,7 +35,7 @@ public final class CompassHudConfig {
     // Styling
     public boolean showBackground = true;
     public int backgroundRgb = 0x000000;
-    public int backgroundAlpha = 90; // 0..255 (lower = less dark)
+    public int backgroundAlpha = 64; // 0..255 (lower = less dark)
     public int textRgb = 0xFFFFFF;
     public int textAlpha = 255; // 0..255
     public boolean shadow = true;
@@ -43,6 +43,9 @@ public final class CompassHudConfig {
     // Latitude display
     public Boolean showLatitude = true;
     public Integer latitudeDecimals = 0;
+
+    // Inline formatting
+    public boolean compactHud = false;
 
     // Hotbar attach
     public boolean attachToHotbarCompass = false;

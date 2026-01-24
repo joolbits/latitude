@@ -11,8 +11,6 @@ import net.minecraft.item.Items;
 import net.minecraft.text.Text;
 import net.minecraft.util.math.MathHelper;
 
-import java.util.Locale;
-
 public final class CompassHud {
     private static long lastCheckWorldTime = Long.MIN_VALUE;
     private static boolean cachedHasCompass = false;
@@ -92,14 +90,16 @@ public final class CompassHud {
             case DEGREES -> degrees(client.player.getYaw());
         };
 
-        String[] lines;
+        String hudText;
         if (Boolean.TRUE.equals(cfg.showLatitude)) {
-            String latText = formatLatitudeDeg(client.player.getZ(), client.world.getWorldBorder(), cfg.latitudeDecimals != null ? cfg.latitudeDecimals : 0);
-            lines = new String[]{directionText, latText};
+            String latText = formatLatitudeDeg(client.player.getZ(), client.world.getWorldBorder());
+            String sep = cfg.compactHud ? " " : " \u00b7 ";
+            hudText = directionText + sep + latText;
         } else {
-            lines = new String[]{directionText};
+            hudText = directionText;
         }
 
+        String[] lines = new String[]{hudText};
         HudBounds b = computeBounds(screenW, screenH, client, cfg, lines);
         renderAt(ctx, client, cfg, lines, b.x, b.y, forceVisible);
     }
@@ -266,7 +266,8 @@ public final class CompassHud {
         };
 
         if (Boolean.TRUE.equals(cfg.showLatitude)) {
-            return new String[]{dir, "45\u00b0N"};
+            String sep = cfg.compactHud ? " " : " \u00b7 ";
+            return new String[]{dir + sep + "1\u00b0S"};
         }
         return new String[]{dir};
     }
@@ -279,28 +280,21 @@ public final class CompassHud {
         return w;
     }
 
-    private static String formatLatitudeDeg(double playerZ, net.minecraft.world.border.WorldBorder border, int decimals) {
+    private static String formatLatitudeDeg(double playerZ, net.minecraft.world.border.WorldBorder border) {
         if (border == null) return "0\u00b0";
 
         double radius = border.getSize() * 0.5;
         if (radius <= 0.0001) return "0\u00b0";
 
         double frac = Math.min(1.0, Math.abs(playerZ) / radius);
-        double degRaw = frac * 90.0;
+        double absDeg = frac * 90.0;
 
-        if (degRaw == 0.0) return "0\u00b0";
+        double lat = (playerZ < 0) ? absDeg : -absDeg;
+        int deg = (int) Math.round(Math.abs(lat));
+        if (deg == 0) return "0\u00b0";
 
-        String hemi = (playerZ < 0) ? "N" : "S";
-        if (decimals <= 0) {
-            int deg = (int) Math.round(degRaw);
-            if (deg == 0) return "0\u00b0";
-            return deg + "\u00b0" + hemi;
-        }
-
-        double pow = Math.pow(10.0, decimals);
-        double deg = Math.round(degRaw * pow) / pow;
-        if (deg == 0.0) return "0\u00b0";
-        return String.format(Locale.ROOT, "%1$." + decimals + "f\u00b0" + hemi, deg);
+        String hemi = lat > 0 ? "N" : "S";
+        return deg + "\u00b0" + hemi;
     }
 
     private static int clamp(int v, int lo, int hi) {

@@ -65,52 +65,7 @@ public class LatitudeSettingsScreen extends Screen {
         y += 24;
 
         baseY = y;
-        var wShowLatDeg = this.addDrawableChild(CyclingButtonWidget.builder(v -> Text.literal(v ? "ON" : "OFF"), Boolean.TRUE.equals(cfg.showLatitude))
-                .values(true, false)
-                .build(columnX, y, w, h, Text.literal("Show Latitude"), (btn, value) -> cfg.showLatitude = value));
-        layoutWidgets.add(wShowLatDeg);
-        layoutBaseYs.add(baseY);
-        y += 28;
-
-        baseY = y;
-        var wSnap = this.addDrawableChild(ButtonWidget.builder(Text.literal("HUD Snap: " + (LatitudeConfig.hudSnapEnabled ? "ON" : "OFF")), btn -> {
-                    LatitudeConfig.hudSnapEnabled = !LatitudeConfig.hudSnapEnabled;
-                    LatitudeConfig.saveCurrent();
-                    btn.setMessage(Text.literal("HUD Snap: " + (LatitudeConfig.hudSnapEnabled ? "ON" : "OFF")));
-                })
-                .dimensions(columnX, y, w, 20)
-                .build());
-        layoutWidgets.add(wSnap);
-        layoutBaseYs.add(baseY);
-        y += 24;
-
-        baseY = y;
-        var wSnapPixels = this.addDrawableChild(ButtonWidget.builder(Text.literal("Snap Pixels: " + LatitudeConfig.hudSnapPixels), btn -> {
-                    int[] opts = {4, 8, 12, 16};
-                    int idx = 0;
-                    for (int i = 0; i < opts.length; i++) {
-                        if (opts[i] == LatitudeConfig.hudSnapPixels) idx = i;
-                    }
-                    LatitudeConfig.hudSnapPixels = opts[(idx + 1) % opts.length];
-                    LatitudeConfig.saveCurrent();
-                    btn.setMessage(Text.literal("Snap Pixels: " + LatitudeConfig.hudSnapPixels));
-                })
-                .dimensions(columnX, y, w, 20)
-                .build());
-        layoutWidgets.add(wSnapPixels);
-        layoutBaseYs.add(baseY);
-        y += 28;
-
-        baseY = y;
-        var wCompassEnabled = this.addDrawableChild(CyclingButtonWidget.builder(v -> Text.literal(v ? "ON" : "OFF"), cfg.enabled)
-                .values(true, false)
-                .build(columnX, y, w, h, Text.literal("Compass HUD"), (btn, value) -> cfg.enabled = value));
-        layoutWidgets.add(wCompassEnabled);
-        layoutBaseYs.add(baseY);
-        y += 24;
-
-        baseY = y;
-        var wShowMode = this.addDrawableChild(CyclingButtonWidget.builder(v -> Text.literal(v.name()), cfg.showMode)
+        var wShowMode = this.addDrawableChild(CyclingButtonWidget.<CompassHudConfig.ShowMode>builder(this::showModeLabel, () -> cfg.showMode)
                 .values(CompassHudConfig.ShowMode.values())
                 .build(columnX, y, w, h, Text.literal("Show Mode"), (btn, value) -> cfg.showMode = value));
         layoutWidgets.add(wShowMode);
@@ -118,55 +73,7 @@ public class LatitudeSettingsScreen extends Screen {
         y += 24;
 
         baseY = y;
-        var wDirMode = this.addDrawableChild(CyclingButtonWidget.builder(v -> Text.literal(v.name()), cfg.directionMode)
-                .values(CompassHudConfig.DirectionMode.values())
-                .build(columnX, y, w, h, Text.literal("Direction Mode"), (btn, value) -> cfg.directionMode = value));
-        layoutWidgets.add(wDirMode);
-        layoutBaseYs.add(baseY);
-        y += 24;
-
-        baseY = y;
-        var wHAnchor = this.addDrawableChild(CyclingButtonWidget.builder(v -> Text.literal(v.name()), cfg.hAnchor)
-                .values(CompassHudConfig.HAnchor.values())
-                .build(columnX, y, w, h, Text.literal("H Anchor"), (btn, value) -> retargetCompassPosition(cfg, c -> c.hAnchor = value)));
-        layoutWidgets.add(wHAnchor);
-        layoutBaseYs.add(baseY);
-        y += 24;
-
-        baseY = y;
-        var wVAnchor = this.addDrawableChild(CyclingButtonWidget.builder(v -> Text.literal(v.name()), cfg.vAnchor)
-                .values(CompassHudConfig.VAnchor.values())
-                .build(columnX, y, w, h, Text.literal("V Anchor"), (btn, value) -> retargetCompassPosition(cfg, c -> c.vAnchor = value)));
-        layoutWidgets.add(wVAnchor);
-        layoutBaseYs.add(baseY);
-        y += 24;
-
-        baseY = y;
-        var wAttach = this.addDrawableChild(CyclingButtonWidget.builder(v -> Text.literal(v ? "ON" : "OFF"), cfg.attachToHotbarCompass)
-                .values(true, false)
-                .build(columnX, y, w, h, Text.literal("Attach To Hotbar Compass"), (btn, value) -> retargetCompassPosition(cfg, c -> c.attachToHotbarCompass = value)));
-        layoutWidgets.add(wAttach);
-        layoutBaseYs.add(baseY);
-        y += 24;
-
-        baseY = y;
-        var wBg = this.addDrawableChild(CyclingButtonWidget.builder(v -> Text.literal(v ? "ON" : "OFF"), cfg.showBackground)
-                .values(true, false)
-                .build(columnX, y, w, h, Text.literal("Background"), (btn, value) -> cfg.showBackground = value));
-        layoutWidgets.add(wBg);
-        layoutBaseYs.add(baseY);
-        y += 24;
-
-        baseY = y;
-        var wShadow = this.addDrawableChild(CyclingButtonWidget.builder(v -> Text.literal(v ? "ON" : "OFF"), cfg.shadow)
-                .values(true, false)
-                .build(columnX, y, w, h, Text.literal("Shadow"), (btn, value) -> cfg.shadow = value));
-        layoutWidgets.add(wShadow);
-        layoutBaseYs.add(baseY);
-        y += 28;
-
-        baseY = y;
-        var wBgAlpha = this.addDrawableChild(new IntSlider(columnX, y, w, h, Text.literal("Background Alpha"), 0, 255, cfg.backgroundAlpha, v -> cfg.backgroundAlpha = v));
+        var wBgAlpha = this.addDrawableChild(new IntSlider(columnX, y, w, h, Text.literal("Transparency"), 0, 255, cfg.backgroundAlpha, v -> cfg.backgroundAlpha = v));
         layoutWidgets.add(wBgAlpha);
         layoutBaseYs.add(baseY);
         y += 24;
@@ -175,38 +82,10 @@ public class LatitudeSettingsScreen extends Screen {
         var wScale = this.addDrawableChild(new FloatSlider(columnX, y, w, h, Text.literal("Scale"), 0.5f, 3.0f, cfg.scale, v -> cfg.scale = v));
         layoutWidgets.add(wScale);
         layoutBaseYs.add(baseY);
-        y += 24;
-
-        baseY = y;
-        var wOffX = this.addDrawableChild(new IntSlider(columnX, y, w, h, Text.literal("Offset X"), -200, 200, cfg.offsetX, v -> cfg.offsetX = v));
-        layoutWidgets.add(wOffX);
-        layoutBaseYs.add(baseY);
-        y += 24;
-
-        baseY = y;
-        var wOffY = this.addDrawableChild(new IntSlider(columnX, y, w, h, Text.literal("Offset Y"), -200, 200, cfg.offsetY, v -> cfg.offsetY = v));
-        layoutWidgets.add(wOffY);
-        layoutBaseYs.add(baseY);
-        y += 28;
-
-        baseY = y;
-        var wTextColor = this.addDrawableChild(CyclingButtonWidget.builder(this::textColorLabel, textColorName(cfg.textRgb))
-                .values("WHITE", "YELLOW", "RED", "CYAN")
-                .build(columnX, y, w, h, Text.literal("Text Color"), (btn, value) -> cfg.textRgb = textColorRgb(value)));
-        layoutWidgets.add(wTextColor);
-        layoutBaseYs.add(baseY);
-        y += 24;
-
-        baseY = y;
-        var wBgColor = this.addDrawableChild(CyclingButtonWidget.builder(this::bgColorLabel, bgColorName(cfg.backgroundRgb))
-                .values("BLACK", "DARK_GRAY", "BLUE")
-                .build(columnX, y, w, h, Text.literal("Background Color"), (btn, value) -> cfg.backgroundRgb = bgColorRgb(value)));
-        layoutWidgets.add(wBgColor);
-        layoutBaseYs.add(baseY);
         y += 34;
 
         baseY = y;
-        var wAdjust = this.addDrawableChild(ButtonWidget.builder(Text.literal("Adjust HUD position..."), b -> {
+        var wAdjust = this.addDrawableChild(ButtonWidget.builder(Text.literal("Adjust HUD"), b -> {
                     MinecraftClient.getInstance().setScreen(new LatitudeHudAdjustScreen(this));
                 })
                 .dimensions(columnX, y, w, 20)
@@ -281,6 +160,15 @@ public class LatitudeSettingsScreen extends Screen {
         return Math.max(lo, Math.min(hi, v));
     }
 
+    private Text showModeLabel(CompassHudConfig.ShowMode v) {
+        if (v == null) return Text.literal("Always");
+        return switch (v) {
+            case COMPASS_PRESENT -> Text.literal("When compass is in inventory");
+            case HOLDING_COMPASS -> Text.literal("When holding compass");
+            case ALWAYS -> Text.literal("Always");
+        };
+    }
+
     private void retargetCompassPosition(CompassHudConfig cfg, Consumer<CompassHudConfig> change) {
         MinecraftClient mc = MinecraftClient.getInstance();
         if (mc == null || mc.getWindow() == null) {
@@ -327,12 +215,12 @@ public class LatitudeSettingsScreen extends Screen {
         cfg.hAnchor = CompassHudConfig.HAnchor.CENTER;
         cfg.vAnchor = CompassHudConfig.VAnchor.TOP;
         cfg.offsetX = 0;
-        cfg.offsetY = 6;
+        cfg.offsetY = 0;
         cfg.scale = 1.0f;
         cfg.padding = 3;
         cfg.showBackground = true;
         cfg.backgroundRgb = 0x000000;
-        cfg.backgroundAlpha = 90;
+        cfg.backgroundAlpha = 64;
         cfg.textRgb = 0xFFFFFF;
         cfg.textAlpha = 255;
         cfg.shadow = true;
