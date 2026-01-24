@@ -65,9 +65,9 @@ public class LatitudeSettingsScreen extends Screen {
         y += 24;
 
         baseY = y;
-        var wShowLatDeg = this.addDrawableChild(CyclingButtonWidget.builder(v -> Text.literal(v ? "ON" : "OFF"), LatitudeConfig.showLatitudeDegreesOnCompass)
+        var wShowLatDeg = this.addDrawableChild(CyclingButtonWidget.builder(v -> Text.literal(v ? "ON" : "OFF"), Boolean.TRUE.equals(cfg.showLatitude))
                 .values(true, false)
-                .build(columnX, y, w, h, Text.literal("Show Latitude Degrees on Compass"), (btn, value) -> LatitudeConfig.showLatitudeDegreesOnCompass = value));
+                .build(columnX, y, w, h, Text.literal("Show Latitude"), (btn, value) -> cfg.showLatitude = value));
         layoutWidgets.add(wShowLatDeg);
         layoutBaseYs.add(baseY);
         y += 28;
@@ -336,6 +336,8 @@ public class LatitudeSettingsScreen extends Screen {
         cfg.textRgb = 0xFFFFFF;
         cfg.textAlpha = 255;
         cfg.shadow = true;
+        cfg.showLatitude = true;
+        cfg.latitudeDecimals = 0;
         cfg.attachToHotbarCompass = false;
     }
 

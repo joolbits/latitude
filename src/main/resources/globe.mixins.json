@@ -11,6 +11,7 @@
   ],
   "client": [
     "client.FogRendererMixin",
+    "client.CreateWorldScreenLatitudeToggleMixin",
     "client.CreateWorldScreenSpawnZoneMixin",
     "client.CreateWorldScreenMixin",
     "client.WorldCreatorMixin",
