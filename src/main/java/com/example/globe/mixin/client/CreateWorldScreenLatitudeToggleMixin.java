@@ -13,6 +13,7 @@ import net.minecraft.registry.RegistryKeys;
 import net.minecraft.registry.entry.RegistryEntry;
 import net.minecraft.text.Text;
 import net.minecraft.util.Identifier;
+import net.minecraft.util.Formatting;
 import net.minecraft.world.gen.WorldPreset;
 import org.jetbrains.annotations.Nullable;
 import org.spongepowered.asm.mixin.Final;
@@ -154,7 +155,10 @@ public abstract class CreateWorldScreenLatitudeToggleMixin extends Screen {
 
     @Unique
     private Text latitude$toggleLabel() {
-        return Text.literal("Latitude: " + (this.latitude$enabled ? "ON" : "OFF"));
+        if (this.latitude$enabled) {
+            return Text.literal("Latitude: ON").formatted(Formatting.BOLD, Formatting.GREEN);
+        }
+        return Text.literal("Latitude: OFF").formatted(Formatting.GRAY);
     }
 
     @Unique
