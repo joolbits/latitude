@@ -215,6 +215,11 @@ public final class LatitudeBiomes {
 
         int absZ = Math.abs(blockZ);
         double t = (double) absZ / (double) radius;
+
+        double latDegAbs = t * 90.0;
+        if (latDegAbs < 8.0) {
+            return 0;
+        }
         int bandIndex = crispBandIndex(t);
 
         if (!LatitudeConfig.latitudeBandBlendingEnabled) {
