@@ -102,7 +102,7 @@ public final class LatitudeMath {
             case "SUBTROPICAL" -> 0.40;
             case "TEMPERATE" -> 0.583;
             case "SUBPOLAR" -> 0.725;
-            case "POLAR" -> 0.891;
+            case "POLAR" -> 0.83;
             default -> 0.0;
         };
     }

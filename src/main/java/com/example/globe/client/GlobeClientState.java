@@ -1,5 +1,6 @@
 package com.example.globe.client;
 
+import com.example.globe.GlobeMod;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.world.ClientWorld;
 import net.minecraft.entity.player.PlayerEntity;
@@ -10,6 +11,11 @@ public final class GlobeClientState {
     public static boolean DEBUG_DISABLE_WARNINGS = false;
 
     private static boolean globeWorld;
+
+    private static final int POLE_WARN_2_DISTANCE_BLOCKS = GlobeMod.POLE_WARNING_DISTANCE_BLOCKS - 64;
+    private static final int POLE_DANGER_DISTANCE_BLOCKS = GlobeMod.POLE_LETHAL_DISTANCE_BLOCKS + 32;
+
+    private static final int EW_TEXT_DANGER_DISTANCE_BLOCKS = 64;
 
     private static long cachedEvalWorldTime = Long.MIN_VALUE;
     private static Eval cachedEval;
@@ -22,19 +28,16 @@ public final class GlobeClientState {
 
     public enum PolarStage {
         NONE,
-        UNEASE,
-        EFFECTS_I,
-        EFFECTS_II,
-        WHITEOUT_APPROACH,
-        LETHAL,
-        HOPELESS
+        WARN_1,
+        WARN_2,
+        DANGER,
+        LETHAL
     }
 
-    public enum StormStage {
+    public enum EwStormStage {
         NONE,
-        WARNING,
-        DANGER,
-        EDGE_ABSOLUTE
+        LEVEL_1,
+        LEVEL_2
     }
 
     public record WarningState(WarningType type, Enum<?> stage, int severityRank) {
@@ -51,57 +54,35 @@ public final class GlobeClientState {
         return (int) Math.round(world.getWorldBorder().getSize() / 2.0);
     }
 
-    private static int polarStartAbsZ(int radius) {
-        if (radius <= 0) return Integer.MAX_VALUE;
-        return (int) Math.floor(radius * com.example.globe.util.LatitudeMath.POLAR_START_FRAC);
-    }
-
-    private static PolarStage polarStageFor(int radius, int distToZPole) {
-        int unease = (int) Math.round(radius / 4.0);
-        int e1 = (int) Math.round(radius / 6.0);
-        int e2 = (int) Math.round(radius / 10.0);
-        int whiteout = (int) Math.round(radius / 16.0);
-        int lethal = (int) Math.round(radius / 24.0);
-        int hopeless = (int) Math.round(radius / 32.0);
-
-        if (distToZPole <= hopeless) return PolarStage.HOPELESS;
-        if (distToZPole <= lethal) return PolarStage.LETHAL;
-        if (distToZPole <= whiteout) return PolarStage.WHITEOUT_APPROACH;
-        if (distToZPole <= e2) return PolarStage.EFFECTS_II;
-        if (distToZPole <= e1) return PolarStage.EFFECTS_I;
-        if (distToZPole <= unease) return PolarStage.UNEASE;
+    private static PolarStage polarStageForDist(int distToZBorder) {
+        if (distToZBorder <= GlobeMod.POLE_LETHAL_DISTANCE_BLOCKS) return PolarStage.LETHAL;
+        if (distToZBorder <= POLE_DANGER_DISTANCE_BLOCKS) return PolarStage.DANGER;
+        if (distToZBorder <= POLE_WARN_2_DISTANCE_BLOCKS) return PolarStage.WARN_2;
+        if (distToZBorder <= GlobeMod.POLE_WARNING_DISTANCE_BLOCKS) return PolarStage.WARN_1;
         return PolarStage.NONE;
     }
 
-    private static StormStage stormStageFor(int radius, int distToXEdge) {
-        int warn = (int) Math.round(radius / 5.0);
-        int danger = (int) Math.round(radius / 12.0);
-        int edge = (int) Math.round(radius / 30.0);
-
-        if (distToXEdge <= edge) return StormStage.EDGE_ABSOLUTE;
-        if (distToXEdge <= danger) return StormStage.DANGER;
-        if (distToXEdge <= warn) return StormStage.WARNING;
-        return StormStage.NONE;
+    private static EwStormStage ewStageForDist(int distToXBorder) {
+        if (distToXBorder <= GlobeMod.POLE_LETHAL_DISTANCE_BLOCKS) return EwStormStage.LEVEL_2;
+        if (distToXBorder <= GlobeMod.POLE_WARNING_DISTANCE_BLOCKS) return EwStormStage.LEVEL_1;
+        return EwStormStage.NONE;
     }
 
     private static int polarRank(PolarStage stage) {
         return switch (stage) {
             case NONE -> 0;
-            case UNEASE -> 1;
-            case EFFECTS_I -> 2;
-            case EFFECTS_II -> 3;
-            case WHITEOUT_APPROACH -> 4;
-            case LETHAL -> 5;
-            case HOPELESS -> 6;
+            case WARN_1 -> 1;
+            case WARN_2 -> 2;
+            case DANGER -> 3;
+            case LETHAL -> 4;
         };
     }
 
-    private static int stormRank(StormStage stage) {
+    private static int ewRank(EwStormStage stage) {
         return switch (stage) {
             case NONE -> 0;
-            case WARNING -> 1;
-            case DANGER -> 5;
-            case EDGE_ABSOLUTE -> 6;
+            case LEVEL_1 -> 1;
+            case LEVEL_2 -> 2;
         };
     }
 
@@ -110,85 +91,128 @@ public final class GlobeClientState {
             return WarningState.NONE;
         }
 
-        int radius = borderRadiusBlocks(world);
-        int absX = (int) Math.floor(Math.abs(player.getX()));
-        int absZ = (int) Math.floor(Math.abs(player.getZ()));
+        var border = world.getWorldBorder();
 
-        int distToXEdge = radius - absX;
-        int distToZPole = radius - absZ;
+        double distToXBorder = axisDistanceInsideBorder(border, player.getX(), true);
+        double distToZBorder = axisDistanceInsideBorder(border, player.getZ(), false);
 
-        PolarStage polar;
-        if (absZ < polarStartAbsZ(radius)) {
-            polar = PolarStage.NONE;
-        } else {
-            polar = polarStageFor(radius, distToZPole);
-        }
-        StormStage storm = stormStageFor(radius, distToXEdge);
+        int distToX = (int) Math.floor(distToXBorder);
+        int distToZ = (int) Math.floor(distToZBorder);
+
+        PolarStage polar = polarStageForDist(distToZ);
+        EwStormStage ewVisual = ewStageForDist(distToX);
+
+        boolean ewTextWarn = distToX <= GlobeMod.POLE_WARNING_DISTANCE_BLOCKS;
+        boolean ewTextDanger = distToX <= EW_TEXT_DANGER_DISTANCE_BLOCKS;
+        EwStormStage ewTextStage = ewTextDanger ? EwStormStage.LEVEL_2 : (ewTextWarn ? EwStormStage.LEVEL_1 : EwStormStage.NONE);
 
         int pr = polarRank(polar);
-        int sr = stormRank(storm);
+        int er = ewRank(ewTextStage);
 
-        if (pr <= 0 && sr <= 0) {
+        if (pr <= 0 && er <= 0) {
             return WarningState.NONE;
         }
 
-        if (pr > sr) {
+        // Corner precedence (stable):
+        // 1) polar lethal
+        // 2) ew level 2
+        // 3) polar warn/danger
+        // 4) ew level 1
+        if (polar == PolarStage.LETHAL) {
             return new WarningState(WarningType.POLAR, polar, pr);
         }
-        if (sr > pr) {
-            return new WarningState(WarningType.STORM, storm, sr);
+        if (ewTextDanger) {
+            return new WarningState(WarningType.STORM, ewTextStage, er);
+        }
+        if (polar != PolarStage.NONE) {
+            return new WarningState(WarningType.POLAR, polar, pr);
         }
 
-        if (distToZPole <= distToXEdge) {
-            return new WarningState(WarningType.POLAR, polar, pr);
+        // Visual stage (fog/particles) can be stronger than text stage.
+        if (ewVisual != EwStormStage.NONE && ewTextStage == EwStormStage.NONE) {
+            ewTextStage = EwStormStage.LEVEL_1;
+            er = ewRank(ewTextStage);
         }
-        return new WarningState(WarningType.STORM, storm, sr);
+
+        return new WarningState(WarningType.STORM, ewTextStage, er);
     }
 
     public static PolarStage computePolarStage(ClientWorld world, PlayerEntity player) {
-        int radius = borderRadiusBlocks(world);
-        int absZ = (int) Math.floor(Math.abs(player.getZ()));
-        if (absZ < polarStartAbsZ(radius)) {
-            return PolarStage.NONE;
-        }
-        int distToZPole = radius - absZ;
-        return polarStageFor(radius, distToZPole);
+        var border = world.getWorldBorder();
+        double distToZBorder = axisDistanceInsideBorder(border, player.getZ(), false);
+        int distToZ = (int) Math.floor(distToZBorder);
+        return polarStageForDist(distToZ);
     }
 
-    public static StormStage computeStormStage(ClientWorld world, PlayerEntity player) {
-        int radius = borderRadiusBlocks(world);
-        int absX = (int) Math.floor(Math.abs(player.getX()));
-        int distToXEdge = radius - absX;
-        return stormStageFor(radius, distToXEdge);
+    public static EwStormStage computeEwStormStage(ClientWorld world, PlayerEntity player) {
+        var border = world.getWorldBorder();
+        double distToXBorder = axisDistanceInsideBorder(border, player.getX(), true);
+        int distToX = (int) Math.floor(distToXBorder);
+        return ewStageForDist(distToX);
+    }
+
+    public static float computeEwFogEnd(double x) {
+        if (DEBUG_DISABLE_WARNINGS) {
+            return -1.0f;
+        }
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client.player == null || client.world == null) {
+            return -1.0f;
+        }
+
+        var border = client.world.getWorldBorder();
+        double distToXBorder = axisDistanceInsideBorder(border, x, true);
+
+        int warn = GlobeMod.POLE_WARNING_DISTANCE_BLOCKS;
+        int danger = GlobeMod.POLE_LETHAL_DISTANCE_BLOCKS;
+        int blackout = 20;
+
+        if (distToXBorder > (double) warn) {
+            return -1.0f;
+        }
+
+        if (distToXBorder <= (double) blackout) {
+            return 20.0f;
+        }
+
+        // Piecewise ramp:
+        // - warn..danger: 160 -> 40 (gets thick quickly)
+        // - danger..blackout: 40 -> 20 (blackout near the border)
+        if (distToXBorder <= (double) danger) {
+            float t = (float) ((danger - distToXBorder) / (double) (danger - blackout));
+            if (t < 0.0f) t = 0.0f;
+            if (t > 1.0f) t = 1.0f;
+
+            float end = 40.0f - (t * 20.0f);
+            if (end < 20.0f) end = 20.0f;
+            return end;
+        }
+
+        float t = (float) ((warn - distToXBorder) / (double) (warn - danger));
+        if (t < 0.0f) t = 0.0f;
+        if (t > 1.0f) t = 1.0f;
+
+        float end = 160.0f - (t * 120.0f);
+        if (end < 40.0f) end = 40.0f;
+        return end;
     }
 
     private static float polarWhiteoutIntensity(ClientWorld world, PlayerEntity player) {
-        int radius = borderRadiusBlocks(world);
-        int absZ = (int) Math.floor(Math.abs(player.getZ()));
-        if (absZ < polarStartAbsZ(radius)) {
+        var border = world.getWorldBorder();
+        double distToZBorder = axisDistanceInsideBorder(border, player.getZ(), false);
+
+        if (distToZBorder > (double) GlobeMod.POLE_WARNING_DISTANCE_BLOCKS) {
             return 0.0f;
         }
-        int distToZPole = radius - absZ;
-
-        int whiteout = (int) Math.round(radius / 16.0);
-        int lethal = (int) Math.round(radius / 24.0);
-        int hopeless = (int) Math.round(radius / 32.0);
-
-        if (distToZPole > whiteout) {
-            return 0.0f;
-        }
-        if (distToZPole <= hopeless) {
+        if (distToZBorder <= 0.0) {
             return 1.0f;
         }
-        if (distToZPole <= lethal) {
-            float t = (lethal - distToZPole) / (float) (lethal - hopeless);
-            t = Math.max(0.0f, Math.min(1.0f, t));
-            return 0.5f + 0.5f * t;
-        }
 
-        float t = (whiteout - distToZPole) / (float) (whiteout - lethal);
-        t = Math.max(0.0f, Math.min(1.0f, t));
-        return 0.5f * t;
+        double warn = (double) GlobeMod.POLE_WARNING_DISTANCE_BLOCKS;
+        double t = (warn - distToZBorder) / warn;
+        if (t < 0.0) t = 0.0;
+        if (t > 1.0) t = 1.0;
+        return (float) t;
     }
 
     private GlobeClientState() {
@@ -317,11 +341,6 @@ public final class GlobeClientState {
             return -1.0f;
         }
 
-        PolarStage stage = computePolarStage(client.world, client.player);
-        if (stage != PolarStage.WHITEOUT_APPROACH && stage != PolarStage.LETHAL && stage != PolarStage.HOPELESS) {
-            return -1.0f;
-        }
-
         float intensity = polarWhiteoutIntensity(client.world, client.player);
         intensity = Math.max(0.0f, Math.min(1.0f, intensity));
         if (intensity <= 0.001f) {
@@ -372,11 +391,6 @@ public final class GlobeClientState {
         }
         MinecraftClient client = MinecraftClient.getInstance();
         if (client.player == null || client.world == null) {
-            return 0.0f;
-        }
-
-        PolarStage stage = computePolarStage(client.world, client.player);
-        if (stage != PolarStage.WHITEOUT_APPROACH && stage != PolarStage.LETHAL && stage != PolarStage.HOPELESS) {
             return 0.0f;
         }
 

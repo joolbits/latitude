@@ -43,13 +43,13 @@ public class LatitudeHudStudioScreen extends Screen {
     private ClickableWidget wCompassTextColor;
     private ClickableWidget wCompassShowLatitude;
     private ClickableWidget wCompassCompact;
+    private ClickableWidget wCompassAttachHotbar;
 
     private ClickableWidget wTitleScale;
 
     private ClickableWidget wResetHud;
 
     private int sidebarHintY;
-    private int sidebarHintRowY;
 
     public LatitudeHudStudioScreen(Screen parent) {
         super(Text.literal("HUD Studio"));
@@ -117,10 +117,13 @@ public class LatitudeHudStudioScreen extends Screen {
                 .build(panelX, y, panelW, rowH, Text.literal("Compact HUD"), (btn, value) -> cfg.compactHud = value));
         y += rowH + rowGap;
 
-        int hintRowH = 14;
-        this.sidebarHintRowY = y;
-        this.sidebarHintY = this.sidebarHintRowY + 2;
-        y += hintRowH + rowGap;
+        this.wCompassAttachHotbar = this.addDrawableChild(CyclingButtonWidget.<Boolean>builder(v -> Text.literal(v ? "ON" : "OFF"), () -> cfg.attachToHotbarCompass)
+                .values(true, false)
+                .build(panelX, y, panelW, rowH, Text.literal("Attach to Hotbar"), (btn, value) -> {
+                    cfg.attachToHotbarCompass = value;
+                    CompassHudConfig.saveCurrent();
+                }));
+        y += rowH + rowGap;
 
         this.wTitleScale = this.addDrawableChild(new StepSlider(panelX, y, panelW, rowH, Text.literal("Title Size"), 1.0, 3.0, 0.1, LatitudeConfig.zoneEnterTitleScale, v -> LatitudeConfig.zoneEnterTitleScale = v));
 
@@ -344,6 +347,7 @@ public class LatitudeHudStudioScreen extends Screen {
         setVisible(wCompassTextColor, showCompassControls);
         setVisible(wCompassShowLatitude, showCompassControls);
         setVisible(wCompassCompact, showCompassControls);
+        setVisible(wCompassAttachHotbar, showCompassControls);
 
         boolean showTitleControls = sidebarVisible && (target == Target.TITLE || target == Target.BOTH);
         setVisible(wTitleScale, showTitleControls);
@@ -354,10 +358,37 @@ public class LatitudeHudStudioScreen extends Screen {
     }
 
     private int computeSidebarHintY() {
-        if (sidebarHintRowY <= 0) {
+        if (!sidebarVisible) {
             return 8;
         }
-        return sidebarHintRowY + 2;
+
+        int bottom = 0;
+        bottom = Math.max(bottom, bottomYIfVisible(wTarget));
+        bottom = Math.max(bottom, bottomYIfVisible(wCompassScale));
+        bottom = Math.max(bottom, bottomYIfVisible(wCompassTransparency));
+        bottom = Math.max(bottom, bottomYIfVisible(wCompassBackground));
+        bottom = Math.max(bottom, bottomYIfVisible(wCompassBgColor));
+        bottom = Math.max(bottom, bottomYIfVisible(wCompassTextColor));
+        bottom = Math.max(bottom, bottomYIfVisible(wCompassShowLatitude));
+        bottom = Math.max(bottom, bottomYIfVisible(wCompassCompact));
+        bottom = Math.max(bottom, bottomYIfVisible(wCompassAttachHotbar));
+        bottom = Math.max(bottom, bottomYIfVisible(wTitleScale));
+        if (bottom <= 0) {
+            return 8;
+        }
+
+        int hintY = bottom + 6;
+        if (wResetHud != null && wResetHud.visible) {
+            hintY = Math.min(hintY, wResetHud.getY() - 14);
+        }
+        hintY = Math.max(hintY, 22);
+        hintY = Math.min(hintY, Math.max(0, this.height - 18));
+        return hintY;
+    }
+
+    private static int bottomYIfVisible(ClickableWidget w) {
+        if (w == null || !w.visible) return 0;
+        return w.getY() + w.getHeight();
     }
 
     private static void applyDefaults(CompassHudConfig cfg) {

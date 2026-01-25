@@ -12,6 +12,20 @@ public final class GlobeWarningOverlay {
     private static long debugStartWorldTime = -1L;
     private static String lastZoneKey;
 
+    private static final String POLE_WARN_1_TEXT =
+            "The air is turning bitterly cold. You should consider turning back.";
+    private static final String POLE_WARN_2_TEXT =
+            "The cold seeps into your body. Movement is becoming difficult.";
+    private static final String POLE_DANGER_TEXT =
+            "DANGER! You are entering a lethal cold zone. Turn back immediately.";
+    private static final String POLE_LETHAL_TEXT =
+            "The cold overwhelms you.";
+
+    private static final String EW_SAND_WARN_TEXT =
+            "Sandstorms ahead. Consider turning back.";
+    private static final String EW_SAND_DANGER_TEXT =
+            "It is too dangerous to continue. Turn back.";
+
     private static long lastZoneUpdateWorldTime = Long.MIN_VALUE;
     private static int lastZoneUpdateX = Integer.MIN_VALUE;
     private static int lastZoneUpdateZ = Integer.MIN_VALUE;
@@ -73,10 +87,34 @@ public final class GlobeWarningOverlay {
         return out.length() == 0 ? s : out.toString();
     }
 
+    private static Text poleTextForStage(GlobeClientState.PolarStage stage) {
+        if (stage == null) return null;
+        return switch (stage) {
+            case WARN_1 -> Text.literal(POLE_WARN_1_TEXT);
+            case WARN_2 -> Text.literal(POLE_WARN_2_TEXT);
+            case DANGER -> Text.literal(POLE_DANGER_TEXT).formatted(Formatting.RED, Formatting.BOLD);
+            case LETHAL -> Text.literal(POLE_LETHAL_TEXT).formatted(Formatting.RED, Formatting.BOLD);
+            default -> null;
+        };
+    }
+
+    private static Text ewTextForStage(GlobeClientState.EwStormStage stage) {
+        if (stage == null) return null;
+        return switch (stage) {
+            case LEVEL_1 -> Text.literal(EW_SAND_WARN_TEXT);
+            case LEVEL_2 -> Text.literal(EW_SAND_DANGER_TEXT).formatted(Formatting.RED, Formatting.BOLD);
+            default -> null;
+        };
+    }
+
     public static void render(DrawContext ctx, RenderTickCounter tickCounter) {
         MinecraftClient client = MinecraftClient.getInstance();
 
         if (client == null) {
+            return;
+        }
+
+        if (!LatitudeConfig.showWarningMessages) {
             return;
         }
 
@@ -134,29 +172,17 @@ public final class GlobeWarningOverlay {
                 return;
             }
 
+            // Stable precedence (corners):
+            // 1) polar lethal
+            // 2) ew level 2
+            // 3) polar stage (warn/danger)
+            // 4) ew level 1
             if (state.type() == GlobeClientState.WarningType.POLAR) {
                 GlobeClientState.PolarStage stage = (GlobeClientState.PolarStage) state.stage();
-                bestText = switch (stage) {
-                    case UNEASE -> Text.literal("The air is turning bitterly cold. You should consider turning back.");
-                    case EFFECTS_I -> Text.literal("The cold seeps into your body. Movement is becoming difficult.");
-                    case EFFECTS_II -> Text.literal("The wind howls across the ice. Exposed skin begins to numb.");
-                    case WHITEOUT_APPROACH -> Text.literal("Whiteout conditions ahead. Visibility is rapidly dropping.");
-                    case LETHAL -> Text.literal("DANGER! You are entering a lethal cold zone. Turn back immediately.")
-                            .formatted(Formatting.RED, Formatting.BOLD);
-                    case HOPELESS -> Text.literal("The cold overwhelms you.")
-                            .formatted(Formatting.RED, Formatting.BOLD);
-                    default -> null;
-                };
-            } else {
-                GlobeClientState.StormStage stage = (GlobeClientState.StormStage) state.stage();
-                bestText = switch (stage) {
-                    case WARNING -> Text.literal("The wind is rising. The horizon ahead looks wrong.");
-                    case DANGER -> Text.literal("DANGER! Catastrophic storms ahead. Turn back.")
-                            .formatted(Formatting.RED, Formatting.BOLD);
-                    case EDGE_ABSOLUTE -> Text.literal("DANGER! The world edge is tearing the air apart. You can’t survive this.")
-                            .formatted(Formatting.RED, Formatting.BOLD);
-                    default -> null;
-                };
+                bestText = poleTextForStage(stage);
+            } else if (state.type() == GlobeClientState.WarningType.STORM) {
+                GlobeClientState.EwStormStage stage = (GlobeClientState.EwStormStage) state.stage();
+                bestText = ewTextForStage(stage);
             }
 
             if (bestText == null) {

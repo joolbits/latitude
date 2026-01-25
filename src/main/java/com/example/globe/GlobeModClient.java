@@ -108,12 +108,12 @@ public class GlobeModClient implements ClientModInitializer {
         }
 
         GlobeClientState.PolarStage polarStage = GlobeClientState.computePolarStage(client.world, client.player);
-        GlobeClientState.StormStage stormStage = GlobeClientState.computeStormStage(client.world, client.player);
+        GlobeClientState.EwStormStage ewStage = GlobeClientState.computeEwStormStage(client.world, client.player);
 
         boolean polarActive = polarStage != GlobeClientState.PolarStage.NONE;
-        boolean stormActive = stormStage != GlobeClientState.StormStage.NONE;
+        boolean ewActive = ewStage != GlobeClientState.EwStormStage.NONE;
 
-        if (!polarActive && !stormActive) {
+        if (!polarActive && !ewActive) {
             return;
         }
 
@@ -121,17 +121,16 @@ public class GlobeModClient implements ClientModInitializer {
             return;
         }
 
-
-        if (stormActive && stormStage != GlobeClientState.StormStage.NONE) {
-            stormWallClientTick(client, stormStage);
+        if (ewActive) {
+            ewSandstormClientTick(client, ewStage);
         }
 
         if (polarActive) {
             float intensity = switch (polarStage) {
-                case UNEASE -> 0.12f;
-                case EFFECTS_I -> 0.22f;
-                case EFFECTS_II -> 0.35f;
-                case WHITEOUT_APPROACH, LETHAL, HOPELESS -> Math.max(0.4f, GlobeClientState.computePoleWhiteoutFactor(client.player.getZ()));
+                case WARN_1 -> 0.12f;
+                case WARN_2 -> 0.22f;
+                case DANGER -> 0.35f;
+                case LETHAL -> Math.max(0.4f, GlobeClientState.computePoleWhiteoutFactor(client.player.getZ()));
                 default -> 0.0f;
             };
 
@@ -163,43 +162,28 @@ public class GlobeModClient implements ClientModInitializer {
         }
     }
 
-    private static void stormWallClientTick(MinecraftClient client, GlobeClientState.StormStage stage) {
-        float storm;
-        float severe;
-        switch (stage) {
-            case WARNING -> {
-                storm = 0.35f;
-                severe = 0.0f;
-            }
-            case DANGER -> {
-                storm = 0.85f;
-                severe = 0.35f;
-            }
-            case EDGE_ABSOLUTE -> {
-                storm = 1.0f;
-                severe = 1.0f;
-            }
-            default -> {
-                return;
-            }
+    private static void ewSandstormClientTick(MinecraftClient client, GlobeClientState.EwStormStage stage) {
+        int base = switch (stage) {
+            case LEVEL_1 -> 2;
+            case LEVEL_2 -> 6;
+            default -> 0;
+        };
+        if (base <= 0) {
+            return;
         }
-
-        int cloudCount = 1 + (int) Math.round(storm * 10.0 + severe * 14.0);
-        if (cloudCount > 6) cloudCount = 6;
-        int ashCount = (int) Math.round(storm * 6.0 + severe * 16.0);
-        if (ashCount > 6) ashCount = 6;
 
         Random random = client.player.getRandom();
         double px = client.player.getX();
         double py = client.player.getY();
         double pz = client.player.getZ();
 
-        double vx = client.player.getX() >= 0.0 ? -0.06 : 0.06;
+        double vx = client.player.getX() >= 0.0 ? -0.10 : 0.10;
 
-        spawnCloudRing(client, ParticleTypes.CLOUD, cloudCount, random, px, py, pz, vx);
-        if (ashCount > 0) {
-            spawnCloudRing(client, ParticleTypes.ASH, ashCount, random, px, py, pz, vx * 0.6);
-        }
+        // Use ash as a "sandy" particulate (vanilla-friendly) and a few cloud puffs for haze.
+        int sandCount = base;
+        int hazeCount = Math.max(1, base / 2);
+        spawnCloudRing(client, ParticleTypes.ASH, sandCount, random, px, py, pz, vx);
+        spawnCloudRing(client, ParticleTypes.CLOUD, hazeCount, random, px, py, pz, vx * 0.6);
     }
 
     private static void spawnCloudRing(MinecraftClient client, ParticleEffect particle, int count, Random random,
@@ -218,7 +202,7 @@ public class GlobeModClient implements ClientModInitializer {
         }
 
         GlobeClientState.PolarStage polarStage = GlobeClientState.computePolarStage(client.world, client.player);
-        GlobeClientState.StormStage stormStage = GlobeClientState.computeStormStage(client.world, client.player);
-        return polarStage != GlobeClientState.PolarStage.NONE || stormStage != GlobeClientState.StormStage.NONE;
+        GlobeClientState.EwStormStage ewStage = GlobeClientState.computeEwStormStage(client.world, client.player);
+        return polarStage != GlobeClientState.PolarStage.NONE || ewStage != GlobeClientState.EwStormStage.NONE;
     }
 }
