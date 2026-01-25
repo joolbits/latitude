@@ -29,7 +29,7 @@ public abstract class CreateWorldScreenSpawnZoneMixin extends Screen {
 
     @Unique
     private static final String[] GLOBE_ZONES = {
-            "EQUATOR", "TROPICAL", "SUBTROPICAL", "TEMPERATE", "SUBPOLAR", "POLAR"
+            "EQUATOR", "TROPICAL", "SUBTROPICAL", "TEMPERATE", "SUBPOLAR", "POLAR", "RANDOM"
     };
 
     @Shadow
@@ -78,7 +78,7 @@ public abstract class CreateWorldScreenSpawnZoneMixin extends Screen {
             h = 20;
         }
 
-        this.globe$spawnZoneButton = CyclingButtonWidget.builder(Text::literal, GLOBE_ZONES[0])
+        this.globe$spawnZoneButton = CyclingButtonWidget.builder(v -> Text.literal(globe$zoneLabel(v)), GLOBE_ZONES[0])
                 .values(GLOBE_ZONES)
                 .build(x, y, w, h, Text.literal("Spawn Zone"), (btn, value) -> GlobePending.set(value));
 
@@ -134,6 +134,20 @@ public abstract class CreateWorldScreenSpawnZoneMixin extends Screen {
     @Unique
     private static Text globe$startWithCompassLabel() {
         return Text.literal("Start with compass: " + (GlobePending.startWithCompass ? "ON" : "OFF"));
+    }
+
+    @Unique
+    private static String globe$zoneLabel(String id) {
+        return switch (id) {
+            case "EQUATOR" -> "Equator";
+            case "TROPICAL" -> "Tropical";
+            case "SUBTROPICAL" -> "Subtropical";
+            case "TEMPERATE" -> "Temperate";
+            case "SUBPOLAR" -> "Subpolar";
+            case "POLAR" -> "Polar";
+            case "RANDOM" -> "Random";
+            default -> id;
+        };
     }
 
     @Unique

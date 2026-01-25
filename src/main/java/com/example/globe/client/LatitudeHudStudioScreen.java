@@ -26,11 +26,13 @@ public class LatitudeHudStudioScreen extends Screen {
 
     private boolean wasLDown = false;
 
-    private double lastMouseX;
-    private double lastMouseY;
-
     private int compassGrabDx;
     private int compassGrabDy;
+
+    private double titleOffsetXf;
+    private double titleOffsetYf;
+    private double titleGrabDx;
+    private double titleGrabDy;
 
     private ClickableWidget wTarget;
 
@@ -43,6 +45,8 @@ public class LatitudeHudStudioScreen extends Screen {
     private ClickableWidget wCompassCompact;
 
     private ClickableWidget wTitleScale;
+
+    private ClickableWidget wResetHud;
 
     public LatitudeHudStudioScreen(Screen parent) {
         super(Text.literal("HUD Studio"));
@@ -60,6 +64,9 @@ public class LatitudeHudStudioScreen extends Screen {
         int rowGap = 4;
 
         var cfg = CompassHudConfig.get();
+
+        this.titleOffsetXf = LatitudeConfig.zoneEnterTitleOffsetX;
+        this.titleOffsetYf = LatitudeConfig.zoneEnterTitleOffsetY;
 
         int y = panelY;
 
@@ -109,6 +116,15 @@ public class LatitudeHudStudioScreen extends Screen {
 
         this.wTitleScale = this.addDrawableChild(new StepSlider(panelX, y, panelW, rowH, Text.literal("Title Size"), 1.0, 3.0, 0.1, LatitudeConfig.zoneEnterTitleScale, v -> LatitudeConfig.zoneEnterTitleScale = v));
 
+        int resetY = this.height - 52;
+        this.wResetHud = this.addDrawableChild(ButtonWidget.builder(Text.literal("Reset HUD"), b -> {
+                    resetHudDefaults();
+                    dragElement = DragElement.NONE;
+                    this.init();
+                })
+                .dimensions(panelX, resetY, panelW, rowH)
+                .build());
+
         int bw = 200;
         int bh = 20;
         int doneX = (this.width - bw) / 2;
@@ -129,16 +145,15 @@ public class LatitudeHudStudioScreen extends Screen {
         this.renderInGameBackground(ctx);
         ctx.fill(0, 0, this.width, this.height, 0x66000000);
 
+        int sidebarX = 6;
+        int sidebarY = 22;
+
         if (sidebarVisible) {
-            int px = 6;
-            int py = 22;
+            int px = sidebarX;
+            int py = sidebarY;
             int pw = sidebarWidth + 4;
             int ph = this.height - 44;
             ctx.fill(px, py, px + pw, py + ph, 0xAA000000);
-            ctx.drawTextWithShadow(this.textRenderer, "HUD Studio", px + 6, py + 6, 0xFFFFFFFF);
-            ctx.drawTextWithShadow(this.textRenderer, "Press L to hide settings", px + 6, py + 18, 0xFFCCCCCC);
-        } else {
-            ctx.drawTextWithShadow(this.textRenderer, "Press L to show settings", 8, 8, 0xFFFFFFFF);
         }
 
         var mc = MinecraftClient.getInstance();
@@ -151,18 +166,28 @@ public class LatitudeHudStudioScreen extends Screen {
         String degText = (border != null) ? LatitudeMath.formatLatitudeDeg(z, border) : "0\u00b0";
         String sampleTitle = "EQUATOR " + degText;
 
+        int titleOffsetX = (dragElement == DragElement.TITLE) ? (int) Math.round(titleOffsetXf) : LatitudeConfig.zoneEnterTitleOffsetX;
+        int titleOffsetY = (dragElement == DragElement.TITLE) ? (int) Math.round(titleOffsetYf) : LatitudeConfig.zoneEnterTitleOffsetY;
+
         ZoneEnterTitleOverlay.renderStaticAt(
                 ctx,
                 this.width,
                 this.height,
                 sampleTitle,
                 LatitudeConfig.zoneEnterTitleScale,
-                LatitudeConfig.zoneEnterTitleOffsetX,
-                LatitudeConfig.zoneEnterTitleOffsetY);
+                titleOffsetX,
+                titleOffsetY);
 
         CompassHud.renderAdjustPreview(ctx, this.width, this.height);
 
         super.render(ctx, mouseX, mouseY, delta);
+
+        if (sidebarVisible) {
+            ctx.drawTextWithShadow(this.textRenderer, "HUD Studio", sidebarX + 8, sidebarY + 18, 0xFFFFFFFF);
+            ctx.drawTextWithShadow(this.textRenderer, "Press L to hide settings", sidebarX + 8, sidebarY + 6, 0xFFFFFFFF);
+        } else {
+            ctx.drawTextWithShadow(this.textRenderer, "Press L to show settings", 8, 8, 0xFFFFFFFF);
+        }
     }
 
     @Override
@@ -191,15 +216,17 @@ public class LatitudeHudStudioScreen extends Screen {
         if (click.button() == 0) {
             if (LatitudeConfig.zoneEnterTitleDraggable && isMouseOverTitle(mx, my)) {
                 dragElement = DragElement.TITLE;
-                lastMouseX = mx;
-                lastMouseY = my;
+                int cx = (this.width / 2) + LatitudeConfig.zoneEnterTitleOffsetX;
+                int cy = (this.height / 2) + LatitudeConfig.zoneEnterTitleOffsetY;
+                titleGrabDx = mx - (double) cx;
+                titleGrabDy = my - (double) cy;
+                titleOffsetXf = LatitudeConfig.zoneEnterTitleOffsetX;
+                titleOffsetYf = LatitudeConfig.zoneEnterTitleOffsetY;
                 return true;
             }
 
             if (isMouseOverCompass(mx, my)) {
                 dragElement = DragElement.COMPASS;
-                lastMouseX = mx;
-                lastMouseY = my;
                 return true;
             }
         }
@@ -221,15 +248,10 @@ public class LatitudeHudStudioScreen extends Screen {
         }
 
         if (dragElement == DragElement.TITLE) {
-            LatitudeConfig.zoneEnterTitleOffsetX += (int) Math.round(mx - lastMouseX);
-            LatitudeConfig.zoneEnterTitleOffsetY += (int) Math.round(my - lastMouseY);
-            lastMouseX = mx;
-            lastMouseY = my;
-
-            if (LatitudeConfig.hudSnapEnabled) {
-                LatitudeConfig.zoneEnterTitleOffsetX = snap(LatitudeConfig.zoneEnterTitleOffsetX, LatitudeConfig.hudSnapPixels);
-                LatitudeConfig.zoneEnterTitleOffsetY = snap(LatitudeConfig.zoneEnterTitleOffsetY, LatitudeConfig.hudSnapPixels);
-            }
+            double newCx = mx - titleGrabDx;
+            double newCy = my - titleGrabDy;
+            titleOffsetXf = newCx - (this.width / 2.0);
+            titleOffsetYf = newCy - (this.height / 2.0);
             return true;
         }
 
@@ -265,9 +287,6 @@ public class LatitudeHudStudioScreen extends Screen {
                 cfg.offsetX = snap(cfg.offsetX, LatitudeConfig.hudSnapPixels);
                 cfg.offsetY = snap(cfg.offsetY, LatitudeConfig.hudSnapPixels);
             }
-
-            lastMouseX = mx;
-            lastMouseY = my;
             return true;
         }
 
@@ -277,12 +296,34 @@ public class LatitudeHudStudioScreen extends Screen {
     @Override
     public boolean mouseReleased(Click click) {
         if (click.button() == 0) {
+            if (dragElement == DragElement.TITLE) {
+                int x = (int) Math.round(titleOffsetXf);
+                int y = (int) Math.round(titleOffsetYf);
+                if (LatitudeConfig.hudSnapEnabled) {
+                    x = snap(x, LatitudeConfig.hudSnapPixels);
+                    y = snap(y, LatitudeConfig.hudSnapPixels);
+                }
+                LatitudeConfig.zoneEnterTitleOffsetX = x;
+                LatitudeConfig.zoneEnterTitleOffsetY = y;
+                LatitudeConfig.saveCurrent();
+            }
             if (dragElement == DragElement.COMPASS) {
                 CompassHudConfig.saveCurrent();
             }
             dragElement = DragElement.NONE;
         }
         return super.mouseReleased(click);
+    }
+
+    private static void resetHudDefaults() {
+        var cfg = CompassHudConfig.get();
+        applyDefaults(cfg);
+        CompassHudConfig.saveCurrent();
+
+        LatitudeConfig.zoneEnterTitleScale = 1.8;
+        LatitudeConfig.zoneEnterTitleOffsetX = 0;
+        LatitudeConfig.zoneEnterTitleOffsetY = -40;
+        LatitudeConfig.saveCurrent();
     }
 
     private void updateSidebarVisibility() {
@@ -299,6 +340,30 @@ public class LatitudeHudStudioScreen extends Screen {
 
         boolean showTitleControls = sidebarVisible && (target == Target.TITLE || target == Target.BOTH);
         setVisible(wTitleScale, showTitleControls);
+
+        setVisible(wResetHud, sidebarVisible);
+    }
+
+    private static void applyDefaults(CompassHudConfig cfg) {
+        cfg.enabled = true;
+        cfg.showMode = CompassHudConfig.ShowMode.COMPASS_PRESENT;
+        cfg.directionMode = CompassHudConfig.DirectionMode.CARDINAL_8;
+        cfg.hAnchor = CompassHudConfig.HAnchor.CENTER;
+        cfg.vAnchor = CompassHudConfig.VAnchor.TOP;
+        cfg.offsetX = 0;
+        cfg.offsetY = 0;
+        cfg.scale = 1.0f;
+        cfg.padding = 3;
+        cfg.showBackground = true;
+        cfg.backgroundRgb = 0x000000;
+        cfg.backgroundAlpha = 64;
+        cfg.textRgb = 0xFFFFFF;
+        cfg.textAlpha = 255;
+        cfg.shadow = true;
+        cfg.showLatitude = true;
+        cfg.latitudeDecimals = 0;
+        cfg.attachToHotbarCompass = false;
+        cfg.compactHud = false;
     }
 
     private static void setVisible(ClickableWidget w, boolean v) {

@@ -286,9 +286,20 @@ public class GlobeMod implements ModInitializer {
             return;
         }
 
-        LOGGER.info("Applying spawn choice: player={}, zoneId={}", player.getName().getString(), id);
+        String zoneId = id;
+        if (zoneId != null && zoneId.equals("RANDOM")) {
+            long seed = world.getServer().getSaveProperties().getGeneratorOptions().getSeed();
+            zoneId = resolveSpawnZoneId(zoneId, seed);
+            LOGGER.info("Resolved RANDOM spawn zone: player={}, seed={}, chosen={}", player.getName().getString(), seed, zoneId);
+        }
 
-        int z = switch (id) {
+        if (zoneId == null) {
+            zoneId = "EQUATOR";
+        }
+
+        LOGGER.info("Applying spawn choice: player={}, zoneId={}", player.getName().getString(), zoneId);
+
+        int z = switch (zoneId) {
             case "EQUATOR" -> 0;
             case "TROPICAL" -> 3000;
             case "SUBTROPICAL" -> 6000;
@@ -319,6 +330,17 @@ public class GlobeMod implements ModInitializer {
         world.setSpawnPoint(WorldProperties.SpawnPoint.create(world.getRegistryKey(), spawn, 0.0f, 0.0f));
         player.teleport(world, spawn.getX() + 0.5, spawn.getY(), spawn.getZ() + 0.5, EnumSet.noneOf(PositionFlag.class), player.getYaw(), player.getPitch(), true);
         player.addCommandTag(SPAWN_CHOSEN_TAG);
+    }
+
+    private static String resolveSpawnZoneId(String selected, long seed) {
+        if (selected == null || !selected.equals("RANDOM")) {
+            return selected;
+        }
+
+        String[] options = {"EQUATOR", "TROPICAL", "SUBTROPICAL", "TEMPERATE", "SUBPOLAR", "POLAR"};
+        long mixed = seed ^ 0x9E3779B97F4A7C15L;
+        int idx = Math.floorMod(mixed, options.length);
+        return options[idx];
     }
 
     private static boolean hasCompassAnywhere(ServerPlayerEntity player) {
