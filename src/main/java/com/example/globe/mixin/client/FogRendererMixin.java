@@ -1,6 +1,7 @@
 package com.example.globe.mixin.client;
 
 import com.example.globe.client.GlobeClientState;
+import com.example.globe.GlobeMod;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.render.Camera;
 import net.minecraft.client.render.fog.FogRenderer;
@@ -18,6 +19,10 @@ public class FogRendererMixin {
 
     private static float globe$smoothedEdgeEnd = -1.0f;
     private static float globe$smoothedPoleEnd = -1.0f;
+
+    private static final int EW_FOG_WARN_DISTANCE = GlobeMod.POLE_WARNING_DISTANCE_BLOCKS;
+    private static final int EW_FOG_DANGER_DISTANCE = GlobeMod.POLE_LETHAL_DISTANCE_BLOCKS;
+    private static final int EW_FOG_BLACKOUT_DISTANCE = 20;
 
     @ModifyVariable(
             method = "applyFog(Ljava/nio/ByteBuffer;ILorg/joml/Vector4f;FFFFFF)V",
@@ -94,7 +99,7 @@ public class FogRendererMixin {
 
         float poleDesired = GlobeClientState.computePoleFogEnd(client.player.getZ());
 
-        globe$smoothedEdgeEnd = -1.0f;
+        float edgeDesired = GlobeClientState.computeEwFogEnd(client.player.getX());
 
         float poleEnd = -1.0f;
         if (poleDesired >= 0.0f) {
@@ -104,9 +109,20 @@ public class FogRendererMixin {
             globe$smoothedPoleEnd = -1.0f;
         }
 
+        float edgeEnd = -1.0f;
+        if (edgeDesired >= 0.0f) {
+            globe$smoothedEdgeEnd = globe$smoothToward(globe$smoothedEdgeEnd, edgeDesired, 0.18f);
+            edgeEnd = globe$smoothedEdgeEnd;
+        } else {
+            globe$smoothedEdgeEnd = -1.0f;
+        }
+
         float clamped = currentEnd;
         if (poleEnd >= 0.0f) {
             clamped = Math.min(clamped, poleEnd);
+        }
+        if (edgeEnd >= 0.0f) {
+            clamped = Math.min(clamped, edgeEnd);
         }
 
         return globe$sanitizeFogEnd(currentEnd, clamped);

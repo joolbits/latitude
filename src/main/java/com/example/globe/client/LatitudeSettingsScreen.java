@@ -3,6 +3,7 @@ package com.example.globe.client;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
+import net.minecraft.client.gui.tooltip.Tooltip;
 import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.gui.widget.ClickableWidget;
 import net.minecraft.client.gui.widget.CyclingButtonWidget;
@@ -46,6 +47,18 @@ public class LatitudeSettingsScreen extends Screen {
                 .values(true, false)
                 .build(columnX, y, w, h, Text.literal("Zone Enter Title"), (btn, value) -> LatitudeConfig.zoneEnterTitleEnabled = value));
         layoutWidgets.add(wZoneTitle);
+        layoutBaseYs.add(baseY);
+        y += 24;
+
+        baseY = y;
+        var wWarnText = this.addDrawableChild(CyclingButtonWidget.builder(v -> Text.literal(v ? "ON" : "OFF"), LatitudeConfig.showWarningMessages)
+                .values(true, false)
+                .build(columnX, y, w, h, Text.literal("Warning messages"), (btn, value) -> {
+                    LatitudeConfig.showWarningMessages = value;
+                    LatitudeConfig.saveCurrent();
+                }));
+        wWarnText.setTooltip(Tooltip.of(Text.literal("Show/hide on-screen warning text (fog/particles/effects still apply).")));
+        layoutWidgets.add(wWarnText);
         layoutBaseYs.add(baseY);
         y += 24;
 
@@ -181,6 +194,7 @@ public class LatitudeSettingsScreen extends Screen {
         LatitudeConfig.latitudeBandBlendWidthFrac = 0.08;
         LatitudeConfig.latitudeBandBoundaryWarpFrac = 0.06;
         LatitudeConfig.debugLatitudeBlend = false;
+        LatitudeConfig.showWarningMessages = true;
     }
 
     private interface DoubleConsumer {
