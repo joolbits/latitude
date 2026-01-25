@@ -1,7 +1,6 @@
 package com.example.globe.client;
 
 import com.example.globe.client.ui.ZoneTitleOverlay;
-import com.example.globe.util.LatitudeMath;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.text.Text;
 
@@ -29,13 +28,8 @@ public final class ZoneEntryNotifier {
 
             Text subtitle = null;
             if (LatitudeConfig.showLatitudeDegrees) {
-                int deg = LatitudeMath.latitudeDegrees(client.world.getWorldBorder(), client.player.getZ());
-                if (deg == 0) {
-                    subtitle = Text.literal("0\u00b0");
-                } else {
-                    char hemi = LatitudeMath.hemisphere(client.world.getWorldBorder(), client.player.getZ());
-                    subtitle = Text.literal(deg + "\u00b0" + hemi);
-                }
+                String degText = LatitudeMath.formatLatitudeDeg(client.player.getZ(), client.world.getWorldBorder());
+                subtitle = Text.literal(degText);
             }
 
             ZoneTitleOverlay.show(title, subtitle);

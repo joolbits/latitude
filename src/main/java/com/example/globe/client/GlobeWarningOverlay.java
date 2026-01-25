@@ -30,45 +30,6 @@ public final class GlobeWarningOverlay {
         registered = true;
     }
 
-    private static String zoneKeyFor(double z) {
-        int absZ = (int) Math.floor(Math.abs(z));
-        if (absZ < 1500) {
-            return "EQUATOR";
-        } else if (absZ < 4500) {
-            return "TROPICAL";
-        } else if (absZ < 7500) {
-            return "SUBTROPICAL";
-        } else if (absZ < 10000) {
-            return "TEMPERATE";
-        } else if (absZ < 11750) {
-            return "SUBPOLAR";
-        } else {
-            return "POLAR";
-        }
-    }
-
-    private static String zoneKeyFor(double z, int radius) {
-        if (radius <= 0) {
-            return zoneKeyFor(z);
-        }
-
-        int absZ = (int) Math.floor(Math.abs(z));
-        double t = absZ / (double) radius;
-        if (t < 0.10) {
-            return "EQUATOR";
-        } else if (t < 0.30) {
-            return "TROPICAL";
-        } else if (t < 0.50) {
-            return "SUBTROPICAL";
-        } else if (t < 0.666) {
-            return "TEMPERATE";
-        } else if (t < 0.783) {
-            return "SUBPOLAR";
-        } else {
-            return "POLAR";
-        }
-    }
-
     private static String zoneDisplayName(String zoneKey) {
         return switch (zoneKey) {
             case "EQUATOR" -> "Equator";
@@ -154,12 +115,12 @@ public final class GlobeWarningOverlay {
                 lastZoneUpdateX = px;
                 lastZoneUpdateZ = pz;
 
-                int radius = (int) Math.round(client.world.getWorldBorder().getSize() * 0.5);
-                String zoneKey = zoneKeyFor(client.player.getZ(), radius);
+                var border = client.world.getWorldBorder();
+                String zoneKey = com.example.globe.util.LatitudeMath.zoneKey(border, client.player.getZ());
                 if (lastZoneKey == null || !lastZoneKey.equals(zoneKey)) {
                     lastZoneKey = zoneKey;
                     if (LatitudeConfig.zoneEnterTitleEnabled) {
-                        String titleText = buildZoneEnterTitle(client, zoneKey, radius);
+                        String titleText = buildZoneEnterTitle(client, zoneKey);
                         int durationTicks = (int) Math.round(clamp(LatitudeConfig.zoneEnterTitleSeconds, 2.0, 10.0) * 20.0);
                         double scale = clamp(LatitudeConfig.zoneEnterTitleScale, 1.0, 3.0);
                         ZoneEnterTitleOverlay.trigger(titleText, durationTicks, scale);
@@ -220,7 +181,7 @@ public final class GlobeWarningOverlay {
         ctx.drawTextWithShadow(tr, text, x, y, 0xFFFFFFFF);
     }
 
-    private static String buildZoneEnterTitle(MinecraftClient client, String zoneKey, int radius) {
+    private static String buildZoneEnterTitle(MinecraftClient client, String zoneKey) {
         String zoneName = zoneDisplayName(zoneKey).toUpperCase();
         if (!LatitudeConfig.showZoneBaseDegreesOnTitle) {
             return zoneName;
@@ -229,52 +190,15 @@ public final class GlobeWarningOverlay {
         if (client.player == null || client.world == null) {
             return zoneName;
         }
-        String degText = LatitudeMath.formatLatitudeDeg(client.player.getZ(), client.world.getWorldBorder());
-        return zoneName + " " + degText;
-    }
+        var border = client.world.getWorldBorder();
 
-    private static int zoneBaseDegrees(String zoneKey, int radius) {
-        double lo;
-        double hi;
-
-        if (radius <= 0) {
-            return 0;
+        int baseDeg = com.example.globe.util.LatitudeMath.zoneCenterDeg(zoneKey);
+        if (baseDeg <= 0) {
+            return zoneName + " 0\u00b0";
         }
 
-        switch (zoneKey) {
-            case "EQUATOR" -> {
-                return 0;
-            }
-            case "TROPICAL" -> {
-                lo = 0.10;
-                hi = 0.30;
-            }
-            case "SUBTROPICAL" -> {
-                lo = 0.30;
-                hi = 0.50;
-            }
-            case "TEMPERATE" -> {
-                lo = 0.50;
-                hi = 0.666;
-            }
-            case "SUBPOLAR" -> {
-                lo = 0.666;
-                hi = 0.783;
-            }
-            case "POLAR" -> {
-                lo = 0.783;
-                hi = 1.0;
-            }
-            default -> {
-                return 0;
-            }
-        }
-
-        double mid = (lo + hi) * 0.5;
-        int deg = (int) Math.round(mid * 90.0);
-        if (deg < 0) deg = 0;
-        if (deg > 90) deg = 90;
-        return deg;
+        char hemi = com.example.globe.util.LatitudeMath.hemisphere(border, client.player.getZ());
+        return zoneName + " " + baseDeg + "\u00b0" + hemi;
     }
 
     private static double clamp(double v, double lo, double hi) {

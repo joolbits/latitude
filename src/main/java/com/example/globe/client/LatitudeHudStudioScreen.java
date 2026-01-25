@@ -49,6 +49,7 @@ public class LatitudeHudStudioScreen extends Screen {
     private ClickableWidget wResetHud;
 
     private int sidebarHintY;
+    private int sidebarHintRowY;
 
     public LatitudeHudStudioScreen(Screen parent) {
         super(Text.literal("HUD Studio"));
@@ -116,7 +117,10 @@ public class LatitudeHudStudioScreen extends Screen {
                 .build(panelX, y, panelW, rowH, Text.literal("Compact HUD"), (btn, value) -> cfg.compactHud = value));
         y += rowH + rowGap;
 
-        this.sidebarHintY = y + 8;
+        int hintRowH = 14;
+        this.sidebarHintRowY = y;
+        this.sidebarHintY = this.sidebarHintRowY + 2;
+        y += hintRowH + rowGap;
 
         this.wTitleScale = this.addDrawableChild(new StepSlider(panelX, y, panelW, rowH, Text.literal("Title Size"), 1.0, 3.0, 0.1, LatitudeConfig.zoneEnterTitleScale, v -> LatitudeConfig.zoneEnterTitleScale = v));
 
@@ -350,26 +354,10 @@ public class LatitudeHudStudioScreen extends Screen {
     }
 
     private int computeSidebarHintY() {
-        int bottom = 0;
-        bottom = Math.max(bottom, bottomYIfVisible(wTarget));
-        bottom = Math.max(bottom, bottomYIfVisible(wCompassScale));
-        bottom = Math.max(bottom, bottomYIfVisible(wCompassTransparency));
-        bottom = Math.max(bottom, bottomYIfVisible(wCompassBackground));
-        bottom = Math.max(bottom, bottomYIfVisible(wCompassBgColor));
-        bottom = Math.max(bottom, bottomYIfVisible(wCompassTextColor));
-        bottom = Math.max(bottom, bottomYIfVisible(wCompassShowLatitude));
-        bottom = Math.max(bottom, bottomYIfVisible(wCompassCompact));
-        bottom = Math.max(bottom, bottomYIfVisible(wTitleScale));
-        bottom = Math.max(bottom, bottomYIfVisible(wResetHud));
-        if (bottom <= 0) {
+        if (sidebarHintRowY <= 0) {
             return 8;
         }
-        return bottom + 8;
-    }
-
-    private static int bottomYIfVisible(ClickableWidget w) {
-        if (w == null || !w.visible) return 0;
-        return w.getY() + w.getHeight();
+        return sidebarHintRowY + 2;
     }
 
     private static void applyDefaults(CompassHudConfig cfg) {
