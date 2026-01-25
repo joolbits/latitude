@@ -136,7 +136,7 @@ public class LatitudeHudStudioScreen extends Screen {
             int ph = this.height - 44;
             ctx.fill(px, py, px + pw, py + ph, 0xAA000000);
             ctx.drawTextWithShadow(this.textRenderer, "HUD Studio", px + 6, py + 6, 0xFFFFFFFF);
-            ctx.drawTextWithShadow(this.textRenderer, "Press L to hide", px + 6, py + 18, 0xFFCCCCCC);
+            ctx.drawTextWithShadow(this.textRenderer, "Press L to hide settings", px + 6, py + 18, 0xFFCCCCCC);
         } else {
             ctx.drawTextWithShadow(this.textRenderer, "Press L to show settings", 8, 8, 0xFFFFFFFF);
         }
