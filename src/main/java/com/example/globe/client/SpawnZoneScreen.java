@@ -16,6 +16,8 @@ public class SpawnZoneScreen extends Screen {
         int cx = this.width / 2;
         int y = this.height / 2 - 60;
 
+        addZoneButton(cx, y, "Random", "RANDOM");
+        y += 22;
         addZoneButton(cx, y, "Equatorial", "EQUATOR");
         y += 22;
         addZoneButton(cx, y, "Tropical", "TROPICAL");
