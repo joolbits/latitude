@@ -104,6 +104,8 @@ public final class LatitudeBiomes {
             return base;
         }
 
+        boolean isRugged = isRuggedBase(base);
+
         int lat = Math.abs(blockZ);
         int absX = Math.abs(blockX);
         double t = (double) lat / (double) borderRadiusBlocks;
@@ -135,15 +137,15 @@ public final class LatitudeBiomes {
         }
 
         return switch (bandIndex) {
-            case 0 -> pickTropicalGradient(biomes, base, blockX, blockZ, t);
-            case 1 -> pickFromLandTagOrBase(biomes, LAT_EQUATOR, base, blockX, blockZ, 1);
-            case 2 -> pickFromLandTagOrBase(biomes, LAT_TEMPERATE, base, blockX, blockZ, 2);
-            case 3 -> pickFromLandTagOrBase(biomes, LAT_SUBPOLAR, base, blockX, blockZ, 3);
-            default -> pickFromLandTagOrBase(biomes, LAT_POLAR, base, blockX, blockZ, 4);
+            case 0 -> pickTropicalGradient(biomes, base, blockX, blockZ, t, isRugged);
+            case 1 -> pickFromLandTagOrBase(biomes, LAT_EQUATOR, base, blockX, blockZ, 1, isRugged);
+            case 2 -> pickFromLandTagOrBase(biomes, LAT_TEMPERATE, base, blockX, blockZ, 2, isRugged);
+            case 3 -> pickFromLandTagOrBase(biomes, LAT_SUBPOLAR, base, blockX, blockZ, 3, isRugged);
+            default -> pickFromLandTagOrBase(biomes, LAT_POLAR, base, blockX, blockZ, 4, isRugged);
         };
     }
 
-    private static RegistryEntry<Biome> pickTropicalGradient(Registry<Biome> biomes, RegistryEntry<Biome> base, int blockX, int blockZ, double t) {
+    private static RegistryEntry<Biome> pickTropicalGradient(Registry<Biome> biomes, RegistryEntry<Biome> base, int blockX, int blockZ, double t, boolean isRugged) {
         int chunkX = blockX >> 4;
         int chunkZ = blockZ >> 4;
 
@@ -167,7 +169,7 @@ public final class LatitudeBiomes {
             default -> LAT_ARID;
         };
 
-        return pickFromTagNoiseOrBase(biomes, chosen, base, blockX, blockZ, 100 + step);
+        return pickFromTagNoiseOrBase(biomes, chosen, base, blockX, blockZ, 100 + step, isRugged);
     }
 
     private static RegistryEntry<Biome> oceanByLatitudeBandOrBase(Registry<Biome> biomes, RegistryEntry<Biome> base, int blockX, int blockZ, int bandIndex) {
@@ -348,7 +350,7 @@ public final class LatitudeBiomes {
         return pickFrom(biomes, blockX, blockZ, bandIndex, fallbackOptions);
     }
 
-    private static RegistryEntry<Biome> pickFromLandTagOrBase(Registry<Biome> biomes, TagKey<Biome> tag, RegistryEntry<Biome> base, int blockX, int blockZ, int bandIndex) {
+    private static RegistryEntry<Biome> pickFromLandTagOrBase(Registry<Biome> biomes, TagKey<Biome> tag, RegistryEntry<Biome> base, int blockX, int blockZ, int bandIndex, boolean isRugged) {
         List<RegistryEntry<Biome>> entries = new ArrayList<>();
         for (RegistryEntry<Biome> entry : biomes.iterateEntries(tag)) {
             entries.add(entry);
@@ -367,11 +369,29 @@ public final class LatitudeBiomes {
         long seed = 0L;
         long salted = seed ^ (0x9E3779B97F4A7C15L * (long) bandIndex);
         double n = ValueNoise2D.sampleBlocks(salted, blockX, blockZ, scaleBlocks);
-        int idx = (int) Math.floor(n * (double) size);
-        if (idx >= size) {
-            idx = size - 1;
+
+        int totalWeight = 0;
+        for (RegistryEntry<Biome> entry : entries) {
+            totalWeight += weightForBiome(biomeId(entry), isRugged);
         }
-        return entries.get(idx);
+
+        if (totalWeight <= 0) {
+            int idx = (int) Math.floor(n * (double) size);
+            if (idx >= size) {
+                idx = size - 1;
+            }
+            return entries.get(idx);
+        }
+
+        int pick = (int) Math.floor(n * (double) totalWeight);
+        for (RegistryEntry<Biome> entry : entries) {
+            pick -= weightForBiome(biomeId(entry), isRugged);
+            if (pick < 0) {
+                return entry;
+            }
+        }
+
+        return entries.get(size - 1);
     }
 
     private static RegistryEntry<Biome> pickFromTagNoiseOrFallback(Registry<Biome> biomes, TagKey<Biome> tag, int blockX, int blockZ, int bandIndex, String... fallbackOptions) {
@@ -400,7 +420,7 @@ public final class LatitudeBiomes {
         return entries.get(idx);
     }
 
-    private static RegistryEntry<Biome> pickFromTagNoiseOrBase(Registry<Biome> biomes, TagKey<Biome> tag, RegistryEntry<Biome> base, int blockX, int blockZ, int bandIndex) {
+    private static RegistryEntry<Biome> pickFromTagNoiseOrBase(Registry<Biome> biomes, TagKey<Biome> tag, RegistryEntry<Biome> base, int blockX, int blockZ, int bandIndex, boolean isRugged) {
         List<RegistryEntry<Biome>> entries = new ArrayList<>();
         for (RegistryEntry<Biome> entry : biomes.iterateEntries(tag)) {
             entries.add(entry);
@@ -419,11 +439,62 @@ public final class LatitudeBiomes {
         long seed = 0L;
         long salted = seed ^ (0x9E3779B97F4A7C15L * (long) bandIndex);
         double n = ValueNoise2D.sampleBlocks(salted, blockX, blockZ, scaleBlocks);
-        int idx = (int) Math.floor(n * (double) size);
-        if (idx >= size) {
-            idx = size - 1;
+
+        int totalWeight = 0;
+        for (RegistryEntry<Biome> entry : entries) {
+            totalWeight += weightForBiome(biomeId(entry), isRugged);
         }
-        return entries.get(idx);
+
+        if (totalWeight <= 0) {
+            int idx = (int) Math.floor(n * (double) size);
+            if (idx >= size) {
+                idx = size - 1;
+            }
+            return entries.get(idx);
+        }
+
+        int pick = (int) Math.floor(n * (double) totalWeight);
+        for (RegistryEntry<Biome> entry : entries) {
+            pick -= weightForBiome(biomeId(entry), isRugged);
+            if (pick < 0) {
+                return entry;
+            }
+        }
+
+        return entries.get(size - 1);
+    }
+
+    private static String biomeId(RegistryEntry<Biome> entry) {
+        if (entry == null) return "";
+        return entry.getKey().map(key -> key.getValue().toString()).orElse("");
+    }
+
+    private static boolean isRuggedBase(RegistryEntry<Biome> base) {
+        String id = biomeId(base);
+        return id.contains("mountain")
+                || id.contains("peak")
+                || id.contains("windswept")
+                || id.contains("cliffs")
+                || id.contains("hills")
+                || id.contains("stony")
+                || id.contains("jagged")
+                || id.contains("slopes");
+    }
+
+    private static int weightForBiome(String biomeId, boolean isRugged) {
+        int w = 10;
+
+        if ("minecraft:plains".equals(biomeId) || "minecraft:sunflower_plains".equals(biomeId)) {
+            return isRugged ? 2 : w;
+        }
+
+        if ("minecraft:badlands".equals(biomeId)
+                || "minecraft:wooded_badlands".equals(biomeId)
+                || "minecraft:eroded_badlands".equals(biomeId)) {
+            return isRugged ? 18 : 10;
+        }
+
+        return w;
     }
 
     private static long hash64(int x, int z, int bandIndex) {
