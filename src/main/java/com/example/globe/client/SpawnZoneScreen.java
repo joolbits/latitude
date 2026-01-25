@@ -5,6 +5,8 @@ import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.text.Text;
+import net.minecraft.text.MutableText;
+import net.minecraft.util.Formatting;
 
 public class SpawnZoneScreen extends Screen {
     public SpawnZoneScreen() {
@@ -16,7 +18,7 @@ public class SpawnZoneScreen extends Screen {
         int cx = this.width / 2;
         int y = this.height / 2 - 60;
 
-        addZoneButton(cx, y, "Random", "RANDOM");
+        addZoneButton(cx, y, rainbowRandomText(), "RANDOM");
         y += 22;
         addZoneButton(cx, y, "Equatorial", "EQUATOR");
         y += 22;
@@ -43,6 +45,34 @@ public class SpawnZoneScreen extends Screen {
                 })
                 .dimensions(cx - 90, y, 180, 20)
                 .build());
+    }
+
+    private void addZoneButton(int cx, int y, Text label, String id) {
+        this.addDrawableChild(ButtonWidget.builder(label, b -> {
+                    ClientPlayNetworking.send(new GlobeNet.SetSpawnPickerPayload(id));
+                    close();
+                })
+                .dimensions(cx - 90, y, 180, 20)
+                .build());
+    }
+
+    private static Text rainbowRandomText() {
+        Formatting[] colors = {
+                Formatting.RED,
+                Formatting.GOLD,
+                Formatting.YELLOW,
+                Formatting.GREEN,
+                Formatting.AQUA,
+                Formatting.BLUE,
+                Formatting.LIGHT_PURPLE
+        };
+
+        String s = "Random";
+        MutableText out = Text.empty();
+        for (int i = 0; i < s.length(); i++) {
+            out.append(Text.literal(String.valueOf(s.charAt(i))).formatted(colors[i % colors.length]));
+        }
+        return out.formatted(Formatting.ITALIC);
     }
 
     @Override

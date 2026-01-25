@@ -299,15 +299,30 @@ public class GlobeMod implements ModInitializer {
 
         LOGGER.info("Applying spawn choice: player={}, zoneId={}", player.getName().getString(), zoneId);
 
-        int z = switch (zoneId) {
-            case "EQUATOR" -> 0;
-            case "TROPICAL" -> 3000;
-            case "SUBTROPICAL" -> 6000;
-            case "TEMPERATE" -> 9000;
-            case "SUBPOLAR" -> 11000;
-            case "POLAR" -> 12500;
-            default -> 0;
+        WorldBorder border = world.getWorldBorder();
+        int radius = (int) Math.round(border.getSize() * 0.5);
+
+        double t = switch (zoneId) {
+            case "EQUATOR" -> 0.0;
+            case "TROPICAL" -> 0.20;
+            case "SUBTROPICAL" -> 0.40;
+            case "TEMPERATE" -> 0.583;
+            case "SUBPOLAR" -> 0.725;
+            case "POLAR" -> 0.891;
+            default -> 0.0;
         };
+
+        int z = (int) Math.round(radius * t);
+
+        int margin = Math.max(256, POLE_LETHAL_WARNING_DISTANCE + 64);
+        int minZ = -radius + margin;
+        int maxZ = radius - margin;
+        if (minZ > maxZ) {
+            minZ = 0;
+            maxZ = 0;
+        }
+        if (z < minZ) z = minZ;
+        if (z > maxZ) z = maxZ;
 
         int x = 0;
         int chunkX = x >> 4;
