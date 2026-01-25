@@ -13,7 +13,9 @@ import net.minecraft.client.gui.widget.ClickableWidget;
 import net.minecraft.client.gui.widget.CyclingButtonWidget;
 import net.minecraft.registry.RegistryKey;
 import net.minecraft.text.Text;
+import net.minecraft.text.MutableText;
 import net.minecraft.util.Identifier;
+import net.minecraft.util.Formatting;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
@@ -78,7 +80,7 @@ public abstract class CreateWorldScreenSpawnZoneMixin extends Screen {
             h = 20;
         }
 
-        this.globe$spawnZoneButton = CyclingButtonWidget.builder(v -> Text.literal(globe$zoneLabel(v)), GLOBE_ZONES[0])
+        this.globe$spawnZoneButton = CyclingButtonWidget.builder(CreateWorldScreenSpawnZoneMixin::globe$zoneLabel, GLOBE_ZONES[0])
                 .values(GLOBE_ZONES)
                 .build(x, y, w, h, Text.literal("Spawn Zone"), (btn, value) -> GlobePending.set(value));
 
@@ -137,17 +139,43 @@ public abstract class CreateWorldScreenSpawnZoneMixin extends Screen {
     }
 
     @Unique
-    private static String globe$zoneLabel(String id) {
-        return switch (id) {
+    private static Text globe$zoneLabel(String id) {
+        if (id == null) {
+            return Text.literal("");
+        }
+
+        if (id.equals("RANDOM")) {
+            return globe$rainbowRandomText();
+        }
+
+        return Text.literal(switch (id) {
             case "EQUATOR" -> "Equator";
             case "TROPICAL" -> "Tropical";
             case "SUBTROPICAL" -> "Subtropical";
             case "TEMPERATE" -> "Temperate";
             case "SUBPOLAR" -> "Subpolar";
             case "POLAR" -> "Polar";
-            case "RANDOM" -> "Random";
             default -> id;
+        });
+    }
+
+    private static Text globe$rainbowRandomText() {
+        Formatting[] colors = {
+                Formatting.RED,
+                Formatting.GOLD,
+                Formatting.YELLOW,
+                Formatting.GREEN,
+                Formatting.AQUA,
+                Formatting.BLUE,
+                Formatting.LIGHT_PURPLE
         };
+
+        String s = "Random";
+        MutableText out = Text.empty();
+        for (int i = 0; i < s.length(); i++) {
+            out.append(Text.literal(String.valueOf(s.charAt(i))).formatted(colors[i % colors.length]));
+        }
+        return out.formatted(Formatting.ITALIC);
     }
 
     @Unique

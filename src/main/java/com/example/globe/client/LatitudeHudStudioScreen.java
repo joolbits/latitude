@@ -48,6 +48,8 @@ public class LatitudeHudStudioScreen extends Screen {
 
     private ClickableWidget wResetHud;
 
+    private int sidebarHintY;
+
     public LatitudeHudStudioScreen(Screen parent) {
         super(Text.literal("HUD Studio"));
         this.parent = parent;
@@ -113,6 +115,8 @@ public class LatitudeHudStudioScreen extends Screen {
                 .values(true, false)
                 .build(panelX, y, panelW, rowH, Text.literal("Compact HUD"), (btn, value) -> cfg.compactHud = value));
         y += rowH + rowGap;
+
+        this.sidebarHintY = y + 8;
 
         this.wTitleScale = this.addDrawableChild(new StepSlider(panelX, y, panelW, rowH, Text.literal("Title Size"), 1.0, 3.0, 0.1, LatitudeConfig.zoneEnterTitleScale, v -> LatitudeConfig.zoneEnterTitleScale = v));
 
@@ -183,8 +187,7 @@ public class LatitudeHudStudioScreen extends Screen {
         super.render(ctx, mouseX, mouseY, delta);
 
         if (sidebarVisible) {
-            ctx.drawTextWithShadow(this.textRenderer, "HUD Studio", sidebarX + 8, sidebarY + 18, 0xFFFFFFFF);
-            ctx.drawTextWithShadow(this.textRenderer, "Press L to hide settings", sidebarX + 8, sidebarY + 6, 0xFFFFFFFF);
+            ctx.drawTextWithShadow(this.textRenderer, "Press L to hide settings", sidebarX + 8, sidebarHintY, 0xFFFFFFFF);
         } else {
             ctx.drawTextWithShadow(this.textRenderer, "Press L to show settings", 8, 8, 0xFFFFFFFF);
         }
@@ -342,6 +345,31 @@ public class LatitudeHudStudioScreen extends Screen {
         setVisible(wTitleScale, showTitleControls);
 
         setVisible(wResetHud, sidebarVisible);
+
+        this.sidebarHintY = computeSidebarHintY();
+    }
+
+    private int computeSidebarHintY() {
+        int bottom = 0;
+        bottom = Math.max(bottom, bottomYIfVisible(wTarget));
+        bottom = Math.max(bottom, bottomYIfVisible(wCompassScale));
+        bottom = Math.max(bottom, bottomYIfVisible(wCompassTransparency));
+        bottom = Math.max(bottom, bottomYIfVisible(wCompassBackground));
+        bottom = Math.max(bottom, bottomYIfVisible(wCompassBgColor));
+        bottom = Math.max(bottom, bottomYIfVisible(wCompassTextColor));
+        bottom = Math.max(bottom, bottomYIfVisible(wCompassShowLatitude));
+        bottom = Math.max(bottom, bottomYIfVisible(wCompassCompact));
+        bottom = Math.max(bottom, bottomYIfVisible(wTitleScale));
+        bottom = Math.max(bottom, bottomYIfVisible(wResetHud));
+        if (bottom <= 0) {
+            return 8;
+        }
+        return bottom + 8;
+    }
+
+    private static int bottomYIfVisible(ClickableWidget w) {
+        if (w == null || !w.visible) return 0;
+        return w.getY() + w.getHeight();
     }
 
     private static void applyDefaults(CompassHudConfig cfg) {
