@@ -6,10 +6,13 @@ import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.gui.widget.ClickableWidget;
 import net.minecraft.client.gui.widget.CyclingButtonWidget;
+import net.minecraft.client.gui.widget.SliderWidget;
 import net.minecraft.text.Text;
+import net.minecraft.util.math.MathHelper;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Consumer;
 
 public class LatitudeSettingsScreen extends Screen {
     private final Screen parent;
@@ -27,11 +30,12 @@ public class LatitudeSettingsScreen extends Screen {
     @Override
     protected void init() {
         var cfg = CompassHudConfig.get();
-        LatitudeConfig.get();
+        var latCfg = LatitudeConfig.get();
 
         this.layoutWidgets.clear();
         this.layoutBaseYs.clear();
 
+        int cx = this.width / 2;
         int y = 28;
         int w = 220;
         int h = 20;
@@ -39,6 +43,26 @@ public class LatitudeSettingsScreen extends Screen {
         final int columnX = (this.width - w) / 2;
 
         int baseY;
+
+        baseY = y;
+        var wZoneTitle = this.addDrawableChild(CyclingButtonWidget.builder(v -> Text.literal(v ? "ON" : "OFF"), LatitudeConfig.zoneEnterTitleEnabled)
+                .values(true, false)
+                .build(columnX, y, w, h, Text.literal("Zone Enter Title"), (btn, value) -> LatitudeConfig.zoneEnterTitleEnabled = value));
+        layoutWidgets.add(wZoneTitle);
+        layoutBaseYs.add(baseY);
+        y += 24;
+
+        baseY = y;
+        var wTitleSec = this.addDrawableChild(new StepSlider(columnX, y, w, h, Text.literal("Title Duration (seconds)"), 2.0, 10.0, 0.5, LatitudeConfig.zoneEnterTitleSeconds, v -> LatitudeConfig.zoneEnterTitleSeconds = v));
+        layoutWidgets.add(wTitleSec);
+        layoutBaseYs.add(baseY);
+        y += 24;
+
+        baseY = y;
+        var wTitleScale = this.addDrawableChild(new StepSlider(columnX, y, w, h, Text.literal("Title Size"), 1.0, 3.0, 0.1, LatitudeConfig.zoneEnterTitleScale, v -> LatitudeConfig.zoneEnterTitleScale = v));
+        layoutWidgets.add(wTitleScale);
+        layoutBaseYs.add(baseY);
+        y += 24;
 
         baseY = y;
         var wShowMode = this.addDrawableChild(CyclingButtonWidget.<CompassHudConfig.ShowMode>builder(this::showModeLabel, () -> cfg.showMode)
@@ -49,12 +73,24 @@ public class LatitudeSettingsScreen extends Screen {
         y += 24;
 
         baseY = y;
-        var wStudio = this.addDrawableChild(ButtonWidget.builder(Text.literal("HUD Studio"), b -> {
-                    MinecraftClient.getInstance().setScreen(new LatitudeHudStudioScreen(this));
+        var wBgAlpha = this.addDrawableChild(new IntSlider(columnX, y, w, h, Text.literal("Transparency"), 0, 255, cfg.backgroundAlpha, v -> cfg.backgroundAlpha = v));
+        layoutWidgets.add(wBgAlpha);
+        layoutBaseYs.add(baseY);
+        y += 24;
+
+        baseY = y;
+        var wScale = this.addDrawableChild(new FloatSlider(columnX, y, w, h, Text.literal("Scale"), 0.5f, 3.0f, cfg.scale, v -> cfg.scale = v));
+        layoutWidgets.add(wScale);
+        layoutBaseYs.add(baseY);
+        y += 34;
+
+        baseY = y;
+        var wAdjust = this.addDrawableChild(ButtonWidget.builder(Text.literal("Adjust HUD"), b -> {
+                    MinecraftClient.getInstance().setScreen(new LatitudeHudAdjustScreen(this));
                 })
                 .dimensions(columnX, y, w, 20)
                 .build());
-        layoutWidgets.add(wStudio);
+        layoutWidgets.add(wAdjust);
         layoutBaseYs.add(baseY);
         y += 24;
 
@@ -74,7 +110,7 @@ public class LatitudeSettingsScreen extends Screen {
         baseY = y;
         var wReset = this.addDrawableChild(ButtonWidget.builder(Text.literal("Reset"), b -> {
                     applyDefaults(cfg);
-                    applyDefaults(LatitudeConfig.get());
+                    applyDefaults(latCfg);
                     CompassHudConfig.saveCurrent();
                     LatitudeConfig.saveCurrent();
                     this.clearChildren();
@@ -120,6 +156,10 @@ public class LatitudeSettingsScreen extends Screen {
         return true;
     }
 
+    private static int clamp(int v, int lo, int hi) {
+        return Math.max(lo, Math.min(hi, v));
+    }
+
     private Text showModeLabel(CompassHudConfig.ShowMode v) {
         if (v == null) return Text.literal("Always");
         return switch (v) {
@@ -127,6 +167,45 @@ public class LatitudeSettingsScreen extends Screen {
             case HOLDING_COMPASS -> Text.literal("When holding compass");
             case ALWAYS -> Text.literal("Always");
         };
+    }
+
+    private void retargetCompassPosition(CompassHudConfig cfg, Consumer<CompassHudConfig> change) {
+        MinecraftClient mc = MinecraftClient.getInstance();
+        if (mc == null || mc.getWindow() == null) {
+            change.accept(cfg);
+            return;
+        }
+
+        boolean wasAttached = cfg.attachToHotbarCompass;
+        var before = CompassHud.computeBounds(mc, cfg);
+        int absX = before.x();
+        int absY = before.y();
+
+        change.accept(cfg);
+
+        boolean nowAttached = cfg.attachToHotbarCompass;
+        if (!wasAttached && nowAttached) {
+            cfg.offsetX = 0;
+            cfg.offsetY = 0;
+            return;
+        }
+
+        var base = CompassHud.computeBasePosition(mc, cfg);
+        cfg.offsetX = absX - base.x();
+        cfg.offsetY = absY - base.y();
+
+        var after = CompassHud.computeBounds(mc, cfg);
+        cfg.offsetX = after.x() - base.x();
+        cfg.offsetY = after.y() - base.y();
+    }
+
+    private static void drawOutline(DrawContext ctx, int x, int y, int w, int h, int argb) {
+        int x2 = x + w;
+        int y2 = y + h;
+        ctx.fill(x, y, x2, y + 1, argb);
+        ctx.fill(x, y2 - 1, x2, y2, argb);
+        ctx.fill(x, y, x + 1, y2, argb);
+        ctx.fill(x2 - 1, y, x2, y2, argb);
     }
 
     private static void applyDefaults(CompassHudConfig cfg) {
@@ -165,5 +244,178 @@ public class LatitudeSettingsScreen extends Screen {
         LatitudeConfig.latitudeBandBlendWidthFrac = 0.08;
         LatitudeConfig.latitudeBandBoundaryWarpFrac = 0.06;
         LatitudeConfig.debugLatitudeBlend = false;
+    }
+
+    private Text textColorLabel(String v) {
+        return Text.literal(v);
+    }
+
+    private static String textColorName(int rgb) {
+        int c = rgb & 0xFFFFFF;
+        if (c == 0xFFFF00) return "YELLOW";
+        if (c == 0xFF0000) return "RED";
+        if (c == 0x00FFFF) return "CYAN";
+        return "WHITE";
+    }
+
+    private static int textColorRgb(String name) {
+        return switch (name) {
+            case "YELLOW" -> 0xFFFF00;
+            case "RED" -> 0xFF0000;
+            case "CYAN" -> 0x00FFFF;
+            default -> 0xFFFFFF;
+        };
+    }
+
+    private Text bgColorLabel(String v) {
+        return Text.literal(v);
+    }
+
+    private static String bgColorName(int rgb) {
+        int c = rgb & 0xFFFFFF;
+        if (c == 0x202020) return "DARK_GRAY";
+        if (c == 0x0000AA) return "BLUE";
+        return "BLACK";
+    }
+
+    private static int bgColorRgb(String name) {
+        return switch (name) {
+            case "DARK_GRAY" -> 0x202020;
+            case "BLUE" -> 0x0000AA;
+            default -> 0x000000;
+        };
+    }
+
+    private interface IntConsumer {
+        void accept(int v);
+    }
+
+    private interface FloatConsumer {
+        void accept(float v);
+    }
+
+    private interface DoubleConsumer {
+        void accept(double v);
+    }
+
+    private static final class StepSlider extends SliderWidget {
+        private final Text label;
+        private final double min;
+        private final double max;
+        private final double step;
+        private final DoubleConsumer onChange;
+
+        private StepSlider(int x, int y, int width, int height, Text label, double min, double max, double step, double initial, DoubleConsumer onChange) {
+            super(x, y, width, height, Text.empty(), toNorm(initial, min, max));
+            this.label = label;
+            this.min = min;
+            this.max = max;
+            this.step = step;
+            this.onChange = onChange;
+            updateMessage();
+        }
+
+        @Override
+        protected void updateMessage() {
+            this.setMessage(Text.literal(label.getString() + ": " + format(getValue())));
+        }
+
+        @Override
+        protected void applyValue() {
+            onChange.accept(getValue());
+        }
+
+        private double getValue() {
+            if (max <= min) return min;
+            double raw = min + (max - min) * this.value;
+            double q = step > 0.0 ? Math.round(raw / step) * step : raw;
+            if (q < min) q = min;
+            if (q > max) q = max;
+            return q;
+        }
+
+        private static double toNorm(double v, double min, double max) {
+            if (max == min) return 0.0;
+            return (v - min) / (max - min);
+        }
+
+        private static String format(double v) {
+            return String.format(java.util.Locale.ROOT, "%.1f", v);
+        }
+    }
+
+    private static final class IntSlider extends SliderWidget {
+        private final Text label;
+        private final int min;
+        private final int max;
+        private final IntConsumer onChange;
+
+        private IntSlider(int x, int y, int width, int height, Text label, int min, int max, int initial, IntConsumer onChange) {
+            super(x, y, width, height, Text.empty(), toNorm(initial, min, max));
+            this.label = label;
+            this.min = min;
+            this.max = max;
+            this.onChange = onChange;
+            updateMessage();
+        }
+
+        @Override
+        protected void updateMessage() {
+            this.setMessage(Text.literal(label.getString() + ": " + getValue()));
+        }
+
+        @Override
+        protected void applyValue() {
+            onChange.accept(getValue());
+        }
+
+        private int getValue() {
+            return MathHelper.clamp((int) Math.round(min + (max - min) * this.value), min, max);
+        }
+
+        private static double toNorm(int v, int min, int max) {
+            if (max == min) return 0.0;
+            return (double) (v - min) / (double) (max - min);
+        }
+    }
+
+    private static final class FloatSlider extends SliderWidget {
+        private final Text label;
+        private final float min;
+        private final float max;
+        private final FloatConsumer onChange;
+
+        private FloatSlider(int x, int y, int width, int height, Text label, float min, float max, float initial, FloatConsumer onChange) {
+            super(x, y, width, height, Text.empty(), toNorm(initial, min, max));
+            this.label = label;
+            this.min = min;
+            this.max = max;
+            this.onChange = onChange;
+            updateMessage();
+        }
+
+        @Override
+        protected void updateMessage() {
+            this.setMessage(Text.literal(label.getString() + ": " + format(getValue())));
+        }
+
+        @Override
+        protected void applyValue() {
+            onChange.accept(getValue());
+        }
+
+        private float getValue() {
+            float v = min + (max - min) * (float) this.value;
+            return MathHelper.clamp(v, min, max);
+        }
+
+        private static double toNorm(float v, float min, float max) {
+            if (max == min) return 0.0;
+            return (v - min) / (max - min);
+        }
+
+        private static String format(float v) {
+            return String.format(java.util.Locale.ROOT, "%.2f", v);
+        }
     }
 }
