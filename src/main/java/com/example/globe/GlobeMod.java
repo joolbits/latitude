@@ -43,7 +43,9 @@ public class GlobeMod implements ModInitializer {
 
     public static final int BORDER_RADIUS = 7500;
     public static final int POLE_BAND_START_ABS_Z = 12000;
-    public static final int POLE_LETHAL_WARNING_DISTANCE = 256;
+    public static final int POLE_WARNING_DISTANCE_BLOCKS = 256;
+    public static final int POLE_LETHAL_DISTANCE_BLOCKS = 96;
+    public static final int POLE_LETHAL_WARNING_DISTANCE = POLE_WARNING_DISTANCE_BLOCKS;
     public static final int EFFECT_REFRESH_TICKS = 20;
 
     public static final int POLE_START = POLE_BAND_START_ABS_Z;
@@ -183,12 +185,9 @@ public class GlobeMod implements ModInitializer {
         WorldBorder border = overworld.getWorldBorder();
         double radius = border.getSize() * 0.5;
 
-        double T_UNEASE = radius / 4.0;
-        double T_IMPAIR = radius / 6.0;
-        double T_HOSTILE = radius / 10.0;
-        double T_WHITEOUT = radius / 16.0;
-        double T_LETHAL = radius / 24.0;
-        double T_HOPELESS = radius / 32.0;
+        if (radius < 2000.0) {
+            return;
+        }
 
         for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
             if (player.getEntityWorld() != overworld) {
@@ -198,28 +197,14 @@ public class GlobeMod implements ModInitializer {
             double absZ = Math.abs(player.getZ());
             double distToPole = radius - absZ;
 
-            PolarStage stage =
-                    distToPole <= T_HOPELESS ? PolarStage.HOPELESS :
-                    distToPole <= T_LETHAL ? PolarStage.LETHAL :
-                    distToPole <= T_WHITEOUT ? PolarStage.WHITEOUT :
-                    distToPole <= T_HOSTILE ? PolarStage.HOSTILE :
-                    distToPole <= T_IMPAIR ? PolarStage.IMPAIR :
-                    distToPole <= T_UNEASE ? PolarStage.UNEASE :
-                    PolarStage.NONE;
+            PolarStage stage = distToPole <= (double) POLE_LETHAL_DISTANCE_BLOCKS ? PolarStage.LETHAL : PolarStage.NONE;
 
             int duration = 40;
             boolean ambient = true;
             boolean showParticles = false;
             boolean showIcon = false;
 
-            if (stage == PolarStage.IMPAIR) {
-                player.addStatusEffect(new StatusEffectInstance(StatusEffects.SLOWNESS, duration, 0, ambient, showParticles, showIcon));
-                player.addStatusEffect(new StatusEffectInstance(StatusEffects.WEAKNESS, duration, 0, ambient, showParticles, showIcon));
-            } else if (stage == PolarStage.HOSTILE || stage == PolarStage.WHITEOUT) {
-                player.addStatusEffect(new StatusEffectInstance(StatusEffects.SLOWNESS, duration, 1, ambient, showParticles, showIcon));
-                player.addStatusEffect(new StatusEffectInstance(StatusEffects.WEAKNESS, duration, 0, ambient, showParticles, showIcon));
-                player.addStatusEffect(new StatusEffectInstance(StatusEffects.MINING_FATIGUE, duration, 0, ambient, showParticles, showIcon));
-            } else if (stage == PolarStage.LETHAL || stage == PolarStage.HOPELESS) {
+            if (stage == PolarStage.LETHAL || stage == PolarStage.HOPELESS) {
                 player.addStatusEffect(new StatusEffectInstance(StatusEffects.SLOWNESS, duration, 2, ambient, showParticles, showIcon));
                 player.addStatusEffect(new StatusEffectInstance(StatusEffects.WEAKNESS, duration, 1, ambient, showParticles, showIcon));
                 player.addStatusEffect(new StatusEffectInstance(StatusEffects.BLINDNESS, duration, 0, ambient, showParticles, showIcon));
@@ -304,17 +289,12 @@ public class GlobeMod implements ModInitializer {
 
         double t = com.example.globe.util.LatitudeMath.spawnFracForZoneKey(zoneId);
 
-        if (!"POLAR".equals(zoneId)) {
-            double maxT = com.example.globe.util.LatitudeMath.POLAR_START_FRAC - (2.0 / 90.0);
-            if (t > maxT) {
-                t = maxT;
-            }
-            if (t < 0.0) t = 0.0;
-        }
+        if (t < 0.0) t = 0.0;
+        if (t > 1.0) t = 1.0;
 
         int z = (int) Math.round(radius * t);
 
-        int margin = Math.max(256, POLE_LETHAL_WARNING_DISTANCE + 64);
+        int margin = POLE_WARNING_DISTANCE_BLOCKS + 64;
         int minZ = -radius + margin;
         int maxZ = radius - margin;
         if (minZ > maxZ) {
@@ -323,14 +303,6 @@ public class GlobeMod implements ModInitializer {
         }
         if (z < minZ) z = minZ;
         if (z > maxZ) z = maxZ;
-
-        if (!"POLAR".equals(zoneId)) {
-            int polarStartZ = (int) Math.floor(radius * com.example.globe.util.LatitudeMath.POLAR_START_FRAC);
-            int maxSafeZ = polarStartZ - 1;
-            if (maxSafeZ < 0) maxSafeZ = 0;
-            if (z > maxSafeZ) z = maxSafeZ;
-            if (z < -maxSafeZ) z = -maxSafeZ;
-        }
 
         int x = 0;
         int chunkX = x >> 4;

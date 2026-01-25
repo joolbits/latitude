@@ -12,6 +12,7 @@ import java.nio.file.Path;
 
 public final class LatitudeConfig {
     public static boolean enableWarningParticles = true;
+    public static boolean showWarningMessages = true;
 
     public enum ZoneEntryNotifyMode { OFF, TOAST, TITLE }
     public static ZoneEntryNotifyMode zoneEntryNotifyMode = ZoneEntryNotifyMode.TITLE;
@@ -39,6 +40,7 @@ public final class LatitudeConfig {
     public static boolean debugLatitudeBlend = false;
 
     private boolean enableWarningParticlesValue = true;
+    private boolean showWarningMessagesValue = true;
     private ZoneEntryNotifyMode zoneEntryNotifyModeValue = ZoneEntryNotifyMode.TITLE;
     private boolean showLatitudeDegreesValue = true;
     private boolean latitudeDegreesOnCompassValue = true;
@@ -94,6 +96,7 @@ public final class LatitudeConfig {
                     if (cfg != null) {
                         cfg.sanitize();
                         enableWarningParticles = cfg.enableWarningParticlesValue;
+                        showWarningMessages = cfg.showWarningMessagesValue;
                         zoneEntryNotifyMode = cfg.zoneEntryNotifyModeValue;
                         showLatitudeDegrees = cfg.showLatitudeDegreesValue;
                         latitudeDegreesOnCompass = cfg.latitudeDegreesOnCompassValue;
@@ -127,6 +130,7 @@ public final class LatitudeConfig {
 
         LatitudeConfig fresh = new LatitudeConfig();
         enableWarningParticles = fresh.enableWarningParticlesValue;
+        showWarningMessages = fresh.showWarningMessagesValue;
         zoneEntryNotifyMode = fresh.zoneEntryNotifyModeValue;
         showLatitudeDegrees = fresh.showLatitudeDegreesValue;
         latitudeDegreesOnCompass = fresh.latitudeDegreesOnCompassValue;
@@ -157,6 +161,7 @@ public final class LatitudeConfig {
     private static void save(LatitudeConfig cfg) {
         try {
             cfg.enableWarningParticlesValue = enableWarningParticles;
+            cfg.showWarningMessagesValue = showWarningMessages;
             cfg.zoneEntryNotifyModeValue = zoneEntryNotifyMode;
             cfg.showLatitudeDegreesValue = showLatitudeDegrees;
             cfg.latitudeDegreesOnCompassValue = showLatitudeDegrees && latitudeDegreesOnCompass;
