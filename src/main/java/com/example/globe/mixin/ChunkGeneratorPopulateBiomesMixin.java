@@ -2,8 +2,6 @@ package com.example.globe.mixin;
 
 import com.example.globe.GlobeMod;
 import com.example.globe.world.LatitudeBiomes;
-import com.example.globe.worldgen.CoherenceSampler;
-import com.example.globe.worldgen.LatitudeCoherenceRules;
 import net.minecraft.registry.Registry;
 import net.minecraft.registry.RegistryKey;
 import net.minecraft.registry.RegistryKeys;
@@ -136,121 +134,15 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
         Registry<Biome> biomes = structureAccessor.getRegistryManager().getOrThrow(RegistryKeys.BIOME);
         int borderRadiusBlocks = this.globe$borderRadiusBlocks();
 
-        final RegistryEntry<Biome> plainsBase = biomeOrNull(biomes, "minecraft:plains");
-
         BiomeSupplier wrapped = (x, y, z, ignoredSampler) -> {
             // x/z are "noise biome coords" (4-block). Convert to block coords for your latitude math.
             int blockX = x << 2;
             int blockZ = z << 2;
 
             RegistryEntry<Biome> base = originalSupplier.getBiome(x, y, z, sampler);
-            RegistryEntry<Biome> selected = LatitudeBiomes.pick(biomes, base, blockX, blockZ, borderRadiusBlocks);
-
-            String selectedId = biomeId(selected);
-            if (LatitudeCoherenceRules.ENABLE_ARID_RIVER_MASKING && LatitudeCoherenceRules.isRiver(selectedId) && plainsBase != null) {
-                RegistryEntry<Biome> host = LatitudeBiomes.pick(biomes, plainsBase, blockX, blockZ, borderRadiusBlocks);
-                String hostId = biomeId(host);
-                String maskedId = LatitudeCoherenceRules.maskRiverInArid(selectedId, hostId);
-                if (!maskedId.equals(selectedId)) {
-                    selected = biomeOrFallback(biomes, maskedId, selected);
-                    selectedId = maskedId;
-                }
-            }
-
-            if (LatitudeCoherenceRules.ENABLE_BADLANDS_MIN_REGION && LatitudeCoherenceRules.isFeatureHeavyBadlands(selectedId)) {
-                final int fy = y;
-                CoherenceSampler.BiomeLookup lookup = (bx, bz) -> {
-                    int nx = bx >> 2;
-                    int nz = bz >> 2;
-                    RegistryEntry<Biome> nb = originalSupplier.getBiome(nx, fy, nz, sampler);
-                    RegistryEntry<Biome> nl = LatitudeBiomes.pick(biomes, nb, bx, bz, borderRadiusBlocks);
-                    return biomeId(nl);
-                };
-
-                int matches = CoherenceSampler.countNeighborsMatching(
-                        lookup,
-                        blockX,
-                        blockZ,
-                        2,
-                        LatitudeCoherenceRules::isBadlandsFamily);
-
-                String gatedId = LatitudeCoherenceRules.gateBadlandsByMinRegion(selectedId, matches);
-                if (!gatedId.equals(selectedId)) {
-                    selected = biomeOrFallback(biomes, gatedId, selected);
-                    selectedId = gatedId;
-                }
-            }
-
-            if (LatitudeCoherenceRules.ENABLE_BADLANDS_MIN_REGION && LatitudeCoherenceRules.isBadlandsFamily(selectedId)) {
-                final int fy = y;
-                CoherenceSampler.BiomeLookup lookup = (bx, bz) -> {
-                    int nx = bx >> 2;
-                    int nz = bz >> 2;
-                    RegistryEntry<Biome> nb = originalSupplier.getBiome(nx, fy, nz, sampler);
-                    RegistryEntry<Biome> nl = LatitudeBiomes.pick(biomes, nb, bx, bz, borderRadiusBlocks);
-                    return biomeId(nl);
-                };
-
-                int matches1 = CoherenceSampler.countNeighborsMatching(
-                        lookup,
-                        blockX,
-                        blockZ,
-                        1,
-                        LatitudeCoherenceRules::isBadlandsFamily);
-
-                int support = matches1 - 1;
-                int requiredSupport = 3;
-                if ("minecraft:eroded_badlands".equals(selectedId)) {
-                    requiredSupport = 5;
-                } else if ("minecraft:wooded_badlands".equals(selectedId)) {
-                    requiredSupport = 4;
-                }
-
-                if (support < requiredSupport) {
-                    String majority = CoherenceSampler.mostCommonNeighbor(lookup, blockX, blockZ, 1, null);
-                    if (majority == null || majority.isEmpty()) {
-                        if (plainsBase != null) {
-                            RegistryEntry<Biome> host = LatitudeBiomes.pick(biomes, plainsBase, blockX, blockZ, borderRadiusBlocks);
-                            majority = biomeId(host);
-                        } else {
-                            majority = "minecraft:plains";
-                        }
-                    }
-
-                    if (!majority.equals(selectedId)) {
-                        selected = biomeOrFallback(biomes, majority, selected);
-                        selectedId = majority;
-                    }
-                }
-            }
-
-            return selected;
+            return LatitudeBiomes.pick(biomes, base, blockX, blockZ, borderRadiusBlocks);
         };
 
         chunk.populateBiomes(wrapped, sampler);
-    }
-
-    @Unique
-    private static String biomeId(RegistryEntry<Biome> b) {
-        if (b == null) return "";
-        return b.getKey().map(key -> key.getValue().toString()).orElse("");
-    }
-
-    @Unique
-    private static RegistryEntry<Biome> biomeOrFallback(Registry<Biome> biomes, String id, RegistryEntry<Biome> fallback) {
-        try {
-            return biomes.getEntry(Identifier.of(id)).map(e -> (RegistryEntry<Biome>) e).orElse(fallback);
-        } catch (Throwable t) {
-            return fallback;
-        }
-    }
-
-    @Unique
-    private static RegistryEntry<Biome> biomeOrNull(Registry<Biome> biomes, String id) {
-        try {
-            return biomes.getEntry(Identifier.of(id)).map(e -> (RegistryEntry<Biome>) e).orElse(null);
-        } catch (Throwable t) {
-            return null;
-        }
     }
 }
