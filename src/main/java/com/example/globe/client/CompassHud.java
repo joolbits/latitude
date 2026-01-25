@@ -92,7 +92,7 @@ public final class CompassHud {
 
         String hudText;
         if (Boolean.TRUE.equals(cfg.showLatitude)) {
-            String latText = formatLatitudeDeg(client.player.getZ(), client.world.getWorldBorder());
+            String latText = LatitudeMath.formatLatitudeDeg(client.player.getZ(), client.world.getWorldBorder());
             String sep = cfg.compactHud ? " " : " \u00b7 ";
             hudText = directionText + sep + latText;
         } else {
@@ -278,23 +278,6 @@ public final class CompassHud {
             w = Math.max(w, client.textRenderer.getWidth(s));
         }
         return w;
-    }
-
-    private static String formatLatitudeDeg(double playerZ, net.minecraft.world.border.WorldBorder border) {
-        if (border == null) return "0\u00b0";
-
-        double radius = border.getSize() * 0.5;
-        if (radius <= 0.0001) return "0\u00b0";
-
-        double frac = Math.min(1.0, Math.abs(playerZ) / radius);
-        double absDeg = frac * 90.0;
-
-        double lat = (playerZ < 0) ? absDeg : -absDeg;
-        int deg = (int) Math.round(Math.abs(lat));
-        if (deg == 0) return "0\u00b0";
-
-        String hemi = lat > 0 ? "N" : "S";
-        return deg + "\u00b0" + hemi;
     }
 
     private static int clamp(int v, int lo, int hi) {

@@ -1,6 +1,5 @@
 package com.example.globe.client;
 
-import com.example.globe.GlobeRegions;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.world.ClientWorld;
 import net.minecraft.entity.player.PlayerEntity;
@@ -50,6 +49,11 @@ public final class GlobeClientState {
 
     private static int borderRadiusBlocks(ClientWorld world) {
         return (int) Math.round(world.getWorldBorder().getSize() / 2.0);
+    }
+
+    private static int polarStartAbsZ(int radius) {
+        if (radius <= 0) return Integer.MAX_VALUE;
+        return (int) Math.floor(radius * com.example.globe.util.LatitudeMath.POLAR_START_FRAC);
     }
 
     private static PolarStage polarStageFor(int radius, int distToZPole) {
@@ -113,7 +117,12 @@ public final class GlobeClientState {
         int distToXEdge = radius - absX;
         int distToZPole = radius - absZ;
 
-        PolarStage polar = polarStageFor(radius, distToZPole);
+        PolarStage polar;
+        if (absZ < polarStartAbsZ(radius)) {
+            polar = PolarStage.NONE;
+        } else {
+            polar = polarStageFor(radius, distToZPole);
+        }
         StormStage storm = stormStageFor(radius, distToXEdge);
 
         int pr = polarRank(polar);
@@ -139,6 +148,9 @@ public final class GlobeClientState {
     public static PolarStage computePolarStage(ClientWorld world, PlayerEntity player) {
         int radius = borderRadiusBlocks(world);
         int absZ = (int) Math.floor(Math.abs(player.getZ()));
+        if (absZ < polarStartAbsZ(radius)) {
+            return PolarStage.NONE;
+        }
         int distToZPole = radius - absZ;
         return polarStageFor(radius, distToZPole);
     }
@@ -153,6 +165,9 @@ public final class GlobeClientState {
     private static float polarWhiteoutIntensity(ClientWorld world, PlayerEntity player) {
         int radius = borderRadiusBlocks(world);
         int absZ = (int) Math.floor(Math.abs(player.getZ()));
+        if (absZ < polarStartAbsZ(radius)) {
+            return 0.0f;
+        }
         int distToZPole = radius - absZ;
 
         int whiteout = (int) Math.round(radius / 16.0);

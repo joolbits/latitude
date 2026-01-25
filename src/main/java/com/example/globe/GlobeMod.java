@@ -302,15 +302,15 @@ public class GlobeMod implements ModInitializer {
         WorldBorder border = world.getWorldBorder();
         int radius = (int) Math.round(border.getSize() * 0.5);
 
-        double t = switch (zoneId) {
-            case "EQUATOR" -> 0.0;
-            case "TROPICAL" -> 0.20;
-            case "SUBTROPICAL" -> 0.40;
-            case "TEMPERATE" -> 0.583;
-            case "SUBPOLAR" -> 0.725;
-            case "POLAR" -> 0.891;
-            default -> 0.0;
-        };
+        double t = com.example.globe.util.LatitudeMath.spawnFracForZoneKey(zoneId);
+
+        if (!"POLAR".equals(zoneId)) {
+            double maxT = com.example.globe.util.LatitudeMath.POLAR_START_FRAC - (2.0 / 90.0);
+            if (t > maxT) {
+                t = maxT;
+            }
+            if (t < 0.0) t = 0.0;
+        }
 
         int z = (int) Math.round(radius * t);
 
@@ -323,6 +323,14 @@ public class GlobeMod implements ModInitializer {
         }
         if (z < minZ) z = minZ;
         if (z > maxZ) z = maxZ;
+
+        if (!"POLAR".equals(zoneId)) {
+            int polarStartZ = (int) Math.floor(radius * com.example.globe.util.LatitudeMath.POLAR_START_FRAC);
+            int maxSafeZ = polarStartZ - 1;
+            if (maxSafeZ < 0) maxSafeZ = 0;
+            if (z > maxSafeZ) z = maxSafeZ;
+            if (z < -maxSafeZ) z = -maxSafeZ;
+        }
 
         int x = 0;
         int chunkX = x >> 4;
