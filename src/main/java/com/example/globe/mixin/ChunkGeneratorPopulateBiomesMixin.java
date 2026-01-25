@@ -177,6 +177,50 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
                 String gatedId = LatitudeCoherenceRules.gateBadlandsByMinRegion(selectedId, matches);
                 if (!gatedId.equals(selectedId)) {
                     selected = biomeOrFallback(biomes, gatedId, selected);
+                    selectedId = gatedId;
+                }
+            }
+
+            if (LatitudeCoherenceRules.ENABLE_BADLANDS_MIN_REGION && LatitudeCoherenceRules.isBadlandsFamily(selectedId)) {
+                final int fy = y;
+                CoherenceSampler.BiomeLookup lookup = (bx, bz) -> {
+                    int nx = bx >> 2;
+                    int nz = bz >> 2;
+                    RegistryEntry<Biome> nb = originalSupplier.getBiome(nx, fy, nz, sampler);
+                    RegistryEntry<Biome> nl = LatitudeBiomes.pick(biomes, nb, bx, bz, borderRadiusBlocks);
+                    return biomeId(nl);
+                };
+
+                int matches1 = CoherenceSampler.countNeighborsMatching(
+                        lookup,
+                        blockX,
+                        blockZ,
+                        1,
+                        LatitudeCoherenceRules::isBadlandsFamily);
+
+                int support = matches1 - 1;
+                int requiredSupport = 3;
+                if ("minecraft:eroded_badlands".equals(selectedId)) {
+                    requiredSupport = 5;
+                } else if ("minecraft:wooded_badlands".equals(selectedId)) {
+                    requiredSupport = 4;
+                }
+
+                if (support < requiredSupport) {
+                    String majority = CoherenceSampler.mostCommonNeighbor(lookup, blockX, blockZ, 1, null);
+                    if (majority == null || majority.isEmpty()) {
+                        if (plainsBase != null) {
+                            RegistryEntry<Biome> host = LatitudeBiomes.pick(biomes, plainsBase, blockX, blockZ, borderRadiusBlocks);
+                            majority = biomeId(host);
+                        } else {
+                            majority = "minecraft:plains";
+                        }
+                    }
+
+                    if (!majority.equals(selectedId)) {
+                        selected = biomeOrFallback(biomes, majority, selected);
+                        selectedId = majority;
+                    }
                 }
             }
 
