@@ -21,7 +21,6 @@ import net.minecraft.text.Text;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.Heightmap;
-import net.minecraft.world.World;
 import net.minecraft.world.border.WorldBorder;
 import net.minecraft.world.gen.chunk.ChunkGenerator;
 import net.minecraft.world.gen.chunk.ChunkGeneratorSettings;
@@ -70,10 +69,17 @@ public class GlobeMod implements ModInitializer {
     private static final Identifier GLOBE_SETTINGS_XSMALL_ID = Identifier.of(MOD_ID, "overworld_xsmall");
     private static final Identifier GLOBE_SETTINGS_SMALL_ID = Identifier.of(MOD_ID, "overworld_small");
     private static final Identifier GLOBE_SETTINGS_REGULAR_ID = Identifier.of(MOD_ID, "overworld_regular");
+
+    private static final Identifier GLOBE_SETTINGS_LARGE_ID = Identifier.of(MOD_ID, "overworld_large");
+    private static final Identifier GLOBE_SETTINGS_MASSIVE_ID = Identifier.of(MOD_ID, "overworld_massive");
+
     private static final RegistryKey<ChunkGeneratorSettings> GLOBE_SETTINGS_KEY = RegistryKey.of(net.minecraft.registry.RegistryKeys.CHUNK_GENERATOR_SETTINGS, GLOBE_SETTINGS_ID);
     private static final RegistryKey<ChunkGeneratorSettings> GLOBE_SETTINGS_XSMALL_KEY = RegistryKey.of(net.minecraft.registry.RegistryKeys.CHUNK_GENERATOR_SETTINGS, GLOBE_SETTINGS_XSMALL_ID);
     private static final RegistryKey<ChunkGeneratorSettings> GLOBE_SETTINGS_SMALL_KEY = RegistryKey.of(net.minecraft.registry.RegistryKeys.CHUNK_GENERATOR_SETTINGS, GLOBE_SETTINGS_SMALL_ID);
     private static final RegistryKey<ChunkGeneratorSettings> GLOBE_SETTINGS_REGULAR_KEY = RegistryKey.of(net.minecraft.registry.RegistryKeys.CHUNK_GENERATOR_SETTINGS, GLOBE_SETTINGS_REGULAR_ID);
+
+    private static final RegistryKey<ChunkGeneratorSettings> GLOBE_SETTINGS_LARGE_KEY = RegistryKey.of(net.minecraft.registry.RegistryKeys.CHUNK_GENERATOR_SETTINGS, GLOBE_SETTINGS_LARGE_ID);
+    private static final RegistryKey<ChunkGeneratorSettings> GLOBE_SETTINGS_MASSIVE_KEY = RegistryKey.of(net.minecraft.registry.RegistryKeys.CHUNK_GENERATOR_SETTINGS, GLOBE_SETTINGS_MASSIVE_ID);
 
     @Override
     public void onInitialize() {
@@ -232,34 +238,29 @@ public class GlobeMod implements ModInitializer {
         }
     }
 
-    private static boolean isGlobeOverworld(ServerWorld overworld) {
-        if (!overworld.getRegistryKey().getValue().equals(World.OVERWORLD.getValue())) {
-            return false;
-        }
-
-        ChunkGenerator generator = overworld.getChunkManager().getChunkGenerator();
-        if (!(generator instanceof NoiseChunkGenerator noise)) {
-            return false;
-        }
+    private static boolean isGlobeOverworld(ServerWorld world) {
+        ChunkGenerator gen = world.getChunkManager().getChunkGenerator();
+        if (!(gen instanceof NoiseChunkGenerator noise)) return false;
 
         return noise.matchesSettings(GLOBE_SETTINGS_KEY)
                 || noise.matchesSettings(GLOBE_SETTINGS_XSMALL_KEY)
                 || noise.matchesSettings(GLOBE_SETTINGS_SMALL_KEY)
-                || noise.matchesSettings(GLOBE_SETTINGS_REGULAR_KEY);
+                || noise.matchesSettings(GLOBE_SETTINGS_REGULAR_KEY)
+                || noise.matchesSettings(GLOBE_SETTINGS_LARGE_KEY)
+                || noise.matchesSettings(GLOBE_SETTINGS_MASSIVE_KEY);
     }
 
-    private static int borderRadiusForGlobeOverworld(ServerWorld overworld) {
-        ChunkGenerator generator = overworld.getChunkManager().getChunkGenerator();
-        if (!(generator instanceof NoiseChunkGenerator noise)) {
-            return BORDER_RADIUS;
-        }
+    private static int borderRadiusForGlobeOverworld(ServerWorld world) {
+        ChunkGenerator gen = world.getChunkManager().getChunkGenerator();
+        if (!(gen instanceof NoiseChunkGenerator noise)) return BORDER_RADIUS;
 
-        if (noise.matchesSettings(GLOBE_SETTINGS_XSMALL_KEY)) {
-            return 3750;
-        }
-        if (noise.matchesSettings(GLOBE_SETTINGS_SMALL_KEY)) {
-            return 5000;
-        }
+        if (noise.matchesSettings(GLOBE_SETTINGS_KEY)) return 15000;
+        if (noise.matchesSettings(GLOBE_SETTINGS_XSMALL_KEY)) return 3750;
+        if (noise.matchesSettings(GLOBE_SETTINGS_SMALL_KEY)) return 5000;
+        if (noise.matchesSettings(GLOBE_SETTINGS_REGULAR_KEY)) return BORDER_RADIUS;
+        if (noise.matchesSettings(GLOBE_SETTINGS_LARGE_KEY)) return 10000;
+        if (noise.matchesSettings(GLOBE_SETTINGS_MASSIVE_KEY)) return 20000;
+
         return BORDER_RADIUS;
     }
 
