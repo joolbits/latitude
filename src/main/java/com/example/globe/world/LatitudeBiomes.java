@@ -23,6 +23,14 @@ public final class LatitudeBiomes {
 
     private static final Logger LOGGER = LoggerFactory.getLogger("LatitudeBiomes");
 
+    private static final String FALLBACK_EQUATOR = "minecraft:plains";
+    private static final String FALLBACK_TEMPERATE = "minecraft:plains";
+    private static final String FALLBACK_SUBPOLAR = "minecraft:snowy_plains";
+    private static final String FALLBACK_POLAR = "minecraft:snowy_slopes";
+
+    private static final String FALLBACK_ARID = "minecraft:desert";
+    private static final String FALLBACK_TROPICAL = "minecraft:jungle";
+
     private static final TagKey<Biome> LAT_EQUATOR = TagKey.of(RegistryKeys.BIOME, Identifier.of("globe", "lat_equator"));
     private static final TagKey<Biome> LAT_TROPICAL = TagKey.of(RegistryKeys.BIOME, Identifier.of("globe", "lat_tropical"));
     private static final TagKey<Biome> LAT_TEMPERATE = TagKey.of(RegistryKeys.BIOME, Identifier.of("globe", "lat_temperate"));
@@ -136,10 +144,10 @@ public final class LatitudeBiomes {
 
         return switch (bandIndex) {
             case 0 -> pickTropicalGradient(biomes, base, blockX, blockZ, t);
-            case 1 -> pickFromLandTagOrBase(biomes, LAT_EQUATOR, base, blockX, blockZ, 1);
-            case 2 -> pickFromLandTagOrBase(biomes, LAT_TEMPERATE, base, blockX, blockZ, 2);
-            case 3 -> pickFromLandTagOrBase(biomes, LAT_SUBPOLAR, base, blockX, blockZ, 3);
-            default -> pickFromLandTagOrBase(biomes, LAT_POLAR, base, blockX, blockZ, 4);
+            case 1 -> pickFromLandTagOrFallback(biomes, LAT_EQUATOR, blockX, blockZ, 1, FALLBACK_EQUATOR);
+            case 2 -> pickFromLandTagOrFallback(biomes, LAT_TEMPERATE, blockX, blockZ, 2, FALLBACK_TEMPERATE);
+            case 3 -> pickFromLandTagOrFallback(biomes, LAT_SUBPOLAR, blockX, blockZ, 3, FALLBACK_SUBPOLAR);
+            default -> pickFromLandTagOrFallback(biomes, LAT_POLAR, blockX, blockZ, 4, FALLBACK_POLAR);
         };
     }
 
@@ -167,7 +175,13 @@ public final class LatitudeBiomes {
             default -> LAT_ARID;
         };
 
-        return pickFromTagNoiseOrBase(biomes, chosen, base, blockX, blockZ, 100 + step);
+        String fallback = switch (step) {
+            case 1, 2 -> "minecraft:savanna";
+            case 3 -> FALLBACK_TROPICAL;
+            default -> FALLBACK_ARID;
+        };
+
+        return pickFromTagNoiseOrFallback(biomes, chosen, blockX, blockZ, 100 + step, fallback);
     }
 
     private static RegistryEntry<Biome> oceanByLatitudeBandOrBase(Registry<Biome> biomes, RegistryEntry<Biome> base, int blockX, int blockZ, int bandIndex) {
@@ -350,10 +364,15 @@ public final class LatitudeBiomes {
             int idx = (int) Long.remainderUnsigned(hash64(cellX, cellZ, bandIndex), size);
             return entries.get(idx);
         }
+        if (fallbackOptions.length > 0) {
+            LOGGER.warn("[Latitude] Biome tag {} is empty/not loaded. Falling back to {}", tag.id(), fallbackOptions[0]);
+        } else {
+            LOGGER.warn("[Latitude] Biome tag {} is empty/not loaded. Falling back to <none>", tag.id());
+        }
         return pickFrom(biomes, blockX, blockZ, bandIndex, fallbackOptions);
     }
 
-    private static RegistryEntry<Biome> pickFromLandTagOrBase(Registry<Biome> biomes, TagKey<Biome> tag, RegistryEntry<Biome> base, int blockX, int blockZ, int bandIndex) {
+    private static RegistryEntry<Biome> pickFromLandTagOrFallback(Registry<Biome> biomes, TagKey<Biome> tag, int blockX, int blockZ, int bandIndex, String fallbackBiomeId) {
         List<RegistryEntry<Biome>> entries = new ArrayList<>();
         for (RegistryEntry<Biome> entry : biomes.iterateEntries(tag)) {
             entries.add(entry);
@@ -365,7 +384,8 @@ public final class LatitudeBiomes {
 
         int size = entries.size();
         if (size <= 0) {
-            return base;
+            LOGGER.warn("[Latitude] Biome tag {} is empty/not loaded. Falling back to {}", tag.id(), fallbackBiomeId);
+            return biome(biomes, fallbackBiomeId);
         }
 
         int scaleBlocks = 2048;
@@ -391,6 +411,11 @@ public final class LatitudeBiomes {
 
         int size = entries.size();
         if (size <= 0) {
+            if (fallbackOptions.length > 0) {
+                LOGGER.warn("[Latitude] Biome tag {} is empty/not loaded. Falling back to {}", tag.id(), fallbackOptions[0]);
+            } else {
+                LOGGER.warn("[Latitude] Biome tag {} is empty/not loaded. Falling back to <none>", tag.id());
+            }
             return pickFrom(biomes, blockX, blockZ, bandIndex, fallbackOptions);
         }
 
