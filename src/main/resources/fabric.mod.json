@@ -16,6 +16,9 @@
     ],
     "client": [
       "com.example.globe.GlobeModClient"
+    ],
+    "modmenu": [
+      "com.example.globe.client.GlobeModMenu"
     ]
   },
   "mixins": [

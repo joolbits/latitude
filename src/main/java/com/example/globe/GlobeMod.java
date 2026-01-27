@@ -28,6 +28,8 @@ import net.minecraft.world.gen.chunk.ChunkGeneratorSettings;
 import net.minecraft.world.gen.chunk.NoiseChunkGenerator;
 import net.minecraft.world.WorldProperties;
 import net.minecraft.network.packet.s2c.play.PositionFlag;
+import net.minecraft.util.math.MathHelper;
+import net.minecraft.util.math.random.Random;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -304,27 +306,96 @@ public class GlobeMod implements ModInitializer {
         if (z < minZ) z = minZ;
         if (z > maxZ) z = maxZ;
 
-        int x = 0;
-        int chunkX = x >> 4;
-        int chunkZ = z >> 4;
-        world.getChunk(chunkX, chunkZ);
+        int targetZ = z;
+        long seed = world.getServer().getSaveProperties().getGeneratorOptions().getSeed();
 
-        int y = world.getTopY(Heightmap.Type.MOTION_BLOCKING_NO_LEAVES, x, z) + 1;
-        y = Math.max(y, world.getBottomY() + 2);
+        BlockPos spawnPos = findLandSpawn(world, radius, targetZ, seed);
 
-        BlockPos p = new BlockPos(x, y, z);
-        int top = world.getTopYInclusive() - 2;
-        for (int i = 0; i < 32 && p.getY() < top; i++) {
-            if (world.isAir(p) && world.isAir(p.up())) {
-                break;
-            }
-            p = p.up();
+        if (spawnPos == null) {
+            LOGGER.warn("[Latitude] Could not find land spawn for zone={} targetZ={}. Falling back to (0, seaLevel+2).", zoneId, targetZ);
+            spawnPos = new BlockPos(0, world.getSeaLevel() + 2, targetZ);
         }
-        BlockPos spawn = p;
 
-        world.setSpawnPoint(WorldProperties.SpawnPoint.create(world.getRegistryKey(), spawn, 0.0f, 0.0f));
-        player.teleport(world, spawn.getX() + 0.5, spawn.getY(), spawn.getZ() + 0.5, EnumSet.noneOf(PositionFlag.class), player.getYaw(), player.getPitch(), true);
+        world.setSpawnPoint(WorldProperties.SpawnPoint.create(world.getRegistryKey(), spawnPos, 0.0f, 0.0f));
+        player.teleport(world, spawnPos.getX() + 0.5, spawnPos.getY(), spawnPos.getZ() + 0.5, EnumSet.noneOf(PositionFlag.class), player.getYaw(), player.getPitch(), true);
         player.addCommandTag(SPAWN_CHOSEN_TAG);
+    }
+
+    private static BlockPos findLandSpawn(ServerWorld world, int borderHalf, int targetZ, long seed) {
+        final int margin = 320;
+        final int max = Math.max(0, borderHalf - margin);
+
+        // First pass: vary X only (stay exactly in the selected latitude line)
+        final int attemptsXOnly = 96;
+
+        // Second pass: if still failing, allow small Z jitter while staying near the band
+        final int attemptsWithZJitter = 96;
+        final int zJitter = 96;
+
+        Random rng = Random.create(seed ^ 0x9E3779B97F4A7C15L ^ (long) targetZ);
+
+        BlockPos best = null;
+        int bestY = Integer.MIN_VALUE;
+
+        // Pass 1: X-only
+        for (int i = 0; i < attemptsXOnly; i++) {
+            int x = rng.nextBetween(-max, max);
+            int z = targetZ;
+
+            BlockPos candidate = tryLandAt(world, x, z);
+            if (candidate == null) continue;
+
+            int y = candidate.getY();
+            if (y > bestY) {
+                bestY = y;
+                best = candidate;
+            }
+        }
+        if (best != null) return best;
+
+        // Pass 2: X + small Z jitter
+        for (int i = 0; i < attemptsWithZJitter; i++) {
+            int x = rng.nextBetween(-max, max);
+            int z = MathHelper.clamp(targetZ + rng.nextBetween(-zJitter, zJitter), -max, max);
+
+            BlockPos candidate = tryLandAt(world, x, z);
+            if (candidate == null) continue;
+
+            int y = candidate.getY();
+            if (y > bestY) {
+                bestY = y;
+                best = candidate;
+            }
+        }
+
+        return best;
+    }
+
+    private static BlockPos tryLandAt(ServerWorld world, int x, int z) {
+        // Ensure chunk exists
+        world.getChunk(x >> 4, z >> 4);
+
+        BlockPos ground = world.getTopPosition(
+                Heightmap.Type.MOTION_BLOCKING_NO_LEAVES,
+                new BlockPos(x, world.getBottomY(), z)
+        );
+
+        // Spawn is one block above ground
+        BlockPos spawn = ground.up();
+
+        // Reject if water column / fluid at spawn space
+        if (!world.getFluidState(spawn).isEmpty()) return null;
+        if (!world.getFluidState(spawn.up()).isEmpty()) return null;
+
+        // Need 2-block headroom
+        if (!world.getBlockState(spawn).isAir()) return null;
+        if (!world.getBlockState(spawn.up()).isAir()) return null;
+
+        // Reject "stand in water" edge cases (seafloor top can still be valid with water above)
+        // MOTION_BLOCKING_NO_LEAVES usually avoids water surfaces, but this double-check is cheap.
+        if (!world.getFluidState(ground).isEmpty()) return null;
+
+        return spawn;
     }
 
     private static String resolveSpawnZoneId(String selected, long seed) {
