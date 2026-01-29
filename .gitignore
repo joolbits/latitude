@@ -15,3 +15,8 @@ temp_tectonic_extract/
 _restore_tmp/
 .gradle_user_home_1_21_2/
 
+
+# Local media (don’t commit)
+Gallery for Modrinth/
+*.mp4
+
