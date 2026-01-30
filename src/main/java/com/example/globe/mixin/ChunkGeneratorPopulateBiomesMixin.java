@@ -1,5 +1,6 @@
 package com.example.globe.mixin;
 
+import com.example.globe.GlobeMod;
 import com.example.globe.world.LatitudeBiomes;
 import net.minecraft.registry.Registry;
 import net.minecraft.registry.RegistryKey;
@@ -39,12 +40,6 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
      @Unique
      private static final Identifier GLOBE_SETTINGS_REGULAR_ID = Identifier.of("globe", "overworld_regular");
 
-     @Unique
-     private static final Identifier GLOBE_SETTINGS_LARGE_ID = Identifier.of("globe", "overworld_large");
-
-     @Unique
-     private static final Identifier GLOBE_SETTINGS_MASSIVE_ID = Identifier.of("globe", "overworld_massive");
-
     @Unique
     private static final RegistryKey<ChunkGeneratorSettings> GLOBE_SETTINGS_KEY =
             RegistryKey.of(RegistryKeys.CHUNK_GENERATOR_SETTINGS, GLOBE_SETTINGS_ID);
@@ -62,27 +57,10 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
              RegistryKey.of(RegistryKeys.CHUNK_GENERATOR_SETTINGS, GLOBE_SETTINGS_REGULAR_ID);
 
      @Unique
-     private static final RegistryKey<ChunkGeneratorSettings> GLOBE_SETTINGS_LARGE_KEY =
-             RegistryKey.of(RegistryKeys.CHUNK_GENERATOR_SETTINGS, GLOBE_SETTINGS_LARGE_ID);
-
-     @Unique
-     private static final RegistryKey<ChunkGeneratorSettings> GLOBE_SETTINGS_MASSIVE_KEY =
-             RegistryKey.of(RegistryKeys.CHUNK_GENERATOR_SETTINGS, GLOBE_SETTINGS_MASSIVE_ID);
-
-     @Unique
      private static final int BORDER_RADIUS_XSMALL_BLOCKS = 3750;
 
      @Unique
      private static final int BORDER_RADIUS_SMALL_BLOCKS = 5000;
-
-     @Unique
-     private static final int BORDER_RADIUS_REGULAR_BLOCKS = 7500;
-
-     @Unique
-     private static final int BORDER_RADIUS_LARGE_BLOCKS = 10000;
-
-     @Unique
-     private static final int BORDER_RADIUS_MASSIVE_BLOCKS = 20000;
 
     // Thread-local so the Redirect (which cannot see outer args) can still access StructureAccessor safely.
     @Unique
@@ -96,32 +74,18 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
          return this.matchesSettings(GLOBE_SETTINGS_KEY)
                  || this.matchesSettings(GLOBE_SETTINGS_XSMALL_KEY)
                  || this.matchesSettings(GLOBE_SETTINGS_SMALL_KEY)
-                 || this.matchesSettings(GLOBE_SETTINGS_REGULAR_KEY)
-                 || this.matchesSettings(GLOBE_SETTINGS_LARGE_KEY)
-                 || this.matchesSettings(GLOBE_SETTINGS_MASSIVE_KEY);
+                 || this.matchesSettings(GLOBE_SETTINGS_REGULAR_KEY);
      }
 
      @Unique
      private int globe$borderRadiusBlocks() {
-         if (this.matchesSettings(GLOBE_SETTINGS_KEY)) {
-             return 15000;
-         }
          if (this.matchesSettings(GLOBE_SETTINGS_XSMALL_KEY)) {
              return BORDER_RADIUS_XSMALL_BLOCKS;
          }
          if (this.matchesSettings(GLOBE_SETTINGS_SMALL_KEY)) {
              return BORDER_RADIUS_SMALL_BLOCKS;
          }
-         if (this.matchesSettings(GLOBE_SETTINGS_REGULAR_KEY)) {
-             return BORDER_RADIUS_REGULAR_BLOCKS;
-         }
-         if (this.matchesSettings(GLOBE_SETTINGS_LARGE_KEY)) {
-             return BORDER_RADIUS_LARGE_BLOCKS;
-         }
-         if (this.matchesSettings(GLOBE_SETTINGS_MASSIVE_KEY)) {
-             return BORDER_RADIUS_MASSIVE_BLOCKS;
-         }
-         return BORDER_RADIUS_REGULAR_BLOCKS;
+         return GlobeMod.BORDER_RADIUS;
      }
 
     // Capture StructureAccessor for the duration of the private populateBiomes call.
@@ -175,7 +139,9 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
             int blockX = x << 2;
             int blockZ = z << 2;
 
-            RegistryEntry<Biome> base = originalSupplier.getBiome(x, y, z, sampler);
+            // IMPORTANT: force Y=0. Passing quartY reintroduces warm_ocean-on-land + harsh seams/infinite plains
+            // because the base biome becomes height-dependent during population.
+            RegistryEntry<Biome> base = originalSupplier.getBiome(x, 0, z, sampler);
             return LatitudeBiomes.pick(biomes, base, blockX, blockZ, borderRadiusBlocks);
         };
 
