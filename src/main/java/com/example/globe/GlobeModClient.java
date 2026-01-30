@@ -13,6 +13,8 @@ import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.block.Blocks;
+import net.minecraft.particle.BlockStateParticleEffect;
 import net.minecraft.particle.ParticleEffect;
 import net.minecraft.particle.ParticleTypes;
 import net.minecraft.util.math.random.Random;
@@ -164,8 +166,8 @@ public class GlobeModClient implements ClientModInitializer {
 
     private static void ewSandstormClientTick(MinecraftClient client, GlobeClientState.EwStormStage stage) {
         int base = switch (stage) {
-            case LEVEL_1 -> 2;
-            case LEVEL_2 -> 6;
+            case LEVEL_1 -> 6;
+            case LEVEL_2 -> 20;
             default -> 0;
         };
         if (base <= 0) {
@@ -179,10 +181,11 @@ public class GlobeModClient implements ClientModInitializer {
 
         double vx = client.player.getX() >= 0.0 ? -0.10 : 0.10;
 
-        // Use ash as a "sandy" particulate (vanilla-friendly) and a few cloud puffs for haze.
+        // Use falling sand dust for a visible sandstorm wall, plus some haze.
         int sandCount = base;
-        int hazeCount = Math.max(1, base / 2);
-        spawnCloudRing(client, ParticleTypes.ASH, sandCount, random, px, py, pz, vx);
+        int hazeCount = Math.max(1, base / 3);
+        BlockStateParticleEffect sand = new BlockStateParticleEffect(ParticleTypes.FALLING_DUST, Blocks.SAND.getDefaultState());
+        spawnCloudRing(client, sand, sandCount, random, px, py, pz, vx);
         spawnCloudRing(client, ParticleTypes.CLOUD, hazeCount, random, px, py, pz, vx * 0.6);
     }
 
