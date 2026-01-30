@@ -1,5 +1,6 @@
 package com.example.globe.mixin;
 
+import com.example.globe.GlobeMod;
 import com.example.globe.world.LatitudeBiomeSource;
 import net.minecraft.registry.RegistryKey;
 import net.minecraft.registry.RegistryKeys;
@@ -16,6 +17,7 @@ import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 @Mixin(ChunkGenerator.class)
 public abstract class ChunkGeneratorBiomeSourceMixin {
@@ -53,6 +55,11 @@ public abstract class ChunkGeneratorBiomeSourceMixin {
         globe$maybeWrapBiomeSource();
     }
 
+    @Inject(method = "getBiomeSource", at = @At("HEAD"))
+    private void globe$wrapBiomeSourceOnDemand(CallbackInfoReturnable<BiomeSource> cir) {
+        globe$maybeWrapBiomeSource();
+    }
+
     private void globe$maybeWrapBiomeSource() {
         if (this.biomeSource instanceof LatitudeBiomeSource) {
             return;
@@ -67,10 +74,19 @@ public abstract class ChunkGeneratorBiomeSourceMixin {
         int borderRadiusBlocks = globe$borderRadiusBlocks();
         // Ensure structure placement and surface rules see the same Latitude biome override as terrain.
         this.biomeSource = new LatitudeBiomeSource(this.biomeSource, biomes, borderRadiusBlocks);
+        GlobeMod.LOGGER.info("Latitude: wrapped ChunkGenerator biomeSource (post-init)");
     }
 
     private boolean globe$isAnyGlobeSettings() {
         if (!((Object) this instanceof NoiseChunkGenerator noise)) {
+            return false;
+        }
+        // ChunkGenerator/NoiseChunkGenerator settings are not initialized yet in some constructor paths.
+        // Never call matchesSettings() until settings is non-null.
+        if (!((Object) this instanceof NoiseChunkGeneratorAccessor accessor)) {
+            return false;
+        }
+        if (accessor.globe$getSettings() == null) {
             return false;
         }
         return noise.matchesSettings(GLOBE_SETTINGS_KEY)
