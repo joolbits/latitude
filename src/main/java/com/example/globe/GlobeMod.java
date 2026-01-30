@@ -191,27 +191,22 @@ public class GlobeMod implements ModInitializer {
         }
 
         WorldBorder border = overworld.getWorldBorder();
-        double T_UNEASE = 90.0 * (1.0 - (1.0 / 4.0));
-        double T_IMPAIR = 90.0 * (1.0 - (1.0 / 6.0));
-        double T_HOSTILE = 90.0 * (1.0 - (1.0 / 10.0));
-        double T_WHITEOUT = 90.0 * (1.0 - (1.0 / 16.0));
-        double T_LETHAL = 90.0 * (1.0 - (1.0 / 24.0));
-        double T_HOPELESS = 90.0 * (1.0 - (1.0 / 32.0));
+        double half = com.example.globe.util.LatitudeMath.halfSize(border);
+        double t1 = clamp(half * 0.06, 150.0, 800.0);
+        double t2 = clamp(half * 0.03, 75.0, 400.0);
+        double t3 = clamp(half * 0.01, 25.0, 200.0);
 
         for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
             if (player.getEntityWorld() != overworld) {
                 continue;
             }
 
-            double absDeg = Math.abs(com.example.globe.util.LatitudeMath.degreesFromZ(border, player.getZ()));
+            double remaining = com.example.globe.util.LatitudeMath.poleRemainingBlocks(border, player.getZ());
 
             PolarStage stage =
-                    absDeg >= T_HOPELESS ? PolarStage.HOPELESS :
-                    absDeg >= T_LETHAL ? PolarStage.LETHAL :
-                    absDeg >= T_WHITEOUT ? PolarStage.WHITEOUT :
-                    absDeg >= T_HOSTILE ? PolarStage.HOSTILE :
-                    absDeg >= T_IMPAIR ? PolarStage.IMPAIR :
-                    absDeg >= T_UNEASE ? PolarStage.UNEASE :
+                    remaining <= t3 ? PolarStage.LETHAL :
+                    remaining <= t2 ? PolarStage.HOSTILE :
+                    remaining <= t1 ? PolarStage.IMPAIR :
                     PolarStage.NONE;
 
             int duration = 40;
@@ -276,6 +271,10 @@ public class GlobeMod implements ModInitializer {
         if (noise.matchesSettings(GLOBE_SETTINGS_MASSIVE_KEY)) return 20000;
 
         return BORDER_RADIUS;
+    }
+
+    private static double clamp(double v, double lo, double hi) {
+        return Math.max(lo, Math.min(hi, v));
     }
 
     private static void applySpawnChoice(ServerPlayerEntity player, String id) {

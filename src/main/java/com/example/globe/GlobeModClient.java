@@ -131,8 +131,7 @@ public class GlobeModClient implements ClientModInitializer {
             float intensity = switch (polarStage) {
                 case WARN_1 -> 0.12f;
                 case WARN_2 -> 0.22f;
-                case DANGER -> 0.35f;
-                case LETHAL -> Math.max(0.4f, GlobeClientState.computePoleWhiteoutFactor(client.player.getZ()));
+                case DANGER, LETHAL -> Math.max(0.4f, GlobeClientState.computePoleWhiteoutFactor(client.player.getZ()));
                 default -> 0.0f;
             };
 
