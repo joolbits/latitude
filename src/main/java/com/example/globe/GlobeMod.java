@@ -191,30 +191,27 @@ public class GlobeMod implements ModInitializer {
         }
 
         WorldBorder border = overworld.getWorldBorder();
-        double radius = border.getSize() * 0.5;
-
-        double T_UNEASE = radius / 4.0;
-        double T_IMPAIR = radius / 6.0;
-        double T_HOSTILE = radius / 10.0;
-        double T_WHITEOUT = radius / 16.0;
-        double T_LETHAL = radius / 24.0;
-        double T_HOPELESS = radius / 32.0;
+        double T_UNEASE = 90.0 * (1.0 - (1.0 / 4.0));
+        double T_IMPAIR = 90.0 * (1.0 - (1.0 / 6.0));
+        double T_HOSTILE = 90.0 * (1.0 - (1.0 / 10.0));
+        double T_WHITEOUT = 90.0 * (1.0 - (1.0 / 16.0));
+        double T_LETHAL = 90.0 * (1.0 - (1.0 / 24.0));
+        double T_HOPELESS = 90.0 * (1.0 - (1.0 / 32.0));
 
         for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
             if (player.getEntityWorld() != overworld) {
                 continue;
             }
 
-            double absZ = Math.abs(player.getZ());
-            double distToPole = radius - absZ;
+            double absDeg = Math.abs(com.example.globe.util.LatitudeMath.degreesFromZ(border, player.getZ()));
 
             PolarStage stage =
-                    distToPole <= T_HOPELESS ? PolarStage.HOPELESS :
-                    distToPole <= T_LETHAL ? PolarStage.LETHAL :
-                    distToPole <= T_WHITEOUT ? PolarStage.WHITEOUT :
-                    distToPole <= T_HOSTILE ? PolarStage.HOSTILE :
-                    distToPole <= T_IMPAIR ? PolarStage.IMPAIR :
-                    distToPole <= T_UNEASE ? PolarStage.UNEASE :
+                    absDeg >= T_HOPELESS ? PolarStage.HOPELESS :
+                    absDeg >= T_LETHAL ? PolarStage.LETHAL :
+                    absDeg >= T_WHITEOUT ? PolarStage.WHITEOUT :
+                    absDeg >= T_HOSTILE ? PolarStage.HOSTILE :
+                    absDeg >= T_IMPAIR ? PolarStage.IMPAIR :
+                    absDeg >= T_UNEASE ? PolarStage.UNEASE :
                     PolarStage.NONE;
 
             int duration = 40;
@@ -305,7 +302,7 @@ public class GlobeMod implements ModInitializer {
         LOGGER.info("Applying spawn choice: player={}, zoneId={}", player.getName().getString(), zoneId);
 
         WorldBorder border = world.getWorldBorder();
-        int radius = (int) Math.round(border.getSize() * 0.5);
+        int radius = (int) Math.round(com.example.globe.util.LatitudeMath.halfSize(border));
 
         double t = com.example.globe.util.LatitudeMath.spawnFracForZoneKey(zoneId);
 

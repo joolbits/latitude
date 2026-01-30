@@ -1,5 +1,6 @@
 package com.example.globe.util;
 
+import net.minecraft.util.math.MathHelper;
 import net.minecraft.world.border.WorldBorder;
 
 public final class LatitudeMath {
@@ -30,22 +31,32 @@ public final class LatitudeMath {
     public static final double POLAR_START_FRAC = SUBPOLAR_MAX_FRAC;
     public static final int POLAR_START_DEG = (int) Math.floor(POLAR_START_FRAC * 90.0);
 
+    /** WorldBorder#getSize() is DIAMETER. Half-size is radius in blocks. */
+    public static double halfSize(WorldBorder border) {
+        if (border == null) return 1.0;
+        double size = border.getSize();
+        if (!(size > 0.0)) return 1.0;
+        return size * 0.5;
+    }
+
+    /** Returns normalized latitude in [-1..1] from Z using border half-size. */
+    public static double latNormFromZ(WorldBorder border, double z) {
+        double half = halfSize(border);
+        double norm = z / half;
+        return MathHelper.clamp(norm, -1.0, 1.0);
+    }
+
+    /** Returns degrees latitude in [-90..90]. */
+    public static double degreesFromZ(WorldBorder border, double z) {
+        return latNormFromZ(border, z) * 90.0;
+    }
+
     public static double worldRadiusBlocks(WorldBorder border) {
-        if (border == null) return 0.0;
-        return border.getSize() * 0.5;
+        return halfSize(border);
     }
 
     public static double absLatFraction(WorldBorder border, double z) {
-        if (border == null) return 0.0;
-
-        double radius = worldRadiusBlocks(border);
-        if (radius <= 0.0001) return 0.0;
-
-        double centerZ = border.getCenterZ();
-        double frac = Math.abs(z - centerZ) / radius;
-        if (frac < 0.0) frac = 0.0;
-        if (frac > 1.0) frac = 1.0;
-        return frac;
+        return Math.abs(latNormFromZ(border, z));
     }
 
     public static double absLatDegExact(WorldBorder border, double z) {
@@ -53,10 +64,8 @@ public final class LatitudeMath {
     }
 
     public static int latitudeDegrees(WorldBorder border, double z) {
-        int deg = (int) Math.round(absLatDegExact(border, z));
-        if (deg < 0) deg = 0;
-        if (deg > 90) deg = 90;
-        return deg;
+        int deg = (int) Math.round(Math.abs(degreesFromZ(border, z)));
+        return MathHelper.clamp(deg, 0, 90);
     }
 
     public static char hemisphere(WorldBorder border, double z) {
