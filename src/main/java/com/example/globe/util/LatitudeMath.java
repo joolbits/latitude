@@ -63,6 +63,20 @@ public final class LatitudeMath {
         return absLatFraction(border, z) * 90.0;
     }
 
+    /** Returns remaining distance to the N/S border in blocks (>= 0). */
+    public static double poleRemainingBlocks(WorldBorder border, double z) {
+        double half = halfSize(border);
+        double remaining = half - Math.abs(z);
+        return Math.max(0.0, remaining);
+    }
+
+    /** Returns remaining distance to the N/S border as a fraction of half-size. */
+    public static double poleRemainingFrac(WorldBorder border, double z) {
+        double half = halfSize(border);
+        if (half <= 0.0) return 0.0;
+        return poleRemainingBlocks(border, z) / half;
+    }
+
     public static int latitudeDegrees(WorldBorder border, double z) {
         int deg = (int) Math.round(Math.abs(degreesFromZ(border, z)));
         return MathHelper.clamp(deg, 0, 90);
