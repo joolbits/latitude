@@ -120,7 +120,8 @@ public final class LatitudeBiomes {
         }
 
         if (base.isIn(BiomeTags.IS_OCEAN)) {
-            return oceanByLatitudeBandOrBase(biomes, base, blockX, blockZ, bandIndex);
+            RegistryEntry<Biome> oceanPick = oceanByLatitudeBandOrBase(biomes, base, blockX, blockZ, bandIndex);
+            return mushroomIslandOverride(biomes, oceanPick, blockX, blockZ);
         }
 
         return switch (bandIndex) {
@@ -157,7 +158,8 @@ public final class LatitudeBiomes {
         }
 
         if (base.isIn(BiomeTags.IS_OCEAN)) {
-            return oceanByLatitudeBandOrBase(biomes, base, blockX, blockZ, bandIndex);
+            RegistryEntry<Biome> oceanPick = oceanByLatitudeBandOrBase(biomes, base, blockX, blockZ, bandIndex);
+            return mushroomIslandOverride(biomes, oceanPick, blockX, blockZ);
         }
 
         return switch (bandIndex) {
@@ -265,6 +267,41 @@ public final class LatitudeBiomes {
         return pickFromTagNoiseOrFallback(biomes, base, LAT_OCEAN_POLAR, blockX, blockZ, 23,
                 "minecraft:frozen_ocean",
                 "minecraft:deep_frozen_ocean");
+    }
+
+    private static RegistryEntry<Biome> mushroomIslandOverride(Registry<Biome> biomes, RegistryEntry<Biome> oceanPick, int blockX, int blockZ) {
+        if (!isDeepOcean(oceanPick)) {
+            return oceanPick;
+        }
+
+        int chunkX = blockX >> 4;
+        int chunkZ = blockZ >> 4;
+        long roll = hash64(chunkX, chunkZ, 0x5F3759DF);
+        if (Long.remainderUnsigned(roll, 2000L) != 0L) {
+            return oceanPick;
+        }
+
+        try {
+            return biome(biomes, "minecraft:mushroom_fields");
+        } catch (Throwable ignored) {
+            return oceanPick;
+        }
+    }
+
+    private static RegistryEntry<Biome> mushroomIslandOverride(Collection<RegistryEntry<Biome>> biomes, RegistryEntry<Biome> oceanPick, int blockX, int blockZ) {
+        if (!isDeepOcean(oceanPick)) {
+            return oceanPick;
+        }
+
+        int chunkX = blockX >> 4;
+        int chunkZ = blockZ >> 4;
+        long roll = hash64(chunkX, chunkZ, 0x5F3759DF);
+        if (Long.remainderUnsigned(roll, 2000L) != 0L) {
+            return oceanPick;
+        }
+
+        RegistryEntry<Biome> entry = entryById(biomes, "minecraft:mushroom_fields");
+        return entry != null ? entry : oceanPick;
     }
 
 
@@ -572,6 +609,15 @@ public final class LatitudeBiomes {
     private static boolean isOcean(RegistryEntry<Biome> biome) {
         return biome.getKey()
                 .map(key -> key.getValue().getPath().contains("ocean"))
+                .orElse(false);
+    }
+
+    private static boolean isDeepOcean(RegistryEntry<Biome> biome) {
+        return biome.getKey()
+                .map(key -> {
+                    String path = key.getValue().getPath();
+                    return path.contains("ocean") && path.contains("deep");
+                })
                 .orElse(false);
     }
 

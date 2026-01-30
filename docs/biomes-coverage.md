@@ -49,7 +49,7 @@ Legend: check a box once coverage is verified in a new world.
 | [ ] | minecraft:stony_peaks | band tag: `lat_temperate` |
 | [ ] | minecraft:jagged_peaks | band tag: `lat_polar` |
 | [ ] | minecraft:frozen_peaks | band tag: `lat_subpolar` |
-| [ ] | minecraft:mushroom_fields | special-case ocean island override (TODO) |
+| [ ] | minecraft:mushroom_fields | special-case deep-ocean override (rare) |
 
 ## shores_edges_only
 
