@@ -14,13 +14,13 @@ Legend: check a box once coverage is verified in a new world.
 | ✅ | Biome | Where selected |
 | --- | --- | --- |
 | [ ] | minecraft:plains | band tag: `lat_equator`, `lat_temperate` |
-| [ ] | minecraft:sunflower_plains | band tag: `lat_equator` |
+| [ ] | minecraft:sunflower_plains | rare override from plains in `LatitudeBiomes` (equator/temperate) |
 | [ ] | minecraft:forest | band tag: `lat_equator`, `lat_temperate` |
 | [ ] | minecraft:flower_forest | band tag: `lat_equator`, `lat_temperate` |
 | [ ] | minecraft:birch_forest | band tag: `lat_equator`, `lat_temperate` |
 | [ ] | minecraft:old_growth_birch_forest | band tag: `lat_temperate` |
 | [ ] | minecraft:dark_forest | band tag: `lat_temperate` |
-| [ ] | minecraft:pale_garden | band tag: `lat_temperate` |
+| [ ] | minecraft:pale_garden | rare override from dark_forest in `LatitudeBiomes` (temperate) |
 | [ ] | minecraft:cherry_grove | band tag: `lat_temperate` |
 | [ ] | minecraft:taiga | band tag: `lat_temperate`, `lat_subpolar` |
 | [ ] | minecraft:snowy_taiga | band tag: `lat_subpolar` |
@@ -46,7 +46,7 @@ Legend: check a box once coverage is verified in a new world.
 | [ ] | minecraft:meadow | band tag: `lat_temperate` |
 | [ ] | minecraft:grove | band tag: `lat_temperate`, `lat_subpolar` |
 | [ ] | minecraft:snowy_slopes | band tag: `lat_subpolar`, `lat_polar` |
-| [ ] | minecraft:stony_peaks | band tag: `lat_temperate` |
+| [ ] | minecraft:stony_peaks | rare override from meadow/windswept_hills in `LatitudeBiomes` |
 | [ ] | minecraft:jagged_peaks | band tag: `lat_polar` |
 | [ ] | minecraft:frozen_peaks | band tag: `lat_subpolar`, `lat_polar` |
 | [ ] | minecraft:mushroom_fields | special-case deep-ocean override (rare) |
