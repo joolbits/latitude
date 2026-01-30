@@ -20,7 +20,7 @@ Legend: check a box once coverage is verified in a new world.
 | [ ] | minecraft:birch_forest | band tag: `lat_equator`, `lat_temperate` |
 | [ ] | minecraft:old_growth_birch_forest | band tag: `lat_temperate` |
 | [ ] | minecraft:dark_forest | band tag: `lat_temperate` |
-| [ ] | minecraft:pale_garden | TODO: add to band tag (temperate accent) |
+| [ ] | minecraft:pale_garden | band tag: `lat_temperate` |
 | [ ] | minecraft:cherry_grove | band tag: `lat_temperate` |
 | [ ] | minecraft:taiga | band tag: `lat_temperate` |
 | [ ] | minecraft:snowy_taiga | band tag: `lat_subpolar` |
