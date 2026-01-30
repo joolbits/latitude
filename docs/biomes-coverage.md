@@ -1,82 +1,84 @@
-# Biome Coverage Checklist
+# Biome Coverage Audit
 
-Each vanilla biome appears exactly once with a category:
+Authoritative checklist for vanilla biomes. Each entry includes where it is selected in Latitude:
 
-- surface_to_band
-- shores_edges_only
-- underground_preserve
-- oceans
-- nether_end_vanilla
+- band tag (e.g., `lat_temperate`)
+- adjacency/preservation (beach/river preservation)
+- special-case override
+- vanilla (not overridden)
+
+Legend: check a box once coverage is verified in a new world.
 
 ## surface_to_band
-- minecraft:plains
-- minecraft:sunflower_plains
-- minecraft:forest
-- minecraft:flower_forest
-- minecraft:birch_forest
-- minecraft:old_growth_birch_forest
-- minecraft:dark_forest
-- minecraft:cherry_grove
-- minecraft:taiga
-- minecraft:snowy_taiga
-- minecraft:old_growth_pine_taiga
-- minecraft:old_growth_spruce_taiga
-- minecraft:savanna
-- minecraft:savanna_plateau
-- minecraft:windswept_savanna
-- minecraft:windswept_hills
-- minecraft:windswept_forest
-- minecraft:windswept_gravelly_hills
-- minecraft:jungle
-- minecraft:sparse_jungle
-- minecraft:bamboo_jungle
-- minecraft:swamp
-- minecraft:mangrove_swamp
-- minecraft:desert
-- minecraft:badlands
-- minecraft:wooded_badlands
-- minecraft:eroded_badlands
-- minecraft:snowy_plains
-- minecraft:ice_spikes
-- minecraft:meadow
-- minecraft:grove
-- minecraft:snowy_slopes
-- minecraft:stony_peaks
-- minecraft:jagged_peaks
-- minecraft:frozen_peaks
-- minecraft:mushroom_fields
+
+| ✅ | Biome | Where selected |
+| --- | --- | --- |
+| [ ] | minecraft:plains | band tag: `lat_equator`, `lat_temperate` |
+| [ ] | minecraft:sunflower_plains | band tag: `lat_equator` |
+| [ ] | minecraft:forest | band tag: `lat_equator`, `lat_temperate` |
+| [ ] | minecraft:flower_forest | band tag: `lat_equator`, `lat_temperate` |
+| [ ] | minecraft:birch_forest | band tag: `lat_equator`, `lat_temperate` |
+| [ ] | minecraft:old_growth_birch_forest | band tag: `lat_temperate` |
+| [ ] | minecraft:dark_forest | band tag: `lat_temperate` |
+| [ ] | minecraft:pale_garden | TODO: add to band tag (temperate accent) |
+| [ ] | minecraft:cherry_grove | band tag: `lat_temperate` |
+| [ ] | minecraft:taiga | band tag: `lat_temperate` |
+| [ ] | minecraft:snowy_taiga | TODO: add to band tag (cold/subpolar) |
+| [ ] | minecraft:old_growth_pine_taiga | band tag: `lat_temperate` |
+| [ ] | minecraft:old_growth_spruce_taiga | TODO: add to band tag (cold/temperate) |
+| [ ] | minecraft:savanna | band tag: `lat_tropical`, `lat_trans_arid_tropics_2` |
+| [ ] | minecraft:savanna_plateau | band tag: `lat_tropical`, `lat_trans_arid_tropics_2` |
+| [ ] | minecraft:windswept_savanna | band tag: `lat_tropical` |
+| [ ] | minecraft:windswept_hills | band tag: `lat_temperate` |
+| [ ] | minecraft:windswept_forest | band tag: `lat_temperate` |
+| [ ] | minecraft:windswept_gravelly_hills | band tag: `lat_temperate` |
+| [ ] | minecraft:jungle | band tag: `lat_tropical`, `lat_tropics` |
+| [ ] | minecraft:sparse_jungle | band tag: `lat_tropical`, `lat_tropics`, `lat_trans_arid_tropics_2` |
+| [ ] | minecraft:bamboo_jungle | band tag: `lat_tropical`, `lat_tropics` |
+| [ ] | minecraft:swamp | band tag: `lat_tropical` |
+| [ ] | minecraft:mangrove_swamp | band tag: `lat_tropical` |
+| [ ] | minecraft:desert | band tag: `lat_tropical`, `lat_arid`, `lat_trans_arid_tropics_1` |
+| [ ] | minecraft:badlands | band tag: `lat_tropical`, `lat_arid`, `lat_trans_arid_tropics_1` |
+| [ ] | minecraft:wooded_badlands | band tag: `lat_tropical`, `lat_arid`, `lat_trans_arid_tropics_1` |
+| [ ] | minecraft:eroded_badlands | band tag: `lat_arid`, `lat_trans_arid_tropics_1` |
+| [ ] | minecraft:snowy_plains | band tag: `lat_subpolar` |
+| [ ] | minecraft:ice_spikes | band tag: `lat_polar` |
+| [ ] | minecraft:meadow | band tag: `lat_temperate` |
+| [ ] | minecraft:grove | band tag: `lat_temperate` |
+| [ ] | minecraft:snowy_slopes | band tag: `lat_subpolar` |
+| [ ] | minecraft:stony_peaks | TODO: add to band tag (temperate accent) |
+| [ ] | minecraft:jagged_peaks | band tag: `lat_polar` |
+| [ ] | minecraft:frozen_peaks | band tag: `lat_subpolar` |
+| [ ] | minecraft:mushroom_fields | special-case ocean island override (TODO) |
 
 ## shores_edges_only
-- minecraft:beach
-- minecraft:snowy_beach
-- minecraft:stony_shore
-- minecraft:river
-- minecraft:frozen_river
+
+| ✅ | Biome | Where selected |
+| --- | --- | --- |
+| [ ] | minecraft:beach | preserved (BiomeTags.IS_BEACH) |
+| [ ] | minecraft:snowy_beach | preserved (BiomeTags.IS_BEACH) |
+| [ ] | minecraft:stony_shore | preserved (BiomeTags.IS_BEACH) |
+| [ ] | minecraft:river | preserved (BiomeTags.IS_RIVER) |
+| [ ] | minecraft:frozen_river | preserved (BiomeTags.IS_RIVER) |
 
 ## underground_preserve
-- minecraft:dripstone_caves
-- minecraft:lush_caves
-- minecraft:deep_dark
+
+| ✅ | Biome | Where selected |
+| --- | --- | --- |
+| [ ] | minecraft:dripstone_caves | vanilla (not overridden) |
+| [ ] | minecraft:lush_caves | vanilla (not overridden) |
+| [ ] | minecraft:deep_dark | vanilla (not overridden) |
 
 ## oceans
-- minecraft:ocean
-- minecraft:deep_ocean
-- minecraft:warm_ocean
-- minecraft:lukewarm_ocean
-- minecraft:deep_lukewarm_ocean
-- minecraft:cold_ocean
-- minecraft:deep_cold_ocean
-- minecraft:frozen_ocean
-- minecraft:deep_frozen_ocean
 
-## nether_end_vanilla
-- minecraft:nether_wastes
-- minecraft:crimson_forest
-- minecraft:warped_forest
-- minecraft:soul_sand_valley
-- minecraft:basalt_deltas
-- minecraft:the_end
-- minecraft:end_highlands
-- minecraft:end_midlands
-- minecraft:end_barrens
-- minecraft:small_end_islands
+| ✅ | Biome | Where selected |
+| --- | --- | --- |
+| [ ] | minecraft:ocean | band tag: `lat_ocean_temperate` |
+| [ ] | minecraft:deep_ocean | band tag: `lat_ocean_temperate` |
+| [ ] | minecraft:warm_ocean | band tag: `lat_ocean_tropical` |
+| [ ] | minecraft:lukewarm_ocean | band tag: `lat_ocean_tropical` |
+| [ ] | minecraft:deep_lukewarm_ocean | band tag: `lat_ocean_tropical` |
+| [ ] | minecraft:cold_ocean | band tag: `lat_ocean_subpolar` |
+| [ ] | minecraft:deep_cold_ocean | band tag: `lat_ocean_subpolar` |
+| [ ] | minecraft:frozen_ocean | band tag: `lat_ocean_polar` |
+| [ ] | minecraft:deep_frozen_ocean | band tag: `lat_ocean_polar` |
