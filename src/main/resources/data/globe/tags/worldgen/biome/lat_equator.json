@@ -2,6 +2,9 @@
   "replace": false,
   "values": [
     "minecraft:plains",
-    "minecraft:forest"
+    "minecraft:forest",
+    "minecraft:birch_forest",
+    "minecraft:flower_forest",
+    "minecraft:sunflower_plains"
   ]
 }

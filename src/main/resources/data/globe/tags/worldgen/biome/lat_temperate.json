@@ -3,6 +3,13 @@
   "values": [
     "minecraft:taiga",
     "minecraft:old_growth_pine_taiga",
-    "minecraft:grove"
+    "minecraft:grove",
+    "minecraft:forest",
+    "minecraft:plains",
+    "minecraft:birch_forest",
+    "minecraft:old_growth_birch_forest",
+    "minecraft:flower_forest",
+    "minecraft:dark_forest",
+    "minecraft:cherry_grove"
   ]
 }
