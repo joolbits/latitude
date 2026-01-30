@@ -22,9 +22,9 @@ Legend: check a box once coverage is verified in a new world.
 | [ ] | minecraft:dark_forest | band tag: `lat_temperate` |
 | [ ] | minecraft:pale_garden | band tag: `lat_temperate` |
 | [ ] | minecraft:cherry_grove | band tag: `lat_temperate` |
-| [ ] | minecraft:taiga | band tag: `lat_temperate` |
+| [ ] | minecraft:taiga | band tag: `lat_temperate`, `lat_subpolar` |
 | [ ] | minecraft:snowy_taiga | band tag: `lat_subpolar` |
-| [ ] | minecraft:old_growth_pine_taiga | band tag: `lat_temperate` |
+| [ ] | minecraft:old_growth_pine_taiga | band tag: `lat_temperate`, `lat_subpolar` |
 | [ ] | minecraft:old_growth_spruce_taiga | band tag: `lat_subpolar` |
 | [ ] | minecraft:savanna | band tag: `lat_tropical`, `lat_trans_arid_tropics_2` |
 | [ ] | minecraft:savanna_plateau | band tag: `lat_tropical`, `lat_trans_arid_tropics_2` |
@@ -44,11 +44,11 @@ Legend: check a box once coverage is verified in a new world.
 | [ ] | minecraft:snowy_plains | band tag: `lat_subpolar` |
 | [ ] | minecraft:ice_spikes | band tag: `lat_polar` |
 | [ ] | minecraft:meadow | band tag: `lat_temperate` |
-| [ ] | minecraft:grove | band tag: `lat_temperate` |
-| [ ] | minecraft:snowy_slopes | band tag: `lat_subpolar` |
+| [ ] | minecraft:grove | band tag: `lat_temperate`, `lat_subpolar` |
+| [ ] | minecraft:snowy_slopes | band tag: `lat_subpolar`, `lat_polar` |
 | [ ] | minecraft:stony_peaks | band tag: `lat_temperate` |
 | [ ] | minecraft:jagged_peaks | band tag: `lat_polar` |
-| [ ] | minecraft:frozen_peaks | band tag: `lat_subpolar` |
+| [ ] | minecraft:frozen_peaks | band tag: `lat_subpolar`, `lat_polar` |
 | [ ] | minecraft:mushroom_fields | special-case deep-ocean override (rare) |
 
 ## shores_edges_only
