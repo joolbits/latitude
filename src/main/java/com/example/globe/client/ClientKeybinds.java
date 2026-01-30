@@ -17,7 +17,7 @@ public final class ClientKeybinds {
         TOGGLE_COMPASS = KeyBindingHelper.registerKeyBinding(new KeyBinding(
                 "key.globe.toggle_compass_hud",
                 InputUtil.Type.KEYSYM,
-                InputUtil.GLFW_KEY_K,
+                InputUtil.GLFW_KEY_COMMA,
                 CATEGORY
         ));
 

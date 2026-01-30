@@ -130,10 +130,17 @@ public final class CompassHud {
             int slotIndex = findHotbarCompassSlot(client.player);
             if (slotIndex >= 0) {
                 int hotbarLeft = screenW / 2 - 91;
-                int slotX = hotbarLeft + slotIndex * 20 + 2;
-                int slotY = screenH - 22 + 3;
-                x = slotX;
-                y = slotY - (scaledBoxH + 6);
+                int hotbarTop = screenH - 22;
+                int hotbarRight = hotbarLeft + 182;
+
+                int margin = 4;
+
+                x = hotbarRight + margin;
+                y = hotbarTop + (22 - scaledBoxH) / 2;
+
+                if (x + scaledBoxW > screenW - margin) {
+                    x = hotbarLeft - margin - scaledBoxW;
+                }
             } else {
                 x = anchoredX(cfg, screenW, scaledBoxW);
                 y = anchoredY(cfg, screenH, scaledBoxH);
@@ -180,10 +187,17 @@ public final class CompassHud {
             int slotIndex = findHotbarCompassSlot(client.player);
             if (slotIndex >= 0) {
                 int hotbarLeft = screenW / 2 - 91;
-                int slotX = hotbarLeft + slotIndex * 20 + 2;
-                int slotY = screenH - 22 + 3;
-                x = slotX;
-                y = slotY - (scaledBoxH + 6);
+                int hotbarTop = screenH - 22;
+                int hotbarRight = hotbarLeft + 182;
+
+                int margin = 4;
+
+                x = hotbarRight + margin;
+                y = hotbarTop + (22 - scaledBoxH) / 2;
+
+                if (x + scaledBoxW > screenW - margin) {
+                    x = hotbarLeft - margin - scaledBoxW;
+                }
             } else {
                 x = anchoredX(cfg, screenW, scaledBoxW);
                 y = anchoredY(cfg, screenH, scaledBoxH);
