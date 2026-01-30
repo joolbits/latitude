@@ -193,9 +193,12 @@ public class GlobeMod implements ModInitializer {
         WorldBorder border = overworld.getWorldBorder();
         double radius = border.getSize() * 0.5;
 
-        if (radius < 2000.0) {
-            return;
-        }
+        double T_UNEASE = radius / 4.0;
+        double T_IMPAIR = radius / 6.0;
+        double T_HOSTILE = radius / 10.0;
+        double T_WHITEOUT = radius / 16.0;
+        double T_LETHAL = radius / 24.0;
+        double T_HOPELESS = radius / 32.0;
 
         for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
             if (player.getEntityWorld() != overworld) {
@@ -205,14 +208,28 @@ public class GlobeMod implements ModInitializer {
             double absZ = Math.abs(player.getZ());
             double distToPole = radius - absZ;
 
-            PolarStage stage = distToPole <= (double) POLE_LETHAL_DISTANCE_BLOCKS ? PolarStage.LETHAL : PolarStage.NONE;
+            PolarStage stage =
+                    distToPole <= T_HOPELESS ? PolarStage.HOPELESS :
+                    distToPole <= T_LETHAL ? PolarStage.LETHAL :
+                    distToPole <= T_WHITEOUT ? PolarStage.WHITEOUT :
+                    distToPole <= T_HOSTILE ? PolarStage.HOSTILE :
+                    distToPole <= T_IMPAIR ? PolarStage.IMPAIR :
+                    distToPole <= T_UNEASE ? PolarStage.UNEASE :
+                    PolarStage.NONE;
 
             int duration = 40;
             boolean ambient = true;
             boolean showParticles = false;
             boolean showIcon = false;
 
-            if (stage == PolarStage.LETHAL || stage == PolarStage.HOPELESS) {
+            if (stage == PolarStage.IMPAIR) {
+                player.addStatusEffect(new StatusEffectInstance(StatusEffects.SLOWNESS, duration, 0, ambient, showParticles, showIcon));
+                player.addStatusEffect(new StatusEffectInstance(StatusEffects.WEAKNESS, duration, 0, ambient, showParticles, showIcon));
+            } else if (stage == PolarStage.HOSTILE || stage == PolarStage.WHITEOUT) {
+                player.addStatusEffect(new StatusEffectInstance(StatusEffects.SLOWNESS, duration, 1, ambient, showParticles, showIcon));
+                player.addStatusEffect(new StatusEffectInstance(StatusEffects.WEAKNESS, duration, 0, ambient, showParticles, showIcon));
+                player.addStatusEffect(new StatusEffectInstance(StatusEffects.MINING_FATIGUE, duration, 0, ambient, showParticles, showIcon));
+            } else if (stage == PolarStage.LETHAL || stage == PolarStage.HOPELESS) {
                 player.addStatusEffect(new StatusEffectInstance(StatusEffects.SLOWNESS, duration, 2, ambient, showParticles, showIcon));
                 player.addStatusEffect(new StatusEffectInstance(StatusEffects.WEAKNESS, duration, 1, ambient, showParticles, showIcon));
                 player.addStatusEffect(new StatusEffectInstance(StatusEffects.BLINDNESS, duration, 0, ambient, showParticles, showIcon));
