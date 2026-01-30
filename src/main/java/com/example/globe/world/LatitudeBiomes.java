@@ -22,6 +22,69 @@ public final class LatitudeBiomes {
     private LatitudeBiomes() {
     }
 
+    private static RegistryEntry<Biome> applyLandOverrides(Registry<Biome> biomes, RegistryEntry<Biome> pick, int blockX, int blockZ, int bandIndex) {
+        if (bandIndex == 1 || bandIndex == 2) {
+            if (isBiomeId(pick, "minecraft:plains") && rollChance(blockX, blockZ, 0x7F4A7C15, 20L)) {
+                try {
+                    pick = biome(biomes, "minecraft:sunflower_plains");
+                } catch (Throwable ignored) {
+                    // Keep original pick.
+                }
+            }
+        }
+
+        if (bandIndex == 2) {
+            if (isBiomeId(pick, "minecraft:dark_forest") && rollChance(blockX, blockZ, 0x51ED270B, 2000L)) {
+                try {
+                    pick = biome(biomes, "minecraft:pale_garden");
+                } catch (Throwable ignored) {
+                    // Keep original pick.
+                }
+            }
+
+            if ((isBiomeId(pick, "minecraft:meadow") || isBiomeId(pick, "minecraft:windswept_hills"))
+                    && rollChance(blockX, blockZ, 0x31415926, 120L)) {
+                try {
+                    pick = biome(biomes, "minecraft:stony_peaks");
+                } catch (Throwable ignored) {
+                    // Keep original pick.
+                }
+            }
+        }
+
+        return pick;
+    }
+
+    private static RegistryEntry<Biome> applyLandOverrides(Collection<RegistryEntry<Biome>> biomes, RegistryEntry<Biome> pick, int blockX, int blockZ, int bandIndex) {
+        if (bandIndex == 1 || bandIndex == 2) {
+            if (isBiomeId(pick, "minecraft:plains") && rollChance(blockX, blockZ, 0x7F4A7C15, 20L)) {
+                RegistryEntry<Biome> entry = entryById(biomes, "minecraft:sunflower_plains");
+                if (entry != null) {
+                    pick = entry;
+                }
+            }
+        }
+
+        if (bandIndex == 2) {
+            if (isBiomeId(pick, "minecraft:dark_forest") && rollChance(blockX, blockZ, 0x51ED270B, 2000L)) {
+                RegistryEntry<Biome> entry = entryById(biomes, "minecraft:pale_garden");
+                if (entry != null) {
+                    pick = entry;
+                }
+            }
+
+            if ((isBiomeId(pick, "minecraft:meadow") || isBiomeId(pick, "minecraft:windswept_hills"))
+                    && rollChance(blockX, blockZ, 0x31415926, 120L)) {
+                RegistryEntry<Biome> entry = entryById(biomes, "minecraft:stony_peaks");
+                if (entry != null) {
+                    pick = entry;
+                }
+            }
+        }
+
+        return pick;
+    }
+
     private static final Logger LOGGER = LoggerFactory.getLogger("LatitudeBiomes");
 
     private static final TagKey<Biome> LAT_EQUATOR = TagKey.of(RegistryKeys.BIOME, Identifier.of("globe", "lat_equator"));
@@ -124,13 +187,14 @@ public final class LatitudeBiomes {
             return mushroomIslandOverride(biomes, oceanPick, blockX, blockZ);
         }
 
-        return switch (bandIndex) {
+        RegistryEntry<Biome> chosen = switch (bandIndex) {
             case 0 -> pickTropicalGradient(biomes, base, blockX, blockZ, t);
             case 1 -> pickFromLandTagOrBase(biomes, LAT_EQUATOR, base, blockX, blockZ, 1);
             case 2 -> pickFromLandTagOrBase(biomes, LAT_TEMPERATE, base, blockX, blockZ, 2);
             case 3 -> pickFromLandTagOrBase(biomes, LAT_SUBPOLAR, base, blockX, blockZ, 3);
             default -> pickFromLandTagOrBase(biomes, LAT_POLAR, base, blockX, blockZ, 4);
         };
+        return applyLandOverrides(biomes, chosen, blockX, blockZ, bandIndex);
     }
 
     public static RegistryEntry<Biome> pick(Collection<RegistryEntry<Biome>> biomes, RegistryEntry<Biome> base, int blockX, int blockZ, int borderRadiusBlocks) {
@@ -162,13 +226,14 @@ public final class LatitudeBiomes {
             return mushroomIslandOverride(biomes, oceanPick, blockX, blockZ);
         }
 
-        return switch (bandIndex) {
+        RegistryEntry<Biome> chosen = switch (bandIndex) {
             case 0 -> pickTropicalGradient(biomes, base, blockX, blockZ, t);
             case 1 -> pickFromLandTagOrBase(biomes, LAT_EQUATOR, base, blockX, blockZ, 1);
             case 2 -> pickFromLandTagOrBase(biomes, LAT_TEMPERATE, base, blockX, blockZ, 2);
             case 3 -> pickFromLandTagOrBase(biomes, LAT_SUBPOLAR, base, blockX, blockZ, 3);
             default -> pickFromLandTagOrBase(biomes, LAT_POLAR, base, blockX, blockZ, 4);
         };
+        return applyLandOverrides(biomes, chosen, blockX, blockZ, bandIndex);
     }
 
     private static RegistryEntry<Biome> pickTropicalGradient(Registry<Biome> biomes, RegistryEntry<Biome> base, int blockX, int blockZ, double t) {
@@ -538,6 +603,20 @@ public final class LatitudeBiomes {
             }
         }
         return null;
+    }
+
+    private static boolean rollChance(int blockX, int blockZ, int salt, long denominator) {
+        int chunkX = blockX >> 4;
+        int chunkZ = blockZ >> 4;
+        long roll = hash64(chunkX, chunkZ, salt);
+        return Long.remainderUnsigned(roll, denominator) == 0L;
+    }
+
+    private static boolean isBiomeId(RegistryEntry<Biome> entry, String id) {
+        Identifier target = Identifier.of(id);
+        return entry.getKey()
+                .map(key -> key.getValue().equals(target))
+                .orElse(false);
     }
 
     private static RegistryEntry<Biome> pickFromTagNoiseOrFallback(Registry<Biome> biomes, TagKey<Biome> tag, int blockX, int blockZ, int bandIndex, String... fallbackOptions) {
