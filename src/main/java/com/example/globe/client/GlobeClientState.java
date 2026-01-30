@@ -11,9 +11,10 @@ public final class GlobeClientState {
 
     private static boolean globeWorld;
 
-    private static final double STAGE_WARN_FRAC = 0.06;
-    private static final double STAGE_DANGER_FRAC = 0.03;
-    private static final double STAGE_LETHAL_FRAC = 0.01;
+    private static final double STAGE_WARN_PROGRESS = 0.88;
+    private static final double STAGE_DANGER_PROGRESS = 0.91;
+    private static final double STAGE_WHITEOUT_PROGRESS = 0.93;
+    private static final double STAGE_LETHAL_PROGRESS = 0.98;
 
     private static long cachedEvalWorldTime = Long.MIN_VALUE;
     private static Eval cachedEval;
@@ -52,38 +53,24 @@ public final class GlobeClientState {
         return (int) Math.round(com.example.globe.util.LatitudeMath.halfSize(world.getWorldBorder()));
     }
 
-    private static double stageWarnThreshold(net.minecraft.world.border.WorldBorder border) {
+    private static double borderProgress(net.minecraft.world.border.WorldBorder border, double coord, boolean isX) {
+        double center = isX ? border.getCenterX() : border.getCenterZ();
         double half = com.example.globe.util.LatitudeMath.halfSize(border);
-        return clamp(half * STAGE_WARN_FRAC, 150.0, 800.0);
+        if (half <= 0.0) return 1.0;
+        return clamp(Math.abs(coord - center) / half, 0.0, 1.0);
     }
 
-    private static double stageDangerThreshold(net.minecraft.world.border.WorldBorder border) {
-        double half = com.example.globe.util.LatitudeMath.halfSize(border);
-        return clamp(half * STAGE_DANGER_FRAC, 75.0, 400.0);
-    }
-
-    private static double stageLethalThreshold(net.minecraft.world.border.WorldBorder border) {
-        double half = com.example.globe.util.LatitudeMath.halfSize(border);
-        return clamp(half * STAGE_LETHAL_FRAC, 25.0, 200.0);
-    }
-
-    private static PolarStage polarStageForRemaining(net.minecraft.world.border.WorldBorder border, double remaining) {
-        double t1 = stageWarnThreshold(border);
-        double t2 = stageDangerThreshold(border);
-        double t3 = stageLethalThreshold(border);
-
-        if (remaining <= t3) return PolarStage.DANGER;
-        if (remaining <= t2) return PolarStage.WARN_2;
-        if (remaining <= t1) return PolarStage.WARN_1;
+    private static PolarStage polarStageForProgress(double progress) {
+        if (progress >= STAGE_LETHAL_PROGRESS) return PolarStage.LETHAL;
+        if (progress >= STAGE_WHITEOUT_PROGRESS) return PolarStage.DANGER;
+        if (progress >= STAGE_DANGER_PROGRESS) return PolarStage.WARN_2;
+        if (progress >= STAGE_WARN_PROGRESS) return PolarStage.WARN_1;
         return PolarStage.NONE;
     }
 
-    private static EwStormStage ewStageForRemaining(net.minecraft.world.border.WorldBorder border, double remaining) {
-        double t1 = stageWarnThreshold(border);
-        double t2 = stageDangerThreshold(border);
-
-        if (remaining <= t2) return EwStormStage.LEVEL_2;
-        if (remaining <= t1) return EwStormStage.LEVEL_1;
+    private static EwStormStage ewStageForProgress(double progress) {
+        if (progress >= STAGE_DANGER_PROGRESS) return EwStormStage.LEVEL_2;
+        if (progress >= STAGE_WARN_PROGRESS) return EwStormStage.LEVEL_1;
         return EwStormStage.NONE;
     }
 
@@ -112,16 +99,14 @@ public final class GlobeClientState {
 
         var border = world.getWorldBorder();
 
-        double distToXBorder = axisDistanceInsideBorder(border, player.getX(), true);
-        double distToZBorder = com.example.globe.util.LatitudeMath.poleRemainingBlocks(border, player.getZ());
+        double progressX = borderProgress(border, player.getX(), true);
+        double progressZ = borderProgress(border, player.getZ(), false);
 
-        PolarStage polar = polarStageForRemaining(border, distToZBorder);
-        EwStormStage ewVisual = ewStageForRemaining(border, distToXBorder);
+        PolarStage polar = polarStageForProgress(progressZ);
+        EwStormStage ewVisual = ewStageForProgress(progressX);
 
-        double t1 = stageWarnThreshold(border);
-        double t2 = stageDangerThreshold(border);
-        boolean ewTextWarn = distToXBorder <= t1;
-        boolean ewTextDanger = distToXBorder <= t2;
+        boolean ewTextWarn = progressX >= STAGE_WARN_PROGRESS;
+        boolean ewTextDanger = progressX >= STAGE_DANGER_PROGRESS;
         EwStormStage ewTextStage = ewTextDanger ? EwStormStage.LEVEL_2 : (ewTextWarn ? EwStormStage.LEVEL_1 : EwStormStage.NONE);
 
         int pr = polarRank(polar);
@@ -157,14 +142,14 @@ public final class GlobeClientState {
 
     public static PolarStage computePolarStage(ClientWorld world, PlayerEntity player) {
         var border = world.getWorldBorder();
-        double distToZBorder = com.example.globe.util.LatitudeMath.poleRemainingBlocks(border, player.getZ());
-        return polarStageForRemaining(border, distToZBorder);
+        double progressZ = borderProgress(border, player.getZ(), false);
+        return polarStageForProgress(progressZ);
     }
 
     public static EwStormStage computeEwStormStage(ClientWorld world, PlayerEntity player) {
         var border = world.getWorldBorder();
-        double distToXBorder = axisDistanceInsideBorder(border, player.getX(), true);
-        return ewStageForRemaining(border, distToXBorder);
+        double progressX = borderProgress(border, player.getX(), true);
+        return ewStageForProgress(progressX);
     }
 
     public static float computeEwFogEnd(double x) {
@@ -186,8 +171,8 @@ public final class GlobeClientState {
 
     private static float polarWhiteoutIntensity(ClientWorld world, PlayerEntity player) {
         var border = world.getWorldBorder();
-        double remaining = com.example.globe.util.LatitudeMath.poleRemainingBlocks(border, player.getZ());
-        PolarStage stage = polarStageForRemaining(border, remaining);
+        double progressZ = borderProgress(border, player.getZ(), false);
+        PolarStage stage = polarStageForProgress(progressZ);
 
         if (stage == PolarStage.NONE) {
             return 0.0f;
@@ -278,18 +263,17 @@ public final class GlobeClientState {
         double x = player.getX();
         double z = player.getZ();
 
-        double distToXBorder = axisDistanceInsideBorder(border, x, true);
-        double distToZBorder = com.example.globe.util.LatitudeMath.poleRemainingBlocks(border, z);
+        double progressX = borderProgress(border, x, true);
+        double progressZ = borderProgress(border, z, false);
 
-        PolarStage polarStage = polarStageForRemaining(border, distToZBorder);
-        EwStormStage stormStage = ewStageForRemaining(border, distToXBorder);
+        PolarStage polarStage = polarStageForProgress(progressZ);
+        EwStormStage stormStage = ewStageForProgress(progressX);
 
         float poleSeverity = polarIntensityForStage(polarStage);
         float stormSeverity = stormIntensityForStage(stormStage);
 
-        double warnCritical = stageLethalThreshold(border);
-        boolean poleCritical = distToZBorder <= warnCritical;
-        boolean stormCritical = distToXBorder <= warnCritical;
+        boolean poleCritical = progressZ >= STAGE_LETHAL_PROGRESS;
+        boolean stormCritical = progressX >= STAGE_LETHAL_PROGRESS;
 
         if (DEBUG_DISABLE_WARNINGS) {
             cachedEval = new Eval(true, surfaceOk, absX, absZ, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, false, false);

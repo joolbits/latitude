@@ -65,6 +65,11 @@ public class GlobeMod implements ModInitializer {
 
     private static final boolean ENABLE_POLAR_SCRUBBER = false;
 
+    private static final double STAGE_WARN_PROGRESS = 0.88;
+    private static final double STAGE_DANGER_PROGRESS = 0.91;
+    private static final double STAGE_WHITEOUT_PROGRESS = 0.93;
+    private static final double STAGE_LETHAL_PROGRESS = 0.98;
+
     private static final Identifier GLOBE_SETTINGS_ID = Identifier.of(MOD_ID, "overworld");
     private static final Identifier GLOBE_SETTINGS_XSMALL_ID = Identifier.of(MOD_ID, "overworld_xsmall");
     private static final Identifier GLOBE_SETTINGS_SMALL_ID = Identifier.of(MOD_ID, "overworld_small");
@@ -191,22 +196,19 @@ public class GlobeMod implements ModInitializer {
         }
 
         WorldBorder border = overworld.getWorldBorder();
-        double half = com.example.globe.util.LatitudeMath.halfSize(border);
-        double t1 = clamp(half * 0.06, 150.0, 800.0);
-        double t2 = clamp(half * 0.03, 75.0, 400.0);
-        double t3 = clamp(half * 0.01, 25.0, 200.0);
 
         for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
             if (player.getEntityWorld() != overworld) {
                 continue;
             }
 
-            double remaining = com.example.globe.util.LatitudeMath.poleRemainingBlocks(border, player.getZ());
+            double progressZ = borderProgress(border, player.getZ(), false);
 
             PolarStage stage =
-                    remaining <= t3 ? PolarStage.LETHAL :
-                    remaining <= t2 ? PolarStage.HOSTILE :
-                    remaining <= t1 ? PolarStage.IMPAIR :
+                    progressZ >= STAGE_LETHAL_PROGRESS ? PolarStage.LETHAL :
+                    progressZ >= STAGE_WHITEOUT_PROGRESS ? PolarStage.WHITEOUT :
+                    progressZ >= STAGE_DANGER_PROGRESS ? PolarStage.HOSTILE :
+                    progressZ >= STAGE_WARN_PROGRESS ? PolarStage.IMPAIR :
                     PolarStage.NONE;
 
             int duration = 40;
@@ -271,6 +273,13 @@ public class GlobeMod implements ModInitializer {
         if (noise.matchesSettings(GLOBE_SETTINGS_MASSIVE_KEY)) return 20000;
 
         return BORDER_RADIUS;
+    }
+
+    private static double borderProgress(WorldBorder border, double coord, boolean isX) {
+        double center = isX ? border.getCenterX() : border.getCenterZ();
+        double half = com.example.globe.util.LatitudeMath.halfSize(border);
+        if (half <= 0.0) return 1.0;
+        return clamp(Math.abs(coord - center) / half, 0.0, 1.0);
     }
 
     private static double clamp(double v, double lo, double hi) {
