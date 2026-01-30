@@ -53,6 +53,8 @@ Legend: check a box once coverage is verified in a new world.
 
 ## shores_edges_only
 
+Preserved in `LatitudeBiomes.pick` via `BiomeTags.IS_BEACH` and `BiomeTags.IS_RIVER`.
+
 | ✅ | Biome | Where selected |
 | --- | --- | --- |
 | [ ] | minecraft:beach | preserved (BiomeTags.IS_BEACH) |
