@@ -5,6 +5,8 @@
   "refmap": "globe.refmap.json",
   "compatibilityLevel": "JAVA_21",
   "mixins": [
+    "BiomeSourceAccessor",
+    "ChunkGeneratorBiomeSourceMixin",
     "ChunkGeneratorPopulateBiomesMixin",
     "NoiseChunkGeneratorCarveMixin"
   ],
