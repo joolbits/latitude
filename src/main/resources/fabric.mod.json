@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "id": "globe",
-  "version": "1.2.3",
+  "version": "${version}",
   "name": "Latitude",
   "description": "A globe-style world + latitude-based biome bands with a customizable compass HUD and warnings.",
   "authors": [
