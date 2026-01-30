@@ -11,6 +11,7 @@ import net.minecraft.util.Identifier;
 import net.minecraft.world.biome.Biome;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.List;
 
@@ -39,13 +40,6 @@ public final class LatitudeBiomes {
     private static final TagKey<Biome> LAT_OCEAN_SUBPOLAR = TagKey.of(RegistryKeys.BIOME, Identifier.of("globe", "lat_ocean_subpolar"));
     private static final TagKey<Biome> LAT_OCEAN_POLAR = TagKey.of(RegistryKeys.BIOME, Identifier.of("globe", "lat_ocean_polar"));
 
-    private static final TagKey<Biome> OCEAN_WARM = TagKey.of(RegistryKeys.BIOME, Identifier.of("globe", "ocean_warm"));
-    private static final TagKey<Biome> OCEAN_MID = TagKey.of(RegistryKeys.BIOME, Identifier.of("globe", "ocean_mid"));
-    private static final TagKey<Biome> OCEAN_COLD = TagKey.of(RegistryKeys.BIOME, Identifier.of("globe", "ocean_cold"));
-    private static final TagKey<Biome> OCEAN_FROZEN = TagKey.of(RegistryKeys.BIOME, Identifier.of("globe", "ocean_frozen"));
-    private static final TagKey<Biome> OCEAN_DEEP_FROZEN = TagKey.of(RegistryKeys.BIOME, Identifier.of("globe", "ocean_deep_frozen"));
-
-    private static final int OCEAN_BAND_BLOCKS = 2500;
     private static final int VARIANT_CELL_SIZE_BLOCKS = 1024;
 
     // --- Blend noise helpers (chunk-stable, 2D, smooth "blobs") ---
@@ -105,7 +99,6 @@ public final class LatitudeBiomes {
         }
 
         int lat = Math.abs(blockZ);
-        int absX = Math.abs(blockX);
         double t = (double) lat / (double) borderRadiusBlocks;
 
         int bandIndex = latitudeBandIndexWithBlend(blockX, blockZ, borderRadiusBlocks);
@@ -130,8 +123,41 @@ public final class LatitudeBiomes {
             return oceanByLatitudeBandOrBase(biomes, base, blockX, blockZ, bandIndex);
         }
 
-        if (absX >= (borderRadiusBlocks - OCEAN_BAND_BLOCKS) && t < 0.93) {
-            return oceanByLatitude(biomes, blockX, blockZ, bandIndex, t);
+        return switch (bandIndex) {
+            case 0 -> pickTropicalGradient(biomes, base, blockX, blockZ, t);
+            case 1 -> pickFromLandTagOrBase(biomes, LAT_EQUATOR, base, blockX, blockZ, 1);
+            case 2 -> pickFromLandTagOrBase(biomes, LAT_TEMPERATE, base, blockX, blockZ, 2);
+            case 3 -> pickFromLandTagOrBase(biomes, LAT_SUBPOLAR, base, blockX, blockZ, 3);
+            default -> pickFromLandTagOrBase(biomes, LAT_POLAR, base, blockX, blockZ, 4);
+        };
+    }
+
+    public static RegistryEntry<Biome> pick(Collection<RegistryEntry<Biome>> biomes, RegistryEntry<Biome> base, int blockX, int blockZ, int borderRadiusBlocks) {
+        // Keep coastlines/rivers vanilla, but DO NOT keep ocean temperature vanilla.
+        if (base.isIn(BiomeTags.IS_BEACH)) {
+            return base;
+        }
+
+        if (borderRadiusBlocks <= 0) {
+            return base;
+        }
+
+        int lat = Math.abs(blockZ);
+        double t = (double) lat / (double) borderRadiusBlocks;
+
+        int bandIndex = latitudeBandIndexWithBlend(blockX, blockZ, borderRadiusBlocks);
+
+        if (base.isIn(BiomeTags.IS_RIVER)) {
+            if (t >= 0.80) {
+                RegistryEntry<Biome> frozen = entryById(biomes, "minecraft:frozen_river");
+                return frozen != null ? frozen : base;
+            }
+            RegistryEntry<Biome> river = entryById(biomes, "minecraft:river");
+            return river != null ? river : base;
+        }
+
+        if (base.isIn(BiomeTags.IS_OCEAN)) {
+            return oceanByLatitudeBandOrBase(biomes, base, blockX, blockZ, bandIndex);
         }
 
         return switch (bandIndex) {
@@ -144,6 +170,33 @@ public final class LatitudeBiomes {
     }
 
     private static RegistryEntry<Biome> pickTropicalGradient(Registry<Biome> biomes, RegistryEntry<Biome> base, int blockX, int blockZ, double t) {
+        int chunkX = blockX >> 4;
+        int chunkZ = blockZ >> 4;
+
+        long seed = 0L;
+
+        // Tropical band is [0.00..0.18]. We want wet near equator (t=0), arid near the edge (t=0.18).
+        double u = clamp(t / 0.18, 0.0, 1.0);
+        double ladderT = 1.0 - u;
+
+        double jitterN = (blobNoise01(seed, chunkX, chunkZ, 8, 0xBADC0FFEE0DDF00DL) * 2.0) - 1.0;
+        double tJitter = ladderT + (jitterN * 0.12);
+        tJitter = clamp(tJitter, 0.0, 1.0);
+        tJitter = smoothstep(tJitter);
+
+        int step = clampInt((int) Math.floor(tJitter * 4.0), 0, 3);
+
+        TagKey<Biome> chosen = switch (step) {
+            case 1 -> LAT_TRANS_ARID_TROPICS_1;
+            case 2 -> LAT_TRANS_ARID_TROPICS_2;
+            case 3 -> LAT_TROPICS;
+            default -> LAT_ARID;
+        };
+
+        return pickFromTagNoiseOrBase(biomes, chosen, base, blockX, blockZ, 100 + step);
+    }
+
+    private static RegistryEntry<Biome> pickTropicalGradient(Collection<RegistryEntry<Biome>> biomes, RegistryEntry<Biome> base, int blockX, int blockZ, double t) {
         int chunkX = blockX >> 4;
         int chunkZ = blockZ >> 4;
 
@@ -192,21 +245,28 @@ public final class LatitudeBiomes {
                 "minecraft:deep_frozen_ocean");
     }
 
-    private static RegistryEntry<Biome> oceanByLatitude(Registry<Biome> biomes, int blockX, int blockZ, int bandIndex, double t) {
+    private static RegistryEntry<Biome> oceanByLatitudeBandOrBase(Collection<RegistryEntry<Biome>> biomes, RegistryEntry<Biome> base, int blockX, int blockZ, int bandIndex) {
         if (bandIndex == 0) {
-            return pickFromTagOrFallback(biomes, OCEAN_WARM, blockX, blockZ, 10, "minecraft:warm_ocean");
+            return pickFromTagNoiseOrFallback(biomes, base, LAT_OCEAN_TROPICAL, blockX, blockZ, 20,
+                    "minecraft:warm_ocean",
+                    "minecraft:lukewarm_ocean",
+                    "minecraft:deep_lukewarm_ocean");
         }
-        if (bandIndex == 1) {
-            return pickFromTagOrFallback(biomes, OCEAN_MID, blockX, blockZ, 11, "minecraft:ocean");
+        if (bandIndex == 1 || bandIndex == 2) {
+            return pickFromTagNoiseOrFallback(biomes, base, LAT_OCEAN_TEMPERATE, blockX, blockZ, 21,
+                    "minecraft:ocean",
+                    "minecraft:deep_ocean");
         }
-        if (bandIndex == 2) {
-            return pickFromTagOrFallback(biomes, OCEAN_COLD, blockX, blockZ, 12, "minecraft:cold_ocean");
+        if (bandIndex == 3) {
+            return pickFromTagNoiseOrFallback(biomes, base, LAT_OCEAN_SUBPOLAR, blockX, blockZ, 22,
+                    "minecraft:cold_ocean",
+                    "minecraft:deep_cold_ocean");
         }
-        if (bandIndex == 3 && t < 0.93) {
-            return pickFromTagOrFallback(biomes, OCEAN_FROZEN, blockX, blockZ, 13, "minecraft:frozen_ocean");
-        }
-        return pickFromTagOrFallback(biomes, OCEAN_DEEP_FROZEN, blockX, blockZ, 14, "minecraft:deep_frozen_ocean");
+        return pickFromTagNoiseOrFallback(biomes, base, LAT_OCEAN_POLAR, blockX, blockZ, 23,
+                "minecraft:frozen_ocean",
+                "minecraft:deep_frozen_ocean");
     }
+
 
     private static int latitudeBandIndexWithBlend(int blockX, int blockZ, int radius) {
         if (radius <= 0) {
@@ -328,26 +388,6 @@ public final class LatitudeBiomes {
         return biome(biomes, options[idx]);
     }
 
-    private static RegistryEntry<Biome> pickFromTagOrFallback(Registry<Biome> biomes, TagKey<Biome> tag, int blockX, int blockZ, int bandIndex, String... fallbackOptions) {
-        List<RegistryEntry<Biome>> entries = new ArrayList<>();
-        for (RegistryEntry<Biome> entry : biomes.iterateEntries(tag)) {
-            entries.add(entry);
-        }
-
-        entries.sort(Comparator.comparing(entry -> entry.getKey()
-                .map(key -> key.getValue().toString())
-                .orElse("")));
-
-        int size = entries.size();
-        if (size > 0) {
-            int cellX = Math.floorDiv(blockX, VARIANT_CELL_SIZE_BLOCKS);
-            int cellZ = Math.floorDiv(blockZ, VARIANT_CELL_SIZE_BLOCKS);
-            int idx = (int) Long.remainderUnsigned(hash64(cellX, cellZ, bandIndex), size);
-            return entries.get(idx);
-        }
-        return pickFrom(biomes, blockX, blockZ, bandIndex, fallbackOptions);
-    }
-
     private static RegistryEntry<Biome> pickFromLandTagOrBase(Registry<Biome> biomes, TagKey<Biome> tag, RegistryEntry<Biome> base, int blockX, int blockZ, int bandIndex) {
         List<RegistryEntry<Biome>> entries = new ArrayList<>();
         for (RegistryEntry<Biome> entry : biomes.iterateEntries(tag)) {
@@ -372,6 +412,95 @@ public final class LatitudeBiomes {
             idx = size - 1;
         }
         return entries.get(idx);
+    }
+
+    private static RegistryEntry<Biome> pickFromLandTagOrBase(Collection<RegistryEntry<Biome>> biomes, TagKey<Biome> tag, RegistryEntry<Biome> base, int blockX, int blockZ, int bandIndex) {
+        List<RegistryEntry<Biome>> entries = entriesForTag(biomes, tag);
+        int size = entries.size();
+        if (size <= 0) {
+            return base;
+        }
+
+        int scaleBlocks = 2048;
+        long seed = 0L;
+        long salted = seed ^ (0x9E3779B97F4A7C15L * (long) bandIndex);
+        double n = ValueNoise2D.sampleBlocks(salted, blockX, blockZ, scaleBlocks);
+        int idx = (int) Math.floor(n * (double) size);
+        if (idx >= size) {
+            idx = size - 1;
+        }
+        return entries.get(idx);
+    }
+
+    private static RegistryEntry<Biome> pickFromTagNoiseOrFallback(Collection<RegistryEntry<Biome>> biomes, RegistryEntry<Biome> base, TagKey<Biome> tag, int blockX, int blockZ, int bandIndex, String... fallbackOptions) {
+        List<RegistryEntry<Biome>> entries = entriesForTag(biomes, tag);
+        int size = entries.size();
+        if (size <= 0) {
+            return pickFromFallbacks(biomes, base, fallbackOptions);
+        }
+
+        int scaleBlocks = 2048;
+        long seed = 0L;
+        long salted = seed ^ (0x9E3779B97F4A7C15L * (long) bandIndex);
+        double n = ValueNoise2D.sampleBlocks(salted, blockX, blockZ, scaleBlocks);
+        int idx = (int) Math.floor(n * (double) size);
+        if (idx >= size) {
+            idx = size - 1;
+        }
+        return entries.get(idx);
+    }
+
+    private static RegistryEntry<Biome> pickFromTagNoiseOrBase(Collection<RegistryEntry<Biome>> biomes, TagKey<Biome> tag, RegistryEntry<Biome> base, int blockX, int blockZ, int bandIndex) {
+        List<RegistryEntry<Biome>> entries = entriesForTag(biomes, tag);
+        int size = entries.size();
+        if (size <= 0) {
+            return base;
+        }
+
+        int scaleBlocks = 2048;
+        long seed = 0L;
+        long salted = seed ^ (0x9E3779B97F4A7C15L * (long) bandIndex);
+        double n = ValueNoise2D.sampleBlocks(salted, blockX, blockZ, scaleBlocks);
+        int idx = (int) Math.floor(n * (double) size);
+        if (idx >= size) {
+            idx = size - 1;
+        }
+        return entries.get(idx);
+    }
+
+    private static RegistryEntry<Biome> pickFromFallbacks(Collection<RegistryEntry<Biome>> biomes, RegistryEntry<Biome> base, String... fallbackOptions) {
+        for (String fallback : fallbackOptions) {
+            RegistryEntry<Biome> entry = entryById(biomes, fallback);
+            if (entry != null) {
+                return entry;
+            }
+        }
+        return base;
+    }
+
+    private static List<RegistryEntry<Biome>> entriesForTag(Collection<RegistryEntry<Biome>> biomes, TagKey<Biome> tag) {
+        List<RegistryEntry<Biome>> entries = new ArrayList<>();
+        for (RegistryEntry<Biome> entry : biomes) {
+            if (entry.isIn(tag)) {
+                entries.add(entry);
+            }
+        }
+
+        entries.sort(Comparator.comparing(entry -> entry.getKey()
+                .map(key -> key.getValue().toString())
+                .orElse("")));
+        return entries;
+    }
+
+    private static RegistryEntry<Biome> entryById(Collection<RegistryEntry<Biome>> biomes, String id) {
+        Identifier target = Identifier.of(id);
+        for (RegistryEntry<Biome> entry : biomes) {
+            var key = entry.getKey();
+            if (key.isPresent() && key.get().getValue().equals(target)) {
+                return entry;
+            }
+        }
+        return null;
     }
 
     private static RegistryEntry<Biome> pickFromTagNoiseOrFallback(Registry<Biome> biomes, TagKey<Biome> tag, int blockX, int blockZ, int bandIndex, String... fallbackOptions) {
