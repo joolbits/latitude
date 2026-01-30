@@ -160,41 +160,12 @@ public final class GlobeClientState {
             return -1.0f;
         }
 
-        var border = client.world.getWorldBorder();
-        double distToXBorder = axisDistanceInsideBorder(border, x, true);
-
-        int warn = GlobeMod.POLE_WARNING_DISTANCE_BLOCKS;
-        int danger = GlobeMod.POLE_LETHAL_DISTANCE_BLOCKS;
-        int blackout = 20;
-
-        if (distToXBorder > (double) warn) {
-            return -1.0f;
-        }
-
-        if (distToXBorder <= (double) blackout) {
-            return 20.0f;
-        }
-
-        // Piecewise ramp:
-        // - warn..danger: 160 -> 40 (gets thick quickly)
-        // - danger..blackout: 40 -> 20 (blackout near the border)
-        if (distToXBorder <= (double) danger) {
-            float t = (float) ((danger - distToXBorder) / (double) (danger - blackout));
-            if (t < 0.0f) t = 0.0f;
-            if (t > 1.0f) t = 1.0f;
-
-            float end = 40.0f - (t * 20.0f);
-            if (end < 20.0f) end = 20.0f;
-            return end;
-        }
-
-        float t = (float) ((warn - distToXBorder) / (double) (warn - danger));
-        if (t < 0.0f) t = 0.0f;
-        if (t > 1.0f) t = 1.0f;
-
-        float end = 160.0f - (t * 120.0f);
-        if (end < 40.0f) end = 40.0f;
-        return end;
+        EwStormStage stage = computeEwStormStage(client.world, client.player);
+        return switch (stage) {
+            case LEVEL_1 -> 48.0f;
+            case LEVEL_2 -> 10.0f;
+            default -> -1.0f;
+        };
     }
 
     private static float polarWhiteoutIntensity(ClientWorld world, PlayerEntity player) {
