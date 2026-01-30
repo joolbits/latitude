@@ -31,36 +31,56 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
     @Unique
     private static final Identifier GLOBE_SETTINGS_ID = Identifier.of("globe", "overworld");
 
-     @Unique
-     private static final Identifier GLOBE_SETTINGS_XSMALL_ID = Identifier.of("globe", "overworld_xsmall");
+    @Unique
+    private static final Identifier GLOBE_SETTINGS_XSMALL_ID = Identifier.of("globe", "overworld_xsmall");
 
-     @Unique
-     private static final Identifier GLOBE_SETTINGS_SMALL_ID = Identifier.of("globe", "overworld_small");
+    @Unique
+    private static final Identifier GLOBE_SETTINGS_SMALL_ID = Identifier.of("globe", "overworld_small");
 
-     @Unique
-     private static final Identifier GLOBE_SETTINGS_REGULAR_ID = Identifier.of("globe", "overworld_regular");
+    @Unique
+    private static final Identifier GLOBE_SETTINGS_REGULAR_ID = Identifier.of("globe", "overworld_regular");
+
+    @Unique
+    private static final Identifier GLOBE_SETTINGS_LARGE_ID = Identifier.of("globe", "overworld_large");
+
+    @Unique
+    private static final Identifier GLOBE_SETTINGS_MASSIVE_ID = Identifier.of("globe", "overworld_massive");
 
     @Unique
     private static final RegistryKey<ChunkGeneratorSettings> GLOBE_SETTINGS_KEY =
             RegistryKey.of(RegistryKeys.CHUNK_GENERATOR_SETTINGS, GLOBE_SETTINGS_ID);
 
-     @Unique
-     private static final RegistryKey<ChunkGeneratorSettings> GLOBE_SETTINGS_XSMALL_KEY =
-             RegistryKey.of(RegistryKeys.CHUNK_GENERATOR_SETTINGS, GLOBE_SETTINGS_XSMALL_ID);
+    @Unique
+    private static final RegistryKey<ChunkGeneratorSettings> GLOBE_SETTINGS_XSMALL_KEY =
+            RegistryKey.of(RegistryKeys.CHUNK_GENERATOR_SETTINGS, GLOBE_SETTINGS_XSMALL_ID);
 
-     @Unique
-     private static final RegistryKey<ChunkGeneratorSettings> GLOBE_SETTINGS_SMALL_KEY =
-             RegistryKey.of(RegistryKeys.CHUNK_GENERATOR_SETTINGS, GLOBE_SETTINGS_SMALL_ID);
+    @Unique
+    private static final RegistryKey<ChunkGeneratorSettings> GLOBE_SETTINGS_SMALL_KEY =
+            RegistryKey.of(RegistryKeys.CHUNK_GENERATOR_SETTINGS, GLOBE_SETTINGS_SMALL_ID);
 
-     @Unique
-     private static final RegistryKey<ChunkGeneratorSettings> GLOBE_SETTINGS_REGULAR_KEY =
-             RegistryKey.of(RegistryKeys.CHUNK_GENERATOR_SETTINGS, GLOBE_SETTINGS_REGULAR_ID);
+    @Unique
+    private static final RegistryKey<ChunkGeneratorSettings> GLOBE_SETTINGS_REGULAR_KEY =
+            RegistryKey.of(RegistryKeys.CHUNK_GENERATOR_SETTINGS, GLOBE_SETTINGS_REGULAR_ID);
 
-     @Unique
-     private static final int BORDER_RADIUS_XSMALL_BLOCKS = 3750;
+    @Unique
+    private static final RegistryKey<ChunkGeneratorSettings> GLOBE_SETTINGS_LARGE_KEY =
+            RegistryKey.of(RegistryKeys.CHUNK_GENERATOR_SETTINGS, GLOBE_SETTINGS_LARGE_ID);
 
-     @Unique
-     private static final int BORDER_RADIUS_SMALL_BLOCKS = 5000;
+    @Unique
+    private static final RegistryKey<ChunkGeneratorSettings> GLOBE_SETTINGS_MASSIVE_KEY =
+            RegistryKey.of(RegistryKeys.CHUNK_GENERATOR_SETTINGS, GLOBE_SETTINGS_MASSIVE_ID);
+
+    @Unique
+    private static final int BORDER_RADIUS_XSMALL_BLOCKS = 3750;
+
+    @Unique
+    private static final int BORDER_RADIUS_SMALL_BLOCKS = 5000;
+
+    @Unique
+    private static final int BORDER_RADIUS_LARGE_BLOCKS = 10000;
+
+    @Unique
+    private static final int BORDER_RADIUS_MASSIVE_BLOCKS = 20000;
 
     // Thread-local so the Redirect (which cannot see outer args) can still access StructureAccessor safely.
     @Unique
@@ -69,24 +89,32 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
     @Shadow
     public abstract boolean matchesSettings(RegistryKey<ChunkGeneratorSettings> settings);
 
-     @Unique
-     private boolean globe$isAnyGlobeSettings() {
-         return this.matchesSettings(GLOBE_SETTINGS_KEY)
-                 || this.matchesSettings(GLOBE_SETTINGS_XSMALL_KEY)
-                 || this.matchesSettings(GLOBE_SETTINGS_SMALL_KEY)
-                 || this.matchesSettings(GLOBE_SETTINGS_REGULAR_KEY);
-     }
+    @Unique
+    private boolean globe$isAnyGlobeSettings() {
+        return this.matchesSettings(GLOBE_SETTINGS_KEY)
+                || this.matchesSettings(GLOBE_SETTINGS_XSMALL_KEY)
+                || this.matchesSettings(GLOBE_SETTINGS_SMALL_KEY)
+                || this.matchesSettings(GLOBE_SETTINGS_REGULAR_KEY)
+                || this.matchesSettings(GLOBE_SETTINGS_LARGE_KEY)
+                || this.matchesSettings(GLOBE_SETTINGS_MASSIVE_KEY);
+    }
 
-     @Unique
-     private int globe$borderRadiusBlocks() {
-         if (this.matchesSettings(GLOBE_SETTINGS_XSMALL_KEY)) {
-             return BORDER_RADIUS_XSMALL_BLOCKS;
-         }
-         if (this.matchesSettings(GLOBE_SETTINGS_SMALL_KEY)) {
-             return BORDER_RADIUS_SMALL_BLOCKS;
-         }
-         return GlobeMod.BORDER_RADIUS;
-     }
+    @Unique
+    private int globe$borderRadiusBlocks() {
+        if (this.matchesSettings(GLOBE_SETTINGS_XSMALL_KEY)) {
+            return BORDER_RADIUS_XSMALL_BLOCKS;
+        }
+        if (this.matchesSettings(GLOBE_SETTINGS_SMALL_KEY)) {
+            return BORDER_RADIUS_SMALL_BLOCKS;
+        }
+        if (this.matchesSettings(GLOBE_SETTINGS_LARGE_KEY)) {
+            return BORDER_RADIUS_LARGE_BLOCKS;
+        }
+        if (this.matchesSettings(GLOBE_SETTINGS_MASSIVE_KEY)) {
+            return BORDER_RADIUS_MASSIVE_BLOCKS;
+        }
+        return GlobeMod.BORDER_RADIUS;
+    }
 
     // Capture StructureAccessor for the duration of the private populateBiomes call.
     @Inject(

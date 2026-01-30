@@ -46,12 +46,12 @@ public final class GlobeClientState {
 
     private static double axisDistanceInsideBorder(net.minecraft.world.border.WorldBorder border, double coord, boolean isX) {
         double center = isX ? border.getCenterX() : border.getCenterZ();
-        double radius = border.getSize() * 0.5;
+        double radius = com.example.globe.util.LatitudeMath.halfSize(border);
         return radius - Math.abs(coord - center);
     }
 
     private static int borderRadiusBlocks(ClientWorld world) {
-        return (int) Math.round(world.getWorldBorder().getSize() / 2.0);
+        return (int) Math.round(com.example.globe.util.LatitudeMath.halfSize(world.getWorldBorder()));
     }
 
     private static PolarStage polarStageForDist(int distToZBorder) {
@@ -230,8 +230,13 @@ public final class GlobeClientState {
 
         boolean active = globeWorld;
         if (!active) {
-            double size = client.world.getWorldBorder().getSize();
-            active = Math.abs(size - 7500.0) < 1.0 || Math.abs(size - 10000.0) < 1.0 || Math.abs(size - 15000.0) < 1.0;
+            double half = com.example.globe.util.LatitudeMath.halfSize(client.world.getWorldBorder());
+            active = Math.abs(half - 3750.0) < 1.0
+                    || Math.abs(half - 5000.0) < 1.0
+                    || Math.abs(half - 7500.0) < 1.0
+                    || Math.abs(half - 10000.0) < 1.0
+                    || Math.abs(half - 15000.0) < 1.0
+                    || Math.abs(half - 20000.0) < 1.0;
         }
 
         // If server says it's a globe world, trust it explicitly and ignore client-side registry key quirks.
@@ -258,7 +263,7 @@ public final class GlobeClientState {
         double distToXBorder = axisDistanceInsideBorder(border, x, true);
         double distToZBorder = axisDistanceInsideBorder(border, z, false);
 
-        double radius = border.getSize() * 0.5;
+        double radius = com.example.globe.util.LatitudeMath.halfSize(border);
         double warnStart = Math.min(1500.0, Math.max(300.0, radius / 8.0));
         double warnCritical = Math.min(750.0, Math.max(150.0, radius / 16.0));
 
@@ -335,7 +340,7 @@ public final class GlobeClientState {
         }
 
         var border = client.world.getWorldBorder();
-        double radius = border.getSize() * 0.5;
+        double radius = com.example.globe.util.LatitudeMath.halfSize(border);
         double warnStart = Math.min(1500.0, Math.max(300.0, radius / 8.0));
 
         double distX = axisDistanceInsideBorder(border, x, true);

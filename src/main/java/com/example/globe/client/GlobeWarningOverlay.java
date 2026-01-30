@@ -218,13 +218,8 @@ public final class GlobeWarningOverlay {
         }
         var border = client.world.getWorldBorder();
 
-        int baseDeg = com.example.globe.util.LatitudeMath.zoneCenterDeg(zoneKey);
-        if (baseDeg <= 0) {
-            return zoneName + " 0\u00b0";
-        }
-
-        char hemi = com.example.globe.util.LatitudeMath.hemisphere(border, client.player.getZ());
-        return zoneName + " " + baseDeg + "\u00b0" + hemi;
+        String degText = com.example.globe.util.LatitudeMath.formatLatitudeDeg(border, client.player.getZ());
+        return zoneName + " " + degText;
     }
 
     private static double clamp(double v, double lo, double hi) {
