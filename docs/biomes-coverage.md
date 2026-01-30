@@ -23,9 +23,9 @@ Legend: check a box once coverage is verified in a new world.
 | [ ] | minecraft:pale_garden | TODO: add to band tag (temperate accent) |
 | [ ] | minecraft:cherry_grove | band tag: `lat_temperate` |
 | [ ] | minecraft:taiga | band tag: `lat_temperate` |
-| [ ] | minecraft:snowy_taiga | TODO: add to band tag (cold/subpolar) |
+| [ ] | minecraft:snowy_taiga | band tag: `lat_subpolar` |
 | [ ] | minecraft:old_growth_pine_taiga | band tag: `lat_temperate` |
-| [ ] | minecraft:old_growth_spruce_taiga | TODO: add to band tag (cold/temperate) |
+| [ ] | minecraft:old_growth_spruce_taiga | band tag: `lat_subpolar` |
 | [ ] | minecraft:savanna | band tag: `lat_tropical`, `lat_trans_arid_tropics_2` |
 | [ ] | minecraft:savanna_plateau | band tag: `lat_tropical`, `lat_trans_arid_tropics_2` |
 | [ ] | minecraft:windswept_savanna | band tag: `lat_tropical` |
@@ -46,7 +46,7 @@ Legend: check a box once coverage is verified in a new world.
 | [ ] | minecraft:meadow | band tag: `lat_temperate` |
 | [ ] | minecraft:grove | band tag: `lat_temperate` |
 | [ ] | minecraft:snowy_slopes | band tag: `lat_subpolar` |
-| [ ] | minecraft:stony_peaks | TODO: add to band tag (temperate accent) |
+| [ ] | minecraft:stony_peaks | band tag: `lat_temperate` |
 | [ ] | minecraft:jagged_peaks | band tag: `lat_polar` |
 | [ ] | minecraft:frozen_peaks | band tag: `lat_subpolar` |
 | [ ] | minecraft:mushroom_fields | special-case ocean island override (TODO) |
