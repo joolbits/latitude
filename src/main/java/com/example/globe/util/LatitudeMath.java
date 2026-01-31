@@ -91,8 +91,7 @@ public final class LatitudeMath {
 
     /** Returns hazard stage index (0..4) based on normalized progress. */
     public static int hazardStageIndex(WorldBorder border, double z, double progress) {
-        // Hard gate: No hazards before the polar band start.
-        if (zoneFor(border, z) != LatitudeZone.POLAR) return 0;
+        // TODO (Hard Mode): allow hazards to start at POLAR entry (zone-gated), not just near border.
 
         if (progress >= POLAR_STAGE_LETHAL_PROGRESS) return 4;
         if (progress >= POLAR_STAGE_3_PROGRESS) return 3;
