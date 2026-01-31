@@ -22,6 +22,39 @@ public final class LatitudeBiomes {
     private LatitudeBiomes() {
     }
 
+    private static RegistryEntry<Biome> pickBeachForBand(Registry<Biome> biomes, RegistryEntry<Biome> base, int blockX, int blockZ, int bandIndex) {
+        if (bandIndex < 3) {
+            return base;
+        }
+
+        int chunkX = blockX >> 4;
+        int chunkZ = blockZ >> 4;
+        long roll = hash64(chunkX, chunkZ, 0xBEEFBEEF);
+        boolean snowy = Long.remainderUnsigned(roll, 100L) < 70L;
+
+        String target = snowy ? "minecraft:snowy_beach" : "minecraft:stony_shore";
+        try {
+            return biome(biomes, target);
+        } catch (Throwable ignored) {
+            return base;
+        }
+    }
+
+    private static RegistryEntry<Biome> pickBeachForBand(Collection<RegistryEntry<Biome>> biomes, RegistryEntry<Biome> base, int blockX, int blockZ, int bandIndex) {
+        if (bandIndex < 3) {
+            return base;
+        }
+
+        int chunkX = blockX >> 4;
+        int chunkZ = blockZ >> 4;
+        long roll = hash64(chunkX, chunkZ, 0xBEEFBEEF);
+        boolean snowy = Long.remainderUnsigned(roll, 100L) < 70L;
+
+        String target = snowy ? "minecraft:snowy_beach" : "minecraft:stony_shore";
+        RegistryEntry<Biome> entry = entryById(biomes, target);
+        return entry != null ? entry : base;
+    }
+
     private static RegistryEntry<Biome> applyLandOverrides(Registry<Biome> biomes, RegistryEntry<Biome> pick, int blockX, int blockZ, int bandIndex) {
         if (bandIndex == 1 || bandIndex == 2) {
             if (isBiomeId(pick, "minecraft:plains") && rollChance(blockX, blockZ, 0x7F4A7C15, 25L)) {
@@ -173,11 +206,6 @@ public final class LatitudeBiomes {
     }
 
     public static RegistryEntry<Biome> pick(Registry<Biome> biomes, RegistryEntry<Biome> base, int blockX, int blockZ, int borderRadiusBlocks) {
-        // Keep coastlines/rivers vanilla, but DO NOT keep ocean temperature vanilla.
-        if (base.isIn(BiomeTags.IS_BEACH)) {
-            return base;
-        }
-
         if (borderRadiusBlocks <= 0) {
             return base;
         }
@@ -186,6 +214,10 @@ public final class LatitudeBiomes {
         double t = (double) lat / (double) borderRadiusBlocks;
 
         int bandIndex = latitudeBandIndexWithBlend(blockX, blockZ, borderRadiusBlocks);
+
+        if (base.isIn(BiomeTags.IS_BEACH)) {
+            return pickBeachForBand(biomes, base, blockX, blockZ, bandIndex);
+        }
 
         if (base.isIn(BiomeTags.IS_RIVER)) {
             if (t >= 0.80) {
@@ -219,11 +251,6 @@ public final class LatitudeBiomes {
     }
 
     public static RegistryEntry<Biome> pick(Collection<RegistryEntry<Biome>> biomes, RegistryEntry<Biome> base, int blockX, int blockZ, int borderRadiusBlocks) {
-        // Keep coastlines/rivers vanilla, but DO NOT keep ocean temperature vanilla.
-        if (base.isIn(BiomeTags.IS_BEACH)) {
-            return base;
-        }
-
         if (borderRadiusBlocks <= 0) {
             return base;
         }
@@ -232,6 +259,10 @@ public final class LatitudeBiomes {
         double t = (double) lat / (double) borderRadiusBlocks;
 
         int bandIndex = latitudeBandIndexWithBlend(blockX, blockZ, borderRadiusBlocks);
+
+        if (base.isIn(BiomeTags.IS_BEACH)) {
+            return pickBeachForBand(biomes, base, blockX, blockZ, bandIndex);
+        }
 
         if (base.isIn(BiomeTags.IS_RIVER)) {
             if (t >= 0.80) {
