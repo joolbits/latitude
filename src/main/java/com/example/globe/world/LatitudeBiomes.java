@@ -57,7 +57,7 @@ public final class LatitudeBiomes {
 
     private static RegistryEntry<Biome> applyLandOverrides(Registry<Biome> biomes, RegistryEntry<Biome> pick, int blockX, int blockZ, int bandIndex) {
         if (bandIndex == 1 || bandIndex == 2) {
-            if (isBiomeId(pick, "minecraft:plains") && rollChance(blockX, blockZ, 0x7F4A7C15, 25L)) {
+            if (isBiomeId(pick, "minecraft:plains") && rollChance(blockX, blockZ, 0x7F4A7C15, 60L)) {
                 try {
                     pick = biome(biomes, "minecraft:sunflower_plains");
                 } catch (Throwable ignored) {
@@ -67,7 +67,7 @@ public final class LatitudeBiomes {
         }
 
         if (bandIndex == 2) {
-            if (isBiomeId(pick, "minecraft:dark_forest") && rollChance(blockX, blockZ, 0x51ED270B, 4000L)) {
+            if (isBiomeId(pick, "minecraft:dark_forest") && rollChance(blockX, blockZ, 0x51ED270B, 12000L)) {
                 try {
                     pick = biome(biomes, "minecraft:pale_garden");
                 } catch (Throwable ignored) {
@@ -90,7 +90,7 @@ public final class LatitudeBiomes {
 
     private static RegistryEntry<Biome> applyLandOverrides(Collection<RegistryEntry<Biome>> biomes, RegistryEntry<Biome> pick, int blockX, int blockZ, int bandIndex) {
         if (bandIndex == 1 || bandIndex == 2) {
-            if (isBiomeId(pick, "minecraft:plains") && rollChance(blockX, blockZ, 0x7F4A7C15, 25L)) {
+            if (isBiomeId(pick, "minecraft:plains") && rollChance(blockX, blockZ, 0x7F4A7C15, 60L)) {
                 RegistryEntry<Biome> entry = entryById(biomes, "minecraft:sunflower_plains");
                 if (entry != null) {
                     pick = entry;
@@ -99,7 +99,7 @@ public final class LatitudeBiomes {
         }
 
         if (bandIndex == 2) {
-            if (isBiomeId(pick, "minecraft:dark_forest") && rollChance(blockX, blockZ, 0x51ED270B, 4000L)) {
+            if (isBiomeId(pick, "minecraft:dark_forest") && rollChance(blockX, blockZ, 0x51ED270B, 12000L)) {
                 RegistryEntry<Biome> entry = entryById(biomes, "minecraft:pale_garden");
                 if (entry != null) {
                     pick = entry;
@@ -215,7 +215,7 @@ public final class LatitudeBiomes {
 
         int bandIndex = latitudeBandIndexWithBlend(blockX, blockZ, borderRadiusBlocks);
 
-        if (base.isIn(BiomeTags.IS_BEACH)) {
+        if (isBeachLike(base)) {
             return pickBeachForBand(biomes, base, blockX, blockZ, bandIndex);
         }
 
@@ -260,7 +260,7 @@ public final class LatitudeBiomes {
 
         int bandIndex = latitudeBandIndexWithBlend(blockX, blockZ, borderRadiusBlocks);
 
-        if (base.isIn(BiomeTags.IS_BEACH)) {
+        if (isBeachLike(base)) {
             return pickBeachForBand(biomes, base, blockX, blockZ, bandIndex);
         }
 
@@ -657,6 +657,18 @@ public final class LatitudeBiomes {
         Identifier target = Identifier.of(id);
         return entry.getKey()
                 .map(key -> key.getValue().equals(target))
+                .orElse(false);
+    }
+
+    private static boolean isBeachLike(RegistryEntry<Biome> biome) {
+        if (biome.isIn(BiomeTags.IS_BEACH)) {
+            return true;
+        }
+        return biome.getKey()
+                .map(key -> {
+                    String path = key.getValue().getPath();
+                    return path.contains("beach") || path.contains("shore");
+                })
                 .orElse(false);
     }
 
