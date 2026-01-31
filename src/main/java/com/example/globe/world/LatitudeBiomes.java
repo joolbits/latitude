@@ -119,6 +119,7 @@ public final class LatitudeBiomes {
     }
 
     private static final Logger LOGGER = LoggerFactory.getLogger("LatitudeBiomes");
+    private static boolean TAG_LOGGED = false;
 
     private static final TagKey<Biome> LAT_EQUATOR_PRIMARY = TagKey.of(RegistryKeys.BIOME, Identifier.of("globe", "lat_equator_primary"));
     private static final TagKey<Biome> LAT_EQUATOR_SECONDARY = TagKey.of(RegistryKeys.BIOME, Identifier.of("globe", "lat_equator_secondary"));
@@ -220,7 +221,7 @@ public final class LatitudeBiomes {
         }
 
         if (base.isIn(BiomeTags.IS_RIVER)) {
-            if (t >= 0.80) {
+            if (bandIndex >= 3) {
                 try {
                     return biome(biomes, "minecraft:frozen_river");
                 } catch (Throwable ignored) {
@@ -247,13 +248,16 @@ public final class LatitudeBiomes {
             case 3 -> pickFromWeightedTags(biomes, base, blockX, blockZ, 3, 0x3C43, LAT_SUBPOLAR_PRIMARY, LAT_SUBPOLAR_SECONDARY, LAT_SUBPOLAR_ACCENT);
             default -> pickFromWeightedTags(biomes, base, blockX, blockZ, 4, 0x4D54, LAT_POLAR_PRIMARY, LAT_POLAR_SECONDARY, LAT_POLAR_ACCENT);
         };
-        return applyLandOverrides(biomes, chosen, blockX, blockZ, bandIndex);
+        RegistryEntry<Biome> sanitized = sanitizeLandBiome(biomes, chosen, bandIndex);
+        return applyLandOverrides(biomes, sanitized, blockX, blockZ, bandIndex);
     }
 
     public static RegistryEntry<Biome> pick(Collection<RegistryEntry<Biome>> biomes, RegistryEntry<Biome> base, int blockX, int blockZ, int borderRadiusBlocks) {
         if (borderRadiusBlocks <= 0) {
             return base;
         }
+
+        logTagPools(biomes);
 
         int lat = Math.abs(blockZ);
         double t = (double) lat / (double) borderRadiusBlocks;
@@ -265,7 +269,7 @@ public final class LatitudeBiomes {
         }
 
         if (base.isIn(BiomeTags.IS_RIVER)) {
-            if (t >= 0.80) {
+            if (bandIndex >= 3) {
                 RegistryEntry<Biome> frozen = entryById(biomes, "minecraft:frozen_river");
                 return frozen != null ? frozen : base;
             }
@@ -285,7 +289,8 @@ public final class LatitudeBiomes {
             case 3 -> pickFromWeightedTags(biomes, base, blockX, blockZ, 3, 0x3C43, LAT_SUBPOLAR_PRIMARY, LAT_SUBPOLAR_SECONDARY, LAT_SUBPOLAR_ACCENT);
             default -> pickFromWeightedTags(biomes, base, blockX, blockZ, 4, 0x4D54, LAT_POLAR_PRIMARY, LAT_POLAR_SECONDARY, LAT_POLAR_ACCENT);
         };
-        return applyLandOverrides(biomes, chosen, blockX, blockZ, bandIndex);
+        RegistryEntry<Biome> sanitized = sanitizeLandBiome(biomes, chosen, bandIndex);
+        return applyLandOverrides(biomes, sanitized, blockX, blockZ, bandIndex);
     }
 
     private static RegistryEntry<Biome> pickTropicalGradient(Registry<Biome> biomes, RegistryEntry<Biome> base, int blockX, int blockZ, double t) {
@@ -658,6 +663,110 @@ public final class LatitudeBiomes {
         return entry.getKey()
                 .map(key -> key.getValue().equals(target))
                 .orElse(false);
+    }
+
+    private static RegistryEntry<Biome> sanitizeLandBiome(Registry<Biome> biomes, RegistryEntry<Biome> pick, int bandIndex) {
+        if (bandIndex == 1) {
+            if (isBiomeId(pick, "minecraft:plains")
+                    || isBiomeId(pick, "minecraft:forest")
+                    || isBiomeId(pick, "minecraft:birch_forest")
+                    || isBiomeId(pick, "minecraft:old_growth_birch_forest")
+                    || isBiomeId(pick, "minecraft:flower_forest")) {
+                try {
+                    return biome(biomes, "minecraft:jungle");
+                } catch (Throwable ignored) {
+                    return pick;
+                }
+            }
+        }
+
+        if (bandIndex == 3) {
+            if (isBiomeId(pick, "minecraft:plains")
+                    || isBiomeId(pick, "minecraft:forest")
+                    || isBiomeId(pick, "minecraft:birch_forest")
+                    || isBiomeId(pick, "minecraft:old_growth_birch_forest")
+                    || isBiomeId(pick, "minecraft:flower_forest")) {
+                try {
+                    return biome(biomes, "minecraft:snowy_plains");
+                } catch (Throwable ignored) {
+                    return pick;
+                }
+            }
+        }
+
+        if (bandIndex >= 4) {
+            String path = pick.getKey().map(key -> key.getValue().getPath()).orElse("");
+            if (path.contains("forest") || path.contains("taiga") || isBiomeId(pick, "minecraft:grove") || isBiomeId(pick, "minecraft:cherry_grove")) {
+                try {
+                    return biome(biomes, "minecraft:ice_spikes");
+                } catch (Throwable ignored) {
+                    return pick;
+                }
+            }
+        }
+
+        return pick;
+    }
+
+    private static RegistryEntry<Biome> sanitizeLandBiome(Collection<RegistryEntry<Biome>> biomes, RegistryEntry<Biome> pick, int bandIndex) {
+        if (bandIndex == 1) {
+            if (isBiomeId(pick, "minecraft:plains")
+                    || isBiomeId(pick, "minecraft:forest")
+                    || isBiomeId(pick, "minecraft:birch_forest")
+                    || isBiomeId(pick, "minecraft:old_growth_birch_forest")
+                    || isBiomeId(pick, "minecraft:flower_forest")) {
+                RegistryEntry<Biome> entry = entryById(biomes, "minecraft:jungle");
+                return entry != null ? entry : pick;
+            }
+        }
+
+        if (bandIndex == 3) {
+            if (isBiomeId(pick, "minecraft:plains")
+                    || isBiomeId(pick, "minecraft:forest")
+                    || isBiomeId(pick, "minecraft:birch_forest")
+                    || isBiomeId(pick, "minecraft:old_growth_birch_forest")
+                    || isBiomeId(pick, "minecraft:flower_forest")) {
+                RegistryEntry<Biome> entry = entryById(biomes, "minecraft:snowy_plains");
+                return entry != null ? entry : pick;
+            }
+        }
+
+        if (bandIndex >= 4) {
+            String path = pick.getKey().map(key -> key.getValue().getPath()).orElse("");
+            if (path.contains("forest") || path.contains("taiga") || isBiomeId(pick, "minecraft:grove") || isBiomeId(pick, "minecraft:cherry_grove")) {
+                RegistryEntry<Biome> entry = entryById(biomes, "minecraft:ice_spikes");
+                return entry != null ? entry : pick;
+            }
+        }
+
+        return pick;
+    }
+
+    private static void logTagPools(Collection<RegistryEntry<Biome>> biomes) {
+        if (TAG_LOGGED) return;
+        TAG_LOGGED = true;
+
+        logTagPool(biomes, LAT_EQUATOR_PRIMARY);
+        logTagPool(biomes, LAT_EQUATOR_SECONDARY);
+        logTagPool(biomes, LAT_EQUATOR_ACCENT);
+        logTagPool(biomes, LAT_SUBPOLAR_PRIMARY);
+        logTagPool(biomes, LAT_SUBPOLAR_SECONDARY);
+        logTagPool(biomes, LAT_SUBPOLAR_ACCENT);
+        logTagPool(biomes, LAT_POLAR_PRIMARY);
+        logTagPool(biomes, LAT_POLAR_SECONDARY);
+        logTagPool(biomes, LAT_POLAR_ACCENT);
+    }
+
+    private static void logTagPool(Collection<RegistryEntry<Biome>> biomes, TagKey<Biome> tag) {
+        List<RegistryEntry<Biome>> entries = entriesForTag(biomes, tag);
+        int size = entries.size();
+        StringBuilder sample = new StringBuilder();
+        for (int i = 0; i < Math.min(10, size); i++) {
+            String key = entries.get(i).getKey().map(k -> k.getValue().toString()).orElse("?");
+            if (i > 0) sample.append(", ");
+            sample.append(key);
+        }
+        LOGGER.info("Tag {} size={} [{}]", tag.id(), size, sample);
     }
 
     private static boolean isBeachLike(RegistryEntry<Biome> biome) {
