@@ -87,16 +87,37 @@ public final class LatitudeBiomes {
 
     private static final Logger LOGGER = LoggerFactory.getLogger("LatitudeBiomes");
 
-    private static final TagKey<Biome> LAT_EQUATOR = TagKey.of(RegistryKeys.BIOME, Identifier.of("globe", "lat_equator"));
-    private static final TagKey<Biome> LAT_TROPICAL = TagKey.of(RegistryKeys.BIOME, Identifier.of("globe", "lat_tropical"));
-    private static final TagKey<Biome> LAT_TEMPERATE = TagKey.of(RegistryKeys.BIOME, Identifier.of("globe", "lat_temperate"));
-    private static final TagKey<Biome> LAT_SUBPOLAR = TagKey.of(RegistryKeys.BIOME, Identifier.of("globe", "lat_subpolar"));
-    private static final TagKey<Biome> LAT_POLAR = TagKey.of(RegistryKeys.BIOME, Identifier.of("globe", "lat_polar"));
+    private static final TagKey<Biome> LAT_EQUATOR_PRIMARY = TagKey.of(RegistryKeys.BIOME, Identifier.of("globe", "lat_equator_primary"));
+    private static final TagKey<Biome> LAT_EQUATOR_SECONDARY = TagKey.of(RegistryKeys.BIOME, Identifier.of("globe", "lat_equator_secondary"));
+    private static final TagKey<Biome> LAT_EQUATOR_ACCENT = TagKey.of(RegistryKeys.BIOME, Identifier.of("globe", "lat_equator_accent"));
 
-    private static final TagKey<Biome> LAT_ARID = TagKey.of(RegistryKeys.BIOME, Identifier.of("globe", "lat_arid"));
-    private static final TagKey<Biome> LAT_TROPICS = TagKey.of(RegistryKeys.BIOME, Identifier.of("globe", "lat_tropics"));
-    private static final TagKey<Biome> LAT_TRANS_ARID_TROPICS_1 = TagKey.of(RegistryKeys.BIOME, Identifier.of("globe", "lat_trans_arid_tropics_1"));
-    private static final TagKey<Biome> LAT_TRANS_ARID_TROPICS_2 = TagKey.of(RegistryKeys.BIOME, Identifier.of("globe", "lat_trans_arid_tropics_2"));
+    private static final TagKey<Biome> LAT_TROPICS_PRIMARY = TagKey.of(RegistryKeys.BIOME, Identifier.of("globe", "lat_tropics_primary"));
+    private static final TagKey<Biome> LAT_TROPICS_SECONDARY = TagKey.of(RegistryKeys.BIOME, Identifier.of("globe", "lat_tropics_secondary"));
+    private static final TagKey<Biome> LAT_TROPICS_ACCENT = TagKey.of(RegistryKeys.BIOME, Identifier.of("globe", "lat_tropics_accent"));
+
+    private static final TagKey<Biome> LAT_ARID_PRIMARY = TagKey.of(RegistryKeys.BIOME, Identifier.of("globe", "lat_arid_primary"));
+    private static final TagKey<Biome> LAT_ARID_SECONDARY = TagKey.of(RegistryKeys.BIOME, Identifier.of("globe", "lat_arid_secondary"));
+    private static final TagKey<Biome> LAT_ARID_ACCENT = TagKey.of(RegistryKeys.BIOME, Identifier.of("globe", "lat_arid_accent"));
+
+    private static final TagKey<Biome> LAT_TRANS_ARID_TROPICS_1_PRIMARY = TagKey.of(RegistryKeys.BIOME, Identifier.of("globe", "lat_trans_arid_tropics_1_primary"));
+    private static final TagKey<Biome> LAT_TRANS_ARID_TROPICS_1_SECONDARY = TagKey.of(RegistryKeys.BIOME, Identifier.of("globe", "lat_trans_arid_tropics_1_secondary"));
+    private static final TagKey<Biome> LAT_TRANS_ARID_TROPICS_1_ACCENT = TagKey.of(RegistryKeys.BIOME, Identifier.of("globe", "lat_trans_arid_tropics_1_accent"));
+
+    private static final TagKey<Biome> LAT_TRANS_ARID_TROPICS_2_PRIMARY = TagKey.of(RegistryKeys.BIOME, Identifier.of("globe", "lat_trans_arid_tropics_2_primary"));
+    private static final TagKey<Biome> LAT_TRANS_ARID_TROPICS_2_SECONDARY = TagKey.of(RegistryKeys.BIOME, Identifier.of("globe", "lat_trans_arid_tropics_2_secondary"));
+    private static final TagKey<Biome> LAT_TRANS_ARID_TROPICS_2_ACCENT = TagKey.of(RegistryKeys.BIOME, Identifier.of("globe", "lat_trans_arid_tropics_2_accent"));
+
+    private static final TagKey<Biome> LAT_TEMPERATE_PRIMARY = TagKey.of(RegistryKeys.BIOME, Identifier.of("globe", "lat_temperate_primary"));
+    private static final TagKey<Biome> LAT_TEMPERATE_SECONDARY = TagKey.of(RegistryKeys.BIOME, Identifier.of("globe", "lat_temperate_secondary"));
+    private static final TagKey<Biome> LAT_TEMPERATE_ACCENT = TagKey.of(RegistryKeys.BIOME, Identifier.of("globe", "lat_temperate_accent"));
+
+    private static final TagKey<Biome> LAT_SUBPOLAR_PRIMARY = TagKey.of(RegistryKeys.BIOME, Identifier.of("globe", "lat_subpolar_primary"));
+    private static final TagKey<Biome> LAT_SUBPOLAR_SECONDARY = TagKey.of(RegistryKeys.BIOME, Identifier.of("globe", "lat_subpolar_secondary"));
+    private static final TagKey<Biome> LAT_SUBPOLAR_ACCENT = TagKey.of(RegistryKeys.BIOME, Identifier.of("globe", "lat_subpolar_accent"));
+
+    private static final TagKey<Biome> LAT_POLAR_PRIMARY = TagKey.of(RegistryKeys.BIOME, Identifier.of("globe", "lat_polar_primary"));
+    private static final TagKey<Biome> LAT_POLAR_SECONDARY = TagKey.of(RegistryKeys.BIOME, Identifier.of("globe", "lat_polar_secondary"));
+    private static final TagKey<Biome> LAT_POLAR_ACCENT = TagKey.of(RegistryKeys.BIOME, Identifier.of("globe", "lat_polar_accent"));
 
     private static final TagKey<Biome> LAT_OCEAN_TROPICAL = TagKey.of(RegistryKeys.BIOME, Identifier.of("globe", "lat_ocean_tropical"));
     private static final TagKey<Biome> LAT_OCEAN_TEMPERATE = TagKey.of(RegistryKeys.BIOME, Identifier.of("globe", "lat_ocean_temperate"));
@@ -189,10 +210,10 @@ public final class LatitudeBiomes {
 
         RegistryEntry<Biome> chosen = switch (bandIndex) {
             case 0 -> pickTropicalGradient(biomes, base, blockX, blockZ, t);
-            case 1 -> pickFromLandTagOrBase(biomes, LAT_EQUATOR, base, blockX, blockZ, 1);
-            case 2 -> pickFromLandTagOrBase(biomes, LAT_TEMPERATE, base, blockX, blockZ, 2);
-            case 3 -> pickFromLandTagOrBase(biomes, LAT_SUBPOLAR, base, blockX, blockZ, 3);
-            default -> pickFromLandTagOrBase(biomes, LAT_POLAR, base, blockX, blockZ, 4);
+            case 1 -> pickFromWeightedTags(biomes, base, blockX, blockZ, 1, 0x1A21, LAT_EQUATOR_PRIMARY, LAT_EQUATOR_SECONDARY, LAT_EQUATOR_ACCENT);
+            case 2 -> pickFromWeightedTags(biomes, base, blockX, blockZ, 2, 0x2B32, LAT_TEMPERATE_PRIMARY, LAT_TEMPERATE_SECONDARY, LAT_TEMPERATE_ACCENT);
+            case 3 -> pickFromWeightedTags(biomes, base, blockX, blockZ, 3, 0x3C43, LAT_SUBPOLAR_PRIMARY, LAT_SUBPOLAR_SECONDARY, LAT_SUBPOLAR_ACCENT);
+            default -> pickFromWeightedTags(biomes, base, blockX, blockZ, 4, 0x4D54, LAT_POLAR_PRIMARY, LAT_POLAR_SECONDARY, LAT_POLAR_ACCENT);
         };
         return applyLandOverrides(biomes, chosen, blockX, blockZ, bandIndex);
     }
@@ -228,10 +249,10 @@ public final class LatitudeBiomes {
 
         RegistryEntry<Biome> chosen = switch (bandIndex) {
             case 0 -> pickTropicalGradient(biomes, base, blockX, blockZ, t);
-            case 1 -> pickFromLandTagOrBase(biomes, LAT_EQUATOR, base, blockX, blockZ, 1);
-            case 2 -> pickFromLandTagOrBase(biomes, LAT_TEMPERATE, base, blockX, blockZ, 2);
-            case 3 -> pickFromLandTagOrBase(biomes, LAT_SUBPOLAR, base, blockX, blockZ, 3);
-            default -> pickFromLandTagOrBase(biomes, LAT_POLAR, base, blockX, blockZ, 4);
+            case 1 -> pickFromWeightedTags(biomes, base, blockX, blockZ, 1, 0x1A21, LAT_EQUATOR_PRIMARY, LAT_EQUATOR_SECONDARY, LAT_EQUATOR_ACCENT);
+            case 2 -> pickFromWeightedTags(biomes, base, blockX, blockZ, 2, 0x2B32, LAT_TEMPERATE_PRIMARY, LAT_TEMPERATE_SECONDARY, LAT_TEMPERATE_ACCENT);
+            case 3 -> pickFromWeightedTags(biomes, base, blockX, blockZ, 3, 0x3C43, LAT_SUBPOLAR_PRIMARY, LAT_SUBPOLAR_SECONDARY, LAT_SUBPOLAR_ACCENT);
+            default -> pickFromWeightedTags(biomes, base, blockX, blockZ, 4, 0x4D54, LAT_POLAR_PRIMARY, LAT_POLAR_SECONDARY, LAT_POLAR_ACCENT);
         };
         return applyLandOverrides(biomes, chosen, blockX, blockZ, bandIndex);
     }
@@ -253,14 +274,16 @@ public final class LatitudeBiomes {
 
         int step = clampInt((int) Math.floor(tJitter * 4.0), 0, 3);
 
-        TagKey<Biome> chosen = switch (step) {
-            case 1 -> LAT_TRANS_ARID_TROPICS_1;
-            case 2 -> LAT_TRANS_ARID_TROPICS_2;
-            case 3 -> LAT_TROPICS;
-            default -> LAT_ARID;
+        return switch (step) {
+            case 1 -> pickFromWeightedTags(biomes, base, blockX, blockZ, 101, 0x7A11,
+                    LAT_TRANS_ARID_TROPICS_1_PRIMARY, LAT_TRANS_ARID_TROPICS_1_SECONDARY, LAT_TRANS_ARID_TROPICS_1_ACCENT);
+            case 2 -> pickFromWeightedTags(biomes, base, blockX, blockZ, 102, 0x7A22,
+                    LAT_TRANS_ARID_TROPICS_2_PRIMARY, LAT_TRANS_ARID_TROPICS_2_SECONDARY, LAT_TRANS_ARID_TROPICS_2_ACCENT);
+            case 3 -> pickFromWeightedTags(biomes, base, blockX, blockZ, 103, 0x7A33,
+                    LAT_TROPICS_PRIMARY, LAT_TROPICS_SECONDARY, LAT_TROPICS_ACCENT);
+            default -> pickFromWeightedTags(biomes, base, blockX, blockZ, 100, 0x7A00,
+                    LAT_ARID_PRIMARY, LAT_ARID_SECONDARY, LAT_ARID_ACCENT);
         };
-
-        return pickFromTagNoiseOrBase(biomes, chosen, base, blockX, blockZ, 100 + step);
     }
 
     private static RegistryEntry<Biome> pickTropicalGradient(Collection<RegistryEntry<Biome>> biomes, RegistryEntry<Biome> base, int blockX, int blockZ, double t) {
@@ -280,14 +303,16 @@ public final class LatitudeBiomes {
 
         int step = clampInt((int) Math.floor(tJitter * 4.0), 0, 3);
 
-        TagKey<Biome> chosen = switch (step) {
-            case 1 -> LAT_TRANS_ARID_TROPICS_1;
-            case 2 -> LAT_TRANS_ARID_TROPICS_2;
-            case 3 -> LAT_TROPICS;
-            default -> LAT_ARID;
+        return switch (step) {
+            case 1 -> pickFromWeightedTags(biomes, base, blockX, blockZ, 101, 0x7A11,
+                    LAT_TRANS_ARID_TROPICS_1_PRIMARY, LAT_TRANS_ARID_TROPICS_1_SECONDARY, LAT_TRANS_ARID_TROPICS_1_ACCENT);
+            case 2 -> pickFromWeightedTags(biomes, base, blockX, blockZ, 102, 0x7A22,
+                    LAT_TRANS_ARID_TROPICS_2_PRIMARY, LAT_TRANS_ARID_TROPICS_2_SECONDARY, LAT_TRANS_ARID_TROPICS_2_ACCENT);
+            case 3 -> pickFromWeightedTags(biomes, base, blockX, blockZ, 103, 0x7A33,
+                    LAT_TROPICS_PRIMARY, LAT_TROPICS_SECONDARY, LAT_TROPICS_ACCENT);
+            default -> pickFromWeightedTags(biomes, base, blockX, blockZ, 100, 0x7A00,
+                    LAT_ARID_PRIMARY, LAT_ARID_SECONDARY, LAT_ARID_ACCENT);
         };
-
-        return pickFromTagNoiseOrBase(biomes, chosen, base, blockX, blockZ, 100 + step);
     }
 
     private static RegistryEntry<Biome> oceanByLatitudeBandOrBase(Registry<Biome> biomes, RegistryEntry<Biome> base, int blockX, int blockZ, int bandIndex) {
@@ -490,48 +515,33 @@ public final class LatitudeBiomes {
         return biome(biomes, options[idx]);
     }
 
-    private static RegistryEntry<Biome> pickFromLandTagOrBase(Registry<Biome> biomes, TagKey<Biome> tag, RegistryEntry<Biome> base, int blockX, int blockZ, int bandIndex) {
-        List<RegistryEntry<Biome>> entries = new ArrayList<>();
-        for (RegistryEntry<Biome> entry : biomes.iterateEntries(tag)) {
-            entries.add(entry);
-        }
-
-        entries.sort(Comparator.comparing(entry -> entry.getKey()
-                .map(key -> key.getValue().toString())
-                .orElse("")));
-
-        int size = entries.size();
-        if (size <= 0) {
-            return base;
-        }
-
-        int scaleBlocks = 2048;
-        long seed = 0L;
-        long salted = seed ^ (0x9E3779B97F4A7C15L * (long) bandIndex);
-        double n = ValueNoise2D.sampleBlocks(salted, blockX, blockZ, scaleBlocks);
-        int idx = (int) Math.floor(n * (double) size);
-        if (idx >= size) {
-            idx = size - 1;
-        }
-        return entries.get(idx);
+    private static TagKey<Biome> weightedTagForRoll(int roll, TagKey<Biome> primary, TagKey<Biome> secondary, TagKey<Biome> accent) {
+        if (roll < 70) return primary;
+        if (roll < 95) return secondary;
+        return accent;
     }
 
-    private static RegistryEntry<Biome> pickFromLandTagOrBase(Collection<RegistryEntry<Biome>> biomes, TagKey<Biome> tag, RegistryEntry<Biome> base, int blockX, int blockZ, int bandIndex) {
-        List<RegistryEntry<Biome>> entries = entriesForTag(biomes, tag);
-        int size = entries.size();
-        if (size <= 0) {
-            return base;
-        }
+    private static int weightedRoll(int blockX, int blockZ, int salt) {
+        int cellX = Math.floorDiv(blockX, VARIANT_CELL_SIZE_BLOCKS);
+        int cellZ = Math.floorDiv(blockZ, VARIANT_CELL_SIZE_BLOCKS);
+        long roll = hash64(cellX, cellZ, salt);
+        return (int) Long.remainderUnsigned(roll, 100L);
+    }
 
-        int scaleBlocks = 2048;
-        long seed = 0L;
-        long salted = seed ^ (0x9E3779B97F4A7C15L * (long) bandIndex);
-        double n = ValueNoise2D.sampleBlocks(salted, blockX, blockZ, scaleBlocks);
-        int idx = (int) Math.floor(n * (double) size);
-        if (idx >= size) {
-            idx = size - 1;
-        }
-        return entries.get(idx);
+    private static RegistryEntry<Biome> pickFromWeightedTags(Registry<Biome> biomes, RegistryEntry<Biome> base, int blockX, int blockZ,
+                                                             int bandIndex, int weightSalt,
+                                                             TagKey<Biome> primary, TagKey<Biome> secondary, TagKey<Biome> accent) {
+        int roll = weightedRoll(blockX, blockZ, weightSalt);
+        TagKey<Biome> tag = weightedTagForRoll(roll, primary, secondary, accent);
+        return pickFromTagNoiseOrBase(biomes, tag, base, blockX, blockZ, bandIndex);
+    }
+
+    private static RegistryEntry<Biome> pickFromWeightedTags(Collection<RegistryEntry<Biome>> biomes, RegistryEntry<Biome> base, int blockX, int blockZ,
+                                                             int bandIndex, int weightSalt,
+                                                             TagKey<Biome> primary, TagKey<Biome> secondary, TagKey<Biome> accent) {
+        int roll = weightedRoll(blockX, blockZ, weightSalt);
+        TagKey<Biome> tag = weightedTagForRoll(roll, primary, secondary, accent);
+        return pickFromTagNoiseOrBase(biomes, tag, base, blockX, blockZ, bandIndex);
     }
 
     private static RegistryEntry<Biome> pickFromTagNoiseOrFallback(Collection<RegistryEntry<Biome>> biomes, RegistryEntry<Biome> base, TagKey<Biome> tag, int blockX, int blockZ, int bandIndex, String... fallbackOptions) {
