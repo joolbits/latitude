@@ -24,7 +24,7 @@ public final class LatitudeBiomes {
 
     private static RegistryEntry<Biome> applyLandOverrides(Registry<Biome> biomes, RegistryEntry<Biome> pick, int blockX, int blockZ, int bandIndex) {
         if (bandIndex == 1 || bandIndex == 2) {
-            if (isBiomeId(pick, "minecraft:plains") && rollChance(blockX, blockZ, 0x7F4A7C15, 20L)) {
+            if (isBiomeId(pick, "minecraft:plains") && rollChance(blockX, blockZ, 0x7F4A7C15, 25L)) {
                 try {
                     pick = biome(biomes, "minecraft:sunflower_plains");
                 } catch (Throwable ignored) {
@@ -34,7 +34,7 @@ public final class LatitudeBiomes {
         }
 
         if (bandIndex == 2) {
-            if (isBiomeId(pick, "minecraft:dark_forest") && rollChance(blockX, blockZ, 0x51ED270B, 2000L)) {
+            if (isBiomeId(pick, "minecraft:dark_forest") && rollChance(blockX, blockZ, 0x51ED270B, 4000L)) {
                 try {
                     pick = biome(biomes, "minecraft:pale_garden");
                 } catch (Throwable ignored) {
@@ -57,7 +57,7 @@ public final class LatitudeBiomes {
 
     private static RegistryEntry<Biome> applyLandOverrides(Collection<RegistryEntry<Biome>> biomes, RegistryEntry<Biome> pick, int blockX, int blockZ, int bandIndex) {
         if (bandIndex == 1 || bandIndex == 2) {
-            if (isBiomeId(pick, "minecraft:plains") && rollChance(blockX, blockZ, 0x7F4A7C15, 20L)) {
+            if (isBiomeId(pick, "minecraft:plains") && rollChance(blockX, blockZ, 0x7F4A7C15, 25L)) {
                 RegistryEntry<Biome> entry = entryById(biomes, "minecraft:sunflower_plains");
                 if (entry != null) {
                     pick = entry;
@@ -66,7 +66,7 @@ public final class LatitudeBiomes {
         }
 
         if (bandIndex == 2) {
-            if (isBiomeId(pick, "minecraft:dark_forest") && rollChance(blockX, blockZ, 0x51ED270B, 2000L)) {
+            if (isBiomeId(pick, "minecraft:dark_forest") && rollChance(blockX, blockZ, 0x51ED270B, 4000L)) {
                 RegistryEntry<Biome> entry = entryById(biomes, "minecraft:pale_garden");
                 if (entry != null) {
                     pick = entry;
