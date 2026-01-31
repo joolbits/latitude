@@ -152,7 +152,7 @@ public final class LatitudeBiomes {
 
     private static final String MANGROVE_ID = "minecraft:mangrove_swamp";
     private static final int MANGROVE_PATCH_CELL_BLOCKS = 1024;
-    private static final int MANGROVE_PATCH_PERCENT = 35;
+    private static final int MANGROVE_PATCH_PERCENT = 20;
     private static final int MANGROVE_PATCH_SALT = 0x2F7A3B1C;
     private static final long MANGROVE_FALLBACK_SALT = 0x6D2B79F5L;
 
@@ -204,6 +204,8 @@ public final class LatitudeBiomes {
     private static final int VARIANT_CELL_SIZE_BLOCKS = 1024;
     private static final int BLEND_TRANSITION_WIDTH_BLOCKS = 768;
     private static final int BLEND_DITHER_SCALE_BLOCKS = 512;
+    private static final int BLEND_NOISE_PATCH_CHUNKS = 6;
+    private static final int WARP_NOISE_PATCH_CHUNKS = 8;
     private static final int JITTER_AMPLITUDE_BLOCKS = 128;
     private static final int JITTER_SCALE_BLOCKS = 3072;
     private static final int DITHER_SCALE_BLOCKS = 144;
@@ -211,6 +213,7 @@ public final class LatitudeBiomes {
     private static final int WARP_SCALE_BLOCKS = 4096;
     private static final long JITTER_NOISE_SALT = -6795153568590067944L;
     private static final long DITHER_NOISE_SALT = 1161981756646125696L;
+    private static final long BLEND_NOISE_SALT = 0x53EED5EEDL;
     private static final long WARP_NOISE_SALT = 0x5A7A5EED0F00D123L;
     private static final long TROPICAL_DITHER_SALT = 0x5EEDBEEF5EEDBEEFL;
 
@@ -618,84 +621,48 @@ public final class LatitudeBiomes {
             }
         }
 
-        if (TRANSITION_MODE == TransitionMode.SMOOTH_WARP) {
-            double halfWidthBlocks = BLEND_TRANSITION_WIDTH_BLOCKS * 0.5;
-            if (!(halfWidthBlocks > 0.0)) {
-                return bandIndex;
-            }
-
-            long warpSeed = WORLD_SEED ^ WARP_NOISE_SALT;
-            double warpNoise = (ValueNoise2D.sampleBlocks(warpSeed, blockX, blockZ, WARP_SCALE_BLOCKS) * 2.0) - 1.0;
-            double boundaryWarp = warpNoise * WARP_AMPLITUDE_BLOCKS;
-            double effectiveBoundary = boundaryBlocks + boundaryWarp;
-            double delta = absZ - effectiveBoundary;
-            if (Math.abs(delta) > halfWidthBlocks) {
-                return bandIndex;
-            }
-
-            int chosenBandIndex = delta < 0.0 ? lowerBandIndex : upperBandIndex;
-
-            if (DEBUG_BLEND
-                    && (blockX & 15) == 0
-                    && (blockZ & 15) == 0
-                    && chosenBandIndex != bandIndex
-                    && BLEND_DEBUG_COUNT.incrementAndGet() <= DEBUG_LIMIT) {
-                LOGGER.info("[LAT_BLEND] mode={} x={} z={} lat={} baseBand={} lower={} upper={} chosen={} boundary={} effectiveBoundary={} delta={} transitionWidth={} warpAmp={} warpScale={}",
-                        TRANSITION_MODE,
-                        blockX,
-                        blockZ,
-                        absZ,
-                        bandIndex,
-                        lowerBandIndex,
-                        upperBandIndex,
-                        chosenBandIndex,
-                        boundaryBlocks,
-                        String.format(java.util.Locale.ROOT, "%.2f", effectiveBoundary),
-                        String.format(java.util.Locale.ROOT, "%.2f", delta),
-                        BLEND_TRANSITION_WIDTH_BLOCKS,
-                        WARP_AMPLITUDE_BLOCKS,
-                        WARP_SCALE_BLOCKS);
-            }
-
-            return chosenBandIndex;
-        }
-
         double halfWidthBlocks = BLEND_TRANSITION_WIDTH_BLOCKS * 0.5;
         if (!(halfWidthBlocks > 0.0)) {
             return bandIndex;
         }
 
-        long jitterSeed = WORLD_SEED ^ JITTER_NOISE_SALT;
-        long ditherSeed = WORLD_SEED ^ DITHER_NOISE_SALT;
-        double jitterNoise = (ValueNoise2D.sampleBlocks(jitterSeed, blockX, blockZ, JITTER_SCALE_BLOCKS) * 2.0) - 1.0;
-        double boundaryJitter = jitterNoise * JITTER_AMPLITUDE_BLOCKS;
-        double effectiveBoundary = boundaryBlocks + boundaryJitter;
+        long warpSeed = WORLD_SEED ^ WARP_NOISE_SALT;
+        double warpNoise = (blobNoise01(warpSeed, blockX >> 4, blockZ >> 4, WARP_NOISE_PATCH_CHUNKS, WARP_NOISE_SALT) * 2.0) - 1.0;
+        double maxWarp = Math.min(WARP_AMPLITUDE_BLOCKS, halfWidthBlocks);
+        double boundaryWarp = warpNoise * maxWarp;
+        double effectiveBoundary = boundaryBlocks + boundaryWarp;
 
         double delta = absZ - effectiveBoundary;
         if (Math.abs(delta) > halfWidthBlocks) {
-            return delta < 0.0 ? lowerBandIndex : upperBandIndex;
+            return bandIndex;
         }
 
         double blendT = (delta + halfWidthBlocks) / (2.0 * halfWidthBlocks);
         blendT = clamp(blendT, 0.0, 1.0);
         blendT = smoothstep(blendT);
-        int cellSize = BLEND_DITHER_SCALE_BLOCKS;
-        int cellX = Math.floorDiv(blockX, cellSize);
-        int cellZ = Math.floorDiv(blockZ, cellSize);
-        double ditherNoise = cellHash01(ditherSeed, cellX, cellZ);
-        int chosenBandIndex = ditherNoise < blendT ? upperBandIndex : lowerBandIndex;
+
+        double blendNoise;
+        if (TRANSITION_MODE == TransitionMode.CELLHASH_PATCHES) {
+            long ditherSeed = WORLD_SEED ^ DITHER_NOISE_SALT;
+            int cellSize = BLEND_DITHER_SCALE_BLOCKS;
+            int cellX = Math.floorDiv(blockX, cellSize);
+            int cellZ = Math.floorDiv(blockZ, cellSize);
+            blendNoise = cellHash01(ditherSeed, cellX, cellZ);
+        } else {
+            blendNoise = blobNoise01(WORLD_SEED, blockX >> 4, blockZ >> 4, BLEND_NOISE_PATCH_CHUNKS, BLEND_NOISE_SALT);
+        }
+
+        int chosenBandIndex = blendNoise < blendT ? upperBandIndex : lowerBandIndex;
 
         if (DEBUG_BLEND
                 && (blockX & 15) == 0
                 && (blockZ & 15) == 0
                 && chosenBandIndex != bandIndex
                 && BLEND_DEBUG_COUNT.incrementAndGet() <= DEBUG_LIMIT) {
-            LOGGER.info("[LAT_BLEND] mode={} x={} z={} cellX={} cellZ={} lat={} baseBand={} lower={} upper={} chosen={} boundary={} effectiveBoundary={} delta={} transitionWidth={} jitterAmp={} jitterScale={} ditherScale={} t={} noise={}",
+            LOGGER.info("[LAT_BLEND] mode={} x={} z={} lat={} baseBand={} lower={} upper={} chosen={} boundary={} effectiveBoundary={} delta={} transitionWidth={} warpAmp={} warpPatchChunks={} blendPatchChunks={} t={} noise={}",
                     TRANSITION_MODE,
                     blockX,
                     blockZ,
-                    cellX,
-                    cellZ,
                     absZ,
                     bandIndex,
                     lowerBandIndex,
@@ -705,11 +672,11 @@ public final class LatitudeBiomes {
                     String.format(java.util.Locale.ROOT, "%.2f", effectiveBoundary),
                     String.format(java.util.Locale.ROOT, "%.2f", delta),
                     BLEND_TRANSITION_WIDTH_BLOCKS,
-                    JITTER_AMPLITUDE_BLOCKS,
-                    JITTER_SCALE_BLOCKS,
-                    BLEND_DITHER_SCALE_BLOCKS,
+                    maxWarp,
+                    WARP_NOISE_PATCH_CHUNKS,
+                    BLEND_NOISE_PATCH_CHUNKS,
                     String.format(java.util.Locale.ROOT, "%.3f", blendT),
-                    String.format(java.util.Locale.ROOT, "%.3f", ditherNoise));
+                    String.format(java.util.Locale.ROOT, "%.3f", blendNoise));
         }
 
         return chosenBandIndex;
@@ -759,10 +726,12 @@ public final class LatitudeBiomes {
     }
 
     private static int weightedRoll(int blockX, int blockZ, int salt) {
-        int cellX = Math.floorDiv(blockX, VARIANT_CELL_SIZE_BLOCKS);
-        int cellZ = Math.floorDiv(blockZ, VARIANT_CELL_SIZE_BLOCKS);
-        long roll = hash64(cellX, cellZ, salt);
-        return (int) Long.remainderUnsigned(roll, 100L);
+        int chunkX = blockX >> 4;
+        int chunkZ = blockZ >> 4;
+        int patchSizeChunks = Math.max(1, VARIANT_CELL_SIZE_BLOCKS >> 4);
+        double blob = blobNoise01(WORLD_SEED, chunkX, chunkZ, patchSizeChunks, salt);
+        int roll = (int) Math.floor(blob * 100.0);
+        return clampInt(roll, 0, 99);
     }
 
     private static RegistryEntry<Biome> pickFromWeightedTags(Registry<Biome> biomes, RegistryEntry<Biome> base, int blockX, int blockZ,
@@ -1000,9 +969,9 @@ public final class LatitudeBiomes {
         double cont = MultiNoiseUtil.toFloat(point.continentalnessNoise());
         double erosion = MultiNoiseUtil.toFloat(point.erosionNoise());
         double weirdness = MultiNoiseUtil.toFloat(point.weirdnessNoise());
-        boolean lowland = cont < 0.25;
-        boolean notRugged = erosion > -0.10;
-        boolean notPeaks = Math.abs(weirdness) < 0.25;
+        boolean lowland = cont < 0.12;
+        boolean notRugged = erosion > 0.0;
+        boolean notPeaks = Math.abs(weirdness) < 0.15;
         boolean suitable = lowland && notRugged && notPeaks;
         boolean patch = allowMangrovePatch(blockX, blockZ);
         return new MangroveDecision(suitable && patch, cont, erosion, weirdness, suitable, patch);
