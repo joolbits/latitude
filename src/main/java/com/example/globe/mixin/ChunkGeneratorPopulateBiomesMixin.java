@@ -170,7 +170,7 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
             // IMPORTANT: force Y=0. Passing quartY reintroduces warm_ocean-on-land + harsh seams/infinite plains
             // because the base biome becomes height-dependent during population.
             RegistryEntry<Biome> base = originalSupplier.getBiome(x, 0, z, sampler);
-            return LatitudeBiomes.pick(biomes, base, blockX, blockZ, borderRadiusBlocks);
+            return LatitudeBiomes.pick(biomes, base, blockX, blockZ, borderRadiusBlocks, sampler);
         };
 
         chunk.populateBiomes(wrapped, sampler);
