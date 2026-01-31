@@ -45,6 +45,9 @@ public abstract class ChunkGeneratorBiomeSourceMixin {
     @Mutable
     private BiomeSource biomeSource;
 
+    @org.spongepowered.asm.mixin.Unique
+    private BiomeSource globe$wrappedBiomeSource;
+
     @Inject(method = "<init>(Lnet/minecraft/world/biome/source/BiomeSource;)V", at = @At("TAIL"), require = 0)
     private void globe$wrapBiomeSource(BiomeSource biomeSource, CallbackInfo ci) {
         globe$maybeWrapBiomeSource();
@@ -55,13 +58,17 @@ public abstract class ChunkGeneratorBiomeSourceMixin {
         globe$maybeWrapBiomeSource();
     }
 
-    @Inject(method = "getBiomeSource", at = @At("HEAD"))
-    private void globe$wrapBiomeSourceOnDemand(CallbackInfoReturnable<BiomeSource> cir) {
+    @Inject(method = "getBiomeSource", at = @At("HEAD"), cancellable = true)
+    private void globe$returnWrappedBiomeSource(CallbackInfoReturnable<BiomeSource> cir) {
         globe$maybeWrapBiomeSource();
+        if (this.globe$wrappedBiomeSource != null) {
+            cir.setReturnValue(this.globe$wrappedBiomeSource);
+            cir.cancel();
+        }
     }
 
     private void globe$maybeWrapBiomeSource() {
-        if (this.biomeSource instanceof LatitudeBiomeSource) {
+        if (this.biomeSource instanceof LatitudeBiomeSource || this.globe$wrappedBiomeSource instanceof LatitudeBiomeSource) {
             return;
         }
         if (!((Object) this instanceof NoiseChunkGenerator)) {
@@ -73,7 +80,7 @@ public abstract class ChunkGeneratorBiomeSourceMixin {
         java.util.Collection<net.minecraft.registry.entry.RegistryEntry<Biome>> biomes = this.biomeSource.getBiomes();
         int borderRadiusBlocks = globe$borderRadiusBlocks();
         // Ensure structure placement and surface rules see the same Latitude biome override as terrain.
-        this.biomeSource = new LatitudeBiomeSource(this.biomeSource, biomes, borderRadiusBlocks);
+        this.globe$wrappedBiomeSource = new LatitudeBiomeSource(this.biomeSource, biomes, borderRadiusBlocks);
         GlobeMod.LOGGER.info("Latitude: wrapped ChunkGenerator biomeSource (post-init)");
     }
 

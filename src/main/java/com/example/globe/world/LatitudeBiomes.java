@@ -1,6 +1,7 @@
 package com.example.globe.world;
 
 import com.example.globe.client.LatitudeConfig;
+import com.example.globe.util.LatitudeMath;
 import com.example.globe.util.ValueNoise2D;
 import net.minecraft.registry.Registry;
 import net.minecraft.registry.RegistryKeys;
@@ -14,12 +15,23 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public final class LatitudeBiomes {
     private LatitudeBiomes() {
+    }
+
+    private static int bandIndexForZone(LatitudeMath.LatitudeZone zone) {
+        return switch (zone) {
+            case EQUATOR -> 1;
+            case TROPICAL, SUBTROPICAL -> 0;
+            case TEMPERATE -> 2;
+            case SUBPOLAR -> 3;
+            case POLAR -> 4;
+        };
     }
 
     private static RegistryEntry<Biome> pickBeachForBand(Registry<Biome> biomes, RegistryEntry<Biome> base, int blockX, int blockZ, int bandIndex) {
@@ -119,6 +131,9 @@ public final class LatitudeBiomes {
     }
 
     private static final Logger LOGGER = LoggerFactory.getLogger("LatitudeBiomes");
+    private static final boolean DEBUG_BIOMES = Boolean.getBoolean("latitude.debugBiomes");
+    private static final int DEBUG_LIMIT = Integer.getInteger("latitude.debugBiomes.limit", 200);
+    private static final AtomicInteger DEBUG_COUNT = new AtomicInteger();
     private static boolean TAG_LOGGED = false;
 
     private static final TagKey<Biome> LAT_EQUATOR_PRIMARY = TagKey.of(RegistryKeys.BIOME, Identifier.of("globe", "lat_equator_primary"));
@@ -213,24 +228,32 @@ public final class LatitudeBiomes {
 
         int lat = Math.abs(blockZ);
         double t = (double) lat / (double) borderRadiusBlocks;
-
-        int bandIndex = latitudeBandIndexWithBlend(blockX, blockZ, borderRadiusBlocks);
+        LatitudeMath.LatitudeZone zone = LatitudeMath.zoneForRadius(borderRadiusBlocks, blockZ);
+        int bandIndex = bandIndexForZone(zone);
 
         if (isBeachLike(base)) {
-            return pickBeachForBand(biomes, base, blockX, blockZ, bandIndex);
+            RegistryEntry<Biome> out = pickBeachForBand(biomes, base, blockX, blockZ, bandIndex);
+            debugPick(blockX, blockZ, borderRadiusBlocks, t, zone, base, out, true, false);
+            return out;
         }
 
         if (base.isIn(BiomeTags.IS_RIVER)) {
             if (bandIndex >= 3) {
                 try {
-                    return biome(biomes, "minecraft:frozen_river");
+                    RegistryEntry<Biome> out = biome(biomes, "minecraft:frozen_river");
+                    debugPick(blockX, blockZ, borderRadiusBlocks, t, zone, base, out, false, false);
+                    return out;
                 } catch (Throwable ignored) {
+                    debugPick(blockX, blockZ, borderRadiusBlocks, t, zone, base, base, false, false);
                     return base;
                 }
             } else {
                 try {
-                    return biome(biomes, "minecraft:river");
+                    RegistryEntry<Biome> out = biome(biomes, "minecraft:river");
+                    debugPick(blockX, blockZ, borderRadiusBlocks, t, zone, base, out, false, false);
+                    return out;
                 } catch (Throwable ignored) {
+                    debugPick(blockX, blockZ, borderRadiusBlocks, t, zone, base, base, false, false);
                     return base;
                 }
             }
@@ -238,7 +261,9 @@ public final class LatitudeBiomes {
 
         if (base.isIn(BiomeTags.IS_OCEAN)) {
             RegistryEntry<Biome> oceanPick = oceanByLatitudeBandOrBase(biomes, base, blockX, blockZ, bandIndex);
-            return mushroomIslandOverride(biomes, oceanPick, blockX, blockZ);
+            RegistryEntry<Biome> out = mushroomIslandOverride(biomes, oceanPick, blockX, blockZ);
+            debugPick(blockX, blockZ, borderRadiusBlocks, t, zone, base, out, false, false);
+            return out;
         }
 
         RegistryEntry<Biome> chosen = switch (bandIndex) {
@@ -249,7 +274,9 @@ public final class LatitudeBiomes {
             default -> pickFromWeightedTags(biomes, base, blockX, blockZ, 4, 0x4D54, LAT_POLAR_PRIMARY, LAT_POLAR_SECONDARY, LAT_POLAR_ACCENT);
         };
         RegistryEntry<Biome> sanitized = sanitizeLandBiome(biomes, chosen, bandIndex);
-        return applyLandOverrides(biomes, sanitized, blockX, blockZ, bandIndex);
+        RegistryEntry<Biome> out = applyLandOverrides(biomes, sanitized, blockX, blockZ, bandIndex);
+        debugPick(blockX, blockZ, borderRadiusBlocks, t, zone, base, out, false, out != sanitized);
+        return out;
     }
 
     public static RegistryEntry<Biome> pick(Collection<RegistryEntry<Biome>> biomes, RegistryEntry<Biome> base, int blockX, int blockZ, int borderRadiusBlocks) {
@@ -261,25 +288,33 @@ public final class LatitudeBiomes {
 
         int lat = Math.abs(blockZ);
         double t = (double) lat / (double) borderRadiusBlocks;
-
-        int bandIndex = latitudeBandIndexWithBlend(blockX, blockZ, borderRadiusBlocks);
+        LatitudeMath.LatitudeZone zone = LatitudeMath.zoneForRadius(borderRadiusBlocks, blockZ);
+        int bandIndex = bandIndexForZone(zone);
 
         if (isBeachLike(base)) {
-            return pickBeachForBand(biomes, base, blockX, blockZ, bandIndex);
+            RegistryEntry<Biome> out = pickBeachForBand(biomes, base, blockX, blockZ, bandIndex);
+            debugPick(blockX, blockZ, borderRadiusBlocks, t, zone, base, out, true, false);
+            return out;
         }
 
         if (base.isIn(BiomeTags.IS_RIVER)) {
             if (bandIndex >= 3) {
                 RegistryEntry<Biome> frozen = entryById(biomes, "minecraft:frozen_river");
-                return frozen != null ? frozen : base;
+                RegistryEntry<Biome> out = frozen != null ? frozen : base;
+                debugPick(blockX, blockZ, borderRadiusBlocks, t, zone, base, out, false, false);
+                return out;
             }
             RegistryEntry<Biome> river = entryById(biomes, "minecraft:river");
-            return river != null ? river : base;
+            RegistryEntry<Biome> out = river != null ? river : base;
+            debugPick(blockX, blockZ, borderRadiusBlocks, t, zone, base, out, false, false);
+            return out;
         }
 
         if (base.isIn(BiomeTags.IS_OCEAN)) {
             RegistryEntry<Biome> oceanPick = oceanByLatitudeBandOrBase(biomes, base, blockX, blockZ, bandIndex);
-            return mushroomIslandOverride(biomes, oceanPick, blockX, blockZ);
+            RegistryEntry<Biome> out = mushroomIslandOverride(biomes, oceanPick, blockX, blockZ);
+            debugPick(blockX, blockZ, borderRadiusBlocks, t, zone, base, out, false, false);
+            return out;
         }
 
         RegistryEntry<Biome> chosen = switch (bandIndex) {
@@ -290,7 +325,9 @@ public final class LatitudeBiomes {
             default -> pickFromWeightedTags(biomes, base, blockX, blockZ, 4, 0x4D54, LAT_POLAR_PRIMARY, LAT_POLAR_SECONDARY, LAT_POLAR_ACCENT);
         };
         RegistryEntry<Biome> sanitized = sanitizeLandBiome(biomes, chosen, bandIndex);
-        return applyLandOverrides(biomes, sanitized, blockX, blockZ, bandIndex);
+        RegistryEntry<Biome> out = applyLandOverrides(biomes, sanitized, blockX, blockZ, bandIndex);
+        debugPick(blockX, blockZ, borderRadiusBlocks, t, zone, base, out, false, out != sanitized);
+        return out;
     }
 
     private static RegistryEntry<Biome> pickTropicalGradient(Registry<Biome> biomes, RegistryEntry<Biome> base, int blockX, int blockZ, double t) {
@@ -663,6 +700,27 @@ public final class LatitudeBiomes {
         return entry.getKey()
                 .map(key -> key.getValue().equals(target))
                 .orElse(false);
+    }
+
+    private static String biomeId(RegistryEntry<Biome> entry) {
+        return entry.getKey().map(key -> key.getValue().toString()).orElse("?");
+    }
+
+    private static void debugPick(int blockX, int blockZ, int borderRadiusBlocks, double t, LatitudeMath.LatitudeZone zone,
+                                  RegistryEntry<Biome> base, RegistryEntry<Biome> out, boolean beachOverride, boolean rareOverride) {
+        if (!DEBUG_BIOMES) return;
+        if (DEBUG_COUNT.incrementAndGet() > DEBUG_LIMIT) return;
+        LOGGER.info("[LAT_PICK] x={} z={} absZ={} radius={} t={} zone={} base={} out={} beachOverride={} rareOverride={}",
+                blockX,
+                blockZ,
+                Math.abs(blockZ),
+                borderRadiusBlocks,
+                String.format(java.util.Locale.ROOT, "%.3f", t),
+                zone,
+                biomeId(base),
+                biomeId(out),
+                beachOverride,
+                rareOverride);
     }
 
     private static RegistryEntry<Biome> sanitizeLandBiome(Registry<Biome> biomes, RegistryEntry<Biome> pick, int bandIndex) {
