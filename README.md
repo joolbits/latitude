@@ -13,6 +13,9 @@ A globe-style world + latitude-based biome bands with a customizable compass HUD
   - Alt+Left-Click a compass icon in inventory to toggle (shows a red X when disabled)
   - Fully configurable: anchors, offsets, scale, background alpha, colors, show modes, direction modes
 
+## Design Spec / Release Gate
+See: docs/design-spec.md
+
 ## Dependencies
 
 - Fabric Loader (Minecraft 1.21.11)
