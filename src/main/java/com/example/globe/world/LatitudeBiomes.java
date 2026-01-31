@@ -193,13 +193,25 @@ public final class LatitudeBiomes {
     private static final TagKey<Biome> LAT_OCEAN_SUBPOLAR = TagKey.of(RegistryKeys.BIOME, Identifier.of("globe", "lat_ocean_subpolar"));
     private static final TagKey<Biome> LAT_OCEAN_POLAR = TagKey.of(RegistryKeys.BIOME, Identifier.of("globe", "lat_ocean_polar"));
 
+    private enum TransitionMode {
+        SMOOTH_WARP,
+        CELLHASH_PATCHES,
+        OFF
+    }
+
+    private static final TransitionMode TRANSITION_MODE = TransitionMode.SMOOTH_WARP;
+
     private static final int VARIANT_CELL_SIZE_BLOCKS = 1024;
-    private static final int TRANSITION_WIDTH_BLOCKS = 512;
+    private static final int BLEND_TRANSITION_WIDTH_BLOCKS = 768;
+    private static final int BLEND_DITHER_SCALE_BLOCKS = 512;
     private static final int JITTER_AMPLITUDE_BLOCKS = 128;
     private static final int JITTER_SCALE_BLOCKS = 3072;
     private static final int DITHER_SCALE_BLOCKS = 144;
+    private static final int WARP_AMPLITUDE_BLOCKS = 256;
+    private static final int WARP_SCALE_BLOCKS = 4096;
     private static final long JITTER_NOISE_SALT = -6795153568590067944L;
     private static final long DITHER_NOISE_SALT = 1161981756646125696L;
+    private static final long WARP_NOISE_SALT = 0x5A7A5EED0F00D123L;
     private static final long TROPICAL_DITHER_SALT = 0x5EEDBEEF5EEDBEEFL;
 
     private static final Set<String> SURFACE_CAVE_DENYLIST = Set.of(
@@ -222,6 +234,18 @@ public final class LatitudeBiomes {
         h ^= (long) z * 0xC2B2AE3D27D4EB4FL;
         h = mix64(h);
         return ((h >>> 11) * (1.0 / (1L << 53)));
+    }
+
+    private static double cellHash01(long seed, int cellX, int cellZ) {
+        long x = seed;
+        x ^= 0x9E3779B97F4A7C15L * (long) cellX;
+        x ^= 0xC2B2AE3D27D4EB4FL * (long) cellZ;
+        x ^= (x >>> 30);
+        x *= 0xBF58476D1CE4E5B9L;
+        x ^= (x >>> 27);
+        x *= 0x94D049BB133111EBL;
+        x ^= (x >>> 31);
+        return ((x >>> 11) * (1.0 / (1L << 53)));
     }
 
     private static double smoothstep(double t) {
@@ -562,8 +586,7 @@ public final class LatitudeBiomes {
         double latNorm = clamp(t, 0.0, 1.0);
         int bandIndex = crispBandIndex(latNorm);
 
-        double halfWidthBlocks = TRANSITION_WIDTH_BLOCKS * 0.5;
-        if (!(halfWidthBlocks > 0.0)) {
+        if (TRANSITION_MODE == TransitionMode.OFF) {
             return bandIndex;
         }
 
@@ -595,6 +618,53 @@ public final class LatitudeBiomes {
             }
         }
 
+        if (TRANSITION_MODE == TransitionMode.SMOOTH_WARP) {
+            double halfWidthBlocks = BLEND_TRANSITION_WIDTH_BLOCKS * 0.5;
+            if (!(halfWidthBlocks > 0.0)) {
+                return bandIndex;
+            }
+
+            long warpSeed = WORLD_SEED ^ WARP_NOISE_SALT;
+            double warpNoise = (ValueNoise2D.sampleBlocks(warpSeed, blockX, blockZ, WARP_SCALE_BLOCKS) * 2.0) - 1.0;
+            double boundaryWarp = warpNoise * WARP_AMPLITUDE_BLOCKS;
+            double effectiveBoundary = boundaryBlocks + boundaryWarp;
+            double delta = absZ - effectiveBoundary;
+            if (Math.abs(delta) > halfWidthBlocks) {
+                return bandIndex;
+            }
+
+            int chosenBandIndex = delta < 0.0 ? lowerBandIndex : upperBandIndex;
+
+            if (DEBUG_BLEND
+                    && (blockX & 15) == 0
+                    && (blockZ & 15) == 0
+                    && chosenBandIndex != bandIndex
+                    && BLEND_DEBUG_COUNT.incrementAndGet() <= DEBUG_LIMIT) {
+                LOGGER.info("[LAT_BLEND] mode={} x={} z={} lat={} baseBand={} lower={} upper={} chosen={} boundary={} effectiveBoundary={} delta={} transitionWidth={} warpAmp={} warpScale={}",
+                        TRANSITION_MODE,
+                        blockX,
+                        blockZ,
+                        absZ,
+                        bandIndex,
+                        lowerBandIndex,
+                        upperBandIndex,
+                        chosenBandIndex,
+                        boundaryBlocks,
+                        String.format(java.util.Locale.ROOT, "%.2f", effectiveBoundary),
+                        String.format(java.util.Locale.ROOT, "%.2f", delta),
+                        BLEND_TRANSITION_WIDTH_BLOCKS,
+                        WARP_AMPLITUDE_BLOCKS,
+                        WARP_SCALE_BLOCKS);
+            }
+
+            return chosenBandIndex;
+        }
+
+        double halfWidthBlocks = BLEND_TRANSITION_WIDTH_BLOCKS * 0.5;
+        if (!(halfWidthBlocks > 0.0)) {
+            return bandIndex;
+        }
+
         long jitterSeed = WORLD_SEED ^ JITTER_NOISE_SALT;
         long ditherSeed = WORLD_SEED ^ DITHER_NOISE_SALT;
         double jitterNoise = (ValueNoise2D.sampleBlocks(jitterSeed, blockX, blockZ, JITTER_SCALE_BLOCKS) * 2.0) - 1.0;
@@ -609,7 +679,10 @@ public final class LatitudeBiomes {
         double blendT = (delta + halfWidthBlocks) / (2.0 * halfWidthBlocks);
         blendT = clamp(blendT, 0.0, 1.0);
         blendT = smoothstep(blendT);
-        double ditherNoise = ValueNoise2D.sampleBlocks(ditherSeed, blockX, blockZ, DITHER_SCALE_BLOCKS);
+        int cellSize = BLEND_DITHER_SCALE_BLOCKS;
+        int cellX = Math.floorDiv(blockX, cellSize);
+        int cellZ = Math.floorDiv(blockZ, cellSize);
+        double ditherNoise = cellHash01(ditherSeed, cellX, cellZ);
         int chosenBandIndex = ditherNoise < blendT ? upperBandIndex : lowerBandIndex;
 
         if (DEBUG_BLEND
@@ -617,9 +690,12 @@ public final class LatitudeBiomes {
                 && (blockZ & 15) == 0
                 && chosenBandIndex != bandIndex
                 && BLEND_DEBUG_COUNT.incrementAndGet() <= DEBUG_LIMIT) {
-            LOGGER.info("[LAT_BLEND] x={} z={} lat={} baseBand={} lower={} upper={} chosen={} boundary={} effectiveBoundary={} delta={} transitionWidth={} jitterAmp={} jitterScale={} ditherScale={} t={} noise={}",
+            LOGGER.info("[LAT_BLEND] mode={} x={} z={} cellX={} cellZ={} lat={} baseBand={} lower={} upper={} chosen={} boundary={} effectiveBoundary={} delta={} transitionWidth={} jitterAmp={} jitterScale={} ditherScale={} t={} noise={}",
+                    TRANSITION_MODE,
                     blockX,
                     blockZ,
+                    cellX,
+                    cellZ,
                     absZ,
                     bandIndex,
                     lowerBandIndex,
@@ -628,10 +704,10 @@ public final class LatitudeBiomes {
                     boundaryBlocks,
                     String.format(java.util.Locale.ROOT, "%.2f", effectiveBoundary),
                     String.format(java.util.Locale.ROOT, "%.2f", delta),
-                    TRANSITION_WIDTH_BLOCKS,
+                    BLEND_TRANSITION_WIDTH_BLOCKS,
                     JITTER_AMPLITUDE_BLOCKS,
                     JITTER_SCALE_BLOCKS,
-                    DITHER_SCALE_BLOCKS,
+                    BLEND_DITHER_SCALE_BLOCKS,
                     String.format(java.util.Locale.ROOT, "%.3f", blendT),
                     String.format(java.util.Locale.ROOT, "%.3f", ditherNoise));
         }
