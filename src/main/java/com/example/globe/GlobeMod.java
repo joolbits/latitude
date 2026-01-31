@@ -65,10 +65,6 @@ public class GlobeMod implements ModInitializer {
 
     private static final boolean ENABLE_POLAR_SCRUBBER = false;
 
-    private static final double STAGE_WARN_PROGRESS = 0.88;
-    private static final double STAGE_DANGER_PROGRESS = 0.91;
-    private static final double STAGE_WHITEOUT_PROGRESS = 0.93;
-    private static final double STAGE_LETHAL_PROGRESS = 0.98;
 
     private static final Identifier GLOBE_SETTINGS_ID = Identifier.of(MOD_ID, "overworld");
     private static final Identifier GLOBE_SETTINGS_XSMALL_ID = Identifier.of(MOD_ID, "overworld_xsmall");
@@ -202,14 +198,16 @@ public class GlobeMod implements ModInitializer {
                 continue;
             }
 
-            double progressZ = borderProgress(border, player.getZ(), false);
+            double progressZ = com.example.globe.util.LatitudeMath.hazardProgress(border, player.getZ());
+            int stageIndex = com.example.globe.util.LatitudeMath.hazardStageIndex(progressZ);
 
-            PolarStage stage =
-                    progressZ >= STAGE_LETHAL_PROGRESS ? PolarStage.LETHAL :
-                    progressZ >= STAGE_WHITEOUT_PROGRESS ? PolarStage.WHITEOUT :
-                    progressZ >= STAGE_DANGER_PROGRESS ? PolarStage.HOSTILE :
-                    progressZ >= STAGE_WARN_PROGRESS ? PolarStage.IMPAIR :
-                    PolarStage.NONE;
+            PolarStage stage = switch (stageIndex) {
+                case 1 -> PolarStage.IMPAIR;
+                case 2 -> PolarStage.HOSTILE;
+                case 3 -> PolarStage.WHITEOUT;
+                case 4 -> PolarStage.LETHAL;
+                default -> PolarStage.NONE;
+            };
 
             int duration = 40;
             boolean ambient = true;
@@ -273,17 +271,6 @@ public class GlobeMod implements ModInitializer {
         if (noise.matchesSettings(GLOBE_SETTINGS_MASSIVE_KEY)) return 20000;
 
         return BORDER_RADIUS;
-    }
-
-    private static double borderProgress(WorldBorder border, double coord, boolean isX) {
-        double center = isX ? border.getCenterX() : border.getCenterZ();
-        double half = com.example.globe.util.LatitudeMath.halfSize(border);
-        if (half <= 0.0) return 1.0;
-        return clamp(Math.abs(coord - center) / half, 0.0, 1.0);
-    }
-
-    private static double clamp(double v, double lo, double hi) {
-        return Math.max(lo, Math.min(hi, v));
     }
 
     private static void applySpawnChoice(ServerPlayerEntity player, String id) {
