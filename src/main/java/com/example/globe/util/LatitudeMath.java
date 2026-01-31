@@ -31,10 +31,10 @@ public final class LatitudeMath {
     public static final double POLAR_START_FRAC = SUBPOLAR_MAX_FRAC;
     public static final int POLAR_START_DEG = (int) Math.floor(POLAR_START_FRAC * 90.0);
 
-    public static final double POLAR_STAGE_1_PROGRESS = 0.925;
-    public static final double POLAR_STAGE_2_PROGRESS = 0.950;
-    public static final double POLAR_STAGE_3_PROGRESS = 0.970;
-    public static final double POLAR_STAGE_LETHAL_PROGRESS = 0.985;
+    public static final double POLAR_STAGE_1_PROGRESS = 0.940;
+    public static final double POLAR_STAGE_2_PROGRESS = 0.970;
+    public static final double POLAR_STAGE_3_PROGRESS = 0.990;
+    public static final double POLAR_STAGE_LETHAL_PROGRESS = 0.995;
 
     /** WorldBorder#getSize() is DIAMETER. Half-size is radius in blocks. */
     public static double halfSize(WorldBorder border) {
@@ -91,6 +91,9 @@ public final class LatitudeMath {
 
     /** Returns hazard stage index (0..4) based on normalized progress. */
     public static int hazardStageIndex(double progress) {
+        // Hard gate: No hazards before the polar band start.
+        if (progress < POLAR_START_FRAC) return 0;
+
         if (progress >= POLAR_STAGE_LETHAL_PROGRESS) return 4;
         if (progress >= POLAR_STAGE_3_PROGRESS) return 3;
         if (progress >= POLAR_STAGE_2_PROGRESS) return 2;
