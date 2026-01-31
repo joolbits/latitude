@@ -13,8 +13,7 @@ public enum GlobeWorldSize {
     REGULAR(Text.literal("Regular (20,000 x 20,000)"),     Identifier.of("globe", "globe_large"), 10000),
     LARGE(Text.literal("Large (30,000 x 30,000)"),         Identifier.of("globe", "globe"), 15000),
     MASSIVE(
-            Text.literal("G")
-                    .append(Text.literal("inormous! (40,000 x 40,000)").formatted(Formatting.ITALIC)),
+            Text.literal("Ginormous! (40,000 x 40,000)").formatted(Formatting.ITALIC),
             Identifier.of("globe", "globe_massive"),
             20000
     );
