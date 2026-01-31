@@ -35,8 +35,12 @@ public final class LatitudeBiomes {
     }
 
     private static RegistryEntry<Biome> pickBeachForBand(Registry<Biome> biomes, RegistryEntry<Biome> base, int blockX, int blockZ, int bandIndex) {
-        if (bandIndex < 3) {
-            return base;
+        if (bandIndex <= 2) {
+            try {
+                return biome(biomes, "minecraft:beach");
+            } catch (Throwable ignored) {
+                return base;
+            }
         }
 
         int chunkX = blockX >> 4;
@@ -53,8 +57,9 @@ public final class LatitudeBiomes {
     }
 
     private static RegistryEntry<Biome> pickBeachForBand(Collection<RegistryEntry<Biome>> biomes, RegistryEntry<Biome> base, int blockX, int blockZ, int bandIndex) {
-        if (bandIndex < 3) {
-            return base;
+        if (bandIndex <= 2) {
+            RegistryEntry<Biome> entry = entryById(biomes, "minecraft:beach");
+            return entry != null ? entry : base;
         }
 
         int chunkX = blockX >> 4;
