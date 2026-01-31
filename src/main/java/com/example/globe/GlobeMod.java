@@ -1,6 +1,7 @@
 package com.example.globe;
 
 import net.fabricmc.api.ModInitializer;
+import com.example.globe.world.LatitudeBiomes;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
@@ -161,6 +162,9 @@ public class GlobeMod implements ModInitializer {
         if (!isGlobeOverworld(overworld)) {
             return;
         }
+
+        long seed = overworld.getServer().getSaveProperties().getGeneratorOptions().getSeed();
+        LatitudeBiomes.setWorldSeed(seed);
 
         int borderRadiusBlocks = borderRadiusForGlobeOverworld(overworld);
 
