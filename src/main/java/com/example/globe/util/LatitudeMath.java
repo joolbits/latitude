@@ -145,6 +145,18 @@ public final class LatitudeMath {
         return LatitudeZone.POLAR;
     }
 
+    public static LatitudeZone zoneForRadius(int radiusBlocks, double z) {
+        if (radiusBlocks <= 0) return LatitudeZone.EQUATOR;
+        double t = Math.abs(z) / (double) radiusBlocks;
+        t = MathHelper.clamp(t, 0.0, 1.0);
+        if (t < EQUATOR_MAX_FRAC) return LatitudeZone.EQUATOR;
+        if (t < TROPICAL_MAX_FRAC) return LatitudeZone.TROPICAL;
+        if (t < SUBTROPICAL_MAX_FRAC) return LatitudeZone.SUBTROPICAL;
+        if (t < TEMPERATE_MAX_FRAC) return LatitudeZone.TEMPERATE;
+        if (t < SUBPOLAR_MAX_FRAC) return LatitudeZone.SUBPOLAR;
+        return LatitudeZone.POLAR;
+    }
+
     public static String zoneKey(WorldBorder border, double z) {
         return zoneFor(border, z).name();
     }
