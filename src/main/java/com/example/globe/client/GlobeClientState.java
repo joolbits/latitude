@@ -11,11 +11,6 @@ public final class GlobeClientState {
 
     private static boolean globeWorld;
 
-    private static final double STAGE_WARN_PROGRESS = 0.88;
-    private static final double STAGE_DANGER_PROGRESS = 0.91;
-    private static final double STAGE_WHITEOUT_PROGRESS = 0.93;
-    private static final double STAGE_LETHAL_PROGRESS = 0.98;
-
     private static long cachedEvalWorldTime = Long.MIN_VALUE;
     private static Eval cachedEval;
 
@@ -53,24 +48,21 @@ public final class GlobeClientState {
         return (int) Math.round(com.example.globe.util.LatitudeMath.halfSize(world.getWorldBorder()));
     }
 
-    private static double borderProgress(net.minecraft.world.border.WorldBorder border, double coord, boolean isX) {
-        double center = isX ? border.getCenterX() : border.getCenterZ();
-        double half = com.example.globe.util.LatitudeMath.halfSize(border);
-        if (half <= 0.0) return 1.0;
-        return clamp(Math.abs(coord - center) / half, 0.0, 1.0);
-    }
-
     private static PolarStage polarStageForProgress(double progress) {
-        if (progress >= STAGE_LETHAL_PROGRESS) return PolarStage.LETHAL;
-        if (progress >= STAGE_WHITEOUT_PROGRESS) return PolarStage.DANGER;
-        if (progress >= STAGE_DANGER_PROGRESS) return PolarStage.WARN_2;
-        if (progress >= STAGE_WARN_PROGRESS) return PolarStage.WARN_1;
-        return PolarStage.NONE;
+        int stageIndex = com.example.globe.util.LatitudeMath.hazardStageIndex(progress);
+        return switch (stageIndex) {
+            case 1 -> PolarStage.WARN_1;
+            case 2 -> PolarStage.WARN_2;
+            case 3 -> PolarStage.DANGER;
+            case 4 -> PolarStage.LETHAL;
+            default -> PolarStage.NONE;
+        };
     }
 
     private static EwStormStage ewStageForProgress(double progress) {
-        if (progress >= STAGE_DANGER_PROGRESS) return EwStormStage.LEVEL_2;
-        if (progress >= STAGE_WARN_PROGRESS) return EwStormStage.LEVEL_1;
+        int stageIndex = com.example.globe.util.LatitudeMath.hazardStageIndex(progress);
+        if (stageIndex >= 2) return EwStormStage.LEVEL_2;
+        if (stageIndex >= 1) return EwStormStage.LEVEL_1;
         return EwStormStage.NONE;
     }
 
@@ -99,14 +91,15 @@ public final class GlobeClientState {
 
         var border = world.getWorldBorder();
 
-        double progressX = borderProgress(border, player.getX(), true);
-        double progressZ = borderProgress(border, player.getZ(), false);
+        double progressX = com.example.globe.util.LatitudeMath.hazardProgress(border, player.getX());
+        double progressZ = com.example.globe.util.LatitudeMath.hazardProgress(border, player.getZ());
 
         PolarStage polar = polarStageForProgress(progressZ);
         EwStormStage ewVisual = ewStageForProgress(progressX);
 
-        boolean ewTextWarn = progressX >= STAGE_WARN_PROGRESS;
-        boolean ewTextDanger = progressX >= STAGE_DANGER_PROGRESS;
+        int ewStageIndex = com.example.globe.util.LatitudeMath.hazardStageIndex(progressX);
+        boolean ewTextWarn = ewStageIndex >= 1;
+        boolean ewTextDanger = ewStageIndex >= 2;
         EwStormStage ewTextStage = ewTextDanger ? EwStormStage.LEVEL_2 : (ewTextWarn ? EwStormStage.LEVEL_1 : EwStormStage.NONE);
 
         int pr = polarRank(polar);
@@ -142,13 +135,13 @@ public final class GlobeClientState {
 
     public static PolarStage computePolarStage(ClientWorld world, PlayerEntity player) {
         var border = world.getWorldBorder();
-        double progressZ = borderProgress(border, player.getZ(), false);
+        double progressZ = com.example.globe.util.LatitudeMath.hazardProgress(border, player.getZ());
         return polarStageForProgress(progressZ);
     }
 
     public static EwStormStage computeEwStormStage(ClientWorld world, PlayerEntity player) {
         var border = world.getWorldBorder();
-        double progressX = borderProgress(border, player.getX(), true);
+        double progressX = com.example.globe.util.LatitudeMath.hazardProgress(border, player.getX());
         return ewStageForProgress(progressX);
     }
 
@@ -171,7 +164,7 @@ public final class GlobeClientState {
 
     private static float polarWhiteoutIntensity(ClientWorld world, PlayerEntity player) {
         var border = world.getWorldBorder();
-        double progressZ = borderProgress(border, player.getZ(), false);
+        double progressZ = com.example.globe.util.LatitudeMath.hazardProgress(border, player.getZ());
         PolarStage stage = polarStageForProgress(progressZ);
 
         if (stage == PolarStage.NONE) {
@@ -263,8 +256,8 @@ public final class GlobeClientState {
         double x = player.getX();
         double z = player.getZ();
 
-        double progressX = borderProgress(border, x, true);
-        double progressZ = borderProgress(border, z, false);
+        double progressX = com.example.globe.util.LatitudeMath.hazardProgress(border, x);
+        double progressZ = com.example.globe.util.LatitudeMath.hazardProgress(border, z);
 
         PolarStage polarStage = polarStageForProgress(progressZ);
         EwStormStage stormStage = ewStageForProgress(progressX);
@@ -272,8 +265,8 @@ public final class GlobeClientState {
         float poleSeverity = polarIntensityForStage(polarStage);
         float stormSeverity = stormIntensityForStage(stormStage);
 
-        boolean poleCritical = progressZ >= STAGE_LETHAL_PROGRESS;
-        boolean stormCritical = progressX >= STAGE_LETHAL_PROGRESS;
+        boolean poleCritical = com.example.globe.util.LatitudeMath.hazardStageIndex(progressZ) >= 4;
+        boolean stormCritical = com.example.globe.util.LatitudeMath.hazardStageIndex(progressX) >= 4;
 
         if (DEBUG_DISABLE_WARNINGS) {
             cachedEval = new Eval(true, surfaceOk, absX, absZ, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, false, false);
@@ -396,7 +389,4 @@ public final class GlobeClientState {
         };
     }
 
-    private static double clamp(double v, double lo, double hi) {
-        return Math.max(lo, Math.min(hi, v));
-    }
 }
