@@ -199,7 +199,7 @@ public class GlobeMod implements ModInitializer {
             }
 
             double progressZ = com.example.globe.util.LatitudeMath.hazardProgress(border, player.getZ());
-            int stageIndex = com.example.globe.util.LatitudeMath.hazardStageIndex(progressZ);
+            int stageIndex = com.example.globe.util.LatitudeMath.hazardStageIndex(border, player.getZ(), progressZ);
 
             PolarStage stage = switch (stageIndex) {
                 case 1 -> PolarStage.IMPAIR;

@@ -90,10 +90,19 @@ public final class LatitudeMath {
     }
 
     /** Returns hazard stage index (0..4) based on normalized progress. */
-    public static int hazardStageIndex(double progress) {
+    public static int hazardStageIndex(WorldBorder border, double z, double progress) {
         // Hard gate: No hazards before the polar band start.
-        if (progress < POLAR_START_FRAC) return 0;
+        if (zoneFor(border, z) != LatitudeZone.POLAR) return 0;
 
+        if (progress >= POLAR_STAGE_LETHAL_PROGRESS) return 4;
+        if (progress >= POLAR_STAGE_3_PROGRESS) return 3;
+        if (progress >= POLAR_STAGE_2_PROGRESS) return 2;
+        if (progress >= POLAR_STAGE_1_PROGRESS) return 1;
+        return 0;
+    }
+
+    /** Returns hazard stage index for X-axis (EW) storms. */
+    public static int hazardStageIndexEW(double progress) {
         if (progress >= POLAR_STAGE_LETHAL_PROGRESS) return 4;
         if (progress >= POLAR_STAGE_3_PROGRESS) return 3;
         if (progress >= POLAR_STAGE_2_PROGRESS) return 2;
