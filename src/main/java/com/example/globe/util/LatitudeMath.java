@@ -164,12 +164,12 @@ public final class LatitudeMath {
     public static double spawnFracForZoneKey(String zoneKey) {
         if (zoneKey == null) return 0.0;
         return switch (zoneKey) {
-            case "EQUATOR" -> 0.0;
+            case "EQUATOR" -> 0.05;
             case "TROPICAL" -> 0.20;
             case "SUBTROPICAL" -> 0.40;
             case "TEMPERATE" -> 0.583;
             case "SUBPOLAR" -> 0.725;
-            case "POLAR" -> 0.83;
+            case "POLAR" -> 0.89;
             default -> 0.0;
         };
     }

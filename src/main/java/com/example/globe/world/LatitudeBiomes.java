@@ -234,6 +234,10 @@ public final class LatitudeBiomes {
         WORLD_SEED = seed;
     }
 
+    public static void setRadius(int radius) {
+        ACTIVE_RADIUS_BLOCKS = radius;
+    }
+
     public static void setActiveRadiusBlocks(int radiusBlocks) {
         ACTIVE_RADIUS_BLOCKS = Math.max(0, radiusBlocks);
     }
@@ -410,12 +414,13 @@ public final class LatitudeBiomes {
     public static RegistryEntry<Biome> pick(Registry<Biome> biomeRegistry, RegistryEntry<Biome> base, int blockX, int blockZ, int borderRadiusBlocks,
                                             MultiNoiseUtil.MultiNoiseSampler sampler, String callerContext) {
         int activeRadius = ACTIVE_RADIUS_BLOCKS;
+        boolean overrideDisabled = Boolean.getBoolean("latitude.disableRadiusOverride");
+
         if (activeRadius > 0 && borderRadiusBlocks != activeRadius && RADIUS_MISMATCH_LOGGED.compareAndSet(false, true)) {
             LOGGER.warn("[Latitude] RADIUS MISMATCH detected from {}! Arg: {}, Active: {}", callerContext, borderRadiusBlocks, activeRadius);
         }
 
-        boolean disableOverride = Boolean.getBoolean("latitude.disableRadiusOverride");
-        int effectiveRadius = (!disableOverride && activeRadius > 0) ? activeRadius : borderRadiusBlocks;
+        int effectiveRadius = (!overrideDisabled && activeRadius > 0) ? activeRadius : borderRadiusBlocks;
         if (effectiveRadius <= 0) {
             return base;
         }
@@ -553,12 +558,13 @@ public final class LatitudeBiomes {
     public static RegistryEntry<Biome> pick(Collection<RegistryEntry<Biome>> biomePool, RegistryEntry<Biome> base, int blockX, int blockZ, int borderRadiusBlocks,
                                             MultiNoiseUtil.MultiNoiseSampler sampler, String callerContext) {
         int activeRadius = ACTIVE_RADIUS_BLOCKS;
+        boolean overrideDisabled = Boolean.getBoolean("latitude.disableRadiusOverride");
+
         if (activeRadius > 0 && borderRadiusBlocks != activeRadius && RADIUS_MISMATCH_LOGGED.compareAndSet(false, true)) {
             LOGGER.warn("[Latitude] RADIUS MISMATCH detected from {}! Arg: {}, Active: {}", callerContext, borderRadiusBlocks, activeRadius);
         }
 
-        boolean disableOverride = Boolean.getBoolean("latitude.disableRadiusOverride");
-        int effectiveRadius = (!disableOverride && activeRadius > 0) ? activeRadius : borderRadiusBlocks;
+        int effectiveRadius = (!overrideDisabled && activeRadius > 0) ? activeRadius : borderRadiusBlocks;
         if (effectiveRadius <= 0) {
             return base;
         }
