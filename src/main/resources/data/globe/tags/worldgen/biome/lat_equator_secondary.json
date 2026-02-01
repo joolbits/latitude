@@ -3,8 +3,8 @@
   "values": [
     "minecraft:jungle",
     "minecraft:sparse_jungle",
-    "minecraft:mangrove_swamp",
     "minecraft:bamboo_jungle",
+    "minecraft:mangrove_swamp",
     "minecraft:swamp"
   ]
 }

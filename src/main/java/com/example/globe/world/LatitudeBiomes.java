@@ -1201,11 +1201,12 @@ public final class LatitudeBiomes {
         double cont = MultiNoiseUtil.toFloat(point.continentalnessNoise());
         double erosion = MultiNoiseUtil.toFloat(point.erosionNoise());
         double weirdness = MultiNoiseUtil.toFloat(point.weirdnessNoise());
-        boolean lowland = cont < 0.18;
-        boolean notRugged = erosion > -0.05;
-        boolean notPeaks = Math.abs(weirdness) < 0.20;
-        boolean suitable = lowland && notRugged && notPeaks;
-        return new SwampDecision(suitable, cont, erosion, weirdness, suitable);
+        // Swamps: lowland & not rugged; allow inland lowlands too (not just coastal slice)
+        boolean swampOk =
+            cont > -0.10 && cont < 0.45 &&
+            erosion > -0.10 &&
+            Math.abs(weirdness) < 0.18;
+        return new SwampDecision(swampOk, cont, erosion, weirdness, swampOk);
     }
 
     private static boolean allowMangrovePatch(int blockX, int blockZ) {
