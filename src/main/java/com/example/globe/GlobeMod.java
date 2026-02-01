@@ -2,6 +2,7 @@ package com.example.globe;
 
 import net.fabricmc.api.ModInitializer;
 import com.example.globe.world.LatitudeBiomes;
+import com.example.globe.world.BiomeFeatureStripping;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
@@ -88,6 +89,7 @@ public class GlobeMod implements ModInitializer {
         LOGGER.info("{} initialized. Use the globe:globe world preset for deterministic terrain.", MOD_ID);
 
         GlobeNet.registerPayloads();
+        BiomeFeatureStripping.init();
 
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
             dispatcher.register(CommandManager.literal("flyspeed")
