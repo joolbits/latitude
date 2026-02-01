@@ -309,6 +309,7 @@ public final class LatitudeBiomes {
     private static final long BLEND_NOISE_SALT = 0x53EED5EEDL;
     private static final long WARP_NOISE_SALT = 0x5A7A5EED0F00D123L;
     private static final long TROPICAL_DITHER_SALT = 0x5EEDBEEF5EEDBEEFL;
+    private static final long SUBPOLAR_RAMP_SALT = 0x5EED5B09A5EEDL;
 
     private static final Set<String> SURFACE_CAVE_DENYLIST = Set.of(
             "minecraft:dripstone_caves",
@@ -475,7 +476,7 @@ public final class LatitudeBiomes {
                 case BAND_EQUATOR -> pickFromWeightedTags(biomeRegistry, base, blockX, blockZ, BAND_EQUATOR, 0x1A21, LAT_EQUATOR_PRIMARY, LAT_EQUATOR_SECONDARY, LAT_EQUATOR_ACCENT);
                 case BAND_TROPICAL -> pickTropicalGradient(biomeRegistry, base, blockX, blockZ, t);
                 case BAND_TEMPERATE -> pickFromWeightedTags(biomeRegistry, base, blockX, blockZ, BAND_TEMPERATE, 0x2B32, LAT_TEMPERATE_PRIMARY, LAT_TEMPERATE_SECONDARY, LAT_TEMPERATE_ACCENT);
-                case BAND_SUBPOLAR -> pickFromWeightedTags(biomeRegistry, base, blockX, blockZ, BAND_SUBPOLAR, 0x3C43, LAT_SUBPOLAR_PRIMARY, LAT_SUBPOLAR_SECONDARY, LAT_SUBPOLAR_ACCENT);
+                case BAND_SUBPOLAR -> pickSubpolarWithRamp(biomeRegistry, base, blockX, blockZ, t, BAND_SUBPOLAR, 0x3C43, LAT_SUBPOLAR_PRIMARY, LAT_SUBPOLAR_SECONDARY, LAT_SUBPOLAR_ACCENT);
                 default -> pickFromWeightedTags(biomeRegistry, base, blockX, blockZ, BAND_POLAR, 0x4D54, LAT_POLAR_PRIMARY, LAT_POLAR_SECONDARY, LAT_POLAR_ACCENT);
             };
         }
@@ -595,7 +596,7 @@ public final class LatitudeBiomes {
                 case BAND_EQUATOR -> pickFromWeightedTags(biomePool, base, blockX, blockZ, BAND_EQUATOR, 0x1A21, LAT_EQUATOR_PRIMARY, LAT_EQUATOR_SECONDARY, LAT_EQUATOR_ACCENT);
                 case BAND_TROPICAL -> pickTropicalGradient(biomePool, base, blockX, blockZ, t);
                 case BAND_TEMPERATE -> pickFromWeightedTags(biomePool, base, blockX, blockZ, BAND_TEMPERATE, 0x2B32, LAT_TEMPERATE_PRIMARY, LAT_TEMPERATE_SECONDARY, LAT_TEMPERATE_ACCENT);
-                case BAND_SUBPOLAR -> pickFromWeightedTags(biomePool, base, blockX, blockZ, BAND_SUBPOLAR, 0x3C43, LAT_SUBPOLAR_PRIMARY, LAT_SUBPOLAR_SECONDARY, LAT_SUBPOLAR_ACCENT);
+                case BAND_SUBPOLAR -> pickSubpolarWithRamp(biomePool, base, blockX, blockZ, t, BAND_SUBPOLAR, 0x3C43, LAT_SUBPOLAR_PRIMARY, LAT_SUBPOLAR_SECONDARY, LAT_SUBPOLAR_ACCENT);
                 default -> pickFromWeightedTags(biomePool, base, blockX, blockZ, BAND_POLAR, 0x4D54, LAT_POLAR_PRIMARY, LAT_POLAR_SECONDARY, LAT_POLAR_ACCENT);
             };
         }
@@ -975,6 +976,57 @@ public final class LatitudeBiomes {
         if (roll < 70) return primary;
         if (roll < 95) return secondary;
         return accent;
+    }
+
+    private static TagKey<Biome> subpolarTagForRoll(int roll, boolean snowyPool, TagKey<Biome> primary, TagKey<Biome> secondary, TagKey<Biome> accent) {
+        if (roll >= 95) {
+            return accent;
+        }
+        return snowyPool ? primary : secondary;
+    }
+
+    private static double subpolarSnowProbability(double absLatFraction) {
+        double subpolarStart = LatitudeMath.TEMPERATE_MAX_FRAC;
+        double polarStart = LatitudeMath.SUBPOLAR_MAX_FRAC;
+        double t = 0.0;
+        if (polarStart > subpolarStart) {
+            t = (absLatFraction - subpolarStart) / (polarStart - subpolarStart);
+        }
+        t = clamp(t, 0.0, 1.0);
+
+        double tw = clamp((t - 0.25) / 0.50, 0.0, 1.0);
+        double pSnow = tw * tw * (3.0 - 2.0 * tw);
+
+        if (t > 0.90) pSnow = 1.0;
+        if (t < 0.10) pSnow = 0.0;
+
+        return pSnow;
+    }
+
+    private static boolean useSubpolarSnowyPool(double absLatFraction, int blockX, int blockZ) {
+        double pSnow = subpolarSnowProbability(absLatFraction);
+        int cellX = Math.floorDiv(blockX, VARIANT_CELL_SIZE_BLOCKS);
+        int cellZ = Math.floorDiv(blockZ, VARIANT_CELL_SIZE_BLOCKS);
+        double r = cellHash01(WORLD_SEED ^ SUBPOLAR_RAMP_SALT, cellX, cellZ);
+        return r < pSnow;
+    }
+
+    private static RegistryEntry<Biome> pickSubpolarWithRamp(Registry<Biome> biomes, RegistryEntry<Biome> base, int blockX, int blockZ,
+                                                             double absLatFraction, int bandIndex, int weightSalt,
+                                                             TagKey<Biome> primary, TagKey<Biome> secondary, TagKey<Biome> accent) {
+        int roll = weightedRoll(blockX, blockZ, weightSalt);
+        boolean snowyPool = useSubpolarSnowyPool(absLatFraction, blockX, blockZ);
+        TagKey<Biome> tag = subpolarTagForRoll(roll, snowyPool, primary, secondary, accent);
+        return pickFromTagNoiseOrBase(biomes, tag, base, blockX, blockZ, bandIndex);
+    }
+
+    private static RegistryEntry<Biome> pickSubpolarWithRamp(Collection<RegistryEntry<Biome>> biomes, RegistryEntry<Biome> base, int blockX, int blockZ,
+                                                             double absLatFraction, int bandIndex, int weightSalt,
+                                                             TagKey<Biome> primary, TagKey<Biome> secondary, TagKey<Biome> accent) {
+        int roll = weightedRoll(blockX, blockZ, weightSalt);
+        boolean snowyPool = useSubpolarSnowyPool(absLatFraction, blockX, blockZ);
+        TagKey<Biome> tag = subpolarTagForRoll(roll, snowyPool, primary, secondary, accent);
+        return pickFromTagNoiseOrBase(biomes, tag, base, blockX, blockZ, bandIndex);
     }
 
     private static int weightedRoll(int blockX, int blockZ, int salt) {
@@ -1411,7 +1463,7 @@ public final class LatitudeBiomes {
             case BAND_EQUATOR -> pickFromWeightedTagsNoMangrove(biomes, base, blockX, blockZ, BAND_EQUATOR, 0x1A21, LAT_EQUATOR_PRIMARY, LAT_EQUATOR_SECONDARY, LAT_EQUATOR_ACCENT);
             case BAND_TROPICAL -> pickTropicalGradientNoMangrove(biomes, base, blockX, blockZ, t);
             case BAND_TEMPERATE -> pickFromWeightedTagsNoMangrove(biomes, base, blockX, blockZ, BAND_TEMPERATE, 0x2B32, LAT_TEMPERATE_PRIMARY, LAT_TEMPERATE_SECONDARY, LAT_TEMPERATE_ACCENT);
-            case BAND_SUBPOLAR -> pickFromWeightedTagsNoMangrove(biomes, base, blockX, blockZ, BAND_SUBPOLAR, 0x3C43, LAT_SUBPOLAR_PRIMARY, LAT_SUBPOLAR_SECONDARY, LAT_SUBPOLAR_ACCENT);
+            case BAND_SUBPOLAR -> pickSubpolarWithRamp(biomes, base, blockX, blockZ, t, BAND_SUBPOLAR, 0x3C43, LAT_SUBPOLAR_PRIMARY, LAT_SUBPOLAR_SECONDARY, LAT_SUBPOLAR_ACCENT);
             default -> pickFromWeightedTagsNoMangrove(biomes, base, blockX, blockZ, BAND_POLAR, 0x4D54, LAT_POLAR_PRIMARY, LAT_POLAR_SECONDARY, LAT_POLAR_ACCENT);
         };
     }
@@ -1421,7 +1473,7 @@ public final class LatitudeBiomes {
             case BAND_EQUATOR -> pickFromWeightedTagsNoMangrove(biomes, base, blockX, blockZ, BAND_EQUATOR, 0x1A21, LAT_EQUATOR_PRIMARY, LAT_EQUATOR_SECONDARY, LAT_EQUATOR_ACCENT);
             case BAND_TROPICAL -> pickTropicalGradientNoMangrove(biomes, base, blockX, blockZ, t);
             case BAND_TEMPERATE -> pickFromWeightedTagsNoMangrove(biomes, base, blockX, blockZ, BAND_TEMPERATE, 0x2B32, LAT_TEMPERATE_PRIMARY, LAT_TEMPERATE_SECONDARY, LAT_TEMPERATE_ACCENT);
-            case BAND_SUBPOLAR -> pickFromWeightedTagsNoMangrove(biomes, base, blockX, blockZ, BAND_SUBPOLAR, 0x3C43, LAT_SUBPOLAR_PRIMARY, LAT_SUBPOLAR_SECONDARY, LAT_SUBPOLAR_ACCENT);
+            case BAND_SUBPOLAR -> pickSubpolarWithRamp(biomes, base, blockX, blockZ, t, BAND_SUBPOLAR, 0x3C43, LAT_SUBPOLAR_PRIMARY, LAT_SUBPOLAR_SECONDARY, LAT_SUBPOLAR_ACCENT);
             default -> pickFromWeightedTagsNoMangrove(biomes, base, blockX, blockZ, BAND_POLAR, 0x4D54, LAT_POLAR_PRIMARY, LAT_POLAR_SECONDARY, LAT_POLAR_ACCENT);
         };
     }
@@ -1431,7 +1483,7 @@ public final class LatitudeBiomes {
             case BAND_EQUATOR -> pickFromWeightedTagsNoSwamp(biomes, base, blockX, blockZ, BAND_EQUATOR, 0x1A21, LAT_EQUATOR_PRIMARY, LAT_EQUATOR_SECONDARY, LAT_EQUATOR_ACCENT);
             case BAND_TROPICAL -> pickTropicalGradientNoSwamp(biomes, base, blockX, blockZ, t);
             case BAND_TEMPERATE -> pickFromWeightedTagsNoSwamp(biomes, base, blockX, blockZ, BAND_TEMPERATE, 0x2B32, LAT_TEMPERATE_PRIMARY, LAT_TEMPERATE_SECONDARY, LAT_TEMPERATE_ACCENT);
-            case BAND_SUBPOLAR -> pickFromWeightedTagsNoSwamp(biomes, base, blockX, blockZ, BAND_SUBPOLAR, 0x3C43, LAT_SUBPOLAR_PRIMARY, LAT_SUBPOLAR_SECONDARY, LAT_SUBPOLAR_ACCENT);
+            case BAND_SUBPOLAR -> pickSubpolarWithRamp(biomes, base, blockX, blockZ, t, BAND_SUBPOLAR, 0x3C43, LAT_SUBPOLAR_PRIMARY, LAT_SUBPOLAR_SECONDARY, LAT_SUBPOLAR_ACCENT);
             default -> pickFromWeightedTagsNoSwamp(biomes, base, blockX, blockZ, BAND_POLAR, 0x4D54, LAT_POLAR_PRIMARY, LAT_POLAR_SECONDARY, LAT_POLAR_ACCENT);
         };
     }
@@ -1441,7 +1493,7 @@ public final class LatitudeBiomes {
             case BAND_EQUATOR -> pickFromWeightedTagsNoSwamp(biomes, base, blockX, blockZ, BAND_EQUATOR, 0x1A21, LAT_EQUATOR_PRIMARY, LAT_EQUATOR_SECONDARY, LAT_EQUATOR_ACCENT);
             case BAND_TROPICAL -> pickTropicalGradientNoSwamp(biomes, base, blockX, blockZ, t);
             case BAND_TEMPERATE -> pickFromWeightedTagsNoSwamp(biomes, base, blockX, blockZ, BAND_TEMPERATE, 0x2B32, LAT_TEMPERATE_PRIMARY, LAT_TEMPERATE_SECONDARY, LAT_TEMPERATE_ACCENT);
-            case BAND_SUBPOLAR -> pickFromWeightedTagsNoSwamp(biomes, base, blockX, blockZ, BAND_SUBPOLAR, 0x3C43, LAT_SUBPOLAR_PRIMARY, LAT_SUBPOLAR_SECONDARY, LAT_SUBPOLAR_ACCENT);
+            case BAND_SUBPOLAR -> pickSubpolarWithRamp(biomes, base, blockX, blockZ, t, BAND_SUBPOLAR, 0x3C43, LAT_SUBPOLAR_PRIMARY, LAT_SUBPOLAR_SECONDARY, LAT_SUBPOLAR_ACCENT);
             default -> pickFromWeightedTagsNoSwamp(biomes, base, blockX, blockZ, BAND_POLAR, 0x4D54, LAT_POLAR_PRIMARY, LAT_POLAR_SECONDARY, LAT_POLAR_ACCENT);
         };
     }
