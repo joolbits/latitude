@@ -25,6 +25,10 @@ public final class BiomeFeatureStripping {
     }
 
     public static void init() {
+        if (Boolean.getBoolean("latitude.disableFeatureStripping")) {
+            LOGGER.info("[Latitude] Biome feature stripping disabled by system property.");
+            return;
+        }
         BiomeModifications.create(STRIP_FROZEN_RIVER_ID)
                 .add(ModificationPhase.REMOVALS,
                         ctx -> ctx.getBiomeKey().equals(BiomeKeys.FROZEN_RIVER),

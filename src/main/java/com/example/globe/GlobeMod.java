@@ -46,13 +46,14 @@ public class GlobeMod implements ModInitializer {
 
     public static final int BORDER_RADIUS = 7500;
     public static final int POLE_BAND_START_ABS_Z = 12000;
+    private static int activePoleBandStartAbsZ = POLE_BAND_START_ABS_Z;
     public static final int POLE_WARNING_DISTANCE_BLOCKS = 256;
     public static final int POLE_LETHAL_DISTANCE_BLOCKS = 96;
     public static final int POLE_LETHAL_WARNING_DISTANCE = POLE_WARNING_DISTANCE_BLOCKS;
     public static final int EFFECT_REFRESH_TICKS = 20;
     private static final long SPAWN_SALT = 0x7A3E21B5D4C1F7A9L;
 
-    public static final int POLE_START = POLE_BAND_START_ABS_Z;
+    public static final int POLE_START = 12000; // Legacy constant, use activePoleBandStartAbsZ for dynamic logic
 
     private enum PolarStage {
         NONE,
@@ -153,6 +154,8 @@ public class GlobeMod implements ModInitializer {
             context.server().execute(() -> applySpawnChoice(context.player(), payload.zoneId()));
         });
 
+        CommandRegistrationCallback.EVENT.register(LatitudeDevCommands::register);
+
         ServerTickEvents.END_SERVER_TICK.register(GlobeMod::borderUxTick);
     }
 
@@ -177,15 +180,21 @@ public class GlobeMod implements ModInitializer {
         border.setCenter(0.0, 0.0);
         border.setSize(diameter);
 
-        int activeRadius = (int) Math.round(border.getSize() * 0.5);
-        LatitudeBiomes.setActiveRadiusBlocks(activeRadius);
-        GlobeMod.LOGGER.info("[Latitude] Radius Sync: Border/2 = {}, ACTIVE_RADIUS_BLOCKS = {}",
+        int activeRadius = (int) (border.getSize() / 2);
+        LatitudeBiomes.setRadius(activeRadius);
+        LOGGER.info("[Latitude] Radius Sync: WorldBorder/2 = {}, ACTIVE_RADIUS_BLOCKS = {}", 
                 activeRadius, LatitudeBiomes.getActiveRadiusBlocks());
 
-        POLAR_SCRUBBER = ENABLE_POLAR_SCRUBBER ? new PolarCapScrubber(borderRadiusBlocks, POLE_BAND_START_ABS_Z) : null;
+        int activeRadiusForCheck = (int) Math.round(border.getSize() * 0.5);
+        LatitudeBiomes.setActiveRadiusBlocks(activeRadiusForCheck);
+        GlobeMod.LOGGER.info("[Latitude] Radius Sync: Border/2 = {}, ACTIVE_RADIUS_BLOCKS = {}",
+                activeRadiusForCheck, LatitudeBiomes.getActiveRadiusBlocks());
 
-        GlobeMod.LOGGER.info("[Latitude] WorldBorder set: radius={} diameter={} center=0,0",
-                borderRadiusBlocks, diameter);
+        activePoleBandStartAbsZ = (int) Math.round(activeRadius * com.example.globe.util.LatitudeMath.POLAR_START_FRAC);
+        POLAR_SCRUBBER = ENABLE_POLAR_SCRUBBER ? new PolarCapScrubber(activeRadius, activePoleBandStartAbsZ) : null;
+
+        GlobeMod.LOGGER.info("[Latitude] WorldBorder set: radius={} diameter={} center=0,0 polarStart={}",
+                borderRadiusBlocks, diameter, activePoleBandStartAbsZ);
     }
 
     private static void borderUxTick(MinecraftServer server) {
@@ -212,6 +221,11 @@ public class GlobeMod implements ModInitializer {
 
             double progressZ = com.example.globe.util.LatitudeMath.hazardProgress(border, player.getZ());
             int stageIndex = com.example.globe.util.LatitudeMath.hazardStageIndex(border, player.getZ(), progressZ);
+
+            // Check if player is in the active polar band for effects
+            if (Math.abs(player.getZ()) < activePoleBandStartAbsZ) {
+                continue;
+            }
 
             PolarStage stage = switch (stageIndex) {
                 case 1 -> PolarStage.IMPAIR;
@@ -311,22 +325,19 @@ public class GlobeMod implements ModInitializer {
         if (zoneId == null) {
             zoneId = "TEMPERATE";
         }
-        if (!"TEMPERATE".equals(zoneId)) {
-            LOGGER.info("Forcing temperate spawn: player={}, requested={}, forced=TEMPERATE", player.getName().getString(), zoneId);
-            zoneId = "TEMPERATE";
-        }
 
         LOGGER.info("Applying spawn choice: player={}, zoneId={}", player.getName().getString(), zoneId);
 
-        WorldBorder border = world.getWorldBorder();
-        int radius = (int) Math.round(com.example.globe.util.LatitudeMath.halfSize(border));
+        int radius = LatitudeBiomes.getActiveRadiusBlocks();
+        if (radius <= 0) {
+            WorldBorder border = world.getWorldBorder();
+            radius = (int) Math.round(com.example.globe.util.LatitudeMath.halfSize(border));
+        }
 
         long seed = world.getServer().getSaveProperties().getGeneratorOptions().getSeed();
-        double u = hash01(seed, 0, 0, SPAWN_SALT);
         double v = hash01(seed, 1, 0, SPAWN_SALT);
-        double minFrac = 0.30 * com.example.globe.util.LatitudeMath.TEMPERATE_MAX_FRAC;
-        double maxFrac = 0.70 * com.example.globe.util.LatitudeMath.TEMPERATE_MAX_FRAC;
-        double spawnAbsLatFrac = lerp(minFrac, maxFrac, u);
+        
+        double spawnAbsLatFrac = com.example.globe.util.LatitudeMath.spawnFracForZoneKey(zoneId);
         int z = (int) Math.round(radius * spawnAbsLatFrac);
         if (v < 0.5) {
             z = -z;

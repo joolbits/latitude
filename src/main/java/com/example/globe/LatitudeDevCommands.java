@@ -5,22 +5,20 @@ import com.example.globe.world.LatitudeBiomes;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.context.CommandContext;
 import net.minecraft.registry.tag.BiomeTags;
+import net.minecraft.registry.entry.RegistryEntry;
 import net.minecraft.server.command.CommandManager;
 import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.text.Text;
 import net.minecraft.util.math.BlockPos;
-import net.minecraft.world.WorldProperties;
 import net.minecraft.world.Heightmap;
-import net.minecraft.world.chunk.Chunk;
 import net.minecraft.command.CommandRegistryAccess;
-import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.network.packet.s2c.play.PositionFlag;
+import net.minecraft.world.biome.Biome;
 
 import java.util.EnumSet;
 import java.util.Locale;
-import java.util.Set;
 
 public final class LatitudeDevCommands {
 
@@ -29,11 +27,6 @@ public final class LatitudeDevCommands {
                                 CommandManager.RegistrationEnvironment environment) {
 
         dispatcher.register(CommandManager.literal("lattp")
-            .requires(source -> {
-                var e = source.getEntity();
-                return e instanceof net.minecraft.server.network.ServerPlayerEntity p
-                    && source.getServer().getPlayerManager().isOperator(p.getGameProfile());
-            })
             .then(CommandManager.literal("equator").executes(ctx -> tp(ctx, "EQUATOR", +1)))
             .then(CommandManager.literal("tropics").executes(ctx -> tp(ctx, "TROPICAL", +1)))
             .then(CommandManager.literal("subtropics").executes(ctx -> tp(ctx, "SUBTROPICAL", +1)))
@@ -43,11 +36,6 @@ public final class LatitudeDevCommands {
         );
 
         dispatcher.register(CommandManager.literal("lattps")
-            .requires(source -> {
-                var e = source.getEntity();
-                return e instanceof net.minecraft.server.network.ServerPlayerEntity p
-                    && source.getServer().getPlayerManager().isOperator(p.getGameProfile());
-            })
             .then(CommandManager.literal("equator").executes(ctx -> tp(ctx, "EQUATOR", -1)))
             .then(CommandManager.literal("tropics").executes(ctx -> tp(ctx, "TROPICAL", -1)))
             .then(CommandManager.literal("subtropics").executes(ctx -> tp(ctx, "SUBTROPICAL", -1)))
@@ -126,7 +114,7 @@ public final class LatitudeDevCommands {
         int y = world.getTopY(Heightmap.Type.MOTION_BLOCKING_NO_LEAVES, x, z);
         BlockPos pos = new BlockPos(x, y, z);
 
-        var biome = world.getBiome(pos);
+        RegistryEntry<Biome> biome = world.getBiome(pos);
         if (biome.isIn(BiomeTags.IS_OCEAN)) return null;
 
         return pos;
