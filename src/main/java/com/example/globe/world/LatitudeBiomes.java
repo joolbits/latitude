@@ -238,6 +238,10 @@ public final class LatitudeBiomes {
     private static final long MANGROVE_FALLBACK_SALT = 0x6D2B79F5L;
     private static final long SWAMP_FALLBACK_SALT = 0x7A1D9E0BL;
 
+    private static final int SWAMP_PATCH_SIZE_BLOCKS = 768;
+    private static final double SWAMP_PATCH_CHANCE = 0.42;
+    private static final long SWAMP_PATCH_SALT = 0x53A95A4DL;
+
     private static final TagKey<Biome> LAT_EQUATOR_PRIMARY = TagKey.of(RegistryKeys.BIOME, Identifier.of("globe", "lat_equator_primary"));
     private static final TagKey<Biome> LAT_EQUATOR_SECONDARY = TagKey.of(RegistryKeys.BIOME, Identifier.of("globe", "lat_equator_secondary"));
     private static final TagKey<Biome> LAT_EQUATOR_ACCENT = TagKey.of(RegistryKeys.BIOME, Identifier.of("globe", "lat_equator_accent"));
@@ -410,13 +414,25 @@ public final class LatitudeBiomes {
         }
 
         int landBandIndex = latitudeBandIndexWithBlend(blockX, blockZ, borderRadiusBlocks, zone, t);
-        RegistryEntry<Biome> chosen = switch (landBandIndex) {
-            case BAND_EQUATOR -> pickFromWeightedTags(biomeRegistry, base, blockX, blockZ, BAND_EQUATOR, 0x1A21, LAT_EQUATOR_PRIMARY, LAT_EQUATOR_SECONDARY, LAT_EQUATOR_ACCENT);
-            case BAND_TROPICAL -> pickTropicalGradient(biomeRegistry, base, blockX, blockZ, t);
-            case BAND_TEMPERATE -> pickFromWeightedTags(biomeRegistry, base, blockX, blockZ, BAND_TEMPERATE, 0x2B32, LAT_TEMPERATE_PRIMARY, LAT_TEMPERATE_SECONDARY, LAT_TEMPERATE_ACCENT);
-            case BAND_SUBPOLAR -> pickFromWeightedTags(biomeRegistry, base, blockX, blockZ, BAND_SUBPOLAR, 0x3C43, LAT_SUBPOLAR_PRIMARY, LAT_SUBPOLAR_SECONDARY, LAT_SUBPOLAR_ACCENT);
-            default -> pickFromWeightedTags(biomeRegistry, base, blockX, blockZ, BAND_POLAR, 0x4D54, LAT_POLAR_PRIMARY, LAT_POLAR_SECONDARY, LAT_POLAR_ACCENT);
-        };
+        RegistryEntry<Biome> chosen = null;
+        if ((landBandIndex == BAND_EQUATOR || landBandIndex == BAND_TROPICAL) && sampler != null && swampPatchHere(WORLD_SEED, blockX, blockZ)) {
+            SwampDecision decision = evaluateSwamp(blockX, blockZ, sampler);
+            if (decision.allow()) {
+                try {
+                    chosen = biome(biomeRegistry, SWAMP_ID);
+                } catch (Throwable ignored) {
+                }
+            }
+        }
+        if (chosen == null) {
+            chosen = switch (landBandIndex) {
+                case BAND_EQUATOR -> pickFromWeightedTags(biomeRegistry, base, blockX, blockZ, BAND_EQUATOR, 0x1A21, LAT_EQUATOR_PRIMARY, LAT_EQUATOR_SECONDARY, LAT_EQUATOR_ACCENT);
+                case BAND_TROPICAL -> pickTropicalGradient(biomeRegistry, base, blockX, blockZ, t);
+                case BAND_TEMPERATE -> pickFromWeightedTags(biomeRegistry, base, blockX, blockZ, BAND_TEMPERATE, 0x2B32, LAT_TEMPERATE_PRIMARY, LAT_TEMPERATE_SECONDARY, LAT_TEMPERATE_ACCENT);
+                case BAND_SUBPOLAR -> pickFromWeightedTags(biomeRegistry, base, blockX, blockZ, BAND_SUBPOLAR, 0x3C43, LAT_SUBPOLAR_PRIMARY, LAT_SUBPOLAR_SECONDARY, LAT_SUBPOLAR_ACCENT);
+                default -> pickFromWeightedTags(biomeRegistry, base, blockX, blockZ, BAND_POLAR, 0x4D54, LAT_POLAR_PRIMARY, LAT_POLAR_SECONDARY, LAT_POLAR_ACCENT);
+            };
+        }
         String mangroveDecision = null;
         if (shouldTryMangroveOverride(chosen, landBandIndex)) {
             MangroveDecision decision = evaluateMangrove(blockX, blockZ, sampler);
@@ -493,13 +509,22 @@ public final class LatitudeBiomes {
         }
 
         int landBandIndex = latitudeBandIndexWithBlend(blockX, blockZ, borderRadiusBlocks, zone, t);
-        RegistryEntry<Biome> chosen = switch (landBandIndex) {
-            case BAND_EQUATOR -> pickFromWeightedTags(biomePool, base, blockX, blockZ, BAND_EQUATOR, 0x1A21, LAT_EQUATOR_PRIMARY, LAT_EQUATOR_SECONDARY, LAT_EQUATOR_ACCENT);
-            case BAND_TROPICAL -> pickTropicalGradient(biomePool, base, blockX, blockZ, t);
-            case BAND_TEMPERATE -> pickFromWeightedTags(biomePool, base, blockX, blockZ, BAND_TEMPERATE, 0x2B32, LAT_TEMPERATE_PRIMARY, LAT_TEMPERATE_SECONDARY, LAT_TEMPERATE_ACCENT);
-            case BAND_SUBPOLAR -> pickFromWeightedTags(biomePool, base, blockX, blockZ, BAND_SUBPOLAR, 0x3C43, LAT_SUBPOLAR_PRIMARY, LAT_SUBPOLAR_SECONDARY, LAT_SUBPOLAR_ACCENT);
-            default -> pickFromWeightedTags(biomePool, base, blockX, blockZ, BAND_POLAR, 0x4D54, LAT_POLAR_PRIMARY, LAT_POLAR_SECONDARY, LAT_POLAR_ACCENT);
-        };
+        RegistryEntry<Biome> chosen = null;
+        if ((landBandIndex == BAND_EQUATOR || landBandIndex == BAND_TROPICAL) && sampler != null && swampPatchHere(WORLD_SEED, blockX, blockZ)) {
+            SwampDecision decision = evaluateSwamp(blockX, blockZ, sampler);
+            if (decision.allow()) {
+                chosen = entryById(biomePool, SWAMP_ID);
+            }
+        }
+        if (chosen == null) {
+            chosen = switch (landBandIndex) {
+                case BAND_EQUATOR -> pickFromWeightedTags(biomePool, base, blockX, blockZ, BAND_EQUATOR, 0x1A21, LAT_EQUATOR_PRIMARY, LAT_EQUATOR_SECONDARY, LAT_EQUATOR_ACCENT);
+                case BAND_TROPICAL -> pickTropicalGradient(biomePool, base, blockX, blockZ, t);
+                case BAND_TEMPERATE -> pickFromWeightedTags(biomePool, base, blockX, blockZ, BAND_TEMPERATE, 0x2B32, LAT_TEMPERATE_PRIMARY, LAT_TEMPERATE_SECONDARY, LAT_TEMPERATE_ACCENT);
+                case BAND_SUBPOLAR -> pickFromWeightedTags(biomePool, base, blockX, blockZ, BAND_SUBPOLAR, 0x3C43, LAT_SUBPOLAR_PRIMARY, LAT_SUBPOLAR_SECONDARY, LAT_SUBPOLAR_ACCENT);
+                default -> pickFromWeightedTags(biomePool, base, blockX, blockZ, BAND_POLAR, 0x4D54, LAT_POLAR_PRIMARY, LAT_POLAR_SECONDARY, LAT_POLAR_ACCENT);
+            };
+        }
         String mangroveDecision = null;
         if (shouldTryMangroveOverride(chosen, landBandIndex)) {
             MangroveDecision decision = evaluateMangrove(blockX, blockZ, sampler);
@@ -1201,11 +1226,11 @@ public final class LatitudeBiomes {
         double cont = MultiNoiseUtil.toFloat(point.continentalnessNoise());
         double erosion = MultiNoiseUtil.toFloat(point.erosionNoise());
         double weirdness = MultiNoiseUtil.toFloat(point.weirdnessNoise());
-        // Swamps: lowland & not rugged; allow inland lowlands too (not just coastal slice)
+        // Swamps: lowland & not rugged; |weirdness| tighter (correlates with ruggedness)
         boolean swampOk =
-            cont > -0.10 && cont < 0.45 &&
-            erosion > -0.10 &&
-            Math.abs(weirdness) < 0.18;
+            cont > -0.20 && cont < 0.55 &&
+            erosion > -0.20 &&
+            Math.abs(weirdness) < 0.16;
         return new SwampDecision(swampOk, cont, erosion, weirdness, swampOk);
     }
 
@@ -1214,6 +1239,14 @@ public final class LatitudeBiomes {
         int cellZ = Math.floorDiv(blockZ, MANGROVE_PATCH_CELL_BLOCKS);
         long roll = hash64(cellX, cellZ, MANGROVE_PATCH_SALT);
         return Long.remainderUnsigned(roll, 100L) < MANGROVE_PATCH_PERCENT;
+    }
+
+    private static boolean swampPatchHere(long seed, int blockX, int blockZ) {
+        int chunkX = blockX >> 4;
+        int chunkZ = blockZ >> 4;
+        int patchSizeChunks = SWAMP_PATCH_SIZE_BLOCKS / 16;
+        double n = blobNoise01(seed ^ SWAMP_PATCH_SALT, chunkX, chunkZ, patchSizeChunks, SWAMP_PATCH_SALT);
+        return n < SWAMP_PATCH_CHANCE;
     }
 
     private static RegistryEntry<Biome> pickMangroveFallback(Registry<Biome> biomes, RegistryEntry<Biome> base, int blockX, int blockZ, double t, int bandIndex) {
