@@ -240,8 +240,8 @@ public final class LatitudeBiomes {
     private static final long MANGROVE_FALLBACK_SALT = 0x6D2B79F5L;
     private static final long SWAMP_FALLBACK_SALT = 0x7A1D9E0BL;
 
-    private static final int BADLANDS_PATCH_SIZE_BLOCKS = 4096;
-    private static final double BADLANDS_PATCH_CHANCE = 0.40;
+    private static final int BADLANDS_PATCH_SIZE_BLOCKS = 65536;
+    private static final double BADLANDS_PATCH_CHANCE = 0.42;
     private static final long BADLANDS_PATCH_SALT = 0xBADD1A2DL;
 
     private static final int SWAMP_PATCH_SIZE_BLOCKS = 1024;
@@ -441,13 +441,19 @@ public final class LatitudeBiomes {
         }
 
         int landBandIndex = latitudeBandIndexWithBlend(blockX, blockZ, borderRadiusBlocks, zone, t);
+        boolean forcedBadlands = false;
         RegistryEntry<Biome> chosen = null;
-        if (landBandIndex == BAND_TROPICAL && badlandsPatchHere(WORLD_SEED, blockX, blockZ)) {
+        if (landBandIndex == BAND_TROPICAL && isAridTropicalStep(blockX, blockZ, t) && badlandsPatchHere(WORLD_SEED, blockX, blockZ)) {
             try {
                 chosen = biome(biomeRegistry, BADLANDS_ID);
+                forcedBadlands = true;
             } catch (Throwable ignored) {
                 // fall through to normal selection
             }
+        }
+        if (forcedBadlands) {
+            debugPick(blockX, blockZ, borderRadiusBlocks, t, zone, base, chosen, false, false, null);
+            return chosen;
         }
         if (chosen == null && (landBandIndex == BAND_EQUATOR || landBandIndex == BAND_TROPICAL) && sampler != null) {
             int noiseX = blockX >> 2;
@@ -474,42 +480,52 @@ public final class LatitudeBiomes {
             };
         }
         String mangroveDecision = null;
-        if (shouldTryMangroveOverride(chosen, landBandIndex)) {
-            MangroveDecision decision = evaluateMangrove(blockX, blockZ, sampler);
-            mangroveDecision = decision.logLabel();
-            if (decision.allow()) {
-                try {
-                    chosen = biome(biomeRegistry, MANGROVE_ID);
-                } catch (Throwable ignored) {
-                    // keep current choice
+        RegistryEntry<Biome> sanitized = chosen;
+        RegistryEntry<Biome> safe = chosen;
+        RegistryEntry<Biome> out = chosen;
+        if (!forcedBadlands) {
+            if (shouldTryMangroveOverride(chosen, landBandIndex)) {
+                MangroveDecision decision = evaluateMangrove(blockX, blockZ, sampler);
+                mangroveDecision = decision.logLabel();
+                if (decision.allow()) {
+                    try {
+                        chosen = biome(biomeRegistry, MANGROVE_ID);
+                    } catch (Throwable ignored) {
+                        // keep current choice
+                    }
+                }
+            } else if (isMangroveCandidate(chosen)) {
+                MangroveDecision decision = evaluateMangrove(blockX, blockZ, sampler);
+                mangroveDecision = decision.logLabel();
+                if (!decision.allow()) {
+                    chosen = pickMangroveFallback(biomeRegistry, base, blockX, blockZ, t, landBandIndex);
                 }
             }
-        } else if (isMangroveCandidate(chosen)) {
-            MangroveDecision decision = evaluateMangrove(blockX, blockZ, sampler);
-            mangroveDecision = decision.logLabel();
-            if (!decision.allow()) {
-                chosen = pickMangroveFallback(biomeRegistry, base, blockX, blockZ, t, landBandIndex);
+            if (isSwampCandidate(chosen)) {
+                SwampDecision decision = evaluateSwamp(blockX, blockZ, sampler);
+                if (!decision.allow()) {
+                    chosen = pickSwampFallback(biomeRegistry, base, blockX, blockZ, t, landBandIndex);
+                }
+            }
+            if (landBandIndex == BAND_TEMPERATE && isMountainLike(sampler, blockX, blockZ)) {
+                chosen = pickFromTagNoiseOrBase(biomeRegistry, LAT_TEMPERATE_MOUNTAIN, base, blockX, blockZ, landBandIndex);
+                if (isBiomeId(chosen, "minecraft:cherry_grove") && !rollChance(blockX, blockZ, 0xC7E22E55, 6L)) {
+                    chosen = pickFrom(biomeRegistry, blockX, blockZ, landBandIndex,
+                            "minecraft:meadow",
+                            "minecraft:grove",
+                            "minecraft:windswept_hills",
+                            "minecraft:stony_peaks");
+                }
+            }
+            sanitized = sanitizeLandBiome(biomeRegistry, chosen, landBandIndex);
+            safe = repickIfSurfaceCave(biomeRegistry, base, sanitized, blockX, blockZ, t, landBandIndex);
+            out = applyLandOverrides(biomeRegistry, safe, blockX, blockZ, landBandIndex);
+        }
+        if (landBandIndex == BAND_EQUATOR || landBandIndex == BAND_TROPICAL) {
+            if (isColdBiome(out)) {
+                out = pickWarmFallback(biomeRegistry, landBandIndex);
             }
         }
-        if (isSwampCandidate(chosen)) {
-            SwampDecision decision = evaluateSwamp(blockX, blockZ, sampler);
-            if (!decision.allow()) {
-                chosen = pickSwampFallback(biomeRegistry, base, blockX, blockZ, t, landBandIndex);
-            }
-        }
-        if (landBandIndex == BAND_TEMPERATE && isMountainLike(sampler, blockX, blockZ)) {
-            chosen = pickFromTagNoiseOrBase(biomeRegistry, LAT_TEMPERATE_MOUNTAIN, base, blockX, blockZ, landBandIndex);
-            if (isBiomeId(chosen, "minecraft:cherry_grove") && !rollChance(blockX, blockZ, 0xC7E22E55, 6L)) {
-                chosen = pickFrom(biomeRegistry, blockX, blockZ, landBandIndex,
-                        "minecraft:meadow",
-                        "minecraft:grove",
-                        "minecraft:windswept_hills",
-                        "minecraft:stony_peaks");
-            }
-        }
-        RegistryEntry<Biome> sanitized = sanitizeLandBiome(biomeRegistry, chosen, landBandIndex);
-        RegistryEntry<Biome> safe = repickIfSurfaceCave(biomeRegistry, base, sanitized, blockX, blockZ, t, landBandIndex);
-        RegistryEntry<Biome> out = applyLandOverrides(biomeRegistry, safe, blockX, blockZ, landBandIndex);
         debugPick(blockX, blockZ, borderRadiusBlocks, t, zone, base, out, false, out != sanitized, mangroveDecision);
         return out;
     }
@@ -553,9 +569,15 @@ public final class LatitudeBiomes {
         }
 
         int landBandIndex = latitudeBandIndexWithBlend(blockX, blockZ, borderRadiusBlocks, zone, t);
+        boolean forcedBadlands = false;
         RegistryEntry<Biome> chosen = null;
-        if (landBandIndex == BAND_TROPICAL && badlandsPatchHere(WORLD_SEED, blockX, blockZ)) {
+        if (landBandIndex == BAND_TROPICAL && isAridTropicalStep(blockX, blockZ, t) && badlandsPatchHere(WORLD_SEED, blockX, blockZ)) {
             chosen = entryById(biomePool, BADLANDS_ID);
+            forcedBadlands = chosen != null;
+        }
+        if (forcedBadlands) {
+            debugPick(blockX, blockZ, borderRadiusBlocks, t, zone, base, chosen, false, false, null);
+            return chosen;
         }
         if (chosen == null && (landBandIndex == BAND_EQUATOR || landBandIndex == BAND_TROPICAL) && sampler != null) {
             int noiseX = blockX >> 2;
@@ -578,41 +600,51 @@ public final class LatitudeBiomes {
             };
         }
         String mangroveDecision = null;
-        if (shouldTryMangroveOverride(chosen, landBandIndex)) {
-            MangroveDecision decision = evaluateMangrove(blockX, blockZ, sampler);
-            mangroveDecision = decision.logLabel();
-            if (decision.allow()) {
-                RegistryEntry<Biome> mangrove = entryById(biomePool, MANGROVE_ID);
-                if (mangrove != null) {
-                    chosen = mangrove;
+        RegistryEntry<Biome> sanitized = chosen;
+        RegistryEntry<Biome> safe = chosen;
+        RegistryEntry<Biome> out = chosen;
+        if (!forcedBadlands) {
+            if (shouldTryMangroveOverride(chosen, landBandIndex)) {
+                MangroveDecision decision = evaluateMangrove(blockX, blockZ, sampler);
+                mangroveDecision = decision.logLabel();
+                if (decision.allow()) {
+                    RegistryEntry<Biome> mangrove = entryById(biomePool, MANGROVE_ID);
+                    if (mangrove != null) {
+                        chosen = mangrove;
+                    }
+                }
+            } else if (isMangroveCandidate(chosen)) {
+                MangroveDecision decision = evaluateMangrove(blockX, blockZ, sampler);
+                mangroveDecision = decision.logLabel();
+                if (!decision.allow()) {
+                    chosen = pickMangroveFallback(biomePool, base, blockX, blockZ, t, landBandIndex);
                 }
             }
-        } else if (isMangroveCandidate(chosen)) {
-            MangroveDecision decision = evaluateMangrove(blockX, blockZ, sampler);
-            mangroveDecision = decision.logLabel();
-            if (!decision.allow()) {
-                chosen = pickMangroveFallback(biomePool, base, blockX, blockZ, t, landBandIndex);
+            if (isSwampCandidate(chosen)) {
+                SwampDecision decision = evaluateSwamp(blockX, blockZ, sampler);
+                if (!decision.allow()) {
+                    chosen = pickSwampFallback(biomePool, base, blockX, blockZ, t, landBandIndex);
+                }
+            }
+            if (landBandIndex == BAND_TEMPERATE && isMountainLike(sampler, blockX, blockZ)) {
+                chosen = pickFromTagNoiseOrBase(biomePool, LAT_TEMPERATE_MOUNTAIN, base, blockX, blockZ, landBandIndex);
+                if (isBiomeId(chosen, "minecraft:cherry_grove") && !rollChance(blockX, blockZ, 0xC7E22E55, 6L)) {
+                    chosen = pickFromFallbacks(biomePool, base,
+                            "minecraft:meadow",
+                            "minecraft:grove",
+                            "minecraft:windswept_hills",
+                            "minecraft:stony_peaks");
+                }
+            }
+            sanitized = sanitizeLandBiome(biomePool, chosen, landBandIndex);
+            safe = repickIfSurfaceCave(biomePool, base, sanitized, blockX, blockZ, t, landBandIndex);
+            out = applyLandOverrides(biomePool, safe, blockX, blockZ, landBandIndex);
+        }
+        if (landBandIndex == BAND_EQUATOR || landBandIndex == BAND_TROPICAL) {
+            if (isColdBiome(out)) {
+                out = pickWarmFallback(biomePool, landBandIndex);
             }
         }
-        if (isSwampCandidate(chosen)) {
-            SwampDecision decision = evaluateSwamp(blockX, blockZ, sampler);
-            if (!decision.allow()) {
-                chosen = pickSwampFallback(biomePool, base, blockX, blockZ, t, landBandIndex);
-            }
-        }
-        if (landBandIndex == BAND_TEMPERATE && isMountainLike(sampler, blockX, blockZ)) {
-            chosen = pickFromTagNoiseOrBase(biomePool, LAT_TEMPERATE_MOUNTAIN, base, blockX, blockZ, landBandIndex);
-            if (isBiomeId(chosen, "minecraft:cherry_grove") && !rollChance(blockX, blockZ, 0xC7E22E55, 6L)) {
-                chosen = pickFromFallbacks(biomePool, base,
-                        "minecraft:meadow",
-                        "minecraft:grove",
-                        "minecraft:windswept_hills",
-                        "minecraft:stony_peaks");
-            }
-        }
-        RegistryEntry<Biome> sanitized = sanitizeLandBiome(biomePool, chosen, landBandIndex);
-        RegistryEntry<Biome> safe = repickIfSurfaceCave(biomePool, base, sanitized, blockX, blockZ, t, landBandIndex);
-        RegistryEntry<Biome> out = applyLandOverrides(biomePool, safe, blockX, blockZ, landBandIndex);
         debugPick(blockX, blockZ, borderRadiusBlocks, t, zone, base, out, false, out != sanitized, mangroveDecision);
         return out;
     }
@@ -653,6 +685,34 @@ public final class LatitudeBiomes {
             default -> pickFromWeightedTags(biomes, base, blockX, blockZ, 100, 0x7A00,
                     LAT_ARID_PRIMARY, LAT_ARID_SECONDARY, LAT_ARID_ACCENT);
         };
+    }
+
+    private static boolean isAridTropicalStep(int blockX, int blockZ, double t) {
+        int chunkX = blockX >> 4;
+        int chunkZ = blockZ >> 4;
+
+        long seed = WORLD_SEED;
+
+        double bandStart = LatitudeMath.EQUATOR_MAX_FRAC;
+        double bandEnd = LatitudeMath.SUBTROPICAL_MAX_FRAC;
+        double u = clamp((t - bandStart) / (bandEnd - bandStart), 0.0, 1.0);
+        double ladderT = 1.0 - u;
+
+        double jitterN = (blobNoise01(seed, chunkX, chunkZ, 8, 0xBADC0FFEE0DDF00DL) * 2.0) - 1.0;
+        double tJitter = ladderT + (jitterN * 0.12);
+        tJitter = clamp(tJitter, 0.0, 1.0);
+        tJitter = smoothstep(tJitter);
+
+        double stepFloat = tJitter * 4.0;
+        int baseStep = clampInt((int) Math.floor(stepFloat), 0, 3);
+        double stepFrac = stepFloat - baseStep;
+        double dither = ValueNoise2D.sampleBlocks(seed ^ TROPICAL_DITHER_SALT, blockX, blockZ, DITHER_SCALE_BLOCKS);
+        int step = baseStep;
+        if (baseStep < 3 && dither < stepFrac) {
+            step = baseStep + 1;
+        }
+
+        return step == 0;
     }
 
     private static RegistryEntry<Biome> pickTropicalGradient(Collection<RegistryEntry<Biome>> biomes, RegistryEntry<Biome> base, int blockX, int blockZ, double t) {
@@ -1193,6 +1253,41 @@ public final class LatitudeBiomes {
 
     private static String biomeId(RegistryEntry<Biome> entry) {
         return entry.getKey().map(key -> key.getValue().toString()).orElse("?");
+    }
+
+    private static boolean isColdBiome(RegistryEntry<Biome> entry) {
+        if (entry == null) {
+            return false;
+        }
+        String path = entry.getKey().map(key -> key.getValue().getPath()).orElse("");
+        return path.contains("snow") || path.contains("ice") || path.contains("frozen");
+    }
+
+    private static RegistryEntry<Biome> pickWarmFallback(Registry<Biome> biomes, int bandIndex) {
+        String target = bandIndex == BAND_EQUATOR ? "minecraft:jungle" : "minecraft:savanna";
+        try {
+            return biome(biomes, target);
+        } catch (Throwable ignored) {
+            try {
+                return biome(biomes, "minecraft:desert");
+            } catch (Throwable ignoredAgain) {
+                return biome(biomes, "minecraft:jungle");
+            }
+        }
+    }
+
+    private static RegistryEntry<Biome> pickWarmFallback(Collection<RegistryEntry<Biome>> biomes, int bandIndex) {
+        String target = bandIndex == BAND_EQUATOR ? "minecraft:jungle" : "minecraft:savanna";
+        RegistryEntry<Biome> entry = entryById(biomes, target);
+        if (entry != null) {
+            return entry;
+        }
+        entry = entryById(biomes, "minecraft:desert");
+        if (entry != null) {
+            return entry;
+        }
+        entry = entryById(biomes, "minecraft:jungle");
+        return entry != null ? entry : biomes.stream().findFirst().orElse(null);
     }
 
     private static void debugPick(int blockX, int blockZ, int borderRadiusBlocks, double t, LatitudeMath.LatitudeZone zone,
