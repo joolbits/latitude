@@ -62,6 +62,6 @@ public final class LatitudeBiomeSource extends BiomeSource {
         RegistryEntry<Biome> base = original.getBiome(x, 0, z, sampler);
         int blockX = x << 2;
         int blockZ = z << 2;
-        return LatitudeBiomes.pick(biomes, base, blockX, blockZ, borderRadiusBlocks, sampler);
+        return LatitudeBiomes.pick(biomes, base, blockX, blockZ, borderRadiusBlocks, sampler, "SOURCE");
     }
 }

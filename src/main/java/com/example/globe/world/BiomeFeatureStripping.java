@@ -2,6 +2,7 @@ package com.example.globe.world;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -10,7 +11,7 @@ import net.fabricmc.fabric.api.biome.v1.BiomeModificationContext;
 import net.fabricmc.fabric.api.biome.v1.BiomeModifications;
 import net.fabricmc.fabric.api.biome.v1.ModificationPhase;
 import net.minecraft.registry.RegistryKey;
-import net.minecraft.registry.RegistryKeys;
+import net.minecraft.registry.entry.RegistryEntry;
 import net.minecraft.util.Identifier;
 import net.minecraft.world.biome.BiomeKeys;
 import net.minecraft.world.gen.GenerationStep;
@@ -35,47 +36,67 @@ public final class BiomeFeatureStripping {
         int attempted = 0;
         int removed = 0;
 
-        attempted++;
-        removed += removeFeature(ctx, step, Identifier.of("minecraft", "patch_sugar_cane"));
-        attempted++;
-        removed += removeFeature(ctx, step, Identifier.of("minecraft", "patch_grass"));
-        attempted++;
-        removed += removeFeature(ctx, step, Identifier.of("minecraft", "patch_tall_grass"));
-        attempted++;
-        removed += removeFeature(ctx, step, Identifier.of("minecraft", "patch_large_fern"));
-
+        boolean enumerated = false;
         try {
-            List<Identifier> fireflyIds = findFireflyPlacedFeatures();
-            for (Identifier id : fireflyIds) {
-                attempted++;
-                removed += removeFeature(ctx, step, id);
+            List<RegistryKey<PlacedFeature>> stepKeys = findStepFeatures(ctx, step);
+            enumerated = !stepKeys.isEmpty();
+            attempted += stepKeys.size();
+            for (RegistryKey<PlacedFeature> key : stepKeys) {
+                if (ctx.getGenerationSettings().removeFeature(step, key)) {
+                    removed++;
+                }
             }
         } catch (Throwable t) {
-            LOGGER.warn("[Latitude] Frozen river vegetal scan failed: {}", t.toString());
+            LOGGER.warn("[Latitude] Frozen river vegetal enumeration failed: {}", t.toString());
+        }
+
+        if (!enumerated) {
+            LOGGER.warn("[Latitude] Frozen river vegetal enumeration empty; no VEGETAL_DECORATION features removed.");
         }
 
         LOGGER.info("[Latitude] Frozen river vegetal removal attempted={} removed={} step={}", attempted, removed, step);
     }
 
-    private static List<Identifier> findFireflyPlacedFeatures() {
-        List<Identifier> fireflyIds = new ArrayList<>();
+    private static List<RegistryKey<PlacedFeature>> findStepFeatures(BiomeModificationContext ctx, GenerationStep.Feature step) {
+        List<RegistryKey<PlacedFeature>> keys = new ArrayList<>();
+        Object generationSettings = extractGenerationSettings(ctx.getGenerationSettings());
+        if (generationSettings == null) {
+            return keys;
+        }
         try {
-            Class<?> registriesClass = Class.forName("net.minecraft.registry.Registries");
-            Object registry = registriesClass.getField("PLACED_FEATURE").get(null);
-            Iterable<?> ids = (Iterable<?>) registry.getClass().getMethod("getIds").invoke(registry);
-            for (Object id : ids) {
-                if (id instanceof Identifier identifier && identifier.getPath().contains("firefly")) {
-                    fireflyIds.add(identifier);
+            Object features = generationSettings.getClass().getMethod("getFeatures").invoke(generationSettings);
+            if (features instanceof List<?> steps) {
+                int idx = step.ordinal();
+                if (idx >= 0 && idx < steps.size()) {
+                    Object stepList = steps.get(idx);
+                    if (stepList instanceof List<?> placedList) {
+                        for (Object entry : placedList) {
+                            if (entry instanceof RegistryEntry<?> registryEntry) {
+                                Optional<? extends RegistryKey<?>> key = registryEntry.getKey();
+                                if (key.isPresent()) {
+                                    @SuppressWarnings("unchecked")
+                                    RegistryKey<PlacedFeature> cast = (RegistryKey<PlacedFeature>) key.get();
+                                    keys.add(cast);
+                                }
+                            }
+                        }
+                    }
                 }
             }
         } catch (Throwable t) {
-            LOGGER.warn("[Latitude] Frozen river firefly scan unavailable: {}", t.toString());
+            LOGGER.warn("[Latitude] Frozen river feature list unavailable: {}", t.toString());
         }
-        return fireflyIds;
+        return keys;
     }
 
-    private static int removeFeature(BiomeModificationContext ctx, GenerationStep.Feature step, Identifier id) {
-        RegistryKey<PlacedFeature> key = RegistryKey.of(RegistryKeys.PLACED_FEATURE, id);
-        return ctx.getGenerationSettings().removeFeature(step, key) ? 1 : 0;
+    private static Object extractGenerationSettings(Object generationSettingsContext) {
+        try {
+            var field = generationSettingsContext.getClass().getDeclaredField("generationSettings");
+            field.setAccessible(true);
+            return field.get(generationSettingsContext);
+        } catch (Throwable ignored) {
+            return null;
+        }
     }
+
 }

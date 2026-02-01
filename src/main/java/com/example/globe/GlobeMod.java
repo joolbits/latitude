@@ -50,6 +50,7 @@ public class GlobeMod implements ModInitializer {
     public static final int POLE_LETHAL_DISTANCE_BLOCKS = 96;
     public static final int POLE_LETHAL_WARNING_DISTANCE = POLE_WARNING_DISTANCE_BLOCKS;
     public static final int EFFECT_REFRESH_TICKS = 20;
+    private static final long SPAWN_SALT = 0x7A3E21B5D4C1F7A9L;
 
     public static final int POLE_START = POLE_BAND_START_ABS_Z;
 
@@ -176,6 +177,11 @@ public class GlobeMod implements ModInitializer {
         border.setCenter(0.0, 0.0);
         border.setSize(diameter);
 
+        int activeRadius = (int) Math.round(border.getSize() * 0.5);
+        LatitudeBiomes.setActiveRadiusBlocks(activeRadius);
+        GlobeMod.LOGGER.info("[Latitude] Radius Sync: Border/2 = {}, ACTIVE_RADIUS_BLOCKS = {}",
+                activeRadius, LatitudeBiomes.getActiveRadiusBlocks());
+
         POLAR_SCRUBBER = ENABLE_POLAR_SCRUBBER ? new PolarCapScrubber(borderRadiusBlocks, POLE_BAND_START_ABS_Z) : null;
 
         GlobeMod.LOGGER.info("[Latitude] WorldBorder set: radius={} diameter={} center=0,0",
@@ -284,6 +290,12 @@ public class GlobeMod implements ModInitializer {
             return;
         }
 
+        if (Boolean.getBoolean("latitude.disableSpawnTeleport")) {
+            // DEBUG ONLY: avoid join hitch while diagnosing spawn teleport.
+            LOGGER.info("Spawn teleport disabled by latitude.disableSpawnTeleport (debug only).");
+            return;
+        }
+
         ServerWorld world = (ServerWorld) player.getEntityWorld();
         if (!isGlobeOverworld(world)) {
             return;
@@ -297,7 +309,11 @@ public class GlobeMod implements ModInitializer {
         }
 
         if (zoneId == null) {
-            zoneId = "EQUATOR";
+            zoneId = "TEMPERATE";
+        }
+        if (!"TEMPERATE".equals(zoneId)) {
+            LOGGER.info("Forcing temperate spawn: player={}, requested={}, forced=TEMPERATE", player.getName().getString(), zoneId);
+            zoneId = "TEMPERATE";
         }
 
         LOGGER.info("Applying spawn choice: player={}, zoneId={}", player.getName().getString(), zoneId);
@@ -305,25 +321,22 @@ public class GlobeMod implements ModInitializer {
         WorldBorder border = world.getWorldBorder();
         int radius = (int) Math.round(com.example.globe.util.LatitudeMath.halfSize(border));
 
-        double t = com.example.globe.util.LatitudeMath.spawnFracForZoneKey(zoneId);
-
-        if (t < 0.0) t = 0.0;
-        if (t > 1.0) t = 1.0;
-
-        int z = (int) Math.round(radius * t);
-
-        int margin = POLE_WARNING_DISTANCE_BLOCKS + 64;
-        int minZ = -radius + margin;
-        int maxZ = radius - margin;
-        if (minZ > maxZ) {
-            minZ = 0;
-            maxZ = 0;
+        long seed = world.getServer().getSaveProperties().getGeneratorOptions().getSeed();
+        double u = hash01(seed, 0, 0, SPAWN_SALT);
+        double v = hash01(seed, 1, 0, SPAWN_SALT);
+        double minFrac = 0.30 * com.example.globe.util.LatitudeMath.TEMPERATE_MAX_FRAC;
+        double maxFrac = 0.70 * com.example.globe.util.LatitudeMath.TEMPERATE_MAX_FRAC;
+        double spawnAbsLatFrac = lerp(minFrac, maxFrac, u);
+        int z = (int) Math.round(radius * spawnAbsLatFrac);
+        if (v < 0.5) {
+            z = -z;
         }
-        if (z < minZ) z = minZ;
-        if (z > maxZ) z = maxZ;
+
+        int warnStartZ = Math.max(0, radius - POLE_WARNING_DISTANCE_BLOCKS);
+        int maxAbsZ = Math.max(0, warnStartZ - 500);
+        z = MathHelper.clamp(z, -maxAbsZ, maxAbsZ);
 
         int targetZ = z;
-        long seed = world.getServer().getSaveProperties().getGeneratorOptions().getSeed();
 
         BlockPos spawnPos = findLandSpawn(world, radius, targetZ, seed);
 
@@ -412,6 +425,20 @@ public class GlobeMod implements ModInitializer {
         if (!world.getFluidState(ground).isEmpty()) return null;
 
         return spawn;
+    }
+
+    private static double lerp(double a, double b, double t) {
+        return a + (b - a) * t;
+    }
+
+    private static double hash01(long seed, int x, int z, long salt) {
+        long h = seed ^ salt;
+        h ^= (long) x * 0x9E3779B97F4A7C15L;
+        h ^= (long) z * 0xC2B2AE3D27D4EB4FL;
+        h ^= (h >>> 27);
+        h *= 0x3C79AC492BA7B653L;
+        h ^= (h >>> 33);
+        return ((h >>> 11) * (1.0 / (1L << 53)));
     }
 
     private static String resolveSpawnZoneId(String selected, long seed) {
