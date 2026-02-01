@@ -1,17 +1,5 @@
 package com.example.globe.world;
 
-import com.example.globe.util.LatitudeMath;
-import com.example.globe.util.ValueNoise2D;
-import net.minecraft.registry.Registry;
-import net.minecraft.registry.RegistryKey;
-import net.minecraft.registry.RegistryKeys;
-import net.minecraft.registry.entry.RegistryEntry;
-import net.minecraft.registry.tag.BiomeTags;
-import net.minecraft.registry.tag.TagKey;
-import net.minecraft.util.Identifier;
-import net.minecraft.world.biome.Biome;
-import net.minecraft.world.biome.source.util.MultiNoiseUtil;
-
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
@@ -21,6 +9,19 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import com.example.globe.util.LatitudeMath;
+import com.example.globe.util.ValueNoise2D;
+
+import net.minecraft.registry.Registry;
+import net.minecraft.registry.RegistryKey;
+import net.minecraft.registry.RegistryKeys;
+import net.minecraft.registry.entry.RegistryEntry;
+import net.minecraft.registry.tag.BiomeTags;
+import net.minecraft.registry.tag.TagKey;
+import net.minecraft.util.Identifier;
+import net.minecraft.world.biome.Biome;
+import net.minecraft.world.biome.source.util.MultiNoiseUtil;
 
 public final class LatitudeBiomes {
     private LatitudeBiomes() {
@@ -238,8 +239,8 @@ public final class LatitudeBiomes {
     private static final long MANGROVE_FALLBACK_SALT = 0x6D2B79F5L;
     private static final long SWAMP_FALLBACK_SALT = 0x7A1D9E0BL;
 
-    private static final int SWAMP_PATCH_SIZE_BLOCKS = 768;
-    private static final double SWAMP_PATCH_CHANCE = 0.42;
+    private static final int SWAMP_PATCH_SIZE_BLOCKS = 1024;
+    private static final double SWAMP_PATCH_CHANCE = 0.55;
     private static final long SWAMP_PATCH_SALT = 0x53A95A4DL;
 
     private static final TagKey<Biome> LAT_EQUATOR_PRIMARY = TagKey.of(RegistryKeys.BIOME, Identifier.of("globe", "lat_equator_primary"));
@@ -368,6 +369,27 @@ public final class LatitudeBiomes {
         return nx0 + (nx1 - nx0) * v;
     }
 
+    /** Block-space version for swamp patch mask; avoids chunk/block mismatch. */
+    private static double blobNoise01Blocks(long seed, int blockX, int blockZ, int patchSizeBlocks, long salt) {
+        int gx = Math.floorDiv(blockX, patchSizeBlocks);
+        int gz = Math.floorDiv(blockZ, patchSizeBlocks);
+        int x0 = gx * patchSizeBlocks;
+        int z0 = gz * patchSizeBlocks;
+        int x1 = x0 + patchSizeBlocks;
+        int z1 = z0 + patchSizeBlocks;
+        double fx = (blockX - x0) / (double) patchSizeBlocks;
+        double fz = (blockZ - z0) / (double) patchSizeBlocks;
+        double u = smoothstep(fx);
+        double v = smoothstep(fz);
+        double n00 = hash01(seed, x0, z0, salt);
+        double n10 = hash01(seed, x1, z0, salt);
+        double n01 = hash01(seed, x0, z1, salt);
+        double n11 = hash01(seed, x1, z1, salt);
+        double nx0 = n00 + (n10 - n00) * u;
+        double nx1 = n01 + (n11 - n01) * u;
+        return nx0 + (nx1 - nx0) * v;
+    }
+
     public static RegistryEntry<Biome> pick(Registry<Biome> biomeRegistry, RegistryEntry<Biome> base, int blockX, int blockZ, int borderRadiusBlocks, MultiNoiseUtil.MultiNoiseSampler sampler) {
         if (borderRadiusBlocks <= 0) {
             return base;
@@ -415,9 +437,14 @@ public final class LatitudeBiomes {
 
         int landBandIndex = latitudeBandIndexWithBlend(blockX, blockZ, borderRadiusBlocks, zone, t);
         RegistryEntry<Biome> chosen = null;
-        if ((landBandIndex == BAND_EQUATOR || landBandIndex == BAND_TROPICAL) && sampler != null && swampPatchHere(WORLD_SEED, blockX, blockZ)) {
-            SwampDecision decision = evaluateSwamp(blockX, blockZ, sampler);
-            if (decision.allow()) {
+        if ((landBandIndex == BAND_EQUATOR || landBandIndex == BAND_TROPICAL) && sampler != null) {
+            int noiseX = blockX >> 2;
+            int noiseZ = blockZ >> 2;
+            MultiNoiseUtil.NoiseValuePoint p = sampler.sample(noiseX, 0, noiseZ);
+            double cont = MultiNoiseUtil.toFloat(p.continentalnessNoise());
+            double erosion = MultiNoiseUtil.toFloat(p.erosionNoise());
+            double weird = MultiNoiseUtil.toFloat(p.weirdnessNoise());
+            if (swampPatchHere(WORLD_SEED, blockX, blockZ) && swampOkInPatch(cont, erosion, weird)) {
                 try {
                     chosen = biome(biomeRegistry, SWAMP_ID);
                 } catch (Throwable ignored) {
@@ -510,9 +537,14 @@ public final class LatitudeBiomes {
 
         int landBandIndex = latitudeBandIndexWithBlend(blockX, blockZ, borderRadiusBlocks, zone, t);
         RegistryEntry<Biome> chosen = null;
-        if ((landBandIndex == BAND_EQUATOR || landBandIndex == BAND_TROPICAL) && sampler != null && swampPatchHere(WORLD_SEED, blockX, blockZ)) {
-            SwampDecision decision = evaluateSwamp(blockX, blockZ, sampler);
-            if (decision.allow()) {
+        if ((landBandIndex == BAND_EQUATOR || landBandIndex == BAND_TROPICAL) && sampler != null) {
+            int noiseX = blockX >> 2;
+            int noiseZ = blockZ >> 2;
+            MultiNoiseUtil.NoiseValuePoint p = sampler.sample(noiseX, 0, noiseZ);
+            double cont = MultiNoiseUtil.toFloat(p.continentalnessNoise());
+            double erosion = MultiNoiseUtil.toFloat(p.erosionNoise());
+            double weird = MultiNoiseUtil.toFloat(p.weirdnessNoise());
+            if (swampPatchHere(WORLD_SEED, blockX, blockZ) && swampOkInPatch(cont, erosion, weird)) {
                 chosen = entryById(biomePool, SWAMP_ID);
             }
         }
@@ -1216,6 +1248,18 @@ public final class LatitudeBiomes {
         return new MangroveDecision(suitable && patch, cont, erosion, weirdness, suitable, patch);
     }
 
+    private static boolean swampOkStrict(double cont, double erosion, double weirdness) {
+        return cont > -0.20 && cont < 0.55
+            && erosion > -0.20
+            && Math.abs(weirdness) < 0.16;
+    }
+
+    private static boolean swampOkInPatch(double cont, double erosion, double weirdness) {
+        return cont > -0.25 && cont < 0.70
+            && erosion > -0.35
+            && Math.abs(weirdness) < 0.35;
+    }
+
     private static SwampDecision evaluateSwamp(int blockX, int blockZ, MultiNoiseUtil.MultiNoiseSampler sampler) {
         if (sampler == null) {
             return new SwampDecision(true, 0.0, 0.0, 0.0, true);
@@ -1226,11 +1270,7 @@ public final class LatitudeBiomes {
         double cont = MultiNoiseUtil.toFloat(point.continentalnessNoise());
         double erosion = MultiNoiseUtil.toFloat(point.erosionNoise());
         double weirdness = MultiNoiseUtil.toFloat(point.weirdnessNoise());
-        // Swamps: lowland & not rugged; |weirdness| tighter (correlates with ruggedness)
-        boolean swampOk =
-            cont > -0.20 && cont < 0.55 &&
-            erosion > -0.20 &&
-            Math.abs(weirdness) < 0.16;
+        boolean swampOk = swampOkStrict(cont, erosion, weirdness);
         return new SwampDecision(swampOk, cont, erosion, weirdness, swampOk);
     }
 
@@ -1242,10 +1282,7 @@ public final class LatitudeBiomes {
     }
 
     private static boolean swampPatchHere(long seed, int blockX, int blockZ) {
-        int chunkX = blockX >> 4;
-        int chunkZ = blockZ >> 4;
-        int patchSizeChunks = SWAMP_PATCH_SIZE_BLOCKS / 16;
-        double n = blobNoise01(seed ^ SWAMP_PATCH_SALT, chunkX, chunkZ, patchSizeChunks, SWAMP_PATCH_SALT);
+        double n = blobNoise01Blocks(seed ^ SWAMP_PATCH_SALT, blockX, blockZ, SWAMP_PATCH_SIZE_BLOCKS, SWAMP_PATCH_SALT);
         return n < SWAMP_PATCH_CHANCE;
     }
 
