@@ -5,6 +5,7 @@ import java.util.Collection;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.slf4j.Logger;
@@ -223,12 +224,22 @@ public final class LatitudeBiomes {
     private static final boolean DEBUG_BLEND = Boolean.getBoolean("latitude.debugBlend");
     private static final int DEBUG_LIMIT = Integer.getInteger("latitude.debugBiomes.limit", 200);
     private static volatile long WORLD_SEED = 0L;
+    public static volatile int ACTIVE_RADIUS_BLOCKS = 0;
     private static final AtomicInteger DEBUG_COUNT = new AtomicInteger();
     private static final AtomicInteger BLEND_DEBUG_COUNT = new AtomicInteger();
+    private static final AtomicBoolean RADIUS_MISMATCH_LOGGED = new AtomicBoolean(false);
     private static boolean TAG_LOGGED = false;
 
     public static void setWorldSeed(long seed) {
         WORLD_SEED = seed;
+    }
+
+    public static void setActiveRadiusBlocks(int radiusBlocks) {
+        ACTIVE_RADIUS_BLOCKS = Math.max(0, radiusBlocks);
+    }
+
+    public static int getActiveRadiusBlocks() {
+        return ACTIVE_RADIUS_BLOCKS;
     }
 
     private static final String MANGROVE_ID = "minecraft:mangrove_swamp";
@@ -294,7 +305,7 @@ public final class LatitudeBiomes {
 
     private static final TransitionMode TRANSITION_MODE = TransitionMode.SMOOTH_WARP;
 
-    private static final int VARIANT_CELL_SIZE_BLOCKS = 1024;
+    private static final int VARIANT_CELL_SIZE_BLOCKS = 32;
     private static final int BLEND_TRANSITION_WIDTH_BLOCKS = 768;
     private static final int BLEND_DITHER_SCALE_BLOCKS = 512;
     private static final int BLEND_NOISE_PATCH_CHUNKS = 6;
@@ -396,19 +407,27 @@ public final class LatitudeBiomes {
         return nx0 + (nx1 - nx0) * v;
     }
 
-    public static RegistryEntry<Biome> pick(Registry<Biome> biomeRegistry, RegistryEntry<Biome> base, int blockX, int blockZ, int borderRadiusBlocks, MultiNoiseUtil.MultiNoiseSampler sampler) {
-        if (borderRadiusBlocks <= 0) {
+    public static RegistryEntry<Biome> pick(Registry<Biome> biomeRegistry, RegistryEntry<Biome> base, int blockX, int blockZ, int borderRadiusBlocks,
+                                            MultiNoiseUtil.MultiNoiseSampler sampler, String callerContext) {
+        int activeRadius = ACTIVE_RADIUS_BLOCKS;
+        if (activeRadius > 0 && borderRadiusBlocks != activeRadius && RADIUS_MISMATCH_LOGGED.compareAndSet(false, true)) {
+            LOGGER.warn("[Latitude] RADIUS MISMATCH detected from {}! Arg: {}, Active: {}", callerContext, borderRadiusBlocks, activeRadius);
+        }
+
+        boolean disableOverride = Boolean.getBoolean("latitude.disableRadiusOverride");
+        int effectiveRadius = (!disableOverride && activeRadius > 0) ? activeRadius : borderRadiusBlocks;
+        if (effectiveRadius <= 0) {
             return base;
         }
 
         int lat = Math.abs(blockZ);
-        double t = (double) lat / (double) borderRadiusBlocks;
-        LatitudeMath.LatitudeZone zone = LatitudeMath.zoneForRadius(borderRadiusBlocks, blockZ);
+        double t = (double) lat / (double) effectiveRadius;
+        LatitudeMath.LatitudeZone zone = LatitudeMath.zoneForRadius(effectiveRadius, blockZ);
         int bandIndex = bandIndexForZone(zone);
 
         if (isBeachLike(base)) {
             RegistryEntry<Biome> out = pickBeachForBand(biomeRegistry, base, blockX, blockZ, bandIndex);
-            debugPick(blockX, blockZ, borderRadiusBlocks, t, zone, base, out, true, false, null);
+            debugPick(blockX, blockZ, effectiveRadius, t, zone, base, out, true, false, null);
             return out;
         }
 
@@ -416,19 +435,19 @@ public final class LatitudeBiomes {
             if (bandIndex >= 3) {
                 try {
                     RegistryEntry<Biome> out = biome(biomeRegistry, "minecraft:frozen_river");
-                    debugPick(blockX, blockZ, borderRadiusBlocks, t, zone, base, out, false, false, null);
+                    debugPick(blockX, blockZ, effectiveRadius, t, zone, base, out, false, false, null);
                     return out;
                 } catch (Throwable ignored) {
-                    debugPick(blockX, blockZ, borderRadiusBlocks, t, zone, base, base, false, false, null);
+                    debugPick(blockX, blockZ, effectiveRadius, t, zone, base, base, false, false, null);
                     return base;
                 }
             } else {
                 try {
                     RegistryEntry<Biome> out = biome(biomeRegistry, "minecraft:river");
-                    debugPick(blockX, blockZ, borderRadiusBlocks, t, zone, base, out, false, false, null);
+                    debugPick(blockX, blockZ, effectiveRadius, t, zone, base, out, false, false, null);
                     return out;
                 } catch (Throwable ignored) {
-                    debugPick(blockX, blockZ, borderRadiusBlocks, t, zone, base, base, false, false, null);
+                    debugPick(blockX, blockZ, effectiveRadius, t, zone, base, base, false, false, null);
                     return base;
                 }
             }
@@ -437,11 +456,11 @@ public final class LatitudeBiomes {
         if (base.isIn(BiomeTags.IS_OCEAN)) {
             RegistryEntry<Biome> oceanPick = oceanByLatitudeBandOrBase(biomeRegistry, base, blockX, blockZ, bandIndex);
             RegistryEntry<Biome> out = mushroomIslandOverride(biomeRegistry, oceanPick, blockX, blockZ);
-            debugPick(blockX, blockZ, borderRadiusBlocks, t, zone, base, out, false, false, null);
+            debugPick(blockX, blockZ, effectiveRadius, t, zone, base, out, false, false, null);
             return out;
         }
 
-        int landBandIndex = latitudeBandIndexWithBlend(blockX, blockZ, borderRadiusBlocks, zone, t);
+        int landBandIndex = latitudeBandIndexWithBlend(blockX, blockZ, effectiveRadius, zone, t);
         boolean forcedBadlands = false;
         RegistryEntry<Biome> chosen = null;
         if (landBandIndex == BAND_TROPICAL && isAridTropicalStep(blockX, blockZ, t) && badlandsPatchHere(WORLD_SEED, blockX, blockZ)) {
@@ -453,7 +472,7 @@ public final class LatitudeBiomes {
             }
         }
         if (forcedBadlands) {
-            debugPick(blockX, blockZ, borderRadiusBlocks, t, zone, base, chosen, false, false, null);
+            debugPick(blockX, blockZ, effectiveRadius, t, zone, base, chosen, false, false, null);
             return chosen;
         }
         if (chosen == null && (landBandIndex == BAND_EQUATOR || landBandIndex == BAND_TROPICAL) && sampler != null) {
@@ -527,25 +546,33 @@ public final class LatitudeBiomes {
                 out = pickWarmFallback(biomeRegistry, landBandIndex);
             }
         }
-        debugPick(blockX, blockZ, borderRadiusBlocks, t, zone, base, out, false, out != sanitized, mangroveDecision);
+        debugPick(blockX, blockZ, effectiveRadius, t, zone, base, out, false, out != sanitized, mangroveDecision);
         return out;
     }
 
-    public static RegistryEntry<Biome> pick(Collection<RegistryEntry<Biome>> biomePool, RegistryEntry<Biome> base, int blockX, int blockZ, int borderRadiusBlocks, MultiNoiseUtil.MultiNoiseSampler sampler) {
-        if (borderRadiusBlocks <= 0) {
+    public static RegistryEntry<Biome> pick(Collection<RegistryEntry<Biome>> biomePool, RegistryEntry<Biome> base, int blockX, int blockZ, int borderRadiusBlocks,
+                                            MultiNoiseUtil.MultiNoiseSampler sampler, String callerContext) {
+        int activeRadius = ACTIVE_RADIUS_BLOCKS;
+        if (activeRadius > 0 && borderRadiusBlocks != activeRadius && RADIUS_MISMATCH_LOGGED.compareAndSet(false, true)) {
+            LOGGER.warn("[Latitude] RADIUS MISMATCH detected from {}! Arg: {}, Active: {}", callerContext, borderRadiusBlocks, activeRadius);
+        }
+
+        boolean disableOverride = Boolean.getBoolean("latitude.disableRadiusOverride");
+        int effectiveRadius = (!disableOverride && activeRadius > 0) ? activeRadius : borderRadiusBlocks;
+        if (effectiveRadius <= 0) {
             return base;
         }
 
         logTagPools(biomePool);
 
         int lat = Math.abs(blockZ);
-        double t = (double) lat / (double) borderRadiusBlocks;
-        LatitudeMath.LatitudeZone zone = LatitudeMath.zoneForRadius(borderRadiusBlocks, blockZ);
+        double t = (double) lat / (double) effectiveRadius;
+        LatitudeMath.LatitudeZone zone = LatitudeMath.zoneForRadius(effectiveRadius, blockZ);
         int bandIndex = bandIndexForZone(zone);
 
         if (isBeachLike(base)) {
             RegistryEntry<Biome> out = pickBeachForBand(biomePool, base, blockX, blockZ, bandIndex);
-            debugPick(blockX, blockZ, borderRadiusBlocks, t, zone, base, out, true, false, null);
+            debugPick(blockX, blockZ, effectiveRadius, t, zone, base, out, true, false, null);
             return out;
         }
 
@@ -553,23 +580,23 @@ public final class LatitudeBiomes {
             if (bandIndex >= 3) {
                 RegistryEntry<Biome> frozen = entryById(biomePool, "minecraft:frozen_river");
                 RegistryEntry<Biome> out = frozen != null ? frozen : base;
-                debugPick(blockX, blockZ, borderRadiusBlocks, t, zone, base, out, false, false, null);
+                debugPick(blockX, blockZ, effectiveRadius, t, zone, base, out, false, false, null);
                 return out;
             }
             RegistryEntry<Biome> river = entryById(biomePool, "minecraft:river");
             RegistryEntry<Biome> out = river != null ? river : base;
-            debugPick(blockX, blockZ, borderRadiusBlocks, t, zone, base, out, false, false, null);
+            debugPick(blockX, blockZ, effectiveRadius, t, zone, base, out, false, false, null);
             return out;
         }
 
         if (base.isIn(BiomeTags.IS_OCEAN)) {
             RegistryEntry<Biome> oceanPick = oceanByLatitudeBandOrBase(biomePool, base, blockX, blockZ, bandIndex);
             RegistryEntry<Biome> out = mushroomIslandOverride(biomePool, oceanPick, blockX, blockZ);
-            debugPick(blockX, blockZ, borderRadiusBlocks, t, zone, base, out, false, false, null);
+            debugPick(blockX, blockZ, effectiveRadius, t, zone, base, out, false, false, null);
             return out;
         }
 
-        int landBandIndex = latitudeBandIndexWithBlend(blockX, blockZ, borderRadiusBlocks, zone, t);
+        int landBandIndex = latitudeBandIndexWithBlend(blockX, blockZ, effectiveRadius, zone, t);
         boolean forcedBadlands = false;
         RegistryEntry<Biome> chosen = null;
         if (landBandIndex == BAND_TROPICAL && isAridTropicalStep(blockX, blockZ, t) && badlandsPatchHere(WORLD_SEED, blockX, blockZ)) {
@@ -577,7 +604,7 @@ public final class LatitudeBiomes {
             forcedBadlands = chosen != null;
         }
         if (forcedBadlands) {
-            debugPick(blockX, blockZ, borderRadiusBlocks, t, zone, base, chosen, false, false, null);
+            debugPick(blockX, blockZ, effectiveRadius, t, zone, base, chosen, false, false, null);
             return chosen;
         }
         if (chosen == null && (landBandIndex == BAND_EQUATOR || landBandIndex == BAND_TROPICAL) && sampler != null) {
@@ -646,7 +673,7 @@ public final class LatitudeBiomes {
                 out = pickWarmFallback(biomePool, landBandIndex);
             }
         }
-        debugPick(blockX, blockZ, borderRadiusBlocks, t, zone, base, out, false, out != sanitized, mangroveDecision);
+        debugPick(blockX, blockZ, effectiveRadius, t, zone, base, out, false, out != sanitized, mangroveDecision);
         return out;
     }
 
@@ -992,9 +1019,9 @@ public final class LatitudeBiomes {
         if (polarStart > subpolarStart) {
             t = (absLatFraction - subpolarStart) / (polarStart - subpolarStart);
         }
-        t = clamp(t, 0.0, 1.0);
+        t = LatitudeMath.clamp(t, 0.0, 1.0);
 
-        double tw = clamp((t - 0.25) / 0.50, 0.0, 1.0);
+        double tw = LatitudeMath.clamp((t - 0.25) / 0.50, 0.0, 1.0);
         double pSnow = tw * tw * (3.0 - 2.0 * tw);
 
         if (t > 0.90) pSnow = 1.0;
@@ -1007,7 +1034,7 @@ public final class LatitudeBiomes {
         double pSnow = subpolarSnowProbability(absLatFraction);
         int cellX = Math.floorDiv(blockX, VARIANT_CELL_SIZE_BLOCKS);
         int cellZ = Math.floorDiv(blockZ, VARIANT_CELL_SIZE_BLOCKS);
-        double r = cellHash01(WORLD_SEED ^ SUBPOLAR_RAMP_SALT, cellX, cellZ);
+        double r = LatitudeMath.hash01(WORLD_SEED, cellX, cellZ, (int) SUBPOLAR_RAMP_SALT);
         return r < pSnow;
     }
 

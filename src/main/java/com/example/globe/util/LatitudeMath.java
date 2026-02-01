@@ -181,4 +181,16 @@ public final class LatitudeMath {
         if (deg > 90) deg = 90;
         return deg;
     }
+
+    public static double clamp(double value, double min, double max) {
+        return Math.max(min, Math.min(max, value));
+    }
+
+    public static double hash01(long seed, int x, int z, int salt) {
+        long h = seed ^ ((long) x * 312289L) ^ ((long) z * 420559L) ^ (long) salt;
+        h = (h ^ (h >>> 33)) * 0xff51afd7ed558ccdL;
+        h = (h ^ (h >>> 33)) * 0xc4ceb9fe1a85ec53L;
+        h = h ^ (h >>> 33);
+        return (h & Long.MAX_VALUE) / (double) Long.MAX_VALUE;
+    }
 }
