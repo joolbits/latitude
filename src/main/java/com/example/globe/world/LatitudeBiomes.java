@@ -233,11 +233,16 @@ public final class LatitudeBiomes {
 
     private static final String MANGROVE_ID = "minecraft:mangrove_swamp";
     private static final String SWAMP_ID = "minecraft:swamp";
+    private static final String BADLANDS_ID = "minecraft:badlands";
     private static final int MANGROVE_PATCH_CELL_BLOCKS = 1024;
     private static final int MANGROVE_PATCH_PERCENT = 20;
     private static final int MANGROVE_PATCH_SALT = 0x2F7A3B1C;
     private static final long MANGROVE_FALLBACK_SALT = 0x6D2B79F5L;
     private static final long SWAMP_FALLBACK_SALT = 0x7A1D9E0BL;
+
+    private static final int BADLANDS_PATCH_SIZE_BLOCKS = 4096;
+    private static final double BADLANDS_PATCH_CHANCE = 0.40;
+    private static final long BADLANDS_PATCH_SALT = 0xBADD1A2DL;
 
     private static final int SWAMP_PATCH_SIZE_BLOCKS = 1024;
     private static final double SWAMP_PATCH_CHANCE = 0.55;
@@ -437,7 +442,14 @@ public final class LatitudeBiomes {
 
         int landBandIndex = latitudeBandIndexWithBlend(blockX, blockZ, borderRadiusBlocks, zone, t);
         RegistryEntry<Biome> chosen = null;
-        if ((landBandIndex == BAND_EQUATOR || landBandIndex == BAND_TROPICAL) && sampler != null) {
+        if (landBandIndex == BAND_TROPICAL && badlandsPatchHere(WORLD_SEED, blockX, blockZ)) {
+            try {
+                chosen = biome(biomeRegistry, BADLANDS_ID);
+            } catch (Throwable ignored) {
+                // fall through to normal selection
+            }
+        }
+        if (chosen == null && (landBandIndex == BAND_EQUATOR || landBandIndex == BAND_TROPICAL) && sampler != null) {
             int noiseX = blockX >> 2;
             int noiseZ = blockZ >> 2;
             MultiNoiseUtil.NoiseValuePoint p = sampler.sample(noiseX, 0, noiseZ);
@@ -448,6 +460,7 @@ public final class LatitudeBiomes {
                 try {
                     chosen = biome(biomeRegistry, SWAMP_ID);
                 } catch (Throwable ignored) {
+                    // keep null to fall through
                 }
             }
         }
@@ -465,7 +478,11 @@ public final class LatitudeBiomes {
             MangroveDecision decision = evaluateMangrove(blockX, blockZ, sampler);
             mangroveDecision = decision.logLabel();
             if (decision.allow()) {
-                chosen = mangroveOverride(biomeRegistry, chosen);
+                try {
+                    chosen = biome(biomeRegistry, MANGROVE_ID);
+                } catch (Throwable ignored) {
+                    // keep current choice
+                }
             }
         } else if (isMangroveCandidate(chosen)) {
             MangroveDecision decision = evaluateMangrove(blockX, blockZ, sampler);
@@ -537,7 +554,10 @@ public final class LatitudeBiomes {
 
         int landBandIndex = latitudeBandIndexWithBlend(blockX, blockZ, borderRadiusBlocks, zone, t);
         RegistryEntry<Biome> chosen = null;
-        if ((landBandIndex == BAND_EQUATOR || landBandIndex == BAND_TROPICAL) && sampler != null) {
+        if (landBandIndex == BAND_TROPICAL && badlandsPatchHere(WORLD_SEED, blockX, blockZ)) {
+            chosen = entryById(biomePool, BADLANDS_ID);
+        }
+        if (chosen == null && (landBandIndex == BAND_EQUATOR || landBandIndex == BAND_TROPICAL) && sampler != null) {
             int noiseX = blockX >> 2;
             int noiseZ = blockZ >> 2;
             MultiNoiseUtil.NoiseValuePoint p = sampler.sample(noiseX, 0, noiseZ);
@@ -1279,6 +1299,11 @@ public final class LatitudeBiomes {
         int cellZ = Math.floorDiv(blockZ, MANGROVE_PATCH_CELL_BLOCKS);
         long roll = hash64(cellX, cellZ, MANGROVE_PATCH_SALT);
         return Long.remainderUnsigned(roll, 100L) < MANGROVE_PATCH_PERCENT;
+    }
+
+    private static boolean badlandsPatchHere(long seed, int blockX, int blockZ) {
+        double n = blobNoise01(seed ^ BADLANDS_PATCH_SALT, blockX, blockZ, BADLANDS_PATCH_SIZE_BLOCKS, 0);
+        return n < BADLANDS_PATCH_CHANCE;
     }
 
     private static boolean swampPatchHere(long seed, int blockX, int blockZ) {
