@@ -86,6 +86,15 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
     private static final Identifier GLOBE_SETTINGS_MASSIVE_ID = Identifier.of("globe", "overworld_massive");
 
     @Unique
+    private static final Identifier LUSH_CAVES_ID = Identifier.of("minecraft", "lush_caves");
+
+    @Unique
+    private static final Identifier DRIPSTONE_CAVES_ID = Identifier.of("minecraft", "dripstone_caves");
+
+    @Unique
+    private static final Identifier DEEP_DARK_ID = Identifier.of("minecraft", "deep_dark");
+
+    @Unique
     private static final RegistryKey<ChunkGeneratorSettings> GLOBE_SETTINGS_KEY =
             RegistryKey.of(RegistryKeys.CHUNK_GENERATOR_SETTINGS, GLOBE_SETTINGS_ID);
 
@@ -229,29 +238,27 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
             }
 
             RegistryEntry<Biome> current = originalSupplier.getBiome(x, y, z, sampler);
-
-            // IMPORTANT: force Y=0. Passing quartY reintroduces warm_ocean-on-land + harsh seams/infinite plains
-            // because the base biome becomes height-dependent during population.
             RegistryEntry<Biome> base = originalSupplier.getBiome(x, 0, z, sampler);
+
             if (FIX_SURFACE_CAVE_BIOMES && isCaveBiome(biomes, current)) {
                 int surfaceY = getSurfaceY(surfaceCache, chunk, blockX, blockZ, blockY);
                 boolean nearSurface = blockY >= surfaceY - CAVE_CLAMP_BUFFER;
-                boolean tooHigh = blockY > MAX_CAVE_BIOME_Y;
-                boolean deepDarkIllegal = isBiomeId(biomes, current, "minecraft:deep_dark") && blockY > -16;
-                boolean skyVisible = isSkyVisible(chunk, blockX, blockY, blockZ);
                 boolean hardDeck = blockY >= CAVE_CLAMP_HARD_DECK_Y;
-                if (nearSurface || tooHigh || skyVisible || deepDarkIllegal || hardDeck) {
-                    RegistryEntry<Biome> replacement = pickSurfaceReplacement(biomes, base, blockX, blockZ, borderRadiusBlocks, sampler);
+                if (nearSurface || hardDeck) {
+                    RegistryEntry<Biome> replacement = pickSurfaceReplacement(
+                            biomes, base, blockX, blockZ, borderRadiusBlocks, sampler);
                     if (DEBUG_CAVE_CLAMP) {
-                        LOGGER.info("[Latitude] Clamped {} at x={} y={} z={} (surface={} buffer={} ceiling={}) -> {}",
-                                biomeId(biomes, current), blockX, blockY, blockZ, surfaceY, CAVE_CLAMP_BUFFER, MAX_CAVE_BIOME_Y,
-                                biomeId(biomes, replacement));
+                        LOGGER.info("[Latitude] Clamped {} at x={} y={} z={} (surface={} buffer={} hardDeck={}) -> {}",
+                                biomeId(biomes, current), blockX, blockY, blockZ, surfaceY, CAVE_CLAMP_BUFFER,
+                                CAVE_CLAMP_HARD_DECK_Y, biomeId(biomes, replacement));
                     }
                     return replacement;
                 }
             }
 
             RegistryEntry<Biome> picked = null;
+
+            // IMPORTANT: force Y=0. Passing quartY reintroduces warm_ocean-on-land + harsh seams/infinite plains
             try {
                 picked = LatitudeBiomes.pick(biomes, base, blockX, blockZ, borderRadiusBlocks, sampler, "MIXIN");
             } catch (Throwable t) {
@@ -273,9 +280,16 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
 
     @Unique
     private static boolean isCaveBiome(Registry<Biome> biomes, RegistryEntry<Biome> entry) {
-        return isBiomeId(biomes, entry, "minecraft:deep_dark")
-                || isBiomeId(biomes, entry, "minecraft:dripstone_caves")
-                || isBiomeId(biomes, entry, "minecraft:lush_caves");
+        Identifier actual = biomes.getId(entry.value());
+        if (actual == null) {
+            actual = entry.getKey().map(key -> key.getValue()).orElse(null);
+        }
+        if (actual == null) {
+            return false;
+        }
+        return actual.equals(LUSH_CAVES_ID)
+                || actual.equals(DRIPSTONE_CAVES_ID)
+                || actual.equals(DEEP_DARK_ID);
     }
 
     @Unique
@@ -285,20 +299,23 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
         if (cached != Integer.MIN_VALUE) {
             return cached;
         }
-        int columnChunkX = blockX >> 4;
-        int columnChunkZ = blockZ >> 4;
-        Chunk heightChunk = resolveColumnChunk(chunk, columnChunkX, columnChunkZ);
-        int surfaceY = heightChunk.getHeightmap(Heightmap.Type.WORLD_SURFACE_WG)
-                .get(blockX & 15, blockZ & 15);
-        if (surfaceY <= heightChunk.getBottomY()) {
-            int seaLevel = chunk instanceof WorldChunk worldChunk
-                    ? worldChunk.getWorld().getSeaLevel()
-                    : blockY;
-            if (DEBUG_CAVE_CLAMP) {
-                LOGGER.info("[Latitude] SurfaceY fallback used at x={} z={} (surface={} sea={})",
-                        blockX, blockZ, surfaceY, seaLevel);
+        int surfaceY;
+        if (chunk instanceof WorldChunk worldChunk) {
+            surfaceY = worldChunk.getWorld().getTopY(Heightmap.Type.WORLD_SURFACE_WG, blockX, blockZ);
+        } else {
+            int columnChunkX = blockX >> 4;
+            int columnChunkZ = blockZ >> 4;
+            Chunk heightChunk = resolveColumnChunk(chunk, columnChunkX, columnChunkZ);
+            surfaceY = heightChunk.getHeightmap(Heightmap.Type.WORLD_SURFACE_WG)
+                    .get(blockX & 15, blockZ & 15);
+            if (surfaceY <= heightChunk.getBottomY()) {
+                int seaLevel = blockY;
+                if (DEBUG_CAVE_CLAMP) {
+                    LOGGER.info("[Latitude] SurfaceY fallback used at x={} z={} (surface={} sea={})",
+                            blockX, blockZ, surfaceY, seaLevel);
+                }
+                surfaceY = seaLevel;
             }
-            surfaceY = seaLevel;
         }
         surfaceCache.put(key, surfaceY);
         return surfaceY;
