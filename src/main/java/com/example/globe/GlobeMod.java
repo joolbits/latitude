@@ -51,6 +51,7 @@ public class GlobeMod implements ModInitializer {
     public static final int POLE_LETHAL_DISTANCE_BLOCKS = 96;
     public static final int POLE_LETHAL_WARNING_DISTANCE = POLE_WARNING_DISTANCE_BLOCKS;
     public static final int EFFECT_REFRESH_TICKS = 20;
+    private static final int EW_SPAWN_PADDING_BLOCKS = 64;
     private static final long SPAWN_SALT = 0x7A3E21B5D4C1F7A9L;
 
     public static final int POLE_START = 12000; // Legacy constant, use activePoleBandStartAbsZ for dynamic logic
@@ -356,9 +357,32 @@ public class GlobeMod implements ModInitializer {
             spawnPos = new BlockPos(0, world.getSeaLevel() + 2, targetZ);
         }
 
-        world.setSpawnPoint(WorldProperties.SpawnPoint.create(world.getRegistryKey(), spawnPos, 0.0f, 0.0f));
-        player.teleport(world, spawnPos.getX() + 0.5, spawnPos.getY(), spawnPos.getZ() + 0.5, EnumSet.noneOf(PositionFlag.class), player.getYaw(), player.getPitch(), true);
+        BlockPos clampedSpawnPos = clampSpawnAwayFromEwWarning(spawnPos, radius);
+        world.setSpawnPoint(WorldProperties.SpawnPoint.create(world.getRegistryKey(), clampedSpawnPos, 0.0f, 0.0f));
+
+        BlockPos teleportPos = clampSpawnAwayFromEwWarning(clampedSpawnPos, radius);
+        player.teleport(world, teleportPos.getX() + 0.5, teleportPos.getY(), teleportPos.getZ() + 0.5, EnumSet.noneOf(PositionFlag.class), player.getYaw(), player.getPitch(), true);
         player.addCommandTag(SPAWN_CHOSEN_TAG);
+    }
+
+    private static BlockPos clampSpawnAwayFromEwWarning(BlockPos spawnPos, int radiusBlocks) {
+        if (spawnPos == null || radiusBlocks <= 0) {
+            return spawnPos;
+        }
+
+        int warningStartX = (int) Math.round(radiusBlocks * com.example.globe.util.LatitudeMath.POLAR_STAGE_1_PROGRESS);
+        if (warningStartX <= 0) {
+            return spawnPos;
+        }
+
+        int absX = Math.abs(spawnPos.getX());
+        if (absX < warningStartX) {
+            return spawnPos;
+        }
+
+        int clampedAbsX = Math.max(0, warningStartX - EW_SPAWN_PADDING_BLOCKS);
+        int clampedX = spawnPos.getX() >= 0 ? clampedAbsX : -clampedAbsX;
+        return new BlockPos(clampedX, spawnPos.getY(), spawnPos.getZ());
     }
 
     private static BlockPos findLandSpawn(ServerWorld world, int borderHalf, int targetZ, long seed) {
