@@ -15,6 +15,15 @@ loom {
         defaultRefmapName = "globe.refmap.json"
         useLegacyMixinAp = true
     }
+    runs {
+        client {
+            vmArg "-Dlatitude.fixSurfaceDripstone=true"
+        }
+        clientNoSurfaceDripstoneFix {
+            inherit client
+            vmArg "-Dlatitude.fixSurfaceDripstone=false"
+        }
+    }
 }
 
 repositories {

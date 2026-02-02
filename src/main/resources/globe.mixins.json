@@ -9,7 +9,8 @@
     "ChunkGeneratorBiomeSourceMixin",
     "NoiseChunkGeneratorAccessor",
     "ChunkGeneratorPopulateBiomesMixin",
-    "NoiseChunkGeneratorCarveMixin"
+    "NoiseChunkGeneratorCarveMixin",
+    "SurfaceDripstoneLawnmowerMixin"
   ],
   "client": [
     "client.FogRendererMixin",
