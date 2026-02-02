@@ -5,10 +5,16 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.world.ClientWorld;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.MathHelper;
 import net.minecraft.world.World;
 
 public final class GlobeClientState {
     public static boolean DEBUG_DISABLE_WARNINGS = false;
+
+    private static final float EW_FOG_WARN_END = 48.0f;
+    private static final float EW_FOG_DANGER_END = 12.0f;
+    private static final float EW_FOG_SEVERE_END = 8.0f;
+    private static final float EW_FOG_BLACKOUT_END = 4.0f;
 
     private static boolean globeWorld;
 
@@ -155,12 +161,37 @@ public final class GlobeClientState {
             return -1.0f;
         }
 
-        EwStormStage stage = computeEwStormStage(client.world, client.player);
-        return switch (stage) {
-            case LEVEL_1 -> 48.0f;
-            case LEVEL_2 -> 10.0f;
-            default -> -1.0f;
-        };
+        var border = client.world.getWorldBorder();
+        double progress = com.example.globe.util.LatitudeMath.hazardProgress(border, x);
+
+        double stage1 = com.example.globe.util.LatitudeMath.POLAR_STAGE_1_PROGRESS;
+        double stage2 = com.example.globe.util.LatitudeMath.POLAR_STAGE_2_PROGRESS;
+        double stage3 = com.example.globe.util.LatitudeMath.POLAR_STAGE_3_PROGRESS;
+        double stage4 = com.example.globe.util.LatitudeMath.POLAR_STAGE_LETHAL_PROGRESS;
+
+        if (progress < stage1) {
+            return -1.0f;
+        }
+
+        if (progress < stage2) {
+            float t = (float) ((progress - stage1) / (stage2 - stage1));
+            t = t * t;
+            return MathHelper.lerp(t, EW_FOG_WARN_END, EW_FOG_DANGER_END);
+        }
+
+        if (progress < stage3) {
+            float t = (float) ((progress - stage2) / (stage3 - stage2));
+            t = t * t;
+            return MathHelper.lerp(t, EW_FOG_DANGER_END, EW_FOG_SEVERE_END);
+        }
+
+        if (progress < stage4) {
+            float t = (float) ((progress - stage3) / (stage4 - stage3));
+            t = t * t;
+            return MathHelper.lerp(t, EW_FOG_SEVERE_END, EW_FOG_BLACKOUT_END);
+        }
+
+        return EW_FOG_BLACKOUT_END;
     }
 
     private static float polarWhiteoutIntensity(ClientWorld world, PlayerEntity player) {
