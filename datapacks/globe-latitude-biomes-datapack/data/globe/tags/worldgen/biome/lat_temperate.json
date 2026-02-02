@@ -2,7 +2,6 @@
   "replace": false,
   "values": [
     "minecraft:taiga",
-    "minecraft:old_growth_pine_taiga",
-    "minecraft:grove"
+    "minecraft:old_growth_pine_taiga"
   ]
 }

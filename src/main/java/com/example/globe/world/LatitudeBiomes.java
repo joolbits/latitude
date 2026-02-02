@@ -220,7 +220,8 @@ public final class LatitudeBiomes {
     }
 
     private static final Logger LOGGER = LoggerFactory.getLogger("LatitudeBiomes");
-    private static final boolean DEBUG_BIOMES = Boolean.getBoolean("latitude.debugBiomes");
+    private static final boolean DEBUG_BIOMES = Boolean.getBoolean("latitude.debugBiomes")
+            || Boolean.getBoolean("latitude.debugBiomePick");
     private static final boolean DEBUG_BLEND = Boolean.getBoolean("latitude.debugBlend");
     private static final int DEBUG_LIMIT = Integer.getInteger("latitude.debugBiomes.limit", 200);
     private static volatile long WORLD_SEED = 0L;
@@ -325,6 +326,10 @@ public final class LatitudeBiomes {
     private static final long WARP_NOISE_SALT = 0x5A7A5EED0F00D123L;
     private static final long TROPICAL_DITHER_SALT = 0x5EEDBEEF5EEDBEEFL;
     private static final long SUBPOLAR_RAMP_SALT = 0x5EED5B09A5EEDL;
+    private static final long SNOWY_RAMP_SALT = 0x5EEDB17A5EEDL;
+    private static final double SNOWY_RAMP_START_DEG = 56.0;
+    private static final double SNOWY_RAMP_FULL_DEG = 66.0;
+    private static final double GROVE_MIN_DEG = 66.0;
 
     private static final Set<String> SURFACE_CAVE_DENYLIST = Set.of(
             "minecraft:dripstone_caves",
@@ -551,6 +556,7 @@ public final class LatitudeBiomes {
                 out = pickWarmFallback(biomeRegistry, landBandIndex);
             }
         }
+        out = enforceSnowyLatitudeRamp(biomeRegistry, out, base, blockX, blockZ, effectiveRadius, landBandIndex);
         debugPick(blockX, blockZ, effectiveRadius, t, zone, base, out, false, out != sanitized, mangroveDecision);
         return out;
     }
@@ -679,6 +685,7 @@ public final class LatitudeBiomes {
                 out = pickWarmFallback(biomePool, landBandIndex);
             }
         }
+        out = enforceSnowyLatitudeRamp(biomePool, out, base, blockX, blockZ, effectiveRadius, landBandIndex);
         debugPick(blockX, blockZ, effectiveRadius, t, zone, base, out, false, out != sanitized, mangroveDecision);
         return out;
     }
@@ -991,6 +998,15 @@ public final class LatitudeBiomes {
 
     private static double clamp(double v, double lo, double hi) {
         return Math.max(lo, Math.min(hi, v));
+    }
+
+    private static double latitudeDegreesFromRadius(int blockZ, int radius) {
+        if (radius <= 0) {
+            return 0.0;
+        }
+        double abs = Math.abs((double) blockZ);
+        double deg = (abs / (double) radius) * 90.0;
+        return clamp(deg, 0.0, 90.0);
     }
 
     private static RegistryEntry<Biome> biome(Registry<Biome> biomes, String id) {
@@ -1346,6 +1362,102 @@ public final class LatitudeBiomes {
         }
         String path = entry.getKey().map(key -> key.getValue().getPath()).orElse("");
         return path.contains("snow") || path.contains("ice") || path.contains("frozen");
+    }
+
+    private static boolean isSnowyVariant(RegistryEntry<Biome> entry) {
+        if (entry == null) {
+            return false;
+        }
+        String path = entry.getKey().map(key -> key.getValue().getPath()).orElse("");
+        return path.contains("snow") || path.contains("ice") || path.contains("frozen");
+    }
+
+    private static boolean isGroveBiome(RegistryEntry<Biome> entry) {
+        return isBiomeId(entry, "minecraft:grove");
+    }
+
+    private static double snowyRampAlpha(double deg) {
+        if (deg <= SNOWY_RAMP_START_DEG) {
+            return 0.0;
+        }
+        if (deg >= SNOWY_RAMP_FULL_DEG) {
+            return 1.0;
+        }
+        double t = clamp((deg - SNOWY_RAMP_START_DEG) / (SNOWY_RAMP_FULL_DEG - SNOWY_RAMP_START_DEG), 0.0, 1.0);
+        return smoothstep(t);
+    }
+
+    private static RegistryEntry<Biome> pickNonSnowyFallback(Registry<Biome> biomes, RegistryEntry<Biome> base, int blockX, int blockZ, int bandIndex) {
+        if (base != null && !isSnowyVariant(base) && !isGroveBiome(base)) {
+            return base;
+        }
+        String[] options = bandIndex <= BAND_TEMPERATE
+                ? new String[]{"minecraft:taiga", "minecraft:forest", "minecraft:plains", "minecraft:meadow"}
+                : new String[]{"minecraft:taiga", "minecraft:old_growth_pine_taiga", "minecraft:meadow", "minecraft:forest", "minecraft:plains"};
+        for (String option : options) {
+            try {
+                RegistryEntry<Biome> entry = biome(biomes, option);
+                if (!isSnowyVariant(entry) && !isGroveBiome(entry)) {
+                    return entry;
+                }
+            } catch (Throwable ignored) {
+            }
+        }
+        return base;
+    }
+
+    private static RegistryEntry<Biome> pickNonSnowyFallback(Collection<RegistryEntry<Biome>> biomes, RegistryEntry<Biome> base, int bandIndex) {
+        if (base != null && !isSnowyVariant(base) && !isGroveBiome(base)) {
+            return base;
+        }
+        String[] options = bandIndex <= BAND_TEMPERATE
+                ? new String[]{"minecraft:taiga", "minecraft:forest", "minecraft:plains", "minecraft:meadow"}
+                : new String[]{"minecraft:taiga", "minecraft:old_growth_pine_taiga", "minecraft:meadow", "minecraft:forest", "minecraft:plains"};
+        for (String option : options) {
+            RegistryEntry<Biome> entry = entryById(biomes, option);
+            if (entry != null && !isSnowyVariant(entry) && !isGroveBiome(entry)) {
+                return entry;
+            }
+        }
+        return base;
+    }
+
+    private static RegistryEntry<Biome> enforceSnowyLatitudeRamp(Registry<Biome> biomes, RegistryEntry<Biome> pick, RegistryEntry<Biome> base,
+                                                                 int blockX, int blockZ, int radius, int bandIndex) {
+        double deg = latitudeDegreesFromRadius(blockZ, radius);
+        if (isGroveBiome(pick) && deg < GROVE_MIN_DEG) {
+            return pickNonSnowyFallback(biomes, base, blockX, blockZ, bandIndex);
+        }
+        if (!isSnowyVariant(pick)) {
+            return pick;
+        }
+        double alpha = snowyRampAlpha(deg);
+        int cellX = Math.floorDiv(blockX, VARIANT_CELL_SIZE_BLOCKS);
+        int cellZ = Math.floorDiv(blockZ, VARIANT_CELL_SIZE_BLOCKS);
+        double r = cellHash01(WORLD_SEED ^ SNOWY_RAMP_SALT, cellX, cellZ);
+        if (r < alpha) {
+            return pick;
+        }
+        return pickNonSnowyFallback(biomes, base, blockX, blockZ, bandIndex);
+    }
+
+    private static RegistryEntry<Biome> enforceSnowyLatitudeRamp(Collection<RegistryEntry<Biome>> biomes, RegistryEntry<Biome> pick, RegistryEntry<Biome> base,
+                                                                 int blockX, int blockZ, int radius, int bandIndex) {
+        double deg = latitudeDegreesFromRadius(blockZ, radius);
+        if (isGroveBiome(pick) && deg < GROVE_MIN_DEG) {
+            return pickNonSnowyFallback(biomes, base, bandIndex);
+        }
+        if (!isSnowyVariant(pick)) {
+            return pick;
+        }
+        double alpha = snowyRampAlpha(deg);
+        int cellX = Math.floorDiv(blockX, VARIANT_CELL_SIZE_BLOCKS);
+        int cellZ = Math.floorDiv(blockZ, VARIANT_CELL_SIZE_BLOCKS);
+        double r = cellHash01(WORLD_SEED ^ SNOWY_RAMP_SALT, cellX, cellZ);
+        if (r < alpha) {
+            return pick;
+        }
+        return pickNonSnowyFallback(biomes, base, bandIndex);
     }
 
     private static RegistryEntry<Biome> pickWarmFallback(Registry<Biome> biomes, int bandIndex) {
