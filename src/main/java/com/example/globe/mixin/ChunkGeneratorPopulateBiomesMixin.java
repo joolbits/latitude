@@ -272,6 +272,11 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
                 }
                 return pickLatitudeFallback(biomes, base, blockX, blockZ, borderRadiusBlocks);
             }
+            if (isCaveBiome(biomes, picked)) {
+                int surfaceY = getSurfaceY(surfaceCache, chunk, blockX, blockZ, blockY);
+                LOGGER.warn("[Latitude] Cave biome chosen id={} decisionY={} quartY={} surfaceY={}",
+                        biomeId(biomes, picked), blockY, y, surfaceY);
+            }
             return picked;
         };
 
