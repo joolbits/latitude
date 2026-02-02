@@ -8,19 +8,15 @@ import net.minecraft.registry.RegistryKey;
 import net.minecraft.registry.RegistryKeys;
 import net.minecraft.registry.entry.RegistryEntry;
 import net.minecraft.util.Identifier;
-import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.biome.Biome;
 import net.minecraft.world.biome.source.BiomeSupplier;
 import net.minecraft.world.biome.source.util.MultiNoiseUtil;
 import net.minecraft.world.chunk.Chunk;
-import net.minecraft.world.chunk.WorldChunk;
-import net.minecraft.world.Heightmap;
 import net.minecraft.world.gen.StructureAccessor;
 import net.minecraft.world.gen.chunk.Blender;
 import net.minecraft.world.gen.chunk.ChunkGeneratorSettings;
 import net.minecraft.world.gen.chunk.NoiseChunkGenerator;
 import net.minecraft.world.gen.noise.NoiseConfig;
-import it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap;
 import it.unimi.dsi.fastutil.longs.Long2LongOpenHashMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -224,9 +220,6 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
         int borderRadiusBlocks = this.globe$borderRadiusBlocks();
         logWorldgenPathOnce(chunk, borderRadiusBlocks, globe$matchedSettingsLabel());
 
-        Long2IntOpenHashMap surfaceCache = new Long2IntOpenHashMap();
-        surfaceCache.defaultReturnValue(Integer.MIN_VALUE);
-
         BiomeSupplier wrapped = (x, y, z, ignoredSampler) -> {
             // x/z are "noise biome coords" (4-block). Convert to block coords for your latitude math.
             int blockX = (x << 2) + 2;
@@ -241,16 +234,16 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
             RegistryEntry<Biome> base = originalSupplier.getBiome(x, 0, z, sampler);
 
             if (FIX_SURFACE_CAVE_BIOMES && isCaveBiome(biomes, current)) {
-                int surfaceY = getSurfaceY(surfaceCache, chunk, blockX, blockZ, blockY);
-                boolean nearSurface = blockY >= surfaceY - CAVE_CLAMP_BUFFER;
                 boolean hardDeck = blockY >= CAVE_CLAMP_HARD_DECK_Y;
-                if (nearSurface || hardDeck) {
+                boolean tooHigh = blockY > MAX_CAVE_BIOME_Y;
+                boolean deepDarkIllegal = isDeepDark(biomes, current) && blockY > -16;
+                if (hardDeck || tooHigh || deepDarkIllegal) {
                     RegistryEntry<Biome> replacement = pickSurfaceReplacement(
                             biomes, base, blockX, blockZ, borderRadiusBlocks, sampler);
                     if (DEBUG_CAVE_CLAMP) {
-                        LOGGER.info("[Latitude] Clamped {} at x={} y={} z={} (surface={} buffer={} hardDeck={}) -> {}",
-                                biomeId(biomes, current), blockX, blockY, blockZ, surfaceY, CAVE_CLAMP_BUFFER,
-                                CAVE_CLAMP_HARD_DECK_Y, biomeId(biomes, replacement));
+                        LOGGER.info("[Latitude] Clamped {} at x={} y={} z={} (hardDeck={} maxY={} deepDarkIllegal={}) -> {}",
+                                biomeId(biomes, current), blockX, blockY, blockZ, CAVE_CLAMP_HARD_DECK_Y,
+                                MAX_CAVE_BIOME_Y, deepDarkIllegal, biomeId(biomes, replacement));
                     }
                     return replacement;
                 }
@@ -273,9 +266,8 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
                 return pickLatitudeFallback(biomes, base, blockX, blockZ, borderRadiusBlocks);
             }
             if (isCaveBiome(biomes, picked)) {
-                int surfaceY = getSurfaceY(surfaceCache, chunk, blockX, blockZ, blockY);
-                LOGGER.warn("[Latitude] Cave biome chosen id={} decisionY={} quartY={} surfaceY={}",
-                        biomeId(biomes, picked), blockY, y, surfaceY);
+                LOGGER.warn("[Latitude] Cave biome chosen id={} decisionY={} quartY={}",
+                        biomeId(biomes, picked), blockY, y);
             }
             return picked;
         };
@@ -298,35 +290,6 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
     }
 
     @Unique
-    private static int getSurfaceY(Long2IntOpenHashMap surfaceCache, Chunk chunk, int blockX, int blockZ, int blockY) {
-        long key = (((long) blockX) << 32) ^ (blockZ & 0xFFFF_FFFFL);
-        int cached = surfaceCache.get(key);
-        if (cached != Integer.MIN_VALUE) {
-            return cached;
-        }
-        int surfaceY;
-        if (chunk instanceof WorldChunk worldChunk) {
-            surfaceY = worldChunk.getWorld().getTopY(Heightmap.Type.WORLD_SURFACE_WG, blockX, blockZ);
-        } else {
-            int columnChunkX = blockX >> 4;
-            int columnChunkZ = blockZ >> 4;
-            Chunk heightChunk = resolveColumnChunk(chunk, columnChunkX, columnChunkZ);
-            surfaceY = heightChunk.getHeightmap(Heightmap.Type.WORLD_SURFACE_WG)
-                    .get(blockX & 15, blockZ & 15);
-            if (surfaceY <= heightChunk.getBottomY()) {
-                int seaLevel = blockY;
-                if (DEBUG_CAVE_CLAMP) {
-                    LOGGER.info("[Latitude] SurfaceY fallback used at x={} z={} (surface={} sea={})",
-                            blockX, blockZ, surfaceY, seaLevel);
-                }
-                surfaceY = seaLevel;
-            }
-        }
-        surfaceCache.put(key, surfaceY);
-        return surfaceY;
-    }
-
-    @Unique
     private static RegistryEntry<Biome> pickSurfaceReplacement(Registry<Biome> biomes, RegistryEntry<Biome> base,
                                                                int blockX, int blockZ, int borderRadiusBlocks,
                                                                MultiNoiseUtil.MultiNoiseSampler sampler) {
@@ -341,22 +304,12 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
     }
 
     @Unique
-    private static Chunk resolveColumnChunk(Chunk chunk, int columnChunkX, int columnChunkZ) {
-        if (chunk.getPos().x == columnChunkX && chunk.getPos().z == columnChunkZ) {
-            return chunk;
+    private static boolean isDeepDark(Registry<Biome> biomes, RegistryEntry<Biome> entry) {
+        Identifier actual = biomes.getId(entry.value());
+        if (actual == null) {
+            actual = entry.getKey().map(key -> key.getValue()).orElse(null);
         }
-        if (chunk instanceof WorldChunk worldChunk) {
-            return worldChunk.getWorld().getChunk(columnChunkX, columnChunkZ);
-        }
-        return chunk;
-    }
-
-    @Unique
-    private static boolean isSkyVisible(Chunk chunk, int blockX, int blockY, int blockZ) {
-        if (chunk instanceof WorldChunk worldChunk) {
-            return worldChunk.getWorld().isSkyVisible(new BlockPos(blockX, blockY, blockZ));
-        }
-        return false;
+        return DEEP_DARK_ID.equals(actual);
     }
 
     @Unique

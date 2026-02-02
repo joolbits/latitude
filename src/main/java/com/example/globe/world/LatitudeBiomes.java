@@ -337,6 +337,19 @@ public final class LatitudeBiomes {
             "minecraft:deep_dark"
     );
 
+    private static final Set<String> WARM_BIOME_BLOCKLIST = Set.of(
+            "minecraft:jungle",
+            "minecraft:sparse_jungle",
+            "minecraft:bamboo_jungle",
+            "minecraft:savanna",
+            "minecraft:savanna_plateau",
+            "minecraft:desert",
+            "minecraft:badlands",
+            "minecraft:wooded_badlands",
+            "minecraft:eroded_badlands",
+            "minecraft:mangrove_swamp"
+    );
+
     // --- Blend noise helpers (chunk-stable, 2D, smooth "blobs") ---
 
     private static long mix64(long z) {
@@ -557,6 +570,7 @@ public final class LatitudeBiomes {
             }
         }
         out = enforceSnowyLatitudeRamp(biomeRegistry, out, base, blockX, blockZ, effectiveRadius, landBandIndex);
+        out = clampWarmInColdZone(biomeRegistry, base, out, zone, blockX, blockZ);
         debugPick(blockX, blockZ, effectiveRadius, t, zone, base, out, false, out != sanitized, mangroveDecision);
         return out;
     }
@@ -686,6 +700,7 @@ public final class LatitudeBiomes {
             }
         }
         out = enforceSnowyLatitudeRamp(biomePool, out, base, blockX, blockZ, effectiveRadius, landBandIndex);
+        out = clampWarmInColdZone(biomePool, base, out, zone, blockX, blockZ);
         debugPick(blockX, blockZ, effectiveRadius, t, zone, base, out, false, out != sanitized, mangroveDecision);
         return out;
     }
@@ -1458,6 +1473,91 @@ public final class LatitudeBiomes {
             return pick;
         }
         return pickNonSnowyFallback(biomes, base, bandIndex);
+    }
+
+    private static RegistryEntry<Biome> clampWarmInColdZone(Registry<Biome> biomes, RegistryEntry<Biome> base,
+                                                            RegistryEntry<Biome> pick, LatitudeMath.LatitudeZone zone,
+                                                            int blockX, int blockZ) {
+        if (pick == null) {
+            return base;
+        }
+        if (zone != LatitudeMath.LatitudeZone.SUBPOLAR && zone != LatitudeMath.LatitudeZone.POLAR) {
+            return pick;
+        }
+        if (!isWarmBiome(pick)) {
+            return pick;
+        }
+        return zone == LatitudeMath.LatitudeZone.POLAR
+                ? pickColdFallback(biomes, base, blockX, blockZ, BAND_POLAR)
+                : pickColdFallback(biomes, base, blockX, blockZ, BAND_SUBPOLAR);
+    }
+
+    private static RegistryEntry<Biome> clampWarmInColdZone(Collection<RegistryEntry<Biome>> biomes, RegistryEntry<Biome> base,
+                                                            RegistryEntry<Biome> pick, LatitudeMath.LatitudeZone zone,
+                                                            int blockX, int blockZ) {
+        if (pick == null) {
+            return base;
+        }
+        if (zone != LatitudeMath.LatitudeZone.SUBPOLAR && zone != LatitudeMath.LatitudeZone.POLAR) {
+            return pick;
+        }
+        if (!isWarmBiome(pick)) {
+            return pick;
+        }
+        return zone == LatitudeMath.LatitudeZone.POLAR
+                ? pickColdFallback(biomes, base, blockX, blockZ, BAND_POLAR)
+                : pickColdFallback(biomes, base, blockX, blockZ, BAND_SUBPOLAR);
+    }
+
+    private static boolean isWarmBiome(RegistryEntry<Biome> entry) {
+        if (entry == null) {
+            return false;
+        }
+        return entry.getKey()
+                .map(key -> WARM_BIOME_BLOCKLIST.contains(key.getValue().toString()))
+                .orElse(false);
+    }
+
+    private static RegistryEntry<Biome> pickColdFallback(Registry<Biome> biomes, RegistryEntry<Biome> base,
+                                                         int blockX, int blockZ, int bandIndex) {
+        if (bandIndex >= BAND_POLAR && rollChance(blockX, blockZ, 0x5EEDC0DE, 40L)) {
+            try {
+                return biome(biomes, "minecraft:ice_spikes");
+            } catch (Throwable ignored) {
+                // fall through
+            }
+        }
+        String[] options = bandIndex >= BAND_POLAR
+                ? new String[]{"minecraft:snowy_plains", "minecraft:snowy_taiga", "minecraft:taiga"}
+                : new String[]{"minecraft:snowy_taiga", "minecraft:snowy_plains", "minecraft:taiga"};
+        for (String option : options) {
+            try {
+                return biome(biomes, option);
+            } catch (Throwable ignored) {
+                // try next
+            }
+        }
+        return base;
+    }
+
+    private static RegistryEntry<Biome> pickColdFallback(Collection<RegistryEntry<Biome>> biomes, RegistryEntry<Biome> base,
+                                                         int blockX, int blockZ, int bandIndex) {
+        if (bandIndex >= BAND_POLAR && rollChance(blockX, blockZ, 0x5EEDC0DE, 40L)) {
+            RegistryEntry<Biome> spikes = entryById(biomes, "minecraft:ice_spikes");
+            if (spikes != null) {
+                return spikes;
+            }
+        }
+        String[] options = bandIndex >= BAND_POLAR
+                ? new String[]{"minecraft:snowy_plains", "minecraft:snowy_taiga", "minecraft:taiga"}
+                : new String[]{"minecraft:snowy_taiga", "minecraft:snowy_plains", "minecraft:taiga"};
+        for (String option : options) {
+            RegistryEntry<Biome> entry = entryById(biomes, option);
+            if (entry != null) {
+                return entry;
+            }
+        }
+        return base;
     }
 
     private static RegistryEntry<Biome> pickWarmFallback(Registry<Biome> biomes, int bandIndex) {
