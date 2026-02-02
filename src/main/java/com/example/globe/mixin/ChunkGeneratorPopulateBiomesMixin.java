@@ -7,8 +7,10 @@ import net.minecraft.registry.Registry;
 import net.minecraft.registry.RegistryKey;
 import net.minecraft.registry.RegistryKeys;
 import net.minecraft.registry.entry.RegistryEntry;
+import net.minecraft.registry.tag.BiomeTags;
 import net.minecraft.util.Identifier;
 import net.minecraft.world.biome.Biome;
+import net.minecraft.world.biome.BiomeKeys;
 import net.minecraft.world.biome.source.BiomeSupplier;
 import net.minecraft.world.biome.source.util.MultiNoiseUtil;
 import net.minecraft.world.chunk.Chunk;
@@ -45,8 +47,16 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
             Integer.getInteger("latitude.maxCaveBiomeY", 96);
 
     @Unique
+    private static final int HARD_DECK_SURFACE_Y =
+            Integer.getInteger("latitude.hardDeckSurfaceY", 20);
+
+    @Unique
     private static final boolean DEBUG_CAVE_CLAMP =
             Boolean.getBoolean("latitude.debugCaveClamp");
+
+    @Unique
+    private static final boolean DEBUG_CAVE_DECK =
+            Boolean.getBoolean("latitude.debugCaveDeck");
 
     @Unique
     private static final boolean DEBUG_WORLDGEN_PATH =
@@ -220,6 +230,24 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
             
             RegistryEntry<Biome> current = originalSupplier.getBiome(x, y, z, sampler);
             RegistryEntry<Biome> base = originalSupplier.getBiome(x, 0, z, sampler);
+
+            if (blockY > HARD_DECK_SURFACE_Y && isCaveBiome(biomes, base)) {
+                RegistryEntry<Biome> plains = biomes.getEntry(BiomeKeys.PLAINS).orElse(base);
+                if (DEBUG_CAVE_DECK) {
+                    LOGGER.info("[LAT_CAVE_DECK] replaced {} at blockY={} x={} z={}",
+                            biomeId(biomes, base), blockY, blockX, blockZ);
+                }
+                base = plains;
+            }
+
+            if (blockY > HARD_DECK_SURFACE_Y && base.isIn(BiomeTags.IS_CAVE)) {
+                RegistryEntry<Biome> plains = biomes.getEntry(BiomeKeys.PLAINS).orElse(base);
+                if (DEBUG_CAVE_DECK) {
+                    LOGGER.info("[LAT_CAVE_DECK] replaced tagged cave {} at blockY={} x={} z={}",
+                            biomeId(biomes, base), blockY, blockX, blockZ);
+                }
+                base = plains;
+            }
 
             if (FIX_SURFACE_CAVE_BIOMES && isCaveBiome(biomes, current)) {
                 boolean hardDeck = blockY >= 0;
