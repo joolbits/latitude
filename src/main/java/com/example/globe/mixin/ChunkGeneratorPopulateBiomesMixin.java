@@ -45,10 +45,6 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
             Integer.getInteger("latitude.maxCaveBiomeY", 96);
 
     @Unique
-    private static final int CAVE_CLAMP_HARD_DECK_Y =
-            Integer.getInteger("latitude.caveClampHardDeckY", 0);
-
-    @Unique
     private static final boolean DEBUG_CAVE_CLAMP =
             Boolean.getBoolean("latitude.debugCaveClamp");
 
@@ -200,8 +196,6 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
             require = 0
     )
     private void globe$wrapBiomeSupplier(Chunk chunk, BiomeSupplier originalSupplier, MultiNoiseUtil.MultiNoiseSampler sampler) {
-        System.out.println(">>> LATITUDE MIXIN ALIVE (REDIRECT) <<<");
-        
         // Gate: only apply to your globe overworld settings.
         if (!this.globe$isAnyGlobeSettings()) {
             chunk.populateBiomes(originalSupplier, sampler);
@@ -224,23 +218,19 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
             int blockZ = (z << 2) + 2;
             int blockY = (y << 2) + 2;
             
-            if (x == 0 && y == 0 && z == 0) {
-                System.out.println(">>> LATITUDE SUPPLIER ALIVE (x=0,y=0,z=0) <<<");
-            }
-
             RegistryEntry<Biome> current = originalSupplier.getBiome(x, y, z, sampler);
             RegistryEntry<Biome> base = originalSupplier.getBiome(x, 0, z, sampler);
 
             if (FIX_SURFACE_CAVE_BIOMES && isCaveBiome(biomes, current)) {
-                boolean hardDeck = blockY >= CAVE_CLAMP_HARD_DECK_Y;
+                boolean hardDeck = blockY >= 0;
                 boolean tooHigh = blockY > MAX_CAVE_BIOME_Y;
                 boolean deepDarkIllegal = isDeepDark(biomes, current) && blockY > -16;
                 if (hardDeck || tooHigh || deepDarkIllegal) {
                     RegistryEntry<Biome> replacement = pickSurfaceReplacement(
                             biomes, base, blockX, blockZ, borderRadiusBlocks, sampler);
                     if (DEBUG_CAVE_CLAMP) {
-                        LOGGER.info("[Latitude] Clamped {} at x={} y={} z={} (hardDeck={} maxY={} deepDarkIllegal={}) -> {}",
-                                biomeId(biomes, current), blockX, blockY, blockZ, CAVE_CLAMP_HARD_DECK_Y,
+                        LOGGER.info("[Latitude] Clamped {} at x={} y={} z={} (hardDeckY=0 maxY={} deepDarkIllegal={}) -> {}",
+                                biomeId(biomes, current), blockX, blockY, blockZ,
                                 MAX_CAVE_BIOME_Y, deepDarkIllegal, biomeId(biomes, replacement));
                     }
                     return replacement;
@@ -262,13 +252,6 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
                     logPickFailOnce(blockX, blockZ, "null", null);
                 }
                 return pickLatitudeFallback(biomes, base, blockX, blockZ, borderRadiusBlocks);
-            }
-            if (isCaveBiome(biomes, picked)) {
-                int minQuartY = chunk.getBottomY() >> 2;
-                int heightQuarts = chunk.getHeight() >> 2;
-                int localY = y - minQuartY;
-                LOGGER.warn("[Latitude] Cave biome chosen id={} decisionY={} quartY={} minQuartY={} localY={} heightQuarts={}",
-                        biomeId(biomes, picked), blockY, y, minQuartY, localY, heightQuarts);
             }
             return picked;
         };
