@@ -7,10 +7,8 @@ import net.minecraft.registry.Registry;
 import net.minecraft.registry.RegistryKey;
 import net.minecraft.registry.RegistryKeys;
 import net.minecraft.registry.entry.RegistryEntry;
-import net.minecraft.registry.tag.BiomeTags;
 import net.minecraft.util.Identifier;
 import net.minecraft.world.biome.Biome;
-import net.minecraft.world.biome.BiomeKeys;
 import net.minecraft.world.biome.source.BiomeSupplier;
 import net.minecraft.world.biome.source.util.MultiNoiseUtil;
 import net.minecraft.world.chunk.Chunk;
@@ -232,21 +230,14 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
             RegistryEntry<Biome> base = originalSupplier.getBiome(x, 0, z, sampler);
 
             if (blockY > HARD_DECK_SURFACE_Y && isCaveBiome(biomes, base)) {
-                RegistryEntry<Biome> plains = biomes.getEntry(BiomeKeys.PLAINS).orElse(base);
+                RegistryEntry<Biome> plains = biomes.getEntry(Identifier.of("minecraft", "plains")).orElse(null);
                 if (DEBUG_CAVE_DECK) {
                     LOGGER.info("[LAT_CAVE_DECK] replaced {} at blockY={} x={} z={}",
                             biomeId(biomes, base), blockY, blockX, blockZ);
                 }
-                base = plains;
-            }
-
-            if (blockY > HARD_DECK_SURFACE_Y && base.isIn(BiomeTags.IS_CAVE)) {
-                RegistryEntry<Biome> plains = biomes.getEntry(BiomeKeys.PLAINS).orElse(base);
-                if (DEBUG_CAVE_DECK) {
-                    LOGGER.info("[LAT_CAVE_DECK] replaced tagged cave {} at blockY={} x={} z={}",
-                            biomeId(biomes, base), blockY, blockX, blockZ);
+                if (plains != null) {
+                    base = plains;
                 }
-                base = plains;
             }
 
             if (FIX_SURFACE_CAVE_BIOMES && isCaveBiome(biomes, current)) {
