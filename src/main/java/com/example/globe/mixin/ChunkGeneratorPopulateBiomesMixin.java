@@ -12,6 +12,8 @@ import net.minecraft.world.biome.Biome;
 import net.minecraft.world.biome.source.BiomeSupplier;
 import net.minecraft.world.biome.source.util.MultiNoiseUtil;
 import net.minecraft.world.chunk.Chunk;
+import net.minecraft.world.chunk.ChunkSection;
+import net.minecraft.world.chunk.PalettedContainer;
 import net.minecraft.world.gen.StructureAccessor;
 import net.minecraft.world.gen.chunk.Blender;
 import net.minecraft.world.gen.chunk.ChunkGeneratorSettings;
@@ -37,10 +39,6 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
     @Unique
     private static final boolean FIX_SURFACE_CAVE_BIOMES =
             Boolean.parseBoolean(System.getProperty("latitude.fixSurfaceCaveBiomes", "true"));
-
-    @Unique
-    private static final int CAVE_CLAMP_BUFFER =
-            Integer.getInteger("latitude.caveClampBuffer", 12);
 
     @Unique
     private static final int MAX_CAVE_BIOME_Y =
@@ -266,13 +264,16 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
                 return pickLatitudeFallback(biomes, base, blockX, blockZ, borderRadiusBlocks);
             }
             if (isCaveBiome(biomes, picked)) {
-                LOGGER.warn("[Latitude] Cave biome chosen id={} decisionY={} quartY={}",
-                        biomeId(biomes, picked), blockY, y);
+                int minQuartY = chunk.getBottomY() >> 2;
+                int heightQuarts = chunk.getHeight() >> 2;
+                int localY = y - minQuartY;
+                LOGGER.warn("[Latitude] Cave biome chosen id={} decisionY={} quartY={} minQuartY={} localY={} heightQuarts={}",
+                        biomeId(biomes, picked), blockY, y, minQuartY, localY, heightQuarts);
             }
             return picked;
         };
 
-        chunk.populateBiomes(wrapped, sampler);
+        globe$populateBiomes(chunk, wrapped, sampler);
     }
 
     @Unique
@@ -293,7 +294,18 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
     private static RegistryEntry<Biome> pickSurfaceReplacement(Registry<Biome> biomes, RegistryEntry<Biome> base,
                                                                int blockX, int blockZ, int borderRadiusBlocks,
                                                                MultiNoiseUtil.MultiNoiseSampler sampler) {
-        RegistryEntry<Biome> pick = LatitudeBiomes.pick(biomes, base, blockX, blockZ, borderRadiusBlocks, sampler, "CAVE_CLAMP");
+        RegistryEntry<Biome> pick;
+        try {
+            pick = LatitudeBiomes.pick(biomes, base, blockX, blockZ, borderRadiusBlocks, sampler, "CAVE_CLAMP");
+        } catch (Throwable t) {
+            pick = null;
+            if (DEBUG_BIOME_PICK) {
+                logPickFailOnce(blockX, blockZ, "clamp_exception", t.toString());
+            }
+        }
+        if (pick == null) {
+            pick = pickLatitudeFallback(biomes, base, blockX, blockZ, borderRadiusBlocks);
+        }
         if (!isCaveBiome(biomes, pick)) {
             return pick;
         }
@@ -301,6 +313,38 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
             return base;
         }
         return pickLatitudeFallback(biomes, base, blockX, blockZ, borderRadiusBlocks);
+    }
+
+    @Unique
+    private static void globe$populateBiomes(Chunk chunk, BiomeSupplier supplier, MultiNoiseUtil.MultiNoiseSampler sampler) {
+        int minQuartY = chunk.getBottomY() >> 2;
+        int heightQuarts = chunk.getHeight() >> 2;
+        int startQuartX = chunk.getPos().x << 2;
+        int startQuartZ = chunk.getPos().z << 2;
+        for (int localX = 0; localX < 4; localX++) {
+            int quartX = startQuartX + localX;
+            for (int localZ = 0; localZ < 4; localZ++) {
+                int quartZ = startQuartZ + localZ;
+                for (int localY = 0; localY < heightQuarts; localY++) {
+                    int quartY = minQuartY + localY;
+                    if (localY < 0 || localY >= heightQuarts) {
+                        if (DEBUG_CAVE_CLAMP) {
+                            LOGGER.warn("[Latitude] Skipping out-of-range biome Y quartY={} minQuartY={} localY={} heightQuarts={}",
+                                    quartY, minQuartY, localY, heightQuarts);
+                        }
+                        continue;
+                    }
+                    RegistryEntry<Biome> biome = supplier.getBiome(quartX, quartY, quartZ, sampler);
+                    int sectionIndex = localY >> 2;
+                    int sectionLocalY = localY & 3;
+                    ChunkSection section = chunk.getSection(sectionIndex);
+                    @SuppressWarnings("unchecked")
+                    PalettedContainer<RegistryEntry<Biome>> container =
+                            (PalettedContainer<RegistryEntry<Biome>>) section.getBiomeContainer();
+                    container.swap(localX, sectionLocalY, localZ, biome);
+                }
+            }
+        }
     }
 
     @Unique
