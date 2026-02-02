@@ -1487,9 +1487,7 @@ public final class LatitudeBiomes {
         if (!isWarmBiome(pick)) {
             return pick;
         }
-        return zone == LatitudeMath.LatitudeZone.POLAR
-                ? pickColdFallback(biomes, base, blockX, blockZ, BAND_POLAR)
-                : pickColdFallback(biomes, base, blockX, blockZ, BAND_SUBPOLAR);
+        return pickSnowyFallback(biomes, base);
     }
 
     private static RegistryEntry<Biome> clampWarmInColdZone(Collection<RegistryEntry<Biome>> biomes, RegistryEntry<Biome> base,
@@ -1504,9 +1502,7 @@ public final class LatitudeBiomes {
         if (!isWarmBiome(pick)) {
             return pick;
         }
-        return zone == LatitudeMath.LatitudeZone.POLAR
-                ? pickColdFallback(biomes, base, blockX, blockZ, BAND_POLAR)
-                : pickColdFallback(biomes, base, blockX, blockZ, BAND_SUBPOLAR);
+        return pickSnowyFallback(biomes, base);
     }
 
     private static boolean isWarmBiome(RegistryEntry<Biome> entry) {
@@ -1516,6 +1512,29 @@ public final class LatitudeBiomes {
         return entry.getKey()
                 .map(key -> WARM_BIOME_BLOCKLIST.contains(key.getValue().toString()))
                 .orElse(false);
+    }
+
+    private static RegistryEntry<Biome> pickSnowyFallback(Registry<Biome> biomes, RegistryEntry<Biome> base) {
+        String[] options = new String[]{"minecraft:snowy_taiga", "minecraft:snowy_plains"};
+        for (String option : options) {
+            try {
+                return biome(biomes, option);
+            } catch (Throwable ignored) {
+                // try next
+            }
+        }
+        return base;
+    }
+
+    private static RegistryEntry<Biome> pickSnowyFallback(Collection<RegistryEntry<Biome>> biomes, RegistryEntry<Biome> base) {
+        String[] options = new String[]{"minecraft:snowy_taiga", "minecraft:snowy_plains"};
+        for (String option : options) {
+            RegistryEntry<Biome> entry = entryById(biomes, option);
+            if (entry != null) {
+                return entry;
+            }
+        }
+        return base;
     }
 
     private static RegistryEntry<Biome> pickColdFallback(Registry<Biome> biomes, RegistryEntry<Biome> base,
