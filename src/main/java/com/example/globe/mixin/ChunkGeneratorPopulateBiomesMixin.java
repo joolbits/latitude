@@ -243,15 +243,17 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
             try {
                 picked = LatitudeBiomes.pick(biomes, base, blockX, blockZ, borderRadiusBlocks, sampler, "MIXIN");
             } catch (Throwable t) {
+                logPickFailOnce(blockX, blockZ, "exception", t.toString());
                 if (DEBUG_BIOME_PICK) {
-                    logPickFailOnce(blockX, blockZ, "exception", t.toString());
+                    LOGGER.debug("[Latitude] Biome pick exception", t);
                 }
             }
             if (picked == null) {
+                logPickFailOnce(blockX, blockZ, "null", null);
                 if (DEBUG_BIOME_PICK) {
-                    logPickFailOnce(blockX, blockZ, "null", null);
+                    LOGGER.debug("[Latitude] Biome pick returned null at x={} z={}", blockX, blockZ);
                 }
-                return pickLatitudeFallback(biomes, base, blockX, blockZ, borderRadiusBlocks);
+                return pickSafeFallback(biomes, blockZ);
             }
             return picked;
         };
@@ -282,12 +284,14 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
             pick = LatitudeBiomes.pick(biomes, base, blockX, blockZ, borderRadiusBlocks, sampler, "CAVE_CLAMP");
         } catch (Throwable t) {
             pick = null;
+            logPickFailOnce(blockX, blockZ, "clamp_exception", t.toString());
             if (DEBUG_BIOME_PICK) {
-                logPickFailOnce(blockX, blockZ, "clamp_exception", t.toString());
+                LOGGER.debug("[Latitude] Clamp pick exception", t);
             }
         }
         if (pick == null) {
-            pick = pickLatitudeFallback(biomes, base, blockX, blockZ, borderRadiusBlocks);
+            logPickFailOnce(blockX, blockZ, "clamp_null", null);
+            pick = pickSafeFallback(biomes, blockZ);
         }
         if (!isCaveBiome(biomes, pick)) {
             return pick;
@@ -295,7 +299,7 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
         if (base != null && !isCaveBiome(biomes, base)) {
             return base;
         }
-        return pickLatitudeFallback(biomes, base, blockX, blockZ, borderRadiusBlocks);
+        return pickSafeFallback(biomes, blockZ);
     }
 
     @Unique
@@ -321,7 +325,6 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
                     int sectionIndex = localY >> 2;
                     int sectionLocalY = localY & 3;
                     ChunkSection section = chunk.getSection(sectionIndex);
-                    @SuppressWarnings("unchecked")
                     PalettedContainer<RegistryEntry<Biome>> container =
                             (PalettedContainer<RegistryEntry<Biome>>) section.getBiomeContainer();
                     container.swap(localX, sectionLocalY, localZ, biome);
@@ -403,6 +406,17 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
             case TROPICAL, SUBTROPICAL -> pickFallback(biomes, base, "minecraft:savanna", "minecraft:sparse_jungle", "minecraft:jungle");
             case EQUATOR -> pickFallback(biomes, base, "minecraft:jungle", "minecraft:savanna", "minecraft:plains");
         };
+    }
+
+    @Unique
+    private static RegistryEntry<Biome> pickSafeFallback(Registry<Biome> biomes, int blockZ) {
+        boolean farNorth = Math.abs(blockZ) > 8000;
+        Identifier id = Identifier.of("minecraft", farNorth ? "snowy_plains" : "plains");
+        RegistryEntry<Biome> entry = biomes.getEntry(id).orElse(null);
+        if (entry != null) {
+            return entry;
+        }
+        return biomes.getEntry(Identifier.of("minecraft", "plains")).orElse(null);
     }
 
     @Unique
