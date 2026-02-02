@@ -18,6 +18,7 @@ loom {
     runs {
         client {
             vmArg "-Dlatitude.fixSurfaceDripstone=true"
+            vmArg "-Dlatitude.debugEwFog=true"
         }
         clientNoSurfaceDripstoneFix {
             inherit client

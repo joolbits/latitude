@@ -1,5 +1,6 @@
 package com.example.globe.client;
 
+import com.example.globe.GlobeMod;
 import net.minecraft.world.border.WorldBorder;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.world.ClientWorld;
@@ -10,11 +11,15 @@ import net.minecraft.world.World;
 
 public final class GlobeClientState {
     public static boolean DEBUG_DISABLE_WARNINGS = false;
+    public static final boolean DEBUG_EW_FOG = Boolean.parseBoolean(System.getProperty("latitude.debugEwFog", "false"));
 
-    private static final float EW_FOG_WARN_END = 48.0f;
-    private static final float EW_FOG_DANGER_END = 12.0f;
-    private static final float EW_FOG_SEVERE_END = 8.0f;
-    private static final float EW_FOG_BLACKOUT_END = 4.0f;
+    private static long lastEwFogLogTick = Long.MIN_VALUE;
+    private static long lastEwStateLogTick = Long.MIN_VALUE;
+
+    private static final float EW_FOG_WARN_END = 96.0f;
+    private static final float EW_FOG_DANGER_END = 64.0f;
+    private static final float EW_FOG_SEVERE_END = 48.0f;
+    private static final float EW_FOG_BLACKOUT_END = 32.0f;
 
     private static boolean globeWorld;
 
@@ -71,6 +76,59 @@ public final class GlobeClientState {
         if (stageIndex >= 2) return EwStormStage.LEVEL_2;
         if (stageIndex >= 1) return EwStormStage.LEVEL_1;
         return EwStormStage.NONE;
+    }
+
+    public static void debugLogEwFogOncePerSec(String hook, float ewEnd, double camX) {
+        if (!DEBUG_EW_FOG) {
+            return;
+        }
+
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client.player == null || client.world == null) {
+            return;
+        }
+
+        long time = client.world.getTime();
+        if (time - lastEwFogLogTick < 20L) {
+            return;
+        }
+
+        lastEwFogLogTick = time;
+        var border = client.world.getWorldBorder();
+        double progress = com.example.globe.util.LatitudeMath.hazardProgress(border, camX);
+        EwStormStage stage = ewStageForProgress(progress);
+        GlobeMod.LOGGER.info("[LAT_EW_FOG] hook={} camX={} stage={} progress={} ewEnd={}",
+                hook, camX, stage, progress, ewEnd);
+    }
+
+    public static void debugLogEwFogStateOncePerSec(double camX) {
+        if (!DEBUG_EW_FOG) {
+            return;
+        }
+
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client.player == null || client.world == null) {
+            return;
+        }
+
+        if (!client.world.getRegistryKey().getValue().equals(World.OVERWORLD.getValue())) {
+            return;
+        }
+
+        long time = client.world.getTime();
+        if (time - lastEwStateLogTick < 20L) {
+            return;
+        }
+        lastEwStateLogTick = time;
+
+        var border = client.world.getWorldBorder();
+        double half = com.example.globe.util.LatitudeMath.halfSize(border);
+        double dist = half - Math.abs(camX);
+        double progress = com.example.globe.util.LatitudeMath.hazardProgress(border, camX);
+        EwStormStage stage = ewStageForProgress(progress);
+        float ewEnd = computeEwFogEnd(camX);
+
+        GlobeMod.LOGGER.info("[LAT_EW_FOG_STATE] x={} radius={} dist={} stage={} progress={} ewEnd={}", camX, half, dist, stage, progress, ewEnd);
     }
 
     private static int polarRank(PolarStage stage) {
