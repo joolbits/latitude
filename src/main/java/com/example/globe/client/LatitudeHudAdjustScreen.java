@@ -86,8 +86,9 @@ public class LatitudeHudAdjustScreen extends Screen {
                 .build(panelX, py, panelW, rowH, Text.literal("Background Color"), (btn, value) -> cfg.backgroundRgb = bgColorRgb(value)));
         py += rowH + rowGap;
 
-        this.settingsTextColor = this.addDrawableChild(CyclingButtonWidget.<String>builder(this::textColorLabel, () -> textColorName(cfg.textRgb))
+        this.settingsTextColor = this.addDrawableChild(CyclingButtonWidget.<String>builder(this::textColorLabel)
                 .values("WHITE", "YELLOW", "RED", "CYAN")
+                .initially(textColorName(cfg.textRgb))
                 .build(panelX, py, panelW, rowH, Text.literal("Text Color"), (btn, value) -> cfg.textRgb = textColorRgb(value)));
 
         updateSettingsVisibility();
