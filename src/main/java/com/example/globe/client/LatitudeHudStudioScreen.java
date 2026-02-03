@@ -205,7 +205,7 @@ public class LatitudeHudStudioScreen extends Screen {
         var mc = MinecraftClient.getInstance();
         if (mc == null || mc.getWindow() == null) return;
 
-        boolean lDown = InputUtil.isKeyPressed(mc.getWindow(), InputUtil.GLFW_KEY_L);
+        boolean lDown = InputUtil.isKeyPressed(mc.getWindow().getHandle(), InputUtil.GLFW_KEY_L);
         if (lDown && !wasLDown) {
             sidebarVisible = !sidebarVisible;
             updateSidebarVisibility();
