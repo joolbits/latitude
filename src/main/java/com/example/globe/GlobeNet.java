@@ -28,7 +28,7 @@ public final class GlobeNet {
     public record GlobeStatePayload(boolean isGlobe) implements CustomPayload {
         public static final Id<GlobeStatePayload> ID = new Id<>(Identifier.of("globe", "s2c_globe_state"));
         public static final PacketCodec<RegistryByteBuf, GlobeStatePayload> CODEC = PacketCodec.tuple(
-                PacketCodecs.BOOLEAN,
+                PacketCodecs.BOOL,
                 GlobeStatePayload::isGlobe,
                 GlobeStatePayload::new
         );
@@ -42,7 +42,7 @@ public final class GlobeNet {
     public record OpenSpawnPickerPayload(boolean open) implements CustomPayload {
         public static final Id<OpenSpawnPickerPayload> ID = new Id<>(Identifier.of("globe", "s2c_open_spawn_picker"));
         public static final PacketCodec<RegistryByteBuf, OpenSpawnPickerPayload> CODEC = PacketCodec.tuple(
-                PacketCodecs.BOOLEAN,
+                PacketCodecs.BOOL,
                 OpenSpawnPickerPayload::open,
                 OpenSpawnPickerPayload::new
         );
