@@ -5,7 +5,7 @@ import com.example.globe.client.GlobeClientState;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.render.Camera;
 import net.minecraft.client.render.RenderTickCounter;
-import net.minecraft.client.render.fog.FogRenderer;
+import net.minecraft.client.render.FogRenderer;
 import net.minecraft.client.world.ClientWorld;
 import org.joml.Vector4f;
 import org.spongepowered.asm.mixin.Mixin;

@@ -1,7 +1,6 @@
 package com.example.globe.client;
 
 import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.Click;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.ButtonWidget;
@@ -215,15 +214,15 @@ public class LatitudeHudStudioScreen extends Screen {
     }
 
     @Override
-    public boolean mouseClicked(Click click, boolean doubleClick) {
-        if (super.mouseClicked(click, doubleClick)) {
+    public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        if (super.mouseClicked(mouseX, mouseY, button)) {
             return true;
         }
 
-        double mx = click.x();
-        double my = click.y();
+        double mx = mouseX;
+        double my = mouseY;
 
-        if (click.button() == 0) {
+        if (button == 0) {
             if (LatitudeConfig.zoneEnterTitleDraggable && isMouseOverTitle(mx, my)) {
                 dragElement = DragElement.TITLE;
                 int cx = (this.width / 2) + LatitudeConfig.zoneEnterTitleOffsetX;
@@ -245,15 +244,15 @@ public class LatitudeHudStudioScreen extends Screen {
     }
 
     @Override
-    public boolean mouseDragged(Click click, double deltaX, double deltaY) {
-        if (super.mouseDragged(click, deltaX, deltaY)) {
+    public boolean mouseDragged(double mouseX, double mouseY, int button, double deltaX, double deltaY) {
+        if (super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY)) {
             return true;
         }
 
-        double mx = click.x();
-        double my = click.y();
+        double mx = mouseX;
+        double my = mouseY;
 
-        if (click.button() != 0) {
+        if (button != 0) {
             return false;
         }
 
@@ -304,8 +303,8 @@ public class LatitudeHudStudioScreen extends Screen {
     }
 
     @Override
-    public boolean mouseReleased(Click click) {
-        if (click.button() == 0) {
+    public boolean mouseReleased(double mouseX, double mouseY, int button) {
+        if (button == 0) {
             if (dragElement == DragElement.TITLE) {
                 int x = (int) Math.round(titleOffsetXf);
                 int y = (int) Math.round(titleOffsetYf);
@@ -322,7 +321,7 @@ public class LatitudeHudStudioScreen extends Screen {
             }
             dragElement = DragElement.NONE;
         }
-        return super.mouseReleased(click);
+        return super.mouseReleased(mouseX, mouseY, button);
     }
 
     private static void resetHudDefaults() {

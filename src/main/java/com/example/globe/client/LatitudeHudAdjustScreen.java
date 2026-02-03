@@ -1,7 +1,6 @@
 package com.example.globe.client;
 
 import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.Click;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.ButtonWidget;
@@ -173,14 +172,10 @@ public class LatitudeHudAdjustScreen extends Screen {
     }
 
     @Override
-    public boolean mouseClicked(Click click, boolean doubleClick) {
-        if (super.mouseClicked(click, doubleClick)) {
+    public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        if (super.mouseClicked(mouseX, mouseY, button)) {
             return true;
         }
-
-        double mouseX = click.x();
-        double mouseY = click.y();
-        int button = click.button();
 
         if (button == 0 && (mode == Mode.TITLE || mode == Mode.BOTH) && isMouseOverTitle(mouseX, mouseY)) {
             draggingTitle = true;
@@ -196,18 +191,14 @@ public class LatitudeHudAdjustScreen extends Screen {
             return true;
         }
 
-        return super.mouseClicked(click, doubleClick);
+        return super.mouseClicked(mouseX, mouseY, button);
     }
 
     @Override
-    public boolean mouseDragged(Click click, double deltaX, double deltaY) {
-        if (super.mouseDragged(click, deltaX, deltaY)) {
+    public boolean mouseDragged(double mouseX, double mouseY, int button, double deltaX, double deltaY) {
+        if (super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY)) {
             return true;
         }
-
-        double mouseX = click.x();
-        double mouseY = click.y();
-        int button = click.button();
 
         if (draggingTitle && button == 0) {
             LatitudeConfig.zoneEnterTitleOffsetX += (int) Math.round(mouseX - lastMouseX);
@@ -260,7 +251,7 @@ public class LatitudeHudAdjustScreen extends Screen {
             return true;
         }
 
-        return super.mouseDragged(click, deltaX, deltaY);
+        return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY);
     }
 
     private void updateSettingsVisibility() {
@@ -397,15 +388,15 @@ public class LatitudeHudAdjustScreen extends Screen {
     }
 
     @Override
-    public boolean mouseReleased(Click click) {
-        if (click.button() == 0) {
+    public boolean mouseReleased(double mouseX, double mouseY, int button) {
+        if (button == 0) {
             draggingTitle = false;
             if (draggingCompass) {
                 draggingCompass = false;
                 CompassHudConfig.saveCurrent();
             }
         }
-        return super.mouseReleased(click);
+        return super.mouseReleased(mouseX, mouseY, button);
     }
 
     private boolean isMouseOverCompass(double mx, double my) {
