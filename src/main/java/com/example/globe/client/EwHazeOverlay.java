@@ -16,7 +16,7 @@ public final class EwHazeOverlay {
         int h = client.getWindow().getScaledHeight();
 
         // Layer A: global sandstorm sepia tint (subtle -> strong)
-        float baseAlpha = Math.min(0.55f, 0.08f + a * 0.47f);
+        float baseAlpha = Math.min(0.75f, 0.08f + a * 0.67f);
         int base = argb(baseAlpha, 120, 92, 55);
         ctx.fill(0, 0, w, h, base);
 
