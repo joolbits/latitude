@@ -64,13 +64,13 @@ public final class ZoneEnterTitleOverlay {
         int cy = (screenH / 2) + LatitudeConfig.zoneEnterTitleOffsetY;
 
         var m = ctx.getMatrices();
-        m.pushMatrix();
+        m.push();
         try {
-            m.translate(cx, cy);
-            m.scale(scale, scale);
+            m.translate((float) cx, (float) cy, 0.0f);
+            m.scale(scale, scale, 1.0f);
             ctx.drawCenteredTextWithShadow(tr, title, 0, 0, argb);
         } finally {
-            m.popMatrix();
+            m.pop();
         }
     }
 
@@ -93,18 +93,18 @@ public final class ZoneEnterTitleOverlay {
         int argb = 0xFFFFFFFF;
 
         var m = ctx.getMatrices();
-        m.pushMatrix();
+        m.push();
         try {
-            m.translate(cx, cy);
+            m.translate((float) cx, (float) cy, 0.0f);
             float s = (float) scale;
-            m.scale(s, s);
+            m.scale(s, s, 1.0f);
 
             int w = tr.getWidth(text);
             int x = -w / 2;
             int y = -tr.fontHeight / 2;
             ctx.drawText(tr, text, x, y, argb, true);
         } finally {
-            m.popMatrix();
+            m.pop();
         }
     }
 
@@ -118,14 +118,14 @@ public final class ZoneEnterTitleOverlay {
         int argb = 0xFFFFFFFF;
 
         var m = ctx.getMatrices();
-        m.pushMatrix();
+        m.push();
         try {
-            m.translate(cx, cy);
+            m.translate((float) cx, (float) cy, 0.0f);
             float s = (float) scale;
-            m.scale(s, s);
+            m.scale(s, s, 1.0f);
             ctx.drawCenteredTextWithShadow(tr, Text.literal(titleText), 0, 0, argb);
         } finally {
-            m.popMatrix();
+            m.pop();
         }
     }
 }
