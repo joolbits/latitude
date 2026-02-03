@@ -210,46 +210,57 @@ public final class GlobeClientState {
         return ewStageForProgress(progressX);
     }
 
-    public static float computeEwFogEnd(double x) {
+    private static double distanceToEwBorderBlocks(WorldBorder border, double camX) {
+        double center = border.getCenterX();
+        double radius = border.getSize() * 0.5;
+        return Math.max(0.0, radius - Math.abs(camX - center));
+    }
+
+    public static double distanceToEwBorderBlocks(double x) {
+        var client = MinecraftClient.getInstance();
+        if (client == null || client.world == null) return Double.POSITIVE_INFINITY;
+        return distanceToEwBorderBlocks(client.world.getWorldBorder(), x);
+    }
+
+    public static int ewWarningStage(double x) {
+        double d = distanceToEwBorderBlocks(x);
+        int stage;
+        if (d <= 100.0) {
+            stage = 2;
+        } else if (d <= 500.0) {
+            stage = 1;
+        } else {
+            stage = 0;
+        }
+
+        if (Boolean.getBoolean("latitude.debugEwWarn")) {
+            System.out.println("[LAT_EW_WARN] stage=" + stage + " d=" + d);
+        }
+        return stage;
+    }
+
+    public static float ewIntensity01(double x) {
+        double d = distanceToEwBorderBlocks(x);
+        if (d > 500.0) return 0.0f;
+
+        float t = (float) ((500.0 - d) / 500.0); // 0..1
+        if (t < 0f) t = 0f;
+        if (t > 1f) t = 1f;
+
+        // steeper right after level-1 threshold
+        return (float) Math.pow(t, 0.55);
+    }
+
+    public static float computeEwFogEnd(double camX) {
         if (DEBUG_DISABLE_WARNINGS) {
             return -1.0f;
         }
-        MinecraftClient client = MinecraftClient.getInstance();
-        if (client.player == null || client.world == null) {
-            return -1.0f;
-        }
+        float a = ewIntensity01(camX);
+        if (a <= 0.0f) return -1.0f;
 
-        var border = client.world.getWorldBorder();
-        double progress = com.example.globe.util.LatitudeMath.hazardProgress(border, x);
-
-        double stage1 = com.example.globe.util.LatitudeMath.POLAR_STAGE_1_PROGRESS;
-        double stage2 = com.example.globe.util.LatitudeMath.POLAR_STAGE_2_PROGRESS;
-        double stage3 = com.example.globe.util.LatitudeMath.POLAR_STAGE_3_PROGRESS;
-        double stage4 = com.example.globe.util.LatitudeMath.POLAR_STAGE_LETHAL_PROGRESS;
-
-        if (progress < stage1) {
-            return -1.0f;
-        }
-
-        if (progress < stage2) {
-            float t = (float) ((progress - stage1) / (stage2 - stage1));
-            t = t * t;
-            return MathHelper.lerp(t, EW_FOG_WARN_END, EW_FOG_DANGER_END);
-        }
-
-        if (progress < stage3) {
-            float t = (float) ((progress - stage2) / (stage3 - stage2));
-            t = t * t;
-            return MathHelper.lerp(t, EW_FOG_DANGER_END, EW_FOG_SEVERE_END);
-        }
-
-        if (progress < stage4) {
-            float t = (float) ((progress - stage3) / (stage4 - stage3));
-            t = t * t;
-            return MathHelper.lerp(t, EW_FOG_SEVERE_END, EW_FOG_BLACKOUT_END);
-        }
-
-        return EW_FOG_BLACKOUT_END;
+        float endFar = 64f;
+        float endNear = 12f;
+        return endFar + (endNear - endFar) * a;
     }
 
     private static float polarWhiteoutIntensity(ClientWorld world, PlayerEntity player) {
