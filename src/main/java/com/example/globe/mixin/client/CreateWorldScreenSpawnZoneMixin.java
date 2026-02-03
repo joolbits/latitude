@@ -80,15 +80,17 @@ public abstract class CreateWorldScreenSpawnZoneMixin extends Screen {
             h = 20;
         }
 
-        this.globe$spawnZoneButton = CyclingButtonWidget.builder(CreateWorldScreenSpawnZoneMixin::globe$zoneLabel, GLOBE_ZONES[0])
+        this.globe$spawnZoneButton = CyclingButtonWidget.builder(CreateWorldScreenSpawnZoneMixin::globe$zoneLabel)
                 .values(GLOBE_ZONES)
+                .initially(GLOBE_ZONES[0])
                 .build(x, y, w, h, Text.literal("Spawn Zone"), (btn, value) -> GlobePending.set(value));
 
         this.addDrawableChild(this.globe$spawnZoneButton);
 
         this.globe$worldSizeButton = CyclingButtonWidget
-                .builder((GlobeWorldSize v) -> v.label, GlobeWorldSizeSelection.get())
+                .builder((GlobeWorldSize v) -> v.label)
                 .values(GlobeWorldSize.values())
+                .initially(GlobeWorldSizeSelection.get())
                 .build(x, y + h + 4, w, h, Text.literal("World Size"), (btn, value) -> GlobeWorldSizeSelection.set(value));
 
         this.addDrawableChild(this.globe$worldSizeButton);
