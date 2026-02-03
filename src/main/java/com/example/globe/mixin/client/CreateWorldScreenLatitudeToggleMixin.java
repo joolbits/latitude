@@ -167,10 +167,10 @@ public abstract class CreateWorldScreenLatitudeToggleMixin extends Screen {
 
         Registry<WorldPreset> presets = this.worldCreator.getGeneratorOptionsHolder()
                 .getCombinedRegistryManager()
-                .getOrThrow(RegistryKeys.WORLD_PRESET);
+                .get(RegistryKeys.WORLD_PRESET);
 
         RegistryKey<WorldPreset> key = RegistryKey.of(RegistryKeys.WORLD_PRESET, presetId);
-        presets.getOptional(key).ifPresent(entry -> this.worldCreator.setWorldType(new WorldCreator.WorldType((RegistryEntry<WorldPreset>) entry)));
+        presets.getEntry(key).ifPresent(entry -> this.worldCreator.setWorldType(new WorldCreator.WorldType(entry)));
     }
 
     @Unique
