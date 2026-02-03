@@ -48,7 +48,7 @@ public abstract class HandledScreenCompassToggleMixin {
     }
 
     @Inject(method = "drawSlot", at = @At("TAIL"))
-    private void globe$drawCompassDisabledX(DrawContext ctx, Slot slot, int i, int j, CallbackInfo ci) {
+    private void globe$drawCompassDisabledX(DrawContext ctx, Slot slot, CallbackInfo ci) {
         if (CompassHudConfig.get().enabled) return;
         if (slot == null) return;
 
