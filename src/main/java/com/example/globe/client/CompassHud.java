@@ -21,6 +21,11 @@ public final class CompassHud {
         }
     }
 
+    private static float snapToPixels(float v, float scale) {
+        if (scale <= 0.0f) return v;
+        return Math.round(v * scale) / scale;
+    }
+
     public record HudPoint(int x, int y) {
     }
 
@@ -233,8 +238,10 @@ public final class CompassHud {
         var m = ctx.getMatrices();
         m.push();
         try {
-            m.translate((float) x, (float) y, 0.0f);
             float sf = (float) s;
+            float sx = snapToPixels((float) x, sf);
+            float sy = snapToPixels((float) y, sf);
+            m.translate(sx, sy, 0.0f);
             m.scale(sf, sf, 1.0f);
 
             if (cfg.showBackground || isPreview) {

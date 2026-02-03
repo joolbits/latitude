@@ -185,14 +185,16 @@ public class LatitudeHudStudioScreen extends Screen {
         int titleOffsetX = (dragElement == DragElement.TITLE) ? (int) Math.round(titleOffsetXf) : LatitudeConfig.zoneEnterTitleOffsetX;
         int titleOffsetY = (dragElement == DragElement.TITLE) ? (int) Math.round(titleOffsetYf) : LatitudeConfig.zoneEnterTitleOffsetY;
 
+        float titleScale = (float) LatitudeConfig.zoneEnterTitleScale;
+        float titleCx = snapToPixels((this.width / 2.0f) + titleOffsetX, titleScale);
+        float titleCy = snapToPixels((this.height / 2.0f) + titleOffsetY, titleScale);
+
         ZoneEnterTitleOverlay.renderStaticAt(
                 ctx,
-                this.width,
-                this.height,
+                Math.round(titleCx),
+                Math.round(titleCy),
                 sampleTitle,
-                LatitudeConfig.zoneEnterTitleScale,
-                titleOffsetX,
-                titleOffsetY);
+                titleScale);
 
         CompassHud.renderAdjustPreview(ctx, this.width, this.height);
 
@@ -481,6 +483,11 @@ public class LatitudeHudStudioScreen extends Screen {
     private static int snap(int v, int step) {
         if (step <= 1) return v;
         return Math.round(v / (float) step) * step;
+    }
+
+    private static float snapToPixels(float v, float scale) {
+        if (scale <= 0.0f) return v;
+        return Math.round(v * scale) / scale;
     }
 
     private static int clamp(int v, int lo, int hi) {
