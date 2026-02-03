@@ -219,8 +219,8 @@ public final class GlobeClientState {
         if (t < 0f) t = 0f;
         if (t > 1f) t = 1f;
 
-        // gradual early, stronger late
-        return (float) Math.pow(t, 2.6);
+        // gradual early, stronger late (cubic)
+        return t * t * t;
     }
 
     public static float computeEwFogEnd(double camX) {
