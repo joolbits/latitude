@@ -3,10 +3,9 @@ package com.example.globe.client;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.util.InputUtil;
-import net.minecraft.util.Identifier;
 
 public final class ClientKeybinds {
-    public static final KeyBinding.Category CATEGORY = KeyBinding.Category.create(Identifier.of("globe", "globe"));
+    public static final String CATEGORY = "key.categories.globe";
 
     public static KeyBinding TOGGLE_COMPASS;
     public static KeyBinding OPEN_SETTINGS;
