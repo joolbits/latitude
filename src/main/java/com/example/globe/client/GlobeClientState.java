@@ -6,7 +6,6 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.world.ClientWorld;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.MathHelper;
 import net.minecraft.world.World;
 
 public final class GlobeClientState {
@@ -15,11 +14,6 @@ public final class GlobeClientState {
 
     private static long lastEwFogLogMs = 0;
     private static long lastEwStateLogTick = Long.MIN_VALUE;
-
-    private static final float EW_FOG_WARN_END = 96.0f;
-    private static final float EW_FOG_DANGER_END = 64.0f;
-    private static final float EW_FOG_SEVERE_END = 48.0f;
-    private static final float EW_FOG_BLACKOUT_END = 32.0f;
 
     private static boolean globeWorld;
 
@@ -71,8 +65,7 @@ public final class GlobeClientState {
         };
     }
 
-    private static EwStormStage ewStageForProgress(double progress) {
-        int stageIndex = com.example.globe.util.LatitudeMath.hazardStageIndexEW(progress);
+    private static EwStormStage ewStageForIndex(int stageIndex) {
         if (stageIndex >= 2) return EwStormStage.LEVEL_2;
         if (stageIndex >= 1) return EwStormStage.LEVEL_1;
         return EwStormStage.NONE;
@@ -107,13 +100,12 @@ public final class GlobeClientState {
         lastEwStateLogTick = time;
 
         var border = client.world.getWorldBorder();
-        double half = com.example.globe.util.LatitudeMath.halfSize(border);
-        double dist = half - Math.abs(camX);
-        double progress = com.example.globe.util.LatitudeMath.hazardProgress(border, camX);
-        EwStormStage stage = ewStageForProgress(progress);
+        double dist = distanceToEwBorderBlocks(border, camX);
+        int stageIndex = ewWarningStage(camX);
+        EwStormStage stage = ewStageForIndex(stageIndex);
         float ewEnd = computeEwFogEnd(camX);
 
-        GlobeMod.LOGGER.info("[LAT_EW_FOG_STATE] x={} radius={} dist={} stage={} progress={} ewEnd={}", camX, half, dist, stage, progress, ewEnd);
+        GlobeMod.LOGGER.info("[LAT_EW_FOG_STATE] x={} dist={} stage={} ewEnd={}", camX, dist, stage, ewEnd);
     }
 
     private static int polarRank(PolarStage stage) {
@@ -141,16 +133,13 @@ public final class GlobeClientState {
 
         var border = world.getWorldBorder();
 
-        double progressX = com.example.globe.util.LatitudeMath.hazardProgress(border, player.getX());
-        double progressZ = com.example.globe.util.LatitudeMath.hazardProgress(border, player.getZ());
+        PolarStage polar = polarStageForProgress(border, player.getZ(), com.example.globe.util.LatitudeMath.hazardProgress(border, player.getZ()));
 
-        PolarStage polar = polarStageForProgress(border, player.getZ(), progressZ);
-        EwStormStage ewVisual = ewStageForProgress(progressX);
-
-        int ewStageIndex = com.example.globe.util.LatitudeMath.hazardStageIndexEW(progressX);
-        boolean ewTextWarn = ewStageIndex >= 1;
+        int ewStageIndex = ewWarningStage(player.getX());
         boolean ewTextDanger = ewStageIndex >= 2;
-        EwStormStage ewTextStage = ewTextDanger ? EwStormStage.LEVEL_2 : (ewTextWarn ? EwStormStage.LEVEL_1 : EwStormStage.NONE);
+        EwStormStage ewTextStage = ewStageForIndex(ewStageIndex);
+
+        EwStormStage ewVisual = ewTextStage;
 
         int pr = polarRank(polar);
         int er = ewRank(ewTextStage);
@@ -190,36 +179,64 @@ public final class GlobeClientState {
     }
 
     public static EwStormStage computeEwStormStage(ClientWorld world, PlayerEntity player) {
-        var border = world.getWorldBorder();
-        double progressX = com.example.globe.util.LatitudeMath.hazardProgress(border, player.getX());
-        return ewStageForProgress(progressX);
+        return ewStageForIndex(ewWarningStage(player.getX()));
     }
 
     private static double distanceToEwBorderBlocks(WorldBorder border, double camX) {
         double center = border.getCenterX();
-        double half = com.example.globe.util.LatitudeMath.halfSize(border);
-        return Math.max(0.0, half - Math.abs(camX - center));
+        double radius = border.getSize() * 0.5;
+        return Math.max(0.0, radius - Math.abs(camX - center));
+    }
+
+    public static double distanceToEwBorderBlocks(double x) {
+        var client = MinecraftClient.getInstance();
+        if (client == null || client.world == null) return Double.POSITIVE_INFINITY;
+        return distanceToEwBorderBlocks(client.world.getWorldBorder(), x);
+    }
+
+    public static int ewWarningStage(double x) {
+        double d = distanceToEwBorderBlocks(x);
+        int stage;
+        if (d <= 100.0) {
+            stage = 2;
+        } else if (d <= 500.0) {
+            stage = 1;
+        } else {
+            stage = 0;
+        }
+
+        if (Boolean.getBoolean("latitude.debugEwWarn")) {
+            System.out.println("[LAT_EW_WARN] stage=" + stage + " d=" + d);
+        }
+        return stage;
+    }
+
+    private static float smoothstep(float t) {
+        if (t < 0f) t = 0f;
+        if (t > 1f) t = 1f;
+        return t * t * (3f - 2f * t);
     }
 
     public static float computeEwFogEnd(double camX) {
         if (DEBUG_DISABLE_WARNINGS) {
             return -1.0f;
         }
-        MinecraftClient client = MinecraftClient.getInstance();
-        if (client.player == null || client.world == null) {
-            return -1.0f;
+        double d = distanceToEwBorderBlocks(camX);
+        if (d > 500.0) return -1.0f;
+
+        final float endAt500 = 64f;
+        final float endAt100 = 20f;
+        final float endAt0 = 6f;
+
+        if (d > 100.0) {
+            float t = (float) ((500.0 - d) / 400.0);
+            t = smoothstep(t);
+            return endAt500 + (endAt100 - endAt500) * t;
         }
 
-        double dist = distanceToEwBorderBlocks(client.world.getWorldBorder(), camX);
-        if (dist > 500.0) return -1.0f;
-
-        if (dist > 100.0) {
-            double t = (500.0 - dist) / 400.0; // 0..1
-            return (float) (64.0 - t * 44.0);  // 64 -> 20
-        }
-
-        double t2 = (100.0 - dist) / 100.0;    // 0..1
-        return (float) (20.0 - t2 * 14.0);      // 20 -> 6
+        float t2 = (float) ((100.0 - d) / 100.0);
+        t2 = smoothstep(t2);
+        return endAt100 + (endAt0 - endAt100) * t2;
     }
 
     private static float polarWhiteoutIntensity(ClientWorld world, PlayerEntity player) {
@@ -316,17 +333,16 @@ public final class GlobeClientState {
         double x = player.getX();
         double z = player.getZ();
 
-        double progressX = com.example.globe.util.LatitudeMath.hazardProgress(border, x);
         double progressZ = com.example.globe.util.LatitudeMath.hazardProgress(border, z);
 
         PolarStage polarStage = polarStageForProgress(border, z, progressZ);
-        EwStormStage stormStage = ewStageForProgress(progressX);
+        EwStormStage stormStage = ewStageForIndex(ewWarningStage(x));
 
         float poleSeverity = polarIntensityForStage(polarStage);
         float stormSeverity = stormIntensityForStage(stormStage);
 
         boolean poleCritical = com.example.globe.util.LatitudeMath.hazardStageIndex(world.getWorldBorder(), player.getZ(), progressZ) >= 4;
-        boolean stormCritical = com.example.globe.util.LatitudeMath.hazardStageIndexEW(progressX) >= 4;
+        boolean stormCritical = ewWarningStage(x) >= 2;
 
         if (DEBUG_DISABLE_WARNINGS) {
             cachedEval = new Eval(true, surfaceOk, absX, absZ, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, false, false);

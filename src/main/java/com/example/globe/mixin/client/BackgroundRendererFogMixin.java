@@ -50,7 +50,7 @@ public class BackgroundRendererFogMixin {
         if (ewEnd < 0.0f) return;
 
         float end = Math.max(8.0f, ewEnd);
-        float start = Math.max(0.0f, end * 0.25f);
+        float start = Math.max(0.0f, end * 0.35f);
 
         RenderSystem.setShaderFogStart(start);
         RenderSystem.setShaderFogEnd(end);
