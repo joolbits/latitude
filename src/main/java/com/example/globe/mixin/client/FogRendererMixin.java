@@ -5,7 +5,6 @@ import com.example.globe.client.GlobeClientState;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.render.Camera;
 import net.minecraft.client.render.RenderTickCounter;
-import net.minecraft.client.render.FogRenderer;
 import net.minecraft.client.world.ClientWorld;
 import org.joml.Vector4f;
 import org.spongepowered.asm.mixin.Mixin;
@@ -15,7 +14,7 @@ import org.spongepowered.asm.mixin.injection.ModifyArgs;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import org.spongepowered.asm.mixin.injection.invoke.arg.Args;
 
-@Mixin(value = FogRenderer.class, priority = 2000)
+@Mixin(targets = "net.minecraft.client.render.FogRenderer", priority = 2000)
 public class FogRendererMixin {
     private static final boolean DEBUG_EW_FOG = Boolean.getBoolean("latitude.debugEwFog");
     private static long lastScreamMs = 0L;
