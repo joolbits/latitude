@@ -11,9 +11,9 @@ import net.minecraft.world.World;
 
 public final class GlobeClientState {
     public static boolean DEBUG_DISABLE_WARNINGS = false;
-    public static final boolean DEBUG_EW_FOG = Boolean.parseBoolean(System.getProperty("latitude.debugEwFog", "false"));
+    public static final boolean DEBUG_EW_FOG = Boolean.getBoolean("latitude.debugEwFog");
 
-    private static long lastEwFogLogTick = Long.MIN_VALUE;
+    private static long lastEwFogLogMs = 0;
     private static long lastEwStateLogTick = Long.MIN_VALUE;
 
     private static final float EW_FOG_WARN_END = 96.0f;
@@ -79,26 +79,11 @@ public final class GlobeClientState {
     }
 
     public static void debugLogEwFogOncePerSec(String hook, float ewEnd, double camX) {
-        if (!DEBUG_EW_FOG) {
-            return;
-        }
-
-        MinecraftClient client = MinecraftClient.getInstance();
-        if (client.player == null || client.world == null) {
-            return;
-        }
-
-        long time = client.world.getTime();
-        if (time - lastEwFogLogTick < 20L) {
-            return;
-        }
-
-        lastEwFogLogTick = time;
-        var border = client.world.getWorldBorder();
-        double progress = com.example.globe.util.LatitudeMath.hazardProgress(border, camX);
-        EwStormStage stage = ewStageForProgress(progress);
-        GlobeMod.LOGGER.info("[LAT_EW_FOG] hook={} camX={} stage={} progress={} ewEnd={}",
-                hook, camX, stage, progress, ewEnd);
+        if (!Boolean.getBoolean("latitude.debugEwFog")) return;
+        long now = System.currentTimeMillis();
+        if (now - lastEwFogLogMs < 1000) return;
+        lastEwFogLogMs = now;
+        System.out.println("[LAT_EW_FOG] hook=" + hook + " ewEnd=" + ewEnd + " camX=" + camX);
     }
 
     public static void debugLogEwFogStateOncePerSec(double camX) {
@@ -210,7 +195,13 @@ public final class GlobeClientState {
         return ewStageForProgress(progressX);
     }
 
-    public static float computeEwFogEnd(double x) {
+    private static double distanceToEwBorderBlocks(WorldBorder border, double camX) {
+        double center = border.getCenterX();
+        double half = com.example.globe.util.LatitudeMath.halfSize(border);
+        return Math.max(0.0, half - Math.abs(camX - center));
+    }
+
+    public static float computeEwFogEnd(double camX) {
         if (DEBUG_DISABLE_WARNINGS) {
             return -1.0f;
         }
@@ -219,37 +210,16 @@ public final class GlobeClientState {
             return -1.0f;
         }
 
-        var border = client.world.getWorldBorder();
-        double progress = com.example.globe.util.LatitudeMath.hazardProgress(border, x);
+        double dist = distanceToEwBorderBlocks(client.world.getWorldBorder(), camX);
+        if (dist > 500.0) return -1.0f;
 
-        double stage1 = com.example.globe.util.LatitudeMath.POLAR_STAGE_1_PROGRESS;
-        double stage2 = com.example.globe.util.LatitudeMath.POLAR_STAGE_2_PROGRESS;
-        double stage3 = com.example.globe.util.LatitudeMath.POLAR_STAGE_3_PROGRESS;
-        double stage4 = com.example.globe.util.LatitudeMath.POLAR_STAGE_LETHAL_PROGRESS;
-
-        if (progress < stage1) {
-            return -1.0f;
+        if (dist > 100.0) {
+            double t = (500.0 - dist) / 400.0; // 0..1
+            return (float) (64.0 - t * 44.0);  // 64 -> 20
         }
 
-        if (progress < stage2) {
-            float t = (float) ((progress - stage1) / (stage2 - stage1));
-            t = t * t;
-            return MathHelper.lerp(t, EW_FOG_WARN_END, EW_FOG_DANGER_END);
-        }
-
-        if (progress < stage3) {
-            float t = (float) ((progress - stage2) / (stage3 - stage2));
-            t = t * t;
-            return MathHelper.lerp(t, EW_FOG_DANGER_END, EW_FOG_SEVERE_END);
-        }
-
-        if (progress < stage4) {
-            float t = (float) ((progress - stage3) / (stage4 - stage3));
-            t = t * t;
-            return MathHelper.lerp(t, EW_FOG_SEVERE_END, EW_FOG_BLACKOUT_END);
-        }
-
-        return EW_FOG_BLACKOUT_END;
+        double t2 = (100.0 - dist) / 100.0;    // 0..1
+        return (float) (20.0 - t2 * 14.0);      // 20 -> 6
     }
 
     private static float polarWhiteoutIntensity(ClientWorld world, PlayerEntity player) {

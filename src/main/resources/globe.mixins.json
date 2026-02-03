@@ -18,6 +18,7 @@
     "client.CreateWorldScreenMixin",
     "client.WorldCreatorMixin",
     "client.InGameHudMixin",
+    "client.BackgroundRendererFogMixin",
     "HandledScreenCompassToggleMixin"
   ],
   "injectors": {
