@@ -13,7 +13,6 @@
     "SurfaceDripstoneLawnmowerMixin"
   ],
   "client": [
-    "client.FogRendererMixin",
     "client.CreateWorldScreenLatitudeToggleMixin",
     "client.CreateWorldScreenSpawnZoneMixin",
     "client.CreateWorldScreenMixin",
