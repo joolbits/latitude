@@ -91,33 +91,39 @@ public class LatitudeHudStudioScreen extends Screen {
         this.wCompassTransparency = this.addDrawableChild(new IntSlider(panelX, y, panelW, rowH, Text.literal("Transparency"), 0, 255, cfg.backgroundAlpha, v -> cfg.backgroundAlpha = v));
         y += rowH + rowGap;
 
-        this.wCompassBackground = this.addDrawableChild(CyclingButtonWidget.<Boolean>builder(v -> Text.literal(v ? "ON" : "OFF"), () -> cfg.showBackground)
+        this.wCompassBackground = this.addDrawableChild(CyclingButtonWidget.<Boolean>builder(v -> Text.literal(v ? "ON" : "OFF"))
                 .values(true, false)
+                .initially(cfg.showBackground)
                 .build(panelX, y, panelW, rowH, Text.literal("Background"), (btn, value) -> cfg.showBackground = value));
         y += rowH + rowGap;
 
-        this.wCompassBgColor = this.addDrawableChild(CyclingButtonWidget.<String>builder(Text::literal, () -> bgColorName(cfg.backgroundRgb))
+        this.wCompassBgColor = this.addDrawableChild(CyclingButtonWidget.<String>builder(Text::literal)
                 .values("BLACK", "WHITE", "DARK_GRAY", "BLUE")
+                .initially(bgColorName(cfg.backgroundRgb))
                 .build(panelX, y, panelW, rowH, Text.literal("Background Color"), (btn, value) -> cfg.backgroundRgb = bgColorRgb(value)));
         y += rowH + rowGap;
 
-        this.wCompassTextColor = this.addDrawableChild(CyclingButtonWidget.<String>builder(Text::literal, () -> textColorName(cfg.textRgb))
+        this.wCompassTextColor = this.addDrawableChild(CyclingButtonWidget.<String>builder(Text::literal)
                 .values("WHITE", "BLACK", "YELLOW", "RED", "CYAN")
+                .initially(textColorName(cfg.textRgb))
                 .build(panelX, y, panelW, rowH, Text.literal("Text Color"), (btn, value) -> cfg.textRgb = textColorRgb(value)));
         y += rowH + rowGap;
 
-        this.wCompassShowLatitude = this.addDrawableChild(CyclingButtonWidget.<Boolean>builder(v -> Text.literal(v ? "ON" : "OFF"), () -> Boolean.TRUE.equals(cfg.showLatitude))
+        this.wCompassShowLatitude = this.addDrawableChild(CyclingButtonWidget.<Boolean>builder(v -> Text.literal(v ? "ON" : "OFF"))
                 .values(true, false)
+                .initially(Boolean.TRUE.equals(cfg.showLatitude))
                 .build(panelX, y, panelW, rowH, Text.literal("Show Latitude"), (btn, value) -> cfg.showLatitude = value));
         y += rowH + rowGap;
 
-        this.wCompassCompact = this.addDrawableChild(CyclingButtonWidget.<Boolean>builder(v -> Text.literal(v ? "ON" : "OFF"), () -> cfg.compactHud)
+        this.wCompassCompact = this.addDrawableChild(CyclingButtonWidget.<Boolean>builder(v -> Text.literal(v ? "ON" : "OFF"))
                 .values(true, false)
+                .initially(cfg.compactHud)
                 .build(panelX, y, panelW, rowH, Text.literal("Compact HUD"), (btn, value) -> cfg.compactHud = value));
         y += rowH + rowGap;
 
-        this.wCompassAttachHotbar = this.addDrawableChild(CyclingButtonWidget.<Boolean>builder(v -> Text.literal(v ? "ON" : "OFF"), () -> cfg.attachToHotbarCompass)
+        this.wCompassAttachHotbar = this.addDrawableChild(CyclingButtonWidget.<Boolean>builder(v -> Text.literal(v ? "ON" : "OFF"))
                 .values(true, false)
+                .initially(cfg.attachToHotbarCompass)
                 .build(panelX, y, panelW, rowH, Text.literal("Attach to Hotbar"), (btn, value) -> {
                     cfg.attachToHotbarCompass = value;
                     CompassHudConfig.saveCurrent();
