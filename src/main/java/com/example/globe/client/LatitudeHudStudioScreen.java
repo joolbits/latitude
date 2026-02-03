@@ -172,6 +172,8 @@ public class LatitudeHudStudioScreen extends Screen {
             ctx.fill(px, py, px + pw, py + ph, 0xAA000000);
         }
 
+        super.render(ctx, mouseX, mouseY, delta);
+
         var mc = MinecraftClient.getInstance();
         double z = 0.0;
         var border = mc.world != null ? mc.world.getWorldBorder() : null;
@@ -195,8 +197,6 @@ public class LatitudeHudStudioScreen extends Screen {
                 titleOffsetY);
 
         CompassHud.renderAdjustPreview(ctx, this.width, this.height);
-
-        super.render(ctx, mouseX, mouseY, delta);
 
         if (sidebarVisible) {
             ctx.drawTextWithShadow(this.textRenderer, "Press L to hide settings", sidebarX + 8, sidebarHintY, 0xFFFFFFFF);
