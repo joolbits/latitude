@@ -211,32 +211,28 @@ public final class GlobeClientState {
         return stage;
     }
 
-    private static float smoothstep(float t) {
+    public static float ewIntensity01(double x) {
+        double d = distanceToEwBorderBlocks(x);
+        if (d > 500.0) return 0.0f;
+
+        float t = (float) ((500.0 - d) / 500.0); // 0..1
         if (t < 0f) t = 0f;
         if (t > 1f) t = 1f;
-        return t * t * (3f - 2f * t);
+
+        // gradual early, stronger late
+        return (float) Math.pow(t, 2.6);
     }
 
     public static float computeEwFogEnd(double camX) {
         if (DEBUG_DISABLE_WARNINGS) {
             return -1.0f;
         }
-        double d = distanceToEwBorderBlocks(camX);
-        if (d > 500.0) return -1.0f;
+        float a = ewIntensity01(camX);
+        if (a <= 0.0f) return -1.0f;
 
-        final float endAt500 = 64f;
-        final float endAt100 = 20f;
-        final float endAt0 = 6f;
-
-        if (d > 100.0) {
-            float t = (float) ((500.0 - d) / 400.0);
-            t = smoothstep(t);
-            return endAt500 + (endAt100 - endAt500) * t;
-        }
-
-        float t2 = (float) ((100.0 - d) / 100.0);
-        t2 = smoothstep(t2);
-        return endAt100 + (endAt0 - endAt100) * t2;
+        float endFar = 96f;
+        float endNear = 4f;
+        return endFar + (endNear - endFar) * a;
     }
 
     private static float polarWhiteoutIntensity(ClientWorld world, PlayerEntity player) {
