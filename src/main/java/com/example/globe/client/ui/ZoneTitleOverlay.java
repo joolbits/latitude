@@ -76,13 +76,13 @@ public final class ZoneTitleOverlay {
         int baseY = screenH / 2 - 24;
 
         var m = ctx.getMatrices();
-        m.pushMatrix();
+        m.push();
         try {
-            m.translate(screenW / 2, baseY);
-            m.scale(2.0f, 2.0f);
+            m.translate((float) (screenW / 2), (float) baseY, 0.0f);
+            m.scale(2.0f, 2.0f, 1.0f);
             ctx.drawCenteredTextWithShadow(tr, title, 0, 0, argb);
         } finally {
-            m.popMatrix();
+            m.pop();
         }
 
         if (subtitle != null) {
