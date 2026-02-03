@@ -105,6 +105,8 @@ public final class LatitudeBiomes {
 
     private static final int BAND_EQUATOR = 0;
     private static final int BAND_TROPICAL = 1;
+    // Alias arid to tropical index for warm-band clamping without changing band math elsewhere.
+    private static final int BAND_ARID = BAND_TROPICAL;
     private static final int BAND_TEMPERATE = 2;
     private static final int BAND_SUBPOLAR = 3;
     private static final int BAND_POLAR = 4;
@@ -1888,6 +1890,35 @@ public final class LatitudeBiomes {
     }
 
     private static RegistryEntry<Biome> sanitizeLandBiome(Registry<Biome> biomes, RegistryEntry<Biome> pick, int bandIndex) {
+        var keyOpt = pick.getKey();
+        if (bandIndex == BAND_EQUATOR || bandIndex == BAND_TROPICAL || bandIndex == BAND_ARID) {
+            if (keyOpt.isPresent()) {
+                RegistryKey<Biome> biomeKey = keyOpt.get();
+                if (biomeKey == BiomeKeys.SNOWY_PLAINS
+                        || biomeKey == BiomeKeys.ICE_SPIKES
+                        || biomeKey == BiomeKeys.SNOWY_TAIGA
+                        || biomeKey == BiomeKeys.FROZEN_RIVER
+                        || biomeKey == BiomeKeys.FROZEN_OCEAN
+                        || biomeKey == BiomeKeys.DEEP_FROZEN_OCEAN
+                        || biomeKey == BiomeKeys.SNOWY_BEACH
+                        || biomeKey == BiomeKeys.GROVE
+                        || biomeKey == BiomeKeys.SNOWY_SLOPES
+                        || biomeKey == BiomeKeys.JAGGED_PEAKS
+                        || biomeKey == BiomeKeys.FROZEN_PEAKS
+                        || biomeKey == BiomeKeys.STONY_PEAKS
+                        || biomeKey == BiomeKeys.WINDSWEPT_HILLS
+                        || biomeKey == BiomeKeys.WINDSWEPT_FOREST
+                        || biomeKey == BiomeKeys.WINDSWEPT_GRAVELLY_HILLS
+                        || biomeKey == BiomeKeys.TAIGA
+                        || biomeKey == BiomeKeys.OLD_GROWTH_PINE_TAIGA
+                        || biomeKey == BiomeKeys.OLD_GROWTH_SPRUCE_TAIGA) {
+                    RegistryEntry<Biome> fallback = pickWarmFallback(biomes, bandIndex);
+                    if (fallback != null) {
+                        return fallback;
+                    }
+                }
+            }
+        }
         if (bandIndex == BAND_EQUATOR) {
             if (isBiomeId(pick, "minecraft:plains")
                     || isBiomeId(pick, "minecraft:forest")
@@ -1931,6 +1962,35 @@ public final class LatitudeBiomes {
     }
 
     private static RegistryEntry<Biome> sanitizeLandBiome(Collection<RegistryEntry<Biome>> biomes, RegistryEntry<Biome> pick, int bandIndex) {
+        var keyOpt = pick.getKey();
+        if (bandIndex == BAND_EQUATOR || bandIndex == BAND_TROPICAL || bandIndex == BAND_ARID) {
+            if (keyOpt.isPresent()) {
+                RegistryKey<Biome> biomeKey = keyOpt.get();
+                if (biomeKey == BiomeKeys.SNOWY_PLAINS
+                        || biomeKey == BiomeKeys.ICE_SPIKES
+                        || biomeKey == BiomeKeys.SNOWY_TAIGA
+                        || biomeKey == BiomeKeys.FROZEN_RIVER
+                        || biomeKey == BiomeKeys.FROZEN_OCEAN
+                        || biomeKey == BiomeKeys.DEEP_FROZEN_OCEAN
+                        || biomeKey == BiomeKeys.SNOWY_BEACH
+                        || biomeKey == BiomeKeys.GROVE
+                        || biomeKey == BiomeKeys.SNOWY_SLOPES
+                        || biomeKey == BiomeKeys.JAGGED_PEAKS
+                        || biomeKey == BiomeKeys.FROZEN_PEAKS
+                        || biomeKey == BiomeKeys.STONY_PEAKS
+                        || biomeKey == BiomeKeys.WINDSWEPT_HILLS
+                        || biomeKey == BiomeKeys.WINDSWEPT_FOREST
+                        || biomeKey == BiomeKeys.WINDSWEPT_GRAVELLY_HILLS
+                        || biomeKey == BiomeKeys.TAIGA
+                        || biomeKey == BiomeKeys.OLD_GROWTH_PINE_TAIGA
+                        || biomeKey == BiomeKeys.OLD_GROWTH_SPRUCE_TAIGA) {
+                    RegistryEntry<Biome> fallback = pickWarmFallback(biomes, bandIndex);
+                    if (fallback != null) {
+                        return fallback;
+                    }
+                }
+            }
+        }
         if (bandIndex == BAND_EQUATOR) {
             if (isBiomeId(pick, "minecraft:plains")
                     || isBiomeId(pick, "minecraft:forest")
