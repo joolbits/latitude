@@ -63,18 +63,21 @@ public class LatitudeHudAdjustScreen extends Screen {
         this.settingsTransparency = this.addDrawableChild(new IntSlider(panelX, py, panelW, rowH, Text.literal("Transparency"), 0, 255, cfg.backgroundAlpha, v -> cfg.backgroundAlpha = v));
         py += rowH + rowGap;
 
-        this.settingsBackground = this.addDrawableChild(CyclingButtonWidget.<Boolean>builder(v -> Text.literal(v ? "ON" : "OFF"), () -> cfg.showBackground)
+        this.settingsBackground = this.addDrawableChild(CyclingButtonWidget.<Boolean>builder(v -> Text.literal(v ? "ON" : "OFF"))
                 .values(true, false)
+                .initially(cfg.showBackground)
                 .build(panelX, py, panelW, rowH, Text.literal("Background"), (btn, value) -> cfg.showBackground = value));
         py += rowH + rowGap;
 
-        this.settingsShowLatitude = this.addDrawableChild(CyclingButtonWidget.<Boolean>builder(v -> Text.literal(v ? "ON" : "OFF"), () -> Boolean.TRUE.equals(cfg.showLatitude))
+        this.settingsShowLatitude = this.addDrawableChild(CyclingButtonWidget.<Boolean>builder(v -> Text.literal(v ? "ON" : "OFF"))
                 .values(true, false)
+                .initially(Boolean.TRUE.equals(cfg.showLatitude))
                 .build(panelX, py, panelW, rowH, Text.literal("Show Latitude"), (btn, value) -> cfg.showLatitude = value));
         py += rowH + rowGap;
 
-        this.settingsCompactHud = this.addDrawableChild(CyclingButtonWidget.<Boolean>builder(v -> Text.literal(v ? "ON" : "OFF"), () -> cfg.compactHud)
+        this.settingsCompactHud = this.addDrawableChild(CyclingButtonWidget.<Boolean>builder(v -> Text.literal(v ? "ON" : "OFF"))
                 .values(true, false)
+                .initially(cfg.compactHud)
                 .build(panelX, py, panelW, rowH, Text.literal("Compact HUD"), (btn, value) -> cfg.compactHud = value));
         py += rowH + rowGap;
 
