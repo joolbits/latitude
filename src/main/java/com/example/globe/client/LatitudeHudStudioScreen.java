@@ -185,16 +185,17 @@ public class LatitudeHudStudioScreen extends Screen {
         int titleOffsetX = (dragElement == DragElement.TITLE) ? (int) Math.round(titleOffsetXf) : LatitudeConfig.zoneEnterTitleOffsetX;
         int titleOffsetY = (dragElement == DragElement.TITLE) ? (int) Math.round(titleOffsetYf) : LatitudeConfig.zoneEnterTitleOffsetY;
 
-        float titleScale = (float) LatitudeConfig.zoneEnterTitleScale;
-        float titleCx = snapToPixels((this.width / 2.0f) + titleOffsetX, titleScale);
-        float titleCy = snapToPixels((this.height / 2.0f) + titleOffsetY, titleScale);
+        float studioScale = (float) LatitudeConfig.zoneEnterTitleScale;
+        float effectiveScale = studioScale;
 
-        ZoneEnterTitleOverlay.renderStaticAt(
-                ctx,
-                Math.round(titleCx),
-                Math.round(titleCy),
-                sampleTitle,
-                titleScale);
+        float titleCx = snapToPixels((this.width / 2.0f) + titleOffsetX, effectiveScale);
+        float titleCy = snapToPixels((this.height / 2.0f) + titleOffsetY, effectiveScale);
+
+        int titleW = this.textRenderer.getWidth(sampleTitle);
+        int titleH = this.textRenderer.fontHeight;
+        int textX = Math.round(titleCx + (-titleW / 2.0f) * effectiveScale);
+        int textY = Math.round(titleCy + (-titleH / 2.0f) * effectiveScale);
+        ctx.drawTextWithShadow(this.textRenderer, sampleTitle, textX, textY, 0xFFFFFFFF);
 
         CompassHud.renderAdjustPreview(ctx, this.width, this.height);
 
