@@ -47,9 +47,9 @@ public abstract class CreateWorldScreenMixin {
 
         Registry<WorldPreset> presets = creator.getGeneratorOptionsHolder()
                 .getCombinedRegistryManager()
-                .getOrThrow(RegistryKeys.WORLD_PRESET);
+                .get(RegistryKeys.WORLD_PRESET);
 
         RegistryKey<WorldPreset> key = RegistryKey.of(RegistryKeys.WORLD_PRESET, size.worldPresetId);
-        presets.getOptional(key).ifPresent(entry -> creator.setWorldType(new WorldCreator.WorldType((RegistryEntry<WorldPreset>) entry)));
+        presets.getEntry(key).ifPresent(entry -> creator.setWorldType(new WorldCreator.WorldType(entry)));
     }
 }
