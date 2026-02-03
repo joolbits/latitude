@@ -234,7 +234,8 @@ public final class CompassHud {
         m.push();
         try {
             m.translate((float) x, (float) y, 0.0f);
-            m.scale(s, s, 1.0f);
+            float sf = (float) s;
+            m.scale(sf, sf, 1.0f);
 
             if (cfg.showBackground || isPreview) {
                 int bg;
