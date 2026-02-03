@@ -29,8 +29,8 @@ public abstract class HandledScreenCompassToggleMixin {
         MinecraftClient client = MinecraftClient.getInstance();
         if (client == null || client.getWindow() == null) return;
 
-        boolean altDown = InputUtil.isKeyPressed(client.getWindow(), InputUtil.GLFW_KEY_LEFT_ALT)
-                || InputUtil.isKeyPressed(client.getWindow(), InputUtil.GLFW_KEY_RIGHT_ALT);
+        boolean altDown = InputUtil.isKeyPressed(client.getWindow().getHandle(), InputUtil.GLFW_KEY_LEFT_ALT)
+                || InputUtil.isKeyPressed(client.getWindow().getHandle(), InputUtil.GLFW_KEY_RIGHT_ALT);
         if (!altDown) return;
 
         Slot slot = this.getSlotAt(mouseX, mouseY);
