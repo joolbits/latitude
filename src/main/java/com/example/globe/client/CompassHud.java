@@ -239,8 +239,8 @@ public final class CompassHud {
         m.push();
         try {
             float sf = (float) s;
-            float sx = snapToPixels((float) x, sf);
-            float sy = snapToPixels((float) y, sf);
+            float sx = isPreview ? snapToPixels((float) x, sf) : (float) x;
+            float sy = isPreview ? snapToPixels((float) y, sf) : (float) y;
             m.translate(sx, sy, 0.0f);
             m.scale(sf, sf, 1.0f);
 
@@ -261,22 +261,50 @@ public final class CompassHud {
                     ctx.fill(boxW - 1, 0, boxW, boxH, border);
                 }
             }
+        } finally {
+            m.pop();
+        }
 
-            int color = cfg.textArgb();
-            int tx = pad;
-            int ty = pad;
+        int color = cfg.textArgb();
+        int tx = pad;
+        int ty = pad;
+
+        if (isPreview) {
+            float sf = (float) s;
+            float sx = snapToPixels((float) x, sf);
+            float sy = snapToPixels((float) y, sf);
 
             for (int i = 0; i < lines.length; i++) {
                 int lineY = ty + i * client.textRenderer.fontHeight;
                 Text line = Text.literal(lines[i]);
+                int drawX = Math.round(sx + tx * sf);
+                int drawY = Math.round(sy + lineY * sf);
                 if (cfg.shadow) {
-                    ctx.drawTextWithShadow(client.textRenderer, line, tx, lineY, color);
+                    ctx.drawTextWithShadow(client.textRenderer, line, drawX, drawY, color);
                 } else {
-                    ctx.drawText(client.textRenderer, line, tx, lineY, color, false);
+                    ctx.drawText(client.textRenderer, line, drawX, drawY, color, false);
                 }
             }
-        } finally {
-            m.pop();
+        } else {
+            m = ctx.getMatrices();
+            m.push();
+            try {
+                m.translate((float) x, (float) y, 0.0f);
+                float sf = (float) s;
+                m.scale(sf, sf, 1.0f);
+
+                for (int i = 0; i < lines.length; i++) {
+                    int lineY = ty + i * client.textRenderer.fontHeight;
+                    Text line = Text.literal(lines[i]);
+                    if (cfg.shadow) {
+                        ctx.drawTextWithShadow(client.textRenderer, line, tx, lineY, color);
+                    } else {
+                        ctx.drawText(client.textRenderer, line, tx, lineY, color, false);
+                    }
+                }
+            } finally {
+                m.pop();
+            }
         }
     }
 
