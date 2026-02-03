@@ -231,10 +231,10 @@ public final class CompassHud {
         float s = cfg.scale;
 
         var m = ctx.getMatrices();
-        m.pushMatrix();
+        m.push();
         try {
-            m.translate(x, y);
-            m.scale(s, s);
+            m.translate((float) x, (float) y, 0.0f);
+            m.scale(s, s, 1.0f);
 
             if (cfg.showBackground || isPreview) {
                 int bg;
@@ -268,7 +268,7 @@ public final class CompassHud {
                 }
             }
         } finally {
-            m.popMatrix();
+            m.pop();
         }
     }
 
