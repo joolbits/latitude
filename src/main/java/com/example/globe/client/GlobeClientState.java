@@ -219,8 +219,8 @@ public final class GlobeClientState {
         if (t < 0f) t = 0f;
         if (t > 1f) t = 1f;
 
-        // gradual early, stronger late (cubic)
-        return t * t * t;
+        // steeper right after level-1 threshold
+        return (float) Math.pow(t, 0.55);
     }
 
     public static float computeEwFogEnd(double camX) {
@@ -230,8 +230,8 @@ public final class GlobeClientState {
         float a = ewIntensity01(camX);
         if (a <= 0.0f) return -1.0f;
 
-        float endFar = 96f;
-        float endNear = 4f;
+        float endFar = 64f;
+        float endNear = 12f;
         return endFar + (endNear - endFar) * a;
     }
 
