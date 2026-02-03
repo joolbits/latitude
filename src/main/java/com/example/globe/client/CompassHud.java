@@ -1,5 +1,6 @@
 package com.example.globe.client;
 
+import com.example.globe.client.LatitudeHudStudioScreen;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.render.RenderTickCounter;
@@ -48,6 +49,10 @@ public final class CompassHud {
     private static void renderInternal(DrawContext ctx, int screenW, int screenH, boolean forceVisible) {
         MinecraftClient client = MinecraftClient.getInstance();
         if (client == null || client.player == null || client.world == null) {
+            return;
+        }
+
+        if (!forceVisible && client.currentScreen instanceof LatitudeHudStudioScreen) {
             return;
         }
 
