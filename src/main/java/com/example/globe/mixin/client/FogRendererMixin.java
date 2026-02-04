@@ -78,7 +78,8 @@ public class FogRendererMixin {
         float renderStart = args.get(5);
         float renderEnd = args.get(6);
 
-        float finalEnd = Math.min(Math.min(environmentalEnd, renderEnd), ewEnd);
+        float clampedEwEnd = Math.max(8.0f, ewEnd);
+        float finalEnd = Math.min(Math.min(environmentalEnd, renderEnd), clampedEwEnd);
         args.set(3, 0.0f);
         args.set(4, finalEnd);
         args.set(5, 0.0f);

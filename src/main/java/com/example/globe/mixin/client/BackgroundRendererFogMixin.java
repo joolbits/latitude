@@ -1,6 +1,6 @@
 package com.example.globe.mixin.client;
 
-final class BackgroundRendererFogMixin {
+public final class BackgroundRendererFogMixin {
     private BackgroundRendererFogMixin() {
     }
 }
