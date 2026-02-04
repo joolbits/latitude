@@ -1,6 +1,7 @@
 package com.example.globe.mixin.client;
 
 import com.example.globe.client.GlobeClientState;
+import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.render.fog.FogRenderer;
 import org.spongepowered.asm.mixin.Mixin;
@@ -11,27 +12,18 @@ import org.spongepowered.asm.mixin.injection.ModifyVariable;
 @Mixin(FogRenderer.class)
 public class FogRendererEwMixin {
 
-    @Unique private static long latitude$lastLogMs = 0L;
+    @Unique private static final boolean LATITUDE_SODIUM_LOADED = FabricLoader.getInstance().isModLoaded("sodium");
 
-    // Attempt A: likely fogStart ordinal=0, fogEnd ordinal=1.
+    // Primary attempt: fogStart ordinal=0, fogEnd ordinal=1.
     @ModifyVariable(method = "applyFog", at = @At("STORE"), ordinal = 0, require = 0)
-    private static float latitude$ewFogStartA(float fogStart) {
+    private static float latitude$ewFogStart(float fogStart) {
+        if (LATITUDE_SODIUM_LOADED) return fogStart; // render-distance clamp handles Sodium
         return latitude$tightenStart(fogStart);
     }
 
     @ModifyVariable(method = "applyFog", at = @At("STORE"), ordinal = 1, require = 0)
-    private static float latitude$ewFogEndA(float fogEnd) {
-        return latitude$tightenEnd(fogEnd);
-    }
-
-    // Attempt B: swapped ordinals (in case the locals are ordered differently).
-    @ModifyVariable(method = "applyFog", at = @At("STORE"), ordinal = 1, require = 0)
-    private static float latitude$ewFogStartB(float fogStart) {
-        return latitude$tightenStart(fogStart);
-    }
-
-    @ModifyVariable(method = "applyFog", at = @At("STORE"), ordinal = 0, require = 0)
-    private static float latitude$ewFogEndB(float fogEnd) {
+    private static float latitude$ewFogEnd(float fogEnd) {
+        if (LATITUDE_SODIUM_LOADED) return fogEnd; // render-distance clamp handles Sodium
         return latitude$tightenEnd(fogEnd);
     }
 
@@ -47,9 +39,7 @@ public class FogRendererEwMixin {
         double desiredEnd = GlobeClientState.computeEwFogEnd(x);
         if (desiredEnd < 0.0) return currentEnd;
 
-        float tightened = (float) Math.min(currentEnd, desiredEnd);
-        latitude$logOncePerSecond("end", currentEnd, tightened, i);
-        return tightened;
+        return (float) Math.min(currentEnd, desiredEnd);
     }
 
     @Unique
@@ -62,16 +52,6 @@ public class FogRendererEwMixin {
         if (i <= 0.0) return currentStart;
 
         // Mild push so start moves forward with intensity; end tightening does the heavy lift.
-        float pushed = (float) (currentStart + (currentStart * (i * 0.25)));
-        latitude$logOncePerSecond("start", currentStart, pushed, i);
-        return pushed;
-    }
-
-    @Unique
-    private static void latitude$logOncePerSecond(String which, float before, float after, double i) {
-        long now = System.currentTimeMillis();
-        if (now - latitude$lastLogMs < 1000L) return;
-        latitude$lastLogMs = now;
-        System.out.println("[Latitude] EW fog " + which + " tighten: " + before + " -> " + after + " (i=" + i + ")");
+        return (float) (currentStart + (currentStart * (i * 0.25)));
     }
 }
