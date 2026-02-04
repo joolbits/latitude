@@ -20,7 +20,9 @@
     "client.WorldCreatorMixin",
     "client.InGameHudMixin",
     "HandledScreenCompassToggleMixin",
-    "client.FogRendererEwMixin"
+    "client.FogRendererEwMixin",
+    "client.compat.sodium.RenderSectionManagerVisibilityMixin",
+    "client.FogUniformPackerClampMixin"
   ],
   "injectors": {
     "defaultRequire": 1

@@ -11,7 +11,11 @@ import net.minecraft.world.World;
 import net.minecraft.client.option.SimpleOption;
 
 public final class GlobeClientState {
-    public static boolean DEBUG_DISABLE_WARNINGS = false;
+    public static final boolean DEBUG_DISABLE_WARNINGS = Boolean.getBoolean("latitude.debugDisableWarnings");
+    public static final boolean DEBUG_DISABLE_FOG = Boolean.getBoolean("latitude.debugDisableFog");
+    // --- TEMP EW DIST DEBUG (remove after) ---
+    private static long globe$ewLastLogMs = 0L;
+    // -----------------------------------------
     public static final boolean DEBUG_EW_FOG = Boolean.parseBoolean(System.getProperty("latitude.debugEwFog", "false"));
 
     private static long lastEwFogLogTick = Long.MIN_VALUE;
@@ -141,60 +145,10 @@ public final class GlobeClientState {
      * Clamp client-side view distance during EW storms (Sodium-proof). Only tightens; restores when inactive.
      */
     public static void clampEwViewDistance(MinecraftClient client) {
-        if (client == null || client.options == null) return;
-        SimpleOption<Integer> option = client.options.getViewDistance();
-        if (option == null) return;
-
-        int current = option.getValue();
-        if (baseViewDistanceChunks < 0 && !ewClampActive && current >= 3) {
-            baseViewDistanceChunks = current;
-            lastAppliedViewDistanceChunks = current;
-            currentViewDistanceF = current;
+        // Tripwire: no view-distance mutations allowed. Enable with -Dlatitude.debugEwClampTripwire=true if needed.
+        if (Boolean.getBoolean("latitude.debugEwClampTripwire")) {
+            GlobeMod.LOGGER.error("EW DISTANCE MUTATION PATH HIT");
         }
-
-        if (client.player == null || client.world == null || !GlobeClientState.isGlobeWorld()) {
-            restoreViewDistance(option);
-            return;
-        }
-
-        double dist = distanceToEwBorderBlocks(client.world.getWorldBorder(), client.player.getX());
-        if (!ewClampActive && dist <= 500.0) {
-            ewClampActive = true;
-        } else if (ewClampActive && dist >= 520.0) {
-            ewClampActive = false;
-        }
-
-        double intensity = ewClampActive ? ewIntensity01(client.player.getX()) : 0.0;
-        if (intensity <= 0.0) {
-            restoreViewDistance(option);
-            return;
-        }
-
-        int minChunks = 3;
-        double target = baseViewDistanceChunks + (minChunks - baseViewDistanceChunks) * Math.min(1.0, intensity);
-        if (currentViewDistanceF < 0f) {
-            currentViewDistanceF = baseViewDistanceChunks;
-        }
-        currentViewDistanceF = MathHelper.lerp(0.15f, currentViewDistanceF, (float) target);
-        int clamped = Math.max(minChunks, Math.round(currentViewDistanceF));
-
-        long now = System.currentTimeMillis();
-        if (clamped != lastAppliedViewDistanceChunks && now - lastViewDistanceApplyMs >= 250L) {
-            option.setValue(clamped);
-            lastAppliedViewDistanceChunks = clamped;
-            lastViewDistanceApplyMs = now;
-        }
-    }
-
-    private static void restoreViewDistance(SimpleOption<Integer> option) {
-        if (baseViewDistanceChunks < 0) return;
-        int current = option.getValue();
-        if (current != baseViewDistanceChunks) {
-            option.setValue(baseViewDistanceChunks);
-        }
-        lastAppliedViewDistanceChunks = baseViewDistanceChunks;
-        currentViewDistanceF = baseViewDistanceChunks;
-        ewClampActive = false;
     }
 
     private static int polarRank(PolarStage stage) {
@@ -222,16 +176,28 @@ public final class GlobeClientState {
 
         var border = world.getWorldBorder();
 
-        double progressX = com.example.globe.util.LatitudeMath.hazardProgress(border, player.getX());
         double progressZ = com.example.globe.util.LatitudeMath.hazardProgress(border, player.getZ());
-
         PolarStage polar = polarStageForProgress(border, player.getZ(), progressZ);
-        EwStormStage ewVisual = ewStageForProgress(progressX);
 
-        int ewStageIndex = com.example.globe.util.LatitudeMath.hazardStageIndexEW(progressX);
-        boolean ewTextWarn = ewStageIndex >= 1;
-        boolean ewTextDanger = ewStageIndex >= 2;
+        double distToBorder = Math.min(Math.abs(player.getX() - border.getBoundWest()), Math.abs(border.getBoundEast() - player.getX()));
+
+        // Debug print every 10s to verify thresholds
+        long now = System.currentTimeMillis();
+        if (now - globe$ewLastLogMs >= 10_000L) {
+            globe$ewLastLogMs = now;
+            System.out.println("[Latitude EW] distToBorder=" + distToBorder
+                    + " x=" + player.getX()
+                    + " west=" + border.getBoundWest()
+                    + " east=" + border.getBoundEast()
+                    + " L1=500 L2=100");
+        }
+
+        boolean ewTextWarn = distToBorder <= 500.0;
+        boolean ewTextDanger = distToBorder <= 100.0;
         EwStormStage ewTextStage = ewTextDanger ? EwStormStage.LEVEL_2 : (ewTextWarn ? EwStormStage.LEVEL_1 : EwStormStage.NONE);
+
+        // Visual stage (fog/particles) mirrors text stage for now
+        EwStormStage ewVisual = ewTextStage;
 
         int pr = polarRank(polar);
         int er = ewRank(ewTextStage);
@@ -315,6 +281,15 @@ public final class GlobeClientState {
 
         // steeper right after level-1 threshold
         return (float) Math.pow(t, 0.55);
+    }
+
+    public static int ewRenderDistanceChunks(int originalChunks, double playerX) {
+        double i = ewIntensity01(playerX);
+        if (i <= 0.0) return originalChunks;
+
+        int minChunks = 3;
+        int target = (int) Math.round(originalChunks + (minChunks - originalChunks) * i);
+        return Math.max(minChunks, Math.min(originalChunks, target));
     }
 
     public static float computeEwFogEnd(double camX) {
