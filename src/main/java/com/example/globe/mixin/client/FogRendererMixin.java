@@ -42,25 +42,27 @@ public class FogRendererMixin {
     @Inject(method = "applyFog", at = @At("HEAD"))
     private void latitude$scream(Camera camera, int viewDistance, RenderTickCounter tickCounter, float tickDelta,
                                  ClientWorld world, CallbackInfoReturnable<Vector4f> cir) {
-        boolean globe = GlobeClientState.isGlobeWorld();
-        double camX = camera.getCameraPos().x;
-        float ewEnd = globe ? GlobeClientState.computeEwFogEnd(camX) : 0.0f;
+        if (false) {
+            boolean globe = GlobeClientState.isGlobeWorld();
+            double camX = camera.getCameraPos().x;
+            float ewEnd = globe ? GlobeClientState.computeEwFogEnd(camX) : 0.0f;
 
-        TL_GLOBE.set(globe);
-        TL_EW_END.set(ewEnd);
-        TL_FOG_TYPE.set("n/a");
+            TL_GLOBE.set(globe);
+            TL_EW_END.set(ewEnd);
+            TL_FOG_TYPE.set("n/a");
 
-        if (!DEBUG_EW_FOG) {
-            return;
+            if (!DEBUG_EW_FOG) {
+                return;
+            }
+
+            long now = System.currentTimeMillis();
+            if (!shouldLog1Hz(now, true)) {
+                return;
+            }
+
+            GlobeMod.LOGGER.info("[LAT_EW_FOG_SCREAM] hook=FogRenderer#applyFog HEAD camX={} globe={} ewEnd={} fogType={} sodium={}",
+                    camX, globe, ewEnd, TL_FOG_TYPE.get(), SODIUM_LOADED);
         }
-
-        long now = System.currentTimeMillis();
-        if (!shouldLog1Hz(now, true)) {
-            return;
-        }
-
-        GlobeMod.LOGGER.info("[LAT_EW_FOG_SCREAM] hook=FogRenderer#applyFog HEAD camX={} globe={} ewEnd={} fogType={} sodium={}",
-                camX, globe, ewEnd, TL_FOG_TYPE.get(), SODIUM_LOADED);
     }
 
     @ModifyArgs(
@@ -72,53 +74,56 @@ public class FogRendererMixin {
             require = 0
     )
     private void latitude$modifyFogArgs(Args args) {
-        boolean globe = TL_GLOBE.get();
-        float ewEnd = TL_EW_END.get();
-        if (!globe || ewEnd <= 0.0f) {
-            return;
-        }
-
-        // HARD PROOF MODE: force a wall if this hook fires.
-        float proofEnd = 12.0f;
-
-        for (int i = 3; i <= 8; i++) {
-            float v = args.get(i);
-            if (v > proofEnd) args.set(i, proofEnd);
-        }
-
-        long now = System.currentTimeMillis();
-        if (now - lastModifyMs >= 1000L) {
-            lastModifyMs = now;
-            double camX = -9999.0;
-            MinecraftClient mc = MinecraftClient.getInstance();
-            if (mc != null && mc.player != null) {
-                camX = mc.player.getX();
+        if (false) {
+            if (!Boolean.getBoolean("latitude.ewFogProof")) {
+                return;
             }
-            GlobeMod.LOGGER.info("[LAT_EW_FOG_PROOF] clamp fired: camX={} ewEnd={} forcedEnd={}", camX, ewEnd, proofEnd);
+            boolean globe = TL_GLOBE.get();
+            float ewEnd = TL_EW_END.get();
+            if (!globe || ewEnd <= 0.0f) {
+                return;
+            }
+
+            // HARD PROOF MODE: force a wall if this hook fires.
+            float proofEnd = 12.0f;
+
+            for (int i = 3; i <= 8; i++) {
+                float v = args.get(i);
+                if (v > proofEnd) args.set(i, proofEnd);
+            }
+
+            long now = System.currentTimeMillis();
+            if (now - lastModifyMs >= 1000L) {
+                lastModifyMs = now;
+                double camX = -9999.0;
+                MinecraftClient mc = MinecraftClient.getInstance();
+                if (mc != null && mc.player != null) {
+                    camX = mc.player.getX();
+                }
+                GlobeMod.LOGGER.info("[LAT_EW_FOG_PROOF] clamp fired: camX={} ewEnd={} forcedEnd={}", camX, ewEnd, proofEnd);
+            }
+
+            float environmentalEnd = args.get(4);
+            float renderEnd = args.get(6);
+
+            float clampedEwEnd = Math.max(8.0f, ewEnd);
+            float finalEnd = Math.min(Math.min(environmentalEnd, renderEnd), clampedEwEnd);
+            args.set(3, 0.0f);
+            args.set(4, finalEnd);
+            args.set(5, 0.0f);
+            args.set(6, finalEnd);
+
+            if (!DEBUG_EW_FOG) {
+                return;
+            }
+
+            long logNow = System.currentTimeMillis();
+            if (!shouldLog1Hz(logNow, false)) {
+                return;
+            }
+
+            GlobeMod.LOGGER.info("[LAT_EW_FOG_MODIFY] end env={} render={} ew={} final={} fogType={} sodium={}",
+                    environmentalEnd, renderEnd, ewEnd, finalEnd, TL_FOG_TYPE.get(), SODIUM_LOADED);
         }
-
-        float environmentalStart = args.get(3);
-        float environmentalEnd = args.get(4);
-        float renderStart = args.get(5);
-        float renderEnd = args.get(6);
-
-        float clampedEwEnd = Math.max(8.0f, ewEnd);
-        float finalEnd = Math.min(Math.min(environmentalEnd, renderEnd), clampedEwEnd);
-        args.set(3, 0.0f);
-        args.set(4, finalEnd);
-        args.set(5, 0.0f);
-        args.set(6, finalEnd);
-
-        if (!DEBUG_EW_FOG) {
-            return;
-        }
-
-        long logNow = System.currentTimeMillis();
-        if (!shouldLog1Hz(logNow, false)) {
-            return;
-        }
-
-        GlobeMod.LOGGER.info("[LAT_EW_FOG_MODIFY] end env={} render={} ew={} final={} fogType={} sodium={}",
-                environmentalEnd, renderEnd, ewEnd, finalEnd, TL_FOG_TYPE.get(), SODIUM_LOADED);
     }
 }
