@@ -8,6 +8,7 @@ import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.world.World;
+import net.minecraft.client.option.SimpleOption;
 
 public final class GlobeClientState {
     public static boolean DEBUG_DISABLE_WARNINGS = false;
@@ -15,6 +16,8 @@ public final class GlobeClientState {
 
     private static long lastEwFogLogTick = Long.MIN_VALUE;
     private static long lastEwStateLogTick = Long.MIN_VALUE;
+    private static int baseViewDistanceChunks = -1;
+    private static int lastAppliedViewDistanceChunks = -1;
 
     private static final float EW_FOG_WARN_END = 96.0f;
     private static final float EW_FOG_DANGER_END = 64.0f;
@@ -129,6 +132,50 @@ public final class GlobeClientState {
         float ewEnd = computeEwFogEnd(camX);
 
         GlobeMod.LOGGER.info("[LAT_EW_FOG_STATE] x={} radius={} dist={} stage={} progress={} ewEnd={}", camX, half, dist, stage, progress, ewEnd);
+    }
+
+    /**
+     * Clamp client-side view distance during EW storms (Sodium-proof). Only tightens; restores when inactive.
+     */
+    public static void clampEwViewDistance(MinecraftClient client) {
+        if (client == null || client.options == null) return;
+        SimpleOption<Integer> option = client.options.getViewDistance();
+        if (option == null) return;
+
+        int current = option.getValue();
+        if (baseViewDistanceChunks < 0) {
+            baseViewDistanceChunks = current;
+            lastAppliedViewDistanceChunks = current;
+        }
+
+        if (client.player == null || client.world == null || !GlobeClientState.isGlobeWorld()) {
+            restoreViewDistance(option);
+            return;
+        }
+
+        double intensity = ewIntensity01(client.player.getX());
+        if (intensity <= 0.0) {
+            restoreViewDistance(option);
+            return;
+        }
+
+        int minChunks = 3;
+        double lerp = baseViewDistanceChunks + (minChunks - baseViewDistanceChunks) * Math.min(1.0, intensity);
+        int clamped = Math.max(minChunks, (int) Math.round(lerp));
+
+        if (clamped != lastAppliedViewDistanceChunks) {
+            option.setValue(clamped);
+            lastAppliedViewDistanceChunks = clamped;
+        }
+    }
+
+    private static void restoreViewDistance(SimpleOption<Integer> option) {
+        if (baseViewDistanceChunks < 0) return;
+        int current = option.getValue();
+        if (current != baseViewDistanceChunks) {
+            option.setValue(baseViewDistanceChunks);
+        }
+        lastAppliedViewDistanceChunks = baseViewDistanceChunks;
     }
 
     private static int polarRank(PolarStage stage) {
