@@ -3,6 +3,7 @@ package com.example.globe.mixin.client;
 import com.example.globe.GlobeMod;
 import com.example.globe.client.GlobeClientState;
 import net.fabricmc.loader.api.FabricLoader;
+import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.render.Camera;
 import net.minecraft.client.render.RenderTickCounter;
 import net.minecraft.client.render.fog.FogRenderer;
@@ -64,13 +65,36 @@ public class FogRendererMixin {
 
     @ModifyArgs(
             method = "applyFog",
-            at = @At(value = "INVOKE", target = "Lnet/minecraft/client/render/fog/FogRenderer;applyFog(Ljava/nio/ByteBuffer;ILorg/joml/Vector4f;FFFFFF)V")
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lnet/minecraft/client/render/fog/FogRenderer;method_71110(Ljava/nio/ByteBuffer;ILorg/joml/Vector4f;FFFFFF)V"
+            ),
+            require = 0
     )
     private void latitude$modifyFogArgs(Args args) {
         boolean globe = TL_GLOBE.get();
         float ewEnd = TL_EW_END.get();
         if (!globe || ewEnd <= 0.0f) {
             return;
+        }
+
+        // HARD PROOF MODE: force a wall if this hook fires.
+        float proofEnd = 12.0f;
+
+        for (int i = 3; i <= 8; i++) {
+            float v = args.get(i);
+            if (v > proofEnd) args.set(i, proofEnd);
+        }
+
+        long now = System.currentTimeMillis();
+        if (now - lastModifyMs >= 1000L) {
+            lastModifyMs = now;
+            double camX = -9999.0;
+            MinecraftClient mc = MinecraftClient.getInstance();
+            if (mc != null && mc.player != null) {
+                camX = mc.player.getX();
+            }
+            GlobeMod.LOGGER.info("[LAT_EW_FOG_PROOF] clamp fired: camX={} ewEnd={} forcedEnd={}", camX, ewEnd, proofEnd);
         }
 
         float environmentalStart = args.get(3);
@@ -89,8 +113,8 @@ public class FogRendererMixin {
             return;
         }
 
-        long now = System.currentTimeMillis();
-        if (!shouldLog1Hz(now, false)) {
+        long logNow = System.currentTimeMillis();
+        if (!shouldLog1Hz(logNow, false)) {
             return;
         }
 
