@@ -10,11 +10,7 @@ base {
     archivesName = project.archives_base_name
 }
 
-loom {
-    mixin {
-        defaultRefmapName = "globe.refmap.json"
-        useLegacyMixinAp = true
-    }
+loom {
     runs {
         client {
             vmArg "-Dlatitude.fixSurfaceDripstone=true"
@@ -46,22 +42,15 @@ dependencies {
     mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
     modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
 
-    modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
-    
+    // CRITICAL FIX: Fabric API only needed at RUNTIME (not compile-time)
+    // The Mixin approach doesn't import any Fabric API classes
+modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
     // MixinExtras for descriptor-based injections
     modImplementation "io.github.llamalad7:mixinextras-fabric:0.5.0"
     include "io.github.llamalad7:mixinextras-fabric:0.5.0"
     compileOnly "io.github.llamalad7:mixinextras-common:0.5.0"
-    annotationProcessor "io.github.llamalad7:mixinextras-common:0.5.0"
+// DISABLED (was crashing compile):     annotationProcessor "io.github.llamalad7:mixinextras-common:0.5.0"
     
-    // Tectonic/Lithostitched not needed - worldgen data is vendored into globe: namespace
-    // modCompileOnly "maven.modrinth:tectonic:${project.tectonic_version}"
-    // modCompileOnly "maven.modrinth:lithostitched:${project.lithostitched_version}"
-    
-    // Optional dependencies for enhanced features (disabled for now)
-    // modImplementation "com.terraformersmc:modmenu:${project.modmenu_version}"
-    // modImplementation "me.shedaniel.cloth:cloth-config-fabric:${project.cloth_config_version}"
-
     // ModMenu API (compile-time only, optional at runtime)
     modCompileOnly "com.terraformersmc:modmenu:${project.modmenu_version}"
     modLocalRuntime "com.terraformersmc:modmenu:${project.modmenu_version}"
@@ -106,3 +95,5 @@ publishing {
         
     }
 }
+
+

@@ -21,7 +21,8 @@
     "client.InGameHudMixin",
     "HandledScreenCompassToggleMixin",
     "client.FogRendererEwMixin",
-    "client.compat.sodium.RenderSectionManagerVisibilityMixin"
+    "client.compat.sodium.RenderSectionManagerVisibilityMixin",
+    "client.EwStormWallRendererMixin"
   ],
   "injectors": {
     "defaultRequire": 1

@@ -221,10 +221,8 @@ public final class GlobeClientState {
             return new WarningState(WarningType.POLAR, polar, pr);
         }
 
-        // Visual stage (fog/particles) can be stronger than text stage.
-        if (ewVisual != EwStormStage.NONE && ewTextStage == EwStormStage.NONE) {
-            ewTextStage = EwStormStage.LEVEL_1;
-            er = ewRank(ewTextStage);
+        if (ewTextWarn) {
+            return new WarningState(WarningType.STORM, ewTextStage, er);
         }
 
         return new WarningState(WarningType.STORM, ewTextStage, er);
@@ -246,6 +244,33 @@ public final class GlobeClientState {
         double center = border.getCenterX();
         double radius = border.getSize() * 0.5;
         return Math.max(0.0, radius - Math.abs(camX - center));
+    }
+
+    public static double ewWestX() {
+        MinecraftClient mc = MinecraftClient.getInstance();
+        if (mc == null || mc.world == null) return Double.POSITIVE_INFINITY;
+        var border = mc.world.getWorldBorder();
+        double center = border.getCenterX();
+        double radius = com.example.globe.util.LatitudeMath.halfSize(border);
+        return center - radius;
+    }
+
+    public static double ewEastX() {
+        MinecraftClient mc = MinecraftClient.getInstance();
+        if (mc == null || mc.world == null) return Double.POSITIVE_INFINITY;
+        var border = mc.world.getWorldBorder();
+        double center = border.getCenterX();
+        double radius = com.example.globe.util.LatitudeMath.halfSize(border);
+        return center + radius;
+    }
+
+    public static double ewDistToBorder(double camX) {
+        double west = ewWestX();
+        double east = ewEastX();
+        if (Double.isInfinite(west) || Double.isInfinite(east)) {
+            return Double.POSITIVE_INFINITY;
+        }
+        return Math.min(Math.abs(camX - west), Math.abs(east - camX));
     }
 
     public static double distanceToEwBorderBlocks(double x) {
