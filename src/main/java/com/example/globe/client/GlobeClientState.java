@@ -18,6 +18,9 @@ public final class GlobeClientState {
     private static long lastEwStateLogTick = Long.MIN_VALUE;
     private static int baseViewDistanceChunks = -1;
     private static int lastAppliedViewDistanceChunks = -1;
+    private static float currentViewDistanceF = -1f;
+    private static long lastViewDistanceApplyMs = 0L;
+    private static boolean ewClampActive = false;
 
     private static final float EW_FOG_WARN_END = 96.0f;
     private static final float EW_FOG_DANGER_END = 64.0f;
@@ -143,9 +146,10 @@ public final class GlobeClientState {
         if (option == null) return;
 
         int current = option.getValue();
-        if (baseViewDistanceChunks < 0) {
+        if (baseViewDistanceChunks < 0 && !ewClampActive && current >= 3) {
             baseViewDistanceChunks = current;
             lastAppliedViewDistanceChunks = current;
+            currentViewDistanceF = current;
         }
 
         if (client.player == null || client.world == null || !GlobeClientState.isGlobeWorld()) {
@@ -153,19 +157,32 @@ public final class GlobeClientState {
             return;
         }
 
-        double intensity = ewIntensity01(client.player.getX());
+        double dist = distanceToEwBorderBlocks(client.world.getWorldBorder(), client.player.getX());
+        if (!ewClampActive && dist <= 500.0) {
+            ewClampActive = true;
+        } else if (ewClampActive && dist >= 520.0) {
+            ewClampActive = false;
+        }
+
+        double intensity = ewClampActive ? ewIntensity01(client.player.getX()) : 0.0;
         if (intensity <= 0.0) {
             restoreViewDistance(option);
             return;
         }
 
         int minChunks = 3;
-        double lerp = baseViewDistanceChunks + (minChunks - baseViewDistanceChunks) * Math.min(1.0, intensity);
-        int clamped = Math.max(minChunks, (int) Math.round(lerp));
+        double target = baseViewDistanceChunks + (minChunks - baseViewDistanceChunks) * Math.min(1.0, intensity);
+        if (currentViewDistanceF < 0f) {
+            currentViewDistanceF = baseViewDistanceChunks;
+        }
+        currentViewDistanceF = MathHelper.lerp(0.15f, currentViewDistanceF, (float) target);
+        int clamped = Math.max(minChunks, Math.round(currentViewDistanceF));
 
-        if (clamped != lastAppliedViewDistanceChunks) {
+        long now = System.currentTimeMillis();
+        if (clamped != lastAppliedViewDistanceChunks && now - lastViewDistanceApplyMs >= 250L) {
             option.setValue(clamped);
             lastAppliedViewDistanceChunks = clamped;
+            lastViewDistanceApplyMs = now;
         }
     }
 
@@ -176,6 +193,8 @@ public final class GlobeClientState {
             option.setValue(baseViewDistanceChunks);
         }
         lastAppliedViewDistanceChunks = baseViewDistanceChunks;
+        currentViewDistanceF = baseViewDistanceChunks;
+        ewClampActive = false;
     }
 
     private static int polarRank(PolarStage stage) {
