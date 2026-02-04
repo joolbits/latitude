@@ -87,6 +87,9 @@ public class GlobeModClient implements ClientModInitializer {
             return;
         }
 
+        // Clamp client-side view distance for EW storms (Sodium-proof fog wall).
+        GlobeClientState.clampEwViewDistance(client);
+
         // Trust GlobeClientState (server-synced)
         if (!GlobeClientState.isGlobeWorld()) {
             return;
