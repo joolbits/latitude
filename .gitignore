@@ -1,23 +1,23 @@
+# Local gradle + loom caches (must never be committed)
 .gradle/
+.gradle-user-home/
+.gradle_user_home_1_21_2/
 build/
 run/
+logs/
+crash-reports/
+out/
+temp_tectonic_extract/
+_restore_tmp/
+gradle-8.8/
+gradle-8.8-bin.zip
+bin/
+
+# IDE
 .idea/
 .vscode/
 *.iml
-bin/
-logs/
-crash-reports/
-gradle-8.8/
-gradle-8.8-bin.zip
-temp_tectonic_extract/
 
-# Local temp/caches
-_restore_tmp/
-.gradle_user_home_1_21_2/
-
-
-# Local media (don’t commit)
+# Local media (do not commit)
 Gallery for Modrinth/
 *.mp4
-
-/run/
