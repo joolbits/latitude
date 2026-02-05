@@ -287,7 +287,7 @@ public final class GlobeClientState {
         int stage;
         if (d <= 100.0) {
             stage = 2;
-        } else if (d <= 500.0) {
+        } else if (d <= 175.0) {
             stage = 1;
         } else {
             stage = 0;

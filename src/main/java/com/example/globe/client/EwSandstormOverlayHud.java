@@ -28,12 +28,7 @@ public final class EwSandstormOverlayHud {
         if (mc.player == null || mc.world == null) return;
         if (mc.options.hudHidden) return;
 
-        // IMPORTANT: Replace this with your authoritative border source later.
-        // For bringup, keep it literal to avoid wiring errors.
-        final double borderX = 3750.0;
-
-        double px = mc.player.getX();
-        double distToBorder = borderX - Math.abs(px);
+        double distToBorder = GlobeClientState.distanceToEwBorderBlocks(mc.player.getX());
 
         // Far from border => no overlay
         if (distToBorder >= FADE_START) return;
@@ -42,15 +37,14 @@ public final class EwSandstormOverlayHud {
         double t = (FADE_START - distToBorder) / (FADE_START - FADE_FULL);
         float a = (float) MathHelper.clamp(t, 0.0, 1.0);
 
-        // Ease-in to feel more “air” than “flat UI”
-        a = a * a;
+        a = a * a; // ramps up faster as you approach the border
 
         if ((net.minecraft.client.MinecraftClient.getInstance().world.getTime() % 40L) == 0L) {
             com.example.globe.GlobeMod.LOGGER.info("[Latitude] EW haze tick: x={} a={}", mc.player.getX(), a);
         }
 
-        // Cap opacity (0..255). Start conservative.
-        int alpha = (int) (a * 110.0f);
+        float baseAlpha = Math.min(0.90f, 0.10f + a * 0.80f);
+        int alpha = (int) (baseAlpha * 255.0f);
         if (alpha <= 0) return;
 
         int argb = (alpha << 24) | (DUST_R << 16) | (DUST_G << 8) | (DUST_B);
