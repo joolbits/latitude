@@ -220,8 +220,7 @@ public final class LatitudeBiomes {
     }
 
     private static final Logger LOGGER = LoggerFactory.getLogger("LatitudeBiomes");
-    private static final boolean DEBUG_BIOMES = Boolean.getBoolean("latitude.debugBiomes")
-            || Boolean.getBoolean("latitude.debugBiomePick");
+    private static final boolean DEBUG_BIOMES = true;
     private static final boolean DEBUG_BLEND = Boolean.getBoolean("latitude.debugBlend");
     private static final int DEBUG_LIMIT = Integer.getInteger("latitude.debugBiomes.limit", 200);
     private static volatile long WORLD_SEED = 0L;
@@ -1671,12 +1670,13 @@ public final class LatitudeBiomes {
         double cont = MultiNoiseUtil.toFloat(point.continentalnessNoise());
         double erosion = MultiNoiseUtil.toFloat(point.erosionNoise());
         double weirdness = MultiNoiseUtil.toFloat(point.weirdnessNoise());
-        boolean lowland = cont < 0.12;
+        boolean lowland = cont <= -0.05;
         boolean notRugged = erosion > 0.0;
         boolean notPeaks = Math.abs(weirdness) < 0.15;
         boolean suitable = lowland && notRugged && notPeaks;
         boolean patch = allowMangrovePatch(blockX, blockZ);
-        return new MangroveDecision(suitable && patch, cont, erosion, weirdness, suitable, patch);
+        boolean allow = suitable && patch;
+        return new MangroveDecision(allow, cont, erosion, weirdness, suitable, patch);
     }
 
     private static boolean swampOkStrict(double cont, double erosion, double weirdness) {

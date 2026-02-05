@@ -642,9 +642,7 @@
                     "type": "minecraft:condition",
                     "if_true": {
                       "type": "minecraft:biome",
-                      "biome_is": [
-                        "minecraft:mangrove_swamp"
-                      ]
+                      "biome_is": []
                     },
                     "then_run": {
                       "type": "minecraft:condition",
@@ -1725,9 +1723,7 @@
                           "type": "minecraft:condition",
                           "if_true": {
                             "type": "minecraft:biome",
-                            "biome_is": [
-                              "minecraft:mangrove_swamp"
-                            ]
+                            "biome_is": []
                           },
                           "then_run": {
                             "type": "minecraft:block",
@@ -2386,9 +2382,7 @@
                           "type": "minecraft:condition",
                           "if_true": {
                             "type": "minecraft:biome",
-                            "biome_is": [
-                              "minecraft:mangrove_swamp"
-                            ]
+                            "biome_is": []
                           },
                           "then_run": {
                             "type": "minecraft:block",
