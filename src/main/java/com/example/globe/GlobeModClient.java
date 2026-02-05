@@ -62,12 +62,6 @@ public class GlobeModClient implements ClientModInitializer {
         ClientTickEvents.END_CLIENT_TICK.register(GlobeModClient::clientKeybindTick);
 
         WorldRenderEvents.BEFORE_TRANSLUCENT.register(ctx -> {
-            var mc = net.minecraft.client.MinecraftClient.getInstance();
-            if (mc != null && mc.player != null) {
-                if ((GlobeClientState.DEBUG_TICK++ % 60) == 0) {
-                    mc.player.sendMessage(net.minecraft.text.Text.literal("[Latitude] BEFORE_TRANSLUCENT"), true);
-                }
-            }
             if (!GlobeClientState.DEBUG_EW_WALL) return;
             EwStormWallRenderer.render(ctx.matrices(), ctx.consumers());
         });
