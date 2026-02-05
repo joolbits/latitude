@@ -204,11 +204,11 @@ public final class GlobeClientState {
                     + " x=" + player.getX()
                     + " west=" + border.getBoundWest()
                     + " east=" + border.getBoundEast()
-                    + " L1=500 L2=175");
+                    + " L1=500 L2=100");
         }
 
         boolean ewTextWarn = distToBorder <= 500.0;
-        boolean ewTextDanger = distToBorder <= 175.0;
+        boolean ewTextDanger = distToBorder <= 100.0;
         EwStormStage ewTextStage = ewTextDanger ? EwStormStage.LEVEL_2 : (ewTextWarn ? EwStormStage.LEVEL_1 : EwStormStage.NONE);
 
         // Visual stage (fog/particles) mirrors text stage for now
@@ -299,7 +299,7 @@ public final class GlobeClientState {
         int stage;
         if (d <= 100.0) {
             stage = 2;
-        } else if (d <= 175.0) {
+        } else if (d <= 500.0) {
             stage = 1;
         } else {
             stage = 0;
@@ -312,15 +312,17 @@ public final class GlobeClientState {
     }
 
     public static float ewIntensity01(double x) {
-        double d = ewDistanceToBorder(x);
-        if (Double.isInfinite(d)) return 0.0f;
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client == null || client.world == null) return 0.0f;
 
-        double fadeStart = 900.0;
-        double fadeFull = 250.0;
+        WorldBorder border = client.world.getWorldBorder();
+        float d = (float) distanceToEwBorderBlocks(border, x);
+        if (d > 500.0f) return 0.0f;
 
-        double t = (fadeStart - d) / (fadeStart - fadeFull);
-        float a = (float) MathHelper.clamp(t, 0.0, 1.0);
-        return a;
+        float t = (500.0f - d) / 500.0f;
+        t = MathHelper.clamp(t, 0.0f, 1.0f);
+
+        return (float) Math.pow(t, 0.55);
     }
 
     public static int ewRenderDistanceChunks(int originalChunks, double playerX) {
