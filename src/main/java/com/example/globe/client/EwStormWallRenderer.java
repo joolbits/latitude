@@ -87,69 +87,7 @@ public final class EwStormWallRenderer {
         var mc = net.minecraft.client.MinecraftClient.getInstance();
         if (mc == null || mc.world == null || mc.gameRenderer == null) return;
         if (!GlobeClientState.DEBUG_EW_WALL) return;
-
-        Camera camera = mc.gameRenderer.getCamera();
-        if (camera == null) return;
-
-        double camX = camera.getCameraPos().x;
-        double camZ = camera.getCameraPos().z;
-        double westX = GlobeClientState.ewWestX();
-        double eastX = GlobeClientState.ewEastX();
-        double dist = GlobeClientState.ewDistToBorder(camX);
-        if (dist > 600.0) return;
-
-        double inset = 2.5;
-        boolean eastCloser = isEastCloser(camX, westX, eastX);
-        double planeX = eastCloser ? (eastX - inset) : (westX + inset);
-
-        int zStart = (int) Math.floor((camZ - WALL_Z_HALFSPAN) / (double) WALL_Z_STEP) * WALL_Z_STEP;
-        int zEnd = (int) Math.ceil((camZ + WALL_Z_HALFSPAN) / (double) WALL_Z_STEP) * WALL_Z_STEP;
-
-        double yBottom = -64.0;
-        double yTop = 320.0;
-
-        float r = 1.0f;
-        float g = 0.0f;
-        float b = 1.0f;
-        float alpha = 0.8f;
-        final int FULLBRIGHT = 0xF000F0;
-
-        VertexConsumer buffer = consumers.getBuffer(RenderLayers.entityTranslucent(WALL_TEXTURE));
-        MatrixStack.Entry entry = matrices.peek();
-        float normalX = eastCloser ? 1.0f : -1.0f;
-
-        for (int z = zStart; z < zEnd; z += WALL_Z_STEP) {
-            float z1 = (float) (z - camZ);
-            float z2 = (float) (z + WALL_Z_STEP - camZ);
-            float x = (float) (planeX - camX);
-
-            buffer.vertex(entry, x, (float) yBottom, z1)
-                .color(r, g, b, alpha)
-                .texture(0, 0)
-                .overlay(OverlayTexture.DEFAULT_UV)
-                .light(FULLBRIGHT)
-                .normal(normalX, 0, 0);
-
-            buffer.vertex(entry, x, (float) yBottom, z2)
-                .color(r, g, b, alpha)
-                .texture(0, 0)
-                .overlay(OverlayTexture.DEFAULT_UV)
-                .light(FULLBRIGHT)
-                .normal(normalX, 0, 0);
-
-            buffer.vertex(entry, x, (float) yTop, z2)
-                .color(r, g, b, alpha)
-                .texture(0, 0)
-                .overlay(OverlayTexture.DEFAULT_UV)
-                .light(FULLBRIGHT)
-                .normal(normalX, 0, 0);
-
-            buffer.vertex(entry, x, (float) yTop, z1)
-                .color(r, g, b, alpha)
-                .texture(0, 0)
-                .overlay(OverlayTexture.DEFAULT_UV)
-                .light(FULLBRIGHT)
-                .normal(normalX, 0, 0);
-        }
+        // TEMP: fog-only verification (wall disabled)
+        return;
     }
 }
