@@ -8,6 +8,7 @@ import com.example.globe.client.ClientKeybinds;
 import com.example.globe.client.GlobeWarningOverlay;
 import com.example.globe.client.LatitudeSettingsScreen;
 import com.example.globe.client.SpawnZoneScreen;
+import com.example.globe.client.EwSandstormOverlayHud;
 import com.example.globe.client.EwSandstormOverlayRenderer;
 import com.example.globe.client.EwStormWallRenderer;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
@@ -58,6 +59,7 @@ public class GlobeModClient implements ClientModInitializer {
 
         GlobeWarningOverlay.init();
         CompassHud.init();
+        EwSandstormOverlayHud.register();
         ClientTickEvents.END_CLIENT_TICK.register(GlobeModClient::polarCapClientTick);
         ClientKeybinds.init();
         ClientTickEvents.END_CLIENT_TICK.register(GlobeModClient::clientKeybindTick);
