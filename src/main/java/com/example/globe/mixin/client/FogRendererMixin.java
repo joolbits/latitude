@@ -19,15 +19,11 @@ import net.minecraft.util.math.MathHelper;
 
 @Mixin(value = FogRenderer.class, priority = 2000)
 public class FogRendererMixin {
+    private static final boolean ENABLE_EW_FOG_TWEAKS = false;
     private static final ThreadLocal<Boolean> IS_ATMOSPHERIC = ThreadLocal.withInitial(() -> false);
     // Distances in blocks (500m -> 100m)
     private static final float STORM_START = 500.0f;
     private static final float STORM_MAX = 100.0f;
-
-    // Tan sandstorm fog color
-    private static final float FOG_R = 0.78f;
-    private static final float FOG_G = 0.67f;
-    private static final float FOG_B = 0.48f;
 
     private static int DEBUG_FOG_HITS = 0;
     private static boolean LOGGED_ARGS_ONCE = false;
@@ -49,6 +45,7 @@ public class FogRendererMixin {
             )
     )
     private void globe$ewFog_modifyFogArgs(Args args, Camera camera, int viewDistance, RenderTickCounter tickCounter, float tickDelta, ClientWorld world) {
+        if (!ENABLE_EW_FOG_TWEAKS) return;
         if (!GlobeClientState.DEBUG_EW_FOG) return;
 
         if (!LOGGED_ARGS_ONCE) {
@@ -73,19 +70,10 @@ public class FogRendererMixin {
         }
 
         if (t > 0.0f) {
-            float start = 0.0f;
-            float end = MathHelper.lerp(t, 220.0f, 18.0f);
-
-            args.set(1, 1); // force alternate fog mode/shape during storm
+            float start = MathHelper.lerp(t, 96.0f, 64.0f);
+            float end = MathHelper.lerp(t, 256.0f, 192.0f);
 
             // indices: 0=ByteBuffer, 1=int, 2=Vector4f color, 3=envStart, 4=envEnd, 5=renderStart, 6=renderEnd, 7=skyEnd, 8=cloudEnd
-            Vector4f color = args.get(2);
-            float r = MathHelper.lerp(t, color.x, FOG_R);
-            float g = MathHelper.lerp(t, color.y, FOG_G);
-            float b = MathHelper.lerp(t, color.z, FOG_B);
-            color.set(r, g, b, 1.0f);
-            args.set(2, color);
-
             args.set(3, start);
             args.set(4, end);
             args.set(5, start);
