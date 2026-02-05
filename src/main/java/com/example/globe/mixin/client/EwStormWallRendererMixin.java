@@ -64,7 +64,7 @@ public abstract class EwStormWallRendererMixin {
             GlStateManager._polygonOffset(-1.0f, -10.0f);
 
             try {
-                EwStormWallRenderer.renderWall(entry, vc, camPos.x, camPos.z, westX, eastX, dist);
+                // EwStormWallRenderer.renderWall(entry, vc, camPos.x, camPos.z, westX, eastX, dist); // TEMP: wall disabled
             } finally {
                 GlStateManager._disablePolygonOffset();
                 GlStateManager._depthMask(true);

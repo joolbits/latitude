@@ -1,0 +1,57 @@
+package com.example.globe.client;
+
+import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.gui.DrawContext;
+import net.minecraft.client.render.RenderTickCounter;
+import net.minecraft.util.math.MathHelper;
+
+public final class EwSandstormOverlayHud {
+    private EwSandstormOverlayHud() {}
+
+    // Start fading in at 500 blocks from border; reach “full” at 100 blocks.
+    private static final double FADE_START = 500.0;
+    private static final double FADE_FULL  = 100.0;
+
+    // Dust tint (tan)
+    private static final int DUST_R = 214;
+    private static final int DUST_G = 186;
+    private static final int DUST_B = 132;
+
+    public static void register() {
+        HudRenderCallback.EVENT.register(EwSandstormOverlayHud::onHudRender);
+    }
+
+    private static void onHudRender(DrawContext ctx, RenderTickCounter tickCounter) {
+        MinecraftClient mc = MinecraftClient.getInstance();
+        if (mc.player == null || mc.world == null) return;
+        if (mc.options.hudHidden) return;
+
+        // IMPORTANT: Replace this with your authoritative border source later.
+        // For bringup, keep it literal to avoid wiring errors.
+        final double borderX = 3750.0;
+
+        double px = mc.player.getX();
+        double distToBorder = borderX - Math.abs(px);
+
+        // Far from border => no overlay
+        if (distToBorder >= FADE_START) return;
+
+        // dist=500 => 0, dist=100 => 1
+        double t = (FADE_START - distToBorder) / (FADE_START - FADE_FULL);
+        float a = (float) MathHelper.clamp(t, 0.0, 1.0);
+
+        // Ease-in to feel more “air” than “flat UI”
+        a = a * a;
+
+        // Cap opacity (0..255). Start conservative.
+        int alpha = (int) (a * 110.0f);
+        if (alpha <= 0) return;
+
+        int argb = (alpha << 24) | (DUST_R << 16) | (DUST_G << 8) | (DUST_B);
+
+        int w = ctx.getScaledWindowWidth();
+        int h = ctx.getScaledWindowHeight();
+        ctx.fill(0, 0, w, h, argb);
+    }
+}

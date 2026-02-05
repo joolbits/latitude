@@ -8,6 +8,7 @@ import com.example.globe.client.ClientKeybinds;
 import com.example.globe.client.GlobeWarningOverlay;
 import com.example.globe.client.LatitudeSettingsScreen;
 import com.example.globe.client.SpawnZoneScreen;
+import com.example.globe.client.EwSandstormOverlayRenderer;
 import com.example.globe.client.EwStormWallRenderer;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
@@ -63,7 +64,8 @@ public class GlobeModClient implements ClientModInitializer {
 
         WorldRenderEvents.BEFORE_TRANSLUCENT.register(ctx -> {
             if (!GlobeClientState.DEBUG_EW_WALL) return;
-            EwStormWallRenderer.render(ctx.matrices(), ctx.consumers());
+            // EwStormWallRenderer.render(ctx.matrices(), ctx.consumers()); // TEMP: wall disabled (overlay bring-up)
+            EwSandstormOverlayRenderer.render(ctx.matrices(), ctx.consumers());
         });
     }
 
