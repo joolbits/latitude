@@ -591,7 +591,8 @@
                     "if_true": {
                       "type": "minecraft:biome",
                       "biome_is": [
-                        "minecraft:swamp"
+                        "minecraft:swamp",
+                        "minecraft:mangrove_swamp"
                       ]
                     },
                     "then_run": {
