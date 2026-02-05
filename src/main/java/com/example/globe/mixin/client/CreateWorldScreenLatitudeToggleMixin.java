@@ -48,6 +48,9 @@ public abstract class CreateWorldScreenLatitudeToggleMixin extends Screen {
     @Unique
     private @Nullable ClickableWidget latitude$worldTypeWidget;
 
+    @Unique
+    private boolean latitude$didInitDefaults;
+
     protected CreateWorldScreenLatitudeToggleMixin(Text title) {
         super(title);
     }
@@ -63,11 +66,14 @@ public abstract class CreateWorldScreenLatitudeToggleMixin extends Screen {
         RegistryKey<WorldPreset> currentKey = preset != null ? preset.getKey().orElse(null) : null;
         Identifier currentId = currentKey != null ? currentKey.getValue() : null;
 
-        if (currentId == null || !currentId.getNamespace().equals("globe")) {
-            if (currentKey != null) {
-                this.latitude$previousPreset = currentKey;
+        if (!this.latitude$didInitDefaults) {
+            this.latitude$didInitDefaults = true;
+            if (currentId == null || !currentId.getNamespace().equals("globe")) {
+                if (currentKey != null) {
+                    this.latitude$previousPreset = currentKey;
+                }
+                latitude$setWorldPreset(LATITUDE_WORLD_PRESET_ID);
             }
-            latitude$setWorldPreset(LATITUDE_WORLD_PRESET_ID);
         }
 
         latitude$syncFromSelectedPreset();
