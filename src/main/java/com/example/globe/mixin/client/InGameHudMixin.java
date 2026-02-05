@@ -1,6 +1,7 @@
 package com.example.globe.mixin.client;
 
 import com.example.globe.client.CompassHud;
+import com.example.globe.client.EwSandstormOverlayHud;
 import com.example.globe.client.GlobeWarningOverlay;
 import com.example.globe.client.LatitudeHudStudioScreen;
 import com.example.globe.client.ZoneEnterTitleOverlay;
@@ -15,6 +16,12 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Mixin(InGameHud.class)
 public class InGameHudMixin {
+    @Inject(method = "render", at = @At("HEAD"))
+    private void globe$renderEwHazeFirst(DrawContext context, RenderTickCounter tickCounter, CallbackInfo ci) {
+        // Draw haze beneath all HUD elements
+        EwSandstormOverlayHud.render(context, tickCounter);
+    }
+
     @Inject(method = "render", at = @At("TAIL"))
     private void globe$renderOverlay(DrawContext context, RenderTickCounter tickCounter, CallbackInfo ci) {
         MinecraftClient client = MinecraftClient.getInstance();
