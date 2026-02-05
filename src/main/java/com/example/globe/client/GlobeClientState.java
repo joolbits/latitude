@@ -1,12 +1,14 @@
 package com.example.globe.client;
 
 import com.example.globe.GlobeMod;
-import net.minecraft.world.border.WorldBorder;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.client.world.ClientWorld;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.MathHelper;
 import net.minecraft.world.World;
+import net.minecraft.world.border.WorldBorder;
 
 public final class GlobeClientState {
     public static boolean DEBUG_EW_WALL = true;
@@ -67,6 +69,16 @@ public final class GlobeClientState {
         double center = isX ? border.getCenterX() : border.getCenterZ();
         double radius = com.example.globe.util.LatitudeMath.halfSize(border);
         return radius - Math.abs(coord - center);
+    }
+
+    public static double ewDistanceToBorder(double playerX) {
+        MinecraftClient mc = MinecraftClient.getInstance();
+        if (mc == null || mc.world == null) return Double.POSITIVE_INFINITY;
+
+        WorldBorder wb = mc.world.getWorldBorder();
+        double half = wb.getSize() * 0.5;
+        double cx = wb.getCenterX();
+        return half - Math.abs(playerX - cx);
     }
 
     private static int borderRadiusBlocks(ClientWorld world) {
@@ -182,7 +194,7 @@ public final class GlobeClientState {
         double progressZ = com.example.globe.util.LatitudeMath.hazardProgress(border, player.getZ());
         PolarStage polar = polarStageForProgress(border, player.getZ(), progressZ);
 
-        double distToBorder = Math.min(Math.abs(player.getX() - border.getBoundWest()), Math.abs(border.getBoundEast() - player.getX()));
+        double distToBorder = ewDistanceToBorder(player.getX());
 
         // Debug print every 10s to verify thresholds
         long now = System.currentTimeMillis();
@@ -192,11 +204,11 @@ public final class GlobeClientState {
                     + " x=" + player.getX()
                     + " west=" + border.getBoundWest()
                     + " east=" + border.getBoundEast()
-                    + " L1=500 L2=100");
+                    + " L1=500 L2=175");
         }
 
         boolean ewTextWarn = distToBorder <= 500.0;
-        boolean ewTextDanger = distToBorder <= 100.0;
+        boolean ewTextDanger = distToBorder <= 175.0;
         EwStormStage ewTextStage = ewTextDanger ? EwStormStage.LEVEL_2 : (ewTextWarn ? EwStormStage.LEVEL_1 : EwStormStage.NONE);
 
         // Visual stage (fog/particles) mirrors text stage for now
@@ -283,7 +295,7 @@ public final class GlobeClientState {
     }
 
     public static int ewWarningStage(double x) {
-        double d = distanceToEwBorderBlocks(x);
+        double d = ewDistanceToBorder(x);
         int stage;
         if (d <= 100.0) {
             stage = 2;
@@ -300,15 +312,15 @@ public final class GlobeClientState {
     }
 
     public static float ewIntensity01(double x) {
-        double d = distanceToEwBorderBlocks(x);
-        if (d > 500.0) return 0.0f;
+        double d = ewDistanceToBorder(x);
+        if (Double.isInfinite(d)) return 0.0f;
 
-        float t = (float) ((500.0 - d) / 500.0); // 0..1
-        if (t < 0f) t = 0f;
-        if (t > 1f) t = 1f;
+        double fadeStart = 900.0;
+        double fadeFull = 250.0;
 
-        // steeper right after level-1 threshold
-        return (float) Math.pow(t, 0.55);
+        double t = (fadeStart - d) / (fadeStart - fadeFull);
+        float a = (float) MathHelper.clamp(t, 0.0, 1.0);
+        return a;
     }
 
     public static int ewRenderDistanceChunks(int originalChunks, double playerX) {
