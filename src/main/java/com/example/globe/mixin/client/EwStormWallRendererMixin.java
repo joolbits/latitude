@@ -2,6 +2,7 @@ package com.example.globe.mixin.client;
 
 import com.example.globe.client.EwStormWallRenderer;
 import com.example.globe.client.GlobeClientState;
+import com.mojang.blaze3d.opengl.GlStateManager;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.render.RenderLayers;
 import net.minecraft.client.render.WorldRenderer;
@@ -9,6 +10,7 @@ import net.minecraft.client.render.command.OrderedRenderCommandQueue;
 import net.minecraft.client.render.state.WorldRenderState;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.util.math.Vec3d;
+import org.lwjgl.opengl.GL11;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -55,7 +57,21 @@ public abstract class EwStormWallRendererMixin {
                 }
             }
 
-            EwStormWallRenderer.renderWall(entry, vc, camPos, westX, eastX, dist);
+            GlStateManager._enableBlend();
+            GlStateManager._blendFuncSeparate(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA, GL11.GL_ONE, GL11.GL_ONE_MINUS_SRC_ALPHA);
+            GlStateManager._enableDepthTest();
+            GlStateManager._depthMask(false);
+            GlStateManager._polygonOffset(-1.0f, -10.0f);
+
+            try {
+                EwStormWallRenderer.renderWall(entry, vc, camPos.x, camPos.z, westX, eastX, dist);
+            } finally {
+                GlStateManager._disablePolygonOffset();
+                GlStateManager._depthMask(true);
+                GlStateManager._disableBlend();
+                GlStateManager._enableCull();
+                GlStateManager._enableDepthTest();
+            }
         });
     }
 }

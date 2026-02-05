@@ -14,15 +14,15 @@
   ],
   "client": [
     "client.FogRendererMixin",
-    "client.CreateWorldScreenLatitudeToggleMixin",
+    "client.EwStormWallRendererMixin",
+    "client.WorldRendererWorldBorderMixin",
     "client.CreateWorldScreenSpawnZoneMixin",
     "client.CreateWorldScreenMixin",
     "client.WorldCreatorMixin",
     "client.InGameHudMixin",
     "HandledScreenCompassToggleMixin",
     "client.FogRendererEwMixin",
-    "client.compat.sodium.RenderSectionManagerVisibilityMixin",
-    "client.EwStormWallRendererMixin"
+    "client.compat.sodium.RenderSectionManagerVisibilityMixin"
   ],
   "injectors": {
     "defaultRequire": 1
