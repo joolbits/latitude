@@ -18,7 +18,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(BackgroundRenderer.class)
 public class BackgroundRendererFogMixin {
 
-    @Inject(method = "applyFog", at = @At("RETURN"))
+    @Inject(method = "applyFog", at = @At("RETURN"), require = 0)
     private static void latitude$applyEwBorderFog(
             Camera camera,
             FogType fogType,
@@ -60,7 +60,8 @@ public class BackgroundRendererFogMixin {
     @ModifyArg(
             method = "applyFog",
             at = @At(value = "INVOKE", target = "Lcom/mojang/blaze3d/systems/RenderSystem;setShaderFogEnd(F)V"),
-            index = 0
+            index = 0,
+            require = 0
     )
     private static float latitude$modifyFogEnd(float originalEnd) {
         MinecraftClient client = MinecraftClient.getInstance();
