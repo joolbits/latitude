@@ -7,7 +7,6 @@
   "mixins": [
     "BiomeSourceAccessor",
     "ChunkGeneratorBiomeSourceMixin",
-    "BiomeNoSnowInWarmBandsMixin",
     "NoiseChunkGeneratorAccessor",
     "ChunkGeneratorPopulateBiomesMixin",
     "NoiseChunkGeneratorCarveMixin",
