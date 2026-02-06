@@ -37,7 +37,7 @@ public class FogRendererMixin {
         return true;
     }
 
-    @Inject(method = "applyFog", at = @At("HEAD"))
+    @Inject(method = "applyFog", at = @At("HEAD"), require = 0)
     private void latitude$scream(Camera camera, int viewDistance, RenderTickCounter tickCounter, float tickDelta,
                                  ClientWorld world, CallbackInfoReturnable<Vector4f> cir) {
         boolean globe = GlobeClientState.isGlobeWorld();
@@ -63,7 +63,8 @@ public class FogRendererMixin {
 
     @ModifyArgs(
             method = "applyFog",
-            at = @At(value = "INVOKE", target = "Lnet/minecraft/client/render/fog/FogRenderer;applyFog(Ljava/nio/ByteBuffer;ILorg/joml/Vector4f;FFFFFF)V")
+            at = @At(value = "INVOKE", target = "Lnet/minecraft/client/render/fog/FogRenderer;applyFog(Ljava/nio/ByteBuffer;ILorg/joml/Vector4f;FFFFFF)V"),
+            require = 0
     )
     private void latitude$modifyFogArgs(Args args) {
         boolean globe = TL_GLOBE.get();
