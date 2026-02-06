@@ -1,0 +1,2920 @@
+diff --git a/.gitignore b/.gitignore
+index 312b96c..4913fd7 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -1,23 +1,29 @@
++# Local gradle + loom caches (must never be committed)
+ .gradle/
++.gradle-user-home/
++.gradle_user_home_1_21_2/
+ build/
+ run/
+-.idea/
+-.vscode/
+-*.iml
+-bin/
+ logs/
+ crash-reports/
++out/
++temp_tectonic_extract/
++_restore_tmp/
++_mcsrc_extract/
+ gradle-8.8/
+ gradle-8.8-bin.zip
+-temp_tectonic_extract/
++bin/
+ 
+-# Local temp/caches
+-_restore_tmp/
+-.gradle_user_home_1_21_2/
++# Windsurf: keep skills tracked, ignore other state
++.windsurf/*
++!.windsurf/skills/
++!.windsurf/skills/**
+ 
++# IDE
++.idea/
++.vscode/
++*.iml
+ 
+-# Local media (donÆt commit)
++# Local media (do not commit)
+ Gallery for Modrinth/
+ *.mp4
+-
+-/run/
+diff --git a/.windsurf/skills/README.md b/.windsurf/skills/README.md
+new file mode 100644
+index 0000000..bc4d48b
+--- /dev/null
++++ b/.windsurf/skills/README.md
+@@ -0,0 +1,83 @@
++# Latitude ΓÇö Windsurf Skills Index
++
++Use this index to pick the *right* skill quickly. If multiple apply, prefer the one that prevents guessing and enforces evidence-first debugging.
++
++---
++
++## Core worldgen / biome logic
++
++### latitude-biome-authority
++**Use when:** assigning/validating vanilla biome inclusion or latitude eligibility.  
++**Guarantees:** no invented biome tables; missing biomes are treated as bugs.
++
++### latitude-generation-order-rules
++**Use when:** reasoning about pipeline order (biomes ΓåÆ surface rules ΓåÆ features ΓåÆ guards).  
++**Guarantees:** no invented worldgen order; evidence required for reordering.
++
++### latitude-biome-selection-contract
++**Use when:** ΓÇ£F3 says warm biome but cold artifacts existΓÇ¥ contradictions.  
++**Guarantees:** correct interpretation of base vs out biomes.
++
++### latitude-zone-math-authority
++**Use when:** radius/t/zone math, warm-band checks, thresholds, any climate gating.  
++**Guarantees:** no hardcoded radius; one source of truth for thresholds.
++
++### latitude-write-path-guards
++**Use when:** impossible blocks appear (snow/powder snow in warm bands, etc.).  
++**Guarantees:** identify write path first; fix at choke point; no biome reassignment.
++
++---
++
++## Debugging rules
++
++### latitude-debug-instrumentation-rules
++**Use when:** adding logs, counters, overlays, sanity pings, stack traces.  
++**Guarantees:** gated, throttled, removable instrumentation (OFF by default).
++
++---
++
++## Releases / backports / repo hygiene
++
++### latitude-release-discipline
++**Use when:** building, tagging, uploading to Modrinth, multi-target releases.  
++**Guarantees:** correct branch/version/jar/tag hygiene; jar contents verified.
++
++### latitude-compat-backport-playbook
++**Use when:** porting fixes between 1.21.11 and 1.21.1 (or other 1.21.x).  
++**Guarantees:** cherry-pick discipline; minimal proof; version/tag correctness.
++
++### latitude-repo-hygiene
++**Use when:** large diffs, extracted sources, tool folders, accidental commits.  
++**Guarantees:** forbidden folders never ship; cleanup commands provided.
++
++---
++
++## UI / rendering
++
++### latitude-ui-and-hud-lifecycle
++**Use when:** screens, HUD overlays, anything that can open/render in-world.  
++**Guarantees:** no auto-open regressions; proper gating & screen rules.
++
++### latitude-rendering-compat-rules
++**Use when:** Sodium/Iris rendering issues (storm wall, fog, world-space debug).  
++**Guarantees:** shader-safe patterns; no raw GL state calls; debug toggles.
++
++---
++
++## Design guardrails
++
++### latitude-player-facing-invariants
++**Use when:** changes that affect the ΓÇ£feelΓÇ¥ of Latitude or core promises.  
++**Guarantees:** prevents technically-correct but experience-breaking changes.
++
++---
++
++## Quick selection cheatsheet
++
++- **Wrong block appears (snow in tropics):** `latitude-write-path-guards` ΓåÆ then `latitude-zone-math-authority` 
++- **F3 vs blocks contradict:** `latitude-biome-selection-contract` 
++- **Need to add logs/counters:** `latitude-debug-instrumentation-rules` 
++- **Backport fix:** `latitude-compat-backport-playbook` 
++- **Tag/build/upload:** `latitude-release-discipline` 
++- **Screen opened unexpectedly:** `latitude-ui-and-hud-lifecycle` 
++- **Shaders/Sodium rendering weirdness:** `latitude-rendering-compat-rules` 
+diff --git a/.windsurf/skills/biomes/SKILL.md b/.windsurf/skills/biomes/SKILL.md
+deleted file mode 100644
+index ad95e78..0000000
+--- a/.windsurf/skills/biomes/SKILL.md
++++ /dev/null
+@@ -1,165 +0,0 @@
+----
+-name: biomes
+-description: a list of all vanilla biomes that should be included in the Latitude (Globe) mod
+----
+-
+-Here is a list of all vanilla biomes that should be included in the Latitude (Globe) mod:
+-
+-# Vanilla Minecraft Biomes -> Latitude Bands (Java 1.21.11)
+-
+-_Generated: 2026-01-31_
+-
+-## Bands
+-
+-* **Equator** (hottest + wettest)
+-* **Tropics** (hot + wet-ish)
+-* **Arid** (hot + dry)
+-* **Temperate** (mild)
+-* **Subpolar** (cold)
+-* **Polar** (coldest)
+-* **Overlay: Mountain/Peaks = only allowed when ΓÇ£mountainnessΓÇ¥ is true (height/slope or climate params), regardless of latitude.**
+-
+-> Notes
+-
+-> * This mapping is designed for **Latitude** (Minecraft Java 1.21.11).
+-> * **Rarity** is a design knob for your tag pools/weights (Common/Uncommon/Rare/Very rare/Special), not a claim about exact vanilla probabilities.
+-
+----
+-
+-## Plains / general land
+-
+-| Biome | Band(s) | Rarity | Notes |
+-| --- | --- | --- | --- |
+-| Plains | Temperate | Common | Core ΓÇ£defaultΓÇ¥ mid-latitude flatland. |
+-| Sunflower Plains | Temperate | Rare | Rare plains variant; keep as spice. |
+-| Savanna | Arid Γåö Tropics | Uncommon | Warm transition biome; use on arid edge / warm band. |
+-| Savanna Plateau | Arid / Tropics | Uncommon | Highland flavor for warm areas. |
+-| Snowy Plains | Subpolar | Common | Main cold flatland. |
+-| Ice Spikes | Polar | Very rare | Cold extreme; keep scarce. |
+-| Mushroom Fields | Any (special exception) | Very rare | Treat as special-case island biome, not latitude-driven. |
+----
+-
+-## Forests / woodlands
+-
+-| Biome | Band(s) | Rarity | Notes |
+-| --- | --- | --- | --- |
+-| Forest | Temperate | Common |  |
+-| Birch Forest | Temperate | Common |  |
+-| Flower Forest | Temperate | Rare | Good ΓÇ£findΓÇ¥ biome; keep rarer than Forest. |
+-| Dark Forest | Temperate | Uncommon | Heavier canopy; good for ΓÇ£moodyΓÇ¥ temperate regions. |
+-| Old Growth Birch Forest | Temperate | Rare | Large birch variant; special temperate. |
+-| Taiga | Temperate-high ΓåÆ Subpolar-low | Common | Should be common near the temperateΓåösubpolar boundary. |
+-| Old Growth Pine Taiga | Temperate-high ΓåÆ Subpolar | Uncommon | Variant taiga; moderate rarity. |
+-| Old Growth Spruce Taiga | Subpolar | Uncommon | Colder, denser taiga variant. |
+-| Snowy Taiga | Subpolar | Uncommon | Snowy spruce forest; not too rare. |
+-| Pale Garden | Temperate (rare) | Very rare | Place as a rare ΓÇ£dark-forest-weirdnessΓÇ¥ temperate variant. |
+----
+-
+-## Jungle family (warm + wet)
+-
+-| Biome | Band(s) | Rarity | Notes |
+-| --- | --- | --- | --- |
+-| Jungle | Equator / Tropics | Uncommon | Equator = denser jungle; tropics = more mixed. |
+-| Bamboo Jungle | Equator / Tropics | Rare | Rare-ish jungle variant. |
+-| Sparse Jungle | Tropics | Uncommon | Perfect blend biome near equatorΓåötropics. |
+-| Mangrove Swamp | Equator / Tropics | Rare | Warm swamp; keep out of temperate/subpolar. |
+----
+-
+-## Swamps / wetlands
+-
+-| Biome | Band(s) | Rarity | Notes |
+-| --- | --- | --- | --- |
+-| Swamp | Tropics Γåö Temperate-low | Uncommon | Warm-ish temperate; good transition biome. |
+-| Mangrove Swamp | Equator / Tropics | Rare | Listed above too; keep warm. |
+----
+-
+-## Sandy / dry / badlands
+-
+-| Biome | Band(s) | Rarity | Notes |
+-| --- | --- | --- | --- |
+-| Desert | Arid | Uncommon | Core hot-dry biome. |
+-| Badlands | Arid | Rare | Mesa biome; rarer than Desert. |
+-| Wooded Badlands | Arid | Rare | Badlands variant; keep scarce. |
+-| Eroded Badlands | Arid | Very rare | Spires/extreme; keep very rare. |
+----
+-
+-## Mountains / highlands (treat as overlays)
+-
+-| Biome | Band(s) | Rarity | Notes |
+-| --- | --- | --- | --- |
+-| Meadow | Temperate (mountain overlay) | Uncommon | Great temperate mountain foothill. |
+-| Grove | Temperate-high / Subpolar (mountain overlay) | Uncommon | Cold foothill near mountains; often disappears if not handled specially. |
+-| Cherry Grove | Temperate (mountain overlay) | Rare | Keep rarer than Meadow. |
+-| Windswept Hills | Temperate (mountain overlay) | Uncommon |  |
+-| Windswept Forest | Temperate (mountain overlay) | Uncommon |  |
+-| Windswept Gravelly Hills | Temperate (mountain overlay) | Rare | Stonier windswept variant; keep rarer. |
+-| Windswept Savanna | Arid/Tropics (mountain overlay) | Uncommon | Warm mountains. |
+-| Stony Peaks | Arid/Tropics/Temperate (mountain overlay) | Rare | Warm peaks; keep out of subpolar/polar. |
+-| Jagged Peaks | Subpolar/Polar (mountain overlay) | Rare | Cold peaks. |
+-| Frozen Peaks | Subpolar/Polar (mountain overlay) | Rare |  |
+-| Snowy Slopes | Subpolar/Polar (mountain overlay) | Uncommon |  |
+-| Stony Shore | Any (adjacency overlay) | Uncommon | Only when mountains touch ocean. |
+----
+-
+-## Caves (not latitude-driven)
+-
+-| Biome | Band(s) | Rarity | Notes |
+-| --- | --- | --- | --- |
+-| Lush Caves | Any | Uncommon | Underground ecology independent of latitude. |
+-| Dripstone Caves | Any | Uncommon |  |
+-| Deep Dark | Any | Rare | Deep underground; keep rare. |
+----
+-
+-## Beaches / shores (adjacency-driven)
+-
+-| Biome | Band(s) | Rarity | Notes |
+-| --- | --- | --- | --- |
+-| Beach | Equator/Tropics/Arid/Temperate | Common | Non-frozen coast. |
+-| Snowy Beach | Subpolar/Polar | Uncommon | Frozen coast. |
+-| Stony Shore | Any (adjacency overlay) | Uncommon | Listed above too; cliffy coast next to mountains. |
+----
+-
+-## Rivers (temperature-driven)
+-
+-| Biome | Band(s) | Rarity | Notes |
+-| --- | --- | --- | --- |
+-| River | Equator/Tropics/Arid/Temperate | Common |  |
+-| Frozen River | Subpolar/Polar | Uncommon |  |
+----
+-
+-## Oceans (temperature-driven)
+-
+-| Biome | Band(s) | Rarity | Notes |
+-| --- | --- | --- | --- |
+-| Warm Ocean | Equator/Tropics | Uncommon | Coral-capable warm seas. |
+-| Lukewarm Ocean | Tropics/Temperate-low | Uncommon |  |
+-| Ocean | Temperate | Common | Default ocean. |
+-| Cold Ocean | Subpolar | Uncommon |  |
+-| Frozen Ocean | Polar | Uncommon |  |
+-| Deep Lukewarm Ocean | Depth overlay (Tropics/Temperate-low) | Uncommon | Use as depth overlay, not latitude-only. |
+-| Deep Ocean | Depth overlay (Temperate) | Uncommon | Depth overlay. |
+-| Deep Cold Ocean | Depth overlay (Subpolar) | Uncommon | Depth overlay. |
+-| Deep Frozen Ocean | Depth overlay (Polar) | Uncommon | Depth overlay. |
+----
+-
+-## The Nether (not latitude-driven)
+-
+-| Biome | Band(s) | Rarity | Notes |
+-| --- | --- | --- | --- |
+-| Nether Wastes | N/A (Nether) | Common |  |
+-| Crimson Forest | N/A (Nether) | Common |  |
+-| Warped Forest | N/A (Nether) | Common |  |
+-| Soul Sand Valley | N/A (Nether) | Uncommon |  |
+-| Basalt Deltas | N/A (Nether) | Uncommon |  |
+----
+-
+-## The End (not latitude-driven)
+-
+-| Biome | Band(s) | Rarity | Notes |
+-| --- | --- | --- | --- |
+-| The End | N/A (End) | Special | Main island biome. |
+-| End Highlands | N/A (End) | Common | Outer islands main terrain. |
+-| End Midlands | N/A (End) | Common |  |
+-| End Barrens | N/A (End) | Common |  |
+-| Small End Islands | N/A (End) | Uncommon |  |
+-| The Void | N/A (special) | Special | Void biome; mostly technical/edge cases. |
+\ No newline at end of file
+diff --git a/.windsurf/skills/latitude-biome-authority/SKILL.md b/.windsurf/skills/latitude-biome-authority/SKILL.md
+new file mode 100644
+index 0000000..a0beb5b
+--- /dev/null
++++ b/.windsurf/skills/latitude-biome-authority/SKILL.md
+@@ -0,0 +1,185 @@
++---
++name: latitude-biome-authority
++description: >
++  Authoritative list of all vanilla Minecraft biomes and the latitude bands
++  they are allowed to generate in for the Latitude (Globe) mod. This skill
++  forbids guessing, omission, or reassignment of biomes and serves as the
++  single source of truth for biome inclusion and climate eligibility.
++
++---
++# Latitude Biome Authority ΓÇö Vanilla Minecraft (Java 1.21.11)
++_Generated: 2026-01-31_
++
++## RULES (MANDATORY)
++- Every vanilla biome listed here **must exist** in at least one valid generation path.
++- Windsurf must **never invent, remove, or reassign** biomes outside this table.
++- If a biome is missing in-world, the cause is **tag omission or logic error**, not intentional rarity.
++- **Latitude bands are authoritative**; variants and overlays are secondary.
++- **Rarity is a design knob**, not a probability guarantee.
++- Caves, rivers, oceans, Nether, and End biomes are **not latitude-decided unless explicitly stated**.
++- Mountain / peak biomes are **overlays** and may restrict placement but **must not override latitude truth**.
++
++---
++
++## Latitude Bands
++
++* **Equator** ΓÇö hottest + wettest  
++* **Tropics** ΓÇö hot + wet-ish  
++* **Arid** ΓÇö hot + dry  
++* **Temperate** ΓÇö mild  
++* **Subpolar** ΓÇö cold  
++* **Polar** ΓÇö coldest  
++
++**Overlay: Mountain / Peaks**  
++Only allowed when ΓÇ£mountainnessΓÇ¥ is true (height, slope, or climate params), regardless of latitude.
++
++---
++
++## Plains / general land
++
++| Biome | Band(s) | Rarity | Notes |
++| --- | --- | --- | --- |
++| Plains | Temperate | Common | Core mid-latitude flatland. |
++| Sunflower Plains | Temperate | Rare | Rare plains variant. |
++| Savanna | Arid Γåö Tropics | Uncommon | Warm transition biome. |
++| Savanna Plateau | Arid / Tropics | Uncommon | Highland warm biome. |
++| Snowy Plains | Subpolar | Common | Main cold flatland. |
++| Ice Spikes | Polar | Very rare | Cold extreme. |
++| Mushroom Fields | Any (special) | Very rare | Special-case island biome; not latitude-driven. |
++
++---
++
++## Forests / woodlands
++
++| Biome | Band(s) | Rarity | Notes |
++| --- | --- | --- | --- |
++| Forest | Temperate | Common | |
++| Birch Forest | Temperate | Common | |
++| Flower Forest | Temperate | Rare | Discovery biome. |
++| Dark Forest | Temperate | Uncommon | Dense canopy. |
++| Old Growth Birch Forest | Temperate | Rare | Large birch variant. |
++| Taiga | Temperate-high ΓåÆ Subpolar-low | Common | Key transition biome. |
++| Old Growth Pine Taiga | Temperate-high ΓåÆ Subpolar | Uncommon | |
++| Old Growth Spruce Taiga | Subpolar | Uncommon | |
++| Snowy Taiga | Subpolar | Uncommon | |
++| Pale Garden | Temperate (rare) | Very rare | Dark-forest-adjacent oddity. |
++
++---
++
++## Jungle family (warm + wet)
++
++| Biome | Band(s) | Rarity | Notes |
++| --- | --- | --- | --- |
++| Jungle | Equator / Tropics | Uncommon | Dense near equator. |
++| Bamboo Jungle | Equator / Tropics | Rare | |
++| Sparse Jungle | Tropics | Uncommon | Transition biome. |
++| Mangrove Swamp | Equator / Tropics | Rare | Must not appear in cool bands. |
++
++---
++
++## Swamps / wetlands
++
++| Biome | Band(s) | Rarity | Notes |
++| --- | --- | --- | --- |
++| Swamp | Tropics Γåö Temperate-low | Uncommon | Warm temperate transition. |
++| Mangrove Swamp | Equator / Tropics | Rare | Warm-only swamp. |
++
++---
++
++## Sandy / dry / badlands
++
++| Biome | Band(s) | Rarity | Notes |
++| --- | --- | --- | --- |
++| Desert | Arid | Uncommon | |
++| Badlands | Arid | Rare | |
++| Wooded Badlands | Arid | Rare | |
++| Eroded Badlands | Arid | Very rare | Extreme terrain. |
++
++---
++
++## Mountains / highlands (overlay-only)
++
++| Biome | Band(s) | Rarity | Notes |
++| --- | --- | --- | --- |
++| Meadow | Temperate (overlay) | Uncommon | |
++| Grove | Temperate-high / Subpolar (overlay) | Uncommon | Must be explicitly preserved. |
++| Cherry Grove | Temperate (overlay) | Rare | |
++| Windswept Hills | Temperate (overlay) | Uncommon | |
++| Windswept Forest | Temperate (overlay) | Uncommon | |
++| Windswept Gravelly Hills | Temperate (overlay) | Rare | |
++| Windswept Savanna | Arid / Tropics (overlay) | Uncommon | |
++| Stony Peaks | Arid / Tropics / Temperate (overlay) | Rare | |
++| Jagged Peaks | Subpolar / Polar (overlay) | Rare | |
++| Frozen Peaks | Subpolar / Polar (overlay) | Rare | |
++| Snowy Slopes | Subpolar / Polar (overlay) | Uncommon | |
++| Stony Shore | Any (adjacency overlay) | Uncommon | Mountains touching ocean only. |
++
++---
++
++## Caves (not latitude-driven)
++
++| Biome | Band(s) | Rarity | Notes |
++| --- | --- | --- | --- |
++| Lush Caves | Any | Uncommon | |
++| Dripstone Caves | Any | Uncommon | |
++| Deep Dark | Any | Rare | |
++
++---
++
++## Beaches / shores (adjacency-driven)
++
++| Biome | Band(s) | Rarity | Notes |
++| --- | --- | --- | --- |
++| Beach | Equator / Tropics / Arid / Temperate | Common | |
++| Snowy Beach | Subpolar / Polar | Uncommon | |
++| Stony Shore | Any (overlay) | Uncommon | |
++
++---
++
++## Rivers (temperature-driven)
++
++| Biome | Band(s) | Rarity | Notes |
++| --- | --- | --- | --- |
++| River | Equator / Tropics / Arid / Temperate | Common | |
++| Frozen River | Subpolar / Polar | Uncommon | |
++
++---
++
++## Oceans (temperature-driven)
++
++| Biome | Band(s) | Rarity | Notes |
++| --- | --- | --- | --- |
++| Warm Ocean | Equator / Tropics | Uncommon | |
++| Lukewarm Ocean | Tropics / Temperate-low | Uncommon | |
++| Ocean | Temperate | Common | |
++| Cold Ocean | Subpolar | Uncommon | |
++| Frozen Ocean | Polar | Uncommon | |
++| Deep Lukewarm Ocean | Depth overlay | Uncommon | |
++| Deep Ocean | Depth overlay | Uncommon | |
++| Deep Cold Ocean | Depth overlay | Uncommon | |
++| Deep Frozen Ocean | Depth overlay | Uncommon | |
++
++---
++
++## The Nether (not latitude-driven)
++
++| Biome | Band(s) | Rarity |
++| --- | --- | --- |
++| Nether Wastes | N/A | Common |
++| Crimson Forest | N/A | Common |
++| Warped Forest | N/A | Common |
++| Soul Sand Valley | N/A | Uncommon |
++| Basalt Deltas | N/A | Uncommon |
++
++---
++
++## The End (not latitude-driven)
++
++| Biome | Band(s) | Rarity |
++| --- | --- | --- |
++| The End | N/A | Special |
++| End Highlands | N/A | Common |
++| End Midlands | N/A | Common |
++| End Barrens | N/A | Common |
++| Small End Islands | N/A | Uncommon |
++| The Void | N/A | Special |
+diff --git a/.windsurf/skills/latitude-biome-selection-contract/SKILL.md b/.windsurf/skills/latitude-biome-selection-contract/SKILL.md
+new file mode 100644
+index 0000000..dd5f9ab
+--- /dev/null
++++ b/.windsurf/skills/latitude-biome-selection-contract/SKILL.md
+@@ -0,0 +1,107 @@
++---
++name: latitude-biome-selection-contract
++description: Defines the contract between vanilla ΓÇ£baseΓÇ¥ biomes and Latitude ΓÇ£outΓÇ¥ biomes. Prevents incorrect assumptions about F3 biome, temperature/precip flags, and feature placement. Provides the required debugging interpretation for LAT_PICK logs.
++---
++
++# Latitude ΓÇö Biome Selection Contract (Authoritative)
++
++This skill prevents a common error:
++> ΓÇ£F3 says biome = jungle, therefore cold/snow features cannot trigger.ΓÇ¥
++
++That is false when:
++- vanilla selects a cold **base** biome, and
++- Latitude overrides to a warm **out** biome, but
++- some vanilla systems still consult base-biome temperature/precip rules during placement.
++
++---
++
++## Definitions
++- **Base biome**: the vanilla biome prior to Latitude override. Logged as `base=...` in `[LAT_PICK]`.
++- **Out biome**: the biome Latitude returns to worldgen. Logged as `out=...` and typically what F3 shows.
++- **Wrapper illusion**: you can see `out` while generation decisions still reference `base`.
++
++---
++
++## Contract rules (must be respected)
++1) Latitude may override biome output by latitude band (Z-based), but vanilla may still:
++   - consult base biome temperature,
++   - consult precipitation flags,
++   - run features keyed off base-biome climate.
++2) Therefore:
++   - Seeing cold blocks/features in a warm F3 biome implies **base leakage** or **write-path placement**, not that F3 is ΓÇ£wrongΓÇ¥.
++3) Fixes must be either:
++   - ensure temperature/precip checks use out-biome (harder), OR
++   - block the offending feature/write path in disallowed bands (preferred for robustness).
++
++---
++
++## How to interpret `[LAT_PICK]` logs
++Given a log line like:
++- `zone=EQUATOR base=minecraft:snowy_taiga out=minecraft:jungle` 
++
++Interpretation:
++- Vanilla asked for a biome and would have used `snowy_taiga`.
++- Latitude returned `jungle`.
++- Any system that still consults base-biome climate may try to place snow/ice even though out-biome is warm.
++
++This is expected in the presence of base leakage and does not mean Latitude selection failed.
++
++### Representative `[LAT_PICK]` template
++
++```
++[LAT_PICK]
++x=<x> z=<z> absZ=<absZ> radius=<radius> t=<t>
++zone=<EQUATOR|TROPICS|ARID|TEMPERATE|SUBPOLAR|POLAR>
++base=<minecraft:...>
++out=<minecraft:...>
++beachOverride=<true|false>
++rareOverride=<true|false>
++mangroveDecision=<...> cont=<...> ero=<...> weird=<...>
++```
++
++How to read it:
++- If `out` is warm but `base` is cold, vanilla temperature-driven features may still attempt cold placements unless guarded (e.g., FreezeTopLayer).
++- ThatΓÇÖs not a biome-table bug; itΓÇÖs a base-leakage / write-path issue.
++
++---
++
++## Debugging obligations
++When a ΓÇ£contradictionΓÇ¥ occurs (warm biome but cold artifacts):
++1) Capture coords + F3 out-biome.
++2) Find nearby `[LAT_PICK]` entries:
++   - confirm `zone` and compare `base` vs `out`.
++3) Identify write path:
++   - feature hook logs (e.g., `FreezeTopLayerFeature`)
++   - ChunkRegion/ProtoChunk traps
++4) Apply minimal fix (feature cancel / write-path rewrite).
++
++Do not propose band-table changes based only on F3.
++
++---
++
++## Canonical example: warm-band snow
++Observed:
++- F3: `minecraft:jungle` 
++- Snow blocks or powder snow appear at cave mouths.
++
++Common cause:
++- `[LAT_PICK] base=snowy_plains out=jungle` 
++- Vanilla `FreezeTopLayerFeature` consults base biome climate ΓåÆ attempts snow.
++- LatitudeSnowGuard blocks/cancels in warm bands.
++
++---
++
++## Forbidden assumptions
++- ΓÇ£Out biome implies all placements consult out biome.ΓÇ¥
++- ΓÇ£If snow appears, Latitude chose the wrong biome.ΓÇ¥
++- ΓÇ£Fix by moving snowy biomes out of authority table.ΓÇ¥
++- ΓÇ£Fix by rewriting MaterialRules first.ΓÇ¥
++
++---
++
++## Required assistant output when diagnosing biome contradictions
++The assistant must provide:
++- base vs out interpretation
++- suspected offender (feature or write path)
++- the minimum guard/cancel plan
++- a proof plan (log/counter) gated behind a debug flag
+diff --git a/.windsurf/skills/latitude-compat-backport-playbook/SKILL.md b/.windsurf/skills/latitude-compat-backport-playbook/SKILL.md
+new file mode 100644
+index 0000000..f9ab1e7
+--- /dev/null
++++ b/.windsurf/skills/latitude-compat-backport-playbook/SKILL.md
+@@ -0,0 +1,194 @@
++---
++name: latitude-compat-backport-playbook
++description: Step-by-step playbook for backporting Latitude changes across MC 1.21.x targets (e.g., 1.21.11 -> 1.21.1). Enforces one-variable-at-a-time, cherry-pick discipline, minimal tests, version/tag correctness, and prevents branch/build confusion.
++---
++
++# Latitude ΓÇö Compat Backport Playbook (Authoritative)
++
++This skill is used whenever porting fixes between Minecraft versions (1.21.x), especially:
++- main target: **1.21.11** (`main`)
++- compat target: **1.21.1** (`compat/1.21.1`)
++
++Goal: make backports boring and safe.
++
++**Default mode: STRICT** ΓÇö behavior must match across targets.
++- Allowed exceptions only when vanilla signatures/behavior truly diverge between MC versions.
++- Any exception must be documented in the commit/PR as: `Pragmatic exception: <why>` including the exact method signature difference.
++
++---
++
++## Golden rules
++1) **One variable at a time**: one fix, one commit, one test.
++2) Prefer **cherry-pick** of known-good commits over manual reimplementation.
++3) Do not mix backport fixes with unrelated refactors.
++4) Always confirm:
++   - branch
++   - mod_version
++   - jar name
++   - tags
++5) If a change touches worldgen, require at least one runtime proof.
++
++---
++
++## Prep checklist (must pass)
++On source branch (e.g., `main`):
++- fix is committed and tested
++- commit(s) are small and focused
++- optional debug is gated and OFF by default
++
++On target branch (e.g., `compat/1.21.1`):
++- baseline builds cleanly before backport
++- working tree is clean (or stash)
++
++---
++
++## Backport procedure (mandatory order)
++
++### Step 1 ΓÇö Baseline build on target branch
++```powershell
++git checkout compat/1.21.1
++git pull
++$env:GRADLE_USER_HOME = "$PWD\.gradle-user-home"
++.\gradlew clean build --no-daemon
++```
++
++If baseline fails, STOP and fix baseline first.
++
++---
++
++### Step 2 ΓÇö Identify minimal commits to port
++
++Preferred: port only commits that touch:
++
++* the specific mixin/feature/fix
++* required config entries (mixins.json)
++* required debug gating
++
++Avoid porting:
++
++* docs
++* extracted sources
++* tooling folders
++* large unrelated refactors
++
++Gather commit list using:
++
++* `git log --oneline <sourceBranch> -- <filePath>` 
++* `git show <hash> --name-only` 
++
++---
++
++### Step 3 ΓÇö Cherry-pick onto target
++
++From target branch:
++
++```powershell
++git cherry-pick <hash1> <hash2> ...
++```
++
++If conflicts:
++
++* resolve by matching target MC signatures (method params/owners)
++* do not change fix behavior while resolving compile errors
++* keep edits minimal and localized
++
++---
++
++### Step 4 ΓÇö Build on target
++
++```powershell
++$env:GRADLE_USER_HOME = "$PWD\.gradle-user-home"
++.\gradlew clean build --no-daemon
++```
++
++If build fails:
++
++* paste first ~60 lines of error
++* adjust only signatures/descriptors until it compiles
++
++---
++
++### Step 5 ΓÇö Minimal runtime proof (no ΓÇ£new world fatigueΓÇ¥)
++
++Require exactly one proof run:
++
++* start client
++* generate a small area near a known test coordinate (or equator zone)
++* confirm the fix triggers (via visual result or gated logs/counters)
++
++If old chunks contain the old bug:
++
++* delete only the relevant region file (`r.<x>.<z>.mca`) to regen
++
++---
++
++### Step 6 ΓÇö Version + tag correctness (do NOT skip)
++
++On the target branch, ensure `gradle.properties`:
++
++* `mod_version=<release>+<mcVersion>` 
++
++Then:
++
++* build jars again
++* confirm jar names match `mod_version` 
++
++Tag must point to the commit that produces that jar:
++
++```powershell
++git tag -f v<mod_version>
++git push origin -f v<mod_version>
++```
++
++---
++
++## Common failure patterns (and required fixes)
++
++### A) ΓÇ£I canΓÇÖt checkout branch: gradle.properties would be overwrittenΓÇ¥
++
++Fix:
++
++* `git stash push -m "temp: gradle.properties bump"` 
++* checkout
++* build
++* later `git stash pop` on the original branch
++
++### B) ΓÇ£I built but jar name is wrongΓÇ¥
++
++Cause:
++
++* target branch still has old `mod_version` 
++  Fix:
++* update `gradle.properties` on THAT branch
++* commit
++* rebuild
++
++### C) ΓÇ£Incompatible mods foundΓÇ¥ during dev run
++
++Cause:
++
++* leftover jars in `run/mods` from a different MC target
++  Fix:
++* clear `run/mods/*` and `run/.fabric/processedMods/*` 
++
++### D) Mixins apply failures on older target
++
++Fix:
++
++* remove non-essential mixin (especially precipitation hooks) if it fails apply
++* keep the core guard/fix mixins
++* re-run, then optionally reintroduce later
++
++---
++
++## Required assistant output format
++
++When asked to backport:
++
++1. Source branch + target branch
++2. Commit list to cherry-pick (with reasons)
++3. Exact commands (PowerShell)
++4. Expected success outputs
++5. Minimal runtime proof steps
++6. Version/tag actions
++7. Rollback strategy
+diff --git a/.windsurf/skills/latitude-debug-instrumentation-rules/SKILL.md b/.windsurf/skills/latitude-debug-instrumentation-rules/SKILL.md
+new file mode 100644
+index 0000000..14a4b70
+--- /dev/null
++++ b/.windsurf/skills/latitude-debug-instrumentation-rules/SKILL.md
+@@ -0,0 +1,131 @@
++---
++name: latitude-debug-instrumentation-rules
++description: Rules for adding debug logs, counters, overlays, and sanity pings in Latitude. Enforces gated, minimal, removable instrumentation and forbids permanent spam in hot paths.
++---
++
++# Latitude ΓÇö Debug Instrumentation Rules (Authoritative)
++
++This skill is used whenever the assistant proposes:
++- adding logs
++- adding HUD/actionbar debug overlays
++- adding counters
++- adding ΓÇ£sanity pingΓÇ¥ mixins
++- adding temporary assertions/stack traces
++- adding profiling toggles
++
++Goal: make debugging **fast**, **low-noise**, and **safe to ship**.
++
++---
++
++## Non-negotiable rules
++1) **All instrumentation is gated** behind a toggle (system property or in-mod debug flag).
++2) Default for any debug toggle is **OFF**.
++3) Never spam in hot paths (per-block/per-vertex/per-tick) without throttling.
++4) Any debug change must be removable in one commit.
++5) Every debug print must answer exactly **one question**.
++
++## Debug flag naming standard (locked)
++
++All debug instrumentation must follow this scheme:
++
++- **Prefix:** `-Dlatitude.` 
++- **Format:** `debug<FeatureName>` (camelCase)
++- **Type:** boolean flags only (`true` enables)
++- **Default:** OFF when not provided
++
++Examples (canonical):
++- `-Dlatitude.debugSnowGuard` 
++- `-Dlatitude.debugWarmSnowTrap` 
++- `-Dlatitude.debugOpenSpawnPicker` 
++- `-Dlatitude.debugLatPick` 
++- `-Dlatitude.debugRenderEwWall` 
++
++Any new debug flag must conform to this naming scheme.
++
++---
++
++## Approved gating mechanisms (choose one)
++Preferred: JVM system properties (dev-only)
++- `-Dlatitude.debugSnowGuard=true` 
++- `-Dlatitude.debugWarmSnowTrap=true` 
++- `-Dlatitude.debugLatPick=true` 
++- `-Dlatitude.debugRenderEwWall=true` 
++
++Alternative: in-mod config keybind / config file (only if it already exists)
++
++---
++
++## Logging rules
++### Throttle requirements
++If a log is in a frequent path:
++- print at most **once per N events** (e.g., once per 60 ticks or once per 256 calls)
++- or ΓÇ£print only on first occurrenceΓÇ¥
++- or ΓÇ£print only when a match happensΓÇ¥ (e.g., only when a snow block is seen)
++
++### Content requirements
++Logs must include:
++- short tag in brackets: `[SNOWBLOCK_GUARD]`, `[FREEZE_GUARD]`, `[LAT_PICK]` 
++- coords and/or chunk origin when relevant
++- band/zone result when it is a latitude-related bug
++
++Never log:
++- full objects with huge toString output
++- entire registry dumps
++- per-biome spam across many chunks unless explicitly requested
++
++---
++
++## Counter/overlay rules (preferred over spam logs)
++If the question is ΓÇ£is the hook firing?ΓÇ¥:
++- Use counters:
++  - calls / matches / rewrites
++- Show them via actionbar or HUD overlay
++- Gate behind `-Dlatitude.debugWarmSnowTrap=true` 
++
++Overlay update cadence:
++- no more than once per 40 ticks (~2s) unless explicitly needed.
++
++---
++
++## Sanity ping rules
++A sanity ping is allowed only when:
++- a mixin is suspected not to apply
++- a crash happens during early init
++- environment mismatch is likely
++
++Rules:
++- print once, then stay silent
++- must include the mixin name and target class
++- must be removed or gated before release
++
++---
++
++## Stack trace / crash-once (nuclear) rules
++Allowed only when:
++- write path is unknown and must be identified
++- symptom is rare and hard to reproduce
++
++Rules:
++- trigger only on the first match
++- include an explicit comment: ΓÇ£REMOVE AFTER TRACEΓÇ¥
++- must be behind a system property OR removed immediately after capture
++
++---
++
++## ΓÇ£Release safetyΓÇ¥ checklist (must pass before tagging)
++Before creating a release tag:
++- debug flags default OFF
++- no ungated WARN spam in worldgen/render loops
++- overlays disabled unless debug flag set
++- `.gitignore` prevents debug-only artifacts from creeping into commits
++
++---
++
++## Expected assistant output
++When proposing instrumentation, the assistant must output:
++1) The exact question the instrumentation answers
++2) The minimal hook point
++3) The toggle name
++4) The throttle strategy
++5) The exact file(s) to edit
++6) The removal plan (revert commit or flip flag)
+diff --git a/.windsurf/skills/latitude-generation-order-rules/SKILL.md b/.windsurf/skills/latitude-generation-order-rules/SKILL.md
+new file mode 100644
+index 0000000..f8a4511
+--- /dev/null
++++ b/.windsurf/skills/latitude-generation-order-rules/SKILL.md
+@@ -0,0 +1,118 @@
++---
++name: latitude-generation-order-rules
++description: Canonical rules for how Latitude decides biomes and applies them across generation stages. Prevents the model from inventing steps, reordering pipeline stages, or ΓÇ£fixingΓÇ¥ bugs by changing generation order.
++---
++
++# Latitude ΓÇö Generation Order Rules (Authoritative)
++
++This skill defines the **only allowed** high-level order of operations for Latitude worldgen and related runtime guards.
++It exists to prevent the assistant from:
++- Inventing new pipeline steps
++- Reordering stages without evidence
++- ΓÇ£FixingΓÇ¥ biome leaks by guessing different order
++- Removing vanilla biomes or changing eligibility tables
++
++If the assistant cannot prove a step from code, logs, or an attached authority table, it must say **UNKNOWN** and ask for the specific file / method signature.
++
++---
++
++## Primary authority files (must consult)
++- **Vanilla biome latitude eligibility table** (single source of truth):
++  - `.windsurf/skills/latitude-biome-authority/SKILL.md`
++- **Biome bands reference (if present in repo docs / exports):**
++  - `cc-latitude-comprehensive-2026-02-05.md` (project notes)
++- **Any ΓÇ£LatitudeBiomesΓÇ¥ / picker implementation**:
++  - `src/main/java/com/example/globe/world/LatitudeBiomes.java` (or the current equivalent)
++
++> Rule: If there is any conflict between a guess and an authority file, the authority file wins.
++
++---
++
++## Non-negotiable invariants
++1) **All vanilla biomes must still exist** somewhere unless the authority list explicitly excludes them.
++2) **Latitude bands constrain selection**; variants/overlays are secondary and may only restrict, not invent.
++3) ΓÇ£FixesΓÇ¥ must not rely on changing worldgen order unless:
++   - a concrete call site is identified, and
++   - a targeted change is made with minimal surface area.
++4) If snow/cold artifacts appear in warm bands, the allowed fixes are **write-path guards** (ProtoChunk/ChunkRegion/Feature cancel) or **correct biome container propagation** ΓÇö not ΓÇ£change band table.ΓÇ¥
++
++---
++
++## Canonical generation pipeline (high level)
++When reasoning about how a block/biome appears, assume this order unless code proves otherwise:
++
++### Stage A ΓÇö Base / vanilla biome resolution
++- Vanilla chooses a **base biome** (the ΓÇ£base=ΓÇ¥ shown in logs).
++- Latitude may log this (e.g. `[LAT_PICK] base=...`).
++
++### Stage B ΓÇö Latitude selection and output biome override
++- Latitude computes:
++  - `radius = worldBorderSize / 2`
++  - `t = abs(z)/radius`
++  - `zone = band(t)`
++- Latitude chooses an **out biome** (the biome returned to the generator).
++- Latitude logs (example shape):
++  - `[LAT_PICK] zone=EQUATOR base=snowy_taiga out=jungle ...`
++- If the assistant proposes threshold changes, it must reference the exact helper/constants used.
++
++### Stage C ΓÇö Surface rules / material placement
++- Surface rules (MaterialRules) place top blocks (grass/sand/snow_block, etc.) based on biome + noise.
++- If ΓÇ£out biomeΓÇ¥ is warm but cold blocks appear, suspect that:
++  - some placements still consult **base biome** temperature/precip flags, OR
++  - placements happen through features after surface rules.
++
++### Stage D ΓÇö Feature placement / post-processing
++- Features can place blocks using region/world access (e.g. `FreezeTopLayerFeature`).
++- These may use biome temperature flags and can be triggered even when out biome is warm if base biome data leaks.
++
++### Stage E ΓÇö Runtime & write-path guards (Latitude protections)
++Allowed guard layers (in order of preference for robustness):
++1) **Feature-level cancel** for known offenders (e.g., cancel `FreezeTopLayerFeature` in warm bands)
++2) **Write-path trap** at `ChunkRegion#setBlockState` during worldgen
++3) **ProtoChunk#setBlockState` trap** for direct chunk writes
++4) **Biome precipitation hooks** (only affect weather-driven snow layers, not worldgen blocks)
++
++> Rule: If a block is still appearing, identify which write path is used by logging/stack trace; do not guess.
++
++---
++
++## Debugging protocol (mandatory)
++When a worldgen artifact appears (snow/powder snow in warm bands, wrong biome, etc.):
++
++1) **Confirm out biome** (F3) and capture coords (x,y,z).
++2) Search logs for the decision record near that location:
++   - `[LAT_PICK] ... base=... out=... zone=...`
++3) Determine which system wrote the offending block:
++   - Feature hook logs (e.g., `[FREEZE_GUARD]`)
++   - Write-path logs (e.g., `[SNOWBLOCK_GUARD]`)
++4) Only then propose the smallest fix:
++   - cancel the feature, or
++   - rewrite the blockstate at the write choke point, gated by warm band logic.
++
++If any of these steps lack evidence, the assistant must request the relevant file/method signature.
++
++---
++
++## Allowed outputs the assistant may produce
++- Exact ΓÇ£next stepΓÇ¥ commands (PowerShell) to locate call sites (`Select-String`, `git grep`, `jar tf`, etc.)
++- Minimal patch plans: 1ΓÇô3 files, 1ΓÇô2 commits, with revert path
++- Explicit ΓÇ£proofΓÇ¥ instrumentation plans: single-shot logs, counters, or stack trace capture
++- Release discipline steps: build, jar verify, tag placement, and Modrinth upload checklist
++
++---
++
++## Forbidden behaviors
++- Inventing a ΓÇ£worldgen orderΓÇ¥ not supported by code/logs
++- Reassigning biomes to bands to ΓÇ£fixΓÇ¥ bugs
++- Removing vanilla biomes because theyΓÇÖre ΓÇ£rareΓÇ¥ or ΓÇ£problematicΓÇ¥
++- Proposing broad refactors when a write-path guard would solve the symptom
++- Shipping releases from branches polluted with extracted MC sources or tooling folders
++
++---
++
++## Reminder: one variable at a time
++When making changes:
++- One change per commit
++- Test
++- Tag savepoint if it touches generation
++- Then proceed
+diff --git a/.windsurf/skills/latitude-player-facing-invariants/SKILL.md b/.windsurf/skills/latitude-player-facing-invariants/SKILL.md
+new file mode 100644
+index 0000000..4d66bec
+--- /dev/null
++++ b/.windsurf/skills/latitude-player-facing-invariants/SKILL.md
+@@ -0,0 +1,66 @@
++---
++name: latitude-player-facing-invariants
++description: Authoritative ΓÇ£promise of LatitudeΓÇ¥ rules. Encodes the non-negotiable player-facing behaviors (climate continuity, band logic, no warm-band snow, intuitive exploration). Prevents technically-correct changes that break the modΓÇÖs feel.
++---
++
++# Latitude ΓÇö Player-Facing Invariants (Authoritative)
++
++This skill encodes the *promise* of Latitude to players. Any change that violates these invariants is a regression, even if it compiles.
++
++---
++
++## Core promise
++Latitude turns MinecraftΓÇÖs overworld into a planet-like climate experience:
++- climate changes meaningfully with north/south travel
++- bands feel continuous and intentional
++- exploration ΓÇ£makes senseΓÇ¥ without reading a wiki
++
++---
++
++## Non-negotiable invariants
++
++### 1) Warm-band snow must be impossible
++In warm bands (equator/tropical/subtropical as defined by the mod):
++- No `snow_block` 
++- No `snow` layers
++- No `powder_snow` 
++- No ΓÇ£frozen top layerΓÇ¥ behavior
++
++If any of these appear, it is a bug. Fix must use write-path guards or feature cancels, not biome reassignment.
++
++### 2) Climate continuity over patchiness
++- Bands should feel continuous across distance.
++- ΓÇ£IslandsΓÇ¥ of totally wrong climate should be treated as bugs unless explicitly designed (and documented).
++
++### 3) Distance must correlate with temperature
++- Moving north/south changes temperature/biomes in a predictable direction.
++- Any system that causes temperature to decorrelate from latitude needs strong justification.
++
++### 4) All vanilla biomes still exist
++- Unless explicitly excluded by the biome authority table, every vanilla biome must remain obtainable somewhere.
++- Fixing a bug by effectively deleting a biome is forbidden.
++
++### 5) The mod must be playable without debug knowledge
++- Default gameplay should not require JVM flags.
++- Debug features must not leak into normal play (no auto-open screens, no actionbar spam).
++
++### 6) ΓÇ£SurprisesΓÇ¥ require communication
++If the mod introduces hazards/effects (storms, polar danger, etc.):
++- players must receive clear in-game feedback (HUD text, warning, particles, etc.)
++- avoid silent punishment
++
++---
++
++## Required assistant behavior
++When proposing changes, the assistant must state:
++- which invariants are affected
++- whether the change preserves them
++- how to test the invariants quickly (minimal proof steps)
++
++---
++
++## Forbidden changes
++- Adjusting biome bands to hide symptoms
++- Shipping with debug toggles enabled by default
++- Removing access to vanilla biomes because they are ΓÇ£problematicΓÇ¥
++- Making climate feel random/patchy to ΓÇ£increase varietyΓÇ¥
+diff --git a/.windsurf/skills/latitude-release-discipline/SKILL.md b/.windsurf/skills/latitude-release-discipline/SKILL.md
+new file mode 100644
+index 0000000..2daa2c2
+--- /dev/null
++++ b/.windsurf/skills/latitude-release-discipline/SKILL.md
+@@ -0,0 +1,161 @@
++---
++name: latitude-release-discipline
++description: Release guardrails for Latitude. Prevents tagging/building/uploading from the wrong branch, mismatched version strings, dirty working trees, or shipping dev/debug artifacts. Enforces one-step-at-a-time release checklist.
++---
++
++# Latitude ΓÇö Release Discipline (Authoritative)
++
++This skill exists to prevent release mistakes:
++- building the wrong branch
++- tagging the wrong commit
++- uploading a jar whose version string doesn't match the release
++- shipping with debug spam enabled
++- releasing from a feature branch that contains extracted sources / tooling artifacts
++- confusion between MC targets (1.21.11 vs 1.21.1)
++
++If any checklist item fails, the assistant must say **STOP** and provide the single next command to fix it.
++
++---
++
++## Supported release targets (current)
++- **Main target:** MC **1.21.11** (branch: `main`)
++- **Compat target:** MC **1.21.1** (branch: `compat/1.21.1`)
++
++> Never release 1.21.11 from a `feature/*` branch.
++> Never assume `build/libs` contains the correct jar until after a clean build on the target branch.
++
++---
++
++## Preflight invariants (must be true)
++1) Working tree clean (or only intended version bump changes)
++2) Correct branch checked out for the target
++3) `gradle.properties` contains the correct `mod_version` for that target
++4) `./gradlew clean build` succeeds
++5) The built jar filename matches the intended release string
++6) Jar contents do not include extracted sources or tooling folders
++7) Tag points at the commit that produced the jar
++
++---
++
++## One-step-at-a-time release protocol (mandatory)
++
++### Step A ΓÇö Confirm branch + cleanliness
++Run:
++- `git status` 
++- `git branch --show-current` 
++
++Rules:
++- If `git status` shows local changes that would block checkout, **stash** with a message.
++- If the branch is wrong, checkout the correct branch before doing anything else.
++
++---
++
++### Step B ΓÇö Confirm version string (no guessing)
++On the target branch:
++- Inspect `gradle.properties` and confirm:
++  - `mod_version=...` 
++
++Required patterns:
++- 1.21.11 build: `1.2.5+1.21.11` (example)
++- 1.21.1 build: `1.2.5+1.21.1` (example)
++
++If the jar name later shows a different version, the branchΓÇÖs `mod_version` is wrong. Fix `gradle.properties`, commit, rebuild.
++
++---
++
++### Step C ΓÇö Clean build with isolated Gradle home
++Run from repo root:
++```powershell
++$env:GRADLE_USER_HOME = "$PWD\.gradle-user-home"
++.\gradlew clean build --no-daemon
++```
++
++Then list jars:
++
++```powershell
++Get-ChildItem .\build\libs\*.jar | Select-Object Name, Length, LastWriteTime
++```
++
++Rule:
++
++* If the expected jar is not present, do not proceed.
++
++---
++
++### Step D ΓÇö Verify jar contents (must do once per release file)
++
++Inspect the jar you will upload:
++
++```powershell
++jar tf .\build\libs\<YOUR_JAR_NAME>.jar | findstr /I "_mcsrc_extract .windsurf SKILL.md com/mojang blaze3d"
++```
++
++Pass criteria:
++
++* No matches.
++
++If there are matches:
++
++* STOP. Rebuild from a clean branch and fix `.gitignore` or build config.
++
++---
++
++### Step E ΓÇö Tag discipline (tags must match jar)
++
++Preferred tags:
++
++* `v<mod_version>` (example: `v1.2.5+1.21.11`)
++
++Rules:
++
++* Tag must be created/moved only **after** the jar is confirmed correct.
++* If you must move a tag, use `-f` and force-push only that tag.
++
++Commands:
++
++```powershell
++git tag -f v<mod_version>
++git push origin -f v<mod_version>
++```
++
++---
++
++### Step F ΓÇö Upload discipline (Modrinth)
++
++Rules:
++
++* A single Modrinth release may contain multiple files.
++* Each file must be assigned the correct game versions.
++* Never upload a ΓÇ£fixed jarΓÇ¥ without also ensuring the tag/branch state matches.
++
++Minimum changelog bullets must include:
++
++* the user-facing fix summary
++* any important regression fix (UI, crashes)
++* optional: debug flags are dev-only
++
++---
++
++## Branch hygiene rules (absolute)
++
++* `main` is the only allowed release base for 1.21.11.
++* `compat/1.21.1` is the only allowed release base for 1.21.1.
++* Feature branches may contain experiments and must not own release tags.
++* Extracted sources and tooling folders must never be part of a release commit:
++
++  * `_mcsrc_extract/` 
++  * `.windsurf/` 
++  * other generated extraction folders
++
++---
++
++## If something is confusing, diagnose like this
++
++1. List jars in `build/libs` 
++2. Confirm current branch
++3. Confirm `mod_version` in `gradle.properties` 
++4. Rebuild
++5. Re-list jars
++6. Only then tag/upload
++
++No other order is allowed.
+diff --git a/.windsurf/skills/latitude-rendering-compat-rules/SKILL.md b/.windsurf/skills/latitude-rendering-compat-rules/SKILL.md
+new file mode 100644
+index 0000000..2147ca7
+--- /dev/null
++++ b/.windsurf/skills/latitude-rendering-compat-rules/SKILL.md
+@@ -0,0 +1,81 @@
++---
++name: latitude-rendering-compat-rules
++description: Rendering rules for Sodium/Iris compatibility in Latitude (E/W storm walls, fog, overlays). Forbids raw GL state, mandates entry-based vertex emission, approved RenderLayers, and shader-safe debugging patterns.
++---
++
++# Latitude ΓÇö Rendering Compatibility Rules (Authoritative)
++
++This skill applies to:
++- E/W storm wall rendering
++- custom fog overlays
++- any world-space debug geometry
++- any rendering that must work with Sodium + Iris
++
++Goal: avoid ΓÇ£works vanilla, breaks with shadersΓÇ¥ regressions.
++
++---
++
++## Non-negotiable rules
++1) No direct GL state calls in mod render code:
++- No `RenderSystem.*` state toggles
++- No `GL11.*` 
++- No manual blend/depth toggles
++
++2) Always use modern vertex emission:
++- `VertexConsumer` with `MatrixStack.Entry` 
++- prefer built-in `RenderLayer`s / `RenderLayers` helpers
++- never rely on ΓÇ£implicitΓÇ¥ GL state being correct
++
++3) Rendering must be safe under:
++- Fabric renderer
++- Sodium renderer
++- Iris shader pipeline
++
++---
++
++## Approved rendering approaches
++### A) World-space geometry (storm wall)
++- Subscribe via the proper world render callback (not HUD)
++- Use `WorldRenderContext` matrices/consumers
++- Emit vertices using `vertex(entry, x,y,z).color(...).texture(...).light(...).normal(...);` 
++- Keep geometry stable and avoid Z-fighting (slight inset if needed)
++
++### B) Debug lines/quads
++- Provide a compile-time or JVM-toggle to swap geometry:
++  - line-only layer for shader visibility testing
++  - quad layer for final
++
++All debug visuals must be behind a toggle and off by default.
++
++---
++
++## Debug toggles (recommended)
++- `-Dlatitude.debugRenderEwWall=true` 
++- `-Dlatitude.debugEwWallLines=true` (lines vs quads)
++- `-Dlatitude.debugFog=true` 
++
++Default OFF.
++
++---
++
++## Performance / safety constraints
++- Avoid per-frame allocations in hot render paths.
++- Avoid extremely dense geometry; scale step size with distance if needed.
++- Never spam actionbar logs; use one-shot logs or counters.
++
++---
++
++## Required assistant procedure for render bugs
++When a render bug is reported (ΓÇ£not visible with shadersΓÇ¥, ΓÇ£flickerΓÇ¥, etc.), the assistant must:
++1) Identify the current RenderLayer and emission style
++2) Switch to a minimal debug layer (lines) behind a toggle
++3) Confirm callback is firing (single-shot ping)
++4) Reduce z-fighting (slight inset, depth tweaks via layer choice only)
++5) Only then adjust final geometry/layer
++
++---
++
++## Forbidden behaviors
++- ΓÇ£Just disable shadersΓÇ¥ as a solution
++- Adding render fixes by toggling GL state directly
++- Shipping with debug render toggles enabled by default
+diff --git a/.windsurf/skills/latitude-repo-hygiene/SKILL.md b/.windsurf/skills/latitude-repo-hygiene/SKILL.md
+new file mode 100644
+index 0000000..b1c41e0
+--- /dev/null
++++ b/.windsurf/skills/latitude-repo-hygiene/SKILL.md
+@@ -0,0 +1,105 @@
++---
++name: latitude-repo-hygiene
++description: Repo hygiene rules for Latitude. Prevents generated/extracted artifacts from entering commits, release branches, tags, or jars. Provides the canonical ignore list and cleanup commands.
++---
++
++# Latitude ΓÇö Repo Hygiene (Authoritative)
++
++This skill prevents:
++- accidental commits of extracted Minecraft sources
++- accidental commits of tooling folders (Windsurf skills, caches)
++- polluted feature branches being used for releases
++- confusion around huge diffs unrelated to mod code
++
++---
++
++## Never-commit folders (absolute)
++These must never be committed to any release branch (and should generally be ignored everywhere):
++
++- `_mcsrc_extract/` 
++- `run/` (worlds, logs, caches)
++- `logs/` 
++- `.gradle/` 
++- `.gradle-user-home/` 
++- `build/` 
++- `out/` 
++- `.idea/` 
++- `.vscode/` 
++- `.classpath` 
++- `.project` 
++- `.settings/` 
++- `*.iml` 
++
++Tooling:
++- `.windsurf/` (skills, internal state) ΓÇö **never ship inside jars**
++- any `processedMods/` cache folder under `run/.fabric/` 
++
++OS noise:
++- `Thumbs.db` 
++- `.DS_Store` 
++
++If any of these appear in `git status`, STOP and fix before continuing.
++
++---
++
++## Release branch hygiene rules
++- 1.21.11 releases must be tagged from `main` 
++- 1.21.1 releases must be tagged from `compat/1.21.1` 
++- Do not tag releases from `feature/*` branches, especially if they contain any forbidden folders.
++
++---
++
++## Required .gitignore policy
++The repo must include ignore rules for every ΓÇ£never-commit folderΓÇ¥ above.
++
++If the assistant proposes adding a generated folder to the repo, it must justify why and confirm it is safe for release.
++
++---
++
++## Cleanup commands (PowerShell)
++### Remove generated artifacts
++```powershell
++Remove-Item -Recurse -Force .\build -ErrorAction SilentlyContinue
++Remove-Item -Recurse -Force .\.gradle -ErrorAction SilentlyContinue
++Remove-Item -Recurse -Force .\.gradle-user-home -ErrorAction SilentlyContinue
++Remove-Item -Recurse -Force .\run\.fabric\processedMods\* -ErrorAction SilentlyContinue
++```
++
++### If forbidden files were accidentally staged
++
++```powershell
++git restore --staged .
++git restore .
++```
++
++### If forbidden files were committed (do not panic)
++
++Preferred fix:
++
++* revert the commit on the branch
++* or rewrite history only if absolutely necessary and coordinated
++
++---
++
++## Jar safety check (must pass before upload)
++
++Always check the jar you will upload:
++
++```powershell
++jar tf .\build\libs\<YOUR_JAR_NAME>.jar | findstr /I "_mcsrc_extract .windsurf SKILL.md com/mojang blaze3d"
++```
++
++Pass criteria:
++
++* no matches.
++
++---
++
++## Required assistant output when repo pollution is detected
++
++The assistant must:
++
++1. identify the forbidden path(s)
++2. provide the smallest safe cleanup action
++3. ensure `.gitignore` prevents recurrence
++4. ensure release tags are on clean branches
+diff --git a/.windsurf/skills/latitude-ui-and-hud-lifecycle/SKILL.md b/.windsurf/skills/latitude-ui-and-hud-lifecycle/SKILL.md
+new file mode 100644
+index 0000000..4ff3710
+--- /dev/null
++++ b/.windsurf/skills/latitude-ui-and-hud-lifecycle/SKILL.md
+@@ -0,0 +1,68 @@
++---
++name: latitude-ui-and-hud-lifecycle
++description: Rules for when Latitude UI screens and HUD overlays may render or open. Prevents screens auto-opening in-world, enforces debug gating, and codifies ΓÇ£world creation onlyΓÇ¥ flows.
++---
++
++# Latitude ΓÇö UI & HUD Lifecycle (Authoritative)
++
++This skill prevents UI regressions such as:
++- spawn/band picker screens opening automatically after joining a world
++- debug screens appearing without explicit user action
++- HUD overlays rendering over menus/inventories unintentionally
++
++---
++
++## Screen-opening rules (absolute)
++1) **No Latitude config screen may auto-open in-world** after joining/spawning.
++2) Screens that configure worldgen (spawn band picker, presets, etc.) are **World Creation only**.
++3) The only allowed in-world screen opens are:
++   - explicit keybind action by the player, or
++   - explicit debug flag enabled (dev-only), or
++   - explicit command-driven open (if the mod provides commands).
++
++Default must be **OFF** for any auto-open behavior.
++
++---
++
++## Approved gates for dev-only auto-open
++If a developer convenience auto-open exists, it must be gated by a JVM property:
++- `-Dlatitude.debugOpenSpawnPicker=true` (default false)
++
++Rules:
++- Must never be enabled by default.
++- Must be clearly labeled ΓÇ£debugΓÇ¥ in code comments.
++
++---
++
++## HUD overlay rendering rules
++1) HUD overlays must not render when a GUI screen is open unless explicitly intended.
++2) Default: if `MinecraftClient.currentScreen != null`, skip overlay rendering.
++3) Exceptions must be explicit (e.g., a dedicated ΓÇ£HUD StudioΓÇ¥ preview screen).
++
++---
++
++## Event lifecycle rules (client)
++Do not open screens from:
++- join world callbacks
++- first tick hooks
++- network handler init
++- world load events
++
++If a screen must be shown on world creation, it must be launched from:
++- world creation UI integration points only
++
++---
++
++## Required assistant behavior
++When asked to add a screen or overlay, the assistant must:
++1) state the allowed opening triggers
++2) specify the exact gate (keybind / debug property / world creation)
++3) confirm ΓÇ£default OFFΓÇ¥ for any auto-open
++4) include a rollback plan
++
++---
++
++## Forbidden behaviors
++- ΓÇ£Open this screen on join for convenienceΓÇ¥ unless gated behind a debug flag
++- Rendering overlays over inventory/menus by default
++- Shipping releases with debug auto-open enabled
+diff --git a/.windsurf/skills/latitude-write-path-guards/SKILL.md b/.windsurf/skills/latitude-write-path-guards/SKILL.md
+new file mode 100644
+index 0000000..f7eb8db
+--- /dev/null
++++ b/.windsurf/skills/latitude-write-path-guards/SKILL.md
+@@ -0,0 +1,133 @@
++---
++name: latitude-write-path-guards
++description: Canonical debugging + fix strategy for ΓÇ£wrong blocks in the wrong placeΓÇ¥ bugs. Forces evidence-first identification of the write path and mandates minimal, choke-point fixes (feature cancel / ChunkRegion / ProtoChunk). Forbids guessing via biome reassignment or pipeline invention.
++---
++
++# Latitude ΓÇö Write-Path Guards (Authoritative)
++
++This skill is used when:
++- a block appears where it should be impossible (snow/powder snow in warm bands, ice in tropics, etc.)
++- a ΓÇ£biome says X but blocks say YΓÇ¥ contradiction occurs
++- a symptom persists despite precipitation/surface-rule changes
++
++**Core rule:** Do not guess the cause. Identify the **write path** that placed the block, then block/rewrite it at the narrowest safe choke point.
++
++---
++
++## Definitions
++- **Base biome:** vanilla biome selection prior to Latitude override (often logged as `base=`).
++- **Out biome:** Latitude-selected biome returned to generation (often logged as `out=` / what F3 shows).
++- **Write path:** the actual code path that calls `setBlockState` to place the offending block.
++
++---
++
++## Mandatory protocol (evidence-first)
++
++### Step 1 ΓÇö Capture the symptom precisely
++Record:
++- offending block(s) (e.g., `powder_snow`, `snow_block`)
++- coords (x,y,z)
++- F3 biome (out biome)
++- zone/band if available
++
++No fix proposals until these exist.
++
++### Step 2 ΓÇö Determine write path
++Allowed methods (choose the least invasive that gives proof):
++
++**A) Single-shot logs (preferred)**
++- Add a guard that logs once when it sees the offending block type.
++- Include:
++  - block id
++  - pos
++  - band/zone result
++  - (optional) chunk origin
++
++**B) Stack trace capture (nuclear, one-time)**
++- On first sighting, throw a controlled exception or log a stack trace.
++- Use only once, then remove.
++
++**C) Counter overlay**
++- Maintain counters for:
++  - calls
++  - matches
++  - rewrites
++- Expose via debug HUD/actionbar behind a flag.
++
++---
++
++## Allowed choke points (use this order)
++
++### 1) Feature-level cancel (best when a known offender exists)
++Examples:
++- `FreezeTopLayerFeature` (snow/ice)
++- other single features when proven by stack trace
++
++Rule:
++- Cancel only in the disallowed bands/zones.
++- Log once behind a debug flag.
++
++### 2) `ChunkRegion#setBlockState` rewrite (best general guard)
++- Catches many feature/placement writes during generation.
++- Use `@ModifyVariable` or `@Redirect` carefully.
++- Must be non-recursive.
++
++### 3) `ProtoChunk#setBlockState` rewrite (good for direct chunk writes)
++- Catches many worldgen surface placements.
++- Often simpler than MaterialRules interception.
++
++### 4) Biome precipitation hooks (last resort, limited scope)
++- Only affects weather-driven snow layers / precipitation checks.
++- Does not stop worldgen-placed `snow_block` or `powder_snow`.
++
++---
++
++## Band/zone gating rules (no hardcoding)
++Warm-band detection must:
++- derive radius from world border:
++  - `radius = world.getWorldBorder().getSize() * 0.5` 
++- compute:
++  - `t = abs(z) / radius` 
++- determine zone using the same helper/constants used by Latitude (do not duplicate thresholds unless unavoidable).
++
++If a helper is not available, the assistant must:
++- locate it in code first, or
++- mark thresholds as UNKNOWN and ask for the file/constant.
++
++---
++
++## Canonical rewrite policy (snow family)
++When in warm bands (equator/tropics/subtropics as defined by Latitude):
++
++- `POWDER_SNOW` -> `AIR` 
++- `SNOW` (layer) -> `AIR` 
++- `SNOW_BLOCK` -> `DIRT` above sea level, else `STONE` 
++
++All logging must be behind `-Dlatitude.debugSnowGuard=true` (or equivalent).
++
++---
++
++## Required safety constraints
++- Guard must be **non-recursive** (do not call the same setBlockState path in a way that re-triggers).
++- Guard must be band-gated (never global nukes unless explicitly set as a one-run diagnostic).
++- Debug output must be gated and off by default for release.
++- Fix must not change biome eligibility tables to hide the symptom.
++
++---
++
++## Forbidden fixes
++- ΓÇ£Just move snowy biomes out of warm bandsΓÇ¥ (unless authority table explicitly says so)
++- Reordering worldgen stages without proof
++- Intercepting deep MaterialRules nested types unless all choke points above are proven insufficient
++- Shipping with debug spam enabled
++
++---
++
++## Output format expected from the assistant
++When asked to fix a block-placement bug, the assistant must produce:
++
++1) **Hypothesis list** (max 3) tied to evidence
++2) **Chosen choke point** and why
++3) **Exact file(s) + mixin target + method descriptor**
++4) **One commit plan** + test step
++5) **Rollback path** (revert commit / toggle flag)
+diff --git a/.windsurf/skills/latitude-zone-math-authority/SKILL.md b/.windsurf/skills/latitude-zone-math-authority/SKILL.md
+new file mode 100644
+index 0000000..08a92e3
+--- /dev/null
++++ b/.windsurf/skills/latitude-zone-math-authority/SKILL.md
+@@ -0,0 +1,128 @@
++---
++name: latitude-zone-math-authority
++description: Canonical authority for Latitude band math (radius, t, thresholds, and helpers). Prevents hardcoding, duplicated thresholds, or inconsistent warm/cold checks across worldgen, guards, fog, hazards, HUD, and features.
++---
++
++# Latitude ΓÇö Zone Math Authority (Authoritative)
++
++This skill ensures every system in Latitude uses the **same** band math:
++- biome picking
++- warm/cold guards (snow/ice/etc.)
++- E/W storm fog borders
++- hazards and effects
++- HUD displays
++
++If different parts of the code use different math, the mod becomes inconsistent and bugs reappear.
++
++---
++
++## Primary invariant: derive radius from world border
++**Never hardcode radius.**
++
++Use:
++- `radius = world.getWorldBorder().getSize() * 0.5` 
++
++Notes:
++- WorldBorder size is a diameter-like value; radius is half.
++- All band logic must use the same radius for the same world.
++
++---
++
++## Canonical latitude coordinate
++Latitude is based on Z (north/south):
++
++- `absZ = Math.abs(pos.getZ())` 
++- `t = absZ / radius` 
++
++Where:
++- `t` is normalized latitude from 0.0 (equator) to 1.0 (border/pole).
++
++Rules:
++- Clamp t if needed: `t = Math.min(1.0, Math.max(0.0, t))` 
++- Do not use X for latitude bands.
++- Any ΓÇ£zone labelΓÇ¥ shown to player must correspond to this same t.
++
++---
++
++## Single source of truth for thresholds
++There must be exactly one implementation that maps `t -> zone/band`:
++- `LatitudeMath` or equivalent helper
++
++All other systems must call that helper, not re-implement thresholds.
++
++Allowed call shapes (examples):
++- `LatitudeMath.zoneFor(world, pos)` 
++- `LatitudeMath.zoneForT(t)` 
++- `LatitudeZones.fromT(t)` 
++
++If the helper does not exist, the assistant must:
++1) locate where thresholds currently live, and
++2) refactor so thresholds live in one place, then
++3) update all call sites to reference it.
++
++---
++
++## Band naming contract
++Band names used across logs/HUD/guards must be consistent.
++Example canonical set:
++- EQUATOR
++- TROPICAL
++- SUBTROPICAL
++- TEMPERATE
++- SUBPOLAR
++- POLAR
++
++If the project uses different names, mirror the projectΓÇÖs names exactly.
++
++---
++
++## Warm band / cold band predicates (required helpers)
++Add and use helpers (names optional, behavior mandatory):
++
++- `isWarmBand(zone)` returns true for bands that must never produce snow family blocks.
++- `isColdBand(zone)` returns true for snow/ice-permitted bands.
++
++Do not duplicate ΓÇ£warm band = t < XΓÇ¥ logic in random places.
++
++---
++
++## Sea level authority
++Avoid hardcoding y=63 unless intentionally matching vanilla sea level.
++
++Preferred:
++- `seaLevel = world.getSeaLevel()` (if available at the call site)
++
++If not available, use a single project constant and document it.
++
++---
++
++## Debug output format requirements (when band math is involved)
++If logging band math decisions, include:
++- x, z, absZ
++- radius
++- t
++- zone result
++
++Example:
++- `x=1514 z=-120 absZ=120 radius=10000 t=0.012 zone=EQUATOR` 
++
++All such logs must be gated behind a debug flag.
++
++---
++
++## Forbidden behaviors
++- Hardcoding radius (e.g., `radius=10000`) except in tests/tools
++- Copying threshold numbers into multiple files
++- Mixing X and Z for latitude decisions
++- Using different t formulas for different features
++- ΓÇ£FixingΓÇ¥ bugs by adjusting thresholds without referencing the authority helper
++
++---
++
++## Required assistant output when math is questioned
++When asked ΓÇ£why is zone X here?ΓÇ¥ or ΓÇ£why is guard firing?ΓÇ¥ the assistant must:
++1) show the formula used
++2) show the radius source
++3) show t computation
++4) point to the helper/constant location in code
++5) propose changes only in that single authority location
+diff --git a/.windsurf/workflows/cc.md b/.windsurf/workflows/cc.md
+deleted file mode 100644
+index 4c1c136..0000000
+--- a/.windsurf/workflows/cc.md
++++ /dev/null
+@@ -1,111 +0,0 @@
+-Windsurf ΓÇö implement **`/cc` = ΓÇ£continue conversation / context handoverΓÇ¥**.
+-
+-## What `/cc` means
+-
+-When the user types **`/cc`**, output a **concise, copy-pasteable ΓÇ£FULL CONTEXT HANDOVERΓÇ¥** that they can drop into a brand-new chat so the new assistant can pick up instantly.
+-
+-### Hard requirements
+-
+-1. **Do NOT ask questions first.** Produce the handover immediately.
+-2. **Include the `wsf` convention** in the handover:
+-
+-   * `wsf` = respond in Windsurf step-by-step style (direct instructions, exact paths/commands, ΓÇ£Done whenΓÇªΓÇ¥ checks, rollback steps).
+-3. Keep it **structured and scannable** (YAML preferred).
+-4. Include **only facts known from this chat/project**. If uncertain, label `uncertain:`.
+-
+----
+-
+-## What the `/cc` handover must contain (minimum fields)
+-
+-Use YAML like this:
+-
+-```yaml
+-# /cc ΓÇö Latitude Mod (Minecraft) ΓÇö CONTEXT HANDOVER
+-# NOTE: wsf convention = step-by-step (exact paths/commands + done-when checks + rollback)
+-
+-project:
+-  name_public: "Latitude"
+-  former_name: "Globe"
+-  mc_version: "1.21.x"
+-  loader: "Fabric"
+-  java: "21"
+-  branding_non_negotiable:
+-    - "Latitude" only (never "Globe" or "Latitude (Globe)")
+-    - display credit must be "By Peetsa"
+-
+-repo:
+-  repo_url: "https://github.com/joolbits/latitude.git"
+-  branch_in_play: "<current branch>"
+-  last_known_good_release: "v1.2.2"
+-  savepoints_tags:
+-    - "<tag1>"
+-    - "<tag2>"
+-  working_tree: "clean | dirty"
+-  last_build_status: "BUILD SUCCESSFUL | BUILD FAILED"
+-  last_build_errors:
+-    - "<compiler error lines if any>"
+-
+-current_goals:
+-  - "Deterministic globe-like latitude biome bands"
+-  - "Band-edge blending like v1.2.2 (feathered overlaps, not ruler-straight seams)"
+-  - "No flower_forest in equator"
+-  - "Subpolar is strongly snowy; no plains; rivers should be frozen_river"
+-  - "Polar is treeless; no forest/grove"
+-  - "Mangrove should be lowland + patchy (not mountainous)"
+-
+-current_regressions_observed:
+-  - "<what user is seeing right now>"
+-  - "<e.g., forest/grove in polar, plains/river in subpolar, flower_forest in equator>"
+-  - "<harsh band lines still present>"
+-
+-recent_work_summary:
+-  - "<what changed recently (files + intent)>"
+-  - "<e.g., sampler plumbing, mangrove gating, attempted 1.2.2-style band blending>"
+-
+-critical_guardrails:
+-  - "Do not touch oceans/shore/rivers unless explicitly in task"
+-  - "Do not change terrain/noise unless proven"
+-  - "Checkpoint discipline: tag/commit frequently; rollback if drift"
+-
+-next_actions_priority:
+-  - "<1> Restore correct band-edge blending WITHOUT biome leakage"
+-  - "<2> Re-verify tag pools actually used at runtime (not just printed once)"
+-  - "<3> Verify biome selection path used by land sampling vs cave/structure paths"
+-  - "<4> Run IB + Ginormous new-world validation protocol"
+-validation_protocol:
+-  - "Create NEW worlds: Itty Bitty + Ginormous!"
+-  - "F3 spot checks: equator, subpolar, polar"
+-  - "Collect logs: latest.log filters for LAT_PICK / LAT_BLEND / band/tag prints"
+-
+-wsf_instruction:
+-  - "Speak directly to Windsurf"
+-  - "Numbered steps, exact paths/commands"
+-  - "After each step: Done whenΓÇª"
+-  - "Include rollback commands"
+-```
+-
+----
+-
+-## Extra: what to include when the situation is ΓÇ£things got worseΓÇ¥
+-
+-If the latest change caused obvious regressions (e.g., taiga/meadows in equator, forest/rivers in polar), the `/cc` handover must also include:
+-
+-* `suspected_cause:` (e.g., blend helper now selecting neighbor band incorrectly; tag pools not actually applied in the land path; incorrect registry type usage; cave/structure repick bypassing band filters)
+-* `recommended_rollback:` a safe git revert/restore plan (tag current state first, then reset to last good tag/commit)
+-
+-Example rollback block to include:
+-
+-```yaml
+-recommended_rollback:
+-  - "git status -sb"
+-  - "git tag -a vNEXT-bad-state-before-rollback -m \"Before rollback\""
+-  - "git reset --hard <last_good_commit_or_tag>"
+-```
+-
+----
+-
+-## One-line instruction you should follow when user types `/cc`
+-
+-**Output the YAML handover only** (no commentary, no preamble), unless the user explicitly asks for explanation.
+-
+-ThatΓÇÖs it ΓÇö implement `/cc` as an always-available ΓÇ£export project stateΓÇ¥ command.
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+new file mode 100644
+index 0000000..0e88048
+--- /dev/null
++++ b/CHANGELOG.md
+@@ -0,0 +1,6 @@
++# Changelog
++
++## Latitude 1.2.4 (MC 1.21.11)
++- EW storm intensity ramp tightened (shader-friendly haze works with Sodium + Iris) for a stronger wall near EW borders.
++- Warm-band cold-biome clamp prevents snow/ice leakage in Equator/Tropics/Arid bands.
++- HUD/overlay ordering preserved so warnings stay readable under the haze.
+diff --git a/build.gradle b/build.gradle
+index ebb9b33..f8d4c91 100644
+--- a/build.gradle
++++ b/build.gradle
+@@ -19,6 +19,8 @@ loom {
+         client {
+             vmArg "-Dlatitude.fixSurfaceDripstone=true"
+             vmArg "-Dlatitude.debugEwFog=true"
++            vmArg "-Dlatitude.fogClampIndex=${System.getProperty('latitude.fogClampIndex', '-1')}"
++            vmArg "-Dlatitude.fogClampValue=${System.getProperty('latitude.fogClampValue', '16.0')}"
+         }
+         clientNoSurfaceDripstoneFix {
+             inherit client
+@@ -33,6 +35,7 @@ repositories {
+     maven { url 'https://maven.blamejared.com/' }
+     maven { url 'https://maven.shedaniel.me/' }
+     maven { url 'https://maven.ladysnake.org/releases' }
++    mavenCentral()
+     maven { url 'https://api.modrinth.com/maven' }
+     maven { url 'https://cursemaven.com' }
+     maven { url 'https://jitpack.io' }
+@@ -45,6 +48,12 @@ dependencies {
+ 
+     modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+     
++    // MixinExtras for descriptor-based injections
++    modImplementation "io.github.llamalad7:mixinextras-fabric:0.5.0"
++    include "io.github.llamalad7:mixinextras-fabric:0.5.0"
++    compileOnly "io.github.llamalad7:mixinextras-common:0.5.0"
++    annotationProcessor "io.github.llamalad7:mixinextras-common:0.5.0"
++    
+     // Tectonic/Lithostitched not needed - worldgen data is vendored into globe: namespace
+     // modCompileOnly "maven.modrinth:tectonic:${project.tectonic_version}"
+     // modCompileOnly "maven.modrinth:lithostitched:${project.lithostitched_version}"
+diff --git a/gradle.properties b/gradle.properties
+index 0b98eb7..80791bb 100644
+--- a/gradle.properties
++++ b/gradle.properties
+@@ -11,7 +11,7 @@ yarn_mappings=1.21.11+build.1
+ loader_version=0.17.3
+ 
+ # Mod Properties
+-mod_version=1.2.4
++mod_version=1.2.4+1.21.11
+ maven_group=com.example
+ archives_base_name=latitude
+ 
+diff --git a/release/latitude-1.2.4.jar b/release/latitude-1.2.4.jar
+deleted file mode 100644
+index 96d3e85..0000000
+Binary files a/release/latitude-1.2.4.jar and /dev/null differ
+diff --git a/src/main/java/com/example/globe/GlobeModClient.java b/src/main/java/com/example/globe/GlobeModClient.java
+index 9b40c77..61f7b2e 100644
+--- a/src/main/java/com/example/globe/GlobeModClient.java
++++ b/src/main/java/com/example/globe/GlobeModClient.java
+@@ -87,6 +87,9 @@ public class GlobeModClient implements ClientModInitializer {
+             return;
+         }
+ 
++        // Clamp client-side view distance for EW storms (Sodium-proof fog wall).
++        GlobeClientState.clampEwViewDistance(client);
++
+         // Trust GlobeClientState (server-synced)
+         if (!GlobeClientState.isGlobeWorld()) {
+             return;
+diff --git a/src/main/java/com/example/globe/client/GlobeClientState.java b/src/main/java/com/example/globe/client/GlobeClientState.java
+index 7852086..c5933cc 100644
+--- a/src/main/java/com/example/globe/client/GlobeClientState.java
++++ b/src/main/java/com/example/globe/client/GlobeClientState.java
+@@ -8,13 +8,23 @@ import net.minecraft.entity.player.PlayerEntity;
+ import net.minecraft.util.math.BlockPos;
+ import net.minecraft.util.math.MathHelper;
+ import net.minecraft.world.World;
++import net.minecraft.client.option.SimpleOption;
+ 
+ public final class GlobeClientState {
+-    public static boolean DEBUG_DISABLE_WARNINGS = false;
++    public static final boolean DEBUG_DISABLE_WARNINGS = Boolean.getBoolean("latitude.debugDisableWarnings");
++    public static final boolean DEBUG_DISABLE_FOG = Boolean.getBoolean("latitude.debugDisableFog");
++    // --- TEMP EW DIST DEBUG (remove after) ---
++    private static long globe$ewLastLogMs = 0L;
++    // -----------------------------------------
+     public static final boolean DEBUG_EW_FOG = Boolean.parseBoolean(System.getProperty("latitude.debugEwFog", "false"));
+ 
+     private static long lastEwFogLogTick = Long.MIN_VALUE;
+     private static long lastEwStateLogTick = Long.MIN_VALUE;
++    private static int baseViewDistanceChunks = -1;
++    private static int lastAppliedViewDistanceChunks = -1;
++    private static float currentViewDistanceF = -1f;
++    private static long lastViewDistanceApplyMs = 0L;
++    private static boolean ewClampActive = false;
+ 
+     private static final float EW_FOG_WARN_END = 96.0f;
+     private static final float EW_FOG_DANGER_END = 64.0f;
+@@ -131,6 +141,16 @@ public final class GlobeClientState {
+         GlobeMod.LOGGER.info("[LAT_EW_FOG_STATE] x={} radius={} dist={} stage={} progress={} ewEnd={}", camX, half, dist, stage, progress, ewEnd);
+     }
+ 
++    /**
++     * Clamp client-side view distance during EW storms (Sodium-proof). Only tightens; restores when inactive.
++     */
++    public static void clampEwViewDistance(MinecraftClient client) {
++        // Tripwire: no view-distance mutations allowed. Enable with -Dlatitude.debugEwClampTripwire=true if needed.
++        if (Boolean.getBoolean("latitude.debugEwClampTripwire")) {
++            GlobeMod.LOGGER.error("EW DISTANCE MUTATION PATH HIT");
++        }
++    }
++
+     private static int polarRank(PolarStage stage) {
+         return switch (stage) {
+             case NONE -> 0;
+@@ -156,17 +176,29 @@ public final class GlobeClientState {
+ 
+         var border = world.getWorldBorder();
+ 
+-        double progressX = com.example.globe.util.LatitudeMath.hazardProgress(border, player.getX());
+         double progressZ = com.example.globe.util.LatitudeMath.hazardProgress(border, player.getZ());
+-
+         PolarStage polar = polarStageForProgress(border, player.getZ(), progressZ);
+-        EwStormStage ewVisual = ewStageForProgress(progressX);
+ 
+-        int ewStageIndex = com.example.globe.util.LatitudeMath.hazardStageIndexEW(progressX);
+-        boolean ewTextWarn = ewStageIndex >= 1;
+-        boolean ewTextDanger = ewStageIndex >= 2;
++        double distToBorder = Math.min(Math.abs(player.getX() - border.getBoundWest()), Math.abs(border.getBoundEast() - player.getX()));
++
++        // Debug print every 10s to verify thresholds
++        long now = System.currentTimeMillis();
++        if (now - globe$ewLastLogMs >= 10_000L) {
++            globe$ewLastLogMs = now;
++            System.out.println("[Latitude EW] distToBorder=" + distToBorder
++                    + " x=" + player.getX()
++                    + " west=" + border.getBoundWest()
++                    + " east=" + border.getBoundEast()
++                    + " L1=500 L2=100");
++        }
++
++        boolean ewTextWarn = distToBorder <= 500.0;
++        boolean ewTextDanger = distToBorder <= 100.0;
+         EwStormStage ewTextStage = ewTextDanger ? EwStormStage.LEVEL_2 : (ewTextWarn ? EwStormStage.LEVEL_1 : EwStormStage.NONE);
+ 
++        // Visual stage (fog/particles) mirrors text stage for now
++        EwStormStage ewVisual = ewTextStage;
++
+         int pr = polarRank(polar);
+         int er = ewRank(ewTextStage);
+ 
+@@ -210,46 +242,66 @@ public final class GlobeClientState {
+         return ewStageForProgress(progressX);
+     }
+ 
+-    public static float computeEwFogEnd(double x) {
+-        if (DEBUG_DISABLE_WARNINGS) {
+-            return -1.0f;
++    private static double distanceToEwBorderBlocks(WorldBorder border, double camX) {
++        double center = border.getCenterX();
++        double radius = border.getSize() * 0.5;
++        return Math.max(0.0, radius - Math.abs(camX - center));
++    }
++
++    public static double distanceToEwBorderBlocks(double x) {
++        var client = MinecraftClient.getInstance();
++        if (client == null || client.world == null) return Double.POSITIVE_INFINITY;
++        return distanceToEwBorderBlocks(client.world.getWorldBorder(), x);
++    }
++
++    public static int ewWarningStage(double x) {
++        double d = distanceToEwBorderBlocks(x);
++        int stage;
++        if (d <= 100.0) {
++            stage = 2;
++        } else if (d <= 500.0) {
++            stage = 1;
++        } else {
++            stage = 0;
+         }
+-        MinecraftClient client = MinecraftClient.getInstance();
+-        if (client.player == null || client.world == null) {
+-            return -1.0f;
++
++        if (Boolean.getBoolean("latitude.debugEwWarn")) {
++            System.out.println("[LAT_EW_WARN] stage=" + stage + " d=" + d);
+         }
++        return stage;
++    }
+ 
+-        var border = client.world.getWorldBorder();
+-        double progress = com.example.globe.util.LatitudeMath.hazardProgress(border, x);
++    public static float ewIntensity01(double x) {
++        double d = distanceToEwBorderBlocks(x);
++        if (d > 500.0) return 0.0f;
+ 
+-        double stage1 = com.example.globe.util.LatitudeMath.POLAR_STAGE_1_PROGRESS;
+-        double stage2 = com.example.globe.util.LatitudeMath.POLAR_STAGE_2_PROGRESS;
+-        double stage3 = com.example.globe.util.LatitudeMath.POLAR_STAGE_3_PROGRESS;
+-        double stage4 = com.example.globe.util.LatitudeMath.POLAR_STAGE_LETHAL_PROGRESS;
++        float t = (float) ((500.0 - d) / 500.0); // 0..1
++        if (t < 0f) t = 0f;
++        if (t > 1f) t = 1f;
+ 
+-        if (progress < stage1) {
+-            return -1.0f;
+-        }
++        // steeper right after level-1 threshold
++        return (float) Math.pow(t, 0.55);
++    }
+ 
+-        if (progress < stage2) {
+-            float t = (float) ((progress - stage1) / (stage2 - stage1));
+-            t = t * t;
+-            return MathHelper.lerp(t, EW_FOG_WARN_END, EW_FOG_DANGER_END);
+-        }
++    public static int ewRenderDistanceChunks(int originalChunks, double playerX) {
++        double i = ewIntensity01(playerX);
++        if (i <= 0.0) return originalChunks;
+ 
+-        if (progress < stage3) {
+-            float t = (float) ((progress - stage2) / (stage3 - stage2));
+-            t = t * t;
+-            return MathHelper.lerp(t, EW_FOG_DANGER_END, EW_FOG_SEVERE_END);
+-        }
++        int minChunks = 3;
++        int target = (int) Math.round(originalChunks + (minChunks - originalChunks) * i);
++        return Math.max(minChunks, Math.min(originalChunks, target));
++    }
+ 
+-        if (progress < stage4) {
+-            float t = (float) ((progress - stage3) / (stage4 - stage3));
+-            t = t * t;
+-            return MathHelper.lerp(t, EW_FOG_SEVERE_END, EW_FOG_BLACKOUT_END);
++    public static float computeEwFogEnd(double camX) {
++        if (DEBUG_DISABLE_WARNINGS) {
++            return -1.0f;
+         }
++        float a = ewIntensity01(camX);
++        if (a <= 0.0f) return -1.0f;
+ 
+-        return EW_FOG_BLACKOUT_END;
++        float endFar = 64f;
++        float endNear = 12f;
++        return endFar + (endNear - endFar) * a;
+     }
+ 
+     private static float polarWhiteoutIntensity(ClientWorld world, PlayerEntity player) {
+diff --git a/src/main/java/com/example/globe/debug/WarmSnowTrapStats.java b/src/main/java/com/example/globe/debug/WarmSnowTrapStats.java
+new file mode 100644
+index 0000000..f06802d
+--- /dev/null
++++ b/src/main/java/com/example/globe/debug/WarmSnowTrapStats.java
+@@ -0,0 +1,17 @@
++package com.example.globe.debug;
++
++import net.minecraft.util.math.BlockPos;
++
++public final class WarmSnowTrapStats {
++    public static volatile long calls = 0;
++    public static volatile long snowHits = 0;
++    public static volatile long rewrites = 0;
++
++    public static volatile BlockPos lastPos = null;
++    public static volatile String lastBlock = null;
++    public static volatile double lastT = -1;
++
++    public static final boolean DEBUG_WARM_SNOW_STATS = Boolean.getBoolean("latitude.debugWarmSnowTrap");
++
++    private WarmSnowTrapStats() {}
++}
+diff --git a/src/main/java/com/example/globe/mixin/BiomeNoSnowInWarmBandsMixin.java b/src/main/java/com/example/globe/mixin/BiomeNoSnowInWarmBandsMixin.java
+new file mode 100644
+index 0000000..349a54b
+--- /dev/null
++++ b/src/main/java/com/example/globe/mixin/BiomeNoSnowInWarmBandsMixin.java
+@@ -0,0 +1,36 @@
++package com.example.globe.mixin;
++
++import com.example.globe.GlobeMod;
++import com.example.globe.util.LatitudeMath;
++import net.minecraft.util.math.BlockPos;
++import net.minecraft.world.biome.Biome;
++import org.spongepowered.asm.mixin.Mixin;
++import org.spongepowered.asm.mixin.injection.At;
++import org.spongepowered.asm.mixin.injection.Inject;
++import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
++
++@Mixin(Biome.class)
++public class BiomeNoSnowInWarmBandsMixin {
++
++    private static boolean globe$isWarmBand(int z) {
++        LatitudeMath.LatitudeZone zone = LatitudeMath.zoneForRadius(GlobeMod.BORDER_RADIUS, z);
++        return zone == LatitudeMath.LatitudeZone.EQUATOR
++                || zone == LatitudeMath.LatitudeZone.TROPICAL
++                || zone == LatitudeMath.LatitudeZone.TEMPERATE;
++    }
++
++    @Inject(method = "doesNotSnow", at = @At("HEAD"), cancellable = true)
++    private void globe$blockSnowInWarmBands(BlockPos pos, int seaLevel, CallbackInfoReturnable<Boolean> cir) {
++        if (globe$isWarmBand(pos.getZ())) {
++            cir.setReturnValue(true);
++        }
++    }
++
++    @Inject(method = "getPrecipitation", at = @At("HEAD"), cancellable = true)
++    private void globe$forceRainInWarmBands(BlockPos pos, int seaLevel, CallbackInfoReturnable<Biome.Precipitation> cir) {
++        if (globe$isWarmBand(pos.getZ())) {
++            Biome self = (Biome) (Object) this;
++            cir.setReturnValue(self.hasPrecipitation() ? Biome.Precipitation.RAIN : Biome.Precipitation.NONE);
++        }
++    }
++}
+diff --git a/src/main/java/com/example/globe/mixin/ChunkRegionWarmSnowTrapMixin.java b/src/main/java/com/example/globe/mixin/ChunkRegionWarmSnowTrapMixin.java
+new file mode 100644
+index 0000000..96d24dc
+--- /dev/null
++++ b/src/main/java/com/example/globe/mixin/ChunkRegionWarmSnowTrapMixin.java
+@@ -0,0 +1,68 @@
++package com.example.globe.mixin;
++
++import com.example.globe.GlobeMod;
++import com.example.globe.debug.WarmSnowTrapStats;
++import com.example.globe.util.LatitudeMath;
++import com.example.globe.world.LatitudeBiomes;
++import net.minecraft.block.BlockState;
++import net.minecraft.block.Blocks;
++import net.minecraft.util.math.BlockPos;
++import net.minecraft.world.ChunkRegion;
++import org.spongepowered.asm.mixin.Mixin;
++import org.spongepowered.asm.mixin.Unique;
++import org.spongepowered.asm.mixin.injection.At;
++import org.spongepowered.asm.mixin.injection.ModifyVariable;
++
++/**
++ * Universal warm-band snow/powder_snow guard at the worldgen write API.
++ * Rewrites the BlockState argument of ChunkRegion#setBlockState before
++ * vanilla processes it. No recursion, no extra setBlockState calls.
++ */
++@Mixin(ChunkRegion.class)
++public abstract class ChunkRegionWarmSnowTrapMixin {
++
++    @Unique
++    private static final BlockState STONE = Blocks.STONE.getDefaultState();
++    @Unique
++    private static final BlockState AIR = Blocks.AIR.getDefaultState();
++
++    @ModifyVariable(
++        method = "setBlockState(Lnet/minecraft/util/math/BlockPos;Lnet/minecraft/block/BlockState;II)Z",
++        at = @At("HEAD"),
++        argsOnly = true,
++        index = 2
++    )
++    private BlockState globe$swapWarmBandSnow(BlockState state, BlockPos pos) {
++        WarmSnowTrapStats.calls++;
++        if (state == null) return null;
++
++        if (state.getBlock() != Blocks.POWDER_SNOW
++            && state.getBlock() != Blocks.SNOW_BLOCK
++            && state.getBlock() != Blocks.SNOW) {
++            return state;
++        }
++
++        WarmSnowTrapStats.snowHits++;
++        WarmSnowTrapStats.lastBlock = state.getBlock().toString();
++        WarmSnowTrapStats.lastPos = pos.toImmutable();
++
++        int radius = LatitudeBiomes.getActiveRadiusBlocks();
++        if (radius <= 0) {
++            radius = GlobeMod.BORDER_RADIUS;
++        }
++        double t = Math.abs((double) pos.getZ()) / (double) radius;
++        WarmSnowTrapStats.lastT = t;
++
++        LatitudeMath.LatitudeZone zone = LatitudeMath.zoneForRadius(radius, pos.getZ());
++        boolean warm = zone == LatitudeMath.LatitudeZone.EQUATOR
++                || zone == LatitudeMath.LatitudeZone.TROPICAL
++                || zone == LatitudeMath.LatitudeZone.SUBTROPICAL
++                || zone == LatitudeMath.LatitudeZone.TEMPERATE;
++
++        if (!warm) return state;
++
++        WarmSnowTrapStats.rewrites++;
++        if (state.getBlock() == Blocks.SNOW_BLOCK) return STONE;
++        return AIR;
++    }
++}
+diff --git a/src/main/java/com/example/globe/mixin/FreezeTopLayerFeatureGuardMixin.java b/src/main/java/com/example/globe/mixin/FreezeTopLayerFeatureGuardMixin.java
+new file mode 100644
+index 0000000..f979a11
+--- /dev/null
++++ b/src/main/java/com/example/globe/mixin/FreezeTopLayerFeatureGuardMixin.java
+@@ -0,0 +1,56 @@
++package com.example.globe.mixin;
++
++import com.example.globe.GlobeMod;
++import com.example.globe.util.LatitudeMath;
++import com.example.globe.world.LatitudeBiomes;
++import net.minecraft.util.math.BlockPos;
++import net.minecraft.world.gen.feature.DefaultFeatureConfig;
++import net.minecraft.world.gen.feature.FreezeTopLayerFeature;
++import net.minecraft.world.gen.feature.util.FeatureContext;
++import org.spongepowered.asm.mixin.Mixin;
++import org.spongepowered.asm.mixin.Unique;
++import org.spongepowered.asm.mixin.injection.At;
++import org.spongepowered.asm.mixin.injection.Inject;
++import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
++
++/**
++ * Prevents FreezeTopLayerFeature from placing snow layers and ice in warm
++ * latitude bands. This feature runs AFTER surface building and carving,
++ * which is why earlier guards (ProtoChunk, surface rules) could not catch it.
++ */
++@Mixin(FreezeTopLayerFeature.class)
++public class FreezeTopLayerFeatureGuardMixin {
++
++    @Unique
++    private static final org.slf4j.Logger LOGGER = org.slf4j.LoggerFactory.getLogger("LatitudeSnowGuard");
++
++    @Unique
++    private static final java.util.concurrent.atomic.AtomicInteger GUARD_LOG_COUNT = new java.util.concurrent.atomic.AtomicInteger();
++
++    @Unique
++    private static boolean globe$isWarmBand(int blockZ) {
++        int borderRadius = GlobeMod.BORDER_RADIUS;
++        int activeRadius = LatitudeBiomes.getActiveRadiusBlocks();
++        if (activeRadius > 0) borderRadius = activeRadius;
++        LatitudeMath.LatitudeZone zone = LatitudeMath.zoneForRadius(borderRadius, blockZ);
++        return zone == LatitudeMath.LatitudeZone.EQUATOR
++                || zone == LatitudeMath.LatitudeZone.TROPICAL
++                || zone == LatitudeMath.LatitudeZone.SUBTROPICAL
++                || zone == LatitudeMath.LatitudeZone.TEMPERATE;
++    }
++
++    @Inject(method = "generate", at = @At("HEAD"), cancellable = true)
++    private void globe$blockFreezeInWarmBands(FeatureContext<DefaultFeatureConfig> context, CallbackInfoReturnable<Boolean> cir) {
++        BlockPos origin = context.getOrigin();
++        if (globe$isWarmBand(origin.getZ())) {
++            if (GUARD_LOG_COUNT.incrementAndGet() <= 10) {
++                LOGGER.warn("[FREEZE_GUARD] Blocked FreezeTopLayer at chunk origin x={} z={} band={}",
++                        origin.getX(), origin.getZ(),
++                        LatitudeMath.zoneForRadius(
++                                LatitudeBiomes.getActiveRadiusBlocks() > 0 ? LatitudeBiomes.getActiveRadiusBlocks() : GlobeMod.BORDER_RADIUS,
++                                origin.getZ()));
++            }
++            cir.setReturnValue(false);
++        }
++    }
++}
+diff --git a/src/main/java/com/example/globe/mixin/MixinSanityPing.java b/src/main/java/com/example/globe/mixin/MixinSanityPing.java
+new file mode 100644
+index 0000000..43cdd60
+--- /dev/null
++++ b/src/main/java/com/example/globe/mixin/MixinSanityPing.java
+@@ -0,0 +1,21 @@
++package com.example.globe.mixin;
++
++import com.example.globe.GlobeMod;
++import net.minecraft.server.MinecraftServer;
++import org.spongepowered.asm.mixin.Mixin;
++import org.spongepowered.asm.mixin.injection.At;
++import org.spongepowered.asm.mixin.injection.Inject;
++import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
++
++@Mixin(MinecraftServer.class)
++public class MixinSanityPing {
++    private static boolean logged = false;
++
++    @Inject(method = "tick", at = @At("HEAD"))
++    private void latitude$sanityPing(CallbackInfo ci) {
++        if (!logged) {
++            logged = true;
++            GlobeMod.LOGGER.info("[MIXIN_PING] MinecraftServer.tick reached");
++        }
++    }
++}
+diff --git a/src/main/java/com/example/globe/mixin/ProtoChunkSnowBlockGuardMixin.java b/src/main/java/com/example/globe/mixin/ProtoChunkSnowBlockGuardMixin.java
+new file mode 100644
+index 0000000..0ed7469
+--- /dev/null
++++ b/src/main/java/com/example/globe/mixin/ProtoChunkSnowBlockGuardMixin.java
+@@ -0,0 +1,87 @@
++package com.example.globe.mixin;
++
++import com.example.globe.GlobeMod;
++import com.example.globe.util.LatitudeMath;
++import com.example.globe.world.LatitudeBiomes;
++import net.minecraft.block.BlockState;
++import net.minecraft.block.Blocks;
++import net.minecraft.util.math.BlockPos;
++import net.minecraft.world.chunk.ProtoChunk;
++import org.spongepowered.asm.mixin.Mixin;
++import org.spongepowered.asm.mixin.Unique;
++import org.spongepowered.asm.mixin.injection.At;
++import org.spongepowered.asm.mixin.injection.Inject;
++import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
++
++/**
++ * Hard guard: prevent snow_block and snow from being written into ProtoChunks
++ * (worldgen only) in warm latitude bands. This is the definitive fix for
++ * "snow at cave mouths in jungle" ΓÇö it catches ALL sources of snow placement
++ * during world generation regardless of biome container state.
++ */
++@Mixin(ProtoChunk.class)
++public class ProtoChunkSnowBlockGuardMixin {
++
++    @Unique
++    private static final org.slf4j.Logger LOGGER = org.slf4j.LoggerFactory.getLogger("LatitudeSnowGuard");
++
++    @Unique
++    private static final java.util.concurrent.atomic.AtomicInteger GUARD_LOG_COUNT = new java.util.concurrent.atomic.AtomicInteger();
++
++    @Unique
++    private static final BlockState STONE_STATE = Blocks.STONE.getDefaultState();
++
++    @Unique
++    private static final BlockState DIRT_STATE = Blocks.DIRT.getDefaultState();
++
++    @Unique
++    private static final BlockState AIR_STATE = Blocks.AIR.getDefaultState();
++
++    @Unique
++    private static final boolean DEBUG_SNOW_GUARD = Boolean.getBoolean("latitude.debugSnowGuard");
++
++    @Unique
++    private static boolean globe$isWarmBand(int blockZ) {
++        int borderRadius = GlobeMod.BORDER_RADIUS;
++        int activeRadius = LatitudeBiomes.getActiveRadiusBlocks();
++        if (activeRadius > 0) borderRadius = activeRadius;
++        LatitudeMath.LatitudeZone zone = LatitudeMath.zoneForRadius(borderRadius, blockZ);
++        return zone == LatitudeMath.LatitudeZone.EQUATOR
++                || zone == LatitudeMath.LatitudeZone.TROPICAL
++                || zone == LatitudeMath.LatitudeZone.SUBTROPICAL
++                || zone == LatitudeMath.LatitudeZone.TEMPERATE;
++    }
++
++    @Inject(method = "setBlockState", at = @At("HEAD"), cancellable = true)
++    private void globe$blockSnowInWarmBands(BlockPos pos, BlockState state, int flags, CallbackInfoReturnable<BlockState> cir) {
++        if (state == null || !globe$isWarmBand(pos.getZ())) return;
++
++        boolean isSnowBlock = state.isOf(Blocks.SNOW_BLOCK);
++        boolean isSnowLayer = state.isOf(Blocks.SNOW);
++        boolean isPowder = state.isOf(Blocks.POWDER_SNOW);
++        if (!(isSnowBlock || isSnowLayer || isPowder)) return;
++
++        BlockState replacement;
++        if (isSnowBlock) {
++            // Cosmetic: dirt on hillsides (above sea level), stone underground
++            replacement = pos.getY() >= 63 ? DIRT_STATE : STONE_STATE;
++        } else {
++            replacement = AIR_STATE;
++        }
++
++        if (DEBUG_SNOW_GUARD) {
++            int count = GUARD_LOG_COUNT.incrementAndGet();
++            if (count <= 25) {
++                LOGGER.warn("[SNOWBLOCK_GUARD] x={} y={} z={} band={} replace {} -> {}",
++                        pos.getX(), pos.getY(), pos.getZ(),
++                        LatitudeMath.zoneForRadius(
++                                LatitudeBiomes.getActiveRadiusBlocks() > 0 ? LatitudeBiomes.getActiveRadiusBlocks() : GlobeMod.BORDER_RADIUS,
++                                pos.getZ()),
++                        state.getBlock(),
++                        replacement.getBlock());
++            }
++        }
++
++        cir.setReturnValue(replacement);
++    }
++}
+diff --git a/src/main/java/com/example/globe/mixin/client/BackgroundRendererFogMixin.java b/src/main/java/com/example/globe/mixin/client/BackgroundRendererFogMixin.java
+index 410a189..955c10f 100644
+--- a/src/main/java/com/example/globe/mixin/client/BackgroundRendererFogMixin.java
++++ b/src/main/java/com/example/globe/mixin/client/BackgroundRendererFogMixin.java
+@@ -1,6 +1,6 @@
+ package com.example.globe.mixin.client;
+ 
+-final class BackgroundRendererFogMixin {
++public final class BackgroundRendererFogMixin {
+     private BackgroundRendererFogMixin() {
+     }
+ }
+diff --git a/src/main/java/com/example/globe/mixin/client/FogRendererEwMixin.java b/src/main/java/com/example/globe/mixin/client/FogRendererEwMixin.java
+new file mode 100644
+index 0000000..7a02306
+--- /dev/null
++++ b/src/main/java/com/example/globe/mixin/client/FogRendererEwMixin.java
+@@ -0,0 +1,52 @@
++package com.example.globe.mixin.client;
++
++import com.example.globe.client.GlobeClientState;
++import net.minecraft.client.MinecraftClient;
++import net.minecraft.client.render.fog.FogRenderer;
++import org.spongepowered.asm.mixin.Mixin;
++import org.spongepowered.asm.mixin.Unique;
++import org.spongepowered.asm.mixin.injection.At;
++import org.spongepowered.asm.mixin.injection.ModifyVariable;
++
++@Mixin(FogRenderer.class)
++public class FogRendererEwMixin {
++
++    // Primary attempt: fogStart ordinal=0, fogEnd ordinal=1.
++    @ModifyVariable(method = "applyFog", at = @At("STORE"), ordinal = 0, require = 0)
++    private static float latitude$ewFogStart(float fogStart) {
++        return latitude$tightenStart(fogStart);
++    }
++
++    @ModifyVariable(method = "applyFog", at = @At("STORE"), ordinal = 1, require = 0)
++    private static float latitude$ewFogEnd(float fogEnd) {
++        return latitude$tightenEnd(fogEnd);
++    }
++
++    @Unique
++    private static float latitude$tightenEnd(float currentEnd) {
++        MinecraftClient mc = MinecraftClient.getInstance();
++        if (mc == null || mc.world == null || mc.player == null) return currentEnd;
++
++        double x = mc.player.getX();
++        double i = GlobeClientState.ewIntensity01(x);
++        if (i <= 0.0) return currentEnd;
++
++        double desiredEnd = GlobeClientState.computeEwFogEnd(x);
++        if (desiredEnd < 0.0) return currentEnd;
++
++        return (float) Math.min(currentEnd, desiredEnd);
++    }
++
++    @Unique
++    private static float latitude$tightenStart(float currentStart) {
++        MinecraftClient mc = MinecraftClient.getInstance();
++        if (mc == null || mc.world == null || mc.player == null) return currentStart;
++
++        double x = mc.player.getX();
++        double i = GlobeClientState.ewIntensity01(x);
++        if (i <= 0.0) return currentStart;
++
++        // Mild push so start moves forward with intensity; end tightening does the heavy lift.
++        return (float) (currentStart + (currentStart * (i * 0.25)));
++    }
++}
+diff --git a/src/main/java/com/example/globe/mixin/client/FogRendererMixin.java b/src/main/java/com/example/globe/mixin/client/FogRendererMixin.java
+index 844e0b6..556e384 100644
+--- a/src/main/java/com/example/globe/mixin/client/FogRendererMixin.java
++++ b/src/main/java/com/example/globe/mixin/client/FogRendererMixin.java
+@@ -3,6 +3,7 @@ package com.example.globe.mixin.client;
+ import com.example.globe.GlobeMod;
+ import com.example.globe.client.GlobeClientState;
+ import net.fabricmc.loader.api.FabricLoader;
++import net.minecraft.client.MinecraftClient;
+ import net.minecraft.client.render.Camera;
+ import net.minecraft.client.render.RenderTickCounter;
+ import net.minecraft.client.render.fog.FogRenderer;
+@@ -64,7 +65,11 @@ public class FogRendererMixin {
+ 
+     @ModifyArgs(
+             method = "applyFog",
+-            at = @At(value = "INVOKE", target = "Lnet/minecraft/client/render/fog/FogRenderer;applyFog(Ljava/nio/ByteBuffer;ILorg/joml/Vector4f;FFFFFF)V")
++            at = @At(
++                    value = "INVOKE",
++                    target = "Lnet/minecraft/client/render/fog/FogRenderer;method_71110(Ljava/nio/ByteBuffer;ILorg/joml/Vector4f;FFFFFF)V"
++            ),
++            require = 0
+     )
+     private void latitude$modifyFogArgs(Args args) {
+         boolean globe = TL_GLOBE.get();
+@@ -73,12 +78,32 @@ public class FogRendererMixin {
+             return;
+         }
+ 
++        // HARD PROOF MODE: force a wall if this hook fires.
++        float proofEnd = 12.0f;
++
++        for (int i = 3; i <= 8; i++) {
++            float v = args.get(i);
++            if (v > proofEnd) args.set(i, proofEnd);
++        }
++
++        long now = System.currentTimeMillis();
++        if (now - lastModifyMs >= 1000L) {
++            lastModifyMs = now;
++            double camX = -9999.0;
++            MinecraftClient mc = MinecraftClient.getInstance();
++            if (mc != null && mc.player != null) {
++                camX = mc.player.getX();
++            }
++            GlobeMod.LOGGER.info("[LAT_EW_FOG_PROOF] clamp fired: camX={} ewEnd={} forcedEnd={}", camX, ewEnd, proofEnd);
++        }
++
+         float environmentalStart = args.get(3);
+         float environmentalEnd = args.get(4);
+         float renderStart = args.get(5);
+         float renderEnd = args.get(6);
+ 
+-        float finalEnd = Math.min(Math.min(environmentalEnd, renderEnd), ewEnd);
++        float clampedEwEnd = Math.max(8.0f, ewEnd);
++        float finalEnd = Math.min(Math.min(environmentalEnd, renderEnd), clampedEwEnd);
+         args.set(3, 0.0f);
+         args.set(4, finalEnd);
+         args.set(5, 0.0f);
+@@ -88,8 +113,8 @@ public class FogRendererMixin {
+             return;
+         }
+ 
+-        long now = System.currentTimeMillis();
+-        if (!shouldLog1Hz(now, false)) {
++        long logNow = System.currentTimeMillis();
++        if (!shouldLog1Hz(logNow, false)) {
+             return;
+         }
+ 
+diff --git a/src/main/java/com/example/globe/mixin/client/FogUniformPackerClampMixin.java b/src/main/java/com/example/globe/mixin/client/FogUniformPackerClampMixin.java
+new file mode 100644
+index 0000000..106a5f8
+--- /dev/null
++++ b/src/main/java/com/example/globe/mixin/client/FogUniformPackerClampMixin.java
+@@ -0,0 +1,52 @@
++package com.example.globe.mixin.client;
++
++import net.fabricmc.loader.api.FabricLoader;
++import org.spongepowered.asm.mixin.Mixin;
++import org.spongepowered.asm.mixin.injection.At;
++import org.spongepowered.asm.mixin.injection.ModifyArgs;
++import org.spongepowered.asm.mixin.injection.invoke.arg.Args;
++
++/**
++ * Clamp fog uniform packer floats to identify the effective fog-end slot.
++ * Controlled via -Dlatitude.fogClampIndex=N (0-5) and -Dlatitude.fogClampValue=16.0
++ * Defaults to no clamp when property is absent.
++ */
++@Mixin(net.minecraft.client.render.fog.FogRenderer.class)
++public class FogUniformPackerClampMixin {
++
++    private static final int CLAMP_INDEX = Integer.getInteger("latitude.fogClampIndex", -1);
++    private static final float CLAMP_VALUE = Float.parseFloat(System.getProperty("latitude.fogClampValue", "16.0"));
++    private static long lastLogMs = 0L;
++
++    @ModifyArgs(
++            method = "applyFog",
++            at = @At(
++                    value = "INVOKE",
++                    target = "Lnet/minecraft/client/render/fog/FogRenderer;method_71110(Ljava/nio/ByteBuffer;ILorg/joml/Vector4f;FFFFFF)V"
++            ),
++            require = 0
++    )
++    private void globe$clampFogArgs(Args args) {
++        if (CLAMP_INDEX < 0 || CLAMP_INDEX > 5) return;
++        if (!FabricLoader.getInstance().isModLoaded("iris")) return;
++
++        // args indices: 0=ByteBuffer buf, 1=int off, 2=Vector4f color, 3..8 = floats
++        int floatSlot = 3 + CLAMP_INDEX;
++        float original = args.<Float>get(floatSlot);
++        float clamped = Math.min(original, CLAMP_VALUE);
++        args.set(floatSlot, clamped);
++
++        long now = System.currentTimeMillis();
++        if (now - lastLogMs >= 1000L) {
++            lastLogMs = now;
++            float f0 = args.<Float>get(3);
++            float f1 = args.<Float>get(4);
++            float f2 = args.<Float>get(5);
++            float f3 = args.<Float>get(6);
++            float f4 = args.<Float>get(7);
++            float f5 = args.<Float>get(8);
++            System.out.println("[Latitude FOG CLAMP] idx=" + CLAMP_INDEX + " val=" + CLAMP_VALUE
++                    + " f0=" + f0 + " f1=" + f1 + " f2=" + f2 + " f3=" + f3 + " f4=" + f4 + " f5=" + f5);
++        }
++    }
++}
+diff --git a/src/main/java/com/example/globe/mixin/client/FogUniformPackerProbeMixin.java b/src/main/java/com/example/globe/mixin/client/FogUniformPackerProbeMixin.java
+new file mode 100644
+index 0000000..4c734ed
+--- /dev/null
++++ b/src/main/java/com/example/globe/mixin/client/FogUniformPackerProbeMixin.java
+@@ -0,0 +1,54 @@
++package com.example.globe.mixin.client;
++
++import net.fabricmc.loader.api.FabricLoader;
++import org.joml.Vector4f;
++import org.spongepowered.asm.mixin.Mixin;
++import org.spongepowered.asm.mixin.injection.At;
++import org.spongepowered.asm.mixin.injection.Inject;
++import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
++
++import java.nio.ByteBuffer;
++
++/**
++ * Temporary probe to locate the fog-end float inside FogRenderer's uniform packer.
++ * Adjust PROBE_ORDINAL 0..5 until fog end visibly collapses under Sodium+Iris.
++ */
++@Mixin(net.minecraft.client.render.fog.FogRenderer.class)
++public class FogUniformPackerProbeMixin {
++
++    static {
++        System.out.println("[Latitude] Fog probe mixin class loaded");
++    }
++
++    // Toggle during probing
++    private static final boolean ENABLE_PROBE = true;
++    private static long globe$lastLogMs = 0L;
++
++    private static void globe$logOncePerSecond(String msg) {
++        long now = System.currentTimeMillis();
++        if (now - globe$lastLogMs >= 1000L) {
++            globe$lastLogMs = now;
++            System.out.println(msg);
++        }
++    }
++
++    @Inject(method = "method_71110", at = @At("HEAD"), remap = false)
++    private void globe$fogPackerProbe(ByteBuffer buf, int off, Vector4f color,
++                                      float f0, float f1, float f2, float f3, float f4, float f5,
++                                      CallbackInfo ci) {
++        if (!ENABLE_PROBE) return;
++        if (!FabricLoader.getInstance().isModLoaded("iris")) return;
++
++        long now = System.currentTimeMillis();
++        if (now - globe$lastLogMs >= 1000L) {
++            globe$lastLogMs = now;
++            System.out.println("[Latitude FOG PROBE] f0=" + f0 + " f1=" + f1 + " f2=" + f2
++                    + " f3=" + f3 + " f4=" + f4 + " f5=" + f5);
++        }
++    }
++
++    @Inject(method = "<init>", at = @At("TAIL"))
++    private void globe$fogCtor(CallbackInfo ci) {
++        System.out.println("[Latitude] FogRenderer ctor hook hit");
++    }
++}
+diff --git a/src/main/java/com/example/globe/mixin/client/compat/sodium/RenderSectionManagerVisibilityMixin.java b/src/main/java/com/example/globe/mixin/client/compat/sodium/RenderSectionManagerVisibilityMixin.java
+new file mode 100644
+index 0000000..857ab79
+--- /dev/null
++++ b/src/main/java/com/example/globe/mixin/client/compat/sodium/RenderSectionManagerVisibilityMixin.java
+@@ -0,0 +1,59 @@
++package com.example.globe.mixin.client.compat.sodium;
++
++import com.example.globe.client.GlobeClientState;
++import net.fabricmc.loader.api.FabricLoader;
++import net.minecraft.client.MinecraftClient;
++import org.spongepowered.asm.mixin.Mixin;
++import org.spongepowered.asm.mixin.Pseudo;
++import org.spongepowered.asm.mixin.Unique;
++import org.spongepowered.asm.mixin.injection.At;
++import org.spongepowered.asm.mixin.injection.Inject;
++import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
++
++@Pseudo
++@Mixin(targets = "net.caffeinemc.mods.sodium.client.render.chunk.RenderSectionManager", remap = false)
++public class RenderSectionManagerVisibilityMixin {
++
++    @Unique private static long latitude$lastLogMs = 0L;
++
++    @Inject(method = "isSectionVisible(III)Z", at = @At("RETURN"), cancellable = true)
++    private void globe$ewCullSections(int sectionX, int sectionY, int sectionZ, CallbackInfoReturnable<Boolean> cir) {
++        if (!cir.getReturnValueZ()) return;
++        if (!FabricLoader.getInstance().isModLoaded("sodium")) return;
++
++        MinecraftClient mc = MinecraftClient.getInstance();
++        if (mc == null || mc.world == null || mc.player == null) return;
++
++        double sectionCenterX = (sectionX << 4) + 8.0;
++        double sectionCenterZ = (sectionZ << 4) + 8.0;
++
++        int baseChunks;
++        try {
++            baseChunks = mc.options.getViewDistance().getValue();
++        } catch (Throwable t) {
++            return;
++        }
++
++        double px = mc.player.getX();
++        double pz = mc.player.getZ();
++        int cappedChunks = GlobeClientState.ewRenderDistanceChunks(baseChunks, px);
++        int cappedBlocks = Math.max(0, cappedChunks * 16);
++
++        double dx = sectionCenterX - px;
++        double dz = sectionCenterZ - pz;
++        double distSq = (dx * dx) + (dz * dz);
++        double capSq = (double) cappedBlocks * (double) cappedBlocks;
++
++        if (distSq > capSq) {
++            cir.setReturnValue(false);
++        }
++
++        long now = System.currentTimeMillis();
++        if (now - latitude$lastLogMs >= 1000L) {
++            latitude$lastLogMs = now;
++            double intensity = GlobeClientState.ewIntensity01(px);
++            System.out.println("[Latitude] EW cull base=" + baseChunks + " capped=" + cappedChunks
++                    + " blocks=" + cappedBlocks + " i=" + intensity + " px=" + px + " pz=" + pz);
++        }
++    }
++}
+diff --git a/src/main/resources/fabric.mod.json b/src/main/resources/fabric.mod.json
+index a218de3..9e44d13 100644
+--- a/src/main/resources/fabric.mod.json
++++ b/src/main/resources/fabric.mod.json
+@@ -26,7 +26,7 @@
+   ],
+   "depends": {
+     "fabricloader": ">=0.17.3",
+-    "minecraft": "1.21.11",
++    "minecraft": ">=1.21 <=1.21.11",
+     "java": ">=21",
+     "fabric-api": "*"
+   },
+diff --git a/src/main/resources/globe.mixins.json b/src/main/resources/globe.mixins.json
+index 6044507..99b4d65 100644
+--- a/src/main/resources/globe.mixins.json
++++ b/src/main/resources/globe.mixins.json
+@@ -7,19 +7,28 @@
+   "mixins": [
+     "BiomeSourceAccessor",
+     "ChunkGeneratorBiomeSourceMixin",
++    "BiomeNoSnowInWarmBandsMixin",
+     "NoiseChunkGeneratorAccessor",
+     "ChunkGeneratorPopulateBiomesMixin",
+     "NoiseChunkGeneratorCarveMixin",
+-    "SurfaceDripstoneLawnmowerMixin"
++    "SurfaceDripstoneLawnmowerMixin",
++    "ProtoChunkSnowBlockGuardMixin",
++    "FreezeTopLayerFeatureGuardMixin",
++    "MixinSanityPing",
++    "ChunkRegionWarmSnowTrapMixin"
+   ],
+   "client": [
+     "client.FogRendererMixin",
++    "client.EwStormWallRendererMixin",
++    "client.WorldRendererWorldBorderMixin",
+     "client.CreateWorldScreenLatitudeToggleMixin",
+     "client.CreateWorldScreenSpawnZoneMixin",
+     "client.CreateWorldScreenMixin",
+     "client.WorldCreatorMixin",
+     "client.InGameHudMixin",
+-    "HandledScreenCompassToggleMixin"
++    "HandledScreenCompassToggleMixin",
++    "client.FogRendererEwMixin",
++    "client.compat.sodium.RenderSectionManagerVisibilityMixin"
+   ],
+   "injectors": {
+     "defaultRequire": 1
