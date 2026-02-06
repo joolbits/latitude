@@ -220,7 +220,7 @@ public final class LatitudeBiomes {
     }
 
     private static final Logger LOGGER = LoggerFactory.getLogger("LatitudeBiomes");
-    private static final boolean DEBUG_BIOMES = true;
+    private static final boolean DEBUG_BIOMES = false;
     private static final boolean DEBUG_BLEND = Boolean.getBoolean("latitude.debugBlend");
     private static final int DEBUG_LIMIT = Integer.getInteger("latitude.debugBiomes.limit", 200);
     private static volatile long WORLD_SEED = 0L;
@@ -563,13 +563,14 @@ public final class LatitudeBiomes {
             safe = repickIfSurfaceCave(biomeRegistry, base, sanitized, blockX, blockZ, t, landBandIndex);
             out = applyLandOverrides(biomeRegistry, safe, blockX, blockZ, landBandIndex);
         }
-        if (landBandIndex == BAND_EQUATOR || landBandIndex == BAND_TROPICAL) {
+        if (landBandIndex < BAND_SUBPOLAR) {
             if (isColdBiome(out)) {
                 out = pickWarmFallback(biomeRegistry, landBandIndex);
             }
         }
         out = enforceSnowyLatitudeRamp(biomeRegistry, out, base, blockX, blockZ, effectiveRadius, landBandIndex);
         out = clampWarmInColdZone(biomeRegistry, base, out, zone, blockX, blockZ);
+        out = finalWarmBandClamp(biomeRegistry, out, landBandIndex, blockX, blockZ);
         debugPick(blockX, blockZ, effectiveRadius, t, zone, base, out, false, out != sanitized, mangroveDecision);
         return out;
     }
@@ -693,13 +694,14 @@ public final class LatitudeBiomes {
             safe = repickIfSurfaceCave(biomePool, base, sanitized, blockX, blockZ, t, landBandIndex);
             out = applyLandOverrides(biomePool, safe, blockX, blockZ, landBandIndex);
         }
-        if (landBandIndex == BAND_EQUATOR || landBandIndex == BAND_TROPICAL) {
+        if (landBandIndex < BAND_SUBPOLAR) {
             if (isColdBiome(out)) {
                 out = pickWarmFallback(biomePool, landBandIndex);
             }
         }
         out = enforceSnowyLatitudeRamp(biomePool, out, base, blockX, blockZ, effectiveRadius, landBandIndex);
         out = clampWarmInColdZone(biomePool, base, out, zone, blockX, blockZ);
+        out = finalWarmBandClamp(biomePool, out, landBandIndex, blockX, blockZ);
         debugPick(blockX, blockZ, effectiveRadius, t, zone, base, out, false, out != sanitized, mangroveDecision);
         return out;
     }
@@ -1375,7 +1377,32 @@ public final class LatitudeBiomes {
             return false;
         }
         String path = entry.getKey().map(key -> key.getValue().getPath()).orElse("");
-        return path.contains("snow") || path.contains("ice") || path.contains("frozen");
+        return path.contains("snow") || path.contains("ice") || path.contains("frozen")
+                || path.equals("grove")
+                || path.equals("taiga")
+                || path.equals("old_growth_pine_taiga")
+                || path.equals("old_growth_spruce_taiga")
+                || path.equals("jagged_peaks")
+                || path.equals("stony_peaks")
+                || path.startsWith("windswept_");
+    }
+
+    private static RegistryEntry<Biome> finalWarmBandClamp(Registry<Biome> biomes, RegistryEntry<Biome> pick, int bandIndex, int blockX, int blockZ) {
+        if (bandIndex >= BAND_SUBPOLAR) return pick;
+        if (!isColdBiome(pick)) return pick;
+        String path = pick.getKey().map(k -> k.getValue().getPath()).orElse("");
+        return switch (path) {
+            case "frozen_peaks", "jagged_peaks", "snowy_slopes" -> biome(biomes, "minecraft:stony_peaks");
+            case "grove" -> biome(biomes, "minecraft:meadow");
+            case "ice_spikes" -> biome(biomes, "minecraft:windswept_gravelly_hills");
+            default -> pickWarmFallback(biomes, bandIndex);
+        };
+    }
+
+    private static RegistryEntry<Biome> finalWarmBandClamp(Collection<RegistryEntry<Biome>> biomes, RegistryEntry<Biome> pick, int bandIndex, int blockX, int blockZ) {
+        if (bandIndex >= BAND_SUBPOLAR) return pick;
+        if (!isColdBiome(pick)) return pick;
+        return pickWarmFallback(biomes, bandIndex);
     }
 
     private static boolean isSnowyVariant(RegistryEntry<Biome> entry) {
