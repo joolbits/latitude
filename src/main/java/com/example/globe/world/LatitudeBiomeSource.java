@@ -1,11 +1,6 @@
 package com.example.globe.world;
 
 import com.example.globe.mixin.BiomeSourceAccessor;
-import com.mojang.serialization.DataResult;
-import com.mojang.serialization.DynamicOps;
-import com.mojang.serialization.MapCodec;
-import com.mojang.serialization.MapLike;
-import com.mojang.serialization.RecordBuilder;
 import net.minecraft.registry.entry.RegistryEntry;
 import net.minecraft.world.biome.Biome;
 import net.minecraft.world.biome.source.BiomeSource;
@@ -30,26 +25,10 @@ public final class LatitudeBiomeSource extends BiomeSource {
     }
 
     @Override
-    protected com.mojang.serialization.MapCodec<? extends BiomeSource> getCodec() {
-        @SuppressWarnings("unchecked")
-        MapCodec<BiomeSource> delegate = (MapCodec<BiomeSource>) ((BiomeSourceAccessor) original).globe$invokeGetCodec();
-        return new MapCodec<>() {
-            @Override
-            public <T> RecordBuilder<T> encode(BiomeSource input, DynamicOps<T> ops, RecordBuilder<T> prefix) {
-                BiomeSource toEncode = input instanceof LatitudeBiomeSource wrapper ? wrapper.original : input;
-                return delegate.encode(toEncode, ops, prefix);
-            }
-
-            @Override
-            public <T> DataResult<BiomeSource> decode(DynamicOps<T> ops, MapLike<T> input) {
-                return delegate.decode(ops, input);
-            }
-
-            @Override
-            public <T> java.util.stream.Stream<T> keys(DynamicOps<T> ops) {
-                return delegate.keys(ops);
-            }
-        };
+    protected com.mojang.serialization.Codec<? extends BiomeSource> getCodec() {
+        // In 1.20.1, BiomeSource.getCodec() returns Codec, not MapCodec.
+        // Delegate to the original source's codec so serialization round-trips correctly.
+        return ((BiomeSourceAccessor) original).globe$invokeGetCodec();
     }
 
     @Override

@@ -27,7 +27,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(CreateWorldScreen.class)
 public abstract class CreateWorldScreenSpawnZoneMixin extends Screen {
     @Unique
-    private static final Identifier GLOBE_WORLD_PRESET_ID = Identifier.of("globe", "globe");
+    private static final Identifier GLOBE_WORLD_PRESET_ID = new Identifier("globe", "globe");
 
     @Unique
     private static final String[] GLOBE_ZONES = {

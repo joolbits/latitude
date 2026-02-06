@@ -11,8 +11,6 @@ import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.server.command.CommandManager;
 import net.minecraft.entity.effect.StatusEffectInstance;
 import net.minecraft.entity.effect.StatusEffects;
-import net.minecraft.component.DataComponentTypes;
-import net.minecraft.component.type.BundleContentsComponent;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
 import net.minecraft.registry.RegistryKey;
@@ -27,8 +25,6 @@ import net.minecraft.world.border.WorldBorder;
 import net.minecraft.world.gen.chunk.ChunkGenerator;
 import net.minecraft.world.gen.chunk.ChunkGeneratorSettings;
 import net.minecraft.world.gen.chunk.NoiseChunkGenerator;
-import net.minecraft.world.WorldProperties;
-import net.minecraft.network.packet.s2c.play.PositionFlag;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.random.Random;
 import org.slf4j.Logger;
@@ -36,7 +32,6 @@ import org.slf4j.LoggerFactory;
 
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 
-import java.util.EnumSet;
 
 public class GlobeMod implements ModInitializer {
     public static final String MOD_ID = "globe";
@@ -71,13 +66,13 @@ public class GlobeMod implements ModInitializer {
     private static final boolean ENABLE_POLAR_SCRUBBER = false;
 
 
-    private static final Identifier GLOBE_SETTINGS_ID = Identifier.of(MOD_ID, "overworld");
-    private static final Identifier GLOBE_SETTINGS_XSMALL_ID = Identifier.of(MOD_ID, "overworld_xsmall");
-    private static final Identifier GLOBE_SETTINGS_SMALL_ID = Identifier.of(MOD_ID, "overworld_small");
-    private static final Identifier GLOBE_SETTINGS_REGULAR_ID = Identifier.of(MOD_ID, "overworld_regular");
+    private static final Identifier GLOBE_SETTINGS_ID = new Identifier(MOD_ID, "overworld");
+    private static final Identifier GLOBE_SETTINGS_XSMALL_ID = new Identifier(MOD_ID, "overworld_xsmall");
+    private static final Identifier GLOBE_SETTINGS_SMALL_ID = new Identifier(MOD_ID, "overworld_small");
+    private static final Identifier GLOBE_SETTINGS_REGULAR_ID = new Identifier(MOD_ID, "overworld_regular");
 
-    private static final Identifier GLOBE_SETTINGS_LARGE_ID = Identifier.of(MOD_ID, "overworld_large");
-    private static final Identifier GLOBE_SETTINGS_MASSIVE_ID = Identifier.of(MOD_ID, "overworld_massive");
+    private static final Identifier GLOBE_SETTINGS_LARGE_ID = new Identifier(MOD_ID, "overworld_large");
+    private static final Identifier GLOBE_SETTINGS_MASSIVE_ID = new Identifier(MOD_ID, "overworld_massive");
 
     private static final RegistryKey<ChunkGeneratorSettings> GLOBE_SETTINGS_KEY = RegistryKey.of(net.minecraft.registry.RegistryKeys.CHUNK_GENERATOR_SETTINGS, GLOBE_SETTINGS_ID);
     private static final RegistryKey<ChunkGeneratorSettings> GLOBE_SETTINGS_XSMALL_KEY = RegistryKey.of(net.minecraft.registry.RegistryKeys.CHUNK_GENERATOR_SETTINGS, GLOBE_SETTINGS_XSMALL_ID);
@@ -121,7 +116,7 @@ public class GlobeMod implements ModInitializer {
 
             boolean isGlobe = isGlobeOverworld(overworld);
             LOGGER.info("JOIN: player={}, isGlobeOverworld={}", handler.player.getName().getString(), isGlobe);
-            ServerPlayNetworking.send(handler.player, new GlobeNet.GlobeStatePayload(isGlobe));
+            ServerPlayNetworking.send(handler.player, GlobeNet.S2C_GLOBE_STATE, new GlobeNet.GlobeStatePayload(isGlobe).write());
 
             String pendingZone = server.isDedicated() ? null : GlobePending.consume();
 
@@ -146,13 +141,14 @@ public class GlobeMod implements ModInitializer {
 
                 if (!handler.player.getCommandTags().contains(SPAWN_CHOSEN_TAG)) {
                     LOGGER.info("Sending spawn picker open to player={}", handler.player.getName().getString());
-                    ServerPlayNetworking.send(handler.player, new GlobeNet.OpenSpawnPickerPayload(true));
+                    ServerPlayNetworking.send(handler.player, GlobeNet.S2C_OPEN_SPAWN_PICKER, new GlobeNet.OpenSpawnPickerPayload(true).write());
                 }
             }
         });
 
-        ServerPlayNetworking.registerGlobalReceiver(GlobeNet.SetSpawnPickerPayload.ID, (payload, context) -> {
-            context.server().execute(() -> applySpawnChoice(context.player(), payload.zoneId()));
+        ServerPlayNetworking.registerGlobalReceiver(GlobeNet.C2S_SET_SPAWN_PICKER, (server, player, handler2, buf, responseSender) -> {
+            GlobeNet.SetSpawnPickerPayload payload = GlobeNet.SetSpawnPickerPayload.read(buf);
+            server.execute(() -> applySpawnChoice(player, payload.zoneId()));
         });
 
         CommandRegistrationCallback.EVENT.register(LatitudeDevCommands::register);
@@ -499,18 +495,7 @@ public class GlobeMod implements ModInitializer {
     private static boolean containsCompass(ItemStack stack, int depth) {
         if (stack == null || stack.isEmpty()) return false;
         if (stack.isOf(Items.COMPASS)) return true;
-
-        if (depth >= 6) return false;
-
-        if (stack.isOf(Items.BUNDLE)) {
-            BundleContentsComponent contents = stack.get(DataComponentTypes.BUNDLE_CONTENTS);
-            if (contents != null) {
-                for (ItemStack inside : contents.iterate()) {
-                    if (containsCompass(inside, depth + 1)) return true;
-                }
-            }
-        }
-
+        // Bundles do not exist in 1.20.1; no recursive container check needed.
         return false;
     }
 }

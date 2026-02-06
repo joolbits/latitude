@@ -21,7 +21,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public class NoiseChunkGeneratorCarveMixin {
     private static final RegistryKey<ChunkGeneratorSettings> GLOBE_SETTINGS_KEY = RegistryKey.of(
             RegistryKeys.CHUNK_GENERATOR_SETTINGS,
-            Identifier.of("globe", "overworld")
+            new Identifier("globe", "overworld")
     );
 
     @Inject(

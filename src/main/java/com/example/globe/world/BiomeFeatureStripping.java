@@ -19,7 +19,7 @@ import net.minecraft.world.gen.feature.PlacedFeature;
 
 public final class BiomeFeatureStripping {
     private static final Logger LOGGER = LoggerFactory.getLogger("globe");
-    private static final Identifier STRIP_FROZEN_RIVER_ID = Identifier.of("globe", "strip_frozen_river_vegetal");
+    private static final Identifier STRIP_FROZEN_RIVER_ID = new Identifier("globe", "strip_frozen_river_vegetal");
 
     private BiomeFeatureStripping() {
     }

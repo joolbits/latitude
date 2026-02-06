@@ -66,31 +66,31 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
 
     // Only apply Latitude to your globe overworld settings (keeps Nether/End sane).
     @Unique
-    private static final Identifier GLOBE_SETTINGS_ID = Identifier.of("globe", "overworld");
+    private static final Identifier GLOBE_SETTINGS_ID = new Identifier("globe", "overworld");
 
     @Unique
-    private static final Identifier GLOBE_SETTINGS_XSMALL_ID = Identifier.of("globe", "overworld_xsmall");
+    private static final Identifier GLOBE_SETTINGS_XSMALL_ID = new Identifier("globe", "overworld_xsmall");
 
     @Unique
-    private static final Identifier GLOBE_SETTINGS_SMALL_ID = Identifier.of("globe", "overworld_small");
+    private static final Identifier GLOBE_SETTINGS_SMALL_ID = new Identifier("globe", "overworld_small");
 
     @Unique
-    private static final Identifier GLOBE_SETTINGS_REGULAR_ID = Identifier.of("globe", "overworld_regular");
+    private static final Identifier GLOBE_SETTINGS_REGULAR_ID = new Identifier("globe", "overworld_regular");
 
     @Unique
-    private static final Identifier GLOBE_SETTINGS_LARGE_ID = Identifier.of("globe", "overworld_large");
+    private static final Identifier GLOBE_SETTINGS_LARGE_ID = new Identifier("globe", "overworld_large");
 
     @Unique
-    private static final Identifier GLOBE_SETTINGS_MASSIVE_ID = Identifier.of("globe", "overworld_massive");
+    private static final Identifier GLOBE_SETTINGS_MASSIVE_ID = new Identifier("globe", "overworld_massive");
 
     @Unique
-    private static final Identifier LUSH_CAVES_ID = Identifier.of("minecraft", "lush_caves");
+    private static final Identifier LUSH_CAVES_ID = new Identifier("minecraft", "lush_caves");
 
     @Unique
-    private static final Identifier DRIPSTONE_CAVES_ID = Identifier.of("minecraft", "dripstone_caves");
+    private static final Identifier DRIPSTONE_CAVES_ID = new Identifier("minecraft", "dripstone_caves");
 
     @Unique
-    private static final Identifier DEEP_DARK_ID = Identifier.of("minecraft", "deep_dark");
+    private static final Identifier DEEP_DARK_ID = new Identifier("minecraft", "deep_dark");
 
     @Unique
     private static final RegistryKey<ChunkGeneratorSettings> GLOBE_SETTINGS_KEY =
@@ -230,7 +230,7 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
             RegistryEntry<Biome> base = originalSupplier.getBiome(x, 0, z, sampler);
 
             if (blockY > HARD_DECK_SURFACE_Y && isCaveBiome(biomes, base)) {
-                RegistryEntry<Biome> plains = biomes.getEntry(Identifier.of("minecraft", "plains")).orElse(null);
+                RegistryEntry<Biome> plains = biomes.getEntry(RegistryKey.of(RegistryKeys.BIOME, new Identifier("minecraft", "plains"))).orElse(null);
                 if (DEBUG_CAVE_DECK) {
                     LOGGER.info("[LAT_CAVE_DECK] replaced {} at blockY={} x={} z={}",
                             biomeId(biomes, base), blockY, blockX, blockZ);
@@ -430,28 +430,28 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
     @Unique
     private static RegistryEntry<Biome> pickSafeFallback(Registry<Biome> biomes, int blockZ) {
         boolean farNorth = Math.abs(blockZ) > 8000;
-        Identifier id = Identifier.of("minecraft", farNorth ? "snowy_plains" : "plains");
-        RegistryEntry<Biome> entry = biomes.getEntry(id).orElse(null);
+        Identifier id = new Identifier("minecraft", farNorth ? "snowy_plains" : "plains");
+        RegistryEntry<Biome> entry = biomes.getEntry(RegistryKey.of(RegistryKeys.BIOME, id)).orElse(null);
         if (entry != null) {
             return entry;
         }
-        return biomes.getEntry(Identifier.of("minecraft", "plains")).orElse(null);
+        return biomes.getEntry(RegistryKey.of(RegistryKeys.BIOME, new Identifier("minecraft", "plains"))).orElse(null);
     }
 
     @Unique
     private static RegistryEntry<Biome> pickFallback(Registry<Biome> biomes, RegistryEntry<Biome> base, String... ids) {
         for (String id : ids) {
-            RegistryEntry<Biome> entry = biomes.getEntry(Identifier.of(id)).orElse(null);
+            RegistryEntry<Biome> entry = biomes.getEntry(RegistryKey.of(RegistryKeys.BIOME, new Identifier(id))).orElse(null);
             if (entry != null) {
                 return entry;
             }
         }
-        return base != null ? base : biomes.getEntry(Identifier.of("minecraft", "plains")).orElse(null);
+        return base != null ? base : biomes.getEntry(RegistryKey.of(RegistryKeys.BIOME, new Identifier("minecraft", "plains"))).orElse(null);
     }
 
     @Unique
     private static boolean isBiomeId(Registry<Biome> biomes, RegistryEntry<Biome> entry, String id) {
-        Identifier target = Identifier.of(id);
+        Identifier target = new Identifier(id);
         Identifier actual = biomes.getId(entry.value());
         if (actual != null) {
             return actual.equals(target);

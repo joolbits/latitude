@@ -19,7 +19,7 @@ import java.util.List;
 
 @Mixin(WorldCreator.class)
 public abstract class WorldCreatorMixin {
-    private static final Identifier GLOBE_WORLD_PRESET_ID = Identifier.of("globe", "globe");
+    private static final Identifier GLOBE_WORLD_PRESET_ID = new Identifier("globe", "globe");
 
     @Shadow
     public abstract GeneratorOptionsHolder getGeneratorOptionsHolder();
