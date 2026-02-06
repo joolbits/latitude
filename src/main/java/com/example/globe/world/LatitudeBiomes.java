@@ -1679,7 +1679,18 @@ public final class LatitudeBiomes {
         boolean notPeaks = Math.abs(weirdness) < 0.15;
         boolean suitable = lowland && notRugged && notPeaks;
         boolean patch = allowMangrovePatch(blockX, blockZ);
-        return new MangroveDecision(suitable && patch, cont, erosion, weirdness, suitable, patch);
+        boolean accepted = suitable && patch;
+        if (Boolean.getBoolean("latitude.debugMangrovePlace")) {
+            String reason = accepted ? "coastal_lowland" :
+                    (!lowland ? "inland" : !notRugged ? "rugged" : !notPeaks ? "peaks" : "patch");
+            LOGGER.info("[MANGROVE_GATE] x={} z={} cont={} ero={} weird={} decision={} reason={}",
+                    blockX, blockZ,
+                    String.format(java.util.Locale.ROOT, "%.3f", cont),
+                    String.format(java.util.Locale.ROOT, "%.3f", erosion),
+                    String.format(java.util.Locale.ROOT, "%.3f", weirdness),
+                    accepted ? "ACCEPTED" : "REJECTED", reason);
+        }
+        return new MangroveDecision(accepted, cont, erosion, weirdness, suitable, patch);
     }
 
     private static boolean swampOkStrict(double cont, double erosion, double weirdness) {
