@@ -20,6 +20,7 @@ import net.minecraft.particle.ParticleTypes;
 import net.minecraft.util.math.random.Random;
 
 public class GlobeModClient implements ClientModInitializer {
+    private static final boolean DEBUG_OPEN_SPAWN_PICKER = Boolean.getBoolean("latitude.debugOpenSpawnPicker");
     private static boolean pendingSpawnPickerOpen;
 
     @Override
@@ -44,6 +45,11 @@ public class GlobeModClient implements ClientModInitializer {
 
         ClientPlayNetworking.registerGlobalReceiver(GlobeNet.OpenSpawnPickerPayload.ID, (payload, context) -> {
             if (!payload.open()) {
+                return;
+            }
+
+            if (!DEBUG_OPEN_SPAWN_PICKER) {
+                // Prevent accidental in-world popup; enable with -Dlatitude.debugOpenSpawnPicker=true
                 return;
             }
 
@@ -77,7 +83,7 @@ public class GlobeModClient implements ClientModInitializer {
     }
 
     private static void polarCapClientTick(MinecraftClient client) {
-        if (pendingSpawnPickerOpen && client.player != null && client.world != null && client.currentScreen == null) {
+        if (DEBUG_OPEN_SPAWN_PICKER && pendingSpawnPickerOpen && client.player != null && client.world != null && client.currentScreen == null) {
             pendingSpawnPickerOpen = false;
             client.setScreen(new SpawnZoneScreen());
             GlobeMod.LOGGER.info("Opened SpawnZoneScreen");
