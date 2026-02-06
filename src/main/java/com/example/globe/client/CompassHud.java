@@ -3,9 +3,6 @@ package com.example.globe.client;
 import com.example.globe.client.LatitudeHudStudioScreen;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.render.RenderTickCounter;
-import net.minecraft.component.DataComponentTypes;
-import net.minecraft.component.type.BundleContentsComponent;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
@@ -30,7 +27,7 @@ public final class CompassHud {
     // Keep for compatibility with existing GlobeModClient init call.
     public static void init() {}
 
-    public static void render(DrawContext ctx, RenderTickCounter tickCounter) {
+    public static void render(DrawContext ctx, float tickDelta) {
         MinecraftClient client = MinecraftClient.getInstance();
         if (client == null || client.getWindow() == null) {
             return;
@@ -320,16 +317,7 @@ public final class CompassHud {
         // Prevent infinite recursion
         if (depth >= 6) return false;
 
-        // Bundle contents (modern data component)
-        if (stack.isOf(Items.BUNDLE)) {
-            BundleContentsComponent contents = stack.get(DataComponentTypes.BUNDLE_CONTENTS);
-            if (contents != null) {
-                for (ItemStack inside : contents.iterate()) {
-                    if (containsCompass(inside, depth + 1)) return true;
-                }
-            }
-        }
-
+        // Bundles do not exist in 1.20.1; no recursive container check needed.
         return false;
     }
 

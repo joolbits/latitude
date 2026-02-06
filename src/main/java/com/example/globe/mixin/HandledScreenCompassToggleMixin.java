@@ -5,8 +5,6 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.ingame.HandledScreen;
 import net.minecraft.client.util.InputUtil;
-import net.minecraft.component.DataComponentTypes;
-import net.minecraft.component.type.BundleContentsComponent;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
 import net.minecraft.screen.slot.Slot;
@@ -74,18 +72,7 @@ public abstract class HandledScreenCompassToggleMixin {
     private static boolean containsCompass(ItemStack stack, int depth) {
         if (stack == null || stack.isEmpty()) return false;
         if (stack.isOf(Items.COMPASS)) return true;
-
-        if (depth >= 6) return false;
-
-        if (stack.isOf(Items.BUNDLE)) {
-            BundleContentsComponent contents = stack.get(DataComponentTypes.BUNDLE_CONTENTS);
-            if (contents != null) {
-                for (ItemStack inside : contents.iterate()) {
-                    if (containsCompass(inside, depth + 1)) return true;
-                }
-            }
-        }
-
+        // Bundles do not exist in 1.20.1; no recursive container check needed.
         return false;
     }
 }

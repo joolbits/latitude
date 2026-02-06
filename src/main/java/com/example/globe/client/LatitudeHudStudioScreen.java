@@ -158,7 +158,7 @@ public class LatitudeHudStudioScreen extends Screen {
 
     @Override
     public void render(DrawContext ctx, int mouseX, int mouseY, float delta) {
-        this.renderInGameBackground(ctx);
+        this.renderBackground(ctx);
         ctx.fill(0, 0, this.width, this.height, 0x66000000);
 
         int sidebarX = 6;

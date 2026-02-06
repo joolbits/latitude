@@ -27,10 +27,10 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(CreateWorldScreen.class)
 public abstract class CreateWorldScreenLatitudeToggleMixin extends Screen {
     @Unique
-    private static final Identifier LATITUDE_WORLD_PRESET_ID = Identifier.of("globe", "globe");
+    private static final Identifier LATITUDE_WORLD_PRESET_ID = new Identifier("globe", "globe");
 
     @Unique
-    private static final Identifier DEFAULT_WORLD_PRESET_ID = Identifier.of("minecraft", "normal");
+    private static final Identifier DEFAULT_WORLD_PRESET_ID = new Identifier("minecraft", "normal");
 
     @Shadow
     @Final

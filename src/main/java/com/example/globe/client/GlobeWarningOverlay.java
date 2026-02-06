@@ -4,7 +4,6 @@ import com.example.globe.GlobeMod;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.render.RenderTickCounter;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 
@@ -107,7 +106,7 @@ public final class GlobeWarningOverlay {
         };
     }
 
-    public static void render(DrawContext ctx, RenderTickCounter tickCounter) {
+    public static void render(DrawContext ctx, float tickDelta) {
         MinecraftClient client = MinecraftClient.getInstance();
 
         if (client == null) {

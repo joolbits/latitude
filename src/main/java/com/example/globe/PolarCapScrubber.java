@@ -140,7 +140,7 @@ public final class PolarCapScrubber {
                 || state.isIn(BlockTags.SAPLINGS)
                 || state.isIn(BlockTags.FLOWERS)
                 || state.isIn(BlockTags.CROPS)
-                || state.getBlock() == Blocks.SHORT_GRASS
+                || state.getBlock() == Blocks.GRASS
                 || state.getBlock() == Blocks.TALL_GRASS
                 || state.getBlock() == Blocks.FERN
                 || state.getBlock() == Blocks.LARGE_FERN

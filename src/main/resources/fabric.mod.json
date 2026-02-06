@@ -18,16 +18,15 @@
       "com.example.globe.GlobeModClient"
     ],
     "modmenu": [
-      "com.example.globe.client.GlobeModMenu"
     ]
   },
   "mixins": [
     "globe.mixins.json"
   ],
   "depends": {
-    "fabricloader": ">=0.16.9",
-    "minecraft": ">=1.21 <=1.21.1",
-    "java": ">=21",
+    "fabricloader": ">=0.15.0",
+    "minecraft": "~1.20.1",
+    "java": ">=17",
     "fabric-api": "*"
   },
   "suggests": {

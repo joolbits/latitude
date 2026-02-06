@@ -122,7 +122,7 @@ public class LatitudeSettingsScreen extends Screen {
 
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
-        this.renderInGameBackground(context);
+        this.renderBackground(context);
         context.drawCenteredTextWithShadow(this.textRenderer, this.title, this.width / 2, 10, 0xFFFFFFFF);
 
         int maxScroll = Math.max(0, contentHeight - (this.height - 20));
@@ -144,7 +144,7 @@ public class LatitudeSettingsScreen extends Screen {
     }
 
     @Override
-    public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
+    public boolean mouseScrolled(double mouseX, double mouseY, double verticalAmount) {
         int maxScroll = Math.max(0, contentHeight - (this.height - 20));
         scrollY -= (int) Math.signum(verticalAmount) * 18;
         scrollY = Math.max(0, Math.min(maxScroll, scrollY));

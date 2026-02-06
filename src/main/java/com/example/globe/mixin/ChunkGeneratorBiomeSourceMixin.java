@@ -21,12 +21,12 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 @Mixin(ChunkGenerator.class)
 public abstract class ChunkGeneratorBiomeSourceMixin {
-    private static final Identifier GLOBE_SETTINGS_ID = Identifier.of("globe", "overworld");
-    private static final Identifier GLOBE_SETTINGS_XSMALL_ID = Identifier.of("globe", "overworld_xsmall");
-    private static final Identifier GLOBE_SETTINGS_SMALL_ID = Identifier.of("globe", "overworld_small");
-    private static final Identifier GLOBE_SETTINGS_REGULAR_ID = Identifier.of("globe", "overworld_regular");
-    private static final Identifier GLOBE_SETTINGS_LARGE_ID = Identifier.of("globe", "overworld_large");
-    private static final Identifier GLOBE_SETTINGS_MASSIVE_ID = Identifier.of("globe", "overworld_massive");
+    private static final Identifier GLOBE_SETTINGS_ID = new Identifier("globe", "overworld");
+    private static final Identifier GLOBE_SETTINGS_XSMALL_ID = new Identifier("globe", "overworld_xsmall");
+    private static final Identifier GLOBE_SETTINGS_SMALL_ID = new Identifier("globe", "overworld_small");
+    private static final Identifier GLOBE_SETTINGS_REGULAR_ID = new Identifier("globe", "overworld_regular");
+    private static final Identifier GLOBE_SETTINGS_LARGE_ID = new Identifier("globe", "overworld_large");
+    private static final Identifier GLOBE_SETTINGS_MASSIVE_ID = new Identifier("globe", "overworld_massive");
 
     private static final RegistryKey<ChunkGeneratorSettings> GLOBE_SETTINGS_KEY =
             RegistryKey.of(RegistryKeys.CHUNK_GENERATOR_SETTINGS, GLOBE_SETTINGS_ID);

@@ -21,3 +21,5 @@ Gallery for Modrinth/
 *.mp4
 
 /run/
+
+.gradle-user-home/
