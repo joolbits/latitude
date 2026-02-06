@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.2.5+1.20.1
+- Backport to Minecraft 1.20.1.
+- Warm-band snow protections (no snow placement in warm latitude bands).
+
 ## Latitude 1.2.4 (MC 1.21.1)
 - EW storm intensity ramp tightened (shader-friendly haze works with Sodium + Iris) for a stronger wall near EW borders.
 - Warm-band cold-biome clamp prevents snow/ice leakage in Equator/Tropics/Arid bands.
