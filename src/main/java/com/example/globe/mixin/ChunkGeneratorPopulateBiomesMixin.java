@@ -192,8 +192,8 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
 
     /**
      * Wrap the BiomeSupplier used by vanilla chunk biome population.
-     * NOTE: require=0 so the game DOES NOT crash if mixin remapping/refmap is broken.
-     * If this Redirect doesn’t apply, Latitude won’t affect worldgen — but you’ll boot and can fix refmap next.
+     * NOTE: require=1 so the game WILL crash if this redirect fails to apply.
+     * Silent failure (require=0) caused snow-in-warm-bands because the biome override never fired.
      */
     @Redirect(
             method = "populateBiomes(Lnet/minecraft/world/gen/chunk/Blender;Lnet/minecraft/world/gen/noise/NoiseConfig;Lnet/minecraft/world/gen/StructureAccessor;Lnet/minecraft/world/chunk/Chunk;)V",
@@ -201,7 +201,7 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
                     value = "INVOKE",
                     target = "Lnet/minecraft/world/chunk/Chunk;populateBiomes(Lnet/minecraft/world/biome/source/BiomeSupplier;Lnet/minecraft/world/biome/source/util/MultiNoiseUtil$MultiNoiseSampler;)V"
             ),
-            require = 0
+            require = 1
     )
     private void globe$wrapBiomeSupplier(Chunk chunk, BiomeSupplier originalSupplier, MultiNoiseUtil.MultiNoiseSampler sampler) {
         // Gate: only apply to your globe overworld settings.

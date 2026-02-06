@@ -7,10 +7,15 @@
   "mixins": [
     "BiomeSourceAccessor",
     "ChunkGeneratorBiomeSourceMixin",
+    "BiomeNoSnowInWarmBandsMixin",
     "NoiseChunkGeneratorAccessor",
     "ChunkGeneratorPopulateBiomesMixin",
     "NoiseChunkGeneratorCarveMixin",
-    "SurfaceDripstoneLawnmowerMixin"
+    "SurfaceDripstoneLawnmowerMixin",
+    "ProtoChunkSnowBlockGuardMixin",
+    "FreezeTopLayerFeatureGuardMixin",
+    "MixinSanityPing",
+    "ChunkRegionWarmSnowTrapMixin"
   ],
   "client": [
     "client.FogRendererMixin",
