@@ -1,3 +1,5 @@
+import java.text.SimpleDateFormat
+
 plugins {
     id 'fabric-loom' version '1.9.2'
     id 'maven-publish'
@@ -101,5 +103,53 @@ publishing {
 
     repositories {
         
+    }
+}
+
+def backupRootDefault = "C:/Users/jscho/CascadeProjects/Backups"
+def backupRoot = (project.findProperty("backupDir") ?: backupRootDefault).toString().replace("\\", "/")
+
+tasks.register("backupJar") {
+    dependsOn tasks.named("build")
+
+    doLast {
+        def ver = project.version.toString()
+        def mcVer = (project.findProperty("minecraft_version") ?: "unknown").toString()
+
+        def destDir = file("${backupRoot}/${ver}/mc${mcVer}")
+        def libsDir = file("${buildDir}/libs")
+
+        def jarFile = libsDir.listFiles()?.find { f ->
+            f.name.endsWith(".jar") &&
+                    !f.name.endsWith("-sources.jar") &&
+                    !f.name.endsWith("-javadoc.jar")
+        }
+
+        if (jarFile == null || !jarFile.exists()) {
+            throw new GradleException("backupJar: Could not find a built jar in ${libsDir}. Run build first.")
+        }
+
+        destDir.mkdirs()
+
+        copy {
+            from jarFile
+            into destDir
+        }
+
+        def sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss")
+        def timestamp = sdf.format(new Date())
+
+        def gitHash = "unknown"
+        try {
+            def proc = ["git", "rev-parse", "--short", "HEAD"].execute(null, project.rootDir)
+            proc.waitFor()
+            if (proc.exitValue() == 0) gitHash = proc.in.text.trim()
+        } catch (ignored) {}
+
+        def info = new File(destDir, "buildinfo.txt")
+        info.text = "version=${ver}\nmc=${mcVer}\njar=${jarFile.name}\ngit=${gitHash}\nbuilt=${timestamp}\n"
+
+        println "backupJar: Copied ${jarFile.name} -> ${destDir}"
+        println "backupJar: Wrote ${info}"
     }
 }
