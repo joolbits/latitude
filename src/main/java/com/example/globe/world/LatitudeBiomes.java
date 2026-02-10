@@ -226,7 +226,6 @@ public final class LatitudeBiomes {
     private static final boolean DEBUG_BIOMES = Boolean.getBoolean("latitude.debugBiomes")
             || Boolean.getBoolean("latitude.debugBiomePick");
     private static final boolean DEBUG_BLEND = Boolean.getBoolean("latitude.debugBlend");
-    private static final boolean DEBUG_BAND_SCALING = Boolean.getBoolean("latitude.debugBandScaling");
     private static final int DEBUG_LIMIT = Integer.getInteger("latitude.debugBiomes.limit", 200);
     private static volatile long WORLD_SEED = 0L;
     public static volatile int ACTIVE_RADIUS_BLOCKS = 0;
@@ -436,13 +435,13 @@ public final class LatitudeBiomes {
     public static RegistryEntry<Biome> pick(Registry<Biome> biomeRegistry, RegistryEntry<Biome> base, int blockX, int blockZ, int borderRadiusBlocks,
                                             MultiNoiseUtil.MultiNoiseSampler sampler, String callerContext) {
         int activeRadius = ACTIVE_RADIUS_BLOCKS;
-        boolean overrideDisabled = Boolean.getBoolean("latitude.disableRadiusOverride");
 
         if (activeRadius > 0 && borderRadiusBlocks != activeRadius && RADIUS_MISMATCH_LOGGED.compareAndSet(false, true)) {
-            LOGGER.warn("[Latitude] RADIUS MISMATCH detected from {}! Arg: {}, Active: {}", callerContext, borderRadiusBlocks, activeRadius);
+            LOGGER.warn("[Latitude] RADIUS MISMATCH detected from {}! Arg: {}, Active: {} (using arg)",
+                    callerContext, borderRadiusBlocks, activeRadius);
         }
 
-        int effectiveRadius = (!overrideDisabled && activeRadius > 0) ? activeRadius : borderRadiusBlocks;
+        int effectiveRadius = borderRadiusBlocks;
         if (effectiveRadius <= 0) {
             return base;
         }
@@ -451,13 +450,6 @@ public final class LatitudeBiomes {
         double t = (double) lat / (double) effectiveRadius;
         LatitudeMath.LatitudeZone zone = LatitudeMath.zoneForRadius(effectiveRadius, blockZ);
         int bandIndex = bandIndexForZone(zone);
-
-        if (DEBUG_BAND_SCALING && (blockX & 0x3FF) == 0 && (blockZ & 0x3FF) == 0) {
-            String radiusSource = (!overrideDisabled && activeRadius > 0) ? "ACTIVE" : "ARG";
-            LOGGER.info("[BAND_SCALE] x={} z={} absZ={} argRadius={} activeRadius={} effectiveRadius={} radiusSource={} t={} zone={} caller=Registry",
-                    blockX, blockZ, lat, borderRadiusBlocks, activeRadius, effectiveRadius, radiusSource,
-                    String.format(java.util.Locale.ROOT, "%.6f", t), zone);
-        }
 
         if (isBeachLike(base)) {
             RegistryEntry<Biome> out = pickBeachForBand(biomeRegistry, base, blockX, blockZ, bandIndex);
@@ -589,13 +581,13 @@ public final class LatitudeBiomes {
     public static RegistryEntry<Biome> pick(Collection<RegistryEntry<Biome>> biomePool, RegistryEntry<Biome> base, int blockX, int blockZ, int borderRadiusBlocks,
                                             MultiNoiseUtil.MultiNoiseSampler sampler, String callerContext) {
         int activeRadius = ACTIVE_RADIUS_BLOCKS;
-        boolean overrideDisabled = Boolean.getBoolean("latitude.disableRadiusOverride");
 
         if (activeRadius > 0 && borderRadiusBlocks != activeRadius && RADIUS_MISMATCH_LOGGED.compareAndSet(false, true)) {
-            LOGGER.warn("[Latitude] RADIUS MISMATCH detected from {}! Arg: {}, Active: {}", callerContext, borderRadiusBlocks, activeRadius);
+            LOGGER.warn("[Latitude] RADIUS MISMATCH detected from {}! Arg: {}, Active: {} (using arg)",
+                    callerContext, borderRadiusBlocks, activeRadius);
         }
 
-        int effectiveRadius = (!overrideDisabled && activeRadius > 0) ? activeRadius : borderRadiusBlocks;
+        int effectiveRadius = borderRadiusBlocks;
         if (effectiveRadius <= 0) {
             return base;
         }
@@ -606,13 +598,6 @@ public final class LatitudeBiomes {
         double t = (double) lat / (double) effectiveRadius;
         LatitudeMath.LatitudeZone zone = LatitudeMath.zoneForRadius(effectiveRadius, blockZ);
         int bandIndex = bandIndexForZone(zone);
-
-        if (DEBUG_BAND_SCALING && (blockX & 0x3FF) == 0 && (blockZ & 0x3FF) == 0) {
-            String radiusSource = (!overrideDisabled && activeRadius > 0) ? "ACTIVE" : "ARG";
-            LOGGER.info("[BAND_SCALE] x={} z={} absZ={} argRadius={} activeRadius={} effectiveRadius={} radiusSource={} t={} zone={} caller=Collection",
-                    blockX, blockZ, lat, borderRadiusBlocks, activeRadius, effectiveRadius, radiusSource,
-                    String.format(java.util.Locale.ROOT, "%.6f", t), zone);
-        }
 
         if (isBeachLike(base)) {
             RegistryEntry<Biome> out = pickBeachForBand(biomePool, base, blockX, blockZ, bandIndex);
