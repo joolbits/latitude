@@ -2,6 +2,8 @@ package com.example.globe.mixin.client;
 
 import com.example.globe.client.GlobeWorldSize;
 import com.example.globe.client.GlobeWorldSizeSelection;
+import com.example.globe.client.LatitudeClientConfig;
+import com.example.globe.client.LatitudeClientState;
 import net.minecraft.client.gui.screen.world.CreateWorldScreen;
 import net.minecraft.client.gui.screen.world.WorldCreator;
 import net.minecraft.registry.Registry;
@@ -24,6 +26,11 @@ public abstract class CreateWorldScreenMixin {
 
     @Inject(method = "createLevel", at = @At("HEAD"))
     private void globe$applySelectedSizeToWorldPreset(CallbackInfo ci) {
+        if (LatitudeClientConfig.get().showFirstLoadMessage) {
+            LatitudeClientState.firstWorldLoad = true;
+            LatitudeClientState.firstWorldLoadStartMs = 0L;
+        }
+
         WorldCreator creator = this.getWorldCreator();
         if (creator == null) {
             return;
