@@ -1,5 +1,6 @@
 package com.example.globe;
 
+import com.example.globe.client.LatitudeClientConfig;
 import com.example.globe.client.LatitudeConfig;
 import com.example.globe.client.GlobeClientState;
 import com.example.globe.client.CompassHud;
@@ -30,6 +31,7 @@ public class GlobeModClient implements ClientModInitializer {
         GlobeMod.LOGGER.info("[Latitude] debugEwFog={}", GlobeClientState.DEBUG_EW_FOG);
 
         LatitudeConfig.get();
+        LatitudeClientConfig.get().loadOrCreate();
 
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
             GlobeClientState.setGlobeWorld(false);
