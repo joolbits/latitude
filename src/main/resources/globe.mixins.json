@@ -23,6 +23,7 @@
     "client.WorldCreatorMixin",
     "client.InGameHudMixin",
     "client.FogRendererMixin",
+    "client.DownloadingTerrainScreenFirstLoadMessageMixin",
     "HandledScreenCompassToggleMixin"
   ],
   "injectors": {
