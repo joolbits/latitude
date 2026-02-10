@@ -435,13 +435,13 @@ public final class LatitudeBiomes {
     public static RegistryEntry<Biome> pick(Registry<Biome> biomeRegistry, RegistryEntry<Biome> base, int blockX, int blockZ, int borderRadiusBlocks,
                                             MultiNoiseUtil.MultiNoiseSampler sampler, String callerContext) {
         int activeRadius = ACTIVE_RADIUS_BLOCKS;
-        boolean overrideDisabled = Boolean.getBoolean("latitude.disableRadiusOverride");
 
         if (activeRadius > 0 && borderRadiusBlocks != activeRadius && RADIUS_MISMATCH_LOGGED.compareAndSet(false, true)) {
-            LOGGER.warn("[Latitude] RADIUS MISMATCH detected from {}! Arg: {}, Active: {}", callerContext, borderRadiusBlocks, activeRadius);
+            LOGGER.warn("[Latitude] RADIUS MISMATCH detected from {}! Arg: {}, Active: {} (using arg)",
+                    callerContext, borderRadiusBlocks, activeRadius);
         }
 
-        int effectiveRadius = (!overrideDisabled && activeRadius > 0) ? activeRadius : borderRadiusBlocks;
+        int effectiveRadius = borderRadiusBlocks;
         if (effectiveRadius <= 0) {
             return base;
         }
@@ -581,13 +581,13 @@ public final class LatitudeBiomes {
     public static RegistryEntry<Biome> pick(Collection<RegistryEntry<Biome>> biomePool, RegistryEntry<Biome> base, int blockX, int blockZ, int borderRadiusBlocks,
                                             MultiNoiseUtil.MultiNoiseSampler sampler, String callerContext) {
         int activeRadius = ACTIVE_RADIUS_BLOCKS;
-        boolean overrideDisabled = Boolean.getBoolean("latitude.disableRadiusOverride");
 
         if (activeRadius > 0 && borderRadiusBlocks != activeRadius && RADIUS_MISMATCH_LOGGED.compareAndSet(false, true)) {
-            LOGGER.warn("[Latitude] RADIUS MISMATCH detected from {}! Arg: {}, Active: {}", callerContext, borderRadiusBlocks, activeRadius);
+            LOGGER.warn("[Latitude] RADIUS MISMATCH detected from {}! Arg: {}, Active: {} (using arg)",
+                    callerContext, borderRadiusBlocks, activeRadius);
         }
 
-        int effectiveRadius = (!overrideDisabled && activeRadius > 0) ? activeRadius : borderRadiusBlocks;
+        int effectiveRadius = borderRadiusBlocks;
         if (effectiveRadius <= 0) {
             return base;
         }
