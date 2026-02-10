@@ -43,18 +43,16 @@ public class LatitudeSettingsScreen extends Screen {
         int baseY;
 
         baseY = y;
-        var wZoneTitle = this.addDrawableChild(CyclingButtonWidget.<Boolean>builder(v -> Text.literal(v ? "ON" : "OFF"))
+        var wZoneTitle = this.addDrawableChild(CyclingButtonWidget.builder(v -> Text.literal(v ? "ON" : "OFF"), LatitudeConfig.zoneEnterTitleEnabled)
                 .values(true, false)
-                .initially(LatitudeConfig.zoneEnterTitleEnabled)
                 .build(columnX, y, w, h, Text.literal("Zone Enter Title"), (btn, value) -> LatitudeConfig.zoneEnterTitleEnabled = value));
         layoutWidgets.add(wZoneTitle);
         layoutBaseYs.add(baseY);
         y += 24;
 
         baseY = y;
-        var wWarnText = this.addDrawableChild(CyclingButtonWidget.<Boolean>builder(v -> Text.literal(v ? "ON" : "OFF"))
+        var wWarnText = this.addDrawableChild(CyclingButtonWidget.builder(v -> Text.literal(v ? "ON" : "OFF"), LatitudeConfig.showWarningMessages)
                 .values(true, false)
-                .initially(LatitudeConfig.showWarningMessages)
                 .build(columnX, y, w, h, Text.literal("Warning messages"), (btn, value) -> {
                     LatitudeConfig.showWarningMessages = value;
                     LatitudeConfig.saveCurrent();
@@ -71,9 +69,8 @@ public class LatitudeSettingsScreen extends Screen {
         y += 24;
 
         baseY = y;
-        var wShowMode = this.addDrawableChild(CyclingButtonWidget.<CompassHudConfig.ShowMode>builder(this::showModeLabel)
+        var wShowMode = this.addDrawableChild(CyclingButtonWidget.<CompassHudConfig.ShowMode>builder(this::showModeLabel, () -> cfg.showMode)
                 .values(CompassHudConfig.ShowMode.values())
-                .initially(cfg.showMode)
                 .build(columnX, y, w, h, Text.literal("Show Mode"), (btn, value) -> cfg.showMode = value));
         layoutWidgets.add(wShowMode);
         layoutBaseYs.add(baseY);

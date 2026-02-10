@@ -2,6 +2,7 @@ package com.example.globe.mixin;
 
 import com.example.globe.client.CompassHudConfig;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.gui.Click;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.ingame.HandledScreen;
 import net.minecraft.client.util.InputUtil;
@@ -23,17 +24,18 @@ public abstract class HandledScreenCompassToggleMixin {
     @Shadow protected int y;
     @Shadow protected abstract Slot getSlotAt(double x, double y);
 
-    @Inject(method = "mouseClicked(DDI)Z", at = @At("HEAD"), cancellable = true)
-    private void globe$altClickToggleCompassHud(double mouseX, double mouseY, int button, CallbackInfoReturnable<Boolean> cir) {
-        if (button != 0) return;
+    @Inject(method = "mouseClicked(Lnet/minecraft/client/gui/Click;Z)Z", at = @At("HEAD"), cancellable = true)
+    private void globe$altClickToggleCompassHud(Click click, boolean bl, CallbackInfoReturnable<Boolean> cir) {
+        if (click == null) return;
+        if (click.button() != 0) return;
         MinecraftClient client = MinecraftClient.getInstance();
         if (client == null || client.getWindow() == null) return;
 
-        boolean altDown = InputUtil.isKeyPressed(client.getWindow().getHandle(), InputUtil.GLFW_KEY_LEFT_ALT)
-                || InputUtil.isKeyPressed(client.getWindow().getHandle(), InputUtil.GLFW_KEY_RIGHT_ALT);
+        boolean altDown = InputUtil.isKeyPressed(client.getWindow(), InputUtil.GLFW_KEY_LEFT_ALT)
+                || InputUtil.isKeyPressed(client.getWindow(), InputUtil.GLFW_KEY_RIGHT_ALT);
         if (!altDown) return;
 
-        Slot slot = this.getSlotAt(mouseX, mouseY);
+        Slot slot = this.getSlotAt(click.x(), click.y());
         if (slot == null) return;
 
         ItemStack stack = slot.getStack();
@@ -48,7 +50,7 @@ public abstract class HandledScreenCompassToggleMixin {
     }
 
     @Inject(method = "drawSlot", at = @At("TAIL"))
-    private void globe$drawCompassDisabledX(DrawContext ctx, Slot slot, CallbackInfo ci) {
+    private void globe$drawCompassDisabledX(DrawContext ctx, Slot slot, int i, int j, CallbackInfo ci) {
         if (CompassHudConfig.get().enabled) return;
         if (slot == null) return;
 

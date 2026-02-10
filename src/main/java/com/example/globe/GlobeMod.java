@@ -358,10 +358,10 @@ public class GlobeMod implements ModInitializer {
         }
 
         BlockPos clampedSpawnPos = clampSpawnAwayFromEwWarning(spawnPos, radius);
-        world.setSpawnPos(clampedSpawnPos, 0.0f);
+        world.setSpawnPoint(WorldProperties.SpawnPoint.create(world.getRegistryKey(), clampedSpawnPos, 0.0f, 0.0f));
 
         BlockPos teleportPos = clampSpawnAwayFromEwWarning(clampedSpawnPos, radius);
-        player.teleport(world, teleportPos.getX() + 0.5, teleportPos.getY(), teleportPos.getZ() + 0.5, player.getYaw(), player.getPitch());
+        player.teleport(world, teleportPos.getX() + 0.5, teleportPos.getY(), teleportPos.getZ() + 0.5, EnumSet.noneOf(PositionFlag.class), player.getYaw(), player.getPitch(), true);
         player.addCommandTag(SPAWN_CHOSEN_TAG);
     }
 

@@ -216,7 +216,7 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
             return;
         }
 
-        Registry<Biome> biomes = structureAccessor.getRegistryManager().get(RegistryKeys.BIOME);
+        Registry<Biome> biomes = structureAccessor.getRegistryManager().getOrThrow(RegistryKeys.BIOME);
         int borderRadiusBlocks = this.globe$borderRadiusBlocks();
         logWorldgenPathOnce(chunk, borderRadiusBlocks, globe$matchedSettingsLabel());
 

@@ -71,7 +71,7 @@ public final class LatitudeDevCommands {
             // Ensure chunk is loaded
             world.getChunk(safe.getX() >> 4, safe.getZ() >> 4);
 
-            player.teleport(world, safe.getX() + 0.5, (double)safe.getY(), safe.getZ() + 0.5, player.getYaw(), player.getPitch());
+            player.teleport(world, safe.getX() + 0.5, (double)safe.getY(), safe.getZ() + 0.5, EnumSet.noneOf(PositionFlag.class), player.getYaw(), player.getPitch(), true);
             source.sendFeedback(() -> Text.literal("[lattp] teleported: " + safe.toShortString()
                 + " topY=" + safe.getY()
                 + " biome=" + world.getBiome(safe).getKey().map(k -> k.getValue().toString()).orElse("?")
