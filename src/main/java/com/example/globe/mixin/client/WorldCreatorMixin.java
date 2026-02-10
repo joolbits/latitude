@@ -36,11 +36,11 @@ public abstract class WorldCreatorMixin {
     private void globe$ensureGlobePresetIsListed(CallbackInfo ci) {
         Registry<WorldPreset> presets = this.getGeneratorOptionsHolder()
                 .getCombinedRegistryManager()
-                .get(RegistryKeys.WORLD_PRESET);
+                .getOrThrow(RegistryKeys.WORLD_PRESET);
 
         RegistryKey<WorldPreset> key = RegistryKey.of(RegistryKeys.WORLD_PRESET, GLOBE_WORLD_PRESET_ID);
-        presets.getEntry(key).ifPresent(entry -> {
-            WorldCreator.WorldType globeType = new WorldCreator.WorldType(entry);
+        presets.getOptional(key).ifPresent(entry -> {
+            WorldCreator.WorldType globeType = new WorldCreator.WorldType((RegistryEntry<WorldPreset>) entry);
 
             if (!this.normalWorldTypes.contains(globeType)) {
                 int idx = this.normalWorldTypes.isEmpty() ? 0 : 1;

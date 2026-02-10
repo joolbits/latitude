@@ -1,6 +1,5 @@
 package com.example.globe.client;
 
-import com.example.globe.client.LatitudeHudStudioScreen;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.render.RenderTickCounter;
@@ -49,10 +48,6 @@ public final class CompassHud {
     private static void renderInternal(DrawContext ctx, int screenW, int screenH, boolean forceVisible) {
         MinecraftClient client = MinecraftClient.getInstance();
         if (client == null || client.player == null || client.world == null) {
-            return;
-        }
-
-        if (!forceVisible && client.currentScreen instanceof LatitudeHudStudioScreen) {
             return;
         }
 
@@ -236,11 +231,10 @@ public final class CompassHud {
         float s = cfg.scale;
 
         var m = ctx.getMatrices();
-        m.push();
+        m.pushMatrix();
         try {
-            m.translate((float) x, (float) y, 0.0f);
-            float sf = (float) s;
-            m.scale(sf, sf, 1.0f);
+            m.translate(x, y);
+            m.scale(s, s);
 
             if (cfg.showBackground || isPreview) {
                 int bg;
@@ -274,7 +268,7 @@ public final class CompassHud {
                 }
             }
         } finally {
-            m.pop();
+            m.popMatrix();
         }
     }
 

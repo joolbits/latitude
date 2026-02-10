@@ -7,7 +7,6 @@ import net.minecraft.util.Identifier;
 import net.minecraft.world.ChunkRegion;
 import net.minecraft.world.biome.source.BiomeAccess;
 import net.minecraft.world.chunk.Chunk;
-import net.minecraft.world.gen.GenerationStep;
 import net.minecraft.world.gen.StructureAccessor;
 import net.minecraft.world.gen.chunk.ChunkGeneratorSettings;
 import net.minecraft.world.gen.chunk.NoiseChunkGenerator;
@@ -25,12 +24,12 @@ public class NoiseChunkGeneratorCarveMixin {
     );
 
     @Inject(
-            method = "carve(Lnet/minecraft/world/ChunkRegion;JLnet/minecraft/world/gen/noise/NoiseConfig;Lnet/minecraft/world/biome/source/BiomeAccess;Lnet/minecraft/world/gen/StructureAccessor;Lnet/minecraft/world/chunk/Chunk;Lnet/minecraft/world/gen/GenerationStep$Carver;)V",
+            method = "carve(Lnet/minecraft/world/ChunkRegion;JLnet/minecraft/world/gen/noise/NoiseConfig;Lnet/minecraft/world/biome/source/BiomeAccess;Lnet/minecraft/world/gen/StructureAccessor;Lnet/minecraft/world/chunk/Chunk;)V",
             at = @At("HEAD"),
             cancellable = true
     )
     private void globe$disableCarversInPolarCap(ChunkRegion chunkRegion, long seed, NoiseConfig noiseConfig, BiomeAccess biomeAccess,
-                                               StructureAccessor structureAccessor, Chunk chunk, GenerationStep.Carver carver, CallbackInfo ci) {
+                                               StructureAccessor structureAccessor, Chunk chunk, CallbackInfo ci) {
         NoiseChunkGenerator self = (NoiseChunkGenerator) (Object) this;
         if (!self.matchesSettings(GLOBE_SETTINGS_KEY)) {
             return;
