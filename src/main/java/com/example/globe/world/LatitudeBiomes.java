@@ -226,6 +226,7 @@ public final class LatitudeBiomes {
     private static final boolean DEBUG_BIOMES = Boolean.getBoolean("latitude.debugBiomes")
             || Boolean.getBoolean("latitude.debugBiomePick");
     private static final boolean DEBUG_BLEND = Boolean.getBoolean("latitude.debugBlend");
+    private static final boolean DEBUG_BAND_SCALING = Boolean.getBoolean("latitude.debugBandScaling");
     private static final int DEBUG_LIMIT = Integer.getInteger("latitude.debugBiomes.limit", 200);
     private static volatile long WORLD_SEED = 0L;
     public static volatile int ACTIVE_RADIUS_BLOCKS = 0;
@@ -451,6 +452,13 @@ public final class LatitudeBiomes {
         LatitudeMath.LatitudeZone zone = LatitudeMath.zoneForRadius(effectiveRadius, blockZ);
         int bandIndex = bandIndexForZone(zone);
 
+        if (DEBUG_BAND_SCALING && (blockX & 0x3FF) == 0 && (blockZ & 0x3FF) == 0) {
+            String radiusSource = (!overrideDisabled && activeRadius > 0) ? "ACTIVE" : "ARG";
+            LOGGER.info("[BAND_SCALE] x={} z={} absZ={} argRadius={} activeRadius={} effectiveRadius={} radiusSource={} t={} zone={} caller=Registry",
+                    blockX, blockZ, lat, borderRadiusBlocks, activeRadius, effectiveRadius, radiusSource,
+                    String.format(java.util.Locale.ROOT, "%.6f", t), zone);
+        }
+
         if (isBeachLike(base)) {
             RegistryEntry<Biome> out = pickBeachForBand(biomeRegistry, base, blockX, blockZ, bandIndex);
             debugPick(blockX, blockZ, effectiveRadius, t, zone, base, out, true, false, null);
@@ -598,6 +606,13 @@ public final class LatitudeBiomes {
         double t = (double) lat / (double) effectiveRadius;
         LatitudeMath.LatitudeZone zone = LatitudeMath.zoneForRadius(effectiveRadius, blockZ);
         int bandIndex = bandIndexForZone(zone);
+
+        if (DEBUG_BAND_SCALING && (blockX & 0x3FF) == 0 && (blockZ & 0x3FF) == 0) {
+            String radiusSource = (!overrideDisabled && activeRadius > 0) ? "ACTIVE" : "ARG";
+            LOGGER.info("[BAND_SCALE] x={} z={} absZ={} argRadius={} activeRadius={} effectiveRadius={} radiusSource={} t={} zone={} caller=Collection",
+                    blockX, blockZ, lat, borderRadiusBlocks, activeRadius, effectiveRadius, radiusSource,
+                    String.format(java.util.Locale.ROOT, "%.6f", t), zone);
+        }
 
         if (isBeachLike(base)) {
             RegistryEntry<Biome> out = pickBeachForBand(biomePool, base, blockX, blockZ, bandIndex);
