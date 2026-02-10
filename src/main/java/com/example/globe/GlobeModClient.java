@@ -3,6 +3,7 @@ package com.example.globe;
 import com.example.globe.client.LatitudeClientConfig;
 import com.example.globe.client.LatitudeConfig;
 import com.example.globe.client.GlobeClientState;
+import com.example.globe.client.FirstWorldLoadSpawnWaitEnforcer;
 import com.example.globe.client.CompassHud;
 import com.example.globe.client.CompassHudConfig;
 import com.example.globe.client.ClientKeybinds;
@@ -32,6 +33,7 @@ public class GlobeModClient implements ClientModInitializer {
 
         LatitudeConfig.get();
         LatitudeClientConfig.get().loadOrCreate();
+        FirstWorldLoadSpawnWaitEnforcer.init();
 
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
             GlobeClientState.setGlobeWorld(false);
