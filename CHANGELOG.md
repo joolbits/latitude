@@ -1,5 +1,10 @@
 # Changelog
 
+## Latitude 1.2.6-beta.1 (MC 1.21.11)
+- First-load “Loading terrain…” message for new worlds (Latitude first-gen can take longer; subsequent loads faster).
+- Band-scaling fixes for 1.21.11 compatibility.
+- Note: spawn-wait overlay intentionally omitted on 1.21.11 (not needed).
+
 ## Latitude 1.2.5 (MC 1.21.x)
 - Broadened declared compatibility to cover MC 1.21.0–1.21.11.
 - Two jars provided: one for 1.21.0–1.21.3, one for 1.21.10–1.21.11.
