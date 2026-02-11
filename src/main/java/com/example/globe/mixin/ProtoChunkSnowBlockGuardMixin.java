@@ -53,7 +53,7 @@ public class ProtoChunkSnowBlockGuardMixin {
     }
 
     @Inject(method = "setBlockState", at = @At("HEAD"), cancellable = true)
-    private void globe$blockSnowInWarmBands(BlockPos pos, BlockState state, boolean flags, CallbackInfoReturnable<BlockState> cir) {
+    private void globe$blockSnowInWarmBands(BlockPos pos, BlockState state, int flags, CallbackInfoReturnable<BlockState> cir) {
         if (state == null || !globe$isWarmBand(pos.getZ())) return;
 
         boolean isSnowBlock = state.isOf(Blocks.SNOW_BLOCK);

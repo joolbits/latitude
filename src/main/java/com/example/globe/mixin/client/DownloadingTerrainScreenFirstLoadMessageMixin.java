@@ -39,7 +39,7 @@ public abstract class DownloadingTerrainScreenFirstLoadMessageMixin {
         TextRenderer tr = MinecraftClient.getInstance().textRenderer;
         int cx = context.getScaledWindowWidth() / 2;
         int cy = context.getScaledWindowHeight() / 2;
-        int baseY = cy + 20 + yOffset;
+        int baseY = cy + 40 + yOffset;
 
         int shadowA = (int) Math.round(alpha * 0.6);
         int shadowColor = (shadowA << 24);
