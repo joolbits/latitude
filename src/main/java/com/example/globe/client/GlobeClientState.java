@@ -7,8 +7,12 @@ import net.minecraft.client.world.ClientWorld;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 public final class GlobeClientState {
+    private static final Logger LAT_LOG = LogManager.getLogger("LatitudeEW");
+    private static long lat$ewLastLogMs = 0L;
     public static boolean DEBUG_DISABLE_WARNINGS = false;
     public static final boolean DEBUG_EW_FOG = Boolean.getBoolean("latitude.debugEwFog");
 
@@ -220,7 +224,17 @@ public final class GlobeClientState {
         if (t > 1f) t = 1f;
 
         // steeper right after level-1 threshold
-        return (float) Math.pow(t, 0.55);
+        float i = (float) Math.pow(t, 0.55);
+
+        if (lat$ewShouldLog()) {
+            WorldBorder border = MinecraftClient.getInstance() != null && MinecraftClient.getInstance().world != null
+                    ? MinecraftClient.getInstance().world.getWorldBorder() : null;
+            double centerX = border != null ? border.getCenterX() : Double.NaN;
+            double radius = border != null ? border.getSize() * 0.5 : Double.NaN;
+            LAT_LOG.info("[LAT][EW_PRED] camX={} centerX={} radius={} d={} i={}", x, centerX, radius, d, i);
+        }
+
+        return i;
     }
 
     public static float computeEwFogEnd(double camX) {
@@ -232,7 +246,20 @@ public final class GlobeClientState {
 
         float endFar = 64f;
         float endNear = 12f;
-        return endFar + (endNear - endFar) * a;
+        float out = endFar + (endNear - endFar) * a;
+
+        if (lat$ewShouldLog()) {
+            LAT_LOG.info("[LAT][EW_FOGEND] i={} endNear={} endFar={} out={}", a, endNear, endFar, out);
+        }
+
+        return out;
+    }
+
+    private static boolean lat$ewShouldLog() {
+        long now = System.currentTimeMillis();
+        if (now - lat$ewLastLogMs < 500L) return false;
+        lat$ewLastLogMs = now;
+        return true;
     }
 
     private static float polarWhiteoutIntensity(ClientWorld world, PlayerEntity player) {
