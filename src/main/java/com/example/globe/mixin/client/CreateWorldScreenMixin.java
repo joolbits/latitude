@@ -2,6 +2,8 @@ package com.example.globe.mixin.client;
 
 import com.example.globe.client.GlobeWorldSize;
 import com.example.globe.client.GlobeWorldSizeSelection;
+import com.example.globe.client.LatitudeClientConfig;
+import com.example.globe.client.LatitudeClientState;
 import net.minecraft.client.gui.screen.world.CreateWorldScreen;
 import net.minecraft.client.gui.screen.world.WorldCreator;
 import net.minecraft.registry.Registry;
@@ -32,6 +34,11 @@ public abstract class CreateWorldScreenMixin {
         WorldCreator.WorldType type = creator.getWorldType();
         if (type == null || type.preset() == null) {
             return;
+        }
+
+        if (LatitudeClientConfig.get().showFirstLoadMessage) {
+            LatitudeClientState.firstWorldLoad = true;
+            LatitudeClientState.firstWorldLoadStartMs = 0L;
         }
 
         Identifier presetId = type.preset()
