@@ -1,0 +1,21 @@
+# LATITUDE Rendering State Snapshot
+
+- Last known good visual state: v1.2.5+1.21.11
+- Tag name: save/arch-guardrails-initial
+- Systems active:
+  - EW border haze overlay active via EwHazeOverlay (HUD tail)
+  - Fog geometry clamp via client.FogRendererMixin
+  - HUD overlays via client.InGameHudMixin
+  - Client mixin set matches globe.mixins.json (client array) for v1.2.5+1.21.11
+- Registered client mixins (authoritative snapshot):
+  - client.CreateWorldScreenLatitudeToggleMixin
+  - client.CreateWorldScreenSpawnZoneMixin
+  - client.CreateWorldScreenMixin
+  - client.WorldCreatorMixin
+  - client.InGameHudMixin
+  - client.FogRendererMixin
+  - client.DownloadingTerrainScreenFirstLoadMessageMixin
+  - HandledScreenCompassToggleMixin
+- Notes:
+  - Baseline validated with shader OFF/ON (Iris-safe) and Sodium present.
+  - EW haze render order: world → EW haze → HUD.
