@@ -1,0 +1,1 @@
+Stash@{0} = "WSF: stash before worktree remove" (fog archaeology; from removed worktree 74b70217; do not apply on main)
