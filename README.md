@@ -16,6 +16,10 @@ A globe-style world + latitude-based biome bands with a customizable compass HUD
 ## Design Spec / Release Gate
 See: docs/design-spec.md
 
+## Assistant Memory / Rendering Snapshot
+- `LATITUDE_ASSISTANT_MEMORY.txt`
+- `LATITUDE_RENDERING_STATE_SNAPSHOT.md`
+
 ## Dependencies
 
 - Fabric Loader (Minecraft 1.21.11)
