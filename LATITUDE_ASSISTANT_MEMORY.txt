@@ -1,0 +1,68 @@
+# LATITUDE — Assistant Memory Contract
+
+## Canonical Workspace
+C:\Users\jscho\CascadeProjects\Latitude (Globe)
+
+Never run Gradle from .windsurf/worktrees unless explicitly instructed.
+
+---
+
+## Canonical Branch Policy
+Production branch: <name>
+Experimental branch: <name>
+
+All render work must occur on experimental branch.
+Never mix branches mid-session.
+
+---
+
+## EW Border Rendering Architecture (Authoritative)
+- Render order: World → EW haze → HUD
+- No global fog mutation
+- Camera-relative geometry only
+- DepthMask(false) during draw
+- Shader-agnostic
+- Sodium-safe
+- Baseline validated in: v1.2.5+1.21.11
+
+Overlay system lives in:
+- EwStormWallRendererMixin
+- WorldRendererWorldBorderMixin
+
+Do not attempt to recreate sandstorm via FogRenderer alone.
+
+---
+
+## Client Rendering Axes (Never mix in one commit)
+1. Fog geometry (start/end)
+2. Fog color tint
+3. Sky tint
+4. EW overlay
+5. HUD overlays
+6. Sodium compat
+
+One axis per commit.
+
+---
+
+## Pre-Experiment Rule
+Before touching client rendering:
+git tag save/pre-<description>
+git push --tags
+
+---
+
+## Release Gate
+- Mixin manifest parity check
+- Client hook verification
+- Shader ON/OFF smoke test
+- Sodium smoke test
+
+---
+
+## Emotional Guardrail
+If >1 hour debugging visuals:
+Stop.
+Tag.
+Diff against last known good tag.
+Do not keep iterating blindly.
