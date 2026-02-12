@@ -10,7 +10,8 @@ base {
     archivesName = project.archives_base_name
 }
 
-loom {
+loom {
+
     runs {
         client {
             vmArg "-Dlatitude.fixSurfaceDripstone=true"
@@ -94,6 +95,19 @@ publishing {
     repositories {
         
     }
+}
+
+// Invariant scan: ensure first-load messaging stays wired
+tasks.register('latitudeInvariantScan', JavaExec) {
+    group = 'verification'
+    description = 'Validate first-load message mixins and strings are present'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'com.example.globe.dev.InvariantScan'
+    dependsOn classes
+}
+
+tasks.named('check').configure {
+    dependsOn tasks.named('latitudeInvariantScan')
 }
 
 
