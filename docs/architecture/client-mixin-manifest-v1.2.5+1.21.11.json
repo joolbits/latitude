@@ -1,0 +1,10 @@
+[
+  "client.CreateWorldScreenLatitudeToggleMixin",
+  "client.CreateWorldScreenSpawnZoneMixin",
+  "client.CreateWorldScreenMixin",
+  "client.WorldCreatorMixin",
+  "client.InGameHudMixin",
+  "client.FogRendererMixin",
+  "client.DownloadingTerrainScreenFirstLoadMessageMixin",
+  "HandledScreenCompassToggleMixin"
+]
