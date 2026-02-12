@@ -8,10 +8,14 @@ import com.example.globe.client.ClientKeybinds;
 import com.example.globe.client.GlobeWarningOverlay;
 import com.example.globe.client.LatitudeSettingsScreen;
 import com.example.globe.client.SpawnZoneScreen;
+import com.example.globe.client.EwSandstormOverlayHud;
+import com.example.globe.client.EwSandstormOverlayRenderer;
+import com.example.globe.client.EwStormWallRenderer;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
+import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderEvents;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.block.Blocks;
 import net.minecraft.particle.BlockStateParticleEffect;
@@ -55,9 +59,16 @@ public class GlobeModClient implements ClientModInitializer {
 
         GlobeWarningOverlay.init();
         CompassHud.init();
+        EwSandstormOverlayHud.register();
         ClientTickEvents.END_CLIENT_TICK.register(GlobeModClient::polarCapClientTick);
         ClientKeybinds.init();
         ClientTickEvents.END_CLIENT_TICK.register(GlobeModClient::clientKeybindTick);
+
+        WorldRenderEvents.BEFORE_TRANSLUCENT.register(ctx -> {
+            if (!GlobeClientState.DEBUG_EW_WALL) return;
+            // EwStormWallRenderer.render(ctx.matrices(), ctx.consumers()); // TEMP: wall disabled (overlay bring-up)
+            EwSandstormOverlayRenderer.render(ctx.matrices(), ctx.consumers());
+        });
     }
 
     private static void clientKeybindTick(MinecraftClient client) {

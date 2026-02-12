@@ -6,17 +6,20 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.world.ClientWorld;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.MathHelper;
 import net.minecraft.world.World;
-import net.minecraft.client.option.SimpleOption;
 
 public final class GlobeClientState {
+    public static boolean DEBUG_EW_WALL = true;
+    public static boolean DEBUG_EW_SUPPRESS_VANILLA_BORDER = true;
+    public static boolean DEBUG_EW_FOG = Boolean.parseBoolean(System.getProperty("latitude.debugEwFog", "false"));
+    public static boolean DEBUG_EW_WALL_LINES = true;
+    public static int DEBUG_TICK = 0;
+    public static int DEBUG_TICK2 = 0;
     public static final boolean DEBUG_DISABLE_WARNINGS = Boolean.getBoolean("latitude.debugDisableWarnings");
     public static final boolean DEBUG_DISABLE_FOG = Boolean.getBoolean("latitude.debugDisableFog");
     // --- TEMP EW DIST DEBUG (remove after) ---
     private static long globe$ewLastLogMs = 0L;
     // -----------------------------------------
-    public static final boolean DEBUG_EW_FOG = Boolean.parseBoolean(System.getProperty("latitude.debugEwFog", "false"));
 
     private static long lastEwFogLogTick = Long.MIN_VALUE;
     private static long lastEwStateLogTick = Long.MIN_VALUE;
@@ -221,10 +224,8 @@ public final class GlobeClientState {
             return new WarningState(WarningType.POLAR, polar, pr);
         }
 
-        // Visual stage (fog/particles) can be stronger than text stage.
-        if (ewVisual != EwStormStage.NONE && ewTextStage == EwStormStage.NONE) {
-            ewTextStage = EwStormStage.LEVEL_1;
-            er = ewRank(ewTextStage);
+        if (ewTextWarn) {
+            return new WarningState(WarningType.STORM, ewTextStage, er);
         }
 
         return new WarningState(WarningType.STORM, ewTextStage, er);
@@ -248,6 +249,33 @@ public final class GlobeClientState {
         return Math.max(0.0, radius - Math.abs(camX - center));
     }
 
+    public static double ewWestX() {
+        MinecraftClient mc = MinecraftClient.getInstance();
+        if (mc == null || mc.world == null) return Double.POSITIVE_INFINITY;
+        var border = mc.world.getWorldBorder();
+        double center = border.getCenterX();
+        double radius = com.example.globe.util.LatitudeMath.halfSize(border);
+        return center - radius;
+    }
+
+    public static double ewEastX() {
+        MinecraftClient mc = MinecraftClient.getInstance();
+        if (mc == null || mc.world == null) return Double.POSITIVE_INFINITY;
+        var border = mc.world.getWorldBorder();
+        double center = border.getCenterX();
+        double radius = com.example.globe.util.LatitudeMath.halfSize(border);
+        return center + radius;
+    }
+
+    public static double ewDistToBorder(double camX) {
+        double west = ewWestX();
+        double east = ewEastX();
+        if (Double.isInfinite(west) || Double.isInfinite(east)) {
+            return Double.POSITIVE_INFINITY;
+        }
+        return Math.min(Math.abs(camX - west), Math.abs(east - camX));
+    }
+
     public static double distanceToEwBorderBlocks(double x) {
         var client = MinecraftClient.getInstance();
         if (client == null || client.world == null) return Double.POSITIVE_INFINITY;
@@ -259,7 +287,7 @@ public final class GlobeClientState {
         int stage;
         if (d <= 100.0) {
             stage = 2;
-        } else if (d <= 500.0) {
+        } else if (d <= 175.0) {
             stage = 1;
         } else {
             stage = 0;
@@ -290,6 +318,21 @@ public final class GlobeClientState {
         int minChunks = 3;
         int target = (int) Math.round(originalChunks + (minChunks - originalChunks) * i);
         return Math.max(minChunks, Math.min(originalChunks, target));
+    }
+
+    public static double getDistanceToNearestEWBorder() {
+        var mc = net.minecraft.client.MinecraftClient.getInstance();
+        if (mc == null || mc.gameRenderer == null) return Double.NaN;
+
+        var cam = mc.gameRenderer.getCamera();
+        if (cam == null) return Double.NaN;
+
+        double x = cam.getCameraPos().x;
+
+        double eastX = 3750.0;
+        double westX = -3750.0;
+
+        return Math.min(Math.abs(eastX - x), Math.abs(x - westX));
     }
 
     public static float computeEwFogEnd(double camX) {
