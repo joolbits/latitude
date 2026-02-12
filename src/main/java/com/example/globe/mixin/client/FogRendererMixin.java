@@ -2,8 +2,6 @@ package com.example.globe.mixin.client;
 
 import com.example.globe.GlobeMod;
 import com.example.globe.client.GlobeClientState;
-import net.fabricmc.loader.api.FabricLoader;
-import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.render.Camera;
 import net.minecraft.client.render.RenderTickCounter;
 import net.minecraft.client.render.fog.FogRenderer;
@@ -13,112 +11,77 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.ModifyArgs;
-import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import org.spongepowered.asm.mixin.injection.invoke.arg.Args;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
+
+import net.minecraft.block.enums.CameraSubmersionType;
+import net.minecraft.util.math.MathHelper;
 
 @Mixin(value = FogRenderer.class, priority = 2000)
 public class FogRendererMixin {
-    private static final boolean DEBUG_EW_FOG = Boolean.getBoolean("latitude.debugEwFog");
-    private static long lastScreamMs = 0L;
-    private static long lastModifyMs = 0L;
-    private static final boolean SODIUM_LOADED = FabricLoader.getInstance().isModLoaded("sodium");
+    private static final boolean ENABLE_EW_FOG_TWEAKS = false;
+    private static final ThreadLocal<Boolean> IS_ATMOSPHERIC = ThreadLocal.withInitial(() -> false);
+    // Distances in blocks (500m -> 100m)
+    private static final float STORM_START = 500.0f;
+    private static final float STORM_MAX = 100.0f;
 
-    private static final ThreadLocal<Boolean> TL_GLOBE = ThreadLocal.withInitial(() -> Boolean.FALSE);
-    private static final ThreadLocal<Float> TL_EW_END = ThreadLocal.withInitial(() -> 0.0f);
-    private static final ThreadLocal<String> TL_FOG_TYPE = ThreadLocal.withInitial(() -> "n/a");
+    private static int DEBUG_FOG_HITS = 0;
+    private static boolean LOGGED_ARGS_ONCE = false;
 
-    private static boolean shouldLog1Hz(long now, boolean scream) {
-        if (scream) {
-            if (now - lastScreamMs < 1000L) return false;
-            lastScreamMs = now;
-            return true;
-        }
-
-        if (now - lastModifyMs < 1000L) return false;
-        lastModifyMs = now;
-        return true;
+    @Inject(method = "applyFog(Lnet/minecraft/client/render/Camera;ILnet/minecraft/client/render/RenderTickCounter;FLnet/minecraft/client/world/ClientWorld;)Lorg/joml/Vector4f;", at = @At("HEAD"))
+    private static void globe$ewFog_markAtmospheric(Camera camera, int viewDistance, RenderTickCounter tickCounter, float tickDelta, ClientWorld world, CallbackInfoReturnable<Vector4f> cir) {
+        IS_ATMOSPHERIC.set(camera.getSubmersionType() == CameraSubmersionType.NONE || camera.getSubmersionType() == CameraSubmersionType.ATMOSPHERIC);
     }
 
-    @Inject(method = "applyFog", at = @At("HEAD"))
-    private void latitude$scream(Camera camera, int viewDistance, RenderTickCounter tickCounter, float tickDelta,
-                                 ClientWorld world, CallbackInfoReturnable<Vector4f> cir) {
-        boolean globe = GlobeClientState.isGlobeWorld();
-        double camX = camera.getCameraPos().x;
-        float ewEnd = globe ? GlobeClientState.computeEwFogEnd(camX) : 0.0f;
-
-        TL_GLOBE.set(globe);
-        TL_EW_END.set(ewEnd);
-        TL_FOG_TYPE.set("n/a");
-
-        if (!DEBUG_EW_FOG) {
-            return;
-        }
-
-        long now = System.currentTimeMillis();
-        if (!shouldLog1Hz(now, true)) {
-            return;
-        }
-
-        GlobeMod.LOGGER.info("[LAT_EW_FOG_SCREAM] hook=FogRenderer#applyFog HEAD camX={} globe={} ewEnd={} fogType={} sodium={}",
-                camX, globe, ewEnd, TL_FOG_TYPE.get(), SODIUM_LOADED);
+    @Inject(method = "applyFog(Lnet/minecraft/client/render/Camera;ILnet/minecraft/client/render/RenderTickCounter;FLnet/minecraft/client/world/ClientWorld;)Lorg/joml/Vector4f;", at = @At("RETURN"))
+    private static void globe$ewFog_clearAtmospheric(CallbackInfoReturnable<Vector4f> cir) {
+        IS_ATMOSPHERIC.set(false);
     }
-
     @ModifyArgs(
             method = "applyFog",
             at = @At(
                     value = "INVOKE",
-                    target = "Lnet/minecraft/client/render/fog/FogRenderer;method_71110(Ljava/nio/ByteBuffer;ILorg/joml/Vector4f;FFFFFF)V"
-            ),
-            require = 0
+                    target = "Lnet/minecraft/client/render/fog/FogRenderer;applyFog(Ljava/nio/ByteBuffer;ILorg/joml/Vector4f;FFFFFF)V"
+            )
     )
-    private void latitude$modifyFogArgs(Args args) {
-        boolean globe = TL_GLOBE.get();
-        float ewEnd = TL_EW_END.get();
-        if (!globe || ewEnd <= 0.0f) {
-            return;
-        }
+    private void globe$ewFog_modifyFogArgs(Args args, Camera camera, int viewDistance, RenderTickCounter tickCounter, float tickDelta, ClientWorld world) {
+        if (!ENABLE_EW_FOG_TWEAKS) return;
+        if (!GlobeClientState.DEBUG_EW_FOG) return;
 
-        // HARD PROOF MODE: force a wall if this hook fires.
-        float proofEnd = 12.0f;
-
-        for (int i = 3; i <= 8; i++) {
-            float v = args.get(i);
-            if (v > proofEnd) args.set(i, proofEnd);
-        }
-
-        long now = System.currentTimeMillis();
-        if (now - lastModifyMs >= 1000L) {
-            lastModifyMs = now;
-            double camX = -9999.0;
-            MinecraftClient mc = MinecraftClient.getInstance();
-            if (mc != null && mc.player != null) {
-                camX = mc.player.getX();
+        if (!LOGGED_ARGS_ONCE) {
+            LOGGED_ARGS_ONCE = true;
+            for (int i = 0; i < args.size(); i++) {
+                Object o = args.get(i);
+                GlobeMod.LOGGER.info("[Latitude] applyFogInternal arg[{}] = {}", i, (o == null ? "null" : o.getClass().getName()));
+                GlobeMod.LOGGER.info("[Latitude] applyFogInternal val[{}] = {}", i, o);
             }
-            GlobeMod.LOGGER.info("[LAT_EW_FOG_PROOF] clamp fired: camX={} ewEnd={} forcedEnd={}", camX, ewEnd, proofEnd);
         }
 
-        float environmentalStart = args.get(3);
-        float environmentalEnd = args.get(4);
-        float renderStart = args.get(5);
-        float renderEnd = args.get(6);
+        if (camera.getSubmersionType() != CameraSubmersionType.NONE) return;
 
-        float clampedEwEnd = Math.max(8.0f, ewEnd);
-        float finalEnd = Math.min(Math.min(environmentalEnd, renderEnd), clampedEwEnd);
-        args.set(3, 0.0f);
-        args.set(4, finalEnd);
-        args.set(5, 0.0f);
-        args.set(6, finalEnd);
+        float dist = (float) GlobeClientState.getDistanceToNearestEWBorder();
+        if (Float.isNaN(dist)) return;
 
-        if (!DEBUG_EW_FOG) {
-            return;
+        float t = 0.0f;
+        if (dist < STORM_START) {
+            float clamped = Math.max(dist, STORM_MAX);
+            t = (STORM_START - clamped) / (STORM_START - STORM_MAX);
+            t = MathHelper.clamp(t, 0.0f, 1.0f);
         }
 
-        long logNow = System.currentTimeMillis();
-        if (!shouldLog1Hz(logNow, false)) {
-            return;
+        if (t > 0.0f) {
+            float start = MathHelper.lerp(t, 96.0f, 64.0f);
+            float end = MathHelper.lerp(t, 256.0f, 192.0f);
+
+            // indices: 0=ByteBuffer, 1=int, 2=Vector4f color, 3=envStart, 4=envEnd, 5=renderStart, 6=renderEnd, 7=skyEnd, 8=cloudEnd
+            args.set(3, start);
+            args.set(4, end);
+            args.set(5, start);
+            args.set(6, end);
         }
 
-        GlobeMod.LOGGER.info("[LAT_EW_FOG_MODIFY] end env={} render={} ew={} final={} fogType={} sodium={}",
-                environmentalEnd, renderEnd, ewEnd, finalEnd, TL_FOG_TYPE.get(), SODIUM_LOADED);
+        if ((++DEBUG_FOG_HITS % 60) == 0) {
+            GlobeMod.LOGGER.info("[Latitude] fog mixin hit: {}", DEBUG_FOG_HITS);
+        }
     }
 }

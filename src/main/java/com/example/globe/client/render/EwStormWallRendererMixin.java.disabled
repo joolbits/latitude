@@ -1,0 +1,133 @@
+import com.mojang.blaze3d.systems.RenderSystem;
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.render.*;
+import net.minecraft.client.util.math.MatrixStack;
+import net.minecraft.util.math.Vec3d;
+import org.joml.Matrix4f;
+import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+
+/**
+ * EW Storm Wall (geometry) - shaderpack-safe
+ *
+ * Inject into WorldRenderer.render() and draw a translucent vertical quad
+ * near the east/west world border.
+ *
+ * Notes:
+ * - Uses 1.21+ rendering APIs (no BufferBuilder#begin / VertexConsumer#next).
+ * - Keeps math intentionally simple for first-visibility success.
+ */
+@Mixin(WorldRenderer.class)
+public class EwStormWallRendererMixin {
+
+    private static final double WALL_VIS_RANGE = 1000.0; // start fading in at this distance
+    private static final double WALL_HALF_Z = 1000.0;     // wall spans +/- Z
+    private static final double WALL_HALF_Y = 256.0;      // wall spans +/- Y around camera
+
+    @Inject(
+        method = "render",
+        at = @At(
+            value = "INVOKE",
+            target = "Lnet/minecraft/client/render/WorldRenderer;renderChunkDebugInfo(Lnet/minecraft/client/util/math/MatrixStack;Lnet/minecraft/client/render/VertexConsumerProvider;Lnet/minecraft/client/render/Camera;)V",
+            shift = At.Shift.BEFORE
+        )
+    )
+    private void latitude$renderEwStormWall(
+        MatrixStack matrices,
+        float tickDelta,
+        long limitTime,
+        boolean renderBlockOutline,
+        Camera camera,
+        GameRenderer gameRenderer,
+        LightmapTextureManager lightmapTextureManager,
+        Matrix4f projectionMatrix,
+        CallbackInfo ci
+    ) {
+        MinecraftClient client = MinecraftClient.getInstance();
+
+        // Overworld only
+        if (client.world == null || !client.world.getRegistryKey().getValue().toString().equals("minecraft:overworld")) {
+            return;
+        }
+
+        // TODO: re-enable once config plumbing is confirmed in this branch
+        // if (!LatitudeConfig.enableEwStormWall) return;
+
+        // 1.21+: camera position is a Vec3d field/method depending on mappings; use getPos() fallback safely via client camera entity
+        // In Yarn 1.21.11, Camera exposes getPos() as getPos() is not present (per your compile error).
+        // Use the camera entity position instead (stable across versions).
+        if (client.getCameraEntity() == null) return;
+        Vec3d cameraPos = client.getCameraEntity().getPos();
+
+        double camX = cameraPos.x;
+
+        // TODO: replace these with your actual Globe radius/border sync values.
+        double centerX = 0.0;
+        double radius = 30000.0; // half-width
+        double westBorder = centerX - radius;
+        double eastBorder = centerX + radius;
+
+        double distToWest = Math.abs(camX - westBorder);
+        double distToEast = Math.abs(camX - eastBorder);
+        double distToNearest = Math.min(distToWest, distToEast);
+
+        if (distToNearest > WALL_VIS_RANGE) return;
+
+        boolean renderWest = distToWest < distToEast;
+        double borderX = renderWest ? westBorder : eastBorder;
+
+        renderStormWall(matrices, cameraPos, borderX, distToNearest);
+    }
+
+    private void renderStormWall(MatrixStack matrices, Vec3d cameraPos, double borderX, double distToBorder) {
+        // Fade in as you approach border
+        float alpha = 1.0f - (float)(distToBorder / WALL_VIS_RANGE);
+        if (alpha < 0.01f) return;
+        if (alpha > 1.0f) alpha = 1.0f;
+
+        // Wall X relative to camera (world-space translated by matrices)
+        float wallX = (float)(borderX - cameraPos.x);
+
+        matrices.push();
+        Matrix4f mat = matrices.peek().getPositionMatrix();
+
+        // Render state
+        RenderSystem.enableBlend();
+        RenderSystem.blendFuncSeparate(
+            org.lwjgl.opengl.GL11.GL_SRC_ALPHA,
+            org.lwjgl.opengl.GL11.GL_ONE_MINUS_SRC_ALPHA,
+            org.lwjgl.opengl.GL11.GL_ONE,
+            org.lwjgl.opengl.GL11.GL_ONE_MINUS_SRC_ALPHA
+        );
+        RenderSystem.depthMask(false);
+
+        // 1.21+: shader is a position+color pipeline
+        RenderSystem.setShader(GameRenderer::getPositionColorShader);
+
+        BufferBuilder bb = Tessellator.getInstance().begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
+
+        float r = 0.2f, g = 0.2f, b = 0.3f;
+
+        // Center wall around camera Y (simple first pass)
+        float y0 = (float)(-WALL_HALF_Y);
+        float y1 = (float)(WALL_HALF_Y);
+        float z0 = (float)(-WALL_HALF_Z);
+        float z1 = (float)(WALL_HALF_Z);
+
+        // Quad at constant X (vertical plane)
+        bb.vertex(mat, wallX, y0, z0).color(r, g, b, alpha);
+        bb.vertex(mat, wallX, y0, z1).color(r, g, b, alpha);
+        bb.vertex(mat, wallX, y1, z1).color(r, g, b, alpha);
+        bb.vertex(mat, wallX, y1, z0).color(r, g, b, alpha);
+
+        BufferRenderer.drawWithGlobalProgram(bb.end());
+
+        // Restore state
+        RenderSystem.depthMask(true);
+        RenderSystem.disableBlend();
+
+        matrices.pop();
+    }
+}

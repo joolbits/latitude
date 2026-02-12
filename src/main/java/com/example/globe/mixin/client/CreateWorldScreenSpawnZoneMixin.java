@@ -117,18 +117,17 @@ public abstract class CreateWorldScreenSpawnZoneMixin extends Screen {
             return;
         }
 
-        boolean globeSelected = globe$isGlobeSelected();
-        this.globe$spawnZoneButton.visible = globeSelected;
-        this.globe$spawnZoneButton.active = globeSelected;
+        this.globe$spawnZoneButton.visible = true;
+        this.globe$spawnZoneButton.active = true;
 
         if (this.globe$worldSizeButton != null) {
-            this.globe$worldSizeButton.visible = globeSelected;
-            this.globe$worldSizeButton.active = globeSelected;
+            this.globe$worldSizeButton.visible = true;
+            this.globe$worldSizeButton.active = true;
         }
 
         if (this.globe$startWithCompassButton != null) {
-            this.globe$startWithCompassButton.visible = globeSelected;
-            this.globe$startWithCompassButton.active = globeSelected;
+            this.globe$startWithCompassButton.visible = true;
+            this.globe$startWithCompassButton.active = true;
             this.globe$startWithCompassButton.setMessage(globe$startWithCompassLabel());
         }
     }
