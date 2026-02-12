@@ -16,6 +16,9 @@ A globe-style world + latitude-based biome bands with a customizable compass HUD
 ## Design Spec / Release Gate
 See: docs/design-spec.md
 
+## Guardrails / Workflows
+- Savepoint Autopilot: `.windsurf/workflows/latitude-savepoint-autopilot.md`
+
 ## Dependencies
 
 - Fabric Loader (Minecraft 1.21.11)
