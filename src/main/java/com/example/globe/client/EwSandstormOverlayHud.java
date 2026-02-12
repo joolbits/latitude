@@ -19,11 +19,11 @@ public final class EwSandstormOverlayHud {
     private static final int DUST_B = 132;
 
     public static void register() {
-        HudRenderCallback.EVENT.register(EwSandstormOverlayHud::onHudRender);
+        HudRenderCallback.EVENT.register(EwSandstormOverlayHud::render);
         com.example.globe.GlobeMod.LOGGER.info("[Latitude] EwSandstormOverlayHud registered");
     }
 
-    private static void onHudRender(DrawContext ctx, RenderTickCounter tickCounter) {
+    public static void render(DrawContext ctx, RenderTickCounter tickCounter) {
         MinecraftClient mc = MinecraftClient.getInstance();
         if (mc.player == null || mc.world == null) return;
         if (mc.options.hudHidden) return;
