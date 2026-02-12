@@ -27,6 +27,7 @@
     "client.WorldCreatorMixin",
     "client.InGameHudMixin",
     "HandledScreenCompassToggleMixin",
+    "client.DownloadingTerrainScreenFirstLoadMessageMixin",
     "client.FogRendererEwMixin",
     "client.compat.sodium.RenderSectionManagerVisibilityMixin"
   ],

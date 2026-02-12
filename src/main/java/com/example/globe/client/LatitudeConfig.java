@@ -13,6 +13,7 @@ import java.nio.file.Path;
 public final class LatitudeConfig {
     public static boolean enableWarningParticles = true;
     public static boolean showWarningMessages = true;
+    public static boolean enableEwStormWall = true;
 
     public enum ZoneEntryNotifyMode { OFF, TOAST, TITLE }
     public static ZoneEntryNotifyMode zoneEntryNotifyMode = ZoneEntryNotifyMode.TITLE;
@@ -41,6 +42,7 @@ public final class LatitudeConfig {
 
     private boolean enableWarningParticlesValue = true;
     private boolean showWarningMessagesValue = true;
+    private boolean enableEwStormWallValue = true;
     private ZoneEntryNotifyMode zoneEntryNotifyModeValue = ZoneEntryNotifyMode.TITLE;
     private boolean showLatitudeDegreesValue = true;
     private boolean latitudeDegreesOnCompassValue = true;
@@ -97,6 +99,7 @@ public final class LatitudeConfig {
                         cfg.sanitize();
                         enableWarningParticles = cfg.enableWarningParticlesValue;
                         showWarningMessages = cfg.showWarningMessagesValue;
+                        enableEwStormWall = cfg.enableEwStormWallValue;
                         zoneEntryNotifyMode = cfg.zoneEntryNotifyModeValue;
                         showLatitudeDegrees = cfg.showLatitudeDegreesValue;
                         latitudeDegreesOnCompass = cfg.latitudeDegreesOnCompassValue;
@@ -131,6 +134,7 @@ public final class LatitudeConfig {
         LatitudeConfig fresh = new LatitudeConfig();
         enableWarningParticles = fresh.enableWarningParticlesValue;
         showWarningMessages = fresh.showWarningMessagesValue;
+        enableEwStormWall = fresh.enableEwStormWallValue;
         zoneEntryNotifyMode = fresh.zoneEntryNotifyModeValue;
         showLatitudeDegrees = fresh.showLatitudeDegreesValue;
         latitudeDegreesOnCompass = fresh.latitudeDegreesOnCompassValue;
@@ -162,6 +166,7 @@ public final class LatitudeConfig {
         try {
             cfg.enableWarningParticlesValue = enableWarningParticles;
             cfg.showWarningMessagesValue = showWarningMessages;
+            cfg.enableEwStormWallValue = enableEwStormWall;
             cfg.zoneEntryNotifyModeValue = zoneEntryNotifyMode;
             cfg.showLatitudeDegreesValue = showLatitudeDegrees;
             cfg.latitudeDegreesOnCompassValue = showLatitudeDegrees && latitudeDegreesOnCompass;
