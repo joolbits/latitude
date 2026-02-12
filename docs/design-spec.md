@@ -44,6 +44,10 @@ Beaches in cold bands must match the environment.
 - **Subpolar/Polar:** Snowy Beach (70%) or Stony Shore (30%).
 - **Warmer Bands:** Preserve vanilla beach selection.
 
+## 5. HUD Render Invariant (EW Haze)
+- EW haze must render inside `InGameHud#renderMainHud` **before** the `renderHotbar(...)` call so HUD elements (hotbar, crosshair, overlays) stay above haze.
+- HudRenderCallback must **not** render EW haze; using both paths would double-draw and break z-order.
+
 ---
 
 ## Acceptance Tests (Release Gate)

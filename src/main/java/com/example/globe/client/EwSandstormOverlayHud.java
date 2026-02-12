@@ -1,6 +1,5 @@
 package com.example.globe.client;
 
-import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.render.RenderTickCounter;
@@ -17,11 +16,6 @@ public final class EwSandstormOverlayHud {
     private static final int DUST_R = 214;
     private static final int DUST_G = 186;
     private static final int DUST_B = 132;
-
-    public static void register() {
-        HudRenderCallback.EVENT.register(EwSandstormOverlayHud::render);
-        com.example.globe.GlobeMod.LOGGER.info("[Latitude] EwSandstormOverlayHud registered");
-    }
 
     public static void render(DrawContext ctx, RenderTickCounter tickCounter) {
         MinecraftClient mc = MinecraftClient.getInstance();
