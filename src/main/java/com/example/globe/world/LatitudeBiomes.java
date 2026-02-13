@@ -315,8 +315,12 @@ public final class LatitudeBiomes {
     private static final int BLEND_DITHER_SCALE_BLOCKS = 512;
     private static final int BLEND_NOISE_PATCH_CHUNKS = 6;
     private static final int WARP_NOISE_PATCH_CHUNKS = 8;
-    private static final int JITTER_AMPLITUDE_BLOCKS = 128;
-    private static final int JITTER_SCALE_BLOCKS = 3072;
+    private static final double BAND_JITTER_FRAC = 0.02;
+    private static final int BAND_JITTER_MIN_BLOCKS = 80;
+    private static final int BAND_JITTER_MAX_BLOCKS = 450;
+    private static final double BAND_JITTER_WAVELENGTH_FRAC = 0.35;
+    private static final int BAND_JITTER_WAVELENGTH_MIN_BLOCKS = 1800;
+    private static final int BAND_JITTER_WAVELENGTH_MAX_BLOCKS = 12000;
     private static final int DITHER_SCALE_BLOCKS = 144;
     private static final int WARP_AMPLITUDE_BLOCKS = 256;
     private static final int WARP_SCALE_BLOCKS = 4096;
@@ -444,8 +448,9 @@ public final class LatitudeBiomes {
         }
 
         int lat = Math.abs(blockZ);
-        double t = (double) lat / (double) effectiveRadius;
-        LatitudeMath.LatitudeZone zone = LatitudeMath.zoneForRadius(effectiveRadius, blockZ);
+        double tBase = (double) lat / (double) effectiveRadius;
+        double t = applyBoundaryJitter(blockX, blockZ, effectiveRadius, tBase);
+        LatitudeMath.LatitudeZone zone = zoneForAbsLatFraction(t);
         int bandIndex = bandIndexForZone(zone);
 
         if (isBeachLike(base)) {
@@ -571,6 +576,7 @@ public final class LatitudeBiomes {
         }
         out = enforceSnowyLatitudeRamp(biomeRegistry, out, base, blockX, blockZ, effectiveRadius, landBandIndex);
         out = clampWarmInColdZone(biomeRegistry, base, out, zone, blockX, blockZ);
+        out = applySubpolarSwampGuard(biomeRegistry, base, out, zone);
         debugPick(blockX, blockZ, effectiveRadius, t, zone, base, out, false, out != sanitized, mangroveDecision);
         return out;
     }
@@ -592,8 +598,9 @@ public final class LatitudeBiomes {
         logTagPools(biomePool);
 
         int lat = Math.abs(blockZ);
-        double t = (double) lat / (double) effectiveRadius;
-        LatitudeMath.LatitudeZone zone = LatitudeMath.zoneForRadius(effectiveRadius, blockZ);
+        double tBase = (double) lat / (double) effectiveRadius;
+        double t = applyBoundaryJitter(blockX, blockZ, effectiveRadius, tBase);
+        LatitudeMath.LatitudeZone zone = zoneForAbsLatFraction(t);
         int bandIndex = bandIndexForZone(zone);
 
         if (isBeachLike(base)) {
@@ -701,6 +708,7 @@ public final class LatitudeBiomes {
         }
         out = enforceSnowyLatitudeRamp(biomePool, out, base, blockX, blockZ, effectiveRadius, landBandIndex);
         out = clampWarmInColdZone(biomePool, base, out, zone, blockX, blockZ);
+        out = applySubpolarSwampGuard(biomePool, base, out, zone);
         debugPick(blockX, blockZ, effectiveRadius, t, zone, base, out, false, out != sanitized, mangroveDecision);
         return out;
     }
@@ -996,6 +1004,31 @@ public final class LatitudeBiomes {
         if (t < LatitudeMath.TEMPERATE_MAX_FRAC) return BAND_TEMPERATE;
         if (t < LatitudeMath.SUBPOLAR_MAX_FRAC) return BAND_SUBPOLAR;
         return BAND_POLAR;
+    }
+
+    private static LatitudeMath.LatitudeZone zoneForAbsLatFraction(double t) {
+        double clamped = clamp(t, 0.0, 1.0);
+        if (clamped < LatitudeMath.EQUATOR_MAX_FRAC) return LatitudeMath.LatitudeZone.EQUATOR;
+        if (clamped < LatitudeMath.TROPICAL_MAX_FRAC) return LatitudeMath.LatitudeZone.TROPICAL;
+        if (clamped < LatitudeMath.SUBTROPICAL_MAX_FRAC) return LatitudeMath.LatitudeZone.SUBTROPICAL;
+        if (clamped < LatitudeMath.TEMPERATE_MAX_FRAC) return LatitudeMath.LatitudeZone.TEMPERATE;
+        if (clamped < LatitudeMath.SUBPOLAR_MAX_FRAC) return LatitudeMath.LatitudeZone.SUBPOLAR;
+        return LatitudeMath.LatitudeZone.POLAR;
+    }
+
+    private static double applyBoundaryJitter(int blockX, int blockZ, int radius, double baseT) {
+        if (radius <= 0) {
+            return clamp(baseT, 0.0, 1.0);
+        }
+        double jitterBlocks = clamp(radius * BAND_JITTER_FRAC, BAND_JITTER_MIN_BLOCKS, BAND_JITTER_MAX_BLOCKS);
+        double wavelengthBlocks = clamp(radius * BAND_JITTER_WAVELENGTH_FRAC,
+                BAND_JITTER_WAVELENGTH_MIN_BLOCKS,
+                BAND_JITTER_WAVELENGTH_MAX_BLOCKS);
+        int noiseScale = Math.max(1, (int) Math.round(wavelengthBlocks));
+        double noise01 = ValueNoise2D.sampleBlocks(WORLD_SEED ^ JITTER_NOISE_SALT, blockX, blockZ, noiseScale);
+        double signedNoise = (noise01 * 2.0) - 1.0;
+        double jitterT = signedNoise * (jitterBlocks / (double) radius);
+        return clamp(baseT + jitterT, 0.0, 1.0);
     }
 
     private static int bandBoundaryBlocks(int boundaryIndex, int radius) {
@@ -1503,6 +1536,45 @@ public final class LatitudeBiomes {
             return pick;
         }
         return pickSnowyFallback(biomes, base);
+    }
+
+    private static RegistryEntry<Biome> applySubpolarSwampGuard(Registry<Biome> biomes, RegistryEntry<Biome> base,
+                                                                 RegistryEntry<Biome> pick, LatitudeMath.LatitudeZone zone) {
+        if (zone != LatitudeMath.LatitudeZone.SUBPOLAR || !isSubpolarDisallowedWetBiome(pick)) {
+            return pick;
+        }
+        return pickSubpolarSwampFallback(biomes, base);
+    }
+
+    private static RegistryEntry<Biome> applySubpolarSwampGuard(Collection<RegistryEntry<Biome>> biomes, RegistryEntry<Biome> base,
+                                                                 RegistryEntry<Biome> pick, LatitudeMath.LatitudeZone zone) {
+        if (zone != LatitudeMath.LatitudeZone.SUBPOLAR || !isSubpolarDisallowedWetBiome(pick)) {
+            return pick;
+        }
+        return pickSubpolarSwampFallback(biomes, base);
+    }
+
+    private static boolean isSubpolarDisallowedWetBiome(RegistryEntry<Biome> biome) {
+        return isBiomeId(biome, SWAMP_ID);
+    }
+
+    private static RegistryEntry<Biome> pickSubpolarSwampFallback(Registry<Biome> biomes, RegistryEntry<Biome> base) {
+        if (!isSubpolarDisallowedWetBiome(base)) {
+            return base;
+        }
+        try {
+            return biome(biomes, "minecraft:snowy_plains");
+        } catch (Throwable ignored) {
+            return base;
+        }
+    }
+
+    private static RegistryEntry<Biome> pickSubpolarSwampFallback(Collection<RegistryEntry<Biome>> biomes, RegistryEntry<Biome> base) {
+        if (!isSubpolarDisallowedWetBiome(base)) {
+            return base;
+        }
+        RegistryEntry<Biome> snowyPlains = entryById(biomes, "minecraft:snowy_plains");
+        return snowyPlains != null ? snowyPlains : base;
     }
 
     private static boolean isWarmBiome(RegistryEntry<Biome> entry) {
