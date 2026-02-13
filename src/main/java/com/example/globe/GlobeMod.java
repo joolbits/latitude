@@ -3,6 +3,7 @@ package com.example.globe;
 import net.fabricmc.api.ModInitializer;
 import com.example.globe.world.LatitudeBiomes;
 import com.example.globe.world.BiomeFeatureStripping;
+import com.example.globe.world.LatitudeWorldState;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
@@ -31,12 +32,19 @@ import net.minecraft.world.WorldProperties;
 import net.minecraft.network.packet.s2c.play.PositionFlag;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.random.Random;
+import net.fabricmc.loader.api.FabricLoader;
+import net.fabricmc.loader.api.ModContainer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 
 import java.util.EnumSet;
+import java.util.Optional;
+import java.util.jar.Attributes;
+import java.util.jar.Manifest;
+
+import java.io.InputStream;
 
 public class GlobeMod implements ModInitializer {
     public static final String MOD_ID = "globe";
@@ -91,6 +99,8 @@ public class GlobeMod implements ModInitializer {
     public void onInitialize() {
         LOGGER.info("{} initialized. Use the globe:globe world preset for deterministic terrain.", MOD_ID);
 
+        logBuildMetadata("server");
+
         GlobeNet.registerPayloads();
         BiomeFeatureStripping.init();
 
@@ -123,6 +133,9 @@ public class GlobeMod implements ModInitializer {
             LOGGER.info("JOIN: player={}, isGlobeOverworld={}", handler.player.getName().getString(), isGlobe);
             ServerPlayNetworking.send(handler.player, new GlobeNet.GlobeStatePayload(isGlobe));
 
+            LatitudeWorldState worldState = LatitudeWorldState.get(overworld);
+            boolean isBrandNewWorld = overworld.getTime() < 100L;
+
             String pendingZone = server.isDedicated() ? null : GlobePending.consume();
 
             boolean startWithCompass = !server.isDedicated() && GlobePending.startWithCompass;
@@ -139,12 +152,13 @@ public class GlobeMod implements ModInitializer {
                 }
             }
 
-            if (isGlobe && !handler.player.getCommandTags().contains(SPAWN_CHOSEN_TAG)) {
+            if (isGlobe && !worldState.isSpawnPickerDismissed() && isBrandNewWorld) {
                 if (pendingZone != null) {
                     applySpawnChoice(handler.player, pendingZone);
                 }
 
-                if (!handler.player.getCommandTags().contains(SPAWN_CHOSEN_TAG)) {
+                if (!worldState.isSpawnPickerDismissed()) {
+                    worldState.setSpawnPickerDismissed(true);
                     LOGGER.info("Sending spawn picker open to player={}", handler.player.getName().getString());
                     ServerPlayNetworking.send(handler.player, new GlobeNet.OpenSpawnPickerPayload(true));
                 }
@@ -363,6 +377,38 @@ public class GlobeMod implements ModInitializer {
         BlockPos teleportPos = clampSpawnAwayFromEwWarning(clampedSpawnPos, radius);
         player.teleport(world, teleportPos.getX() + 0.5, teleportPos.getY(), teleportPos.getZ() + 0.5, EnumSet.noneOf(PositionFlag.class), player.getYaw(), player.getPitch(), true);
         player.addCommandTag(SPAWN_CHOSEN_TAG);
+        LatitudeWorldState.get(world).setSpawnPickerDismissed(true);
+    }
+
+    public static void logBuildMetadata(String side) {
+        Optional<ModContainer> mod = FabricLoader.getInstance().getModContainer(MOD_ID);
+        String version = mod.map(c -> c.getMetadata().getVersion().getFriendlyString()).orElse("?");
+        String commit = "?";
+        String branch = "?";
+        String time = "?";
+        String dirty = "?";
+
+        if (mod.isPresent()) {
+            try (InputStream is = mod.get().findPath("META-INF/MANIFEST.MF").map(path -> {
+                try {
+                    return java.nio.file.Files.newInputStream(path);
+                } catch (Exception e) {
+                    return null;
+                }
+            }).orElse(null)) {
+                if (is != null) {
+                    Manifest mf = new Manifest(is);
+                    Attributes attrs = mf.getMainAttributes();
+                    commit = Optional.ofNullable(attrs.getValue("Git-Commit")).orElse(commit);
+                    branch = Optional.ofNullable(attrs.getValue("Git-Branch")).orElse(branch);
+                    time = Optional.ofNullable(attrs.getValue("Build-Time")).orElse(time);
+                    dirty = Optional.ofNullable(attrs.getValue("Build-Dirty")).orElse(dirty);
+                }
+            } catch (Exception ignored) {
+            }
+        }
+
+        LOGGER.info("[LAT][BUILD] side={} version={} commit={} branch={} dirty={} time={}", side, version, commit, branch, dirty, time);
     }
 
     private static BlockPos clampSpawnAwayFromEwWarning(BlockPos spawnPos, int radiusBlocks) {
