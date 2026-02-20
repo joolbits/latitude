@@ -37,6 +37,9 @@ public final class LatitudeDevCommand {
                         .then(CommandManager.literal("resume").executes(LatitudeDevCommand::resumeTransect))
                         .then(CommandManager.literal("stop").executes(LatitudeDevCommand::stopTransect))
                         .then(CommandManager.literal("status").executes(LatitudeDevCommand::statusTransect))
+                        .then(CommandManager.literal("budgetMs")
+                                .then(CommandManager.argument("ms", IntegerArgumentType.integer())
+                                        .executes(LatitudeDevCommand::setBudgetMs)))
         );
     }
 
@@ -117,6 +120,16 @@ public final class LatitudeDevCommand {
 
     private static int statusTransect(CommandContext<ServerCommandSource> ctx) {
         return ChunkPregenerator.status(ctx.getSource());
+    }
+
+    private static int setBudgetMs(CommandContext<ServerCommandSource> ctx) {
+        ServerCommandSource source = ctx.getSource();
+        int ms = IntegerArgumentType.getInteger(ctx, "ms");
+        if (ms < 1 || ms > 50) {
+            source.sendError(Text.literal("[latdev] budgetMs must be in [1..50]"));
+            return 0;
+        }
+        return ChunkPregenerator.setDefaultBudgetMs(source, ms);
     }
 
     private static int maxAbsZFromBorder(ServerCommandSource source) {

@@ -15,8 +15,10 @@ import java.util.Queue;
 public final class ChunkPregenerator {
     private static final int BLOCKS_PER_CHUNK = 16;
     private static final int PROGRESS_INTERVAL = 200;
+    private static final long DEFAULT_MAX_NANOS_PER_TICK = 3_000_000L;
 
     private static boolean tickHookRegistered;
+    private static long defaultMaxNanosPerTick = DEFAULT_MAX_NANOS_PER_TICK;
 
     private static boolean active;
     private static boolean paused;
@@ -25,6 +27,7 @@ public final class ChunkPregenerator {
     private static int totalChunksPlanned;
     private static int chunksCompleted;
     private static int activeChunksPerTick;
+    private static long activeMaxNanosPerTick;
     private static String jobSummary = "none";
     private static MinecraftServer activeServer;
     private static GenerationJob activeJob;
@@ -69,12 +72,13 @@ public final class ChunkPregenerator {
 
         int totalChunks = queue.size();
         int widthChunks = xHalfWidthChunks * 2 + 1;
+        long maxNanosPerTick = defaultMaxNanosPerTick;
         String summary = "slice[zChunks=" + negStartChunk + ".." + negEndChunk
                 + " and " + zStartChunk + ".." + zEndChunk
                 + ", width=" + widthChunks + "]";
 
         long newJobId = ++nextJobId;
-        activeJob = new GenerationJob(server, world, source, queue, chunksPerTick);
+        activeJob = new GenerationJob(server, world, source, queue, chunksPerTick, maxNanosPerTick);
         activeServer = server;
         active = true;
         paused = false;
@@ -82,12 +86,21 @@ public final class ChunkPregenerator {
         totalChunksPlanned = totalChunks;
         chunksCompleted = 0;
         activeChunksPerTick = chunksPerTick;
+        activeMaxNanosPerTick = maxNanosPerTick;
         jobSummary = summary;
 
         source.sendFeedback(() -> Text.literal("[latdev] started job#" + newJobId
                 + " planned=" + totalChunks
                 + " " + summary
-                + " chunksPerTick=" + chunksPerTick), false);
+                + " chunksPerTick=" + chunksPerTick
+                + " budgetMs=" + nanosToMs(maxNanosPerTick)), false);
+        return 1;
+    }
+
+    public static int setDefaultBudgetMs(ServerCommandSource source, int budgetMs) {
+        long nanos = budgetMs * 1_000_000L;
+        defaultMaxNanosPerTick = nanos;
+        source.sendFeedback(() -> Text.literal("[latdev] default budgetMs set to " + nanosToMs(nanos) + " (applies to new jobs)"), false);
         return 1;
     }
 
@@ -170,6 +183,7 @@ public final class ChunkPregenerator {
                 + " jobId=" + jobId
                 + " progress=" + chunksCompleted + "/" + totalChunksPlanned
                 + " chunksPerTick=" + activeChunksPerTick
+                + " budgetMs=" + nanosToMs(activeMaxNanosPerTick)
                 + " " + jobSummary), false);
         return 1;
     }
@@ -208,8 +222,13 @@ public final class ChunkPregenerator {
             return;
         }
 
+        long tickStartNanos = System.nanoTime();
         int budget = job.chunksPerTick;
         while (budget-- > 0 && !job.queue.isEmpty()) {
+            if ((System.nanoTime() - tickStartNanos) >= job.maxNanosPerTick) {
+                break;
+            }
+
             ChunkPos next = job.queue.poll();
             if (next == null) {
                 break;
@@ -254,6 +273,7 @@ public final class ChunkPregenerator {
         totalChunksPlanned = 0;
         chunksCompleted = 0;
         activeChunksPerTick = 0;
+        activeMaxNanosPerTick = 0L;
         jobSummary = "none";
         activeServer = null;
         activeJob = null;
@@ -263,23 +283,30 @@ public final class ChunkPregenerator {
         return "job#" + jobId + " progress=" + chunksCompleted + "/" + totalChunksPlanned;
     }
 
+    private static String nanosToMs(long nanos) {
+        return String.format(java.util.Locale.ROOT, "%.1f", nanos / 1_000_000.0);
+    }
+
     private static final class GenerationJob {
         private final MinecraftServer server;
         private final ServerWorld world;
         private final ServerCommandSource source;
         private final Queue<ChunkPos> queue;
         private final int chunksPerTick;
+        private final long maxNanosPerTick;
 
         private GenerationJob(MinecraftServer server,
                               ServerWorld world,
                               ServerCommandSource source,
                               Queue<ChunkPos> queue,
-                              int chunksPerTick) {
+                              int chunksPerTick,
+                              long maxNanosPerTick) {
             this.server = server;
             this.world = world;
             this.source = source;
             this.queue = queue;
             this.chunksPerTick = chunksPerTick;
+            this.maxNanosPerTick = maxNanosPerTick;
         }
     }
 }
