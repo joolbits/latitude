@@ -65,27 +65,9 @@ public class LatitudeSettingsScreen extends Screen {
         baseY = y;
         var wCaptureClipboard = this.addDrawableChild(CyclingButtonWidget.builder(v -> Text.literal(v ? "ON" : "OFF"), LatitudeConfig.screenshotClipboardEnabled)
                 .values(true, false)
-                .build(columnX, y, w, h, Text.literal("Capture: Clipboard"), (btn, value) -> LatitudeConfig.screenshotClipboardEnabled = value));
-        wCaptureClipboard.setTooltip(Tooltip.of(Text.literal("Copy dev capture image to clipboard first.")));
+                .build(columnX, y, w, h, Text.translatable("option.globe.capture_clipboard"), (btn, value) -> LatitudeConfig.screenshotClipboardEnabled = value));
+        wCaptureClipboard.setTooltip(Tooltip.of(Text.translatable("option.globe.capture_clipboard.tooltip")));
         layoutWidgets.add(wCaptureClipboard);
-        layoutBaseYs.add(baseY);
-        y += 24;
-
-        baseY = y;
-        var wCaptureFallback = this.addDrawableChild(CyclingButtonWidget.builder(v -> Text.literal(v ? "ON" : "OFF"), LatitudeConfig.screenshotClipboardFallbackToDisk)
-                .values(true, false)
-                .build(columnX, y, w, h, Text.literal("Capture: Fallback Save"), (btn, value) -> LatitudeConfig.screenshotClipboardFallbackToDisk = value));
-        wCaptureFallback.setTooltip(Tooltip.of(Text.literal("If clipboard fails (or is disabled), save PNG to run/Latitude/captures.")));
-        layoutWidgets.add(wCaptureFallback);
-        layoutBaseYs.add(baseY);
-        y += 24;
-
-        baseY = y;
-        var wCaptureAlsoSave = this.addDrawableChild(CyclingButtonWidget.builder(v -> Text.literal(v ? "ON" : "OFF"), LatitudeConfig.screenshotAlsoSaveToDisk)
-                .values(true, false)
-                .build(columnX, y, w, h, Text.literal("Capture: Also Save"), (btn, value) -> LatitudeConfig.screenshotAlsoSaveToDisk = value));
-        wCaptureAlsoSave.setTooltip(Tooltip.of(Text.literal("Always save a PNG copy to run/Latitude/captures even when clipboard succeeds.")));
-        layoutWidgets.add(wCaptureAlsoSave);
         layoutBaseYs.add(baseY);
         y += 24;
 
@@ -95,6 +77,24 @@ public class LatitudeSettingsScreen extends Screen {
                 .build(columnX, y, w, h, Text.translatable("option.globe.capture_windows_powershell"), (btn, value) -> LatitudeConfig.screenshotClipboardWindowsPowerShell = value));
         wCapturePowerShell.setTooltip(Tooltip.of(Text.translatable("option.globe.capture_windows_powershell.tooltip")));
         layoutWidgets.add(wCapturePowerShell);
+        layoutBaseYs.add(baseY);
+        y += 24;
+
+        baseY = y;
+        var wCaptureAlsoSave = this.addDrawableChild(CyclingButtonWidget.builder(v -> Text.literal(v ? "ON" : "OFF"), LatitudeConfig.screenshotAlsoSaveToDisk)
+                .values(true, false)
+                .build(columnX, y, w, h, Text.translatable("option.globe.capture_save_disk"), (btn, value) -> LatitudeConfig.screenshotAlsoSaveToDisk = value));
+        wCaptureAlsoSave.setTooltip(Tooltip.of(Text.translatable("option.globe.capture_save_disk.tooltip")));
+        layoutWidgets.add(wCaptureAlsoSave);
+        layoutBaseYs.add(baseY);
+        y += 24;
+
+        baseY = y;
+        var wCaptureCsv = this.addDrawableChild(CyclingButtonWidget.builder(v -> Text.literal(v ? "ON" : "OFF"), LatitudeConfig.captureWriteCsv)
+                .values(true, false)
+                .build(columnX, y, w, h, Text.translatable("option.globe.capture_write_csv"), (btn, value) -> LatitudeConfig.captureWriteCsv = value));
+        wCaptureCsv.setTooltip(Tooltip.of(Text.translatable("option.globe.capture_write_csv.tooltip")));
+        layoutWidgets.add(wCaptureCsv);
         layoutBaseYs.add(baseY);
         y += 24;
 
@@ -233,8 +233,14 @@ public class LatitudeSettingsScreen extends Screen {
         LatitudeConfig.showWarningMessages = true;
         LatitudeConfig.screenshotClipboardEnabled = true;
         LatitudeConfig.screenshotClipboardFallbackToDisk = true;
-        LatitudeConfig.screenshotAlsoSaveToDisk = false;
-        LatitudeConfig.screenshotClipboardWindowsPowerShell = false;
+        LatitudeConfig.screenshotAlsoSaveToDisk = true;
+        LatitudeConfig.screenshotClipboardWindowsPowerShell = isWindows();
+        LatitudeConfig.captureWriteCsv = false;
+    }
+
+    private static boolean isWindows() {
+        String os = System.getProperty("os.name", "");
+        return os.toLowerCase(java.util.Locale.ROOT).contains("win");
     }
 
     private interface DoubleConsumer {

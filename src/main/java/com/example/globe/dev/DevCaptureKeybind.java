@@ -5,30 +5,29 @@ import com.example.globe.client.ClientKeybinds;
 import com.example.globe.client.ClipboardImageWriter;
 import com.example.globe.client.ClipboardImageWriter.ClipboardCopyResult;
 import com.example.globe.client.LatitudeConfig;
-import com.example.globe.client.UlOverlayTextBuilder;
-import com.example.globe.mixin.client.GameRendererAccessor;
-import com.example.globe.mixin.client.MinecraftClientFramebufferAccessor;
-import com.mojang.blaze3d.buffers.GpuBufferSlice;
-import com.mojang.blaze3d.systems.RenderSystem;
-import com.mojang.blaze3d.textures.GpuTexture;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gl.Framebuffer;
-import net.minecraft.client.gl.SimpleFramebuffer;
-import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.util.InputUtil;
 import net.minecraft.client.util.ScreenshotRecorder;
 import net.minecraft.client.texture.NativeImage;
 import net.minecraft.text.Text;
+import net.minecraft.util.Util;
+
 import java.io.File;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.util.concurrent.CompletableFuture;
 
 public final class DevCaptureKeybind {
     private static final long DEBOUNCE_MS = 300L;
+    private static final String CAPTURE_CSV_HEADER = "timestamp,file,x,y,z\n";
 
     private static KeyBinding captureKey;
     private static boolean initialized;
@@ -73,125 +72,63 @@ public final class DevCaptureKeybind {
             return;
         }
 
-        SimpleFramebuffer compositeFramebuffer = null;
-        boolean handedOff = false;
         try {
-            Framebuffer mainFramebuffer = client.getFramebuffer();
-            compositeFramebuffer = new SimpleFramebuffer(
-                    "Latitude Capture Composite",
-                    mainFramebuffer.textureWidth,
-                    mainFramebuffer.textureHeight,
-                    mainFramebuffer.useDepthAttachment
-            );
-
-            copyFramebuffer(mainFramebuffer, compositeFramebuffer);
-            renderMetadataOverlayOffscreen(client, compositeFramebuffer);
-            final SimpleFramebuffer compositeForCallback = compositeFramebuffer;
-
-            ScreenshotRecorder.takeScreenshot(compositeForCallback, image ->
-                    client.execute(() -> {
-                        try {
-                            handleCapturedImage(client, image);
-                        } finally {
-                            compositeForCallback.delete();
-                        }
-                    })
-            );
-            handedOff = true;
+            Framebuffer framebuffer = client.getFramebuffer();
+            ScreenshotRecorder.takeScreenshot(framebuffer, image -> client.execute(() -> handleCapturedImage(client, image)));
         } catch (Exception e) {
             GlobeMod.LOGGER.warn("[latdev] Capture pipeline failed", e);
             sendStatus(client, "[latdev] Capture failed: " + e.getMessage());
-        } finally {
-            if (!handedOff && compositeFramebuffer != null) {
-                compositeFramebuffer.delete();
-            }
-        }
-    }
-
-    private static void copyFramebuffer(Framebuffer source, Framebuffer target) {
-        GpuTexture sourceColor = source.getColorAttachment();
-        GpuTexture targetColor = target.getColorAttachment();
-        if (sourceColor == null || targetColor == null) {
-            throw new IllegalStateException("Missing color attachment during capture compositing");
-        }
-
-        RenderSystem.getDevice().createCommandEncoder().copyTextureToTexture(
-                sourceColor,
-                targetColor,
-                0,
-                0,
-                0,
-                0,
-                0,
-                source.textureWidth,
-                source.textureHeight
-        );
-    }
-
-    private static void renderMetadataOverlayOffscreen(MinecraftClient client, Framebuffer targetFramebuffer) {
-        if (!(client.gameRenderer instanceof GameRendererAccessor gameRendererAccessor)) {
-            throw new IllegalStateException("GameRenderer accessor not available");
-        }
-        if (!(client instanceof MinecraftClientFramebufferAccessor clientFramebufferAccessor)) {
-            throw new IllegalStateException("MinecraftClient framebuffer accessor not available");
-        }
-
-        GpuBufferSlice fogBuffer = RenderSystem.getShaderFog();
-        if (fogBuffer == null) {
-            throw new IllegalStateException("Fog buffer unavailable for capture overlay render");
-        }
-
-        Framebuffer originalFramebuffer = clientFramebufferAccessor.globe$getFramebuffer();
-        clientFramebufferAccessor.globe$setFramebuffer(targetFramebuffer);
-        try {
-            gameRendererAccessor.globe$getGuiState().clear();
-            DrawContext drawContext = new DrawContext(client, gameRendererAccessor.globe$getGuiState(), 0, 0);
-            drawUlMetadata(drawContext, client);
-            drawContext.drawDeferredElements();
-            gameRendererAccessor.globe$getGuiRenderer().render(fogBuffer);
-            gameRendererAccessor.globe$getGuiRenderer().incrementFrame();
-        } finally {
-            gameRendererAccessor.globe$getGuiState().clear();
-            clientFramebufferAccessor.globe$setFramebuffer(originalFramebuffer);
-        }
-    }
-
-    private static void drawUlMetadata(DrawContext ctx, MinecraftClient client) {
-        int x = 4;
-        int y = 4;
-        for (String line : UlOverlayTextBuilder.buildLines(client)) {
-            ctx.drawTextWithShadow(client.textRenderer, line, x, y, 0xFFFFFF);
-            y += 10;
         }
     }
 
     private static void handleCapturedImage(MinecraftClient client, NativeImage image) {
         try {
             boolean clipboardEnabled = LatitudeConfig.screenshotClipboardEnabled;
-            ClipboardCopyResult clipboardResult = ClipboardCopyResult.UNAVAILABLE;
+            boolean saveEnabled = LatitudeConfig.screenshotAlsoSaveToDisk;
+            boolean csvEnabled = LatitudeConfig.captureWriteCsv;
+            File savedFile = null;
 
-            if (clipboardEnabled) {
-                clipboardResult = ClipboardImageWriter.copyToClipboard(image);
+            if (saveEnabled || csvEnabled || (clipboardEnabled && usePowerShellClipboard())) {
+                savedFile = ClipboardImageWriter.saveToDisk(client, image);
             }
 
-            if (clipboardResult == ClipboardCopyResult.SUCCESS) {
-                if (LatitudeConfig.screenshotAlsoSaveToDisk) {
-                    File file = ClipboardImageWriter.saveToDisk(client, image);
-                    sendStatus(client, "[latdev] Copied capture to clipboard and saved " + file.getName());
+            if (!clipboardEnabled) {
+                if (savedFile != null) {
+                    sendStatus(client, "[latdev] Saved " + savedFile.getName());
+                    appendCaptureCsvIfEnabled(client, savedFile.toPath());
                 } else {
-                    sendStatus(client, "[latdev] Copied capture to clipboard");
+                    sendStatus(client, "[latdev] Capture completed (clipboard disabled, disk save disabled)");
                 }
                 return;
             }
 
-            if (clipboardEnabled
-                    && LatitudeConfig.screenshotClipboardWindowsPowerShell
-                    && ClipboardImageWriter.isWindows()) {
-                handlePowerShellClipboardAsync(client, image, clipboardResult);
+            if (usePowerShellClipboard()) {
+                if (savedFile == null) {
+                    savedFile = ClipboardImageWriter.saveToDisk(client, image);
+                }
+                boolean keepOnSuccess = saveEnabled || csvEnabled;
+                handlePowerShellClipboardAsync(client, savedFile, keepOnSuccess, csvEnabled);
                 return;
             }
 
-            handleClipboardFailure(client, image, clipboardEnabled, clipboardResult);
+            ClipboardCopyResult clipboardResult = ClipboardImageWriter.copyToClipboard(image);
+            if (clipboardResult == ClipboardCopyResult.SUCCESS) {
+                sendStatus(client, "[latdev] Copied screenshot to clipboard");
+                if (savedFile != null) {
+                    appendCaptureCsvIfEnabled(client, savedFile.toPath());
+                }
+                return;
+            }
+
+            if (savedFile == null) {
+                savedFile = ClipboardImageWriter.saveToDisk(client, image);
+            }
+            if (clipboardResult == ClipboardCopyResult.HEADLESS) {
+                sendStatus(client, "[latdev] Clipboard unavailable; saved " + savedFile.getName());
+            } else {
+                sendStatus(client, "[latdev] Clipboard copy failed; saved " + savedFile.getName());
+            }
+            appendCaptureCsvIfEnabled(client, savedFile.toPath());
         } catch (Exception e) {
             GlobeMod.LOGGER.warn("[latdev] Capture output failed", e);
             sendStatus(client, "[latdev] Capture output failed: " + e.getMessage());
@@ -200,99 +137,87 @@ public final class DevCaptureKeybind {
         }
     }
 
-    private static void handlePowerShellClipboardAsync(MinecraftClient client, NativeImage image, ClipboardCopyResult clipboardResult) throws IOException {
-        File tempFile = ClipboardImageWriter.saveTempClipboardImage(client, image);
-        File fallbackFile = null;
-
-        if (LatitudeConfig.screenshotClipboardFallbackToDisk) {
-            fallbackFile = ClipboardImageWriter.saveToDisk(client, image);
-        }
-
-        final File tempForTask = tempFile;
-        final File fallbackForTask = fallbackFile;
-        final ClipboardCopyResult failureReason = clipboardResult;
-
-        CompletableFuture.runAsync(() -> {
-            boolean copied = ClipboardImageWriter.copyToClipboardViaPowerShell(tempForTask);
-            client.execute(() -> finalizePowerShellClipboard(client, copied, tempForTask, fallbackForTask, failureReason));
-        });
+    private static void handlePowerShellClipboardAsync(
+            MinecraftClient client,
+            File captureFile,
+            boolean keepOnSuccess,
+            boolean csvEnabled
+    ) {
+        CompletableFuture
+                .supplyAsync(() -> ClipboardImageWriter.copyPngFileToClipboardWindowsPowerShell(captureFile.toPath()))
+                .thenAccept(copied -> client.execute(() -> finalizePowerShellClipboard(client, copied, captureFile, keepOnSuccess, csvEnabled)));
     }
 
     private static void finalizePowerShellClipboard(
             MinecraftClient client,
             boolean copied,
-            File tempFile,
-            File fallbackFile,
-            ClipboardCopyResult failureReason
+            File captureFile,
+            boolean keepOnSuccess,
+            boolean csvEnabled
     ) {
         try {
             if (copied) {
-                if (LatitudeConfig.screenshotAlsoSaveToDisk) {
-                    File saved = fallbackFile != null ? fallbackFile : ClipboardImageWriter.moveTempCaptureToCaptures(client, tempFile);
-                    if (fallbackFile != null) {
-                        ClipboardImageWriter.deleteQuietly(tempFile);
-                    }
-                    sendStatus(client, "[latdev] Copied capture to clipboard (PowerShell) and saved " + saved.getName());
+                if (!keepOnSuccess) {
+                    ClipboardImageWriter.deleteQuietly(captureFile);
                 } else {
-                    if (fallbackFile != null) {
-                        ClipboardImageWriter.deleteQuietly(fallbackFile);
-                    }
-                    ClipboardImageWriter.deleteQuietly(tempFile);
-                    sendStatus(client, "[latdev] Copied capture to clipboard (PowerShell)");
+                    appendCaptureCsvIfEnabled(client, captureFile.toPath());
                 }
+                sendStatus(client, "[latdev] Copied screenshot to clipboard");
                 return;
             }
 
-            if (fallbackFile != null) {
-                ClipboardImageWriter.deleteQuietly(tempFile);
-                sendStatus(client, clipboardFailureSavedMessage(failureReason, fallbackFile.getName()));
-                return;
+            sendStatus(client, "[latdev] Clipboard copy failed; saved " + captureFile.getName());
+            if (csvEnabled) {
+                appendCaptureCsv(client, captureFile.toPath());
             }
-
-            ClipboardImageWriter.deleteQuietly(tempFile);
-            sendStatus(client, clipboardFailureNoFallbackMessage(failureReason));
         } catch (Exception e) {
             GlobeMod.LOGGER.warn("[latdev] Capture output failed", e);
             sendStatus(client, "[latdev] Capture output failed: " + e.getMessage());
         }
     }
 
-    private static void handleClipboardFailure(
-            MinecraftClient client,
-            NativeImage image,
-            boolean clipboardEnabled,
-            ClipboardCopyResult clipboardResult
-    ) throws IOException {
-
-            if (LatitudeConfig.screenshotClipboardFallbackToDisk) {
-                File file = ClipboardImageWriter.saveToDisk(client, image);
-                if (clipboardEnabled) {
-                    sendStatus(client, clipboardFailureSavedMessage(clipboardResult, file.getName()));
-                } else {
-                    sendStatus(client, "[latdev] Clipboard disabled; saved " + file.getName());
-                }
-                return;
-            }
-
-            if (clipboardEnabled) {
-                sendStatus(client, clipboardFailureNoFallbackMessage(clipboardResult));
-            } else {
-                sendStatus(client, "[latdev] Clipboard disabled and fallback disabled");
-            }
+    private static void appendCaptureCsvIfEnabled(MinecraftClient client, Path capturePath) throws IOException {
+        if (!LatitudeConfig.captureWriteCsv) {
+            return;
+        }
+        appendCaptureCsv(client, capturePath);
     }
 
-    private static String clipboardFailureSavedMessage(ClipboardCopyResult result, String filename) {
-        if (result == ClipboardCopyResult.HEADLESS) {
-            return "[latdev] Clipboard unavailable (headless); saved " + filename;
+    private static void appendCaptureCsv(MinecraftClient client, Path capturePath) throws IOException {
+        Path latdevDir = client.runDirectory.toPath().resolve("latdev");
+        Files.createDirectories(latdevDir);
+        Path csvPath = latdevDir.resolve("captures.csv");
+
+        if (Files.notExists(csvPath)) {
+            Files.writeString(csvPath, CAPTURE_CSV_HEADER, StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.APPEND);
         }
-        return "[latdev] Clipboard copy failed; saved " + filename;
+
+        String x = "?";
+        String y = "?";
+        String z = "?";
+        var player = client.player;
+        if (player != null) {
+            x = Integer.toString(player.getBlockX());
+            y = Integer.toString(player.getBlockY());
+            z = Integer.toString(player.getBlockZ());
+        }
+
+        String row = escapeCsv(Util.getFormattedCurrentTime())
+                + "," + escapeCsv(capturePath.getFileName().toString())
+                + "," + x
+                + "," + y
+                + "," + z
+                + "\n";
+        Files.writeString(csvPath, row, StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.APPEND);
     }
 
-    private static String clipboardFailureNoFallbackMessage(ClipboardCopyResult result) {
-        if (result == ClipboardCopyResult.HEADLESS) {
-            return "[latdev] Clipboard unavailable (headless; fallback disabled)";
-        }
-        return "[latdev] Clipboard copy failed (fallback disabled)";
+    private static String escapeCsv(String value) {
+        String escaped = value.replace("\"", "\"\"");
+        return "\"" + escaped + "\"";
+    }
+
+    private static boolean usePowerShellClipboard() {
+        return LatitudeConfig.screenshotClipboardWindowsPowerShell && ClipboardImageWriter.isWindows();
     }
 
     private static void sendStatus(MinecraftClient client, String message) {
