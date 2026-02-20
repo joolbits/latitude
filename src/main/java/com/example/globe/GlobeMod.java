@@ -4,6 +4,7 @@ import net.fabricmc.api.ModInitializer;
 import com.example.globe.world.LatitudeBiomes;
 import com.example.globe.world.BiomeFeatureStripping;
 import com.example.globe.world.LatitudeWorldState;
+import com.example.globe.dev.LatitudeDevCommand;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
@@ -116,6 +117,10 @@ public class GlobeMod implements ModInitializer {
                                 ctx.getSource().sendFeedback(() -> Text.literal("Fly speed set to " + level), false);
                                 return 1;
                             })));
+
+            if (FabricLoader.getInstance().isDevelopmentEnvironment()) {
+                LatitudeDevCommand.register(dispatcher);
+            }
         });
 
         ServerLifecycleEvents.SERVER_STARTED.register(GlobeMod::applyWorldBorder);
