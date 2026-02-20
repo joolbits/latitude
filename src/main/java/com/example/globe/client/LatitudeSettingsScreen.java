@@ -63,6 +63,33 @@ public class LatitudeSettingsScreen extends Screen {
         y += 24;
 
         baseY = y;
+        var wCaptureClipboard = this.addDrawableChild(CyclingButtonWidget.builder(v -> Text.literal(v ? "ON" : "OFF"), LatitudeConfig.screenshotClipboardEnabled)
+                .values(true, false)
+                .build(columnX, y, w, h, Text.literal("Capture: Clipboard"), (btn, value) -> LatitudeConfig.screenshotClipboardEnabled = value));
+        wCaptureClipboard.setTooltip(Tooltip.of(Text.literal("Copy dev capture image to clipboard first.")));
+        layoutWidgets.add(wCaptureClipboard);
+        layoutBaseYs.add(baseY);
+        y += 24;
+
+        baseY = y;
+        var wCaptureFallback = this.addDrawableChild(CyclingButtonWidget.builder(v -> Text.literal(v ? "ON" : "OFF"), LatitudeConfig.screenshotClipboardFallbackToDisk)
+                .values(true, false)
+                .build(columnX, y, w, h, Text.literal("Capture: Fallback Save"), (btn, value) -> LatitudeConfig.screenshotClipboardFallbackToDisk = value));
+        wCaptureFallback.setTooltip(Tooltip.of(Text.literal("If clipboard fails (or is disabled), save PNG to run/Latitude/captures.")));
+        layoutWidgets.add(wCaptureFallback);
+        layoutBaseYs.add(baseY);
+        y += 24;
+
+        baseY = y;
+        var wCaptureAlsoSave = this.addDrawableChild(CyclingButtonWidget.builder(v -> Text.literal(v ? "ON" : "OFF"), LatitudeConfig.screenshotAlsoSaveToDisk)
+                .values(true, false)
+                .build(columnX, y, w, h, Text.literal("Capture: Also Save"), (btn, value) -> LatitudeConfig.screenshotAlsoSaveToDisk = value));
+        wCaptureAlsoSave.setTooltip(Tooltip.of(Text.literal("Always save a PNG copy to run/Latitude/captures even when clipboard succeeds.")));
+        layoutWidgets.add(wCaptureAlsoSave);
+        layoutBaseYs.add(baseY);
+        y += 24;
+
+        baseY = y;
         var wTitleSec = this.addDrawableChild(new StepSlider(columnX, y, w, h, Text.literal("Title Duration (seconds)"), 2.0, 10.0, 0.5, LatitudeConfig.zoneEnterTitleSeconds, v -> LatitudeConfig.zoneEnterTitleSeconds = v));
         layoutWidgets.add(wTitleSec);
         layoutBaseYs.add(baseY);
@@ -195,6 +222,9 @@ public class LatitudeSettingsScreen extends Screen {
         LatitudeConfig.latitudeBandBoundaryWarpFrac = 0.06;
         LatitudeConfig.debugLatitudeBlend = false;
         LatitudeConfig.showWarningMessages = true;
+        LatitudeConfig.screenshotClipboardEnabled = true;
+        LatitudeConfig.screenshotClipboardFallbackToDisk = true;
+        LatitudeConfig.screenshotAlsoSaveToDisk = false;
     }
 
     private interface DoubleConsumer {

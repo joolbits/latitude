@@ -3,5 +3,6 @@
   "category.globe": "Latitude",
   "key.category.globe.globe": "Latitude",
   "key.globe.toggle_compass_hud": "Toggle Compass HUD",
-  "key.globe.open_settings": "Open Latitude Settings"
+  "key.globe.open_settings": "Open Latitude Settings",
+  "key.globe.dev_capture_overlay": "Copy Capture (Clipboard-first)"
 }
