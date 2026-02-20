@@ -90,6 +90,15 @@ public class LatitudeSettingsScreen extends Screen {
         y += 24;
 
         baseY = y;
+        var wCapturePowerShell = this.addDrawableChild(CyclingButtonWidget.builder(v -> Text.literal(v ? "ON" : "OFF"), LatitudeConfig.screenshotClipboardWindowsPowerShell)
+                .values(true, false)
+                .build(columnX, y, w, h, Text.translatable("option.globe.capture_windows_powershell"), (btn, value) -> LatitudeConfig.screenshotClipboardWindowsPowerShell = value));
+        wCapturePowerShell.setTooltip(Tooltip.of(Text.translatable("option.globe.capture_windows_powershell.tooltip")));
+        layoutWidgets.add(wCapturePowerShell);
+        layoutBaseYs.add(baseY);
+        y += 24;
+
+        baseY = y;
         var wTitleSec = this.addDrawableChild(new StepSlider(columnX, y, w, h, Text.literal("Title Duration (seconds)"), 2.0, 10.0, 0.5, LatitudeConfig.zoneEnterTitleSeconds, v -> LatitudeConfig.zoneEnterTitleSeconds = v));
         layoutWidgets.add(wTitleSec);
         layoutBaseYs.add(baseY);
@@ -225,6 +234,7 @@ public class LatitudeSettingsScreen extends Screen {
         LatitudeConfig.screenshotClipboardEnabled = true;
         LatitudeConfig.screenshotClipboardFallbackToDisk = true;
         LatitudeConfig.screenshotAlsoSaveToDisk = false;
+        LatitudeConfig.screenshotClipboardWindowsPowerShell = false;
     }
 
     private interface DoubleConsumer {

@@ -4,5 +4,7 @@
   "key.category.globe.globe": "Latitude",
   "key.globe.toggle_compass_hud": "Toggle Compass HUD",
   "key.globe.open_settings": "Open Latitude Settings",
-  "key.globe.dev_capture_overlay": "Copy Capture (Clipboard-first)"
+  "key.globe.dev_capture_overlay": "Copy Capture (Clipboard-first)",
+  "option.globe.capture_windows_powershell": "Capture: Windows Clipboard (PowerShell)",
+  "option.globe.capture_windows_powershell.tooltip": "Use PowerShell clipboard backend on Windows when AWT clipboard is unavailable."
 }
