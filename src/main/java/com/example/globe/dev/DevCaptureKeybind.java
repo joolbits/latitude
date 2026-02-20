@@ -3,6 +3,7 @@ package com.example.globe.dev;
 import com.example.globe.GlobeMod;
 import com.example.globe.client.ClientKeybinds;
 import com.example.globe.client.ClipboardImageWriter;
+import com.example.globe.client.ClipboardImageWriter.ClipboardCopyResult;
 import com.example.globe.client.LatitudeConfig;
 import com.example.globe.client.UlOverlayTextBuilder;
 import com.example.globe.mixin.client.GameRendererAccessor;
@@ -23,6 +24,8 @@ import net.minecraft.client.util.ScreenshotRecorder;
 import net.minecraft.client.texture.NativeImage;
 import net.minecraft.text.Text;
 import java.io.File;
+import java.io.IOException;
+import java.util.concurrent.CompletableFuture;
 
 public final class DevCaptureKeybind {
     private static final long DEBOUNCE_MS = 300L;
@@ -164,14 +167,14 @@ public final class DevCaptureKeybind {
 
     private static void handleCapturedImage(MinecraftClient client, NativeImage image) {
         try {
-            boolean copied = false;
             boolean clipboardEnabled = LatitudeConfig.screenshotClipboardEnabled;
+            ClipboardCopyResult clipboardResult = ClipboardCopyResult.UNAVAILABLE;
 
             if (clipboardEnabled) {
-                copied = ClipboardImageWriter.copyToClipboard(image);
+                clipboardResult = ClipboardImageWriter.copyToClipboard(image);
             }
 
-            if (copied) {
+            if (clipboardResult == ClipboardCopyResult.SUCCESS) {
                 if (LatitudeConfig.screenshotAlsoSaveToDisk) {
                     File file = ClipboardImageWriter.saveToDisk(client, image);
                     sendStatus(client, "[latdev] Copied capture to clipboard and saved " + file.getName());
@@ -181,10 +184,90 @@ public final class DevCaptureKeybind {
                 return;
             }
 
+            if (clipboardEnabled
+                    && LatitudeConfig.screenshotClipboardWindowsPowerShell
+                    && ClipboardImageWriter.isWindows()) {
+                handlePowerShellClipboardAsync(client, image, clipboardResult);
+                return;
+            }
+
+            handleClipboardFailure(client, image, clipboardEnabled, clipboardResult);
+        } catch (Exception e) {
+            GlobeMod.LOGGER.warn("[latdev] Capture output failed", e);
+            sendStatus(client, "[latdev] Capture output failed: " + e.getMessage());
+        } finally {
+            image.close();
+        }
+    }
+
+    private static void handlePowerShellClipboardAsync(MinecraftClient client, NativeImage image, ClipboardCopyResult clipboardResult) throws IOException {
+        File tempFile = ClipboardImageWriter.saveTempClipboardImage(client, image);
+        File fallbackFile = null;
+
+        if (LatitudeConfig.screenshotClipboardFallbackToDisk) {
+            fallbackFile = ClipboardImageWriter.saveToDisk(client, image);
+        }
+
+        final File tempForTask = tempFile;
+        final File fallbackForTask = fallbackFile;
+        final ClipboardCopyResult failureReason = clipboardResult;
+
+        CompletableFuture.runAsync(() -> {
+            boolean copied = ClipboardImageWriter.copyToClipboardViaPowerShell(tempForTask);
+            client.execute(() -> finalizePowerShellClipboard(client, copied, tempForTask, fallbackForTask, failureReason));
+        });
+    }
+
+    private static void finalizePowerShellClipboard(
+            MinecraftClient client,
+            boolean copied,
+            File tempFile,
+            File fallbackFile,
+            ClipboardCopyResult failureReason
+    ) {
+        try {
+            if (copied) {
+                if (LatitudeConfig.screenshotAlsoSaveToDisk) {
+                    File saved = fallbackFile != null ? fallbackFile : ClipboardImageWriter.moveTempCaptureToCaptures(client, tempFile);
+                    if (fallbackFile != null) {
+                        ClipboardImageWriter.deleteQuietly(tempFile);
+                    }
+                    sendStatus(client, "[latdev] Copied capture to clipboard (PowerShell) and saved " + saved.getName());
+                } else {
+                    if (fallbackFile != null) {
+                        ClipboardImageWriter.deleteQuietly(fallbackFile);
+                    }
+                    ClipboardImageWriter.deleteQuietly(tempFile);
+                    sendStatus(client, "[latdev] Copied capture to clipboard (PowerShell)");
+                }
+                return;
+            }
+
+            if (fallbackFile != null) {
+                ClipboardImageWriter.deleteQuietly(tempFile);
+                sendStatus(client, clipboardFailureSavedMessage(failureReason, fallbackFile.getName()));
+                return;
+            }
+
+            ClipboardImageWriter.deleteQuietly(tempFile);
+            sendStatus(client, clipboardFailureNoFallbackMessage(failureReason));
+        } catch (Exception e) {
+            GlobeMod.LOGGER.warn("[latdev] Capture output failed", e);
+            sendStatus(client, "[latdev] Capture output failed: " + e.getMessage());
+        }
+    }
+
+    private static void handleClipboardFailure(
+            MinecraftClient client,
+            NativeImage image,
+            boolean clipboardEnabled,
+            ClipboardCopyResult clipboardResult
+    ) throws IOException {
+
             if (LatitudeConfig.screenshotClipboardFallbackToDisk) {
                 File file = ClipboardImageWriter.saveToDisk(client, image);
                 if (clipboardEnabled) {
-                    sendStatus(client, "[latdev] Clipboard copy failed; saved " + file.getName());
+                    sendStatus(client, clipboardFailureSavedMessage(clipboardResult, file.getName()));
                 } else {
                     sendStatus(client, "[latdev] Clipboard disabled; saved " + file.getName());
                 }
@@ -192,16 +275,24 @@ public final class DevCaptureKeybind {
             }
 
             if (clipboardEnabled) {
-                sendStatus(client, "[latdev] Clipboard copy failed (fallback disabled)");
+                sendStatus(client, clipboardFailureNoFallbackMessage(clipboardResult));
             } else {
                 sendStatus(client, "[latdev] Clipboard disabled and fallback disabled");
             }
-        } catch (Exception e) {
-            GlobeMod.LOGGER.warn("[latdev] Capture output failed", e);
-            sendStatus(client, "[latdev] Capture output failed: " + e.getMessage());
-        } finally {
-            image.close();
+    }
+
+    private static String clipboardFailureSavedMessage(ClipboardCopyResult result, String filename) {
+        if (result == ClipboardCopyResult.HEADLESS) {
+            return "[latdev] Clipboard unavailable (headless); saved " + filename;
         }
+        return "[latdev] Clipboard copy failed; saved " + filename;
+    }
+
+    private static String clipboardFailureNoFallbackMessage(ClipboardCopyResult result) {
+        if (result == ClipboardCopyResult.HEADLESS) {
+            return "[latdev] Clipboard unavailable (headless; fallback disabled)";
+        }
+        return "[latdev] Clipboard copy failed (fallback disabled)";
     }
 
     private static void sendStatus(MinecraftClient client, String message) {

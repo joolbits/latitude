@@ -42,6 +42,7 @@ public final class LatitudeConfig {
     public static boolean screenshotClipboardEnabled = true;
     public static boolean screenshotClipboardFallbackToDisk = true;
     public static boolean screenshotAlsoSaveToDisk = false;
+    public static boolean screenshotClipboardWindowsPowerShell = false;
 
     private boolean enableWarningParticlesValue = true;
     private boolean showWarningMessagesValue = true;
@@ -72,6 +73,7 @@ public final class LatitudeConfig {
     private boolean screenshotClipboardEnabledValue = true;
     private boolean screenshotClipboardFallbackToDiskValue = true;
     private boolean screenshotAlsoSaveToDiskValue = false;
+    private boolean screenshotClipboardWindowsPowerShellValue = false;
 
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static final Path PATH = FabricLoader.getInstance().getConfigDir().resolve("globe_latitude.json");
@@ -132,6 +134,7 @@ public final class LatitudeConfig {
                         screenshotClipboardEnabled = cfg.screenshotClipboardEnabledValue;
                         screenshotClipboardFallbackToDisk = cfg.screenshotClipboardFallbackToDiskValue;
                         screenshotAlsoSaveToDisk = cfg.screenshotAlsoSaveToDiskValue;
+                        screenshotClipboardWindowsPowerShell = cfg.screenshotClipboardWindowsPowerShellValue;
                         return cfg;
                     }
                 }
@@ -170,6 +173,7 @@ public final class LatitudeConfig {
         screenshotClipboardEnabled = fresh.screenshotClipboardEnabledValue;
         screenshotClipboardFallbackToDisk = fresh.screenshotClipboardFallbackToDiskValue;
         screenshotAlsoSaveToDisk = fresh.screenshotAlsoSaveToDiskValue;
+        screenshotClipboardWindowsPowerShell = fresh.screenshotClipboardWindowsPowerShellValue;
         save(fresh);
         return fresh;
     }
@@ -205,6 +209,7 @@ public final class LatitudeConfig {
             cfg.screenshotClipboardEnabledValue = screenshotClipboardEnabled;
             cfg.screenshotClipboardFallbackToDiskValue = screenshotClipboardFallbackToDisk;
             cfg.screenshotAlsoSaveToDiskValue = screenshotAlsoSaveToDisk;
+            cfg.screenshotClipboardWindowsPowerShellValue = screenshotClipboardWindowsPowerShell;
             Files.createDirectories(PATH.getParent());
             try (Writer w = Files.newBufferedWriter(PATH)) {
                 GSON.toJson(cfg, w);
