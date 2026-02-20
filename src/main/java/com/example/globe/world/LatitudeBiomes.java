@@ -310,6 +310,8 @@ public final class LatitudeBiomes {
 
     private static final TransitionMode TRANSITION_MODE = TransitionMode.SMOOTH_WARP;
 
+    private static final int REFERENCE_DIAMETER_BLOCKS = 20000;
+
     private static final int VARIANT_CELL_SIZE_BLOCKS = 32;
     private static final int BLEND_TRANSITION_WIDTH_BLOCKS = 768;
     private static final int BLEND_DITHER_SCALE_BLOCKS = 512;
@@ -942,8 +944,12 @@ public final class LatitudeBiomes {
             return bandIndex;
         }
 
+        double diameter = radius * 2.0;
+        double noiseScale = diameter > 0.0 ? (REFERENCE_DIAMETER_BLOCKS / diameter) : 1.0;
+        int warpPatchChunks = scaledPatchChunks(WARP_NOISE_PATCH_CHUNKS, noiseScale);
+
         long warpSeed = WORLD_SEED ^ WARP_NOISE_SALT;
-        double warpNoise = (blobNoise01(warpSeed, blockX >> 4, blockZ >> 4, WARP_NOISE_PATCH_CHUNKS, WARP_NOISE_SALT) * 2.0) - 1.0;
+        double warpNoise = (blobNoise01(warpSeed, blockX >> 4, blockZ >> 4, warpPatchChunks, WARP_NOISE_SALT) * 2.0) - 1.0;
         double maxWarp = Math.min(WARP_AMPLITUDE_BLOCKS, halfWidthBlocks);
         double boundaryWarp = warpNoise * maxWarp;
         double effectiveBoundary = boundaryBlocks + boundaryWarp;
@@ -965,7 +971,8 @@ public final class LatitudeBiomes {
             int cellZ = Math.floorDiv(blockZ, cellSize);
             blendNoise = cellHash01(ditherSeed, cellX, cellZ);
         } else {
-            blendNoise = blobNoise01(WORLD_SEED, blockX >> 4, blockZ >> 4, BLEND_NOISE_PATCH_CHUNKS, BLEND_NOISE_SALT);
+            int blendPatchChunks = scaledPatchChunks(BLEND_NOISE_PATCH_CHUNKS, noiseScale);
+            blendNoise = blobNoise01(WORLD_SEED, blockX >> 4, blockZ >> 4, blendPatchChunks, BLEND_NOISE_SALT);
         }
 
         int chosenBandIndex = blendNoise < blendT ? upperBandIndex : lowerBandIndex;
@@ -1115,6 +1122,12 @@ public final class LatitudeBiomes {
         boolean snowyPool = useSubpolarSnowyPool(absLatFraction, blockX, blockZ);
         TagKey<Biome> tag = subpolarTagForRoll(roll, snowyPool, primary, secondary, accent);
         return pickFromTagNoiseOrBase(biomes, tag, base, blockX, blockZ, bandIndex);
+    }
+
+    private static int scaledPatchChunks(int basePatchChunks, double noiseScale) {
+        double scaled = basePatchChunks * noiseScale;
+        int rounded = (int) Math.round(scaled);
+        return Math.max(1, rounded);
     }
 
     private static RegistryEntry<Biome> pickSubpolarWithRamp(Collection<RegistryEntry<Biome>> biomes, RegistryEntry<Biome> base, int blockX, int blockZ,
