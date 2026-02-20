@@ -19,19 +19,25 @@ public final class LatitudeDevCommand {
             return;
         }
 
-        dispatcher.register(CommandManager.literal("latdev")
-                .then(CommandManager.literal("transect")
-                        .then(CommandManager.argument("zStart", IntegerArgumentType.integer())
-                                .then(CommandManager.argument("zEnd", IntegerArgumentType.integer())
-                                        .then(CommandManager.argument("xHalfWidthChunks", IntegerArgumentType.integer())
-                                                .then(CommandManager.argument("chunksPerTick", IntegerArgumentType.integer())
-                                                        .executes(LatitudeDevCommand::startTransectRaw))))))
-                .then(CommandManager.literal("transectDeg")
-                        .then(CommandManager.argument("degStart", IntegerArgumentType.integer())
-                                .then(CommandManager.argument("degEnd", IntegerArgumentType.integer())
-                                        .then(CommandManager.argument("xHalfWidthChunks", IntegerArgumentType.integer())
-                                                .then(CommandManager.argument("chunksPerTick", IntegerArgumentType.integer())
-                                                        .executes(LatitudeDevCommand::startTransectDeg)))))));
+        dispatcher.register(
+                CommandManager.literal("latdev")
+                        .then(CommandManager.literal("transect")
+                                .then(CommandManager.argument("zStart", IntegerArgumentType.integer())
+                                        .then(CommandManager.argument("zEnd", IntegerArgumentType.integer())
+                                                .then(CommandManager.argument("xHalfWidthChunks", IntegerArgumentType.integer())
+                                                        .then(CommandManager.argument("chunksPerTick", IntegerArgumentType.integer())
+                                                                .executes(LatitudeDevCommand::startTransectRaw))))))
+                        .then(CommandManager.literal("transectDeg")
+                                .then(CommandManager.argument("degStart", IntegerArgumentType.integer())
+                                        .then(CommandManager.argument("degEnd", IntegerArgumentType.integer())
+                                                .then(CommandManager.argument("xHalfWidthChunks", IntegerArgumentType.integer())
+                                                        .then(CommandManager.argument("chunksPerTick", IntegerArgumentType.integer())
+                                                                .executes(LatitudeDevCommand::startTransectDeg))))))
+                        .then(CommandManager.literal("pause").executes(LatitudeDevCommand::pauseTransect))
+                        .then(CommandManager.literal("resume").executes(LatitudeDevCommand::resumeTransect))
+                        .then(CommandManager.literal("stop").executes(LatitudeDevCommand::stopTransect))
+                        .then(CommandManager.literal("status").executes(LatitudeDevCommand::statusTransect))
+        );
     }
 
     private static int startTransectRaw(CommandContext<ServerCommandSource> ctx) {
@@ -61,12 +67,7 @@ public final class LatitudeDevCommand {
             zEnd = tmp;
         }
 
-        ChunkPregenerator.startTransect(source.getServer(), source, zStart, zEnd, xHalfWidthChunks, chunksPerTick);
-
-        int finalZStart = zStart;
-        int finalZEnd = zEnd;
-        source.sendFeedback(() -> Text.literal("[latdev] Started transect(raw blocks): ±" + finalZStart + "..±" + finalZEnd), false);
-        return 1;
+        return ChunkPregenerator.startTransect(source.getServer(), source, zStart, zEnd, xHalfWidthChunks, chunksPerTick);
     }
 
     private static int startTransectDeg(CommandContext<ServerCommandSource> ctx) {
@@ -99,15 +100,23 @@ public final class LatitudeDevCommand {
             zEnd = tmp;
         }
 
-        ChunkPregenerator.startTransect(source.getServer(), source, zStart, zEnd, xHalfWidthChunks, chunksPerTick);
+        return ChunkPregenerator.startTransect(source.getServer(), source, zStart, zEnd, xHalfWidthChunks, chunksPerTick);
+    }
 
-        int finalDegStart = degStart;
-        int finalDegEnd = degEnd;
-        int finalZStart = zStart;
-        int finalZEnd = zEnd;
-        source.sendFeedback(() -> Text.literal("[latdev] Started transectDeg: " + finalDegStart + ".." + finalDegEnd
-                + " deg => ±" + finalZStart + "..±" + finalZEnd + " blocks"), false);
-        return 1;
+    private static int pauseTransect(CommandContext<ServerCommandSource> ctx) {
+        return ChunkPregenerator.pauseJob(ctx.getSource());
+    }
+
+    private static int resumeTransect(CommandContext<ServerCommandSource> ctx) {
+        return ChunkPregenerator.resumeJob(ctx.getSource());
+    }
+
+    private static int stopTransect(CommandContext<ServerCommandSource> ctx) {
+        return ChunkPregenerator.stopJob(ctx.getSource());
+    }
+
+    private static int statusTransect(CommandContext<ServerCommandSource> ctx) {
+        return ChunkPregenerator.status(ctx.getSource());
     }
 
     private static int maxAbsZFromBorder(ServerCommandSource source) {
