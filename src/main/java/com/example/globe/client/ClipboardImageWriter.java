@@ -16,6 +16,7 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.Locale;
 import java.util.concurrent.TimeUnit;
@@ -30,8 +31,12 @@ public final class ClipboardImageWriter {
     private ClipboardImageWriter() {
     }
 
+    public static boolean isHeadless() {
+        return GraphicsEnvironment.isHeadless();
+    }
+
     public static ClipboardCopyResult copyToClipboard(NativeImage image) {
-        if (GraphicsEnvironment.isHeadless()) {
+        if (isHeadless()) {
             GlobeMod.LOGGER.info("[latdev] Clipboard unavailable (headless)");
             return ClipboardCopyResult.HEADLESS;
         }
@@ -91,25 +96,23 @@ public final class ClipboardImageWriter {
         return os.toLowerCase(Locale.ROOT).contains("win");
     }
 
-    public static boolean copyToClipboardViaPowerShell(File imageFile) {
-        if (imageFile == null || !imageFile.isFile() || !isWindows()) {
+    public static boolean copyPngFileToClipboardWindowsPowerShell(Path pngPath) {
+        if (pngPath == null || !Files.isRegularFile(pngPath) || !isWindows()) {
             return false;
         }
 
+        String escapedPath = pngPath.toAbsolutePath().toString().replace("'", "''");
         String script = "$ErrorActionPreference='Stop';"
                 + "Add-Type -AssemblyName System.Windows.Forms;"
                 + "Add-Type -AssemblyName System.Drawing;"
-                + "$path=$args[0];"
-                + "$img=[System.Drawing.Image]::FromFile($path);"
+                + "$img=[System.Drawing.Image]::FromFile('" + escapedPath + "');"
                 + "try{[System.Windows.Forms.Clipboard]::SetImage($img)}finally{$img.Dispose()}";
 
         ProcessBuilder builder = new ProcessBuilder(
                 "powershell",
                 "-NoProfile",
-                "-STA",
                 "-Command",
-                script,
-                imageFile.getAbsolutePath()
+                script
         );
         builder.redirectErrorStream(true);
 
@@ -120,25 +123,29 @@ public final class ClipboardImageWriter {
 
             if (!finished) {
                 process.destroyForcibly();
-                GlobeMod.LOGGER.debug("[latdev] PowerShell clipboard timed out");
+                GlobeMod.LOGGER.warn("[latdev] PowerShell clipboard copy timed out");
                 return false;
             }
 
             int exitCode = process.exitValue();
             if (exitCode != 0) {
-                if (!output.isEmpty()) {
-                    GlobeMod.LOGGER.debug("[latdev] PowerShell clipboard failed ({}): {}", exitCode, output);
-                }
+                String outputSuffix = output.isEmpty() ? "" : " output=" + truncate(output, 240);
+                GlobeMod.LOGGER.warn("[latdev] PowerShell clipboard copy failed (exitCode={}){}", exitCode, outputSuffix);
                 return false;
             }
             return true;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
+            GlobeMod.LOGGER.warn("[latdev] PowerShell clipboard copy interrupted");
             return false;
         } catch (IOException e) {
-            GlobeMod.LOGGER.debug("[latdev] Failed to run PowerShell clipboard backend", e);
+            GlobeMod.LOGGER.warn("[latdev] Failed to run PowerShell clipboard backend: {}", e.getMessage());
             return false;
         }
+    }
+
+    public static File moveTempCaptureToCaptures(MinecraftClient client, Path tempPath) throws IOException {
+        return moveTempCaptureToCaptures(client, tempPath.toFile());
     }
 
     private static BufferedImage toBufferedImage(NativeImage image) {
@@ -152,6 +159,13 @@ public final class ClipboardImageWriter {
 
     private static String nextCaptureName() {
         return "capture-" + Util.getFormattedCurrentTime() + ".png";
+    }
+
+    private static String truncate(String value, int maxChars) {
+        if (value.length() <= maxChars) {
+            return value;
+        }
+        return value.substring(0, maxChars) + "...";
     }
 
     private static File ensureDirectory(File directory) throws IOException {

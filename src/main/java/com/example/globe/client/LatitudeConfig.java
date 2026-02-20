@@ -41,8 +41,9 @@ public final class LatitudeConfig {
     public static boolean debugLatitudeBlend = false;
     public static boolean screenshotClipboardEnabled = true;
     public static boolean screenshotClipboardFallbackToDisk = true;
-    public static boolean screenshotAlsoSaveToDisk = false;
-    public static boolean screenshotClipboardWindowsPowerShell = false;
+    public static boolean screenshotAlsoSaveToDisk = true;
+    public static boolean screenshotClipboardWindowsPowerShell = defaultWindowsClipboardEnabled();
+    public static boolean captureWriteCsv = false;
 
     private boolean enableWarningParticlesValue = true;
     private boolean showWarningMessagesValue = true;
@@ -72,8 +73,9 @@ public final class LatitudeConfig {
     private boolean debugLatitudeBlendValue = false;
     private boolean screenshotClipboardEnabledValue = true;
     private boolean screenshotClipboardFallbackToDiskValue = true;
-    private boolean screenshotAlsoSaveToDiskValue = false;
-    private boolean screenshotClipboardWindowsPowerShellValue = false;
+    private boolean screenshotAlsoSaveToDiskValue = true;
+    private boolean screenshotClipboardWindowsPowerShellValue = defaultWindowsClipboardEnabled();
+    private boolean captureWriteCsvValue = false;
 
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static final Path PATH = FabricLoader.getInstance().getConfigDir().resolve("globe_latitude.json");
@@ -135,6 +137,7 @@ public final class LatitudeConfig {
                         screenshotClipboardFallbackToDisk = cfg.screenshotClipboardFallbackToDiskValue;
                         screenshotAlsoSaveToDisk = cfg.screenshotAlsoSaveToDiskValue;
                         screenshotClipboardWindowsPowerShell = cfg.screenshotClipboardWindowsPowerShellValue;
+                        captureWriteCsv = cfg.captureWriteCsvValue;
                         return cfg;
                     }
                 }
@@ -174,6 +177,7 @@ public final class LatitudeConfig {
         screenshotClipboardFallbackToDisk = fresh.screenshotClipboardFallbackToDiskValue;
         screenshotAlsoSaveToDisk = fresh.screenshotAlsoSaveToDiskValue;
         screenshotClipboardWindowsPowerShell = fresh.screenshotClipboardWindowsPowerShellValue;
+        captureWriteCsv = fresh.captureWriteCsvValue;
         save(fresh);
         return fresh;
     }
@@ -210,6 +214,7 @@ public final class LatitudeConfig {
             cfg.screenshotClipboardFallbackToDiskValue = screenshotClipboardFallbackToDisk;
             cfg.screenshotAlsoSaveToDiskValue = screenshotAlsoSaveToDisk;
             cfg.screenshotClipboardWindowsPowerShellValue = screenshotClipboardWindowsPowerShell;
+            cfg.captureWriteCsvValue = captureWriteCsv;
             Files.createDirectories(PATH.getParent());
             try (Writer w = Files.newBufferedWriter(PATH)) {
                 GSON.toJson(cfg, w);
@@ -238,5 +243,10 @@ public final class LatitudeConfig {
 
     private static int clampInt(int v, int lo, int hi) {
         return Math.max(lo, Math.min(hi, v));
+    }
+
+    private static boolean defaultWindowsClipboardEnabled() {
+        String os = System.getProperty("os.name", "");
+        return os.toLowerCase(java.util.Locale.ROOT).contains("win");
     }
 }
