@@ -39,6 +39,9 @@ public final class LatitudeConfig {
     public static double latitudeBandBoundaryWarpFrac = 0.06;
 
     public static boolean debugLatitudeBlend = false;
+    public static boolean screenshotClipboardEnabled = true;
+    public static boolean screenshotClipboardFallbackToDisk = true;
+    public static boolean screenshotAlsoSaveToDisk = false;
 
     private boolean enableWarningParticlesValue = true;
     private boolean showWarningMessagesValue = true;
@@ -66,6 +69,9 @@ public final class LatitudeConfig {
     private double latitudeBandBoundaryWarpFracValue = 0.06;
 
     private boolean debugLatitudeBlendValue = false;
+    private boolean screenshotClipboardEnabledValue = true;
+    private boolean screenshotClipboardFallbackToDiskValue = true;
+    private boolean screenshotAlsoSaveToDiskValue = false;
 
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static final Path PATH = FabricLoader.getInstance().getConfigDir().resolve("globe_latitude.json");
@@ -123,6 +129,9 @@ public final class LatitudeConfig {
                         latitudeBandBoundaryWarpFrac = cfg.latitudeBandBoundaryWarpFracValue;
 
                         debugLatitudeBlend = cfg.debugLatitudeBlendValue;
+                        screenshotClipboardEnabled = cfg.screenshotClipboardEnabledValue;
+                        screenshotClipboardFallbackToDisk = cfg.screenshotClipboardFallbackToDiskValue;
+                        screenshotAlsoSaveToDisk = cfg.screenshotAlsoSaveToDiskValue;
                         return cfg;
                     }
                 }
@@ -158,6 +167,9 @@ public final class LatitudeConfig {
         latitudeBandBoundaryWarpFrac = fresh.latitudeBandBoundaryWarpFracValue;
 
         debugLatitudeBlend = fresh.debugLatitudeBlendValue;
+        screenshotClipboardEnabled = fresh.screenshotClipboardEnabledValue;
+        screenshotClipboardFallbackToDisk = fresh.screenshotClipboardFallbackToDiskValue;
+        screenshotAlsoSaveToDisk = fresh.screenshotAlsoSaveToDiskValue;
         save(fresh);
         return fresh;
     }
@@ -190,6 +202,9 @@ public final class LatitudeConfig {
             cfg.latitudeBandBoundaryWarpFracValue = latitudeBandBoundaryWarpFrac;
 
             cfg.debugLatitudeBlendValue = debugLatitudeBlend;
+            cfg.screenshotClipboardEnabledValue = screenshotClipboardEnabled;
+            cfg.screenshotClipboardFallbackToDiskValue = screenshotClipboardFallbackToDisk;
+            cfg.screenshotAlsoSaveToDiskValue = screenshotAlsoSaveToDisk;
             Files.createDirectories(PATH.getParent());
             try (Writer w = Files.newBufferedWriter(PATH)) {
                 GSON.toJson(cfg, w);

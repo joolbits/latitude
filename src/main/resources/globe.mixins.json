@@ -26,6 +26,8 @@
     "client.CreateWorldScreenMixin",
     "client.WorldCreatorMixin",
     "client.InGameHudMixin",
+    "client.GameRendererAccessor",
+    "client.MinecraftClientFramebufferAccessor",
     "HandledScreenCompassToggleMixin",
     "client.DownloadingTerrainScreenFirstLoadMessageMixin",
     "client.FogRendererEwMixin",
