@@ -40,6 +40,9 @@ public final class LatitudeDevCommand {
                         .then(CommandManager.literal("budgetMs")
                                 .then(CommandManager.argument("ms", IntegerArgumentType.integer())
                                         .executes(LatitudeDevCommand::setBudgetMs)))
+                        .then(CommandManager.literal("budgetAuto")
+                                .then(CommandManager.literal("on").executes(LatitudeDevCommand::setBudgetAutoOn))
+                                .then(CommandManager.literal("off").executes(LatitudeDevCommand::setBudgetAutoOff)))
         );
     }
 
@@ -130,6 +133,14 @@ public final class LatitudeDevCommand {
             return 0;
         }
         return ChunkPregenerator.setDefaultBudgetMs(source, ms);
+    }
+
+    private static int setBudgetAutoOn(CommandContext<ServerCommandSource> ctx) {
+        return ChunkPregenerator.setAutoBudget(ctx.getSource(), true);
+    }
+
+    private static int setBudgetAutoOff(CommandContext<ServerCommandSource> ctx) {
+        return ChunkPregenerator.setAutoBudget(ctx.getSource(), false);
     }
 
     private static int maxAbsZFromBorder(ServerCommandSource source) {

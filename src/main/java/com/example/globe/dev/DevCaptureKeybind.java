@@ -28,6 +28,7 @@ import java.util.concurrent.CompletableFuture;
 public final class DevCaptureKeybind {
     private static final long DEBOUNCE_MS = 300L;
     private static final String CAPTURE_CSV_HEADER = "timestamp,file,x,y,z\n";
+    private static final String CAPTURE_DIR_HINT = "run/Latitude/captures/";
 
     private static KeyBinding captureKey;
     private static boolean initialized;
@@ -94,7 +95,7 @@ public final class DevCaptureKeybind {
 
             if (!clipboardEnabled) {
                 if (savedFile != null) {
-                    sendStatus(client, "[latdev] Saved " + savedFile.getName());
+                    sendStatus(client, "[latdev] Saved to " + CAPTURE_DIR_HINT + savedFile.getName());
                     appendCaptureCsvIfEnabled(client, savedFile.toPath());
                 } else {
                     sendStatus(client, "[latdev] Capture completed (clipboard disabled, disk save disabled)");
@@ -113,9 +114,11 @@ public final class DevCaptureKeybind {
 
             ClipboardCopyResult clipboardResult = ClipboardImageWriter.copyToClipboard(image);
             if (clipboardResult == ClipboardCopyResult.SUCCESS) {
-                sendStatus(client, "[latdev] Copied screenshot to clipboard");
                 if (savedFile != null) {
+                    sendStatus(client, "[latdev] Copied screenshot to clipboard; saved to " + CAPTURE_DIR_HINT + savedFile.getName());
                     appendCaptureCsvIfEnabled(client, savedFile.toPath());
+                } else {
+                    sendStatus(client, "[latdev] Copied screenshot to clipboard");
                 }
                 return;
             }
@@ -124,9 +127,9 @@ public final class DevCaptureKeybind {
                 savedFile = ClipboardImageWriter.saveToDisk(client, image);
             }
             if (clipboardResult == ClipboardCopyResult.HEADLESS) {
-                sendStatus(client, "[latdev] Clipboard unavailable; saved " + savedFile.getName());
+                sendStatus(client, "[latdev] Clipboard unavailable; saved to " + CAPTURE_DIR_HINT + savedFile.getName());
             } else {
-                sendStatus(client, "[latdev] Clipboard copy failed; saved " + savedFile.getName());
+                sendStatus(client, "[latdev] Clipboard copy failed; saved to " + CAPTURE_DIR_HINT + savedFile.getName());
             }
             appendCaptureCsvIfEnabled(client, savedFile.toPath());
         } catch (Exception e) {
@@ -159,14 +162,15 @@ public final class DevCaptureKeybind {
             if (copied) {
                 if (!keepOnSuccess) {
                     ClipboardImageWriter.deleteQuietly(captureFile);
+                    sendStatus(client, "[latdev] Copied screenshot to clipboard");
                 } else {
                     appendCaptureCsvIfEnabled(client, captureFile.toPath());
+                    sendStatus(client, "[latdev] Copied screenshot to clipboard; saved to " + CAPTURE_DIR_HINT + captureFile.getName());
                 }
-                sendStatus(client, "[latdev] Copied screenshot to clipboard");
                 return;
             }
 
-            sendStatus(client, "[latdev] Clipboard copy failed; saved " + captureFile.getName());
+            sendStatus(client, "[latdev] Clipboard copy failed; saved to " + CAPTURE_DIR_HINT + captureFile.getName());
             if (csvEnabled) {
                 appendCaptureCsv(client, captureFile.toPath());
             }

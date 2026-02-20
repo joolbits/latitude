@@ -2,8 +2,11 @@ package com.example.globe.dev;
 
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
+import net.minecraft.entity.boss.BossBar;
+import net.minecraft.entity.boss.ServerBossBar;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.command.ServerCommandSource;
+import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.text.Text;
 import net.minecraft.util.math.ChunkPos;
@@ -15,10 +18,14 @@ import java.util.Queue;
 public final class ChunkPregenerator {
     private static final int BLOCKS_PER_CHUNK = 16;
     private static final int PROGRESS_INTERVAL = 200;
-    private static final long DEFAULT_MAX_NANOS_PER_TICK = 3_000_000L;
+    private static final int BOSSBAR_UPDATE_CHUNK_INTERVAL = 20;
+    private static final long DEFAULT_MAX_NANOS_PER_TICK = 15_000_000L;
+    private static final long AUTO_REDUCED_MAX_NANOS_PER_TICK = 5_000_000L;
+    private static final long AUTO_BACKPRESSURE_THRESHOLD_NANOS = 45_000_000L;
 
     private static boolean tickHookRegistered;
-    private static long defaultMaxNanosPerTick = DEFAULT_MAX_NANOS_PER_TICK;
+    private static long fixedMaxNanosPerTick = DEFAULT_MAX_NANOS_PER_TICK;
+    private static boolean autoBudget = true;
 
     private static boolean active;
     private static boolean paused;
@@ -27,7 +34,8 @@ public final class ChunkPregenerator {
     private static int totalChunksPlanned;
     private static int chunksCompleted;
     private static int activeChunksPerTick;
-    private static long activeMaxNanosPerTick;
+    private static long activeFixedMaxNanosPerTick;
+    private static boolean activeAutoBudget;
     private static String jobSummary = "none";
     private static MinecraftServer activeServer;
     private static GenerationJob activeJob;
@@ -72,13 +80,15 @@ public final class ChunkPregenerator {
 
         int totalChunks = queue.size();
         int widthChunks = xHalfWidthChunks * 2 + 1;
-        long maxNanosPerTick = defaultMaxNanosPerTick;
+        long maxNanosPerTick = fixedMaxNanosPerTick;
+        boolean autoBudgetEnabled = autoBudget;
         String summary = "slice[zChunks=" + negStartChunk + ".." + negEndChunk
                 + " and " + zStartChunk + ".." + zEndChunk
                 + ", width=" + widthChunks + "]";
 
         long newJobId = ++nextJobId;
-        activeJob = new GenerationJob(server, world, source, queue, chunksPerTick, maxNanosPerTick);
+        ServerBossBar bossBar = createBossBar(summary, world);
+        activeJob = new GenerationJob(server, world, source, queue, chunksPerTick, maxNanosPerTick, autoBudgetEnabled, bossBar);
         activeServer = server;
         active = true;
         paused = false;
@@ -86,21 +96,31 @@ public final class ChunkPregenerator {
         totalChunksPlanned = totalChunks;
         chunksCompleted = 0;
         activeChunksPerTick = chunksPerTick;
-        activeMaxNanosPerTick = maxNanosPerTick;
+        activeFixedMaxNanosPerTick = maxNanosPerTick;
+        activeAutoBudget = autoBudgetEnabled;
         jobSummary = summary;
 
         source.sendFeedback(() -> Text.literal("[latdev] started job#" + newJobId
                 + " planned=" + totalChunks
                 + " " + summary
                 + " chunksPerTick=" + chunksPerTick
-                + " budgetMs=" + nanosToMs(maxNanosPerTick)), false);
+                + " budgetMs=" + nanosToMs(maxNanosPerTick)
+                + " auto=" + autoBudgetEnabled), false);
         return 1;
     }
 
     public static int setDefaultBudgetMs(ServerCommandSource source, int budgetMs) {
         long nanos = budgetMs * 1_000_000L;
-        defaultMaxNanosPerTick = nanos;
-        source.sendFeedback(() -> Text.literal("[latdev] default budgetMs set to " + nanosToMs(nanos) + " (applies to new jobs)"), false);
+        fixedMaxNanosPerTick = nanos;
+        source.sendFeedback(() -> Text.literal("[latdev] budgetMs=" + budgetMs + " (auto=" + autoBudget + ")"), false);
+        return 1;
+    }
+
+    public static int setAutoBudget(ServerCommandSource source, boolean enabled) {
+        autoBudget = enabled;
+        long fixedMs = fixedMaxNanosPerTick / 1_000_000L;
+        source.sendFeedback(() -> Text.literal("[latdev] budgetAuto=" + (enabled ? "on" : "off")
+                + " (budgetMs=" + fixedMs + ")"), false);
         return 1;
     }
 
@@ -183,7 +203,8 @@ public final class ChunkPregenerator {
                 + " jobId=" + jobId
                 + " progress=" + chunksCompleted + "/" + totalChunksPlanned
                 + " chunksPerTick=" + activeChunksPerTick
-                + " budgetMs=" + nanosToMs(activeMaxNanosPerTick)
+                + " budgetMs=" + nanosToMs(activeFixedMaxNanosPerTick)
+                + " auto=" + activeAutoBudget
                 + " " + jobSummary), false);
         return 1;
     }
@@ -222,10 +243,11 @@ public final class ChunkPregenerator {
             return;
         }
 
+        long maxNanosThisTick = resolveMaxNanosThisTick(job);
         long tickStartNanos = System.nanoTime();
         int budget = job.chunksPerTick;
         while (budget-- > 0 && !job.queue.isEmpty()) {
-            if ((System.nanoTime() - tickStartNanos) >= job.maxNanosPerTick) {
+            if ((System.nanoTime() - tickStartNanos) >= maxNanosThisTick) {
                 break;
             }
 
@@ -237,6 +259,10 @@ public final class ChunkPregenerator {
             job.world.getChunkManager().getChunk(next.x, next.z, ChunkStatus.FULL, true);
             chunksCompleted++;
 
+            if ((chunksCompleted - job.lastBossbarUpdateChunks) >= BOSSBAR_UPDATE_CHUNK_INTERVAL || job.queue.isEmpty()) {
+                updateBossBar(job, false);
+            }
+
             if (chunksCompleted % PROGRESS_INTERVAL == 0) {
                 int remaining = totalChunksPlanned - chunksCompleted;
                 job.source.sendFeedback(() -> Text.literal("[latdev] progress job#" + jobId + " "
@@ -244,6 +270,7 @@ public final class ChunkPregenerator {
                         + " chunks (remaining=" + remaining + ")"), false);
             }
         }
+        job.lastWorkDurationNanos = System.nanoTime() - tickStartNanos;
 
         if (job.queue.isEmpty()) {
             complete(job);
@@ -256,6 +283,7 @@ public final class ChunkPregenerator {
         int planned = totalChunksPlanned;
         String summary = jobSummary;
 
+        updateBossBar(job, true);
         clearState();
 
         job.source.sendFeedback(() -> Text.literal("[latdev] complete job#" + completedJobId
@@ -265,6 +293,7 @@ public final class ChunkPregenerator {
 
     private static void clearState() {
         if (activeJob != null) {
+            clearBossBar(activeJob);
             activeJob.queue.clear();
         }
         active = false;
@@ -273,7 +302,8 @@ public final class ChunkPregenerator {
         totalChunksPlanned = 0;
         chunksCompleted = 0;
         activeChunksPerTick = 0;
-        activeMaxNanosPerTick = 0L;
+        activeFixedMaxNanosPerTick = 0L;
+        activeAutoBudget = false;
         jobSummary = "none";
         activeServer = null;
         activeJob = null;
@@ -281,6 +311,48 @@ public final class ChunkPregenerator {
 
     private static String progressText() {
         return "job#" + jobId + " progress=" + chunksCompleted + "/" + totalChunksPlanned;
+    }
+
+    private static long resolveMaxNanosThisTick(GenerationJob job) {
+        if (!job.autoBudget) {
+            return job.fixedMaxNanosPerTick;
+        }
+        if (job.lastWorkDurationNanos > AUTO_BACKPRESSURE_THRESHOLD_NANOS) {
+            return AUTO_REDUCED_MAX_NANOS_PER_TICK;
+        }
+        return job.fixedMaxNanosPerTick;
+    }
+
+    private static ServerBossBar createBossBar(String summary, ServerWorld world) {
+        ServerBossBar bossBar = new ServerBossBar(Text.literal("LATDEV " + summary), BossBar.Color.BLUE, BossBar.Style.PROGRESS);
+        bossBar.setPercent(0.0F);
+        for (ServerPlayerEntity player : world.getPlayers()) {
+            bossBar.addPlayer(player);
+        }
+        return bossBar;
+    }
+
+    private static void updateBossBar(GenerationJob job, boolean force) {
+        if (job.bossBar == null) {
+            return;
+        }
+        if (!force && (chunksCompleted - job.lastBossbarUpdateChunks) < BOSSBAR_UPDATE_CHUNK_INTERVAL && !job.queue.isEmpty()) {
+            return;
+        }
+        float percent = totalChunksPlanned <= 0
+                ? 1.0F
+                : Math.min(1.0F, chunksCompleted / (float) totalChunksPlanned);
+        job.bossBar.setPercent(percent);
+        job.bossBar.setName(Text.literal("LATDEV " + jobSummary + " " + chunksCompleted + "/" + totalChunksPlanned));
+        job.lastBossbarUpdateChunks = chunksCompleted;
+    }
+
+    private static void clearBossBar(GenerationJob job) {
+        if (job.bossBar == null) {
+            return;
+        }
+        job.bossBar.clearPlayers();
+        job.bossBar = null;
     }
 
     private static String nanosToMs(long nanos) {
@@ -293,20 +365,30 @@ public final class ChunkPregenerator {
         private final ServerCommandSource source;
         private final Queue<ChunkPos> queue;
         private final int chunksPerTick;
-        private final long maxNanosPerTick;
+        private final long fixedMaxNanosPerTick;
+        private final boolean autoBudget;
+        private long lastWorkDurationNanos;
+        private ServerBossBar bossBar;
+        private int lastBossbarUpdateChunks;
 
         private GenerationJob(MinecraftServer server,
                               ServerWorld world,
                               ServerCommandSource source,
                               Queue<ChunkPos> queue,
                               int chunksPerTick,
-                              long maxNanosPerTick) {
+                              long fixedMaxNanosPerTick,
+                              boolean autoBudget,
+                              ServerBossBar bossBar) {
             this.server = server;
             this.world = world;
             this.source = source;
             this.queue = queue;
             this.chunksPerTick = chunksPerTick;
-            this.maxNanosPerTick = maxNanosPerTick;
+            this.fixedMaxNanosPerTick = fixedMaxNanosPerTick;
+            this.autoBudget = autoBudget;
+            this.lastWorkDurationNanos = 0L;
+            this.bossBar = bossBar;
+            this.lastBossbarUpdateChunks = 0;
         }
     }
 }
