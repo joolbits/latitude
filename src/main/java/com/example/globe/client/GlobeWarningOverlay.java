@@ -11,6 +11,8 @@ import net.minecraft.util.Formatting;
 public final class GlobeWarningOverlay {
     private static long debugStartWorldTime = -1L;
     private static String lastZoneKey;
+    private static String pendingZoneKey = null;
+    private static int pendingZoneChecks = 0;
 
     private static final String POLE_WARN_1_TEXT =
             "The air is turning bitterly cold. You should consider turning back.";
@@ -155,13 +157,26 @@ public final class GlobeWarningOverlay {
 
                 var border = client.world.getWorldBorder();
                 String zoneKey = com.example.globe.util.LatitudeMath.zoneKey(border, client.player.getZ());
-                if (lastZoneKey == null || !lastZoneKey.equals(zoneKey)) {
-                    lastZoneKey = zoneKey;
-                    if (LatitudeConfig.zoneEnterTitleEnabled) {
-                        String titleText = buildZoneEnterTitle(client, zoneKey);
-                        int durationTicks = (int) Math.round(clamp(LatitudeConfig.zoneEnterTitleSeconds, 2.0, 10.0) * 20.0);
-                        double scale = clamp(LatitudeConfig.zoneEnterTitleScale, 1.0, 3.0);
-                        ZoneEnterTitleOverlay.trigger(titleText, durationTicks, scale);
+                if (lastZoneKey != null && lastZoneKey.equals(zoneKey)) {
+                    pendingZoneKey = null;
+                    pendingZoneChecks = 0;
+                } else {
+                    if (!java.util.Objects.equals(zoneKey, pendingZoneKey)) {
+                        pendingZoneKey = zoneKey;
+                        pendingZoneChecks = 1;
+                    } else {
+                        pendingZoneChecks++;
+                        if (pendingZoneChecks >= 2) {
+                            lastZoneKey = zoneKey;
+                            pendingZoneKey = null;
+                            pendingZoneChecks = 0;
+                            if (LatitudeConfig.zoneEnterTitleEnabled) {
+                                String titleText = buildZoneEnterTitle(client, zoneKey);
+                                int durationTicks = (int) Math.round(clamp(LatitudeConfig.zoneEnterTitleSeconds, 2.0, 10.0) * 20.0);
+                                double scale = clamp(LatitudeConfig.zoneEnterTitleScale, 1.0, 3.0);
+                                ZoneEnterTitleOverlay.trigger(titleText, durationTicks, scale);
+                            }
+                        }
                     }
                 }
             }
