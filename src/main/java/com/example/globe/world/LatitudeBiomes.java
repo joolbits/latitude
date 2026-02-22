@@ -964,17 +964,8 @@ public final class LatitudeBiomes {
         blendT = clamp(blendT, 0.0, 1.0);
         blendT = smoothstep(blendT);
 
-        double blendNoise;
-        if (TRANSITION_MODE == TransitionMode.CELLHASH_PATCHES) {
-            long ditherSeed = WORLD_SEED ^ DITHER_NOISE_SALT;
-            int cellSize = BLEND_DITHER_SCALE_BLOCKS;
-            int cellX = Math.floorDiv(blockX, cellSize);
-            int cellZ = Math.floorDiv(blockZ, cellSize);
-            blendNoise = cellHash01(ditherSeed, cellX, cellZ);
-        } else {
-            double blendPatchBlocks = scaledPatchBlocks(BLEND_NOISE_PATCH_CHUNKS, noiseScale);
-            blendNoise = blobNoise01ScaledBlocks(WORLD_SEED, blockX, blockZ, blendPatchBlocks, BLEND_NOISE_SALT);
-        }
+        double blendPatchBlocks = scaledPatchBlocks(BLEND_NOISE_PATCH_CHUNKS, noiseScale);
+        double blendNoise = blobNoise01ScaledBlocks(WORLD_SEED, blockX, blockZ, blendPatchBlocks, BLEND_NOISE_SALT);
 
         int chosenBandIndex = blendNoise < blendT ? upperBandIndex : lowerBandIndex;
 
