@@ -109,6 +109,69 @@ public final class ChunkPregenerator {
         return 1;
     }
 
+    public static int startSliceNS(ServerCommandSource source,
+                                   int centerXChunk,
+                                   int zStartBlocks,
+                                   int zEndBlocks,
+                                   int widthChunks,
+                                   int chunksPerTick) {
+        ensureTickHookRegistered();
+
+        if (active) {
+            source.sendError(Text.literal("[latdev] job active; run /latdev stop"));
+            return 0;
+        }
+
+        ServerWorld world = source.getWorld();
+        int zStartChunk = Math.floorDiv(zStartBlocks, BLOCKS_PER_CHUNK);
+        int zEndChunk = Math.floorDiv(zEndBlocks, BLOCKS_PER_CHUNK);
+
+        if (zStartChunk > zEndChunk) {
+            int tmp = zStartChunk;
+            zStartChunk = zEndChunk;
+            zEndChunk = tmp;
+        }
+
+        int startXChunk = centerXChunk - (widthChunks / 2);
+        int endXChunk = startXChunk + widthChunks - 1;
+
+        Queue<ChunkPos> queue = new ArrayDeque<>();
+        for (int zChunk = zStartChunk; zChunk <= zEndChunk; zChunk++) {
+            for (int xChunk = startXChunk; xChunk <= endXChunk; xChunk++) {
+                queue.add(new ChunkPos(xChunk, zChunk));
+            }
+        }
+
+        int totalChunks = queue.size();
+        long maxNanosPerTick = fixedMaxNanosPerTick;
+        boolean autoBudgetEnabled = autoBudget;
+        String summary = "sliceNS[zChunks=" + zStartChunk + ".." + zEndChunk
+                + ", width=" + widthChunks
+                + ", centerXChunk=" + centerXChunk + "]";
+
+        long newJobId = ++nextJobId;
+        ServerBossBar bossBar = createBossBar(summary, world);
+        activeJob = new GenerationJob(source.getServer(), world, source, queue, chunksPerTick, maxNanosPerTick, autoBudgetEnabled, bossBar);
+        activeServer = source.getServer();
+        active = true;
+        paused = false;
+        jobId = newJobId;
+        totalChunksPlanned = totalChunks;
+        chunksCompleted = 0;
+        activeChunksPerTick = chunksPerTick;
+        activeFixedMaxNanosPerTick = maxNanosPerTick;
+        activeAutoBudget = autoBudgetEnabled;
+        jobSummary = summary;
+
+        source.sendFeedback(() -> Text.literal("[latdev] started job#" + newJobId
+                + " planned=" + totalChunks
+                + " " + summary
+                + " chunksPerTick=" + chunksPerTick
+                + " budgetMs=" + nanosToMs(maxNanosPerTick)
+                + " auto=" + autoBudgetEnabled), false);
+        return 1;
+    }
+
     public static int setDefaultBudgetMs(ServerCommandSource source, int budgetMs) {
         long nanos = budgetMs * 1_000_000L;
         fixedMaxNanosPerTick = nanos;

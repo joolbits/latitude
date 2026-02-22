@@ -33,6 +33,13 @@ public final class LatitudeDevCommand {
                                                 .then(CommandManager.argument("xHalfWidthChunks", IntegerArgumentType.integer())
                                                         .then(CommandManager.argument("chunksPerTick", IntegerArgumentType.integer())
                                                                 .executes(LatitudeDevCommand::startTransectDeg))))))
+                        .then(CommandManager.literal("slicePoleNS")
+                                .then(CommandManager.argument("centerX", IntegerArgumentType.integer())
+                                        .executes(LatitudeDevCommand::startSlicePoleNS)
+                                        .then(CommandManager.argument("widthChunks", IntegerArgumentType.integer(1, 64))
+                                                .executes(LatitudeDevCommand::startSlicePoleNS)
+                                                .then(CommandManager.argument("chunksPerTick", IntegerArgumentType.integer(1, 2000))
+                                                        .executes(LatitudeDevCommand::startSlicePoleNS)))))
                         .then(CommandManager.literal("pause").executes(LatitudeDevCommand::pauseTransect))
                         .then(CommandManager.literal("resume").executes(LatitudeDevCommand::resumeTransect))
                         .then(CommandManager.literal("stop").executes(LatitudeDevCommand::stopTransect))
@@ -107,6 +114,24 @@ public final class LatitudeDevCommand {
         }
 
         return ChunkPregenerator.startTransect(source.getServer(), source, zStart, zEnd, xHalfWidthChunks, chunksPerTick);
+    }
+
+    private static int startSlicePoleNS(CommandContext<ServerCommandSource> ctx) {
+        ServerCommandSource source = ctx.getSource();
+
+        int centerXChunk = IntegerArgumentType.getInteger(ctx, "centerX");
+        int widthChunks = ctx.getNodes().stream().anyMatch(node -> node.getNode().getName().equals("widthChunks"))
+                ? IntegerArgumentType.getInteger(ctx, "widthChunks")
+                : 1;
+        int chunksPerTick = ctx.getNodes().stream().anyMatch(node -> node.getNode().getName().equals("chunksPerTick"))
+                ? IntegerArgumentType.getInteger(ctx, "chunksPerTick")
+                : 200;
+
+        widthChunks = MathHelper.clamp(widthChunks, 1, 64);
+        chunksPerTick = MathHelper.clamp(chunksPerTick, 1, 2000);
+
+        int radiusBlocks = maxAbsZFromBorder(source);
+        return ChunkPregenerator.startSliceNS(source, centerXChunk, -radiusBlocks, radiusBlocks, widthChunks, chunksPerTick);
     }
 
     private static int pauseTransect(CommandContext<ServerCommandSource> ctx) {
