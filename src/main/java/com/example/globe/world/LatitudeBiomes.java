@@ -48,11 +48,7 @@ public final class LatitudeBiomes {
         double stepFloat = tJitter * 4.0;
         int baseStep = clampInt((int) Math.floor(stepFloat), 0, 3);
         double stepFrac = stepFloat - baseStep;
-        double dither = ValueNoise2D.sampleBlocks(seed ^ TROPICAL_DITHER_SALT, blockX, blockZ, DITHER_SCALE_BLOCKS);
-        int step = baseStep;
-        if (baseStep < 3 && dither < stepFrac) {
-            step = baseStep + 1;
-        }
+        int step = applyTropicalStepDither(seed, blockX, blockZ, baseStep, stepFrac);
 
         return switch (step) {
             case 1 -> pickFromWeightedTagsNoSwamp(biomes, base, blockX, blockZ, 101, 0x7A11,
@@ -85,11 +81,7 @@ public final class LatitudeBiomes {
         double stepFloat = tJitter * 4.0;
         int baseStep = clampInt((int) Math.floor(stepFloat), 0, 3);
         double stepFrac = stepFloat - baseStep;
-        double dither = ValueNoise2D.sampleBlocks(seed ^ TROPICAL_DITHER_SALT, blockX, blockZ, DITHER_SCALE_BLOCKS);
-        int step = baseStep;
-        if (baseStep < 3 && dither < stepFrac) {
-            step = baseStep + 1;
-        }
+        int step = applyTropicalStepDither(seed, blockX, blockZ, baseStep, stepFrac);
 
         return switch (step) {
             case 1 -> pickFromWeightedTagsNoSwamp(biomes, base, blockX, blockZ, 101, 0x7A11,
@@ -310,6 +302,8 @@ public final class LatitudeBiomes {
     }
 
     private static final TransitionMode TRANSITION_MODE = TransitionMode.SMOOTH_WARP;
+    private static final boolean DISABLE_GRID_DITHER = Boolean.parseBoolean(
+            System.getProperty("latitude.disableGridDither", "true"));
 
     private static final int REFERENCE_DIAMETER_BLOCKS = 20000;
 
@@ -388,6 +382,14 @@ public final class LatitudeBiomes {
     private static double smoothstep(double t) {
         t = Math.max(0.0, Math.min(1.0, t));
         return t * t * (3.0 - 2.0 * t);
+    }
+
+    private static int applyTropicalStepDither(long seed, int blockX, int blockZ, int baseStep, double stepFrac) {
+        if (baseStep >= 3 || DISABLE_GRID_DITHER) {
+            return baseStep;
+        }
+        double dither = ValueNoise2D.sampleBlocks(seed ^ TROPICAL_DITHER_SALT, blockX, blockZ, DITHER_SCALE_BLOCKS);
+        return dither < stepFrac ? baseStep + 1 : baseStep;
     }
 
     private static double blobNoise01(long seed, int chunkX, int chunkZ, int patchSizeChunks, long salt) {
@@ -736,11 +738,7 @@ public final class LatitudeBiomes {
         double stepFloat = tJitter * 4.0;
         int baseStep = clampInt((int) Math.floor(stepFloat), 0, 3);
         double stepFrac = stepFloat - baseStep;
-        double dither = ValueNoise2D.sampleBlocks(seed ^ TROPICAL_DITHER_SALT, blockX, blockZ, DITHER_SCALE_BLOCKS);
-        int step = baseStep;
-        if (baseStep < 3 && dither < stepFrac) {
-            step = baseStep + 1;
-        }
+        int step = applyTropicalStepDither(seed, blockX, blockZ, baseStep, stepFrac);
 
         return switch (step) {
             case 1 -> pickFromWeightedTags(biomes, base, blockX, blockZ, 101, 0x7A11,
@@ -773,11 +771,7 @@ public final class LatitudeBiomes {
         double stepFloat = tJitter * 4.0;
         int baseStep = clampInt((int) Math.floor(stepFloat), 0, 3);
         double stepFrac = stepFloat - baseStep;
-        double dither = ValueNoise2D.sampleBlocks(seed ^ TROPICAL_DITHER_SALT, blockX, blockZ, DITHER_SCALE_BLOCKS);
-        int step = baseStep;
-        if (baseStep < 3 && dither < stepFrac) {
-            step = baseStep + 1;
-        }
+        int step = applyTropicalStepDither(seed, blockX, blockZ, baseStep, stepFrac);
 
         return step == 0;
     }
@@ -802,11 +796,7 @@ public final class LatitudeBiomes {
         double stepFloat = tJitter * 4.0;
         int baseStep = clampInt((int) Math.floor(stepFloat), 0, 3);
         double stepFrac = stepFloat - baseStep;
-        double dither = ValueNoise2D.sampleBlocks(seed ^ TROPICAL_DITHER_SALT, blockX, blockZ, DITHER_SCALE_BLOCKS);
-        int step = baseStep;
-        if (baseStep < 3 && dither < stepFrac) {
-            step = baseStep + 1;
-        }
+        int step = applyTropicalStepDither(seed, blockX, blockZ, baseStep, stepFrac);
 
         return switch (step) {
             case 1 -> pickFromWeightedTags(biomes, base, blockX, blockZ, 101, 0x7A11,
@@ -1103,9 +1093,14 @@ public final class LatitudeBiomes {
 
     private static boolean useSubpolarSnowyPool(double absLatFraction, int blockX, int blockZ) {
         double pSnow = subpolarSnowProbability(absLatFraction);
-        int cellX = Math.floorDiv(blockX, VARIANT_CELL_SIZE_BLOCKS);
-        int cellZ = Math.floorDiv(blockZ, VARIANT_CELL_SIZE_BLOCKS);
-        double r = LatitudeMath.hash01(WORLD_SEED, cellX, cellZ, (int) SUBPOLAR_RAMP_SALT);
+        double r;
+        if (DISABLE_GRID_DITHER) {
+            r = ValueNoise2D.sampleBlocks(WORLD_SEED ^ SUBPOLAR_RAMP_SALT, blockX, blockZ, Math.max(16, VARIANT_CELL_SIZE_BLOCKS));
+        } else {
+            int cellX = Math.floorDiv(blockX, VARIANT_CELL_SIZE_BLOCKS);
+            int cellZ = Math.floorDiv(blockZ, VARIANT_CELL_SIZE_BLOCKS);
+            r = LatitudeMath.hash01(WORLD_SEED, cellX, cellZ, (int) SUBPOLAR_RAMP_SALT);
+        }
         return r < pSnow;
     }
 
@@ -1159,10 +1154,15 @@ public final class LatitudeBiomes {
     }
 
     private static int weightedRoll(int blockX, int blockZ, int salt) {
-        int chunkX = blockX >> 4;
-        int chunkZ = blockZ >> 4;
-        int patchSizeChunks = Math.max(1, VARIANT_CELL_SIZE_BLOCKS >> 4);
-        double blob = blobNoise01(WORLD_SEED, chunkX, chunkZ, patchSizeChunks, salt);
+        double blob;
+        if (DISABLE_GRID_DITHER) {
+            blob = blobNoise01Blocks(WORLD_SEED, blockX, blockZ, Math.max(16, VARIANT_CELL_SIZE_BLOCKS), salt);
+        } else {
+            int chunkX = blockX >> 4;
+            int chunkZ = blockZ >> 4;
+            int patchSizeChunks = Math.max(1, VARIANT_CELL_SIZE_BLOCKS >> 4);
+            blob = blobNoise01(WORLD_SEED, chunkX, chunkZ, patchSizeChunks, salt);
+        }
         int roll = (int) Math.floor(blob * 100.0);
         return clampInt(roll, 0, 99);
     }
@@ -1512,9 +1512,14 @@ public final class LatitudeBiomes {
             return pick;
         }
         double alpha = snowyRampAlpha(deg);
-        int cellX = Math.floorDiv(blockX, VARIANT_CELL_SIZE_BLOCKS);
-        int cellZ = Math.floorDiv(blockZ, VARIANT_CELL_SIZE_BLOCKS);
-        double r = cellHash01(WORLD_SEED ^ SNOWY_RAMP_SALT, cellX, cellZ);
+        double r;
+        if (DISABLE_GRID_DITHER) {
+            r = ValueNoise2D.sampleBlocks(WORLD_SEED ^ SNOWY_RAMP_SALT, blockX, blockZ, Math.max(16, VARIANT_CELL_SIZE_BLOCKS));
+        } else {
+            int cellX = Math.floorDiv(blockX, VARIANT_CELL_SIZE_BLOCKS);
+            int cellZ = Math.floorDiv(blockZ, VARIANT_CELL_SIZE_BLOCKS);
+            r = cellHash01(WORLD_SEED ^ SNOWY_RAMP_SALT, cellX, cellZ);
+        }
         if (r < alpha) {
             return pick;
         }
@@ -1531,9 +1536,14 @@ public final class LatitudeBiomes {
             return pick;
         }
         double alpha = snowyRampAlpha(deg);
-        int cellX = Math.floorDiv(blockX, VARIANT_CELL_SIZE_BLOCKS);
-        int cellZ = Math.floorDiv(blockZ, VARIANT_CELL_SIZE_BLOCKS);
-        double r = cellHash01(WORLD_SEED ^ SNOWY_RAMP_SALT, cellX, cellZ);
+        double r;
+        if (DISABLE_GRID_DITHER) {
+            r = ValueNoise2D.sampleBlocks(WORLD_SEED ^ SNOWY_RAMP_SALT, blockX, blockZ, Math.max(16, VARIANT_CELL_SIZE_BLOCKS));
+        } else {
+            int cellX = Math.floorDiv(blockX, VARIANT_CELL_SIZE_BLOCKS);
+            int cellZ = Math.floorDiv(blockZ, VARIANT_CELL_SIZE_BLOCKS);
+            r = cellHash01(WORLD_SEED ^ SNOWY_RAMP_SALT, cellX, cellZ);
+        }
         if (r < alpha) {
             return pick;
         }
@@ -1915,11 +1925,7 @@ public final class LatitudeBiomes {
         double stepFloat = tJitter * 4.0;
         int baseStep = clampInt((int) Math.floor(stepFloat), 0, 3);
         double stepFrac = stepFloat - baseStep;
-        double dither = ValueNoise2D.sampleBlocks(seed ^ TROPICAL_DITHER_SALT, blockX, blockZ, DITHER_SCALE_BLOCKS);
-        int step = baseStep;
-        if (baseStep < 3 && dither < stepFrac) {
-            step = baseStep + 1;
-        }
+        int step = applyTropicalStepDither(seed, blockX, blockZ, baseStep, stepFrac);
 
         return switch (step) {
             case 1 -> pickFromWeightedTagsNoMangrove(biomes, base, blockX, blockZ, 101, 0x7A11,
@@ -1952,11 +1958,7 @@ public final class LatitudeBiomes {
         double stepFloat = tJitter * 4.0;
         int baseStep = clampInt((int) Math.floor(stepFloat), 0, 3);
         double stepFrac = stepFloat - baseStep;
-        double dither = ValueNoise2D.sampleBlocks(seed ^ TROPICAL_DITHER_SALT, blockX, blockZ, DITHER_SCALE_BLOCKS);
-        int step = baseStep;
-        if (baseStep < 3 && dither < stepFrac) {
-            step = baseStep + 1;
-        }
+        int step = applyTropicalStepDither(seed, blockX, blockZ, baseStep, stepFrac);
 
         return switch (step) {
             case 1 -> pickFromWeightedTagsNoMangrove(biomes, base, blockX, blockZ, 101, 0x7A11,
