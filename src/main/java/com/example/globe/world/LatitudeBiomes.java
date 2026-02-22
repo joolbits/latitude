@@ -21,6 +21,7 @@ import net.minecraft.registry.entry.RegistryEntry;
 import net.minecraft.registry.tag.BiomeTags;
 import net.minecraft.registry.tag.TagKey;
 import net.minecraft.util.Identifier;
+import net.minecraft.util.math.MathHelper;
 import net.minecraft.world.biome.Biome;
 import net.minecraft.world.biome.source.util.MultiNoiseUtil;
 
@@ -946,10 +947,10 @@ public final class LatitudeBiomes {
 
         double diameter = radius * 2.0;
         double noiseScale = diameter > 0.0 ? (REFERENCE_DIAMETER_BLOCKS / diameter) : 1.0;
-        int warpPatchChunks = scaledPatchChunks(WARP_NOISE_PATCH_CHUNKS, noiseScale);
+        double warpPatchBlocks = scaledPatchBlocks(WARP_NOISE_PATCH_CHUNKS, noiseScale);
 
         long warpSeed = WORLD_SEED ^ WARP_NOISE_SALT;
-        double warpNoise = (blobNoise01(warpSeed, blockX >> 4, blockZ >> 4, warpPatchChunks, WARP_NOISE_SALT) * 2.0) - 1.0;
+        double warpNoise = (blobNoise01ScaledBlocks(warpSeed, blockX, blockZ, warpPatchBlocks, WARP_NOISE_SALT) * 2.0) - 1.0;
         double maxWarp = Math.min(WARP_AMPLITUDE_BLOCKS, halfWidthBlocks);
         double boundaryWarp = warpNoise * maxWarp;
         double effectiveBoundary = boundaryBlocks + boundaryWarp;
@@ -971,8 +972,8 @@ public final class LatitudeBiomes {
             int cellZ = Math.floorDiv(blockZ, cellSize);
             blendNoise = cellHash01(ditherSeed, cellX, cellZ);
         } else {
-            int blendPatchChunks = scaledPatchChunks(BLEND_NOISE_PATCH_CHUNKS, noiseScale);
-            blendNoise = blobNoise01(WORLD_SEED, blockX >> 4, blockZ >> 4, blendPatchChunks, BLEND_NOISE_SALT);
+            double blendPatchBlocks = scaledPatchBlocks(BLEND_NOISE_PATCH_CHUNKS, noiseScale);
+            blendNoise = blobNoise01ScaledBlocks(WORLD_SEED, blockX, blockZ, blendPatchBlocks, BLEND_NOISE_SALT);
         }
 
         int chosenBandIndex = blendNoise < blendT ? upperBandIndex : lowerBandIndex;
@@ -982,7 +983,7 @@ public final class LatitudeBiomes {
                 && (blockZ & 15) == 0
                 && chosenBandIndex != bandIndex
                 && BLEND_DEBUG_COUNT.incrementAndGet() <= DEBUG_LIMIT) {
-            LOGGER.info("[LAT_BLEND] mode={} x={} z={} lat={} baseBand={} lower={} upper={} chosen={} boundary={} effectiveBoundary={} delta={} transitionWidth={} warpAmp={} warpPatchChunks={} blendPatchChunks={} t={} noise={}",
+            LOGGER.info("[LAT_BLEND] mode={} x={} z={} lat={} baseBand={} lower={} upper={} chosen={} boundary={} effectiveBoundary={} delta={} transitionWidth={} warpAmp={} warpPatchBlocks={} blendPatchBlocks={} t={} noise={}",
                     TRANSITION_MODE,
                     blockX,
                     blockZ,
@@ -996,8 +997,8 @@ public final class LatitudeBiomes {
                     String.format(java.util.Locale.ROOT, "%.2f", delta),
                     BLEND_TRANSITION_WIDTH_BLOCKS,
                     maxWarp,
-                    WARP_NOISE_PATCH_CHUNKS,
-                    BLEND_NOISE_PATCH_CHUNKS,
+                    String.format(java.util.Locale.ROOT, "%.1f", warpPatchBlocks),
+                    String.format(java.util.Locale.ROOT, "%.1f", scaledPatchBlocks(BLEND_NOISE_PATCH_CHUNKS, noiseScale)),
                     String.format(java.util.Locale.ROOT, "%.3f", blendT),
                     String.format(java.util.Locale.ROOT, "%.3f", blendNoise));
         }
@@ -1025,7 +1026,7 @@ public final class LatitudeBiomes {
 
     private static double applyBoundaryJitter(int blockX, int blockZ, int radius, double baseT) {
         if (radius <= 0) {
-            return clamp(baseT, 0.0, 1.0);
+            return MathHelper.clamp(baseT, 0.0, 1.0);
         }
         double jitterBlocks = clamp(radius * BAND_JITTER_FRAC, BAND_JITTER_MIN_BLOCKS, BAND_JITTER_MAX_BLOCKS);
         double wavelengthBlocks = clamp(radius * BAND_JITTER_WAVELENGTH_FRAC,
@@ -1035,7 +1036,9 @@ public final class LatitudeBiomes {
         double noise01 = ValueNoise2D.sampleBlocks(WORLD_SEED ^ JITTER_NOISE_SALT, blockX, blockZ, noiseScale);
         double signedNoise = (noise01 * 2.0) - 1.0;
         double jitterT = signedNoise * (jitterBlocks / (double) radius);
-        return clamp(baseT + jitterT, 0.0, 1.0);
+        double t = baseT + jitterT;
+        t = MathHelper.clamp(t, 0.0, 1.0);
+        return t;
     }
 
     private static int bandBoundaryBlocks(int boundaryIndex, int radius) {
@@ -1124,10 +1127,35 @@ public final class LatitudeBiomes {
         return pickFromTagNoiseOrBase(biomes, tag, base, blockX, blockZ, bandIndex);
     }
 
-    private static int scaledPatchChunks(int basePatchChunks, double noiseScale) {
-        double scaled = basePatchChunks * noiseScale;
-        int rounded = (int) Math.round(scaled);
-        return Math.max(1, rounded);
+    private static double scaledPatchBlocks(int basePatchChunks, double noiseScale) {
+        double basePatchBlocks = basePatchChunks * 16.0;
+        double scaled = basePatchBlocks * noiseScale;
+        return Math.max(16.0, scaled);
+    }
+
+    private static double blobNoise01ScaledBlocks(long seed, int blockX, int blockZ, double patchBlocks, long salt) {
+        double safePatchBlocks = Math.max(16.0, patchBlocks);
+        double sx = blockX / safePatchBlocks;
+        double sz = blockZ / safePatchBlocks;
+
+        int gx = (int) Math.floor(sx);
+        int gz = (int) Math.floor(sz);
+        int x1 = gx + 1;
+        int z1 = gz + 1;
+
+        double fx = sx - gx;
+        double fz = sz - gz;
+        double u = smoothstep(fx);
+        double v = smoothstep(fz);
+
+        double n00 = hash01(seed, gx, gz, salt);
+        double n10 = hash01(seed, x1, gz, salt);
+        double n01 = hash01(seed, gx, z1, salt);
+        double n11 = hash01(seed, x1, z1, salt);
+
+        double nx0 = n00 + (n10 - n00) * u;
+        double nx1 = n01 + (n11 - n01) * u;
+        return nx0 + (nx1 - nx0) * v;
     }
 
     private static RegistryEntry<Biome> pickSubpolarWithRamp(Collection<RegistryEntry<Biome>> biomes, RegistryEntry<Biome> base, int blockX, int blockZ,
