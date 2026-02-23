@@ -3,7 +3,9 @@ package com.example.globe.dev;
 import com.example.globe.util.LatitudeMath;
 import com.example.globe.world.LatitudeBiomes;
 import com.mojang.brigadier.CommandDispatcher;
+import com.mojang.brigadier.arguments.BoolArgumentType;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
+import com.mojang.brigadier.arguments.LongArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.context.CommandContext;
 import net.fabricmc.loader.api.FabricLoader;
@@ -16,6 +18,7 @@ import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.text.Text;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.ChunkPos;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.world.border.WorldBorder;
 import net.minecraft.world.biome.Biome;
@@ -30,6 +33,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.OptionalLong;
 import java.util.Random;
 
 public final class LatitudeDevCommand {
@@ -79,6 +83,26 @@ public final class LatitudeDevCommand {
                                 .then(CommandManager.argument("radiusBlocks", IntegerArgumentType.integer())
                                         .then(CommandManager.argument("samples", IntegerArgumentType.integer())
                                                 .executes(LatitudeDevCommand::probe))))
+                        .then(CommandManager.literal("regenChunk")
+                                .executes(ctx -> regenChunk(ctx, 0, false, OptionalLong.empty()))
+                                .then(CommandManager.argument("radiusChunks", IntegerArgumentType.integer(0, 8))
+                                        .executes(ctx -> regenChunk(
+                                                ctx,
+                                                IntegerArgumentType.getInteger(ctx, "radiusChunks"),
+                                                false,
+                                                OptionalLong.empty()))
+                                        .then(CommandManager.argument("biomes", BoolArgumentType.bool())
+                                                .executes(ctx -> regenChunk(
+                                                        ctx,
+                                                        IntegerArgumentType.getInteger(ctx, "radiusChunks"),
+                                                        BoolArgumentType.getBool(ctx, "biomes"),
+                                                        OptionalLong.empty()))
+                                                .then(CommandManager.argument("seed", LongArgumentType.longArg())
+                                                        .executes(ctx -> regenChunk(
+                                                                ctx,
+                                                                IntegerArgumentType.getInteger(ctx, "radiusChunks"),
+                                                                BoolArgumentType.getBool(ctx, "biomes"),
+                                                                OptionalLong.of(LongArgumentType.getLong(ctx, "seed"))))))))
                         .then(CommandManager.literal("pause").executes(LatitudeDevCommand::pauseTransect))
                         .then(CommandManager.literal("resume").executes(LatitudeDevCommand::resumeTransect))
                         .then(CommandManager.literal("stop").executes(LatitudeDevCommand::stopTransect))
@@ -94,7 +118,7 @@ public final class LatitudeDevCommand {
 
     private static int help(CommandContext<ServerCommandSource> ctx) {
         ServerCommandSource source = ctx.getSource();
-        source.sendFeedback(() -> Text.literal("[latdev] commands: here | tpBand <equator|tropics|arid|temperate|subpolar|polar> [center|low|high] | probe <radiusBlocks> <samples> | transect | transectDeg | slicePoleNS | pause | resume | stop | status | budgetMs | budgetAuto <on|off>"), false);
+        source.sendFeedback(() -> Text.literal("[latdev] commands: here | tpBand <equator|tropics|arid|temperate|subpolar|polar> [center|low|high] | probe <radiusBlocks> <samples> | regenChunk [radiusChunks] [biomes] [seed] | transect | transectDeg | slicePoleNS | pause | resume | stop | status | budgetMs | budgetAuto <on|off>"), false);
         return 1;
     }
 
@@ -346,6 +370,21 @@ public final class LatitudeDevCommand {
 
         int radiusBlocks = maxAbsZFromBorder(source);
         return ChunkPregenerator.startSliceNS(source, centerXChunk, -radiusBlocks, radiusBlocks, widthChunks, chunksPerTick);
+    }
+
+    private static int regenChunk(CommandContext<ServerCommandSource> ctx, int requestedRadius, boolean biomes, OptionalLong seedOverride) {
+        try {
+            ServerCommandSource source = ctx.getSource();
+            ServerPlayerEntity player = source.getPlayerOrThrow();
+            ServerWorld world = source.getWorld();
+            ChunkPos center = player.getChunkPos();
+            int radius = MathHelper.clamp(requestedRadius, 0, 8);
+            return ChunkRegenerator.regenSquare(world, center.x, center.z, radius, biomes, seedOverride, source);
+        } catch (Exception e) {
+            ctx.getSource().sendError(Text.literal("[latdev] regenChunk error: " + e.getMessage()));
+            e.printStackTrace();
+            return 0;
+        }
     }
 
     private static int pauseTransect(CommandContext<ServerCommandSource> ctx) {
