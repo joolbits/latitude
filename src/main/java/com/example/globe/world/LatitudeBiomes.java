@@ -515,7 +515,9 @@ public final class LatitudeBiomes {
             double cont = MultiNoiseUtil.toFloat(p.continentalnessNoise());
             double erosion = MultiNoiseUtil.toFloat(p.erosionNoise());
             double weird = MultiNoiseUtil.toFloat(p.weirdnessNoise());
-            if (swampPatchHere(WORLD_SEED, blockX, blockZ) && swampOkInPatch(cont, erosion, weird)) {
+            if (!isAridTropicalStep(blockX, blockZ, t)
+                    && swampPatchHere(WORLD_SEED, blockX, blockZ)
+                    && swampOkInPatch(cont, erosion, weird)) {
                 try {
                     chosen = biome(biomeRegistry, SWAMP_ID);
                 } catch (Throwable ignored) {
@@ -652,7 +654,9 @@ public final class LatitudeBiomes {
             double cont = MultiNoiseUtil.toFloat(p.continentalnessNoise());
             double erosion = MultiNoiseUtil.toFloat(p.erosionNoise());
             double weird = MultiNoiseUtil.toFloat(p.weirdnessNoise());
-            if (swampPatchHere(WORLD_SEED, blockX, blockZ) && swampOkInPatch(cont, erosion, weird)) {
+            if (!isAridTropicalStep(blockX, blockZ, t)
+                    && swampPatchHere(WORLD_SEED, blockX, blockZ)
+                    && swampOkInPatch(cont, erosion, weird)) {
                 chosen = entryById(biomePool, SWAMP_ID);
             }
         }
