@@ -1846,12 +1846,6 @@ public final class LatitudeBiomes {
     }
 
     
-    private static long mix64(long z) {
-        z = (z ^ (z >>> 33)) * 0xff51afd7ed558ccdL;
-        z = (z ^ (z >>> 33)) * 0xc4ceb9fe1a85ec53L;
-        return z ^ (z >>> 33);
-    }
-
     private static double toUnitDouble(long h) {
         // Map 53 random bits to [0,1)
         return ((h >>> 11) & ((1L << 53) - 1L)) * (1.0 / (1L << 53));
