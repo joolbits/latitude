@@ -307,7 +307,7 @@ public final class LatitudeBiomes {
 
     private static final int REFERENCE_DIAMETER_BLOCKS = 20000;
 
-    private static final int VARIANT_CELL_SIZE_BLOCKS = 32;
+    private static final int VARIANT_CELL_SIZE_BLOCKS = 38;
     private static final int BLEND_TRANSITION_WIDTH_BLOCKS = 768;
     private static final int BLEND_DITHER_SCALE_BLOCKS = 512;
     private static final int BLEND_NOISE_PATCH_CHUNKS = 6;
