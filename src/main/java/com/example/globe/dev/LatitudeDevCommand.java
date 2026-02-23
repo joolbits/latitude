@@ -1,16 +1,41 @@
 package com.example.globe.dev;
 
+import com.example.globe.util.LatitudeMath;
+import com.example.globe.world.LatitudeBiomes;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
+import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.context.CommandContext;
 import net.fabricmc.loader.api.FabricLoader;
+import net.minecraft.command.CommandSource;
+import net.minecraft.network.packet.s2c.play.PositionFlag;
+import net.minecraft.registry.entry.RegistryEntry;
 import net.minecraft.server.command.CommandManager;
 import net.minecraft.server.command.ServerCommandSource;
+import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.server.world.ServerWorld;
 import net.minecraft.text.Text;
+import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.world.border.WorldBorder;
+import net.minecraft.world.biome.Biome;
+import net.minecraft.world.chunk.ChunkStatus;
+import net.minecraft.world.Heightmap;
+
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.EnumMap;
+import java.util.EnumSet;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Random;
 
 public final class LatitudeDevCommand {
+    private static final List<String> TP_BAND_NAMES = List.of("equator", "tropics", "arid", "temperate", "subpolar", "polar");
+    private static final List<String> TP_EDGE_NAMES = List.of("center", "low", "high");
+
     private LatitudeDevCommand() {
     }
 
@@ -40,6 +65,18 @@ public final class LatitudeDevCommand {
                                                 .executes(LatitudeDevCommand::startSlicePoleNS)
                                                 .then(CommandManager.argument("chunksPerTick", IntegerArgumentType.integer(1, 2000))
                                                         .executes(LatitudeDevCommand::startSlicePoleNS)))))
+                        .then(CommandManager.literal("here").executes(LatitudeDevCommand::here))
+                        .then(CommandManager.literal("tpBand")
+                                .then(CommandManager.argument("band", StringArgumentType.word())
+                                        .suggests((context, builder) -> CommandSource.suggestMatching(TP_BAND_NAMES, builder))
+                                        .executes(ctx -> tpBand(ctx, false))
+                                        .then(CommandManager.argument("edge", StringArgumentType.word())
+                                                .suggests((context, builder) -> CommandSource.suggestMatching(TP_EDGE_NAMES, builder))
+                                                .executes(ctx -> tpBand(ctx, true)))))
+                        .then(CommandManager.literal("probe")
+                                .then(CommandManager.argument("radiusBlocks", IntegerArgumentType.integer())
+                                        .then(CommandManager.argument("samples", IntegerArgumentType.integer())
+                                                .executes(LatitudeDevCommand::probe))))
                         .then(CommandManager.literal("pause").executes(LatitudeDevCommand::pauseTransect))
                         .then(CommandManager.literal("resume").executes(LatitudeDevCommand::resumeTransect))
                         .then(CommandManager.literal("stop").executes(LatitudeDevCommand::stopTransect))
@@ -51,6 +88,175 @@ public final class LatitudeDevCommand {
                                 .then(CommandManager.literal("on").executes(LatitudeDevCommand::setBudgetAutoOn))
                                 .then(CommandManager.literal("off").executes(LatitudeDevCommand::setBudgetAutoOff)))
         );
+    }
+
+    private static int here(CommandContext<ServerCommandSource> ctx) {
+        try {
+            ServerCommandSource source = ctx.getSource();
+            ServerPlayerEntity player = source.getPlayerOrThrow();
+            ServerWorld world = source.getWorld();
+            BlockPos pos = player.getBlockPos();
+            int radius = authoritativeRadius(source);
+            double deg = LatitudeMath.absLatDegExact(world.getWorldBorder(), player.getZ());
+            double t = MathHelper.clamp(Math.abs(player.getZ()) / (double) radius, 0.0, 1.0);
+
+            BandTarget band = BandTarget.fromZ(radius, player.getZ());
+            String biomeId = biomeId(world.getBiome(pos));
+            boolean mountainLike = isMountainLikeBiome(biomeId);
+
+            source.sendFeedback(() -> Text.literal(String.format(Locale.ROOT,
+                    "[latdev] here x=%d y=%d z=%d deg=%.2f band=%s(idx=%d) cut=%.2f..%.2f t=%.4f mtnLike=%s biome=%s",
+                    pos.getX(),
+                    pos.getY(),
+                    pos.getZ(),
+                    deg,
+                    band.argName,
+                    band.ordinal(),
+                    band.lowDeg,
+                    band.highDeg,
+                    t,
+                    mountainLike,
+                    biomeId)), false);
+            return 1;
+        } catch (Exception e) {
+            ctx.getSource().sendError(Text.literal("[latdev] here error: " + e.getMessage()));
+            e.printStackTrace();
+            return 0;
+        }
+    }
+
+    private static int tpBand(CommandContext<ServerCommandSource> ctx, boolean hasEdgeArg) {
+        try {
+            ServerCommandSource source = ctx.getSource();
+            ServerPlayerEntity player = source.getPlayerOrThrow();
+            ServerWorld world = source.getWorld();
+
+            String bandArg = StringArgumentType.getString(ctx, "band");
+            String edgeArg = hasEdgeArg ? StringArgumentType.getString(ctx, "edge") : "center";
+
+            BandTarget band = BandTarget.fromArg(bandArg);
+            if (band == null) {
+                source.sendError(Text.literal("[latdev] tpBand band must be one of: " + String.join("|", TP_BAND_NAMES)));
+                return 0;
+            }
+
+            EdgeMode edge = EdgeMode.fromArg(edgeArg);
+            if (edge == null) {
+                source.sendError(Text.literal("[latdev] tpBand edge must be one of: " + String.join("|", TP_EDGE_NAMES)));
+                return 0;
+            }
+
+            int radius = authoritativeRadius(source);
+            double targetDeg = edge.pickDeg(band.lowDeg, band.highDeg);
+            int absTargetZ = LatitudeMath.zForLatitudeDeg(targetDeg, radius);
+            int sign = player.getZ() < 0.0 ? -1 : 1;
+            int targetZ = sign * absTargetZ;
+            int targetX = MathHelper.floor(player.getX());
+
+            world.getChunkManager().getChunk(Math.floorDiv(targetX, 16), Math.floorDiv(targetZ, 16), ChunkStatus.FULL, true);
+            int topY = world.getTopY(Heightmap.Type.MOTION_BLOCKING_NO_LEAVES, targetX, targetZ);
+            int worldMaxY = world.getBottomY() + world.getHeight() - 1;
+            int targetY = MathHelper.clamp(topY + 1, world.getBottomY() + 1, worldMaxY);
+
+            player.teleport(world,
+                    targetX + 0.5,
+                    targetY,
+                    targetZ + 0.5,
+                    EnumSet.noneOf(PositionFlag.class),
+                    player.getYaw(),
+                    player.getPitch(),
+                    true);
+
+            String biomeId = biomeId(world.getBiome(new BlockPos(targetX, targetY, targetZ)));
+            source.sendFeedback(() -> Text.literal(String.format(Locale.ROOT,
+                    "[latdev] tpBand band=%s edge=%s deg=%.2f R=%d -> x=%d y=%d z=%d biome=%s",
+                    band.argName,
+                    edge.argName,
+                    targetDeg,
+                    radius,
+                    targetX,
+                    targetY,
+                    targetZ,
+                    biomeId)), true);
+            return 1;
+        } catch (Exception e) {
+            ctx.getSource().sendError(Text.literal("[latdev] tpBand error: " + e.getMessage()));
+            e.printStackTrace();
+            return 0;
+        }
+    }
+
+    private static int probe(CommandContext<ServerCommandSource> ctx) {
+        try {
+            ServerCommandSource source = ctx.getSource();
+            ServerPlayerEntity player = source.getPlayerOrThrow();
+            ServerWorld world = source.getWorld();
+
+            int requestedRadius = IntegerArgumentType.getInteger(ctx, "radiusBlocks");
+            int requestedSamples = IntegerArgumentType.getInteger(ctx, "samples");
+            int radiusBlocks = MathHelper.clamp(requestedRadius, 32, 8192);
+            int samples = MathHelper.clamp(requestedSamples, 10, 5000);
+            int latitudeRadius = authoritativeRadius(source);
+
+            int centerX = player.getBlockX();
+            int centerZ = player.getBlockZ();
+            int worldMaxY = world.getBottomY() + world.getHeight() - 1;
+            int sampleY = MathHelper.clamp(player.getBlockY(), world.getBottomY() + 1, worldMaxY);
+            long seed = world.getSeed() ^ mix64(player.getBlockPos().asLong());
+            Random rng = new Random(seed);
+
+            Map<String, Integer> biomeCounts = new HashMap<>();
+            EnumMap<BandTarget, Integer> bandCounts = new EnumMap<>(BandTarget.class);
+            int unloaded = 0;
+
+            for (int i = 0; i < samples; i++) {
+                double r = Math.sqrt(rng.nextDouble()) * radiusBlocks;
+                double theta = rng.nextDouble() * (Math.PI * 2.0);
+                int dx = (int) Math.round(r * Math.cos(theta));
+                int dz = (int) Math.round(r * Math.sin(theta));
+
+                int sampleX = centerX + dx;
+                int sampleZ = centerZ + dz;
+                int chunkX = Math.floorDiv(sampleX, 16);
+                int chunkZ = Math.floorDiv(sampleZ, 16);
+
+                if (world.getChunkManager().getChunk(chunkX, chunkZ, ChunkStatus.BIOMES, false) == null) {
+                    unloaded++;
+                    continue;
+                }
+
+                BlockPos samplePos = new BlockPos(sampleX, sampleY, sampleZ);
+                String biomeId = biomeId(world.getBiome(samplePos));
+                biomeCounts.merge(biomeId, 1, Integer::sum);
+
+                BandTarget band = BandTarget.fromZ(latitudeRadius, sampleZ);
+                bandCounts.merge(band, 1, Integer::sum);
+            }
+
+            int loaded = samples - unloaded;
+            String biomeSummary = summarizeTopBiomes(biomeCounts, loaded, 10);
+            String bandSummary = summarizeBands(bandCounts, loaded);
+            int loadedCount = loaded;
+            int unloadedCount = unloaded;
+            int probeRadius = radiusBlocks;
+            int sampleCount = samples;
+            long sampleSeed = seed;
+
+            source.sendFeedback(() -> Text.literal(String.format(Locale.ROOT,
+                    "[latdev] probe r=%d n=%d loaded=%d unloaded=%d seed=%d",
+                    probeRadius,
+                    sampleCount,
+                    loadedCount,
+                    unloadedCount,
+                    sampleSeed)), false);
+            source.sendFeedback(() -> Text.literal("[latdev] biomes: " + biomeSummary), false);
+            source.sendFeedback(() -> Text.literal("[latdev] bands: " + bandSummary), false);
+            return loaded > 0 ? 1 : 0;
+        } catch (Exception e) {
+            ctx.getSource().sendError(Text.literal("[latdev] probe error: " + e.getMessage()));
+            e.printStackTrace();
+            return 0;
+        }
     }
 
     private static int startTransectRaw(CommandContext<ServerCommandSource> ctx) {
@@ -168,9 +374,181 @@ public final class LatitudeDevCommand {
         return ChunkPregenerator.setAutoBudget(ctx.getSource(), false);
     }
 
+    private static int authoritativeRadius(ServerCommandSource source) {
+        int borderRadius = maxAbsZFromBorder(source);
+        int activeRadius = LatitudeBiomes.getActiveRadiusBlocks();
+        if (activeRadius > 0) {
+            return MathHelper.clamp(activeRadius, 1, Math.max(1, borderRadius));
+        }
+        return Math.max(1, borderRadius);
+    }
+
     private static int maxAbsZFromBorder(ServerCommandSource source) {
         WorldBorder border = source.getWorld().getWorldBorder();
         int radius = (int) Math.floor(border.getSize() * 0.5);
         return Math.max(0, radius - 16);
+    }
+
+    private static long mix64(long value) {
+        long z = value;
+        z = (z ^ (z >>> 33)) * 0xff51afd7ed558ccdL;
+        z = (z ^ (z >>> 33)) * 0xc4ceb9fe1a85ec53L;
+        return z ^ (z >>> 33);
+    }
+
+    private static boolean isMountainLikeBiome(String biomeId) {
+        String id = biomeId.toLowerCase(Locale.ROOT);
+        return id.contains("mountain")
+                || id.contains("peak")
+                || id.contains("hills")
+                || id.contains("ridge")
+                || id.contains("windswept");
+    }
+
+    private static String biomeId(RegistryEntry<Biome> biome) {
+        return biome.getKey().map(key -> key.getValue().toString()).orElse("?");
+    }
+
+    private static String summarizeTopBiomes(Map<String, Integer> biomeCounts, int loaded, int limit) {
+        if (loaded <= 0 || biomeCounts.isEmpty()) {
+            return "none";
+        }
+
+        List<Map.Entry<String, Integer>> entries = new ArrayList<>(biomeCounts.entrySet());
+        entries.sort(Comparator.comparingInt((Map.Entry<String, Integer> entry) -> entry.getValue()).reversed());
+
+        int count = Math.min(limit, entries.size());
+        StringBuilder out = new StringBuilder();
+        for (int i = 0; i < count; i++) {
+            Map.Entry<String, Integer> entry = entries.get(i);
+            if (i > 0) {
+                out.append(", ");
+            }
+            out.append(shortBiomeName(entry.getKey()))
+                    .append(" ")
+                    .append(formatPercent(entry.getValue(), loaded))
+                    .append("(")
+                    .append(entry.getValue())
+                    .append(")");
+        }
+        return out.toString();
+    }
+
+    private static String summarizeBands(EnumMap<BandTarget, Integer> bandCounts, int loaded) {
+        if (loaded <= 0) {
+            return "none";
+        }
+
+        StringBuilder out = new StringBuilder();
+        for (BandTarget band : BandTarget.values()) {
+            int count = bandCounts.getOrDefault(band, 0);
+            if (count <= 0) {
+                continue;
+            }
+            if (out.length() > 0) {
+                out.append(", ");
+            }
+            out.append(band.argName)
+                    .append(" ")
+                    .append(formatPercent(count, loaded))
+                    .append("(")
+                    .append(count)
+                    .append(")");
+        }
+        return out.length() == 0 ? "none" : out.toString();
+    }
+
+    private static String shortBiomeName(String biomeId) {
+        int split = biomeId.indexOf(':');
+        return split >= 0 ? biomeId.substring(split + 1) : biomeId;
+    }
+
+    private static String formatPercent(int count, int total) {
+        if (total <= 0) {
+            return "0.0%";
+        }
+        return String.format(Locale.ROOT, "%.1f%%", (count * 100.0) / total);
+    }
+
+    private enum EdgeMode {
+        CENTER("center"),
+        LOW("low"),
+        HIGH("high");
+
+        private final String argName;
+
+        EdgeMode(String argName) {
+            this.argName = argName;
+        }
+
+        private static EdgeMode fromArg(String raw) {
+            if (raw == null) {
+                return CENTER;
+            }
+            String normalized = raw.toLowerCase(Locale.ROOT);
+            for (EdgeMode mode : values()) {
+                if (mode.argName.equals(normalized)) {
+                    return mode;
+                }
+            }
+            return null;
+        }
+
+        private double pickDeg(double lowDeg, double highDeg) {
+            double span = Math.max(0.0, highDeg - lowDeg);
+            return switch (this) {
+                case LOW -> lowDeg + (span * 0.10);
+                case HIGH -> lowDeg + (span * 0.90);
+                default -> lowDeg + (span * 0.50);
+            };
+        }
+    }
+
+    private enum BandTarget {
+        EQUATOR("equator", 0.0, LatitudeMath.EQUATOR_MAX_FRAC * 90.0, LatitudeMath.LatitudeZone.EQUATOR),
+        TROPICS("tropics", LatitudeMath.EQUATOR_MAX_FRAC * 90.0, LatitudeMath.TROPICAL_MAX_FRAC * 90.0, LatitudeMath.LatitudeZone.TROPICAL),
+        ARID("arid", LatitudeMath.TROPICAL_MAX_FRAC * 90.0, LatitudeMath.SUBTROPICAL_MAX_FRAC * 90.0, LatitudeMath.LatitudeZone.SUBTROPICAL),
+        TEMPERATE("temperate", LatitudeMath.SUBTROPICAL_MAX_FRAC * 90.0, LatitudeMath.TEMPERATE_MAX_FRAC * 90.0, LatitudeMath.LatitudeZone.TEMPERATE),
+        SUBPOLAR("subpolar", LatitudeMath.TEMPERATE_MAX_FRAC * 90.0, LatitudeMath.SUBPOLAR_MAX_FRAC * 90.0, LatitudeMath.LatitudeZone.SUBPOLAR),
+        POLAR("polar", LatitudeMath.SUBPOLAR_MAX_FRAC * 90.0, 90.0, LatitudeMath.LatitudeZone.POLAR);
+
+        private final String argName;
+        private final double lowDeg;
+        private final double highDeg;
+        private final LatitudeMath.LatitudeZone zone;
+
+        BandTarget(String argName, double lowDeg, double highDeg, LatitudeMath.LatitudeZone zone) {
+            this.argName = argName;
+            this.lowDeg = lowDeg;
+            this.highDeg = highDeg;
+            this.zone = zone;
+        }
+
+        private static BandTarget fromArg(String raw) {
+            if (raw == null) {
+                return null;
+            }
+            String normalized = raw.toLowerCase(Locale.ROOT);
+            for (BandTarget band : values()) {
+                if (band.argName.equals(normalized)) {
+                    return band;
+                }
+            }
+            return null;
+        }
+
+        private static BandTarget fromZone(LatitudeMath.LatitudeZone zone) {
+            for (BandTarget band : values()) {
+                if (band.zone == zone) {
+                    return band;
+                }
+            }
+            return EQUATOR;
+        }
+
+        private static BandTarget fromZ(int radius, double z) {
+            LatitudeMath.LatitudeZone zone = LatitudeMath.zoneForRadius(Math.max(1, radius), z);
+            return fromZone(zone);
+        }
     }
 }
