@@ -39,6 +39,8 @@ import java.util.Random;
 public final class LatitudeDevCommand {
     private static final List<String> TP_BAND_NAMES = List.of("equator", "tropics", "arid", "temperate", "subpolar", "polar");
     private static final List<String> TP_EDGE_NAMES = List.of("center", "low", "high");
+    private static final List<String> PREGEN_ARGS = List.of(
+            "pause", "resume", "stop", "status", "confirm", "slow", "normal", "fast", "insane");
 
     private LatitudeDevCommand() {
     }
@@ -79,6 +81,11 @@ public final class LatitudeDevCommand {
                                 .then(CommandManager.argument("radiusBlocks", IntegerArgumentType.integer())
                                         .then(CommandManager.argument("samples", IntegerArgumentType.integer())
                                                 .executes(LatitudeDevCommand::probe))))
+                        .then(CommandManager.literal("pregen")
+                                .executes(ctx -> pregen(ctx, null))
+                                .then(CommandManager.argument("arg", StringArgumentType.word())
+                                        .suggests((context, builder) -> CommandSource.suggestMatching(PREGEN_ARGS, builder))
+                                        .executes(ctx -> pregen(ctx, StringArgumentType.getString(ctx, "arg")))))
                         .then(regenLiteral("regen"))
                         .then(regenLiteral("regenChunk"))
                         .then(CommandManager.literal("pause").executes(LatitudeDevCommand::pauseTransect))
@@ -96,7 +103,7 @@ public final class LatitudeDevCommand {
 
     private static int help(CommandContext<ServerCommandSource> ctx) {
         ServerCommandSource source = ctx.getSource();
-        source.sendFeedback(() -> Text.literal("[latdev] commands: here | tpBand <equator|tropics|arid|temperate|subpolar|polar> [center|low|high] | probe <radiusBlocks> <samples> | regen|regenChunk [radiusChunks] [biomes] [seed] | transect | transectDeg | slicePoleNS | pause | resume | stop | status | budgetMs | budgetAuto <on|off>"), false);
+        source.sendFeedback(() -> Text.literal("[latdev] commands: here | tpBand <equator|tropics|arid|temperate|subpolar|polar> [center|low|high] | probe <radiusBlocks> <samples> | pregen [pause|resume|stop|status|confirm|slow|normal|fast|insane] | regen|regenChunk [radiusChunks] [biomes] [seed] | transect | transectDeg | slicePoleNS | pause | resume | stop | status | budgetMs | budgetAuto <on|off>"), false);
         return 1;
     }
 
@@ -386,6 +393,69 @@ public final class LatitudeDevCommand {
             e.printStackTrace();
             return 0;
         }
+    }
+
+    private static int pregen(CommandContext<ServerCommandSource> ctx, String rawArg) {
+        ServerCommandSource source = ctx.getSource();
+        String arg = rawArg == null ? "" : rawArg.toLowerCase(Locale.ROOT);
+
+        if (arg.isEmpty()) {
+            if (ChunkPregenerator.isPregenPaused()) {
+                return ChunkPregenerator.pregenResume(source);
+            }
+            return previewPregen(source, ChunkPregenerator.PregenSpeedPreset.NORMAL);
+        }
+
+        return switch (arg) {
+            case "pause" -> ChunkPregenerator.pregenPause(source);
+            case "resume" -> ChunkPregenerator.pregenResume(source);
+            case "stop" -> ChunkPregenerator.pregenStop(source);
+            case "status" -> ChunkPregenerator.pregenStatus(source);
+            case "confirm" -> ChunkPregenerator.confirmPregen(source);
+            case "slow" -> previewPregen(source, ChunkPregenerator.PregenSpeedPreset.SLOW);
+            case "normal" -> previewPregen(source, ChunkPregenerator.PregenSpeedPreset.NORMAL);
+            case "fast" -> previewPregen(source, ChunkPregenerator.PregenSpeedPreset.FAST);
+            case "insane" -> previewPregen(source, ChunkPregenerator.PregenSpeedPreset.INSANE);
+            default -> {
+                source.sendError(Text.literal("[latdev] pregen arg must be one of: " + String.join("|", PREGEN_ARGS)));
+                yield 0;
+            }
+        };
+    }
+
+    private static int previewPregen(ServerCommandSource source, ChunkPregenerator.PregenSpeedPreset preset) {
+        int radiusBlocks = maxAbsZFromBorder(source);
+        int blockMinX = -radiusBlocks;
+        int blockMaxX = radiusBlocks;
+        int blockMinZ = -radiusBlocks;
+        int blockMaxZ = radiusBlocks;
+
+        int chunkMinX = Math.floorDiv(blockMinX, 16);
+        int chunkMaxX = Math.floorDiv(blockMaxX, 16);
+        int chunkMinZ = Math.floorDiv(blockMinZ, 16);
+        int chunkMaxZ = Math.floorDiv(blockMaxZ, 16);
+        int widthChunks = chunkMaxX - chunkMinX + 1;
+        int depthChunks = chunkMaxZ - chunkMinZ + 1;
+        long totalChunksLong = (long) widthChunks * depthChunks;
+
+        if (widthChunks <= 0 || depthChunks <= 0 || totalChunksLong <= 0L) {
+            source.sendError(Text.literal("[latdev] pregen preview failed: invalid chunk bounds from border radius " + radiusBlocks));
+            return 0;
+        }
+
+        if (totalChunksLong > Integer.MAX_VALUE) {
+            source.sendError(Text.literal("[latdev] pregen preview failed: planned chunk count too large (" + totalChunksLong + ")"));
+            return 0;
+        }
+
+        return ChunkPregenerator.previewPregen(source,
+                chunkMinX,
+                chunkMaxX,
+                chunkMinZ,
+                chunkMaxZ,
+                (int) totalChunksLong,
+                radiusBlocks,
+                preset);
     }
 
     private static int pauseTransect(CommandContext<ServerCommandSource> ctx) {

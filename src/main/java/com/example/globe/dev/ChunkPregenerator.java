@@ -13,12 +13,14 @@ import net.minecraft.util.math.ChunkPos;
 import net.minecraft.world.chunk.ChunkStatus;
 
 import java.util.ArrayDeque;
+import java.util.Locale;
 import java.util.Queue;
 
 public final class ChunkPregenerator {
     private static final int BLOCKS_PER_CHUNK = 16;
     private static final int PROGRESS_INTERVAL = 200;
     private static final int BOSSBAR_UPDATE_CHUNK_INTERVAL = 20;
+    private static final long PREGEN_PREVIEW_TTL_MS = 30_000L;
     private static final long DEFAULT_MAX_NANOS_PER_TICK = 15_000_000L;
     private static final long AUTO_REDUCED_MAX_NANOS_PER_TICK = 5_000_000L;
     private static final long AUTO_BACKPRESSURE_THRESHOLD_NANOS = 45_000_000L;
@@ -39,6 +41,7 @@ public final class ChunkPregenerator {
     private static String jobSummary = "none";
     private static MinecraftServer activeServer;
     private static GenerationJob activeJob;
+    private static PregenPreview pendingPregenPreview;
 
     private ChunkPregenerator() {
     }
@@ -87,8 +90,8 @@ public final class ChunkPregenerator {
                 + ", width=" + widthChunks + "]";
 
         long newJobId = ++nextJobId;
-        ServerBossBar bossBar = createBossBar(summary, world);
-        activeJob = new GenerationJob(server, world, source, queue, chunksPerTick, maxNanosPerTick, autoBudgetEnabled, bossBar);
+        ServerBossBar bossBar = createBossBar(summary, world, source, false);
+        activeJob = new GenerationJob(server, world, source, queue, chunksPerTick, maxNanosPerTick, autoBudgetEnabled, bossBar, false);
         activeServer = server;
         active = true;
         paused = false;
@@ -150,8 +153,8 @@ public final class ChunkPregenerator {
                 + ", centerXChunk=" + centerXChunk + "]";
 
         long newJobId = ++nextJobId;
-        ServerBossBar bossBar = createBossBar(summary, world);
-        activeJob = new GenerationJob(source.getServer(), world, source, queue, chunksPerTick, maxNanosPerTick, autoBudgetEnabled, bossBar);
+        ServerBossBar bossBar = createBossBar(summary, world, source, false);
+        activeJob = new GenerationJob(source.getServer(), world, source, queue, chunksPerTick, maxNanosPerTick, autoBudgetEnabled, bossBar, false);
         activeServer = source.getServer();
         active = true;
         paused = false;
@@ -169,6 +172,167 @@ public final class ChunkPregenerator {
                 + " chunksPerTick=" + chunksPerTick
                 + " budgetMs=" + nanosToMs(maxNanosPerTick)
                 + " auto=" + autoBudgetEnabled), false);
+        return 1;
+    }
+
+    public static boolean isPregenPaused() {
+        return active && paused && activeJob != null && activeJob.pregen;
+    }
+
+    public static int previewPregen(ServerCommandSource source,
+                                    int chunkMinX,
+                                    int chunkMaxX,
+                                    int chunkMinZ,
+                                    int chunkMaxZ,
+                                    int totalChunks,
+                                    int radiusBlocks,
+                                    PregenSpeedPreset preset) {
+        ensureTickHookRegistered();
+
+        if (active) {
+            source.sendError(Text.literal("[latdev] job active; run /latdev pregen stop"));
+            return 0;
+        }
+
+        if (preset == null) {
+            source.sendError(Text.literal("[latdev] pregen preview failed: missing speed preset"));
+            return 0;
+        }
+
+        if (chunkMinX > chunkMaxX || chunkMinZ > chunkMaxZ || totalChunks <= 0) {
+            source.sendError(Text.literal("[latdev] pregen preview failed: invalid chunk bounds"));
+            return 0;
+        }
+
+        pendingPregenPreview = new PregenPreview(
+                source.getServer(),
+                source.getWorld(),
+                chunkMinX,
+                chunkMaxX,
+                chunkMinZ,
+                chunkMaxZ,
+                totalChunks,
+                radiusBlocks,
+                preset,
+                System.currentTimeMillis());
+
+        String previewText = "[latdev] pregen preview: R=" + radiusBlocks
+                + " chunks x=" + chunkMinX + ".." + chunkMaxX
+                + " z=" + chunkMinZ + ".." + chunkMaxZ
+                + " total=" + formatCount(totalChunks)
+                + " preset=" + preset.id
+                + " (chunksPerTick=" + preset.chunksPerTick
+                + ", budgetMs=" + preset.budgetMs + ")"
+                + " confirm within " + (PREGEN_PREVIEW_TTL_MS / 1000) + "s using /latdev pregen confirm";
+        source.sendFeedback(() -> Text.literal(previewText), false);
+        return 1;
+    }
+
+    public static int confirmPregen(ServerCommandSource source) {
+        ensureTickHookRegistered();
+
+        if (active) {
+            source.sendError(Text.literal("[latdev] job active; run /latdev pregen stop"));
+            return 0;
+        }
+
+        PregenPreview preview = pendingPregenPreview;
+        if (preview == null) {
+            source.sendError(Text.literal("[latdev] no pregen preview queued. Run /latdev pregen first."));
+            return 0;
+        }
+
+        if (preview.server != source.getServer()) {
+            pendingPregenPreview = null;
+            source.sendError(Text.literal("[latdev] pregen preview is from a different server; run /latdev pregen again."));
+            return 0;
+        }
+
+        long ageMs = System.currentTimeMillis() - preview.createdAtMs;
+        if (ageMs > PREGEN_PREVIEW_TTL_MS) {
+            pendingPregenPreview = null;
+            source.sendError(Text.literal("[latdev] pregen preview expired after " + (ageMs / 1000.0) + "s; run /latdev pregen again."));
+            return 0;
+        }
+
+        pendingPregenPreview = null;
+        return startPregenFromPreview(source, preview);
+    }
+
+    public static int pregenPause(ServerCommandSource source) {
+        if (!isActivePregen()) {
+            source.sendFeedback(() -> Text.literal("[latdev] no active pregen job."), false);
+            return 0;
+        }
+
+        if (paused) {
+            source.sendFeedback(() -> Text.literal("[latdev] Pregen already paused"), false);
+            return 1;
+        }
+
+        paused = true;
+        source.sendFeedback(() -> Text.literal("[latdev] Pregen paused"), false);
+        return 1;
+    }
+
+    public static int pregenResume(ServerCommandSource source) {
+        if (!isActivePregen()) {
+            source.sendFeedback(() -> Text.literal("[latdev] no active pregen job."), false);
+            return 0;
+        }
+
+        if (!paused) {
+            source.sendFeedback(() -> Text.literal("[latdev] Pregen already running"), false);
+            showBossBarToSource(activeJob, source);
+            return 1;
+        }
+
+        paused = false;
+        source.sendFeedback(() -> Text.literal("[latdev] Pregen resumed"), false);
+        showBossBarToSource(activeJob, source);
+        return 1;
+    }
+
+    public static int pregenStop(ServerCommandSource source) {
+        if (!isActivePregen()) {
+            source.sendFeedback(() -> Text.literal("[latdev] no active pregen job."), false);
+            return 0;
+        }
+
+        int completed = chunksCompleted;
+        int planned = totalChunksPlanned;
+        clearState();
+        source.sendFeedback(() -> Text.literal("[latdev] Pregen stopped at " + formatCount(completed) + "/" + formatCount(planned)), false);
+        return 1;
+    }
+
+    public static int pregenStatus(ServerCommandSource source) {
+        if (isActivePregen()) {
+            showBossBarToSource(activeJob, source);
+            updateBossBar(activeJob, true);
+            source.sendFeedback(() -> Text.literal("[latdev] status: active=true paused=" + paused
+                    + " progress=" + formatCount(chunksCompleted) + "/" + formatCount(totalChunksPlanned)
+                    + " chunksPerTick=" + activeChunksPerTick
+                    + " budgetMs=" + nanosToMs(activeFixedMaxNanosPerTick)
+                    + " preset=" + activeJob.presetName), false);
+            return 1;
+        }
+
+        if (pendingPregenPreview != null) {
+            long ageMs = System.currentTimeMillis() - pendingPregenPreview.createdAtMs;
+            if (ageMs <= PREGEN_PREVIEW_TTL_MS) {
+                long remainingMs = PREGEN_PREVIEW_TTL_MS - ageMs;
+                PregenPreview preview = pendingPregenPreview;
+                source.sendFeedback(() -> Text.literal("[latdev] status: active=false preview=true "
+                        + "total=" + formatCount(preview.totalChunks)
+                        + " preset=" + preview.preset.id
+                        + " expiresIn=" + String.format(Locale.ROOT, "%.1fs", remainingMs / 1000.0)), false);
+                return 1;
+            }
+            pendingPregenPreview = null;
+        }
+
+        source.sendFeedback(() -> Text.literal("[latdev] status: active=false preview=false"), false);
         return 1;
     }
 
@@ -262,6 +426,8 @@ public final class ChunkPregenerator {
             return 1;
         }
 
+        showBossBarToSource(activeJob, source);
+        updateBossBar(activeJob, true);
         source.sendFeedback(() -> Text.literal("[latdev] status: active=true paused=" + paused
                 + " jobId=" + jobId
                 + " progress=" + chunksCompleted + "/" + totalChunksPlanned
@@ -281,6 +447,9 @@ public final class ChunkPregenerator {
         ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
             if (active && activeServer == server) {
                 stopJob(true);
+            }
+            if (pendingPregenPreview != null && pendingPregenPreview.server == server) {
+                pendingPregenPreview = null;
             }
         });
         tickHookRegistered = true;
@@ -349,6 +518,11 @@ public final class ChunkPregenerator {
         updateBossBar(job, true);
         clearState();
 
+        if (job.pregen) {
+            job.source.sendFeedback(() -> Text.literal("[latdev] Pregen complete: " + formatCount(completed) + " chunks"), false);
+            return;
+        }
+
         job.source.sendFeedback(() -> Text.literal("[latdev] complete job#" + completedJobId
                 + " progress=" + completed + "/" + planned
                 + " " + summary), false);
@@ -386,11 +560,17 @@ public final class ChunkPregenerator {
         return job.fixedMaxNanosPerTick;
     }
 
-    private static ServerBossBar createBossBar(String summary, ServerWorld world) {
+    private static ServerBossBar createBossBar(String summary, ServerWorld world, ServerCommandSource source, boolean senderOnly) {
         ServerBossBar bossBar = new ServerBossBar(Text.literal("LATDEV " + summary), BossBar.Color.BLUE, BossBar.Style.PROGRESS);
         bossBar.setPercent(0.0F);
-        for (ServerPlayerEntity player : world.getPlayers()) {
-            bossBar.addPlayer(player);
+        if (senderOnly) {
+            if (source.getEntity() instanceof ServerPlayerEntity player) {
+                bossBar.addPlayer(player);
+            }
+        } else {
+            for (ServerPlayerEntity player : world.getPlayers()) {
+                bossBar.addPlayer(player);
+            }
         }
         return bossBar;
     }
@@ -406,8 +586,27 @@ public final class ChunkPregenerator {
                 ? 1.0F
                 : Math.min(1.0F, chunksCompleted / (float) totalChunksPlanned);
         job.bossBar.setPercent(percent);
-        job.bossBar.setName(Text.literal("LATDEV " + jobSummary + " " + chunksCompleted + "/" + totalChunksPlanned));
+        if (job.pregen) {
+            double percentValue = totalChunksPlanned <= 0 ? 100.0 : (chunksCompleted * 100.0) / totalChunksPlanned;
+            job.bossBar.setName(Text.literal("Pregen: "
+                    + formatCount(chunksCompleted) + " / " + formatCount(totalChunksPlanned)
+                    + " (" + String.format(Locale.ROOT, "%.1f%%", percentValue) + ")"));
+        } else {
+            job.bossBar.setName(Text.literal("LATDEV " + jobSummary + " " + chunksCompleted + "/" + totalChunksPlanned));
+        }
         job.lastBossbarUpdateChunks = chunksCompleted;
+    }
+
+    private static void showBossBarToSource(GenerationJob job, ServerCommandSource source) {
+        if (job == null || job.bossBar == null) {
+            return;
+        }
+        if (!(source.getEntity() instanceof ServerPlayerEntity player)) {
+            return;
+        }
+        if (!job.bossBar.getPlayers().contains(player)) {
+            job.bossBar.addPlayer(player);
+        }
     }
 
     private static void clearBossBar(GenerationJob job) {
@@ -418,8 +617,120 @@ public final class ChunkPregenerator {
         job.bossBar = null;
     }
 
+    private static int startPregenFromPreview(ServerCommandSource source, PregenPreview preview) {
+        ensureTickHookRegistered();
+
+        if (active) {
+            source.sendError(Text.literal("[latdev] job active; run /latdev pregen stop"));
+            return 0;
+        }
+
+        Queue<ChunkPos> queue = new ArrayDeque<>(preview.totalChunks);
+        for (int z = preview.chunkMinZ; z <= preview.chunkMaxZ; z++) {
+            for (int x = preview.chunkMinX; x <= preview.chunkMaxX; x++) {
+                queue.add(new ChunkPos(x, z));
+            }
+        }
+
+        String summary = "pregen[x=" + preview.chunkMinX + ".." + preview.chunkMaxX
+                + ", z=" + preview.chunkMinZ + ".." + preview.chunkMaxZ
+                + ", preset=" + preview.preset.id + "]";
+        long newJobId = ++nextJobId;
+        ServerBossBar bossBar = createBossBar(summary, preview.world, source, true);
+        activeJob = new GenerationJob(
+                source.getServer(),
+                preview.world,
+                source,
+                queue,
+                preview.preset.chunksPerTick,
+                preview.preset.budgetMs * 1_000_000L,
+                false,
+                bossBar,
+                true,
+                preview.preset.id);
+        activeServer = source.getServer();
+        active = true;
+        paused = false;
+        jobId = newJobId;
+        totalChunksPlanned = preview.totalChunks;
+        chunksCompleted = 0;
+        activeChunksPerTick = preview.preset.chunksPerTick;
+        activeFixedMaxNanosPerTick = preview.preset.budgetMs * 1_000_000L;
+        activeAutoBudget = false;
+        jobSummary = summary;
+
+        updateBossBar(activeJob, true);
+        showBossBarToSource(activeJob, source);
+        source.sendFeedback(() -> Text.literal("[latdev] Pregen queued: "
+                + formatCount(preview.totalChunks)
+                + " chunks (preset=" + preview.preset.id
+                + ", chunksPerTick=" + preview.preset.chunksPerTick
+                + ", budgetMs=" + preview.preset.budgetMs + ")"), false);
+        return 1;
+    }
+
+    private static boolean isActivePregen() {
+        return active && activeJob != null && activeJob.pregen;
+    }
+
+    private static String formatCount(int value) {
+        return String.format(Locale.ROOT, "%,d", value);
+    }
+
     private static String nanosToMs(long nanos) {
-        return String.format(java.util.Locale.ROOT, "%.1f", nanos / 1_000_000.0);
+        return String.format(Locale.ROOT, "%.1f", nanos / 1_000_000.0);
+    }
+
+    public enum PregenSpeedPreset {
+        SLOW("slow", 24, 4),
+        NORMAL("normal", 72, 8),
+        FAST("fast", 160, 12),
+        INSANE("insane", 320, 20);
+
+        private final String id;
+        private final int chunksPerTick;
+        private final int budgetMs;
+
+        PregenSpeedPreset(String id, int chunksPerTick, int budgetMs) {
+            this.id = id;
+            this.chunksPerTick = chunksPerTick;
+            this.budgetMs = budgetMs;
+        }
+    }
+
+    private static final class PregenPreview {
+        private final MinecraftServer server;
+        private final ServerWorld world;
+        private final int chunkMinX;
+        private final int chunkMaxX;
+        private final int chunkMinZ;
+        private final int chunkMaxZ;
+        private final int totalChunks;
+        private final int radiusBlocks;
+        private final PregenSpeedPreset preset;
+        private final long createdAtMs;
+
+        private PregenPreview(MinecraftServer server,
+                              ServerWorld world,
+                              int chunkMinX,
+                              int chunkMaxX,
+                              int chunkMinZ,
+                              int chunkMaxZ,
+                              int totalChunks,
+                              int radiusBlocks,
+                              PregenSpeedPreset preset,
+                              long createdAtMs) {
+            this.server = server;
+            this.world = world;
+            this.chunkMinX = chunkMinX;
+            this.chunkMaxX = chunkMaxX;
+            this.chunkMinZ = chunkMinZ;
+            this.chunkMaxZ = chunkMaxZ;
+            this.totalChunks = totalChunks;
+            this.radiusBlocks = radiusBlocks;
+            this.preset = preset;
+            this.createdAtMs = createdAtMs;
+        }
     }
 
     private static final class GenerationJob {
@@ -430,6 +741,8 @@ public final class ChunkPregenerator {
         private final int chunksPerTick;
         private final long fixedMaxNanosPerTick;
         private final boolean autoBudget;
+        private final boolean pregen;
+        private final String presetName;
         private long lastWorkDurationNanos;
         private ServerBossBar bossBar;
         private int lastBossbarUpdateChunks;
@@ -441,7 +754,21 @@ public final class ChunkPregenerator {
                               int chunksPerTick,
                               long fixedMaxNanosPerTick,
                               boolean autoBudget,
-                              ServerBossBar bossBar) {
+                              ServerBossBar bossBar,
+                              boolean pregen) {
+            this(server, world, source, queue, chunksPerTick, fixedMaxNanosPerTick, autoBudget, bossBar, pregen, pregen ? "custom" : "n/a");
+        }
+
+        private GenerationJob(MinecraftServer server,
+                              ServerWorld world,
+                              ServerCommandSource source,
+                              Queue<ChunkPos> queue,
+                              int chunksPerTick,
+                              long fixedMaxNanosPerTick,
+                              boolean autoBudget,
+                              ServerBossBar bossBar,
+                              boolean pregen,
+                              String presetName) {
             this.server = server;
             this.world = world;
             this.source = source;
@@ -449,6 +776,8 @@ public final class ChunkPregenerator {
             this.chunksPerTick = chunksPerTick;
             this.fixedMaxNanosPerTick = fixedMaxNanosPerTick;
             this.autoBudget = autoBudget;
+            this.pregen = pregen;
+            this.presetName = presetName;
             this.lastWorkDurationNanos = 0L;
             this.bossBar = bossBar;
             this.lastBossbarUpdateChunks = 0;
