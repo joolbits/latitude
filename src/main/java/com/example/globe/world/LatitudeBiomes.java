@@ -515,7 +515,7 @@ public final class LatitudeBiomes {
             double cont = MultiNoiseUtil.toFloat(p.continentalnessNoise());
             double erosion = MultiNoiseUtil.toFloat(p.erosionNoise());
             double weird = MultiNoiseUtil.toFloat(p.weirdnessNoise());
-            if (!isAridTropicalStep(blockX, blockZ, t)
+            if (!isAridTropicalStepSymmetric(blockX, blockZ, t)
                     && swampPatchHere(WORLD_SEED, blockX, blockZ)
                     && swampOkInPatch(cont, erosion, weird)) {
                 try {
@@ -654,7 +654,7 @@ public final class LatitudeBiomes {
             double cont = MultiNoiseUtil.toFloat(p.continentalnessNoise());
             double erosion = MultiNoiseUtil.toFloat(p.erosionNoise());
             double weird = MultiNoiseUtil.toFloat(p.weirdnessNoise());
-            if (!isAridTropicalStep(blockX, blockZ, t)
+            if (!isAridTropicalStepSymmetric(blockX, blockZ, t)
                     && swampPatchHere(WORLD_SEED, blockX, blockZ)
                     && swampOkInPatch(cont, erosion, weird)) {
                 chosen = entryById(biomePool, SWAMP_ID);
@@ -778,6 +778,11 @@ public final class LatitudeBiomes {
         int step = applyTropicalStepDither(seed, blockX, blockZ, baseStep, stepFrac);
 
         return step == 0;
+    }
+
+    private static boolean isAridTropicalStepSymmetric(int blockX, int blockZ, double t) {
+        int absZ = Math.abs(blockZ);
+        return isAridTropicalStep(blockX, absZ, t);
     }
 
     private static RegistryEntry<Biome> pickTropicalGradient(Collection<RegistryEntry<Biome>> biomes, RegistryEntry<Biome> base, int blockX, int blockZ, double t) {
