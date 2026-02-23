@@ -1865,7 +1865,7 @@ public final class LatitudeBiomes {
         // Lower threshold => more wetlands. Tropical-biased, arid less frequent.
         // bandIndex: tropics=1, arid=2 (per your logs)
         if (bandIndex == 1) return 0.20; // tropics: often, but not continuous
-        if (bandIndex == 2) return 0.55; // arid: occasional pockets
+        if (bandIndex == 2) return 0.72; // arid/subtropics: rarer pockets
         return 0.45;
     }
 
