@@ -114,6 +114,15 @@ public final class LatitudeMath {
         return MathHelper.clamp(deg, 0, 90);
     }
 
+    /** Returns |z| in blocks for a target absolute latitude degree [0..90]. */
+    public static int zForLatitudeDeg(double deg, int radiusBlocks) {
+        if (radiusBlocks <= 0) return 0;
+        double clampedDeg = MathHelper.clamp(Math.abs(deg), 0.0, 90.0);
+        double t = clampedDeg / 90.0;
+        int z = (int) Math.round(t * radiusBlocks);
+        return MathHelper.clamp(z, 0, radiusBlocks);
+    }
+
     public static char hemisphere(WorldBorder border, double z) {
         double centerZ = border != null ? border.getCenterZ() : 0.0;
         return z < centerZ ? 'N' : 'S';
