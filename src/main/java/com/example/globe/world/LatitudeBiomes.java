@@ -222,6 +222,11 @@ public final class LatitudeBiomes {
     private static final AtomicInteger DEBUG_COUNT = new AtomicInteger();
     private static final AtomicInteger BLEND_DEBUG_COUNT = new AtomicInteger();
     private static final AtomicBoolean RADIUS_MISMATCH_LOGGED = new AtomicBoolean(false);
+    private static final AtomicBoolean SUBPOLAR_JUNGLE_TRACE_LOGGED = new AtomicBoolean(false);
+    private static final ThreadLocal<String> LAST_SELECTION_PATH = new ThreadLocal<>();
+    private static final String PATH_TAG_PICK = "tag-based pick";
+    private static final String PATH_FALLBACK_PICK = "explicit fallback list pick";
+    private static final String PATH_RETURN_BASE = "return base";
     private static boolean TAG_LOGGED = false;
 
     public static void setWorldSeed(long seed) {
@@ -455,6 +460,7 @@ public final class LatitudeBiomes {
         if (effectiveRadius <= 0) {
             return base;
         }
+        LAST_SELECTION_PATH.remove();
 
         int lat = Math.abs(blockZ);
         double tBase = (double) lat / (double) effectiveRadius;
@@ -589,6 +595,10 @@ public final class LatitudeBiomes {
         out = enforceSnowyLatitudeRamp(biomeRegistry, out, base, blockX, blockZ, effectiveRadius, landBandIndex);
         out = clampWarmInColdZone(biomeRegistry, base, out, zone, blockX, blockZ);
         out = applySubpolarSwampGuard(biomeRegistry, base, out, zone);
+        if (landBandIndex >= BAND_SUBPOLAR && isJungleFamily(out)) {
+            out = pickColdFallback(biomeRegistry, base, blockX, blockZ, landBandIndex);
+        }
+        traceSubpolarJunglePick(blockX, blockZ, effectiveRadius, landBandIndex, base, out);
         debugPick(blockX, blockZ, effectiveRadius, t, zone, base, out, false, out != sanitized, mangroveDecision);
         return out;
     }
@@ -607,6 +617,7 @@ public final class LatitudeBiomes {
             return base;
         }
 
+        LAST_SELECTION_PATH.remove();
         logTagPools(biomePool);
 
         int lat = Math.abs(blockZ);
@@ -723,6 +734,10 @@ public final class LatitudeBiomes {
         out = enforceSnowyLatitudeRamp(biomePool, out, base, blockX, blockZ, effectiveRadius, landBandIndex);
         out = clampWarmInColdZone(biomePool, base, out, zone, blockX, blockZ);
         out = applySubpolarSwampGuard(biomePool, base, out, zone);
+        if (landBandIndex >= BAND_SUBPOLAR && isJungleFamily(out)) {
+            out = pickColdFallback(biomePool, base, blockX, blockZ, landBandIndex);
+        }
+        traceSubpolarJunglePick(blockX, blockZ, effectiveRadius, landBandIndex, base, out);
         debugPick(blockX, blockZ, effectiveRadius, t, zone, base, out, false, out != sanitized, mangroveDecision);
         return out;
     }
@@ -1071,6 +1086,7 @@ public final class LatitudeBiomes {
         int cellX = Math.floorDiv(blockX, VARIANT_CELL_SIZE_BLOCKS);
         int cellZ = Math.floorDiv(blockZ, VARIANT_CELL_SIZE_BLOCKS);
         int idx = (int) Long.remainderUnsigned(hash64(cellX, cellZ, bandIndex), options.length);
+        setSelectionPath(PATH_FALLBACK_PICK);
         return biome(biomes, options[idx]);
     }
 
@@ -1244,6 +1260,7 @@ public final class LatitudeBiomes {
         if (idx >= size) {
             idx = size - 1;
         }
+        setSelectionPath(PATH_TAG_PICK);
         return entries.get(idx);
     }
 
@@ -1255,6 +1272,7 @@ public final class LatitudeBiomes {
         }
         int size = entries.size();
         if (size <= 0) {
+            setSelectionPath(PATH_RETURN_BASE);
             return base;
         }
 
@@ -1266,6 +1284,7 @@ public final class LatitudeBiomes {
         if (idx >= size) {
             idx = size - 1;
         }
+        setSelectionPath(PATH_TAG_PICK);
         return entries.get(idx);
     }
 
@@ -1286,6 +1305,7 @@ public final class LatitudeBiomes {
 
         int size = entries.size();
         if (size <= 0) {
+            setSelectionPath(PATH_RETURN_BASE);
             return base;
         }
 
@@ -1297,6 +1317,7 @@ public final class LatitudeBiomes {
         if (idx >= size) {
             idx = size - 1;
         }
+        setSelectionPath(PATH_TAG_PICK);
         return entries.get(idx);
     }
 
@@ -1317,6 +1338,7 @@ public final class LatitudeBiomes {
 
         int size = entries.size();
         if (size <= 0) {
+            setSelectionPath(PATH_RETURN_BASE);
             return base;
         }
 
@@ -1328,6 +1350,7 @@ public final class LatitudeBiomes {
         if (idx >= size) {
             idx = size - 1;
         }
+        setSelectionPath(PATH_TAG_PICK);
         return entries.get(idx);
     }
 
@@ -1339,6 +1362,7 @@ public final class LatitudeBiomes {
         }
         int size = entries.size();
         if (size <= 0) {
+            setSelectionPath(PATH_RETURN_BASE);
             return base;
         }
 
@@ -1350,6 +1374,7 @@ public final class LatitudeBiomes {
         if (idx >= size) {
             idx = size - 1;
         }
+        setSelectionPath(PATH_TAG_PICK);
         return entries.get(idx);
     }
 
@@ -1357,6 +1382,7 @@ public final class LatitudeBiomes {
         List<RegistryEntry<Biome>> entries = entriesForTag(biomes, tag);
         int size = entries.size();
         if (size <= 0) {
+            setSelectionPath(PATH_RETURN_BASE);
             return base;
         }
 
@@ -1368,6 +1394,7 @@ public final class LatitudeBiomes {
         if (idx >= size) {
             idx = size - 1;
         }
+        setSelectionPath(PATH_TAG_PICK);
         return entries.get(idx);
     }
 
@@ -1375,9 +1402,11 @@ public final class LatitudeBiomes {
         for (String fallback : fallbackOptions) {
             RegistryEntry<Biome> entry = entryById(biomes, fallback);
             if (entry != null) {
+                setSelectionPath(PATH_FALLBACK_PICK);
                 return entry;
             }
         }
+        setSelectionPath(PATH_RETURN_BASE);
         return base;
     }
 
@@ -1440,6 +1469,9 @@ public final class LatitudeBiomes {
     }
 
     private static boolean isBiomeId(RegistryEntry<Biome> entry, String id) {
+        if (entry == null) {
+            return false;
+        }
         Identifier target = Identifier.of(id);
         return entry.getKey()
                 .map(key -> key.getValue().equals(target))
@@ -1447,6 +1479,9 @@ public final class LatitudeBiomes {
     }
 
     private static String biomeId(RegistryEntry<Biome> entry) {
+        if (entry == null) {
+            return "null";
+        }
         return entry.getKey().map(key -> key.getValue().toString()).orElse("?");
     }
 
@@ -1732,6 +1767,45 @@ public final class LatitudeBiomes {
         }
         entry = entryById(biomes, "minecraft:jungle");
         return entry != null ? entry : biomes.stream().findFirst().orElse(null);
+    }
+
+    private static void setSelectionPath(String path) {
+        LAST_SELECTION_PATH.set(path);
+    }
+
+    private static boolean isJungleFamily(RegistryEntry<Biome> entry) {
+        return isBiomeId(entry, "minecraft:jungle")
+                || isBiomeId(entry, "minecraft:bamboo_jungle")
+                || isBiomeId(entry, "minecraft:sparse_jungle");
+    }
+
+    private static String selectionPathForTrace(RegistryEntry<Biome> base, RegistryEntry<Biome> picked) {
+        String path = LAST_SELECTION_PATH.get();
+        if (path != null && !path.isBlank()) {
+            return path;
+        }
+        return base == picked ? PATH_RETURN_BASE : PATH_TAG_PICK;
+    }
+
+    private static void traceSubpolarJunglePick(int blockX, int blockZ, int radius, int bandIndex,
+                                                RegistryEntry<Biome> base, RegistryEntry<Biome> picked) {
+        if (bandIndex < BAND_SUBPOLAR || !isJungleFamily(picked)) {
+            return;
+        }
+        if (!SUBPOLAR_JUNGLE_TRACE_LOGGED.compareAndSet(false, true)) {
+            return;
+        }
+        double deg = latitudeDegreesFromRadius(blockZ, radius);
+        String baseId = base != null ? biomeId(base) : "null";
+        String pickedId = picked != null ? biomeId(picked) : "null";
+        LOGGER.warn("[Latitude] subpolar jungle trace: bandIndex={} deg={} x={} z={} picked={} base={} path={}",
+                bandIndex,
+                String.format(java.util.Locale.ROOT, "%.3f", deg),
+                blockX,
+                blockZ,
+                pickedId,
+                baseId,
+                selectionPathForTrace(base, picked));
     }
 
     private static void debugPick(int blockX, int blockZ, int borderRadiusBlocks, double t, LatitudeMath.LatitudeZone zone,
@@ -2159,6 +2233,7 @@ private static boolean swampPatchHere(long seed, int blockX, int blockZ) {
 
         int size = entries.size();
         if (size <= 0) {
+            setSelectionPath(PATH_FALLBACK_PICK);
             return pickFrom(biomes, blockX, blockZ, bandIndex, fallbackOptions);
         }
 
@@ -2170,6 +2245,7 @@ private static boolean swampPatchHere(long seed, int blockX, int blockZ) {
         if (idx >= size) {
             idx = size - 1;
         }
+        setSelectionPath(PATH_TAG_PICK);
         return entries.get(idx);
     }
 
@@ -2185,6 +2261,7 @@ private static boolean swampPatchHere(long seed, int blockX, int blockZ) {
 
         int size = entries.size();
         if (size <= 0) {
+            setSelectionPath(PATH_RETURN_BASE);
             return base;
         }
 
@@ -2196,6 +2273,7 @@ private static boolean swampPatchHere(long seed, int blockX, int blockZ) {
         if (idx >= size) {
             idx = size - 1;
         }
+        setSelectionPath(PATH_TAG_PICK);
         return entries.get(idx);
     }
 
