@@ -118,9 +118,7 @@ public class GlobeMod implements ModInitializer {
                                 return 1;
                             })));
 
-            if (FabricLoader.getInstance().isDevelopmentEnvironment()) {
-                LatitudeDevCommand.register(dispatcher);
-            }
+            LatitudeDevCommand.register(dispatcher);
         });
 
         ServerLifecycleEvents.SERVER_STARTED.register(GlobeMod::applyWorldBorder);

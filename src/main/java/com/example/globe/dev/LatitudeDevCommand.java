@@ -7,8 +7,8 @@ import com.mojang.brigadier.arguments.BoolArgumentType;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.LongArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
+import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
-import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.command.CommandSource;
 import net.minecraft.network.packet.s2c.play.PositionFlag;
 import net.minecraft.registry.entry.RegistryEntry;
@@ -44,10 +44,6 @@ public final class LatitudeDevCommand {
     }
 
     public static void register(CommandDispatcher<ServerCommandSource> dispatcher) {
-        if (!FabricLoader.getInstance().isDevelopmentEnvironment()) {
-            return;
-        }
-
         dispatcher.register(
                 CommandManager.literal("latdev")
                         .executes(LatitudeDevCommand::help)
@@ -83,26 +79,8 @@ public final class LatitudeDevCommand {
                                 .then(CommandManager.argument("radiusBlocks", IntegerArgumentType.integer())
                                         .then(CommandManager.argument("samples", IntegerArgumentType.integer())
                                                 .executes(LatitudeDevCommand::probe))))
-                        .then(CommandManager.literal("regenChunk")
-                                .executes(ctx -> regenChunk(ctx, 0, false, OptionalLong.empty()))
-                                .then(CommandManager.argument("radiusChunks", IntegerArgumentType.integer(0, 8))
-                                        .executes(ctx -> regenChunk(
-                                                ctx,
-                                                IntegerArgumentType.getInteger(ctx, "radiusChunks"),
-                                                false,
-                                                OptionalLong.empty()))
-                                        .then(CommandManager.argument("biomes", BoolArgumentType.bool())
-                                                .executes(ctx -> regenChunk(
-                                                        ctx,
-                                                        IntegerArgumentType.getInteger(ctx, "radiusChunks"),
-                                                        BoolArgumentType.getBool(ctx, "biomes"),
-                                                        OptionalLong.empty()))
-                                                .then(CommandManager.argument("seed", LongArgumentType.longArg())
-                                                        .executes(ctx -> regenChunk(
-                                                                ctx,
-                                                                IntegerArgumentType.getInteger(ctx, "radiusChunks"),
-                                                                BoolArgumentType.getBool(ctx, "biomes"),
-                                                                OptionalLong.of(LongArgumentType.getLong(ctx, "seed"))))))))
+                        .then(regenLiteral("regen"))
+                        .then(regenLiteral("regenChunk"))
                         .then(CommandManager.literal("pause").executes(LatitudeDevCommand::pauseTransect))
                         .then(CommandManager.literal("resume").executes(LatitudeDevCommand::resumeTransect))
                         .then(CommandManager.literal("stop").executes(LatitudeDevCommand::stopTransect))
@@ -118,7 +96,7 @@ public final class LatitudeDevCommand {
 
     private static int help(CommandContext<ServerCommandSource> ctx) {
         ServerCommandSource source = ctx.getSource();
-        source.sendFeedback(() -> Text.literal("[latdev] commands: here | tpBand <equator|tropics|arid|temperate|subpolar|polar> [center|low|high] | probe <radiusBlocks> <samples> | regenChunk [radiusChunks] [biomes] [seed] | transect | transectDeg | slicePoleNS | pause | resume | stop | status | budgetMs | budgetAuto <on|off>"), false);
+        source.sendFeedback(() -> Text.literal("[latdev] commands: here | tpBand <equator|tropics|arid|temperate|subpolar|polar> [center|low|high] | probe <radiusBlocks> <samples> | regen|regenChunk [radiusChunks] [biomes] [seed] | transect | transectDeg | slicePoleNS | pause | resume | stop | status | budgetMs | budgetAuto <on|off>"), false);
         return 1;
     }
 
@@ -370,6 +348,29 @@ public final class LatitudeDevCommand {
 
         int radiusBlocks = maxAbsZFromBorder(source);
         return ChunkPregenerator.startSliceNS(source, centerXChunk, -radiusBlocks, radiusBlocks, widthChunks, chunksPerTick);
+    }
+
+    private static LiteralArgumentBuilder<ServerCommandSource> regenLiteral(String name) {
+        return CommandManager.literal(name)
+                .executes(ctx -> regenChunk(ctx, 0, false, OptionalLong.empty()))
+                .then(CommandManager.argument("radiusChunks", IntegerArgumentType.integer(0, 8))
+                        .executes(ctx -> regenChunk(
+                                ctx,
+                                IntegerArgumentType.getInteger(ctx, "radiusChunks"),
+                                false,
+                                OptionalLong.empty()))
+                        .then(CommandManager.argument("biomes", BoolArgumentType.bool())
+                                .executes(ctx -> regenChunk(
+                                        ctx,
+                                        IntegerArgumentType.getInteger(ctx, "radiusChunks"),
+                                        BoolArgumentType.getBool(ctx, "biomes"),
+                                        OptionalLong.empty()))
+                                .then(CommandManager.argument("seed", LongArgumentType.longArg())
+                                        .executes(ctx -> regenChunk(
+                                                ctx,
+                                                IntegerArgumentType.getInteger(ctx, "radiusChunks"),
+                                                BoolArgumentType.getBool(ctx, "biomes"),
+                                                OptionalLong.of(LongArgumentType.getLong(ctx, "seed")))))));
     }
 
     private static int regenChunk(CommandContext<ServerCommandSource> ctx, int requestedRadius, boolean biomes, OptionalLong seedOverride) {
