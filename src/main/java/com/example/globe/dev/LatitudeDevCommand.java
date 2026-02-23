@@ -35,6 +35,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.OptionalLong;
 import java.util.Random;
+import java.util.concurrent.CompletableFuture;
 
 public final class LatitudeDevCommand {
     private static final List<String> TP_BAND_NAMES = List.of("equator", "tropics", "arid", "temperate", "subpolar", "polar");
@@ -79,6 +80,12 @@ public final class LatitudeDevCommand {
                                 .then(CommandManager.argument("radiusBlocks", IntegerArgumentType.integer())
                                         .then(CommandManager.argument("samples", IntegerArgumentType.integer())
                                                 .executes(LatitudeDevCommand::probe))))
+                        .then(CommandManager.literal("biomePng")
+                                .executes(LatitudeDevCommand::biomePngDefault)
+                                .then(CommandManager.argument("stepBlocks", IntegerArgumentType.integer(8, 512))
+                                        .executes(LatitudeDevCommand::biomePngWithStep)
+                                        .then(CommandManager.argument("y", IntegerArgumentType.integer(0, 320))
+                                                .executes(LatitudeDevCommand::biomePngWithStepAndY))))
                         .then(regenLiteral("regen"))
                         .then(regenLiteral("regenChunk"))
                         .then(CommandManager.literal("pause").executes(LatitudeDevCommand::pauseTransect))
@@ -96,7 +103,7 @@ public final class LatitudeDevCommand {
 
     private static int help(CommandContext<ServerCommandSource> ctx) {
         ServerCommandSource source = ctx.getSource();
-        source.sendFeedback(() -> Text.literal("[latdev] commands: here | tpBand <equator|tropics|arid|temperate|subpolar|polar> [center|low|high] | probe <radiusBlocks> <samples> | regen|regenChunk [radiusChunks] [biomes] [seed] | transect | transectDeg | slicePoleNS | pause | resume | stop | status | budgetMs | budgetAuto <on|off>"), false);
+        source.sendFeedback(() -> Text.literal("[latdev] commands: here | tpBand <equator|tropics|arid|temperate|subpolar|polar> [center|low|high] | probe <radiusBlocks> <samples> | biomePng [stepBlocks] [y] | regen|regenChunk [radiusChunks] [biomes] [seed] | transect | transectDeg | slicePoleNS | pause | resume | stop | status | budgetMs | budgetAuto <on|off>"), false);
         return 1;
     }
 
@@ -386,6 +393,73 @@ public final class LatitudeDevCommand {
             e.printStackTrace();
             return 0;
         }
+    }
+
+    private static int biomePngDefault(CommandContext<ServerCommandSource> ctx) {
+        return startBiomePngExport(ctx.getSource(), 64, 64);
+    }
+
+    private static int biomePngWithStep(CommandContext<ServerCommandSource> ctx) {
+        int stepBlocks = IntegerArgumentType.getInteger(ctx, "stepBlocks");
+        return startBiomePngExport(ctx.getSource(), stepBlocks, 64);
+    }
+
+    private static int biomePngWithStepAndY(CommandContext<ServerCommandSource> ctx) {
+        int stepBlocks = IntegerArgumentType.getInteger(ctx, "stepBlocks");
+        int y = IntegerArgumentType.getInteger(ctx, "y");
+        return startBiomePngExport(ctx.getSource(), stepBlocks, y);
+    }
+
+    private static int startBiomePngExport(ServerCommandSource source, int stepBlocks, int y) {
+        int clampedStep = MathHelper.clamp(stepBlocks, 8, 512);
+        int clampedY = MathHelper.clamp(y, 0, 320);
+        int radiusBlocks = authoritativeRadius(source);
+        if (radiusBlocks <= 0) {
+            source.sendError(Text.literal("[latdev] biomePng failed: invalid radius " + radiusBlocks));
+            return 0;
+        }
+
+        long seed = source.getWorld().getSeed();
+        source.sendFeedback(() -> Text.literal("[latdev] biomePng start seed=" + seed
+                + " R=" + radiusBlocks
+                + " step=" + clampedStep
+                + " y=" + clampedY), false);
+
+        CompletableFuture
+                .supplyAsync(() -> {
+                    try {
+                        return BiomePreviewExporter.export(
+                                source.getWorld(),
+                                radiusBlocks,
+                                clampedStep,
+                                clampedY,
+                                source.getServer().getRunDirectory());
+                    } catch (Exception e) {
+                        throw new RuntimeException(e);
+                    }
+                })
+                .whenComplete((result, throwable) -> source.getServer().execute(() -> {
+                    if (throwable != null) {
+                        Throwable cause = throwable instanceof RuntimeException && throwable.getCause() != null
+                                ? throwable.getCause()
+                                : throwable;
+                        source.sendError(Text.literal("[latdev] biomePng failed: " + cause.getMessage()));
+                        return;
+                    }
+                    source.sendFeedback(() -> Text.literal("[latdev] biomePng done file="
+                            + result.pngPath()
+                            + " sidecar="
+                            + result.txtPath()
+                            + " image="
+                            + result.width()
+                            + "x"
+                            + result.height()
+                            + " samples="
+                            + result.totalSamples()
+                            + " durationMs="
+                            + result.durationMs()), false);
+                }));
+        return 1;
     }
 
     private static int pauseTransect(CommandContext<ServerCommandSource> ctx) {
