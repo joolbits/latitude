@@ -249,6 +249,10 @@ public final class LatitudeBiomes {
     private static final long MANGROVE_FALLBACK_SALT = 0x6D2B79F5L;
     private static final long SWAMP_FALLBACK_SALT = 0x7A1D9E0BL;
 
+    // Wetland gating for swamp patches near water (Kakadu-style: patchy, tropical-biased)
+    private static final long WETLAND_SALT = 0x6A6B_7765_746C_616EL; // "jkwetlan" -> just a stable salt
+    private static final double WETLAND_FREQ = 1.0 / 1200.0; // low frequency => broad patches
+
     private static final int BADLANDS_PATCH_SIZE_BLOCKS = 65536;
     private static final double BADLANDS_PATCH_CHANCE = 0.42;
     private static final long BADLANDS_PATCH_SALT = 0xBADD1A2DL;
@@ -517,7 +521,8 @@ public final class LatitudeBiomes {
             double weird = MultiNoiseUtil.toFloat(p.weirdnessNoise());
             if (!isAridTropicalStepSymmetric(blockX, blockZ, t)
                     && swampPatchHere(WORLD_SEED, blockX, blockZ)
-                    && swampOkInPatch(cont, erosion, weird)) {
+                    && swampOkInPatch(cont, erosion, weird)
+            && wetlandNoiseSymmetric(WORLD_SEED, blockX, blockZ) > wetlandThresholdForBand(bandIndex, t)) {
                 try {
                     chosen = biome(biomeRegistry, SWAMP_ID);
                 } catch (Throwable ignored) {
@@ -1840,7 +1845,37 @@ public final class LatitudeBiomes {
         return n < BADLANDS_PATCH_CHANCE;
     }
 
-    private static boolean swampPatchHere(long seed, int blockX, int blockZ) {
+    
+    private static long mix64(long z) {
+        z = (z ^ (z >>> 33)) * 0xff51afd7ed558ccdL;
+        z = (z ^ (z >>> 33)) * 0xc4ceb9fe1a85ec53L;
+        return z ^ (z >>> 33);
+    }
+
+    private static double toUnitDouble(long h) {
+        // Map 53 random bits to [0,1)
+        return ((h >>> 11) & ((1L << 53) - 1L)) * (1.0 / (1L << 53));
+    }
+
+    private static double wetlandNoiseSymmetric(long worldSeed, int blockX, int blockZ) {
+        // Symmetric N/S: use abs(z) so wetland eligibility doesn't differ between hemispheres.
+        int z = Math.abs(blockZ);
+
+        // Low-frequency feel comes from pairing this with swampPatchHere() clustering.
+        // This gate just decides "is this patch wet enough?" in a broad, deterministic way.
+        long h = mix64(worldSeed ^ WETLAND_SALT ^ (long) blockX * 341873128712L ^ (long) z * 132897987541L);
+        return toUnitDouble(h);
+    }
+
+    private static double wetlandThresholdForBand(int bandIndex, double t) {
+        // Lower threshold => more wetlands. Tropical-biased, arid less frequent.
+        // bandIndex: tropics=1, arid=2 (per your logs)
+        if (bandIndex == 1) return 0.20; // tropics: often, but not continuous
+        if (bandIndex == 2) return 0.55; // arid: occasional pockets
+        return 0.45;
+    }
+
+private static boolean swampPatchHere(long seed, int blockX, int blockZ) {
         double n = blobNoise01Blocks(seed ^ SWAMP_PATCH_SALT, blockX, blockZ, SWAMP_PATCH_SIZE_BLOCKS, SWAMP_PATCH_SALT);
         return n < SWAMP_PATCH_CHANCE;
     }
