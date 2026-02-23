@@ -64,6 +64,22 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
     private static final boolean DEBUG_BIOME_PICK =
             Boolean.getBoolean("latitude.debugBiomePick");
 
+    @Unique
+    private static final java.util.concurrent.atomic.AtomicBoolean DEBUG_POPULATE_GATE_REJECT_LOGGED =
+            new java.util.concurrent.atomic.AtomicBoolean(false);
+
+    @Unique
+    private static final java.util.concurrent.atomic.AtomicBoolean DEBUG_POPULATE_NO_STRUCTURE_LOGGED =
+            new java.util.concurrent.atomic.AtomicBoolean(false);
+
+    @Unique
+    private static final java.util.concurrent.atomic.AtomicBoolean DEBUG_WORLDGEN_PATH_ONCE_LOGGED =
+            new java.util.concurrent.atomic.AtomicBoolean(false);
+
+    @Unique
+    private static final String GLOBE_SETTINGS_CHECKED =
+            "globe:overworld|globe:overworld_xsmall|globe:overworld_small|globe:overworld_regular|globe:overworld_large|globe:overworld_massive";
+
     // Only apply Latitude to your globe overworld settings (keeps Nether/End sane).
     @Unique
     private static final Identifier GLOBE_SETTINGS_ID = Identifier.of("globe", "overworld");
@@ -206,12 +222,20 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
     private void globe$wrapBiomeSupplier(Chunk chunk, BiomeSupplier originalSupplier, MultiNoiseUtil.MultiNoiseSampler sampler) {
         // Gate: only apply to your globe overworld settings.
         if (!this.globe$isAnyGlobeSettings()) {
+            if (DEBUG_WORLDGEN_PATH && DEBUG_POPULATE_GATE_REJECT_LOGGED.compareAndSet(false, true)) {
+                LOGGER.info("[Latitude] populateBiomes gate reject: settings not Globe preset checked={} matched={} action=falling back to vanilla populateBiomes",
+                        GLOBE_SETTINGS_CHECKED, globe$matchedSettingsLabel());
+            }
             chunk.populateBiomes(originalSupplier, sampler);
             return;
         }
 
         StructureAccessor structureAccessor = globe$structureAccessorTL.get();
         if (structureAccessor == null) {
+            if (DEBUG_WORLDGEN_PATH && DEBUG_POPULATE_NO_STRUCTURE_LOGGED.compareAndSet(false, true)) {
+                LOGGER.info("[Latitude] populateBiomes gate reject: StructureAccessor unavailable settings={} action=falling back to vanilla populateBiomes",
+                        globe$matchedSettingsLabel());
+            }
             chunk.populateBiomes(originalSupplier, sampler);
             return;
         }
@@ -366,14 +390,11 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
         if (!DEBUG_WORLDGEN_PATH) {
             return;
         }
-        long key = chunk.getPos().toLong();
-        synchronized (DEBUG_WORLDGEN_CHUNKS) {
-            if (DEBUG_WORLDGEN_CHUNKS.putIfAbsent(key, System.nanoTime()) != Long.MIN_VALUE) {
-                return;
-            }
+        if (!DEBUG_WORLDGEN_PATH_ONCE_LOGGED.compareAndSet(false, true)) {
+            return;
         }
-        LOGGER.info("[Latitude] Worldgen path active settings={} chunk={} radius={} writing=true",
-                settingsLabel, chunk.getPos(), borderRadiusBlocks);
+        LOGGER.info("[Latitude] Worldgen path active: overriding populateBiomes settings={} checked={} chunk={} radius={} writing=true",
+                settingsLabel, GLOBE_SETTINGS_CHECKED, chunk.getPos(), borderRadiusBlocks);
     }
 
     @Unique
