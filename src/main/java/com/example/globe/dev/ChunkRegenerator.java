@@ -35,7 +35,6 @@ import java.lang.reflect.Field;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.BitSet;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
@@ -271,17 +270,12 @@ public final class ChunkRegenerator {
             PalettedContainer<RegistryEntry<Biome>> targetBiomes =
                     (PalettedContainer<RegistryEntry<Biome>>) targetSection.getBiomeContainer();
 
-            targetBiomes.lock();
-            try {
-                for (int biomeX = 0; biomeX < 4; biomeX++) {
-                    for (int biomeY = 0; biomeY < 4; biomeY++) {
-                        for (int biomeZ = 0; biomeZ < 4; biomeZ++) {
-                            targetBiomes.set(biomeX, biomeY, biomeZ, sourceBiomes.get(biomeX, biomeY, biomeZ));
-                        }
+            for (int biomeX = 0; biomeX < 4; biomeX++) {
+                for (int biomeY = 0; biomeY < 4; biomeY++) {
+                    for (int biomeZ = 0; biomeZ < 4; biomeZ++) {
+                        targetBiomes.set(biomeX, biomeY, biomeZ, sourceBiomes.get(biomeX, biomeY, biomeZ));
                     }
                 }
-            } finally {
-                targetBiomes.unlock();
             }
         }
     }
