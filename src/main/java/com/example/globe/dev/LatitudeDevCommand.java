@@ -46,6 +46,8 @@ public final class LatitudeDevCommand {
 
         dispatcher.register(
                 CommandManager.literal("latdev")
+                        .executes(LatitudeDevCommand::help)
+                        .then(CommandManager.literal("help").executes(LatitudeDevCommand::help))
                         .then(CommandManager.literal("transect")
                                 .then(CommandManager.argument("zStart", IntegerArgumentType.integer())
                                         .then(CommandManager.argument("zEnd", IntegerArgumentType.integer())
@@ -88,6 +90,12 @@ public final class LatitudeDevCommand {
                                 .then(CommandManager.literal("on").executes(LatitudeDevCommand::setBudgetAutoOn))
                                 .then(CommandManager.literal("off").executes(LatitudeDevCommand::setBudgetAutoOff)))
         );
+    }
+
+    private static int help(CommandContext<ServerCommandSource> ctx) {
+        ServerCommandSource source = ctx.getSource();
+        source.sendFeedback(() -> Text.literal("[latdev] commands: here | tpBand <equator|tropics|arid|temperate|subpolar|polar> [center|low|high] | probe <radiusBlocks> <samples> | transect | transectDeg | slicePoleNS | pause | resume | stop | status | budgetMs | budgetAuto <on|off>"), false);
+        return 1;
     }
 
     private static int here(CommandContext<ServerCommandSource> ctx) {
