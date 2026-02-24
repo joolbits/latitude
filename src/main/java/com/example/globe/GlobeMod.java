@@ -4,6 +4,7 @@ import net.fabricmc.api.ModInitializer;
 import com.example.globe.world.LatitudeBiomes;
 import com.example.globe.world.BiomeFeatureStripping;
 import com.example.globe.world.LatitudeWorldState;
+import com.example.globe.dev.BiomePreviewHeadlessRunner;
 import com.example.globe.dev.LatitudeDevCommand;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
@@ -122,6 +123,7 @@ public class GlobeMod implements ModInitializer {
         });
 
         ServerLifecycleEvents.SERVER_STARTED.register(GlobeMod::applyWorldBorder);
+        BiomePreviewHeadlessRunner.register();
         ServerLifecycleEvents.SERVER_STOPPED.register(server -> {
             POLAR_SCRUBBER = null;
         });

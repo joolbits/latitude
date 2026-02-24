@@ -23,6 +23,12 @@ loom {
             inherit client
             vmArg "-Dlatitude.fixSurfaceDripstone=false"
         }
+        biomePreview {
+            server()
+            name "Biome Preview (Headless)"
+            runDir "run-headless"
+            vmArg "-Dlatdev.biomePng=${System.getProperty('latdev.biomePng', 'enabled')}"
+        }
     }
 }
 
@@ -110,4 +116,92 @@ tasks.named('check').configure {
     dependsOn tasks.named('latitudeInvariantScan')
 }
 
+tasks.register('prepareBiomePreviewRunDir') {
+    doLast {
+        def dir = file('run-headless')
+        if (!dir.exists()) {
+            dir.mkdirs()
+        }
 
+        def eulaFile = file("${dir}/eula.txt")
+        eulaFile.text = "eula=true\n"
+
+        def propsFile = file("${dir}/server.properties")
+        if (!propsFile.exists()) {
+            propsFile.text = """motd=Latitude Headless Preview
+online-mode=false
+max-players=1
+enable-command-block=false
+"""
+        }
+    }
+}
+
+tasks.named('runBiomePreview').configure {
+    dependsOn tasks.named('prepareBiomePreviewRunDir')
+    doFirst {
+        def rawArgs = new ArrayList(args ?: [])
+        def latdevOptions = [:]
+        def passthrough = []
+        def latdevKeys = ['seed', 'radius', 'size', 'step', 'steps', 'y', 'out'] as Set
+        boolean enabled = false
+
+        for (int i = 0; i < rawArgs.size(); i++) {
+            def token = rawArgs[i]
+            if (!(token instanceof String) || !token.startsWith('--')) {
+                passthrough << token
+                continue
+            }
+
+            def body = token.substring(2)
+            if (body.equalsIgnoreCase('latdevBiomePng')) {
+                enabled = true
+                continue
+            }
+
+            int eq = body.indexOf('=')
+            if (eq >= 0) {
+                def key = body.substring(0, eq).toLowerCase(Locale.ROOT)
+                def value = body.substring(eq + 1)
+                if (latdevKeys.contains(key)) {
+                    latdevOptions[key] = value
+                    enabled = true
+                } else {
+                    passthrough << token
+                }
+                continue
+            }
+
+            def key = body.toLowerCase(Locale.ROOT)
+            if (latdevKeys.contains(key)) {
+                if (i + 1 < rawArgs.size() && rawArgs[i + 1] instanceof String && !rawArgs[i + 1].startsWith('--')) {
+                    latdevOptions[key] = rawArgs[i + 1]
+                    i++
+                } else {
+                    latdevOptions[key] = 'true'
+                }
+                enabled = true
+            } else {
+                passthrough << token
+            }
+        }
+
+        if (enabled || !latdevOptions.isEmpty()) {
+            if (!latdevOptions.containsKey('out')) {
+                latdevOptions['out'] = file('run/latdev/biome-previews').absolutePath.replace('\\', '/')
+            }
+
+            def propParts = ['enabled=true']
+            latdevOptions.each { key, value ->
+                propParts << "${key}=${value}"
+            }
+            def propValue = propParts.join(';')
+
+            jvmArgs "-Dlatdev.biomePng=${propValue}"
+            setArgs(passthrough)
+            logger.lifecycle("[runBiomePreview] translated latdev --args to JVM property: {}", propValue)
+        } else {
+            setArgs(rawArgs)
+        }
+    }
+}
