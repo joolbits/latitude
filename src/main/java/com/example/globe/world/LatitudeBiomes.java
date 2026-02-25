@@ -3,6 +3,7 @@ package com.example.globe.world;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -216,13 +217,16 @@ public final class LatitudeBiomes {
     private static final boolean DEBUG_BIOMES = Boolean.getBoolean("latitude.debugBiomes")
             || Boolean.getBoolean("latitude.debugBiomePick");
     private static final boolean DEBUG_BLEND = Boolean.getBoolean("latitude.debugBlend");
+    private static final boolean DEBUG_LEAK = Boolean.getBoolean("latitude.debugLeak");
     private static final int DEBUG_LIMIT = Integer.getInteger("latitude.debugBiomes.limit", 200);
     private static volatile long WORLD_SEED = 0L;
     public static volatile int ACTIVE_RADIUS_BLOCKS = 0;
     private static final AtomicInteger DEBUG_COUNT = new AtomicInteger();
     private static final AtomicInteger BLEND_DEBUG_COUNT = new AtomicInteger();
+    private static final AtomicInteger LEAK_LOG_COUNT = new AtomicInteger();
     private static final AtomicBoolean RADIUS_MISMATCH_LOGGED = new AtomicBoolean(false);
     private static final AtomicBoolean SUBPOLAR_JUNGLE_TRACE_LOGGED = new AtomicBoolean(false);
+    private static final int LEAK_LOG_LIMIT = Integer.getInteger("latitude.leakLogLimit", 200);
     private static final ThreadLocal<String> LAST_SELECTION_PATH = new ThreadLocal<>();
     private static final String PATH_TAG_PICK = "tag-based pick";
     private static final String PATH_FALLBACK_PICK = "explicit fallback list pick";
@@ -598,6 +602,7 @@ public final class LatitudeBiomes {
         if (landBandIndex >= BAND_SUBPOLAR && isJungleFamily(out)) {
             out = pickColdFallback(biomeRegistry, base, blockX, blockZ, landBandIndex);
         }
+        out = enforceLandBandPool(biomeRegistry, out, blockX, blockZ, t, landBandIndex);
         traceSubpolarJunglePick(blockX, blockZ, effectiveRadius, landBandIndex, base, out);
         debugPick(blockX, blockZ, effectiveRadius, t, zone, base, out, false, out != sanitized, mangroveDecision);
         return out;
@@ -737,6 +742,7 @@ public final class LatitudeBiomes {
         if (landBandIndex >= BAND_SUBPOLAR && isJungleFamily(out)) {
             out = pickColdFallback(biomePool, base, blockX, blockZ, landBandIndex);
         }
+        out = enforceLandBandPool(biomePool, out, blockX, blockZ, t, landBandIndex);
         traceSubpolarJunglePick(blockX, blockZ, effectiveRadius, landBandIndex, base, out);
         debugPick(blockX, blockZ, effectiveRadius, t, zone, base, out, false, out != sanitized, mangroveDecision);
         return out;
@@ -1422,6 +1428,195 @@ public final class LatitudeBiomes {
                 .map(key -> key.getValue().toString())
                 .orElse("")));
         return entries;
+    }
+
+    private static List<TagKey<Biome>> landBandTags(int bandIndex) {
+        return switch (bandIndex) {
+            case BAND_EQUATOR -> List.of(
+                    LAT_EQUATOR_PRIMARY,
+                    LAT_EQUATOR_SECONDARY,
+                    LAT_EQUATOR_ACCENT);
+            case BAND_TROPICAL -> List.of(
+                    LAT_ARID_PRIMARY,
+                    LAT_ARID_SECONDARY,
+                    LAT_ARID_ACCENT,
+                    LAT_TRANS_ARID_TROPICS_1_PRIMARY,
+                    LAT_TRANS_ARID_TROPICS_1_SECONDARY,
+                    LAT_TRANS_ARID_TROPICS_1_ACCENT,
+                    LAT_TRANS_ARID_TROPICS_2_PRIMARY,
+                    LAT_TRANS_ARID_TROPICS_2_SECONDARY,
+                    LAT_TRANS_ARID_TROPICS_2_ACCENT,
+                    LAT_TROPICS_PRIMARY,
+                    LAT_TROPICS_SECONDARY,
+                    LAT_TROPICS_ACCENT);
+            case BAND_TEMPERATE -> List.of(
+                    LAT_TEMPERATE_PRIMARY,
+                    LAT_TEMPERATE_SECONDARY,
+                    LAT_TEMPERATE_ACCENT,
+                    LAT_TEMPERATE_MOUNTAIN);
+            case BAND_SUBPOLAR -> List.of(
+                    LAT_SUBPOLAR_PRIMARY,
+                    LAT_SUBPOLAR_SECONDARY,
+                    LAT_SUBPOLAR_ACCENT);
+            default -> List.of(
+                    LAT_POLAR_PRIMARY,
+                    LAT_POLAR_SECONDARY,
+                    LAT_POLAR_ACCENT);
+        };
+    }
+
+    private static List<String> allowedExtraBiomeIdsForBand(int bandIndex) {
+        return switch (bandIndex) {
+            case BAND_EQUATOR -> List.of(
+                    SWAMP_ID,
+                    MANGROVE_ID,
+                    "minecraft:sunflower_plains");
+            case BAND_TROPICAL -> List.of(
+                    SWAMP_ID,
+                    MANGROVE_ID);
+            case BAND_TEMPERATE -> List.of(
+                    "minecraft:sunflower_plains",
+                    "minecraft:pale_garden",
+                    "minecraft:stony_peaks");
+            case BAND_POLAR -> List.of(
+                    "minecraft:ice_spikes");
+            default -> List.of();
+        };
+    }
+
+    private static List<RegistryEntry<Biome>> allowedLandPool(Registry<Biome> biomes, int bandIndex) {
+        List<RegistryEntry<Biome>> allowed = new ArrayList<>();
+        Set<Identifier> seen = new HashSet<>();
+        for (TagKey<Biome> tag : landBandTags(bandIndex)) {
+            for (RegistryEntry<Biome> entry : biomes.iterateEntries(tag)) {
+                addAllowedEntry(allowed, seen, entry);
+            }
+        }
+        for (String id : allowedExtraBiomeIdsForBand(bandIndex)) {
+            try {
+                addAllowedEntry(allowed, seen, biome(biomes, id));
+            } catch (Throwable ignored) {
+                // Optional biome not present in current registry/datapack set.
+            }
+        }
+        allowed.sort(Comparator.comparing(LatitudeBiomes::biomeId));
+        return allowed;
+    }
+
+    private static List<RegistryEntry<Biome>> allowedLandPool(Collection<RegistryEntry<Biome>> biomes, int bandIndex) {
+        List<RegistryEntry<Biome>> allowed = new ArrayList<>();
+        Set<Identifier> seen = new HashSet<>();
+        for (TagKey<Biome> tag : landBandTags(bandIndex)) {
+            for (RegistryEntry<Biome> entry : entriesForTag(biomes, tag)) {
+                addAllowedEntry(allowed, seen, entry);
+            }
+        }
+        for (String id : allowedExtraBiomeIdsForBand(bandIndex)) {
+            RegistryEntry<Biome> entry = entryById(biomes, id);
+            if (entry != null) {
+                addAllowedEntry(allowed, seen, entry);
+            }
+        }
+        allowed.sort(Comparator.comparing(LatitudeBiomes::biomeId));
+        return allowed;
+    }
+
+    private static void addAllowedEntry(List<RegistryEntry<Biome>> allowed, Set<Identifier> seen, RegistryEntry<Biome> entry) {
+        Identifier id = entry.getKey().map(key -> key.getValue()).orElse(null);
+        if (id == null || !seen.add(id)) {
+            return;
+        }
+        allowed.add(entry);
+    }
+
+    private static boolean isInAllowedLandPool(List<RegistryEntry<Biome>> allowedPool, RegistryEntry<Biome> candidate) {
+        Identifier candidateId = candidate.getKey().map(key -> key.getValue()).orElse(null);
+        if (candidateId == null) {
+            return false;
+        }
+        for (RegistryEntry<Biome> allowed : allowedPool) {
+            Identifier allowedId = allowed.getKey().map(key -> key.getValue()).orElse(null);
+            if (candidateId.equals(allowedId)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static RegistryEntry<Biome> enforceLandBandPool(Registry<Biome> biomes,
+                                                            RegistryEntry<Biome> candidate,
+                                                            int blockX,
+                                                            int blockZ,
+                                                            double t,
+                                                            int bandIndex) {
+        List<RegistryEntry<Biome>> allowedPool = allowedLandPool(biomes, bandIndex);
+        if (allowedPool.isEmpty() || isInAllowedLandPool(allowedPool, candidate)) {
+            return candidate;
+        }
+        maybeLogBandLeak(blockX, blockZ, t, bandIndex, candidate);
+        return pickFromAllowedLandPool(allowedPool, blockX, blockZ, bandIndex);
+    }
+
+    private static RegistryEntry<Biome> enforceLandBandPool(Collection<RegistryEntry<Biome>> biomes,
+                                                            RegistryEntry<Biome> candidate,
+                                                            int blockX,
+                                                            int blockZ,
+                                                            double t,
+                                                            int bandIndex) {
+        List<RegistryEntry<Biome>> allowedPool = allowedLandPool(biomes, bandIndex);
+        if (allowedPool.isEmpty() || isInAllowedLandPool(allowedPool, candidate)) {
+            return candidate;
+        }
+        maybeLogBandLeak(blockX, blockZ, t, bandIndex, candidate);
+        return pickFromAllowedLandPool(allowedPool, blockX, blockZ, bandIndex);
+    }
+
+    private static RegistryEntry<Biome> pickFromAllowedLandPool(List<RegistryEntry<Biome>> allowedPool,
+                                                                int blockX,
+                                                                int blockZ,
+                                                                int bandIndex) {
+        int size = allowedPool.size();
+        if (size <= 0) {
+            throw new IllegalStateException("allowedPool must not be empty");
+        }
+
+        int scaleBlocks = 2048;
+        long seed = 0L;
+        long salted = seed ^ (0x9E3779B97F4A7C15L * (long) bandIndex);
+        double n = ValueNoise2D.sampleBlocks(salted, blockX, blockZ, scaleBlocks);
+        int idx = (int) Math.floor(n * (double) size);
+        if (idx >= size) {
+            idx = size - 1;
+        }
+        return allowedPool.get(idx);
+    }
+
+    private static void maybeLogBandLeak(int blockX, int blockZ, double t, int bandIndex, RegistryEntry<Biome> candidate) {
+        if (!DEBUG_LEAK) {
+            return;
+        }
+        int count = LEAK_LOG_COUNT.incrementAndGet();
+        if (count > LEAK_LOG_LIMIT) {
+            return;
+        }
+        double latDeg = clamp(t, 0.0, 1.0) * 90.0;
+        LOGGER.warn("LAT_LEAK baseBiome={} band={}({}) latDeg={} x={} z={} -> replacing",
+                biomeId(candidate),
+                bandName(bandIndex),
+                bandIndex,
+                String.format(java.util.Locale.ROOT, "%.2f", latDeg),
+                blockX,
+                blockZ);
+    }
+
+    private static String bandName(int bandIndex) {
+        return switch (bandIndex) {
+            case BAND_EQUATOR -> "EQUATOR";
+            case BAND_TROPICAL -> "TROPICAL";
+            case BAND_TEMPERATE -> "TEMPERATE";
+            case BAND_SUBPOLAR -> "SUBPOLAR";
+            default -> "POLAR";
+        };
     }
 
     private static List<RegistryEntry<Biome>> filterMangrove(List<RegistryEntry<Biome>> entries) {
