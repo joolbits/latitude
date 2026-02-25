@@ -143,7 +143,15 @@ tasks.named('runBiomePreview').configure {
         def rawArgs = new ArrayList(args ?: [])
         def latdevOptions = [:]
         def passthrough = []
-        def latdevKeys = ['seed', 'radius', 'size', 'step', 'steps', 'y', 'out'] as Set
+        def latdevKeys = ['seed', 'radius', 'size', 'step', 'steps', 'y', 'out', 'bundle', 'layers', 'mask', 'overlay', 'overlays', 'emitbiomeindex'] as Set
+        def mergeKeys = ['steps', 'layers', 'mask', 'overlay', 'overlays'] as Set
+        def putLatdevOption = { key, value ->
+            if (mergeKeys.contains(key) && latdevOptions.containsKey(key) && latdevOptions[key] != null && latdevOptions[key].toString().trim().length() > 0) {
+                latdevOptions[key] = "${latdevOptions[key]},${value}"
+            } else {
+                latdevOptions[key] = value
+            }
+        }
         boolean enabled = false
 
         for (int i = 0; i < rawArgs.size(); i++) {
@@ -164,7 +172,7 @@ tasks.named('runBiomePreview').configure {
                 def key = body.substring(0, eq).toLowerCase(Locale.ROOT)
                 def value = body.substring(eq + 1)
                 if (latdevKeys.contains(key)) {
-                    latdevOptions[key] = value
+                    putLatdevOption(key, value)
                     enabled = true
                 } else {
                     passthrough << token
@@ -175,10 +183,10 @@ tasks.named('runBiomePreview').configure {
             def key = body.toLowerCase(Locale.ROOT)
             if (latdevKeys.contains(key)) {
                 if (i + 1 < rawArgs.size() && rawArgs[i + 1] instanceof String && !rawArgs[i + 1].startsWith('--')) {
-                    latdevOptions[key] = rawArgs[i + 1]
+                    putLatdevOption(key, rawArgs[i + 1])
                     i++
                 } else {
-                    latdevOptions[key] = 'true'
+                    putLatdevOption(key, 'true')
                 }
                 enabled = true
             } else {
@@ -188,7 +196,7 @@ tasks.named('runBiomePreview').configure {
 
         if (enabled || !latdevOptions.isEmpty()) {
             if (!latdevOptions.containsKey('out')) {
-                latdevOptions['out'] = file('run/latdev/biome-previews').absolutePath.replace('\\', '/')
+                latdevOptions['out'] = file('run/latdev/atlas').absolutePath.replace('\\', '/')
             }
 
             def propParts = ['enabled=true']
