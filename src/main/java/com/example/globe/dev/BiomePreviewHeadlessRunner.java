@@ -11,7 +11,6 @@ import net.minecraft.util.math.MathHelper;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -22,6 +21,7 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Stream;
 
 public final class BiomePreviewHeadlessRunner {
     private static final AtomicBoolean TRIGGERED = new AtomicBoolean(false);
@@ -70,20 +70,23 @@ public final class BiomePreviewHeadlessRunner {
             LatitudeBiomes.setWorldSeed(effectiveSeed);
             String startMessage = String.format(
                     Locale.ROOT,
-                    "[latdev][headless] starting export seed=%d worldSeed=%d radius=%d steps=%s y=%d out=%s",
+                    "[latdev][headless] starting export seed=%d worldSeed=%d radius=%d steps=%s y=%d layers=%s overlays=%s emitBiomeIndex=%s out=%s",
                     effectiveSeed,
                     worldSeed,
                     radius,
                     config.steps,
                     y,
+                    config.exportOptions.layerCsv(),
+                    config.exportOptions.overlayCsv(),
+                    config.exportOptions.emitBiomeIndex(),
                     outputDir);
             GlobeMod.LOGGER.info(startMessage);
             System.out.println(startMessage);
 
             for (int step : config.steps) {
                 BiomePreviewExporter.ExportResult result = BiomePreviewExporter.export(
-                        world, radius, step, y, server.getRunDirectory());
-                BiomePreviewExporter.ExportResult finalized = finalizeOutput(result, worldSeed, effectiveSeed, outputDir);
+                        world, radius, step, y, server.getRunDirectory(), config.exportOptions);
+                BiomePreviewExporter.ExportResult finalized = finalizeOutput(result, effectiveSeed, outputDir);
 
                 String finishMessage = String.format(
                         Locale.ROOT,
@@ -112,54 +115,135 @@ public final class BiomePreviewHeadlessRunner {
         if (fileName != null && "run-headless".equalsIgnoreCase(fileName.toString())) {
             Path parent = normalized.getParent();
             if (parent != null) {
-                return parent.resolve("run").resolve("latdev").resolve("biome-previews").toAbsolutePath().normalize();
+                return BiomePreviewExporter.defaultAtlasRoot(parent.resolve("run"));
             }
         }
-        return null;
+        return BiomePreviewExporter.defaultAtlasRoot(normalized);
     }
 
     private static BiomePreviewExporter.ExportResult finalizeOutput(BiomePreviewExporter.ExportResult result,
-                                                                    long worldSeed,
                                                                     long effectiveSeed,
                                                                     Path outDir) throws IOException {
-        Path targetDir = outDir != null ? outDir : result.pngPath().getParent();
+        Path sourceStepDir = result.pngPath().toAbsolutePath().normalize().getParent();
+        Path targetRoot = outDir != null ? outDir : deriveAtlasRoot(sourceStepDir);
+        Path targetDir = BiomePreviewExporter.atlasStepDirectory(
+                targetRoot,
+                effectiveSeed,
+                result.radiusBlocks(),
+                result.stepBlocks());
         if (targetDir == null) {
             return result;
         }
         Files.createDirectories(targetDir);
 
-        String seedSource = String.valueOf(worldSeed);
-        String seedTarget = String.valueOf(effectiveSeed);
-        String pngName = result.pngPath().getFileName().toString().replace(seedSource, seedTarget);
-        String txtName = result.txtPath().getFileName().toString().replace(seedSource, seedTarget);
-        Path targetPng = targetDir.resolve(pngName);
-        Path targetTxt = targetDir.resolve(txtName);
-
-        moveIfDifferent(result.pngPath(), targetPng);
-        moveIfDifferent(result.txtPath(), targetTxt);
-
-        if (Files.exists(targetTxt)) {
-            List<String> lines = Files.readAllLines(targetTxt);
-            if (!lines.isEmpty() && lines.get(0).startsWith("seed=")) {
-                lines.set(0, "seed=" + effectiveSeed);
-            }
-            Files.write(targetTxt, lines);
+        if (sourceStepDir != null && !sourceStepDir.toAbsolutePath().normalize().equals(targetDir.toAbsolutePath().normalize())) {
+            moveDirectoryContents(sourceStepDir, targetDir);
+            cleanupEmptyAncestors(sourceStepDir);
         }
+
+        rewriteSeedMetadata(targetDir, effectiveSeed);
+
+        Path targetPng = targetDir.resolve(result.pngPath().getFileName());
+        Path targetTxt = targetDir.resolve(result.txtPath().getFileName());
 
         return new BiomePreviewExporter.ExportResult(
                 targetPng,
                 targetTxt,
+                effectiveSeed,
+                result.radiusBlocks(),
+                result.stepBlocks(),
                 result.width(),
                 result.height(),
                 result.totalSamples(),
                 result.durationMs());
     }
 
-    private static void moveIfDifferent(Path src, Path dst) throws IOException {
-        if (src.toAbsolutePath().normalize().equals(dst.toAbsolutePath().normalize())) {
+    private static void moveDirectoryContents(Path sourceDir, Path targetDir) throws IOException {
+        if (sourceDir == null || !Files.isDirectory(sourceDir)) {
             return;
         }
-        Files.move(src, dst, StandardCopyOption.REPLACE_EXISTING);
+        Files.createDirectories(targetDir);
+
+        try (Stream<Path> stream = Files.list(sourceDir)) {
+            List<Path> children = stream.toList();
+            for (Path child : children) {
+                Path target = targetDir.resolve(child.getFileName());
+                Files.move(child, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            }
+        }
+    }
+
+    private static void cleanupEmptyAncestors(Path start) throws IOException {
+        Path cursor = start;
+        while (cursor != null) {
+            if (!Files.isDirectory(cursor)) {
+                break;
+            }
+            try (Stream<Path> stream = Files.list(cursor)) {
+                if (stream.findAny().isPresent()) {
+                    break;
+                }
+            }
+            Files.deleteIfExists(cursor);
+            cursor = cursor.getParent();
+            if (cursor == null || cursor.getFileName() == null) {
+                break;
+            }
+            if ("atlas".equalsIgnoreCase(cursor.getFileName().toString())) {
+                break;
+            }
+        }
+    }
+
+    private static void rewriteSeedMetadata(Path targetDir, long seed) throws IOException {
+        if (targetDir == null || !Files.isDirectory(targetDir)) {
+            return;
+        }
+        try (Stream<Path> stream = Files.list(targetDir)) {
+            List<Path> files = stream.filter(Files::isRegularFile).toList();
+            for (Path file : files) {
+                String name = file.getFileName().toString().toLowerCase(Locale.ROOT);
+                if (name.endsWith(".txt")) {
+                    rewriteSeedInTextFile(file, seed);
+                } else if (name.endsWith(".json")) {
+                    rewriteSeedInJsonFile(file, seed);
+                }
+            }
+        }
+    }
+
+    private static void rewriteSeedInTextFile(Path file, long seed) throws IOException {
+        List<String> lines = Files.readAllLines(file);
+        for (int i = 0; i < lines.size(); i++) {
+            if (lines.get(i).startsWith("seed=")) {
+                lines.set(i, "seed=" + seed);
+                Files.write(file, lines);
+                return;
+            }
+        }
+    }
+
+    private static void rewriteSeedInJsonFile(Path file, long seed) throws IOException {
+        String content = Files.readString(file);
+        String updated = content.replaceFirst("\"seed\"\\s*:\\s*-?\\d+", "\"seed\": " + seed);
+        if (!updated.equals(content)) {
+            Files.writeString(file, updated);
+        }
+    }
+
+    private static Path deriveAtlasRoot(Path sourceStepDir) {
+        if (sourceStepDir == null) {
+            return null;
+        }
+        Path radiusDir = sourceStepDir.getParent();
+        if (radiusDir == null) {
+            return null;
+        }
+        Path seedDir = radiusDir.getParent();
+        if (seedDir == null) {
+            return null;
+        }
+        return seedDir.getParent();
     }
 
     private static int radiusFromSizeOrWorld(String sizePreset, ServerWorld world) {
@@ -208,11 +292,23 @@ public final class BiomePreviewHeadlessRunner {
             steps = List.of(64);
         }
         int y = parseInt(kv.get("y"), 64);
+        boolean bundle = parseBoolean(kv.get("bundle"));
+        ParsedLayers parsedLayers = parseLayers(kv.get("layers"));
+        List<String> masks = coalesceMaskValues(parsedLayers.masks(), parseMaskValues(kv.get("mask")));
+        List<BiomePreviewExporter.Overlay> overlays = parseOverlays(coalesceListValues(kv.get("overlay"), kv.get("overlays")));
+        boolean emitBiomeIndex = parseBoolean(kv.get("emitbiomeindex"));
+        BiomePreviewExporter.ExportOptions baseOptions = BiomePreviewExporter.ExportOptions.from(bundle, parsedLayers.layers(), overlays, masks);
+        BiomePreviewExporter.ExportOptions exportOptions = new BiomePreviewExporter.ExportOptions(
+                baseOptions.layers(),
+                baseOptions.overlays(),
+                baseOptions.maskLayers(),
+                baseOptions.writeLegends(),
+                emitBiomeIndex);
         Path out = kv.containsKey("out") && !kv.get("out").isBlank()
                 ? Path.of(kv.get("out")).toAbsolutePath().normalize()
                 : null;
 
-        return new Config(enabled, seed, radius, size, steps, y, out);
+        return new Config(enabled, seed, radius, size, steps, y, exportOptions, out);
     }
 
     private static List<String> launchArgs() {
@@ -226,7 +322,7 @@ public final class BiomePreviewHeadlessRunner {
 
     private static boolean collectProgramArgs(List<String> args, Map<String, String> out) {
         boolean enabled = false;
-        List<String> latdevKeys = List.of("seed", "radius", "size", "step", "steps", "y", "out");
+        List<String> latdevKeys = List.of("seed", "radius", "size", "step", "steps", "y", "out", "bundle", "layers", "mask", "overlay", "overlays", "emitbiomeindex");
         for (int i = 0; i < args.size(); i++) {
             String arg = args.get(i);
             if (!arg.startsWith("--")) {
@@ -243,7 +339,7 @@ public final class BiomePreviewHeadlessRunner {
             if (eq >= 0) {
                 String key = token.substring(0, eq).toLowerCase(Locale.ROOT);
                 String value = token.substring(eq + 1);
-                out.put(key, value);
+                putOption(out, key, value);
                 if (latdevKeys.contains(key)) {
                     enabled = true;
                 }
@@ -252,13 +348,13 @@ public final class BiomePreviewHeadlessRunner {
 
             String key = token.toLowerCase(Locale.ROOT);
             if (i + 1 < args.size() && !args.get(i + 1).startsWith("--")) {
-                out.put(key, args.get(i + 1));
+                putOption(out, key, args.get(i + 1));
                 i++;
                 if (latdevKeys.contains(key)) {
                     enabled = true;
                 }
             } else {
-                out.put(key, "true");
+                putOption(out, key, "true");
             }
         }
         return enabled;
@@ -270,9 +366,28 @@ public final class BiomePreviewHeadlessRunner {
             String key = matcher.group(1).trim().toLowerCase(Locale.ROOT);
             String value = matcher.group(2).trim();
             if (!key.isEmpty() && !value.isEmpty()) {
-                out.put(key, value);
+                putOption(out, key, value);
             }
         }
+    }
+
+    private static void putOption(Map<String, String> out, String key, String value) {
+        if (key == null || value == null) {
+            return;
+        }
+        if (isMergeKey(key) && out.containsKey(key) && !out.get(key).isBlank()) {
+            out.put(key, out.get(key) + "," + value);
+            return;
+        }
+        out.put(key, value);
+    }
+
+    private static boolean isMergeKey(String key) {
+        return "steps".equals(key)
+                || "layers".equals(key)
+                || "mask".equals(key)
+                || "overlay".equals(key)
+                || "overlays".equals(key);
     }
 
     private static Integer parseInt(String raw) {
@@ -302,6 +417,120 @@ public final class BiomePreviewHeadlessRunner {
         }
     }
 
+    private static boolean parseBoolean(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return false;
+        }
+        String normalized = raw.trim().toLowerCase(Locale.ROOT);
+        return normalized.equals("true")
+                || normalized.equals("1")
+                || normalized.equals("yes")
+                || normalized.equals("on")
+                || normalized.equals("enabled")
+                || normalized.equals("bundle");
+    }
+
+    private static ParsedLayers parseLayers(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return new ParsedLayers(List.of(), List.of());
+        }
+
+        LinkedHashSet<BiomePreviewExporter.Layer> layers = new LinkedHashSet<>();
+        LinkedHashSet<String> masks = new LinkedHashSet<>();
+        boolean collectingMaskValues = false;
+        String[] parts = raw.split("[,|]");
+        for (String part : parts) {
+            String token = part == null ? "" : part.trim();
+            if (token.isEmpty()) {
+                continue;
+            }
+            String normalized = token.toLowerCase(Locale.ROOT);
+            if (normalized.startsWith("biomemask:")) {
+                String maskToken = token.substring("biomemask:".length()).trim();
+                if (!maskToken.isEmpty()) {
+                    masks.add(maskToken);
+                }
+                collectingMaskValues = false;
+                continue;
+            }
+            if (normalized.startsWith("mask=")) {
+                String maskToken = token.substring("mask=".length()).trim();
+                if (!maskToken.isEmpty()) {
+                    masks.add(maskToken);
+                }
+                collectingMaskValues = true;
+                continue;
+            }
+            BiomePreviewExporter.Layer layer = BiomePreviewExporter.Layer.fromToken(part);
+            if (layer != null) {
+                layers.add(layer);
+                collectingMaskValues = false;
+                continue;
+            }
+            if (collectingMaskValues) {
+                masks.add(token);
+            }
+        }
+        return new ParsedLayers(new ArrayList<>(layers), new ArrayList<>(masks));
+    }
+
+    private static List<String> parseMaskValues(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return List.of();
+        }
+        LinkedHashSet<String> masks = new LinkedHashSet<>();
+        String[] parts = raw.split("[,|]");
+        for (String part : parts) {
+            String token = part == null ? "" : part.trim();
+            if (!token.isEmpty()) {
+                masks.add(token);
+            }
+        }
+        return new ArrayList<>(masks);
+    }
+
+    private static List<String> coalesceMaskValues(List<String> first, List<String> second) {
+        LinkedHashSet<String> masks = new LinkedHashSet<>();
+        if (first != null) {
+            masks.addAll(first);
+        }
+        if (second != null) {
+            masks.addAll(second);
+        }
+        return new ArrayList<>(masks);
+    }
+
+    private static List<BiomePreviewExporter.Overlay> parseOverlays(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return List.of();
+        }
+
+        LinkedHashSet<BiomePreviewExporter.Overlay> overlays = new LinkedHashSet<>();
+        String[] parts = raw.split("[,|]");
+        for (String part : parts) {
+            BiomePreviewExporter.Overlay overlay = BiomePreviewExporter.Overlay.fromToken(part);
+            if (overlay != null) {
+                overlays.add(overlay);
+            }
+        }
+        return new ArrayList<>(overlays);
+    }
+
+    private static String coalesceListValues(String first, String second) {
+        boolean hasFirst = first != null && !first.isBlank();
+        boolean hasSecond = second != null && !second.isBlank();
+        if (hasFirst && hasSecond) {
+            return first + "," + second;
+        }
+        if (hasFirst) {
+            return first;
+        }
+        if (hasSecond) {
+            return second;
+        }
+        return "";
+    }
+
     private static List<Integer> parseSteps(String raw) {
         if (raw == null || raw.isBlank()) {
             return List.of();
@@ -325,6 +554,11 @@ public final class BiomePreviewHeadlessRunner {
                           String sizePreset,
                           List<Integer> steps,
                           int y,
+                          BiomePreviewExporter.ExportOptions exportOptions,
                           Path outDir) {
+    }
+
+    private record ParsedLayers(List<BiomePreviewExporter.Layer> layers,
+                                List<String> masks) {
     }
 }
