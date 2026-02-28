@@ -63,6 +63,6 @@ public final class LatitudeBiomeSource extends BiomeSource {
         int blockX = x << 2;
         int blockZ = z << 2;
         int blockY = y << 2;
-        return LatitudeBiomes.pick(biomes, base, blockX, blockZ, blockY, borderRadiusBlocks, sampler, "SOURCE");
+        return LatitudeBiomes.pick(biomes, base, blockX, blockZ, blockY, borderRadiusBlocks, sampler, "SOURCE", null, null, null);
     }
 }

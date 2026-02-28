@@ -126,6 +126,11 @@ public final class LatitudeDevCommand {
             double savUplandChance = Math.max(0.0, Math.min(1.0, uplandT));
             boolean savUplandActive = savUplandChance > 0.0;
             String savannaDebug = LatitudeBiomes.debugSavannaUplandDecision(pos.getX(), pos.getZ(), pos.getY());
+            net.minecraft.world.gen.noise.NoiseConfig noiseConfig = world.getChunkManager().getNoiseConfig();
+            net.minecraft.world.biome.source.util.MultiNoiseUtil.MultiNoiseSampler sampler = noiseConfig.getMultiNoiseSampler();
+            net.minecraft.world.gen.chunk.ChunkGenerator cg = world.getChunkManager().getChunkGenerator();
+            net.minecraft.world.gen.chunk.NoiseChunkGenerator ng = cg instanceof net.minecraft.world.gen.chunk.NoiseChunkGenerator n ? n : null;
+            String savannaRule = LatitudeBiomes.debugSavannaRule(sampler, ng, noiseConfig, world, pos.getX(), pos.getZ());
             RuggednessSensor.Measurement ruggedness = RuggednessSensor.measure(world, pos, 24);
             double bumpinessScore = ruggedness.robustDelta(); // robust second-highest delta
 
@@ -146,6 +151,7 @@ public final class LatitudeDevCommand {
                     savUplandChance,
                     biomeId)), false);
             source.sendFeedback(() -> Text.literal("[latdev] here savUplandDebug " + savannaDebug), false);
+            source.sendFeedback(() -> Text.literal("[latdev] here savannaRule " + savannaRule), false);
             source.sendFeedback(() -> Text.literal(String.format(Locale.ROOT,
                     "[latdev] here rugged x=%d z=%d ring=%d topY[c=%d n=%d s=%d e=%d w=%d ne=%d nw=%d se=%d sw=%d] dMax=%d dMean=%.2f axis=%.2f robust=%d",
                     pos.getX(),
