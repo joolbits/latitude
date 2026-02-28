@@ -106,7 +106,8 @@ public final class BiomePreviewExporter {
                 ? latitudeSource.original()
                 : biomeSource;
         Registry<Biome> biomeRegistry = world.getRegistryManager().getOrThrow(RegistryKeys.BIOME);
-        MultiNoiseUtil.MultiNoiseSampler sampler = world.getChunkManager().getNoiseConfig().getMultiNoiseSampler();
+        NoiseConfig noiseConfig = world.getChunkManager().getNoiseConfig();
+        MultiNoiseUtil.MultiNoiseSampler sampler = noiseConfig.getMultiNoiseSampler();
 
         int noiseY = Math.floorDiv(y, 4);
         for (int imageZ = 0, blockZ = zMin; imageZ < height; imageZ++, blockZ += stepBlocks) {
@@ -125,7 +126,10 @@ public final class BiomePreviewExporter {
                             y,
                             radiusBlocks,
                             sampler,
-                            "BIOME_PNG");
+                            "BIOME_PNG",
+                            generator instanceof net.minecraft.world.gen.chunk.NoiseChunkGenerator noiseGen ? noiseGen : null,
+                            noiseConfig,
+                            world);
                     RegistryEntry<Biome> out = picked != null ? picked : base;
                     sampledBiomeId = biomeId(biomeRegistry, out);
                     biomeCounts.merge(sampledBiomeId, 1, Integer::sum);

@@ -24,8 +24,12 @@ import net.minecraft.registry.tag.BiomeTags;
 import net.minecraft.registry.tag.TagKey;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.MathHelper;
+import net.minecraft.world.HeightLimitView;
+import net.minecraft.world.Heightmap;
 import net.minecraft.world.biome.Biome;
 import net.minecraft.world.biome.source.util.MultiNoiseUtil;
+import net.minecraft.world.gen.chunk.NoiseChunkGenerator;
+import net.minecraft.world.gen.noise.NoiseConfig;
 
 public final class LatitudeBiomes {
     private LatitudeBiomes() {
@@ -278,6 +282,105 @@ public final class LatitudeBiomes {
                 blockX, blockZ, blockY, WINDSWEPT_RUGGED_THRESH, WINDSWEPT_RUGGED_HYST);
     }
 
+    public static String debugSavannaRule(MultiNoiseUtil.MultiNoiseSampler sampler,
+                                          NoiseChunkGenerator generator,
+                                          NoiseConfig noiseConfig,
+                                          HeightLimitView heightView,
+                                          int blockX, int blockZ) {
+        boolean noiseMountain = isMountainLike(sampler, blockX, blockZ);
+        PreviewTerrain preview = previewTerrain(generator, noiseConfig, heightView, blockX, blockZ);
+        int seaLevel = previewSeaLevel(generator);
+        boolean previewHeightHigh = preview.centerHeight >= (seaLevel + PREVIEW_HEIGHT_MARGIN_BLOCKS);
+        boolean previewRuggedHigh = preview.robustDelta >= WINDSWEPT_RUGGED_THRESH;
+        boolean mountainLike = noiseMountain && (previewHeightHigh || previewRuggedHigh);
+        String reason = savannaGateReason(preview.robustDelta);
+        return String.format(java.util.Locale.ROOT,
+                "mtnLike(noise)=%s previewHeight=%d sea=%d previewRobust=%d mtnLike(final)=%s reason=%s",
+                noiseMountain, preview.centerHeight, seaLevel, preview.robustDelta, mountainLike, reason);
+    }
+
+    private static PreviewTerrain previewTerrain(NoiseChunkGenerator generator, NoiseConfig noiseConfig, HeightLimitView heightView,
+                                                 int blockX, int blockZ) {
+        if (generator == null || noiseConfig == null || heightView == null) {
+            return new PreviewTerrain(0, 0);
+        }
+        int ring = SAVANNA_RUGGED_RING_BLOCKS;
+        int sampleX = blockX & ~3;
+        int sampleZ = blockZ & ~3;
+        int c = previewHeight(generator, noiseConfig, heightView, sampleX, sampleZ);
+        int n = previewHeight(generator, noiseConfig, heightView, sampleX, sampleZ - ring);
+        int s = previewHeight(generator, noiseConfig, heightView, sampleX, sampleZ + ring);
+        int e = previewHeight(generator, noiseConfig, heightView, sampleX + ring, sampleZ);
+        int w = previewHeight(generator, noiseConfig, heightView, sampleX - ring, sampleZ);
+        int ne = previewHeight(generator, noiseConfig, heightView, sampleX + ring, sampleZ - ring);
+        int nw = previewHeight(generator, noiseConfig, heightView, sampleX - ring, sampleZ - ring);
+        int se = previewHeight(generator, noiseConfig, heightView, sampleX + ring, sampleZ + ring);
+        int sw = previewHeight(generator, noiseConfig, heightView, sampleX - ring, sampleZ + ring);
+        int[] ys = {n, s, e, w, ne, nw, se, sw};
+        int[] deltas = new int[ys.length];
+        for (int i = 0; i < ys.length; i++) {
+            deltas[i] = Math.abs(ys[i] - c);
+        }
+        java.util.Arrays.sort(deltas);
+        return new PreviewTerrain(c, deltas[deltas.length - 2]);
+    }
+
+    private static int previewHeight(NoiseChunkGenerator generator, NoiseConfig noiseConfig, HeightLimitView heightView,
+                                     int blockX, int blockZ) {
+        return generator.getHeight(blockX, blockZ, Heightmap.Type.WORLD_SURFACE_WG, heightView, noiseConfig);
+    }
+
+    private static int previewSeaLevel(NoiseChunkGenerator generator) {
+        return generator == null ? 63 : generator.getSeaLevel();
+    }
+
+    private static String savannaGateReason(int robustDelta) {
+        if (robustDelta >= WINDSWEPT_RUGGED_THRESH + WINDSWEPT_RUGGED_HYST) {
+            return "windswept:robust";
+        }
+        if (robustDelta < WINDSWEPT_RUGGED_THRESH) {
+            return "plateau:below_thresh";
+        }
+        return "deadband:keep";
+    }
+
+    private static RegistryEntry<Biome> applySavannaWindsweptGate(Registry<Biome> biomes, RegistryEntry<Biome> out, int robustDelta) {
+        if (!isSavannaFamily(out)) {
+            return out;
+        }
+        if (robustDelta >= WINDSWEPT_RUGGED_THRESH + WINDSWEPT_RUGGED_HYST) {
+            return biome(biomes, "minecraft:windswept_savanna");
+        }
+        if (robustDelta < WINDSWEPT_RUGGED_THRESH) {
+            return biome(biomes, "minecraft:savanna_plateau");
+        }
+        return out;
+    }
+
+    private static RegistryEntry<Biome> applySavannaWindsweptGate(Collection<RegistryEntry<Biome>> biomes, RegistryEntry<Biome> out, int robustDelta) {
+        if (!isSavannaFamily(out)) {
+            return out;
+        }
+        if (robustDelta >= WINDSWEPT_RUGGED_THRESH + WINDSWEPT_RUGGED_HYST) {
+            RegistryEntry<Biome> entry = entryById(biomes, "minecraft:windswept_savanna");
+            return entry != null ? entry : out;
+        }
+        if (robustDelta < WINDSWEPT_RUGGED_THRESH) {
+            RegistryEntry<Biome> entry = entryById(biomes, "minecraft:savanna_plateau");
+            return entry != null ? entry : out;
+        }
+        return out;
+    }
+
+    private static boolean isSavannaFamily(RegistryEntry<Biome> entry) {
+        return isBiomeId(entry, "minecraft:savanna")
+                || isBiomeId(entry, "minecraft:savanna_plateau")
+                || isBiomeId(entry, "minecraft:windswept_savanna");
+    }
+
+    private record PreviewTerrain(int centerHeight, int robustDelta) {
+    }
+
     private static final String MANGROVE_ID = "minecraft:mangrove_swamp";
     private static final String SWAMP_ID = "minecraft:swamp";
     private static final String BADLANDS_ID = "minecraft:badlands";
@@ -399,6 +502,7 @@ public final class LatitudeBiomes {
     private static final int SAVANNA_RUGGED_RING_BLOCKS = 24;
     private static final int WINDSWEPT_RUGGED_THRESH = 8;
     private static final int WINDSWEPT_RUGGED_HYST = 2;
+    private static final int PREVIEW_HEIGHT_MARGIN_BLOCKS = 25;
     private static final long UPLAND_ROLL_SALT = 0x1CEB0D03L;
     private static final long UPLAND_POOL_SALT = 0x1CEB0D04L;
     private static final String[] TEMPERATE_UPLAND_BIOMES = {
@@ -496,6 +600,12 @@ public final class LatitudeBiomes {
 
     public static RegistryEntry<Biome> pick(Registry<Biome> biomeRegistry, RegistryEntry<Biome> base, int blockX, int blockZ, int blockY, int borderRadiusBlocks,
                                             MultiNoiseUtil.MultiNoiseSampler sampler, String callerContext) {
+        return pick(biomeRegistry, base, blockX, blockZ, blockY, borderRadiusBlocks, sampler, callerContext, null, null, null);
+    }
+
+    public static RegistryEntry<Biome> pick(Registry<Biome> biomeRegistry, RegistryEntry<Biome> base, int blockX, int blockZ, int blockY, int borderRadiusBlocks,
+                                            MultiNoiseUtil.MultiNoiseSampler sampler, String callerContext,
+                                            NoiseChunkGenerator generator, NoiseConfig noiseConfig, HeightLimitView heightView) {
         assertSurfaceY(blockY);
         int activeRadius = ACTIVE_RADIUS_BLOCKS;
         boolean overrideDisabled = Boolean.getBoolean("latitude.disableRadiusOverride");
@@ -552,7 +662,12 @@ public final class LatitudeBiomes {
         }
 
         int landBandIndex = latitudeBandIndexWithBlend(blockX, blockZ, effectiveRadius, zone, t);
-        boolean mountainLike = landBandIndex == BAND_TEMPERATE && isMountainLike(sampler, blockX, blockZ);
+        boolean mountainNoiseLike = landBandIndex == BAND_TEMPERATE && isMountainLike(sampler, blockX, blockZ);
+        PreviewTerrain preview = previewTerrain(generator, noiseConfig, heightView, blockX, blockZ);
+        int seaLevel = previewSeaLevel(generator);
+        boolean previewHeightHigh = preview.centerHeight >= (seaLevel + PREVIEW_HEIGHT_MARGIN_BLOCKS);
+        boolean previewRuggedHigh = preview.robustDelta >= WINDSWEPT_RUGGED_THRESH;
+        boolean mountainLike = mountainNoiseLike && (previewHeightHigh || previewRuggedHigh);
         boolean forcedBadlands = false;
         RegistryEntry<Biome> chosen = null;
         if (landBandIndex == BAND_TROPICAL && isAridTropicalStep(blockX, blockZ, t) && badlandsPatchHere(WORLD_SEED, blockX, blockZ)) {
@@ -633,10 +748,17 @@ public final class LatitudeBiomes {
                             "minecraft:windswept_hills",
                             "minecraft:stony_peaks");
                 }
+                if (isBiomeId(chosen, "minecraft:windswept_savanna")) {
+                    chosen = biome(biomeRegistry, "minecraft:savanna_plateau");
+                }
             }
             sanitized = sanitizeLandBiome(biomeRegistry, chosen, landBandIndex);
             safe = repickIfSurfaceCave(biomeRegistry, base, sanitized, blockX, blockZ, t, landBandIndex);
             out = applyLandOverrides(biomeRegistry, safe, blockX, blockZ, landBandIndex);
+            if (isBiomeId(out, "minecraft:windswept_savanna")) {
+                out = biome(biomeRegistry, "minecraft:savanna_plateau");
+            }
+            out = applySavannaWindsweptGate(biomeRegistry, out, preview.robustDelta);
         }
         if (landBandIndex == BAND_EQUATOR || landBandIndex == BAND_TROPICAL) {
             if (isColdBiome(out)) {
@@ -657,6 +779,12 @@ public final class LatitudeBiomes {
 
     public static RegistryEntry<Biome> pick(Collection<RegistryEntry<Biome>> biomePool, RegistryEntry<Biome> base, int blockX, int blockZ, int blockY, int borderRadiusBlocks,
                                             MultiNoiseUtil.MultiNoiseSampler sampler, String callerContext) {
+        return pick(biomePool, base, blockX, blockZ, blockY, borderRadiusBlocks, sampler, callerContext, null, null, null);
+    }
+
+    public static RegistryEntry<Biome> pick(Collection<RegistryEntry<Biome>> biomePool, RegistryEntry<Biome> base, int blockX, int blockZ, int blockY, int borderRadiusBlocks,
+                                            MultiNoiseUtil.MultiNoiseSampler sampler, String callerContext,
+                                            NoiseChunkGenerator generator, NoiseConfig noiseConfig, HeightLimitView heightView) {
         assertSurfaceY(blockY);
         int activeRadius = ACTIVE_RADIUS_BLOCKS;
         boolean overrideDisabled = Boolean.getBoolean("latitude.disableRadiusOverride");
@@ -706,7 +834,12 @@ public final class LatitudeBiomes {
         }
 
         int landBandIndex = latitudeBandIndexWithBlend(blockX, blockZ, effectiveRadius, zone, t);
-        boolean mountainLike = landBandIndex == BAND_TEMPERATE && isMountainLike(sampler, blockX, blockZ);
+        boolean mountainNoiseLike = landBandIndex == BAND_TEMPERATE && isMountainLike(sampler, blockX, blockZ);
+        PreviewTerrain preview = previewTerrain(generator, noiseConfig, heightView, blockX, blockZ);
+        int seaLevel = previewSeaLevel(generator);
+        boolean previewHeightHigh = preview.centerHeight >= (seaLevel + PREVIEW_HEIGHT_MARGIN_BLOCKS);
+        boolean previewRuggedHigh = preview.robustDelta >= WINDSWEPT_RUGGED_THRESH;
+        boolean mountainLike = mountainNoiseLike && (previewHeightHigh || previewRuggedHigh);
         boolean forcedBadlands = false;
         RegistryEntry<Biome> chosen = null;
         if (landBandIndex == BAND_TROPICAL && isAridTropicalStep(blockX, blockZ, t) && badlandsPatchHere(WORLD_SEED, blockX, blockZ)) {
@@ -777,10 +910,23 @@ public final class LatitudeBiomes {
                             "minecraft:windswept_hills",
                             "minecraft:stony_peaks");
                 }
+                if (isBiomeId(chosen, "minecraft:windswept_savanna")) {
+                    RegistryEntry<Biome> plateau = entryById(biomePool, "minecraft:savanna_plateau");
+                    if (plateau != null) {
+                        chosen = plateau;
+                    }
+                }
             }
             sanitized = sanitizeLandBiome(biomePool, chosen, landBandIndex);
             safe = repickIfSurfaceCave(biomePool, base, sanitized, blockX, blockZ, t, landBandIndex);
             out = applyLandOverrides(biomePool, safe, blockX, blockZ, landBandIndex);
+            if (isBiomeId(out, "minecraft:windswept_savanna")) {
+                RegistryEntry<Biome> plateau = entryById(biomePool, "minecraft:savanna_plateau");
+                if (plateau != null) {
+                    out = plateau;
+                }
+            }
+            out = applySavannaWindsweptGate(biomePool, out, preview.robustDelta);
         }
         if (landBandIndex == BAND_EQUATOR || landBandIndex == BAND_TROPICAL) {
             if (isColdBiome(out)) {

@@ -79,6 +79,8 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
     @Unique
     private static final String GLOBE_SETTINGS_CHECKED =
             "globe:overworld|globe:overworld_xsmall|globe:overworld_small|globe:overworld_regular|globe:overworld_large|globe:overworld_massive";
+    @Unique
+    private static final ThreadLocal<NoiseConfig> globe$noiseConfigTL = new ThreadLocal<>();
 
     // Only apply Latitude to your globe overworld settings (keeps Nether/End sane).
     @Unique
@@ -196,6 +198,7 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
     )
     private void globe$captureStructureAccessor(Blender blender, NoiseConfig noiseConfig, StructureAccessor structureAccessor, Chunk chunk, CallbackInfo ci) {
         globe$structureAccessorTL.set(structureAccessor);
+        globe$noiseConfigTL.set(noiseConfig);
     }
 
     @Inject(
@@ -204,6 +207,7 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
     )
     private void globe$clearStructureAccessor(Blender blender, NoiseConfig noiseConfig, StructureAccessor structureAccessor, Chunk chunk, CallbackInfo ci) {
         globe$structureAccessorTL.remove();
+        globe$noiseConfigTL.remove();
     }
 
     /**
@@ -270,7 +274,8 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
                 boolean deepDarkIllegal = isDeepDark(biomes, current) && blockY > -16;
                 if (hardDeck || tooHigh || deepDarkIllegal) {
                     RegistryEntry<Biome> replacement = pickSurfaceReplacement(
-                            biomes, base, blockX, blockZ, blockY, borderRadiusBlocks, sampler);
+                            biomes, base, blockX, blockZ, blockY, borderRadiusBlocks, sampler,
+                            (NoiseChunkGenerator)(Object) this, globe$noiseConfigTL.get(), chunk);
                     if (DEBUG_CAVE_CLAMP) {
                         LOGGER.info("[Latitude] Clamped {} at x={} y={} z={} (hardDeckY=0 maxY={} deepDarkIllegal={}) -> {}",
                                 biomeId(biomes, current), blockX, blockY, blockZ,
@@ -284,7 +289,8 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
 
             // BlockY is forwarded so LatitudeBiomes can compute the upland ramp while horizontal selection remains unchanged.
             try {
-                picked = LatitudeBiomes.pick(biomes, base, blockX, blockZ, blockY, borderRadiusBlocks, sampler, "MIXIN");
+                picked = LatitudeBiomes.pick(biomes, base, blockX, blockZ, blockY, borderRadiusBlocks, sampler, "MIXIN",
+                        (NoiseChunkGenerator)(Object) this, globe$noiseConfigTL.get(), chunk);
             } catch (Throwable t) {
                 logPickFailOnce(blockX, blockZ, "exception", t.toString());
                 if (DEBUG_BIOME_PICK) {
@@ -320,11 +326,13 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
 
     @Unique
     private static RegistryEntry<Biome> pickSurfaceReplacement(Registry<Biome> biomes, RegistryEntry<Biome> base,
-                                                               int blockX, int blockZ, int blockY, int borderRadiusBlocks,
-                                                               MultiNoiseUtil.MultiNoiseSampler sampler) {
+                                                                int blockX, int blockZ, int blockY, int borderRadiusBlocks,
+                                                                MultiNoiseUtil.MultiNoiseSampler sampler,
+                                                                NoiseChunkGenerator generator, NoiseConfig noiseConfig, Chunk heightView) {
         RegistryEntry<Biome> pick;
         try {
-            pick = LatitudeBiomes.pick(biomes, base, blockX, blockZ, blockY, borderRadiusBlocks, sampler, "CAVE_CLAMP");
+            pick = LatitudeBiomes.pick(biomes, base, blockX, blockZ, blockY, borderRadiusBlocks, sampler, "CAVE_CLAMP",
+                    generator, noiseConfig, heightView);
         } catch (Throwable t) {
             pick = null;
             logPickFailOnce(blockX, blockZ, "clamp_exception", t.toString());
