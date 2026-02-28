@@ -1,7 +1,7 @@
 param(
   [long]$Seed = 0,
   [ValidateSet("itty","tiny","small","regular","large","ginormous")][string]$Size="small",
-  [string]$Steps="128,64,32",
+  [string]$Steps="128,64,32,16",
   [int]$Y=64,
   [string]$Layers="biomes,bands,temperature,humidity",
   [string]$Overlays="lat10,bandEdges",
@@ -34,7 +34,8 @@ $argsParts = @(
   "--y", "$Y",
   "--seed", "$Seed",
   "--layers", $Layers,
-  "--overlay", $Overlays
+  "--overlay", $Overlays,
+  "--emitBiomeIndex"
 )
 foreach ($m in $maskList) {
   $argsParts += @("--mask", $m)
