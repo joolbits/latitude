@@ -270,7 +270,7 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
                 boolean deepDarkIllegal = isDeepDark(biomes, current) && blockY > -16;
                 if (hardDeck || tooHigh || deepDarkIllegal) {
                     RegistryEntry<Biome> replacement = pickSurfaceReplacement(
-                            biomes, base, blockX, blockZ, borderRadiusBlocks, sampler);
+                            biomes, base, blockX, blockZ, blockY, borderRadiusBlocks, sampler);
                     if (DEBUG_CAVE_CLAMP) {
                         LOGGER.info("[Latitude] Clamped {} at x={} y={} z={} (hardDeckY=0 maxY={} deepDarkIllegal={}) -> {}",
                                 biomeId(biomes, current), blockX, blockY, blockZ,
@@ -282,9 +282,9 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
 
             RegistryEntry<Biome> picked = null;
 
-            // IMPORTANT: force Y=0. Passing quartY reintroduces warm_ocean-on-land + harsh seams/infinite plains
+            // BlockY is forwarded so LatitudeBiomes can compute the upland ramp while horizontal selection remains unchanged.
             try {
-                picked = LatitudeBiomes.pick(biomes, base, blockX, blockZ, borderRadiusBlocks, sampler, "MIXIN");
+                picked = LatitudeBiomes.pick(biomes, base, blockX, blockZ, blockY, borderRadiusBlocks, sampler, "MIXIN");
             } catch (Throwable t) {
                 logPickFailOnce(blockX, blockZ, "exception", t.toString());
                 if (DEBUG_BIOME_PICK) {
@@ -320,11 +320,11 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
 
     @Unique
     private static RegistryEntry<Biome> pickSurfaceReplacement(Registry<Biome> biomes, RegistryEntry<Biome> base,
-                                                               int blockX, int blockZ, int borderRadiusBlocks,
+                                                               int blockX, int blockZ, int blockY, int borderRadiusBlocks,
                                                                MultiNoiseUtil.MultiNoiseSampler sampler) {
         RegistryEntry<Biome> pick;
         try {
-            pick = LatitudeBiomes.pick(biomes, base, blockX, blockZ, borderRadiusBlocks, sampler, "CAVE_CLAMP");
+            pick = LatitudeBiomes.pick(biomes, base, blockX, blockZ, blockY, borderRadiusBlocks, sampler, "CAVE_CLAMP");
         } catch (Throwable t) {
             pick = null;
             logPickFailOnce(blockX, blockZ, "clamp_exception", t.toString());

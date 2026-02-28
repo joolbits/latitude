@@ -120,9 +120,10 @@ public final class LatitudeDevCommand {
             BandTarget band = BandTarget.fromZ(radius, player.getZ());
             String biomeId = biomeId(world.getBiome(pos));
             boolean mountainLike = isMountainLikeBiome(biomeId);
+            double uplandT = LatitudeBiomes.uplandRampForY(pos.getY());
 
             source.sendFeedback(() -> Text.literal(String.format(Locale.ROOT,
-                    "[latdev] here x=%d y=%d z=%d deg=%.2f band=%s(idx=%d) cut=%.2f..%.2f t=%.4f mtnLike=%s biome=%s",
+                    "[latdev] here x=%d y=%d z=%d deg=%.2f band=%s(idx=%d) cut=%.2f..%.2f t=%.4f mtnLike=%s uplandT=%.3f biome=%s",
                     pos.getX(),
                     pos.getY(),
                     pos.getZ(),
@@ -133,6 +134,7 @@ public final class LatitudeDevCommand {
                     band.highDeg,
                     t,
                     mountainLike,
+                    uplandT,
                     biomeId)), false);
             return 1;
         } catch (Exception e) {
