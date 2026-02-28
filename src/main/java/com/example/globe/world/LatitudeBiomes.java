@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Supplier;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -134,6 +135,21 @@ public final class LatitudeBiomes {
         }
     }
 
+    private static RegistryEntry<Biome> pickTemperateUplandBiome(Collection<RegistryEntry<Biome>> biomes, int blockX, int blockZ) {
+        int poolSize = TEMPERATE_UPLAND_BIOMES.length;
+        if (poolSize == 0) {
+            return null;
+        }
+        double n = ValueNoise2D.sampleBlocks(WORLD_SEED ^ UPLAND_POOL_SALT, blockX, blockZ, UPLAND_SCALE_BLOCKS);
+        int idx = (int) Math.floor(n * (double) poolSize);
+        if (idx < 0) {
+            idx = 0;
+        } else if (idx >= poolSize) {
+            idx = poolSize - 1;
+        }
+        return entryById(biomes, TEMPERATE_UPLAND_BIOMES[idx]);
+    }
+
     private static RegistryEntry<Biome> pickBeachForBand(Collection<RegistryEntry<Biome>> biomes, RegistryEntry<Biome> base, int blockX, int blockZ, int bandIndex) {
         if (bandIndex <= 2) {
             RegistryEntry<Biome> entry = entryById(biomes, "minecraft:beach");
@@ -226,6 +242,9 @@ public final class LatitudeBiomes {
     private static final AtomicInteger LEAK_LOG_COUNT = new AtomicInteger();
     private static final AtomicBoolean RADIUS_MISMATCH_LOGGED = new AtomicBoolean(false);
     private static final AtomicBoolean SUBPOLAR_JUNGLE_TRACE_LOGGED = new AtomicBoolean(false);
+    private static final AtomicBoolean SURFACE_Y_LOGGED = new AtomicBoolean(false);
+    // Surface classification is column-stable. Never use caller Y for these.
+    private static final int SURFACE_CLASSIFY_Y = 96; // constant sampling layer
     private static final int LEAK_LOG_LIMIT = Integer.getInteger("latitude.leakLogLimit", 200);
     private static final ThreadLocal<String> LAST_SELECTION_PATH = new ThreadLocal<>();
     private static final String PATH_TAG_PICK = "tag-based pick";
@@ -247,6 +266,10 @@ public final class LatitudeBiomes {
 
     public static int getActiveRadiusBlocks() {
         return ACTIVE_RADIUS_BLOCKS;
+    }
+
+    public static double uplandRampForY(int blockY) {
+        return uplandT(SURFACE_CLASSIFY_Y);
     }
 
     private static final String MANGROVE_ID = "minecraft:mangrove_swamp";
@@ -364,6 +387,17 @@ public final class LatitudeBiomes {
             "minecraft:mangrove_swamp"
     );
 
+    private static final int UPLAND_MIN_Y = 112;
+    private static final int UPLAND_FULL_Y = 145;
+    private static final int UPLAND_SCALE_BLOCKS = 2048;
+    private static final long UPLAND_ROLL_SALT = 0x1CEB0D03L;
+    private static final long UPLAND_POOL_SALT = 0x1CEB0D04L;
+    private static final String[] TEMPERATE_UPLAND_BIOMES = {
+            "minecraft:meadow",
+            "minecraft:windswept_hills",
+            "minecraft:windswept_forest"
+    };
+
     // --- Blend noise helpers (chunk-stable, 2D, smooth "blobs") ---
 
     private static long mix64(long z) {
@@ -451,8 +485,9 @@ public final class LatitudeBiomes {
         return nx0 + (nx1 - nx0) * v;
     }
 
-    public static RegistryEntry<Biome> pick(Registry<Biome> biomeRegistry, RegistryEntry<Biome> base, int blockX, int blockZ, int borderRadiusBlocks,
+    public static RegistryEntry<Biome> pick(Registry<Biome> biomeRegistry, RegistryEntry<Biome> base, int blockX, int blockZ, int blockY, int borderRadiusBlocks,
                                             MultiNoiseUtil.MultiNoiseSampler sampler, String callerContext) {
+        assertSurfaceY(blockY);
         int activeRadius = ACTIVE_RADIUS_BLOCKS;
         boolean overrideDisabled = Boolean.getBoolean("latitude.disableRadiusOverride");
 
@@ -508,6 +543,7 @@ public final class LatitudeBiomes {
         }
 
         int landBandIndex = latitudeBandIndexWithBlend(blockX, blockZ, effectiveRadius, zone, t);
+        boolean mountainLike = landBandIndex == BAND_TEMPERATE && isMountainLike(sampler, blockX, blockZ);
         boolean forcedBadlands = false;
         RegistryEntry<Biome> chosen = null;
         if (landBandIndex == BAND_TROPICAL && isAridTropicalStep(blockX, blockZ, t) && badlandsPatchHere(WORLD_SEED, blockX, blockZ)) {
@@ -525,7 +561,7 @@ public final class LatitudeBiomes {
         if (chosen == null && (landBandIndex == BAND_EQUATOR || landBandIndex == BAND_TROPICAL) && sampler != null) {
             int noiseX = blockX >> 2;
             int noiseZ = blockZ >> 2;
-            MultiNoiseUtil.NoiseValuePoint p = sampler.sample(noiseX, 0, noiseZ);
+            MultiNoiseUtil.NoiseValuePoint p = sampler.sample(noiseX, SURFACE_CLASSIFY_Y >> 2, noiseZ);
             double cont = MultiNoiseUtil.toFloat(p.continentalnessNoise());
             double erosion = MultiNoiseUtil.toFloat(p.erosionNoise());
             double weird = MultiNoiseUtil.toFloat(p.weirdnessNoise());
@@ -544,7 +580,9 @@ public final class LatitudeBiomes {
             chosen = switch (landBandIndex) {
                 case BAND_EQUATOR -> pickFromWeightedTags(biomeRegistry, base, blockX, blockZ, BAND_EQUATOR, 0x1A21, LAT_EQUATOR_PRIMARY, LAT_EQUATOR_SECONDARY, LAT_EQUATOR_ACCENT);
                 case BAND_TROPICAL -> pickTropicalGradient(biomeRegistry, base, blockX, blockZ, t);
-                case BAND_TEMPERATE -> pickFromWeightedTags(biomeRegistry, base, blockX, blockZ, BAND_TEMPERATE, 0x2B32, LAT_TEMPERATE_PRIMARY, LAT_TEMPERATE_SECONDARY, LAT_TEMPERATE_ACCENT);
+                case BAND_TEMPERATE -> pickTemperateLand(biomeRegistry, blockX, blockZ, blockY,
+                        () -> pickFromWeightedTags(biomeRegistry, base, blockX, blockZ, BAND_TEMPERATE, 0x2B32, LAT_TEMPERATE_PRIMARY, LAT_TEMPERATE_SECONDARY, LAT_TEMPERATE_ACCENT),
+                        mountainLike);
                 case BAND_SUBPOLAR -> pickSubpolarWithRamp(biomeRegistry, base, blockX, blockZ, t, BAND_SUBPOLAR, 0x3C43, LAT_SUBPOLAR_PRIMARY, LAT_SUBPOLAR_SECONDARY, LAT_SUBPOLAR_ACCENT);
                 default -> pickFromWeightedTags(biomeRegistry, base, blockX, blockZ, BAND_POLAR, 0x4D54, LAT_POLAR_PRIMARY, LAT_POLAR_SECONDARY, LAT_POLAR_ACCENT);
             };
@@ -577,7 +615,7 @@ public final class LatitudeBiomes {
                     chosen = pickSwampFallback(biomeRegistry, base, blockX, blockZ, t, landBandIndex);
                 }
             }
-            if (landBandIndex == BAND_TEMPERATE && isMountainLike(sampler, blockX, blockZ)) {
+            if (mountainLike) {
                 chosen = pickFromTagNoiseOrBase(biomeRegistry, LAT_TEMPERATE_MOUNTAIN, base, blockX, blockZ, landBandIndex);
                 if (isBiomeId(chosen, "minecraft:cherry_grove") && !rollChance(blockX, blockZ, 0xC7E22E55, 6L)) {
                     chosen = pickFrom(biomeRegistry, blockX, blockZ, landBandIndex,
@@ -608,8 +646,9 @@ public final class LatitudeBiomes {
         return out;
     }
 
-    public static RegistryEntry<Biome> pick(Collection<RegistryEntry<Biome>> biomePool, RegistryEntry<Biome> base, int blockX, int blockZ, int borderRadiusBlocks,
+    public static RegistryEntry<Biome> pick(Collection<RegistryEntry<Biome>> biomePool, RegistryEntry<Biome> base, int blockX, int blockZ, int blockY, int borderRadiusBlocks,
                                             MultiNoiseUtil.MultiNoiseSampler sampler, String callerContext) {
+        assertSurfaceY(blockY);
         int activeRadius = ACTIVE_RADIUS_BLOCKS;
         boolean overrideDisabled = Boolean.getBoolean("latitude.disableRadiusOverride");
 
@@ -658,6 +697,7 @@ public final class LatitudeBiomes {
         }
 
         int landBandIndex = latitudeBandIndexWithBlend(blockX, blockZ, effectiveRadius, zone, t);
+        boolean mountainLike = landBandIndex == BAND_TEMPERATE && isMountainLike(sampler, blockX, blockZ);
         boolean forcedBadlands = false;
         RegistryEntry<Biome> chosen = null;
         if (landBandIndex == BAND_TROPICAL && isAridTropicalStep(blockX, blockZ, t) && badlandsPatchHere(WORLD_SEED, blockX, blockZ)) {
@@ -671,7 +711,7 @@ public final class LatitudeBiomes {
         if (chosen == null && (landBandIndex == BAND_EQUATOR || landBandIndex == BAND_TROPICAL) && sampler != null) {
             int noiseX = blockX >> 2;
             int noiseZ = blockZ >> 2;
-            MultiNoiseUtil.NoiseValuePoint p = sampler.sample(noiseX, 0, noiseZ);
+            MultiNoiseUtil.NoiseValuePoint p = sampler.sample(noiseX, SURFACE_CLASSIFY_Y >> 2, noiseZ);
             double cont = MultiNoiseUtil.toFloat(p.continentalnessNoise());
             double erosion = MultiNoiseUtil.toFloat(p.erosionNoise());
             double weird = MultiNoiseUtil.toFloat(p.weirdnessNoise());
@@ -685,7 +725,9 @@ public final class LatitudeBiomes {
             chosen = switch (landBandIndex) {
                 case BAND_EQUATOR -> pickFromWeightedTags(biomePool, base, blockX, blockZ, BAND_EQUATOR, 0x1A21, LAT_EQUATOR_PRIMARY, LAT_EQUATOR_SECONDARY, LAT_EQUATOR_ACCENT);
                 case BAND_TROPICAL -> pickTropicalGradient(biomePool, base, blockX, blockZ, t);
-                case BAND_TEMPERATE -> pickFromWeightedTags(biomePool, base, blockX, blockZ, BAND_TEMPERATE, 0x2B32, LAT_TEMPERATE_PRIMARY, LAT_TEMPERATE_SECONDARY, LAT_TEMPERATE_ACCENT);
+                case BAND_TEMPERATE -> pickTemperateLand(biomePool, blockX, blockZ, blockY,
+                        () -> pickFromWeightedTags(biomePool, base, blockX, blockZ, BAND_TEMPERATE, 0x2B32, LAT_TEMPERATE_PRIMARY, LAT_TEMPERATE_SECONDARY, LAT_TEMPERATE_ACCENT),
+                        mountainLike);
                 case BAND_SUBPOLAR -> pickSubpolarWithRamp(biomePool, base, blockX, blockZ, t, BAND_SUBPOLAR, 0x3C43, LAT_SUBPOLAR_PRIMARY, LAT_SUBPOLAR_SECONDARY, LAT_SUBPOLAR_ACCENT);
                 default -> pickFromWeightedTags(biomePool, base, blockX, blockZ, BAND_POLAR, 0x4D54, LAT_POLAR_PRIMARY, LAT_POLAR_SECONDARY, LAT_POLAR_ACCENT);
             };
@@ -717,7 +759,7 @@ public final class LatitudeBiomes {
                     chosen = pickSwampFallback(biomePool, base, blockX, blockZ, t, landBandIndex);
                 }
             }
-            if (landBandIndex == BAND_TEMPERATE && isMountainLike(sampler, blockX, blockZ)) {
+            if (mountainLike) {
                 chosen = pickFromTagNoiseOrBase(biomePool, LAT_TEMPERATE_MOUNTAIN, base, blockX, blockZ, landBandIndex);
                 if (isBiomeId(chosen, "minecraft:cherry_grove") && !rollChance(blockX, blockZ, 0xC7E22E55, 6L)) {
                     chosen = pickFromFallbacks(biomePool, base,
@@ -1074,6 +1116,21 @@ public final class LatitudeBiomes {
         return Math.max(lo, Math.min(hi, v));
     }
 
+    private static double uplandT(int blockY) {
+        if (UPLAND_FULL_Y <= UPLAND_MIN_Y) {
+            return blockY >= UPLAND_FULL_Y ? 1.0 : 0.0;
+        }
+        double raw = (double) (blockY - UPLAND_MIN_Y) / (double) (UPLAND_FULL_Y - UPLAND_MIN_Y);
+        raw = clamp(raw, 0.0, 1.0);
+        return smoothstep(raw);
+    }
+
+    private static void assertSurfaceY(int blockY) {
+        if (DEBUG_BIOMES && blockY != SURFACE_CLASSIFY_Y && SURFACE_Y_LOGGED.compareAndSet(false, true)) {
+            LOGGER.debug("[Latitude] surface pick ignoring callerY={} (using {})", blockY, SURFACE_CLASSIFY_Y);
+        }
+    }
+
     private static double latitudeDegreesFromRadius(int blockZ, int radius) {
         if (radius <= 0) {
             return 0.0;
@@ -1358,6 +1415,61 @@ public final class LatitudeBiomes {
         }
         setSelectionPath(PATH_TAG_PICK);
         return entries.get(idx);
+    }
+
+    private static RegistryEntry<Biome> pickTemperateLand(Registry<Biome> biomes,
+                                                          int blockX, int blockZ, int blockY,
+                                                          Supplier<RegistryEntry<Biome>> defaultPick,
+                                                          boolean mountainLike) {
+        double ramp = uplandT(SURFACE_CLASSIFY_Y);
+        if (mountainLike || ramp <= 0.0) {
+            return defaultPick.get();
+        }
+        double roll = ValueNoise2D.sampleBlocks(WORLD_SEED ^ UPLAND_ROLL_SALT, blockX, blockZ, UPLAND_SCALE_BLOCKS);
+        if (roll < ramp) {
+            RegistryEntry<Biome> upland = pickTemperateUplandBiome(biomes, blockX, blockZ);
+            if (upland != null) {
+                return upland;
+            }
+        }
+        return defaultPick.get();
+    }
+
+    private static RegistryEntry<Biome> pickTemperateLand(Collection<RegistryEntry<Biome>> biomes,
+                                                          int blockX, int blockZ, int blockY,
+                                                          Supplier<RegistryEntry<Biome>> defaultPick,
+                                                          boolean mountainLike) {
+        double ramp = uplandT(SURFACE_CLASSIFY_Y);
+        if (mountainLike || ramp <= 0.0) {
+            return defaultPick.get();
+        }
+        double roll = ValueNoise2D.sampleBlocks(WORLD_SEED ^ UPLAND_ROLL_SALT, blockX, blockZ, UPLAND_SCALE_BLOCKS);
+        if (roll < ramp) {
+            RegistryEntry<Biome> upland = pickTemperateUplandBiome(biomes, blockX, blockZ);
+            if (upland != null) {
+                return upland;
+            }
+        }
+        return defaultPick.get();
+    }
+
+    private static RegistryEntry<Biome> pickTemperateUplandBiome(Registry<Biome> biomes, int blockX, int blockZ) {
+        int poolSize = TEMPERATE_UPLAND_BIOMES.length;
+        if (poolSize == 0) {
+            return null;
+        }
+        double n = ValueNoise2D.sampleBlocks(WORLD_SEED ^ UPLAND_POOL_SALT, blockX, blockZ, UPLAND_SCALE_BLOCKS);
+        int idx = (int) Math.floor(n * (double) poolSize);
+        if (idx < 0) {
+            idx = 0;
+        } else if (idx >= poolSize) {
+            idx = poolSize - 1;
+        }
+        try {
+            return biome(biomes, TEMPERATE_UPLAND_BIOMES[idx]);
+        } catch (Throwable ignored) {
+            return null;
+        }
     }
 
     private static RegistryEntry<Biome> pickFromTagNoiseOrBaseFiltered(Collection<RegistryEntry<Biome>> biomes, TagKey<Biome> tag, RegistryEntry<Biome> base,
@@ -2043,7 +2155,7 @@ public final class LatitudeBiomes {
         }
         int noiseX = blockX >> 2;
         int noiseZ = blockZ >> 2;
-        MultiNoiseUtil.NoiseValuePoint point = sampler.sample(noiseX, 0, noiseZ);
+        MultiNoiseUtil.NoiseValuePoint point = sampler.sample(noiseX, SURFACE_CLASSIFY_Y >> 2, noiseZ);
         double cont = MultiNoiseUtil.toFloat(point.continentalnessNoise());
         double erosion = MultiNoiseUtil.toFloat(point.erosionNoise());
         double weirdness = MultiNoiseUtil.toFloat(point.weirdnessNoise());
@@ -2064,7 +2176,7 @@ public final class LatitudeBiomes {
         }
         int noiseX = blockX >> 2;
         int noiseZ = blockZ >> 2;
-        MultiNoiseUtil.NoiseValuePoint point = sampler.sample(noiseX, 0, noiseZ);
+        MultiNoiseUtil.NoiseValuePoint point = sampler.sample(noiseX, SURFACE_CLASSIFY_Y >> 2, noiseZ);
         double cont = MultiNoiseUtil.toFloat(point.continentalnessNoise());
         double erosion = MultiNoiseUtil.toFloat(point.erosionNoise());
         double weirdness = MultiNoiseUtil.toFloat(point.weirdnessNoise());
@@ -2094,7 +2206,7 @@ public final class LatitudeBiomes {
         }
         int noiseX = blockX >> 2;
         int noiseZ = blockZ >> 2;
-        MultiNoiseUtil.NoiseValuePoint point = sampler.sample(noiseX, 0, noiseZ);
+        MultiNoiseUtil.NoiseValuePoint point = sampler.sample(noiseX, SURFACE_CLASSIFY_Y >> 2, noiseZ);
         double cont = MultiNoiseUtil.toFloat(point.continentalnessNoise());
         double erosion = MultiNoiseUtil.toFloat(point.erosionNoise());
         double weirdness = MultiNoiseUtil.toFloat(point.weirdnessNoise());

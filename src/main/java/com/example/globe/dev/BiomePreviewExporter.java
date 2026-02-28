@@ -121,6 +121,7 @@ public final class BiomePreviewExporter {
                             base,
                             blockX,
                             blockZ,
+                            y,
                             radiusBlocks,
                             sampler,
                             "BIOME_PNG");
