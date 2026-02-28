@@ -20,10 +20,10 @@ import net.minecraft.text.Text;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.ChunkPos;
 import net.minecraft.util.math.MathHelper;
+import net.minecraft.world.Heightmap;
 import net.minecraft.world.border.WorldBorder;
 import net.minecraft.world.biome.Biome;
 import net.minecraft.world.chunk.ChunkStatus;
-import net.minecraft.world.Heightmap;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -40,6 +40,8 @@ import java.util.concurrent.CompletableFuture;
 public final class LatitudeDevCommand {
     private static final List<String> TP_BAND_NAMES = List.of("equator", "tropics", "arid", "temperate", "subpolar", "polar");
     private static final List<String> TP_EDGE_NAMES = List.of("center", "low", "high");
+    private static final int WINDSWEPT_RUGGED_THRESH = 8;
+    private static final int WINDSWEPT_RUGGED_HYST = 2;
 
     private LatitudeDevCommand() {
     }
@@ -121,9 +123,14 @@ public final class LatitudeDevCommand {
             String biomeId = biomeId(world.getBiome(pos));
             boolean mountainLike = isMountainLikeBiome(biomeId);
             double uplandT = LatitudeBiomes.uplandRampForY(pos.getY());
+            double savUplandChance = Math.max(0.0, Math.min(1.0, uplandT));
+            boolean savUplandActive = savUplandChance > 0.0;
+            String savannaDebug = LatitudeBiomes.debugSavannaUplandDecision(pos.getX(), pos.getZ(), pos.getY());
+            RuggednessSensor.Measurement ruggedness = RuggednessSensor.measure(world, pos, 24);
+            double bumpinessScore = ruggedness.robustDelta(); // robust second-highest delta
 
             source.sendFeedback(() -> Text.literal(String.format(Locale.ROOT,
-                    "[latdev] here x=%d y=%d z=%d deg=%.2f band=%s(idx=%d) cut=%.2f..%.2f t=%.4f mtnLike=%s uplandT=%.3f biome=%s",
+                    "[latdev] here x=%d y=%d z=%d deg=%.2f band=%s(idx=%d) cut=%.2f..%.2f t=%.4f mtnLike=%s uplandT=%.3f savUpland=%s chance=%.3f biome=%s",
                     pos.getX(),
                     pos.getY(),
                     pos.getZ(),
@@ -135,7 +142,37 @@ public final class LatitudeDevCommand {
                     t,
                     mountainLike,
                     uplandT,
+                    savUplandActive,
+                    savUplandChance,
                     biomeId)), false);
+            source.sendFeedback(() -> Text.literal("[latdev] here savUplandDebug " + savannaDebug), false);
+            source.sendFeedback(() -> Text.literal(String.format(Locale.ROOT,
+                    "[latdev] here rugged x=%d z=%d ring=%d topY[c=%d n=%d s=%d e=%d w=%d ne=%d nw=%d se=%d sw=%d] dMax=%d dMean=%.2f axis=%.2f robust=%d",
+                    pos.getX(),
+                    pos.getZ(),
+                    ruggedness.ringBlocks(),
+                    ruggedness.centerY(),
+                    ruggedness.northY(),
+                    ruggedness.southY(),
+                    ruggedness.eastY(),
+                    ruggedness.westY(),
+                    ruggedness.northEastY(),
+                    ruggedness.northWestY(),
+                    ruggedness.southEastY(),
+                    ruggedness.southWestY(),
+                    ruggedness.maxAbsDelta(),
+                    ruggedness.meanAbsDelta(),
+                    ruggedness.axisGradient(),
+                    ruggedness.robustDelta())), false);
+            source.sendFeedback(() -> Text.literal(String.format(Locale.ROOT,
+                    "[latdev] dashboard bumpiness=%.2f robustDelta=%d dMax=%d dMean=%.2f thresh=%d hyst=%d → windswept_if>=%.0f",
+                    bumpinessScore,
+                    ruggedness.robustDelta(),
+                    ruggedness.maxAbsDelta(),
+                    ruggedness.meanAbsDelta(),
+                    WINDSWEPT_RUGGED_THRESH,
+                    WINDSWEPT_RUGGED_HYST,
+                    (double) WINDSWEPT_RUGGED_THRESH + WINDSWEPT_RUGGED_HYST)), false);
             return 1;
         } catch (Exception e) {
             ctx.getSource().sendError(Text.literal("[latdev] here error: " + e.getMessage()));
