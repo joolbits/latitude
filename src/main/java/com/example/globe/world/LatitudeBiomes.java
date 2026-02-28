@@ -272,6 +272,12 @@ public final class LatitudeBiomes {
         return uplandT(SURFACE_CLASSIFY_Y);
     }
 
+    public static String debugSavannaUplandDecision(int blockX, int blockZ, int blockY) {
+        return String.format(java.util.Locale.ROOT,
+                "savanna upland gate: x=%d z=%d y=%d ruggedThresh=%d hyst=%d",
+                blockX, blockZ, blockY, WINDSWEPT_RUGGED_THRESH, WINDSWEPT_RUGGED_HYST);
+    }
+
     private static final String MANGROVE_ID = "minecraft:mangrove_swamp";
     private static final String SWAMP_ID = "minecraft:swamp";
     private static final String BADLANDS_ID = "minecraft:badlands";
@@ -390,6 +396,9 @@ public final class LatitudeBiomes {
     private static final int UPLAND_MIN_Y = 112;
     private static final int UPLAND_FULL_Y = 145;
     private static final int UPLAND_SCALE_BLOCKS = 2048;
+    private static final int SAVANNA_RUGGED_RING_BLOCKS = 24;
+    private static final int WINDSWEPT_RUGGED_THRESH = 8;
+    private static final int WINDSWEPT_RUGGED_HYST = 2;
     private static final long UPLAND_ROLL_SALT = 0x1CEB0D03L;
     private static final long UPLAND_POOL_SALT = 0x1CEB0D04L;
     private static final String[] TEMPERATE_UPLAND_BIOMES = {
