@@ -1,0 +1,1983 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Atlas Viewer</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 16px; }
+    .row { display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin-bottom:12px; }
+    select, input, button { padding:6px 8px; }
+    .wrap { display:flex; gap:16px; align-items:flex-start; flex-wrap:wrap; }
+    .pane { border:1px solid #ddd; padding:12px; border-radius:10px; }
+    .stage { position:relative; display:inline-block; border:1px solid #eee; background:#111; }
+    .stage canvas, .stage img { image-rendering: pixelated; position:absolute; left:0; top:0; width:100%; height:100%; }
+    .stage img { pointer-events:none; }
+    #continentalnessCanvas, #overlayCanvas, #temperatureThresholdCanvas, #humidityThresholdCanvas, #bandViolationCanvas, #differenceCanvas, #maskCanvas { pointer-events:none; }
+    .mask-hidden { display:none; }
+    .muted { color:#666; font-size:12px; }
+    .biome-controls { margin-top:10px; min-width:340px; max-width:520px; }
+    .biome-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(180px, 1fr)); gap:6px; margin-top:8px; max-height:320px; overflow:auto; }
+    .biome-chip { display:flex; align-items:center; gap:8px; border:1px solid #ccc; border-radius:8px; background:#fff; text-align:left; cursor:pointer; }
+    .biome-chip .swatch { width:12px; height:12px; border-radius:2px; border:1px solid rgba(0,0,0,0.25); flex:0 0 auto; }
+    .biome-chip.active { border-color:#111; box-shadow:0 0 0 1px #111 inset; background:#f6f6f6; }
+    .legend-sections { display:flex; flex-direction:column; gap:10px; max-width:520px; }
+    .legend-section { border:1px solid #ddd; border-radius:8px; padding:8px 10px; background:#fafafa; }
+    .legend-section h4 { margin:0 0 6px 0; font-size:13px; }
+    .legend-list { margin:0; padding-left:18px; }
+    .legend-list li { margin:2px 0; font-size:13px; }
+    .legend-empty { color:#666; font-size:12px; }
+    .legend-kv { margin:0; display:grid; grid-template-columns:auto 1fr; gap:4px 10px; font-size:13px; }
+    .legend-kv dt { font-weight:600; }
+    .legend-kv dd { margin:0; }
+    .hist-panel { min-width:340px; max-width:520px; }
+    .hist-list { display:flex; flex-direction:column; gap:6px; }
+    .hist-row { display:grid; grid-template-columns:150px 70px 1fr; align-items:center; gap:8px; font-size:12px; }
+    .hist-row.with-delta { grid-template-columns:150px 70px 70px 1fr; }
+    .hist-name { display:flex; align-items:center; gap:6px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .hist-swatch { width:10px; height:10px; border:1px solid rgba(0,0,0,0.3); border-radius:2px; flex:0 0 auto; }
+    .hist-value { text-align:right; color:#333; font-variant-numeric: tabular-nums; }
+    .hist-delta { text-align:right; font-variant-numeric: tabular-nums; font-weight:600; }
+    .hist-delta.pos { color:#C62828; }
+    .hist-delta.neg { color:#1565C0; }
+    .hist-delta.zero { color:#666; }
+    .hist-bar { position:relative; height:10px; background:#ececec; border-radius:5px; overflow:hidden; }
+    .hist-fill { position:absolute; left:0; top:0; bottom:0; background:#5b8def; border-radius:5px; }
+    .hist-expected { position:absolute; top:0; bottom:0; width:2px; background:#111; opacity:0.8; }
+    .hist-muted { color:#666; font-size:12px; }
+    pre { max-width:520px; white-space:pre-wrap; word-break:break-word; margin:0; }
+  </style>
+</head>
+<body>
+  <div class="row">
+    <label>Step <select id="step"></select></label>
+    <label>Overlay <select id="overlay"></select></label>
+    <label>Opacity <input id="opacity" type="range" min="0" max="100" value="40" /></label>
+    <label><input id="showOverlay" type="checkbox" checked /> Show</label>
+    <label><input id="splitVertical" type="checkbox" /> Vertical split</label>
+    <label><input id="splitHorizontal" type="checkbox" /> Horizontal split</label>
+    <label>Divider <input id="splitDivider" type="range" min="5" max="95" value="50" /></label>
+    <label><input id="showDifferences" type="checkbox" /> Show Differences</label>
+    <label><input id="showTempThreshold" type="checkbox" /> Temp Threshold</label>
+    <label>Temp Min <input id="tempMinThreshold" type="range" min="-1" max="1" step="0.01" value="-1" /></label>
+    <label>Temp Max <input id="tempMaxThreshold" type="range" min="-1" max="1" step="0.01" value="1" /></label>
+    <span class="muted" id="tempThresholdLabel">Temp range: -1.00 to 1.00</span>
+    <label><input id="showHumidityThreshold" type="checkbox" /> Humidity Threshold</label>
+    <label>Humidity Min <input id="humidityMinThreshold" type="range" min="-1" max="1" step="0.01" value="-1" /></label>
+    <label>Humidity Max <input id="humidityMaxThreshold" type="range" min="-1" max="1" step="0.01" value="1" /></label>
+    <span class="muted" id="humidityThresholdLabel">Humidity range: -1.00 to 1.00</span>
+    <label><input id="showBandViolations" type="checkbox" /> Show Band Violations</label>
+    <span class="muted" id="bandViolationLabel">Band violations: off</span>
+    <label>Zoom <input id="zoom" type="number" value="1" min="1" max="8" /></label>
+    <label><input id="showContinentalness" type="checkbox" /> Continentalness</label>
+    <label>Cont Opacity <input id="continentalnessOpacity" type="range" min="0" max="100" value="50" /></label>
+    <button id="clearBiome" type="button">clear biome mask</button>
+    <button id="loadSecondSeed" type="button">Load Second Seed</button>
+    <input id="secondSeedPicker" type="file" webkitdirectory directory multiple style="display:none;" />
+    <button id="reload" type="button">reload legend</button>
+    <span class="muted" id="status"></span>
+    <span class="muted" id="datasetBStatus">Dataset B: not loaded</span>
+  </div>
+
+  <div class="wrap">
+    <div class="pane">
+      <div class="stage" id="stage">
+        <canvas id="baseCanvas"></canvas>
+        <canvas id="continentalnessCanvas" class="mask-hidden"></canvas>
+        <canvas id="overlayCanvas" class="mask-hidden"></canvas>
+        <canvas id="temperatureThresholdCanvas" class="mask-hidden"></canvas>
+        <canvas id="humidityThresholdCanvas" class="mask-hidden"></canvas>
+        <canvas id="bandViolationCanvas" class="mask-hidden"></canvas>
+        <canvas id="differenceCanvas" class="mask-hidden"></canvas>
+        <canvas id="maskCanvas" class="mask-hidden"></canvas>
+      </div>
+    </div>
+
+    <div class="pane biome-controls">
+      <strong>Biome overlays</strong>
+      <div class="muted" id="biomeHint">Load a step to populate biome toggles from biome_palette.json.</div>
+      <div class="muted" id="selectedBiome">Selected: none</div>
+      <div id="biomeToggles" class="biome-grid"></div>
+    </div>
+
+    <div class="pane hist-panel">
+      <details open>
+        <summary><strong>Biome Distribution</strong></summary>
+        <div class="hist-muted" id="biomeHistMeta">Awaiting biome index data...</div>
+        <div id="biomeHistogram" class="hist-list"></div>
+      </details>
+      <details style="margin-top:10px;" open>
+        <summary><strong>Band Distribution</strong></summary>
+        <div class="hist-muted" id="bandHistMeta">Awaiting legend.json...</div>
+        <div id="bandHistogram" class="hist-list"></div>
+      </details>
+    </div>
+
+    <div class="pane" style="min-width:340px;">
+      <strong>Legend (human-readable)</strong>
+      <div id="legendHuman" class="legend-sections">
+        <div class="legend-empty">Loading...</div>
+      </div>
+      <details style="margin-top:10px;">
+        <summary>Show raw legend.json</summary>
+        <pre id="legendRaw" style="margin-top:8px;">(raw legend loads after first step is selected)</pre>
+      </details>
+    </div>
+  </div>
+
+<script>
+const stepSel = document.getElementById("step");
+const overlaySel = document.getElementById("overlay");
+const baseCanvas = document.getElementById("baseCanvas");
+const continentalnessCanvas = document.getElementById("continentalnessCanvas");
+const overlayCanvas = document.getElementById("overlayCanvas");
+const temperatureThresholdCanvas = document.getElementById("temperatureThresholdCanvas");
+const humidityThresholdCanvas = document.getElementById("humidityThresholdCanvas");
+const bandViolationCanvas = document.getElementById("bandViolationCanvas");
+const differenceCanvas = document.getElementById("differenceCanvas");
+const maskCanvas = document.getElementById("maskCanvas");
+const opacity = document.getElementById("opacity");
+const showOverlay = document.getElementById("showOverlay");
+const splitVertical = document.getElementById("splitVertical");
+const splitHorizontal = document.getElementById("splitHorizontal");
+const splitDivider = document.getElementById("splitDivider");
+const showDifferences = document.getElementById("showDifferences");
+const showTempThreshold = document.getElementById("showTempThreshold");
+const tempMinThreshold = document.getElementById("tempMinThreshold");
+const tempMaxThreshold = document.getElementById("tempMaxThreshold");
+const tempThresholdLabel = document.getElementById("tempThresholdLabel");
+const showHumidityThreshold = document.getElementById("showHumidityThreshold");
+const humidityMinThreshold = document.getElementById("humidityMinThreshold");
+const humidityMaxThreshold = document.getElementById("humidityMaxThreshold");
+const humidityThresholdLabel = document.getElementById("humidityThresholdLabel");
+const showBandViolations = document.getElementById("showBandViolations");
+const bandViolationLabel = document.getElementById("bandViolationLabel");
+const zoom = document.getElementById("zoom");
+const showContinentalness = document.getElementById("showContinentalness");
+const continentalnessOpacity = document.getElementById("continentalnessOpacity");
+const stage = document.getElementById("stage");
+const status = document.getElementById("status");
+const biomeHint = document.getElementById("biomeHint");
+const selectedBiomeEl = document.getElementById("selectedBiome");
+const biomeToggles = document.getElementById("biomeToggles");
+const legendHumanEl = document.getElementById("legendHuman");
+const legendRawEl = document.getElementById("legendRaw");
+const datasetBStatusEl = document.getElementById("datasetBStatus");
+const biomeHistogramEl = document.getElementById("biomeHistogram");
+const biomeHistMetaEl = document.getElementById("biomeHistMeta");
+const bandHistogramEl = document.getElementById("bandHistogram");
+const bandHistMetaEl = document.getElementById("bandHistMeta");
+
+const baseCtx = baseCanvas.getContext("2d", { willReadFrequently: true });
+const continentalnessCtx = continentalnessCanvas.getContext("2d");
+const overlayCtx = overlayCanvas.getContext("2d");
+const temperatureThresholdCtx = temperatureThresholdCanvas.getContext("2d", { willReadFrequently: true });
+const humidityThresholdCtx = humidityThresholdCanvas.getContext("2d", { willReadFrequently: true });
+const bandViolationCtx = bandViolationCanvas.getContext("2d", { willReadFrequently: true });
+const differenceCtx = differenceCanvas.getContext("2d", { willReadFrequently: true });
+const maskCtx = maskCanvas.getContext("2d");
+
+const preferredOrder = [
+  "bands.png",
+  "temperature.png",
+  "humidity.png",
+  "continentalness.png",
+  "erosion.png",
+  "weirdness.png"
+];
+const layerNames = {
+  biomes: "Biome map",
+  bands: "Latitude bands",
+  temperature: "Temperature",
+  humidity: "Humidity",
+  continentalness: "Continentalness",
+  erosion: "Erosion",
+  weirdness: "Weirdness"
+};
+
+const MASK_ALPHA = 170;
+const MASK_HIGHLIGHT_RGB = { r: 255, g: 0, b: 220 };
+const BAND_KEYS = ["equator", "tropical", "subtropical", "temperate", "subpolar", "polar"];
+const BAND_BIT_BY_KEY = new Map(BAND_KEYS.map((key, index) => [key, 1 << index]));
+const BAND_RANK_BY_KEY = new Map(BAND_KEYS.map((key, index) => [key, index]));
+const SUBPOLAR_BAND_RANK = BAND_RANK_BY_KEY.get("subpolar");
+let atlasIndex = [];
+let mapWidth = 1;
+let mapHeight = 1;
+let biomeIndices = null; // Uint8Array
+let paletteEntries = [];
+let selectedBiomeIndex = null;
+let currentBaseLabel = "biomes.png";
+let datasetB = null;
+let currentLegend = null;
+let hasContinentalnessLayer = false;
+let datasetA = {
+  step: null,
+  width: 1,
+  height: 1,
+  biomeIndices: null,
+  paletteEntries: [],
+  baseSource: null,
+  overlaySource: null,
+  continentalnessSource: null,
+  temperatureValues: null,
+  humidityValues: null,
+  legend: null,
+  bandMaskByIndex: null,
+  jungleFamilyByIndex: null,
+  maskCache: new Map()
+};
+let renderQueued = false;
+let differenceStats = null;
+let bandViolationStats = null;
+let bandViolationFlashTimer = null;
+
+function toTitle(text) {
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+function layerLabel(name) {
+  if (layerNames[name]) return layerNames[name];
+  if (name.startsWith("mask_")) return `Mask: ${toTitle(name.replace("mask_", ""))}`;
+  return toTitle(name.replace(/[_-]/g, " "));
+}
+
+function hexToRgb(hex) {
+  const normalized = String(hex || "").trim().replace("#", "");
+  if (!/^[0-9a-fA-F]{6}$/.test(normalized)) return { r: 128, g: 128, b: 128 };
+  return {
+    r: parseInt(normalized.slice(0, 2), 16),
+    g: parseInt(normalized.slice(2, 4), 16),
+    b: parseInt(normalized.slice(4, 6), 16)
+  };
+}
+
+function updateOverlayVisibility() {
+  scheduleRender();
+}
+
+function updateContinentalnessVisibility() {
+  scheduleRender();
+}
+
+function scheduleRender() {
+  if (renderQueued) {
+    return;
+  }
+  renderQueued = true;
+  requestAnimationFrame(() => {
+    renderQueued = false;
+    renderComposite();
+  });
+}
+
+function activeSplitMode() {
+  if (splitVertical.checked) {
+    return "vertical";
+  }
+  if (splitHorizontal.checked) {
+    return "horizontal";
+  }
+  return "none";
+}
+
+function splitRegions() {
+  const mode = activeSplitMode();
+  if (!datasetB || mode === "none") {
+    return [{ dataset: "A", x: 0, y: 0, w: mapWidth, h: mapHeight }];
+  }
+  const divider = Math.max(5, Math.min(95, parseInt(splitDivider.value || "50", 10))) / 100;
+  if (mode === "vertical") {
+    const left = Math.max(1, Math.round(mapWidth * divider));
+    const right = Math.max(1, mapWidth - left);
+    return [
+      { dataset: "A", x: 0, y: 0, w: left, h: mapHeight },
+      { dataset: "B", x: left, y: 0, w: right, h: mapHeight }
+    ];
+  }
+  const top = Math.max(1, Math.round(mapHeight * divider));
+  const bottom = Math.max(1, mapHeight - top);
+  return [
+    { dataset: "A", x: 0, y: 0, w: mapWidth, h: top },
+    { dataset: "B", x: 0, y: top, w: mapWidth, h: bottom }
+  ];
+}
+
+function temperatureThresholdBounds() {
+  const rawMin = Number.parseFloat(tempMinThreshold.value || "-1");
+  const rawMax = Number.parseFloat(tempMaxThreshold.value || "1");
+  const min = Math.max(-1, Math.min(1, Number.isFinite(rawMin) ? rawMin : -1));
+  const max = Math.max(-1, Math.min(1, Number.isFinite(rawMax) ? rawMax : 1));
+  return min <= max ? { min, max } : { min: max, max: min };
+}
+
+function refreshTempThresholdLabel() {
+  const bounds = temperatureThresholdBounds();
+  tempThresholdLabel.textContent = `Temp range: ${bounds.min.toFixed(2)} to ${bounds.max.toFixed(2)}`;
+}
+
+function humidityThresholdBounds() {
+  const rawMin = Number.parseFloat(humidityMinThreshold.value || "-1");
+  const rawMax = Number.parseFloat(humidityMaxThreshold.value || "1");
+  const min = Math.max(-1, Math.min(1, Number.isFinite(rawMin) ? rawMin : -1));
+  const max = Math.max(-1, Math.min(1, Number.isFinite(rawMax) ? rawMax : 1));
+  return min <= max ? { min, max } : { min: max, max: min };
+}
+
+function refreshHumidityThresholdLabel() {
+  const bounds = humidityThresholdBounds();
+  humidityThresholdLabel.textContent = `Humidity range: ${bounds.min.toFixed(2)} to ${bounds.max.toFixed(2)}`;
+}
+
+function refreshBandViolationLabel() {
+  if (!showBandViolations.checked) {
+    bandViolationLabel.textContent = "Band violations: off";
+    return;
+  }
+  if (!bandViolationStats || bandViolationStats.checked <= 0) {
+    bandViolationLabel.textContent = "Band violations: none detected";
+    return;
+  }
+  const pctValue = (bandViolationStats.violations * 100) / Math.max(1, bandViolationStats.checked);
+  const hardValue = Number(bandViolationStats.hardJungleInvariant || 0);
+  const hardText = hardValue > 0 ? ` | jungle hard invariant: ${hardValue.toLocaleString()}` : "";
+  bandViolationLabel.textContent = `Band violations: ${bandViolationStats.violations.toLocaleString()} / ${bandViolationStats.checked.toLocaleString()} (${pctValue.toFixed(2)}%)${hardText}`;
+}
+
+function setBandViolationAnimation(enabled) {
+  if (enabled) {
+    if (bandViolationFlashTimer == null) {
+      bandViolationFlashTimer = setInterval(() => scheduleRender(), 150);
+    }
+    return;
+  }
+  if (bandViolationFlashTimer != null) {
+    clearInterval(bandViolationFlashTimer);
+    bandViolationFlashTimer = null;
+  }
+}
+
+function normalizeBandKey(value) {
+  const raw = String(value || "").trim().toLowerCase();
+  if (!raw) return null;
+  if (raw === "equatorial") return "equator";
+  if (raw === "sub-polar") return "subpolar";
+  if (raw === "sub_tropical") return "subtropical";
+  if (raw === "sub_temperate") return "temperate";
+  const cleaned = raw.replace(/[\s_-]+/g, "");
+  return BAND_BIT_BY_KEY.has(cleaned) ? cleaned : null;
+}
+
+function bandsToMask(list) {
+  if (!Array.isArray(list)) {
+    return 0;
+  }
+  let mask = 0;
+  for (const item of list) {
+    const key = normalizeBandKey(item);
+    const bit = key ? BAND_BIT_BY_KEY.get(key) : 0;
+    mask |= bit || 0;
+  }
+  return mask;
+}
+
+function inferBiomeBandMask(biomeId) {
+  const shortId = String(biomeId || "").toLowerCase().replace(/^.*:/, "");
+  if (!shortId) {
+    return 0;
+  }
+
+  if (
+    shortId.includes("ocean")
+    || shortId.includes("river")
+    || shortId.includes("beach")
+    || shortId === "mushroom_fields"
+  ) {
+    return 0;
+  }
+  if (
+    shortId.includes("snowy")
+    || shortId.includes("frozen")
+    || shortId.includes("ice_spikes")
+    || shortId.includes("jagged_peaks")
+    || shortId.includes("frozen_peaks")
+    || shortId.includes("grove")
+  ) {
+    return bandsToMask(["subpolar", "polar"]);
+  }
+  if (shortId.includes("taiga")) {
+    return bandsToMask(["temperate", "subpolar"]);
+  }
+  if (shortId.includes("jungle") || shortId.includes("mangrove")) {
+    return bandsToMask(["equator", "tropical"]);
+  }
+  if (shortId.includes("desert") || shortId.includes("badlands")) {
+    return bandsToMask(["equator", "tropical", "subtropical"]);
+  }
+  if (shortId.includes("savanna")) {
+    return bandsToMask(["tropical", "subtropical"]);
+  }
+  if (shortId.includes("swamp")) {
+    return bandsToMask(["tropical", "subtropical", "temperate"]);
+  }
+  if (
+    shortId.includes("windswept")
+    || shortId.includes("stony")
+    || shortId.includes("peak")
+    || shortId.includes("slope")
+  ) {
+    return bandsToMask(["temperate", "subpolar"]);
+  }
+  if (
+    shortId.includes("forest")
+    || shortId.includes("plains")
+    || shortId.includes("meadow")
+    || shortId.includes("cherry")
+  ) {
+    return bandsToMask(["subtropical", "temperate"]);
+  }
+  return 0;
+}
+
+function datasetLegend(dataset) {
+  if (dataset?.legend) {
+    return dataset.legend;
+  }
+  if (dataset === datasetA) {
+    return currentLegend;
+  }
+  return null;
+}
+
+function rebuildDatasetBandMasks(dataset) {
+  if (!dataset) {
+    return;
+  }
+  const masks = new Uint32Array(256);
+  const jungleFamily = new Uint8Array(256);
+  const legend = datasetLegend(dataset);
+  const legendMap = legend && typeof legend.biomeBands === "object" && legend.biomeBands
+    ? legend.biomeBands
+    : null;
+
+  for (const entry of dataset.paletteEntries || []) {
+    const idx = Number(entry.index) & 0xFF;
+    if (!Number.isFinite(idx)) {
+      continue;
+    }
+    let mask = bandsToMask(entry.allowedBands);
+    if (!mask && legendMap) {
+      const mapped = legendMap[entry.biome_id] ?? legendMap[String(entry.biome_id).replace(/^.*:/, "")];
+      mask = bandsToMask(mapped);
+    }
+    if (!mask) {
+      mask = inferBiomeBandMask(entry.biome_id);
+    }
+    masks[idx] = mask;
+    jungleFamily[idx] = String(entry.biome_id || "").toLowerCase().includes("jungle") ? 1 : 0;
+  }
+  dataset.bandMaskByIndex = masks;
+  dataset.jungleFamilyByIndex = jungleFamily;
+}
+
+function datasetForRegion(region) {
+  if (region.dataset === "B" && datasetB) {
+    return datasetB;
+  }
+  return datasetA;
+}
+
+function drawDatasetSource(ctx, source, sourceWidth, sourceHeight, region, alpha = 1) {
+  if (!source || !sourceWidth || !sourceHeight || !region || region.w <= 0 || region.h <= 0) {
+    return false;
+  }
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.beginPath();
+  ctx.rect(region.x, region.y, region.w, region.h);
+  ctx.clip();
+  ctx.drawImage(source, 0, 0, sourceWidth, sourceHeight, 0, 0, mapWidth, mapHeight);
+  ctx.restore();
+  return true;
+}
+
+function renderBaseLayer() {
+  baseCtx.clearRect(0, 0, mapWidth, mapHeight);
+  for (const region of splitRegions()) {
+    const dataset = datasetForRegion(region);
+    if (!dataset) {
+      continue;
+    }
+    drawDatasetSource(baseCtx, dataset.baseSource, dataset.width, dataset.height, region, 1);
+  }
+}
+
+function renderContinentalnessLayer() {
+  continentalnessCtx.clearRect(0, 0, mapWidth, mapHeight);
+  hasContinentalnessLayer = false;
+  if (!showContinentalness.checked) {
+    continentalnessCanvas.classList.add("mask-hidden");
+    return;
+  }
+  const alpha = Math.max(0, Math.min(1, parseInt(continentalnessOpacity.value || "50", 10) / 100));
+  let drew = false;
+  for (const region of splitRegions()) {
+    const dataset = datasetForRegion(region);
+    if (!dataset?.continentalnessSource) {
+      continue;
+    }
+    drew = drawDatasetSource(
+      continentalnessCtx,
+      dataset.continentalnessSource,
+      dataset.width,
+      dataset.height,
+      region,
+      alpha
+    ) || drew;
+  }
+  hasContinentalnessLayer = drew;
+  continentalnessCanvas.classList.toggle("mask-hidden", !drew);
+}
+
+function renderOverlayLayer() {
+  overlayCtx.clearRect(0, 0, mapWidth, mapHeight);
+  if (!showOverlay.checked || overlaySel.value === "(none)") {
+    overlayCanvas.classList.add("mask-hidden");
+    return;
+  }
+  const alpha = Math.max(0, Math.min(1, parseInt(opacity.value || "40", 10) / 100));
+  let drew = false;
+  for (const region of splitRegions()) {
+    const dataset = datasetForRegion(region);
+    if (!dataset?.overlaySource) {
+      continue;
+    }
+    drew = drawDatasetSource(
+      overlayCtx,
+      dataset.overlaySource,
+      dataset.width,
+      dataset.height,
+      region,
+      alpha
+    ) || drew;
+  }
+  overlayCanvas.classList.toggle("mask-hidden", !drew);
+}
+
+function sampleTemperatureValue(dataset, x, y) {
+  if (!dataset?.temperatureValues || !dataset.width || !dataset.height) {
+    return null;
+  }
+  const sx = Math.max(0, Math.min(dataset.width - 1, Math.floor((x * dataset.width) / mapWidth)));
+  const sy = Math.max(0, Math.min(dataset.height - 1, Math.floor((y * dataset.height) / mapHeight)));
+  return dataset.temperatureValues[(sy * dataset.width) + sx];
+}
+
+function renderTemperatureThresholdLayer() {
+  temperatureThresholdCtx.clearRect(0, 0, mapWidth, mapHeight);
+  if (!showTempThreshold.checked) {
+    temperatureThresholdCanvas.classList.add("mask-hidden");
+    return;
+  }
+
+  const bounds = temperatureThresholdBounds();
+  const image = temperatureThresholdCtx.createImageData(mapWidth, mapHeight);
+  const data = image.data;
+  let highlighted = 0;
+
+  for (const region of splitRegions()) {
+    const dataset = datasetForRegion(region);
+    if (!dataset?.temperatureValues) {
+      continue;
+    }
+    for (let y = region.y; y < region.y + region.h; y++) {
+      for (let x = region.x; x < region.x + region.w; x++) {
+        const value = sampleTemperatureValue(dataset, x, y);
+        if (value == null || (value >= bounds.min && value <= bounds.max)) {
+          continue;
+        }
+        const o = ((y * mapWidth) + x) * 4;
+        data[o] = 255;
+        data[o + 1] = 0;
+        data[o + 2] = 0;
+        data[o + 3] = 170;
+        highlighted++;
+      }
+    }
+  }
+
+  if (highlighted <= 0) {
+    temperatureThresholdCanvas.classList.add("mask-hidden");
+    return;
+  }
+
+  temperatureThresholdCtx.putImageData(image, 0, 0);
+  temperatureThresholdCanvas.classList.remove("mask-hidden");
+}
+
+function sampleHumidityValue(dataset, x, y) {
+  if (!dataset?.humidityValues || !dataset.width || !dataset.height) {
+    return null;
+  }
+  const sx = Math.max(0, Math.min(dataset.width - 1, Math.floor((x * dataset.width) / mapWidth)));
+  const sy = Math.max(0, Math.min(dataset.height - 1, Math.floor((y * dataset.height) / mapHeight)));
+  return dataset.humidityValues[(sy * dataset.width) + sx];
+}
+
+function renderHumidityThresholdLayer() {
+  humidityThresholdCtx.clearRect(0, 0, mapWidth, mapHeight);
+  if (!showHumidityThreshold.checked) {
+    humidityThresholdCanvas.classList.add("mask-hidden");
+    return;
+  }
+
+  const bounds = humidityThresholdBounds();
+  const image = humidityThresholdCtx.createImageData(mapWidth, mapHeight);
+  const data = image.data;
+  let highlighted = 0;
+
+  for (const region of splitRegions()) {
+    const dataset = datasetForRegion(region);
+    if (!dataset?.humidityValues) {
+      continue;
+    }
+    for (let y = region.y; y < region.y + region.h; y++) {
+      for (let x = region.x; x < region.x + region.w; x++) {
+        const value = sampleHumidityValue(dataset, x, y);
+        if (value == null || (value >= bounds.min && value <= bounds.max)) {
+          continue;
+        }
+        const o = ((y * mapWidth) + x) * 4;
+        data[o] = 0;
+        data[o + 1] = 170;
+        data[o + 2] = 255;
+        data[o + 3] = 150;
+        highlighted++;
+      }
+    }
+  }
+
+  if (highlighted <= 0) {
+    humidityThresholdCanvas.classList.add("mask-hidden");
+    return;
+  }
+
+  humidityThresholdCtx.putImageData(image, 0, 0);
+  humidityThresholdCanvas.classList.remove("mask-hidden");
+}
+
+function sampleBiomeIndex(dataset, x, y) {
+  if (!dataset?.biomeIndices || !dataset.width || !dataset.height) {
+    return null;
+  }
+  const sx = Math.max(0, Math.min(dataset.width - 1, Math.floor((x * dataset.width) / mapWidth)));
+  const sy = Math.max(0, Math.min(dataset.height - 1, Math.floor((y * dataset.height) / mapHeight)));
+  return dataset.biomeIndices[(sy * dataset.width) + sx];
+}
+
+function sampleExpectedBandKey(dataset, x, y) {
+  const legend = datasetLegend(dataset);
+  if (!legend || !Array.isArray(legend.bands) || !legend.bands.length) {
+    return null;
+  }
+  const radius = Number(legend.radiusBlocks);
+  if (!Number.isFinite(radius) || radius <= 0) {
+    return null;
+  }
+  const step = Number.isFinite(Number(legend.stepBlocks)) ? Number(legend.stepBlocks) : 1;
+  const sy = Math.max(0, Math.min(dataset.height - 1, Math.floor((y * dataset.height) / mapHeight)));
+  const blockZ = -radius + (sy * step);
+  const absFrac = Math.max(0, Math.min(1, Math.abs(blockZ) / radius));
+
+  for (let i = 0; i < legend.bands.length; i++) {
+    const band = legend.bands[i] || {};
+    const min = Number(band.minFrac);
+    const max = Number(band.maxFrac);
+    if (!Number.isFinite(min) || !Number.isFinite(max)) {
+      continue;
+    }
+    const inRange = i === legend.bands.length - 1
+      ? absFrac >= min && absFrac <= max
+      : absFrac >= min && absFrac < max;
+    if (inRange) {
+      return normalizeBandKey(band.zone);
+    }
+  }
+  return null;
+}
+
+function renderBandViolationLayer() {
+  bandViolationCtx.clearRect(0, 0, mapWidth, mapHeight);
+  bandViolationStats = null;
+
+  if (!showBandViolations.checked) {
+    bandViolationCanvas.classList.add("mask-hidden");
+    refreshBandViolationLabel();
+    return;
+  }
+
+  const image = bandViolationCtx.createImageData(mapWidth, mapHeight);
+  const data = image.data;
+  let violations = 0;
+  let checked = 0;
+  let hardJungleInvariant = 0;
+  const flashAlpha = 120 + Math.round((Math.sin(Date.now() / 140) + 1) * 65);
+
+  for (const region of splitRegions()) {
+    const dataset = datasetForRegion(region);
+    if (!dataset?.biomeIndices || !dataset.width || !dataset.height) {
+      continue;
+    }
+    if (!(dataset.bandMaskByIndex instanceof Uint32Array)) {
+      rebuildDatasetBandMasks(dataset);
+    }
+    const jungleFamilyByIndex = dataset.jungleFamilyByIndex instanceof Uint8Array
+      ? dataset.jungleFamilyByIndex
+      : new Uint8Array(256);
+
+    for (let y = region.y; y < region.y + region.h; y++) {
+      for (let x = region.x; x < region.x + region.w; x++) {
+        const biomeIndex = sampleBiomeIndex(dataset, x, y);
+        if (biomeIndex == null) {
+          continue;
+        }
+        const expectedBand = sampleExpectedBandKey(dataset, x, y);
+        const expectedBit = expectedBand ? BAND_BIT_BY_KEY.get(expectedBand) : 0;
+        if (!expectedBit) {
+          continue;
+        }
+
+        const expectedRank = expectedBand ? BAND_RANK_BY_KEY.get(expectedBand) : null;
+        const isSubpolarOrHigher = Number.isFinite(expectedRank) && expectedRank >= SUBPOLAR_BAND_RANK;
+        const isJungleFamily = jungleFamilyByIndex[biomeIndex & 0xFF] === 1;
+        if (isSubpolarOrHigher && isJungleFamily) {
+          checked++;
+          violations++;
+          hardJungleInvariant++;
+          const o = ((y * mapWidth) + x) * 4;
+          data[o] = 255;
+          data[o + 1] = 0;
+          data[o + 2] = 0;
+          data[o + 3] = flashAlpha;
+          continue;
+        }
+
+        const allowedMask = dataset.bandMaskByIndex[biomeIndex & 0xFF] || 0;
+        if (!allowedMask) {
+          continue;
+        }
+        checked++;
+        if ((allowedMask & expectedBit) !== 0) {
+          continue;
+        }
+        const o = ((y * mapWidth) + x) * 4;
+        data[o] = 255;
+        data[o + 1] = 0;
+        data[o + 2] = 0;
+        data[o + 3] = 180;
+        violations++;
+      }
+    }
+  }
+
+  bandViolationStats = { violations, checked, hardJungleInvariant };
+  refreshBandViolationLabel();
+  if (violations <= 0) {
+    bandViolationCanvas.classList.add("mask-hidden");
+    return;
+  }
+  bandViolationCtx.putImageData(image, 0, 0);
+  bandViolationCanvas.classList.remove("mask-hidden");
+}
+
+function renderDifferenceLayer() {
+  differenceCtx.clearRect(0, 0, mapWidth, mapHeight);
+  differenceStats = null;
+
+  if (!showDifferences.checked || !datasetA?.biomeIndices || !datasetB?.biomeIndices) {
+    differenceCanvas.classList.add("mask-hidden");
+    return;
+  }
+
+  const image = differenceCtx.createImageData(mapWidth, mapHeight);
+  const data = image.data;
+  let diffPixels = 0;
+  const totalPixels = mapWidth * mapHeight;
+  for (let y = 0; y < mapHeight; y++) {
+    for (let x = 0; x < mapWidth; x++) {
+      const indexA = sampleBiomeIndex(datasetA, x, y);
+      const indexB = sampleBiomeIndex(datasetB, x, y);
+      if (indexA == null || indexB == null || indexA === indexB) {
+        continue;
+      }
+      const o = ((y * mapWidth) + x) * 4;
+      data[o] = 255;
+      data[o + 1] = 0;
+      data[o + 2] = 255;
+      data[o + 3] = 230;
+      diffPixels++;
+    }
+  }
+
+  differenceStats = { diffPixels, totalPixels };
+  differenceCtx.putImageData(image, 0, 0);
+  differenceCanvas.classList.toggle("mask-hidden", diffPixels <= 0);
+}
+
+function maskSourceForDataset(dataset, index) {
+  if (!dataset?.biomeIndices || !dataset.width || !dataset.height) {
+    return null;
+  }
+  const key = String(index & 0xFF);
+  if (dataset.maskCache?.has(key)) {
+    return dataset.maskCache.get(key);
+  }
+  // Fixed high-contrast tint so selected biome regions are clearly visible.
+  const rgb = MASK_HIGHLIGHT_RGB;
+
+  const mask = document.createElement("canvas");
+  mask.width = dataset.width;
+  mask.height = dataset.height;
+  const ctx = mask.getContext("2d");
+  const image = ctx.createImageData(dataset.width, dataset.height);
+  const data = image.data;
+  const target = index & 0xFF;
+  for (let i = 0; i < dataset.biomeIndices.length; i++) {
+    if (dataset.biomeIndices[i] !== target) {
+      continue;
+    }
+    const o = i * 4;
+    data[o] = rgb.r;
+    data[o + 1] = rgb.g;
+    data[o + 2] = rgb.b;
+    data[o + 3] = MASK_ALPHA;
+  }
+  ctx.putImageData(image, 0, 0);
+  if (!dataset.maskCache) {
+    dataset.maskCache = new Map();
+  }
+  dataset.maskCache.set(key, mask);
+  return mask;
+}
+
+function renderMaskLayer() {
+  maskCtx.clearRect(0, 0, mapWidth, mapHeight);
+  if (selectedBiomeIndex == null) {
+    maskCanvas.classList.add("mask-hidden");
+    return;
+  }
+
+  let drew = false;
+  for (const region of splitRegions()) {
+    const dataset = datasetForRegion(region);
+    const source = maskSourceForDataset(dataset, selectedBiomeIndex);
+    if (!source) {
+      continue;
+    }
+    drew = drawDatasetSource(maskCtx, source, dataset.width, dataset.height, region, 1) || drew;
+  }
+  maskCanvas.classList.toggle("mask-hidden", !drew);
+}
+
+function renderComposite() {
+  renderBaseLayer();
+  renderContinentalnessLayer();
+  renderOverlayLayer();
+  renderTemperatureThresholdLayer();
+  renderHumidityThresholdLayer();
+  renderBandViolationLayer();
+  renderDifferenceLayer();
+  renderMaskLayer();
+  const splitText = datasetB ? `${activeSplitMode()}@${splitDivider.value}%` : "none";
+  const diffText = differenceStats
+    ? ` | Diff: ${((differenceStats.diffPixels * 100) / Math.max(1, differenceStats.totalPixels)).toFixed(2)}%`
+    : "";
+  const bandText = bandViolationStats && bandViolationStats.checked > 0
+    ? ` | BandViol: ${((bandViolationStats.violations * 100) / bandViolationStats.checked).toFixed(2)}% (J:${Number(bandViolationStats.hardJungleInvariant || 0)})`
+    : "";
+  status.textContent = `Base: ${currentBaseLabel} | Overlay: ${overlaySel.value} | Split: ${splitText}${diffText}${bandText}`;
+}
+
+function applyZoom() {
+  const z = Math.max(1, Math.min(8, parseInt(zoom.value || "1", 10)));
+  stage.style.width = `${Math.round(mapWidth * z)}px`;
+  stage.style.height = `${Math.round(mapHeight * z)}px`;
+}
+
+function setCanvasSize(w, h) {
+  mapWidth = Math.max(1, w || 1);
+  mapHeight = Math.max(1, h || 1);
+  baseCanvas.width = mapWidth;
+  baseCanvas.height = mapHeight;
+  continentalnessCanvas.width = mapWidth;
+  continentalnessCanvas.height = mapHeight;
+  overlayCanvas.width = mapWidth;
+  overlayCanvas.height = mapHeight;
+  temperatureThresholdCanvas.width = mapWidth;
+  temperatureThresholdCanvas.height = mapHeight;
+  bandViolationCanvas.width = mapWidth;
+  bandViolationCanvas.height = mapHeight;
+  differenceCanvas.width = mapWidth;
+  differenceCanvas.height = mapHeight;
+  humidityThresholdCanvas.width = mapWidth;
+  humidityThresholdCanvas.height = mapHeight;
+  maskCanvas.width = mapWidth;
+  maskCanvas.height = mapHeight;
+  applyZoom();
+}
+
+function clearMask() {
+  selectedBiomeIndex = null;
+  maskCtx.clearRect(0, 0, mapWidth, mapHeight);
+  maskCanvas.classList.add("mask-hidden");
+  selectedBiomeEl.textContent = "Selected: none";
+  for (const el of biomeToggles.querySelectorAll(".biome-chip")) {
+    el.classList.remove("active");
+  }
+  scheduleRender();
+}
+
+function markSelectedChip(index) {
+  for (const el of biomeToggles.querySelectorAll(".biome-chip")) {
+    if (Number(el.dataset.index) === index) {
+      el.classList.add("active");
+    } else {
+      el.classList.remove("active");
+    }
+  }
+}
+
+function selectBiome(index, sourcePalette = paletteEntries) {
+  if (selectedBiomeIndex === index) {
+    clearMask();
+    return;
+  }
+  selectedBiomeIndex = index;
+  const selected = (sourcePalette || []).find((entry) => entry.index === index);
+  if (selected) {
+    selectedBiomeEl.textContent = `Selected: [${selected.index}] ${selected.biome_id}`;
+  } else {
+    selectedBiomeEl.textContent = `Selected: [${index}] (unknown)`;
+  }
+  markSelectedChip(index);
+  scheduleRender();
+}
+
+function buildBiomeToggles() {
+  biomeToggles.innerHTML = "";
+  if (!paletteEntries.length) {
+    biomeHint.textContent = "No biome index assets for this step (biome_ids.png + biome_palette.json required).";
+    clearMask();
+    return;
+  }
+
+  biomeHint.textContent = "Click a biome to toggle translucent mask. You can also click the map.";
+  const sorted = [...paletteEntries].sort((a, b) => a.biome_id.localeCompare(b.biome_id));
+  for (const entry of sorted) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "biome-chip";
+    btn.dataset.index = String(entry.index);
+    btn.innerHTML = `<span class="swatch" style="background:${entry.displayColor}"></span><span>[${entry.index}] ${entry.biome_id}</span>`;
+    btn.addEventListener("click", () => selectBiome(entry.index));
+    biomeToggles.appendChild(btn);
+  }
+}
+
+function buildColorizedCanvas(width, height, indices, palette) {
+  if (!indices || !palette || !palette.length) {
+    return null;
+  }
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  const paletteByIndex = new Map();
+  for (const entry of palette) {
+    paletteByIndex.set(entry.index & 0xFF, entry.rgb);
+  }
+  const image = ctx.createImageData(width, height);
+  const data = image.data;
+  for (let i = 0; i < indices.length; i++) {
+    const color = paletteByIndex.get(indices[i]) || { r: indices[i], g: indices[i], b: indices[i] };
+    const o = i * 4;
+    data[o] = color.r;
+    data[o + 1] = color.g;
+    data[o + 2] = color.b;
+    data[o + 3] = 255;
+  }
+  ctx.putImageData(image, 0, 0);
+  return canvas;
+}
+
+async function loadImage(url) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error(`Failed image: ${url}`));
+    img.src = url;
+  });
+}
+
+async function loadImageFromFile(file) {
+  const objectUrl = URL.createObjectURL(file);
+  try {
+    return await loadImage(objectUrl);
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
+function decodeBiomeIndexImage(image) {
+  const width = image.naturalWidth || image.width || 1;
+  const height = image.naturalHeight || image.height || 1;
+  const temp = document.createElement("canvas");
+  temp.width = width;
+  temp.height = height;
+  const tempCtx = temp.getContext("2d", { willReadFrequently: true });
+  tempCtx.drawImage(image, 0, 0);
+  const pixels = tempCtx.getImageData(0, 0, width, height).data;
+  const indices = new Uint8Array(width * height);
+  for (let i = 0; i < indices.length; i++) {
+    indices[i] = pixels[i * 4];
+  }
+  return { width, height, indices };
+}
+
+function clamp01(value) {
+  return Math.max(0, Math.min(1, value));
+}
+
+function projectToSegment(px, py, pz, ax, ay, az, bx, by, bz) {
+  const vx = bx - ax;
+  const vy = by - ay;
+  const vz = bz - az;
+  const wx = px - ax;
+  const wy = py - ay;
+  const wz = pz - az;
+  const denom = (vx * vx) + (vy * vy) + (vz * vz);
+  if (denom <= 0) {
+    return 0;
+  }
+  const t = ((wx * vx) + (wy * vy) + (wz * vz)) / denom;
+  return clamp01(t);
+}
+
+function decodeTemperatureSignedFromRgb(r, g, b) {
+  const a = { r: 0x2C, g: 0x7B, b: 0xB6 };
+  const m = { r: 0xFF, g: 0xF3, b: 0xB0 };
+  const c = { r: 0xD7, g: 0x19, b: 0x1C };
+
+  const u1 = projectToSegment(r, g, b, a.r, a.g, a.b, m.r, m.g, m.b);
+  const p1r = a.r + ((m.r - a.r) * u1);
+  const p1g = a.g + ((m.g - a.g) * u1);
+  const p1b = a.b + ((m.b - a.b) * u1);
+  const d1 = ((r - p1r) ** 2) + ((g - p1g) ** 2) + ((b - p1b) ** 2);
+
+  const u2 = projectToSegment(r, g, b, m.r, m.g, m.b, c.r, c.g, c.b);
+  const p2r = m.r + ((c.r - m.r) * u2);
+  const p2g = m.g + ((c.g - m.g) * u2);
+  const p2b = m.b + ((c.b - m.b) * u2);
+  const d2 = ((r - p2r) ** 2) + ((g - p2g) ** 2) + ((b - p2b) ** 2);
+
+  const value01 = d1 <= d2 ? (u1 * 0.5) : (0.5 + (u2 * 0.5));
+  return (value01 * 2.0) - 1.0;
+}
+
+function decodeTemperatureValues(image, width, height) {
+  const temp = document.createElement("canvas");
+  temp.width = width;
+  temp.height = height;
+  const tempCtx = temp.getContext("2d", { willReadFrequently: true });
+  tempCtx.drawImage(image, 0, 0, width, height);
+  const pixels = tempCtx.getImageData(0, 0, width, height).data;
+  const out = new Float32Array(width * height);
+  for (let i = 0; i < out.length; i++) {
+    const o = i * 4;
+    out[i] = decodeTemperatureSignedFromRgb(pixels[o], pixels[o + 1], pixels[o + 2]);
+  }
+  return out;
+}
+
+function decodeHumiditySignedFromRgb(r, g, b) {
+  const a = { r: 0xB0, g: 0x7D, b: 0x3B };
+  const m = { r: 0xE9, g: 0xE7, b: 0xC5 };
+  const c = { r: 0x2A, g: 0x9D, b: 0x8F };
+
+  const u1 = projectToSegment(r, g, b, a.r, a.g, a.b, m.r, m.g, m.b);
+  const p1r = a.r + ((m.r - a.r) * u1);
+  const p1g = a.g + ((m.g - a.g) * u1);
+  const p1b = a.b + ((m.b - a.b) * u1);
+  const d1 = ((r - p1r) ** 2) + ((g - p1g) ** 2) + ((b - p1b) ** 2);
+
+  const u2 = projectToSegment(r, g, b, m.r, m.g, m.b, c.r, c.g, c.b);
+  const p2r = m.r + ((c.r - m.r) * u2);
+  const p2g = m.g + ((c.g - m.g) * u2);
+  const p2b = m.b + ((c.b - m.b) * u2);
+  const d2 = ((r - p2r) ** 2) + ((g - p2g) ** 2) + ((b - p2b) ** 2);
+
+  const value01 = d1 <= d2 ? (u1 * 0.5) : (0.5 + (u2 * 0.5));
+  return (value01 * 2.0) - 1.0;
+}
+
+function decodeHumidityValues(image, width, height) {
+  const temp = document.createElement("canvas");
+  temp.width = width;
+  temp.height = height;
+  const tempCtx = temp.getContext("2d", { willReadFrequently: true });
+  tempCtx.drawImage(image, 0, 0, width, height);
+  const pixels = tempCtx.getImageData(0, 0, width, height).data;
+  const out = new Float32Array(width * height);
+  for (let i = 0; i < out.length; i++) {
+    const o = i * 4;
+    out[i] = decodeHumiditySignedFromRgb(pixels[o], pixels[o + 1], pixels[o + 2]);
+  }
+  return out;
+}
+
+function normalizeBaseBiomeColor(biomeId, fallbackHex) {
+  const id = String(biomeId || "");
+  if (id === "minecraft:beach") {
+    return "#E0C097";
+  }
+  return fallbackHex;
+}
+
+function parsePaletteEntries(paletteJson) {
+  const rawBiomes = Array.isArray(paletteJson?.biomes) ? paletteJson.biomes : [];
+  return rawBiomes
+    .map((b) => ({
+      index: Number(b.index) & 0xFF,
+      biome_id: String(b.biome_id || "unknown"),
+      displayColor: normalizeBaseBiomeColor(
+        String(b.biome_id || "unknown"),
+        String(b.displayColor || "#808080")
+      ),
+      rgb: hexToRgb(
+        normalizeBaseBiomeColor(
+          String(b.biome_id || "unknown"),
+          String(b.displayColor || "#808080")
+        )
+      ),
+      allowedBands: Array.isArray(b.bands) ? b.bands.map(normalizeBandKey).filter(Boolean) : []
+    }))
+    .filter((b) => Number.isFinite(b.index));
+}
+
+function parseDatasetBStep(fileMap, preferredStep) {
+  const stepCandidates = [];
+  for (const relPath of fileMap.keys()) {
+    const match = relPath.match(/(?:^|\/)(step\d+)\/(?:biome_ids\.png|legend\.json)$/i);
+    if (match) {
+      stepCandidates.push(match[1]);
+    }
+  }
+  if (!stepCandidates.length) {
+    return null;
+  }
+
+  const unique = [...new Set(stepCandidates)];
+  if (preferredStep && unique.includes(preferredStep)) {
+    return preferredStep;
+  }
+  unique.sort((a, b) => {
+    const an = parseInt((a.match(/\d+/) || ["0"])[0], 10);
+    const bn = parseInt((b.match(/\d+/) || ["0"])[0], 10);
+    return an - bn;
+  });
+  return unique[unique.length - 1];
+}
+
+function findStepFile(fileMap, stepName, fileName) {
+  const exact = `${stepName}/${fileName}`.toLowerCase();
+  for (const [relPath, file] of fileMap.entries()) {
+    if (relPath.toLowerCase().endsWith(exact)) {
+      return file;
+    }
+  }
+  return null;
+}
+
+function legendFileName(legend, keys, fallback) {
+  const files = legend && typeof legend.files === "object" && legend.files ? legend.files : null;
+  if (files) {
+    for (const key of keys || []) {
+      const value = files[key];
+      if (typeof value === "string" && value.trim().length > 0) {
+        return value.trim();
+      }
+    }
+  }
+  return fallback;
+}
+
+async function loadDatasetBOverlay(overlayFile) {
+  if (!datasetB) {
+    return;
+  }
+  datasetB.overlaySource = null;
+  if (!overlayFile || overlayFile === "(none)") {
+    return;
+  }
+  const cacheKey = String(overlayFile);
+  if (datasetB.overlayCache?.has(cacheKey)) {
+    datasetB.overlaySource = datasetB.overlayCache.get(cacheKey);
+    return;
+  }
+  const file = findStepFile(datasetB.fileMap, datasetB.step, overlayFile);
+  if (!file) {
+    return;
+  }
+  try {
+    const image = await loadImageFromFile(file);
+    datasetB.overlaySource = image;
+    if (datasetB.overlayCache) {
+      datasetB.overlayCache.set(cacheKey, image);
+    }
+  } catch (_) {
+    datasetB.overlaySource = null;
+  }
+}
+
+async function loadDatasetBContinentalness() {
+  if (!datasetB) {
+    return;
+  }
+  datasetB.continentalnessSource = null;
+  const fileName = legendFileName(datasetB.legend, ["continentalness", "cont"], "continentalness.png");
+  const file = findStepFile(datasetB.fileMap, datasetB.step, fileName);
+  if (!file) {
+    return;
+  }
+  try {
+    datasetB.continentalnessSource = await loadImageFromFile(file);
+  } catch (_) {
+    datasetB.continentalnessSource = null;
+  }
+}
+
+async function loadDatasetBTemperature() {
+  if (!datasetB) {
+    return;
+  }
+  datasetB.temperatureValues = null;
+  const fileName = legendFileName(datasetB.legend, ["temperature", "temp"], "temperature.png");
+  const file = findStepFile(datasetB.fileMap, datasetB.step, fileName);
+  if (!file) {
+    return;
+  }
+  try {
+    const image = await loadImageFromFile(file);
+    datasetB.temperatureValues = decodeTemperatureValues(image, datasetB.width, datasetB.height);
+  } catch (_) {
+    datasetB.temperatureValues = null;
+  }
+}
+
+async function loadDatasetBHumidity() {
+  if (!datasetB) {
+    return;
+  }
+  datasetB.humidityValues = null;
+  const fileName = legendFileName(datasetB.legend, ["humidity", "humid"], "humidity.png");
+  const file = findStepFile(datasetB.fileMap, datasetB.step, fileName);
+  if (!file) {
+    return;
+  }
+  try {
+    const image = await loadImageFromFile(file);
+    datasetB.humidityValues = decodeHumidityValues(image, datasetB.width, datasetB.height);
+  } catch (_) {
+    datasetB.humidityValues = null;
+  }
+}
+
+async function loadSecondSeedDataset(fileList) {
+  if (!fileList || !fileList.length) {
+    return;
+  }
+
+  const fileMap = new Map();
+  for (const file of fileList) {
+    const rel = String(file.webkitRelativePath || file.name).replace(/\\/g, "/").replace(/^\/+/, "");
+    fileMap.set(rel, file);
+  }
+
+  const stepName = parseDatasetBStep(fileMap, stepSel.value);
+  if (!stepName) {
+    throw new Error("Selected folder does not contain step*/legend.json or step*/biome_ids.png");
+  }
+
+  const legendFile = findStepFile(fileMap, stepName, "legend.json");
+  const legendJson = legendFile
+    ? await legendFile.text().then((t) => JSON.parse(t.replace(/^\uFEFF/, "")))
+    : null;
+  const idsName = legendFileName(legendJson, ["biome_ids", "biomeIds"], "biome_ids.png");
+  const paletteName = legendFileName(legendJson, ["biome_palette", "biomePalette"], "biome_palette.json");
+  const idsFile = findStepFile(fileMap, stepName, idsName);
+  const paletteFile = findStepFile(fileMap, stepName, paletteName);
+  if (!idsFile || !paletteFile) {
+    throw new Error(`Missing required files in ${stepName} (need ${idsName} and ${paletteName})`);
+  }
+
+  const [idsImage, paletteJson] = await Promise.all([
+    loadImageFromFile(idsFile),
+    paletteFile.text().then((t) => JSON.parse(t.replace(/^\uFEFF/, "")))
+  ]);
+
+  const decoded = decodeBiomeIndexImage(idsImage);
+  const parsedPalette = parsePaletteEntries(paletteJson);
+  datasetB = {
+    step: stepName,
+    width: decoded.width,
+    height: decoded.height,
+    biomeIndices: decoded.indices,
+    paletteEntries: parsedPalette,
+    baseSource: buildColorizedCanvas(decoded.width, decoded.height, decoded.indices, parsedPalette),
+    overlaySource: null,
+    continentalnessSource: null,
+    temperatureValues: null,
+    humidityValues: null,
+    overlayCache: new Map(),
+    maskCache: new Map(),
+    bandMaskByIndex: null,
+    jungleFamilyByIndex: null,
+    legend: legendJson,
+    fileMap,
+    loadedAt: new Date().toISOString()
+  };
+
+  await Promise.all([
+    loadDatasetBOverlay(overlaySel.value || "(none)"),
+    loadDatasetBContinentalness(),
+    loadDatasetBTemperature(),
+    loadDatasetBHumidity()
+  ]);
+
+  const seedLabel = datasetB.legend?.seed != null ? ` seed=${datasetB.legend.seed}` : "";
+  datasetBStatusEl.textContent = `Dataset B loaded:${seedLabel} ${datasetB.step} ${datasetB.width}x${datasetB.height}`;
+  renderBiomeHistogram();
+  scheduleRender();
+}
+
+async function fetchJsonClean(url) {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  const text = await response.text();
+  return JSON.parse(text.replace(/^\uFEFF/, ""));
+}
+
+async function loadBaseFromBiomeIndex(stepName, legend = currentLegend) {
+  const idsName = legendFileName(legend, ["biome_ids", "biomeIds"], "biome_ids.png");
+  const paletteName = legendFileName(legend, ["biome_palette", "biomePalette"], "biome_palette.json");
+  const [idsImage, paletteJson] = await Promise.all([
+    loadImage(`${stepName}/${idsName}?t=${Date.now()}`),
+    fetchJsonClean(`${stepName}/${paletteName}?t=${Date.now()}`)
+  ]);
+
+  const decoded = decodeBiomeIndexImage(idsImage);
+  const parsedPalette = parsePaletteEntries(paletteJson);
+  setCanvasSize(decoded.width, decoded.height);
+  biomeIndices = decoded.indices;
+  paletteEntries = parsedPalette;
+  datasetA = {
+    step: stepName,
+    width: decoded.width,
+    height: decoded.height,
+    biomeIndices: decoded.indices,
+    paletteEntries: parsedPalette,
+    baseSource: buildColorizedCanvas(decoded.width, decoded.height, decoded.indices, parsedPalette),
+    overlaySource: null,
+    continentalnessSource: null,
+    temperatureValues: null,
+    humidityValues: null,
+    legend: null,
+    bandMaskByIndex: null,
+    jungleFamilyByIndex: null,
+    maskCache: new Map()
+  };
+  buildBiomeToggles();
+  clearMask();
+  renderBiomeHistogram();
+  currentBaseLabel = `${stepName}/${idsName} + ${paletteName} (colorized)`;
+  scheduleRender();
+}
+
+async function loadBaseFallback(stepName) {
+  const biomesImage = await loadImage(`${stepName}/biomes.png?t=${Date.now()}`);
+  setCanvasSize(biomesImage.naturalWidth || biomesImage.width, biomesImage.naturalHeight || biomesImage.height);
+  biomeIndices = null;
+  paletteEntries = [];
+  datasetA = {
+    step: stepName,
+    width: biomesImage.naturalWidth || biomesImage.width || mapWidth,
+    height: biomesImage.naturalHeight || biomesImage.height || mapHeight,
+    biomeIndices: null,
+    paletteEntries: [],
+    baseSource: biomesImage,
+    overlaySource: null,
+    continentalnessSource: null,
+    temperatureValues: null,
+    humidityValues: null,
+    legend: null,
+    bandMaskByIndex: null,
+    jungleFamilyByIndex: null,
+    maskCache: new Map()
+  };
+  buildBiomeToggles();
+  clearMask();
+  renderBiomeHistogram();
+  currentBaseLabel = `${stepName}/biomes.png`;
+  scheduleRender();
+}
+
+async function setOverlay(stepName, overlayFile) {
+  datasetA.overlaySource = null;
+  if (overlayFile && overlayFile !== "(none)") {
+    try {
+      datasetA.overlaySource = await loadImage(`${stepName}/${overlayFile}?t=${Date.now()}`);
+    } catch (_) {
+      datasetA.overlaySource = null;
+    }
+  }
+  await loadDatasetBOverlay(overlayFile);
+  updateOverlayVisibility();
+  scheduleRender();
+}
+
+async function loadContinentalnessOverlay(stepName, legend = currentLegend) {
+  datasetA.continentalnessSource = null;
+  const fileName = legendFileName(legend, ["continentalness", "cont"], "continentalness.png");
+  try {
+    datasetA.continentalnessSource = await loadImage(`${stepName}/${fileName}?t=${Date.now()}`);
+  } catch (_) {
+    datasetA.continentalnessSource = null;
+  }
+  await loadDatasetBContinentalness();
+  updateContinentalnessVisibility();
+  scheduleRender();
+}
+
+async function loadTemperatureData(stepName, legend = currentLegend) {
+  datasetA.temperatureValues = null;
+  const fileName = legendFileName(legend, ["temperature", "temp"], "temperature.png");
+  try {
+    const image = await loadImage(`${stepName}/${fileName}?t=${Date.now()}`);
+    datasetA.temperatureValues = decodeTemperatureValues(image, datasetA.width, datasetA.height);
+  } catch (_) {
+    datasetA.temperatureValues = null;
+  }
+  await loadDatasetBTemperature();
+  scheduleRender();
+}
+
+async function loadHumidityData(stepName, legend = currentLegend) {
+  datasetA.humidityValues = null;
+  const fileName = legendFileName(legend, ["humidity", "humid"], "humidity.png");
+  try {
+    const image = await loadImage(`${stepName}/${fileName}?t=${Date.now()}`);
+    datasetA.humidityValues = decodeHumidityValues(image, datasetA.width, datasetA.height);
+  } catch (_) {
+    datasetA.humidityValues = null;
+  }
+  await loadDatasetBHumidity();
+  scheduleRender();
+}
+
+function pct(frac) {
+  return `${(Number(frac) * 100).toFixed(1)}%`;
+}
+
+function renderHistogramRows(container, rows, options = {}) {
+  container.innerHTML = "";
+  if (!rows.length) {
+    const empty = document.createElement("div");
+    empty.className = "hist-muted";
+    empty.textContent = options.emptyText || "No data";
+    container.appendChild(empty);
+    return;
+  }
+
+  const hasDeltaColumn = rows.some((row) => typeof row.deltaText === "string");
+  for (const row of rows) {
+    const wrapper = document.createElement("div");
+    wrapper.className = "hist-row";
+    if (hasDeltaColumn) {
+      wrapper.classList.add("with-delta");
+    }
+
+    const name = document.createElement("div");
+    name.className = "hist-name";
+    if (row.color) {
+      const swatch = document.createElement("span");
+      swatch.className = "hist-swatch";
+      swatch.style.background = row.color;
+      name.appendChild(swatch);
+    }
+    const label = document.createElement("span");
+    label.textContent = row.label;
+    name.appendChild(label);
+
+    const value = document.createElement("div");
+    value.className = "hist-value";
+    value.textContent = row.valueText;
+
+    let delta = null;
+    if (hasDeltaColumn) {
+      delta = document.createElement("div");
+      delta.className = `hist-delta ${row.deltaClass || "zero"}`;
+      delta.textContent = typeof row.deltaText === "string" ? row.deltaText : "n/a";
+    }
+
+    const bar = document.createElement("div");
+    bar.className = "hist-bar";
+
+    const fill = document.createElement("div");
+    fill.className = "hist-fill";
+    fill.style.width = `${Math.max(0, Math.min(100, row.percent))}%`;
+    fill.style.background = row.barColor || "#5b8def";
+    bar.appendChild(fill);
+
+    if (row.expectedPercent != null) {
+      const marker = document.createElement("div");
+      marker.className = "hist-expected";
+      marker.style.left = `${Math.max(0, Math.min(100, row.expectedPercent))}%`;
+      bar.appendChild(marker);
+    }
+
+    wrapper.appendChild(name);
+    wrapper.appendChild(value);
+    if (delta) {
+      wrapper.appendChild(delta);
+    }
+    wrapper.appendChild(bar);
+    container.appendChild(wrapper);
+  }
+}
+
+function computeBiomePercentages(dataset) {
+  if (!dataset?.biomeIndices || !dataset.biomeIndices.length) {
+    return { percents: new Float64Array(256), total: 0 };
+  }
+  const counts = new Uint32Array(256);
+  for (let i = 0; i < dataset.biomeIndices.length; i++) {
+    counts[dataset.biomeIndices[i]]++;
+  }
+  const total = dataset.biomeIndices.length;
+  const percents = new Float64Array(256);
+  for (let i = 0; i < counts.length; i++) {
+    percents[i] = (counts[i] * 100) / total;
+  }
+  return { percents, total };
+}
+
+function renderBiomeHistogram() {
+  if (!datasetA?.biomeIndices || !datasetA.biomeIndices.length || !datasetA?.paletteEntries?.length) {
+    biomeHistMetaEl.textContent = "Awaiting biome index data...";
+    renderHistogramRows(biomeHistogramEl, [], { emptyText: "No biome index loaded" });
+    return;
+  }
+
+  const hasDatasetB = !!(datasetB?.biomeIndices && datasetB.biomeIndices.length);
+  const statsA = computeBiomePercentages(datasetA);
+  const statsB = hasDatasetB ? computeBiomePercentages(datasetB) : null;
+  const totalA = statsA.total || 1;
+  const totalB = statsB ? statsB.total : 0;
+
+  const paletteByIndex = new Map();
+  for (const entry of (datasetA.paletteEntries || [])) {
+    paletteByIndex.set(entry.index & 0xFF, entry);
+  }
+  for (const entry of (datasetB?.paletteEntries || [])) {
+    if (!paletteByIndex.has(entry.index & 0xFF)) {
+      paletteByIndex.set(entry.index & 0xFF, entry);
+    }
+  }
+
+  const rows = [];
+  for (let idx = 0; idx < statsA.percents.length; idx++) {
+    const percentA = statsA.percents[idx];
+    const percentB = statsB ? statsB.percents[idx] : 0;
+    if (percentA <= 0 && percentB <= 0) continue;
+    const palette = paletteByIndex.get(idx);
+    const delta = statsB ? (percentA - percentB) : null;
+    rows.push({
+      label: palette ? palette.biome_id : `index ${idx}`,
+      valueText: `${percentA.toFixed(2)}%`,
+      percent: percentA,
+      deltaText: statsB ? `${delta >= 0 ? "+" : ""}${delta.toFixed(2)}%` : undefined,
+      deltaClass: !statsB ? undefined : (delta > 0.0005 ? "pos" : (delta < -0.0005 ? "neg" : "zero")),
+      color: palette ? palette.displayColor : "#999999",
+      barColor: palette ? palette.displayColor : "#999999"
+    });
+  }
+  if (statsB) {
+    rows.sort((a, b) => {
+      const ad = Math.abs(Number.parseFloat(String(a.deltaText || "0")));
+      const bd = Math.abs(Number.parseFloat(String(b.deltaText || "0")));
+      if (bd !== ad) return bd - ad;
+      return b.percent - a.percent;
+    });
+    biomeHistMetaEl.textContent = `${rows.length} biome buckets | A: ${totalA.toLocaleString()} px, B: ${totalB.toLocaleString()} px | delta = A - B`;
+  } else {
+    rows.sort((a, b) => b.percent - a.percent);
+    biomeHistMetaEl.textContent = `${rows.length} biome buckets across ${totalA.toLocaleString()} pixels (A only)`;
+  }
+  renderHistogramRows(biomeHistogramEl, rows);
+}
+
+function renderBandHistogram(legend) {
+  if (!legend || !Array.isArray(legend.bands) || !legend.bands.length || !Number.isFinite(legend.radiusBlocks)) {
+    bandHistMetaEl.textContent = "Awaiting legend.json...";
+    renderHistogramRows(bandHistogramEl, [], { emptyText: "No band data available" });
+    return;
+  }
+  if (mapHeight <= 0) {
+    bandHistMetaEl.textContent = "Map dimensions unavailable";
+    renderHistogramRows(bandHistogramEl, [], { emptyText: "No band data available" });
+    return;
+  }
+
+  const radius = Math.max(1, Number(legend.radiusBlocks));
+  const stepBlocks = Number.isFinite(Number(legend.stepBlocks)) ? Number(legend.stepBlocks) : 1;
+  const zMin = -radius;
+  const counts = new Array(legend.bands.length).fill(0);
+
+  for (let row = 0; row < mapHeight; row++) {
+    const z = zMin + (row * stepBlocks);
+    const absFrac = Math.max(0, Math.min(1, Math.abs(z) / radius));
+    let matched = legend.bands.length - 1;
+    for (let i = 0; i < legend.bands.length; i++) {
+      const band = legend.bands[i];
+      const min = Number(band.minFrac);
+      const max = Number(band.maxFrac);
+      const inRange = i === legend.bands.length - 1
+        ? absFrac >= min && absFrac <= max
+        : absFrac >= min && absFrac < max;
+      if (inRange) {
+        matched = i;
+        break;
+      }
+    }
+    counts[matched]++;
+  }
+
+  const total = counts.reduce((sum, value) => sum + value, 0) || 1;
+  const rows = legend.bands.map((band, i) => {
+    const count = counts[i];
+    const observedPercent = (count * 100) / total;
+    const expectedPercent = Math.max(0, (Number(band.maxFrac) - Number(band.minFrac)) * 100);
+    return {
+      label: String(band.zone || `band ${i + 1}`),
+      valueText: `${observedPercent.toFixed(2)}% (exp ${expectedPercent.toFixed(2)}%)`,
+      percent: observedPercent,
+      expectedPercent,
+      color: String(band.color || "#777777"),
+      barColor: String(band.color || "#777777")
+    };
+  });
+
+  bandHistMetaEl.textContent = `${total.toLocaleString()} rows sampled from legend band definitions`;
+  renderHistogramRows(bandHistogramEl, rows);
+}
+
+function createLegendSection(title) {
+  const section = document.createElement("section");
+  section.className = "legend-section";
+  const heading = document.createElement("h4");
+  heading.textContent = title;
+  section.appendChild(heading);
+  return section;
+}
+
+function appendLegendEmpty(section, text) {
+  const empty = document.createElement("div");
+  empty.className = "legend-empty";
+  empty.textContent = text;
+  section.appendChild(empty);
+}
+
+function appendLegendList(section, items) {
+  if (!items || !items.length) {
+    appendLegendEmpty(section, "None");
+    return;
+  }
+  const list = document.createElement("ul");
+  list.className = "legend-list";
+  for (const item of items) {
+    const li = document.createElement("li");
+    li.textContent = String(item);
+    list.appendChild(li);
+  }
+  section.appendChild(list);
+}
+
+function appendLegendKv(section, rows) {
+  const dl = document.createElement("dl");
+  dl.className = "legend-kv";
+  for (const row of rows) {
+    const dt = document.createElement("dt");
+    dt.textContent = row[0];
+    const dd = document.createElement("dd");
+    dd.textContent = String(row[1]);
+    dl.appendChild(dt);
+    dl.appendChild(dd);
+  }
+  section.appendChild(dl);
+}
+
+function renderLegendHuman(json) {
+  legendHumanEl.innerHTML = "";
+
+  const metadataSection = createLegendSection("Atlas Metadata");
+  appendLegendKv(metadataSection, [
+    ["Seed", json.seed ?? "?"],
+    ["Radius", `${json.radiusBlocks ?? "?"} blocks`],
+    ["Step", `${json.stepBlocks ?? "?"} blocks`],
+    ["Y level", json.y ?? "?"]
+  ]);
+  legendHumanEl.appendChild(metadataSection);
+
+  const layersSection = createLegendSection("Enabled Layers");
+  const layers = Array.isArray(json.layers) ? json.layers.map(layerLabel) : [];
+  const masks = Array.isArray(json.maskTargets) ? json.maskTargets.map((m) => `Mask: ${m}`) : [];
+  appendLegendList(layersSection, [...layers, ...masks]);
+  legendHumanEl.appendChild(layersSection);
+
+  const overlaysSection = createLegendSection("Overlays");
+  const overlays = Array.isArray(json.overlays) ? json.overlays : [];
+  appendLegendList(overlaysSection, overlays);
+  legendHumanEl.appendChild(overlaysSection);
+
+  const bandsSection = createLegendSection("Band Definitions");
+  const bands = Array.isArray(json.bands)
+    ? json.bands.map((b) => `${toTitle(String(b.zone || "?"))}: ${pct(b.minFrac)} to ${pct(b.maxFrac)} (${b.color || "n/a"})`)
+    : [];
+  appendLegendList(bandsSection, bands);
+  legendHumanEl.appendChild(bandsSection);
+
+  const scaleSection = createLegendSection("Temperature/Humidity Scales");
+  appendLegendKv(scaleSection, [
+    ["Temperature", json.temperatureScale ?? "n/a"],
+    ["Humidity", json.humidityScale ?? "n/a"]
+  ]);
+  legendHumanEl.appendChild(scaleSection);
+}
+
+async function loadLegend(stepName) {
+  try {
+    const json = await fetchJsonClean(`${stepName}/legend.json?t=${Date.now()}`);
+    currentLegend = json;
+    datasetA.legend = json;
+    datasetA.bandMaskByIndex = null;
+    renderLegendHuman(json);
+    legendRawEl.textContent = JSON.stringify(json, null, 2);
+    renderBandHistogram(currentLegend);
+    scheduleRender();
+  } catch (error) {
+    currentLegend = null;
+    if (datasetA) {
+      datasetA.legend = null;
+      datasetA.bandMaskByIndex = null;
+    }
+    legendHumanEl.innerHTML = "";
+    const msg = document.createElement("div");
+    msg.className = "legend-empty";
+    msg.textContent = `No legend.json in this step folder. (${error.message || error})`;
+    legendHumanEl.appendChild(msg);
+    legendRawEl.textContent = "(missing)";
+    renderBandHistogram(currentLegend);
+    scheduleRender();
+  }
+}
+
+function sortSteps(steps) {
+  return [...steps].sort((a, b) => {
+    const an = parseInt((a.match(/\d+/) || ["0"])[0], 10);
+    const bn = parseInt((b.match(/\d+/) || ["0"])[0], 10);
+    return an - bn;
+  });
+}
+
+function overlayCandidates(stepName) {
+  const step = atlasIndex.find((x) => x.step === stepName);
+  const pngs = (step?.files || []).filter((f) => f.toLowerCase().endsWith(".png"));
+  const out = [];
+  for (const file of preferredOrder) if (pngs.includes(file)) out.push(file);
+  for (const file of pngs) {
+    if (file === "biomes.png" || file === "biome_ids.png") continue;
+    if (!out.includes(file)) out.push(file);
+  }
+  return out;
+}
+
+function repopulateOverlaySelect(stepName) {
+  const prior = overlaySel.value;
+  const files = overlayCandidates(stepName);
+  overlaySel.innerHTML = "";
+  const none = document.createElement("option");
+  none.value = "(none)";
+  none.textContent = "(none)";
+  overlaySel.appendChild(none);
+  for (const file of files) {
+    const option = document.createElement("option");
+    option.value = file;
+    option.textContent = file.replace(".png", "");
+    overlaySel.appendChild(option);
+  }
+  if (files.includes(prior)) overlaySel.value = prior;
+}
+
+async function loadStep(stepName) {
+  status.textContent = `Loading ${stepName}...`;
+  let stepLegend = null;
+  try {
+    stepLegend = await fetchJsonClean(`${stepName}/legend.json?t=${Date.now()}`);
+  } catch (_) {
+    stepLegend = null;
+  }
+  repopulateOverlaySelect(stepName);
+  try {
+    await loadBaseFromBiomeIndex(stepName, stepLegend);
+  } catch (_) {
+    await loadBaseFallback(stepName);
+  }
+  await loadTemperatureData(stepName, stepLegend);
+  await loadHumidityData(stepName, stepLegend);
+  await loadContinentalnessOverlay(stepName, stepLegend);
+  await setOverlay(stepName, overlaySel.value || "(none)");
+  await loadLegend(stepName);
+  scheduleRender();
+}
+
+function handleCanvasClick(event) {
+  const rect = baseCanvas.getBoundingClientRect();
+  if (rect.width <= 0 || rect.height <= 0) return;
+  const x = Math.max(0, Math.min(mapWidth - 1, Math.floor((event.clientX - rect.left) * mapWidth / rect.width)));
+  const y = Math.max(0, Math.min(mapHeight - 1, Math.floor((event.clientY - rect.top) * mapHeight / rect.height)));
+  const region = splitRegions().find((r) => x >= r.x && x < (r.x + r.w) && y >= r.y && y < (r.y + r.h));
+  const dataset = datasetForRegion(region || { dataset: "A", x: 0, y: 0, w: mapWidth, h: mapHeight });
+  if (!dataset?.biomeIndices || !dataset.width || !dataset.height) {
+    return;
+  }
+  const sx = Math.max(0, Math.min(dataset.width - 1, Math.floor((x * dataset.width) / mapWidth)));
+  const sy = Math.max(0, Math.min(dataset.height - 1, Math.floor((y * dataset.height) / mapHeight)));
+  const index = dataset.biomeIndices[(sy * dataset.width) + sx];
+  selectBiome(index, dataset.paletteEntries || []);
+}
+
+async function init() {
+  const rawIndex = await fetchJsonClean(`atlas_index.json?t=${Date.now()}`);
+  if (Array.isArray(rawIndex)) {
+    atlasIndex = rawIndex;
+  } else if (rawIndex && typeof rawIndex === "object" && rawIndex.step) {
+    atlasIndex = [rawIndex];
+  } else {
+    throw new Error("atlas_index.json has unexpected shape");
+  }
+
+  const steps = sortSteps(atlasIndex.map((x) => x.step));
+  if (!steps.length) {
+    status.textContent = "No step folders found.";
+    return;
+  }
+
+  stepSel.innerHTML = "";
+  for (const step of steps) {
+    const option = document.createElement("option");
+    option.value = step;
+    option.textContent = step;
+    stepSel.appendChild(option);
+  }
+
+  const preferredStep = steps.includes("step16") ? "step16" : steps[0];
+  stepSel.value = preferredStep;
+  await loadStep(preferredStep);
+
+  stepSel.addEventListener("change", () => loadStep(stepSel.value).catch((e) => {
+    status.textContent = `Failed to load step. ${e.message || e}`;
+  }));
+  overlaySel.addEventListener("change", () => {
+    setOverlay(stepSel.value, overlaySel.value).catch((e) => {
+      status.textContent = `Failed to load overlay. ${e.message || e}`;
+    });
+  });
+  opacity.addEventListener("input", updateOverlayVisibility);
+  showOverlay.addEventListener("change", updateOverlayVisibility);
+  showDifferences.addEventListener("change", scheduleRender);
+  showTempThreshold.addEventListener("change", scheduleRender);
+  tempMinThreshold.addEventListener("input", () => {
+    refreshTempThresholdLabel();
+    scheduleRender();
+  });
+  tempMaxThreshold.addEventListener("input", () => {
+    refreshTempThresholdLabel();
+    scheduleRender();
+  });
+  showHumidityThreshold.addEventListener("change", scheduleRender);
+  humidityMinThreshold.addEventListener("input", () => {
+    refreshHumidityThresholdLabel();
+    scheduleRender();
+  });
+  humidityMaxThreshold.addEventListener("input", () => {
+    refreshHumidityThresholdLabel();
+    scheduleRender();
+  });
+  showBandViolations.addEventListener("change", () => {
+    setBandViolationAnimation(showBandViolations.checked);
+    refreshBandViolationLabel();
+    scheduleRender();
+  });
+  splitVertical.addEventListener("change", () => {
+    if (splitVertical.checked) {
+      splitHorizontal.checked = false;
+    }
+    scheduleRender();
+  });
+  splitHorizontal.addEventListener("change", () => {
+    if (splitHorizontal.checked) {
+      splitVertical.checked = false;
+    }
+    scheduleRender();
+  });
+  splitDivider.addEventListener("input", scheduleRender);
+  zoom.addEventListener("input", applyZoom);
+  continentalnessOpacity.addEventListener("input", updateContinentalnessVisibility);
+  showContinentalness.addEventListener("change", updateContinentalnessVisibility);
+  document.getElementById("reload").addEventListener("click", () => loadLegend(stepSel.value));
+  document.getElementById("clearBiome").addEventListener("click", clearMask);
+  document.getElementById("loadSecondSeed").addEventListener("click", () => {
+    const picker = document.getElementById("secondSeedPicker");
+    picker.value = "";
+    picker.click();
+  });
+  document.getElementById("secondSeedPicker").addEventListener("change", async (event) => {
+    try {
+      const files = Array.from(event.target.files || []);
+      await loadSecondSeedDataset(files);
+    } catch (error) {
+      datasetB = null;
+      datasetBStatusEl.textContent = `Dataset B load failed: ${error.message || error}`;
+      renderBiomeHistogram();
+      scheduleRender();
+    }
+  });
+  window.addEventListener("beforeunload", () => setBandViolationAnimation(false), { once: true });
+  baseCanvas.addEventListener("click", handleCanvasClick);
+  refreshTempThresholdLabel();
+  refreshHumidityThresholdLabel();
+  setBandViolationAnimation(showBandViolations.checked);
+  refreshBandViolationLabel();
+  updateOverlayVisibility();
+  updateContinentalnessVisibility();
+  renderBiomeHistogram();
+  renderBandHistogram(currentLegend);
+  scheduleRender();
+}
+
+init().catch((error) => {
+  status.textContent = `Failed to load atlas viewer. ${error.message || error}`;
+});
+</script>
+</body>
+</html>
