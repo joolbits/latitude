@@ -420,6 +420,16 @@ public final class LatitudeBiomes {
         return "deadband_keep";
     }
 
+    private static String savannaBiomeIdForHeight(int blockY) {
+        if (blockY >= SAVANNA_WINDSWEPT_CLAMP_Y) {
+            return "minecraft:windswept_savanna";
+        }
+        if (blockY >= SAVANNA_PLATEAU_CLAMP_Y) {
+            return "minecraft:savanna_plateau";
+        }
+        return "minecraft:savanna";
+    }
+
     private static void incrementSavannaIncomingCounter(String biomeId) {
         if ("minecraft:savanna".equals(biomeId)) {
             SAVANNA_GATE_IN_SAVANNA.incrementAndGet();
@@ -476,8 +486,12 @@ public final class LatitudeBiomes {
         }
     }
 
-    private static RegistryEntry<Biome> applySavannaWindsweptGate(Registry<Biome> biomes, RegistryEntry<Biome> out, int robustDelta, boolean upland) {
-        if (!isSavannaFamily(out)) {
+    private static RegistryEntry<Biome> applySavannaWindsweptGate(Registry<Biome> biomes,
+                                                                   RegistryEntry<Biome> out,
+                                                                   int robustDelta,
+                                                                   boolean upland) {
+        int cutoff = WINDSWEPT_RUGGED_THRESH + WINDSWEPT_RUGGED_HYST;
+        if (!isSavannaFamily(out) || robustDelta < cutoff) {
             return out;
         }
         String incomingBiomeId = savannaIncomingBiomeId(out);
@@ -487,8 +501,12 @@ public final class LatitudeBiomes {
         return biome(biomes, selectedBiomeId);
     }
 
-    private static RegistryEntry<Biome> applySavannaWindsweptGate(Collection<RegistryEntry<Biome>> biomes, RegistryEntry<Biome> out, int robustDelta, boolean upland) {
-        if (!isSavannaFamily(out)) {
+    private static RegistryEntry<Biome> applySavannaWindsweptGate(Collection<RegistryEntry<Biome>> biomes,
+                                                                   RegistryEntry<Biome> out,
+                                                                   int robustDelta,
+                                                                   boolean upland) {
+        int cutoff = WINDSWEPT_RUGGED_THRESH + WINDSWEPT_RUGGED_HYST;
+        if (!isSavannaFamily(out) || robustDelta < cutoff) {
             return out;
         }
         String incomingBiomeId = savannaIncomingBiomeId(out);
@@ -628,6 +646,8 @@ public final class LatitudeBiomes {
     private static final int UPLAND_FULL_Y = 145;
     private static final int UPLAND_SCALE_BLOCKS = 2048;
     private static final int SAVANNA_UPLAND_CLAMP_Y = 90;
+    private static final int SAVANNA_PLATEAU_CLAMP_Y = 100;
+    private static final int SAVANNA_WINDSWEPT_CLAMP_Y = 120;
     private static final int SAVANNA_RUGGED_RING_BLOCKS = 24;
     private static final int WINDSWEPT_RUGGED_THRESH = 8;
     private static final int WINDSWEPT_RUGGED_HYST = 2;
@@ -897,7 +917,7 @@ public final class LatitudeBiomes {
             out = applyLandOverrides(biomeRegistry, safe, blockX, blockZ, landBandIndex);
             boolean savannaGateInput = isSavannaFamily(out);
             out = applySavannaWindsweptGate(biomeRegistry, out, preview.robustDelta, previewHeightHigh);
-            finalSavannaRegion = savannaGateInput || isSavannaFamily(out);
+            finalSavannaRegion = isSavannaFamily(base) || savannaGateInput || isSavannaFamily(out);
         }
         if (landBandIndex == BAND_EQUATOR || landBandIndex == BAND_TROPICAL) {
             if (isColdBiome(out)) {
@@ -1065,7 +1085,7 @@ public final class LatitudeBiomes {
             out = applyLandOverrides(biomePool, safe, blockX, blockZ, landBandIndex);
             boolean savannaGateInput = isSavannaFamily(out);
             out = applySavannaWindsweptGate(biomePool, out, preview.robustDelta, previewHeightHigh);
-            finalSavannaRegion = savannaGateInput || isSavannaFamily(out);
+            finalSavannaRegion = isSavannaFamily(base) || savannaGateInput || isSavannaFamily(out);
         }
         if (landBandIndex == BAND_EQUATOR || landBandIndex == BAND_TROPICAL) {
             if (isColdBiome(out)) {
@@ -2758,16 +2778,18 @@ private static boolean swampPatchHere(long seed, int blockX, int blockZ) {
         RegistryEntry<Biome> out = pick;
         String incomingId = biomeId(pick);
         if (inSavannaRegion) {
-            if (isBiomeId(out, "minecraft:plains") || isBiomeId(out, "minecraft:sunflower_plains")) {
+            if ((isBiomeId(out, "minecraft:plains") || isBiomeId(out, "minecraft:sunflower_plains"))
+                    && blockY >= SAVANNA_UPLAND_CLAMP_Y) {
                 try {
                     out = biome(biomes, "minecraft:savanna");
                 } catch (Throwable ignored) {
                     out = pick;
                 }
             }
-            if (isBiomeId(out, "minecraft:savanna") && blockY >= SAVANNA_UPLAND_CLAMP_Y) {
+            if (isSavannaFamily(out)) {
+                String tierBiomeId = savannaBiomeIdForHeight(blockY);
                 try {
-                    out = biome(biomes, "minecraft:savanna_plateau");
+                    out = biome(biomes, tierBiomeId);
                 } catch (Throwable ignored) {
                     // keep current biome
                 }
@@ -2823,16 +2845,17 @@ private static boolean swampPatchHere(long seed, int blockX, int blockZ) {
         RegistryEntry<Biome> out = pick;
         String incomingId = biomeId(pick);
         if (inSavannaRegion) {
-            if (isBiomeId(out, "minecraft:plains") || isBiomeId(out, "minecraft:sunflower_plains")) {
+            if ((isBiomeId(out, "minecraft:plains") || isBiomeId(out, "minecraft:sunflower_plains"))
+                    && blockY >= SAVANNA_UPLAND_CLAMP_Y) {
                 RegistryEntry<Biome> savanna = entryById(biomes, "minecraft:savanna");
                 if (savanna != null) {
                     out = savanna;
                 }
             }
-            if (isBiomeId(out, "minecraft:savanna") && blockY >= SAVANNA_UPLAND_CLAMP_Y) {
-                RegistryEntry<Biome> plateau = entryById(biomes, "minecraft:savanna_plateau");
-                if (plateau != null) {
-                    out = plateau;
+            if (isSavannaFamily(out)) {
+                RegistryEntry<Biome> tier = entryById(biomes, savannaBiomeIdForHeight(blockY));
+                if (tier != null) {
+                    out = tier;
                 }
             }
         }
