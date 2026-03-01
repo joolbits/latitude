@@ -420,16 +420,6 @@ public final class LatitudeBiomes {
         return "deadband_keep";
     }
 
-    private static String savannaBiomeIdForHeight(int blockY) {
-        if (blockY >= SAVANNA_WINDSWEPT_CLAMP_Y) {
-            return "minecraft:windswept_savanna";
-        }
-        if (blockY >= SAVANNA_PLATEAU_CLAMP_Y) {
-            return "minecraft:savanna_plateau";
-        }
-        return "minecraft:savanna";
-    }
-
     private static void incrementSavannaIncomingCounter(String biomeId) {
         if ("minecraft:savanna".equals(biomeId)) {
             SAVANNA_GATE_IN_SAVANNA.incrementAndGet();
@@ -646,8 +636,6 @@ public final class LatitudeBiomes {
     private static final int UPLAND_FULL_Y = 145;
     private static final int UPLAND_SCALE_BLOCKS = 2048;
     private static final int SAVANNA_UPLAND_CLAMP_Y = 90;
-    private static final int SAVANNA_PLATEAU_CLAMP_Y = 100;
-    private static final int SAVANNA_WINDSWEPT_CLAMP_Y = 120;
     private static final int SAVANNA_RUGGED_RING_BLOCKS = 24;
     private static final int WINDSWEPT_RUGGED_THRESH = 8;
     private static final int WINDSWEPT_RUGGED_HYST = 2;
@@ -2778,21 +2766,37 @@ private static boolean swampPatchHere(long seed, int blockX, int blockZ) {
         RegistryEntry<Biome> out = pick;
         String incomingId = biomeId(pick);
         if (inSavannaRegion) {
-            if ((isBiomeId(out, "minecraft:plains") || isBiomeId(out, "minecraft:sunflower_plains"))
-                    && blockY >= SAVANNA_UPLAND_CLAMP_Y) {
+            if (isBiomeId(out, "minecraft:windswept_savanna")) {
+                return out;
+            }
+
+            boolean jungleClamped = false;
+            if (isJungleFamily(out)) {
+                try {
+                    out = biome(biomes, "minecraft:savanna");
+                    jungleClamped = true;
+                } catch (Throwable ignored) {
+                    out = pick;
+                }
+            } else if (isBiomeId(out, "minecraft:plains") || isBiomeId(out, "minecraft:sunflower_plains")) {
                 try {
                     out = biome(biomes, "minecraft:savanna");
                 } catch (Throwable ignored) {
                     out = pick;
                 }
             }
-            if (isSavannaFamily(out)) {
-                String tierBiomeId = savannaBiomeIdForHeight(blockY);
+
+            if (isBiomeId(out, "minecraft:savanna") && blockY >= SAVANNA_UPLAND_CLAMP_Y) {
                 try {
-                    out = biome(biomes, tierBiomeId);
+                    out = biome(biomes, "minecraft:savanna_plateau");
                 } catch (Throwable ignored) {
                     // keep current biome
                 }
+            }
+
+            if (DEBUG_FINAL_SANITIZE && jungleClamped) {
+                LOGGER.info("[LAT][FINAL_SANITIZE] jungle_clamp y={} in={} out={} x={} z={}",
+                        blockY, incomingId, biomeId(out), blockX, blockZ);
             }
         }
         if (DEBUG_FINAL_SANITIZE && inSavannaRegion) {
@@ -2845,18 +2849,34 @@ private static boolean swampPatchHere(long seed, int blockX, int blockZ) {
         RegistryEntry<Biome> out = pick;
         String incomingId = biomeId(pick);
         if (inSavannaRegion) {
-            if ((isBiomeId(out, "minecraft:plains") || isBiomeId(out, "minecraft:sunflower_plains"))
-                    && blockY >= SAVANNA_UPLAND_CLAMP_Y) {
+            if (isBiomeId(out, "minecraft:windswept_savanna")) {
+                return out;
+            }
+
+            boolean jungleClamped = false;
+            if (isJungleFamily(out)) {
+                RegistryEntry<Biome> savanna = entryById(biomes, "minecraft:savanna");
+                if (savanna != null) {
+                    out = savanna;
+                    jungleClamped = true;
+                }
+            } else if (isBiomeId(out, "minecraft:plains") || isBiomeId(out, "minecraft:sunflower_plains")) {
                 RegistryEntry<Biome> savanna = entryById(biomes, "minecraft:savanna");
                 if (savanna != null) {
                     out = savanna;
                 }
             }
-            if (isSavannaFamily(out)) {
-                RegistryEntry<Biome> tier = entryById(biomes, savannaBiomeIdForHeight(blockY));
-                if (tier != null) {
-                    out = tier;
+
+            if (isBiomeId(out, "minecraft:savanna") && blockY >= SAVANNA_UPLAND_CLAMP_Y) {
+                RegistryEntry<Biome> plateau = entryById(biomes, "minecraft:savanna_plateau");
+                if (plateau != null) {
+                    out = plateau;
                 }
+            }
+
+            if (DEBUG_FINAL_SANITIZE && jungleClamped) {
+                LOGGER.info("[LAT][FINAL_SANITIZE] jungle_clamp y={} in={} out={} x={} z={}",
+                        blockY, incomingId, biomeId(out), blockX, blockZ);
             }
         }
         if (DEBUG_FINAL_SANITIZE && inSavannaRegion) {
