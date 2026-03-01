@@ -240,6 +240,7 @@ public final class LatitudeBiomes {
             || Boolean.getBoolean("latitude.debugBiomePick");
     private static final boolean DEBUG_BLEND = Boolean.getBoolean("latitude.debugBlend");
     private static final boolean DEBUG_LEAK = Boolean.getBoolean("latitude.debugLeak");
+    private static final boolean DEBUG_FINAL_SANITIZE = Boolean.getBoolean("latitude.debugFinalSanitize");
     private static final int DEBUG_LIMIT = Integer.getInteger("latitude.debugBiomes.limit", 200);
     private static volatile long WORLD_SEED = 0L;
     public static volatile int ACTIVE_RADIUS_BLOCKS = 0;
@@ -626,6 +627,7 @@ public final class LatitudeBiomes {
     private static final int UPLAND_MIN_Y = 112;
     private static final int UPLAND_FULL_Y = 145;
     private static final int UPLAND_SCALE_BLOCKS = 2048;
+    private static final int SAVANNA_UPLAND_CLAMP_Y = 90;
     private static final int SAVANNA_RUGGED_RING_BLOCKS = 24;
     private static final int WINDSWEPT_RUGGED_THRESH = 8;
     private static final int WINDSWEPT_RUGGED_HYST = 2;
@@ -855,6 +857,7 @@ public final class LatitudeBiomes {
         RegistryEntry<Biome> sanitized = chosen;
         RegistryEntry<Biome> safe = chosen;
         RegistryEntry<Biome> out = chosen;
+        boolean finalSavannaRegion = false;
         if (!forcedBadlands) {
             if (shouldTryMangroveOverride(chosen, landBandIndex)) {
                 MangroveDecision decision = evaluateMangrove(blockX, blockZ, sampler);
@@ -892,7 +895,9 @@ public final class LatitudeBiomes {
             sanitized = sanitizeLandBiome(biomeRegistry, chosen, landBandIndex);
             safe = repickIfSurfaceCave(biomeRegistry, base, sanitized, blockX, blockZ, t, landBandIndex);
             out = applyLandOverrides(biomeRegistry, safe, blockX, blockZ, landBandIndex);
+            boolean savannaGateInput = isSavannaFamily(out);
             out = applySavannaWindsweptGate(biomeRegistry, out, preview.robustDelta, previewHeightHigh);
+            finalSavannaRegion = savannaGateInput || isSavannaFamily(out);
         }
         if (landBandIndex == BAND_EQUATOR || landBandIndex == BAND_TROPICAL) {
             if (isColdBiome(out)) {
@@ -906,6 +911,7 @@ public final class LatitudeBiomes {
             out = pickColdFallback(biomeRegistry, base, blockX, blockZ, landBandIndex);
         }
         out = enforceLandBandPool(biomeRegistry, out, blockX, blockZ, t, landBandIndex);
+        out = applyFinalSavannaClimateClamp(biomeRegistry, out, finalSavannaRegion, blockY, blockX, blockZ);
         traceSubpolarJunglePick(blockX, blockZ, effectiveRadius, landBandIndex, base, out);
         debugPick(blockX, blockZ, effectiveRadius, t, zone, base, out, false, out != sanitized, mangroveDecision);
         return out;
@@ -1020,6 +1026,7 @@ public final class LatitudeBiomes {
         RegistryEntry<Biome> sanitized = chosen;
         RegistryEntry<Biome> safe = chosen;
         RegistryEntry<Biome> out = chosen;
+        boolean finalSavannaRegion = false;
         if (!forcedBadlands) {
             if (shouldTryMangroveOverride(chosen, landBandIndex)) {
                 MangroveDecision decision = evaluateMangrove(blockX, blockZ, sampler);
@@ -1056,7 +1063,9 @@ public final class LatitudeBiomes {
             sanitized = sanitizeLandBiome(biomePool, chosen, landBandIndex);
             safe = repickIfSurfaceCave(biomePool, base, sanitized, blockX, blockZ, t, landBandIndex);
             out = applyLandOverrides(biomePool, safe, blockX, blockZ, landBandIndex);
+            boolean savannaGateInput = isSavannaFamily(out);
             out = applySavannaWindsweptGate(biomePool, out, preview.robustDelta, previewHeightHigh);
+            finalSavannaRegion = savannaGateInput || isSavannaFamily(out);
         }
         if (landBandIndex == BAND_EQUATOR || landBandIndex == BAND_TROPICAL) {
             if (isColdBiome(out)) {
@@ -1070,6 +1079,7 @@ public final class LatitudeBiomes {
             out = pickColdFallback(biomePool, base, blockX, blockZ, landBandIndex);
         }
         out = enforceLandBandPool(biomePool, out, blockX, blockZ, t, landBandIndex);
+        out = applyFinalSavannaClimateClamp(biomePool, out, finalSavannaRegion, blockY, blockX, blockZ);
         traceSubpolarJunglePick(blockX, blockZ, effectiveRadius, landBandIndex, base, out);
         debugPick(blockX, blockZ, effectiveRadius, t, zone, base, out, false, out != sanitized, mangroveDecision);
         return out;
@@ -2739,6 +2749,37 @@ private static boolean swampPatchHere(long seed, int blockX, int blockZ) {
         return pick;
     }
 
+    private static RegistryEntry<Biome> applyFinalSavannaClimateClamp(Registry<Biome> biomes,
+                                                                       RegistryEntry<Biome> pick,
+                                                                       boolean inSavannaRegion,
+                                                                       int blockY,
+                                                                       int blockX,
+                                                                       int blockZ) {
+        RegistryEntry<Biome> out = pick;
+        String incomingId = biomeId(pick);
+        if (inSavannaRegion) {
+            if (isBiomeId(out, "minecraft:plains") || isBiomeId(out, "minecraft:sunflower_plains")) {
+                try {
+                    out = biome(biomes, "minecraft:savanna");
+                } catch (Throwable ignored) {
+                    out = pick;
+                }
+            }
+            if (isBiomeId(out, "minecraft:savanna") && blockY >= SAVANNA_UPLAND_CLAMP_Y) {
+                try {
+                    out = biome(biomes, "minecraft:savanna_plateau");
+                } catch (Throwable ignored) {
+                    // keep current biome
+                }
+            }
+        }
+        if (DEBUG_FINAL_SANITIZE && inSavannaRegion) {
+            LOGGER.info("[LAT][FINAL_SANITIZE] inSavannaRegion={} y={} in={} outBefore={} outAfter={} x={} z={}",
+                    inSavannaRegion, blockY, incomingId, incomingId, biomeId(out), blockX, blockZ);
+        }
+        return out;
+    }
+
     private static RegistryEntry<Biome> sanitizeLandBiome(Collection<RegistryEntry<Biome>> biomes, RegistryEntry<Biome> pick, int bandIndex) {
         if (bandIndex == BAND_EQUATOR) {
             if (isBiomeId(pick, "minecraft:plains")
@@ -2771,6 +2812,35 @@ private static boolean swampPatchHere(long seed, int blockX, int blockZ) {
         }
 
         return pick;
+    }
+
+    private static RegistryEntry<Biome> applyFinalSavannaClimateClamp(Collection<RegistryEntry<Biome>> biomes,
+                                                                       RegistryEntry<Biome> pick,
+                                                                       boolean inSavannaRegion,
+                                                                       int blockY,
+                                                                       int blockX,
+                                                                       int blockZ) {
+        RegistryEntry<Biome> out = pick;
+        String incomingId = biomeId(pick);
+        if (inSavannaRegion) {
+            if (isBiomeId(out, "minecraft:plains") || isBiomeId(out, "minecraft:sunflower_plains")) {
+                RegistryEntry<Biome> savanna = entryById(biomes, "minecraft:savanna");
+                if (savanna != null) {
+                    out = savanna;
+                }
+            }
+            if (isBiomeId(out, "minecraft:savanna") && blockY >= SAVANNA_UPLAND_CLAMP_Y) {
+                RegistryEntry<Biome> plateau = entryById(biomes, "minecraft:savanna_plateau");
+                if (plateau != null) {
+                    out = plateau;
+                }
+            }
+        }
+        if (DEBUG_FINAL_SANITIZE && inSavannaRegion) {
+            LOGGER.info("[LAT][FINAL_SANITIZE] inSavannaRegion={} y={} in={} outBefore={} outAfter={} x={} z={}",
+                    inSavannaRegion, blockY, incomingId, incomingId, biomeId(out), blockX, blockZ);
+        }
+        return out;
     }
 
     private static void logTagPools(Collection<RegistryEntry<Biome>> biomes) {
