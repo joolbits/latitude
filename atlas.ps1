@@ -43,8 +43,16 @@ foreach ($m in $maskList) {
 $argsString = $argsParts -join " "
 
 Write-Host "Running Atlas export with args: $argsString" -ForegroundColor Cyan
-& "$PSScriptRoot\gradlew.bat" --no-daemon runBiomePreview --args="$argsString"
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+$gradle = Join-Path $PSScriptRoot "..\..\gradlew.bat"
+$gradle = (Resolve-Path $gradle).Path
+
+& $gradle --no-daemon runBiomePreview --args="$argsString"
+if ($LASTEXITCODE -ne 0) {
+  Write-Host "Gradle build failed. Exit code $LASTEXITCODE" -ForegroundColor Red
+  exit $LASTEXITCODE
+}
+
+Write-Host "Gradle export complete. Continuing to serve viewer..." -ForegroundColor Green
 
 $seedDir = Join-Path $PSScriptRoot "run\latdev\atlas\seed_$Seed"
 $rDir = Get-ChildItem $seedDir -Directory -Filter "R*" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
