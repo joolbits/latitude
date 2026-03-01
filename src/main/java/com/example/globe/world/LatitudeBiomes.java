@@ -420,6 +420,16 @@ public final class LatitudeBiomes {
         return "deadband_keep";
     }
 
+    private static String savannaTierByY(int blockY) {
+        if (blockY >= WINDSWEPT_MIN_Y) {
+            return "minecraft:windswept_savanna";
+        }
+        if (blockY >= SAVANNA_PLATEAU_MIN_Y) {
+            return "minecraft:savanna_plateau";
+        }
+        return "minecraft:savanna";
+    }
+
     private static void incrementSavannaIncomingCounter(String biomeId) {
         if ("minecraft:savanna".equals(biomeId)) {
             SAVANNA_GATE_IN_SAVANNA.incrementAndGet();
@@ -636,6 +646,8 @@ public final class LatitudeBiomes {
     private static final int UPLAND_FULL_Y = 145;
     private static final int UPLAND_SCALE_BLOCKS = 2048;
     private static final int SAVANNA_UPLAND_CLAMP_Y = 90;
+    private static final int SAVANNA_PLATEAU_MIN_Y = 100;
+    private static final int WINDSWEPT_MIN_Y = 120;
     private static final int SAVANNA_RUGGED_RING_BLOCKS = 24;
     private static final int WINDSWEPT_RUGGED_THRESH = 8;
     private static final int WINDSWEPT_RUGGED_HYST = 2;
@@ -905,6 +917,11 @@ public final class LatitudeBiomes {
             out = applyLandOverrides(biomeRegistry, safe, blockX, blockZ, landBandIndex);
             boolean savannaGateInput = isSavannaFamily(out);
             out = applySavannaWindsweptGate(biomeRegistry, out, preview.robustDelta, previewHeightHigh);
+            if (landBandIndex == BAND_TROPICAL && tropicalBaseStep(blockX, Math.abs(blockZ), t) <= 1 && isJungleFamily(out)) {
+                try {
+                    out = biome(biomeRegistry, "minecraft:savanna");
+                } catch (Throwable ignored) {}
+            }
             finalSavannaRegion = isSavannaFamily(base) || savannaGateInput || isSavannaFamily(out);
         }
         if (landBandIndex == BAND_EQUATOR || landBandIndex == BAND_TROPICAL) {
@@ -919,6 +936,13 @@ public final class LatitudeBiomes {
             out = pickColdFallback(biomeRegistry, base, blockX, blockZ, landBandIndex);
         }
         out = enforceLandBandPool(biomeRegistry, out, blockX, blockZ, t, landBandIndex);
+        if (landBandIndex == BAND_TROPICAL && tropicalBaseStep(blockX, Math.abs(blockZ), t) <= 1 && isJungleFamily(out)) {
+            try {
+                out = biome(biomeRegistry, "minecraft:savanna");
+            } catch (Throwable ignored) {
+                // keep current biome
+            }
+        }
         out = applyFinalSavannaClimateClamp(biomeRegistry, out, finalSavannaRegion, blockY, blockX, blockZ);
         traceSubpolarJunglePick(blockX, blockZ, effectiveRadius, landBandIndex, base, out);
         debugPick(blockX, blockZ, effectiveRadius, t, zone, base, out, false, out != sanitized, mangroveDecision);
@@ -1073,6 +1097,10 @@ public final class LatitudeBiomes {
             out = applyLandOverrides(biomePool, safe, blockX, blockZ, landBandIndex);
             boolean savannaGateInput = isSavannaFamily(out);
             out = applySavannaWindsweptGate(biomePool, out, preview.robustDelta, previewHeightHigh);
+            if (landBandIndex == BAND_TROPICAL && tropicalBaseStep(blockX, Math.abs(blockZ), t) <= 1 && isJungleFamily(out)) {
+                RegistryEntry<Biome> savanna = entryById(biomePool, "minecraft:savanna");
+                if (savanna != null) out = savanna;
+            }
             finalSavannaRegion = isSavannaFamily(base) || savannaGateInput || isSavannaFamily(out);
         }
         if (landBandIndex == BAND_EQUATOR || landBandIndex == BAND_TROPICAL) {
@@ -1087,6 +1115,12 @@ public final class LatitudeBiomes {
             out = pickColdFallback(biomePool, base, blockX, blockZ, landBandIndex);
         }
         out = enforceLandBandPool(biomePool, out, blockX, blockZ, t, landBandIndex);
+        if (landBandIndex == BAND_TROPICAL && tropicalBaseStep(blockX, Math.abs(blockZ), t) <= 1 && isJungleFamily(out)) {
+            RegistryEntry<Biome> savanna = entryById(biomePool, "minecraft:savanna");
+            if (savanna != null) {
+                out = savanna;
+            }
+        }
         out = applyFinalSavannaClimateClamp(biomePool, out, finalSavannaRegion, blockY, blockX, blockZ);
         traceSubpolarJunglePick(blockX, blockZ, effectiveRadius, landBandIndex, base, out);
         debugPick(blockX, blockZ, effectiveRadius, t, zone, base, out, false, out != sanitized, mangroveDecision);
@@ -1154,6 +1188,22 @@ public final class LatitudeBiomes {
     private static boolean isAridTropicalStepSymmetric(int blockX, int blockZ, double t) {
         int absZ = Math.abs(blockZ);
         return isAridTropicalStep(blockX, absZ, t);
+    }
+
+    // Returns the pre-dither tropical step (0-3) using only the 8-chunk jitter, ignoring fine dithering.
+    // baseStep <= 1 means this location is in savanna/arid macro-territory.
+    private static int tropicalBaseStep(int blockX, int absZ, double t) {
+        int chunkX = blockX >> 4;
+        int chunkZ = absZ >> 4;
+        long seed = WORLD_SEED;
+        double bandStart = LatitudeMath.EQUATOR_MAX_FRAC;
+        double bandEnd = LatitudeMath.SUBTROPICAL_MAX_FRAC;
+        double u = clamp((t - bandStart) / (bandEnd - bandStart), 0.0, 1.0);
+        double ladderT = 1.0 - u;
+        double jitterN = (blobNoise01(seed, chunkX, chunkZ, 8, 0xBADC0FFEE0DDF00DL) * 2.0) - 1.0;
+        double tJitter = clamp(ladderT + (jitterN * 0.12), 0.0, 1.0);
+        tJitter = smoothstep(tJitter);
+        return clampInt((int) Math.floor(tJitter * 4.0), 0, 3);
     }
 
     private static RegistryEntry<Biome> pickTropicalGradient(Collection<RegistryEntry<Biome>> biomes, RegistryEntry<Biome> base, int blockX, int blockZ, double t) {
@@ -2766,10 +2816,6 @@ private static boolean swampPatchHere(long seed, int blockX, int blockZ) {
         RegistryEntry<Biome> out = pick;
         String incomingId = biomeId(pick);
         if (inSavannaRegion) {
-            if (isBiomeId(out, "minecraft:windswept_savanna")) {
-                return out;
-            }
-
             boolean jungleClamped = false;
             if (isJungleFamily(out)) {
                 try {
@@ -2778,7 +2824,8 @@ private static boolean swampPatchHere(long seed, int blockX, int blockZ) {
                 } catch (Throwable ignored) {
                     out = pick;
                 }
-            } else if (isBiomeId(out, "minecraft:plains") || isBiomeId(out, "minecraft:sunflower_plains")) {
+            } else if ((isBiomeId(out, "minecraft:plains") || isBiomeId(out, "minecraft:sunflower_plains"))
+                    && blockY >= SAVANNA_UPLAND_CLAMP_Y) {
                 try {
                     out = biome(biomes, "minecraft:savanna");
                 } catch (Throwable ignored) {
@@ -2786,17 +2833,16 @@ private static boolean swampPatchHere(long seed, int blockX, int blockZ) {
                 }
             }
 
-            if (isBiomeId(out, "minecraft:savanna") && blockY >= SAVANNA_UPLAND_CLAMP_Y) {
-                try {
-                    out = biome(biomes, "minecraft:savanna_plateau");
-                } catch (Throwable ignored) {
-                    // keep current biome
-                }
-            }
-
             if (DEBUG_FINAL_SANITIZE && jungleClamped) {
                 LOGGER.info("[LAT][FINAL_SANITIZE] jungle_clamp y={} in={} out={} x={} z={}",
                         blockY, incomingId, biomeId(out), blockX, blockZ);
+            }
+        }
+        if (isSavannaFamily(out)) {
+            try {
+                out = biome(biomes, savannaTierByY(blockY));
+            } catch (Throwable ignored) {
+                // keep current biome
             }
         }
         if (DEBUG_FINAL_SANITIZE && inSavannaRegion) {
@@ -2849,10 +2895,6 @@ private static boolean swampPatchHere(long seed, int blockX, int blockZ) {
         RegistryEntry<Biome> out = pick;
         String incomingId = biomeId(pick);
         if (inSavannaRegion) {
-            if (isBiomeId(out, "minecraft:windswept_savanna")) {
-                return out;
-            }
-
             boolean jungleClamped = false;
             if (isJungleFamily(out)) {
                 RegistryEntry<Biome> savanna = entryById(biomes, "minecraft:savanna");
@@ -2860,23 +2902,23 @@ private static boolean swampPatchHere(long seed, int blockX, int blockZ) {
                     out = savanna;
                     jungleClamped = true;
                 }
-            } else if (isBiomeId(out, "minecraft:plains") || isBiomeId(out, "minecraft:sunflower_plains")) {
+            } else if ((isBiomeId(out, "minecraft:plains") || isBiomeId(out, "minecraft:sunflower_plains"))
+                    && blockY >= SAVANNA_UPLAND_CLAMP_Y) {
                 RegistryEntry<Biome> savanna = entryById(biomes, "minecraft:savanna");
                 if (savanna != null) {
                     out = savanna;
                 }
             }
 
-            if (isBiomeId(out, "minecraft:savanna") && blockY >= SAVANNA_UPLAND_CLAMP_Y) {
-                RegistryEntry<Biome> plateau = entryById(biomes, "minecraft:savanna_plateau");
-                if (plateau != null) {
-                    out = plateau;
-                }
-            }
-
             if (DEBUG_FINAL_SANITIZE && jungleClamped) {
                 LOGGER.info("[LAT][FINAL_SANITIZE] jungle_clamp y={} in={} out={} x={} z={}",
                         blockY, incomingId, biomeId(out), blockX, blockZ);
+            }
+        }
+        if (isSavannaFamily(out)) {
+            RegistryEntry<Biome> tier = entryById(biomes, savannaTierByY(blockY));
+            if (tier != null) {
+                out = tier;
             }
         }
         if (DEBUG_FINAL_SANITIZE && inSavannaRegion) {
