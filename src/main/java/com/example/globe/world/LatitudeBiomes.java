@@ -246,6 +246,17 @@ public final class LatitudeBiomes {
     private static final AtomicInteger DEBUG_COUNT = new AtomicInteger();
     private static final AtomicInteger BLEND_DEBUG_COUNT = new AtomicInteger();
     private static final AtomicInteger LEAK_LOG_COUNT = new AtomicInteger();
+    private static final AtomicInteger SAVANNA_GATE_TOTAL = new AtomicInteger();
+    private static final AtomicInteger SAVANNA_GATE_IN_SAVANNA = new AtomicInteger();
+    private static final AtomicInteger SAVANNA_GATE_IN_PLATEAU = new AtomicInteger();
+    private static final AtomicInteger SAVANNA_GATE_IN_WINDSWEPT = new AtomicInteger();
+    private static final AtomicInteger SAVANNA_GATE_IN_OTHER = new AtomicInteger();
+    private static final AtomicInteger SAVANNA_GATE_OUT_SAVANNA = new AtomicInteger();
+    private static final AtomicInteger SAVANNA_GATE_OUT_WINDSWEPT = new AtomicInteger();
+    private static final AtomicInteger SAVANNA_GATE_OUT_OTHER = new AtomicInteger();
+    private static final AtomicInteger SAVANNA_GATE_REASON_HIGH = new AtomicInteger();
+    private static final AtomicInteger SAVANNA_GATE_REASON_LOW = new AtomicInteger();
+    private static final AtomicInteger SAVANNA_GATE_REASON_DEADBAND = new AtomicInteger();
     private static final AtomicBoolean RADIUS_MISMATCH_LOGGED = new AtomicBoolean(false);
     private static final AtomicBoolean SUBPOLAR_JUNGLE_TRACE_LOGGED = new AtomicBoolean(false);
     private static final AtomicBoolean SURFACE_Y_LOGGED = new AtomicBoolean(false);
@@ -253,6 +264,7 @@ public final class LatitudeBiomes {
     // Surface classification is column-stable. Never use caller Y for these.
     private static final int SURFACE_CLASSIFY_Y = 96; // constant sampling layer
     private static final int LEAK_LOG_LIMIT = Integer.getInteger("latitude.leakLogLimit", 200);
+    private static final int SAVANNA_GATE_LOG_EVERY = Integer.getInteger("latitude.savannaGateLogEvery", 2048);
     private static final ThreadLocal<String> LAST_SELECTION_PATH = new ThreadLocal<>();
     private static final String PATH_TAG_PICK = "tag-based pick";
     private static final String PATH_FALLBACK_PICK = "explicit fallback list pick";
@@ -296,13 +308,13 @@ public final class LatitudeBiomes {
         boolean previewHeightHigh = preview.centerHeight >= (seaLevel + PREVIEW_HEIGHT_MARGIN_BLOCKS);
         boolean previewRuggedHigh = preview.robustDelta >= WINDSWEPT_RUGGED_THRESH;
         boolean mountainLike = noiseMountain && (previewHeightHigh || previewRuggedHigh);
-        String candidate = previewHeightHigh ? "minecraft:savanna_plateau" : "minecraft:savanna";
-        String selected = savannaGateBiomeId(preview.robustDelta, previewHeightHigh);
-        String reason = savannaGateReason(preview.robustDelta, previewHeightHigh);
+        String incoming = "minecraft:savanna";
+        String selected = savannaGateBiomeId(incoming, preview.robustDelta);
+        String reason = savannaGateReason(preview.robustDelta);
         return String.format(java.util.Locale.ROOT,
-                "mtnLike(noise)=%s previewHeight=%d sea=%d previewRobust=%d mtnLike(final)=%s upland=%s candidate=%s selected=%s reason=%s",
+                "mtnLike(noise)=%s previewHeight=%d sea=%d previewRobust=%d mtnLike(final)=%s incoming=%s selected=%s reason=%s",
                 noiseMountain, preview.centerHeight, seaLevel, preview.robustDelta, mountainLike,
-                previewHeightHigh, candidate, selected, reason);
+                incoming, selected, reason);
     }
 
     private static PreviewTerrain previewTerrain(NoiseChunkGenerator generator, NoiseConfig noiseConfig, HeightLimitView heightView,
@@ -377,40 +389,114 @@ public final class LatitudeBiomes {
         return generator == null ? 63 : generator.getSeaLevel();
     }
 
-    private static String savannaCandidateBiomeId(boolean upland) {
-        return upland ? "minecraft:savanna_plateau" : "minecraft:savanna";
+    private static String savannaIncomingBiomeId(RegistryEntry<Biome> entry) {
+        if (isBiomeId(entry, "minecraft:windswept_savanna")) {
+            return "minecraft:windswept_savanna";
+        }
+        if (isBiomeId(entry, "minecraft:savanna_plateau")) {
+            return "minecraft:savanna_plateau";
+        }
+        return "minecraft:savanna";
     }
 
-    private static String savannaGateBiomeId(int robustDelta, boolean upland) {
+    private static String savannaGateBiomeId(String incomingBiomeId, int robustDelta) {
         if (robustDelta >= WINDSWEPT_RUGGED_THRESH + WINDSWEPT_RUGGED_HYST) {
             return "minecraft:windswept_savanna";
         }
-        return savannaCandidateBiomeId(upland);
+        if (robustDelta < WINDSWEPT_RUGGED_THRESH) {
+            return "minecraft:savanna";
+        }
+        return incomingBiomeId;
     }
 
-    private static String savannaGateReason(int robustDelta, boolean upland) {
+    private static String savannaGateReason(int robustDelta) {
         if (robustDelta >= WINDSWEPT_RUGGED_THRESH + WINDSWEPT_RUGGED_HYST) {
-            return "windswept:robust";
+            return "robust_high";
         }
         if (robustDelta < WINDSWEPT_RUGGED_THRESH) {
-            return upland ? "plateau:upland" : "savanna:flat/default";
+            return "robust_low";
         }
-        return upland ? "deadband:plateau_upland" : "deadband:savanna_flat/default";
+        return "deadband_keep";
+    }
+
+    private static void incrementSavannaIncomingCounter(String biomeId) {
+        if ("minecraft:savanna".equals(biomeId)) {
+            SAVANNA_GATE_IN_SAVANNA.incrementAndGet();
+        } else if ("minecraft:savanna_plateau".equals(biomeId)) {
+            SAVANNA_GATE_IN_PLATEAU.incrementAndGet();
+        } else if ("minecraft:windswept_savanna".equals(biomeId)) {
+            SAVANNA_GATE_IN_WINDSWEPT.incrementAndGet();
+        } else {
+            SAVANNA_GATE_IN_OTHER.incrementAndGet();
+        }
+    }
+
+    private static void incrementSavannaOutgoingCounter(String biomeId) {
+        if ("minecraft:savanna".equals(biomeId)) {
+            SAVANNA_GATE_OUT_SAVANNA.incrementAndGet();
+        } else if ("minecraft:windswept_savanna".equals(biomeId)) {
+            SAVANNA_GATE_OUT_WINDSWEPT.incrementAndGet();
+        } else {
+            SAVANNA_GATE_OUT_OTHER.incrementAndGet();
+        }
+    }
+
+    private static void incrementSavannaReasonCounter(String reason) {
+        if ("robust_high".equals(reason)) {
+            SAVANNA_GATE_REASON_HIGH.incrementAndGet();
+        } else if ("robust_low".equals(reason)) {
+            SAVANNA_GATE_REASON_LOW.incrementAndGet();
+        } else {
+            SAVANNA_GATE_REASON_DEADBAND.incrementAndGet();
+        }
+    }
+
+    private static void logSavannaGateCounters(String incomingBiomeId, String outgoingBiomeId, String reason) {
+        int total = SAVANNA_GATE_TOTAL.incrementAndGet();
+        incrementSavannaIncomingCounter(incomingBiomeId);
+        incrementSavannaOutgoingCounter(outgoingBiomeId);
+        incrementSavannaReasonCounter(reason);
+        if (SAVANNA_GATE_LOG_EVERY > 0 && (total % SAVANNA_GATE_LOG_EVERY == 0)) {
+            LOGGER.info("[Latitude][SavannaGate] total={} in[savanna={},plateau={},windswept={},other={}] out[savanna={},windswept={},other={}] reason[robust_high={},robust_low={},deadband_keep={}] last[in={},out={},reason={}]",
+                    total,
+                    SAVANNA_GATE_IN_SAVANNA.get(),
+                    SAVANNA_GATE_IN_PLATEAU.get(),
+                    SAVANNA_GATE_IN_WINDSWEPT.get(),
+                    SAVANNA_GATE_IN_OTHER.get(),
+                    SAVANNA_GATE_OUT_SAVANNA.get(),
+                    SAVANNA_GATE_OUT_WINDSWEPT.get(),
+                    SAVANNA_GATE_OUT_OTHER.get(),
+                    SAVANNA_GATE_REASON_HIGH.get(),
+                    SAVANNA_GATE_REASON_LOW.get(),
+                    SAVANNA_GATE_REASON_DEADBAND.get(),
+                    incomingBiomeId,
+                    outgoingBiomeId,
+                    reason);
+        }
     }
 
     private static RegistryEntry<Biome> applySavannaWindsweptGate(Registry<Biome> biomes, RegistryEntry<Biome> out, int robustDelta, boolean upland) {
         if (!isSavannaFamily(out)) {
             return out;
         }
-        return biome(biomes, savannaGateBiomeId(robustDelta, upland));
+        String incomingBiomeId = savannaIncomingBiomeId(out);
+        String reason = savannaGateReason(robustDelta);
+        String selectedBiomeId = savannaGateBiomeId(incomingBiomeId, robustDelta);
+        logSavannaGateCounters(incomingBiomeId, selectedBiomeId, reason);
+        return biome(biomes, selectedBiomeId);
     }
 
     private static RegistryEntry<Biome> applySavannaWindsweptGate(Collection<RegistryEntry<Biome>> biomes, RegistryEntry<Biome> out, int robustDelta, boolean upland) {
         if (!isSavannaFamily(out)) {
             return out;
         }
-        RegistryEntry<Biome> selected = entryById(biomes, savannaGateBiomeId(robustDelta, upland));
-        return selected != null ? selected : out;
+        String incomingBiomeId = savannaIncomingBiomeId(out);
+        String reason = savannaGateReason(robustDelta);
+        String selectedBiomeId = savannaGateBiomeId(incomingBiomeId, robustDelta);
+        RegistryEntry<Biome> selected = entryById(biomes, selectedBiomeId);
+        RegistryEntry<Biome> returning = selected != null ? selected : out;
+        logSavannaGateCounters(incomingBiomeId, selected != null ? selectedBiomeId : incomingBiomeId, reason);
+        return returning;
     }
 
     private static boolean isSavannaFamily(RegistryEntry<Biome> entry) {
