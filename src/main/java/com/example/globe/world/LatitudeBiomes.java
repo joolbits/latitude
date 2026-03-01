@@ -648,6 +648,7 @@ public final class LatitudeBiomes {
     private static final int SAVANNA_UPLAND_CLAMP_Y = 90;
     private static final int SAVANNA_PLATEAU_MIN_Y = 100;
     private static final int WINDSWEPT_MIN_Y = 120;
+    private static final int MANGROVE_MAX_Y_ABOVE_SEA = 8;
     private static final int SAVANNA_RUGGED_RING_BLOCKS = 24;
     private static final int WINDSWEPT_RUGGED_THRESH = 8;
     private static final int WINDSWEPT_RUGGED_HYST = 2;
@@ -817,8 +818,10 @@ public final class LatitudeBiomes {
 
         int landBandIndex = latitudeBandIndexWithBlend(blockX, blockZ, effectiveRadius, zone, t);
         boolean mountainNoiseLike = landBandIndex == BAND_TEMPERATE && isMountainLike(sampler, blockX, blockZ);
+        boolean skipPreview = shouldSkipPreviewTerrain(callerContext);
+        boolean hasReliableSurface = !skipPreview && generator != null && noiseConfig != null && heightView != null;
         PreviewTerrain preview;
-        if (shouldSkipPreviewTerrain(callerContext)) {
+        if (skipPreview) {
             preview = syntheticPreviewTerrain(mountainNoiseLike, generator);
             if (PREVIEW_TERRAIN_SKIP_LOGGED.compareAndSet(false, true)) {
                 LOGGER.info("[Latitude] skipping previewHeight() for callerContext={} (atlas fast-path enabled)", callerContext);
@@ -880,7 +883,7 @@ public final class LatitudeBiomes {
         boolean finalSavannaRegion = false;
         if (!forcedBadlands) {
             if (shouldTryMangroveOverride(chosen, landBandIndex)) {
-                MangroveDecision decision = evaluateMangrove(blockX, blockZ, sampler);
+                MangroveDecision decision = evaluateMangrove(blockX, blockZ, preview.centerHeight, seaLevel, sampler, hasReliableSurface);
                 mangroveDecision = decision.logLabel();
                 if (decision.allow()) {
                     try {
@@ -890,7 +893,7 @@ public final class LatitudeBiomes {
                     }
                 }
             } else if (isMangroveCandidate(chosen)) {
-                MangroveDecision decision = evaluateMangrove(blockX, blockZ, sampler);
+                MangroveDecision decision = evaluateMangrove(blockX, blockZ, preview.centerHeight, seaLevel, sampler, hasReliableSurface);
                 mangroveDecision = decision.logLabel();
                 if (!decision.allow()) {
                     chosen = pickMangroveFallback(biomeRegistry, base, blockX, blockZ, t, landBandIndex);
@@ -1007,8 +1010,10 @@ public final class LatitudeBiomes {
 
         int landBandIndex = latitudeBandIndexWithBlend(blockX, blockZ, effectiveRadius, zone, t);
         boolean mountainNoiseLike = landBandIndex == BAND_TEMPERATE && isMountainLike(sampler, blockX, blockZ);
+        boolean skipPreview = shouldSkipPreviewTerrain(callerContext);
+        boolean hasReliableSurface = !skipPreview && generator != null && noiseConfig != null && heightView != null;
         PreviewTerrain preview;
-        if (shouldSkipPreviewTerrain(callerContext)) {
+        if (skipPreview) {
             preview = syntheticPreviewTerrain(mountainNoiseLike, generator);
             if (PREVIEW_TERRAIN_SKIP_LOGGED.compareAndSet(false, true)) {
                 LOGGER.info("[Latitude] skipping previewHeight() for callerContext={} (atlas fast-path enabled)", callerContext);
@@ -1061,7 +1066,7 @@ public final class LatitudeBiomes {
         boolean finalSavannaRegion = false;
         if (!forcedBadlands) {
             if (shouldTryMangroveOverride(chosen, landBandIndex)) {
-                MangroveDecision decision = evaluateMangrove(blockX, blockZ, sampler);
+                MangroveDecision decision = evaluateMangrove(blockX, blockZ, preview.centerHeight, seaLevel, sampler, hasReliableSurface);
                 mangroveDecision = decision.logLabel();
                 if (decision.allow()) {
                     RegistryEntry<Biome> mangrove = entryById(biomePool, MANGROVE_ID);
@@ -1070,7 +1075,7 @@ public final class LatitudeBiomes {
                     }
                 }
             } else if (isMangroveCandidate(chosen)) {
-                MangroveDecision decision = evaluateMangrove(blockX, blockZ, sampler);
+                MangroveDecision decision = evaluateMangrove(blockX, blockZ, preview.centerHeight, seaLevel, sampler, hasReliableSurface);
                 mangroveDecision = decision.logLabel();
                 if (!decision.allow()) {
                     chosen = pickMangroveFallback(biomePool, base, blockX, blockZ, t, landBandIndex);
@@ -1934,11 +1939,9 @@ public final class LatitudeBiomes {
         return switch (bandIndex) {
             case BAND_EQUATOR -> List.of(
                     SWAMP_ID,
-                    MANGROVE_ID,
                     "minecraft:sunflower_plains");
             case BAND_TROPICAL -> List.of(
-                    SWAMP_ID,
-                    MANGROVE_ID);
+                    SWAMP_ID);
             case BAND_TEMPERATE -> List.of(
                     "minecraft:sunflower_plains",
                     "minecraft:pale_garden",
@@ -2523,9 +2526,14 @@ public final class LatitudeBiomes {
         }
     }
 
-    private static MangroveDecision evaluateMangrove(int blockX, int blockZ, MultiNoiseUtil.MultiNoiseSampler sampler) {
-        if (sampler == null) {
-            return new MangroveDecision(true, 0.0, 0.0, 0.0, true, true);
+    private static MangroveDecision evaluateMangrove(int blockX,
+                                                     int blockZ,
+                                                     int surfaceY,
+                                                     int seaLevel,
+                                                     MultiNoiseUtil.MultiNoiseSampler sampler,
+                                                     boolean hasReliableSurface) {
+        if (sampler == null || !hasReliableSurface) {
+            return new MangroveDecision(false, 0.0, 0.0, 0.0, false, false);
         }
         int noiseX = blockX >> 2;
         int noiseZ = blockZ >> 2;
@@ -2533,7 +2541,11 @@ public final class LatitudeBiomes {
         double cont = MultiNoiseUtil.toFloat(point.continentalnessNoise());
         double erosion = MultiNoiseUtil.toFloat(point.erosionNoise());
         double weirdness = MultiNoiseUtil.toFloat(point.weirdnessNoise());
-        boolean lowland = cont < 0.12;
+        int mangroveMaxY = seaLevel + MANGROVE_MAX_Y_ABOVE_SEA;
+        if (surfaceY > mangroveMaxY) {
+            return new MangroveDecision(false, cont, erosion, weirdness, false, false);
+        }
+        boolean lowland = cont < 0.05;
         boolean notRugged = erosion > 0.0;
         boolean notPeaks = Math.abs(weirdness) < 0.15;
         boolean suitable = lowland && notRugged && notPeaks;
