@@ -2,7 +2,6 @@
   "replace": false,
   "values": [
     "minecraft:savanna",
-    "minecraft:savanna_plateau",
-    "minecraft:sparse_jungle"
+    "minecraft:savanna_plateau"
   ]
 }
