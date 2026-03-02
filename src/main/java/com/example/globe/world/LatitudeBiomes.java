@@ -708,6 +708,10 @@ public final class LatitudeBiomes {
     private static final double MANGROVE_CONTINENTALNESS_MAX = 0.015;
     private static final double MANGROVE_MIN_EROSION = 0.08;
     private static final double MANGROVE_MAX_ABS_WEIRDNESS = 0.10;
+    private static final int MANGROVE_SECONDARY_COAST_MAX_BLOCKS = 64;
+    private static final double MANGROVE_SECONDARY_MIN_EROSION = 0.15;
+    private static final double MANGROVE_SECONDARY_MAX_ABS_WEIRDNESS = 0.70;
+
     private static final int SAVANNA_RUGGED_RING_BLOCKS = 24;
     private static final int WINDSWEPT_RUGGED_THRESH = 8;
     private static final int WINDSWEPT_RUGGED_HYST = 2;
@@ -2292,18 +2296,31 @@ public final class LatitudeBiomes {
         double cont = MultiNoiseUtil.toFloat(p.continentalnessNoise());
         double erosion = MultiNoiseUtil.toFloat(p.erosionNoise());
         double weird = MultiNoiseUtil.toFloat(p.weirdnessNoise());
-        boolean veryWet = erosion > 0.25 && Math.abs(weird) < 0.40;
+
         boolean coastal = cont < MANGROVE_CONTINENTALNESS_MAX;
-        boolean invite = coastal && veryWet;
+        boolean invitePrimary = coastal && erosion > 0.25 && Math.abs(weird) < 0.40;
+
+        int oceanDist = oceanDistanceBlocks(blockX, blockZ, sampler);
+        boolean coastalSecondary = coastal
+                && oceanDist <= MANGROVE_SECONDARY_COAST_MAX_BLOCKS
+                && erosion > MANGROVE_SECONDARY_MIN_EROSION
+                && Math.abs(weird) < MANGROVE_SECONDARY_MAX_ABS_WEIRDNESS;
+
+        boolean invite = invitePrimary || coastalSecondary;
         if (DEBUG_MANGROVE_INVITE) {
             long n = MANGROVE_INVITE_LOG_COUNT.incrementAndGet();
             if (invite || n <= 50 || n % 50000L == 0L) {
-                LOGGER.info("[latdev] mangroveInviteProbe x={} z={} cont={}; erosion={}; weird={}; nearOcean={}; invite={} count={}",
+                String path = invitePrimary ? "primary" : (coastalSecondary ? "secondary" : "none");
+                LOGGER.info("[latdev] mangroveInviteProbe x={} z={} cont={}; erosion={}; weird={}; nearOcean={}; oceanDist={}; invite={}; path={} count={}",
                         blockX, blockZ,
                         String.format(java.util.Locale.ROOT, "%.3f", cont),
                         String.format(java.util.Locale.ROOT, "%.3f", erosion),
                         String.format(java.util.Locale.ROOT, "%.3f", weird),
-                        nearOcean, invite, n);
+                        nearOcean,
+                        oceanDist,
+                        invite,
+                        path,
+                        n);
             }
         }
         return invite;
