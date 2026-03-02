@@ -895,9 +895,9 @@ public final class LatitudeBiomes {
             double erosion = MultiNoiseUtil.toFloat(p.erosionNoise());
             double weird = MultiNoiseUtil.toFloat(p.weirdnessNoise());
             if (!isAridTropicalStepSymmetric(blockX, blockZ, t)
-                    && swampPatchHere(WORLD_SEED, blockX, blockZ)
-                    && swampOkInPatch(cont, erosion, weird)
-            && wetlandNoiseSymmetric(WORLD_SEED, blockX, blockZ) > wetlandThresholdForBand(bandIndex, t)) {
+            && swampPatchHere(WORLD_SEED, blockX, blockZ)
+            && swampOkInPatch(cont, erosion, weird)
+            && wetlandNoiseSymmetric(WORLD_SEED, blockX, blockZ) < wetlandThresholdForBand(bandIndex, t)) {
                 try {
                     chosen = biome(biomeRegistry, SWAMP_ID);
                 } catch (Throwable ignored) {
@@ -1094,8 +1094,9 @@ public final class LatitudeBiomes {
             double erosion = MultiNoiseUtil.toFloat(p.erosionNoise());
             double weird = MultiNoiseUtil.toFloat(p.weirdnessNoise());
             if (!isAridTropicalStepSymmetric(blockX, blockZ, t)
-                    && swampPatchHere(WORLD_SEED, blockX, blockZ)
-                    && swampOkInPatch(cont, erosion, weird)) {
+            && swampPatchHere(WORLD_SEED, blockX, blockZ)
+            && swampOkInPatch(cont, erosion, weird)
+            && wetlandNoiseSymmetric(WORLD_SEED, blockX, blockZ) < wetlandThresholdForBand(bandIndex, t)) {
                 chosen = entryById(biomePool, SWAMP_ID);
             }
         }
