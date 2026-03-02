@@ -2714,7 +2714,7 @@ public final class LatitudeBiomes {
 
     private static SwampDecision evaluateSwamp(int blockX, int blockZ, MultiNoiseUtil.MultiNoiseSampler sampler) {
         if (sampler == null) {
-            return new SwampDecision(true, 0.0, 0.0, 0.0, true);
+            return new SwampDecision(false, 0.0, 0.0, 0.0, false);
         }
         int noiseX = blockX >> 2;
         int noiseZ = blockZ >> 2;
