@@ -2292,7 +2292,7 @@ public final class LatitudeBiomes {
         double cont = MultiNoiseUtil.toFloat(p.continentalnessNoise());
         double erosion = MultiNoiseUtil.toFloat(p.erosionNoise());
         double weird = MultiNoiseUtil.toFloat(p.weirdnessNoise());
-        boolean veryWet = erosion > 0.35 && Math.abs(weird) < 0.40;
+        boolean veryWet = erosion > 0.25 && Math.abs(weird) < 0.40;
         boolean coastal = cont < MANGROVE_CONTINENTALNESS_MAX;
         boolean invite = coastal && veryWet;
         if (DEBUG_MANGROVE_INVITE) {
