@@ -25,9 +25,7 @@ import net.minecraft.registry.entry.RegistryEntry;
 import net.minecraft.registry.tag.BiomeTags;
 import net.minecraft.registry.tag.TagKey;
 import net.minecraft.util.Identifier;
-import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.MathHelper;
-import net.minecraft.block.Blocks;
 import net.minecraft.world.HeightLimitView;
 import net.minecraft.world.Heightmap;
 import net.minecraft.world.biome.Biome;
@@ -244,6 +242,7 @@ public final class LatitudeBiomes {
     private static final boolean DEBUG_BLEND = Boolean.getBoolean("latitude.debugBlend");
     private static final boolean DEBUG_LEAK = Boolean.getBoolean("latitude.debugLeak");
     private static final boolean DEBUG_FINAL_SANITIZE = Boolean.getBoolean("latitude.debugFinalSanitize");
+    private static final boolean DEBUG_MANGROVE_DENIAL = Boolean.getBoolean("latitude.debugMangroveDenial");
     private static final boolean DEBUG_MANGROVE_ORIGIN = Boolean.getBoolean("latitude.debugMangroveOrigin");
     private static final int DEBUG_LIMIT = Integer.getInteger("latitude.debugBiomes.limit", 200);
     private static volatile long WORLD_SEED = 0L;
@@ -275,6 +274,12 @@ public final class LatitudeBiomes {
     private static final String PATH_FALLBACK_PICK = "explicit fallback list pick";
     private static final String PATH_RETURN_BASE = "return base";
     private static boolean TAG_LOGGED = false;
+
+    private static void logMangroveDenial(String reason) {
+        if (DEBUG_MANGROVE_DENIAL) {
+            System.out.println("[latdev] mangroveDenied reason=" + reason);
+        }
+    }
 
     public static void setWorldSeed(long seed) {
         WORLD_SEED = seed;
@@ -794,7 +799,9 @@ public final class LatitudeBiomes {
     public static RegistryEntry<Biome> pick(Registry<Biome> biomeRegistry, RegistryEntry<Biome> base, int blockX, int blockZ, int blockY, int borderRadiusBlocks,
                                             MultiNoiseUtil.MultiNoiseSampler sampler, String callerContext,
                                             NoiseChunkGenerator generator, NoiseConfig noiseConfig, HeightLimitView heightView) {
-        assertSurfaceY(blockY);
+        int columnDecisionY = surfaceDecisionY(generator, noiseConfig, heightView, blockX, blockZ);
+        int biomeY = (blockY < columnDecisionY - 16) ? blockY : columnDecisionY;
+        assertSurfaceY(biomeY);
         int activeRadius = ACTIVE_RADIUS_BLOCKS;
         boolean overrideDisabled = Boolean.getBoolean("latitude.disableRadiusOverride");
 
@@ -863,7 +870,6 @@ public final class LatitudeBiomes {
             preview = previewTerrain(generator, noiseConfig, heightView, blockX, blockZ);
         }
         int seaLevel = previewSeaLevel(generator);
-        int columnDecisionY = surfaceDecisionY(generator, noiseConfig, heightView, blockX, blockZ);
         boolean previewHeightHigh = preview.centerHeight >= (seaLevel + PREVIEW_HEIGHT_MARGIN_BLOCKS);
         boolean previewRuggedHigh = preview.robustDelta >= WINDSWEPT_RUGGED_THRESH;
         boolean mountainLike = mountainNoiseLike && (previewHeightHigh || previewRuggedHigh);
@@ -978,6 +984,10 @@ public final class LatitudeBiomes {
             out = pickColdFallback(biomeRegistry, base, blockX, blockZ, landBandIndex);
         }
         out = enforceLandBandPool(biomeRegistry, out, blockX, blockZ, t, landBandIndex);
+        if (DEBUG_BIOMES && isMangroveCandidate(out)) {
+            LOGGER.warn("[Latitude][MangroveLeak] mangrove escaped into land pool result (registry path) at x={} z={} bandIndex={} y={}",
+                    blockX, blockZ, landBandIndex, columnDecisionY);
+        }
         if (landBandIndex == BAND_TROPICAL && tropicalBaseStep(blockX, Math.abs(blockZ), t) <= 1 && isJungleFamily(out)) {
             try {
                 out = biome(biomeRegistry, "minecraft:savanna");
@@ -999,7 +1009,9 @@ public final class LatitudeBiomes {
     public static RegistryEntry<Biome> pick(Collection<RegistryEntry<Biome>> biomePool, RegistryEntry<Biome> base, int blockX, int blockZ, int blockY, int borderRadiusBlocks,
                                             MultiNoiseUtil.MultiNoiseSampler sampler, String callerContext,
                                             NoiseChunkGenerator generator, NoiseConfig noiseConfig, HeightLimitView heightView) {
-        assertSurfaceY(blockY);
+        int columnDecisionY = surfaceDecisionY(generator, noiseConfig, heightView, blockX, blockZ);
+        int biomeY = (blockY < columnDecisionY - 16) ? blockY : columnDecisionY;
+        assertSurfaceY(biomeY);
         int activeRadius = ACTIVE_RADIUS_BLOCKS;
         boolean overrideDisabled = Boolean.getBoolean("latitude.disableRadiusOverride");
 
@@ -1061,7 +1073,6 @@ public final class LatitudeBiomes {
             preview = previewTerrain(generator, noiseConfig, heightView, blockX, blockZ);
         }
         int seaLevel = previewSeaLevel(generator);
-        int columnDecisionY = surfaceDecisionY(generator, noiseConfig, heightView, blockX, blockZ);
         boolean previewHeightHigh = preview.centerHeight >= (seaLevel + PREVIEW_HEIGHT_MARGIN_BLOCKS);
         boolean previewRuggedHigh = preview.robustDelta >= WINDSWEPT_RUGGED_THRESH;
         boolean mountainLike = mountainNoiseLike && (previewHeightHigh || previewRuggedHigh);
@@ -1165,6 +1176,10 @@ public final class LatitudeBiomes {
             out = pickColdFallback(biomePool, base, blockX, blockZ, landBandIndex);
         }
         out = enforceLandBandPool(biomePool, out, blockX, blockZ, t, landBandIndex);
+        if (DEBUG_BIOMES && isMangroveCandidate(out)) {
+            LOGGER.warn("[Latitude][MangroveLeak] mangrove escaped into land pool result (collection path) at x={} z={} bandIndex={} y={}",
+                    blockX, blockZ, landBandIndex, columnDecisionY);
+        }
         if (landBandIndex == BAND_TROPICAL && tropicalBaseStep(blockX, Math.abs(blockZ), t) <= 1 && isJungleFamily(out)) {
             RegistryEntry<Biome> savanna = entryById(biomePool, "minecraft:savanna");
             if (savanna != null) {
@@ -2580,6 +2595,7 @@ public final class LatitudeBiomes {
                                                      boolean hasReliableSurface,
                                                      HeightLimitView heightView) {
         if (sampler == null || !hasReliableSurface) {
+            logMangroveDenial("no_surface_data");
             return new MangroveDecision(false, 0.0, 0.0, 0.0, false, false);
         }
         int noiseX = blockX >> 2;
@@ -2590,12 +2606,14 @@ public final class LatitudeBiomes {
         double weirdness = MultiNoiseUtil.toFloat(point.weirdnessNoise());
         int mangroveMaxY = seaLevel + MANGROVE_MAX_Y_ABOVE_SEA;
         if (surfaceY > mangroveMaxY) {
+            logMangroveDenial("height");
             return new MangroveDecision(false, cont, erosion, weirdness, false, false);
         }
         if (robustDelta > MANGROVE_MAX_ROBUST_DELTA) {
+            logMangroveDenial("rugged");
             return new MangroveDecision(false, cont, erosion, weirdness, false, false);
         }
-        ShorelineScan shoreline = scanShorelineAtSeaLevel(heightView, blockX, blockZ, seaLevel, MANGROVE_WATER_SCAN_RADIUS_BLOCKS);
+        ShorelineScan shoreline = scanShorelineByBiome(heightView, blockX, blockZ, seaLevel, MANGROVE_WATER_SCAN_RADIUS_BLOCKS);
         if (!shoreline.isValid()
                 || shoreline.waterCount() < MANGROVE_MIN_WATER_SAMPLES
                 || shoreline.shallowWaterCount() < MANGROVE_MIN_SHALLOW_WATER_SAMPLES
@@ -2603,20 +2621,26 @@ public final class LatitudeBiomes {
                 || shoreline.waterFraction() > MANGROVE_MAX_WATER_FRACTION
                 || shoreline.waterCount() <= 0
                 || shoreline.landCount() <= 0) {
+            logMangroveDenial("shoreline");
             return new MangroveDecision(false, cont, erosion, weirdness, false, false);
         }
         boolean coastal = cont < MANGROVE_CONTINENTALNESS_MAX;
         boolean floodplain = erosion > MANGROVE_MIN_EROSION && Math.abs(weirdness) < MANGROVE_MAX_ABS_WEIRDNESS;
         boolean suitable = coastal && floodplain;
         boolean patch = allowMangrovePatch(blockX, blockZ);
+        if (!suitable) {
+            logMangroveDenial("terrain");
+        } else if (!patch) {
+            logMangroveDenial("patch");
+        }
         return new MangroveDecision(suitable && patch, cont, erosion, weirdness, suitable, patch);
     }
 
-    private static ShorelineScan scanShorelineAtSeaLevel(HeightLimitView heightView,
-                                                         int blockX,
-                                                         int blockZ,
-                                                         int seaLevel,
-                                                         int radius) {
+    private static ShorelineScan scanShorelineByBiome(HeightLimitView heightView,
+                                                      int blockX,
+                                                      int blockZ,
+                                                      int seaLevel,
+                                                      int radius) {
         if (!(heightView instanceof Chunk chunk)) {
             return ShorelineScan.invalid();
         }
@@ -2628,25 +2652,31 @@ public final class LatitudeBiomes {
         int landCount = 0;
         int shallowWaterCount = 0;
         int sampled = 0;
-        for (int dz = -radius; dz <= radius; dz++) {
-            for (int dx = -radius; dx <= radius; dx++) {
-                int x = blockX + dx;
-                int z = blockZ + dz;
-                if (x < minX || x > maxX || z < minZ || z > maxZ) {
-                    continue;
-                }
-                sampled++;
-                boolean waterAtSea = chunk.getBlockState(new BlockPos(x, seaLevel, z)).isOf(Blocks.WATER);
-                boolean waterBelow = chunk.getBlockState(new BlockPos(x, seaLevel - 1, z)).isOf(Blocks.WATER);
-                boolean waterHere = waterAtSea || waterBelow;
-                if (waterHere) {
-                    waterCount++;
-                    if (waterAtSea && !waterBelow) {
-                        shallowWaterCount++;
-                    }
-                } else {
-                    landCount++;
-                }
+        // Sample a simple 8-point ring plus center for stability.
+        int[][] offsets = {
+                {0, 0},
+                {radius, 0}, {-radius, 0}, {0, radius}, {0, -radius},
+                {radius, radius}, {radius, -radius}, {-radius, radius}, {-radius, -radius}
+        };
+        for (int[] off : offsets) {
+            int x = blockX + off[0];
+            int z = blockZ + off[1];
+            if (x < minX || x > maxX || z < minZ || z > maxZ) {
+                continue;
+            }
+            sampled++;
+            int quartX = x >> 2;
+            int quartZ = z >> 2;
+            int quartY = seaLevel >> 2;
+            RegistryEntry<Biome> biome = chunk.getBiomeForNoiseGen(quartX, quartY, quartZ);
+            boolean isWater = biome.isIn(BiomeTags.IS_OCEAN) || biome.isIn(BiomeTags.IS_RIVER);
+            // Treat mangrove itself as land for the scan to avoid self-justification.
+            boolean isMangrove = biome.getKey().map(k -> k.getValue().equals(Identifier.of(MANGROVE_ID))).orElse(false);
+            if (isWater && !isMangrove) {
+                waterCount++;
+                shallowWaterCount++; // biome-based scan cannot tell depth; count as shallow
+            } else {
+                landCount++;
             }
         }
         if (sampled == 0) {
