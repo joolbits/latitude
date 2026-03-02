@@ -253,6 +253,7 @@ public final class LatitudeBiomes {
     private static final AtomicInteger DEBUG_COUNT = new AtomicInteger();
     private static final AtomicInteger BLEND_DEBUG_COUNT = new AtomicInteger();
     private static final AtomicInteger LEAK_LOG_COUNT = new AtomicInteger();
+    private static final AtomicInteger MANGROVE_OCEAN_DIST_LOG_COUNT = new AtomicInteger();
     private static final AtomicInteger SAVANNA_GATE_TOTAL = new AtomicInteger();
     private static final AtomicInteger SAVANNA_GATE_IN_SAVANNA = new AtomicInteger();
     private static final AtomicInteger SAVANNA_GATE_IN_PLATEAU = new AtomicInteger();
@@ -308,7 +309,10 @@ public final class LatitudeBiomes {
         }
         int dist = OCEAN_DISTANCE_FIELD.oceanDistanceBlocks(blockX, blockZ, sampler);
         if (DEBUG_OCEAN_DIST) {
-            LOGGER.info("[latdev] oceanDist x={} z={} dist={} blocks", blockX, blockZ, dist);
+            long n = MANGROVE_OCEAN_DIST_LOG_COUNT.incrementAndGet();
+            if (n <= 50 || n % 50000L == 0L) {
+                LOGGER.info("[latdev] oceanDist x={} z={} dist={} blocks", blockX, blockZ, dist);
+            }
         }
         return dist;
     }
@@ -2288,7 +2292,7 @@ public final class LatitudeBiomes {
         double cont = MultiNoiseUtil.toFloat(p.continentalnessNoise());
         double erosion = MultiNoiseUtil.toFloat(p.erosionNoise());
         double weird = MultiNoiseUtil.toFloat(p.weirdnessNoise());
-        boolean veryWet = erosion > 0.35 && Math.abs(weird) < 0.25;
+        boolean veryWet = erosion > 0.35 && Math.abs(weird) < 0.40;
         boolean coastal = cont < MANGROVE_CONTINENTALNESS_MAX;
         boolean invite = coastal && veryWet;
         if (DEBUG_MANGROVE_INVITE) {
