@@ -245,6 +245,7 @@ public final class LatitudeBiomes {
     private static final boolean DEBUG_MANGROVE_DENIAL = Boolean.getBoolean("latitude.debugMangroveDenial");
     private static final boolean DEBUG_MANGROVE_ORIGIN = Boolean.getBoolean("latitude.debugMangroveOrigin");
     private static final boolean DEBUG_OCEAN_DIST = Boolean.getBoolean("latitude.debugOceanDist");
+    private static final boolean DEBUG_MANGROVE_INVITE = Boolean.getBoolean("latitude.debugMangroveInvite");
     private static final int DEBUG_LIMIT = Integer.getInteger("latitude.debugBiomes.limit", 200);
     private static volatile long WORLD_SEED = 0L;
     public static volatile int ACTIVE_RADIUS_BLOCKS = 0;
@@ -939,6 +940,7 @@ public final class LatitudeBiomes {
         RegistryEntry<Biome> safe = chosen;
         RegistryEntry<Biome> out = chosen;
         boolean finalSavannaRegion = false;
+        boolean invitedMangrove = false;
         if (!forcedBadlands) {
             if (shouldTryMangroveOverride(chosen, landBandIndex)) {
                 MangroveDecision decision = evaluateMangrove(blockX, blockZ, preview.centerHeight, seaLevel, preview.robustDelta, sampler, nearOcean, allowSurfaceGates, heightView);
@@ -966,6 +968,23 @@ public final class LatitudeBiomes {
                 SwampDecision decision = evaluateSwamp(blockX, blockZ, sampler);
                 if (!decision.allow()) {
                     chosen = pickSwampFallback(biomeRegistry, base, blockX, blockZ, t, landBandIndex);
+                }
+            }
+            if (!isMangroveCandidate(chosen) && shouldInviteMangrove(blockX, columnDecisionY, blockZ, bandIndex, sampler, nearOcean)) {
+                invitedMangrove = true;
+                MangroveDecision decision = evaluateMangrove(blockX, blockZ, preview.centerHeight, seaLevel, preview.robustDelta, sampler, nearOcean, allowSurfaceGates, heightView);
+                mangroveDecision = decision.logLabel();
+                if (decision.allow()) {
+                    try {
+                        chosen = biome(biomeRegistry, MANGROVE_ID);
+                        if (DEBUG_MANGROVE_INVITE) {
+                            LOGGER.info("[latdev] mangroveInvite ACCEPT x={} z={} oceanDist={} decision={}", blockX, blockZ, oceanDistance, mangroveDecision);
+                        }
+                    } catch (Throwable ignored) {
+                        // keep chosen
+                    }
+                } else if (DEBUG_MANGROVE_INVITE) {
+                    LOGGER.info("[latdev] mangroveInvite REJECT x={} z={} oceanDist={} decision={}", blockX, blockZ, oceanDistance, mangroveDecision);
                 }
             }
             if (mountainLike) {
@@ -1137,6 +1156,7 @@ public final class LatitudeBiomes {
         RegistryEntry<Biome> safe = chosen;
         RegistryEntry<Biome> out = chosen;
         boolean finalSavannaRegion = false;
+        boolean invitedMangrove = false;
         if (!forcedBadlands) {
             if (shouldTryMangroveOverride(chosen, landBandIndex)) {
                 MangroveDecision decision = evaluateMangrove(blockX, blockZ, preview.centerHeight, seaLevel, preview.robustDelta, sampler, nearOcean, allowSurfaceGates, heightView);
@@ -1163,6 +1183,22 @@ public final class LatitudeBiomes {
                 SwampDecision decision = evaluateSwamp(blockX, blockZ, sampler);
                 if (!decision.allow()) {
                     chosen = pickSwampFallback(biomePool, base, blockX, blockZ, t, landBandIndex);
+                }
+            }
+            if (!isMangroveCandidate(chosen) && shouldInviteMangrove(blockX, columnDecisionY, blockZ, bandIndex, sampler, nearOcean)) {
+                invitedMangrove = true;
+                MangroveDecision decision = evaluateMangrove(blockX, blockZ, preview.centerHeight, seaLevel, preview.robustDelta, sampler, nearOcean, allowSurfaceGates, heightView);
+                mangroveDecision = decision.logLabel();
+                if (decision.allow()) {
+                    RegistryEntry<Biome> mangrove = entryById(biomePool, MANGROVE_ID);
+                    if (mangrove != null) {
+                        chosen = mangrove;
+                        if (DEBUG_MANGROVE_INVITE) {
+                            LOGGER.info("[latdev] mangroveInvite ACCEPT x={} z={} oceanDist={} decision={}", blockX, blockZ, oceanDistance, mangroveDecision);
+                        }
+                    }
+                } else if (DEBUG_MANGROVE_INVITE) {
+                    LOGGER.info("[latdev] mangroveInvite REJECT x={} z={} oceanDist={} decision={}", blockX, blockZ, oceanDistance, mangroveDecision);
                 }
             }
             if (mountainLike) {
@@ -2204,6 +2240,51 @@ public final class LatitudeBiomes {
             }
         }
         return null;
+    }
+
+    private static boolean nearRiverLike(int blockX, int blockZ, MultiNoiseUtil.MultiNoiseSampler sampler) {
+        if (sampler == null) {
+            return false;
+        }
+        int noiseX = blockX >> 2;
+        int noiseZ = blockZ >> 2;
+        MultiNoiseUtil.NoiseValuePoint point = sampler.sample(noiseX, SURFACE_CLASSIFY_Y >> 2, noiseZ);
+        double erosion = MultiNoiseUtil.toFloat(point.erosionNoise());
+        double weird = MultiNoiseUtil.toFloat(point.weirdnessNoise());
+        // Rivers tend to follow flat, low-weirdness corridors.
+        return erosion > 0.25 && Math.abs(weird) < 0.08;
+    }
+
+    private static boolean shouldInviteMangrove(int blockX, int blockY, int blockZ, int bandIndex,
+                                                MultiNoiseUtil.MultiNoiseSampler sampler, boolean nearOcean) {
+        if (!nearOcean) {
+            return false;
+        }
+        if (bandIndex > BAND_TROPICAL) {
+            return false;
+        }
+        if (sampler == null) {
+            return false;
+        }
+        int noiseX = blockX >> 2;
+        int noiseZ = blockZ >> 2;
+        MultiNoiseUtil.NoiseValuePoint p = sampler.sample(noiseX, SURFACE_CLASSIFY_Y >> 2, noiseZ);
+        double cont = MultiNoiseUtil.toFloat(p.continentalnessNoise());
+        double erosion = MultiNoiseUtil.toFloat(p.erosionNoise());
+        double weird = MultiNoiseUtil.toFloat(p.weirdnessNoise());
+        boolean veryWet = erosion > 0.35 && Math.abs(weird) < 0.12;
+        boolean coastal = cont < MANGROVE_CONTINENTALNESS_MAX;
+        boolean river = nearRiverLike(blockX, blockZ, sampler);
+        boolean invite = coastal && veryWet && river;
+        if (DEBUG_MANGROVE_INVITE) {
+            LOGGER.info("[latdev] mangroveInviteProbe x={} z={} cont={}; erosion={}; weird={}; nearOcean={}; riverLike={}; invite={}",
+                    blockX, blockZ,
+                    String.format(java.util.Locale.ROOT, "%.3f", cont),
+                    String.format(java.util.Locale.ROOT, "%.3f", erosion),
+                    String.format(java.util.Locale.ROOT, "%.3f", weird),
+                    nearOcean, river, invite);
+        }
+        return invite;
     }
 
     private static boolean rollChance(int blockX, int blockZ, int salt, long denominator) {
