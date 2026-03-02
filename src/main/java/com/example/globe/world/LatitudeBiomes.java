@@ -943,6 +943,13 @@ public final class LatitudeBiomes {
         boolean finalSavannaRegion = false;
         boolean invitedMangrove = false;
         if (!forcedBadlands) {
+            boolean oceanChosen = chosen != null && chosen.isIn(BiomeTags.IS_OCEAN);
+            if (oceanChosen) {
+                // Do not allow swamp/mangrove overrides on ocean picks.
+                sanitized = chosen;
+                safe = chosen;
+                out = chosen;
+            } else {
             if (shouldTryMangroveOverride(chosen, landBandIndex)) {
                 MangroveDecision decision = evaluateMangrove(blockX, blockZ, preview.centerHeight, seaLevel, preview.robustDelta, sampler, nearOcean, allowSurfaceGates, heightView);
                 mangroveDecision = decision.logLabel();
@@ -1009,6 +1016,7 @@ public final class LatitudeBiomes {
                 } catch (Throwable ignored) {}
             }
             finalSavannaRegion = isSavannaFamily(base) || savannaGateInput || isSavannaFamily(out);
+            }
         }
         if (landBandIndex == BAND_EQUATOR || landBandIndex == BAND_TROPICAL) {
             if (isColdBiome(out)) {
@@ -1159,6 +1167,12 @@ public final class LatitudeBiomes {
         boolean finalSavannaRegion = false;
         boolean invitedMangrove = false;
         if (!forcedBadlands) {
+            boolean oceanChosen = chosen != null && chosen.isIn(BiomeTags.IS_OCEAN);
+            if (oceanChosen) {
+                sanitized = chosen;
+                safe = chosen;
+                out = chosen;
+            } else {
             if (shouldTryMangroveOverride(chosen, landBandIndex)) {
                 MangroveDecision decision = evaluateMangrove(blockX, blockZ, preview.centerHeight, seaLevel, preview.robustDelta, sampler, nearOcean, allowSurfaceGates, heightView);
                 mangroveDecision = decision.logLabel();
@@ -1222,6 +1236,7 @@ public final class LatitudeBiomes {
                 if (savanna != null) out = savanna;
             }
             finalSavannaRegion = isSavannaFamily(base) || savannaGateInput || isSavannaFamily(out);
+            }
         }
         if (landBandIndex == BAND_EQUATOR || landBandIndex == BAND_TROPICAL) {
             if (isColdBiome(out)) {
@@ -2275,17 +2290,16 @@ public final class LatitudeBiomes {
         double weird = MultiNoiseUtil.toFloat(p.weirdnessNoise());
         boolean veryWet = erosion > 0.35 && Math.abs(weird) < 0.25;
         boolean coastal = cont < MANGROVE_CONTINENTALNESS_MAX;
-        boolean river = nearRiverLike(blockX, blockZ, sampler);
-        boolean invite = coastal && veryWet && river;
+        boolean invite = coastal && veryWet;
         if (DEBUG_MANGROVE_INVITE) {
             long n = MANGROVE_INVITE_LOG_COUNT.incrementAndGet();
             if (invite || n <= 50 || n % 50000L == 0L) {
-                LOGGER.info("[latdev] mangroveInviteProbe x={} z={} cont={}; erosion={}; weird={}; nearOcean={}; riverLike={}; invite={} count={}",
+                LOGGER.info("[latdev] mangroveInviteProbe x={} z={} cont={}; erosion={}; weird={}; nearOcean={}; invite={} count={}",
                         blockX, blockZ,
                         String.format(java.util.Locale.ROOT, "%.3f", cont),
                         String.format(java.util.Locale.ROOT, "%.3f", erosion),
                         String.format(java.util.Locale.ROOT, "%.3f", weird),
-                        nearOcean, river, invite, n);
+                        nearOcean, invite, n);
             }
         }
         return invite;
