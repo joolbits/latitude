@@ -264,6 +264,7 @@ public final class LatitudeBiomes {
     private static final AtomicInteger SAVANNA_GATE_REASON_HIGH = new AtomicInteger();
     private static final AtomicInteger SAVANNA_GATE_REASON_LOW = new AtomicInteger();
     private static final AtomicInteger SAVANNA_GATE_REASON_DEADBAND = new AtomicInteger();
+    private static final java.util.concurrent.atomic.AtomicLong MANGROVE_INVITE_LOG_COUNT = new java.util.concurrent.atomic.AtomicLong();
     private static final AtomicBoolean RADIUS_MISMATCH_LOGGED = new AtomicBoolean(false);
     private static final AtomicBoolean SUBPOLAR_JUNGLE_TRACE_LOGGED = new AtomicBoolean(false);
     private static final AtomicBoolean SURFACE_Y_LOGGED = new AtomicBoolean(false);
@@ -2272,17 +2273,20 @@ public final class LatitudeBiomes {
         double cont = MultiNoiseUtil.toFloat(p.continentalnessNoise());
         double erosion = MultiNoiseUtil.toFloat(p.erosionNoise());
         double weird = MultiNoiseUtil.toFloat(p.weirdnessNoise());
-        boolean veryWet = erosion > 0.35 && Math.abs(weird) < 0.12;
+        boolean veryWet = erosion > 0.35 && Math.abs(weird) < 0.25;
         boolean coastal = cont < MANGROVE_CONTINENTALNESS_MAX;
         boolean river = nearRiverLike(blockX, blockZ, sampler);
         boolean invite = coastal && veryWet && river;
         if (DEBUG_MANGROVE_INVITE) {
-            LOGGER.info("[latdev] mangroveInviteProbe x={} z={} cont={}; erosion={}; weird={}; nearOcean={}; riverLike={}; invite={}",
-                    blockX, blockZ,
-                    String.format(java.util.Locale.ROOT, "%.3f", cont),
-                    String.format(java.util.Locale.ROOT, "%.3f", erosion),
-                    String.format(java.util.Locale.ROOT, "%.3f", weird),
-                    nearOcean, river, invite);
+            long n = MANGROVE_INVITE_LOG_COUNT.incrementAndGet();
+            if (invite || n <= 50 || n % 50000L == 0L) {
+                LOGGER.info("[latdev] mangroveInviteProbe x={} z={} cont={}; erosion={}; weird={}; nearOcean={}; riverLike={}; invite={} count={}",
+                        blockX, blockZ,
+                        String.format(java.util.Locale.ROOT, "%.3f", cont),
+                        String.format(java.util.Locale.ROOT, "%.3f", erosion),
+                        String.format(java.util.Locale.ROOT, "%.3f", weird),
+                        nearOcean, river, invite, n);
+            }
         }
         return invite;
     }
