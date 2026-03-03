@@ -70,7 +70,7 @@ public final class BiomePreviewHeadlessRunner {
             LatitudeBiomes.setWorldSeed(effectiveSeed);
             String startMessage = String.format(
                     Locale.ROOT,
-                    "[latdev][headless] starting export seed=%d worldSeed=%d radius=%d steps=%s y=%d layers=%s overlays=%s emitBiomeIndex=%s out=%s",
+                    "[latdev][headless] starting export seed=%d worldSeed=%d radius=%d steps=%s y=%d layers=%s overlays=%s emitBiomeIndex=%s emitHeight=%s out=%s",
                     effectiveSeed,
                     worldSeed,
                     radius,
@@ -79,6 +79,7 @@ public final class BiomePreviewHeadlessRunner {
                     config.exportOptions.layerCsv(),
                     config.exportOptions.overlayCsv(),
                     config.exportOptions.emitBiomeIndex(),
+                    config.exportOptions.emitHeight(),
                     outputDir);
             GlobeMod.LOGGER.info(startMessage);
             System.out.println(startMessage);
@@ -297,13 +298,15 @@ public final class BiomePreviewHeadlessRunner {
         List<String> masks = coalesceMaskValues(parsedLayers.masks(), parseMaskValues(kv.get("mask")));
         List<BiomePreviewExporter.Overlay> overlays = parseOverlays(coalesceListValues(kv.get("overlay"), kv.get("overlays")));
         boolean emitBiomeIndex = parseBoolean(kv.get("emitbiomeindex"));
+        boolean emitHeight = parseBoolean(kv.get("emitheight"));
         BiomePreviewExporter.ExportOptions baseOptions = BiomePreviewExporter.ExportOptions.from(bundle, parsedLayers.layers(), overlays, masks);
         BiomePreviewExporter.ExportOptions exportOptions = new BiomePreviewExporter.ExportOptions(
                 baseOptions.layers(),
                 baseOptions.overlays(),
                 baseOptions.maskLayers(),
                 baseOptions.writeLegends(),
-                emitBiomeIndex);
+                emitBiomeIndex,
+                emitHeight);
         Path out = kv.containsKey("out") && !kv.get("out").isBlank()
                 ? Path.of(kv.get("out")).toAbsolutePath().normalize()
                 : null;
@@ -322,7 +325,7 @@ public final class BiomePreviewHeadlessRunner {
 
     private static boolean collectProgramArgs(List<String> args, Map<String, String> out) {
         boolean enabled = false;
-        List<String> latdevKeys = List.of("seed", "radius", "size", "step", "steps", "y", "out", "bundle", "layers", "mask", "overlay", "overlays", "emitbiomeindex");
+        List<String> latdevKeys = List.of("seed", "radius", "size", "step", "steps", "y", "out", "bundle", "layers", "mask", "overlay", "overlays", "emitbiomeindex", "emitheight");
         for (int i = 0; i < args.size(); i++) {
             String arg = args.get(i);
             if (!arg.startsWith("--")) {
