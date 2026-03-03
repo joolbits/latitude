@@ -143,7 +143,7 @@ tasks.named('runBiomePreview').configure {
         def rawArgs = new ArrayList(args ?: [])
         def latdevOptions = [:]
         def passthrough = []
-        def latdevKeys = ['seed', 'radius', 'size', 'step', 'steps', 'y', 'out', 'bundle', 'layers', 'mask', 'overlay', 'overlays', 'emitbiomeindex'] as Set
+        def latdevKeys = ['seed', 'radius', 'size', 'step', 'steps', 'y', 'out', 'bundle', 'layers', 'mask', 'overlay', 'overlays', 'emitbiomeindex', 'emitheight'] as Set
         def mergeKeys = ['steps', 'layers', 'mask', 'overlay', 'overlays'] as Set
         def putLatdevOption = { key, value ->
             if (mergeKeys.contains(key) && latdevOptions.containsKey(key) && latdevOptions[key] != null && latdevOptions[key].toString().trim().length() > 0) {
@@ -154,6 +154,8 @@ tasks.named('runBiomePreview').configure {
         }
         boolean enabled = false
 
+        boolean emitHeightFlag = false
+
         for (int i = 0; i < rawArgs.size(); i++) {
             def token = rawArgs[i]
             if (!(token instanceof String) || !token.startsWith('--')) {
@@ -162,6 +164,11 @@ tasks.named('runBiomePreview').configure {
             }
 
             def body = token.substring(2)
+            if (body.equalsIgnoreCase('emitHeight')) {
+                emitHeightFlag = true
+                continue
+            }
+
             if (body.equalsIgnoreCase('latdevBiomePng')) {
                 enabled = true
                 continue
@@ -192,6 +199,10 @@ tasks.named('runBiomePreview').configure {
             } else {
                 passthrough << token
             }
+        }
+
+        if (emitHeightFlag) {
+            jvmArgs "-Dlatitude.emitHeight=true"
         }
 
         if (enabled || !latdevOptions.isEmpty()) {

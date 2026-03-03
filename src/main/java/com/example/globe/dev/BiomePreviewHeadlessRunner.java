@@ -27,6 +27,7 @@ public final class BiomePreviewHeadlessRunner {
     private static final AtomicBoolean TRIGGERED = new AtomicBoolean(false);
     private static final String ARG_FLAG = "latdevBiomePng";
     private static final String PROP_KEY = "latdev.biomePng";
+    private static final String EMIT_HEIGHT_PROP_KEY = "latitude.emitHeight";
     private static final Pattern PROP_PAIR = Pattern.compile(
             "(?i)([a-z][a-z0-9_]*)\\s*=\\s*([^;]+?)(?=(?:\\s*[;,]\\s*[a-z][a-z0-9_]*\\s*=)|$)");
 
@@ -297,8 +298,9 @@ public final class BiomePreviewHeadlessRunner {
         ParsedLayers parsedLayers = parseLayers(kv.get("layers"));
         List<String> masks = coalesceMaskValues(parsedLayers.masks(), parseMaskValues(kv.get("mask")));
         List<BiomePreviewExporter.Overlay> overlays = parseOverlays(coalesceListValues(kv.get("overlay"), kv.get("overlays")));
+        boolean emitHeightProp = parseBoolean(System.getProperty(EMIT_HEIGHT_PROP_KEY, ""));
         boolean emitBiomeIndex = parseBoolean(kv.get("emitbiomeindex"));
-        boolean emitHeight = parseBoolean(kv.get("emitheight"));
+        boolean emitHeight = emitHeightProp || parseBoolean(kv.get("emitheight"));
         BiomePreviewExporter.ExportOptions baseOptions = BiomePreviewExporter.ExportOptions.from(bundle, parsedLayers.layers(), overlays, masks);
         BiomePreviewExporter.ExportOptions exportOptions = new BiomePreviewExporter.ExportOptions(
                 baseOptions.layers(),
