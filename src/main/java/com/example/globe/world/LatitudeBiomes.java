@@ -2745,6 +2745,7 @@ public final class LatitudeBiomes {
             logMangroveDenial("coastal");
             return new MangroveDecision(false, 0.0, 0.0, 0.0, false, false);
         }
+        int oceanDist = oceanDistanceBlocks(blockX, blockZ, sampler);
         int noiseX = blockX >> 2;
         int noiseZ = blockZ >> 2;
         MultiNoiseUtil.NoiseValuePoint point = sampler.sample(noiseX, SURFACE_CLASSIFY_Y >> 2, noiseZ);
@@ -2774,9 +2775,14 @@ public final class LatitudeBiomes {
             }
         }
         boolean coastal = cont < MANGROVE_CONTINENTALNESS_MAX;
-        boolean floodplain = erosion > MANGROVE_MIN_EROSION && Math.abs(weirdness) < MANGROVE_MAX_ABS_WEIRDNESS;
+        boolean floodplain = erosion > 0.12 && Math.abs(weirdness) < 0.40;
         boolean suitable = coastal && floodplain;
-        boolean patch = allowMangrovePatch(blockX, blockZ);
+        boolean patch;
+        if (oceanDist <= 32) {
+            patch = true; // true-coast bypass to force first ACCEPTs
+        } else {
+            patch = allowMangrovePatch(blockX, blockZ);
+        }
         if (!suitable) {
             logMangroveDenial("terrain");
         } else if (!patch) {

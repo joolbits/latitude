@@ -43,7 +43,7 @@ foreach ($m in $maskList) {
 $argsString = $argsParts -join " "
 
 Write-Host "Running Atlas export with args: $argsString" -ForegroundColor Cyan
-$gradle = Join-Path $PSScriptRoot "..\..\gradlew.bat"
+$gradle = Join-Path $PSScriptRoot "gradlew.bat"
 $gradle = (Resolve-Path $gradle).Path
 
 & $gradle --no-daemon runBiomePreview --args="$argsString"
