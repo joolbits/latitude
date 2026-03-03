@@ -62,6 +62,7 @@ public final class BiomePreviewExporter {
         EnumSet<Overlay> overlays = effectiveOptions.overlays();
         List<BiomeMaskLayer> maskTargets = effectiveOptions.maskLayers();
         boolean emitBiomeIndex = effectiveOptions.emitBiomeIndex();
+        boolean emitHeight = effectiveOptions.emitHeight();
 
         int xMin = -radiusBlocks;
         int xMax = radiusBlocks;
@@ -108,6 +109,12 @@ public final class BiomePreviewExporter {
         Registry<Biome> biomeRegistry = world.getRegistryManager().getOrThrow(RegistryKeys.BIOME);
         NoiseConfig noiseConfig = world.getChunkManager().getNoiseConfig();
         MultiNoiseUtil.MultiNoiseSampler sampler = noiseConfig.getMultiNoiseSampler();
+        net.minecraft.world.gen.chunk.NoiseChunkGenerator noiseGen =
+                generator instanceof net.minecraft.world.gen.chunk.NoiseChunkGenerator ng ? ng : null;
+        // Avoid height sampling unless explicitly requested.
+        net.minecraft.world.gen.chunk.NoiseChunkGenerator gatedNoiseGen = emitHeight ? noiseGen : null;
+        NoiseConfig gatedNoiseConfig = emitHeight ? noiseConfig : null;
+        net.minecraft.world.HeightLimitView gatedHeightView = emitHeight ? world : null;
 
         int noiseY = Math.floorDiv(y, 4);
         for (int imageZ = 0, blockZ = zMin; imageZ < height; imageZ++, blockZ += stepBlocks) {
@@ -127,9 +134,9 @@ public final class BiomePreviewExporter {
                             radiusBlocks,
                             sampler,
                             "BIOME_PNG",
-                            generator instanceof net.minecraft.world.gen.chunk.NoiseChunkGenerator noiseGen ? noiseGen : null,
-                            noiseConfig,
-                            world);
+                            gatedNoiseGen,
+                            gatedNoiseConfig,
+                            gatedHeightView);
                     RegistryEntry<Biome> out = picked != null ? picked : base;
                     sampledBiomeId = biomeId(biomeRegistry, out);
                     biomeCounts.merge(sampledBiomeId, 1, Integer::sum);
@@ -961,7 +968,8 @@ public final class BiomePreviewExporter {
                                 EnumSet<Overlay> overlays,
                                 List<BiomeMaskLayer> maskLayers,
                                 boolean writeLegends,
-                                boolean emitBiomeIndex) {
+                                boolean emitBiomeIndex,
+                                boolean emitHeight) {
         public ExportOptions {
             if (layers == null) {
                 layers = EnumSet.of(Layer.BIOMES);
@@ -989,7 +997,7 @@ public final class BiomePreviewExporter {
         }
 
         public static ExportOptions singleBiome() {
-            return new ExportOptions(EnumSet.of(Layer.BIOMES), EnumSet.noneOf(Overlay.class), List.of(), false, false);
+            return new ExportOptions(EnumSet.of(Layer.BIOMES), EnumSet.noneOf(Overlay.class), List.of(), false, false, false);
         }
 
         public static ExportOptions bundle() {
@@ -998,6 +1006,7 @@ public final class BiomePreviewExporter {
                     EnumSet.noneOf(Overlay.class),
                     List.of(),
                     true,
+                    false,
                     false);
         }
 
@@ -1015,10 +1024,10 @@ public final class BiomePreviewExporter {
                         ? EnumSet.copyOf(requestedLayers)
                         : EnumSet.noneOf(Layer.class);
                 boolean legends = bundle || layerSet.size() > 1 || !maskLayers.isEmpty();
-                return new ExportOptions(layerSet, overlaySet, maskLayers, legends, false);
+                return new ExportOptions(layerSet, overlaySet, maskLayers, legends, false, false);
             }
             ExportOptions base = bundle ? bundle() : singleBiome();
-            return new ExportOptions(base.layers(), overlaySet, base.maskLayers(), base.writeLegends(), false);
+            return new ExportOptions(base.layers(), overlaySet, base.maskLayers(), base.writeLegends(), false, false);
         }
 
         private static List<BiomeMaskLayer> parseMaskLayers(List<String> requestedMasks) {
