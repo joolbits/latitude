@@ -38,6 +38,8 @@ public final class BiomePreviewExporter {
     private static final int TOP_BIOME_COUNT = 20;
     private static final int MASK_MATCH_COLOR = 0xF2F5F8;
     private static final int MASK_MISS_COLOR = 0x11161B;
+    private static final long DEFAULT_BUDGET_MS = 10L;
+    private static final Identifier MANGROVE_SWAMP_BIOME_ID = Identifier.of("minecraft:mangrove_swamp");
 
     private BiomePreviewExporter() {
     }
@@ -63,6 +65,19 @@ public final class BiomePreviewExporter {
         List<BiomeMaskLayer> maskTargets = effectiveOptions.maskLayers();
         boolean emitBiomeIndex = effectiveOptions.emitBiomeIndex();
         boolean emitHeight = effectiveOptions.emitHeight();
+
+        // Batched path for emitHeight to avoid long single ticks. Caller should drive processBudget() across ticks.
+        if (emitHeight) {
+            HeightStepProcessor processor = HeightStepProcessor.create(
+                    world,
+                    radiusBlocks,
+                    stepBlocks,
+                    y,
+                    runDirectory,
+                    effectiveOptions);
+            long budgetMs = Math.max(1L, Long.getLong("latitude.atlas.heightBudgetMs", DEFAULT_BUDGET_MS));
+            return processor.processBudget(budgetMs);
+        }
 
         int xMin = -radiusBlocks;
         int xMax = radiusBlocks;
@@ -111,10 +126,11 @@ public final class BiomePreviewExporter {
         MultiNoiseUtil.MultiNoiseSampler sampler = noiseConfig.getMultiNoiseSampler();
         net.minecraft.world.gen.chunk.NoiseChunkGenerator noiseGen =
                 generator instanceof net.minecraft.world.gen.chunk.NoiseChunkGenerator ng ? ng : null;
-        // Avoid height sampling unless explicitly requested.
-        net.minecraft.world.gen.chunk.NoiseChunkGenerator gatedNoiseGen = emitHeight ? noiseGen : null;
-        NoiseConfig gatedNoiseConfig = emitHeight ? noiseConfig : null;
-        net.minecraft.world.HeightLimitView gatedHeightView = emitHeight ? world : null;
+        // Lightweight surface stub for atlas mode: keep sea level from the generator,
+        // but skip expensive height probing by leaving noiseConfig/heightView unset.
+        net.minecraft.world.gen.chunk.NoiseChunkGenerator gatedNoiseGen = noiseGen;
+        NoiseConfig gatedNoiseConfig = null;
+        net.minecraft.world.HeightLimitView gatedHeightView = null;
 
         int noiseY = Math.floorDiv(y, 4);
         for (int imageZ = 0, blockZ = zMin; imageZ < height; imageZ++, blockZ += stepBlocks) {
@@ -125,20 +141,36 @@ public final class BiomePreviewExporter {
                 String sampledBiomeId = null;
                 if (needsBiomeSampling) {
                     RegistryEntry<Biome> base = baseSource.getBiome(noiseX, noiseY, noiseZ, sampler);
-                    RegistryEntry<Biome> picked = LatitudeBiomes.pick(
+                    RegistryEntry<Biome> picked = LatitudeBiomes.pickWithSurfaceY(
                             biomeRegistry,
                             base,
                             blockX,
                             blockZ,
                             y,
+                            63,
                             radiusBlocks,
                             sampler,
-                            "BIOME_PNG",
-                            gatedNoiseGen,
-                            gatedNoiseConfig,
-                            gatedHeightView);
+                            "SOURCE");
                     RegistryEntry<Biome> out = picked != null ? picked : base;
                     sampledBiomeId = biomeId(biomeRegistry, out);
+
+                    boolean mangroveMaskHit = false;
+                    if (renderBiomeMasks && sampledBiomeId != null) {
+                        for (BiomeMaskLayer maskLayer : maskTargets) {
+                            boolean maskMatch = maskLayer.matches(sampledBiomeId);
+                            int maskColor = maskMatch ? MASK_MATCH_COLOR : MASK_MISS_COLOR;
+                            maskImages.get(maskLayer).setRGB(imageX, imageZ, maskColor);
+                            if (maskMatch && isMangroveMaskLayer(maskLayer)) {
+                                mangroveMaskHit = true;
+                            }
+                        }
+                    }
+
+                    if (mangroveMaskHit) {
+                        out = forceMangroveSwampForAtlas(biomeRegistry, out);
+                        sampledBiomeId = biomeId(biomeRegistry, out);
+                    }
+
                     biomeCounts.merge(sampledBiomeId, 1, Integer::sum);
                     if (emitBiomeIndex && biomeIndexImage != null) {
                         int biomeIndex = biomeIndices.computeIfAbsent(sampledBiomeId, ignored -> biomeIndices.size());
@@ -147,13 +179,6 @@ public final class BiomePreviewExporter {
                     if (renderBiomes) {
                         int rgb = biomeColors.computeIfAbsent(sampledBiomeId, BiomePreviewExporter::stableColorForBiomeId);
                         images.get(Layer.BIOMES).setRGB(imageX, imageZ, rgb);
-                    }
-                }
-
-                if (renderBiomeMasks && sampledBiomeId != null) {
-                    for (BiomeMaskLayer maskLayer : maskTargets) {
-                        int maskColor = maskLayer.matches(sampledBiomeId) ? MASK_MATCH_COLOR : MASK_MISS_COLOR;
-                        maskImages.get(maskLayer).setRGB(imageX, imageZ, maskColor);
                     }
                 }
 
@@ -274,6 +299,323 @@ public final class BiomePreviewExporter {
             throw new IOException("No export layers were generated");
         }
         return new ExportResult(primaryPng, summaryPath, seed, radiusBlocks, stepBlocks, width, height, totalSamples, durationMs);
+    }
+
+    /**
+     * Stateful processor for height-enabled exports that can be advanced in small time-budgeted chunks.
+     */
+    public static final class HeightStepProcessor {
+        private final ServerWorld world;
+        private final int radiusBlocks;
+        private final int stepBlocks;
+        private final int y;
+        private final Path runDirectory;
+        private final ExportOptions options;
+
+        private final EnumSet<Layer> layers;
+        private final EnumSet<Overlay> overlays;
+        private final List<BiomeMaskLayer> maskTargets;
+        private final boolean emitBiomeIndex;
+
+        private final int xMin;
+        private final int zMin;
+        private final int width;
+        private final int height;
+        private final int chunkMinX;
+        private final int chunkMaxX;
+        private final int chunkMinZ;
+        private final int chunkMaxZ;
+
+        private final EnumMap<Layer, BufferedImage> images = new EnumMap<>(Layer.class);
+        private final Map<BiomeMaskLayer, BufferedImage> maskImages = new LinkedHashMap<>();
+        private BufferedImage biomeIndexImage;
+
+        private final Map<String, Integer> biomeCounts = new HashMap<>();
+        private final Map<String, Integer> biomeColors = new HashMap<>();
+        private final Map<String, Integer> biomeIndices = new LinkedHashMap<>();
+        private final Map<String, Integer> bandCounts = new HashMap<>();
+
+        private final ChunkGenerator generator;
+        private final BiomeSource baseSource;
+        private final Registry<Biome> biomeRegistry;
+        private final NoiseConfig noiseConfig;
+        private final MultiNoiseUtil.MultiNoiseSampler sampler;
+        private final net.minecraft.world.gen.chunk.NoiseChunkGenerator gatedNoiseGen;
+        private final NoiseConfig gatedNoiseConfig;
+        private final net.minecraft.world.HeightLimitView gatedHeightView;
+        private final int noiseY;
+
+        private int imageX = 0;
+        private int imageZ = 0;
+        private final long startNanos;
+        private ExportResult result;
+
+        private HeightStepProcessor(ServerWorld world,
+                                     int radiusBlocks,
+                                     int stepBlocks,
+                                     int y,
+                                     Path runDirectory,
+                                     ExportOptions options) {
+            this.world = world;
+            this.radiusBlocks = radiusBlocks;
+            this.stepBlocks = stepBlocks;
+            this.y = y;
+            this.runDirectory = runDirectory;
+            this.options = options != null ? options : ExportOptions.singleBiome();
+            this.layers = this.options.layers();
+            this.overlays = this.options.overlays();
+            this.maskTargets = this.options.maskLayers();
+            this.emitBiomeIndex = this.options.emitBiomeIndex();
+
+            this.xMin = -radiusBlocks;
+            this.zMin = -radiusBlocks;
+            int xMax = radiusBlocks;
+            int zMax = radiusBlocks;
+            this.width = ((xMax - xMin) / stepBlocks) + 1;
+            this.height = ((zMax - zMin) / stepBlocks) + 1;
+            this.chunkMinX = Math.floorDiv(xMin, BLOCKS_PER_CHUNK);
+            this.chunkMaxX = Math.floorDiv(xMax, BLOCKS_PER_CHUNK);
+            this.chunkMinZ = Math.floorDiv(zMin, BLOCKS_PER_CHUNK);
+            this.chunkMaxZ = Math.floorDiv(zMax, BLOCKS_PER_CHUNK);
+
+            this.generator = world.getChunkManager().getChunkGenerator();
+            BiomeSource biomeSource = generator.getBiomeSource();
+            this.baseSource = biomeSource instanceof LatitudeBiomeSource latitudeSource
+                    ? latitudeSource.original()
+                    : biomeSource;
+            this.biomeRegistry = world.getRegistryManager().getOrThrow(RegistryKeys.BIOME);
+            this.noiseConfig = world.getChunkManager().getNoiseConfig();
+            this.sampler = noiseConfig.getMultiNoiseSampler();
+            net.minecraft.world.gen.chunk.NoiseChunkGenerator noiseGen =
+                    generator instanceof net.minecraft.world.gen.chunk.NoiseChunkGenerator ng ? ng : null;
+            this.gatedNoiseGen = noiseGen;
+            this.gatedNoiseConfig = noiseConfig;
+            this.gatedHeightView = world;
+            this.noiseY = Math.floorDiv(y, 4);
+
+            for (Layer layer : layers) {
+                images.put(layer, new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB));
+            }
+            if (emitBiomeIndex) {
+                biomeIndexImage = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
+            }
+            for (BiomeMaskLayer maskLayer : maskTargets) {
+                maskImages.put(maskLayer, new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB));
+            }
+
+            this.startNanos = System.nanoTime();
+        }
+
+        static HeightStepProcessor create(ServerWorld world,
+                                          int radiusBlocks,
+                                          int stepBlocks,
+                                          int y,
+                                          Path runDirectory,
+                                          ExportOptions options) {
+            return new HeightStepProcessor(world, radiusBlocks, stepBlocks, y, runDirectory, options);
+        }
+
+        /**
+         * Process as many pixels as possible within the provided budget (milliseconds).
+         * Returns ExportResult when the step is complete; otherwise null.
+         */
+        public ExportResult processBudget(long budgetMs) {
+            if (result != null) {
+                return result;
+            }
+            long budgetNanos = Math.max(1L, budgetMs) * 1_000_000L;
+            long deadline = System.nanoTime() + budgetNanos;
+
+            while (imageZ < height && System.nanoTime() <= deadline) {
+                int blockZ = zMin + (imageZ * stepBlocks);
+                int noiseZ = Math.floorDiv(blockZ, 4);
+                int blockX = xMin + (imageX * stepBlocks);
+                int noiseX = Math.floorDiv(blockX, 4);
+
+                String sampledBiomeId = null;
+                if (needsBiomeSampling()) {
+                    RegistryEntry<Biome> base = baseSource.getBiome(noiseX, noiseY, noiseZ, sampler);
+                    RegistryEntry<Biome> picked = LatitudeBiomes.pick(
+                            biomeRegistry,
+                            base,
+                            blockX,
+                            blockZ,
+                            y,
+                            radiusBlocks,
+                            sampler,
+                            "SOURCE",
+                            gatedNoiseGen,
+                            gatedNoiseConfig,
+                            gatedHeightView);
+                    RegistryEntry<Biome> out = picked != null ? picked : base;
+                    sampledBiomeId = biomeId(biomeRegistry, out);
+
+                    boolean mangroveMaskHit = false;
+                    if (!maskTargets.isEmpty() && sampledBiomeId != null) {
+                        for (BiomeMaskLayer maskLayer : maskTargets) {
+                            boolean maskMatch = maskLayer.matches(sampledBiomeId);
+                            int maskColor = maskMatch ? MASK_MATCH_COLOR : MASK_MISS_COLOR;
+                            maskImages.get(maskLayer).setRGB(imageX, imageZ, maskColor);
+                            if (maskMatch && isMangroveMaskLayer(maskLayer)) {
+                                mangroveMaskHit = true;
+                            }
+                        }
+                    }
+
+                    if (mangroveMaskHit) {
+                        out = forceMangroveSwampForAtlas(biomeRegistry, out);
+                        sampledBiomeId = biomeId(biomeRegistry, out);
+                    }
+
+                    biomeCounts.merge(sampledBiomeId, 1, Integer::sum);
+                    if (emitBiomeIndex && biomeIndexImage != null) {
+                        int biomeIndex = biomeIndices.computeIfAbsent(sampledBiomeId, ignored -> biomeIndices.size());
+                        biomeIndexImage.setRGB(imageX, imageZ, encodeBiomeIndexColor(biomeIndex));
+                    }
+                    if (layers.contains(Layer.BIOMES)) {
+                        int rgb = biomeColors.computeIfAbsent(sampledBiomeId, BiomePreviewExporter::stableColorForBiomeId);
+                        images.get(Layer.BIOMES).setRGB(imageX, imageZ, rgb);
+                    }
+                }
+
+                if (layers.contains(Layer.BANDS)) {
+                    LatitudeMath.LatitudeZone zone = LatitudeMath.zoneForRadius(radiusBlocks, blockZ);
+                    images.get(Layer.BANDS).setRGB(imageX, imageZ, colorForBand(zone));
+                    bandCounts.merge(zoneKey(zone), 1, Integer::sum);
+                }
+
+                if (layers.contains(Layer.TEMPERATURE) || layers.contains(Layer.HUMIDITY) || layers.contains(Layer.CONTINENTALNESS)) {
+                    MultiNoiseUtil.NoiseValuePoint point = sampler.sample(noiseX, noiseY, noiseZ);
+                    if (layers.contains(Layer.TEMPERATURE)) {
+                        double temperature01 = normalizeNoise(MultiNoiseUtil.toFloat(point.temperatureNoise()));
+                        images.get(Layer.TEMPERATURE).setRGB(imageX, imageZ, colorForTemperature(temperature01));
+                    }
+                    if (layers.contains(Layer.HUMIDITY)) {
+                        double humidity01 = normalizeNoise(MultiNoiseUtil.toFloat(point.humidityNoise()));
+                        images.get(Layer.HUMIDITY).setRGB(imageX, imageZ, colorForHumidity(humidity01));
+                    }
+                    if (layers.contains(Layer.CONTINENTALNESS)) {
+                        double continentalness = MathHelper.clamp(MultiNoiseUtil.toFloat(point.continentalnessNoise()), -1.0, 1.0);
+                        images.get(Layer.CONTINENTALNESS).setRGB(imageX, imageZ, colorForContinentalness(continentalness));
+                    }
+                }
+
+                advanceCursor();
+            }
+
+            if (imageZ >= height) {
+                finalizeResult();
+            }
+            return result;
+        }
+
+        private void advanceCursor() {
+            imageX++;
+            if (imageX >= width) {
+                imageX = 0;
+                imageZ++;
+            }
+        }
+
+        private boolean needsBiomeSampling() {
+            return layers.contains(Layer.BIOMES) || !maskTargets.isEmpty() || emitBiomeIndex;
+        }
+
+        private void finalizeResult() {
+            try {
+                if (!overlays.isEmpty()) {
+                    applyOverlays(images.values(), overlays, radiusBlocks, zMin, stepBlocks);
+                    applyOverlays(maskImages.values(), overlays, radiusBlocks, zMin, stepBlocks);
+                }
+
+                long seed = world.getSeed();
+                Path outputDir = atlasStepDirectory(defaultAtlasRoot(runDirectory), seed, radiusBlocks, stepBlocks);
+                Files.createDirectories(outputDir);
+
+                EnumMap<Layer, Path> layerPaths = new EnumMap<>(Layer.class);
+                Map<BiomeMaskLayer, Path> maskPaths = new LinkedHashMap<>();
+                Path biomeIndexPath = null;
+                for (Layer layer : layers) {
+                    Path pngPath = outputDir.resolve(layer.fileStem() + ".png");
+                    BufferedImage image = images.get(layer);
+                    boolean wrote = ImageIO.write(image, "png", pngPath.toFile());
+                    if (!wrote) {
+                        throw new IOException("PNG writer unavailable for layer " + layer.fileStem());
+                    }
+                    layerPaths.put(layer, pngPath);
+                }
+                for (BiomeMaskLayer maskLayer : maskTargets) {
+                    Path pngPath = outputDir.resolve(maskLayer.fileStem() + ".png");
+                    BufferedImage image = maskImages.get(maskLayer);
+                    boolean wrote = ImageIO.write(image, "png", pngPath.toFile());
+                    if (!wrote) {
+                        throw new IOException("PNG writer unavailable for layer " + maskLayer.fileStem());
+                    }
+                    maskPaths.put(maskLayer, pngPath);
+                }
+                if (emitBiomeIndex && biomeIndexImage != null) {
+                    biomeIndexPath = outputDir.resolve("biome_ids.png");
+                    boolean wrote = ImageIO.write(biomeIndexImage, "png", biomeIndexPath.toFile());
+                    if (!wrote) {
+                        throw new IOException("PNG writer unavailable for biome_ids");
+                    }
+                    writeBiomePalette(outputDir.resolve("biome_palette.json"), biomeIndices);
+                }
+
+                Path summaryPath = outputDir.resolve("biomes.txt");
+                long totalSamples = (long) width * height;
+                long durationMs = (System.nanoTime() - startNanos) / 1_000_000L;
+                writeSummary(
+                        summaryPath,
+                        seed,
+                        radiusBlocks,
+                        stepBlocks,
+                        y,
+                        xMin,
+                        xMin + (width - 1) * stepBlocks,
+                        zMin,
+                        zMin + (height - 1) * stepBlocks,
+                        chunkMinX,
+                        chunkMaxX,
+                        chunkMinZ,
+                        chunkMaxZ,
+                        (long) width * height,
+                        width,
+                        height,
+                        totalSamples,
+                        durationMs,
+                        biomeCounts);
+
+                if (options.writeLegends()) {
+                    writeLegendFiles(
+                            outputDir,
+                            seed,
+                            radiusBlocks,
+                            stepBlocks,
+                            y,
+                            layers,
+                            overlays,
+                            maskTargets,
+                            layerPaths,
+                            maskPaths,
+                            bandCounts,
+                            totalSamples);
+                }
+
+                this.result = new ExportResult(
+                        summaryPath,
+                        summaryPath,
+                        seed,
+                        radiusBlocks,
+                        stepBlocks,
+                        width,
+                        height,
+                        totalSamples,
+                        durationMs);
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        }
     }
 
     private static int encodeBiomeIndexColor(int index) {
@@ -884,6 +1226,20 @@ public final class BiomePreviewExporter {
         int colon = candidate.indexOf(':');
         String path = colon >= 0 ? candidate.substring(colon + 1) : candidate;
         return path.equals(normalizedMaskToken) || path.contains(normalizedMaskToken);
+    }
+
+    private static boolean isMangroveMaskLayer(BiomeMaskLayer maskLayer) {
+        if (maskLayer == null || maskLayer.normalizedId() == null) {
+            return false;
+        }
+        String token = maskLayer.normalizedId();
+        return token.equals("mangrove")
+                || token.equals("mangrove_swamp")
+                || token.equals("minecraft:mangrove_swamp");
+    }
+
+    private static RegistryEntry<Biome> forceMangroveSwampForAtlas(Registry<Biome> biomeRegistry, RegistryEntry<Biome> fallback) {
+        return biomeRegistry.getEntry(MANGROVE_SWAMP_BIOME_ID).orElse(fallback);
     }
 
     public record BiomeMaskLayer(String normalizedId, String fileStem) {
