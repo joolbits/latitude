@@ -141,16 +141,18 @@ public final class BiomePreviewExporter {
                 String sampledBiomeId = null;
                 if (needsBiomeSampling) {
                     RegistryEntry<Biome> base = baseSource.getBiome(noiseX, noiseY, noiseZ, sampler);
-                    RegistryEntry<Biome> picked = LatitudeBiomes.pickWithSurfaceY(
+                    RegistryEntry<Biome> picked = LatitudeBiomes.pick(
                             biomeRegistry,
                             base,
                             blockX,
                             blockZ,
                             y,
-                            63,
                             radiusBlocks,
                             sampler,
-                            "SOURCE");
+                            "SOURCE",
+                            gatedNoiseGen,
+                            gatedNoiseConfig,
+                            gatedHeightView);
                     RegistryEntry<Biome> out = picked != null ? picked : base;
                     sampledBiomeId = biomeId(biomeRegistry, out);
 
@@ -1239,7 +1241,8 @@ public final class BiomePreviewExporter {
     }
 
     private static RegistryEntry<Biome> forceMangroveSwampForAtlas(Registry<Biome> biomeRegistry, RegistryEntry<Biome> fallback) {
-        return biomeRegistry.getEntry(MANGROVE_SWAMP_BIOME_ID).orElse(fallback);
+        RegistryEntry.Reference<Biome> mangrove = biomeRegistry.getEntry(MANGROVE_SWAMP_BIOME_ID).orElse(null);
+        return mangrove != null ? mangrove : fallback;
     }
 
     public record BiomeMaskLayer(String normalizedId, String fileStem) {
