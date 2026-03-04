@@ -265,6 +265,9 @@ public final class LatitudeBiomes {
     private static final AtomicInteger SAVANNA_GATE_REASON_HIGH = new AtomicInteger();
     private static final AtomicInteger SAVANNA_GATE_REASON_LOW = new AtomicInteger();
     private static final AtomicInteger SAVANNA_GATE_REASON_DEADBAND = new AtomicInteger();
+    private static final AtomicInteger MANGROVE_EVAL_AUDIT_COUNT = new AtomicInteger();
+    private static final java.util.concurrent.atomic.AtomicInteger MANGROVE_EVAL_AUDIT_N =
+            new java.util.concurrent.atomic.AtomicInteger(0);
     private static final java.util.concurrent.atomic.AtomicLong MANGROVE_INVITE_LOG_COUNT = new java.util.concurrent.atomic.AtomicLong();
     private static final AtomicBoolean RADIUS_MISMATCH_LOGGED = new AtomicBoolean(false);
     private static final AtomicBoolean SUBPOLAR_JUNGLE_TRACE_LOGGED = new AtomicBoolean(false);
@@ -1183,11 +1186,20 @@ public final class LatitudeBiomes {
             } else {
             if (shouldTryMangroveOverride(chosen, landBandIndex)) {
                 MangroveDecision decision = evaluateMangrove(blockX, blockZ, preview.centerHeight, seaLevel, preview.robustDelta, sampler, nearOcean, allowSurfaceGates, heightView);
+                if (Boolean.getBoolean("latitude.audit.mangroveFinal")) {
+                    LOGGER.info("[mangrove-final-live] x={} z={} resultBiome={}",
+                            blockX, blockZ, biomeId(chosen));
+                }
                 mangroveDecision = decision.logLabel();
                 if (decision.allow()) {
                     RegistryEntry<Biome> mangrove = entryById(biomePool, MANGROVE_ID);
                     if (mangrove != null) {
+                        RegistryEntry<Biome> before = chosen;
                         chosen = mangrove;
+                        if (Boolean.getBoolean("latitude.audit.mangroveFinal")) {
+                            LOGGER.info("[mangrove-rewrite-live] x={} z={} old={} new={}",
+                                    blockX, blockZ, biomeId(before), biomeId(chosen));
+                        }
                         if (DEBUG_MANGROVE_ORIGIN) {
                             LOGGER.info("[latdev] mangroveSelected x={} z={} surfaceY={} sea={} robustDelta={} origin={} reason={}",
                                     blockX, blockZ, preview.centerHeight, seaLevel, preview.robustDelta,
@@ -1197,9 +1209,18 @@ public final class LatitudeBiomes {
                 }
             } else if (isMangroveCandidate(chosen)) {
                 MangroveDecision decision = evaluateMangrove(blockX, blockZ, preview.centerHeight, seaLevel, preview.robustDelta, sampler, nearOcean, allowSurfaceGates, heightView);
+                if (Boolean.getBoolean("latitude.audit.mangroveFinal")) {
+                    LOGGER.info("[mangrove-final-live] x={} z={} resultBiome={}",
+                            blockX, blockZ, biomeId(chosen));
+                }
                 mangroveDecision = decision.logLabel();
                 if (!decision.allow()) {
+                    RegistryEntry<Biome> before = chosen;
                     chosen = pickMangroveFallback(biomePool, base, blockX, blockZ, t, landBandIndex);
+                    if (Boolean.getBoolean("latitude.audit.mangroveFinal")) {
+                        LOGGER.info("[mangrove-rewrite-live] x={} z={} old={} new={}",
+                                blockX, blockZ, biomeId(before), biomeId(chosen));
+                    }
                 }
             }
             if (isSwampCandidate(chosen)) {
@@ -1211,11 +1232,20 @@ public final class LatitudeBiomes {
             if (!isMangroveCandidate(chosen) && shouldInviteMangrove(blockX, columnDecisionY, blockZ, bandIndex, sampler, nearOcean)) {
                 invitedMangrove = true;
                 MangroveDecision decision = evaluateMangrove(blockX, blockZ, preview.centerHeight, seaLevel, preview.robustDelta, sampler, nearOcean, allowSurfaceGates, heightView);
+                if (Boolean.getBoolean("latitude.audit.mangroveFinal")) {
+                    LOGGER.info("[mangrove-final-live] x={} z={} resultBiome={}",
+                            blockX, blockZ, biomeId(chosen));
+                }
                 mangroveDecision = decision.logLabel();
                 if (decision.allow()) {
                     RegistryEntry<Biome> mangrove = entryById(biomePool, MANGROVE_ID);
                     if (mangrove != null) {
+                        RegistryEntry<Biome> before = chosen;
                         chosen = mangrove;
+                        if (Boolean.getBoolean("latitude.audit.mangroveFinal")) {
+                            LOGGER.info("[mangrove-rewrite-live] x={} z={} old={} new={}",
+                                    blockX, blockZ, biomeId(before), biomeId(chosen));
+                        }
                         if (DEBUG_MANGROVE_INVITE) {
                             LOGGER.info("[latdev] mangroveInvite ACCEPT x={} z={} oceanDist={} decision={}", blockX, blockZ, oceanDistance, mangroveDecision);
                         }
@@ -2083,7 +2113,8 @@ public final class LatitudeBiomes {
                     SWAMP_ID,
                     "minecraft:sunflower_plains");
             case BAND_TROPICAL -> List.of(
-                    SWAMP_ID);
+                    SWAMP_ID,
+                    MANGROVE_ID);
             case BAND_TEMPERATE -> List.of(
                     "minecraft:sunflower_plains",
                     "minecraft:pale_garden",
@@ -2737,41 +2768,73 @@ public final class LatitudeBiomes {
                                                      boolean nearOcean,
                                                      boolean allowSurfaceGates,
                                                      HeightLimitView heightView) {
+        // Utility to emit throttled audit logs for every exit path.
+        final java.util.function.Consumer<MangroveDecision> audit = decision -> {
+            if (!Boolean.getBoolean("latitude.audit.mangrove")) return;
+            int n = MANGROVE_EVAL_AUDIT_N.getAndIncrement();
+            if ((n & 0xFF) != 0) return; // throttle to 1/256
+            LOGGER.info("[mangrove-eval] n={} x={} z={} oceanDist={} surfaceY={} sea={} robustDelta={} cont={} ero={} weird={} suitable={} patch={} allow={}",
+                    n, blockX, blockZ, decision.oceanDistance, surfaceY, seaLevel, robustDelta,
+                    String.format(java.util.Locale.ROOT, "%.3f", decision.continentalness),
+                    String.format(java.util.Locale.ROOT, "%.3f", decision.erosion),
+                    String.format(java.util.Locale.ROOT, "%.3f", decision.weirdness),
+                    decision.suitable, decision.patch, decision.allow);
+        };
+        final java.util.function.BiConsumer<MangroveDecision, String> auditFinal = (decision, decisionLabel) -> {
+            if (!Boolean.getBoolean("latitude.audit.mangroveFinal")) return;
+            int n = MANGROVE_EVAL_AUDIT_N.incrementAndGet();
+            if (n <= 50 || (n % 2000) == 0) {
+                LOGGER.info("[mangrove-eval] n={} x={} z={} sea={} surfY={} oceanDist={} cont={} ero={} weird={} robust={} decision={}",
+                        n, blockX, blockZ, seaLevel, surfaceY, decision.oceanDistance,
+                        String.format(java.util.Locale.ROOT, "%.3f", decision.continentalness),
+                        String.format(java.util.Locale.ROOT, "%.3f", decision.erosion),
+                        String.format(java.util.Locale.ROOT, "%.3f", decision.weirdness),
+                        robustDelta, decisionLabel);
+            }
+        };
+
+        double cont = 0.0;
+        double erosion = 0.0;
+        double weirdness = 0.0;
+        int oceanDist = -1;
+
         if (sampler == null) {
             logMangroveDenial("no_surface_data");
-            return new MangroveDecision(false, 0.0, 0.0, 0.0, false, false);
+            MangroveDecision d = new MangroveDecision(false, cont, erosion, weirdness, false, false, oceanDist);
+            audit.accept(d);
+            auditFinal.accept(d, "REJECT(no_surface_data)");
+            return d;
         }
-        if (!nearOcean) {
+        oceanDist = oceanDistanceBlocks(blockX, blockZ, sampler);
+        boolean coastalOk = oceanDist <= MANGROVE_COASTAL_MAX_BLOCKS;
+        if (!coastalOk) {
             logMangroveDenial("coastal");
-            return new MangroveDecision(false, 0.0, 0.0, 0.0, false, false);
+            MangroveDecision d = new MangroveDecision(false, cont, erosion, weirdness, false, false, oceanDist);
+            audit.accept(d);
+            auditFinal.accept(d, "REJECT(coastal)");
+            return d;
         }
-        int oceanDist = oceanDistanceBlocks(blockX, blockZ, sampler);
         int noiseX = blockX >> 2;
         int noiseZ = blockZ >> 2;
         MultiNoiseUtil.NoiseValuePoint point = sampler.sample(noiseX, SURFACE_CLASSIFY_Y >> 2, noiseZ);
-        double cont = MultiNoiseUtil.toFloat(point.continentalnessNoise());
-        double erosion = MultiNoiseUtil.toFloat(point.erosionNoise());
-        double weirdness = MultiNoiseUtil.toFloat(point.weirdnessNoise());
+        cont = MultiNoiseUtil.toFloat(point.continentalnessNoise());
+        erosion = MultiNoiseUtil.toFloat(point.erosionNoise());
+        weirdness = MultiNoiseUtil.toFloat(point.weirdnessNoise());
         if (allowSurfaceGates) {
             int mangroveMaxY = seaLevel + MANGROVE_MAX_Y_ABOVE_SEA;
             if (surfaceY > mangroveMaxY) {
                 logMangroveDenial("height");
-                return new MangroveDecision(false, cont, erosion, weirdness, false, false);
+                MangroveDecision d = new MangroveDecision(false, cont, erosion, weirdness, false, false, oceanDist);
+                audit.accept(d);
+                auditFinal.accept(d, "REJECT(height)");
+                return d;
             }
             if (robustDelta > MANGROVE_MAX_ROBUST_DELTA) {
                 logMangroveDenial("rugged");
-                return new MangroveDecision(false, cont, erosion, weirdness, false, false);
-            }
-            ShorelineScan shoreline = scanShorelineByBiome(heightView, blockX, blockZ, seaLevel, MANGROVE_WATER_SCAN_RADIUS_BLOCKS);
-            if (!shoreline.isValid()
-                    || shoreline.waterCount() < MANGROVE_MIN_WATER_SAMPLES
-                    || shoreline.shallowWaterCount() < MANGROVE_MIN_SHALLOW_WATER_SAMPLES
-                    || shoreline.waterFraction() < MANGROVE_MIN_WATER_FRACTION
-                    || shoreline.waterFraction() > MANGROVE_MAX_WATER_FRACTION
-                    || shoreline.waterCount() <= 0
-                    || shoreline.landCount() <= 0) {
-                logMangroveDenial("shoreline");
-                return new MangroveDecision(false, cont, erosion, weirdness, false, false);
+                MangroveDecision d = new MangroveDecision(false, cont, erosion, weirdness, false, false, oceanDist);
+                audit.accept(d);
+                auditFinal.accept(d, "REJECT(rugged)");
+                return d;
             }
         }
         boolean coastal = cont < MANGROVE_CONTINENTALNESS_MAX;
@@ -2788,7 +2851,10 @@ public final class LatitudeBiomes {
         } else if (!patch) {
             logMangroveDenial("patch");
         }
-        return new MangroveDecision(suitable && patch, cont, erosion, weirdness, suitable, patch);
+        MangroveDecision d = new MangroveDecision(suitable && patch, cont, erosion, weirdness, suitable, patch, oceanDist);
+        audit.accept(d);
+        auditFinal.accept(d, d.allow ? "ACCEPT" : "REJECT");
+        return d;
     }
 
     private static ShorelineScan scanShorelineByBiome(HeightLimitView heightView,
@@ -3063,7 +3129,13 @@ private static boolean swampPatchHere(long seed, int blockX, int blockZ) {
         };
     }
 
-    private record MangroveDecision(boolean allow, double continentalness, double erosion, double weirdness, boolean suitable, boolean patch) {
+    private record MangroveDecision(boolean allow,
+                                    double continentalness,
+                                    double erosion,
+                                    double weirdness,
+                                    boolean suitable,
+                                    boolean patch,
+                                    int oceanDistance) {
         private String logLabel() {
             String status = allow ? "ACCEPT" : "REJECT";
             String reason = "";
