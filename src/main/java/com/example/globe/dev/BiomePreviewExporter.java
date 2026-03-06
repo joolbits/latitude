@@ -1154,7 +1154,7 @@ public final class BiomePreviewExporter {
         if (id.contains("snowy_beach")) {
             return 0xE9E1CC;
         }
-        if (id.contains("beach") || id.contains("shore")) {
+        if (id.contains("beach") || id.contains("shore") || id.contains("coast")) {
             return 0xE7D7A5;
         }
         if (id.contains("ocean") || id.contains("river")) {
