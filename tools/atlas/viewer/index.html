@@ -63,6 +63,30 @@
     .status { font-size: 13px; color: var(--warn); min-height: 18px; }
     .overlayList { display: flex; flex-direction: column; gap: 6px; max-height: 220px; overflow: auto; }
     .overlayItem { display: flex; gap: 8px; align-items: center; font-size: 13px; }
+    .biomeList { display: flex; flex-direction: column; gap: 4px; max-height: 260px; overflow: auto; }
+    .biomeRow {
+      display: grid;
+      grid-template-columns: 16px 1fr auto;
+      gap: 8px;
+      align-items: center;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 6px 8px;
+      font-size: 12px;
+      cursor: pointer;
+      background: #fff;
+    }
+    .biomeRow.active {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 1px var(--accent) inset;
+      background: #f1f7ff;
+    }
+    .swatch {
+      width: 14px;
+      height: 14px;
+      border: 1px solid #00000033;
+      border-radius: 3px;
+    }
     pre {
       margin: 0;
       border: 1px solid var(--border);
@@ -95,7 +119,7 @@
       </div>
       <div class="field">
         <label for="highlightToggle">Inspect</label>
-        <label class="overlayItem"><input id="highlightToggle" type="checkbox"/> Highlight same biome (if ids available)</label>
+        <label class="overlayItem"><input id="highlightToggle" type="checkbox" disabled/> Highlight same biome (if ids available)</label>
       </div>
       <div class="field">
         <label>Actions</label>
@@ -126,6 +150,11 @@
       </div>
 
       <div class="panel">
+        <div style="font-weight:600; margin-bottom:8px;">Biomes</div>
+        <div id="biomeLegend" class="biomeList"><div class="muted">Index assets missing for this layer.</div></div>
+      </div>
+
+      <div class="panel">
         <div style="font-weight:600; margin-bottom:8px;">Inspect</div>
         <div class="kv">
           <div class="muted">Run</div><div id="iRun">-</div>
@@ -150,6 +179,7 @@ const layerSelect = document.getElementById("layerSelect");
 const refreshBtn = document.getElementById("refreshBtn");
 const latestBtn = document.getElementById("latestBtn");
 const overlayList = document.getElementById("overlayList");
+const biomeLegend = document.getElementById("biomeLegend");
 const overlayHost = document.getElementById("overlayHost");
 const statusEl = document.getElementById("status");
 const manifestEl = document.getElementById("manifest");
@@ -178,7 +208,10 @@ const state = {
   overlayEnabled: new Set(),
   manifest: null,
   baseCanvas: document.createElement("canvas"),
-  biomeIndex: null
+  biomeIndex: null,
+  biomeStats: [],
+  selectedBiomeId: null,
+  selectedBiomeIndex: null
 };
 
 function setStatus(msg) {
@@ -206,6 +239,11 @@ function parseStep(name) {
   return m ? Number(m[1]) : -1;
 }
 
+function stepToken(name) {
+  const m = String(name || "").match(/(step\d+)/i);
+  return m ? m[1].toLowerCase() : null;
+}
+
 function parseRunFromUrl() {
   const u = new URL(window.location.href);
   const run = u.searchParams.get("run") || u.searchParams.get("runId");
@@ -219,6 +257,9 @@ function rgbToHex(r, g, b) {
 }
 
 function rgbToIndex(r, g, b) {
+  // Current exporter stores biome index as grayscale (same value in R/G/B).
+  if (r === g && g === b) return r & 0xFF;
+  // Fallback path for potential future 24-bit index encoding.
   return (r & 0xFF) | ((g & 0xFF) << 8) | ((b & 0xFF) << 16);
 }
 
@@ -296,6 +337,25 @@ function renderLayerDropdown() {
   if (state.layerName) layerSelect.value = state.layerName;
 }
 
+function renderBiomeLegend() {
+  biomeLegend.innerHTML = "";
+  if (!state.biomeStats.length) {
+    biomeLegend.innerHTML = '<div class="muted">Index assets missing for this layer.</div>';
+    return;
+  }
+
+  for (const row of state.biomeStats) {
+    const el = document.createElement("button");
+    el.type = "button";
+    el.className = "biomeRow" + (state.selectedBiomeId === row.biomeId ? " active" : "");
+    el.innerHTML = `<span class="swatch" style="background:${row.color};"></span><span title="${row.biomeId}">${row.biomeId}</span><span>${row.count} (${row.percent}%)</span>`;
+    el.addEventListener("click", () => {
+      selectBiomeById(row.biomeId);
+    });
+    biomeLegend.appendChild(el);
+  }
+}
+
 function renderOverlayToggles() {
   overlayList.innerHTML = "";
   if (!state.overlays.length) {
@@ -341,18 +401,30 @@ function renderOverlayImages() {
 
 async function loadBiomeIndexArtifacts(runId, files) {
   state.biomeIndex = null;
+  state.biomeStats = [];
+  state.selectedBiomeId = null;
+  state.selectedBiomeIndex = null;
 
-  const idsName = files.find((f) => /^biome_ids\.png$/i.test(f));
-  const paletteName = files.find((f) => /^biome_palette\.json$/i.test(f));
+  const token = stepToken(state.layerName);
+  const idsName = files.find((f) => token && f.toLowerCase() === `${token}_biome_ids.png`)
+    || files.find((f) => /^biome_ids\.png$/i.test(f))
+    || files.find((f) => /(?:^|_)biome_ids\.png$/i.test(f));
+  const paletteName = files.find((f) => token && f.toLowerCase() === `${token}_biome_palette.json`)
+    || files.find((f) => /^biome_palette\.json$/i.test(f))
+    || files.find((f) => /(?:^|_)biome_palette\.json$/i.test(f));
   if (!idsName || !paletteName) return;
 
   try {
     const paletteJson = await fetchJson(`${runBase(runId)}/${paletteName}`);
     const entries = Array.isArray(paletteJson.biomes) ? paletteJson.biomes : [];
     const indexToBiome = new Map();
+    const biomeToIndex = new Map();
+    const indexToColor = new Map();
     for (const e of entries) {
       if (typeof e.index === "number" && typeof e.biome_id === "string") {
         indexToBiome.set(e.index, e.biome_id);
+        if (!biomeToIndex.has(e.biome_id)) biomeToIndex.set(e.biome_id, e.index);
+        if (typeof e.displayColor === "string") indexToColor.set(e.index, e.displayColor);
       }
     }
 
@@ -369,13 +441,36 @@ async function loadBiomeIndexArtifacts(runId, files) {
     const ctx = c.getContext("2d", { willReadFrequently: true });
     ctx.drawImage(img, 0, 0);
     const data = ctx.getImageData(0, 0, c.width, c.height).data;
+    const indexCounts = new Map();
+    const total = c.width * c.height;
+    for (let i = 0; i < total; i++) {
+      const p = i * 4;
+      const idx = rgbToIndex(data[p], data[p + 1], data[p + 2]);
+      indexCounts.set(idx, (indexCounts.get(idx) || 0) + 1);
+    }
+
+    const stats = [];
+    for (const [idx, count] of indexCounts.entries()) {
+      const biomeId = indexToBiome.get(idx) || `index ${idx}`;
+      const pct = (count * 100) / total;
+      stats.push({
+        biomeId,
+        index: idx,
+        count,
+        percent: pct.toFixed(2),
+        color: indexToColor.get(idx) || "#8A8A8A"
+      });
+    }
+    stats.sort((a, b) => b.count - a.count);
 
     state.biomeIndex = {
       width: c.width,
       height: c.height,
       data,
-      indexToBiome
+      indexToBiome,
+      biomeToIndex
     };
+    state.biomeStats = stats;
   } catch (e) {
     console.warn(e);
   }
@@ -402,6 +497,26 @@ function drawBiomeHighlight(targetIndex) {
     out.data[p + 3] = 95;
   }
   ctx.putImageData(out, 0, 0);
+}
+
+function selectBiomeByIndex(index) {
+  if (!state.biomeIndex) return;
+  const biomeId = state.biomeIndex.indexToBiome.get(index) || `index ${index}`;
+  state.selectedBiomeIndex = index;
+  state.selectedBiomeId = biomeId;
+  renderBiomeLegend();
+  if (highlightToggle.checked) {
+    drawBiomeHighlight(index);
+  } else {
+    clearHighlight();
+  }
+}
+
+function selectBiomeById(biomeId) {
+  if (!state.biomeIndex || !state.biomeIndex.biomeToIndex) return;
+  const idx = state.biomeIndex.biomeToIndex.get(biomeId);
+  if (idx == null) return;
+  selectBiomeByIndex(idx);
 }
 
 function setInspector(data) {
@@ -450,6 +565,10 @@ function pickAtEvent(ev, clickMode) {
   if (clickMode && highlightToggle.checked && biomeIndex != null) {
     drawBiomeHighlight(biomeIndex);
   }
+
+  if (clickMode && biomeIndex != null) {
+    selectBiomeByIndex(biomeIndex);
+  }
 }
 
 function preparePickCanvas() {
@@ -476,6 +595,9 @@ async function loadLayer() {
   const ctx = state.baseCanvas.getContext("2d", { willReadFrequently: true });
   ctx.drawImage(baseImg, 0, 0);
   preparePickCanvas();
+  if (state.selectedBiomeIndex != null && highlightToggle.checked) {
+    drawBiomeHighlight(state.selectedBiomeIndex);
+  }
 }
 
 async function loadRun(runId, keepLayer) {
@@ -493,6 +615,11 @@ async function loadRun(runId, keepLayer) {
     emptyEl.textContent = `Run ${runId} has no PNG layers.`;
     state.layerName = null;
     renderLayerDropdown();
+    state.biomeStats = [];
+    state.biomeIndex = null;
+    highlightToggle.checked = false;
+    highlightToggle.disabled = true;
+    renderBiomeLegend();
     return;
   }
 
@@ -505,6 +632,14 @@ async function loadRun(runId, keepLayer) {
   renderLayerDropdown();
 
   await loadBiomeIndexArtifacts(runId, files);
+  renderBiomeLegend();
+  if (!state.biomeIndex) {
+    highlightToggle.checked = false;
+    highlightToggle.disabled = true;
+    setStatus("Index assets missing for this layer; biome id selection/highlight is disabled.");
+  } else {
+    highlightToggle.disabled = false;
+  }
   await loadLayer();
 
   stack.hidden = false;
@@ -523,6 +658,11 @@ async function refreshRuns(keepRun) {
     emptyEl.textContent = "No stamped runs found under /run-headless/latdev/atlas-runs/.";
     setInspector({});
     manifestEl.textContent = "(none)";
+    state.biomeStats = [];
+    state.biomeIndex = null;
+    highlightToggle.checked = false;
+    highlightToggle.disabled = true;
+    renderBiomeLegend();
     return;
   }
 
@@ -545,6 +685,8 @@ layerSelect.addEventListener("change", async () => {
   state.overlays = classifyOverlays(state.files, state.layerName);
   state.overlayEnabled = new Set();
   renderOverlayToggles();
+  await loadBiomeIndexArtifacts(state.runId, state.files);
+  renderBiomeLegend();
   await loadLayer().catch((e) => setStatus(String(e.message || e)));
 });
 
@@ -560,7 +702,13 @@ pickCanvas.addEventListener("mousemove", (e) => pickAtEvent(e, false));
 pickCanvas.addEventListener("click", (e) => pickAtEvent(e, true));
 
 highlightToggle.addEventListener("change", () => {
-  if (!highlightToggle.checked) clearHighlight();
+  if (!highlightToggle.checked) {
+    clearHighlight();
+    return;
+  }
+  if (state.selectedBiomeIndex != null) {
+    drawBiomeHighlight(state.selectedBiomeIndex);
+  }
 });
 
 refreshRuns(null).catch((e) => setStatus(String(e.message || e)));
