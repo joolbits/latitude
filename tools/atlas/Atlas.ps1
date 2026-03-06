@@ -31,6 +31,7 @@ New-Item -ItemType Directory -Force -Path $runDir | Out-Null
   seed = $Seed
   size = $Size
   step = $Step
+  emitBiomeIndex = $true
   emitHeight = [bool]$EmitHeight
 } | ConvertTo-Json -Depth 5 | Out-File (Join-Path $runDir "run_manifest.json") -Encoding utf8
 
@@ -39,21 +40,31 @@ New-Item -ItemType Directory -Force -Path $runDir | Out-Null
 .\gradlew.bat clean build -x test
 
 # Run exporter
-$args = "--seed $Seed --size $Size --step $Step"
+$args = "--seed $Seed --size $Size --step $Step --emitBiomeIndex true"
 if ($EmitHeight) { $args += " --emitHeight" }
 
 .\gradlew.bat --no-daemon --info --stacktrace runBiomePreview --args="$args"
 
-# --- Collect latest export outputs into the stamped run folder ---
-$src = Join-Path $root "run-headless\latdev\biome-previews"
-if (Test-Path $src) {
-  # copy only the newest matching outputs (png + txt) into this run folder
-  $latestPng = Get-ChildItem $src -File -Filter "*.png" | Sort-Object LastWriteTime | Select-Object -Last 1
-  if ($latestPng) {
-    Copy-Item $latestPng.FullName -Destination $runDir -Force
-    $maybeTxt = [System.IO.Path]::ChangeExtension($latestPng.FullName, ".txt")
-    if (Test-Path $maybeTxt) { Copy-Item $maybeTxt -Destination $runDir -Force }
+# --- Collect latest atlas step outputs into the stamped run folder ---
+$seedDir = Join-Path $root ("run\latdev\atlas\seed_" + $Seed)
+$stepDir = $null
+if (Test-Path $seedDir) {
+  $stepDirs = Get-ChildItem $seedDir -Directory -Recurse |
+    Where-Object { $_.Name -ieq ("step" + $Step) } |
+    Sort-Object LastWriteTime
+  $stepDir = $stepDirs | Select-Object -Last 1
+}
+
+if ($stepDir) {
+  $stepPrefix = "step$Step"
+  $stepFiles = Get-ChildItem $stepDir.FullName -File |
+    Where-Object { $_.Extension -in @(".png", ".txt", ".json") }
+
+  foreach ($f in $stepFiles) {
+    Copy-Item $f.FullName -Destination (Join-Path $runDir ($stepPrefix + "_" + $f.Name)) -Force
   }
+} else {
+  Write-Warning "No atlas step directory found for seed=$Seed step=$Step under $seedDir"
 }
 
 # --- Serve + open viewer (MVP) ---
