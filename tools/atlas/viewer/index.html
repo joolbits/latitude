@@ -1,2240 +1,733 @@
-<!DOCTYPE html>
-<html lang="en" data-theme="dark">
+<!doctype html>
+<html>
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Latitude — Atlas Viewer</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=IBM+Plex+Sans:wght@300;400;500&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<style>
-/* ═══════════════════════════════════════════════
-   CSS VARIABLES & THEME
-   ═══════════════════════════════════════════════ */
-:root {
-  /* Core palette */
-  --lat-cyan:    #3ee8d6;
-  --lat-blue:    #3da0e3;
-  --lat-accent:  #3ee8d6;
-  --lat-accent2: #3da0e3;
-  --lat-warn:    #e8a73e;
-  --lat-error:   #e85a5a;
-  --lat-success: #5ae87a;
-
-  /* Typography */
-  --font-display: 'Outfit', sans-serif;
-  --font-body:    'IBM Plex Sans', sans-serif;
-  --font-mono:    'JetBrains Mono', monospace;
-
-  /* Timing */
-  --ease-smooth: cubic-bezier(0.22, 1, 0.36, 1);
-  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
-
-  /* Radii */
-  --r-sm: 6px;
-  --r-md: 10px;
-  --r-lg: 16px;
-  --r-xl: 24px;
-}
-
-[data-theme="dark"] {
-  --bg-deep:     #0d1117;
-  --bg-base:     #151b23;
-  --bg-surface:  #1c2333;
-  --bg-elevated: #222d3d;
-  --bg-glass:    rgba(22, 30, 44, 0.72);
-  --bg-glass-hover: rgba(30, 40, 58, 0.82);
-  --border-subtle:  rgba(62, 232, 214, 0.08);
-  --border-medium:  rgba(62, 232, 214, 0.15);
-  --border-accent:  rgba(62, 232, 214, 0.35);
-  --text-primary:   #e6edf3;
-  --text-secondary: #8b949e;
-  --text-tertiary:  #5a6370;
-  --text-accent:    #3ee8d6;
-  --shadow-float: 0 8px 32px rgba(0,0,0,0.45), 0 2px 8px rgba(0,0,0,0.3);
-  --shadow-glow:  0 0 20px rgba(62, 232, 214, 0.08);
-  --canvas-bg:    #0a0e14;
-  --checkerboard-a: #0e1219;
-  --checkerboard-b: #111822;
-}
-
-[data-theme="light"] {
-  --bg-deep:     #f0f2f5;
-  --bg-base:     #f8f9fb;
-  --bg-surface:  #ffffff;
-  --bg-elevated: #ffffff;
-  --bg-glass:    rgba(255, 255, 255, 0.72);
-  --bg-glass-hover: rgba(255, 255, 255, 0.85);
-  --border-subtle:  rgba(0, 0, 0, 0.06);
-  --border-medium:  rgba(0, 0, 0, 0.12);
-  --border-accent:  rgba(45, 170, 156, 0.4);
-  --text-primary:   #1a1f26;
-  --text-secondary: #5a6370;
-  --text-tertiary:  #8b949e;
-  --text-accent:    #1a9e8f;
-  --shadow-float: 0 8px 32px rgba(0,0,0,0.1), 0 2px 8px rgba(0,0,0,0.06);
-  --shadow-glow:  0 0 20px rgba(45, 170, 156, 0.06);
-  --canvas-bg:    #e8ecf0;
-  --checkerboard-a: #e2e6ea;
-  --checkerboard-b: #eaeef2;
-  --lat-accent:  #1a9e8f;
-  --lat-accent2: #2a7dc9;
-}
-
-/* ═══════════════════════════════════════════════
-   RESET & BASE
-   ═══════════════════════════════════════════════ */
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-html, body {
-  height: 100%;
-  overflow: hidden;
-  font-family: var(--font-body);
-  font-size: 13px;
-  color: var(--text-primary);
-  background: var(--bg-deep);
-  -webkit-font-smoothing: antialiased;
-  user-select: none;
-}
-
-/* Scrollbar styling */
-::-webkit-scrollbar { width: 5px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb {
-  background: var(--border-medium);
-  border-radius: 10px;
-}
-::-webkit-scrollbar-thumb:hover { background: var(--border-accent); }
-
-/* ═══════════════════════════════════════════════
-   LAYOUT
-   ═══════════════════════════════════════════════ */
-#app {
-  display: grid;
-  grid-template-columns: 1fr;
-  grid-template-rows: 1fr;
-  height: 100vh;
-  width: 100vw;
-  position: relative;
-}
-
-/* ═══════════════════════════════════════════════
-   CANVAS VIEWPORT
-   ═══════════════════════════════════════════════ */
-#canvas-viewport {
-  position: relative;
-  width: 100%;
-  height: 100%;
-  background: var(--canvas-bg);
-  overflow: hidden;
-  cursor: grab;
-  /* checkerboard */
-  background-image:
-    linear-gradient(45deg, var(--checkerboard-a) 25%, transparent 25%),
-    linear-gradient(-45deg, var(--checkerboard-a) 25%, transparent 25%),
-    linear-gradient(45deg, transparent 75%, var(--checkerboard-a) 75%),
-    linear-gradient(-45deg, transparent 75%, var(--checkerboard-a) 75%);
-  background-size: 20px 20px;
-  background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
-  background-color: var(--checkerboard-b);
-}
-#canvas-viewport.dragging { cursor: grabbing; }
-
-#map-canvas {
-  position: absolute;
-  top: 0; left: 0;
-  transform-origin: 0 0;
-  image-rendering: pixelated;
-  transition: opacity 0.4s var(--ease-smooth);
-}
-#map-canvas.fading { opacity: 0.3; }
-
-/* Crosshair overlay */
-#crosshair {
-  position: absolute;
-  pointer-events: none;
-  z-index: 5;
-  display: none;
-}
-#crosshair .h-line, #crosshair .v-line {
-  position: absolute;
-  background: var(--lat-accent);
-  opacity: 0.25;
-}
-#crosshair .h-line { height: 1px; width: 100vw; left: -50vw; top: 0; }
-#crosshair .v-line { width: 1px; height: 100vh; top: -50vh; left: 0; }
-
-/* Zoom badge */
-#zoom-badge {
-  position: absolute;
-  bottom: 16px;
-  left: 50%;
-  transform: translateX(-50%);
-  background: var(--bg-glass);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid var(--border-subtle);
-  border-radius: 20px;
-  padding: 5px 14px;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--text-secondary);
-  z-index: 10;
-  pointer-events: none;
-  transition: opacity 0.3s;
-}
-
-/* Coordinate readout */
-#coord-readout {
-  position: absolute;
-  bottom: 16px;
-  right: 16px;
-  background: var(--bg-glass);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--r-md);
-  padding: 6px 12px;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--text-secondary);
-  z-index: 10;
-  pointer-events: none;
-}
-
-/* Generation status bar */
-#generation-status {
-  position: absolute;
-  top: 68px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 120;
-  display: none;
-  align-items: center;
-  gap: 10px;
-  padding: 9px 14px;
-  border-radius: 999px;
-  background: var(--bg-glass);
-  border: 1px solid var(--border-accent);
-  box-shadow: var(--shadow-float), var(--shadow-glow);
-  color: var(--text-primary);
-  font-family: var(--font-display);
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.01em;
-}
-#generation-status.visible { display: inline-flex; }
-#generation-status .hg {
-  width: 14px;
-  height: 14px;
-  border: 2px solid var(--lat-accent);
-  border-radius: 999px;
-  border-top-color: transparent;
-  animation: genSpin 0.9s linear infinite;
-}
-@keyframes genSpin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
-}
-
-/* ═══════════════════════════════════════════════
-   FLOATING CONTROL PILL (Top bar)
-   ═══════════════════════════════════════════════ */
-#control-pill {
-  position: absolute;
-  top: 16px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 100;
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  background: var(--bg-glass);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
-  border: 1px solid var(--border-subtle);
-  border-radius: 50px;
-  padding: 5px 6px;
-  box-shadow: var(--shadow-float);
-  transition: box-shadow 0.3s;
-}
-#control-pill:hover { box-shadow: var(--shadow-float), var(--shadow-glow); }
-
-/* Pill segments */
-.pill-segment {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 0 4px;
-}
-.pill-divider {
-  width: 1px;
-  height: 22px;
-  background: var(--border-medium);
-  margin: 0 4px;
-  flex-shrink: 0;
-}
-.pill-label {
-  font-family: var(--font-display);
-  font-size: 10px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--text-tertiary);
-  white-space: nowrap;
-}
-
-/* Custom Select */
-.lat-select-wrap {
-  position: relative;
-}
-.lat-select {
-  appearance: none;
-  -webkit-appearance: none;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border-subtle);
-  border-radius: 20px;
-  padding: 6px 28px 6px 12px;
-  font-family: var(--font-display);
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--text-primary);
-  cursor: pointer;
-  outline: none;
-  min-width: 100px;
-  transition: border-color 0.2s, background 0.2s, box-shadow 0.2s;
-}
-.lat-select:hover {
-  border-color: var(--border-accent);
-  background: var(--bg-glass-hover);
-}
-.lat-select:focus {
-  border-color: var(--lat-accent);
-  box-shadow: 0 0 0 2px rgba(62, 232, 214, 0.15);
-}
-.lat-select-wrap::after {
-  content: '';
-  position: absolute;
-  right: 11px;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 0; height: 0;
-  border-left: 4px solid transparent;
-  border-right: 4px solid transparent;
-  border-top: 5px solid var(--text-secondary);
-  pointer-events: none;
-}
-.pill-readout {
-  background: var(--bg-elevated);
-  border: 1px solid var(--border-subtle);
-  border-radius: 20px;
-  padding: 6px 12px;
-  font-family: var(--font-display);
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--text-secondary);
-  min-width: 148px;
-  text-align: center;
-}
-
-/* Theme toggle */
-#theme-btn {
-  width: 32px; height: 32px;
-  border-radius: 50%;
-  border: 1px solid var(--border-subtle);
-  background: var(--bg-elevated);
-  color: var(--text-secondary);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 14px;
-  transition: all 0.25s var(--ease-smooth);
-  flex-shrink: 0;
-}
-#theme-btn:hover {
-  border-color: var(--border-accent);
-  color: var(--text-accent);
-  transform: rotate(15deg);
-}
-
-/* Fit button */
-.pill-icon-btn {
-  width: 32px; height: 32px;
-  border-radius: 50%;
-  border: 1px solid var(--border-subtle);
-  background: var(--bg-elevated);
-  color: var(--text-secondary);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 13px;
-  transition: all 0.2s var(--ease-smooth);
-  flex-shrink: 0;
-}
-.pill-icon-btn:hover {
-  border-color: var(--border-accent);
-  color: var(--text-accent);
-}
-.pill-icon-btn:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-  color: var(--text-tertiary);
-}
-
-/* ═══════════════════════════════════════════════
-   LEFT PANEL — OVERLAYS + METADATA
-   ═══════════════════════════════════════════════ */
-.side-panel {
-  position: absolute;
-  top: 72px;
-  z-index: 90;
-  width: 280px;
-  max-height: calc(100vh - 88px);
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  overflow-y: auto;
-  padding-bottom: 16px;
-}
-.side-panel.left  { left: 16px; }
-.side-panel.right { right: 16px; }
-
-/* Panel card */
-.panel-card {
-  background: var(--bg-glass);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--r-lg);
-  box-shadow: var(--shadow-float);
-  overflow: hidden;
-  transition: box-shadow 0.3s;
-}
-.panel-card:hover { box-shadow: var(--shadow-float), var(--shadow-glow); }
-
-.panel-header {
-  padding: 14px 16px 10px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  border-bottom: 1px solid var(--border-subtle);
-}
-.panel-title {
-  font-family: var(--font-display);
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: var(--text-accent);
-}
-.panel-action-btn {
-  border: 1px solid var(--border-medium);
-  background: var(--bg-elevated);
-  color: var(--text-secondary);
-  border-radius: 999px;
-  padding: 4px 10px;
-  font-family: var(--font-display);
-  font-size: 10.5px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: border-color 0.2s, color 0.2s, background 0.2s;
-}
-.panel-action-btn:hover {
-  border-color: var(--border-accent);
-  color: var(--text-accent);
-}
-.panel-body {
-  padding: 12px 16px 14px;
-}
-.context-grid {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 6px 12px;
-}
-.context-k {
-  color: var(--text-secondary);
-  font-size: 11px;
-}
-.context-v {
-  color: var(--text-primary);
-  font-family: var(--font-mono);
-  font-size: 11px;
-  text-align: right;
-}
-.context-empty {
-  color: var(--text-tertiary);
-  font-size: 12px;
-  font-style: italic;
-}
-
-/* Toggle switches */
-.toggle-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 6px 0;
-}
-.toggle-row + .toggle-row {
-  border-top: 1px solid var(--border-subtle);
-}
-.toggle-label {
-  font-family: var(--font-body);
-  font-size: 12.5px;
-  font-weight: 400;
-  color: var(--text-primary);
-}
-.range-wrap {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 118px;
-}
-.range-wrap input[type="range"] {
-  width: 84px;
-  accent-color: var(--lat-accent);
-}
-.range-val {
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  color: var(--text-secondary);
-  min-width: 34px;
-  text-align: right;
-}
-.band-desc-hint {
-  margin-top: 6px;
-  color: var(--text-tertiary);
-  font-size: 10.5px;
-  line-height: 1.35;
-}
-.toggle-switch {
-  position: relative;
-  width: 38px;
-  height: 22px;
-  flex-shrink: 0;
-}
-.toggle-switch input {
-  opacity: 0;
-  width: 0;
-  height: 0;
-  position: absolute;
-}
-.toggle-track {
-  position: absolute;
-  inset: 0;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border-medium);
-  border-radius: 11px;
-  cursor: pointer;
-  transition: background 0.25s, border-color 0.25s;
-}
-.toggle-track::after {
-  content: '';
-  position: absolute;
-  top: 2px; left: 2px;
-  width: 16px; height: 16px;
-  background: var(--text-secondary);
-  border-radius: 50%;
-  transition: transform 0.25s var(--ease-spring), background 0.25s;
-}
-.toggle-switch input:checked + .toggle-track {
-  background: rgba(62, 232, 214, 0.15);
-  border-color: var(--lat-accent);
-}
-.toggle-switch input:checked + .toggle-track::after {
-  transform: translateX(16px);
-  background: var(--lat-accent);
-}
-
-/* Metadata key-value */
-.meta-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  padding: 5px 0;
-  gap: 12px;
-}
-.meta-row + .meta-row { border-top: 1px solid var(--border-subtle); }
-.meta-key {
-  font-family: var(--font-body);
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--text-secondary);
-  white-space: nowrap;
-  text-transform: capitalize;
-}
-.meta-val {
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-  font-weight: 400;
-  color: var(--text-primary);
-  text-align: right;
-  word-break: break-all;
-  line-height: 1.4;
-}
-.meta-val.seed {
-  color: var(--text-accent);
-  font-weight: 500;
-}
-
-/* ═══════════════════════════════════════════════
-   RIGHT PANEL — BIOME GALLERY
-   ═══════════════════════════════════════════════ */
-.biome-list {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-}
-
-.biome-entry {
-  display: grid;
-  grid-template-columns: 18px 1fr auto;
-  gap: 10px;
-  align-items: center;
-  padding: 7px 0;
-  cursor: pointer;
-  border-radius: var(--r-sm);
-  transition: background 0.15s;
-  position: relative;
-}
-.biome-entry:hover { background: rgba(62, 232, 214, 0.04); }
-.biome-entry.active { background: rgba(62, 232, 214, 0.08); }
-.biome-entry + .biome-entry { border-top: 1px solid var(--border-subtle); }
-
-.biome-swatch {
-  width: 18px;
-  height: 18px;
-  border-radius: 4px;
-  border: 1px solid rgba(255,255,255,0.08);
-  flex-shrink: 0;
-  transition: transform 0.2s var(--ease-spring);
-}
-.biome-entry:hover .biome-swatch { transform: scale(1.15); }
-
-.biome-name {
-  font-family: var(--font-display);
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--text-primary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.biome-pct {
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  font-weight: 500;
-  color: var(--text-secondary);
-  white-space: nowrap;
-}
-
-/* Biome search */
-.biome-search-wrap {
-  padding: 0 16px 8px;
-}
-.biome-search {
-  width: 100%;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border-subtle);
-  border-radius: 20px;
-  padding: 7px 12px;
-  font-family: var(--font-body);
-  font-size: 12px;
-  color: var(--text-primary);
-  outline: none;
-  transition: border-color 0.2s;
-}
-.biome-search::placeholder { color: var(--text-tertiary); }
-.biome-search:focus { border-color: var(--border-accent); }
-
-/* ═══════════════════════════════════════════════
-   INSPECT CARD (Floating)
-   ═══════════════════════════════════════════════ */
-#inspect-card {
-  position: absolute;
-  z-index: 200;
-  pointer-events: none;
-  background: var(--bg-glass);
-  backdrop-filter: blur(28px);
-  -webkit-backdrop-filter: blur(28px);
-  border: 1px solid var(--border-medium);
-  border-radius: var(--r-lg);
-  box-shadow: var(--shadow-float), var(--shadow-glow);
-  padding: 14px 16px;
-  min-width: 200px;
-  opacity: 0;
-  transform: translateY(4px);
-  transition: opacity 0.2s var(--ease-smooth), transform 0.2s var(--ease-smooth);
-}
-#inspect-card.visible {
-  opacity: 1;
-  transform: translateY(0);
-}
-
-.inspect-color-bar {
-  height: 6px;
-  border-radius: 3px;
-  margin-bottom: 10px;
-  transition: background-color 0.15s;
-}
-.inspect-biome-name {
-  font-family: var(--font-display);
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--text-primary);
-  margin-bottom: 2px;
-}
-.inspect-biome-id {
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  color: var(--text-tertiary);
-  margin-bottom: 8px;
-}
-.inspect-coords {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--text-secondary);
-}
-.inspect-coords span {
-  color: var(--text-accent);
-}
-
-/* ═══════════════════════════════════════════════
-   HIGHLIGHT OVERLAY (Canvas-based)
-   ═══════════════════════════════════════════════ */
-#highlight-canvas {
-  position: absolute;
-  top: 0; left: 0;
-  transform-origin: 0 0;
-  pointer-events: none;
-  image-rendering: pixelated;
-  mix-blend-mode: multiply;
-  opacity: 0;
-  transition: opacity 0.35s var(--ease-smooth);
-}
-[data-theme="dark"] #highlight-canvas { mix-blend-mode: screen; }
-#highlight-canvas.active { opacity: 1; }
-
-/* Grid overlay */
-#grid-canvas {
-  position: absolute;
-  top: 0; left: 0;
-  transform-origin: 0 0;
-  pointer-events: none;
-  image-rendering: pixelated;
-  opacity: 0;
-  transition: opacity 0.2s var(--ease-smooth);
-  z-index: 3;
-}
-#grid-canvas.active { opacity: 1; }
-
-/* ═══════════════════════════════════════════════
-   LATITUDE BAND OVERLAY
-   ═══════════════════════════════════════════════ */
-#band-canvas {
-  position: absolute;
-  top: 0; left: 0;
-  transform-origin: 0 0;
-  pointer-events: none;
-  image-rendering: auto;
-  opacity: 0;
-  transition: opacity 0.4s var(--ease-smooth);
-  z-index: 4;
-}
-#band-canvas.active { opacity: 1; }
-
-/* Band legend (bottom-left floating) */
-#band-legend {
-  position: absolute;
-  bottom: 16px;
-  left: 16px;
-  z-index: 10;
-  background: var(--bg-glass);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--r-md);
-  padding: 10px 14px;
-  display: none;
-  flex-direction: column;
-  gap: 4px;
-  box-shadow: var(--shadow-float);
-}
-#band-legend.visible { display: flex; }
-.band-legend-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.band-legend-swatch {
-  width: 20px;
-  height: 10px;
-  border-radius: 2px;
-  flex-shrink: 0;
-}
-.band-legend-label {
-  font-family: var(--font-display);
-  font-size: 10.5px;
-  font-weight: 500;
-  color: var(--text-secondary);
-}
-.band-legend-deg {
-  font-family: var(--font-mono);
-  font-size: 9.5px;
-  color: var(--text-tertiary);
-  margin-left: auto;
-}
-
-/* ═══════════════════════════════════════════════
-   STATUS / LOADING
-   ═══════════════════════════════════════════════ */
-#status-toast {
-  position: absolute;
-  top: 72px;
-  left: 50%;
-  transform: translateX(-50%) translateY(-8px);
-  z-index: 300;
-  background: var(--bg-glass);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid var(--border-medium);
-  border-radius: 20px;
-  padding: 8px 18px;
-  font-family: var(--font-body);
-  font-size: 12px;
-  color: var(--text-secondary);
-  box-shadow: var(--shadow-float);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.3s, transform 0.3s var(--ease-smooth);
-}
-#status-toast.visible {
-  opacity: 1;
-  transform: translateX(-50%) translateY(0);
-}
-#status-toast .dot {
-  display: inline-block;
-  width: 6px; height: 6px;
-  border-radius: 50%;
-  margin-right: 8px;
-  vertical-align: middle;
-}
-#status-toast .dot.loading { background: var(--lat-warn); animation: pulse 1s infinite; }
-#status-toast .dot.success { background: var(--lat-success); }
-#status-toast .dot.error   { background: var(--lat-error); }
-
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.3; }
-}
-
-/* ═══════════════════════════════════════════════
-   SPLASH / EMPTY STATE
-   ═══════════════════════════════════════════════ */
-#empty-state {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  z-index: 50;
-  pointer-events: none;
-  opacity: 1;
-  transition: opacity 0.5s;
-}
-#empty-state.hidden { opacity: 0; }
-
-.empty-icon {
-  width: 64px; height: 64px;
-  border-radius: 50%;
-  background: var(--bg-surface);
-  border: 1px solid var(--border-subtle);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 28px;
-  margin-bottom: 16px;
-  color: var(--text-tertiary);
-}
-.empty-title {
-  font-family: var(--font-display);
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--text-primary);
-  margin-bottom: 6px;
-}
-.empty-sub {
-  font-family: var(--font-body);
-  font-size: 13px;
-  color: var(--text-tertiary);
-}
-
-/* ═══════════════════════════════════════════════
-   ANIMATIONS
-   ═══════════════════════════════════════════════ */
-@keyframes slideUp {
-  from { opacity: 0; transform: translateY(12px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-.side-panel .panel-card {
-  animation: slideUp 0.45s var(--ease-smooth) backwards;
-}
-.side-panel .panel-card:nth-child(1) { animation-delay: 0.05s; }
-.side-panel .panel-card:nth-child(2) { animation-delay: 0.12s; }
-.side-panel .panel-card:nth-child(3) { animation-delay: 0.19s; }
-
-/* ═══════════════════════════════════════════════
-   RESPONSIVE
-   ═══════════════════════════════════════════════ */
-@media (max-width: 960px) {
-  .side-panel { width: 240px; }
-}
-@media (max-width: 720px) {
-  .side-panel.left  { display: none; }
-  .side-panel.right { display: none; }
-  #control-pill { max-width: 95vw; overflow-x: auto; }
-}
-</style>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Latitude Atlas Viewer</title>
+  <style>
+    :root {
+      --bg: #f6f7f9;
+      --panel: #ffffff;
+      --ink: #1d232f;
+      --muted: #5f6675;
+      --border: #d8dde6;
+      --accent: #0f6ec8;
+      --warn: #a0522d;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: radial-gradient(circle at 10% -10%, #ffffff 0%, var(--bg) 55%);
+      color: var(--ink);
+      font-family: "Segoe UI", "Trebuchet MS", Arial, sans-serif;
+    }
+    .wrap { max-width: 1400px; margin: 0 auto; padding: 16px; }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      box-shadow: 0 8px 26px rgba(20, 40, 60, 0.06);
+      padding: 12px;
+    }
+    .toolbar {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(180px, 1fr));
+      gap: 10px;
+      align-items: end;
+    }
+    .field { display: flex; flex-direction: column; gap: 6px; }
+    .field label { font-size: 12px; color: var(--muted); }
+    select, button {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 10px;
+      font-size: 14px;
+      background: #fff;
+    }
+    button { cursor: pointer; }
+    button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .grid {
+      margin-top: 12px;
+      display: grid;
+      gap: 12px;
+      grid-template-columns: 1fr 320px;
+    }
+    .viewerBox { position: relative; overflow: auto; min-height: 360px; background: #0f1318; border-radius: 10px; display:flex; align-items:stretch; }
+    .stack { position: relative; display: block; line-height: 0; width: 100%; min-height: 360px; }
+    .stack img, .stack canvas { display: block; width: 100%; height: auto; image-rendering: pixelated; image-rendering: crisp-edges; }
+    .overlay { position: absolute; inset: 0; pointer-events: none; opacity: 0.55; }
+    .pickCanvas { position: absolute; inset: 0; pointer-events: auto; background: transparent; }
+    .highlightCanvas { position: absolute; inset: 0; pointer-events: none; }
+    .side { display: flex; flex-direction: column; gap: 12px; }
+    .muted { color: var(--muted); font-size: 12px; }
+    .status { font-size: 13px; color: var(--warn); min-height: 18px; }
+    .overlayList { display: flex; flex-direction: column; gap: 6px; max-height: 220px; overflow: auto; }
+    .overlayItem { display: flex; gap: 8px; align-items: center; font-size: 13px; }
+    .biomeList { display: flex; flex-direction: column; gap: 4px; max-height: 260px; overflow: auto; }
+    .biomeRow {
+      display: grid;
+      grid-template-columns: 16px 1fr auto;
+      gap: 8px;
+      align-items: center;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 6px 8px;
+      font-size: 12px;
+      cursor: pointer;
+      background: #fff;
+    }
+    .biomeRow.active {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 1px var(--accent) inset;
+      background: #f1f7ff;
+    }
+    .swatch {
+      width: 14px;
+      height: 14px;
+      border: 1px solid #00000033;
+      border-radius: 3px;
+    }
+    pre {
+      margin: 0;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #fafbfe;
+      padding: 8px;
+      font-size: 12px;
+      max-height: 220px;
+      overflow: auto;
+    }
+    .kv { display: grid; grid-template-columns: 110px 1fr; gap: 4px 8px; font-size: 12px; }
+    .chip { display: inline-block; width: 14px; height: 14px; border: 1px solid #00000033; border-radius: 3px; vertical-align: middle; margin-right: 6px; }
+    @media (max-width: 1080px) {
+      .toolbar { grid-template-columns: 1fr 1fr; }
+      .grid { grid-template-columns: 1fr; }
+    }
+  </style>
 </head>
 <body>
-
-<div id="app">
-  <!-- ════════ MAP VIEWPORT ════════ -->
-  <div id="canvas-viewport">
-    <canvas id="map-canvas"></canvas>
-    <canvas id="highlight-canvas"></canvas>
-    <canvas id="grid-canvas"></canvas>
-    <canvas id="band-canvas"></canvas>
-    <div id="crosshair"><div class="h-line"></div><div class="v-line"></div></div>
-
-    <!-- Empty state -->
-    <div id="empty-state">
-      <div class="empty-icon">🌐</div>
-      <div class="empty-title">Latitude Atlas Viewer</div>
-      <div class="empty-sub">Select a run to begin exploring</div>
+<div class="wrap">
+  <div class="panel">
+    <div class="toolbar">
+      <div class="field">
+        <label for="runSelect">Run</label>
+        <select id="runSelect"></select>
+      </div>
+      <div class="field">
+        <label for="layerSelect">Layer</label>
+        <select id="layerSelect"></select>
+      </div>
+      <div class="field">
+        <label for="highlightToggle">Inspect</label>
+        <label class="overlayItem"><input id="highlightToggle" type="checkbox" disabled/> Highlight same biome (if ids available)</label>
+      </div>
+      <div class="field">
+        <label>Actions</label>
+        <div style="display:flex; gap:8px;">
+          <button id="refreshBtn" class="primary">Refresh</button>
+          <button id="latestBtn">Latest</button>
+        </div>
+      </div>
     </div>
+    <div id="status" class="status"></div>
   </div>
 
-  <!-- ════════ CONTROL PILL ════════ -->
-  <div id="control-pill">
-    <div class="pill-segment">
-      <span class="pill-label">Run</span>
-      <div class="lat-select-wrap">
-        <select id="sel-run" class="lat-select">
-          <option value="">— choose —</option>
-        </select>
+  <div class="grid">
+    <div class="panel viewerBox">
+      <div id="stack" class="stack" hidden>
+        <img id="baseImg" alt="atlas layer"/>
+        <div id="overlayHost" class="overlay"></div>
+        <canvas id="highlightCanvas" class="highlightCanvas"></canvas>
+        <canvas id="pickCanvas" class="pickCanvas"></canvas>
       </div>
-    </div>
-    <div class="pill-divider"></div>
-    <div class="pill-segment">
-      <span class="pill-label" title="Auto-selected detail level from run contents">Detail</span>
-      <div id="detail-readout" class="pill-readout" title="Auto-selected detail level from run contents">Auto</div>
-    </div>
-    <div class="pill-divider"></div>
-    <div class="pill-segment">
-      <span class="pill-label">Generate</span>
-      <div class="lat-select-wrap">
-        <select id="gen-quality" class="lat-select" title="Generate a new run at a selected quality">
-          <option value="">Choose…</option>
-          <option value="potato">Potato</option>
-          <option value="low">Low</option>
-          <option value="medium">Medium</option>
-          <option value="high">High</option>
-          <option value="extra-high">Extra High</option>
-        </select>
-      </div>
-    </div>
-    <div class="pill-divider"></div>
-    <button class="pill-icon-btn" id="btn-fit" title="Fit to view">⊡</button>
-    <button class="pill-icon-btn" id="btn-reset-zoom" title="Reset zoom">1:1</button>
-    <div class="pill-divider"></div>
-    <button id="theme-btn" title="Toggle theme">◐</button>
-  </div>
-
-  <!-- ════════ LEFT PANEL ════════ -->
-  <div class="side-panel left" id="panel-left">
-    <!-- Overlays -->
-    <div class="panel-card">
-      <div class="panel-header">
-        <span class="panel-title">Overlays</span>
-      </div>
-      <div class="panel-body">
-        <div class="toggle-row">
-          <span class="toggle-label">Grid Lines</span>
-          <label class="toggle-switch">
-            <input type="checkbox" id="tog-grid">
-            <span class="toggle-track"></span>
-          </label>
-        </div>
-        <div class="toggle-row">
-          <span class="toggle-label">Crosshair</span>
-          <label class="toggle-switch">
-            <input type="checkbox" id="tog-crosshair">
-            <span class="toggle-track"></span>
-          </label>
-        </div>
-        <div class="toggle-row">
-          <span class="toggle-label">Highlight Biome</span>
-          <label class="toggle-switch">
-            <input type="checkbox" id="tog-highlight">
-            <span class="toggle-track"></span>
-          </label>
-        </div>
-        <div class="toggle-row">
-          <span class="toggle-label">High Contrast Selection</span>
-          <label class="toggle-switch">
-            <input type="checkbox" id="tog-hi-contrast">
-            <span class="toggle-track"></span>
-          </label>
-        </div>
-        <div class="toggle-row">
-          <span class="toggle-label">Inspect on Hover</span>
-          <label class="toggle-switch">
-            <input type="checkbox" id="tog-inspect" checked>
-            <span class="toggle-track"></span>
-          </label>
-        </div>
-        <div class="toggle-row">
-          <span class="toggle-label">Biome Tooltip</span>
-          <label class="toggle-switch">
-            <input type="checkbox" id="tog-tooltip" checked>
-            <span class="toggle-track"></span>
-          </label>
-        </div>
-        <div class="toggle-row">
-          <span class="toggle-label">Latitude Bands</span>
-          <label class="toggle-switch">
-            <input type="checkbox" id="tog-bands">
-            <span class="toggle-track"></span>
-          </label>
-        </div>
-        <div class="toggle-row">
-          <span class="toggle-label">Band Opacity</span>
-          <div class="range-wrap">
-            <input type="range" id="bands-opacity" min="10" max="90" value="24" step="1">
-            <span class="range-val" id="bands-opacity-val">24%</span>
-          </div>
-        </div>
-        <div class="band-desc-hint">Descriptors: Equator, Tropics, Subtropics, Temperate, Subpolar, Polar</div>
-      </div>
+      <div id="empty" style="color:#dce2ee; padding:22px;">No stamped runs found. Generate a run from Atlas menu, then click Refresh.</div>
     </div>
 
-    <!-- Run Metadata -->
-    <div class="panel-card" id="card-metadata">
-      <div class="panel-header">
-        <span class="panel-title">Run Metadata</span>
+    <div class="side">
+      <div class="panel">
+        <div style="font-weight:600; margin-bottom:8px;">Overlays</div>
+        <div id="overlayList" class="overlayList"><div class="muted">No overlay assets in this layer.</div></div>
       </div>
-      <div class="panel-body" id="metadata-body">
-        <div style="color: var(--text-tertiary); font-size: 12px; font-style: italic;">No run loaded</div>
+
+      <div class="panel">
+        <div style="font-weight:600; margin-bottom:8px;">Biomes</div>
+        <div id="biomeLegend" class="biomeList"><div class="muted">Index assets missing for this layer.</div></div>
+      </div>
+
+      <div class="panel">
+        <div style="font-weight:600; margin-bottom:8px;">Inspect</div>
+        <div class="kv">
+          <div class="muted">Run</div><div id="iRun">-</div>
+          <div class="muted">Layer</div><div id="iLayer">-</div>
+          <div class="muted">Pixel</div><div id="iPixel">-</div>
+          <div class="muted">Biome</div><div id="iBiome">unknown</div>
+          <div class="muted">Color</div><div id="iColor">-</div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div style="font-weight:600; margin-bottom:8px;">Manifest</div>
+        <pre id="manifest">(none)</pre>
       </div>
     </div>
   </div>
-
-  <!-- ════════ RIGHT PANEL — BIOME GALLERY ════════ -->
-  <div class="side-panel right" id="panel-right">
-    <div class="panel-card" id="card-selected">
-      <div class="panel-header">
-        <span class="panel-title">Biome Highlights</span>
-        <button id="btn-clear-selection" class="panel-action-btn" title="Clear selected biome highlight">Clear</button>
-      </div>
-      <div class="panel-body" id="selection-context-body">
-        <div class="context-empty">No biome selected</div>
-      </div>
-    </div>
-    <div class="panel-card" id="card-biomes" style="display:flex; flex-direction:column; min-height: 280px;">
-      <div class="panel-header">
-        <span class="panel-title">Biome Palette</span>
-        <span id="biome-count" style="font-family:var(--font-mono); font-size:10px; color:var(--text-tertiary);"></span>
-      </div>
-      <div class="biome-search-wrap">
-        <input type="text" class="biome-search" id="biome-search" placeholder="Filter biomes…" disabled>
-      </div>
-      <div class="panel-body" id="biome-list-body" style="overflow-y:auto; flex:1; padding-top:4px;">
-        <div style="color: var(--text-tertiary); font-size: 12px; font-style: italic;">No biomes loaded</div>
-      </div>
-    </div>
-  </div>
-
-  <!-- ════════ BAND LEGEND ════════ -->
-  <div id="band-legend"></div>
-
-  <!-- ════════ INSPECT CARD ════════ -->
-  <div id="inspect-card">
-    <div class="inspect-color-bar" id="inspect-color-bar"></div>
-    <div class="inspect-biome-name" id="inspect-biome-name">—</div>
-    <div class="inspect-biome-id" id="inspect-biome-id"></div>
-    <div class="inspect-coords" id="inspect-coords"></div>
-    <div class="inspect-zone" id="inspect-zone" style="font-family:var(--font-display);font-size:10.5px;font-weight:500;margin-top:6px;padding-top:5px;border-top:1px solid var(--border-subtle);"></div>
-  </div>
-
-  <!-- ════════ STATUS TOAST ════════ -->
-  <div id="status-toast"><span class="dot"></span><span class="msg"></span></div>
-  <div id="generation-status"><span class="hg"></span><span id="generation-status-text">Generating atlas run…</span></div>
-
-  <!-- ════════ ZOOM BADGE ════════ -->
-  <div id="zoom-badge">100%</div>
-  <div id="coord-readout">— , —</div>
 </div>
 
-<!-- ═══════════════════════════════════════════════════════════════
-     JAVASCRIPT
-     ═══════════════════════════════════════════════════════════════ -->
 <script>
-(() => {
-'use strict';
+const runSelect = document.getElementById("runSelect");
+const layerSelect = document.getElementById("layerSelect");
+const refreshBtn = document.getElementById("refreshBtn");
+const latestBtn = document.getElementById("latestBtn");
+const overlayList = document.getElementById("overlayList");
+const biomeLegend = document.getElementById("biomeLegend");
+const overlayHost = document.getElementById("overlayHost");
+const statusEl = document.getElementById("status");
+const manifestEl = document.getElementById("manifest");
+const baseImg = document.getElementById("baseImg");
+const stack = document.getElementById("stack");
+const emptyEl = document.getElementById("empty");
+const pickCanvas = document.getElementById("pickCanvas");
+const highlightCanvas = document.getElementById("highlightCanvas");
+const highlightToggle = document.getElementById("highlightToggle");
 
-/* ─── CONFIG ─── */
-// !! Adjust this base URL to your Python server address !!
-const API_BASE = window.location.origin;
+const inspectEls = {
+  run: document.getElementById("iRun"),
+  layer: document.getElementById("iLayer"),
+  pixel: document.getElementById("iPixel"),
+  biome: document.getElementById("iBiome"),
+  color: document.getElementById("iColor")
+};
 
-/* ─── DOM REFS ─── */
-const $ = (s, p=document) => p.querySelector(s);
-const $$ = (s, p=document) => [...p.querySelectorAll(s)];
-
-const viewport    = $('#canvas-viewport');
-const mapCanvas   = $('#map-canvas');
-const hlCanvas    = $('#highlight-canvas');
-const gridCanvas  = $('#grid-canvas');
-const bandCanvas  = $('#band-canvas');
-const mapCtx      = mapCanvas.getContext('2d', { willReadFrequently: true });
-const hlCtx       = hlCanvas.getContext('2d');
-const gridCtx     = gridCanvas.getContext('2d');
-const bandCtx     = bandCanvas.getContext('2d');
-const crosshair   = $('#crosshair');
-const inspectCard = $('#inspect-card');
-const emptyState  = $('#empty-state');
-const zoomBadge   = $('#zoom-badge');
-const coordReadout= $('#coord-readout');
-const statusToast = $('#status-toast');
-const generationStatus = $('#generation-status');
-const generationStatusText = $('#generation-status-text');
-
-const selRun      = $('#sel-run');
-const detailReadout = $('#detail-readout');
-const genQuality = $('#gen-quality');
-const btnFit      = $('#btn-fit');
-const btnReset    = $('#btn-reset-zoom');
-const themeBtn    = $('#theme-btn');
-const togGrid     = $('#tog-grid');
-const togCrosshair= $('#tog-crosshair');
-const togHighlight= $('#tog-highlight');
-const togHiContrast = $('#tog-hi-contrast');
-const togInspect  = $('#tog-inspect');
-const togTooltip  = $('#tog-tooltip');
-const togBands    = $('#tog-bands');
-const bandsOpacity = $('#bands-opacity');
-const bandsOpacityVal = $('#bands-opacity-val');
-const bandLegend  = $('#band-legend');
-const biomeSearch = $('#biome-search');
-const biomeListBody = $('#biome-list-body');
-const metadataBody  = $('#metadata-body');
-const biomeCountEl  = $('#biome-count');
-const btnClearSelection = $('#btn-clear-selection');
-const selectionContextBody = $('#selection-context-body');
-
-/* ─── STATE ─── */
-let state = {
+const state = {
   runs: [],
-  currentRun: null,
-  currentLayer: null,
+  runId: null,
+  files: [],
+  layers: [],
+  layerName: null,
+  overlays: [],
+  overlayEnabled: new Set(),
   manifest: null,
-  biomes: [],          // [{ id, name, color, pct }]
-  biomeMap: {},        // id -> biome
-  imageData: null,     // ImageData from loaded map
-  mapWidth: 0,
-  mapHeight: 0,
-  // viewport transform
-  panX: 0, panY: 0,
-  zoom: 1,
-  // interaction
-  isDragging: false,
-  dragStartX: 0, dragStartY: 0,
-  panStartX: 0, panStartY: 0,
-  hoveredBiomeId: null,
+  baseCanvas: document.createElement("canvas"),
+  biomeIndex: null,
+  biomeStats: [],
   selectedBiomeId: null,
-  renderedHighlightKey: null,
-  // pixel color -> biome lookup
-  colorToBiome: {},
-  selectionStatsCache: {},
-  bandOpacity: 0.24,
-  generationActive: false,
-  generationPollTimer: null,
+  selectedBiomeIndex: null
 };
 
-const LEGACY_BEACH_RED = [235, 72, 63];
-const BEACH_SAND = [231, 215, 165];
-const GENERATION_PRESETS = {
-  potato: { label: 'Potato', resolution: 128 },
-  low: { label: 'Low', resolution: 64 },
-  medium: { label: 'Medium', resolution: 32 },
-  high: { label: 'High', resolution: 16 },
-  'extra-high': { label: 'Extra High', resolution: 8 },
-};
-
-/* ─── HELPERS ─── */
-function colorKey(r, g, b) { return `${r},${g},${b}`; }
-
-function showToast(msg, type='loading') {
-  const dot = $('.dot', statusToast);
-  const m   = $('.msg', statusToast);
-  dot.className = 'dot ' + type;
-  m.textContent = msg;
-  statusToast.classList.add('visible');
-  if (type !== 'loading') setTimeout(() => statusToast.classList.remove('visible'), 2200);
-}
-function hideToast() { statusToast.classList.remove('visible'); }
-
-function setGenerationStatus(active, text) {
-  if (!generationStatus) return;
-  if (active) {
-    generationStatusText.textContent = text || 'Generating atlas run…';
-    generationStatus.classList.add('visible');
-  } else {
-    generationStatus.classList.remove('visible');
-  }
-}
-window.__latSetGenerationStatus = setGenerationStatus;
-
-async function apiFetch(path, options) {
-  const resp = await fetch(API_BASE + path, options || {});
-  if (!resp.ok) throw new Error(`API ${resp.status}: ${path}`);
-  const ct = resp.headers.get('content-type') || '';
-  if (ct.includes('json')) return resp.json();
-  if (ct.includes('image')) return resp.blob();
-  return resp.text();
+function setStatus(msg) {
+  statusEl.textContent = msg || "";
 }
 
-function prettifyKey(k) {
-  return k.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+async function fetchText(url) {
+  const r = await fetch(url, { cache: "no-store" });
+  if (!r.ok) throw new Error(`${r.status} ${r.statusText} for ${url}`);
+  return r.text();
 }
 
-function biomeById(id) {
-  if (!id) return null;
-  return state.biomes.find((b) => b.id === id) || null;
+async function fetchJson(url) {
+  const r = await fetch(url, { cache: "no-store" });
+  if (!r.ok) throw new Error(`${r.status} ${r.statusText} for ${url}`);
+  return r.json();
 }
 
-function generationLabelForResolution(resolution) {
-  const hit = Object.values(GENERATION_PRESETS).find((p) => p.resolution === Number(resolution));
-  return hit ? hit.label : `Custom ${resolution}`;
+function parseHrefNames(html) {
+  return [...html.matchAll(/href="([^"]+)"/gi)].map((m) => decodeURIComponent(m[1]));
 }
 
-function selectionStatsForBiome(biome) {
-  if (!state.imageData || !state.mapWidth || !state.mapHeight || !biome || !Array.isArray(biome.color)) return null;
-  const cacheKey = `${state.currentRun || ''}|${state.currentLayer || ''}|${biome.id}`;
-  if (state.selectionStatsCache[cacheKey]) return state.selectionStatsCache[cacheKey];
+function parseStep(name) {
+  const m = name.match(/step(\d+)/i);
+  return m ? Number(m[1]) : -1;
+}
 
-  const [tr, tg, tb] = biome.color;
-  const d = state.imageData.data;
-  let count = 0;
-  let minX = Number.POSITIVE_INFINITY;
-  let minY = Number.POSITIVE_INFINITY;
-  let maxX = -1;
-  let maxY = -1;
-  let sumX = 0;
-  let sumY = 0;
+function stepToken(name) {
+  const m = String(name || "").match(/(step\d+)/i);
+  return m ? m[1].toLowerCase() : null;
+}
 
-  for (let i = 0; i < d.length; i += 4) {
-    if (d[i] !== tr || d[i+1] !== tg || d[i+2] !== tb) continue;
-    const p = i / 4;
-    const x = p % state.mapWidth;
-    const y = Math.floor(p / state.mapWidth);
-    count++;
-    sumX += x;
-    sumY += y;
-    if (x < minX) minX = x;
-    if (x > maxX) maxX = x;
-    if (y < minY) minY = y;
-    if (y > maxY) maxY = y;
-  }
+function parseRunFromUrl() {
+  const u = new URL(window.location.href);
+  const run = u.searchParams.get("run") || u.searchParams.get("runId");
+  if (!run) return null;
+  if (!/^\d{8}-\d{6}$/.test(run)) return null;
+  return run;
+}
 
-  if (!count) return null;
+function rgbToHex(r, g, b) {
+  return `#${[r, g, b].map((v) => v.toString(16).padStart(2, "0")).join("").toUpperCase()}`;
+}
 
-  const cx = Math.round(sumX / count);
-  const cy = Math.round(sumY / count);
-  const centerY = state.mapHeight / 2;
-  const latFrac = Math.abs(cy - centerY) / centerY;
-  const zone = zoneForFrac(latFrac);
-  const hemi = cy < centerY ? 'N' : (cy > centerY ? 'S' : 'EQ');
+function rgbToIndex(r, g, b) {
+  // Current exporter stores biome index as grayscale (same value in R/G/B).
+  if (r === g && g === b) return r & 0xFF;
+  // Fallback path for potential future 24-bit index encoding.
+  return (r & 0xFF) | ((g & 0xFF) << 8) | ((b & 0xFF) << 16);
+}
 
-  const stats = {
-    count,
-    centroidX: cx,
-    centroidY: cy,
-    bboxW: maxX - minX + 1,
-    bboxH: maxY - minY + 1,
-    latDeg: Math.round(latFrac * 90),
-    hemisphere: hemi,
-    zoneLabel: zone.label,
+function runBase(runId) {
+  return `/run-headless/latdev/atlas-runs/${runId}`;
+}
+
+async function listRuns() {
+  const html = await fetchText("/run-headless/latdev/atlas-runs/");
+  const runs = parseHrefNames(html)
+    .map((h) => h.replace(/\/$/, ""))
+    .filter((n) => /^\d{8}-\d{6}$/.test(n))
+    .sort();
+  return runs;
+}
+
+async function listRunFiles(runId) {
+  const html = await fetchText(`${runBase(runId)}/`);
+  return parseHrefNames(html)
+    .filter((h) => !h.endsWith("/"))
+    .map((n) => n.trim())
+    .filter(Boolean);
+}
+
+function classifyLayers(files) {
+  const pngs = files.filter((f) => /\.png$/i.test(f));
+  const rankLayer = (name) => {
+    const n = name.toLowerCase();
+    if (/_biomes\.png$/.test(n) || /^biomes\.png$/.test(n)) return 0;
+    if (/bands\.png$/.test(n)) return 1;
+    if (/temperature\.png$/.test(n)) return 2;
+    if (/humidity\.png$/.test(n)) return 3;
+    if (/continentalness\.png$/.test(n)) return 4;
+    if (/biome_ids\.png$/.test(n)) return 5;
+    if (/mask_/.test(n)) return 6;
+    return 7;
   };
-  state.selectionStatsCache[cacheKey] = stats;
-  return stats;
+  const layers = pngs.map((name) => ({
+    name,
+    step: parseStep(name),
+    rank: rankLayer(name)
+  })).sort((a, b) => {
+    const sa = a.step > -1 ? a.step : Number.MAX_SAFE_INTEGER;
+    const sb = b.step > -1 ? b.step : Number.MAX_SAFE_INTEGER;
+    return sa - sb || a.rank - b.rank || a.name.localeCompare(b.name);
+  });
+  return layers;
 }
 
-function renderSelectionContext(biome) {
-  if (!selectionContextBody) return;
-  if (!biome) {
-    selectionContextBody.innerHTML = '<div class="context-empty">No biome selected</div>';
+function classifyOverlays(files, baseLayerName) {
+  const pngs = files.filter((f) => /\.png$/i.test(f) && f !== baseLayerName);
+  const wanted = pngs.filter((n) => /mask_|ids|overlay|debug|bands|temperature|humidity|continentalness/i.test(n));
+  return wanted.sort((a, b) => a.localeCompare(b));
+}
+
+async function loadManifest(runId) {
+  try {
+    const m = await fetchJson(`${runBase(runId)}/run_manifest.json`);
+    state.manifest = m;
+    manifestEl.textContent = JSON.stringify(m, null, 2);
+  } catch (e) {
+    state.manifest = null;
+    if (String(e.message).includes("404")) {
+      manifestEl.textContent = "Run exists but manifest not found - did Atlas.cmd finish successfully?";
+    } else {
+      manifestEl.textContent = String(e.message || e);
+    }
+  }
+}
+
+function renderRunDropdown() {
+  runSelect.innerHTML = "";
+  for (const runId of state.runs) {
+    const opt = document.createElement("option");
+    opt.value = runId;
+    opt.textContent = runId;
+    runSelect.appendChild(opt);
+  }
+  if (state.runId && state.runs.includes(state.runId)) runSelect.value = state.runId;
+}
+
+function renderLayerDropdown() {
+  layerSelect.innerHTML = "";
+  for (const layer of state.layers) {
+    const opt = document.createElement("option");
+    opt.value = layer.name;
+    const stepLabel = layer.step > -1 ? `step${layer.step}` : "layer";
+    opt.textContent = `${stepLabel} - ${layer.name}`;
+    layerSelect.appendChild(opt);
+  }
+  if (state.layerName) layerSelect.value = state.layerName;
+}
+
+function renderBiomeLegend() {
+  biomeLegend.innerHTML = "";
+  if (!state.biomeStats.length) {
+    biomeLegend.innerHTML = '<div class="muted">Index assets missing for this layer.</div>';
     return;
   }
 
-  const stats = selectionStatsForBiome(biome);
-  const pct = biome.pct != null ? `${biome.pct.toFixed(2)}%` : '—';
-  const color = Array.isArray(biome.color) ? `rgb(${biome.color.join(',')})` : '—';
-
-  let html = `
-    <div class="context-grid">
-      <div class="context-k">Biome</div><div class="context-v">${biome.name}</div>
-      <div class="context-k">ID</div><div class="context-v">${biome.id}</div>
-      <div class="context-k">Coverage</div><div class="context-v">${pct}</div>
-      <div class="context-k">Display Color</div><div class="context-v">${color}</div>
-  `;
-
-  if (stats) {
-    html += `
-      <div class="context-k">Pixel Count</div><div class="context-v">${stats.count.toLocaleString()}</div>
-      <div class="context-k">Centroid (X,Z)</div><div class="context-v">${stats.centroidX}, ${stats.centroidY}</div>
-      <div class="context-k">Latitude Context</div><div class="context-v">${stats.latDeg}°${stats.hemisphere} (${stats.zoneLabel})</div>
-      <div class="context-k">Bounds (px)</div><div class="context-v">${stats.bboxW} × ${stats.bboxH}</div>
-    `;
+  for (const row of state.biomeStats) {
+    const el = document.createElement("button");
+    el.type = "button";
+    el.className = "biomeRow" + (state.selectedBiomeId === row.biomeId ? " active" : "");
+    el.innerHTML = `<span class="swatch" style="background:${row.color};"></span><span title="${row.biomeId}">${row.biomeId}</span><span>${row.count} (${row.percent}%)</span>`;
+    el.addEventListener("click", () => {
+      selectBiomeById(row.biomeId);
+    });
+    biomeLegend.appendChild(el);
   }
-
-  html += '</div>';
-  selectionContextBody.innerHTML = html;
 }
 
-function clearBiomeSelection() {
+function renderOverlayToggles() {
+  overlayList.innerHTML = "";
+  if (!state.overlays.length) {
+    overlayList.innerHTML = '<div class="muted">No overlay assets in this layer.</div>';
+    overlayHost.innerHTML = "";
+    return;
+  }
+  for (const name of state.overlays) {
+    const id = `ov_${name.replace(/[^a-z0-9]+/gi, "_")}`;
+    const row = document.createElement("label");
+    row.className = "overlayItem";
+    row.innerHTML = `<input id="${id}" type="checkbox"/> <span>${name}</span>`;
+    const cb = row.querySelector("input");
+    cb.checked = state.overlayEnabled.has(name);
+    cb.addEventListener("change", () => {
+      if (cb.checked) state.overlayEnabled.add(name); else state.overlayEnabled.delete(name);
+      renderOverlayImages();
+    });
+    overlayList.appendChild(row);
+  }
+  renderOverlayImages();
+}
+
+function renderOverlayImages() {
+  overlayHost.innerHTML = "";
+  const runId = state.runId;
+  if (!runId) return;
+  for (const name of state.overlays) {
+    if (!state.overlayEnabled.has(name)) continue;
+    const img = document.createElement("img");
+    img.src = `${runBase(runId)}/${encodeURIComponent(name)}?t=${Date.now()}`;
+    img.alt = name;
+    img.style.position = "absolute";
+    img.style.inset = "0";
+    img.style.width = "100%";
+    img.style.height = "100%";
+    img.style.objectFit = "contain";
+    img.style.pointerEvents = "none";
+    img.style.mixBlendMode = "screen";
+    overlayHost.appendChild(img);
+  }
+}
+
+async function loadBiomeIndexArtifacts(runId, files) {
+  state.biomeIndex = null;
+  state.biomeStats = [];
   state.selectedBiomeId = null;
-  highlightBiomeInList(null);
-  renderSelectionContext(null);
-  if (!togHighlight.checked) return;
-  const hovered = biomeById(state.hoveredBiomeId);
-  if (hovered) {
-    renderHighlight(hovered);
+  state.selectedBiomeIndex = null;
+
+  const token = stepToken(state.layerName);
+  const idsName = files.find((f) => token && f.toLowerCase() === `${token}_biome_ids.png`)
+    || files.find((f) => /^biome_ids\.png$/i.test(f))
+    || files.find((f) => /(?:^|_)biome_ids\.png$/i.test(f));
+  const paletteName = files.find((f) => token && f.toLowerCase() === `${token}_biome_palette.json`)
+    || files.find((f) => /^biome_palette\.json$/i.test(f))
+    || files.find((f) => /(?:^|_)biome_palette\.json$/i.test(f));
+  if (!idsName || !paletteName) return;
+
+  try {
+    const paletteJson = await fetchJson(`${runBase(runId)}/${paletteName}`);
+    const entries = Array.isArray(paletteJson.biomes) ? paletteJson.biomes : [];
+    const indexToBiome = new Map();
+    const biomeToIndex = new Map();
+    const indexToColor = new Map();
+    for (const e of entries) {
+      if (typeof e.index === "number" && typeof e.biome_id === "string") {
+        indexToBiome.set(e.index, e.biome_id);
+        if (!biomeToIndex.has(e.biome_id)) biomeToIndex.set(e.biome_id, e.index);
+        if (typeof e.displayColor === "string") indexToColor.set(e.index, e.displayColor);
+      }
+    }
+
+    const img = new Image();
+    await new Promise((resolve, reject) => {
+      img.onload = resolve;
+      img.onerror = () => reject(new Error("Failed loading biome_ids.png"));
+      img.src = `${runBase(runId)}/${idsName}?t=${Date.now()}`;
+    });
+
+    const c = document.createElement("canvas");
+    c.width = img.naturalWidth;
+    c.height = img.naturalHeight;
+    const ctx = c.getContext("2d", { willReadFrequently: true });
+    ctx.drawImage(img, 0, 0);
+    const data = ctx.getImageData(0, 0, c.width, c.height).data;
+    const indexCounts = new Map();
+    const total = c.width * c.height;
+    for (let i = 0; i < total; i++) {
+      const p = i * 4;
+      const idx = rgbToIndex(data[p], data[p + 1], data[p + 2]);
+      indexCounts.set(idx, (indexCounts.get(idx) || 0) + 1);
+    }
+
+    const stats = [];
+    for (const [idx, count] of indexCounts.entries()) {
+      const biomeId = indexToBiome.get(idx) || `index ${idx}`;
+      const pct = (count * 100) / total;
+      stats.push({
+        biomeId,
+        index: idx,
+        count,
+        percent: pct.toFixed(2),
+        color: indexToColor.get(idx) || "#8A8A8A"
+      });
+    }
+    stats.sort((a, b) => b.count - a.count);
+
+    state.biomeIndex = {
+      width: c.width,
+      height: c.height,
+      data,
+      indexToBiome,
+      biomeToIndex
+    };
+    state.biomeStats = stats;
+  } catch (e) {
+    console.warn(e);
+  }
+}
+
+function clearHighlight() {
+  const c = highlightCanvas;
+  const ctx = c.getContext("2d");
+  ctx.clearRect(0, 0, c.width, c.height);
+}
+
+function drawBiomeHighlight(targetIndex) {
+  if (!state.biomeIndex) return;
+  const b = state.biomeIndex;
+  const c = highlightCanvas;
+  const ctx = c.getContext("2d");
+  const out = ctx.createImageData(c.width, c.height);
+  for (let i = 0, p = 0; i < b.width * b.height; i++, p += 4) {
+    const idx = rgbToIndex(b.data[p], b.data[p + 1], b.data[p + 2]);
+    if (idx !== targetIndex) continue;
+    out.data[p] = 250;
+    out.data[p + 1] = 240;
+    out.data[p + 2] = 30;
+    out.data[p + 3] = 95;
+  }
+  ctx.putImageData(out, 0, 0);
+}
+
+function selectBiomeByIndex(index) {
+  if (!state.biomeIndex) return;
+  const biomeId = state.biomeIndex.indexToBiome.get(index) || `index ${index}`;
+  state.selectedBiomeIndex = index;
+  state.selectedBiomeId = biomeId;
+  renderBiomeLegend();
+  if (highlightToggle.checked) {
+    drawBiomeHighlight(index);
   } else {
     clearHighlight();
   }
 }
 
-function selectBiomePersistent(biome) {
-  if (!biome) return;
-  state.selectedBiomeId = biome.id;
-  highlightBiomeInList(biome.id);
-  renderSelectionContext(biome);
-  if (!togHighlight.checked) togHighlight.checked = true;
-  renderHighlight(biome);
+function selectBiomeById(biomeId) {
+  if (!state.biomeIndex || !state.biomeIndex.biomeToIndex) return;
+  const idx = state.biomeIndex.biomeToIndex.get(biomeId);
+  if (idx == null) return;
+  selectBiomeByIndex(idx);
 }
 
-/* ─── THEME ─── */
-function setTheme(t) {
-  document.documentElement.setAttribute('data-theme', t);
-  themeBtn.textContent = t === 'dark' ? '◐' : '◑';
-  localStorage.setItem('lat-theme', t);
-}
-themeBtn.addEventListener('click', () => {
-  const cur = document.documentElement.getAttribute('data-theme');
-  setTheme(cur === 'dark' ? 'light' : 'dark');
-  if (togBands.checked && state.mapWidth) renderBands();
-});
-// init theme
-setTheme(localStorage.getItem('lat-theme') || 'dark');
-
-/* ─── VIEWPORT: PAN & ZOOM ─── */
-function applyTransform() {
-  const t = `translate(${state.panX}px, ${state.panY}px) scale(${state.zoom})`;
-  mapCanvas.style.transform = t;
-  hlCanvas.style.transform = t;
-  gridCanvas.style.transform = t;
-  bandCanvas.style.transform = t;
-  zoomBadge.textContent = `${Math.round(state.zoom * 100)}%`;
+function setInspector(data) {
+  inspectEls.run.textContent = data.run || "-";
+  inspectEls.layer.textContent = data.layer || "-";
+  inspectEls.pixel.textContent = data.pixel || "-";
+  inspectEls.biome.textContent = data.biome || "unknown";
+  inspectEls.color.innerHTML = data.color
+    ? `<span class="chip" style="background:${data.color};"></span>${data.color}`
+    : "-";
 }
 
-function zoomTo(newZoom, pivotX, pivotY) {
-  const z0 = state.zoom;
-  const z1 = Math.min(64, Math.max(0.05, newZoom));
-  // pivot in world coords
-  const wx = (pivotX - state.panX) / z0;
-  const wy = (pivotY - state.panY) / z0;
-  state.zoom = z1;
-  state.panX = pivotX - wx * z1;
-  state.panY = pivotY - wy * z1;
-  applyTransform();
-}
+function pickAtEvent(ev, clickMode) {
+  if (!baseImg.naturalWidth || !baseImg.naturalHeight) return;
 
-viewport.addEventListener('wheel', e => {
-  e.preventDefault();
-  const rect = viewport.getBoundingClientRect();
-  const mx = e.clientX - rect.left;
-  const my = e.clientY - rect.top;
-  const factor = e.deltaY < 0 ? 1.12 : 1/1.12;
-  zoomTo(state.zoom * factor, mx, my);
-}, { passive: false });
+  const rect = baseImg.getBoundingClientRect();
+  if (rect.width <= 0 || rect.height <= 0) return;
+  const x = Math.floor((ev.clientX - rect.left) * (baseImg.naturalWidth / rect.width));
+  const y = Math.floor((ev.clientY - rect.top) * (baseImg.naturalHeight / rect.height));
+  if (x < 0 || y < 0 || x >= baseImg.naturalWidth || y >= baseImg.naturalHeight) return;
 
-viewport.addEventListener('mousedown', e => {
-  if (e.button !== 0) return;
-  state.isDragging = true;
-  state.dragStartX = e.clientX;
-  state.dragStartY = e.clientY;
-  state.panStartX = state.panX;
-  state.panStartY = state.panY;
-  viewport.classList.add('dragging');
-});
-window.addEventListener('mousemove', e => {
-  if (state.isDragging) {
-    state.panX = state.panStartX + (e.clientX - state.dragStartX);
-    state.panY = state.panStartY + (e.clientY - state.dragStartY);
-    applyTransform();
-  }
-  updateInspect(e);
-});
-window.addEventListener('mouseup', () => {
-  state.isDragging = false;
-  viewport.classList.remove('dragging');
-});
+  const ctx = state.baseCanvas.getContext("2d", { willReadFrequently: true });
+  const px = ctx.getImageData(x, y, 1, 1).data;
+  const colorHex = rgbToHex(px[0], px[1], px[2]);
 
-// Fit to view
-function fitToView() {
-  if (!state.mapWidth) return;
-  const vw = viewport.clientWidth;
-  const vh = viewport.clientHeight;
-  const pad = 60;
-  const scale = Math.min((vw - pad * 2) / state.mapWidth, (vh - pad * 2) / state.mapHeight);
-  state.zoom = scale;
-  state.panX = (vw - state.mapWidth * scale) / 2;
-  state.panY = (vh - state.mapHeight * scale) / 2;
-  applyTransform();
-}
-btnFit.addEventListener('click', fitToView);
-btnReset.addEventListener('click', () => {
-  state.zoom = 1;
-  state.panX = (viewport.clientWidth - state.mapWidth) / 2;
-  state.panY = (viewport.clientHeight - state.mapHeight) / 2;
-  applyTransform();
-});
-
-/* ─── INSPECT ─── */
-function updateInspect(e) {
-  if (!state.imageData || !togInspect.checked) {
-    inspectCard.classList.remove('visible');
-    coordReadout.textContent = '— , —';
-    return;
-  }
-  const rect = viewport.getBoundingClientRect();
-  const mx = e.clientX - rect.left;
-  const my = e.clientY - rect.top;
-  // world coords
-  const wx = Math.floor((mx - state.panX) / state.zoom);
-  const wy = Math.floor((my - state.panY) / state.zoom);
-
-  coordReadout.textContent = `${wx} , ${wy}`;
-
-  if (wx < 0 || wy < 0 || wx >= state.mapWidth || wy >= state.mapHeight) {
-    inspectCard.classList.remove('visible');
-    return;
+  let biomeId = "unknown";
+  let biomeIndex = null;
+  if (state.biomeIndex && x < state.biomeIndex.width && y < state.biomeIndex.height) {
+    const p = ((y * state.biomeIndex.width) + x) * 4;
+    biomeIndex = rgbToIndex(
+      state.biomeIndex.data[p],
+      state.biomeIndex.data[p + 1],
+      state.biomeIndex.data[p + 2]
+    );
+    biomeId = state.biomeIndex.indexToBiome.get(biomeIndex) || `index ${biomeIndex}`;
   }
 
-  // Read pixel
-  const idx = (wy * state.mapWidth + wx) * 4;
-  const d = state.imageData.data;
-  const r = d[idx], g = d[idx+1], b = d[idx+2];
-  const key = colorKey(r, g, b);
-  const biome = state.colorToBiome[key];
+  setInspector({
+    run: state.runId,
+    layer: state.layerName,
+    pixel: `${x}, ${y}`,
+    biome: biomeId,
+    color: colorHex
+  });
 
-  // Crosshair
-  if (togCrosshair.checked) {
-    crosshair.style.display = 'block';
-    crosshair.style.left = mx + 'px';
-    crosshair.style.top = my + 'px';
-  } else {
-    crosshair.style.display = 'none';
+  if (clickMode && highlightToggle.checked && biomeIndex != null) {
+    drawBiomeHighlight(biomeIndex);
   }
 
-  if (togTooltip.checked) {
-    // Inspect card position
-    const cardW = 210, cardH = 100;
-    let cx = mx + 20, cy = my - 10;
-    if (cx + cardW > viewport.clientWidth - 300) cx = mx - cardW - 12;
-    if (cy + cardH > viewport.clientHeight) cy = viewport.clientHeight - cardH - 8;
-    if (cy < 70) cy = 70;
-    inspectCard.style.left = cx + 'px';
-    inspectCard.style.top = cy + 'px';
-
-    const colorHex = `rgb(${r},${g},${b})`;
-    $('#inspect-color-bar').style.background = colorHex;
-    $('#inspect-biome-name').textContent = biome ? biome.name : 'Unknown';
-    $('#inspect-biome-id').textContent = biome ? biome.id : key;
-    $('#inspect-coords').innerHTML = `X <span>${wx}</span>  Z <span>${wy}</span>`;
-
-    // Latitude zone from pixel Y position
-    const centerY = state.mapHeight / 2;
-    const latFrac = Math.abs(wy - centerY) / centerY;
-    const zone = zoneForFrac(latFrac);
-    const hemi = wy < centerY ? 'N' : (wy > centerY ? 'S' : '—');
-    const deg = Math.round(latFrac * 90);
-    const [zr, zg, zb] = zone.color;
-    $('#inspect-zone').innerHTML = `<span style="color:rgb(${zr},${zg},${zb})">${zone.label}</span> <span style="color:var(--text-tertiary)">${deg}°${hemi}</span>`;
-
-    inspectCard.classList.add('visible');
-  } else {
-    inspectCard.classList.remove('visible');
-  }
-
-  // Highlight biome on hover
-  if (togHighlight.checked && biome) {
-    if (state.selectedBiomeId) {
-      const selected = biomeById(state.selectedBiomeId);
-      if (selected) renderHighlight(selected);
-    } else if (state.hoveredBiomeId !== biome.id) {
-      state.hoveredBiomeId = biome.id;
-      renderHighlight(biome);
-    }
+  if (clickMode && biomeIndex != null) {
+    selectBiomeByIndex(biomeIndex);
   }
 }
 
-viewport.addEventListener('mouseleave', () => {
-  inspectCard.classList.remove('visible');
-  crosshair.style.display = 'none';
-  if (!state.selectedBiomeId) clearHighlight();
-});
-
-viewport.addEventListener('click', e => {
-  if (state.isDragging) return;
-  if (!state.imageData) return;
-  const rect = viewport.getBoundingClientRect();
-  const mx = e.clientX - rect.left;
-  const my = e.clientY - rect.top;
-  const wx = Math.floor((mx - state.panX) / state.zoom);
-  const wy = Math.floor((my - state.panY) / state.zoom);
-  if (wx < 0 || wy < 0 || wx >= state.mapWidth || wy >= state.mapHeight) return;
-  const idx = (wy * state.mapWidth + wx) * 4;
-  const d = state.imageData.data;
-  const key = colorKey(d[idx], d[idx+1], d[idx+2]);
-  const biome = state.colorToBiome[key];
-  if (biome) {
-    selectBiomePersistent(biome);
-  }
-});
-
-/* ─── HIGHLIGHT RENDERING ─── */
-function renderHighlight(biome) {
-  if (!state.imageData) return;
-  const useHighContrast = !!(togHiContrast.checked && state.selectedBiomeId && state.selectedBiomeId === biome.id);
-  const renderKey = `${biome.id}|${useHighContrast ? 'hc' : 'normal'}`;
-  if (state.renderedHighlightKey === renderKey && hlCanvas.classList.contains('active')) return;
-  hlCanvas.width = state.mapWidth;
-  hlCanvas.height = state.mapHeight;
-  const src = state.imageData.data;
-  const dst = hlCtx.createImageData(state.mapWidth, state.mapHeight);
-  const dd = dst.data;
-  const [tr, tg, tb] = biome.color;
-
-  for (let i = 0; i < src.length; i += 4) {
-    const match = src[i] === tr && src[i+1] === tg && src[i+2] === tb;
-    if (useHighContrast) {
-      if (match) {
-        dd[i] = 255; dd[i+1] = 255; dd[i+2] = 255; dd[i+3] = 255;
-      } else {
-        dd[i] = 0; dd[i+1] = 0; dd[i+2] = 0; dd[i+3] = 220;
-      }
-    } else {
-      // Default mode: magenta overlay on selected biome only, no global darkening.
-      if (match) {
-        dd[i] = 255; dd[i+1] = 0; dd[i+2] = 255; dd[i+3] = 170;
-      } else {
-        dd[i+3] = 0;
-      }
-    }
-  }
-  hlCtx.putImageData(dst, 0, 0);
-  hlCanvas.classList.add('active');
-  // override blend mode for this approach
-  hlCanvas.style.mixBlendMode = 'normal';
-  state.renderedHighlightKey = renderKey;
-}
-function clearHighlight() {
-  state.hoveredBiomeId = null;
-  state.renderedHighlightKey = null;
-  hlCanvas.classList.remove('active');
-}
-
-togHighlight.addEventListener('change', () => {
-  if (!togHighlight.checked) clearHighlight();
-});
-togHiContrast.addEventListener('change', () => {
-  const selected = biomeById(state.selectedBiomeId);
-  if (selected) {
-    if (!togHighlight.checked) togHighlight.checked = true;
-    renderHighlight(selected);
-    return;
-  }
-  if (!togHighlight.checked) return;
-  const hovered = biomeById(state.hoveredBiomeId);
-  if (hovered) {
-    renderHighlight(hovered);
-    return;
-  }
+function preparePickCanvas() {
+  pickCanvas.width = baseImg.naturalWidth;
+  pickCanvas.height = baseImg.naturalHeight;
+  highlightCanvas.width = baseImg.naturalWidth;
+  highlightCanvas.height = baseImg.naturalHeight;
   clearHighlight();
-});
-btnClearSelection.addEventListener('click', clearBiomeSelection);
-
-/* ─── LATITUDE BAND OVERLAY ─── */
-// Zone fractions from LatitudeMath.java
-const ZONE_BANDS = [
-  { id: 'equator',    label: 'Equator',     maxFrac: 0.10,  color: [232, 90, 90],   deg: '0–9°'    },
-  { id: 'tropical',   label: 'Tropics',     maxFrac: 0.30,  color: [232, 167, 62],   deg: '9–27°'   },
-  { id: 'subtropical', label: 'Subtropics', maxFrac: 0.50,  color: [232, 214, 62],   deg: '27–45°'  },
-  { id: 'temperate',  label: 'Temperate',   maxFrac: 0.666, color: [96, 196, 96],    deg: '45–60°'  },
-  { id: 'subpolar',   label: 'Subpolar',    maxFrac: 0.783, color: [96, 160, 220],   deg: '60–70°'  },
-  { id: 'polar',      label: 'Polar',       maxFrac: 1.0,   color: [180, 200, 232],  deg: '70–90°'  },
-];
-
-// World size name lookup (diameter in blocks)
-const WORLD_SIZE_NAMES = {
-  7500:  'Itty Bitty',
-  10000: 'Tiny',
-  15000: 'Small',
-  20000: 'Regular',
-  30000: 'Large',
-  40000: 'Ginormous',
-};
-
-function getWorldRadius() {
-  if (!state.manifest) return null;
-  // Try radius directly, then diameter/2
-  if (state.manifest.radius && state.manifest.radius > 0) return state.manifest.radius;
-  if (state.manifest.diameter && state.manifest.diameter > 0) return state.manifest.diameter / 2;
-  // Try world_size name lookup
-  const name = (state.manifest.world_size || '').toLowerCase();
-  for (const [diam, label] of Object.entries(WORLD_SIZE_NAMES)) {
-    if (label.toLowerCase() === name) return Number(diam) / 2;
-  }
-  return null;
 }
 
-function zoneForFrac(t) {
-  const absT = Math.abs(t);
-  for (const band of ZONE_BANDS) {
-    if (absT < band.maxFrac) return band;
-  }
-  return ZONE_BANDS[ZONE_BANDS.length - 1];
-}
+async function loadLayer() {
+  const runId = state.runId;
+  if (!runId || !state.layerName) return;
 
-function renderBands() {
-  if (!state.mapWidth || !state.mapHeight) return;
+  const url = `${runBase(runId)}/${encodeURIComponent(state.layerName)}?t=${Date.now()}`;
+  await new Promise((resolve, reject) => {
+    baseImg.onload = resolve;
+    baseImg.onerror = () => reject(new Error(`Failed to load layer image: ${state.layerName}`));
+    baseImg.src = url;
+  });
 
-  bandCanvas.width = state.mapWidth;
-  bandCanvas.height = state.mapHeight;
-  bandCtx.clearRect(0, 0, state.mapWidth, state.mapHeight);
-
-  // The map image is a top-down view: Y=0 is north pole, Y=mapHeight is south pole
-  // Center row (mapHeight/2) is the equator (Z=0)
-  // Latitude fraction t = abs(pixelY - center) / center
-  const centerY = state.mapHeight / 2;
-  const bandAlpha = Math.min(0.9, Math.max(0.1, state.bandOpacity || 0.24));
-
-  // Draw bands as filled horizontal stripes with zone colors
-  let prevFrac = 0;
-  for (const band of ZONE_BANDS) {
-    const [r, g, b] = band.color;
-    bandCtx.fillStyle = `rgba(${r},${g},${b},${bandAlpha})`;
-
-    const topPx  = Math.round(centerY - band.maxFrac * centerY);
-    const botPx  = Math.round(centerY + band.maxFrac * centerY);
-    const prevTopPx = Math.round(centerY - prevFrac * centerY);
-    const prevBotPx = Math.round(centerY + prevFrac * centerY);
-
-    // North hemisphere band: from topPx to prevTopPx
-    bandCtx.fillRect(0, topPx, state.mapWidth, prevTopPx - topPx);
-    // South hemisphere band: from prevBotPx to botPx
-    bandCtx.fillRect(0, prevBotPx, state.mapWidth, botPx - prevBotPx);
-
-    prevFrac = band.maxFrac;
-  }
-
-  // Draw boundary lines at each zone transition
-  bandCtx.save();
-  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-  for (const band of ZONE_BANDS) {
-    if (band.maxFrac >= 1.0) continue; // no line at the very edge
-    const northY = Math.round(centerY - band.maxFrac * centerY);
-    const southY = Math.round(centerY + band.maxFrac * centerY);
-    const [r, g, b] = band.color;
-
-    bandCtx.strokeStyle = `rgba(${r},${g},${b},${isDark ? 0.85 : 0.8})`;
-    bandCtx.lineWidth = 1.8;
-    bandCtx.setLineDash([10, 5]);
-
-    bandCtx.beginPath();
-    bandCtx.moveTo(0, northY); bandCtx.lineTo(state.mapWidth, northY);
-    bandCtx.stroke();
-
-    bandCtx.beginPath();
-    bandCtx.moveTo(0, southY); bandCtx.lineTo(state.mapWidth, southY);
-    bandCtx.stroke();
-  }
-
-  // Equator line — solid, accent
-  bandCtx.strokeStyle = isDark ? 'rgba(62, 232, 214, 0.95)' : 'rgba(26, 158, 143, 0.9)';
-  bandCtx.lineWidth = 2.2;
-  bandCtx.setLineDash([]);
-  bandCtx.beginPath();
-  bandCtx.moveTo(0, Math.round(centerY));
-  bandCtx.lineTo(state.mapWidth, Math.round(centerY));
-  bandCtx.stroke();
-
-  bandCtx.restore();
-
-  // Draw zone labels along the right edge (north hemisphere only — mirrored is implied)
-  bandCtx.save();
-  const fontSize = Math.max(9, Math.min(14, Math.round(state.mapHeight / 50)));
-  bandCtx.font = `500 ${fontSize}px ${getComputedStyle(document.documentElement).getPropertyValue('--font-display').trim() || 'sans-serif'}`;
-  bandCtx.textAlign = 'right';
-  bandCtx.textBaseline = 'middle';
-
-  let prevLabelFrac = 0;
-  for (const band of ZONE_BANDS) {
-    const midFrac = (prevLabelFrac + band.maxFrac) / 2;
-    const labelY = Math.round(centerY - midFrac * centerY);
-    const [r, g, b] = band.color;
-    bandCtx.fillStyle = isDark
-      ? `rgba(${Math.min(255,r+60)},${Math.min(255,g+60)},${Math.min(255,b+60)},0.7)`
-      : `rgba(${Math.max(0,r-40)},${Math.max(0,g-40)},${Math.max(0,b-40)},0.8)`;
-    bandCtx.fillText(band.label, state.mapWidth - 6, labelY);
-    prevLabelFrac = band.maxFrac;
-  }
-  bandCtx.restore();
-
-  // Show/hide
-  if (togBands.checked) {
-    bandCanvas.classList.add('active');
-  } else {
-    bandCanvas.classList.remove('active');
+  state.baseCanvas.width = baseImg.naturalWidth;
+  state.baseCanvas.height = baseImg.naturalHeight;
+  const ctx = state.baseCanvas.getContext("2d", { willReadFrequently: true });
+  ctx.drawImage(baseImg, 0, 0);
+  preparePickCanvas();
+  if (state.selectedBiomeIndex != null && highlightToggle.checked) {
+    drawBiomeHighlight(state.selectedBiomeIndex);
   }
 }
 
-function renderBandLegend() {
-  bandLegend.innerHTML = '';
-  const radius = getWorldRadius();
-  const radiusLabel = radius ? ` (r=${radius.toLocaleString()})` : '';
-  const sizeName = state.manifest?.world_size || state.manifest?.diameter
-    ? (WORLD_SIZE_NAMES[state.manifest.diameter] || state.manifest.world_size || '')
-    : '';
+async function loadRun(runId, keepLayer) {
+  state.runId = runId;
+  setStatus("");
+  await loadManifest(runId);
 
-  for (const band of ZONE_BANDS) {
-    const [r, g, b] = band.color;
-    const row = document.createElement('div');
-    row.className = 'band-legend-row';
-    row.innerHTML = `
-      <div class="band-legend-swatch" style="background:rgb(${r},${g},${b})"></div>
-      <span class="band-legend-label">${band.label}</span>
-      <span class="band-legend-deg">${band.deg}</span>
-    `;
-    bandLegend.appendChild(row);
-  }
+  const files = await listRunFiles(runId);
+  state.files = files;
+  state.layers = classifyLayers(files);
 
-  if (sizeName || radius) {
-    const footer = document.createElement('div');
-    footer.style.cssText = 'font-family:var(--font-mono);font-size:9.5px;color:var(--text-tertiary);margin-top:4px;padding-top:4px;border-top:1px solid var(--border-subtle);';
-    footer.textContent = sizeName ? `${sizeName}${radiusLabel}` : `Radius: ${radius.toLocaleString()}`;
-    bandLegend.appendChild(footer);
-  }
-}
-
-function toggleBands() {
-  if (bandsOpacity) bandsOpacity.disabled = !togBands.checked;
-  if (togBands.checked) {
-    renderBands();
-    renderBandLegend();
-    bandCanvas.classList.add('active');
-    bandLegend.classList.add('visible');
-  } else {
-    bandCanvas.classList.remove('active');
-    bandLegend.classList.remove('visible');
-  }
-}
-
-togBands.addEventListener('change', toggleBands);
-if (bandsOpacity) {
-  const applyBandOpacity = () => {
-    const v = Number(bandsOpacity.value || 24);
-    state.bandOpacity = Math.min(0.9, Math.max(0.1, v / 100));
-    if (bandsOpacityVal) bandsOpacityVal.textContent = `${Math.round(state.bandOpacity * 100)}%`;
-    if (togBands.checked && state.mapWidth) renderBands();
-  };
-  bandsOpacity.addEventListener('input', applyBandOpacity);
-  bandsOpacity.addEventListener('change', applyBandOpacity);
-  applyBandOpacity();
-  bandsOpacity.disabled = !togBands.checked;
-}
-
-/* ─── BIOME LIST ─── */
-function renderBiomeList(biomes) {
-  biomeListBody.innerHTML = '';
-  if (!biomes.length) {
-    biomeListBody.innerHTML = '<div style="color:var(--text-tertiary);font-size:12px;font-style:italic;">No biomes</div>';
+  if (!state.layers.length) {
+    stack.hidden = true;
+    emptyEl.hidden = false;
+    emptyEl.textContent = `Run ${runId} has no PNG layers.`;
+    state.layerName = null;
+    renderLayerDropdown();
+    state.biomeStats = [];
+    state.biomeIndex = null;
+    highlightToggle.checked = false;
+    highlightToggle.disabled = true;
+    renderBiomeLegend();
     return;
   }
-  biomeCountEl.textContent = biomes.length;
-  const frag = document.createDocumentFragment();
-  for (const b of biomes) {
-    const row = document.createElement('div');
-    row.className = 'biome-entry';
-    row.dataset.biomeId = b.id;
-    row.innerHTML = `
-      <div class="biome-swatch" style="background:rgb(${b.color.join(',')})"></div>
-      <div class="biome-name" title="${b.id}">${b.name}</div>
-      <div class="biome-pct">${b.pct != null ? b.pct.toFixed(1) + '%' : ''}</div>
-    `;
-    row.addEventListener('click', () => {
-      selectBiomePersistent(b);
-    });
-    frag.appendChild(row);
-  }
-  biomeListBody.appendChild(frag);
-}
 
-function renderGrid() {
-  if (!state.mapWidth || !state.mapHeight) return;
-  gridCanvas.width = state.mapWidth;
-  gridCanvas.height = state.mapHeight;
-  gridCtx.clearRect(0, 0, state.mapWidth, state.mapHeight);
+  const preserved = keepLayer && state.layers.find((l) => l.name === keepLayer) ? keepLayer : null;
+  state.layerName = preserved || state.layers[0].name;
 
-  const step = Number((state.currentLayer || '').match(/step(\d+)/i)?.[1] || 32);
-  const base = step <= 16 ? 64 : step <= 32 ? 128 : step <= 64 ? 256 : 512;
-  const majorEvery = 4;
-  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+  state.overlays = classifyOverlays(files, state.layerName);
+  state.overlayEnabled = new Set();
+  renderOverlayToggles();
+  renderLayerDropdown();
 
-  for (let x = 0, i = 0; x <= state.mapWidth; x += base, i++) {
-    const major = i % majorEvery === 0;
-    gridCtx.strokeStyle = major
-      ? (isDark ? 'rgba(62,232,214,0.35)' : 'rgba(26,158,143,0.35)')
-      : (isDark ? 'rgba(255,255,255,0.14)' : 'rgba(0,0,0,0.14)');
-    gridCtx.lineWidth = major ? 1.5 : 1;
-    gridCtx.beginPath();
-    gridCtx.moveTo(x + 0.5, 0);
-    gridCtx.lineTo(x + 0.5, state.mapHeight);
-    gridCtx.stroke();
-  }
-
-  for (let y = 0, i = 0; y <= state.mapHeight; y += base, i++) {
-    const major = i % majorEvery === 0;
-    gridCtx.strokeStyle = major
-      ? (isDark ? 'rgba(62,232,214,0.35)' : 'rgba(26,158,143,0.35)')
-      : (isDark ? 'rgba(255,255,255,0.14)' : 'rgba(0,0,0,0.14)');
-    gridCtx.lineWidth = major ? 1.5 : 1;
-    gridCtx.beginPath();
-    gridCtx.moveTo(0, y + 0.5);
-    gridCtx.lineTo(state.mapWidth, y + 0.5);
-    gridCtx.stroke();
-  }
-}
-
-function toggleGrid() {
-  if (togGrid.checked && state.mapWidth) {
-    renderGrid();
-    gridCanvas.classList.add('active');
+  await loadBiomeIndexArtifacts(runId, files);
+  renderBiomeLegend();
+  if (!state.biomeIndex) {
+    highlightToggle.checked = false;
+    highlightToggle.disabled = true;
+    setStatus("Index assets missing for this layer; biome id selection/highlight is disabled.");
   } else {
-    gridCanvas.classList.remove('active');
+    highlightToggle.disabled = false;
   }
+  await loadLayer();
+
+  stack.hidden = false;
+  emptyEl.hidden = true;
 }
 
-function highlightBiomeInList(id) {
-  $$('.biome-entry', biomeListBody).forEach(el => {
-    el.classList.toggle('active', el.dataset.biomeId === id);
-  });
-}
+async function refreshRuns(keepRun) {
+  const runs = await listRuns();
+  state.runs = runs;
 
-biomeSearch.addEventListener('input', () => {
-  const q = biomeSearch.value.toLowerCase();
-  $$('.biome-entry', biomeListBody).forEach(el => {
-    const name = el.dataset.biomeId.toLowerCase();
-    el.style.display = name.includes(q) ? '' : 'none';
-  });
-});
-
-/* ─── METADATA ─── */
-function renderMetadata(manifest) {
-  if (!manifest) {
-    metadataBody.innerHTML = '<div style="color:var(--text-tertiary);font-size:12px;font-style:italic;">No metadata</div>';
+  if (!runs.length) {
+    runSelect.innerHTML = "";
+    layerSelect.innerHTML = "";
+    stack.hidden = true;
+    emptyEl.hidden = false;
+    emptyEl.textContent = "No stamped runs found under /run-headless/latdev/atlas-runs/.";
+    setInspector({});
+    manifestEl.textContent = "(none)";
+    state.biomeStats = [];
+    state.biomeIndex = null;
+    highlightToggle.checked = false;
+    highlightToggle.disabled = true;
+    renderBiomeLegend();
     return;
   }
-  let html = '';
-  for (const [k, v] of Object.entries(manifest)) {
-    const isSeed = k.toLowerCase().includes('seed');
-    const displayVal = typeof v === 'object' ? JSON.stringify(v) : String(v);
-    html += `
-      <div class="meta-row">
-        <span class="meta-key">${prettifyKey(k)}</span>
-        <span class="meta-val${isSeed ? ' seed' : ''}">${displayVal}</span>
-      </div>`;
+
+  const explicit = parseRunFromUrl();
+  const preferred = keepRun && runs.includes(keepRun)
+    ? keepRun
+    : (explicit && runs.includes(explicit) ? explicit : runs[runs.length - 1]);
+
+  state.runId = preferred;
+  renderRunDropdown();
+  await loadRun(preferred, null);
+}
+
+runSelect.addEventListener("change", async () => {
+  await loadRun(runSelect.value, null).catch((e) => setStatus(String(e.message || e)));
+});
+
+layerSelect.addEventListener("change", async () => {
+  state.layerName = layerSelect.value;
+  state.overlays = classifyOverlays(state.files, state.layerName);
+  state.overlayEnabled = new Set();
+  renderOverlayToggles();
+  await loadBiomeIndexArtifacts(state.runId, state.files);
+  renderBiomeLegend();
+  await loadLayer().catch((e) => setStatus(String(e.message || e)));
+});
+
+refreshBtn.addEventListener("click", async () => {
+  await refreshRuns(state.runId).catch((e) => setStatus(String(e.message || e)));
+});
+
+latestBtn.addEventListener("click", async () => {
+  await refreshRuns(null).catch((e) => setStatus(String(e.message || e)));
+});
+
+pickCanvas.addEventListener("mousemove", (e) => pickAtEvent(e, false));
+pickCanvas.addEventListener("click", (e) => pickAtEvent(e, true));
+
+highlightToggle.addEventListener("change", () => {
+  if (!highlightToggle.checked) {
+    clearHighlight();
+    return;
   }
-  metadataBody.innerHTML = html;
-}
-
-/* ─── MAP IMAGE LOADING ─── */
-async function loadMapImage(url) {
-  showToast('Loading map…', 'loading');
-  mapCanvas.classList.add('fading');
-  await new Promise(r => setTimeout(r, 250)); // let fade start
-
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.onload = () => {
-      state.mapWidth = img.width;
-      state.mapHeight = img.height;
-      mapCanvas.width = img.width;
-      mapCanvas.height = img.height;
-      mapCtx.drawImage(img, 0, 0);
-      state.imageData = mapCtx.getImageData(0, 0, img.width, img.height);
-      buildColorLookup();
-      mapCanvas.classList.remove('fading');
-      emptyState.classList.add('hidden');
-      showToast('Map loaded', 'success');
-      resolve();
-    };
-    img.onerror = () => {
-      mapCanvas.classList.remove('fading');
-      showToast('Failed to load map', 'error');
-      reject(new Error('Image load failed'));
-    };
-    img.src = url;
-  });
-}
-
-function buildColorLookup() {
-  state.colorToBiome = {};
-  for (const b of state.biomes) {
-    const key = colorKey(...b.color);
-    state.colorToBiome[key] = b;
-  }
-}
-
-function normalizeBiomePaletteForDisplay(rawBiomes) {
-  const remaps = [];
-  const biomes = (rawBiomes || []).map((b) => {
-    if (!b || !Array.isArray(b.color)) return b;
-    const id = String(b.id || '').toLowerCase();
-    const isBeachFamily = id.includes('beach') || id.includes('shore') || id.includes('coast');
-    const isLegacyRed = b.color.length >= 3
-      && b.color[0] === LEGACY_BEACH_RED[0]
-      && b.color[1] === LEGACY_BEACH_RED[1]
-      && b.color[2] === LEGACY_BEACH_RED[2];
-    if (isBeachFamily && isLegacyRed) {
-      remaps.push({ from: [...LEGACY_BEACH_RED], to: [...BEACH_SAND] });
-      return { ...b, color: [...BEACH_SAND] };
-    }
-    return b;
-  });
-  return { biomes, remaps };
-}
-
-function applyImageColorRemaps(remaps) {
-  if (!state.imageData || !Array.isArray(remaps) || remaps.length === 0) return;
-  const d = state.imageData.data;
-  for (let i = 0; i < d.length; i += 4) {
-    for (const r of remaps) {
-      if (d[i] === r.from[0] && d[i+1] === r.from[1] && d[i+2] === r.from[2]) {
-        d[i] = r.to[0];
-        d[i+1] = r.to[1];
-        d[i+2] = r.to[2];
-        break;
-      }
-    }
-  }
-  mapCtx.putImageData(state.imageData, 0, 0);
-}
-
-/* ─── GRID OVERLAY (drawn on map canvas) ─── */
-// We'll redraw grid as an overlay via a separate canvas or directly.
-// For simplicity, grid is drawn atop the main canvas on toggle.
-// (A more robust approach uses a separate grid canvas.)
-
-/* ─── API INTEGRATION ─── */
-
-/*
- * ╔═══════════════════════════════════════════════════════════╗
- * ║  API CONTRACT — Adjust these functions to match your     ║
- * ║  Python server's actual endpoints & response shapes.     ║
- * ╚═══════════════════════════════════════════════════════════╝
- *
- * Expected endpoints (customize as needed):
- *
- *   GET /api/runs
- *     → ["run_001", "run_002", ...]
- *
- *   GET /api/runs/{run}/manifest
- *     → { "seed": "259189...", "world_size": "Small", ... }
- *
- *   GET /api/runs/{run}/layers
- *     → ["step32", "step64", "step128"]
- *
- *   GET /api/runs/{run}/layers/{layer}/biomes
- *     → [ { "id": "minecraft:plains", "name": "Plains",
- *            "color": [141,179,96], "pct": 12.3 }, ... ]
- *
- *   GET /api/runs/{run}/layers/{layer}/image
- *     → image/png blob
- */
-
-async function fetchRuns() {
-  try {
-    const data = await apiFetch('/api/runs');
-    return Array.isArray(data) ? data : [];
-  } catch {
-    // Fallback: try listing from /runs directory pattern
-    console.warn('Could not fetch runs from /api/runs');
-    return [];
-  }
-}
-
-async function fetchManifest(run) {
-  try {
-    return await apiFetch(`/api/runs/${run}/manifest`);
-  } catch { return null; }
-}
-
-async function fetchLayers(run) {
-  try {
-    const data = await apiFetch(`/api/runs/${run}/layers`);
-    return Array.isArray(data) ? data : [];
-  } catch { return []; }
-}
-
-async function fetchBiomes(run, layer) {
-  try {
-    const data = await apiFetch(`/api/runs/${run}/layers/${layer}/biomes`);
-    return Array.isArray(data) ? data : [];
-  } catch { return []; }
-}
-
-async function fetchGenerationStatus() {
-  try {
-    return await apiFetch('/api/generation-status');
-  } catch {
-    return null;
-  }
-}
-
-async function startGeneration(presetKey) {
-  const preset = GENERATION_PRESETS[presetKey];
-  if (!preset) return;
-  const resolution = Number(preset.resolution);
-  const label = preset.label;
-
-  const accepted = window.confirm(
-    `Start atlas generation at ${label} quality?\nThis can take a while and uses CPU heavily.`
-  );
-  if (!accepted) return;
-
-  const dot = $('.dot', statusToast);
-  const msg = $('.msg', statusToast);
-  try {
-    const resp = await fetch(`${API_BASE}/api/generate`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ step: resolution }),
-    });
-    const payload = await resp.json().catch(() => ({}));
-    if (resp.status === 202 || resp.status === 409) {
-      syncGenerationUi(payload, false);
-      if (resp.status === 202) {
-        showToast(`Generating atlas run (${label})...`, 'loading');
-      } else {
-        showToast('Atlas generation is already in progress.', 'loading');
-      }
-      return;
-    }
-    throw new Error(payload?.error || `API ${resp.status}`);
-  } catch (e) {
-    dot.className = 'dot error';
-    msg.textContent = `Failed to start generation: ${e.message || e}`;
-    statusToast.classList.add('visible');
-  }
-}
-
-function syncGenerationUi(status, fromPoll) {
-  if (!status || typeof status !== 'object') return;
-
-  const wasActive = !!state.generationActive;
-  const isActive = !!status.active;
-  const label = generationLabelForResolution(status.step);
-  state.generationActive = isActive;
-  if (genQuality) genQuality.disabled = isActive;
-  setGenerationStatus(isActive, isActive ? `Generating atlas run (${label})...` : '');
-
-  if (!fromPoll) return;
-  if (!wasActive || isActive) return;
-
-  const exitCode = Number(status.exit_code);
-  if (exitCode === 0) {
-    showToast(`Generation complete (${label}).`, 'success');
-    refreshRuns().then(() => {
-      if (state.runs.length > 0) {
-        const newest = state.runs[0];
-        selRun.value = newest;
-        selRun.dispatchEvent(new Event('change'));
-      }
-    });
-  } else {
-    showToast(`Generation failed (${label}).`, 'error');
-  }
-}
-
-async function pollGenerationStatus() {
-  const status = await fetchGenerationStatus();
-  if (status) syncGenerationUi(status, true);
-}
-
-function startGenerationPolling() {
-  if (state.generationPollTimer) return;
-  pollGenerationStatus();
-  state.generationPollTimer = setInterval(pollGenerationStatus, 1500);
-}
-
-async function refreshRuns() {
-  state.runs = await fetchRuns();
-  const previous = state.currentRun || selRun.value;
-  selRun.innerHTML = '<option value="">— choose —</option>';
-  for (const r of state.runs) {
-    const opt = document.createElement('option');
-    opt.value = r;
-    opt.textContent = r;
-    selRun.appendChild(opt);
-  }
-
-  if (previous && state.runs.includes(previous)) {
-    selRun.value = previous;
-  }
-}
-
-function getImageUrl(run, layer) {
-  return `${API_BASE}/api/runs/${run}/layers/${layer}/image`;
-}
-
-function formatLayerLabel(layerId) {
-  const step = Number((layerId || '').match(/step(\d+)/i)?.[1] || 0);
-  if (!step) return layerId || 'Auto';
-  let quality = 'Low detail';
-  if (step <= 16) quality = 'Highest detail';
-  else if (step <= 32) quality = 'High detail';
-  else if (step <= 64) quality = 'Medium detail';
-  return `${quality} (${step}-block samples)`;
-}
-
-/* ─── ORCHESTRATION ─── */
-
-async function init() {
-  showToast('Connecting…', 'loading');
-  try {
-    await refreshRuns();
-    hideToast();
-    if (state.runs.length === 0) {
-      showToast('No runs found — is the server running?', 'error');
-    }
-    startGenerationPolling();
-  } catch (err) {
-    showToast('Cannot reach server', 'error');
-    console.error(err);
-  }
-}
-
-selRun.addEventListener('change', async () => {
-  const run = selRun.value;
-  if (!run) return;
-  state.currentRun = run;
-  state.currentLayer = null;
-
-  // Fetch layers
-  showToast('Loading run…', 'loading');
-  const [layers, manifest] = await Promise.all([
-    fetchLayers(run),
-    fetchManifest(run),
-  ]);
-
-  state.manifest = manifest;
-  renderMetadata(manifest);
-
-  if (layers.length > 0) {
-    const chosen = layers[0];
-    detailReadout.textContent = formatLayerLabel(chosen);
-    await switchLayer(run, chosen);
-  } else {
-    detailReadout.textContent = 'No layer';
-    hideToast();
+  if (state.selectedBiomeIndex != null) {
+    drawBiomeHighlight(state.selectedBiomeIndex);
   }
 });
 
-genQuality.addEventListener('change', async () => {
-  const key = genQuality.value;
-  if (!key) return;
-  await startGeneration(key);
-  genQuality.value = '';
-});
-
-async function switchLayer(run, layer) {
-  state.currentLayer = layer;
-  detailReadout.textContent = formatLayerLabel(layer);
-  state.selectionStatsCache = {};
-  state.selectedBiomeId = null;
-  renderSelectionContext(null);
-
-  // Fetch biomes + image concurrently
-  const [biomes] = await Promise.all([
-    fetchBiomes(run, layer),
-    loadMapImage(getImageUrl(run, layer)),
-  ]);
-
-  const normalized = normalizeBiomePaletteForDisplay(biomes);
-  applyImageColorRemaps(normalized.remaps);
-  state.biomes = normalized.biomes.sort((a, b) => (b.pct || 0) - (a.pct || 0));
-  buildColorLookup();
-  renderBiomeList(state.biomes);
-  biomeSearch.disabled = false;
-  biomeSearch.value = '';
-
-  fitToView();
-  clearHighlight();
-  highlightBiomeInList(null);
-  toggleGrid();
-  if (togBands.checked) { renderBands(); renderBandLegend(); }
-}
-
-togGrid.addEventListener('change', toggleGrid);
-togCrosshair.addEventListener('change', () => {
-  if (!togCrosshair.checked) crosshair.style.display = 'none';
-});
-togInspect.addEventListener('change', () => {
-  if (!togInspect.checked) inspectCard.classList.remove('visible');
-});
-togTooltip.addEventListener('change', () => {
-  if (!togTooltip.checked) inspectCard.classList.remove('visible');
-});
-
-/* ─── KEYBOARD SHORTCUTS ─── */
-document.addEventListener('keydown', e => {
-  if (e.key === 'f' || e.key === 'F') fitToView();
-  if (e.key === '1') { state.zoom = 1; fitToView(); }
-  if (e.key === 'g') { togGrid.checked = !togGrid.checked; toggleGrid(); }
-  if (e.key === 'h') { togHighlight.checked = !togHighlight.checked; if (!togHighlight.checked) clearHighlight(); }
-  if (e.key === 'c') { togCrosshair.checked = !togCrosshair.checked; if (!togCrosshair.checked) crosshair.style.display = 'none'; }
-  if (e.key === 'b' || e.key === 'B') { togBands.checked = !togBands.checked; toggleBands(); }
-  if (e.key === 'Escape') {
-    clearBiomeSelection();
-  }
-});
-
-/* ─── RESIZE ─── */
-window.addEventListener('resize', () => {
-  // no-op for now; canvas doesn't need resize since it's world-space
-});
-
-/* ─── BOOT ─── */
-init();
-
-})();
+refreshRuns(null).catch((e) => setStatus(String(e.message || e)));
 </script>
 </body>
 </html>

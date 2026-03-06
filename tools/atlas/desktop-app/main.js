@@ -3,7 +3,6 @@ const path = require("path");
 const fs = require("fs");
 const os = require("os");
 const net = require("net");
-const http = require("http");
 const { spawn } = require("child_process");
 
 const PORT_MIN = 8000;
@@ -13,7 +12,6 @@ let py = null;
 let mainWindow = null;
 let currentRepoRoot = null;
 let currentPort = 0;
-let atlasProc = null;
 
 function logPath() {
   return path.join(os.tmpdir(), "LatitudeAtlasViewer.log");
@@ -205,30 +203,6 @@ function waitForPort(port, timeoutMs) {
   });
 }
 
-function checkApiHealth(port, timeoutMs = 2000) {
-  return new Promise((resolve) => {
-    const req = http.get(
-      {
-        host: "127.0.0.1",
-        port,
-        path: "/api/runs",
-        timeout: timeoutMs,
-      },
-      (res) => {
-        const ok = res.statusCode === 200;
-        res.resume();
-        resolve(ok);
-      }
-    );
-
-    req.on("timeout", () => {
-      req.destroy();
-      resolve(false);
-    });
-    req.on("error", () => resolve(false));
-  });
-}
-
 async function stopPythonServer() {
   if (!py) return;
   try {
@@ -238,23 +212,17 @@ async function stopPythonServer() {
 }
 
 async function startPythonServer(repoRoot) {
-  const apiServerScript = path.join(repoRoot, "tools", "atlas", "viewer_api_server.py");
-  if (!fs.existsSync(apiServerScript)) {
-    throw new Error(`Viewer API server script not found: ${apiServerScript}`);
-  }
-
   for (let port = PORT_MIN; port <= PORT_MAX; port++) {
     if (!(await portIsFree(port))) continue;
 
-    const child = spawn("python", [apiServerScript, "--port", String(port)], {
+    const child = spawn("python", ["-m", "http.server", String(port)], {
       cwd: repoRoot,
       stdio: "ignore",
       windowsHide: true,
     });
 
     const ready = await waitForPort(port, 2500);
-    const healthy = ready ? await checkApiHealth(port, 2500) : false;
-    if (healthy) {
+    if (ready) {
       LOG(`python server started (pid=${child.pid})`);
       LOG(`port=${port}`);
       return { child, port };
@@ -263,7 +231,7 @@ async function startPythonServer(repoRoot) {
     try {
       child.kill();
     } catch {}
-    LOG(`WARN: viewer API unhealthy on port ${port}, trying next`);
+    LOG(`WARN: python server failed to come up on port ${port}, trying next`);
   }
 
   throw new Error(`Could not start server on ports ${PORT_MIN}-${PORT_MAX}.`);
@@ -272,8 +240,8 @@ async function startPythonServer(repoRoot) {
 function buildViewerUrl(port, repoRoot, explicitRunId) {
   const runId = explicitRunId || (pickNewestAtlasRun(repoRoot)?.runId ?? null);
   const url = runId
-    ? `http://127.0.0.1:${port}/?run=${runId}`
-    : `http://127.0.0.1:${port}/`;
+    ? `http://127.0.0.1:${port}/tools/atlas/viewer/index.html?run=${runId}`
+    : `http://127.0.0.1:${port}/tools/atlas/viewer/index.html`;
 
   LOG(`viewerUrl=${url}`);
   if (runId) LOG(`newestRun=${runId}`);
@@ -323,16 +291,6 @@ function focusMainWindow() {
   mainWindow.focus();
 }
 
-function setGenerateStatus(active, text) {
-  try {
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.setProgressBar(active ? 2 : -1);
-      const js = `window.__latSetGenerationStatus && window.__latSetGenerationStatus(${active ? "true" : "false"}, ${JSON.stringify(text || "")});`;
-      mainWindow.webContents.executeJavaScript(js).catch(() => {});
-    }
-  } catch {}
-}
-
 async function changeRepoRootInteractive() {
   const picked = await promptForRepoRoot();
   if (!picked) return;
@@ -358,94 +316,24 @@ function openRunsFolder() {
   shell.openPath(runsAbs);
 }
 
-function runAtlasGenerator(step = 16) {
-  if (atlasProc) {
-    dialog.showMessageBox({
-      type: "info",
-      message: "Atlas generation is already in progress.",
-    });
-    focusMainWindow();
-    return;
-  }
-
-  const atlasPs1 = path.join(currentRepoRoot, "tools", "atlas", "Atlas.ps1");
-  if (!fs.existsSync(atlasPs1)) {
+function runAtlasGenerator() {
+  const atlasCmd = path.join(currentRepoRoot, "tools", "atlas", "Atlas.cmd");
+  if (!fs.existsSync(atlasCmd)) {
     dialog.showMessageBox({
       type: "error",
-      message: `Atlas launcher not found: ${atlasPs1}`,
+      message: `Atlas launcher not found: ${atlasCmd}`,
     });
     return;
   }
 
-  setGenerateStatus(true, `Generating atlas run (step ${step})…`);
-
-  const child = spawn(
-    "powershell.exe",
-    ["-ExecutionPolicy", "Bypass", "-File", atlasPs1, "-Step", String(step), "-NoViewerOpen"],
-    {
-      cwd: currentRepoRoot,
-      detached: false,
-      stdio: "ignore",
-      windowsHide: true,
-    }
-  );
-  atlasProc = child;
-  LOG(`Spawned Atlas.ps1 from app menu (step=${step})`);
-  showGenerationStartedToast(step);
-
-  child.once("exit", async (code) => {
-    atlasProc = null;
-    setGenerateStatus(false, "");
-    LOG(`Atlas.ps1 exited with code=${code}`);
-    showGenerationFinishedToast(step, code === 0);
-    if (code === 0) {
-      await restartServerAndLoad(null).catch((e) => {
-        LOG(`WARN: reload after generation failed: ${e?.message || e}`);
-      });
-    }
+  const child = spawn("cmd.exe", ["/c", atlasCmd], {
+    cwd: currentRepoRoot,
+    detached: true,
+    stdio: "ignore",
+    windowsHide: true,
   });
-
-  child.once("error", (e) => {
-    atlasProc = null;
-    setGenerateStatus(false, "");
-    LOG(`Atlas.ps1 spawn error: ${e?.message || e}`);
-    dialog.showMessageBox({
-      type: "error",
-      message: `Failed to start Atlas generation: ${e?.message || e}`,
-    });
-  });
-}
-
-function showGenerationStartedToast(step) {
-  try {
-    const js = `window.__latSetGenerationStatus && window.__latSetGenerationStatus(true, "Generating atlas run (step ${step})…");`;
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.executeJavaScript(js).catch(() => {});
-    }
-  } catch {}
-}
-
-function showGenerationFinishedToast(step, ok) {
-  try {
-    const message = ok
-      ? `Generation complete (step ${step}).`
-      : `Generation failed (step ${step}). Check Help -> Open log file.`;
-    const js = `
-      if (window.__latSetGenerationStatus) window.__latSetGenerationStatus(false, "");
-      const el = document.getElementById("status-toast");
-      if (el && el.querySelector(".msg")) {
-        const dot = el.querySelector(".dot");
-        const msg = el.querySelector(".msg");
-        if (dot) dot.className = "dot ${ok ? "success" : "error"}";
-        msg.textContent = ${JSON.stringify(message)};
-        el.classList.add("visible");
-        setTimeout(() => el.classList.remove("visible"), 2600);
-      }
-    `;
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.executeJavaScript(js).catch(() => {});
-    }
-  } catch {}
+  child.unref();
+  LOG("Spawned Atlas.cmd from app menu");
 }
 
 function openLogFile() {
@@ -461,15 +349,9 @@ function buildMenu() {
       label: "Atlas",
       submenu: [
         {
-          label: "Generate new run (Step 16)",
+          label: "Generate new run",
           click: () => {
-            runAtlasGenerator(16);
-          },
-        },
-        {
-          label: "Generate new run (Step 32)",
-          click: () => {
-            runAtlasGenerator(32);
+            runAtlasGenerator();
           },
         },
         {
