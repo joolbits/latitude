@@ -52,9 +52,9 @@
       gap: 12px;
       grid-template-columns: 1fr 320px;
     }
-    .viewerBox { position: relative; overflow: auto; min-height: 360px; background: #0f1318; border-radius: 10px; }
-    .stack { position: relative; display: inline-block; line-height: 0; }
-    .stack img, .stack canvas { display: block; max-width: 100%; height: auto; }
+    .viewerBox { position: relative; overflow: auto; min-height: 360px; background: #0f1318; border-radius: 10px; display:flex; align-items:stretch; }
+    .stack { position: relative; display: block; line-height: 0; width: 100%; min-height: 360px; }
+    .stack img, .stack canvas { display: block; width: 100%; height: auto; image-rendering: pixelated; image-rendering: crisp-edges; }
     .overlay { position: absolute; inset: 0; pointer-events: none; opacity: 0.55; }
     .pickCanvas { position: absolute; inset: 0; pointer-events: auto; background: transparent; }
     .highlightCanvas { position: absolute; inset: 0; pointer-events: none; }
@@ -286,10 +286,26 @@ async function listRunFiles(runId) {
 
 function classifyLayers(files) {
   const pngs = files.filter((f) => /\.png$/i.test(f));
+  const rankLayer = (name) => {
+    const n = name.toLowerCase();
+    if (/_biomes\.png$/.test(n) || /^biomes\.png$/.test(n)) return 0;
+    if (/bands\.png$/.test(n)) return 1;
+    if (/temperature\.png$/.test(n)) return 2;
+    if (/humidity\.png$/.test(n)) return 3;
+    if (/continentalness\.png$/.test(n)) return 4;
+    if (/biome_ids\.png$/.test(n)) return 5;
+    if (/mask_/.test(n)) return 6;
+    return 7;
+  };
   const layers = pngs.map((name) => ({
     name,
-    step: parseStep(name)
-  })).sort((a, b) => b.step - a.step || a.name.localeCompare(b.name));
+    step: parseStep(name),
+    rank: rankLayer(name)
+  })).sort((a, b) => {
+    const sa = a.step > -1 ? a.step : Number.MAX_SAFE_INTEGER;
+    const sb = b.step > -1 ? b.step : Number.MAX_SAFE_INTEGER;
+    return sa - sb || a.rank - b.rank || a.name.localeCompare(b.name);
+  });
   return layers;
 }
 
