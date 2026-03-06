@@ -1161,6 +1161,9 @@ public final class BiomePreviewExporter {
         if (id.contains("desert") || id.contains("badlands")) {
             return 0xD39B4D;
         }
+        if (id.contains("beach") || id.contains("shore")) {
+            return 0xE7D7A5;
+        }
         if (id.contains("swamp") || id.contains("mangrove")) {
             return 0x3C6B43;
         }

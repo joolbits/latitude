@@ -27,3 +27,11 @@ bin/
 # Local media (do not commit)
 Gallery for Modrinth/
 *.mp4
+
+# Atlas desktop app local artifacts
+tools/atlas/desktop-app/node_modules/
+tools/atlas/desktop-app/dist/
+tools/atlas/desktop-app/.electron-builder/
+
+# Atlas generated runs
+run-headless/latdev/atlas-runs/
