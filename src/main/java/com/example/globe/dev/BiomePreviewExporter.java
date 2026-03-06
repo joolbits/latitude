@@ -16,7 +16,6 @@ import net.minecraft.world.gen.chunk.ChunkGenerator;
 import net.minecraft.world.gen.noise.NoiseConfig;
 
 import javax.imageio.ImageIO;
-import java.awt.Color;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -1152,6 +1151,12 @@ public final class BiomePreviewExporter {
 
     private static int stableColorForBiomeId(String biomeId) {
         String id = biomeId.toLowerCase(Locale.ROOT);
+        if (id.contains("snowy_beach")) {
+            return 0xE9E1CC;
+        }
+        if (id.contains("beach") || id.contains("shore")) {
+            return 0xE7D7A5;
+        }
         if (id.contains("ocean") || id.contains("river")) {
             return 0x2F6FA8;
         }
@@ -1160,9 +1165,6 @@ public final class BiomePreviewExporter {
         }
         if (id.contains("desert") || id.contains("badlands")) {
             return 0xD39B4D;
-        }
-        if (id.contains("beach") || id.contains("shore")) {
-            return 0xE7D7A5;
         }
         if (id.contains("swamp") || id.contains("mangrove")) {
             return 0x3C6B43;
@@ -1180,12 +1182,8 @@ public final class BiomePreviewExporter {
             return 0x7A7A7A;
         }
 
-        int hash = biomeId.hashCode();
-        hash ^= (hash >>> 16);
-        float hue = (hash & 0xFFFF) / 65535.0f;
-        float sat = 0.55f + ((hash >>> 16) & 0x1F) / 100.0f;
-        float val = 0.65f + ((hash >>> 21) & 0x1F) / 100.0f;
-        return Color.HSBtoRGB(hue, Math.min(0.95f, sat), Math.min(0.95f, val)) & 0x00FFFFFF;
+        // Neutral fallback for unknown/custom biomes.
+        return 0x8A8A8A;
     }
 
     private static String normalizeMaskToken(String raw) {
