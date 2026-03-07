@@ -38,6 +38,7 @@ public final class BiomePreviewExporter {
     private static final int MASK_MATCH_COLOR = 0xF2F5F8;
     private static final int MASK_MISS_COLOR = 0x11161B;
     private static final long DEFAULT_BUDGET_MS = 10L;
+    private static final int DEFAULT_INVENTORY_DISCOVERY_STEP = 32;
     private static final Identifier MANGROVE_SWAMP_BIOME_ID = Identifier.of("minecraft:mangrove_swamp");
 
     private BiomePreviewExporter() {
@@ -246,6 +247,13 @@ public final class BiomePreviewExporter {
             writeBiomePalette(outputDir.resolve("biome_palette.json"), biomeIndices);
         }
 
+        int inventoryDiscoveryStep = inventoryDiscoveryStep(stepBlocks);
+        BiomeSamplerTools.InventoryReport inventoryReport = needsBiomeSampling
+                ? BiomeSamplerTools.discoverInventory(world, radiusBlocks, inventoryDiscoveryStep, y)
+                : new BiomeSamplerTools.InventoryReport(seed, radiusBlocks, inventoryDiscoveryStep, y, List.of());
+        Path inventoryPath = outputDir.resolve("world_biome_inventory.json");
+        BiomeSamplerTools.writeInventoryJson(inventoryPath, inventoryReport);
+
         Path summaryPath = outputDir.resolve("biomes.txt");
         long totalSamples = (long) width * height;
         long durationMs = (System.nanoTime() - startNanos) / 1_000_000L;
@@ -268,7 +276,9 @@ public final class BiomePreviewExporter {
                 height,
                 totalSamples,
                 durationMs,
-                biomeCounts);
+                biomeCounts,
+                inventoryReport,
+                inventoryPath);
 
         if (effectiveOptions.writeLegends()) {
             writeLegendFiles(
@@ -563,6 +573,13 @@ public final class BiomePreviewExporter {
                     writeBiomePalette(outputDir.resolve("biome_palette.json"), biomeIndices);
                 }
 
+                int inventoryDiscoveryStep = inventoryDiscoveryStep(stepBlocks);
+                BiomeSamplerTools.InventoryReport inventoryReport = needsBiomeSampling()
+                        ? BiomeSamplerTools.discoverInventory(world, radiusBlocks, inventoryDiscoveryStep, y)
+                        : new BiomeSamplerTools.InventoryReport(seed, radiusBlocks, inventoryDiscoveryStep, y, List.of());
+                Path inventoryPath = outputDir.resolve("world_biome_inventory.json");
+                BiomeSamplerTools.writeInventoryJson(inventoryPath, inventoryReport);
+
                 Path summaryPath = outputDir.resolve("biomes.txt");
                 long totalSamples = (long) width * height;
                 long durationMs = (System.nanoTime() - startNanos) / 1_000_000L;
@@ -585,7 +602,9 @@ public final class BiomePreviewExporter {
                         height,
                         totalSamples,
                         durationMs,
-                        biomeCounts);
+                        biomeCounts,
+                        inventoryReport,
+                        inventoryPath);
 
                 if (options.writeLegends()) {
                     writeLegendFiles(
@@ -694,7 +713,9 @@ public final class BiomePreviewExporter {
                                      int height,
                                      long totalSamples,
                                      long durationMs,
-                                     Map<String, Integer> biomeCounts) throws IOException {
+                                     Map<String, Integer> biomeCounts,
+                                     BiomeSamplerTools.InventoryReport inventoryReport,
+                                     Path inventoryPath) throws IOException {
         List<Map.Entry<String, Integer>> top = new ArrayList<>(biomeCounts.entrySet());
         top.sort(Comparator.comparingInt((Map.Entry<String, Integer> e) -> e.getValue()).reversed());
 
@@ -711,6 +732,13 @@ public final class BiomePreviewExporter {
         out.append("image=").append(width).append('x').append(height).append('\n');
         out.append("totalSamples=").append(totalSamples).append('\n');
         out.append("durationMs=").append(durationMs).append('\n');
+        if (inventoryReport != null) {
+            out.append("worldBiomeInventoryCount=").append(inventoryReport.biomes().size()).append('\n');
+            out.append("worldBiomeInventoryStep=").append(inventoryReport.discoveryStepUsed()).append('\n');
+        }
+        if (inventoryPath != null) {
+            out.append("worldBiomeInventoryFile=").append(inventoryPath.getFileName()).append('\n');
+        }
         out.append("topBiomes:\n");
 
         int limit = Math.min(TOP_BIOME_COUNT, top.size());
@@ -1149,7 +1177,7 @@ public final class BiomePreviewExporter {
         return biome.getKey().map(key -> key.getValue().toString()).orElse("minecraft:plains");
     }
 
-    private static int stableColorForBiomeId(String biomeId) {
+    static int stableColorForBiomeId(String biomeId) {
         String id = biomeId.toLowerCase(Locale.ROOT);
         if (id.contains("snowy_beach")) {
             return 0xE9E1CC;
@@ -1187,6 +1215,12 @@ public final class BiomePreviewExporter {
 
         // Neutral fallback for unknown/custom biomes.
         return 0x8A8A8A;
+    }
+
+    private static int inventoryDiscoveryStep(int stepBlocks) {
+        int configured = Integer.getInteger("latitude.atlas.inventoryStep", DEFAULT_INVENTORY_DISCOVERY_STEP);
+        int clamped = MathHelper.clamp(configured, 8, 512);
+        return Math.min(Math.max(1, stepBlocks), clamped);
     }
 
     private static String normalizeMaskToken(String raw) {

@@ -11,6 +11,9 @@ import net.minecraft.util.math.MathHelper;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Instant;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -27,9 +30,14 @@ public final class BiomePreviewHeadlessRunner {
     private static final AtomicBoolean TRIGGERED = new AtomicBoolean(false);
     private static final String ARG_FLAG = "latdevBiomePng";
     private static final String PROP_KEY = "latdev.biomePng";
+    private static final String SEARCH_ARG_FLAG = "latdevBiomeSearch";
+    private static final String SEARCH_PROP_KEY = "latdev.biomeSearch";
     private static final String EMIT_HEIGHT_PROP_KEY = "latitude.emitHeight";
     private static final Pattern PROP_PAIR = Pattern.compile(
             "(?i)([a-z][a-z0-9_]*)\\s*=\\s*([^;]+?)(?=(?:\\s*[;,]\\s*[a-z][a-z0-9_]*\\s*=)|$)");
+    private static final DateTimeFormatter SEARCH_TIMESTAMP = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss")
+            .withLocale(Locale.ROOT)
+            .withZone(ZoneOffset.UTC);
 
     private BiomePreviewHeadlessRunner() {
     }
@@ -40,6 +48,12 @@ public final class BiomePreviewHeadlessRunner {
 
     private static void onServerStarted(MinecraftServer server) {
         if (!TRIGGERED.compareAndSet(false, true)) {
+            return;
+        }
+
+        SearchConfig searchConfig = parseSearchConfig();
+        if (searchConfig.enabled) {
+            server.execute(() -> runSearchAndStop(server, searchConfig));
             return;
         }
 
@@ -107,6 +121,73 @@ public final class BiomePreviewHeadlessRunner {
             GlobeMod.LOGGER.error("[latdev][headless] export failed", t);
         } finally {
             GlobeMod.LOGGER.info("[latdev][headless] stopping server");
+            server.stop(false);
+        }
+    }
+
+    private static void runSearchAndStop(MinecraftServer server, SearchConfig config) {
+        ServerWorld world = server.getOverworld();
+        if (world == null) {
+            GlobeMod.LOGGER.error("[latdev][search] no overworld available; stopping server");
+            server.stop(false);
+            return;
+        }
+
+        try {
+            int y = MathHelper.clamp(config.y, 0, 320);
+            int radius = config.radiusBlocks != null
+                    ? Math.max(1, config.radiusBlocks)
+                    : radiusFromSizeOrWorld(config.sizePreset, world);
+            Instant generatedAt = Instant.now();
+            Path outputRoot = config.outDir != null
+                    ? config.outDir
+                    : server.getRunDirectory().toAbsolutePath().normalize().resolve("seed-search");
+            Path outputDir = outputRoot.resolve(SEARCH_TIMESTAMP.format(generatedAt));
+            GitStamp gitStamp = currentGitStamp();
+            BiomeSamplerTools.SearchOptions options = new BiomeSamplerTools.SearchOptions(
+                    config.seedStart,
+                    Math.max(1, config.seedCount),
+                    config.targetBiomes,
+                    config.requireAll,
+                    radius,
+                    Math.max(1, config.stepBlocks),
+                    y,
+                    Math.max(1, config.maxResults));
+
+            String startMessage = String.format(
+                    Locale.ROOT,
+                    "[latdev][search] starting seed search seedStart=%d seedCount=%d targets=%s requireAll=%s radius=%d step=%d y=%d maxResults=%d out=%s",
+                    options.seedStart(),
+                    options.seedCount(),
+                    options.targetBiomes(),
+                    options.requireAll(),
+                    options.radiusBlocks(),
+                    options.stepBlocks(),
+                    options.y(),
+                    options.maxResults(),
+                    outputDir);
+            GlobeMod.LOGGER.info(startMessage);
+            System.out.println(startMessage);
+
+            BiomeSamplerTools.SearchReport report = BiomeSamplerTools.searchSeeds(
+                    world,
+                    options,
+                    gitStamp.branch(),
+                    gitStamp.commit(),
+                    generatedAt);
+            BiomeSamplerTools.writeSearchReportFiles(outputDir, report);
+
+            String finishMessage = String.format(
+                    Locale.ROOT,
+                    "[latdev][search] finished matches=%d results=%s",
+                    report.results().size(),
+                    outputDir.resolve("results.json"));
+            GlobeMod.LOGGER.info(finishMessage);
+            System.out.println(finishMessage);
+        } catch (Throwable t) {
+            GlobeMod.LOGGER.error("[latdev][search] seed search failed", t);
+        } finally {
+            GlobeMod.LOGGER.info("[latdev][search] stopping server");
             server.stop(false);
         }
     }
@@ -316,6 +397,37 @@ public final class BiomePreviewHeadlessRunner {
         return new Config(enabled, seed, radius, size, steps, y, exportOptions, out);
     }
 
+    private static SearchConfig parseSearchConfig() {
+        Map<String, String> kv = new HashMap<>();
+        List<String> launchArgs = launchArgs();
+        boolean enabled = collectSearchProgramArgs(launchArgs, kv);
+
+        String prop = System.getProperty(SEARCH_PROP_KEY, "");
+        if (!prop.isBlank()) {
+            enabled = true;
+            parsePropertyOptions(prop, kv);
+        }
+
+        List<String> targetBiomes = parseTargetBiomes(kv.get("targetbiome"));
+        if (targetBiomes.isEmpty()) {
+            enabled = false;
+        }
+
+        long seedStart = parseLong(kv.get("seedstart")) != null ? parseLong(kv.get("seedstart")) : 0L;
+        int seedCount = parseInt(kv.get("seedcount"), 1);
+        Integer radius = parseInt(kv.get("radius"));
+        String size = kv.get("size");
+        int step = parseInt(kv.get("step"), 128);
+        int y = parseInt(kv.get("y"), 64);
+        int maxResults = parseInt(kv.get("maxresults"), 10);
+        boolean requireAll = parseBoolean(kv.get("requireall"));
+        Path out = kv.containsKey("out") && !kv.get("out").isBlank()
+                ? Path.of(kv.get("out")).toAbsolutePath().normalize()
+                : null;
+
+        return new SearchConfig(enabled, seedStart, seedCount, targetBiomes, requireAll, radius, size, step, y, maxResults, out);
+    }
+
     private static List<String> launchArgs() {
         try {
             return Arrays.asList(FabricLoader.getInstance().getLaunchArguments(true));
@@ -365,6 +477,46 @@ public final class BiomePreviewHeadlessRunner {
         return enabled;
     }
 
+    private static boolean collectSearchProgramArgs(List<String> args, Map<String, String> out) {
+        boolean enabled = false;
+        List<String> searchKeys = List.of("seedstart", "seedcount", "targetbiome", "requireall", "radius", "size", "step", "y", "maxresults", "out");
+        for (int i = 0; i < args.size(); i++) {
+            String arg = args.get(i);
+            if (!arg.startsWith("--")) {
+                continue;
+            }
+
+            String token = arg.substring(2);
+            if (token.equalsIgnoreCase(SEARCH_ARG_FLAG)) {
+                enabled = true;
+                continue;
+            }
+
+            int eq = token.indexOf('=');
+            if (eq >= 0) {
+                String key = token.substring(0, eq).toLowerCase(Locale.ROOT);
+                String value = token.substring(eq + 1);
+                putOption(out, key, value);
+                if (searchKeys.contains(key)) {
+                    enabled = true;
+                }
+                continue;
+            }
+
+            String key = token.toLowerCase(Locale.ROOT);
+            if (i + 1 < args.size() && !args.get(i + 1).startsWith("--")) {
+                putOption(out, key, args.get(i + 1));
+                i++;
+                if (searchKeys.contains(key)) {
+                    enabled = true;
+                }
+            } else {
+                putOption(out, key, "true");
+            }
+        }
+        return enabled;
+    }
+
     private static void parsePropertyOptions(String prop, Map<String, String> out) {
         Matcher matcher = PROP_PAIR.matcher(prop);
         while (matcher.find()) {
@@ -392,7 +544,8 @@ public final class BiomePreviewHeadlessRunner {
                 || "layers".equals(key)
                 || "mask".equals(key)
                 || "overlay".equals(key)
-                || "overlays".equals(key);
+                || "overlays".equals(key)
+                || "targetbiome".equals(key);
     }
 
     private static Integer parseInt(String raw) {
@@ -553,6 +706,48 @@ public final class BiomePreviewHeadlessRunner {
         return new ArrayList<>(deduped);
     }
 
+    private static List<String> parseTargetBiomes(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return List.of();
+        }
+        LinkedHashSet<String> deduped = new LinkedHashSet<>();
+        String[] parts = raw.split("[,|]");
+        for (String part : parts) {
+            String token = part == null ? "" : part.trim().toLowerCase(Locale.ROOT);
+            if (!token.isEmpty()) {
+                deduped.add(token);
+            }
+        }
+        return new ArrayList<>(deduped);
+    }
+
+    private static GitStamp currentGitStamp() {
+        return new GitStamp(runGit("rev-parse", "--abbrev-ref", "HEAD"), runGit("rev-parse", "--short", "HEAD"));
+    }
+
+    private static String runGit(String... args) {
+        try {
+            Process process = new ProcessBuilder().command(commandWithGit(args)).start();
+            byte[] out = process.getInputStream().readAllBytes();
+            int exit = process.waitFor();
+            if (exit == 0) {
+                String text = new String(out).trim();
+                if (!text.isEmpty()) {
+                    return text;
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return "";
+    }
+
+    private static List<String> commandWithGit(String... args) {
+        List<String> command = new ArrayList<>();
+        command.add("git");
+        command.addAll(List.of(args));
+        return command;
+    }
+
     private record Config(boolean enabled,
                           Long seedOverride,
                           Integer radiusBlocks,
@@ -563,7 +758,23 @@ public final class BiomePreviewHeadlessRunner {
                           Path outDir) {
     }
 
+    private record SearchConfig(boolean enabled,
+                                long seedStart,
+                                int seedCount,
+                                List<String> targetBiomes,
+                                boolean requireAll,
+                                Integer radiusBlocks,
+                                String sizePreset,
+                                int stepBlocks,
+                                int y,
+                                int maxResults,
+                                Path outDir) {
+    }
+
     private record ParsedLayers(List<BiomePreviewExporter.Layer> layers,
                                 List<String> masks) {
+    }
+
+    private record GitStamp(String branch, String commit) {
     }
 }
