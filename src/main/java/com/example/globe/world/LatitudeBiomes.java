@@ -1594,6 +1594,8 @@ public final class LatitudeBiomes {
         return chosenBandIndex;
     }
 
+    // Legacy worldgen band boundaries are retained intentionally.
+    // Do not replace these with LatitudeBands until the LCMM v2 boundary migration slice.
     private static int crispBandIndex(double t) {
         if (t < LatitudeMath.EQUATOR_MAX_FRAC) return BAND_EQUATOR;
         if (t < LatitudeMath.SUBTROPICAL_MAX_FRAC) return BAND_TROPICAL;

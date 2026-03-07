@@ -1,5 +1,6 @@
 package com.example.globe.dev;
 
+import com.example.globe.util.LatitudeBands;
 import com.example.globe.util.LatitudeMath;
 import com.example.globe.world.LatitudeBiomes;
 import com.mojang.brigadier.CommandDispatcher;
@@ -38,7 +39,7 @@ import java.util.Random;
 import java.util.concurrent.CompletableFuture;
 
 public final class LatitudeDevCommand {
-    private static final List<String> TP_BAND_NAMES = List.of("equator", "tropics", "arid", "temperate", "subpolar", "polar");
+    private static final List<String> TP_BAND_NAMES = LatitudeBands.canonicalIds();
     private static final List<String> TP_EDGE_NAMES = List.of("center", "low", "high");
     private static final int WINDSWEPT_RUGGED_THRESH = 8;
     private static final int WINDSWEPT_RUGGED_HYST = 2;
@@ -105,7 +106,7 @@ public final class LatitudeDevCommand {
 
     private static int help(CommandContext<ServerCommandSource> ctx) {
         ServerCommandSource source = ctx.getSource();
-        source.sendFeedback(() -> Text.literal("[latdev] commands: here | tpBand <equator|tropics|arid|temperate|subpolar|polar> [center|low|high] | probe <radiusBlocks> <samples> | biomePng [stepBlocks] [y] | regen|regenChunk [radiusChunks] [biomes] [seed] | transect | transectDeg | slicePoleNS | pause | resume | stop | status | budgetMs | budgetAuto <on|off>"), false);
+        source.sendFeedback(() -> Text.literal("[latdev] commands: here | tpBand <tropical|subtropical|temperate|subpolar|polar> [center|low|high] | probe <radiusBlocks> <samples> | biomePng [stepBlocks] [y] | regen|regenChunk [radiusChunks] [biomes] [seed] | transect | transectDeg | slicePoleNS | pause | resume | stop | status | budgetMs | budgetAuto <on|off>"), false);
         return 1;
     }
 
@@ -672,30 +673,33 @@ public final class LatitudeDevCommand {
     }
 
     private enum BandTarget {
-        EQUATOR("equator", 0.0, LatitudeMath.EQUATOR_MAX_FRAC * 90.0, LatitudeMath.LatitudeZone.EQUATOR),
-        TROPICS("tropics", LatitudeMath.EQUATOR_MAX_FRAC * 90.0, LatitudeMath.TROPICAL_MAX_FRAC * 90.0, LatitudeMath.LatitudeZone.TROPICAL),
-        ARID("arid", LatitudeMath.TROPICAL_MAX_FRAC * 90.0, LatitudeMath.SUBTROPICAL_MAX_FRAC * 90.0, LatitudeMath.LatitudeZone.SUBTROPICAL),
-        TEMPERATE("temperate", LatitudeMath.SUBTROPICAL_MAX_FRAC * 90.0, LatitudeMath.TEMPERATE_MAX_FRAC * 90.0, LatitudeMath.LatitudeZone.TEMPERATE),
-        SUBPOLAR("subpolar", LatitudeMath.TEMPERATE_MAX_FRAC * 90.0, LatitudeMath.SUBPOLAR_MAX_FRAC * 90.0, LatitudeMath.LatitudeZone.SUBPOLAR),
-        POLAR("polar", LatitudeMath.SUBPOLAR_MAX_FRAC * 90.0, 90.0, LatitudeMath.LatitudeZone.POLAR);
+        TROPICAL(LatitudeBands.Band.TROPICAL),
+        SUBTROPICAL(LatitudeBands.Band.SUBTROPICAL),
+        TEMPERATE(LatitudeBands.Band.TEMPERATE),
+        SUBPOLAR(LatitudeBands.Band.SUBPOLAR),
+        POLAR(LatitudeBands.Band.POLAR);
 
         private final String argName;
         private final double lowDeg;
         private final double highDeg;
-        private final LatitudeMath.LatitudeZone zone;
+        private final LatitudeBands.Band band;
 
-        BandTarget(String argName, double lowDeg, double highDeg, LatitudeMath.LatitudeZone zone) {
-            this.argName = argName;
-            this.lowDeg = lowDeg;
-            this.highDeg = highDeg;
-            this.zone = zone;
+        BandTarget(LatitudeBands.Band band) {
+            this.argName = band.id();
+            this.lowDeg = band.lowDeg();
+            this.highDeg = band.highDeg();
+            this.band = band;
         }
 
         private static BandTarget fromArg(String raw) {
             if (raw == null) {
                 return null;
             }
-            String normalized = raw.toLowerCase(Locale.ROOT);
+            String normalized = switch (raw.trim().toLowerCase(Locale.ROOT)) {
+                case "equator", "equatorial", "tropics" -> "tropical";
+                case "arid", "subtropics" -> "subtropical";
+                default -> raw.trim().toLowerCase(Locale.ROOT);
+            };
             for (BandTarget band : values()) {
                 if (band.argName.equals(normalized)) {
                     return band;
@@ -704,18 +708,18 @@ public final class LatitudeDevCommand {
             return null;
         }
 
-        private static BandTarget fromZone(LatitudeMath.LatitudeZone zone) {
-            for (BandTarget band : values()) {
-                if (band.zone == zone) {
-                    return band;
+        private static BandTarget fromBand(LatitudeBands.Band canonicalBand) {
+            for (BandTarget target : values()) {
+                if (target.band == canonicalBand) {
+                    return target;
                 }
             }
-            return EQUATOR;
+            return TROPICAL;
         }
 
         private static BandTarget fromZ(int radius, double z) {
-            LatitudeMath.LatitudeZone zone = LatitudeMath.zoneForRadius(Math.max(1, radius), z);
-            return fromZone(zone);
+            double absLatDeg = radius <= 0 ? 0.0 : Math.abs(z) * 90.0 / (double) Math.max(1, radius);
+            return fromBand(LatitudeBands.fromAbsoluteLatitudeDeg(absLatDeg));
         }
     }
 }
