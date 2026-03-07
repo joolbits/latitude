@@ -1,5 +1,6 @@
 package com.example.globe.dev;
 
+import com.example.globe.util.LatitudeBands;
 import com.example.globe.util.LatitudeMath;
 import com.example.globe.world.LatitudeBiomeSource;
 import com.example.globe.world.LatitudeBiomes;
@@ -406,15 +407,10 @@ public final class BiomeSamplerTools {
         int deg = radiusBlocks <= 0
                 ? 0
                 : MathHelper.clamp((int) Math.round((Math.abs(blockZ) * 90.0) / (double) radiusBlocks), 0, 90);
-        LatitudeMath.LatitudeZone zone = LatitudeMath.zoneForRadius(radiusBlocks, blockZ);
-        String zoneLabel = switch (zone) {
-            case EQUATOR -> "Equator";
-            case TROPICAL -> "Tropics";
-            case SUBTROPICAL -> "Subtropical";
-            case TEMPERATE -> "Temperate";
-            case SUBPOLAR -> "Subpolar";
-            case POLAR -> "Polar";
-        };
+        LatitudeBands.Band band = radiusBlocks <= 0
+                ? LatitudeBands.Band.TROPICAL
+                : LatitudeBands.fromAbsoluteLatitudeDeg(Math.abs((double) blockZ) * 90.0 / (double) radiusBlocks);
+        String zoneLabel = band.displayName();
         if (deg == 0) {
             return zoneLabel + " 0";
         }
