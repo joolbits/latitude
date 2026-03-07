@@ -2009,6 +2009,7 @@ function bandForLatitudeDegrees(latDeg) {
 function normalizeBandKey(value) {
  const raw = String(value || '').trim().toLowerCase();
  if (!raw) return null;
+ // TODO: Keep this tiny display-side compatibility shim in sync with LatitudeBands until the viewer can consume a shared authority directly.
  if (raw === 'equator' || raw === 'equatorial') return 'tropical';
  if (raw === 'arid') return 'subtropical';
  if (raw === 'sub-polar') return 'subpolar';
@@ -2958,7 +2959,7 @@ function renderBandViolations() {
      biomeName: biome?.name || biome?.id || `Index ${biomeIndex}`,
      reason: 'Jungle-family biome entered a cold band.',
      expectedBand: bandLabelForKey(expectedBand),
-     allowedBands: ['Equator', 'Tropical'],
+     allowedBands: ['Tropical'],
      count: 0,
     };
     existing.count += 1;
