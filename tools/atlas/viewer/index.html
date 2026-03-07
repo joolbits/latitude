@@ -327,25 +327,133 @@ html, body {
   padding: 5px 6px;
   box-shadow: var(--shadow-float);
   max-width: calc(100vw - 32px);
+  overflow: visible;
+  flex-wrap: wrap;
+  justify-content: center;
   transition: box-shadow 0.3s;
 }
 #control-pill:hover { box-shadow: var(--shadow-float), var(--shadow-glow); }
-
-/* Pill segments */
-.pill-segment {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 0 4px;
+#control-pill[data-mode="focused"] .toolbar-optional {
+  display: none;
 }
-.pill-divider {
-  width: 1px;
-  height: 22px;
-  background: var(--border-medium);
-  margin: 0 4px;
+#control-pill[data-layout="expanded"] {
+  width: min(calc(100vw - 32px), 1480px);
+  border-radius: 30px;
+  padding: 10px 12px;
+  gap: 8px;
+  justify-content: flex-start;
+}
+#control-pill[data-layout="expanded"] .toolbar-bubble {
+  flex: 1 1 180px;
+  min-width: 150px;
+}
+#control-pill[data-layout="expanded"] .toolbar-bubble-trigger {
+  display: none;
+}
+#control-pill[data-layout="expanded"] .toolbar-bubble-panel {
+  position: static;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  max-width: none;
+  padding: 0;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  opacity: 1;
+  pointer-events: auto;
+  transform: none;
+}
+#control-pill[data-layout="expanded"] .toolbar-bubble[data-align="right"] .toolbar-bubble-panel,
+#control-pill[data-layout="expanded"] .toolbar-bubble.open .toolbar-bubble-panel,
+#control-pill[data-layout="expanded"] .toolbar-bubble[data-align="right"].open .toolbar-bubble-panel {
+  transform: none;
+}
+#control-pill[data-layout="expanded"] .toolbar-panel-label {
+  color: var(--text-tertiary);
+}
+#control-pill[data-layout="expanded"] .toolbar-tools-row {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+#control-pill[data-layout="expanded"] .toolbar-tools-row .pill-icon-btn,
+#control-pill[data-layout="expanded"] .toolbar-tools-row .pill-chip-btn {
+  width: 100%;
+}
+#control-pill[data-layout="expanded"] #generation-status {
+  display: inline-flex;
+}
+
+/* Toolbar bubbles */
+.toolbar-bubble {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
   flex-shrink: 0;
 }
-.pill-label {
+.toolbar-bubble-trigger {
+  min-width: 58px;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-display);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  transition: all 0.25s var(--ease-smooth);
+}
+.toolbar-bubble-trigger:hover,
+.toolbar-bubble.open .toolbar-bubble-trigger {
+  border-color: var(--border-accent);
+  color: var(--text-accent);
+}
+.toolbar-bubble.open .toolbar-bubble-trigger {
+  box-shadow: var(--shadow-glow);
+}
+.toolbar-bubble-panel {
+  position: absolute;
+  top: calc(100% + 10px);
+  left: 50%;
+  transform: translateX(-50%) translateY(-6px);
+  min-width: 200px;
+  max-width: min(360px, calc(100vw - 36px));
+  padding: 12px;
+  border-radius: 20px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-glass);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  box-shadow: var(--shadow-float), var(--shadow-glow);
+  display: none;
+  opacity: 0;
+  pointer-events: none;
+  z-index: 120;
+}
+.toolbar-bubble.open .toolbar-bubble-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateX(-50%) translateY(0);
+}
+.toolbar-bubble[data-align="right"] .toolbar-bubble-panel {
+  left: auto;
+  right: 0;
+  transform: translateY(-6px);
+}
+.toolbar-bubble[data-align="right"].open .toolbar-bubble-panel {
+  transform: translateY(0);
+}
+.toolbar-panel-label {
   font-family: var(--font-display);
   font-size: 10px;
   font-weight: 600;
@@ -353,6 +461,11 @@ html, body {
   letter-spacing: 0.08em;
   color: var(--text-tertiary);
   white-space: nowrap;
+}
+.toolbar-panel-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 /* Custom Select */
@@ -377,6 +490,15 @@ html, body {
 }
 #sel-run {
   width: clamp(220px, 28vw, 340px);
+}
+.toolbar-bubble-panel .lat-select-wrap,
+.toolbar-bubble-panel .lat-select {
+  width: 100%;
+}
+.toolbar-bubble-panel #sel-run,
+.toolbar-bubble-panel #detail-readout {
+  width: 100%;
+  min-width: 0;
 }
 .lat-select:hover {
   border-color: var(--border-accent);
@@ -417,6 +539,7 @@ html, body {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  flex-wrap: wrap;
 }
 .jump-coord {
   width: 88px;
@@ -457,9 +580,10 @@ html, body {
   flex-direction: column;
   align-items: flex-start;
   gap: 3px;
+  width: 100%;
 }
 .seed-input {
-  width: 220px;
+  width: 100%;
   background: var(--bg-elevated);
   border: 1px solid var(--border-subtle);
   border-radius: 18px;
@@ -489,6 +613,40 @@ html, body {
 }
 .seed-status.error {
   color: var(--lat-error);
+}
+.toolbar-bubble-panel .seed-status {
+  max-width: none;
+  white-space: normal;
+}
+.toolbar-tools-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.toolbar-tools-row .pill-chip-btn,
+.toolbar-tools-row .pill-icon-btn {
+  width: 100%;
+  min-width: 0;
+}
+.toolbar-tools-row .pill-icon-btn {
+  border-radius: 16px;
+  height: 34px;
+}
+#control-pill[data-layout="expanded"] #toolbar-size {
+  align-self: stretch;
+}
+#control-pill[data-mode="focused"] .toolbar-bubble.toolbar-optional {
+  display: none;
+}
+#control-pill[data-mode="focused"] .toolbar-bubble.toolbar-essential .toolbar-bubble-trigger,
+#control-pill[data-mode="focused"] .pill-chip-btn {
+  border-color: var(--border-accent);
+  color: var(--text-accent);
+}
+.toolbar-bubble-panel #generation-status {
+  margin-left: 0;
+  max-width: none;
+  width: 100%;
 }
 .jump-status {
   font-family: var(--font-mono);
@@ -550,6 +708,35 @@ html, body {
   opacity: 0.45;
   cursor: not-allowed;
   color: var(--text-tertiary);
+}
+.pill-chip-btn {
+  min-width: 58px;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-display);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  transition: all 0.25s var(--ease-smooth);
+  flex-shrink: 0;
+}
+.pill-chip-btn:hover {
+  border-color: var(--border-accent);
+  color: var(--text-accent);
+}
+#control-pill[data-mode="focused"] .pill-chip-btn {
+  border-color: var(--border-accent);
+  color: var(--text-accent);
+  box-shadow: var(--shadow-glow);
 }
 
 /* ═══════════════════════════════════════════════
@@ -950,6 +1137,7 @@ html, body {
   mix-blend-mode: multiply;
   opacity: 0;
   transition: opacity 0.35s var(--ease-smooth);
+  z-index: 6;
 }
 [data-theme="dark"] #highlight-canvas { mix-blend-mode: screen; }
 #highlight-canvas.active { opacity: 1; }
@@ -1163,7 +1351,20 @@ html, body {
   @media (max-width: 720px) {
    .side-panel.left  { display: none; }
    .side-panel.right { display: none; }
-   #control-pill { max-width: 95vw; overflow-x: auto; }
+   #control-pill { max-width: 95vw; }
+   #control-pill[data-layout="expanded"] {
+    width: 95vw;
+   }
+   .toolbar-bubble-panel,
+   .toolbar-bubble[data-align="right"] .toolbar-bubble-panel {
+    left: 0;
+    right: auto;
+    transform: translateY(-6px);
+   }
+   .toolbar-bubble.open .toolbar-bubble-panel,
+   .toolbar-bubble[data-align="right"].open .toolbar-bubble-panel {
+    transform: translateY(0);
+   }
   }
  
   /* Additional styles */
@@ -1200,77 +1401,110 @@ html, body {
   </div>
  
   <div id="control-pill">
-   <div class="pill-segment">
-    <span class="pill-label">Run</span>
-    <div class="lat-select-wrap">
-     <select id="sel-run" class="lat-select">
-      <option value="">— choose a generated world —</option>
-     </select>
+   <div class="toolbar-bubble toolbar-optional" data-toolbar-bubble="run">
+    <button type="button" class="toolbar-bubble-trigger" data-toolbar-trigger="run" aria-expanded="false">Run</button>
+    <div class="toolbar-bubble-panel">
+     <div class="toolbar-panel-stack">
+      <span class="toolbar-panel-label">Generated Run</span>
+      <div class="lat-select-wrap">
+       <select id="sel-run" class="lat-select">
+        <option value="">— choose a generated world —</option>
+       </select>
+      </div>
+     </div>
     </div>
    </div>
-   <div class="pill-divider"></div>
-  <div class="pill-segment">
-   <span class="pill-label">Detail</span>
-   <div id="detail-readout" class="pill-readout">Auto</div>
-  </div>
-  <div class="pill-divider"></div>
-  <div class="pill-segment jump-segment">
-   <span class="pill-label">Jump</span>
-   <div class="jump-controls">
-    <input type="number" id="jump-x" class="jump-coord" placeholder="X" inputmode="numeric">
-    <input type="number" id="jump-z" class="jump-coord" placeholder="Z" inputmode="numeric">
-    <button id="btn-jump" class="jump-go-btn" type="button">Go</button>
-   </div>
-   <div id="jump-status" class="jump-status">Awaiting coords</div>
-  </div>
-  <div class="pill-divider"></div>
-  <div class="pill-segment">
-   <span class="pill-label">UI</span>
-   <div class="lat-select-wrap">
-     <select id="ui-scale" class="lat-select" title="Scale viewer UI chrome">
-      <option value="0.9">Compact</option>
-      <option value="1">Default</option>
-      <option value="1.15">Large</option>
-      <option value="1.3">XL</option>
-     </select>
+   <div class="toolbar-bubble toolbar-optional" data-toolbar-bubble="detail">
+    <button type="button" class="toolbar-bubble-trigger" data-toolbar-trigger="detail" aria-expanded="false">Detail</button>
+    <div class="toolbar-bubble-panel">
+     <div class="toolbar-panel-stack">
+      <span class="toolbar-panel-label">Sampling Detail</span>
+      <div id="detail-readout" class="pill-readout">Auto</div>
+     </div>
     </div>
    </div>
-   <div class="pill-divider"></div>
-  <div class="pill-segment">
-   <span class="pill-label">Generate</span>
-   <div class="lat-select-wrap">
-     <select id="gen-quality" class="lat-select" title="Generate a new run at a selected quality">
-      <option value="">Choose…</option>
-      <option value="potato">Potato</option>
-      <option value="low">Low</option>
-      <option value="medium">Medium</option>
-      <option value="high">High</option>
-     </select>
+   <div class="toolbar-bubble toolbar-optional" data-toolbar-bubble="jump">
+    <button type="button" class="toolbar-bubble-trigger" data-toolbar-trigger="jump" aria-expanded="false">Jump</button>
+    <div class="toolbar-bubble-panel">
+     <div class="toolbar-panel-stack">
+      <span class="toolbar-panel-label">Jump To Coordinates</span>
+      <div class="jump-controls">
+       <input type="number" id="jump-x" class="jump-coord" placeholder="X" inputmode="numeric">
+       <input type="number" id="jump-z" class="jump-coord" placeholder="Z" inputmode="numeric">
+       <button id="btn-jump" class="jump-go-btn" type="button">Go</button>
+      </div>
+      <div id="jump-status" class="jump-status">Awaiting coords</div>
+     </div>
     </div>
    </div>
-   <div class="pill-segment seed-segment">
-    <span class="pill-label">Seed</span>
-    <div class="seed-controls">
-     <input id="gen-seed" class="seed-input" type="text" inputmode="numeric" spellcheck="false" autocomplete="off" placeholder="2591890304012655616" title="Optional signed 64-bit seed">
-     <span id="gen-seed-status" class="seed-status"></span>
+   <div class="toolbar-bubble toolbar-optional" data-toolbar-bubble="ui">
+    <button type="button" class="toolbar-bubble-trigger" data-toolbar-trigger="ui" aria-expanded="false">UI</button>
+    <div class="toolbar-bubble-panel">
+     <div class="toolbar-panel-stack">
+      <span class="toolbar-panel-label">Interface Scale</span>
+      <div class="lat-select-wrap">
+       <select id="ui-scale" class="lat-select" title="Scale viewer UI chrome">
+        <option value="0.8">Compact</option>
+        <option value="1">Default</option>
+        <option value="1.15">Large</option>
+        <option value="1.3">XL</option>
+       </select>
+      </div>
+     </div>
     </div>
    </div>
-   <div id="generation-status">
-    <span class="hg"></span>
-    <span class="gen-copy">
-     <span id="generation-status-text">Generating a new world</span>
-     <span id="generation-status-detail">World generation can take several minutes.</span>
-    </span>
-    <span class="gen-actions">
-     <button type="button" class="gen-action-btn cancel" id="generation-cancel" title="Cancel">×</button>
-     <button type="button" class="gen-action-btn confirm" id="generation-confirm" title="Confirm">✓</button>
-    </span>
+   <div class="toolbar-bubble toolbar-essential" data-toolbar-bubble="generate" data-align="right">
+    <button type="button" class="toolbar-bubble-trigger" data-toolbar-trigger="generate" aria-expanded="false">Generate</button>
+    <div class="toolbar-bubble-panel">
+     <div class="toolbar-panel-stack">
+      <span class="toolbar-panel-label">Run Generation</span>
+      <div class="lat-select-wrap">
+       <select id="gen-quality" class="lat-select" title="Generate a new run at a selected quality">
+        <option value="">Choose…</option>
+        <option value="potato">Potato</option>
+        <option value="low">Low</option>
+        <option value="medium">Medium</option>
+        <option value="high">High</option>
+       </select>
+      </div>
+      <div class="seed-controls">
+       <input id="gen-seed" class="seed-input" type="text" inputmode="numeric" spellcheck="false" autocomplete="off" placeholder="2591890304012655616" title="Optional signed 64-bit seed">
+       <span id="gen-seed-status" class="seed-status"></span>
+      </div>
+      <div id="generation-status">
+       <span class="hg"></span>
+       <span class="gen-copy">
+        <span id="generation-status-text">Generating a new world</span>
+        <span id="generation-status-detail">World generation can take several minutes.</span>
+       </span>
+       <span class="gen-actions">
+        <button type="button" class="gen-action-btn cancel" id="generation-cancel" title="Cancel">×</button>
+        <button type="button" class="gen-action-btn confirm" id="generation-confirm" title="Confirm">✓</button>
+       </span>
+      </div>
+     </div>
+    </div>
    </div>
-   <div class="pill-divider"></div>
-   <button class="pill-icon-btn" id="btn-save-run" title="Save current run archive">💾</button>
-   <button class="pill-icon-btn" id="btn-fit" title="Fit to view">⌖</button>
-   <button class="pill-icon-btn" id="btn-reset-zoom" title="Reset zoom">1:1</button>
-   <div class="pill-divider"></div>
+   <div class="toolbar-bubble toolbar-optional" data-toolbar-bubble="tools" data-align="right">
+    <button type="button" class="toolbar-bubble-trigger" data-toolbar-trigger="tools" aria-expanded="false">Tools</button>
+    <div class="toolbar-bubble-panel">
+     <div class="toolbar-panel-stack">
+      <span class="toolbar-panel-label">Viewer Tools</span>
+      <div class="toolbar-tools-row">
+       <button class="pill-icon-btn" id="btn-save-run" title="Save current run archive">💾</button>
+       <button class="pill-icon-btn" id="btn-fit" title="Fit to view">⌖</button>
+       <button class="pill-icon-btn" id="btn-reset-zoom" title="Reset zoom">1:1</button>
+      </div>
+     </div>
+    </div>
+   </div>
+   <div class="lat-select-wrap" style="width:132px;">
+    <select id="toolbar-size" class="lat-select" title="Choose toolbar size mode">
+     <option value="compact">Toolbar: Compact</option>
+     <option value="focused">Toolbar: Focused</option>
+     <option value="expanded">Toolbar: Expanded</option>
+    </select>
+   </div>
    <button id="theme-btn" title="Toggle theme">◐</button>
   </div>
  
@@ -1372,11 +1606,15 @@ html, body {
      <div class="context-empty">No biome selected</div>
     </div>
    </div>
-   <div class="panel-card" id="card-biomes">
+ <div class="panel-card" id="card-biomes">
     <div class="panel-header">
-     <span class="panel-title" id="biome-palette-title">Biome Presence</span>
-     <span id="biome-count" style="font-family:var(--font-mono); font-size:10px; color:var(--text-tertiary);"></span>
+     <div class="panel-actions">
+      <span class="panel-title" id="biome-palette-title">Biome Presence</span>
+      <span id="biome-count" style="font-family:var(--font-mono); font-size:10px; color:var(--text-tertiary);"></span>
+      <button id="btn-clear-palette-selection" class="panel-action-btn" title="Clear selected biomes">Clear</button>
+     </div>
     </div>
+    <div id="selected-biomes-summary" class="band-desc-hint" style="padding:0 18px 8px 18px;color:var(--text-secondary);">Selected biomes: none</div>
     <div class="band-desc-hint" id="biome-sampling-note" style="padding:0 18px 8px 18px;color:var(--lat-warn);display:none;">Coarse sampling may omit rare biomes; absence here does not prove world absence.</div>
     <div class="biome-search-wrap">
      <input type="text" class="biome-search" id="biome-search" placeholder="Filter biomes…" disabled>
@@ -1407,8 +1645,11 @@ html, body {
  const $ = (s, p=document) => p.querySelector(s);
  const $$ = (s, p=document) => [...p.querySelectorAll(s)];
  
- const viewport = $('#canvas-viewport');
- const mapCanvas = $('#map-canvas');
+const viewport = $('#canvas-viewport');
+const controlPill = $('#control-pill');
+const toolbarBubbles = $$('.toolbar-bubble', controlPill);
+const toolbarBubbleTriggers = $$('[data-toolbar-trigger]', controlPill);
+const mapCanvas = $('#map-canvas');
 const hlCanvas = $('#highlight-canvas');
 const gridCanvas = $('#grid-canvas');
 const bandCanvas = $('#band-canvas');
@@ -1441,9 +1682,10 @@ const uiScaleSel = $('#ui-scale');
 const genSeedInput = $('#gen-seed');
 const genSeedStatus = $('#gen-seed-status');
  const genQuality = $('#gen-quality');
- const btnFit = $('#btn-fit');
- const btnReset = $('#btn-reset-zoom');
- const themeBtn = $('#theme-btn');
+const btnFit = $('#btn-fit');
+const btnReset = $('#btn-reset-zoom');
+const toolbarSizeSel = $('#toolbar-size');
+const themeBtn = $('#theme-btn');
  const togGrid = $('#tog-grid');
  const togCrosshair = $('#tog-crosshair');
  const togHighlight = $('#tog-highlight');
@@ -1459,12 +1701,14 @@ const bandLegend = $('#band-legend');
 const biomeSearch = $('#biome-search');
 const biomeListBody = $('#biome-list-body');
 const biomePaletteTitle = $('#biome-palette-title');
+const selectedBiomesSummary = $('#selected-biomes-summary');
 const biomeSamplingNote = $('#biome-sampling-note');
 const metadataBody = $('#metadata-body');
 const biomeCountEl = $('#biome-count');
 const btnOpenReport = $('#btn-open-report');
 const btnExportReport = $('#btn-export-report');
 const btnClearSelection = $('#btn-clear-selection');
+const btnClearPaletteSelection = $('#btn-clear-palette-selection');
  const selectionContextBody = $('#selection-context-body');
  const btnSaveRun = $('#btn-save-run');
  
@@ -1491,7 +1735,9 @@ const btnClearSelection = $('#btn-clear-selection');
   panStartX: 0,
   panStartY: 0,
   hoveredBiomeId: null,
-  selectedBiomeId: null,
+  selectedBiomeIds: [],
+  focusedBiomeId: null,
+  inspectedPoint: null,
   selectedPoint: null,
   renderedHighlightKey: null,
   colorToBiome: {},
@@ -1508,6 +1754,7 @@ const btnClearSelection = $('#btn-clear-selection');
   selectionStatsCache: {},
   bandOpacity: 0.24,
   lastManualSeed: '',
+  activeToolbarBubble: '',
   generationActive: false,
   pendingGenerationPreset: null,
   generationPollTimer: null,
@@ -1530,6 +1777,7 @@ const VIOLATION_REASON_NONE = 0;
 const VIOLATION_REASON_JUNGLE_HARD = 1;
 const VIOLATION_REASON_ALLOWED_BAND = 2;
 const MANUAL_SEED_STORAGE_KEY = 'latitudeAtlas.manualSeed';
+const TOOLBAR_SIZE_STORAGE_KEY = 'lat-toolbar-size';
 const JAVA_LONG_MIN = BigInt('-9223372036854775808');
 const JAVA_LONG_MAX = BigInt('9223372036854775807');
  
@@ -1551,7 +1799,7 @@ const JAVA_LONG_MAX = BigInt('9223372036854775807');
 function normalizeUiScale(value) {
   const n = Number(value);
   if (!Number.isFinite(n)) return 1;
-  return Math.min(1.3, Math.max(0.9, n));
+  return Math.min(1.3, Math.max(0.8, n));
 }
 
 function validateManualSeed(rawValue) {
@@ -1595,6 +1843,46 @@ function syncSeedInputStatus({ announce = false } = {}) {
   return result;
 }
 
+function closeToolbarBubbles() {
+  if (controlPill?.dataset.layout === 'expanded') {
+    state.activeToolbarBubble = '';
+    return;
+  }
+  state.activeToolbarBubble = '';
+  toolbarBubbles.forEach((bubble) => {
+    bubble.classList.remove('open');
+    const trigger = $('[data-toolbar-trigger]', bubble);
+    if (trigger) trigger.setAttribute('aria-expanded', 'false');
+  });
+}
+
+function openToolbarBubble(name) {
+  if (controlPill?.dataset.layout === 'expanded') {
+    state.activeToolbarBubble = '';
+    return;
+  }
+  if (!name) return;
+  state.activeToolbarBubble = name;
+  toolbarBubbles.forEach((bubble) => {
+    const isActive = bubble.dataset.toolbarBubble === name;
+    bubble.classList.toggle('open', isActive);
+    const trigger = $('[data-toolbar-trigger]', bubble);
+    if (trigger) trigger.setAttribute('aria-expanded', isActive ? 'true' : 'false');
+  });
+}
+
+function toggleToolbarBubble(name) {
+  if (controlPill?.dataset.layout === 'expanded') {
+    return;
+  }
+  if (!name) return;
+  if (state.activeToolbarBubble === name) {
+    closeToolbarBubbles();
+    return;
+  }
+  openToolbarBubble(name);
+}
+
 function applyUiScale(value) {
   const scale = normalizeUiScale(value);
   document.documentElement.style.setProperty('--ui-scale', String(scale));
@@ -1608,6 +1896,32 @@ try {
   state.lastManualSeed = rememberedSeed;
   syncSeedInputStatus();
 } catch {}
+
+function setToolbarFocusMode(enabled) {
+  if (!controlPill) return;
+  const active = !!enabled;
+  if (active && state.activeToolbarBubble && state.activeToolbarBubble !== 'generate') {
+    closeToolbarBubbles();
+  }
+  controlPill.dataset.mode = active ? 'focused' : 'full';
+}
+
+function setToolbarExpandedMode(enabled) {
+  if (!controlPill) return;
+  const active = !!enabled;
+  controlPill.dataset.layout = active ? 'expanded' : 'compact';
+  if (active) {
+    closeToolbarBubbles();
+  }
+}
+
+function setToolbarSizeMode(mode) {
+  const normalized = mode === 'focused' || mode === 'expanded' ? mode : 'compact';
+  setToolbarExpandedMode(normalized === 'expanded');
+  setToolbarFocusMode(normalized === 'focused');
+  if (toolbarSizeSel) toolbarSizeSel.value = normalized;
+  localStorage.setItem(TOOLBAR_SIZE_STORAGE_KEY, normalized);
+}
  
  function clearPendingGeneration() {
   state.pendingGenerationPreset = null;
@@ -1617,6 +1931,7 @@ try {
  function showGenerationConfirm(presetKey) {
    const preset = GENERATION_PRESETS[presetKey];
    if (!preset || state.generationActive) return;
+   openToolbarBubble('generate');
    const seedState = syncSeedInputStatus({ announce: true });
    if (!seedState.ok) return;
    state.pendingGenerationPreset = presetKey;
@@ -1630,8 +1945,9 @@ try {
    generationStatus.classList.add('visible', 'mode-confirm');
   }
  
-  function setGenerationStatus(active, text) {
+function setGenerationStatus(active, text) {
   if (active) {
+   openToolbarBubble('generate');
    clearPendingGeneration();
    generationStatusText.textContent = text || 'Generating a new world';
    if (generationStatusDetail) {
@@ -1885,17 +2201,56 @@ function selectionStatsForBiome(biome) {
  return stats;
 }
 
-function renderSelectionContext(biome) {
+function selectionFocusPointForBiome(biome) {
+ if (!biome) return null;
+ const inspected = state.inspectedPoint;
+ if (inspected && inspected.biomeId === biome.id && Number.isFinite(inspected.worldX) && Number.isFinite(inspected.worldZ)) {
+  return inspected;
+ }
+ const selected = state.selectedPoint;
+ if (selected && selected.biomeId === biome.id && Number.isFinite(selected.worldX) && Number.isFinite(selected.worldZ)) {
+  return selected;
+ }
+ return null;
+}
+
+function selectedBiomeIdsSet() {
+ return new Set(Array.isArray(state.selectedBiomeIds) ? state.selectedBiomeIds : []);
+}
+
+function isBiomeSelected(id) {
+ return !!id && selectedBiomeIdsSet().has(id);
+}
+
+function selectedBiomes() {
+ const ids = Array.isArray(state.selectedBiomeIds) ? state.selectedBiomeIds : [];
+ return ids.map((id) => biomeById(id)).filter(Boolean);
+}
+
+function focusedSelectedBiome() {
+ if (state.focusedBiomeId && isBiomeSelected(state.focusedBiomeId)) {
+  return biomeById(state.focusedBiomeId);
+ }
+ const selected = selectedBiomes();
+ return selected.length ? selected[0] : null;
+}
+
+function renderSelectionContext(biome = focusedSelectedBiome()) {
  if (!selectionContextBody) return;
  if (!biome) {
   selectionContextBody.innerHTML = '<div class="context-empty">No biome selected</div>';
   return;
  }
+ const selected = selectedBiomes();
  const stats = selectionStatsForBiome(biome);
+ const focusPoint = selectionFocusPointForBiome(biome);
+ const focusLatContext = focusPoint ? latitudeContextForWorldZ(focusPoint.worldZ) : null;
+ const focusPointLabel = focusPoint?.source === 'hover' ? 'Hovered Pixel (X,Z)' : 'Selected Pixel (X,Z)';
  const pct = biome.pct != null ? `${biome.pct.toFixed(2)}%` : '—';
  const color = Array.isArray(biome.color) ? `rgb(${biome.color.join(',')})` : '—';
  let html = `
-   <div class="context-grid">
+  <div class="context-grid">
+     <div class="context-k">Selected Biomes</div><div class="context-v">${selected.length}</div>
      <div class="context-k">Biome</div><div class="context-v">${biome.name}</div>
      <div class="context-k">ID</div><div class="context-v">${biome.id}</div>
      <div class="context-k">Coverage</div><div class="context-v">${pct}</div>
@@ -1903,18 +2258,33 @@ function renderSelectionContext(biome) {
  if (stats) {
   html += `
      <div class="context-k">Pixel Count</div><div class="context-v">${stats.count.toLocaleString()}</div>
+     ${focusPoint ? `<div class="context-k">${focusPointLabel}</div><div class="context-v">${focusPoint.worldX}, ${focusPoint.worldZ}</div>` : ''}
+     <div class="context-k">Latitude Context</div><div class="context-v">${focusLatContext ? `${focusLatContext.deg}°${focusLatContext.hemisphere} (${focusLatContext.zone.label})` : `${stats.latDeg != null ? `${stats.latDeg}°${stats.hemisphere}` : '—'} (${stats.zoneLabel})`}</div>
      <div class="context-k">Centroid (X,Z)</div><div class="context-v">${stats.centroidX}, ${stats.centroidZ}</div>
-     <div class="context-k">Latitude Context</div><div class="context-v">${stats.latDeg != null ? `${stats.latDeg}°${stats.hemisphere}` : '—'} (${stats.zoneLabel})</div>
      <div class="context-k">Bounds (px)</div><div class="context-v">${stats.bboxW} × ${stats.bboxH}</div>`;
  }
  html += '\n   </div>';
  selectionContextBody.innerHTML = html;
 }
 
+function updateSelectedBiomesSummary() {
+ if (!selectedBiomesSummary) return;
+ const selected = selectedBiomes();
+ if (!selected.length) {
+  selectedBiomesSummary.textContent = 'Selected biomes: none';
+  return;
+ }
+ const names = selected.map((biome) => biome.name);
+ selectedBiomesSummary.textContent = `Selected biomes: ${names.join(', ')}`;
+}
+
 function clearBiomeSelection() {
- state.selectedBiomeId = null;
+ state.selectedBiomeIds = [];
+ state.focusedBiomeId = null;
  state.hoveredBiomeId = null;
- highlightBiomeInList(null);
+ state.inspectedPoint = null;
+ highlightBiomeInList();
+ updateSelectedBiomesSummary();
  renderSelectionContext(null);
  clearHighlight();
  if (!state.selectedPoint) {
@@ -1924,16 +2294,26 @@ function clearBiomeSelection() {
 
 function selectBiomePersistent(biome) {
  if (!biome) return;
- if (state.selectedBiomeId === biome.id) {
-  clearBiomeSelection();
-  return;
+ const next = selectedBiomeIdsSet();
+ if (next.has(biome.id)) {
+  next.delete(biome.id);
+ } else {
+  next.add(biome.id);
  }
- state.selectedBiomeId = biome.id;
+ state.selectedBiomeIds = Array.from(next);
+ state.focusedBiomeId = next.has(biome.id)
+  ? biome.id
+  : (state.selectedBiomeIds.length ? state.selectedBiomeIds[state.selectedBiomeIds.length - 1] : null);
  state.hoveredBiomeId = biome.id;
- highlightBiomeInList(biome.id);
- renderSelectionContext(biome);
- if (!togHighlight.checked) togHighlight.checked = true;
- renderHighlight(biome);
+ highlightBiomeInList();
+ updateSelectedBiomesSummary();
+ renderSelectionContext();
+ if (!togHighlight.checked && state.selectedBiomeIds.length) togHighlight.checked = true;
+ if (state.selectedBiomeIds.length) {
+  renderSelectedHighlights();
+ } else {
+  clearHighlight();
+ }
 }
 
 function setTheme(theme) {
@@ -1947,8 +2327,29 @@ themeBtn.addEventListener('click', () => {
  setTheme(current === 'dark' ? 'light' : 'dark');
  if (togBands.checked && state.mapWidth) renderBands();
 });
+toolbarBubbleTriggers.forEach((trigger) => {
+ trigger.addEventListener('click', (e) => {
+  e.stopPropagation();
+  toggleToolbarBubble(trigger.dataset.toolbarTrigger);
+ });
+});
+toolbarBubbles.forEach((bubble) => {
+ bubble.addEventListener('click', (e) => e.stopPropagation());
+});
+document.addEventListener('click', () => {
+ closeToolbarBubbles();
+});
+document.addEventListener('keydown', (e) => {
+ if (e.key === 'Escape') closeToolbarBubbles();
+});
+if (toolbarSizeSel) {
+ toolbarSizeSel.addEventListener('change', () => {
+  setToolbarSizeMode(toolbarSizeSel.value);
+ });
+}
 setTheme(localStorage.getItem('lat-theme') || 'dark');
 applyUiScale(localStorage.getItem('lat-ui-scale') || '1');
+setToolbarSizeMode(localStorage.getItem(TOOLBAR_SIZE_STORAGE_KEY) || 'compact');
 if (uiScaleSel) {
  uiScaleSel.addEventListener('change', () => applyUiScale(uiScaleSel.value));
 }
@@ -2083,6 +2484,8 @@ jumpZ.addEventListener('keydown', (e) => {
 function updateInspect(e) {
  if (!state.imageData || !togInspect.checked) {
   inspectCard.classList.remove('visible');
+  state.inspectedPoint = null;
+  if (state.selectedBiomeIds.length) renderSelectionContext();
   if (!state.selectedPoint) coordReadout.textContent = '— , —';
   return;
  }
@@ -2095,7 +2498,9 @@ function updateInspect(e) {
  coordReadout.textContent = worldPos ? `${worldPos.x} , ${worldPos.z}` : `${wx} , ${wy}`;
  if (wx < 0 || wy < 0 || wx >= state.mapWidth || wy >= state.mapHeight) {
   inspectCard.classList.remove('visible');
-  if (!state.selectedBiomeId) clearHighlight();
+  state.inspectedPoint = null;
+  if (state.selectedBiomeIds.length) renderSelectionContext();
+  if (!state.selectedBiomeIds.length) clearHighlight();
   return;
  }
  if (togCrosshair.checked) {
@@ -2107,21 +2512,29 @@ function updateInspect(e) {
  const idx = (wy * state.mapWidth + wx) * 4;
  const d = state.imageData.data;
  const biome = biomeAtPixel(wx, wy, [d[idx], d[idx + 1], d[idx + 2]]);
- showInspectCard(biome, worldPos, mx, my);
- if (togHighlight.checked && state.selectedBiomeId) {
-  const selected = biomeById(state.selectedBiomeId);
-  if (selected) renderHighlight(selected);
- }
+ state.inspectedPoint = {
+  source: 'hover',
+  pixelX: wx,
+  pixelY: wy,
+  worldX: worldPos ? worldPos.x : null,
+  worldZ: worldPos ? worldPos.z : null,
+  biomeId: biome ? biome.id : null,
+ };
+ if (state.selectedBiomeIds.length) renderSelectionContext();
+ showInspectCard(biome, worldPos, mx, my, wx, wy);
+ if (togHighlight.checked && state.selectedBiomeIds.length) renderSelectedHighlights();
 }
 
 viewport.addEventListener('mouseleave', () => {
  inspectCard.classList.remove('visible');
  crosshair.style.display = 'none';
  state.hoveredBiomeId = null;
+ state.inspectedPoint = null;
+ if (state.selectedBiomeIds.length) renderSelectionContext();
  if (state.selectedPoint && Number.isFinite(state.selectedPoint.worldX) && Number.isFinite(state.selectedPoint.worldZ)) {
   coordReadout.textContent = `${state.selectedPoint.worldX} , ${state.selectedPoint.worldZ}`;
  }
- if (!state.selectedBiomeId) clearHighlight();
+ if (!state.selectedBiomeIds.length) clearHighlight();
 });
 
 viewport.addEventListener('click', e => {
@@ -2139,10 +2552,16 @@ viewport.addEventListener('click', e => {
  inspectPointAtPixel(wx, wy, { selectBiome: true });
 });
 
-function renderHighlight(biome) {
+function renderSelectedHighlights() {
  if (!state.imageData) return;
- const useHighContrast = !!(togHiContrast.checked && state.selectedBiomeId && state.selectedBiomeId === biome.id);
- const renderKey = `${biome.id}|${useHighContrast ? 'hc' : 'normal'}`;
+ const selected = selectedBiomes();
+ if (!selected.length) {
+  clearHighlight();
+  return;
+ }
+ const selectedIds = selectedBiomeIdsSet();
+ const useHighContrast = !!togHiContrast.checked;
+ const renderKey = `${Array.from(selectedIds).sort().join('|')}|${useHighContrast ? 'hc' : 'normal'}`;
  if (state.renderedHighlightKey === renderKey && hlCanvas.classList.contains('active')) return;
  hlCanvas.width = state.mapWidth;
  hlCanvas.height = state.mapHeight;
@@ -2150,9 +2569,22 @@ function renderHighlight(biome) {
  const dst = hlCtx.createImageData(state.mapWidth, state.mapHeight);
  const dd = dst.data;
  const pixelCount = state.mapWidth * state.mapHeight;
+ const matchedMask = new Uint8Array(pixelCount);
  for (let p = 0; p < pixelCount; p++) {
   const i = p * 4;
-  const match = pixelMatchesBiome(biome, p, src);
+  let match = false;
+  if (state.biomeIndices && state.biomeIndexWidth === state.mapWidth && state.biomeIndexHeight === state.mapHeight) {
+   const biome = biomeByIndex(state.biomeIndices[p]);
+   match = !!(biome && selectedIds.has(biome.id));
+  } else {
+   for (const biome of selected) {
+    if (pixelMatchesBiome(biome, p, src)) {
+     match = true;
+     break;
+    }
+   }
+  }
+  matchedMask[p] = match ? 1 : 0;
   if (useHighContrast) {
    if (match) {
     dd[i] = 255; dd[i + 1] = 255; dd[i + 2] = 255; dd[i + 3] = 255;
@@ -2163,6 +2595,25 @@ function renderHighlight(biome) {
    dd[i] = 255; dd[i + 1] = 0; dd[i + 2] = 255; dd[i + 3] = 170;
   } else {
    dd[i + 3] = 0;
+  }
+ }
+ const outlineColor = useHighContrast
+  ? [62, 232, 214, 255]
+  : [255, 255, 255, 255];
+ for (let y = 0; y < state.mapHeight; y++) {
+  for (let x = 0; x < state.mapWidth; x++) {
+   const p = (y * state.mapWidth) + x;
+   if (!matchedMask[p]) continue;
+   const left = x > 0 ? matchedMask[p - 1] : 0;
+   const right = x + 1 < state.mapWidth ? matchedMask[p + 1] : 0;
+   const up = y > 0 ? matchedMask[p - state.mapWidth] : 0;
+   const down = y + 1 < state.mapHeight ? matchedMask[p + state.mapWidth] : 0;
+   if (left && right && up && down) continue;
+   const i = p * 4;
+   dd[i] = outlineColor[0];
+   dd[i + 1] = outlineColor[1];
+   dd[i + 2] = outlineColor[2];
+   dd[i + 3] = outlineColor[3];
   }
  }
  hlCtx.putImageData(dst, 0, 0);
@@ -2182,23 +2633,22 @@ togHighlight.addEventListener('change', () => {
   clearHighlight();
   return;
  }
- const selected = biomeById(state.selectedBiomeId);
- if (selected) {
-  renderHighlight(selected);
- }
+ renderSelectedHighlights();
 });
 
 togHiContrast.addEventListener('change', () => {
- const selected = biomeById(state.selectedBiomeId);
- if (selected) {
+ if (state.selectedBiomeIds.length) {
   if (!togHighlight.checked) togHighlight.checked = true;
-  renderHighlight(selected);
+  renderSelectedHighlights();
   return;
  }
  clearHighlight();
 });
 
 btnClearSelection.addEventListener('click', clearBiomeSelection);
+if (btnClearPaletteSelection) {
+ btnClearPaletteSelection.addEventListener('click', clearBiomeSelection);
+}
 
 const ZONE_BANDS = [
  { id: 'equator', label: 'Equator', maxFrac: 0.10, color: [232, 90, 90], deg: '0–9°' },
@@ -2637,6 +3087,15 @@ function inspectPointAtPixel(pixelX, pixelY, options = {}) {
   worldZ: worldPos ? worldPos.z : null,
   biomeId: biome ? biome.id : null,
  });
+ state.inspectedPoint = {
+  source: options.selectBiome ? 'selected' : 'hover',
+  pixelX,
+  pixelY,
+  worldX: worldPos ? worldPos.x : null,
+  worldZ: worldPos ? worldPos.z : null,
+  biomeId: biome ? biome.id : null,
+ };
+ if (state.selectedBiomeIds.length) renderSelectionContext();
 
  if (togCrosshair.checked) {
   crosshair.style.display = 'block';
@@ -2653,32 +3112,37 @@ function inspectPointAtPixel(pixelX, pixelY, options = {}) {
 }
 
 function currentReportBiomes() {
- const selected = biomeById(state.selectedBiomeId);
- if (selected) return [selected];
+ const selected = selectedBiomes();
+ if (selected.length) return selected;
  return mergeBiomePresenceRows(state.biomes, state.biomeInventory);
 }
 
 function currentSampledBiomes() {
- return Array.isArray(state.biomes) ? state.biomes.slice() : [];
+ const selectedIds = selectedBiomeIdsSet();
+ const rows = Array.isArray(state.biomes) ? state.biomes.slice() : [];
+ if (!selectedIds.size) return rows;
+ return rows.filter((biome) => selectedIds.has(biome.id));
 }
 
 function currentInventoryBiomes() {
- const selected = biomeById(state.selectedBiomeId);
- if (selected) return [selected];
- return Array.isArray(state.biomeInventory) ? state.biomeInventory.slice() : [];
+ const selectedIds = selectedBiomeIdsSet();
+ const rows = Array.isArray(state.biomeInventory) ? state.biomeInventory.slice() : [];
+ if (!selectedIds.size) return rows;
+ return rows.filter((biome) => selectedIds.has(biome.id));
 }
 
 function buildPrintableReportHtml() {
  const manifest = state.manifest || {};
  const radius = getWorldRadius(manifest);
  const diameter = manifest?.diameter || (radius ? radius * 2 : null);
- const currentStep = getCurrentLayerStep();
- const coarseSampling = isCoarseSamplingStep(currentStep);
- const reportBiomes = currentReportBiomes();
- const sampledBiomes = currentSampledBiomes();
- const inventoryBiomes = currentInventoryBiomes();
- const selected = biomeById(state.selectedBiomeId);
- const point = state.selectedPoint;
+const currentStep = getCurrentLayerStep();
+const coarseSampling = isCoarseSamplingStep(currentStep);
+const reportBiomes = currentReportBiomes();
+const sampledBiomes = currentSampledBiomes();
+const inventoryBiomes = currentInventoryBiomes();
+ const selected = selectedBiomes();
+ const focused = focusedSelectedBiome();
+const point = state.selectedPoint;
  const latSummary = point && Number.isFinite(point.worldZ) ? formatLatitudeSummary(point.worldZ) : '—';
  const metadataRows = [
   ['Run', state.currentRun || '—'],
@@ -2693,8 +3157,10 @@ function buildPrintableReportHtml() {
   ['Known World Biomes', inventoryBiomes.length ? inventoryBiomes.length.toLocaleString() : '—'],
  ];
  const selectionRows = [
-  ['Selection', selected ? selected.name : 'None'],
-  ['Selected Biome ID', selected ? selected.id : '—'],
+  ['Selection Scope', selected.length ? `${selected.length} biome${selected.length === 1 ? '' : 's'}` : 'All biomes'],
+  ['Selected Biomes', selected.length ? selected.map((biome) => biome.name).join(', ') : 'All loaded biomes'],
+  ['Focused Biome', focused ? focused.name : '—'],
+  ['Focused Biome ID', focused ? focused.id : '—'],
   ['Cursor X/Z', point && Number.isFinite(point.worldX) && Number.isFinite(point.worldZ) ? `${point.worldX}, ${point.worldZ}` : '—'],
   ['Latitude', latSummary],
   ['Sampling Warning', coarseSampling ? 'Coarse sampling may omit rare biomes; absence here does not prove world absence.' : 'Displayed palette is sampled from the current atlas layer.'],
@@ -2790,7 +3256,12 @@ ${inventoryBiomes.length ? `<table><thead><tr><th>Biome ID</th><th>Name</th><th>
 
 function reportFilename() {
  const run = String(state.currentRun || 'atlas-report').replace(/[^a-zA-Z0-9_-]+/g, '-');
- const scope = state.selectedBiomeId ? String(state.selectedBiomeId).split(':').pop() : 'all-biomes';
+ const selected = selectedBiomes();
+ const scope = selected.length
+  ? (selected.length === 1
+   ? String(selected[0].id).split(':').pop()
+   : `${selected.length}-biomes`)
+  : 'all-biomes';
  return `${run}-${scope}-report.html`;
 }
 
@@ -3036,9 +3507,10 @@ function toggleGrid() {
   }
 }
 
-function highlightBiomeInList(id) {
+function highlightBiomeInList() {
+  const selected = selectedBiomeIdsSet();
   $$('.biome-entry', biomeListBody).forEach(el => {
-    el.classList.toggle('active', el.dataset.biomeId === id);
+    el.classList.toggle('active', selected.has(el.dataset.biomeId));
   });
 }
 
@@ -3372,8 +3844,8 @@ async function startGeneration(presetKey) {
   const resolution = Number(preset.resolution);
   const seedState = syncSeedInputStatus({ announce: true });
   if (!seedState.ok) return;
-  const payload = { step: resolution, size: 'small' };
-  if (seedState.value) payload.seed = seedState.value;
+  const requestPayload = { step: resolution, size: 'small' };
+  if (seedState.value) requestPayload.seed = seedState.value;
 
   const dot = $('.dot', statusToast);
   const msg = $('.msg', statusToast);
@@ -3382,17 +3854,17 @@ async function startGeneration(presetKey) {
     const resp = await fetch(`${API_BASE}/api/generate`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(requestPayload),
     });
-    const payload = await resp.json().catch(() => ({}));
+    const responsePayload = await resp.json().catch(() => ({}));
     if (resp.status === 202 || resp.status === 409) {
-      syncGenerationUi(payload, false);
+      syncGenerationUi(responsePayload, false);
       if (resp.status !== 202) {
         showToast('Atlas generation is already in progress.', 'loading');
       }
       return;
     }
-    throw new Error(payload?.error || `API ${resp.status}`);
+    throw new Error(responsePayload?.error || `API ${resp.status}`);
   } catch (e) {
     setGenerationStatus(false, '');
     dot.className = 'dot error';
@@ -3516,18 +3988,25 @@ selRun.addEventListener('change', async () => {
     state.manifest = null;
     state.biomes = [];
     state.biomeInventory = [];
+    state.selectedBiomeIds = [];
+    state.focusedBiomeId = null;
+    state.inspectedPoint = null;
     clearSelectedPoint();
     setJumpStatus('Awaiting coords');
     state.bandMaskByIndex = null;
     state.jungleFamilyByIndex = null;
-    state.bandViolationStats = null;
-    state.bandViolationReasonCodes = null;
-    refreshBandViolationLabel();
-    bandViolationCanvas.classList.remove('active');
-    detailReadout.textContent = 'Auto';
-    renderMetadata(null);
-    updateRunActionButtons();
-    return;
+  state.bandViolationStats = null;
+  state.bandViolationReasonCodes = null;
+  refreshBandViolationLabel();
+  bandViolationCanvas.classList.remove('active');
+  detailReadout.textContent = 'Auto';
+  clearHighlight();
+  highlightBiomeInList();
+  updateSelectedBiomesSummary();
+  renderSelectionContext(null);
+  renderMetadata(null);
+  updateRunActionButtons();
+  return;
   }
   state.currentRun = run;
   state.currentLayer = null;
@@ -3567,8 +4046,10 @@ async function switchLayer(run, layer) {
   detailReadout.textContent = formatLayerLabel(layer);
   state.biomeInventory = [];
   state.selectionStatsCache = {};
-  state.selectedBiomeId = null;
+  state.selectedBiomeIds = [];
+  state.focusedBiomeId = null;
   state.hoveredBiomeId = null;
+  state.inspectedPoint = null;
   clearSelectedPoint();
   state.bandMaskByIndex = null;
   state.jungleFamilyByIndex = null;
@@ -3577,6 +4058,7 @@ async function switchLayer(run, layer) {
   state.biomeIndices = null;
   state.biomeIndexWidth = 0;
   state.biomeIndexHeight = 0;
+  updateSelectedBiomesSummary();
   renderSelectionContext(null);
 
   // Fetch biomes + image + ids concurrently
@@ -3613,11 +4095,12 @@ async function switchLayer(run, layer) {
   biomeSearch.disabled = false;
   biomeSearch.removeAttribute('disabled');
   biomeSearch.value = '';
+  updateSelectedBiomesSummary();
   renderMetadata(state.manifest);
   setJumpStatus('Ready for world X/Z jumps');
 
   clearHighlight();
-  highlightBiomeInList(null);
+  highlightBiomeInList();
   toggleGrid();
   if (togBands.checked) { renderBands(); renderBandLegend(); }
   renderBandViolations();
