@@ -1,7 +1,7 @@
 package com.example.globe.mixin;
 
 import com.example.globe.GlobeMod;
-import com.example.globe.util.LatitudeMath;
+import com.example.globe.util.LatitudeBands;
 import com.example.globe.world.LatitudeBiomes;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.Blocks;
@@ -45,11 +45,10 @@ public class ProtoChunkSnowBlockGuardMixin {
         int borderRadius = GlobeMod.BORDER_RADIUS;
         int activeRadius = LatitudeBiomes.getActiveRadiusBlocks();
         if (activeRadius > 0) borderRadius = activeRadius;
-        LatitudeMath.LatitudeZone zone = LatitudeMath.zoneForRadius(borderRadius, blockZ);
-        return zone == LatitudeMath.LatitudeZone.EQUATOR
-                || zone == LatitudeMath.LatitudeZone.TROPICAL
-                || zone == LatitudeMath.LatitudeZone.SUBTROPICAL
-                || zone == LatitudeMath.LatitudeZone.TEMPERATE;
+        LatitudeBands.Band band = LatitudeBands.fromAbsoluteLatitudeDeg(Math.abs((double) blockZ) * 90.0 / Math.max(1, borderRadius));
+        return band == LatitudeBands.Band.TROPICAL
+                || band == LatitudeBands.Band.SUBTROPICAL
+                || band == LatitudeBands.Band.TEMPERATE;
     }
 
     @Inject(method = "setBlockState", at = @At("HEAD"), cancellable = true)
@@ -74,9 +73,10 @@ public class ProtoChunkSnowBlockGuardMixin {
             if (count <= 25) {
                 LOGGER.warn("[SNOWBLOCK_GUARD] x={} y={} z={} band={} replace {} -> {}",
                         pos.getX(), pos.getY(), pos.getZ(),
-                        LatitudeMath.zoneForRadius(
-                                LatitudeBiomes.getActiveRadiusBlocks() > 0 ? LatitudeBiomes.getActiveRadiusBlocks() : GlobeMod.BORDER_RADIUS,
-                                pos.getZ()),
+                        LatitudeBands.fromAbsoluteLatitudeDeg(
+                                Math.abs((double) pos.getZ()) * 90.0
+                                        / Math.max(1, LatitudeBiomes.getActiveRadiusBlocks() > 0 ? LatitudeBiomes.getActiveRadiusBlocks() : GlobeMod.BORDER_RADIUS)
+                        ).id(),
                         state.getBlock(),
                         replacement.getBlock());
             }

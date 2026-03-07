@@ -2,7 +2,7 @@ package com.example.globe.mixin;
 
 import com.example.globe.GlobeMod;
 import com.example.globe.debug.WarmSnowTrapStats;
-import com.example.globe.util.LatitudeMath;
+import com.example.globe.util.LatitudeBands;
 import com.example.globe.world.LatitudeBiomes;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.Blocks;
@@ -53,11 +53,10 @@ public abstract class ChunkRegionWarmSnowTrapMixin {
         double t = Math.abs((double) pos.getZ()) / (double) radius;
         WarmSnowTrapStats.lastT = t;
 
-        LatitudeMath.LatitudeZone zone = LatitudeMath.zoneForRadius(radius, pos.getZ());
-        boolean warm = zone == LatitudeMath.LatitudeZone.EQUATOR
-                || zone == LatitudeMath.LatitudeZone.TROPICAL
-                || zone == LatitudeMath.LatitudeZone.SUBTROPICAL
-                || zone == LatitudeMath.LatitudeZone.TEMPERATE;
+        LatitudeBands.Band band = LatitudeBands.fromAbsoluteLatitudeDeg(Math.abs((double) pos.getZ()) * 90.0 / Math.max(1, radius));
+        boolean warm = band == LatitudeBands.Band.TROPICAL
+                || band == LatitudeBands.Band.SUBTROPICAL
+                || band == LatitudeBands.Band.TEMPERATE;
 
         if (!warm) return state;
 
