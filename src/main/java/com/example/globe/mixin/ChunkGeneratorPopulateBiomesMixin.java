@@ -1,7 +1,7 @@
 package com.example.globe.mixin;
 
 import com.example.globe.GlobeMod;
-import com.example.globe.util.LatitudeMath;
+import com.example.globe.util.LatitudeBands;
 import com.example.globe.world.LatitudeBiomes;
 import net.minecraft.registry.Registry;
 import net.minecraft.registry.RegistryKey;
@@ -447,12 +447,12 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
     private static RegistryEntry<Biome> pickLatitudeFallback(Registry<Biome> biomes, RegistryEntry<Biome> base,
                                                              int blockX, int blockZ, int borderRadiusBlocks) {
         int radius = Math.max(1, borderRadiusBlocks);
-        LatitudeMath.LatitudeZone zone = LatitudeMath.zoneForRadius(radius, blockZ);
-        return switch (zone) {
+        LatitudeBands.Band band = LatitudeBands.fromAbsoluteLatitudeDeg(Math.abs((double) blockZ) * 90.0 / radius);
+        return switch (band) {
             case SUBPOLAR, POLAR -> pickFallback(biomes, base, "minecraft:snowy_plains", "minecraft:taiga", "minecraft:snowy_taiga");
             case TEMPERATE -> pickFallback(biomes, base, "minecraft:plains", "minecraft:forest", "minecraft:birch_forest");
-            case TROPICAL, SUBTROPICAL -> pickFallback(biomes, base, "minecraft:savanna", "minecraft:sparse_jungle", "minecraft:jungle");
-            case EQUATOR -> pickFallback(biomes, base, "minecraft:jungle", "minecraft:savanna", "minecraft:plains");
+            case SUBTROPICAL -> pickFallback(biomes, base, "minecraft:savanna", "minecraft:sparse_jungle", "minecraft:jungle");
+            case TROPICAL -> pickFallback(biomes, base, "minecraft:jungle", "minecraft:savanna", "minecraft:plains");
         };
     }
 

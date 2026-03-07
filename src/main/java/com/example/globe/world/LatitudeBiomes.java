@@ -15,6 +15,7 @@ import it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.example.globe.util.LatitudeBands;
 import com.example.globe.util.LatitudeMath;
 import com.example.globe.util.ValueNoise2D;
 
@@ -44,8 +45,8 @@ public final class LatitudeBiomes {
 
         long seed = WORLD_SEED;
 
-        double bandStart = LatitudeMath.EQUATOR_MAX_FRAC;
-        double bandEnd = LatitudeMath.SUBTROPICAL_MAX_FRAC;
+        double bandStart = LatitudeBands.Band.SUBTROPICAL.lowDeg() / 90.0;
+        double bandEnd = LatitudeBands.Band.TEMPERATE.lowDeg() / 90.0;
         double u = clamp((t - bandStart) / (bandEnd - bandStart), 0.0, 1.0);
         double ladderT = 1.0 - u;
 
@@ -77,8 +78,8 @@ public final class LatitudeBiomes {
 
         long seed = WORLD_SEED;
 
-        double bandStart = LatitudeMath.EQUATOR_MAX_FRAC;
-        double bandEnd = LatitudeMath.SUBTROPICAL_MAX_FRAC;
+        double bandStart = LatitudeBands.Band.SUBTROPICAL.lowDeg() / 90.0;
+        double bandEnd = LatitudeBands.Band.TEMPERATE.lowDeg() / 90.0;
         double u = clamp((t - bandStart) / (bandEnd - bandStart), 0.0, 1.0);
         double ladderT = 1.0 - u;
 
@@ -104,16 +105,16 @@ public final class LatitudeBiomes {
         };
     }
 
-    private static final int BAND_EQUATOR = 0;
-    private static final int BAND_TROPICAL = 1;
+    private static final int BAND_TROPICAL = 0;
+    private static final int BAND_SUBTROPICAL = 1;
     private static final int BAND_TEMPERATE = 2;
     private static final int BAND_SUBPOLAR = 3;
     private static final int BAND_POLAR = 4;
 
-    private static int bandIndexForZone(LatitudeMath.LatitudeZone zone) {
-        return switch (zone) {
-            case EQUATOR -> BAND_EQUATOR;
-            case TROPICAL, SUBTROPICAL -> BAND_TROPICAL;
+    private static int bandIndexForBand(LatitudeBands.Band band) {
+        return switch (band) {
+            case TROPICAL -> BAND_TROPICAL;
+            case SUBTROPICAL -> BAND_SUBTROPICAL;
             case TEMPERATE -> BAND_TEMPERATE;
             case SUBPOLAR -> BAND_SUBPOLAR;
             case POLAR -> BAND_POLAR;
@@ -174,7 +175,7 @@ public final class LatitudeBiomes {
     }
 
     private static RegistryEntry<Biome> applyLandOverrides(Registry<Biome> biomes, RegistryEntry<Biome> pick, int blockX, int blockZ, int bandIndex) {
-        if (bandIndex == BAND_EQUATOR || bandIndex == BAND_TEMPERATE) {
+        if (bandIndex == BAND_TROPICAL || bandIndex == BAND_TEMPERATE) {
             if (isBiomeId(pick, "minecraft:plains") && rollChance(blockX, blockZ, 0x7F4A7C15, 60L)) {
                 try {
                     pick = biome(biomes, "minecraft:sunflower_plains");
@@ -207,7 +208,7 @@ public final class LatitudeBiomes {
     }
 
     private static RegistryEntry<Biome> applyLandOverrides(Collection<RegistryEntry<Biome>> biomes, RegistryEntry<Biome> pick, int blockX, int blockZ, int bandIndex) {
-        if (bandIndex == BAND_EQUATOR || bandIndex == BAND_TEMPERATE) {
+        if (bandIndex == BAND_TROPICAL || bandIndex == BAND_TEMPERATE) {
             if (isBiomeId(pick, "minecraft:plains") && rollChance(blockX, blockZ, 0x7F4A7C15, 60L)) {
                 RegistryEntry<Biome> entry = entryById(biomes, "minecraft:sunflower_plains");
                 if (entry != null) {
@@ -846,12 +847,12 @@ public final class LatitudeBiomes {
         int lat = Math.abs(blockZ);
         double tBase = (double) lat / (double) effectiveRadius;
         double t = applyBoundaryJitter(blockX, blockZ, effectiveRadius, tBase);
-        LatitudeMath.LatitudeZone zone = zoneForAbsLatFraction(t);
-        int bandIndex = bandIndexForZone(zone);
+        LatitudeBands.Band band = bandForAbsLatFraction(t);
+        int bandIndex = bandIndexForBand(band);
 
         if (isBeachLike(base)) {
             RegistryEntry<Biome> out = pickBeachForBand(biomeRegistry, base, blockX, blockZ, bandIndex);
-            debugPick(blockX, blockZ, effectiveRadius, t, zone, base, out, true, false, null);
+            debugPick(blockX, blockZ, effectiveRadius, t, band, base, out, true, false, null);
             return out;
         }
 
@@ -859,19 +860,19 @@ public final class LatitudeBiomes {
             if (bandIndex >= 3) {
                 try {
                     RegistryEntry<Biome> out = biome(biomeRegistry, "minecraft:frozen_river");
-                    debugPick(blockX, blockZ, effectiveRadius, t, zone, base, out, false, false, null);
+                    debugPick(blockX, blockZ, effectiveRadius, t, band, base, out, false, false, null);
                     return out;
                 } catch (Throwable ignored) {
-                    debugPick(blockX, blockZ, effectiveRadius, t, zone, base, base, false, false, null);
+                    debugPick(blockX, blockZ, effectiveRadius, t, band, base, base, false, false, null);
                     return base;
                 }
             } else {
                 try {
                     RegistryEntry<Biome> out = biome(biomeRegistry, "minecraft:river");
-                    debugPick(blockX, blockZ, effectiveRadius, t, zone, base, out, false, false, null);
+                    debugPick(blockX, blockZ, effectiveRadius, t, band, base, out, false, false, null);
                     return out;
                 } catch (Throwable ignored) {
-                    debugPick(blockX, blockZ, effectiveRadius, t, zone, base, base, false, false, null);
+                    debugPick(blockX, blockZ, effectiveRadius, t, band, base, base, false, false, null);
                     return base;
                 }
             }
@@ -880,11 +881,11 @@ public final class LatitudeBiomes {
         if (base.isIn(BiomeTags.IS_OCEAN)) {
             RegistryEntry<Biome> oceanPick = oceanByLatitudeBandOrBase(biomeRegistry, base, blockX, blockZ, bandIndex);
             RegistryEntry<Biome> out = mushroomIslandOverride(biomeRegistry, oceanPick, blockX, blockZ);
-            debugPick(blockX, blockZ, effectiveRadius, t, zone, base, out, false, false, null);
+            debugPick(blockX, blockZ, effectiveRadius, t, band, base, out, false, false, null);
             return out;
         }
 
-        int landBandIndex = latitudeBandIndexWithBlend(blockX, blockZ, effectiveRadius, zone, t);
+        int landBandIndex = latitudeBandIndexWithBlend(blockX, blockZ, effectiveRadius, band, t);
         boolean mountainNoiseLike = landBandIndex == BAND_TEMPERATE && isMountainLike(sampler, blockX, blockZ);
         boolean skipPreview = shouldSkipPreviewTerrain(callerContext);
         boolean hasReliableSurface = !skipPreview && generator != null && noiseConfig != null && heightView != null;
@@ -906,7 +907,7 @@ public final class LatitudeBiomes {
         boolean nearOcean = oceanDistance <= MANGROVE_COASTAL_MAX_BLOCKS;
         boolean forcedBadlands = false;
         RegistryEntry<Biome> chosen = null;
-        if (landBandIndex == BAND_TROPICAL && isAridTropicalStep(blockX, blockZ, t) && badlandsPatchHere(WORLD_SEED, blockX, blockZ)) {
+        if (landBandIndex == BAND_SUBTROPICAL && isAridTropicalStep(blockX, blockZ, t) && badlandsPatchHere(WORLD_SEED, blockX, blockZ)) {
             try {
                 chosen = biome(biomeRegistry, BADLANDS_ID);
                 forcedBadlands = true;
@@ -915,10 +916,10 @@ public final class LatitudeBiomes {
             }
         }
         if (forcedBadlands) {
-            debugPick(blockX, blockZ, effectiveRadius, t, zone, base, chosen, false, false, null);
+            debugPick(blockX, blockZ, effectiveRadius, t, band, base, chosen, false, false, null);
             return chosen;
         }
-        if (chosen == null && (landBandIndex == BAND_EQUATOR || landBandIndex == BAND_TROPICAL) && sampler != null) {
+        if (chosen == null && (landBandIndex == BAND_TROPICAL || landBandIndex == BAND_SUBTROPICAL) && sampler != null) {
             int noiseX = blockX >> 2;
             int noiseZ = blockZ >> 2;
             MultiNoiseUtil.NoiseValuePoint p = sampler.sample(noiseX, SURFACE_CLASSIFY_Y >> 2, noiseZ);
@@ -938,8 +939,8 @@ public final class LatitudeBiomes {
         }
         if (chosen == null) {
             chosen = switch (landBandIndex) {
-                case BAND_EQUATOR -> pickFromWeightedTags(biomeRegistry, base, blockX, blockZ, BAND_EQUATOR, 0x1A21, LAT_EQUATOR_PRIMARY, LAT_EQUATOR_SECONDARY, LAT_EQUATOR_ACCENT);
-                case BAND_TROPICAL -> pickTropicalGradient(biomeRegistry, base, blockX, blockZ, t);
+                case BAND_TROPICAL -> pickFromWeightedTags(biomeRegistry, base, blockX, blockZ, BAND_TROPICAL, 0x1A21, LAT_EQUATOR_PRIMARY, LAT_EQUATOR_SECONDARY, LAT_EQUATOR_ACCENT);
+                case BAND_SUBTROPICAL -> pickTropicalGradient(biomeRegistry, base, blockX, blockZ, t);
                 case BAND_TEMPERATE -> pickTemperateLand(biomeRegistry, blockX, blockZ, columnDecisionY,
                         () -> pickFromWeightedTags(biomeRegistry, base, blockX, blockZ, BAND_TEMPERATE, 0x2B32, LAT_TEMPERATE_PRIMARY, LAT_TEMPERATE_SECONDARY, LAT_TEMPERATE_ACCENT),
                         mountainLike);
@@ -1021,7 +1022,7 @@ public final class LatitudeBiomes {
             out = applyLandOverrides(biomeRegistry, safe, blockX, blockZ, landBandIndex);
             boolean savannaGateInput = isSavannaFamily(out);
             out = applySavannaWindsweptGate(biomeRegistry, out, preview.robustDelta, previewHeightHigh);
-            if (landBandIndex == BAND_TROPICAL && tropicalBaseStep(blockX, Math.abs(blockZ), t) <= 1 && isJungleFamily(out)) {
+            if (landBandIndex == BAND_SUBTROPICAL && tropicalBaseStep(blockX, Math.abs(blockZ), t) <= 1 && isJungleFamily(out)) {
                 try {
                     out = biome(biomeRegistry, "minecraft:savanna");
                 } catch (Throwable ignored) {}
@@ -1029,14 +1030,14 @@ public final class LatitudeBiomes {
             finalSavannaRegion = isSavannaFamily(base) || savannaGateInput || isSavannaFamily(out);
             }
         }
-        if (landBandIndex == BAND_EQUATOR || landBandIndex == BAND_TROPICAL) {
+        if (landBandIndex == BAND_TROPICAL || landBandIndex == BAND_SUBTROPICAL) {
             if (isColdBiome(out)) {
                 out = pickWarmFallback(biomeRegistry, landBandIndex);
             }
         }
         out = enforceSnowyLatitudeRamp(biomeRegistry, out, base, blockX, blockZ, effectiveRadius, landBandIndex);
-        out = clampWarmInColdZone(biomeRegistry, base, out, zone, blockX, blockZ);
-        out = applySubpolarSwampGuard(biomeRegistry, base, out, zone);
+        out = clampWarmInColdZone(biomeRegistry, base, out, band, blockX, blockZ);
+        out = applySubpolarSwampGuard(biomeRegistry, base, out, band);
         if (landBandIndex >= BAND_SUBPOLAR && isJungleFamily(out)) {
             out = pickColdFallback(biomeRegistry, base, blockX, blockZ, landBandIndex);
         }
@@ -1054,7 +1055,7 @@ public final class LatitudeBiomes {
         }
         out = applyFinalSavannaClimateClamp(biomeRegistry, out, finalSavannaRegion, columnDecisionY, blockX, blockZ);
         traceSubpolarJunglePick(blockX, blockZ, effectiveRadius, landBandIndex, base, out);
-        debugPick(blockX, blockZ, effectiveRadius, t, zone, base, out, false, out != sanitized, mangroveDecision);
+        debugPick(blockX, blockZ, effectiveRadius, t, band, base, out, false, out != sanitized, mangroveDecision);
         return out;
     }
 
@@ -1087,12 +1088,12 @@ public final class LatitudeBiomes {
         int lat = Math.abs(blockZ);
         double tBase = (double) lat / (double) effectiveRadius;
         double t = applyBoundaryJitter(blockX, blockZ, effectiveRadius, tBase);
-        LatitudeMath.LatitudeZone zone = zoneForAbsLatFraction(t);
-        int bandIndex = bandIndexForZone(zone);
+        LatitudeBands.Band band = bandForAbsLatFraction(t);
+        int bandIndex = bandIndexForBand(band);
 
         if (isBeachLike(base)) {
             RegistryEntry<Biome> out = pickBeachForBand(biomePool, base, blockX, blockZ, bandIndex);
-            debugPick(blockX, blockZ, effectiveRadius, t, zone, base, out, true, false, null);
+            debugPick(blockX, blockZ, effectiveRadius, t, band, base, out, true, false, null);
             return out;
         }
 
@@ -1100,23 +1101,23 @@ public final class LatitudeBiomes {
             if (bandIndex >= 3) {
                 RegistryEntry<Biome> frozen = entryById(biomePool, "minecraft:frozen_river");
                 RegistryEntry<Biome> out = frozen != null ? frozen : base;
-                debugPick(blockX, blockZ, effectiveRadius, t, zone, base, out, false, false, null);
+                debugPick(blockX, blockZ, effectiveRadius, t, band, base, out, false, false, null);
                 return out;
             }
             RegistryEntry<Biome> river = entryById(biomePool, "minecraft:river");
             RegistryEntry<Biome> out = river != null ? river : base;
-            debugPick(blockX, blockZ, effectiveRadius, t, zone, base, out, false, false, null);
+            debugPick(blockX, blockZ, effectiveRadius, t, band, base, out, false, false, null);
             return out;
         }
 
         if (base.isIn(BiomeTags.IS_OCEAN)) {
             RegistryEntry<Biome> oceanPick = oceanByLatitudeBandOrBase(biomePool, base, blockX, blockZ, bandIndex);
             RegistryEntry<Biome> out = mushroomIslandOverride(biomePool, oceanPick, blockX, blockZ);
-            debugPick(blockX, blockZ, effectiveRadius, t, zone, base, out, false, false, null);
+            debugPick(blockX, blockZ, effectiveRadius, t, band, base, out, false, false, null);
             return out;
         }
 
-        int landBandIndex = latitudeBandIndexWithBlend(blockX, blockZ, effectiveRadius, zone, t);
+        int landBandIndex = latitudeBandIndexWithBlend(blockX, blockZ, effectiveRadius, band, t);
         boolean mountainNoiseLike = landBandIndex == BAND_TEMPERATE && isMountainLike(sampler, blockX, blockZ);
         boolean skipPreview = shouldSkipPreviewTerrain(callerContext);
         boolean hasReliableSurface = !skipPreview && generator != null && noiseConfig != null && heightView != null;
@@ -1138,15 +1139,15 @@ public final class LatitudeBiomes {
         boolean nearOcean = oceanDistance <= MANGROVE_COASTAL_MAX_BLOCKS;
         boolean forcedBadlands = false;
         RegistryEntry<Biome> chosen = null;
-        if (landBandIndex == BAND_TROPICAL && isAridTropicalStep(blockX, blockZ, t) && badlandsPatchHere(WORLD_SEED, blockX, blockZ)) {
+        if (landBandIndex == BAND_SUBTROPICAL && isAridTropicalStep(blockX, blockZ, t) && badlandsPatchHere(WORLD_SEED, blockX, blockZ)) {
             chosen = entryById(biomePool, BADLANDS_ID);
             forcedBadlands = chosen != null;
         }
         if (forcedBadlands) {
-            debugPick(blockX, blockZ, effectiveRadius, t, zone, base, chosen, false, false, null);
+            debugPick(blockX, blockZ, effectiveRadius, t, band, base, chosen, false, false, null);
             return chosen;
         }
-        if (chosen == null && (landBandIndex == BAND_EQUATOR || landBandIndex == BAND_TROPICAL) && sampler != null) {
+        if (chosen == null && (landBandIndex == BAND_TROPICAL || landBandIndex == BAND_SUBTROPICAL) && sampler != null) {
             int noiseX = blockX >> 2;
             int noiseZ = blockZ >> 2;
             MultiNoiseUtil.NoiseValuePoint p = sampler.sample(noiseX, SURFACE_CLASSIFY_Y >> 2, noiseZ);
@@ -1162,8 +1163,8 @@ public final class LatitudeBiomes {
         }
         if (chosen == null) {
             chosen = switch (landBandIndex) {
-                case BAND_EQUATOR -> pickFromWeightedTags(biomePool, base, blockX, blockZ, BAND_EQUATOR, 0x1A21, LAT_EQUATOR_PRIMARY, LAT_EQUATOR_SECONDARY, LAT_EQUATOR_ACCENT);
-                case BAND_TROPICAL -> pickTropicalGradient(biomePool, base, blockX, blockZ, t);
+                case BAND_TROPICAL -> pickFromWeightedTags(biomePool, base, blockX, blockZ, BAND_TROPICAL, 0x1A21, LAT_EQUATOR_PRIMARY, LAT_EQUATOR_SECONDARY, LAT_EQUATOR_ACCENT);
+                case BAND_SUBTROPICAL -> pickTropicalGradient(biomePool, base, blockX, blockZ, t);
                 case BAND_TEMPERATE -> pickTemperateLand(biomePool, blockX, blockZ, columnDecisionY,
                         () -> pickFromWeightedTags(biomePool, base, blockX, blockZ, BAND_TEMPERATE, 0x2B32, LAT_TEMPERATE_PRIMARY, LAT_TEMPERATE_SECONDARY, LAT_TEMPERATE_ACCENT),
                         mountainLike);
@@ -1269,21 +1270,21 @@ public final class LatitudeBiomes {
             out = applyLandOverrides(biomePool, safe, blockX, blockZ, landBandIndex);
             boolean savannaGateInput = isSavannaFamily(out);
             out = applySavannaWindsweptGate(biomePool, out, preview.robustDelta, previewHeightHigh);
-            if (landBandIndex == BAND_TROPICAL && tropicalBaseStep(blockX, Math.abs(blockZ), t) <= 1 && isJungleFamily(out)) {
+            if (landBandIndex == BAND_SUBTROPICAL && tropicalBaseStep(blockX, Math.abs(blockZ), t) <= 1 && isJungleFamily(out)) {
                 RegistryEntry<Biome> savanna = entryById(biomePool, "minecraft:savanna");
                 if (savanna != null) out = savanna;
             }
             finalSavannaRegion = isSavannaFamily(base) || savannaGateInput || isSavannaFamily(out);
             }
         }
-        if (landBandIndex == BAND_EQUATOR || landBandIndex == BAND_TROPICAL) {
+        if (landBandIndex == BAND_TROPICAL || landBandIndex == BAND_SUBTROPICAL) {
             if (isColdBiome(out)) {
                 out = pickWarmFallback(biomePool, landBandIndex);
             }
         }
         out = enforceSnowyLatitudeRamp(biomePool, out, base, blockX, blockZ, effectiveRadius, landBandIndex);
-        out = clampWarmInColdZone(biomePool, base, out, zone, blockX, blockZ);
-        out = applySubpolarSwampGuard(biomePool, base, out, zone);
+        out = clampWarmInColdZone(biomePool, base, out, band, blockX, blockZ);
+        out = applySubpolarSwampGuard(biomePool, base, out, band);
         if (landBandIndex >= BAND_SUBPOLAR && isJungleFamily(out)) {
             out = pickColdFallback(biomePool, base, blockX, blockZ, landBandIndex);
         }
@@ -1300,7 +1301,7 @@ public final class LatitudeBiomes {
         }
         out = applyFinalSavannaClimateClamp(biomePool, out, finalSavannaRegion, columnDecisionY, blockX, blockZ);
         traceSubpolarJunglePick(blockX, blockZ, effectiveRadius, landBandIndex, base, out);
-        debugPick(blockX, blockZ, effectiveRadius, t, zone, base, out, false, out != sanitized, mangroveDecision);
+        debugPick(blockX, blockZ, effectiveRadius, t, band, base, out, false, out != sanitized, mangroveDecision);
         return out;
     }
 
@@ -1310,9 +1311,9 @@ public final class LatitudeBiomes {
 
         long seed = WORLD_SEED;
 
-        // Tropical band is [EQUATOR_MAX_FRAC..SUBTROPICAL_MAX_FRAC]. Wet near equator, arid near the edge.
-        double bandStart = LatitudeMath.EQUATOR_MAX_FRAC;
-        double bandEnd = LatitudeMath.SUBTROPICAL_MAX_FRAC;
+        // Subtropical band grades from wetter low latitudes to drier high latitudes.
+        double bandStart = LatitudeBands.Band.SUBTROPICAL.lowDeg() / 90.0;
+        double bandEnd = LatitudeBands.Band.TEMPERATE.lowDeg() / 90.0;
         double u = clamp((t - bandStart) / (bandEnd - bandStart), 0.0, 1.0);
         double ladderT = 1.0 - u;
 
@@ -1344,8 +1345,8 @@ public final class LatitudeBiomes {
 
         long seed = WORLD_SEED;
 
-        double bandStart = LatitudeMath.EQUATOR_MAX_FRAC;
-        double bandEnd = LatitudeMath.SUBTROPICAL_MAX_FRAC;
+        double bandStart = LatitudeBands.Band.SUBTROPICAL.lowDeg() / 90.0;
+        double bandEnd = LatitudeBands.Band.TEMPERATE.lowDeg() / 90.0;
         double u = clamp((t - bandStart) / (bandEnd - bandStart), 0.0, 1.0);
         double ladderT = 1.0 - u;
 
@@ -1373,8 +1374,8 @@ public final class LatitudeBiomes {
         int chunkX = blockX >> 4;
         int chunkZ = absZ >> 4;
         long seed = WORLD_SEED;
-        double bandStart = LatitudeMath.EQUATOR_MAX_FRAC;
-        double bandEnd = LatitudeMath.SUBTROPICAL_MAX_FRAC;
+        double bandStart = LatitudeBands.Band.SUBTROPICAL.lowDeg() / 90.0;
+        double bandEnd = LatitudeBands.Band.TEMPERATE.lowDeg() / 90.0;
         double u = clamp((t - bandStart) / (bandEnd - bandStart), 0.0, 1.0);
         double ladderT = 1.0 - u;
         double jitterN = (blobNoise01(seed, chunkX, chunkZ, 8, 0xBADC0FFEE0DDF00DL) * 2.0) - 1.0;
@@ -1389,9 +1390,9 @@ public final class LatitudeBiomes {
 
         long seed = WORLD_SEED;
 
-        // Tropical band is [EQUATOR_MAX_FRAC..SUBTROPICAL_MAX_FRAC]. Wet near equator, arid near the edge.
-        double bandStart = LatitudeMath.EQUATOR_MAX_FRAC;
-        double bandEnd = LatitudeMath.SUBTROPICAL_MAX_FRAC;
+        // Subtropical band grades from wetter low latitudes to drier high latitudes.
+        double bandStart = LatitudeBands.Band.SUBTROPICAL.lowDeg() / 90.0;
+        double bandEnd = LatitudeBands.Band.TEMPERATE.lowDeg() / 90.0;
         double u = clamp((t - bandStart) / (bandEnd - bandStart), 0.0, 1.0);
         double ladderT = 1.0 - u;
 
@@ -1497,9 +1498,9 @@ public final class LatitudeBiomes {
     }
 
 
-    private static int latitudeBandIndexWithBlend(int blockX, int blockZ, int radius, LatitudeMath.LatitudeZone zone, double t) {
+    private static int latitudeBandIndexWithBlend(int blockX, int blockZ, int radius, LatitudeBands.Band band, double t) {
         if (radius <= 0) {
-            return bandIndexForZone(zone);
+            return bandIndexForBand(band);
         }
 
         double latNorm = clamp(t, 0.0, 1.0);
@@ -1513,9 +1514,9 @@ public final class LatitudeBiomes {
         int lowerBandIndex;
         int upperBandIndex;
         int boundaryBlocks;
-        if (bandIndex <= BAND_EQUATOR) {
-            lowerBandIndex = BAND_EQUATOR;
-            upperBandIndex = BAND_TROPICAL;
+        if (bandIndex <= BAND_TROPICAL) {
+            lowerBandIndex = BAND_TROPICAL;
+            upperBandIndex = BAND_SUBTROPICAL;
             boundaryBlocks = bandBoundaryBlocks(0, radius);
         } else if (bandIndex >= BAND_POLAR) {
             lowerBandIndex = BAND_SUBPOLAR;
@@ -1594,24 +1595,14 @@ public final class LatitudeBiomes {
         return chosenBandIndex;
     }
 
-    // Legacy worldgen band boundaries are retained intentionally.
-    // Do not replace these with LatitudeBands until the LCMM v2 boundary migration slice.
     private static int crispBandIndex(double t) {
-        if (t < LatitudeMath.EQUATOR_MAX_FRAC) return BAND_EQUATOR;
-        if (t < LatitudeMath.SUBTROPICAL_MAX_FRAC) return BAND_TROPICAL;
-        if (t < LatitudeMath.TEMPERATE_MAX_FRAC) return BAND_TEMPERATE;
-        if (t < LatitudeMath.SUBPOLAR_MAX_FRAC) return BAND_SUBPOLAR;
-        return BAND_POLAR;
+        double absLatDeg = clamp(t, 0.0, 1.0) * 90.0;
+        return bandIndexForBand(LatitudeBands.fromAbsoluteLatitudeDeg(absLatDeg));
     }
 
-    private static LatitudeMath.LatitudeZone zoneForAbsLatFraction(double t) {
-        double clamped = clamp(t, 0.0, 1.0);
-        if (clamped < LatitudeMath.EQUATOR_MAX_FRAC) return LatitudeMath.LatitudeZone.EQUATOR;
-        if (clamped < LatitudeMath.TROPICAL_MAX_FRAC) return LatitudeMath.LatitudeZone.TROPICAL;
-        if (clamped < LatitudeMath.SUBTROPICAL_MAX_FRAC) return LatitudeMath.LatitudeZone.SUBTROPICAL;
-        if (clamped < LatitudeMath.TEMPERATE_MAX_FRAC) return LatitudeMath.LatitudeZone.TEMPERATE;
-        if (clamped < LatitudeMath.SUBPOLAR_MAX_FRAC) return LatitudeMath.LatitudeZone.SUBPOLAR;
-        return LatitudeMath.LatitudeZone.POLAR;
+    private static LatitudeBands.Band bandForAbsLatFraction(double t) {
+        double absLatDeg = clamp(t, 0.0, 1.0) * 90.0;
+        return LatitudeBands.fromAbsoluteLatitudeDeg(absLatDeg);
     }
 
     private static double applyBoundaryJitter(int blockX, int blockZ, int radius, double baseT) {
@@ -1633,10 +1624,10 @@ public final class LatitudeBiomes {
 
     private static int bandBoundaryBlocks(int boundaryIndex, int radius) {
         return switch (boundaryIndex) {
-            case 0 -> (int) Math.round(LatitudeMath.EQUATOR_MAX_FRAC * (double) radius);
-            case 1 -> (int) Math.round(LatitudeMath.SUBTROPICAL_MAX_FRAC * (double) radius);
-            case 2 -> (int) Math.round(LatitudeMath.TEMPERATE_MAX_FRAC * (double) radius);
-            default -> (int) Math.round(LatitudeMath.SUBPOLAR_MAX_FRAC * (double) radius);
+            case 0 -> LatitudeMath.zForLatitudeDeg(LatitudeBands.Band.SUBTROPICAL.lowDeg(), radius);
+            case 1 -> LatitudeMath.zForLatitudeDeg(LatitudeBands.Band.TEMPERATE.lowDeg(), radius);
+            case 2 -> LatitudeMath.zForLatitudeDeg(LatitudeBands.Band.SUBPOLAR.lowDeg(), radius);
+            default -> LatitudeMath.zForLatitudeDeg(LatitudeBands.Band.POLAR.lowDeg(), radius);
         };
     }
 
@@ -1699,8 +1690,8 @@ public final class LatitudeBiomes {
     }
 
     private static double subpolarSnowProbability(double absLatFraction) {
-        double subpolarStart = LatitudeMath.TEMPERATE_MAX_FRAC;
-        double polarStart = LatitudeMath.SUBPOLAR_MAX_FRAC;
+        double subpolarStart = LatitudeBands.Band.SUBPOLAR.lowDeg() / 90.0;
+        double polarStart = LatitudeBands.Band.POLAR.lowDeg() / 90.0;
         double t = 0.0;
         if (polarStart > subpolarStart) {
             t = (absLatFraction - subpolarStart) / (polarStart - subpolarStart);
@@ -2076,11 +2067,11 @@ public final class LatitudeBiomes {
 
     private static List<TagKey<Biome>> landBandTags(int bandIndex) {
         return switch (bandIndex) {
-            case BAND_EQUATOR -> List.of(
+            case BAND_TROPICAL -> List.of(
                     LAT_EQUATOR_PRIMARY,
                     LAT_EQUATOR_SECONDARY,
                     LAT_EQUATOR_ACCENT);
-            case BAND_TROPICAL -> List.of(
+            case BAND_SUBTROPICAL -> List.of(
                     LAT_ARID_PRIMARY,
                     LAT_ARID_SECONDARY,
                     LAT_ARID_ACCENT,
@@ -2111,10 +2102,10 @@ public final class LatitudeBiomes {
 
     private static List<String> allowedExtraBiomeIdsForBand(int bandIndex) {
         return switch (bandIndex) {
-            case BAND_EQUATOR -> List.of(
+            case BAND_TROPICAL -> List.of(
                     SWAMP_ID,
                     "minecraft:sunflower_plains");
-            case BAND_TROPICAL -> List.of(
+            case BAND_SUBTROPICAL -> List.of(
                     SWAMP_ID,
                     MANGROVE_ID);
             case BAND_TEMPERATE -> List.of(
@@ -2254,8 +2245,8 @@ public final class LatitudeBiomes {
 
     private static String bandName(int bandIndex) {
         return switch (bandIndex) {
-            case BAND_EQUATOR -> "EQUATOR";
             case BAND_TROPICAL -> "TROPICAL";
+            case BAND_SUBTROPICAL -> "SUBTROPICAL";
             case BAND_TEMPERATE -> "TEMPERATE";
             case BAND_SUBPOLAR -> "SUBPOLAR";
             default -> "POLAR";
@@ -2317,7 +2308,7 @@ public final class LatitudeBiomes {
         if (!nearOcean) {
             return false;
         }
-        if (bandIndex > BAND_TROPICAL) {
+        if (bandIndex > BAND_SUBTROPICAL) {
             return false;
         }
         if (sampler == null) {
@@ -2498,12 +2489,12 @@ public final class LatitudeBiomes {
     }
 
     private static RegistryEntry<Biome> clampWarmInColdZone(Registry<Biome> biomes, RegistryEntry<Biome> base,
-                                                            RegistryEntry<Biome> pick, LatitudeMath.LatitudeZone zone,
+                                                            RegistryEntry<Biome> pick, LatitudeBands.Band band,
                                                             int blockX, int blockZ) {
         if (pick == null) {
             return base;
         }
-        if (zone != LatitudeMath.LatitudeZone.SUBPOLAR && zone != LatitudeMath.LatitudeZone.POLAR) {
+        if (band != LatitudeBands.Band.SUBPOLAR && band != LatitudeBands.Band.POLAR) {
             return pick;
         }
         if (!isWarmBiome(pick)) {
@@ -2513,12 +2504,12 @@ public final class LatitudeBiomes {
     }
 
     private static RegistryEntry<Biome> clampWarmInColdZone(Collection<RegistryEntry<Biome>> biomes, RegistryEntry<Biome> base,
-                                                            RegistryEntry<Biome> pick, LatitudeMath.LatitudeZone zone,
+                                                            RegistryEntry<Biome> pick, LatitudeBands.Band band,
                                                             int blockX, int blockZ) {
         if (pick == null) {
             return base;
         }
-        if (zone != LatitudeMath.LatitudeZone.SUBPOLAR && zone != LatitudeMath.LatitudeZone.POLAR) {
+        if (band != LatitudeBands.Band.SUBPOLAR && band != LatitudeBands.Band.POLAR) {
             return pick;
         }
         if (!isWarmBiome(pick)) {
@@ -2528,16 +2519,16 @@ public final class LatitudeBiomes {
     }
 
     private static RegistryEntry<Biome> applySubpolarSwampGuard(Registry<Biome> biomes, RegistryEntry<Biome> base,
-                                                                 RegistryEntry<Biome> pick, LatitudeMath.LatitudeZone zone) {
-        if (zone != LatitudeMath.LatitudeZone.SUBPOLAR || !isSubpolarDisallowedWetBiome(pick)) {
+                                                                 RegistryEntry<Biome> pick, LatitudeBands.Band band) {
+        if (band != LatitudeBands.Band.SUBPOLAR || !isSubpolarDisallowedWetBiome(pick)) {
             return pick;
         }
         return pickSubpolarSwampFallback(biomes, base);
     }
 
     private static RegistryEntry<Biome> applySubpolarSwampGuard(Collection<RegistryEntry<Biome>> biomes, RegistryEntry<Biome> base,
-                                                                 RegistryEntry<Biome> pick, LatitudeMath.LatitudeZone zone) {
-        if (zone != LatitudeMath.LatitudeZone.SUBPOLAR || !isSubpolarDisallowedWetBiome(pick)) {
+                                                                 RegistryEntry<Biome> pick, LatitudeBands.Band band) {
+        if (band != LatitudeBands.Band.SUBPOLAR || !isSubpolarDisallowedWetBiome(pick)) {
             return pick;
         }
         return pickSubpolarSwampFallback(biomes, base);
@@ -2641,7 +2632,7 @@ public final class LatitudeBiomes {
     }
 
     private static RegistryEntry<Biome> pickWarmFallback(Registry<Biome> biomes, int bandIndex) {
-        String target = bandIndex == BAND_EQUATOR ? "minecraft:jungle" : "minecraft:savanna";
+        String target = bandIndex == BAND_TROPICAL ? "minecraft:jungle" : "minecraft:savanna";
         try {
             return biome(biomes, target);
         } catch (Throwable ignored) {
@@ -2654,7 +2645,7 @@ public final class LatitudeBiomes {
     }
 
     private static RegistryEntry<Biome> pickWarmFallback(Collection<RegistryEntry<Biome>> biomes, int bandIndex) {
-        String target = bandIndex == BAND_EQUATOR ? "minecraft:jungle" : "minecraft:savanna";
+        String target = bandIndex == BAND_TROPICAL ? "minecraft:jungle" : "minecraft:savanna";
         RegistryEntry<Biome> entry = entryById(biomes, target);
         if (entry != null) {
             return entry;
@@ -2706,7 +2697,7 @@ public final class LatitudeBiomes {
                 selectionPathForTrace(base, picked));
     }
 
-    private static void debugPick(int blockX, int blockZ, int borderRadiusBlocks, double t, LatitudeMath.LatitudeZone zone,
+    private static void debugPick(int blockX, int blockZ, int borderRadiusBlocks, double t, LatitudeBands.Band band,
                                   RegistryEntry<Biome> base, RegistryEntry<Biome> out, boolean beachOverride, boolean rareOverride, String mangroveDecision) {
         if (!DEBUG_BIOMES) return;
         if (DEBUG_COUNT.incrementAndGet() > DEBUG_LIMIT) return;
@@ -2717,7 +2708,7 @@ public final class LatitudeBiomes {
                 Math.abs(blockZ),
                 borderRadiusBlocks,
                 String.format(java.util.Locale.ROOT, "%.3f", t),
-                zone,
+                band.id(),
                 biomeId(base),
                 biomeId(out),
                 beachOverride,
@@ -2734,7 +2725,7 @@ public final class LatitudeBiomes {
     }
 
     private static boolean shouldTryMangroveOverride(RegistryEntry<Biome> entry, int bandIndex) {
-        if (bandIndex > BAND_TROPICAL) {
+        if (bandIndex > BAND_SUBTROPICAL) {
             return false;
         }
         return isBiomeId(entry, "minecraft:jungle") || isBiomeId(entry, "minecraft:sparse_jungle");
@@ -2983,10 +2974,9 @@ public final class LatitudeBiomes {
     }
 
     private static double wetlandThresholdForBand(int bandIndex, double t) {
-        // Lower threshold => more wetlands. Tropical-biased, arid less frequent.
-        // bandIndex: tropics=1, arid=2 (per your logs)
-        if (bandIndex == 1) return 0.20; // tropics: often, but not continuous
-        if (bandIndex == 2) return 0.72; // arid/subtropics: rarer pockets
+        // Lower threshold => more wetlands. Tropical-biased, subtropical less frequent.
+        if (bandIndex == BAND_TROPICAL) return 0.20;
+        if (bandIndex == BAND_SUBTROPICAL) return 0.72;
         return 0.45;
     }
 
@@ -2997,8 +2987,8 @@ private static boolean swampPatchHere(long seed, int blockX, int blockZ) {
 
     private static RegistryEntry<Biome> pickMangroveFallback(Registry<Biome> biomes, RegistryEntry<Biome> base, int blockX, int blockZ, double t, int bandIndex) {
         return switch (bandIndex) {
-            case BAND_EQUATOR -> pickFromWeightedTagsNoMangrove(biomes, base, blockX, blockZ, BAND_EQUATOR, 0x1A21, LAT_EQUATOR_PRIMARY, LAT_EQUATOR_SECONDARY, LAT_EQUATOR_ACCENT);
-            case BAND_TROPICAL -> pickTropicalGradientNoMangrove(biomes, base, blockX, blockZ, t);
+            case BAND_TROPICAL -> pickFromWeightedTagsNoMangrove(biomes, base, blockX, blockZ, BAND_TROPICAL, 0x1A21, LAT_EQUATOR_PRIMARY, LAT_EQUATOR_SECONDARY, LAT_EQUATOR_ACCENT);
+            case BAND_SUBTROPICAL -> pickTropicalGradientNoMangrove(biomes, base, blockX, blockZ, t);
             case BAND_TEMPERATE -> pickFromWeightedTagsNoMangrove(biomes, base, blockX, blockZ, BAND_TEMPERATE, 0x2B32, LAT_TEMPERATE_PRIMARY, LAT_TEMPERATE_SECONDARY, LAT_TEMPERATE_ACCENT);
             case BAND_SUBPOLAR -> pickSubpolarWithRamp(biomes, base, blockX, blockZ, t, BAND_SUBPOLAR, 0x3C43, LAT_SUBPOLAR_PRIMARY, LAT_SUBPOLAR_SECONDARY, LAT_SUBPOLAR_ACCENT);
             default -> pickFromWeightedTagsNoMangrove(biomes, base, blockX, blockZ, BAND_POLAR, 0x4D54, LAT_POLAR_PRIMARY, LAT_POLAR_SECONDARY, LAT_POLAR_ACCENT);
@@ -3007,8 +2997,8 @@ private static boolean swampPatchHere(long seed, int blockX, int blockZ) {
 
     private static RegistryEntry<Biome> pickMangroveFallback(Collection<RegistryEntry<Biome>> biomes, RegistryEntry<Biome> base, int blockX, int blockZ, double t, int bandIndex) {
         return switch (bandIndex) {
-            case BAND_EQUATOR -> pickFromWeightedTagsNoMangrove(biomes, base, blockX, blockZ, BAND_EQUATOR, 0x1A21, LAT_EQUATOR_PRIMARY, LAT_EQUATOR_SECONDARY, LAT_EQUATOR_ACCENT);
-            case BAND_TROPICAL -> pickTropicalGradientNoMangrove(biomes, base, blockX, blockZ, t);
+            case BAND_TROPICAL -> pickFromWeightedTagsNoMangrove(biomes, base, blockX, blockZ, BAND_TROPICAL, 0x1A21, LAT_EQUATOR_PRIMARY, LAT_EQUATOR_SECONDARY, LAT_EQUATOR_ACCENT);
+            case BAND_SUBTROPICAL -> pickTropicalGradientNoMangrove(biomes, base, blockX, blockZ, t);
             case BAND_TEMPERATE -> pickFromWeightedTagsNoMangrove(biomes, base, blockX, blockZ, BAND_TEMPERATE, 0x2B32, LAT_TEMPERATE_PRIMARY, LAT_TEMPERATE_SECONDARY, LAT_TEMPERATE_ACCENT);
             case BAND_SUBPOLAR -> pickSubpolarWithRamp(biomes, base, blockX, blockZ, t, BAND_SUBPOLAR, 0x3C43, LAT_SUBPOLAR_PRIMARY, LAT_SUBPOLAR_SECONDARY, LAT_SUBPOLAR_ACCENT);
             default -> pickFromWeightedTagsNoMangrove(biomes, base, blockX, blockZ, BAND_POLAR, 0x4D54, LAT_POLAR_PRIMARY, LAT_POLAR_SECONDARY, LAT_POLAR_ACCENT);
@@ -3017,8 +3007,8 @@ private static boolean swampPatchHere(long seed, int blockX, int blockZ) {
 
     private static RegistryEntry<Biome> pickSwampFallback(Registry<Biome> biomes, RegistryEntry<Biome> base, int blockX, int blockZ, double t, int bandIndex) {
         return switch (bandIndex) {
-            case BAND_EQUATOR -> pickFromWeightedTagsNoSwamp(biomes, base, blockX, blockZ, BAND_EQUATOR, 0x1A21, LAT_EQUATOR_PRIMARY, LAT_EQUATOR_SECONDARY, LAT_EQUATOR_ACCENT);
-            case BAND_TROPICAL -> pickTropicalGradientNoSwamp(biomes, base, blockX, blockZ, t);
+            case BAND_TROPICAL -> pickFromWeightedTagsNoSwamp(biomes, base, blockX, blockZ, BAND_TROPICAL, 0x1A21, LAT_EQUATOR_PRIMARY, LAT_EQUATOR_SECONDARY, LAT_EQUATOR_ACCENT);
+            case BAND_SUBTROPICAL -> pickTropicalGradientNoSwamp(biomes, base, blockX, blockZ, t);
             case BAND_TEMPERATE -> pickFromWeightedTagsNoSwamp(biomes, base, blockX, blockZ, BAND_TEMPERATE, 0x2B32, LAT_TEMPERATE_PRIMARY, LAT_TEMPERATE_SECONDARY, LAT_TEMPERATE_ACCENT);
             case BAND_SUBPOLAR -> pickSubpolarWithRamp(biomes, base, blockX, blockZ, t, BAND_SUBPOLAR, 0x3C43, LAT_SUBPOLAR_PRIMARY, LAT_SUBPOLAR_SECONDARY, LAT_SUBPOLAR_ACCENT);
             default -> pickFromWeightedTagsNoSwamp(biomes, base, blockX, blockZ, BAND_POLAR, 0x4D54, LAT_POLAR_PRIMARY, LAT_POLAR_SECONDARY, LAT_POLAR_ACCENT);
@@ -3027,8 +3017,8 @@ private static boolean swampPatchHere(long seed, int blockX, int blockZ) {
 
     private static RegistryEntry<Biome> pickSwampFallback(Collection<RegistryEntry<Biome>> biomes, RegistryEntry<Biome> base, int blockX, int blockZ, double t, int bandIndex) {
         return switch (bandIndex) {
-            case BAND_EQUATOR -> pickFromWeightedTagsNoSwamp(biomes, base, blockX, blockZ, BAND_EQUATOR, 0x1A21, LAT_EQUATOR_PRIMARY, LAT_EQUATOR_SECONDARY, LAT_EQUATOR_ACCENT);
-            case BAND_TROPICAL -> pickTropicalGradientNoSwamp(biomes, base, blockX, blockZ, t);
+            case BAND_TROPICAL -> pickFromWeightedTagsNoSwamp(biomes, base, blockX, blockZ, BAND_TROPICAL, 0x1A21, LAT_EQUATOR_PRIMARY, LAT_EQUATOR_SECONDARY, LAT_EQUATOR_ACCENT);
+            case BAND_SUBTROPICAL -> pickTropicalGradientNoSwamp(biomes, base, blockX, blockZ, t);
             case BAND_TEMPERATE -> pickFromWeightedTagsNoSwamp(biomes, base, blockX, blockZ, BAND_TEMPERATE, 0x2B32, LAT_TEMPERATE_PRIMARY, LAT_TEMPERATE_SECONDARY, LAT_TEMPERATE_ACCENT);
             case BAND_SUBPOLAR -> pickSubpolarWithRamp(biomes, base, blockX, blockZ, t, BAND_SUBPOLAR, 0x3C43, LAT_SUBPOLAR_PRIMARY, LAT_SUBPOLAR_SECONDARY, LAT_SUBPOLAR_ACCENT);
             default -> pickFromWeightedTagsNoSwamp(biomes, base, blockX, blockZ, BAND_POLAR, 0x4D54, LAT_POLAR_PRIMARY, LAT_POLAR_SECONDARY, LAT_POLAR_ACCENT);
@@ -3071,8 +3061,8 @@ private static boolean swampPatchHere(long seed, int blockX, int blockZ) {
 
         long seed = WORLD_SEED;
 
-        double bandStart = LatitudeMath.EQUATOR_MAX_FRAC;
-        double bandEnd = LatitudeMath.SUBTROPICAL_MAX_FRAC;
+        double bandStart = LatitudeBands.Band.SUBTROPICAL.lowDeg() / 90.0;
+        double bandEnd = LatitudeBands.Band.TEMPERATE.lowDeg() / 90.0;
         double u = clamp((t - bandStart) / (bandEnd - bandStart), 0.0, 1.0);
         double ladderT = 1.0 - u;
 
@@ -3104,8 +3094,8 @@ private static boolean swampPatchHere(long seed, int blockX, int blockZ) {
 
         long seed = WORLD_SEED;
 
-        double bandStart = LatitudeMath.EQUATOR_MAX_FRAC;
-        double bandEnd = LatitudeMath.SUBTROPICAL_MAX_FRAC;
+        double bandStart = LatitudeBands.Band.SUBTROPICAL.lowDeg() / 90.0;
+        double bandEnd = LatitudeBands.Band.TEMPERATE.lowDeg() / 90.0;
         double u = clamp((t - bandStart) / (bandEnd - bandStart), 0.0, 1.0);
         double ladderT = 1.0 - u;
 
@@ -3158,7 +3148,7 @@ private static boolean swampPatchHere(long seed, int blockX, int blockZ) {
     }
 
     private static RegistryEntry<Biome> sanitizeLandBiome(Registry<Biome> biomes, RegistryEntry<Biome> pick, int bandIndex) {
-        if (bandIndex == BAND_EQUATOR) {
+        if (bandIndex == BAND_TROPICAL) {
             if (isBiomeId(pick, "minecraft:plains")
                     || isBiomeId(pick, "minecraft:forest")
                     || isBiomeId(pick, "minecraft:birch_forest")
@@ -3246,7 +3236,7 @@ private static boolean swampPatchHere(long seed, int blockX, int blockZ) {
     }
 
     private static RegistryEntry<Biome> sanitizeLandBiome(Collection<RegistryEntry<Biome>> biomes, RegistryEntry<Biome> pick, int bandIndex) {
-        if (bandIndex == BAND_EQUATOR) {
+        if (bandIndex == BAND_TROPICAL) {
             if (isBiomeId(pick, "minecraft:plains")
                     || isBiomeId(pick, "minecraft:forest")
                     || isBiomeId(pick, "minecraft:birch_forest")

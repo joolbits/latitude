@@ -1,7 +1,7 @@
 package com.example.globe.mixin;
 
 import com.example.globe.GlobeMod;
-import com.example.globe.util.LatitudeMath;
+import com.example.globe.util.LatitudeBands;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.biome.Biome;
 import org.spongepowered.asm.mixin.Mixin;
@@ -13,10 +13,10 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 public class BiomeNoSnowInWarmBandsMixin {
 
     private static boolean globe$isWarmBand(int z) {
-        LatitudeMath.LatitudeZone zone = LatitudeMath.zoneForRadius(GlobeMod.BORDER_RADIUS, z);
-        return zone == LatitudeMath.LatitudeZone.EQUATOR
-                || zone == LatitudeMath.LatitudeZone.TROPICAL
-                || zone == LatitudeMath.LatitudeZone.TEMPERATE;
+        LatitudeBands.Band band = LatitudeBands.fromAbsoluteLatitudeDeg(Math.abs((double) z) * 90.0 / Math.max(1, GlobeMod.BORDER_RADIUS));
+        return band == LatitudeBands.Band.TROPICAL
+                || band == LatitudeBands.Band.SUBTROPICAL
+                || band == LatitudeBands.Band.TEMPERATE;
     }
 
     @Inject(method = "doesNotSnow", at = @At("HEAD"), cancellable = true)
