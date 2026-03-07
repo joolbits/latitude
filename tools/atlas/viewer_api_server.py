@@ -55,6 +55,8 @@ GENERATION_PROC: subprocess.Popen | None = None
 GENERATION_STATE: dict[str, object | None] = {
     "active": False,
     "step": None,
+    "seed": None,
+    "size": None,
     "started_at": None,
     "finished_at": None,
     "exit_code": None,
@@ -71,6 +73,8 @@ def generation_status() -> dict:
         return {
             "active": bool(GENERATION_STATE.get("active")),
             "step": GENERATION_STATE.get("step"),
+            "seed": GENERATION_STATE.get("seed"),
+            "size": GENERATION_STATE.get("size"),
             "started_at": GENERATION_STATE.get("started_at"),
             "finished_at": GENERATION_STATE.get("finished_at"),
             "exit_code": GENERATION_STATE.get("exit_code"),
@@ -78,7 +82,7 @@ def generation_status() -> dict:
         }
 
 
-def _watch_generation(proc: subprocess.Popen, step: int):
+def _watch_generation(proc: subprocess.Popen, step: int, seed: int | None, size: str | None):
     global GENERATION_PROC
     code = proc.wait()
     with GENERATION_LOCK:
@@ -88,12 +92,33 @@ def _watch_generation(proc: subprocess.Popen, step: int):
         GENERATION_STATE["finished_at"] = utc_now_iso()
         GENERATION_STATE["exit_code"] = int(code)
         if code == 0:
-            GENERATION_STATE["message"] = f"Generation complete (step {step})."
+            GENERATION_STATE["message"] = generation_message("Generation complete", step, seed, size)
         else:
-            GENERATION_STATE["message"] = f"Generation failed (step {step}, exit {code})."
+            GENERATION_STATE["message"] = generation_message(f"Generation failed (exit {code})", step, seed, size)
 
 
-def start_generation(step: int) -> tuple[bool, dict]:
+def generation_message(prefix: str, step: int, seed: int | None, size: str | None) -> str:
+    parts = [prefix, f"(step {step})"]
+    if size:
+        parts.append(f"[size {size}]")
+    if seed is not None:
+        parts.append(f"[seed {seed}]")
+    return " ".join(parts)
+
+
+def parse_java_long(raw) -> int | None:
+    if raw is None:
+        return None
+    text = str(raw).strip()
+    if not text:
+        return None
+    value = int(text, 10)
+    if value < -(2**63) or value > (2**63 - 1):
+        raise ValueError("seed must be a signed 64-bit integer")
+    return value
+
+
+def start_generation(step: int, seed: int | None = None, size: str | None = None) -> tuple[bool, dict]:
     global GENERATION_PROC
 
     if step <= 0 or step > 4096:
@@ -108,6 +133,8 @@ def start_generation(step: int) -> tuple[bool, dict]:
                 {
                     "active": bool(GENERATION_STATE.get("active")),
                     "step": GENERATION_STATE.get("step"),
+                    "seed": GENERATION_STATE.get("seed"),
+                    "size": GENERATION_STATE.get("size"),
                     "started_at": GENERATION_STATE.get("started_at"),
                     "finished_at": GENERATION_STATE.get("finished_at"),
                     "exit_code": GENERATION_STATE.get("exit_code"),
@@ -120,8 +147,13 @@ def start_generation(step: int) -> tuple[bool, dict]:
             raise RuntimeError("PowerShell not found on PATH.")
 
         creationflags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+        command = [powershell, "-ExecutionPolicy", "Bypass", "-File", str(ATLAS_PS1), "-Step", str(step), "-NoViewerOpen"]
+        if size:
+            command.extend(["-Size", str(size)])
+        if seed is not None:
+            command.extend(["-Seed", str(seed)])
         proc = subprocess.Popen(
-            [powershell, "-ExecutionPolicy", "Bypass", "-File", str(ATLAS_PS1), "-Step", str(step), "-NoViewerOpen"],
+            command,
             cwd=str(ROOT),
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
@@ -130,12 +162,14 @@ def start_generation(step: int) -> tuple[bool, dict]:
         GENERATION_PROC = proc
         GENERATION_STATE["active"] = True
         GENERATION_STATE["step"] = int(step)
+        GENERATION_STATE["seed"] = seed
+        GENERATION_STATE["size"] = size
         GENERATION_STATE["started_at"] = utc_now_iso()
         GENERATION_STATE["finished_at"] = None
         GENERATION_STATE["exit_code"] = None
-        GENERATION_STATE["message"] = f"Generating atlas run (step {step})..."
+        GENERATION_STATE["message"] = generation_message("Generating atlas run", step, seed, size)
 
-    watcher = threading.Thread(target=_watch_generation, args=(proc, int(step)), daemon=True)
+    watcher = threading.Thread(target=_watch_generation, args=(proc, int(step), seed, size), daemon=True)
     watcher.start()
     return True, generation_status()
 
@@ -426,9 +460,13 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         step_raw = payload.get("step", 16) if isinstance(payload, dict) else 16
+        seed_raw = payload.get("seed") if isinstance(payload, dict) else None
+        size_raw = payload.get("size") if isinstance(payload, dict) else None
         try:
             step = int(step_raw)
-            started, status = start_generation(step)
+            seed = parse_java_long(seed_raw)
+            size = str(size_raw).strip() if size_raw is not None and str(size_raw).strip() else None
+            started, status = start_generation(step, seed=seed, size=size)
         except ValueError as e:
             self._send_json({"error": str(e)}, HTTPStatus.BAD_REQUEST)
             return
