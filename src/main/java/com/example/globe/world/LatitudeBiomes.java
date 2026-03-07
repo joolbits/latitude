@@ -1676,7 +1676,12 @@ public final class LatitudeBiomes {
         return biome(biomes, options[idx]);
     }
 
-    private static TagKey<Biome> weightedTagForRoll(int roll, TagKey<Biome> primary, TagKey<Biome> secondary, TagKey<Biome> accent) {
+    private static TagKey<Biome> weightedTagForRoll(int bandIndex, int roll, TagKey<Biome> primary, TagKey<Biome> secondary, TagKey<Biome> accent) {
+        if (bandIndex == BAND_TROPICAL) {
+            if (roll < 40) return primary;
+            if (roll < 85) return secondary;
+            return accent;
+        }
         if (roll < 70) return primary;
         if (roll < 95) return secondary;
         return accent;
@@ -1787,7 +1792,7 @@ public final class LatitudeBiomes {
                                                              int bandIndex, int weightSalt,
                                                              TagKey<Biome> primary, TagKey<Biome> secondary, TagKey<Biome> accent) {
         int roll = weightedRoll(blockX, blockZ, weightSalt);
-        TagKey<Biome> tag = weightedTagForRoll(roll, primary, secondary, accent);
+        TagKey<Biome> tag = weightedTagForRoll(bandIndex, roll, primary, secondary, accent);
         return pickFromTagNoiseOrBase(biomes, tag, base, blockX, blockZ, bandIndex);
     }
 
@@ -1795,7 +1800,7 @@ public final class LatitudeBiomes {
                                                                        int bandIndex, int weightSalt,
                                                                        TagKey<Biome> primary, TagKey<Biome> secondary, TagKey<Biome> accent) {
         int roll = weightedRoll(blockX, blockZ, weightSalt + (int) MANGROVE_FALLBACK_SALT);
-        TagKey<Biome> tag = weightedTagForRoll(roll, primary, secondary, accent);
+        TagKey<Biome> tag = weightedTagForRoll(bandIndex, roll, primary, secondary, accent);
         return pickFromTagNoiseOrBaseFiltered(biomes, tag, base, blockX, blockZ, bandIndex, MANGROVE_FALLBACK_SALT, true);
     }
 
@@ -1803,7 +1808,7 @@ public final class LatitudeBiomes {
                                                                     int bandIndex, int weightSalt,
                                                                     TagKey<Biome> primary, TagKey<Biome> secondary, TagKey<Biome> accent) {
         int roll = weightedRoll(blockX, blockZ, weightSalt + (int) SWAMP_FALLBACK_SALT);
-        TagKey<Biome> tag = weightedTagForRoll(roll, primary, secondary, accent);
+        TagKey<Biome> tag = weightedTagForRoll(bandIndex, roll, primary, secondary, accent);
         return pickFromTagNoiseOrBaseFilteredSwamp(biomes, tag, base, blockX, blockZ, bandIndex, SWAMP_FALLBACK_SALT, true);
     }
 
@@ -1811,7 +1816,7 @@ public final class LatitudeBiomes {
                                                              int bandIndex, int weightSalt,
                                                              TagKey<Biome> primary, TagKey<Biome> secondary, TagKey<Biome> accent) {
         int roll = weightedRoll(blockX, blockZ, weightSalt);
-        TagKey<Biome> tag = weightedTagForRoll(roll, primary, secondary, accent);
+        TagKey<Biome> tag = weightedTagForRoll(bandIndex, roll, primary, secondary, accent);
         return pickFromTagNoiseOrBase(biomes, tag, base, blockX, blockZ, bandIndex);
     }
 
@@ -1819,7 +1824,7 @@ public final class LatitudeBiomes {
                                                                        int bandIndex, int weightSalt,
                                                                        TagKey<Biome> primary, TagKey<Biome> secondary, TagKey<Biome> accent) {
         int roll = weightedRoll(blockX, blockZ, weightSalt + (int) MANGROVE_FALLBACK_SALT);
-        TagKey<Biome> tag = weightedTagForRoll(roll, primary, secondary, accent);
+        TagKey<Biome> tag = weightedTagForRoll(bandIndex, roll, primary, secondary, accent);
         return pickFromTagNoiseOrBaseFiltered(biomes, tag, base, blockX, blockZ, bandIndex, MANGROVE_FALLBACK_SALT, true);
     }
 
@@ -1827,7 +1832,7 @@ public final class LatitudeBiomes {
                                                                     int bandIndex, int weightSalt,
                                                                     TagKey<Biome> primary, TagKey<Biome> secondary, TagKey<Biome> accent) {
         int roll = weightedRoll(blockX, blockZ, weightSalt + (int) SWAMP_FALLBACK_SALT);
-        TagKey<Biome> tag = weightedTagForRoll(roll, primary, secondary, accent);
+        TagKey<Biome> tag = weightedTagForRoll(bandIndex, roll, primary, secondary, accent);
         return pickFromTagNoiseOrBaseFilteredSwamp(biomes, tag, base, blockX, blockZ, bandIndex, SWAMP_FALLBACK_SALT, true);
     }
 
@@ -3155,7 +3160,7 @@ private static boolean swampPatchHere(long seed, int blockX, int blockZ) {
                     || isBiomeId(pick, "minecraft:old_growth_birch_forest")
                     || isBiomeId(pick, "minecraft:flower_forest")) {
                 try {
-                    return biome(biomes, "minecraft:jungle");
+                    return biome(biomes, "minecraft:sparse_jungle");
                 } catch (Throwable ignored) {
                     return pick;
                 }
@@ -3242,7 +3247,10 @@ private static boolean swampPatchHere(long seed, int blockX, int blockZ) {
                     || isBiomeId(pick, "minecraft:birch_forest")
                     || isBiomeId(pick, "minecraft:old_growth_birch_forest")
                     || isBiomeId(pick, "minecraft:flower_forest")) {
-                RegistryEntry<Biome> entry = entryById(biomes, "minecraft:jungle");
+                RegistryEntry<Biome> entry = entryById(biomes, "minecraft:sparse_jungle");
+                if (entry == null) {
+                    entry = entryById(biomes, "minecraft:jungle");
+                }
                 return entry != null ? entry : pick;
             }
         }
