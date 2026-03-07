@@ -166,6 +166,13 @@ def rgb_key(rgb: tuple[int, int, int]) -> str:
     return f"{rgb[0]},{rgb[1]},{rgb[2]}"
 
 
+def read_json_file(path: Path):
+    text = path.read_text(encoding="utf-8-sig")
+    if text.startswith("\ufeff"):
+        text = text.lstrip("\ufeff")
+    return json.loads(text)
+
+
 def _collect_image_color_stats(image_path: Path) -> tuple[Counter[tuple[int, int, int]], int]:
     counts: Counter[tuple[int, int, int]] = Counter()
     with Image.open(image_path).convert("RGB") as img:
@@ -217,7 +224,7 @@ def _biomes_from_palette_and_ids(
             idx_to_color_counts[idx][biome_rgb] += 1
 
     total = sum(idx_counts.values()) or 1
-    by_color_key: dict[str, dict] = {}
+    out: list[dict] = []
 
     for e in palette_entries:
         if not isinstance(e, dict):
@@ -230,20 +237,16 @@ def _biomes_from_palette_and_ids(
         dominant_rgb = (138, 138, 138)
         if idx in idx_to_color_counts and idx_to_color_counts[idx]:
             dominant_rgb = idx_to_color_counts[idx].most_common(1)[0][0]
+        if count <= 0:
+            continue
         row = {
+            "index": idx,
             "id": biome_id,
             "name": biome_name_from_id(biome_id),
             "color": [dominant_rgb[0], dominant_rgb[1], dominant_rgb[2]],
             "pct": round((count * 100.0) / total, 4),
         }
-        key = rgb_key(dominant_rgb)
-        existing = by_color_key.get(key)
-        if existing:
-            existing["pct"] = round(existing.get("pct", 0.0) + row["pct"], 4)
-        else:
-            by_color_key[key] = row
-
-    out = list(by_color_key.values())
+        out.append(row)
     out.sort(key=lambda b: b.get("pct", 0.0), reverse=True)
     return out
 
@@ -373,6 +376,11 @@ class Handler(BaseHTTPRequestHandler):
             self.handle_image(m.group(1), m.group(2))
             return
 
+        m = re.match(r"^/api/runs/([^/]+)/layers/([^/]+)/ids-image$", path)
+        if m:
+            self.handle_ids_image(m.group(1), m.group(2))
+            return
+
         # static viewer
         if path == "/":
             static_path = VIEWER_ROOT / "index.html"
@@ -441,7 +449,7 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json({})
             return
         try:
-            data = json.loads(manifest.read_text(encoding="utf-8"))
+            data = read_json_file(manifest)
             self._send_json(data if isinstance(data, dict) else {})
         except Exception:
             self._send_json({})
@@ -468,7 +476,7 @@ class Handler(BaseHTTPRequestHandler):
 
         try:
             if palette_path and ids_path:
-                palette_json = json.loads(palette_path.read_text(encoding="utf-8"))
+                palette_json = read_json_file(palette_path)
                 entries = palette_json.get("biomes", []) if isinstance(palette_json, dict) else []
                 entries = entries if isinstance(entries, list) else []
                 out = _biomes_from_palette_and_ids(image_path, ids_path, entries)
@@ -490,6 +498,17 @@ class Handler(BaseHTTPRequestHandler):
             self._send_text("layer image not found", HTTPStatus.NOT_FOUND)
             return
         self._send_file(image_path, "image/png")
+
+    def handle_ids_image(self, run: str, layer: str):
+        run_dir = run_path(run)
+        if not run_dir.exists():
+            self._send_text("run not found", HTTPStatus.NOT_FOUND)
+            return
+        ids_path = layer_file(run_dir, layer, "biome_ids.png")
+        if not ids_path:
+            self._send_text("layer ids image not found", HTTPStatus.NOT_FOUND)
+            return
+        self._send_file(ids_path, "image/png")
 
 
 if __name__ == "__main__":

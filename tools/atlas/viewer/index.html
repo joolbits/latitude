@@ -1588,20 +1588,20 @@ function renderSelectionContext(biome) {
 
 function clearBiomeSelection() {
  state.selectedBiomeId = null;
+ state.hoveredBiomeId = null;
  highlightBiomeInList(null);
  renderSelectionContext(null);
- if (!togHighlight.checked) return;
- const hovered = biomeById(state.hoveredBiomeId);
- if (hovered) {
-  renderHighlight(hovered);
- } else {
-  clearHighlight();
- }
+ clearHighlight();
 }
 
 function selectBiomePersistent(biome) {
  if (!biome) return;
+ if (state.selectedBiomeId === biome.id) {
+  clearBiomeSelection();
+  return;
+ }
  state.selectedBiomeId = biome.id;
+ state.hoveredBiomeId = biome.id;
  highlightBiomeInList(biome.id);
  renderSelectionContext(biome);
  if (!togHighlight.checked) togHighlight.checked = true;
@@ -1739,29 +1739,25 @@ function updateInspect(e) {
    const hemi = latContext.hemisphere;
    const [zr, zg, zb] = zone.color;
    $('#inspect-zone').innerHTML = `<span style="color:rgb(${zr},${zg},${zb})">${zone.label}</span> <span style="color:var(--text-tertiary)">${deg}°${hemi}</span>`;
-  } else {
-   $('#inspect-zone').textContent = '—';
-  }
+ } else {
+  $('#inspect-zone').textContent = '—';
+ }
   inspectCard.style.left = `${mx + 18}px`;
   inspectCard.style.top = `${my + 18}px`;
   inspectCard.classList.add('visible');
  } else {
   inspectCard.classList.remove('visible');
  }
- if (togHighlight.checked && biome) {
-  if (state.selectedBiomeId) {
-   const selected = biomeById(state.selectedBiomeId);
-   if (selected) renderHighlight(selected);
-  } else if (state.hoveredBiomeId !== biome.id) {
-   state.hoveredBiomeId = biome.id;
-   renderHighlight(biome);
-  }
+ if (togHighlight.checked && state.selectedBiomeId) {
+  const selected = biomeById(state.selectedBiomeId);
+  if (selected) renderHighlight(selected);
  }
 }
 
 viewport.addEventListener('mouseleave', () => {
  inspectCard.classList.remove('visible');
  crosshair.style.display = 'none';
+ state.hoveredBiomeId = null;
  if (!state.selectedBiomeId) clearHighlight();
 });
 
@@ -1776,7 +1772,9 @@ viewport.addEventListener('click', e => {
  const idx = (wy * state.mapWidth + wx) * 4;
  const d = state.imageData.data;
  const biome = biomeAtPixel(wx, wy, [d[idx], d[idx + 1], d[idx + 2]]);
- if (biome) selectBiomePersistent(biome);
+ if (biome) {
+  selectBiomePersistent(biome);
+ }
 });
 
 function renderHighlight(biome) {
@@ -1818,7 +1816,14 @@ function clearHighlight() {
 }
 
 togHighlight.addEventListener('change', () => {
- if (!togHighlight.checked) clearHighlight();
+ if (!togHighlight.checked) {
+  clearHighlight();
+  return;
+ }
+ const selected = biomeById(state.selectedBiomeId);
+ if (selected) {
+  renderHighlight(selected);
+ }
 });
 
 togHiContrast.addEventListener('change', () => {
@@ -1826,12 +1831,6 @@ togHiContrast.addEventListener('change', () => {
  if (selected) {
   if (!togHighlight.checked) togHighlight.checked = true;
   renderHighlight(selected);
-  return;
- }
- if (!togHighlight.checked) return;
- const hovered = biomeById(state.hoveredBiomeId);
- if (hovered) {
-  renderHighlight(hovered);
   return;
  }
  clearHighlight();
