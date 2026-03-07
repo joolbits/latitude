@@ -1326,14 +1326,15 @@ html, body {
    </div>
    <div class="panel-card" id="card-biomes">
     <div class="panel-header">
-     <span class="panel-title">Biome Palette</span>
+     <span class="panel-title" id="biome-palette-title">Sampled Biome Palette</span>
      <span id="biome-count" style="font-family:var(--font-mono); font-size:10px; color:var(--text-tertiary);"></span>
     </div>
+    <div class="band-desc-hint" id="biome-sampling-note" style="padding:0 18px 8px 18px;color:var(--lat-warn);display:none;">Coarse sampling may omit rare biomes; absence here does not prove world absence.</div>
     <div class="biome-search-wrap">
      <input type="text" class="biome-search" id="biome-search" placeholder="Filter biomes…" disabled>
     </div>
     <div class="panel-body" id="biome-list-body">
-     <div style="color:var(--text-tertiary); font-size:12px; font-style:italic;">No biomes loaded</div>
+     <div style="color:var(--text-tertiary); font-size:12px; font-style:italic;">No sampled biomes loaded</div>
     </div>
    </div>
   </div>
@@ -1405,8 +1406,10 @@ const bandsOpacity = $('#bands-opacity');
 const bandsOpacityVal = $('#bands-opacity-val');
 const bandViolationsLabel = $('#band-violations-label');
 const bandLegend = $('#band-legend');
- const biomeSearch = $('#biome-search');
+const biomeSearch = $('#biome-search');
 const biomeListBody = $('#biome-list-body');
+const biomePaletteTitle = $('#biome-palette-title');
+const biomeSamplingNote = $('#biome-sampling-note');
 const metadataBody = $('#metadata-body');
 const biomeCountEl = $('#biome-count');
 const btnOpenReport = $('#btn-open-report');
@@ -2178,6 +2181,20 @@ function getCurrentLayerStep() {
  return null;
 }
 
+function isCoarseSamplingStep(step = getCurrentLayerStep()) {
+ if (!Number.isFinite(step) || step <= 0) return false;
+ return step > 16;
+}
+
+function updateSamplingDisclosure() {
+ if (biomePaletteTitle) {
+  biomePaletteTitle.textContent = 'Sampled Biome Palette';
+ }
+ if (biomeSamplingNote) {
+  biomeSamplingNote.style.display = isCoarseSamplingStep() ? 'block' : 'none';
+ }
+}
+
 function clamp(value, min, max) {
  if (!Number.isFinite(value)) return min;
  return Math.min(max, Math.max(min, value));
@@ -2531,6 +2548,8 @@ function buildPrintableReportHtml() {
  const manifest = state.manifest || {};
  const radius = getWorldRadius(manifest);
  const diameter = manifest?.diameter || (radius ? radius * 2 : null);
+ const currentStep = getCurrentLayerStep();
+ const coarseSampling = isCoarseSamplingStep(currentStep);
  const reportBiomes = currentReportBiomes();
  const selected = biomeById(state.selectedBiomeId);
  const point = state.selectedPoint;
@@ -2544,12 +2563,14 @@ function buildPrintableReportHtml() {
   ['Commit', manifest.commit || '—'],
   ['Step', getCurrentLayerStep() || '—'],
   ['Generated', formatRunTimestamp(state.currentRun || manifest.ts)],
+  ['Palette Scope', coarseSampling ? `Sampled at current resolution (step ${currentStep})` : 'Sampled at current resolution'],
  ];
  const selectionRows = [
   ['Selection', selected ? selected.name : 'None'],
   ['Selected Biome ID', selected ? selected.id : '—'],
   ['Cursor X/Z', point && Number.isFinite(point.worldX) && Number.isFinite(point.worldZ) ? `${point.worldX}, ${point.worldZ}` : '—'],
   ['Latitude', latSummary],
+  ['Sampling Warning', coarseSampling ? 'Coarse sampling may omit rare biomes; absence here does not prove world absence.' : 'Displayed palette is sampled from the current atlas layer.'],
  ];
  const selectedIds = new Set(reportBiomes.map((biome) => biome.id));
  const violationDetails = Array.isArray(state.bandViolationStats?.details)
@@ -2601,6 +2622,7 @@ function buildPrintableReportHtml() {
 <body>
 <h1>Latitude Atlas Biome Report</h1>
 <div class="sub">Run ${escapeHtml(state.currentRun || '—')} · ${escapeHtml(formatRunTimestamp(state.currentRun || manifest.ts))}</div>
+${coarseSampling ? '<div class="sub">Coarse sampling may omit rare biomes; absence here does not prove world absence.</div>' : '<div class="sub">This report summarizes biomes sampled from the currently loaded atlas layer.</div>'}
 <h2>World Metadata</h2>
 <div class="meta">${renderRows(metadataRows)}</div>
 <h2>Selection Context</h2>
@@ -2609,8 +2631,8 @@ function buildPrintableReportHtml() {
 ${violationDetails.length
  ? `<table><thead><tr><th>Biome ID</th><th>Name</th><th>Reason</th><th>Observed Band</th><th>Allowed Bands</th><th>Pixels</th></tr></thead><tbody>${violationRows}</tbody></table>`
  : '<div class="empty">No band violations are currently recorded for this report scope.</div>'}
-<h2>Biome Palette Report</h2>
-${reportBiomes.length ? `<table><thead><tr><th>Biome ID</th><th>Name</th><th>Color</th><th>Index</th><th>Coverage</th></tr></thead><tbody>${tableRows}</tbody></table>` : '<div class="empty">No biome rows are loaded for the current run.</div>'}
+<h2>Sampled Biome Palette Report</h2>
+${reportBiomes.length ? `<table><thead><tr><th>Biome ID</th><th>Name</th><th>Color</th><th>Index</th><th>Sampled Coverage</th></tr></thead><tbody>${tableRows}</tbody></table>` : '<div class="empty">No sampled biome rows are loaded for the current run.</div>'}
 </body>
 </html>`;
 }
@@ -2782,9 +2804,10 @@ if (bandsOpacity) {
 }
 
 function renderBiomeList(biomes) {
+ updateSamplingDisclosure();
  biomeListBody.innerHTML = '';
  if (!biomes.length) {
-  biomeListBody.innerHTML = '<div style="color:var(--text-tertiary);font-size:12px;font-style:italic;">No biomes</div>';
+  biomeListBody.innerHTML = '<div style="color:var(--text-tertiary);font-size:12px;font-style:italic;">No sampled biomes at current resolution</div>';
   return;
  }
  biomeCountEl.textContent = biomes.length;
@@ -2891,7 +2914,7 @@ biomeSearch.addEventListener('keydown', e => {
   const sizeName = formatWorldSizeLabel(manifest);
   const radius = getWorldRadius(manifest);
   const seedValue = manifest?.seed != null && String(manifest.seed).trim() ? String(manifest.seed) : '—';
-  const rows = [
+ const rows = [
     { key: 'Run', value: state.currentRun || '—' },
     { key: 'Generated', value: formatRunTimestamp(state.currentRun || manifest.ts) },
     { key: 'Seed', value: seedValue, seed: true },
@@ -2899,7 +2922,8 @@ biomeSearch.addEventListener('keydown', e => {
     { key: 'Radius', value: radius ? radius.toLocaleString() : '—' },
     { key: 'Current Detail', value: state.currentLayer ? formatLayerLabel(state.currentLayer) : (manifest.step ? formatLayerLabel(`step${manifest.step}`) : '—') },
     { key: 'Layers', value: state.availableLayers.length ? String(state.availableLayers.length) : '—' },
-    { key: 'Palette Biomes', value: state.biomes.length ? state.biomes.length.toLocaleString() : '—' },
+    { key: 'Sampled Palette Biomes', value: state.biomes.length ? state.biomes.length.toLocaleString() : '—' },
+    { key: 'Sampling Note', value: isCoarseSamplingStep() ? 'Coarse sampling may omit rare biomes.' : 'Current step is detailed enough to reduce omission risk.' },
     { key: 'Branch', value: String(manifest.branch || '—') },
     { key: 'Commit', value: String(manifest.commit || '—') },
     { key: 'Biome Index', value: boolLabel(!!manifest.emitBiomeIndex) },
@@ -3267,6 +3291,7 @@ selRun.addEventListener('change', async () => {
   if (!run) {
     state.currentRun = null;
     state.currentLayer = null;
+    updateSamplingDisclosure();
     state.availableLayers = [];
     state.manifest = null;
     clearSelectedPoint();
@@ -3316,6 +3341,7 @@ genQuality.addEventListener('change', async () => {
 
 async function switchLayer(run, layer) {
   state.currentLayer = layer;
+  updateSamplingDisclosure();
   detailReadout.textContent = formatLayerLabel(layer);
   state.selectionStatsCache = {};
   state.selectedBiomeId = null;
