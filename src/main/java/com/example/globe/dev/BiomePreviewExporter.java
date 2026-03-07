@@ -1,5 +1,6 @@
 package com.example.globe.dev;
 
+import com.example.globe.util.LatitudeBands;
 import com.example.globe.util.LatitudeMath;
 import com.example.globe.world.LatitudeBiomeSource;
 import com.example.globe.world.LatitudeBiomes;
@@ -199,9 +200,9 @@ public final class BiomePreviewExporter {
                 }
 
                 if (renderBands) {
-                    LatitudeMath.LatitudeZone zone = LatitudeMath.zoneForRadius(radiusBlocks, blockZ);
-                    images.get(Layer.BANDS).setRGB(imageX, imageZ, colorForBand(zone));
-                    bandCounts.merge(zoneKey(zone), 1, Integer::sum);
+                    LatitudeBands.Band band = bandForBlockZ(radiusBlocks, blockZ);
+                    images.get(Layer.BANDS).setRGB(imageX, imageZ, colorForBand(band));
+                    bandCounts.merge(band.id(), 1, Integer::sum);
                 }
 
                 if (renderTemperature || renderHumidity || renderContinentalness) {
@@ -511,9 +512,9 @@ public final class BiomePreviewExporter {
                 }
 
                 if (layers.contains(Layer.BANDS)) {
-                    LatitudeMath.LatitudeZone zone = LatitudeMath.zoneForRadius(radiusBlocks, blockZ);
-                    images.get(Layer.BANDS).setRGB(imageX, imageZ, colorForBand(zone));
-                    bandCounts.merge(zoneKey(zone), 1, Integer::sum);
+                    LatitudeBands.Band band = bandForBlockZ(radiusBlocks, blockZ);
+                    images.get(Layer.BANDS).setRGB(imageX, imageZ, colorForBand(band));
+                    bandCounts.merge(band.id(), 1, Integer::sum);
                 }
 
                 if (layers.contains(Layer.TEMPERATURE) || layers.contains(Layer.HUMIDITY) || layers.contains(Layer.CONTINENTALNESS)) {
@@ -837,12 +838,9 @@ public final class BiomePreviewExporter {
 
         if (layers.contains(Layer.BANDS)) {
             out.append("bands:\n");
-            appendBandLegendTxt(out, LatitudeMath.LatitudeZone.EQUATOR, 0.0, LatitudeMath.EQUATOR_MAX_FRAC, bandCounts, totalSamples);
-            appendBandLegendTxt(out, LatitudeMath.LatitudeZone.TROPICAL, LatitudeMath.EQUATOR_MAX_FRAC, LatitudeMath.TROPICAL_MAX_FRAC, bandCounts, totalSamples);
-            appendBandLegendTxt(out, LatitudeMath.LatitudeZone.SUBTROPICAL, LatitudeMath.TROPICAL_MAX_FRAC, LatitudeMath.SUBTROPICAL_MAX_FRAC, bandCounts, totalSamples);
-            appendBandLegendTxt(out, LatitudeMath.LatitudeZone.TEMPERATE, LatitudeMath.SUBTROPICAL_MAX_FRAC, LatitudeMath.TEMPERATE_MAX_FRAC, bandCounts, totalSamples);
-            appendBandLegendTxt(out, LatitudeMath.LatitudeZone.SUBPOLAR, LatitudeMath.TEMPERATE_MAX_FRAC, LatitudeMath.SUBPOLAR_MAX_FRAC, bandCounts, totalSamples);
-            appendBandLegendTxt(out, LatitudeMath.LatitudeZone.POLAR, LatitudeMath.SUBPOLAR_MAX_FRAC, 1.0, bandCounts, totalSamples);
+            for (LatitudeBands.Band band : LatitudeBands.Band.values()) {
+                appendBandLegendTxt(out, band, band.lowDeg() / 90.0, band.highDeg() / 90.0, bandCounts, totalSamples);
+            }
         }
 
         if (layers.contains(Layer.TEMPERATURE)) {
@@ -867,19 +865,19 @@ public final class BiomePreviewExporter {
     }
 
     private static void appendBandLegendTxt(StringBuilder out,
-                                            LatitudeMath.LatitudeZone zone,
+                                            LatitudeBands.Band band,
                                             double minFrac,
                                             double maxFrac,
                                             Map<String, Integer> bandCounts,
                                             long totalSamples) {
-        String key = zoneKey(zone);
+        String key = band.id();
         int count = bandCounts.getOrDefault(key, 0);
         double pct = totalSamples <= 0 ? 0.0 : (count * 100.0) / totalSamples;
         out.append(String.format(
                 Locale.ROOT,
                 "  - %-11s color=%s frac=[%.3f..%.3f) count=%d (%.2f%%)%n",
                 key,
-                hexColor(colorForBand(zone)),
+                hexColor(colorForBand(band)),
                 minFrac,
                 maxFrac,
                 count,
@@ -954,12 +952,11 @@ public final class BiomePreviewExporter {
         }
         json.append("  },\n");
         json.append("  \"bands\": [\n");
-        appendBandLegendJson(json, LatitudeMath.LatitudeZone.EQUATOR, 0.0, LatitudeMath.EQUATOR_MAX_FRAC, true);
-        appendBandLegendJson(json, LatitudeMath.LatitudeZone.TROPICAL, LatitudeMath.EQUATOR_MAX_FRAC, LatitudeMath.TROPICAL_MAX_FRAC, true);
-        appendBandLegendJson(json, LatitudeMath.LatitudeZone.SUBTROPICAL, LatitudeMath.TROPICAL_MAX_FRAC, LatitudeMath.SUBTROPICAL_MAX_FRAC, true);
-        appendBandLegendJson(json, LatitudeMath.LatitudeZone.TEMPERATE, LatitudeMath.SUBTROPICAL_MAX_FRAC, LatitudeMath.TEMPERATE_MAX_FRAC, true);
-        appendBandLegendJson(json, LatitudeMath.LatitudeZone.SUBPOLAR, LatitudeMath.TEMPERATE_MAX_FRAC, LatitudeMath.SUBPOLAR_MAX_FRAC, true);
-        appendBandLegendJson(json, LatitudeMath.LatitudeZone.POLAR, LatitudeMath.SUBPOLAR_MAX_FRAC, 1.0, false);
+        LatitudeBands.Band[] bands = LatitudeBands.Band.values();
+        for (int i = 0; i < bands.length; i++) {
+            LatitudeBands.Band band = bands[i];
+            appendBandLegendJson(json, band, band.lowDeg() / 90.0, band.highDeg() / 90.0, i + 1 < bands.length);
+        }
         json.append("  ],\n");
         json.append("  \"overlayStyles\": {\n");
         int overlayStyleIndex = 0;
@@ -981,12 +978,12 @@ public final class BiomePreviewExporter {
     }
 
     private static void appendBandLegendJson(StringBuilder json,
-                                             LatitudeMath.LatitudeZone zone,
+                                             LatitudeBands.Band band,
                                              double minFrac,
                                              double maxFrac,
                                              boolean trailingComma) {
-        json.append("    {\"zone\":\"").append(zoneKey(zone))
-                .append("\",\"color\":\"").append(hexColor(colorForBand(zone)))
+        json.append("    {\"zone\":\"").append(band.id())
+                .append("\",\"color\":\"").append(hexColor(colorForBand(band)))
                 .append("\",\"minFrac\":").append(String.format(Locale.ROOT, "%.6f", minFrac))
                 .append(",\"maxFrac\":").append(String.format(Locale.ROOT, "%.6f", maxFrac))
                 .append("}");
@@ -1018,11 +1015,10 @@ public final class BiomePreviewExporter {
         if (overlays.contains(Overlay.BAND_EDGES)) {
             double[] edges = {
                     0.0,
-                    LatitudeMath.EQUATOR_MAX_FRAC,
-                    LatitudeMath.TROPICAL_MAX_FRAC,
-                    LatitudeMath.SUBTROPICAL_MAX_FRAC,
-                    LatitudeMath.TEMPERATE_MAX_FRAC,
-                    LatitudeMath.SUBPOLAR_MAX_FRAC,
+                    LatitudeBands.Band.SUBTROPICAL.lowDeg() / 90.0,
+                    LatitudeBands.Band.TEMPERATE.lowDeg() / 90.0,
+                    LatitudeBands.Band.SUBPOLAR.lowDeg() / 90.0,
+                    LatitudeBands.Band.POLAR.lowDeg() / 90.0,
                     1.0
             };
             for (double frac : edges) {
@@ -1121,29 +1117,25 @@ public final class BiomePreviewExporter {
         return out.toString();
     }
 
-    private static String zoneKey(LatitudeMath.LatitudeZone zone) {
-        return switch (zone) {
-            case EQUATOR -> "equator";
-            case TROPICAL -> "tropical";
-            case SUBTROPICAL -> "subtropical";
-            case TEMPERATE -> "temperate";
-            case SUBPOLAR -> "subpolar";
-            case POLAR -> "polar";
-        };
+    private static LatitudeBands.Band bandForBlockZ(int radiusBlocks, int blockZ) {
+        if (radiusBlocks <= 0) {
+            return LatitudeBands.Band.TROPICAL;
+        }
+        double absLatDeg = Math.abs((double) blockZ) * 90.0 / (double) radiusBlocks;
+        return LatitudeBands.fromAbsoluteLatitudeDeg(absLatDeg);
     }
 
     private static double normalizeNoise(float noiseValue) {
         return MathHelper.clamp((noiseValue + 1.0) * 0.5, 0.0, 1.0);
     }
 
-    private static int colorForBand(LatitudeMath.LatitudeZone zone) {
-        return switch (zone) {
-            case EQUATOR -> 0xE63946;
-            case TROPICAL -> 0xF4A261;
-            case SUBTROPICAL -> 0xE9C46A;
-            case TEMPERATE -> 0x588157;
-            case SUBPOLAR -> 0x457B9D;
-            case POLAR -> 0xBDE0FE;
+    private static int colorForBand(LatitudeBands.Band band) {
+        return switch (band) {
+            case TROPICAL -> 0xE8703E;
+            case SUBTROPICAL -> 0xE8B63E;
+            case TEMPERATE -> 0x7EC460;
+            case SUBPOLAR -> 0x60A0DC;
+            case POLAR -> 0xB4C8E8;
         };
     }
 
