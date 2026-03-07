@@ -591,6 +591,7 @@ public final class LatitudeBiomes {
 
     // Wetland gating for swamp patches near water (Kakadu-style: patchy, tropical-biased)
     private static final long WETLAND_SALT = 0x6A6B_7765_746C_616EL; // "jkwetlan" -> just a stable salt
+    private static final long TROPICAL_CANOPY_SALT = 0x7472_6F70_6361_6E79L; // "tropcany"
     private static final double WETLAND_FREQ = 1.0 / 1200.0; // low frequency => broad patches
 
     private static final int BADLANDS_PATCH_SIZE_BLOCKS = 65536;
@@ -1020,6 +1021,9 @@ public final class LatitudeBiomes {
             sanitized = sanitizeLandBiome(biomeRegistry, chosen, landBandIndex);
             safe = repickIfSurfaceCave(biomeRegistry, base, sanitized, blockX, blockZ, t, landBandIndex);
             out = applyLandOverrides(biomeRegistry, safe, blockX, blockZ, landBandIndex);
+            if (landBandIndex == BAND_TROPICAL && isJungleFamily(out) && !allowWetTropicalCanopy(blockX, blockZ, t, out)) {
+                out = pickOpenTropicalFallback(biomeRegistry, out, blockX, blockZ, t);
+            }
             boolean savannaGateInput = isSavannaFamily(out);
             out = applySavannaWindsweptGate(biomeRegistry, out, preview.robustDelta, previewHeightHigh);
             if (landBandIndex == BAND_SUBTROPICAL && tropicalBaseStep(blockX, Math.abs(blockZ), t) <= 1 && isJungleFamily(out)) {
@@ -1268,6 +1272,9 @@ public final class LatitudeBiomes {
             sanitized = sanitizeLandBiome(biomePool, chosen, landBandIndex);
             safe = repickIfSurfaceCave(biomePool, base, sanitized, blockX, blockZ, t, landBandIndex);
             out = applyLandOverrides(biomePool, safe, blockX, blockZ, landBandIndex);
+            if (landBandIndex == BAND_TROPICAL && isJungleFamily(out) && !allowWetTropicalCanopy(blockX, blockZ, t, out)) {
+                out = pickOpenTropicalFallback(biomePool, out, blockX, blockZ, t);
+            }
             boolean savannaGateInput = isSavannaFamily(out);
             out = applySavannaWindsweptGate(biomePool, out, preview.robustDelta, previewHeightHigh);
             if (landBandIndex == BAND_SUBTROPICAL && tropicalBaseStep(blockX, Math.abs(blockZ), t) <= 1 && isJungleFamily(out)) {
@@ -2661,6 +2668,61 @@ public final class LatitudeBiomes {
         }
         entry = entryById(biomes, "minecraft:jungle");
         return entry != null ? entry : biomes.stream().findFirst().orElse(null);
+    }
+
+    private static boolean allowWetTropicalCanopy(int blockX, int blockZ, double t, RegistryEntry<Biome> candidate) {
+        double tropicalEnd = LatitudeBands.Band.SUBTROPICAL.lowDeg() / 90.0;
+        double u = tropicalEnd > 0.0 ? clamp(t / tropicalEnd, 0.0, 1.0) : 1.0;
+        double latitudePenalty = 0.35 * u;
+        double baseChance;
+        if (isBiomeId(candidate, "minecraft:jungle")) {
+            baseChance = 0.78;
+        } else if (isBiomeId(candidate, "minecraft:sparse_jungle")) {
+            baseChance = 0.56;
+        } else {
+            baseChance = 0.34;
+        }
+        double threshold = clamp(baseChance - latitudePenalty, 0.08, 0.85);
+        double canopyNoise = ValueNoise2D.sampleBlocks(WORLD_SEED ^ TROPICAL_CANOPY_SALT, blockX, blockZ, 1536);
+        return canopyNoise < threshold;
+    }
+
+    private static RegistryEntry<Biome> pickOpenTropicalFallback(Registry<Biome> biomes, RegistryEntry<Biome> base, int blockX, int blockZ, double t) {
+        double tropicalEnd = LatitudeBands.Band.SUBTROPICAL.lowDeg() / 90.0;
+        double u = tropicalEnd > 0.0 ? clamp(t / tropicalEnd, 0.0, 1.0) : 1.0;
+        if (u > 0.72) {
+            try {
+                return biome(biomes, "minecraft:desert");
+            } catch (Throwable ignored) {
+                // fall through
+            }
+        }
+        try {
+            return biome(biomes, "minecraft:savanna");
+        } catch (Throwable ignored) {
+            try {
+                return biome(biomes, "minecraft:desert");
+            } catch (Throwable ignoredAgain) {
+                return base;
+            }
+        }
+    }
+
+    private static RegistryEntry<Biome> pickOpenTropicalFallback(Collection<RegistryEntry<Biome>> biomes, RegistryEntry<Biome> base, int blockX, int blockZ, double t) {
+        double tropicalEnd = LatitudeBands.Band.SUBTROPICAL.lowDeg() / 90.0;
+        double u = tropicalEnd > 0.0 ? clamp(t / tropicalEnd, 0.0, 1.0) : 1.0;
+        if (u > 0.72) {
+            RegistryEntry<Biome> desert = entryById(biomes, "minecraft:desert");
+            if (desert != null) {
+                return desert;
+            }
+        }
+        RegistryEntry<Biome> savanna = entryById(biomes, "minecraft:savanna");
+        if (savanna != null) {
+            return savanna;
+        }
+        RegistryEntry<Biome> desert = entryById(biomes, "minecraft:desert");
+        return desert != null ? desert : base;
     }
 
     private static void setSelectionPath(String path) {
