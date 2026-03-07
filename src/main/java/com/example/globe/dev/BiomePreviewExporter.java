@@ -49,7 +49,7 @@ public final class BiomePreviewExporter {
                                       int stepBlocks,
                                       int y,
                                       Path runDirectory) throws IOException {
-        return export(world, radiusBlocks, stepBlocks, y, runDirectory, ExportOptions.singleBiome());
+        return export(world, radiusBlocks, stepBlocks, y, runDirectory, world.getSeed(), ExportOptions.singleBiome());
     }
 
     public static ExportResult export(ServerWorld world,
@@ -57,6 +57,16 @@ public final class BiomePreviewExporter {
                                       int stepBlocks,
                                       int y,
                                       Path runDirectory,
+                                      ExportOptions options) throws IOException {
+        return export(world, radiusBlocks, stepBlocks, y, runDirectory, world.getSeed(), options);
+    }
+
+    public static ExportResult export(ServerWorld world,
+                                      int radiusBlocks,
+                                      int stepBlocks,
+                                      int y,
+                                      Path runDirectory,
+                                      long atlasSeed,
                                       ExportOptions options) throws IOException {
         long startNanos = System.nanoTime();
         ExportOptions effectiveOptions = options != null ? options : ExportOptions.singleBiome();
@@ -74,6 +84,7 @@ public final class BiomePreviewExporter {
                     stepBlocks,
                     y,
                     runDirectory,
+                    atlasSeed,
                     effectiveOptions);
             long budgetMs = Math.max(1L, Long.getLong("latitude.atlas.heightBudgetMs", DEFAULT_BUDGET_MS));
             return processor.processBudget(budgetMs);
@@ -122,7 +133,10 @@ public final class BiomePreviewExporter {
                 ? latitudeSource.original()
                 : biomeSource;
         Registry<Biome> biomeRegistry = world.getRegistryManager().getOrThrow(RegistryKeys.BIOME);
-        NoiseConfig noiseConfig = world.getChunkManager().getNoiseConfig();
+        NoiseConfig noiseConfig = NoiseConfig.create(
+                ((net.minecraft.world.gen.chunk.NoiseChunkGenerator) generator).getSettings().value(),
+                world.getRegistryManager().getOrThrow(RegistryKeys.NOISE_PARAMETERS),
+                atlasSeed);
         MultiNoiseUtil.MultiNoiseSampler sampler = noiseConfig.getMultiNoiseSampler();
         net.minecraft.world.gen.chunk.NoiseChunkGenerator noiseGen =
                 generator instanceof net.minecraft.world.gen.chunk.NoiseChunkGenerator ng ? ng : null;
@@ -213,7 +227,7 @@ public final class BiomePreviewExporter {
             applyOverlays(maskImages.values(), overlays, radiusBlocks, zMin, stepBlocks);
         }
 
-        long seed = world.getSeed();
+        long seed = atlasSeed;
         Path outputDir = atlasStepDirectory(defaultAtlasRoot(runDirectory), seed, radiusBlocks, stepBlocks);
         Files.createDirectories(outputDir);
 
@@ -249,7 +263,7 @@ public final class BiomePreviewExporter {
 
         int inventoryDiscoveryStep = inventoryDiscoveryStep(stepBlocks);
         BiomeSamplerTools.InventoryReport inventoryReport = needsBiomeSampling
-                ? BiomeSamplerTools.discoverInventory(world, radiusBlocks, inventoryDiscoveryStep, y)
+                ? BiomeSamplerTools.discoverInventory(BiomeSamplerTools.createTemplate(world), seed, radiusBlocks, inventoryDiscoveryStep, y)
                 : new BiomeSamplerTools.InventoryReport(seed, radiusBlocks, inventoryDiscoveryStep, y, List.of());
         Path inventoryPath = outputDir.resolve("world_biome_inventory.json");
         BiomeSamplerTools.writeInventoryJson(inventoryPath, inventoryReport);
@@ -321,6 +335,7 @@ public final class BiomePreviewExporter {
         private final int stepBlocks;
         private final int y;
         private final Path runDirectory;
+        private final long atlasSeed;
         private final ExportOptions options;
 
         private final EnumSet<Layer> layers;
@@ -366,12 +381,14 @@ public final class BiomePreviewExporter {
                                      int stepBlocks,
                                      int y,
                                      Path runDirectory,
+                                     long atlasSeed,
                                      ExportOptions options) {
             this.world = world;
             this.radiusBlocks = radiusBlocks;
             this.stepBlocks = stepBlocks;
             this.y = y;
             this.runDirectory = runDirectory;
+            this.atlasSeed = atlasSeed;
             this.options = options != null ? options : ExportOptions.singleBiome();
             this.layers = this.options.layers();
             this.overlays = this.options.overlays();
@@ -395,7 +412,10 @@ public final class BiomePreviewExporter {
                     ? latitudeSource.original()
                     : biomeSource;
             this.biomeRegistry = world.getRegistryManager().getOrThrow(RegistryKeys.BIOME);
-            this.noiseConfig = world.getChunkManager().getNoiseConfig();
+            this.noiseConfig = NoiseConfig.create(
+                    ((net.minecraft.world.gen.chunk.NoiseChunkGenerator) this.generator).getSettings().value(),
+                    world.getRegistryManager().getOrThrow(RegistryKeys.NOISE_PARAMETERS),
+                    atlasSeed);
             this.sampler = noiseConfig.getMultiNoiseSampler();
             net.minecraft.world.gen.chunk.NoiseChunkGenerator noiseGen =
                     generator instanceof net.minecraft.world.gen.chunk.NoiseChunkGenerator ng ? ng : null;
@@ -422,8 +442,9 @@ public final class BiomePreviewExporter {
                                           int stepBlocks,
                                           int y,
                                           Path runDirectory,
+                                          long atlasSeed,
                                           ExportOptions options) {
-            return new HeightStepProcessor(world, radiusBlocks, stepBlocks, y, runDirectory, options);
+            return new HeightStepProcessor(world, radiusBlocks, stepBlocks, y, runDirectory, atlasSeed, options);
         }
 
         /**
@@ -539,7 +560,7 @@ public final class BiomePreviewExporter {
                     applyOverlays(maskImages.values(), overlays, radiusBlocks, zMin, stepBlocks);
                 }
 
-                long seed = world.getSeed();
+                long seed = atlasSeed;
                 Path outputDir = atlasStepDirectory(defaultAtlasRoot(runDirectory), seed, radiusBlocks, stepBlocks);
                 Files.createDirectories(outputDir);
 
@@ -575,7 +596,7 @@ public final class BiomePreviewExporter {
 
                 int inventoryDiscoveryStep = inventoryDiscoveryStep(stepBlocks);
                 BiomeSamplerTools.InventoryReport inventoryReport = needsBiomeSampling()
-                        ? BiomeSamplerTools.discoverInventory(world, radiusBlocks, inventoryDiscoveryStep, y)
+                        ? BiomeSamplerTools.discoverInventory(BiomeSamplerTools.createTemplate(world), seed, radiusBlocks, inventoryDiscoveryStep, y)
                         : new BiomeSamplerTools.InventoryReport(seed, radiusBlocks, inventoryDiscoveryStep, y, List.of());
                 Path inventoryPath = outputDir.resolve("world_biome_inventory.json");
                 BiomeSamplerTools.writeInventoryJson(inventoryPath, inventoryReport);

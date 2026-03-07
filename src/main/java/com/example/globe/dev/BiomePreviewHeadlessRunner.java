@@ -101,7 +101,7 @@ public final class BiomePreviewHeadlessRunner {
 
             for (int step : config.steps) {
                 BiomePreviewExporter.ExportResult result = BiomePreviewExporter.export(
-                        world, radius, step, y, server.getRunDirectory(), config.exportOptions);
+                        world, radius, step, y, server.getRunDirectory(), effectiveSeed, config.exportOptions);
                 BiomePreviewExporter.ExportResult finalized = finalizeOutput(result, effectiveSeed, outputDir);
 
                 String finishMessage = String.format(
