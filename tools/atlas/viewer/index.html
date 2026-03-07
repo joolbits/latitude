@@ -1578,7 +1578,7 @@ html, body {
       </label>
      </div>
      <div class="band-desc-hint" id="band-violations-label">Band violations: off</div>
-     <div class="band-desc-hint">Descriptors: Equator, Tropics, Subtropics, Temperate, Subpolar, Polar</div>
+     <div class="band-desc-hint">Descriptors: Tropical, Subtropical, Temperate, Subpolar, Polar</div>
     </div>
    </div>
  
@@ -1768,7 +1768,14 @@ const GENERATION_PRESETS = {
   medium: { label: 'Medium', resolution: 32 },
   high: { label: 'High', resolution: 16 },
  };
-const BAND_KEYS = ['equator', 'tropical', 'subtropical', 'temperate', 'subpolar', 'polar'];
+const CANONICAL_BAND_DEFINITIONS = [
+ { id: 'tropical', label: 'Tropical', minDeg: 0.0, maxDeg: 23.5, color: [232, 112, 62] },
+ { id: 'subtropical', label: 'Subtropical', minDeg: 23.5, maxDeg: 35.0, color: [232, 182, 62] },
+ { id: 'temperate', label: 'Temperate', minDeg: 35.0, maxDeg: 50.0, color: [126, 196, 96] },
+ { id: 'subpolar', label: 'Subpolar', minDeg: 50.0, maxDeg: 66.5, color: [96, 160, 220] },
+ { id: 'polar', label: 'Polar', minDeg: 66.5, maxDeg: 90.0, color: [180, 200, 232] },
+];
+const BAND_KEYS = CANONICAL_BAND_DEFINITIONS.map((band) => band.id);
 const BAND_BIT_BY_KEY = new Map(BAND_KEYS.map((key, index) => [key, 1 << index]));
 const BAND_RANK_BY_KEY = new Map(BAND_KEYS.map((key, index) => [key, index]));
 const SUBPOLAR_BAND_RANK = BAND_RANK_BY_KEY.get('subpolar');
@@ -1985,10 +1992,25 @@ function boolLabel(value) {
  return value ? 'Yes' : 'No';
 }
 
+function clampLatitudeDegrees(value) {
+ const lat = Number(value);
+ if (!Number.isFinite(lat)) return 0;
+ return clamp(lat, 0, 90);
+}
+
+function bandForLatitudeDegrees(latDeg) {
+ const clampedLat = clampLatitudeDegrees(latDeg);
+ for (const band of ZONE_BANDS) {
+  if (clampedLat < band.maxDeg) return band;
+ }
+ return ZONE_BANDS[ZONE_BANDS.length - 1];
+}
+
 function normalizeBandKey(value) {
  const raw = String(value || '').trim().toLowerCase();
  if (!raw) return null;
- if (raw === 'equatorial') return 'equator';
+ if (raw === 'equator' || raw === 'equatorial') return 'tropical';
+ if (raw === 'arid') return 'subtropical';
  if (raw === 'sub-polar') return 'subpolar';
  if (raw === 'sub_tropical') return 'subtropical';
  if (raw === 'sub_temperate') return 'temperate';
@@ -2027,15 +2049,15 @@ function inferBiomeBandMask(biomeId) {
  if (!shortId) return 0;
  if (shortId === 'mushroom_fields') return 0;
  if (shortId.includes('ocean') || shortId.includes('river') || shortId.includes('beach') || shortId.includes('shore') || shortId.includes('coast')) return 0;
- if (shortId.includes('mangrove')) return bandsToMask(['equator', 'tropical']);
- if (shortId.includes('jungle')) return bandsToMask(['equator', 'tropical']);
+ if (shortId.includes('mangrove')) return bandsToMask(['tropical']);
+ if (shortId.includes('jungle')) return bandsToMask(['tropical']);
  if (shortId.includes('snowy') || shortId.includes('frozen') || shortId.includes('ice_spikes') || shortId.includes('jagged_peaks') || shortId.includes('frozen_peaks') || shortId === 'grove' || shortId.endsWith('_grove')) {
   return bandsToMask(['subpolar', 'polar']);
  }
  if (shortId.includes('taiga')) return bandsToMask(['temperate', 'subpolar']);
- if (shortId.includes('desert') || shortId.includes('badlands')) return bandsToMask(['equator', 'tropical']);
+ if (shortId.includes('desert') || shortId.includes('badlands')) return bandsToMask(['tropical']);
  if (shortId.includes('savanna')) return bandsToMask(['tropical']);
- if (shortId.includes('swamp')) return bandsToMask(['equator', 'tropical', 'temperate']);
+ if (shortId.includes('swamp')) return bandsToMask(['tropical', 'temperate']);
  if (shortId.includes('windswept') || shortId.includes('stony') || shortId.includes('peak') || shortId.includes('slope')) {
   return bandsToMask(['temperate', 'subpolar']);
  }
@@ -2652,14 +2674,11 @@ if (btnClearPaletteSelection) {
  btnClearPaletteSelection.addEventListener('click', clearBiomeSelection);
 }
 
-const ZONE_BANDS = [
- { id: 'equator', label: 'Equator', maxFrac: 0.10, color: [232, 90, 90], deg: '0–9°' },
- { id: 'tropical', label: 'Tropics', maxFrac: 0.30, color: [232, 167, 62], deg: '9–27°' },
- { id: 'subtropical', label: 'Subtropics', maxFrac: 0.50, color: [232, 214, 62], deg: '27–45°' },
- { id: 'temperate', label: 'Temperate', maxFrac: 0.666, color: [96, 196, 96], deg: '45–60°' },
- { id: 'subpolar', label: 'Subpolar', maxFrac: 0.783, color: [96, 160, 220], deg: '60–70°' },
- { id: 'polar', label: 'Polar', maxFrac: 1.0, color: [180, 200, 232], deg: '70–90°' },
-];
+const ZONE_BANDS = CANONICAL_BAND_DEFINITIONS.map((band) => ({
+ ...band,
+ maxFrac: band.maxDeg / 90,
+ deg: `${band.minDeg.toFixed(1)}–${band.maxDeg.toFixed(1)}°`,
+}));
 
 const WORLD_SIZE_NAMES = {
  7500: 'Itty Bitty',
@@ -2823,19 +2842,16 @@ function latitudeContextForWorldZ(worldZ) {
  const radius = getWorldRadius();
  if (!Number.isFinite(radius) || radius <= 0 || !Number.isFinite(worldZ)) return null;
  const absFrac = Math.max(0, Math.min(1, Math.abs(worldZ) / radius));
+ const latDeg = clampLatitudeDegrees(absFrac * 90);
  return {
-  deg: Math.round(absFrac * 90),
+  deg: Math.round(latDeg),
   hemisphere: worldZ < 0 ? 'N' : (worldZ > 0 ? 'S' : 'EQ'),
-  zone: zoneForFrac(absFrac),
+  zone: bandForLatitudeDegrees(latDeg),
  };
 }
 
 function zoneForFrac(t) {
- const absT = Math.abs(t);
- for (const band of ZONE_BANDS) {
-  if (absT < band.maxFrac) return band;
- }
- return ZONE_BANDS[ZONE_BANDS.length - 1];
+ return bandForLatitudeDegrees(Math.abs(Number(t) || 0) * 90);
 }
 
 function refreshBandViolationLabel() {
