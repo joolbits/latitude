@@ -29,6 +29,12 @@ loom {
             runDir "run-headless"
             vmArg "-Dlatdev.biomePng=${System.getProperty('latdev.biomePng', 'enabled')}"
         }
+        biomeSeedSearch {
+            server()
+            name "Biome Seed Search (Headless)"
+            runDir "run-headless"
+            vmArg "-Dlatdev.biomeSearch=${System.getProperty('latdev.biomeSearch', 'enabled')}"
+        }
     }
 }
 
@@ -219,6 +225,83 @@ tasks.named('runBiomePreview').configure {
             jvmArgs "-Dlatdev.biomePng=${propValue}"
             setArgs(passthrough)
             logger.lifecycle("[runBiomePreview] translated latdev --args to JVM property: {}", propValue)
+        } else {
+            setArgs(rawArgs)
+        }
+    }
+}
+
+tasks.named('runBiomeSeedSearch').configure {
+    dependsOn tasks.named('prepareBiomePreviewRunDir')
+    doFirst {
+        def rawArgs = new ArrayList(args ?: [])
+        def latdevOptions = [:]
+        def passthrough = []
+        def latdevKeys = ['seedstart', 'seedcount', 'targetbiome', 'requireall', 'radius', 'size', 'step', 'y', 'maxresults', 'out'] as Set
+        def mergeKeys = ['targetbiome'] as Set
+        def putLatdevOption = { key, value ->
+            if (mergeKeys.contains(key) && latdevOptions.containsKey(key) && latdevOptions[key] != null && latdevOptions[key].toString().trim().length() > 0) {
+                latdevOptions[key] = "${latdevOptions[key]},${value}"
+            } else {
+                latdevOptions[key] = value
+            }
+        }
+        boolean enabled = false
+
+        for (int i = 0; i < rawArgs.size(); i++) {
+            def token = rawArgs[i]
+            if (!(token instanceof String) || !token.startsWith('--')) {
+                passthrough << token
+                continue
+            }
+
+            def body = token.substring(2)
+            if (body.equalsIgnoreCase('latdevBiomeSearch')) {
+                enabled = true
+                continue
+            }
+
+            int eq = body.indexOf('=')
+            if (eq >= 0) {
+                def key = body.substring(0, eq).toLowerCase(Locale.ROOT)
+                def value = body.substring(eq + 1)
+                if (latdevKeys.contains(key)) {
+                    putLatdevOption(key, value)
+                    enabled = true
+                } else {
+                    passthrough << token
+                }
+                continue
+            }
+
+            def key = body.toLowerCase(Locale.ROOT)
+            if (latdevKeys.contains(key)) {
+                if (i + 1 < rawArgs.size() && rawArgs[i + 1] instanceof String && !rawArgs[i + 1].startsWith('--')) {
+                    putLatdevOption(key, rawArgs[i + 1])
+                    i++
+                } else {
+                    putLatdevOption(key, 'true')
+                }
+                enabled = true
+            } else {
+                passthrough << token
+            }
+        }
+
+        if (enabled || !latdevOptions.isEmpty()) {
+            if (!latdevOptions.containsKey('out')) {
+                latdevOptions['out'] = file('run-headless/seed-search').absolutePath.replace('\\', '/')
+            }
+
+            def propParts = ['enabled=true']
+            latdevOptions.each { key, value ->
+                propParts << "${key}=${value}"
+            }
+            def propValue = propParts.join(';')
+
+            jvmArgs "-Dlatdev.biomeSearch=${propValue}"
+            setArgs(passthrough)
+            logger.lifecycle("[runBiomeSeedSearch] translated latdev --args to JVM property: {}", propValue)
         } else {
             setArgs(rawArgs)
         }

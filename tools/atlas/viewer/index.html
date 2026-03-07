@@ -1326,7 +1326,7 @@ html, body {
    </div>
    <div class="panel-card" id="card-biomes">
     <div class="panel-header">
-     <span class="panel-title" id="biome-palette-title">Sampled Biome Palette</span>
+     <span class="panel-title" id="biome-palette-title">Biome Presence</span>
      <span id="biome-count" style="font-family:var(--font-mono); font-size:10px; color:var(--text-tertiary);"></span>
     </div>
     <div class="band-desc-hint" id="biome-sampling-note" style="padding:0 18px 8px 18px;color:var(--lat-warn);display:none;">Coarse sampling may omit rare biomes; absence here does not prove world absence.</div>
@@ -1445,6 +1445,7 @@ const btnClearSelection = $('#btn-clear-selection');
   selectedPoint: null,
   renderedHighlightKey: null,
   colorToBiome: {},
+  biomeInventory: [],
   biomeByIdMap: {},
   biomeByIndex: {},
   bandMaskByIndex: null,
@@ -2188,7 +2189,7 @@ function isCoarseSamplingStep(step = getCurrentLayerStep()) {
 
 function updateSamplingDisclosure() {
  if (biomePaletteTitle) {
-  biomePaletteTitle.textContent = 'Sampled Biome Palette';
+  biomePaletteTitle.textContent = 'Biome Presence';
  }
  if (biomeSamplingNote) {
   biomeSamplingNote.style.display = isCoarseSamplingStep() ? 'block' : 'none';
@@ -2541,7 +2542,17 @@ function inspectPointAtPixel(pixelX, pixelY, options = {}) {
 function currentReportBiomes() {
  const selected = biomeById(state.selectedBiomeId);
  if (selected) return [selected];
+ return mergeBiomePresenceRows(state.biomes, state.biomeInventory);
+}
+
+function currentSampledBiomes() {
  return Array.isArray(state.biomes) ? state.biomes.slice() : [];
+}
+
+function currentInventoryBiomes() {
+ const selected = biomeById(state.selectedBiomeId);
+ if (selected) return [selected];
+ return Array.isArray(state.biomeInventory) ? state.biomeInventory.slice() : [];
 }
 
 function buildPrintableReportHtml() {
@@ -2551,6 +2562,8 @@ function buildPrintableReportHtml() {
  const currentStep = getCurrentLayerStep();
  const coarseSampling = isCoarseSamplingStep(currentStep);
  const reportBiomes = currentReportBiomes();
+ const sampledBiomes = currentSampledBiomes();
+ const inventoryBiomes = currentInventoryBiomes();
  const selected = biomeById(state.selectedBiomeId);
  const point = state.selectedPoint;
  const latSummary = point && Number.isFinite(point.worldZ) ? formatLatitudeSummary(point.worldZ) : '—';
@@ -2564,6 +2577,7 @@ function buildPrintableReportHtml() {
   ['Step', getCurrentLayerStep() || '—'],
   ['Generated', formatRunTimestamp(state.currentRun || manifest.ts)],
   ['Palette Scope', coarseSampling ? `Sampled at current resolution (step ${currentStep})` : 'Sampled at current resolution'],
+  ['Known World Biomes', inventoryBiomes.length ? inventoryBiomes.length.toLocaleString() : '—'],
  ];
  const selectionRows = [
   ['Selection', selected ? selected.name : 'None'],
@@ -2576,15 +2590,36 @@ function buildPrintableReportHtml() {
  const violationDetails = Array.isArray(state.bandViolationStats?.details)
   ? state.bandViolationStats.details.filter((detail) => selectedIds.size === 0 || selectedIds.has(detail.biomeId))
   : [];
- const tableRows = reportBiomes.map((biome) => {
+ const sampledById = new Map(sampledBiomes.map((biome) => [biome.id, biome]));
+ const tableRows = sampledBiomes.map((biome) => {
   const hex = formatBiomeHex(biome.color);
   return `
    <tr>
     <td>${escapeHtml(biome.id || '—')}</td>
     <td>${escapeHtml(biome.name || '—')}</td>
     <td><span class="swatch" style="background:${escapeHtml(hex)}"></span> ${escapeHtml(hex)}</td>
-    <td>${Number.isFinite(biome.index) ? biome.index : '—'}</td>
+   <td>${Number.isFinite(biome.index) ? biome.index : '—'}</td>
    <td>${biome.pct != null ? `${biome.pct.toFixed(4)}%` : '—'}</td>
+   </tr>`;
+ }).join('');
+ const inventoryRows = inventoryBiomes.map((biome) => {
+  const hex = formatBiomeHex(biome.color);
+  const sampled = sampledById.get(biome.id);
+  const firstLocation = Number.isFinite(biome.first_seen_x) && Number.isFinite(biome.first_seen_z)
+   ? `${biome.first_seen_x}, ${biome.first_seen_z}`
+   : '—';
+  const sampledCoverage = sampled?.pct != null
+   ? `${sampled.pct.toFixed(4)}%`
+   : '0.0000% (not observed at current resolution)';
+  return `
+   <tr>
+    <td>${escapeHtml(biome.id || '—')}</td>
+    <td>${escapeHtml(biome.name || '—')}</td>
+    <td><span class="swatch" style="background:${escapeHtml(hex)}"></span> ${escapeHtml(hex)}</td>
+    <td>${escapeHtml(firstLocation)}</td>
+    <td>${escapeHtml(biome.latitude_label || '—')}</td>
+    <td>${Number.isFinite(biome.discovery_step_used) ? biome.discovery_step_used : '—'}</td>
+    <td>${escapeHtml(sampledCoverage)}</td>
    </tr>`;
  }).join('');
  const violationRows = violationDetails.map((detail) => `
@@ -2632,7 +2667,10 @@ ${violationDetails.length
  ? `<table><thead><tr><th>Biome ID</th><th>Name</th><th>Reason</th><th>Observed Band</th><th>Allowed Bands</th><th>Pixels</th></tr></thead><tbody>${violationRows}</tbody></table>`
  : '<div class="empty">No band violations are currently recorded for this report scope.</div>'}
 <h2>Sampled Biome Palette Report</h2>
-${reportBiomes.length ? `<table><thead><tr><th>Biome ID</th><th>Name</th><th>Color</th><th>Index</th><th>Sampled Coverage</th></tr></thead><tbody>${tableRows}</tbody></table>` : '<div class="empty">No sampled biome rows are loaded for the current run.</div>'}
+${sampledBiomes.length ? `<table><thead><tr><th>Biome ID</th><th>Name</th><th>Color</th><th>Index</th><th>Sampled Coverage</th></tr></thead><tbody>${tableRows}</tbody></table>` : '<div class="empty">No sampled biome rows are loaded for the current run.</div>'}
+<h2>Known Biomes In World</h2>
+<div class="sub">This inventory is discovery-based and separate from sampled coverage. A biome may be present in world even when sampled coverage is zero on the current atlas layer.</div>
+${inventoryBiomes.length ? `<table><thead><tr><th>Biome ID</th><th>Name</th><th>Color</th><th>First Known X/Z</th><th>Latitude</th><th>Discovery Step</th><th>Sampled Coverage</th></tr></thead><tbody>${inventoryRows}</tbody></table>` : '<div class="empty">No world-biome inventory rows are loaded for the current run.</div>'}
 </body>
 </html>`;
 }
@@ -2644,7 +2682,7 @@ function reportFilename() {
 }
 
 function openPrintableReport() {
- if (!state.currentRun || !state.biomes.length) {
+ if (!state.currentRun || (!state.biomes.length && !state.biomeInventory.length)) {
   showToast('Load a run before opening a report.', 'error');
   return;
  }
@@ -2662,7 +2700,7 @@ function openPrintableReport() {
 }
 
 function exportPrintableReport() {
- if (!state.currentRun || !state.biomes.length) {
+ if (!state.currentRun || (!state.biomes.length && !state.biomeInventory.length)) {
   showToast('Load a run before exporting a report.', 'error');
   return;
  }
@@ -2806,20 +2844,31 @@ if (bandsOpacity) {
 function renderBiomeList(biomes) {
  updateSamplingDisclosure();
  biomeListBody.innerHTML = '';
- if (!biomes.length) {
-  biomeListBody.innerHTML = '<div style="color:var(--text-tertiary);font-size:12px;font-style:italic;">No sampled biomes at current resolution</div>';
+ const inventory = Array.isArray(state.biomeInventory) ? state.biomeInventory : [];
+ const rows = mergeBiomePresenceRows(biomes, inventory);
+ if (!rows.length) {
+  biomeListBody.innerHTML = '<div style="color:var(--text-tertiary);font-size:12px;font-style:italic;">No sampled or inventory biomes are loaded for this run.</div>';
+  biomeCountEl.textContent = '0';
   return;
  }
- biomeCountEl.textContent = biomes.length;
+ biomeCountEl.textContent = `${rows.length} known`;
  const frag = document.createDocumentFragment();
- for (const b of biomes) {
+ for (const b of rows) {
   const row = document.createElement('div');
   row.className = 'biome-entry';
   row.dataset.biomeId = b.id;
+  const pctText = b.pct != null
+   ? `${b.pct.toFixed(1)}%`
+   : (b.present_in_world ? 'Present in world' : '');
+  const statusTitle = b.pct != null
+   ? 'Sampled on the current atlas layer'
+   : (b.present_in_world && b.latitude_label
+      ? `Present in world; not observed at current resolution. First seen near ${b.first_seen_x}, ${b.first_seen_z} (${b.latitude_label}).`
+      : 'Present in world; not observed at current resolution.');
   row.innerHTML = `
      <div class="biome-swatch" style="background:rgb(${b.color.join(',')})"></div>
      <div class="biome-name" title="${b.id}">${b.name}</div>
-     <div class="biome-pct">${b.pct != null ? b.pct.toFixed(1) + '%' : ''}</div>
+     <div class="biome-pct" title="${statusTitle}">${pctText}</div>
    `;
   row.addEventListener('click', () => {
    selectBiomePersistent(b);
@@ -2923,6 +2972,7 @@ biomeSearch.addEventListener('keydown', e => {
     { key: 'Current Detail', value: state.currentLayer ? formatLayerLabel(state.currentLayer) : (manifest.step ? formatLayerLabel(`step${manifest.step}`) : '—') },
     { key: 'Layers', value: state.availableLayers.length ? String(state.availableLayers.length) : '—' },
     { key: 'Sampled Palette Biomes', value: state.biomes.length ? state.biomes.length.toLocaleString() : '—' },
+    { key: 'Known World Biomes', value: state.biomeInventory.length ? state.biomeInventory.length.toLocaleString() : '—' },
     { key: 'Sampling Note', value: isCoarseSamplingStep() ? 'Coarse sampling may omit rare biomes.' : 'Current step is detailed enough to reduce omission risk.' },
     { key: 'Branch', value: String(manifest.branch || '—') },
     { key: 'Commit', value: String(manifest.commit || '—') },
@@ -2993,8 +3043,8 @@ async function loadRunManifest(run, force = false) {
 
 function updateRunActionButtons() {
   if (btnSaveRun) btnSaveRun.disabled = !state.currentRun;
-  if (btnOpenReport) btnOpenReport.disabled = !state.currentRun || !state.biomes.length;
-  if (btnExportReport) btnExportReport.disabled = !state.currentRun || !state.biomes.length;
+  if (btnOpenReport) btnOpenReport.disabled = !state.currentRun || (!state.biomes.length && !state.biomeInventory.length);
+  if (btnExportReport) btnExportReport.disabled = !state.currentRun || (!state.biomes.length && !state.biomeInventory.length);
 }
 
 btnSaveRun.addEventListener('click', () => {
@@ -3052,13 +3102,15 @@ function buildColorLookup() {
   state.colorToBiome = {};
   state.biomeByIdMap = {};
   state.biomeByIndex = {};
-  for (const b of state.biomes) {
+  const allBiomes = mergeBiomePresenceRows(state.biomes, state.biomeInventory);
+  for (const b of allBiomes) {
     if (b?.id && !state.biomeByIdMap[b.id]) {
       state.biomeByIdMap[b.id] = b;
     }
     if (Number.isFinite(b?.index) && state.biomeByIndex[(b.index & 0xFF)] == null) {
       state.biomeByIndex[b.index & 0xFF] = b;
     }
+    if (!Array.isArray(b?.color)) continue;
     const key = colorKey(...b.color);
     if (!state.colorToBiome[key]) {
       state.colorToBiome[key] = b;
@@ -3083,6 +3135,27 @@ function normalizeBiomePaletteForDisplay(rawBiomes) {
     return b;
   });
   return { biomes, remaps };
+}
+
+function mergeBiomePresenceRows(rawBiomes, rawInventory) {
+  const sampled = Array.isArray(rawBiomes) ? rawBiomes : [];
+  const inventory = Array.isArray(rawInventory) ? rawInventory : [];
+  const merged = new Map();
+  for (const biome of inventory) {
+    if (!biome?.id) continue;
+    merged.set(biome.id, { ...biome, pct: null });
+  }
+  for (const biome of sampled) {
+    if (!biome?.id) continue;
+    const existing = merged.get(biome.id) || {};
+    merged.set(biome.id, { ...existing, ...biome, present_in_world: existing.present_in_world ?? true });
+  }
+  return Array.from(merged.values()).sort((a, b) => {
+    const aPct = Number.isFinite(a?.pct) ? a.pct : -1;
+    const bPct = Number.isFinite(b?.pct) ? b.pct : -1;
+    if (aPct !== bPct) return bPct - aPct;
+    return String(a?.name || a?.id || '').localeCompare(String(b?.name || b?.id || ''));
+  });
 }
 
 function applyImageColorRemaps(remaps) {
@@ -3132,6 +3205,13 @@ async function fetchLayers(run) {
 async function fetchBiomes(run, layer) {
   try {
     const data = await apiFetch(`/api/runs/${run}/layers/${layer}/biomes`);
+    return Array.isArray(data) ? data : [];
+  } catch { return []; }
+}
+
+async function fetchBiomeInventory(run, layer) {
+  try {
+    const data = await apiFetch(`/api/runs/${run}/layers/${layer}/inventory`);
     return Array.isArray(data) ? data : [];
   } catch { return []; }
 }
@@ -3294,6 +3374,8 @@ selRun.addEventListener('change', async () => {
     updateSamplingDisclosure();
     state.availableLayers = [];
     state.manifest = null;
+    state.biomes = [];
+    state.biomeInventory = [];
     clearSelectedPoint();
     setJumpStatus('Awaiting coords');
     state.bandMaskByIndex = null;
@@ -3343,6 +3425,7 @@ async function switchLayer(run, layer) {
   state.currentLayer = layer;
   updateSamplingDisclosure();
   detailReadout.textContent = formatLayerLabel(layer);
+  state.biomeInventory = [];
   state.selectionStatsCache = {};
   state.selectedBiomeId = null;
   state.hoveredBiomeId = null;
@@ -3357,16 +3440,19 @@ async function switchLayer(run, layer) {
   renderSelectionContext(null);
 
   // Fetch biomes + image + ids concurrently
-  const [biomes, idsBlob] = await Promise.all([
+  const [biomes, inventory, idsBlob] = await Promise.all([
     fetchBiomes(run, layer),
+    fetchBiomeInventory(run, layer),
     fetchBiomeIds(run, layer),
     loadMapImage(getImageUrl(run, layer)),
   ]);
   fitToView();
 
   const normalized = normalizeBiomePaletteForDisplay(biomes);
+  const normalizedInventory = normalizeBiomePaletteForDisplay(inventory);
   applyImageColorRemaps(normalized.remaps);
   state.biomes = normalized.biomes.sort((a, b) => (b.pct || 0) - (a.pct || 0));
+  state.biomeInventory = normalizedInventory.biomes.sort((a, b) => String(a?.name || a?.id || '').localeCompare(String(b?.name || b?.id || '')));
   rebuildBiomeBandMasks();
 
   if (idsBlob) {

@@ -371,6 +371,11 @@ class Handler(BaseHTTPRequestHandler):
             self.handle_biomes(m.group(1), m.group(2))
             return
 
+        m = re.match(r"^/api/runs/([^/]+)/layers/([^/]+)/inventory$", path)
+        if m:
+            self.handle_inventory(m.group(1), m.group(2))
+            return
+
         m = re.match(r"^/api/runs/([^/]+)/layers/([^/]+)/image$", path)
         if m:
             self.handle_image(m.group(1), m.group(2))
@@ -485,6 +490,47 @@ class Handler(BaseHTTPRequestHandler):
                     return
             # Fallback for older runs with no ids/palette.
             self._send_json(_derive_biomes_from_image_only(image_path))
+        except Exception:
+            self._send_json([])
+
+    def handle_inventory(self, run: str, layer: str):
+        run_dir = run_path(run)
+        if not run_dir.exists():
+            self._send_json([], HTTPStatus.NOT_FOUND)
+            return
+
+        inventory_path = layer_file(run_dir, layer, "world_biome_inventory.json")
+        if not inventory_path or not inventory_path.exists():
+            self._send_json([])
+            return
+
+        try:
+            payload = read_json_file(inventory_path)
+            rows = payload.get("biomes", []) if isinstance(payload, dict) else []
+            if not isinstance(rows, list):
+                rows = []
+            out = []
+            for row in rows:
+                if not isinstance(row, dict):
+                    continue
+                biome_id = row.get("biome_id")
+                if not isinstance(biome_id, str) or not biome_id:
+                    continue
+                display_color = row.get("displayColor")
+                out.append(
+                    {
+                        "id": biome_id,
+                        "name": row.get("biome_name") or biome_name_from_id(biome_id),
+                        "color": hex_to_rgb(display_color) if isinstance(display_color, str) else [138, 138, 138],
+                        "present_in_world": bool(row.get("present_in_world", True)),
+                        "first_seen_x": row.get("first_seen_x"),
+                        "first_seen_z": row.get("first_seen_z"),
+                        "latitude_label": row.get("latitude_label") or "",
+                        "discovery_step_used": row.get("discovery_step_used"),
+                        "discovery_hits": row.get("discovery_hits"),
+                    }
+                )
+            self._send_json(out)
         except Exception:
             self._send_json([])
 
