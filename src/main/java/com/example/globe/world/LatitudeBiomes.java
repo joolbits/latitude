@@ -673,7 +673,7 @@ public final class LatitudeBiomes {
     private static final long SNOWY_RAMP_SALT = 0x5EEDB17A5EEDL;
     private static final double SNOWY_RAMP_START_DEG = 56.0;
     private static final double SNOWY_RAMP_FULL_DEG = 66.0;
-    private static final double GROVE_MIN_DEG = 66.0;
+    private static final double GROVE_MIN_DEG = 56.0;
 
     private static final Set<String> SURFACE_CAVE_DENYLIST = Set.of(
             "minecraft:dripstone_caves",
