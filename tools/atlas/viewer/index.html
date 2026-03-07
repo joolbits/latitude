@@ -35,6 +35,7 @@
   --r-md: 10px;
   --r-lg: 16px;
   --r-xl: 24px;
+  --ui-scale: 1;
 }
 
 [data-theme="dark"] {
@@ -169,7 +170,8 @@ html, body {
   position: absolute;
   bottom: 16px;
   left: 50%;
-  transform: translateX(-50%);
+  transform: translateX(-50%) scale(var(--ui-scale));
+  transform-origin: bottom center;
   background: var(--bg-glass);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
@@ -189,6 +191,8 @@ html, body {
   position: absolute;
   bottom: 16px;
   right: 16px;
+  transform: scale(var(--ui-scale));
+  transform-origin: bottom right;
   background: var(--bg-glass);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
@@ -204,24 +208,18 @@ html, body {
 
 /* Generation status bar */
 #generation-status {
-  position: absolute;
-  top: 68px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 120;
   display: none;
   align-items: center;
   gap: 10px;
-  padding: 9px 14px;
-  border-radius: 999px;
-  background: var(--bg-glass);
+  margin-left: 8px;
+  padding: 8px 12px;
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(62, 232, 214, 0.14), rgba(61, 160, 227, 0.1));
   border: 1px solid var(--border-accent);
   box-shadow: var(--shadow-float), var(--shadow-glow);
   color: var(--text-primary);
-  font-family: var(--font-display);
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.01em;
+  max-width: min(340px, 42vw);
+  flex-shrink: 1;
 }
 #generation-status.visible { display: inline-flex; }
 #generation-status .hg {
@@ -231,6 +229,77 @@ html, body {
   border-radius: 999px;
   border-top-color: transparent;
   animation: genSpin 0.9s linear infinite;
+  flex-shrink: 0;
+}
+#generation-status .gen-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+#generation-status-text {
+  font-family: var(--font-display);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#generation-status-detail {
+  font-family: var(--font-body);
+  font-size: 10.5px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#generation-status .gen-actions {
+  display: none;
+  align-items: center;
+  gap: 6px;
+  margin-left: 2px;
+  flex-shrink: 0;
+}
+#generation-status.mode-confirm .hg {
+  display: none;
+}
+#generation-status.mode-confirm .gen-actions {
+  display: inline-flex;
+}
+#generation-status.mode-running .gen-actions {
+  display: none;
+}
+.gen-action-btn {
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--border-medium);
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+  transition: transform 0.2s var(--ease-spring), border-color 0.2s, background 0.2s, color 0.2s;
+}
+.gen-action-btn:hover {
+  transform: translateY(-1px) scale(1.04);
+}
+.gen-action-btn.cancel:hover {
+  border-color: rgba(232, 90, 90, 0.45);
+  background: rgba(232, 90, 90, 0.12);
+  color: #ffd4d4;
+}
+.gen-action-btn.confirm:hover {
+  border-color: rgba(90, 232, 122, 0.45);
+  background: rgba(90, 232, 122, 0.14);
+  color: #d7ffe2;
 }
 @keyframes genSpin {
   from { transform: rotate(0deg); }
@@ -244,7 +313,8 @@ html, body {
   position: absolute;
   top: 16px;
   left: 50%;
-  transform: translateX(-50%);
+  transform: translateX(-50%) scale(var(--ui-scale));
+  transform-origin: top center;
   z-index: 100;
   display: flex;
   align-items: center;
@@ -256,6 +326,7 @@ html, body {
   border-radius: 50px;
   padding: 5px 6px;
   box-shadow: var(--shadow-float);
+  max-width: calc(100vw - 32px);
   transition: box-shadow 0.3s;
 }
 #control-pill:hover { box-shadow: var(--shadow-float), var(--shadow-glow); }
@@ -303,6 +374,9 @@ html, body {
   outline: none;
   min-width: 100px;
   transition: border-color 0.2s, background 0.2s, box-shadow 0.2s;
+}
+#sel-run {
+  width: clamp(220px, 28vw, 340px);
 }
 .lat-select:hover {
   border-color: var(--border-accent);
@@ -391,15 +465,41 @@ html, body {
   top: 72px;
   z-index: 90;
   width: 280px;
-  max-height: calc(100vh - 88px);
+  max-height: calc((100vh - 88px) / var(--ui-scale));
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  overflow-y: auto;
-  padding-bottom: 16px;
+  gap: 10px;
+  overflow-y: scroll;
+  overflow-x: visible;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(62, 232, 214, 0.55) rgba(8, 18, 32, 0.72);
+  overscroll-behavior: contain;
+  box-sizing: border-box;
+  padding: 8px 14px 24px 8px;
+  transform: scale(var(--ui-scale));
+  transform-origin: top left;
 }
-.side-panel.left  { left: 16px; }
-.side-panel.right { right: 16px; }
+.side-panel.left  { left: 12px; padding-right: 14px; }
+.side-panel.right { right: 12px; padding-left: 14px; padding-right: 8px; transform-origin: top right; }
+.side-panel::-webkit-scrollbar {
+  width: 12px;
+}
+.side-panel::-webkit-scrollbar-track {
+  background: rgba(8, 18, 32, 0.72);
+  border-radius: 999px;
+}
+.side-panel::-webkit-scrollbar-thumb {
+  background: rgba(62, 232, 214, 0.35);
+  border: 2px solid rgba(8, 18, 32, 0.72);
+  border-radius: 999px;
+}
+.side-panel::-webkit-scrollbar-thumb:hover {
+  background: rgba(62, 232, 214, 0.55);
+}
+.side-panel .panel-card {
+  flex: 0 0 auto;
+}
 
 /* Panel card */
 .panel-card {
@@ -428,7 +528,9 @@ html, body {
   text-transform: uppercase;
   letter-spacing: 0.1em;
   color: var(--text-accent);
+  white-space: nowrap;
 }
+
 .panel-action-btn {
   border: 1px solid var(--border-medium);
   background: var(--bg-elevated);
@@ -445,9 +547,11 @@ html, body {
   border-color: var(--border-accent);
   color: var(--text-accent);
 }
+
 .panel-body {
   padding: 12px 16px 14px;
 }
+
 .context-grid {
   display: grid;
   grid-template-columns: 1fr auto;
@@ -460,13 +564,74 @@ html, body {
 .context-v {
   color: var(--text-primary);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 11.5px;
+  font-weight: 400;
   text-align: right;
+  word-break: break-all;
+  line-height: 1.4;
 }
 .context-empty {
   color: var(--text-tertiary);
   font-size: 12px;
   font-style: italic;
+}
+
+.meta-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 5px 0;
+  gap: 12px;
+}
+.meta-row + .meta-row { border-top: 1px solid var(--border-subtle); }
+.meta-key {
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+.meta-key.seed-copyable {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.meta-val {
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 400;
+  text-align: right;
+  word-break: break-all;
+  line-height: 1.4;
+}
+.meta-val.seed {
+  color: var(--text-accent);
+  font-weight: 500;
+}
+
+.meta-copy-btn {
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--border-medium);
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 11px;
+  line-height: 1;
+  flex-shrink: 0;
+  transition: border-color 0.2s, color 0.2s, background 0.2s, transform 0.2s;
+}
+.meta-copy-btn:hover {
+  border-color: var(--border-accent);
+  color: var(--text-accent);
+  transform: translateY(-1px);
+}
+.meta-copy-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  color: var(--text-tertiary);
 }
 
 /* Toggle switches */
@@ -547,37 +712,6 @@ html, body {
   background: var(--lat-accent);
 }
 
-/* Metadata key-value */
-.meta-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  padding: 5px 0;
-  gap: 12px;
-}
-.meta-row + .meta-row { border-top: 1px solid var(--border-subtle); }
-.meta-key {
-  font-family: var(--font-body);
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--text-secondary);
-  white-space: nowrap;
-  text-transform: capitalize;
-}
-.meta-val {
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-  font-weight: 400;
-  color: var(--text-primary);
-  text-align: right;
-  word-break: break-all;
-  line-height: 1.4;
-}
-.meta-val.seed {
-  color: var(--text-accent);
-  font-weight: 500;
-}
-
 /* ═══════════════════════════════════════════════
    RIGHT PANEL — BIOME GALLERY
    ═══════════════════════════════════════════════ */
@@ -608,7 +742,6 @@ html, body {
   border-radius: 4px;
   border: 1px solid rgba(255,255,255,0.08);
   flex-shrink: 0;
-  transition: transform 0.2s var(--ease-spring);
 }
 .biome-entry:hover .biome-swatch { transform: scale(1.15); }
 
@@ -644,6 +777,9 @@ html, body {
   font-size: 12px;
   color: var(--text-primary);
   outline: none;
+  user-select: text;
+  -webkit-user-select: text;
+  pointer-events: auto;
   transition: border-color 0.2s;
 }
 .biome-search::placeholder { color: var(--text-tertiary); }
@@ -665,12 +801,13 @@ html, body {
   padding: 14px 16px;
   min-width: 200px;
   opacity: 0;
-  transform: translateY(4px);
+  transform: translateY(4px) scale(var(--ui-scale));
+  transform-origin: top left;
   transition: opacity 0.2s var(--ease-smooth), transform 0.2s var(--ease-smooth);
 }
 #inspect-card.visible {
   opacity: 1;
-  transform: translateY(0);
+  transform: translateY(0) scale(var(--ui-scale));
 }
 
 .inspect-color-bar {
@@ -751,6 +888,8 @@ html, body {
   bottom: 16px;
   left: 16px;
   z-index: 10;
+  transform: scale(var(--ui-scale));
+  transform-origin: bottom left;
   background: var(--bg-glass);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
@@ -794,7 +933,8 @@ html, body {
   position: absolute;
   top: 72px;
   left: 50%;
-  transform: translateX(-50%) translateY(-8px);
+  transform: translateX(-50%) translateY(-8px) scale(var(--ui-scale));
+  transform-origin: top center;
   z-index: 300;
   background: var(--bg-glass);
   backdrop-filter: blur(20px);
@@ -812,7 +952,7 @@ html, body {
 }
 #status-toast.visible {
   opacity: 1;
-  transform: translateX(-50%) translateY(0);
+  transform: translateX(-50%) translateY(0) scale(var(--ui-scale));
 }
 #status-toast .dot {
   display: inline-block;
@@ -892,907 +1032,1088 @@ html, body {
 @media (max-width: 960px) {
   .side-panel { width: 240px; }
 }
-@media (max-width: 720px) {
-  .side-panel.left  { display: none; }
-  .side-panel.right { display: none; }
-  #control-pill { max-width: 95vw; overflow-x: auto; }
-}
-</style>
-</head>
-<body>
-
-<div id="app">
-  <!-- ════════ MAP VIEWPORT ════════ -->
+  @media (max-width: 720px) {
+   .side-panel.left  { display: none; }
+   .side-panel.right { display: none; }
+   #control-pill { max-width: 95vw; overflow-x: auto; }
+  }
+ 
+  /* Additional styles */
+ #card-biomes {
+  display: flex;
+  flex-direction: column;
+  min-height: 280px;
+  max-height: 50vh;
+ }
+ 
+ #biome-list-body {
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+  padding-top: 4px;
+ }
+ </style>
+ </head>
+ <body>
+ <div id="app">
   <div id="canvas-viewport">
-    <canvas id="map-canvas"></canvas>
-    <canvas id="highlight-canvas"></canvas>
-    <canvas id="grid-canvas"></canvas>
-    <canvas id="band-canvas"></canvas>
-    <div id="crosshair"><div class="h-line"></div><div class="v-line"></div></div>
-
-    <!-- Empty state -->
-    <div id="empty-state">
-      <div class="empty-icon">🌐</div>
-      <div class="empty-title">Latitude Atlas Viewer</div>
-      <div class="empty-sub">Select a run to begin exploring</div>
-    </div>
+   <canvas id="map-canvas"></canvas>
+   <canvas id="highlight-canvas"></canvas>
+   <canvas id="grid-canvas"></canvas>
+   <canvas id="band-canvas"></canvas>
+   <div id="crosshair"><div class="h-line"></div><div class="v-line"></div></div>
+   <div id="empty-state">
+    <div class="empty-icon">🗺</div>
+    <div class="empty-title">Latitude Atlas Viewer</div>
+    <div class="empty-sub">Select a run to begin exploring</div>
+   </div>
   </div>
-
-  <!-- ════════ CONTROL PILL ════════ -->
+ 
   <div id="control-pill">
-    <div class="pill-segment">
-      <span class="pill-label">Run</span>
-      <div class="lat-select-wrap">
-        <select id="sel-run" class="lat-select">
-          <option value="">— choose —</option>
-        </select>
-      </div>
+   <div class="pill-segment">
+    <span class="pill-label">Run</span>
+    <div class="lat-select-wrap">
+     <select id="sel-run" class="lat-select">
+      <option value="">— choose a generated world —</option>
+     </select>
     </div>
-    <div class="pill-divider"></div>
-    <div class="pill-segment">
-      <span class="pill-label" title="Auto-selected detail level from run contents">Detail</span>
-      <div id="detail-readout" class="pill-readout" title="Auto-selected detail level from run contents">Auto</div>
+   </div>
+   <div class="pill-divider"></div>
+   <div class="pill-segment">
+    <span class="pill-label">Detail</span>
+    <div id="detail-readout" class="pill-readout">Auto</div>
+   </div>
+   <div class="pill-divider"></div>
+   <div class="pill-segment">
+    <span class="pill-label">UI</span>
+    <div class="lat-select-wrap">
+     <select id="ui-scale" class="lat-select" title="Scale viewer UI chrome">
+      <option value="0.9">Compact</option>
+      <option value="1">Default</option>
+      <option value="1.15">Large</option>
+      <option value="1.3">XL</option>
+     </select>
     </div>
-    <div class="pill-divider"></div>
-    <div class="pill-segment">
-      <span class="pill-label">Generate</span>
-      <div class="lat-select-wrap">
-        <select id="gen-quality" class="lat-select" title="Generate a new run at a selected quality">
-          <option value="">Choose…</option>
-          <option value="potato">Potato</option>
-          <option value="low">Low</option>
-          <option value="medium">Medium</option>
-          <option value="high">High</option>
-          <option value="extra-high">Extra High</option>
-        </select>
-      </div>
+   </div>
+   <div class="pill-divider"></div>
+   <div class="pill-segment">
+    <span class="pill-label">Generate</span>
+    <div class="lat-select-wrap">
+     <select id="gen-quality" class="lat-select" title="Generate a new run at a selected quality">
+      <option value="">Choose…</option>
+      <option value="potato">Potato</option>
+      <option value="low">Low</option>
+      <option value="medium">Medium</option>
+      <option value="high">High</option>
+     </select>
     </div>
-    <div class="pill-divider"></div>
-    <button class="pill-icon-btn" id="btn-fit" title="Fit to view">⊡</button>
-    <button class="pill-icon-btn" id="btn-reset-zoom" title="Reset zoom">1:1</button>
-    <div class="pill-divider"></div>
-    <button id="theme-btn" title="Toggle theme">◐</button>
+   </div>
+   <div id="generation-status">
+    <span class="hg"></span>
+    <span class="gen-copy">
+     <span id="generation-status-text">Generating a new world</span>
+     <span id="generation-status-detail">World generation can take several minutes.</span>
+    </span>
+    <span class="gen-actions">
+     <button type="button" class="gen-action-btn cancel" id="generation-cancel" title="Cancel">×</button>
+     <button type="button" class="gen-action-btn confirm" id="generation-confirm" title="Confirm">✓</button>
+    </span>
+   </div>
+   <div class="pill-divider"></div>
+   <button class="pill-icon-btn" id="btn-save-run" title="Save current run archive">💾</button>
+   <button class="pill-icon-btn" id="btn-fit" title="Fit to view">⌖</button>
+   <button class="pill-icon-btn" id="btn-reset-zoom" title="Reset zoom">1:1</button>
+   <div class="pill-divider"></div>
+   <button id="theme-btn" title="Toggle theme">◐</button>
   </div>
-
-  <!-- ════════ LEFT PANEL ════════ -->
+ 
   <div class="side-panel left" id="panel-left">
-    <!-- Overlays -->
-    <div class="panel-card">
-      <div class="panel-header">
-        <span class="panel-title">Overlays</span>
-      </div>
-      <div class="panel-body">
-        <div class="toggle-row">
-          <span class="toggle-label">Grid Lines</span>
-          <label class="toggle-switch">
-            <input type="checkbox" id="tog-grid">
-            <span class="toggle-track"></span>
-          </label>
-        </div>
-        <div class="toggle-row">
-          <span class="toggle-label">Crosshair</span>
-          <label class="toggle-switch">
-            <input type="checkbox" id="tog-crosshair">
-            <span class="toggle-track"></span>
-          </label>
-        </div>
-        <div class="toggle-row">
-          <span class="toggle-label">Highlight Biome</span>
-          <label class="toggle-switch">
-            <input type="checkbox" id="tog-highlight">
-            <span class="toggle-track"></span>
-          </label>
-        </div>
-        <div class="toggle-row">
-          <span class="toggle-label">High Contrast Selection</span>
-          <label class="toggle-switch">
-            <input type="checkbox" id="tog-hi-contrast">
-            <span class="toggle-track"></span>
-          </label>
-        </div>
-        <div class="toggle-row">
-          <span class="toggle-label">Inspect on Hover</span>
-          <label class="toggle-switch">
-            <input type="checkbox" id="tog-inspect" checked>
-            <span class="toggle-track"></span>
-          </label>
-        </div>
-        <div class="toggle-row">
-          <span class="toggle-label">Biome Tooltip</span>
-          <label class="toggle-switch">
-            <input type="checkbox" id="tog-tooltip" checked>
-            <span class="toggle-track"></span>
-          </label>
-        </div>
-        <div class="toggle-row">
-          <span class="toggle-label">Latitude Bands</span>
-          <label class="toggle-switch">
-            <input type="checkbox" id="tog-bands">
-            <span class="toggle-track"></span>
-          </label>
-        </div>
-        <div class="toggle-row">
-          <span class="toggle-label">Band Opacity</span>
-          <div class="range-wrap">
-            <input type="range" id="bands-opacity" min="10" max="90" value="24" step="1">
-            <span class="range-val" id="bands-opacity-val">24%</span>
-          </div>
-        </div>
-        <div class="band-desc-hint">Descriptors: Equator, Tropics, Subtropics, Temperate, Subpolar, Polar</div>
-      </div>
+   <div class="panel-card">
+    <div class="panel-header">
+     <span class="panel-title">Overlays</span>
     </div>
-
-    <!-- Run Metadata -->
-    <div class="panel-card" id="card-metadata">
-      <div class="panel-header">
-        <span class="panel-title">Run Metadata</span>
+    <div class="panel-body">
+     <div class="toggle-row">
+      <span class="toggle-label">Grid Lines</span>
+      <label class="toggle-switch">
+       <input type="checkbox" id="tog-grid">
+       <span class="toggle-track"></span>
+      </label>
+     </div>
+     <div class="toggle-row">
+      <span class="toggle-label">Crosshair</span>
+      <label class="toggle-switch">
+       <input type="checkbox" id="tog-crosshair">
+       <span class="toggle-track"></span>
+      </label>
+     </div>
+     <div class="toggle-row">
+      <span class="toggle-label">Highlight Biome</span>
+      <label class="toggle-switch">
+       <input type="checkbox" id="tog-highlight">
+       <span class="toggle-track"></span>
+      </label>
+     </div>
+     <div class="toggle-row">
+      <span class="toggle-label">High Contrast Selection</span>
+      <label class="toggle-switch">
+       <input type="checkbox" id="tog-hi-contrast">
+       <span class="toggle-track"></span>
+      </label>
+     </div>
+     <div class="toggle-row">
+      <span class="toggle-label">Inspect on Hover</span>
+      <label class="toggle-switch">
+       <input type="checkbox" id="tog-inspect" checked>
+       <span class="toggle-track"></span>
+      </label>
+     </div>
+     <div class="toggle-row">
+      <span class="toggle-label">Biome Tooltip</span>
+      <label class="toggle-switch">
+       <input type="checkbox" id="tog-tooltip" checked>
+       <span class="toggle-track"></span>
+      </label>
+     </div>
+     <div class="toggle-row">
+      <span class="toggle-label">Latitude Bands</span>
+      <label class="toggle-switch">
+       <input type="checkbox" id="tog-bands">
+       <span class="toggle-track"></span>
+      </label>
+     </div>
+     <div class="toggle-row">
+      <span class="toggle-label">Band Opacity</span>
+      <div class="range-wrap">
+       <input type="range" id="bands-opacity" min="10" max="90" value="24" step="1">
+       <span class="range-val" id="bands-opacity-val">24%</span>
       </div>
-      <div class="panel-body" id="metadata-body">
-        <div style="color: var(--text-tertiary); font-size: 12px; font-style: italic;">No run loaded</div>
-      </div>
+     </div>
+     <div class="band-desc-hint">Descriptors: Equator, Tropics, Subtropics, Temperate, Subpolar, Polar</div>
     </div>
+   </div>
+ 
+   <div class="panel-card" id="card-metadata">
+    <div class="panel-header">
+     <span class="panel-title">Run Summary</span>
+    </div>
+    <div class="panel-body" id="metadata-body">
+     <div style="color:var(--text-tertiary);font-size:12px;font-style:italic;">Select a run to view summary</div>
+    </div>
+   </div>
   </div>
-
-  <!-- ════════ RIGHT PANEL — BIOME GALLERY ════════ -->
+ 
   <div class="side-panel right" id="panel-right">
-    <div class="panel-card" id="card-selected">
-      <div class="panel-header">
-        <span class="panel-title">Biome Highlights</span>
-        <button id="btn-clear-selection" class="panel-action-btn" title="Clear selected biome highlight">Clear</button>
-      </div>
-      <div class="panel-body" id="selection-context-body">
-        <div class="context-empty">No biome selected</div>
-      </div>
+   <div class="panel-card" id="card-selected">
+    <div class="panel-header">
+     <span class="panel-title">Biome Highlights</span>
+     <button id="btn-clear-selection" class="panel-action-btn" title="Clear selected biome highlight">Clear</button>
     </div>
-    <div class="panel-card" id="card-biomes" style="display:flex; flex-direction:column; min-height: 280px;">
-      <div class="panel-header">
-        <span class="panel-title">Biome Palette</span>
-        <span id="biome-count" style="font-family:var(--font-mono); font-size:10px; color:var(--text-tertiary);"></span>
-      </div>
-      <div class="biome-search-wrap">
-        <input type="text" class="biome-search" id="biome-search" placeholder="Filter biomes…" disabled>
-      </div>
-      <div class="panel-body" id="biome-list-body" style="overflow-y:auto; flex:1; padding-top:4px;">
-        <div style="color: var(--text-tertiary); font-size: 12px; font-style: italic;">No biomes loaded</div>
-      </div>
+    <div class="panel-body" id="selection-context-body">
+     <div class="context-empty">No biome selected</div>
     </div>
+   </div>
+   <div class="panel-card" id="card-biomes">
+    <div class="panel-header">
+     <span class="panel-title">Biome Palette</span>
+     <span id="biome-count" style="font-family:var(--font-mono); font-size:10px; color:var(--text-tertiary);"></span>
+    </div>
+    <div class="biome-search-wrap">
+     <input type="text" class="biome-search" id="biome-search" placeholder="Filter biomes…" disabled>
+    </div>
+    <div class="panel-body" id="biome-list-body">
+     <div style="color:var(--text-tertiary); font-size:12px; font-style:italic;">No biomes loaded</div>
+    </div>
+   </div>
   </div>
-
-  <!-- ════════ BAND LEGEND ════════ -->
+ 
   <div id="band-legend"></div>
-
-  <!-- ════════ INSPECT CARD ════════ -->
   <div id="inspect-card">
-    <div class="inspect-color-bar" id="inspect-color-bar"></div>
-    <div class="inspect-biome-name" id="inspect-biome-name">—</div>
-    <div class="inspect-biome-id" id="inspect-biome-id"></div>
-    <div class="inspect-coords" id="inspect-coords"></div>
-    <div class="inspect-zone" id="inspect-zone" style="font-family:var(--font-display);font-size:10.5px;font-weight:500;margin-top:6px;padding-top:5px;border-top:1px solid var(--border-subtle);"></div>
+   <div class="inspect-color-bar" id="inspect-color-bar"></div>
+   <div class="inspect-biome-name" id="inspect-biome-name">—</div>
+   <div class="inspect-biome-id" id="inspect-biome-id"></div>
+   <div class="inspect-coords" id="inspect-coords"></div>
+   <div class="inspect-zone" id="inspect-zone" style="font-family:var(--font-display);font-size:10.5px;font-weight:500;margin-top:6px;padding-top:5px;border-top:1px solid var(--border-subtle);"></div>
   </div>
-
-  <!-- ════════ STATUS TOAST ════════ -->
   <div id="status-toast"><span class="dot"></span><span class="msg"></span></div>
-  <div id="generation-status"><span class="hg"></span><span id="generation-status-text">Generating atlas run…</span></div>
-
-  <!-- ════════ ZOOM BADGE ════════ -->
   <div id="zoom-badge">100%</div>
   <div id="coord-readout">— , —</div>
-</div>
-
-<!-- ═══════════════════════════════════════════════════════════════
-     JAVASCRIPT
-     ═══════════════════════════════════════════════════════════════ -->
-<script>
-(() => {
-'use strict';
-
-/* ─── CONFIG ─── */
-// !! Adjust this base URL to your Python server address !!
-const API_BASE = window.location.origin;
-
-/* ─── DOM REFS ─── */
-const $ = (s, p=document) => p.querySelector(s);
-const $$ = (s, p=document) => [...p.querySelectorAll(s)];
-
-const viewport    = $('#canvas-viewport');
-const mapCanvas   = $('#map-canvas');
-const hlCanvas    = $('#highlight-canvas');
-const gridCanvas  = $('#grid-canvas');
-const bandCanvas  = $('#band-canvas');
-const mapCtx      = mapCanvas.getContext('2d', { willReadFrequently: true });
-const hlCtx       = hlCanvas.getContext('2d');
-const gridCtx     = gridCanvas.getContext('2d');
-const bandCtx     = bandCanvas.getContext('2d');
-const crosshair   = $('#crosshair');
-const inspectCard = $('#inspect-card');
-const emptyState  = $('#empty-state');
-const zoomBadge   = $('#zoom-badge');
-const coordReadout= $('#coord-readout');
-const statusToast = $('#status-toast');
-const generationStatus = $('#generation-status');
-const generationStatusText = $('#generation-status-text');
-
-const selRun      = $('#sel-run');
-const detailReadout = $('#detail-readout');
-const genQuality = $('#gen-quality');
-const btnFit      = $('#btn-fit');
-const btnReset    = $('#btn-reset-zoom');
-const themeBtn    = $('#theme-btn');
-const togGrid     = $('#tog-grid');
-const togCrosshair= $('#tog-crosshair');
-const togHighlight= $('#tog-highlight');
-const togHiContrast = $('#tog-hi-contrast');
-const togInspect  = $('#tog-inspect');
-const togTooltip  = $('#tog-tooltip');
-const togBands    = $('#tog-bands');
-const bandsOpacity = $('#bands-opacity');
-const bandsOpacityVal = $('#bands-opacity-val');
-const bandLegend  = $('#band-legend');
-const biomeSearch = $('#biome-search');
-const biomeListBody = $('#biome-list-body');
-const metadataBody  = $('#metadata-body');
-const biomeCountEl  = $('#biome-count');
-const btnClearSelection = $('#btn-clear-selection');
-const selectionContextBody = $('#selection-context-body');
-
-/* ─── STATE ─── */
-let state = {
+ </div>
+ <script>
+ (() => {
+ 'use strict';
+ 
+ const API_BASE = window.location.origin;
+ const $ = (s, p=document) => p.querySelector(s);
+ const $$ = (s, p=document) => [...p.querySelectorAll(s)];
+ 
+ const viewport = $('#canvas-viewport');
+ const mapCanvas = $('#map-canvas');
+ const hlCanvas = $('#highlight-canvas');
+ const gridCanvas = $('#grid-canvas');
+ const bandCanvas = $('#band-canvas');
+ const mapCtx = mapCanvas.getContext('2d', { willReadFrequently: true });
+ const hlCtx = hlCanvas.getContext('2d');
+ const gridCtx = gridCanvas.getContext('2d');
+ const bandCtx = bandCanvas.getContext('2d');
+ const crosshair = $('#crosshair');
+ const inspectCard = $('#inspect-card');
+ const emptyState = $('#empty-state');
+ const zoomBadge = $('#zoom-badge');
+ const coordReadout = $('#coord-readout');
+ const statusToast = $('#status-toast');
+ const generationStatus = $('#generation-status');
+ const generationStatusText = $('#generation-status-text');
+ const generationStatusDetail = $('#generation-status-detail');
+ const generationCancelBtn = $('#generation-cancel');
+ const generationConfirmBtn = $('#generation-confirm');
+ 
+ const selRun = $('#sel-run');
+ const detailReadout = $('#detail-readout');
+ const uiScaleSel = $('#ui-scale');
+ const genQuality = $('#gen-quality');
+ const btnFit = $('#btn-fit');
+ const btnReset = $('#btn-reset-zoom');
+ const themeBtn = $('#theme-btn');
+ const togGrid = $('#tog-grid');
+ const togCrosshair = $('#tog-crosshair');
+ const togHighlight = $('#tog-highlight');
+ const togHiContrast = $('#tog-hi-contrast');
+ const togInspect = $('#tog-inspect');
+ const togTooltip = $('#tog-tooltip');
+ const togBands = $('#tog-bands');
+ const bandsOpacity = $('#bands-opacity');
+ const bandsOpacityVal = $('#bands-opacity-val');
+ const bandLegend = $('#band-legend');
+ const biomeSearch = $('#biome-search');
+ const biomeListBody = $('#biome-list-body');
+ const metadataBody = $('#metadata-body');
+ const biomeCountEl = $('#biome-count');
+ const btnClearSelection = $('#btn-clear-selection');
+ const selectionContextBody = $('#selection-context-body');
+ const btnSaveRun = $('#btn-save-run');
+ 
+ let state = {
   runs: [],
+  runManifestMap: {},
   currentRun: null,
   currentLayer: null,
+  availableLayers: [],
   manifest: null,
-  biomes: [],          // [{ id, name, color, pct }]
-  biomeMap: {},        // id -> biome
-  imageData: null,     // ImageData from loaded map
+  biomes: [],
+  biomeMap: {},
+  imageData: null,
   mapWidth: 0,
   mapHeight: 0,
-  // viewport transform
-  panX: 0, panY: 0,
+  panX: 0,
+  panY: 0,
   zoom: 1,
-  // interaction
   isDragging: false,
-  dragStartX: 0, dragStartY: 0,
-  panStartX: 0, panStartY: 0,
+  dragStartX: 0,
+  dragStartY: 0,
+  panStartX: 0,
+  panStartY: 0,
   hoveredBiomeId: null,
   selectedBiomeId: null,
   renderedHighlightKey: null,
-  // pixel color -> biome lookup
   colorToBiome: {},
+  biomeByIdMap: {},
+  biomeByIndex: {},
+  biomeIndices: null,
+  biomeIndexWidth: 0,
+  biomeIndexHeight: 0,
   selectionStatsCache: {},
   bandOpacity: 0.24,
   generationActive: false,
+  pendingGenerationPreset: null,
   generationPollTimer: null,
-};
-
-const LEGACY_BEACH_RED = [235, 72, 63];
-const BEACH_SAND = [231, 215, 165];
-const GENERATION_PRESETS = {
+ };
+ 
+ const LEGACY_BEACH_RED = [235, 72, 63];
+ const BEACH_SAND = [231, 215, 165];
+ const GENERATION_PRESETS = {
   potato: { label: 'Potato', resolution: 128 },
   low: { label: 'Low', resolution: 64 },
   medium: { label: 'Medium', resolution: 32 },
   high: { label: 'High', resolution: 16 },
-  'extra-high': { label: 'Extra High', resolution: 8 },
-};
-
-/* ─── HELPERS ─── */
-function colorKey(r, g, b) { return `${r},${g},${b}`; }
-
-function showToast(msg, type='loading') {
+ };
+ 
+ function colorKey(r, g, b) { return `${r},${g},${b}`; }
+ 
+ function showToast(msg, type='loading') {
   const dot = $('.dot', statusToast);
-  const m   = $('.msg', statusToast);
+  const m = $('.msg', statusToast);
   dot.className = 'dot ' + type;
   m.textContent = msg;
   statusToast.classList.add('visible');
   if (type !== 'loading') setTimeout(() => statusToast.classList.remove('visible'), 2200);
-}
-function hideToast() { statusToast.classList.remove('visible'); }
-
-function setGenerationStatus(active, text) {
-  if (!generationStatus) return;
-  if (active) {
-    generationStatusText.textContent = text || 'Generating atlas run…';
-    generationStatus.classList.add('visible');
-  } else {
-    generationStatus.classList.remove('visible');
+ }
+ 
+ function hideToast() {
+  statusToast.classList.remove('visible');
+ }
+ 
+ function normalizeUiScale(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 1;
+  return Math.min(1.3, Math.max(0.9, n));
+ }
+ 
+ function applyUiScale(value) {
+  const scale = normalizeUiScale(value);
+  document.documentElement.style.setProperty('--ui-scale', String(scale));
+  if (uiScaleSel) uiScaleSel.value = String(scale);
+  localStorage.setItem('lat-ui-scale', String(scale));
+ }
+ 
+ function clearPendingGeneration() {
+  state.pendingGenerationPreset = null;
+  generationStatus.classList.remove('mode-confirm');
+ }
+ 
+  function showGenerationConfirm(presetKey) {
+   const preset = GENERATION_PRESETS[presetKey];
+   if (!preset || state.generationActive) return;
+   state.pendingGenerationPreset = presetKey;
+   generationStatusText.textContent = `Generate ${preset.label} world?`;
+   if (generationStatusDetail) generationStatusDetail.textContent = 'World generation can take several minutes.';
+   generationStatus.classList.remove('mode-running');
+   generationStatus.classList.add('visible', 'mode-confirm');
   }
-}
-window.__latSetGenerationStatus = setGenerationStatus;
+ 
+  function setGenerationStatus(active, text) {
+  if (active) {
+   clearPendingGeneration();
+   generationStatusText.textContent = text || 'Generating a new world';
+   if (generationStatusDetail) generationStatusDetail.textContent = 'World generation can take several minutes.';
+   generationStatus.classList.add('mode-running', 'visible');
+  } else {
+   clearPendingGeneration();
+   generationStatus.classList.remove('mode-running', 'visible', 'mode-confirm');
+  }
+ }
 
-async function apiFetch(path, options) {
-  const resp = await fetch(API_BASE + path, options || {});
-  if (!resp.ok) throw new Error(`API ${resp.status}: ${path}`);
-  const ct = resp.headers.get('content-type') || '';
-  if (ct.includes('json')) return resp.json();
-  if (ct.includes('image')) return resp.blob();
-  return resp.text();
+  async function apiFetch(path, options) {
+   const resp = await fetch(API_BASE + path, options || {});
+   if (!resp.ok) throw new Error(`API ${resp.status}: ${path}`);
+   const ct = resp.headers.get('content-type') || '';
+   if (ct.includes('json')) return resp.json();
+   if (ct.includes('image')) return resp.blob();
+   return resp.text();
+  }
+
+  function formatRunTimestamp(raw) {
+   const s = String(raw || '');
+   const m = s.match(/^(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})$/);
+   if (!m) return '—';
+   const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4]), Number(m[5]), Number(m[6]));
+   if (Number.isNaN(d.getTime())) return '—';
+   return d.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
+  }
+ 
+  function boolLabel(value) {
+ return value ? 'Yes' : 'No';
 }
 
-function prettifyKey(k) {
-  return k.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+async function copyText(text) {
+ if (navigator.clipboard && navigator.clipboard.writeText) {
+  await navigator.clipboard.writeText(text);
+  return;
+ }
+ const temp = document.createElement('textarea');
+ temp.value = text;
+ temp.setAttribute('readonly', 'readonly');
+ temp.style.position = 'absolute';
+ temp.style.left = '-9999px';
+ document.body.appendChild(temp);
+ temp.select();
+ document.execCommand('copy');
+ temp.remove();
 }
 
 function biomeById(id) {
-  if (!id) return null;
-  return state.biomes.find((b) => b.id === id) || null;
+ if (!id) return null;
+ return state.biomeByIdMap[id] || null;
+}
+
+function biomeByIndex(index) {
+ if (!Number.isFinite(index)) return null;
+ return state.biomeByIndex[index & 0xFF] || null;
+}
+
+function decodeBiomeIndexImage(image) {
+ const width = image.naturalWidth || image.width || 1;
+ const height = image.naturalHeight || image.height || 1;
+ const temp = document.createElement('canvas');
+ temp.width = width;
+ temp.height = height;
+ const tempCtx = temp.getContext('2d', { willReadFrequently: true });
+ tempCtx.drawImage(image, 0, 0);
+ const pixels = tempCtx.getImageData(0, 0, width, height).data;
+ const indices = new Uint8Array(width * height);
+ for (let i = 0; i < indices.length; i++) {
+  indices[i] = pixels[i * 4];
+ }
+ return { width, height, indices };
+}
+
+function decodeBiomeIndexBlob(blob) {
+ if (!blob) return Promise.resolve(null);
+ return new Promise((resolve, reject) => {
+  const url = URL.createObjectURL(blob);
+  const img = new Image();
+  img.onload = () => {
+   try {
+    resolve(decodeBiomeIndexImage(img));
+   } catch (err) {
+    reject(err);
+   } finally {
+    URL.revokeObjectURL(url);
+   }
+  };
+  img.onerror = () => {
+   URL.revokeObjectURL(url);
+   reject(new Error('Biome ids image load failed'));
+  };
+  img.src = url;
+ });
+}
+
+function biomeIndexAtPixel(x, y) {
+ if (!state.biomeIndices) return null;
+ if (state.biomeIndexWidth !== state.mapWidth || state.biomeIndexHeight !== state.mapHeight) return null;
+ if (x < 0 || y < 0 || x >= state.biomeIndexWidth || y >= state.biomeIndexHeight) return null;
+ return state.biomeIndices[(y * state.biomeIndexWidth) + x];
+}
+
+function biomeAtPixel(x, y, rgb) {
+ const biomeIndex = biomeIndexAtPixel(x, y);
+ if (biomeIndex != null) {
+  const indexed = biomeByIndex(biomeIndex);
+  if (indexed) return indexed;
+ }
+ if (Array.isArray(rgb) && rgb.length >= 3) {
+  return state.colorToBiome[colorKey(rgb[0], rgb[1], rgb[2])] || null;
+ }
+ return null;
+}
+
+function pixelMatchesBiome(biome, pixelNumber, sourceData) {
+ if (!biome) return false;
+ if (state.biomeIndices && state.biomeIndexWidth === state.mapWidth && state.biomeIndexHeight === state.mapHeight && Number.isFinite(biome.index)) {
+  return state.biomeIndices[pixelNumber] === (biome.index & 0xFF);
+ }
+ if (!sourceData || !Array.isArray(biome.color)) return false;
+ const offset = pixelNumber * 4;
+ const [tr, tg, tb] = biome.color;
+ return sourceData[offset] === tr && sourceData[offset + 1] === tg && sourceData[offset + 2] === tb;
 }
 
 function generationLabelForResolution(resolution) {
-  const hit = Object.values(GENERATION_PRESETS).find((p) => p.resolution === Number(resolution));
-  return hit ? hit.label : `Custom ${resolution}`;
+ const hit = Object.values(GENERATION_PRESETS).find((preset) => preset.resolution === Number(resolution));
+ return hit ? hit.label : `Custom ${resolution}`;
 }
 
 function selectionStatsForBiome(biome) {
-  if (!state.imageData || !state.mapWidth || !state.mapHeight || !biome || !Array.isArray(biome.color)) return null;
-  const cacheKey = `${state.currentRun || ''}|${state.currentLayer || ''}|${biome.id}`;
-  if (state.selectionStatsCache[cacheKey]) return state.selectionStatsCache[cacheKey];
-
-  const [tr, tg, tb] = biome.color;
-  const d = state.imageData.data;
-  let count = 0;
-  let minX = Number.POSITIVE_INFINITY;
-  let minY = Number.POSITIVE_INFINITY;
-  let maxX = -1;
-  let maxY = -1;
-  let sumX = 0;
-  let sumY = 0;
-
-  for (let i = 0; i < d.length; i += 4) {
-    if (d[i] !== tr || d[i+1] !== tg || d[i+2] !== tb) continue;
-    const p = i / 4;
-    const x = p % state.mapWidth;
-    const y = Math.floor(p / state.mapWidth);
-    count++;
-    sumX += x;
-    sumY += y;
-    if (x < minX) minX = x;
-    if (x > maxX) maxX = x;
-    if (y < minY) minY = y;
-    if (y > maxY) maxY = y;
-  }
-
-  if (!count) return null;
-
-  const cx = Math.round(sumX / count);
-  const cy = Math.round(sumY / count);
-  const centerY = state.mapHeight / 2;
-  const latFrac = Math.abs(cy - centerY) / centerY;
-  const zone = zoneForFrac(latFrac);
-  const hemi = cy < centerY ? 'N' : (cy > centerY ? 'S' : 'EQ');
-
-  const stats = {
-    count,
-    centroidX: cx,
-    centroidY: cy,
-    bboxW: maxX - minX + 1,
-    bboxH: maxY - minY + 1,
-    latDeg: Math.round(latFrac * 90),
-    hemisphere: hemi,
-    zoneLabel: zone.label,
-  };
-  state.selectionStatsCache[cacheKey] = stats;
-  return stats;
+ if (!state.imageData || !state.mapWidth || !state.mapHeight || !biome || !Array.isArray(biome.color)) return null;
+ const cacheKey = `${state.currentRun || ''}|${state.currentLayer || ''}|${biome.id}`;
+ if (state.selectionStatsCache[cacheKey]) return state.selectionStatsCache[cacheKey];
+ const d = state.imageData.data;
+ let count = 0;
+ let minX = Number.POSITIVE_INFINITY;
+ let minY = Number.POSITIVE_INFINITY;
+ let maxX = -1;
+ let maxY = -1;
+ let sumX = 0;
+ let sumY = 0;
+ const pixelCount = state.mapWidth * state.mapHeight;
+ for (let p = 0; p < pixelCount; p++) {
+  if (!pixelMatchesBiome(biome, p, d)) continue;
+  const x = p % state.mapWidth;
+  const y = Math.floor(p / state.mapWidth);
+  count++;
+  sumX += x;
+  sumY += y;
+  if (x < minX) minX = x;
+  if (x > maxX) maxX = x;
+  if (y < minY) minY = y;
+  if (y > maxY) maxY = y;
+ }
+ if (!count) return null;
+ const cx = Math.round(sumX / count);
+ const cy = Math.round(sumY / count);
+ const worldPos = worldPositionForPixel(cx, cy);
+ const latContext = worldPos ? latitudeContextForWorldZ(worldPos.z) : null;
+ const stats = {
+  count,
+  centroidPixelX: cx,
+  centroidPixelY: cy,
+  centroidX: worldPos ? worldPos.x : cx,
+  centroidZ: worldPos ? worldPos.z : cy,
+  bboxW: maxX - minX + 1,
+  bboxH: maxY - minY + 1,
+  latDeg: latContext ? latContext.deg : null,
+  hemisphere: latContext ? latContext.hemisphere : 'EQ',
+  zoneLabel: latContext ? latContext.zone.label : '—',
+ };
+ state.selectionStatsCache[cacheKey] = stats;
+ return stats;
 }
 
 function renderSelectionContext(biome) {
-  if (!selectionContextBody) return;
-  if (!biome) {
-    selectionContextBody.innerHTML = '<div class="context-empty">No biome selected</div>';
-    return;
-  }
-
-  const stats = selectionStatsForBiome(biome);
-  const pct = biome.pct != null ? `${biome.pct.toFixed(2)}%` : '—';
-  const color = Array.isArray(biome.color) ? `rgb(${biome.color.join(',')})` : '—';
-
-  let html = `
-    <div class="context-grid">
-      <div class="context-k">Biome</div><div class="context-v">${biome.name}</div>
-      <div class="context-k">ID</div><div class="context-v">${biome.id}</div>
-      <div class="context-k">Coverage</div><div class="context-v">${pct}</div>
-      <div class="context-k">Display Color</div><div class="context-v">${color}</div>
-  `;
-
-  if (stats) {
-    html += `
-      <div class="context-k">Pixel Count</div><div class="context-v">${stats.count.toLocaleString()}</div>
-      <div class="context-k">Centroid (X,Z)</div><div class="context-v">${stats.centroidX}, ${stats.centroidY}</div>
-      <div class="context-k">Latitude Context</div><div class="context-v">${stats.latDeg}°${stats.hemisphere} (${stats.zoneLabel})</div>
-      <div class="context-k">Bounds (px)</div><div class="context-v">${stats.bboxW} × ${stats.bboxH}</div>
-    `;
-  }
-
-  html += '</div>';
-  selectionContextBody.innerHTML = html;
+ if (!selectionContextBody) return;
+ if (!biome) {
+  selectionContextBody.innerHTML = '<div class="context-empty">No biome selected</div>';
+  return;
+ }
+ const stats = selectionStatsForBiome(biome);
+ const pct = biome.pct != null ? `${biome.pct.toFixed(2)}%` : '—';
+ const color = Array.isArray(biome.color) ? `rgb(${biome.color.join(',')})` : '—';
+ let html = `
+   <div class="context-grid">
+     <div class="context-k">Biome</div><div class="context-v">${biome.name}</div>
+     <div class="context-k">ID</div><div class="context-v">${biome.id}</div>
+     <div class="context-k">Coverage</div><div class="context-v">${pct}</div>
+     <div class="context-k">Display Color</div><div class="context-v">${color}</div>`;
+ if (stats) {
+  html += `
+     <div class="context-k">Pixel Count</div><div class="context-v">${stats.count.toLocaleString()}</div>
+     <div class="context-k">Centroid (X,Z)</div><div class="context-v">${stats.centroidX}, ${stats.centroidZ}</div>
+     <div class="context-k">Latitude Context</div><div class="context-v">${stats.latDeg != null ? `${stats.latDeg}°${stats.hemisphere}` : '—'} (${stats.zoneLabel})</div>
+     <div class="context-k">Bounds (px)</div><div class="context-v">${stats.bboxW} × ${stats.bboxH}</div>`;
+ }
+ html += '\n   </div>';
+ selectionContextBody.innerHTML = html;
 }
 
 function clearBiomeSelection() {
-  state.selectedBiomeId = null;
-  highlightBiomeInList(null);
-  renderSelectionContext(null);
-  if (!togHighlight.checked) return;
-  const hovered = biomeById(state.hoveredBiomeId);
-  if (hovered) {
-    renderHighlight(hovered);
-  } else {
-    clearHighlight();
-  }
+ state.selectedBiomeId = null;
+ highlightBiomeInList(null);
+ renderSelectionContext(null);
+ if (!togHighlight.checked) return;
+ const hovered = biomeById(state.hoveredBiomeId);
+ if (hovered) {
+  renderHighlight(hovered);
+ } else {
+  clearHighlight();
+ }
 }
 
 function selectBiomePersistent(biome) {
-  if (!biome) return;
-  state.selectedBiomeId = biome.id;
-  highlightBiomeInList(biome.id);
-  renderSelectionContext(biome);
-  if (!togHighlight.checked) togHighlight.checked = true;
-  renderHighlight(biome);
+ if (!biome) return;
+ state.selectedBiomeId = biome.id;
+ highlightBiomeInList(biome.id);
+ renderSelectionContext(biome);
+ if (!togHighlight.checked) togHighlight.checked = true;
+ renderHighlight(biome);
 }
 
-/* ─── THEME ─── */
-function setTheme(t) {
-  document.documentElement.setAttribute('data-theme', t);
-  themeBtn.textContent = t === 'dark' ? '◐' : '◑';
-  localStorage.setItem('lat-theme', t);
+function setTheme(theme) {
+ document.documentElement.setAttribute('data-theme', theme);
+ themeBtn.textContent = theme === 'dark' ? '◐' : '◑';
+ localStorage.setItem('lat-theme', theme);
 }
+
 themeBtn.addEventListener('click', () => {
-  const cur = document.documentElement.getAttribute('data-theme');
-  setTheme(cur === 'dark' ? 'light' : 'dark');
-  if (togBands.checked && state.mapWidth) renderBands();
+ const current = document.documentElement.getAttribute('data-theme');
+ setTheme(current === 'dark' ? 'light' : 'dark');
+ if (togBands.checked && state.mapWidth) renderBands();
 });
-// init theme
 setTheme(localStorage.getItem('lat-theme') || 'dark');
+applyUiScale(localStorage.getItem('lat-ui-scale') || '1');
+if (uiScaleSel) {
+ uiScaleSel.addEventListener('change', () => applyUiScale(uiScaleSel.value));
+}
 
-/* ─── VIEWPORT: PAN & ZOOM ─── */
 function applyTransform() {
-  const t = `translate(${state.panX}px, ${state.panY}px) scale(${state.zoom})`;
-  mapCanvas.style.transform = t;
-  hlCanvas.style.transform = t;
-  gridCanvas.style.transform = t;
-  bandCanvas.style.transform = t;
-  zoomBadge.textContent = `${Math.round(state.zoom * 100)}%`;
+ const transform = `translate(${state.panX}px, ${state.panY}px) scale(${state.zoom})`;
+ mapCanvas.style.transform = transform;
+ hlCanvas.style.transform = transform;
+ gridCanvas.style.transform = transform;
+ bandCanvas.style.transform = transform;
+ zoomBadge.textContent = `${Math.round(state.zoom * 100)}%`;
 }
 
 function zoomTo(newZoom, pivotX, pivotY) {
-  const z0 = state.zoom;
-  const z1 = Math.min(64, Math.max(0.05, newZoom));
-  // pivot in world coords
-  const wx = (pivotX - state.panX) / z0;
-  const wy = (pivotY - state.panY) / z0;
-  state.zoom = z1;
-  state.panX = pivotX - wx * z1;
-  state.panY = pivotY - wy * z1;
-  applyTransform();
+ const z0 = state.zoom;
+ const z1 = Math.min(64, Math.max(0.05, newZoom));
+ const wx = (pivotX - state.panX) / z0;
+ const wy = (pivotY - state.panY) / z0;
+ state.zoom = z1;
+ state.panX = pivotX - wx * z1;
+ state.panY = pivotY - wy * z1;
+ applyTransform();
 }
 
 viewport.addEventListener('wheel', e => {
-  e.preventDefault();
-  const rect = viewport.getBoundingClientRect();
-  const mx = e.clientX - rect.left;
-  const my = e.clientY - rect.top;
-  const factor = e.deltaY < 0 ? 1.12 : 1/1.12;
-  zoomTo(state.zoom * factor, mx, my);
+ e.preventDefault();
+ const rect = viewport.getBoundingClientRect();
+ const mx = e.clientX - rect.left;
+ const my = e.clientY - rect.top;
+ const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
+ zoomTo(state.zoom * factor, mx, my);
 }, { passive: false });
 
 viewport.addEventListener('mousedown', e => {
-  if (e.button !== 0) return;
-  state.isDragging = true;
-  state.dragStartX = e.clientX;
-  state.dragStartY = e.clientY;
-  state.panStartX = state.panX;
-  state.panStartY = state.panY;
-  viewport.classList.add('dragging');
-});
-window.addEventListener('mousemove', e => {
-  if (state.isDragging) {
-    state.panX = state.panStartX + (e.clientX - state.dragStartX);
-    state.panY = state.panStartY + (e.clientY - state.dragStartY);
-    applyTransform();
-  }
-  updateInspect(e);
-});
-window.addEventListener('mouseup', () => {
-  state.isDragging = false;
-  viewport.classList.remove('dragging');
+ if (e.button !== 0) return;
+ state.isDragging = true;
+ state.dragStartX = e.clientX;
+ state.dragStartY = e.clientY;
+ state.panStartX = state.panX;
+ state.panStartY = state.panY;
+ viewport.classList.add('dragging');
 });
 
-// Fit to view
-function fitToView() {
-  if (!state.mapWidth) return;
-  const vw = viewport.clientWidth;
-  const vh = viewport.clientHeight;
-  const pad = 60;
-  const scale = Math.min((vw - pad * 2) / state.mapWidth, (vh - pad * 2) / state.mapHeight);
-  state.zoom = scale;
-  state.panX = (vw - state.mapWidth * scale) / 2;
-  state.panY = (vh - state.mapHeight * scale) / 2;
+window.addEventListener('mousemove', e => {
+ if (state.isDragging) {
+  state.panX = state.panStartX + (e.clientX - state.dragStartX);
+  state.panY = state.panStartY + (e.clientY - state.dragStartY);
   applyTransform();
+ }
+ updateInspect(e);
+});
+
+window.addEventListener('mouseup', () => {
+ state.isDragging = false;
+ viewport.classList.remove('dragging');
+});
+
+function fitToView() {
+ if (!state.mapWidth) return;
+ const vw = viewport.clientWidth;
+ const vh = viewport.clientHeight;
+ const pad = 60;
+ const scale = Math.min((vw - pad * 2) / state.mapWidth, (vh - pad * 2) / state.mapHeight);
+ state.zoom = scale;
+ state.panX = (vw - state.mapWidth * scale) / 2;
+ state.panY = (vh - state.mapHeight * scale) / 2;
+ applyTransform();
 }
+
 btnFit.addEventListener('click', fitToView);
 btnReset.addEventListener('click', () => {
-  state.zoom = 1;
-  state.panX = (viewport.clientWidth - state.mapWidth) / 2;
-  state.panY = (viewport.clientHeight - state.mapHeight) / 2;
-  applyTransform();
+ state.zoom = 1;
+ state.panX = (viewport.clientWidth - state.mapWidth) / 2;
+ state.panY = (viewport.clientHeight - state.mapHeight) / 2;
+ applyTransform();
 });
 
-/* ─── INSPECT ─── */
 function updateInspect(e) {
-  if (!state.imageData || !togInspect.checked) {
-    inspectCard.classList.remove('visible');
-    coordReadout.textContent = '— , —';
-    return;
-  }
-  const rect = viewport.getBoundingClientRect();
-  const mx = e.clientX - rect.left;
-  const my = e.clientY - rect.top;
-  // world coords
-  const wx = Math.floor((mx - state.panX) / state.zoom);
-  const wy = Math.floor((my - state.panY) / state.zoom);
-
-  coordReadout.textContent = `${wx} , ${wy}`;
-
-  if (wx < 0 || wy < 0 || wx >= state.mapWidth || wy >= state.mapHeight) {
-    inspectCard.classList.remove('visible');
-    return;
-  }
-
-  // Read pixel
-  const idx = (wy * state.mapWidth + wx) * 4;
-  const d = state.imageData.data;
-  const r = d[idx], g = d[idx+1], b = d[idx+2];
-  const key = colorKey(r, g, b);
-  const biome = state.colorToBiome[key];
-
-  // Crosshair
-  if (togCrosshair.checked) {
-    crosshair.style.display = 'block';
-    crosshair.style.left = mx + 'px';
-    crosshair.style.top = my + 'px';
+ if (!state.imageData || !togInspect.checked) {
+  inspectCard.classList.remove('visible');
+  coordReadout.textContent = '— , —';
+  return;
+ }
+ const rect = viewport.getBoundingClientRect();
+ const mx = e.clientX - rect.left;
+ const my = e.clientY - rect.top;
+ const wx = Math.floor((mx - state.panX) / state.zoom);
+ const wy = Math.floor((my - state.panY) / state.zoom);
+ const worldPos = worldPositionForPixel(wx, wy);
+ coordReadout.textContent = worldPos ? `${worldPos.x} , ${worldPos.z}` : `${wx} , ${wy}`;
+ if (wx < 0 || wy < 0 || wx >= state.mapWidth || wy >= state.mapHeight) {
+  inspectCard.classList.remove('visible');
+  if (!state.selectedBiomeId) clearHighlight();
+  return;
+ }
+ if (togCrosshair.checked) {
+  crosshair.style.display = 'block';
+  crosshair.style.transform = `translate(${mx}px, ${my}px)`;
+ } else {
+  crosshair.style.display = 'none';
+ }
+ const idx = (wy * state.mapWidth + wx) * 4;
+ const d = state.imageData.data;
+ const biome = biomeAtPixel(wx, wy, [d[idx], d[idx + 1], d[idx + 2]]);
+ if (togTooltip.checked && biome) {
+  $('#inspect-color-bar').style.background = `rgb(${biome.color.join(',')})`;
+  $('#inspect-biome-name').textContent = biome.name;
+  $('#inspect-biome-id').textContent = biome.id;
+  $('#inspect-coords').innerHTML = worldPos
+   ? `<span>x ${worldPos.x}</span> <span>z ${worldPos.z}</span>`
+   : `<span>x ${wx}</span> <span>z ${wy}</span>`;
+  const latContext = worldPos ? latitudeContextForWorldZ(worldPos.z) : null;
+  if (latContext) {
+   const zone = latContext.zone;
+   const deg = latContext.deg;
+   const hemi = latContext.hemisphere;
+   const [zr, zg, zb] = zone.color;
+   $('#inspect-zone').innerHTML = `<span style="color:rgb(${zr},${zg},${zb})">${zone.label}</span> <span style="color:var(--text-tertiary)">${deg}°${hemi}</span>`;
   } else {
-    crosshair.style.display = 'none';
+   $('#inspect-zone').textContent = '—';
   }
-
-  if (togTooltip.checked) {
-    // Inspect card position
-    const cardW = 210, cardH = 100;
-    let cx = mx + 20, cy = my - 10;
-    if (cx + cardW > viewport.clientWidth - 300) cx = mx - cardW - 12;
-    if (cy + cardH > viewport.clientHeight) cy = viewport.clientHeight - cardH - 8;
-    if (cy < 70) cy = 70;
-    inspectCard.style.left = cx + 'px';
-    inspectCard.style.top = cy + 'px';
-
-    const colorHex = `rgb(${r},${g},${b})`;
-    $('#inspect-color-bar').style.background = colorHex;
-    $('#inspect-biome-name').textContent = biome ? biome.name : 'Unknown';
-    $('#inspect-biome-id').textContent = biome ? biome.id : key;
-    $('#inspect-coords').innerHTML = `X <span>${wx}</span>  Z <span>${wy}</span>`;
-
-    // Latitude zone from pixel Y position
-    const centerY = state.mapHeight / 2;
-    const latFrac = Math.abs(wy - centerY) / centerY;
-    const zone = zoneForFrac(latFrac);
-    const hemi = wy < centerY ? 'N' : (wy > centerY ? 'S' : '—');
-    const deg = Math.round(latFrac * 90);
-    const [zr, zg, zb] = zone.color;
-    $('#inspect-zone').innerHTML = `<span style="color:rgb(${zr},${zg},${zb})">${zone.label}</span> <span style="color:var(--text-tertiary)">${deg}°${hemi}</span>`;
-
-    inspectCard.classList.add('visible');
-  } else {
-    inspectCard.classList.remove('visible');
+  inspectCard.style.left = `${mx + 18}px`;
+  inspectCard.style.top = `${my + 18}px`;
+  inspectCard.classList.add('visible');
+ } else {
+  inspectCard.classList.remove('visible');
+ }
+ if (togHighlight.checked && biome) {
+  if (state.selectedBiomeId) {
+   const selected = biomeById(state.selectedBiomeId);
+   if (selected) renderHighlight(selected);
+  } else if (state.hoveredBiomeId !== biome.id) {
+   state.hoveredBiomeId = biome.id;
+   renderHighlight(biome);
   }
-
-  // Highlight biome on hover
-  if (togHighlight.checked && biome) {
-    if (state.selectedBiomeId) {
-      const selected = biomeById(state.selectedBiomeId);
-      if (selected) renderHighlight(selected);
-    } else if (state.hoveredBiomeId !== biome.id) {
-      state.hoveredBiomeId = biome.id;
-      renderHighlight(biome);
-    }
-  }
+ }
 }
 
 viewport.addEventListener('mouseleave', () => {
-  inspectCard.classList.remove('visible');
-  crosshair.style.display = 'none';
-  if (!state.selectedBiomeId) clearHighlight();
+ inspectCard.classList.remove('visible');
+ crosshair.style.display = 'none';
+ if (!state.selectedBiomeId) clearHighlight();
 });
 
 viewport.addEventListener('click', e => {
-  if (state.isDragging) return;
-  if (!state.imageData) return;
-  const rect = viewport.getBoundingClientRect();
-  const mx = e.clientX - rect.left;
-  const my = e.clientY - rect.top;
-  const wx = Math.floor((mx - state.panX) / state.zoom);
-  const wy = Math.floor((my - state.panY) / state.zoom);
-  if (wx < 0 || wy < 0 || wx >= state.mapWidth || wy >= state.mapHeight) return;
-  const idx = (wy * state.mapWidth + wx) * 4;
-  const d = state.imageData.data;
-  const key = colorKey(d[idx], d[idx+1], d[idx+2]);
-  const biome = state.colorToBiome[key];
-  if (biome) {
-    selectBiomePersistent(biome);
-  }
+ if (state.isDragging || !state.imageData) return;
+ const rect = viewport.getBoundingClientRect();
+ const mx = e.clientX - rect.left;
+ const my = e.clientY - rect.top;
+ const wx = Math.floor((mx - state.panX) / state.zoom);
+ const wy = Math.floor((my - state.panY) / state.zoom);
+ if (wx < 0 || wy < 0 || wx >= state.mapWidth || wy >= state.mapHeight) return;
+ const idx = (wy * state.mapWidth + wx) * 4;
+ const d = state.imageData.data;
+ const biome = biomeAtPixel(wx, wy, [d[idx], d[idx + 1], d[idx + 2]]);
+ if (biome) selectBiomePersistent(biome);
 });
 
-/* ─── HIGHLIGHT RENDERING ─── */
 function renderHighlight(biome) {
-  if (!state.imageData) return;
-  const useHighContrast = !!(togHiContrast.checked && state.selectedBiomeId && state.selectedBiomeId === biome.id);
-  const renderKey = `${biome.id}|${useHighContrast ? 'hc' : 'normal'}`;
-  if (state.renderedHighlightKey === renderKey && hlCanvas.classList.contains('active')) return;
-  hlCanvas.width = state.mapWidth;
-  hlCanvas.height = state.mapHeight;
-  const src = state.imageData.data;
-  const dst = hlCtx.createImageData(state.mapWidth, state.mapHeight);
-  const dd = dst.data;
-  const [tr, tg, tb] = biome.color;
-
-  for (let i = 0; i < src.length; i += 4) {
-    const match = src[i] === tr && src[i+1] === tg && src[i+2] === tb;
-    if (useHighContrast) {
-      if (match) {
-        dd[i] = 255; dd[i+1] = 255; dd[i+2] = 255; dd[i+3] = 255;
-      } else {
-        dd[i] = 0; dd[i+1] = 0; dd[i+2] = 0; dd[i+3] = 220;
-      }
-    } else {
-      // Default mode: magenta overlay on selected biome only, no global darkening.
-      if (match) {
-        dd[i] = 255; dd[i+1] = 0; dd[i+2] = 255; dd[i+3] = 170;
-      } else {
-        dd[i+3] = 0;
-      }
-    }
+ if (!state.imageData) return;
+ const useHighContrast = !!(togHiContrast.checked && state.selectedBiomeId && state.selectedBiomeId === biome.id);
+ const renderKey = `${biome.id}|${useHighContrast ? 'hc' : 'normal'}`;
+ if (state.renderedHighlightKey === renderKey && hlCanvas.classList.contains('active')) return;
+ hlCanvas.width = state.mapWidth;
+ hlCanvas.height = state.mapHeight;
+ const src = state.imageData.data;
+ const dst = hlCtx.createImageData(state.mapWidth, state.mapHeight);
+ const dd = dst.data;
+ const pixelCount = state.mapWidth * state.mapHeight;
+ for (let p = 0; p < pixelCount; p++) {
+  const i = p * 4;
+  const match = pixelMatchesBiome(biome, p, src);
+  if (useHighContrast) {
+   if (match) {
+    dd[i] = 255; dd[i + 1] = 255; dd[i + 2] = 255; dd[i + 3] = 255;
+   } else {
+    dd[i] = 0; dd[i + 1] = 0; dd[i + 2] = 0; dd[i + 3] = 220;
+   }
+  } else if (match) {
+   dd[i] = 255; dd[i + 1] = 0; dd[i + 2] = 255; dd[i + 3] = 170;
+  } else {
+   dd[i + 3] = 0;
   }
-  hlCtx.putImageData(dst, 0, 0);
-  hlCanvas.classList.add('active');
-  // override blend mode for this approach
-  hlCanvas.style.mixBlendMode = 'normal';
-  state.renderedHighlightKey = renderKey;
+ }
+ hlCtx.putImageData(dst, 0, 0);
+ hlCanvas.classList.add('active');
+ hlCanvas.style.mixBlendMode = 'normal';
+ state.renderedHighlightKey = renderKey;
 }
+
 function clearHighlight() {
-  state.hoveredBiomeId = null;
-  state.renderedHighlightKey = null;
-  hlCanvas.classList.remove('active');
+ state.hoveredBiomeId = null;
+ state.renderedHighlightKey = null;
+ hlCanvas.classList.remove('active');
 }
 
 togHighlight.addEventListener('change', () => {
-  if (!togHighlight.checked) clearHighlight();
+ if (!togHighlight.checked) clearHighlight();
 });
+
 togHiContrast.addEventListener('change', () => {
-  const selected = biomeById(state.selectedBiomeId);
-  if (selected) {
-    if (!togHighlight.checked) togHighlight.checked = true;
-    renderHighlight(selected);
-    return;
-  }
-  if (!togHighlight.checked) return;
-  const hovered = biomeById(state.hoveredBiomeId);
-  if (hovered) {
-    renderHighlight(hovered);
-    return;
-  }
-  clearHighlight();
+ const selected = biomeById(state.selectedBiomeId);
+ if (selected) {
+  if (!togHighlight.checked) togHighlight.checked = true;
+  renderHighlight(selected);
+  return;
+ }
+ if (!togHighlight.checked) return;
+ const hovered = biomeById(state.hoveredBiomeId);
+ if (hovered) {
+  renderHighlight(hovered);
+  return;
+ }
+ clearHighlight();
 });
+
 btnClearSelection.addEventListener('click', clearBiomeSelection);
 
-/* ─── LATITUDE BAND OVERLAY ─── */
-// Zone fractions from LatitudeMath.java
 const ZONE_BANDS = [
-  { id: 'equator',    label: 'Equator',     maxFrac: 0.10,  color: [232, 90, 90],   deg: '0–9°'    },
-  { id: 'tropical',   label: 'Tropics',     maxFrac: 0.30,  color: [232, 167, 62],   deg: '9–27°'   },
-  { id: 'subtropical', label: 'Subtropics', maxFrac: 0.50,  color: [232, 214, 62],   deg: '27–45°'  },
-  { id: 'temperate',  label: 'Temperate',   maxFrac: 0.666, color: [96, 196, 96],    deg: '45–60°'  },
-  { id: 'subpolar',   label: 'Subpolar',    maxFrac: 0.783, color: [96, 160, 220],   deg: '60–70°'  },
-  { id: 'polar',      label: 'Polar',       maxFrac: 1.0,   color: [180, 200, 232],  deg: '70–90°'  },
+ { id: 'equator', label: 'Equator', maxFrac: 0.10, color: [232, 90, 90], deg: '0–9°' },
+ { id: 'tropical', label: 'Tropics', maxFrac: 0.30, color: [232, 167, 62], deg: '9–27°' },
+ { id: 'subtropical', label: 'Subtropics', maxFrac: 0.50, color: [232, 214, 62], deg: '27–45°' },
+ { id: 'temperate', label: 'Temperate', maxFrac: 0.666, color: [96, 196, 96], deg: '45–60°' },
+ { id: 'subpolar', label: 'Subpolar', maxFrac: 0.783, color: [96, 160, 220], deg: '60–70°' },
+ { id: 'polar', label: 'Polar', maxFrac: 1.0, color: [180, 200, 232], deg: '70–90°' },
 ];
 
-// World size name lookup (diameter in blocks)
 const WORLD_SIZE_NAMES = {
-  7500:  'Itty Bitty',
-  10000: 'Tiny',
-  15000: 'Small',
-  20000: 'Regular',
-  30000: 'Large',
-  40000: 'Ginormous',
+ 7500: 'Itty Bitty',
+ 10000: 'Tiny',
+ 15000: 'Small',
+ 20000: 'Regular',
+ 30000: 'Large',
+ 40000: 'Ginormous',
 };
 
-function getWorldRadius() {
-  if (!state.manifest) return null;
-  // Try radius directly, then diameter/2
-  if (state.manifest.radius && state.manifest.radius > 0) return state.manifest.radius;
-  if (state.manifest.diameter && state.manifest.diameter > 0) return state.manifest.diameter / 2;
-  // Try world_size name lookup
-  const name = (state.manifest.world_size || '').toLowerCase();
-  for (const [diam, label] of Object.entries(WORLD_SIZE_NAMES)) {
-    if (label.toLowerCase() === name) return Number(diam) / 2;
-  }
-  return null;
+function pickManifestValue(manifest, keys) {
+ if (!manifest || typeof manifest !== 'object') return null;
+ for (const key of keys) {
+  if (!Object.prototype.hasOwnProperty.call(manifest, key)) continue;
+  const value = manifest[key];
+  if (value == null) continue;
+  if (typeof value === 'string' && !value.trim()) continue;
+  return value;
+ }
+ return null;
+}
+
+function formatWorldSizeLabel(manifest) {
+ const diameter = Number(pickManifestValue(manifest, ['diameter', 'worldDiameter', 'world_diameter']) || 0);
+ if (diameter && WORLD_SIZE_NAMES[diameter]) return WORLD_SIZE_NAMES[diameter];
+ const raw = pickManifestValue(manifest, ['world_size', 'worldSize', 'size', 'Size']);
+ if (raw == null) return '—';
+ const text = String(raw).trim();
+ if (!text) return '—';
+ const normalized = text.toLowerCase();
+ for (const label of Object.values(WORLD_SIZE_NAMES)) {
+  if (label.toLowerCase() === normalized) return label;
+ }
+ return text.replace(/\b[a-z]/g, c => c.toUpperCase());
+}
+
+function normalizeManifest(manifest, run = '') {
+ if (!manifest || typeof manifest !== 'object') {
+  return run ? { ts: run } : null;
+ }
+ const diameter = Number(pickManifestValue(manifest, ['diameter', 'worldDiameter', 'world_diameter']) || 0);
+ const radius = Number(pickManifestValue(manifest, ['radius', 'worldRadius', 'world_radius']) || 0);
+ const step = Number(pickManifestValue(manifest, ['step', 'Step']) || 0);
+ const seed = pickManifestValue(manifest, ['seed', 'Seed', 'worldSeed', 'world_seed']);
+ const size = pickManifestValue(manifest, ['world_size', 'worldSize', 'size', 'Size']);
+ const branch = pickManifestValue(manifest, ['branch', 'Branch']);
+ const commit = pickManifestValue(manifest, ['commit', 'Commit']);
+ const ts = pickManifestValue(manifest, ['ts', 'timestamp', 'generatedAt', 'generated_at']) || run;
+ const emitBiomeIndex = pickManifestValue(manifest, ['emitBiomeIndex', 'emit_biome_index']);
+ const emitHeight = pickManifestValue(manifest, ['emitHeight', 'emit_height']);
+ return {
+  ...manifest,
+  ts: ts || '',
+  seed: seed == null ? null : String(seed),
+  size: size == null ? '' : String(size),
+  world_size: size == null ? '' : String(size),
+  diameter: Number.isFinite(diameter) && diameter > 0 ? diameter : null,
+  radius: Number.isFinite(radius) && radius > 0 ? radius : null,
+  step: Number.isFinite(step) && step > 0 ? step : null,
+  branch: branch == null ? '' : String(branch),
+  commit: commit == null ? '' : String(commit),
+  emitBiomeIndex: emitBiomeIndex == null ? !!manifest.emitBiomeIndex : !!emitBiomeIndex,
+  emitHeight: emitHeight == null ? !!manifest.emitHeight : !!emitHeight,
+ };
+}
+
+function getWorldRadius(manifest = state.manifest) {
+ if (!manifest) return null;
+ if (manifest.radius && manifest.radius > 0) return manifest.radius;
+ if (manifest.diameter && manifest.diameter > 0) return manifest.diameter / 2;
+ const name = String(manifest.world_size || manifest.size || '').toLowerCase();
+ for (const [diam, label] of Object.entries(WORLD_SIZE_NAMES)) {
+  if (label.toLowerCase() === name) return Number(diam) / 2;
+ }
+ return null;
+}
+
+function getCurrentLayerStep() {
+ const layerMatch = String(state.currentLayer || '').match(/step(\d+)/i);
+ if (layerMatch) {
+  const layerStep = Number(layerMatch[1]);
+  if (Number.isFinite(layerStep) && layerStep > 0) return layerStep;
+ }
+ if (state.manifest && state.manifest.step && state.manifest.step > 0) return state.manifest.step;
+ return null;
+}
+
+function worldPositionForPixel(pixelX, pixelY) {
+ const radius = getWorldRadius();
+ if (!Number.isFinite(radius) || radius <= 0) return null;
+ let stepX = state.mapWidth > 1 ? (radius * 2) / (state.mapWidth - 1) : 0;
+ let stepZ = state.mapHeight > 1 ? (radius * 2) / (state.mapHeight - 1) : 0;
+ const fallbackStep = getCurrentLayerStep();
+ if (!(stepX > 0)) stepX = fallbackStep || 0;
+ if (!(stepZ > 0)) stepZ = fallbackStep || 0;
+ if (!(stepX > 0) || !(stepZ > 0)) return null;
+ return {
+  x: Math.round(-radius + (pixelX * stepX)),
+  z: Math.round(-radius + (pixelY * stepZ)),
+ };
+}
+
+function latitudeContextForWorldZ(worldZ) {
+ const radius = getWorldRadius();
+ if (!Number.isFinite(radius) || radius <= 0 || !Number.isFinite(worldZ)) return null;
+ const absFrac = Math.max(0, Math.min(1, Math.abs(worldZ) / radius));
+ return {
+  deg: Math.round(absFrac * 90),
+  hemisphere: worldZ < 0 ? 'N' : (worldZ > 0 ? 'S' : 'EQ'),
+  zone: zoneForFrac(absFrac),
+ };
 }
 
 function zoneForFrac(t) {
-  const absT = Math.abs(t);
-  for (const band of ZONE_BANDS) {
-    if (absT < band.maxFrac) return band;
-  }
-  return ZONE_BANDS[ZONE_BANDS.length - 1];
+ const absT = Math.abs(t);
+ for (const band of ZONE_BANDS) {
+  if (absT < band.maxFrac) return band;
+ }
+ return ZONE_BANDS[ZONE_BANDS.length - 1];
 }
 
 function renderBands() {
-  if (!state.mapWidth || !state.mapHeight) return;
-
-  bandCanvas.width = state.mapWidth;
-  bandCanvas.height = state.mapHeight;
-  bandCtx.clearRect(0, 0, state.mapWidth, state.mapHeight);
-
-  // The map image is a top-down view: Y=0 is north pole, Y=mapHeight is south pole
-  // Center row (mapHeight/2) is the equator (Z=0)
-  // Latitude fraction t = abs(pixelY - center) / center
-  const centerY = state.mapHeight / 2;
-  const bandAlpha = Math.min(0.9, Math.max(0.1, state.bandOpacity || 0.24));
-
-  // Draw bands as filled horizontal stripes with zone colors
-  let prevFrac = 0;
-  for (const band of ZONE_BANDS) {
-    const [r, g, b] = band.color;
-    bandCtx.fillStyle = `rgba(${r},${g},${b},${bandAlpha})`;
-
-    const topPx  = Math.round(centerY - band.maxFrac * centerY);
-    const botPx  = Math.round(centerY + band.maxFrac * centerY);
-    const prevTopPx = Math.round(centerY - prevFrac * centerY);
-    const prevBotPx = Math.round(centerY + prevFrac * centerY);
-
-    // North hemisphere band: from topPx to prevTopPx
-    bandCtx.fillRect(0, topPx, state.mapWidth, prevTopPx - topPx);
-    // South hemisphere band: from prevBotPx to botPx
-    bandCtx.fillRect(0, prevBotPx, state.mapWidth, botPx - prevBotPx);
-
-    prevFrac = band.maxFrac;
-  }
-
-  // Draw boundary lines at each zone transition
-  bandCtx.save();
-  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-  for (const band of ZONE_BANDS) {
-    if (band.maxFrac >= 1.0) continue; // no line at the very edge
-    const northY = Math.round(centerY - band.maxFrac * centerY);
-    const southY = Math.round(centerY + band.maxFrac * centerY);
-    const [r, g, b] = band.color;
-
-    bandCtx.strokeStyle = `rgba(${r},${g},${b},${isDark ? 0.85 : 0.8})`;
-    bandCtx.lineWidth = 1.8;
-    bandCtx.setLineDash([10, 5]);
-
-    bandCtx.beginPath();
-    bandCtx.moveTo(0, northY); bandCtx.lineTo(state.mapWidth, northY);
-    bandCtx.stroke();
-
-    bandCtx.beginPath();
-    bandCtx.moveTo(0, southY); bandCtx.lineTo(state.mapWidth, southY);
-    bandCtx.stroke();
-  }
-
-  // Equator line — solid, accent
-  bandCtx.strokeStyle = isDark ? 'rgba(62, 232, 214, 0.95)' : 'rgba(26, 158, 143, 0.9)';
-  bandCtx.lineWidth = 2.2;
-  bandCtx.setLineDash([]);
+ if (!state.mapWidth || !state.mapHeight) return;
+ bandCanvas.width = state.mapWidth;
+ bandCanvas.height = state.mapHeight;
+ bandCtx.clearRect(0, 0, state.mapWidth, state.mapHeight);
+ const centerY = state.mapHeight / 2;
+ const bandAlpha = Math.min(0.9, Math.max(0.1, state.bandOpacity || 0.24));
+ let prevFrac = 0;
+ for (const band of ZONE_BANDS) {
+  const [r, g, b] = band.color;
+  bandCtx.fillStyle = `rgba(${r},${g},${b},${bandAlpha})`;
+  const topPx = Math.round(centerY - band.maxFrac * centerY);
+  const botPx = Math.round(centerY + band.maxFrac * centerY);
+  const prevTopPx = Math.round(centerY - prevFrac * centerY);
+  const prevBotPx = Math.round(centerY + prevFrac * centerY);
+  bandCtx.fillRect(0, topPx, state.mapWidth, prevTopPx - topPx);
+  bandCtx.fillRect(0, prevBotPx, state.mapWidth, botPx - prevBotPx);
+  prevFrac = band.maxFrac;
+ }
+ bandCtx.save();
+ const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+ for (const band of ZONE_BANDS) {
+  if (band.maxFrac >= 1.0) continue;
+  const northY = Math.round(centerY - band.maxFrac * centerY);
+  const southY = Math.round(centerY + band.maxFrac * centerY);
+  const [r, g, b] = band.color;
+  bandCtx.strokeStyle = `rgba(${r},${g},${b},${isDark ? 0.85 : 0.8})`;
+  bandCtx.lineWidth = 1.8;
+  bandCtx.setLineDash([10, 5]);
   bandCtx.beginPath();
-  bandCtx.moveTo(0, Math.round(centerY));
-  bandCtx.lineTo(state.mapWidth, Math.round(centerY));
+  bandCtx.moveTo(0, northY);
+  bandCtx.lineTo(state.mapWidth, northY);
   bandCtx.stroke();
-
-  bandCtx.restore();
-
-  // Draw zone labels along the right edge (north hemisphere only — mirrored is implied)
-  bandCtx.save();
-  const fontSize = Math.max(9, Math.min(14, Math.round(state.mapHeight / 50)));
-  bandCtx.font = `500 ${fontSize}px ${getComputedStyle(document.documentElement).getPropertyValue('--font-display').trim() || 'sans-serif'}`;
-  bandCtx.textAlign = 'right';
-  bandCtx.textBaseline = 'middle';
-
-  let prevLabelFrac = 0;
-  for (const band of ZONE_BANDS) {
-    const midFrac = (prevLabelFrac + band.maxFrac) / 2;
-    const labelY = Math.round(centerY - midFrac * centerY);
-    const [r, g, b] = band.color;
-    bandCtx.fillStyle = isDark
-      ? `rgba(${Math.min(255,r+60)},${Math.min(255,g+60)},${Math.min(255,b+60)},0.7)`
-      : `rgba(${Math.max(0,r-40)},${Math.max(0,g-40)},${Math.max(0,b-40)},0.8)`;
-    bandCtx.fillText(band.label, state.mapWidth - 6, labelY);
-    prevLabelFrac = band.maxFrac;
-  }
-  bandCtx.restore();
-
-  // Show/hide
-  if (togBands.checked) {
-    bandCanvas.classList.add('active');
-  } else {
-    bandCanvas.classList.remove('active');
-  }
+  bandCtx.beginPath();
+  bandCtx.moveTo(0, southY);
+  bandCtx.lineTo(state.mapWidth, southY);
+  bandCtx.stroke();
+ }
+ bandCtx.strokeStyle = isDark ? 'rgba(62,232,214,0.95)' : 'rgba(26,158,143,0.9)';
+ bandCtx.lineWidth = 2.2;
+ bandCtx.setLineDash([]);
+ bandCtx.beginPath();
+ bandCtx.moveTo(0, Math.round(centerY));
+ bandCtx.lineTo(state.mapWidth, Math.round(centerY));
+ bandCtx.stroke();
+ bandCtx.restore();
+ bandCtx.save();
+ const fontSize = Math.max(9, Math.min(14, Math.round(state.mapHeight / 50)));
+ bandCtx.font = `500 ${fontSize}px ${getComputedStyle(document.documentElement).getPropertyValue('--font-display').trim() || 'sans-serif'}`;
+ bandCtx.textAlign = 'right';
+ bandCtx.textBaseline = 'middle';
+ let prevLabelFrac = 0;
+ for (const band of ZONE_BANDS) {
+  const midFrac = (prevLabelFrac + band.maxFrac) / 2;
+  const labelY = Math.round(centerY - midFrac * centerY);
+  const [r, g, b] = band.color;
+  bandCtx.fillStyle = isDark
+   ? `rgba(${Math.min(255, r + 60)},${Math.min(255, g + 60)},${Math.min(255, b + 60)},0.7)`
+   : `rgba(${Math.max(0, r - 40)},${Math.max(0, g - 40)},${Math.max(0, b - 40)},0.8)`;
+  bandCtx.fillText(band.label, state.mapWidth - 6, labelY);
+  prevLabelFrac = band.maxFrac;
+ }
+ bandCtx.restore();
+ if (togBands.checked) {
+  bandCanvas.classList.add('active');
+ } else {
+  bandCanvas.classList.remove('active');
+ }
 }
 
 function renderBandLegend() {
-  bandLegend.innerHTML = '';
-  const radius = getWorldRadius();
-  const radiusLabel = radius ? ` (r=${radius.toLocaleString()})` : '';
-  const sizeName = state.manifest?.world_size || state.manifest?.diameter
-    ? (WORLD_SIZE_NAMES[state.manifest.diameter] || state.manifest.world_size || '')
-    : '';
-
-  for (const band of ZONE_BANDS) {
-    const [r, g, b] = band.color;
-    const row = document.createElement('div');
-    row.className = 'band-legend-row';
-    row.innerHTML = `
-      <div class="band-legend-swatch" style="background:rgb(${r},${g},${b})"></div>
-      <span class="band-legend-label">${band.label}</span>
-      <span class="band-legend-deg">${band.deg}</span>
-    `;
-    bandLegend.appendChild(row);
-  }
-
-  if (sizeName || radius) {
-    const footer = document.createElement('div');
-    footer.style.cssText = 'font-family:var(--font-mono);font-size:9.5px;color:var(--text-tertiary);margin-top:4px;padding-top:4px;border-top:1px solid var(--border-subtle);';
-    footer.textContent = sizeName ? `${sizeName}${radiusLabel}` : `Radius: ${radius.toLocaleString()}`;
-    bandLegend.appendChild(footer);
-  }
+ bandLegend.innerHTML = '';
+ const radius = getWorldRadius();
+ const radiusLabel = radius ? ` (r=${radius.toLocaleString()})` : '';
+ const sizeName = state.manifest?.world_size || state.manifest?.diameter
+  ? (WORLD_SIZE_NAMES[state.manifest.diameter] || state.manifest.world_size || '')
+  : '';
+ for (const band of ZONE_BANDS) {
+  const [r, g, b] = band.color;
+  const row = document.createElement('div');
+  row.className = 'band-legend-row';
+  row.innerHTML = `
+     <div class="band-legend-swatch" style="background:rgb(${r},${g},${b})"></div>
+     <span class="band-legend-label">${band.label}</span>
+     <span class="band-legend-deg">${band.deg}</span>
+   `;
+  bandLegend.appendChild(row);
+ }
+ if (sizeName || radius) {
+  const footer = document.createElement('div');
+  footer.style.cssText = 'font-family:var(--font-mono);font-size:9.5px;color:var(--text-tertiary);margin-top:4px;padding-top:4px;border-top:1px solid var(--border-subtle);';
+  footer.textContent = sizeName ? `${sizeName}${radiusLabel}` : `Radius: ${radius.toLocaleString()}`;
+  bandLegend.appendChild(footer);
+ }
 }
 
 function toggleBands() {
-  if (bandsOpacity) bandsOpacity.disabled = !togBands.checked;
-  if (togBands.checked) {
-    renderBands();
-    renderBandLegend();
-    bandCanvas.classList.add('active');
-    bandLegend.classList.add('visible');
-  } else {
-    bandCanvas.classList.remove('active');
-    bandLegend.classList.remove('visible');
-  }
+ if (bandsOpacity) bandsOpacity.disabled = !togBands.checked;
+ if (togBands.checked) {
+  renderBands();
+  renderBandLegend();
+  bandCanvas.classList.add('active');
+  bandLegend.classList.add('visible');
+ } else {
+  bandCanvas.classList.remove('active');
+  bandLegend.classList.remove('visible');
+ }
 }
 
 togBands.addEventListener('change', toggleBands);
 if (bandsOpacity) {
-  const applyBandOpacity = () => {
-    const v = Number(bandsOpacity.value || 24);
-    state.bandOpacity = Math.min(0.9, Math.max(0.1, v / 100));
-    if (bandsOpacityVal) bandsOpacityVal.textContent = `${Math.round(state.bandOpacity * 100)}%`;
-    if (togBands.checked && state.mapWidth) renderBands();
-  };
-  bandsOpacity.addEventListener('input', applyBandOpacity);
-  bandsOpacity.addEventListener('change', applyBandOpacity);
-  applyBandOpacity();
-  bandsOpacity.disabled = !togBands.checked;
+ const applyBandOpacity = () => {
+  const v = Number(bandsOpacity.value || 24);
+  state.bandOpacity = Math.min(0.9, Math.max(0.1, v / 100));
+  if (bandsOpacityVal) bandsOpacityVal.textContent = `${Math.round(state.bandOpacity * 100)}%`;
+  if (togBands.checked && state.mapWidth) renderBands();
+ };
+ bandsOpacity.addEventListener('input', applyBandOpacity);
+ bandsOpacity.addEventListener('change', applyBandOpacity);
+ applyBandOpacity();
+ bandsOpacity.disabled = !togBands.checked;
 }
 
-/* ─── BIOME LIST ─── */
 function renderBiomeList(biomes) {
-  biomeListBody.innerHTML = '';
-  if (!biomes.length) {
-    biomeListBody.innerHTML = '<div style="color:var(--text-tertiary);font-size:12px;font-style:italic;">No biomes</div>';
-    return;
-  }
-  biomeCountEl.textContent = biomes.length;
-  const frag = document.createDocumentFragment();
-  for (const b of biomes) {
-    const row = document.createElement('div');
-    row.className = 'biome-entry';
-    row.dataset.biomeId = b.id;
-    row.innerHTML = `
-      <div class="biome-swatch" style="background:rgb(${b.color.join(',')})"></div>
-      <div class="biome-name" title="${b.id}">${b.name}</div>
-      <div class="biome-pct">${b.pct != null ? b.pct.toFixed(1) + '%' : ''}</div>
-    `;
-    row.addEventListener('click', () => {
-      selectBiomePersistent(b);
-    });
-    frag.appendChild(row);
-  }
-  biomeListBody.appendChild(frag);
+ biomeListBody.innerHTML = '';
+ if (!biomes.length) {
+  biomeListBody.innerHTML = '<div style="color:var(--text-tertiary);font-size:12px;font-style:italic;">No biomes</div>';
+  return;
+ }
+ biomeCountEl.textContent = biomes.length;
+ const frag = document.createDocumentFragment();
+ for (const b of biomes) {
+  const row = document.createElement('div');
+  row.className = 'biome-entry';
+  row.dataset.biomeId = b.id;
+  row.innerHTML = `
+     <div class="biome-swatch" style="background:rgb(${b.color.join(',')})"></div>
+     <div class="biome-name" title="${b.id}">${b.name}</div>
+     <div class="biome-pct">${b.pct != null ? b.pct.toFixed(1) + '%' : ''}</div>
+   `;
+  row.addEventListener('click', () => {
+   selectBiomePersistent(b);
+  });
+  frag.appendChild(row);
+ }
+ biomeListBody.appendChild(frag);
 }
 
 function renderGrid() {
@@ -1846,32 +2167,131 @@ function highlightBiomeInList(id) {
   });
 }
 
+function isTextEntryTarget(el) {
+  if (!el) return false;
+  const tag = String(el.tagName || '').toUpperCase();
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || !!el.isContentEditable;
+}
+
 biomeSearch.addEventListener('input', () => {
   const q = biomeSearch.value.toLowerCase();
   $$('.biome-entry', biomeListBody).forEach(el => {
-    const name = el.dataset.biomeId.toLowerCase();
-    el.style.display = name.includes(q) ? '' : 'none';
+    const name = String(el.dataset.biomeId || '').toLowerCase();
+    const label = $('.biome-name', el)?.textContent?.toLowerCase() || '';
+    el.style.display = name.includes(q) || label.includes(q) ? '' : 'none';
   });
+});
+biomeSearch.addEventListener('pointerdown', e => {
+  e.stopPropagation();
+  if (!biomeSearch.disabled) {
+    biomeSearch.focus();
+  }
+});
+biomeSearch.addEventListener('keydown', e => {
+  e.stopPropagation();
 });
 
 /* ─── METADATA ─── */
-function renderMetadata(manifest) {
+ function renderMetadata(manifest) {
   if (!manifest) {
-    metadataBody.innerHTML = '<div style="color:var(--text-tertiary);font-size:12px;font-style:italic;">No metadata</div>';
+    metadataBody.innerHTML = '<div style="color:var(--text-tertiary);font-size:12px;font-style:italic;">Select a run to view summary</div>';
+    updateRunActionButtons();
     return;
   }
+  const sizeName = formatWorldSizeLabel(manifest);
+  const radius = getWorldRadius(manifest);
+  const seedValue = manifest?.seed != null && String(manifest.seed).trim() ? String(manifest.seed) : '—';
+  const rows = [
+    { key: 'Run', value: state.currentRun || '—' },
+    { key: 'Generated', value: formatRunTimestamp(state.currentRun || manifest.ts) },
+    { key: 'Seed', value: seedValue, seed: true },
+    { key: 'World Size', value: sizeName },
+    { key: 'Radius', value: radius ? radius.toLocaleString() : '—' },
+    { key: 'Current Detail', value: state.currentLayer ? formatLayerLabel(state.currentLayer) : (manifest.step ? formatLayerLabel(`step${manifest.step}`) : '—') },
+    { key: 'Layers', value: state.availableLayers.length ? String(state.availableLayers.length) : '—' },
+    { key: 'Palette Biomes', value: state.biomes.length ? state.biomes.length.toLocaleString() : '—' },
+    { key: 'Branch', value: String(manifest.branch || '—') },
+    { key: 'Commit', value: String(manifest.commit || '—') },
+    { key: 'Biome Index', value: boolLabel(!!manifest.emitBiomeIndex) },
+    { key: 'Height Export', value: boolLabel(!!manifest.emitHeight) },
+  ];
   let html = '';
-  for (const [k, v] of Object.entries(manifest)) {
-    const isSeed = k.toLowerCase().includes('seed');
-    const displayVal = typeof v === 'object' ? JSON.stringify(v) : String(v);
+  for (const row of rows) {
+    const hasSeedValue = row.seed && seedValue !== '—';
     html += `
       <div class="meta-row">
-        <span class="meta-key">${prettifyKey(k)}</span>
-        <span class="meta-val${isSeed ? ' seed' : ''}">${displayVal}</span>
+        <span class="meta-key${row.seed ? ' seed-copyable' : ''}">${row.key}${hasSeedValue ? '<button type="button" class="meta-copy-btn" data-copy-seed="true" title="Copy seed to clipboard">⧉</button>' : ''}</span>
+        <span class="meta-val${row.seed ? ' seed' : ''}">${row.value}</span>
       </div>`;
   }
   metadataBody.innerHTML = html;
+  const copySeedBtn = metadataBody.querySelector('[data-copy-seed="true"]');
+  if (copySeedBtn) {
+    copySeedBtn.addEventListener('click', handleCopySeed);
+  }
+  updateRunActionButtons();
 }
+
+async function handleCopySeed() {
+  const seed = state.manifest?.seed;
+  if (!seed) return;
+  try {
+    await copyText(String(seed));
+    showToast('Seed has been copied to clipboard', 'success');
+  } catch {
+    showToast('Failed to copy seed.', 'error');
+  }
+}
+
+function shortSeed(seed) {
+  const s = String(seed ?? '').trim();
+  if (!s) return '';
+  if (s.length <= 14) return s;
+  return `${s.slice(0, 8)}…${s.slice(-4)}`;
+}
+
+function runOptionLabel(run, manifest) {
+  const generated = formatRunTimestamp(run || manifest?.ts);
+  const seed = shortSeed(manifest?.seed);
+  if (generated !== '—' && seed) return `${generated} · Seed ${seed}`;
+  if (generated !== '—') return generated;
+  if (seed) return `Seed ${seed}`;
+  return run;
+}
+
+function runOptionTitle(run, manifest) {
+  const lines = [`Run: ${run}`];
+  const generated = formatRunTimestamp(run || manifest?.ts);
+  if (generated !== '—') lines.push(`Generated: ${generated}`);
+  if (manifest?.seed != null && String(manifest.seed).trim()) lines.push(`Seed: ${String(manifest.seed)}`);
+  return lines.join('\n');
+}
+
+async function loadRunManifest(run, force = false) {
+  if (!run) return null;
+  if (!force && Object.prototype.hasOwnProperty.call(state.runManifestMap, run)) {
+    return state.runManifestMap[run];
+  }
+  const manifest = await fetchManifest(run);
+  state.runManifestMap[run] = manifest;
+  return manifest;
+}
+
+function updateRunActionButtons() {
+  if (btnSaveRun) btnSaveRun.disabled = !state.currentRun;
+}
+
+btnSaveRun.addEventListener('click', () => {
+  const run = state.currentRun;
+  if (!run) return;
+  const link = document.createElement('a');
+  link.href = `${API_BASE}/api/runs/${encodeURIComponent(run)}/archive`;
+  link.download = `${run}.zip`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  showToast('Downloading run archive…', 'success');
+});
 
 /* ─── MAP IMAGE LOADING ─── */
 async function loadMapImage(url) {
@@ -1906,9 +2326,19 @@ async function loadMapImage(url) {
 
 function buildColorLookup() {
   state.colorToBiome = {};
+  state.biomeByIdMap = {};
+  state.biomeByIndex = {};
   for (const b of state.biomes) {
+    if (b?.id && !state.biomeByIdMap[b.id]) {
+      state.biomeByIdMap[b.id] = b;
+    }
+    if (Number.isFinite(b?.index) && state.biomeByIndex[(b.index & 0xFF)] == null) {
+      state.biomeByIndex[b.index & 0xFF] = b;
+    }
     const key = colorKey(...b.color);
-    state.colorToBiome[key] = b;
+    if (!state.colorToBiome[key]) {
+      state.colorToBiome[key] = b;
+    }
   }
 }
 
@@ -1935,11 +2365,11 @@ function applyImageColorRemaps(remaps) {
   if (!state.imageData || !Array.isArray(remaps) || remaps.length === 0) return;
   const d = state.imageData.data;
   for (let i = 0; i < d.length; i += 4) {
-    for (const r of remaps) {
-      if (d[i] === r.from[0] && d[i+1] === r.from[1] && d[i+2] === r.from[2]) {
-        d[i] = r.to[0];
-        d[i+1] = r.to[1];
-        d[i+2] = r.to[2];
+    for (const remap of remaps) {
+      if (d[i] === remap.from[0] && d[i + 1] === remap.from[1] && d[i + 2] === remap.from[2]) {
+        d[i] = remap.to[0];
+        d[i + 1] = remap.to[1];
+        d[i + 2] = remap.to[2];
         break;
       }
     }
@@ -1947,37 +2377,7 @@ function applyImageColorRemaps(remaps) {
   mapCtx.putImageData(state.imageData, 0, 0);
 }
 
-/* ─── GRID OVERLAY (drawn on map canvas) ─── */
-// We'll redraw grid as an overlay via a separate canvas or directly.
-// For simplicity, grid is drawn atop the main canvas on toggle.
-// (A more robust approach uses a separate grid canvas.)
-
 /* ─── API INTEGRATION ─── */
-
-/*
- * ╔═══════════════════════════════════════════════════════════╗
- * ║  API CONTRACT — Adjust these functions to match your     ║
- * ║  Python server's actual endpoints & response shapes.     ║
- * ╚═══════════════════════════════════════════════════════════╝
- *
- * Expected endpoints (customize as needed):
- *
- *   GET /api/runs
- *     → ["run_001", "run_002", ...]
- *
- *   GET /api/runs/{run}/manifest
- *     → { "seed": "259189...", "world_size": "Small", ... }
- *
- *   GET /api/runs/{run}/layers
- *     → ["step32", "step64", "step128"]
- *
- *   GET /api/runs/{run}/layers/{layer}/biomes
- *     → [ { "id": "minecraft:plains", "name": "Plains",
- *            "color": [141,179,96], "pct": 12.3 }, ... ]
- *
- *   GET /api/runs/{run}/layers/{layer}/image
- *     → image/png blob
- */
 
 async function fetchRuns() {
   try {
@@ -1992,8 +2392,10 @@ async function fetchRuns() {
 
 async function fetchManifest(run) {
   try {
-    return await apiFetch(`/api/runs/${run}/manifest`);
-  } catch { return null; }
+    return normalizeManifest(await apiFetch(`/api/runs/${run}/manifest`), run);
+  } catch {
+    return normalizeManifest({}, run);
+  }
 }
 
 async function fetchLayers(run) {
@@ -2010,6 +2412,14 @@ async function fetchBiomes(run, layer) {
   } catch { return []; }
 }
 
+async function fetchBiomeIds(run, layer) {
+  try {
+    return await apiFetch(`/api/runs/${run}/layers/${layer}/ids-image`);
+  } catch {
+    return null;
+  }
+}
+
 async function fetchGenerationStatus() {
   try {
     return await apiFetch('/api/generation-status');
@@ -2022,16 +2432,11 @@ async function startGeneration(presetKey) {
   const preset = GENERATION_PRESETS[presetKey];
   if (!preset) return;
   const resolution = Number(preset.resolution);
-  const label = preset.label;
-
-  const accepted = window.confirm(
-    `Start atlas generation at ${label} quality?\nThis can take a while and uses CPU heavily.`
-  );
-  if (!accepted) return;
 
   const dot = $('.dot', statusToast);
   const msg = $('.msg', statusToast);
   try {
+    setGenerationStatus(true, 'Generating a new world');
     const resp = await fetch(`${API_BASE}/api/generate`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -2040,15 +2445,14 @@ async function startGeneration(presetKey) {
     const payload = await resp.json().catch(() => ({}));
     if (resp.status === 202 || resp.status === 409) {
       syncGenerationUi(payload, false);
-      if (resp.status === 202) {
-        showToast(`Generating atlas run (${label})...`, 'loading');
-      } else {
+      if (resp.status !== 202) {
         showToast('Atlas generation is already in progress.', 'loading');
       }
       return;
     }
     throw new Error(payload?.error || `API ${resp.status}`);
   } catch (e) {
+    setGenerationStatus(false, '');
     dot.className = 'dot error';
     msg.textContent = `Failed to start generation: ${e.message || e}`;
     statusToast.classList.add('visible');
@@ -2063,7 +2467,11 @@ function syncGenerationUi(status, fromPoll) {
   const label = generationLabelForResolution(status.step);
   state.generationActive = isActive;
   if (genQuality) genQuality.disabled = isActive;
-  setGenerationStatus(isActive, isActive ? `Generating atlas run (${label})...` : '');
+  if (isActive) {
+    setGenerationStatus(true, 'Generating a new world');
+  } else if (!state.pendingGenerationPreset) {
+    setGenerationStatus(false, '');
+  }
 
   if (!fromPoll) return;
   if (!wasActive || isActive) return;
@@ -2083,6 +2491,16 @@ function syncGenerationUi(status, fromPoll) {
   }
 }
 
+generationCancelBtn.addEventListener('click', () => {
+  if (state.generationActive) return;
+  setGenerationStatus(false, '');
+});
+generationConfirmBtn.addEventListener('click', async () => {
+  const presetKey = state.pendingGenerationPreset;
+  if (!presetKey || state.generationActive) return;
+  await startGeneration(presetKey);
+});
+
 async function pollGenerationStatus() {
   const status = await fetchGenerationStatus();
   if (status) syncGenerationUi(status, true);
@@ -2096,12 +2514,15 @@ function startGenerationPolling() {
 
 async function refreshRuns() {
   state.runs = await fetchRuns();
+  const manifestEntries = await Promise.all(state.runs.map(async run => [run, await loadRunManifest(run, true)]));
+  state.runManifestMap = Object.fromEntries(manifestEntries);
   const previous = state.currentRun || selRun.value;
-  selRun.innerHTML = '<option value="">— choose —</option>';
+  selRun.innerHTML = '<option value="">— choose a generated world —</option>';
   for (const r of state.runs) {
     const opt = document.createElement('option');
     opt.value = r;
-    opt.textContent = r;
+    opt.textContent = runOptionLabel(r, state.runManifestMap[r]);
+    opt.title = runOptionTitle(r, state.runManifestMap[r]);
     selRun.appendChild(opt);
   }
 
@@ -2143,18 +2564,29 @@ async function init() {
 
 selRun.addEventListener('change', async () => {
   const run = selRun.value;
-  if (!run) return;
+  if (!run) {
+    state.currentRun = null;
+    state.currentLayer = null;
+    state.availableLayers = [];
+    state.manifest = null;
+    detailReadout.textContent = 'Auto';
+    renderMetadata(null);
+    updateRunActionButtons();
+    return;
+  }
   state.currentRun = run;
   state.currentLayer = null;
+  state.availableLayers = [];
 
   // Fetch layers
   showToast('Loading run…', 'loading');
   const [layers, manifest] = await Promise.all([
     fetchLayers(run),
-    fetchManifest(run),
+    loadRunManifest(run),
   ]);
 
   state.manifest = manifest;
+  state.availableLayers = layers.slice();
   renderMetadata(manifest);
 
   if (layers.length > 0) {
@@ -2170,8 +2602,8 @@ selRun.addEventListener('change', async () => {
 genQuality.addEventListener('change', async () => {
   const key = genQuality.value;
   if (!key) return;
-  await startGeneration(key);
   genQuality.value = '';
+  showGenerationConfirm(key);
 });
 
 async function switchLayer(run, layer) {
@@ -2179,23 +2611,44 @@ async function switchLayer(run, layer) {
   detailReadout.textContent = formatLayerLabel(layer);
   state.selectionStatsCache = {};
   state.selectedBiomeId = null;
+  state.hoveredBiomeId = null;
+  state.biomeIndices = null;
+  state.biomeIndexWidth = 0;
+  state.biomeIndexHeight = 0;
   renderSelectionContext(null);
 
-  // Fetch biomes + image concurrently
-  const [biomes] = await Promise.all([
+  // Fetch biomes + image + ids concurrently
+  const [biomes, idsBlob] = await Promise.all([
     fetchBiomes(run, layer),
+    fetchBiomeIds(run, layer),
     loadMapImage(getImageUrl(run, layer)),
   ]);
+  fitToView();
 
   const normalized = normalizeBiomePaletteForDisplay(biomes);
   applyImageColorRemaps(normalized.remaps);
   state.biomes = normalized.biomes.sort((a, b) => (b.pct || 0) - (a.pct || 0));
+
+  if (idsBlob) {
+    try {
+      const decoded = await decodeBiomeIndexBlob(idsBlob);
+      if (decoded && decoded.width === state.mapWidth && decoded.height === state.mapHeight) {
+        state.biomeIndices = decoded.indices;
+        state.biomeIndexWidth = decoded.width;
+        state.biomeIndexHeight = decoded.height;
+      }
+    } catch (err) {
+      console.warn('Failed to decode biome ids image', err);
+    }
+  }
+
   buildColorLookup();
   renderBiomeList(state.biomes);
   biomeSearch.disabled = false;
+  biomeSearch.removeAttribute('disabled');
   biomeSearch.value = '';
+  renderMetadata(state.manifest);
 
-  fitToView();
   clearHighlight();
   highlightBiomeInList(null);
   toggleGrid();
@@ -2215,6 +2668,7 @@ togTooltip.addEventListener('change', () => {
 
 /* ─── KEYBOARD SHORTCUTS ─── */
 document.addEventListener('keydown', e => {
+  if (isTextEntryTarget(e.target)) return;
   if (e.key === 'f' || e.key === 'F') fitToView();
   if (e.key === '1') { state.zoom = 1; fitToView(); }
   if (e.key === 'g') { togGrid.checked = !togGrid.checked; toggleGrid(); }
