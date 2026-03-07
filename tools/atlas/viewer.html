@@ -198,7 +198,15 @@ const layerNames = {
 
 const MASK_ALPHA = 170;
 const MASK_HIGHLIGHT_RGB = { r: 255, g: 0, b: 220 };
-const BAND_KEYS = ["equator", "tropical", "subtropical", "temperate", "subpolar", "polar"];
+// TODO: Keep this tiny display-side mirror in sync with LatitudeBands until the legacy viewer is retired.
+const CANONICAL_BAND_DEFINITIONS = [
+  { id: "tropical", label: "Tropical", minDeg: 0.0, maxDeg: 23.5 },
+  { id: "subtropical", label: "Subtropical", minDeg: 23.5, maxDeg: 35.0 },
+  { id: "temperate", label: "Temperate", minDeg: 35.0, maxDeg: 50.0 },
+  { id: "subpolar", label: "Subpolar", minDeg: 50.0, maxDeg: 66.5 },
+  { id: "polar", label: "Polar", minDeg: 66.5, maxDeg: 90.0 }
+];
+const BAND_KEYS = CANONICAL_BAND_DEFINITIONS.map((band) => band.id);
 const BAND_BIT_BY_KEY = new Map(BAND_KEYS.map((key, index) => [key, 1 << index]));
 const BAND_RANK_BY_KEY = new Map(BAND_KEYS.map((key, index) => [key, index]));
 const SUBPOLAR_BAND_RANK = BAND_RANK_BY_KEY.get("subpolar");
@@ -361,7 +369,8 @@ function setBandViolationAnimation(enabled) {
 function normalizeBandKey(value) {
   const raw = String(value || "").trim().toLowerCase();
   if (!raw) return null;
-  if (raw === "equatorial") return "equator";
+  if (raw === "equator" || raw === "equatorial" || raw === "tropics") return "tropical";
+  if (raw === "arid" || raw === "subtropics") return "subtropical";
   if (raw === "sub-polar") return "subpolar";
   if (raw === "sub_tropical") return "subtropical";
   if (raw === "sub_temperate") return "temperate";
@@ -410,16 +419,16 @@ function inferBiomeBandMask(biomeId) {
     return bandsToMask(["temperate", "subpolar"]);
   }
   if (shortId.includes("jungle") || shortId.includes("mangrove")) {
-    return bandsToMask(["equator", "tropical"]);
+    return bandsToMask(["tropical"]);
   }
   if (shortId.includes("desert") || shortId.includes("badlands")) {
-    return bandsToMask(["equator", "tropical", "subtropical"]);
+    return bandsToMask(["tropical"]);
   }
   if (shortId.includes("savanna")) {
-    return bandsToMask(["tropical", "subtropical"]);
+    return bandsToMask(["tropical"]);
   }
   if (shortId.includes("swamp")) {
-    return bandsToMask(["tropical", "subtropical", "temperate"]);
+    return bandsToMask(["tropical", "temperate"]);
   }
   if (
     shortId.includes("windswept")
@@ -435,7 +444,7 @@ function inferBiomeBandMask(biomeId) {
     || shortId.includes("meadow")
     || shortId.includes("cherry")
   ) {
-    return bandsToMask(["subtropical", "temperate"]);
+    return bandsToMask(["temperate"]);
   }
   return 0;
 }
