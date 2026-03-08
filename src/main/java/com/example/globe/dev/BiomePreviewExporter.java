@@ -958,6 +958,26 @@ public final class BiomePreviewExporter {
             appendBandLegendJson(json, band, band.lowDeg() / 90.0, band.highDeg() / 90.0, i + 1 < bands.length);
         }
         json.append("  ],\n");
+        json.append("  \"biomeBands\": {\n");
+        List<Map.Entry<String, List<LatitudeBands.Band>>> bandEntries = new ArrayList<>(BiomeBandPolicy.policy().entrySet());
+        bandEntries.sort(Map.Entry.comparingByKey());
+        for (int i = 0; i < bandEntries.size(); i++) {
+            Map.Entry<String, List<LatitudeBands.Band>> entry = bandEntries.get(i);
+            json.append("    \"").append(entry.getKey()).append("\": [");
+            List<LatitudeBands.Band> allowedBands = entry.getValue();
+            for (int j = 0; j < allowedBands.size(); j++) {
+                if (j > 0) {
+                    json.append(", ");
+                }
+                json.append("\"").append(allowedBands.get(j).id()).append("\"");
+            }
+            json.append("]");
+            if (i + 1 < bandEntries.size()) {
+                json.append(",");
+            }
+            json.append("\n");
+        }
+        json.append("  },\n");
         json.append("  \"overlayStyles\": {\n");
         int overlayStyleIndex = 0;
         for (Overlay overlay : overlays) {

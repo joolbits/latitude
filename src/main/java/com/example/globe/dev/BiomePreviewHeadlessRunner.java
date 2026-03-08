@@ -383,11 +383,13 @@ public final class BiomePreviewHeadlessRunner {
         boolean emitBiomeIndex = parseBoolean(kv.get("emitbiomeindex"));
         boolean emitHeight = emitHeightProp || parseBoolean(kv.get("emitheight"));
         BiomePreviewExporter.ExportOptions baseOptions = BiomePreviewExporter.ExportOptions.from(bundle, parsedLayers.layers(), overlays, masks);
+        // Emit legend metadata whenever biome index output is requested so atlas runs
+        // keep the policy/legend authority alongside the sampled layer payload.
         BiomePreviewExporter.ExportOptions exportOptions = new BiomePreviewExporter.ExportOptions(
                 baseOptions.layers(),
                 baseOptions.overlays(),
                 baseOptions.maskLayers(),
-                baseOptions.writeLegends(),
+                baseOptions.writeLegends() || emitBiomeIndex,
                 emitBiomeIndex,
                 emitHeight);
         Path out = kv.containsKey("out") && !kv.get("out").isBlank()

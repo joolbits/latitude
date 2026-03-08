@@ -1744,6 +1744,7 @@ const btnClearPaletteSelection = $('#btn-clear-palette-selection');
   biomeInventory: [],
   biomeByIdMap: {},
   biomeByIndex: {},
+  legend: null,
   bandMaskByIndex: null,
   jungleFamilyByIndex: null,
   bandViolationStats: null,
@@ -2071,10 +2072,21 @@ function inferBiomeBandMask(biomeId) {
 function rebuildBiomeBandMasks() {
  const masks = new Uint32Array(256);
  const jungleFamily = new Uint8Array(256);
+ const legendMap = state.legend && typeof state.legend.biomeBands === 'object' && state.legend.biomeBands
+  ? state.legend.biomeBands
+  : null;
  for (const biome of state.biomes) {
   const idx = Number(biome.index);
   if (!Number.isFinite(idx) || idx < 0 || idx > 255) continue;
-  masks[idx] = inferBiomeBandMask(biome.id);
+  let mask = bandsToMask(biome.allowedBands);
+  if (!mask && legendMap) {
+   const mapped = legendMap[biome.id] ?? legendMap[String(biome.id || '').replace(/^.*:/, '')];
+   mask = bandsToMask(mapped);
+  }
+  if (!mask) {
+   mask = inferBiomeBandMask(biome.id);
+  }
+  masks[idx] = mask;
   jungleFamily[idx] = String(biome.id || '').toLowerCase().includes('jungle') ? 1 : 0;
  }
  state.bandMaskByIndex = masks;
@@ -3841,6 +3853,13 @@ async function fetchBiomeInventory(run, layer) {
   } catch { return []; }
 }
 
+async function fetchLegend(run, layer) {
+  try {
+    const data = await apiFetch(`/api/runs/${run}/layers/${layer}/legend`);
+    return data && typeof data === 'object' ? data : null;
+  } catch { return null; }
+}
+
 async function fetchBiomeIds(run, layer) {
   try {
     return await apiFetch(`/api/runs/${run}/layers/${layer}/ids-image`);
@@ -4010,6 +4029,7 @@ selRun.addEventListener('change', async () => {
     state.selectedBiomeIds = [];
     state.focusedBiomeId = null;
     state.inspectedPoint = null;
+    state.legend = null;
     clearSelectedPoint();
     setJumpStatus('Awaiting coords');
     state.bandMaskByIndex = null;
@@ -4069,6 +4089,7 @@ async function switchLayer(run, layer) {
   state.focusedBiomeId = null;
   state.hoveredBiomeId = null;
   state.inspectedPoint = null;
+  state.legend = null;
   clearSelectedPoint();
   state.bandMaskByIndex = null;
   state.jungleFamilyByIndex = null;
@@ -4081,16 +4102,18 @@ async function switchLayer(run, layer) {
   renderSelectionContext(null);
 
   // Fetch biomes + image + ids concurrently
-  const [biomes, inventory, idsBlob] = await Promise.all([
+  const [biomes, inventory, idsBlob, legend] = await Promise.all([
     fetchBiomes(run, layer),
     fetchBiomeInventory(run, layer),
     fetchBiomeIds(run, layer),
+    fetchLegend(run, layer),
     loadMapImage(getImageUrl(run, layer)),
   ]);
   fitToView();
 
   const normalized = normalizeBiomePaletteForDisplay(biomes);
   const normalizedInventory = normalizeBiomePaletteForDisplay(inventory);
+  state.legend = legend;
   applyImageColorRemaps(normalized.remaps);
   state.biomes = normalized.biomes.sort((a, b) => (b.pct || 0) - (a.pct || 0));
   state.biomeInventory = normalizedInventory.biomes.sort((a, b) => String(a?.name || a?.id || '').localeCompare(String(b?.name || b?.id || '')));

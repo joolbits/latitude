@@ -410,6 +410,11 @@ class Handler(BaseHTTPRequestHandler):
             self.handle_inventory(m.group(1), m.group(2))
             return
 
+        m = re.match(r"^/api/runs/([^/]+)/layers/([^/]+)/legend$", path)
+        if m:
+            self.handle_legend(m.group(1), m.group(2))
+            return
+
         m = re.match(r"^/api/runs/([^/]+)/layers/([^/]+)/image$", path)
         if m:
             self.handle_image(m.group(1), m.group(2))
@@ -571,6 +576,23 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json(out)
         except Exception:
             self._send_json([])
+
+    def handle_legend(self, run: str, layer: str):
+        run_dir = run_path(run)
+        if not run_dir.exists():
+            self._send_json({}, HTTPStatus.NOT_FOUND)
+            return
+
+        legend_path = layer_file(run_dir, layer, "legend.json")
+        if not legend_path or not legend_path.exists():
+            self._send_json({})
+            return
+
+        try:
+            payload = read_json_file(legend_path)
+            self._send_json(payload if isinstance(payload, dict) else {})
+        except Exception:
+            self._send_json({})
 
     def handle_image(self, run: str, layer: str):
         run_dir = run_path(run)
