@@ -653,18 +653,18 @@ public final class LatitudeBiomes {
     private static final int REFERENCE_DIAMETER_BLOCKS = 20000;
 
     private static final int VARIANT_CELL_SIZE_BLOCKS = 38;
-    private static final int BLEND_TRANSITION_WIDTH_BLOCKS = 768;
+    private static final int BLEND_TRANSITION_WIDTH_BLOCKS = 1408;
     private static final int BLEND_DITHER_SCALE_BLOCKS = 512;
-    private static final int BLEND_NOISE_PATCH_CHUNKS = 6;
-    private static final int WARP_NOISE_PATCH_CHUNKS = 8;
-    private static final double BAND_JITTER_FRAC = 0.02;
-    private static final int BAND_JITTER_MIN_BLOCKS = 80;
-    private static final int BAND_JITTER_MAX_BLOCKS = 450;
-    private static final double BAND_JITTER_WAVELENGTH_FRAC = 0.35;
-    private static final int BAND_JITTER_WAVELENGTH_MIN_BLOCKS = 1800;
+    private static final int BLEND_NOISE_PATCH_CHUNKS = 10;
+    private static final int WARP_NOISE_PATCH_CHUNKS = 12;
+    private static final double BAND_JITTER_FRAC = 0.03;
+    private static final int BAND_JITTER_MIN_BLOCKS = 120;
+    private static final int BAND_JITTER_MAX_BLOCKS = 700;
+    private static final double BAND_JITTER_WAVELENGTH_FRAC = 0.45;
+    private static final int BAND_JITTER_WAVELENGTH_MIN_BLOCKS = 2600;
     private static final int BAND_JITTER_WAVELENGTH_MAX_BLOCKS = 12000;
     private static final int DITHER_SCALE_BLOCKS = 144;
-    private static final int WARP_AMPLITUDE_BLOCKS = 256;
+    private static final int WARP_AMPLITUDE_BLOCKS = 420;
     private static final int WARP_SCALE_BLOCKS = 4096;
     private static final long JITTER_NOISE_SALT = -6795153568590067944L;
     private static final long DITHER_NOISE_SALT = 1161981756646125696L;
