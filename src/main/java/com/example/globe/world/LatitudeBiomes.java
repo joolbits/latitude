@@ -382,7 +382,9 @@ public final class LatitudeBiomes {
             return false;
         }
         String normalized = callerContext.trim().toUpperCase(java.util.Locale.ROOT);
-        if ("BIOME_PNG".equals(normalized)) {
+        if ("BIOME_PNG".equals(normalized)
+                || "SOURCE".equals(normalized)
+                || "ATLAS_SAMPLER".equals(normalized)) {
             return Boolean.parseBoolean(System.getProperty("latitude.skipPreviewHeightForBiomePng", "true"));
         }
         if ("MIXIN".equals(normalized) || "CAVE_CLAMP".equals(normalized)) {
