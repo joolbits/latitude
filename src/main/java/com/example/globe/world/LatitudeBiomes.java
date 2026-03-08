@@ -2712,6 +2712,13 @@ public final class LatitudeBiomes {
                 // fall through
             }
         }
+        if (isBiomeId(base, "minecraft:bamboo_jungle") && compositionBias > 0.12 && opennessNoise < 0.40) {
+            try {
+                return biome(biomes, "minecraft:sparse_jungle");
+            } catch (Throwable ignored) {
+                // fall through
+            }
+        }
         if (compositionBias > 0.16 && opennessNoise < 0.34) {
             try {
                 return biome(biomes, "minecraft:sparse_jungle");
@@ -2739,6 +2746,12 @@ public final class LatitudeBiomes {
             RegistryEntry<Biome> desert = entryById(biomes, "minecraft:desert");
             if (desert != null) {
                 return desert;
+            }
+        }
+        if (isBiomeId(base, "minecraft:bamboo_jungle") && compositionBias > 0.12 && opennessNoise < 0.40) {
+            RegistryEntry<Biome> sparseJungle = entryById(biomes, "minecraft:sparse_jungle");
+            if (sparseJungle != null) {
+                return sparseJungle;
             }
         }
         if (compositionBias > 0.16 && opennessNoise < 0.34) {
