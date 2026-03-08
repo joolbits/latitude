@@ -951,7 +951,7 @@ public final class LatitudeBiomes {
                         () -> pickFromWeightedTags(biomeRegistry, base, blockX, blockZ, BAND_TEMPERATE, 0x2B32, LAT_TEMPERATE_PRIMARY, LAT_TEMPERATE_SECONDARY, LAT_TEMPERATE_ACCENT),
                         mountainLike);
                 case BAND_SUBPOLAR -> pickSubpolarWithRamp(biomeRegistry, base, blockX, blockZ, t, BAND_SUBPOLAR, 0x3C43, LAT_SUBPOLAR_PRIMARY, LAT_SUBPOLAR_SECONDARY, LAT_SUBPOLAR_ACCENT);
-                default -> pickFromWeightedTags(biomeRegistry, base, blockX, blockZ, BAND_POLAR, 0x4D54, LAT_POLAR_PRIMARY, LAT_POLAR_SECONDARY, LAT_POLAR_ACCENT);
+                default -> pickPolarWithFrontShoulder(biomeRegistry, base, blockX, blockZ, t, sampler != null && isMountainLike(sampler, blockX, blockZ));
             };
         }
         String mangroveDecision = null;
@@ -1176,7 +1176,7 @@ public final class LatitudeBiomes {
                         () -> pickFromWeightedTags(biomePool, base, blockX, blockZ, BAND_TEMPERATE, 0x2B32, LAT_TEMPERATE_PRIMARY, LAT_TEMPERATE_SECONDARY, LAT_TEMPERATE_ACCENT),
                         mountainLike);
                 case BAND_SUBPOLAR -> pickSubpolarWithRamp(biomePool, base, blockX, blockZ, t, BAND_SUBPOLAR, 0x3C43, LAT_SUBPOLAR_PRIMARY, LAT_SUBPOLAR_SECONDARY, LAT_SUBPOLAR_ACCENT);
-                default -> pickFromWeightedTags(biomePool, base, blockX, blockZ, BAND_POLAR, 0x4D54, LAT_POLAR_PRIMARY, LAT_POLAR_SECONDARY, LAT_POLAR_ACCENT);
+                default -> pickPolarWithFrontShoulder(biomePool, base, blockX, blockZ, t, sampler != null && isMountainLike(sampler, blockX, blockZ));
             };
         }
         String mangroveDecision = null;
@@ -1730,6 +1730,17 @@ public final class LatitudeBiomes {
         return pickFromTagNoiseOrBase(biomes, tag, base, blockX, blockZ, bandIndex);
     }
 
+    private static RegistryEntry<Biome> pickPolarWithFrontShoulder(Registry<Biome> biomes, RegistryEntry<Biome> base, int blockX, int blockZ,
+                                                                   double absLatFraction, boolean coldMountainLike) {
+        RegistryEntry<Biome> pick = pickFromWeightedTags(biomes, base, blockX, blockZ, BAND_POLAR, 0x4D54, LAT_POLAR_PRIMARY, LAT_POLAR_SECONDARY, LAT_POLAR_ACCENT);
+        double deg = LatitudeMath.clamp(absLatFraction * 90.0, 0.0, 90.0);
+        double shoulderMaxDeg = LatitudeBands.Band.POLAR.lowDeg() + 8.0;
+        if (!coldMountainLike && deg <= shoulderMaxDeg && isBiomeId(pick, "minecraft:snowy_slopes")) {
+            return pickSubpolarWithRamp(biomes, base, blockX, blockZ, absLatFraction, BAND_SUBPOLAR, 0x3C43, LAT_SUBPOLAR_PRIMARY, LAT_SUBPOLAR_SECONDARY, LAT_SUBPOLAR_ACCENT);
+        }
+        return pick;
+    }
+
     private static double scaledPatchBlocks(int basePatchChunks, double noiseScale) {
         double basePatchBlocks = basePatchChunks * 16.0;
         double scaled = basePatchBlocks * noiseScale;
@@ -1789,6 +1800,17 @@ public final class LatitudeBiomes {
         boolean snowyPool = useSubpolarSnowyPool(absLatFraction, blockX, blockZ);
         TagKey<Biome> tag = subpolarTagForRoll(roll, snowyPool, primary, secondary, accent);
         return pickFromTagNoiseOrBase(biomes, tag, base, blockX, blockZ, bandIndex);
+    }
+
+    private static RegistryEntry<Biome> pickPolarWithFrontShoulder(Collection<RegistryEntry<Biome>> biomes, RegistryEntry<Biome> base, int blockX, int blockZ,
+                                                                   double absLatFraction, boolean coldMountainLike) {
+        RegistryEntry<Biome> pick = pickFromWeightedTags(biomes, base, blockX, blockZ, BAND_POLAR, 0x4D54, LAT_POLAR_PRIMARY, LAT_POLAR_SECONDARY, LAT_POLAR_ACCENT);
+        double deg = LatitudeMath.clamp(absLatFraction * 90.0, 0.0, 90.0);
+        double shoulderMaxDeg = LatitudeBands.Band.POLAR.lowDeg() + 8.0;
+        if (!coldMountainLike && deg <= shoulderMaxDeg && isBiomeId(pick, "minecraft:snowy_slopes")) {
+            return pickSubpolarWithRamp(biomes, base, blockX, blockZ, absLatFraction, BAND_SUBPOLAR, 0x3C43, LAT_SUBPOLAR_PRIMARY, LAT_SUBPOLAR_SECONDARY, LAT_SUBPOLAR_ACCENT);
+        }
+        return pick;
     }
 
     private static int weightedRoll(int blockX, int blockZ, int salt) {
