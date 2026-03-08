@@ -485,6 +485,14 @@ public final class LatitudeBiomes {
         return "minecraft:savanna";
     }
 
+    private static boolean preserveSavannaPlateauAtSanitize(RegistryEntry<Biome> entry, int blockX, int blockZ) {
+        if (!isBiomeId(entry, "minecraft:savanna_plateau")) {
+            return false;
+        }
+        double localUpland = ValueNoise2D.sampleBlocks(WORLD_SEED ^ UPLAND_POOL_SALT, blockX, blockZ, UPLAND_SCALE_BLOCKS);
+        return localUpland >= 0.58;
+    }
+
     private static void incrementSavannaIncomingCounter(String biomeId) {
         if ("minecraft:savanna".equals(biomeId)) {
             SAVANNA_GATE_IN_SAVANNA.incrementAndGet();
@@ -3406,7 +3414,11 @@ private static boolean swampPatchHere(long seed, int blockX, int blockZ) {
         }
         if (isSavannaFamily(out)) {
             try {
-                out = biome(biomes, savannaTierByY(blockY));
+                String targetId = savannaTierByY(blockY);
+                if ("minecraft:savanna".equals(targetId) && preserveSavannaPlateauAtSanitize(out, blockX, blockZ)) {
+                    targetId = "minecraft:savanna_plateau";
+                }
+                out = biome(biomes, targetId);
             } catch (Throwable ignored) {
                 // keep current biome
             }
@@ -3486,7 +3498,11 @@ private static boolean swampPatchHere(long seed, int blockX, int blockZ) {
             }
         }
         if (isSavannaFamily(out)) {
-            RegistryEntry<Biome> tier = entryById(biomes, savannaTierByY(blockY));
+            String targetId = savannaTierByY(blockY);
+            if ("minecraft:savanna".equals(targetId) && preserveSavannaPlateauAtSanitize(out, blockX, blockZ)) {
+                targetId = "minecraft:savanna_plateau";
+            }
+            RegistryEntry<Biome> tier = entryById(biomes, targetId);
             if (tier != null) {
                 out = tier;
             }
