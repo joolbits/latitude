@@ -2462,6 +2462,50 @@ public final class LatitudeBiomes {
         return base;
     }
 
+    private static RegistryEntry<Biome> pickSnowyTaigaRampFallback(Registry<Biome> biomes, RegistryEntry<Biome> base, int bandIndex) {
+        if (base != null
+                && !isSnowyVariant(base)
+                && !isGroveBiome(base)
+                && !isWarmBiome(base)
+                && !isBiomeId(base, "minecraft:taiga")) {
+            return base;
+        }
+        String[] options = bandIndex <= BAND_TEMPERATE
+                ? new String[]{"minecraft:forest", "minecraft:plains", "minecraft:taiga", "minecraft:meadow"}
+                : new String[]{"minecraft:forest", "minecraft:old_growth_pine_taiga", "minecraft:taiga", "minecraft:meadow", "minecraft:plains"};
+        for (String option : options) {
+            try {
+                RegistryEntry<Biome> entry = biome(biomes, option);
+                if (!isSnowyVariant(entry) && !isGroveBiome(entry) && !isWarmBiome(entry)) {
+                    return entry;
+                }
+            } catch (Throwable ignored) {
+                // try next
+            }
+        }
+        return base;
+    }
+
+    private static RegistryEntry<Biome> pickSnowyTaigaRampFallback(Collection<RegistryEntry<Biome>> biomes, RegistryEntry<Biome> base, int bandIndex) {
+        if (base != null
+                && !isSnowyVariant(base)
+                && !isGroveBiome(base)
+                && !isWarmBiome(base)
+                && !isBiomeId(base, "minecraft:taiga")) {
+            return base;
+        }
+        String[] options = bandIndex <= BAND_TEMPERATE
+                ? new String[]{"minecraft:forest", "minecraft:plains", "minecraft:taiga", "minecraft:meadow"}
+                : new String[]{"minecraft:forest", "minecraft:old_growth_pine_taiga", "minecraft:taiga", "minecraft:meadow", "minecraft:plains"};
+        for (String option : options) {
+            RegistryEntry<Biome> entry = entryById(biomes, option);
+            if (entry != null && !isSnowyVariant(entry) && !isGroveBiome(entry) && !isWarmBiome(entry)) {
+                return entry;
+            }
+        }
+        return base;
+    }
+
     private static RegistryEntry<Biome> enforceSnowyLatitudeRamp(Registry<Biome> biomes, RegistryEntry<Biome> pick, RegistryEntry<Biome> base,
                                                                  int blockX, int blockZ, int radius, int bandIndex) {
         double deg = latitudeDegreesFromRadius(blockZ, radius);
@@ -2482,6 +2526,9 @@ public final class LatitudeBiomes {
         }
         if (r < alpha) {
             return pick;
+        }
+        if (isBiomeId(pick, "minecraft:snowy_taiga")) {
+            return pickSnowyTaigaRampFallback(biomes, base, bandIndex);
         }
         return pickNonSnowyFallback(biomes, base, blockX, blockZ, bandIndex);
     }
@@ -2506,6 +2553,9 @@ public final class LatitudeBiomes {
         }
         if (r < alpha) {
             return pick;
+        }
+        if (isBiomeId(pick, "minecraft:snowy_taiga")) {
+            return pickSnowyTaigaRampFallback(biomes, base, bandIndex);
         }
         return pickNonSnowyFallback(biomes, base, bandIndex);
     }
