@@ -1017,8 +1017,8 @@ public final class LatitudeBiomes {
                 chosen = pickFromTagNoiseOrBase(biomeRegistry, LAT_TEMPERATE_MOUNTAIN, base, blockX, blockZ, landBandIndex);
                 if (isBiomeId(chosen, "minecraft:cherry_grove") && !rollChance(blockX, blockZ, 0xC7E22E55, 6L)) {
                     chosen = pickFrom(biomeRegistry, blockX, blockZ, landBandIndex,
-                            "minecraft:meadow",
                             "minecraft:grove",
+                            "minecraft:meadow",
                             "minecraft:windswept_hills",
                             "minecraft:stony_peaks");
                 }
@@ -1266,8 +1266,8 @@ public final class LatitudeBiomes {
                 chosen = pickFromTagNoiseOrBase(biomePool, LAT_TEMPERATE_MOUNTAIN, base, blockX, blockZ, landBandIndex);
                 if (isBiomeId(chosen, "minecraft:cherry_grove") && !rollChance(blockX, blockZ, 0xC7E22E55, 6L)) {
                     chosen = pickFromFallbacks(biomePool, base,
-                            "minecraft:meadow",
                             "minecraft:grove",
+                            "minecraft:meadow",
                             "minecraft:windswept_hills",
                             "minecraft:stony_peaks");
                 }
