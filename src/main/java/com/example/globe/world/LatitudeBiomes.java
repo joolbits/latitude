@@ -2703,14 +2703,14 @@ public final class LatitudeBiomes {
         double u = tropicalEnd > 0.0 ? clamp(t / tropicalEnd, 0.0, 1.0) : 1.0;
         double opennessNoise = tropicalOpennessNoise(blockX, blockZ);
         double compositionBias = tropicalCompositionBias(WORLD_SEED, blockX, blockZ);
-        if ((u > 0.78 || opennessNoise > 0.72) && compositionBias < 0.02) {
+        if ((u > 0.86 || opennessNoise > 0.82) && compositionBias < -0.04) {
             try {
                 return biome(biomes, "minecraft:desert");
             } catch (Throwable ignored) {
                 // fall through
             }
         }
-        if (compositionBias > 0.10 && opennessNoise < 0.46) {
+        if (compositionBias > 0.16 && opennessNoise < 0.34) {
             try {
                 return biome(biomes, "minecraft:sparse_jungle");
             } catch (Throwable ignored) {
@@ -2733,13 +2733,13 @@ public final class LatitudeBiomes {
         double u = tropicalEnd > 0.0 ? clamp(t / tropicalEnd, 0.0, 1.0) : 1.0;
         double opennessNoise = tropicalOpennessNoise(blockX, blockZ);
         double compositionBias = tropicalCompositionBias(WORLD_SEED, blockX, blockZ);
-        if ((u > 0.78 || opennessNoise > 0.72) && compositionBias < 0.02) {
+        if ((u > 0.86 || opennessNoise > 0.82) && compositionBias < -0.04) {
             RegistryEntry<Biome> desert = entryById(biomes, "minecraft:desert");
             if (desert != null) {
                 return desert;
             }
         }
-        if (compositionBias > 0.10 && opennessNoise < 0.46) {
+        if (compositionBias > 0.16 && opennessNoise < 0.34) {
             RegistryEntry<Biome> sparseJungle = entryById(biomes, "minecraft:sparse_jungle");
             if (sparseJungle != null) {
                 return sparseJungle;
