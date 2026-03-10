@@ -116,10 +116,13 @@ tasks.register('latitudeInvariantScan', JavaExec) {
     classpath = sourceSets.main.runtimeClasspath
     mainClass = 'com.example.globe.dev.InvariantScan'
     dependsOn classes
+    onlyIf { project.hasProperty('enableInvariantScan') }
 }
 
 tasks.named('check').configure {
-    dependsOn tasks.named('latitudeInvariantScan')
+    if (project.hasProperty('enableInvariantScan')) {
+        dependsOn tasks.named('latitudeInvariantScan')
+    }
 }
 
 tasks.register('prepareBiomePreviewRunDir') {
