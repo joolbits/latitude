@@ -1338,6 +1338,21 @@ public final class LatitudeBiomes {
         int baseStep = clampInt((int) Math.floor(stepFloat), 0, 3);
         double stepFrac = stepFloat - baseStep;
         int step = applyTropicalStepDither(seed, blockX, blockZ, baseStep, stepFrac);
+        boolean plateauLike = step == 2 && t <= 0.325 && stepFrac >= 0.75;
+
+        if (step == 2) {
+            int roll = weightedRoll(blockX, blockZ, 0x7A22);
+            TagKey<Biome> tag = weightedTagForRoll(102, roll,
+                    LAT_TRANS_ARID_TROPICS_2_PRIMARY, LAT_TRANS_ARID_TROPICS_2_SECONDARY, LAT_TRANS_ARID_TROPICS_2_ACCENT);
+            List<RegistryEntry<Biome>> candidates = new ArrayList<>();
+            for (RegistryEntry<Biome> entry : biomes.iterateEntries(tag)) {
+                candidates.add(entry);
+            }
+            RegistryEntry<Biome> forced = maybePickWsavStep2SecondaryOverride(biomes, step, plateauLike, candidates);
+            if (forced != null) {
+                return forced;
+            }
+        }
 
         return switch (step) {
             case 1 -> pickFromWeightedTags(biomes, base, blockX, blockZ, 101, 0x7A11,
@@ -1409,6 +1424,18 @@ public final class LatitudeBiomes {
         int baseStep = clampInt((int) Math.floor(stepFloat), 0, 3);
         double stepFrac = stepFloat - baseStep;
         int step = applyTropicalStepDither(seed, blockX, blockZ, baseStep, stepFrac);
+        boolean plateauLike = step == 2 && t <= 0.325 && stepFrac >= 0.75;
+
+        if (step == 2) {
+            int roll = weightedRoll(blockX, blockZ, 0x7A22);
+            TagKey<Biome> tag = weightedTagForRoll(102, roll,
+                    LAT_TRANS_ARID_TROPICS_2_PRIMARY, LAT_TRANS_ARID_TROPICS_2_SECONDARY, LAT_TRANS_ARID_TROPICS_2_ACCENT);
+            List<RegistryEntry<Biome>> candidates = entriesForTag(biomes, tag);
+            RegistryEntry<Biome> forced = maybePickWsavStep2SecondaryOverride(biomes, step, plateauLike, candidates);
+            if (forced != null) {
+                return forced;
+            }
+        }
 
         return switch (step) {
             case 1 -> pickFromWeightedTags(biomes, base, blockX, blockZ, 101, 0x7A11,
@@ -2866,6 +2893,36 @@ public final class LatitudeBiomes {
         return base == picked ? PATH_RETURN_BASE : PATH_TAG_PICK;
     }
 
+    private static @org.jetbrains.annotations.Nullable RegistryEntry<Biome> maybePickWsavStep2SecondaryOverride(Registry<Biome> biomes,
+                                                                                                                  int step,
+                                                                                                                  boolean plateauLike,
+                                                                                                                  List<RegistryEntry<Biome>> candidates) {
+        if (step != 2 || !plateauLike || candidates.size() != 2) {
+            return null;
+        }
+        boolean hasSavannaPlateau = candidates.stream().anyMatch(entry -> isBiomeId(entry, "minecraft:savanna_plateau"));
+        boolean hasWsav = candidates.stream().anyMatch(entry -> isBiomeId(entry, "minecraft:windswept_savanna"));
+        if (!(hasSavannaPlateau && hasWsav)) {
+            return null;
+        }
+        return biome(biomes, "minecraft:windswept_savanna");
+    }
+
+    private static @org.jetbrains.annotations.Nullable RegistryEntry<Biome> maybePickWsavStep2SecondaryOverride(Collection<RegistryEntry<Biome>> biomes,
+                                                                                                                  int step,
+                                                                                                                  boolean plateauLike,
+                                                                                                                  List<RegistryEntry<Biome>> candidates) {
+        if (step != 2 || !plateauLike || candidates.size() != 2) {
+            return null;
+        }
+        boolean hasSavannaPlateau = candidates.stream().anyMatch(entry -> isBiomeId(entry, "minecraft:savanna_plateau"));
+        boolean hasWsav = candidates.stream().anyMatch(entry -> isBiomeId(entry, "minecraft:windswept_savanna"));
+        if (!(hasSavannaPlateau && hasWsav)) {
+            return null;
+        }
+        return entryById(biomes, "minecraft:windswept_savanna");
+    }
+
     private static void traceSubpolarJunglePick(int blockX, int blockZ, int radius, int bandIndex,
                                                 RegistryEntry<Biome> base, RegistryEntry<Biome> picked) {
         if (bandIndex < BAND_SUBPOLAR || !isJungleFamily(picked)) {
@@ -3414,11 +3471,13 @@ private static boolean swampPatchHere(long seed, int blockX, int blockZ) {
         }
         if (isSavannaFamily(out)) {
             try {
-                String targetId = savannaTierByY(blockY);
-                if ("minecraft:savanna".equals(targetId) && preserveSavannaPlateauAtSanitize(out, blockX, blockZ)) {
-                    targetId = "minecraft:savanna_plateau";
+                if (!isBiomeId(out, "minecraft:windswept_savanna")) {
+                    String targetId = savannaTierByY(blockY);
+                    if ("minecraft:savanna".equals(targetId) && preserveSavannaPlateauAtSanitize(out, blockX, blockZ)) {
+                        targetId = "minecraft:savanna_plateau";
+                    }
+                    out = biome(biomes, targetId);
                 }
-                out = biome(biomes, targetId);
             } catch (Throwable ignored) {
                 // keep current biome
             }
@@ -3498,13 +3557,15 @@ private static boolean swampPatchHere(long seed, int blockX, int blockZ) {
             }
         }
         if (isSavannaFamily(out)) {
-            String targetId = savannaTierByY(blockY);
-            if ("minecraft:savanna".equals(targetId) && preserveSavannaPlateauAtSanitize(out, blockX, blockZ)) {
-                targetId = "minecraft:savanna_plateau";
-            }
-            RegistryEntry<Biome> tier = entryById(biomes, targetId);
-            if (tier != null) {
-                out = tier;
+            if (!isBiomeId(out, "minecraft:windswept_savanna")) {
+                String targetId = savannaTierByY(blockY);
+                if ("minecraft:savanna".equals(targetId) && preserveSavannaPlateauAtSanitize(out, blockX, blockZ)) {
+                    targetId = "minecraft:savanna_plateau";
+                }
+                RegistryEntry<Biome> tier = entryById(biomes, targetId);
+                if (tier != null) {
+                    out = tier;
+                }
             }
         }
         if (DEBUG_FINAL_SANITIZE && inSavannaRegion) {
