@@ -916,7 +916,8 @@ public final class LatitudeBiomes {
         int seaLevel = previewSeaLevel(generator);
         boolean previewHeightHigh = preview.centerHeight >= (seaLevel + PREVIEW_HEIGHT_MARGIN_BLOCKS);
         boolean previewRuggedHigh = preview.robustDelta >= WINDSWEPT_RUGGED_THRESH;
-        boolean mountainLike = mountainNoiseLike && (previewHeightHigh || previewRuggedHigh);
+        boolean previewHeightModerate = preview.centerHeight >= (seaLevel + PREVIEW_HEIGHT_MARGIN_BLOCKS / 2);
+        boolean mountainLike = mountainNoiseLike && (previewHeightHigh || previewHeightModerate || previewRuggedHigh);
         int oceanDistance = oceanDistanceBlocks(blockX, blockZ, sampler);
         boolean nearOcean = oceanDistance <= MANGROVE_COASTAL_MAX_BLOCKS;
         boolean forcedBadlands = false;
@@ -1145,7 +1146,8 @@ public final class LatitudeBiomes {
         int seaLevel = previewSeaLevel(generator);
         boolean previewHeightHigh = preview.centerHeight >= (seaLevel + PREVIEW_HEIGHT_MARGIN_BLOCKS);
         boolean previewRuggedHigh = preview.robustDelta >= WINDSWEPT_RUGGED_THRESH;
-        boolean mountainLike = mountainNoiseLike && (previewHeightHigh || previewRuggedHigh);
+        boolean previewHeightModerate = preview.centerHeight >= (seaLevel + PREVIEW_HEIGHT_MARGIN_BLOCKS / 2);
+        boolean mountainLike = mountainNoiseLike && (previewHeightHigh || previewHeightModerate || previewRuggedHigh);
         int oceanDistance = oceanDistanceBlocks(blockX, blockZ, sampler);
         boolean nearOcean = oceanDistance <= MANGROVE_COASTAL_MAX_BLOCKS;
         boolean forcedBadlands = false;
