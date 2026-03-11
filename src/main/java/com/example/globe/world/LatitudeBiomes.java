@@ -1443,10 +1443,15 @@ public final class LatitudeBiomes {
 
     private static RegistryEntry<Biome> oceanByLatitudeBandOrBase(Registry<Biome> biomes, RegistryEntry<Biome> base, int blockX, int blockZ, int bandIndex) {
         if (bandIndex == 0) {
-            return pickFromTagNoiseOrFallback(biomes, LAT_OCEAN_TROPICAL, blockX, blockZ, 20,
-                    "minecraft:warm_ocean",
-                    "minecraft:lukewarm_ocean",
-                    "minecraft:deep_lukewarm_ocean");
+            if (isDeepOcean(base)) {
+                try {
+                    setSelectionPath(PATH_FALLBACK_PICK);
+                    return biome(biomes, "minecraft:deep_lukewarm_ocean");
+                } catch (Throwable ignored) {
+                    return base;
+                }
+            }
+            return pickShallowTropicalOcean(biomes, blockX, blockZ);
         }
         if (bandIndex == 1 || bandIndex == 2) {
             return pickFromTagNoiseOrFallback(biomes, LAT_OCEAN_TEMPERATE, blockX, blockZ, 21,
@@ -1465,10 +1470,15 @@ public final class LatitudeBiomes {
 
     private static RegistryEntry<Biome> oceanByLatitudeBandOrBase(Collection<RegistryEntry<Biome>> biomes, RegistryEntry<Biome> base, int blockX, int blockZ, int bandIndex) {
         if (bandIndex == 0) {
-            return pickFromTagNoiseOrFallback(biomes, base, LAT_OCEAN_TROPICAL, blockX, blockZ, 20,
-                    "minecraft:warm_ocean",
-                    "minecraft:lukewarm_ocean",
-                    "minecraft:deep_lukewarm_ocean");
+            if (isDeepOcean(base)) {
+                RegistryEntry<Biome> deep = entryById(biomes, "minecraft:deep_lukewarm_ocean");
+                if (deep != null) {
+                    setSelectionPath(PATH_FALLBACK_PICK);
+                    return deep;
+                }
+                return base;
+            }
+            return pickShallowTropicalOcean(biomes, blockX, blockZ);
         }
         if (bandIndex == 1 || bandIndex == 2) {
             return pickFromTagNoiseOrFallback(biomes, base, LAT_OCEAN_TEMPERATE, blockX, blockZ, 21,
@@ -1483,6 +1493,64 @@ public final class LatitudeBiomes {
         return pickFromTagNoiseOrFallback(biomes, base, LAT_OCEAN_POLAR, blockX, blockZ, 23,
                 "minecraft:frozen_ocean",
                 "minecraft:deep_frozen_ocean");
+    }
+
+    private static RegistryEntry<Biome> pickShallowTropicalOcean(Registry<Biome> biomes, int blockX, int blockZ) {
+        List<RegistryEntry<Biome>> entries = new ArrayList<>();
+        for (RegistryEntry<Biome> entry : biomes.iterateEntries(LAT_OCEAN_TROPICAL)) {
+            if (!isDeepOcean(entry)) {
+                entries.add(entry);
+            }
+        }
+
+        entries.sort(Comparator.comparing(entry -> entry.getKey()
+                .map(key -> key.getValue().toString())
+                .orElse("")));
+
+        int size = entries.size();
+        if (size <= 0) {
+            setSelectionPath(PATH_FALLBACK_PICK);
+            return pickFrom(biomes, blockX, blockZ, 20,
+                    "minecraft:warm_ocean",
+                    "minecraft:lukewarm_ocean");
+        }
+
+        int scaleBlocks = 2048;
+        long seed = 0L;
+        long salted = seed ^ (0x9E3779B97F4A7C15L * 20L);
+        double n = ValueNoise2D.sampleBlocks(salted, blockX, blockZ, scaleBlocks);
+        int idx = (int) Math.floor(n * (double) size);
+        if (idx >= size) {
+            idx = size - 1;
+        }
+        setSelectionPath(PATH_TAG_PICK);
+        return entries.get(idx);
+    }
+
+    private static RegistryEntry<Biome> pickShallowTropicalOcean(Collection<RegistryEntry<Biome>> biomes, int blockX, int blockZ) {
+        List<RegistryEntry<Biome>> entries = entriesForTag(biomes, LAT_OCEAN_TROPICAL).stream()
+                .filter(entry -> !isDeepOcean(entry))
+                .sorted(Comparator.comparing(entry -> entry.getKey()
+                        .map(key -> key.getValue().toString())
+                        .orElse("")))
+                .toList();
+
+        int size = entries.size();
+        if (size <= 0) {
+            setSelectionPath(PATH_FALLBACK_PICK);
+            return pickFromFallbacks(biomes, entryById(biomes, "minecraft:warm_ocean"), "minecraft:warm_ocean", "minecraft:lukewarm_ocean");
+        }
+
+        int scaleBlocks = 2048;
+        long seed = 0L;
+        long salted = seed ^ (0x9E3779B97F4A7C15L * 20L);
+        double n = ValueNoise2D.sampleBlocks(salted, blockX, blockZ, scaleBlocks);
+        int idx = (int) Math.floor(n * (double) size);
+        if (idx >= size) {
+            idx = size - 1;
+        }
+        setSelectionPath(PATH_TAG_PICK);
+        return entries.get(idx);
     }
 
     private static RegistryEntry<Biome> mushroomIslandOverride(Registry<Biome> biomes, RegistryEntry<Biome> oceanPick, int blockX, int blockZ) {
@@ -1918,7 +1986,8 @@ public final class LatitudeBiomes {
             idx = size - 1;
         }
         setSelectionPath(PATH_TAG_PICK);
-        return entries.get(idx);
+        RegistryEntry<Biome> pick = entries.get(idx);
+        return pick;
     }
 
     private static RegistryEntry<Biome> pickFromTagNoiseOrBaseFilteredSwamp(Collection<RegistryEntry<Biome>> biomes, TagKey<Biome> tag, RegistryEntry<Biome> base,
@@ -3632,7 +3701,8 @@ private static boolean swampPatchHere(long seed, int blockX, int blockZ) {
             idx = size - 1;
         }
         setSelectionPath(PATH_TAG_PICK);
-        return entries.get(idx);
+        RegistryEntry<Biome> pick = entries.get(idx);
+        return pick;
     }
 
     private static RegistryEntry<Biome> pickFromTagNoiseOrBase(Registry<Biome> biomes, TagKey<Biome> tag, RegistryEntry<Biome> base, int blockX, int blockZ, int bandIndex) {
