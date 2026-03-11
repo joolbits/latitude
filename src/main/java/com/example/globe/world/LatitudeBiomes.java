@@ -1832,6 +1832,20 @@ public final class LatitudeBiomes {
         RegistryEntry<Biome> pick = pickFromWeightedTags(biomes, base, blockX, blockZ, BAND_POLAR, 0x4D54, LAT_POLAR_PRIMARY, LAT_POLAR_SECONDARY, LAT_POLAR_ACCENT);
         double deg = LatitudeMath.clamp(absLatFraction * 90.0, 0.0, 90.0);
         double shoulderMaxDeg = LatitudeBands.Band.POLAR.lowDeg() + 8.0;
+        if (coldMountainLike) {
+            RegistryEntry<Biome> mountain = biome(biomes, "minecraft:snowy_slopes");
+            if (mountain == null) {
+                mountain = biome(biomes, "minecraft:frozen_peaks");
+            }
+            if (mountain != null) {
+                pick = mountain;
+            }
+        } else if (isBiomeId(pick, "minecraft:snowy_slopes")) {
+            RegistryEntry<Biome> fallback = pickSnowyFallback(biomes, base);
+            if (fallback != null) {
+                pick = fallback;
+            }
+        }
         if (!coldMountainLike && deg <= shoulderMaxDeg && isBiomeId(pick, "minecraft:snowy_slopes")) {
             return pickSubpolarWithRamp(biomes, base, blockX, blockZ, absLatFraction, BAND_SUBPOLAR, 0x3C43, LAT_SUBPOLAR_PRIMARY, LAT_SUBPOLAR_SECONDARY, LAT_SUBPOLAR_ACCENT);
         }
@@ -1904,6 +1918,20 @@ public final class LatitudeBiomes {
         RegistryEntry<Biome> pick = pickFromWeightedTags(biomes, base, blockX, blockZ, BAND_POLAR, 0x4D54, LAT_POLAR_PRIMARY, LAT_POLAR_SECONDARY, LAT_POLAR_ACCENT);
         double deg = LatitudeMath.clamp(absLatFraction * 90.0, 0.0, 90.0);
         double shoulderMaxDeg = LatitudeBands.Band.POLAR.lowDeg() + 8.0;
+        if (coldMountainLike) {
+            RegistryEntry<Biome> mountain = entryById(biomes, "minecraft:snowy_slopes");
+            if (mountain == null) {
+                mountain = entryById(biomes, "minecraft:frozen_peaks");
+            }
+            if (mountain != null) {
+                pick = mountain;
+            }
+        } else if (isBiomeId(pick, "minecraft:snowy_slopes")) {
+            RegistryEntry<Biome> fallback = pickSnowyFallback(biomes, base);
+            if (fallback != null) {
+                pick = fallback;
+            }
+        }
         if (!coldMountainLike && deg <= shoulderMaxDeg && isBiomeId(pick, "minecraft:snowy_slopes")) {
             return pickSubpolarWithRamp(biomes, base, blockX, blockZ, absLatFraction, BAND_SUBPOLAR, 0x3C43, LAT_SUBPOLAR_PRIMARY, LAT_SUBPOLAR_SECONDARY, LAT_SUBPOLAR_ACCENT);
         }
