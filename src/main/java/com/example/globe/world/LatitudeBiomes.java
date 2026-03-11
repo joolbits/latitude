@@ -1023,12 +1023,8 @@ public final class LatitudeBiomes {
             }
             if (mountainLike) {
                 chosen = pickFromTagNoiseOrBase(biomeRegistry, LAT_TEMPERATE_MOUNTAIN, base, blockX, blockZ, landBandIndex);
-                if (isBiomeId(chosen, "minecraft:cherry_grove") && !rollChance(blockX, blockZ, 0xC7E22E55, 6L)) {
-                    chosen = pickFrom(biomeRegistry, blockX, blockZ, landBandIndex,
-                            "minecraft:grove",
-                            "minecraft:meadow",
-                            "minecraft:windswept_hills",
-                            "minecraft:stony_peaks");
+                if (isBiomeId(chosen, "minecraft:cherry_grove")) {
+                    return chosen;
                 }
             }
             sanitized = sanitizeLandBiome(biomeRegistry, chosen, landBandIndex, blockX, blockZ);
@@ -1272,12 +1268,8 @@ public final class LatitudeBiomes {
             }
             if (mountainLike) {
                 chosen = pickFromTagNoiseOrBase(biomePool, LAT_TEMPERATE_MOUNTAIN, base, blockX, blockZ, landBandIndex);
-                if (isBiomeId(chosen, "minecraft:cherry_grove") && !rollChance(blockX, blockZ, 0xC7E22E55, 6L)) {
-                    chosen = pickFromFallbacks(biomePool, base,
-                            "minecraft:grove",
-                            "minecraft:meadow",
-                            "minecraft:windswept_hills",
-                            "minecraft:stony_peaks");
+                if (isBiomeId(chosen, "minecraft:cherry_grove")) {
+                    return chosen;
                 }
             }
             sanitized = sanitizeLandBiome(biomePool, chosen, landBandIndex, blockX, blockZ);
