@@ -1833,18 +1833,17 @@ public final class LatitudeBiomes {
         double deg = LatitudeMath.clamp(absLatFraction * 90.0, 0.0, 90.0);
         double shoulderMaxDeg = LatitudeBands.Band.POLAR.lowDeg() + 8.0;
         if (coldMountainLike) {
-            RegistryEntry<Biome> mountain = biome(biomes, "minecraft:snowy_slopes");
-            if (mountain == null) {
-                mountain = biome(biomes, "minecraft:frozen_peaks");
-            }
-            if (mountain != null) {
-                pick = mountain;
-            }
+            RegistryEntry<Biome> mountain = pickFrom(biomes, blockX, blockZ, BAND_POLAR,
+                    "minecraft:snowy_slopes",
+                    "minecraft:frozen_peaks",
+                    "minecraft:jagged_peaks");
+            if (mountain != null) pick = mountain;
         } else if (isBiomeId(pick, "minecraft:snowy_slopes")) {
-            RegistryEntry<Biome> fallback = pickSnowyFallback(biomes, base);
-            if (fallback != null) {
-                pick = fallback;
-            }
+            RegistryEntry<Biome> fallback = pickFrom(biomes, blockX, blockZ, BAND_POLAR,
+                    "minecraft:snowy_slopes",
+                    "minecraft:snowy_plains",
+                    "minecraft:snowy_taiga");
+            if (fallback != null) pick = fallback;
         }
         if (!coldMountainLike && deg <= shoulderMaxDeg && isBiomeId(pick, "minecraft:snowy_slopes")) {
             return pickSubpolarWithRamp(biomes, base, blockX, blockZ, absLatFraction, BAND_SUBPOLAR, 0x3C43, LAT_SUBPOLAR_PRIMARY, LAT_SUBPOLAR_SECONDARY, LAT_SUBPOLAR_ACCENT);
@@ -1919,17 +1918,32 @@ public final class LatitudeBiomes {
         double deg = LatitudeMath.clamp(absLatFraction * 90.0, 0.0, 90.0);
         double shoulderMaxDeg = LatitudeBands.Band.POLAR.lowDeg() + 8.0;
         if (coldMountainLike) {
-            RegistryEntry<Biome> mountain = entryById(biomes, "minecraft:snowy_slopes");
-            if (mountain == null) {
-                mountain = entryById(biomes, "minecraft:frozen_peaks");
-            }
-            if (mountain != null) {
-                pick = mountain;
+            List<RegistryEntry<Biome>> options = new ArrayList<>();
+            RegistryEntry<Biome> slope = entryById(biomes, "minecraft:snowy_slopes");
+            RegistryEntry<Biome> frozen = entryById(biomes, "minecraft:frozen_peaks");
+            RegistryEntry<Biome> jagged = entryById(biomes, "minecraft:jagged_peaks");
+            if (slope != null) options.add(slope);
+            if (frozen != null) options.add(frozen);
+            if (jagged != null) options.add(jagged);
+            if (!options.isEmpty()) {
+                double n = ValueNoise2D.sampleBlocks(WORLD_SEED ^ 0x5EEDC0DEL, blockX, blockZ, 2048);
+                int idx = (int) Math.floor(n * (double) options.size());
+                if (idx >= options.size()) idx = options.size() - 1;
+                pick = options.get(idx);
             }
         } else if (isBiomeId(pick, "minecraft:snowy_slopes")) {
-            RegistryEntry<Biome> fallback = pickSnowyFallback(biomes, base);
-            if (fallback != null) {
-                pick = fallback;
+            List<RegistryEntry<Biome>> options = new ArrayList<>();
+            RegistryEntry<Biome> slopes = entryById(biomes, "minecraft:snowy_slopes");
+            RegistryEntry<Biome> plains = entryById(biomes, "minecraft:snowy_plains");
+            RegistryEntry<Biome> taiga = entryById(biomes, "minecraft:snowy_taiga");
+            if (slopes != null) options.add(slopes);
+            if (plains != null) options.add(plains);
+            if (taiga != null) options.add(taiga);
+            if (!options.isEmpty()) {
+                double n = ValueNoise2D.sampleBlocks(WORLD_SEED ^ 0x5EEDC0DEL, blockX, blockZ, 2048);
+                int idx = (int) Math.floor(n * (double) options.size());
+                if (idx >= options.size()) idx = options.size() - 1;
+                pick = options.get(idx);
             }
         }
         if (!coldMountainLike && deg <= shoulderMaxDeg && isBiomeId(pick, "minecraft:snowy_slopes")) {
