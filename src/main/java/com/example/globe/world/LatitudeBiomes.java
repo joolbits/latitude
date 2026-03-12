@@ -1065,7 +1065,9 @@ public final class LatitudeBiomes {
                 // keep current biome
             }
         }
-        out = applyFinalSavannaClimateClamp(biomeRegistry, out, finalSavannaRegion, columnDecisionY, blockX, blockZ);
+        if (landBandIndex <= BAND_SUBTROPICAL) {
+            out = applyFinalSavannaClimateClamp(biomeRegistry, out, finalSavannaRegion, columnDecisionY, blockX, blockZ);
+        }
         traceSubpolarJunglePick(blockX, blockZ, effectiveRadius, landBandIndex, base, out);
         debugPick(blockX, blockZ, effectiveRadius, t, band, base, out, false, out != sanitized, mangroveDecision);
         return out;
@@ -1308,7 +1310,9 @@ public final class LatitudeBiomes {
         if (landBandIndex == BAND_TROPICAL && tropicalBaseStep(blockX, Math.abs(blockZ), t) <= 1 && isJungleFamily(out)) {
             out = pickOpenTropicalFallback(biomePool, out, blockX, blockZ, t);
         }
-        out = applyFinalSavannaClimateClamp(biomePool, out, finalSavannaRegion, columnDecisionY, blockX, blockZ);
+        if (landBandIndex <= BAND_SUBTROPICAL) {
+            out = applyFinalSavannaClimateClamp(biomePool, out, finalSavannaRegion, columnDecisionY, blockX, blockZ);
+        }
         traceSubpolarJunglePick(blockX, blockZ, effectiveRadius, landBandIndex, base, out);
         debugPick(blockX, blockZ, effectiveRadius, t, band, base, out, false, out != sanitized, mangroveDecision);
         return out;
