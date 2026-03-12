@@ -1827,7 +1827,18 @@ public final class LatitudeBiomes {
         int roll = weightedRoll(blockX, blockZ, weightSalt);
         boolean snowyPool = useSubpolarSnowyPool(absLatFraction, blockX, blockZ);
         TagKey<Biome> tag = subpolarTagForRoll(roll, snowyPool, primary, secondary, accent);
-        return pickFromTagNoiseOrBase(biomes, tag, base, blockX, blockZ, bandIndex);
+        RegistryEntry<Biome> pick = pickFromTagNoiseOrBase(biomes, tag, base, blockX, blockZ, bandIndex);
+        double deg = LatitudeMath.clamp(absLatFraction * 90.0, 0.0, 90.0);
+        if (deg < 60.0 && isBiomeId(pick, "minecraft:snowy_taiga")) {
+            RegistryEntry<Biome> fallback = pickFrom(biomes, blockX, blockZ, BAND_SUBPOLAR,
+                    "minecraft:taiga",
+                    "minecraft:old_growth_spruce_taiga",
+                    "minecraft:snowy_plains");
+            if (fallback != null) {
+                return fallback;
+            }
+        }
+        return pick;
     }
 
     private static RegistryEntry<Biome> pickPolarWithFrontShoulder(Registry<Biome> biomes, RegistryEntry<Biome> base, int blockX, int blockZ,
