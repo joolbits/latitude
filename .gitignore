@@ -35,3 +35,5 @@ tools/atlas/desktop-app/.electron-builder/
 
 # Atlas generated runs
 run-headless/latdev/atlas-runs/
+
+run-headless/warm_ocean_debug_trace.txt
