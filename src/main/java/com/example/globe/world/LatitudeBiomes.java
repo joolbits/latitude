@@ -60,7 +60,7 @@ public final class LatitudeBiomes {
         double stepFrac = stepFloat - baseStep;
         int step = applyTropicalStepDither(seed, blockX, blockZ, baseStep, stepFrac);
 
-        return switch (step) {
+        RegistryEntry<Biome> pick = switch (step) {
             case 1 -> pickFromWeightedTagsNoSwamp(biomes, base, blockX, blockZ, 101, 0x7A11,
                     LAT_TRANS_ARID_TROPICS_1_PRIMARY, LAT_TRANS_ARID_TROPICS_1_SECONDARY, LAT_TRANS_ARID_TROPICS_1_ACCENT);
             case 2 -> pickFromWeightedTagsNoSwamp(biomes, base, blockX, blockZ, 102, 0x7A22,
@@ -70,6 +70,7 @@ public final class LatitudeBiomes {
             default -> pickFromWeightedTagsNoSwamp(biomes, base, blockX, blockZ, 100, 0x7A00,
                     LAT_ARID_PRIMARY, LAT_ARID_SECONDARY, LAT_ARID_ACCENT);
         };
+        return softenSubtropicalBadlands(biomes, base, pick);
     }
 
     private static RegistryEntry<Biome> pickTropicalGradientNoSwamp(Registry<Biome> biomes, RegistryEntry<Biome> base, int blockX, int blockZ, double t) {
@@ -93,7 +94,7 @@ public final class LatitudeBiomes {
         double stepFrac = stepFloat - baseStep;
         int step = applyTropicalStepDither(seed, blockX, blockZ, baseStep, stepFrac);
 
-        return switch (step) {
+        RegistryEntry<Biome> pick = switch (step) {
             case 1 -> pickFromWeightedTagsNoSwamp(biomes, base, blockX, blockZ, 101, 0x7A11,
                     LAT_TRANS_ARID_TROPICS_1_PRIMARY, LAT_TRANS_ARID_TROPICS_1_SECONDARY, LAT_TRANS_ARID_TROPICS_1_ACCENT);
             case 2 -> pickFromWeightedTagsNoSwamp(biomes, base, blockX, blockZ, 102, 0x7A22,
@@ -103,6 +104,7 @@ public final class LatitudeBiomes {
             default -> pickFromWeightedTagsNoSwamp(biomes, base, blockX, blockZ, 100, 0x7A00,
                     LAT_ARID_PRIMARY, LAT_ARID_SECONDARY, LAT_ARID_ACCENT);
         };
+        return softenSubtropicalBadlands(biomes, base, pick);
     }
 
     private static final int BAND_TROPICAL = 0;
@@ -587,6 +589,37 @@ public final class LatitudeBiomes {
                 || isBiomeId(entry, "minecraft:windswept_savanna");
     }
 
+    private static boolean isBadlandsFamily(RegistryEntry<Biome> entry) {
+        return isBiomeId(entry, "minecraft:badlands")
+                || isBiomeId(entry, "minecraft:wooded_badlands")
+                || isBiomeId(entry, "minecraft:eroded_badlands");
+    }
+
+    private static RegistryEntry<Biome> softenSubtropicalBadlands(Registry<Biome> biomes, RegistryEntry<Biome> base, RegistryEntry<Biome> pick) {
+        if (!isBadlandsFamily(pick)) {
+            return pick;
+        }
+        for (String fallbackId : List.of("minecraft:desert", "minecraft:savanna", "minecraft:savanna_plateau")) {
+            try {
+                return biome(biomes, fallbackId);
+            } catch (Throwable ignored) {
+                // try next fallback
+            }
+        }
+        return base != null ? base : pick;
+    }
+
+    private static RegistryEntry<Biome> softenSubtropicalBadlands(Collection<RegistryEntry<Biome>> biomes, RegistryEntry<Biome> base, RegistryEntry<Biome> pick) {
+        if (!isBadlandsFamily(pick)) {
+            return pick;
+        }
+        RegistryEntry<Biome> fallback = pickFromFallbacks(biomes, base,
+                "minecraft:desert",
+                "minecraft:savanna",
+                "minecraft:savanna_plateau");
+        return fallback != null ? fallback : pick;
+    }
+
     private record PreviewTerrain(int centerHeight, int robustDelta) {
     }
 
@@ -922,18 +955,6 @@ public final class LatitudeBiomes {
         boolean nearOcean = oceanDistance <= MANGROVE_COASTAL_MAX_BLOCKS;
         boolean forcedBadlands = false;
         RegistryEntry<Biome> chosen = null;
-        if (landBandIndex == BAND_SUBTROPICAL && isAridTropicalStep(blockX, blockZ, t) && badlandsPatchHere(WORLD_SEED, blockX, blockZ)) {
-            try {
-                chosen = biome(biomeRegistry, BADLANDS_ID);
-                forcedBadlands = true;
-            } catch (Throwable ignored) {
-                // fall through to normal selection
-            }
-        }
-        if (forcedBadlands) {
-            debugPick(blockX, blockZ, effectiveRadius, t, band, base, chosen, false, false, null);
-            return chosen;
-        }
         if (chosen == null && (landBandIndex == BAND_TROPICAL || landBandIndex == BAND_SUBTROPICAL) && sampler != null) {
             int noiseX = blockX >> 2;
             int noiseZ = blockZ >> 2;
@@ -1154,14 +1175,6 @@ public final class LatitudeBiomes {
         boolean nearOcean = oceanDistance <= MANGROVE_COASTAL_MAX_BLOCKS;
         boolean forcedBadlands = false;
         RegistryEntry<Biome> chosen = null;
-        if (landBandIndex == BAND_SUBTROPICAL && isAridTropicalStep(blockX, blockZ, t) && badlandsPatchHere(WORLD_SEED, blockX, blockZ)) {
-            chosen = entryById(biomePool, BADLANDS_ID);
-            forcedBadlands = chosen != null;
-        }
-        if (forcedBadlands) {
-            debugPick(blockX, blockZ, effectiveRadius, t, band, base, chosen, false, false, null);
-            return chosen;
-        }
         if (chosen == null && (landBandIndex == BAND_TROPICAL || landBandIndex == BAND_SUBTROPICAL) && sampler != null) {
             int noiseX = blockX >> 2;
             int noiseZ = blockZ >> 2;
@@ -1352,7 +1365,7 @@ public final class LatitudeBiomes {
             }
         }
 
-        return switch (step) {
+        RegistryEntry<Biome> pick = switch (step) {
             case 1 -> pickFromWeightedTags(biomes, base, blockX, blockZ, 101, 0x7A11,
                     LAT_TRANS_ARID_TROPICS_1_PRIMARY, LAT_TRANS_ARID_TROPICS_1_SECONDARY, LAT_TRANS_ARID_TROPICS_1_ACCENT);
             case 2 -> pickFromWeightedTags(biomes, base, blockX, blockZ, 102, 0x7A22,
@@ -1362,6 +1375,7 @@ public final class LatitudeBiomes {
             default -> pickFromWeightedTags(biomes, base, blockX, blockZ, 100, 0x7A00,
                     LAT_ARID_PRIMARY, LAT_ARID_SECONDARY, LAT_ARID_ACCENT);
         };
+        return softenSubtropicalBadlands(biomes, base, pick);
     }
 
     private static boolean isAridTropicalStep(int blockX, int blockZ, double t) {
@@ -1435,7 +1449,7 @@ public final class LatitudeBiomes {
             }
         }
 
-        return switch (step) {
+        RegistryEntry<Biome> pick = switch (step) {
             case 1 -> pickFromWeightedTags(biomes, base, blockX, blockZ, 101, 0x7A11,
                     LAT_TRANS_ARID_TROPICS_1_PRIMARY, LAT_TRANS_ARID_TROPICS_1_SECONDARY, LAT_TRANS_ARID_TROPICS_1_ACCENT);
             case 2 -> pickFromWeightedTags(biomes, base, blockX, blockZ, 102, 0x7A22,
@@ -1445,6 +1459,7 @@ public final class LatitudeBiomes {
             default -> pickFromWeightedTags(biomes, base, blockX, blockZ, 100, 0x7A00,
                     LAT_ARID_PRIMARY, LAT_ARID_SECONDARY, LAT_ARID_ACCENT);
         };
+        return softenSubtropicalBadlands(biomes, base, pick);
     }
 
     private static RegistryEntry<Biome> oceanByLatitudeBandOrBase(Registry<Biome> biomes, RegistryEntry<Biome> base, int blockX, int blockZ, int bandIndex) {
@@ -3446,7 +3461,7 @@ private static boolean swampPatchHere(long seed, int blockX, int blockZ) {
         double stepFrac = stepFloat - baseStep;
         int step = applyTropicalStepDither(seed, blockX, blockZ, baseStep, stepFrac);
 
-        return switch (step) {
+        RegistryEntry<Biome> pick = switch (step) {
             case 1 -> pickFromWeightedTagsNoMangrove(biomes, base, blockX, blockZ, 101, 0x7A11,
                     LAT_TRANS_ARID_TROPICS_1_PRIMARY, LAT_TRANS_ARID_TROPICS_1_SECONDARY, LAT_TRANS_ARID_TROPICS_1_ACCENT);
             case 2 -> pickFromWeightedTagsNoMangrove(biomes, base, blockX, blockZ, 102, 0x7A22,
@@ -3456,6 +3471,7 @@ private static boolean swampPatchHere(long seed, int blockX, int blockZ) {
             default -> pickFromWeightedTagsNoMangrove(biomes, base, blockX, blockZ, 100, 0x7A00,
                     LAT_ARID_PRIMARY, LAT_ARID_SECONDARY, LAT_ARID_ACCENT);
         };
+        return softenSubtropicalBadlands(biomes, base, pick);
     }
 
     private static RegistryEntry<Biome> pickTropicalGradientNoMangrove(Collection<RegistryEntry<Biome>> biomes, RegistryEntry<Biome> base, int blockX, int blockZ, double t) {
@@ -3479,7 +3495,7 @@ private static boolean swampPatchHere(long seed, int blockX, int blockZ) {
         double stepFrac = stepFloat - baseStep;
         int step = applyTropicalStepDither(seed, blockX, blockZ, baseStep, stepFrac);
 
-        return switch (step) {
+        RegistryEntry<Biome> pick = switch (step) {
             case 1 -> pickFromWeightedTagsNoMangrove(biomes, base, blockX, blockZ, 101, 0x7A11,
                     LAT_TRANS_ARID_TROPICS_1_PRIMARY, LAT_TRANS_ARID_TROPICS_1_SECONDARY, LAT_TRANS_ARID_TROPICS_1_ACCENT);
             case 2 -> pickFromWeightedTagsNoMangrove(biomes, base, blockX, blockZ, 102, 0x7A22,
@@ -3489,6 +3505,7 @@ private static boolean swampPatchHere(long seed, int blockX, int blockZ) {
             default -> pickFromWeightedTagsNoMangrove(biomes, base, blockX, blockZ, 100, 0x7A00,
                     LAT_ARID_PRIMARY, LAT_ARID_SECONDARY, LAT_ARID_ACCENT);
         };
+        return softenSubtropicalBadlands(biomes, base, pick);
     }
 
     private record MangroveDecision(boolean allow,
