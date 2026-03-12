@@ -1856,7 +1856,7 @@ public final class LatitudeBiomes {
             RegistryEntry<Biome> fallback = pickFrom(biomes, blockX, blockZ, BAND_POLAR,
                     "minecraft:snowy_slopes",
                     "minecraft:snowy_plains",
-                    "minecraft:snowy_taiga");
+                    "minecraft:grove");
             if (fallback != null) pick = fallback;
         }
         if (!coldMountainLike && deg <= shoulderMaxDeg && isBiomeId(pick, "minecraft:snowy_slopes")) {
