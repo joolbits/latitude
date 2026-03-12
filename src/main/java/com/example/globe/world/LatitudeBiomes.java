@@ -647,6 +647,7 @@ public final class LatitudeBiomes {
     private static final int SWAMP_PATCH_SIZE_BLOCKS = 1024;
     private static final double SWAMP_PATCH_CHANCE = 0.55;
     private static final long SWAMP_PATCH_SALT = 0x53A95A4DL;
+    private static final int SWAMP_SUBTROPICAL_PATCH_MAX_OCEAN_DISTANCE = 384;
 
     private static final TagKey<Biome> LAT_EQUATOR_PRIMARY = TagKey.of(RegistryKeys.BIOME, Identifier.of("globe", "lat_equator_primary"));
     private static final TagKey<Biome> LAT_EQUATOR_SECONDARY = TagKey.of(RegistryKeys.BIOME, Identifier.of("globe", "lat_equator_secondary"));
@@ -963,10 +964,18 @@ public final class LatitudeBiomes {
             double cont = MultiNoiseUtil.toFloat(p.continentalnessNoise());
             double erosion = MultiNoiseUtil.toFloat(p.erosionNoise());
             double weird = MultiNoiseUtil.toFloat(p.weirdnessNoise());
-            if (!isAridTropicalStepSymmetric(blockX, blockZ, t)
-            && swampPatchHere(WORLD_SEED, blockX, blockZ)
-            && swampOkInPatch(cont, erosion, weird)
-            && wetlandNoiseSymmetric(WORLD_SEED, blockX, blockZ) < wetlandThresholdForBand(bandIndex, t)) {
+            boolean aridBlocked = isAridTropicalStepSymmetric(blockX, blockZ, t);
+            boolean swampPatch = swampPatchHere(WORLD_SEED, blockX, blockZ);
+            boolean swampPatchOk = swampOkInPatch(cont, erosion, weird);
+            double wetlandNoise = wetlandNoiseSymmetric(WORLD_SEED, blockX, blockZ);
+            double wetlandThreshold = wetlandThresholdForBand(bandIndex, t);
+            boolean subtropicalCoastalOk = landBandIndex != BAND_SUBTROPICAL
+                    || oceanDistance <= SWAMP_SUBTROPICAL_PATCH_MAX_OCEAN_DISTANCE;
+            if (!aridBlocked
+            && subtropicalCoastalOk
+            && swampPatch
+            && swampPatchOk
+            && wetlandNoise < wetlandThreshold) {
                 try {
                     chosen = biome(biomeRegistry, SWAMP_ID);
                 } catch (Throwable ignored) {
@@ -1183,10 +1192,18 @@ public final class LatitudeBiomes {
             double cont = MultiNoiseUtil.toFloat(p.continentalnessNoise());
             double erosion = MultiNoiseUtil.toFloat(p.erosionNoise());
             double weird = MultiNoiseUtil.toFloat(p.weirdnessNoise());
-            if (!isAridTropicalStepSymmetric(blockX, blockZ, t)
-            && swampPatchHere(WORLD_SEED, blockX, blockZ)
-            && swampOkInPatch(cont, erosion, weird)
-            && wetlandNoiseSymmetric(WORLD_SEED, blockX, blockZ) < wetlandThresholdForBand(bandIndex, t)) {
+            boolean aridBlocked = isAridTropicalStepSymmetric(blockX, blockZ, t);
+            boolean swampPatch = swampPatchHere(WORLD_SEED, blockX, blockZ);
+            boolean swampPatchOk = swampOkInPatch(cont, erosion, weird);
+            double wetlandNoise = wetlandNoiseSymmetric(WORLD_SEED, blockX, blockZ);
+            double wetlandThreshold = wetlandThresholdForBand(bandIndex, t);
+            boolean subtropicalCoastalOk = landBandIndex != BAND_SUBTROPICAL
+                    || oceanDistance <= SWAMP_SUBTROPICAL_PATCH_MAX_OCEAN_DISTANCE;
+            if (!aridBlocked
+            && subtropicalCoastalOk
+            && swampPatch
+            && swampPatchOk
+            && wetlandNoise < wetlandThreshold) {
                 chosen = entryById(biomePool, SWAMP_ID);
             }
         }
