@@ -759,6 +759,7 @@ public final class LatitudeBiomes {
     private static final double MANGROVE_CONTINENTALNESS_MAX = 0.015;
     private static final double MANGROVE_MIN_EROSION = 0.08;
     private static final double MANGROVE_MAX_ABS_WEIRDNESS = 0.10;
+    private static final int MANGROVE_PRIMARY_INVITE_COAST_MAX_BLOCKS = 96;
     private static final int MANGROVE_SECONDARY_COAST_MAX_BLOCKS = 64;
     private static final double MANGROVE_SECONDARY_MIN_EROSION = 0.15;
     private static final double MANGROVE_SECONDARY_MAX_ABS_WEIRDNESS = 0.70;
@@ -2537,11 +2538,14 @@ public final class LatitudeBiomes {
         double cont = MultiNoiseUtil.toFloat(p.continentalnessNoise());
         double erosion = MultiNoiseUtil.toFloat(p.erosionNoise());
         double weird = MultiNoiseUtil.toFloat(p.weirdnessNoise());
+        int oceanDist = oceanDistanceBlocks(blockX, blockZ, sampler);
 
         boolean coastal = cont < MANGROVE_CONTINENTALNESS_MAX;
-        boolean invitePrimary = coastal && erosion > 0.25 && Math.abs(weird) < 0.40;
+        boolean invitePrimary = coastal
+                && oceanDist <= MANGROVE_PRIMARY_INVITE_COAST_MAX_BLOCKS
+                && erosion > 0.25
+                && Math.abs(weird) < 0.40;
 
-        int oceanDist = oceanDistanceBlocks(blockX, blockZ, sampler);
         boolean coastalSecondary = coastal
                 && oceanDist <= MANGROVE_SECONDARY_COAST_MAX_BLOCKS
                 && erosion > MANGROVE_SECONDARY_MIN_EROSION
