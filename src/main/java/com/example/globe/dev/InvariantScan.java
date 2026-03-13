@@ -30,8 +30,6 @@ public final class InvariantScan {
             }
             System.exit(1);
         }
-
-        System.out.println("[Latitude invariant scan] PASS");
     }
 
     private static String readFile(String path) throws IOException {

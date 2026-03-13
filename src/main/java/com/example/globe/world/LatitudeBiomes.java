@@ -288,7 +288,7 @@ public final class LatitudeBiomes {
 
     private static void logMangroveDenial(String reason) {
         if (DEBUG_MANGROVE_DENIAL) {
-            System.out.println("[latdev] mangroveDenied reason=" + reason);
+            LOGGER.info("[latdev] mangroveDenied reason={}", reason);
         }
     }
 

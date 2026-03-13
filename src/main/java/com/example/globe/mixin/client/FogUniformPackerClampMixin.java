@@ -36,17 +36,5 @@ public class FogUniformPackerClampMixin {
         float clamped = Math.min(original, CLAMP_VALUE);
         args.set(floatSlot, clamped);
 
-        long now = System.currentTimeMillis();
-        if (now - lastLogMs >= 1000L) {
-            lastLogMs = now;
-            float f0 = args.<Float>get(3);
-            float f1 = args.<Float>get(4);
-            float f2 = args.<Float>get(5);
-            float f3 = args.<Float>get(6);
-            float f4 = args.<Float>get(7);
-            float f5 = args.<Float>get(8);
-            System.out.println("[Latitude FOG CLAMP] idx=" + CLAMP_INDEX + " val=" + CLAMP_VALUE
-                    + " f0=" + f0 + " f1=" + f1 + " f2=" + f2 + " f3=" + f3 + " f4=" + f4 + " f5=" + f5);
-        }
     }
 }
