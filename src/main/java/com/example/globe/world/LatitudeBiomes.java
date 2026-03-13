@@ -3004,26 +3004,30 @@ public final class LatitudeBiomes {
         double u = tropicalEnd > 0.0 ? clamp(t / tropicalEnd, 0.0, 1.0) : 1.0;
         double opennessNoise = tropicalOpennessNoise(blockX, blockZ);
         double compositionBias = tropicalCompositionBias(WORLD_SEED, blockX, blockZ);
-        if ((u > 0.86 || opennessNoise > 0.82) && compositionBias < -0.04) {
+        if ((u > 0.86 || opennessNoise > 0.82) && compositionBias < -0.06) {
             try {
                 return biome(biomes, "minecraft:desert");
             } catch (Throwable ignored) {
                 // fall through
             }
         }
-        if (isBiomeId(base, "minecraft:bamboo_jungle") && compositionBias > 0.12 && opennessNoise < 0.40) {
+        if (isBiomeId(base, "minecraft:bamboo_jungle") && compositionBias > 0.12 && opennessNoise < 0.38) {
             try {
                 return biome(biomes, "minecraft:sparse_jungle");
             } catch (Throwable ignored) {
                 // fall through
             }
         }
-        if (compositionBias > 0.16 && opennessNoise < 0.34) {
+        if (compositionBias > 0.22 && opennessNoise < 0.32) {
             try {
                 return biome(biomes, "minecraft:sparse_jungle");
             } catch (Throwable ignored) {
                 // fall through
             }
+        }
+        boolean strongOpen = opennessNoise >= 0.70 || (u > 0.78 && opennessNoise >= 0.62);
+        if (!strongOpen) {
+            return base;
         }
         try {
             return biome(biomes, "minecraft:savanna");
@@ -3041,23 +3045,27 @@ public final class LatitudeBiomes {
         double u = tropicalEnd > 0.0 ? clamp(t / tropicalEnd, 0.0, 1.0) : 1.0;
         double opennessNoise = tropicalOpennessNoise(blockX, blockZ);
         double compositionBias = tropicalCompositionBias(WORLD_SEED, blockX, blockZ);
-        if ((u > 0.86 || opennessNoise > 0.82) && compositionBias < -0.04) {
+        if ((u > 0.86 || opennessNoise > 0.82) && compositionBias < -0.06) {
             RegistryEntry<Biome> desert = entryById(biomes, "minecraft:desert");
             if (desert != null) {
                 return desert;
             }
         }
-        if (isBiomeId(base, "minecraft:bamboo_jungle") && compositionBias > 0.12 && opennessNoise < 0.40) {
+        if (isBiomeId(base, "minecraft:bamboo_jungle") && compositionBias > 0.12 && opennessNoise < 0.38) {
             RegistryEntry<Biome> sparseJungle = entryById(biomes, "minecraft:sparse_jungle");
             if (sparseJungle != null) {
                 return sparseJungle;
             }
         }
-        if (compositionBias > 0.16 && opennessNoise < 0.34) {
+        if (compositionBias > 0.22 && opennessNoise < 0.32) {
             RegistryEntry<Biome> sparseJungle = entryById(biomes, "minecraft:sparse_jungle");
             if (sparseJungle != null) {
                 return sparseJungle;
             }
+        }
+        boolean strongOpen = opennessNoise >= 0.70 || (u > 0.78 && opennessNoise >= 0.62);
+        if (!strongOpen) {
+            return base;
         }
         RegistryEntry<Biome> savanna = entryById(biomes, "minecraft:savanna");
         if (savanna != null) {
