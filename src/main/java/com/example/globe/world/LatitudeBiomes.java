@@ -2877,6 +2877,39 @@ public final class LatitudeBiomes {
         return base;
     }
 
+    private static RegistryEntry<Biome> pickSubpolarForestSanitizeFallback(Registry<Biome> biomes, RegistryEntry<Biome> pick) {
+        String[] options = new String[]{
+                "minecraft:snowy_taiga",
+                "minecraft:taiga",
+                "minecraft:old_growth_spruce_taiga",
+                "minecraft:snowy_plains"
+        };
+        for (String option : options) {
+            try {
+                return biome(biomes, option);
+            } catch (Throwable ignored) {
+                // try next
+            }
+        }
+        return pick;
+    }
+
+    private static RegistryEntry<Biome> pickSubpolarForestSanitizeFallback(Collection<RegistryEntry<Biome>> biomes, RegistryEntry<Biome> pick) {
+        String[] options = new String[]{
+                "minecraft:snowy_taiga",
+                "minecraft:taiga",
+                "minecraft:old_growth_spruce_taiga",
+                "minecraft:snowy_plains"
+        };
+        for (String option : options) {
+            RegistryEntry<Biome> entry = entryById(biomes, option);
+            if (entry != null) {
+                return entry;
+            }
+        }
+        return pick;
+    }
+
     private static RegistryEntry<Biome> pickColdFallback(Registry<Biome> biomes, RegistryEntry<Biome> base,
                                                          int blockX, int blockZ, int bandIndex) {
         if (bandIndex >= BAND_POLAR && rollChance(blockX, blockZ, 0x5EEDC0DE, 40L)) {
@@ -3578,11 +3611,7 @@ private static boolean swampPatchHere(long seed, int blockX, int blockZ) {
                     || isBiomeId(pick, "minecraft:birch_forest")
                     || isBiomeId(pick, "minecraft:old_growth_birch_forest")
                     || isBiomeId(pick, "minecraft:flower_forest")) {
-                try {
-                    return biome(biomes, "minecraft:snowy_plains");
-                } catch (Throwable ignored) {
-                    return pick;
-                }
+                return pickSubpolarForestSanitizeFallback(biomes, pick);
             }
         }
 
@@ -3672,8 +3701,7 @@ private static boolean swampPatchHere(long seed, int blockX, int blockZ) {
                     || isBiomeId(pick, "minecraft:birch_forest")
                     || isBiomeId(pick, "minecraft:old_growth_birch_forest")
                     || isBiomeId(pick, "minecraft:flower_forest")) {
-                RegistryEntry<Biome> entry = entryById(biomes, "minecraft:snowy_plains");
-                return entry != null ? entry : pick;
+                return pickSubpolarForestSanitizeFallback(biomes, pick);
             }
         }
 

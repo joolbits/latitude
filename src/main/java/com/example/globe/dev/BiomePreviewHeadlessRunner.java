@@ -207,6 +207,9 @@ public final class BiomePreviewHeadlessRunner {
     private static BiomePreviewExporter.ExportResult finalizeOutput(BiomePreviewExporter.ExportResult result,
                                                                     long effectiveSeed,
                                                                     Path outDir) throws IOException {
+        if (result == null) {
+            throw new IOException("Height-enabled atlas export did not produce an ExportResult before finalizeOutput");
+        }
         Path sourceStepDir = result.pngPath().toAbsolutePath().normalize().getParent();
         Path targetRoot = outDir != null ? outDir : deriveAtlasRoot(sourceStepDir);
         Path targetDir = BiomePreviewExporter.atlasStepDirectory(
