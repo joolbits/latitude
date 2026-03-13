@@ -3591,12 +3591,15 @@ public final class LatitudeBiomes {
         } else {
             patch = allowMangrovePatch(blockX, blockZ);
         }
-        if (!suitable) {
-            logMangroveDenial("terrain");
-        } else if (!patch) {
-            logMangroveDenial("patch");
+        boolean allow = suitable && patch;
+        // Tiny true-coast invite: if we are extremely coastal, reuse the same suitability but bypass the patch mask.
+        if (!allow && oceanDist <= 64 && coastal && floodplain) {
+            allow = true;
         }
-        MangroveDecision d = new MangroveDecision(suitable && patch, cont, erosion, weirdness, suitable, patch, oceanDist);
+        if (!allow) {
+            logMangroveDenial(!suitable ? "terrain" : "patch");
+        }
+        MangroveDecision d = new MangroveDecision(allow, cont, erosion, weirdness, suitable, patch, oceanDist);
         audit.accept(d);
         auditFinal.accept(d, d.allow ? "ACCEPT" : "REJECT");
         return d;
