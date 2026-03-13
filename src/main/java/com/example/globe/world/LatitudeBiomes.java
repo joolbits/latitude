@@ -2953,29 +2953,35 @@ public final class LatitudeBiomes {
     }
 
     private static RegistryEntry<Biome> pickWarmFallback(Registry<Biome> biomes, int bandIndex) {
-        String target = bandIndex == BAND_TROPICAL ? "minecraft:jungle" : "minecraft:savanna";
+        String primary = bandIndex == BAND_TROPICAL ? "minecraft:sparse_jungle" : "minecraft:savanna";
+        String secondary = bandIndex == BAND_TROPICAL ? "minecraft:jungle" : "minecraft:plains";
         try {
-            return biome(biomes, target);
+            return biome(biomes, primary);
         } catch (Throwable ignored) {
             try {
-                return biome(biomes, "minecraft:desert");
+                return biome(biomes, secondary);
             } catch (Throwable ignoredAgain) {
-                return biome(biomes, "minecraft:jungle");
+                try {
+                    return biome(biomes, "minecraft:forest");
+                } catch (Throwable ignoredLast) {
+                    return null;
+                }
             }
         }
     }
 
     private static RegistryEntry<Biome> pickWarmFallback(Collection<RegistryEntry<Biome>> biomes, int bandIndex) {
-        String target = bandIndex == BAND_TROPICAL ? "minecraft:jungle" : "minecraft:savanna";
-        RegistryEntry<Biome> entry = entryById(biomes, target);
+        String primary = bandIndex == BAND_TROPICAL ? "minecraft:sparse_jungle" : "minecraft:savanna";
+        String secondary = bandIndex == BAND_TROPICAL ? "minecraft:jungle" : "minecraft:plains";
+        RegistryEntry<Biome> entry = entryById(biomes, primary);
         if (entry != null) {
             return entry;
         }
-        entry = entryById(biomes, "minecraft:desert");
+        entry = entryById(biomes, secondary);
         if (entry != null) {
             return entry;
         }
-        entry = entryById(biomes, "minecraft:jungle");
+        entry = entryById(biomes, "minecraft:forest");
         return entry != null ? entry : biomes.stream().findFirst().orElse(null);
     }
 
