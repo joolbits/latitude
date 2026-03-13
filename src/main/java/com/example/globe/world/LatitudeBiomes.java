@@ -9,6 +9,7 @@ import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 
 import it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap;
@@ -287,6 +288,9 @@ public final class LatitudeBiomes {
     private static final boolean DEBUG_MANGROVE_INVITE = Boolean.getBoolean("latitude.debugMangroveInvite");
     private static final boolean DEBUG_SPARSE_JUNGLE_AUDIT = Boolean.getBoolean("latitude.debug.sparseJungleAudit");
     private static final boolean DEBUG_SAVANNA_GATE_AUDIT = Boolean.getBoolean("latitude.debug.savannaGateAudit");
+    private static final boolean DEBUG_WARM_POOL_AUDIT = Boolean.getBoolean("latitude.debug.warmPoolAudit")
+            || "true".equalsIgnoreCase(System.getenv("LATITUDE_DEBUG_WARM_POOL_AUDIT"));
+    private static final long WARM_POOL_AUDIT_LOG_EVERY = Long.getLong("latitude.warmPoolAudit.logEvery", 8192L);
     private static final int SPARSE_JUNGLE_AUDIT_LOG_LIMIT = Integer.getInteger("latitude.sparseJungleAudit.maxLogs", 200);
     private static final int SAVANNA_GATE_AUDIT_LOG_LIMIT = Integer.getInteger("latitude.savannaGateAudit.maxLogs", 200);
     private static final int SAVANNA_GATE_AUDIT_SUMMARY_EVERY = Integer.getInteger("latitude.savannaGateAudit.summaryEvery", 50000);
@@ -319,6 +323,34 @@ public final class LatitudeBiomes {
     private static final AtomicLong SPARSE_WARM_FALLBACK_COUNT = new AtomicLong();
     private static final AtomicLong SPARSE_FINAL_SAVANNA_COUNT = new AtomicLong();
     private static final AtomicLong SPARSE_LATITUDE_FALLBACK_COUNT = new AtomicLong();
+    private static final AtomicLong WARM_POOL_AUDIT_TOTAL = new AtomicLong();
+    private static final AtomicLong WARM_POOL_AUDIT_ENTER_TROPICAL_OPEN = new AtomicLong();
+    private static final AtomicLong WARM_POOL_AUDIT_OPEN_JUNGLE_BRANCH_ENTER = new AtomicLong();
+    private static final AtomicLong WARM_POOL_AUDIT_OPEN_STRONG_BRANCH_ENTER = new AtomicLong();
+    private static final AtomicLong WARM_POOL_AUDIT_PICK_SAVANNA = new AtomicLong();
+    private static final AtomicLong WARM_POOL_AUDIT_PICK_PLATEAU = new AtomicLong();
+    private static final AtomicLong WARM_POOL_AUDIT_PICK_WSAV = new AtomicLong();
+    private static final AtomicLong WARM_POOL_AUDIT_PICK_DESERT = new AtomicLong();
+    private static final AtomicLong WARM_POOL_AUDIT_PICK_JUNGLE = new AtomicLong();
+    private static final AtomicLong WARM_POOL_AUDIT_PICK_SPARSE = new AtomicLong();
+    private static final AtomicLong WARM_POOL_AUDIT_PICK_PLAINS = new AtomicLong();
+    private static final AtomicLong WARM_POOL_AUDIT_PICK_OTHER = new AtomicLong();
+    private static final AtomicLong WARM_POOL_AUDIT_REROUTE = new AtomicLong();
+    private static final AtomicLong WARM_POOL_AUDIT_NS_ENTER = new AtomicLong();
+    private static final AtomicLong WARM_POOL_AUDIT_NS_RETURN_SAVANNA = new AtomicLong();
+    private static final AtomicLong WARM_POOL_AUDIT_NS_RETURN_DESERT = new AtomicLong();
+    private static final AtomicLong WARM_POOL_AUDIT_NS_RETURN_BASE = new AtomicLong();
+    private static final AtomicLong WARM_POOL_AUDIT_NS_RETURN_PLAINS_ATTEMPT = new AtomicLong();
+    private static final AtomicLong WARM_POOL_AUDIT_NS_RETURN_OTHER = new AtomicLong();
+    private static final AtomicReference<String> WARM_POOL_AUDIT_LAST_SOURCE = new AtomicReference<>("");
+    private static final AtomicReference<String> WARM_POOL_AUDIT_LAST_PICK = new AtomicReference<>("");
+    private static final AtomicReference<String> WARM_POOL_AUDIT_LAST_BUCKET = new AtomicReference<>("");
+    private static final long[] WARM_OPEN_BUCKET_COUNTS = new long[60];
+    private static final long[] WARM_OPEN_NS_SAVANNA_BUCKETS = new long[60];
+    private static final long[] WARM_OPEN_NS_DESERT_BUCKETS = new long[60];
+    private static final long[] WARM_OPEN_NS_BASE_BUCKETS = new long[60];
+    private static final long[] WARM_OPEN_NS_PLAINS_BUCKETS = new long[60];
+    private static final long[] WARM_OPEN_NS_OTHER_BUCKETS = new long[60];
     private static final AtomicLong SAVANNA_AUDIT_TOTAL = new AtomicLong();
     private static final AtomicLong SAVANNA_AUDIT_LOGGED = new AtomicLong();
     private static final AtomicLong SAVANNA_AUDIT_ENTER = new AtomicLong();
@@ -2094,6 +2126,204 @@ public final class LatitudeBiomes {
         return accent;
     }
 
+    private static void warmPoolAuditRecord(String sourceTag, RegistryEntry<Biome> choice, boolean rerouted) {
+        if (!DEBUG_WARM_POOL_AUDIT || choice == null) {
+            return;
+        }
+
+        long total = WARM_POOL_AUDIT_TOTAL.incrementAndGet();
+        if ("tropical_open".equals(sourceTag)) {
+            WARM_POOL_AUDIT_ENTER_TROPICAL_OPEN.incrementAndGet();
+        }
+
+        String id = biomeId(choice);
+        switch (id) {
+            case "minecraft:savanna" -> WARM_POOL_AUDIT_PICK_SAVANNA.incrementAndGet();
+            case "minecraft:savanna_plateau" -> WARM_POOL_AUDIT_PICK_PLATEAU.incrementAndGet();
+            case "minecraft:windswept_savanna" -> WARM_POOL_AUDIT_PICK_WSAV.incrementAndGet();
+            case "minecraft:desert" -> WARM_POOL_AUDIT_PICK_DESERT.incrementAndGet();
+            case "minecraft:jungle" -> WARM_POOL_AUDIT_PICK_JUNGLE.incrementAndGet();
+            case "minecraft:sparse_jungle" -> WARM_POOL_AUDIT_PICK_SPARSE.incrementAndGet();
+            case "minecraft:plains" -> WARM_POOL_AUDIT_PICK_PLAINS.incrementAndGet();
+            default -> WARM_POOL_AUDIT_PICK_OTHER.incrementAndGet();
+        }
+
+        if (rerouted) {
+            WARM_POOL_AUDIT_REROUTE.incrementAndGet();
+        }
+
+        WARM_POOL_AUDIT_LAST_SOURCE.set(sourceTag);
+        WARM_POOL_AUDIT_LAST_PICK.set(id);
+    }
+
+    private static RegistryEntry<Biome> warmPoolAuditReturn(String sourceTag, RegistryEntry<Biome> choice, boolean rerouted) {
+        warmPoolAuditRecord(sourceTag, choice, rerouted);
+
+        if (!DEBUG_WARM_POOL_AUDIT) {
+            return choice;
+        }
+
+        long total = WARM_POOL_AUDIT_TOTAL.get();
+        if (WARM_POOL_AUDIT_LOG_EVERY > 0 && total % WARM_POOL_AUDIT_LOG_EVERY == 0) {
+            String bucketSummary = WARM_POOL_AUDIT_LAST_BUCKET.get();
+            String topBucket = topWarmOpenBucket();
+            LOGGER.info("[Latitude][WarmPoolAudit] total={} open_enter={} branch[jungle={},strong={}] pick[savanna={},plateau={},windswept={},desert={},jungle={},sparse_jungle={},plains={},other={}] reroute={} last[source={},pick={},bucket={}] topBucket={}",
+                    total,
+                    WARM_POOL_AUDIT_ENTER_TROPICAL_OPEN.get(),
+                    WARM_POOL_AUDIT_OPEN_JUNGLE_BRANCH_ENTER.get(),
+                    WARM_POOL_AUDIT_OPEN_STRONG_BRANCH_ENTER.get(),
+                    WARM_POOL_AUDIT_PICK_SAVANNA.get(),
+                    WARM_POOL_AUDIT_PICK_PLATEAU.get(),
+                    WARM_POOL_AUDIT_PICK_WSAV.get(),
+                    WARM_POOL_AUDIT_PICK_DESERT.get(),
+                    WARM_POOL_AUDIT_PICK_JUNGLE.get(),
+                    WARM_POOL_AUDIT_PICK_SPARSE.get(),
+                    WARM_POOL_AUDIT_PICK_PLAINS.get(),
+                    WARM_POOL_AUDIT_PICK_OTHER.get(),
+                    WARM_POOL_AUDIT_REROUTE.get(),
+                    WARM_POOL_AUDIT_LAST_SOURCE.get(),
+                    WARM_POOL_AUDIT_LAST_PICK.get(),
+                    bucketSummary,
+                    topBucket);
+            LOGGER.info("[Latitude][WarmPoolAudit][NS] enter={} ret[savanna={},desert={},base={},plains_attempt={},other={}] top[savanna={},desert={},base={},plains={},other={}]",
+                    WARM_POOL_AUDIT_NS_ENTER.get(),
+                    WARM_POOL_AUDIT_NS_RETURN_SAVANNA.get(),
+                    WARM_POOL_AUDIT_NS_RETURN_DESERT.get(),
+                    WARM_POOL_AUDIT_NS_RETURN_BASE.get(),
+                    WARM_POOL_AUDIT_NS_RETURN_PLAINS_ATTEMPT.get(),
+                    WARM_POOL_AUDIT_NS_RETURN_OTHER.get(),
+                    topBucket(WARM_OPEN_NS_SAVANNA_BUCKETS),
+                    topBucket(WARM_OPEN_NS_DESERT_BUCKETS),
+                    topBucket(WARM_OPEN_NS_BASE_BUCKETS),
+                    topBucket(WARM_OPEN_NS_PLAINS_BUCKETS),
+                    topBucket(WARM_OPEN_NS_OTHER_BUCKETS));
+        }
+
+        return choice;
+    }
+
+    private static void warmOpenBranchEnter(String branch) {
+        if (!DEBUG_WARM_POOL_AUDIT) {
+            return;
+        }
+        if ("open_jungle_family_branch_enter".equals(branch)) {
+            WARM_POOL_AUDIT_OPEN_JUNGLE_BRANCH_ENTER.incrementAndGet();
+        } else if ("open_strong_open_branch_enter".equals(branch)) {
+            WARM_POOL_AUDIT_OPEN_STRONG_BRANCH_ENTER.incrementAndGet();
+        }
+    }
+
+    private static RegistryEntry<Biome> warmOpenAuditReturn(String branch,
+                                                            RegistryEntry<Biome> choice,
+                                                            boolean rerouted,
+                                                            double compositionBias,
+                                                            double openness,
+                                                            boolean strongOpen) {
+        if (DEBUG_WARM_POOL_AUDIT) {
+            warmOpenBranchReturn(branch, choice, compositionBias, openness, strongOpen);
+        }
+        return warmPoolAuditReturn("tropical_open", choice, rerouted);
+    }
+
+    private static void warmOpenBranchReturn(String branch,
+                                             RegistryEntry<Biome> choice,
+                                             double compositionBias,
+                                             double openness,
+                                             boolean strongOpen) {
+        recordWarmOpenBuckets(compositionBias, openness, strongOpen);
+        WARM_POOL_AUDIT_LAST_BUCKET.set(bucketLabel(compositionBias, openness, strongOpen));
+    }
+
+    private static void recordWarmOpenBuckets(double compositionBias, double openness, boolean strongOpen) {
+        int biasBucket = biasBucket(compositionBias);
+        int openBucket = opennessBucket(openness);
+        int idx = (biasBucket * 10) + (openBucket * 2) + (strongOpen ? 1 : 0);
+        if (idx >= 0 && idx < WARM_OPEN_BUCKET_COUNTS.length) {
+            WARM_OPEN_BUCKET_COUNTS[idx] += 1L;
+        }
+    }
+
+    private static void recordWarmOpenNsBuckets(String kind, double compositionBias, double openness, boolean strongOpen) {
+        int biasBucket = biasBucket(compositionBias);
+        int openBucket = opennessBucket(openness);
+        int idx = (biasBucket * 10) + (openBucket * 2) + (strongOpen ? 1 : 0);
+        if (idx < 0 || idx >= WARM_OPEN_BUCKET_COUNTS.length) {
+            return;
+        }
+        switch (kind) {
+            case "savanna" -> WARM_OPEN_NS_SAVANNA_BUCKETS[idx] += 1L;
+            case "desert" -> WARM_OPEN_NS_DESERT_BUCKETS[idx] += 1L;
+            case "base" -> WARM_OPEN_NS_BASE_BUCKETS[idx] += 1L;
+            case "plains_attempt" -> WARM_OPEN_NS_PLAINS_BUCKETS[idx] += 1L;
+            default -> WARM_OPEN_NS_OTHER_BUCKETS[idx] += 1L;
+        }
+    }
+
+    private static int biasBucket(double v) {
+        if (v < -0.4) return 0;
+        if (v < -0.2) return 1;
+        if (v < 0.0) return 2;
+        if (v < 0.2) return 3;
+        if (v < 0.4) return 4;
+        return 5;
+    }
+
+    private static int opennessBucket(double v) {
+        if (v < 0.2) return 0;
+        if (v < 0.4) return 1;
+        if (v < 0.6) return 2;
+        if (v < 0.8) return 3;
+        return 4;
+    }
+
+    private static String bucketLabel(double compositionBias, double openness, boolean strongOpen) {
+        String[] biasLabels = new String[]{"<-0.4", "-0.4..-0.2", "-0.2..0", "0..0.2", "0.2..0.4", ">=0.4"};
+        String[] openLabels = new String[]{"<0.2", "0.2..0.4", "0.4..0.6", "0.6..0.8", ">=0.8"};
+        return "bias=" + biasLabels[biasBucket(compositionBias)] + ",open=" + openLabels[opennessBucket(openness)] + ",strong=" + strongOpen;
+    }
+
+    private static String topWarmOpenBucket() {
+        long bestCount = 0;
+        int bestIdx = -1;
+        for (int i = 0; i < WARM_OPEN_BUCKET_COUNTS.length; i++) {
+            long c = WARM_OPEN_BUCKET_COUNTS[i];
+            if (c > bestCount) {
+                bestCount = c;
+                bestIdx = i;
+            }
+        }
+        if (bestIdx < 0) {
+            return "none";
+        }
+        int biasBucket = bestIdx / 10;
+        int openBucket = (bestIdx % 10) / 2;
+        boolean strongOpen = (bestIdx % 2) == 1;
+        String[] biasLabels = new String[]{"<-0.4", "-0.4..-0.2", "-0.2..0", "0..0.2", "0.2..0.4", ">=0.4"};
+        String[] openLabels = new String[]{"<0.2", "0.2..0.4", "0.4..0.6", "0.6..0.8", ">=0.8"};
+        return "bias=" + biasLabels[biasBucket] + ",open=" + openLabels[openBucket] + ",strong=" + strongOpen + ",count=" + bestCount;
+    }
+
+    private static String topBucket(long[] buckets) {
+        long bestCount = 0;
+        int bestIdx = -1;
+        for (int i = 0; i < buckets.length; i++) {
+            long c = buckets[i];
+            if (c > bestCount) {
+                bestCount = c;
+                bestIdx = i;
+            }
+        }
+        if (bestIdx < 0) {
+            return "none";
+        }
+        int biasBucket = bestIdx / 10;
+        int openBucket = (bestIdx % 10) / 2;
+        boolean strongOpen = (bestIdx % 2) == 1;
+        String[] biasLabels = new String[]{"<-0.4", "-0.4..-0.2", "-0.2..0", "0..0.2", "0.2..0.4", ">=0.4"};
+        String[] openLabels = new String[]{"<0.2", "0.2..0.4", "0.4..0.6", "0.6..0.8", ">=0.8"};
+        return "bias=" + biasLabels[biasBucket] + ",open=" + openLabels[openBucket] + ",strong=" + strongOpen + ",count=" + bestCount;
+    }
+
     private static TagKey<Biome> subpolarTagForRoll(int roll, boolean snowyPool, TagKey<Biome> primary, TagKey<Biome> secondary, TagKey<Biome> accent) {
         if (roll >= 88) {
             return accent;
@@ -3292,113 +3522,290 @@ public final class LatitudeBiomes {
     }
 
     private static RegistryEntry<Biome> pickOpenTropicalFallback(Registry<Biome> biomes, RegistryEntry<Biome> base, int blockX, int blockZ, double t) {
+        if (!DEBUG_WARM_POOL_AUDIT) {
+            double tropicalEnd = LatitudeBands.Band.SUBTROPICAL.lowDeg() / 90.0;
+            double u = tropicalEnd > 0.0 ? clamp(t / tropicalEnd, 0.0, 1.0) : 1.0;
+            double opennessNoise = tropicalOpennessNoise(blockX, blockZ);
+            double compositionBias = tropicalCompositionBias(WORLD_SEED, blockX, blockZ);
+            if ((u > 0.86 || opennessNoise > 0.82) && compositionBias < -0.06) {
+                try {
+                    return biome(biomes, "minecraft:desert");
+                } catch (Throwable ignored) {
+                    // fall through
+                }
+            }
+            if (isBiomeId(base, "minecraft:bamboo_jungle") && compositionBias > 0.32 && opennessNoise < 0.18) {
+                try {
+                    return biome(biomes, "minecraft:sparse_jungle");
+                } catch (Throwable ignored) {
+                    // fall through
+                }
+            }
+            if (compositionBias > 0.42 && opennessNoise < 0.18) {
+                try {
+                    return biome(biomes, "minecraft:savanna");
+                } catch (Throwable ignoredSavanna) {
+                    // fall through
+                }
+            }
+            if (u < 0.42 && opennessNoise >= 0.54 && opennessNoise < 0.74 && compositionBias > 0.08) {
+                try {
+                    return biome(biomes, SWAMP_ID);
+                } catch (Throwable ignored) {
+                    // fall through
+                }
+            }
+            boolean strongOpen = opennessNoise >= 0.76 || (u > 0.82 && opennessNoise >= 0.68);
+            if (!strongOpen) {
+                if (isJungleFamily(base)) {
+                    int roll = (int) Long.remainderUnsigned(hash64(blockX, blockZ, 0x5A1E5A1E), 100);
+                    if (roll < 20) {
+                        try {
+                            return biome(biomes, "minecraft:plains");
+                        } catch (Throwable ignoredPlains) {
+                            // fall through
+                        }
+                    }
+                    try {
+                        return biome(biomes, "minecraft:savanna");
+                    } catch (Throwable ignoredSavanna) {
+                        try {
+                            return biome(biomes, "minecraft:desert");
+                        } catch (Throwable ignoredDesert) {
+                            return base;
+                        }
+                    }
+                }
+                return base;
+            }
+            try {
+                return biome(biomes, "minecraft:savanna");
+            } catch (Throwable ignored) {
+                try {
+                    return biome(biomes, "minecraft:desert");
+                } catch (Throwable ignoredAgain) {
+                    return base;
+                }
+            }
+        }
+
         double tropicalEnd = LatitudeBands.Band.SUBTROPICAL.lowDeg() / 90.0;
         double u = tropicalEnd > 0.0 ? clamp(t / tropicalEnd, 0.0, 1.0) : 1.0;
         double opennessNoise = tropicalOpennessNoise(blockX, blockZ);
         double compositionBias = tropicalCompositionBias(WORLD_SEED, blockX, blockZ);
+        boolean strongOpen = opennessNoise >= 0.76 || (u > 0.82 && opennessNoise >= 0.68);
         if ((u > 0.86 || opennessNoise > 0.82) && compositionBias < -0.06) {
             try {
-                return biome(biomes, "minecraft:desert");
+                RegistryEntry<Biome> pick = biome(biomes, "minecraft:desert");
+                return warmOpenAuditReturn("open_desert_return", pick, pick != base, compositionBias, opennessNoise, strongOpen);
             } catch (Throwable ignored) {
                 // fall through
             }
         }
         if (isBiomeId(base, "minecraft:bamboo_jungle") && compositionBias > 0.32 && opennessNoise < 0.18) {
             try {
-                return biome(biomes, "minecraft:sparse_jungle");
+                RegistryEntry<Biome> pick = biome(biomes, "minecraft:sparse_jungle");
+                return warmOpenAuditReturn("open_sparse_jungle_return", pick, pick != base, compositionBias, opennessNoise, strongOpen);
             } catch (Throwable ignored) {
                 // fall through
             }
         }
         if (compositionBias > 0.42 && opennessNoise < 0.18) {
             try {
-                return biome(biomes, "minecraft:savanna");
+                RegistryEntry<Biome> pick = biome(biomes, "minecraft:savanna");
+                return warmOpenAuditReturn("open_savanna_return", pick, pick != base, compositionBias, opennessNoise, strongOpen);
             } catch (Throwable ignoredSavanna) {
                 // fall through
             }
         }
         if (u < 0.42 && opennessNoise >= 0.54 && opennessNoise < 0.74 && compositionBias > 0.08) {
             try {
-                return biome(biomes, SWAMP_ID);
+                RegistryEntry<Biome> pick = biome(biomes, SWAMP_ID);
+                return warmOpenAuditReturn("open_other_return", pick, pick != base, compositionBias, opennessNoise, strongOpen);
             } catch (Throwable ignored) {
                 // fall through
             }
         }
-        boolean strongOpen = opennessNoise >= 0.76 || (u > 0.82 && opennessNoise >= 0.68);
         if (!strongOpen) {
             if (isJungleFamily(base)) {
+                warmOpenBranchEnter("open_jungle_family_branch_enter");
+                WARM_POOL_AUDIT_NS_ENTER.incrementAndGet();
+                int roll = (int) Long.remainderUnsigned(hash64(blockX, blockZ, 0x5A1E5A1E), 100);
+                if (roll < 20) {
+                    try {
+                        RegistryEntry<Biome> plains = biome(biomes, "minecraft:plains");
+                        WARM_POOL_AUDIT_NS_RETURN_PLAINS_ATTEMPT.incrementAndGet();
+                        recordWarmOpenNsBuckets("plains_attempt", compositionBias, opennessNoise, strongOpen);
+                        return warmOpenAuditReturn("open_plains_return", plains, plains != base, compositionBias, opennessNoise, strongOpen);
+                    } catch (Throwable ignoredPlains) {
+                        // fall through
+                    }
+                }
                 try {
-                    return biome(biomes, "minecraft:savanna");
+                    RegistryEntry<Biome> pick = biome(biomes, "minecraft:savanna");
+                    WARM_POOL_AUDIT_NS_RETURN_SAVANNA.incrementAndGet();
+                    recordWarmOpenNsBuckets("savanna", compositionBias, opennessNoise, strongOpen);
+                    return warmOpenAuditReturn("open_savanna_return", pick, pick != base, compositionBias, opennessNoise, strongOpen);
                 } catch (Throwable ignoredSavanna) {
                     try {
-                        return biome(biomes, "minecraft:desert");
+                        RegistryEntry<Biome> desert = biome(biomes, "minecraft:desert");
+                        WARM_POOL_AUDIT_NS_RETURN_DESERT.incrementAndGet();
+                        recordWarmOpenNsBuckets("desert", compositionBias, opennessNoise, strongOpen);
+                        return warmOpenAuditReturn("open_desert_return", desert, desert != base, compositionBias, opennessNoise, strongOpen);
                     } catch (Throwable ignoredDesert) {
-                        return base;
+                        WARM_POOL_AUDIT_NS_RETURN_BASE.incrementAndGet();
+                        recordWarmOpenNsBuckets("base", compositionBias, opennessNoise, strongOpen);
+                        return warmOpenAuditReturn("open_jungle_return", base, false, compositionBias, opennessNoise, strongOpen);
                     }
                 }
             }
-            return base;
+            WARM_POOL_AUDIT_NS_RETURN_OTHER.incrementAndGet();
+            recordWarmOpenNsBuckets("other", compositionBias, opennessNoise, strongOpen);
+            return warmOpenAuditReturn("open_other_return", base, false, compositionBias, opennessNoise, strongOpen);
         }
+        warmOpenBranchEnter("open_strong_open_branch_enter");
         try {
-            return biome(biomes, "minecraft:savanna");
+            RegistryEntry<Biome> pick = biome(biomes, "minecraft:savanna");
+            return warmOpenAuditReturn("open_savanna_return", pick, pick != base, compositionBias, opennessNoise, strongOpen);
         } catch (Throwable ignored) {
             try {
-                return biome(biomes, "minecraft:desert");
+                RegistryEntry<Biome> pick = biome(biomes, "minecraft:desert");
+                return warmOpenAuditReturn("open_desert_return", pick, pick != base, compositionBias, opennessNoise, strongOpen);
             } catch (Throwable ignoredAgain) {
-                return base;
+                return warmOpenAuditReturn("open_other_return", base, false, compositionBias, opennessNoise, strongOpen);
             }
         }
     }
 
     private static RegistryEntry<Biome> pickOpenTropicalFallback(Collection<RegistryEntry<Biome>> biomes, RegistryEntry<Biome> base, int blockX, int blockZ, double t) {
-        double tropicalEnd = LatitudeBands.Band.SUBTROPICAL.lowDeg() / 90.0;
-        double u = tropicalEnd > 0.0 ? clamp(t / tropicalEnd, 0.0, 1.0) : 1.0;
-        double opennessNoise = tropicalOpennessNoise(blockX, blockZ);
-        double compositionBias = tropicalCompositionBias(WORLD_SEED, blockX, blockZ);
-        if ((u > 0.86 || opennessNoise > 0.82) && compositionBias < -0.06) {
-            RegistryEntry<Biome> desert = entryById(biomes, "minecraft:desert");
-            if (desert != null) {
-                return desert;
-            }
-        }
-        if (isBiomeId(base, "minecraft:bamboo_jungle") && compositionBias > 0.32 && opennessNoise < 0.18) {
-            RegistryEntry<Biome> sparseJungle = entryById(biomes, "minecraft:sparse_jungle");
-            if (sparseJungle != null) {
-                return sparseJungle;
-            }
-        }
-        if (compositionBias > 0.42 && opennessNoise < 0.18) {
-            RegistryEntry<Biome> savanna = entryById(biomes, "minecraft:savanna");
-            if (savanna != null) {
-                return savanna;
-            }
-        }
-        if (u < 0.42 && opennessNoise >= 0.54 && opennessNoise < 0.74 && compositionBias > 0.08) {
-            RegistryEntry<Biome> swamp = entryById(biomes, SWAMP_ID);
-            if (swamp != null) {
-                return swamp;
-            }
-        }
-        boolean strongOpen = opennessNoise >= 0.76 || (u > 0.82 && opennessNoise >= 0.68);
-        if (!strongOpen) {
-            if (isJungleFamily(base)) {
-                RegistryEntry<Biome> savanna = entryById(biomes, "minecraft:savanna");
-                if (savanna != null) {
-                    return savanna;
-                }
+        if (!DEBUG_WARM_POOL_AUDIT) {
+            double tropicalEnd = LatitudeBands.Band.SUBTROPICAL.lowDeg() / 90.0;
+            double u = tropicalEnd > 0.0 ? clamp(t / tropicalEnd, 0.0, 1.0) : 1.0;
+            double opennessNoise = tropicalOpennessNoise(blockX, blockZ);
+            double compositionBias = tropicalCompositionBias(WORLD_SEED, blockX, blockZ);
+            if ((u > 0.86 || opennessNoise > 0.82) && compositionBias < -0.06) {
                 RegistryEntry<Biome> desert = entryById(biomes, "minecraft:desert");
                 if (desert != null) {
                     return desert;
                 }
             }
-            return base;
+            if (isBiomeId(base, "minecraft:bamboo_jungle") && compositionBias > 0.32 && opennessNoise < 0.18) {
+                RegistryEntry<Biome> sparseJungle = entryById(biomes, "minecraft:sparse_jungle");
+                if (sparseJungle != null) {
+                    return sparseJungle;
+                }
+            }
+            if (compositionBias > 0.42 && opennessNoise < 0.18) {
+                RegistryEntry<Biome> savanna = entryById(biomes, "minecraft:savanna");
+                if (savanna != null) {
+                    return savanna;
+                }
+            }
+            if (u < 0.42 && opennessNoise >= 0.54 && opennessNoise < 0.74 && compositionBias > 0.08) {
+                RegistryEntry<Biome> swamp = entryById(biomes, SWAMP_ID);
+                if (swamp != null) {
+                    return swamp;
+                }
+            }
+            boolean strongOpen = opennessNoise >= 0.76 || (u > 0.82 && opennessNoise >= 0.68);
+            if (!strongOpen) {
+                if (isJungleFamily(base)) {
+                    int roll = (int) Long.remainderUnsigned(hash64(blockX, blockZ, 0x5A1E5A1E), 100);
+                    if (roll < 20) {
+                        RegistryEntry<Biome> plains = entryById(biomes, "minecraft:plains");
+                        if (plains != null) {
+                            return plains;
+                        }
+                    }
+                    RegistryEntry<Biome> savanna = entryById(biomes, "minecraft:savanna");
+                    if (savanna != null) {
+                        return savanna;
+                    }
+                    RegistryEntry<Biome> desert = entryById(biomes, "minecraft:desert");
+                    if (desert != null) {
+                        return desert;
+                    }
+                }
+                return base;
+            }
+            RegistryEntry<Biome> savanna = entryById(biomes, "minecraft:savanna");
+            if (savanna != null) {
+                return savanna;
+            }
+            RegistryEntry<Biome> desert = entryById(biomes, "minecraft:desert");
+            return desert != null ? desert : base;
         }
+
+        double tropicalEnd = LatitudeBands.Band.SUBTROPICAL.lowDeg() / 90.0;
+        double u = tropicalEnd > 0.0 ? clamp(t / tropicalEnd, 0.0, 1.0) : 1.0;
+        double opennessNoise = tropicalOpennessNoise(blockX, blockZ);
+        double compositionBias = tropicalCompositionBias(WORLD_SEED, blockX, blockZ);
+        boolean strongOpen = opennessNoise >= 0.76 || (u > 0.82 && opennessNoise >= 0.68);
+        if ((u > 0.86 || opennessNoise > 0.82) && compositionBias < -0.06) {
+            RegistryEntry<Biome> desert = entryById(biomes, "minecraft:desert");
+            if (desert != null) {
+                return warmOpenAuditReturn("open_desert_return", desert, desert != base, compositionBias, opennessNoise, strongOpen);
+            }
+        }
+        if (isBiomeId(base, "minecraft:bamboo_jungle") && compositionBias > 0.32 && opennessNoise < 0.18) {
+            RegistryEntry<Biome> sparseJungle = entryById(biomes, "minecraft:sparse_jungle");
+            if (sparseJungle != null) {
+                return warmOpenAuditReturn("open_sparse_jungle_return", sparseJungle, sparseJungle != base, compositionBias, opennessNoise, strongOpen);
+            }
+        }
+        if (compositionBias > 0.42 && opennessNoise < 0.18) {
+            RegistryEntry<Biome> savanna = entryById(biomes, "minecraft:savanna");
+            if (savanna != null) {
+                return warmOpenAuditReturn("open_savanna_return", savanna, savanna != base, compositionBias, opennessNoise, strongOpen);
+            }
+        }
+        if (u < 0.42 && opennessNoise >= 0.54 && opennessNoise < 0.74 && compositionBias > 0.08) {
+            RegistryEntry<Biome> swamp = entryById(biomes, SWAMP_ID);
+            if (swamp != null) {
+                return warmOpenAuditReturn("open_other_return", swamp, swamp != base, compositionBias, opennessNoise, strongOpen);
+            }
+        }
+        if (!strongOpen) {
+            if (isJungleFamily(base)) {
+                warmOpenBranchEnter("open_jungle_family_branch_enter");
+                WARM_POOL_AUDIT_NS_ENTER.incrementAndGet();
+                int roll = (int) Long.remainderUnsigned(hash64(blockX, blockZ, 0x5A1E5A1E), 100);
+                if (roll < 20) {
+                    RegistryEntry<Biome> plains = entryById(biomes, "minecraft:plains");
+                    if (plains != null) {
+                        WARM_POOL_AUDIT_NS_RETURN_PLAINS_ATTEMPT.incrementAndGet();
+                        recordWarmOpenNsBuckets("plains_attempt", compositionBias, opennessNoise, strongOpen);
+                        return warmOpenAuditReturn("open_plains_return", plains, plains != base, compositionBias, opennessNoise, strongOpen);
+                    }
+                }
+                RegistryEntry<Biome> savanna = entryById(biomes, "minecraft:savanna");
+                if (savanna != null) {
+                    WARM_POOL_AUDIT_NS_RETURN_SAVANNA.incrementAndGet();
+                    recordWarmOpenNsBuckets("savanna", compositionBias, opennessNoise, strongOpen);
+                    return warmOpenAuditReturn("open_savanna_return", savanna, savanna != base, compositionBias, opennessNoise, strongOpen);
+                }
+                RegistryEntry<Biome> desert = entryById(biomes, "minecraft:desert");
+                if (desert != null) {
+                    WARM_POOL_AUDIT_NS_RETURN_DESERT.incrementAndGet();
+                    recordWarmOpenNsBuckets("desert", compositionBias, opennessNoise, strongOpen);
+                    return warmOpenAuditReturn("open_desert_return", desert, desert != base, compositionBias, opennessNoise, strongOpen);
+                }
+                WARM_POOL_AUDIT_NS_RETURN_BASE.incrementAndGet();
+                recordWarmOpenNsBuckets("base", compositionBias, opennessNoise, strongOpen);
+            }
+            WARM_POOL_AUDIT_NS_RETURN_OTHER.incrementAndGet();
+            recordWarmOpenNsBuckets("other", compositionBias, opennessNoise, strongOpen);
+            return warmOpenAuditReturn("open_jungle_return", base, false, compositionBias, opennessNoise, strongOpen);
+        }
+        warmOpenBranchEnter("open_strong_open_branch_enter");
         RegistryEntry<Biome> savanna = entryById(biomes, "minecraft:savanna");
         if (savanna != null) {
-            return savanna;
+            return warmOpenAuditReturn("open_savanna_return", savanna, savanna != base, compositionBias, opennessNoise, strongOpen);
         }
         RegistryEntry<Biome> desert = entryById(biomes, "minecraft:desert");
-        return desert != null ? desert : base;
+        RegistryEntry<Biome> pick = desert != null ? desert : base;
+        String branch = desert != null ? "open_desert_return" : "open_other_return";
+        return warmOpenAuditReturn(branch, pick, pick != base, compositionBias, opennessNoise, strongOpen);
     }
 
     private static RegistryEntry<Biome> pickDryWarmFallback(Registry<Biome> biomes, RegistryEntry<Biome> base) {
