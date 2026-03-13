@@ -286,7 +286,10 @@ public final class LatitudeBiomes {
     private static final boolean DEBUG_OCEAN_DIST = Boolean.getBoolean("latitude.debugOceanDist");
     private static final boolean DEBUG_MANGROVE_INVITE = Boolean.getBoolean("latitude.debugMangroveInvite");
     private static final boolean DEBUG_SPARSE_JUNGLE_AUDIT = Boolean.getBoolean("latitude.debug.sparseJungleAudit");
+    private static final boolean DEBUG_SAVANNA_GATE_AUDIT = Boolean.getBoolean("latitude.debug.savannaGateAudit");
     private static final int SPARSE_JUNGLE_AUDIT_LOG_LIMIT = Integer.getInteger("latitude.sparseJungleAudit.maxLogs", 200);
+    private static final int SAVANNA_GATE_AUDIT_LOG_LIMIT = Integer.getInteger("latitude.savannaGateAudit.maxLogs", 200);
+    private static final int SAVANNA_GATE_AUDIT_SUMMARY_EVERY = Integer.getInteger("latitude.savannaGateAudit.summaryEvery", 50000);
     private static final int DEBUG_LIMIT = Integer.getInteger("latitude.debugBiomes.limit", 200);
     private static volatile long WORLD_SEED = 0L;
     public static volatile int ACTIVE_RADIUS_BLOCKS = 0;
@@ -316,6 +319,17 @@ public final class LatitudeBiomes {
     private static final AtomicLong SPARSE_WARM_FALLBACK_COUNT = new AtomicLong();
     private static final AtomicLong SPARSE_FINAL_SAVANNA_COUNT = new AtomicLong();
     private static final AtomicLong SPARSE_LATITUDE_FALLBACK_COUNT = new AtomicLong();
+    private static final AtomicLong SAVANNA_AUDIT_TOTAL = new AtomicLong();
+    private static final AtomicLong SAVANNA_AUDIT_LOGGED = new AtomicLong();
+    private static final AtomicLong SAVANNA_AUDIT_ENTER = new AtomicLong();
+    private static final AtomicLong SAVANNA_AUDIT_NOT_SAVANNA = new AtomicLong();
+    private static final AtomicLong SAVANNA_AUDIT_FAIL_LOW = new AtomicLong();
+    private static final AtomicLong SAVANNA_AUDIT_FAIL_DEADBAND = new AtomicLong();
+    private static final AtomicLong SAVANNA_AUDIT_PASS = new AtomicLong();
+    private static final AtomicLong SAVANNA_AUDIT_SELECTED = new AtomicLong();
+    private static final AtomicLong SAVANNA_AUDIT_UPLAND = new AtomicLong();
+    private static final AtomicLong SAVANNA_AUDIT_REAL_PREVIEW = new AtomicLong();
+    private static final AtomicLong SAVANNA_AUDIT_PREVIEW_MISSING = new AtomicLong();
     private static final AtomicLong SPARSE_AUDIT_TOTAL = new AtomicLong();
     private static final AtomicLong SPARSE_AUDIT_LOGGED = new AtomicLong();
     private static final AtomicBoolean RADIUS_MISMATCH_LOGGED = new AtomicBoolean(false);
@@ -656,18 +670,75 @@ public final class LatitudeBiomes {
         }
     }
 
+    private static void logSavannaGateAuditSummary(long total) {
+        LOGGER.info("[LAT][SAV_GATE_AUDIT_SUMMARY] total={} enter={} notSavanna={} pass={} failLow={} failDeadband={} selectedWsav={} upland={} realPreview={} previewMissing={}",
+                total,
+                SAVANNA_AUDIT_ENTER.get(),
+                SAVANNA_AUDIT_NOT_SAVANNA.get(),
+                SAVANNA_AUDIT_PASS.get(),
+                SAVANNA_AUDIT_FAIL_LOW.get(),
+                SAVANNA_AUDIT_FAIL_DEADBAND.get(),
+                SAVANNA_AUDIT_SELECTED.get(),
+                SAVANNA_AUDIT_UPLAND.get(),
+                SAVANNA_AUDIT_REAL_PREVIEW.get(),
+                SAVANNA_AUDIT_PREVIEW_MISSING.get());
+    }
+
+    private static void auditSavannaGate(int robustDelta,
+                                         boolean upland,
+                                         boolean savannaFamily,
+                                         String incomingBiomeId,
+                                         String outgoingBiomeId) {
+        if (!DEBUG_SAVANNA_GATE_AUDIT) {
+            return;
+        }
+        long total = SAVANNA_AUDIT_TOTAL.incrementAndGet();
+        if (savannaFamily) {
+            SAVANNA_AUDIT_ENTER.incrementAndGet();
+            if (robustDelta < WINDSWEPT_RUGGED_THRESH) {
+                SAVANNA_AUDIT_FAIL_LOW.incrementAndGet();
+            } else if (robustDelta < WINDSWEPT_RUGGED_THRESH + WINDSWEPT_RUGGED_HYST) {
+                SAVANNA_AUDIT_FAIL_DEADBAND.incrementAndGet();
+            } else {
+                SAVANNA_AUDIT_PASS.incrementAndGet();
+            }
+            if (upland) {
+                SAVANNA_AUDIT_UPLAND.incrementAndGet();
+            }
+        } else {
+            SAVANNA_AUDIT_NOT_SAVANNA.incrementAndGet();
+        }
+        if ("minecraft:windswept_savanna".equals(outgoingBiomeId)) {
+            SAVANNA_AUDIT_SELECTED.incrementAndGet();
+        }
+        long logged = SAVANNA_AUDIT_LOGGED.get();
+        if (logged < SAVANNA_GATE_AUDIT_LOG_LIMIT) {
+            if (SAVANNA_AUDIT_LOGGED.incrementAndGet() <= SAVANNA_GATE_AUDIT_LOG_LIMIT) {
+                LOGGER.info("[LAT][SAV_GATE_AUDIT] robust={} upland={} savFamily={} incoming={} outgoing={}",
+                        robustDelta, upland, savannaFamily, incomingBiomeId, outgoingBiomeId);
+            }
+        }
+        if (total == SAVANNA_GATE_AUDIT_LOG_LIMIT
+                || (SAVANNA_GATE_AUDIT_SUMMARY_EVERY > 0 && (total % SAVANNA_GATE_AUDIT_SUMMARY_EVERY) == 0)) {
+            logSavannaGateAuditSummary(total);
+        }
+    }
+
     private static RegistryEntry<Biome> applySavannaWindsweptGate(Registry<Biome> biomes,
                                                                    RegistryEntry<Biome> out,
                                                                    int robustDelta,
                                                                    boolean upland) {
         int cutoff = WINDSWEPT_RUGGED_THRESH + WINDSWEPT_RUGGED_HYST;
-        if (!isSavannaFamily(out) || robustDelta < cutoff) {
+        boolean savannaFamily = isSavannaFamily(out);
+        String incomingBiomeId = savannaFamily ? savannaIncomingBiomeId(out) : biomeId(out);
+        if (!savannaFamily || robustDelta < cutoff) {
+            auditSavannaGate(robustDelta, upland, savannaFamily, incomingBiomeId, incomingBiomeId);
             return out;
         }
-        String incomingBiomeId = savannaIncomingBiomeId(out);
         String reason = savannaGateReason(robustDelta);
         String selectedBiomeId = savannaGateBiomeId(incomingBiomeId, robustDelta);
         logSavannaGateCounters(incomingBiomeId, selectedBiomeId, reason);
+        auditSavannaGate(robustDelta, upland, true, incomingBiomeId, selectedBiomeId);
         return biome(biomes, selectedBiomeId);
     }
 
@@ -676,15 +747,18 @@ public final class LatitudeBiomes {
                                                                    int robustDelta,
                                                                    boolean upland) {
         int cutoff = WINDSWEPT_RUGGED_THRESH + WINDSWEPT_RUGGED_HYST;
-        if (!isSavannaFamily(out) || robustDelta < cutoff) {
+        boolean savannaFamily = isSavannaFamily(out);
+        String incomingBiomeId = savannaFamily ? savannaIncomingBiomeId(out) : biomeId(out);
+        if (!savannaFamily || robustDelta < cutoff) {
+            auditSavannaGate(robustDelta, upland, savannaFamily, incomingBiomeId, incomingBiomeId);
             return out;
         }
-        String incomingBiomeId = savannaIncomingBiomeId(out);
         String reason = savannaGateReason(robustDelta);
         String selectedBiomeId = savannaGateBiomeId(incomingBiomeId, robustDelta);
         RegistryEntry<Biome> selected = entryById(biomes, selectedBiomeId);
         RegistryEntry<Biome> returning = selected != null ? selected : out;
         logSavannaGateCounters(incomingBiomeId, selected != null ? selectedBiomeId : incomingBiomeId, reason);
+        auditSavannaGate(robustDelta, upland, true, incomingBiomeId, selected != null ? selectedBiomeId : incomingBiomeId);
         return returning;
     }
 
@@ -1192,7 +1266,27 @@ public final class LatitudeBiomes {
                 }
             }
             boolean savannaGateInput = isSavannaFamily(out);
-            out = applySavannaWindsweptGate(biomeRegistry, out, preview.robustDelta, previewHeightHigh);
+            int savannaRobustDelta = preview.robustDelta;
+            boolean savannaUpland = previewHeightHigh;
+            if (skipPreview && savannaGateInput && generator != null && noiseConfig != null && heightView != null) {
+                PreviewTerrain wsavPreview = previewTerrain(generator, noiseConfig, heightView, blockX, blockZ);
+                savannaRobustDelta = wsavPreview.robustDelta;
+                savannaUpland = wsavPreview.centerHeight >= (seaLevel + PREVIEW_HEIGHT_MARGIN_BLOCKS);
+                if (DEBUG_SAVANNA_GATE_AUDIT) {
+                    SAVANNA_AUDIT_REAL_PREVIEW.incrementAndGet();
+                }
+            } else if (skipPreview && savannaGateInput && sampler != null) {
+                boolean ruggedNoise = isMountainLike(sampler, blockX, blockZ);
+                if (ruggedNoise) {
+                    savannaRobustDelta = WINDSWEPT_RUGGED_THRESH + WINDSWEPT_RUGGED_HYST;
+                }
+                if (DEBUG_SAVANNA_GATE_AUDIT) {
+                    SAVANNA_AUDIT_PREVIEW_MISSING.incrementAndGet();
+                }
+            } else if (skipPreview && savannaGateInput && DEBUG_SAVANNA_GATE_AUDIT) {
+                SAVANNA_AUDIT_PREVIEW_MISSING.incrementAndGet();
+            }
+            out = applySavannaWindsweptGate(biomeRegistry, out, savannaRobustDelta, savannaUpland);
             if (landBandIndex == BAND_SUBTROPICAL && isJungleFamily(out)) {
                 out = pickDryWarmFallback(biomeRegistry, out);
             }
@@ -1469,7 +1563,27 @@ public final class LatitudeBiomes {
                 out = pickOpenTropicalFallback(biomePool, out, blockX, blockZ, t);
             }
             boolean savannaGateInput = isSavannaFamily(out);
-            out = applySavannaWindsweptGate(biomePool, out, preview.robustDelta, previewHeightHigh);
+            int savannaRobustDelta = preview.robustDelta;
+            boolean savannaUpland = previewHeightHigh;
+            if (skipPreview && savannaGateInput && generator != null && noiseConfig != null && heightView != null) {
+                PreviewTerrain wsavPreview = previewTerrain(generator, noiseConfig, heightView, blockX, blockZ);
+                savannaRobustDelta = wsavPreview.robustDelta;
+                savannaUpland = wsavPreview.centerHeight >= (seaLevel + PREVIEW_HEIGHT_MARGIN_BLOCKS);
+                if (DEBUG_SAVANNA_GATE_AUDIT) {
+                    SAVANNA_AUDIT_REAL_PREVIEW.incrementAndGet();
+                }
+            } else if (skipPreview && savannaGateInput && sampler != null) {
+                boolean ruggedNoise = isMountainLike(sampler, blockX, blockZ);
+                if (ruggedNoise) {
+                    savannaRobustDelta = WINDSWEPT_RUGGED_THRESH + WINDSWEPT_RUGGED_HYST;
+                }
+                if (DEBUG_SAVANNA_GATE_AUDIT) {
+                    SAVANNA_AUDIT_PREVIEW_MISSING.incrementAndGet();
+                }
+            } else if (skipPreview && savannaGateInput && DEBUG_SAVANNA_GATE_AUDIT) {
+                SAVANNA_AUDIT_PREVIEW_MISSING.incrementAndGet();
+            }
+            out = applySavannaWindsweptGate(biomePool, out, savannaRobustDelta, savannaUpland);
             if (landBandIndex == BAND_SUBTROPICAL && isJungleFamily(out)) {
                 out = pickDryWarmFallback(biomePool, out);
             }
