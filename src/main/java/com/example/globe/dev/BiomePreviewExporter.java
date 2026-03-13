@@ -88,7 +88,11 @@ public final class BiomePreviewExporter {
                     atlasSeed,
                     effectiveOptions);
             long budgetMs = Math.max(1L, Long.getLong("latitude.atlas.heightBudgetMs", DEFAULT_BUDGET_MS));
-            return processor.processBudget(budgetMs);
+            ExportResult result = processor.processBudget(budgetMs);
+            while (result == null) {
+                result = processor.processBudget(budgetMs);
+            }
+            return result;
         }
 
         int xMin = -radiusBlocks;
