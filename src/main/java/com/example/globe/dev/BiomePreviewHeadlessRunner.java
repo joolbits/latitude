@@ -97,7 +97,6 @@ public final class BiomePreviewHeadlessRunner {
                     config.exportOptions.emitHeight(),
                     outputDir);
             GlobeMod.LOGGER.info(startMessage);
-            System.out.println(startMessage);
 
             for (int step : config.steps) {
                 BiomePreviewExporter.ExportResult result = BiomePreviewExporter.export(
@@ -115,7 +114,6 @@ public final class BiomePreviewHeadlessRunner {
                         finalized.totalSamples(),
                         finalized.durationMs());
                 GlobeMod.LOGGER.info(finishMessage);
-                System.out.println(finishMessage);
             }
         } catch (Throwable t) {
             GlobeMod.LOGGER.error("[latdev][headless] export failed", t);
@@ -167,7 +165,6 @@ public final class BiomePreviewHeadlessRunner {
                     options.maxResults(),
                     outputDir);
             GlobeMod.LOGGER.info(startMessage);
-            System.out.println(startMessage);
 
             BiomeSamplerTools.SearchReport report = BiomeSamplerTools.searchSeeds(
                     world,
@@ -183,7 +180,6 @@ public final class BiomePreviewHeadlessRunner {
                     report.results().size(),
                     outputDir.resolve("results.json"));
             GlobeMod.LOGGER.info(finishMessage);
-            System.out.println(finishMessage);
         } catch (Throwable t) {
             GlobeMod.LOGGER.error("[latdev][search] seed search failed", t);
         } finally {
