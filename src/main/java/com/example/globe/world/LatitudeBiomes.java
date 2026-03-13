@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Supplier;
 
 import it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap;
@@ -66,7 +67,7 @@ public final class LatitudeBiomes {
             case 2 -> pickFromWeightedTagsNoSwamp(biomes, base, blockX, blockZ, 102, 0x7A22,
                     LAT_TRANS_ARID_TROPICS_2_PRIMARY, LAT_TRANS_ARID_TROPICS_2_SECONDARY, LAT_TRANS_ARID_TROPICS_2_ACCENT);
             case 3 -> pickFromWeightedTagsNoSwamp(biomes, base, blockX, blockZ, 103, 0x7A33,
-                    LAT_TROPICS_PRIMARY, LAT_TROPICS_SECONDARY, LAT_TROPICS_ACCENT);
+                    LAT_TRANS_ARID_TROPICS_2_PRIMARY, LAT_TRANS_ARID_TROPICS_2_SECONDARY, LAT_TRANS_ARID_TROPICS_2_ACCENT);
             default -> pickFromWeightedTagsNoSwamp(biomes, base, blockX, blockZ, 100, 0x7A00,
                     LAT_ARID_PRIMARY, LAT_ARID_SECONDARY, LAT_ARID_ACCENT);
         };
@@ -100,7 +101,7 @@ public final class LatitudeBiomes {
             case 2 -> pickFromWeightedTagsNoSwamp(biomes, base, blockX, blockZ, 102, 0x7A22,
                     LAT_TRANS_ARID_TROPICS_2_PRIMARY, LAT_TRANS_ARID_TROPICS_2_SECONDARY, LAT_TRANS_ARID_TROPICS_2_ACCENT);
             case 3 -> pickFromWeightedTagsNoSwamp(biomes, base, blockX, blockZ, 103, 0x7A33,
-                    LAT_TROPICS_PRIMARY, LAT_TROPICS_SECONDARY, LAT_TROPICS_ACCENT);
+                    LAT_TRANS_ARID_TROPICS_2_PRIMARY, LAT_TRANS_ARID_TROPICS_2_SECONDARY, LAT_TRANS_ARID_TROPICS_2_ACCENT);
             default -> pickFromWeightedTagsNoSwamp(biomes, base, blockX, blockZ, 100, 0x7A00,
                     LAT_ARID_PRIMARY, LAT_ARID_SECONDARY, LAT_ARID_ACCENT);
         };
@@ -121,6 +122,40 @@ public final class LatitudeBiomes {
             case SUBPOLAR -> BAND_SUBPOLAR;
             case POLAR -> BAND_POLAR;
         };
+    }
+
+    private static LatitudeBands.Band bandForIndex(int bandIndex) {
+        return switch (bandIndex) {
+            case BAND_TROPICAL -> LatitudeBands.Band.TROPICAL;
+            case BAND_SUBTROPICAL -> LatitudeBands.Band.SUBTROPICAL;
+            case BAND_TEMPERATE -> LatitudeBands.Band.TEMPERATE;
+            case BAND_SUBPOLAR -> LatitudeBands.Band.SUBPOLAR;
+            case BAND_POLAR -> LatitudeBands.Band.POLAR;
+            default -> LatitudeBands.Band.TROPICAL;
+        };
+    }
+
+    public static LatitudeBands.Band bandFromIndex(int bandIndex) {
+        return bandForIndex(bandIndex);
+    }
+
+    /**
+     * Compute the authoritative land band index using the same jitter/blend path as the picker,
+     * including the active radius override logic. This is exported for atlas/report so overlays
+     * stay aligned with the picker’s decision.
+     */
+    public static int authoritativeLandBandIndex(int blockX, int blockZ, int borderRadiusBlocks) {
+        int activeRadius = ACTIVE_RADIUS_BLOCKS;
+        boolean overrideDisabled = Boolean.getBoolean("latitude.disableRadiusOverride");
+        int effectiveRadius = (!overrideDisabled && activeRadius > 0) ? activeRadius : borderRadiusBlocks;
+        if (effectiveRadius <= 0) {
+            return BAND_TROPICAL;
+        }
+        int lat = Math.abs(blockZ);
+        double tBase = (double) lat / (double) effectiveRadius;
+        double t = applyBoundaryJitter(blockX, blockZ, effectiveRadius, tBase);
+        LatitudeBands.Band band = bandForAbsLatFraction(tBase);
+        return latitudeBandIndexWithBlend(blockX, blockZ, effectiveRadius, band, t);
     }
 
     private static RegistryEntry<Biome> pickBeachForBand(Registry<Biome> biomes, RegistryEntry<Biome> base, int blockX, int blockZ, int bandIndex) {
@@ -242,6 +277,7 @@ public final class LatitudeBiomes {
     private static final Logger LOGGER = LoggerFactory.getLogger("LatitudeBiomes");
     private static final boolean DEBUG_BIOMES = Boolean.getBoolean("latitude.debugBiomes")
             || Boolean.getBoolean("latitude.debugBiomePick");
+    private static final boolean DEBUG_SUBTROPICAL_JUNGLE = Boolean.getBoolean("latitude.debug.subtropicalJungle");
     private static final boolean DEBUG_BLEND = Boolean.getBoolean("latitude.debugBlend");
     private static final boolean DEBUG_LEAK = Boolean.getBoolean("latitude.debugLeak");
     private static final boolean DEBUG_FINAL_SANITIZE = Boolean.getBoolean("latitude.debugFinalSanitize");
@@ -249,6 +285,8 @@ public final class LatitudeBiomes {
     private static final boolean DEBUG_MANGROVE_ORIGIN = Boolean.getBoolean("latitude.debugMangroveOrigin");
     private static final boolean DEBUG_OCEAN_DIST = Boolean.getBoolean("latitude.debugOceanDist");
     private static final boolean DEBUG_MANGROVE_INVITE = Boolean.getBoolean("latitude.debugMangroveInvite");
+    private static final boolean DEBUG_SPARSE_JUNGLE_AUDIT = Boolean.getBoolean("latitude.debug.sparseJungleAudit");
+    private static final int SPARSE_JUNGLE_AUDIT_LOG_LIMIT = Integer.getInteger("latitude.sparseJungleAudit.maxLogs", 200);
     private static final int DEBUG_LIMIT = Integer.getInteger("latitude.debugBiomes.limit", 200);
     private static volatile long WORLD_SEED = 0L;
     public static volatile int ACTIVE_RADIUS_BLOCKS = 0;
@@ -272,6 +310,14 @@ public final class LatitudeBiomes {
     private static final java.util.concurrent.atomic.AtomicInteger MANGROVE_EVAL_AUDIT_N =
             new java.util.concurrent.atomic.AtomicInteger(0);
     private static final java.util.concurrent.atomic.AtomicLong MANGROVE_INVITE_LOG_COUNT = new java.util.concurrent.atomic.AtomicLong();
+    private static final AtomicLong SPARSE_TAG_PICK_COUNT = new AtomicLong();
+    private static final AtomicLong SPARSE_SANITIZE_REWRITE_COUNT = new AtomicLong();
+    private static final AtomicLong SPARSE_CANOPY_FALLBACK_COUNT = new AtomicLong();
+    private static final AtomicLong SPARSE_WARM_FALLBACK_COUNT = new AtomicLong();
+    private static final AtomicLong SPARSE_FINAL_SAVANNA_COUNT = new AtomicLong();
+    private static final AtomicLong SPARSE_LATITUDE_FALLBACK_COUNT = new AtomicLong();
+    private static final AtomicLong SPARSE_AUDIT_TOTAL = new AtomicLong();
+    private static final AtomicLong SPARSE_AUDIT_LOGGED = new AtomicLong();
     private static final AtomicBoolean RADIUS_MISMATCH_LOGGED = new AtomicBoolean(false);
     private static final AtomicBoolean SUBPOLAR_JUNGLE_TRACE_LOGGED = new AtomicBoolean(false);
     private static final AtomicBoolean SURFACE_Y_LOGGED = new AtomicBoolean(false);
@@ -290,6 +336,65 @@ public final class LatitudeBiomes {
         if (DEBUG_MANGROVE_DENIAL) {
             LOGGER.info("[latdev] mangroveDenied reason={}", reason);
         }
+    }
+
+    public static boolean isSparseJungleAuditEnabled() {
+        return DEBUG_SPARSE_JUNGLE_AUDIT;
+    }
+
+    public static String biomeIdPublic(RegistryEntry<Biome> entry) {
+        return biomeId(entry);
+    }
+
+    public static boolean isBiomeIdPublic(RegistryEntry<Biome> entry, String id) {
+        return isBiomeId(entry, id);
+    }
+
+    public static void auditSparseJungleExternal(String bucket, int blockX, int blockZ, int landBandIndex, String detail, RegistryEntry<Biome> pre, RegistryEntry<Biome> post) {
+        auditSparseJungle(bucket, blockX, blockZ, landBandIndex, detail, biomeId(pre), biomeId(post));
+    }
+
+    private static void auditSparseJungle(String bucket, int blockX, int blockZ, int landBandIndex, String detail, String preBiomeId, String postBiomeId) {
+        if (!DEBUG_SPARSE_JUNGLE_AUDIT) {
+            return;
+        }
+        AtomicLong counter = switch (bucket) {
+            case "TAG_PICK_DIRECT" -> SPARSE_TAG_PICK_COUNT;
+            case "SANITIZE_REWRITE" -> SPARSE_SANITIZE_REWRITE_COUNT;
+            case "CANOPY_FALLBACK" -> SPARSE_CANOPY_FALLBACK_COUNT;
+            case "WARM_SAFETY_FALLBACK" -> SPARSE_WARM_FALLBACK_COUNT;
+            case "FINAL_SAVANNA_CLAMP" -> SPARSE_FINAL_SAVANNA_COUNT;
+            case "LATITUDE_FALLBACK" -> SPARSE_LATITUDE_FALLBACK_COUNT;
+            default -> null;
+        };
+        if (counter == null) {
+            return;
+        }
+        counter.incrementAndGet();
+        long total = SPARSE_AUDIT_TOTAL.incrementAndGet();
+        long logged = SPARSE_AUDIT_LOGGED.get();
+        if (logged < SPARSE_JUNGLE_AUDIT_LOG_LIMIT) {
+            if (SPARSE_AUDIT_LOGGED.incrementAndGet() <= SPARSE_JUNGLE_AUDIT_LOG_LIMIT) {
+                LOGGER.info("[LAT][SPARSE_AUDIT] bucket={} band={} x={} z={} pre={} post={} detail={}",
+                        bucket, landBandIndex, blockX, blockZ, preBiomeId, postBiomeId, detail);
+            }
+        }
+        if (total == SPARSE_JUNGLE_AUDIT_LOG_LIMIT || total % 50 == 0) {
+            logSparseAuditSummary(total);
+        }
+    }
+
+    private static void logSparseAuditSummary(long total) {
+        LOGGER.info("[LAT][SPARSE_AUDIT_SUMMARY] total={} tagPick={} sanitize={} canopy={} warmFallback={} finalSavanna={} latitudeFallback={} logged={} limit={}",
+                total,
+                SPARSE_TAG_PICK_COUNT.get(),
+                SPARSE_SANITIZE_REWRITE_COUNT.get(),
+                SPARSE_CANOPY_FALLBACK_COUNT.get(),
+                SPARSE_WARM_FALLBACK_COUNT.get(),
+                SPARSE_FINAL_SAVANNA_COUNT.get(),
+                SPARSE_LATITUDE_FALLBACK_COUNT.get(),
+                SPARSE_AUDIT_LOGGED.get(),
+                SPARSE_JUNGLE_AUDIT_LOG_LIMIT);
     }
 
     public static void setWorldSeed(long seed) {
@@ -645,7 +750,7 @@ public final class LatitudeBiomes {
     private static final long BADLANDS_PATCH_SALT = 0xBADD1A2DL;
 
     private static final int SWAMP_PATCH_SIZE_BLOCKS = 1024;
-    private static final double SWAMP_PATCH_CHANCE = 0.55;
+    private static final double SWAMP_PATCH_CHANCE = 0.66;
     private static final long SWAMP_PATCH_SALT = 0x53A95A4DL;
     private static final int SWAMP_SUBTROPICAL_PATCH_MAX_OCEAN_DISTANCE = 384;
 
@@ -711,6 +816,7 @@ public final class LatitudeBiomes {
     private static final int BAND_JITTER_WAVELENGTH_MIN_BLOCKS = 2600;
     private static final int BAND_JITTER_WAVELENGTH_MAX_BLOCKS = 12000;
     private static final int DITHER_SCALE_BLOCKS = 144;
+    private static final int TROPICAL_STEP_PATCH_BLOCKS = 352;
     private static final int WARP_AMPLITUDE_BLOCKS = 420;
     private static final int WARP_SCALE_BLOCKS = 4096;
     private static final long JITTER_NOISE_SALT = -6795153568590067944L;
@@ -720,9 +826,11 @@ public final class LatitudeBiomes {
     private static final long TROPICAL_DITHER_SALT = 0x5EEDBEEF5EEDBEEFL;
     private static final long SUBPOLAR_RAMP_SALT = 0x5EED5B09A5EEDL;
     private static final long SNOWY_RAMP_SALT = 0x5EEDB17A5EEDL;
-    private static final double SNOWY_RAMP_START_DEG = 56.0;
-    private static final double SNOWY_RAMP_FULL_DEG = 66.0;
-    private static final double GROVE_MIN_DEG = 56.0;
+    private static final double SNOWY_RAMP_START_DEG = 54.0;
+    private static final double SNOWY_RAMP_FULL_DEG = 68.0;
+    private static final double GROVE_MIN_DEG = 54.0;
+    private static final int SUBPOLAR_RAMP_PATCH_BLOCKS = 224;
+    private static final int SNOWY_RAMP_PATCH_BLOCKS = 288;
 
     private static final Set<String> SURFACE_CAVE_DENYLIST = Set.of(
             "minecraft:dripstone_caves",
@@ -816,10 +924,11 @@ public final class LatitudeBiomes {
     }
 
     private static int applyTropicalStepDither(long seed, int blockX, int blockZ, int baseStep, double stepFrac) {
-        if (baseStep >= 3 || DISABLE_GRID_DITHER) {
+        if (baseStep >= 3) {
             return baseStep;
         }
-        double dither = ValueNoise2D.sampleBlocks(seed ^ TROPICAL_DITHER_SALT, blockX, blockZ, DITHER_SCALE_BLOCKS);
+        int patchBlocks = DISABLE_GRID_DITHER ? TROPICAL_STEP_PATCH_BLOCKS : DITHER_SCALE_BLOCKS;
+        double dither = ValueNoise2D.sampleBlocks(seed ^ TROPICAL_DITHER_SALT, blockX, blockZ, patchBlocks);
         return dither < stepFrac ? baseStep + 1 : baseStep;
     }
 
@@ -892,6 +1001,13 @@ public final class LatitudeBiomes {
             return base;
         }
         LAST_SELECTION_PATH.remove();
+
+        // Sparse jungle audit flags for final source classification.
+        boolean auditTagPick = false;
+        boolean auditSanitize = false;
+        boolean auditCanopy = false;
+        boolean auditWarmFallback = false;
+        boolean auditFinalSavanna = false;
 
         int lat = Math.abs(blockZ);
         double tBase = (double) lat / (double) effectiveRadius;
@@ -995,6 +1111,10 @@ public final class LatitudeBiomes {
             };
         }
         String mangroveDecision = null;
+        if (DEBUG_SPARSE_JUNGLE_AUDIT && chosen != null && isBiomeId(chosen, "minecraft:sparse_jungle")
+                && PATH_TAG_PICK.equals(selectionPathForTrace(base, chosen))) {
+            auditTagPick = true;
+        }
         RegistryEntry<Biome> sanitized = chosen;
         RegistryEntry<Biome> safe = chosen;
         RegistryEntry<Biome> out = chosen;
@@ -1060,15 +1180,21 @@ public final class LatitudeBiomes {
                 }
             }
             sanitized = sanitizeLandBiome(biomeRegistry, chosen, landBandIndex, blockX, blockZ);
+            if (DEBUG_SPARSE_JUNGLE_AUDIT && !isBiomeId(chosen, "minecraft:sparse_jungle") && isBiomeId(sanitized, "minecraft:sparse_jungle")) {
+                auditSanitize = true;
+            }
             safe = repickIfSurfaceCave(biomeRegistry, base, sanitized, blockX, blockZ, t, landBandIndex);
             out = applyLandOverrides(biomeRegistry, safe, blockX, blockZ, landBandIndex);
             if (landBandIndex == BAND_TROPICAL && isJungleFamily(out) && !allowWetTropicalCanopy(blockX, blockZ, t, out)) {
                 out = pickOpenTropicalFallback(biomeRegistry, out, blockX, blockZ, t);
+                if (DEBUG_SPARSE_JUNGLE_AUDIT && isBiomeId(out, "minecraft:sparse_jungle")) {
+                    auditCanopy = true;
+                }
             }
             boolean savannaGateInput = isSavannaFamily(out);
             out = applySavannaWindsweptGate(biomeRegistry, out, preview.robustDelta, previewHeightHigh);
-            if (landBandIndex == BAND_SUBTROPICAL && tropicalBaseStep(blockX, Math.abs(blockZ), t) <= 1 && isJungleFamily(out)) {
-                out = pickOpenTropicalFallback(biomeRegistry, out, blockX, blockZ, t);
+            if (landBandIndex == BAND_SUBTROPICAL && isJungleFamily(out)) {
+                out = pickDryWarmFallback(biomeRegistry, out);
             }
             finalSavannaRegion = isSavannaFamily(base) || savannaGateInput || isSavannaFamily(out);
             }
@@ -1076,15 +1202,20 @@ public final class LatitudeBiomes {
         if (landBandIndex == BAND_TROPICAL || landBandIndex == BAND_SUBTROPICAL) {
             if (isColdBiome(out)) {
                 out = pickWarmFallback(biomeRegistry, landBandIndex);
+                if (DEBUG_SPARSE_JUNGLE_AUDIT && isBiomeId(out, "minecraft:sparse_jungle")) {
+                    auditWarmFallback = true;
+                }
             }
         }
         out = enforceSnowyLatitudeRamp(biomeRegistry, out, base, blockX, blockZ, effectiveRadius, landBandIndex);
         out = clampWarmInColdZone(biomeRegistry, base, out, band, blockX, blockZ);
         out = applySubpolarSwampGuard(biomeRegistry, base, out, band);
+        RegistryEntry<Biome> preBandEnforce = out;
         if (landBandIndex >= BAND_SUBPOLAR && isJungleFamily(out)) {
             out = pickColdFallback(biomeRegistry, base, blockX, blockZ, landBandIndex);
         }
         out = enforceLandBandPool(biomeRegistry, out, blockX, blockZ, t, landBandIndex);
+        RegistryEntry<Biome> postBandEnforce = out;
         if (DEBUG_BIOMES && isMangroveCandidate(out)) {
             LOGGER.warn("[Latitude][MangroveLeak] mangrove escaped into land pool result (registry path) at x={} z={} bandIndex={} y={}",
                     blockX, blockZ, landBandIndex, columnDecisionY);
@@ -1097,9 +1228,33 @@ public final class LatitudeBiomes {
             }
         }
         if (landBandIndex <= BAND_SUBTROPICAL) {
-            out = applyFinalSavannaClimateClamp(biomeRegistry, out, finalSavannaRegion, columnDecisionY, blockX, blockZ);
+            RegistryEntry<Biome> beforeClamp = out;
+            out = applyFinalSavannaClimateClamp(biomeRegistry, out, finalSavannaRegion, landBandIndex, columnDecisionY, blockX, blockZ);
+            if (DEBUG_SPARSE_JUNGLE_AUDIT && out != beforeClamp && isBiomeId(out, "minecraft:sparse_jungle")) {
+                auditFinalSavanna = true;
+            }
         }
+        RegistryEntry<Biome> postFinalClamp = out;
+        int overlayBandIndex = authoritativeLandBandIndex(blockX, blockZ, effectiveRadius);
+        logSubtropicalJungleReturn("pick-registry", blockX, blockZ, t, landBandIndex, base, chosen, sanitized, preBandEnforce, postBandEnforce, postFinalClamp, out);
+        logAtlasViewportJungleReturn("pick-registry", callerContext, blockX, blockZ, t, landBandIndex, overlayBandIndex, base, chosen, sanitized, preBandEnforce, postBandEnforce, postFinalClamp, out);
         traceSubpolarJunglePick(blockX, blockZ, effectiveRadius, landBandIndex, base, out);
+        if (DEBUG_SPARSE_JUNGLE_AUDIT && isBiomeId(out, "minecraft:sparse_jungle")) {
+            String bucket = "TAG_PICK_DIRECT";
+            if (auditFinalSavanna) {
+                bucket = "FINAL_SAVANNA_CLAMP";
+            } else if (auditCanopy) {
+                bucket = "CANOPY_FALLBACK";
+            } else if (auditSanitize) {
+                bucket = "SANITIZE_REWRITE";
+            } else if (auditWarmFallback) {
+                bucket = "WARM_SAFETY_FALLBACK";
+            } else if (auditTagPick) {
+                bucket = "TAG_PICK_DIRECT";
+            }
+            String detail = "path=" + selectionPathForTrace(base, out) + " auditFlags{tag=" + auditTagPick + ",sanitize=" + auditSanitize + ",canopy=" + auditCanopy + ",warm=" + auditWarmFallback + ",finalSavanna=" + auditFinalSavanna + "}";
+            auditSparseJungle(bucket, blockX, blockZ, landBandIndex, detail, biomeId(preBandEnforce), biomeId(out));
+        }
         debugPick(blockX, blockZ, effectiveRadius, t, band, base, out, false, out != sanitized, mangroveDecision);
         return out;
     }
@@ -1315,9 +1470,8 @@ public final class LatitudeBiomes {
             }
             boolean savannaGateInput = isSavannaFamily(out);
             out = applySavannaWindsweptGate(biomePool, out, preview.robustDelta, previewHeightHigh);
-            if (landBandIndex == BAND_SUBTROPICAL && tropicalBaseStep(blockX, Math.abs(blockZ), t) <= 1 && isJungleFamily(out)) {
-                RegistryEntry<Biome> savanna = entryById(biomePool, "minecraft:savanna");
-                if (savanna != null) out = savanna;
+            if (landBandIndex == BAND_SUBTROPICAL && isJungleFamily(out)) {
+                out = pickDryWarmFallback(biomePool, out);
             }
             finalSavannaRegion = isSavannaFamily(base) || savannaGateInput || isSavannaFamily(out);
             }
@@ -1330,10 +1484,12 @@ public final class LatitudeBiomes {
         out = enforceSnowyLatitudeRamp(biomePool, out, base, blockX, blockZ, effectiveRadius, landBandIndex);
         out = clampWarmInColdZone(biomePool, base, out, band, blockX, blockZ);
         out = applySubpolarSwampGuard(biomePool, base, out, band);
+        RegistryEntry<Biome> preBandEnforce = out;
         if (landBandIndex >= BAND_SUBPOLAR && isJungleFamily(out)) {
             out = pickColdFallback(biomePool, base, blockX, blockZ, landBandIndex);
         }
         out = enforceLandBandPool(biomePool, out, blockX, blockZ, t, landBandIndex);
+        RegistryEntry<Biome> postBandEnforce = out;
         if (DEBUG_BIOMES && isMangroveCandidate(out)) {
             LOGGER.warn("[Latitude][MangroveLeak] mangrove escaped into land pool result (collection path) at x={} z={} bandIndex={} y={}",
                     blockX, blockZ, landBandIndex, columnDecisionY);
@@ -1342,8 +1498,12 @@ public final class LatitudeBiomes {
             out = pickOpenTropicalFallback(biomePool, out, blockX, blockZ, t);
         }
         if (landBandIndex <= BAND_SUBTROPICAL) {
-            out = applyFinalSavannaClimateClamp(biomePool, out, finalSavannaRegion, columnDecisionY, blockX, blockZ);
+            out = applyFinalSavannaClimateClamp(biomePool, out, finalSavannaRegion, landBandIndex, columnDecisionY, blockX, blockZ);
         }
+        RegistryEntry<Biome> postFinalClamp = out;
+        int overlayBandIndex = authoritativeLandBandIndex(blockX, blockZ, effectiveRadius);
+        logSubtropicalJungleReturn("pick-collection", blockX, blockZ, t, landBandIndex, base, chosen, sanitized, preBandEnforce, postBandEnforce, postFinalClamp, out);
+        logAtlasViewportJungleReturn("pick-collection", callerContext, blockX, blockZ, t, landBandIndex, overlayBandIndex, base, chosen, sanitized, preBandEnforce, postBandEnforce, postFinalClamp, out);
         traceSubpolarJunglePick(blockX, blockZ, effectiveRadius, landBandIndex, base, out);
         debugPick(blockX, blockZ, effectiveRadius, t, band, base, out, false, out != sanitized, mangroveDecision);
         return out;
@@ -1389,7 +1549,7 @@ public final class LatitudeBiomes {
             case 2 -> pickFromWeightedTags(biomes, base, blockX, blockZ, 102, 0x7A22,
                     LAT_TRANS_ARID_TROPICS_2_PRIMARY, LAT_TRANS_ARID_TROPICS_2_SECONDARY, LAT_TRANS_ARID_TROPICS_2_ACCENT);
             case 3 -> pickFromWeightedTags(biomes, base, blockX, blockZ, 103, 0x7A33,
-                    LAT_TROPICS_PRIMARY, LAT_TROPICS_SECONDARY, LAT_TROPICS_ACCENT);
+                    LAT_TRANS_ARID_TROPICS_2_PRIMARY, LAT_TRANS_ARID_TROPICS_2_SECONDARY, LAT_TRANS_ARID_TROPICS_2_ACCENT);
             default -> pickFromWeightedTags(biomes, base, blockX, blockZ, 100, 0x7A00,
                     LAT_ARID_PRIMARY, LAT_ARID_SECONDARY, LAT_ARID_ACCENT);
         };
@@ -1473,7 +1633,7 @@ public final class LatitudeBiomes {
             case 2 -> pickFromWeightedTags(biomes, base, blockX, blockZ, 102, 0x7A22,
                     LAT_TRANS_ARID_TROPICS_2_PRIMARY, LAT_TRANS_ARID_TROPICS_2_SECONDARY, LAT_TRANS_ARID_TROPICS_2_ACCENT);
             case 3 -> pickFromWeightedTags(biomes, base, blockX, blockZ, 103, 0x7A33,
-                    LAT_TROPICS_PRIMARY, LAT_TROPICS_SECONDARY, LAT_TROPICS_ACCENT);
+                    LAT_TRANS_ARID_TROPICS_2_PRIMARY, LAT_TRANS_ARID_TROPICS_2_SECONDARY, LAT_TRANS_ARID_TROPICS_2_ACCENT);
             default -> pickFromWeightedTags(biomes, base, blockX, blockZ, 100, 0x7A00,
                     LAT_ARID_PRIMARY, LAT_ARID_SECONDARY, LAT_ARID_ACCENT);
         };
@@ -1811,8 +1971,8 @@ public final class LatitudeBiomes {
 
     private static TagKey<Biome> weightedTagForRoll(int bandIndex, int roll, TagKey<Biome> primary, TagKey<Biome> secondary, TagKey<Biome> accent) {
         if (bandIndex == BAND_TROPICAL) {
-            if (roll < 40) return primary;
-            if (roll < 85) return secondary;
+            if (roll < 34) return primary;
+            if (roll < 86) return secondary;
             return accent;
         }
         if (roll < 70) return primary;
@@ -1821,7 +1981,7 @@ public final class LatitudeBiomes {
     }
 
     private static TagKey<Biome> subpolarTagForRoll(int roll, boolean snowyPool, TagKey<Biome> primary, TagKey<Biome> secondary, TagKey<Biome> accent) {
-        if (roll >= 95) {
+        if (roll >= 88) {
             return accent;
         }
         return snowyPool ? primary : secondary;
@@ -1849,7 +2009,7 @@ public final class LatitudeBiomes {
         double pSnow = subpolarSnowProbability(absLatFraction);
         double r;
         if (DISABLE_GRID_DITHER) {
-            r = ValueNoise2D.sampleBlocks(WORLD_SEED ^ SUBPOLAR_RAMP_SALT, blockX, blockZ, Math.max(16, VARIANT_CELL_SIZE_BLOCKS));
+            r = ValueNoise2D.sampleBlocks(WORLD_SEED ^ SUBPOLAR_RAMP_SALT, blockX, blockZ, SUBPOLAR_RAMP_PATCH_BLOCKS);
         } else {
             int cellX = Math.floorDiv(blockX, VARIANT_CELL_SIZE_BLOCKS);
             int cellZ = Math.floorDiv(blockZ, VARIANT_CELL_SIZE_BLOCKS);
@@ -1893,6 +2053,7 @@ public final class LatitudeBiomes {
             RegistryEntry<Biome> fallback = pickFrom(biomes, blockX, blockZ, BAND_POLAR,
                     "minecraft:snowy_slopes",
                     "minecraft:snowy_plains",
+                    "minecraft:snowy_taiga",
                     "minecraft:grove");
             if (fallback != null) pick = fallback;
         }
@@ -1925,7 +2086,7 @@ public final class LatitudeBiomes {
         int chunkZ = Math.abs(blockZ) >> 4;
         double jitterN = (blobNoise01(seed, chunkX, chunkZ, 8, 0xBADC0FFEE0DDF00DL) * 2.0) - 1.0;
         double compositionBias = tropicalCompositionBias(seed, blockX, blockZ);
-        double tJitter = clamp(ladderT + (jitterN * 0.08) + compositionBias, 0.0, 1.0);
+        double tJitter = clamp(ladderT + (jitterN * 0.10) + compositionBias, 0.0, 1.0);
         return smoothstep(tJitter);
     }
 
@@ -1987,9 +2148,11 @@ public final class LatitudeBiomes {
             RegistryEntry<Biome> slopes = entryById(biomes, "minecraft:snowy_slopes");
             RegistryEntry<Biome> plains = entryById(biomes, "minecraft:snowy_plains");
             RegistryEntry<Biome> taiga = entryById(biomes, "minecraft:snowy_taiga");
+            RegistryEntry<Biome> grove = entryById(biomes, "minecraft:grove");
             if (slopes != null) options.add(slopes);
             if (plains != null) options.add(plains);
             if (taiga != null) options.add(taiga);
+            if (grove != null) options.add(grove);
             if (!options.isEmpty()) {
                 double n = ValueNoise2D.sampleBlocks(WORLD_SEED ^ 0x5EEDC0DEL, blockX, blockZ, 2048);
                 int idx = (int) Math.floor(n * (double) options.size());
@@ -2081,8 +2244,7 @@ public final class LatitudeBiomes {
             idx = size - 1;
         }
         setSelectionPath(PATH_TAG_PICK);
-        RegistryEntry<Biome> pick = entries.get(idx);
-        return pick;
+        return entries.get(idx);
     }
 
     private static RegistryEntry<Biome> pickFromTagNoiseOrBaseFilteredSwamp(Collection<RegistryEntry<Biome>> biomes, TagKey<Biome> tag, RegistryEntry<Biome> base,
@@ -2271,7 +2433,20 @@ public final class LatitudeBiomes {
             idx = size - 1;
         }
         setSelectionPath(PATH_TAG_PICK);
-        return entries.get(idx);
+        RegistryEntry<Biome> pick = entries.get(idx);
+        if (bandIndex == BAND_TROPICAL && isBiomeId(pick, "minecraft:sparse_jungle")) {
+            double openness = tropicalOpennessNoise(blockX, blockZ);
+            double compositionBias = tropicalCompositionBias(WORLD_SEED, blockX, blockZ);
+            if (openness >= 0.32 || compositionBias <= 0.16) {
+                RegistryEntry<Biome> reroute = openness >= 0.20
+                        ? entryById(biomes, "minecraft:savanna")
+                        : entryById(biomes, "minecraft:jungle");
+                if (reroute != null) {
+                    return reroute;
+                }
+            }
+        }
+        return pick;
     }
 
     private static RegistryEntry<Biome> pickFromFallbacks(Collection<RegistryEntry<Biome>> biomes, RegistryEntry<Biome> base, String... fallbackOptions) {
@@ -2315,10 +2490,7 @@ public final class LatitudeBiomes {
                     LAT_TRANS_ARID_TROPICS_1_ACCENT,
                     LAT_TRANS_ARID_TROPICS_2_PRIMARY,
                     LAT_TRANS_ARID_TROPICS_2_SECONDARY,
-                    LAT_TRANS_ARID_TROPICS_2_ACCENT,
-                    LAT_TROPICS_PRIMARY,
-                    LAT_TROPICS_SECONDARY,
-                    LAT_TROPICS_ACCENT);
+                    LAT_TRANS_ARID_TROPICS_2_ACCENT);
             case BAND_TEMPERATE -> List.of(
                     LAT_TEMPERATE_PRIMARY,
                     LAT_TEMPERATE_SECONDARY,
@@ -2734,7 +2906,7 @@ public final class LatitudeBiomes {
         double alpha = snowyRampAlpha(deg);
         double r;
         if (DISABLE_GRID_DITHER) {
-            r = ValueNoise2D.sampleBlocks(WORLD_SEED ^ SNOWY_RAMP_SALT, blockX, blockZ, Math.max(16, VARIANT_CELL_SIZE_BLOCKS));
+            r = ValueNoise2D.sampleBlocks(WORLD_SEED ^ SNOWY_RAMP_SALT, blockX, blockZ, SNOWY_RAMP_PATCH_BLOCKS);
         } else {
             int cellX = Math.floorDiv(blockX, VARIANT_CELL_SIZE_BLOCKS);
             int cellZ = Math.floorDiv(blockZ, VARIANT_CELL_SIZE_BLOCKS);
@@ -2761,7 +2933,7 @@ public final class LatitudeBiomes {
         double alpha = snowyRampAlpha(deg);
         double r;
         if (DISABLE_GRID_DITHER) {
-            r = ValueNoise2D.sampleBlocks(WORLD_SEED ^ SNOWY_RAMP_SALT, blockX, blockZ, Math.max(16, VARIANT_CELL_SIZE_BLOCKS));
+            r = ValueNoise2D.sampleBlocks(WORLD_SEED ^ SNOWY_RAMP_SALT, blockX, blockZ, SNOWY_RAMP_PATCH_BLOCKS);
         } else {
             int cellX = Math.floorDiv(blockX, VARIANT_CELL_SIZE_BLOCKS);
             int cellZ = Math.floorDiv(blockZ, VARIANT_CELL_SIZE_BLOCKS);
@@ -2988,17 +3160,17 @@ public final class LatitudeBiomes {
     private static boolean allowWetTropicalCanopy(int blockX, int blockZ, double t, RegistryEntry<Biome> candidate) {
         double tropicalEnd = LatitudeBands.Band.SUBTROPICAL.lowDeg() / 90.0;
         double u = tropicalEnd > 0.0 ? clamp(t / tropicalEnd, 0.0, 1.0) : 1.0;
-        double latitudePenalty = 0.22 * u;
+        double latitudePenalty = 0.28 * u;
         double compositionBias = tropicalCompositionBias(WORLD_SEED, blockX, blockZ);
         double opennessNoise = tropicalOpennessNoise(blockX, blockZ);
-        double opennessPenalty = Math.max(0.0, opennessNoise - 0.52) * 0.22;
+        double opennessPenalty = Math.max(0.0, opennessNoise - 0.48) * 0.30;
         double baseChance;
         if (isBiomeId(candidate, "minecraft:jungle")) {
-            baseChance = 0.78;
+            baseChance = 0.68;
         } else if (isBiomeId(candidate, "minecraft:sparse_jungle")) {
-            baseChance = 0.56;
+            baseChance = 0.48;
         } else {
-            baseChance = 0.34;
+            baseChance = 0.26;
         }
         double threshold = clamp(baseChance - latitudePenalty - opennessPenalty + compositionBias, 0.08, 0.88);
         double canopyNoise = ValueNoise2D.sampleBlocks(WORLD_SEED ^ TROPICAL_CANOPY_SALT, blockX, blockZ, 1536);
@@ -3017,22 +3189,40 @@ public final class LatitudeBiomes {
                 // fall through
             }
         }
-        if (isBiomeId(base, "minecraft:bamboo_jungle") && compositionBias > 0.12 && opennessNoise < 0.38) {
+        if (isBiomeId(base, "minecraft:bamboo_jungle") && compositionBias > 0.32 && opennessNoise < 0.18) {
             try {
                 return biome(biomes, "minecraft:sparse_jungle");
             } catch (Throwable ignored) {
                 // fall through
             }
         }
-        if (compositionBias > 0.22 && opennessNoise < 0.32) {
+        if (compositionBias > 0.42 && opennessNoise < 0.18) {
             try {
-                return biome(biomes, "minecraft:sparse_jungle");
+                return biome(biomes, "minecraft:savanna");
+            } catch (Throwable ignoredSavanna) {
+                // fall through
+            }
+        }
+        if (u < 0.42 && opennessNoise >= 0.54 && opennessNoise < 0.74 && compositionBias > 0.08) {
+            try {
+                return biome(biomes, SWAMP_ID);
             } catch (Throwable ignored) {
                 // fall through
             }
         }
-        boolean strongOpen = opennessNoise >= 0.70 || (u > 0.78 && opennessNoise >= 0.62);
+        boolean strongOpen = opennessNoise >= 0.76 || (u > 0.82 && opennessNoise >= 0.68);
         if (!strongOpen) {
+            if (isJungleFamily(base)) {
+                try {
+                    return biome(biomes, "minecraft:savanna");
+                } catch (Throwable ignoredSavanna) {
+                    try {
+                        return biome(biomes, "minecraft:desert");
+                    } catch (Throwable ignoredDesert) {
+                        return base;
+                    }
+                }
+            }
             return base;
         }
         try {
@@ -3057,20 +3247,36 @@ public final class LatitudeBiomes {
                 return desert;
             }
         }
-        if (isBiomeId(base, "minecraft:bamboo_jungle") && compositionBias > 0.12 && opennessNoise < 0.38) {
+        if (isBiomeId(base, "minecraft:bamboo_jungle") && compositionBias > 0.32 && opennessNoise < 0.18) {
             RegistryEntry<Biome> sparseJungle = entryById(biomes, "minecraft:sparse_jungle");
             if (sparseJungle != null) {
                 return sparseJungle;
             }
         }
-        if (compositionBias > 0.22 && opennessNoise < 0.32) {
-            RegistryEntry<Biome> sparseJungle = entryById(biomes, "minecraft:sparse_jungle");
-            if (sparseJungle != null) {
-                return sparseJungle;
+        if (compositionBias > 0.42 && opennessNoise < 0.18) {
+            RegistryEntry<Biome> savanna = entryById(biomes, "minecraft:savanna");
+            if (savanna != null) {
+                return savanna;
             }
         }
-        boolean strongOpen = opennessNoise >= 0.70 || (u > 0.78 && opennessNoise >= 0.62);
+        if (u < 0.42 && opennessNoise >= 0.54 && opennessNoise < 0.74 && compositionBias > 0.08) {
+            RegistryEntry<Biome> swamp = entryById(biomes, SWAMP_ID);
+            if (swamp != null) {
+                return swamp;
+            }
+        }
+        boolean strongOpen = opennessNoise >= 0.76 || (u > 0.82 && opennessNoise >= 0.68);
         if (!strongOpen) {
+            if (isJungleFamily(base)) {
+                RegistryEntry<Biome> savanna = entryById(biomes, "minecraft:savanna");
+                if (savanna != null) {
+                    return savanna;
+                }
+                RegistryEntry<Biome> desert = entryById(biomes, "minecraft:desert");
+                if (desert != null) {
+                    return desert;
+                }
+            }
             return base;
         }
         RegistryEntry<Biome> savanna = entryById(biomes, "minecraft:savanna");
@@ -3079,6 +3285,99 @@ public final class LatitudeBiomes {
         }
         RegistryEntry<Biome> desert = entryById(biomes, "minecraft:desert");
         return desert != null ? desert : base;
+    }
+
+    private static RegistryEntry<Biome> pickDryWarmFallback(Registry<Biome> biomes, RegistryEntry<Biome> base) {
+        try {
+            return biome(biomes, "minecraft:savanna");
+        } catch (Throwable ignored) {
+            try {
+                return biome(biomes, "minecraft:desert");
+            } catch (Throwable ignoredAgain) {
+                return base;
+            }
+        }
+    }
+
+    private static RegistryEntry<Biome> pickDryWarmFallback(Collection<RegistryEntry<Biome>> biomes, RegistryEntry<Biome> base) {
+        RegistryEntry<Biome> savanna = entryById(biomes, "minecraft:savanna");
+        if (savanna != null) {
+            return savanna;
+        }
+        RegistryEntry<Biome> desert = entryById(biomes, "minecraft:desert");
+        return desert != null ? desert : base;
+    }
+
+    private static void logSubtropicalJungleReturn(String pathLabel,
+                                                   int blockX,
+                                                   int blockZ,
+                                                   double t,
+                                                   int landBandIndex,
+                                                   RegistryEntry<Biome> base,
+                                                   RegistryEntry<Biome> chosen,
+                                                   RegistryEntry<Biome> sanitized,
+                                                   RegistryEntry<Biome> preEnforce,
+                                                   RegistryEntry<Biome> postEnforce,
+                                                   RegistryEntry<Biome> postClamp,
+                                                   RegistryEntry<Biome> finalOut) {
+        if (!DEBUG_SUBTROPICAL_JUNGLE || landBandIndex != BAND_SUBTROPICAL || finalOut == null || !isJungleFamily(finalOut)) {
+            return;
+        }
+        double latDeg = clamp(t, 0.0, 1.0) * 90.0;
+        LOGGER.info("[LAT][SUBTROPICAL_JUNGLE] path={} x={} z={} bandIndex={} latDeg={} base={} chosen={} sanitized={} preEnforce={} postEnforce={} postClamp={} final={}",
+                pathLabel,
+                blockX,
+                blockZ,
+                landBandIndex,
+                String.format(java.util.Locale.ROOT, "%.3f", latDeg),
+                biomeId(base),
+                biomeId(chosen),
+                biomeId(sanitized),
+                biomeId(preEnforce),
+                biomeId(postEnforce),
+                biomeId(postClamp),
+                biomeId(finalOut));
+    }
+
+    private static void logAtlasViewportJungleReturn(String pathLabel,
+                                                     String callerContext,
+                                                     int blockX,
+                                                     int blockZ,
+                                                     double t,
+                                                     int landBandIndex,
+                                                     int overlayBandIndex,
+                                                     RegistryEntry<Biome> base,
+                                                     RegistryEntry<Biome> chosen,
+                                                     RegistryEntry<Biome> sanitized,
+                                                     RegistryEntry<Biome> preEnforce,
+                                                     RegistryEntry<Biome> postEnforce,
+                                                     RegistryEntry<Biome> postClamp,
+                                                     RegistryEntry<Biome> finalOut) {
+        if (!DEBUG_SUBTROPICAL_JUNGLE || finalOut == null || !isJungleFamily(finalOut)) {
+            return;
+        }
+        if (!"SOURCE".equalsIgnoreCase(callerContext) && !"ATLAS_SAMPLER".equalsIgnoreCase(callerContext)) {
+            return;
+        }
+        if (overlayBandIndex != BAND_SUBTROPICAL) {
+            return;
+        }
+        double latDeg = clamp(t, 0.0, 1.0) * 90.0;
+        LOGGER.info("[LAT][ATLAS_SUBTROPICAL_JUNGLE] path={} caller={} x={} z={} bandIndex={} overlayBandIndex={} latDeg={} base={} chosen={} sanitized={} preEnforce={} postEnforce={} postClamp={} final={}",
+                pathLabel,
+                callerContext,
+                blockX,
+                blockZ,
+                landBandIndex,
+                overlayBandIndex,
+                String.format(java.util.Locale.ROOT, "%.3f", latDeg),
+                biomeId(base),
+                biomeId(chosen),
+                biomeId(sanitized),
+                biomeId(preEnforce),
+                biomeId(postEnforce),
+                biomeId(postClamp),
+                biomeId(finalOut));
     }
 
     private static void setSelectionPath(String path) {
@@ -3535,7 +3834,7 @@ private static boolean swampPatchHere(long seed, int blockX, int blockZ) {
             case 2 -> pickFromWeightedTagsNoMangrove(biomes, base, blockX, blockZ, 102, 0x7A22,
                     LAT_TRANS_ARID_TROPICS_2_PRIMARY, LAT_TRANS_ARID_TROPICS_2_SECONDARY, LAT_TRANS_ARID_TROPICS_2_ACCENT);
             case 3 -> pickFromWeightedTagsNoMangrove(biomes, base, blockX, blockZ, 103, 0x7A33,
-                    LAT_TROPICS_PRIMARY, LAT_TROPICS_SECONDARY, LAT_TROPICS_ACCENT);
+                    LAT_TRANS_ARID_TROPICS_2_PRIMARY, LAT_TRANS_ARID_TROPICS_2_SECONDARY, LAT_TRANS_ARID_TROPICS_2_ACCENT);
             default -> pickFromWeightedTagsNoMangrove(biomes, base, blockX, blockZ, 100, 0x7A00,
                     LAT_ARID_PRIMARY, LAT_ARID_SECONDARY, LAT_ARID_ACCENT);
         };
@@ -3569,7 +3868,7 @@ private static boolean swampPatchHere(long seed, int blockX, int blockZ) {
             case 2 -> pickFromWeightedTagsNoMangrove(biomes, base, blockX, blockZ, 102, 0x7A22,
                     LAT_TRANS_ARID_TROPICS_2_PRIMARY, LAT_TRANS_ARID_TROPICS_2_SECONDARY, LAT_TRANS_ARID_TROPICS_2_ACCENT);
             case 3 -> pickFromWeightedTagsNoMangrove(biomes, base, blockX, blockZ, 103, 0x7A33,
-                    LAT_TROPICS_PRIMARY, LAT_TROPICS_SECONDARY, LAT_TROPICS_ACCENT);
+                    LAT_TRANS_ARID_TROPICS_2_PRIMARY, LAT_TRANS_ARID_TROPICS_2_SECONDARY, LAT_TRANS_ARID_TROPICS_2_ACCENT);
             default -> pickFromWeightedTagsNoMangrove(biomes, base, blockX, blockZ, 100, 0x7A00,
                     LAT_ARID_PRIMARY, LAT_ARID_SECONDARY, LAT_ARID_ACCENT);
         };
@@ -3612,11 +3911,14 @@ private static boolean swampPatchHere(long seed, int blockX, int blockZ) {
                 try {
                     double openness = tropicalOpennessNoise(blockX, blockZ);
                     double compositionBias = tropicalCompositionBias(WORLD_SEED, blockX, blockZ);
-                    if (openness < 0.70 || compositionBias <= 0.02) {
+                    if (openness < 0.76 || compositionBias <= 0.06) {
                         return pick; // neutral/marginal openness → keep the original temperate winner
                     }
-                    if (openness >= 0.82) {
+                    if (openness >= 0.90) {
                         return biome(biomes, "minecraft:savanna");
+                    }
+                    if (openness >= 0.78 && compositionBias > 0.12) {
+                        return biome(biomes, SWAMP_ID);
                     }
                     return biome(biomes, "minecraft:sparse_jungle");
                 } catch (Throwable ignored) {
@@ -3637,7 +3939,7 @@ private static boolean swampPatchHere(long seed, int blockX, int blockZ) {
 
         if (bandIndex >= BAND_POLAR) {
             String path = pick.getKey().map(key -> key.getValue().getPath()).orElse("");
-            if (path.contains("forest") || path.contains("taiga") || isBiomeId(pick, "minecraft:grove") || isBiomeId(pick, "minecraft:cherry_grove")) {
+            if (path.contains("forest") || path.contains("taiga") || isBiomeId(pick, "minecraft:cherry_grove")) {
                 try {
                     return biome(biomes, "minecraft:ice_spikes");
                 } catch (Throwable ignored) {
@@ -3652,23 +3954,27 @@ private static boolean swampPatchHere(long seed, int blockX, int blockZ) {
     private static RegistryEntry<Biome> applyFinalSavannaClimateClamp(Registry<Biome> biomes,
                                                                        RegistryEntry<Biome> pick,
                                                                        boolean inSavannaRegion,
+                                                                       int bandIndex,
                                                                        int blockY,
                                                                        int blockX,
                                                                        int blockZ) {
         RegistryEntry<Biome> out = pick;
         double openness = tropicalOpennessNoise(blockX, blockZ);
         boolean warmOpen = openness >= 0.50;
+        boolean tropicalBand = bandIndex == BAND_TROPICAL;
         String incomingId = biomeId(pick);
         if (inSavannaRegion) {
             boolean jungleClamped = false;
-            if (warmOpen && isJungleFamily(out)) {
-                RegistryEntry<Biome> softened = pickOpenTropicalFallback(biomes, out, blockX, blockZ, LatitudeBands.Band.SUBTROPICAL.lowDeg() / 90.0);
+            if (isJungleFamily(out)) {
+                RegistryEntry<Biome> softened = tropicalBand && warmOpen
+                        ? pickOpenTropicalFallback(biomes, out, blockX, blockZ, LatitudeBands.Band.SUBTROPICAL.lowDeg() / 90.0)
+                        : pickDryWarmFallback(biomes, out);
                 jungleClamped = softened != out;
                 out = softened;
-            } else if (warmOpen && (isBiomeId(out, "minecraft:plains") || isBiomeId(out, "minecraft:sunflower_plains"))
-                    && blockY >= SAVANNA_UPLAND_CLAMP_Y) {
+            } else if (openness >= 0.66 && (isBiomeId(out, "minecraft:plains") || isBiomeId(out, "minecraft:sunflower_plains"))
+                    && blockY >= (SAVANNA_UPLAND_CLAMP_Y + 8)) {
                 try {
-                    out = openness < 0.42
+                    out = tropicalBand && openness < 0.40
                             ? biome(biomes, "minecraft:sparse_jungle")
                             : biome(biomes, "minecraft:savanna");
                 } catch (Throwable ignored) {
@@ -3680,6 +3986,9 @@ private static boolean swampPatchHere(long seed, int blockX, int blockZ) {
                 LOGGER.info("[LAT][FINAL_SANITIZE] jungle_clamp y={} in={} out={} x={} z={}",
                         blockY, incomingId, biomeId(out), blockX, blockZ);
             }
+        }
+        if (!tropicalBand && isJungleFamily(out)) {
+            out = pickDryWarmFallback(biomes, out);
         }
         if (isSavannaFamily(out)) {
             try {
@@ -3710,12 +4019,14 @@ private static boolean swampPatchHere(long seed, int blockX, int blockZ) {
                     || isBiomeId(pick, "minecraft:flower_forest")) {
                 double openness = tropicalOpennessNoise(blockX, blockZ);
                 double compositionBias = tropicalCompositionBias(WORLD_SEED, blockX, blockZ);
-                if (openness < 0.70 || compositionBias <= 0.02) {
+                if (openness < 0.76 || compositionBias <= 0.06) {
                     return pick; // neutral/marginal openness → keep the original temperate winner
                 }
-                RegistryEntry<Biome> entry = openness >= 0.82
+                RegistryEntry<Biome> entry = openness >= 0.90
                         ? entryById(biomes, "minecraft:savanna")
-                        : entryById(biomes, "minecraft:sparse_jungle");
+                        : (openness >= 0.78 && compositionBias > 0.12
+                        ? entryById(biomes, SWAMP_ID)
+                        : entryById(biomes, "minecraft:sparse_jungle"));
                 if (entry == null) entry = entryById(biomes, "minecraft:sparse_jungle");
                 if (entry == null) entry = entryById(biomes, "minecraft:jungle");
                 return entry != null ? entry : pick;
@@ -3734,7 +4045,7 @@ private static boolean swampPatchHere(long seed, int blockX, int blockZ) {
 
         if (bandIndex >= BAND_POLAR) {
             String path = pick.getKey().map(key -> key.getValue().getPath()).orElse("");
-            if (path.contains("forest") || path.contains("taiga") || isBiomeId(pick, "minecraft:grove") || isBiomeId(pick, "minecraft:cherry_grove")) {
+            if (path.contains("forest") || path.contains("taiga") || isBiomeId(pick, "minecraft:cherry_grove")) {
                 RegistryEntry<Biome> entry = entryById(biomes, "minecraft:ice_spikes");
                 return entry != null ? entry : pick;
             }
@@ -3746,22 +4057,26 @@ private static boolean swampPatchHere(long seed, int blockX, int blockZ) {
     private static RegistryEntry<Biome> applyFinalSavannaClimateClamp(Collection<RegistryEntry<Biome>> biomes,
                                                                        RegistryEntry<Biome> pick,
                                                                        boolean inSavannaRegion,
+                                                                       int bandIndex,
                                                                        int blockY,
                                                                        int blockX,
                                                                        int blockZ) {
         RegistryEntry<Biome> out = pick;
         double openness = tropicalOpennessNoise(blockX, blockZ);
         boolean warmOpen = openness >= 0.50;
+        boolean tropicalBand = bandIndex == BAND_TROPICAL;
         String incomingId = biomeId(pick);
         if (inSavannaRegion) {
             boolean jungleClamped = false;
-            if (warmOpen && isJungleFamily(out)) {
-                RegistryEntry<Biome> softened = pickOpenTropicalFallback(biomes, out, blockX, blockZ, LatitudeBands.Band.SUBTROPICAL.lowDeg() / 90.0);
+            if (isJungleFamily(out)) {
+                RegistryEntry<Biome> softened = tropicalBand && warmOpen
+                        ? pickOpenTropicalFallback(biomes, out, blockX, blockZ, LatitudeBands.Band.SUBTROPICAL.lowDeg() / 90.0)
+                        : pickDryWarmFallback(biomes, out);
                 jungleClamped = softened != out;
                 out = softened;
-            } else if (warmOpen && (isBiomeId(out, "minecraft:plains") || isBiomeId(out, "minecraft:sunflower_plains"))
-                    && blockY >= SAVANNA_UPLAND_CLAMP_Y) {
-                RegistryEntry<Biome> softened = openness < 0.42
+            } else if (openness >= 0.66 && (isBiomeId(out, "minecraft:plains") || isBiomeId(out, "minecraft:sunflower_plains"))
+                    && blockY >= (SAVANNA_UPLAND_CLAMP_Y + 8)) {
+                RegistryEntry<Biome> softened = tropicalBand && openness < 0.40
                         ? entryById(biomes, "minecraft:sparse_jungle")
                         : entryById(biomes, "minecraft:savanna");
                 if (softened != null) {
@@ -3773,6 +4088,9 @@ private static boolean swampPatchHere(long seed, int blockX, int blockZ) {
                 LOGGER.info("[LAT][FINAL_SANITIZE] jungle_clamp y={} in={} out={} x={} z={}",
                         blockY, incomingId, biomeId(out), blockX, blockZ);
             }
+        }
+        if (!tropicalBand && isJungleFamily(out)) {
+            out = pickDryWarmFallback(biomes, out);
         }
         if (isSavannaFamily(out)) {
             if (!isBiomeId(out, "minecraft:windswept_savanna")) {
@@ -3858,8 +4176,7 @@ private static boolean swampPatchHere(long seed, int blockX, int blockZ) {
             idx = size - 1;
         }
         setSelectionPath(PATH_TAG_PICK);
-        RegistryEntry<Biome> pick = entries.get(idx);
-        return pick;
+        return entries.get(idx);
     }
 
     private static RegistryEntry<Biome> pickFromTagNoiseOrBase(Registry<Biome> biomes, TagKey<Biome> tag, RegistryEntry<Biome> base, int blockX, int blockZ, int bandIndex) {
@@ -3887,7 +4204,21 @@ private static boolean swampPatchHere(long seed, int blockX, int blockZ) {
             idx = size - 1;
         }
         setSelectionPath(PATH_TAG_PICK);
-        return entries.get(idx);
+        RegistryEntry<Biome> pick = entries.get(idx);
+        if (bandIndex == BAND_TROPICAL && isBiomeId(pick, "minecraft:sparse_jungle")) {
+            double openness = tropicalOpennessNoise(blockX, blockZ);
+            double compositionBias = tropicalCompositionBias(WORLD_SEED, blockX, blockZ);
+            if (openness >= 0.32 || compositionBias <= 0.16) {
+                try {
+                    return openness >= 0.20
+                            ? biome(biomes, "minecraft:savanna")
+                            : biome(biomes, "minecraft:jungle");
+                } catch (Throwable ignored) {
+                    // keep the original sparse jungle pick if the reroute target is unavailable
+                }
+            }
+        }
+        return pick;
     }
 
     private static long hash64(int x, int z, int bandIndex) {
