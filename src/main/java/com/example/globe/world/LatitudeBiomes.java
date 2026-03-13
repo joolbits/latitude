@@ -3611,10 +3611,11 @@ private static boolean swampPatchHere(long seed, int blockX, int blockZ) {
                     || isBiomeId(pick, "minecraft:flower_forest")) {
                 try {
                     double openness = tropicalOpennessNoise(blockX, blockZ);
-                    if (openness < 0.65) {
+                    double compositionBias = tropicalCompositionBias(WORLD_SEED, blockX, blockZ);
+                    if (openness < 0.70 || compositionBias <= 0.02) {
                         return pick; // neutral/marginal openness → keep the original temperate winner
                     }
-                    if (openness >= 0.80) {
+                    if (openness >= 0.82) {
                         return biome(biomes, "minecraft:savanna");
                     }
                     return biome(biomes, "minecraft:sparse_jungle");
@@ -3708,10 +3709,11 @@ private static boolean swampPatchHere(long seed, int blockX, int blockZ) {
                     || isBiomeId(pick, "minecraft:old_growth_birch_forest")
                     || isBiomeId(pick, "minecraft:flower_forest")) {
                 double openness = tropicalOpennessNoise(blockX, blockZ);
-                if (openness < 0.65) {
+                double compositionBias = tropicalCompositionBias(WORLD_SEED, blockX, blockZ);
+                if (openness < 0.70 || compositionBias <= 0.02) {
                     return pick; // neutral/marginal openness → keep the original temperate winner
                 }
-                RegistryEntry<Biome> entry = openness >= 0.80
+                RegistryEntry<Biome> entry = openness >= 0.82
                         ? entryById(biomes, "minecraft:savanna")
                         : entryById(biomes, "minecraft:sparse_jungle");
                 if (entry == null) entry = entryById(biomes, "minecraft:sparse_jungle");
