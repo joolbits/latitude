@@ -3655,17 +3655,19 @@ private static boolean swampPatchHere(long seed, int blockX, int blockZ) {
                                                                        int blockX,
                                                                        int blockZ) {
         RegistryEntry<Biome> out = pick;
+        double openness = tropicalOpennessNoise(blockX, blockZ);
+        boolean warmOpen = openness >= 0.50;
         String incomingId = biomeId(pick);
         if (inSavannaRegion) {
             boolean jungleClamped = false;
-            if (isJungleFamily(out)) {
+            if (warmOpen && isJungleFamily(out)) {
                 RegistryEntry<Biome> softened = pickOpenTropicalFallback(biomes, out, blockX, blockZ, LatitudeBands.Band.SUBTROPICAL.lowDeg() / 90.0);
                 jungleClamped = softened != out;
                 out = softened;
-            } else if ((isBiomeId(out, "minecraft:plains") || isBiomeId(out, "minecraft:sunflower_plains"))
+            } else if (warmOpen && (isBiomeId(out, "minecraft:plains") || isBiomeId(out, "minecraft:sunflower_plains"))
                     && blockY >= SAVANNA_UPLAND_CLAMP_Y) {
                 try {
-                    out = tropicalOpennessNoise(blockX, blockZ) < 0.42
+                    out = openness < 0.42
                             ? biome(biomes, "minecraft:sparse_jungle")
                             : biome(biomes, "minecraft:savanna");
                 } catch (Throwable ignored) {
@@ -3746,16 +3748,18 @@ private static boolean swampPatchHere(long seed, int blockX, int blockZ) {
                                                                        int blockX,
                                                                        int blockZ) {
         RegistryEntry<Biome> out = pick;
+        double openness = tropicalOpennessNoise(blockX, blockZ);
+        boolean warmOpen = openness >= 0.50;
         String incomingId = biomeId(pick);
         if (inSavannaRegion) {
             boolean jungleClamped = false;
-            if (isJungleFamily(out)) {
+            if (warmOpen && isJungleFamily(out)) {
                 RegistryEntry<Biome> softened = pickOpenTropicalFallback(biomes, out, blockX, blockZ, LatitudeBands.Band.SUBTROPICAL.lowDeg() / 90.0);
                 jungleClamped = softened != out;
                 out = softened;
-            } else if ((isBiomeId(out, "minecraft:plains") || isBiomeId(out, "minecraft:sunflower_plains"))
+            } else if (warmOpen && (isBiomeId(out, "minecraft:plains") || isBiomeId(out, "minecraft:sunflower_plains"))
                     && blockY >= SAVANNA_UPLAND_CLAMP_Y) {
-                RegistryEntry<Biome> softened = tropicalOpennessNoise(blockX, blockZ) < 0.42
+                RegistryEntry<Biome> softened = openness < 0.42
                         ? entryById(biomes, "minecraft:sparse_jungle")
                         : entryById(biomes, "minecraft:savanna");
                 if (softened != null) {
