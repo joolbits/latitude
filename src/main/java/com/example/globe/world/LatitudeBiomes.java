@@ -348,6 +348,16 @@ public final class LatitudeBiomes {
     private static final long[] WARM_OPEN_BUCKET_COUNTS = new long[60];
     private static final long[] WARM_OPEN_NS_SAVANNA_BUCKETS = new long[60];
     private static final long[] WARM_OPEN_NS_DESERT_BUCKETS = new long[60];
+
+    private static boolean isTemperateForestFamily(RegistryEntry<Biome> biome) {
+        return biome != null && (
+                isBiomeId(biome, "minecraft:dark_forest")
+                        || isBiomeId(biome, "minecraft:forest")
+                || isBiomeId(biome, "minecraft:birch_forest")
+                || isBiomeId(biome, "minecraft:old_growth_birch_forest")
+                || isBiomeId(biome, "minecraft:flower_forest")
+                || isBiomeId(biome, "minecraft:pale_garden"));
+    }
     private static final long[] WARM_OPEN_NS_BASE_BUCKETS = new long[60];
     private static final long[] WARM_OPEN_NS_PLAINS_BUCKETS = new long[60];
     private static final long[] WARM_OPEN_NS_OTHER_BUCKETS = new long[60];
@@ -1216,6 +1226,13 @@ public final class LatitudeBiomes {
                 default -> pickPolarWithFrontShoulder(biomeRegistry, base, blockX, blockZ, t, sampler != null && isMountainLike(sampler, blockX, blockZ));
             };
         }
+        if (landBandIndex == BAND_TEMPERATE
+                && chosen != null
+                && isBiomeId(base, "minecraft:dark_forest")
+                && !isBiomeId(chosen, "minecraft:dark_forest")
+                && isTemperateForestFamily(chosen)) {
+            chosen = base;
+        }
         String mangroveDecision = null;
         if (DEBUG_SPARSE_JUNGLE_AUDIT && chosen != null && isBiomeId(chosen, "minecraft:sparse_jungle")
                 && PATH_TAG_PICK.equals(selectionPathForTrace(base, chosen))) {
@@ -1498,6 +1515,13 @@ public final class LatitudeBiomes {
                 case BAND_SUBPOLAR -> pickSubpolarWithRamp(biomePool, base, blockX, blockZ, t, BAND_SUBPOLAR, 0x3C43, LAT_SUBPOLAR_PRIMARY, LAT_SUBPOLAR_SECONDARY, LAT_SUBPOLAR_ACCENT);
                 default -> pickPolarWithFrontShoulder(biomePool, base, blockX, blockZ, t, sampler != null && isMountainLike(sampler, blockX, blockZ));
             };
+        }
+        if (landBandIndex == BAND_TEMPERATE
+                && chosen != null
+                && isBiomeId(base, "minecraft:dark_forest")
+                && !isBiomeId(chosen, "minecraft:dark_forest")
+                && isTemperateForestFamily(chosen)) {
+            chosen = base;
         }
         String mangroveDecision = null;
         RegistryEntry<Biome> sanitized = chosen;
