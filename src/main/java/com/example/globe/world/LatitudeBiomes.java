@@ -817,28 +817,17 @@ public final class LatitudeBiomes {
     }
 
     private static RegistryEntry<Biome> softenSubtropicalBadlands(Registry<Biome> biomes, RegistryEntry<Biome> base, RegistryEntry<Biome> pick) {
-        if (!isBadlandsFamily(pick)) {
+        if (isBadlandsFamily(pick)) {
             return pick;
         }
-        for (String fallbackId : List.of("minecraft:desert", "minecraft:savanna", "minecraft:savanna_plateau")) {
-            try {
-                return biome(biomes, fallbackId);
-            } catch (Throwable ignored) {
-                // try next fallback
-            }
-        }
-        return base != null ? base : pick;
+        return pick;
     }
 
     private static RegistryEntry<Biome> softenSubtropicalBadlands(Collection<RegistryEntry<Biome>> biomes, RegistryEntry<Biome> base, RegistryEntry<Biome> pick) {
-        if (!isBadlandsFamily(pick)) {
+        if (isBadlandsFamily(pick)) {
             return pick;
         }
-        RegistryEntry<Biome> fallback = pickFromFallbacks(biomes, base,
-                "minecraft:desert",
-                "minecraft:savanna",
-                "minecraft:savanna_plateau");
-        return fallback != null ? fallback : pick;
+        return pick;
     }
 
     private record PreviewTerrain(int centerHeight, int robustDelta) {
