@@ -304,6 +304,11 @@ def layer_file(run_dir: Path, layer: str, suffix: str) -> Path | None:
     if direct.exists():
         return direct
 
+    if suffix == "world_biome_inventory.json":
+        alt = run_dir / f"world_biome_inventory_{layer}.json"
+        if alt.exists():
+            return alt
+
     if suffix == "biomes.png":
         legacy = next(iter(sorted(run_dir.glob(f"biomes_*_{layer}.png"))), None)
         if legacy:

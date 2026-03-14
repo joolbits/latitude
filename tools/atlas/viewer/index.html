@@ -1764,17 +1764,17 @@ const btnClearPaletteSelection = $('#btn-clear-palette-selection');
  const LEGACY_BEACH_RED = [235, 72, 63];
 const BEACH_SAND = [231, 215, 165];
 const BIOME_COLOR_OVERRIDES = new Map([
-  ['minecraft:warm_ocean', '#4FD3FF'],
-  ['minecraft:lukewarm_ocean', '#2BB8FF'],
+  ['minecraft:warm_ocean', '#58D6FF'],
+  ['minecraft:lukewarm_ocean', '#2CB7FF'],
   ['minecraft:deep_lukewarm_ocean', '#0077CC'],
-  ['minecraft:ocean', '#3A5BFF'],
-  ['minecraft:deep_ocean', '#1A2F8F'],
-  ['minecraft:cold_ocean', '#7AC0FF'],
-  ['minecraft:deep_cold_ocean', '#4066CC'],
-  ['minecraft:frozen_ocean', '#B9E6FF'],
-  ['minecraft:deep_frozen_ocean', '#7AA9D6'],
-  ['minecraft:river', '#5AA7FF'],
-  ['minecraft:frozen_river', '#D7F1FF'],
+  ['minecraft:ocean', '#355CFF'],
+  ['minecraft:deep_ocean', '#182B88'],
+  ['minecraft:cold_ocean', '#79C8FF'],
+  ['minecraft:deep_cold_ocean', '#4065B8'],
+  ['minecraft:frozen_ocean', '#BFEFFF'],
+  ['minecraft:deep_frozen_ocean', '#7EA8D6'],
+  ['minecraft:river', '#3F88FF'],
+  ['minecraft:frozen_river', '#D8F3FF'],
 
   ['minecraft:savanna', '#B7C85A'],
   ['minecraft:savanna_plateau', '#93A64A'],
@@ -3897,7 +3897,9 @@ async function fetchBiomes(run, layer) {
 async function fetchBiomeInventory(run, layer) {
   try {
     const data = await apiFetch(`/api/runs/${run}/layers/${layer}/inventory`);
-    return Array.isArray(data) ? data : [];
+    if (Array.isArray(data)) return data;
+    if (data && Array.isArray(data.biomes)) return data.biomes;
+    return [];
   } catch { return []; }
 }
 
