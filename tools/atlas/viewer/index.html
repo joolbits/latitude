@@ -2094,14 +2094,14 @@ function inferBiomeBandMask(biomeId) {
  if (!shortId) return 0;
  if (shortId === 'mushroom_fields') return 0;
  if (shortId.includes('ocean') || shortId.includes('river') || shortId.includes('beach') || shortId.includes('shore') || shortId.includes('coast')) return 0;
- if (shortId.includes('mangrove')) return bandsToMask(['tropical']);
- if (shortId.includes('jungle')) return bandsToMask(['tropical']);
+ if (shortId.includes('mangrove')) return bandsToMask(['tropical', 'subtropical']);
+ if (shortId.includes('jungle')) return bandsToMask(['tropical', 'subtropical']);
  if (shortId.includes('snowy') || shortId.includes('frozen') || shortId.includes('ice_spikes') || shortId.includes('jagged_peaks') || shortId.includes('frozen_peaks') || shortId === 'grove' || shortId.endsWith('_grove')) {
   return bandsToMask(['subpolar', 'polar']);
  }
  if (shortId.includes('taiga')) return bandsToMask(['temperate', 'subpolar']);
- if (shortId.includes('desert') || shortId.includes('badlands')) return bandsToMask(['tropical']);
- if (shortId.includes('savanna')) return bandsToMask(['tropical']);
+ if (shortId.includes('desert') || shortId.includes('badlands')) return bandsToMask(['tropical', 'subtropical']);
+ if (shortId.includes('savanna')) return bandsToMask(['tropical', 'subtropical']);
  if (shortId.includes('swamp')) return bandsToMask(['tropical', 'temperate']);
  if (shortId.includes('windswept') || shortId.includes('stony') || shortId.includes('peak') || shortId.includes('slope')) {
   return bandsToMask(['temperate', 'subpolar']);
@@ -2842,17 +2842,27 @@ function clamp(value, min, max) {
 }
 
 function formatBiomeHex(color) {
- if (!Array.isArray(color) || color.length < 3) return '—';
- return `#${color.slice(0, 3).map(v => clamp(Math.round(v), 0, 255).toString(16).padStart(2, '0')).join('').toUpperCase()}`;
+  if (!Array.isArray(color) || color.length < 3) return '—';
+  return `#${color.slice(0, 3).map(v => clamp(Math.round(v), 0, 255).toString(16).padStart(2, '0')).join('').toUpperCase()}`;
+}
+
+function hexToRgb(value) {
+  const hex = String(value || '').trim().replace(/^#/, '');
+  if (!/^[0-9a-fA-F]{6}$/.test(hex)) return [138, 138, 138];
+  return [
+    parseInt(hex.slice(0, 2), 16),
+    parseInt(hex.slice(2, 4), 16),
+    parseInt(hex.slice(4, 6), 16),
+  ];
 }
 
 function escapeHtml(value) {
- return String(value ?? '')
-  .replace(/&/g, '&amp;')
-  .replace(/</g, '&lt;')
-  .replace(/>/g, '&gt;')
-  .replace(/"/g, '&quot;')
-  .replace(/'/g, '&#39;');
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 function worldPositionForPixel(pixelX, pixelY) {
@@ -4035,6 +4045,12 @@ async function refreshRuns() {
   }
 }
 
+function requestedRunFromUrl() {
+  const params = new URLSearchParams(window.location.search || '');
+  const run = String(params.get('run') || '').trim();
+  return run || null;
+}
+
 function getImageUrl(run, layer) {
   return `${API_BASE}/api/runs/${run}/layers/${layer}/image`;
 }
@@ -4056,6 +4072,11 @@ async function init() {
   try {
     await refreshRuns();
     hideToast();
+    const requestedRun = requestedRunFromUrl();
+    if (requestedRun && state.runs.includes(requestedRun)) {
+      selRun.value = requestedRun;
+      selRun.dispatchEvent(new Event('change'));
+    }
     if (state.runs.length === 0) {
       showToast('No runs found — is the server running?', 'error');
     }

@@ -419,13 +419,13 @@ function inferBiomeBandMask(biomeId) {
     return bandsToMask(["temperate", "subpolar"]);
   }
   if (shortId.includes("jungle") || shortId.includes("mangrove")) {
-    return bandsToMask(["tropical"]);
+    return bandsToMask(["tropical", "subtropical"]);
   }
   if (shortId.includes("desert") || shortId.includes("badlands")) {
-    return bandsToMask(["tropical"]);
+    return bandsToMask(["tropical", "subtropical"]);
   }
   if (shortId.includes("savanna")) {
-    return bandsToMask(["tropical"]);
+    return bandsToMask(["tropical", "subtropical"]);
   }
   if (shortId.includes("swamp")) {
     return bandsToMask(["tropical", "temperate"]);
