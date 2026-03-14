@@ -1233,6 +1233,16 @@ public final class LatitudeBiomes {
                 && isTemperateForestFamily(chosen)) {
             chosen = base;
         }
+        if (landBandIndex == BAND_TEMPERATE
+                && !mountainLike
+                && chosen != null
+                && isTemperateForestFamily(base)
+                && !isTemperateForestFamily(chosen)
+                && (isBiomeId(chosen, "minecraft:plains")
+                || isBiomeId(chosen, "minecraft:taiga")
+                || isBiomeId(chosen, "minecraft:old_growth_pine_taiga"))) {
+            chosen = base;
+        }
         String mangroveDecision = null;
         if (DEBUG_SPARSE_JUNGLE_AUDIT && chosen != null && isBiomeId(chosen, "minecraft:sparse_jungle")
                 && PATH_TAG_PICK.equals(selectionPathForTrace(base, chosen))) {
@@ -1521,6 +1531,16 @@ public final class LatitudeBiomes {
                 && isBiomeId(base, "minecraft:dark_forest")
                 && !isBiomeId(chosen, "minecraft:dark_forest")
                 && isTemperateForestFamily(chosen)) {
+            chosen = base;
+        }
+        if (landBandIndex == BAND_TEMPERATE
+                && !mountainLike
+                && chosen != null
+                && isTemperateForestFamily(base)
+                && !isTemperateForestFamily(chosen)
+                && (isBiomeId(chosen, "minecraft:plains")
+                || isBiomeId(chosen, "minecraft:taiga")
+                || isBiomeId(chosen, "minecraft:old_growth_pine_taiga"))) {
             chosen = base;
         }
         String mangroveDecision = null;
