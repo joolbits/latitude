@@ -1126,8 +1126,12 @@ public final class LatitudeBiomes {
             return out;
         }
 
+        // Compute blended band index once; shared by river, ocean, and land so all three
+        // use the same 1408-block stochastic transition zone instead of a hard integer snap.
+        int blendedBandIndex = latitudeBandIndexWithBlend(blockX, blockZ, effectiveRadius, band, t);
+
         if (base.isIn(BiomeTags.IS_RIVER)) {
-            if (bandIndex >= 3) {
+            if (blendedBandIndex >= 3) {
                 try {
                     RegistryEntry<Biome> out = biome(biomeRegistry, "minecraft:frozen_river");
                     debugPick(blockX, blockZ, effectiveRadius, t, band, base, out, false, false, null);
@@ -1149,13 +1153,13 @@ public final class LatitudeBiomes {
         }
 
         if (base.isIn(BiomeTags.IS_OCEAN)) {
-            RegistryEntry<Biome> oceanPick = oceanByLatitudeBandOrBase(biomeRegistry, base, blockX, blockZ, bandIndex);
+            RegistryEntry<Biome> oceanPick = oceanByLatitudeBandOrBase(biomeRegistry, base, blockX, blockZ, blendedBandIndex);
             RegistryEntry<Biome> out = mushroomIslandOverride(biomeRegistry, oceanPick, blockX, blockZ);
             debugPick(blockX, blockZ, effectiveRadius, t, band, base, out, false, false, null);
             return out;
         }
 
-        int landBandIndex = latitudeBandIndexWithBlend(blockX, blockZ, effectiveRadius, band, t);
+        int landBandIndex = blendedBandIndex;
         boolean mountainNoiseLike = landBandIndex == BAND_TEMPERATE && isMountainLike(sampler, blockX, blockZ);
         boolean skipPreview = shouldSkipPreviewTerrain(callerContext);
         boolean hasReliableSurface = !skipPreview && generator != null && noiseConfig != null && heightView != null;
@@ -1439,8 +1443,12 @@ public final class LatitudeBiomes {
             return out;
         }
 
+        // Compute blended band index once; shared by river, ocean, and land so all three
+        // use the same 1408-block stochastic transition zone instead of a hard integer snap.
+        int blendedBandIndex = latitudeBandIndexWithBlend(blockX, blockZ, effectiveRadius, band, t);
+
         if (base.isIn(BiomeTags.IS_RIVER)) {
-            if (bandIndex >= 3) {
+            if (blendedBandIndex >= 3) {
                 RegistryEntry<Biome> frozen = entryById(biomePool, "minecraft:frozen_river");
                 RegistryEntry<Biome> out = frozen != null ? frozen : base;
                 debugPick(blockX, blockZ, effectiveRadius, t, band, base, out, false, false, null);
@@ -1453,13 +1461,13 @@ public final class LatitudeBiomes {
         }
 
         if (base.isIn(BiomeTags.IS_OCEAN)) {
-            RegistryEntry<Biome> oceanPick = oceanByLatitudeBandOrBase(biomePool, base, blockX, blockZ, bandIndex);
+            RegistryEntry<Biome> oceanPick = oceanByLatitudeBandOrBase(biomePool, base, blockX, blockZ, blendedBandIndex);
             RegistryEntry<Biome> out = mushroomIslandOverride(biomePool, oceanPick, blockX, blockZ);
             debugPick(blockX, blockZ, effectiveRadius, t, band, base, out, false, false, null);
             return out;
         }
 
-        int landBandIndex = latitudeBandIndexWithBlend(blockX, blockZ, effectiveRadius, band, t);
+        int landBandIndex = blendedBandIndex;
         boolean mountainNoiseLike = landBandIndex == BAND_TEMPERATE && isMountainLike(sampler, blockX, blockZ);
         boolean skipPreview = shouldSkipPreviewTerrain(callerContext);
         boolean hasReliableSurface = !skipPreview && generator != null && noiseConfig != null && heightView != null;
