@@ -62,6 +62,14 @@ public final class LatitudeBiomes {
         double stepFrac = stepFloat - baseStep;
         int step = applyTropicalStepDither(seed, blockX, blockZ, baseStep, stepFrac);
 
+        // Humidity-biased per-step diversion: humid patches within each ladder step
+        double humidity = subtropicalHumidityNoise(blockX, blockZ);
+        double humidThreshold = subtropicalHumidityThreshold(step);
+        if (humidity < humidThreshold) {
+            return pickFromWeightedTagsNoSwamp(biomes, base, blockX, blockZ, 110 + step, 0x5B70 + step,
+                    LAT_SUBTROPICAL_HUMID_PRIMARY, LAT_SUBTROPICAL_HUMID_SECONDARY, LAT_SUBTROPICAL_HUMID_ACCENT);
+        }
+
         RegistryEntry<Biome> pick = switch (step) {
             case 1 -> pickFromWeightedTagsNoSwamp(biomes, base, blockX, blockZ, 101, 0x7A11,
                     LAT_TRANS_ARID_TROPICS_1_PRIMARY, LAT_TRANS_ARID_TROPICS_1_SECONDARY, LAT_TRANS_ARID_TROPICS_1_ACCENT);
@@ -95,6 +103,14 @@ public final class LatitudeBiomes {
         int baseStep = clampInt((int) Math.floor(stepFloat), 0, 3);
         double stepFrac = stepFloat - baseStep;
         int step = applyTropicalStepDither(seed, blockX, blockZ, baseStep, stepFrac);
+
+        // Humidity-biased per-step diversion: humid patches within each ladder step
+        double humidity = subtropicalHumidityNoise(blockX, blockZ);
+        double humidThreshold = subtropicalHumidityThreshold(step);
+        if (humidity < humidThreshold) {
+            return pickFromWeightedTagsNoSwamp(biomes, base, blockX, blockZ, 110 + step, 0x5B70 + step,
+                    LAT_SUBTROPICAL_HUMID_PRIMARY, LAT_SUBTROPICAL_HUMID_SECONDARY, LAT_SUBTROPICAL_HUMID_ACCENT);
+        }
 
         RegistryEntry<Biome> pick = switch (step) {
             case 1 -> pickFromWeightedTagsNoSwamp(biomes, base, blockX, blockZ, 101, 0x7A11,
@@ -878,6 +894,10 @@ public final class LatitudeBiomes {
     private static final TagKey<Biome> LAT_TRANS_ARID_TROPICS_2_PRIMARY = TagKey.of(RegistryKeys.BIOME, Identifier.of("globe", "lat_trans_arid_tropics_2_primary"));
     private static final TagKey<Biome> LAT_TRANS_ARID_TROPICS_2_SECONDARY = TagKey.of(RegistryKeys.BIOME, Identifier.of("globe", "lat_trans_arid_tropics_2_secondary"));
     private static final TagKey<Biome> LAT_TRANS_ARID_TROPICS_2_ACCENT = TagKey.of(RegistryKeys.BIOME, Identifier.of("globe", "lat_trans_arid_tropics_2_accent"));
+
+    private static final TagKey<Biome> LAT_SUBTROPICAL_HUMID_PRIMARY = TagKey.of(RegistryKeys.BIOME, Identifier.of("globe", "lat_subtropical_humid_primary"));
+    private static final TagKey<Biome> LAT_SUBTROPICAL_HUMID_SECONDARY = TagKey.of(RegistryKeys.BIOME, Identifier.of("globe", "lat_subtropical_humid_secondary"));
+    private static final TagKey<Biome> LAT_SUBTROPICAL_HUMID_ACCENT = TagKey.of(RegistryKeys.BIOME, Identifier.of("globe", "lat_subtropical_humid_accent"));
 
     private static final TagKey<Biome> LAT_TEMPERATE_PRIMARY = TagKey.of(RegistryKeys.BIOME, Identifier.of("globe", "lat_temperate_primary"));
     private static final TagKey<Biome> LAT_TEMPERATE_SECONDARY = TagKey.of(RegistryKeys.BIOME, Identifier.of("globe", "lat_temperate_secondary"));
@@ -1714,6 +1734,15 @@ public final class LatitudeBiomes {
         int baseStep = clampInt((int) Math.floor(stepFloat), 0, 3);
         double stepFrac = stepFloat - baseStep;
         int step = applyTropicalStepDither(seed, blockX, blockZ, baseStep, stepFrac);
+
+        // Humidity-biased per-step diversion: humid patches within each ladder step
+        double humidity = subtropicalHumidityNoise(blockX, blockZ);
+        double humidThreshold = subtropicalHumidityThreshold(step);
+        if (humidity < humidThreshold) {
+            return pickFromWeightedTags(biomes, base, blockX, blockZ, 110 + step, 0x5B70 + step,
+                    LAT_SUBTROPICAL_HUMID_PRIMARY, LAT_SUBTROPICAL_HUMID_SECONDARY, LAT_SUBTROPICAL_HUMID_ACCENT);
+        }
+
         boolean plateauLike = step == 2 && t <= 0.325 && stepFrac >= 0.75;
 
         if (step == 2) {
@@ -1801,6 +1830,15 @@ public final class LatitudeBiomes {
         int baseStep = clampInt((int) Math.floor(stepFloat), 0, 3);
         double stepFrac = stepFloat - baseStep;
         int step = applyTropicalStepDither(seed, blockX, blockZ, baseStep, stepFrac);
+
+        // Humidity-biased per-step diversion: humid patches within each ladder step
+        double humidity = subtropicalHumidityNoise(blockX, blockZ);
+        double humidThreshold = subtropicalHumidityThreshold(step);
+        if (humidity < humidThreshold) {
+            return pickFromWeightedTags(biomes, base, blockX, blockZ, 110 + step, 0x5B70 + step,
+                    LAT_SUBTROPICAL_HUMID_PRIMARY, LAT_SUBTROPICAL_HUMID_SECONDARY, LAT_SUBTROPICAL_HUMID_ACCENT);
+        }
+
         boolean plateauLike = step == 2 && t <= 0.325 && stepFrac >= 0.75;
 
         if (step == 2) {
@@ -2466,6 +2504,21 @@ public final class LatitudeBiomes {
         return ValueNoise2D.sampleBlocks(WORLD_SEED ^ TROPICAL_OPENNESS_SALT, blockX, blockZ, 1792);
     }
 
+    private static final long SUBTROPICAL_HUMIDITY_SALT = 0xDECAF_50B7_0001L;
+
+    private static double subtropicalHumidityNoise(int blockX, int blockZ) {
+        return ValueNoise2D.sampleBlocks(WORLD_SEED ^ SUBTROPICAL_HUMIDITY_SALT, blockX, blockZ, 1536);
+    }
+
+    private static double subtropicalHumidityThreshold(int step) {
+        return switch (step) {
+            case 1 -> 0.40;
+            case 2 -> 0.45;
+            case 3 -> 0.35;
+            default -> 0.0; // step 0 = desert core, always arid
+        };
+    }
+
     private static double softenedTropicalLadderT(long seed, int blockX, int blockZ, double ladderT) {
         int chunkX = blockX >> 4;
         int chunkZ = Math.abs(blockZ) >> 4;
@@ -2875,7 +2928,10 @@ public final class LatitudeBiomes {
                     LAT_TRANS_ARID_TROPICS_1_ACCENT,
                     LAT_TRANS_ARID_TROPICS_2_PRIMARY,
                     LAT_TRANS_ARID_TROPICS_2_SECONDARY,
-                    LAT_TRANS_ARID_TROPICS_2_ACCENT);
+                    LAT_TRANS_ARID_TROPICS_2_ACCENT,
+                    LAT_SUBTROPICAL_HUMID_PRIMARY,
+                    LAT_SUBTROPICAL_HUMID_SECONDARY,
+                    LAT_SUBTROPICAL_HUMID_ACCENT);
             case BAND_TEMPERATE -> List.of(
                     LAT_TEMPERATE_PRIMARY,
                     LAT_TEMPERATE_SECONDARY,
