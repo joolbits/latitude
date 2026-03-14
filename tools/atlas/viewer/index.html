@@ -1762,7 +1762,50 @@ const btnClearPaletteSelection = $('#btn-clear-palette-selection');
  };
  
  const LEGACY_BEACH_RED = [235, 72, 63];
- const BEACH_SAND = [231, 215, 165];
+const BEACH_SAND = [231, 215, 165];
+const BIOME_COLOR_OVERRIDES = new Map([
+  ['minecraft:warm_ocean', '#58D6FF'],
+  ['minecraft:lukewarm_ocean', '#2CB7FF'],
+  ['minecraft:deep_lukewarm_ocean', '#0077CC'],
+  ['minecraft:ocean', '#355CFF'],
+  ['minecraft:deep_ocean', '#182B88'],
+  ['minecraft:cold_ocean', '#79C8FF'],
+  ['minecraft:deep_cold_ocean', '#4065B8'],
+  ['minecraft:frozen_ocean', '#BFEFFF'],
+  ['minecraft:deep_frozen_ocean', '#7EA8D6'],
+  ['minecraft:river', '#3F88FF'],
+  ['minecraft:frozen_river', '#D8F3FF'],
+
+  ['minecraft:savanna', '#B7C85A'],
+  ['minecraft:savanna_plateau', '#93A64A'],
+  ['minecraft:windswept_savanna', '#C4B15A'],
+  ['minecraft:desert', '#D9B15B'],
+  ['minecraft:badlands', '#C96E3A'],
+  ['minecraft:wooded_badlands', '#A85B33'],
+  ['minecraft:eroded_badlands', '#E08A52'],
+
+  ['minecraft:forest', '#3F8F4E'],
+  ['minecraft:birch_forest', '#7CCB6B'],
+  ['minecraft:old_growth_birch_forest', '#A1D67C'],
+  ['minecraft:dark_forest', '#245A2A'],
+  ['minecraft:flower_forest', '#D06BCF'],
+  ['minecraft:pale_garden', '#B7B7C9'],
+  ['minecraft:cherry_grove', '#F2A7C6'],
+
+  ['minecraft:snowy_plains', '#F2FAFF'],
+  ['minecraft:snowy_taiga', '#CFE7E8'],
+  ['minecraft:grove', '#7EA590'],
+  ['minecraft:frozen_peaks', '#DDE8F5'],
+  ['minecraft:jagged_peaks', '#8B8F99'],
+  ['minecraft:snowy_slopes', '#EAF3F8'],
+  ['minecraft:ice_spikes', '#F8FDFF'],
+  ['minecraft:meadow', '#8FD36C'],
+  ['minecraft:stony_peaks', '#8F7D73'],
+  ['minecraft:windswept_hills', '#8A9272'],
+  ['minecraft:windswept_gravelly_hills', '#A29A90'],
+  ['minecraft:windswept_forest', '#4D7E57'],
+  ['minecraft:stony_shore', '#7F7F7F']
+]);
 const GENERATION_PRESETS = {
   potato: { label: 'Potato', resolution: 128 },
   low: { label: 'Low', resolution: 64 },
@@ -3760,6 +3803,11 @@ function normalizeBiomePaletteForDisplay(rawBiomes) {
   const biomes = (rawBiomes || []).map((b) => {
     if (!b || !Array.isArray(b.color)) return b;
     const id = String(b.id || '').toLowerCase();
+    const overrideHex = BIOME_COLOR_OVERRIDES.get(id);
+    if (overrideHex) {
+      const [r, g, bl] = hexToRgb(overrideHex);
+      return { ...b, color: [r, g, bl] };
+    }
     const isBeachFamily = id.includes('beach') || id.includes('shore') || id.includes('coast');
     const isLegacyRed = b.color.length >= 3
       && b.color[0] === LEGACY_BEACH_RED[0]
