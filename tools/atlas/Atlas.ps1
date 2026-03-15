@@ -3,7 +3,10 @@ param(
   [string]$Size = "small",
   [int]$Step = 16,
   [switch]$EmitHeight = $false,
-  [switch]$NoViewerOpen = $false
+  [switch]$NoViewerOpen = $false,
+  [switch]$IncludeRuggedness = $false,
+  [switch]$GenerateRuggednessOnly = $false,
+  [string]$Run = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -36,12 +39,57 @@ New-Item -ItemType Directory -Force -Path $runDir | Out-Null
   emitHeight = [bool]$EmitHeight
 } | ConvertTo-Json -Depth 5 | Out-File (Join-Path $runDir "run_manifest.json") -Encoding utf8
 
+# ── Ruggedness-only add-on mode ─────────────────────────────────────────────
+if ($GenerateRuggednessOnly) {
+  if ([string]::IsNullOrEmpty($Run)) {
+    throw "-Run <timestamp-folder> is required with -GenerateRuggednessOnly"
+  }
+  $existingRunDir = Join-Path $root "run-headless\latdev\atlas-runs\$Run"
+  if (-not (Test-Path $existingRunDir)) {
+    throw "Run folder not found: $existingRunDir"
+  }
+  $manifest = Get-Content (Join-Path $existingRunDir "run_manifest.json") | ConvertFrom-Json
+  $rSeed = $manifest.seed
+  $rSize = $manifest.size
+  $rStep = $manifest.step
+
+  Write-Host "[atlas] Adding ruggedness to run $Run (seed=$rSeed size=$rSize step=$rStep)"
+
+  .\gradlew.bat --stop | Out-Null
+  .\gradlew.bat compileJava --rerun-tasks --no-daemon
+
+  .\gradlew.bat --no-daemon --info --stacktrace runBiomePreview `
+      --args="--seed $rSeed --size $rSize --step $rStep --layers ruggedness"
+
+  # Copy only ruggedness.png into the existing run folder; preserve all other files.
+  $rSeedDir = Join-Path $root ("run\latdev\atlas\seed_$rSeed")
+  $rStepDir = Get-ChildItem $rSeedDir -Directory -Recurse |
+      Where-Object { $_.Name -ieq ("step$rStep") } |
+      Sort-Object LastWriteTime |
+      Select-Object -Last 1
+  if ($rStepDir) {
+    $src = Join-Path $rStepDir.FullName "ruggedness.png"
+    if (Test-Path $src) {
+      $dst = Join-Path $existingRunDir ("step${rStep}_ruggedness.png")
+      Copy-Item $src -Destination $dst -Force
+      Write-Host "[atlas] Wrote $dst"
+    } else {
+      Write-Warning "ruggedness.png not found in step dir $($rStepDir.FullName)"
+    }
+  } else {
+    Write-Warning "No step$rStep dir found under $rSeedDir"
+  }
+  exit 0
+}
+# ── End ruggedness-only ──────────────────────────────────────────────────────
+
 # Build once (so export reflects current code)
 .\gradlew.bat --stop | Out-Null
 .\gradlew.bat clean build -x test
 
 # Run exporter
-$args = "--seed $Seed --size $Size --step $Step --emitBiomeIndex true"
+$args = "--seed $Seed --size $Size --step $Step --emitBiomeIndex true --bundle"
+if ($IncludeRuggedness) { $args += " --ruggedness true" }
 if ($EmitHeight) { $args += " --emitHeight" }
 
 .\gradlew.bat --no-daemon --info --stacktrace runBiomePreview --args="$args"

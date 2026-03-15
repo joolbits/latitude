@@ -69,6 +69,8 @@ public final class BiomePreviewExporter {
                                       Path runDirectory,
                                       long atlasSeed,
                                       ExportOptions options) throws IOException {
+        System.out.println("[LAT][ATLAS_TRACE] phase=export-start ruggednessMode=constant-bypass");
+
         long startNanos = System.nanoTime();
         ExportOptions effectiveOptions = options != null ? options : ExportOptions.singleBiome();
         EnumSet<Layer> layers = effectiveOptions.layers();
@@ -228,8 +230,7 @@ public final class BiomePreviewExporter {
 
                 if (renderRuggedness &&
                         noiseGen instanceof net.minecraft.world.gen.chunk.NoiseChunkGenerator) {
-                    int delta = com.example.globe.world.LatitudeBiomes.previewRobustDelta(
-                            noiseGen, noiseConfig, world, blockX, blockZ);
+                    int delta = 0;
                     images.get(Layer.RUGGEDNESS).setRGB(imageX, imageZ, colorForRuggedness(delta));
                 }
             }
@@ -273,6 +274,8 @@ public final class BiomePreviewExporter {
             }
             writeBiomePalette(outputDir.resolve("biome_palette.json"), biomeIndices);
         }
+
+        System.out.println("[LAT][ATLAS_TRACE] phase=export-complete ruggednessMode=constant-bypass");
 
         int inventoryDiscoveryStep = inventoryDiscoveryStep(stepBlocks);
         BiomeSamplerTools.InventoryReport inventoryReport = needsBiomeSampling
@@ -1469,7 +1472,7 @@ public final class BiomePreviewExporter {
 
         public static ExportOptions bundle() {
             return new ExportOptions(
-                    EnumSet.of(Layer.BIOMES, Layer.BANDS, Layer.TEMPERATURE, Layer.HUMIDITY, Layer.CONTINENTALNESS, Layer.RUGGEDNESS),
+                    EnumSet.of(Layer.BIOMES, Layer.BANDS, Layer.TEMPERATURE, Layer.HUMIDITY, Layer.CONTINENTALNESS),
                     EnumSet.noneOf(Overlay.class),
                     List.of(),
                     true,
