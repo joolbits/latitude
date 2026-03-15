@@ -197,6 +197,42 @@ public final class LatitudeBiomes {
         }
     }
 
+    private static boolean shouldSkipSavannaGate(String callerContext) {
+        if (callerContext == null) {
+            return false;
+        }
+        String ctx = callerContext.trim().toUpperCase(java.util.Locale.ROOT);
+        if (DEBUG_SKIP_SAVANNA_GATE && ("SOURCE".equals(ctx) || "MIXIN".equals(ctx))) {
+            return true;
+        }
+        if (DEBUG_SKIP_SAVANNA_GATE_MIXIN && "MIXIN".equals(ctx)) {
+            return true;
+        }
+        return false;
+    }
+
+    private static void logSavannaGateSkip(String callerContext,
+                                           int blockX,
+                                           int blockZ,
+                                           String incomingBiomeId,
+                                           int landBandIndex,
+                                           int robustDelta) {
+        if (!DEBUG_SKIP_SAVANNA_GATE && !DEBUG_SKIP_SAVANNA_GATE_MIXIN) {
+            return;
+        }
+        int skips = SAVANNA_GATE_DEBUG_SKIPS.incrementAndGet();
+        if (skips <= 10 || skips % 2000 == 0) {
+            LOGGER.info("[Latitude][SpawnGate] SKIPPED total={} x={} z={} band={} incoming={} robust={} context={}",
+                    skips,
+                    blockX,
+                    blockZ,
+                    landBandIndex,
+                    incomingBiomeId,
+                    robustDelta,
+                    callerContext);
+        }
+    }
+
     private static RegistryEntry<Biome> pickTemperateUplandBiome(Collection<RegistryEntry<Biome>> biomes, int blockX, int blockZ) {
         int poolSize = TEMPERATE_UPLAND_BIOMES.length;
         if (poolSize == 0) {
@@ -304,6 +340,9 @@ public final class LatitudeBiomes {
     private static final boolean DEBUG_MANGROVE_INVITE = Boolean.getBoolean("latitude.debugMangroveInvite");
     private static final boolean DEBUG_SPARSE_JUNGLE_AUDIT = Boolean.getBoolean("latitude.debug.sparseJungleAudit");
     private static final boolean DEBUG_SAVANNA_GATE_AUDIT = Boolean.getBoolean("latitude.debug.savannaGateAudit");
+    private static final boolean DEBUG_SAVANNA_SPAWN_GATE = Boolean.getBoolean("latitude.debugSpawnGate");
+    private static final boolean DEBUG_SKIP_SAVANNA_GATE = Boolean.getBoolean("latitude.debugSkipSavannaGate");
+    private static final boolean DEBUG_SKIP_SAVANNA_GATE_MIXIN = Boolean.getBoolean("latitude.debugSkipSavannaGateMixin");
     private static final boolean DEBUG_WARM_POOL_AUDIT = Boolean.getBoolean("latitude.debug.warmPoolAudit")
             || "true".equalsIgnoreCase(System.getenv("LATITUDE_DEBUG_WARM_POOL_AUDIT"));
     private static final long WARM_POOL_AUDIT_LOG_EVERY = Long.getLong("latitude.warmPoolAudit.logEvery", 8192L);
@@ -329,6 +368,10 @@ public final class LatitudeBiomes {
     private static final AtomicInteger SAVANNA_GATE_REASON_HIGH = new AtomicInteger();
     private static final AtomicInteger SAVANNA_GATE_REASON_LOW = new AtomicInteger();
     private static final AtomicInteger SAVANNA_GATE_REASON_DEADBAND = new AtomicInteger();
+    private static final AtomicInteger SAVANNA_GATE_DEBUG_TOTAL = new AtomicInteger();
+    private static final AtomicInteger SAVANNA_GATE_DEBUG_SOURCE = new AtomicInteger();
+    private static final AtomicInteger SAVANNA_GATE_DEBUG_SKIPS = new AtomicInteger();
+    private static final it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap SAVANNA_GATE_SEEN = new it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap();
     private static final AtomicInteger MANGROVE_EVAL_AUDIT_COUNT = new AtomicInteger();
     private static final java.util.concurrent.atomic.AtomicInteger MANGROVE_EVAL_AUDIT_N =
             new java.util.concurrent.atomic.AtomicInteger(0);
@@ -529,6 +572,226 @@ public final class LatitudeBiomes {
                 noiseMountain, preview.centerHeight, seaLevel, preview.robustDelta, mountainLike,
                 incoming, selected, reason);
     }
+
+    // ---- Biome explainer diagnostics ----
+
+    /**
+     * Immutable diagnostic snapshot of the signals that drive biome selection at a given position.
+     * All fields use sentinel values (Double.NaN, Integer.MIN_VALUE, -1) rather than zero when a
+     * signal was unavailable, to avoid confusing "not sampled" with a legitimate low reading.
+     */
+    public record BiomeDiagnostics(
+            int blockX,
+            int blockY,
+            int blockZ,
+            String finalBiomeId,
+            double latDeg,
+            int bandIndex,
+            String bandLabel,
+            double humidity,
+            double openness,
+            double compositionBias,
+            double continentalness,
+            double erosion,
+            double weirdness,
+            int oceanDist,
+            boolean coastalHint,
+            boolean mountainNoiseLike,
+            boolean mountainLike,
+            boolean terrainPreviewAvailable,
+            int centerHeight,
+            int robustDelta,
+            double uplandT,
+            String summaryLine,
+            String driversBlock) {
+    }
+
+    /**
+     * Samples all observable signals at (blockX, blockZ, blockY) and returns a {@link BiomeDiagnostics}
+     * that explains the major drivers of biome selection. This method is read-only; it does not
+     * run the biome picker or change any selection logic.
+     */
+    public static BiomeDiagnostics explainBiomeAt(
+            String finalBiomeId,
+            int blockX, int blockZ, int blockY,
+            int borderRadius,
+            MultiNoiseUtil.MultiNoiseSampler sampler,
+            NoiseChunkGenerator generator,
+            NoiseConfig noiseConfig,
+            HeightLimitView heightView) {
+
+        // --- latitude / band ---
+        int activeRadius = ACTIVE_RADIUS_BLOCKS;
+        boolean overrideDisabled = Boolean.getBoolean("latitude.disableRadiusOverride");
+        int effectiveRadius = (!overrideDisabled && activeRadius > 0) ? activeRadius : borderRadius;
+        if (effectiveRadius <= 0) effectiveRadius = 1;
+
+        int lat = Math.abs(blockZ);
+        double tBase = (double) lat / (double) effectiveRadius;
+        double t = applyBoundaryJitter(blockX, blockZ, effectiveRadius, tBase);
+        com.example.globe.util.LatitudeBands.Band band = bandForAbsLatFraction(t);
+        int bandIndex = latitudeBandIndexWithBlend(blockX, blockZ, effectiveRadius, band, t);
+        double latDeg = tBase * 90.0;
+        String bandLabel = com.example.globe.util.LatitudeBands.Band.values()[
+                Math.max(0, Math.min(4, bandIndex))].displayName();
+
+        // --- tropical/subtropical climate signals (band-conditional) ---
+        double humidity = Double.NaN;
+        double openness = Double.NaN;
+        double compositionBias = Double.NaN;
+        if (bandIndex == BAND_SUBTROPICAL) {
+            humidity = subtropicalHumidityNoise(blockX, blockZ);
+        }
+        if (bandIndex <= BAND_SUBTROPICAL) {
+            openness = tropicalOpennessNoise(blockX, blockZ);
+            compositionBias = tropicalCompositionBias(WORLD_SEED, blockX, blockZ);
+        }
+
+        // --- vanilla noise (sampler-conditional) ---
+        double continentalness = Double.NaN;
+        double erosion = Double.NaN;
+        double weirdness = Double.NaN;
+        if (sampler != null) {
+            int noiseX = blockX >> 2;
+            int noiseZ = blockZ >> 2;
+            MultiNoiseUtil.NoiseValuePoint p = sampler.sample(noiseX, SURFACE_CLASSIFY_Y >> 2, noiseZ);
+            continentalness = MultiNoiseUtil.toFloat(p.continentalnessNoise());
+            erosion = MultiNoiseUtil.toFloat(p.erosionNoise());
+            weirdness = MultiNoiseUtil.toFloat(p.weirdnessNoise());
+        }
+
+        // --- ocean distance ---
+        int oceanDist = sampler != null ? oceanDistanceBlocks(blockX, blockZ, sampler) : -1;
+        boolean coastalHint = oceanDist >= 0 && oceanDist <= MANGROVE_COASTAL_MAX_BLOCKS;
+
+        // --- terrain preview (generator-conditional) ---
+        boolean terrainPreviewAvailable = generator != null && noiseConfig != null && heightView != null;
+        int centerHeight = Integer.MIN_VALUE;
+        int robustDelta = Integer.MIN_VALUE;
+        if (terrainPreviewAvailable) {
+            PreviewTerrain preview = previewTerrain(generator, noiseConfig, heightView, blockX, blockZ);
+            centerHeight = preview.centerHeight;
+            robustDelta = preview.robustDelta;
+        }
+
+        // --- mountain signals ---
+        boolean mountainNoiseLike = sampler != null && isMountainLike(sampler, blockX, blockZ);
+        boolean mountainLike;
+        if (terrainPreviewAvailable) {
+            int seaLevel = previewSeaLevel(generator);
+            mountainLike = mountainNoiseLike
+                    && (centerHeight >= seaLevel + PREVIEW_HEIGHT_MARGIN_BLOCKS / 2
+                        || robustDelta >= WINDSWEPT_RUGGED_THRESH);
+        } else {
+            mountainLike = false;
+        }
+
+        // --- upland ---
+        double uplandT = uplandRampForY(blockY);
+
+        // --- summary line ---
+        StringBuilder summary = new StringBuilder();
+        switch (bandIndex) {
+            case BAND_TROPICAL -> {
+                if (!Double.isNaN(openness)) {
+                    if (openness >= 0.90) {
+                        summary.append("Very open tropical conditions; terrain signals strongly favor open-ground biomes over closed canopy.");
+                    } else if (openness >= 0.76) {
+                        summary.append("Mixed tropical canopy structure; signals support a blend of open and wooded tropical biomes.");
+                    } else {
+                        summary.append("Closed tropical conditions; low openness signal favors denser canopy outcomes.");
+                    }
+                } else {
+                    summary.append("Tropical conditions; openness signal unavailable.");
+                }
+            }
+            case BAND_SUBTROPICAL -> {
+                if (!Double.isNaN(humidity)) {
+                    if (humidity >= 0.40) {
+                        summary.append("More moisture-supported subtropical conditions; less arid biome outcomes are favored here.");
+                    } else {
+                        summary.append("Drier subtropical conditions; arid or semi-arid biome pressure is stronger here.");
+                    }
+                } else {
+                    summary.append("Subtropical conditions; humidity signal unavailable.");
+                }
+            }
+            case BAND_TEMPERATE -> {
+                if (mountainLike) {
+                    summary.append("Rugged temperate terrain; elevation and relief push this area toward hill, mountain, or wind-exposed outcomes.");
+                } else if (terrainPreviewAvailable && robustDelta >= 6) {
+                    summary.append("Hilly temperate terrain; moderate relief is influencing the biome outcome.");
+                } else {
+                    summary.append("Gentler temperate terrain; standard wooded/open temperate outcomes are more likely here.");
+                }
+            }
+            case BAND_SUBPOLAR -> summary.append("Cold shoulder conditions; boreal and subpolar biome pressure is active here.");
+            default -> summary.append("Polar conditions dominate here; frozen biomes are strongly favored.");
+        }
+        if (coastalHint) {
+            summary.append(" Coastal proximity is likely influencing this spot.");
+        }
+        if (mountainLike && bandIndex != BAND_TEMPERATE) {
+            summary.append(" Nearby relief is a major factor.");
+        }
+        String summaryLine = summary.toString();
+
+        // --- drivers block ---
+        String naPreview = "n/a(preview)";
+        String naBand = "n/a(band)";
+        String centerHeightStr = terrainPreviewAvailable ? Integer.toString(centerHeight) : naPreview;
+        String robustDeltaStr = terrainPreviewAvailable ? Integer.toString(robustDelta) : naPreview;
+        String mountainLikeStr = terrainPreviewAvailable ? Boolean.toString(mountainLike) : naPreview;
+        String humidityStr = !Double.isNaN(humidity) ? String.format(java.util.Locale.ROOT, "%.3f", humidity) : naBand;
+        String opennessStr = !Double.isNaN(openness) ? String.format(java.util.Locale.ROOT, "%.3f", openness) : naBand;
+        String compositionBiasStr = !Double.isNaN(compositionBias) ? String.format(java.util.Locale.ROOT, "%.3f", compositionBias) : naBand;
+        String contStr = !Double.isNaN(continentalness) ? String.format(java.util.Locale.ROOT, "%.3f", continentalness) : "n/a";
+        String eroStr = !Double.isNaN(erosion) ? String.format(java.util.Locale.ROOT, "%.3f", erosion) : "n/a";
+        String weirdStr = !Double.isNaN(weirdness) ? String.format(java.util.Locale.ROOT, "%.3f", weirdness) : "n/a";
+        String oceanDistStr = oceanDist >= 0 ? Integer.toString(oceanDist) : "n/a";
+        String driversBlock = String.format(java.util.Locale.ROOT,
+                "  pos=%d,%d,%d  finalBiome=%s%n"
+                + "  latDeg=%.2f  band=%s(idx=%d)%n"
+                + "  oceanDist=%s  coastalHint=%s(<=MANGROVE_COASTAL_MAX_BLOCKS)%n"
+                + "  cont=%s  ero=%s  weird=%s%n"
+                + "  terrainPreview=%s  centerHeight=%s  robustDelta=%s%n"
+                + "  mountainNoiseLike=%s  mountainLike=%s%n"
+                + "  humidity=%s  openness=%s  compositionBias=%s%n"
+                + "  uplandT=%.3f",
+                blockX, blockY, blockZ, finalBiomeId,
+                latDeg, bandLabel, bandIndex,
+                oceanDistStr, coastalHint,
+                contStr, eroStr, weirdStr,
+                terrainPreviewAvailable ? "available" : "unavailable", centerHeightStr, robustDeltaStr,
+                mountainNoiseLike, mountainLikeStr,
+                humidityStr, opennessStr, compositionBiasStr,
+                uplandT);
+
+        return new BiomeDiagnostics(
+                blockX, blockY, blockZ,
+                finalBiomeId,
+                latDeg,
+                bandIndex,
+                bandLabel,
+                humidity,
+                openness,
+                compositionBias,
+                continentalness,
+                erosion,
+                weirdness,
+                oceanDist,
+                coastalHint,
+                mountainNoiseLike,
+                mountainLike,
+                terrainPreviewAvailable,
+                centerHeight,
+                robustDelta,
+                uplandT,
+                summaryLine,
+                driversBlock);
+    }
+
+    // ---- end biome explainer diagnostics ----
 
     private static PreviewTerrain previewTerrain(NoiseChunkGenerator generator, NoiseConfig noiseConfig, HeightLimitView heightView,
                                                  int blockX, int blockZ) {
@@ -782,13 +1045,54 @@ public final class LatitudeBiomes {
         }
     }
 
+    private static void logSavannaSpawnGateDebug(String callerContext,
+                                                 int blockX,
+                                                 int blockZ,
+                                                 String incomingBiomeId,
+                                                 String outgoingBiomeId,
+                                                 int landBandIndex,
+                                                 String reason) {
+        if (!DEBUG_SAVANNA_SPAWN_GATE) {
+            return;
+        }
+        int total = SAVANNA_GATE_DEBUG_TOTAL.incrementAndGet();
+        boolean sourceCtx = callerContext != null && "SOURCE".equalsIgnoreCase(callerContext);
+        if (sourceCtx) {
+            SAVANNA_GATE_DEBUG_SOURCE.incrementAndGet();
+        }
+        long key = ((long) blockX << 32) ^ (blockZ & 0xffffffffL);
+        int repeats = SAVANNA_GATE_SEEN.getOrDefault(key, 0) + 1;
+        SAVANNA_GATE_SEEN.put(key, repeats);
+        if (total <= 25 || total % 2000 == 0) {
+            LOGGER.info("[Latitude][SpawnGate] total={} source={} repeat={} x={} z={} band={} incoming={} outgoing={} reason={} context={}",
+                    total,
+                    SAVANNA_GATE_DEBUG_SOURCE.get(),
+                    repeats,
+                    blockX,
+                    blockZ,
+                    landBandIndex,
+                    incomingBiomeId,
+                    outgoingBiomeId,
+                    reason,
+                    callerContext);
+        }
+    }
+
     private static RegistryEntry<Biome> applySavannaWindsweptGate(Registry<Biome> biomes,
                                                                    RegistryEntry<Biome> out,
                                                                    int robustDelta,
-                                                                   boolean upland) {
+                                                                   boolean upland,
+                                                                   int blockX,
+                                                                   int blockZ,
+                                                                   String callerContext,
+                                                                   int landBandIndex) {
         int cutoff = WINDSWEPT_RUGGED_THRESH + WINDSWEPT_RUGGED_HYST;
         boolean savannaFamily = isSavannaFamily(out);
         String incomingBiomeId = savannaFamily ? savannaIncomingBiomeId(out) : biomeId(out);
+        if (shouldSkipSavannaGate(callerContext)) {
+            logSavannaGateSkip(callerContext, blockX, blockZ, incomingBiomeId, landBandIndex, robustDelta);
+            return out;
+        }
         if (!savannaFamily || robustDelta < cutoff) {
             auditSavannaGate(robustDelta, upland, savannaFamily, incomingBiomeId, incomingBiomeId);
             return out;
@@ -796,6 +1100,7 @@ public final class LatitudeBiomes {
         String reason = savannaGateReason(robustDelta);
         String selectedBiomeId = savannaGateBiomeId(incomingBiomeId, robustDelta);
         logSavannaGateCounters(incomingBiomeId, selectedBiomeId, reason);
+        logSavannaSpawnGateDebug(callerContext, blockX, blockZ, incomingBiomeId, selectedBiomeId, landBandIndex, reason);
         auditSavannaGate(robustDelta, upland, true, incomingBiomeId, selectedBiomeId);
         return biome(biomes, selectedBiomeId);
     }
@@ -803,10 +1108,18 @@ public final class LatitudeBiomes {
     private static RegistryEntry<Biome> applySavannaWindsweptGate(Collection<RegistryEntry<Biome>> biomes,
                                                                    RegistryEntry<Biome> out,
                                                                    int robustDelta,
-                                                                   boolean upland) {
+                                                                   boolean upland,
+                                                                   int blockX,
+                                                                   int blockZ,
+                                                                   String callerContext,
+                                                                   int landBandIndex) {
         int cutoff = WINDSWEPT_RUGGED_THRESH + WINDSWEPT_RUGGED_HYST;
         boolean savannaFamily = isSavannaFamily(out);
         String incomingBiomeId = savannaFamily ? savannaIncomingBiomeId(out) : biomeId(out);
+        if (shouldSkipSavannaGate(callerContext)) {
+            logSavannaGateSkip(callerContext, blockX, blockZ, incomingBiomeId, landBandIndex, robustDelta);
+            return out;
+        }
         if (!savannaFamily || robustDelta < cutoff) {
             auditSavannaGate(robustDelta, upland, savannaFamily, incomingBiomeId, incomingBiomeId);
             return out;
@@ -815,8 +1128,10 @@ public final class LatitudeBiomes {
         String selectedBiomeId = savannaGateBiomeId(incomingBiomeId, robustDelta);
         RegistryEntry<Biome> selected = entryById(biomes, selectedBiomeId);
         RegistryEntry<Biome> returning = selected != null ? selected : out;
-        logSavannaGateCounters(incomingBiomeId, selected != null ? selectedBiomeId : incomingBiomeId, reason);
-        auditSavannaGate(robustDelta, upland, true, incomingBiomeId, selected != null ? selectedBiomeId : incomingBiomeId);
+        String outgoing = selected != null ? selectedBiomeId : incomingBiomeId;
+        logSavannaGateCounters(incomingBiomeId, outgoing, reason);
+        logSavannaSpawnGateDebug(callerContext, blockX, blockZ, incomingBiomeId, outgoing, landBandIndex, reason);
+        auditSavannaGate(robustDelta, upland, true, incomingBiomeId, outgoing);
         return returning;
     }
 
@@ -1266,6 +1581,7 @@ public final class LatitudeBiomes {
         RegistryEntry<Biome> out = chosen;
         boolean finalSavannaRegion = false;
         boolean invitedMangrove = false;
+        boolean sourceContext = "SOURCE".equalsIgnoreCase(callerContext);
         if (!forcedBadlands) {
             boolean oceanChosen = chosen != null && chosen.isIn(BiomeTags.IS_OCEAN);
             if (oceanChosen) {
@@ -1274,95 +1590,101 @@ public final class LatitudeBiomes {
                 safe = chosen;
                 out = chosen;
             } else {
-            if (shouldTryMangroveOverride(chosen, landBandIndex)) {
-                MangroveDecision decision = evaluateMangrove(blockX, blockZ, preview.centerHeight, seaLevel, preview.robustDelta, sampler, nearOcean, allowSurfaceGates, heightView);
-                mangroveDecision = decision.logLabel();
-                if (decision.allow()) {
-                    try {
-                        chosen = biome(biomeRegistry, MANGROVE_ID);
-                        if (DEBUG_MANGROVE_ORIGIN) {
-                            LOGGER.info("[latdev] mangroveSelected x={} z={} surfaceY={} sea={} robustDelta={} origin={} reason={}",
-                                    blockX, blockZ, preview.centerHeight, seaLevel, preview.robustDelta,
-                                    mangroveOrigin(true, false), mangroveDecision);
+                if (!sourceContext && shouldTryMangroveOverride(chosen, landBandIndex)) {
+                    MangroveDecision decision = evaluateMangrove(blockX, blockZ, preview.centerHeight, seaLevel, preview.robustDelta, sampler, nearOcean, allowSurfaceGates, heightView);
+                    mangroveDecision = decision.logLabel();
+                    if (decision.allow()) {
+                        try {
+                            chosen = biome(biomeRegistry, MANGROVE_ID);
+                            if (DEBUG_MANGROVE_ORIGIN) {
+                                LOGGER.info("[latdev] mangroveSelected x={} z={} surfaceY={} sea={} robustDelta={} origin={} reason={}",
+                                        blockX, blockZ, preview.centerHeight, seaLevel, preview.robustDelta,
+                                        mangroveOrigin(true, false), mangroveDecision);
+                            }
+                        } catch (Throwable ignored) {
+                            // keep current choice
                         }
-                    } catch (Throwable ignored) {
-                        // keep current choice
+                    }
+                } else if (!sourceContext && isMangroveCandidate(chosen)) {
+                    MangroveDecision decision = evaluateMangrove(blockX, blockZ, preview.centerHeight, seaLevel, preview.robustDelta, sampler, nearOcean, allowSurfaceGates, heightView);
+                    mangroveDecision = decision.logLabel();
+                    if (!decision.allow()) {
+                        chosen = pickMangroveFallback(biomeRegistry, base, blockX, blockZ, t, landBandIndex);
                     }
                 }
-            } else if (isMangroveCandidate(chosen)) {
-                MangroveDecision decision = evaluateMangrove(blockX, blockZ, preview.centerHeight, seaLevel, preview.robustDelta, sampler, nearOcean, allowSurfaceGates, heightView);
-                mangroveDecision = decision.logLabel();
-                if (!decision.allow()) {
-                    chosen = pickMangroveFallback(biomeRegistry, base, blockX, blockZ, t, landBandIndex);
-                }
-            }
-            if (isSwampCandidate(chosen)) {
-                SwampDecision decision = evaluateSwamp(blockX, blockZ, sampler);
-                if (!decision.allow()) {
-                    chosen = pickSwampFallback(biomeRegistry, base, blockX, blockZ, t, landBandIndex);
-                }
-            }
-            if (!isMangroveCandidate(chosen) && shouldInviteMangrove(blockX, columnDecisionY, blockZ, bandIndex, sampler, nearOcean)) {
-                invitedMangrove = true;
-                MangroveDecision decision = evaluateMangrove(blockX, blockZ, preview.centerHeight, seaLevel, preview.robustDelta, sampler, nearOcean, allowSurfaceGates, heightView);
-                mangroveDecision = decision.logLabel();
-                if (decision.allow()) {
+                if (isSwampCandidate(chosen)) {
                     try {
-                        chosen = biome(biomeRegistry, MANGROVE_ID);
-                        if (DEBUG_MANGROVE_INVITE) {
-                            LOGGER.info("[latdev] mangroveInvite ACCEPT x={} z={} oceanDist={} decision={}", blockX, blockZ, oceanDistance, mangroveDecision);
+                        RegistryEntry<Biome> swamp = biome(biomeRegistry, SWAMP_ID);
+                        if (swamp != null) {
+                            chosen = pickSwampFallback(biomeRegistry, base, blockX, blockZ, t, landBandIndex);
                         }
                     } catch (Throwable ignored) {
                         // keep chosen
                     }
-                } else if (DEBUG_MANGROVE_INVITE) {
-                    LOGGER.info("[latdev] mangroveInvite REJECT x={} z={} oceanDist={} decision={}", blockX, blockZ, oceanDistance, mangroveDecision);
                 }
-            }
-            if (mountainLike) {
-                chosen = pickFromTagNoiseOrBase(biomeRegistry, LAT_TEMPERATE_MOUNTAIN, base, blockX, blockZ, landBandIndex);
-                if (isBiomeId(chosen, "minecraft:cherry_grove")) {
-                    return chosen;
+                if (!sourceContext && !isMangroveCandidate(chosen) && shouldInviteMangrove(blockX, columnDecisionY, blockZ, bandIndex, sampler, nearOcean)) {
+                    invitedMangrove = true;
+                    MangroveDecision decision = evaluateMangrove(blockX, blockZ, preview.centerHeight, seaLevel, preview.robustDelta, sampler, nearOcean, allowSurfaceGates, heightView);
+                    mangroveDecision = decision.logLabel();
+                    if (decision.allow()) {
+                        try {
+                            chosen = biome(biomeRegistry, MANGROVE_ID);
+                            if (DEBUG_MANGROVE_INVITE) {
+                                LOGGER.info("[latdev] mangroveInvite ACCEPT x={} z={} oceanDist={} decision={}", blockX, blockZ, oceanDistance, mangroveDecision);
+                            }
+                        } catch (Throwable ignored) {
+                            // keep chosen
+                        }
+                    } else if (DEBUG_MANGROVE_INVITE) {
+                        LOGGER.info("[latdev] mangroveInvite REJECT x={} z={} oceanDist={} decision={}", blockX, blockZ, oceanDistance, mangroveDecision);
+                    }
                 }
-            }
-            sanitized = sanitizeLandBiome(biomeRegistry, chosen, landBandIndex, blockX, blockZ);
-            if (DEBUG_SPARSE_JUNGLE_AUDIT && !isBiomeId(chosen, "minecraft:sparse_jungle") && isBiomeId(sanitized, "minecraft:sparse_jungle")) {
-                auditSanitize = true;
-            }
-            safe = repickIfSurfaceCave(biomeRegistry, base, sanitized, blockX, blockZ, t, landBandIndex);
-            out = applyLandOverrides(biomeRegistry, safe, blockX, blockZ, landBandIndex);
-            if (landBandIndex == BAND_TROPICAL && isJungleFamily(out) && !allowWetTropicalCanopy(blockX, blockZ, t, out)) {
-                out = pickOpenTropicalFallback(biomeRegistry, out, blockX, blockZ, t);
-                if (DEBUG_SPARSE_JUNGLE_AUDIT && isBiomeId(out, "minecraft:sparse_jungle")) {
-                    auditCanopy = true;
+                if (mountainLike) {
+                    chosen = pickFromTagNoiseOrBase(biomeRegistry, LAT_TEMPERATE_MOUNTAIN, base, blockX, blockZ, landBandIndex);
+                    if (isBiomeId(chosen, "minecraft:cherry_grove")) {
+                        return chosen;
+                    }
                 }
-            }
-            boolean savannaGateInput = isSavannaFamily(out);
-            int savannaRobustDelta = preview.robustDelta;
-            boolean savannaUpland = previewHeightHigh;
-            if (skipPreview && savannaGateInput && generator != null && noiseConfig != null && heightView != null) {
-                PreviewTerrain wsavPreview = previewTerrain(generator, noiseConfig, heightView, blockX, blockZ);
-                savannaRobustDelta = wsavPreview.robustDelta;
-                savannaUpland = wsavPreview.centerHeight >= (seaLevel + PREVIEW_HEIGHT_MARGIN_BLOCKS);
-                if (DEBUG_SAVANNA_GATE_AUDIT) {
-                    SAVANNA_AUDIT_REAL_PREVIEW.incrementAndGet();
+                sanitized = sanitizeLandBiome(biomeRegistry, chosen, landBandIndex, blockX, blockZ);
+                if (DEBUG_SPARSE_JUNGLE_AUDIT && !isBiomeId(chosen, "minecraft:sparse_jungle") && isBiomeId(sanitized, "minecraft:sparse_jungle")) {
+                    auditSanitize = true;
                 }
-            } else if (skipPreview && savannaGateInput && sampler != null) {
-                boolean ruggedNoise = isMountainLike(sampler, blockX, blockZ);
-                if (ruggedNoise) {
-                    savannaRobustDelta = WINDSWEPT_RUGGED_THRESH + WINDSWEPT_RUGGED_HYST;
+                safe = repickIfSurfaceCave(biomeRegistry, base, sanitized, blockX, blockZ, t, landBandIndex);
+                out = applyLandOverrides(biomeRegistry, safe, blockX, blockZ, landBandIndex);
+                if (landBandIndex == BAND_TROPICAL && isJungleFamily(out) && !allowWetTropicalCanopy(blockX, blockZ, t, out)) {
+                    out = pickOpenTropicalFallback(biomeRegistry, out, blockX, blockZ, t);
+                    if (DEBUG_SPARSE_JUNGLE_AUDIT && isBiomeId(out, "minecraft:sparse_jungle")) {
+                        auditCanopy = true;
+                    }
                 }
-                if (DEBUG_SAVANNA_GATE_AUDIT) {
+                boolean savannaGateInput = isSavannaFamily(out);
+                int savannaRobustDelta = preview.robustDelta;
+                boolean savannaUpland = previewHeightHigh;
+                // MIXIN and CAVE_CLAMP must not re-enter real previewTerrain here — stay on the synthetic path.
+                boolean forceSyntheticTerrain = skipPreview && ("MIXIN".equalsIgnoreCase(callerContext) || "CAVE_CLAMP".equalsIgnoreCase(callerContext));
+                if (skipPreview && savannaGateInput && generator != null && noiseConfig != null && heightView != null && !forceSyntheticTerrain) {
+                    PreviewTerrain wsavPreview = previewTerrain(generator, noiseConfig, heightView, blockX, blockZ);
+                    savannaRobustDelta = wsavPreview.robustDelta;
+                    savannaUpland = wsavPreview.centerHeight >= (seaLevel + PREVIEW_HEIGHT_MARGIN_BLOCKS);
+                    if (DEBUG_SAVANNA_GATE_AUDIT) {
+                        SAVANNA_AUDIT_REAL_PREVIEW.incrementAndGet();
+                    }
+                } else if (skipPreview && savannaGateInput && sampler != null) {
+                    boolean ruggedNoise = isMountainLike(sampler, blockX, blockZ);
+                    if (ruggedNoise) {
+                        savannaRobustDelta = WINDSWEPT_RUGGED_THRESH + WINDSWEPT_RUGGED_HYST;
+                    }
+                    if (DEBUG_SAVANNA_GATE_AUDIT) {
+                        SAVANNA_AUDIT_PREVIEW_MISSING.incrementAndGet();
+                    }
+                } else if (skipPreview && savannaGateInput && DEBUG_SAVANNA_GATE_AUDIT) {
                     SAVANNA_AUDIT_PREVIEW_MISSING.incrementAndGet();
                 }
-            } else if (skipPreview && savannaGateInput && DEBUG_SAVANNA_GATE_AUDIT) {
-                SAVANNA_AUDIT_PREVIEW_MISSING.incrementAndGet();
-            }
-            out = applySavannaWindsweptGate(biomeRegistry, out, savannaRobustDelta, savannaUpland);
-            if (landBandIndex == BAND_SUBTROPICAL && isJungleFamily(out)) {
-                out = pickDryWarmFallback(biomeRegistry, out);
-            }
-            finalSavannaRegion = isSavannaFamily(base) || savannaGateInput || isSavannaFamily(out);
+                out = applySavannaWindsweptGate(biomeRegistry, out, savannaRobustDelta, savannaUpland, blockX, blockZ, callerContext, landBandIndex);
+                if (landBandIndex == BAND_SUBTROPICAL && isJungleFamily(out)) {
+                    out = pickDryWarmFallback(biomeRegistry, out);
+                }
+                finalSavannaRegion = isSavannaFamily(base) || savannaGateInput || isSavannaFamily(out);
             }
         }
         if (landBandIndex == BAND_TROPICAL || landBandIndex == BAND_SUBTROPICAL) {
@@ -1658,7 +1980,9 @@ public final class LatitudeBiomes {
             boolean savannaGateInput = isSavannaFamily(out);
             int savannaRobustDelta = preview.robustDelta;
             boolean savannaUpland = previewHeightHigh;
-            if (skipPreview && savannaGateInput && generator != null && noiseConfig != null && heightView != null) {
+            // MIXIN and CAVE_CLAMP must not re-enter real previewTerrain here — stay on the synthetic path.
+            boolean forceSyntheticTerrain = skipPreview && ("MIXIN".equalsIgnoreCase(callerContext) || "CAVE_CLAMP".equalsIgnoreCase(callerContext));
+            if (skipPreview && savannaGateInput && generator != null && noiseConfig != null && heightView != null && !forceSyntheticTerrain) {
                 PreviewTerrain wsavPreview = previewTerrain(generator, noiseConfig, heightView, blockX, blockZ);
                 savannaRobustDelta = wsavPreview.robustDelta;
                 savannaUpland = wsavPreview.centerHeight >= (seaLevel + PREVIEW_HEIGHT_MARGIN_BLOCKS);
@@ -1676,7 +2000,7 @@ public final class LatitudeBiomes {
             } else if (skipPreview && savannaGateInput && DEBUG_SAVANNA_GATE_AUDIT) {
                 SAVANNA_AUDIT_PREVIEW_MISSING.incrementAndGet();
             }
-            out = applySavannaWindsweptGate(biomePool, out, savannaRobustDelta, savannaUpland);
+            out = applySavannaWindsweptGate(biomePool, out, savannaRobustDelta, savannaUpland, blockX, blockZ, callerContext, landBandIndex);
             if (landBandIndex == BAND_SUBTROPICAL && isJungleFamily(out)) {
                 out = pickDryWarmFallback(biomePool, out);
             }

@@ -72,6 +72,7 @@ public final class LatitudeDevCommand {
                                                 .then(CommandManager.argument("chunksPerTick", IntegerArgumentType.integer(1, 2000))
                                                         .executes(LatitudeDevCommand::startSlicePoleNS)))))
                         .then(CommandManager.literal("here").executes(LatitudeDevCommand::here))
+                        .then(CommandManager.literal("explainHere").executes(LatitudeDevCommand::explainHere))
                         .then(CommandManager.literal("tpBand")
                                 .then(CommandManager.argument("band", StringArgumentType.word())
                                         .suggests((context, builder) -> CommandSource.suggestMatching(TP_BAND_NAMES, builder))
@@ -106,7 +107,7 @@ public final class LatitudeDevCommand {
 
     private static int help(CommandContext<ServerCommandSource> ctx) {
         ServerCommandSource source = ctx.getSource();
-        source.sendFeedback(() -> Text.literal("[latdev] commands: here | tpBand <tropical|subtropical|temperate|subpolar|polar> [center|low|high] | probe <radiusBlocks> <samples> | biomePng [stepBlocks] [y] | regen|regenChunk [radiusChunks] [biomes] [seed] | transect | transectDeg | slicePoleNS | pause | resume | stop | status | budgetMs | budgetAuto <on|off>"), false);
+        source.sendFeedback(() -> Text.literal("[latdev] commands: here | explainHere | tpBand <tropical|subtropical|temperate|subpolar|polar> [center|low|high] | probe <radiusBlocks> <samples> | biomePng [stepBlocks] [y] | regen|regenChunk [radiusChunks] [biomes] [seed] | transect | transectDeg | slicePoleNS | pause | resume | stop | status | budgetMs | budgetAuto <on|off>"), false);
         return 1;
     }
 
@@ -183,6 +184,43 @@ public final class LatitudeDevCommand {
             return 1;
         } catch (Exception e) {
             ctx.getSource().sendError(Text.literal("[latdev] here error: " + e.getMessage()));
+            e.printStackTrace();
+            return 0;
+        }
+    }
+
+    private static int explainHere(CommandContext<ServerCommandSource> ctx) {
+        try {
+            ServerCommandSource source = ctx.getSource();
+            ServerPlayerEntity player = source.getPlayerOrThrow();
+            ServerWorld world = source.getWorld();
+            BlockPos pos = player.getBlockPos();
+            int radius = authoritativeRadius(source);
+            net.minecraft.world.gen.noise.NoiseConfig noiseConfig = world.getChunkManager().getNoiseConfig();
+            net.minecraft.world.biome.source.util.MultiNoiseUtil.MultiNoiseSampler sampler = noiseConfig.getMultiNoiseSampler();
+            net.minecraft.world.gen.chunk.ChunkGenerator cg = world.getChunkManager().getChunkGenerator();
+            net.minecraft.world.gen.chunk.NoiseChunkGenerator ng = cg instanceof net.minecraft.world.gen.chunk.NoiseChunkGenerator n ? n : null;
+            String finalBiomeId = biomeId(world.getBiome(pos));
+
+            LatitudeBiomes.BiomeDiagnostics diag = LatitudeBiomes.explainBiomeAt(
+                    finalBiomeId,
+                    pos.getX(), pos.getZ(), pos.getY(),
+                    radius,
+                    sampler,
+                    ng,
+                    noiseConfig,
+                    world);
+
+            final String headerText = String.format(Locale.ROOT, "[latdev] explain @ x=%d z=%d", pos.getX(), pos.getZ());
+            final String summaryText = "Summary: " + diag.summaryLine();
+            final String driversText = "Drivers:\n" + diag.driversBlock();
+
+            source.sendFeedback(() -> Text.literal(headerText), false);
+            source.sendFeedback(() -> Text.literal(summaryText), false);
+            source.sendFeedback(() -> Text.literal(driversText), false);
+            return 1;
+        } catch (Exception e) {
+            ctx.getSource().sendError(Text.literal("[latdev] explainHere error: " + e.getMessage()));
             e.printStackTrace();
             return 0;
         }
