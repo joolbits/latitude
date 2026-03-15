@@ -819,6 +819,20 @@ public final class LatitudeBiomes {
         return new PreviewTerrain(c, deltas[deltas.length - 2]);
     }
 
+    /**
+     * Public accessor used by the atlas exporter.
+     * Returns the robustDelta (second-highest neighbour height delta) without loading chunks.
+     * Returns 0 if any required input is null.
+     */
+    public static int previewRobustDelta(
+            net.minecraft.world.gen.chunk.NoiseChunkGenerator generator,
+            NoiseConfig noiseConfig,
+            HeightLimitView heightView,
+            int blockX, int blockZ) {
+        if (generator == null || noiseConfig == null || heightView == null) return 0;
+        return previewTerrain(generator, noiseConfig, heightView, blockX, blockZ).robustDelta();
+    }
+
     private static boolean shouldSkipPreviewTerrain(String callerContext) {
         if (callerContext == null) {
             return false;
