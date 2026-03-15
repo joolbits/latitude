@@ -3979,7 +3979,7 @@ function clearRuggedness() {
 async function fetchAndRenderRuggedness(run, layer) {
   try {
     const resp = await fetch(`${API_BASE}/api/runs/${encodeURIComponent(run)}/layers/${encodeURIComponent(layer)}/ruggedness-image`);
-    if (!resp.ok) { clearRuggedness(); return; }
+    if (!resp.ok) { clearRuggedness(); if (togRuggedness) { togRuggedness.checked = false; togRuggedness.disabled = true; } return; }
     const blob = await resp.blob();
     const url = URL.createObjectURL(blob);
     const img = new Image();
@@ -4291,6 +4291,8 @@ async function switchLayer(run, layer) {
   if (togBands.checked) { renderBands(); renderBandLegend(); }
   renderBandViolations();
 
+  // Re-enable ruggedness toggle for the new layer (will self-disable again if absent).
+  if (togRuggedness) { togRuggedness.disabled = false; }
   // Sync rugged canvas dimensions to the biome base image, then clear / re-render.
   if (mapCanvas && ruggedCanvas) {
     ruggedCanvas.width  = mapCanvas.width;

@@ -382,6 +382,15 @@ public final class BiomePreviewHeadlessRunner {
         boolean emitBiomeIndex = parseBoolean(kv.get("emitbiomeindex"));
         boolean emitHeight = emitHeightProp || parseBoolean(kv.get("emitheight"));
         BiomePreviewExporter.ExportOptions baseOptions = BiomePreviewExporter.ExportOptions.from(bundle, parsedLayers.layers(), overlays, masks);
+        // --ruggedness true: append RUGGEDNESS to whatever layer set was chosen
+        boolean addRuggedness = parseBoolean(kv.get("ruggedness"));
+        if (addRuggedness && !baseOptions.layers().contains(BiomePreviewExporter.Layer.RUGGEDNESS)) {
+            java.util.EnumSet<BiomePreviewExporter.Layer> ext = java.util.EnumSet.copyOf(baseOptions.layers());
+            ext.add(BiomePreviewExporter.Layer.RUGGEDNESS);
+            baseOptions = new BiomePreviewExporter.ExportOptions(
+                    ext, baseOptions.overlays(), baseOptions.maskLayers(), baseOptions.writeLegends(),
+                    false, false);
+        }
         // Emit legend metadata whenever biome index output is requested so atlas runs
         // keep the policy/legend authority alongside the sampled layer payload.
         BiomePreviewExporter.ExportOptions exportOptions = new BiomePreviewExporter.ExportOptions(
@@ -440,7 +449,7 @@ public final class BiomePreviewHeadlessRunner {
 
     private static boolean collectProgramArgs(List<String> args, Map<String, String> out) {
         boolean enabled = false;
-        List<String> latdevKeys = List.of("seed", "radius", "size", "step", "steps", "y", "out", "bundle", "layers", "mask", "overlay", "overlays", "emitbiomeindex", "emitheight");
+        List<String> latdevKeys = List.of("seed", "radius", "size", "step", "steps", "y", "out", "bundle", "layers", "mask", "overlay", "overlays", "emitbiomeindex", "emitheight", "ruggedness");
         for (int i = 0; i < args.size(); i++) {
             String arg = args.get(i);
             if (!arg.startsWith("--")) {
