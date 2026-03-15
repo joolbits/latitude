@@ -430,6 +430,11 @@ class Handler(BaseHTTPRequestHandler):
             self.handle_ids_image(m.group(1), m.group(2))
             return
 
+        m = re.match(r"^/api/runs/([^/]+)/layers/([^/]+)/ruggedness-image$", path)
+        if m:
+            self.handle_ruggedness_image(m.group(1), m.group(2))
+            return
+
         # static viewer
         if path == "/":
             static_path = VIEWER_ROOT / "index.html"
@@ -620,6 +625,17 @@ class Handler(BaseHTTPRequestHandler):
             self._send_text("layer ids image not found", HTTPStatus.NOT_FOUND)
             return
         self._send_file(ids_path, "image/png")
+
+    def handle_ruggedness_image(self, run: str, layer: str):
+        run_dir = run_path(run)
+        if not run_dir.exists():
+            self._send_text("run not found", HTTPStatus.NOT_FOUND)
+            return
+        path = layer_file(run_dir, layer, "ruggedness.png")
+        if not path or not path.exists():
+            self._send_text("ruggedness layer not found", HTTPStatus.NOT_FOUND)
+            return
+        self._send_file(path, "image/png")
 
 
 if __name__ == "__main__":

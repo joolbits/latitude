@@ -1198,6 +1198,21 @@ html, body {
 }
 #band-violation-canvas.active { opacity: 1; }
 
+/* ═══════════════════════════════════════════════
+   TERRAIN RUGGEDNESS OVERLAY
+   ═══════════════════════════════════════════════ */
+#rugged-canvas {
+  position: absolute;
+  top: 0; left: 0;
+  transform-origin: 0 0;
+  pointer-events: none;
+  image-rendering: pixelated;
+  opacity: 0;
+  transition: opacity 0.3s var(--ease-smooth);
+  z-index: 2;
+}
+#rugged-canvas.active { opacity: 1; }
+
 /* Band legend (bottom-left floating) */
 #band-legend {
   position: absolute;
@@ -1387,6 +1402,7 @@ html, body {
  <div id="app">
  <div id="canvas-viewport">
   <canvas id="map-canvas"></canvas>
+  <canvas id="rugged-canvas"></canvas>
  <canvas id="highlight-canvas"></canvas>
  <canvas id="grid-canvas"></canvas>
  <canvas id="band-canvas"></canvas>
@@ -1579,6 +1595,19 @@ html, body {
      </div>
      <div class="band-desc-hint" id="band-violations-label">Band violations: off</div>
      <div class="band-desc-hint">Descriptors: Tropical, Subtropical, Temperate, Subpolar, Polar</div>
+     <div class="toggle-row" style="margin-top:8px">
+      <span class="toggle-label">Terrain Ruggedness</span>
+      <label class="toggle-switch">
+       <input type="checkbox" id="tog-ruggedness">
+       <span class="toggle-track"></span>
+      </label>
+     </div>
+     <div style="font-size:0.78em;margin-top:3px;line-height:1.7;color:var(--text-secondary)">
+      <span style="display:inline-block;width:11px;height:11px;background:#8BC34A;vertical-align:middle;border-radius:2px"></span> 0–5 flat&nbsp;&nbsp;
+      <span style="display:inline-block;width:11px;height:11px;background:#FFB74D;vertical-align:middle;border-radius:2px"></span> 6–12 rolling&nbsp;&nbsp;
+      <span style="display:inline-block;width:11px;height:11px;background:#FF7043;vertical-align:middle;border-radius:2px"></span> 13–20 hilly&nbsp;&nbsp;
+      <span style="display:inline-block;width:11px;height:11px;background:#AB47BC;vertical-align:middle;border-radius:2px"></span> 21+ rugged
+     </div>
     </div>
    </div>
  
@@ -1654,11 +1683,13 @@ const hlCanvas = $('#highlight-canvas');
 const gridCanvas = $('#grid-canvas');
 const bandCanvas = $('#band-canvas');
 const bandViolationCanvas = $('#band-violation-canvas');
+const ruggedCanvas = $('#rugged-canvas');
 const mapCtx = mapCanvas.getContext('2d', { willReadFrequently: true });
 const hlCtx = hlCanvas.getContext('2d');
 const gridCtx = gridCanvas.getContext('2d');
 const bandCtx = bandCanvas.getContext('2d');
 const bandViolationCtx = bandViolationCanvas.getContext('2d');
+const ruggedCtx = ruggedCanvas.getContext('2d');
 const crosshair = $('#crosshair');
 const selectionMarker = $('#selection-marker');
 const inspectCard = $('#inspect-card');
@@ -1694,6 +1725,7 @@ const themeBtn = $('#theme-btn');
 const togTooltip = $('#tog-tooltip');
 const togBands = $('#tog-bands');
 const togBandViolations = $('#tog-band-violations');
+const togRuggedness = $('#tog-ruggedness');
 const bandsOpacity = $('#bands-opacity');
 const bandsOpacityVal = $('#bands-opacity-val');
 const bandViolationsLabel = $('#band-violations-label');
@@ -3496,6 +3528,14 @@ function toggleBands() {
 
 togBands.addEventListener('change', toggleBands);
 togBandViolations.addEventListener('change', toggleBandViolations);
+togRuggedness.addEventListener('change', () => {
+  if (togRuggedness.checked) {
+    if (!state.currentRun || !state.currentLayer) return;
+    fetchAndRenderRuggedness(state.currentRun, state.currentLayer);
+  } else {
+    clearRuggedness();
+  }
+});
 if (bandsOpacity) {
  const applyBandOpacity = () => {
   const v = Number(bandsOpacity.value || 24);
@@ -3928,6 +3968,39 @@ async function fetchBiomeIds(run, layer) {
   }
 }
 
+function clearRuggedness() {
+  if (!ruggedCanvas) return;
+  // Zero dimensions so no stale pixel survives a run/layer switch.
+  ruggedCanvas.width = 0;
+  ruggedCanvas.height = 0;
+  ruggedCanvas.classList.remove('active');
+}
+
+async function fetchAndRenderRuggedness(run, layer) {
+  try {
+    const resp = await fetch(`${API_BASE}/api/runs/${encodeURIComponent(run)}/layers/${encodeURIComponent(layer)}/ruggedness-image`);
+    if (!resp.ok) { clearRuggedness(); return; }
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    const img = new Image();
+    img.onload = () => {
+      // Sync canvas dimensions to the loaded image on every fetch.
+      ruggedCanvas.width = img.naturalWidth;
+      ruggedCanvas.height = img.naturalHeight;
+      ruggedCtx.clearRect(0, 0, ruggedCanvas.width, ruggedCanvas.height);
+      ruggedCtx.globalAlpha = 0.65;
+      ruggedCtx.drawImage(img, 0, 0);
+      ruggedCtx.globalAlpha = 1.0;
+      ruggedCanvas.classList.add('active');
+      URL.revokeObjectURL(url);
+    };
+    img.onerror = () => { clearRuggedness(); URL.revokeObjectURL(url); };
+    img.src = url;
+  } catch (e) {
+    clearRuggedness();
+  }
+}
+
 async function fetchGenerationStatus() {
   try {
     return await apiFetch('/api/generation-status');
@@ -4217,6 +4290,16 @@ async function switchLayer(run, layer) {
   toggleGrid();
   if (togBands.checked) { renderBands(); renderBandLegend(); }
   renderBandViolations();
+
+  // Sync rugged canvas dimensions to the biome base image, then clear / re-render.
+  if (mapCanvas && ruggedCanvas) {
+    ruggedCanvas.width  = mapCanvas.width;
+    ruggedCanvas.height = mapCanvas.height;
+  }
+  clearRuggedness();
+  if (togRuggedness && togRuggedness.checked) {
+    fetchAndRenderRuggedness(run, layer);
+  }
 }
 
 togGrid.addEventListener('change', toggleGrid);

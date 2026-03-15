@@ -129,6 +129,7 @@ public final class BiomePreviewExporter {
         boolean renderTemperature = layers.contains(Layer.TEMPERATURE);
         boolean renderHumidity = layers.contains(Layer.HUMIDITY);
         boolean renderContinentalness = layers.contains(Layer.CONTINENTALNESS);
+        boolean renderRuggedness = layers.contains(Layer.RUGGEDNESS);
         boolean renderBiomeMasks = !maskTargets.isEmpty();
         boolean needsBiomeSampling = renderBiomes || renderBiomeMasks || emitBiomeIndex;
 
@@ -223,6 +224,13 @@ public final class BiomePreviewExporter {
                         double continentalness = MathHelper.clamp(MultiNoiseUtil.toFloat(point.continentalnessNoise()), -1.0, 1.0);
                         images.get(Layer.CONTINENTALNESS).setRGB(imageX, imageZ, colorForContinentalness(continentalness));
                     }
+                }
+
+                if (renderRuggedness &&
+                        noiseGen instanceof net.minecraft.world.gen.chunk.NoiseChunkGenerator) {
+                    int delta = com.example.globe.world.LatitudeBiomes.previewRobustDelta(
+                            noiseGen, noiseConfig, world, blockX, blockZ);
+                    images.get(Layer.RUGGEDNESS).setRGB(imageX, imageZ, colorForRuggedness(delta));
                 }
             }
         }
@@ -535,6 +543,13 @@ public final class BiomePreviewExporter {
                         double continentalness = MathHelper.clamp(MultiNoiseUtil.toFloat(point.continentalnessNoise()), -1.0, 1.0);
                         images.get(Layer.CONTINENTALNESS).setRGB(imageX, imageZ, colorForContinentalness(continentalness));
                     }
+                }
+
+                if (layers.contains(Layer.RUGGEDNESS) &&
+                        gatedNoiseGen instanceof net.minecraft.world.gen.chunk.NoiseChunkGenerator) {
+                    int delta = com.example.globe.world.LatitudeBiomes.previewRobustDelta(
+                            gatedNoiseGen, gatedNoiseConfig, gatedHeightView, blockX, blockZ);
+                    images.get(Layer.RUGGEDNESS).setRGB(imageX, imageZ, colorForRuggedness(delta));
                 }
 
                 advanceCursor();
@@ -856,6 +871,9 @@ public final class BiomePreviewExporter {
         if (layers.contains(Layer.CONTINENTALNESS)) {
             out.append("continentalnessScale=-1.0..1.0 (deep ocean -> coast -> inland)\n");
         }
+        if (layers.contains(Layer.RUGGEDNESS)) {
+            out.append("ruggednessScale=robustDelta blocks (0-5 flat, 6-12 rolling, 13-20 hilly, 21+ rugged/mountain)\n");
+        }
         if (!overlays.isEmpty()) {
             out.append("overlayStyles:\n");
             for (Overlay overlay : overlays) {
@@ -996,7 +1014,12 @@ public final class BiomePreviewExporter {
         json.append("  },\n");
         json.append("  \"temperatureScale\": \"-1.0..1.0 (blue->cream->red)\",\n");
         json.append("  \"humidityScale\": \"-1.0..1.0 (tan->pale->teal)\",\n");
-        json.append("  \"continentalnessScale\": \"-1.0..1.0 (deep-ocean->coast->inland)\"\n");
+        if (layers.contains(Layer.RUGGEDNESS)) {
+            json.append("  \"continentalnessScale\": \"-1.0..1.0 (deep-ocean->coast->inland)\",\n");
+            json.append("  \"ruggednessScale\": {\"0-5\":\"flat\",\"6-12\":\"rolling\",\"13-20\":\"hilly\",\"21+\":\"rugged/mountain\"}\n");
+        } else {
+            json.append("  \"continentalnessScale\": \"-1.0..1.0 (deep-ocean->coast->inland)\"\n");
+        }
         json.append("}\n");
         Files.writeString(legendPath, json.toString());
     }
@@ -1187,6 +1210,14 @@ public final class BiomePreviewExporter {
         return lerpRgb(0xE0C097, 0x6B8E23, c);
     }
 
+    private static int colorForRuggedness(int robustDelta) {
+        // 4-bin encoding; 0xFF__ prefix ensures opaque alpha in ARGB contexts.
+        if (robustDelta <= 5)  return 0xFF8BC34A;  // flat    — light green
+        if (robustDelta <= 12) return 0xFFFFB74D;  // rolling — amber
+        if (robustDelta <= 20) return 0xFFFF7043;  // hilly   — deep orange
+        return                        0xFFAB47BC;  // rugged  — purple
+    }
+
     private static int lerpRgb(int from, int to, double t) {
         double clamped = MathHelper.clamp(t, 0.0, 1.0);
         int fromR = (from >> 16) & 0xFF;
@@ -1343,7 +1374,8 @@ public final class BiomePreviewExporter {
         BANDS("bands"),
         TEMPERATURE("temperature"),
         HUMIDITY("humidity"),
-        CONTINENTALNESS("continentalness");
+        CONTINENTALNESS("continentalness"),
+        RUGGEDNESS("ruggedness");
 
         private final String fileStem;
 
@@ -1366,6 +1398,7 @@ public final class BiomePreviewExporter {
                 case "temperature", "temp" -> TEMPERATURE;
                 case "humidity", "humid", "moisture" -> HUMIDITY;
                 case "continentalness", "continental", "cont" -> CONTINENTALNESS;
+                case "ruggedness", "rugged" -> RUGGEDNESS;
                 default -> null;
             };
         }
@@ -1436,7 +1469,7 @@ public final class BiomePreviewExporter {
 
         public static ExportOptions bundle() {
             return new ExportOptions(
-                    EnumSet.of(Layer.BIOMES, Layer.BANDS, Layer.TEMPERATURE, Layer.HUMIDITY, Layer.CONTINENTALNESS),
+                    EnumSet.of(Layer.BIOMES, Layer.BANDS, Layer.TEMPERATURE, Layer.HUMIDITY, Layer.CONTINENTALNESS, Layer.RUGGEDNESS),
                     EnumSet.noneOf(Overlay.class),
                     List.of(),
                     true,
