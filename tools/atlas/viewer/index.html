@@ -1608,6 +1608,7 @@ html, body {
       <span style="display:inline-block;width:11px;height:11px;background:#FF7043;vertical-align:middle;border-radius:2px"></span> 13–20 hilly&nbsp;&nbsp;
       <span style="display:inline-block;width:11px;height:11px;background:#AB47BC;vertical-align:middle;border-radius:2px"></span> 21+ rugged
      </div>
+     <div id="ruggedness-status" style="font-size:0.78em;margin-top:3px;color:var(--text-secondary);min-height:1.2em"></div>
     </div>
    </div>
  
@@ -3976,10 +3977,84 @@ function clearRuggedness() {
   ruggedCanvas.classList.remove('active');
 }
 
+function setRuggednessStatus(msg) {
+  const el = document.getElementById('ruggedness-status');
+  if (el) el.textContent = msg || '';
+}
+
+async function pollUntilRuggednessReady() {
+  // Poll /api/generation-status every 2 s for up to 4 minutes.
+  for (let i = 0; i < 120; i++) {
+    await new Promise(r => setTimeout(r, 2000));
+    const status = await apiFetch('/api/generation-status').catch(() => null);
+    if (status && status.message) setRuggednessStatus(status.message);
+    if (!status || !status.active) {
+      if (status && status.exit_code !== null && status.exit_code !== 0) {
+        throw new Error(status.message || `generation failed (exit ${status.exit_code})`);
+      }
+      return; // active:false + exit_code 0 (or null) = done
+    }
+  }
+  throw new Error('Ruggedness generation timed out (>4 min).');
+}
+
+async function promptAndGenerateRuggedness(run, layer) {
+  const confirmed = confirm(
+    'This run does not have a terrain ruggedness layer yet.\n\n' +
+    'Generate it now? This may take a few minutes.'
+  );
+  if (!confirmed) {
+    if (togRuggedness) { togRuggedness.disabled = false; }
+    return;
+  }
+
+  if (togRuggedness) togRuggedness.disabled = true;
+  setRuggednessStatus('Starting ruggedness generation\u2026');
+
+  try {
+    const resp = await fetch(
+      `${API_BASE}/api/runs/${encodeURIComponent(run)}/generate-ruggedness`,
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }
+    );
+    const data = resp.headers.get('content-type')?.includes('json')
+      ? await resp.json().catch(() => ({}))
+      : {};
+
+    if (!resp.ok && resp.status !== 409) {
+      throw new Error(data.error || `HTTP ${resp.status}`);
+    }
+
+    if (data.already_exists) {
+      // File appeared between the 404 probe and the POST; skip polling.
+    } else {
+      // 202 started, or 409 another job running — poll either way.
+      setRuggednessStatus('Generating terrain ruggedness\u2026 this may take a few minutes.');
+      await pollUntilRuggednessReady();
+    }
+
+    setRuggednessStatus('');
+    if (togRuggedness) { togRuggedness.disabled = false; togRuggedness.checked = true; }
+    await fetchAndRenderRuggedness(run, layer);
+  } catch (e) {
+    setRuggednessStatus('');
+    if (togRuggedness) { togRuggedness.disabled = false; }
+    alert(`Ruggedness generation failed: ${e?.message || e}`);
+  }
+}
+
 async function fetchAndRenderRuggedness(run, layer) {
   try {
     const resp = await fetch(`${API_BASE}/api/runs/${encodeURIComponent(run)}/layers/${encodeURIComponent(layer)}/ruggedness-image`);
-    if (!resp.ok) { clearRuggedness(); if (togRuggedness) { togRuggedness.checked = false; togRuggedness.disabled = true; } return; }
+    if (!resp.ok) {
+      clearRuggedness();
+      if (resp.status === 404) {
+        if (togRuggedness) { togRuggedness.checked = false; }
+        promptAndGenerateRuggedness(run, layer);
+        return;
+      }
+      if (togRuggedness) { togRuggedness.checked = false; togRuggedness.disabled = true; }
+      return;
+    }
     const blob = await resp.blob();
     const url = URL.createObjectURL(blob);
     const img = new Image();

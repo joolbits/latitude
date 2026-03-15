@@ -97,6 +97,21 @@ def _watch_generation(proc: subprocess.Popen, step: int, seed: int | None, size:
             GENERATION_STATE["message"] = generation_message(f"Generation failed (exit {code})", step, seed, size)
 
 
+def _watch_ruggedness_generation(proc: subprocess.Popen, run_id: str):
+    global GENERATION_PROC
+    code = proc.wait()
+    with GENERATION_LOCK:
+        if GENERATION_PROC is proc:
+            GENERATION_PROC = None
+        GENERATION_STATE["active"] = False
+        GENERATION_STATE["finished_at"] = utc_now_iso()
+        GENERATION_STATE["exit_code"] = int(code)
+        if code == 0:
+            GENERATION_STATE["message"] = f"Ruggedness generation complete for run {run_id}."
+        else:
+            GENERATION_STATE["message"] = f"Ruggedness generation failed (exit {code}) for run {run_id}."
+
+
 def generation_message(prefix: str, step: int, seed: int | None, size: str | None) -> str:
     parts = [prefix, f"(step {step})"]
     if size:
@@ -170,6 +185,58 @@ def start_generation(step: int, seed: int | None = None, size: str | None = None
         GENERATION_STATE["message"] = generation_message("Generating atlas run", step, seed, size)
 
     watcher = threading.Thread(target=_watch_generation, args=(proc, int(step), seed, size), daemon=True)
+    watcher.start()
+    return True, generation_status()
+
+
+def start_ruggedness_generation(run_id: str) -> tuple[bool, dict]:
+    global GENERATION_PROC
+
+    run_dir = run_path(run_id)
+    if not run_dir.exists():
+        raise FileNotFoundError(f"Run not found: {run_id}")
+
+    # If ruggedness already exists, return 200 so caller can skip polling.
+    if list(run_dir.glob("*_ruggedness.png")):
+        return False, {"already_exists": True, "message": "ruggedness already present"}
+
+    if not ATLAS_PS1.exists():
+        raise FileNotFoundError(f"Atlas launcher not found: {ATLAS_PS1}")
+
+    with GENERATION_LOCK:
+        if GENERATION_STATE.get("active"):
+            # Another job is running; return current state so caller polls.
+            return False, generation_status()
+
+        powershell = shutil.which("powershell.exe") or shutil.which("pwsh") or shutil.which("powershell")
+        if not powershell:
+            raise RuntimeError("PowerShell not found on PATH.")
+
+        creationflags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+        command = [
+            powershell, "-ExecutionPolicy", "Bypass", "-File", str(ATLAS_PS1),
+            "-GenerateRuggednessOnly", "-Run", run_id, "-NoViewerOpen",
+        ]
+        proc = subprocess.Popen(
+            command,
+            cwd=str(ROOT),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=creationflags,
+        )
+        GENERATION_PROC = proc
+        GENERATION_STATE["active"] = True
+        GENERATION_STATE["step"] = None
+        GENERATION_STATE["seed"] = None
+        GENERATION_STATE["size"] = None
+        GENERATION_STATE["started_at"] = utc_now_iso()
+        GENERATION_STATE["finished_at"] = None
+        GENERATION_STATE["exit_code"] = None
+        GENERATION_STATE["message"] = f"Generating terrain ruggedness for run {run_id}\u2026 this may take a few minutes."
+
+    watcher = threading.Thread(
+        target=_watch_ruggedness_generation, args=(proc, run_id), daemon=True
+    )
     watcher.start()
     return True, generation_status()
 
@@ -380,6 +447,11 @@ class Handler(BaseHTTPRequestHandler):
             self.handle_generate()
             return
 
+        m = re.match(r"^/api/runs/([^/]+)/generate-ruggedness$", path)
+        if m:
+            self.handle_generate_ruggedness(m.group(1))
+            return
+
         self._send_text("not found", HTTPStatus.NOT_FOUND)
 
     def do_GET(self):
@@ -495,6 +567,24 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json({"error": str(e)}, HTTPStatus.INTERNAL_SERVER_ERROR)
             return
 
+        self._send_json(status, HTTPStatus.ACCEPTED if started else HTTPStatus.CONFLICT)
+
+    def handle_generate_ruggedness(self, run: str):
+        try:
+            started, status = start_ruggedness_generation(run)
+        except FileNotFoundError as e:
+            self._send_json({"error": str(e)}, HTTPStatus.NOT_FOUND)
+            return
+        except RuntimeError as e:
+            self._send_json({"error": str(e)}, HTTPStatus.INTERNAL_SERVER_ERROR)
+            return
+        except Exception as e:
+            self._send_json({"error": str(e)}, HTTPStatus.INTERNAL_SERVER_ERROR)
+            return
+
+        if status.get("already_exists"):
+            self._send_json(status, HTTPStatus.OK)
+            return
         self._send_json(status, HTTPStatus.ACCEPTED if started else HTTPStatus.CONFLICT)
 
     def handle_manifest(self, run: str):
