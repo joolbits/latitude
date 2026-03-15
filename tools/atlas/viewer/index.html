@@ -3969,11 +3969,16 @@ async function fetchBiomeIds(run, layer) {
   }
 }
 
+function syncOverlayCanvasToMap() {
+  if (!ruggedCanvas || !state.mapWidth) return;
+  ruggedCanvas.width  = state.mapWidth;
+  ruggedCanvas.height = state.mapHeight;
+}
+
 function clearRuggedness() {
   if (!ruggedCanvas) return;
-  // Zero dimensions so no stale pixel survives a run/layer switch.
-  ruggedCanvas.width = 0;
-  ruggedCanvas.height = 0;
+  syncOverlayCanvasToMap();
+  ruggedCtx.clearRect(0, 0, ruggedCanvas.width, ruggedCanvas.height);
   ruggedCanvas.classList.remove('active');
 }
 
@@ -4059,12 +4064,11 @@ async function fetchAndRenderRuggedness(run, layer) {
     const url = URL.createObjectURL(blob);
     const img = new Image();
     img.onload = () => {
-      // Sync canvas dimensions to the loaded image on every fetch.
-      ruggedCanvas.width = img.naturalWidth;
-      ruggedCanvas.height = img.naturalHeight;
+      // Sync canvas to the map state (same source as bands/grid/highlight overlays).
+      syncOverlayCanvasToMap();
       ruggedCtx.clearRect(0, 0, ruggedCanvas.width, ruggedCanvas.height);
       ruggedCtx.globalAlpha = 0.65;
-      ruggedCtx.drawImage(img, 0, 0);
+      ruggedCtx.drawImage(img, 0, 0, ruggedCanvas.width, ruggedCanvas.height);
       ruggedCtx.globalAlpha = 1.0;
       ruggedCanvas.classList.add('active');
       URL.revokeObjectURL(url);
@@ -4368,11 +4372,6 @@ async function switchLayer(run, layer) {
 
   // Re-enable ruggedness toggle for the new layer (will self-disable again if absent).
   if (togRuggedness) { togRuggedness.disabled = false; }
-  // Sync rugged canvas dimensions to the biome base image, then clear / re-render.
-  if (mapCanvas && ruggedCanvas) {
-    ruggedCanvas.width  = mapCanvas.width;
-    ruggedCanvas.height = mapCanvas.height;
-  }
   clearRuggedness();
   if (togRuggedness && togRuggedness.checked) {
     fetchAndRenderRuggedness(run, layer);
