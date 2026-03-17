@@ -20,8 +20,6 @@ public class SpawnZoneScreen extends Screen {
 
         addZoneButton(cx, y, rainbowRandomText(), "RANDOM");
         y += 22;
-        addZoneButton(cx, y, "Equatorial", "EQUATOR");
-        y += 22;
         addZoneButton(cx, y, "Tropical", "TROPICAL");
         y += 22;
         addZoneButton(cx, y, "Subtropical", "SUBTROPICAL");
