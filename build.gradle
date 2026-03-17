@@ -15,7 +15,6 @@ loom {
     runs {
         client {
             vmArg "-Dlatitude.fixSurfaceDripstone=true"
-            vmArg "-Dlatitude.debugEwFog=true"
             vmArg "-Dlatitude.fogClampIndex=${System.getProperty('latitude.fogClampIndex', '-1')}"
             vmArg "-Dlatitude.fogClampValue=${System.getProperty('latitude.fogClampValue', '16.0')}"
         }
