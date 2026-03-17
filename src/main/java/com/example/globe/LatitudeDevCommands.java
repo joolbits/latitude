@@ -29,7 +29,6 @@ public final class LatitudeDevCommands {
 
         dispatcher.register(CommandManager.literal("lattp")
             .then(CommandManager.literal("tropical").executes(ctx -> tp(ctx, LatitudeBands.Band.TROPICAL, +1)))
-            .then(CommandManager.literal("equator").executes(ctx -> tp(ctx, LatitudeBands.Band.TROPICAL, +1)))
             .then(CommandManager.literal("tropics").executes(ctx -> tp(ctx, LatitudeBands.Band.TROPICAL, +1)))
             .then(CommandManager.literal("subtropical").executes(ctx -> tp(ctx, LatitudeBands.Band.SUBTROPICAL, +1)))
             .then(CommandManager.literal("subtropics").executes(ctx -> tp(ctx, LatitudeBands.Band.SUBTROPICAL, +1)))
@@ -40,7 +39,6 @@ public final class LatitudeDevCommands {
 
         dispatcher.register(CommandManager.literal("lattps")
             .then(CommandManager.literal("tropical").executes(ctx -> tp(ctx, LatitudeBands.Band.TROPICAL, -1)))
-            .then(CommandManager.literal("equator").executes(ctx -> tp(ctx, LatitudeBands.Band.TROPICAL, -1)))
             .then(CommandManager.literal("tropics").executes(ctx -> tp(ctx, LatitudeBands.Band.TROPICAL, -1)))
             .then(CommandManager.literal("subtropical").executes(ctx -> tp(ctx, LatitudeBands.Band.SUBTROPICAL, -1)))
             .then(CommandManager.literal("subtropics").executes(ctx -> tp(ctx, LatitudeBands.Band.SUBTROPICAL, -1)))

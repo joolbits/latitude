@@ -175,7 +175,7 @@ public class LatitudeHudStudioScreen extends Screen {
         }
 
         String degText = (border != null) ? LatitudeMath.formatLatitudeDeg(z, border) : "0\u00b0";
-        String sampleTitle = "EQUATOR " + degText;
+        String sampleTitle = "TROPICAL " + degText;
 
         int titleOffsetX = (dragElement == DragElement.TITLE) ? (int) Math.round(titleOffsetXf) : LatitudeConfig.zoneEnterTitleOffsetX;
         int titleOffsetY = (dragElement == DragElement.TITLE) ? (int) Math.round(titleOffsetYf) : LatitudeConfig.zoneEnterTitleOffsetY;
@@ -454,7 +454,7 @@ public class LatitudeHudStudioScreen extends Screen {
             return false;
         }
 
-        String s = "EQUATOR 0\u00b0";
+        String s = "TROPICAL 0\u00b0";
         int w = mc.textRenderer.getWidth(s);
         int h = mc.textRenderer.fontHeight;
 

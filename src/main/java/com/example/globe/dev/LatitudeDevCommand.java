@@ -734,7 +734,7 @@ public final class LatitudeDevCommand {
                 return null;
             }
             String normalized = switch (raw.trim().toLowerCase(Locale.ROOT)) {
-                case "equator", "equatorial", "tropics" -> "tropical";
+                case "tropics" -> "tropical";
                 case "arid", "subtropics" -> "subtropical";
                 default -> raw.trim().toLowerCase(Locale.ROOT);
             };
