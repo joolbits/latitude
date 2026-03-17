@@ -3993,14 +3993,6 @@ public final class LatitudeBiomes {
             boolean strongOpen = opennessNoise >= 0.76 || (u > 0.82 && opennessNoise >= 0.68);
             if (!strongOpen) {
                 if (isJungleFamily(base)) {
-                    int roll = (int) Long.remainderUnsigned(hash64(blockX, blockZ, 0x5A1E5A1E), 100);
-                    if (roll < 20) {
-                        try {
-                            return biome(biomes, "minecraft:plains");
-                        } catch (Throwable ignoredPlains) {
-                            // fall through
-                        }
-                    }
                     try {
                         return biome(biomes, "minecraft:savanna");
                     } catch (Throwable ignoredSavanna) {
@@ -4145,13 +4137,6 @@ public final class LatitudeBiomes {
             boolean strongOpen = opennessNoise >= 0.76 || (u > 0.82 && opennessNoise >= 0.68);
             if (!strongOpen) {
                 if (isJungleFamily(base)) {
-                    int roll = (int) Long.remainderUnsigned(hash64(blockX, blockZ, 0x5A1E5A1E), 100);
-                    if (roll < 20) {
-                        RegistryEntry<Biome> plains = entryById(biomes, "minecraft:plains");
-                        if (plains != null) {
-                            return plains;
-                        }
-                    }
                     RegistryEntry<Biome> savanna = entryById(biomes, "minecraft:savanna");
                     if (savanna != null) {
                         return savanna;
