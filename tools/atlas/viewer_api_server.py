@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import unquote, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 from PIL import Image
 
@@ -20,6 +20,8 @@ ROOT = Path(__file__).resolve().parents[2]
 RUNS_ROOT = ROOT / "run-headless" / "latdev" / "atlas-runs"
 VIEWER_ROOT = ROOT / "tools" / "atlas" / "viewer"
 ATLAS_PS1 = ROOT / "tools" / "atlas" / "Atlas.ps1"
+COARSE_RUGGEDNESS_STEP = 64
+COARSE_RUGGEDNESS_FILE = f"step{COARSE_RUGGEDNESS_STEP}_ruggedness.png"
 
 STEP_RE = re.compile(r"step(\d+)", re.IGNORECASE)
 HEX_RE = re.compile(r"^#?([0-9a-fA-F]{6})$")
@@ -133,6 +135,36 @@ def parse_java_long(raw) -> int | None:
     return value
 
 
+def resolve_ruggedness_file(run_dir: Path, layer: str, step: int | None = None) -> Path | None:
+    # 0) When an explicit step is requested, treat it as authoritative — no fallback.
+    # Do NOT use `layer` in this branch: layer="step64" would match step64_ruggedness.png
+    # even when step=16 was asked, reintroducing the silent-serving bug.
+    if step is not None:
+        specific = run_dir / f"step{step}_ruggedness.png"
+        return specific if specific.exists() else None
+
+    # 1) Exact layer match for current selection (legacy path).
+    direct = run_dir / f"{layer}_ruggedness.png"
+    if direct.exists():
+        return direct
+
+    rugged_files = sorted(run_dir.glob("*_ruggedness.png"))
+    if not rugged_files:
+        return None
+
+    # 2) If only one ruggedness image exists, use it.
+    if len(rugged_files) == 1:
+        return rugged_files[0]
+
+    # 3) If multiple exist, prefer desktop coarse preview authority.
+    coarse = run_dir / COARSE_RUGGEDNESS_FILE
+    if coarse.exists():
+        return coarse
+
+    # 4) Deterministic final fallback.
+    return rugged_files[0]
+
+
 def start_generation(step: int, seed: int | None = None, size: str | None = None) -> tuple[bool, dict]:
     global GENERATION_PROC
 
@@ -189,16 +221,16 @@ def start_generation(step: int, seed: int | None = None, size: str | None = None
     return True, generation_status()
 
 
-def start_ruggedness_generation(run_id: str) -> tuple[bool, dict]:
+def start_ruggedness_generation(run_id: str, step: int = COARSE_RUGGEDNESS_STEP) -> tuple[bool, dict]:
     global GENERATION_PROC
 
     run_dir = run_path(run_id)
     if not run_dir.exists():
         raise FileNotFoundError(f"Run not found: {run_id}")
 
-    # If ruggedness already exists, return 200 so caller can skip polling.
-    if list(run_dir.glob("*_ruggedness.png")):
-        return False, {"already_exists": True, "message": "ruggedness already present"}
+    # Skip generation if the requested step's file already exists.
+    if (run_dir / f"step{step}_ruggedness.png").exists():
+        return False, {"already_exists": True, "message": "coarse ruggedness preview already present"}
 
     if not ATLAS_PS1.exists():
         raise FileNotFoundError(f"Atlas launcher not found: {ATLAS_PS1}")
@@ -215,7 +247,9 @@ def start_ruggedness_generation(run_id: str) -> tuple[bool, dict]:
         creationflags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
         command = [
             powershell, "-ExecutionPolicy", "Bypass", "-File", str(ATLAS_PS1),
-            "-GenerateRuggednessOnly", "-Run", run_id, "-NoViewerOpen",
+            "-GenerateRuggednessOnly", "-Run", run_id,
+            "-RuggednessPreviewStep", str(step),
+            "-NoViewerOpen",
         ]
         proc = subprocess.Popen(
             command,
@@ -232,7 +266,10 @@ def start_ruggedness_generation(run_id: str) -> tuple[bool, dict]:
         GENERATION_STATE["started_at"] = utc_now_iso()
         GENERATION_STATE["finished_at"] = None
         GENERATION_STATE["exit_code"] = None
-        GENERATION_STATE["message"] = f"Generating terrain ruggedness for run {run_id}\u2026 this may take a few minutes."
+        GENERATION_STATE["message"] = (
+            f"Generating terrain ruggedness (coarse preview, step {step}) "
+            f"for run {run_id}\u2026 this may take a few minutes."
+        )
 
     watcher = threading.Thread(
         target=_watch_ruggedness_generation, args=(proc, run_id), daemon=True
@@ -243,6 +280,16 @@ def start_ruggedness_generation(run_id: str) -> tuple[bool, dict]:
 
 def run_path(run_id: str) -> Path:
     return RUNS_ROOT / run_id
+
+
+def _validate_run_id(run_id: str) -> Path | None:
+    """Return the run directory Path if run_id is safe and exists, else None."""
+    try:
+        run_dir = (RUNS_ROOT / run_id).resolve()
+        run_dir.relative_to(RUNS_ROOT.resolve())  # raises ValueError if outside root
+    except (ValueError, Exception):
+        return None
+    return run_dir if run_dir.exists() else None
 
 
 def step_num(layer_id: str) -> int:
@@ -402,7 +449,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
         self.end_headers()
         self.wfile.write(body)
 
@@ -436,7 +483,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(HTTPStatus.NO_CONTENT)
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
         self.end_headers()
 
     def do_POST(self):
@@ -447,9 +494,28 @@ class Handler(BaseHTTPRequestHandler):
             self.handle_generate()
             return
 
+        if path == "/api/runs/bulk-delete":
+            self.handle_bulk_delete()
+            return
+
+        if path == "/api/runs/delete-all":
+            self.handle_delete_all()
+            return
+
         m = re.match(r"^/api/runs/([^/]+)/generate-ruggedness$", path)
         if m:
             self.handle_generate_ruggedness(m.group(1))
+            return
+
+        self._send_text("not found", HTTPStatus.NOT_FOUND)
+
+    def do_DELETE(self):
+        parsed = urlparse(self.path)
+        path = unquote(parsed.path)
+
+        m = re.match(r"^/api/runs/([^/]+)$", path)
+        if m:
+            self.handle_delete_run(m.group(1))
             return
 
         self._send_text("not found", HTTPStatus.NOT_FOUND)
@@ -534,6 +600,65 @@ class Handler(BaseHTTPRequestHandler):
         runs.sort(reverse=True)
         self._send_json(runs)
 
+    def handle_delete_run(self, run: str):
+        if GENERATION_STATE.get("active"):
+            self._send_json({"error": "generation in progress"}, HTTPStatus.CONFLICT)
+            return
+        run_dir = _validate_run_id(run)
+        if run_dir is None:
+            self._send_text("run not found", HTTPStatus.NOT_FOUND)
+            return
+        shutil.rmtree(run_dir)
+        self._send_json({"deleted": run})
+
+    def handle_bulk_delete(self):
+        length = int(self.headers.get("Content-Length", "0") or "0")
+        raw = self.rfile.read(length) if length > 0 else b"{}"
+        try:
+            payload = json.loads(raw.decode("utf-8")) if raw else {}
+        except json.JSONDecodeError:
+            payload = {}
+        run_ids = payload.get("runs", [])
+        if not isinstance(run_ids, list):
+            self._send_text("invalid request body", HTTPStatus.BAD_REQUEST)
+            return
+        if GENERATION_STATE.get("active"):
+            self._send_json({"error": "generation in progress"}, HTTPStatus.CONFLICT)
+            return
+        deleted, failed = [], []
+        for run_id in run_ids:
+            active = GENERATION_STATE.get("run")
+            if active and str(run_id) == active:
+                failed.append(str(run_id))
+                continue
+            run_dir = _validate_run_id(str(run_id))
+            if run_dir is None:
+                failed.append(str(run_id))
+                continue
+            try:
+                shutil.rmtree(run_dir)
+                deleted.append(str(run_id))
+            except Exception:
+                failed.append(str(run_id))
+        self._send_json({"deleted": deleted, "failed": failed})
+
+    def handle_delete_all(self):
+        if GENERATION_STATE.get("active"):
+            self._send_json({"error": "generation in progress", "skipped_active": []},
+                            HTTPStatus.CONFLICT)
+            return
+        if not RUNS_ROOT.exists():
+            self._send_json({"deleted": [], "failed": []})
+            return
+        deleted, failed = [], []
+        for run_dir in [d for d in RUNS_ROOT.iterdir() if d.is_dir()]:
+            try:
+                shutil.rmtree(run_dir)
+                deleted.append(run_dir.name)
+            except Exception:
+                failed.append(run_dir.name)
+        self._send_json({"deleted": deleted, "failed": failed})
+
     def handle_generation_status(self):
         self._send_json(generation_status())
 
@@ -570,8 +695,17 @@ class Handler(BaseHTTPRequestHandler):
         self._send_json(status, HTTPStatus.ACCEPTED if started else HTTPStatus.CONFLICT)
 
     def handle_generate_ruggedness(self, run: str):
+        length = int(self.headers.get("Content-Length", "0") or "0")
+        raw = self.rfile.read(length) if length > 0 else b"{}"
         try:
-            started, status = start_ruggedness_generation(run)
+            payload = json.loads(raw.decode("utf-8")) if raw else {}
+        except json.JSONDecodeError:
+            payload = {}
+        step = int(payload.get("step", COARSE_RUGGEDNESS_STEP))
+        if step not in (16, 32, 64, 128):
+            step = COARSE_RUGGEDNESS_STEP
+        try:
+            started, status = start_ruggedness_generation(run, step)
         except FileNotFoundError as e:
             self._send_json({"error": str(e)}, HTTPStatus.NOT_FOUND)
             return
@@ -717,11 +851,16 @@ class Handler(BaseHTTPRequestHandler):
         self._send_file(ids_path, "image/png")
 
     def handle_ruggedness_image(self, run: str, layer: str):
+        parsed = urlparse(self.path)
+        params = parse_qs(parsed.query)
+        step_raw = params.get("step", [None])[0]
+        step = int(step_raw) if step_raw and step_raw.isdigit() else None
+
         run_dir = run_path(run)
         if not run_dir.exists():
             self._send_text("run not found", HTTPStatus.NOT_FOUND)
             return
-        path = layer_file(run_dir, layer, "ruggedness.png")
+        path = resolve_ruggedness_file(run_dir, layer, step)
         if not path or not path.exists():
             self._send_text("ruggedness layer not found", HTTPStatus.NOT_FOUND)
             return
