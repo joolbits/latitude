@@ -31,7 +31,9 @@ public class GlobeModClient implements ClientModInitializer {
     public void onInitializeClient() {
         GlobeNet.registerPayloads();
         GlobeMod.LOGGER.info("Globe client init OK");
-        GlobeMod.LOGGER.info("[Latitude] debugEwFog={}", GlobeClientState.DEBUG_EW_FOG);
+        if (GlobeClientState.DEBUG_EW_FOG) {
+            GlobeMod.LOGGER.info("[Latitude] debugEwFog=true");
+        }
 
         LatitudeConfig.get();
 
