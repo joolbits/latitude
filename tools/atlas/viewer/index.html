@@ -1427,6 +1427,29 @@ html, body {
         <option value="">— choose a generated world —</option>
        </select>
       </div>
+      <button id="btn-delete-run" class="pill-icon-btn" type="button"
+        title="Delete this run from disk" style="margin-top:4px;font-size:11px;padding:1px 6px;display:none">
+        🗑 Delete run
+      </button>
+      <button id="btn-manage-runs" class="pill-icon-btn" type="button"
+        style="margin-top:4px;font-size:11px;padding:1px 6px">
+        Manage runs…
+      </button>
+      <div id="run-manage-panel" style="display:none;margin-top:6px">
+        <div id="run-check-list"
+          style="max-height:180px;overflow-y:auto;border:1px solid #444;border-radius:3px;padding:2px 0">
+        </div>
+        <div style="margin-top:4px;display:flex;gap:4px;flex-wrap:wrap">
+          <button id="btn-delete-selected" class="pill-icon-btn" type="button"
+            style="font-size:11px;padding:1px 6px" disabled>
+            🗑 Delete selected (<span id="delete-selected-count">0</span>)
+          </button>
+          <button id="btn-delete-all-runs" class="pill-icon-btn" type="button"
+            style="font-size:11px;padding:1px 6px">
+            🗑 Delete all
+          </button>
+        </div>
+      </div>
      </div>
     </div>
    </div>
@@ -1477,14 +1500,15 @@ html, body {
       <div class="lat-select-wrap">
        <select id="gen-quality" class="lat-select" title="Generate a new run at a selected quality">
         <option value="">Choose…</option>
-        <option value="potato">Potato</option>
-        <option value="low">Low</option>
-        <option value="medium">Medium</option>
-        <option value="high">High</option>
+        <option value="step128">step128</option>
+        <option value="step64">step64</option>
+        <option value="step32">step32</option>
+        <option value="step16">step16</option>
        </select>
       </div>
       <div class="seed-controls">
        <input id="gen-seed" class="seed-input" type="text" inputmode="numeric" spellcheck="false" autocomplete="off" placeholder="2591890304012655616" title="Optional signed 64-bit seed">
+       <button id="btn-random-seed" class="pill-icon-btn" type="button" title="Fill a random seed" style="margin-left:4px;font-size:11px;padding:1px 6px;height:20px;vertical-align:middle">⚄</button>
        <span id="gen-seed-status" class="seed-status"></span>
       </div>
       <div id="generation-status">
@@ -1596,11 +1620,17 @@ html, body {
      <div class="band-desc-hint" id="band-violations-label">Band violations: off</div>
      <div class="band-desc-hint">Descriptors: Tropical, Subtropical, Temperate, Subpolar, Polar</div>
      <div class="toggle-row" style="margin-top:8px">
-      <span class="toggle-label">Terrain Ruggedness</span>
+      <span class="toggle-label">Terrain Relief (fast preview)</span>
       <label class="toggle-switch">
        <input type="checkbox" id="tog-ruggedness">
        <span class="toggle-track"></span>
       </label>
+     </div>
+     <div style="margin-top:4px">
+      <select id="ruggedness-quality" class="lat-select" title="Quality for on-demand terrain relief generation" style="font-size:11px;padding:1px 4px;height:20px;vertical-align:middle">
+       <option value="64" selected>fast (step64)</option>
+       <option value="16">detailed (step16)</option>
+      </select>
      </div>
      <div style="font-size:0.78em;margin-top:3px;line-height:1.7;color:var(--text-secondary)">
       <span style="display:inline-block;width:11px;height:11px;background:#8BC34A;vertical-align:middle;border-radius:2px"></span> 0–5 flat&nbsp;&nbsp;
@@ -1609,6 +1639,13 @@ html, body {
       <span style="display:inline-block;width:11px;height:11px;background:#AB47BC;vertical-align:middle;border-radius:2px"></span> 21+ rugged
      </div>
      <div id="ruggedness-status" style="font-size:0.78em;margin-top:3px;color:var(--text-secondary);min-height:1.2em"></div>
+     <div class="toggle-row" style="margin-top:8px">
+      <span class="toggle-label">Biome Colors</span>
+      <select id="sel-color-view" class="lat-select" style="font-size:11px;padding:1px 4px;height:20px;vertical-align:middle">
+       <option value="identity" selected>Identity</option>
+       <option value="legacy">Legacy</option>
+      </select>
+     </div>
     </div>
    </div>
  
@@ -1685,6 +1722,7 @@ const gridCanvas = $('#grid-canvas');
 const bandCanvas = $('#band-canvas');
 const bandViolationCanvas = $('#band-violation-canvas');
 const ruggedCanvas = $('#rugged-canvas');
+let currentRuggedImg = null; // tracks any in-flight ruggedness Image load
 const mapCtx = mapCanvas.getContext('2d', { willReadFrequently: true });
 const hlCtx = hlCanvas.getContext('2d');
 const gridCtx = gridCanvas.getContext('2d');
@@ -1713,6 +1751,14 @@ const btnJump = $('#btn-jump');
 const uiScaleSel = $('#ui-scale');
 const genSeedInput = $('#gen-seed');
 const genSeedStatus = $('#gen-seed-status');
+const btnRandomSeed      = $('#btn-random-seed');
+const btnDeleteRun       = $('#btn-delete-run');
+const btnManageRuns      = $('#btn-manage-runs');
+const runManagePanel     = $('#run-manage-panel');
+const runCheckList       = $('#run-check-list');
+const btnDeleteSelected  = $('#btn-delete-selected');
+const btnDeleteAllRuns   = $('#btn-delete-all-runs');
+const deleteSelectedCount = $('#delete-selected-count');
  const genQuality = $('#gen-quality');
 const btnFit = $('#btn-fit');
 const btnReset = $('#btn-reset-zoom');
@@ -1727,6 +1773,8 @@ const togTooltip = $('#tog-tooltip');
 const togBands = $('#tog-bands');
 const togBandViolations = $('#tog-band-violations');
 const togRuggedness = $('#tog-ruggedness');
+const ruggedQuality = $('#ruggedness-quality');
+const selColorView = $('#sel-color-view');
 const bandsOpacity = $('#bands-opacity');
 const bandsOpacityVal = $('#bands-opacity-val');
 const bandViolationsLabel = $('#band-violations-label');
@@ -1792,6 +1840,8 @@ const btnClearPaletteSelection = $('#btn-clear-palette-selection');
   generationActive: false,
   pendingGenerationPreset: null,
   generationPollTimer: null,
+  selectedRunIds: new Set(),
+  colorViewMode: 'identity',
  };
  
  const LEGACY_BEACH_RED = [235, 72, 63];
@@ -1840,10 +1890,10 @@ const BIOME_COLOR_OVERRIDES = new Map([
   ['minecraft:stony_shore', '#7F7F7F']
 ]);
 const GENERATION_PRESETS = {
-  potato: { label: 'Potato', resolution: 128 },
-  low: { label: 'Low', resolution: 64 },
-  medium: { label: 'Medium', resolution: 32 },
-  high: { label: 'High', resolution: 16 },
+  step128: { label: 'step128', resolution: 128 },
+  step64:  { label: 'step64',  resolution: 64  },
+  step32:  { label: 'step32',  resolution: 32  },
+  step16:  { label: 'step16',  resolution: 16  },
  };
 const CANONICAL_BAND_DEFINITIONS = [
  { id: 'tropical', label: 'Tropical', minDeg: 0.0, maxDeg: 23.5, color: [232, 112, 62] },
@@ -1884,6 +1934,17 @@ function normalizeUiScale(value) {
   const n = Number(value);
   if (!Number.isFinite(n)) return 1;
   return Math.min(1.3, Math.max(0.8, n));
+}
+
+function randomSignedLongString() {
+  // Generate a random signed 64-bit integer in Java long range using
+  // crypto.getRandomValues for uniform distribution.
+  const buf = new Uint32Array(2);
+  crypto.getRandomValues(buf);
+  // Combine two 32-bit halves into a BigInt, then re-interpret as signed.
+  let val = (BigInt(buf[0]) << 32n) | BigInt(buf[1]);
+  if (val > JAVA_LONG_MAX) val -= (JAVA_LONG_MAX - JAVA_LONG_MIN + 1n);
+  return val.toString();
 }
 
 function validateManualSeed(rawValue) {
@@ -3536,8 +3597,25 @@ togRuggedness.addEventListener('change', () => {
     fetchAndRenderRuggedness(state.currentRun, state.currentLayer);
   } else {
     clearRuggedness();
+    setRuggednessStatus('');
   }
 });
+if (ruggedQuality) {
+  ruggedQuality.addEventListener('change', () => {
+    if (!state.currentRun || !state.currentLayer) return;
+    setRuggednessStatus('');
+    if (currentRuggedImg) {
+      currentRuggedImg.onload = null;
+      currentRuggedImg.onerror = null;
+      currentRuggedImg.src = '';
+      currentRuggedImg = null;
+    }
+    if (togRuggedness && togRuggedness.checked) {
+      clearRuggedness();
+      fetchAndRenderRuggedness(state.currentRun, state.currentLayer);
+    }
+  });
+}
 if (bandsOpacity) {
  const applyBandOpacity = () => {
   const v = Number(bandsOpacity.value || 24);
@@ -3756,6 +3834,41 @@ function updateRunActionButtons() {
   if (btnSaveRun) btnSaveRun.disabled = !state.currentRun;
   if (btnOpenReport) btnOpenReport.disabled = !state.currentRun || (!state.biomes.length && !state.biomeInventory.length);
   if (btnExportReport) btnExportReport.disabled = !state.currentRun || (!state.biomes.length && !state.biomeInventory.length);
+  if (btnDeleteRun) btnDeleteRun.style.display = state.currentRun ? '' : 'none';
+}
+
+function updateDeleteSelectedBtn() {
+  const n = state.selectedRunIds.size;
+  if (deleteSelectedCount) deleteSelectedCount.textContent = String(n);
+  if (btnDeleteSelected) btnDeleteSelected.disabled = n === 0;
+  if (btnDeleteAllRuns) btnDeleteAllRuns.disabled = state.runs.length === 0;
+}
+
+function buildRunCheckList() {
+  if (!runCheckList) return;
+  // Prune stale selections after a refresh.
+  state.selectedRunIds = new Set([...state.selectedRunIds].filter(r => state.runs.includes(r)));
+  runCheckList.innerHTML = '';
+  for (const r of [...state.runs].sort().reverse()) {
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:center;gap:6px;padding:2px 6px;cursor:default';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.dataset.run = r;
+    cb.checked = state.selectedRunIds.has(r);
+    cb.addEventListener('change', () => {
+      if (cb.checked) state.selectedRunIds.add(r);
+      else state.selectedRunIds.delete(r);
+      updateDeleteSelectedBtn();
+    });
+    const lbl = document.createElement('span');
+    lbl.style.cssText = 'font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px';
+    lbl.textContent = runOptionLabel(r, state.runManifestMap[r]);
+    lbl.title = r;
+    row.append(cb, lbl);
+    runCheckList.appendChild(row);
+  }
+  updateDeleteSelectedBtn();
 }
 
 btnSaveRun.addEventListener('click', () => {
@@ -3797,6 +3910,37 @@ if (genSeedInput) {
   genQuality.value = '';
   showGenerationConfirm(key);
  });
+}
+
+if (btnRandomSeed) {
+  btnRandomSeed.addEventListener('click', () => {
+    if (genSeedInput) {
+      genSeedInput.value = randomSignedLongString();
+      syncSeedInputStatus();
+    }
+  });
+}
+
+if (btnDeleteRun) {
+  btnDeleteRun.addEventListener('click', () => {
+    deleteRun(state.currentRun);
+  });
+}
+
+if (btnManageRuns) {
+  btnManageRuns.addEventListener('click', () => {
+    const isOpen = runManagePanel && runManagePanel.style.display !== 'none';
+    if (runManagePanel) runManagePanel.style.display = isOpen ? 'none' : '';
+    if (!isOpen) buildRunCheckList();
+  });
+}
+
+if (btnDeleteSelected) {
+  btnDeleteSelected.addEventListener('click', () => deleteSelectedRuns());
+}
+
+if (btnDeleteAllRuns) {
+  btnDeleteAllRuns.addEventListener('click', () => deleteAllRuns());
 }
 
 /* ─── MAP IMAGE LOADING ─── */
@@ -3850,15 +3994,46 @@ function buildColorLookup() {
   }
 }
 
+function paintCanvasFromBiomeIndices() {
+  if (!state.biomeIndices || !state.imageData) return;
+  if (state.biomeIndexWidth !== state.mapWidth || state.biomeIndexHeight !== state.mapHeight) return;
+  const useLegacy = state.colorViewMode === 'legacy';
+  const data = state.imageData.data;
+  const indices = state.biomeIndices;
+  for (let i = 0; i < indices.length; i++) {
+    const b = state.biomeByIndex[indices[i] & 0xFF];
+    if (!b) continue;
+    const c = useLegacy && Array.isArray(b.legacyColor) ? b.legacyColor : b.color;
+    if (Array.isArray(c)) {
+      const off = i * 4;
+      data[off]     = c[0];
+      data[off + 1] = c[1];
+      data[off + 2] = c[2];
+    }
+  }
+  mapCtx.putImageData(state.imageData, 0, 0);
+}
+
 function normalizeBiomePaletteForDisplay(rawBiomes) {
   const remaps = [];
   const biomes = (rawBiomes || []).map((b) => {
     if (!b || !Array.isArray(b.color)) return b;
+    const legacyColor = [...b.color];
     const id = String(b.id || '').toLowerCase();
     const overrideHex = BIOME_COLOR_OVERRIDES.get(id);
     if (overrideHex) {
+      const origColor = [...b.color];
       const [r, g, bl] = hexToRgb(overrideHex);
-      return { ...b, color: [r, g, bl] };
+      const exists = remaps.some(m =>
+        m.from[0] === origColor[0] &&
+        m.from[1] === origColor[1] &&
+        m.from[2] === origColor[2] &&
+        m.to[0] === r &&
+        m.to[1] === g &&
+        m.to[2] === bl
+      );
+      if (!exists) remaps.push({ from: origColor, to: [r, g, bl] });
+      return { ...b, color: [r, g, bl], legacyColor };
     }
     const isBeachFamily = id.includes('beach') || id.includes('shore') || id.includes('coast');
     const isLegacyRed = b.color.length >= 3
@@ -3867,9 +4042,9 @@ function normalizeBiomePaletteForDisplay(rawBiomes) {
       && b.color[2] === LEGACY_BEACH_RED[2];
     if (isBeachFamily && isLegacyRed) {
       remaps.push({ from: [...LEGACY_BEACH_RED], to: [...BEACH_SAND] });
-      return { ...b, color: [...BEACH_SAND] };
+      return { ...b, color: [...BEACH_SAND], legacyColor };
     }
-    return b;
+    return { ...b, legacyColor };
   });
   return { biomes, remaps };
 }
@@ -3893,22 +4068,6 @@ function mergeBiomePresenceRows(rawBiomes, rawInventory) {
     if (aPct !== bPct) return bPct - aPct;
     return String(a?.name || a?.id || '').localeCompare(String(b?.name || b?.id || ''));
   });
-}
-
-function applyImageColorRemaps(remaps) {
-  if (!state.imageData || !Array.isArray(remaps) || remaps.length === 0) return;
-  const d = state.imageData.data;
-  for (let i = 0; i < d.length; i += 4) {
-    for (const remap of remaps) {
-      if (d[i] === remap.from[0] && d[i + 1] === remap.from[1] && d[i + 2] === remap.from[2]) {
-        d[i] = remap.to[0];
-        d[i + 1] = remap.to[1];
-        d[i + 2] = remap.to[2];
-        break;
-      }
-    }
-  }
-  mapCtx.putImageData(state.imageData, 0, 0);
 }
 
 /* ─── API INTEGRATION ─── */
@@ -3978,6 +4137,12 @@ function syncOverlayCanvasToMap() {
 
 function clearRuggedness() {
   if (!ruggedCanvas) return;
+  if (currentRuggedImg) {
+    currentRuggedImg.onload = null;
+    currentRuggedImg.onerror = null;
+    currentRuggedImg.src = '';
+    currentRuggedImg = null;
+  }
   syncOverlayCanvasToMap();
   ruggedCtx.clearRect(0, 0, ruggedCanvas.width, ruggedCanvas.height);
   ruggedCanvas.classList.remove('active');
@@ -4005,8 +4170,9 @@ async function pollUntilRuggednessReady() {
 }
 
 async function promptAndGenerateRuggedness(run, layer) {
+  const step = Number(ruggedQuality?.value || 64);
   const confirmed = confirm(
-    'This run does not have a terrain ruggedness layer yet.\n\n' +
+    `Terrain Relief step${step} has not been generated for this run yet.\n\n` +
     'Generate it now? This may take a few minutes.'
   );
   if (!confirmed) {
@@ -4015,12 +4181,12 @@ async function promptAndGenerateRuggedness(run, layer) {
   }
 
   if (togRuggedness) togRuggedness.disabled = true;
-  setRuggednessStatus('Starting ruggedness generation\u2026');
+  setRuggednessStatus(`Starting Terrain Relief step${step} generation…`);
 
   try {
     const resp = await fetch(
       `${API_BASE}/api/runs/${encodeURIComponent(run)}/generate-ruggedness`,
-      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ step }) }
     );
     const data = resp.headers.get('content-type')?.includes('json')
       ? await resp.json().catch(() => ({}))
@@ -4034,7 +4200,7 @@ async function promptAndGenerateRuggedness(run, layer) {
       // File appeared between the 404 probe and the POST; skip polling.
     } else {
       // 202 started, or 409 another job running — poll either way.
-      setRuggednessStatus('Generating terrain ruggedness\u2026 this may take a few minutes.');
+      setRuggednessStatus(`Generating Terrain Relief step${step}… this may take a few minutes.`);
       await pollUntilRuggednessReady();
     }
 
@@ -4049,8 +4215,16 @@ async function promptAndGenerateRuggedness(run, layer) {
 }
 
 async function fetchAndRenderRuggedness(run, layer) {
+  // Cancel any previous in-flight image load before starting a new one.
+  if (currentRuggedImg) {
+    currentRuggedImg.onload = null;
+    currentRuggedImg.onerror = null;
+    currentRuggedImg.src = '';
+    currentRuggedImg = null;
+  }
   try {
-    const resp = await fetch(`${API_BASE}/api/runs/${encodeURIComponent(run)}/layers/${encodeURIComponent(layer)}/ruggedness-image`);
+    const step = Number(ruggedQuality?.value || 64);
+    const resp = await fetch(`${API_BASE}/api/runs/${encodeURIComponent(run)}/layers/${encodeURIComponent(layer)}/ruggedness-image?step=${step}`);
     if (!resp.ok) {
       clearRuggedness();
       if (resp.status === 404) {
@@ -4064,17 +4238,20 @@ async function fetchAndRenderRuggedness(run, layer) {
     const blob = await resp.blob();
     const url = URL.createObjectURL(blob);
     const img = new Image();
+    currentRuggedImg = img;
     img.onload = () => {
+      currentRuggedImg = null;
       // Sync canvas to the map state (same source as bands/grid/highlight overlays).
       syncOverlayCanvasToMap();
       ruggedCtx.clearRect(0, 0, ruggedCanvas.width, ruggedCanvas.height);
       ruggedCtx.globalAlpha = 0.65;
       ruggedCtx.drawImage(img, 0, 0, ruggedCanvas.width, ruggedCanvas.height);
       ruggedCtx.globalAlpha = 1.0;
+      setRuggednessStatus(`Terrain Relief: step${step}`);
       ruggedCanvas.classList.add('active');
       URL.revokeObjectURL(url);
     };
-    img.onerror = () => { clearRuggedness(); URL.revokeObjectURL(url); };
+    img.onerror = () => { currentRuggedImg = null; clearRuggedness(); URL.revokeObjectURL(url); };
     img.src = url;
   } catch (e) {
     clearRuggedness();
@@ -4179,6 +4356,112 @@ function startGenerationPolling() {
   state.generationPollTimer = setInterval(pollGenerationStatus, 1500);
 }
 
+async function deleteSelectedRuns() {
+  const ids = [...state.selectedRunIds];
+  if (ids.length === 0) return;
+  const confirmed = confirm(
+    `Delete ${ids.length} run${ids.length === 1 ? '' : 's'} from disk?\n\n` +
+    ids.map(id => `  \u2022 ${id}`).join('\n') +
+    '\n\nThis cannot be undone.'
+  );
+  if (!confirmed) return;
+  try {
+    const resp = await fetch(`${API_BASE}/api/runs/bulk-delete`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ runs: ids }),
+    });
+    if (resp.status === 409) {
+      showToast('Cannot delete: generation is in progress.', 'error');
+      return;
+    }
+    if (!resp.ok) {
+      const text = await resp.text().catch(() => '');
+      showToast(`Delete failed: ${text || resp.status}`, 'error');
+      return;
+    }
+    const result = await resp.json().catch(() => ({}));
+    const deleted = result.deleted || ids;
+    state.selectedRunIds.clear();
+    if (state.currentRun && deleted.includes(state.currentRun)) {
+      selRun.value = '';
+      selRun.dispatchEvent(new Event('change'));
+    }
+    showToast(`Deleted ${deleted.length} run${deleted.length === 1 ? '' : 's'}.`, 'success');
+    await refreshRuns();
+    buildRunCheckList();
+  } catch (e) {
+    showToast(`Delete error: ${e.message}`, 'error');
+  }
+}
+
+async function deleteAllRuns() {
+  const count = state.runs.length;
+  if (count === 0) { showToast('No runs to delete.', 'error'); return; }
+  const confirmed = confirm(
+    `Delete ALL ${count} run${count === 1 ? '' : 's'} from disk?\n\nThis cannot be undone.`
+  );
+  if (!confirmed) return;
+  try {
+    const resp = await fetch(`${API_BASE}/api/runs/delete-all`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    });
+    if (resp.status === 409) {
+      showToast('Cannot delete: generation is in progress.', 'error');
+      return;
+    }
+    if (!resp.ok) {
+      const text = await resp.text().catch(() => '');
+      showToast(`Delete all failed: ${text || resp.status}`, 'error');
+      return;
+    }
+    const result = await resp.json().catch(() => ({}));
+    const deleted = result.deleted || [];
+    state.selectedRunIds.clear();
+    if (runCheckList) runCheckList.innerHTML = '';
+    if (state.currentRun) {
+      selRun.value = '';
+      selRun.dispatchEvent(new Event('change'));
+    }
+    showToast(`Deleted ${deleted.length} run${deleted.length === 1 ? '' : 's'}.`, 'success');
+    await refreshRuns();
+    buildRunCheckList();
+  } catch (e) {
+    showToast(`Delete all error: ${e.message}`, 'error');
+  }
+}
+
+async function deleteRun(runId) {
+  if (!runId) return;
+  const confirmed = confirm(
+    `Delete run "${runId}" from disk?\n\nThis cannot be undone.`
+  );
+  if (!confirmed) return;
+  try {
+    const resp = await fetch(`${API_BASE}/api/runs/${encodeURIComponent(runId)}`, { method: 'DELETE' });
+    if (resp.status === 409) {
+      showToast('Cannot delete: generation is in progress.', 'error');
+      return;
+    }
+    if (!resp.ok) {
+      const text = await resp.text().catch(() => '');
+      showToast(`Delete failed: ${text || resp.status}`, 'error');
+      return;
+    }
+    // If the deleted run was selected, clear selection before refreshing.
+    if (state.currentRun === runId) {
+      selRun.value = '';
+      selRun.dispatchEvent(new Event('change'));
+    }
+    showToast(`Run "${runId}" deleted.`, 'success');
+    await refreshRuns();
+  } catch (e) {
+    showToast(`Delete error: ${e.message}`, 'error');
+  }
+}
+
 async function refreshRuns() {
   state.runs = await fetchRuns();
   const manifestEntries = await Promise.all(state.runs.map(async run => [run, await loadRunManifest(run, true)]));
@@ -4195,6 +4478,9 @@ async function refreshRuns() {
 
   if (previous && state.runs.includes(previous)) {
     selRun.value = previous;
+  }
+  if (runManagePanel && runManagePanel.style.display !== 'none') {
+    buildRunCheckList();
   }
 }
 
@@ -4338,7 +4624,6 @@ async function switchLayer(run, layer) {
   const normalized = normalizeBiomePaletteForDisplay(biomes);
   const normalizedInventory = normalizeBiomePaletteForDisplay(inventory);
   state.legend = legend;
-  applyImageColorRemaps(normalized.remaps);
   state.biomes = normalized.biomes.sort((a, b) => (b.pct || 0) - (a.pct || 0));
   state.biomeInventory = normalizedInventory.biomes.sort((a, b) => String(a?.name || a?.id || '').localeCompare(String(b?.name || b?.id || '')));
   rebuildBiomeBandMasks();
@@ -4357,6 +4642,7 @@ async function switchLayer(run, layer) {
   }
 
   buildColorLookup();
+  paintCanvasFromBiomeIndices();
   renderBiomeList(state.biomes);
   biomeSearch.disabled = false;
   biomeSearch.removeAttribute('disabled');
@@ -4389,6 +4675,12 @@ togInspect.addEventListener('change', () => {
 togTooltip.addEventListener('change', () => {
   if (!togTooltip.checked) inspectCard.classList.remove('visible');
 });
+if (selColorView) {
+  selColorView.addEventListener('change', () => {
+    state.colorViewMode = selColorView.value;
+    paintCanvasFromBiomeIndices();
+  });
+}
 
 /* ─── KEYBOARD SHORTCUTS ─── */
 document.addEventListener('keydown', e => {
