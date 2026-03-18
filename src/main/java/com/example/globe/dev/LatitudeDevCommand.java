@@ -1,5 +1,6 @@
 package com.example.globe.dev;
 
+import com.example.globe.GlobeMod;
 import com.example.globe.util.LatitudeBands;
 import com.example.globe.util.LatitudeMath;
 import com.example.globe.world.LatitudeBiomes;
@@ -26,6 +27,13 @@ import net.minecraft.world.border.WorldBorder;
 import net.minecraft.world.biome.Biome;
 import net.minecraft.world.chunk.ChunkStatus;
 
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumMap;
@@ -218,6 +226,11 @@ public final class LatitudeDevCommand {
             source.sendFeedback(() -> Text.literal(headerText), false);
             source.sendFeedback(() -> Text.literal(summaryText), false);
             source.sendFeedback(() -> Text.literal(driversText), false);
+
+            String logPath = writeExplainLog(source, headerText, summaryText, driversText, pos.getX(), pos.getZ());
+            if (logPath != null) {
+                source.sendFeedback(() -> Text.literal("[latdev] explain log → " + logPath), false);
+            }
             return 1;
         } catch (Exception e) {
             ctx.getSource().sendError(Text.literal("[latdev] explainHere error: " + e.getMessage()));
@@ -578,6 +591,30 @@ public final class LatitudeDevCommand {
 
     private static int setBudgetAutoOff(CommandContext<ServerCommandSource> ctx) {
         return ChunkPregenerator.setAutoBudget(ctx.getSource(), false);
+    }
+
+    private static final DateTimeFormatter EXPLAIN_TIMESTAMP_FMT =
+            DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss");
+
+    /** Writes explain output to run/latdev/explain/<timestamp>_x<X>_z<Z>.txt and latest.txt. Returns relative path string for user feedback, or null on failure. */
+    private static String writeExplainLog(ServerCommandSource source, String header, String summary, String drivers, int x, int z) {
+        try {
+            Path explainDir = source.getServer().getRunDirectory().resolve("latdev").resolve("explain");
+            Files.createDirectories(explainDir);
+
+            String timestamp = EXPLAIN_TIMESTAMP_FMT.format(LocalDateTime.now());
+            String filename = timestamp + "_x" + x + "_z" + z + ".txt";
+            String content = header + "\n" + summary + "\n" + drivers + "\n";
+
+            Files.writeString(explainDir.resolve(filename), content, StandardCharsets.UTF_8);
+            Files.writeString(explainDir.resolve("latest.txt"), content, StandardCharsets.UTF_8,
+                    StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+
+            return "latdev/explain/latest.txt  (also " + filename + ")";
+        } catch (IOException e) {
+            GlobeMod.LOGGER.warn("[latdev] explainHere log write failed", e);
+            return null;
+        }
     }
 
     private static int authoritativeRadius(ServerCommandSource source) {

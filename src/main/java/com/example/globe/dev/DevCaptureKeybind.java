@@ -31,6 +31,7 @@ public final class DevCaptureKeybind {
     private static final String CAPTURE_DIR_HINT = "run/Latitude/captures/";
 
     private static KeyBinding captureKey;
+    private static KeyBinding explainKey;
     private static boolean initialized;
     private static long lastCaptureMillis;
 
@@ -46,6 +47,13 @@ public final class DevCaptureKeybind {
                 "key.globe.dev_capture_overlay",
                 InputUtil.Type.KEYSYM,
                 InputUtil.GLFW_KEY_KP_0,
+                ClientKeybinds.CATEGORY
+        ));
+
+        explainKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+                "key.globe.dev_explain_here",
+                InputUtil.Type.KEYSYM,
+                InputUtil.GLFW_KEY_KP_3,
                 ClientKeybinds.CATEGORY
         ));
 
@@ -65,6 +73,14 @@ public final class DevCaptureKeybind {
             }
             lastCaptureMillis = now;
             capture(client);
+        }
+
+        if (explainKey != null) {
+            while (explainKey.wasPressed()) {
+                if (client.player != null && client.player.networkHandler != null) {
+                    client.player.networkHandler.sendChatCommand("latdev explainHere");
+                }
+            }
         }
     }
 
