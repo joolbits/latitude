@@ -2810,7 +2810,9 @@ public final class LatitudeBiomes {
                     "minecraft:frozen_peaks",
                     "minecraft:jagged_peaks");
             if (mountain != null) pick = mountain;
-        } else if (isBiomeId(pick, "minecraft:snowy_slopes")) {
+        } else if (isBiomeId(pick, "minecraft:snowy_slopes")
+                || isBiomeId(pick, "minecraft:jagged_peaks")
+                || isBiomeId(pick, "minecraft:frozen_peaks")) {
             RegistryEntry<Biome> fallback = pickFrom(biomes, blockX, blockZ, BAND_POLAR,
                     "minecraft:snowy_slopes",
                     "minecraft:snowy_plains",
@@ -2919,7 +2921,9 @@ public final class LatitudeBiomes {
                 if (idx >= options.size()) idx = options.size() - 1;
                 pick = options.get(idx);
             }
-        } else if (isBiomeId(pick, "minecraft:snowy_slopes")) {
+        } else if (isBiomeId(pick, "minecraft:snowy_slopes")
+                || isBiomeId(pick, "minecraft:jagged_peaks")
+                || isBiomeId(pick, "minecraft:frozen_peaks")) {
             List<RegistryEntry<Biome>> options = new ArrayList<>();
             RegistryEntry<Biome> slopes = entryById(biomes, "minecraft:snowy_slopes");
             RegistryEntry<Biome> plains = entryById(biomes, "minecraft:snowy_plains");
