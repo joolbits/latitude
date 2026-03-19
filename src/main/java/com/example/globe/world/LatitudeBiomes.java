@@ -2810,13 +2810,10 @@ public final class LatitudeBiomes {
                     "minecraft:frozen_peaks",
                     "minecraft:jagged_peaks");
             if (mountain != null) pick = mountain;
-        } else if (isBiomeId(pick, "minecraft:snowy_slopes")) {
-            RegistryEntry<Biome> fallback = pickFrom(biomes, blockX, blockZ, BAND_POLAR,
-                    "minecraft:snowy_slopes",
-                    "minecraft:snowy_plains",
-                    "minecraft:snowy_taiga",
-                    "minecraft:grove");
-            if (fallback != null) pick = fallback;
+        } else if (isBiomeId(pick, "minecraft:snowy_slopes")
+                || isBiomeId(pick, "minecraft:jagged_peaks")
+                || isBiomeId(pick, "minecraft:frozen_peaks")) {
+            pick = biome(biomes, "minecraft:snowy_slopes");
         }
         if (!coldMountainLike && deg <= shoulderMaxDeg && isBiomeId(pick, "minecraft:snowy_slopes")) {
             return pickSubpolarWithRamp(biomes, base, blockX, blockZ, absLatFraction, BAND_SUBPOLAR, 0x3C43, LAT_SUBPOLAR_PRIMARY, LAT_SUBPOLAR_SECONDARY, LAT_SUBPOLAR_ACCENT);
@@ -2919,22 +2916,11 @@ public final class LatitudeBiomes {
                 if (idx >= options.size()) idx = options.size() - 1;
                 pick = options.get(idx);
             }
-        } else if (isBiomeId(pick, "minecraft:snowy_slopes")) {
-            List<RegistryEntry<Biome>> options = new ArrayList<>();
+        } else if (isBiomeId(pick, "minecraft:snowy_slopes")
+                || isBiomeId(pick, "minecraft:jagged_peaks")
+                || isBiomeId(pick, "minecraft:frozen_peaks")) {
             RegistryEntry<Biome> slopes = entryById(biomes, "minecraft:snowy_slopes");
-            RegistryEntry<Biome> plains = entryById(biomes, "minecraft:snowy_plains");
-            RegistryEntry<Biome> taiga = entryById(biomes, "minecraft:snowy_taiga");
-            RegistryEntry<Biome> grove = entryById(biomes, "minecraft:grove");
-            if (slopes != null) options.add(slopes);
-            if (plains != null) options.add(plains);
-            if (taiga != null) options.add(taiga);
-            if (grove != null) options.add(grove);
-            if (!options.isEmpty()) {
-                double n = ValueNoise2D.sampleBlocks(WORLD_SEED ^ 0x5EEDC0DEL, blockX, blockZ, 2048);
-                int idx = (int) Math.floor(n * (double) options.size());
-                if (idx >= options.size()) idx = options.size() - 1;
-                pick = options.get(idx);
-            }
+            if (slopes != null) pick = slopes;
         }
         if (!coldMountainLike && deg <= shoulderMaxDeg && isBiomeId(pick, "minecraft:snowy_slopes")) {
             return pickSubpolarWithRamp(biomes, base, blockX, blockZ, absLatFraction, BAND_SUBPOLAR, 0x3C43, LAT_SUBPOLAR_PRIMARY, LAT_SUBPOLAR_SECONDARY, LAT_SUBPOLAR_ACCENT);
