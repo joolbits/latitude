@@ -1428,6 +1428,7 @@ public final class LatitudeBiomes {
     private static final double SNOWY_RAMP_START_DEG = 54.0;
     private static final double SNOWY_RAMP_FULL_DEG = 68.0;
     private static final double GROVE_MIN_DEG = 54.0;
+    private static final double EXTREME_POLAR_CAP_MIN_DEG = 85.0;
     private static final int SUBPOLAR_RAMP_PATCH_BLOCKS = 224;
     private static final int SNOWY_RAMP_PATCH_BLOCKS = 288;
 
@@ -1972,7 +1973,9 @@ public final class LatitudeBiomes {
             String detail = "path=" + selectionPathForTrace(base, out) + " auditFlags{tag=" + auditTagPick + ",sanitize=" + auditSanitize + ",canopy=" + auditCanopy + ",warm=" + auditWarmFallback + ",finalSavanna=" + auditFinalSavanna + "}";
             auditSparseJungle(bucket, blockX, blockZ, landBandIndex, detail, biomeId(preBandEnforce), biomeId(out));
         }
-        out = clampFinalPolarNonMountainAlpineOutput(biomeRegistry, out, landBandIndex, mountainLike, mountainNoiseLike || polarMountainLikeFinal);
+        out = clampFinalPolarNonMountainAlpineOutput(biomeRegistry, out, landBandIndex,
+                latitudeDegreesFromRadius(blockZ, effectiveRadius),
+                mountainLike, mountainNoiseLike || polarMountainLikeFinal);
         debugPick(blockX, blockZ, effectiveRadius, t, band, base, out, false, out != sanitized, mangroveDecision);
         return out;
     }
@@ -2332,7 +2335,9 @@ public final class LatitudeBiomes {
         logSubtropicalJungleReturn("pick-collection", blockX, blockZ, t, landBandIndex, base, chosen, sanitized, preBandEnforce, postBandEnforce, postFinalClamp, out);
         logAtlasViewportJungleReturn("pick-collection", callerContext, blockX, blockZ, t, landBandIndex, overlayBandIndex, base, chosen, sanitized, preBandEnforce, postBandEnforce, postFinalClamp, out);
         traceSubpolarJunglePick(blockX, blockZ, effectiveRadius, landBandIndex, base, out);
-        out = clampFinalPolarNonMountainAlpineOutput(biomePool, out, landBandIndex, mountainLike, mountainNoiseLike || polarMountainLikeFinal);
+        out = clampFinalPolarNonMountainAlpineOutput(biomePool, out, landBandIndex,
+                latitudeDegreesFromRadius(blockZ, effectiveRadius),
+                mountainLike, mountainNoiseLike || polarMountainLikeFinal);
         debugPick(blockX, blockZ, effectiveRadius, t, band, base, out, false, out != sanitized, mangroveDecision);
         return out;
     }
@@ -4146,11 +4151,27 @@ public final class LatitudeBiomes {
                 && !mountainNoiseLike;
     }
 
+    private static boolean isExtremePolarCap(double latDeg) {
+        return latDeg >= EXTREME_POLAR_CAP_MIN_DEG;
+    }
+
     private static boolean isFlatPolarShelfBannedMountainPick(RegistryEntry<Biome> candidate) {
         return isBiomeId(candidate, "minecraft:jagged_peaks")
                 || isBiomeId(candidate, "minecraft:frozen_peaks")
                 || isBiomeId(candidate, "minecraft:snowy_slopes")
                 || isBiomeId(candidate, "minecraft:ice_spikes");
+    }
+
+    private static boolean isExtremePolarGroveLeak(RegistryEntry<Biome> candidate) {
+        return isBiomeId(candidate, "minecraft:grove")
+                || isBiomeId(candidate, "minecraft:cherry_grove");
+    }
+
+    private static boolean isExtremePolarSoftColdLeak(RegistryEntry<Biome> candidate) {
+        String path = candidate.getKey().map(key -> key.getValue().getPath()).orElse("");
+        return isExtremePolarGroveLeak(candidate)
+                || path.contains("forest")
+                || path.contains("taiga");
     }
 
     private static boolean isMountainCodedColdPick(RegistryEntry<Biome> candidate) {
@@ -4164,10 +4185,38 @@ public final class LatitudeBiomes {
 
     // Final-return clamp: polar non-mountain cells must never output alpine biomes.
     // This fires AFTER all upstream guards, sanitize, enforcement, and post-processing.
+    private static RegistryEntry<Biome> clampExtremePolarLandOutput(Registry<Biome> biomes,
+                                                                    RegistryEntry<Biome> out,
+                                                                    int landBandIndex,
+                                                                    double latDeg,
+                                                                    boolean mountainAuthority) {
+        if (landBandIndex != BAND_POLAR || !isExtremePolarCap(latDeg) || !isExtremePolarSoftColdLeak(out)) {
+            return out;
+        }
+        String fallbackId = mountainAuthority && isExtremePolarGroveLeak(out)
+                ? "minecraft:snowy_slopes"
+                : "minecraft:snowy_plains";
+        try {
+            return biome(biomes, fallbackId);
+        } catch (Throwable ignored) {
+            if (!mountainAuthority || !isExtremePolarGroveLeak(out)) {
+                return out;
+            }
+            try {
+                return biome(biomes, "minecraft:snowy_plains");
+            } catch (Throwable ignored2) {
+                return out;
+            }
+        }
+    }
+
     private static RegistryEntry<Biome> clampFinalPolarNonMountainAlpineOutput(Registry<Biome> biomes,
                                                                                 RegistryEntry<Biome> out, int landBandIndex,
+                                                                                double latDeg,
                                                                                 boolean mountainLike, boolean mountainNoiseLike) {
-        if (landBandIndex != BAND_POLAR || mountainLike || mountainNoiseLike) {
+        boolean mountainAuthority = mountainLike || mountainNoiseLike;
+        out = clampExtremePolarLandOutput(biomes, out, landBandIndex, latDeg, mountainAuthority);
+        if (landBandIndex != BAND_POLAR || mountainAuthority) {
             return out;
         }
         if (!isFlatPolarShelfBannedMountainPick(out)) {
@@ -4180,10 +4229,35 @@ public final class LatitudeBiomes {
         }
     }
 
+    private static RegistryEntry<Biome> clampExtremePolarLandOutput(Collection<RegistryEntry<Biome>> biomes,
+                                                                    RegistryEntry<Biome> out,
+                                                                    int landBandIndex,
+                                                                    double latDeg,
+                                                                    boolean mountainAuthority) {
+        if (landBandIndex != BAND_POLAR || !isExtremePolarCap(latDeg) || !isExtremePolarSoftColdLeak(out)) {
+            return out;
+        }
+        String fallbackId = mountainAuthority && isExtremePolarGroveLeak(out)
+                ? "minecraft:snowy_slopes"
+                : "minecraft:snowy_plains";
+        RegistryEntry<Biome> safe = entryById(biomes, fallbackId);
+        if (safe != null) {
+            return safe;
+        }
+        if (!mountainAuthority || !isExtremePolarGroveLeak(out)) {
+            return out;
+        }
+        RegistryEntry<Biome> fallback = entryById(biomes, "minecraft:snowy_plains");
+        return fallback != null ? fallback : out;
+    }
+
     private static RegistryEntry<Biome> clampFinalPolarNonMountainAlpineOutput(Collection<RegistryEntry<Biome>> biomes,
                                                                                 RegistryEntry<Biome> out, int landBandIndex,
+                                                                                double latDeg,
                                                                                 boolean mountainLike, boolean mountainNoiseLike) {
-        if (landBandIndex != BAND_POLAR || mountainLike || mountainNoiseLike) {
+        boolean mountainAuthority = mountainLike || mountainNoiseLike;
+        out = clampExtremePolarLandOutput(biomes, out, landBandIndex, latDeg, mountainAuthority);
+        if (landBandIndex != BAND_POLAR || mountainAuthority) {
             return out;
         }
         if (!isFlatPolarShelfBannedMountainPick(out)) {
