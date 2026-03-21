@@ -4185,28 +4185,17 @@ public final class LatitudeBiomes {
 
     // Final-return clamp: polar non-mountain cells must never output alpine biomes.
     // This fires AFTER all upstream guards, sanitize, enforcement, and post-processing.
-    private static RegistryEntry<Biome> clampExtremePolarLandOutput(Registry<Biome> biomes,
+    private static RegistryEntry<Biome> clampExtremePolarCapOutput(Registry<Biome> biomes,
                                                                     RegistryEntry<Biome> out,
                                                                     int landBandIndex,
-                                                                    double latDeg,
-                                                                    boolean mountainAuthority) {
+                                                                    double latDeg) {
         if (landBandIndex != BAND_POLAR || !isExtremePolarCap(latDeg) || !isExtremePolarSoftColdLeak(out)) {
             return out;
         }
-        String fallbackId = mountainAuthority && isExtremePolarGroveLeak(out)
-                ? "minecraft:snowy_slopes"
-                : "minecraft:snowy_plains";
         try {
-            return biome(biomes, fallbackId);
+            return biome(biomes, "minecraft:snowy_plains");
         } catch (Throwable ignored) {
-            if (!mountainAuthority || !isExtremePolarGroveLeak(out)) {
-                return out;
-            }
-            try {
-                return biome(biomes, "minecraft:snowy_plains");
-            } catch (Throwable ignored2) {
-                return out;
-            }
+            return out;
         }
     }
 
@@ -4215,7 +4204,7 @@ public final class LatitudeBiomes {
                                                                                 double latDeg,
                                                                                 boolean mountainLike, boolean mountainNoiseLike) {
         boolean mountainAuthority = mountainLike || mountainNoiseLike;
-        out = clampExtremePolarLandOutput(biomes, out, landBandIndex, latDeg, mountainAuthority);
+        out = clampExtremePolarCapOutput(biomes, out, landBandIndex, latDeg);
         if (landBandIndex != BAND_POLAR || mountainAuthority) {
             return out;
         }
@@ -4229,26 +4218,15 @@ public final class LatitudeBiomes {
         }
     }
 
-    private static RegistryEntry<Biome> clampExtremePolarLandOutput(Collection<RegistryEntry<Biome>> biomes,
+    private static RegistryEntry<Biome> clampExtremePolarCapOutput(Collection<RegistryEntry<Biome>> biomes,
                                                                     RegistryEntry<Biome> out,
                                                                     int landBandIndex,
-                                                                    double latDeg,
-                                                                    boolean mountainAuthority) {
+                                                                    double latDeg) {
         if (landBandIndex != BAND_POLAR || !isExtremePolarCap(latDeg) || !isExtremePolarSoftColdLeak(out)) {
             return out;
         }
-        String fallbackId = mountainAuthority && isExtremePolarGroveLeak(out)
-                ? "minecraft:snowy_slopes"
-                : "minecraft:snowy_plains";
-        RegistryEntry<Biome> safe = entryById(biomes, fallbackId);
-        if (safe != null) {
-            return safe;
-        }
-        if (!mountainAuthority || !isExtremePolarGroveLeak(out)) {
-            return out;
-        }
-        RegistryEntry<Biome> fallback = entryById(biomes, "minecraft:snowy_plains");
-        return fallback != null ? fallback : out;
+        RegistryEntry<Biome> safe = entryById(biomes, "minecraft:snowy_plains");
+        return safe != null ? safe : out;
     }
 
     private static RegistryEntry<Biome> clampFinalPolarNonMountainAlpineOutput(Collection<RegistryEntry<Biome>> biomes,
@@ -4256,7 +4234,7 @@ public final class LatitudeBiomes {
                                                                                 double latDeg,
                                                                                 boolean mountainLike, boolean mountainNoiseLike) {
         boolean mountainAuthority = mountainLike || mountainNoiseLike;
-        out = clampExtremePolarLandOutput(biomes, out, landBandIndex, latDeg, mountainAuthority);
+        out = clampExtremePolarCapOutput(biomes, out, landBandIndex, latDeg);
         if (landBandIndex != BAND_POLAR || mountainAuthority) {
             return out;
         }
