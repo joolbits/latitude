@@ -6,6 +6,10 @@ plugins {
 version = project.mod_version
 group = project.maven_group
 
+def latitudeClientXms = (findProperty('latitudeClientXms') ?: '1G').toString()
+def latitudeClientXmx = (findProperty('latitudeClientXmx') ?: '2G').toString()
+def latitudeSkipSystemDetailsHardware = (findProperty('latitudeSkipSystemDetailsHardware') ?: 'true').toString()
+
 base {
     archivesName = project.archives_base_name
 }
@@ -14,6 +18,9 @@ loom {
 
     runs {
         client {
+            vmArg "-Xms2G"
+            vmArg "-Xmx8G"
+            vmArg "-Dlatitude.skipSystemDetailsHardware=${latitudeSkipSystemDetailsHardware}"
             vmArg "-Dlatitude.fixSurfaceDripstone=true"
             vmArg "-Dlatitude.fogClampIndex=${System.getProperty('latitude.fogClampIndex', '-1')}"
             vmArg "-Dlatitude.fogClampValue=${System.getProperty('latitude.fogClampValue', '16.0')}"
@@ -26,12 +33,16 @@ loom {
             server()
             name "Biome Preview (Headless)"
             runDir "run-headless"
+            vmArg "-Xms2G"
+            vmArg "-Xmx8G"
             vmArg "-Dlatdev.biomePng=${System.getProperty('latdev.biomePng', 'enabled')}"
         }
         biomeSeedSearch {
             server()
             name "Biome Seed Search (Headless)"
             runDir "run-headless"
+            vmArg "-Xms2G"
+            vmArg "-Xmx8G"
             vmArg "-Dlatdev.biomeSearch=${System.getProperty('latdev.biomeSearch', 'enabled')}"
         }
     }

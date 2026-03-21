@@ -602,6 +602,23 @@ public final class LatitudeBiomes {
             int centerHeight,
             int robustDelta,
             double uplandT,
+            boolean surfaceTruthAvailable,
+            String surfaceBlock,
+            String surfaceFluid,
+            boolean isWaterSurface,
+            int surfaceY,
+            int seaLevelDelta,
+            boolean isSeaLevelSurface,
+            boolean isFlatSurface,
+            boolean isMountainCandidate,
+            boolean isNearOcean,
+            String decisionPath,
+            boolean enteredLandLogic,
+            boolean pickLifecycleAvailable,
+            String initialPick,
+            boolean poolRejected,
+            boolean sanitizeApplied,
+            String reasonSummary,
             String summaryLine,
             String driversBlock) {
     }
@@ -618,7 +635,12 @@ public final class LatitudeBiomes {
             MultiNoiseUtil.MultiNoiseSampler sampler,
             NoiseChunkGenerator generator,
             NoiseConfig noiseConfig,
-            HeightLimitView heightView) {
+            HeightLimitView heightView,
+            boolean surfaceTruthAvailable,
+            String surfaceBlock,
+            String surfaceFluid,
+            boolean isWaterSurface,
+            int surfaceY) {
 
         // --- latitude / band ---
         int activeRadius = ACTIVE_RADIUS_BLOCKS;
@@ -677,14 +699,42 @@ public final class LatitudeBiomes {
         // --- mountain signals ---
         boolean mountainNoiseLike = sampler != null && isMountainLike(sampler, blockX, blockZ);
         boolean mountainLike;
+        int seaLevel = previewSeaLevel(generator);
         if (terrainPreviewAvailable) {
-            int seaLevel = previewSeaLevel(generator);
             mountainLike = mountainNoiseLike
                     && (centerHeight >= seaLevel + PREVIEW_HEIGHT_MARGIN_BLOCKS / 2
                         || robustDelta >= WINDSWEPT_RUGGED_THRESH);
         } else {
             mountainLike = false;
         }
+        boolean isSeaLevelSurface = surfaceTruthAvailable && surfaceY != Integer.MIN_VALUE && surfaceY == seaLevel;
+        int seaLevelDelta = surfaceTruthAvailable && surfaceY != Integer.MIN_VALUE ? (surfaceY - seaLevel) : Integer.MIN_VALUE;
+        boolean isFlatSurface = terrainPreviewAvailable && robustDelta == 0;
+        boolean isNearOcean = oceanDist >= 0 && oceanDist <= MANGROVE_COASTAL_MAX_BLOCKS;
+        boolean isMountainCandidate = mountainNoiseLike || mountainLike;
+        boolean activeWaterSurfaceAuthority = oceanDist == 0;
+        // Mirror the raised-land veto from pick() so the explain path matches actual worldgen
+        if (activeWaterSurfaceAuthority && terrainPreviewAvailable && centerHeight > seaLevel + 3) {
+            activeWaterSurfaceAuthority = false;
+        }
+        String decisionPath = inferDecisionPath(finalBiomeId, bandIndex, activeWaterSurfaceAuthority);
+        boolean enteredLandLogic = "LAND".equals(decisionPath)
+                || "POLAR_PICK".equals(decisionPath)
+                || "SANITIZE".equals(decisionPath)
+                || "FALLBACK".equals(decisionPath);
+        boolean pickLifecycleAvailable = false;
+        String initialPick = "n/a(explain-only)";
+        boolean poolRejected = false;
+        boolean sanitizeApplied = false;
+        String reasonSummary = buildReasonSummary(
+                decisionPath,
+                bandLabel,
+                finalBiomeId,
+                initialPick,
+                isWaterSurface,
+                isSeaLevelSurface,
+                isFlatSurface,
+                isNearOcean);
 
         // --- upland ---
         double uplandT = uplandRampForY(blockY);
@@ -742,6 +792,12 @@ public final class LatitudeBiomes {
         String centerHeightStr = terrainPreviewAvailable ? Integer.toString(centerHeight) : naPreview;
         String robustDeltaStr = terrainPreviewAvailable ? Integer.toString(robustDelta) : naPreview;
         String mountainLikeStr = terrainPreviewAvailable ? Boolean.toString(mountainLike) : naPreview;
+        String surfaceYStr = surfaceTruthAvailable && surfaceY != Integer.MIN_VALUE ? Integer.toString(surfaceY) : "n/a(surface)";
+        String seaLevelDeltaStr = surfaceTruthAvailable && surfaceY != Integer.MIN_VALUE ? Integer.toString(seaLevelDelta) : "n/a(surface)";
+        String seaLevelSurfaceStr = surfaceTruthAvailable ? Boolean.toString(isSeaLevelSurface) : "n/a(surface)";
+        String waterSurfaceStr = surfaceTruthAvailable ? Boolean.toString(isWaterSurface) : "n/a(surface)";
+        String surfaceBlockStr = surfaceTruthAvailable ? safeString(surfaceBlock, "minecraft:air") : "n/a(surface)";
+        String surfaceFluidStr = surfaceTruthAvailable ? safeString(surfaceFluid, "minecraft:empty") : "n/a(surface)";
         String humidityStr = !Double.isNaN(humidity) ? String.format(java.util.Locale.ROOT, "%.3f", humidity) : naBand;
         String opennessStr = !Double.isNaN(openness) ? String.format(java.util.Locale.ROOT, "%.3f", openness) : naBand;
         String compositionBiasStr = !Double.isNaN(compositionBias) ? String.format(java.util.Locale.ROOT, "%.3f", compositionBias) : naBand;
@@ -756,6 +812,13 @@ public final class LatitudeBiomes {
                 + "  cont=%s  ero=%s  weird=%s%n"
                 + "  terrainPreview=%s  centerHeight=%s  robustDelta=%s%n"
                 + "  mountainNoiseLike=%s  mountainLike=%s%n"
+                + "  surfaceTruthAvailable=%s  surfaceBlock=%s  surfaceFluid=%s%n"
+                + "  isWaterSurface=%s  surfaceY=%s  seaLevelDelta=%s%n"
+                + "  isSeaLevelSurface=%s  isFlatSurface=%s  isMountainCandidate=%s  isNearOcean=%s%n"
+                + "  decisionPath=%s  enteredLandLogic=%s%n"
+                + "  initialPick=%s  poolRejected=%s  sanitizeApplied=%s  finalBiome=%s%n"
+                + "  pickLifecycleAvailable=%s%n"
+                + "  reasonSummary=%s%n"
                 + "  humidity=%s  openness=%s  compositionBias=%s%n"
                 + "  uplandT=%.3f",
                 blockX, blockY, blockZ, finalBiomeId,
@@ -764,6 +827,13 @@ public final class LatitudeBiomes {
                 contStr, eroStr, weirdStr,
                 terrainPreviewAvailable ? "available" : "unavailable", centerHeightStr, robustDeltaStr,
                 mountainNoiseLike, mountainLikeStr,
+                surfaceTruthAvailable, surfaceBlockStr, surfaceFluidStr,
+                waterSurfaceStr, surfaceYStr, seaLevelDeltaStr,
+                seaLevelSurfaceStr, isFlatSurface, isMountainCandidate, isNearOcean,
+                decisionPath, enteredLandLogic,
+                initialPick, poolRejected, sanitizeApplied, finalBiomeId,
+                pickLifecycleAvailable,
+                reasonSummary,
                 humidityStr, opennessStr, compositionBiasStr,
                 uplandT);
 
@@ -787,8 +857,83 @@ public final class LatitudeBiomes {
                 centerHeight,
                 robustDelta,
                 uplandT,
+                surfaceTruthAvailable,
+                surfaceBlockStr,
+                surfaceFluidStr,
+                isWaterSurface,
+                surfaceY,
+                seaLevelDelta,
+                isSeaLevelSurface,
+                isFlatSurface,
+                isMountainCandidate,
+                isNearOcean,
+                decisionPath,
+                enteredLandLogic,
+                pickLifecycleAvailable,
+                initialPick,
+                poolRejected,
+                sanitizeApplied,
+                reasonSummary,
                 summaryLine,
                 driversBlock);
+    }
+
+    private static String inferDecisionPath(String finalBiomeId, int bandIndex, boolean activeWaterSurfaceAuthority) {
+        if (activeWaterSurfaceAuthority) {
+            return "ACTIVE_OCEAN";
+        }
+        if (isBeachId(finalBiomeId)) {
+            return "BEACH";
+        }
+        if (isRiverId(finalBiomeId)) {
+            return "RIVER";
+        }
+        if (isOceanId(finalBiomeId)) {
+            return "PASSIVE_OCEAN";
+        }
+        if (bandIndex >= BAND_POLAR) {
+            return "POLAR_PICK";
+        }
+        return "LAND";
+    }
+
+    private static String buildReasonSummary(String decisionPath,
+                                             String bandLabel,
+                                             String finalBiomeId,
+                                             String initialPick,
+                                             boolean isWaterSurface,
+                                             boolean isSeaLevelSurface,
+                                             boolean isFlatSurface,
+                                             boolean isNearOcean) {
+        return String.format(java.util.Locale.ROOT,
+                "Entered %s -> %s -> waterSurface=%s seaLevel=%s flat=%s nearOcean=%s -> initial %s -> final %s",
+                decisionPath,
+                bandLabel,
+                isWaterSurface,
+                isSeaLevelSurface,
+                isFlatSurface,
+                isNearOcean,
+                initialPick,
+                finalBiomeId);
+    }
+
+    private static boolean isBeachId(String biomeId) {
+        return biomeId != null && (biomeId.contains("beach") || biomeId.contains("shore"));
+    }
+
+    private static boolean isRiverId(String biomeId) {
+        return biomeId != null && biomeId.contains("river");
+    }
+
+    private static boolean isOceanId(String biomeId) {
+        return biomeId != null && biomeId.contains("ocean");
+    }
+
+    private static String safeString(String value, String fallback) {
+        if (value == null || value.isBlank()) {
+            return fallback;
+        }
+        return value;
     }
 
     // ---- end biome explainer diagnostics ----
@@ -854,7 +999,7 @@ public final class LatitudeBiomes {
         int centerHeight = mountainNoiseLike ? (seaLevel + PREVIEW_HEIGHT_MARGIN_BLOCKS + 1) : (seaLevel - 1);
         int robustDelta = mountainNoiseLike
                 ? (WINDSWEPT_RUGGED_THRESH + WINDSWEPT_RUGGED_HYST)
-                : Math.max(0, WINDSWEPT_RUGGED_THRESH - 1);
+                : 0; // flat/unknown-safe: do not fabricate raised-land roughness for skipped-preview ocean shelf
         return new PreviewTerrain(centerHeight, robustDelta);
     }
 
@@ -1492,11 +1637,22 @@ public final class LatitudeBiomes {
         boolean previewRuggedHigh = preview.robustDelta >= WINDSWEPT_RUGGED_THRESH;
         boolean previewHeightModerate = preview.centerHeight >= (seaLevel + PREVIEW_HEIGHT_MARGIN_BLOCKS / 2);
         boolean mountainLike = mountainNoiseLike && (previewHeightHigh || previewHeightModerate || previewRuggedHigh);
+        boolean polarMountainNoiseLike = sampler != null && isMountainLike(sampler, blockX, blockZ);
+        boolean polarMountainLike = polarMountainNoiseLike && (previewHeightHigh || previewHeightModerate || previewRuggedHigh);
+        if (landBandIndex >= BAND_POLAR && polarMountainLike) {
+            mountainLike = true;
+        }
         int oceanDistance = oceanDistanceBlocks(blockX, blockZ, sampler);
         boolean nearOcean = oceanDistance <= MANGROVE_COASTAL_MAX_BLOCKS;
         boolean oceanAuthority = oceanDistance == 0;
-        boolean flatSeaLevelSurface = hasReliableSurface && preview.centerHeight <= seaLevel && preview.robustDelta <= 1;
-        boolean waterSurface = oceanAuthority && flatSeaLevelSurface;
+        // Veto coarse ODF ocean authority when real terrain is clearly raised land
+        if (oceanAuthority && !base.isIn(BiomeTags.IS_OCEAN)
+                && generator != null && noiseConfig != null && heightView != null) {
+            int realHeight = previewHeight(generator, noiseConfig, heightView, blockX & ~3, blockZ & ~3);
+            if (realHeight > seaLevel + 3) {
+                oceanAuthority = false;
+            }
+        }
 
         if (base.isIn(BiomeTags.IS_RIVER)) {
             if (blendedBandIndex >= 3) {
@@ -1520,7 +1676,7 @@ public final class LatitudeBiomes {
             }
         }
 
-        if (base.isIn(BiomeTags.IS_OCEAN) || waterSurface) {
+        if (base.isIn(BiomeTags.IS_OCEAN) || oceanAuthority) {
             RegistryEntry<Biome> oceanBase;
             if (base.isIn(BiomeTags.IS_OCEAN)) {
                 oceanBase = base;
@@ -1532,6 +1688,9 @@ public final class LatitudeBiomes {
                 }
             }
             RegistryEntry<Biome> oceanPick = oceanByLatitudeBandOrBase(biomeRegistry, oceanBase, blockX, blockZ, blendedBandIndex);
+            if (oceanPick == null || !oceanPick.isIn(BiomeTags.IS_OCEAN)) {
+                oceanPick = firstPresentOcean(biomeRegistry);
+            }
             RegistryEntry<Biome> out = mushroomIslandOverride(biomeRegistry, oceanPick, blockX, blockZ);
             debugPick(blockX, blockZ, effectiveRadius, t, band, base, out, false, false, null);
             return out;
@@ -1576,7 +1735,19 @@ public final class LatitudeBiomes {
                         () -> pickFromWeightedTags(biomeRegistry, base, blockX, blockZ, BAND_TEMPERATE, 0x2B32, LAT_TEMPERATE_PRIMARY, LAT_TEMPERATE_SECONDARY, LAT_TEMPERATE_ACCENT),
                         mountainLike);
                 case BAND_SUBPOLAR -> pickSubpolarWithRamp(biomeRegistry, base, blockX, blockZ, t, BAND_SUBPOLAR, 0x3C43, LAT_SUBPOLAR_PRIMARY, LAT_SUBPOLAR_SECONDARY, LAT_SUBPOLAR_ACCENT);
-                default -> pickPolarWithFrontShoulder(biomeRegistry, base, blockX, blockZ, t, sampler != null && isMountainLike(sampler, blockX, blockZ));
+                default -> pickPolarWithFrontShoulder(
+                        biomeRegistry,
+                        base,
+                        blockX,
+                        blockZ,
+                        t,
+                        polarMountainLike,
+                        preview.centerHeight,
+                        preview.robustDelta,
+                        seaLevel,
+                        polarMountainNoiseLike,
+                        mountainLike,
+                        oceanDistance);
             };
         }
         if (landBandIndex == BAND_TEMPERATE
@@ -1595,6 +1766,38 @@ public final class LatitudeBiomes {
                 || isBiomeId(chosen, "minecraft:taiga")
                 || isBiomeId(chosen, "minecraft:old_growth_pine_taiga"))) {
             chosen = base;
+        }
+        if (skipPreview && landBandIndex >= BAND_SUBPOLAR && chosen != null) {
+            int gateHeight = preview.centerHeight;
+            int gateDelta = preview.robustDelta;
+            if (generator != null && noiseConfig != null && heightView != null) {
+                gateHeight = previewHeight(generator, noiseConfig, heightView, blockX & ~3, blockZ & ~3);
+            }
+            chosen = applyTerrainCompatibilityGate(
+                    biomeRegistry,
+                    chosen,
+                    landBandIndex,
+                    blockX,
+                    blockZ,
+                    gateHeight,
+                    gateDelta,
+                    seaLevel,
+                    oceanDistance,
+                    mountainNoiseLike,
+                    mountainLike);
+        } else if (!skipPreview && landBandIndex >= BAND_SUBPOLAR && chosen != null) {
+            chosen = applyTerrainCompatibilityGate(
+                    biomeRegistry,
+                    chosen,
+                    landBandIndex,
+                    blockX,
+                    blockZ,
+                    preview.centerHeight,
+                    preview.robustDelta,
+                    seaLevel,
+                    oceanDistance,
+                    mountainNoiseLike,
+                    mountainLike);
         }
         String mangroveDecision = null;
         if (DEBUG_SPARSE_JUNGLE_AUDIT && chosen != null && isBiomeId(chosen, "minecraft:sparse_jungle")
@@ -1768,6 +1971,7 @@ public final class LatitudeBiomes {
             String detail = "path=" + selectionPathForTrace(base, out) + " auditFlags{tag=" + auditTagPick + ",sanitize=" + auditSanitize + ",canopy=" + auditCanopy + ",warm=" + auditWarmFallback + ",finalSavanna=" + auditFinalSavanna + "}";
             auditSparseJungle(bucket, blockX, blockZ, landBandIndex, detail, biomeId(preBandEnforce), biomeId(out));
         }
+        out = clampFinalPolarNonMountainAlpineOutput(biomeRegistry, out, landBandIndex, mountainLike, mountainNoiseLike);
         debugPick(blockX, blockZ, effectiveRadius, t, band, base, out, false, out != sanitized, mangroveDecision);
         return out;
     }
@@ -1827,11 +2031,22 @@ public final class LatitudeBiomes {
         boolean previewRuggedHigh = preview.robustDelta >= WINDSWEPT_RUGGED_THRESH;
         boolean previewHeightModerate = preview.centerHeight >= (seaLevel + PREVIEW_HEIGHT_MARGIN_BLOCKS / 2);
         boolean mountainLike = mountainNoiseLike && (previewHeightHigh || previewHeightModerate || previewRuggedHigh);
+        boolean polarMountainNoiseLike = sampler != null && isMountainLike(sampler, blockX, blockZ);
+        boolean polarMountainLike = polarMountainNoiseLike && (previewHeightHigh || previewHeightModerate || previewRuggedHigh);
+        if (landBandIndex >= BAND_POLAR && polarMountainLike) {
+            mountainLike = true;
+        }
         int oceanDistance = oceanDistanceBlocks(blockX, blockZ, sampler);
         boolean nearOcean = oceanDistance <= MANGROVE_COASTAL_MAX_BLOCKS;
         boolean oceanAuthority = oceanDistance == 0;
-        boolean flatSeaLevelSurface = hasReliableSurface && preview.centerHeight <= seaLevel && preview.robustDelta <= 1;
-        boolean waterSurface = oceanAuthority && flatSeaLevelSurface;
+        // Veto coarse ODF ocean authority when real terrain is clearly raised land
+        if (oceanAuthority && !base.isIn(BiomeTags.IS_OCEAN)
+                && generator != null && noiseConfig != null && heightView != null) {
+            int realHeight = previewHeight(generator, noiseConfig, heightView, blockX & ~3, blockZ & ~3);
+            if (realHeight > seaLevel + 3) {
+                oceanAuthority = false;
+            }
+        }
 
         if (base.isIn(BiomeTags.IS_RIVER)) {
             if (blendedBandIndex >= 3) {
@@ -1846,7 +2061,7 @@ public final class LatitudeBiomes {
             return out;
         }
 
-        if (base.isIn(BiomeTags.IS_OCEAN) || waterSurface) {
+        if (base.isIn(BiomeTags.IS_OCEAN) || oceanAuthority) {
             RegistryEntry<Biome> oceanBase = base.isIn(BiomeTags.IS_OCEAN)
                     ? base
                     : entryById(biomePool, "minecraft:ocean");
@@ -1854,6 +2069,9 @@ public final class LatitudeBiomes {
                 oceanBase = base;
             }
             RegistryEntry<Biome> oceanPick = oceanByLatitudeBandOrBase(biomePool, oceanBase, blockX, blockZ, blendedBandIndex);
+            if (oceanPick == null || !oceanPick.isIn(BiomeTags.IS_OCEAN)) {
+                oceanPick = firstPresentOcean(biomePool);
+            }
             RegistryEntry<Biome> out = mushroomIslandOverride(biomePool, oceanPick, blockX, blockZ);
             debugPick(blockX, blockZ, effectiveRadius, t, band, base, out, false, false, null);
             return out;
@@ -1894,7 +2112,19 @@ public final class LatitudeBiomes {
                         () -> pickFromWeightedTags(biomePool, base, blockX, blockZ, BAND_TEMPERATE, 0x2B32, LAT_TEMPERATE_PRIMARY, LAT_TEMPERATE_SECONDARY, LAT_TEMPERATE_ACCENT),
                         mountainLike);
                 case BAND_SUBPOLAR -> pickSubpolarWithRamp(biomePool, base, blockX, blockZ, t, BAND_SUBPOLAR, 0x3C43, LAT_SUBPOLAR_PRIMARY, LAT_SUBPOLAR_SECONDARY, LAT_SUBPOLAR_ACCENT);
-                default -> pickPolarWithFrontShoulder(biomePool, base, blockX, blockZ, t, sampler != null && isMountainLike(sampler, blockX, blockZ));
+                default -> pickPolarWithFrontShoulder(
+                        biomePool,
+                        base,
+                        blockX,
+                        blockZ,
+                        t,
+                        polarMountainLike,
+                        preview.centerHeight,
+                        preview.robustDelta,
+                        seaLevel,
+                        polarMountainNoiseLike,
+                        mountainLike,
+                        oceanDistance);
             };
         }
         if (landBandIndex == BAND_TEMPERATE
@@ -1913,6 +2143,38 @@ public final class LatitudeBiomes {
                 || isBiomeId(chosen, "minecraft:taiga")
                 || isBiomeId(chosen, "minecraft:old_growth_pine_taiga"))) {
             chosen = base;
+        }
+        if (skipPreview && landBandIndex >= BAND_SUBPOLAR && chosen != null) {
+            int gateHeight = preview.centerHeight;
+            int gateDelta = preview.robustDelta;
+            if (generator != null && noiseConfig != null && heightView != null) {
+                gateHeight = previewHeight(generator, noiseConfig, heightView, blockX & ~3, blockZ & ~3);
+            }
+            chosen = applyTerrainCompatibilityGate(
+                    biomePool,
+                    chosen,
+                    landBandIndex,
+                    blockX,
+                    blockZ,
+                    gateHeight,
+                    gateDelta,
+                    seaLevel,
+                    oceanDistance,
+                    mountainNoiseLike,
+                    mountainLike);
+        } else if (!skipPreview && landBandIndex >= BAND_SUBPOLAR && chosen != null) {
+            chosen = applyTerrainCompatibilityGate(
+                    biomePool,
+                    chosen,
+                    landBandIndex,
+                    blockX,
+                    blockZ,
+                    preview.centerHeight,
+                    preview.robustDelta,
+                    seaLevel,
+                    oceanDistance,
+                    mountainNoiseLike,
+                    mountainLike);
         }
         String mangroveDecision = null;
         RegistryEntry<Biome> sanitized = chosen;
@@ -2068,6 +2330,7 @@ public final class LatitudeBiomes {
         logSubtropicalJungleReturn("pick-collection", blockX, blockZ, t, landBandIndex, base, chosen, sanitized, preBandEnforce, postBandEnforce, postFinalClamp, out);
         logAtlasViewportJungleReturn("pick-collection", callerContext, blockX, blockZ, t, landBandIndex, overlayBandIndex, base, chosen, sanitized, preBandEnforce, postBandEnforce, postFinalClamp, out);
         traceSubpolarJunglePick(blockX, blockZ, effectiveRadius, landBandIndex, base, out);
+        out = clampFinalPolarNonMountainAlpineOutput(biomePool, out, landBandIndex, mountainLike, mountainNoiseLike);
         debugPick(blockX, blockZ, effectiveRadius, t, band, base, out, false, out != sanitized, mangroveDecision);
         return out;
     }
@@ -2352,6 +2615,34 @@ public final class LatitudeBiomes {
         }
     }
 
+    private static RegistryEntry<Biome> firstPresentOcean(Registry<Biome> biomes) {
+        String[] ids = new String[]{
+                "minecraft:frozen_ocean",
+                "minecraft:deep_frozen_ocean",
+                "minecraft:deep_cold_ocean",
+                "minecraft:cold_ocean",
+                "minecraft:ocean"};
+        for (String id : ids) {
+            try {
+                RegistryEntry<Biome> entry = biome(biomes, id);
+                if (entry != null && entry.isIn(BiomeTags.IS_OCEAN)) {
+                    return entry;
+                }
+            } catch (Throwable ignored) {
+                // continue
+            }
+        }
+        try {
+            return biome(biomes, "minecraft:ocean");
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    private static RegistryEntry<Biome> polarShelfOceanFallback(Registry<Biome> biomes) {
+        return firstPresentOcean(biomes);
+    }
+
     private static RegistryEntry<Biome> mushroomIslandOverride(Collection<RegistryEntry<Biome>> biomes, RegistryEntry<Biome> oceanPick, int blockX, int blockZ) {
         if (!isDeepOcean(oceanPick)) {
             return oceanPick;
@@ -2366,6 +2657,26 @@ public final class LatitudeBiomes {
 
         RegistryEntry<Biome> entry = entryById(biomes, "minecraft:mushroom_fields");
         return entry != null ? entry : oceanPick;
+    }
+
+    private static RegistryEntry<Biome> polarShelfOceanFallback(Collection<RegistryEntry<Biome>> biomes) {
+        return firstPresentOcean(biomes);
+    }
+
+    private static RegistryEntry<Biome> firstPresentOcean(Collection<RegistryEntry<Biome>> biomes) {
+        String[] ids = new String[]{
+                "minecraft:frozen_ocean",
+                "minecraft:deep_frozen_ocean",
+                "minecraft:deep_cold_ocean",
+                "minecraft:cold_ocean",
+                "minecraft:ocean"};
+        for (String id : ids) {
+            RegistryEntry<Biome> entry = entryById(biomes, id);
+            if (entry != null && entry.isIn(BiomeTags.IS_OCEAN)) {
+                return entry;
+            }
+        }
+        return entryById(biomes, "minecraft:ocean");
     }
 
 
@@ -2818,28 +3129,89 @@ public final class LatitudeBiomes {
     }
 
     private static RegistryEntry<Biome> pickPolarWithFrontShoulder(Registry<Biome> biomes, RegistryEntry<Biome> base, int blockX, int blockZ,
-                                                                   double absLatFraction, boolean coldMountainLike) {
+                                                                   double absLatFraction, boolean coldMountainLike,
+                                                                   int centerHeight, int robustDelta, int seaLevel,
+                                                                   boolean mountainNoiseLike, boolean mountainLike, int oceanDistance) {
+        boolean flatPolarShelf = isFlatPolarShelf(centerHeight, robustDelta, seaLevel, mountainNoiseLike, mountainLike);
+        boolean nearShelf = oceanDistance >= 0 && oceanDistance <= 64;
+        if (flatPolarShelf && nearShelf && !mountainLike && !mountainNoiseLike) {
+            RegistryEntry<Biome> shelf = polarShelfOceanFallback(biomes);
+            if (shelf != null) {
+                return shelf;
+            }
+        }
+        if (flatPolarShelf) {
+            RegistryEntry<Biome> shelfPick = pickDeterministicFromPool(
+                    flatPolarShelfPool(allowedLandPool(biomes, BAND_POLAR)),
+                    blockX,
+                    blockZ,
+                    BAND_POLAR,
+                    TERRAIN_CLASS_FLAT_SHELF,
+                    0x4D54);
+            if (shelfPick != null) {
+                return shelfPick;
+            }
+        }
         RegistryEntry<Biome> pick = pickFromWeightedTags(biomes, base, blockX, blockZ, BAND_POLAR, 0x4D54, LAT_POLAR_PRIMARY, LAT_POLAR_SECONDARY, LAT_POLAR_ACCENT);
         double deg = LatitudeMath.clamp(absLatFraction * 90.0, 0.0, 90.0);
         double shoulderMaxDeg = LatitudeBands.Band.POLAR.lowDeg() + 8.0;
         if (coldMountainLike) {
-            RegistryEntry<Biome> mountain = pickFrom(biomes, blockX, blockZ, BAND_POLAR,
+            RegistryEntry<Biome> mountain = flatPolarShelf ? null : pickFrom(biomes, blockX, blockZ, BAND_POLAR,
                     "minecraft:snowy_slopes",
                     "minecraft:frozen_peaks",
                     "minecraft:jagged_peaks");
             if (mountain != null) pick = mountain;
         } else if (isBiomeId(pick, "minecraft:snowy_slopes")) {
             RegistryEntry<Biome> fallback = pickFrom(biomes, blockX, blockZ, BAND_POLAR,
-                    "minecraft:snowy_slopes",
+                    flatPolarShelf ? "minecraft:snowy_plains" : "minecraft:snowy_slopes",
                     "minecraft:snowy_plains",
                     "minecraft:snowy_taiga",
                     "minecraft:grove");
             if (fallback != null) pick = fallback;
         }
+        if (flatPolarShelf && isFlatPolarShelfBannedMountainPick(pick)) {
+            RegistryEntry<Biome> shelfFallback = pickFrom(biomes, blockX, blockZ, BAND_POLAR,
+                    "minecraft:snowy_plains",
+                    "minecraft:snowy_taiga",
+                    "minecraft:grove");
+            if (shelfFallback != null) {
+                pick = shelfFallback;
+            }
+        }
         if (!coldMountainLike && deg <= shoulderMaxDeg && isBiomeId(pick, "minecraft:snowy_slopes")) {
             return pickSubpolarWithRamp(biomes, base, blockX, blockZ, absLatFraction, BAND_SUBPOLAR, 0x3C43, LAT_SUBPOLAR_PRIMARY, LAT_SUBPOLAR_SECONDARY, LAT_SUBPOLAR_ACCENT);
         }
+        // Block alpine outputs on ALL non-mountain polar land
+        if (!coldMountainLike && !mountainLike && !mountainNoiseLike
+                && isFlatPolarShelfBannedMountainPick(pick)) {
+            RegistryEntry<Biome> fallback = pickFrom(biomes, blockX, blockZ, BAND_POLAR,
+                    "minecraft:snowy_plains",
+                    "minecraft:snowy_taiga",
+                    "minecraft:grove");
+            if (fallback != null) {
+                pick = fallback;
+            }
+        }
         return pick;
+    }
+
+    private static RegistryEntry<Biome> pickPolarWithFrontShoulder(Registry<Biome> biomes, RegistryEntry<Biome> base, int blockX, int blockZ,
+                                                                   double absLatFraction, boolean coldMountainLike,
+                                                                   int centerHeight, int robustDelta, int seaLevel,
+                                                                   boolean mountainNoiseLike, int oceanDistance, boolean mountainLike) {
+        return pickPolarWithFrontShoulder(
+                biomes,
+                base,
+                blockX,
+                blockZ,
+                absLatFraction,
+                coldMountainLike,
+                centerHeight,
+                robustDelta,
+                seaLevel,
+                mountainNoiseLike,
+                mountainLike,
+                oceanDistance);
     }
 
     private static double scaledPatchBlocks(int basePatchChunks, double noiseScale) {
@@ -2919,7 +3291,29 @@ public final class LatitudeBiomes {
     }
 
     private static RegistryEntry<Biome> pickPolarWithFrontShoulder(Collection<RegistryEntry<Biome>> biomes, RegistryEntry<Biome> base, int blockX, int blockZ,
-                                                                   double absLatFraction, boolean coldMountainLike) {
+                                                                   double absLatFraction, boolean coldMountainLike,
+                                                                   int centerHeight, int robustDelta, int seaLevel,
+                                                                   boolean mountainNoiseLike, boolean mountainLike, int oceanDistance) {
+        boolean flatPolarShelf = isFlatPolarShelf(centerHeight, robustDelta, seaLevel, mountainNoiseLike, mountainLike);
+        boolean nearShelf = oceanDistance >= 0 && oceanDistance <= 64;
+        if (flatPolarShelf && nearShelf && !mountainLike && !mountainNoiseLike) {
+            RegistryEntry<Biome> shelf = polarShelfOceanFallback(biomes);
+            if (shelf != null) {
+                return shelf;
+            }
+        }
+        if (flatPolarShelf) {
+            RegistryEntry<Biome> shelfPick = pickDeterministicFromPool(
+                    flatPolarShelfPool(allowedLandPool(biomes, BAND_POLAR)),
+                    blockX,
+                    blockZ,
+                    BAND_POLAR,
+                    TERRAIN_CLASS_FLAT_SHELF,
+                    0x4D54);
+            if (shelfPick != null) {
+                return shelfPick;
+            }
+        }
         RegistryEntry<Biome> pick = pickFromWeightedTags(biomes, base, blockX, blockZ, BAND_POLAR, 0x4D54, LAT_POLAR_PRIMARY, LAT_POLAR_SECONDARY, LAT_POLAR_ACCENT);
         double deg = LatitudeMath.clamp(absLatFraction * 90.0, 0.0, 90.0);
         double shoulderMaxDeg = LatitudeBands.Band.POLAR.lowDeg() + 8.0;
@@ -2931,6 +3325,9 @@ public final class LatitudeBiomes {
             if (slope != null) options.add(slope);
             if (frozen != null) options.add(frozen);
             if (jagged != null) options.add(jagged);
+            if (flatPolarShelf) {
+                options.removeIf(LatitudeBiomes::isFlatPolarShelfBannedMountainPick);
+            }
             if (!options.isEmpty()) {
                 double n = ValueNoise2D.sampleBlocks(WORLD_SEED ^ 0x5EEDC0DEL, blockX, blockZ, 2048);
                 int idx = (int) Math.floor(n * (double) options.size());
@@ -2947,6 +3344,9 @@ public final class LatitudeBiomes {
             if (plains != null) options.add(plains);
             if (taiga != null) options.add(taiga);
             if (grove != null) options.add(grove);
+            if (flatPolarShelf) {
+                options.removeIf(LatitudeBiomes::isFlatPolarShelfBannedMountainPick);
+            }
             if (!options.isEmpty()) {
                 double n = ValueNoise2D.sampleBlocks(WORLD_SEED ^ 0x5EEDC0DEL, blockX, blockZ, 2048);
                 int idx = (int) Math.floor(n * (double) options.size());
@@ -2954,8 +3354,40 @@ public final class LatitudeBiomes {
                 pick = options.get(idx);
             }
         }
+        if (flatPolarShelf && isFlatPolarShelfBannedMountainPick(pick)) {
+            List<RegistryEntry<Biome>> shelfFallbacks = new ArrayList<>();
+            RegistryEntry<Biome> plains = entryById(biomes, "minecraft:snowy_plains");
+            RegistryEntry<Biome> taiga = entryById(biomes, "minecraft:snowy_taiga");
+            RegistryEntry<Biome> grove = entryById(biomes, "minecraft:grove");
+            if (plains != null) shelfFallbacks.add(plains);
+            if (taiga != null) shelfFallbacks.add(taiga);
+            if (grove != null) shelfFallbacks.add(grove);
+            if (!shelfFallbacks.isEmpty()) {
+                double n = ValueNoise2D.sampleBlocks(WORLD_SEED ^ 0x5EEDC0DEL, blockX, blockZ, 2048);
+                int idx = (int) Math.floor(n * (double) shelfFallbacks.size());
+                if (idx >= shelfFallbacks.size()) idx = shelfFallbacks.size() - 1;
+                pick = shelfFallbacks.get(idx);
+            }
+        }
         if (!coldMountainLike && deg <= shoulderMaxDeg && isBiomeId(pick, "minecraft:snowy_slopes")) {
             return pickSubpolarWithRamp(biomes, base, blockX, blockZ, absLatFraction, BAND_SUBPOLAR, 0x3C43, LAT_SUBPOLAR_PRIMARY, LAT_SUBPOLAR_SECONDARY, LAT_SUBPOLAR_ACCENT);
+        }
+        // Block alpine outputs on ALL non-mountain polar land
+        if (!coldMountainLike && !mountainLike && !mountainNoiseLike
+                && isFlatPolarShelfBannedMountainPick(pick)) {
+            List<RegistryEntry<Biome>> nearOceanFallbacks = new ArrayList<>();
+            RegistryEntry<Biome> plains = entryById(biomes, "minecraft:snowy_plains");
+            RegistryEntry<Biome> taiga = entryById(biomes, "minecraft:snowy_taiga");
+            RegistryEntry<Biome> grove = entryById(biomes, "minecraft:grove");
+            if (plains != null) nearOceanFallbacks.add(plains);
+            if (taiga != null) nearOceanFallbacks.add(taiga);
+            if (grove != null) nearOceanFallbacks.add(grove);
+            if (!nearOceanFallbacks.isEmpty()) {
+                double n = ValueNoise2D.sampleBlocks(WORLD_SEED ^ 0x5EEDC0DEL, blockX, blockZ, 2048);
+                int idx = (int) Math.floor(n * (double) nearOceanFallbacks.size());
+                if (idx >= nearOceanFallbacks.size()) idx = nearOceanFallbacks.size() - 1;
+                pick = nearOceanFallbacks.get(idx);
+            }
         }
         return pick;
     }
@@ -3317,7 +3749,10 @@ public final class LatitudeBiomes {
                     "minecraft:pale_garden",
                     "minecraft:stony_peaks");
             case BAND_POLAR -> List.of(
-                    "minecraft:ice_spikes");
+                    "minecraft:ice_spikes",
+                    "minecraft:snowy_plains",
+                    "minecraft:snowy_taiga",
+                    "minecraft:grove");
             default -> List.of();
         };
     }
@@ -3445,6 +3880,315 @@ public final class LatitudeBiomes {
                 String.format(java.util.Locale.ROOT, "%.2f", latDeg),
                 blockX,
                 blockZ);
+    }
+
+    private static final int TERRAIN_CLASS_FLAT_SHELF = 0;
+    private static final int TERRAIN_CLASS_FLAT_LOWLAND = 1;
+    private static final int TERRAIN_CLASS_RAISED_SHOULDER = 2;
+    private static final int TERRAIN_CLASS_MOUNTAIN = 3;
+    private static final int TERRAIN_POOL_SELECTION_SCALE_BLOCKS = 1152;
+    private static final int COLD_SIBLING_SELECTION_SCALE_BLOCKS = 1536;
+
+    private static RegistryEntry<Biome> applyTerrainCompatibilityGate(Registry<Biome> biomes,
+                                                                      RegistryEntry<Biome> chosen,
+                                                                      int bandIndex,
+                                                                      int blockX,
+                                                                      int blockZ,
+                                                                      int centerHeight,
+                                                                      int robustDelta,
+                                                                      int seaLevel,
+                                                                      int oceanDistance,
+                                                                      boolean mountainNoiseLike,
+                                                                      boolean mountainLike) {
+        return rerollTerrainCompatibleCandidate(
+                chosen,
+                allowedLandPool(biomes, bandIndex),
+                bandIndex,
+                blockX,
+                blockZ,
+                centerHeight,
+                robustDelta,
+                seaLevel,
+                oceanDistance,
+                mountainNoiseLike,
+                mountainLike);
+    }
+
+    private static RegistryEntry<Biome> applyTerrainCompatibilityGate(Collection<RegistryEntry<Biome>> biomes,
+                                                                      RegistryEntry<Biome> chosen,
+                                                                      int bandIndex,
+                                                                      int blockX,
+                                                                      int blockZ,
+                                                                      int centerHeight,
+                                                                      int robustDelta,
+                                                                      int seaLevel,
+                                                                      int oceanDistance,
+                                                                      boolean mountainNoiseLike,
+                                                                      boolean mountainLike) {
+        return rerollTerrainCompatibleCandidate(
+                chosen,
+                allowedLandPool(biomes, bandIndex),
+                bandIndex,
+                blockX,
+                blockZ,
+                centerHeight,
+                robustDelta,
+                seaLevel,
+                oceanDistance,
+                mountainNoiseLike,
+                mountainLike);
+    }
+
+    private static RegistryEntry<Biome> rerollTerrainCompatibleCandidate(RegistryEntry<Biome> chosen,
+                                                                         List<RegistryEntry<Biome>> pool,
+                                                                         int bandIndex,
+                                                                         int blockX,
+                                                                         int blockZ,
+                                                                         int centerHeight,
+                                                                         int robustDelta,
+                                                                         int seaLevel,
+                                                                         int oceanDistance,
+                                                                         boolean mountainNoiseLike,
+                                                                         boolean mountainLike) {
+        if (chosen == null || pool.isEmpty()) {
+            return chosen;
+        }
+        int terrainClass = terrainClassForSelection(centerHeight, robustDelta, seaLevel, oceanDistance, mountainNoiseLike, mountainLike);
+        if (isBiomeCompatibleWithTerrain(chosen, terrainClass, mountainNoiseLike, mountainLike)) {
+            return applyColdSiblingCoherence(chosen, pool, bandIndex, blockX, blockZ, terrainClass);
+        }
+        int size = pool.size();
+        int start = continuousSelectionIndex(
+                size,
+                blockX,
+                blockZ,
+                bandIndex,
+                terrainClass,
+                0x54A1,
+                TERRAIN_POOL_SELECTION_SCALE_BLOCKS);
+        for (int i = 0; i < size; i++) {
+            RegistryEntry<Biome> candidate = pool.get((start + i) % size);
+            // Polar non-mountain: do not reroll into alpine — preserve the picker's guard
+            if (bandIndex == BAND_POLAR && !mountainLike && !mountainNoiseLike
+                    && (isBiomeId(candidate, "minecraft:snowy_slopes")
+                        || isBiomeId(candidate, "minecraft:frozen_peaks")
+                        || isBiomeId(candidate, "minecraft:jagged_peaks")
+                        || isBiomeId(candidate, "minecraft:ice_spikes"))) {
+                continue;
+            }
+            if (isBiomeCompatibleWithTerrain(candidate, terrainClass, mountainNoiseLike, mountainLike)) {
+                return applyColdSiblingCoherence(candidate, pool, bandIndex, blockX, blockZ, terrainClass);
+            }
+        }
+        if (bandIndex >= BAND_POLAR && terrainClass == TERRAIN_CLASS_FLAT_SHELF && isFlatPolarShelfBannedMountainPick(chosen)) {
+            for (int i = 0; i < size; i++) {
+                RegistryEntry<Biome> fallback = pool.get((start + i) % size);
+                if (!isFlatPolarShelfBannedMountainPick(fallback)) {
+                    return applyColdSiblingCoherence(fallback, pool, bandIndex, blockX, blockZ, terrainClass);
+                }
+            }
+        }
+        return chosen;
+    }
+
+    private static int continuousSelectionIndex(int size,
+                                                int blockX,
+                                                int blockZ,
+                                                int bandIndex,
+                                                int terrainClass,
+                                                int salt,
+                                                int scaleBlocks) {
+        if (size <= 1) {
+            return 0;
+        }
+        long mix = ((long) (bandIndex ^ (terrainClass << 8) ^ salt)) * 0x9E3779B97F4A7C15L;
+        long salted = WORLD_SEED ^ mix;
+        double n = ValueNoise2D.sampleBlocks(salted, blockX, blockZ, scaleBlocks);
+        n = smoothstep(clamp(n, 0.0, 1.0));
+        int idx = (int) Math.floor(n * (double) size);
+        if (idx >= size) {
+            idx = size - 1;
+        }
+        return idx;
+    }
+
+    private static RegistryEntry<Biome> pickDeterministicFromPool(List<RegistryEntry<Biome>> pool,
+                                                                   int blockX,
+                                                                   int blockZ,
+                                                                   int bandIndex,
+                                                                   int terrainClass,
+                                                                   int salt) {
+        if (pool.isEmpty()) {
+            return null;
+        }
+        int idx = continuousSelectionIndex(
+                pool.size(),
+                blockX,
+                blockZ,
+                bandIndex,
+                terrainClass,
+                salt,
+                TERRAIN_POOL_SELECTION_SCALE_BLOCKS);
+        return pool.get(idx);
+    }
+
+    private static List<RegistryEntry<Biome>> flatPolarShelfPool(List<RegistryEntry<Biome>> pool) {
+        List<RegistryEntry<Biome>> filtered = new ArrayList<>(pool.size());
+        for (RegistryEntry<Biome> entry : pool) {
+            if (!isFlatPolarShelfBannedMountainPick(entry)) {
+                filtered.add(entry);
+            }
+        }
+        filtered.sort(Comparator.comparing(LatitudeBiomes::biomeId));
+        return filtered;
+    }
+
+    private static RegistryEntry<Biome> applyColdSiblingCoherence(RegistryEntry<Biome> candidate,
+                                                                   List<RegistryEntry<Biome>> pool,
+                                                                   int bandIndex,
+                                                                   int blockX,
+                                                                   int blockZ,
+                                                                   int terrainClass) {
+        if (candidate == null || bandIndex < BAND_SUBPOLAR || !isColdSiblingBiome(candidate) || terrainClass >= TERRAIN_CLASS_MOUNTAIN) {
+            return candidate;
+        }
+        List<RegistryEntry<Biome>> siblings = new ArrayList<>();
+        for (RegistryEntry<Biome> entry : pool) {
+            if (isColdSiblingBiome(entry) && isColdSiblingTerrainCompatible(entry, terrainClass)) {
+                siblings.add(entry);
+            }
+        }
+        if (siblings.isEmpty()) {
+            return candidate;
+        }
+        siblings.sort(Comparator.comparing(LatitudeBiomes::biomeId));
+        int idx = continuousSelectionIndex(
+                siblings.size(),
+                blockX,
+                blockZ,
+                bandIndex,
+                terrainClass,
+                0x2A11,
+                COLD_SIBLING_SELECTION_SCALE_BLOCKS);
+        return siblings.get(idx);
+    }
+
+    private static boolean isColdSiblingBiome(RegistryEntry<Biome> candidate) {
+        return isBiomeId(candidate, "minecraft:taiga")
+                || isBiomeId(candidate, "minecraft:snowy_taiga")
+                || isBiomeId(candidate, "minecraft:grove")
+                || isBiomeId(candidate, "minecraft:old_growth_spruce_taiga")
+                || isBiomeId(candidate, "minecraft:old_growth_pine_taiga");
+    }
+
+    private static boolean isColdSiblingTerrainCompatible(RegistryEntry<Biome> candidate, int terrainClass) {
+        boolean taigaBase = isBiomeId(candidate, "minecraft:taiga")
+                || isBiomeId(candidate, "minecraft:old_growth_spruce_taiga")
+                || isBiomeId(candidate, "minecraft:old_growth_pine_taiga");
+        if (terrainClass >= TERRAIN_CLASS_RAISED_SHOULDER) {
+            return !taigaBase;
+        }
+        if (terrainClass == TERRAIN_CLASS_FLAT_SHELF || terrainClass == TERRAIN_CLASS_FLAT_LOWLAND) {
+            return !isBiomeId(candidate, "minecraft:grove");
+        }
+        return true;
+    }
+
+    private static int terrainClassForSelection(int centerHeight,
+                                                int robustDelta,
+                                                int seaLevel,
+                                                int oceanDistance,
+                                                boolean mountainNoiseLike,
+                                                boolean mountainLike) {
+        boolean nearSeaLevel = centerHeight <= seaLevel + 1;
+        boolean flat = robustDelta <= 1;
+        boolean oceanAdjacentShelf = oceanDistance >= 0 && oceanDistance <= 64;
+        if (nearSeaLevel && flat && oceanAdjacentShelf) {
+            return TERRAIN_CLASS_FLAT_SHELF;
+        }
+        if (mountainLike || mountainNoiseLike || robustDelta >= (WINDSWEPT_RUGGED_THRESH + WINDSWEPT_RUGGED_HYST)) {
+            return TERRAIN_CLASS_MOUNTAIN;
+        }
+        if (centerHeight >= seaLevel + 4 || robustDelta >= 3) {
+            return TERRAIN_CLASS_RAISED_SHOULDER;
+        }
+        return TERRAIN_CLASS_FLAT_LOWLAND;
+    }
+
+    private static boolean isBiomeCompatibleWithTerrain(RegistryEntry<Biome> candidate,
+                                                        int terrainClass,
+                                                        boolean mountainNoiseLike,
+                                                        boolean mountainLike) {
+        boolean mountainPick = isMountainCodedColdPick(candidate);
+        boolean plainsPick = isPlainsFamily(candidate);
+        if (terrainClass == TERRAIN_CLASS_FLAT_SHELF && mountainPick) {
+            return false;
+        }
+        if ((terrainClass == TERRAIN_CLASS_RAISED_SHOULDER || terrainClass == TERRAIN_CLASS_MOUNTAIN) && plainsPick) {
+            return false;
+        }
+        if (mountainPick && !(mountainLike || mountainNoiseLike || terrainClass >= TERRAIN_CLASS_RAISED_SHOULDER)) {
+            return false;
+        }
+        return true;
+    }
+
+    private static boolean isFlatPolarShelf(int centerHeight,
+                                            int robustDelta,
+                                            int seaLevel,
+                                            boolean mountainNoiseLike,
+                                            boolean mountainLike) {
+        return centerHeight <= seaLevel + 1
+                && robustDelta <= 1
+                && !mountainLike
+                && !mountainNoiseLike;
+    }
+
+    private static boolean isFlatPolarShelfBannedMountainPick(RegistryEntry<Biome> candidate) {
+        return isBiomeId(candidate, "minecraft:jagged_peaks")
+                || isBiomeId(candidate, "minecraft:frozen_peaks")
+                || isBiomeId(candidate, "minecraft:snowy_slopes")
+                || isBiomeId(candidate, "minecraft:ice_spikes");
+    }
+
+    private static boolean isMountainCodedColdPick(RegistryEntry<Biome> candidate) {
+        return isFlatPolarShelfBannedMountainPick(candidate);
+    }
+
+    private static boolean isPlainsFamily(RegistryEntry<Biome> candidate) {
+        return isBiomeId(candidate, "minecraft:plains")
+                || isBiomeId(candidate, "minecraft:snowy_plains");
+    }
+
+    // Final-return clamp: polar non-mountain cells must never output alpine biomes.
+    // This fires AFTER all upstream guards, sanitize, enforcement, and post-processing.
+    private static RegistryEntry<Biome> clampFinalPolarNonMountainAlpineOutput(Registry<Biome> biomes,
+                                                                                RegistryEntry<Biome> out, int landBandIndex,
+                                                                                boolean mountainLike, boolean mountainNoiseLike) {
+        if (landBandIndex != BAND_POLAR || mountainLike || mountainNoiseLike) {
+            return out;
+        }
+        if (!isFlatPolarShelfBannedMountainPick(out)) {
+            return out;
+        }
+        try {
+            return biome(biomes, "minecraft:snowy_plains");
+        } catch (Throwable ignored) {
+            return out;
+        }
+    }
+
+    private static RegistryEntry<Biome> clampFinalPolarNonMountainAlpineOutput(Collection<RegistryEntry<Biome>> biomes,
+                                                                                RegistryEntry<Biome> out, int landBandIndex,
+                                                                                boolean mountainLike, boolean mountainNoiseLike) {
+        if (landBandIndex != BAND_POLAR || mountainLike || mountainNoiseLike) {
+            return out;
+        }
+        if (!isFlatPolarShelfBannedMountainPick(out)) {
+            return out;
+        }
+        RegistryEntry<Biome> safe = entryById(biomes, "minecraft:snowy_plains");
+        return safe != null ? safe : out;
     }
 
     private static String bandName(int bandIndex) {
