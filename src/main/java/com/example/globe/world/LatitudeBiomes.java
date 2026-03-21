@@ -1479,6 +1479,25 @@ public final class LatitudeBiomes {
         // use the same 1408-block stochastic transition zone instead of a hard integer snap.
         int blendedBandIndex = latitudeBandIndexWithBlend(blockX, blockZ, effectiveRadius, band, t);
 
+        int landBandIndex = blendedBandIndex;
+        boolean mountainNoiseLike = landBandIndex == BAND_TEMPERATE && isMountainLike(sampler, blockX, blockZ);
+        boolean skipPreview = shouldSkipPreviewTerrain(callerContext);
+        boolean hasReliableSurface = !skipPreview && generator != null && noiseConfig != null && heightView != null;
+        boolean allowSurfaceGates = hasReliableSurface;
+        PreviewTerrain preview = skipPreview
+                ? syntheticPreviewTerrain(mountainNoiseLike, generator)
+                : previewTerrain(generator, noiseConfig, heightView, blockX, blockZ);
+        int seaLevel = previewSeaLevel(generator);
+        boolean previewHeightHigh = preview.centerHeight >= (seaLevel + PREVIEW_HEIGHT_MARGIN_BLOCKS);
+        boolean previewRuggedHigh = preview.robustDelta >= WINDSWEPT_RUGGED_THRESH;
+        boolean previewHeightModerate = preview.centerHeight >= (seaLevel + PREVIEW_HEIGHT_MARGIN_BLOCKS / 2);
+        boolean mountainLike = mountainNoiseLike && (previewHeightHigh || previewHeightModerate || previewRuggedHigh);
+        int oceanDistance = oceanDistanceBlocks(blockX, blockZ, sampler);
+        boolean nearOcean = oceanDistance <= MANGROVE_COASTAL_MAX_BLOCKS;
+        boolean oceanAuthority = oceanDistance == 0;
+        boolean flatSeaLevelSurface = hasReliableSurface && preview.centerHeight <= seaLevel && preview.robustDelta <= 1;
+        boolean waterSurface = oceanAuthority && flatSeaLevelSurface;
+
         if (base.isIn(BiomeTags.IS_RIVER)) {
             if (blendedBandIndex >= 3) {
                 try {
@@ -1501,34 +1520,26 @@ public final class LatitudeBiomes {
             }
         }
 
-        if (base.isIn(BiomeTags.IS_OCEAN)) {
-            RegistryEntry<Biome> oceanPick = oceanByLatitudeBandOrBase(biomeRegistry, base, blockX, blockZ, blendedBandIndex);
+        if (base.isIn(BiomeTags.IS_OCEAN) || waterSurface) {
+            RegistryEntry<Biome> oceanBase;
+            if (base.isIn(BiomeTags.IS_OCEAN)) {
+                oceanBase = base;
+            } else {
+                try {
+                    oceanBase = biome(biomeRegistry, "minecraft:ocean");
+                } catch (Throwable ignored) {
+                    oceanBase = base;
+                }
+            }
+            RegistryEntry<Biome> oceanPick = oceanByLatitudeBandOrBase(biomeRegistry, oceanBase, blockX, blockZ, blendedBandIndex);
             RegistryEntry<Biome> out = mushroomIslandOverride(biomeRegistry, oceanPick, blockX, blockZ);
             debugPick(blockX, blockZ, effectiveRadius, t, band, base, out, false, false, null);
             return out;
         }
 
-        int landBandIndex = blendedBandIndex;
-        boolean mountainNoiseLike = landBandIndex == BAND_TEMPERATE && isMountainLike(sampler, blockX, blockZ);
-        boolean skipPreview = shouldSkipPreviewTerrain(callerContext);
-        boolean hasReliableSurface = !skipPreview && generator != null && noiseConfig != null && heightView != null;
-        boolean allowSurfaceGates = hasReliableSurface;
-        PreviewTerrain preview;
-        if (skipPreview) {
-            preview = syntheticPreviewTerrain(mountainNoiseLike, generator);
-            if (PREVIEW_TERRAIN_SKIP_LOGGED.compareAndSet(false, true)) {
-                LOGGER.info("[Latitude] skipping previewHeight() for callerContext={} (atlas fast-path enabled)", callerContext);
-            }
-        } else {
-            preview = previewTerrain(generator, noiseConfig, heightView, blockX, blockZ);
+        if (skipPreview && PREVIEW_TERRAIN_SKIP_LOGGED.compareAndSet(false, true)) {
+            LOGGER.info("[Latitude] skipping previewHeight() for callerContext={} (atlas fast-path enabled)", callerContext);
         }
-        int seaLevel = previewSeaLevel(generator);
-        boolean previewHeightHigh = preview.centerHeight >= (seaLevel + PREVIEW_HEIGHT_MARGIN_BLOCKS);
-        boolean previewRuggedHigh = preview.robustDelta >= WINDSWEPT_RUGGED_THRESH;
-        boolean previewHeightModerate = preview.centerHeight >= (seaLevel + PREVIEW_HEIGHT_MARGIN_BLOCKS / 2);
-        boolean mountainLike = mountainNoiseLike && (previewHeightHigh || previewHeightModerate || previewRuggedHigh);
-        int oceanDistance = oceanDistanceBlocks(blockX, blockZ, sampler);
-        boolean nearOcean = oceanDistance <= MANGROVE_COASTAL_MAX_BLOCKS;
         boolean forcedBadlands = false;
         RegistryEntry<Biome> chosen = null;
         if (chosen == null && (landBandIndex == BAND_TROPICAL || landBandIndex == BAND_SUBTROPICAL) && sampler != null) {
@@ -1803,6 +1814,25 @@ public final class LatitudeBiomes {
         // use the same 1408-block stochastic transition zone instead of a hard integer snap.
         int blendedBandIndex = latitudeBandIndexWithBlend(blockX, blockZ, effectiveRadius, band, t);
 
+        int landBandIndex = blendedBandIndex;
+        boolean mountainNoiseLike = landBandIndex == BAND_TEMPERATE && isMountainLike(sampler, blockX, blockZ);
+        boolean skipPreview = shouldSkipPreviewTerrain(callerContext);
+        boolean hasReliableSurface = !skipPreview && generator != null && noiseConfig != null && heightView != null;
+        boolean allowSurfaceGates = hasReliableSurface;
+        PreviewTerrain preview = skipPreview
+                ? syntheticPreviewTerrain(mountainNoiseLike, generator)
+                : previewTerrain(generator, noiseConfig, heightView, blockX, blockZ);
+        int seaLevel = previewSeaLevel(generator);
+        boolean previewHeightHigh = preview.centerHeight >= (seaLevel + PREVIEW_HEIGHT_MARGIN_BLOCKS);
+        boolean previewRuggedHigh = preview.robustDelta >= WINDSWEPT_RUGGED_THRESH;
+        boolean previewHeightModerate = preview.centerHeight >= (seaLevel + PREVIEW_HEIGHT_MARGIN_BLOCKS / 2);
+        boolean mountainLike = mountainNoiseLike && (previewHeightHigh || previewHeightModerate || previewRuggedHigh);
+        int oceanDistance = oceanDistanceBlocks(blockX, blockZ, sampler);
+        boolean nearOcean = oceanDistance <= MANGROVE_COASTAL_MAX_BLOCKS;
+        boolean oceanAuthority = oceanDistance == 0;
+        boolean flatSeaLevelSurface = hasReliableSurface && preview.centerHeight <= seaLevel && preview.robustDelta <= 1;
+        boolean waterSurface = oceanAuthority && flatSeaLevelSurface;
+
         if (base.isIn(BiomeTags.IS_RIVER)) {
             if (blendedBandIndex >= 3) {
                 RegistryEntry<Biome> frozen = entryById(biomePool, "minecraft:frozen_river");
@@ -1816,34 +1846,22 @@ public final class LatitudeBiomes {
             return out;
         }
 
-        if (base.isIn(BiomeTags.IS_OCEAN)) {
-            RegistryEntry<Biome> oceanPick = oceanByLatitudeBandOrBase(biomePool, base, blockX, blockZ, blendedBandIndex);
+        if (base.isIn(BiomeTags.IS_OCEAN) || waterSurface) {
+            RegistryEntry<Biome> oceanBase = base.isIn(BiomeTags.IS_OCEAN)
+                    ? base
+                    : entryById(biomePool, "minecraft:ocean");
+            if (oceanBase == null) {
+                oceanBase = base;
+            }
+            RegistryEntry<Biome> oceanPick = oceanByLatitudeBandOrBase(biomePool, oceanBase, blockX, blockZ, blendedBandIndex);
             RegistryEntry<Biome> out = mushroomIslandOverride(biomePool, oceanPick, blockX, blockZ);
             debugPick(blockX, blockZ, effectiveRadius, t, band, base, out, false, false, null);
             return out;
         }
 
-        int landBandIndex = blendedBandIndex;
-        boolean mountainNoiseLike = landBandIndex == BAND_TEMPERATE && isMountainLike(sampler, blockX, blockZ);
-        boolean skipPreview = shouldSkipPreviewTerrain(callerContext);
-        boolean hasReliableSurface = !skipPreview && generator != null && noiseConfig != null && heightView != null;
-        boolean allowSurfaceGates = hasReliableSurface;
-        PreviewTerrain preview;
-        if (skipPreview) {
-            preview = syntheticPreviewTerrain(mountainNoiseLike, generator);
-            if (PREVIEW_TERRAIN_SKIP_LOGGED.compareAndSet(false, true)) {
-                LOGGER.info("[Latitude] skipping previewHeight() for callerContext={} (atlas fast-path enabled)", callerContext);
-            }
-        } else {
-            preview = previewTerrain(generator, noiseConfig, heightView, blockX, blockZ);
+        if (skipPreview && PREVIEW_TERRAIN_SKIP_LOGGED.compareAndSet(false, true)) {
+            LOGGER.info("[Latitude] skipping previewHeight() for callerContext={} (atlas fast-path enabled)", callerContext);
         }
-        int seaLevel = previewSeaLevel(generator);
-        boolean previewHeightHigh = preview.centerHeight >= (seaLevel + PREVIEW_HEIGHT_MARGIN_BLOCKS);
-        boolean previewRuggedHigh = preview.robustDelta >= WINDSWEPT_RUGGED_THRESH;
-        boolean previewHeightModerate = preview.centerHeight >= (seaLevel + PREVIEW_HEIGHT_MARGIN_BLOCKS / 2);
-        boolean mountainLike = mountainNoiseLike && (previewHeightHigh || previewHeightModerate || previewRuggedHigh);
-        int oceanDistance = oceanDistanceBlocks(blockX, blockZ, sampler);
-        boolean nearOcean = oceanDistance <= MANGROVE_COASTAL_MAX_BLOCKS;
         boolean forcedBadlands = false;
         RegistryEntry<Biome> chosen = null;
         if (chosen == null && (landBandIndex == BAND_TROPICAL || landBandIndex == BAND_SUBTROPICAL) && sampler != null) {
