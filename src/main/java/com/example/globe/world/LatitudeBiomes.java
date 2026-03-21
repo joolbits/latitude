@@ -408,6 +408,18 @@ public final class LatitudeBiomes {
     private static final long[] WARM_OPEN_NS_SAVANNA_BUCKETS = new long[60];
     private static final long[] WARM_OPEN_NS_DESERT_BUCKETS = new long[60];
 
+    // --- Polar atlas/headless parity instrumentation (latitude.debugPolarAtlas) ---
+    private static final boolean DEBUG_POLAR_ATLAS = Boolean.getBoolean("latitude.debugPolarAtlas");
+    private static final AtomicLong PAR_SAMPLES            = new AtomicLong();
+    private static final AtomicLong PAR_NOISE_MOUNTAIN     = new AtomicLong();
+    private static final AtomicLong PAR_NONZERO_HEIGHT     = new AtomicLong();
+    private static final AtomicLong PAR_NONZERO_DELTA      = new AtomicLong();
+    private static final AtomicLong PAR_MOUNTAIN_AUTHORITY = new AtomicLong();
+    private static final AtomicLong PAR_INITIAL_ALPINE     = new AtomicLong();
+    private static final AtomicLong PAR_FINAL_ALPINE       = new AtomicLong();
+    private static final AtomicLong PAR_REWRITTEN_SNOWY    = new AtomicLong();
+    private static final AtomicInteger PAR_PARITY_HIT_LOG  = new AtomicInteger();
+
     private static boolean isTemperateForestFamily(RegistryEntry<Biome> biome) {
         return biome != null && (
                 isBiomeId(biome, "minecraft:dark_forest")
@@ -997,6 +1009,19 @@ public final class LatitudeBiomes {
             return Boolean.parseBoolean(System.getProperty("latitude.skipPreviewHeightForWorldgen", "true"));
         }
         return false;
+    }
+
+    /**
+     * True for caller contexts that never provide noiseConfig/heightView:
+     * atlas export ("SOURCE"), headless sampler tools ("ATLAS_SAMPLER").
+     * Used to gate polar terrain authority fallback to noise when real terrain probes are absent.
+     * Proven (call-site audit): only SOURCE and ATLAS_SAMPLER callers pass null for
+     * noiseConfig/heightView; MIXIN and CAVE_CLAMP always pass real inputs.
+     */
+    private static boolean isAtlasHeadlessContext(String callerContext) {
+        if (callerContext == null) return false;
+        String n = callerContext.trim().toUpperCase(java.util.Locale.ROOT);
+        return "SOURCE".equals(n) || "ATLAS_SAMPLER".equals(n);
     }
 
     private static PreviewTerrain syntheticPreviewTerrain(boolean mountainNoiseLike, NoiseChunkGenerator generator) {
@@ -1634,6 +1659,9 @@ public final class LatitudeBiomes {
         boolean mountainNoiseLike = landBandIndex == BAND_TEMPERATE && isMountainLike(sampler, blockX, blockZ);
         boolean skipPreview = shouldSkipPreviewTerrain(callerContext);
         boolean hasReliableSurface = !skipPreview && generator != null && noiseConfig != null && heightView != null;
+        // True only when the caller supplied all three preview probe inputs (MIXIN, CAVE_CLAMP).
+        // False for atlas/headless callers (SOURCE, ATLAS_SAMPLER) that null out noiseConfig/heightView.
+        boolean hasPreviewTerrainInputs = generator != null && noiseConfig != null && heightView != null;
         boolean allowSurfaceGates = hasReliableSurface;
         PreviewTerrain preview = skipPreview
                 ? syntheticPreviewTerrain(mountainNoiseLike, generator)
@@ -1644,7 +1672,14 @@ public final class LatitudeBiomes {
         boolean previewHeightModerate = preview.centerHeight >= (seaLevel + PREVIEW_HEIGHT_MARGIN_BLOCKS / 2);
         boolean mountainLike = mountainNoiseLike && (previewHeightHigh || previewHeightModerate || previewRuggedHigh);
         boolean polarMountainNoiseLike = sampler != null && isMountainLike(sampler, blockX, blockZ);
-        boolean polarTerrainMountainLike = (preview.robustDelta >= 12) || (preview.centerHeight >= seaLevel + 20);
+        // Atlas/headless parity: when real terrain probes are absent, allow the noise signal to
+        // satisfy the terrain gate as a substitute for the missing preview terrain inputs.
+        // NOT a general definition of polar terrain mountainness — must not drift into live worldgen.
+        // Double-gated: !hasPreviewTerrainInputs (only SOURCE/ATLAS_SAMPLER paths, per call-site audit)
+        // AND isAtlasHeadlessContext (explicit context gate to prevent silent future breakage).
+        boolean polarTerrainMountainLike = (!hasPreviewTerrainInputs && isAtlasHeadlessContext(callerContext) && polarMountainNoiseLike)
+                || (preview.robustDelta >= 12)
+                || (preview.centerHeight >= seaLevel + 20);
         boolean polarMountainLikeFinal = polarMountainNoiseLike && polarTerrainMountainLike;
         if (landBandIndex >= BAND_POLAR && polarMountainLikeFinal) {
             mountainLike = true;
@@ -1978,10 +2013,46 @@ public final class LatitudeBiomes {
             String detail = "path=" + selectionPathForTrace(base, out) + " auditFlags{tag=" + auditTagPick + ",sanitize=" + auditSanitize + ",canopy=" + auditCanopy + ",warm=" + auditWarmFallback + ",finalSavanna=" + auditFinalSavanna + "}";
             auditSparseJungle(bucket, blockX, blockZ, landBandIndex, detail, biomeId(preBandEnforce), biomeId(out));
         }
+        // Atlas/headless parity: when terrain probes are absent, synthesize authority values
+        // that satisfy polarMountainAuthority() for noise-confirmed mountain cells.
+        // POLAR_AUTHORITY_PARITY_DELTA / _HEIGHT match the existing authority thresholds exactly.
+        // Double-gated: same conditions as the polarTerrainMountainLike fix above.
+        boolean polarAtlasMountainParity = !hasPreviewTerrainInputs
+                && isAtlasHeadlessContext(callerContext)
+                && polarMountainNoiseLike;
+        int effectivePolarHeight = polarAtlasMountainParity ? POLAR_AUTHORITY_PARITY_HEIGHT : preview.centerHeight;
+        int effectivePolarDelta  = polarAtlasMountainParity ? POLAR_AUTHORITY_PARITY_DELTA  : preview.robustDelta;
+        // Capture pre-clamp state so instrumentation comparison is unambiguous.
+        RegistryEntry<Biome> preClampOut = out;
+        if (DEBUG_POLAR_ATLAS && landBandIndex == BAND_POLAR && isAtlasHeadlessContext(callerContext)) {
+            PAR_SAMPLES.incrementAndGet();
+            if (polarMountainNoiseLike)       PAR_NOISE_MOUNTAIN.incrementAndGet();
+            if (preview.centerHeight > 0)     PAR_NONZERO_HEIGHT.incrementAndGet();
+            if (preview.robustDelta > 0)      PAR_NONZERO_DELTA.incrementAndGet();
+            if (polarMountainAuthority(effectivePolarDelta, effectivePolarHeight, landBandIndex))
+                                              PAR_MOUNTAIN_AUTHORITY.incrementAndGet();
+            if (isPolarAlpineBiome(out))      PAR_INITIAL_ALPINE.incrementAndGet();
+            if (polarAtlasMountainParity && PAR_PARITY_HIT_LOG.incrementAndGet() <= 5) {
+                LOGGER.info("[LAT][POLAR_ATLAS_PARITY_HIT] ctx={} x={} z={} initialBiome={} effectiveH={} effectiveD={}",
+                        callerContext, blockX, blockZ, biomeId(out), effectivePolarHeight, effectivePolarDelta);
+            }
+        }
         out = clampFinalPolarNonMountainAlpineOutput(biomeRegistry, out, landBandIndex,
                 latitudeDegreesFromRadius(blockZ, effectiveRadius),
-                preview.centerHeight,
-                preview.robustDelta);
+                effectivePolarHeight,
+                effectivePolarDelta);
+        if (DEBUG_POLAR_ATLAS && landBandIndex == BAND_POLAR && isAtlasHeadlessContext(callerContext)) {
+            if (isPolarAlpineBiome(out))      PAR_FINAL_ALPINE.incrementAndGet();
+            if (isBiomeId(out, "minecraft:snowy_plains") && !isBiomeId(preClampOut, "minecraft:snowy_plains"))
+                                              PAR_REWRITTEN_SNOWY.incrementAndGet();
+            long n = PAR_SAMPLES.get();
+            if (n == 1 || (n & 8191L) == 0) {
+                LOGGER.info("[LAT][POLAR_ATLAS_REPORT] ctx={} n={} noiseMtn={} nonzeroH={} nonzeroD={} authority={} initAlpine={} finalAlpine={} rewroteSnowy={}",
+                        callerContext, n, PAR_NOISE_MOUNTAIN.get(), PAR_NONZERO_HEIGHT.get(), PAR_NONZERO_DELTA.get(),
+                        PAR_MOUNTAIN_AUTHORITY.get(), PAR_INITIAL_ALPINE.get(), PAR_FINAL_ALPINE.get(),
+                        PAR_REWRITTEN_SNOWY.get());
+            }
+        }
         debugPick(blockX, blockZ, effectiveRadius, t, band, base, out, false, out != sanitized, mangroveDecision);
         return out;
     }
@@ -2032,6 +2103,9 @@ public final class LatitudeBiomes {
         boolean mountainNoiseLike = landBandIndex == BAND_TEMPERATE && isMountainLike(sampler, blockX, blockZ);
         boolean skipPreview = shouldSkipPreviewTerrain(callerContext);
         boolean hasReliableSurface = !skipPreview && generator != null && noiseConfig != null && heightView != null;
+        // True only when the caller supplied all three preview probe inputs (MIXIN, CAVE_CLAMP).
+        // False for atlas/headless callers (SOURCE, ATLAS_SAMPLER) that null out noiseConfig/heightView.
+        boolean hasPreviewTerrainInputs = generator != null && noiseConfig != null && heightView != null;
         boolean allowSurfaceGates = hasReliableSurface;
         PreviewTerrain preview = skipPreview
                 ? syntheticPreviewTerrain(mountainNoiseLike, generator)
@@ -2042,7 +2116,14 @@ public final class LatitudeBiomes {
         boolean previewHeightModerate = preview.centerHeight >= (seaLevel + PREVIEW_HEIGHT_MARGIN_BLOCKS / 2);
         boolean mountainLike = mountainNoiseLike && (previewHeightHigh || previewHeightModerate || previewRuggedHigh);
         boolean polarMountainNoiseLike = sampler != null && isMountainLike(sampler, blockX, blockZ);
-        boolean polarTerrainMountainLike = (preview.robustDelta >= 12) || (preview.centerHeight >= seaLevel + 20);
+        // Atlas/headless parity: when real terrain probes are absent, allow the noise signal to
+        // satisfy the terrain gate as a substitute for the missing preview terrain inputs.
+        // NOT a general definition of polar terrain mountainness — must not drift into live worldgen.
+        // Double-gated: !hasPreviewTerrainInputs (only SOURCE/ATLAS_SAMPLER paths, per call-site audit)
+        // AND isAtlasHeadlessContext (explicit context gate to prevent silent future breakage).
+        boolean polarTerrainMountainLike = (!hasPreviewTerrainInputs && isAtlasHeadlessContext(callerContext) && polarMountainNoiseLike)
+                || (preview.robustDelta >= 12)
+                || (preview.centerHeight >= seaLevel + 20);
         boolean polarMountainLikeFinal = polarMountainNoiseLike && polarTerrainMountainLike;
         if (landBandIndex >= BAND_POLAR && polarMountainLikeFinal) {
             mountainLike = true;
@@ -2341,10 +2422,46 @@ public final class LatitudeBiomes {
         logSubtropicalJungleReturn("pick-collection", blockX, blockZ, t, landBandIndex, base, chosen, sanitized, preBandEnforce, postBandEnforce, postFinalClamp, out);
         logAtlasViewportJungleReturn("pick-collection", callerContext, blockX, blockZ, t, landBandIndex, overlayBandIndex, base, chosen, sanitized, preBandEnforce, postBandEnforce, postFinalClamp, out);
         traceSubpolarJunglePick(blockX, blockZ, effectiveRadius, landBandIndex, base, out);
+        // Atlas/headless parity: when terrain probes are absent, synthesize authority values
+        // that satisfy polarMountainAuthority() for noise-confirmed mountain cells.
+        // POLAR_AUTHORITY_PARITY_DELTA / _HEIGHT match the existing authority thresholds exactly.
+        // Double-gated: same conditions as the polarTerrainMountainLike fix above.
+        boolean polarAtlasMountainParity = !hasPreviewTerrainInputs
+                && isAtlasHeadlessContext(callerContext)
+                && polarMountainNoiseLike;
+        int effectivePolarHeight = polarAtlasMountainParity ? POLAR_AUTHORITY_PARITY_HEIGHT : preview.centerHeight;
+        int effectivePolarDelta  = polarAtlasMountainParity ? POLAR_AUTHORITY_PARITY_DELTA  : preview.robustDelta;
+        // Capture pre-clamp state so instrumentation comparison is unambiguous.
+        RegistryEntry<Biome> preClampOut = out;
+        if (DEBUG_POLAR_ATLAS && landBandIndex == BAND_POLAR && isAtlasHeadlessContext(callerContext)) {
+            PAR_SAMPLES.incrementAndGet();
+            if (polarMountainNoiseLike)       PAR_NOISE_MOUNTAIN.incrementAndGet();
+            if (preview.centerHeight > 0)     PAR_NONZERO_HEIGHT.incrementAndGet();
+            if (preview.robustDelta > 0)      PAR_NONZERO_DELTA.incrementAndGet();
+            if (polarMountainAuthority(effectivePolarDelta, effectivePolarHeight, landBandIndex))
+                                              PAR_MOUNTAIN_AUTHORITY.incrementAndGet();
+            if (isPolarAlpineBiome(out))      PAR_INITIAL_ALPINE.incrementAndGet();
+            if (polarAtlasMountainParity && PAR_PARITY_HIT_LOG.incrementAndGet() <= 5) {
+                LOGGER.info("[LAT][POLAR_ATLAS_PARITY_HIT] ctx={} x={} z={} initialBiome={} effectiveH={} effectiveD={}",
+                        callerContext, blockX, blockZ, biomeId(out), effectivePolarHeight, effectivePolarDelta);
+            }
+        }
         out = clampFinalPolarNonMountainAlpineOutput(biomePool, out, landBandIndex,
                 latitudeDegreesFromRadius(blockZ, effectiveRadius),
-                preview.centerHeight,
-                preview.robustDelta);
+                effectivePolarHeight,
+                effectivePolarDelta);
+        if (DEBUG_POLAR_ATLAS && landBandIndex == BAND_POLAR && isAtlasHeadlessContext(callerContext)) {
+            if (isPolarAlpineBiome(out))      PAR_FINAL_ALPINE.incrementAndGet();
+            if (isBiomeId(out, "minecraft:snowy_plains") && !isBiomeId(preClampOut, "minecraft:snowy_plains"))
+                                              PAR_REWRITTEN_SNOWY.incrementAndGet();
+            long n = PAR_SAMPLES.get();
+            if (n == 1 || (n & 8191L) == 0) {
+                LOGGER.info("[LAT][POLAR_ATLAS_REPORT] ctx={} n={} noiseMtn={} nonzeroH={} nonzeroD={} authority={} initAlpine={} finalAlpine={} rewroteSnowy={}",
+                        callerContext, n, PAR_NOISE_MOUNTAIN.get(), PAR_NONZERO_HEIGHT.get(), PAR_NONZERO_DELTA.get(),
+                        PAR_MOUNTAIN_AUTHORITY.get(), PAR_INITIAL_ALPINE.get(), PAR_FINAL_ALPINE.get(),
+                        PAR_REWRITTEN_SNOWY.get());
+            }
+        }
         debugPick(blockX, blockZ, effectiveRadius, t, band, base, out, false, out != sanitized, mangroveDecision);
         return out;
     }
@@ -4158,6 +4275,12 @@ public final class LatitudeBiomes {
                 && !mountainNoiseLike;
     }
 
+    // Synthetic authority values used when real terrain probes are absent (atlas/headless).
+    // Chosen to exactly satisfy the existing polarMountainAuthority() thresholds
+    // (robustDelta >= 18, centerHeight >= 110), producing parity with a confirmed-mountain cell.
+    private static final int POLAR_AUTHORITY_PARITY_DELTA  = 18;
+    private static final int POLAR_AUTHORITY_PARITY_HEIGHT = 111;
+
     private static boolean polarMountainAuthority(int robustDelta, int centerHeight, int landBandIndex) {
         if (landBandIndex != BAND_POLAR) {
             return false;
@@ -4178,6 +4301,14 @@ public final class LatitudeBiomes {
     }
 
     private static boolean isFlatPolarShelfBannedMountainPick(RegistryEntry<Biome> candidate) {
+        return isBiomeId(candidate, "minecraft:jagged_peaks")
+                || isBiomeId(candidate, "minecraft:frozen_peaks")
+                || isBiomeId(candidate, "minecraft:snowy_slopes")
+                || isBiomeId(candidate, "minecraft:ice_spikes");
+    }
+
+    /** Alpine biomes requiring polar mountain authority to survive the non-mountain clamp. */
+    private static boolean isPolarAlpineBiome(RegistryEntry<Biome> candidate) {
         return isBiomeId(candidate, "minecraft:jagged_peaks")
                 || isBiomeId(candidate, "minecraft:frozen_peaks")
                 || isBiomeId(candidate, "minecraft:snowy_slopes")
