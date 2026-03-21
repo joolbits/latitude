@@ -1638,8 +1638,9 @@ public final class LatitudeBiomes {
         boolean previewHeightModerate = preview.centerHeight >= (seaLevel + PREVIEW_HEIGHT_MARGIN_BLOCKS / 2);
         boolean mountainLike = mountainNoiseLike && (previewHeightHigh || previewHeightModerate || previewRuggedHigh);
         boolean polarMountainNoiseLike = sampler != null && isMountainLike(sampler, blockX, blockZ);
-        boolean polarMountainLike = polarMountainNoiseLike && (previewHeightHigh || previewHeightModerate || previewRuggedHigh);
-        if (landBandIndex >= BAND_POLAR && polarMountainLike) {
+        boolean polarTerrainMountainLike = (preview.robustDelta >= 12) || (preview.centerHeight >= seaLevel + 20);
+        boolean polarMountainLikeFinal = polarMountainNoiseLike && polarTerrainMountainLike;
+        if (landBandIndex >= BAND_POLAR && polarMountainLikeFinal) {
             mountainLike = true;
         }
         int oceanDistance = oceanDistanceBlocks(blockX, blockZ, sampler);
@@ -1741,11 +1742,11 @@ public final class LatitudeBiomes {
                         blockX,
                         blockZ,
                         t,
-                        polarMountainLike,
+                        polarMountainLikeFinal,
                         preview.centerHeight,
                         preview.robustDelta,
                         seaLevel,
-                        polarMountainNoiseLike,
+                        polarMountainLikeFinal,
                         mountainLike,
                         oceanDistance);
             };
@@ -1971,7 +1972,7 @@ public final class LatitudeBiomes {
             String detail = "path=" + selectionPathForTrace(base, out) + " auditFlags{tag=" + auditTagPick + ",sanitize=" + auditSanitize + ",canopy=" + auditCanopy + ",warm=" + auditWarmFallback + ",finalSavanna=" + auditFinalSavanna + "}";
             auditSparseJungle(bucket, blockX, blockZ, landBandIndex, detail, biomeId(preBandEnforce), biomeId(out));
         }
-        out = clampFinalPolarNonMountainAlpineOutput(biomeRegistry, out, landBandIndex, mountainLike, mountainNoiseLike);
+        out = clampFinalPolarNonMountainAlpineOutput(biomeRegistry, out, landBandIndex, mountainLike, mountainNoiseLike || polarMountainLikeFinal);
         debugPick(blockX, blockZ, effectiveRadius, t, band, base, out, false, out != sanitized, mangroveDecision);
         return out;
     }
@@ -2032,8 +2033,9 @@ public final class LatitudeBiomes {
         boolean previewHeightModerate = preview.centerHeight >= (seaLevel + PREVIEW_HEIGHT_MARGIN_BLOCKS / 2);
         boolean mountainLike = mountainNoiseLike && (previewHeightHigh || previewHeightModerate || previewRuggedHigh);
         boolean polarMountainNoiseLike = sampler != null && isMountainLike(sampler, blockX, blockZ);
-        boolean polarMountainLike = polarMountainNoiseLike && (previewHeightHigh || previewHeightModerate || previewRuggedHigh);
-        if (landBandIndex >= BAND_POLAR && polarMountainLike) {
+        boolean polarTerrainMountainLike = (preview.robustDelta >= 12) || (preview.centerHeight >= seaLevel + 20);
+        boolean polarMountainLikeFinal = polarMountainNoiseLike && polarTerrainMountainLike;
+        if (landBandIndex >= BAND_POLAR && polarMountainLikeFinal) {
             mountainLike = true;
         }
         int oceanDistance = oceanDistanceBlocks(blockX, blockZ, sampler);
@@ -2118,11 +2120,11 @@ public final class LatitudeBiomes {
                         blockX,
                         blockZ,
                         t,
-                        polarMountainLike,
+                        polarMountainLikeFinal,
                         preview.centerHeight,
                         preview.robustDelta,
                         seaLevel,
-                        polarMountainNoiseLike,
+                        polarMountainLikeFinal,
                         mountainLike,
                         oceanDistance);
             };
@@ -2330,7 +2332,7 @@ public final class LatitudeBiomes {
         logSubtropicalJungleReturn("pick-collection", blockX, blockZ, t, landBandIndex, base, chosen, sanitized, preBandEnforce, postBandEnforce, postFinalClamp, out);
         logAtlasViewportJungleReturn("pick-collection", callerContext, blockX, blockZ, t, landBandIndex, overlayBandIndex, base, chosen, sanitized, preBandEnforce, postBandEnforce, postFinalClamp, out);
         traceSubpolarJunglePick(blockX, blockZ, effectiveRadius, landBandIndex, base, out);
-        out = clampFinalPolarNonMountainAlpineOutput(biomePool, out, landBandIndex, mountainLike, mountainNoiseLike);
+        out = clampFinalPolarNonMountainAlpineOutput(biomePool, out, landBandIndex, mountainLike, mountainNoiseLike || polarMountainLikeFinal);
         debugPick(blockX, blockZ, effectiveRadius, t, band, base, out, false, out != sanitized, mangroveDecision);
         return out;
     }
