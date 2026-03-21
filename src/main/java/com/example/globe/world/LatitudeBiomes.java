@@ -598,6 +598,7 @@ public final class LatitudeBiomes {
             boolean coastalHint,
             boolean mountainNoiseLike,
             boolean mountainLike,
+            boolean polarMountainAuthority,
             boolean terrainPreviewAvailable,
             int centerHeight,
             int robustDelta,
@@ -707,6 +708,7 @@ public final class LatitudeBiomes {
         } else {
             mountainLike = false;
         }
+        boolean polarMountainAuthorityActive = polarMountainAuthority(robustDelta, centerHeight, bandIndex);
         boolean isSeaLevelSurface = surfaceTruthAvailable && surfaceY != Integer.MIN_VALUE && surfaceY == seaLevel;
         int seaLevelDelta = surfaceTruthAvailable && surfaceY != Integer.MIN_VALUE ? (surfaceY - seaLevel) : Integer.MIN_VALUE;
         boolean isFlatSurface = terrainPreviewAvailable && robustDelta == 0;
@@ -812,6 +814,7 @@ public final class LatitudeBiomes {
                 + "  cont=%s  ero=%s  weird=%s%n"
                 + "  terrainPreview=%s  centerHeight=%s  robustDelta=%s%n"
                 + "  mountainNoiseLike=%s  mountainLike=%s%n"
+                + "  polarMountainAuthority=%s%n"
                 + "  surfaceTruthAvailable=%s  surfaceBlock=%s  surfaceFluid=%s%n"
                 + "  isWaterSurface=%s  surfaceY=%s  seaLevelDelta=%s%n"
                 + "  isSeaLevelSurface=%s  isFlatSurface=%s  isMountainCandidate=%s  isNearOcean=%s%n"
@@ -827,6 +830,7 @@ public final class LatitudeBiomes {
                 contStr, eroStr, weirdStr,
                 terrainPreviewAvailable ? "available" : "unavailable", centerHeightStr, robustDeltaStr,
                 mountainNoiseLike, mountainLikeStr,
+                polarMountainAuthorityActive,
                 surfaceTruthAvailable, surfaceBlockStr, surfaceFluidStr,
                 waterSurfaceStr, surfaceYStr, seaLevelDeltaStr,
                 seaLevelSurfaceStr, isFlatSurface, isMountainCandidate, isNearOcean,
@@ -853,6 +857,7 @@ public final class LatitudeBiomes {
                 coastalHint,
                 mountainNoiseLike,
                 mountainLike,
+                polarMountainAuthorityActive,
                 terrainPreviewAvailable,
                 centerHeight,
                 robustDelta,
@@ -1975,7 +1980,8 @@ public final class LatitudeBiomes {
         }
         out = clampFinalPolarNonMountainAlpineOutput(biomeRegistry, out, landBandIndex,
                 latitudeDegreesFromRadius(blockZ, effectiveRadius),
-                mountainLike, mountainNoiseLike || polarMountainLikeFinal);
+                preview.centerHeight,
+                preview.robustDelta);
         debugPick(blockX, blockZ, effectiveRadius, t, band, base, out, false, out != sanitized, mangroveDecision);
         return out;
     }
@@ -2337,7 +2343,8 @@ public final class LatitudeBiomes {
         traceSubpolarJunglePick(blockX, blockZ, effectiveRadius, landBandIndex, base, out);
         out = clampFinalPolarNonMountainAlpineOutput(biomePool, out, landBandIndex,
                 latitudeDegreesFromRadius(blockZ, effectiveRadius),
-                mountainLike, mountainNoiseLike || polarMountainLikeFinal);
+                preview.centerHeight,
+                preview.robustDelta);
         debugPick(blockX, blockZ, effectiveRadius, t, band, base, out, false, out != sanitized, mangroveDecision);
         return out;
     }
@@ -4151,6 +4158,21 @@ public final class LatitudeBiomes {
                 && !mountainNoiseLike;
     }
 
+    private static boolean polarMountainAuthority(int robustDelta, int centerHeight, int landBandIndex) {
+        if (landBandIndex != BAND_POLAR) {
+            return false;
+        }
+        boolean robustKnown = robustDelta != Integer.MIN_VALUE;
+        boolean heightKnown = centerHeight != Integer.MIN_VALUE;
+        if (!robustKnown && !heightKnown) {
+            return false;
+        }
+        if (robustKnown && robustDelta >= 18) {
+            return true;
+        }
+        return heightKnown && centerHeight >= 110;
+    }
+
     private static boolean isExtremePolarCap(double latDeg) {
         return latDeg >= EXTREME_POLAR_CAP_MIN_DEG;
     }
@@ -4202,10 +4224,11 @@ public final class LatitudeBiomes {
     private static RegistryEntry<Biome> clampFinalPolarNonMountainAlpineOutput(Registry<Biome> biomes,
                                                                                 RegistryEntry<Biome> out, int landBandIndex,
                                                                                 double latDeg,
-                                                                                boolean mountainLike, boolean mountainNoiseLike) {
-        boolean mountainAuthority = mountainLike || mountainNoiseLike;
+                                                                                int centerHeight,
+                                                                                int robustDelta) {
         out = clampExtremePolarCapOutput(biomes, out, landBandIndex, latDeg);
-        if (landBandIndex != BAND_POLAR || mountainAuthority) {
+        boolean polarAuthority = polarMountainAuthority(robustDelta, centerHeight, landBandIndex);
+        if (landBandIndex != BAND_POLAR || polarAuthority) {
             return out;
         }
         if (!isFlatPolarShelfBannedMountainPick(out)) {
@@ -4232,10 +4255,11 @@ public final class LatitudeBiomes {
     private static RegistryEntry<Biome> clampFinalPolarNonMountainAlpineOutput(Collection<RegistryEntry<Biome>> biomes,
                                                                                 RegistryEntry<Biome> out, int landBandIndex,
                                                                                 double latDeg,
-                                                                                boolean mountainLike, boolean mountainNoiseLike) {
-        boolean mountainAuthority = mountainLike || mountainNoiseLike;
+                                                                                int centerHeight,
+                                                                                int robustDelta) {
         out = clampExtremePolarCapOutput(biomes, out, landBandIndex, latDeg);
-        if (landBandIndex != BAND_POLAR || mountainAuthority) {
+        boolean polarAuthority = polarMountainAuthority(robustDelta, centerHeight, landBandIndex);
+        if (landBandIndex != BAND_POLAR || polarAuthority) {
             return out;
         }
         if (!isFlatPolarShelfBannedMountainPick(out)) {
