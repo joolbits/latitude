@@ -13,18 +13,23 @@ import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
 import net.minecraft.command.CommandSource;
 import net.minecraft.network.packet.s2c.play.PositionFlag;
+import net.minecraft.registry.RegistryKeys;
 import net.minecraft.registry.entry.RegistryEntry;
 import net.minecraft.server.command.CommandManager;
 import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.text.Text;
+import net.minecraft.fluid.FluidState;
+import net.minecraft.registry.tag.FluidTags;
+import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.ChunkPos;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.world.Heightmap;
 import net.minecraft.world.border.WorldBorder;
 import net.minecraft.world.biome.Biome;
+import net.minecraft.block.BlockState;
 import net.minecraft.world.chunk.ChunkStatus;
 
 import java.io.IOException;
@@ -209,6 +214,7 @@ public final class LatitudeDevCommand {
             net.minecraft.world.gen.chunk.ChunkGenerator cg = world.getChunkManager().getChunkGenerator();
             net.minecraft.world.gen.chunk.NoiseChunkGenerator ng = cg instanceof net.minecraft.world.gen.chunk.NoiseChunkGenerator n ? n : null;
             String finalBiomeId = biomeId(world.getBiome(pos));
+            SurfaceTruth surfaceTruth = resolveSurfaceTruth(world, pos.getX(), pos.getZ());
 
             LatitudeBiomes.BiomeDiagnostics diag = LatitudeBiomes.explainBiomeAt(
                     finalBiomeId,
@@ -217,7 +223,12 @@ public final class LatitudeDevCommand {
                     sampler,
                     ng,
                     noiseConfig,
-                    world);
+                    world,
+                    surfaceTruth.available(),
+                    surfaceTruth.surfaceBlockId(),
+                    surfaceTruth.surfaceFluidId(),
+                    surfaceTruth.waterSurface(),
+                    surfaceTruth.surfaceY());
 
             final String headerText = String.format(Locale.ROOT, "[latdev] explain @ x=%d z=%d", pos.getX(), pos.getZ());
             final String summaryText = "Summary: " + diag.summaryLine();
@@ -650,6 +661,38 @@ public final class LatitudeDevCommand {
 
     private static String biomeId(RegistryEntry<Biome> biome) {
         return biome.getKey().map(key -> key.getValue().toString()).orElse("?");
+    }
+
+    private static SurfaceTruth resolveSurfaceTruth(ServerWorld world, int x, int z) {
+        int top = world.getTopY(Heightmap.Type.WORLD_SURFACE, x, z) - 1;
+        if (top < world.getBottomY()) {
+            return new SurfaceTruth(false, "n/a(surface)", "n/a(surface)", false, Integer.MIN_VALUE);
+        }
+        BlockPos surfacePos = new BlockPos(x, top, z);
+        BlockState blockState = world.getBlockState(surfacePos);
+        FluidState fluidState = world.getFluidState(surfacePos);
+        String surfaceBlockId = blockId(world, blockState);
+        String surfaceFluidId = fluidId(world, fluidState);
+        boolean isWaterSurface = fluidState.isIn(FluidTags.WATER);
+        return new SurfaceTruth(true, surfaceBlockId, surfaceFluidId, isWaterSurface, top);
+    }
+
+    private static String blockId(ServerWorld world, BlockState state) {
+        Identifier id = world.getRegistryManager().getOrThrow(RegistryKeys.BLOCK).getId(state.getBlock());
+        return id != null ? id.toString() : "minecraft:air";
+    }
+
+    private static String fluidId(ServerWorld world, FluidState state) {
+        Identifier id = world.getRegistryManager().getOrThrow(RegistryKeys.FLUID).getId(state.getFluid());
+        return id != null ? id.toString() : "minecraft:empty";
+    }
+
+    private record SurfaceTruth(
+            boolean available,
+            String surfaceBlockId,
+            String surfaceFluidId,
+            boolean waterSurface,
+            int surfaceY) {
     }
 
     private static String summarizeTopBiomes(Map<String, Integer> biomeCounts, int loaded, int limit) {

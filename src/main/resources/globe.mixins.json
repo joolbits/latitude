@@ -20,6 +20,7 @@
     "client.FogRendererMixin",
     "client.EwStormWallRendererMixin",
     "client.WorldRendererWorldBorderMixin",
+    "client.SystemDetailsHardwareProbeMixin",
     "client.CreateWorldScreenLatitudeToggleMixin",
     "client.CreateWorldScreenSpawnZoneMixin",
     "client.CreateWorldScreenMixin",
