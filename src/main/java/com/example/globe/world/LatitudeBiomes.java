@@ -4320,11 +4320,38 @@ public final class LatitudeBiomes {
                 || isBiomeId(candidate, "minecraft:cherry_grove");
     }
 
+    /**
+     * True for biomes that must not appear in the extreme polar cap (≥85°).
+     * These are soft, vegetated, or village-friendly relative to 85°+ polar ecology.
+     *
+     * Authority: used exclusively by clampExtremePolarCapOutput, which fires before
+     * the alpine-authority check. Alpine biomes (jagged_peaks, frozen_peaks, snowy_slopes,
+     * ice_spikes) are intentionally NOT listed here — they are preserved or removed by
+     * the downstream polarMountainAuthority check in clampFinalPolarNonMountainAlpineOutput.
+     *
+     * Uses explicit isBiomeId() checks (not path-string matching) to avoid silent
+     * false-negatives when registry-key resolution returns Optional.empty().
+     * Path-based catch-all is kept as secondary safety net only.
+     */
     private static boolean isExtremePolarSoftColdLeak(RegistryEntry<Biome> candidate) {
+        // Explicit primary checks — all biomes that are ecologically invalid at 85°+.
+        if (isBiomeId(candidate, "minecraft:grove")
+                || isBiomeId(candidate, "minecraft:cherry_grove")
+                || isBiomeId(candidate, "minecraft:snowy_taiga")
+                || isBiomeId(candidate, "minecraft:taiga")
+                || isBiomeId(candidate, "minecraft:old_growth_spruce_taiga")
+                || isBiomeId(candidate, "minecraft:old_growth_pine_taiga")
+                || isBiomeId(candidate, "minecraft:dark_forest")
+                || isBiomeId(candidate, "minecraft:forest")
+                || isBiomeId(candidate, "minecraft:flower_forest")
+                || isBiomeId(candidate, "minecraft:birch_forest")
+                || isBiomeId(candidate, "minecraft:old_growth_birch_forest")
+                || isBiomeId(candidate, "minecraft:windswept_forest")) {
+            return true;
+        }
+        // Path-based catch-all for any unlisted biome whose ID path contains "forest" or "taiga".
         String path = candidate.getKey().map(key -> key.getValue().getPath()).orElse("");
-        return isExtremePolarGroveLeak(candidate)
-                || path.contains("forest")
-                || path.contains("taiga");
+        return path.contains("forest") || path.contains("taiga");
     }
 
     private static boolean isMountainCodedColdPick(RegistryEntry<Biome> candidate) {
