@@ -2831,6 +2831,19 @@ const ZONE_BANDS = CANONICAL_BAND_DEFINITIONS.map((band) => ({
  deg: `${band.minDeg.toFixed(1)}–${band.maxDeg.toFixed(1)}°`,
 }));
 
+// Maps atlas.ps1 --size preset names → radius in blocks.
+// Kept in sync with BiomePreviewHeadlessRunner.radiusFromSizeOrWorld().
+const ATLAS_PRESET_RADII = {
+ itty:    3750,
+ xsmall:  3750,
+ small:   5000,
+ regular: 7500,
+ large:   10000,
+ massive: 20000,
+};
+
+// Legacy diameter→display-label map (predates the current preset naming).
+// Used by formatWorldSizeLabel() and as a last-resort fallback in getWorldRadius().
 const WORLD_SIZE_NAMES = {
  7500: 'Itty Bitty',
  10000: 'Tiny',
@@ -2898,9 +2911,19 @@ function normalizeManifest(manifest, run = '') {
 
 function getWorldRadius(manifest = state.manifest) {
  if (!manifest) return null;
+ // 1. Explicit radius field in manifest (most direct).
  if (manifest.radius && manifest.radius > 0) return manifest.radius;
+ // 2. Explicit diameter field.
  if (manifest.diameter && manifest.diameter > 0) return manifest.diameter / 2;
- const name = String(manifest.world_size || manifest.size || '').toLowerCase();
+ // 3. Atlas preset name → radius (authoritative; matches BiomePreviewHeadlessRunner).
+ const name = String(manifest.world_size || manifest.size || '').toLowerCase().trim();
+ if (name && Object.prototype.hasOwnProperty.call(ATLAS_PRESET_RADII, name)) {
+  return ATLAS_PRESET_RADII[name];
+ }
+ // 4. Legend radiusBlocks — loaded separately from manifest; guards against any
+ //    new preset name not yet in ATLAS_PRESET_RADII.
+ if (state?.legend?.radiusBlocks > 0) return state.legend.radiusBlocks;
+ // 5. Legacy fallback: match against old WORLD_SIZE_NAMES display labels.
  for (const [diam, label] of Object.entries(WORLD_SIZE_NAMES)) {
   if (label.toLowerCase() === name) return Number(diam) / 2;
  }
