@@ -1509,6 +1509,7 @@ public final class LatitudeBiomes {
     private static final double MANGROVE_CONTINENTALNESS_MAX = 0.015;
     private static final double MANGROVE_MIN_EROSION = 0.08;
     private static final double MANGROVE_MAX_ABS_WEIRDNESS = 0.10;
+    private static final int MANGROVE_TRUE_COAST_RECOVERY_MAX_BLOCKS = 32;
     private static final int MANGROVE_PRIMARY_INVITE_COAST_MAX_BLOCKS = 96;
     private static final int MANGROVE_SECONDARY_COAST_MAX_BLOCKS = 64;
     private static final double MANGROVE_SECONDARY_MIN_EROSION = 0.15;
@@ -4600,11 +4601,16 @@ public final class LatitudeBiomes {
                 && erosion > MANGROVE_SECONDARY_MIN_EROSION
                 && Math.abs(weird) < MANGROVE_SECONDARY_MAX_ABS_WEIRDNESS;
 
-        boolean invite = invitePrimary || coastalSecondary;
+        boolean trueCoastRecovery = coastal
+                && oceanDist <= MANGROVE_TRUE_COAST_RECOVERY_MAX_BLOCKS
+                && erosion > MANGROVE_MIN_EROSION
+                && Math.abs(weird) < MANGROVE_MAX_ABS_WEIRDNESS;
+
+        boolean invite = invitePrimary || coastalSecondary || trueCoastRecovery;
         if (DEBUG_MANGROVE_INVITE) {
             long n = MANGROVE_INVITE_LOG_COUNT.incrementAndGet();
             if (invite || n <= 50 || n % 50000L == 0L) {
-                String path = invitePrimary ? "primary" : (coastalSecondary ? "secondary" : "none");
+                String path = invitePrimary ? "primary" : (coastalSecondary ? "secondary" : (trueCoastRecovery ? "recovery" : "none"));
                 LOGGER.info("[latdev] mangroveInviteProbe x={} z={} cont={}; erosion={}; weird={}; nearOcean={}; oceanDist={}; invite={}; path={} count={}",
                         blockX, blockZ,
                         String.format(java.util.Locale.ROOT, "%.3f", cont),
