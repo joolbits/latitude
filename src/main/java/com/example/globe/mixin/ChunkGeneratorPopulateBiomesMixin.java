@@ -255,7 +255,7 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
             int blockY = (y << 2) + 2;
             
             RegistryEntry<Biome> current = originalSupplier.getBiome(x, y, z, sampler);
-            RegistryEntry<Biome> base = originalSupplier.getBiome(x, 0, z, sampler);
+            RegistryEntry<Biome> base = originalSupplier.getBiome(x, LatitudeBiomes.SURFACE_CLASSIFY_Y >> 2, z, sampler);
 
             if (blockY > HARD_DECK_SURFACE_Y && isCaveBiome(biomes, base)) {
                 RegistryEntry<Biome> plains = biomes.getEntry(Identifier.of("minecraft", "plains")).orElse(null);

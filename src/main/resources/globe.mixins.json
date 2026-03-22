@@ -14,7 +14,9 @@
     "SurfaceDripstoneLawnmowerMixin",
     "ProtoChunkSnowBlockGuardMixin",
     "FreezeTopLayerFeatureGuardMixin",
-    "ChunkRegionWarmSnowTrapMixin"
+    "ChunkRegionWarmSnowTrapMixin",
+    "ExtremePolarVegetationGuardMixin",
+    "ExtremePolarVillageGuardMixin"
   ],
   "client": [
     "client.FogRendererMixin",
