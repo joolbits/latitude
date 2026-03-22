@@ -420,6 +420,9 @@ public final class LatitudeBiomes {
     private static final AtomicLong PAR_REWRITTEN_SNOWY    = new AtomicLong();
     private static final AtomicInteger PAR_PARITY_HIT_LOG  = new AtomicInteger();
 
+    // --- Polar cap live trace (latitude.debugPolarCapTrace) ---
+    private static final boolean DEBUG_POLAR_CAP_TRACE = Boolean.getBoolean("latitude.debugPolarCapTrace");
+
     private static boolean isTemperateForestFamily(RegistryEntry<Biome> biome) {
         return biome != null && (
                 isBiomeId(biome, "minecraft:dark_forest")
@@ -1024,6 +1027,14 @@ public final class LatitudeBiomes {
         return "SOURCE".equals(n) || "ATLAS_SAMPLER".equals(n);
     }
 
+    /** Coordinate gate for polar cap live trace — matches x=0/z=9702, x=14/z=9668, x=2133/z=9722 (±4 blocks). */
+    private static boolean isPolarCapTraceCoord(int blockX, int blockZ) {
+        int az = Math.abs(blockZ);
+        return (Math.abs(blockX) <= 4          && Math.abs(az - 9702) <= 4)
+            || (Math.abs(blockX - 14) <= 4     && Math.abs(az - 9668) <= 4)
+            || (Math.abs(blockX - 2133) <= 4   && Math.abs(az - 9722) <= 4);
+    }
+
     private static PreviewTerrain syntheticPreviewTerrain(boolean mountainNoiseLike, NoiseChunkGenerator generator) {
         int seaLevel = previewSeaLevel(generator);
         int centerHeight = mountainNoiseLike ? (seaLevel + PREVIEW_HEIGHT_MARGIN_BLOCKS + 1) : (seaLevel - 1);
@@ -1458,7 +1469,7 @@ public final class LatitudeBiomes {
     private static final double SNOWY_RAMP_START_DEG = 54.0;
     private static final double SNOWY_RAMP_FULL_DEG = 68.0;
     private static final double GROVE_MIN_DEG = 54.0;
-    private static final double EXTREME_POLAR_CAP_MIN_DEG = 85.0;
+    private static final double EXTREME_POLAR_CAP_MIN_DEG = 74.5;
     private static final int SUBPOLAR_RAMP_PATCH_BLOCKS = 224;
     private static final int SNOWY_RAMP_PATCH_BLOCKS = 288;
 
@@ -1674,12 +1685,25 @@ public final class LatitudeBiomes {
         boolean polarMountainNoiseLike = sampler != null && isMountainLike(sampler, blockX, blockZ);
         // Atlas/headless parity: when real terrain probes are absent, allow the noise signal to
         // satisfy the terrain gate as a substitute for the missing preview terrain inputs.
-        // NOT a general definition of polar terrain mountainness — must not drift into live worldgen.
         // Double-gated: !hasPreviewTerrainInputs (only SOURCE/ATLAS_SAMPLER paths, per call-site audit)
         // AND isAtlasHeadlessContext (explicit context gate to prevent silent future breakage).
+        //
+        // Live-worldgen bridge (skipPreview && hasPreviewTerrainInputs && polar noise-mountain):
+        // syntheticPreviewTerrain uses temperate-gated mountainNoiseLike, which is always false
+        // for polar band, producing flat placeholder values that suppress polarTerrainMountainLike.
+        // When the noise says "mountain" in a polar cell, do a targeted real-terrain probe
+        // (same pattern as the post-pick terrain gate at the subpolar/polar skipPreview block)
+        // so that actual mountain terrain can earn polar mountain authority.
+        int polarProbeHeight = preview.centerHeight;
+        int polarProbeDelta  = preview.robustDelta;
+        if (skipPreview && landBandIndex >= BAND_POLAR && polarMountainNoiseLike && hasPreviewTerrainInputs) {
+            PreviewTerrain polarProbe = previewTerrain(generator, noiseConfig, heightView, blockX, blockZ);
+            polarProbeHeight = polarProbe.centerHeight;
+            polarProbeDelta  = polarProbe.robustDelta;
+        }
         boolean polarTerrainMountainLike = (!hasPreviewTerrainInputs && isAtlasHeadlessContext(callerContext) && polarMountainNoiseLike)
-                || (preview.robustDelta >= 12)
-                || (preview.centerHeight >= seaLevel + 20);
+                || (polarProbeDelta >= 12)
+                || (polarProbeHeight >= seaLevel + 20);
         boolean polarMountainLikeFinal = polarMountainNoiseLike && polarTerrainMountainLike;
         if (landBandIndex >= BAND_POLAR && polarMountainLikeFinal) {
             mountainLike = true;
@@ -1911,11 +1935,15 @@ public final class LatitudeBiomes {
                 }
                 if (mountainLike) {
                     chosen = pickFromTagNoiseOrBase(biomeRegistry, LAT_TEMPERATE_MOUNTAIN, base, blockX, blockZ, landBandIndex);
-                    if (isBiomeId(chosen, "minecraft:cherry_grove")) {
+                    if (isBiomeId(chosen, "minecraft:cherry_grove") && landBandIndex < BAND_POLAR) {
                         return chosen;
                     }
                 }
                 sanitized = sanitizeLandBiome(biomeRegistry, chosen, landBandIndex, blockX, blockZ);
+                if (DEBUG_POLAR_CAP_TRACE && landBandIndex == BAND_POLAR && isPolarCapTraceCoord(blockX, blockZ)) {
+                    LOGGER.info("[LAT][POLAR_CAP_TRACE][sanitize] ctx={} x={} z={} chosen={} -> sanitized={}",
+                            callerContext, blockX, blockZ, biomeId(chosen), biomeId(sanitized));
+                }
                 if (DEBUG_SPARSE_JUNGLE_AUDIT && !isBiomeId(chosen, "minecraft:sparse_jungle") && isBiomeId(sanitized, "minecraft:sparse_jungle")) {
                     auditSanitize = true;
                 }
@@ -2020,10 +2048,18 @@ public final class LatitudeBiomes {
         boolean polarAtlasMountainParity = !hasPreviewTerrainInputs
                 && isAtlasHeadlessContext(callerContext)
                 && polarMountainNoiseLike;
-        int effectivePolarHeight = polarAtlasMountainParity ? POLAR_AUTHORITY_PARITY_HEIGHT : preview.centerHeight;
-        int effectivePolarDelta  = polarAtlasMountainParity ? POLAR_AUTHORITY_PARITY_DELTA  : preview.robustDelta;
+        int effectivePolarHeight = polarAtlasMountainParity ? POLAR_AUTHORITY_PARITY_HEIGHT : polarProbeHeight;
+        int effectivePolarDelta  = polarAtlasMountainParity ? POLAR_AUTHORITY_PARITY_DELTA  : polarProbeDelta;
         // Capture pre-clamp state so instrumentation comparison is unambiguous.
         RegistryEntry<Biome> preClampOut = out;
+        if (DEBUG_POLAR_CAP_TRACE && landBandIndex == BAND_POLAR && isPolarCapTraceCoord(blockX, blockZ)) {
+            double traceLatDeg = latitudeDegreesFromRadius(blockZ, effectiveRadius);
+            LOGGER.info("[LAT][POLAR_CAP_TRACE][preClamp] ctx={} x={} z={} latDeg={} preClamp={} extremeCap={} softLeak={} isAlpine={} mtnAuth={} effH={} effD={}",
+                    callerContext, blockX, blockZ, String.format("%.1f", traceLatDeg), biomeId(out),
+                    isExtremePolarCap(traceLatDeg), isExtremePolarSoftColdLeak(out),
+                    isPolarAlpineBiome(out), polarMountainAuthority(effectivePolarDelta, effectivePolarHeight, landBandIndex),
+                    effectivePolarHeight, effectivePolarDelta);
+        }
         if (DEBUG_POLAR_ATLAS && landBandIndex == BAND_POLAR && isAtlasHeadlessContext(callerContext)) {
             PAR_SAMPLES.incrementAndGet();
             if (polarMountainNoiseLike)       PAR_NOISE_MOUNTAIN.incrementAndGet();
@@ -2041,6 +2077,10 @@ public final class LatitudeBiomes {
                 latitudeDegreesFromRadius(blockZ, effectiveRadius),
                 effectivePolarHeight,
                 effectivePolarDelta);
+        if (DEBUG_POLAR_CAP_TRACE && landBandIndex == BAND_POLAR && isPolarCapTraceCoord(blockX, blockZ)) {
+            LOGGER.info("[LAT][POLAR_CAP_TRACE][postClamp] ctx={} x={} z={} result={}",
+                    callerContext, blockX, blockZ, biomeId(out));
+        }
         if (DEBUG_POLAR_ATLAS && landBandIndex == BAND_POLAR && isAtlasHeadlessContext(callerContext)) {
             if (isPolarAlpineBiome(out))      PAR_FINAL_ALPINE.incrementAndGet();
             if (isBiomeId(out, "minecraft:snowy_plains") && !isBiomeId(preClampOut, "minecraft:snowy_plains"))
@@ -2118,12 +2158,25 @@ public final class LatitudeBiomes {
         boolean polarMountainNoiseLike = sampler != null && isMountainLike(sampler, blockX, blockZ);
         // Atlas/headless parity: when real terrain probes are absent, allow the noise signal to
         // satisfy the terrain gate as a substitute for the missing preview terrain inputs.
-        // NOT a general definition of polar terrain mountainness — must not drift into live worldgen.
         // Double-gated: !hasPreviewTerrainInputs (only SOURCE/ATLAS_SAMPLER paths, per call-site audit)
         // AND isAtlasHeadlessContext (explicit context gate to prevent silent future breakage).
+        //
+        // Live-worldgen bridge (skipPreview && hasPreviewTerrainInputs && polar noise-mountain):
+        // syntheticPreviewTerrain uses temperate-gated mountainNoiseLike, which is always false
+        // for polar band, producing flat placeholder values that suppress polarTerrainMountainLike.
+        // When the noise says "mountain" in a polar cell, do a targeted real-terrain probe
+        // (same pattern as the post-pick terrain gate at the subpolar/polar skipPreview block)
+        // so that actual mountain terrain can earn polar mountain authority.
+        int polarProbeHeight = preview.centerHeight;
+        int polarProbeDelta  = preview.robustDelta;
+        if (skipPreview && landBandIndex >= BAND_POLAR && polarMountainNoiseLike && hasPreviewTerrainInputs) {
+            PreviewTerrain polarProbe = previewTerrain(generator, noiseConfig, heightView, blockX, blockZ);
+            polarProbeHeight = polarProbe.centerHeight;
+            polarProbeDelta  = polarProbe.robustDelta;
+        }
         boolean polarTerrainMountainLike = (!hasPreviewTerrainInputs && isAtlasHeadlessContext(callerContext) && polarMountainNoiseLike)
-                || (preview.robustDelta >= 12)
-                || (preview.centerHeight >= seaLevel + 20);
+                || (polarProbeDelta >= 12)
+                || (polarProbeHeight >= seaLevel + 20);
         boolean polarMountainLikeFinal = polarMountainNoiseLike && polarTerrainMountainLike;
         if (landBandIndex >= BAND_POLAR && polarMountainLikeFinal) {
             mountainLike = true;
@@ -2353,11 +2406,15 @@ public final class LatitudeBiomes {
             }
             if (mountainLike) {
                 chosen = pickFromTagNoiseOrBase(biomePool, LAT_TEMPERATE_MOUNTAIN, base, blockX, blockZ, landBandIndex);
-                if (isBiomeId(chosen, "minecraft:cherry_grove")) {
+                if (isBiomeId(chosen, "minecraft:cherry_grove") && landBandIndex < BAND_POLAR) {
                     return chosen;
                 }
             }
             sanitized = sanitizeLandBiome(biomePool, chosen, landBandIndex, blockX, blockZ);
+            if (DEBUG_POLAR_CAP_TRACE && landBandIndex == BAND_POLAR && isPolarCapTraceCoord(blockX, blockZ)) {
+                LOGGER.info("[LAT][POLAR_CAP_TRACE][sanitize] ctx={} x={} z={} chosen={} -> sanitized={}",
+                        callerContext, blockX, blockZ, biomeId(chosen), biomeId(sanitized));
+            }
             safe = repickIfSurfaceCave(biomePool, base, sanitized, blockX, blockZ, t, landBandIndex);
             out = applyLandOverrides(biomePool, safe, blockX, blockZ, landBandIndex);
             if (landBandIndex == BAND_TROPICAL && isJungleFamily(out) && !allowWetTropicalCanopy(blockX, blockZ, t, out)) {
@@ -2429,10 +2486,18 @@ public final class LatitudeBiomes {
         boolean polarAtlasMountainParity = !hasPreviewTerrainInputs
                 && isAtlasHeadlessContext(callerContext)
                 && polarMountainNoiseLike;
-        int effectivePolarHeight = polarAtlasMountainParity ? POLAR_AUTHORITY_PARITY_HEIGHT : preview.centerHeight;
-        int effectivePolarDelta  = polarAtlasMountainParity ? POLAR_AUTHORITY_PARITY_DELTA  : preview.robustDelta;
+        int effectivePolarHeight = polarAtlasMountainParity ? POLAR_AUTHORITY_PARITY_HEIGHT : polarProbeHeight;
+        int effectivePolarDelta  = polarAtlasMountainParity ? POLAR_AUTHORITY_PARITY_DELTA  : polarProbeDelta;
         // Capture pre-clamp state so instrumentation comparison is unambiguous.
         RegistryEntry<Biome> preClampOut = out;
+        if (DEBUG_POLAR_CAP_TRACE && landBandIndex == BAND_POLAR && isPolarCapTraceCoord(blockX, blockZ)) {
+            double traceLatDeg = latitudeDegreesFromRadius(blockZ, effectiveRadius);
+            LOGGER.info("[LAT][POLAR_CAP_TRACE][preClamp] ctx={} x={} z={} latDeg={} preClamp={} extremeCap={} softLeak={} isAlpine={} mtnAuth={} effH={} effD={}",
+                    callerContext, blockX, blockZ, String.format("%.1f", traceLatDeg), biomeId(out),
+                    isExtremePolarCap(traceLatDeg), isExtremePolarSoftColdLeak(out),
+                    isPolarAlpineBiome(out), polarMountainAuthority(effectivePolarDelta, effectivePolarHeight, landBandIndex),
+                    effectivePolarHeight, effectivePolarDelta);
+        }
         if (DEBUG_POLAR_ATLAS && landBandIndex == BAND_POLAR && isAtlasHeadlessContext(callerContext)) {
             PAR_SAMPLES.incrementAndGet();
             if (polarMountainNoiseLike)       PAR_NOISE_MOUNTAIN.incrementAndGet();
@@ -2450,6 +2515,10 @@ public final class LatitudeBiomes {
                 latitudeDegreesFromRadius(blockZ, effectiveRadius),
                 effectivePolarHeight,
                 effectivePolarDelta);
+        if (DEBUG_POLAR_CAP_TRACE && landBandIndex == BAND_POLAR && isPolarCapTraceCoord(blockX, blockZ)) {
+            LOGGER.info("[LAT][POLAR_CAP_TRACE][postClamp] ctx={} x={} z={} result={}",
+                    callerContext, blockX, blockZ, biomeId(out));
+        }
         if (DEBUG_POLAR_ATLAS && landBandIndex == BAND_POLAR && isAtlasHeadlessContext(callerContext)) {
             if (isPolarAlpineBiome(out))      PAR_FINAL_ALPINE.incrementAndGet();
             if (isBiomeId(out, "minecraft:snowy_plains") && !isBiomeId(preClampOut, "minecraft:snowy_plains"))
@@ -3881,9 +3950,7 @@ public final class LatitudeBiomes {
                     "minecraft:stony_peaks");
             case BAND_POLAR -> List.of(
                     "minecraft:ice_spikes",
-                    "minecraft:snowy_plains",
-                    "minecraft:snowy_taiga",
-                    "minecraft:grove");
+                    "minecraft:snowy_plains");
             default -> List.of();
         };
     }
@@ -4300,11 +4367,27 @@ public final class LatitudeBiomes {
         return latDeg >= EXTREME_POLAR_CAP_MIN_DEG;
     }
 
+    /**
+     * Public entry point for extreme-polar-cap detection, usable from mixins.
+     * Uses the active radius override (if set) or the border radius.
+     * World-size-safe: degree threshold, not hardcoded block offsets.
+     */
+    /**
+     * Checks extreme-polar-cap membership for a given blockZ.
+     * Requires a borderRadius fallback because ACTIVE_RADIUS_BLOCKS may be 0
+     * during early worldgen before any pick() call sets it.
+     */
+    public static boolean isBlockInExtremePolarCap(int blockZ, int borderRadiusFallback) {
+        int radius = getActiveRadiusBlocks();
+        if (radius <= 0) radius = borderRadiusFallback;
+        double latDeg = Math.abs((double) blockZ) * 90.0 / Math.max(1, radius);
+        return latDeg >= EXTREME_POLAR_CAP_MIN_DEG;
+    }
+
     private static boolean isFlatPolarShelfBannedMountainPick(RegistryEntry<Biome> candidate) {
         return isBiomeId(candidate, "minecraft:jagged_peaks")
                 || isBiomeId(candidate, "minecraft:frozen_peaks")
-                || isBiomeId(candidate, "minecraft:snowy_slopes")
-                || isBiomeId(candidate, "minecraft:ice_spikes");
+                || isBiomeId(candidate, "minecraft:snowy_slopes");
     }
 
     /** Alpine biomes requiring polar mountain authority to survive the non-mountain clamp. */

@@ -18,8 +18,8 @@ loom {
 
     runs {
         client {
-            vmArg "-Xms2G"
-            vmArg "-Xmx8G"
+            vmArg "-Xms${latitudeClientXms}"
+            vmArg "-Xmx${latitudeClientXmx}"
             vmArg "-Dlatitude.skipSystemDetailsHardware=${latitudeSkipSystemDetailsHardware}"
             vmArg "-Dlatitude.fixSurfaceDripstone=true"
             vmArg "-Dlatitude.fogClampIndex=${System.getProperty('latitude.fogClampIndex', '-1')}"
