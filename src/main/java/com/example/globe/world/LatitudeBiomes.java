@@ -3860,7 +3860,7 @@ public final class LatitudeBiomes {
         if (bandIndex == BAND_TROPICAL && isBiomeId(pick, "minecraft:sparse_jungle")) {
             double openness = tropicalOpennessNoise(blockX, blockZ);
             double compositionBias = tropicalCompositionBias(WORLD_SEED, blockX, blockZ);
-            if (openness >= 0.32 || compositionBias <= 0.16) {
+            if (openness >= 0.55 || compositionBias <= 0.16) {
                 RegistryEntry<Biome> reroute = openness >= 0.20
                         ? entryById(biomes, "minecraft:savanna")
                         : entryById(biomes, "minecraft:jungle");
@@ -5029,6 +5029,8 @@ public final class LatitudeBiomes {
         double baseChance;
         if (isBiomeId(candidate, "minecraft:jungle")) {
             baseChance = 0.68;
+        } else if (isBiomeId(candidate, "minecraft:bamboo_jungle")) {
+            baseChance = 0.52;
         } else if (isBiomeId(candidate, "minecraft:sparse_jungle")) {
             baseChance = 0.48;
         } else {
@@ -6317,7 +6319,7 @@ public final class LatitudeBiomes {
         if (bandIndex == BAND_TROPICAL && isBiomeId(pick, "minecraft:sparse_jungle")) {
             double openness = tropicalOpennessNoise(blockX, blockZ);
             double compositionBias = tropicalCompositionBias(WORLD_SEED, blockX, blockZ);
-            if (openness >= 0.32 || compositionBias <= 0.16) {
+            if (openness >= 0.55 || compositionBias <= 0.16) {
                 try {
                     return openness >= 0.20
                             ? biome(biomes, "minecraft:savanna")
