@@ -559,7 +559,7 @@ public final class LatitudeBiomes {
     }
 
     public static double uplandRampForY(int blockY) {
-        return uplandT(SURFACE_CLASSIFY_Y);
+        return uplandT(blockY);
     }
 
     public static String debugSavannaUplandDecision(int blockX, int blockZ, int blockY) {
@@ -3764,7 +3764,7 @@ public final class LatitudeBiomes {
                                                           int blockX, int blockZ, int blockY,
                                                           Supplier<RegistryEntry<Biome>> defaultPick,
                                                           boolean mountainLike) {
-        double ramp = uplandT(SURFACE_CLASSIFY_Y);
+        double ramp = uplandT(blockY);
         if (mountainLike || ramp <= 0.0) {
             return defaultPick.get();
         }
@@ -3782,7 +3782,7 @@ public final class LatitudeBiomes {
                                                           int blockX, int blockZ, int blockY,
                                                           Supplier<RegistryEntry<Biome>> defaultPick,
                                                           boolean mountainLike) {
-        double ramp = uplandT(SURFACE_CLASSIFY_Y);
+        double ramp = uplandT(blockY);
         if (mountainLike || ramp <= 0.0) {
             return defaultPick.get();
         }
