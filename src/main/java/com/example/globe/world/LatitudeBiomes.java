@@ -1777,9 +1777,9 @@ public final class LatitudeBiomes {
             double weird = MultiNoiseUtil.toFloat(p.weirdnessNoise());
             boolean aridBlocked = isAridTropicalStepSymmetric(blockX, blockZ, t);
             boolean swampPatch = swampPatchHere(WORLD_SEED, blockX, blockZ);
-            boolean swampPatchOk = swampOkInPatch(cont, erosion, weird);
+            boolean swampPatchOk = swampOkInPatchScaled(cont, erosion, weird);
             double wetlandNoise = wetlandNoiseSymmetric(WORLD_SEED, blockX, blockZ);
-            double wetlandThreshold = wetlandThresholdForBand(bandIndex, t);
+            double wetlandThreshold = scaledWetlandThresholdForBand(bandIndex, t);
             boolean subtropicalCoastalOk = landBandIndex != BAND_SUBTROPICAL
                     || oceanDistance <= SWAMP_SUBTROPICAL_PATCH_MAX_OCEAN_DISTANCE;
             if (!aridBlocked
@@ -1908,13 +1908,9 @@ public final class LatitudeBiomes {
                     }
                 }
                 if (isSwampCandidate(chosen)) {
-                    try {
-                        RegistryEntry<Biome> swamp = biome(biomeRegistry, SWAMP_ID);
-                        if (swamp != null) {
-                            chosen = pickSwampFallback(biomeRegistry, base, blockX, blockZ, t, landBandIndex);
-                        }
-                    } catch (Throwable ignored) {
-                        // keep chosen
+                    SwampDecision swampDecision = evaluateSwamp(blockX, blockZ, sampler);
+                    if (!swampDecision.allow()) {
+                        chosen = pickSwampFallback(biomeRegistry, base, blockX, blockZ, t, landBandIndex);
                     }
                 }
                 if (!sourceContext && !isMangroveCandidate(chosen) && shouldInviteMangrove(blockX, columnDecisionY, blockZ, bandIndex, sampler, nearOcean)) {
@@ -2237,9 +2233,9 @@ public final class LatitudeBiomes {
             double weird = MultiNoiseUtil.toFloat(p.weirdnessNoise());
             boolean aridBlocked = isAridTropicalStepSymmetric(blockX, blockZ, t);
             boolean swampPatch = swampPatchHere(WORLD_SEED, blockX, blockZ);
-            boolean swampPatchOk = swampOkInPatch(cont, erosion, weird);
+            boolean swampPatchOk = swampOkInPatchScaled(cont, erosion, weird);
             double wetlandNoise = wetlandNoiseSymmetric(WORLD_SEED, blockX, blockZ);
-            double wetlandThreshold = wetlandThresholdForBand(bandIndex, t);
+            double wetlandThreshold = scaledWetlandThresholdForBand(bandIndex, t);
             boolean subtropicalCoastalOk = landBandIndex != BAND_SUBTROPICAL
                     || oceanDistance <= SWAMP_SUBTROPICAL_PATCH_MAX_OCEAN_DISTANCE;
             if (!aridBlocked
@@ -5714,6 +5710,45 @@ public final class LatitudeBiomes {
             && Math.abs(weirdness) < 0.35;
     }
 
+    /**
+     * World-size-aware terrain gate for the evaluateSwamp decision (post-pick validation).
+     * swampOkStrict was designed for large worlds where the tropical/temperate bands are wide
+     * and favorable terrain is common. On small worlds the bands are narrow, meaning
+     * fewer positions land in the favored noise windows.
+     * We widen contMax, erosionMin, and weirdnessMax proportionally with world-size slack.
+     * Caps prevent placing swamp in genuinely extreme terrain even at minimum size.
+     * Regular+ worlds use the baseline swampOkStrict thresholds unchanged.
+     */
+    private static boolean swampOkForSize(double cont, double erosion, double weirdness) {
+        double scale = rarePatchWorldScale();
+        if (scale >= 1.0) return swampOkStrict(cont, erosion, weirdness);
+        double slack = (1.0 - scale) * 0.40; // 0.20 at R5000, 0.10 at R7500
+        double contMax    = Math.min(0.55 + slack * 0.50, 0.75); // 0.65 at R5000
+        double erosionMin = Math.max(-0.20 - slack * 0.50, -0.40); // -0.30 at R5000
+        double weirdMax   = Math.min(0.16 + slack * 0.60, 0.32);   // 0.28 at R5000
+        return cont > -0.20 && cont < contMax
+            && erosion > erosionMin
+            && Math.abs(weirdness) < weirdMax;
+    }
+
+    /**
+     * World-size-aware swamp terrain gate for the triple-gate pre-filter.
+     * Small worlds use wider cont and erosion bands because the same block-space noise
+     * distribution is compressed into narrower latitude band strips, under-sampling
+     * favorable terrain regions. Weirdness kept fixed to avoid mountain swamps.
+     * Regular+ worlds fall back to the baseline swampOkInPatch filter unchanged.
+     */
+    private static boolean swampOkInPatchScaled(double cont, double erosion, double weirdness) {
+        double scale = rarePatchWorldScale();
+        if (scale >= 1.0) return swampOkInPatch(cont, erosion, weirdness);
+        double slack = (1.0 - scale) * 0.40; // 0.20 slack at R5000, 0.10 at R7500
+        double contMax = Math.min(0.70 + slack, 0.90);
+        double erosionMin = Math.max(-0.35 - slack, -0.55);
+        return cont > -0.25 && cont < contMax
+            && erosion > erosionMin
+            && Math.abs(weirdness) < 0.35;
+    }
+
     private static SwampDecision evaluateSwamp(int blockX, int blockZ, MultiNoiseUtil.MultiNoiseSampler sampler) {
         if (sampler == null) {
             return new SwampDecision(false, 0.0, 0.0, 0.0, false);
@@ -5724,8 +5759,34 @@ public final class LatitudeBiomes {
         double cont = MultiNoiseUtil.toFloat(point.continentalnessNoise());
         double erosion = MultiNoiseUtil.toFloat(point.erosionNoise());
         double weirdness = MultiNoiseUtil.toFloat(point.weirdnessNoise());
-        boolean swampOk = swampOkStrict(cont, erosion, weirdness);
+        boolean swampOk = swampOkForSize(cont, erosion, weirdness);
         return new SwampDecision(swampOk, cont, erosion, weirdness, swampOk);
+    }
+
+    private static double rarePatchWorldScale() {
+        int radius = ACTIVE_RADIUS_BLOCKS;
+        if (radius <= 0) {
+            radius = REFERENCE_DIAMETER_BLOCKS / 2;
+        }
+        double baseline = (double) REFERENCE_DIAMETER_BLOCKS / 2.0;
+        if (baseline <= 0.0) {
+            return 1.0;
+        }
+        // Do not upscale beyond regular; only shrink to help small worlds keep rare biomes visible.
+        return MathHelper.clamp(radius / baseline, 0.25, 1.0);
+    }
+
+    /**
+     * Scales the swamp blob-patch acceptance chance with active world radius.
+     * Small worlds get a higher chance so that the fixed-size patch grid covers more area
+     * within each narrow latitude band without rearranging blob positions.
+     * Cap at 0.85 to keep patches meaningfully bounded. Regular+ worlds use the base chance.
+     */
+    private static double scaledSwampPatchChance() {
+        double scale = rarePatchWorldScale();
+        if (scale >= 1.0) return SWAMP_PATCH_CHANCE;
+        double boost = (1.0 - scale) * 0.30; // +0.15 at R5000, +0.075 at R7500
+        return Math.min(SWAMP_PATCH_CHANCE + boost, 0.85);
     }
 
     private static boolean allowMangrovePatch(int blockX, int blockZ) {
@@ -5763,9 +5824,26 @@ public final class LatitudeBiomes {
         return 0.45;
     }
 
-private static boolean swampPatchHere(long seed, int blockX, int blockZ) {
+    /**
+     * World-size-aware wetland acceptance threshold. On small worlds the band strips are narrow,
+     * so we relax the threshold to preserve wet-lowland opportunity within each valid patch cell.
+     * Regular+ worlds use the base threshold unchanged.
+     * Tropical cap (0.35) and temperate cap (0.62) prevent over-swamping even at minimum size.
+     */
+    private static double scaledWetlandThresholdForBand(int bandIndex, double t) {
+        double base = wetlandThresholdForBand(bandIndex, t);
+        double scale = rarePatchWorldScale();
+        if (scale >= 1.0) return base; // regular+ worlds: no change
+        // Boost: up to +60% relative at R5000, proportionally less at R7500.
+        // Tropical: 0.20 -> 0.32 at R5000. Temperate: 0.45 -> 0.54 at R5000.
+        double boost = 1.0 + (1.0 - scale) * 1.20;
+        double max = (bandIndex == BAND_TROPICAL) ? 0.35 : 0.62;
+        return Math.min(base * boost, max);
+    }
+
+    private static boolean swampPatchHere(long seed, int blockX, int blockZ) {
         double n = blobNoise01Blocks(seed ^ SWAMP_PATCH_SALT, blockX, blockZ, SWAMP_PATCH_SIZE_BLOCKS, SWAMP_PATCH_SALT);
-        return n < SWAMP_PATCH_CHANCE;
+        return n < scaledSwampPatchChance();
     }
 
     private static RegistryEntry<Biome> pickMangroveFallback(Registry<Biome> biomes, RegistryEntry<Biome> base, int blockX, int blockZ, double t, int bandIndex) {

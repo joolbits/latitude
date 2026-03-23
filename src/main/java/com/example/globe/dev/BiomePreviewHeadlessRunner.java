@@ -83,6 +83,7 @@ public final class BiomePreviewHeadlessRunner {
             Path outputDir = config.outDir != null ? config.outDir : defaultOutDir(server.getRunDirectory());
 
             LatitudeBiomes.setWorldSeed(effectiveSeed);
+            LatitudeBiomes.setActiveRadiusBlocks(radius);
             String startMessage = String.format(
                     Locale.ROOT,
                     "[latdev][headless] starting export seed=%d worldSeed=%d radius=%d steps=%s y=%d layers=%s overlays=%s emitBiomeIndex=%s emitHeight=%s out=%s",
