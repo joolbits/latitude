@@ -1822,6 +1822,7 @@ public final class LatitudeBiomes {
                 && chosen != null
                 && isBiomeId(base, "minecraft:dark_forest")
                 && !isBiomeId(chosen, "minecraft:dark_forest")
+                && !isBiomeId(chosen, "minecraft:pale_garden") // pale_garden is a valid dark_forest replacement
                 && isTemperateForestFamily(chosen)) {
             chosen = base;
         }
@@ -2274,6 +2275,7 @@ public final class LatitudeBiomes {
                 && chosen != null
                 && isBiomeId(base, "minecraft:dark_forest")
                 && !isBiomeId(chosen, "minecraft:dark_forest")
+                && !isBiomeId(chosen, "minecraft:pale_garden") // pale_garden is a valid dark_forest replacement
                 && isTemperateForestFamily(chosen)) {
             chosen = base;
         }
