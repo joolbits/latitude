@@ -334,7 +334,7 @@ public final class BiomePreviewHeadlessRunner {
             String normalized = sizePreset.toLowerCase(Locale.ROOT);
             return switch (normalized) {
                 case "itty", "xsmall" -> 3750;
-                case "small" -> 5000;
+                case "tiny", "small" -> 5000;
                 case "regular" -> 7500;
                 case "large" -> 10000;
                 case "massive" -> 20000;
