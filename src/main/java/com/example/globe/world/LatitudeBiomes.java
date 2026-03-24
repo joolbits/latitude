@@ -1932,7 +1932,13 @@ public final class LatitudeBiomes {
                         LOGGER.info("[latdev] mangroveInvite REJECT x={} z={} oceanDist={} decision={}", blockX, blockZ, oceanDistance, mangroveDecision);
                     }
                 }
-                if (mountainLike) {
+                // Guard: polar land has its own mountain picker (pickPolarWithFrontShoulder).
+                // Firing the temperate-mountain override there overwrites the polar result and
+                // routes it through enforceLandBandPool with a fixed-seed noise pattern that
+                // makes frozen_peaks inaccessible in atlas runs.  Only run this block for
+                // bands below POLAR (i.e. temperate and subpolar, where mountainLike can
+                // legitimately be true via the terrain-preview path).
+                if (mountainLike && landBandIndex < BAND_POLAR) {
                     chosen = pickFromTagNoiseOrBase(biomeRegistry, LAT_TEMPERATE_MOUNTAIN, base, blockX, blockZ, landBandIndex);
                     if (isBiomeId(chosen, "minecraft:cherry_grove") && landBandIndex < BAND_POLAR) {
                         return chosen;
@@ -2404,7 +2410,9 @@ public final class LatitudeBiomes {
                     LOGGER.info("[latdev] mangroveInvite REJECT x={} z={} oceanDist={} decision={}", blockX, blockZ, oceanDistance, mangroveDecision);
                 }
             }
-            if (mountainLike) {
+            // Guard: polar land has its own mountain picker (pickPolarWithFrontShoulder).
+            // See parallel Registry<Biome> overload for full rationale.
+            if (mountainLike && landBandIndex < BAND_POLAR) {
                 chosen = pickFromTagNoiseOrBase(biomePool, LAT_TEMPERATE_MOUNTAIN, base, blockX, blockZ, landBandIndex);
                 if (isBiomeId(chosen, "minecraft:cherry_grove") && landBandIndex < BAND_POLAR) {
                     return chosen;
