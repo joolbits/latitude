@@ -1380,6 +1380,7 @@ public final class LatitudeBiomes {
     private static final long TROPICAL_MICRO_COMPOSITION_SALT = 0x7472_6F70_6D69_6372L; // "tropmicr"
     private static final long TROPICAL_OPENNESS_SALT = 0x7472_6F70_6F70_656EL; // "tropopen"
     private static final double WETLAND_FREQ = 1.0 / 1200.0; // low frequency => broad patches
+    private static final int WETLAND_SCALE_BLOCKS = 1200; // matches WETLAND_FREQ
 
     private static final int BADLANDS_PATCH_SIZE_BLOCKS = 65536;
     private static final double BADLANDS_PATCH_CHANCE = 0.42;
@@ -5813,10 +5814,9 @@ public final class LatitudeBiomes {
         // Symmetric N/S: use abs(z) so wetland eligibility doesn't differ between hemispheres.
         int z = Math.abs(blockZ);
 
-        // Low-frequency feel comes from pairing this with swampPatchHere() clustering.
-        // This gate just decides "is this patch wet enough?" in a broad, deterministic way.
-        long h = mix64(worldSeed ^ WETLAND_SALT ^ (long) blockX * 341873128712L ^ (long) z * 132897987541L);
-        return toUnitDouble(h);
+        // Spatially correlated noise at the declared WETLAND_SCALE_BLOCKS (1200 blocks).
+        // Previous per-block hash produced white noise, fragmenting swamp patches into confetti.
+        return ValueNoise2D.sampleBlocks(worldSeed ^ WETLAND_SALT, blockX, z, WETLAND_SCALE_BLOCKS);
     }
 
     private static double wetlandThresholdForBand(int bandIndex, double t) {
