@@ -155,6 +155,7 @@ public final class BiomePreviewExporter {
         net.minecraft.world.HeightLimitView gatedHeightView = null;
 
         int noiseY = Math.floorDiv(y, 4);
+        final String pickerContext = "ATLAS_SAMPLER";
         for (int imageZ = 0, blockZ = zMin; imageZ < height; imageZ++, blockZ += stepBlocks) {
             int noiseZ = Math.floorDiv(blockZ, 4);
             for (int imageX = 0, blockX = xMin; imageX < width; imageX++, blockX += stepBlocks) {
@@ -171,7 +172,7 @@ public final class BiomePreviewExporter {
                             y,
                             radiusBlocks,
                             sampler,
-                            "SOURCE",
+                            pickerContext,
                             gatedNoiseGen,
                             gatedNoiseConfig,
                             gatedHeightView);
@@ -473,6 +474,7 @@ public final class BiomePreviewExporter {
             }
             long budgetNanos = Math.max(1L, budgetMs) * 1_000_000L;
             long deadline = System.nanoTime() + budgetNanos;
+            final String pickerContext = "ATLAS_SAMPLER";
 
             while (imageZ < height && System.nanoTime() <= deadline) {
                 int blockZ = zMin + (imageZ * stepBlocks);
@@ -491,7 +493,7 @@ public final class BiomePreviewExporter {
                             y,
                             radiusBlocks,
                             sampler,
-                            "SOURCE",
+                            pickerContext,
                             gatedNoiseGen,
                             gatedNoiseConfig,
                             gatedHeightView);
