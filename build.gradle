@@ -6,8 +6,8 @@ plugins {
 version = project.mod_version
 group = project.maven_group
 
-def latitudeClientXms = (findProperty('latitudeClientXms') ?: '1G').toString()
-def latitudeClientXmx = (findProperty('latitudeClientXmx') ?: '2G').toString()
+def latitudeClientXms = (findProperty('latitudeClientXms') ?: System.getProperty('latitudeClientXms') ?: '1G').toString()
+def latitudeClientXmx = (findProperty('latitudeClientXmx') ?: System.getProperty('latitudeClientXmx') ?: '2G').toString()
 def latitudeSkipSystemDetailsHardware = (findProperty('latitudeSkipSystemDetailsHardware') ?: 'true').toString()
 
 base {
