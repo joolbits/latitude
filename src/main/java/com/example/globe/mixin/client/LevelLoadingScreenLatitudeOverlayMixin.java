@@ -166,7 +166,7 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
 
         // ── First-creation note ──
         if (LatitudeClientState.firstWorldLoad) {
-            globe$drawCentered(context, "First expedition setup takes a bit longer.", cx, titleY + 12, MUTED, false);
+            globe$drawCentered(context, "Creating a new world may take a little longer.", cx, titleY + 12, MUTED, false);
         }
 
         // ── Compass with wandering needle ──
