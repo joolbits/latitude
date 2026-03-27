@@ -276,7 +276,7 @@ public final class LatitudeBiomes {
         }
 
         if (bandIndex == BAND_TEMPERATE) {
-            if (isBiomeId(pick, "minecraft:dark_forest") && rollChance(blockX, blockZ, 0x51ED270B, 12000L)) {
+            if (isBiomeId(pick, "minecraft:dark_forest") && paleGardenNoiseHit(WORLD_SEED, blockX, blockZ)) {
                 try {
                     pick = biome(biomes, "minecraft:pale_garden");
                 } catch (Throwable ignored) {
@@ -308,7 +308,7 @@ public final class LatitudeBiomes {
         }
 
         if (bandIndex == BAND_TEMPERATE) {
-            if (isBiomeId(pick, "minecraft:dark_forest") && rollChance(blockX, blockZ, 0x51ED270B, 12000L)) {
+            if (isBiomeId(pick, "minecraft:dark_forest") && paleGardenNoiseHit(WORLD_SEED, blockX, blockZ)) {
                 RegistryEntry<Biome> entry = entryById(biomes, "minecraft:pale_garden");
                 if (entry != null) {
                     pick = entry;
@@ -1381,6 +1381,12 @@ public final class LatitudeBiomes {
     private static final long TROPICAL_OPENNESS_SALT = 0x7472_6F70_6F70_656EL; // "tropopen"
     private static final double WETLAND_FREQ = 1.0 / 1200.0; // low frequency => broad patches
     private static final int WETLAND_SCALE_BLOCKS = 1200; // matches WETLAND_FREQ
+
+    // Pale garden override: spatially correlated noise replaces per-chunk hash to produce
+    // coherent clusters within dark_forest instead of single-chunk confetti.
+    private static final long PALE_GARDEN_SALT = 0x7061_6C65_6761_7264L; // "palegard"
+    private static final int PALE_GARDEN_SCALE_BLOCKS = 3000;
+    private static final double PALE_GARDEN_THRESHOLD = 0.025;
 
     private static final int BADLANDS_PATCH_SIZE_BLOCKS = 65536;
     private static final double BADLANDS_PATCH_CHANCE = 0.42;
@@ -5827,6 +5833,12 @@ public final class LatitudeBiomes {
         // Spatially correlated noise at the declared WETLAND_SCALE_BLOCKS (1200 blocks).
         // Previous per-block hash produced white noise, fragmenting swamp patches into confetti.
         return ValueNoise2D.sampleBlocks(worldSeed ^ WETLAND_SALT, blockX, z, WETLAND_SCALE_BLOCKS);
+    }
+
+    private static boolean paleGardenNoiseHit(long worldSeed, int blockX, int blockZ) {
+        int z = Math.abs(blockZ);
+        double n = ValueNoise2D.sampleBlocks(worldSeed ^ PALE_GARDEN_SALT, blockX, z, PALE_GARDEN_SCALE_BLOCKS);
+        return n < PALE_GARDEN_THRESHOLD;
     }
 
     private static double wetlandThresholdForBand(int bandIndex, double t) {
