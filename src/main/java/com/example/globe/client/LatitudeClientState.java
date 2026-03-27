@@ -58,6 +58,7 @@ public final class LatitudeClientState {
         lastLifecycleClearElapsedMs = sinceExpedition;
         expeditionStartMs = 0L;
         latitudeLoadingProgress = 0f;
+        firstWorldLoad = false;
         return sinceExpedition;
     }
 }
