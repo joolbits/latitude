@@ -1,6 +1,7 @@
 package com.example.globe.mixin.client;
 
 import com.example.globe.client.LatitudeClientState;
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.client.world.ClientWorld;
@@ -88,6 +89,34 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
     @Unique private static final long DIRECTION_CHANGE_INTERVAL_MS = 2200;
     @Unique private static final Logger GLOBE_LOGGER = LoggerFactory.getLogger("LatitudeLoadingOverlay");
 
+    static {
+        ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> {
+            if (!LatitudeClientState.isLatitudeWorldLoading()) {
+                return;
+            }
+            long sinceExpedition = LatitudeClientState.elapsedSinceExpeditionMs();
+            boolean firstMark = LatitudeClientState.markClientReadyObserved();
+            if (firstMark) {
+                GLOBE_LOGGER.info("[Latitude lifecycle] client game join callback — {}ms since beginExpedition",
+                        sinceExpedition);
+            }
+
+            ClientWorld world = client.world;
+            ClientPlayerEntity player = client.player;
+            if (world == null || player == null) {
+                return;
+            }
+
+            long clearedAt = LatitudeClientState.clearLatitudeLoadingState();
+            GLOBE_LOGGER.info("[Latitude lifecycle] bespoke overlay cleared at game-join — {}ms since beginExpedition",
+                    clearedAt);
+
+            if (client.currentScreen instanceof LevelLoadingScreen screen) {
+                screen.close();
+            }
+        });
+    }
+
     protected LevelLoadingScreenLatitudeOverlayMixin(Text title) {
         super(title);
     }
@@ -105,7 +134,7 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
             globe$overlayStartMs = now;
             globe$lastDirectionChangeMs = now;
             globe$displayProgress = 0f;
-            GLOBE_LOGGER.info("[Latitude lifecycle] loading overlay first render — {}ms since beginExpedition",
+            GLOBE_LOGGER.info("[Latitude lifecycle] bespoke overlay first render — {}ms since beginExpedition",
                     LatitudeClientState.elapsedSinceExpeditionMs());
         } else if (LatitudeClientState.elapsedSinceExpeditionMs() >= FAIL_SAFE_CLEAR_MS) {
             globe$clearLoadingFlagNow(true);
@@ -374,6 +403,10 @@ class LatitudeLoadingClientTickMixin {
         if (!pastFirstPlayerTick && !noLongerLoadingScreen) {
             return;
         }
+        GLOBE_LOGGER.info("[Latitude lifecycle] first safe playable tick — {}ms since beginExpedition (playerAge={}, loadingScreenVisible={})",
+                LatitudeClientState.elapsedSinceExpeditionMs(),
+                this.player.age,
+                !noLongerLoadingScreen);
 
         long clearedAt = LatitudeClientState.clearLatitudeLoadingState();
         GLOBE_LOGGER.info("[Latitude lifecycle] bespoke overlay cleared by normal client-ready path — {}ms since beginExpedition",
