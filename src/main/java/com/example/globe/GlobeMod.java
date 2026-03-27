@@ -5,6 +5,8 @@ import com.example.globe.world.LatitudeBiomes;
 import com.example.globe.world.BiomeFeatureStripping;
 import com.example.globe.world.LatitudeWorldState;
 import com.example.globe.dev.BiomePreviewHeadlessRunner;
+import com.example.globe.dev.BiomeSamplerTools;
+import com.example.globe.dev.BiomeSamplerTools.SamplerTemplate;
 import com.example.globe.dev.LatitudeDevCommand;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
@@ -27,9 +29,15 @@ import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.Heightmap;
 import net.minecraft.world.border.WorldBorder;
+import net.minecraft.world.biome.Biome;
+import net.minecraft.world.biome.source.util.MultiNoiseUtil;
 import net.minecraft.world.gen.chunk.ChunkGenerator;
 import net.minecraft.world.gen.chunk.ChunkGeneratorSettings;
 import net.minecraft.world.gen.chunk.NoiseChunkGenerator;
+import net.minecraft.world.gen.noise.NoiseConfig;
+import net.minecraft.registry.Registry;
+import net.minecraft.registry.entry.RegistryEntry;
+import net.minecraft.registry.tag.BiomeTags;
 import net.minecraft.world.WorldProperties;
 import net.minecraft.network.packet.s2c.play.PositionFlag;
 import net.minecraft.util.math.MathHelper;
@@ -369,7 +377,19 @@ public class GlobeMod implements ModInitializer {
 
         int targetZ = z;
 
-        BlockPos spawnPos = findLandSpawn(world, radius, targetZ, seed);
+        // Biome-probe spawn finding: sample noise to find land X,Z (no chunk gen),
+        // then generate only the chosen chunk for safe Y placement.
+        BlockPos spawnPos;
+        try {
+            SamplerTemplate template = BiomeSamplerTools.createTemplate(world);
+            NoiseConfig noiseConfig = NoiseConfig.create(
+                    template.settings().value(), template.noiseParameters(), seed);
+            MultiNoiseUtil.MultiNoiseSampler sampler = noiseConfig.getMultiNoiseSampler();
+            spawnPos = findLandSpawn(world, template, sampler, radius, targetZ, seed);
+        } catch (Exception e) {
+            LOGGER.warn("[Latitude] Biome probe failed, using fallback spawn", e);
+            spawnPos = null;
+        }
 
         if (spawnPos == null) {
             LOGGER.warn("[Latitude] Could not find land spawn for zone={} targetZ={}. Falling back to (0, seaLevel+2).", zoneId, targetZ);
@@ -436,7 +456,9 @@ public class GlobeMod implements ModInitializer {
         return new BlockPos(clampedX, spawnPos.getY(), spawnPos.getZ());
     }
 
-    private static BlockPos findLandSpawn(ServerWorld world, int borderHalf, int targetZ, long seed) {
+    private static BlockPos findLandSpawn(ServerWorld world, SamplerTemplate template,
+                                          MultiNoiseUtil.MultiNoiseSampler sampler,
+                                          int borderHalf, int targetZ, long seed) {
         final int margin = 320;
         final int max = Math.max(0, borderHalf - margin);
 
@@ -447,67 +469,78 @@ public class GlobeMod implements ModInitializer {
         final int attemptsWithZJitter = 96;
         final int zJitter = 96;
 
+        // Size-invariance: active radius is source of truth, borderHalf is fallback only.
+        int radiusBlocks = LatitudeBiomes.getActiveRadiusBlocks();
+        if (radiusBlocks <= 0) radiusBlocks = borderHalf;
+        int classifyY = LatitudeBiomes.SURFACE_CLASSIFY_Y;
+
+        LatitudeBiomes.setWorldSeed(seed);
+
         Random rng = Random.create(seed ^ 0x9E3779B97F4A7C15L ^ (long) targetZ);
 
-        BlockPos best = null;
-        int bestY = Integer.MIN_VALUE;
-
-        // Pass 1: X-only
+        // Pass 1: X-only — biome probe then single-chunk Y placement
         for (int i = 0; i < attemptsXOnly; i++) {
             int x = rng.nextBetween(-max, max);
             int z = targetZ;
 
-            BlockPos candidate = tryLandAt(world, x, z);
-            if (candidate == null) continue;
-
-            int y = candidate.getY();
-            if (y > bestY) {
-                bestY = y;
-                best = candidate;
-            }
+            if (!isLandBiome(template, sampler, x, z, classifyY, radiusBlocks)) continue;
+            BlockPos candidate = placeSafeY(world, x, z);
+            if (candidate != null) return candidate;
         }
-        if (best != null) return best;
 
         // Pass 2: X + small Z jitter
         for (int i = 0; i < attemptsWithZJitter; i++) {
             int x = rng.nextBetween(-max, max);
             int z = MathHelper.clamp(targetZ + rng.nextBetween(-zJitter, zJitter), -max, max);
 
-            BlockPos candidate = tryLandAt(world, x, z);
-            if (candidate == null) continue;
-
-            int y = candidate.getY();
-            if (y > bestY) {
-                bestY = y;
-                best = candidate;
-            }
+            if (!isLandBiome(template, sampler, x, z, classifyY, radiusBlocks)) continue;
+            BlockPos candidate = placeSafeY(world, x, z);
+            if (candidate != null) return candidate;
         }
 
-        return best;
+        return null;
     }
 
-    private static BlockPos tryLandAt(ServerWorld world, int x, int z) {
-        // Ensure chunk exists
+    /**
+     * Pure biome-source probe — no chunk generation. Returns true if the biome
+     * at (blockX, blockZ) is land (not ocean or river).
+     */
+    private static boolean isLandBiome(SamplerTemplate template,
+                                        MultiNoiseUtil.MultiNoiseSampler sampler,
+                                        int blockX, int blockZ,
+                                        int classifyY, int radiusBlocks) {
+        int noiseX = Math.floorDiv(blockX, 4);
+        int noiseZ = Math.floorDiv(blockZ, 4);
+        int noiseY = Math.floorDiv(classifyY, 4);
+
+        RegistryEntry<Biome> base = template.baseSource().getBiome(noiseX, noiseY, noiseZ, sampler);
+        RegistryEntry<Biome> picked = LatitudeBiomes.pick(
+                template.biomeRegistry(), base,
+                blockX, blockZ, classifyY, radiusBlocks,
+                sampler, "SPAWN_PROBE");
+        RegistryEntry<Biome> resolved = picked != null ? picked : base;
+
+        // Tag-based checks — safe against substring false positives
+        return !resolved.isIn(BiomeTags.IS_OCEAN) && !resolved.isIn(BiomeTags.IS_RIVER);
+    }
+
+    /**
+     * Generates exactly ONE chunk to get a safe spawn Y via heightmap.
+     * Returns a valid spawn BlockPos, or null if the terrain fails validation.
+     */
+    private static BlockPos placeSafeY(ServerWorld world, int x, int z) {
         world.getChunk(x >> 4, z >> 4);
 
         BlockPos ground = world.getTopPosition(
                 Heightmap.Type.MOTION_BLOCKING_NO_LEAVES,
-                new BlockPos(x, world.getBottomY(), z)
-        );
-
-        // Spawn is one block above ground
+                new BlockPos(x, world.getBottomY(), z));
         BlockPos spawn = ground.up();
 
-        // Reject if water column / fluid at spawn space
+        // Same validation as the old tryLandAt
         if (!world.getFluidState(spawn).isEmpty()) return null;
         if (!world.getFluidState(spawn.up()).isEmpty()) return null;
-
-        // Need 2-block headroom
         if (!world.getBlockState(spawn).isAir()) return null;
         if (!world.getBlockState(spawn.up()).isAir()) return null;
-
-        // Reject "stand in water" edge cases (seafloor top can still be valid with water above)
-        // MOTION_BLOCKING_NO_LEAVES usually avoids water surfaces, but this double-check is cheap.
         if (!world.getFluidState(ground).isEmpty()) return null;
 
         return spawn;

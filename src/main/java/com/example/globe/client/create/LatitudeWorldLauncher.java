@@ -16,7 +16,6 @@ import net.minecraft.registry.RegistryKey;
 import net.minecraft.registry.RegistryKeys;
 import net.minecraft.registry.entry.RegistryEntry;
 import net.minecraft.resource.featuretoggle.FeatureFlags;
-import net.minecraft.server.integrated.IntegratedServerLoader;
 import net.minecraft.text.Text;
 import net.minecraft.world.Difficulty;
 import net.minecraft.world.GameMode;
@@ -63,6 +62,13 @@ public final class LatitudeWorldLauncher {
                                        GameRules gameRules, int worldTypeIdx) {
         // worldTypeIdx: 0=Latitude, 1=Vanilla, 2=Vanilla Superflat
         boolean isLatitude = worldTypeIdx == 0;
+        long t0 = System.currentTimeMillis();
+        if (isLatitude) {
+            LatitudeClientState.beginExpedition(t0);
+        }
+        LOGGER.info("[Latitude lifecycle] begin expedition — type={}, size={}, zone={}, {}ms since beginExpedition",
+                isLatitude ? "latitude" : worldTypeIdx == 1 ? "vanilla" : "superflat",
+                size.name(), spawnZone.id(), LatitudeClientState.elapsedSinceExpeditionMs());
         try {
             // ── 1. Size preset resolution ──
             net.minecraft.util.Identifier presetId;
@@ -95,6 +101,9 @@ public final class LatitudeWorldLauncher {
             if (presetEntry == null) {
                 LOGGER.error("Latitude world preset '{}' was not present in the loaded registry; enabled packs={}",
                         presetKey.getValue(), holder.dataConfiguration().dataPacks().getEnabled());
+                if (isLatitude) {
+                    LatitudeClientState.clearLatitudeLoadingState();
+                }
                 client.setScreen(screen);
                 return;
             }
@@ -121,6 +130,9 @@ public final class LatitudeWorldLauncher {
             if (updatedPresetEntry == null) {
                 LOGGER.error("Latitude world preset '{}' disappeared after WorldCreator.update(); enabled packs={}",
                         presetKey.getValue(), goh.dataConfiguration().dataPacks().getEnabled());
+                if (isLatitude) {
+                    LatitudeClientState.clearLatitudeLoadingState();
+                }
                 client.setScreen(screen);
                 return;
             }
@@ -166,22 +178,30 @@ public final class LatitudeWorldLauncher {
                 session = client.getLevelStorage().createSessionWithoutSymlinkCheck(wc.getWorldDirectoryName());
             } catch (Exception e) {
                 LOGGER.error("Failed to create world session for '{}'", wc.getWorldDirectoryName(), e);
+                if (isLatitude) {
+                    LatitudeClientState.clearLatitudeLoadingState();
+                }
                 client.setScreen(screen);
                 return;
             }
+
+            LOGGER.info("[Latitude lifecycle] session created — {}ms elapsed", System.currentTimeMillis() - t0);
 
             // ── 10. Write Latitude state (latest safe point — after session, before launch) ──
             if (isLatitude) {
                 GlobeWorldSizeSelection.set(size);
                 GlobePending.set(spawnZone.id().toUpperCase(java.util.Locale.ROOT));
                 GlobePending.startWithCompass = startWithCompass;
-                LatitudeClientState.latitudeWorldLoading = true;
+                LatitudeClientState.activateLatitudeLoading();
                 if (LatitudeClientConfig.get().showFirstLoadMessage) {
                     LatitudeClientState.firstWorldLoad = true;
                 }
+                LOGGER.info("[Latitude lifecycle] bespoke overlay activated — {}ms since beginExpedition",
+                        LatitudeClientState.elapsedSinceExpeditionMs());
             }
 
             // ── 11. Launch ──
+            LOGGER.info("[Latitude lifecycle] calling startNewWorld — {}ms elapsed", System.currentTimeMillis() - t0);
             try {
                 client.createIntegratedServerLoader()
                         .startNewWorld(session, goh.dataPackContents(), combinedDynamicRegistries, levelProperties);
@@ -190,6 +210,9 @@ public final class LatitudeWorldLauncher {
                 // Rollback Latitude state
                 GlobePending.consume();
                 GlobeWorldSizeSelection.set(GlobeWorldSize.REGULAR);
+                if (isLatitude) {
+                    LatitudeClientState.clearLatitudeLoadingState();
+                }
                 try {
                     session.close();
                 } catch (Exception closeEx) {
@@ -200,6 +223,9 @@ public final class LatitudeWorldLauncher {
         } catch (Exception e) {
             LOGGER.error("Unexpected error in beginExpedition", e);
             // Steps 1-9 failed — no Latitude state was written
+            if (isLatitude) {
+                LatitudeClientState.clearLatitudeLoadingState();
+            }
             client.setScreen(screen);
         }
     }
