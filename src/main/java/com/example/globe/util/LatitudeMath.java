@@ -16,11 +16,13 @@ public final class LatitudeMath {
         POLAR
     }
 
-    public static final double EQUATOR_MAX_FRAC = 0.10;
-    public static final double TROPICAL_MAX_FRAC = 0.30;
-    public static final double SUBTROPICAL_MAX_FRAC = 0.50;
-    public static final double TEMPERATE_MAX_FRAC = 0.666;
-    public static final double SUBPOLAR_MAX_FRAC = 0.783;
+    // Canonical LCMM v2 band boundaries (source of truth: LatitudeBands).
+    // EQUATOR is a display-only sub-zone within Tropical (worldgen has no EQUATOR band).
+    public static final double EQUATOR_MAX_FRAC = 0.10;          //  ~9°  (display sub-zone of Tropical)
+    public static final double TROPICAL_MAX_FRAC = 23.5 / 90.0;  // 23.5° (canonical Tropical/Subtropical boundary)
+    public static final double SUBTROPICAL_MAX_FRAC = 35.0 / 90.0; // 35° (canonical Subtropical/Temperate boundary)
+    public static final double TEMPERATE_MAX_FRAC = 50.0 / 90.0;  // 50° (canonical Temperate/Subpolar boundary)
+    public static final double SUBPOLAR_MAX_FRAC = 66.5 / 90.0;   // 66.5° (canonical Subpolar/Polar boundary)
 
     public static final int EQUATOR_MAX_DEG = (int) Math.ceil(EQUATOR_MAX_FRAC * 90.0);
     public static final int TROPICAL_MAX_DEG = (int) Math.ceil(TROPICAL_MAX_FRAC * 90.0);
