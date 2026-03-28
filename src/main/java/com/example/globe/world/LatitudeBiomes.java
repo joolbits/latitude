@@ -275,18 +275,6 @@ public final class LatitudeBiomes {
             }
         }
 
-        if (bandIndex == BAND_TEMPERATE) {
-            if (isBiomeId(pick, "minecraft:dark_forest") && paleGardenNoiseHit(WORLD_SEED, blockX, blockZ)) {
-                try {
-                    pick = biome(biomes, "minecraft:pale_garden");
-                } catch (Throwable ignored) {
-                    // Keep original pick.
-                }
-            }
-
-            // Avoid promoting gentle meadow/windswept hills into stony_peaks on low-relief temperate land.
-        }
-
         return pick;
     }
 
@@ -298,17 +286,6 @@ public final class LatitudeBiomes {
                     pick = entry;
                 }
             }
-        }
-
-        if (bandIndex == BAND_TEMPERATE) {
-            if (isBiomeId(pick, "minecraft:dark_forest") && paleGardenNoiseHit(WORLD_SEED, blockX, blockZ)) {
-                RegistryEntry<Biome> entry = entryById(biomes, "minecraft:pale_garden");
-                if (entry != null) {
-                    pick = entry;
-                }
-            }
-
-            // Avoid promoting gentle meadow/windswept hills into stony_peaks on low-relief temperate land.
         }
 
         return pick;
@@ -1369,11 +1346,20 @@ public final class LatitudeBiomes {
     private static final double WETLAND_FREQ = 1.0 / 1200.0; // low frequency => broad patches
     private static final int WETLAND_SCALE_BLOCKS = 1200; // matches WETLAND_FREQ
 
-    // Pale garden override: spatially correlated noise replaces per-chunk hash to produce
-    // coherent clusters within dark_forest instead of single-chunk confetti.
-    private static final long PALE_GARDEN_SALT = 0x7061_6C65_6761_7264L; // "palegard"
-    private static final int PALE_GARDEN_SCALE_BLOCKS = 3000;
-    private static final double PALE_GARDEN_THRESHOLD = 0.025;
+    // Pale Garden uses one deterministic world-scale temperate region per world.
+    // Local eligibility still applies (dark_forest replacement), but outside this
+    // region pale_garden is blocked.
+    private static final long PALE_GARDEN_REGION_ANCHOR_X_SALT = 0x7061_6C65_5F61_6E63L; // "pale_anc"
+    private static final long PALE_GARDEN_REGION_ANCHOR_Z_SALT = 0x7061_6C65_5F61_7A7AL; // "pale_azz"
+    private static final long PALE_GARDEN_REGION_HEMI_SALT = 0x7061_6C65_5F68_656DL; // "pale_hem"
+    private static final long PALE_GARDEN_REGION_SHAPE_SALT = 0x7061_6C65_5F73_6861L; // "pale_sha"
+    private static final double PALE_GARDEN_REGION_RADIUS_FRAC = 0.18;
+    private static final int PALE_GARDEN_REGION_MIN_RADIUS_BLOCKS = 720;
+    private static final double PALE_GARDEN_REGION_WOBBLE_FRAC = 0.18;
+    private static final int PALE_GARDEN_REGION_ANGLE_SAMPLE_BLOCKS = 2048;
+    private static final int PALE_GARDEN_REGION_WOBBLE_SCALE_BLOCKS = 640;
+    private static final double PALE_GARDEN_REGION_X_INSET_FRAC = 0.20;
+    private static final double PALE_GARDEN_REGION_TEMPERATE_INSET_FRAC = 0.18;
 
     private static final int BADLANDS_PATCH_SIZE_BLOCKS = 65536;
     private static final double BADLANDS_PATCH_CHANCE = 0.42;
@@ -2003,6 +1989,7 @@ public final class LatitudeBiomes {
             out = pickColdFallback(biomeRegistry, base, blockX, blockZ, landBandIndex);
         }
         out = enforceLandBandPool(biomeRegistry, out, blockX, blockZ, t, landBandIndex, mountainLike);
+        out = enforcePaleGardenRegion(biomeRegistry, out, base, blockX, blockZ, landBandIndex, effectiveRadius);
         RegistryEntry<Biome> postBandEnforce = out;
         if (DEBUG_BIOMES && isMangroveCandidate(out)) {
             LOGGER.warn("[Latitude][MangroveLeak] mangrove escaped into land pool result (registry path) at x={} z={} bandIndex={} y={}",
@@ -2472,6 +2459,7 @@ public final class LatitudeBiomes {
             out = pickColdFallback(biomePool, base, blockX, blockZ, landBandIndex);
         }
         out = enforceLandBandPool(biomePool, out, blockX, blockZ, t, landBandIndex, mountainLike);
+        out = enforcePaleGardenRegion(biomePool, out, base, blockX, blockZ, landBandIndex, effectiveRadius);
         RegistryEntry<Biome> postBandEnforce = out;
         if (DEBUG_BIOMES && isMangroveCandidate(out)) {
             LOGGER.warn("[Latitude][MangroveLeak] mangrove escaped into land pool result (collection path) at x={} z={} bandIndex={} y={}",
@@ -4057,6 +4045,73 @@ public final class LatitudeBiomes {
         }
         maybeLogBandLeak(blockX, blockZ, t, bandIndex, candidate);
         return pickFromAllowedLandPool(allowedPool, blockX, blockZ, bandIndex);
+    }
+
+    private static RegistryEntry<Biome> enforcePaleGardenRegion(Registry<Biome> biomes,
+                                                                RegistryEntry<Biome> candidate,
+                                                                RegistryEntry<Biome> base,
+                                                                int blockX,
+                                                                int blockZ,
+                                                                int bandIndex,
+                                                                int effectiveRadius) {
+        if (bandIndex != BAND_TEMPERATE) {
+            return candidate;
+        }
+        boolean inRegion = paleGardenRegionHit(WORLD_SEED, blockX, blockZ, effectiveRadius);
+        if (inRegion && isBiomeId(candidate, "minecraft:dark_forest")) {
+            try {
+                return biome(biomes, "minecraft:pale_garden");
+            } catch (Throwable ignored) {
+                return candidate;
+            }
+        }
+        if (!isBiomeId(candidate, "minecraft:pale_garden") || inRegion) {
+            return candidate;
+        }
+        if (isBiomeId(base, "minecraft:dark_forest")) {
+            return base;
+        }
+        try {
+            return biome(biomes, "minecraft:dark_forest");
+        } catch (Throwable ignored) {
+            try {
+                return biome(biomes, "minecraft:forest");
+            } catch (Throwable ignoredAgain) {
+                return isBiomeId(base, "minecraft:pale_garden") ? candidate : base;
+            }
+        }
+    }
+
+    private static RegistryEntry<Biome> enforcePaleGardenRegion(Collection<RegistryEntry<Biome>> biomes,
+                                                                RegistryEntry<Biome> candidate,
+                                                                RegistryEntry<Biome> base,
+                                                                int blockX,
+                                                                int blockZ,
+                                                                int bandIndex,
+                                                                int effectiveRadius) {
+        if (bandIndex != BAND_TEMPERATE) {
+            return candidate;
+        }
+        boolean inRegion = paleGardenRegionHit(WORLD_SEED, blockX, blockZ, effectiveRadius);
+        if (inRegion && isBiomeId(candidate, "minecraft:dark_forest")) {
+            RegistryEntry<Biome> paleGarden = entryById(biomes, "minecraft:pale_garden");
+            return paleGarden != null ? paleGarden : candidate;
+        }
+        if (!isBiomeId(candidate, "minecraft:pale_garden") || inRegion) {
+            return candidate;
+        }
+        if (isBiomeId(base, "minecraft:dark_forest")) {
+            return base;
+        }
+        RegistryEntry<Biome> darkForest = entryById(biomes, "minecraft:dark_forest");
+        if (darkForest != null) {
+            return darkForest;
+        }
+        RegistryEntry<Biome> forest = entryById(biomes, "minecraft:forest");
+        if (forest != null) {
+            return forest;
+        }
+        return isBiomeId(base, "minecraft:pale_garden") ? candidate : base;
     }
 
     private static List<RegistryEntry<Biome>> removeTemperateMountainFamily(List<RegistryEntry<Biome>> pool) {
@@ -5858,10 +5913,56 @@ public final class LatitudeBiomes {
         return ValueNoise2D.sampleBlocks(worldSeed ^ WETLAND_SALT, blockX, z, WETLAND_SCALE_BLOCKS);
     }
 
-    private static boolean paleGardenNoiseHit(long worldSeed, int blockX, int blockZ) {
-        int z = Math.abs(blockZ);
-        double n = ValueNoise2D.sampleBlocks(worldSeed ^ PALE_GARDEN_SALT, blockX, z, PALE_GARDEN_SCALE_BLOCKS);
-        return n < PALE_GARDEN_THRESHOLD;
+    private static boolean paleGardenRegionHit(long worldSeed, int blockX, int blockZ, int effectiveRadiusHint) {
+        int radius = effectiveRadiusHint > 0 ? effectiveRadiusHint : ACTIVE_RADIUS_BLOCKS;
+        if (radius <= 0) {
+            radius = REFERENCE_DIAMETER_BLOCKS / 2;
+        }
+        radius = Math.max(1, radius);
+
+        int temperateMinAbsZ = bandBoundaryBlocks(1, radius);
+        int temperateMaxAbsZ = bandBoundaryBlocks(2, radius);
+        if (temperateMaxAbsZ <= temperateMinAbsZ) {
+            return false;
+        }
+
+        int temperateSpan = temperateMaxAbsZ - temperateMinAbsZ;
+        int temperateInset = Math.max(64, (int) Math.round(temperateSpan * PALE_GARDEN_REGION_TEMPERATE_INSET_FRAC));
+        int minAnchorAbsZ = Math.min(temperateMaxAbsZ - 1, temperateMinAbsZ + temperateInset);
+        int maxAnchorAbsZ = Math.max(minAnchorAbsZ, temperateMaxAbsZ - temperateInset);
+        int anchorAbsZ = minAnchorAbsZ
+                + (int) Math.floor(toUnitDouble(mix64(worldSeed ^ PALE_GARDEN_REGION_ANCHOR_Z_SALT))
+                * (double) (maxAnchorAbsZ - minAnchorAbsZ + 1));
+        int hemisphereSign = (mix64(worldSeed ^ PALE_GARDEN_REGION_HEMI_SALT) & 1L) == 0L ? 1 : -1;
+        int anchorZ = anchorAbsZ * hemisphereSign;
+
+        int xInset = Math.max(512, (int) Math.round(radius * PALE_GARDEN_REGION_X_INSET_FRAC));
+        int minAnchorX = -radius + xInset;
+        int maxAnchorX = radius - xInset;
+        if (maxAnchorX <= minAnchorX) {
+            minAnchorX = -radius / 3;
+            maxAnchorX = radius / 3;
+        }
+        int anchorX = minAnchorX
+                + (int) Math.floor(toUnitDouble(mix64(worldSeed ^ PALE_GARDEN_REGION_ANCHOR_X_SALT))
+                * (double) (Math.max(1, maxAnchorX - minAnchorX + 1)));
+
+        double dx = (double) blockX - (double) anchorX;
+        double dz = (double) blockZ - (double) anchorZ;
+        double theta = Math.atan2(dz, dx);
+        int shapeX = (int) Math.round(Math.cos(theta) * PALE_GARDEN_REGION_ANGLE_SAMPLE_BLOCKS);
+        int shapeZ = (int) Math.round(Math.sin(theta) * PALE_GARDEN_REGION_ANGLE_SAMPLE_BLOCKS);
+        double shapeNoise = ValueNoise2D.sampleBlocks(
+                worldSeed ^ PALE_GARDEN_REGION_SHAPE_SALT,
+                shapeX,
+                shapeZ,
+                PALE_GARDEN_REGION_WOBBLE_SCALE_BLOCKS);
+        double shapeSigned = (shapeNoise * 2.0) - 1.0;
+        double baseRadius = Math.max(PALE_GARDEN_REGION_MIN_RADIUS_BLOCKS, radius * PALE_GARDEN_REGION_RADIUS_FRAC);
+        double regionRadius = baseRadius * (1.0 + shapeSigned * PALE_GARDEN_REGION_WOBBLE_FRAC);
+        regionRadius = Math.max(baseRadius * (1.0 - PALE_GARDEN_REGION_WOBBLE_FRAC), regionRadius);
+
+        return (dx * dx + dz * dz) <= (regionRadius * regionRadius);
     }
 
     private static double wetlandThresholdForBand(int bandIndex, double t) {
