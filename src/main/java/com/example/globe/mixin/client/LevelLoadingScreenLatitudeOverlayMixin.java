@@ -81,6 +81,7 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
     @Unique private static final long FAIL_SAFE_CLEAR_MS = 10 * 60 * 1000L;
     @Unique private long globe$overlayStartMs = 0L;
     @Unique private float globe$displayProgress = 0f;
+    @Unique private int globe$phraseSeedIdx = 0;
 
     // ── Compass needle animation state ──
     @Unique private double globe$needleAngle = 0.0;
@@ -134,6 +135,7 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
             globe$overlayStartMs = now;
             globe$lastDirectionChangeMs = now;
             globe$displayProgress = 0f;
+            globe$phraseSeedIdx = (int) (Math.random() * PHRASES.length);
             GLOBE_LOGGER.info("[Latitude lifecycle] bespoke overlay first render — {}ms since beginExpedition",
                     LatitudeClientState.elapsedSinceExpeditionMs());
         } else if (LatitudeClientState.elapsedSinceExpeditionMs() >= FAIL_SAFE_CLEAR_MS) {
@@ -327,7 +329,7 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
     @Unique
     private void globe$drawPhrase(DrawContext context, int cx, int y, long elapsedMs) {
         long cyclePos = elapsedMs % PHRASE_CYCLE_MS;
-        int phraseIdx = (int) ((elapsedMs / PHRASE_CYCLE_MS) % PHRASES.length);
+        int phraseIdx = (globe$phraseSeedIdx + (int) ((elapsedMs / PHRASE_CYCLE_MS) % PHRASES.length)) % PHRASES.length;
         String phrase = PHRASES[phraseIdx];
 
         // Fade: quick in (first 15%), steady (60%), quick out (last 25%)
