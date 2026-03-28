@@ -445,6 +445,10 @@ public class LatitudeCreateWorldScreen extends Screen {
 
     private void cycleMode(int delta) {
         selectedModeIdx = (selectedModeIdx + delta + MODE_NAMES.length) % MODE_NAMES.length;
+        if (selectedModeIdx == 2 && !allowCommands) {
+            allowCommands = true;
+            updateSettingsButtons();
+        }
     }
 
     private void cycleWorldType(int delta) {

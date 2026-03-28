@@ -6,6 +6,7 @@ import com.example.globe.client.CompassHud;
 import com.example.globe.client.CompassHudConfig;
 import com.example.globe.client.ClientKeybinds;
 import com.example.globe.client.GlobeWarningOverlay;
+import com.example.globe.client.LatitudeClientState;
 import com.example.globe.client.LatitudeSettingsScreen;
 import com.example.globe.client.SpawnZoneScreen;
 import com.example.globe.client.EwSandstormOverlayRenderer;
@@ -46,6 +47,12 @@ public class GlobeModClient implements ClientModInitializer {
             context.client().execute(() -> {
                 GlobeClientState.setGlobeWorld(payload.isGlobe());
                 GlobeMod.LOGGER.info("S2C globe state: isGlobe={}", payload.isGlobe());
+                if (payload.isGlobe()) {
+                    LatitudeClientState.activateLatitudeLoading();
+                    if (!LatitudeClientState.firstWorldLoad) {
+                        LatitudeClientState.firstWorldLoad = false;
+                    }
+                }
             });
         });
 
