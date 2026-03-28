@@ -2002,7 +2002,7 @@ public final class LatitudeBiomes {
         if (landBandIndex >= BAND_SUBPOLAR && isJungleFamily(out)) {
             out = pickColdFallback(biomeRegistry, base, blockX, blockZ, landBandIndex);
         }
-        out = enforceLandBandPool(biomeRegistry, out, blockX, blockZ, t, landBandIndex);
+        out = enforceLandBandPool(biomeRegistry, out, blockX, blockZ, t, landBandIndex, mountainLike);
         RegistryEntry<Biome> postBandEnforce = out;
         if (DEBUG_BIOMES && isMangroveCandidate(out)) {
             LOGGER.warn("[Latitude][MangroveLeak] mangrove escaped into land pool result (registry path) at x={} z={} bandIndex={} y={}",
@@ -2471,7 +2471,7 @@ public final class LatitudeBiomes {
         if (landBandIndex >= BAND_SUBPOLAR && isJungleFamily(out)) {
             out = pickColdFallback(biomePool, base, blockX, blockZ, landBandIndex);
         }
-        out = enforceLandBandPool(biomePool, out, blockX, blockZ, t, landBandIndex);
+        out = enforceLandBandPool(biomePool, out, blockX, blockZ, t, landBandIndex, mountainLike);
         RegistryEntry<Biome> postBandEnforce = out;
         if (DEBUG_BIOMES && isMangroveCandidate(out)) {
             LOGGER.warn("[Latitude][MangroveLeak] mangrove escaped into land pool result (collection path) at x={} z={} bandIndex={} y={}",
@@ -4028,8 +4028,12 @@ public final class LatitudeBiomes {
                                                             int blockX,
                                                             int blockZ,
                                                             double t,
-                                                            int bandIndex) {
+                                                            int bandIndex,
+                                                            boolean mountainLike) {
         List<RegistryEntry<Biome>> allowedPool = allowedLandPool(biomes, bandIndex);
+        if (bandIndex == BAND_TEMPERATE && !mountainLike) {
+            allowedPool = removeStonyPeaks(allowedPool);
+        }
         if (allowedPool.isEmpty() || isInAllowedLandPool(allowedPool, candidate)) {
             return candidate;
         }
@@ -4042,13 +4046,27 @@ public final class LatitudeBiomes {
                                                             int blockX,
                                                             int blockZ,
                                                             double t,
-                                                            int bandIndex) {
+                                                            int bandIndex,
+                                                            boolean mountainLike) {
         List<RegistryEntry<Biome>> allowedPool = allowedLandPool(biomes, bandIndex);
+        if (bandIndex == BAND_TEMPERATE && !mountainLike) {
+            allowedPool = removeStonyPeaks(allowedPool);
+        }
         if (allowedPool.isEmpty() || isInAllowedLandPool(allowedPool, candidate)) {
             return candidate;
         }
         maybeLogBandLeak(blockX, blockZ, t, bandIndex, candidate);
         return pickFromAllowedLandPool(allowedPool, blockX, blockZ, bandIndex);
+    }
+
+    private static List<RegistryEntry<Biome>> removeStonyPeaks(List<RegistryEntry<Biome>> pool) {
+        List<RegistryEntry<Biome>> filtered = new ArrayList<>(pool.size());
+        for (RegistryEntry<Biome> entry : pool) {
+            if (!isBiomeId(entry, "minecraft:stony_peaks")) {
+                filtered.add(entry);
+            }
+        }
+        return filtered;
     }
 
     private static RegistryEntry<Biome> pickFromAllowedLandPool(List<RegistryEntry<Biome>> allowedPool,
