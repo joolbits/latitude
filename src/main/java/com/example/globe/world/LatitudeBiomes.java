@@ -1944,7 +1944,11 @@ public final class LatitudeBiomes {
                 // makes frozen_peaks inaccessible in atlas runs.  Only run this block for
                 // bands below POLAR (i.e. temperate and subpolar, where mountainLike can
                 // legitimately be true via the terrain-preview path).
-                if (mountainLike && landBandIndex < BAND_POLAR) {
+                boolean mountainPromotion = mountainLike
+                        && landBandIndex < BAND_POLAR
+                        && (preview.robustDelta >= (WINDSWEPT_RUGGED_THRESH + WINDSWEPT_RUGGED_HYST)
+                        || preview.centerHeight >= (seaLevel + PREVIEW_HEIGHT_MARGIN_BLOCKS));
+                if (mountainPromotion) {
                     chosen = pickFromTagNoiseOrBase(biomeRegistry, LAT_TEMPERATE_MOUNTAIN, base, blockX, blockZ, landBandIndex);
                     if (isBiomeId(chosen, "minecraft:cherry_grove") && landBandIndex < BAND_POLAR) {
                         return chosen;
@@ -2418,7 +2422,11 @@ public final class LatitudeBiomes {
             }
             // Guard: polar land has its own mountain picker (pickPolarWithFrontShoulder).
             // See parallel Registry<Biome> overload for full rationale.
-            if (mountainLike && landBandIndex < BAND_POLAR) {
+            boolean mountainPromotion = mountainLike
+                    && landBandIndex < BAND_POLAR
+                    && (preview.robustDelta >= (WINDSWEPT_RUGGED_THRESH + WINDSWEPT_RUGGED_HYST)
+                    || preview.centerHeight >= (seaLevel + PREVIEW_HEIGHT_MARGIN_BLOCKS));
+            if (mountainPromotion) {
                 chosen = pickFromTagNoiseOrBase(biomePool, LAT_TEMPERATE_MOUNTAIN, base, blockX, blockZ, landBandIndex);
                 if (isBiomeId(chosen, "minecraft:cherry_grove") && landBandIndex < BAND_POLAR) {
                     return chosen;
