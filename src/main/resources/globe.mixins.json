@@ -27,6 +27,7 @@
     "client.CreateWorldScreenSpawnZoneMixin",
     "client.CreateWorldScreenMixin",
     "client.CreateWorldScreenShowMixin",
+    "client.CreateWorldScreenInitRedirectMixin",
     "client.MinecraftClientStartIntegratedMixin",
     "client.WorldCreatorMixin",
     "client.InGameHudMixin",
