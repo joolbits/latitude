@@ -284,14 +284,7 @@ public final class LatitudeBiomes {
                 }
             }
 
-            if ((isBiomeId(pick, "minecraft:meadow") || isBiomeId(pick, "minecraft:windswept_hills"))
-                    && rollChance(blockX, blockZ, 0x31415926, 120L)) {
-                try {
-                    pick = biome(biomes, "minecraft:stony_peaks");
-                } catch (Throwable ignored) {
-                    // Keep original pick.
-                }
-            }
+            // Avoid promoting gentle meadow/windswept hills into stony_peaks on low-relief temperate land.
         }
 
         return pick;
@@ -315,13 +308,7 @@ public final class LatitudeBiomes {
                 }
             }
 
-            if ((isBiomeId(pick, "minecraft:meadow") || isBiomeId(pick, "minecraft:windswept_hills"))
-                    && rollChance(blockX, blockZ, 0x31415926, 120L)) {
-                RegistryEntry<Biome> entry = entryById(biomes, "minecraft:stony_peaks");
-                if (entry != null) {
-                    pick = entry;
-                }
-            }
+            // Avoid promoting gentle meadow/windswept hills into stony_peaks on low-relief temperate land.
         }
 
         return pick;
