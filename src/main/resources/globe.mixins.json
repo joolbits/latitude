@@ -26,6 +26,7 @@
     "client.CreateWorldScreenLatitudeToggleMixin",
     "client.CreateWorldScreenSpawnZoneMixin",
     "client.CreateWorldScreenMixin",
+    "client.CreateWorldScreenShowMixin",
     "client.WorldCreatorMixin",
     "client.InGameHudMixin",
     "HandledScreenCompassToggleMixin",
