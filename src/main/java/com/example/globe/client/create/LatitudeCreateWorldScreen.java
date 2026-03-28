@@ -887,7 +887,9 @@ public class LatitudeCreateWorldScreen extends Screen {
 
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
-        UiRect headerRect = new UiRect(12, headerY, Math.max(1, this.width - 24), Math.max(1, panelTop - headerY - 6));
+        int titlePaneX = threeCol ? rightX : 12;
+        int titlePaneW = threeCol ? rightW : Math.max(1, this.width - 24);
+        UiRect headerRect = new UiRect(titlePaneX, headerY, Math.max(1, titlePaneW), Math.max(1, panelTop - headerY - 6));
         int headerLineY = headerRect.y;
         if (drawCenteredBoundedText(context, "LATITUDE", new UiRect(headerRect.x, headerLineY, headerRect.w, uiFontHeight()), GOLD, true, false)) {
             headerLineY += uiFontHeight() + scaledUi(6);
