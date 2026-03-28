@@ -265,29 +265,10 @@ public final class LatitudeBiomes {
     }
 
     private static RegistryEntry<Biome> applyLandOverrides(Registry<Biome> biomes, RegistryEntry<Biome> pick, int blockX, int blockZ, int bandIndex) {
-        if (bandIndex == BAND_TROPICAL || bandIndex == BAND_TEMPERATE) {
-            if (isBiomeId(pick, "minecraft:plains") && rollChance(blockX, blockZ, 0x7F4A7C15, 60L)) {
-                try {
-                    pick = biome(biomes, "minecraft:sunflower_plains");
-                } catch (Throwable ignored) {
-                    // Keep original pick.
-                }
-            }
-        }
-
         return pick;
     }
 
     private static RegistryEntry<Biome> applyLandOverrides(Collection<RegistryEntry<Biome>> biomes, RegistryEntry<Biome> pick, int blockX, int blockZ, int bandIndex) {
-        if (bandIndex == BAND_TROPICAL || bandIndex == BAND_TEMPERATE) {
-            if (isBiomeId(pick, "minecraft:plains") && rollChance(blockX, blockZ, 0x7F4A7C15, 60L)) {
-                RegistryEntry<Biome> entry = entryById(biomes, "minecraft:sunflower_plains");
-                if (entry != null) {
-                    pick = entry;
-                }
-            }
-        }
-
         return pick;
     }
 
