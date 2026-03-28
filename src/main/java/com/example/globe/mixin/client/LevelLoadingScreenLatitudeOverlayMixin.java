@@ -41,7 +41,7 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
 
     // ── Loading phrases ──
     @Unique private static final String[] PHRASES = {
-            "Exploding creepers...",
+            "Defusing creepers...",
             "Charting the frontier...",
             "Following the compass...",
             "Packing snow boots...",
