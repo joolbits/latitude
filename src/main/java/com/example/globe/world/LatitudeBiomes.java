@@ -3936,8 +3936,7 @@ public final class LatitudeBiomes {
     private static List<String> allowedExtraBiomeIdsForBand(int bandIndex) {
         return switch (bandIndex) {
             case BAND_TROPICAL -> List.of(
-                    SWAMP_ID,
-                    "minecraft:sunflower_plains");
+                    SWAMP_ID);
             case BAND_SUBTROPICAL -> List.of(
                     SWAMP_ID,
                     MANGROVE_ID);
