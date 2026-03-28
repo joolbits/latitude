@@ -44,15 +44,14 @@ public class GlobeModClient implements ClientModInitializer {
         });
 
         ClientPlayNetworking.registerGlobalReceiver(GlobeNet.GlobeStatePayload.ID, (payload, context) -> {
+            if (payload.isGlobe()) {
+                // Flip the bespoke loading flag as soon as the handshake packet arrives (network thread).
+                LatitudeClientState.activateLatitudeLoading();
+                LatitudeClientState.firstWorldLoad = false;
+            }
             context.client().execute(() -> {
                 GlobeClientState.setGlobeWorld(payload.isGlobe());
                 GlobeMod.LOGGER.info("S2C globe state: isGlobe={}", payload.isGlobe());
-                if (payload.isGlobe()) {
-                    LatitudeClientState.activateLatitudeLoading();
-                    if (!LatitudeClientState.firstWorldLoad) {
-                        LatitudeClientState.firstWorldLoad = false;
-                    }
-                }
             });
         });
 
