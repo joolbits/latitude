@@ -176,7 +176,7 @@ public final class LatitudeMath {
             case "EQUATOR" -> 0.05;
             case "TROPICAL" -> 0.20;
             case "SUBTROPICAL" -> 0.40;
-            case "TEMPERATE" -> 0.583;
+            case "TEMPERATE" -> 0.472;
             case "SUBPOLAR" -> 0.725;
             case "POLAR" -> 0.89;
             default -> 0.0;
