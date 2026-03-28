@@ -4032,7 +4032,7 @@ public final class LatitudeBiomes {
                                                             boolean mountainLike) {
         List<RegistryEntry<Biome>> allowedPool = allowedLandPool(biomes, bandIndex);
         if (bandIndex == BAND_TEMPERATE && !mountainLike) {
-            allowedPool = removeStonyPeaks(allowedPool);
+            allowedPool = removeTemperateMountainFamily(allowedPool);
         }
         if (allowedPool.isEmpty() || isInAllowedLandPool(allowedPool, candidate)) {
             return candidate;
@@ -4050,7 +4050,7 @@ public final class LatitudeBiomes {
                                                             boolean mountainLike) {
         List<RegistryEntry<Biome>> allowedPool = allowedLandPool(biomes, bandIndex);
         if (bandIndex == BAND_TEMPERATE && !mountainLike) {
-            allowedPool = removeStonyPeaks(allowedPool);
+            allowedPool = removeTemperateMountainFamily(allowedPool);
         }
         if (allowedPool.isEmpty() || isInAllowedLandPool(allowedPool, candidate)) {
             return candidate;
@@ -4059,14 +4059,24 @@ public final class LatitudeBiomes {
         return pickFromAllowedLandPool(allowedPool, blockX, blockZ, bandIndex);
     }
 
-    private static List<RegistryEntry<Biome>> removeStonyPeaks(List<RegistryEntry<Biome>> pool) {
+    private static List<RegistryEntry<Biome>> removeTemperateMountainFamily(List<RegistryEntry<Biome>> pool) {
         List<RegistryEntry<Biome>> filtered = new ArrayList<>(pool.size());
         for (RegistryEntry<Biome> entry : pool) {
-            if (!isBiomeId(entry, "minecraft:stony_peaks")) {
+            if (!isTemperateMountainFamilyBiome(entry)) {
                 filtered.add(entry);
             }
         }
         return filtered;
+    }
+
+    private static boolean isTemperateMountainFamilyBiome(RegistryEntry<Biome> entry) {
+        return isBiomeId(entry, "minecraft:stony_peaks")
+                || isBiomeId(entry, "minecraft:grove")
+                || isBiomeId(entry, "minecraft:meadow")
+                || isBiomeId(entry, "minecraft:windswept_hills")
+                || isBiomeId(entry, "minecraft:windswept_forest")
+                || isBiomeId(entry, "minecraft:windswept_gravelly_hills")
+                || isBiomeId(entry, "minecraft:cherry_grove");
     }
 
     private static RegistryEntry<Biome> pickFromAllowedLandPool(List<RegistryEntry<Biome>> allowedPool,
