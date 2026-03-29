@@ -69,6 +69,7 @@ public final class LatitudeBiomes {
             return pickFromWeightedTagsNoSwamp(biomes, base, blockX, blockZ, 110 + step, 0x5B70 + step,
                     LAT_SUBTROPICAL_HUMID_PRIMARY, LAT_SUBTROPICAL_HUMID_SECONDARY, LAT_SUBTROPICAL_HUMID_ACCENT);
         }
+        boolean coldShoulderArid = step == 0 && u >= SUBTROPICAL_ARID_SHOULDER_U;
 
         RegistryEntry<Biome> pick = switch (step) {
             case 1 -> pickFromWeightedTagsNoSwamp(biomes, base, blockX, blockZ, 101, 0x7A11,
@@ -77,7 +78,10 @@ public final class LatitudeBiomes {
                     LAT_TRANS_ARID_TROPICS_2_PRIMARY, LAT_TRANS_ARID_TROPICS_2_SECONDARY, LAT_TRANS_ARID_TROPICS_2_ACCENT);
             case 3 -> pickFromWeightedTagsNoSwamp(biomes, base, blockX, blockZ, 103, 0x7A33,
                     LAT_TRANS_ARID_TROPICS_2_PRIMARY, LAT_TRANS_ARID_TROPICS_2_SECONDARY, LAT_TRANS_ARID_TROPICS_2_ACCENT);
-            default -> pickFromWeightedTagsNoSwamp(biomes, base, blockX, blockZ, 100, 0x7A00,
+            default -> coldShoulderArid
+                    ? pickFromWeightedTagsNoSwamp(biomes, base, blockX, blockZ, 101, 0x7A11,
+                    LAT_TRANS_ARID_TROPICS_1_PRIMARY, LAT_TRANS_ARID_TROPICS_1_SECONDARY, LAT_TRANS_ARID_TROPICS_1_ACCENT)
+                    : pickFromWeightedTagsNoSwamp(biomes, base, blockX, blockZ, 100, 0x7A00,
                     LAT_ARID_PRIMARY, LAT_ARID_SECONDARY, LAT_ARID_ACCENT);
         };
         return softenSubtropicalBadlands(biomes, base, pick);
@@ -111,6 +115,7 @@ public final class LatitudeBiomes {
             return pickFromWeightedTagsNoSwamp(biomes, base, blockX, blockZ, 110 + step, 0x5B70 + step,
                     LAT_SUBTROPICAL_HUMID_PRIMARY, LAT_SUBTROPICAL_HUMID_SECONDARY, LAT_SUBTROPICAL_HUMID_ACCENT);
         }
+        boolean coldShoulderArid = step == 0 && u >= SUBTROPICAL_ARID_SHOULDER_U;
 
         RegistryEntry<Biome> pick = switch (step) {
             case 1 -> pickFromWeightedTagsNoSwamp(biomes, base, blockX, blockZ, 101, 0x7A11,
@@ -119,7 +124,10 @@ public final class LatitudeBiomes {
                     LAT_TRANS_ARID_TROPICS_2_PRIMARY, LAT_TRANS_ARID_TROPICS_2_SECONDARY, LAT_TRANS_ARID_TROPICS_2_ACCENT);
             case 3 -> pickFromWeightedTagsNoSwamp(biomes, base, blockX, blockZ, 103, 0x7A33,
                     LAT_TRANS_ARID_TROPICS_2_PRIMARY, LAT_TRANS_ARID_TROPICS_2_SECONDARY, LAT_TRANS_ARID_TROPICS_2_ACCENT);
-            default -> pickFromWeightedTagsNoSwamp(biomes, base, blockX, blockZ, 100, 0x7A00,
+            default -> coldShoulderArid
+                    ? pickFromWeightedTagsNoSwamp(biomes, base, blockX, blockZ, 101, 0x7A11,
+                    LAT_TRANS_ARID_TROPICS_1_PRIMARY, LAT_TRANS_ARID_TROPICS_1_SECONDARY, LAT_TRANS_ARID_TROPICS_1_ACCENT)
+                    : pickFromWeightedTagsNoSwamp(biomes, base, blockX, blockZ, 100, 0x7A00,
                     LAT_ARID_PRIMARY, LAT_ARID_SECONDARY, LAT_ARID_ACCENT);
         };
         return softenSubtropicalBadlands(biomes, base, pick);
@@ -130,6 +138,7 @@ public final class LatitudeBiomes {
     private static final int BAND_TEMPERATE = 2;
     private static final int BAND_SUBPOLAR = 3;
     private static final int BAND_POLAR = 4;
+    private static final double SUBTROPICAL_ARID_SHOULDER_U = 0.84;
 
     private static int bandIndexForBand(LatitudeBands.Band band) {
         return switch (band) {
@@ -2539,6 +2548,7 @@ public final class LatitudeBiomes {
             return pickFromWeightedTags(biomes, base, blockX, blockZ, 110 + step, 0x5B70 + step,
                     LAT_SUBTROPICAL_HUMID_PRIMARY, LAT_SUBTROPICAL_HUMID_SECONDARY, LAT_SUBTROPICAL_HUMID_ACCENT);
         }
+        boolean coldShoulderArid = step == 0 && u >= SUBTROPICAL_ARID_SHOULDER_U;
 
         boolean plateauLike = step == 2 && t <= 0.325 && stepFrac >= 0.75;
 
@@ -2563,7 +2573,10 @@ public final class LatitudeBiomes {
                     LAT_TRANS_ARID_TROPICS_2_PRIMARY, LAT_TRANS_ARID_TROPICS_2_SECONDARY, LAT_TRANS_ARID_TROPICS_2_ACCENT);
             case 3 -> pickFromWeightedTags(biomes, base, blockX, blockZ, 103, 0x7A33,
                     LAT_TRANS_ARID_TROPICS_2_PRIMARY, LAT_TRANS_ARID_TROPICS_2_SECONDARY, LAT_TRANS_ARID_TROPICS_2_ACCENT);
-            default -> pickFromWeightedTags(biomes, base, blockX, blockZ, 100, 0x7A00,
+            default -> coldShoulderArid
+                    ? pickFromWeightedTags(biomes, base, blockX, blockZ, 101, 0x7A11,
+                    LAT_TRANS_ARID_TROPICS_1_PRIMARY, LAT_TRANS_ARID_TROPICS_1_SECONDARY, LAT_TRANS_ARID_TROPICS_1_ACCENT)
+                    : pickFromWeightedTags(biomes, base, blockX, blockZ, 100, 0x7A00,
                     LAT_ARID_PRIMARY, LAT_ARID_SECONDARY, LAT_ARID_ACCENT);
         };
         return softenSubtropicalBadlands(biomes, base, pick);
@@ -2635,6 +2648,7 @@ public final class LatitudeBiomes {
             return pickFromWeightedTags(biomes, base, blockX, blockZ, 110 + step, 0x5B70 + step,
                     LAT_SUBTROPICAL_HUMID_PRIMARY, LAT_SUBTROPICAL_HUMID_SECONDARY, LAT_SUBTROPICAL_HUMID_ACCENT);
         }
+        boolean coldShoulderArid = step == 0 && u >= SUBTROPICAL_ARID_SHOULDER_U;
 
         boolean plateauLike = step == 2 && t <= 0.325 && stepFrac >= 0.75;
 
@@ -2656,7 +2670,10 @@ public final class LatitudeBiomes {
                     LAT_TRANS_ARID_TROPICS_2_PRIMARY, LAT_TRANS_ARID_TROPICS_2_SECONDARY, LAT_TRANS_ARID_TROPICS_2_ACCENT);
             case 3 -> pickFromWeightedTags(biomes, base, blockX, blockZ, 103, 0x7A33,
                     LAT_TRANS_ARID_TROPICS_2_PRIMARY, LAT_TRANS_ARID_TROPICS_2_SECONDARY, LAT_TRANS_ARID_TROPICS_2_ACCENT);
-            default -> pickFromWeightedTags(biomes, base, blockX, blockZ, 100, 0x7A00,
+            default -> coldShoulderArid
+                    ? pickFromWeightedTags(biomes, base, blockX, blockZ, 101, 0x7A11,
+                    LAT_TRANS_ARID_TROPICS_1_PRIMARY, LAT_TRANS_ARID_TROPICS_1_SECONDARY, LAT_TRANS_ARID_TROPICS_1_ACCENT)
+                    : pickFromWeightedTags(biomes, base, blockX, blockZ, 100, 0x7A00,
                     LAT_ARID_PRIMARY, LAT_ARID_SECONDARY, LAT_ARID_ACCENT);
         };
         return softenSubtropicalBadlands(biomes, base, pick);
@@ -6064,6 +6081,7 @@ public final class LatitudeBiomes {
         int baseStep = clampInt((int) Math.floor(stepFloat), 0, 3);
         double stepFrac = stepFloat - baseStep;
         int step = applyTropicalStepDither(seed, blockX, blockZ, baseStep, stepFrac);
+        boolean coldShoulderArid = step == 0 && u >= SUBTROPICAL_ARID_SHOULDER_U;
 
         RegistryEntry<Biome> pick = switch (step) {
             case 1 -> pickFromWeightedTagsNoMangrove(biomes, base, blockX, blockZ, 101, 0x7A11,
@@ -6072,7 +6090,10 @@ public final class LatitudeBiomes {
                     LAT_TRANS_ARID_TROPICS_2_PRIMARY, LAT_TRANS_ARID_TROPICS_2_SECONDARY, LAT_TRANS_ARID_TROPICS_2_ACCENT);
             case 3 -> pickFromWeightedTagsNoMangrove(biomes, base, blockX, blockZ, 103, 0x7A33,
                     LAT_TRANS_ARID_TROPICS_2_PRIMARY, LAT_TRANS_ARID_TROPICS_2_SECONDARY, LAT_TRANS_ARID_TROPICS_2_ACCENT);
-            default -> pickFromWeightedTagsNoMangrove(biomes, base, blockX, blockZ, 100, 0x7A00,
+            default -> coldShoulderArid
+                    ? pickFromWeightedTagsNoMangrove(biomes, base, blockX, blockZ, 101, 0x7A11,
+                    LAT_TRANS_ARID_TROPICS_1_PRIMARY, LAT_TRANS_ARID_TROPICS_1_SECONDARY, LAT_TRANS_ARID_TROPICS_1_ACCENT)
+                    : pickFromWeightedTagsNoMangrove(biomes, base, blockX, blockZ, 100, 0x7A00,
                     LAT_ARID_PRIMARY, LAT_ARID_SECONDARY, LAT_ARID_ACCENT);
         };
         return softenSubtropicalBadlands(biomes, base, pick);
@@ -6098,6 +6119,7 @@ public final class LatitudeBiomes {
         int baseStep = clampInt((int) Math.floor(stepFloat), 0, 3);
         double stepFrac = stepFloat - baseStep;
         int step = applyTropicalStepDither(seed, blockX, blockZ, baseStep, stepFrac);
+        boolean coldShoulderArid = step == 0 && u >= SUBTROPICAL_ARID_SHOULDER_U;
 
         RegistryEntry<Biome> pick = switch (step) {
             case 1 -> pickFromWeightedTagsNoMangrove(biomes, base, blockX, blockZ, 101, 0x7A11,
@@ -6106,7 +6128,10 @@ public final class LatitudeBiomes {
                     LAT_TRANS_ARID_TROPICS_2_PRIMARY, LAT_TRANS_ARID_TROPICS_2_SECONDARY, LAT_TRANS_ARID_TROPICS_2_ACCENT);
             case 3 -> pickFromWeightedTagsNoMangrove(biomes, base, blockX, blockZ, 103, 0x7A33,
                     LAT_TRANS_ARID_TROPICS_2_PRIMARY, LAT_TRANS_ARID_TROPICS_2_SECONDARY, LAT_TRANS_ARID_TROPICS_2_ACCENT);
-            default -> pickFromWeightedTagsNoMangrove(biomes, base, blockX, blockZ, 100, 0x7A00,
+            default -> coldShoulderArid
+                    ? pickFromWeightedTagsNoMangrove(biomes, base, blockX, blockZ, 101, 0x7A11,
+                    LAT_TRANS_ARID_TROPICS_1_PRIMARY, LAT_TRANS_ARID_TROPICS_1_SECONDARY, LAT_TRANS_ARID_TROPICS_1_ACCENT)
+                    : pickFromWeightedTagsNoMangrove(biomes, base, blockX, blockZ, 100, 0x7A00,
                     LAT_ARID_PRIMARY, LAT_ARID_SECONDARY, LAT_ARID_ACCENT);
         };
         return softenSubtropicalBadlands(biomes, base, pick);
