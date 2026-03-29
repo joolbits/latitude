@@ -1436,10 +1436,8 @@ public final class LatitudeBiomes {
     private static final long TROPICAL_DITHER_SALT = 0x5EEDBEEF5EEDBEEFL;
     private static final long SUBPOLAR_RAMP_SALT = 0x5EED5B09A5EEDL;
     private static final long SNOWY_RAMP_SALT = 0x5EEDB17A5EEDL;
-    // Snowy shoulder should begin softly after ~58° and finish by ~62° to avoid
-    // a harsh temperate→subpolar wall while still ramping toward full snow deeper north.
-    private static final double SNOWY_RAMP_START_DEG = 58.0;
-    private static final double SNOWY_RAMP_FULL_DEG = 62.0;
+    private static final double SNOWY_RAMP_START_DEG = 54.0;
+    private static final double SNOWY_RAMP_FULL_DEG = 68.0;
     private static final double GROVE_MIN_DEG = 54.0;
     private static final double EXTREME_POLAR_CAP_MIN_DEG = 74.5;
     private static final int SUBPOLAR_RAMP_PATCH_BLOCKS = 224;
@@ -1973,6 +1971,7 @@ public final class LatitudeBiomes {
                 }
             }
         }
+        out = enforceSnowyLatitudeRamp(biomeRegistry, out, base, blockX, blockZ, effectiveRadius, landBandIndex);
         out = clampWarmInColdZone(biomeRegistry, base, out, band, blockX, blockZ);
         out = applySubpolarSwampGuard(biomeRegistry, base, out, band);
         RegistryEntry<Biome> preBandEnforce = out;
@@ -1981,7 +1980,6 @@ public final class LatitudeBiomes {
         }
         out = enforceLandBandPool(biomeRegistry, out, blockX, blockZ, t, landBandIndex, mountainLike);
         out = enforcePaleGardenRegion(biomeRegistry, out, base, blockX, blockZ, landBandIndex, effectiveRadius);
-        out = enforceSnowyLatitudeRamp(biomeRegistry, out, base, blockX, blockZ, effectiveRadius, landBandIndex);
         RegistryEntry<Biome> postBandEnforce = out;
         if (DEBUG_BIOMES && isMangroveCandidate(out)) {
             LOGGER.warn("[Latitude][MangroveLeak] mangrove escaped into land pool result (registry path) at x={} z={} bandIndex={} y={}",
@@ -2443,6 +2441,7 @@ public final class LatitudeBiomes {
                 out = pickWarmFallback(biomePool, landBandIndex);
             }
         }
+        out = enforceSnowyLatitudeRamp(biomePool, out, base, blockX, blockZ, effectiveRadius, landBandIndex);
         out = clampWarmInColdZone(biomePool, base, out, band, blockX, blockZ);
         out = applySubpolarSwampGuard(biomePool, base, out, band);
         RegistryEntry<Biome> preBandEnforce = out;
@@ -2451,7 +2450,6 @@ public final class LatitudeBiomes {
         }
         out = enforceLandBandPool(biomePool, out, blockX, blockZ, t, landBandIndex, mountainLike);
         out = enforcePaleGardenRegion(biomePool, out, base, blockX, blockZ, landBandIndex, effectiveRadius);
-        out = enforceSnowyLatitudeRamp(biomePool, out, base, blockX, blockZ, effectiveRadius, landBandIndex);
         RegistryEntry<Biome> postBandEnforce = out;
         if (DEBUG_BIOMES && isMangroveCandidate(out)) {
             LOGGER.warn("[Latitude][MangroveLeak] mangrove escaped into land pool result (collection path) at x={} z={} bandIndex={} y={}",
