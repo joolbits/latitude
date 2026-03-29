@@ -77,8 +77,8 @@ public class GlobeModClient implements ClientModInitializer {
 
         WorldRenderEvents.BEFORE_TRANSLUCENT.register(ctx -> {
             if (!GlobeClientState.DEBUG_EW_WALL) return;
-            // EwStormWallRenderer.render(ctx.matrices(), ctx.consumers()); // TEMP: wall disabled (overlay bring-up)
-            EwSandstormOverlayRenderer.render(ctx.matrices(), ctx.consumers());
+            // Wall/overlay rendering happens in the HUD pass now to avoid POV seams.
+            return;
         });
     }
 
