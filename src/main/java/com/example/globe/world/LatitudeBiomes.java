@@ -138,7 +138,7 @@ public final class LatitudeBiomes {
     private static final int BAND_TEMPERATE = 2;
     private static final int BAND_SUBPOLAR = 3;
     private static final int BAND_POLAR = 4;
-    private static final double SUBTROPICAL_ARID_SHOULDER_U = 0.84;
+    private static final double SUBTROPICAL_ARID_SHOULDER_U = 0.92;
 
     private static int bandIndexForBand(LatitudeBands.Band band) {
         return switch (band) {
