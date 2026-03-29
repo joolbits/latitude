@@ -3281,7 +3281,9 @@ public final class LatitudeBiomes {
         }
         t = LatitudeMath.clamp(t, 0.0, 1.0);
 
-        double tw = LatitudeMath.clamp((t - 0.25) / 0.50, 0.0, 1.0);
+        // Ease in the snowy pool a little later and over a wider span so the lower
+        // subpolar shoulder stays patchy (taiga/forest) before fully committing to snow.
+        double tw = LatitudeMath.clamp((t - 0.30) / 0.55, 0.0, 1.0);
         double pSnow = tw * tw * (3.0 - 2.0 * tw);
 
         if (t > 0.90) pSnow = 1.0;
