@@ -148,6 +148,7 @@ public class GlobeMod implements ModInitializer {
 
             LatitudeWorldState worldState = LatitudeWorldState.get(overworld);
             boolean isBrandNewWorld = overworld.getTime() < 100L;
+            boolean spawnAlreadyChosen = handler.player.getCommandTags().contains(SPAWN_CHOSEN_TAG);
 
             String pendingZone = server.isDedicated() ? null : GlobePending.consume();
 
@@ -165,7 +166,7 @@ public class GlobeMod implements ModInitializer {
                 }
             }
 
-            if (isGlobe && !worldState.isSpawnPickerDismissed() && isBrandNewWorld) {
+            if (isGlobe && !spawnAlreadyChosen && !worldState.isSpawnPickerDismissed() && isBrandNewWorld) {
                 if (pendingZone != null) {
                     applySpawnChoice(handler.player, pendingZone);
                 }
