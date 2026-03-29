@@ -1,7 +1,7 @@
 {
   "replace": false,
   "values": [
-    "minecraft:desert",
-    "minecraft:badlands"
+    "minecraft:plains",
+    "minecraft:forest"
   ]
 }
