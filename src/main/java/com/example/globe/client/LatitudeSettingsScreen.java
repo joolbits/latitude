@@ -15,6 +15,16 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class LatitudeSettingsScreen extends Screen {
+    // ── Theme constants shared with bespoke world-creation UI ──
+    private static final int BG_COLOR = 0xFF2C2420;
+    private static final int GOLD = 0xFFD4A74A;
+    private static final int WARM_WHITE = 0xFFEDE0D0;
+    private static final int MUTED = 0xFF8C8078;
+    private static final int PANEL_BORDER = 0xFF5C4A3A;
+    private static final int PANEL_BG = 0xFF3A302A;
+    private static final int GRID_COLOR = 0x14504840;
+    private static final int GRID_STEP = 16;
+
     private final Screen parent;
 
     private int scrollY = 0;
@@ -44,17 +54,18 @@ public class LatitudeSettingsScreen extends Screen {
         this.doneButton = null;
         this.resetButton = null;
 
-        this.panelWidth = Math.min(380, this.width - 40);
+        int gutter = Math.max(28, this.width / 16);
+        this.panelWidth = Math.min(420, this.width - gutter * 2);
         this.panelX = (this.width - this.panelWidth) / 2;
-        this.panelTop = 76;
-        this.panelBottom = this.height - 60;
-        this.scrollAreaHeight = Math.max(120, this.panelBottom - this.panelTop - 70);
+        this.panelTop = Math.max(96, this.height / 6 + 28);
+        this.panelBottom = this.height - 86;
+        this.scrollAreaHeight = Math.max(140, this.panelBottom - this.panelTop - 76);
 
-        int columnX = this.panelX + 24;
-        int w = this.panelWidth - 48;
+        int columnX = this.panelX + 30;
+        int w = this.panelWidth - 60;
         int h = 20;
 
-        int y = this.panelTop + 22;
+        int y = this.panelTop + 24;
 
         int baseY;
 
@@ -140,9 +151,9 @@ public class LatitudeSettingsScreen extends Screen {
 
         this.contentHeight = y - this.panelTop;
 
-        int footerY = this.panelBottom - 28;
-        int buttonWidth = 90;
-        int buttonSpacing = 12;
+        int footerY = this.panelBottom - 26;
+        int buttonWidth = 96;
+        int buttonSpacing = 14;
         int footerTotal = buttonWidth * 2 + buttonSpacing;
         int footerX = this.panelX + (this.panelWidth - footerTotal) / 2;
 
@@ -170,8 +181,7 @@ public class LatitudeSettingsScreen extends Screen {
 
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
-        this.renderInGameBackground(context);
-
+        context.fill(0, 0, this.width, this.height, BG_COLOR);
         drawPanel(context);
         drawHeader(context);
 
@@ -267,38 +277,63 @@ public class LatitudeSettingsScreen extends Screen {
     }
 
     private void drawPanel(DrawContext context) {
-        int outer = 0x88000000;
-        int inner = 0xCC111111;
-        int frame = 0x55FFFFFF;
+        int inset = 10;
+        int x0 = panelX - inset;
+        int y0 = panelTop - inset - 16;
+        int x1 = panelX + panelWidth + inset;
+        int y1 = panelBottom + inset + 12;
 
-        context.fill(panelX - 4, panelTop - 18, panelX + panelWidth + 4, panelBottom + 16, outer);
-        context.fill(panelX, panelTop - 14, panelX + panelWidth, panelBottom + 12, inner);
+        // Outer glow
+        context.fill(x0, y0, x1, y1, 0x55000000);
 
-        // simple frame
-        context.fill(panelX, panelTop - 14, panelX + panelWidth, panelTop - 13, frame);
-        context.fill(panelX, panelBottom + 11, panelX + panelWidth, panelBottom + 12, frame);
-        context.fill(panelX, panelTop - 14, panelX + 1, panelBottom + 12, frame);
-        context.fill(panelX + panelWidth - 1, panelTop - 14, panelX + panelWidth, panelBottom + 12, frame);
+        // Panel shell
+        context.fill(panelX, panelTop - 14, panelX + panelWidth, panelBottom + 10, PANEL_BORDER);
+        context.fill(panelX + 1, panelTop - 13, panelX + panelWidth - 1, panelBottom + 9, PANEL_BG);
 
-        int frameSoft = 0x33FFFFFF;
-        context.fill(panelX + 3, panelTop - 11, panelX + panelWidth - 3, panelTop - 10, frameSoft);
-        context.fill(panelX + 3, panelBottom + 8, panelX + panelWidth - 3, panelBottom + 9, frameSoft);
+        // Grid detail
+        drawGridDecoration(context, panelX + 2, panelTop - 12, panelWidth - 4, (panelBottom + 8) - (panelTop - 12));
+
+        // Inner frame accent
+        context.fill(panelX + 2, panelTop - 12, panelX + panelWidth - 2, panelTop - 11, GOLD & 0x66FFFFFF);
+        context.fill(panelX + 2, panelBottom + 7, panelX + panelWidth - 2, panelBottom + 8, GOLD & 0x66FFFFFF);
     }
 
     private void drawHeader(DrawContext context) {
         int centerX = this.width / 2;
-        int titleY = this.panelTop - 36;
-        int subtitleY = titleY + 12;
-        int helperY = subtitleY + 12;
-        Text brand = Text.literal("LATITUDE");
-        Text subtitle = Text.literal("Settings");
-        Text helper = Text.literal("Configure HUD, capture, and alerts");
-        Text section = Text.literal("Client");
+        int titleY = this.panelTop - 60;
+        int subtitleY = titleY + 18;
+        int helperY = subtitleY + 14;
+        int sectionY = this.panelTop - 18;
 
-        context.drawTextWithShadow(this.textRenderer, brand, centerX - this.textRenderer.getWidth(brand) / 2, titleY, 0xFFFFFF);
-        context.drawTextWithShadow(this.textRenderer, subtitle, centerX - this.textRenderer.getWidth(subtitle) / 2, subtitleY, 0xA0C8FF);
-        context.drawTextWithShadow(this.textRenderer, helper, centerX - this.textRenderer.getWidth(helper) / 2, helperY, 0x80FFFFFF);
-        context.drawTextWithShadow(this.textRenderer, section, centerX - this.textRenderer.getWidth(section) / 2, this.panelTop - 4, 0xA0FFFFFF);
+        drawScaledCenteredText(context, Text.literal("LATITUDE"), centerX, titleY, 1.4f, GOLD, false);
+        drawCenteredText(context, Text.literal("Settings"), centerX, subtitleY, WARM_WHITE, true);
+        drawCenteredText(context, Text.literal("Configure HUD, capture, and alerts"), centerX, helperY, MUTED, false);
+        drawCenteredText(context, Text.literal("Client"), centerX, sectionY, MUTED, true);
+    }
+
+    private void drawCenteredText(DrawContext context, Text text, int centerX, int y, int color, boolean shadow) {
+        int w = this.textRenderer.getWidth(text);
+        context.drawText(this.textRenderer, text, centerX - w / 2, y, color, shadow);
+    }
+
+    private void drawScaledCenteredText(DrawContext context, Text text, int centerX, int y, float scale, int color, boolean shadow) {
+        var matrices = context.getMatrices();
+        matrices.pushMatrix();
+        matrices.translate((float) centerX, (float) y);
+        matrices.scale(scale, scale);
+        int w = this.textRenderer.getWidth(text);
+        context.drawText(this.textRenderer, text, -w / 2, 0, color, shadow);
+        matrices.popMatrix();
+    }
+
+    private void drawGridDecoration(DrawContext context, int x, int y, int w, int h) {
+        if (h < 20 || w < 20) return;
+        for (int gy = GRID_STEP; gy < h; gy += GRID_STEP) {
+            context.fill(x, y + gy, x + w, y + gy + 1, GRID_COLOR);
+        }
+        for (int gx = GRID_STEP; gx < w; gx += GRID_STEP) {
+            context.fill(x + gx, y, x + gx + 1, y + h, GRID_COLOR);
+        }
     }
 
     private interface DoubleConsumer {
