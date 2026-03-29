@@ -2943,9 +2943,6 @@ public final class LatitudeBiomes {
         double blendNoise = blobNoise01ScaledBlocks(WORLD_SEED, blockX, blockZ, blendPatchBlocks, BLEND_NOISE_SALT);
 
         int chosenBandIndex = blendNoise < blendT ? upperBandIndex : lowerBandIndex;
-        if (latNorm >= (LatitudeBands.Band.SUBPOLAR.lowDeg() / 90.0)) {
-            chosenBandIndex = Math.max(chosenBandIndex, BAND_SUBPOLAR);
-        }
 
         if (DEBUG_BLEND
                 && (blockX & 15) == 0
