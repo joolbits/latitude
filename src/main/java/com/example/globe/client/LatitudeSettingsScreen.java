@@ -9,6 +9,7 @@ import net.minecraft.client.gui.widget.ClickableWidget;
 import net.minecraft.client.gui.widget.CyclingButtonWidget;
 import net.minecraft.client.gui.widget.SliderWidget;
 import net.minecraft.text.Text;
+import net.minecraft.util.math.MathHelper;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -18,8 +19,15 @@ public class LatitudeSettingsScreen extends Screen {
 
     private int scrollY = 0;
     private int contentHeight = 0;
+    private int panelX;
+    private int panelWidth;
+    private int panelTop;
+    private int panelBottom;
+    private int scrollAreaHeight;
     private final List<ClickableWidget> layoutWidgets = new ArrayList<>();
     private final List<Integer> layoutBaseYs = new ArrayList<>();
+    private ButtonWidget doneButton;
+    private ButtonWidget resetButton;
 
     public LatitudeSettingsScreen(Screen parent) {
         super(Text.literal("Latitude Settings"));
@@ -33,12 +41,20 @@ public class LatitudeSettingsScreen extends Screen {
 
         this.layoutWidgets.clear();
         this.layoutBaseYs.clear();
+        this.doneButton = null;
+        this.resetButton = null;
 
-        int y = 28;
-        int w = 220;
+        this.panelWidth = Math.min(380, this.width - 40);
+        this.panelX = (this.width - this.panelWidth) / 2;
+        this.panelTop = 76;
+        this.panelBottom = this.height - 60;
+        this.scrollAreaHeight = Math.max(120, this.panelBottom - this.panelTop - 70);
+
+        int columnX = this.panelX + 24;
+        int w = this.panelWidth - 48;
         int h = 20;
 
-        final int columnX = (this.width - w) / 2;
+        int y = this.panelTop + 22;
 
         int baseY;
 
@@ -122,21 +138,25 @@ public class LatitudeSettingsScreen extends Screen {
         layoutBaseYs.add(baseY);
         y += 24;
 
-        baseY = y;
-        var wDone = this.addDrawableChild(ButtonWidget.builder(Text.literal("Done"), b -> {
+        this.contentHeight = y - this.panelTop;
+
+        int footerY = this.panelBottom - 28;
+        int buttonWidth = 90;
+        int buttonSpacing = 12;
+        int footerTotal = buttonWidth * 2 + buttonSpacing;
+        int footerX = this.panelX + (this.panelWidth - footerTotal) / 2;
+
+        this.doneButton = this.addDrawableChild(ButtonWidget.builder(Text.literal("Done"), b -> {
                     CompassHudConfig.saveCurrent();
                     LatitudeConfig.saveCurrent();
                     if (this.client != null) {
                         this.client.setScreen(this.parent);
                     }
                 })
-                .dimensions(columnX, y, 70, 20)
+                .dimensions(footerX, footerY, buttonWidth, 20)
                 .build());
-        layoutWidgets.add(wDone);
-        layoutBaseYs.add(baseY);
 
-        baseY = y;
-        var wReset = this.addDrawableChild(ButtonWidget.builder(Text.literal("Reset"), b -> {
+        this.resetButton = this.addDrawableChild(ButtonWidget.builder(Text.literal("Reset"), b -> {
                     applyDefaults(cfg);
                     applyDefaults(latCfg);
                     CompassHudConfig.saveCurrent();
@@ -144,23 +164,19 @@ public class LatitudeSettingsScreen extends Screen {
                     this.clearChildren();
                     this.init();
                 })
-                .dimensions(columnX + 150, y, 70, 20)
+                .dimensions(footerX + buttonWidth + buttonSpacing, footerY, buttonWidth, 20)
                 .build());
-        layoutWidgets.add(wReset);
-        layoutBaseYs.add(baseY);
-
-        y += 40;
-        this.contentHeight = y;
     }
 
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
         this.renderInGameBackground(context);
-        context.drawCenteredTextWithShadow(this.textRenderer, this.title, this.width / 2, 10, 0xFFFFFFFF);
 
-        int maxScroll = Math.max(0, contentHeight - (this.height - 20));
-        if (scrollY < 0) scrollY = 0;
-        if (scrollY > maxScroll) scrollY = maxScroll;
+        drawPanel(context);
+        drawHeader(context);
+
+        int maxScroll = Math.max(0, contentHeight - scrollAreaHeight);
+        scrollY = MathHelper.clamp(scrollY, 0, maxScroll);
 
         for (int i = 0; i < layoutWidgets.size(); i++) {
             ClickableWidget w = layoutWidgets.get(i);
@@ -168,9 +184,16 @@ public class LatitudeSettingsScreen extends Screen {
             int drawY = baseY - scrollY;
             w.setY(drawY);
 
-            boolean visible = drawY > -40 && drawY < (this.height + 40);
+            boolean visible = drawY >= panelTop && drawY <= panelBottom;
             w.visible = visible;
             w.active = visible;
+        }
+
+        if (doneButton != null) {
+            doneButton.setX(this.panelX + (this.panelWidth - (doneButton.getWidth() + resetButton.getWidth() + 12)) / 2);
+            doneButton.setY(this.panelBottom - 28);
+            resetButton.setX(doneButton.getX() + doneButton.getWidth() + 12);
+            resetButton.setY(doneButton.getY());
         }
 
         super.render(context, mouseX, mouseY, delta);
@@ -178,9 +201,9 @@ public class LatitudeSettingsScreen extends Screen {
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
-        int maxScroll = Math.max(0, contentHeight - (this.height - 20));
+        int maxScroll = Math.max(0, contentHeight - scrollAreaHeight);
         scrollY -= (int) Math.signum(verticalAmount) * 18;
-        scrollY = Math.max(0, Math.min(maxScroll, scrollY));
+        scrollY = MathHelper.clamp(scrollY, 0, maxScroll);
         return true;
     }
 
@@ -241,6 +264,41 @@ public class LatitudeSettingsScreen extends Screen {
     private static boolean isWindows() {
         String os = System.getProperty("os.name", "");
         return os.toLowerCase(java.util.Locale.ROOT).contains("win");
+    }
+
+    private void drawPanel(DrawContext context) {
+        int outer = 0x88000000;
+        int inner = 0xCC111111;
+        int frame = 0x55FFFFFF;
+
+        context.fill(panelX - 4, panelTop - 18, panelX + panelWidth + 4, panelBottom + 16, outer);
+        context.fill(panelX, panelTop - 14, panelX + panelWidth, panelBottom + 12, inner);
+
+        // simple frame
+        context.fill(panelX, panelTop - 14, panelX + panelWidth, panelTop - 13, frame);
+        context.fill(panelX, panelBottom + 11, panelX + panelWidth, panelBottom + 12, frame);
+        context.fill(panelX, panelTop - 14, panelX + 1, panelBottom + 12, frame);
+        context.fill(panelX + panelWidth - 1, panelTop - 14, panelX + panelWidth, panelBottom + 12, frame);
+
+        int frameSoft = 0x33FFFFFF;
+        context.fill(panelX + 3, panelTop - 11, panelX + panelWidth - 3, panelTop - 10, frameSoft);
+        context.fill(panelX + 3, panelBottom + 8, panelX + panelWidth - 3, panelBottom + 9, frameSoft);
+    }
+
+    private void drawHeader(DrawContext context) {
+        int centerX = this.width / 2;
+        int titleY = this.panelTop - 36;
+        int subtitleY = titleY + 12;
+        int helperY = subtitleY + 12;
+        Text brand = Text.literal("LATITUDE");
+        Text subtitle = Text.literal("Settings");
+        Text helper = Text.literal("Configure HUD, capture, and alerts");
+        Text section = Text.literal("Client");
+
+        context.drawTextWithShadow(this.textRenderer, brand, centerX - this.textRenderer.getWidth(brand) / 2, titleY, 0xFFFFFF);
+        context.drawTextWithShadow(this.textRenderer, subtitle, centerX - this.textRenderer.getWidth(subtitle) / 2, subtitleY, 0xA0C8FF);
+        context.drawTextWithShadow(this.textRenderer, helper, centerX - this.textRenderer.getWidth(helper) / 2, helperY, 0x80FFFFFF);
+        context.drawTextWithShadow(this.textRenderer, section, centerX - this.textRenderer.getWidth(section) / 2, this.panelTop - 4, 0xA0FFFFFF);
     }
 
     private interface DoubleConsumer {
