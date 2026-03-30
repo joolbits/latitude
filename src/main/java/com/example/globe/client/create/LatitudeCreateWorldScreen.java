@@ -119,6 +119,7 @@ public class LatitudeCreateWorldScreen extends Screen {
     private int worldTypeIdx = 0;  // 0=Latitude, 1=Vanilla, 2=Vanilla Superflat
     private GameRules gameRules;
 
+    private String worldNameInput = "New World";
     private TextFieldWidget worldNameField;
     private TextFieldWidget seedField;
     private ButtonWidget sizePrevBtn;
@@ -315,7 +316,8 @@ public class LatitudeCreateWorldScreen extends Screen {
         worldFieldY = panelTop + labelFieldGap;
         this.worldNameField = new TextFieldWidget(this.textRenderer, inputX, worldFieldY, inputW, fieldH, Text.literal("World Name"));
         this.worldNameField.setMaxLength(64);
-        this.worldNameField.setText("New World");
+        this.worldNameField.setText(worldNameInput);
+        this.worldNameField.setChangedListener(text -> worldNameInput = text);
         this.addDrawableChild(this.worldNameField);
 
         // ── 2. Seed ──
@@ -438,6 +440,9 @@ public class LatitudeCreateWorldScreen extends Screen {
         if (idx < 0) idx = sizes.length - 1;
         if (idx >= sizes.length) idx = 0;
         selectedSize = sizes[idx];
+        if (this.worldNameField != null) {
+            worldNameInput = this.worldNameField.getText();
+        }
         this.clearAndInit();
     }
 
