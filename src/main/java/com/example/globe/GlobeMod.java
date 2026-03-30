@@ -167,15 +167,17 @@ public class GlobeMod implements ModInitializer {
             }
 
             if (isGlobe && !spawnAlreadyChosen && !worldState.isSpawnPickerDismissed() && isBrandNewWorld) {
-                if (pendingZone != null) {
-                    applySpawnChoice(handler.player, pendingZone);
+                // Legacy post-load spawn picker path is no longer used. Apply a spawn choice immediately
+                // (pending value from bespoke flow when present, otherwise fall back to TEMPERATE) and
+                // mark the picker dismissed so the old menu cannot reopen on first load or crash recovery.
+                String zoneToApply = pendingZone != null ? pendingZone : "TEMPERATE";
+
+                if (pendingZone == null) {
+                    LOGGER.info("No pending spawn zone from bespoke flow; defaulting to TEMPERATE and suppressing legacy picker");
                 }
 
-                if (!worldState.isSpawnPickerDismissed()) {
-                    worldState.setSpawnPickerDismissed(true);
-                    LOGGER.info("Sending spawn picker open to player={}", handler.player.getName().getString());
-                    ServerPlayNetworking.send(handler.player, new GlobeNet.OpenSpawnPickerPayload(true));
-                }
+                applySpawnChoice(handler.player, zoneToApply);
+                worldState.setSpawnPickerDismissed(true);
             }
         });
 
