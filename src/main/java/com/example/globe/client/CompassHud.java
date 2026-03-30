@@ -168,7 +168,7 @@ public final class CompassHud {
 
         int x;
         int y;
-        if (cfg.attachToHotbarCompass && client.player != null) {
+        if (cfg.style == CompassHudConfig.CompassStyle.DIGITAL && cfg.attachToHotbarCompass && client.player != null) {
             int slotIndex = findHotbarCompassSlot(client.player);
             if (slotIndex >= 0) {
                 int hotbarLeft = screenW / 2 - 91;
@@ -314,6 +314,7 @@ public final class CompassHud {
 
     private static void drawAnalogCompass(DrawContext ctx, CompassHudConfig cfg, int cx, int cy, int radius, double angle) {
         int r2 = radius * radius;
+        var colors = analogColors(cfg);
         for (int dy = -radius; dy <= radius; dy++) {
             for (int dx = -radius; dx <= radius; dx++) {
                 int dist2 = dx * dx + dy * dy;
@@ -321,42 +322,42 @@ public final class CompassHud {
                 int px = cx + dx;
                 int py = cy + dy;
                 if (dist2 > (radius - 2) * (radius - 2)) {
-                    ctx.fill(px, py, px + 1, py + 1, ANALOG_RING);
+                    ctx.fill(px, py, px + 1, py + 1, colors.ring());
                 } else {
-                    ctx.fill(px, py, px + 1, py + 1, analogInnerColor(cfg));
+                    ctx.fill(px, py, px + 1, py + 1, analogInnerColor(cfg, colors.face()));
                 }
             }
         }
 
         int tickLen = Math.max(2, radius / 6);
         // North tick (up)
-        ctx.fill(cx, cy - radius + 2, cx + 1, cy - radius + 2 + tickLen, ANALOG_RING);
+        ctx.fill(cx, cy - radius + 2, cx + 1, cy - radius + 2 + tickLen, colors.ring());
         // South tick
-        ctx.fill(cx, cy + radius - 2 - tickLen, cx + 1, cy + radius - 2, ANALOG_MUTED);
+        ctx.fill(cx, cy + radius - 2 - tickLen, cx + 1, cy + radius - 2, colors.muted());
         // East tick
-        ctx.fill(cx + radius - 2 - tickLen, cy, cx + radius - 2, cy + 1, ANALOG_MUTED);
+        ctx.fill(cx + radius - 2 - tickLen, cy, cx + radius - 2, cy + 1, colors.muted());
         // West tick
-        ctx.fill(cx - radius + 2, cy, cx - radius + 2 + tickLen, cy + 1, ANALOG_MUTED);
+        ctx.fill(cx - radius + 2, cy, cx - radius + 2 + tickLen, cy + 1, colors.muted());
 
         String nLabel = "N";
         int nW = MinecraftClient.getInstance().textRenderer.getWidth(nLabel);
-        ctx.drawText(MinecraftClient.getInstance().textRenderer, nLabel, cx - nW / 2 + 1, cy - radius + 2 + tickLen + 1, ANALOG_N_COLOR, true);
+        ctx.drawText(MinecraftClient.getInstance().textRenderer, nLabel, cx - nW / 2 + 1, cy - radius + 2 + tickLen + 1, colors.needle(), true);
 
         int needleLen = radius - 4;
         int nx = cx + (int) Math.round(Math.sin(angle) * needleLen);
         int ny = cy - (int) Math.round(Math.cos(angle) * needleLen);
-        drawLine(ctx, cx, cy, nx, ny, ANALOG_N_COLOR);
+        drawLine(ctx, cx, cy, nx, ny, colors.needle());
 
         int sx = cx - (int) Math.round(Math.sin(angle) * (needleLen * 0.6));
         int sy = cy + (int) Math.round(Math.cos(angle) * (needleLen * 0.6));
-        drawLine(ctx, cx, cy, sx, sy, ANALOG_RING);
+        drawLine(ctx, cx, cy, sx, sy, colors.ring());
 
-        ctx.fill(cx - 1, cy - 1, cx + 2, cy + 2, ANALOG_RING);
+        ctx.fill(cx - 1, cy - 1, cx + 2, cy + 2, colors.ring());
     }
 
-    private static int analogInnerColor(CompassHudConfig cfg) {
+    private static int analogInnerColor(CompassHudConfig cfg, int faceRgb) {
         int a = MathHelper.clamp((int) Math.round(cfg.analogInnerAlpha * 255.0f), 0, 255);
-        return (a << 24) | (ANALOG_FACE_RGB & 0xFFFFFF);
+        return (a << 24) | (faceRgb & 0xFFFFFF);
     }
 
     private static void drawLine(DrawContext ctx, int x0, int y0, int x1, int y1, int color) {
@@ -434,26 +435,10 @@ public final class CompassHud {
 
         int x;
         int y;
-        if (cfg.attachToHotbarCompass && client.player != null) {
-            int slotIndex = findHotbarCompassSlot(client.player);
-            if (slotIndex >= 0) {
-                int hotbarLeft = screenW / 2 - 91;
-                int hotbarTop = screenH - 22;
-                int hotbarRight = hotbarLeft + 182;
-                int margin = 4;
-                x = hotbarRight + margin;
-                y = hotbarTop + (22 - boxH) / 2;
-                if (x + boxW > screenW - margin) {
-                    x = hotbarLeft - margin - boxW;
-                }
-            } else {
-                x = anchoredX(cfg, screenW, boxW);
-                y = anchoredY(cfg, screenH, boxH);
-            }
-        } else {
-            x = anchoredX(cfg, screenW, boxW);
-            y = anchoredY(cfg, screenH, boxH);
-        }
+        x = anchoredX(cfg, screenW, boxW);
+        y = anchoredY(cfg, screenH, boxH);
+        x += cfg.offsetX;
+        y += cfg.offsetY;
 
         x = clamp(x, 0, Math.max(0, screenW - boxW));
         y = clamp(y, 0, Math.max(0, screenH - boxH));
@@ -476,33 +461,32 @@ public final class CompassHud {
 
         int x;
         int y;
-        if (cfg.attachToHotbarCompass && client.player != null) {
-            int slotIndex = findHotbarCompassSlot(client.player);
-            if (slotIndex >= 0) {
-                int hotbarLeft = screenW / 2 - 91;
-                int hotbarTop = screenH - 22;
-                int hotbarRight = hotbarLeft + 182;
-                int margin = 4;
-                x = hotbarRight + margin;
-                y = hotbarTop + (22 - boxH) / 2;
-                if (x + boxW > screenW - margin) {
-                    x = hotbarLeft - margin - boxW;
-                }
-            } else {
-                x = anchoredX(cfg, screenW, boxW);
-                y = anchoredY(cfg, screenH, boxH);
-            }
-        } else {
-            x = anchoredX(cfg, screenW, boxW);
-            y = anchoredY(cfg, screenH, boxH);
-        }
-
+        x = anchoredX(cfg, screenW, boxW);
+        y = anchoredY(cfg, screenH, boxH);
         x += cfg.offsetX;
         y += cfg.offsetY;
 
         x = clamp(x, 0, Math.max(0, screenW - boxW));
         y = clamp(y, 0, Math.max(0, screenH - boxH));
         return new HudBounds(x, y, boxW, boxH);
+    }
+
+    private static HudPoint computeAttachedCompassPosition(int screenW, int screenH, CompassHudConfig cfg, int boxW, int boxH) {
+        int hotbarLeft = screenW / 2 - 91;
+        int hotbarTop = screenH - 22;
+        if (cfg.style == CompassHudConfig.CompassStyle.ANALOG) {
+            int x = hotbarLeft + (182 - boxW) / 2;
+            int y = hotbarTop + (22 - boxH) / 2;
+            return new HudPoint(x, y);
+        }
+        int hotbarRight = hotbarLeft + 182;
+        int margin = 4;
+        int x = hotbarRight + margin;
+        int y = hotbarTop + (22 - boxH) / 2;
+        if (x + boxW > screenW - margin) {
+            x = hotbarLeft - margin - boxW;
+        }
+        return new HudPoint(x, y);
     }
 
     private static int analogDiameter(CompassHudConfig cfg) {
@@ -529,18 +513,9 @@ public final class CompassHud {
         if (cfg.attachToHotbarCompass && client.player != null) {
             int slotIndex = findHotbarCompassSlot(client.player);
             if (slotIndex >= 0) {
-                int hotbarLeft = screenW / 2 - 91;
-                int hotbarTop = screenH - 22;
-                int hotbarRight = hotbarLeft + 182;
-
-                int margin = 4;
-
-                x = hotbarRight + margin;
-                y = hotbarTop + (22 - scaledBoxH) / 2;
-
-                if (x + scaledBoxW > screenW - margin) {
-                    x = hotbarLeft - margin - scaledBoxW;
-                }
+                var attached = computeAttachedCompassPosition(screenW, screenH, cfg, scaledBoxW, scaledBoxH);
+                x = attached.x;
+                y = attached.y;
             } else {
                 x = anchoredX(cfg, screenW, scaledBoxW);
                 y = anchoredY(cfg, screenH, scaledBoxH);
@@ -739,5 +714,18 @@ public final class CompassHud {
         x = clamp(x, 0, Math.max(0, screenW - w));
         y = clamp(y, 0, Math.max(0, screenH - h));
         return new HudBounds(x, y, w, h);
+    }
+    
+    private record AnalogColors(int face, int ring, int muted, int needle) {}
+
+    private static AnalogColors analogColors(CompassHudConfig cfg) {
+        return switch (cfg.analogTheme) {
+            case PALE_GOLD -> new AnalogColors(0x233029, 0xFFE5C07B, 0xFFA58C6F, 0xFFDD845A);
+            case RED_IVORY -> new AnalogColors(0x292221, 0xFFE3D4C8, 0xFF9E8B83, 0xFFE05B4F);
+            case CYAN_STEEL -> new AnalogColors(0x1A232A, 0xFF5CC8FF, 0xFF8FB7CC, 0xFF52E0FF);
+            case MINT_BRASS -> new AnalogColors(0x1C2823, 0xFFD4B87A, 0xFF8FA58F, 0xFF6AE6B8);
+            case CLASSIC_GOLD -> new AnalogColors(ANALOG_FACE_RGB, ANALOG_RING, ANALOG_MUTED, ANALOG_N_COLOR);
+            default -> new AnalogColors(ANALOG_FACE_RGB, ANALOG_RING, ANALOG_MUTED, ANALOG_N_COLOR);
+        };
     }
 }

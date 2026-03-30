@@ -14,6 +14,7 @@ public final class CompassHudConfig {
     public enum ShowMode { ALWAYS, COMPASS_PRESENT, HOLDING_COMPASS }
     public enum DirectionMode { CARDINAL_4, CARDINAL_8, DEGREES }
     public enum CompassStyle { DIGITAL, ANALOG }
+    public enum AnalogCompassTheme { CLASSIC_GOLD, PALE_GOLD, RED_IVORY, CYAN_STEEL, MINT_BRASS }
     public enum HAnchor { LEFT, CENTER, RIGHT }
     public enum VAnchor { TOP, CENTER, BOTTOM }
 
@@ -22,6 +23,7 @@ public final class CompassHudConfig {
 
     public ShowMode showMode = ShowMode.COMPASS_PRESENT;
     public CompassStyle style = CompassStyle.DIGITAL;
+    public AnalogCompassTheme analogTheme = AnalogCompassTheme.CLASSIC_GOLD;
     public DirectionMode directionMode = DirectionMode.CARDINAL_8;
 
     // Positioning (screen-space)
@@ -130,6 +132,7 @@ public final class CompassHudConfig {
     private void sanitize() {
         if (showMode == null) showMode = ShowMode.COMPASS_PRESENT;
         if (style == null) style = CompassStyle.DIGITAL;
+        if (analogTheme == null) analogTheme = AnalogCompassTheme.CLASSIC_GOLD;
         if (directionMode == null) directionMode = DirectionMode.CARDINAL_8;
         if (hAnchor == null) hAnchor = HAnchor.CENTER;
         if (vAnchor == null) vAnchor = VAnchor.TOP;
