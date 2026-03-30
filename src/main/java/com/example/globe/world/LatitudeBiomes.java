@@ -2005,11 +2005,16 @@ public final class LatitudeBiomes {
             out = pickColdFallback(biomeRegistry, base, blockX, blockZ, landBandIndex);
         }
         out = enforceLandBandPool(biomeRegistry, out, blockX, blockZ, t, landBandIndex, mountainLike);
-        if (isSnowyVariant(out) && latitudeDegreesFromRadius(blockZ, effectiveRadius) < SNOWY_RAMP_START_DEG) {
-            try {
-                out = biome(biomeRegistry, "minecraft:taiga");
-            } catch (Throwable ignored) {
-                // keep current pick
+        if (isSnowyVariant(out)) {
+            double _bgDeg = latitudeDegreesFromRadius(blockZ, effectiveRadius);
+            double _bgAlpha = snowyRampAlpha(_bgDeg);
+            double _bgR = ValueNoise2D.sampleBlocks(WORLD_SEED ^ SNOWY_RAMP_SALT, blockX, blockZ, SNOWY_RAMP_PATCH_BLOCKS);
+            if (_bgR > _bgAlpha) {
+                try {
+                    out = biome(biomeRegistry, "minecraft:taiga");
+                } catch (Throwable ignored) {
+                    // keep current pick
+                }
             }
         }
         out = enforcePaleGardenRegion(biomeRegistry, out, base, blockX, blockZ, landBandIndex, effectiveRadius);
@@ -2482,10 +2487,15 @@ public final class LatitudeBiomes {
             out = pickColdFallback(biomePool, base, blockX, blockZ, landBandIndex);
         }
         out = enforceLandBandPool(biomePool, out, blockX, blockZ, t, landBandIndex, mountainLike);
-        if (isSnowyVariant(out) && latitudeDegreesFromRadius(blockZ, effectiveRadius) < SNOWY_RAMP_START_DEG) {
-            RegistryEntry<Biome> taigaFallback = entryById(biomePool, "minecraft:taiga");
-            if (taigaFallback != null) {
-                out = taigaFallback;
+        if (isSnowyVariant(out)) {
+            double _bgDeg = latitudeDegreesFromRadius(blockZ, effectiveRadius);
+            double _bgAlpha = snowyRampAlpha(_bgDeg);
+            double _bgR = ValueNoise2D.sampleBlocks(WORLD_SEED ^ SNOWY_RAMP_SALT, blockX, blockZ, SNOWY_RAMP_PATCH_BLOCKS);
+            if (_bgR > _bgAlpha) {
+                RegistryEntry<Biome> taigaFallback = entryById(biomePool, "minecraft:taiga");
+                if (taigaFallback != null) {
+                    out = taigaFallback;
+                }
             }
         }
         out = enforcePaleGardenRegion(biomePool, out, base, blockX, blockZ, landBandIndex, effectiveRadius);
