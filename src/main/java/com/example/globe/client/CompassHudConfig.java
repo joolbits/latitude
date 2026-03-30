@@ -40,6 +40,14 @@ public final class CompassHudConfig {
     // Analog styling
     public float analogInnerAlpha = 0.65f; // 0..1
 
+    // Zone label
+    public boolean displayZoneInHud = false;
+    public boolean zoneFollowsCompass = true;
+    public HAnchor zoneHAnchor = HAnchor.CENTER;
+    public VAnchor zoneVAnchor = VAnchor.TOP;
+    public int zoneOffsetX = 0;
+    public int zoneOffsetY = 0;
+
     // Styling
     public boolean showBackground = true;
     public int backgroundRgb = 0x000000;
@@ -136,6 +144,8 @@ public final class CompassHudConfig {
         if (analogSize > 128.0f) analogSize = 128.0f;
         if (analogInnerAlpha < 0.0f) analogInnerAlpha = 0.0f;
         if (analogInnerAlpha > 1.0f) analogInnerAlpha = 1.0f;
+        if (zoneHAnchor == null) zoneHAnchor = HAnchor.CENTER;
+        if (zoneVAnchor == null) zoneVAnchor = VAnchor.TOP;
         if (padding < 0) padding = 0;
         if (backgroundAlpha < 0) backgroundAlpha = 0;
         if (backgroundAlpha > 255) backgroundAlpha = 255;

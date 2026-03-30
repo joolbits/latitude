@@ -34,10 +34,14 @@ public class LatitudeSettingsScreen extends Screen {
     private int panelTop;
     private int panelBottom;
     private int scrollAreaHeight;
+    private int columnXCache;
+    private int columnWCache;
     private final List<ClickableWidget> layoutWidgets = new ArrayList<>();
     private final List<Integer> layoutBaseYs = new ArrayList<>();
     private ButtonWidget doneButton;
     private ButtonWidget resetButton;
+    private boolean compassExpanded = false;
+    private int compassPreviewBaseY = -1;
 
     public LatitudeSettingsScreen(Screen parent) {
         super(Text.literal("Latitude Settings"));
@@ -57,13 +61,15 @@ public class LatitudeSettingsScreen extends Screen {
         int gutter = Math.max(28, this.width / 16);
         this.panelWidth = Math.min(420, this.width - gutter * 2);
         this.panelX = (this.width - this.panelWidth) / 2;
-        this.panelTop = Math.max(96, this.height / 6 + 28);
+        this.panelTop = Math.max(116, this.height / 6 + 38);
         this.panelBottom = this.height - 86;
         this.scrollAreaHeight = Math.max(140, this.panelBottom - this.panelTop - 76);
 
         int columnX = this.panelX + 30;
         int w = this.panelWidth - 60;
         int h = 20;
+        this.columnXCache = columnX;
+        this.columnWCache = w;
 
         int y = this.panelTop + 24;
 
@@ -128,6 +134,54 @@ public class LatitudeSettingsScreen extends Screen {
         baseY = y;
         var wTitleSec = this.addDrawableChild(new StepSlider(columnX, y, w, h, Text.literal("Title Duration (seconds)"), 2.0, 10.0, 0.5, LatitudeConfig.zoneEnterTitleSeconds, v -> LatitudeConfig.zoneEnterTitleSeconds = v));
         layoutWidgets.add(wTitleSec);
+        layoutBaseYs.add(baseY);
+        y += 24;
+
+        baseY = y;
+        var wCompassExpander = this.addDrawableChild(ButtonWidget.builder(Text.literal(compassSummary(cfg)), b -> {
+                    compassExpanded = !compassExpanded;
+                    this.clearChildren();
+                    this.init();
+                })
+                .dimensions(columnX, y, w, h)
+                .build());
+        layoutWidgets.add(wCompassExpander);
+        layoutBaseYs.add(baseY);
+        y += 24;
+
+        if (compassExpanded) {
+            baseY = y;
+            var wCompassStyle = this.addDrawableChild(CyclingButtonWidget.<CompassHudConfig.CompassStyle>builder(v -> Text.literal(v == CompassHudConfig.CompassStyle.ANALOG ? "Analog" : "Digital"), () -> cfg.style)
+                    .values(CompassHudConfig.CompassStyle.values())
+                    .build(columnX, y, w, h, Text.literal("Style"), (btn, value) -> {
+                        cfg.style = value;
+                        CompassHudConfig.saveCurrent();
+                        this.clearChildren();
+                        this.init();
+                    }));
+            layoutWidgets.add(wCompassStyle);
+            layoutBaseYs.add(baseY);
+            y += 24;
+
+            baseY = y;
+            var wCompassCompact = this.addDrawableChild(CyclingButtonWidget.<Boolean>builder(v -> Text.literal(v ? "ON" : "OFF"), () -> cfg.compactHud)
+                    .values(true, false)
+                    .build(columnX, y, w, h, Text.literal("Compact"), (btn, value) -> cfg.compactHud = value));
+            layoutWidgets.add(wCompassCompact);
+            layoutBaseYs.add(baseY);
+            y += 24;
+
+            compassPreviewBaseY = y;
+            y += 36;
+        } else {
+            compassPreviewBaseY = -1;
+        }
+
+        baseY = y;
+        var wDisplayZone = this.addDrawableChild(CyclingButtonWidget.<Boolean>builder(v -> Text.literal(v ? "ON" : "OFF"), () -> cfg.displayZoneInHud)
+                .values(true, false)
+                .build(columnX, y, w, h, Text.literal("Zone Label"), (btn, value) -> cfg.displayZoneInHud = value));
+        layoutWidgets.add(wDisplayZone);
         layoutBaseYs.add(baseY);
         y += 24;
 
@@ -206,6 +260,13 @@ public class LatitudeSettingsScreen extends Screen {
             resetButton.setY(doneButton.getY());
         }
 
+        if (compassExpanded && compassPreviewBaseY >= 0) {
+            int previewY = compassPreviewBaseY - scrollY;
+            if (previewY >= panelTop && previewY <= panelBottom) {
+                drawCompassPreview(context, columnXCache, previewY, columnWCache, 28, CompassHudConfig.get());
+            }
+        }
+
         super.render(context, mouseX, mouseY, delta);
     }
 
@@ -224,6 +285,35 @@ public class LatitudeSettingsScreen extends Screen {
             case HOLDING_COMPASS -> Text.literal("When holding compass");
             case ALWAYS -> Text.literal("Always");
         };
+    }
+
+    private String compassSummary(CompassHudConfig cfg) {
+        String style = cfg.style == CompassHudConfig.CompassStyle.ANALOG ? "Analog" : "Digital";
+        String compact = cfg.compactHud ? "Compact: ON" : "Compact: OFF";
+        return "Compass Style: " + style + " | " + compact;
+    }
+
+    private void drawCompassPreview(DrawContext ctx, int x, int y, int w, int h, CompassHudConfig cfg) {
+        int boxColor = 0x33111111;
+        ctx.fill(x, y, x + w, y + h, boxColor);
+        int padding = 6;
+        if (cfg.style == CompassHudConfig.CompassStyle.ANALOG) {
+            int radius = Math.min(10, Math.min(w, h) / 3);
+            int cx = x + padding + radius;
+            int cy = y + h / 2;
+            ctx.fill(cx - radius, cy - radius, cx + radius, cy + radius, 0xAA1A1410);
+            ctx.fill(cx - radius, cy - radius, cx - radius + 1, cy + radius, 0xFFD4A74A);
+            ctx.fill(cx + radius - 1, cy - radius, cx + radius, cy + radius, 0xFFD4A74A);
+            ctx.fill(cx - radius, cy - radius, cx + radius, cy - radius + 1, 0xFFD4A74A);
+            ctx.fill(cx - radius, cy + radius - 1, cx + radius, cy + radius, 0xFFD4A74A);
+            ctx.fill(cx, cy - radius + 2, cx + 1, cy - radius + 6, 0xFFD4A74A);
+            ctx.drawText(this.textRenderer, "N", cx - 1, cy - radius + 7, 0xFFCC3333, true);
+            int textX = cx + radius + 6;
+            ctx.drawText(this.textRenderer, "57\u00b0S" + (cfg.compactHud ? " Tropics" : " · Tropics"), textX, cy - this.textRenderer.fontHeight / 2, 0xFFFFFFFF, true);
+        } else {
+            String text = cfg.compactHud ? "NW 57\u00b0S Tropics" : "NW · 57\u00b0S · Tropics";
+            ctx.drawText(this.textRenderer, text, x + padding, y + h / 2 - this.textRenderer.fontHeight / 2, 0xFFFFFFFF, true);
+        }
     }
 
 
@@ -250,6 +340,13 @@ public class LatitudeSettingsScreen extends Screen {
         cfg.analogShowLatitude = true;
         cfg.latitudeDecimals = 0;
         cfg.attachToHotbarCompass = false;
+        cfg.compactHud = false;
+        cfg.displayZoneInHud = false;
+        cfg.zoneFollowsCompass = true;
+        cfg.zoneHAnchor = CompassHudConfig.HAnchor.CENTER;
+        cfg.zoneVAnchor = CompassHudConfig.VAnchor.TOP;
+        cfg.zoneOffsetX = 0;
+        cfg.zoneOffsetY = 0;
     }
 
     private static void applyDefaults(LatitudeConfig cfg) {
@@ -304,7 +401,7 @@ public class LatitudeSettingsScreen extends Screen {
 
     private void drawHeader(DrawContext context) {
         int centerX = this.width / 2;
-        int titleY = this.panelTop - 60;
+        int titleY = this.panelTop - 70;
         int subtitleY = titleY + 18;
         int helperY = subtitleY + 14;
         int sectionY = this.panelTop - 18;
