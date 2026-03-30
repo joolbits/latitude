@@ -2030,11 +2030,7 @@ public final class LatitudeBiomes {
                     blockX, blockZ, landBandIndex, columnDecisionY);
         }
         if (landBandIndex == BAND_TROPICAL && tropicalBaseStep(blockX, Math.abs(blockZ), t) <= 1 && isJungleFamily(out)) {
-            try {
-                out = biome(biomeRegistry, "minecraft:savanna");
-            } catch (Throwable ignored) {
-                // keep current biome
-            }
+            out = pickOpenTropicalFallback(biomeRegistry, out, blockX, blockZ, t);
         }
         if (landBandIndex <= BAND_SUBTROPICAL) {
             RegistryEntry<Biome> beforeClamp = out;
