@@ -56,13 +56,14 @@ public class GlobeModClient implements ClientModInitializer {
         });
 
         ClientPlayNetworking.registerGlobalReceiver(GlobeNet.OpenSpawnPickerPayload.ID, (payload, context) -> {
+            // Legacy spawn picker is no longer part of the first-load flow; ignore any stale payloads.
             if (!payload.open()) {
                 return;
             }
 
             context.client().execute(() -> {
-                pendingSpawnPickerOpen = true;
-                GlobeMod.LOGGER.info("S2C open spawn picker received (pending=true)");
+                pendingSpawnPickerOpen = false;
+                GlobeMod.LOGGER.info("Ignoring legacy open spawn picker payload");
             });
         });
 
