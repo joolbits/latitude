@@ -2196,12 +2196,18 @@ function inferBiomeBandMask(biomeId) {
  if (shortId.includes('taiga')) return bandsToMask(['temperate', 'subpolar']);
  if (shortId.includes('desert') || shortId.includes('badlands')) return bandsToMask(['tropical', 'subtropical']);
  if (shortId.includes('savanna')) return bandsToMask(['tropical', 'subtropical']);
- if (shortId.includes('swamp')) return bandsToMask(['tropical', 'temperate']);
- if (shortId.includes('windswept') || shortId.includes('stony') || shortId.includes('peak') || shortId.includes('slope')) {
+ if (shortId.includes('swamp')) return bandsToMask(['tropical', 'subtropical', 'temperate']);
+ if (shortId.includes('windswept')) {
+  return bandsToMask(['subtropical', 'temperate', 'subpolar']);
+ }
+ if (shortId.includes('stony') || shortId.includes('peak') || shortId.includes('slope')) {
   return bandsToMask(['temperate', 'subpolar']);
  }
- if (shortId.includes('forest') || shortId.includes('plains') || shortId.includes('meadow') || shortId.includes('cherry') || shortId.includes('pale_garden')) {
+ if (shortId.includes('cherry') || shortId.includes('pale_garden')) {
   return bandsToMask(['temperate']);
+ }
+ if (shortId.includes('forest') || shortId.includes('plains') || shortId.includes('meadow')) {
+  return bandsToMask(['subtropical', 'temperate']);
  }
  return 0;
 }
