@@ -1,6 +1,7 @@
 package com.example.globe.client;
 
 import com.example.globe.GlobeMod;
+import com.example.globe.util.LatitudeBands;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.gui.DrawContext;
@@ -52,14 +53,14 @@ public final class GlobeWarningOverlay {
         registered = true;
     }
 
-    private static String zoneDisplayName(String zoneKey) {
-        return switch (zoneKey) {
-            case "EQUATOR", "TROPICAL" -> "Tropics";
-            case "SUBTROPICAL" -> "Subtropics";
+    private static String zoneDisplayName(String canonicalKey) {
+        return switch (canonicalKey) {
+            case "TROPICAL" -> "Tropical";
+            case "SUBTROPICAL" -> "Subtropical";
             case "TEMPERATE" -> "Temperate";
             case "SUBPOLAR" -> "Subpolar";
             case "POLAR" -> "Polar";
-            default -> zoneKey;
+            default -> canonicalKey;
         };
     }
 
@@ -161,11 +162,11 @@ public final class GlobeWarningOverlay {
                 lastZoneUpdateZ = pz;
 
                 var border = client.world.getWorldBorder();
-                String zoneKey = com.example.globe.util.LatitudeMath.zoneKey(border, client.player.getZ());
-                if (lastZoneKey == null || !lastZoneKey.equals(zoneKey)) {
-                    lastZoneKey = zoneKey;
+                String canonicalZoneKey = canonicalTitleZoneKey(border, client.player.getZ());
+                if (lastZoneKey == null || !lastZoneKey.equals(canonicalZoneKey)) {
+                    lastZoneKey = canonicalZoneKey;
                     if (LatitudeConfig.zoneEnterTitleEnabled) {
-                        String titleText = buildZoneEnterTitle(client, zoneKey);
+                        String titleText = buildZoneEnterTitle(client, canonicalZoneKey);
                         int durationTicks = (int) Math.round(clamp(LatitudeConfig.zoneEnterTitleSeconds, 2.0, 10.0) * 20.0);
                         double scale = clamp(LatitudeConfig.zoneEnterTitleScale, 1.0, 3.0);
                         ZoneEnterTitleOverlay.trigger(titleText, durationTicks, scale);
@@ -319,8 +320,8 @@ public final class GlobeWarningOverlay {
         return z > 0 ? 'N' : 'S';
     }
 
-    private static String buildZoneEnterTitle(MinecraftClient client, String zoneKey) {
-        String zoneName = zoneDisplayName(zoneKey).toUpperCase();
+    private static String buildZoneEnterTitle(MinecraftClient client, String canonicalZoneKey) {
+        String zoneName = zoneDisplayName(canonicalZoneKey).toUpperCase();
         if (!LatitudeConfig.showZoneBaseDegreesOnTitle) {
             return zoneName;
         }
@@ -332,6 +333,12 @@ public final class GlobeWarningOverlay {
 
         String degText = com.example.globe.util.LatitudeMath.formatLatitudeDeg(border, client.player.getZ());
         return zoneName + " " + degText;
+    }
+
+    private static String canonicalTitleZoneKey(net.minecraft.world.border.WorldBorder border, double z) {
+        double absDeg = Math.abs(com.example.globe.util.LatitudeMath.degreesFromZ(border, z));
+        LatitudeBands.Band band = LatitudeBands.fromAbsoluteLatitudeDeg(absDeg);
+        return band.name();
     }
 
     private static double clamp(double v, double lo, double hi) {
