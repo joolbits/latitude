@@ -2005,6 +2005,12 @@ public final class LatitudeBiomes {
             out = pickColdFallback(biomeRegistry, base, blockX, blockZ, landBandIndex);
         }
         out = enforceLandBandPool(biomeRegistry, out, blockX, blockZ, t, landBandIndex, mountainLike);
+        if (isSwampCandidate(out)) {
+            SwampDecision poolSwampDecision = evaluateSwamp(blockX, blockZ, sampler);
+            if (!poolSwampDecision.allow()) {
+                out = pickSwampFallback(biomeRegistry, base, blockX, blockZ, t, landBandIndex);
+            }
+        }
         if (isSnowyVariant(out)) {
             double _bgDeg = latitudeDegreesFromRadius(blockZ, effectiveRadius);
             double _bgAlpha = snowyRampAlpha(_bgDeg);
@@ -2487,6 +2493,12 @@ public final class LatitudeBiomes {
             out = pickColdFallback(biomePool, base, blockX, blockZ, landBandIndex);
         }
         out = enforceLandBandPool(biomePool, out, blockX, blockZ, t, landBandIndex, mountainLike);
+        if (isSwampCandidate(out)) {
+            SwampDecision poolSwampDecision = evaluateSwamp(blockX, blockZ, sampler);
+            if (!poolSwampDecision.allow()) {
+                out = pickSwampFallback(biomePool, base, blockX, blockZ, t, landBandIndex);
+            }
+        }
         if (isSnowyVariant(out)) {
             double _bgDeg = latitudeDegreesFromRadius(blockZ, effectiveRadius);
             double _bgAlpha = snowyRampAlpha(_bgDeg);
