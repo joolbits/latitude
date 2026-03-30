@@ -6,7 +6,9 @@ import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.render.RenderTickCounter;
 import net.minecraft.text.Text;
+import net.minecraft.text.TextColor;
 import net.minecraft.util.Formatting;
+import net.minecraft.util.math.MathHelper;
 
 public final class GlobeWarningOverlay {
     private static long debugStartWorldTime = -1L;
@@ -21,14 +23,20 @@ public final class GlobeWarningOverlay {
     private static final String POLE_LETHAL_TEXT =
             "The cold overwhelms you.";
 
-    private static final String EW_SAND_WARN_TEXT =
-            "Sandstorms ahead. Consider turning back.";
-    private static final String EW_SAND_DANGER_TEXT =
-            "It is too dangerous to continue. Turn back.";
+    private static final String EW_SAND_WARN_TEMPLATE =
+            "Sandstorms to the %s. Head %s to turn back.";
+    private static final String EW_SAND_DANGER_TEMPLATE =
+            "Extreme danger to the %s. Head %s immediately.";
+
+    private static final int EQUATOR_STABLE_DIST = 64;
+    private static final long HEMISPHERE_TITLE_COOLDOWN_MS = 15_000L;
 
     private static long lastZoneUpdateWorldTime = Long.MIN_VALUE;
     private static int lastZoneUpdateX = Integer.MIN_VALUE;
     private static int lastZoneUpdateZ = Integer.MIN_VALUE;
+    private static char lastStableHemisphere = '\0';
+    private static double lastObservedZ = Double.NaN;
+    private static long lastHemisphereTitleAtMs = Long.MIN_VALUE;
 
     private static boolean registered;
 
@@ -100,8 +108,8 @@ public final class GlobeWarningOverlay {
     private static Text ewTextForStage(GlobeClientState.EwStormStage stage) {
         if (stage == null) return null;
         return switch (stage) {
-            case LEVEL_1 -> Text.literal(EW_SAND_WARN_TEXT);
-            case LEVEL_2 -> Text.literal(EW_SAND_DANGER_TEXT).formatted(Formatting.RED, Formatting.BOLD);
+            case LEVEL_1 -> Text.literal(EW_SAND_WARN_TEMPLATE);
+            case LEVEL_2 -> Text.literal(EW_SAND_DANGER_TEMPLATE).formatted(Formatting.RED, Formatting.BOLD);
             default -> null;
         };
     }
@@ -163,6 +171,8 @@ public final class GlobeWarningOverlay {
                         ZoneEnterTitleOverlay.trigger(titleText, durationTicks, scale);
                     }
                 }
+
+                maybeTriggerHemisphereTitle(client, client.player.getZ());
             }
 
             Text bestText = null;
@@ -181,7 +191,12 @@ public final class GlobeWarningOverlay {
                 bestText = poleTextForStage(stage);
             } else if (state.type() == GlobeClientState.WarningType.STORM) {
                 GlobeClientState.EwStormStage stage = (GlobeClientState.EwStormStage) state.stage();
-                bestText = ewTextForStage(stage);
+                String dir = ewDangerDirection(client.world.getWorldBorder(), client.player.getX());
+                String escapeDir = oppositeDirection(dir);
+                Text base = ewTextForStage(stage);
+                if (base != null) {
+                    bestText = Text.literal(String.format(base.getString(), dir.toLowerCase(), escapeDir.toLowerCase())).setStyle(base.getStyle());
+                }
             }
 
             if (bestText == null) {
@@ -193,17 +208,115 @@ public final class GlobeWarningOverlay {
             if (warnY < 18) {
                 warnY = 18;
             }
-            drawCenteredWarning(ctx, client.textRenderer, bestText, warnY);
+            int color = warningColorWithPulse(bestText, client, tickCounter);
+            drawCenteredWarning(ctx, client.textRenderer, bestText, warnY, color);
         } catch (Throwable t) {
             GlobeMod.LOGGER.error("GlobeWarningOverlay.render crashed", t);
         }
     }
 
-    private static void drawCenteredWarning(DrawContext ctx, TextRenderer tr, Text text, int y) {
+    private static int warningColorWithPulse(Text text, MinecraftClient client, RenderTickCounter tickCounter) {
+        TextColor styleColor = text.getStyle().getColor();
+        int rgb = styleColor != null ? styleColor.getRgb() : 0xFFFFFF;
+        long worldTime = client.world != null ? client.world.getTime() : 0L;
+        double phase = worldTime * 0.04; // gentle ~7.8s period
+        float pulse = 0.55f + 0.45f * (float) ((Math.sin(phase) + 1.0) * 0.5);
+        int alpha = (int) MathHelper.clamp(pulse * 255.0f, 0.0f, 255.0f);
+        return (alpha << 24) | (rgb & 0x00FFFFFF);
+    }
+
+    private static void drawCenteredWarning(DrawContext ctx, TextRenderer tr, Text text, int y, int argbColor) {
         int screenW = MinecraftClient.getInstance().getWindow().getScaledWidth();
         int w = tr.getWidth(text);
         int x = Math.max(4, (screenW - w) / 2);
-        ctx.drawTextWithShadow(tr, text, x, y, 0xFFFFFFFF);
+        ctx.drawTextWithShadow(tr, text, x, y, argbColor);
+    }
+
+    private static String ewDangerDirection(net.minecraft.world.border.WorldBorder border, double playerX) {
+        double distWest = Math.abs(playerX - border.getBoundWest());
+        double distEast = Math.abs(border.getBoundEast() - playerX);
+        return distWest <= distEast ? "West" : "East";
+    }
+
+    private static String oppositeDirection(String direction) {
+        return "West".equals(direction) ? "East" : "West";
+    }
+
+    private static void maybeTriggerHemisphereTitle(MinecraftClient client, double playerZ) {
+        char stableHemisphere = stableHemisphere(playerZ);
+        boolean titleActive = ZoneEnterTitleOverlay.isActive();
+        boolean updateSample = Math.abs(playerZ) >= EQUATOR_STABLE_DIST || Double.isNaN(lastObservedZ);
+
+        if (!LatitudeConfig.zoneEnterTitleEnabled) {
+            if (stableHemisphere != '\0') {
+                lastStableHemisphere = stableHemisphere;
+            }
+            if (updateSample) {
+                lastObservedZ = playerZ;
+            }
+            return;
+        }
+
+        if (titleActive) {
+            if (stableHemisphere != '\0') {
+                lastStableHemisphere = stableHemisphere;
+            }
+            if (updateSample) {
+                lastObservedZ = playerZ;
+            }
+            return;
+        }
+
+        if (Double.isNaN(lastObservedZ) && updateSample) {
+            lastObservedZ = playerZ;
+        }
+
+        if (stableHemisphere == '\0') {
+            if (updateSample) {
+                lastObservedZ = playerZ;
+            }
+            return;
+        }
+
+        if (lastStableHemisphere == '\0') {
+            lastStableHemisphere = stableHemisphere;
+            if (updateSample) {
+                lastObservedZ = playerZ;
+            }
+            return;
+        }
+
+        boolean crossedNorth = lastObservedZ < 0 && playerZ > 0;
+        boolean crossedSouth = lastObservedZ > 0 && playerZ < 0;
+        boolean changedHemisphere = stableHemisphere != lastStableHemisphere && (crossedNorth || crossedSouth);
+
+        if (changedHemisphere && canFireHemisphereTitle()) {
+            String hemisphereTitle = crossedNorth ? "NORTHERN HEMISPHERE" : "SOUTHERN HEMISPHERE";
+            int durationTicks = (int) Math.round(clamp(LatitudeConfig.zoneEnterTitleSeconds, 2.0, 10.0) * 20.0);
+            double scale = clamp(LatitudeConfig.zoneEnterTitleScale, 1.0, 3.0);
+            ZoneEnterTitleOverlay.trigger(hemisphereTitle, durationTicks, scale);
+            lastHemisphereTitleAtMs = System.currentTimeMillis();
+        }
+
+        lastStableHemisphere = stableHemisphere;
+        if (updateSample) {
+            lastObservedZ = playerZ;
+        }
+    }
+
+    private static boolean canFireHemisphereTitle() {
+        if (lastHemisphereTitleAtMs == Long.MIN_VALUE) {
+            return true;
+        }
+        long now = System.currentTimeMillis();
+        return (now - lastHemisphereTitleAtMs) >= HEMISPHERE_TITLE_COOLDOWN_MS;
+    }
+
+    private static char stableHemisphere(double z) {
+        if (Math.abs(z) < EQUATOR_STABLE_DIST) {
+            return '\0';
+        }
+        return z > 0 ? 'N' : 'S';
     }
 
     private static String buildZoneEnterTitle(MinecraftClient client, String zoneKey) {
