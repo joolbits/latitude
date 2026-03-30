@@ -290,7 +290,7 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
         // Red 'N' label at north
         String nLabel = "N";
         int nW = this.textRenderer.getWidth(nLabel);
-        context.drawText(this.textRenderer, nLabel, cx - nW / 2, cy - radius + 2 + tickLen + 1, 0xFFCC3333, true);
+        context.drawText(this.textRenderer, nLabel, cx - nW / 2 + 1, cy - radius + 2 + tickLen + 1, 0xFFCC3333, true);
 
         // Wandering needle
         double angle = globe$needleAngle;

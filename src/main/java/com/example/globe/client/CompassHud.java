@@ -12,7 +12,7 @@ import net.minecraft.text.Text;
 import net.minecraft.util.math.MathHelper;
 
 public final class CompassHud {
-    private static final int ANALOG_FACE = 0xFF1A1410;
+    private static final int ANALOG_FACE_RGB = 0x1A1410;
     private static final int ANALOG_RING = 0xFFD4A74A;
     private static final int ANALOG_MUTED = 0xFF8C8078;
     private static final int ANALOG_N_COLOR = 0xFFCC3333;
@@ -269,7 +269,7 @@ public final class CompassHud {
 
         double angle = Math.toRadians(MathHelper.wrapDegrees(client.player.getYaw() + 180.0f));
 
-        drawAnalogCompass(ctx, cx, cy, radius, angle);
+        drawAnalogCompass(ctx, cfg, cx, cy, radius, angle);
 
         if (isPreview) {
             int boxW = diameter;
@@ -296,7 +296,7 @@ public final class CompassHud {
         }
     }
 
-    private static void drawAnalogCompass(DrawContext ctx, int cx, int cy, int radius, double angle) {
+    private static void drawAnalogCompass(DrawContext ctx, CompassHudConfig cfg, int cx, int cy, int radius, double angle) {
         int r2 = radius * radius;
         for (int dy = -radius; dy <= radius; dy++) {
             for (int dx = -radius; dx <= radius; dx++) {
@@ -307,7 +307,7 @@ public final class CompassHud {
                 if (dist2 > (radius - 2) * (radius - 2)) {
                     ctx.fill(px, py, px + 1, py + 1, ANALOG_RING);
                 } else {
-                    ctx.fill(px, py, px + 1, py + 1, ANALOG_FACE);
+                    ctx.fill(px, py, px + 1, py + 1, analogInnerColor(cfg));
                 }
             }
         }
@@ -324,7 +324,7 @@ public final class CompassHud {
 
         String nLabel = "N";
         int nW = MinecraftClient.getInstance().textRenderer.getWidth(nLabel);
-        ctx.drawText(MinecraftClient.getInstance().textRenderer, nLabel, cx - nW / 2, cy - radius + 2 + tickLen + 1, ANALOG_N_COLOR, true);
+        ctx.drawText(MinecraftClient.getInstance().textRenderer, nLabel, cx - nW / 2 + 1, cy - radius + 2 + tickLen + 1, ANALOG_N_COLOR, true);
 
         int needleLen = radius - 4;
         int nx = cx + (int) Math.round(Math.sin(angle) * needleLen);
@@ -336,6 +336,11 @@ public final class CompassHud {
         drawLine(ctx, cx, cy, sx, sy, ANALOG_RING);
 
         ctx.fill(cx - 1, cy - 1, cx + 2, cy + 2, ANALOG_RING);
+    }
+
+    private static int analogInnerColor(CompassHudConfig cfg) {
+        int a = MathHelper.clamp((int) Math.round(cfg.analogInnerAlpha * 255.0f), 0, 255);
+        return (a << 24) | (ANALOG_FACE_RGB & 0xFFFFFF);
     }
 
     private static void drawLine(DrawContext ctx, int x0, int y0, int x1, int y1, int color) {
