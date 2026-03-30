@@ -5212,7 +5212,7 @@ public final class LatitudeBiomes {
             }
             if (u < 0.42 && opennessNoise >= 0.54 && opennessNoise < 0.74 && compositionBias > 0.08) {
                 try {
-                    return biome(biomes, SWAMP_ID);
+                    return biome(biomes, "minecraft:plains");
                 } catch (Throwable ignored) {
                     // fall through
                 }
@@ -5274,7 +5274,7 @@ public final class LatitudeBiomes {
         }
         if (u < 0.42 && opennessNoise >= 0.54 && opennessNoise < 0.74 && compositionBias > 0.08) {
             try {
-                RegistryEntry<Biome> pick = biome(biomes, SWAMP_ID);
+                RegistryEntry<Biome> pick = biome(biomes, "minecraft:plains");
                 return warmOpenAuditReturn("open_other_return", pick, pick != base, compositionBias, opennessNoise, strongOpen);
             } catch (Throwable ignored) {
                 // fall through
@@ -5356,9 +5356,9 @@ public final class LatitudeBiomes {
                 }
             }
             if (u < 0.42 && opennessNoise >= 0.54 && opennessNoise < 0.74 && compositionBias > 0.08) {
-                RegistryEntry<Biome> swamp = entryById(biomes, SWAMP_ID);
-                if (swamp != null) {
-                    return swamp;
+                RegistryEntry<Biome> plains = entryById(biomes, "minecraft:plains");
+                if (plains != null) {
+                    return plains;
                 }
             }
             boolean strongOpen = opennessNoise >= 0.76 || (u > 0.82 && opennessNoise >= 0.68);
@@ -5407,9 +5407,9 @@ public final class LatitudeBiomes {
             }
         }
         if (u < 0.42 && opennessNoise >= 0.54 && opennessNoise < 0.74 && compositionBias > 0.08) {
-            RegistryEntry<Biome> swamp = entryById(biomes, SWAMP_ID);
-            if (swamp != null) {
-                return warmOpenAuditReturn("open_other_return", swamp, swamp != base, compositionBias, opennessNoise, strongOpen);
+            RegistryEntry<Biome> plains = entryById(biomes, "minecraft:plains");
+            if (plains != null) {
+                return warmOpenAuditReturn("open_other_return", plains, plains != base, compositionBias, opennessNoise, strongOpen);
             }
         }
         if (!strongOpen) {
