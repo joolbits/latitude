@@ -21,13 +21,15 @@ public class LatitudeHudStudioScreen extends Screen {
     private enum Target { COMPASS, TITLE, BOTH }
     private Target target = Target.COMPASS;
 
-    private enum DragElement { NONE, COMPASS, TITLE }
+    private enum DragElement { NONE, COMPASS, TITLE, ZONE }
     private DragElement dragElement = DragElement.NONE;
 
     private boolean wasLDown = false;
 
     private int compassGrabDx;
     private int compassGrabDy;
+    private int zoneGrabDx;
+    private int zoneGrabDy;
 
     private double titleOffsetXf;
     private double titleOffsetYf;
@@ -48,6 +50,8 @@ public class LatitudeHudStudioScreen extends Screen {
     private ClickableWidget wCompassAnalogShowLatitude;
     private ClickableWidget wCompassCompact;
     private ClickableWidget wCompassAttachHotbar;
+    private ClickableWidget wZoneDisplay;
+    private ClickableWidget wZoneFollow;
 
     private ClickableWidget wTitleScale;
 
@@ -85,6 +89,8 @@ public class LatitudeHudStudioScreen extends Screen {
         this.wCompassAnalogShowLatitude = null;
         this.wCompassCompact = null;
         this.wCompassAttachHotbar = null;
+        this.wZoneDisplay = null;
+        this.wZoneFollow = null;
 
         this.titleOffsetXf = LatitudeConfig.zoneEnterTitleOffsetX;
         this.titleOffsetYf = LatitudeConfig.zoneEnterTitleOffsetY;
@@ -163,6 +169,24 @@ public class LatitudeHudStudioScreen extends Screen {
                 .build(panelX, y, panelW, rowH, Text.literal("Attach to Hotbar"), (btn, value) -> {
                     cfg.attachToHotbarCompass = value;
                     CompassHudConfig.saveCurrent();
+                }));
+        y += rowH + rowGap;
+
+        this.wZoneDisplay = this.addDrawableChild(CyclingButtonWidget.<Boolean>builder(v -> Text.literal(v ? "ON" : "OFF"), () -> cfg.displayZoneInHud)
+                .values(true, false)
+                .build(panelX, y, panelW, rowH, Text.literal("Display Zone in HUD"), (btn, value) -> {
+                    cfg.displayZoneInHud = value;
+                    CompassHudConfig.saveCurrent();
+                    updateSidebarVisibility();
+                }));
+        y += rowH + rowGap;
+
+        this.wZoneFollow = this.addDrawableChild(CyclingButtonWidget.<Boolean>builder(v -> Text.literal(v ? "FOLLOW" : "DETACH"), () -> cfg.zoneFollowsCompass)
+                .values(true, false)
+                .build(panelX, y, panelW, rowH, Text.literal("Zone Placement"), (btn, value) -> {
+                    cfg.zoneFollowsCompass = value;
+                    CompassHudConfig.saveCurrent();
+                    updateSidebarVisibility();
                 }));
         y += rowH + rowGap;
 
@@ -280,6 +304,11 @@ public class LatitudeHudStudioScreen extends Screen {
                 dragElement = DragElement.COMPASS;
                 return true;
             }
+
+            if (isMouseOverZone(mx, my)) {
+                dragElement = DragElement.ZONE;
+                return true;
+            }
         }
 
         return false;
@@ -341,6 +370,36 @@ public class LatitudeHudStudioScreen extends Screen {
             return true;
         }
 
+        if (dragElement == DragElement.ZONE) {
+            var mc = MinecraftClient.getInstance();
+            if (mc == null || mc.getWindow() == null) return true;
+            var cfg = CompassHudConfig.get();
+            if (!cfg.displayZoneInHud || cfg.zoneFollowsCompass) return true;
+
+            int screenW = mc.getWindow().getScaledWidth();
+            int screenH = mc.getWindow().getScaledHeight();
+            var zb = CompassHud.computeZoneBounds(mc, cfg);
+            if (zb == null) return true;
+
+            int targetX = (int) Math.round(mx) - zoneGrabDx;
+            int targetY = (int) Math.round(my) - zoneGrabDy;
+            int boxW = zb.w();
+            int boxH = zb.h();
+            targetX = clamp(targetX, 0, Math.max(0, screenW - boxW));
+            targetY = clamp(targetY, 0, Math.max(0, screenH - boxH));
+
+            int baseX = anchoredZoneX(cfg, screenW, boxW);
+            int baseY = anchoredZoneY(cfg, screenH, boxH);
+            cfg.zoneOffsetX = targetX - baseX;
+            cfg.zoneOffsetY = targetY - baseY;
+
+            if (LatitudeConfig.hudSnapEnabled) {
+                cfg.zoneOffsetX = snap(cfg.zoneOffsetX, LatitudeConfig.hudSnapPixels);
+                cfg.zoneOffsetY = snap(cfg.zoneOffsetY, LatitudeConfig.hudSnapPixels);
+            }
+            return true;
+        }
+
         return false;
     }
 
@@ -359,6 +418,9 @@ public class LatitudeHudStudioScreen extends Screen {
                 LatitudeConfig.saveCurrent();
             }
             if (dragElement == DragElement.COMPASS) {
+                CompassHudConfig.saveCurrent();
+            }
+            if (dragElement == DragElement.ZONE) {
                 CompassHudConfig.saveCurrent();
             }
             dragElement = DragElement.NONE;
@@ -394,6 +456,8 @@ public class LatitudeHudStudioScreen extends Screen {
         setVisible(wCompassAnalogShowLatitude, showCompassControls && analog);
         setVisible(wCompassCompact, showCompassControls && !analog);
         setVisible(wCompassAttachHotbar, showCompassControls);
+        setVisible(wZoneDisplay, showCompassControls);
+        setVisible(wZoneFollow, showCompassControls && CompassHudConfig.get().displayZoneInHud);
 
         boolean showTitleControls = sidebarVisible && (target == Target.TITLE || target == Target.BOTH);
         setVisible(wTitleScale, showTitleControls);
@@ -422,6 +486,8 @@ public class LatitudeHudStudioScreen extends Screen {
         bottom = Math.max(bottom, bottomYIfVisible(wCompassAnalogShowLatitude));
         bottom = Math.max(bottom, bottomYIfVisible(wCompassCompact));
         bottom = Math.max(bottom, bottomYIfVisible(wCompassAttachHotbar));
+        bottom = Math.max(bottom, bottomYIfVisible(wZoneDisplay));
+        bottom = Math.max(bottom, bottomYIfVisible(wZoneFollow));
         bottom = Math.max(bottom, bottomYIfVisible(wTitleScale));
         if (bottom <= 0) {
             return 8;
@@ -434,6 +500,19 @@ public class LatitudeHudStudioScreen extends Screen {
         hintY = Math.max(hintY, 22);
         hintY = Math.min(hintY, Math.max(0, this.height - 18));
         return hintY;
+    }
+
+    private boolean isMouseOverZone(double mx, double my) {
+        var mc = MinecraftClient.getInstance();
+        if (mc == null) return false;
+        var cfg = CompassHudConfig.get();
+        if (!cfg.displayZoneInHud || cfg.zoneFollowsCompass) return false;
+        var b = CompassHud.computeZoneBounds(mc, cfg);
+        if (b == null) return false;
+        if (mx < b.x() || mx >= (b.x() + b.w()) || my < b.y() || my >= (b.y() + b.h())) return false;
+        zoneGrabDx = (int) Math.round(mx) - b.x();
+        zoneGrabDy = (int) Math.round(my) - b.y();
+        return true;
     }
 
     private static int bottomYIfVisible(ClickableWidget w) {
@@ -465,6 +544,12 @@ public class LatitudeHudStudioScreen extends Screen {
         cfg.latitudeDecimals = 0;
         cfg.attachToHotbarCompass = false;
         cfg.compactHud = false;
+        cfg.displayZoneInHud = false;
+        cfg.zoneFollowsCompass = true;
+        cfg.zoneHAnchor = CompassHudConfig.HAnchor.CENTER;
+        cfg.zoneVAnchor = CompassHudConfig.VAnchor.TOP;
+        cfg.zoneOffsetX = 0;
+        cfg.zoneOffsetY = 0;
     }
 
     private static void setVisible(ClickableWidget w, boolean v) {
@@ -534,6 +619,22 @@ public class LatitudeHudStudioScreen extends Screen {
 
     private static int clamp(int v, int lo, int hi) {
         return Math.max(lo, Math.min(hi, v));
+    }
+
+    private static int anchoredZoneX(CompassHudConfig cfg, int screenW, int boxW) {
+        return switch (cfg.zoneHAnchor) {
+            case LEFT -> 4;
+            case CENTER -> (screenW - boxW) / 2;
+            case RIGHT -> screenW - boxW - 4;
+        };
+    }
+
+    private static int anchoredZoneY(CompassHudConfig cfg, int screenH, int boxH) {
+        return switch (cfg.zoneVAnchor) {
+            case TOP -> 4;
+            case CENTER -> (screenH - boxH) / 2;
+            case BOTTOM -> screenH - boxH - 4;
+        };
     }
 
     private static String textColorName(int rgb) {
