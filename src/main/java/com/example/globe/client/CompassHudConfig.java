@@ -13,6 +13,7 @@ import java.nio.file.Path;
 public final class CompassHudConfig {
     public enum ShowMode { ALWAYS, COMPASS_PRESENT, HOLDING_COMPASS }
     public enum DirectionMode { CARDINAL_4, CARDINAL_8, DEGREES }
+    public enum CompassStyle { DIGITAL, ANALOG }
     public enum HAnchor { LEFT, CENTER, RIGHT }
     public enum VAnchor { TOP, CENTER, BOTTOM }
 
@@ -20,6 +21,7 @@ public final class CompassHudConfig {
     public boolean enabled = true;
 
     public ShowMode showMode = ShowMode.COMPASS_PRESENT;
+    public CompassStyle style = CompassStyle.DIGITAL;
     public DirectionMode directionMode = DirectionMode.CARDINAL_8;
 
     // Positioning (screen-space)
@@ -28,9 +30,12 @@ public final class CompassHudConfig {
     public int offsetX = 0;
     public int offsetY = 0;
 
-    // Sizing
+    // Sizing (digital text)
     public float scale = 1.0f; // 0.5 .. 3.0 recommended
     public int padding = 3;
+
+    // Sizing (analog disc diameter, unscaled)
+    public float analogSize = 48.0f; // pixels
 
     // Styling
     public boolean showBackground = true;
@@ -41,7 +46,8 @@ public final class CompassHudConfig {
     public boolean shadow = true;
 
     // Latitude display
-    public Boolean showLatitude = true;
+    public Boolean showLatitude = true; // digital mode
+    public Boolean analogShowLatitude = true;
     public Integer latitudeDecimals = 0;
 
     // Inline formatting
@@ -112,15 +118,19 @@ public final class CompassHudConfig {
 
     private void sanitize() {
         if (showMode == null) showMode = ShowMode.COMPASS_PRESENT;
+        if (style == null) style = CompassStyle.DIGITAL;
         if (directionMode == null) directionMode = DirectionMode.CARDINAL_8;
         if (hAnchor == null) hAnchor = HAnchor.CENTER;
         if (vAnchor == null) vAnchor = VAnchor.TOP;
         if (showLatitude == null) showLatitude = true;
+        if (analogShowLatitude == null) analogShowLatitude = true;
         if (latitudeDecimals == null) latitudeDecimals = 0;
         if (latitudeDecimals < 0) latitudeDecimals = 0;
         if (latitudeDecimals > 3) latitudeDecimals = 3;
         if (scale < 0.25f) scale = 0.25f;
         if (scale > 4.0f) scale = 4.0f;
+        if (analogSize < 24.0f) analogSize = 24.0f;
+        if (analogSize > 128.0f) analogSize = 128.0f;
         if (padding < 0) padding = 0;
         if (backgroundAlpha < 0) backgroundAlpha = 0;
         if (backgroundAlpha > 255) backgroundAlpha = 255;
