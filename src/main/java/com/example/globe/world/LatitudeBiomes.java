@@ -166,6 +166,32 @@ public final class LatitudeBiomes {
     }
 
     /**
+     * Continuous snow-paint authority for surface painters (no spatial jitter).
+    * Uses the same boundary jitter as band blending to avoid ruler-straight thresholds.
+     *
+     * @param blockX world X (blocks)
+     * @param blockZ world Z (blocks)
+     * @param borderRadiusBlocks caller border radius (falls back to ACTIVE_RADIUS or 1)
+     * @return alpha in [0,1]; higher means stronger permission to paint snow/ice
+     */
+    public static double snowPaintAlpha(int blockX, int blockZ, int borderRadiusBlocks) {
+        int effectiveRadius = ACTIVE_RADIUS_BLOCKS > 0 ? ACTIVE_RADIUS_BLOCKS : borderRadiusBlocks;
+        if (effectiveRadius <= 0) effectiveRadius = 1;
+        int lat = Math.abs(blockZ);
+        double tBase = (double) lat / (double) effectiveRadius;
+        double t = applyBoundaryJitter(blockX, blockZ, effectiveRadius, tBase);
+        double deg = LatitudeMath.clamp(t * 90.0, 0.0, 90.0);
+
+        // Shoulder window for painter activation: block fully ≤50°, allow fully ≥56°.
+        double start = 50.0;
+        double end = 56.0;
+        if (deg <= start) return 0.0;
+        if (deg >= end) return 1.0;
+        double u = (deg - start) / (end - start);
+        return smoothstep(u);
+    }
+
+    /**
      * Compute the authoritative land band index using the same jitter/blend path as the picker,
      * including the active radius override logic. This is exported for atlas/report so overlays
      * stay aligned with the picker’s decision.
@@ -1979,6 +2005,13 @@ public final class LatitudeBiomes {
             out = pickColdFallback(biomeRegistry, base, blockX, blockZ, landBandIndex);
         }
         out = enforceLandBandPool(biomeRegistry, out, blockX, blockZ, t, landBandIndex, mountainLike);
+        if (isSnowyVariant(out) && latitudeDegreesFromRadius(blockZ, effectiveRadius) < SNOWY_RAMP_START_DEG) {
+            try {
+                out = biome(biomeRegistry, "minecraft:taiga");
+            } catch (Throwable ignored) {
+                // keep current pick
+            }
+        }
         out = enforcePaleGardenRegion(biomeRegistry, out, base, blockX, blockZ, landBandIndex, effectiveRadius);
         RegistryEntry<Biome> postBandEnforce = out;
         if (DEBUG_BIOMES && isMangroveCandidate(out)) {
@@ -2449,6 +2482,12 @@ public final class LatitudeBiomes {
             out = pickColdFallback(biomePool, base, blockX, blockZ, landBandIndex);
         }
         out = enforceLandBandPool(biomePool, out, blockX, blockZ, t, landBandIndex, mountainLike);
+        if (isSnowyVariant(out) && latitudeDegreesFromRadius(blockZ, effectiveRadius) < SNOWY_RAMP_START_DEG) {
+            RegistryEntry<Biome> taigaFallback = entryById(biomePool, "minecraft:taiga");
+            if (taigaFallback != null) {
+                out = taigaFallback;
+            }
+        }
         out = enforcePaleGardenRegion(biomePool, out, base, blockX, blockZ, landBandIndex, effectiveRadius);
         RegistryEntry<Biome> postBandEnforce = out;
         if (DEBUG_BIOMES && isMangroveCandidate(out)) {
