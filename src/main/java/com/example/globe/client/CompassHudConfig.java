@@ -37,6 +37,9 @@ public final class CompassHudConfig {
     // Sizing (analog disc diameter, unscaled)
     public float analogSize = 48.0f; // pixels
 
+    // Analog styling
+    public float analogInnerAlpha = 0.65f; // 0..1
+
     // Styling
     public boolean showBackground = true;
     public int backgroundRgb = 0x000000;
@@ -131,6 +134,8 @@ public final class CompassHudConfig {
         if (scale > 4.0f) scale = 4.0f;
         if (analogSize < 24.0f) analogSize = 24.0f;
         if (analogSize > 128.0f) analogSize = 128.0f;
+        if (analogInnerAlpha < 0.0f) analogInnerAlpha = 0.0f;
+        if (analogInnerAlpha > 1.0f) analogInnerAlpha = 1.0f;
         if (padding < 0) padding = 0;
         if (backgroundAlpha < 0) backgroundAlpha = 0;
         if (backgroundAlpha > 255) backgroundAlpha = 255;

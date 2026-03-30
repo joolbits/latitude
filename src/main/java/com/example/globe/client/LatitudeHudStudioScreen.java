@@ -36,8 +36,10 @@ public class LatitudeHudStudioScreen extends Screen {
 
     private ClickableWidget wTarget;
 
+    private ClickableWidget wCompassStyle;
     private ClickableWidget wCompassScale;
     private ClickableWidget wCompassAnalogSize;
+    private ClickableWidget wCompassAnalogInnerAlpha;
     private ClickableWidget wCompassTransparency;
     private ClickableWidget wCompassBackground;
     private ClickableWidget wCompassBgColor;
@@ -71,8 +73,10 @@ public class LatitudeHudStudioScreen extends Screen {
         var cfg = CompassHudConfig.get();
         boolean analog = cfg.style == CompassHudConfig.CompassStyle.ANALOG;
 
+        this.wCompassStyle = null;
         this.wCompassScale = null;
         this.wCompassAnalogSize = null;
+        this.wCompassAnalogInnerAlpha = null;
         this.wCompassTransparency = null;
         this.wCompassBackground = null;
         this.wCompassBgColor = null;
@@ -100,8 +104,19 @@ public class LatitudeHudStudioScreen extends Screen {
                 .build());
         y += rowH + rowGap;
 
+        this.wCompassStyle = this.addDrawableChild(CyclingButtonWidget.<CompassHudConfig.CompassStyle>builder(v -> Text.literal(v == CompassHudConfig.CompassStyle.ANALOG ? "Analog" : "Digital"), () -> cfg.style)
+                .values(CompassHudConfig.CompassStyle.values())
+                .build(panelX, y, panelW, rowH, Text.literal("Compass Style"), (btn, value) -> {
+                    cfg.style = value;
+                    CompassHudConfig.saveCurrent();
+                    this.init();
+                }));
+        y += rowH + rowGap;
+
         if (analog) {
             this.wCompassAnalogSize = this.addDrawableChild(new FloatSlider(panelX, y, panelW, rowH, Text.literal("Analog Size"), 32.0f, 128.0f, cfg.analogSize, v -> cfg.analogSize = v));
+            y += rowH + rowGap;
+            this.wCompassAnalogInnerAlpha = this.addDrawableChild(new FloatSlider(panelX, y, panelW, rowH, Text.literal("Inner Transparency"), 0.0f, 1.0f, cfg.analogInnerAlpha, v -> cfg.analogInnerAlpha = v));
             y += rowH + rowGap;
         } else {
             this.wCompassScale = this.addDrawableChild(new FloatSlider(panelX, y, panelW, rowH, Text.literal("Scale"), 0.5f, 3.0f, cfg.scale, v -> cfg.scale = v));
@@ -367,8 +382,10 @@ public class LatitudeHudStudioScreen extends Screen {
 
         boolean analog = CompassHudConfig.get().style == CompassHudConfig.CompassStyle.ANALOG;
         boolean showCompassControls = sidebarVisible && (target == Target.COMPASS || target == Target.BOTH);
+        setVisible(wCompassStyle, showCompassControls);
         setVisible(wCompassScale, showCompassControls && !analog);
         setVisible(wCompassAnalogSize, showCompassControls && analog);
+        setVisible(wCompassAnalogInnerAlpha, showCompassControls && analog);
         setVisible(wCompassTransparency, showCompassControls && !analog);
         setVisible(wCompassBackground, showCompassControls && !analog);
         setVisible(wCompassBgColor, showCompassControls && !analog);
@@ -393,8 +410,10 @@ public class LatitudeHudStudioScreen extends Screen {
 
         int bottom = 0;
         bottom = Math.max(bottom, bottomYIfVisible(wTarget));
+        bottom = Math.max(bottom, bottomYIfVisible(wCompassStyle));
         bottom = Math.max(bottom, bottomYIfVisible(wCompassScale));
         bottom = Math.max(bottom, bottomYIfVisible(wCompassAnalogSize));
+        bottom = Math.max(bottom, bottomYIfVisible(wCompassAnalogInnerAlpha));
         bottom = Math.max(bottom, bottomYIfVisible(wCompassTransparency));
         bottom = Math.max(bottom, bottomYIfVisible(wCompassBackground));
         bottom = Math.max(bottom, bottomYIfVisible(wCompassBgColor));
@@ -433,6 +452,7 @@ public class LatitudeHudStudioScreen extends Screen {
         cfg.offsetY = 0;
         cfg.scale = 1.0f;
         cfg.analogSize = 48.0f;
+        cfg.analogInnerAlpha = 0.65f;
         cfg.padding = 3;
         cfg.showBackground = true;
         cfg.backgroundRgb = 0x000000;
