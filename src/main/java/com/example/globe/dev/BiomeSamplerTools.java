@@ -193,6 +193,84 @@ public final class BiomeSamplerTools {
                 matches);
     }
 
+    public static BandAuditReport bandAudit(ServerWorld world,
+                                              long seed,
+                                              int radiusBlocks,
+                                              int stepBlocks,
+                                              int y,
+                                              double minDeg,
+                                              double maxDeg,
+                                              Set<String> watchedBiomes,
+                                              Set<String> controlBiomes) {
+        SamplerTemplate template = createTemplate(world);
+        NoiseConfig noiseConfig = NoiseConfig.create(template.settings().value(), template.noiseParameters(), seed);
+        MultiNoiseUtil.MultiNoiseSampler sampler = noiseConfig.getMultiNoiseSampler();
+
+        Set<String> allTracked = new LinkedHashSet<>();
+        allTracked.addAll(watchedBiomes);
+        allTracked.addAll(controlBiomes);
+
+        Map<String, BandAuditAccumulator> accumulators = new LinkedHashMap<>();
+        int[] totalInWindow = {0};
+
+        long originalSeed = template.templateSeed();
+        try {
+            scanGrid(template, seed, radiusBlocks, Math.max(1, stepBlocks), y, (blockX, blockZ, biomeId) -> {
+                double latDeg = radiusBlocks <= 0 ? 0.0 : (Math.abs(blockZ) * 90.0) / (double) radiusBlocks;
+                if (latDeg < minDeg || latDeg > maxDeg) {
+                    return;
+                }
+                totalInWindow[0]++;
+                if (!allTracked.contains(biomeId)) {
+                    return;
+                }
+                BandAuditAccumulator acc = accumulators.get(biomeId);
+                if (acc == null) {
+                    acc = new BandAuditAccumulator(biomeId, blockX, blockZ, latDeg);
+                    accumulators.put(biomeId, acc);
+                }
+                acc.hitCount++;
+            }, sampler);
+        } finally {
+            LatitudeBiomes.setWorldSeed(originalSeed);
+        }
+
+        List<BandAuditHit> hits = new ArrayList<>();
+        for (String biomeId : allTracked) {
+            BandAuditAccumulator acc = accumulators.get(biomeId);
+            if (acc != null) {
+                double pct = totalInWindow[0] > 0 ? (acc.hitCount * 100.0) / totalInWindow[0] : 0.0;
+                hits.add(new BandAuditHit(biomeId, acc.hitCount, pct, acc.firstX, acc.firstZ, acc.firstLatDeg,
+                        watchedBiomes.contains(biomeId)));
+            } else {
+                hits.add(new BandAuditHit(biomeId, 0, 0.0, 0, 0, 0.0, watchedBiomes.contains(biomeId)));
+            }
+        }
+
+        return new BandAuditReport(seed, radiusBlocks, stepBlocks, y, minDeg, maxDeg, totalInWindow[0], hits);
+    }
+
+    public static void writeBandAuditReport(Path outputPath, BandAuditReport report) throws IOException {
+        StringBuilder out = new StringBuilder();
+        out.append(String.format(Locale.ROOT, "=== Band Audit: %.1f-%.1f deg ===%n", report.minDeg(), report.maxDeg()));
+        out.append(String.format(Locale.ROOT, "seed=%d  radius=%d  step=%d  y=%d%n",
+                report.seed(), report.radiusBlocks(), report.stepBlocks(), report.y()));
+        out.append(String.format(Locale.ROOT, "totalSamplesInWindow=%d%n%n", report.totalSamplesInWindow()));
+
+        out.append(String.format(Locale.ROOT, "%-40s %8s %8s %8s %8s %10s %s%n",
+                "biome_id", "hits", "pct", "first_x", "first_z", "first_lat", "type"));
+        out.append(String.format(Locale.ROOT, "%-40s %8s %8s %8s %8s %10s %s%n",
+                "--------", "----", "---", "-------", "-------", "---------", "----"));
+
+        for (BandAuditHit hit : report.hits()) {
+            out.append(String.format(Locale.ROOT, "%-40s %8d %7.2f%% %8d %8d %9.2f° %s%n",
+                    hit.biomeId(), hit.hitCount(), hit.percentage(),
+                    hit.firstSeenX(), hit.firstSeenZ(), hit.firstSeenLatDeg(),
+                    hit.watched() ? "WATCHED" : "control"));
+        }
+        Files.writeString(outputPath, out.toString());
+    }
+
     public static void writeInventoryJson(Path outputPath, InventoryReport report) throws IOException {
         StringBuilder out = new StringBuilder();
         out.append("{\n");
@@ -562,5 +640,40 @@ public final class BiomeSamplerTools {
                                boolean requireAll,
                                int maxResults,
                                List<SearchMatch> results) {
+    }
+
+    public record BandAuditHit(String biomeId,
+                                int hitCount,
+                                double percentage,
+                                int firstSeenX,
+                                int firstSeenZ,
+                                double firstSeenLatDeg,
+                                boolean watched) {
+    }
+
+    public record BandAuditReport(long seed,
+                                   int radiusBlocks,
+                                   int stepBlocks,
+                                   int y,
+                                   double minDeg,
+                                   double maxDeg,
+                                   int totalSamplesInWindow,
+                                   List<BandAuditHit> hits) {
+    }
+
+    private static final class BandAuditAccumulator {
+        private final String biomeId;
+        private final int firstX;
+        private final int firstZ;
+        private final double firstLatDeg;
+        private int hitCount;
+
+        private BandAuditAccumulator(String biomeId, int firstX, int firstZ, double firstLatDeg) {
+            this.biomeId = biomeId;
+            this.firstX = firstX;
+            this.firstZ = firstZ;
+            this.firstLatDeg = firstLatDeg;
+            this.hitCount = 0;
+        }
     }
 }

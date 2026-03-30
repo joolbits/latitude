@@ -32,6 +32,8 @@ public final class BiomePreviewHeadlessRunner {
     private static final String PROP_KEY = "latdev.biomePng";
     private static final String SEARCH_ARG_FLAG = "latdevBiomeSearch";
     private static final String SEARCH_PROP_KEY = "latdev.biomeSearch";
+    private static final String AUDIT_ARG_FLAG = "latdevBandAudit";
+    private static final String AUDIT_PROP_KEY = "latdev.bandAudit";
     private static final String EMIT_HEIGHT_PROP_KEY = "latitude.emitHeight";
     private static final Pattern PROP_PAIR = Pattern.compile(
             "(?i)([a-z][a-z0-9_]*)\\s*=\\s*([^;]+?)(?=(?:\\s*[;,]\\s*[a-z][a-z0-9_]*\\s*=)|$)");
@@ -48,6 +50,12 @@ public final class BiomePreviewHeadlessRunner {
 
     private static void onServerStarted(MinecraftServer server) {
         if (!TRIGGERED.compareAndSet(false, true)) {
+            return;
+        }
+
+        AuditConfig auditConfig = parseAuditConfig();
+        if (auditConfig.enabled) {
+            server.execute(() -> runAuditAndStop(server, auditConfig));
             return;
         }
 
@@ -185,6 +193,62 @@ public final class BiomePreviewHeadlessRunner {
             GlobeMod.LOGGER.error("[latdev][search] seed search failed", t);
         } finally {
             GlobeMod.LOGGER.info("[latdev][search] stopping server");
+            server.stop(false);
+        }
+    }
+
+    private static void runAuditAndStop(MinecraftServer server, AuditConfig config) {
+        ServerWorld world = server.getOverworld();
+        if (world == null) {
+            GlobeMod.LOGGER.error("[latdev][audit] no overworld available; stopping server");
+            server.stop(false);
+            return;
+        }
+
+        try {
+            int y = MathHelper.clamp(config.y, 0, 320);
+            int radius = config.radiusBlocks != null
+                    ? Math.max(1, config.radiusBlocks)
+                    : radiusFromSizeOrWorld(config.sizePreset, world);
+            long worldSeed = world.getSeed();
+            long effectiveSeed = config.seedOverride != null ? config.seedOverride : worldSeed;
+
+            LatitudeBiomes.setWorldSeed(effectiveSeed);
+            LatitudeBiomes.setActiveRadiusBlocks(radius);
+
+            Path outputDir = config.outDir != null
+                    ? config.outDir
+                    : server.getRunDirectory().toAbsolutePath().normalize()
+                            .getParent().resolve("run").resolve("latdev");
+            Files.createDirectories(outputDir);
+
+            java.util.Set<String> watched = new LinkedHashSet<>(config.watchedBiomes);
+            java.util.Set<String> control = new LinkedHashSet<>(config.controlBiomes);
+
+            for (double[] window : config.windows) {
+                double minDeg = window[0];
+                double maxDeg = window[1];
+                String tag = String.format(Locale.ROOT, "%.0f-%.0f", minDeg, maxDeg);
+
+                GlobeMod.LOGGER.info("[latdev][audit] scanning window {}° seed={} radius={} step={} y={}",
+                        tag, effectiveSeed, radius, config.stepBlocks, y);
+
+                BiomeSamplerTools.BandAuditReport report = BiomeSamplerTools.bandAudit(
+                        world, effectiveSeed, radius, config.stepBlocks, y,
+                        minDeg, maxDeg, watched, control);
+
+                String fileName = String.format(Locale.ROOT, "band-audit_%s_seed%d_R%d.txt",
+                        tag, effectiveSeed, radius);
+                Path outFile = outputDir.resolve(fileName);
+                BiomeSamplerTools.writeBandAuditReport(outFile, report);
+
+                GlobeMod.LOGGER.info("[latdev][audit] window {}°: {} samples, report={}",
+                        tag, report.totalSamplesInWindow(), outFile);
+            }
+        } catch (Throwable t) {
+            GlobeMod.LOGGER.error("[latdev][audit] audit failed", t);
+        } finally {
+            GlobeMod.LOGGER.info("[latdev][audit] stopping server");
             server.stop(false);
         }
     }
@@ -437,6 +501,119 @@ public final class BiomePreviewHeadlessRunner {
                 : null;
 
         return new SearchConfig(enabled, seedStart, seedCount, targetBiomes, requireAll, radius, size, step, y, maxResults, out);
+    }
+
+    private static AuditConfig parseAuditConfig() {
+        Map<String, String> kv = new HashMap<>();
+        List<String> launchArgs = launchArgs();
+        boolean enabled = collectAuditProgramArgs(launchArgs, kv);
+
+        String prop = System.getProperty(AUDIT_PROP_KEY, "");
+        if (!prop.isBlank()) {
+            enabled = true;
+            parsePropertyOptions(prop, kv);
+        }
+
+        String windowsRaw = kv.get("windows");
+        if (windowsRaw == null || windowsRaw.isBlank()) {
+            enabled = false;
+        }
+
+        List<double[]> windows = parseWindows(windowsRaw);
+        if (windows.isEmpty()) {
+            enabled = false;
+        }
+
+        Long seed = parseLong(kv.get("seed"));
+        Integer radius = parseInt(kv.get("radius"));
+        String size = kv.get("size");
+        int step = parseInt(kv.get("step"), 16);
+        int y = parseInt(kv.get("y"), 64);
+        Path out = kv.containsKey("out") && !kv.get("out").isBlank()
+                ? Path.of(kv.get("out")).toAbsolutePath().normalize()
+                : null;
+
+        List<String> watched = parseTargetBiomes(kv.get("watched"));
+        if (watched.isEmpty()) {
+            watched = List.of(
+                    "minecraft:snowy_plains",
+                    "minecraft:snowy_taiga",
+                    "minecraft:frozen_river");
+        }
+        List<String> control = parseTargetBiomes(kv.get("control"));
+        if (control.isEmpty()) {
+            control = List.of(
+                    "minecraft:plains",
+                    "minecraft:forest",
+                    "minecraft:taiga",
+                    "minecraft:river");
+        }
+
+        return new AuditConfig(enabled, seed, radius, size, step, y, windows, watched, control, out);
+    }
+
+    private static boolean collectAuditProgramArgs(List<String> args, Map<String, String> out) {
+        boolean enabled = false;
+        List<String> auditKeys = List.of("seed", "radius", "size", "step", "y", "out", "windows", "watched", "control");
+        for (int i = 0; i < args.size(); i++) {
+            String arg = args.get(i);
+            if (!arg.startsWith("--")) {
+                continue;
+            }
+
+            String token = arg.substring(2);
+            if (token.equalsIgnoreCase(AUDIT_ARG_FLAG)) {
+                enabled = true;
+                continue;
+            }
+
+            int eq = token.indexOf('=');
+            if (eq >= 0) {
+                String key = token.substring(0, eq).toLowerCase(Locale.ROOT);
+                String value = token.substring(eq + 1);
+                putOption(out, key, value);
+                if (auditKeys.contains(key)) {
+                    enabled = true;
+                }
+                continue;
+            }
+
+            String key = token.toLowerCase(Locale.ROOT);
+            if (i + 1 < args.size() && !args.get(i + 1).startsWith("--")) {
+                putOption(out, key, args.get(i + 1));
+                i++;
+                if (auditKeys.contains(key)) {
+                    enabled = true;
+                }
+            } else {
+                putOption(out, key, "true");
+            }
+        }
+        return enabled;
+    }
+
+    private static List<double[]> parseWindows(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return List.of();
+        }
+        List<double[]> windows = new ArrayList<>();
+        String[] parts = raw.split("[,|]");
+        for (String part : parts) {
+            String trimmed = part == null ? "" : part.trim();
+            int dash = trimmed.indexOf('-');
+            if (dash <= 0 || dash >= trimmed.length() - 1) {
+                continue;
+            }
+            try {
+                double min = Double.parseDouble(trimmed.substring(0, dash).trim());
+                double max = Double.parseDouble(trimmed.substring(dash + 1).trim());
+                if (min >= 0 && max > min && max <= 90) {
+                    windows.add(new double[]{min, max});
+                }
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        return windows;
     }
 
     private static List<String> launchArgs() {
@@ -787,5 +964,17 @@ public final class BiomePreviewHeadlessRunner {
     }
 
     private record GitStamp(String branch, String commit) {
+    }
+
+    private record AuditConfig(boolean enabled,
+                                Long seedOverride,
+                                Integer radiusBlocks,
+                                String sizePreset,
+                                int stepBlocks,
+                                int y,
+                                List<double[]> windows,
+                                List<String> watchedBiomes,
+                                List<String> controlBiomes,
+                                Path outDir) {
     }
 }
