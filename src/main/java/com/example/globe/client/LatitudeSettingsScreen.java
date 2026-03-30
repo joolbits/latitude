@@ -132,10 +132,31 @@ public class LatitudeSettingsScreen extends Screen {
         y += 24;
 
         baseY = y;
+        var wCompassStyle = this.addDrawableChild(CyclingButtonWidget.<CompassHudConfig.CompassStyle>builder(this::styleLabel, () -> cfg.style)
+                .values(CompassHudConfig.CompassStyle.values())
+                .build(columnX, y, w, h, Text.literal("Compass Style"), (btn, value) -> {
+                    cfg.style = value;
+                    CompassHudConfig.saveCurrent();
+                    this.clearChildren();
+                    this.init();
+                }));
+        layoutWidgets.add(wCompassStyle);
+        layoutBaseYs.add(baseY);
+        y += 24;
+
+        baseY = y;
         var wShowMode = this.addDrawableChild(CyclingButtonWidget.<CompassHudConfig.ShowMode>builder(this::showModeLabel, () -> cfg.showMode)
                 .values(CompassHudConfig.ShowMode.values())
                 .build(columnX, y, w, h, Text.literal("Show Mode"), (btn, value) -> cfg.showMode = value));
         layoutWidgets.add(wShowMode);
+        layoutBaseYs.add(baseY);
+        y += 24;
+
+        baseY = y;
+        var wAnalogLatitude = this.addDrawableChild(CyclingButtonWidget.<Boolean>builder(v -> Text.literal(v ? "ON" : "OFF"), () -> Boolean.TRUE.equals(cfg.analogShowLatitude))
+                .values(true, false)
+                .build(columnX, y, w, h, Text.literal("Analog Latitude"), (btn, value) -> cfg.analogShowLatitude = value));
+        layoutWidgets.add(wAnalogLatitude);
         layoutBaseYs.add(baseY);
         y += 24;
 
@@ -226,16 +247,26 @@ public class LatitudeSettingsScreen extends Screen {
         };
     }
 
+    private Text styleLabel(CompassHudConfig.CompassStyle style) {
+        if (style == null) return Text.literal("Digital");
+        return switch (style) {
+            case DIGITAL -> Text.literal("Digital");
+            case ANALOG -> Text.literal("Analog");
+        };
+    }
+
 
     private static void applyDefaults(CompassHudConfig cfg) {
         cfg.enabled = true;
         cfg.showMode = CompassHudConfig.ShowMode.COMPASS_PRESENT;
+        cfg.style = CompassHudConfig.CompassStyle.DIGITAL;
         cfg.directionMode = CompassHudConfig.DirectionMode.CARDINAL_8;
         cfg.hAnchor = CompassHudConfig.HAnchor.CENTER;
         cfg.vAnchor = CompassHudConfig.VAnchor.TOP;
         cfg.offsetX = 0;
         cfg.offsetY = 0;
         cfg.scale = 1.0f;
+        cfg.analogSize = 48.0f;
         cfg.padding = 3;
         cfg.showBackground = true;
         cfg.backgroundRgb = 0x000000;
@@ -244,6 +275,7 @@ public class LatitudeSettingsScreen extends Screen {
         cfg.textAlpha = 255;
         cfg.shadow = true;
         cfg.showLatitude = true;
+        cfg.analogShowLatitude = true;
         cfg.latitudeDecimals = 0;
         cfg.attachToHotbarCompass = false;
     }
