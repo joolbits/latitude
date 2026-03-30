@@ -2005,7 +2005,13 @@ public final class LatitudeBiomes {
             out = pickColdFallback(biomeRegistry, base, blockX, blockZ, landBandIndex);
         }
         out = enforceLandBandPool(biomeRegistry, out, blockX, blockZ, t, landBandIndex, mountainLike);
-        out = enforceSnowyLatitudeRamp(biomeRegistry, out, base, blockX, blockZ, effectiveRadius, landBandIndex);
+        if (isSnowyVariant(out) && latitudeDegreesFromRadius(blockZ, effectiveRadius) < SNOWY_RAMP_START_DEG) {
+            try {
+                out = biome(biomeRegistry, "minecraft:taiga");
+            } catch (Throwable ignored) {
+                // keep current pick
+            }
+        }
         out = enforcePaleGardenRegion(biomeRegistry, out, base, blockX, blockZ, landBandIndex, effectiveRadius);
         RegistryEntry<Biome> postBandEnforce = out;
         if (DEBUG_BIOMES && isMangroveCandidate(out)) {
@@ -2476,7 +2482,12 @@ public final class LatitudeBiomes {
             out = pickColdFallback(biomePool, base, blockX, blockZ, landBandIndex);
         }
         out = enforceLandBandPool(biomePool, out, blockX, blockZ, t, landBandIndex, mountainLike);
-        out = enforceSnowyLatitudeRamp(biomePool, out, base, blockX, blockZ, effectiveRadius, landBandIndex);
+        if (isSnowyVariant(out) && latitudeDegreesFromRadius(blockZ, effectiveRadius) < SNOWY_RAMP_START_DEG) {
+            RegistryEntry<Biome> taigaFallback = entryById(biomePool, "minecraft:taiga");
+            if (taigaFallback != null) {
+                out = taigaFallback;
+            }
+        }
         out = enforcePaleGardenRegion(biomePool, out, base, blockX, blockZ, landBandIndex, effectiveRadius);
         RegistryEntry<Biome> postBandEnforce = out;
         if (DEBUG_BIOMES && isMangroveCandidate(out)) {
