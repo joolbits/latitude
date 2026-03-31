@@ -23,9 +23,12 @@ if ($normalizedRoot -ne $expectedRoot) {
 $branch = (git rev-parse --abbrev-ref HEAD).Trim()
 $commit = (git rev-parse --short HEAD).Trim()
 $ts = Get-Date -Format "yyyyMMdd-HHmmss"
+$runStart = Get-Date
 
-# Run folder + manifest (viewer can use this later)
-$runDir = Join-Path $root "run-headless\latdev\atlas-runs\$ts"
+# Run folder staging + manifest (viewer can use this later)
+$finalRunDir = Join-Path $root "run-headless\latdev\atlas-runs\$ts"
+$stagingRoot = Join-Path $root "run-headless\latdev\atlas-runs\.staging"
+$runDir = Join-Path $stagingRoot $ts
 New-Item -ItemType Directory -Force -Path $runDir | Out-Null
 
 @{
@@ -38,6 +41,26 @@ New-Item -ItemType Directory -Force -Path $runDir | Out-Null
   emitBiomeIndex = $true
   emitHeight = [bool]$EmitHeight
 } | ConvertTo-Json -Depth 5 | Out-File (Join-Path $runDir "run_manifest.json") -Encoding utf8
+
+# Size -> expected radius map
+$sizeKey = $Size.ToLower()
+$expectedRadius = switch ($sizeKey) {
+  "itty" { 3750 }
+  "ittybitty" { 3750 }
+  "tiny" { 5000 }
+  "small" { 7500 }
+  "regular" { 10000 }
+  "large" { 15000 }
+  "ginormous" { 20000 }
+  "massive" { 20000 }
+  default { throw "Unknown atlas size '$Size'" }
+}
+
+function Fail-AtlasStage([string]$reason) {
+  $failPath = Join-Path $runDir "FAILED.txt"
+  $reason | Out-File $failPath
+  throw "[atlas] $reason"
+}
 
 # ── Ruggedness-only add-on mode ─────────────────────────────────────────────
 if ($GenerateRuggednessOnly) {
@@ -99,22 +122,56 @@ $seedDir = Join-Path $root ("run\latdev\atlas\seed_" + $Seed)
 $stepDir = $null
 if (Test-Path $seedDir) {
   $stepDirs = Get-ChildItem $seedDir -Directory -Recurse |
-    Where-Object { $_.Name -ieq ("step" + $Step) } |
+    Where-Object { $_.Name -ieq ("step" + $Step) -and $_.LastWriteTime -gt $runStart } |
     Sort-Object LastWriteTime
   $stepDir = $stepDirs | Select-Object -Last 1
 }
 
-if ($stepDir) {
-  $stepPrefix = "step$Step"
-  $stepFiles = Get-ChildItem $stepDir.FullName -File |
-    Where-Object { $_.Extension -in @(".png", ".txt", ".json") }
-
-  foreach ($f in $stepFiles) {
-    Copy-Item $f.FullName -Destination (Join-Path $runDir ($stepPrefix + "_" + $f.Name)) -Force
-  }
-} else {
-  Write-Warning "No atlas step directory found for seed=$Seed step=$Step under $seedDir"
+if (-not $stepDir) {
+  Fail-AtlasStage "No fresh atlas step directory found for seed=$Seed step=$Step under $seedDir"
 }
+
+$stepPrefix = "step$Step"
+$stepFiles = Get-ChildItem $stepDir.FullName -File |
+  Where-Object { $_.Extension -in @(".png", ".txt", ".json") }
+
+foreach ($f in $stepFiles) {
+  Copy-Item $f.FullName -Destination (Join-Path $runDir ($stepPrefix + "_" + $f.Name)) -Force
+}
+
+$requiredFiles = @(
+  "$stepPrefix`_biomes.png",
+  "$stepPrefix`_legend.json",
+  "$stepPrefix`_world_biome_inventory.json"
+)
+foreach ($req in $requiredFiles) {
+  $reqPath = Join-Path $runDir $req
+  if (-not (Test-Path $reqPath)) {
+    Fail-AtlasStage "Missing required atlas output $req in staging $runDir"
+  }
+}
+
+$legendPath = Join-Path $runDir "$stepPrefix`_legend.json"
+try {
+  $legend = Get-Content $legendPath | ConvertFrom-Json
+} catch {
+  Fail-AtlasStage "Unable to read legend json at $legendPath"
+}
+if (-not $legend.PSObject.Properties.Name -contains "radiusBlocks") {
+  Fail-AtlasStage "Legend missing radiusBlocks field at $legendPath"
+}
+$producedRadius = [int]$legend.radiusBlocks
+if ($producedRadius -ne $expectedRadius) {
+  Fail-AtlasStage "Radius mismatch. requested size '$Size' expects radius $expectedRadius but legend reports $producedRadius"
+}
+
+# Move staged run into final location only after validation passes
+if (Test-Path $finalRunDir) {
+  Remove-Item -Recurse -Force $finalRunDir
+}
+New-Item -ItemType Directory -Force -Path (Split-Path $finalRunDir) | Out-Null
+Move-Item -LiteralPath $runDir -Destination $finalRunDir
+$runDir = $finalRunDir
 
 if (-not $NoViewerOpen) {
   # --- Serve + open viewer (MVP) ---
