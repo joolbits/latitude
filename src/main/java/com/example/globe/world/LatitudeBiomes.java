@@ -6221,8 +6221,25 @@ public final class LatitudeBiomes {
     private record SwampDecision(boolean allow, double continentalness, double erosion, double weirdness, boolean suitable) {
     }
 
+    private static boolean isWarmFamily(RegistryEntry<Biome> biome) {
+        return isBiomeId(biome, "minecraft:desert")
+                || isBiomeId(biome, "minecraft:badlands")
+                || isBiomeId(biome, "minecraft:wooded_badlands")
+                || isBiomeId(biome, "minecraft:eroded_badlands")
+                || isBiomeId(biome, "minecraft:savanna")
+                || isBiomeId(biome, "minecraft:windswept_savanna")
+                || isBiomeId(biome, "minecraft:jungle")
+                || isBiomeId(biome, "minecraft:bamboo_jungle")
+                || isBiomeId(biome, "minecraft:sparse_jungle")
+                || isBiomeId(biome, SWAMP_ID)
+                || isBiomeId(biome, "minecraft:mangrove_swamp");
+    }
+
     private static RegistryEntry<Biome> sanitizeLandBiome(Registry<Biome> biomes, RegistryEntry<Biome> pick, int bandIndex, int blockX, int blockZ) {
         if (bandIndex == BAND_TROPICAL) {
+            if (isWarmFamily(pick)) {
+                return pick;
+            }
             if (isBiomeId(pick, "minecraft:plains")
                     || isBiomeId(pick, "minecraft:forest")
                     || isBiomeId(pick, "minecraft:birch_forest")
@@ -6231,13 +6248,14 @@ public final class LatitudeBiomes {
                 try {
                     double openness = tropicalOpennessNoise(blockX, blockZ);
                     double compositionBias = tropicalCompositionBias(WORLD_SEED, blockX, blockZ);
-                    if (openness < 0.76 || compositionBias <= 0.06) {
-                        return pick; // neutral/marginal openness → keep the original temperate winner
+                    // Coarse, rare promotion only when both signals are strongly open/wet.
+                    if (openness < 0.92 || compositionBias <= 0.20) {
+                        return pick; // keep temperate winner; avoid speckle repaint
                     }
-                    if (openness >= 0.90) {
+                    if (openness >= 0.96 && compositionBias > 0.28) {
                         return biome(biomes, "minecraft:savanna");
                     }
-                    if (openness >= 0.78 && compositionBias > 0.12) {
+                    if (compositionBias > 0.32) {
                         return biome(biomes, SWAMP_ID);
                     }
                     return biome(biomes, "minecraft:sparse_jungle");
