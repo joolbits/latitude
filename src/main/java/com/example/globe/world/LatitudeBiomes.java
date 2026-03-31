@@ -510,18 +510,74 @@ public final class LatitudeBiomes {
     public static void setWorldSeed(long seed) {
         WORLD_SEED = seed;
         OCEAN_DISTANCE_FIELD = new OceanDistanceField(seed);
+        rebuildProvinceAuthority();
     }
 
     public static void setRadius(int radius) {
         ACTIVE_RADIUS_BLOCKS = radius;
+        rebuildProvinceAuthority();
     }
 
     public static void setActiveRadiusBlocks(int radiusBlocks) {
         ACTIVE_RADIUS_BLOCKS = Math.max(0, radiusBlocks);
+        rebuildProvinceAuthority();
     }
 
     public static int getActiveRadiusBlocks() {
         return ACTIVE_RADIUS_BLOCKS;
+    }
+
+    // --- Province authority (scaffolding) ---
+
+    private static volatile ProvinceAuthority PROVINCE_AUTHORITY = null;
+    private static final boolean DEBUG_PROVINCE = Boolean.getBoolean("latitude.debugProvince");
+    private static final AtomicInteger PROVINCE_DEBUG_COUNT = new AtomicInteger();
+    private static final int PROVINCE_DEBUG_LIMIT = Integer.getInteger("latitude.debugProvince.limit", 200);
+
+    private static void rebuildProvinceAuthority() {
+        long seed = WORLD_SEED;
+        int radius = ACTIVE_RADIUS_BLOCKS;
+        if (seed != 0L && radius > 0) {
+            PROVINCE_AUTHORITY = new ProvinceAuthority(seed, radius);
+            if (DEBUG_PROVINCE) {
+                LOGGER.info("[LAT][PROVINCE] rebuilt authority seed={} radius={}", seed, radius);
+            }
+        }
+    }
+
+    /**
+     * Returns the current province authority instance, or null if seed/radius
+     * have not yet been initialized.
+     */
+    public static ProvinceAuthority getProvinceAuthority() {
+        return PROVINCE_AUTHORITY;
+    }
+
+    /**
+     * Classifies the given block position into a coarse humidity/moisture province.
+     * Returns null if the province authority has not been initialized.
+     *
+     * <p>This method is the shared entrypoint for worldgen, atlas/headless, and
+     * /latdev diagnostics — all paths resolve through the same authority instance.
+     *
+     * @param blockX world X (blocks)
+     * @param blockZ world Z (blocks)
+     * @return province classification, or null if not yet initialized
+     */
+    public static ProvinceAuthority.Province classifyProvince(int blockX, int blockZ) {
+        ProvinceAuthority authority = PROVINCE_AUTHORITY;
+        if (authority == null) {
+            return null;
+        }
+        ProvinceAuthority.Province province = authority.classify(blockX, blockZ);
+        if (DEBUG_PROVINCE) {
+            int count = PROVINCE_DEBUG_COUNT.incrementAndGet();
+            if (count <= PROVINCE_DEBUG_LIMIT || count % 10000 == 0) {
+                LOGGER.info("[LAT][PROVINCE] x={} z={} province={} band={}",
+                        blockX, blockZ, province, authority.bandIndex(blockX, blockZ));
+            }
+        }
+        return province;
     }
 
     public static int oceanDistanceBlocks(int blockX, int blockZ, MultiNoiseUtil.MultiNoiseSampler sampler) {
@@ -616,7 +672,8 @@ public final class LatitudeBiomes {
             boolean sanitizeApplied,
             String reasonSummary,
             String summaryLine,
-            String driversBlock) {
+            String driversBlock,
+            String province) {
     }
 
     /**
@@ -802,6 +859,8 @@ public final class LatitudeBiomes {
         String eroStr = !Double.isNaN(erosion) ? String.format(java.util.Locale.ROOT, "%.3f", erosion) : "n/a";
         String weirdStr = !Double.isNaN(weirdness) ? String.format(java.util.Locale.ROOT, "%.3f", weirdness) : "n/a";
         String oceanDistStr = oceanDist >= 0 ? Integer.toString(oceanDist) : "n/a";
+        ProvinceAuthority.Province provinceResult = classifyProvince(blockX, blockZ);
+        String provinceStr = provinceResult != null ? provinceResult.name() : "n/a(not-initialized)";
         String driversBlock = String.format(java.util.Locale.ROOT,
                 "  pos=%d,%d,%d  finalBiome=%s%n"
                 + "  latDeg=%.2f  band=%s(idx=%d)%n"
@@ -818,7 +877,8 @@ public final class LatitudeBiomes {
                 + "  pickLifecycleAvailable=%s%n"
                 + "  reasonSummary=%s%n"
                 + "  humidity=%s  openness=%s  compositionBias=%s%n"
-                + "  uplandT=%.3f",
+                + "  uplandT=%.3f%n"
+                + "  province=%s",
                 blockX, blockY, blockZ, finalBiomeId,
                 latDeg, bandLabel, bandIndex,
                 oceanDistStr, coastalHint,
@@ -834,7 +894,8 @@ public final class LatitudeBiomes {
                 pickLifecycleAvailable,
                 reasonSummary,
                 humidityStr, opennessStr, compositionBiasStr,
-                uplandT);
+                uplandT,
+                provinceStr);
 
         return new BiomeDiagnostics(
                 blockX, blockY, blockZ,
@@ -875,7 +936,8 @@ public final class LatitudeBiomes {
                 sanitizeApplied,
                 reasonSummary,
                 summaryLine,
-                driversBlock);
+                driversBlock,
+                provinceStr);
     }
 
     private static String inferDecisionPath(String finalBiomeId, int bandIndex, boolean activeWaterSurfaceAuthority) {
