@@ -4783,6 +4783,23 @@ public final class LatitudeBiomes {
         if (province == null || province == ProvinceAuthority.Province.WARM_WET) {
             return out;
         }
+        if (province == ProvinceAuthority.Province.WARM_MEDIUM) {
+            if (isBiomeId(out, "minecraft:sparse_jungle")) {
+                return out;
+            }
+            if (DEBUG_PROVINCE) {
+                int count = PROVINCE_DEBUG_COUNT.get();
+                if (count <= PROVINCE_DEBUG_LIMIT) {
+                    LOGGER.info("[LAT][PROVINCE][WARM_JUNGLE_GATE] x={} z={} province={} biome={} -> sparse_jungle",
+                            blockX, blockZ, province, biomeId(out));
+                }
+            }
+            try {
+                return biome(biomes, "minecraft:sparse_jungle");
+            } catch (Throwable ignored) {
+                return out;
+            }
+        }
         if (DEBUG_PROVINCE) {
             int count = PROVINCE_DEBUG_COUNT.get();
             if (count <= PROVINCE_DEBUG_LIMIT) {
@@ -4803,6 +4820,20 @@ public final class LatitudeBiomes {
         ProvinceAuthority.Province province = classifyProvince(blockX, blockZ);
         if (province == null || province == ProvinceAuthority.Province.WARM_WET) {
             return out;
+        }
+        if (province == ProvinceAuthority.Province.WARM_MEDIUM) {
+            if (isBiomeId(out, "minecraft:sparse_jungle")) {
+                return out;
+            }
+            if (DEBUG_PROVINCE) {
+                int count = PROVINCE_DEBUG_COUNT.get();
+                if (count <= PROVINCE_DEBUG_LIMIT) {
+                    LOGGER.info("[LAT][PROVINCE][WARM_JUNGLE_GATE] x={} z={} province={} biome={} -> sparse_jungle",
+                            blockX, blockZ, province, biomeId(out));
+                }
+            }
+            RegistryEntry<Biome> sparse = entryById(biomes, "minecraft:sparse_jungle");
+            return sparse != null ? sparse : out;
         }
         if (DEBUG_PROVINCE) {
             int count = PROVINCE_DEBUG_COUNT.get();
