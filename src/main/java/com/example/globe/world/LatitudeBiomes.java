@@ -5439,6 +5439,28 @@ public final class LatitudeBiomes {
             double u = tropicalEnd > 0.0 ? clamp(t / tropicalEnd, 0.0, 1.0) : 1.0;
             double opennessNoise = tropicalOpennessNoise(blockX, blockZ);
             double compositionBias = tropicalCompositionBias(WORLD_SEED, blockX, blockZ);
+            ProvinceAuthority.Province province = classifyProvince(blockX, blockZ);
+            boolean strongOpen = opennessNoise >= 0.76 || (u > 0.82 && opennessNoise >= 0.68);
+            if (province == ProvinceAuthority.Province.WARM_DRY) {
+                if ((u > 0.86 || opennessNoise > 0.82) && compositionBias < -0.06) {
+                    try {
+                        return biome(biomes, "minecraft:desert");
+                    } catch (Throwable ignored) {
+                        // fall through
+                    }
+                }
+                if (isJungleFamily(base)) {
+                    return pickDryWarmFallback(biomes, base);
+                }
+                if (u > 0.72 || strongOpen || compositionBias < 0.10) {
+                    try {
+                        return biome(biomes, "minecraft:desert");
+                    } catch (Throwable ignored) {
+                        // fall through
+                    }
+                }
+                return pickDryWarmFallback(biomes, base);
+            }
             if ((u > 0.86 || opennessNoise > 0.82) && compositionBias < -0.06) {
                 try {
                     return biome(biomes, "minecraft:desert");
@@ -5451,6 +5473,35 @@ public final class LatitudeBiomes {
                     return biome(biomes, "minecraft:sparse_jungle");
                 } catch (Throwable ignored) {
                     // fall through
+                }
+            }
+            if (province == ProvinceAuthority.Province.WARM_WET) {
+                if (compositionBias > 0.42 && opennessNoise < 0.18) {
+                    try {
+                        return biome(biomes, "minecraft:sparse_jungle");
+                    } catch (Throwable ignoredSparse) {
+                        try {
+                            return biome(biomes, "minecraft:jungle");
+                        } catch (Throwable ignoredJungle) {
+                            return base;
+                        }
+                    }
+                }
+                if (!strongOpen) {
+                    if (isJungleFamily(base)) {
+                        return base;
+                    }
+                    if (compositionBias > 0.16 && opennessNoise < 0.48) {
+                        RegistryEntry<Biome> wetWarm = pickWarmFallback(biomes, BAND_TROPICAL);
+                        return wetWarm != null ? wetWarm : base;
+                    }
+                    return base;
+                }
+                try {
+                    return biome(biomes, "minecraft:sparse_jungle");
+                } catch (Throwable ignoredSparse) {
+                    RegistryEntry<Biome> wetWarm = pickWarmFallback(biomes, BAND_TROPICAL);
+                    return wetWarm != null ? wetWarm : base;
                 }
             }
             if (compositionBias > 0.42 && opennessNoise < 0.18) {
@@ -5467,7 +5518,6 @@ public final class LatitudeBiomes {
                     // fall through
                 }
             }
-            boolean strongOpen = opennessNoise >= 0.76 || (u > 0.82 && opennessNoise >= 0.68);
             if (!strongOpen) {
                 if (isJungleFamily(base)) {
                     try {
@@ -5497,7 +5547,32 @@ public final class LatitudeBiomes {
         double u = tropicalEnd > 0.0 ? clamp(t / tropicalEnd, 0.0, 1.0) : 1.0;
         double opennessNoise = tropicalOpennessNoise(blockX, blockZ);
         double compositionBias = tropicalCompositionBias(WORLD_SEED, blockX, blockZ);
+        ProvinceAuthority.Province province = classifyProvince(blockX, blockZ);
         boolean strongOpen = opennessNoise >= 0.76 || (u > 0.82 && opennessNoise >= 0.68);
+        if (province == ProvinceAuthority.Province.WARM_DRY) {
+            if ((u > 0.86 || opennessNoise > 0.82) && compositionBias < -0.06) {
+                try {
+                    RegistryEntry<Biome> pick = biome(biomes, "minecraft:desert");
+                    return warmOpenAuditReturn("open_province_dry_desert_return", pick, pick != base, compositionBias, opennessNoise, strongOpen);
+                } catch (Throwable ignored) {
+                    // fall through
+                }
+            }
+            if (isJungleFamily(base)) {
+                RegistryEntry<Biome> pick = pickDryWarmFallback(biomes, base);
+                return warmOpenAuditReturn("open_province_dry_fallback_return", pick, pick != base, compositionBias, opennessNoise, strongOpen);
+            }
+            if (u > 0.72 || strongOpen || compositionBias < 0.10) {
+                try {
+                    RegistryEntry<Biome> pick = biome(biomes, "minecraft:desert");
+                    return warmOpenAuditReturn("open_province_dry_desert_return", pick, pick != base, compositionBias, opennessNoise, strongOpen);
+                } catch (Throwable ignored) {
+                    // fall through
+                }
+            }
+            RegistryEntry<Biome> pick = pickDryWarmFallback(biomes, base);
+            return warmOpenAuditReturn("open_province_dry_fallback_return", pick, pick != base, compositionBias, opennessNoise, strongOpen);
+        }
         if ((u > 0.86 || opennessNoise > 0.82) && compositionBias < -0.06) {
             try {
                 RegistryEntry<Biome> pick = biome(biomes, "minecraft:desert");
@@ -5512,6 +5587,40 @@ public final class LatitudeBiomes {
                 return warmOpenAuditReturn("open_sparse_jungle_return", pick, pick != base, compositionBias, opennessNoise, strongOpen);
             } catch (Throwable ignored) {
                 // fall through
+            }
+        }
+        if (province == ProvinceAuthority.Province.WARM_WET) {
+            if (compositionBias > 0.42 && opennessNoise < 0.18) {
+                try {
+                    RegistryEntry<Biome> pick = biome(biomes, "minecraft:sparse_jungle");
+                    return warmOpenAuditReturn("open_province_wet_sparse_return", pick, pick != base, compositionBias, opennessNoise, strongOpen);
+                } catch (Throwable ignoredSparse) {
+                    try {
+                        RegistryEntry<Biome> pick = biome(biomes, "minecraft:jungle");
+                        return warmOpenAuditReturn("open_province_wet_jungle_return", pick, pick != base, compositionBias, opennessNoise, strongOpen);
+                    } catch (Throwable ignoredJungle) {
+                        return warmOpenAuditReturn("open_jungle_return", base, false, compositionBias, opennessNoise, strongOpen);
+                    }
+                }
+            }
+            if (!strongOpen) {
+                if (isJungleFamily(base)) {
+                    return warmOpenAuditReturn("open_jungle_return", base, false, compositionBias, opennessNoise, strongOpen);
+                }
+                if (compositionBias > 0.16 && opennessNoise < 0.48) {
+                    RegistryEntry<Biome> pick = pickWarmFallback(biomes, BAND_TROPICAL);
+                    RegistryEntry<Biome> out = pick != null ? pick : base;
+                    return warmOpenAuditReturn("open_province_wet_warm_return", out, out != base, compositionBias, opennessNoise, strongOpen);
+                }
+                return warmOpenAuditReturn("open_other_return", base, false, compositionBias, opennessNoise, strongOpen);
+            }
+            try {
+                RegistryEntry<Biome> pick = biome(biomes, "minecraft:sparse_jungle");
+                return warmOpenAuditReturn("open_province_wet_sparse_return", pick, pick != base, compositionBias, opennessNoise, strongOpen);
+            } catch (Throwable ignoredSparse) {
+                RegistryEntry<Biome> pick = pickWarmFallback(biomes, BAND_TROPICAL);
+                RegistryEntry<Biome> out = pick != null ? pick : base;
+                return warmOpenAuditReturn("open_province_wet_warm_return", out, out != base, compositionBias, opennessNoise, strongOpen);
             }
         }
         if (compositionBias > 0.42 && opennessNoise < 0.18) {
@@ -5587,6 +5696,26 @@ public final class LatitudeBiomes {
             double u = tropicalEnd > 0.0 ? clamp(t / tropicalEnd, 0.0, 1.0) : 1.0;
             double opennessNoise = tropicalOpennessNoise(blockX, blockZ);
             double compositionBias = tropicalCompositionBias(WORLD_SEED, blockX, blockZ);
+            ProvinceAuthority.Province province = classifyProvince(blockX, blockZ);
+            boolean strongOpen = opennessNoise >= 0.76 || (u > 0.82 && opennessNoise >= 0.68);
+            if (province == ProvinceAuthority.Province.WARM_DRY) {
+                if ((u > 0.86 || opennessNoise > 0.82) && compositionBias < -0.06) {
+                    RegistryEntry<Biome> desert = entryById(biomes, "minecraft:desert");
+                    if (desert != null) {
+                        return desert;
+                    }
+                }
+                if (isJungleFamily(base)) {
+                    return pickDryWarmFallback(biomes, base);
+                }
+                if (u > 0.72 || strongOpen || compositionBias < 0.10) {
+                    RegistryEntry<Biome> desert = entryById(biomes, "minecraft:desert");
+                    if (desert != null) {
+                        return desert;
+                    }
+                }
+                return pickDryWarmFallback(biomes, base);
+            }
             if ((u > 0.86 || opennessNoise > 0.82) && compositionBias < -0.06) {
                 RegistryEntry<Biome> desert = entryById(biomes, "minecraft:desert");
                 if (desert != null) {
@@ -5598,6 +5727,35 @@ public final class LatitudeBiomes {
                 if (sparseJungle != null) {
                     return sparseJungle;
                 }
+            }
+            if (province == ProvinceAuthority.Province.WARM_WET) {
+                if (compositionBias > 0.42 && opennessNoise < 0.18) {
+                    RegistryEntry<Biome> sparseJungle = entryById(biomes, "minecraft:sparse_jungle");
+                    if (sparseJungle != null) {
+                        return sparseJungle;
+                    }
+                    RegistryEntry<Biome> jungle = entryById(biomes, "minecraft:jungle");
+                    if (jungle != null) {
+                        return jungle;
+                    }
+                    return base;
+                }
+                if (!strongOpen) {
+                    if (isJungleFamily(base)) {
+                        return base;
+                    }
+                    if (compositionBias > 0.16 && opennessNoise < 0.48) {
+                        RegistryEntry<Biome> wetWarm = pickWarmFallback(biomes, BAND_TROPICAL);
+                        return wetWarm != null ? wetWarm : base;
+                    }
+                    return base;
+                }
+                RegistryEntry<Biome> sparseJungle = entryById(biomes, "minecraft:sparse_jungle");
+                if (sparseJungle != null) {
+                    return sparseJungle;
+                }
+                RegistryEntry<Biome> wetWarm = pickWarmFallback(biomes, BAND_TROPICAL);
+                return wetWarm != null ? wetWarm : base;
             }
             if (compositionBias > 0.42 && opennessNoise < 0.18) {
                 RegistryEntry<Biome> savanna = entryById(biomes, "minecraft:savanna");
@@ -5611,7 +5769,6 @@ public final class LatitudeBiomes {
                     return plains;
                 }
             }
-            boolean strongOpen = opennessNoise >= 0.76 || (u > 0.82 && opennessNoise >= 0.68);
             if (!strongOpen) {
                 if (isJungleFamily(base)) {
                     RegistryEntry<Biome> savanna = entryById(biomes, "minecraft:savanna");
@@ -5637,7 +5794,28 @@ public final class LatitudeBiomes {
         double u = tropicalEnd > 0.0 ? clamp(t / tropicalEnd, 0.0, 1.0) : 1.0;
         double opennessNoise = tropicalOpennessNoise(blockX, blockZ);
         double compositionBias = tropicalCompositionBias(WORLD_SEED, blockX, blockZ);
+        ProvinceAuthority.Province province = classifyProvince(blockX, blockZ);
         boolean strongOpen = opennessNoise >= 0.76 || (u > 0.82 && opennessNoise >= 0.68);
+        if (province == ProvinceAuthority.Province.WARM_DRY) {
+            if ((u > 0.86 || opennessNoise > 0.82) && compositionBias < -0.06) {
+                RegistryEntry<Biome> desert = entryById(biomes, "minecraft:desert");
+                if (desert != null) {
+                    return warmOpenAuditReturn("open_province_dry_desert_return", desert, desert != base, compositionBias, opennessNoise, strongOpen);
+                }
+            }
+            if (isJungleFamily(base)) {
+                RegistryEntry<Biome> pick = pickDryWarmFallback(biomes, base);
+                return warmOpenAuditReturn("open_province_dry_fallback_return", pick, pick != base, compositionBias, opennessNoise, strongOpen);
+            }
+            if (u > 0.72 || strongOpen || compositionBias < 0.10) {
+                RegistryEntry<Biome> desert = entryById(biomes, "minecraft:desert");
+                if (desert != null) {
+                    return warmOpenAuditReturn("open_province_dry_desert_return", desert, desert != base, compositionBias, opennessNoise, strongOpen);
+                }
+            }
+            RegistryEntry<Biome> pick = pickDryWarmFallback(biomes, base);
+            return warmOpenAuditReturn("open_province_dry_fallback_return", pick, pick != base, compositionBias, opennessNoise, strongOpen);
+        }
         if ((u > 0.86 || opennessNoise > 0.82) && compositionBias < -0.06) {
             RegistryEntry<Biome> desert = entryById(biomes, "minecraft:desert");
             if (desert != null) {
@@ -5649,6 +5827,37 @@ public final class LatitudeBiomes {
             if (sparseJungle != null) {
                 return warmOpenAuditReturn("open_sparse_jungle_return", sparseJungle, sparseJungle != base, compositionBias, opennessNoise, strongOpen);
             }
+        }
+        if (province == ProvinceAuthority.Province.WARM_WET) {
+            if (compositionBias > 0.42 && opennessNoise < 0.18) {
+                RegistryEntry<Biome> sparseJungle = entryById(biomes, "minecraft:sparse_jungle");
+                if (sparseJungle != null) {
+                    return warmOpenAuditReturn("open_province_wet_sparse_return", sparseJungle, sparseJungle != base, compositionBias, opennessNoise, strongOpen);
+                }
+                RegistryEntry<Biome> jungle = entryById(biomes, "minecraft:jungle");
+                if (jungle != null) {
+                    return warmOpenAuditReturn("open_province_wet_jungle_return", jungle, jungle != base, compositionBias, opennessNoise, strongOpen);
+                }
+                return warmOpenAuditReturn("open_jungle_return", base, false, compositionBias, opennessNoise, strongOpen);
+            }
+            if (!strongOpen) {
+                if (isJungleFamily(base)) {
+                    return warmOpenAuditReturn("open_jungle_return", base, false, compositionBias, opennessNoise, strongOpen);
+                }
+                if (compositionBias > 0.16 && opennessNoise < 0.48) {
+                    RegistryEntry<Biome> pick = pickWarmFallback(biomes, BAND_TROPICAL);
+                    RegistryEntry<Biome> out = pick != null ? pick : base;
+                    return warmOpenAuditReturn("open_province_wet_warm_return", out, out != base, compositionBias, opennessNoise, strongOpen);
+                }
+                return warmOpenAuditReturn("open_other_return", base, false, compositionBias, opennessNoise, strongOpen);
+            }
+            RegistryEntry<Biome> sparseJungle = entryById(biomes, "minecraft:sparse_jungle");
+            if (sparseJungle != null) {
+                return warmOpenAuditReturn("open_province_wet_sparse_return", sparseJungle, sparseJungle != base, compositionBias, opennessNoise, strongOpen);
+            }
+            RegistryEntry<Biome> pick = pickWarmFallback(biomes, BAND_TROPICAL);
+            RegistryEntry<Biome> out = pick != null ? pick : base;
+            return warmOpenAuditReturn("open_province_wet_warm_return", out, out != base, compositionBias, opennessNoise, strongOpen);
         }
         if (compositionBias > 0.42 && opennessNoise < 0.18) {
             RegistryEntry<Biome> savanna = entryById(biomes, "minecraft:savanna");
