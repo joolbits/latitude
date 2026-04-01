@@ -4732,15 +4732,11 @@ public final class LatitudeBiomes {
         if (landBandIndex < BAND_POLAR || !isTaigaFamilyBiome(out)) {
             return out;
         }
-        ProvinceAuthority.Province province = classifyProvince(blockX, blockZ);
-        if (province == null) {
-            return out;
-        }
         if (DEBUG_PROVINCE) {
             int count = PROVINCE_DEBUG_COUNT.get();
             if (count <= PROVINCE_DEBUG_LIMIT) {
-                LOGGER.info("[LAT][PROVINCE][POLAR_TAIGA_GATE] x={} z={} province={} biome={} -> snowy_plains",
-                        blockX, blockZ, province, biomeId(out));
+                LOGGER.info("[LAT][POLAR_TAIGA_GATE] x={} z={} band=POLAR biome={} -> snowy_plains",
+                        blockX, blockZ, biomeId(out));
             }
         }
         try {
@@ -4757,15 +4753,11 @@ public final class LatitudeBiomes {
         if (landBandIndex < BAND_POLAR || !isTaigaFamilyBiome(out)) {
             return out;
         }
-        ProvinceAuthority.Province province = classifyProvince(blockX, blockZ);
-        if (province == null) {
-            return out;
-        }
         if (DEBUG_PROVINCE) {
             int count = PROVINCE_DEBUG_COUNT.get();
             if (count <= PROVINCE_DEBUG_LIMIT) {
-                LOGGER.info("[LAT][PROVINCE][POLAR_TAIGA_GATE] x={} z={} province={} biome={} -> snowy_plains",
-                        blockX, blockZ, province, biomeId(out));
+                LOGGER.info("[LAT][POLAR_TAIGA_GATE] x={} z={} band=POLAR biome={} -> snowy_plains",
+                        blockX, blockZ, biomeId(out));
             }
         }
         RegistryEntry<Biome> safe = entryById(biomes, "minecraft:snowy_plains");
