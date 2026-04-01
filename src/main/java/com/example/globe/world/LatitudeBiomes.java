@@ -2174,6 +2174,7 @@ public final class LatitudeBiomes {
                         PAR_REWRITTEN_SNOWY.get());
             }
         }
+        out = gateWarmJungleSurvival(biomeRegistry, out, landBandIndex, blockX, blockZ);
         out = gatePolarTaigaSurvival(biomeRegistry, out, landBandIndex, blockX, blockZ);
         debugPick(blockX, blockZ, effectiveRadius, t, band, base, out, false, out != sanitized, mangroveDecision);
         return out;
@@ -2638,6 +2639,7 @@ public final class LatitudeBiomes {
                         PAR_REWRITTEN_SNOWY.get());
             }
         }
+        out = gateWarmJungleSurvival(biomePool, out, landBandIndex, blockX, blockZ);
         out = gatePolarTaigaSurvival(biomePool, out, landBandIndex, blockX, blockZ);
         debugPick(blockX, blockZ, effectiveRadius, t, band, base, out, false, out != sanitized, mangroveDecision);
         return out;
@@ -4766,6 +4768,48 @@ public final class LatitudeBiomes {
         }
         RegistryEntry<Biome> safe = entryById(biomes, "minecraft:snowy_plains");
         return safe != null ? safe : out;
+    }
+
+    private static RegistryEntry<Biome> gateWarmJungleSurvival(Registry<Biome> biomes,
+                                                               RegistryEntry<Biome> out,
+                                                               int landBandIndex,
+                                                               int blockX, int blockZ) {
+        if (landBandIndex > BAND_SUBTROPICAL || !isJungleFamily(out)) {
+            return out;
+        }
+        ProvinceAuthority.Province province = classifyProvince(blockX, blockZ);
+        if (province == null || province == ProvinceAuthority.Province.WARM_WET) {
+            return out;
+        }
+        if (DEBUG_PROVINCE) {
+            int count = PROVINCE_DEBUG_COUNT.get();
+            if (count <= PROVINCE_DEBUG_LIMIT) {
+                LOGGER.info("[LAT][PROVINCE][WARM_JUNGLE_GATE] x={} z={} province={} biome={} -> dryWarmFallback",
+                        blockX, blockZ, province, biomeId(out));
+            }
+        }
+        return pickDryWarmFallback(biomes, out);
+    }
+
+    private static RegistryEntry<Biome> gateWarmJungleSurvival(Collection<RegistryEntry<Biome>> biomes,
+                                                               RegistryEntry<Biome> out,
+                                                               int landBandIndex,
+                                                               int blockX, int blockZ) {
+        if (landBandIndex > BAND_SUBTROPICAL || !isJungleFamily(out)) {
+            return out;
+        }
+        ProvinceAuthority.Province province = classifyProvince(blockX, blockZ);
+        if (province == null || province == ProvinceAuthority.Province.WARM_WET) {
+            return out;
+        }
+        if (DEBUG_PROVINCE) {
+            int count = PROVINCE_DEBUG_COUNT.get();
+            if (count <= PROVINCE_DEBUG_LIMIT) {
+                LOGGER.info("[LAT][PROVINCE][WARM_JUNGLE_GATE] x={} z={} province={} biome={} -> dryWarmFallback",
+                        blockX, blockZ, province, biomeId(out));
+            }
+        }
+        return pickDryWarmFallback(biomes, out);
     }
 
     private static String bandName(int bandIndex) {
