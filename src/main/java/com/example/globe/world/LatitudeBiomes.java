@@ -6755,6 +6755,10 @@ public final class LatitudeBiomes {
         if (inSavannaRegion) {
             boolean jungleClamped = false;
             if (isJungleFamily(out)) {
+                ProvinceAuthority.Province province = classifyProvince(blockX, blockZ);
+                if (province == ProvinceAuthority.Province.WARM_MEDIUM) {
+                    return out; // let medium-warm survive instead of being savanna-clamped
+                }
                 RegistryEntry<Biome> softened = tropicalBand && warmOpen
                         ? pickOpenTropicalFallback(biomes, out, blockX, blockZ, LatitudeBands.Band.SUBTROPICAL.lowDeg() / 90.0)
                         : pickDryWarmFallback(biomes, out);
@@ -6858,6 +6862,10 @@ public final class LatitudeBiomes {
         if (inSavannaRegion) {
             boolean jungleClamped = false;
             if (isJungleFamily(out)) {
+                ProvinceAuthority.Province province = classifyProvince(blockX, blockZ);
+                if (province == ProvinceAuthority.Province.WARM_MEDIUM) {
+                    return out; // let medium-warm survive instead of being savanna-clamped
+                }
                 RegistryEntry<Biome> softened = tropicalBand && warmOpen
                         ? pickOpenTropicalFallback(biomes, out, blockX, blockZ, LatitudeBands.Band.SUBTROPICAL.lowDeg() / 90.0)
                         : pickDryWarmFallback(biomes, out);
