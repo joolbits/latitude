@@ -2174,6 +2174,7 @@ public final class LatitudeBiomes {
                         PAR_REWRITTEN_SNOWY.get());
             }
         }
+        out = gatePolarTaigaSurvival(biomeRegistry, out, landBandIndex, blockX, blockZ);
         debugPick(blockX, blockZ, effectiveRadius, t, band, base, out, false, out != sanitized, mangroveDecision);
         return out;
     }
@@ -2637,6 +2638,7 @@ public final class LatitudeBiomes {
                         PAR_REWRITTEN_SNOWY.get());
             }
         }
+        out = gatePolarTaigaSurvival(biomePool, out, landBandIndex, blockX, blockZ);
         debugPick(blockX, blockZ, effectiveRadius, t, band, base, out, false, out != sanitized, mangroveDecision);
         return out;
     }
@@ -4719,6 +4721,53 @@ public final class LatitudeBiomes {
         return safe != null ? safe : out;
     }
 
+    private static RegistryEntry<Biome> gatePolarTaigaSurvival(Registry<Biome> biomes,
+                                                                RegistryEntry<Biome> out,
+                                                                int landBandIndex,
+                                                                int blockX, int blockZ) {
+        if (landBandIndex < BAND_POLAR || !isTaigaFamilyBiome(out)) {
+            return out;
+        }
+        ProvinceAuthority.Province province = classifyProvince(blockX, blockZ);
+        if (province == null) {
+            return out;
+        }
+        if (DEBUG_PROVINCE) {
+            int count = PROVINCE_DEBUG_COUNT.get();
+            if (count <= PROVINCE_DEBUG_LIMIT) {
+                LOGGER.info("[LAT][PROVINCE][POLAR_TAIGA_GATE] x={} z={} province={} biome={} -> snowy_plains",
+                        blockX, blockZ, province, biomeId(out));
+            }
+        }
+        try {
+            return biome(biomes, "minecraft:snowy_plains");
+        } catch (Throwable ignored) {
+            return out;
+        }
+    }
+
+    private static RegistryEntry<Biome> gatePolarTaigaSurvival(Collection<RegistryEntry<Biome>> biomes,
+                                                                RegistryEntry<Biome> out,
+                                                                int landBandIndex,
+                                                                int blockX, int blockZ) {
+        if (landBandIndex < BAND_POLAR || !isTaigaFamilyBiome(out)) {
+            return out;
+        }
+        ProvinceAuthority.Province province = classifyProvince(blockX, blockZ);
+        if (province == null) {
+            return out;
+        }
+        if (DEBUG_PROVINCE) {
+            int count = PROVINCE_DEBUG_COUNT.get();
+            if (count <= PROVINCE_DEBUG_LIMIT) {
+                LOGGER.info("[LAT][PROVINCE][POLAR_TAIGA_GATE] x={} z={} province={} biome={} -> snowy_plains",
+                        blockX, blockZ, province, biomeId(out));
+            }
+        }
+        RegistryEntry<Biome> safe = entryById(biomes, "minecraft:snowy_plains");
+        return safe != null ? safe : out;
+    }
+
     private static String bandName(int bandIndex) {
         return switch (bandIndex) {
             case BAND_TROPICAL -> "TROPICAL";
@@ -4876,6 +4925,14 @@ public final class LatitudeBiomes {
 
     private static boolean isGroveBiome(RegistryEntry<Biome> entry) {
         return isBiomeId(entry, "minecraft:grove");
+    }
+
+    private static boolean isTaigaFamilyBiome(RegistryEntry<Biome> entry) {
+        if (entry == null) return false;
+        return isBiomeId(entry, "minecraft:taiga")
+                || isBiomeId(entry, "minecraft:snowy_taiga")
+                || isBiomeId(entry, "minecraft:old_growth_pine_taiga")
+                || isBiomeId(entry, "minecraft:old_growth_spruce_taiga");
     }
 
     private static double snowyRampAlpha(double deg) {
