@@ -1403,12 +1403,22 @@ public final class LatitudeBiomes {
         return pick;
     }
 
+    private static boolean aridHotspotHere(long worldSeed, int blockX, int blockZ) {
+        // Use world-size-aware wavelength so hotspots stay coarse on large worlds and don’t alias to stripes on small ones.
+        int radius = ACTIVE_RADIUS_BLOCKS > 0 ? ACTIVE_RADIUS_BLOCKS : REFERENCE_DIAMETER_BLOCKS / 2;
+        int scale = Math.max(ARID_REGION_MIN_SCALE_BLOCKS, radius / 3);
+        double n = ValueNoise2D.sampleBlocks(worldSeed ^ ARID_REGION_SALT, blockX, blockZ, scale);
+        return n < 0.28; // ~28% of dry-warm space becomes arid-capable provinces
+    }
+
     private record PreviewTerrain(int centerHeight, int robustDelta) {
     }
 
     private static final String MANGROVE_ID = "minecraft:mangrove_swamp";
     private static final String SWAMP_ID = "minecraft:swamp";
     private static final String BADLANDS_ID = "minecraft:badlands";
+    private static final long ARID_REGION_SALT = 0xA11D9110L;
+    private static final int ARID_REGION_MIN_SCALE_BLOCKS = 1024;
     private static final int MANGROVE_PATCH_CELL_BLOCKS = 1024;
     private static final int MANGROVE_PATCH_PERCENT = 20;
     private static final int MANGROVE_PATCH_SALT = 0x2F7A3B1C;
@@ -5935,6 +5945,60 @@ public final class LatitudeBiomes {
         return desert != null ? desert : base;
     }
 
+    private static RegistryEntry<Biome> pickAridRegionFallback(Registry<Biome> biomes,
+                                                               RegistryEntry<Biome> base,
+                                                               int blockX,
+                                                               int blockZ) {
+        if (!aridHotspotHere(WORLD_SEED, blockX, blockZ)) {
+            return pickDryWarmFallback(biomes, base);
+        }
+
+        // Inside an arid hotspot: prefer badlands family when patch noise hits, else desert.
+        if (badlandsPatchHere(WORLD_SEED, blockX, blockZ)) {
+            try {
+                return biome(biomes, "minecraft:badlands");
+            } catch (Throwable ignored) {
+                try {
+                    return biome(biomes, "minecraft:wooded_badlands");
+                } catch (Throwable ignoredAgain) {
+                    try {
+                        return biome(biomes, "minecraft:eroded_badlands");
+                    } catch (Throwable ignoredAgainAgain) {
+                        // fall through to desert
+                    }
+                }
+            }
+        }
+        try {
+            return biome(biomes, "minecraft:desert");
+        } catch (Throwable ignored) {
+            return pickDryWarmFallback(biomes, base);
+        }
+    }
+
+    private static RegistryEntry<Biome> pickAridRegionFallback(Collection<RegistryEntry<Biome>> biomes,
+                                                               RegistryEntry<Biome> base,
+                                                               int blockX,
+                                                               int blockZ) {
+        if (!aridHotspotHere(WORLD_SEED, blockX, blockZ)) {
+            return pickDryWarmFallback(biomes, base);
+        }
+
+        if (badlandsPatchHere(WORLD_SEED, blockX, blockZ)) {
+            RegistryEntry<Biome> badlands = entryById(biomes, "minecraft:badlands");
+            if (badlands != null) return badlands;
+            RegistryEntry<Biome> wooded = entryById(biomes, "minecraft:wooded_badlands");
+            if (wooded != null) return wooded;
+            RegistryEntry<Biome> eroded = entryById(biomes, "minecraft:eroded_badlands");
+            if (eroded != null) return eroded;
+        }
+        RegistryEntry<Biome> desert = entryById(biomes, "minecraft:desert");
+        if (desert != null) {
+            return desert;
+        }
+        return pickDryWarmFallback(biomes, base);
+    }
+
     private static void logSubtropicalJungleReturn(String pathLabel,
                                                    int blockX,
                                                    int blockZ,
@@ -6761,7 +6825,7 @@ public final class LatitudeBiomes {
                 }
                 RegistryEntry<Biome> softened = tropicalBand && warmOpen
                         ? pickOpenTropicalFallback(biomes, out, blockX, blockZ, LatitudeBands.Band.SUBTROPICAL.lowDeg() / 90.0)
-                        : pickDryWarmFallback(biomes, out);
+                        : pickAridRegionFallback(biomes, out, blockX, blockZ);
                 jungleClamped = softened != out;
                 out = softened;
             } else if (openness >= 0.66 && (isBiomeId(out, "minecraft:plains") || isBiomeId(out, "minecraft:sunflower_plains"))
@@ -6868,7 +6932,7 @@ public final class LatitudeBiomes {
                 }
                 RegistryEntry<Biome> softened = tropicalBand && warmOpen
                         ? pickOpenTropicalFallback(biomes, out, blockX, blockZ, LatitudeBands.Band.SUBTROPICAL.lowDeg() / 90.0)
-                        : pickDryWarmFallback(biomes, out);
+                        : pickAridRegionFallback(biomes, out, blockX, blockZ);
                 jungleClamped = softened != out;
                 out = softened;
             } else if (openness >= 0.66 && (isBiomeId(out, "minecraft:plains") || isBiomeId(out, "minecraft:sunflower_plains"))
