@@ -6843,6 +6843,9 @@ public final class LatitudeBiomes {
                         : pickAridRegionFallback(biomes, out, blockX, blockZ);
                 jungleClamped = softened != out;
                 out = softened;
+            } else if (isBadlandsFamily(out) && !aridHotspotHere(WORLD_SEED, blockX, blockZ)) {
+                // Outside a true arid province, drop badlands to the narrow dry fallback to avoid seam leakage.
+                out = pickDryWarmFallback(biomes, out);
             } else if (openness >= 0.66 && (isBiomeId(out, "minecraft:plains") || isBiomeId(out, "minecraft:sunflower_plains"))
                     && blockY >= (SAVANNA_UPLAND_CLAMP_Y + 8)) {
                 try {
@@ -6950,6 +6953,9 @@ public final class LatitudeBiomes {
                         : pickAridRegionFallback(biomes, out, blockX, blockZ);
                 jungleClamped = softened != out;
                 out = softened;
+            } else if (isBadlandsFamily(out) && !aridHotspotHere(WORLD_SEED, blockX, blockZ)) {
+                RegistryEntry<Biome> softened = pickDryWarmFallback(biomes, out);
+                out = softened != null ? softened : out;
             } else if (openness >= 0.66 && (isBiomeId(out, "minecraft:plains") || isBiomeId(out, "minecraft:sunflower_plains"))
                     && blockY >= (SAVANNA_UPLAND_CLAMP_Y + 8)) {
                 RegistryEntry<Biome> softened = tropicalBand && openness < 0.40
