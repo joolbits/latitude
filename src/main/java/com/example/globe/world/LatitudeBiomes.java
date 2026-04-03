@@ -5984,6 +5984,27 @@ public final class LatitudeBiomes {
         if (warmProvince != ProvinceAuthority.Province.WARM_DRY) {
             return base;
         }
+        boolean provinceBadlands = badlandsPatchHere(WORLD_SEED, blockX, blockZ);
+        if (!provinceBadlands) {
+            // Allow a small, continuous badlands variant inside WARM_DRY without reintroducing stripe-led dry seams.
+            double provinceVariant = blobNoise01(WORLD_SEED ^ BADLANDS_PATCH_SALT ^ 0xBAD1A11L, blockX, blockZ, BADLANDS_PATCH_SIZE_BLOCKS * 3, 2);
+            provinceBadlands = provinceVariant < 0.12;
+        }
+        if (provinceBadlands) {
+            try {
+                return biome(biomes, "minecraft:badlands");
+            } catch (Throwable ignored) {
+                try {
+                    return biome(biomes, "minecraft:wooded_badlands");
+                } catch (Throwable ignoredAgain) {
+                    try {
+                        return biome(biomes, "minecraft:eroded_badlands");
+                    } catch (Throwable ignoredAgainAgain) {
+                        // fall through to desert
+                    }
+                }
+            }
+        }
         if (!aridHotspotHere(WORLD_SEED, blockX, blockZ)) {
             return enforceWarmProvinceFamily(biomes, base, warmProvince);
         }
@@ -6022,6 +6043,19 @@ public final class LatitudeBiomes {
                 authoritativeLandBandIndex(blockX, blockZ, radiusHint));
         if (warmProvince != ProvinceAuthority.Province.WARM_DRY) {
             return base;
+        }
+        boolean provinceBadlands = badlandsPatchHere(WORLD_SEED, blockX, blockZ);
+        if (!provinceBadlands) {
+            double provinceVariant = blobNoise01(WORLD_SEED ^ BADLANDS_PATCH_SALT ^ 0xBAD1A11L, blockX, blockZ, BADLANDS_PATCH_SIZE_BLOCKS * 3, 2);
+            provinceBadlands = provinceVariant < 0.12;
+        }
+        if (provinceBadlands) {
+            RegistryEntry<Biome> badlands = entryById(biomes, "minecraft:badlands");
+            if (badlands != null) return badlands;
+            RegistryEntry<Biome> wooded = entryById(biomes, "minecraft:wooded_badlands");
+            if (wooded != null) return wooded;
+            RegistryEntry<Biome> eroded = entryById(biomes, "minecraft:eroded_badlands");
+            if (eroded != null) return eroded;
         }
         if (!aridHotspotHere(WORLD_SEED, blockX, blockZ)) {
             return enforceWarmProvinceFamily(biomes, base, warmProvince);
