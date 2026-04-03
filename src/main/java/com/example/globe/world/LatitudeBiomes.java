@@ -6479,10 +6479,7 @@ public final class LatitudeBiomes {
     }
 
     private static boolean badlandsPatchHere(long seed, int blockX, int blockZ) {
-        int radius = ACTIVE_RADIUS_BLOCKS > 0 ? ACTIVE_RADIUS_BLOCKS : REFERENCE_DIAMETER_BLOCKS / 2;
-        radius = Math.max(1, radius);
-        int scale = Math.max(32768, radius * 2);
-        double n = blobNoise01(seed ^ BADLANDS_PATCH_SALT, blockX, blockZ, scale, 0);
+        double n = blobNoise01(seed ^ BADLANDS_PATCH_SALT, blockX, blockZ, BADLANDS_PATCH_SIZE_BLOCKS, 0);
         return n < BADLANDS_PATCH_CHANCE;
     }
 
