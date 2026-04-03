@@ -2677,6 +2677,10 @@ public final class LatitudeBiomes {
         int chunkZ = blockZ >> 4;
 
         long seed = WORLD_SEED;
+        ProvinceAuthority.Province warmProvince = warmProvinceClass(blockX, blockZ, BAND_SUBTROPICAL);
+        if (warmProvince == ProvinceAuthority.Province.WARM_DRY) {
+            return pickAridRegionFallback(biomes, base, blockX, blockZ);
+        }
 
         // Subtropical band grades from wetter low latitudes to drier high latitudes.
         double bandStart = LatitudeBands.Band.SUBTROPICAL.lowDeg() / 90.0;
@@ -2695,8 +2699,9 @@ public final class LatitudeBiomes {
         double humidity = subtropicalHumidityNoise(blockX, blockZ);
         double humidThreshold = subtropicalHumidityThreshold(step);
         if (humidity < humidThreshold) {
-            return pickFromWeightedTags(biomes, base, blockX, blockZ, 110 + step, 0x5B70 + step,
+            RegistryEntry<Biome> humidPick = pickFromWeightedTags(biomes, base, blockX, blockZ, 110 + step, 0x5B70 + step,
                     LAT_SUBTROPICAL_HUMID_PRIMARY, LAT_SUBTROPICAL_HUMID_SECONDARY, LAT_SUBTROPICAL_HUMID_ACCENT);
+            return enforceWarmProvinceFamily(biomes, humidPick, warmProvince);
         }
         boolean coldShoulderArid = step == 0 && u >= SUBTROPICAL_ARID_SHOULDER_U;
 
@@ -2729,7 +2734,8 @@ public final class LatitudeBiomes {
                     : pickFromWeightedTags(biomes, base, blockX, blockZ, 100, 0x7A00,
                     LAT_ARID_PRIMARY, LAT_ARID_SECONDARY, LAT_ARID_ACCENT);
         };
-        return softenSubtropicalBadlands(biomes, base, pick);
+        RegistryEntry<Biome> softened = softenSubtropicalBadlands(biomes, base, pick);
+        return enforceWarmProvinceFamily(biomes, softened, warmProvince);
     }
 
     private static boolean isAridTropicalStep(int blockX, int blockZ, double t) {
@@ -2777,6 +2783,10 @@ public final class LatitudeBiomes {
         int chunkZ = blockZ >> 4;
 
         long seed = WORLD_SEED;
+        ProvinceAuthority.Province warmProvince = warmProvinceClass(blockX, blockZ, BAND_SUBTROPICAL);
+        if (warmProvince == ProvinceAuthority.Province.WARM_DRY) {
+            return pickAridRegionFallback(biomes, base, blockX, blockZ);
+        }
 
         // Subtropical band grades from wetter low latitudes to drier high latitudes.
         double bandStart = LatitudeBands.Band.SUBTROPICAL.lowDeg() / 90.0;
@@ -2795,8 +2805,9 @@ public final class LatitudeBiomes {
         double humidity = subtropicalHumidityNoise(blockX, blockZ);
         double humidThreshold = subtropicalHumidityThreshold(step);
         if (humidity < humidThreshold) {
-            return pickFromWeightedTags(biomes, base, blockX, blockZ, 110 + step, 0x5B70 + step,
+            RegistryEntry<Biome> humidPick = pickFromWeightedTags(biomes, base, blockX, blockZ, 110 + step, 0x5B70 + step,
                     LAT_SUBTROPICAL_HUMID_PRIMARY, LAT_SUBTROPICAL_HUMID_SECONDARY, LAT_SUBTROPICAL_HUMID_ACCENT);
+            return enforceWarmProvinceFamily(biomes, humidPick, warmProvince);
         }
         boolean coldShoulderArid = step == 0 && u >= SUBTROPICAL_ARID_SHOULDER_U;
 
@@ -2826,7 +2837,8 @@ public final class LatitudeBiomes {
                     : pickFromWeightedTags(biomes, base, blockX, blockZ, 100, 0x7A00,
                     LAT_ARID_PRIMARY, LAT_ARID_SECONDARY, LAT_ARID_ACCENT);
         };
-        return softenSubtropicalBadlands(biomes, base, pick);
+        RegistryEntry<Biome> softened = softenSubtropicalBadlands(biomes, base, pick);
+        return enforceWarmProvinceFamily(biomes, softened, warmProvince);
     }
 
     private static RegistryEntry<Biome> oceanByLatitudeBandOrBase(Registry<Biome> biomes, RegistryEntry<Biome> base, int blockX, int blockZ, int bandIndex) {
@@ -5961,11 +5973,19 @@ public final class LatitudeBiomes {
     }
 
     private static RegistryEntry<Biome> pickAridRegionFallback(Registry<Biome> biomes,
-                                                               RegistryEntry<Biome> base,
-                                                               int blockX,
-                                                               int blockZ) {
+                                                                RegistryEntry<Biome> base,
+                                                                int blockX,
+                                                                int blockZ) {
+        int radiusHint = ACTIVE_RADIUS_BLOCKS > 0 ? ACTIVE_RADIUS_BLOCKS : (REFERENCE_DIAMETER_BLOCKS / 2);
+        ProvinceAuthority.Province warmProvince = warmProvinceClass(
+                blockX,
+                blockZ,
+                authoritativeLandBandIndex(blockX, blockZ, radiusHint));
+        if (warmProvince != ProvinceAuthority.Province.WARM_DRY) {
+            return base;
+        }
         if (!aridHotspotHere(WORLD_SEED, blockX, blockZ)) {
-            return pickDryWarmFallback(biomes, base);
+            return enforceWarmProvinceFamily(biomes, base, warmProvince);
         }
 
         // Inside an arid hotspot: prefer badlands family when patch noise hits, else desert.
@@ -5987,16 +6007,24 @@ public final class LatitudeBiomes {
         try {
             return biome(biomes, "minecraft:desert");
         } catch (Throwable ignored) {
-            return pickDryWarmFallback(biomes, base);
+            return enforceWarmProvinceFamily(biomes, base, warmProvince);
         }
     }
 
     private static RegistryEntry<Biome> pickAridRegionFallback(Collection<RegistryEntry<Biome>> biomes,
-                                                               RegistryEntry<Biome> base,
-                                                               int blockX,
-                                                               int blockZ) {
+                                                                RegistryEntry<Biome> base,
+                                                                int blockX,
+                                                                int blockZ) {
+        int radiusHint = ACTIVE_RADIUS_BLOCKS > 0 ? ACTIVE_RADIUS_BLOCKS : (REFERENCE_DIAMETER_BLOCKS / 2);
+        ProvinceAuthority.Province warmProvince = warmProvinceClass(
+                blockX,
+                blockZ,
+                authoritativeLandBandIndex(blockX, blockZ, radiusHint));
+        if (warmProvince != ProvinceAuthority.Province.WARM_DRY) {
+            return base;
+        }
         if (!aridHotspotHere(WORLD_SEED, blockX, blockZ)) {
-            return pickDryWarmFallback(biomes, base);
+            return enforceWarmProvinceFamily(biomes, base, warmProvince);
         }
 
         if (badlandsPatchHere(WORLD_SEED, blockX, blockZ)) {
@@ -6011,7 +6039,7 @@ public final class LatitudeBiomes {
         if (desert != null) {
             return desert;
         }
-        return pickDryWarmFallback(biomes, base);
+        return enforceWarmProvinceFamily(biomes, base, warmProvince);
     }
 
     private static void logSubtropicalJungleReturn(String pathLabel,
@@ -6483,6 +6511,126 @@ public final class LatitudeBiomes {
         return n < BADLANDS_PATCH_CHANCE;
     }
 
+    // Diagnostic helpers (read-only)
+    public static boolean debugAridHotspot(int blockX, int blockZ) {
+        return aridHotspotHere(WORLD_SEED, blockX, blockZ);
+    }
+
+    public static boolean debugBadlandsPatch(int blockX, int blockZ) {
+        return badlandsPatchHere(WORLD_SEED, blockX, blockZ);
+    }
+
+    private static ProvinceAuthority.Province warmProvinceClass(int blockX, int blockZ, int bandIndex) {
+        if (bandIndex != BAND_TROPICAL && bandIndex != BAND_SUBTROPICAL) {
+            return null;
+        }
+        ProvinceAuthority.Province province = classifyProvince(blockX, blockZ);
+        return switch (province) {
+            case WARM_WET, WARM_MEDIUM, WARM_DRY -> province;
+            default -> null;
+        };
+    }
+
+    private static boolean isDesertFamily(RegistryEntry<Biome> biome) {
+        return isBiomeId(biome, "minecraft:desert");
+    }
+
+    private static RegistryEntry<Biome> enforceWarmProvinceFamily(Registry<Biome> biomes,
+                                                                  RegistryEntry<Biome> pick,
+                                                                  ProvinceAuthority.Province province) {
+        if (province == null || pick == null) {
+            return pick;
+        }
+        switch (province) {
+            case WARM_WET -> {
+                if (isJungleFamily(pick)) return pick;
+                try {
+                    return biome(biomes, "minecraft:sparse_jungle");
+                } catch (Throwable ignored) {
+                }
+                try {
+                    return biome(biomes, "minecraft:bamboo_jungle");
+                } catch (Throwable ignored) {
+                }
+                try {
+                    return biome(biomes, "minecraft:jungle");
+                } catch (Throwable ignored) {
+                }
+                return pick;
+            }
+            case WARM_MEDIUM -> {
+                if (isSavannaFamily(pick)) return pick;
+                try {
+                    return biome(biomes, "minecraft:savanna");
+                } catch (Throwable ignored) {
+                }
+                try {
+                    return biome(biomes, "minecraft:savanna_plateau");
+                } catch (Throwable ignored) {
+                }
+                try {
+                    return biome(biomes, "minecraft:windswept_savanna");
+                } catch (Throwable ignored) {
+                    return pick;
+                }
+            }
+            case WARM_DRY -> {
+                if (isDesertFamily(pick) || isBadlandsFamily(pick)) return pick;
+                try {
+                    return biome(biomes, "minecraft:desert");
+                } catch (Throwable ignored) {
+                }
+                try {
+                    return biome(biomes, "minecraft:badlands");
+                } catch (Throwable ignored) {
+                    return pick;
+                }
+            }
+            default -> {
+                return pick;
+            }
+        }
+    }
+
+    private static RegistryEntry<Biome> enforceWarmProvinceFamily(Collection<RegistryEntry<Biome>> biomes,
+                                                                  RegistryEntry<Biome> pick,
+                                                                  ProvinceAuthority.Province province) {
+        if (province == null || pick == null) {
+            return pick;
+        }
+        switch (province) {
+            case WARM_WET -> {
+                if (isJungleFamily(pick)) return pick;
+                RegistryEntry<Biome> sparse = entryById(biomes, "minecraft:sparse_jungle");
+                if (sparse != null) return sparse;
+                RegistryEntry<Biome> bamboo = entryById(biomes, "minecraft:bamboo_jungle");
+                if (bamboo != null) return bamboo;
+                RegistryEntry<Biome> jungle = entryById(biomes, "minecraft:jungle");
+                if (jungle != null) return jungle;
+                return pick;
+            }
+            case WARM_MEDIUM -> {
+                if (isSavannaFamily(pick)) return pick;
+                RegistryEntry<Biome> savanna = entryById(biomes, "minecraft:savanna");
+                if (savanna != null) return savanna;
+                RegistryEntry<Biome> plateau = entryById(biomes, "minecraft:savanna_plateau");
+                if (plateau != null) return plateau;
+                RegistryEntry<Biome> windswept = entryById(biomes, "minecraft:windswept_savanna");
+                return windswept != null ? windswept : pick;
+            }
+            case WARM_DRY -> {
+                if (isDesertFamily(pick) || isBadlandsFamily(pick)) return pick;
+                RegistryEntry<Biome> desert = entryById(biomes, "minecraft:desert");
+                if (desert != null) return desert;
+                RegistryEntry<Biome> badlands = entryById(biomes, "minecraft:badlands");
+                return badlands != null ? badlands : pick;
+            }
+            default -> {
+                return pick;
+            }
+        }
+    }
+
     
     private static double toUnitDouble(long h) {
         // Map 53 random bits to [0,1)
@@ -6767,8 +6915,9 @@ public final class LatitudeBiomes {
 
     private static RegistryEntry<Biome> sanitizeLandBiome(Registry<Biome> biomes, RegistryEntry<Biome> pick, int bandIndex, int blockX, int blockZ) {
         if (bandIndex == BAND_TROPICAL) {
+            ProvinceAuthority.Province warmProvince = warmProvinceClass(blockX, blockZ, bandIndex);
             if (isWarmFamily(pick)) {
-                return pick;
+                return enforceWarmProvinceFamily(biomes, pick, warmProvince);
             }
             if (isBiomeId(pick, "minecraft:plains")
                     || isBiomeId(pick, "minecraft:forest")
@@ -6782,13 +6931,15 @@ public final class LatitudeBiomes {
                     if (openness < 0.92 || compositionBias <= 0.20) {
                         return pick; // keep temperate winner; avoid speckle repaint
                     }
+                    RegistryEntry<Biome> promoted;
                     if (openness >= 0.96 && compositionBias > 0.28) {
-                        return biome(biomes, "minecraft:savanna");
+                        promoted = biome(biomes, "minecraft:savanna");
+                    } else if (compositionBias > 0.32) {
+                        promoted = biome(biomes, SWAMP_ID);
+                    } else {
+                        promoted = biome(biomes, "minecraft:sparse_jungle");
                     }
-                    if (compositionBias > 0.32) {
-                        return biome(biomes, SWAMP_ID);
-                    }
-                    return biome(biomes, "minecraft:sparse_jungle");
+                    return enforceWarmProvinceFamily(biomes, promoted, warmProvince);
                 } catch (Throwable ignored) {
                     return pick;
                 }
@@ -6830,23 +6981,27 @@ public final class LatitudeBiomes {
         double openness = tropicalOpennessNoise(blockX, blockZ);
         boolean warmOpen = openness >= 0.50;
         boolean tropicalBand = bandIndex == BAND_TROPICAL;
+        ProvinceAuthority.Province warmProvince = warmProvinceClass(blockX, blockZ, bandIndex);
         String incomingId = biomeId(pick);
         if (inSavannaRegion) {
             boolean jungleClamped = false;
             if (isJungleFamily(out)) {
-                ProvinceAuthority.Province province = classifyProvince(blockX, blockZ);
-                if (province == ProvinceAuthority.Province.WARM_MEDIUM) {
+                if (warmProvince == ProvinceAuthority.Province.WARM_WET) {
                     return out; // let medium-warm survive instead of being savanna-clamped
                 }
-                RegistryEntry<Biome> softened = tropicalBand && warmOpen
+                RegistryEntry<Biome> softened = warmProvince == ProvinceAuthority.Province.WARM_DRY
+                        ? pickAridRegionFallback(biomes, out, blockX, blockZ)
+                        : (tropicalBand && warmOpen
                         ? pickOpenTropicalFallback(biomes, out, blockX, blockZ, LatitudeBands.Band.SUBTROPICAL.lowDeg() / 90.0)
-                        : pickAridRegionFallback(biomes, out, blockX, blockZ);
+                        : pickDryWarmFallback(biomes, out));
                 jungleClamped = softened != out;
                 out = softened;
-            } else if (isBadlandsFamily(out) && !aridHotspotHere(WORLD_SEED, blockX, blockZ)) {
+            } else if (isBadlandsFamily(out) && warmProvince != ProvinceAuthority.Province.WARM_DRY) {
                 // Outside a true arid province, drop badlands to the narrow dry fallback to avoid seam leakage.
                 out = pickDryWarmFallback(biomes, out);
-            } else if (openness >= 0.66 && (isBiomeId(out, "minecraft:plains") || isBiomeId(out, "minecraft:sunflower_plains"))
+            } else if (warmProvince == ProvinceAuthority.Province.WARM_MEDIUM
+                    && openness >= 0.66
+                    && (isBiomeId(out, "minecraft:plains") || isBiomeId(out, "minecraft:sunflower_plains"))
                     && blockY >= (SAVANNA_UPLAND_CLAMP_Y + 8)) {
                 try {
                     out = tropicalBand && openness < 0.40
@@ -6862,9 +7017,10 @@ public final class LatitudeBiomes {
                         blockY, incomingId, biomeId(out), blockX, blockZ);
             }
         }
-        if (!tropicalBand && isJungleFamily(out)) {
+        if (!tropicalBand && isJungleFamily(out) && warmProvince != ProvinceAuthority.Province.WARM_WET) {
             out = pickDryWarmFallback(biomes, out);
         }
+        out = enforceWarmProvinceFamily(biomes, out, warmProvince);
         if (isSavannaFamily(out)) {
             try {
                 if (!isBiomeId(out, "minecraft:windswept_savanna")) {
@@ -6887,6 +7043,10 @@ public final class LatitudeBiomes {
 
     private static RegistryEntry<Biome> sanitizeLandBiome(Collection<RegistryEntry<Biome>> biomes, RegistryEntry<Biome> pick, int bandIndex, int blockX, int blockZ) {
         if (bandIndex == BAND_TROPICAL) {
+            ProvinceAuthority.Province warmProvince = warmProvinceClass(blockX, blockZ, bandIndex);
+            if (isWarmFamily(pick)) {
+                return enforceWarmProvinceFamily(biomes, pick, warmProvince);
+            }
             if (isBiomeId(pick, "minecraft:plains")
                     || isBiomeId(pick, "minecraft:forest")
                     || isBiomeId(pick, "minecraft:birch_forest")
@@ -6904,7 +7064,7 @@ public final class LatitudeBiomes {
                         : entryById(biomes, "minecraft:sparse_jungle"));
                 if (entry == null) entry = entryById(biomes, "minecraft:sparse_jungle");
                 if (entry == null) entry = entryById(biomes, "minecraft:jungle");
-                return entry != null ? entry : pick;
+                return enforceWarmProvinceFamily(biomes, entry != null ? entry : pick, warmProvince);
             }
         }
 
@@ -6940,23 +7100,27 @@ public final class LatitudeBiomes {
         double openness = tropicalOpennessNoise(blockX, blockZ);
         boolean warmOpen = openness >= 0.50;
         boolean tropicalBand = bandIndex == BAND_TROPICAL;
+        ProvinceAuthority.Province warmProvince = warmProvinceClass(blockX, blockZ, bandIndex);
         String incomingId = biomeId(pick);
         if (inSavannaRegion) {
             boolean jungleClamped = false;
             if (isJungleFamily(out)) {
-                ProvinceAuthority.Province province = classifyProvince(blockX, blockZ);
-                if (province == ProvinceAuthority.Province.WARM_MEDIUM) {
+                if (warmProvince == ProvinceAuthority.Province.WARM_WET) {
                     return out; // let medium-warm survive instead of being savanna-clamped
                 }
-                RegistryEntry<Biome> softened = tropicalBand && warmOpen
+                RegistryEntry<Biome> softened = warmProvince == ProvinceAuthority.Province.WARM_DRY
+                        ? pickAridRegionFallback(biomes, out, blockX, blockZ)
+                        : (tropicalBand && warmOpen
                         ? pickOpenTropicalFallback(biomes, out, blockX, blockZ, LatitudeBands.Band.SUBTROPICAL.lowDeg() / 90.0)
-                        : pickAridRegionFallback(biomes, out, blockX, blockZ);
+                        : pickDryWarmFallback(biomes, out));
                 jungleClamped = softened != out;
                 out = softened;
-            } else if (isBadlandsFamily(out) && !aridHotspotHere(WORLD_SEED, blockX, blockZ)) {
+            } else if (isBadlandsFamily(out) && warmProvince != ProvinceAuthority.Province.WARM_DRY) {
                 RegistryEntry<Biome> softened = pickDryWarmFallback(biomes, out);
                 out = softened != null ? softened : out;
-            } else if (openness >= 0.66 && (isBiomeId(out, "minecraft:plains") || isBiomeId(out, "minecraft:sunflower_plains"))
+            } else if (warmProvince == ProvinceAuthority.Province.WARM_MEDIUM
+                    && openness >= 0.66
+                    && (isBiomeId(out, "minecraft:plains") || isBiomeId(out, "minecraft:sunflower_plains"))
                     && blockY >= (SAVANNA_UPLAND_CLAMP_Y + 8)) {
                 RegistryEntry<Biome> softened = tropicalBand && openness < 0.40
                         ? entryById(biomes, "minecraft:sparse_jungle")
@@ -6971,9 +7135,10 @@ public final class LatitudeBiomes {
                         blockY, incomingId, biomeId(out), blockX, blockZ);
             }
         }
-        if (!tropicalBand && isJungleFamily(out)) {
+        if (!tropicalBand && isJungleFamily(out) && warmProvince != ProvinceAuthority.Province.WARM_WET) {
             out = pickDryWarmFallback(biomes, out);
         }
+        out = enforceWarmProvinceFamily(biomes, out, warmProvince);
         if (isSavannaFamily(out)) {
             if (!isBiomeId(out, "minecraft:windswept_savanna")) {
                 String targetId = savannaTierByY(blockY);
