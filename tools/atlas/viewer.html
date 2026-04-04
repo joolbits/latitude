@@ -1146,10 +1146,6 @@ function decodeHumidityValues(image, width, height) {
 }
 
 function normalizeBaseBiomeColor(biomeId, fallbackHex) {
-  const id = String(biomeId || "");
-  if (id === "minecraft:beach") {
-    return "#E0C097";
-  }
   return fallbackHex;
 }
 
