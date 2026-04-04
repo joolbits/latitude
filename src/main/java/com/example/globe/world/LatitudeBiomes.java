@@ -5972,6 +5972,60 @@ public final class LatitudeBiomes {
         return desert != null ? desert : base;
     }
 
+    private static RegistryEntry<Biome> chooseBadlandsVariant(Registry<Biome> biomes, int blockX, int blockZ) {
+        RegistryEntry<Biome> badlands = null;
+        RegistryEntry<Biome> wooded = null;
+        RegistryEntry<Biome> eroded = null;
+        try {
+            badlands = biome(biomes, "minecraft:badlands");
+        } catch (Throwable ignored) {
+        }
+        try {
+            wooded = biome(biomes, "minecraft:wooded_badlands");
+        } catch (Throwable ignored) {
+        }
+        try {
+            eroded = biome(biomes, "minecraft:eroded_badlands");
+        } catch (Throwable ignored) {
+        }
+        // Deterministic uniform split so rare variants can actually win.
+        int salt = (int) (BADLANDS_PATCH_SALT ^ 0xB11AD5L);
+        long h = hash64(blockX, blockZ, salt);
+        double roll = (double) Long.remainderUnsigned(h, 10_000_000L) / 10_000_000.0; // [0,1)
+        if (roll < 0.90 && badlands != null) {
+            return badlands;                 // dominant default
+        }
+        if (roll < 0.99 && wooded != null) {
+            return wooded;                   // uncommon
+        }
+        if (eroded != null) {
+            return eroded;                   // very rare
+        }
+        if (wooded != null) {
+            return wooded;
+        }
+        return badlands != null ? badlands : eroded;
+    }
+
+    private static RegistryEntry<Biome> chooseBadlandsVariant(Collection<RegistryEntry<Biome>> biomes, int blockX, int blockZ) {
+        RegistryEntry<Biome> badlands = entryById(biomes, "minecraft:badlands");
+        RegistryEntry<Biome> wooded = entryById(biomes, "minecraft:wooded_badlands");
+        RegistryEntry<Biome> eroded = entryById(biomes, "minecraft:eroded_badlands");
+        double roll = blobNoise01(WORLD_SEED ^ BADLANDS_PATCH_SALT ^ 0xB11AD5L, blockX, blockZ, BADLANDS_PATCH_SIZE_BLOCKS * 2, 2);
+        RegistryEntry<Biome> chosen = null;
+        if (roll < 0.03 && eroded != null) {
+            chosen = eroded;
+        } else if (roll < 0.12 && wooded != null) {
+            chosen = wooded;
+        } else if (badlands != null) {
+            chosen = badlands;
+        }
+        if (chosen == null) {
+            chosen = badlands != null ? badlands : (wooded != null ? wooded : eroded);
+        }
+        return chosen;
+    }
+
     private static RegistryEntry<Biome> pickAridRegionFallback(Registry<Biome> biomes,
                                                                 RegistryEntry<Biome> base,
                                                                 int blockX,
@@ -5991,18 +6045,9 @@ public final class LatitudeBiomes {
             provinceBadlands = provinceVariant < 0.12;
         }
         if (provinceBadlands) {
-            try {
-                return biome(biomes, "minecraft:badlands");
-            } catch (Throwable ignored) {
-                try {
-                    return biome(biomes, "minecraft:wooded_badlands");
-                } catch (Throwable ignoredAgain) {
-                    try {
-                        return biome(biomes, "minecraft:eroded_badlands");
-                    } catch (Throwable ignoredAgainAgain) {
-                        // fall through to desert
-                    }
-                }
+            RegistryEntry<Biome> variant = chooseBadlandsVariant(biomes, blockX, blockZ);
+            if (variant != null) {
+                return variant;
             }
         }
         if (!aridHotspotHere(WORLD_SEED, blockX, blockZ)) {
@@ -6011,18 +6056,9 @@ public final class LatitudeBiomes {
 
         // Inside an arid hotspot: prefer badlands family when patch noise hits, else desert.
         if (badlandsPatchHere(WORLD_SEED, blockX, blockZ)) {
-            try {
-                return biome(biomes, "minecraft:badlands");
-            } catch (Throwable ignored) {
-                try {
-                    return biome(biomes, "minecraft:wooded_badlands");
-                } catch (Throwable ignoredAgain) {
-                    try {
-                        return biome(biomes, "minecraft:eroded_badlands");
-                    } catch (Throwable ignoredAgainAgain) {
-                        // fall through to desert
-                    }
-                }
+            RegistryEntry<Biome> variant = chooseBadlandsVariant(biomes, blockX, blockZ);
+            if (variant != null) {
+                return variant;
             }
         }
         try {
@@ -6050,24 +6086,20 @@ public final class LatitudeBiomes {
             provinceBadlands = provinceVariant < 0.12;
         }
         if (provinceBadlands) {
-            RegistryEntry<Biome> badlands = entryById(biomes, "minecraft:badlands");
-            if (badlands != null) return badlands;
-            RegistryEntry<Biome> wooded = entryById(biomes, "minecraft:wooded_badlands");
-            if (wooded != null) return wooded;
-            RegistryEntry<Biome> eroded = entryById(biomes, "minecraft:eroded_badlands");
-            if (eroded != null) return eroded;
+            RegistryEntry<Biome> variant = chooseBadlandsVariant(biomes, blockX, blockZ);
+            if (variant != null) {
+                return variant;
+            }
         }
         if (!aridHotspotHere(WORLD_SEED, blockX, blockZ)) {
             return enforceWarmProvinceFamily(biomes, base, warmProvince);
         }
 
         if (badlandsPatchHere(WORLD_SEED, blockX, blockZ)) {
-            RegistryEntry<Biome> badlands = entryById(biomes, "minecraft:badlands");
-            if (badlands != null) return badlands;
-            RegistryEntry<Biome> wooded = entryById(biomes, "minecraft:wooded_badlands");
-            if (wooded != null) return wooded;
-            RegistryEntry<Biome> eroded = entryById(biomes, "minecraft:eroded_badlands");
-            if (eroded != null) return eroded;
+            RegistryEntry<Biome> variant = chooseBadlandsVariant(biomes, blockX, blockZ);
+            if (variant != null) {
+                return variant;
+            }
         }
         RegistryEntry<Biome> desert = entryById(biomes, "minecraft:desert");
         if (desert != null) {
