@@ -20,11 +20,29 @@ ROOT = Path(__file__).resolve().parents[2]
 RUNS_ROOT = ROOT / "run-headless" / "latdev" / "atlas-runs"
 VIEWER_ROOT = ROOT / "tools" / "atlas" / "viewer"
 ATLAS_PS1 = ROOT / "tools" / "atlas" / "Atlas.ps1"
+PALETTE_AUTHORITY_PATH = ROOT / "tools" / "atlas" / "palette_authority.json"
 COARSE_RUGGEDNESS_STEP = 64
 COARSE_RUGGEDNESS_FILE = f"step{COARSE_RUGGEDNESS_STEP}_ruggedness.png"
 
 STEP_RE = re.compile(r"step(\d+)", re.IGNORECASE)
 HEX_RE = re.compile(r"^#?([0-9a-fA-F]{6})$")
+
+def _load_palette_overrides() -> dict[str, list[int]]:
+    if not PALETTE_AUTHORITY_PATH.exists():
+        return {}
+    try:
+        data = json.loads(PALETTE_AUTHORITY_PATH.read_text(encoding="utf-8"))
+        biomes = data.get("biomes", {}) if isinstance(data, dict) else {}
+        out: dict[str, list[int]] = {}
+        for key, val in biomes.items():
+            if not isinstance(val, str):
+                continue
+            rgb = hex_to_rgb(val)
+            if rgb:
+                out[key.lower()] = rgb
+        return out
+    except Exception:
+        return {}
 
 # Fallback name mapping for legacy runs that only have biome PNG + txt.
 # These RGB values are the canonical stable colors emitted by BiomePreviewExporter.
@@ -46,11 +64,23 @@ CANONICAL_COLOR_TO_BIOME_ID = {
     "154,154,154": "minecraft:stony_shore",
 }
 
-BIOME_DISPLAY_COLOR_OVERRIDE = {
+PALETTE_OVERRIDES = _load_palette_overrides()
+DEFAULT_DISPLAY_COLOR_OVERRIDE = {
     "minecraft:beach": [231, 215, 165],       # #E7D7A5 sandy tan
     "minecraft:snowy_beach": [233, 225, 204], # #E9E1CC off-white sand
     "minecraft:stony_shore": [154, 154, 154], # #9A9A9A stone gray
 }
+
+def display_color_for(biome_id: str, fallback_rgb: list[int] | tuple[int, int, int]) -> list[int]:
+    key = str(biome_id or "").lower()
+    if key in PALETTE_OVERRIDES:
+        return list(PALETTE_OVERRIDES[key])
+    short = key.split(":", 1)[1] if ":" in key else key
+    if short in PALETTE_OVERRIDES:
+        return list(PALETTE_OVERRIDES[short])
+    if key in DEFAULT_DISPLAY_COLOR_OVERRIDE:
+        return list(DEFAULT_DISPLAY_COLOR_OVERRIDE[key])
+    return list(fallback_rgb)
 
 GENERATION_LOCK = threading.Lock()
 GENERATION_PROC: subprocess.Popen | None = None
@@ -338,7 +368,7 @@ def _derive_biomes_from_image_only(image_path: Path) -> list[dict]:
         mapped = CANONICAL_COLOR_TO_BIOME_ID.get(key)
         biome_id = mapped if mapped else f"color:{r:02x}{g:02x}{b:02x}"
         biome_name = biome_name_from_id(biome_id) if mapped else f"Color {r:02X}{g:02X}{b:02X}"
-        display_color = BIOME_DISPLAY_COLOR_OVERRIDE.get(biome_id, [r, g, b])
+        display_color = display_color_for(biome_id, (r, g, b))
         out.append(
             {
                 "id": biome_id,
@@ -387,11 +417,16 @@ def _biomes_from_palette_and_ids(
             dominant_rgb = idx_to_color_counts[idx].most_common(1)[0][0]
         if count <= 0:
             continue
+        display_color = e.get("displayColor") or e.get("display_color")
+        rgb = hex_to_rgb(display_color) if isinstance(display_color, str) else None
+        if not rgb:
+            rgb = [dominant_rgb[0], dominant_rgb[1], dominant_rgb[2]]
+        rgb = display_color_for(biome_id, rgb)
         row = {
             "index": idx,
             "id": biome_id,
             "name": biome_name_from_id(biome_id),
-            "color": [dominant_rgb[0], dominant_rgb[1], dominant_rgb[2]],
+            "color": rgb,
             "pct": round((count * 100.0) / total, 4),
         }
         out.append(row)
@@ -794,11 +829,13 @@ class Handler(BaseHTTPRequestHandler):
                 if not isinstance(biome_id, str) or not biome_id:
                     continue
                 display_color = row.get("displayColor")
+                base_rgb = hex_to_rgb(display_color) if isinstance(display_color, str) else [138, 138, 138]
+                base_rgb = display_color_for(biome_id, base_rgb)
                 out.append(
                     {
                         "id": biome_id,
                         "name": row.get("biome_name") or biome_name_from_id(biome_id),
-                        "color": hex_to_rgb(display_color) if isinstance(display_color, str) else [138, 138, 138],
+                        "color": base_rgb,
                         "present_in_world": bool(row.get("present_in_world", True)),
                         "first_seen_x": row.get("first_seen_x"),
                         "first_seen_z": row.get("first_seen_z"),

@@ -4,6 +4,9 @@ import com.example.globe.util.LatitudeBands;
 import com.example.globe.util.LatitudeMath;
 import com.example.globe.world.LatitudeBiomeSource;
 import com.example.globe.world.LatitudeBiomes;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import net.minecraft.registry.Registry;
 import net.minecraft.registry.RegistryKeys;
 import net.minecraft.registry.entry.RegistryEntry;
@@ -21,9 +24,14 @@ import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.io.Reader;
+import java.time.Instant;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
+import java.util.Collections;
 import java.util.EnumMap;
 import java.util.EnumSet;
 import java.util.HashMap;
@@ -32,6 +40,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 public final class BiomePreviewExporter {
     private static final int BLOCKS_PER_CHUNK = 16;
@@ -41,6 +50,10 @@ public final class BiomePreviewExporter {
     private static final long DEFAULT_BUDGET_MS = 10L;
     private static final int DEFAULT_INVENTORY_DISCOVERY_STEP = 32;
     private static final Identifier MANGROVE_SWAMP_BIOME_ID = Identifier.of("minecraft:mangrove_swamp");
+    private static final DateTimeFormatter RUN_LABEL_TIMESTAMP = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss")
+            .withLocale(Locale.ROOT)
+            .withZone(ZoneOffset.UTC);
+    private static final Map<String, Integer> PALETTE_OVERRIDES = loadPaletteOverrides();
 
     private BiomePreviewExporter() {
     }
@@ -50,7 +63,7 @@ public final class BiomePreviewExporter {
                                       int stepBlocks,
                                       int y,
                                       Path runDirectory) throws IOException {
-        return export(world, radiusBlocks, stepBlocks, y, runDirectory, world.getSeed(), ExportOptions.singleBiome());
+        return export(world, radiusBlocks, stepBlocks, y, runDirectory, world.getSeed(), ExportOptions.singleBiome(), null);
     }
 
     public static ExportResult export(ServerWorld world,
@@ -59,7 +72,7 @@ public final class BiomePreviewExporter {
                                       int y,
                                       Path runDirectory,
                                       ExportOptions options) throws IOException {
-        return export(world, radiusBlocks, stepBlocks, y, runDirectory, world.getSeed(), options);
+        return export(world, radiusBlocks, stepBlocks, y, runDirectory, world.getSeed(), options, null);
     }
 
     public static ExportResult export(ServerWorld world,
@@ -68,7 +81,8 @@ public final class BiomePreviewExporter {
                                       int y,
                                       Path runDirectory,
                                       long atlasSeed,
-                                      ExportOptions options) throws IOException {
+                                      ExportOptions options,
+                                      String runLabel) throws IOException {
         System.out.println("[LAT][ATLAS_TRACE] phase=export-start ruggednessMode=constant-bypass");
 
         long startNanos = System.nanoTime();
@@ -78,6 +92,7 @@ public final class BiomePreviewExporter {
         List<BiomeMaskLayer> maskTargets = effectiveOptions.maskLayers();
         boolean emitBiomeIndex = effectiveOptions.emitBiomeIndex();
         boolean emitHeight = effectiveOptions.emitHeight();
+        String resolvedRunLabel = resolveRunLabel(runLabel);
 
         // Batched path for emitHeight to avoid long single ticks. Caller should drive processBudget() across ticks.
         if (emitHeight) {
@@ -88,7 +103,8 @@ public final class BiomePreviewExporter {
                     y,
                     runDirectory,
                     atlasSeed,
-                    effectiveOptions);
+                    effectiveOptions,
+                    resolvedRunLabel);
             long budgetMs = Math.max(1L, Long.getLong("latitude.atlas.heightBudgetMs", DEFAULT_BUDGET_MS));
             ExportResult result = processor.processBudget(budgetMs);
             while (result == null) {
@@ -243,7 +259,7 @@ public final class BiomePreviewExporter {
         }
 
         long seed = atlasSeed;
-        Path outputDir = atlasStepDirectory(defaultAtlasRoot(runDirectory), seed, radiusBlocks, stepBlocks);
+        Path outputDir = atlasStepDirectory(defaultAtlasRoot(runDirectory), seed, resolvedRunLabel, radiusBlocks, stepBlocks);
         Files.createDirectories(outputDir);
 
         EnumMap<Layer, Path> layerPaths = new EnumMap<>(Layer.class);
@@ -274,6 +290,7 @@ public final class BiomePreviewExporter {
                 throw new IOException("PNG writer unavailable for biome_ids");
             }
             writeBiomePalette(outputDir.resolve("biome_palette.json"), biomeIndices);
+            writePaletteAuthority(outputDir);
         }
 
         System.out.println("[LAT][ATLAS_TRACE] phase=export-complete ruggednessMode=constant-bypass");
@@ -354,6 +371,7 @@ public final class BiomePreviewExporter {
         private final Path runDirectory;
         private final long atlasSeed;
         private final ExportOptions options;
+        private final String runLabel;
 
         private final EnumSet<Layer> layers;
         private final EnumSet<Overlay> overlays;
@@ -399,7 +417,8 @@ public final class BiomePreviewExporter {
                                      int y,
                                      Path runDirectory,
                                      long atlasSeed,
-                                     ExportOptions options) {
+                                     ExportOptions options,
+                                     String runLabel) {
             this.world = world;
             this.radiusBlocks = radiusBlocks;
             this.stepBlocks = stepBlocks;
@@ -407,6 +426,7 @@ public final class BiomePreviewExporter {
             this.runDirectory = runDirectory;
             this.atlasSeed = atlasSeed;
             this.options = options != null ? options : ExportOptions.singleBiome();
+            this.runLabel = resolveRunLabel(runLabel);
             this.layers = this.options.layers();
             this.overlays = this.options.overlays();
             this.maskTargets = this.options.maskLayers();
@@ -460,8 +480,9 @@ public final class BiomePreviewExporter {
                                           int y,
                                           Path runDirectory,
                                           long atlasSeed,
-                                          ExportOptions options) {
-            return new HeightStepProcessor(world, radiusBlocks, stepBlocks, y, runDirectory, atlasSeed, options);
+                                          ExportOptions options,
+                                          String runLabel) {
+            return new HeightStepProcessor(world, radiusBlocks, stepBlocks, y, runDirectory, atlasSeed, options, runLabel);
         }
 
         /**
@@ -586,7 +607,7 @@ public final class BiomePreviewExporter {
                 }
 
                 long seed = atlasSeed;
-                Path outputDir = atlasStepDirectory(defaultAtlasRoot(runDirectory), seed, radiusBlocks, stepBlocks);
+                Path outputDir = atlasStepDirectory(defaultAtlasRoot(runDirectory), seed, runLabel, radiusBlocks, stepBlocks);
                 Files.createDirectories(outputDir);
 
                 EnumMap<Layer, Path> layerPaths = new EnumMap<>(Layer.class);
@@ -617,6 +638,7 @@ public final class BiomePreviewExporter {
                         throw new IOException("PNG writer unavailable for biome_ids");
                     }
                     writeBiomePalette(outputDir.resolve("biome_palette.json"), biomeIndices);
+                    writePaletteAuthority(outputDir);
                 }
 
                 int inventoryDiscoveryStep = inventoryDiscoveryStep(stepBlocks);
@@ -714,6 +736,84 @@ public final class BiomePreviewExporter {
         Files.writeString(palettePath, out.toString());
     }
 
+    private static void writePaletteAuthority(Path outputDir) throws IOException {
+        Path authorityPath = outputDir.resolve("palette_authority.json");
+        List<Map.Entry<String, Integer>> entries = new ArrayList<>(PALETTE_OVERRIDES.entrySet());
+        entries.sort(Map.Entry.comparingByKey());
+        StringBuilder out = new StringBuilder();
+        out.append("{\n");
+        out.append("  \"biomes\": {\n");
+        for (int i = 0; i < entries.size(); i++) {
+            Map.Entry<String, Integer> entry = entries.get(i);
+            out.append("    \"").append(jsonEscape(entry.getKey())).append("\": \"")
+                    .append(hexColor(entry.getValue()))
+                    .append("\"");
+            if (i + 1 < entries.size()) {
+                out.append(",");
+            }
+            out.append("\n");
+        }
+        out.append("  }\n");
+        out.append("}\n");
+        Files.writeString(authorityPath, out.toString());
+    }
+
+    private static Map<String, Integer> loadPaletteOverrides() {
+        Map<String, Integer> overrides = new HashMap<>();
+        Path candidate = Path.of("tools", "atlas", "palette_authority.json");
+        if (Files.exists(candidate)) {
+            try (Reader reader = Files.newBufferedReader(candidate)) {
+                JsonElement parsed = JsonParser.parseReader(reader);
+                if (parsed != null && parsed.isJsonObject()) {
+                    JsonObject root = parsed.getAsJsonObject();
+                    JsonObject biomes = root.getAsJsonObject("biomes");
+                    if (biomes != null) {
+                        for (Map.Entry<String, JsonElement> entry : biomes.entrySet()) {
+                            JsonElement val = entry.getValue();
+                            if (val != null && val.isJsonPrimitive()) {
+                                Integer parsedColor = parseHexColor(val.getAsString());
+                                if (parsedColor != null) {
+                                    overrides.put(entry.getKey().toLowerCase(Locale.ROOT), parsedColor);
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                System.err.println("[LAT][ATLAS] palette_authority.json parse failed: " + e.getMessage());
+            }
+        }
+
+        // Built-in defaults to keep outputs deterministic even if the JSON file is missing.
+        overrides.putIfAbsent("minecraft:beach", 0xE0C097);
+        overrides.putIfAbsent("minecraft:snowy_beach", 0xE9E1CC);
+        overrides.putIfAbsent("minecraft:stony_shore", 0x9A9A9A);
+        overrides.putIfAbsent("minecraft:badlands", 0xD47F34);
+        overrides.putIfAbsent("minecraft:wooded_badlands", 0xB86832);
+        overrides.putIfAbsent("minecraft:eroded_badlands", 0xE3B35A);
+
+        return Collections.unmodifiableMap(overrides);
+    }
+
+    private static Integer parseHexColor(String raw) {
+        if (raw == null) {
+            return null;
+        }
+        String cleaned = raw.trim();
+        if (cleaned.startsWith("#")) {
+            cleaned = cleaned.substring(1);
+        }
+        try {
+            int rgb = Integer.parseInt(cleaned, 16);
+            if ((rgb & 0xFF000000) != 0) {
+                rgb = rgb & 0x00FFFFFF;
+            }
+            return rgb;
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
     private static String jsonEscape(String input) {
         StringBuilder out = new StringBuilder(input.length() + 8);
         for (int i = 0; i < input.length(); i++) {
@@ -734,11 +834,58 @@ public final class BiomePreviewExporter {
         return runDirectory.toAbsolutePath().normalize().resolve("latdev").resolve("atlas");
     }
 
-    public static Path atlasStepDirectory(Path atlasRoot, long seed, int radiusBlocks, int stepBlocks) {
+    public static Path atlasRunDirectory(Path atlasRoot, long seed, String runLabel) {
         return atlasRoot
                 .resolve("seed_" + seed)
+                .resolve("Run_" + resolveRunLabel(runLabel));
+    }
+
+    public static Path atlasStepDirectory(Path atlasRoot, long seed, String runLabel, int radiusBlocks, int stepBlocks) {
+        return atlasRunDirectory(atlasRoot, seed, runLabel)
                 .resolve("R" + radiusBlocks)
                 .resolve("step" + stepBlocks);
+    }
+
+    public static String resolveRunLabel(String runLabel) {
+        String candidate = normalizeRunLabel(runLabel);
+        if (!candidate.isEmpty()) {
+            return candidate;
+        }
+
+        String commit = normalizeRunLabel(currentGitCommit());
+        if (!commit.isEmpty()) {
+            return commit;
+        }
+
+        return RUN_LABEL_TIMESTAMP.format(Instant.now());
+    }
+
+    private static String normalizeRunLabel(String raw) {
+        if (raw == null) {
+            return "";
+        }
+        String trimmed = raw.trim();
+        if (trimmed.isEmpty()) {
+            return "";
+        }
+        String cleaned = trimmed.replaceAll("[^A-Za-z0-9._-]", "_");
+        return cleaned.isEmpty() ? "" : cleaned;
+    }
+
+    private static String currentGitCommit() {
+        try {
+            Process process = new ProcessBuilder().command("git", "rev-parse", "--short", "HEAD").start();
+            byte[] out = process.getInputStream().readAllBytes();
+            int exit = process.waitFor();
+            if (exit == 0) {
+                String text = new String(out).trim();
+                if (!text.isEmpty()) {
+                    return text;
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return "";
     }
 
     private static void writeSummary(Path txtPath,
@@ -1250,8 +1397,32 @@ public final class BiomePreviewExporter {
         return biome.getKey().map(key -> key.getValue().toString()).orElse("minecraft:plains");
     }
 
+    private static Integer paletteOverrideFor(String biomeId) {
+        if (biomeId == null) {
+            return null;
+        }
+        String normalized = biomeId.toLowerCase(Locale.ROOT);
+        Integer override = PALETTE_OVERRIDES.get(normalized);
+        if (override != null) {
+            return override;
+        }
+        int colon = normalized.indexOf(':');
+        if (colon > 0) {
+            String shortId = normalized.substring(colon + 1);
+            override = PALETTE_OVERRIDES.get(shortId);
+            if (override != null) {
+                return override;
+            }
+        }
+        return null;
+    }
+
     static int stableColorForBiomeId(String biomeId) {
         String id = biomeId.toLowerCase(Locale.ROOT);
+        Integer override = paletteOverrideFor(id);
+        if (override != null) {
+            return override;
+        }
         if (id.contains("snowy_beach")) {
             return 0xE9E1CC;
         }
