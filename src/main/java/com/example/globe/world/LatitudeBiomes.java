@@ -5557,6 +5557,10 @@ public final class LatitudeBiomes {
             }
             if (!strongOpen) {
                 if (isJungleFamily(base)) {
+                    RegistryEntry<Biome> wetWarm = pickWarmFallback(biomes, BAND_TROPICAL);
+                    if (wetWarm != null && !isSavannaFamily(wetWarm)) {
+                        return wetWarm;
+                    }
                     try {
                         return biome(biomes, "minecraft:savanna");
                     } catch (Throwable ignoredSavanna) {
@@ -5690,6 +5694,12 @@ public final class LatitudeBiomes {
                     } catch (Throwable ignoredPlains) {
                         // fall through
                     }
+                }
+                RegistryEntry<Biome> wetWarm = pickWarmFallback(biomes, BAND_TROPICAL);
+                if (wetWarm != null && !isSavannaFamily(wetWarm)) {
+                    WARM_POOL_AUDIT_NS_RETURN_OTHER.incrementAndGet();
+                    recordWarmOpenNsBuckets("other", compositionBias, opennessNoise, strongOpen);
+                    return warmOpenAuditReturn("open_province_wet_warm_return", wetWarm, wetWarm != base, compositionBias, opennessNoise, strongOpen);
                 }
                 try {
                     RegistryEntry<Biome> pick = biome(biomes, "minecraft:savanna");
