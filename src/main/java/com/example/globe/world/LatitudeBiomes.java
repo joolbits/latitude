@@ -7086,7 +7086,14 @@ public final class LatitudeBiomes {
         if (!tropicalBand && isJungleFamily(out) && warmProvince != ProvinceAuthority.Province.WARM_WET) {
             out = pickDryWarmFallback(biomes, out);
         }
-        out = enforceWarmProvinceFamily(biomes, out, warmProvince);
+        boolean allowWarmMediumSavannaClamp = warmProvince != ProvinceAuthority.Province.WARM_MEDIUM
+                || isSavannaFamily(out)
+                || isBiomeId(out, "minecraft:plains")
+                || isBiomeId(out, "minecraft:sunflower_plains");
+
+        if (allowWarmMediumSavannaClamp) {
+            out = enforceWarmProvinceFamily(biomes, out, warmProvince);
+        }
         if (isSavannaFamily(out)) {
             try {
                 if (!isBiomeId(out, "minecraft:windswept_savanna")) {
@@ -7204,7 +7211,14 @@ public final class LatitudeBiomes {
         if (!tropicalBand && isJungleFamily(out) && warmProvince != ProvinceAuthority.Province.WARM_WET) {
             out = pickDryWarmFallback(biomes, out);
         }
-        out = enforceWarmProvinceFamily(biomes, out, warmProvince);
+        boolean allowWarmMediumSavannaClamp = warmProvince != ProvinceAuthority.Province.WARM_MEDIUM
+                || isSavannaFamily(out)
+                || isBiomeId(out, "minecraft:plains")
+                || isBiomeId(out, "minecraft:sunflower_plains");
+
+        if (allowWarmMediumSavannaClamp) {
+            out = enforceWarmProvinceFamily(biomes, out, warmProvince);
+        }
         if (isSavannaFamily(out)) {
             if (!isBiomeId(out, "minecraft:windswept_savanna")) {
                 String targetId = savannaTierByY(blockY);
