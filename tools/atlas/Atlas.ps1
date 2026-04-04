@@ -42,17 +42,18 @@ New-Item -ItemType Directory -Force -Path $runDir | Out-Null
   emitHeight = [bool]$EmitHeight
 } | ConvertTo-Json -Depth 5 | Out-File (Join-Path $runDir "run_manifest.json") -Encoding utf8
 
-# Size -> expected radius map
+# Size -> expected radius map (canonical Latitude sizes)
 $sizeKey = $Size.ToLower()
 $expectedRadius = switch ($sizeKey) {
-  "itty" { 3750 }
-  "ittybitty" { 3750 }
+  "itty" { 5000 }          # alias tiny (legacy UI wording)
+  "ittybitty" { 5000 }     # alias tiny (legacy UI wording)
   "tiny" { 5000 }
   "small" { 7500 }
+  "medium" { 7500 }        # keep legacy label but align to canonical "small"
   "regular" { 10000 }
   "large" { 15000 }
   "ginormous" { 20000 }
-  "massive" { 20000 }
+  "massive" { 20000 }      # alias ginormous
   default { throw "Unknown atlas size '$Size'" }
 }
 
@@ -111,7 +112,7 @@ if ($GenerateRuggednessOnly) {
 .\gradlew.bat clean build -x test
 
 # Run exporter
-$args = "--seed $Seed --size $Size --step $Step --emitBiomeIndex true --bundle"
+$args = "--seed $Seed --size $Size --radius $expectedRadius --step $Step --emitBiomeIndex true --bundle"
 if ($IncludeRuggedness) { $args += " --ruggedness true" }
 if ($EmitHeight) { $args += " --emitHeight" }
 
