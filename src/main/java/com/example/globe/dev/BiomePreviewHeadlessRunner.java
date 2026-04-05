@@ -88,13 +88,14 @@ public final class BiomePreviewHeadlessRunner {
                     : radiusFromSizeOrWorld(config.sizePreset, world);
             long worldSeed = world.getSeed();
             long effectiveSeed = config.seedOverride != null ? config.seedOverride : worldSeed;
+            String runLabel = BiomePreviewExporter.resolveRunLabel(config.runLabel);
             Path outputDir = config.outDir != null ? config.outDir : defaultOutDir(server.getRunDirectory());
 
             LatitudeBiomes.setWorldSeed(effectiveSeed);
             LatitudeBiomes.setActiveRadiusBlocks(radius);
             String startMessage = String.format(
                     Locale.ROOT,
-                    "[latdev][headless] starting export seed=%d worldSeed=%d radius=%d steps=%s y=%d layers=%s overlays=%s emitBiomeIndex=%s emitHeight=%s out=%s",
+                    "[latdev][headless] starting export seed=%d worldSeed=%d radius=%d steps=%s y=%d layers=%s overlays=%s emitBiomeIndex=%s emitHeight=%s out=%s run=%s",
                     effectiveSeed,
                     worldSeed,
                     radius,
@@ -104,13 +105,14 @@ public final class BiomePreviewHeadlessRunner {
                     config.exportOptions.overlayCsv(),
                     config.exportOptions.emitBiomeIndex(),
                     config.exportOptions.emitHeight(),
-                    outputDir);
+                    outputDir,
+                    runLabel);
             GlobeMod.LOGGER.info(startMessage);
 
             for (int step : config.steps) {
                 BiomePreviewExporter.ExportResult result = BiomePreviewExporter.export(
-                        world, radius, step, y, server.getRunDirectory(), effectiveSeed, config.exportOptions);
-                BiomePreviewExporter.ExportResult finalized = finalizeOutput(result, effectiveSeed, outputDir);
+                        world, radius, step, y, server.getRunDirectory(), effectiveSeed, config.exportOptions, runLabel);
+                BiomePreviewExporter.ExportResult finalized = finalizeOutput(result, effectiveSeed, outputDir, runLabel);
 
                 String finishMessage = String.format(
                         Locale.ROOT,
@@ -267,7 +269,8 @@ public final class BiomePreviewHeadlessRunner {
 
     private static BiomePreviewExporter.ExportResult finalizeOutput(BiomePreviewExporter.ExportResult result,
                                                                     long effectiveSeed,
-                                                                    Path outDir) throws IOException {
+                                                                    Path outDir,
+                                                                    String runLabel) throws IOException {
         if (result == null) {
             throw new IOException("Height-enabled atlas export did not produce an ExportResult before finalizeOutput");
         }
@@ -276,6 +279,7 @@ public final class BiomePreviewHeadlessRunner {
         Path targetDir = BiomePreviewExporter.atlasStepDirectory(
                 targetRoot,
                 effectiveSeed,
+                runLabel,
                 result.radiusBlocks(),
                 result.stepBlocks());
         if (targetDir == null) {
@@ -386,7 +390,16 @@ public final class BiomePreviewHeadlessRunner {
         if (radiusDir == null) {
             return null;
         }
-        Path seedDir = radiusDir.getParent();
+        Path maybeRunDir = radiusDir.getParent();
+        if (maybeRunDir == null) {
+            return null;
+        }
+        Path seedDir;
+        if (maybeRunDir.getFileName() != null && maybeRunDir.getFileName().toString().toLowerCase(Locale.ROOT).startsWith("run_")) {
+            seedDir = maybeRunDir.getParent();
+        } else {
+            seedDir = maybeRunDir;
+        }
         if (seedDir == null) {
             return null;
         }
@@ -469,7 +482,15 @@ public final class BiomePreviewHeadlessRunner {
                 ? Path.of(kv.get("out")).toAbsolutePath().normalize()
                 : null;
 
-        return new Config(enabled, seed, radius, size, steps, y, exportOptions, out);
+        String runLabel = null;
+        for (String key : List.of("runlabel", "run", "label")) {
+            if (kv.containsKey(key) && !kv.get(key).isBlank()) {
+                runLabel = kv.get(key).trim();
+                break;
+            }
+        }
+
+        return new Config(enabled, seed, radius, size, steps, y, exportOptions, runLabel, out);
     }
 
     private static SearchConfig parseSearchConfig() {
@@ -943,6 +964,7 @@ public final class BiomePreviewHeadlessRunner {
                           List<Integer> steps,
                           int y,
                           BiomePreviewExporter.ExportOptions exportOptions,
+                          String runLabel,
                           Path outDir) {
     }
 
