@@ -1092,7 +1092,11 @@ public class LatitudeCreateWorldScreen extends Screen {
             drawSettingsStepperValue(context, MODE_NAMES[selectedModeIdx], MODE_COLORS[selectedModeIdx], modeRowY);
             drawSettingsRowLabel(context, "Commands", settLabelX, commandsRowY, MUTED);
             drawSettingsRowLabel(context, "Starting Compass", settLabelX, compassRowY, isLatitudeWorld() ? MUTED : DISABLED_COLOR);
-            if (!isLatitudeWorld()) drawSettingsRowLabel(context, "Bonus Chest", settLabelX, bonusChestRowY, MUTED);
+            if (!isLatitudeWorld()) {
+                drawSettingsRowLabel(context, "Bonus Chest", settLabelX, bonusChestRowY, MUTED);
+            } else {
+                drawSettingsRowLabel(context, "Bonus Chest unavailable in Latitude", settLabelX, bonusChestRowY, DISABLED_COLOR);
+            }
             drawSettingsRowLabel(context, "Game Rules", settLabelX, gameRulesRowY, MUTED);
             context.disableScissor();
             }
