@@ -1,5 +1,7 @@
 package com.example.globe.client;
 
+import java.util.ArrayList;
+import java.util.List;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.Click;
 import net.minecraft.client.gui.DrawContext;
@@ -59,6 +61,12 @@ public class LatitudeHudStudioScreen extends Screen {
 
     private ClickableWidget wResetHud;
 
+    private int sidebarScrollY = 0;
+    private int sidebarViewportTop;
+    private int sidebarViewportBottom;
+    private int sidebarContentHeight;
+    private final List<ClickableWidget> sidebarScrollWidgets = new ArrayList<>();
+    private final List<Integer> sidebarScrollBaseYs = new ArrayList<>();
 
     public LatitudeHudStudioScreen(Screen parent) {
         super(Text.literal("HUD Studio"));
@@ -97,6 +105,11 @@ public class LatitudeHudStudioScreen extends Screen {
         this.titleOffsetXf = LatitudeConfig.zoneEnterTitleOffsetX;
         this.titleOffsetYf = LatitudeConfig.zoneEnterTitleOffsetY;
 
+        this.sidebarScrollWidgets.clear();
+        this.sidebarScrollBaseYs.clear();
+        this.sidebarViewportTop = panelY;
+        this.sidebarViewportBottom = Math.max(panelY + 24, this.height - 60);
+
         int y = panelY;
 
         this.wTarget = this.addDrawableChild(ButtonWidget.builder(targetLabel(), b -> {
@@ -111,6 +124,7 @@ public class LatitudeHudStudioScreen extends Screen {
                 .dimensions(panelX, y, panelW, rowH)
                 .build());
         tooltip(this.wTarget, "Choose whether to adjust the compass, zone title, or both.");
+        trackSidebarWidget(this.wTarget, y);
         y += rowH + rowGap;
 
         this.wCompassStyle = this.addDrawableChild(CyclingButtonWidget.<CompassHudConfig.CompassStyle>builder(v -> Text.literal(v == CompassHudConfig.CompassStyle.ANALOG ? "Analog" : "Digital"), () -> cfg.style)
@@ -121,14 +135,17 @@ public class LatitudeHudStudioScreen extends Screen {
                     this.init();
                 }));
         tooltip(this.wCompassStyle, "Switch between the digital bar and the analog round compass.");
+        trackSidebarWidget(this.wCompassStyle, y);
         y += rowH + rowGap;
 
         if (analog) {
             this.wCompassAnalogSize = this.addDrawableChild(new FloatSlider(panelX, y, panelW, rowH, Text.literal("Analog Size"), 32.0f, 128.0f, cfg.analogSize, v -> cfg.analogSize = v));
             tooltip(this.wCompassAnalogSize, "Sets the analog compass diameter.");
+            trackSidebarWidget(this.wCompassAnalogSize, y);
             y += rowH + rowGap;
             this.wCompassAnalogInnerAlpha = this.addDrawableChild(new FloatSlider(panelX, y, panelW, rowH, Text.literal("Inner Transparency"), 0.0f, 1.0f, cfg.analogInnerAlpha, v -> cfg.analogInnerAlpha = v));
             tooltip(this.wCompassAnalogInnerAlpha, "Controls how transparent the analog inner disc is.");
+            trackSidebarWidget(this.wCompassAnalogInnerAlpha, y);
             y += rowH + rowGap;
             this.wCompassAnalogTheme = this.addDrawableChild(CyclingButtonWidget.<CompassHudConfig.AnalogCompassTheme>builder(v -> Text.literal(themeLabel(v)), () -> cfg.analogTheme)
                     .values(CompassHudConfig.AnalogCompassTheme.values())
@@ -137,26 +154,31 @@ public class LatitudeHudStudioScreen extends Screen {
                         CompassHudConfig.saveCurrent();
                     }));
             tooltip(this.wCompassAnalogTheme, "Pick a preset color scheme for the analog compass.");
+            trackSidebarWidget(this.wCompassAnalogTheme, y);
             y += rowH + rowGap;
         } else {
             this.wCompassScale = this.addDrawableChild(new FloatSlider(panelX, y, panelW, rowH, Text.literal("Scale"), 0.5f, 3.0f, cfg.scale, v -> cfg.scale = v));
             tooltip(this.wCompassScale, "Changes the size of the digital compass text.");
+            trackSidebarWidget(this.wCompassScale, y);
             y += rowH + rowGap;
 
             this.wCompassTransparency = this.addDrawableChild(new IntSlider(panelX, y, panelW, rowH, Text.literal("Transparency"), 0, 255, cfg.backgroundAlpha, v -> cfg.backgroundAlpha = v));
             tooltip(this.wCompassTransparency, "Adjusts the opacity of the digital compass background bar.");
+            trackSidebarWidget(this.wCompassTransparency, y);
             y += rowH + rowGap;
 
             this.wCompassBackground = this.addDrawableChild(CyclingButtonWidget.<Boolean>builder(v -> Text.literal(v ? "ON" : "OFF"), () -> cfg.showBackground)
                     .values(true, false)
                     .build(panelX, y, panelW, rowH, Text.literal("Background"), (btn, value) -> cfg.showBackground = value));
             tooltip(this.wCompassBackground, "Toggles the digital compass background box.");
+            trackSidebarWidget(this.wCompassBackground, y);
             y += rowH + rowGap;
 
             this.wCompassBgColor = this.addDrawableChild(CyclingButtonWidget.<String>builder(Text::literal, () -> bgColorName(cfg.backgroundRgb))
                     .values("BLACK", "WHITE", "DARK_GRAY", "BLUE")
                     .build(panelX, y, panelW, rowH, Text.literal("Background Color"), (btn, value) -> cfg.backgroundRgb = bgColorRgb(value)));
             tooltip(this.wCompassBgColor, "Selects the background color for the digital compass.");
+            trackSidebarWidget(this.wCompassBgColor, y);
             y += rowH + rowGap;
         }
 
@@ -164,6 +186,7 @@ public class LatitudeHudStudioScreen extends Screen {
                 .values("WHITE", "BLACK", "YELLOW", "RED", "CYAN")
                 .build(panelX, y, panelW, rowH, Text.literal("Text Color"), (btn, value) -> cfg.textRgb = textColorRgb(value)));
         tooltip(this.wCompassTextColor, "Selects the text color used for the compass and labels.");
+        trackSidebarWidget(this.wCompassTextColor, y);
         y += rowH + rowGap;
 
         if (analog) {
@@ -171,18 +194,21 @@ public class LatitudeHudStudioScreen extends Screen {
                     .values(true, false)
                     .build(panelX, y, panelW, rowH, Text.literal("Analog Latitude"), (btn, value) -> cfg.analogShowLatitude = value));
             tooltip(this.wCompassAnalogShowLatitude, "Shows latitude next to the analog compass.");
+            trackSidebarWidget(this.wCompassAnalogShowLatitude, y);
             y += rowH + rowGap;
         } else {
             this.wCompassShowLatitude = this.addDrawableChild(CyclingButtonWidget.<Boolean>builder(v -> Text.literal(v ? "ON" : "OFF"), () -> Boolean.TRUE.equals(cfg.showLatitude))
                     .values(true, false)
                     .build(panelX, y, panelW, rowH, Text.literal("Show Latitude"), (btn, value) -> cfg.showLatitude = value));
             tooltip(this.wCompassShowLatitude, "Shows latitude inside the digital compass line.");
+            trackSidebarWidget(this.wCompassShowLatitude, y);
             y += rowH + rowGap;
 
             this.wCompassCompact = this.addDrawableChild(CyclingButtonWidget.<Boolean>builder(v -> Text.literal(v ? "ON" : "OFF"), () -> cfg.compactHud)
                     .values(true, false)
                     .build(panelX, y, panelW, rowH, Text.literal("Compact HUD"), (btn, value) -> cfg.compactHud = value));
             tooltip(this.wCompassCompact, "Uses a tighter layout with minimal spacing.");
+            trackSidebarWidget(this.wCompassCompact, y);
             y += rowH + rowGap;
         }
 
@@ -193,6 +219,7 @@ public class LatitudeHudStudioScreen extends Screen {
                     CompassHudConfig.saveCurrent();
                 }));
         tooltip(this.wCompassAttachHotbar, "Snaps the digital compass to the hotbar. Analog ignores this for now.");
+        trackSidebarWidget(this.wCompassAttachHotbar, y);
         y += rowH + rowGap;
 
         this.wZoneDisplay = this.addDrawableChild(CyclingButtonWidget.<Boolean>builder(v -> Text.literal(v ? "ON" : "OFF"), () -> cfg.displayZoneInHud)
@@ -203,6 +230,7 @@ public class LatitudeHudStudioScreen extends Screen {
                     updateSidebarVisibility();
                 }));
         tooltip(this.wZoneDisplay, "Shows the current zone as small HUD text.");
+        trackSidebarWidget(this.wZoneDisplay, y);
         y += rowH + rowGap;
 
         this.wZoneFollow = this.addDrawableChild(CyclingButtonWidget.<Boolean>builder(v -> Text.literal(v ? "FOLLOW" : "DETACH"), () -> cfg.zoneFollowsCompass)
@@ -213,10 +241,13 @@ public class LatitudeHudStudioScreen extends Screen {
                     updateSidebarVisibility();
                 }));
         tooltip(this.wZoneFollow, "Let the zone label ride with the compass or detach it for dragging.");
+        trackSidebarWidget(this.wZoneFollow, y);
         y += rowH + rowGap;
 
         this.wTitleScale = this.addDrawableChild(new StepSlider(panelX, y, panelW, rowH, Text.literal("Title Size"), 1.0, 3.0, 0.1, LatitudeConfig.zoneEnterTitleScale, v -> LatitudeConfig.zoneEnterTitleScale = v));
         tooltip(this.wTitleScale, "Scales the zone enter title preview.");
+        trackSidebarWidget(this.wTitleScale, y);
+        this.sidebarContentHeight = y + rowH - panelY;
 
         int resetY = this.height - 52;
         this.wResetHud = this.addDrawableChild(ButtonWidget.builder(Text.literal("Reset HUD"), b -> {
@@ -283,6 +314,8 @@ public class LatitudeHudStudioScreen extends Screen {
 
         CompassHud.renderAdjustPreview(ctx, this.width, this.height);
 
+        applySidebarScroll();
+        drawSidebarScrollbar(ctx);
         super.render(ctx, mouseX, mouseY, delta);
 
         if (sidebarVisible) {
@@ -304,6 +337,18 @@ public class LatitudeHudStudioScreen extends Screen {
             updateSidebarVisibility();
         }
         wasLDown = lDown;
+    }
+
+    @Override
+    public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
+        if (sidebarVisible && mouseX < sidebarWidth + 10) {
+            int viewportH = sidebarViewportBottom - sidebarViewportTop;
+            int maxScroll = Math.max(0, sidebarContentHeight - viewportH);
+            sidebarScrollY -= (int) Math.signum(verticalAmount) * 20;
+            sidebarScrollY = MathHelper.clamp(sidebarScrollY, 0, maxScroll);
+            return true;
+        }
+        return super.mouseScrolled(mouseX, mouseY, horizontalAmount, verticalAmount);
     }
 
     @Override
@@ -464,6 +509,42 @@ public class LatitudeHudStudioScreen extends Screen {
         LatitudeConfig.zoneEnterTitleOffsetX = 0;
         LatitudeConfig.zoneEnterTitleOffsetY = -40;
         LatitudeConfig.saveCurrent();
+    }
+
+    private void trackSidebarWidget(ClickableWidget w, int baseY) {
+        sidebarScrollWidgets.add(w);
+        sidebarScrollBaseYs.add(baseY);
+    }
+
+    private void applySidebarScroll() {
+        if (!sidebarVisible) return;
+        int viewportH = sidebarViewportBottom - sidebarViewportTop;
+        int maxScroll = Math.max(0, sidebarContentHeight - viewportH);
+        sidebarScrollY = MathHelper.clamp(sidebarScrollY, 0, maxScroll);
+        for (int i = 0; i < sidebarScrollWidgets.size(); i++) {
+            ClickableWidget w = sidebarScrollWidgets.get(i);
+            if (w == null) continue;
+            int baseY = sidebarScrollBaseYs.get(i);
+            int drawY = baseY - sidebarScrollY;
+            w.setY(drawY);
+            w.visible = w.active && drawY >= sidebarViewportTop && drawY + w.getHeight() <= sidebarViewportBottom;
+        }
+    }
+
+    private void drawSidebarScrollbar(DrawContext ctx) {
+        if (!sidebarVisible) return;
+        int viewportH = sidebarViewportBottom - sidebarViewportTop;
+        int maxScroll = sidebarContentHeight - viewportH;
+        if (maxScroll <= 0) return;
+        int trackX = 6 + sidebarWidth + 1;
+        int trackTop = sidebarViewportTop + 2;
+        int trackBottom = sidebarViewportBottom - 2;
+        int trackH = trackBottom - trackTop;
+        if (trackH < 10) return;
+        int thumbH = Math.max(8, trackH * viewportH / sidebarContentHeight);
+        int thumbY = trackTop + (trackH - thumbH) * sidebarScrollY / maxScroll;
+        ctx.fill(trackX, trackTop, trackX + 3, trackBottom, 0x55FFFFFF);
+        ctx.fill(trackX, thumbY, trackX + 3, thumbY + thumbH, 0xFFD4A74A);
     }
 
     private void updateSidebarVisibility() {
