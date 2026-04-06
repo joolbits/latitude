@@ -437,8 +437,6 @@ public final class CompassHud {
         int y;
         x = anchoredX(cfg, screenW, boxW);
         y = anchoredY(cfg, screenH, boxH);
-        x += cfg.offsetX;
-        y += cfg.offsetY;
 
         x = clamp(x, 0, Math.max(0, screenW - boxW));
         y = clamp(y, 0, Math.max(0, screenH - boxH));
