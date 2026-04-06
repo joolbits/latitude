@@ -755,15 +755,14 @@ public class LatitudeCreateWorldScreen extends Screen {
         compassRowY = y;
         positionSettingsButton(compassBtn, settBtnX, settBtnW, y, btnH);
 
+        y += btnH + rowGap + labelGap;
+        bonusChestRowY = y;
         if (!isLatitudeWorld()) {
-            y += btnH + rowGap + labelGap;
-            bonusChestRowY = y;
             positionSettingsButton(bonusChestBtn, settBtnX, settBtnW, y, btnH);
-            y += btnH + rowGap + labelGap;
         } else {
-            bonusChestRowY = -1;
             if (bonusChestBtn != null) { bonusChestBtn.visible = false; bonusChestBtn.active = false; }
         }
+        y += btnH + rowGap + labelGap;
         gameRulesRowY = y;
         positionSettingsButton(gameRulesBtn, settBtnX, settBtnW, y, btnH);
 
