@@ -40,6 +40,7 @@ public class LatitudeSettingsScreen extends Screen {
     private final List<Integer> layoutBaseYs = new ArrayList<>();
     private ButtonWidget doneButton;
     private ButtonWidget resetButton;
+    private int footerY;
     private boolean compassExpanded = false;
     private int compassPreviewBaseY = -1;
 
@@ -211,6 +212,8 @@ public class LatitudeSettingsScreen extends Screen {
         int footerTotal = buttonWidth * 2 + buttonSpacing;
         int footerX = this.panelX + (this.panelWidth - footerTotal) / 2;
 
+        this.footerY = this.panelBottom - 28;
+
         this.doneButton = this.addDrawableChild(ButtonWidget.builder(Text.literal("Done"), b -> {
                     CompassHudConfig.saveCurrent();
                     LatitudeConfig.saveCurrent();
@@ -248,7 +251,7 @@ public class LatitudeSettingsScreen extends Screen {
             int drawY = baseY - scrollY;
             w.setY(drawY);
 
-            boolean visible = drawY >= panelTop && drawY <= panelBottom;
+            boolean visible = drawY >= panelTop && drawY + w.getHeight() <= this.footerY;
             w.visible = visible;
             w.active = visible;
         }
