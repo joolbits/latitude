@@ -267,6 +267,7 @@ public class LatitudeSettingsScreen extends Screen {
             }
         }
 
+        drawScrollbar(context, maxScroll);
         super.render(context, mouseX, mouseY, delta);
     }
 
@@ -291,6 +292,21 @@ public class LatitudeSettingsScreen extends Screen {
         String style = cfg.style == CompassHudConfig.CompassStyle.ANALOG ? "Analog" : "Digital";
         String compact = cfg.compactHud ? "Compact: ON" : "Compact: OFF";
         return "Compass Style: " + style + " | " + compact;
+    }
+
+    private void drawScrollbar(DrawContext context, int maxScroll) {
+        if (maxScroll <= 0) return;
+        int trackX = panelX + panelWidth - 5;
+        int trackTop = panelTop + 4;
+        int trackBottom = footerY - 4;
+        int trackH = trackBottom - trackTop;
+        if (trackH < 10) return;
+        int viewportH = footerY - panelTop;
+        int totalH = viewportH + maxScroll;
+        int thumbH = Math.max(10, trackH * viewportH / totalH);
+        int thumbY = trackTop + (trackH - thumbH) * scrollY / maxScroll;
+        context.fill(trackX, trackTop, trackX + 3, trackBottom, PANEL_BORDER);
+        context.fill(trackX, thumbY, trackX + 3, thumbY + thumbH, GOLD);
     }
 
     private void drawCompassPreview(DrawContext ctx, int x, int y, int w, int h, CompassHudConfig cfg) {
@@ -404,7 +420,7 @@ public class LatitudeSettingsScreen extends Screen {
         int titleY = this.panelTop - 70;
         int subtitleY = titleY + 18;
         int helperY = subtitleY + 14;
-        int sectionY = this.panelTop - 18;
+        int sectionY = this.panelTop - 26;
 
         drawScaledCenteredText(context, Text.literal("LATITUDE"), centerX, titleY, 1.4f, GOLD, false);
         drawCenteredText(context, Text.literal("Settings"), centerX, subtitleY, WARM_WHITE, true);
