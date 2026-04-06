@@ -755,11 +755,15 @@ public class LatitudeCreateWorldScreen extends Screen {
         compassRowY = y;
         positionSettingsButton(compassBtn, settBtnX, settBtnW, y, btnH);
 
-        y += btnH + rowGap + labelGap;
-        bonusChestRowY = y;
-        positionSettingsButton(bonusChestBtn, settBtnX, settBtnW, y, btnH);
-
-        y += btnH + rowGap + labelGap;
+        if (!isLatitudeWorld()) {
+            y += btnH + rowGap + labelGap;
+            bonusChestRowY = y;
+            positionSettingsButton(bonusChestBtn, settBtnX, settBtnW, y, btnH);
+            y += btnH + rowGap + labelGap;
+        } else {
+            bonusChestRowY = -1;
+            if (bonusChestBtn != null) { bonusChestBtn.visible = false; bonusChestBtn.active = false; }
+        }
         gameRulesRowY = y;
         positionSettingsButton(gameRulesBtn, settBtnX, settBtnW, y, btnH);
 
@@ -787,7 +791,7 @@ public class LatitudeCreateWorldScreen extends Screen {
         setTabbedWidgetVisible(modeNextBtn, showRules);
         setTabbedWidgetVisible(commandsBtn, showRules);
         setTabbedWidgetVisible(compassBtn, showRules);
-        setTabbedWidgetVisible(bonusChestBtn, showRules);
+        setTabbedWidgetVisible(bonusChestBtn, showRules && !isLatitudeWorld());
         setTabbedWidgetVisible(gameRulesBtn, showRules);
     }
 
@@ -1089,7 +1093,7 @@ public class LatitudeCreateWorldScreen extends Screen {
             drawSettingsStepperValue(context, MODE_NAMES[selectedModeIdx], MODE_COLORS[selectedModeIdx], modeRowY);
             drawSettingsRowLabel(context, "Commands", settLabelX, commandsRowY, MUTED);
             drawSettingsRowLabel(context, "Starting Compass", settLabelX, compassRowY, isLatitudeWorld() ? MUTED : DISABLED_COLOR);
-            drawSettingsRowLabel(context, "Bonus Chest", settLabelX, bonusChestRowY, MUTED);
+            if (!isLatitudeWorld()) drawSettingsRowLabel(context, "Bonus Chest", settLabelX, bonusChestRowY, MUTED);
             drawSettingsRowLabel(context, "Game Rules", settLabelX, gameRulesRowY, MUTED);
             context.disableScissor();
             }
