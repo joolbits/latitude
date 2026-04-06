@@ -61,8 +61,8 @@ public class LatitudeSettingsScreen extends Screen {
         int gutter = Math.max(28, this.width / 16);
         this.panelWidth = Math.min(420, this.width - gutter * 2);
         this.panelX = (this.width - this.panelWidth) / 2;
-        this.panelTop = Math.max(116, this.height / 6 + 38);
-        this.panelBottom = this.height - 86;
+        this.panelTop = Math.max(74, this.height / 6 + 38);
+        this.panelBottom = this.height - 26;
         int columnX = this.panelX + 30;
         int w = this.panelWidth - 60;
         int h = 20;
