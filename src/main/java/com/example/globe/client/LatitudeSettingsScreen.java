@@ -33,7 +33,6 @@ public class LatitudeSettingsScreen extends Screen {
     private int panelWidth;
     private int panelTop;
     private int panelBottom;
-    private int scrollAreaHeight;
     private int columnXCache;
     private int columnWCache;
     private final List<ClickableWidget> layoutWidgets = new ArrayList<>();
@@ -64,8 +63,6 @@ public class LatitudeSettingsScreen extends Screen {
         this.panelX = (this.width - this.panelWidth) / 2;
         this.panelTop = Math.max(116, this.height / 6 + 38);
         this.panelBottom = this.height - 86;
-        this.scrollAreaHeight = Math.max(140, this.panelBottom - this.panelTop - 76);
-
         int columnX = this.panelX + 30;
         int w = this.panelWidth - 60;
         int h = 20;
@@ -242,7 +239,7 @@ public class LatitudeSettingsScreen extends Screen {
         drawPanel(context);
         drawHeader(context);
 
-        int maxScroll = Math.max(0, contentHeight - scrollAreaHeight);
+        int maxScroll = Math.max(0, contentHeight - (this.footerY - this.panelTop));
         scrollY = MathHelper.clamp(scrollY, 0, maxScroll);
 
         for (int i = 0; i < layoutWidgets.size(); i++) {
@@ -265,7 +262,7 @@ public class LatitudeSettingsScreen extends Screen {
 
         if (compassExpanded && compassPreviewBaseY >= 0) {
             int previewY = compassPreviewBaseY - scrollY;
-            if (previewY >= panelTop && previewY <= panelBottom) {
+            if (previewY >= panelTop && previewY + 28 <= this.footerY) {
                 drawCompassPreview(context, columnXCache, previewY, columnWCache, 28, CompassHudConfig.get());
             }
         }
@@ -275,7 +272,7 @@ public class LatitudeSettingsScreen extends Screen {
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
-        int maxScroll = Math.max(0, contentHeight - scrollAreaHeight);
+        int maxScroll = Math.max(0, contentHeight - (this.footerY - this.panelTop));
         scrollY -= (int) Math.signum(verticalAmount) * 18;
         scrollY = MathHelper.clamp(scrollY, 0, maxScroll);
         return true;
