@@ -67,6 +67,8 @@ public class LatitudeHudStudioScreen extends Screen {
     private int sidebarContentHeight;
     private final List<ClickableWidget> sidebarScrollWidgets = new ArrayList<>();
     private final List<Integer> sidebarScrollBaseYs = new ArrayList<>();
+    private int sidebarWidgetW;
+    private int sidebarBgY;
 
     public LatitudeHudStudioScreen(Screen parent) {
         super(Text.literal("HUD Studio"));
@@ -77,9 +79,14 @@ public class LatitudeHudStudioScreen extends Screen {
     protected void init() {
         this.clearChildren();
 
+        int hintLaneH = 20;         // 8px padding + ~9px font + 3px bottom margin
         int panelX = 8;
-        int panelY = 28;
+        int panelY = hintLaneH + 8;  // 28 — first widget top
         int panelW = sidebarWidth;
+        int scrollGutter = 7;        // 2px gap + 3px bar + 2px right pad
+        int widgetW = panelW - scrollGutter;
+        this.sidebarWidgetW = widgetW;
+        this.sidebarBgY = hintLaneH + 2; // 22 — sidebar bg rect top
         int rowH = 20;
         int rowGap = 4;
 
@@ -121,7 +128,7 @@ public class LatitudeHudStudioScreen extends Screen {
                     b.setMessage(targetLabel());
                     updateSidebarVisibility();
                 })
-                .dimensions(panelX, y, panelW, rowH)
+                .dimensions(panelX, y, widgetW, rowH)
                 .build());
         tooltip(this.wTarget, "Choose whether to adjust the compass, zone title, or both.");
         trackSidebarWidget(this.wTarget, y);
@@ -129,7 +136,7 @@ public class LatitudeHudStudioScreen extends Screen {
 
         this.wCompassStyle = this.addDrawableChild(CyclingButtonWidget.<CompassHudConfig.CompassStyle>builder(v -> Text.literal(v == CompassHudConfig.CompassStyle.ANALOG ? "Analog" : "Digital"), () -> cfg.style)
                 .values(CompassHudConfig.CompassStyle.values())
-                .build(panelX, y, panelW, rowH, Text.literal("Compass Style"), (btn, value) -> {
+                .build(panelX, y, widgetW, rowH, Text.literal("Compass Style"), (btn, value) -> {
                     cfg.style = value;
                     CompassHudConfig.saveCurrent();
                     this.init();
@@ -139,17 +146,17 @@ public class LatitudeHudStudioScreen extends Screen {
         y += rowH + rowGap;
 
         if (analog) {
-            this.wCompassAnalogSize = this.addDrawableChild(new FloatSlider(panelX, y, panelW, rowH, Text.literal("Analog Size"), 32.0f, 128.0f, cfg.analogSize, v -> cfg.analogSize = v));
+            this.wCompassAnalogSize = this.addDrawableChild(new FloatSlider(panelX, y, widgetW, rowH, Text.literal("Analog Size"), 32.0f, 128.0f, cfg.analogSize, v -> cfg.analogSize = v));
             tooltip(this.wCompassAnalogSize, "Sets the analog compass diameter.");
             trackSidebarWidget(this.wCompassAnalogSize, y);
             y += rowH + rowGap;
-            this.wCompassAnalogInnerAlpha = this.addDrawableChild(new FloatSlider(panelX, y, panelW, rowH, Text.literal("Inner Transparency"), 0.0f, 1.0f, cfg.analogInnerAlpha, v -> cfg.analogInnerAlpha = v));
+            this.wCompassAnalogInnerAlpha = this.addDrawableChild(new FloatSlider(panelX, y, widgetW, rowH, Text.literal("Inner Transparency"), 0.0f, 1.0f, cfg.analogInnerAlpha, v -> cfg.analogInnerAlpha = v));
             tooltip(this.wCompassAnalogInnerAlpha, "Controls how transparent the analog inner disc is.");
             trackSidebarWidget(this.wCompassAnalogInnerAlpha, y);
             y += rowH + rowGap;
             this.wCompassAnalogTheme = this.addDrawableChild(CyclingButtonWidget.<CompassHudConfig.AnalogCompassTheme>builder(v -> Text.literal(themeLabel(v)), () -> cfg.analogTheme)
                     .values(CompassHudConfig.AnalogCompassTheme.values())
-                    .build(panelX, y, panelW, rowH, Text.literal("Color Scheme"), (btn, value) -> {
+                    .build(panelX, y, widgetW, rowH, Text.literal("Color Scheme"), (btn, value) -> {
                         cfg.analogTheme = value;
                         CompassHudConfig.saveCurrent();
                     }));
@@ -157,26 +164,26 @@ public class LatitudeHudStudioScreen extends Screen {
             trackSidebarWidget(this.wCompassAnalogTheme, y);
             y += rowH + rowGap;
         } else {
-            this.wCompassScale = this.addDrawableChild(new FloatSlider(panelX, y, panelW, rowH, Text.literal("Scale"), 0.5f, 3.0f, cfg.scale, v -> cfg.scale = v));
+            this.wCompassScale = this.addDrawableChild(new FloatSlider(panelX, y, widgetW, rowH, Text.literal("Scale"), 0.5f, 3.0f, cfg.scale, v -> cfg.scale = v));
             tooltip(this.wCompassScale, "Changes the size of the digital compass text.");
             trackSidebarWidget(this.wCompassScale, y);
             y += rowH + rowGap;
 
-            this.wCompassTransparency = this.addDrawableChild(new IntSlider(panelX, y, panelW, rowH, Text.literal("Transparency"), 0, 255, cfg.backgroundAlpha, v -> cfg.backgroundAlpha = v));
+            this.wCompassTransparency = this.addDrawableChild(new IntSlider(panelX, y, widgetW, rowH, Text.literal("Transparency"), 0, 255, cfg.backgroundAlpha, v -> cfg.backgroundAlpha = v));
             tooltip(this.wCompassTransparency, "Adjusts the opacity of the digital compass background bar.");
             trackSidebarWidget(this.wCompassTransparency, y);
             y += rowH + rowGap;
 
             this.wCompassBackground = this.addDrawableChild(CyclingButtonWidget.<Boolean>builder(v -> Text.literal(v ? "ON" : "OFF"), () -> cfg.showBackground)
                     .values(true, false)
-                    .build(panelX, y, panelW, rowH, Text.literal("Background"), (btn, value) -> cfg.showBackground = value));
+                    .build(panelX, y, widgetW, rowH, Text.literal("Background"), (btn, value) -> cfg.showBackground = value));
             tooltip(this.wCompassBackground, "Toggles the digital compass background box.");
             trackSidebarWidget(this.wCompassBackground, y);
             y += rowH + rowGap;
 
             this.wCompassBgColor = this.addDrawableChild(CyclingButtonWidget.<String>builder(Text::literal, () -> bgColorName(cfg.backgroundRgb))
                     .values("BLACK", "WHITE", "DARK_GRAY", "BLUE")
-                    .build(panelX, y, panelW, rowH, Text.literal("Background Color"), (btn, value) -> cfg.backgroundRgb = bgColorRgb(value)));
+                    .build(panelX, y, widgetW, rowH, Text.literal("Background Color"), (btn, value) -> cfg.backgroundRgb = bgColorRgb(value)));
             tooltip(this.wCompassBgColor, "Selects the background color for the digital compass.");
             trackSidebarWidget(this.wCompassBgColor, y);
             y += rowH + rowGap;
@@ -184,7 +191,7 @@ public class LatitudeHudStudioScreen extends Screen {
 
         this.wCompassTextColor = this.addDrawableChild(CyclingButtonWidget.<String>builder(Text::literal, () -> textColorName(cfg.textRgb))
                 .values("WHITE", "BLACK", "YELLOW", "RED", "CYAN")
-                .build(panelX, y, panelW, rowH, Text.literal("Text Color"), (btn, value) -> cfg.textRgb = textColorRgb(value)));
+                .build(panelX, y, widgetW, rowH, Text.literal("Text Color"), (btn, value) -> cfg.textRgb = textColorRgb(value)));
         tooltip(this.wCompassTextColor, "Selects the text color used for the compass and labels.");
         trackSidebarWidget(this.wCompassTextColor, y);
         y += rowH + rowGap;
@@ -192,21 +199,21 @@ public class LatitudeHudStudioScreen extends Screen {
         if (analog) {
             this.wCompassAnalogShowLatitude = this.addDrawableChild(CyclingButtonWidget.<Boolean>builder(v -> Text.literal(v ? "ON" : "OFF"), () -> Boolean.TRUE.equals(cfg.analogShowLatitude))
                     .values(true, false)
-                    .build(panelX, y, panelW, rowH, Text.literal("Analog Latitude"), (btn, value) -> cfg.analogShowLatitude = value));
+                    .build(panelX, y, widgetW, rowH, Text.literal("Analog Latitude"), (btn, value) -> cfg.analogShowLatitude = value));
             tooltip(this.wCompassAnalogShowLatitude, "Shows latitude next to the analog compass.");
             trackSidebarWidget(this.wCompassAnalogShowLatitude, y);
             y += rowH + rowGap;
         } else {
             this.wCompassShowLatitude = this.addDrawableChild(CyclingButtonWidget.<Boolean>builder(v -> Text.literal(v ? "ON" : "OFF"), () -> Boolean.TRUE.equals(cfg.showLatitude))
                     .values(true, false)
-                    .build(panelX, y, panelW, rowH, Text.literal("Show Latitude"), (btn, value) -> cfg.showLatitude = value));
+                    .build(panelX, y, widgetW, rowH, Text.literal("Show Latitude"), (btn, value) -> cfg.showLatitude = value));
             tooltip(this.wCompassShowLatitude, "Shows latitude inside the digital compass line.");
             trackSidebarWidget(this.wCompassShowLatitude, y);
             y += rowH + rowGap;
 
             this.wCompassCompact = this.addDrawableChild(CyclingButtonWidget.<Boolean>builder(v -> Text.literal(v ? "ON" : "OFF"), () -> cfg.compactHud)
                     .values(true, false)
-                    .build(panelX, y, panelW, rowH, Text.literal("Compact HUD"), (btn, value) -> cfg.compactHud = value));
+                    .build(panelX, y, widgetW, rowH, Text.literal("Compact HUD"), (btn, value) -> cfg.compactHud = value));
             tooltip(this.wCompassCompact, "Uses a tighter layout with minimal spacing.");
             trackSidebarWidget(this.wCompassCompact, y);
             y += rowH + rowGap;
@@ -214,7 +221,7 @@ public class LatitudeHudStudioScreen extends Screen {
 
         this.wCompassAttachHotbar = this.addDrawableChild(CyclingButtonWidget.<Boolean>builder(v -> Text.literal(v ? "ON" : "OFF"), () -> cfg.attachToHotbarCompass)
                 .values(true, false)
-                .build(panelX, y, panelW, rowH, Text.literal("Attach to Hotbar"), (btn, value) -> {
+                .build(panelX, y, widgetW, rowH, Text.literal("Attach to Hotbar"), (btn, value) -> {
                     cfg.attachToHotbarCompass = value;
                     CompassHudConfig.saveCurrent();
                 }));
@@ -224,7 +231,7 @@ public class LatitudeHudStudioScreen extends Screen {
 
         this.wZoneDisplay = this.addDrawableChild(CyclingButtonWidget.<Boolean>builder(v -> Text.literal(v ? "ON" : "OFF"), () -> cfg.displayZoneInHud)
                 .values(true, false)
-                .build(panelX, y, panelW, rowH, Text.literal("Display Zone in HUD"), (btn, value) -> {
+                .build(panelX, y, widgetW, rowH, Text.literal("Display Zone in HUD"), (btn, value) -> {
                     cfg.displayZoneInHud = value;
                     CompassHudConfig.saveCurrent();
                     updateSidebarVisibility();
@@ -235,7 +242,7 @@ public class LatitudeHudStudioScreen extends Screen {
 
         this.wZoneFollow = this.addDrawableChild(CyclingButtonWidget.<Boolean>builder(v -> Text.literal(v ? "FOLLOW" : "DETACH"), () -> cfg.zoneFollowsCompass)
                 .values(true, false)
-                .build(panelX, y, panelW, rowH, Text.literal("Zone Placement"), (btn, value) -> {
+                .build(panelX, y, widgetW, rowH, Text.literal("Zone Placement"), (btn, value) -> {
                     cfg.zoneFollowsCompass = value;
                     CompassHudConfig.saveCurrent();
                     updateSidebarVisibility();
@@ -244,7 +251,7 @@ public class LatitudeHudStudioScreen extends Screen {
         trackSidebarWidget(this.wZoneFollow, y);
         y += rowH + rowGap;
 
-        this.wTitleScale = this.addDrawableChild(new StepSlider(panelX, y, panelW, rowH, Text.literal("Title Size"), 1.0, 3.0, 0.1, LatitudeConfig.zoneEnterTitleScale, v -> LatitudeConfig.zoneEnterTitleScale = v));
+        this.wTitleScale = this.addDrawableChild(new StepSlider(panelX, y, widgetW, rowH, Text.literal("Title Size"), 1.0, 3.0, 0.1, LatitudeConfig.zoneEnterTitleScale, v -> LatitudeConfig.zoneEnterTitleScale = v));
         tooltip(this.wTitleScale, "Scales the zone enter title preview.");
         trackSidebarWidget(this.wTitleScale, y);
         this.sidebarContentHeight = y + rowH - panelY;
@@ -255,7 +262,7 @@ public class LatitudeHudStudioScreen extends Screen {
                     dragElement = DragElement.NONE;
                     this.init();
                 })
-                .dimensions(panelX, resetY, panelW, rowH)
+                .dimensions(panelX, resetY, widgetW, rowH)
                 .build());
         tooltip(this.wResetHud, "Restore compass and zone HUD settings to defaults.");
 
@@ -280,7 +287,7 @@ public class LatitudeHudStudioScreen extends Screen {
         ctx.fill(0, 0, this.width, this.height, 0x66000000);
 
         int sidebarX = 6;
-        int sidebarY = 22;
+        int sidebarY = this.sidebarBgY;
 
         if (sidebarVisible) {
             int px = sidebarX;
@@ -319,7 +326,7 @@ public class LatitudeHudStudioScreen extends Screen {
         super.render(ctx, mouseX, mouseY, delta);
 
         if (sidebarVisible) {
-            ctx.drawTextWithShadow(this.textRenderer, "Press L to hide settings", sidebarWidth + 14, 8, 0xAAFFFFFF);
+            ctx.drawTextWithShadow(this.textRenderer, "Press L to hide settings", 8, 8, 0xAAFFFFFF);
         } else {
             ctx.drawTextWithShadow(this.textRenderer, "Press L to show settings", 8, 8, 0xFFFFFFFF);
         }
@@ -536,7 +543,7 @@ public class LatitudeHudStudioScreen extends Screen {
         int viewportH = sidebarViewportBottom - sidebarViewportTop;
         int maxScroll = sidebarContentHeight - viewportH;
         if (maxScroll <= 0) return;
-        int trackX = 6 + sidebarWidth + 1;
+        int trackX = 8 + sidebarWidgetW + 2;  // panelX + widgetW + 2px gap
         int trackTop = sidebarViewportTop + 2;
         int trackBottom = sidebarViewportBottom - 2;
         int trackH = trackBottom - trackTop;
