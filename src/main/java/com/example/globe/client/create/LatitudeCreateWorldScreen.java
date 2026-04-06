@@ -53,6 +53,9 @@ public class LatitudeCreateWorldScreen extends Screen {
     private static final int PANEL_BORDER = 0xFF5C4A3A;
     private static final int PANEL_BG = 0xFF3A302A;
     private static final int SCROLLBAR_GUTTER = 6;
+    private static final int MIN_LEFT_W = 108;   // World: text fields (leftW-8) + padding
+    private static final int MIN_RIGHT_W = 130;  // Spawn Zone: zone rows + description
+    private static final int MIN_RAIL_W = 130;   // Rules: enough for world-type label (safeWidth = railW-66 >= 64px)
     private static final double[] PREVIEW_LABEL_DEGREES = {0.0, 23.5, 35.0, 50.0, 66.5, 90.0};
 
     private static final GlobeWorldSize DEFAULT_SIZE = GlobeWorldSize.REGULAR;
@@ -191,6 +194,15 @@ public class LatitudeCreateWorldScreen extends Screen {
     private int bonusChestRowY;
     private int gameRulesRowY;
 
+    // ── Tabbed fallback mode (activates when 3-col doesn't fit) ──
+    private boolean tabbedMode;
+    private int activeTab; // 0=World, 1=Spawn Zone, 2=Rules
+    private static final String[] TAB_LABELS = {"World", "Spawn Zone", "Rules"};
+    private static final int TAB_H = 20;
+    private static final int TAB_GAP = 4;
+    private int tabStripY;
+    private int tabPanelTop; // content area top (below tab strip)
+
     private LatitudeCreateWorldScreen(Runnable onClose, @Nullable Screen parent, GeneratorOptionsHolder holder) {
         super(Text.literal("New Expedition"));
         this.onClose = onClose;
@@ -291,15 +303,24 @@ public class LatitudeCreateWorldScreen extends Screen {
         paneStripScrollbarW = paneStripViewportWidth;
         paneStripScrollbarY = panelBottom + 2;
         paneStripScrollbarH = Math.max(4, Math.min(Math.max(4, scaledUi(6)), Math.max(4, bottomY - paneStripScrollbarY - 2)));
-        threeCol = paneStripViewportWidth >= 480;
-        if (threeCol) {
-            leftW = (int) (paneStripContentWidth * 0.32f);
-            rightW = (int) (paneStripContentWidth * 0.42f);
-            railW = paneStripContentWidth - leftW - rightW - paneGap * 2;
+        int minThreeColWidth = MIN_LEFT_W + MIN_RIGHT_W + MIN_RAIL_W + paneGap * 2;
+        tabbedMode = paneStripViewportWidth < minThreeColWidth;
+        threeCol = !tabbedMode;
+        if (tabbedMode) {
+            tabStripY = panelTop;
+            tabPanelTop = tabStripY + TAB_H + TAB_GAP;
+            panelTop = tabPanelTop;
+            leftW = paneStripContentWidth;
+            rightW = paneStripContentWidth;
+            railW = paneStripContentWidth;
         } else {
-            leftW = (int) (paneStripContentWidth * 0.45f);
-            rightW = paneStripContentWidth - leftW - paneGap;
-            railW = 0;
+            tabStripY = 0;
+            tabPanelTop = panelTop;
+            // Rail gets its minimum first; left/right split remainder at original 32:42 ratio.
+            railW = Math.max(MIN_RAIL_W, (int) (paneStripContentWidth * 0.26f));
+            int rem = paneStripContentWidth - railW - paneGap * 2;
+            leftW = Math.max(MIN_LEFT_W, (int) (rem * 0.432f)); // 32/(32+42)
+            rightW = Math.max(MIN_RIGHT_W, rem - leftW);
         }
         int maxPaneStripScroll = getPaneStripMaxScroll();
         if (paneStripScroll < 0) paneStripScroll = 0;
@@ -359,7 +380,7 @@ public class LatitudeCreateWorldScreen extends Screen {
         }
         updateRightLayout();
 
-        if (threeCol) {
+        {
             int settBtnW = railW - 8;
             int settBtnX = railX + 4;
 
@@ -402,18 +423,10 @@ public class LatitudeCreateWorldScreen extends Screen {
                     .build();
             this.addDrawableChild(gameRulesBtn);
             updateSettingsLayout();
-        } else {
-            worldTypePrevBtn = null;
-            worldTypeNextBtn = null;
-            modePrevBtn = null;
-            modeNextBtn = null;
-            commandsBtn = null;
-            compassBtn = null;
-            bonusChestBtn = null;
-            gameRulesBtn = null;
-            settingsViewportTop = 0;
-            settingsViewportBottom = 0;
-            settingsContentHeight = 0;
+        }
+
+        if (tabbedMode) {
+            applyTabbedVisibility();
         }
 
         // ── 17. Begin Expedition ──
@@ -527,6 +540,13 @@ public class LatitudeCreateWorldScreen extends Screen {
     }
 
     private void updatePaneStripLayout() {
+        if (tabbedMode) {
+            // All panels overlap at the same position in tabbed mode
+            leftX = paneStripViewportLeft;
+            rightX = paneStripViewportLeft;
+            railX = paneStripViewportLeft;
+            return;
+        }
         int baseLeft = paneStripViewportLeft + Math.max(0, (paneStripViewportWidth - paneStripContentWidth) / 2);
         leftX = baseLeft - paneStripScroll;
         rightX = leftX + leftW + paneGap;
@@ -622,7 +642,8 @@ public class LatitudeCreateWorldScreen extends Screen {
 
     private void updateLeftWidgetVisibility(ClickableWidget widget) {
         if (widget == null) return;
-        boolean visible = widget.getX() >= paneStripViewportLeft
+        boolean visible = (!tabbedMode || activeTab == 0)
+                && widget.getX() >= paneStripViewportLeft
                 && widget.getX() + widget.getWidth() <= paneStripViewportRight
                 && widget.getY() >= leftViewportTop
                 && widget.getY() + widget.getHeight() <= leftViewportBottom;
@@ -665,7 +686,9 @@ public class LatitudeCreateWorldScreen extends Screen {
         int zoneY = zoneListTopY;
         for (ZoneRowWidget row : zoneRows) {
             row.setDimensionsAndPosition(rightW - 4 - SCROLLBAR_GUTTER, zoneRowHeight, rightX + 2, zoneY);
-            boolean visible = row.getX() >= paneStripViewportLeft
+            boolean visible = isLatitudeWorld()
+                    && (!tabbedMode || activeTab == 1)
+                    && row.getX() >= paneStripViewportLeft
                     && row.getX() + row.getWidth() <= paneStripViewportRight
                     && zoneY >= rightViewportTop
                     && zoneY + zoneRowHeight <= rightViewportBottom;
@@ -694,7 +717,7 @@ public class LatitudeCreateWorldScreen extends Screen {
     }
 
     private void updateSettingsLayout() {
-        if (!threeCol || worldTypePrevBtn == null || worldTypeNextBtn == null || modePrevBtn == null || modeNextBtn == null || commandsBtn == null || compassBtn == null || bonusChestBtn == null || gameRulesBtn == null) {
+        if (worldTypePrevBtn == null || worldTypeNextBtn == null || modePrevBtn == null || modeNextBtn == null || commandsBtn == null || compassBtn == null || bonusChestBtn == null || gameRulesBtn == null) {
             settingsViewportTop = 0;
             settingsViewportBottom = 0;
             settingsContentHeight = 0;
@@ -743,11 +766,49 @@ public class LatitudeCreateWorldScreen extends Screen {
         updateSettingsButtons();
     }
 
+    private void applyTabbedVisibility() {
+        if (!tabbedMode) return;
+        // Tab 0 = World (left panel widgets)
+        boolean showWorld = activeTab == 0;
+        setTabbedWidgetVisible(worldNameField, showWorld);
+        setTabbedWidgetVisible(seedField, showWorld);
+        setTabbedWidgetVisible(sizePrevBtn, showWorld);
+        setTabbedWidgetVisible(sizeNextBtn, showWorld);
+        // Tab 1 = Spawn Zone (right panel widgets)
+        boolean showZone = activeTab == 1 && isLatitudeWorld();
+        for (ZoneRowWidget row : zoneRows) {
+            setTabbedWidgetVisible(row, showZone);
+        }
+        // Tab 2 = Rules (settings rail widgets)
+        boolean showRules = activeTab == 2;
+        setTabbedWidgetVisible(worldTypePrevBtn, showRules);
+        setTabbedWidgetVisible(worldTypeNextBtn, showRules);
+        setTabbedWidgetVisible(modePrevBtn, showRules);
+        setTabbedWidgetVisible(modeNextBtn, showRules);
+        setTabbedWidgetVisible(commandsBtn, showRules);
+        setTabbedWidgetVisible(compassBtn, showRules);
+        setTabbedWidgetVisible(bonusChestBtn, showRules);
+        setTabbedWidgetVisible(gameRulesBtn, showRules);
+    }
+
+    private void setTabbedWidgetVisible(ClickableWidget widget, boolean visible) {
+        if (widget == null) return;
+        widget.visible = visible;
+        widget.active = visible;
+    }
+
+    private void switchTab(int tab) {
+        if (tab == activeTab) return;
+        activeTab = tab;
+        applyTabbedVisibility();
+    }
+
     private void positionSettingsStepper(ButtonWidget left, ButtonWidget right, int x, int width, int y, int height) {
         int stepperW = left.getWidth();
         left.setDimensionsAndPosition(stepperW, height, x, y);
         right.setDimensionsAndPosition(stepperW, height, x + width - stepperW, y);
-        boolean visible = left.getX() >= paneStripViewportLeft
+        boolean visible = (!tabbedMode || activeTab == 2)
+                && left.getX() >= paneStripViewportLeft
                 && right.getX() + right.getWidth() <= paneStripViewportRight
                 && y >= settingsViewportTop
                 && y + height <= settingsViewportBottom;
@@ -759,7 +820,8 @@ public class LatitudeCreateWorldScreen extends Screen {
 
     private void positionSettingsButton(ButtonWidget button, int x, int width, int y, int height) {
         button.setDimensionsAndPosition(width - SCROLLBAR_GUTTER, height, x, y);
-        boolean visible = button.getX() >= paneStripViewportLeft
+        boolean visible = (!tabbedMode || activeTab == 2)
+                && button.getX() >= paneStripViewportLeft
                 && button.getX() + button.getWidth() <= paneStripViewportRight
                 && y >= settingsViewportTop
                 && y + height <= settingsViewportBottom;
@@ -814,7 +876,7 @@ public class LatitudeCreateWorldScreen extends Screen {
             applyPaneStripScroll(paneStripScroll - (int) Math.signum(horizontalAmount) * scaledUi(28));
             return true;
         }
-        if (mouseX >= Math.max(leftX, paneStripViewportLeft) && mouseX < Math.min(leftX + leftW, paneStripViewportRight) && mouseY >= panelTop && mouseY < panelBottom) {
+        if ((!tabbedMode || activeTab == 0) && mouseX >= Math.max(leftX, paneStripViewportLeft) && mouseX < Math.min(leftX + leftW, paneStripViewportRight) && mouseY >= panelTop && mouseY < panelBottom) {
             int viewportHeight = Math.max(0, leftViewportBottom - leftViewportTop);
             int maxScroll = Math.max(0, leftContentHeight - viewportHeight);
             if (maxScroll > 0 && verticalAmount != 0.0D) {
@@ -825,7 +887,7 @@ public class LatitudeCreateWorldScreen extends Screen {
                 return true;
             }
         }
-        if (mouseX >= Math.max(rightX, paneStripViewportLeft) && mouseX < Math.min(rightX + rightW, paneStripViewportRight) && mouseY >= panelTop && mouseY < panelBottom) {
+        if ((!tabbedMode || activeTab == 1) && mouseX >= Math.max(rightX, paneStripViewportLeft) && mouseX < Math.min(rightX + rightW, paneStripViewportRight) && mouseY >= panelTop && mouseY < panelBottom) {
             int viewportHeight = Math.max(0, rightViewportBottom - rightViewportTop);
             int maxScroll = Math.max(0, rightContentHeight - viewportHeight);
             if (maxScroll > 0 && verticalAmount != 0.0D) {
@@ -836,7 +898,7 @@ public class LatitudeCreateWorldScreen extends Screen {
                 return true;
             }
         }
-        if (threeCol && mouseX >= Math.max(railX, paneStripViewportLeft) && mouseX < Math.min(railX + railW, paneStripViewportRight) && mouseY >= panelTop && mouseY < panelBottom) {
+        if ((!tabbedMode || activeTab == 2) && mouseX >= Math.max(railX, paneStripViewportLeft) && mouseX < Math.min(railX + railW, paneStripViewportRight) && mouseY >= panelTop && mouseY < panelBottom) {
             int viewportHeight = Math.max(0, settingsViewportBottom - settingsViewportTop);
             int maxScroll = Math.max(0, settingsContentHeight - viewportHeight);
             if (maxScroll > 0 && verticalAmount != 0.0D) {
@@ -861,6 +923,9 @@ public class LatitudeCreateWorldScreen extends Screen {
 
     @Override
     public boolean mouseClicked(Click click, boolean doubled) {
+        if (click.button() == 0 && handleTabClick(click.x(), click.y())) {
+            return true;
+        }
         if (click.button() == 0
                 && getPaneStripMaxScroll() > 0
                 && click.x() >= paneStripScrollbarX
@@ -900,7 +965,8 @@ public class LatitudeCreateWorldScreen extends Screen {
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
         int titlePaneX = threeCol ? rightX : 12;
         int titlePaneW = threeCol ? rightW : Math.max(1, this.width - 24);
-        UiRect headerRect = new UiRect(titlePaneX, headerY, Math.max(1, titlePaneW), Math.max(1, panelTop - headerY - 6));
+        int headerBottom = tabbedMode ? tabStripY - 2 : panelTop;
+        UiRect headerRect = new UiRect(titlePaneX, headerY, Math.max(1, titlePaneW), Math.max(1, headerBottom - headerY - 6));
         int headerLineY = headerRect.y;
         if (drawCenteredBoundedText(context, "LATITUDE", new UiRect(headerRect.x, headerLineY, headerRect.w, uiFontHeight()), GOLD, true, false)) {
             headerLineY += uiFontHeight() + scaledUi(6);
@@ -910,6 +976,11 @@ public class LatitudeCreateWorldScreen extends Screen {
         }
         drawWrappedTextBlock(context, "Prepare your journey across the globe", new UiRect(headerRect.x, headerLineY, headerRect.w, Math.max(0, headerRect.bottom() - headerLineY)), MUTED, false, 2, true, true);
 
+        if (tabbedMode) {
+            drawTabStrip(context, mouseX, mouseY);
+        }
+
+        if (!tabbedMode || activeTab == 0) {
         drawViewportClippedPanel(context, leftX, panelTop, leftW, panelBottom - panelTop);
         int leftClipLeft = Math.max(leftX + 1, paneStripViewportLeft);
         int leftClipRight = Math.min(leftX + leftW - 1, paneStripViewportRight);
@@ -939,19 +1010,23 @@ public class LatitudeCreateWorldScreen extends Screen {
         context.disableScissor();
         }
         drawPaneScrollbar(context, leftX, leftW, leftViewportTop, leftViewportBottom, leftContentHeight, leftScroll);
+        } // end tab 0 (World)
 
+        if (!tabbedMode || activeTab == 1) {
         drawViewportClippedPanel(context, rightX, panelTop, rightW, panelBottom - panelTop);
         int paneTitleY = panelTop + scaledUi(8);
         int rightClipLeft = Math.max(rightX + 1, paneStripViewportLeft);
         int rightClipRight = Math.min(rightX + rightW - 1, paneStripViewportRight);
         if (rightClipRight > rightClipLeft) {
         context.enableScissor(rightClipLeft, rightViewportTop, rightClipRight, rightViewportBottom);
+        boolean latWorld = isLatitudeWorld();
         int rightTextWidth = Math.max(40, rightW - 8 - SCROLLBAR_GUTTER);
-        drawCenteredBoundedText(context, "Spawn Zone", new UiRect(rightX + 4, paneTitleY, rightTextWidth, uiFontHeight()), GOLD, false, false);
-        drawWrappedTextBlock(context, "Choose the climate where your journey begins", new UiRect(rightX + 4, rightSubtitleY, rightTextWidth, Math.max(uiFontHeight(), rightDividerY - rightSubtitleY - scaledUi(2))), MUTED, false, 2, true, true);
+        drawCenteredBoundedText(context, "Spawn Zone", new UiRect(rightX + 4, paneTitleY, rightTextWidth, uiFontHeight()), latWorld ? GOLD : DISABLED_COLOR, false, false);
+        drawWrappedTextBlock(context, "Choose the climate where your journey begins", new UiRect(rightX + 4, rightSubtitleY, rightTextWidth, Math.max(uiFontHeight(), rightDividerY - rightSubtitleY - scaledUi(2))), latWorld ? MUTED : DISABLED_COLOR, false, 2, true, true);
         int divInset = rightW / 6;
         context.fill(rightX + divInset, rightDividerY, rightX + rightW - divInset - SCROLLBAR_GUTTER, rightDividerY + 1, PANEL_BORDER);
 
+        if (latWorld) {
         int barInset = 4;
         int barTotalW = rightW - barInset * 2 - SCROLLBAR_GUTTER;
         LatitudeBands.Band[] allBands = LatitudeBands.Band.values();
@@ -989,11 +1064,15 @@ public class LatitudeCreateWorldScreen extends Screen {
                 drawBoundedText(context, "Climate: " + ZONE_CLIMATE[selectedZone.ordinal()], new UiRect(textX, ty, textMaxW, uiFontHeight()), MUTED, false, true);
             }
         }
+        } else {
+            renderSpawnZoneDisabled(context);
+        }
         context.disableScissor();
         }
         drawPaneScrollbar(context, rightX, rightW, rightViewportTop, rightViewportBottom, rightContentHeight, rightScroll);
+        } // end tab 1 (Spawn Zone)
 
-        if (threeCol) {
+        if (!tabbedMode || activeTab == 2) {
             updateSettingsLayout();
             drawViewportClippedPanel(context, railX, panelTop, railW, panelBottom - panelTop);
             int settLabelX = railX + 4;
@@ -1015,9 +1094,11 @@ public class LatitudeCreateWorldScreen extends Screen {
             context.disableScissor();
             }
             drawPaneScrollbar(context, railX, railW, settingsViewportTop, settingsViewportBottom, settingsContentHeight, settingsScroll);
-        }
+        } // end tab 2 (Rules)
 
-        drawHorizontalScrollbar(context);
+        if (!tabbedMode) {
+            drawHorizontalScrollbar(context);
+        }
 
         super.render(context, mouseX, mouseY, delta);
     }
@@ -1076,6 +1157,22 @@ public class LatitudeCreateWorldScreen extends Screen {
             drawScaledText(context, formatDegree(deg), layout.labelX, layout.labelYs[i], layout.labelScale, color, false);
         }
         drawScaledText(context, caption, layout.captionX, layout.captionY, layout.captionScale, MUTED, false);
+    }
+
+    private void renderSpawnZoneDisabled(DrawContext context) {
+        int overlayTop = rightDividerY + 2;
+        int overlayBottom = rightViewportBottom;
+        if (overlayBottom <= overlayTop + 4) return;
+        context.fill(rightX + 1, overlayTop, rightX + rightW - 1, overlayBottom, 0xCC1A1410);
+        int textW = Math.max(40, rightW - 8 - SCROLLBAR_GUTTER);
+        int midY = overlayTop + (overlayBottom - overlayTop) / 2;
+        String line1 = "Not available for";
+        String line2 = WORLD_TYPE_NAMES[worldTypeIdx];
+        int gap = 3;
+        int totalTextH = uiFontHeight() * 2 + gap;
+        int ty = midY - totalTextH / 2;
+        drawCenteredBoundedText(context, line1, new UiRect(rightX + 4, ty, textW, uiFontHeight()), DISABLED_COLOR, false, true);
+        drawCenteredBoundedText(context, line2, new UiRect(rightX + 4, ty + uiFontHeight() + gap, textW, uiFontHeight()), MUTED, false, true);
     }
 
     private void renderPlanisphereDisabled(DrawContext context, int areaLeft, int areaTop, int areaRight, int areaBottom) {
@@ -1433,6 +1530,57 @@ public class LatitudeCreateWorldScreen extends Screen {
         if (thumbRight > thumbLeft) {
             context.fill(thumbLeft, thumbY, thumbRight, thumbY + thumbH, GOLD);
         }
+    }
+
+    private void drawTabStrip(DrawContext context, int mouseX, int mouseY) {
+        int tabCount = TAB_LABELS.length;
+        int totalW = paneStripViewportWidth;
+        int tabW = (totalW - TAB_GAP * (tabCount - 1)) / tabCount;
+        int x = paneStripViewportLeft;
+        for (int i = 0; i < tabCount; i++) {
+            boolean active = i == activeTab;
+            boolean hovered = !active && mouseX >= x && mouseX < x + tabW && mouseY >= tabStripY && mouseY < tabStripY + TAB_H;
+            int bg = active ? PANEL_BG : (hovered ? 0xFF3A302A : 0xFF2A2420);
+            int border = active ? GOLD : PANEL_BORDER;
+            // Tab background
+            context.fill(x, tabStripY, x + tabW, tabStripY + TAB_H, bg);
+            // Top + side borders
+            context.fill(x, tabStripY, x + tabW, tabStripY + 1, border);
+            context.fill(x, tabStripY, x + 1, tabStripY + TAB_H, border);
+            context.fill(x + tabW - 1, tabStripY, x + tabW, tabStripY + TAB_H, border);
+            if (active) {
+                // Active tab: no bottom border (merges with panel)
+                context.fill(x + 1, tabStripY + TAB_H - 1, x + tabW - 1, tabStripY + TAB_H, PANEL_BG);
+            } else {
+                // Inactive tab: bottom border
+                context.fill(x, tabStripY + TAB_H - 1, x + tabW, tabStripY + TAB_H, PANEL_BORDER);
+            }
+            // Tab label
+            int labelColor = active ? GOLD : (hovered ? WARM_WHITE : MUTED);
+            String label = TAB_LABELS[i];
+            int labelW = uiTextWidth(label);
+            int labelX = x + (tabW - labelW) / 2;
+            int labelY = tabStripY + (TAB_H - uiFontHeight()) / 2;
+            drawUiText(context, label, labelX, labelY, labelColor, active);
+            x += tabW + TAB_GAP;
+        }
+    }
+
+    private boolean handleTabClick(double mouseX, double mouseY) {
+        if (!tabbedMode) return false;
+        if (mouseY < tabStripY || mouseY >= tabStripY + TAB_H) return false;
+        int tabCount = TAB_LABELS.length;
+        int totalW = paneStripViewportWidth;
+        int tabW = (totalW - TAB_GAP * (tabCount - 1)) / tabCount;
+        int x = paneStripViewportLeft;
+        for (int i = 0; i < tabCount; i++) {
+            if (mouseX >= x && mouseX < x + tabW) {
+                switchTab(i);
+                return true;
+            }
+            x += tabW + TAB_GAP;
+        }
+        return false;
     }
 
     private void drawHorizontalScrollbar(DrawContext context) {
