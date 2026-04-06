@@ -286,15 +286,21 @@ public class LatitudeCreateWorldScreen extends Screen {
         paneStripViewportLeft = 12;
         paneStripViewportRight = Math.max(paneStripViewportLeft + 1, this.width - 12);
         paneStripViewportWidth = Math.max(1, paneStripViewportRight - paneStripViewportLeft);
-        paneStripContentWidth = 780;
+        paneStripContentWidth = paneStripViewportWidth;
         paneStripScrollbarX = paneStripViewportLeft;
         paneStripScrollbarW = paneStripViewportWidth;
         paneStripScrollbarY = panelBottom + 2;
         paneStripScrollbarH = Math.max(4, Math.min(Math.max(4, scaledUi(6)), Math.max(4, bottomY - paneStripScrollbarY - 2)));
-        threeCol = true;
-        leftW = (int) (paneStripContentWidth * 0.32f);
-        rightW = (int) (paneStripContentWidth * 0.42f);
-        railW = paneStripContentWidth - leftW - rightW - paneGap * 2;
+        threeCol = paneStripViewportWidth >= 480;
+        if (threeCol) {
+            leftW = (int) (paneStripContentWidth * 0.32f);
+            rightW = (int) (paneStripContentWidth * 0.42f);
+            railW = paneStripContentWidth - leftW - rightW - paneGap * 2;
+        } else {
+            leftW = (int) (paneStripContentWidth * 0.45f);
+            rightW = paneStripContentWidth - leftW - paneGap;
+            railW = 0;
+        }
         int maxPaneStripScroll = getPaneStripMaxScroll();
         if (paneStripScroll < 0) paneStripScroll = 0;
         if (paneStripScroll > maxPaneStripScroll) paneStripScroll = maxPaneStripScroll;

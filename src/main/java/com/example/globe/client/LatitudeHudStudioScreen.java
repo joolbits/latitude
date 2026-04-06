@@ -59,7 +59,6 @@ public class LatitudeHudStudioScreen extends Screen {
 
     private ClickableWidget wResetHud;
 
-    private int sidebarHintY;
 
     public LatitudeHudStudioScreen(Screen parent) {
         super(Text.literal("HUD Studio"));
@@ -287,7 +286,7 @@ public class LatitudeHudStudioScreen extends Screen {
         super.render(ctx, mouseX, mouseY, delta);
 
         if (sidebarVisible) {
-            ctx.drawTextWithShadow(this.textRenderer, "Press L to hide settings", sidebarX + 8, sidebarHintY, 0xFFFFFFFF);
+            ctx.drawTextWithShadow(this.textRenderer, "Press L to hide settings", sidebarWidth + 14, 8, 0xAAFFFFFF);
         } else {
             ctx.drawTextWithShadow(this.textRenderer, "Press L to show settings", 8, 8, 0xFFFFFFFF);
         }
@@ -492,44 +491,6 @@ public class LatitudeHudStudioScreen extends Screen {
         setVisible(wTitleScale, showTitleControls);
 
         setVisible(wResetHud, sidebarVisible);
-
-        this.sidebarHintY = computeSidebarHintY();
-    }
-
-    private int computeSidebarHintY() {
-        if (!sidebarVisible) {
-            return 8;
-        }
-
-        int bottom = 0;
-        bottom = Math.max(bottom, bottomYIfVisible(wTarget));
-        bottom = Math.max(bottom, bottomYIfVisible(wCompassStyle));
-        bottom = Math.max(bottom, bottomYIfVisible(wCompassScale));
-        bottom = Math.max(bottom, bottomYIfVisible(wCompassAnalogSize));
-        bottom = Math.max(bottom, bottomYIfVisible(wCompassAnalogTheme));
-        bottom = Math.max(bottom, bottomYIfVisible(wCompassAnalogInnerAlpha));
-        bottom = Math.max(bottom, bottomYIfVisible(wCompassTransparency));
-        bottom = Math.max(bottom, bottomYIfVisible(wCompassBackground));
-        bottom = Math.max(bottom, bottomYIfVisible(wCompassBgColor));
-        bottom = Math.max(bottom, bottomYIfVisible(wCompassTextColor));
-        bottom = Math.max(bottom, bottomYIfVisible(wCompassShowLatitude));
-        bottom = Math.max(bottom, bottomYIfVisible(wCompassAnalogShowLatitude));
-        bottom = Math.max(bottom, bottomYIfVisible(wCompassCompact));
-        bottom = Math.max(bottom, bottomYIfVisible(wCompassAttachHotbar));
-        bottom = Math.max(bottom, bottomYIfVisible(wZoneDisplay));
-        bottom = Math.max(bottom, bottomYIfVisible(wZoneFollow));
-        bottom = Math.max(bottom, bottomYIfVisible(wTitleScale));
-        if (bottom <= 0) {
-            return 8;
-        }
-
-        int hintY = bottom + 6;
-        if (wResetHud != null && wResetHud.visible) {
-            hintY = Math.min(hintY, wResetHud.getY() - 14);
-        }
-        hintY = Math.max(hintY, 22);
-        hintY = Math.min(hintY, Math.max(0, this.height - 18));
-        return hintY;
     }
 
     private boolean isMouseOverZone(double mx, double my) {
@@ -543,11 +504,6 @@ public class LatitudeHudStudioScreen extends Screen {
         zoneGrabDx = (int) Math.round(mx) - b.x();
         zoneGrabDy = (int) Math.round(my) - b.y();
         return true;
-    }
-
-    private static int bottomYIfVisible(ClickableWidget w) {
-        if (w == null || !w.visible) return 0;
-        return w.getY() + w.getHeight();
     }
 
     private static void applyDefaults(CompassHudConfig cfg) {
