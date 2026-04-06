@@ -8,6 +8,7 @@ import net.minecraft.registry.RegistryKey;
 import net.minecraft.registry.RegistryKeys;
 import net.minecraft.registry.entry.RegistryEntry;
 import net.minecraft.util.Identifier;
+import net.minecraft.world.Heightmap;
 import net.minecraft.world.biome.Biome;
 import net.minecraft.world.biome.source.BiomeSupplier;
 import net.minecraft.world.biome.source.util.MultiNoiseUtil;
@@ -47,6 +48,10 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
     @Unique
     private static final int HARD_DECK_SURFACE_Y =
             Integer.getInteger("latitude.hardDeckSurfaceY", 20);
+
+    @Unique
+    private static final int CAVE_SURFACE_MARGIN_BLOCKS =
+            Integer.getInteger("latitude.caveSurfaceMarginBlocks", 8);
 
     @Unique
     private static final boolean DEBUG_CAVE_CLAMP =
@@ -246,6 +251,10 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
 
         Registry<Biome> biomes = structureAccessor.getRegistryManager().getOrThrow(RegistryKeys.BIOME);
         int borderRadiusBlocks = this.globe$borderRadiusBlocks();
+        NoiseChunkGenerator generator = (NoiseChunkGenerator)(Object) this;
+        NoiseConfig noiseConfig = globe$noiseConfigTL.get();
+        Long2LongOpenHashMap surfaceYCache = new Long2LongOpenHashMap();
+        surfaceYCache.defaultReturnValue(Long.MIN_VALUE);
         logWorldgenPathOnce(chunk, borderRadiusBlocks, globe$matchedSettingsLabel());
 
         BiomeSupplier wrapped = (x, y, z, ignoredSampler) -> {
@@ -269,17 +278,19 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
             }
 
             if (FIX_SURFACE_CAVE_BIOMES && isCaveBiome(biomes, current)) {
-                boolean hardDeck = blockY >= 0;
+                int surfaceY = resolveSurfaceY(generator, noiseConfig, chunk, blockX, blockZ, surfaceYCache);
+                boolean nearSurface = blockY >= (surfaceY - CAVE_SURFACE_MARGIN_BLOCKS);
                 boolean tooHigh = blockY > MAX_CAVE_BIOME_Y;
                 boolean deepDarkIllegal = isDeepDark(biomes, current) && blockY > -16;
-                if (hardDeck || tooHigh || deepDarkIllegal) {
+                if (nearSurface || tooHigh || deepDarkIllegal) {
                     RegistryEntry<Biome> replacement = pickSurfaceReplacement(
                             biomes, base, blockX, blockZ, blockY, borderRadiusBlocks, sampler,
-                            (NoiseChunkGenerator)(Object) this, globe$noiseConfigTL.get(), chunk);
+                            generator, noiseConfig, chunk);
                     if (DEBUG_CAVE_CLAMP) {
-                        LOGGER.info("[Latitude] Clamped {} at x={} y={} z={} (hardDeckY=0 maxY={} deepDarkIllegal={}) -> {}",
+                        LOGGER.info("[Latitude] Clamped {} at x={} y={} z={} (surfaceY={} margin={} maxY={} deepDarkIllegal={}) -> {}",
                                 biomeId(biomes, current), blockX, blockY, blockZ,
-                                MAX_CAVE_BIOME_Y, deepDarkIllegal, biomeId(biomes, replacement));
+                                surfaceY, CAVE_SURFACE_MARGIN_BLOCKS, MAX_CAVE_BIOME_Y,
+                                deepDarkIllegal, biomeId(biomes, replacement));
                     }
                     return replacement;
                 }
@@ -290,7 +301,7 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
             // BlockY is forwarded so LatitudeBiomes can compute the upland ramp while horizontal selection remains unchanged.
             try {
                 picked = LatitudeBiomes.pick(biomes, base, blockX, blockZ, blockY, borderRadiusBlocks, sampler, "MIXIN",
-                        (NoiseChunkGenerator)(Object) this, globe$noiseConfigTL.get(), chunk);
+                        generator, noiseConfig, chunk);
             } catch (Throwable t) {
                 logPickFailOnce(blockX, blockZ, "exception", t.toString());
                 if (DEBUG_BIOME_PICK) {
@@ -351,6 +362,25 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
             return base;
         }
         return pickSafeFallback(biomes, blockZ);
+    }
+
+    @Unique
+    private static int resolveSurfaceY(NoiseChunkGenerator generator, NoiseConfig noiseConfig, Chunk heightView,
+                                       int blockX, int blockZ, Long2LongOpenHashMap surfaceYCache) {
+        long key = (((long) blockX) << 32) ^ (blockZ & 0xFFFF_FFFFL);
+        long cached = surfaceYCache.get(key);
+        if (cached != Long.MIN_VALUE) {
+            return (int) cached;
+        }
+
+        int surfaceY;
+        if (generator == null || noiseConfig == null || heightView == null) {
+            surfaceY = HARD_DECK_SURFACE_Y;
+        } else {
+            surfaceY = generator.getHeight(blockX, blockZ, Heightmap.Type.WORLD_SURFACE_WG, heightView, noiseConfig);
+        }
+        surfaceYCache.put(key, surfaceY);
+        return surfaceY;
     }
 
     @Unique
