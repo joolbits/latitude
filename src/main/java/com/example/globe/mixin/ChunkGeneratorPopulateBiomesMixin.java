@@ -265,6 +265,7 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
             
             RegistryEntry<Biome> current = originalSupplier.getBiome(x, y, z, sampler);
             RegistryEntry<Biome> base = originalSupplier.getBiome(x, LatitudeBiomes.SURFACE_CLASSIFY_Y >> 2, z, sampler);
+            boolean caveCurrent = isCaveBiome(biomes, current);
 
             if (blockY > HARD_DECK_SURFACE_Y && isCaveBiome(biomes, base)) {
                 RegistryEntry<Biome> plains = biomes.getEntry(Identifier.of("minecraft", "plains")).orElse(null);
@@ -277,11 +278,15 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
                 }
             }
 
-            if (FIX_SURFACE_CAVE_BIOMES && isCaveBiome(biomes, current)) {
-                int surfaceY = resolveSurfaceY(generator, noiseConfig, chunk, blockX, blockZ, surfaceYCache);
-                boolean nearSurface = blockY >= (surfaceY - CAVE_SURFACE_MARGIN_BLOCKS);
-                boolean tooHigh = blockY > MAX_CAVE_BIOME_Y;
-                boolean deepDarkIllegal = isDeepDark(biomes, current) && blockY > -16;
+            int surfaceY = Integer.MIN_VALUE;
+            boolean nearSurface = false;
+            boolean tooHigh = false;
+            boolean deepDarkIllegal = false;
+            if (FIX_SURFACE_CAVE_BIOMES && caveCurrent) {
+                surfaceY = resolveSurfaceY(generator, noiseConfig, chunk, blockX, blockZ, surfaceYCache);
+                nearSurface = blockY >= (surfaceY - CAVE_SURFACE_MARGIN_BLOCKS);
+                tooHigh = blockY > MAX_CAVE_BIOME_Y;
+                deepDarkIllegal = isDeepDark(biomes, current) && blockY > -16;
                 if (nearSurface || tooHigh || deepDarkIllegal) {
                     RegistryEntry<Biome> replacement = pickSurfaceReplacement(
                             biomes, base, blockX, blockZ, blockY, borderRadiusBlocks, sampler,
@@ -294,6 +299,9 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
                     }
                     return replacement;
                 }
+            }
+            if (caveCurrent) {
+                return current;
             }
 
             RegistryEntry<Biome> picked = null;
