@@ -63,6 +63,17 @@ function Fail-AtlasStage([string]$reason) {
   throw "[atlas] $reason"
 }
 
+function Build-LatdevBiomePngProperty([hashtable]$options) {
+  $parts = @("enabled=true")
+  foreach ($key in $options.Keys) {
+    $value = [string]$options[$key]
+    if (-not [string]::IsNullOrWhiteSpace($value)) {
+      $parts += ("{0}={1}" -f $key, $value)
+    }
+  }
+  return ($parts -join ";")
+}
+
 # ── Ruggedness-only add-on mode ─────────────────────────────────────────────
 if ($GenerateRuggednessOnly) {
   if ([string]::IsNullOrEmpty($Run)) {
@@ -79,10 +90,19 @@ if ($GenerateRuggednessOnly) {
 
   Write-Host "[atlas] Adding ruggedness to run $Run (seed=$rSeed size=$rSize step=$rStep)"
 
+  $atlasOut = ((Join-Path $root "run\latdev\atlas") -replace "\\", "/")
+  $rLatdevProp = Build-LatdevBiomePngProperty @{
+    seed = $rSeed
+    size = $rSize
+    step = $rStep
+    layers = "ruggedness"
+    out = $atlasOut
+  }
+
   .\gradlew.bat --stop | Out-Null
   .\gradlew.bat compileJava --rerun-tasks --no-daemon
 
-  .\gradlew.bat --no-daemon --info --stacktrace runBiomePreview `
+  .\gradlew.bat --no-daemon --info --stacktrace "-Dlatdev.biomePng=$rLatdevProp" runBiomePreview `
       --args="--seed $rSeed --size $rSize --step $rStep --layers ruggedness"
 
   # Copy only ruggedness.png into the existing run folder; preserve all other files.
@@ -112,11 +132,25 @@ if ($GenerateRuggednessOnly) {
 .\gradlew.bat clean build -x test
 
 # Run exporter
+$atlasOut = ((Join-Path $root "run\latdev\atlas") -replace "\\", "/")
 $args = "--seed $Seed --size $Size --radius $expectedRadius --step $Step --emitBiomeIndex true --bundle"
 if ($IncludeRuggedness) { $args += " --ruggedness true" }
 if ($EmitHeight) { $args += " --emitHeight" }
 
-.\gradlew.bat --no-daemon --info --stacktrace runBiomePreview --args="$args"
+$latdevOptions = @{
+  seed = $Seed
+  size = $Size
+  radius = $expectedRadius
+  step = $Step
+  emitBiomeIndex = "true"
+  bundle = "true"
+  out = $atlasOut
+}
+if ($IncludeRuggedness) { $latdevOptions["ruggedness"] = "true" }
+if ($EmitHeight) { $latdevOptions["emitHeight"] = "true" }
+$latdevProp = Build-LatdevBiomePngProperty $latdevOptions
+
+.\gradlew.bat --no-daemon --info --stacktrace "-Dlatdev.biomePng=$latdevProp" runBiomePreview --args="$args"
 
 # --- Collect latest atlas step outputs into the stamped run folder ---
 $seedDir = Join-Path $root ("run\latdev\atlas\seed_" + $Seed)
