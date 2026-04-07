@@ -1582,6 +1582,7 @@ public final class LatitudeBiomes {
     private static final int SAVANNA_PLATEAU_MIN_Y = 100;
     private static final int WINDSWEPT_MIN_Y = 120;
     private static final int MANGROVE_MAX_Y_ABOVE_SEA = 2;
+    private static final double MANGROVE_MAX_ABS_LAT_DEG = 25.0;
     private static final int MANGROVE_COASTAL_MAX_BLOCKS = 384;
     private static final int MANGROVE_WATER_SCAN_RADIUS_BLOCKS = 2;
     private static final int MANGROVE_MAX_ROBUST_DELTA = 3;
@@ -6352,6 +6353,16 @@ public final class LatitudeBiomes {
         double erosion = 0.0;
         double weirdness = 0.0;
         int oceanDist = -1;
+        int radiusHint = ACTIVE_RADIUS_BLOCKS > 0 ? ACTIVE_RADIUS_BLOCKS : (REFERENCE_DIAMETER_BLOCKS / 2);
+        double absLatDeg = latitudeDegreesFromRadius(blockZ, Math.max(1, radiusHint));
+
+        if (absLatDeg > MANGROVE_MAX_ABS_LAT_DEG) {
+            logMangroveDenial("latitude");
+            MangroveDecision d = new MangroveDecision(false, cont, erosion, weirdness, false, false, oceanDist);
+            audit.accept(d);
+            auditFinal.accept(d, "REJECT(latitude)");
+            return d;
+        }
 
         if (sampler == null) {
             logMangroveDenial("no_surface_data");
