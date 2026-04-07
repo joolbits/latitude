@@ -983,6 +983,13 @@ public class LatitudeCreateWorldScreen extends Screen {
             drawTabStrip(context, mouseX, mouseY);
         }
 
+        if (threeCol) {
+            drawPanelTabCap(context, leftX, leftW, TAB_LABELS[0], GOLD);
+            int spawnLabelColor = isLatitudeWorld() ? GOLD : DISABLED_COLOR;
+            drawPanelTabCap(context, rightX, rightW, TAB_LABELS[1], spawnLabelColor);
+            drawPanelTabCap(context, railX, railW, TAB_LABELS[2], GOLD);
+        }
+
         if (!tabbedMode || activeTab == 0) {
         drawViewportClippedPanel(context, leftX, panelTop, leftW, panelBottom - panelTop);
         int leftClipLeft = Math.max(leftX + 1, paneStripViewportLeft);
@@ -1513,6 +1520,31 @@ public class LatitudeCreateWorldScreen extends Screen {
         context.enableScissor(clipLeft, y, clipRight, y + h);
         drawPanel(context, x, y, w, h);
         context.disableScissor();
+    }
+
+    private void drawPanelTabCap(DrawContext context, int x, int w, String label, int labelColor) {
+        // Decorative only: non-interactive chrome for three-column layout.
+        int visibleLeft = Math.max(x + scaledUi(4), paneStripViewportLeft + scaledUi(2));
+        int visibleRight = Math.min(x + w - scaledUi(4), paneStripViewportRight - scaledUi(2));
+        if (visibleRight <= visibleLeft) {
+            return;
+        }
+
+        int capH = compactUi(14);
+        int capTop = Math.max(headerY + compactUi(2), panelTop - compactUi(2));
+        int capBottom = capTop + capH;
+        int capW = Math.min(visibleRight - visibleLeft, Math.max(compactUi(44), uiTextWidth(label) + compactUi(14)));
+        int capX = visibleLeft + Math.max(0, (visibleRight - visibleLeft - capW) / 2);
+
+        context.fill(capX, capTop, capX + capW, capBottom, PANEL_BG);
+        context.fill(capX, capTop, capX + capW, capTop + 1, PANEL_BORDER);
+        context.fill(capX, capTop, capX + 1, capBottom, PANEL_BORDER);
+        context.fill(capX + capW - 1, capTop, capX + capW, capBottom, PANEL_BORDER);
+        context.fill(capX + 1, capBottom - 1, capX + capW - 1, capBottom, PANEL_BORDER);
+
+        drawCenteredBoundedText(context, label,
+                new UiRect(capX + compactUi(2), capTop + compactUi(3), capW - compactUi(4), uiFontHeight()),
+                labelColor, true, true);
     }
 
     private void drawPaneScrollbar(DrawContext context, int paneX, int paneW, int viewportTop, int viewportBottom,
