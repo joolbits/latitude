@@ -1031,8 +1031,10 @@ public class LatitudeCreateWorldScreen extends Screen {
         context.enableScissor(rightClipLeft, rightViewportTop, rightClipRight, rightViewportBottom);
         boolean latWorld = isLatitudeWorld();
         int rightTextWidth = Math.max(40, rightW - 8 - SCROLLBAR_GUTTER);
+        if (!threeCol) {
         drawCenteredBoundedText(context, "Spawn Zone", new UiRect(rightX + 4, paneTitleY, rightTextWidth, uiFontHeight()), latWorld ? GOLD : DISABLED_COLOR, false, false);
         drawWrappedTextBlock(context, "Choose the climate where your journey begins", new UiRect(rightX + 4, rightSubtitleY, rightTextWidth, Math.max(uiFontHeight(), rightDividerY - rightSubtitleY - scaledUi(2))), latWorld ? MUTED : DISABLED_COLOR, false, 2, true, true);
+        }
         int divInset = rightW / 6;
         context.fill(rightX + divInset, rightDividerY, rightX + rightW - divInset - SCROLLBAR_GUTTER, rightDividerY + 1, PANEL_BORDER);
 
@@ -1530,8 +1532,8 @@ public class LatitudeCreateWorldScreen extends Screen {
             return;
         }
 
-        int capH = compactUi(14);
-        int capTop = Math.max(headerY + compactUi(2), panelTop - compactUi(2));
+        int capH = compactUi(18);
+        int capTop = panelTop - compactUi(12);
         int capBottom = capTop + capH;
         int capW = Math.min(visibleRight - visibleLeft, Math.max(compactUi(44), uiTextWidth(label) + compactUi(14)));
         int capX = visibleLeft + Math.max(0, (visibleRight - visibleLeft - capW) / 2);
