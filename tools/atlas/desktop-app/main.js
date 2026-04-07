@@ -379,11 +379,25 @@ function runAtlasGenerator(step = 16) {
 
   setGenerateStatus(true, `Generating atlas run (step ${step})…`);
 
+  const childEnv = { ...process.env };
+  if (process.platform === "win32") {
+    const windowsJdk = "C:\\Program Files\\Eclipse Adoptium\\jdk-21.0.10.7-hotspot";
+    if (fs.existsSync(path.join(windowsJdk, "bin", "java.exe"))) {
+      childEnv.JAVA_HOME = windowsJdk;
+      childEnv.ORG_GRADLE_JAVA_HOME = windowsJdk;
+      const javaHomeProp = `-Dorg.gradle.java.home=\"${windowsJdk}\"`;
+      childEnv.GRADLE_OPTS = childEnv.GRADLE_OPTS
+        ? `${childEnv.GRADLE_OPTS} ${javaHomeProp}`
+        : javaHomeProp;
+    }
+  }
+
   const child = spawn(
     "powershell.exe",
     ["-ExecutionPolicy", "Bypass", "-File", atlasPs1, "-Step", String(step), "-NoViewerOpen"],
     {
       cwd: currentRepoRoot,
+      env: childEnv,
       detached: false,
       stdio: "ignore",
       windowsHide: true,
