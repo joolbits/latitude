@@ -106,6 +106,7 @@ public class LatitudeCreateWorldScreen extends Screen {
     private static final String[] WORLD_TYPE_NAMES = { "Latitude", "Vanilla", "Vanilla Superflat" };
     private static final int[] WORLD_TYPE_COLORS = { GOLD, WARM_WHITE, MUTED };
     private static final int DISABLED_COLOR = 0xFF605850;
+    private static final boolean DEBUG_UI_SWITCH_LAG = Boolean.getBoolean("latitude.debug.uiSwitchLag");
 
     private final Runnable onClose;
     @Nullable
@@ -202,6 +203,8 @@ public class LatitudeCreateWorldScreen extends Screen {
     private static final int TAB_GAP = 4;
     private int tabStripY;
     private int tabPanelTop; // content area top (below tab strip)
+    private long debugSwitchSampleDeadlineMs;
+    private int debugSwitchSeq;
 
     private LatitudeCreateWorldScreen(Runnable onClose, @Nullable Screen parent, GeneratorOptionsHolder holder) {
         super(Text.literal("New Expedition"));
@@ -476,9 +479,16 @@ public class LatitudeCreateWorldScreen extends Screen {
     }
 
     private void cycleWorldType(int delta) {
+        long t0 = Util.getMeasuringTimeMs();
         worldTypeIdx = (worldTypeIdx + delta + WORLD_TYPE_NAMES.length) % WORLD_TYPE_NAMES.length;
         updateSettingsButtons();
         updateRightLayout();
+        if (DEBUG_UI_SWITCH_LAG) {
+            debugSwitchSeq++;
+            debugSwitchSampleDeadlineMs = t0 + 2_000L; // sample for 2s after switch
+            long elapsed = Util.getMeasuringTimeMs() - t0;
+            LOGGER.info("[lat-ui] switchLag seq={} worldType={} handler_ms={}", debugSwitchSeq, currentWorldTypeName(), elapsed);
+        }
     }
 
     private boolean isLatitudeWorld() {
@@ -1127,6 +1137,7 @@ public class LatitudeCreateWorldScreen extends Screen {
     }
 
     private void renderPlanispherePreview(DrawContext context, int areaLeft, int areaTop, int areaRight, int areaBottom) {
+        long dbgStart = DEBUG_UI_SWITCH_LAG ? Util.getMeasuringTimeMs() : 0L;
         String caption = formatDiameter(selectedSize.borderRadiusBlocks * 2) + " blocks";
         float labelScale = previewLabelScale(selectedSize);
         float captionScale = previewCaptionScale(selectedSize);
@@ -1169,9 +1180,16 @@ public class LatitudeCreateWorldScreen extends Screen {
             drawScaledText(context, formatDegree(deg), layout.labelX, layout.labelYs[i], layout.labelScale, color, false);
         }
         drawScaledText(context, caption, layout.captionX, layout.captionY, layout.captionScale, MUTED, false);
+        if (DEBUG_UI_SWITCH_LAG && Util.getMeasuringTimeMs() <= debugSwitchSampleDeadlineMs) {
+            long elapsed = Util.getMeasuringTimeMs() - dbgStart;
+            if (elapsed >= 1L) {
+                LOGGER.info("[lat-ui] switchLag seq={} worldType={} section=planispherePreview ms={}", debugSwitchSeq, currentWorldTypeName(), elapsed);
+            }
+        }
     }
 
     private void renderSpawnZoneDisabled(DrawContext context) {
+        long dbgStart = DEBUG_UI_SWITCH_LAG ? Util.getMeasuringTimeMs() : 0L;
         int overlayTop = rightDividerY + 2;
         int overlayBottom = rightViewportBottom;
         if (overlayBottom <= overlayTop + 4) return;
@@ -1185,9 +1203,16 @@ public class LatitudeCreateWorldScreen extends Screen {
         int ty = midY - totalTextH / 2;
         drawCenteredBoundedText(context, line1, new UiRect(rightX + 4, ty, textW, uiFontHeight()), DISABLED_COLOR, false, true);
         drawCenteredBoundedText(context, line2, new UiRect(rightX + 4, ty + uiFontHeight() + gap, textW, uiFontHeight()), MUTED, false, true);
+        if (DEBUG_UI_SWITCH_LAG && Util.getMeasuringTimeMs() <= debugSwitchSampleDeadlineMs) {
+            long elapsed = Util.getMeasuringTimeMs() - dbgStart;
+            if (elapsed >= 1L) {
+                LOGGER.info("[lat-ui] switchLag seq={} worldType={} section=spawnZoneDisabled ms={}", debugSwitchSeq, currentWorldTypeName(), elapsed);
+            }
+        }
     }
 
     private void renderPlanisphereDisabled(DrawContext context, int areaLeft, int areaTop, int areaRight, int areaBottom) {
+        long dbgStart = DEBUG_UI_SWITCH_LAG ? Util.getMeasuringTimeMs() : 0L;
         int areaW = areaRight - areaLeft;
         int areaH = areaBottom - areaTop;
         int diameter = Math.min(areaW, areaH) - 8;
@@ -1218,6 +1243,12 @@ public class LatitudeCreateWorldScreen extends Screen {
         // Label
         String label = "N/A for " + WORLD_TYPE_NAMES[worldTypeIdx];
         drawCenteredBoundedText(context, label, new UiRect(areaLeft, cy + radius + scaledUi(6), areaW, uiFontHeight()), DISABLED_COLOR, false, true);
+        if (DEBUG_UI_SWITCH_LAG && Util.getMeasuringTimeMs() <= debugSwitchSampleDeadlineMs) {
+            long elapsed = Util.getMeasuringTimeMs() - dbgStart;
+            if (elapsed >= 1L) {
+                LOGGER.info("[lat-ui] switchLag seq={} worldType={} section=planisphereDisabled ms={}", debugSwitchSeq, currentWorldTypeName(), elapsed);
+            }
+        }
     }
 
     private PreviewLayout computePreviewLayout(int areaLeft, int areaTop, int areaRight, int areaBottom,
@@ -1470,6 +1501,10 @@ public class LatitudeCreateWorldScreen extends Screen {
 
     private static boolean isOnSelectedEdge(double deg, LatitudeBands.Band band) {
         return Math.abs(deg - band.lowDeg()) < 0.01 || Math.abs(deg - band.highDeg()) < 0.01;
+    }
+
+    private String currentWorldTypeName() {
+        return WORLD_TYPE_NAMES[Math.max(0, Math.min(worldTypeIdx, WORLD_TYPE_NAMES.length - 1))];
     }
 
     // ══════════════════════════════════════════════════════════════
