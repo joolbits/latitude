@@ -1033,9 +1033,6 @@ public class LatitudeCreateWorldScreen extends Screen {
         drawCenteredBoundedText(context, "Spawn Zone", new UiRect(rightX + 4, paneTitleY, rightTextWidth, uiFontHeight()), latWorld ? GOLD : DISABLED_COLOR, false, false);
         drawWrappedTextBlock(context, "Choose the climate where your journey begins", new UiRect(rightX + 4, rightSubtitleY, rightTextWidth, Math.max(uiFontHeight(), rightDividerY - rightSubtitleY - scaledUi(2))), latWorld ? MUTED : DISABLED_COLOR, false, 2, true, true);
         }
-        int divInset = rightW / 6;
-        context.fill(rightX + divInset, rightDividerY, rightX + rightW - divInset - SCROLLBAR_GUTTER, rightDividerY + 1, PANEL_BORDER);
-
         if (latWorld) {
         int barInset = 4;
         int barTotalW = rightW - barInset * 2 - SCROLLBAR_GUTTER;
