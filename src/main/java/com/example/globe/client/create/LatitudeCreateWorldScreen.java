@@ -1213,36 +1213,33 @@ public class LatitudeCreateWorldScreen extends Screen {
 
     private void renderPlanisphereDisabled(DrawContext context, int areaLeft, int areaTop, int areaRight, int areaBottom) {
         long dbgStart = DEBUG_UI_SWITCH_LAG ? Util.getMeasuringTimeMs() : 0L;
-        int areaW = areaRight - areaLeft;
-        int areaH = areaBottom - areaTop;
-        int diameter = Math.min(areaW, areaH) - 8;
-        if (diameter < 30) return;
-        int cx = areaLeft + areaW / 2;
-        int cy = areaTop + areaH / 2;
-        int radius = diameter / 2;
+        int areaW = Math.max(0, areaRight - areaLeft);
+        int areaH = Math.max(0, areaBottom - areaTop);
+        if (areaW <= 6 || areaH <= 6) return;
 
-        // Draw dimmed circle
-        int r2 = radius * radius;
-        for (int dy = -radius; dy <= radius; dy++) {
-            for (int dx = -radius; dx <= radius; dx++) {
-                if (dx * dx + dy * dy <= r2) {
-                    context.fill(cx + dx, cy + dy, cx + dx + 1, cy + dy + 1, 0x30302820);
-                }
-            }
-        }
+        int pad = scaledUi(6);
+        int boxLeft = areaLeft + pad;
+        int boxTop = areaTop + pad;
+        int boxRight = areaRight - pad;
+        int boxBottom = areaBottom - pad;
+        if (boxRight <= boxLeft || boxBottom <= boxTop) return;
 
-        // Draw X overlay
-        int xSize = radius * 2 / 3;
-        for (int i = -xSize; i <= xSize; i++) {
-            int px1 = cx + i, py1 = cy + i;
-            int px2 = cx + i, py2 = cy - i;
-            context.fill(px1, py1, px1 + 1, py1 + 1, DISABLED_COLOR);
-            context.fill(px2, py2, px2 + 1, py2 + 1, DISABLED_COLOR);
-        }
+        // Soft, low-cost placeholder panel
+        int overlay = 0x501A1410;
+        int border = PANEL_BORDER;
+        context.fill(boxLeft, boxTop, boxRight, boxBottom, overlay);
+        context.fill(boxLeft, boxTop, boxRight, boxTop + 1, border);
+        context.fill(boxLeft, boxBottom - 1, boxRight, boxBottom, border);
+        context.fill(boxLeft, boxTop, boxLeft + 1, boxBottom, border);
+        context.fill(boxRight - 1, boxTop, boxRight, boxBottom, border);
 
-        // Label
-        String label = "N/A for " + WORLD_TYPE_NAMES[worldTypeIdx];
-        drawCenteredBoundedText(context, label, new UiRect(areaLeft, cy + radius + scaledUi(6), areaW, uiFontHeight()), DISABLED_COLOR, false, true);
+        // Simple inner accent lines
+        int midY = boxTop + (boxBottom - boxTop) / 2;
+        int accentInset = scaledUi(4);
+        context.fill(boxLeft + accentInset, midY, boxRight - accentInset, midY + 1, 0x40FFFFFF & PANEL_BORDER);
+
+        String label = "Preview available only for Latitude";
+        drawCenteredBoundedText(context, label, new UiRect(boxLeft + pad, boxTop + pad, boxRight - boxLeft - pad * 2, uiFontHeight()), DISABLED_COLOR, false, true);
         if (DEBUG_UI_SWITCH_LAG && Util.getMeasuringTimeMs() <= debugSwitchSampleDeadlineMs) {
             long elapsed = Util.getMeasuringTimeMs() - dbgStart;
             if (elapsed >= 1L) {
