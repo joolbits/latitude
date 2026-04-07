@@ -983,19 +983,15 @@ public class LatitudeCreateWorldScreen extends Screen {
             drawTabStrip(context, mouseX, mouseY);
         }
 
-        if (threeCol) {
-            drawPanelTabCap(context, leftX, leftW, TAB_LABELS[0], GOLD);
-            int spawnLabelColor = isLatitudeWorld() ? GOLD : DISABLED_COLOR;
-            drawPanelTabCap(context, rightX, rightW, TAB_LABELS[1], spawnLabelColor);
-            drawPanelTabCap(context, railX, railW, TAB_LABELS[2], GOLD);
-        }
-
         if (!tabbedMode || activeTab == 0) {
         drawViewportClippedPanel(context, leftX, panelTop, leftW, panelBottom - panelTop);
         int leftClipLeft = Math.max(leftX + 1, paneStripViewportLeft);
         int leftClipRight = Math.min(leftX + leftW - 1, paneStripViewportRight);
         if (leftClipRight > leftClipLeft) {
             context.enableScissor(leftClipLeft, leftViewportTop, leftClipRight, leftViewportBottom);
+        if (threeCol) {
+            drawInlineHeading(context, leftX, leftW, TAB_LABELS[0], GOLD);
+        }
         int inputX = leftX + 4;
         int stepperBtnW = sizePrevBtn != null ? sizePrevBtn.getWidth() : 20;
         int labelColor = GOLD;
@@ -1031,7 +1027,9 @@ public class LatitudeCreateWorldScreen extends Screen {
         context.enableScissor(rightClipLeft, rightViewportTop, rightClipRight, rightViewportBottom);
         boolean latWorld = isLatitudeWorld();
         int rightTextWidth = Math.max(40, rightW - 8 - SCROLLBAR_GUTTER);
-        if (!threeCol) {
+        if (threeCol) {
+            drawInlineHeading(context, rightX, rightW, TAB_LABELS[1], latWorld ? GOLD : DISABLED_COLOR);
+        } else {
         drawCenteredBoundedText(context, "Spawn Zone", new UiRect(rightX + 4, paneTitleY, rightTextWidth, uiFontHeight()), latWorld ? GOLD : DISABLED_COLOR, false, false);
         drawWrappedTextBlock(context, "Choose the climate where your journey begins", new UiRect(rightX + 4, rightSubtitleY, rightTextWidth, Math.max(uiFontHeight(), rightDividerY - rightSubtitleY - scaledUi(2))), latWorld ? MUTED : DISABLED_COLOR, false, 2, true, true);
         }
@@ -1091,10 +1089,15 @@ public class LatitudeCreateWorldScreen extends Screen {
             int railClipLeft = Math.max(railX + 1, paneStripViewportLeft);
             int railClipRight = Math.min(railX + railW - 1, paneStripViewportRight);
             if (railClipRight > railClipLeft) {
+            if (threeCol) {
+                drawInlineHeading(context, railX, railW, TAB_LABELS[2], GOLD);
+            }
             context.enableScissor(railClipLeft, settingsViewportTop, railClipRight, settingsViewportBottom);
             int railTextWidth = Math.max(40, railW - 8 - SCROLLBAR_GUTTER);
-            drawCenteredBoundedText(context, "EXPEDITION", new UiRect(railX + 4, panelTop + scaledUi(4), railTextWidth, uiFontHeight()), GOLD, false, true);
-            drawCenteredBoundedText(context, "SETTINGS", new UiRect(railX + 4, panelTop + scaledUi(14), railTextWidth, uiFontHeight()), GOLD, false, true);
+            if (!threeCol) {
+                drawCenteredBoundedText(context, "EXPEDITION", new UiRect(railX + 4, panelTop + scaledUi(4), railTextWidth, uiFontHeight()), GOLD, false, true);
+                drawCenteredBoundedText(context, "SETTINGS", new UiRect(railX + 4, panelTop + scaledUi(14), railTextWidth, uiFontHeight()), GOLD, false, true);
+            }
             drawSettingsRowLabel(context, "World Type", settLabelX, worldTypeRowY, MUTED);
             drawSettingsStepperValue(context, WORLD_TYPE_NAMES[worldTypeIdx], WORLD_TYPE_COLORS[worldTypeIdx], worldTypeRowY);
             drawSettingsRowLabel(context, "Game Mode", settLabelX, modeRowY, MUTED);
@@ -1524,28 +1527,23 @@ public class LatitudeCreateWorldScreen extends Screen {
         context.disableScissor();
     }
 
-    private void drawPanelTabCap(DrawContext context, int x, int w, String label, int labelColor) {
-        // Decorative only: non-interactive chrome for three-column layout.
-        int visibleLeft = Math.max(x + scaledUi(4), paneStripViewportLeft + scaledUi(2));
-        int visibleRight = Math.min(x + w - scaledUi(4), paneStripViewportRight - scaledUi(2));
-        if (visibleRight <= visibleLeft) {
-            return;
-        }
+    private void drawInlineHeading(DrawContext context, int paneX, int paneW, String label, int labelColor) {
+        int headingY = panelTop + compactUi(6);
+        int availableW = paneW - scaledUi(12);
+        if (availableW <= 0) return;
+        int textW = uiTextWidth(label);
+        int lineGap = compactUi(6);
+        int lineLen = Math.max(compactUi(10), (availableW - textW - lineGap * 2) / 2);
+        int centerX = paneX + paneW / 2;
+        int lineY = headingY + uiFontHeight() / 2;
+        int lineLeftStart = centerX - (textW / 2) - lineGap - lineLen;
+        int lineRightStart = centerX + (textW / 2) + lineGap;
 
-        int capH = compactUi(18);
-        int capTop = panelTop - compactUi(12);
-        int capBottom = capTop + capH;
-        int capW = Math.min(visibleRight - visibleLeft, Math.max(compactUi(44), uiTextWidth(label) + compactUi(14)));
-        int capX = visibleLeft + Math.max(0, (visibleRight - visibleLeft - capW) / 2);
-
-        context.fill(capX, capTop, capX + capW, capBottom, PANEL_BG);
-        context.fill(capX, capTop, capX + capW, capTop + 1, PANEL_BORDER);
-        context.fill(capX, capTop, capX + 1, capBottom, PANEL_BORDER);
-        context.fill(capX + capW - 1, capTop, capX + capW, capBottom, PANEL_BORDER);
-        context.fill(capX + 1, capBottom - 1, capX + capW - 1, capBottom, PANEL_BORDER);
+        context.fill(lineLeftStart, lineY, lineLeftStart + lineLen, lineY + 1, PANEL_BORDER);
+        context.fill(lineRightStart, lineY, lineRightStart + lineLen, lineY + 1, PANEL_BORDER);
 
         drawCenteredBoundedText(context, label,
-                new UiRect(capX + compactUi(2), capTop + compactUi(3), capW - compactUi(4), uiFontHeight()),
+                new UiRect(paneX + compactUi(4), headingY, paneW - compactUi(8), uiFontHeight()),
                 labelColor, true, true);
     }
 
