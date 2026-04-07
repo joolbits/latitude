@@ -709,7 +709,7 @@ public class LatitudeCreateWorldScreen extends Screen {
         }
         if (bonusChestBtn != null) {
             bonusChestBtn.setMessage(Text.literal(bonusChest ? "ON" : "OFF"));
-            bonusChestBtn.active = bonusChestBtn.visible;
+            bonusChestBtn.active = !isLatitudeWorld() && bonusChestBtn.visible;
         }
         if (gameRulesBtn != null) {
             gameRulesBtn.active = gameRulesBtn.visible;
@@ -757,11 +757,7 @@ public class LatitudeCreateWorldScreen extends Screen {
 
         y += btnH + rowGap + labelGap;
         bonusChestRowY = y;
-        if (!isLatitudeWorld()) {
-            positionSettingsButton(bonusChestBtn, settBtnX, settBtnW, y, btnH);
-        } else {
-            if (bonusChestBtn != null) { bonusChestBtn.visible = false; bonusChestBtn.active = false; }
-        }
+        positionSettingsButton(bonusChestBtn, settBtnX, settBtnW, y, btnH);
         y += btnH + rowGap + labelGap;
         gameRulesRowY = y;
         positionSettingsButton(gameRulesBtn, settBtnX, settBtnW, y, btnH);
@@ -1101,11 +1097,7 @@ public class LatitudeCreateWorldScreen extends Screen {
             drawSettingsStepperValue(context, MODE_NAMES[selectedModeIdx], MODE_COLORS[selectedModeIdx], modeRowY);
             drawSettingsRowLabel(context, "Commands", settLabelX, commandsRowY, MUTED);
             drawSettingsRowLabel(context, "Starting Compass", settLabelX, compassRowY, isLatitudeWorld() ? MUTED : DISABLED_COLOR);
-            if (!isLatitudeWorld()) {
-                drawSettingsRowLabel(context, "Bonus Chest", settLabelX, bonusChestRowY, MUTED);
-            } else {
-                drawSettingsRowLabel(context, "Bonus Chest unavailable in Latitude", settLabelX, bonusChestRowY, DISABLED_COLOR);
-            }
+            drawSettingsRowLabel(context, "Bonus Chest", settLabelX, bonusChestRowY, isLatitudeWorld() ? DISABLED_COLOR : MUTED);
             drawSettingsRowLabel(context, "Game Rules", settLabelX, gameRulesRowY, MUTED);
             context.disableScissor();
             }
@@ -1114,6 +1106,10 @@ public class LatitudeCreateWorldScreen extends Screen {
 
         if (!tabbedMode) {
             drawHorizontalScrollbar(context);
+        }
+
+        if (isLatitudeWorld() && bonusChestBtn != null && !bonusChestBtn.active && bonusChestBtn.isMouseOver(mouseX, mouseY)) {
+            context.drawTooltip(Text.literal("Bonus chest is not available in Latitude."), mouseX, mouseY);
         }
 
         super.render(context, mouseX, mouseY, delta);
