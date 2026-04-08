@@ -2099,6 +2099,14 @@ public final class LatitudeBiomes {
                 out = pickSwampFallback(biomeRegistry, base, blockX, blockZ, t, landBandIndex);
             }
         }
+        // Mangrove guard: enforceLandBandPool can re-introduce mangrove (MANGROVE_ID is in the
+        // BAND_SUBTROPICAL allowed-extras list). Re-evaluate and reject if surface/coastal gates fail.
+        if (isMangroveCandidate(out)) {
+            MangroveDecision poolMangroveDecision = evaluateMangroveWithSurface(blockX, blockZ, columnDecisionY, preview, seaLevel, sampler, nearOcean, hasReliableSurface, hasPreviewTerrainInputs, heightView);
+            if (!poolMangroveDecision.allow()) {
+                out = pickMangroveFallback(biomeRegistry, base, blockX, blockZ, t, landBandIndex);
+            }
+        }
         if (isSnowyVariant(out)) {
             double _bgDeg = latitudeDegreesFromRadius(blockZ, effectiveRadius);
             double _bgAlpha = snowyRampAlpha(_bgDeg);
@@ -2584,6 +2592,14 @@ public final class LatitudeBiomes {
             SwampDecision poolSwampDecision = evaluateSwamp(blockX, blockZ, sampler);
             if (!poolSwampDecision.allow()) {
                 out = pickSwampFallback(biomePool, base, blockX, blockZ, t, landBandIndex);
+            }
+        }
+        // Mangrove guard: enforceLandBandPool can re-introduce mangrove (MANGROVE_ID is in the
+        // BAND_SUBTROPICAL allowed-extras list). Re-evaluate and reject if surface/coastal gates fail.
+        if (isMangroveCandidate(out)) {
+            MangroveDecision poolMangroveDecision = evaluateMangroveWithSurface(blockX, blockZ, columnDecisionY, preview, seaLevel, sampler, nearOcean, hasReliableSurface, hasPreviewTerrainInputs, heightView);
+            if (!poolMangroveDecision.allow()) {
+                out = pickMangroveFallback(biomePool, base, blockX, blockZ, t, landBandIndex);
             }
         }
         if (isSnowyVariant(out)) {
