@@ -1970,7 +1970,7 @@ public final class LatitudeBiomes {
                 out = chosen;
             } else {
                 if (!sourceContext && shouldTryMangroveOverride(chosen, landBandIndex)) {
-                    MangroveDecision decision = evaluateMangrove(blockX, blockZ, preview.centerHeight, seaLevel, preview.robustDelta, sampler, nearOcean, allowSurfaceGates, heightView);
+                    MangroveDecision decision = evaluateMangroveWithSurface(blockX, blockZ, preview, seaLevel, sampler, nearOcean, hasReliableSurface, hasPreviewTerrainInputs, generator, noiseConfig, heightView);
                     mangroveDecision = decision.logLabel();
                     if (decision.allow()) {
                         try {
@@ -1985,7 +1985,7 @@ public final class LatitudeBiomes {
                         }
                     }
                 } else if (!sourceContext && isMangroveCandidate(chosen)) {
-                    MangroveDecision decision = evaluateMangrove(blockX, blockZ, preview.centerHeight, seaLevel, preview.robustDelta, sampler, nearOcean, allowSurfaceGates, heightView);
+                    MangroveDecision decision = evaluateMangroveWithSurface(blockX, blockZ, preview, seaLevel, sampler, nearOcean, hasReliableSurface, hasPreviewTerrainInputs, generator, noiseConfig, heightView);
                     mangroveDecision = decision.logLabel();
                     if (!decision.allow()) {
                         chosen = pickMangroveFallback(biomeRegistry, base, blockX, blockZ, t, landBandIndex);
@@ -1999,7 +1999,7 @@ public final class LatitudeBiomes {
                 }
                 if (!sourceContext && !isMangroveCandidate(chosen) && shouldInviteMangrove(blockX, columnDecisionY, blockZ, bandIndex, sampler, nearOcean)) {
                     invitedMangrove = true;
-                    MangroveDecision decision = evaluateMangrove(blockX, blockZ, preview.centerHeight, seaLevel, preview.robustDelta, sampler, nearOcean, allowSurfaceGates, heightView);
+                    MangroveDecision decision = evaluateMangroveWithSurface(blockX, blockZ, preview, seaLevel, sampler, nearOcean, hasReliableSurface, hasPreviewTerrainInputs, generator, noiseConfig, heightView);
                     mangroveDecision = decision.logLabel();
                     if (decision.allow()) {
                         try {
@@ -2445,7 +2445,7 @@ public final class LatitudeBiomes {
                 out = chosen;
             } else {
             if (shouldTryMangroveOverride(chosen, landBandIndex)) {
-                MangroveDecision decision = evaluateMangrove(blockX, blockZ, preview.centerHeight, seaLevel, preview.robustDelta, sampler, nearOcean, allowSurfaceGates, heightView);
+                MangroveDecision decision = evaluateMangroveWithSurface(blockX, blockZ, preview, seaLevel, sampler, nearOcean, hasReliableSurface, hasPreviewTerrainInputs, generator, noiseConfig, heightView);
                 if (Boolean.getBoolean("latitude.audit.mangroveFinal")) {
                     LOGGER.info("[mangrove-final-live] x={} z={} resultBiome={}",
                             blockX, blockZ, biomeId(chosen));
@@ -2468,7 +2468,7 @@ public final class LatitudeBiomes {
                     }
                 }
             } else if (isMangroveCandidate(chosen)) {
-                MangroveDecision decision = evaluateMangrove(blockX, blockZ, preview.centerHeight, seaLevel, preview.robustDelta, sampler, nearOcean, allowSurfaceGates, heightView);
+                MangroveDecision decision = evaluateMangroveWithSurface(blockX, blockZ, preview, seaLevel, sampler, nearOcean, hasReliableSurface, hasPreviewTerrainInputs, generator, noiseConfig, heightView);
                 if (Boolean.getBoolean("latitude.audit.mangroveFinal")) {
                     LOGGER.info("[mangrove-final-live] x={} z={} resultBiome={}",
                             blockX, blockZ, biomeId(chosen));
@@ -2491,7 +2491,7 @@ public final class LatitudeBiomes {
             }
             if (!isMangroveCandidate(chosen) && shouldInviteMangrove(blockX, columnDecisionY, blockZ, bandIndex, sampler, nearOcean)) {
                 invitedMangrove = true;
-                MangroveDecision decision = evaluateMangrove(blockX, blockZ, preview.centerHeight, seaLevel, preview.robustDelta, sampler, nearOcean, allowSurfaceGates, heightView);
+                MangroveDecision decision = evaluateMangroveWithSurface(blockX, blockZ, preview, seaLevel, sampler, nearOcean, hasReliableSurface, hasPreviewTerrainInputs, generator, noiseConfig, heightView);
                 if (Boolean.getBoolean("latitude.audit.mangroveFinal")) {
                     LOGGER.info("[mangrove-final-live] x={} z={} resultBiome={}",
                             blockX, blockZ, biomeId(chosen));
@@ -6312,6 +6312,40 @@ public final class LatitudeBiomes {
         } catch (Throwable ignored) {
             return fallback;
         }
+    }
+
+    /**
+     * Wrapper around {@link #evaluateMangrove} that recovers mangrove surface-gate authority
+     * when the general preview-terrain pass was skipped for performance (MIXIN/CAVE_CLAMP).
+     *
+     * <p>When {@code hasReliableSurface} is false but {@code hasPreviewTerrainInputs} is true
+     * (the live-worldgen path where skipPreviewHeightForWorldgen defaults to true), this method
+     * probes real terrain height specifically for mangrove gating. The probe reuses the
+     * per-chunk cache in {@link #previewTerrain}, so the extra call costs at most one
+     * {@code getHeight} call per chunk and only fires on actual mangrove evaluation paths.
+     *
+     * <p>When no terrain probe inputs are available (atlas / SOURCE / ATLAS_SAMPLER contexts),
+     * falls back to {@code fallbackPreview} with gates disabled, preserving prior atlas behavior.
+     */
+    private static MangroveDecision evaluateMangroveWithSurface(
+            int blockX, int blockZ,
+            PreviewTerrain fallbackPreview,
+            int seaLevel,
+            MultiNoiseUtil.MultiNoiseSampler sampler,
+            boolean nearOcean,
+            boolean hasReliableSurface,
+            boolean hasPreviewTerrainInputs,
+            NoiseChunkGenerator generator,
+            NoiseConfig noiseConfig,
+            HeightLimitView heightView) {
+        // When general preview was skipped for performance but probe inputs are present
+        // (MIXIN path), probe real terrain now so height/rugged gates are not bypassed.
+        PreviewTerrain probe = (!hasReliableSurface && hasPreviewTerrainInputs)
+                ? previewTerrain(generator, noiseConfig, heightView, blockX, blockZ)
+                : fallbackPreview;
+        boolean allowMangroveGates = hasReliableSurface || hasPreviewTerrainInputs;
+        return evaluateMangrove(blockX, blockZ, probe.centerHeight, seaLevel, probe.robustDelta,
+                sampler, nearOcean, allowMangroveGates, heightView);
     }
 
     private static MangroveDecision evaluateMangrove(int blockX,
