@@ -1,7 +1,7 @@
 {
   "replace": false,
   "values": [
-    "minecraft:plains",
-    "minecraft:old_growth_birch_forest"
+    "minecraft:savanna",
+    "minecraft:savanna_plateau"
   ]
 }
