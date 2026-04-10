@@ -4630,6 +4630,9 @@ public final class LatitudeBiomes {
         if (bandIndex == BAND_TEMPERATE && !mountainLike) {
             allowedPool = removeTemperateMountainFamily(allowedPool);
         }
+        if (bandIndex == BAND_SUBTROPICAL && !mountainLike) {
+            allowedPool = removeSubtropicalNonMountainWindsweptFamily(allowedPool);
+        }
         RegistryEntry<Biome> out = candidate;
         if (!allowedPool.isEmpty() && !isInAllowedLandPool(allowedPool, candidate)) {
             maybeLogBandLeak(blockX, blockZ, t, bandIndex, candidate);
@@ -4650,6 +4653,9 @@ public final class LatitudeBiomes {
         List<RegistryEntry<Biome>> allowedPool = preFilterPool;
         if (bandIndex == BAND_TEMPERATE && !mountainLike) {
             allowedPool = removeTemperateMountainFamily(allowedPool);
+        }
+        if (bandIndex == BAND_SUBTROPICAL && !mountainLike) {
+            allowedPool = removeSubtropicalNonMountainWindsweptFamily(allowedPool);
         }
         RegistryEntry<Biome> out = candidate;
         if (!allowedPool.isEmpty() && !isInAllowedLandPool(allowedPool, candidate)) {
@@ -4731,6 +4737,16 @@ public final class LatitudeBiomes {
         List<RegistryEntry<Biome>> filtered = new ArrayList<>(pool.size());
         for (RegistryEntry<Biome> entry : pool) {
             if (!isTemperateMountainFamilyBiome(entry)) {
+                filtered.add(entry);
+            }
+        }
+        return filtered;
+    }
+
+    private static List<RegistryEntry<Biome>> removeSubtropicalNonMountainWindsweptFamily(List<RegistryEntry<Biome>> pool) {
+        List<RegistryEntry<Biome>> filtered = new ArrayList<>(pool.size());
+        for (RegistryEntry<Biome> entry : pool) {
+            if (!isBiomeId(entry, "minecraft:windswept_savanna")) {
                 filtered.add(entry);
             }
         }
