@@ -3030,6 +3030,7 @@ public final class LatitudeBiomes {
     private static RegistryEntry<Biome> pickTropicalGradient(Registry<Biome> biomes, RegistryEntry<Biome> base, int blockX, int blockZ, double t) {
         int chunkX = blockX >> 4;
         int chunkZ = blockZ >> 4;
+        boolean mountainLike = false;
 
         long seed = WORLD_SEED;
         ProvinceAuthority.Province warmProvince = warmProvinceClass(blockX, blockZ, BAND_SUBTROPICAL);
@@ -3056,7 +3057,8 @@ public final class LatitudeBiomes {
         if (humidity < humidThreshold) {
             RegistryEntry<Biome> humidPick = pickFromWeightedTags(biomes, base, blockX, blockZ, 110 + step, 0x5B70 + step,
                     LAT_SUBTROPICAL_HUMID_PRIMARY, LAT_SUBTROPICAL_HUMID_SECONDARY, LAT_SUBTROPICAL_HUMID_ACCENT);
-            return enforceWarmProvinceFamily(biomes, humidPick, warmProvince);
+            RegistryEntry<Biome> humidOut = enforceWarmProvinceFamily(biomes, humidPick, warmProvince);
+            return blockNewSubtropicalNonMountainWindswept(base, humidOut, mountainLike, BAND_SUBTROPICAL);
         }
         boolean coldShoulderArid = step == 0 && u >= SUBTROPICAL_ARID_SHOULDER_U;
 
@@ -3072,7 +3074,7 @@ public final class LatitudeBiomes {
             }
             RegistryEntry<Biome> forced = maybePickWsavStep2SecondaryOverride(biomes, step, plateauLike, candidates);
             if (forced != null) {
-                return forced;
+                return blockNewSubtropicalNonMountainWindswept(base, forced, mountainLike, BAND_SUBTROPICAL);
             }
         }
 
@@ -3090,7 +3092,8 @@ public final class LatitudeBiomes {
                     LAT_ARID_PRIMARY, LAT_ARID_SECONDARY, LAT_ARID_ACCENT);
         };
         RegistryEntry<Biome> softened = softenSubtropicalBadlands(biomes, base, pick);
-        return enforceWarmProvinceFamily(biomes, softened, warmProvince);
+        RegistryEntry<Biome> out = enforceWarmProvinceFamily(biomes, softened, warmProvince);
+        return blockNewSubtropicalNonMountainWindswept(base, out, mountainLike, BAND_SUBTROPICAL);
     }
 
     private static boolean isAridTropicalStep(int blockX, int blockZ, double t) {
@@ -3136,6 +3139,7 @@ public final class LatitudeBiomes {
     private static RegistryEntry<Biome> pickTropicalGradient(Collection<RegistryEntry<Biome>> biomes, RegistryEntry<Biome> base, int blockX, int blockZ, double t) {
         int chunkX = blockX >> 4;
         int chunkZ = blockZ >> 4;
+        boolean mountainLike = false;
 
         long seed = WORLD_SEED;
         ProvinceAuthority.Province warmProvince = warmProvinceClass(blockX, blockZ, BAND_SUBTROPICAL);
@@ -3162,7 +3166,8 @@ public final class LatitudeBiomes {
         if (humidity < humidThreshold) {
             RegistryEntry<Biome> humidPick = pickFromWeightedTags(biomes, base, blockX, blockZ, 110 + step, 0x5B70 + step,
                     LAT_SUBTROPICAL_HUMID_PRIMARY, LAT_SUBTROPICAL_HUMID_SECONDARY, LAT_SUBTROPICAL_HUMID_ACCENT);
-            return enforceWarmProvinceFamily(biomes, humidPick, warmProvince);
+            RegistryEntry<Biome> humidOut = enforceWarmProvinceFamily(biomes, humidPick, warmProvince);
+            return blockNewSubtropicalNonMountainWindswept(base, humidOut, mountainLike, BAND_SUBTROPICAL);
         }
         boolean coldShoulderArid = step == 0 && u >= SUBTROPICAL_ARID_SHOULDER_U;
 
@@ -3175,7 +3180,7 @@ public final class LatitudeBiomes {
             List<RegistryEntry<Biome>> candidates = entriesForTag(biomes, tag);
             RegistryEntry<Biome> forced = maybePickWsavStep2SecondaryOverride(biomes, step, plateauLike, candidates);
             if (forced != null) {
-                return forced;
+                return blockNewSubtropicalNonMountainWindswept(base, forced, mountainLike, BAND_SUBTROPICAL);
             }
         }
 
@@ -3193,7 +3198,24 @@ public final class LatitudeBiomes {
                     LAT_ARID_PRIMARY, LAT_ARID_SECONDARY, LAT_ARID_ACCENT);
         };
         RegistryEntry<Biome> softened = softenSubtropicalBadlands(biomes, base, pick);
-        return enforceWarmProvinceFamily(biomes, softened, warmProvince);
+        RegistryEntry<Biome> out = enforceWarmProvinceFamily(biomes, softened, warmProvince);
+        return blockNewSubtropicalNonMountainWindswept(base, out, mountainLike, BAND_SUBTROPICAL);
+    }
+
+    private static RegistryEntry<Biome> blockNewSubtropicalNonMountainWindswept(RegistryEntry<Biome> incoming,
+                                                                                  RegistryEntry<Biome> candidate,
+                                                                                  boolean mountainLike,
+                                                                                  int bandIndex) {
+        if (candidate == null) {
+            return incoming;
+        }
+        if (bandIndex == BAND_SUBTROPICAL
+                && !mountainLike
+                && isBiomeId(candidate, "minecraft:windswept_savanna")
+                && !isBiomeId(incoming, "minecraft:windswept_savanna")) {
+            return incoming;
+        }
+        return candidate;
     }
 
     private static RegistryEntry<Biome> oceanByLatitudeBandOrBase(Registry<Biome> biomes, RegistryEntry<Biome> base, int blockX, int blockZ, int bandIndex) {
