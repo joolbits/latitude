@@ -1693,7 +1693,7 @@ public final class LatitudeBiomes {
     private static final int SWAMP_PATCH_SIZE_BLOCKS = 1024;
     private static final double SWAMP_PATCH_CHANCE = 0.66;
     private static final long SWAMP_PATCH_SALT = 0x53A95A4DL;
-    private static final int SWAMP_SUBTROPICAL_PATCH_MAX_OCEAN_DISTANCE = 384;
+    private static final int SWAMP_SUBTROPICAL_PATCH_MAX_OCEAN_DISTANCE = 256;
 
     private static final TagKey<Biome> LAT_EQUATOR_PRIMARY = TagKey.of(RegistryKeys.BIOME, Identifier.of("globe", "lat_equator_primary"));
     private static final TagKey<Biome> LAT_EQUATOR_SECONDARY = TagKey.of(RegistryKeys.BIOME, Identifier.of("globe", "lat_equator_secondary"));
