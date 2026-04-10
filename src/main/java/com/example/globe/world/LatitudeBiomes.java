@@ -7331,7 +7331,7 @@ public final class LatitudeBiomes {
     private static double wetlandThresholdForBand(int bandIndex, double t) {
         // Lower threshold => more wetlands. Tropical-biased, subtropical less frequent.
         if (bandIndex == BAND_TROPICAL) return 0.20;
-        if (bandIndex == BAND_SUBTROPICAL) return 0.72;
+        if (bandIndex == BAND_SUBTROPICAL) return 0.20;
         return 0.45;
     }
 
