@@ -325,6 +325,7 @@ public final class LatitudeBiomes {
     private static final boolean DEBUG_SKIP_SAVANNA_GATE_MIXIN = Boolean.getBoolean("latitude.debugSkipSavannaGateMixin");
     private static final boolean DEBUG_WARM_WINDSWEPT_LATE_PATH = Boolean.getBoolean("latitude.debugWarmWindsweptLatePath");
     private static final boolean DEBUG_WARM_POOL_MEMBERSHIP = Boolean.getBoolean("latitude.debugWarmPoolMembership");
+    private static final boolean DEBUG_SUBTROPICAL_SWAMP_SOURCE_TRACE = Boolean.getBoolean("latitude.debugSubtropicalSwampSourceTrace");
     private static final boolean DEBUG_WARM_POOL_AUDIT = Boolean.getBoolean("latitude.debug.warmPoolAudit")
             || "true".equalsIgnoreCase(System.getenv("LATITUDE_DEBUG_WARM_POOL_AUDIT"));
     private static final long WARM_POOL_AUDIT_LOG_EVERY = Long.getLong("latitude.warmPoolAudit.logEvery", 8192L);
@@ -1331,6 +1332,45 @@ public final class LatitudeBiomes {
                 postFilterHasWindsweptFamily);
     }
 
+    private static void logSubtropicalSwampTrace(int blockX,
+                                                 int blockZ,
+                                                 int landBandIndex,
+                                                 boolean mountainLike,
+                                                 String source,
+                                                 RegistryEntry<Biome> chosenBiome,
+                                                 RegistryEntry<Biome> postSanitize,
+                                                 RegistryEntry<Biome> preEnforce,
+                                                 RegistryEntry<Biome> postEnforce,
+                                                 RegistryEntry<Biome> finalBiome,
+                                                 Boolean evaluateAllow,
+                                                 Boolean postEnforceAllow) {
+        if (!DEBUG_SUBTROPICAL_SWAMP_SOURCE_TRACE) {
+            return;
+        }
+        if (landBandIndex != BAND_SUBTROPICAL || mountainLike) {
+            return;
+        }
+        boolean anySwamp = isSwampCandidate(chosenBiome)
+                || isSwampCandidate(postSanitize)
+                || isSwampCandidate(preEnforce)
+                || isSwampCandidate(postEnforce)
+                || isSwampCandidate(finalBiome);
+        if (!anySwamp) {
+            return;
+        }
+        LOGGER.info("[LAT][SUBTROPICAL_SWAMP_TRACE] x={} z={} source={} chosenBiome={} postSanitize={} preEnforce={} postEnforce={} finalBiome={} evaluateAllow={} postEnforceAllow={}",
+                blockX,
+                blockZ,
+                source == null ? "unknown" : source,
+                biomeId(chosenBiome),
+                biomeId(postSanitize),
+                biomeId(preEnforce),
+                biomeId(postEnforce),
+                biomeId(finalBiome),
+                evaluateAllow == null ? "n/a" : evaluateAllow.toString(),
+                postEnforceAllow == null ? "n/a" : postEnforceAllow.toString());
+    }
+
     private static void logWarmWindsweptLatePath(String stage,
                                                  RegistryEntry<Biome> base,
                                                  int blockX,
@@ -1693,7 +1733,7 @@ public final class LatitudeBiomes {
     private static final int SWAMP_PATCH_SIZE_BLOCKS = 1024;
     private static final double SWAMP_PATCH_CHANCE = 0.66;
     private static final long SWAMP_PATCH_SALT = 0x53A95A4DL;
-    private static final int SWAMP_SUBTROPICAL_PATCH_MAX_OCEAN_DISTANCE = 256;
+    private static final int SWAMP_SUBTROPICAL_PATCH_MAX_OCEAN_DISTANCE = 192;
 
     private static final TagKey<Biome> LAT_EQUATOR_PRIMARY = TagKey.of(RegistryKeys.BIOME, Identifier.of("globe", "lat_equator_primary"));
     private static final TagKey<Biome> LAT_EQUATOR_SECONDARY = TagKey.of(RegistryKeys.BIOME, Identifier.of("globe", "lat_equator_secondary"));
@@ -2074,6 +2114,9 @@ public final class LatitudeBiomes {
         }
         boolean forcedBadlands = false;
         RegistryEntry<Biome> chosen = null;
+        String subtropicalSwampSource = null;
+        Boolean subtropicalSwampEvaluateAllow = null;
+        Boolean subtropicalPostEnforceSwampAllow = null;
         if (chosen == null && (landBandIndex == BAND_TROPICAL || landBandIndex == BAND_SUBTROPICAL) && sampler != null) {
             int noiseX = blockX >> 2;
             int noiseZ = blockZ >> 2;
@@ -2095,6 +2138,9 @@ public final class LatitudeBiomes {
             && wetlandNoise < wetlandThreshold) {
                 try {
                     chosen = biome(biomeRegistry, SWAMP_ID);
+                    if (landBandIndex == BAND_SUBTROPICAL && !mountainLike && isSwampCandidate(chosen)) {
+                        subtropicalSwampSource = "prepassSwampPatch";
+                    }
                 } catch (Throwable ignored) {
                     // keep null to fall through
                 }
@@ -2103,7 +2149,13 @@ public final class LatitudeBiomes {
         if (chosen == null) {
             chosen = switch (landBandIndex) {
                 case BAND_TROPICAL -> pickFromWeightedTags(biomeRegistry, base, blockX, blockZ, BAND_TROPICAL, 0x1A21, LAT_EQUATOR_PRIMARY, LAT_EQUATOR_SECONDARY, LAT_EQUATOR_ACCENT);
-                case BAND_SUBTROPICAL -> pickTropicalGradient(biomeRegistry, base, blockX, blockZ, t);
+                case BAND_SUBTROPICAL -> {
+                    RegistryEntry<Biome> subtropicalPick = pickTropicalGradient(biomeRegistry, base, blockX, blockZ, t);
+                    if (!mountainLike && isSwampCandidate(subtropicalPick)) {
+                        subtropicalSwampSource = "pickTropicalGradient";
+                    }
+                    yield subtropicalPick;
+                }
                 case BAND_TEMPERATE -> pickTemperateLand(biomeRegistry, blockX, blockZ, columnDecisionY,
                         () -> pickFromWeightedTags(biomeRegistry, base, blockX, blockZ, BAND_TEMPERATE, 0x2B32, LAT_TEMPERATE_PRIMARY, LAT_TEMPERATE_SECONDARY, LAT_TEMPERATE_ACCENT),
                         mountainLike);
@@ -2216,7 +2268,11 @@ public final class LatitudeBiomes {
                     }
                 }
                 if (isSwampCandidate(chosen)) {
+                    if (subtropicalSwampSource == null && landBandIndex == BAND_SUBTROPICAL && !mountainLike) {
+                        subtropicalSwampSource = "evaluateSwampRetention";
+                    }
                     SwampDecision swampDecision = evaluateSwamp(blockX, blockZ, sampler);
+                    subtropicalSwampEvaluateAllow = swampDecision.allow();
                     if (!swampDecision.allow()) {
                         chosen = pickSwampFallback(biomeRegistry, base, blockX, blockZ, t, landBandIndex);
                     }
@@ -2327,6 +2383,7 @@ public final class LatitudeBiomes {
         RegistryEntry<Biome> swampFallbackReturned = null;
         if (swampCandidateAfterEnforce) {
             SwampDecision poolSwampDecision = evaluateSwamp(blockX, blockZ, sampler);
+            subtropicalPostEnforceSwampAllow = poolSwampDecision.allow();
             if (!poolSwampDecision.allow()) {
                 swampValidationFailed = true;
                 swampFallbackCalled = true;
@@ -2381,6 +2438,19 @@ public final class LatitudeBiomes {
             }
         }
         RegistryEntry<Biome> postFinalSavannaClamp = out;
+        logSubtropicalSwampTrace(
+                blockX,
+                blockZ,
+                landBandIndex,
+                mountainLike,
+                subtropicalSwampSource,
+                chosen,
+                sanitized,
+                preBandEnforce,
+                postPoolEnforce,
+                postFinalSavannaClamp,
+                subtropicalSwampEvaluateAllow,
+                subtropicalPostEnforceSwampAllow);
         RegistryEntry<Biome> postFinalClamp = out;
         int overlayBandIndex = authoritativeLandBandIndex(blockX, blockZ, effectiveRadius);
         logSubtropicalJungleReturn("pick-registry", blockX, blockZ, t, landBandIndex, base, chosen, sanitized, preBandEnforce, postBandEnforce, postFinalClamp, out);
