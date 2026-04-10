@@ -323,6 +323,8 @@ public final class LatitudeBiomes {
     private static final boolean DEBUG_SAVANNA_SPAWN_GATE = Boolean.getBoolean("latitude.debugSpawnGate");
     private static final boolean DEBUG_SKIP_SAVANNA_GATE = Boolean.getBoolean("latitude.debugSkipSavannaGate");
     private static final boolean DEBUG_SKIP_SAVANNA_GATE_MIXIN = Boolean.getBoolean("latitude.debugSkipSavannaGateMixin");
+    private static final boolean DEBUG_WARM_WINDSWEPT_LATE_PATH = Boolean.getBoolean("latitude.debugWarmWindsweptLatePath");
+    private static final boolean DEBUG_WARM_POOL_MEMBERSHIP = Boolean.getBoolean("latitude.debugWarmPoolMembership");
     private static final boolean DEBUG_WARM_POOL_AUDIT = Boolean.getBoolean("latitude.debug.warmPoolAudit")
             || "true".equalsIgnoreCase(System.getenv("LATITUDE_DEBUG_WARM_POOL_AUDIT"));
     private static final long WARM_POOL_AUDIT_LOG_EVERY = Long.getLong("latitude.warmPoolAudit.logEvery", 8192L);
@@ -437,6 +439,7 @@ public final class LatitudeBiomes {
     private static final int LEAK_LOG_LIMIT = Integer.getInteger("latitude.leakLogLimit", 200);
     private static final int SAVANNA_GATE_LOG_EVERY = Integer.getInteger("latitude.savannaGateLogEvery", 2048);
     private static final ThreadLocal<String> LAST_SELECTION_PATH = new ThreadLocal<>();
+    private static final ThreadLocal<WarmPoolMembershipSnapshot> LAST_WARM_POOL_MEMBERSHIP_SNAPSHOT = new ThreadLocal<>();
     private static final String PATH_TAG_PICK = "tag-based pick";
     private static final String PATH_FALLBACK_PICK = "explicit fallback list pick";
     private static final String PATH_RETURN_BASE = "return base";
@@ -1151,6 +1154,225 @@ public final class LatitudeBiomes {
             return "robust_low";
         }
         return "deadband_keep";
+    }
+
+    private static boolean isWarmLandWindsweptBiome(RegistryEntry<Biome> biome) {
+        return isBiomeId(biome, "minecraft:windswept_hills")
+                || isBiomeId(biome, "minecraft:windswept_forest")
+                || isBiomeId(biome, "minecraft:windswept_gravelly_hills");
+    }
+
+    private static String warmWindsweptTraceBiomeId(RegistryEntry<Biome> biome) {
+        return biome == null ? "null" : biomeId(biome);
+    }
+
+    private static boolean sameBiomeId(RegistryEntry<Biome> a, RegistryEntry<Biome> b) {
+        return java.util.Objects.equals(warmWindsweptTraceBiomeId(a), warmWindsweptTraceBiomeId(b));
+    }
+
+    private record WarmPoolMembershipSnapshot(int blockX,
+                                              int blockZ,
+                                              int bandIndex,
+                                              String incomingBeforeEnforce,
+                                              String outgoingAfterEnforce,
+                                              String preFilterPoolIds,
+                                              String postFilterPoolIds,
+                                              boolean mountainFamilyRemovedByFilter,
+                                              boolean coldFamilyRemovedByFilter,
+                                              boolean postFilterContainsTaigaFamily,
+                                              boolean postFilterContainsWindsweptFamily) {
+    }
+
+    private static boolean isWarmPoolMembershipTargetBiome(RegistryEntry<Biome> biome) {
+        return isTaigaFamilyBiome(biome);
+    }
+
+    private static boolean poolContainsMountainFamily(List<RegistryEntry<Biome>> pool) {
+        for (RegistryEntry<Biome> entry : pool) {
+            if (isTemperateMountainFamilyBiome(entry)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean poolContainsColdFamily(List<RegistryEntry<Biome>> pool) {
+        for (RegistryEntry<Biome> entry : pool) {
+            if (isTaigaFamilyBiome(entry)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean poolContainsWindsweptFamily(List<RegistryEntry<Biome>> pool) {
+        for (RegistryEntry<Biome> entry : pool) {
+            if (isWarmLandWindsweptBiome(entry)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static String poolBiomeIds(List<RegistryEntry<Biome>> pool) {
+        if (pool == null || pool.isEmpty()) {
+            return "[]";
+        }
+        StringBuilder builder = new StringBuilder("[");
+        for (int i = 0; i < pool.size(); i++) {
+            if (i > 0) {
+                builder.append(',');
+            }
+            builder.append(biomeId(pool.get(i)));
+        }
+        builder.append(']');
+        return builder.toString();
+    }
+
+    private static void stashWarmPoolMembershipSnapshot(int blockX,
+                                                        int blockZ,
+                                                        int bandIndex,
+                                                        RegistryEntry<Biome> incomingBeforeEnforce,
+                                                        RegistryEntry<Biome> outgoingAfterEnforce,
+                                                        List<RegistryEntry<Biome>> preFilterPool,
+                                                        List<RegistryEntry<Biome>> postFilterPool) {
+        if (!DEBUG_WARM_POOL_MEMBERSHIP) {
+            return;
+        }
+        boolean preHasMountainFamily = poolContainsMountainFamily(preFilterPool);
+        boolean postHasMountainFamily = poolContainsMountainFamily(postFilterPool);
+        boolean preHasColdFamily = poolContainsColdFamily(preFilterPool);
+        boolean postHasColdFamily = poolContainsColdFamily(postFilterPool);
+
+        LAST_WARM_POOL_MEMBERSHIP_SNAPSHOT.set(new WarmPoolMembershipSnapshot(
+                blockX,
+                blockZ,
+                bandIndex,
+                warmWindsweptTraceBiomeId(incomingBeforeEnforce),
+                warmWindsweptTraceBiomeId(outgoingAfterEnforce),
+                poolBiomeIds(preFilterPool),
+                poolBiomeIds(postFilterPool),
+                preHasMountainFamily && !postHasMountainFamily,
+                preHasColdFamily && !postHasColdFamily,
+                postHasColdFamily,
+                poolContainsWindsweptFamily(postFilterPool)));
+    }
+
+    private static void logWarmPoolMembershipFinalPoint(String stage,
+                                                        RegistryEntry<Biome> base,
+                                                        int blockX,
+                                                        int blockZ,
+                                                        double t,
+                                                        int landBandIndex,
+                                                        boolean mountainLikeBeforeFinalTruth,
+                                                        boolean mountainLikeAfterFinalTruth,
+                                                        RegistryEntry<Biome> beforeSanitize,
+                                                        RegistryEntry<Biome> afterSanitize,
+                                                        RegistryEntry<Biome> beforeEnforceLandBandPool,
+                                                        RegistryEntry<Biome> afterEnforceLandBandPool,
+                                                        boolean swampCandidateAfterEnforce,
+                                                        boolean swampValidationFailed,
+                                                        boolean swampFallbackCalled,
+                                                        RegistryEntry<Biome> swampFallbackReturned,
+                                                        RegistryEntry<Biome> finalBiome) {
+        if (!DEBUG_WARM_POOL_MEMBERSHIP || !isWarmPoolMembershipTargetBiome(finalBiome)) {
+            return;
+        }
+        WarmPoolMembershipSnapshot snapshot = LAST_WARM_POOL_MEMBERSHIP_SNAPSHOT.get();
+        LAST_WARM_POOL_MEMBERSHIP_SNAPSHOT.remove();
+        boolean snapshotMatches = snapshot != null
+                && snapshot.blockX == blockX
+                && snapshot.blockZ == blockZ
+                && snapshot.bandIndex == landBandIndex;
+        String poolIncoming = snapshotMatches ? snapshot.incomingBeforeEnforce : "snapshot-missing";
+        String poolOutgoing = snapshotMatches ? snapshot.outgoingAfterEnforce : "snapshot-missing";
+        String preFilterPoolIds = snapshotMatches ? snapshot.preFilterPoolIds : "snapshot-missing";
+        String postFilterPoolIds = snapshotMatches ? snapshot.postFilterPoolIds : "snapshot-missing";
+        boolean mountainFamilyRemovedByFilter = snapshotMatches && snapshot.mountainFamilyRemovedByFilter;
+        boolean coldFamilyRemovedByFilter = snapshotMatches && snapshot.coldFamilyRemovedByFilter;
+        boolean postFilterHasTaigaFamily = snapshotMatches && snapshot.postFilterContainsTaigaFamily;
+        boolean postFilterHasWindsweptFamily = snapshotMatches && snapshot.postFilterContainsWindsweptFamily;
+        boolean sanitizeChanged = !sameBiomeId(beforeSanitize, afterSanitize);
+        double latDeg = clamp(t, 0.0, 1.0) * 90.0;
+        ProvinceAuthority.Province warmProvince = warmProvinceClass(blockX, blockZ, landBandIndex);
+        String humiditySummary = landBandIndex == BAND_SUBTROPICAL
+                ? String.format(java.util.Locale.ROOT, "%.3f", subtropicalHumidityNoise(blockX, blockZ))
+                : "n/a";
+
+        LOGGER.warn("[LAT][WARM_POOL_MEMBERSHIP] stage={} x={} z={} latDeg={} bandIndex={} province={} subtropicalHumidity={} mtnLikeBefore={} mtnLikeAfter={} beforeSanitize={} afterSanitize={} sanitizeChanged={} beforeEnforce={} afterEnforce={} swampCandidateAfterEnforce={} swampValidationFailed={} swampFallbackCalled={} swampFallbackReturned={} finalBiome={} selectionPath={} poolSnapshotMatch={} poolIncoming={} poolOutgoing={} preFilterPool={} postFilterPool={} mountainFamilyRemovedByFilter={} coldFamilyRemovedByFilter={} postFilterHasTaigaFamily={} postFilterHasWindsweptFamily={}",
+                stage,
+                blockX,
+                blockZ,
+                String.format(java.util.Locale.ROOT, "%.2f", latDeg),
+                landBandIndex,
+                warmProvince,
+                humiditySummary,
+                mountainLikeBeforeFinalTruth,
+                mountainLikeAfterFinalTruth,
+                warmWindsweptTraceBiomeId(beforeSanitize),
+                warmWindsweptTraceBiomeId(afterSanitize),
+                sanitizeChanged,
+                warmWindsweptTraceBiomeId(beforeEnforceLandBandPool),
+                warmWindsweptTraceBiomeId(afterEnforceLandBandPool),
+                swampCandidateAfterEnforce,
+                swampValidationFailed,
+                swampFallbackCalled,
+                warmWindsweptTraceBiomeId(swampFallbackReturned),
+                warmWindsweptTraceBiomeId(finalBiome),
+                selectionPathForTrace(base, finalBiome),
+                snapshotMatches,
+                poolIncoming,
+                poolOutgoing,
+                preFilterPoolIds,
+                postFilterPoolIds,
+                mountainFamilyRemovedByFilter,
+                coldFamilyRemovedByFilter,
+                postFilterHasTaigaFamily,
+                postFilterHasWindsweptFamily);
+    }
+
+    private static void logWarmWindsweptLatePath(String stage,
+                                                 RegistryEntry<Biome> base,
+                                                 int blockX,
+                                                 int blockZ,
+                                                 int landBandIndex,
+                                                 boolean mountainLikeBeforeFinalTruth,
+                                                 boolean mountainLikeAfterFinalTruth,
+                                                 boolean temperateMountainRewriteRan,
+                                                 RegistryEntry<Biome> beforeSanitize,
+                                                 RegistryEntry<Biome> afterSanitize,
+                                                 RegistryEntry<Biome> beforeEnforceLandBandPool,
+                                                 RegistryEntry<Biome> afterEnforceLandBandPool,
+                                                 boolean finalSavannaClampRan,
+                                                 RegistryEntry<Biome> beforeFinalSavannaClamp,
+                                                 RegistryEntry<Biome> afterFinalSavannaClamp,
+                                                 RegistryEntry<Biome> finalBiome) {
+        if (!DEBUG_WARM_WINDSWEPT_LATE_PATH || !isWarmLandWindsweptBiome(finalBiome)) {
+            return;
+        }
+        boolean sanitizeChanged = !sameBiomeId(beforeSanitize, afterSanitize);
+        boolean enforceChanged = !sameBiomeId(beforeEnforceLandBandPool, afterEnforceLandBandPool);
+        boolean finalClampChanged = finalSavannaClampRan && !sameBiomeId(beforeFinalSavannaClamp, afterFinalSavannaClamp);
+        LOGGER.warn("[LAT][WARM_WINDSWEPT_LATE] stage={} x={} z={} bandIndex={} mtnLikeBefore={} mtnLikeAfter={} temperateMountainRewriteRan={} beforeSanitize={} afterSanitize={} sanitizeChanged={} beforeEnforce={} afterEnforce={} enforceChanged={} finalClampRan={} beforeFinalClamp={} afterFinalClamp={} finalClampChanged={} finalBiome={} selectionPath={}",
+                stage,
+                blockX,
+                blockZ,
+                landBandIndex,
+                mountainLikeBeforeFinalTruth,
+                mountainLikeAfterFinalTruth,
+                temperateMountainRewriteRan,
+                warmWindsweptTraceBiomeId(beforeSanitize),
+                warmWindsweptTraceBiomeId(afterSanitize),
+                sanitizeChanged,
+                warmWindsweptTraceBiomeId(beforeEnforceLandBandPool),
+                warmWindsweptTraceBiomeId(afterEnforceLandBandPool),
+                enforceChanged,
+                finalSavannaClampRan,
+                warmWindsweptTraceBiomeId(beforeFinalSavannaClamp),
+                warmWindsweptTraceBiomeId(afterFinalSavannaClamp),
+                finalClampChanged,
+                warmWindsweptTraceBiomeId(finalBiome),
+                selectionPathForTrace(base, finalBiome));
     }
 
     private static String mangroveOrigin(boolean registryPath, boolean collectionPath) {
@@ -1959,6 +2181,7 @@ public final class LatitudeBiomes {
         RegistryEntry<Biome> sanitized = chosen;
         RegistryEntry<Biome> safe = chosen;
         RegistryEntry<Biome> out = chosen;
+        boolean temperateMountainRewriteRan = false;
         boolean finalSavannaRegion = false;
         boolean invitedMangrove = false;
         boolean sourceContext = "SOURCE".equalsIgnoreCase(callerContext);
@@ -2026,6 +2249,7 @@ public final class LatitudeBiomes {
                         && (preview.robustDelta >= (WINDSWEPT_RUGGED_THRESH + WINDSWEPT_RUGGED_HYST)
                         || preview.centerHeight >= (seaLevel + PREVIEW_HEIGHT_MARGIN_BLOCKS));
                 if (mountainPromotion) {
+                    temperateMountainRewriteRan = true;
                     chosen = pickFromTagNoiseOrBase(biomeRegistry, LAT_TEMPERATE_MOUNTAIN, base, blockX, blockZ, landBandIndex);
                     if (isBiomeId(chosen, "minecraft:cherry_grove") && landBandIndex < BAND_POLAR) {
                         return chosen;
@@ -2092,11 +2316,22 @@ public final class LatitudeBiomes {
         if (landBandIndex >= BAND_SUBPOLAR && isJungleFamily(out)) {
             out = pickColdFallback(biomeRegistry, base, blockX, blockZ, landBandIndex);
         }
+        if (DEBUG_WARM_POOL_MEMBERSHIP) {
+            LAST_WARM_POOL_MEMBERSHIP_SNAPSHOT.remove();
+        }
         out = enforceLandBandPool(biomeRegistry, out, blockX, blockZ, t, landBandIndex, mountainLike);
-        if (isSwampCandidate(out)) {
+        RegistryEntry<Biome> postPoolEnforce = out;
+        boolean swampCandidateAfterEnforce = isSwampCandidate(out);
+        boolean swampValidationFailed = false;
+        boolean swampFallbackCalled = false;
+        RegistryEntry<Biome> swampFallbackReturned = null;
+        if (swampCandidateAfterEnforce) {
             SwampDecision poolSwampDecision = evaluateSwamp(blockX, blockZ, sampler);
             if (!poolSwampDecision.allow()) {
+                swampValidationFailed = true;
+                swampFallbackCalled = true;
                 out = pickSwampFallback(biomeRegistry, base, blockX, blockZ, t, landBandIndex);
+                swampFallbackReturned = out;
             }
         }
         // Mangrove guard: enforceLandBandPool can re-introduce mangrove (MANGROVE_ID is in the
@@ -2108,14 +2343,21 @@ public final class LatitudeBiomes {
             }
         }
         if (isSnowyVariant(out)) {
-            double _bgDeg = latitudeDegreesFromRadius(blockZ, effectiveRadius);
-            double _bgAlpha = snowyRampAlpha(_bgDeg);
-            double _bgR = ValueNoise2D.sampleBlocks(WORLD_SEED ^ SNOWY_RAMP_SALT, blockX, blockZ, SNOWY_RAMP_PATCH_BLOCKS);
-            if (_bgR > _bgAlpha) {
-                try {
-                    out = biome(biomeRegistry, "minecraft:taiga");
-                } catch (Throwable ignored) {
-                    // keep current pick
+            if (landBandIndex == BAND_SUBTROPICAL && !mountainLike) {
+                RegistryEntry<Biome> warmFallback = pickWarmFallback(biomeRegistry, landBandIndex);
+                if (warmFallback != null) {
+                    out = warmFallback;
+                }
+            } else {
+                double _bgDeg = latitudeDegreesFromRadius(blockZ, effectiveRadius);
+                double _bgAlpha = snowyRampAlpha(_bgDeg);
+                double _bgR = ValueNoise2D.sampleBlocks(WORLD_SEED ^ SNOWY_RAMP_SALT, blockX, blockZ, SNOWY_RAMP_PATCH_BLOCKS);
+                if (_bgR > _bgAlpha) {
+                    try {
+                        out = biome(biomeRegistry, "minecraft:taiga");
+                    } catch (Throwable ignored) {
+                        // keep current pick
+                    }
                 }
             }
         }
@@ -2128,13 +2370,17 @@ public final class LatitudeBiomes {
         if (landBandIndex == BAND_TROPICAL && tropicalBaseStep(blockX, Math.abs(blockZ), t) <= 1 && isJungleFamily(out)) {
             out = pickOpenTropicalFallback(biomeRegistry, out, blockX, blockZ, t);
         }
+        RegistryEntry<Biome> beforeFinalSavannaClamp = out;
+        boolean finalSavannaClampRan = false;
         if (landBandIndex <= BAND_SUBTROPICAL) {
+            finalSavannaClampRan = true;
             RegistryEntry<Biome> beforeClamp = out;
             out = applyFinalSavannaClimateClamp(biomeRegistry, out, finalSavannaRegion, landBandIndex, columnDecisionY, blockX, blockZ);
             if (DEBUG_SPARSE_JUNGLE_AUDIT && out != beforeClamp && isBiomeId(out, "minecraft:sparse_jungle")) {
                 auditFinalSavanna = true;
             }
         }
+        RegistryEntry<Biome> postFinalSavannaClamp = out;
         RegistryEntry<Biome> postFinalClamp = out;
         int overlayBandIndex = authoritativeLandBandIndex(blockX, blockZ, effectiveRadius);
         logSubtropicalJungleReturn("pick-registry", blockX, blockZ, t, landBandIndex, base, chosen, sanitized, preBandEnforce, postBandEnforce, postFinalClamp, out);
@@ -2211,6 +2457,40 @@ public final class LatitudeBiomes {
         out = gateWarmJungleSurvival(biomeRegistry, out, landBandIndex, blockX, blockZ);
         out = gateDryWarmIdentity(biomeRegistry, out, landBandIndex, blockX, blockZ);
         out = gatePolarTaigaSurvival(biomeRegistry, out, landBandIndex, blockX, blockZ);
+        boolean mountainLikeAfterFinalTruth = isMountainLike(sampler, blockX, blockZ);
+        logWarmWindsweptLatePath("pick-registry-late",
+                base,
+                blockX,
+                blockZ,
+                landBandIndex,
+                mountainLike,
+                mountainLikeAfterFinalTruth,
+                temperateMountainRewriteRan,
+                chosen,
+                sanitized,
+                preBandEnforce,
+                postPoolEnforce,
+                finalSavannaClampRan,
+                beforeFinalSavannaClamp,
+                postFinalSavannaClamp,
+                out);
+        logWarmPoolMembershipFinalPoint("pick-registry-late",
+                base,
+                blockX,
+                blockZ,
+                t,
+                landBandIndex,
+                mountainLike,
+                mountainLikeAfterFinalTruth,
+                chosen,
+                sanitized,
+                preBandEnforce,
+                postPoolEnforce,
+                swampCandidateAfterEnforce,
+                swampValidationFailed,
+                swampFallbackCalled,
+                swampFallbackReturned,
+                out);
         debugPick(blockX, blockZ, effectiveRadius, t, band, base, out, false, out != sanitized, mangroveDecision);
         return out;
     }
@@ -2444,6 +2724,7 @@ public final class LatitudeBiomes {
         RegistryEntry<Biome> sanitized = chosen;
         RegistryEntry<Biome> safe = chosen;
         RegistryEntry<Biome> out = chosen;
+        boolean temperateMountainRewriteRan = false;
         boolean finalSavannaRegion = false;
         boolean invitedMangrove = false;
         if (!forcedBadlands) {
@@ -2530,6 +2811,7 @@ public final class LatitudeBiomes {
                     && (preview.robustDelta >= (WINDSWEPT_RUGGED_THRESH + WINDSWEPT_RUGGED_HYST)
                     || preview.centerHeight >= (seaLevel + PREVIEW_HEIGHT_MARGIN_BLOCKS));
             if (mountainPromotion) {
+                temperateMountainRewriteRan = true;
                 chosen = pickFromTagNoiseOrBase(biomePool, LAT_TEMPERATE_MOUNTAIN, base, blockX, blockZ, landBandIndex);
                 if (isBiomeId(chosen, "minecraft:cherry_grove") && landBandIndex < BAND_POLAR) {
                     return chosen;
@@ -2587,11 +2869,22 @@ public final class LatitudeBiomes {
         if (landBandIndex >= BAND_SUBPOLAR && isJungleFamily(out)) {
             out = pickColdFallback(biomePool, base, blockX, blockZ, landBandIndex);
         }
+        if (DEBUG_WARM_POOL_MEMBERSHIP) {
+            LAST_WARM_POOL_MEMBERSHIP_SNAPSHOT.remove();
+        }
         out = enforceLandBandPool(biomePool, out, blockX, blockZ, t, landBandIndex, mountainLike);
-        if (isSwampCandidate(out)) {
+        RegistryEntry<Biome> postPoolEnforce = out;
+        boolean swampCandidateAfterEnforce = isSwampCandidate(out);
+        boolean swampValidationFailed = false;
+        boolean swampFallbackCalled = false;
+        RegistryEntry<Biome> swampFallbackReturned = null;
+        if (swampCandidateAfterEnforce) {
             SwampDecision poolSwampDecision = evaluateSwamp(blockX, blockZ, sampler);
             if (!poolSwampDecision.allow()) {
+                swampValidationFailed = true;
+                swampFallbackCalled = true;
                 out = pickSwampFallback(biomePool, base, blockX, blockZ, t, landBandIndex);
+                swampFallbackReturned = out;
             }
         }
         // Mangrove guard: enforceLandBandPool can re-introduce mangrove (MANGROVE_ID is in the
@@ -2603,13 +2896,20 @@ public final class LatitudeBiomes {
             }
         }
         if (isSnowyVariant(out)) {
-            double _bgDeg = latitudeDegreesFromRadius(blockZ, effectiveRadius);
-            double _bgAlpha = snowyRampAlpha(_bgDeg);
-            double _bgR = ValueNoise2D.sampleBlocks(WORLD_SEED ^ SNOWY_RAMP_SALT, blockX, blockZ, SNOWY_RAMP_PATCH_BLOCKS);
-            if (_bgR > _bgAlpha) {
-                RegistryEntry<Biome> taigaFallback = entryById(biomePool, "minecraft:taiga");
-                if (taigaFallback != null) {
-                    out = taigaFallback;
+            if (landBandIndex == BAND_SUBTROPICAL && !mountainLike) {
+                RegistryEntry<Biome> warmFallback = pickWarmFallback(biomePool, landBandIndex);
+                if (warmFallback != null) {
+                    out = warmFallback;
+                }
+            } else {
+                double _bgDeg = latitudeDegreesFromRadius(blockZ, effectiveRadius);
+                double _bgAlpha = snowyRampAlpha(_bgDeg);
+                double _bgR = ValueNoise2D.sampleBlocks(WORLD_SEED ^ SNOWY_RAMP_SALT, blockX, blockZ, SNOWY_RAMP_PATCH_BLOCKS);
+                if (_bgR > _bgAlpha) {
+                    RegistryEntry<Biome> taigaFallback = entryById(biomePool, "minecraft:taiga");
+                    if (taigaFallback != null) {
+                        out = taigaFallback;
+                    }
                 }
             }
         }
@@ -2622,9 +2922,13 @@ public final class LatitudeBiomes {
         if (landBandIndex == BAND_TROPICAL && tropicalBaseStep(blockX, Math.abs(blockZ), t) <= 1 && isJungleFamily(out)) {
             out = pickOpenTropicalFallback(biomePool, out, blockX, blockZ, t);
         }
+        RegistryEntry<Biome> beforeFinalSavannaClamp = out;
+        boolean finalSavannaClampRan = false;
         if (landBandIndex <= BAND_SUBTROPICAL) {
+            finalSavannaClampRan = true;
             out = applyFinalSavannaClimateClamp(biomePool, out, finalSavannaRegion, landBandIndex, columnDecisionY, blockX, blockZ);
         }
+        RegistryEntry<Biome> postFinalSavannaClamp = out;
         RegistryEntry<Biome> postFinalClamp = out;
         int overlayBandIndex = authoritativeLandBandIndex(blockX, blockZ, effectiveRadius);
         logSubtropicalJungleReturn("pick-collection", blockX, blockZ, t, landBandIndex, base, chosen, sanitized, preBandEnforce, postBandEnforce, postFinalClamp, out);
@@ -2685,6 +2989,40 @@ public final class LatitudeBiomes {
         out = gateWarmJungleSurvival(biomePool, out, landBandIndex, blockX, blockZ);
         out = gateDryWarmIdentity(biomePool, out, landBandIndex, blockX, blockZ);
         out = gatePolarTaigaSurvival(biomePool, out, landBandIndex, blockX, blockZ);
+        boolean mountainLikeAfterFinalTruth = isMountainLike(sampler, blockX, blockZ);
+        logWarmWindsweptLatePath("pick-collection-late",
+                base,
+                blockX,
+                blockZ,
+                landBandIndex,
+                mountainLike,
+                mountainLikeAfterFinalTruth,
+                temperateMountainRewriteRan,
+                chosen,
+                sanitized,
+                preBandEnforce,
+                postPoolEnforce,
+                finalSavannaClampRan,
+                beforeFinalSavannaClamp,
+                postFinalSavannaClamp,
+                out);
+        logWarmPoolMembershipFinalPoint("pick-collection-late",
+                base,
+                blockX,
+                blockZ,
+                t,
+                landBandIndex,
+                mountainLike,
+                mountainLikeAfterFinalTruth,
+                chosen,
+                sanitized,
+                preBandEnforce,
+                postPoolEnforce,
+                swampCandidateAfterEnforce,
+                swampValidationFailed,
+                swampFallbackCalled,
+                swampFallbackReturned,
+                out);
         debugPick(blockX, blockZ, effectiveRadius, t, band, base, out, false, out != sanitized, mangroveDecision);
         return out;
     }
@@ -4195,15 +4533,18 @@ public final class LatitudeBiomes {
                                                             double t,
                                                             int bandIndex,
                                                             boolean mountainLike) {
-        List<RegistryEntry<Biome>> allowedPool = allowedLandPool(biomes, bandIndex);
+        List<RegistryEntry<Biome>> preFilterPool = allowedLandPool(biomes, bandIndex);
+        List<RegistryEntry<Biome>> allowedPool = preFilterPool;
         if (bandIndex == BAND_TEMPERATE && !mountainLike) {
             allowedPool = removeTemperateMountainFamily(allowedPool);
         }
-        if (allowedPool.isEmpty() || isInAllowedLandPool(allowedPool, candidate)) {
-            return candidate;
+        RegistryEntry<Biome> out = candidate;
+        if (!allowedPool.isEmpty() && !isInAllowedLandPool(allowedPool, candidate)) {
+            maybeLogBandLeak(blockX, blockZ, t, bandIndex, candidate);
+            out = pickFromAllowedLandPool(allowedPool, blockX, blockZ, bandIndex);
         }
-        maybeLogBandLeak(blockX, blockZ, t, bandIndex, candidate);
-        return pickFromAllowedLandPool(allowedPool, blockX, blockZ, bandIndex);
+        stashWarmPoolMembershipSnapshot(blockX, blockZ, bandIndex, candidate, out, preFilterPool, allowedPool);
+        return out;
     }
 
     private static RegistryEntry<Biome> enforceLandBandPool(Collection<RegistryEntry<Biome>> biomes,
@@ -4213,15 +4554,18 @@ public final class LatitudeBiomes {
                                                             double t,
                                                             int bandIndex,
                                                             boolean mountainLike) {
-        List<RegistryEntry<Biome>> allowedPool = allowedLandPool(biomes, bandIndex);
+        List<RegistryEntry<Biome>> preFilterPool = allowedLandPool(biomes, bandIndex);
+        List<RegistryEntry<Biome>> allowedPool = preFilterPool;
         if (bandIndex == BAND_TEMPERATE && !mountainLike) {
             allowedPool = removeTemperateMountainFamily(allowedPool);
         }
-        if (allowedPool.isEmpty() || isInAllowedLandPool(allowedPool, candidate)) {
-            return candidate;
+        RegistryEntry<Biome> out = candidate;
+        if (!allowedPool.isEmpty() && !isInAllowedLandPool(allowedPool, candidate)) {
+            maybeLogBandLeak(blockX, blockZ, t, bandIndex, candidate);
+            out = pickFromAllowedLandPool(allowedPool, blockX, blockZ, bandIndex);
         }
-        maybeLogBandLeak(blockX, blockZ, t, bandIndex, candidate);
-        return pickFromAllowedLandPool(allowedPool, blockX, blockZ, bandIndex);
+        stashWarmPoolMembershipSnapshot(blockX, blockZ, bandIndex, candidate, out, preFilterPool, allowedPool);
+        return out;
     }
 
     private static RegistryEntry<Biome> enforcePaleGardenRegion(Registry<Biome> biomes,
@@ -6899,7 +7243,7 @@ public final class LatitudeBiomes {
     private static RegistryEntry<Biome> pickSwampFallback(Registry<Biome> biomes, RegistryEntry<Biome> base, int blockX, int blockZ, double t, int bandIndex) {
         return switch (bandIndex) {
             case BAND_TROPICAL -> pickFromWeightedTagsNoSwamp(biomes, base, blockX, blockZ, BAND_TROPICAL, 0x1A21, LAT_EQUATOR_PRIMARY, LAT_EQUATOR_SECONDARY, LAT_EQUATOR_ACCENT);
-            case BAND_SUBTROPICAL -> pickTropicalGradientNoSwamp(biomes, base, blockX, blockZ, t);
+            case BAND_SUBTROPICAL -> sanitizeSubtropicalSwampFallback(biomes, pickTropicalGradientNoSwamp(biomes, base, blockX, blockZ, t));
             case BAND_TEMPERATE -> pickFromWeightedTagsNoSwamp(biomes, base, blockX, blockZ, BAND_TEMPERATE, 0x2B32, LAT_TEMPERATE_PRIMARY, LAT_TEMPERATE_SECONDARY, LAT_TEMPERATE_ACCENT);
             case BAND_SUBPOLAR -> pickSubpolarWithRamp(biomes, base, blockX, blockZ, t, BAND_SUBPOLAR, 0x3C43, LAT_SUBPOLAR_PRIMARY, LAT_SUBPOLAR_SECONDARY, LAT_SUBPOLAR_ACCENT);
             default -> pickFromWeightedTagsNoSwamp(biomes, base, blockX, blockZ, BAND_POLAR, 0x4D54, LAT_POLAR_PRIMARY, LAT_POLAR_SECONDARY, LAT_POLAR_ACCENT);
@@ -6909,11 +7253,27 @@ public final class LatitudeBiomes {
     private static RegistryEntry<Biome> pickSwampFallback(Collection<RegistryEntry<Biome>> biomes, RegistryEntry<Biome> base, int blockX, int blockZ, double t, int bandIndex) {
         return switch (bandIndex) {
             case BAND_TROPICAL -> pickFromWeightedTagsNoSwamp(biomes, base, blockX, blockZ, BAND_TROPICAL, 0x1A21, LAT_EQUATOR_PRIMARY, LAT_EQUATOR_SECONDARY, LAT_EQUATOR_ACCENT);
-            case BAND_SUBTROPICAL -> pickTropicalGradientNoSwamp(biomes, base, blockX, blockZ, t);
+            case BAND_SUBTROPICAL -> sanitizeSubtropicalSwampFallback(biomes, pickTropicalGradientNoSwamp(biomes, base, blockX, blockZ, t));
             case BAND_TEMPERATE -> pickFromWeightedTagsNoSwamp(biomes, base, blockX, blockZ, BAND_TEMPERATE, 0x2B32, LAT_TEMPERATE_PRIMARY, LAT_TEMPERATE_SECONDARY, LAT_TEMPERATE_ACCENT);
             case BAND_SUBPOLAR -> pickSubpolarWithRamp(biomes, base, blockX, blockZ, t, BAND_SUBPOLAR, 0x3C43, LAT_SUBPOLAR_PRIMARY, LAT_SUBPOLAR_SECONDARY, LAT_SUBPOLAR_ACCENT);
             default -> pickFromWeightedTagsNoSwamp(biomes, base, blockX, blockZ, BAND_POLAR, 0x4D54, LAT_POLAR_PRIMARY, LAT_POLAR_SECONDARY, LAT_POLAR_ACCENT);
         };
+    }
+
+    private static RegistryEntry<Biome> sanitizeSubtropicalSwampFallback(Registry<Biome> biomes, RegistryEntry<Biome> pick) {
+        if (!isTaigaFamilyBiome(pick)) {
+            return pick;
+        }
+        RegistryEntry<Biome> warmFallback = pickWarmFallback(biomes, BAND_SUBTROPICAL);
+        return warmFallback != null ? warmFallback : pick;
+    }
+
+    private static RegistryEntry<Biome> sanitizeSubtropicalSwampFallback(Collection<RegistryEntry<Biome>> biomes, RegistryEntry<Biome> pick) {
+        if (!isTaigaFamilyBiome(pick)) {
+            return pick;
+        }
+        RegistryEntry<Biome> warmFallback = pickWarmFallback(biomes, BAND_SUBTROPICAL);
+        return warmFallback != null ? warmFallback : pick;
     }
 
     private static RegistryEntry<Biome> repickIfSurfaceCave(Registry<Biome> biomes, RegistryEntry<Biome> base, RegistryEntry<Biome> pick,
