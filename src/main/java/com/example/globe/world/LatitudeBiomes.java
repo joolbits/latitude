@@ -4636,7 +4636,14 @@ public final class LatitudeBiomes {
         RegistryEntry<Biome> out = candidate;
         if (!allowedPool.isEmpty() && !isInAllowedLandPool(allowedPool, candidate)) {
             maybeLogBandLeak(blockX, blockZ, t, bandIndex, candidate);
-            out = pickFromAllowedLandPool(allowedPool, blockX, blockZ, bandIndex);
+            List<RegistryEntry<Biome>> rerollPool = allowedPool;
+            if (bandIndex == BAND_SUBTROPICAL && !mountainLike) {
+                List<RegistryEntry<Biome>> subtropicalNoForest = removeSubtropicalNonMountainForestFamily(rerollPool);
+                if (!subtropicalNoForest.isEmpty()) {
+                    rerollPool = subtropicalNoForest;
+                }
+            }
+            out = pickFromAllowedLandPool(rerollPool, blockX, blockZ, bandIndex);
         }
         stashWarmPoolMembershipSnapshot(blockX, blockZ, bandIndex, candidate, out, preFilterPool, allowedPool);
         return out;
@@ -4660,7 +4667,14 @@ public final class LatitudeBiomes {
         RegistryEntry<Biome> out = candidate;
         if (!allowedPool.isEmpty() && !isInAllowedLandPool(allowedPool, candidate)) {
             maybeLogBandLeak(blockX, blockZ, t, bandIndex, candidate);
-            out = pickFromAllowedLandPool(allowedPool, blockX, blockZ, bandIndex);
+            List<RegistryEntry<Biome>> rerollPool = allowedPool;
+            if (bandIndex == BAND_SUBTROPICAL && !mountainLike) {
+                List<RegistryEntry<Biome>> subtropicalNoForest = removeSubtropicalNonMountainForestFamily(rerollPool);
+                if (!subtropicalNoForest.isEmpty()) {
+                    rerollPool = subtropicalNoForest;
+                }
+            }
+            out = pickFromAllowedLandPool(rerollPool, blockX, blockZ, bandIndex);
         }
         stashWarmPoolMembershipSnapshot(blockX, blockZ, bandIndex, candidate, out, preFilterPool, allowedPool);
         return out;
@@ -4747,6 +4761,21 @@ public final class LatitudeBiomes {
         List<RegistryEntry<Biome>> filtered = new ArrayList<>(pool.size());
         for (RegistryEntry<Biome> entry : pool) {
             if (!isBiomeId(entry, "minecraft:windswept_savanna")) {
+                filtered.add(entry);
+            }
+        }
+        return filtered;
+    }
+
+    private static List<RegistryEntry<Biome>> removeSubtropicalNonMountainForestFamily(List<RegistryEntry<Biome>> pool) {
+        List<RegistryEntry<Biome>> filtered = new ArrayList<>(pool.size());
+        for (RegistryEntry<Biome> entry : pool) {
+            if (!isBiomeId(entry, "minecraft:forest")
+                    && !isBiomeId(entry, "minecraft:birch_forest")
+                    && !isBiomeId(entry, "minecraft:flower_forest")
+                    && !isBiomeId(entry, "minecraft:dark_forest")
+                    && !isBiomeId(entry, "minecraft:pale_garden")
+                    && !isBiomeId(entry, "minecraft:old_growth_birch_forest")) {
                 filtered.add(entry);
             }
         }
