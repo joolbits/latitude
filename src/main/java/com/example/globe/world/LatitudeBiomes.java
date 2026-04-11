@@ -341,6 +341,7 @@ public final class LatitudeBiomes {
     private static final boolean DEBUG_SUBTROPICAL_SWAMP_SOURCE_TRACE = Boolean.getBoolean("latitude.debugSubtropicalSwampSourceTrace");
     private static final boolean DEBUG_WARM_POOL_AUDIT = Boolean.getBoolean("latitude.debug.warmPoolAudit")
             || "true".equalsIgnoreCase(System.getenv("LATITUDE_DEBUG_WARM_POOL_AUDIT"));
+    private static final boolean DEBUG_WETLANDS = Boolean.getBoolean("latitude.debugWetlands");
     private static final long WARM_POOL_AUDIT_LOG_EVERY = Long.getLong("latitude.warmPoolAudit.logEvery", 8192L);
     private static final int SPARSE_JUNGLE_AUDIT_LOG_LIMIT = Integer.getInteger("latitude.sparseJungleAudit.maxLogs", 200);
     private static final int SAVANNA_GATE_AUDIT_LOG_LIMIT = Integer.getInteger("latitude.savannaGateAudit.maxLogs", 200);
@@ -1428,6 +1429,56 @@ public final class LatitudeBiomes {
                 selectionPathForTrace(base, finalBiome));
     }
 
+    private static void logWetlandAudit(String stage,
+                                        String callerContext,
+                                        RegistryEntry<Biome> base,
+                                        int blockX,
+                                        int blockZ,
+                                        int landBandIndex,
+                                        double t,
+                                        double latDeg,
+                                        boolean mountainLike,
+                                        int robustDelta,
+                                        int oceanDistance,
+                                        boolean skipPreview,
+                                        RegistryEntry<Biome> preEnforce,
+                                        RegistryEntry<Biome> postEnforce,
+                                        RegistryEntry<Biome> sanitizeResult,
+                                        RegistryEntry<Biome> finalBiome,
+                                        boolean swampFallbackCalled,
+                                        RegistryEntry<Biome> swampFallbackReturned,
+                                        boolean mangroveFallbackCalled,
+                                        RegistryEntry<Biome> mangroveFallbackReturned) {
+        if (!DEBUG_WETLANDS) {
+            return;
+        }
+        if (!(isBiomeId(finalBiome, "minecraft:swamp") || isBiomeId(finalBiome, "minecraft:mangrove_swamp"))) {
+            return;
+        }
+        LOGGER.warn("[WETLAND_AUDIT] stage={} caller={} x={} z={} landBandIndex={} latDeg={} t={} preEnforce={} postEnforce={} sanitize={} finalBiome={} decisionPath={} mountainLike={} robustDelta={} oceanDist={} swampFallbackCalled={} swampFallbackReturned={} mangroveFallbackCalled={} mangroveFallbackReturned={} skipPreview={} atlasFastPathSkipPreview={}",
+                stage,
+                callerContext,
+                blockX,
+                blockZ,
+                landBandIndex,
+                String.format(java.util.Locale.ROOT, "%.2f", latDeg),
+                String.format(java.util.Locale.ROOT, "%.4f", t),
+                biomeId(preEnforce),
+                biomeId(postEnforce),
+                biomeId(sanitizeResult),
+                biomeId(finalBiome),
+                selectionPathForTrace(base, finalBiome),
+                mountainLike,
+                robustDelta,
+                oceanDistance,
+                swampFallbackCalled,
+                biomeId(swampFallbackReturned),
+                mangroveFallbackCalled,
+                biomeId(mangroveFallbackReturned),
+                skipPreview,
+                skipPreview && isAtlasHeadlessContext(callerContext));
+    }
+
     private static String mangroveOrigin(boolean registryPath, boolean collectionPath) {
         if (registryPath) return "registry";
         if (collectionPath) return "collection";
@@ -2405,6 +2456,8 @@ public final class LatitudeBiomes {
         boolean swampValidationFailed = false;
         boolean swampFallbackCalled = false;
         RegistryEntry<Biome> swampFallbackReturned = null;
+        boolean mangroveFallbackCalled = false;
+        RegistryEntry<Biome> mangroveFallbackReturned = null;
         if (swampCandidateAfterEnforce) {
             SwampDecision poolSwampDecision = evaluateSwamp(blockX, blockZ, sampler);
             subtropicalPostEnforceSwampAllow = poolSwampDecision.allow();
@@ -2420,7 +2473,9 @@ public final class LatitudeBiomes {
         if (isMangroveCandidate(out)) {
             MangroveDecision poolMangroveDecision = evaluateMangroveWithSurface(blockX, blockZ, columnDecisionY, preview, seaLevel, sampler, nearOcean, hasReliableSurface, hasPreviewTerrainInputs, heightView);
             if (!poolMangroveDecision.allow()) {
+                mangroveFallbackCalled = true;
                 out = pickMangroveFallback(biomeRegistry, base, blockX, blockZ, t, landBandIndex);
+                mangroveFallbackReturned = out;
             }
         }
         if (isSnowyVariant(out)) {
@@ -2553,6 +2608,38 @@ public final class LatitudeBiomes {
         out = gateWarmJungleSurvival(biomeRegistry, out, landBandIndex, blockX, blockZ);
         out = gateDryWarmIdentity(biomeRegistry, out, landBandIndex, blockX, blockZ);
         out = gatePolarTaigaSurvival(biomeRegistry, out, landBandIndex, finalLatDeg, blockX, blockZ);
+        RegistryEntry<Biome> beforeLateWetlandClamp = out;
+        out = clampLateWetlandSurvival(biomeRegistry, out, base, blockX, blockZ, t, landBandIndex, mountainLike, oceanDistance);
+        if (!sameBiomeId(beforeLateWetlandClamp, out)) {
+            if (isSwampCandidate(beforeLateWetlandClamp)) {
+                swampFallbackCalled = true;
+                swampFallbackReturned = out;
+            }
+            if (isMangroveCandidate(beforeLateWetlandClamp)) {
+                mangroveFallbackCalled = true;
+                mangroveFallbackReturned = out;
+            }
+        }
+        logWetlandAudit("pick-registry-late",
+                callerContext,
+                base,
+                blockX,
+                blockZ,
+                landBandIndex,
+                t,
+                finalLatDeg,
+                mountainLike,
+                preview.robustDelta,
+                oceanDistance,
+                skipPreview,
+                preBandEnforce,
+                postPoolEnforce,
+                sanitized,
+                out,
+                swampFallbackCalled,
+                swampFallbackReturned,
+                mangroveFallbackCalled,
+                mangroveFallbackReturned);
         boolean mountainLikeAfterFinalTruth = isMountainLike(sampler, blockX, blockZ);
         logWarmWindsweptLatePath("pick-registry-late",
                 base,
@@ -2974,6 +3061,8 @@ public final class LatitudeBiomes {
         boolean swampValidationFailed = false;
         boolean swampFallbackCalled = false;
         RegistryEntry<Biome> swampFallbackReturned = null;
+        boolean mangroveFallbackCalled = false;
+        RegistryEntry<Biome> mangroveFallbackReturned = null;
         if (swampCandidateAfterEnforce) {
             SwampDecision poolSwampDecision = evaluateSwamp(blockX, blockZ, sampler);
             if (!poolSwampDecision.allow()) {
@@ -2988,7 +3077,9 @@ public final class LatitudeBiomes {
         if (isMangroveCandidate(out)) {
             MangroveDecision poolMangroveDecision = evaluateMangroveWithSurface(blockX, blockZ, columnDecisionY, preview, seaLevel, sampler, nearOcean, hasReliableSurface, hasPreviewTerrainInputs, heightView);
             if (!poolMangroveDecision.allow()) {
+                mangroveFallbackCalled = true;
                 out = pickMangroveFallback(biomePool, base, blockX, blockZ, t, landBandIndex);
+                mangroveFallbackReturned = out;
             }
         }
         if (isSnowyVariant(out)) {
@@ -3087,6 +3178,38 @@ public final class LatitudeBiomes {
         out = gateWarmJungleSurvival(biomePool, out, landBandIndex, blockX, blockZ);
         out = gateDryWarmIdentity(biomePool, out, landBandIndex, blockX, blockZ);
         out = gatePolarTaigaSurvival(biomePool, out, landBandIndex, finalLatDeg, blockX, blockZ);
+        RegistryEntry<Biome> beforeLateWetlandClamp = out;
+        out = clampLateWetlandSurvival(biomePool, out, base, blockX, blockZ, t, landBandIndex, mountainLike, oceanDistance);
+        if (!sameBiomeId(beforeLateWetlandClamp, out)) {
+            if (isSwampCandidate(beforeLateWetlandClamp)) {
+                swampFallbackCalled = true;
+                swampFallbackReturned = out;
+            }
+            if (isMangroveCandidate(beforeLateWetlandClamp)) {
+                mangroveFallbackCalled = true;
+                mangroveFallbackReturned = out;
+            }
+        }
+        logWetlandAudit("pick-collection-late",
+                callerContext,
+                base,
+                blockX,
+                blockZ,
+                landBandIndex,
+                t,
+                finalLatDeg,
+                mountainLike,
+                preview.robustDelta,
+                oceanDistance,
+                skipPreview,
+                preBandEnforce,
+                postPoolEnforce,
+                sanitized,
+                out,
+                swampFallbackCalled,
+                swampFallbackReturned,
+                mangroveFallbackCalled,
+                mangroveFallbackReturned);
         boolean mountainLikeAfterFinalTruth = isMountainLike(sampler, blockX, blockZ);
         logWarmWindsweptLatePath("pick-collection-late",
                 base,
@@ -7582,6 +7705,56 @@ public final class LatitudeBiomes {
             case BAND_SUBPOLAR -> pickSubpolarWithRamp(biomes, base, blockX, blockZ, t, BAND_SUBPOLAR, 0x3C43, LAT_SUBPOLAR_PRIMARY, LAT_SUBPOLAR_SECONDARY, LAT_SUBPOLAR_ACCENT);
             default -> pickFromWeightedTagsNoSwamp(biomes, base, blockX, blockZ, BAND_POLAR, 0x4D54, LAT_POLAR_PRIMARY, LAT_POLAR_SECONDARY, LAT_POLAR_ACCENT);
         };
+    }
+
+    private static RegistryEntry<Biome> clampLateWetlandSurvival(Registry<Biome> biomes,
+                                                                  RegistryEntry<Biome> candidate,
+                                                                  RegistryEntry<Biome> base,
+                                                                  int blockX,
+                                                                  int blockZ,
+                                                                  double t,
+                                                                  int bandIndex,
+                                                                  boolean mountainLike,
+                                                                  int oceanDistance) {
+        RegistryEntry<Biome> out = candidate;
+        if (isMangroveCandidate(out)) {
+            boolean inlandMangrove = oceanDistance < 0 || oceanDistance > MANGROVE_COASTAL_MAX_BLOCKS;
+            if (mountainLike || inlandMangrove) {
+                out = pickMangroveFallback(biomes, base, blockX, blockZ, t, bandIndex);
+            }
+        }
+        if (isSwampCandidate(out)) {
+            boolean inlandSwamp = oceanDistance < 0 || oceanDistance > SWAMP_SUBTROPICAL_PATCH_MAX_OCEAN_DISTANCE;
+            if (mountainLike || inlandSwamp) {
+                out = pickSwampFallback(biomes, base, blockX, blockZ, t, bandIndex);
+            }
+        }
+        return out;
+    }
+
+    private static RegistryEntry<Biome> clampLateWetlandSurvival(Collection<RegistryEntry<Biome>> biomes,
+                                                                  RegistryEntry<Biome> candidate,
+                                                                  RegistryEntry<Biome> base,
+                                                                  int blockX,
+                                                                  int blockZ,
+                                                                  double t,
+                                                                  int bandIndex,
+                                                                  boolean mountainLike,
+                                                                  int oceanDistance) {
+        RegistryEntry<Biome> out = candidate;
+        if (isMangroveCandidate(out)) {
+            boolean inlandMangrove = oceanDistance < 0 || oceanDistance > MANGROVE_COASTAL_MAX_BLOCKS;
+            if (mountainLike || inlandMangrove) {
+                out = pickMangroveFallback(biomes, base, blockX, blockZ, t, bandIndex);
+            }
+        }
+        if (isSwampCandidate(out)) {
+            boolean inlandSwamp = oceanDistance < 0 || oceanDistance > SWAMP_SUBTROPICAL_PATCH_MAX_OCEAN_DISTANCE;
+            if (mountainLike || inlandSwamp) {
+                out = pickSwampFallback(biomes, base, blockX, blockZ, t, bandIndex);
+            }
+        }
+        return out;
     }
 
     private static RegistryEntry<Biome> sanitizeSubtropicalSwampFallback(Registry<Biome> biomes, RegistryEntry<Biome> pick) {
