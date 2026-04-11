@@ -7807,7 +7807,9 @@ public final class LatitudeBiomes {
                 || isBiomeId(out, "minecraft:plains")
                 || isBiomeId(out, "minecraft:sunflower_plains");
 
-        if (allowWarmMediumSavannaClamp) {
+        boolean allowProvinceFamilyRewrite = allowWarmMediumSavannaClamp
+                && (tropicalBand || warmProvince != ProvinceAuthority.Province.WARM_WET);
+        if (allowProvinceFamilyRewrite) {
             out = enforceWarmProvinceFamily(biomes, out, warmProvince);
         }
         if (isSavannaFamily(out)) {
@@ -7932,7 +7934,9 @@ public final class LatitudeBiomes {
                 || isBiomeId(out, "minecraft:plains")
                 || isBiomeId(out, "minecraft:sunflower_plains");
 
-        if (allowWarmMediumSavannaClamp) {
+        boolean allowProvinceFamilyRewrite = allowWarmMediumSavannaClamp
+                && (tropicalBand || warmProvince != ProvinceAuthority.Province.WARM_WET);
+        if (allowProvinceFamilyRewrite) {
             out = enforceWarmProvinceFamily(biomes, out, warmProvince);
         }
         if (isSavannaFamily(out)) {
