@@ -2529,8 +2529,9 @@ public final class LatitudeBiomes {
                         callerContext, blockX, blockZ, biomeId(out), effectivePolarHeight, effectivePolarDelta);
             }
         }
+        double finalLatDeg = latitudeDegreesFromRadius(blockZ, effectiveRadius);
         out = clampFinalPolarNonMountainAlpineOutput(biomeRegistry, out, landBandIndex,
-                latitudeDegreesFromRadius(blockZ, effectiveRadius),
+                finalLatDeg,
                 effectivePolarHeight,
                 effectivePolarDelta);
         if (DEBUG_POLAR_CAP_TRACE && landBandIndex == BAND_POLAR && isPolarCapTraceCoord(blockX, blockZ)) {
@@ -2551,7 +2552,7 @@ public final class LatitudeBiomes {
         }
         out = gateWarmJungleSurvival(biomeRegistry, out, landBandIndex, blockX, blockZ);
         out = gateDryWarmIdentity(biomeRegistry, out, landBandIndex, blockX, blockZ);
-        out = gatePolarTaigaSurvival(biomeRegistry, out, landBandIndex, blockX, blockZ);
+        out = gatePolarTaigaSurvival(biomeRegistry, out, landBandIndex, finalLatDeg, blockX, blockZ);
         boolean mountainLikeAfterFinalTruth = isMountainLike(sampler, blockX, blockZ);
         logWarmWindsweptLatePath("pick-registry-late",
                 base,
@@ -3062,8 +3063,9 @@ public final class LatitudeBiomes {
                         callerContext, blockX, blockZ, biomeId(out), effectivePolarHeight, effectivePolarDelta);
             }
         }
+        double finalLatDeg = latitudeDegreesFromRadius(blockZ, effectiveRadius);
         out = clampFinalPolarNonMountainAlpineOutput(biomePool, out, landBandIndex,
-                latitudeDegreesFromRadius(blockZ, effectiveRadius),
+                finalLatDeg,
                 effectivePolarHeight,
                 effectivePolarDelta);
         if (DEBUG_POLAR_CAP_TRACE && landBandIndex == BAND_POLAR && isPolarCapTraceCoord(blockX, blockZ)) {
@@ -3084,7 +3086,7 @@ public final class LatitudeBiomes {
         }
         out = gateWarmJungleSurvival(biomePool, out, landBandIndex, blockX, blockZ);
         out = gateDryWarmIdentity(biomePool, out, landBandIndex, blockX, blockZ);
-        out = gatePolarTaigaSurvival(biomePool, out, landBandIndex, blockX, blockZ);
+        out = gatePolarTaigaSurvival(biomePool, out, landBandIndex, finalLatDeg, blockX, blockZ);
         boolean mountainLikeAfterFinalTruth = isMountainLike(sampler, blockX, blockZ);
         logWarmWindsweptLatePath("pick-collection-late",
                 base,
@@ -4659,6 +4661,12 @@ public final class LatitudeBiomes {
         if (bandIndex == BAND_SUBTROPICAL && !mountainLike) {
             allowedPool = removeSubtropicalNonMountainWindsweptFamily(allowedPool);
         }
+        if (bandIndex == BAND_POLAR) {
+            List<RegistryEntry<Biome>> polarNoTaiga = removePolarTaigaFamily(allowedPool);
+            if (!polarNoTaiga.isEmpty()) {
+                allowedPool = polarNoTaiga;
+            }
+        }
         RegistryEntry<Biome> out = candidate;
         if (!allowedPool.isEmpty() && !isInAllowedLandPool(allowedPool, candidate)) {
             maybeLogBandLeak(blockX, blockZ, t, bandIndex, candidate);
@@ -4689,6 +4697,12 @@ public final class LatitudeBiomes {
         }
         if (bandIndex == BAND_SUBTROPICAL && !mountainLike) {
             allowedPool = removeSubtropicalNonMountainWindsweptFamily(allowedPool);
+        }
+        if (bandIndex == BAND_POLAR) {
+            List<RegistryEntry<Biome>> polarNoTaiga = removePolarTaigaFamily(allowedPool);
+            if (!polarNoTaiga.isEmpty()) {
+                allowedPool = polarNoTaiga;
+            }
         }
         RegistryEntry<Biome> out = candidate;
         if (!allowedPool.isEmpty() && !isInAllowedLandPool(allowedPool, candidate)) {
@@ -4803,6 +4817,16 @@ public final class LatitudeBiomes {
                     && !isBiomeId(entry, "minecraft:dark_forest")
                     && !isBiomeId(entry, "minecraft:pale_garden")
                     && !isBiomeId(entry, "minecraft:old_growth_birch_forest")) {
+                filtered.add(entry);
+            }
+        }
+        return filtered;
+    }
+
+    private static List<RegistryEntry<Biome>> removePolarTaigaFamily(List<RegistryEntry<Biome>> pool) {
+        List<RegistryEntry<Biome>> filtered = new ArrayList<>(pool.size());
+        for (RegistryEntry<Biome> entry : pool) {
+            if (!isTaigaFamilyBiome(entry)) {
                 filtered.add(entry);
             }
         }
@@ -5290,8 +5314,10 @@ public final class LatitudeBiomes {
     private static RegistryEntry<Biome> gatePolarTaigaSurvival(Registry<Biome> biomes,
                                                                 RegistryEntry<Biome> out,
                                                                 int landBandIndex,
+                                                                double latDeg,
                                                                 int blockX, int blockZ) {
-        if (landBandIndex < BAND_POLAR || !isTaigaFamilyBiome(out)) {
+        boolean polarRange = landBandIndex >= BAND_POLAR || latDeg >= LatitudeBands.Band.POLAR.lowDeg();
+        if (!polarRange || !isTaigaFamilyBiome(out)) {
             return out;
         }
         if (DEBUG_PROVINCE) {
@@ -5311,8 +5337,10 @@ public final class LatitudeBiomes {
     private static RegistryEntry<Biome> gatePolarTaigaSurvival(Collection<RegistryEntry<Biome>> biomes,
                                                                 RegistryEntry<Biome> out,
                                                                 int landBandIndex,
+                                                                double latDeg,
                                                                 int blockX, int blockZ) {
-        if (landBandIndex < BAND_POLAR || !isTaigaFamilyBiome(out)) {
+        boolean polarRange = landBandIndex >= BAND_POLAR || latDeg >= LatitudeBands.Band.POLAR.lowDeg();
+        if (!polarRange || !isTaigaFamilyBiome(out)) {
             return out;
         }
         if (DEBUG_PROVINCE) {
