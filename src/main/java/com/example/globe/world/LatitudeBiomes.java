@@ -4771,7 +4771,8 @@ public final class LatitudeBiomes {
     private static List<RegistryEntry<Biome>> removeSubtropicalNonMountainWindsweptFamily(List<RegistryEntry<Biome>> pool) {
         List<RegistryEntry<Biome>> filtered = new ArrayList<>(pool.size());
         for (RegistryEntry<Biome> entry : pool) {
-            if (!isBiomeId(entry, "minecraft:windswept_savanna")) {
+            if (!isBiomeId(entry, "minecraft:windswept_savanna")
+                    && !isBiomeId(entry, "minecraft:meadow")) {
                 filtered.add(entry);
             }
         }
