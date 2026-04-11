@@ -299,6 +299,27 @@ public final class LatitudeBiomes {
         return entry != null ? entry : base;
     }
 
+    private static boolean allowBeachShortcut(NoiseChunkGenerator generator,
+                                              NoiseConfig noiseConfig,
+                                              HeightLimitView heightView,
+                                              int blockX,
+                                              int blockZ,
+                                              int surfaceY) {
+        int seaLevel = previewSeaLevel(generator);
+        int seaLevelDelta = surfaceY - seaLevel;
+        if (seaLevelDelta > BEACH_SHORTCUT_MAX_SEA_LEVEL_DELTA) {
+            return false;
+        }
+        if (uplandT(surfaceY) > BEACH_SHORTCUT_MAX_UPLAND_T) {
+            return false;
+        }
+        if (generator == null || noiseConfig == null || heightView == null) {
+            return true;
+        }
+        PreviewTerrain preview = previewTerrain(generator, noiseConfig, heightView, blockX, blockZ);
+        return preview.robustDelta <= BEACH_SHORTCUT_MAX_ROBUST_DELTA;
+    }
+
     private static RegistryEntry<Biome> applyLandOverrides(Registry<Biome> biomes, RegistryEntry<Biome> pick, int blockX, int blockZ, int bandIndex) {
         return pick;
     }
@@ -1843,6 +1864,9 @@ public final class LatitudeBiomes {
     private static final int SAVANNA_UPLAND_CLAMP_Y = 90;
     private static final int SAVANNA_PLATEAU_MIN_Y = 100;
     private static final int WINDSWEPT_MIN_Y = 120;
+    private static final int BEACH_SHORTCUT_MAX_SEA_LEVEL_DELTA = 16;
+    private static final int BEACH_SHORTCUT_MAX_ROBUST_DELTA = 6;
+    private static final double BEACH_SHORTCUT_MAX_UPLAND_T = 0.25;
     private static final int MANGROVE_MAX_Y_ABOVE_SEA = 2;
     private static final double MANGROVE_MAX_ABS_LAT_DEG = 25.0;
     private static final int MANGROVE_COASTAL_MAX_BLOCKS = 384;
@@ -2012,7 +2036,7 @@ public final class LatitudeBiomes {
         LatitudeBands.Band band = bandForAbsLatFraction(t);
         int bandIndex = bandIndexForBand(band);
 
-        if (isBeachLike(base)) {
+        if (isBeachLike(base) && allowBeachShortcut(generator, noiseConfig, heightView, blockX, blockZ, columnDecisionY)) {
             RegistryEntry<Biome> out = pickBeachForBand(biomeRegistry, base, blockX, blockZ, bandIndex);
             debugPick(blockX, blockZ, effectiveRadius, t, band, base, out, true, false, null);
             return out;
@@ -2607,7 +2631,7 @@ public final class LatitudeBiomes {
         LatitudeBands.Band band = bandForAbsLatFraction(t);
         int bandIndex = bandIndexForBand(band);
 
-        if (isBeachLike(base)) {
+        if (isBeachLike(base) && allowBeachShortcut(generator, noiseConfig, heightView, blockX, blockZ, columnDecisionY)) {
             RegistryEntry<Biome> out = pickBeachForBand(biomePool, base, blockX, blockZ, bandIndex);
             debugPick(blockX, blockZ, effectiveRadius, t, band, base, out, true, false, null);
             return out;
