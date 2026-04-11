@@ -1877,6 +1877,15 @@ public final class LatitudeBiomes {
             "minecraft:windswept_hills",
             "minecraft:windswept_forest"
     };
+    private static final double TEMPERATE_WARM_EDGE_SHOULDER_FRAC = 0.18;
+    private static final int TEMPERATE_WARM_EDGE_SHOULDER_MIN_BLOCKS = 96;
+    private static final int TEMPERATE_WARM_EDGE_SHOULDER_MAX_BLOCKS = 320;
+    private static final long TEMPERATE_WARM_EDGE_ROLL_SALT = 0x74EAD9E54B0AL;
+    private static final String[] TEMPERATE_WARM_EDGE_TRANSITION_BIOMES = {
+            "minecraft:forest",
+            "minecraft:plains",
+            "minecraft:meadow"
+    };
 
     // --- Blend noise helpers (chunk-stable, 2D, smooth "blobs") ---
 
@@ -2419,6 +2428,7 @@ public final class LatitudeBiomes {
             }
         }
         out = enforcePaleGardenRegion(biomeRegistry, out, base, blockX, blockZ, landBandIndex, effectiveRadius);
+        out = softenTemperateWarmEdgeTaigaJump(biomeRegistry, base, out, blockX, blockZ, effectiveRadius, bandIndex, landBandIndex, mountainLike);
         RegistryEntry<Biome> postBandEnforce = out;
         if (DEBUG_BIOMES && isMangroveCandidate(out)) {
             LOGGER.warn("[Latitude][MangroveLeak] mangrove escaped into land pool result (registry path) at x={} z={} bandIndex={} y={}",
@@ -2984,6 +2994,7 @@ public final class LatitudeBiomes {
             }
         }
         out = enforcePaleGardenRegion(biomePool, out, base, blockX, blockZ, landBandIndex, effectiveRadius);
+        out = softenTemperateWarmEdgeTaigaJump(biomePool, base, out, blockX, blockZ, effectiveRadius, bandIndex, landBandIndex, mountainLike);
         RegistryEntry<Biome> postBandEnforce = out;
         if (DEBUG_BIOMES && isMangroveCandidate(out)) {
             LOGGER.warn("[Latitude][MangroveLeak] mangrove escaped into land pool result (collection path) at x={} z={} bandIndex={} y={}",
@@ -5591,6 +5602,130 @@ public final class LatitudeBiomes {
                 || isBiomeId(entry, "minecraft:snowy_taiga")
                 || isBiomeId(entry, "minecraft:old_growth_pine_taiga")
                 || isBiomeId(entry, "minecraft:old_growth_spruce_taiga");
+    }
+
+    private static int temperateWarmEdgeShoulderBlocks(int effectiveRadius) {
+        if (effectiveRadius <= 0) {
+            return TEMPERATE_WARM_EDGE_SHOULDER_MIN_BLOCKS;
+        }
+        int temperateStart = bandBoundaryBlocks(1, effectiveRadius);
+        int temperateEnd = bandBoundaryBlocks(2, effectiveRadius);
+        int temperateSpan = Math.max(1, temperateEnd - temperateStart);
+        int shoulder = (int) Math.round(temperateSpan * TEMPERATE_WARM_EDGE_SHOULDER_FRAC);
+        return clampInt(shoulder, TEMPERATE_WARM_EDGE_SHOULDER_MIN_BLOCKS, TEMPERATE_WARM_EDGE_SHOULDER_MAX_BLOCKS);
+    }
+
+    private static double subtropicalTemperateBoundaryDeltaBlocks(int blockX, int blockZ, int effectiveRadius) {
+        if (effectiveRadius <= 0) {
+            return Double.POSITIVE_INFINITY;
+        }
+        int boundaryBlocks = bandBoundaryBlocks(1, effectiveRadius);
+        double halfWidthBlocks = BLEND_TRANSITION_WIDTH_BLOCKS * 0.5;
+        if (!(halfWidthBlocks > 0.0)) {
+            return Math.abs(blockZ) - boundaryBlocks;
+        }
+
+        double diameter = effectiveRadius * 2.0;
+        double noiseScale = diameter > 0.0 ? (REFERENCE_DIAMETER_BLOCKS / diameter) : 1.0;
+        double warpPatchBlocks = scaledPatchBlocks(WARP_NOISE_PATCH_CHUNKS, noiseScale);
+
+        long warpSeed = WORLD_SEED ^ WARP_NOISE_SALT;
+        double warpNoise = (blobNoise01ScaledBlocks(warpSeed, blockX, blockZ, warpPatchBlocks, WARP_NOISE_SALT) * 2.0) - 1.0;
+        double maxWarp = Math.min(WARP_AMPLITUDE_BLOCKS, halfWidthBlocks);
+        double effectiveBoundary = boundaryBlocks + (warpNoise * maxWarp);
+        return Math.abs(blockZ) - effectiveBoundary;
+    }
+
+    private static boolean isTemperateWarmEdgeShoulderCell(int blockX, int blockZ,
+                                                            int effectiveRadius, int sourceBandIndex,
+                                                            int landBandIndex, boolean mountainLike) {
+        if (landBandIndex != BAND_TEMPERATE || mountainLike || effectiveRadius <= 0) {
+            return false;
+        }
+        double deltaBlocks = subtropicalTemperateBoundaryDeltaBlocks(blockX, blockZ, effectiveRadius);
+        int shoulderBlocks = temperateWarmEdgeShoulderBlocks(effectiveRadius);
+        if (sourceBandIndex <= BAND_SUBTROPICAL) {
+            return deltaBlocks <= shoulderBlocks;
+        }
+        return deltaBlocks >= 0.0 && deltaBlocks <= shoulderBlocks;
+    }
+
+    private static boolean isTemperateWarmEdgeTransitionBiome(RegistryEntry<Biome> biome) {
+        if (biome == null) {
+            return false;
+        }
+        return isTemperateForestFamily(biome)
+                || isBiomeId(biome, "minecraft:plains")
+                || isBiomeId(biome, "minecraft:meadow");
+    }
+
+    private static int temperateWarmEdgeFallbackStartIndex(int blockX, int blockZ, int size) {
+        if (size <= 1) {
+            return 0;
+        }
+        double n = ValueNoise2D.sampleBlocks(WORLD_SEED ^ TEMPERATE_WARM_EDGE_ROLL_SALT, blockX, blockZ, 2048);
+        int idx = (int) Math.floor(n * (double) size);
+        return clampInt(idx, 0, size - 1);
+    }
+
+    private static RegistryEntry<Biome> pickTemperateWarmEdgeTransitionFallback(Registry<Biome> biomes, RegistryEntry<Biome> base,
+                                                                                int blockX, int blockZ) {
+        int size = TEMPERATE_WARM_EDGE_TRANSITION_BIOMES.length;
+        int start = temperateWarmEdgeFallbackStartIndex(blockX, blockZ, size);
+        for (int i = 0; i < size; i++) {
+            String option = TEMPERATE_WARM_EDGE_TRANSITION_BIOMES[(start + i) % size];
+            try {
+                RegistryEntry<Biome> candidate = biome(biomes, option);
+                if (isTemperateWarmEdgeTransitionBiome(candidate)) {
+                    return candidate;
+                }
+            } catch (Throwable ignored) {
+                // try next option
+            }
+        }
+        return isTemperateWarmEdgeTransitionBiome(base) ? base : null;
+    }
+
+    private static RegistryEntry<Biome> pickTemperateWarmEdgeTransitionFallback(Collection<RegistryEntry<Biome>> biomes, RegistryEntry<Biome> base,
+                                                                                int blockX, int blockZ) {
+        int size = TEMPERATE_WARM_EDGE_TRANSITION_BIOMES.length;
+        int start = temperateWarmEdgeFallbackStartIndex(blockX, blockZ, size);
+        for (int i = 0; i < size; i++) {
+            String option = TEMPERATE_WARM_EDGE_TRANSITION_BIOMES[(start + i) % size];
+            RegistryEntry<Biome> candidate = entryById(biomes, option);
+            if (isTemperateWarmEdgeTransitionBiome(candidate)) {
+                return candidate;
+            }
+        }
+        return isTemperateWarmEdgeTransitionBiome(base) ? base : null;
+    }
+
+    private static RegistryEntry<Biome> softenTemperateWarmEdgeTaigaJump(Registry<Biome> biomes, RegistryEntry<Biome> base,
+                                                                          RegistryEntry<Biome> out,
+                                                                          int blockX, int blockZ, int effectiveRadius,
+                                                                          int sourceBandIndex, int landBandIndex, boolean mountainLike) {
+        if (!isTaigaFamilyBiome(out)) {
+            return out;
+        }
+        if (!isTemperateWarmEdgeShoulderCell(blockX, blockZ, effectiveRadius, sourceBandIndex, landBandIndex, mountainLike)) {
+            return out;
+        }
+        RegistryEntry<Biome> fallback = pickTemperateWarmEdgeTransitionFallback(biomes, base, blockX, blockZ);
+        return fallback != null ? fallback : out;
+    }
+
+    private static RegistryEntry<Biome> softenTemperateWarmEdgeTaigaJump(Collection<RegistryEntry<Biome>> biomes, RegistryEntry<Biome> base,
+                                                                          RegistryEntry<Biome> out,
+                                                                          int blockX, int blockZ, int effectiveRadius,
+                                                                          int sourceBandIndex, int landBandIndex, boolean mountainLike) {
+        if (!isTaigaFamilyBiome(out)) {
+            return out;
+        }
+        if (!isTemperateWarmEdgeShoulderCell(blockX, blockZ, effectiveRadius, sourceBandIndex, landBandIndex, mountainLike)) {
+            return out;
+        }
+        RegistryEntry<Biome> fallback = pickTemperateWarmEdgeTransitionFallback(biomes, base, blockX, blockZ);
+        return fallback != null ? fallback : out;
     }
 
     private static double snowyRampAlpha(double deg) {
