@@ -7799,6 +7799,12 @@ public final class LatitudeBiomes {
                         blockY, incomingId, biomeId(out), blockX, blockZ);
             }
         }
+        if (bandIndex == BAND_SUBTROPICAL
+                && isBadlandsFamily(out)
+                && warmProvince != ProvinceAuthority.Province.WARM_DRY
+                && blockY >= (SAVANNA_UPLAND_CLAMP_Y + 8)) {
+            out = pickDryWarmFallback(biomes, out);
+        }
         if (!tropicalBand && isJungleFamily(out) && warmProvince != ProvinceAuthority.Province.WARM_WET) {
             out = pickDryWarmFallback(biomes, out);
         }
@@ -7925,6 +7931,12 @@ public final class LatitudeBiomes {
                 LOGGER.info("[LAT][FINAL_SANITIZE] jungle_clamp y={} in={} out={} x={} z={}",
                         blockY, incomingId, biomeId(out), blockX, blockZ);
             }
+        }
+        if (bandIndex == BAND_SUBTROPICAL
+                && isBadlandsFamily(out)
+                && warmProvince != ProvinceAuthority.Province.WARM_DRY
+                && blockY >= (SAVANNA_UPLAND_CLAMP_Y + 8)) {
+            out = pickDryWarmFallback(biomes, out);
         }
         if (!tropicalBand && isJungleFamily(out) && warmProvince != ProvinceAuthority.Province.WARM_WET) {
             out = pickDryWarmFallback(biomes, out);
