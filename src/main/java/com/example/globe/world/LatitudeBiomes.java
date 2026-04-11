@@ -3580,11 +3580,19 @@ public final class LatitudeBiomes {
         double blendNoise = blobNoise01ScaledBlocks(WORLD_SEED, blockX, blockZ, blendPatchBlocks, BLEND_NOISE_SALT);
 
         int chosenBandIndex = blendNoise < blendT ? upperBandIndex : lowerBandIndex;
+        int resolvedBandIndex = chosenBandIndex;
+        double latDegFromRadius = latitudeDegreesFromRadius(blockZ, radius);
+        if (lowerBandIndex == BAND_SUBTROPICAL
+                && upperBandIndex == BAND_TEMPERATE
+                && resolvedBandIndex == BAND_SUBTROPICAL
+                && latDegFromRadius >= LatitudeBands.Band.TEMPERATE.lowDeg()) {
+            resolvedBandIndex = BAND_TEMPERATE;
+        }
 
         if (DEBUG_BLEND
                 && (blockX & 15) == 0
                 && (blockZ & 15) == 0
-                && chosenBandIndex != bandIndex
+                && resolvedBandIndex != bandIndex
                 && BLEND_DEBUG_COUNT.incrementAndGet() <= DEBUG_LIMIT) {
             LOGGER.info("[LAT_BLEND] mode={} x={} z={} lat={} baseBand={} lower={} upper={} chosen={} boundary={} effectiveBoundary={} delta={} transitionWidth={} warpAmp={} warpPatchBlocks={} blendPatchBlocks={} t={} noise={}",
                     TRANSITION_MODE,
@@ -3594,7 +3602,7 @@ public final class LatitudeBiomes {
                     bandIndex,
                     lowerBandIndex,
                     upperBandIndex,
-                    chosenBandIndex,
+                    resolvedBandIndex,
                     boundaryBlocks,
                     String.format(java.util.Locale.ROOT, "%.2f", effectiveBoundary),
                     String.format(java.util.Locale.ROOT, "%.2f", delta),
@@ -3606,7 +3614,7 @@ public final class LatitudeBiomes {
                     String.format(java.util.Locale.ROOT, "%.3f", blendNoise));
         }
 
-        return chosenBandIndex;
+        return resolvedBandIndex;
     }
 
     private static int crispBandIndex(double t) {
