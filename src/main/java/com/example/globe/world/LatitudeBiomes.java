@@ -7829,7 +7829,7 @@ public final class LatitudeBiomes {
                         : pickDryWarmFallback(biomes, out));
                 jungleClamped = softened != out;
                 out = softened;
-            } else if (isBadlandsFamily(out) && warmProvince != ProvinceAuthority.Province.WARM_DRY) {
+            } else if (isBadlandsFamily(out) && warmProvince == ProvinceAuthority.Province.WARM_WET) {
                 // Outside a true arid province, drop badlands to the narrow dry fallback to avoid seam leakage.
                 out = pickDryWarmFallback(biomes, out);
             } else if (warmProvince == ProvinceAuthority.Province.WARM_MEDIUM
@@ -7852,7 +7852,7 @@ public final class LatitudeBiomes {
         }
         if (bandIndex == BAND_SUBTROPICAL
                 && isBadlandsFamily(out)
-                && warmProvince != ProvinceAuthority.Province.WARM_DRY
+                && warmProvince == ProvinceAuthority.Province.WARM_WET
                 && blockY >= (SAVANNA_UPLAND_CLAMP_Y + 8)) {
             out = pickDryWarmFallback(biomes, out);
         }
@@ -7864,8 +7864,12 @@ public final class LatitudeBiomes {
                 || isBiomeId(out, "minecraft:plains")
                 || isBiomeId(out, "minecraft:sunflower_plains");
 
+        boolean preserveSubtropicalBadlands = bandIndex == BAND_SUBTROPICAL && isBadlandsFamily(out);
         boolean allowProvinceFamilyRewrite = allowWarmMediumSavannaClamp
                 && (tropicalBand || warmProvince != ProvinceAuthority.Province.WARM_WET);
+        if (preserveSubtropicalBadlands) {
+            allowProvinceFamilyRewrite = false;
+        }
         if (allowProvinceFamilyRewrite) {
             out = enforceWarmProvinceFamily(biomes, out, warmProvince);
         }
@@ -7963,7 +7967,7 @@ public final class LatitudeBiomes {
                         : pickDryWarmFallback(biomes, out));
                 jungleClamped = softened != out;
                 out = softened;
-            } else if (isBadlandsFamily(out) && warmProvince != ProvinceAuthority.Province.WARM_DRY) {
+            } else if (isBadlandsFamily(out) && warmProvince == ProvinceAuthority.Province.WARM_WET) {
                 RegistryEntry<Biome> softened = pickDryWarmFallback(biomes, out);
                 out = softened != null ? softened : out;
             } else if (warmProvince == ProvinceAuthority.Province.WARM_MEDIUM
@@ -7985,7 +7989,7 @@ public final class LatitudeBiomes {
         }
         if (bandIndex == BAND_SUBTROPICAL
                 && isBadlandsFamily(out)
-                && warmProvince != ProvinceAuthority.Province.WARM_DRY
+                && warmProvince == ProvinceAuthority.Province.WARM_WET
                 && blockY >= (SAVANNA_UPLAND_CLAMP_Y + 8)) {
             out = pickDryWarmFallback(biomes, out);
         }
@@ -7997,8 +8001,12 @@ public final class LatitudeBiomes {
                 || isBiomeId(out, "minecraft:plains")
                 || isBiomeId(out, "minecraft:sunflower_plains");
 
+        boolean preserveSubtropicalBadlands = bandIndex == BAND_SUBTROPICAL && isBadlandsFamily(out);
         boolean allowProvinceFamilyRewrite = allowWarmMediumSavannaClamp
                 && (tropicalBand || warmProvince != ProvinceAuthority.Province.WARM_WET);
+        if (preserveSubtropicalBadlands) {
+            allowProvinceFamilyRewrite = false;
+        }
         if (allowProvinceFamilyRewrite) {
             out = enforceWarmProvinceFamily(biomes, out, warmProvince);
         }
