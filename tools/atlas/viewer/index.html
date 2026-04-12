@@ -1668,6 +1668,21 @@ html, body {
        <span class="toggle-track"></span>
       </label>
      </div>
+     <div class="toggle-row" id="confetti-scope-row" style="display:none">
+      <span class="toggle-label">Scope</span>
+      <select id="confetti-scope" class="lat-select" style="font-size:11px;padding:1px 4px;height:20px;vertical-align:middle">
+       <option value="selected">Selected biome</option>
+       <option value="all">All biomes</option>
+       <option value="offenders">Offenders only</option>
+      </select>
+     </div>
+     <div class="toggle-row" id="confetti-filter-row" style="display:none">
+      <span class="toggle-label">Show</span>
+      <select id="confetti-filter" class="lat-select" style="font-size:11px;padding:1px 4px;height:20px;vertical-align:middle">
+       <option value="all">Bad + borderline</option>
+       <option value="bad">Bad only</option>
+      </select>
+     </div>
      <div class="toggle-row" id="confetti-threshold-row" style="display:none">
       <span class="toggle-label">Tiny threshold (px)</span>
       <input type="number" id="confetti-threshold" min="1" max="1000" value="50"
@@ -1699,6 +1714,17 @@ html, body {
     </div>
     <div class="panel-body" id="selection-context-body">
      <div class="context-empty">No biome selected</div>
+    </div>
+   </div>
+ <div class="panel-card" id="card-confetti-offenders" style="display:none">
+    <div class="panel-header">
+     <span class="panel-title">Confetti Offenders</span>
+     <div class="panel-actions">
+      <span id="confetti-scan-status" style="font-size:10px;color:var(--text-secondary)"></span>
+     </div>
+    </div>
+    <div class="panel-body" id="confetti-offenders-body" style="padding:0;overflow:hidden">
+     <div style="padding:8px 12px;color:var(--text-tertiary);font-size:12px;font-style:italic">Enable confetti mode to scan.</div>
     </div>
    </div>
  <div class="panel-card" id="card-biomes">
@@ -1763,6 +1789,13 @@ const togConfetti = $('#tog-confetti');
 const confettiThresholdInput = $('#confetti-threshold');
 const confettiThresholdRow = $('#confetti-threshold-row');
 const confettiStatusEl = $('#confetti-status');
+const confettiScopeSelect = $('#confetti-scope');
+const confettiScopeRow = $('#confetti-scope-row');
+const confettiFilterSelect = $('#confetti-filter');
+const confettiFilterRow = $('#confetti-filter-row');
+const cardConfettiOffenders = $('#card-confetti-offenders');
+const confettiOffendersBody = $('#confetti-offenders-body');
+const confettiScanStatus = $('#confetti-scan-status');
 const crosshair = $('#crosshair');
 const selectionMarker = $('#selection-marker');
 const inspectCard = $('#inspect-card');
@@ -1877,8 +1910,11 @@ const btnClearPaletteSelection = $('#btn-clear-palette-selection');
   selectedRunIds: new Set(),
   colorViewMode: 'identity',
   confettiMode: false,
+  confettiScope: 'selected',  // 'selected' | 'all' | 'offenders'
+  confettiFilter: 'all',      // 'all' (bad+borderline) | 'bad'
   confettiThreshold: 50,
-  confettiBfsCache: {},   // run|layer|biomeId → sorted component array [{size, pixels|null}]
+  confettiBfsCache: {},       // run|layer|biomeId → sorted component array [{size, pixels|null}]
+  confettiScanCache: null,    // { key, results } for all-biome scan
  };
  
  const LEGACY_BEACH_RED = [235, 72, 63];
@@ -2939,22 +2975,75 @@ function confettiMetrics(components, threshold) {
           tinyCount, tinyComponents, verdict };
 }
 
-function renderConfettiOverlay() {
- if (!state.confettiMode || !state.mapWidth || !state.mapHeight) {
-   clearConfettiOverlay();
+// Run BFS on all sampled biomes and return [{biome, m}] sorted worst-first.
+// Cached per run|layer|threshold.
+function confettiScanAll() {
+ const cacheKey = `${state.currentRun || ''}|${state.currentLayer || ''}|${state.confettiThreshold}`;
+ if (state.confettiScanCache && state.confettiScanCache.key === cacheKey) return state.confettiScanCache.results;
+ const threshold = state.confettiThreshold || 50;
+ const results = [];
+ for (const biome of (state.biomes || [])) {
+   const comps = confettiBfsForBiome(biome);
+   const m = confettiMetrics(comps, threshold);
+   if (m) results.push({ biome, m });
+ }
+ const verdictOrder = { bad: 0, borderline: 1, clean: 2 };
+ results.sort((a, b) => {
+   const vo = (verdictOrder[a.m.verdict] ?? 3) - (verdictOrder[b.m.verdict] ?? 3);
+   return vo !== 0 ? vo : b.m.tinyCount - a.m.tinyCount;
+ });
+ state.confettiScanCache = { key: cacheKey, results };
+ return results;
+}
+
+function renderConfettiOffendersList() {
+ if (!cardConfettiOffenders || !confettiOffendersBody) return;
+ const scope = state.confettiScope || 'selected';
+ if (!state.confettiMode || scope === 'selected') {
+   cardConfettiOffenders.style.display = 'none';
    return;
  }
- const biome = focusedSelectedBiome();
- if (!biome) {
-   clearConfettiOverlay();
-   if (confettiStatusEl) {
-     confettiStatusEl.textContent = 'Select a biome to see its confetti islands.';
-     confettiStatusEl.style.display = '';
+ cardConfettiOffenders.style.display = '';
+ if (confettiScanStatus) confettiScanStatus.textContent = 'Scanning…';
+ confettiOffendersBody.innerHTML = '<div style="padding:8px 12px;color:var(--text-secondary);font-size:12px">Scanning biomes…</div>';
+ setTimeout(() => {
+   if (!state.confettiMode) return;
+   const all = confettiScanAll();
+   const filter = state.confettiFilter || 'all';
+   const rows = all.filter(r => filter === 'bad' ? r.m.verdict === 'bad' : r.m.verdict !== 'clean');
+   if (confettiScanStatus) confettiScanStatus.textContent = `${rows.length} found`;
+   if (!rows.length) {
+     confettiOffendersBody.innerHTML = '<div style="padding:8px 12px;color:var(--text-tertiary);font-size:12px;font-style:italic">No offenders at current threshold.</div>';
+     return;
    }
-   return;
- }
+   const html = rows.map(({ biome, m }) => {
+     const vc = m.verdict === 'bad' ? 'var(--lat-error)' : 'var(--lat-warn)';
+     const focused = state.focusedBiomeId === biome.id;
+     return `<div class="confetti-offender-row" data-biome-id="${escapeHtml(biome.id)}"
+       style="display:grid;grid-template-columns:1fr auto auto;gap:2px 8px;padding:5px 12px;
+              cursor:pointer;border-bottom:1px solid var(--border-subtle);font-size:11px;
+              ${focused ? 'background:var(--bg-elevated);' : ''}">
+       <div style="font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-primary)"
+         title="${escapeHtml(biome.id)}">${escapeHtml(biome.name || biome.id)}</div>
+       <div style="color:${vc};font-weight:700;font-size:10px;white-space:nowrap">${m.verdict}</div>
+       <div style="color:var(--text-secondary);white-space:nowrap">${m.tinyCount} tiny</div>
+       <div style="color:var(--text-tertiary);font-size:10px">${m.componentCount} regions</div>
+       <div style="color:var(--text-tertiary);font-size:10px;text-align:right">${(m.largestShare*100).toFixed(0)}% dom</div>
+       <div></div>
+     </div>`;
+   }).join('');
+   confettiOffendersBody.innerHTML = `<div style="max-height:240px;overflow-y:auto">${html}</div>`;
+   $$('.confetti-offender-row', confettiOffendersBody).forEach(row => {
+     row.addEventListener('click', () => {
+       const b = biomeById(row.dataset.biomeId);
+       if (b) selectBiomePersistent(b);
+     });
+   });
+ }, 0);
+}
+
+function _renderSingleBiomeConfetti(biome) {
  if (confettiStatusEl) { confettiStatusEl.textContent = 'Analyzing…'; confettiStatusEl.style.display = ''; }
- // Defer to next tick so the "Analyzing…" label paints first
  setTimeout(() => {
    const components = confettiBfsForBiome(biome);
    const threshold = state.confettiThreshold || 50;
@@ -2963,14 +3052,13 @@ function renderConfettiOverlay() {
      if (confettiStatusEl) confettiStatusEl.textContent = 'Cannot analyze: biome index data unavailable.';
      return;
    }
-   // Build tiny-pixel overlay
    const W = state.mapWidth, H = state.mapHeight;
    confettiCanvas.width = W;
    confettiCanvas.height = H;
    const dst = confettiCtx.createImageData(W, H);
    const dd = dst.data;
    for (const comp of m.tinyComponents) {
-     if (!comp.pixels) continue; // stored only for size ≤ CONFETTI_PIXEL_STORE_LIMIT
+     if (!comp.pixels) continue;
      for (const p of comp.pixels) {
        const i = p * 4;
        dd[i] = 255; dd[i+1] = 48; dd[i+2] = 48; dd[i+3] = 210;
@@ -2979,15 +3067,68 @@ function renderConfettiOverlay() {
    confettiCtx.putImageData(dst, 0, 0);
    confettiCanvas.classList.add('active');
    if (confettiStatusEl) {
-     const verdictEmoji = m.verdict === 'clean' ? '✓' : m.verdict === 'borderline' ? '⚠' : '✗';
+     const ve = m.verdict === 'clean' ? '✓' : m.verdict === 'borderline' ? '⚠' : '✗';
      confettiStatusEl.textContent =
        `${biome.name}: ${m.componentCount} region${m.componentCount===1?'':'s'}, `+
        `${m.tinyCount} tiny (<${threshold}px). `+
        `Largest ${(m.largestShare*100).toFixed(1)}%. `+
-       `${verdictEmoji} ${m.verdict}`;
+       `${ve} ${m.verdict}`;
      confettiStatusEl.style.display = '';
    }
  }, 0);
+}
+
+function _renderAllBiomesConfetti() {
+ if (confettiStatusEl) { confettiStatusEl.textContent = 'Scanning all biomes…'; confettiStatusEl.style.display = ''; }
+ setTimeout(() => {
+   if (!state.confettiMode) return;
+   const all = confettiScanAll();
+   const filter = state.confettiFilter || 'all';
+   const toRender = all.filter(r => filter === 'bad' ? r.m.verdict === 'bad' : r.m.verdict !== 'clean');
+   const W = state.mapWidth, H = state.mapHeight;
+   confettiCanvas.width = W;
+   confettiCanvas.height = H;
+   const dst = confettiCtx.createImageData(W, H);
+   const dd = dst.data;
+   for (const { m } of toRender) {
+     for (const comp of m.tinyComponents) {
+       if (!comp.pixels) continue;
+       for (const p of comp.pixels) {
+         const i = p * 4;
+         dd[i] = 255; dd[i+1] = 48; dd[i+2] = 48; dd[i+3] = 210;
+       }
+     }
+   }
+   confettiCtx.putImageData(dst, 0, 0);
+   confettiCanvas.classList.add('active');
+   if (confettiStatusEl) {
+     const totalTiny = toRender.reduce((s, r) => s + r.m.tinyCount, 0);
+     confettiStatusEl.textContent =
+       `${toRender.length} biome${toRender.length===1?'':'s'} with islands, ${totalTiny} total tiny components.`;
+     confettiStatusEl.style.display = '';
+   }
+ }, 0);
+}
+
+function renderConfettiOverlay() {
+ if (!state.confettiMode || !state.mapWidth || !state.mapHeight) {
+   clearConfettiOverlay();
+   renderConfettiOffendersList();
+   return;
+ }
+ const scope = state.confettiScope || 'selected';
+ renderConfettiOffendersList();
+ if (scope === 'selected') {
+   const biome = focusedSelectedBiome();
+   if (!biome) {
+     clearConfettiOverlay();
+     if (confettiStatusEl) { confettiStatusEl.textContent = 'Select a biome to see its confetti islands.'; confettiStatusEl.style.display = ''; }
+     return;
+   }
+   _renderSingleBiomeConfetti(biome);
+ } else {
+   _renderAllBiomesConfetti();
+ }
 }
 
 function clearConfettiOverlay() {
@@ -3640,14 +3781,21 @@ ${violationDetails.length
  ? `<table><thead><tr><th>Biome ID</th><th>Name</th><th>Reason</th><th>Observed Band</th><th>Allowed Bands</th><th>Pixels</th></tr></thead><tbody>${violationRows}</tbody></table>`
  : '<div class="empty">No band violations are currently recorded for this report scope.</div>'}
 <h2>Fragmentation (Confetti) Report</h2>
-<div class="sub">Connected-component analysis of the loaded biome raster. Tiny = component &lt; ${escapeHtml(String(state.confettiThreshold || 50))} pixels.</div>
+<div class="sub">Connected-component analysis of the loaded biome raster. Tiny = component &lt; ${escapeHtml(String(state.confettiThreshold || 50))} pixels. Sorted worst-first.</div>
 ${(() => {
- const rows = sampledBiomes.map((biome) => {
-   const bfsComps = confettiBfsForBiome(biome);
-   const threshold = state.confettiThreshold || 50;
-   const m = confettiMetrics(bfsComps, threshold);
+ if (!sampledBiomes.length) return '<div class="empty">No sampled biomes loaded.</div>';
+ const threshold = state.confettiThreshold || 50;
+ const verdictOrder = { bad: 0, borderline: 1, clean: 2 };
+ const withMetrics = sampledBiomes.map((biome) => {
+   const m = confettiMetrics(confettiBfsForBiome(biome), threshold);
+   return { biome, m };
+ }).sort((a, b) => {
+   const vo = (verdictOrder[a.m?.verdict] ?? 3) - (verdictOrder[b.m?.verdict] ?? 3);
+   return vo !== 0 ? vo : (b.m?.tinyCount || 0) - (a.m?.tinyCount || 0);
+ });
+ const rows = withMetrics.map(({ biome, m }) => {
    if (!m) return `<tr><td>${escapeHtml(biome.id||'—')}</td><td>${escapeHtml(biome.name||'—')}</td><td colspan="5" style="color:#888">not available</td></tr>`;
-   const verdictStyle = m.verdict==='clean'?'color:#2a7':(m.verdict==='borderline'?'color:#c90':'color:#c33');
+   const vs = m.verdict==='clean'?'color:#2a7':(m.verdict==='borderline'?'color:#c90':'color:#c33');
    return `<tr>
     <td>${escapeHtml(biome.id||'—')}</td>
     <td>${escapeHtml(biome.name||'—')}</td>
@@ -3655,12 +3803,10 @@ ${(() => {
     <td>${m.componentCount.toLocaleString()}</td>
     <td>${m.largestSize.toLocaleString()} (${(m.largestShare*100).toFixed(1)}%)</td>
     <td>${m.tinyCount.toLocaleString()}</td>
-    <td style="${verdictStyle};font-weight:700">${m.verdict}</td>
+    <td style="${vs};font-weight:700">${m.verdict}</td>
    </tr>`;
  }).join('');
- return sampledBiomes.length
-   ? `<table><thead><tr><th>Biome ID</th><th>Name</th><th>Total Pixels</th><th>Components</th><th>Largest (share)</th><th>Tiny Components</th><th>Verdict</th></tr></thead><tbody>${rows}</tbody></table>`
-   : '<div class="empty">No sampled biomes loaded.</div>';
+ return `<table><thead><tr><th>Biome ID</th><th>Name</th><th>Total Pixels</th><th>Components</th><th>Largest (share)</th><th>Tiny Components</th><th>Verdict</th></tr></thead><tbody>${rows}</tbody></table>`;
 })()}
 <h2>Sampled Biome Palette Report</h2>
 ${sampledBiomes.length ? `<table><thead><tr><th>Biome ID</th><th>Name</th><th>Color</th><th>Index</th><th>Sampled Coverage</th></tr></thead><tbody>${tableRows}</tbody></table>` : '<div class="empty">No sampled biome rows are loaded for the current run.</div>'}
@@ -4834,6 +4980,7 @@ async function switchLayer(run, layer) {
   state.biomeInventory = [];
   state.selectionStatsCache = {};
   state.confettiBfsCache = {};
+  state.confettiScanCache = null;
   state.selectedBiomeIds = [];
   state.focusedBiomeId = null;
   state.hoveredBiomeId = null;
@@ -4906,19 +5053,44 @@ async function switchLayer(run, layer) {
 
 togConfetti.addEventListener('change', () => {
   state.confettiMode = togConfetti.checked;
-  if (confettiThresholdRow) confettiThresholdRow.style.display = state.confettiMode ? '' : 'none';
-  if (confettiStatusEl) confettiStatusEl.style.display = state.confettiMode ? '' : 'none';
-  if (!state.confettiMode) clearConfettiOverlay();
+  const on = state.confettiMode;
+  if (confettiScopeRow)     confettiScopeRow.style.display     = on ? '' : 'none';
+  if (confettiThresholdRow) confettiThresholdRow.style.display = on ? '' : 'none';
+  if (confettiStatusEl)     confettiStatusEl.style.display     = on ? '' : 'none';
+  // show filter row only when scope is not 'selected'
+  const scope = state.confettiScope || 'selected';
+  if (confettiFilterRow) confettiFilterRow.style.display = (on && scope !== 'selected') ? '' : 'none';
+  if (!on) { clearConfettiOverlay(); renderConfettiOffendersList(); }
   else renderConfettiOverlay();
 });
+
+if (confettiScopeSelect) {
+  confettiScopeSelect.addEventListener('change', () => {
+    state.confettiScope = confettiScopeSelect.value;
+    const multiScope = state.confettiScope !== 'selected';
+    if (confettiFilterRow) confettiFilterRow.style.display = multiScope ? '' : 'none';
+    state.confettiScanCache = null; // invalidate so offenders list refreshes
+    renderConfettiOverlay();
+    const focused = focusedSelectedBiome();
+    if (focused) renderSelectionContext(focused);
+  });
+}
+
+if (confettiFilterSelect) {
+  confettiFilterSelect.addEventListener('change', () => {
+    state.confettiFilter = confettiFilterSelect.value;
+    state.confettiScanCache = null;
+    renderConfettiOverlay();
+  });
+}
 
 if (confettiThresholdInput) {
   confettiThresholdInput.addEventListener('change', () => {
     const v = Math.max(1, Math.min(1000, parseInt(confettiThresholdInput.value, 10) || 50));
     confettiThresholdInput.value = v;
     state.confettiThreshold = v;
+    state.confettiScanCache = null;
     renderConfettiOverlay();
-    // Refresh sidebar metrics if a biome is focused
     const focused = focusedSelectedBiome();
     if (focused) renderSelectionContext(focused);
   });
