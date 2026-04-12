@@ -2521,12 +2521,13 @@ function renderSelectionContext(biome = focusedSelectedBiome()) {
    const threshold = state.confettiThreshold || 50;
    const m = confettiMetrics(bfsComps, threshold);
    if (m) {
-     const verdictColor = m.verdict === 'clean' ? 'var(--lat-success)' : m.verdict === 'borderline' ? 'var(--lat-warn)' : 'var(--lat-error)';
+     const verdictColor = m.verdict === 'clean' ? 'var(--lat-success)' : m.verdict === 'borderline' ? 'var(--lat-warn)' : m.verdict === 'insufficient' ? 'var(--text-tertiary)' : 'var(--lat-error)';
      html += `
      <div class="context-k" style="margin-top:6px;color:var(--text-accent)">Confetti</div><div class="context-v"></div>
      <div class="context-k">Components</div><div class="context-v">${m.componentCount.toLocaleString()}</div>
-     <div class="context-k">Tiny (&lt;${threshold}px)</div><div class="context-v">${m.tinyCount.toLocaleString()}</div>
+     <div class="context-k">Tiny (&lt;${threshold}px)</div><div class="context-v">${m.tinyCount.toLocaleString()} (${(m.tinyPixelShare*100).toFixed(2)}% of biome)</div>
      <div class="context-k">Largest region</div><div class="context-v">${m.largestSize.toLocaleString()} px (${(m.largestShare*100).toFixed(1)}%)</div>
+     <div class="context-k">Total biome px</div><div class="context-v">${m.totalPixels.toLocaleString()}${m.insufficient ? ' ⚠ too small to verdict' : ''}</div>
      <div class="context-k">Verdict</div><div class="context-v" style="color:${verdictColor};font-weight:600">${m.verdict}</div>`;
    }
  }
@@ -2910,6 +2911,16 @@ function clearHighlight() {
 // never "tiny" so we don't need their pixel coords for the overlay.
 const CONFETTI_PIXEL_STORE_LIMIT = 1500;
 
+// Verdict thresholds — tunable here.
+// "insufficient data": totalPixels below this → skip verdicting entirely.
+const CONFETTI_MIN_PIXELS = 100;          // absolute minimum
+// clean: tiny fragment burden is negligible
+const CONFETTI_CLEAN_MAX_TINY_SHARE  = 0.02;  // tinyPixels / totalPixels
+const CONFETTI_CLEAN_MIN_LARGEST     = 0.20;  // largestSize / totalPixels
+// borderline: moderate fragmentation
+const CONFETTI_BORDER_MAX_TINY_SHARE = 0.08;
+const CONFETTI_BORDER_MIN_LARGEST    = 0.10;
+
 // Run BFS flood-fill for all components of the given biome.
 // Returns sorted component array [{size, pixels|null}], cached per run+layer+biome.
 function confettiBfsForBiome(biome) {
@@ -2967,12 +2978,24 @@ function confettiMetrics(components, threshold) {
  const largestShare = totalPixels ? largestSize / totalPixels : 0;
  const tinyComponents = components.filter(c => c.size < threshold);
  const tinyCount = tinyComponents.length;
+ const tinyPixels = tinyComponents.reduce((s, c) => s + c.size, 0);
+ const tinyPixelShare = totalPixels ? tinyPixels / totalPixels : 0;
+ // Insufficient data: biome is too small to verdict meaningfully
+ const minPx = Math.max(CONFETTI_MIN_PIXELS, threshold * 2);
+ const insufficient = totalPixels < minPx;
  let verdict;
- if (tinyCount === 0 || (tinyCount <= 2 && largestShare >= 0.9)) verdict = 'clean';
- else if (tinyCount <= 10 && largestShare >= 0.5)                 verdict = 'borderline';
- else                                                              verdict = 'bad';
+ if (insufficient) {
+   verdict = 'insufficient';
+ } else if (tinyCount === 0 ||
+            (tinyPixelShare <= CONFETTI_CLEAN_MAX_TINY_SHARE && largestShare >= CONFETTI_CLEAN_MIN_LARGEST)) {
+   verdict = 'clean';
+ } else if (tinyPixelShare <= CONFETTI_BORDER_MAX_TINY_SHARE && largestShare >= CONFETTI_BORDER_MIN_LARGEST) {
+   verdict = 'borderline';
+ } else {
+   verdict = 'bad';
+ }
  return { totalPixels, componentCount: components.length, largestSize, largestShare,
-          tinyCount, tinyComponents, verdict };
+          tinyCount, tinyPixels, tinyPixelShare, tinyComponents, insufficient, verdict };
 }
 
 // Run BFS on all sampled biomes and return [{biome, m}] sorted worst-first.
@@ -2987,10 +3010,13 @@ function confettiScanAll() {
    const m = confettiMetrics(comps, threshold);
    if (m) results.push({ biome, m });
  }
- const verdictOrder = { bad: 0, borderline: 1, clean: 2 };
+ const verdictOrder = { bad: 0, borderline: 1, clean: 2, insufficient: 3 };
  results.sort((a, b) => {
-   const vo = (verdictOrder[a.m.verdict] ?? 3) - (verdictOrder[b.m.verdict] ?? 3);
-   return vo !== 0 ? vo : b.m.tinyCount - a.m.tinyCount;
+   const vo = (verdictOrder[a.m.verdict] ?? 4) - (verdictOrder[b.m.verdict] ?? 4);
+   if (vo !== 0) return vo;
+   const sd = b.m.tinyPixelShare - a.m.tinyPixelShare;
+   if (Math.abs(sd) > 0.001) return sd;
+   return b.m.tinyCount - a.m.tinyCount;
  });
  state.confettiScanCache = { key: cacheKey, results };
  return results;
@@ -3010,8 +3036,15 @@ function renderConfettiOffendersList() {
    if (!state.confettiMode) return;
    const all = confettiScanAll();
    const filter = state.confettiFilter || 'all';
-   const rows = all.filter(r => filter === 'bad' ? r.m.verdict === 'bad' : r.m.verdict !== 'clean');
-   if (confettiScanStatus) confettiScanStatus.textContent = `${rows.length} found`;
+   const rows = all.filter(r => {
+     if (r.m.insufficient) return false;
+     return filter === 'bad' ? r.m.verdict === 'bad' : r.m.verdict !== 'clean';
+   });
+   const nBad  = all.filter(r => r.m.verdict === 'bad').length;
+   const nBord = all.filter(r => r.m.verdict === 'borderline').length;
+   const nClean= all.filter(r => r.m.verdict === 'clean').length;
+   if (confettiScanStatus) confettiScanStatus.textContent =
+     `${nBad}✗ ${nBord}⚠ ${nClean}✓`;
    if (!rows.length) {
      confettiOffendersBody.innerHTML = '<div style="padding:8px 12px;color:var(--text-tertiary);font-size:12px;font-style:italic">No offenders at current threshold.</div>';
      return;
@@ -3026,10 +3059,10 @@ function renderConfettiOffendersList() {
        <div style="font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-primary)"
          title="${escapeHtml(biome.id)}">${escapeHtml(biome.name || biome.id)}</div>
        <div style="color:${vc};font-weight:700;font-size:10px;white-space:nowrap">${m.verdict}</div>
-       <div style="color:var(--text-secondary);white-space:nowrap">${m.tinyCount} tiny</div>
+       <div style="color:var(--text-secondary);white-space:nowrap">${(m.tinyPixelShare*100).toFixed(1)}% frag</div>
        <div style="color:var(--text-tertiary);font-size:10px">${m.componentCount} regions</div>
        <div style="color:var(--text-tertiary);font-size:10px;text-align:right">${(m.largestShare*100).toFixed(0)}% dom</div>
-       <div></div>
+       <div style="color:var(--text-tertiary);font-size:10px">${m.tinyCount} tiny</div>
      </div>`;
    }).join('');
    confettiOffendersBody.innerHTML = `<div style="max-height:240px;overflow-y:auto">${html}</div>`;
@@ -3067,10 +3100,10 @@ function _renderSingleBiomeConfetti(biome) {
    confettiCtx.putImageData(dst, 0, 0);
    confettiCanvas.classList.add('active');
    if (confettiStatusEl) {
-     const ve = m.verdict === 'clean' ? '✓' : m.verdict === 'borderline' ? '⚠' : '✗';
+     const ve = m.verdict === 'clean' ? '✓' : m.verdict === 'borderline' ? '⚠' : m.verdict === 'insufficient' ? '–' : '✗';
      confettiStatusEl.textContent =
        `${biome.name}: ${m.componentCount} region${m.componentCount===1?'':'s'}, `+
-       `${m.tinyCount} tiny (<${threshold}px). `+
+       `${m.tinyCount} tiny (${(m.tinyPixelShare*100).toFixed(2)}%). `+
        `Largest ${(m.largestShare*100).toFixed(1)}%. `+
        `${ve} ${m.verdict}`;
      confettiStatusEl.style.display = '';
@@ -3785,28 +3818,30 @@ ${violationDetails.length
 ${(() => {
  if (!sampledBiomes.length) return '<div class="empty">No sampled biomes loaded.</div>';
  const threshold = state.confettiThreshold || 50;
- const verdictOrder = { bad: 0, borderline: 1, clean: 2 };
+ const verdictOrder = { bad: 0, borderline: 1, clean: 2, insufficient: 3 };
  const withMetrics = sampledBiomes.map((biome) => {
    const m = confettiMetrics(confettiBfsForBiome(biome), threshold);
    return { biome, m };
  }).sort((a, b) => {
-   const vo = (verdictOrder[a.m?.verdict] ?? 3) - (verdictOrder[b.m?.verdict] ?? 3);
-   return vo !== 0 ? vo : (b.m?.tinyCount || 0) - (a.m?.tinyCount || 0);
+   const vo = (verdictOrder[a.m?.verdict] ?? 4) - (verdictOrder[b.m?.verdict] ?? 4);
+   if (vo !== 0) return vo;
+   const sd = (b.m?.tinyPixelShare || 0) - (a.m?.tinyPixelShare || 0);
+   return Math.abs(sd) > 0.001 ? sd : (b.m?.tinyCount || 0) - (a.m?.tinyCount || 0);
  });
  const rows = withMetrics.map(({ biome, m }) => {
-   if (!m) return `<tr><td>${escapeHtml(biome.id||'—')}</td><td>${escapeHtml(biome.name||'—')}</td><td colspan="5" style="color:#888">not available</td></tr>`;
-   const vs = m.verdict==='clean'?'color:#2a7':(m.verdict==='borderline'?'color:#c90':'color:#c33');
+   if (!m) return `<tr><td>${escapeHtml(biome.id||'—')}</td><td>${escapeHtml(biome.name||'—')}</td><td colspan="6" style="color:#888">not available</td></tr>`;
+   const vs = m.verdict==='clean'?'color:#2a7':(m.verdict==='borderline'?'color:#c90':(m.verdict==='insufficient'?'color:#888':'color:#c33'));
    return `<tr>
     <td>${escapeHtml(biome.id||'—')}</td>
     <td>${escapeHtml(biome.name||'—')}</td>
     <td>${m.totalPixels.toLocaleString()}</td>
     <td>${m.componentCount.toLocaleString()}</td>
     <td>${m.largestSize.toLocaleString()} (${(m.largestShare*100).toFixed(1)}%)</td>
-    <td>${m.tinyCount.toLocaleString()}</td>
+    <td>${m.tinyCount.toLocaleString()} (${(m.tinyPixelShare*100).toFixed(2)}%)</td>
     <td style="${vs};font-weight:700">${m.verdict}</td>
    </tr>`;
  }).join('');
- return `<table><thead><tr><th>Biome ID</th><th>Name</th><th>Total Pixels</th><th>Components</th><th>Largest (share)</th><th>Tiny Components</th><th>Verdict</th></tr></thead><tbody>${rows}</tbody></table>`;
+ return `<table><thead><tr><th>Biome ID</th><th>Name</th><th>Total Pixels</th><th>Components</th><th>Largest (share)</th><th>Tiny Components (frag%)</th><th>Verdict</th></tr></thead><tbody>${rows}</tbody></table>`;
 })()}
 <h2>Sampled Biome Palette Report</h2>
 ${sampledBiomes.length ? `<table><thead><tr><th>Biome ID</th><th>Name</th><th>Color</th><th>Index</th><th>Sampled Coverage</th></tr></thead><tbody>${tableRows}</tbody></table>` : '<div class="empty">No sampled biome rows are loaded for the current run.</div>'}
