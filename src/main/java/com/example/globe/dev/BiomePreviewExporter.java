@@ -49,6 +49,8 @@ public final class BiomePreviewExporter {
     private static final int MASK_MATCH_COLOR = 0xF2F5F8;
     private static final int MASK_MISS_COLOR = 0x11161B;
     private static final long DEFAULT_BUDGET_MS = 10L;
+    private static final double SEAM_LAT_MIN_DEG = 32.0;
+    private static final double SEAM_LAT_MAX_DEG = 38.0;
     private static final int DEFAULT_INVENTORY_DISCOVERY_STEP = 32;
     private static final Identifier MANGROVE_SWAMP_BIOME_ID = Identifier.of("minecraft:mangrove_swamp");
     private static final DateTimeFormatter RUN_LABEL_TIMESTAMP = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss")
@@ -231,7 +233,7 @@ public final class BiomePreviewExporter {
                 chosenBandsImage.setRGB(imageX, imageZ, colorForBandIndex(chosenBandIndex));
                 landBandsImage.setRGB(imageX, imageZ, colorForBandIndex(landBandIndex));
                 double latDeg = latitudeDegreesForBlockZ(radiusBlocks, blockZ);
-                if (latDeg >= 32.0 && latDeg <= 38.0) {
+                if (latDeg >= SEAM_LAT_MIN_DEG && latDeg <= SEAM_LAT_MAX_DEG) {
                     SeamRowSummary row = seamRows.computeIfAbsent(blockZ, ignored -> new SeamRowSummary(latDeg));
                     row.addChosen(chosenBandIndex);
                     row.addLand(landBandIndex);
@@ -312,6 +314,14 @@ public final class BiomePreviewExporter {
             throw new IOException("PNG writer unavailable for land_bands");
         }
         writeSeamRowSummary(outputDir.resolve("seam_rows.txt"), seamRows);
+        writeSeamCropArtifacts(
+                outputDir,
+                images.get(Layer.BIOMES),
+                chosenBandsImage,
+                landBandsImage,
+                radiusBlocks,
+                zMin,
+                stepBlocks);
         if (emitBiomeIndex && biomeIndexImage != null) {
             biomeIndexPath = outputDir.resolve("biome_ids.png");
             boolean wrote = ImageIO.write(biomeIndexImage, "png", biomeIndexPath.toFile());
@@ -587,7 +597,7 @@ public final class BiomePreviewExporter {
                 chosenBandsImage.setRGB(imageX, imageZ, colorForBandIndex(chosenBandIndex));
                 landBandsImage.setRGB(imageX, imageZ, colorForBandIndex(landBandIndex));
                 double latDeg = latitudeDegreesForBlockZ(radiusBlocks, blockZ);
-                if (latDeg >= 32.0 && latDeg <= 38.0) {
+                if (latDeg >= SEAM_LAT_MIN_DEG && latDeg <= SEAM_LAT_MAX_DEG) {
                     SeamRowSummary row = seamRows.computeIfAbsent(blockZ, ignored -> new SeamRowSummary(latDeg));
                     row.addChosen(chosenBandIndex);
                     row.addLand(landBandIndex);
@@ -690,6 +700,14 @@ public final class BiomePreviewExporter {
                     throw new IOException("PNG writer unavailable for land_bands");
                 }
                 writeSeamRowSummary(outputDir.resolve("seam_rows.txt"), seamRows);
+                writeSeamCropArtifacts(
+                        outputDir,
+                        images.get(Layer.BIOMES),
+                        chosenBandsImage,
+                        landBandsImage,
+                        radiusBlocks,
+                        zMin,
+                        stepBlocks);
                 if (emitBiomeIndex && biomeIndexImage != null) {
                     biomeIndexPath = outputDir.resolve("biome_ids.png");
                     boolean wrote = ImageIO.write(biomeIndexImage, "png", biomeIndexPath.toFile());
@@ -1437,7 +1455,7 @@ public final class BiomePreviewExporter {
             return;
         }
         StringBuilder out = new StringBuilder();
-        out.append("seam_rows_window=32.0..38.0\n");
+        out.append(String.format(Locale.ROOT, "seam_rows_window=%.1f..%.1f%n", SEAM_LAT_MIN_DEG, SEAM_LAT_MAX_DEG));
         for (Map.Entry<Integer, SeamRowSummary> entry : seamRows.entrySet()) {
             int z = entry.getKey();
             SeamRowSummary row = entry.getValue();
@@ -1453,6 +1471,128 @@ public final class BiomePreviewExporter {
                     row.finalTemperate));
         }
         Files.writeString(summaryPath, out.toString());
+    }
+
+    private static void writeSeamCropArtifacts(Path outputDir,
+                                               BufferedImage biomesImage,
+                                               BufferedImage chosenBandsImage,
+                                               BufferedImage landBandsImage,
+                                               int radiusBlocks,
+                                               int zMin,
+                                               int stepBlocks) throws IOException {
+        if (chosenBandsImage == null || landBandsImage == null) {
+            return;
+        }
+        List<Integer> seamRows = collectSeamRowIndices(chosenBandsImage.getHeight(), radiusBlocks, zMin, stepBlocks);
+        BufferedImage seamCropBiomes = buildSeamCropImage(biomesImage, chosenBandsImage.getWidth(), seamRows);
+        BufferedImage seamCropChosen = buildSeamCropImage(chosenBandsImage, chosenBandsImage.getWidth(), seamRows);
+        BufferedImage seamCropLand = buildSeamCropImage(landBandsImage, landBandsImage.getWidth(), seamRows);
+
+        Path seamBiomesPath = outputDir.resolve("seam_crop_biomes.png");
+        if (!ImageIO.write(seamCropBiomes, "png", seamBiomesPath.toFile())) {
+            throw new IOException("PNG writer unavailable for seam_crop_biomes");
+        }
+        Path seamChosenPath = outputDir.resolve("seam_crop_chosen_bands.png");
+        if (!ImageIO.write(seamCropChosen, "png", seamChosenPath.toFile())) {
+            throw new IOException("PNG writer unavailable for seam_crop_chosen_bands");
+        }
+        Path seamLandPath = outputDir.resolve("seam_crop_land_bands.png");
+        if (!ImageIO.write(seamCropLand, "png", seamLandPath.toFile())) {
+            throw new IOException("PNG writer unavailable for seam_crop_land_bands");
+        }
+
+        writeSeamBandLegend(outputDir.resolve("seam_band_legend.txt"));
+        writeSeamRowMarkers(outputDir.resolve("seam_row_markers.txt"), radiusBlocks, zMin, stepBlocks, chosenBandsImage.getHeight());
+    }
+
+    private static List<Integer> collectSeamRowIndices(int imageHeight,
+                                                        int radiusBlocks,
+                                                        int zMin,
+                                                        int stepBlocks) {
+        List<Integer> rows = new ArrayList<>();
+        for (int imageZ = 0; imageZ < imageHeight; imageZ++) {
+            int blockZ = zMin + (imageZ * stepBlocks);
+            double latDeg = latitudeDegreesForBlockZ(radiusBlocks, blockZ);
+            if (latDeg >= SEAM_LAT_MIN_DEG && latDeg <= SEAM_LAT_MAX_DEG) {
+                rows.add(imageZ);
+            }
+        }
+        return rows;
+    }
+
+    private static BufferedImage buildSeamCropImage(BufferedImage sourceImage, int fallbackWidth, List<Integer> seamRows) {
+        int width = sourceImage != null ? sourceImage.getWidth() : Math.max(1, fallbackWidth);
+        int rowCount = Math.max(1, seamRows.size());
+        BufferedImage cropped = new BufferedImage(width, rowCount, BufferedImage.TYPE_INT_RGB);
+        if (sourceImage == null || seamRows.isEmpty()) {
+            return cropped;
+        }
+        int[] rowBuffer = new int[width];
+        for (int dstY = 0; dstY < seamRows.size(); dstY++) {
+            int srcY = seamRows.get(dstY);
+            sourceImage.getRGB(0, srcY, width, 1, rowBuffer, 0, width);
+            cropped.setRGB(0, dstY, width, 1, rowBuffer, 0, width);
+        }
+        return cropped;
+    }
+
+    private static void writeSeamBandLegend(Path legendPath) throws IOException {
+        String out = String.format(Locale.ROOT,
+                "seam_band_palette%n"
+                        + "tropical=#%06X%n"
+                        + "subtropical=#%06X%n"
+                        + "temperate=#%06X%n"
+                        + "subpolar=#%06X%n"
+                        + "polar=#%06X%n",
+                colorForBandIndex(0) & 0x00FFFFFF,
+                colorForBandIndex(1) & 0x00FFFFFF,
+                colorForBandIndex(2) & 0x00FFFFFF,
+                colorForBandIndex(3) & 0x00FFFFFF,
+                colorForBandIndex(4) & 0x00FFFFFF);
+        Files.writeString(legendPath, out);
+    }
+
+    private static void writeSeamRowMarkers(Path markerPath,
+                                            int radiusBlocks,
+                                            int zMin,
+                                            int stepBlocks,
+                                            int imageHeight) throws IOException {
+        double[] targets = new double[]{35.00, 35.28, 34.99};
+        StringBuilder out = new StringBuilder();
+        out.append(String.format(Locale.ROOT,
+                "seam_row_markers latWindow=%.1f..%.1f stepBlocks=%d%n",
+                SEAM_LAT_MIN_DEG,
+                SEAM_LAT_MAX_DEG,
+                stepBlocks));
+        for (double targetLat : targets) {
+            appendRowMarker(out, radiusBlocks, zMin, stepBlocks, imageHeight, targetLat, -1);
+            appendRowMarker(out, radiusBlocks, zMin, stepBlocks, imageHeight, targetLat, 1);
+        }
+        Files.writeString(markerPath, out.toString());
+    }
+
+    private static void appendRowMarker(StringBuilder out,
+                                        int radiusBlocks,
+                                        int zMin,
+                                        int stepBlocks,
+                                        int imageHeight,
+                                        double targetLat,
+                                        int hemiSign) {
+        int targetBlockZ = (int) Math.round((targetLat / 90.0) * radiusBlocks) * hemiSign;
+        int imageZ = Math.round((targetBlockZ - zMin) / (float) stepBlocks);
+        boolean inBounds = imageZ >= 0 && imageZ < imageHeight;
+        int snappedBlockZ = zMin + (imageZ * stepBlocks);
+        double snappedLat = latitudeDegreesForBlockZ(radiusBlocks, snappedBlockZ);
+        String hemi = hemiSign < 0 ? "north" : "south";
+        out.append(String.format(Locale.ROOT,
+                "targetLat=%.2f hemi=%s targetBlockZ=%d imageZ=%d inBounds=%s snappedBlockZ=%d snappedLat=%.3f%n",
+                targetLat,
+                hemi,
+                targetBlockZ,
+                imageZ,
+                inBounds ? "true" : "false",
+                snappedBlockZ,
+                snappedLat));
     }
 
     private static final class SeamRowSummary {
