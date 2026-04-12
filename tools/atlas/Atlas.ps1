@@ -213,14 +213,39 @@ if (-not $NoViewerOpen) {
   # --- Serve + open viewer (MVP) ---
   $viewerIndex = Join-Path $root "tools\atlas\viewer\index.html"
   if (Test-Path $viewerIndex) {
+    # Kill any stale Python Atlas server left over from a previous run so we
+    # consistently land on port 8000 and the browser does not end up on a stale tab.
+    Get-CimInstance Win32_Process -Filter "Name LIKE 'python%'" -ErrorAction SilentlyContinue |
+      Where-Object { $_.CommandLine -match 'viewer_api_server|http\.server' } |
+      ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+
     $port = 8000
     while (Test-NetConnection -ComputerName "127.0.0.1" -Port $port -InformationLevel Quiet) { $port++ }
 
-    # Serve the repo root so /run-headless/... URLs work
-    Push-Location $root
-    Start-Process -WindowStyle Hidden -FilePath "python" -ArgumentList @("-m","http.server",$port) | Out-Null
-    Pop-Location
+    # Start the API server (viewer + /api/* routes).
+    # viewer_api_server.py resolves paths from its own __file__ so cwd does not matter.
+    $apiServer = Join-Path $root "tools\atlas\viewer_api_server.py"
+    # Wrap script path in quotes — Start-Process splits on spaces in args without them.
+    Start-Process -WindowStyle Hidden -FilePath "python" -ArgumentList @("`"$apiServer`"","--port",$port) | Out-Null
 
-    Start-Process "http://127.0.0.1:$port/tools/atlas/viewer/index.html"
+    # Wait for the server to start listening before opening the browser.
+    # Python takes ~1-2 s to import + bind; opening the URL too early causes "refused to connect".
+    $deadline = (Get-Date).AddSeconds(12)
+    $ready = $false
+    while ((Get-Date) -lt $deadline) {
+      try {
+        $tc = New-Object System.Net.Sockets.TcpClient
+        $tc.Connect("127.0.0.1", $port)
+        $tc.Close()
+        $ready = $true
+        break
+      } catch {}
+      Start-Sleep -Milliseconds 200
+    }
+    if (-not $ready) {
+      Write-Warning "[atlas] viewer_api_server did not start in time on port $port"
+    }
+
+    Start-Process "http://127.0.0.1:$port/"
   }
 }

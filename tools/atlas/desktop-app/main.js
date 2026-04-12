@@ -380,15 +380,17 @@ function runAtlasGenerator(step = 16) {
   setGenerateStatus(true, `Generating atlas run (step ${step})…`);
 
   const childEnv = { ...process.env };
+  // Strip inherited JVM debug flags that pollute spawned Gradle/Java processes.
+  delete childEnv.JAVA_TOOL_OPTIONS;
+  delete childEnv._JAVA_OPTIONS;
   if (process.platform === "win32") {
     const windowsJdk = "C:\\Program Files\\Eclipse Adoptium\\jdk-21.0.10.7-hotspot";
     if (fs.existsSync(path.join(windowsJdk, "bin", "java.exe"))) {
+      // Set plain paths — no extra quotes. JAVA_HOME + ORG_GRADLE_JAVA_HOME are
+      // sufficient for Gradle to pick the right JDK without GRADLE_OPTS quoting
+      // issues (which split on the space in "Program Files").
       childEnv.JAVA_HOME = windowsJdk;
       childEnv.ORG_GRADLE_JAVA_HOME = windowsJdk;
-      const javaHomeProp = `-Dorg.gradle.java.home=\"${windowsJdk}\"`;
-      childEnv.GRADLE_OPTS = childEnv.GRADLE_OPTS
-        ? `${childEnv.GRADLE_OPTS} ${javaHomeProp}`
-        : javaHomeProp;
     }
   }
 
