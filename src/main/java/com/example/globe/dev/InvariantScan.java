@@ -20,8 +20,7 @@ public final class InvariantScan {
 
         byte[] clazz = readClassBytes("/com/example/globe/mixin/client/DownloadingTerrainScreenFirstLoadMessageMixin.class");
         String clazzText = new String(clazz, StandardCharsets.ISO_8859_1);
-        requireContains(clazzText, "Latitude is preparing your world for the first time.", errors, "first-load line 1 missing in mixin class");
-        requireContains(clazzText, "Subsequent loads will be much faster.", errors, "first-load line 2 missing in mixin class");
+        requireContains(clazzText, "Creating a new world may take a little longer.", errors, "first-load line 1 missing in mixin class");
 
         if (!errors.isEmpty()) {
             System.err.println("[Latitude invariant scan] FAIL");
@@ -30,8 +29,6 @@ public final class InvariantScan {
             }
             System.exit(1);
         }
-
-        System.out.println("[Latitude invariant scan] PASS");
     }
 
     private static String readFile(String path) throws IOException {

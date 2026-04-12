@@ -1,7 +1,7 @@
 package com.example.globe.mixin;
 
 import com.example.globe.GlobeMod;
-import com.example.globe.util.LatitudeMath;
+import com.example.globe.util.LatitudeBands;
 import com.example.globe.world.LatitudeBiomes;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.gen.feature.DefaultFeatureConfig;
@@ -32,11 +32,10 @@ public class FreezeTopLayerFeatureGuardMixin {
         int borderRadius = GlobeMod.BORDER_RADIUS;
         int activeRadius = LatitudeBiomes.getActiveRadiusBlocks();
         if (activeRadius > 0) borderRadius = activeRadius;
-        LatitudeMath.LatitudeZone zone = LatitudeMath.zoneForRadius(borderRadius, blockZ);
-        return zone == LatitudeMath.LatitudeZone.EQUATOR
-                || zone == LatitudeMath.LatitudeZone.TROPICAL
-                || zone == LatitudeMath.LatitudeZone.SUBTROPICAL
-                || zone == LatitudeMath.LatitudeZone.TEMPERATE;
+        LatitudeBands.Band band = LatitudeBands.fromAbsoluteLatitudeDeg(Math.abs((double) blockZ) * 90.0 / Math.max(1, borderRadius));
+        return band == LatitudeBands.Band.TROPICAL
+                || band == LatitudeBands.Band.SUBTROPICAL
+                || band == LatitudeBands.Band.TEMPERATE;
     }
 
     @Inject(method = "generate", at = @At("HEAD"), cancellable = true)
@@ -46,9 +45,10 @@ public class FreezeTopLayerFeatureGuardMixin {
             if (GUARD_LOG_COUNT.incrementAndGet() <= 10) {
                 LOGGER.warn("[FREEZE_GUARD] Blocked FreezeTopLayer at chunk origin x={} z={} band={}",
                         origin.getX(), origin.getZ(),
-                        LatitudeMath.zoneForRadius(
-                                LatitudeBiomes.getActiveRadiusBlocks() > 0 ? LatitudeBiomes.getActiveRadiusBlocks() : GlobeMod.BORDER_RADIUS,
-                                origin.getZ()));
+                        LatitudeBands.fromAbsoluteLatitudeDeg(
+                                Math.abs((double) origin.getZ()) * 90.0
+                                        / Math.max(1, LatitudeBiomes.getActiveRadiusBlocks() > 0 ? LatitudeBiomes.getActiveRadiusBlocks() : GlobeMod.BORDER_RADIUS)
+                        ).id());
             }
             cir.setReturnValue(false);
         }

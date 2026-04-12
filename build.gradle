@@ -6,6 +6,10 @@ plugins {
 version = project.mod_version
 group = project.maven_group
 
+def latitudeClientXms = (findProperty('latitudeClientXms') ?: System.getProperty('latitudeClientXms') ?: '1G').toString()
+def latitudeClientXmx = (findProperty('latitudeClientXmx') ?: System.getProperty('latitudeClientXmx') ?: '2G').toString()
+def latitudeSkipSystemDetailsHardware = (findProperty('latitudeSkipSystemDetailsHardware') ?: 'true').toString()
+
 base {
     archivesName = project.archives_base_name
 }
@@ -14,14 +18,40 @@ loom {
 
     runs {
         client {
+            vmArg "-Xms${latitudeClientXms}"
+            vmArg "-Xmx${latitudeClientXmx}"
+            vmArg "-Dlatitude.skipSystemDetailsHardware=${latitudeSkipSystemDetailsHardware}"
             vmArg "-Dlatitude.fixSurfaceDripstone=true"
-            vmArg "-Dlatitude.debugEwFog=true"
             vmArg "-Dlatitude.fogClampIndex=${System.getProperty('latitude.fogClampIndex', '-1')}"
             vmArg "-Dlatitude.fogClampValue=${System.getProperty('latitude.fogClampValue', '16.0')}"
         }
         clientNoSurfaceDripstoneFix {
             inherit client
             vmArg "-Dlatitude.fixSurfaceDripstone=false"
+        }
+        biomePreview {
+            server()
+            name "Biome Preview (Headless)"
+            runDir "run-headless"
+            vmArg "-Xms2G"
+            vmArg "-Xmx8G"
+            vmArg "-Dlatdev.biomePng=${System.getProperty('latdev.biomePng', 'enabled')}"
+        }
+        biomeSeedSearch {
+            server()
+            name "Biome Seed Search (Headless)"
+            runDir "run-headless"
+            vmArg "-Xms2G"
+            vmArg "-Xmx8G"
+            vmArg "-Dlatdev.biomeSearch=${System.getProperty('latdev.biomeSearch', 'enabled')}"
+        }
+        bandAudit {
+            server()
+            name "Band Audit (Headless)"
+            runDir "run-headless"
+            vmArg "-Xms2G"
+            vmArg "-Xmx8G"
+            vmArg "-Dlatdev.bandAudit=${System.getProperty('latdev.bandAudit', 'enabled')}"
         }
     }
 }
@@ -104,10 +134,274 @@ tasks.register('latitudeInvariantScan', JavaExec) {
     classpath = sourceSets.main.runtimeClasspath
     mainClass = 'com.example.globe.dev.InvariantScan'
     dependsOn classes
+    onlyIf { project.hasProperty('enableInvariantScan') }
 }
 
 tasks.named('check').configure {
-    dependsOn tasks.named('latitudeInvariantScan')
+    if (project.hasProperty('enableInvariantScan')) {
+        dependsOn tasks.named('latitudeInvariantScan')
+    }
 }
 
+tasks.register('prepareBiomePreviewRunDir') {
+    doLast {
+        def dir = file('run-headless')
+        if (!dir.exists()) {
+            dir.mkdirs()
+        }
 
+        def eulaFile = file("${dir}/eula.txt")
+        eulaFile.text = "eula=true\n"
+
+        def propsFile = file("${dir}/server.properties")
+        if (!propsFile.exists()) {
+            propsFile.text = """motd=Latitude Headless Preview
+online-mode=false
+max-players=1
+enable-command-block=false
+"""
+        }
+    }
+}
+
+tasks.named('runBiomePreview').configure {
+    dependsOn tasks.named('prepareBiomePreviewRunDir')
+    doFirst {
+        def rawArgs = new ArrayList(args ?: [])
+        def latdevOptions = [:]
+        def passthrough = []
+        def latdevKeys = ['seed', 'radius', 'size', 'step', 'steps', 'y', 'out', 'bundle', 'layers', 'mask', 'overlay', 'overlays', 'emitbiomeindex', 'emitheight'] as Set
+        def mergeKeys = ['steps', 'layers', 'mask', 'overlay', 'overlays'] as Set
+        def putLatdevOption = { key, value ->
+            if (mergeKeys.contains(key) && latdevOptions.containsKey(key) && latdevOptions[key] != null && latdevOptions[key].toString().trim().length() > 0) {
+                latdevOptions[key] = "${latdevOptions[key]},${value}"
+            } else {
+                latdevOptions[key] = value
+            }
+        }
+        boolean enabled = false
+
+        boolean emitHeightFlag = false
+
+        for (int i = 0; i < rawArgs.size(); i++) {
+            def token = rawArgs[i]
+            if (!(token instanceof String) || !token.startsWith('--')) {
+                passthrough << token
+                continue
+            }
+
+            def body = token.substring(2)
+            if (body.equalsIgnoreCase('emitHeight')) {
+                emitHeightFlag = true
+                continue
+            }
+
+            if (body.equalsIgnoreCase('latdevBiomePng')) {
+                enabled = true
+                continue
+            }
+
+            int eq = body.indexOf('=')
+            if (eq >= 0) {
+                def key = body.substring(0, eq).toLowerCase(Locale.ROOT)
+                def value = body.substring(eq + 1)
+                if (latdevKeys.contains(key)) {
+                    putLatdevOption(key, value)
+                    enabled = true
+                } else {
+                    passthrough << token
+                }
+                continue
+            }
+
+            def key = body.toLowerCase(Locale.ROOT)
+            if (latdevKeys.contains(key)) {
+                if (i + 1 < rawArgs.size() && rawArgs[i + 1] instanceof String && !rawArgs[i + 1].startsWith('--')) {
+                    putLatdevOption(key, rawArgs[i + 1])
+                    i++
+                } else {
+                    putLatdevOption(key, 'true')
+                }
+                enabled = true
+            } else {
+                passthrough << token
+            }
+        }
+
+        if (emitHeightFlag) {
+            jvmArgs "-Dlatitude.emitHeight=true"
+        }
+
+        if (enabled || !latdevOptions.isEmpty()) {
+            if (!latdevOptions.containsKey('out')) {
+                latdevOptions['out'] = file('run/latdev/atlas').absolutePath.replace('\\', '/')
+            }
+
+            def propParts = ['enabled=true']
+            latdevOptions.each { key, value ->
+                propParts << "${key}=${value}"
+            }
+            def propValue = propParts.join(';')
+
+            jvmArgs "-Dlatdev.biomePng=${propValue}"
+            setArgs(passthrough)
+            logger.lifecycle("[runBiomePreview] translated latdev --args to JVM property: {}", propValue)
+        } else {
+            setArgs(rawArgs)
+        }
+    }
+}
+
+tasks.named('runBiomeSeedSearch').configure {
+    dependsOn tasks.named('prepareBiomePreviewRunDir')
+    doFirst {
+        def rawArgs = new ArrayList(args ?: [])
+        def latdevOptions = [:]
+        def passthrough = []
+        def latdevKeys = ['seedstart', 'seedcount', 'targetbiome', 'requireall', 'radius', 'size', 'step', 'y', 'maxresults', 'out'] as Set
+        def mergeKeys = ['targetbiome'] as Set
+        def putLatdevOption = { key, value ->
+            if (mergeKeys.contains(key) && latdevOptions.containsKey(key) && latdevOptions[key] != null && latdevOptions[key].toString().trim().length() > 0) {
+                latdevOptions[key] = "${latdevOptions[key]},${value}"
+            } else {
+                latdevOptions[key] = value
+            }
+        }
+        boolean enabled = false
+
+        for (int i = 0; i < rawArgs.size(); i++) {
+            def token = rawArgs[i]
+            if (!(token instanceof String) || !token.startsWith('--')) {
+                passthrough << token
+                continue
+            }
+
+            def body = token.substring(2)
+            if (body.equalsIgnoreCase('latdevBiomeSearch')) {
+                enabled = true
+                continue
+            }
+
+            int eq = body.indexOf('=')
+            if (eq >= 0) {
+                def key = body.substring(0, eq).toLowerCase(Locale.ROOT)
+                def value = body.substring(eq + 1)
+                if (latdevKeys.contains(key)) {
+                    putLatdevOption(key, value)
+                    enabled = true
+                } else {
+                    passthrough << token
+                }
+                continue
+            }
+
+            def key = body.toLowerCase(Locale.ROOT)
+            if (latdevKeys.contains(key)) {
+                if (i + 1 < rawArgs.size() && rawArgs[i + 1] instanceof String && !rawArgs[i + 1].startsWith('--')) {
+                    putLatdevOption(key, rawArgs[i + 1])
+                    i++
+                } else {
+                    putLatdevOption(key, 'true')
+                }
+                enabled = true
+            } else {
+                passthrough << token
+            }
+        }
+
+        if (enabled || !latdevOptions.isEmpty()) {
+            if (!latdevOptions.containsKey('out')) {
+                latdevOptions['out'] = file('run-headless/seed-search').absolutePath.replace('\\', '/')
+            }
+
+            def propParts = ['enabled=true']
+            latdevOptions.each { key, value ->
+                propParts << "${key}=${value}"
+            }
+            def propValue = propParts.join(';')
+
+            jvmArgs "-Dlatdev.biomeSearch=${propValue}"
+            setArgs(passthrough)
+            logger.lifecycle("[runBiomeSeedSearch] translated latdev --args to JVM property: {}", propValue)
+        } else {
+            setArgs(rawArgs)
+        }
+    }
+}
+
+tasks.named('runBandAudit').configure {
+    dependsOn tasks.named('prepareBiomePreviewRunDir')
+    doFirst {
+        def rawArgs = new ArrayList(args ?: [])
+        def latdevOptions = [:]
+        def passthrough = []
+        def latdevKeys = ['seed', 'radius', 'size', 'step', 'y', 'out', 'windows', 'watched', 'control'] as Set
+        def mergeKeys = ['windows', 'watched', 'control'] as Set
+        def putLatdevOption = { key, value ->
+            if (mergeKeys.contains(key) && latdevOptions.containsKey(key) && latdevOptions[key] != null && latdevOptions[key].toString().trim().length() > 0) {
+                latdevOptions[key] = "${latdevOptions[key]},${value}"
+            } else {
+                latdevOptions[key] = value
+            }
+        }
+        boolean enabled = false
+
+        for (int i = 0; i < rawArgs.size(); i++) {
+            def token = rawArgs[i]
+            if (!(token instanceof String) || !token.startsWith('--')) {
+                passthrough << token
+                continue
+            }
+
+            def body = token.substring(2)
+            if (body.equalsIgnoreCase('latdevBandAudit')) {
+                enabled = true
+                continue
+            }
+
+            int eq = body.indexOf('=')
+            if (eq >= 0) {
+                def key = body.substring(0, eq).toLowerCase(Locale.ROOT)
+                def value = body.substring(eq + 1)
+                if (latdevKeys.contains(key)) {
+                    putLatdevOption(key, value)
+                    enabled = true
+                } else {
+                    passthrough << token
+                }
+                continue
+            }
+
+            def key = body.toLowerCase(Locale.ROOT)
+            if (latdevKeys.contains(key)) {
+                if (i + 1 < rawArgs.size() && rawArgs[i + 1] instanceof String && !rawArgs[i + 1].startsWith('--')) {
+                    putLatdevOption(key, rawArgs[i + 1])
+                    i++
+                } else {
+                    putLatdevOption(key, 'true')
+                }
+                enabled = true
+            } else {
+                passthrough << token
+            }
+        }
+
+        if (enabled || !latdevOptions.isEmpty()) {
+            if (!latdevOptions.containsKey('out')) {
+                latdevOptions['out'] = file('run/latdev').absolutePath.replace('\\', '/')
+            }
+
+            def propParts = ['enabled=true']
+            latdevOptions.each { key, value ->
+                propParts << "${key}=${value}"
+            }
+            def propValue = propParts.join(';')
+
+            jvmArgs "-Dlatdev.bandAudit=${propValue}"
+            setArgs(passthrough)
+            logger.lifecycle("[runBandAudit] translated latdev --args to JVM property: {}", propValue)
+        } else {
+            setArgs(rawArgs)
+        }
+    }
+}

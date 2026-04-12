@@ -38,8 +38,7 @@ public final class ZoneEntryNotifier {
 
     private static String zoneDisplayName(String zoneKey) {
         return switch (zoneKey) {
-            case "EQUATOR" -> "Equator";
-            case "TROPICAL" -> "Tropics";
+            case "EQUATOR", "TROPICAL" -> "Tropics";
             case "SUBTROPICAL" -> "Subtropics";
             case "TEMPERATE" -> "Temperate";
             case "SUBPOLAR" -> "Subpolar";

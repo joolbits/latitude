@@ -1,5 +1,6 @@
 package com.example.globe;
 
+import com.example.globe.util.LatitudeBands;
 import com.example.globe.util.LatitudeMath;
 import com.example.globe.world.LatitudeBiomes;
 import com.mojang.brigadier.CommandDispatcher;
@@ -27,39 +28,41 @@ public final class LatitudeDevCommands {
                                 CommandManager.RegistrationEnvironment environment) {
 
         dispatcher.register(CommandManager.literal("lattp")
-            .then(CommandManager.literal("equator").executes(ctx -> tp(ctx, "EQUATOR", +1)))
-            .then(CommandManager.literal("tropics").executes(ctx -> tp(ctx, "TROPICAL", +1)))
-            .then(CommandManager.literal("subtropics").executes(ctx -> tp(ctx, "SUBTROPICAL", +1)))
-            .then(CommandManager.literal("temperate").executes(ctx -> tp(ctx, "TEMPERATE", +1)))
-            .then(CommandManager.literal("subpolar").executes(ctx -> tp(ctx, "SUBPOLAR", +1)))
-            .then(CommandManager.literal("polar").executes(ctx -> tp(ctx, "POLAR", +1)))
+            .then(CommandManager.literal("tropical").executes(ctx -> tp(ctx, LatitudeBands.Band.TROPICAL, +1)))
+            .then(CommandManager.literal("tropics").executes(ctx -> tp(ctx, LatitudeBands.Band.TROPICAL, +1)))
+            .then(CommandManager.literal("subtropical").executes(ctx -> tp(ctx, LatitudeBands.Band.SUBTROPICAL, +1)))
+            .then(CommandManager.literal("subtropics").executes(ctx -> tp(ctx, LatitudeBands.Band.SUBTROPICAL, +1)))
+            .then(CommandManager.literal("temperate").executes(ctx -> tp(ctx, LatitudeBands.Band.TEMPERATE, +1)))
+            .then(CommandManager.literal("subpolar").executes(ctx -> tp(ctx, LatitudeBands.Band.SUBPOLAR, +1)))
+            .then(CommandManager.literal("polar").executes(ctx -> tp(ctx, LatitudeBands.Band.POLAR, +1)))
         );
 
         dispatcher.register(CommandManager.literal("lattps")
-            .then(CommandManager.literal("equator").executes(ctx -> tp(ctx, "EQUATOR", -1)))
-            .then(CommandManager.literal("tropics").executes(ctx -> tp(ctx, "TROPICAL", -1)))
-            .then(CommandManager.literal("subtropics").executes(ctx -> tp(ctx, "SUBTROPICAL", -1)))
-            .then(CommandManager.literal("temperate").executes(ctx -> tp(ctx, "TEMPERATE", -1)))
-            .then(CommandManager.literal("subpolar").executes(ctx -> tp(ctx, "SUBPOLAR", -1)))
-            .then(CommandManager.literal("polar").executes(ctx -> tp(ctx, "POLAR", -1)))
+            .then(CommandManager.literal("tropical").executes(ctx -> tp(ctx, LatitudeBands.Band.TROPICAL, -1)))
+            .then(CommandManager.literal("tropics").executes(ctx -> tp(ctx, LatitudeBands.Band.TROPICAL, -1)))
+            .then(CommandManager.literal("subtropical").executes(ctx -> tp(ctx, LatitudeBands.Band.SUBTROPICAL, -1)))
+            .then(CommandManager.literal("subtropics").executes(ctx -> tp(ctx, LatitudeBands.Band.SUBTROPICAL, -1)))
+            .then(CommandManager.literal("temperate").executes(ctx -> tp(ctx, LatitudeBands.Band.TEMPERATE, -1)))
+            .then(CommandManager.literal("subpolar").executes(ctx -> tp(ctx, LatitudeBands.Band.SUBPOLAR, -1)))
+            .then(CommandManager.literal("polar").executes(ctx -> tp(ctx, LatitudeBands.Band.POLAR, -1)))
         );
     }
 
-    private static int tp(CommandContext<ServerCommandSource> ctx, String zoneKey, int hemiSign) {
+    private static int tp(CommandContext<ServerCommandSource> ctx, LatitudeBands.Band band, int hemiSign) {
         try {
             ServerCommandSource source = ctx.getSource();
             ServerPlayerEntity player = source.getPlayerOrThrow();
             ServerWorld world = source.getWorld();
 
             int radius = getAuthoritativeRadius(world);
-            double frac = LatitudeMath.spawnFracForZoneKey(zoneKey);
-            int targetZ = (int) Math.round(radius * frac) * hemiSign;
+            double targetDeg = (band.lowDeg() + band.highDeg()) * 0.5;
+            int targetZ = LatitudeMath.zForLatitudeDeg(targetDeg, radius) * hemiSign;
 
-            source.sendFeedback(() -> Text.literal("[lattp] zone=" + zoneKey
+            source.sendFeedback(() -> Text.literal("[lattp] band=" + band.id()
                 + " targetZ=" + targetZ
                 + " hemi=" + (hemiSign > 0 ? "N" : "S")
                 + " activeRadius=" + radius
-                + " frac=" + String.format(Locale.ROOT, "%.3f", frac)
+                + " deg=" + String.format(Locale.ROOT, "%.2f", targetDeg)
             ), false);
 
             BlockPos safe = findSafeLand(world, targetZ);

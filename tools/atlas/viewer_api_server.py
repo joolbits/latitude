@@ -1,0 +1,917 @@
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import shutil
+import subprocess
+import threading
+from collections import Counter
+from datetime import datetime, timezone
+from http import HTTPStatus
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from urllib.parse import parse_qs, unquote, urlparse
+
+from PIL import Image
+
+ROOT = Path(__file__).resolve().parents[2]
+RUNS_ROOT = ROOT / "run-headless" / "latdev" / "atlas-runs"
+VIEWER_ROOT = ROOT / "tools" / "atlas" / "viewer"
+ATLAS_PS1 = ROOT / "tools" / "atlas" / "Atlas.ps1"
+PALETTE_AUTHORITY_PATH = ROOT / "tools" / "atlas" / "palette_authority.json"
+COARSE_RUGGEDNESS_STEP = 64
+COARSE_RUGGEDNESS_FILE = f"step{COARSE_RUGGEDNESS_STEP}_ruggedness.png"
+
+STEP_RE = re.compile(r"step(\d+)", re.IGNORECASE)
+HEX_RE = re.compile(r"^#?([0-9a-fA-F]{6})$")
+
+def _load_palette_overrides() -> dict[str, list[int]]:
+    if not PALETTE_AUTHORITY_PATH.exists():
+        return {}
+    try:
+        data = json.loads(PALETTE_AUTHORITY_PATH.read_text(encoding="utf-8"))
+        biomes = data.get("biomes", {}) if isinstance(data, dict) else {}
+        out: dict[str, list[int]] = {}
+        for key, val in biomes.items():
+            if not isinstance(val, str):
+                continue
+            rgb = hex_to_rgb(val)
+            if rgb:
+                out[key.lower()] = rgb
+        return out
+    except Exception:
+        return {}
+
+# Fallback name mapping for legacy runs that only have biome PNG + txt.
+# These RGB values are the canonical stable colors emitted by BiomePreviewExporter.
+CANONICAL_COLOR_TO_BIOME_ID = {
+    "47,111,168": "minecraft:ocean",
+    "230,244,255": "minecraft:snowy_slopes",
+    "143,191,99": "minecraft:plains",
+    "46,138,87": "minecraft:jungle",
+    "211,155,77": "minecraft:desert",
+    "235,72,63": "minecraft:beach",
+    "74,123,77": "minecraft:forest",
+    "60,107,67": "minecraft:swamp",
+    "122,122,122": "minecraft:stony_shore",
+    "232,225,204": "minecraft:snowy_beach",
+    "231,215,165": "minecraft:beach",
+    "189,182,74": "minecraft:savanna",
+    "142,59,204": "minecraft:mushroom_fields",
+    "58,240,218": "minecraft:warm_ocean",
+    "154,154,154": "minecraft:stony_shore",
+}
+
+PALETTE_OVERRIDES = _load_palette_overrides()
+DEFAULT_DISPLAY_COLOR_OVERRIDE = {
+    "minecraft:beach": [231, 215, 165],       # #E7D7A5 sandy tan
+    "minecraft:snowy_beach": [233, 225, 204], # #E9E1CC off-white sand
+    "minecraft:stony_shore": [154, 154, 154], # #9A9A9A stone gray
+}
+
+def display_color_for(biome_id: str, fallback_rgb: list[int] | tuple[int, int, int]) -> list[int]:
+    key = str(biome_id or "").lower()
+    if key in PALETTE_OVERRIDES:
+        return list(PALETTE_OVERRIDES[key])
+    short = key.split(":", 1)[1] if ":" in key else key
+    if short in PALETTE_OVERRIDES:
+        return list(PALETTE_OVERRIDES[short])
+    if key in DEFAULT_DISPLAY_COLOR_OVERRIDE:
+        return list(DEFAULT_DISPLAY_COLOR_OVERRIDE[key])
+    return list(fallback_rgb)
+
+GENERATION_LOCK = threading.Lock()
+GENERATION_PROC: subprocess.Popen | None = None
+GENERATION_STATE: dict[str, object | None] = {
+    "active": False,
+    "step": None,
+    "seed": None,
+    "size": None,
+    "started_at": None,
+    "finished_at": None,
+    "exit_code": None,
+    "message": "",
+}
+
+
+def utc_now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
+def generation_status() -> dict:
+    with GENERATION_LOCK:
+        return {
+            "active": bool(GENERATION_STATE.get("active")),
+            "step": GENERATION_STATE.get("step"),
+            "seed": GENERATION_STATE.get("seed"),
+            "size": GENERATION_STATE.get("size"),
+            "started_at": GENERATION_STATE.get("started_at"),
+            "finished_at": GENERATION_STATE.get("finished_at"),
+            "exit_code": GENERATION_STATE.get("exit_code"),
+            "message": GENERATION_STATE.get("message") or "",
+        }
+
+
+def _watch_generation(proc: subprocess.Popen, step: int, seed: int | None, size: str | None):
+    global GENERATION_PROC
+    code = proc.wait()
+    with GENERATION_LOCK:
+        if GENERATION_PROC is proc:
+            GENERATION_PROC = None
+        GENERATION_STATE["active"] = False
+        GENERATION_STATE["finished_at"] = utc_now_iso()
+        GENERATION_STATE["exit_code"] = int(code)
+        if code == 0:
+            GENERATION_STATE["message"] = generation_message("Generation complete", step, seed, size)
+        else:
+            GENERATION_STATE["message"] = generation_message(f"Generation failed (exit {code})", step, seed, size)
+
+
+def _watch_ruggedness_generation(proc: subprocess.Popen, run_id: str):
+    global GENERATION_PROC
+    code = proc.wait()
+    with GENERATION_LOCK:
+        if GENERATION_PROC is proc:
+            GENERATION_PROC = None
+        GENERATION_STATE["active"] = False
+        GENERATION_STATE["finished_at"] = utc_now_iso()
+        GENERATION_STATE["exit_code"] = int(code)
+        if code == 0:
+            GENERATION_STATE["message"] = f"Ruggedness generation complete for run {run_id}."
+        else:
+            GENERATION_STATE["message"] = f"Ruggedness generation failed (exit {code}) for run {run_id}."
+
+
+def generation_message(prefix: str, step: int, seed: int | None, size: str | None) -> str:
+    parts = [prefix, f"(step {step})"]
+    if size:
+        parts.append(f"[size {size}]")
+    if seed is not None:
+        parts.append(f"[seed {seed}]")
+    return " ".join(parts)
+
+
+def parse_java_long(raw) -> int | None:
+    if raw is None:
+        return None
+    text = str(raw).strip()
+    if not text:
+        return None
+    value = int(text, 10)
+    if value < -(2**63) or value > (2**63 - 1):
+        raise ValueError("seed must be a signed 64-bit integer")
+    return value
+
+
+def resolve_ruggedness_file(run_dir: Path, layer: str, step: int | None = None) -> Path | None:
+    # 0) When an explicit step is requested, treat it as authoritative — no fallback.
+    # Do NOT use `layer` in this branch: layer="step64" would match step64_ruggedness.png
+    # even when step=16 was asked, reintroducing the silent-serving bug.
+    if step is not None:
+        specific = run_dir / f"step{step}_ruggedness.png"
+        return specific if specific.exists() else None
+
+    # 1) Exact layer match for current selection (legacy path).
+    direct = run_dir / f"{layer}_ruggedness.png"
+    if direct.exists():
+        return direct
+
+    rugged_files = sorted(run_dir.glob("*_ruggedness.png"))
+    if not rugged_files:
+        return None
+
+    # 2) If only one ruggedness image exists, use it.
+    if len(rugged_files) == 1:
+        return rugged_files[0]
+
+    # 3) If multiple exist, prefer desktop coarse preview authority.
+    coarse = run_dir / COARSE_RUGGEDNESS_FILE
+    if coarse.exists():
+        return coarse
+
+    # 4) Deterministic final fallback.
+    return rugged_files[0]
+
+
+def start_generation(step: int, seed: int | None = None, size: str | None = None) -> tuple[bool, dict]:
+    global GENERATION_PROC
+
+    if step <= 0 or step > 4096:
+        raise ValueError("step must be in range 1..4096")
+    if not ATLAS_PS1.exists():
+        raise FileNotFoundError(f"Atlas launcher not found: {ATLAS_PS1}")
+
+    with GENERATION_LOCK:
+        if GENERATION_STATE.get("active"):
+            return (
+                False,
+                {
+                    "active": bool(GENERATION_STATE.get("active")),
+                    "step": GENERATION_STATE.get("step"),
+                    "seed": GENERATION_STATE.get("seed"),
+                    "size": GENERATION_STATE.get("size"),
+                    "started_at": GENERATION_STATE.get("started_at"),
+                    "finished_at": GENERATION_STATE.get("finished_at"),
+                    "exit_code": GENERATION_STATE.get("exit_code"),
+                    "message": GENERATION_STATE.get("message") or "",
+                },
+            )
+
+        powershell = shutil.which("powershell.exe") or shutil.which("pwsh") or shutil.which("powershell")
+        if not powershell:
+            raise RuntimeError("PowerShell not found on PATH.")
+
+        creationflags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+        command = [powershell, "-ExecutionPolicy", "Bypass", "-File", str(ATLAS_PS1), "-Step", str(step), "-NoViewerOpen"]
+        if size:
+            command.extend(["-Size", str(size)])
+        if seed is not None:
+            command.extend(["-Seed", str(seed)])
+        proc = subprocess.Popen(
+            command,
+            cwd=str(ROOT),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=creationflags,
+        )
+        GENERATION_PROC = proc
+        GENERATION_STATE["active"] = True
+        GENERATION_STATE["step"] = int(step)
+        GENERATION_STATE["seed"] = seed
+        GENERATION_STATE["size"] = size
+        GENERATION_STATE["started_at"] = utc_now_iso()
+        GENERATION_STATE["finished_at"] = None
+        GENERATION_STATE["exit_code"] = None
+        GENERATION_STATE["message"] = generation_message("Generating atlas run", step, seed, size)
+
+    watcher = threading.Thread(target=_watch_generation, args=(proc, int(step), seed, size), daemon=True)
+    watcher.start()
+    return True, generation_status()
+
+
+def start_ruggedness_generation(run_id: str, step: int = COARSE_RUGGEDNESS_STEP) -> tuple[bool, dict]:
+    global GENERATION_PROC
+
+    run_dir = run_path(run_id)
+    if not run_dir.exists():
+        raise FileNotFoundError(f"Run not found: {run_id}")
+
+    # Skip generation if the requested step's file already exists.
+    if (run_dir / f"step{step}_ruggedness.png").exists():
+        return False, {"already_exists": True, "message": "coarse ruggedness preview already present"}
+
+    if not ATLAS_PS1.exists():
+        raise FileNotFoundError(f"Atlas launcher not found: {ATLAS_PS1}")
+
+    with GENERATION_LOCK:
+        if GENERATION_STATE.get("active"):
+            # Another job is running; return current state so caller polls.
+            return False, generation_status()
+
+        powershell = shutil.which("powershell.exe") or shutil.which("pwsh") or shutil.which("powershell")
+        if not powershell:
+            raise RuntimeError("PowerShell not found on PATH.")
+
+        creationflags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+        command = [
+            powershell, "-ExecutionPolicy", "Bypass", "-File", str(ATLAS_PS1),
+            "-GenerateRuggednessOnly", "-Run", run_id,
+            "-RuggednessPreviewStep", str(step),
+            "-NoViewerOpen",
+        ]
+        proc = subprocess.Popen(
+            command,
+            cwd=str(ROOT),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=creationflags,
+        )
+        GENERATION_PROC = proc
+        GENERATION_STATE["active"] = True
+        GENERATION_STATE["step"] = None
+        GENERATION_STATE["seed"] = None
+        GENERATION_STATE["size"] = None
+        GENERATION_STATE["started_at"] = utc_now_iso()
+        GENERATION_STATE["finished_at"] = None
+        GENERATION_STATE["exit_code"] = None
+        GENERATION_STATE["message"] = (
+            f"Generating terrain ruggedness (coarse preview, step {step}) "
+            f"for run {run_id}\u2026 this may take a few minutes."
+        )
+
+    watcher = threading.Thread(
+        target=_watch_ruggedness_generation, args=(proc, run_id), daemon=True
+    )
+    watcher.start()
+    return True, generation_status()
+
+
+def run_path(run_id: str) -> Path:
+    return RUNS_ROOT / run_id
+
+
+def _validate_run_id(run_id: str) -> Path | None:
+    """Return the run directory Path if run_id is safe and exists, else None."""
+    try:
+        run_dir = (RUNS_ROOT / run_id).resolve()
+        run_dir.relative_to(RUNS_ROOT.resolve())  # raises ValueError if outside root
+    except (ValueError, Exception):
+        return None
+    return run_dir if run_dir.exists() else None
+
+
+def step_num(layer_id: str) -> int:
+    m = STEP_RE.search(layer_id or "")
+    return int(m.group(1)) if m else 10**9
+
+
+def hex_to_rgb(value: str) -> list[int]:
+    m = HEX_RE.match(value or "")
+    if not m:
+        return [138, 138, 138]
+    n = int(m.group(1), 16)
+    return [(n >> 16) & 0xFF, (n >> 8) & 0xFF, n & 0xFF]
+
+
+def biome_name_from_id(biome_id: str) -> str:
+    raw = (biome_id or "unknown").split(":")[-1].replace("_", " ").strip()
+    return raw.title() if raw else "Unknown"
+
+
+def rgb_key(rgb: tuple[int, int, int]) -> str:
+    return f"{rgb[0]},{rgb[1]},{rgb[2]}"
+
+
+def read_json_file(path: Path):
+    text = path.read_text(encoding="utf-8-sig")
+    if text.startswith("\ufeff"):
+        text = text.lstrip("\ufeff")
+    return json.loads(text)
+
+
+def _collect_image_color_stats(image_path: Path) -> tuple[Counter[tuple[int, int, int]], int]:
+    counts: Counter[tuple[int, int, int]] = Counter()
+    with Image.open(image_path).convert("RGB") as img:
+        data = img.getdata()
+        counts.update(data)
+    total = sum(counts.values())
+    return counts, total
+
+
+def _derive_biomes_from_image_only(image_path: Path) -> list[dict]:
+    color_counts, total = _collect_image_color_stats(image_path)
+    out = []
+    for (r, g, b), count in color_counts.most_common():
+        key = rgb_key((r, g, b))
+        mapped = CANONICAL_COLOR_TO_BIOME_ID.get(key)
+        biome_id = mapped if mapped else f"color:{r:02x}{g:02x}{b:02x}"
+        biome_name = biome_name_from_id(biome_id) if mapped else f"Color {r:02X}{g:02X}{b:02X}"
+        display_color = display_color_for(biome_id, (r, g, b))
+        out.append(
+            {
+                "id": biome_id,
+                "name": biome_name,
+                "color": display_color,
+                "pct": round((count * 100.0) / max(total, 1), 4),
+            }
+        )
+    return out
+
+
+def _biomes_from_palette_and_ids(
+    image_path: Path,
+    ids_path: Path,
+    palette_entries: list[dict],
+) -> list[dict]:
+    # Build exact index -> RGB mapping from the image + ids grid so returned colors
+    # always match displayed pixels byte-for-byte.
+    idx_to_color_counts: dict[int, Counter[tuple[int, int, int]]] = {}
+    idx_counts: Counter[int] = Counter()
+
+    with Image.open(image_path).convert("RGB") as biomes_img, Image.open(ids_path).convert("RGB") as ids_img:
+        if biomes_img.size != ids_img.size:
+            return []
+        for biome_rgb, idx_rgb in zip(biomes_img.getdata(), ids_img.getdata()):
+            r, g, b = idx_rgb
+            idx = r if (r == g == b) else ((r & 0xFF) | ((g & 0xFF) << 8) | ((b & 0xFF) << 16))
+            idx_counts[idx] += 1
+            if idx not in idx_to_color_counts:
+                idx_to_color_counts[idx] = Counter()
+            idx_to_color_counts[idx][biome_rgb] += 1
+
+    total = sum(idx_counts.values()) or 1
+    out: list[dict] = []
+
+    for e in palette_entries:
+        if not isinstance(e, dict):
+            continue
+        idx = e.get("index")
+        biome_id = e.get("biome_id")
+        if not isinstance(idx, int) or not isinstance(biome_id, str):
+            continue
+        count = idx_counts.get(idx, 0)
+        dominant_rgb = (138, 138, 138)
+        if idx in idx_to_color_counts and idx_to_color_counts[idx]:
+            dominant_rgb = idx_to_color_counts[idx].most_common(1)[0][0]
+        if count <= 0:
+            continue
+        display_color = e.get("displayColor") or e.get("display_color")
+        rgb = hex_to_rgb(display_color) if isinstance(display_color, str) else None
+        if not rgb:
+            rgb = [dominant_rgb[0], dominant_rgb[1], dominant_rgb[2]]
+        rgb = display_color_for(biome_id, rgb)
+        row = {
+            "index": idx,
+            "id": biome_id,
+            "name": biome_name_from_id(biome_id),
+            "color": rgb,
+            "pct": round((count * 100.0) / total, 4),
+        }
+        out.append(row)
+    out.sort(key=lambda b: b.get("pct", 0.0), reverse=True)
+    return out
+
+
+def layers_for_run(run_dir: Path) -> list[str]:
+    layers: set[str] = set()
+    for f in run_dir.glob("*.png"):
+        name = f.name
+        m = re.match(r"^(step\d+)_biomes\.png$", name, re.IGNORECASE)
+        if m:
+            layers.add(m.group(1).lower())
+            continue
+        m2 = re.match(r"^biomes_.*_(step\d+)\.png$", name, re.IGNORECASE)
+        if m2:
+            layers.add(m2.group(1).lower())
+    return sorted(layers, key=step_num)
+
+
+def layer_file(run_dir: Path, layer: str, suffix: str) -> Path | None:
+    direct = run_dir / f"{layer}_{suffix}"
+    if direct.exists():
+        return direct
+
+    if suffix == "world_biome_inventory.json":
+        alt = run_dir / f"world_biome_inventory_{layer}.json"
+        if alt.exists():
+            return alt
+
+    if suffix == "biomes.png":
+        legacy = next(iter(sorted(run_dir.glob(f"biomes_*_{layer}.png"))), None)
+        if legacy:
+            return legacy
+    if suffix == "biome_palette.json":
+        legacy = next(iter(sorted(run_dir.glob(f"*{layer}*biome_palette.json"))), None)
+        if legacy:
+            return legacy
+    if suffix == "biome_ids.png":
+        legacy = next(iter(sorted(run_dir.glob(f"*{layer}*biome_ids.png"))), None)
+        if legacy:
+            return legacy
+
+    return None
+
+
+class Handler(BaseHTTPRequestHandler):
+    server_version = "AtlasViewerAPI/1.0"
+
+    def _send_json(self, payload, status=HTTPStatus.OK):
+        body = json.dumps(payload).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _send_file(self, path: Path, content_type: str):
+        if not path.exists() or not path.is_file():
+            self._send_text("not found", HTTPStatus.NOT_FOUND)
+            return
+
+        data = path.read_bytes()
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
+        self.end_headers()
+        self.wfile.write(data)
+
+    def _send_text(self, text: str, status=HTTPStatus.OK):
+        data = text.encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "text/plain; charset=utf-8")
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
+        self.end_headers()
+        self.wfile.write(data)
+
+    def do_OPTIONS(self):
+        self.send_response(HTTPStatus.NO_CONTENT)
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
+        self.end_headers()
+
+    def do_POST(self):
+        parsed = urlparse(self.path)
+        path = unquote(parsed.path)
+
+        if path == "/api/generate":
+            self.handle_generate()
+            return
+
+        if path == "/api/runs/bulk-delete":
+            self.handle_bulk_delete()
+            return
+
+        if path == "/api/runs/delete-all":
+            self.handle_delete_all()
+            return
+
+        m = re.match(r"^/api/runs/([^/]+)/generate-ruggedness$", path)
+        if m:
+            self.handle_generate_ruggedness(m.group(1))
+            return
+
+        self._send_text("not found", HTTPStatus.NOT_FOUND)
+
+    def do_DELETE(self):
+        parsed = urlparse(self.path)
+        path = unquote(parsed.path)
+
+        m = re.match(r"^/api/runs/([^/]+)$", path)
+        if m:
+            self.handle_delete_run(m.group(1))
+            return
+
+        self._send_text("not found", HTTPStatus.NOT_FOUND)
+
+    def do_GET(self):
+        parsed = urlparse(self.path)
+        path = unquote(parsed.path)
+
+        # API routes
+        if path == "/api/runs":
+            self.handle_runs()
+            return
+
+        if path == "/api/generation-status":
+            self.handle_generation_status()
+            return
+
+        m = re.match(r"^/api/runs/([^/]+)/manifest$", path)
+        if m:
+            self.handle_manifest(m.group(1))
+            return
+
+        m = re.match(r"^/api/runs/([^/]+)/layers$", path)
+        if m:
+            self.handle_layers(m.group(1))
+            return
+
+        m = re.match(r"^/api/runs/([^/]+)/layers/([^/]+)/biomes$", path)
+        if m:
+            self.handle_biomes(m.group(1), m.group(2))
+            return
+
+        m = re.match(r"^/api/runs/([^/]+)/layers/([^/]+)/inventory$", path)
+        if m:
+            self.handle_inventory(m.group(1), m.group(2))
+            return
+
+        m = re.match(r"^/api/runs/([^/]+)/layers/([^/]+)/legend$", path)
+        if m:
+            self.handle_legend(m.group(1), m.group(2))
+            return
+
+        m = re.match(r"^/api/runs/([^/]+)/layers/([^/]+)/image$", path)
+        if m:
+            self.handle_image(m.group(1), m.group(2))
+            return
+
+        m = re.match(r"^/api/runs/([^/]+)/layers/([^/]+)/ids-image$", path)
+        if m:
+            self.handle_ids_image(m.group(1), m.group(2))
+            return
+
+        m = re.match(r"^/api/runs/([^/]+)/layers/([^/]+)/ruggedness-image$", path)
+        if m:
+            self.handle_ruggedness_image(m.group(1), m.group(2))
+            return
+
+        # static viewer
+        if path == "/":
+            static_path = VIEWER_ROOT / "index.html"
+        else:
+            static_path = (VIEWER_ROOT / path.lstrip("/")).resolve()
+            if VIEWER_ROOT.resolve() not in static_path.parents and static_path != VIEWER_ROOT.resolve():
+                self._send_text("forbidden", HTTPStatus.FORBIDDEN)
+                return
+
+        if static_path.suffix.lower() == ".html":
+            ctype = "text/html; charset=utf-8"
+        elif static_path.suffix.lower() == ".js":
+            ctype = "application/javascript; charset=utf-8"
+        elif static_path.suffix.lower() == ".css":
+            ctype = "text/css; charset=utf-8"
+        else:
+            ctype = "application/octet-stream"
+        self._send_file(static_path, ctype)
+
+    def handle_runs(self):
+        if not RUNS_ROOT.exists():
+            self._send_json([])
+            return
+        runs = [d.name for d in RUNS_ROOT.iterdir() if d.is_dir()]
+        runs.sort(reverse=True)
+        self._send_json(runs)
+
+    def handle_delete_run(self, run: str):
+        if GENERATION_STATE.get("active"):
+            self._send_json({"error": "generation in progress"}, HTTPStatus.CONFLICT)
+            return
+        run_dir = _validate_run_id(run)
+        if run_dir is None:
+            self._send_text("run not found", HTTPStatus.NOT_FOUND)
+            return
+        shutil.rmtree(run_dir)
+        self._send_json({"deleted": run})
+
+    def handle_bulk_delete(self):
+        length = int(self.headers.get("Content-Length", "0") or "0")
+        raw = self.rfile.read(length) if length > 0 else b"{}"
+        try:
+            payload = json.loads(raw.decode("utf-8")) if raw else {}
+        except json.JSONDecodeError:
+            payload = {}
+        run_ids = payload.get("runs", [])
+        if not isinstance(run_ids, list):
+            self._send_text("invalid request body", HTTPStatus.BAD_REQUEST)
+            return
+        if GENERATION_STATE.get("active"):
+            self._send_json({"error": "generation in progress"}, HTTPStatus.CONFLICT)
+            return
+        deleted, failed = [], []
+        for run_id in run_ids:
+            active = GENERATION_STATE.get("run")
+            if active and str(run_id) == active:
+                failed.append(str(run_id))
+                continue
+            run_dir = _validate_run_id(str(run_id))
+            if run_dir is None:
+                failed.append(str(run_id))
+                continue
+            try:
+                shutil.rmtree(run_dir)
+                deleted.append(str(run_id))
+            except Exception:
+                failed.append(str(run_id))
+        self._send_json({"deleted": deleted, "failed": failed})
+
+    def handle_delete_all(self):
+        if GENERATION_STATE.get("active"):
+            self._send_json({"error": "generation in progress", "skipped_active": []},
+                            HTTPStatus.CONFLICT)
+            return
+        if not RUNS_ROOT.exists():
+            self._send_json({"deleted": [], "failed": []})
+            return
+        deleted, failed = [], []
+        for run_dir in [d for d in RUNS_ROOT.iterdir() if d.is_dir()]:
+            try:
+                shutil.rmtree(run_dir)
+                deleted.append(run_dir.name)
+            except Exception:
+                failed.append(run_dir.name)
+        self._send_json({"deleted": deleted, "failed": failed})
+
+    def handle_generation_status(self):
+        self._send_json(generation_status())
+
+    def handle_generate(self):
+        length = int(self.headers.get("Content-Length", "0") or "0")
+        raw = self.rfile.read(length) if length > 0 else b"{}"
+        try:
+            payload = json.loads(raw.decode("utf-8")) if raw else {}
+        except Exception:
+            self._send_json({"error": "invalid JSON body"}, HTTPStatus.BAD_REQUEST)
+            return
+
+        step_raw = payload.get("step", 16) if isinstance(payload, dict) else 16
+        seed_raw = payload.get("seed") if isinstance(payload, dict) else None
+        size_raw = payload.get("size") if isinstance(payload, dict) else None
+        try:
+            step = int(step_raw)
+            seed = parse_java_long(seed_raw)
+            size = str(size_raw).strip() if size_raw is not None and str(size_raw).strip() else None
+            started, status = start_generation(step, seed=seed, size=size)
+        except ValueError as e:
+            self._send_json({"error": str(e)}, HTTPStatus.BAD_REQUEST)
+            return
+        except FileNotFoundError as e:
+            self._send_json({"error": str(e)}, HTTPStatus.NOT_FOUND)
+            return
+        except RuntimeError as e:
+            self._send_json({"error": str(e)}, HTTPStatus.INTERNAL_SERVER_ERROR)
+            return
+        except Exception as e:
+            self._send_json({"error": str(e)}, HTTPStatus.INTERNAL_SERVER_ERROR)
+            return
+
+        self._send_json(status, HTTPStatus.ACCEPTED if started else HTTPStatus.CONFLICT)
+
+    def handle_generate_ruggedness(self, run: str):
+        length = int(self.headers.get("Content-Length", "0") or "0")
+        raw = self.rfile.read(length) if length > 0 else b"{}"
+        try:
+            payload = json.loads(raw.decode("utf-8")) if raw else {}
+        except json.JSONDecodeError:
+            payload = {}
+        step = int(payload.get("step", COARSE_RUGGEDNESS_STEP))
+        if step not in (16, 32, 64, 128):
+            step = COARSE_RUGGEDNESS_STEP
+        try:
+            started, status = start_ruggedness_generation(run, step)
+        except FileNotFoundError as e:
+            self._send_json({"error": str(e)}, HTTPStatus.NOT_FOUND)
+            return
+        except RuntimeError as e:
+            self._send_json({"error": str(e)}, HTTPStatus.INTERNAL_SERVER_ERROR)
+            return
+        except Exception as e:
+            self._send_json({"error": str(e)}, HTTPStatus.INTERNAL_SERVER_ERROR)
+            return
+
+        if status.get("already_exists"):
+            self._send_json(status, HTTPStatus.OK)
+            return
+        self._send_json(status, HTTPStatus.ACCEPTED if started else HTTPStatus.CONFLICT)
+
+    def handle_manifest(self, run: str):
+        run_dir = run_path(run)
+        if not run_dir.exists():
+            self._send_json({}, HTTPStatus.NOT_FOUND)
+            return
+        manifest = run_dir / "run_manifest.json"
+        if not manifest.exists():
+            self._send_json({})
+            return
+        try:
+            data = read_json_file(manifest)
+            self._send_json(data if isinstance(data, dict) else {})
+        except Exception:
+            self._send_json({})
+
+    def handle_layers(self, run: str):
+        run_dir = run_path(run)
+        if not run_dir.exists():
+            self._send_json([], HTTPStatus.NOT_FOUND)
+            return
+        self._send_json(layers_for_run(run_dir))
+
+    def handle_biomes(self, run: str, layer: str):
+        run_dir = run_path(run)
+        if not run_dir.exists():
+            self._send_json([], HTTPStatus.NOT_FOUND)
+            return
+
+        image_path = layer_file(run_dir, layer, "biomes.png")
+        palette_path = layer_file(run_dir, layer, "biome_palette.json")
+        ids_path = layer_file(run_dir, layer, "biome_ids.png")
+        if not image_path:
+            self._send_json([], HTTPStatus.NOT_FOUND)
+            return
+
+        try:
+            if palette_path and ids_path:
+                palette_json = read_json_file(palette_path)
+                entries = palette_json.get("biomes", []) if isinstance(palette_json, dict) else []
+                entries = entries if isinstance(entries, list) else []
+                out = _biomes_from_palette_and_ids(image_path, ids_path, entries)
+                if out:
+                    self._send_json(out)
+                    return
+            # Fallback for older runs with no ids/palette.
+            self._send_json(_derive_biomes_from_image_only(image_path))
+        except Exception:
+            self._send_json([])
+
+    def handle_inventory(self, run: str, layer: str):
+        run_dir = run_path(run)
+        if not run_dir.exists():
+            self._send_json([], HTTPStatus.NOT_FOUND)
+            return
+
+        inventory_path = layer_file(run_dir, layer, "world_biome_inventory.json")
+        if not inventory_path or not inventory_path.exists():
+            self._send_json([])
+            return
+
+        try:
+            payload = read_json_file(inventory_path)
+            rows = payload.get("biomes", []) if isinstance(payload, dict) else []
+            if not isinstance(rows, list):
+                rows = []
+            out = []
+            for row in rows:
+                if not isinstance(row, dict):
+                    continue
+                biome_id = row.get("biome_id")
+                if not isinstance(biome_id, str) or not biome_id:
+                    continue
+                display_color = row.get("displayColor")
+                base_rgb = hex_to_rgb(display_color) if isinstance(display_color, str) else [138, 138, 138]
+                base_rgb = display_color_for(biome_id, base_rgb)
+                out.append(
+                    {
+                        "id": biome_id,
+                        "name": row.get("biome_name") or biome_name_from_id(biome_id),
+                        "color": base_rgb,
+                        "present_in_world": bool(row.get("present_in_world", True)),
+                        "first_seen_x": row.get("first_seen_x"),
+                        "first_seen_z": row.get("first_seen_z"),
+                        "latitude_label": row.get("latitude_label") or "",
+                        "discovery_step_used": row.get("discovery_step_used"),
+                        "discovery_hits": row.get("discovery_hits"),
+                    }
+                )
+            self._send_json(out)
+        except Exception:
+            self._send_json([])
+
+    def handle_legend(self, run: str, layer: str):
+        run_dir = run_path(run)
+        if not run_dir.exists():
+            self._send_json({}, HTTPStatus.NOT_FOUND)
+            return
+
+        legend_path = layer_file(run_dir, layer, "legend.json")
+        if not legend_path or not legend_path.exists():
+            self._send_json({})
+            return
+
+        try:
+            payload = read_json_file(legend_path)
+            self._send_json(payload if isinstance(payload, dict) else {})
+        except Exception:
+            self._send_json({})
+
+    def handle_image(self, run: str, layer: str):
+        run_dir = run_path(run)
+        if not run_dir.exists():
+            self._send_text("run not found", HTTPStatus.NOT_FOUND)
+            return
+        image_path = layer_file(run_dir, layer, "biomes.png")
+        if not image_path:
+            self._send_text("layer image not found", HTTPStatus.NOT_FOUND)
+            return
+        self._send_file(image_path, "image/png")
+
+    def handle_ids_image(self, run: str, layer: str):
+        run_dir = run_path(run)
+        if not run_dir.exists():
+            self._send_text("run not found", HTTPStatus.NOT_FOUND)
+            return
+        ids_path = layer_file(run_dir, layer, "biome_ids.png")
+        if not ids_path:
+            self._send_text("layer ids image not found", HTTPStatus.NOT_FOUND)
+            return
+        self._send_file(ids_path, "image/png")
+
+    def handle_ruggedness_image(self, run: str, layer: str):
+        parsed = urlparse(self.path)
+        params = parse_qs(parsed.query)
+        step_raw = params.get("step", [None])[0]
+        step = int(step_raw) if step_raw and step_raw.isdigit() else None
+
+        run_dir = run_path(run)
+        if not run_dir.exists():
+            self._send_text("run not found", HTTPStatus.NOT_FOUND)
+            return
+        path = resolve_ruggedness_file(run_dir, layer, step)
+        if not path or not path.exists():
+            self._send_text("ruggedness layer not found", HTTPStatus.NOT_FOUND)
+            return
+        self._send_file(path, "image/png")
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Latitude Atlas Viewer API server")
+    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--port", type=int, default=5000)
+    args = parser.parse_args()
+
+    host = args.host
+    port = args.port
+    server = ThreadingHTTPServer((host, port), Handler)
+    print(f"Serving Atlas viewer + API on http://{host}:{port}")
+    server.serve_forever()

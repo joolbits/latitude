@@ -6,15 +6,18 @@ import com.example.globe.client.CompassHud;
 import com.example.globe.client.CompassHudConfig;
 import com.example.globe.client.ClientKeybinds;
 import com.example.globe.client.GlobeWarningOverlay;
+import com.example.globe.client.LatitudeClientState;
 import com.example.globe.client.LatitudeSettingsScreen;
 import com.example.globe.client.SpawnZoneScreen;
 import com.example.globe.client.EwSandstormOverlayRenderer;
 import com.example.globe.client.EwStormWallRenderer;
+import com.example.globe.dev.DevCaptureKeybind;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderEvents;
+import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.block.Blocks;
 import net.minecraft.particle.BlockStateParticleEffect;
@@ -29,7 +32,9 @@ public class GlobeModClient implements ClientModInitializer {
     public void onInitializeClient() {
         GlobeNet.registerPayloads();
         GlobeMod.LOGGER.info("Globe client init OK");
-        GlobeMod.LOGGER.info("[Latitude] debugEwFog={}", GlobeClientState.DEBUG_EW_FOG);
+        if (GlobeClientState.DEBUG_EW_FOG) {
+            GlobeMod.LOGGER.info("[Latitude] debugEwFog=true");
+        }
 
         LatitudeConfig.get();
 
@@ -39,6 +44,11 @@ public class GlobeModClient implements ClientModInitializer {
         });
 
         ClientPlayNetworking.registerGlobalReceiver(GlobeNet.GlobeStatePayload.ID, (payload, context) -> {
+            if (payload.isGlobe()) {
+                // Flip the bespoke loading flag as soon as the handshake packet arrives (network thread).
+                LatitudeClientState.activateLatitudeLoading();
+                LatitudeClientState.firstWorldLoad = false;
+            }
             context.client().execute(() -> {
                 GlobeClientState.setGlobeWorld(payload.isGlobe());
                 GlobeMod.LOGGER.info("S2C globe state: isGlobe={}", payload.isGlobe());
@@ -46,13 +56,14 @@ public class GlobeModClient implements ClientModInitializer {
         });
 
         ClientPlayNetworking.registerGlobalReceiver(GlobeNet.OpenSpawnPickerPayload.ID, (payload, context) -> {
+            // Legacy spawn picker is no longer part of the first-load flow; ignore any stale payloads.
             if (!payload.open()) {
                 return;
             }
 
             context.client().execute(() -> {
-                pendingSpawnPickerOpen = true;
-                GlobeMod.LOGGER.info("S2C open spawn picker received (pending=true)");
+                pendingSpawnPickerOpen = false;
+                GlobeMod.LOGGER.info("Ignoring legacy open spawn picker payload");
             });
         });
 
@@ -60,12 +71,15 @@ public class GlobeModClient implements ClientModInitializer {
         CompassHud.init();
         ClientTickEvents.END_CLIENT_TICK.register(GlobeModClient::polarCapClientTick);
         ClientKeybinds.init();
+        if (FabricLoader.getInstance().isDevelopmentEnvironment()) {
+            DevCaptureKeybind.init();
+        }
         ClientTickEvents.END_CLIENT_TICK.register(GlobeModClient::clientKeybindTick);
 
         WorldRenderEvents.BEFORE_TRANSLUCENT.register(ctx -> {
             if (!GlobeClientState.DEBUG_EW_WALL) return;
-            // EwStormWallRenderer.render(ctx.matrices(), ctx.consumers()); // TEMP: wall disabled (overlay bring-up)
-            EwSandstormOverlayRenderer.render(ctx.matrices(), ctx.consumers());
+            // Wall/overlay rendering happens in the HUD pass now to avoid POV seams.
+            return;
         });
     }
 

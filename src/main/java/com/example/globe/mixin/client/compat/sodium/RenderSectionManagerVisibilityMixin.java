@@ -47,13 +47,5 @@ public class RenderSectionManagerVisibilityMixin {
         if (distSq > capSq) {
             cir.setReturnValue(false);
         }
-
-        long now = System.currentTimeMillis();
-        if (now - latitude$lastLogMs >= 1000L) {
-            latitude$lastLogMs = now;
-            double intensity = GlobeClientState.ewIntensity01(px);
-            System.out.println("[Latitude] EW cull base=" + baseChunks + " capped=" + cappedChunks
-                    + " blocks=" + cappedBlocks + " i=" + intensity + " px=" + px + " pz=" + pz);
-        }
     }
 }

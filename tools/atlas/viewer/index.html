@@ -1,0 +1,4740 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Latitude — Atlas Viewer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=IBM+Plex+Sans:wght@300;400;500&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* ═══════════════════════════════════════════════
+   CSS VARIABLES & THEME
+   ═══════════════════════════════════════════════ */
+:root {
+  /* Core palette */
+  --lat-cyan:    #3ee8d6;
+  --lat-blue:    #3da0e3;
+  --lat-accent:  #3ee8d6;
+  --lat-accent2: #3da0e3;
+  --lat-warn:    #e8a73e;
+  --lat-error:   #e85a5a;
+  --lat-success: #5ae87a;
+
+  /* Typography */
+  --font-display: 'Outfit', sans-serif;
+  --font-body:    'IBM Plex Sans', sans-serif;
+  --font-mono:    'JetBrains Mono', monospace;
+
+  /* Timing */
+  --ease-smooth: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  /* Radii */
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-lg: 16px;
+  --r-xl: 24px;
+  --ui-scale: 1;
+}
+
+[data-theme="dark"] {
+  --bg-deep:     #0d1117;
+  --bg-base:     #151b23;
+  --bg-surface:  #1c2333;
+  --bg-elevated: #222d3d;
+  --bg-glass:    rgba(22, 30, 44, 0.72);
+  --bg-glass-hover: rgba(30, 40, 58, 0.82);
+  --border-subtle:  rgba(62, 232, 214, 0.08);
+  --border-medium:  rgba(62, 232, 214, 0.15);
+  --border-accent:  rgba(62, 232, 214, 0.35);
+  --text-primary:   #e6edf3;
+  --text-secondary: #8b949e;
+  --text-tertiary:  #5a6370;
+  --text-accent:    #3ee8d6;
+  --shadow-float: 0 8px 32px rgba(0,0,0,0.45), 0 2px 8px rgba(0,0,0,0.3);
+  --shadow-glow:  0 0 20px rgba(62, 232, 214, 0.08);
+  --canvas-bg:    #0a0e14;
+  --checkerboard-a: #0e1219;
+  --checkerboard-b: #111822;
+}
+
+[data-theme="light"] {
+  --bg-deep:     #f0f2f5;
+  --bg-base:     #f8f9fb;
+  --bg-surface:  #ffffff;
+  --bg-elevated: #ffffff;
+  --bg-glass:    rgba(255, 255, 255, 0.72);
+  --bg-glass-hover: rgba(255, 255, 255, 0.85);
+  --border-subtle:  rgba(0, 0, 0, 0.06);
+  --border-medium:  rgba(0, 0, 0, 0.12);
+  --border-accent:  rgba(45, 170, 156, 0.4);
+  --text-primary:   #1a1f26;
+  --text-secondary: #5a6370;
+  --text-tertiary:  #8b949e;
+  --text-accent:    #1a9e8f;
+  --shadow-float: 0 8px 32px rgba(0,0,0,0.1), 0 2px 8px rgba(0,0,0,0.06);
+  --shadow-glow:  0 0 20px rgba(45, 170, 156, 0.06);
+  --canvas-bg:    #e8ecf0;
+  --checkerboard-a: #e2e6ea;
+  --checkerboard-b: #eaeef2;
+  --lat-accent:  #1a9e8f;
+  --lat-accent2: #2a7dc9;
+}
+
+/* ═══════════════════════════════════════════════
+   RESET & BASE
+   ═══════════════════════════════════════════════ */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  height: 100%;
+  overflow: hidden;
+  font-family: var(--font-body);
+  font-size: 13px;
+  color: var(--text-primary);
+  background: var(--bg-deep);
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--border-medium);
+  border-radius: 10px;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--border-accent); }
+
+/* ═══════════════════════════════════════════════
+   LAYOUT
+   ═══════════════════════════════════════════════ */
+#app {
+  display: grid;
+  grid-template-columns: 1fr;
+  grid-template-rows: 1fr;
+  height: 100vh;
+  width: 100vw;
+  position: relative;
+}
+
+/* ═══════════════════════════════════════════════
+   CANVAS VIEWPORT
+   ═══════════════════════════════════════════════ */
+#canvas-viewport {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  background: var(--canvas-bg);
+  overflow: hidden;
+  cursor: grab;
+  /* checkerboard */
+  background-image:
+    linear-gradient(45deg, var(--checkerboard-a) 25%, transparent 25%),
+    linear-gradient(-45deg, var(--checkerboard-a) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, var(--checkerboard-a) 75%),
+    linear-gradient(-45deg, transparent 75%, var(--checkerboard-a) 75%);
+  background-size: 20px 20px;
+  background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+  background-color: var(--checkerboard-b);
+}
+#canvas-viewport.dragging { cursor: grabbing; }
+
+#map-canvas {
+  position: absolute;
+  top: 0; left: 0;
+  transform-origin: 0 0;
+  image-rendering: pixelated;
+  transition: opacity 0.4s var(--ease-smooth);
+}
+#map-canvas.fading { opacity: 0.3; }
+
+/* Crosshair overlay */
+#crosshair {
+  position: absolute;
+  pointer-events: none;
+  z-index: 5;
+  display: none;
+}
+#crosshair .h-line, #crosshair .v-line {
+  position: absolute;
+  background: var(--lat-accent);
+  opacity: 0.25;
+}
+#crosshair .h-line { height: 1px; width: 100vw; left: -50vw; top: 0; }
+#crosshair .v-line { width: 1px; height: 100vh; top: -50vh; left: 0; }
+
+/* Zoom badge */
+#zoom-badge {
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%) scale(var(--ui-scale));
+  transform-origin: bottom center;
+  background: var(--bg-glass);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--border-subtle);
+  border-radius: 20px;
+  padding: 5px 14px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-secondary);
+  z-index: 10;
+  pointer-events: none;
+  transition: opacity 0.3s;
+}
+
+/* Coordinate readout */
+#coord-readout {
+  position: absolute;
+  bottom: 16px;
+  right: 16px;
+  transform: scale(var(--ui-scale));
+  transform-origin: bottom right;
+  background: var(--bg-glass);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+  padding: 6px 12px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-secondary);
+  z-index: 10;
+  pointer-events: none;
+}
+
+/* Generation status bar */
+#generation-status {
+  display: none;
+  align-items: center;
+  gap: 10px;
+  margin-left: 8px;
+  padding: 8px 12px;
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(62, 232, 214, 0.14), rgba(61, 160, 227, 0.1));
+  border: 1px solid var(--border-accent);
+  box-shadow: var(--shadow-float), var(--shadow-glow);
+  color: var(--text-primary);
+  max-width: min(340px, 42vw);
+  flex-shrink: 1;
+}
+#generation-status.visible { display: inline-flex; }
+#generation-status .hg {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--lat-accent);
+  border-radius: 999px;
+  border-top-color: transparent;
+  animation: genSpin 0.9s linear infinite;
+  flex-shrink: 0;
+}
+#generation-status .gen-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+#generation-status-text {
+  font-family: var(--font-display);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#generation-status-detail {
+  font-family: var(--font-body);
+  font-size: 10.5px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#generation-status .gen-actions {
+  display: none;
+  align-items: center;
+  gap: 6px;
+  margin-left: 2px;
+  flex-shrink: 0;
+}
+#generation-status.mode-confirm .hg {
+  display: none;
+}
+#generation-status.mode-confirm .gen-actions {
+  display: inline-flex;
+}
+#generation-status.mode-running .gen-actions {
+  display: none;
+}
+.gen-action-btn {
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--border-medium);
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+  transition: transform 0.2s var(--ease-spring), border-color 0.2s, background 0.2s, color 0.2s;
+}
+.gen-action-btn:hover {
+  transform: translateY(-1px) scale(1.04);
+}
+.gen-action-btn.cancel:hover {
+  border-color: rgba(232, 90, 90, 0.45);
+  background: rgba(232, 90, 90, 0.12);
+  color: #ffd4d4;
+}
+.gen-action-btn.confirm:hover {
+  border-color: rgba(90, 232, 122, 0.45);
+  background: rgba(90, 232, 122, 0.14);
+  color: #d7ffe2;
+}
+@keyframes genSpin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* ═══════════════════════════════════════════════
+   FLOATING CONTROL PILL (Top bar)
+   ═══════════════════════════════════════════════ */
+#control-pill {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%) scale(var(--ui-scale));
+  transform-origin: top center;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  background: var(--bg-glass);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid var(--border-subtle);
+  border-radius: 50px;
+  padding: 5px 6px;
+  box-shadow: var(--shadow-float);
+  max-width: calc(100vw - 32px);
+  overflow: visible;
+  flex-wrap: wrap;
+  justify-content: center;
+  transition: box-shadow 0.3s;
+}
+#control-pill:hover { box-shadow: var(--shadow-float), var(--shadow-glow); }
+#control-pill[data-mode="focused"] .toolbar-optional {
+  display: none;
+}
+#control-pill[data-layout="expanded"] {
+  width: min(calc(100vw - 32px), 1480px);
+  border-radius: 30px;
+  padding: 10px 12px;
+  gap: 8px;
+  justify-content: flex-start;
+}
+#control-pill[data-layout="expanded"] .toolbar-bubble {
+  flex: 1 1 180px;
+  min-width: 150px;
+}
+#control-pill[data-layout="expanded"] .toolbar-bubble-trigger {
+  display: none;
+}
+#control-pill[data-layout="expanded"] .toolbar-bubble-panel {
+  position: static;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  max-width: none;
+  padding: 0;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  opacity: 1;
+  pointer-events: auto;
+  transform: none;
+}
+#control-pill[data-layout="expanded"] .toolbar-bubble[data-align="right"] .toolbar-bubble-panel,
+#control-pill[data-layout="expanded"] .toolbar-bubble.open .toolbar-bubble-panel,
+#control-pill[data-layout="expanded"] .toolbar-bubble[data-align="right"].open .toolbar-bubble-panel {
+  transform: none;
+}
+#control-pill[data-layout="expanded"] .toolbar-panel-label {
+  color: var(--text-tertiary);
+}
+#control-pill[data-layout="expanded"] .toolbar-tools-row {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+#control-pill[data-layout="expanded"] .toolbar-tools-row .pill-icon-btn,
+#control-pill[data-layout="expanded"] .toolbar-tools-row .pill-chip-btn {
+  width: 100%;
+}
+#control-pill[data-layout="expanded"] #generation-status {
+  display: inline-flex;
+}
+
+/* Toolbar bubbles */
+.toolbar-bubble {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+.toolbar-bubble-trigger {
+  min-width: 58px;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-display);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  transition: all 0.25s var(--ease-smooth);
+}
+.toolbar-bubble-trigger:hover,
+.toolbar-bubble.open .toolbar-bubble-trigger {
+  border-color: var(--border-accent);
+  color: var(--text-accent);
+}
+.toolbar-bubble.open .toolbar-bubble-trigger {
+  box-shadow: var(--shadow-glow);
+}
+.toolbar-bubble-panel {
+  position: absolute;
+  top: calc(100% + 10px);
+  left: 50%;
+  transform: translateX(-50%) translateY(-6px);
+  min-width: 200px;
+  max-width: min(360px, calc(100vw - 36px));
+  padding: 12px;
+  border-radius: 20px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-glass);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  box-shadow: var(--shadow-float), var(--shadow-glow);
+  display: none;
+  opacity: 0;
+  pointer-events: none;
+  z-index: 120;
+}
+.toolbar-bubble.open .toolbar-bubble-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateX(-50%) translateY(0);
+}
+.toolbar-bubble[data-align="right"] .toolbar-bubble-panel {
+  left: auto;
+  right: 0;
+  transform: translateY(-6px);
+}
+.toolbar-bubble[data-align="right"].open .toolbar-bubble-panel {
+  transform: translateY(0);
+}
+.toolbar-panel-label {
+  font-family: var(--font-display);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+.toolbar-panel-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Custom Select */
+.lat-select-wrap {
+  position: relative;
+}
+.lat-select {
+  appearance: none;
+  -webkit-appearance: none;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: 20px;
+  padding: 6px 28px 6px 12px;
+  font-family: var(--font-display);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-primary);
+  cursor: pointer;
+  outline: none;
+  min-width: 100px;
+  transition: border-color 0.2s, background 0.2s, box-shadow 0.2s;
+}
+#sel-run {
+  width: clamp(220px, 28vw, 340px);
+}
+.toolbar-bubble-panel .lat-select-wrap,
+.toolbar-bubble-panel .lat-select {
+  width: 100%;
+}
+.toolbar-bubble-panel #sel-run,
+.toolbar-bubble-panel #detail-readout {
+  width: 100%;
+  min-width: 0;
+}
+.lat-select:hover {
+  border-color: var(--border-accent);
+  background: var(--bg-glass-hover);
+}
+.lat-select:focus {
+  border-color: var(--lat-accent);
+  box-shadow: 0 0 0 2px rgba(62, 232, 214, 0.15);
+}
+.lat-select-wrap::after {
+  content: '';
+  position: absolute;
+  right: 11px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 0; height: 0;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 5px solid var(--text-secondary);
+  pointer-events: none;
+}
+.pill-readout {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: 20px;
+  padding: 6px 12px;
+  font-family: var(--font-display);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  min-width: 148px;
+  text-align: center;
+}
+.jump-segment {
+  gap: 8px;
+}
+.jump-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.jump-coord {
+  width: 88px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: 18px;
+  padding: 6px 10px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text-primary);
+  outline: none;
+}
+.jump-coord:focus {
+  border-color: var(--lat-accent);
+  box-shadow: 0 0 0 2px rgba(62, 232, 214, 0.15);
+}
+.jump-go-btn {
+  border: 1px solid var(--border-medium);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  border-radius: 18px;
+  padding: 6px 12px;
+  font-family: var(--font-display);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.2s, color 0.2s, background 0.2s;
+}
+.jump-go-btn:hover {
+  border-color: var(--border-accent);
+  color: var(--text-accent);
+}
+.seed-segment {
+  gap: 8px;
+}
+.seed-controls {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  width: 100%;
+}
+.seed-input {
+  width: 100%;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: 18px;
+  padding: 6px 10px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text-primary);
+  outline: none;
+}
+.seed-input:focus {
+  border-color: var(--lat-accent);
+  box-shadow: 0 0 0 2px rgba(62, 232, 214, 0.15);
+}
+.seed-input.invalid {
+  border-color: rgba(232, 90, 90, 0.55);
+  box-shadow: 0 0 0 2px rgba(232, 90, 90, 0.12);
+}
+.seed-status {
+  min-height: 13px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-secondary);
+  max-width: 220px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.seed-status.error {
+  color: var(--lat-error);
+}
+.toolbar-bubble-panel .seed-status {
+  max-width: none;
+  white-space: normal;
+}
+.toolbar-tools-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.toolbar-tools-row .pill-chip-btn,
+.toolbar-tools-row .pill-icon-btn {
+  width: 100%;
+  min-width: 0;
+}
+.toolbar-tools-row .pill-icon-btn {
+  border-radius: 16px;
+  height: 34px;
+}
+#control-pill[data-layout="expanded"] #toolbar-size {
+  align-self: stretch;
+}
+#control-pill[data-mode="focused"] .toolbar-bubble.toolbar-optional {
+  display: none;
+}
+#control-pill[data-mode="focused"] .toolbar-bubble.toolbar-essential .toolbar-bubble-trigger,
+#control-pill[data-mode="focused"] .pill-chip-btn {
+  border-color: var(--border-accent);
+  color: var(--text-accent);
+}
+.toolbar-bubble-panel #generation-status {
+  margin-left: 0;
+  max-width: none;
+  width: 100%;
+}
+.jump-status {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-secondary);
+  max-width: 180px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.jump-status.warn {
+  color: var(--lat-warn);
+}
+.jump-status.error {
+  color: var(--lat-error);
+}
+
+/* Theme toggle */
+#theme-btn {
+  width: 32px; height: 32px;
+  border-radius: 50%;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  transition: all 0.25s var(--ease-smooth);
+  flex-shrink: 0;
+}
+#theme-btn:hover {
+  border-color: var(--border-accent);
+  color: var(--text-accent);
+  transform: rotate(15deg);
+}
+
+/* Fit button */
+.pill-icon-btn {
+  width: 32px; height: 32px;
+  border-radius: 50%;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  transition: all 0.2s var(--ease-smooth);
+  flex-shrink: 0;
+}
+.pill-icon-btn:hover {
+  border-color: var(--border-accent);
+  color: var(--text-accent);
+}
+.pill-icon-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  color: var(--text-tertiary);
+}
+.pill-chip-btn {
+  min-width: 58px;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-display);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  transition: all 0.25s var(--ease-smooth);
+  flex-shrink: 0;
+}
+.pill-chip-btn:hover {
+  border-color: var(--border-accent);
+  color: var(--text-accent);
+}
+#control-pill[data-mode="focused"] .pill-chip-btn {
+  border-color: var(--border-accent);
+  color: var(--text-accent);
+  box-shadow: var(--shadow-glow);
+}
+
+/* ═══════════════════════════════════════════════
+   LEFT PANEL — OVERLAYS + METADATA
+   ═══════════════════════════════════════════════ */
+.side-panel {
+  position: absolute;
+  top: 72px;
+  z-index: 90;
+  width: 280px;
+  max-height: calc((100vh - 88px) / var(--ui-scale));
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: scroll;
+  overflow-x: visible;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(62, 232, 214, 0.55) rgba(8, 18, 32, 0.72);
+  overscroll-behavior: contain;
+  box-sizing: border-box;
+  padding: 8px 14px 24px 8px;
+  transform: scale(var(--ui-scale));
+  transform-origin: top left;
+}
+.side-panel.left  { left: 12px; padding-right: 14px; }
+.side-panel.right { right: 12px; padding-left: 14px; padding-right: 8px; transform-origin: top right; }
+.side-panel::-webkit-scrollbar {
+  width: 12px;
+}
+.side-panel::-webkit-scrollbar-track {
+  background: rgba(8, 18, 32, 0.72);
+  border-radius: 999px;
+}
+.side-panel::-webkit-scrollbar-thumb {
+  background: rgba(62, 232, 214, 0.35);
+  border: 2px solid rgba(8, 18, 32, 0.72);
+  border-radius: 999px;
+}
+.side-panel::-webkit-scrollbar-thumb:hover {
+  background: rgba(62, 232, 214, 0.55);
+}
+.side-panel .panel-card {
+  flex: 0 0 auto;
+}
+
+/* Panel card */
+.panel-card {
+  background: var(--bg-glass);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-float);
+  overflow: hidden;
+  transition: box-shadow 0.3s;
+}
+.panel-card:hover { box-shadow: var(--shadow-float), var(--shadow-glow); }
+
+.panel-header {
+  padding: 14px 16px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.panel-title {
+  font-family: var(--font-display);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-accent);
+  white-space: nowrap;
+}
+
+.panel-action-btn {
+  border: 1px solid var(--border-medium);
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-family: var(--font-display);
+  font-size: 10.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.2s, color 0.2s, background 0.2s;
+}
+.panel-action-btn:hover {
+  border-color: var(--border-accent);
+  color: var(--text-accent);
+}
+.panel-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.panel-body {
+  padding: 12px 16px 14px;
+}
+
+.context-grid {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 6px 12px;
+}
+.context-k {
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+.context-v {
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 400;
+  text-align: right;
+  word-break: break-all;
+  line-height: 1.4;
+}
+.context-empty {
+  color: var(--text-tertiary);
+  font-size: 12px;
+  font-style: italic;
+}
+
+.meta-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 5px 0;
+  gap: 12px;
+}
+.meta-row + .meta-row { border-top: 1px solid var(--border-subtle); }
+.meta-key {
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+.meta-key.seed-copyable {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.meta-val {
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 400;
+  text-align: right;
+  word-break: break-all;
+  line-height: 1.4;
+}
+.meta-val.seed {
+  color: var(--text-accent);
+  font-weight: 500;
+}
+
+.meta-copy-btn {
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--border-medium);
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 11px;
+  line-height: 1;
+  flex-shrink: 0;
+  transition: border-color 0.2s, color 0.2s, background 0.2s, transform 0.2s;
+}
+.meta-copy-btn:hover {
+  border-color: var(--border-accent);
+  color: var(--text-accent);
+  transform: translateY(-1px);
+}
+.meta-copy-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  color: var(--text-tertiary);
+}
+
+/* Toggle switches */
+.toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 0;
+}
+.toggle-row + .toggle-row {
+  border-top: 1px solid var(--border-subtle);
+}
+.toggle-label {
+  font-family: var(--font-body);
+  font-size: 12.5px;
+  font-weight: 400;
+  color: var(--text-primary);
+}
+.range-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 118px;
+}
+.range-wrap input[type="range"] {
+  width: 84px;
+  accent-color: var(--lat-accent);
+}
+.range-val {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-secondary);
+  min-width: 34px;
+  text-align: right;
+}
+.band-desc-hint {
+  margin-top: 6px;
+  color: var(--text-tertiary);
+  font-size: 10.5px;
+  line-height: 1.35;
+}
+.toggle-switch {
+  position: relative;
+  width: 38px;
+  height: 22px;
+  flex-shrink: 0;
+}
+.toggle-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+  position: absolute;
+}
+.toggle-track {
+  position: absolute;
+  inset: 0;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-medium);
+  border-radius: 11px;
+  cursor: pointer;
+  transition: background 0.25s, border-color 0.25s;
+}
+.toggle-track::after {
+  content: '';
+  position: absolute;
+  top: 2px; left: 2px;
+  width: 16px; height: 16px;
+  background: var(--text-secondary);
+  border-radius: 50%;
+  transition: transform 0.25s var(--ease-spring), background 0.25s;
+}
+.toggle-switch input:checked + .toggle-track {
+  background: rgba(62, 232, 214, 0.15);
+  border-color: var(--lat-accent);
+}
+.toggle-switch input:checked + .toggle-track::after {
+  transform: translateX(16px);
+  background: var(--lat-accent);
+}
+
+/* ═══════════════════════════════════════════════
+   RIGHT PANEL — BIOME GALLERY
+   ═══════════════════════════════════════════════ */
+.biome-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.biome-entry {
+  display: grid;
+  grid-template-columns: 18px 1fr auto;
+  gap: 10px;
+  align-items: center;
+  padding: 7px 0;
+  cursor: pointer;
+  border-radius: var(--r-sm);
+  transition: background 0.15s;
+  position: relative;
+}
+.biome-entry:hover { background: rgba(62, 232, 214, 0.04); }
+.biome-entry.active { background: rgba(62, 232, 214, 0.08); }
+.biome-entry + .biome-entry { border-top: 1px solid var(--border-subtle); }
+
+.biome-swatch {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  border: 1px solid rgba(255,255,255,0.08);
+  flex-shrink: 0;
+}
+.biome-entry:hover .biome-swatch { transform: scale(1.15); }
+
+.biome-name {
+  font-family: var(--font-display);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.biome-pct {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+/* Biome search */
+.biome-search-wrap {
+  padding: 0 16px 8px;
+}
+.biome-search {
+  width: 100%;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: 20px;
+  padding: 7px 12px;
+  font-family: var(--font-body);
+  font-size: 12px;
+  color: var(--text-primary);
+  outline: none;
+  user-select: text;
+  -webkit-user-select: text;
+  pointer-events: auto;
+  transition: border-color 0.2s;
+}
+.biome-search::placeholder { color: var(--text-tertiary); }
+.biome-search:focus { border-color: var(--border-accent); }
+
+/* ═══════════════════════════════════════════════
+   INSPECT CARD (Floating)
+   ═══════════════════════════════════════════════ */
+#inspect-card {
+  position: absolute;
+  z-index: 200;
+  pointer-events: none;
+  background: var(--bg-glass);
+  backdrop-filter: blur(28px);
+  -webkit-backdrop-filter: blur(28px);
+  border: 1px solid var(--border-medium);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-float), var(--shadow-glow);
+  padding: 14px 16px;
+  min-width: 200px;
+  opacity: 0;
+  transform: translateY(4px) scale(var(--ui-scale));
+  transform-origin: top left;
+  transition: opacity 0.2s var(--ease-smooth), transform 0.2s var(--ease-smooth);
+}
+#inspect-card.visible {
+  opacity: 1;
+  transform: translateY(0) scale(var(--ui-scale));
+}
+
+.inspect-color-bar {
+  height: 6px;
+  border-radius: 3px;
+  margin-bottom: 10px;
+  transition: background-color 0.15s;
+}
+.inspect-biome-name {
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 2px;
+}
+.inspect-biome-id {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-tertiary);
+  margin-bottom: 8px;
+}
+.inspect-coords {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+.inspect-coords span {
+  color: var(--text-accent);
+}
+
+/* ═══════════════════════════════════════════════
+   HIGHLIGHT OVERLAY (Canvas-based)
+   ═══════════════════════════════════════════════ */
+#highlight-canvas {
+  position: absolute;
+  top: 0; left: 0;
+  transform-origin: 0 0;
+  pointer-events: none;
+  image-rendering: pixelated;
+  mix-blend-mode: multiply;
+  opacity: 0;
+  transition: opacity 0.35s var(--ease-smooth);
+  z-index: 6;
+}
+[data-theme="dark"] #highlight-canvas { mix-blend-mode: screen; }
+#highlight-canvas.active { opacity: 1; }
+#selection-marker {
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  margin-left: -9px;
+  margin-top: -9px;
+  border: 2px solid rgba(255, 255, 255, 0.95);
+  border-radius: 999px;
+  background: rgba(255, 0, 255, 0.16);
+  box-shadow: 0 0 0 3px rgba(255, 0, 255, 0.22);
+  pointer-events: none;
+  z-index: 8;
+  opacity: 0;
+  transform: translate(-9999px, -9999px);
+  transition: opacity 0.18s ease;
+}
+#selection-marker.visible { opacity: 1; }
+
+/* Grid overlay */
+#grid-canvas {
+  position: absolute;
+  top: 0; left: 0;
+  transform-origin: 0 0;
+  pointer-events: none;
+  image-rendering: pixelated;
+  opacity: 0;
+  transition: opacity 0.2s var(--ease-smooth);
+  z-index: 3;
+}
+#grid-canvas.active { opacity: 1; }
+
+/* ═══════════════════════════════════════════════
+   LATITUDE BAND OVERLAY
+   ═══════════════════════════════════════════════ */
+#band-canvas {
+  position: absolute;
+  top: 0; left: 0;
+  transform-origin: 0 0;
+  pointer-events: none;
+  image-rendering: auto;
+  opacity: 0;
+  transition: opacity 0.4s var(--ease-smooth);
+  z-index: 4;
+}
+#band-canvas.active { opacity: 1; }
+#band-violation-canvas {
+  position: absolute;
+  top: 0; left: 0;
+  transform-origin: 0 0;
+  pointer-events: none;
+  image-rendering: pixelated;
+  opacity: 0;
+  transition: opacity 0.25s var(--ease-smooth);
+  z-index: 5;
+}
+#band-violation-canvas.active { opacity: 1; }
+
+/* ═══════════════════════════════════════════════
+   TERRAIN RUGGEDNESS OVERLAY
+   ═══════════════════════════════════════════════ */
+#rugged-canvas {
+  position: absolute;
+  top: 0; left: 0;
+  transform-origin: 0 0;
+  pointer-events: none;
+  image-rendering: pixelated;
+  opacity: 0;
+  transition: opacity 0.3s var(--ease-smooth);
+  z-index: 2;
+}
+#rugged-canvas.active { opacity: 1; }
+
+/* Band legend (bottom-left floating) */
+#band-legend {
+  position: absolute;
+  bottom: 16px;
+  left: 16px;
+  z-index: 10;
+  transform: scale(var(--ui-scale));
+  transform-origin: bottom left;
+  background: var(--bg-glass);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+  padding: 10px 14px;
+  display: none;
+  flex-direction: column;
+  gap: 4px;
+  box-shadow: var(--shadow-float);
+}
+#band-legend.visible { display: flex; }
+.band-legend-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.band-legend-swatch {
+  width: 20px;
+  height: 10px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+.band-legend-label {
+  font-family: var(--font-display);
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+.band-legend-deg {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  color: var(--text-tertiary);
+  margin-left: auto;
+}
+
+/* ═══════════════════════════════════════════════
+   STATUS / LOADING
+   ═══════════════════════════════════════════════ */
+#status-toast {
+  position: absolute;
+  top: 72px;
+  left: 50%;
+  transform: translateX(-50%) translateY(-8px) scale(var(--ui-scale));
+  transform-origin: top center;
+  z-index: 300;
+  background: var(--bg-glass);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--border-medium);
+  border-radius: 20px;
+  padding: 8px 18px;
+  font-family: var(--font-body);
+  font-size: 12px;
+  color: var(--text-secondary);
+  box-shadow: var(--shadow-float);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s, transform 0.3s var(--ease-smooth);
+}
+#status-toast.visible {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0) scale(var(--ui-scale));
+}
+#status-toast .dot {
+  display: inline-block;
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  margin-right: 8px;
+  vertical-align: middle;
+}
+#status-toast .dot.loading { background: var(--lat-warn); animation: pulse 1s infinite; }
+#status-toast .dot.success { background: var(--lat-success); }
+#status-toast .dot.error   { background: var(--lat-error); }
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+/* ═══════════════════════════════════════════════
+   SPLASH / EMPTY STATE
+   ═══════════════════════════════════════════════ */
+#empty-state {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+  pointer-events: none;
+  opacity: 1;
+  transition: opacity 0.5s;
+}
+#empty-state.hidden { opacity: 0; }
+
+.empty-icon {
+  width: 64px; height: 64px;
+  border-radius: 50%;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  margin-bottom: 16px;
+  color: var(--text-tertiary);
+}
+.empty-title {
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 6px;
+}
+.empty-sub {
+  font-family: var(--font-body);
+  font-size: 13px;
+  color: var(--text-tertiary);
+}
+
+/* ═══════════════════════════════════════════════
+   ANIMATIONS
+   ═══════════════════════════════════════════════ */
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.side-panel .panel-card {
+  animation: slideUp 0.45s var(--ease-smooth) backwards;
+}
+.side-panel .panel-card:nth-child(1) { animation-delay: 0.05s; }
+.side-panel .panel-card:nth-child(2) { animation-delay: 0.12s; }
+.side-panel .panel-card:nth-child(3) { animation-delay: 0.19s; }
+
+/* ═══════════════════════════════════════════════
+   RESPONSIVE
+   ═══════════════════════════════════════════════ */
+@media (max-width: 960px) {
+  .side-panel { width: 240px; }
+}
+  @media (max-width: 720px) {
+   .side-panel.left  { display: none; }
+   .side-panel.right { display: none; }
+   #control-pill { max-width: 95vw; }
+   #control-pill[data-layout="expanded"] {
+    width: 95vw;
+   }
+   .toolbar-bubble-panel,
+   .toolbar-bubble[data-align="right"] .toolbar-bubble-panel {
+    left: 0;
+    right: auto;
+    transform: translateY(-6px);
+   }
+   .toolbar-bubble.open .toolbar-bubble-panel,
+   .toolbar-bubble[data-align="right"].open .toolbar-bubble-panel {
+    transform: translateY(0);
+   }
+  }
+ 
+  /* Additional styles */
+ #card-biomes {
+  display: flex;
+  flex-direction: column;
+  min-height: 280px;
+  max-height: 50vh;
+ }
+ 
+ #biome-list-body {
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+  padding-top: 4px;
+ }
+ </style>
+ </head>
+ <body>
+ <div id="app">
+ <div id="canvas-viewport">
+  <canvas id="map-canvas"></canvas>
+  <canvas id="rugged-canvas"></canvas>
+ <canvas id="highlight-canvas"></canvas>
+ <canvas id="grid-canvas"></canvas>
+ <canvas id="band-canvas"></canvas>
+  <canvas id="band-violation-canvas"></canvas>
+  <div id="selection-marker"></div>
+  <div id="crosshair"><div class="h-line"></div><div class="v-line"></div></div>
+   <div id="empty-state">
+    <div class="empty-icon">🗺</div>
+    <div class="empty-title">Latitude Atlas Viewer</div>
+    <div class="empty-sub">Select a run to begin exploring</div>
+   </div>
+  </div>
+ 
+  <div id="control-pill">
+   <div class="toolbar-bubble toolbar-optional" data-toolbar-bubble="run">
+    <button type="button" class="toolbar-bubble-trigger" data-toolbar-trigger="run" aria-expanded="false">Run</button>
+    <div class="toolbar-bubble-panel">
+     <div class="toolbar-panel-stack">
+      <span class="toolbar-panel-label">Generated Run</span>
+      <div class="lat-select-wrap">
+       <select id="sel-run" class="lat-select">
+        <option value="">— choose a generated world —</option>
+       </select>
+      </div>
+      <button id="btn-delete-run" class="pill-icon-btn" type="button"
+        title="Delete this run from disk" style="margin-top:4px;font-size:11px;padding:1px 6px;display:none">
+        🗑 Delete run
+      </button>
+      <button id="btn-manage-runs" class="pill-icon-btn" type="button"
+        style="margin-top:4px;font-size:11px;padding:1px 6px">
+        Manage runs…
+      </button>
+      <div id="run-manage-panel" style="display:none;margin-top:6px">
+        <div id="run-check-list"
+          style="max-height:180px;overflow-y:auto;border:1px solid #444;border-radius:3px;padding:2px 0">
+        </div>
+        <div style="margin-top:4px;display:flex;gap:4px;flex-wrap:wrap">
+          <button id="btn-delete-selected" class="pill-icon-btn" type="button"
+            style="font-size:11px;padding:1px 6px" disabled>
+            🗑 Delete selected (<span id="delete-selected-count">0</span>)
+          </button>
+          <button id="btn-delete-all-runs" class="pill-icon-btn" type="button"
+            style="font-size:11px;padding:1px 6px">
+            🗑 Delete all
+          </button>
+        </div>
+      </div>
+     </div>
+    </div>
+   </div>
+   <div class="toolbar-bubble toolbar-optional" data-toolbar-bubble="detail">
+    <button type="button" class="toolbar-bubble-trigger" data-toolbar-trigger="detail" aria-expanded="false">Detail</button>
+    <div class="toolbar-bubble-panel">
+     <div class="toolbar-panel-stack">
+      <span class="toolbar-panel-label">Sampling Detail</span>
+      <div id="detail-readout" class="pill-readout">Auto</div>
+     </div>
+    </div>
+   </div>
+   <div class="toolbar-bubble toolbar-optional" data-toolbar-bubble="jump">
+    <button type="button" class="toolbar-bubble-trigger" data-toolbar-trigger="jump" aria-expanded="false">Jump</button>
+    <div class="toolbar-bubble-panel">
+     <div class="toolbar-panel-stack">
+      <span class="toolbar-panel-label">Jump To Coordinates</span>
+      <div class="jump-controls">
+       <input type="number" id="jump-x" class="jump-coord" placeholder="X" inputmode="numeric">
+       <input type="number" id="jump-z" class="jump-coord" placeholder="Z" inputmode="numeric">
+       <button id="btn-jump" class="jump-go-btn" type="button">Go</button>
+      </div>
+      <div id="jump-status" class="jump-status">Awaiting coords</div>
+     </div>
+    </div>
+   </div>
+   <div class="toolbar-bubble toolbar-optional" data-toolbar-bubble="ui">
+    <button type="button" class="toolbar-bubble-trigger" data-toolbar-trigger="ui" aria-expanded="false">UI</button>
+    <div class="toolbar-bubble-panel">
+     <div class="toolbar-panel-stack">
+      <span class="toolbar-panel-label">Interface Scale</span>
+      <div class="lat-select-wrap">
+       <select id="ui-scale" class="lat-select" title="Scale viewer UI chrome">
+        <option value="0.8">Compact</option>
+        <option value="1">Default</option>
+        <option value="1.15">Large</option>
+        <option value="1.3">XL</option>
+       </select>
+      </div>
+     </div>
+    </div>
+   </div>
+   <div class="toolbar-bubble toolbar-essential" data-toolbar-bubble="generate" data-align="right">
+    <button type="button" class="toolbar-bubble-trigger" data-toolbar-trigger="generate" aria-expanded="false">Generate</button>
+    <div class="toolbar-bubble-panel">
+     <div class="toolbar-panel-stack">
+      <span class="toolbar-panel-label">Run Generation</span>
+      <div class="lat-select-wrap">
+       <select id="gen-quality" class="lat-select" title="Generate a new run at a selected quality">
+        <option value="">Choose…</option>
+        <option value="step128">step128</option>
+        <option value="step64">step64</option>
+        <option value="step32">step32</option>
+        <option value="step16">step16</option>
+       </select>
+      </div>
+      <div class="seed-controls">
+       <input id="gen-seed" class="seed-input" type="text" inputmode="numeric" spellcheck="false" autocomplete="off" placeholder="2591890304012655616" title="Optional signed 64-bit seed">
+       <button id="btn-random-seed" class="pill-icon-btn" type="button" title="Fill a random seed" style="margin-left:4px;font-size:11px;padding:1px 6px;height:20px;vertical-align:middle">⚄</button>
+       <span id="gen-seed-status" class="seed-status"></span>
+      </div>
+      <div id="generation-status">
+       <span class="hg"></span>
+       <span class="gen-copy">
+        <span id="generation-status-text">Generating a new world</span>
+        <span id="generation-status-detail">World generation can take several minutes.</span>
+       </span>
+       <span class="gen-actions">
+        <button type="button" class="gen-action-btn cancel" id="generation-cancel" title="Cancel">×</button>
+        <button type="button" class="gen-action-btn confirm" id="generation-confirm" title="Confirm">✓</button>
+       </span>
+      </div>
+     </div>
+    </div>
+   </div>
+   <div class="toolbar-bubble toolbar-optional" data-toolbar-bubble="tools" data-align="right">
+    <button type="button" class="toolbar-bubble-trigger" data-toolbar-trigger="tools" aria-expanded="false">Tools</button>
+    <div class="toolbar-bubble-panel">
+     <div class="toolbar-panel-stack">
+      <span class="toolbar-panel-label">Viewer Tools</span>
+      <div class="toolbar-tools-row">
+       <button class="pill-icon-btn" id="btn-save-run" title="Save current run archive">💾</button>
+       <button class="pill-icon-btn" id="btn-fit" title="Fit to view">⌖</button>
+       <button class="pill-icon-btn" id="btn-reset-zoom" title="Reset zoom">1:1</button>
+      </div>
+     </div>
+    </div>
+   </div>
+   <div class="lat-select-wrap" style="width:132px;">
+    <select id="toolbar-size" class="lat-select" title="Choose toolbar size mode">
+     <option value="compact">Toolbar: Compact</option>
+     <option value="focused">Toolbar: Focused</option>
+     <option value="expanded">Toolbar: Expanded</option>
+    </select>
+   </div>
+   <button id="theme-btn" title="Toggle theme">◐</button>
+  </div>
+ 
+  <div class="side-panel left" id="panel-left">
+   <div class="panel-card">
+    <div class="panel-header">
+     <span class="panel-title">Overlays</span>
+    </div>
+    <div class="panel-body">
+     <div class="toggle-row">
+      <span class="toggle-label">Grid Lines</span>
+      <label class="toggle-switch">
+       <input type="checkbox" id="tog-grid">
+       <span class="toggle-track"></span>
+      </label>
+     </div>
+     <div class="toggle-row">
+      <span class="toggle-label">Crosshair</span>
+      <label class="toggle-switch">
+       <input type="checkbox" id="tog-crosshair">
+       <span class="toggle-track"></span>
+      </label>
+     </div>
+     <div class="toggle-row">
+      <span class="toggle-label">Highlight Biome</span>
+      <label class="toggle-switch">
+       <input type="checkbox" id="tog-highlight">
+       <span class="toggle-track"></span>
+      </label>
+     </div>
+     <div class="toggle-row">
+      <span class="toggle-label">High Contrast Selection</span>
+      <label class="toggle-switch">
+       <input type="checkbox" id="tog-hi-contrast">
+       <span class="toggle-track"></span>
+      </label>
+     </div>
+     <div class="toggle-row">
+      <span class="toggle-label">Inspect on Hover</span>
+      <label class="toggle-switch">
+       <input type="checkbox" id="tog-inspect" checked>
+       <span class="toggle-track"></span>
+      </label>
+     </div>
+     <div class="toggle-row">
+      <span class="toggle-label">Biome Tooltip</span>
+      <label class="toggle-switch">
+       <input type="checkbox" id="tog-tooltip" checked>
+       <span class="toggle-track"></span>
+      </label>
+     </div>
+     <div class="toggle-row">
+      <span class="toggle-label">Latitude Bands</span>
+      <label class="toggle-switch">
+       <input type="checkbox" id="tog-bands">
+       <span class="toggle-track"></span>
+      </label>
+     </div>
+     <div class="toggle-row">
+      <span class="toggle-label">Band Opacity</span>
+      <div class="range-wrap">
+       <input type="range" id="bands-opacity" min="10" max="90" value="24" step="1">
+       <span class="range-val" id="bands-opacity-val">24%</span>
+      </div>
+     </div>
+     <div class="toggle-row">
+      <span class="toggle-label">Band Violations</span>
+      <label class="toggle-switch">
+       <input type="checkbox" id="tog-band-violations">
+       <span class="toggle-track"></span>
+      </label>
+     </div>
+     <div class="band-desc-hint" id="band-violations-label">Band violations: off</div>
+     <div class="band-desc-hint">Descriptors: Tropical, Subtropical, Temperate, Subpolar, Polar</div>
+     <div class="toggle-row" style="margin-top:8px">
+      <span class="toggle-label">Terrain Relief (fast preview)</span>
+      <label class="toggle-switch">
+       <input type="checkbox" id="tog-ruggedness">
+       <span class="toggle-track"></span>
+      </label>
+     </div>
+     <div style="margin-top:4px">
+      <select id="ruggedness-quality" class="lat-select" title="Quality for on-demand terrain relief generation" style="font-size:11px;padding:1px 4px;height:20px;vertical-align:middle">
+       <option value="64" selected>fast (step64)</option>
+       <option value="16">detailed (step16)</option>
+      </select>
+     </div>
+     <div style="font-size:0.78em;margin-top:3px;line-height:1.7;color:var(--text-secondary)">
+      <span style="display:inline-block;width:11px;height:11px;background:#8BC34A;vertical-align:middle;border-radius:2px"></span> 0–5 flat&nbsp;&nbsp;
+      <span style="display:inline-block;width:11px;height:11px;background:#FFB74D;vertical-align:middle;border-radius:2px"></span> 6–12 rolling&nbsp;&nbsp;
+      <span style="display:inline-block;width:11px;height:11px;background:#FF7043;vertical-align:middle;border-radius:2px"></span> 13–20 hilly&nbsp;&nbsp;
+      <span style="display:inline-block;width:11px;height:11px;background:#AB47BC;vertical-align:middle;border-radius:2px"></span> 21+ rugged
+     </div>
+     <div id="ruggedness-status" style="font-size:0.78em;margin-top:3px;color:var(--text-secondary);min-height:1.2em"></div>
+     <div class="toggle-row" style="margin-top:8px">
+      <span class="toggle-label">Biome Colors</span>
+      <select id="sel-color-view" class="lat-select" style="font-size:11px;padding:1px 4px;height:20px;vertical-align:middle">
+       <option value="identity" selected>Identity</option>
+       <option value="legacy">Legacy</option>
+      </select>
+     </div>
+    </div>
+   </div>
+ 
+   <div class="panel-card" id="card-metadata">
+    <div class="panel-header">
+     <span class="panel-title">Run Summary</span>
+    </div>
+    <div class="panel-body" id="metadata-body">
+     <div style="color:var(--text-tertiary);font-size:12px;font-style:italic;">Select a run to view summary</div>
+    </div>
+   </div>
+  </div>
+ 
+  <div class="side-panel right" id="panel-right">
+   <div class="panel-card" id="card-selected">
+    <div class="panel-header">
+     <span class="panel-title">Biome Highlights</span>
+     <div class="panel-actions">
+      <button id="btn-open-report" class="panel-action-btn" title="Open a printable biome report">Open Report</button>
+      <button id="btn-export-report" class="panel-action-btn" title="Export biome report to an HTML file">Export Report</button>
+      <button id="btn-clear-selection" class="panel-action-btn" title="Clear selected biome highlight">Clear</button>
+     </div>
+    </div>
+    <div class="panel-body" id="selection-context-body">
+     <div class="context-empty">No biome selected</div>
+    </div>
+   </div>
+ <div class="panel-card" id="card-biomes">
+    <div class="panel-header">
+     <div class="panel-actions">
+      <span class="panel-title" id="biome-palette-title">Biome Presence</span>
+      <span id="biome-count" style="font-family:var(--font-mono); font-size:10px; color:var(--text-tertiary);"></span>
+      <button id="btn-clear-palette-selection" class="panel-action-btn" title="Clear selected biomes">Clear</button>
+     </div>
+    </div>
+    <div id="selected-biomes-summary" class="band-desc-hint" style="padding:0 18px 8px 18px;color:var(--text-secondary);">Selected biomes: none</div>
+    <div class="band-desc-hint" id="biome-sampling-note" style="padding:0 18px 8px 18px;color:var(--lat-warn);display:none;">Coarse sampling may omit rare biomes; absence here does not prove world absence.</div>
+    <div class="biome-search-wrap">
+     <input type="text" class="biome-search" id="biome-search" placeholder="Filter biomes…" disabled>
+    </div>
+    <div class="panel-body" id="biome-list-body">
+     <div style="color:var(--text-tertiary); font-size:12px; font-style:italic;">No sampled biomes loaded</div>
+    </div>
+   </div>
+  </div>
+ 
+  <div id="band-legend"></div>
+  <div id="inspect-card">
+   <div class="inspect-color-bar" id="inspect-color-bar"></div>
+   <div class="inspect-biome-name" id="inspect-biome-name">—</div>
+   <div class="inspect-biome-id" id="inspect-biome-id"></div>
+   <div class="inspect-coords" id="inspect-coords"></div>
+   <div class="inspect-zone" id="inspect-zone" style="font-family:var(--font-display);font-size:10.5px;font-weight:500;margin-top:6px;padding-top:5px;border-top:1px solid var(--border-subtle);"></div>
+  </div>
+  <div id="status-toast"><span class="dot"></span><span class="msg"></span></div>
+  <div id="zoom-badge">100%</div>
+  <div id="coord-readout">— , —</div>
+ </div>
+ <script>
+ (() => {
+ 'use strict';
+ 
+ const API_BASE = window.location.origin;
+ const $ = (s, p=document) => p.querySelector(s);
+ const $$ = (s, p=document) => [...p.querySelectorAll(s)];
+ 
+const viewport = $('#canvas-viewport');
+const controlPill = $('#control-pill');
+const toolbarBubbles = $$('.toolbar-bubble', controlPill);
+const toolbarBubbleTriggers = $$('[data-toolbar-trigger]', controlPill);
+const mapCanvas = $('#map-canvas');
+const hlCanvas = $('#highlight-canvas');
+const gridCanvas = $('#grid-canvas');
+const bandCanvas = $('#band-canvas');
+const bandViolationCanvas = $('#band-violation-canvas');
+const ruggedCanvas = $('#rugged-canvas');
+let currentRuggedImg = null; // tracks any in-flight ruggedness Image load
+const mapCtx = mapCanvas.getContext('2d', { willReadFrequently: true });
+const hlCtx = hlCanvas.getContext('2d');
+const gridCtx = gridCanvas.getContext('2d');
+const bandCtx = bandCanvas.getContext('2d');
+const bandViolationCtx = bandViolationCanvas.getContext('2d');
+const ruggedCtx = ruggedCanvas.getContext('2d');
+const crosshair = $('#crosshair');
+const selectionMarker = $('#selection-marker');
+const inspectCard = $('#inspect-card');
+ const emptyState = $('#empty-state');
+ const zoomBadge = $('#zoom-badge');
+ const coordReadout = $('#coord-readout');
+ const statusToast = $('#status-toast');
+ const generationStatus = $('#generation-status');
+ const generationStatusText = $('#generation-status-text');
+ const generationStatusDetail = $('#generation-status-detail');
+ const generationCancelBtn = $('#generation-cancel');
+ const generationConfirmBtn = $('#generation-confirm');
+ 
+ const selRun = $('#sel-run');
+const detailReadout = $('#detail-readout');
+const jumpX = $('#jump-x');
+const jumpZ = $('#jump-z');
+const jumpStatus = $('#jump-status');
+const btnJump = $('#btn-jump');
+const uiScaleSel = $('#ui-scale');
+const genSeedInput = $('#gen-seed');
+const genSeedStatus = $('#gen-seed-status');
+const btnRandomSeed      = $('#btn-random-seed');
+const btnDeleteRun       = $('#btn-delete-run');
+const btnManageRuns      = $('#btn-manage-runs');
+const runManagePanel     = $('#run-manage-panel');
+const runCheckList       = $('#run-check-list');
+const btnDeleteSelected  = $('#btn-delete-selected');
+const btnDeleteAllRuns   = $('#btn-delete-all-runs');
+const deleteSelectedCount = $('#delete-selected-count');
+ const genQuality = $('#gen-quality');
+const btnFit = $('#btn-fit');
+const btnReset = $('#btn-reset-zoom');
+const toolbarSizeSel = $('#toolbar-size');
+const themeBtn = $('#theme-btn');
+ const togGrid = $('#tog-grid');
+ const togCrosshair = $('#tog-crosshair');
+ const togHighlight = $('#tog-highlight');
+ const togHiContrast = $('#tog-hi-contrast');
+ const togInspect = $('#tog-inspect');
+const togTooltip = $('#tog-tooltip');
+const togBands = $('#tog-bands');
+const togBandViolations = $('#tog-band-violations');
+const togRuggedness = $('#tog-ruggedness');
+const ruggedQuality = $('#ruggedness-quality');
+const selColorView = $('#sel-color-view');
+const bandsOpacity = $('#bands-opacity');
+const bandsOpacityVal = $('#bands-opacity-val');
+const bandViolationsLabel = $('#band-violations-label');
+const bandLegend = $('#band-legend');
+const biomeSearch = $('#biome-search');
+const biomeListBody = $('#biome-list-body');
+const biomePaletteTitle = $('#biome-palette-title');
+const selectedBiomesSummary = $('#selected-biomes-summary');
+const biomeSamplingNote = $('#biome-sampling-note');
+const metadataBody = $('#metadata-body');
+const biomeCountEl = $('#biome-count');
+const btnOpenReport = $('#btn-open-report');
+const btnExportReport = $('#btn-export-report');
+const btnClearSelection = $('#btn-clear-selection');
+const btnClearPaletteSelection = $('#btn-clear-palette-selection');
+ const selectionContextBody = $('#selection-context-body');
+ const btnSaveRun = $('#btn-save-run');
+ 
+ let state = {
+  runs: [],
+  runManifestMap: {},
+  currentRun: null,
+  currentLayer: null,
+  availableLayers: [],
+  manifest: null,
+  biomes: [],
+  biomeMap: {},
+  imageData: null,
+  mapWidth: 0,
+  mapHeight: 0,
+  panX: 0,
+  panY: 0,
+  zoom: 1,
+  isDragging: false,
+  dragStartX: 0,
+  dragStartY: 0,
+  dragMoved: false,
+  suppressNextMapClick: false,
+  panStartX: 0,
+  panStartY: 0,
+  hoveredBiomeId: null,
+  selectedBiomeIds: [],
+  focusedBiomeId: null,
+  inspectedPoint: null,
+  selectedPoint: null,
+  renderedHighlightKey: null,
+  colorToBiome: {},
+  biomeInventory: [],
+  biomeByIdMap: {},
+  biomeByIndex: {},
+  legend: null,
+  bandMaskByIndex: null,
+  jungleFamilyByIndex: null,
+  bandViolationStats: null,
+  bandViolationReasonCodes: null,
+  biomeIndices: null,
+  biomeIndexWidth: 0,
+  biomeIndexHeight: 0,
+  selectionStatsCache: {},
+  bandOpacity: 0.24,
+  lastManualSeed: '',
+  activeToolbarBubble: '',
+  generationActive: false,
+  pendingGenerationPreset: null,
+  generationPollTimer: null,
+  selectedRunIds: new Set(),
+  colorViewMode: 'identity',
+ };
+ 
+ const LEGACY_BEACH_RED = [235, 72, 63];
+const BEACH_SAND = [231, 215, 165];
+const BIOME_COLOR_OVERRIDES = new Map([
+  ['minecraft:warm_ocean', '#58D6FF'],
+  ['minecraft:lukewarm_ocean', '#2CB7FF'],
+  ['minecraft:deep_lukewarm_ocean', '#0077CC'],
+  ['minecraft:ocean', '#355CFF'],
+  ['minecraft:deep_ocean', '#182B88'],
+  ['minecraft:cold_ocean', '#79C8FF'],
+  ['minecraft:deep_cold_ocean', '#4065B8'],
+  ['minecraft:frozen_ocean', '#BFEFFF'],
+  ['minecraft:deep_frozen_ocean', '#7EA8D6'],
+  ['minecraft:river', '#3F88FF'],
+  ['minecraft:frozen_river', '#D8F3FF'],
+
+  ['minecraft:savanna', '#B7C85A'],
+  ['minecraft:savanna_plateau', '#93A64A'],
+  ['minecraft:windswept_savanna', '#C4B15A'],
+  ['minecraft:desert', '#D9B15B'],
+  ['minecraft:badlands', '#C96E3A'],
+  ['minecraft:wooded_badlands', '#A85B33'],
+  ['minecraft:eroded_badlands', '#E08A52'],
+
+  ['minecraft:forest', '#3F8F4E'],
+  ['minecraft:birch_forest', '#7CCB6B'],
+  ['minecraft:old_growth_birch_forest', '#A1D67C'],
+  ['minecraft:dark_forest', '#245A2A'],
+  ['minecraft:flower_forest', '#D06BCF'],
+  ['minecraft:pale_garden', '#B7B7C9'],
+  ['minecraft:cherry_grove', '#F2A7C6'],
+
+  ['minecraft:snowy_plains', '#F2FAFF'],
+  ['minecraft:snowy_taiga', '#CFE7E8'],
+  ['minecraft:grove', '#7EA590'],
+  ['minecraft:frozen_peaks', '#DDE8F5'],
+  ['minecraft:jagged_peaks', '#8B8F99'],
+  ['minecraft:snowy_slopes', '#EAF3F8'],
+  ['minecraft:ice_spikes', '#F8FDFF'],
+  ['minecraft:meadow', '#8FD36C'],
+  ['minecraft:stony_peaks', '#8F7D73'],
+  ['minecraft:windswept_hills', '#8A9272'],
+  ['minecraft:windswept_gravelly_hills', '#A29A90'],
+  ['minecraft:windswept_forest', '#4D7E57'],
+  ['minecraft:stony_shore', '#7F7F7F']
+]);
+const GENERATION_PRESETS = {
+  step128: { label: 'step128', resolution: 128 },
+  step64:  { label: 'step64',  resolution: 64  },
+  step32:  { label: 'step32',  resolution: 32  },
+  step16:  { label: 'step16',  resolution: 16  },
+ };
+const CANONICAL_BAND_DEFINITIONS = [
+ { id: 'tropical', label: 'Tropical', minDeg: 0.0, maxDeg: 23.5, color: [232, 112, 62] },
+ { id: 'subtropical', label: 'Subtropical', minDeg: 23.5, maxDeg: 35.0, color: [232, 182, 62] },
+ { id: 'temperate', label: 'Temperate', minDeg: 35.0, maxDeg: 50.0, color: [126, 196, 96] },
+ { id: 'subpolar', label: 'Subpolar', minDeg: 50.0, maxDeg: 66.5, color: [96, 160, 220] },
+ { id: 'polar', label: 'Polar', minDeg: 66.5, maxDeg: 90.0, color: [180, 200, 232] },
+];
+const BAND_KEYS = CANONICAL_BAND_DEFINITIONS.map((band) => band.id);
+const BAND_BIT_BY_KEY = new Map(BAND_KEYS.map((key, index) => [key, 1 << index]));
+const BAND_RANK_BY_KEY = new Map(BAND_KEYS.map((key, index) => [key, index]));
+const SUBPOLAR_BAND_RANK = BAND_RANK_BY_KEY.get('subpolar');
+const DRAG_SELECT_THRESHOLD_PX = 4;
+const VIOLATION_REASON_NONE = 0;
+const VIOLATION_REASON_JUNGLE_HARD = 1;
+const VIOLATION_REASON_ALLOWED_BAND = 2;
+const MANUAL_SEED_STORAGE_KEY = 'latitudeAtlas.manualSeed';
+const TOOLBAR_SIZE_STORAGE_KEY = 'lat-toolbar-size';
+const JAVA_LONG_MIN = BigInt('-9223372036854775808');
+const JAVA_LONG_MAX = BigInt('9223372036854775807');
+ 
+ function colorKey(r, g, b) { return `${r},${g},${b}`; }
+ 
+ function showToast(msg, type='loading') {
+  const dot = $('.dot', statusToast);
+  const m = $('.msg', statusToast);
+  dot.className = 'dot ' + type;
+  m.textContent = msg;
+  statusToast.classList.add('visible');
+  if (type !== 'loading') setTimeout(() => statusToast.classList.remove('visible'), 2200);
+ }
+ 
+ function hideToast() {
+  statusToast.classList.remove('visible');
+ }
+ 
+function normalizeUiScale(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 1;
+  return Math.min(1.3, Math.max(0.8, n));
+}
+
+function randomSignedLongString() {
+  // Generate a random signed 64-bit integer in Java long range using
+  // crypto.getRandomValues for uniform distribution.
+  const buf = new Uint32Array(2);
+  crypto.getRandomValues(buf);
+  // Combine two 32-bit halves into a BigInt, then re-interpret as signed.
+  let val = (BigInt(buf[0]) << 32n) | BigInt(buf[1]);
+  if (val > JAVA_LONG_MAX) val -= (JAVA_LONG_MAX - JAVA_LONG_MIN + 1n);
+  return val.toString();
+}
+
+function validateManualSeed(rawValue) {
+  const raw = String(rawValue ?? '').trim();
+  if (!raw) {
+    return { ok: true, value: '', parsed: null, message: '' };
+  }
+  if (!/^[+-]?\d+$/.test(raw)) {
+    return { ok: false, value: raw, parsed: null, message: 'Seed must be a signed 64-bit integer.' };
+  }
+  try {
+    const parsed = BigInt(raw);
+    if (parsed < JAVA_LONG_MIN || parsed > JAVA_LONG_MAX) {
+      return { ok: false, value: raw, parsed: null, message: 'Seed is outside Java long range.' };
+    }
+    return { ok: true, value: raw, parsed, message: `Seed ${raw} will be used for the next run.` };
+  } catch {
+    return { ok: false, value: raw, parsed: null, message: 'Seed must be a signed 64-bit integer.' };
+  }
+}
+
+function setSeedValidationMessage(message = '', isError = false) {
+  if (!genSeedStatus) return;
+  genSeedStatus.textContent = message;
+  genSeedStatus.classList.toggle('error', !!isError);
+  if (genSeedInput) genSeedInput.classList.toggle('invalid', !!isError);
+}
+
+function syncSeedInputStatus({ announce = false } = {}) {
+  const result = validateManualSeed(genSeedInput?.value || '');
+  if (result.ok) {
+    state.lastManualSeed = result.value;
+    try {
+      localStorage.setItem(MANUAL_SEED_STORAGE_KEY, result.value);
+    } catch {}
+    setSeedValidationMessage(result.value ? result.message : '');
+  } else {
+    setSeedValidationMessage(result.message, true);
+    if (announce) showToast(result.message, 'error');
+  }
+  return result;
+}
+
+function closeToolbarBubbles() {
+  if (controlPill?.dataset.layout === 'expanded') {
+    state.activeToolbarBubble = '';
+    return;
+  }
+  state.activeToolbarBubble = '';
+  toolbarBubbles.forEach((bubble) => {
+    bubble.classList.remove('open');
+    const trigger = $('[data-toolbar-trigger]', bubble);
+    if (trigger) trigger.setAttribute('aria-expanded', 'false');
+  });
+}
+
+function openToolbarBubble(name) {
+  if (controlPill?.dataset.layout === 'expanded') {
+    state.activeToolbarBubble = '';
+    return;
+  }
+  if (!name) return;
+  state.activeToolbarBubble = name;
+  toolbarBubbles.forEach((bubble) => {
+    const isActive = bubble.dataset.toolbarBubble === name;
+    bubble.classList.toggle('open', isActive);
+    const trigger = $('[data-toolbar-trigger]', bubble);
+    if (trigger) trigger.setAttribute('aria-expanded', isActive ? 'true' : 'false');
+  });
+}
+
+function toggleToolbarBubble(name) {
+  if (controlPill?.dataset.layout === 'expanded') {
+    return;
+  }
+  if (!name) return;
+  if (state.activeToolbarBubble === name) {
+    closeToolbarBubbles();
+    return;
+  }
+  openToolbarBubble(name);
+}
+
+function applyUiScale(value) {
+  const scale = normalizeUiScale(value);
+  document.documentElement.style.setProperty('--ui-scale', String(scale));
+  if (uiScaleSel) uiScaleSel.value = String(scale);
+  localStorage.setItem('lat-ui-scale', String(scale));
+ }
+
+try {
+  const rememberedSeed = localStorage.getItem(MANUAL_SEED_STORAGE_KEY) || '';
+  if (genSeedInput) genSeedInput.value = rememberedSeed;
+  state.lastManualSeed = rememberedSeed;
+  syncSeedInputStatus();
+} catch {}
+
+function setToolbarFocusMode(enabled) {
+  if (!controlPill) return;
+  const active = !!enabled;
+  if (active && state.activeToolbarBubble && state.activeToolbarBubble !== 'generate') {
+    closeToolbarBubbles();
+  }
+  controlPill.dataset.mode = active ? 'focused' : 'full';
+}
+
+function setToolbarExpandedMode(enabled) {
+  if (!controlPill) return;
+  const active = !!enabled;
+  controlPill.dataset.layout = active ? 'expanded' : 'compact';
+  if (active) {
+    closeToolbarBubbles();
+  }
+}
+
+function setToolbarSizeMode(mode) {
+  const normalized = mode === 'focused' || mode === 'expanded' ? mode : 'compact';
+  setToolbarExpandedMode(normalized === 'expanded');
+  setToolbarFocusMode(normalized === 'focused');
+  if (toolbarSizeSel) toolbarSizeSel.value = normalized;
+  localStorage.setItem(TOOLBAR_SIZE_STORAGE_KEY, normalized);
+}
+ 
+ function clearPendingGeneration() {
+  state.pendingGenerationPreset = null;
+  generationStatus.classList.remove('mode-confirm');
+ }
+ 
+ function showGenerationConfirm(presetKey) {
+   const preset = GENERATION_PRESETS[presetKey];
+   if (!preset || state.generationActive) return;
+   openToolbarBubble('generate');
+   const seedState = syncSeedInputStatus({ announce: true });
+   if (!seedState.ok) return;
+   state.pendingGenerationPreset = presetKey;
+   generationStatusText.textContent = `Generate ${preset.label} world?`;
+   if (generationStatusDetail) {
+    generationStatusDetail.textContent = seedState.value
+     ? `Seed ${seedState.value} will be used for this run.`
+     : 'World generation can take several minutes.';
+   }
+   generationStatus.classList.remove('mode-running');
+   generationStatus.classList.add('visible', 'mode-confirm');
+  }
+ 
+function setGenerationStatus(active, text) {
+  if (active) {
+   openToolbarBubble('generate');
+   clearPendingGeneration();
+   generationStatusText.textContent = text || 'Generating a new world';
+   if (generationStatusDetail) {
+    const seedState = validateManualSeed(genSeedInput?.value || '');
+    generationStatusDetail.textContent = seedState.ok && seedState.value
+     ? `Seed ${seedState.value} · World generation can take several minutes.`
+     : 'World generation can take several minutes.';
+   }
+   generationStatus.classList.add('mode-running', 'visible');
+  } else {
+   clearPendingGeneration();
+   generationStatus.classList.remove('mode-running', 'visible', 'mode-confirm');
+  }
+ }
+
+  async function apiFetch(path, options) {
+   const resp = await fetch(API_BASE + path, options || {});
+   if (!resp.ok) throw new Error(`API ${resp.status}: ${path}`);
+   const ct = resp.headers.get('content-type') || '';
+   if (ct.includes('json')) return resp.json();
+   if (ct.includes('image')) return resp.blob();
+   return resp.text();
+  }
+
+  function formatRunTimestamp(raw) {
+   const s = String(raw || '');
+   const m = s.match(/^(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})$/);
+   if (!m) return '—';
+   const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4]), Number(m[5]), Number(m[6]));
+   if (Number.isNaN(d.getTime())) return '—';
+   return d.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
+  }
+ 
+function boolLabel(value) {
+ return value ? 'Yes' : 'No';
+}
+
+function clampLatitudeDegrees(value) {
+ const lat = Number(value);
+ if (!Number.isFinite(lat)) return 0;
+ return clamp(lat, 0, 90);
+}
+
+function bandForLatitudeDegrees(latDeg) {
+ const clampedLat = clampLatitudeDegrees(latDeg);
+ for (const band of ZONE_BANDS) {
+  if (clampedLat < band.maxDeg) return band;
+ }
+ return ZONE_BANDS[ZONE_BANDS.length - 1];
+}
+
+function normalizeBandKey(value) {
+ const raw = String(value || '').trim().toLowerCase();
+ if (!raw) return null;
+ // TODO: Keep this tiny display-side compatibility shim in sync with LatitudeBands until the viewer can consume a shared authority directly.
+ if (raw === 'equator' || raw === 'equatorial') return 'tropical';
+ if (raw === 'arid') return 'subtropical';
+ if (raw === 'sub-polar') return 'subpolar';
+ if (raw === 'sub_tropical') return 'subtropical';
+ if (raw === 'sub_temperate') return 'temperate';
+ const cleaned = raw.replace(/[\s_-]+/g, '');
+ return BAND_BIT_BY_KEY.has(cleaned) ? cleaned : null;
+}
+
+function bandsToMask(list) {
+ if (!Array.isArray(list)) return 0;
+ let mask = 0;
+ for (const item of list) {
+  const key = normalizeBandKey(item);
+  const bit = key ? BAND_BIT_BY_KEY.get(key) : 0;
+  mask |= bit || 0;
+ }
+ return mask;
+}
+
+function bandLabelForKey(key) {
+ const normalized = normalizeBandKey(key);
+ if (!normalized) return 'Unknown';
+ const band = ZONE_BANDS.find((item) => item.id === normalized);
+ return band ? band.label : normalized;
+}
+
+function bandMaskToLabels(mask) {
+ const labels = [];
+ for (const key of BAND_KEYS) {
+  if ((mask & (BAND_BIT_BY_KEY.get(key) || 0)) !== 0) labels.push(bandLabelForKey(key));
+ }
+ return labels;
+}
+
+function inferBiomeBandMask(biomeId) {
+ const shortId = String(biomeId || '').toLowerCase().replace(/^.*:/, '');
+ if (!shortId) return 0;
+ if (shortId === 'mushroom_fields') return 0;
+ if (shortId.includes('ocean') || shortId.includes('river') || shortId.includes('beach') || shortId.includes('shore') || shortId.includes('coast')) return 0;
+ if (shortId.includes('mangrove')) return bandsToMask(['tropical', 'subtropical']);
+ if (shortId.includes('jungle')) return bandsToMask(['tropical', 'subtropical']);
+ if (shortId.includes('snowy') || shortId.includes('frozen') || shortId.includes('ice_spikes') || shortId.includes('jagged_peaks') || shortId.includes('frozen_peaks') || shortId === 'grove' || shortId.endsWith('_grove')) {
+  return bandsToMask(['subpolar', 'polar']);
+ }
+ if (shortId.includes('taiga')) return bandsToMask(['temperate', 'subpolar']);
+ if (shortId.includes('desert') || shortId.includes('badlands')) return bandsToMask(['tropical', 'subtropical']);
+ if (shortId.includes('savanna')) return bandsToMask(['tropical', 'subtropical']);
+ if (shortId.includes('swamp')) return bandsToMask(['tropical', 'subtropical', 'temperate']);
+ if (shortId.includes('windswept')) {
+  return bandsToMask(['subtropical', 'temperate', 'subpolar']);
+ }
+ if (shortId.includes('stony') || shortId.includes('peak') || shortId.includes('slope')) {
+  return bandsToMask(['temperate', 'subpolar']);
+ }
+ if (shortId.includes('cherry') || shortId.includes('pale_garden')) {
+  return bandsToMask(['temperate']);
+ }
+ if (shortId.includes('forest') || shortId.includes('plains') || shortId.includes('meadow')) {
+  return bandsToMask(['subtropical', 'temperate']);
+ }
+ return 0;
+}
+
+function rebuildBiomeBandMasks() {
+ const masks = new Uint32Array(256);
+ const jungleFamily = new Uint8Array(256);
+ const legendMap = state.legend && typeof state.legend.biomeBands === 'object' && state.legend.biomeBands
+  ? state.legend.biomeBands
+  : null;
+ for (const biome of state.biomes) {
+  const idx = Number(biome.index);
+  if (!Number.isFinite(idx) || idx < 0 || idx > 255) continue;
+  let mask = bandsToMask(biome.allowedBands);
+  if (!mask && legendMap) {
+   const mapped = legendMap[biome.id] ?? legendMap[String(biome.id || '').replace(/^.*:/, '')];
+   mask = bandsToMask(mapped);
+  }
+  if (!mask) {
+   mask = inferBiomeBandMask(biome.id);
+  }
+  masks[idx] = mask;
+  jungleFamily[idx] = String(biome.id || '').toLowerCase().includes('jungle') ? 1 : 0;
+ }
+ state.bandMaskByIndex = masks;
+ state.jungleFamilyByIndex = jungleFamily;
+}
+
+async function copyText(text) {
+ if (navigator.clipboard && navigator.clipboard.writeText) {
+  await navigator.clipboard.writeText(text);
+  return;
+ }
+ const temp = document.createElement('textarea');
+ temp.value = text;
+ temp.setAttribute('readonly', 'readonly');
+ temp.style.position = 'absolute';
+ temp.style.left = '-9999px';
+ document.body.appendChild(temp);
+ temp.select();
+ document.execCommand('copy');
+ temp.remove();
+}
+
+function biomeById(id) {
+ if (!id) return null;
+ return state.biomeByIdMap[id] || null;
+}
+
+function biomeByIndex(index) {
+ if (!Number.isFinite(index)) return null;
+ return state.biomeByIndex[index & 0xFF] || null;
+}
+
+function decodeBiomeIndexImage(image) {
+ const width = image.naturalWidth || image.width || 1;
+ const height = image.naturalHeight || image.height || 1;
+ const temp = document.createElement('canvas');
+ temp.width = width;
+ temp.height = height;
+ const tempCtx = temp.getContext('2d', { willReadFrequently: true });
+ tempCtx.drawImage(image, 0, 0);
+ const pixels = tempCtx.getImageData(0, 0, width, height).data;
+ const indices = new Uint8Array(width * height);
+ for (let i = 0; i < indices.length; i++) {
+  indices[i] = pixels[i * 4];
+ }
+ return { width, height, indices };
+}
+
+function decodeBiomeIndexBlob(blob) {
+ if (!blob) return Promise.resolve(null);
+ return new Promise((resolve, reject) => {
+  const url = URL.createObjectURL(blob);
+  const img = new Image();
+  img.onload = () => {
+   try {
+    resolve(decodeBiomeIndexImage(img));
+   } catch (err) {
+    reject(err);
+   } finally {
+    URL.revokeObjectURL(url);
+   }
+  };
+  img.onerror = () => {
+   URL.revokeObjectURL(url);
+   reject(new Error('Biome ids image load failed'));
+  };
+  img.src = url;
+ });
+}
+
+function biomeIndexAtPixel(x, y) {
+ if (!state.biomeIndices) return null;
+ if (state.biomeIndexWidth !== state.mapWidth || state.biomeIndexHeight !== state.mapHeight) return null;
+ if (x < 0 || y < 0 || x >= state.biomeIndexWidth || y >= state.biomeIndexHeight) return null;
+ return state.biomeIndices[(y * state.biomeIndexWidth) + x];
+}
+
+function biomeAtPixel(x, y, rgb) {
+ const biomeIndex = biomeIndexAtPixel(x, y);
+ if (biomeIndex != null) {
+  const indexed = biomeByIndex(biomeIndex);
+  if (indexed) return indexed;
+ }
+ if (Array.isArray(rgb) && rgb.length >= 3) {
+  return state.colorToBiome[colorKey(rgb[0], rgb[1], rgb[2])] || null;
+ }
+ return null;
+}
+
+function pixelMatchesBiome(biome, pixelNumber, sourceData) {
+ if (!biome) return false;
+ if (state.biomeIndices && state.biomeIndexWidth === state.mapWidth && state.biomeIndexHeight === state.mapHeight && Number.isFinite(biome.index)) {
+  return state.biomeIndices[pixelNumber] === (biome.index & 0xFF);
+ }
+ if (!sourceData || !Array.isArray(biome.color)) return false;
+ const offset = pixelNumber * 4;
+ const [tr, tg, tb] = biome.color;
+ return sourceData[offset] === tr && sourceData[offset + 1] === tg && sourceData[offset + 2] === tb;
+}
+
+function generationLabelForResolution(resolution) {
+ const hit = Object.values(GENERATION_PRESETS).find((preset) => preset.resolution === Number(resolution));
+ return hit ? hit.label : `Custom ${resolution}`;
+}
+
+function selectionStatsForBiome(biome) {
+ if (!state.imageData || !state.mapWidth || !state.mapHeight || !biome || !Array.isArray(biome.color)) return null;
+ const cacheKey = `${state.currentRun || ''}|${state.currentLayer || ''}|${biome.id}`;
+ if (state.selectionStatsCache[cacheKey]) return state.selectionStatsCache[cacheKey];
+ const d = state.imageData.data;
+ let count = 0;
+ let minX = Number.POSITIVE_INFINITY;
+ let minY = Number.POSITIVE_INFINITY;
+ let maxX = -1;
+ let maxY = -1;
+ let sumX = 0;
+ let sumY = 0;
+ const pixelCount = state.mapWidth * state.mapHeight;
+ for (let p = 0; p < pixelCount; p++) {
+  if (!pixelMatchesBiome(biome, p, d)) continue;
+  const x = p % state.mapWidth;
+  const y = Math.floor(p / state.mapWidth);
+  count++;
+  sumX += x;
+  sumY += y;
+  if (x < minX) minX = x;
+  if (x > maxX) maxX = x;
+  if (y < minY) minY = y;
+  if (y > maxY) maxY = y;
+ }
+ if (!count) return null;
+ const cx = Math.round(sumX / count);
+ const cy = Math.round(sumY / count);
+ const worldPos = worldPositionForPixel(cx, cy);
+ const latContext = worldPos ? latitudeContextForWorldZ(worldPos.z) : null;
+ const stats = {
+  count,
+  centroidPixelX: cx,
+  centroidPixelY: cy,
+  centroidX: worldPos ? worldPos.x : cx,
+  centroidZ: worldPos ? worldPos.z : cy,
+  bboxW: maxX - minX + 1,
+  bboxH: maxY - minY + 1,
+  latDeg: latContext ? latContext.deg : null,
+  hemisphere: latContext ? latContext.hemisphere : 'EQ',
+  zoneLabel: latContext ? latContext.zone.label : '—',
+ };
+ state.selectionStatsCache[cacheKey] = stats;
+ return stats;
+}
+
+function selectionFocusPointForBiome(biome) {
+ if (!biome) return null;
+ const inspected = state.inspectedPoint;
+ if (inspected && inspected.biomeId === biome.id && Number.isFinite(inspected.worldX) && Number.isFinite(inspected.worldZ)) {
+  return inspected;
+ }
+ const selected = state.selectedPoint;
+ if (selected && selected.biomeId === biome.id && Number.isFinite(selected.worldX) && Number.isFinite(selected.worldZ)) {
+  return selected;
+ }
+ return null;
+}
+
+function selectedBiomeIdsSet() {
+ return new Set(Array.isArray(state.selectedBiomeIds) ? state.selectedBiomeIds : []);
+}
+
+function isBiomeSelected(id) {
+ return !!id && selectedBiomeIdsSet().has(id);
+}
+
+function selectedBiomes() {
+ const ids = Array.isArray(state.selectedBiomeIds) ? state.selectedBiomeIds : [];
+ return ids.map((id) => biomeById(id)).filter(Boolean);
+}
+
+function focusedSelectedBiome() {
+ if (state.focusedBiomeId && isBiomeSelected(state.focusedBiomeId)) {
+  return biomeById(state.focusedBiomeId);
+ }
+ const selected = selectedBiomes();
+ return selected.length ? selected[0] : null;
+}
+
+function renderSelectionContext(biome = focusedSelectedBiome()) {
+ if (!selectionContextBody) return;
+ if (!biome) {
+  selectionContextBody.innerHTML = '<div class="context-empty">No biome selected</div>';
+  return;
+ }
+ const selected = selectedBiomes();
+ const stats = selectionStatsForBiome(biome);
+ const focusPoint = selectionFocusPointForBiome(biome);
+ const focusLatContext = focusPoint ? latitudeContextForWorldZ(focusPoint.worldZ) : null;
+ const focusPointLabel = focusPoint?.source === 'hover' ? 'Hovered Pixel (X,Z)' : 'Selected Pixel (X,Z)';
+ const pct = biome.pct != null ? `${biome.pct.toFixed(2)}%` : '—';
+ const color = Array.isArray(biome.color) ? `rgb(${biome.color.join(',')})` : '—';
+ let html = `
+  <div class="context-grid">
+     <div class="context-k">Selected Biomes</div><div class="context-v">${selected.length}</div>
+     <div class="context-k">Biome</div><div class="context-v">${biome.name}</div>
+     <div class="context-k">ID</div><div class="context-v">${biome.id}</div>
+     <div class="context-k">Coverage</div><div class="context-v">${pct}</div>
+     <div class="context-k">Display Color</div><div class="context-v">${color}</div>`;
+ if (stats) {
+  html += `
+     <div class="context-k">Pixel Count</div><div class="context-v">${stats.count.toLocaleString()}</div>
+     ${focusPoint ? `<div class="context-k">${focusPointLabel}</div><div class="context-v">${focusPoint.worldX}, ${focusPoint.worldZ}</div>` : ''}
+     <div class="context-k">Latitude Context</div><div class="context-v">${focusLatContext ? `${focusLatContext.deg}°${focusLatContext.hemisphere} (${focusLatContext.zone.label})` : `${stats.latDeg != null ? `${stats.latDeg}°${stats.hemisphere}` : '—'} (${stats.zoneLabel})`}</div>
+     <div class="context-k">Centroid (X,Z)</div><div class="context-v">${stats.centroidX}, ${stats.centroidZ}</div>
+     <div class="context-k">Bounds (px)</div><div class="context-v">${stats.bboxW} × ${stats.bboxH}</div>`;
+ }
+ html += '\n   </div>';
+ selectionContextBody.innerHTML = html;
+}
+
+function updateSelectedBiomesSummary() {
+ if (!selectedBiomesSummary) return;
+ const selected = selectedBiomes();
+ if (!selected.length) {
+  selectedBiomesSummary.textContent = 'Selected biomes: none';
+  return;
+ }
+ const names = selected.map((biome) => biome.name);
+ selectedBiomesSummary.textContent = `Selected biomes: ${names.join(', ')}`;
+}
+
+function clearBiomeSelection() {
+ state.selectedBiomeIds = [];
+ state.focusedBiomeId = null;
+ state.hoveredBiomeId = null;
+ state.inspectedPoint = null;
+ highlightBiomeInList();
+ updateSelectedBiomesSummary();
+ renderSelectionContext(null);
+ clearHighlight();
+ if (!state.selectedPoint) {
+  coordReadout.textContent = '— , —';
+ }
+}
+
+function selectBiomePersistent(biome) {
+ if (!biome) return;
+ const next = selectedBiomeIdsSet();
+ if (next.has(biome.id)) {
+  next.delete(biome.id);
+ } else {
+  next.add(biome.id);
+ }
+ state.selectedBiomeIds = Array.from(next);
+ state.focusedBiomeId = next.has(biome.id)
+  ? biome.id
+  : (state.selectedBiomeIds.length ? state.selectedBiomeIds[state.selectedBiomeIds.length - 1] : null);
+ state.hoveredBiomeId = biome.id;
+ highlightBiomeInList();
+ updateSelectedBiomesSummary();
+ renderSelectionContext();
+ if (!togHighlight.checked && state.selectedBiomeIds.length) togHighlight.checked = true;
+ if (state.selectedBiomeIds.length) {
+  renderSelectedHighlights();
+ } else {
+  clearHighlight();
+ }
+}
+
+function setTheme(theme) {
+ document.documentElement.setAttribute('data-theme', theme);
+ themeBtn.textContent = theme === 'dark' ? '◐' : '◑';
+ localStorage.setItem('lat-theme', theme);
+}
+
+themeBtn.addEventListener('click', () => {
+ const current = document.documentElement.getAttribute('data-theme');
+ setTheme(current === 'dark' ? 'light' : 'dark');
+ if (togBands.checked && state.mapWidth) renderBands();
+});
+toolbarBubbleTriggers.forEach((trigger) => {
+ trigger.addEventListener('click', (e) => {
+  e.stopPropagation();
+  toggleToolbarBubble(trigger.dataset.toolbarTrigger);
+ });
+});
+toolbarBubbles.forEach((bubble) => {
+ bubble.addEventListener('click', (e) => e.stopPropagation());
+});
+document.addEventListener('click', () => {
+ closeToolbarBubbles();
+});
+document.addEventListener('keydown', (e) => {
+ if (e.key === 'Escape') closeToolbarBubbles();
+});
+if (toolbarSizeSel) {
+ toolbarSizeSel.addEventListener('change', () => {
+  setToolbarSizeMode(toolbarSizeSel.value);
+ });
+}
+setTheme(localStorage.getItem('lat-theme') || 'dark');
+applyUiScale(localStorage.getItem('lat-ui-scale') || '1');
+setToolbarSizeMode(localStorage.getItem(TOOLBAR_SIZE_STORAGE_KEY) || 'compact');
+if (uiScaleSel) {
+ uiScaleSel.addEventListener('change', () => applyUiScale(uiScaleSel.value));
+}
+
+function applyTransform() {
+ const transform = `translate(${state.panX}px, ${state.panY}px) scale(${state.zoom})`;
+ mapCanvas.style.transform = transform;
+ hlCanvas.style.transform = transform;
+ gridCanvas.style.transform = transform;
+ bandCanvas.style.transform = transform;
+ bandViolationCanvas.style.transform = transform;
+ ruggedCanvas.style.transform = transform;
+ updateSelectionMarker();
+ zoomBadge.textContent = `${Math.round(state.zoom * 100)}%`;
+}
+
+function zoomTo(newZoom, pivotX, pivotY) {
+ const z0 = state.zoom;
+ const z1 = Math.min(64, Math.max(0.05, newZoom));
+ const wx = (pivotX - state.panX) / z0;
+ const wy = (pivotY - state.panY) / z0;
+ state.zoom = z1;
+ state.panX = pivotX - wx * z1;
+ state.panY = pivotY - wy * z1;
+ applyTransform();
+}
+
+viewport.addEventListener('wheel', e => {
+ e.preventDefault();
+ const rect = viewport.getBoundingClientRect();
+ const mx = e.clientX - rect.left;
+ const my = e.clientY - rect.top;
+ const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
+ zoomTo(state.zoom * factor, mx, my);
+}, { passive: false });
+
+viewport.addEventListener('mousedown', e => {
+ if (e.button !== 0) return;
+ state.isDragging = true;
+ state.dragMoved = false;
+ state.dragStartX = e.clientX;
+ state.dragStartY = e.clientY;
+ state.panStartX = state.panX;
+ state.panStartY = state.panY;
+ viewport.classList.add('dragging');
+});
+
+window.addEventListener('mousemove', e => {
+ if (state.isDragging) {
+  const dx = e.clientX - state.dragStartX;
+  const dy = e.clientY - state.dragStartY;
+  if (!state.dragMoved && Math.hypot(dx, dy) >= DRAG_SELECT_THRESHOLD_PX) {
+   state.dragMoved = true;
+  }
+  state.panX = state.panStartX + dx;
+  state.panY = state.panStartY + dy;
+  applyTransform();
+ }
+ updateInspect(e);
+});
+
+window.addEventListener('mouseup', () => {
+ state.suppressNextMapClick = state.dragMoved;
+ state.isDragging = false;
+ state.dragMoved = false;
+ viewport.classList.remove('dragging');
+});
+
+function fitToView() {
+ if (!state.mapWidth) return;
+ const vw = viewport.clientWidth;
+ const vh = viewport.clientHeight;
+ const pad = 60;
+ const scale = Math.min((vw - pad * 2) / state.mapWidth, (vh - pad * 2) / state.mapHeight);
+ state.zoom = scale;
+ state.panX = (vw - state.mapWidth * scale) / 2;
+ state.panY = (vh - state.mapHeight * scale) / 2;
+ applyTransform();
+}
+
+btnFit.addEventListener('click', fitToView);
+btnReset.addEventListener('click', () => {
+ state.zoom = 1;
+ state.panX = (viewport.clientWidth - state.mapWidth) / 2;
+ state.panY = (viewport.clientHeight - state.mapHeight) / 2;
+ applyTransform();
+});
+
+function runJumpToCoordinates() {
+ if (!state.imageData || !state.mapWidth || !state.mapHeight) {
+  setJumpStatus('Load a run before jumping.', 'error');
+  return;
+ }
+ const xText = String(jumpX.value || '').trim();
+ const zText = String(jumpZ.value || '').trim();
+ if (!xText || !zText) {
+  setJumpStatus('Enter numeric X and Z values.', 'error');
+  return;
+ }
+ const rawX = Number(xText);
+ const rawZ = Number(zText);
+ if (!Number.isFinite(rawX) || !Number.isFinite(rawZ)) {
+  setJumpStatus('Enter numeric X and Z values.', 'error');
+  return;
+ }
+ const radius = getWorldRadius();
+ if (!Number.isFinite(radius) || radius <= 0) {
+  setJumpStatus('World radius unavailable for this run.', 'error');
+  return;
+ }
+ const mapped = worldToPixel(rawX, rawZ, radius, state.mapWidth, state.mapHeight);
+ if (!mapped) {
+  setJumpStatus('Could not convert world coords.', 'error');
+  return;
+ }
+ centerViewOnPixel(mapped.px, mapped.py);
+ inspectPointAtPixel(mapped.px, mapped.py, { selectBiome: true });
+ if (mapped.wasClamped) {
+  setJumpStatus('Outside world bounds; jumped to nearest edge.', 'warn');
+ } else {
+  setJumpStatus(formatLatitudeSummary(mapped.clampedZ));
+ }
+}
+
+btnJump.addEventListener('click', runJumpToCoordinates);
+jumpX.addEventListener('keydown', (e) => {
+ if (e.key === 'Enter') runJumpToCoordinates();
+});
+jumpZ.addEventListener('keydown', (e) => {
+ if (e.key === 'Enter') runJumpToCoordinates();
+});
+
+function updateInspect(e) {
+ if (!state.imageData || !togInspect.checked) {
+  inspectCard.classList.remove('visible');
+  state.inspectedPoint = null;
+  if (state.selectedBiomeIds.length) renderSelectionContext();
+  if (!state.selectedPoint) coordReadout.textContent = '— , —';
+  return;
+ }
+ const rect = viewport.getBoundingClientRect();
+ const mx = e.clientX - rect.left;
+ const my = e.clientY - rect.top;
+ const wx = Math.floor((mx - state.panX) / state.zoom);
+ const wy = Math.floor((my - state.panY) / state.zoom);
+ const worldPos = worldPositionForPixel(wx, wy);
+ coordReadout.textContent = worldPos ? `${worldPos.x} , ${worldPos.z}` : `${wx} , ${wy}`;
+ if (wx < 0 || wy < 0 || wx >= state.mapWidth || wy >= state.mapHeight) {
+  inspectCard.classList.remove('visible');
+  state.inspectedPoint = null;
+  if (state.selectedBiomeIds.length) renderSelectionContext();
+  if (!state.selectedBiomeIds.length) clearHighlight();
+  return;
+ }
+ if (togCrosshair.checked) {
+  crosshair.style.display = 'block';
+  crosshair.style.transform = `translate(${mx}px, ${my}px)`;
+ } else {
+  crosshair.style.display = 'none';
+ }
+ const idx = (wy * state.mapWidth + wx) * 4;
+ const d = state.imageData.data;
+ const biome = biomeAtPixel(wx, wy, [d[idx], d[idx + 1], d[idx + 2]]);
+ state.inspectedPoint = {
+  source: 'hover',
+  pixelX: wx,
+  pixelY: wy,
+  worldX: worldPos ? worldPos.x : null,
+  worldZ: worldPos ? worldPos.z : null,
+  biomeId: biome ? biome.id : null,
+ };
+ if (state.selectedBiomeIds.length) renderSelectionContext();
+ showInspectCard(biome, worldPos, mx, my, wx, wy);
+ if (togHighlight.checked && state.selectedBiomeIds.length) renderSelectedHighlights();
+}
+
+viewport.addEventListener('mouseleave', () => {
+ inspectCard.classList.remove('visible');
+ crosshair.style.display = 'none';
+ state.hoveredBiomeId = null;
+ state.inspectedPoint = null;
+ if (state.selectedBiomeIds.length) renderSelectionContext();
+ if (state.selectedPoint && Number.isFinite(state.selectedPoint.worldX) && Number.isFinite(state.selectedPoint.worldZ)) {
+  coordReadout.textContent = `${state.selectedPoint.worldX} , ${state.selectedPoint.worldZ}`;
+ }
+ if (!state.selectedBiomeIds.length) clearHighlight();
+});
+
+viewport.addEventListener('click', e => {
+ if (state.suppressNextMapClick) {
+  state.suppressNextMapClick = false;
+  return;
+ }
+ if (state.isDragging || !state.imageData) return;
+ const rect = viewport.getBoundingClientRect();
+ const mx = e.clientX - rect.left;
+ const my = e.clientY - rect.top;
+ const wx = Math.floor((mx - state.panX) / state.zoom);
+ const wy = Math.floor((my - state.panY) / state.zoom);
+ if (wx < 0 || wy < 0 || wx >= state.mapWidth || wy >= state.mapHeight) return;
+ inspectPointAtPixel(wx, wy, { selectBiome: true });
+});
+
+function renderSelectedHighlights() {
+ if (!state.imageData) return;
+ const selected = selectedBiomes();
+ if (!selected.length) {
+  clearHighlight();
+  return;
+ }
+ const selectedIds = selectedBiomeIdsSet();
+ const useHighContrast = !!togHiContrast.checked;
+ const renderKey = `${Array.from(selectedIds).sort().join('|')}|${useHighContrast ? 'hc' : 'normal'}`;
+ if (state.renderedHighlightKey === renderKey && hlCanvas.classList.contains('active')) return;
+ hlCanvas.width = state.mapWidth;
+ hlCanvas.height = state.mapHeight;
+ const src = state.imageData.data;
+ const dst = hlCtx.createImageData(state.mapWidth, state.mapHeight);
+ const dd = dst.data;
+ const pixelCount = state.mapWidth * state.mapHeight;
+ const matchedMask = new Uint8Array(pixelCount);
+ for (let p = 0; p < pixelCount; p++) {
+  const i = p * 4;
+  let match = false;
+  if (state.biomeIndices && state.biomeIndexWidth === state.mapWidth && state.biomeIndexHeight === state.mapHeight) {
+   const biome = biomeByIndex(state.biomeIndices[p]);
+   match = !!(biome && selectedIds.has(biome.id));
+  } else {
+   for (const biome of selected) {
+    if (pixelMatchesBiome(biome, p, src)) {
+     match = true;
+     break;
+    }
+   }
+  }
+  matchedMask[p] = match ? 1 : 0;
+  if (useHighContrast) {
+   if (match) {
+    dd[i] = 255; dd[i + 1] = 255; dd[i + 2] = 255; dd[i + 3] = 255;
+   } else {
+    dd[i] = 0; dd[i + 1] = 0; dd[i + 2] = 0; dd[i + 3] = 220;
+   }
+  } else if (match) {
+   dd[i] = 255; dd[i + 1] = 0; dd[i + 2] = 255; dd[i + 3] = 170;
+  } else {
+   dd[i + 3] = 0;
+  }
+ }
+ const outlineColor = useHighContrast
+  ? [62, 232, 214, 255]
+  : [255, 255, 255, 255];
+ for (let y = 0; y < state.mapHeight; y++) {
+  for (let x = 0; x < state.mapWidth; x++) {
+   const p = (y * state.mapWidth) + x;
+   if (!matchedMask[p]) continue;
+   const left = x > 0 ? matchedMask[p - 1] : 0;
+   const right = x + 1 < state.mapWidth ? matchedMask[p + 1] : 0;
+   const up = y > 0 ? matchedMask[p - state.mapWidth] : 0;
+   const down = y + 1 < state.mapHeight ? matchedMask[p + state.mapWidth] : 0;
+   if (left && right && up && down) continue;
+   const i = p * 4;
+   dd[i] = outlineColor[0];
+   dd[i + 1] = outlineColor[1];
+   dd[i + 2] = outlineColor[2];
+   dd[i + 3] = outlineColor[3];
+  }
+ }
+ hlCtx.putImageData(dst, 0, 0);
+ hlCanvas.classList.add('active');
+ hlCanvas.style.mixBlendMode = 'normal';
+ state.renderedHighlightKey = renderKey;
+}
+
+function clearHighlight() {
+ state.hoveredBiomeId = null;
+ state.renderedHighlightKey = null;
+ hlCanvas.classList.remove('active');
+}
+
+togHighlight.addEventListener('change', () => {
+ if (!togHighlight.checked) {
+  clearHighlight();
+  return;
+ }
+ renderSelectedHighlights();
+});
+
+togHiContrast.addEventListener('change', () => {
+ if (state.selectedBiomeIds.length) {
+  if (!togHighlight.checked) togHighlight.checked = true;
+  renderSelectedHighlights();
+  return;
+ }
+ clearHighlight();
+});
+
+btnClearSelection.addEventListener('click', clearBiomeSelection);
+if (btnClearPaletteSelection) {
+ btnClearPaletteSelection.addEventListener('click', clearBiomeSelection);
+}
+
+const ZONE_BANDS = CANONICAL_BAND_DEFINITIONS.map((band) => ({
+ ...band,
+ maxFrac: band.maxDeg / 90,
+ deg: `${band.minDeg.toFixed(1)}–${band.maxDeg.toFixed(1)}°`,
+}));
+
+// Maps atlas.ps1 --size preset names → radius in blocks.
+// Kept in sync with BiomePreviewHeadlessRunner.radiusFromSizeOrWorld().
+const ATLAS_PRESET_RADII = {
+ itty:    3750,
+ xsmall:  3750,
+ tiny:    5000,
+ small:   5000,
+ regular: 7500,
+ large:   10000,
+ massive: 20000,
+};
+
+// Legacy diameter→display-label map (predates the current preset naming).
+// Used by formatWorldSizeLabel() and as a last-resort fallback in getWorldRadius().
+const WORLD_SIZE_NAMES = {
+ 7500: 'Itty Bitty',
+ 10000: 'Tiny',
+ 15000: 'Small',
+ 20000: 'Regular',
+ 30000: 'Large',
+ 40000: 'Ginormous',
+};
+
+function pickManifestValue(manifest, keys) {
+ if (!manifest || typeof manifest !== 'object') return null;
+ for (const key of keys) {
+  if (!Object.prototype.hasOwnProperty.call(manifest, key)) continue;
+  const value = manifest[key];
+  if (value == null) continue;
+  if (typeof value === 'string' && !value.trim()) continue;
+  return value;
+ }
+ return null;
+}
+
+function formatWorldSizeLabel(manifest) {
+ const diameter = Number(pickManifestValue(manifest, ['diameter', 'worldDiameter', 'world_diameter']) || 0);
+ if (diameter && WORLD_SIZE_NAMES[diameter]) return WORLD_SIZE_NAMES[diameter];
+ const raw = pickManifestValue(manifest, ['world_size', 'worldSize', 'size', 'Size']);
+ if (raw == null) return '—';
+ const text = String(raw).trim();
+ if (!text) return '—';
+ const normalized = text.toLowerCase();
+ for (const label of Object.values(WORLD_SIZE_NAMES)) {
+  if (label.toLowerCase() === normalized) return label;
+ }
+ return text.replace(/\b[a-z]/g, c => c.toUpperCase());
+}
+
+function normalizeManifest(manifest, run = '') {
+ if (!manifest || typeof manifest !== 'object') {
+  return run ? { ts: run } : null;
+ }
+ const diameter = Number(pickManifestValue(manifest, ['diameter', 'worldDiameter', 'world_diameter']) || 0);
+ const radius = Number(pickManifestValue(manifest, ['radius', 'worldRadius', 'world_radius']) || 0);
+ const step = Number(pickManifestValue(manifest, ['step', 'Step']) || 0);
+ const seed = pickManifestValue(manifest, ['seed', 'Seed', 'worldSeed', 'world_seed']);
+ const size = pickManifestValue(manifest, ['world_size', 'worldSize', 'size', 'Size']);
+ const branch = pickManifestValue(manifest, ['branch', 'Branch']);
+ const commit = pickManifestValue(manifest, ['commit', 'Commit']);
+ const ts = pickManifestValue(manifest, ['ts', 'timestamp', 'generatedAt', 'generated_at']) || run;
+ const emitBiomeIndex = pickManifestValue(manifest, ['emitBiomeIndex', 'emit_biome_index']);
+ const emitHeight = pickManifestValue(manifest, ['emitHeight', 'emit_height']);
+ return {
+  ...manifest,
+  ts: ts || '',
+  seed: seed == null ? null : String(seed),
+  size: size == null ? '' : String(size),
+  world_size: size == null ? '' : String(size),
+  diameter: Number.isFinite(diameter) && diameter > 0 ? diameter : null,
+  radius: Number.isFinite(radius) && radius > 0 ? radius : null,
+  step: Number.isFinite(step) && step > 0 ? step : null,
+  branch: branch == null ? '' : String(branch),
+  commit: commit == null ? '' : String(commit),
+  emitBiomeIndex: emitBiomeIndex == null ? !!manifest.emitBiomeIndex : !!emitBiomeIndex,
+  emitHeight: emitHeight == null ? !!manifest.emitHeight : !!emitHeight,
+ };
+}
+
+function getWorldRadius(manifest = state.manifest) {
+ if (!manifest) return null;
+ // 1. Explicit radius field in manifest (most direct).
+ if (manifest.radius && manifest.radius > 0) return manifest.radius;
+ // 2. Explicit diameter field.
+ if (manifest.diameter && manifest.diameter > 0) return manifest.diameter / 2;
+ // 3. Atlas preset name → radius (authoritative; matches BiomePreviewHeadlessRunner).
+ const name = String(manifest.world_size || manifest.size || '').toLowerCase().trim();
+ if (name && Object.prototype.hasOwnProperty.call(ATLAS_PRESET_RADII, name)) {
+  return ATLAS_PRESET_RADII[name];
+ }
+ // 4. Legend radiusBlocks — loaded separately from manifest; guards against any
+ //    new preset name not yet in ATLAS_PRESET_RADII.
+ if (state?.legend?.radiusBlocks > 0) return state.legend.radiusBlocks;
+ // 5. Legacy fallback: match against old WORLD_SIZE_NAMES display labels.
+ for (const [diam, label] of Object.entries(WORLD_SIZE_NAMES)) {
+  if (label.toLowerCase() === name) return Number(diam) / 2;
+ }
+ return null;
+}
+
+function getCurrentLayerStep() {
+ const layerMatch = String(state.currentLayer || '').match(/step(\d+)/i);
+ if (layerMatch) {
+  const layerStep = Number(layerMatch[1]);
+  if (Number.isFinite(layerStep) && layerStep > 0) return layerStep;
+ }
+ if (state.manifest && state.manifest.step && state.manifest.step > 0) return state.manifest.step;
+ return null;
+}
+
+function isCoarseSamplingStep(step = getCurrentLayerStep()) {
+ if (!Number.isFinite(step) || step <= 0) return false;
+ return step > 16;
+}
+
+function updateSamplingDisclosure() {
+ if (biomePaletteTitle) {
+  biomePaletteTitle.textContent = 'Biome Presence';
+ }
+ if (biomeSamplingNote) {
+  biomeSamplingNote.style.display = isCoarseSamplingStep() ? 'block' : 'none';
+ }
+}
+
+function clamp(value, min, max) {
+ if (!Number.isFinite(value)) return min;
+ return Math.min(max, Math.max(min, value));
+}
+
+function formatBiomeHex(color) {
+  if (!Array.isArray(color) || color.length < 3) return '—';
+  return `#${color.slice(0, 3).map(v => clamp(Math.round(v), 0, 255).toString(16).padStart(2, '0')).join('').toUpperCase()}`;
+}
+
+function hexToRgb(value) {
+  const hex = String(value || '').trim().replace(/^#/, '');
+  if (!/^[0-9a-fA-F]{6}$/.test(hex)) return [138, 138, 138];
+  return [
+    parseInt(hex.slice(0, 2), 16),
+    parseInt(hex.slice(2, 4), 16),
+    parseInt(hex.slice(4, 6), 16),
+  ];
+}
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function worldPositionForPixel(pixelX, pixelY) {
+ const radius = getWorldRadius();
+ if (!Number.isFinite(radius) || radius <= 0) return null;
+ let stepX = state.mapWidth > 1 ? (radius * 2) / (state.mapWidth - 1) : 0;
+ let stepZ = state.mapHeight > 1 ? (radius * 2) / (state.mapHeight - 1) : 0;
+ const fallbackStep = getCurrentLayerStep();
+ if (!(stepX > 0)) stepX = fallbackStep || 0;
+ if (!(stepZ > 0)) stepZ = fallbackStep || 0;
+ if (!(stepX > 0) || !(stepZ > 0)) return null;
+ return {
+  x: Math.round(-radius + (pixelX * stepX)),
+  z: Math.round(-radius + (pixelY * stepZ)),
+ };
+}
+
+function worldToPixel(worldX, worldZ, radius = getWorldRadius(), width = state.mapWidth, height = state.mapHeight) {
+ if (!Number.isFinite(radius) || radius <= 0 || !Number.isFinite(width) || width <= 0 || !Number.isFinite(height) || height <= 0) {
+  return null;
+ }
+ const rawX = Number(worldX);
+ const rawZ = Number(worldZ);
+ if (!Number.isFinite(rawX) || !Number.isFinite(rawZ)) return null;
+
+ // Preserve the current atlas orientation: negative Z is north and maps to the top of the image.
+ const clampedX = clamp(rawX, -radius, radius);
+ const clampedZ = clamp(rawZ, -radius, radius);
+ const maxX = Math.max(0, width - 1);
+ const maxY = Math.max(0, height - 1);
+ const px = clamp(Math.round(((clampedX + radius) / (2 * radius)) * maxX), 0, maxX);
+ const py = clamp(Math.round(((clampedZ + radius) / (2 * radius)) * maxY), 0, maxY);
+ return {
+  px,
+  py,
+  clampedX,
+  clampedZ,
+  wasClamped: clampedX !== rawX || clampedZ !== rawZ,
+ };
+}
+
+function latitudeContextForWorldZ(worldZ) {
+ const radius = getWorldRadius();
+ if (!Number.isFinite(radius) || radius <= 0 || !Number.isFinite(worldZ)) return null;
+ const absFrac = Math.max(0, Math.min(1, Math.abs(worldZ) / radius));
+ const latDeg = clampLatitudeDegrees(absFrac * 90);
+ return {
+  deg: Math.round(latDeg),
+  hemisphere: worldZ < 0 ? 'N' : (worldZ > 0 ? 'S' : 'EQ'),
+  zone: bandForLatitudeDegrees(latDeg),
+ };
+}
+
+function zoneForFrac(t) {
+ return bandForLatitudeDegrees(Math.abs(Number(t) || 0) * 90);
+}
+
+function refreshBandViolationLabel() {
+ if (!bandViolationsLabel) return;
+ if (!togBandViolations.checked) {
+  bandViolationsLabel.textContent = 'Band violations: off';
+  return;
+ }
+ const stats = state.bandViolationStats;
+ if (!stats || stats.checked <= 0) {
+  bandViolationsLabel.textContent = 'Band violations: none detected';
+  return;
+ }
+ const pct = (stats.violations * 100) / Math.max(1, stats.checked);
+ const hardText = stats.hardJungleInvariant > 0 ? ` | jungle hard invariant: ${stats.hardJungleInvariant.toLocaleString()}` : '';
+ bandViolationsLabel.textContent = `Band violations: ${stats.violations.toLocaleString()} / ${stats.checked.toLocaleString()} (${pct.toFixed(2)}%)${hardText}`;
+}
+
+function bandViolationInfoAtPixel(pixelX, pixelY, biome, worldPos) {
+ if (!state.bandViolationReasonCodes || !state.mapWidth || !state.mapHeight) return null;
+ if (!Number.isFinite(pixelX) || !Number.isFinite(pixelY)) return null;
+ if (pixelX < 0 || pixelY < 0 || pixelX >= state.mapWidth || pixelY >= state.mapHeight) return null;
+ const offset = (pixelY * state.mapWidth) + pixelX;
+ const reasonCode = state.bandViolationReasonCodes[offset] || VIOLATION_REASON_NONE;
+ if (!reasonCode) return null;
+ const biomeIndex = biomeIndexAtPixel(pixelX, pixelY);
+ const latContext = worldPos ? latitudeContextForWorldZ(worldPos.z) : null;
+ const expectedBand = latContext?.zone?.id || null;
+ const expectedLabel = latContext?.zone?.label || 'Unknown';
+ const allowedMask = biomeIndex != null && state.bandMaskByIndex instanceof Uint32Array
+  ? (state.bandMaskByIndex[biomeIndex & 0xFF] || 0)
+  : 0;
+ const allowedLabels = bandMaskToLabels(allowedMask);
+ if (reasonCode === VIOLATION_REASON_JUNGLE_HARD) {
+  return {
+   code: reasonCode,
+   shortText: `Violation: jungle-family biome in ${expectedLabel}`,
+   fullText: `${biome?.name || biome?.id || 'Biome'} is part of the jungle family and should not appear in ${expectedLabel}.`,
+   expectedBand,
+   expectedLabel,
+   allowedLabels,
+  };
+ }
+ return {
+  code: reasonCode,
+  shortText: `Violation: found in ${expectedLabel}, allowed ${allowedLabels.join(', ') || 'none'}`,
+  fullText: `${biome?.name || biome?.id || 'Biome'} appears in ${expectedLabel}, but its allowed bands are ${allowedLabels.join(', ') || 'not defined'}.`,
+  expectedBand,
+  expectedLabel,
+  allowedLabels,
+ };
+}
+
+function renderBandViolations() {
+ bandViolationCanvas.width = state.mapWidth || 1;
+ bandViolationCanvas.height = state.mapHeight || 1;
+ bandViolationCtx.clearRect(0, 0, bandViolationCanvas.width, bandViolationCanvas.height);
+ state.bandViolationStats = null;
+ state.bandViolationReasonCodes = null;
+
+ if (!togBandViolations.checked || !state.mapWidth || !state.mapHeight || !state.biomeIndices || !(state.bandMaskByIndex instanceof Uint32Array)) {
+  bandViolationCanvas.classList.remove('active');
+  refreshBandViolationLabel();
+  return;
+ }
+
+ const image = bandViolationCtx.createImageData(state.mapWidth, state.mapHeight);
+ const data = image.data;
+ const reasonCodes = new Uint8Array(state.mapWidth * state.mapHeight);
+ const detailMap = new Map();
+ let violations = 0;
+ let checked = 0;
+ let hardJungleInvariant = 0;
+
+ for (let y = 0; y < state.mapHeight; y++) {
+  for (let x = 0; x < state.mapWidth; x++) {
+   const biomeIndex = biomeIndexAtPixel(x, y);
+   if (biomeIndex == null) continue;
+   const worldPos = worldPositionForPixel(x, y);
+   if (!worldPos) continue;
+   const expectedBand = latitudeContextForWorldZ(worldPos.z)?.zone?.id;
+   const expectedBit = expectedBand ? BAND_BIT_BY_KEY.get(expectedBand) : 0;
+   if (!expectedBit) continue;
+
+   const expectedRank = expectedBand ? BAND_RANK_BY_KEY.get(expectedBand) : null;
+   const isSubpolarOrHigher = Number.isFinite(expectedRank) && expectedRank >= SUBPOLAR_BAND_RANK;
+   const isJungleFamily = state.jungleFamilyByIndex && state.jungleFamilyByIndex[biomeIndex & 0xFF] === 1;
+   const biome = biomeByIndex(biomeIndex);
+   const o = ((y * state.mapWidth) + x) * 4;
+   const pixelOffset = (y * state.mapWidth) + x;
+
+   if (isSubpolarOrHigher && isJungleFamily) {
+    checked++;
+    violations++;
+    hardJungleInvariant++;
+    reasonCodes[pixelOffset] = VIOLATION_REASON_JUNGLE_HARD;
+    data[o] = 255;
+    data[o + 1] = 0;
+    data[o + 2] = 0;
+    data[o + 3] = 210;
+    const detailKey = `${biome?.id || biomeIndex}|${VIOLATION_REASON_JUNGLE_HARD}|${expectedBand || 'unknown'}`;
+    const existing = detailMap.get(detailKey) || {
+     biomeId: biome?.id || '—',
+     biomeName: biome?.name || biome?.id || `Index ${biomeIndex}`,
+     reason: 'Jungle-family biome entered a cold band.',
+     expectedBand: bandLabelForKey(expectedBand),
+     allowedBands: ['Tropical'],
+     count: 0,
+    };
+    existing.count += 1;
+    detailMap.set(detailKey, existing);
+    continue;
+   }
+
+   const allowedMask = state.bandMaskByIndex[biomeIndex & 0xFF] || 0;
+   if (!allowedMask) continue;
+   checked++;
+   if ((allowedMask & expectedBit) !== 0) continue;
+   reasonCodes[pixelOffset] = VIOLATION_REASON_ALLOWED_BAND;
+   data[o] = 255;
+   data[o + 1] = 48;
+   data[o + 2] = 48;
+   data[o + 3] = 180;
+   violations++;
+   const allowedLabels = bandMaskToLabels(allowedMask);
+   const detailKey = `${biome?.id || biomeIndex}|${VIOLATION_REASON_ALLOWED_BAND}|${expectedBand || 'unknown'}|${allowedLabels.join('|')}`;
+   const existing = detailMap.get(detailKey) || {
+    biomeId: biome?.id || '—',
+    biomeName: biome?.name || biome?.id || `Index ${biomeIndex}`,
+    reason: `${biome?.name || biome?.id || 'Biome'} appears in ${bandLabelForKey(expectedBand)}, outside its allowed bands.`,
+    expectedBand: bandLabelForKey(expectedBand),
+    allowedBands: allowedLabels,
+    count: 0,
+   };
+   existing.count += 1;
+   detailMap.set(detailKey, existing);
+  }
+ }
+
+ state.bandViolationReasonCodes = reasonCodes;
+ state.bandViolationStats = {
+  violations,
+  checked,
+  hardJungleInvariant,
+  details: Array.from(detailMap.values()).sort((a, b) => b.count - a.count || a.biomeName.localeCompare(b.biomeName)),
+ };
+ refreshBandViolationLabel();
+ if (violations <= 0) {
+  bandViolationCanvas.classList.remove('active');
+  return;
+ }
+ bandViolationCtx.putImageData(image, 0, 0);
+ bandViolationCanvas.classList.add('active');
+}
+
+function toggleBandViolations() {
+ renderBandViolations();
+}
+
+function viewportPositionForPixel(pixelX, pixelY) {
+ return {
+  x: (pixelX * state.zoom) + state.panX,
+  y: (pixelY * state.zoom) + state.panY,
+ };
+}
+
+function updateSelectionMarker() {
+ if (!selectionMarker || !state.selectedPoint || !state.mapWidth || !state.mapHeight) {
+  if (selectionMarker) {
+   selectionMarker.classList.remove('visible');
+   selectionMarker.style.transform = 'translate(-9999px, -9999px)';
+  }
+  return;
+ }
+ const pos = viewportPositionForPixel(state.selectedPoint.pixelX, state.selectedPoint.pixelY);
+ selectionMarker.style.transform = `translate(${Math.round(pos.x)}px, ${Math.round(pos.y)}px)`;
+ selectionMarker.classList.add('visible');
+}
+
+function setSelectedPoint(point) {
+ state.selectedPoint = point;
+ updateSelectionMarker();
+}
+
+function clearSelectedPoint() {
+ state.selectedPoint = null;
+ coordReadout.textContent = '— , —';
+ updateSelectionMarker();
+}
+
+function setJumpStatus(message, tone = '') {
+ if (!jumpStatus) return;
+ jumpStatus.textContent = message;
+ jumpStatus.className = `jump-status${tone ? ` ${tone}` : ''}`;
+}
+
+function formatLatitudeSummary(worldZ) {
+ const latContext = latitudeContextForWorldZ(worldZ);
+ if (!latContext) return 'Latitude unavailable';
+ return `${latContext.deg}°${latContext.hemisphere} · ${latContext.zone.label}`;
+}
+
+function centerViewOnPixel(pixelX, pixelY) {
+ if (!state.mapWidth || !state.mapHeight) return;
+ const targetX = viewport.clientWidth / 2;
+ const targetY = viewport.clientHeight / 2;
+ state.panX = targetX - (pixelX * state.zoom);
+ state.panY = targetY - (pixelY * state.zoom);
+ applyTransform();
+}
+
+function showInspectCard(biome, worldPos, viewportX, viewportY, pixelX, pixelY) {
+ if (!biome || !togTooltip.checked) {
+  inspectCard.classList.remove('visible');
+  return;
+ }
+ $('#inspect-color-bar').style.background = `rgb(${biome.color.join(',')})`;
+ $('#inspect-biome-name').textContent = biome.name;
+ $('#inspect-biome-id').textContent = biome.id;
+ $('#inspect-coords').innerHTML = worldPos
+  ? `<span>x ${worldPos.x}</span> <span>z ${worldPos.z}</span>`
+  : '';
+ const latContext = worldPos ? latitudeContextForWorldZ(worldPos.z) : null;
+ if (latContext) {
+  const zone = latContext.zone;
+  const [zr, zg, zb] = zone.color;
+  const violation = bandViolationInfoAtPixel(pixelX, pixelY, biome, worldPos);
+  const violationHtml = violation ? `<div style="margin-top:4px;color:#ff8b8b">${escapeHtml(violation.shortText)}</div>` : '';
+  $('#inspect-zone').innerHTML = `<span style="color:rgb(${zr},${zg},${zb})">${zone.label}</span> <span style="color:var(--text-tertiary)">${latContext.deg}°${latContext.hemisphere}</span>${violationHtml}`;
+ } else {
+  $('#inspect-zone').textContent = '—';
+ }
+ inspectCard.style.left = `${viewportX + 18}px`;
+ inspectCard.style.top = `${viewportY + 18}px`;
+ inspectCard.classList.add('visible');
+}
+
+function inspectPointAtPixel(pixelX, pixelY, options = {}) {
+ if (!state.imageData || pixelX < 0 || pixelY < 0 || pixelX >= state.mapWidth || pixelY >= state.mapHeight) return null;
+ const idx = (pixelY * state.mapWidth + pixelX) * 4;
+ const d = state.imageData.data;
+ const biome = biomeAtPixel(pixelX, pixelY, [d[idx], d[idx + 1], d[idx + 2]]);
+ const worldPos = worldPositionForPixel(pixelX, pixelY);
+ const viewportPos = viewportPositionForPixel(pixelX, pixelY);
+
+ coordReadout.textContent = worldPos ? `${worldPos.x} , ${worldPos.z}` : `${pixelX} , ${pixelY}`;
+ setSelectedPoint({
+  pixelX,
+  pixelY,
+  worldX: worldPos ? worldPos.x : null,
+  worldZ: worldPos ? worldPos.z : null,
+  biomeId: biome ? biome.id : null,
+ });
+ state.inspectedPoint = {
+  source: options.selectBiome ? 'selected' : 'hover',
+  pixelX,
+  pixelY,
+  worldX: worldPos ? worldPos.x : null,
+  worldZ: worldPos ? worldPos.z : null,
+  biomeId: biome ? biome.id : null,
+ };
+ if (state.selectedBiomeIds.length) renderSelectionContext();
+
+ if (togCrosshair.checked) {
+  crosshair.style.display = 'block';
+  crosshair.style.transform = `translate(${Math.round(viewportPos.x)}px, ${Math.round(viewportPos.y)}px)`;
+ } else {
+  crosshair.style.display = 'none';
+ }
+
+ if (options.selectBiome && biome) {
+  selectBiomePersistent(biome);
+ }
+ showInspectCard(biome, worldPos, viewportPos.x, viewportPos.y, pixelX, pixelY);
+ return { biome, worldPos, viewportPos };
+}
+
+function currentReportBiomes() {
+ const selected = selectedBiomes();
+ if (selected.length) return selected;
+ return mergeBiomePresenceRows(state.biomes, state.biomeInventory);
+}
+
+function currentSampledBiomes() {
+ const selectedIds = selectedBiomeIdsSet();
+ const rows = Array.isArray(state.biomes) ? state.biomes.slice() : [];
+ if (!selectedIds.size) return rows;
+ return rows.filter((biome) => selectedIds.has(biome.id));
+}
+
+function currentInventoryBiomes() {
+ const selectedIds = selectedBiomeIdsSet();
+ const rows = Array.isArray(state.biomeInventory) ? state.biomeInventory.slice() : [];
+ if (!selectedIds.size) return rows;
+ return rows.filter((biome) => selectedIds.has(biome.id));
+}
+
+function buildPrintableReportHtml() {
+ const manifest = state.manifest || {};
+ const radius = getWorldRadius(manifest);
+ const diameter = manifest?.diameter || (radius ? radius * 2 : null);
+const currentStep = getCurrentLayerStep();
+const coarseSampling = isCoarseSamplingStep(currentStep);
+const reportBiomes = currentReportBiomes();
+const sampledBiomes = currentSampledBiomes();
+const inventoryBiomes = currentInventoryBiomes();
+ const selected = selectedBiomes();
+ const focused = focusedSelectedBiome();
+const point = state.selectedPoint;
+ const latSummary = point && Number.isFinite(point.worldZ) ? formatLatitudeSummary(point.worldZ) : '—';
+ const metadataRows = [
+  ['Run', state.currentRun || '—'],
+  ['Seed', manifest.seed || '—'],
+  ['Radius', radius ? radius.toLocaleString() : '—'],
+  ['Diameter', diameter ? Number(diameter).toLocaleString() : '—'],
+  ['Branch', manifest.branch || '—'],
+  ['Commit', manifest.commit || '—'],
+  ['Step', getCurrentLayerStep() || '—'],
+  ['Generated', formatRunTimestamp(state.currentRun || manifest.ts)],
+  ['Palette Scope', coarseSampling ? `Sampled at current resolution (step ${currentStep})` : 'Sampled at current resolution'],
+  ['Known World Biomes', inventoryBiomes.length ? inventoryBiomes.length.toLocaleString() : '—'],
+ ];
+ const selectionRows = [
+  ['Selection Scope', selected.length ? `${selected.length} biome${selected.length === 1 ? '' : 's'}` : 'All biomes'],
+  ['Selected Biomes', selected.length ? selected.map((biome) => biome.name).join(', ') : 'All loaded biomes'],
+  ['Focused Biome', focused ? focused.name : '—'],
+  ['Focused Biome ID', focused ? focused.id : '—'],
+  ['Cursor X/Z', point && Number.isFinite(point.worldX) && Number.isFinite(point.worldZ) ? `${point.worldX}, ${point.worldZ}` : '—'],
+  ['Latitude', latSummary],
+  ['Sampling Warning', coarseSampling ? 'Coarse sampling may omit rare biomes; absence here does not prove world absence.' : 'Displayed palette is sampled from the current atlas layer.'],
+ ];
+ const selectedIds = new Set(reportBiomes.map((biome) => biome.id));
+ const violationDetails = Array.isArray(state.bandViolationStats?.details)
+  ? state.bandViolationStats.details.filter((detail) => selectedIds.size === 0 || selectedIds.has(detail.biomeId))
+  : [];
+ const sampledById = new Map(sampledBiomes.map((biome) => [biome.id, biome]));
+ const tableRows = sampledBiomes.map((biome) => {
+  const hex = formatBiomeHex(biome.color);
+  return `
+   <tr>
+    <td>${escapeHtml(biome.id || '—')}</td>
+    <td>${escapeHtml(biome.name || '—')}</td>
+    <td><span class="swatch" style="background:${escapeHtml(hex)}"></span> ${escapeHtml(hex)}</td>
+   <td>${Number.isFinite(biome.index) ? biome.index : '—'}</td>
+   <td>${biome.pct != null ? `${biome.pct.toFixed(4)}%` : '—'}</td>
+   </tr>`;
+ }).join('');
+ const inventoryRows = inventoryBiomes.map((biome) => {
+  const hex = formatBiomeHex(biome.color);
+  const sampled = sampledById.get(biome.id);
+  const firstLocation = Number.isFinite(biome.first_seen_x) && Number.isFinite(biome.first_seen_z)
+   ? `${biome.first_seen_x}, ${biome.first_seen_z}`
+   : '—';
+  const sampledCoverage = sampled?.pct != null
+   ? `${sampled.pct.toFixed(4)}%`
+   : '0.0000% (not observed at current resolution)';
+  return `
+   <tr>
+    <td>${escapeHtml(biome.id || '—')}</td>
+    <td>${escapeHtml(biome.name || '—')}</td>
+    <td><span class="swatch" style="background:${escapeHtml(hex)}"></span> ${escapeHtml(hex)}</td>
+    <td>${escapeHtml(firstLocation)}</td>
+    <td>${escapeHtml(biome.latitude_label || '—')}</td>
+    <td>${Number.isFinite(biome.discovery_step_used) ? biome.discovery_step_used : '—'}</td>
+    <td>${escapeHtml(sampledCoverage)}</td>
+   </tr>`;
+ }).join('');
+ const violationRows = violationDetails.map((detail) => `
+   <tr>
+    <td>${escapeHtml(detail.biomeId || '—')}</td>
+    <td>${escapeHtml(detail.biomeName || '—')}</td>
+    <td>${escapeHtml(detail.reason || '—')}</td>
+    <td>${escapeHtml(detail.expectedBand || '—')}</td>
+    <td>${escapeHtml((detail.allowedBands || []).join(', ') || '—')}</td>
+    <td>${Number.isFinite(detail.count) ? detail.count.toLocaleString() : '—'}</td>
+   </tr>`).join('');
+ const renderRows = (rows) => rows.map(([key, value]) => `<div class="meta-row"><div class="meta-key">${escapeHtml(key)}</div><div class="meta-value">${escapeHtml(value)}</div></div>`).join('');
+ return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Latitude Atlas Report</title>
+<style>
+ body { margin: 24px; font-family: Arial, sans-serif; color: #111; background: #fff; }
+ h1 { margin: 0 0 6px; font-size: 22px; }
+ h2 { margin: 22px 0 10px; font-size: 15px; }
+ .sub { color: #444; margin-bottom: 14px; }
+ .meta { display: grid; grid-template-columns: 180px 1fr; gap: 6px 14px; max-width: 860px; }
+ .meta-row { display: contents; }
+ .meta-key { font-weight: 700; }
+ .meta-value { font-family: "Courier New", monospace; }
+ table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+ th, td { border: 1px solid #bbb; padding: 8px 10px; text-align: left; font-size: 12px; }
+ th { background: #f3f3f3; }
+ .swatch { display: inline-block; width: 12px; height: 12px; margin-right: 8px; vertical-align: middle; border: 1px solid #666; }
+ .empty { color: #666; font-style: italic; }
+ @media print { body { margin: 16px; } }
+</style>
+</head>
+<body>
+<h1>Latitude Atlas Biome Report</h1>
+<div class="sub">Run ${escapeHtml(state.currentRun || '—')} · ${escapeHtml(formatRunTimestamp(state.currentRun || manifest.ts))}</div>
+${coarseSampling ? '<div class="sub">Coarse sampling may omit rare biomes; absence here does not prove world absence.</div>' : '<div class="sub">This report summarizes biomes sampled from the currently loaded atlas layer.</div>'}
+<h2>World Metadata</h2>
+<div class="meta">${renderRows(metadataRows)}</div>
+<h2>Selection Context</h2>
+<div class="meta">${renderRows(selectionRows)}</div>
+<h2>Band Violations</h2>
+${violationDetails.length
+ ? `<table><thead><tr><th>Biome ID</th><th>Name</th><th>Reason</th><th>Observed Band</th><th>Allowed Bands</th><th>Pixels</th></tr></thead><tbody>${violationRows}</tbody></table>`
+ : '<div class="empty">No band violations are currently recorded for this report scope.</div>'}
+<h2>Sampled Biome Palette Report</h2>
+${sampledBiomes.length ? `<table><thead><tr><th>Biome ID</th><th>Name</th><th>Color</th><th>Index</th><th>Sampled Coverage</th></tr></thead><tbody>${tableRows}</tbody></table>` : '<div class="empty">No sampled biome rows are loaded for the current run.</div>'}
+<h2>Known Biomes In World</h2>
+<div class="sub">This inventory is discovery-based and separate from sampled coverage. A biome may be present in world even when sampled coverage is zero on the current atlas layer.</div>
+${inventoryBiomes.length ? `<table><thead><tr><th>Biome ID</th><th>Name</th><th>Color</th><th>First Known X/Z</th><th>Latitude</th><th>Discovery Step</th><th>Sampled Coverage</th></tr></thead><tbody>${inventoryRows}</tbody></table>` : '<div class="empty">No world-biome inventory rows are loaded for the current run.</div>'}
+</body>
+</html>`;
+}
+
+function reportFilename() {
+ const run = String(state.currentRun || 'atlas-report').replace(/[^a-zA-Z0-9_-]+/g, '-');
+ const selected = selectedBiomes();
+ const scope = selected.length
+  ? (selected.length === 1
+   ? String(selected[0].id).split(':').pop()
+   : `${selected.length}-biomes`)
+  : 'all-biomes';
+ return `${run}-${scope}-report.html`;
+}
+
+function openPrintableReport() {
+ if (!state.currentRun || (!state.biomes.length && !state.biomeInventory.length)) {
+  showToast('Load a run before opening a report.', 'error');
+  return;
+ }
+ const html = buildPrintableReportHtml();
+ const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+ const blobUrl = URL.createObjectURL(blob);
+ const win = window.open(blobUrl, '_blank', 'width=960,height=780');
+ if (!win) {
+  URL.revokeObjectURL(blobUrl);
+  showToast('Popup blocked while opening report.', 'error');
+  return;
+ }
+ setTimeout(() => URL.revokeObjectURL(blobUrl), 30000);
+ win.focus();
+}
+
+function exportPrintableReport() {
+ if (!state.currentRun || (!state.biomes.length && !state.biomeInventory.length)) {
+  showToast('Load a run before exporting a report.', 'error');
+  return;
+ }
+ const html = buildPrintableReportHtml();
+ const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+ const blobUrl = URL.createObjectURL(blob);
+ const link = document.createElement('a');
+ link.href = blobUrl;
+ link.download = reportFilename();
+ document.body.appendChild(link);
+ link.click();
+ link.remove();
+ setTimeout(() => URL.revokeObjectURL(blobUrl), 30000);
+ showToast('Exporting report…', 'success');
+}
+
+function renderBands() {
+ if (!state.mapWidth || !state.mapHeight) return;
+ bandCanvas.width = state.mapWidth;
+ bandCanvas.height = state.mapHeight;
+ bandCtx.clearRect(0, 0, state.mapWidth, state.mapHeight);
+ const centerY = state.mapHeight / 2;
+ const bandAlpha = Math.min(0.9, Math.max(0.1, state.bandOpacity || 0.24));
+ let prevFrac = 0;
+ for (const band of ZONE_BANDS) {
+  const [r, g, b] = band.color;
+  bandCtx.fillStyle = `rgba(${r},${g},${b},${bandAlpha})`;
+  const topPx = Math.round(centerY - band.maxFrac * centerY);
+  const botPx = Math.round(centerY + band.maxFrac * centerY);
+  const prevTopPx = Math.round(centerY - prevFrac * centerY);
+  const prevBotPx = Math.round(centerY + prevFrac * centerY);
+  bandCtx.fillRect(0, topPx, state.mapWidth, prevTopPx - topPx);
+  bandCtx.fillRect(0, prevBotPx, state.mapWidth, botPx - prevBotPx);
+  prevFrac = band.maxFrac;
+ }
+ bandCtx.save();
+ const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+ for (const band of ZONE_BANDS) {
+  if (band.maxFrac >= 1.0) continue;
+  const northY = Math.round(centerY - band.maxFrac * centerY);
+  const southY = Math.round(centerY + band.maxFrac * centerY);
+  const [r, g, b] = band.color;
+  bandCtx.strokeStyle = `rgba(${r},${g},${b},${isDark ? 0.85 : 0.8})`;
+  bandCtx.lineWidth = 1.8;
+  bandCtx.setLineDash([10, 5]);
+  bandCtx.beginPath();
+  bandCtx.moveTo(0, northY);
+  bandCtx.lineTo(state.mapWidth, northY);
+  bandCtx.stroke();
+  bandCtx.beginPath();
+  bandCtx.moveTo(0, southY);
+  bandCtx.lineTo(state.mapWidth, southY);
+  bandCtx.stroke();
+ }
+ bandCtx.strokeStyle = isDark ? 'rgba(62,232,214,0.95)' : 'rgba(26,158,143,0.9)';
+ bandCtx.lineWidth = 2.2;
+ bandCtx.setLineDash([]);
+ bandCtx.beginPath();
+ bandCtx.moveTo(0, Math.round(centerY));
+ bandCtx.lineTo(state.mapWidth, Math.round(centerY));
+ bandCtx.stroke();
+ bandCtx.restore();
+ bandCtx.save();
+ const fontSize = Math.max(9, Math.min(14, Math.round(state.mapHeight / 50)));
+ bandCtx.font = `500 ${fontSize}px ${getComputedStyle(document.documentElement).getPropertyValue('--font-display').trim() || 'sans-serif'}`;
+ bandCtx.textAlign = 'right';
+ bandCtx.textBaseline = 'middle';
+ let prevLabelFrac = 0;
+ for (const band of ZONE_BANDS) {
+  const midFrac = (prevLabelFrac + band.maxFrac) / 2;
+  const labelY = Math.round(centerY - midFrac * centerY);
+  const [r, g, b] = band.color;
+  bandCtx.fillStyle = isDark
+   ? `rgba(${Math.min(255, r + 60)},${Math.min(255, g + 60)},${Math.min(255, b + 60)},0.7)`
+   : `rgba(${Math.max(0, r - 40)},${Math.max(0, g - 40)},${Math.max(0, b - 40)},0.8)`;
+  bandCtx.fillText(band.label, state.mapWidth - 6, labelY);
+  prevLabelFrac = band.maxFrac;
+ }
+ bandCtx.restore();
+ if (togBands.checked) {
+  bandCanvas.classList.add('active');
+ } else {
+  bandCanvas.classList.remove('active');
+ }
+}
+
+function renderBandLegend() {
+ bandLegend.innerHTML = '';
+ const radius = getWorldRadius();
+ const radiusLabel = radius ? ` (r=${radius.toLocaleString()})` : '';
+ const sizeName = state.manifest?.world_size || state.manifest?.diameter
+  ? (WORLD_SIZE_NAMES[state.manifest.diameter] || state.manifest.world_size || '')
+  : '';
+ for (const band of ZONE_BANDS) {
+  const [r, g, b] = band.color;
+  const row = document.createElement('div');
+  row.className = 'band-legend-row';
+  row.innerHTML = `
+     <div class="band-legend-swatch" style="background:rgb(${r},${g},${b})"></div>
+     <span class="band-legend-label">${band.label}</span>
+     <span class="band-legend-deg">${band.deg}</span>
+   `;
+  bandLegend.appendChild(row);
+ }
+ if (sizeName || radius) {
+  const footer = document.createElement('div');
+  footer.style.cssText = 'font-family:var(--font-mono);font-size:9.5px;color:var(--text-tertiary);margin-top:4px;padding-top:4px;border-top:1px solid var(--border-subtle);';
+  footer.textContent = sizeName ? `${sizeName}${radiusLabel}` : `Radius: ${radius.toLocaleString()}`;
+  bandLegend.appendChild(footer);
+ }
+}
+
+function toggleBands() {
+ if (bandsOpacity) bandsOpacity.disabled = !togBands.checked;
+ if (togBands.checked) {
+  renderBands();
+  renderBandLegend();
+  bandCanvas.classList.add('active');
+  bandLegend.classList.add('visible');
+ } else {
+  bandCanvas.classList.remove('active');
+  bandLegend.classList.remove('visible');
+ }
+}
+
+togBands.addEventListener('change', toggleBands);
+togBandViolations.addEventListener('change', toggleBandViolations);
+togRuggedness.addEventListener('change', () => {
+  if (togRuggedness.checked) {
+    if (!state.currentRun || !state.currentLayer) return;
+    fetchAndRenderRuggedness(state.currentRun, state.currentLayer);
+  } else {
+    clearRuggedness();
+    setRuggednessStatus('');
+  }
+});
+if (ruggedQuality) {
+  ruggedQuality.addEventListener('change', () => {
+    if (!state.currentRun || !state.currentLayer) return;
+    setRuggednessStatus('');
+    if (currentRuggedImg) {
+      currentRuggedImg.onload = null;
+      currentRuggedImg.onerror = null;
+      currentRuggedImg.src = '';
+      currentRuggedImg = null;
+    }
+    if (togRuggedness && togRuggedness.checked) {
+      clearRuggedness();
+      fetchAndRenderRuggedness(state.currentRun, state.currentLayer);
+    }
+  });
+}
+if (bandsOpacity) {
+ const applyBandOpacity = () => {
+  const v = Number(bandsOpacity.value || 24);
+  state.bandOpacity = Math.min(0.9, Math.max(0.1, v / 100));
+  if (bandsOpacityVal) bandsOpacityVal.textContent = `${Math.round(state.bandOpacity * 100)}%`;
+  if (togBands.checked && state.mapWidth) renderBands();
+ };
+ bandsOpacity.addEventListener('input', applyBandOpacity);
+ bandsOpacity.addEventListener('change', applyBandOpacity);
+ applyBandOpacity();
+ bandsOpacity.disabled = !togBands.checked;
+}
+
+function renderBiomeList(biomes) {
+ updateSamplingDisclosure();
+ biomeListBody.innerHTML = '';
+ const inventory = Array.isArray(state.biomeInventory) ? state.biomeInventory : [];
+ const rows = mergeBiomePresenceRows(biomes, inventory);
+ if (!rows.length) {
+  biomeListBody.innerHTML = '<div style="color:var(--text-tertiary);font-size:12px;font-style:italic;">No sampled or inventory biomes are loaded for this run.</div>';
+  biomeCountEl.textContent = '0';
+  return;
+ }
+ biomeCountEl.textContent = `${rows.length} known`;
+ const frag = document.createDocumentFragment();
+ for (const b of rows) {
+  const row = document.createElement('div');
+  row.className = 'biome-entry';
+  row.dataset.biomeId = b.id;
+  const pctText = b.pct != null
+   ? `${b.pct.toFixed(1)}%`
+   : (b.present_in_world ? 'Present in world' : '');
+  const statusTitle = b.pct != null
+   ? 'Sampled on the current atlas layer'
+   : (b.present_in_world && b.latitude_label
+      ? `Present in world; not observed at current resolution. First seen near ${b.first_seen_x}, ${b.first_seen_z} (${b.latitude_label}).`
+      : 'Present in world; not observed at current resolution.');
+  row.innerHTML = `
+     <div class="biome-swatch" style="background:rgb(${b.color.join(',')})"></div>
+     <div class="biome-name" title="${b.id}">${b.name}</div>
+     <div class="biome-pct" title="${statusTitle}">${pctText}</div>
+   `;
+  row.addEventListener('click', () => {
+   selectBiomePersistent(b);
+  });
+  frag.appendChild(row);
+ }
+ biomeListBody.appendChild(frag);
+}
+
+function renderGrid() {
+  if (!state.mapWidth || !state.mapHeight) return;
+  gridCanvas.width = state.mapWidth;
+  gridCanvas.height = state.mapHeight;
+  gridCtx.clearRect(0, 0, state.mapWidth, state.mapHeight);
+
+  const step = Number((state.currentLayer || '').match(/step(\d+)/i)?.[1] || 32);
+  const base = step <= 16 ? 64 : step <= 32 ? 128 : step <= 64 ? 256 : 512;
+  const majorEvery = 4;
+  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+
+  for (let x = 0, i = 0; x <= state.mapWidth; x += base, i++) {
+    const major = i % majorEvery === 0;
+    gridCtx.strokeStyle = major
+      ? (isDark ? 'rgba(62,232,214,0.35)' : 'rgba(26,158,143,0.35)')
+      : (isDark ? 'rgba(255,255,255,0.14)' : 'rgba(0,0,0,0.14)');
+    gridCtx.lineWidth = major ? 1.5 : 1;
+    gridCtx.beginPath();
+    gridCtx.moveTo(x + 0.5, 0);
+    gridCtx.lineTo(x + 0.5, state.mapHeight);
+    gridCtx.stroke();
+  }
+
+  for (let y = 0, i = 0; y <= state.mapHeight; y += base, i++) {
+    const major = i % majorEvery === 0;
+    gridCtx.strokeStyle = major
+      ? (isDark ? 'rgba(62,232,214,0.35)' : 'rgba(26,158,143,0.35)')
+      : (isDark ? 'rgba(255,255,255,0.14)' : 'rgba(0,0,0,0.14)');
+    gridCtx.lineWidth = major ? 1.5 : 1;
+    gridCtx.beginPath();
+    gridCtx.moveTo(0, y + 0.5);
+    gridCtx.lineTo(state.mapWidth, y + 0.5);
+    gridCtx.stroke();
+  }
+}
+
+function toggleGrid() {
+  if (togGrid.checked && state.mapWidth) {
+    renderGrid();
+    gridCanvas.classList.add('active');
+  } else {
+    gridCanvas.classList.remove('active');
+  }
+}
+
+function highlightBiomeInList() {
+  const selected = selectedBiomeIdsSet();
+  $$('.biome-entry', biomeListBody).forEach(el => {
+    el.classList.toggle('active', selected.has(el.dataset.biomeId));
+  });
+}
+
+function isTextEntryTarget(el) {
+  if (!el) return false;
+  const tag = String(el.tagName || '').toUpperCase();
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || !!el.isContentEditable;
+}
+
+biomeSearch.addEventListener('input', () => {
+  const q = biomeSearch.value.toLowerCase();
+  $$('.biome-entry', biomeListBody).forEach(el => {
+    const name = String(el.dataset.biomeId || '').toLowerCase();
+    const label = $('.biome-name', el)?.textContent?.toLowerCase() || '';
+    el.style.display = name.includes(q) || label.includes(q) ? '' : 'none';
+  });
+});
+biomeSearch.addEventListener('pointerdown', e => {
+  e.stopPropagation();
+  if (!biomeSearch.disabled) {
+    biomeSearch.focus();
+  }
+});
+biomeSearch.addEventListener('keydown', e => {
+  e.stopPropagation();
+});
+
+/* ─── METADATA ─── */
+ function renderMetadata(manifest) {
+  if (!manifest) {
+    metadataBody.innerHTML = '<div style="color:var(--text-tertiary);font-size:12px;font-style:italic;">Select a run to view summary</div>';
+    updateRunActionButtons();
+    return;
+  }
+  const sizeName = formatWorldSizeLabel(manifest);
+  const radius = getWorldRadius(manifest);
+  const seedValue = manifest?.seed != null && String(manifest.seed).trim() ? String(manifest.seed) : '—';
+ const rows = [
+    { key: 'Run', value: state.currentRun || '—' },
+    { key: 'Generated', value: formatRunTimestamp(state.currentRun || manifest.ts) },
+    { key: 'Seed', value: seedValue, seed: true },
+    { key: 'World Size', value: sizeName },
+    { key: 'Radius', value: radius ? radius.toLocaleString() : '—' },
+    { key: 'Current Detail', value: state.currentLayer ? formatLayerLabel(state.currentLayer) : (manifest.step ? formatLayerLabel(`step${manifest.step}`) : '—') },
+    { key: 'Layers', value: state.availableLayers.length ? String(state.availableLayers.length) : '—' },
+    { key: 'Sampled Palette Biomes', value: state.biomes.length ? state.biomes.length.toLocaleString() : '—' },
+    { key: 'Known World Biomes', value: state.biomeInventory.length ? state.biomeInventory.length.toLocaleString() : '—' },
+    { key: 'Sampling Note', value: isCoarseSamplingStep() ? 'Coarse sampling may omit rare biomes.' : 'Current step is detailed enough to reduce omission risk.' },
+    { key: 'Branch', value: String(manifest.branch || '—') },
+    { key: 'Commit', value: String(manifest.commit || '—') },
+    { key: 'Biome Index', value: boolLabel(!!manifest.emitBiomeIndex) },
+    { key: 'Height Export', value: boolLabel(!!manifest.emitHeight) },
+  ];
+  let html = '';
+  for (const row of rows) {
+    const hasSeedValue = row.seed && seedValue !== '—';
+    html += `
+      <div class="meta-row">
+        <span class="meta-key${row.seed ? ' seed-copyable' : ''}">${row.key}${hasSeedValue ? '<button type="button" class="meta-copy-btn" data-copy-seed="true" title="Copy seed to clipboard">⧉</button>' : ''}</span>
+        <span class="meta-val${row.seed ? ' seed' : ''}">${row.value}</span>
+      </div>`;
+  }
+  metadataBody.innerHTML = html;
+  const copySeedBtn = metadataBody.querySelector('[data-copy-seed="true"]');
+  if (copySeedBtn) {
+    copySeedBtn.addEventListener('click', handleCopySeed);
+  }
+  updateRunActionButtons();
+}
+
+async function handleCopySeed() {
+  const seed = state.manifest?.seed;
+  if (!seed) return;
+  try {
+    await copyText(String(seed));
+    showToast('Seed has been copied to clipboard', 'success');
+  } catch {
+    showToast('Failed to copy seed.', 'error');
+  }
+}
+
+function shortSeed(seed) {
+  const s = String(seed ?? '').trim();
+  if (!s) return '';
+  if (s.length <= 14) return s;
+  return `${s.slice(0, 8)}…${s.slice(-4)}`;
+}
+
+function runOptionLabel(run, manifest) {
+  const generated = formatRunTimestamp(run || manifest?.ts);
+  const seed = shortSeed(manifest?.seed);
+  if (generated !== '—' && seed) return `${generated} · Seed ${seed}`;
+  if (generated !== '—') return generated;
+  if (seed) return `Seed ${seed}`;
+  return run;
+}
+
+function runOptionTitle(run, manifest) {
+  const lines = [`Run: ${run}`];
+  const generated = formatRunTimestamp(run || manifest?.ts);
+  if (generated !== '—') lines.push(`Generated: ${generated}`);
+  if (manifest?.seed != null && String(manifest.seed).trim()) lines.push(`Seed: ${String(manifest.seed)}`);
+  return lines.join('\n');
+}
+
+async function loadRunManifest(run, force = false) {
+  if (!run) return null;
+  if (!force && Object.prototype.hasOwnProperty.call(state.runManifestMap, run)) {
+    return state.runManifestMap[run];
+  }
+  const manifest = await fetchManifest(run);
+  state.runManifestMap[run] = manifest;
+  return manifest;
+}
+
+function updateRunActionButtons() {
+  if (btnSaveRun) btnSaveRun.disabled = !state.currentRun;
+  if (btnOpenReport) btnOpenReport.disabled = !state.currentRun || (!state.biomes.length && !state.biomeInventory.length);
+  if (btnExportReport) btnExportReport.disabled = !state.currentRun || (!state.biomes.length && !state.biomeInventory.length);
+  if (btnDeleteRun) btnDeleteRun.style.display = state.currentRun ? '' : 'none';
+}
+
+function updateDeleteSelectedBtn() {
+  const n = state.selectedRunIds.size;
+  if (deleteSelectedCount) deleteSelectedCount.textContent = String(n);
+  if (btnDeleteSelected) btnDeleteSelected.disabled = n === 0;
+  if (btnDeleteAllRuns) btnDeleteAllRuns.disabled = state.runs.length === 0;
+}
+
+function buildRunCheckList() {
+  if (!runCheckList) return;
+  // Prune stale selections after a refresh.
+  state.selectedRunIds = new Set([...state.selectedRunIds].filter(r => state.runs.includes(r)));
+  runCheckList.innerHTML = '';
+  for (const r of [...state.runs].sort().reverse()) {
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:center;gap:6px;padding:2px 6px;cursor:default';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.dataset.run = r;
+    cb.checked = state.selectedRunIds.has(r);
+    cb.addEventListener('change', () => {
+      if (cb.checked) state.selectedRunIds.add(r);
+      else state.selectedRunIds.delete(r);
+      updateDeleteSelectedBtn();
+    });
+    const lbl = document.createElement('span');
+    lbl.style.cssText = 'font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px';
+    lbl.textContent = runOptionLabel(r, state.runManifestMap[r]);
+    lbl.title = r;
+    row.append(cb, lbl);
+    runCheckList.appendChild(row);
+  }
+  updateDeleteSelectedBtn();
+}
+
+btnSaveRun.addEventListener('click', () => {
+  const run = state.currentRun;
+  if (!run) return;
+  const link = document.createElement('a');
+  link.href = `${API_BASE}/api/runs/${encodeURIComponent(run)}/archive`;
+  link.download = `${run}.zip`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  showToast('Downloading run archive…', 'success');
+});
+
+btnOpenReport.addEventListener('click', () => {
+  openPrintableReport();
+});
+
+btnExportReport.addEventListener('click', () => {
+  exportPrintableReport();
+});
+
+if (genSeedInput) {
+ genSeedInput.addEventListener('input', () => {
+  syncSeedInputStatus();
+ });
+ genSeedInput.addEventListener('blur', () => {
+  syncSeedInputStatus();
+ });
+ genSeedInput.addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter') return;
+  if (!genQuality || state.generationActive) return;
+  const key = genQuality.value;
+  if (!key) {
+   showToast('Choose a generation quality first.', 'error');
+   return;
+  }
+  e.preventDefault();
+  genQuality.value = '';
+  showGenerationConfirm(key);
+ });
+}
+
+if (btnRandomSeed) {
+  btnRandomSeed.addEventListener('click', () => {
+    if (genSeedInput) {
+      genSeedInput.value = randomSignedLongString();
+      syncSeedInputStatus();
+    }
+  });
+}
+
+if (btnDeleteRun) {
+  btnDeleteRun.addEventListener('click', () => {
+    deleteRun(state.currentRun);
+  });
+}
+
+if (btnManageRuns) {
+  btnManageRuns.addEventListener('click', () => {
+    const isOpen = runManagePanel && runManagePanel.style.display !== 'none';
+    if (runManagePanel) runManagePanel.style.display = isOpen ? 'none' : '';
+    if (!isOpen) buildRunCheckList();
+  });
+}
+
+if (btnDeleteSelected) {
+  btnDeleteSelected.addEventListener('click', () => deleteSelectedRuns());
+}
+
+if (btnDeleteAllRuns) {
+  btnDeleteAllRuns.addEventListener('click', () => deleteAllRuns());
+}
+
+/* ─── MAP IMAGE LOADING ─── */
+async function loadMapImage(url) {
+  showToast('Loading map…', 'loading');
+  mapCanvas.classList.add('fading');
+  await new Promise(r => setTimeout(r, 250)); // let fade start
+
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      state.mapWidth = img.width;
+      state.mapHeight = img.height;
+      mapCanvas.width = img.width;
+      mapCanvas.height = img.height;
+      mapCtx.drawImage(img, 0, 0);
+      state.imageData = mapCtx.getImageData(0, 0, img.width, img.height);
+      buildColorLookup();
+      mapCanvas.classList.remove('fading');
+      emptyState.classList.add('hidden');
+      showToast('Map loaded', 'success');
+      resolve();
+    };
+    img.onerror = () => {
+      mapCanvas.classList.remove('fading');
+      showToast('Failed to load map', 'error');
+      reject(new Error('Image load failed'));
+    };
+    img.src = url;
+  });
+}
+
+function buildColorLookup() {
+  state.colorToBiome = {};
+  state.biomeByIdMap = {};
+  state.biomeByIndex = {};
+  const allBiomes = mergeBiomePresenceRows(state.biomes, state.biomeInventory);
+  for (const b of allBiomes) {
+    if (b?.id && !state.biomeByIdMap[b.id]) {
+      state.biomeByIdMap[b.id] = b;
+    }
+    if (Number.isFinite(b?.index) && state.biomeByIndex[(b.index & 0xFF)] == null) {
+      state.biomeByIndex[b.index & 0xFF] = b;
+    }
+    if (!Array.isArray(b?.color)) continue;
+    const key = colorKey(...b.color);
+    if (!state.colorToBiome[key]) {
+      state.colorToBiome[key] = b;
+    }
+  }
+}
+
+function paintCanvasFromBiomeIndices() {
+  if (!state.biomeIndices || !state.imageData) return;
+  if (state.biomeIndexWidth !== state.mapWidth || state.biomeIndexHeight !== state.mapHeight) return;
+  const useLegacy = state.colorViewMode === 'legacy';
+  const data = state.imageData.data;
+  const indices = state.biomeIndices;
+  for (let i = 0; i < indices.length; i++) {
+    const b = state.biomeByIndex[indices[i] & 0xFF];
+    if (!b) continue;
+    const c = useLegacy && Array.isArray(b.legacyColor) ? b.legacyColor : b.color;
+    if (Array.isArray(c)) {
+      const off = i * 4;
+      data[off]     = c[0];
+      data[off + 1] = c[1];
+      data[off + 2] = c[2];
+    }
+  }
+  mapCtx.putImageData(state.imageData, 0, 0);
+}
+
+function normalizeBiomePaletteForDisplay(rawBiomes) {
+  const remaps = [];
+  const biomes = (rawBiomes || []).map((b) => {
+    if (!b || !Array.isArray(b.color)) return b;
+    const legacyColor = [...b.color];
+    const id = String(b.id || '').toLowerCase();
+    const overrideHex = BIOME_COLOR_OVERRIDES.get(id);
+    if (overrideHex) {
+      const origColor = [...b.color];
+      const [r, g, bl] = hexToRgb(overrideHex);
+      const exists = remaps.some(m =>
+        m.from[0] === origColor[0] &&
+        m.from[1] === origColor[1] &&
+        m.from[2] === origColor[2] &&
+        m.to[0] === r &&
+        m.to[1] === g &&
+        m.to[2] === bl
+      );
+      if (!exists) remaps.push({ from: origColor, to: [r, g, bl] });
+      return { ...b, color: [r, g, bl], legacyColor };
+    }
+    const isBeachFamily = id.includes('beach') || id.includes('shore') || id.includes('coast');
+    const isLegacyRed = b.color.length >= 3
+      && b.color[0] === LEGACY_BEACH_RED[0]
+      && b.color[1] === LEGACY_BEACH_RED[1]
+      && b.color[2] === LEGACY_BEACH_RED[2];
+    if (isBeachFamily && isLegacyRed) {
+      remaps.push({ from: [...LEGACY_BEACH_RED], to: [...BEACH_SAND] });
+      return { ...b, color: [...BEACH_SAND], legacyColor };
+    }
+    return { ...b, legacyColor };
+  });
+  return { biomes, remaps };
+}
+
+function mergeBiomePresenceRows(rawBiomes, rawInventory) {
+  const sampled = Array.isArray(rawBiomes) ? rawBiomes : [];
+  const inventory = Array.isArray(rawInventory) ? rawInventory : [];
+  const merged = new Map();
+  for (const biome of inventory) {
+    if (!biome?.id) continue;
+    merged.set(biome.id, { ...biome, pct: null });
+  }
+  for (const biome of sampled) {
+    if (!biome?.id) continue;
+    const existing = merged.get(biome.id) || {};
+    merged.set(biome.id, { ...existing, ...biome, present_in_world: existing.present_in_world ?? true });
+  }
+  return Array.from(merged.values()).sort((a, b) => {
+    const aPct = Number.isFinite(a?.pct) ? a.pct : -1;
+    const bPct = Number.isFinite(b?.pct) ? b.pct : -1;
+    if (aPct !== bPct) return bPct - aPct;
+    return String(a?.name || a?.id || '').localeCompare(String(b?.name || b?.id || ''));
+  });
+}
+
+/* ─── API INTEGRATION ─── */
+
+async function fetchRuns() {
+  try {
+    const data = await apiFetch('/api/runs');
+    return Array.isArray(data) ? data : [];
+  } catch {
+    // Fallback: try listing from /runs directory pattern
+    console.warn('Could not fetch runs from /api/runs');
+    return [];
+  }
+}
+
+async function fetchManifest(run) {
+  try {
+    return normalizeManifest(await apiFetch(`/api/runs/${run}/manifest`), run);
+  } catch {
+    return normalizeManifest({}, run);
+  }
+}
+
+async function fetchLayers(run) {
+  try {
+    const data = await apiFetch(`/api/runs/${run}/layers`);
+    return Array.isArray(data) ? data : [];
+  } catch { return []; }
+}
+
+async function fetchBiomes(run, layer) {
+  try {
+    const data = await apiFetch(`/api/runs/${run}/layers/${layer}/biomes`);
+    return Array.isArray(data) ? data : [];
+  } catch { return []; }
+}
+
+async function fetchBiomeInventory(run, layer) {
+  try {
+    const data = await apiFetch(`/api/runs/${run}/layers/${layer}/inventory`);
+    if (Array.isArray(data)) return data;
+    if (data && Array.isArray(data.biomes)) return data.biomes;
+    return [];
+  } catch { return []; }
+}
+
+async function fetchLegend(run, layer) {
+  try {
+    const data = await apiFetch(`/api/runs/${run}/layers/${layer}/legend`);
+    return data && typeof data === 'object' ? data : null;
+  } catch { return null; }
+}
+
+async function fetchBiomeIds(run, layer) {
+  try {
+    return await apiFetch(`/api/runs/${run}/layers/${layer}/ids-image`);
+  } catch {
+    return null;
+  }
+}
+
+function syncOverlayCanvasToMap() {
+  if (!ruggedCanvas || !state.mapWidth) return;
+  ruggedCanvas.width  = state.mapWidth;
+  ruggedCanvas.height = state.mapHeight;
+}
+
+function clearRuggedness() {
+  if (!ruggedCanvas) return;
+  if (currentRuggedImg) {
+    currentRuggedImg.onload = null;
+    currentRuggedImg.onerror = null;
+    currentRuggedImg.src = '';
+    currentRuggedImg = null;
+  }
+  syncOverlayCanvasToMap();
+  ruggedCtx.clearRect(0, 0, ruggedCanvas.width, ruggedCanvas.height);
+  ruggedCanvas.classList.remove('active');
+}
+
+function setRuggednessStatus(msg) {
+  const el = document.getElementById('ruggedness-status');
+  if (el) el.textContent = msg || '';
+}
+
+async function pollUntilRuggednessReady() {
+  // Poll /api/generation-status every 2 s for up to 4 minutes.
+  for (let i = 0; i < 120; i++) {
+    await new Promise(r => setTimeout(r, 2000));
+    const status = await apiFetch('/api/generation-status').catch(() => null);
+    if (status && status.message) setRuggednessStatus(status.message);
+    if (!status || !status.active) {
+      if (status && status.exit_code !== null && status.exit_code !== 0) {
+        throw new Error(status.message || `generation failed (exit ${status.exit_code})`);
+      }
+      return; // active:false + exit_code 0 (or null) = done
+    }
+  }
+  throw new Error('Ruggedness generation timed out (>4 min).');
+}
+
+async function promptAndGenerateRuggedness(run, layer) {
+  const step = Number(ruggedQuality?.value || 64);
+  const confirmed = confirm(
+    `Terrain Relief step${step} has not been generated for this run yet.\n\n` +
+    'Generate it now? This may take a few minutes.'
+  );
+  if (!confirmed) {
+    if (togRuggedness) { togRuggedness.disabled = false; }
+    return;
+  }
+
+  if (togRuggedness) togRuggedness.disabled = true;
+  setRuggednessStatus(`Starting Terrain Relief step${step} generation…`);
+
+  try {
+    const resp = await fetch(
+      `${API_BASE}/api/runs/${encodeURIComponent(run)}/generate-ruggedness`,
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ step }) }
+    );
+    const data = resp.headers.get('content-type')?.includes('json')
+      ? await resp.json().catch(() => ({}))
+      : {};
+
+    if (!resp.ok && resp.status !== 409) {
+      throw new Error(data.error || `HTTP ${resp.status}`);
+    }
+
+    if (data.already_exists) {
+      // File appeared between the 404 probe and the POST; skip polling.
+    } else {
+      // 202 started, or 409 another job running — poll either way.
+      setRuggednessStatus(`Generating Terrain Relief step${step}… this may take a few minutes.`);
+      await pollUntilRuggednessReady();
+    }
+
+    setRuggednessStatus('');
+    if (togRuggedness) { togRuggedness.disabled = false; togRuggedness.checked = true; }
+    await fetchAndRenderRuggedness(run, layer);
+  } catch (e) {
+    setRuggednessStatus('');
+    if (togRuggedness) { togRuggedness.disabled = false; }
+    alert(`Ruggedness generation failed: ${e?.message || e}`);
+  }
+}
+
+async function fetchAndRenderRuggedness(run, layer) {
+  // Cancel any previous in-flight image load before starting a new one.
+  if (currentRuggedImg) {
+    currentRuggedImg.onload = null;
+    currentRuggedImg.onerror = null;
+    currentRuggedImg.src = '';
+    currentRuggedImg = null;
+  }
+  try {
+    const step = Number(ruggedQuality?.value || 64);
+    const resp = await fetch(`${API_BASE}/api/runs/${encodeURIComponent(run)}/layers/${encodeURIComponent(layer)}/ruggedness-image?step=${step}`);
+    if (!resp.ok) {
+      clearRuggedness();
+      if (resp.status === 404) {
+        if (togRuggedness) { togRuggedness.checked = false; }
+        promptAndGenerateRuggedness(run, layer);
+        return;
+      }
+      if (togRuggedness) { togRuggedness.checked = false; togRuggedness.disabled = true; }
+      return;
+    }
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    const img = new Image();
+    currentRuggedImg = img;
+    img.onload = () => {
+      currentRuggedImg = null;
+      // Sync canvas to the map state (same source as bands/grid/highlight overlays).
+      syncOverlayCanvasToMap();
+      ruggedCtx.clearRect(0, 0, ruggedCanvas.width, ruggedCanvas.height);
+      ruggedCtx.globalAlpha = 0.65;
+      ruggedCtx.drawImage(img, 0, 0, ruggedCanvas.width, ruggedCanvas.height);
+      ruggedCtx.globalAlpha = 1.0;
+      setRuggednessStatus(`Terrain Relief: step${step}`);
+      ruggedCanvas.classList.add('active');
+      URL.revokeObjectURL(url);
+    };
+    img.onerror = () => { currentRuggedImg = null; clearRuggedness(); URL.revokeObjectURL(url); };
+    img.src = url;
+  } catch (e) {
+    clearRuggedness();
+  }
+}
+
+async function fetchGenerationStatus() {
+  try {
+    return await apiFetch('/api/generation-status');
+  } catch {
+    return null;
+  }
+}
+
+async function startGeneration(presetKey) {
+  const preset = GENERATION_PRESETS[presetKey];
+  if (!preset) return;
+  const resolution = Number(preset.resolution);
+  const seedState = syncSeedInputStatus({ announce: true });
+  if (!seedState.ok) return;
+  const requestPayload = { step: resolution, size: 'small' };
+  if (seedState.value) requestPayload.seed = seedState.value;
+
+  const dot = $('.dot', statusToast);
+  const msg = $('.msg', statusToast);
+  try {
+    setGenerationStatus(true, 'Generating a new world');
+    const resp = await fetch(`${API_BASE}/api/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(requestPayload),
+    });
+    const responsePayload = await resp.json().catch(() => ({}));
+    if (resp.status === 202 || resp.status === 409) {
+      syncGenerationUi(responsePayload, false);
+      if (resp.status !== 202) {
+        showToast('Atlas generation is already in progress.', 'loading');
+      }
+      return;
+    }
+    throw new Error(responsePayload?.error || `API ${resp.status}`);
+  } catch (e) {
+    setGenerationStatus(false, '');
+    dot.className = 'dot error';
+    msg.textContent = `Failed to start generation: ${e.message || e}`;
+    statusToast.classList.add('visible');
+  }
+}
+
+function syncGenerationUi(status, fromPoll) {
+  if (!status || typeof status !== 'object') return;
+
+  const wasActive = !!state.generationActive;
+  const isActive = !!status.active;
+  const label = generationLabelForResolution(status.step);
+  const seedLabel = status.seed != null && String(status.seed).trim() ? ` seed ${status.seed}` : '';
+  state.generationActive = isActive;
+  if (genQuality) genQuality.disabled = isActive;
+  if (genSeedInput) genSeedInput.disabled = isActive;
+  if (isActive) {
+    setGenerationStatus(true, `Generating ${label}${seedLabel}`);
+  } else if (!state.pendingGenerationPreset) {
+    setGenerationStatus(false, '');
+  }
+
+  if (!fromPoll) return;
+  if (!wasActive || isActive) return;
+
+  const exitCode = Number(status.exit_code);
+  if (exitCode === 0) {
+    showToast(`Generation complete (${label}${seedLabel}).`, 'success');
+    refreshRuns().then(() => {
+      if (state.runs.length > 0) {
+        const newest = state.runs[0];
+        selRun.value = newest;
+        selRun.dispatchEvent(new Event('change'));
+      }
+    });
+  } else {
+    showToast(`Generation failed (${label}${seedLabel}).`, 'error');
+  }
+}
+
+generationCancelBtn.addEventListener('click', () => {
+  if (state.generationActive) return;
+  setGenerationStatus(false, '');
+});
+generationConfirmBtn.addEventListener('click', async () => {
+  const presetKey = state.pendingGenerationPreset;
+  if (!presetKey || state.generationActive) return;
+  await startGeneration(presetKey);
+});
+
+async function pollGenerationStatus() {
+  const status = await fetchGenerationStatus();
+  if (status) syncGenerationUi(status, true);
+}
+
+function startGenerationPolling() {
+  if (state.generationPollTimer) return;
+  pollGenerationStatus();
+  state.generationPollTimer = setInterval(pollGenerationStatus, 1500);
+}
+
+async function deleteSelectedRuns() {
+  const ids = [...state.selectedRunIds];
+  if (ids.length === 0) return;
+  const confirmed = confirm(
+    `Delete ${ids.length} run${ids.length === 1 ? '' : 's'} from disk?\n\n` +
+    ids.map(id => `  \u2022 ${id}`).join('\n') +
+    '\n\nThis cannot be undone.'
+  );
+  if (!confirmed) return;
+  try {
+    const resp = await fetch(`${API_BASE}/api/runs/bulk-delete`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ runs: ids }),
+    });
+    if (resp.status === 409) {
+      showToast('Cannot delete: generation is in progress.', 'error');
+      return;
+    }
+    if (!resp.ok) {
+      const text = await resp.text().catch(() => '');
+      showToast(`Delete failed: ${text || resp.status}`, 'error');
+      return;
+    }
+    const result = await resp.json().catch(() => ({}));
+    const deleted = result.deleted || ids;
+    state.selectedRunIds.clear();
+    if (state.currentRun && deleted.includes(state.currentRun)) {
+      selRun.value = '';
+      selRun.dispatchEvent(new Event('change'));
+    }
+    showToast(`Deleted ${deleted.length} run${deleted.length === 1 ? '' : 's'}.`, 'success');
+    await refreshRuns();
+    buildRunCheckList();
+  } catch (e) {
+    showToast(`Delete error: ${e.message}`, 'error');
+  }
+}
+
+async function deleteAllRuns() {
+  const count = state.runs.length;
+  if (count === 0) { showToast('No runs to delete.', 'error'); return; }
+  const confirmed = confirm(
+    `Delete ALL ${count} run${count === 1 ? '' : 's'} from disk?\n\nThis cannot be undone.`
+  );
+  if (!confirmed) return;
+  try {
+    const resp = await fetch(`${API_BASE}/api/runs/delete-all`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    });
+    if (resp.status === 409) {
+      showToast('Cannot delete: generation is in progress.', 'error');
+      return;
+    }
+    if (!resp.ok) {
+      const text = await resp.text().catch(() => '');
+      showToast(`Delete all failed: ${text || resp.status}`, 'error');
+      return;
+    }
+    const result = await resp.json().catch(() => ({}));
+    const deleted = result.deleted || [];
+    state.selectedRunIds.clear();
+    if (runCheckList) runCheckList.innerHTML = '';
+    if (state.currentRun) {
+      selRun.value = '';
+      selRun.dispatchEvent(new Event('change'));
+    }
+    showToast(`Deleted ${deleted.length} run${deleted.length === 1 ? '' : 's'}.`, 'success');
+    await refreshRuns();
+    buildRunCheckList();
+  } catch (e) {
+    showToast(`Delete all error: ${e.message}`, 'error');
+  }
+}
+
+async function deleteRun(runId) {
+  if (!runId) return;
+  const confirmed = confirm(
+    `Delete run "${runId}" from disk?\n\nThis cannot be undone.`
+  );
+  if (!confirmed) return;
+  try {
+    const resp = await fetch(`${API_BASE}/api/runs/${encodeURIComponent(runId)}`, { method: 'DELETE' });
+    if (resp.status === 409) {
+      showToast('Cannot delete: generation is in progress.', 'error');
+      return;
+    }
+    if (!resp.ok) {
+      const text = await resp.text().catch(() => '');
+      showToast(`Delete failed: ${text || resp.status}`, 'error');
+      return;
+    }
+    // If the deleted run was selected, clear selection before refreshing.
+    if (state.currentRun === runId) {
+      selRun.value = '';
+      selRun.dispatchEvent(new Event('change'));
+    }
+    showToast(`Run "${runId}" deleted.`, 'success');
+    await refreshRuns();
+  } catch (e) {
+    showToast(`Delete error: ${e.message}`, 'error');
+  }
+}
+
+async function refreshRuns() {
+  state.runs = await fetchRuns();
+  const manifestEntries = await Promise.all(state.runs.map(async run => [run, await loadRunManifest(run, true)]));
+  state.runManifestMap = Object.fromEntries(manifestEntries);
+  const previous = state.currentRun || selRun.value;
+  selRun.innerHTML = '<option value="">— choose a generated world —</option>';
+  for (const r of state.runs) {
+    const opt = document.createElement('option');
+    opt.value = r;
+    opt.textContent = runOptionLabel(r, state.runManifestMap[r]);
+    opt.title = runOptionTitle(r, state.runManifestMap[r]);
+    selRun.appendChild(opt);
+  }
+
+  if (previous && state.runs.includes(previous)) {
+    selRun.value = previous;
+  }
+  if (runManagePanel && runManagePanel.style.display !== 'none') {
+    buildRunCheckList();
+  }
+}
+
+function requestedRunFromUrl() {
+  const params = new URLSearchParams(window.location.search || '');
+  const run = String(params.get('run') || '').trim();
+  return run || null;
+}
+
+function getImageUrl(run, layer) {
+  return `${API_BASE}/api/runs/${run}/layers/${layer}/image`;
+}
+
+function formatLayerLabel(layerId) {
+  const step = Number((layerId || '').match(/step(\d+)/i)?.[1] || 0);
+  if (!step) return layerId || 'Auto';
+  let quality = 'Low detail';
+  if (step <= 16) quality = 'Highest detail';
+  else if (step <= 32) quality = 'High detail';
+  else if (step <= 64) quality = 'Medium detail';
+  return `${quality} (${step}-block samples)`;
+}
+
+/* ─── ORCHESTRATION ─── */
+
+async function init() {
+  showToast('Connecting…', 'loading');
+  try {
+    await refreshRuns();
+    hideToast();
+    const requestedRun = requestedRunFromUrl();
+    if (requestedRun && state.runs.includes(requestedRun)) {
+      selRun.value = requestedRun;
+      selRun.dispatchEvent(new Event('change'));
+    }
+    if (state.runs.length === 0) {
+      showToast('No runs found — is the server running?', 'error');
+    }
+    startGenerationPolling();
+  } catch (err) {
+    showToast('Cannot reach server', 'error');
+    console.error(err);
+  }
+}
+
+selRun.addEventListener('change', async () => {
+  const run = selRun.value;
+  if (!run) {
+    state.currentRun = null;
+    state.currentLayer = null;
+    updateSamplingDisclosure();
+    state.availableLayers = [];
+    state.manifest = null;
+    state.biomes = [];
+    state.biomeInventory = [];
+    state.selectedBiomeIds = [];
+    state.focusedBiomeId = null;
+    state.inspectedPoint = null;
+    state.legend = null;
+    clearSelectedPoint();
+    setJumpStatus('Awaiting coords');
+    state.bandMaskByIndex = null;
+    state.jungleFamilyByIndex = null;
+  state.bandViolationStats = null;
+  state.bandViolationReasonCodes = null;
+  refreshBandViolationLabel();
+  bandViolationCanvas.classList.remove('active');
+  detailReadout.textContent = 'Auto';
+  clearHighlight();
+  highlightBiomeInList();
+  updateSelectedBiomesSummary();
+  renderSelectionContext(null);
+  renderMetadata(null);
+  updateRunActionButtons();
+  return;
+  }
+  state.currentRun = run;
+  state.currentLayer = null;
+  state.availableLayers = [];
+
+  // Fetch layers
+  showToast('Loading run…', 'loading');
+  const [layers, manifest] = await Promise.all([
+    fetchLayers(run),
+    loadRunManifest(run),
+  ]);
+
+  state.manifest = manifest;
+  state.availableLayers = layers.slice();
+  renderMetadata(manifest);
+
+  if (layers.length > 0) {
+    const chosen = layers[0];
+    detailReadout.textContent = formatLayerLabel(chosen);
+    await switchLayer(run, chosen);
+  } else {
+    detailReadout.textContent = 'No layer';
+    hideToast();
+  }
+});
+
+genQuality.addEventListener('change', async () => {
+  const key = genQuality.value;
+  if (!key) return;
+  genQuality.value = '';
+  showGenerationConfirm(key);
+});
+
+async function switchLayer(run, layer) {
+  state.currentLayer = layer;
+  updateSamplingDisclosure();
+  detailReadout.textContent = formatLayerLabel(layer);
+  state.biomeInventory = [];
+  state.selectionStatsCache = {};
+  state.selectedBiomeIds = [];
+  state.focusedBiomeId = null;
+  state.hoveredBiomeId = null;
+  state.inspectedPoint = null;
+  state.legend = null;
+  clearSelectedPoint();
+  state.bandMaskByIndex = null;
+  state.jungleFamilyByIndex = null;
+  state.bandViolationStats = null;
+  state.bandViolationReasonCodes = null;
+  state.biomeIndices = null;
+  state.biomeIndexWidth = 0;
+  state.biomeIndexHeight = 0;
+  updateSelectedBiomesSummary();
+  renderSelectionContext(null);
+
+  // Fetch biomes + image + ids concurrently
+  const [biomes, inventory, idsBlob, legend] = await Promise.all([
+    fetchBiomes(run, layer),
+    fetchBiomeInventory(run, layer),
+    fetchBiomeIds(run, layer),
+    fetchLegend(run, layer),
+    loadMapImage(getImageUrl(run, layer)),
+  ]);
+  fitToView();
+
+  const normalized = normalizeBiomePaletteForDisplay(biomes);
+  const normalizedInventory = normalizeBiomePaletteForDisplay(inventory);
+  state.legend = legend;
+  state.biomes = normalized.biomes.sort((a, b) => (b.pct || 0) - (a.pct || 0));
+  state.biomeInventory = normalizedInventory.biomes.sort((a, b) => String(a?.name || a?.id || '').localeCompare(String(b?.name || b?.id || '')));
+  rebuildBiomeBandMasks();
+
+  if (idsBlob) {
+    try {
+      const decoded = await decodeBiomeIndexBlob(idsBlob);
+      if (decoded && decoded.width === state.mapWidth && decoded.height === state.mapHeight) {
+        state.biomeIndices = decoded.indices;
+        state.biomeIndexWidth = decoded.width;
+        state.biomeIndexHeight = decoded.height;
+      }
+    } catch (err) {
+      console.warn('Failed to decode biome ids image', err);
+    }
+  }
+
+  buildColorLookup();
+  paintCanvasFromBiomeIndices();
+  renderBiomeList(state.biomes);
+  biomeSearch.disabled = false;
+  biomeSearch.removeAttribute('disabled');
+  biomeSearch.value = '';
+  updateSelectedBiomesSummary();
+  renderMetadata(state.manifest);
+  setJumpStatus('Ready for world X/Z jumps');
+
+  clearHighlight();
+  highlightBiomeInList();
+  toggleGrid();
+  if (togBands.checked) { renderBands(); renderBandLegend(); }
+  renderBandViolations();
+
+  // Re-enable ruggedness toggle for the new layer (will self-disable again if absent).
+  if (togRuggedness) { togRuggedness.disabled = false; }
+  clearRuggedness();
+  if (togRuggedness && togRuggedness.checked) {
+    fetchAndRenderRuggedness(run, layer);
+  }
+}
+
+togGrid.addEventListener('change', toggleGrid);
+togCrosshair.addEventListener('change', () => {
+  if (!togCrosshair.checked) crosshair.style.display = 'none';
+});
+togInspect.addEventListener('change', () => {
+  if (!togInspect.checked) inspectCard.classList.remove('visible');
+});
+togTooltip.addEventListener('change', () => {
+  if (!togTooltip.checked) inspectCard.classList.remove('visible');
+});
+if (selColorView) {
+  selColorView.addEventListener('change', () => {
+    state.colorViewMode = selColorView.value;
+    paintCanvasFromBiomeIndices();
+  });
+}
+
+/* ─── KEYBOARD SHORTCUTS ─── */
+document.addEventListener('keydown', e => {
+  if (isTextEntryTarget(e.target)) return;
+  if (e.key === 'f' || e.key === 'F') fitToView();
+  if (e.key === '1') { state.zoom = 1; fitToView(); }
+  if (e.key === 'g') { togGrid.checked = !togGrid.checked; toggleGrid(); }
+  if (e.key === 'h') { togHighlight.checked = !togHighlight.checked; if (!togHighlight.checked) clearHighlight(); }
+  if (e.key === 'c') { togCrosshair.checked = !togCrosshair.checked; if (!togCrosshair.checked) crosshair.style.display = 'none'; }
+  if (e.key === 'b' || e.key === 'B') { togBands.checked = !togBands.checked; toggleBands(); }
+  if (e.key === 'Escape') {
+    clearBiomeSelection();
+  }
+});
+
+/* ─── RESIZE ─── */
+window.addEventListener('resize', () => {
+  // no-op for now; canvas doesn't need resize since it's world-space
+});
+
+/* ─── BOOT ─── */
+init();
+
+})();
+</script>
+</body>
+</html>
