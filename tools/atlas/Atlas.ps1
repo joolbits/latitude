@@ -6,7 +6,8 @@ param(
   [switch]$NoViewerOpen = $false,
   [switch]$IncludeRuggedness = $false,
   [switch]$GenerateRuggednessOnly = $false,
-  [string]$Run = ""
+  [string]$Run = "",
+  [int]$RuggednessPreviewStep = 0
 )
 
 $ErrorActionPreference = "Stop"
@@ -86,7 +87,7 @@ if ($GenerateRuggednessOnly) {
   $manifest = Get-Content (Join-Path $existingRunDir "run_manifest.json") | ConvertFrom-Json
   $rSeed = $manifest.seed
   $rSize = $manifest.size
-  $rStep = $manifest.step
+  $rStep = if ($RuggednessPreviewStep -gt 0) { $RuggednessPreviewStep } else { $manifest.step }
 
   Write-Host "[atlas] Adding ruggedness to run $Run (seed=$rSeed size=$rSize step=$rStep)"
 
