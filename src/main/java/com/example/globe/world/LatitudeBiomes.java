@@ -1965,11 +1965,16 @@ public final class LatitudeBiomes {
     private static final double TEMPERATE_WARM_EDGE_SHOULDER_FRAC = 0.18;
     private static final int TEMPERATE_WARM_EDGE_SHOULDER_MIN_BLOCKS = 96;
     private static final int TEMPERATE_WARM_EDGE_SHOULDER_MAX_BLOCKS = 320;
+    private static final double TEMPERATE_WARM_EDGE_LAT_MIN_DEG = 35.28;
+    private static final double TEMPERATE_WARM_EDGE_LAT_MAX_DEG = 37.88;
     private static final long TEMPERATE_WARM_EDGE_ROLL_SALT = 0x74EAD9E54B0AL;
     private static final String[] TEMPERATE_WARM_EDGE_TRANSITION_BIOMES = {
-            "minecraft:forest",
             "minecraft:plains",
-            "minecraft:meadow"
+            "minecraft:sunflower_plains",
+            "minecraft:meadow",
+            "minecraft:flower_forest",
+            "minecraft:birch_forest",
+            "minecraft:old_growth_birch_forest"
     };
 
     // --- Blend noise helpers (chunk-stable, 2D, smooth "blobs") ---
@@ -5895,10 +5900,14 @@ public final class LatitudeBiomes {
         if (landBandIndex != BAND_TEMPERATE || mountainLike || effectiveRadius <= 0) {
             return false;
         }
+        double latDeg = latitudeDegreesFromRadius(blockZ, effectiveRadius);
+        if (latDeg < TEMPERATE_WARM_EDGE_LAT_MIN_DEG || latDeg > TEMPERATE_WARM_EDGE_LAT_MAX_DEG) {
+            return false;
+        }
         double deltaBlocks = subtropicalTemperateBoundaryDeltaBlocks(blockX, blockZ, effectiveRadius);
         int shoulderBlocks = temperateWarmEdgeShoulderBlocks(effectiveRadius);
         if (sourceBandIndex <= BAND_SUBTROPICAL) {
-            return deltaBlocks <= shoulderBlocks;
+            return deltaBlocks >= 0.0 && deltaBlocks <= shoulderBlocks;
         }
         return deltaBlocks >= 0.0 && deltaBlocks <= shoulderBlocks;
     }
@@ -5907,9 +5916,22 @@ public final class LatitudeBiomes {
         if (biome == null) {
             return false;
         }
-        return isTemperateForestFamily(biome)
-                || isBiomeId(biome, "minecraft:plains")
-                || isBiomeId(biome, "minecraft:meadow");
+        return isBiomeId(biome, "minecraft:plains")
+                || isBiomeId(biome, "minecraft:sunflower_plains")
+                || isBiomeId(biome, "minecraft:meadow")
+                || isBiomeId(biome, "minecraft:flower_forest")
+                || isBiomeId(biome, "minecraft:birch_forest")
+                || isBiomeId(biome, "minecraft:old_growth_birch_forest");
+    }
+
+    private static boolean isTemperateShoulderHeavyBiome(RegistryEntry<Biome> biome) {
+        if (biome == null) {
+            return false;
+        }
+        return isBiomeId(biome, "minecraft:forest")
+                || isBiomeId(biome, "minecraft:dark_forest")
+                || isBiomeId(biome, "minecraft:windswept_forest")
+                || isTaigaFamilyBiome(biome);
     }
 
     private static int temperateWarmEdgeFallbackStartIndex(int blockX, int blockZ, int size) {
@@ -5957,7 +5979,7 @@ public final class LatitudeBiomes {
                                                                           RegistryEntry<Biome> out,
                                                                           int blockX, int blockZ, int effectiveRadius,
                                                                           int sourceBandIndex, int landBandIndex, boolean mountainLike) {
-        if (!isTaigaFamilyBiome(out)) {
+        if (!isTemperateShoulderHeavyBiome(out)) {
             return out;
         }
         if (!isTemperateWarmEdgeShoulderCell(blockX, blockZ, effectiveRadius, sourceBandIndex, landBandIndex, mountainLike)) {
@@ -5971,7 +5993,7 @@ public final class LatitudeBiomes {
                                                                           RegistryEntry<Biome> out,
                                                                           int blockX, int blockZ, int effectiveRadius,
                                                                           int sourceBandIndex, int landBandIndex, boolean mountainLike) {
-        if (!isTaigaFamilyBiome(out)) {
+        if (!isTemperateShoulderHeavyBiome(out)) {
             return out;
         }
         if (!isTemperateWarmEdgeShoulderCell(blockX, blockZ, effectiveRadius, sourceBandIndex, landBandIndex, mountainLike)) {
