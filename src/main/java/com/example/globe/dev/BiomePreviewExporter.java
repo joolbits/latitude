@@ -41,6 +41,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 
 public final class BiomePreviewExporter {
     private static final int BLOCKS_PER_CHUNK = 16;
@@ -132,6 +133,9 @@ public final class BiomePreviewExporter {
             images.put(layer, new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB));
         }
         BufferedImage biomeIndexImage = emitBiomeIndex ? new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB) : null;
+        BufferedImage chosenBandsImage = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
+        BufferedImage landBandsImage = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
+        Map<Integer, SeamRowSummary> seamRows = new TreeMap<>();
         Map<BiomeMaskLayer, BufferedImage> maskImages = new LinkedHashMap<>();
         for (BiomeMaskLayer maskLayer : maskTargets) {
             maskImages.put(maskLayer, new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB));
@@ -222,6 +226,22 @@ public final class BiomePreviewExporter {
                         images.get(Layer.BIOMES).setRGB(imageX, imageZ, rgb);
                     }
                 }
+                int chosenBandIndex = LatitudeBiomes.authoritativeChosenBandIndex(blockX, blockZ, radiusBlocks);
+                int landBandIndex = LatitudeBiomes.authoritativeLandBandIndex(blockX, blockZ, radiusBlocks);
+                chosenBandsImage.setRGB(imageX, imageZ, colorForBandIndex(chosenBandIndex));
+                landBandsImage.setRGB(imageX, imageZ, colorForBandIndex(landBandIndex));
+                double latDeg = latitudeDegreesForBlockZ(radiusBlocks, blockZ);
+                if (latDeg >= 32.0 && latDeg <= 38.0) {
+                    SeamRowSummary row = seamRows.computeIfAbsent(blockZ, ignored -> new SeamRowSummary(latDeg));
+                    row.addChosen(chosenBandIndex);
+                    row.addLand(landBandIndex);
+                    if (isWarmDryBiomeId(sampledBiomeId)) {
+                        row.finalWarmDry++;
+                    }
+                    if (isTemperateBiomeId(sampledBiomeId)) {
+                        row.finalTemperate++;
+                    }
+                }
 
                 if (renderBands) {
                     LatitudeBands.Band band = bandForBlockZ(radiusBlocks, blockZ);
@@ -283,6 +303,15 @@ public final class BiomePreviewExporter {
             }
             maskPaths.put(maskLayer, pngPath);
         }
+        Path chosenBandsPath = outputDir.resolve("chosen_bands.png");
+        if (!ImageIO.write(chosenBandsImage, "png", chosenBandsPath.toFile())) {
+            throw new IOException("PNG writer unavailable for chosen_bands");
+        }
+        Path landBandsPath = outputDir.resolve("land_bands.png");
+        if (!ImageIO.write(landBandsImage, "png", landBandsPath.toFile())) {
+            throw new IOException("PNG writer unavailable for land_bands");
+        }
+        writeSeamRowSummary(outputDir.resolve("seam_rows.txt"), seamRows);
         if (emitBiomeIndex && biomeIndexImage != null) {
             biomeIndexPath = outputDir.resolve("biome_ids.png");
             boolean wrote = ImageIO.write(biomeIndexImage, "png", biomeIndexPath.toFile());
@@ -390,11 +419,14 @@ public final class BiomePreviewExporter {
         private final EnumMap<Layer, BufferedImage> images = new EnumMap<>(Layer.class);
         private final Map<BiomeMaskLayer, BufferedImage> maskImages = new LinkedHashMap<>();
         private BufferedImage biomeIndexImage;
+        private BufferedImage chosenBandsImage;
+        private BufferedImage landBandsImage;
 
         private final Map<String, Integer> biomeCounts = new HashMap<>();
         private final Map<String, Integer> biomeColors = new HashMap<>();
         private final Map<String, Integer> biomeIndices = new LinkedHashMap<>();
         private final Map<String, Integer> bandCounts = new HashMap<>();
+        private final Map<Integer, SeamRowSummary> seamRows = new TreeMap<>();
 
         private final ChunkGenerator generator;
         private final BiomeSource baseSource;
@@ -467,6 +499,8 @@ public final class BiomePreviewExporter {
             if (emitBiomeIndex) {
                 biomeIndexImage = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
             }
+            chosenBandsImage = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
+            landBandsImage = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
             for (BiomeMaskLayer maskLayer : maskTargets) {
                 maskImages.put(maskLayer, new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB));
             }
@@ -546,6 +580,22 @@ public final class BiomePreviewExporter {
                     if (layers.contains(Layer.BIOMES)) {
                         int rgb = biomeColors.computeIfAbsent(sampledBiomeId, BiomePreviewExporter::stableColorForBiomeId);
                         images.get(Layer.BIOMES).setRGB(imageX, imageZ, rgb);
+                    }
+                }
+                int chosenBandIndex = LatitudeBiomes.authoritativeChosenBandIndex(blockX, blockZ, radiusBlocks);
+                int landBandIndex = LatitudeBiomes.authoritativeLandBandIndex(blockX, blockZ, radiusBlocks);
+                chosenBandsImage.setRGB(imageX, imageZ, colorForBandIndex(chosenBandIndex));
+                landBandsImage.setRGB(imageX, imageZ, colorForBandIndex(landBandIndex));
+                double latDeg = latitudeDegreesForBlockZ(radiusBlocks, blockZ);
+                if (latDeg >= 32.0 && latDeg <= 38.0) {
+                    SeamRowSummary row = seamRows.computeIfAbsent(blockZ, ignored -> new SeamRowSummary(latDeg));
+                    row.addChosen(chosenBandIndex);
+                    row.addLand(landBandIndex);
+                    if (isWarmDryBiomeId(sampledBiomeId)) {
+                        row.finalWarmDry++;
+                    }
+                    if (isTemperateBiomeId(sampledBiomeId)) {
+                        row.finalTemperate++;
                     }
                 }
 
@@ -631,6 +681,15 @@ public final class BiomePreviewExporter {
                     }
                     maskPaths.put(maskLayer, pngPath);
                 }
+                Path chosenBandsPath = outputDir.resolve("chosen_bands.png");
+                if (!ImageIO.write(chosenBandsImage, "png", chosenBandsPath.toFile())) {
+                    throw new IOException("PNG writer unavailable for chosen_bands");
+                }
+                Path landBandsPath = outputDir.resolve("land_bands.png");
+                if (!ImageIO.write(landBandsImage, "png", landBandsPath.toFile())) {
+                    throw new IOException("PNG writer unavailable for land_bands");
+                }
+                writeSeamRowSummary(outputDir.resolve("seam_rows.txt"), seamRows);
                 if (emitBiomeIndex && biomeIndexImage != null) {
                     biomeIndexPath = outputDir.resolve("biome_ids.png");
                     boolean wrote = ImageIO.write(biomeIndexImage, "png", biomeIndexPath.toFile());
@@ -1336,6 +1395,94 @@ public final class BiomePreviewExporter {
             case SUBPOLAR -> 0x60A0DC;
             case POLAR -> 0xB4C8E8;
         };
+    }
+
+    private static int colorForBandIndex(int bandIndex) {
+        return switch (bandIndex) {
+            case 0 -> 0x7A4A28;
+            case 1 -> 0xF5A623;
+            case 2 -> 0x3FAF5A;
+            case 3 -> 0x3D7FC7;
+            case 4 -> 0xB7C8E5;
+            default -> 0x4A4A4A;
+        };
+    }
+
+    private static double latitudeDegreesForBlockZ(int radiusBlocks, int blockZ) {
+        int safeRadius = Math.max(1, radiusBlocks);
+        return Math.min(90.0, (Math.abs((double) blockZ) * 90.0) / (double) safeRadius);
+    }
+
+    private static boolean isWarmDryBiomeId(String biomeId) {
+        if (biomeId == null) return false;
+        return biomeId.contains("savanna")
+                || biomeId.contains("desert")
+                || biomeId.contains("badlands");
+    }
+
+    private static boolean isTemperateBiomeId(String biomeId) {
+        if (biomeId == null) return false;
+        return biomeId.contains("forest")
+                || biomeId.contains("plains")
+                || biomeId.contains("meadow")
+                || biomeId.contains("hills")
+                || biomeId.contains("stony_peaks")
+                || biomeId.contains("cherry_grove")
+                || biomeId.contains("taiga");
+    }
+
+    private static void writeSeamRowSummary(Path summaryPath, Map<Integer, SeamRowSummary> seamRows) throws IOException {
+        if (seamRows == null || seamRows.isEmpty()) {
+            Files.writeString(summaryPath, "no seam rows in 32..38 latitude window\n");
+            return;
+        }
+        StringBuilder out = new StringBuilder();
+        out.append("seam_rows_window=32.0..38.0\n");
+        for (Map.Entry<Integer, SeamRowSummary> entry : seamRows.entrySet()) {
+            int z = entry.getKey();
+            SeamRowSummary row = entry.getValue();
+            out.append(String.format(Locale.ROOT,
+                    "z=%d latDeg=%.3f chosenSub=%d chosenTemp=%d landSub=%d landTemp=%d finalWarmDry=%d finalTemperate=%d%n",
+                    z,
+                    row.latDeg,
+                    row.chosenSub,
+                    row.chosenTemp,
+                    row.landSub,
+                    row.landTemp,
+                    row.finalWarmDry,
+                    row.finalTemperate));
+        }
+        Files.writeString(summaryPath, out.toString());
+    }
+
+    private static final class SeamRowSummary {
+        private final double latDeg;
+        private int chosenSub;
+        private int chosenTemp;
+        private int landSub;
+        private int landTemp;
+        private int finalWarmDry;
+        private int finalTemperate;
+
+        private SeamRowSummary(double latDeg) {
+            this.latDeg = latDeg;
+        }
+
+        private void addChosen(int bandIndex) {
+            if (bandIndex == 1) {
+                chosenSub++;
+            } else if (bandIndex == 2) {
+                chosenTemp++;
+            }
+        }
+
+        private void addLand(int bandIndex) {
+            if (bandIndex == 1) {
+                landSub++;
+            } else if (bandIndex == 2) {
+                landTemp++;
+            }
+        }
     }
 
     private static int colorForTemperature(double value01) {

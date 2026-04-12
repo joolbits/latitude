@@ -210,6 +210,25 @@ public final class LatitudeBiomes {
         return latitudeBandIndexWithBlend(blockX, blockZ, effectiveRadius, band, t);
     }
 
+    /**
+     * Diagnostic-only accessor for atlas/export tooling: returns the pre-rewrite band choice
+     * from the blend comparator (chosenBandIndex) before the subtropical->temperate constitutional
+     * rewrite is applied.
+     */
+    public static int authoritativeChosenBandIndex(int blockX, int blockZ, int borderRadiusBlocks) {
+        int activeRadius = ACTIVE_RADIUS_BLOCKS;
+        boolean overrideDisabled = Boolean.getBoolean("latitude.disableRadiusOverride");
+        int effectiveRadius = (!overrideDisabled && activeRadius > 0) ? activeRadius : borderRadiusBlocks;
+        if (effectiveRadius <= 0) {
+            return BAND_TROPICAL;
+        }
+        int lat = Math.abs(blockZ);
+        double tBase = (double) lat / (double) effectiveRadius;
+        double t = applyBoundaryJitter(blockX, blockZ, effectiveRadius, tBase);
+        LatitudeBands.Band band = bandForAbsLatFraction(tBase);
+        return latitudeBandChosenIndexWithBlend(blockX, blockZ, effectiveRadius, band, t);
+    }
+
     private static RegistryEntry<Biome> pickBeachForBand(Registry<Biome> biomes, RegistryEntry<Biome> base, int blockX, int blockZ, int bandIndex) {
         if (bandIndex <= 2) {
             try {
@@ -3738,6 +3757,65 @@ public final class LatitudeBiomes {
         }
 
         return resolvedBandIndex;
+    }
+
+    private static int latitudeBandChosenIndexWithBlend(int blockX, int blockZ, int radius, LatitudeBands.Band band, double t) {
+        if (radius <= 0) {
+            return bandIndexForBand(band);
+        }
+        double latNorm = clamp(t, 0.0, 1.0);
+        int bandIndex = crispBandIndex(latNorm);
+        if (TRANSITION_MODE == TransitionMode.OFF) {
+            return bandIndex;
+        }
+        int absZ = Math.abs(blockZ);
+        int lowerBandIndex;
+        int upperBandIndex;
+        int boundaryBlocks;
+        if (bandIndex <= BAND_TROPICAL) {
+            lowerBandIndex = BAND_TROPICAL;
+            upperBandIndex = BAND_SUBTROPICAL;
+            boundaryBlocks = bandBoundaryBlocks(0, radius);
+        } else if (bandIndex >= BAND_POLAR) {
+            lowerBandIndex = BAND_SUBPOLAR;
+            upperBandIndex = BAND_POLAR;
+            boundaryBlocks = bandBoundaryBlocks(3, radius);
+        } else {
+            int loBoundary = bandBoundaryBlocks(bandIndex - 1, radius);
+            int hiBoundary = bandBoundaryBlocks(bandIndex, radius);
+            int dLo = Math.abs(absZ - loBoundary);
+            int dHi = Math.abs(absZ - hiBoundary);
+            lowerBandIndex = bandIndex - 1;
+            upperBandIndex = bandIndex;
+            boundaryBlocks = loBoundary;
+            if (dHi < dLo) {
+                lowerBandIndex = bandIndex;
+                upperBandIndex = bandIndex + 1;
+                boundaryBlocks = hiBoundary;
+            }
+        }
+        double halfWidthBlocks = BLEND_TRANSITION_WIDTH_BLOCKS * 0.5;
+        if (!(halfWidthBlocks > 0.0)) {
+            return bandIndex;
+        }
+        double diameter = radius * 2.0;
+        double noiseScale = diameter > 0.0 ? (REFERENCE_DIAMETER_BLOCKS / diameter) : 1.0;
+        double warpPatchBlocks = scaledPatchBlocks(WARP_NOISE_PATCH_CHUNKS, noiseScale);
+        long warpSeed = WORLD_SEED ^ WARP_NOISE_SALT;
+        double warpNoise = (blobNoise01ScaledBlocks(warpSeed, blockX, blockZ, warpPatchBlocks, WARP_NOISE_SALT) * 2.0) - 1.0;
+        double maxWarp = Math.min(WARP_AMPLITUDE_BLOCKS, halfWidthBlocks);
+        double boundaryWarp = warpNoise * maxWarp;
+        double effectiveBoundary = boundaryBlocks + boundaryWarp;
+        double delta = absZ - effectiveBoundary;
+        if (Math.abs(delta) > halfWidthBlocks) {
+            return bandIndex;
+        }
+        double blendT = (delta + halfWidthBlocks) / (2.0 * halfWidthBlocks);
+        blendT = clamp(blendT, 0.0, 1.0);
+        blendT = smoothstep(blendT);
+        double blendPatchBlocks = scaledPatchBlocks(BLEND_NOISE_PATCH_CHUNKS, noiseScale);
+        double blendNoise = blobNoise01ScaledBlocks(WORLD_SEED, blockX, blockZ, blendPatchBlocks, BLEND_NOISE_SALT);
+        return blendNoise < blendT ? upperBandIndex : lowerBandIndex;
     }
 
     private static int crispBandIndex(double t) {
