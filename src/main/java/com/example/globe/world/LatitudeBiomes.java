@@ -2226,6 +2226,18 @@ public final class LatitudeBiomes {
         boolean previewHeightHigh = preview.centerHeight >= (seaLevel + PREVIEW_HEIGHT_MARGIN_BLOCKS);
         boolean previewRuggedHigh = preview.robustDelta >= WINDSWEPT_RUGGED_THRESH;
         boolean previewHeightModerate = preview.centerHeight >= (seaLevel + PREVIEW_HEIGHT_MARGIN_BLOCKS / 2);
+        // Temperate terrain-authority probe: syntheticPreviewTerrain is noise-circular for temperate —
+        // it sets height/ruggedness high when mountainNoiseLike=true, making mountainLike trivially
+        // equal to mountainNoiseLike (no actual terrain confirmation).  When real terrain inputs are
+        // available (MIXIN/CAVE_CLAMP), do a targeted probe so terrain must confirm before admission,
+        // mirroring the polar probe below.  Atlas/headless callers (hasPreviewTerrainInputs=false)
+        // remain noise-only, matching polar in atlas context.
+        if (skipPreview && landBandIndex == BAND_TEMPERATE && mountainNoiseLike && hasPreviewTerrainInputs) {
+            PreviewTerrain temperateProbe = previewTerrain(generator, noiseConfig, heightView, blockX, blockZ);
+            previewHeightHigh     = temperateProbe.centerHeight >= (seaLevel + PREVIEW_HEIGHT_MARGIN_BLOCKS);
+            previewRuggedHigh     = temperateProbe.robustDelta >= WINDSWEPT_RUGGED_THRESH;
+            previewHeightModerate = temperateProbe.centerHeight >= (seaLevel + PREVIEW_HEIGHT_MARGIN_BLOCKS / 2);
+        }
         boolean mountainLike = mountainNoiseLike && (previewHeightHigh || previewHeightModerate || previewRuggedHigh);
         boolean polarMountainNoiseLike = sampler != null && isMountainLike(sampler, blockX, blockZ);
         // Atlas/headless parity: when real terrain probes are absent, allow the noise signal to
@@ -2858,6 +2870,18 @@ public final class LatitudeBiomes {
         boolean previewHeightHigh = preview.centerHeight >= (seaLevel + PREVIEW_HEIGHT_MARGIN_BLOCKS);
         boolean previewRuggedHigh = preview.robustDelta >= WINDSWEPT_RUGGED_THRESH;
         boolean previewHeightModerate = preview.centerHeight >= (seaLevel + PREVIEW_HEIGHT_MARGIN_BLOCKS / 2);
+        // Temperate terrain-authority probe: syntheticPreviewTerrain is noise-circular for temperate —
+        // it sets height/ruggedness high when mountainNoiseLike=true, making mountainLike trivially
+        // equal to mountainNoiseLike (no actual terrain confirmation).  When real terrain inputs are
+        // available (MIXIN/CAVE_CLAMP), do a targeted probe so terrain must confirm before admission,
+        // mirroring the polar probe below.  Atlas/headless callers (hasPreviewTerrainInputs=false)
+        // remain noise-only, matching polar in atlas context.
+        if (skipPreview && landBandIndex == BAND_TEMPERATE && mountainNoiseLike && hasPreviewTerrainInputs) {
+            PreviewTerrain temperateProbe = previewTerrain(generator, noiseConfig, heightView, blockX, blockZ);
+            previewHeightHigh     = temperateProbe.centerHeight >= (seaLevel + PREVIEW_HEIGHT_MARGIN_BLOCKS);
+            previewRuggedHigh     = temperateProbe.robustDelta >= WINDSWEPT_RUGGED_THRESH;
+            previewHeightModerate = temperateProbe.centerHeight >= (seaLevel + PREVIEW_HEIGHT_MARGIN_BLOCKS / 2);
+        }
         boolean mountainLike = mountainNoiseLike && (previewHeightHigh || previewHeightModerate || previewRuggedHigh);
         boolean polarMountainNoiseLike = sampler != null && isMountainLike(sampler, blockX, blockZ);
         // Atlas/headless parity: when real terrain probes are absent, allow the noise signal to
