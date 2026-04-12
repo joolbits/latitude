@@ -4945,28 +4945,30 @@ public final class LatitudeBiomes {
             return candidate;
         }
         boolean inRegion = paleGardenRegionHit(WORLD_SEED, blockX, blockZ, effectiveRadius);
-        if (inRegion && isBiomeId(candidate, "minecraft:dark_forest")) {
+        if (inRegion) {
+            // Region is authoritative: override any land candidate with pale_garden.
             try {
                 return biome(biomes, "minecraft:pale_garden");
             } catch (Throwable ignored) {
                 return candidate;
             }
         }
-        if (!isBiomeId(candidate, "minecraft:pale_garden") || inRegion) {
-            return candidate;
-        }
-        if (isBiomeId(base, "minecraft:dark_forest")) {
-            return base;
-        }
-        try {
-            return biome(biomes, "minecraft:dark_forest");
-        } catch (Throwable ignored) {
+        // Outside region: suppress any stray pale_garden (e.g. from vanilla noise base).
+        if (isBiomeId(candidate, "minecraft:pale_garden")) {
+            if (isBiomeId(base, "minecraft:dark_forest")) {
+                return base;
+            }
             try {
-                return biome(biomes, "minecraft:forest");
-            } catch (Throwable ignoredAgain) {
-                return isBiomeId(base, "minecraft:pale_garden") ? candidate : base;
+                return biome(biomes, "minecraft:dark_forest");
+            } catch (Throwable ignored) {
+                try {
+                    return biome(biomes, "minecraft:forest");
+                } catch (Throwable ignoredAgain) {
+                    return isBiomeId(base, "minecraft:pale_garden") ? candidate : base;
+                }
             }
         }
+        return candidate;
     }
 
     private static RegistryEntry<Biome> enforcePaleGardenRegion(Collection<RegistryEntry<Biome>> biomes,
@@ -4980,25 +4982,27 @@ public final class LatitudeBiomes {
             return candidate;
         }
         boolean inRegion = paleGardenRegionHit(WORLD_SEED, blockX, blockZ, effectiveRadius);
-        if (inRegion && isBiomeId(candidate, "minecraft:dark_forest")) {
+        if (inRegion) {
+            // Region is authoritative: override any land candidate with pale_garden.
             RegistryEntry<Biome> paleGarden = entryById(biomes, "minecraft:pale_garden");
             return paleGarden != null ? paleGarden : candidate;
         }
-        if (!isBiomeId(candidate, "minecraft:pale_garden") || inRegion) {
-            return candidate;
+        // Outside region: suppress any stray pale_garden (e.g. from vanilla noise base).
+        if (isBiomeId(candidate, "minecraft:pale_garden")) {
+            if (isBiomeId(base, "minecraft:dark_forest")) {
+                return base;
+            }
+            RegistryEntry<Biome> darkForest = entryById(biomes, "minecraft:dark_forest");
+            if (darkForest != null) {
+                return darkForest;
+            }
+            RegistryEntry<Biome> forest = entryById(biomes, "minecraft:forest");
+            if (forest != null) {
+                return forest;
+            }
+            return isBiomeId(base, "minecraft:pale_garden") ? candidate : base;
         }
-        if (isBiomeId(base, "minecraft:dark_forest")) {
-            return base;
-        }
-        RegistryEntry<Biome> darkForest = entryById(biomes, "minecraft:dark_forest");
-        if (darkForest != null) {
-            return darkForest;
-        }
-        RegistryEntry<Biome> forest = entryById(biomes, "minecraft:forest");
-        if (forest != null) {
-            return forest;
-        }
-        return isBiomeId(base, "minecraft:pale_garden") ? candidate : base;
+        return candidate;
     }
 
     private static List<RegistryEntry<Biome>> removeTemperateMountainFamily(List<RegistryEntry<Biome>> pool) {
