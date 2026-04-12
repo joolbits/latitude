@@ -14,9 +14,6 @@ public class WorldRendererWorldBorderMixin {
     @Inject(method = "render", at = @At("HEAD"), cancellable = true)
     private void globe$cancelVanillaWorldBorder(WorldBorderRenderState state, Vec3d cameraPos, double viewDistanceBlocks, double farPlaneDistance, CallbackInfo ci) {
         if (!GlobeClientState.DEBUG_EW_SUPPRESS_VANILLA_BORDER) return;
-        if (Math.random() < 0.01) {
-            System.out.println("Suppressing Vanilla Border...");
-        }
         ci.cancel();
     }
 }

@@ -1,13 +1,14 @@
 package com.example.globe.mixin;
 
 import com.example.globe.GlobeMod;
-import com.example.globe.util.LatitudeMath;
+import com.example.globe.util.LatitudeBands;
 import com.example.globe.world.LatitudeBiomes;
 import net.minecraft.registry.Registry;
 import net.minecraft.registry.RegistryKey;
 import net.minecraft.registry.RegistryKeys;
 import net.minecraft.registry.entry.RegistryEntry;
 import net.minecraft.util.Identifier;
+import net.minecraft.world.Heightmap;
 import net.minecraft.world.biome.Biome;
 import net.minecraft.world.biome.source.BiomeSupplier;
 import net.minecraft.world.biome.source.util.MultiNoiseUtil;
@@ -49,6 +50,10 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
             Integer.getInteger("latitude.hardDeckSurfaceY", 20);
 
     @Unique
+    private static final int CAVE_SURFACE_MARGIN_BLOCKS =
+            Integer.getInteger("latitude.caveSurfaceMarginBlocks", 8);
+
+    @Unique
     private static final boolean DEBUG_CAVE_CLAMP =
             Boolean.getBoolean("latitude.debugCaveClamp");
 
@@ -63,6 +68,24 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
     @Unique
     private static final boolean DEBUG_BIOME_PICK =
             Boolean.getBoolean("latitude.debugBiomePick");
+
+    @Unique
+    private static final java.util.concurrent.atomic.AtomicBoolean DEBUG_POPULATE_GATE_REJECT_LOGGED =
+            new java.util.concurrent.atomic.AtomicBoolean(false);
+
+    @Unique
+    private static final java.util.concurrent.atomic.AtomicBoolean DEBUG_POPULATE_NO_STRUCTURE_LOGGED =
+            new java.util.concurrent.atomic.AtomicBoolean(false);
+
+    @Unique
+    private static final java.util.concurrent.atomic.AtomicBoolean DEBUG_WORLDGEN_PATH_ONCE_LOGGED =
+            new java.util.concurrent.atomic.AtomicBoolean(false);
+
+    @Unique
+    private static final String GLOBE_SETTINGS_CHECKED =
+            "globe:overworld|globe:overworld_xsmall|globe:overworld_small|globe:overworld_regular|globe:overworld_large|globe:overworld_massive";
+    @Unique
+    private static final ThreadLocal<NoiseConfig> globe$noiseConfigTL = new ThreadLocal<>();
 
     // Only apply Latitude to your globe overworld settings (keeps Nether/End sane).
     @Unique
@@ -180,6 +203,7 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
     )
     private void globe$captureStructureAccessor(Blender blender, NoiseConfig noiseConfig, StructureAccessor structureAccessor, Chunk chunk, CallbackInfo ci) {
         globe$structureAccessorTL.set(structureAccessor);
+        globe$noiseConfigTL.set(noiseConfig);
     }
 
     @Inject(
@@ -188,6 +212,7 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
     )
     private void globe$clearStructureAccessor(Blender blender, NoiseConfig noiseConfig, StructureAccessor structureAccessor, Chunk chunk, CallbackInfo ci) {
         globe$structureAccessorTL.remove();
+        globe$noiseConfigTL.remove();
     }
 
     /**
@@ -206,18 +231,30 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
     private void globe$wrapBiomeSupplier(Chunk chunk, BiomeSupplier originalSupplier, MultiNoiseUtil.MultiNoiseSampler sampler) {
         // Gate: only apply to your globe overworld settings.
         if (!this.globe$isAnyGlobeSettings()) {
+            if (DEBUG_WORLDGEN_PATH && DEBUG_POPULATE_GATE_REJECT_LOGGED.compareAndSet(false, true)) {
+                LOGGER.info("[Latitude] populateBiomes gate reject: settings not Globe preset checked={} matched={} action=falling back to vanilla populateBiomes",
+                        GLOBE_SETTINGS_CHECKED, globe$matchedSettingsLabel());
+            }
             chunk.populateBiomes(originalSupplier, sampler);
             return;
         }
 
         StructureAccessor structureAccessor = globe$structureAccessorTL.get();
         if (structureAccessor == null) {
+            if (DEBUG_WORLDGEN_PATH && DEBUG_POPULATE_NO_STRUCTURE_LOGGED.compareAndSet(false, true)) {
+                LOGGER.info("[Latitude] populateBiomes gate reject: StructureAccessor unavailable settings={} action=falling back to vanilla populateBiomes",
+                        globe$matchedSettingsLabel());
+            }
             chunk.populateBiomes(originalSupplier, sampler);
             return;
         }
 
         Registry<Biome> biomes = structureAccessor.getRegistryManager().getOrThrow(RegistryKeys.BIOME);
         int borderRadiusBlocks = this.globe$borderRadiusBlocks();
+        NoiseChunkGenerator generator = (NoiseChunkGenerator)(Object) this;
+        NoiseConfig noiseConfig = globe$noiseConfigTL.get();
+        Long2LongOpenHashMap surfaceYCache = new Long2LongOpenHashMap();
+        surfaceYCache.defaultReturnValue(Long.MIN_VALUE);
         logWorldgenPathOnce(chunk, borderRadiusBlocks, globe$matchedSettingsLabel());
 
         BiomeSupplier wrapped = (x, y, z, ignoredSampler) -> {
@@ -227,7 +264,8 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
             int blockY = (y << 2) + 2;
             
             RegistryEntry<Biome> current = originalSupplier.getBiome(x, y, z, sampler);
-            RegistryEntry<Biome> base = originalSupplier.getBiome(x, 0, z, sampler);
+            RegistryEntry<Biome> base = originalSupplier.getBiome(x, LatitudeBiomes.SURFACE_CLASSIFY_Y >> 2, z, sampler);
+            boolean caveCurrent = isCaveBiome(biomes, current);
 
             if (blockY > HARD_DECK_SURFACE_Y && isCaveBiome(biomes, base)) {
                 RegistryEntry<Biome> plains = biomes.getEntry(Identifier.of("minecraft", "plains")).orElse(null);
@@ -240,27 +278,38 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
                 }
             }
 
-            if (FIX_SURFACE_CAVE_BIOMES && isCaveBiome(biomes, current)) {
-                boolean hardDeck = blockY >= 0;
-                boolean tooHigh = blockY > MAX_CAVE_BIOME_Y;
-                boolean deepDarkIllegal = isDeepDark(biomes, current) && blockY > -16;
-                if (hardDeck || tooHigh || deepDarkIllegal) {
+            int surfaceY = Integer.MIN_VALUE;
+            boolean nearSurface = false;
+            boolean tooHigh = false;
+            boolean deepDarkIllegal = false;
+            if (FIX_SURFACE_CAVE_BIOMES && caveCurrent) {
+                surfaceY = resolveSurfaceY(generator, noiseConfig, chunk, blockX, blockZ, surfaceYCache);
+                nearSurface = blockY >= (surfaceY - CAVE_SURFACE_MARGIN_BLOCKS);
+                tooHigh = blockY > MAX_CAVE_BIOME_Y;
+                deepDarkIllegal = isDeepDark(biomes, current) && blockY > -16;
+                if (nearSurface || tooHigh || deepDarkIllegal) {
                     RegistryEntry<Biome> replacement = pickSurfaceReplacement(
-                            biomes, base, blockX, blockZ, borderRadiusBlocks, sampler);
+                            biomes, base, blockX, blockZ, blockY, borderRadiusBlocks, sampler,
+                            generator, noiseConfig, chunk);
                     if (DEBUG_CAVE_CLAMP) {
-                        LOGGER.info("[Latitude] Clamped {} at x={} y={} z={} (hardDeckY=0 maxY={} deepDarkIllegal={}) -> {}",
+                        LOGGER.info("[Latitude] Clamped {} at x={} y={} z={} (surfaceY={} margin={} maxY={} deepDarkIllegal={}) -> {}",
                                 biomeId(biomes, current), blockX, blockY, blockZ,
-                                MAX_CAVE_BIOME_Y, deepDarkIllegal, biomeId(biomes, replacement));
+                                surfaceY, CAVE_SURFACE_MARGIN_BLOCKS, MAX_CAVE_BIOME_Y,
+                                deepDarkIllegal, biomeId(biomes, replacement));
                     }
                     return replacement;
                 }
             }
+            if (caveCurrent) {
+                return current;
+            }
 
             RegistryEntry<Biome> picked = null;
 
-            // IMPORTANT: force Y=0. Passing quartY reintroduces warm_ocean-on-land + harsh seams/infinite plains
+            // BlockY is forwarded so LatitudeBiomes can compute the upland ramp while horizontal selection remains unchanged.
             try {
-                picked = LatitudeBiomes.pick(biomes, base, blockX, blockZ, borderRadiusBlocks, sampler, "MIXIN");
+                picked = LatitudeBiomes.pick(biomes, base, blockX, blockZ, blockY, borderRadiusBlocks, sampler, "MIXIN",
+                        generator, noiseConfig, chunk);
             } catch (Throwable t) {
                 logPickFailOnce(blockX, blockZ, "exception", t.toString());
                 if (DEBUG_BIOME_PICK) {
@@ -296,11 +345,13 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
 
     @Unique
     private static RegistryEntry<Biome> pickSurfaceReplacement(Registry<Biome> biomes, RegistryEntry<Biome> base,
-                                                               int blockX, int blockZ, int borderRadiusBlocks,
-                                                               MultiNoiseUtil.MultiNoiseSampler sampler) {
+                                                                int blockX, int blockZ, int blockY, int borderRadiusBlocks,
+                                                                MultiNoiseUtil.MultiNoiseSampler sampler,
+                                                                NoiseChunkGenerator generator, NoiseConfig noiseConfig, Chunk heightView) {
         RegistryEntry<Biome> pick;
         try {
-            pick = LatitudeBiomes.pick(biomes, base, blockX, blockZ, borderRadiusBlocks, sampler, "CAVE_CLAMP");
+            pick = LatitudeBiomes.pick(biomes, base, blockX, blockZ, blockY, borderRadiusBlocks, sampler, "CAVE_CLAMP",
+                    generator, noiseConfig, heightView);
         } catch (Throwable t) {
             pick = null;
             logPickFailOnce(blockX, blockZ, "clamp_exception", t.toString());
@@ -319,6 +370,25 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
             return base;
         }
         return pickSafeFallback(biomes, blockZ);
+    }
+
+    @Unique
+    private static int resolveSurfaceY(NoiseChunkGenerator generator, NoiseConfig noiseConfig, Chunk heightView,
+                                       int blockX, int blockZ, Long2LongOpenHashMap surfaceYCache) {
+        long key = (((long) blockX) << 32) ^ (blockZ & 0xFFFF_FFFFL);
+        long cached = surfaceYCache.get(key);
+        if (cached != Long.MIN_VALUE) {
+            return (int) cached;
+        }
+
+        int surfaceY;
+        if (generator == null || noiseConfig == null || heightView == null) {
+            surfaceY = HARD_DECK_SURFACE_Y;
+        } else {
+            surfaceY = generator.getHeight(blockX, blockZ, Heightmap.Type.WORLD_SURFACE_WG, heightView, noiseConfig);
+        }
+        surfaceYCache.put(key, surfaceY);
+        return surfaceY;
     }
 
     @Unique
@@ -366,14 +436,11 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
         if (!DEBUG_WORLDGEN_PATH) {
             return;
         }
-        long key = chunk.getPos().toLong();
-        synchronized (DEBUG_WORLDGEN_CHUNKS) {
-            if (DEBUG_WORLDGEN_CHUNKS.putIfAbsent(key, System.nanoTime()) != Long.MIN_VALUE) {
-                return;
-            }
+        if (!DEBUG_WORLDGEN_PATH_ONCE_LOGGED.compareAndSet(false, true)) {
+            return;
         }
-        LOGGER.info("[Latitude] Worldgen path active settings={} chunk={} radius={} writing=true",
-                settingsLabel, chunk.getPos(), borderRadiusBlocks);
+        LOGGER.info("[Latitude] Worldgen path active: overriding populateBiomes settings={} checked={} chunk={} radius={} writing=true",
+                settingsLabel, GLOBE_SETTINGS_CHECKED, chunk.getPos(), borderRadiusBlocks);
     }
 
     @Unique
@@ -418,12 +485,12 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
     private static RegistryEntry<Biome> pickLatitudeFallback(Registry<Biome> biomes, RegistryEntry<Biome> base,
                                                              int blockX, int blockZ, int borderRadiusBlocks) {
         int radius = Math.max(1, borderRadiusBlocks);
-        LatitudeMath.LatitudeZone zone = LatitudeMath.zoneForRadius(radius, blockZ);
-        return switch (zone) {
+        LatitudeBands.Band band = LatitudeBands.fromAbsoluteLatitudeDeg(Math.abs((double) blockZ) * 90.0 / radius);
+        return switch (band) {
             case SUBPOLAR, POLAR -> pickFallback(biomes, base, "minecraft:snowy_plains", "minecraft:taiga", "minecraft:snowy_taiga");
             case TEMPERATE -> pickFallback(biomes, base, "minecraft:plains", "minecraft:forest", "minecraft:birch_forest");
-            case TROPICAL, SUBTROPICAL -> pickFallback(biomes, base, "minecraft:savanna", "minecraft:sparse_jungle", "minecraft:jungle");
-            case EQUATOR -> pickFallback(biomes, base, "minecraft:jungle", "minecraft:savanna", "minecraft:plains");
+            case SUBTROPICAL -> pickFallback(biomes, base, "minecraft:savanna", "minecraft:sparse_jungle", "minecraft:jungle");
+            case TROPICAL -> pickFallback(biomes, base, "minecraft:jungle", "minecraft:savanna", "minecraft:plains");
         };
     }
 

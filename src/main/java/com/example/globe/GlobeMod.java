@@ -3,6 +3,11 @@ package com.example.globe;
 import net.fabricmc.api.ModInitializer;
 import com.example.globe.world.LatitudeBiomes;
 import com.example.globe.world.BiomeFeatureStripping;
+import com.example.globe.world.LatitudeWorldState;
+import com.example.globe.dev.BiomePreviewHeadlessRunner;
+import com.example.globe.dev.BiomeSamplerTools;
+import com.example.globe.dev.BiomeSamplerTools.SamplerTemplate;
+import com.example.globe.dev.LatitudeDevCommand;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
@@ -24,19 +29,32 @@ import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.Heightmap;
 import net.minecraft.world.border.WorldBorder;
+import net.minecraft.world.biome.Biome;
+import net.minecraft.world.biome.source.util.MultiNoiseUtil;
 import net.minecraft.world.gen.chunk.ChunkGenerator;
 import net.minecraft.world.gen.chunk.ChunkGeneratorSettings;
 import net.minecraft.world.gen.chunk.NoiseChunkGenerator;
+import net.minecraft.world.gen.noise.NoiseConfig;
+import net.minecraft.registry.Registry;
+import net.minecraft.registry.entry.RegistryEntry;
+import net.minecraft.registry.tag.BiomeTags;
 import net.minecraft.world.WorldProperties;
 import net.minecraft.network.packet.s2c.play.PositionFlag;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.random.Random;
+import net.fabricmc.loader.api.FabricLoader;
+import net.fabricmc.loader.api.ModContainer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 
 import java.util.EnumSet;
+import java.util.Optional;
+import java.util.jar.Attributes;
+import java.util.jar.Manifest;
+
+import java.io.InputStream;
 
 public class GlobeMod implements ModInitializer {
     public static final String MOD_ID = "globe";
@@ -91,6 +109,8 @@ public class GlobeMod implements ModInitializer {
     public void onInitialize() {
         LOGGER.info("{} initialized. Use the globe:globe world preset for deterministic terrain.", MOD_ID);
 
+        logBuildMetadata("server");
+
         GlobeNet.registerPayloads();
         BiomeFeatureStripping.init();
 
@@ -106,9 +126,12 @@ public class GlobeMod implements ModInitializer {
                                 ctx.getSource().sendFeedback(() -> Text.literal("Fly speed set to " + level), false);
                                 return 1;
                             })));
+
+            LatitudeDevCommand.register(dispatcher);
         });
 
         ServerLifecycleEvents.SERVER_STARTED.register(GlobeMod::applyWorldBorder);
+        BiomePreviewHeadlessRunner.register();
         ServerLifecycleEvents.SERVER_STOPPED.register(server -> {
             POLAR_SCRUBBER = null;
         });
@@ -122,6 +145,10 @@ public class GlobeMod implements ModInitializer {
             boolean isGlobe = isGlobeOverworld(overworld);
             LOGGER.info("JOIN: player={}, isGlobeOverworld={}", handler.player.getName().getString(), isGlobe);
             ServerPlayNetworking.send(handler.player, new GlobeNet.GlobeStatePayload(isGlobe));
+
+            LatitudeWorldState worldState = LatitudeWorldState.get(overworld);
+            boolean isBrandNewWorld = overworld.getTime() < 100L;
+            boolean spawnAlreadyChosen = handler.player.getCommandTags().contains(SPAWN_CHOSEN_TAG);
 
             String pendingZone = server.isDedicated() ? null : GlobePending.consume();
 
@@ -139,15 +166,18 @@ public class GlobeMod implements ModInitializer {
                 }
             }
 
-            if (isGlobe && !handler.player.getCommandTags().contains(SPAWN_CHOSEN_TAG)) {
-                if (pendingZone != null) {
-                    applySpawnChoice(handler.player, pendingZone);
+            if (isGlobe && !spawnAlreadyChosen && !worldState.isSpawnPickerDismissed() && isBrandNewWorld) {
+                // Legacy post-load spawn picker path is no longer used. Apply a spawn choice immediately
+                // (pending value from bespoke flow when present, otherwise fall back to TEMPERATE) and
+                // mark the picker dismissed so the old menu cannot reopen on first load or crash recovery.
+                String zoneToApply = pendingZone != null ? pendingZone : "TEMPERATE";
+
+                if (pendingZone == null) {
+                    LOGGER.info("No pending spawn zone from bespoke flow; defaulting to TEMPERATE and suppressing legacy picker");
                 }
 
-                if (!handler.player.getCommandTags().contains(SPAWN_CHOSEN_TAG)) {
-                    LOGGER.info("Sending spawn picker open to player={}", handler.player.getName().getString());
-                    ServerPlayNetworking.send(handler.player, new GlobeNet.OpenSpawnPickerPayload(true));
-                }
+                applySpawnChoice(handler.player, zoneToApply);
+                worldState.setSpawnPickerDismissed(true);
             }
         });
 
@@ -350,7 +380,19 @@ public class GlobeMod implements ModInitializer {
 
         int targetZ = z;
 
-        BlockPos spawnPos = findLandSpawn(world, radius, targetZ, seed);
+        // Biome-probe spawn finding: sample noise to find land X,Z (no chunk gen),
+        // then generate only the chosen chunk for safe Y placement.
+        BlockPos spawnPos;
+        try {
+            SamplerTemplate template = BiomeSamplerTools.createTemplate(world);
+            NoiseConfig noiseConfig = NoiseConfig.create(
+                    template.settings().value(), template.noiseParameters(), seed);
+            MultiNoiseUtil.MultiNoiseSampler sampler = noiseConfig.getMultiNoiseSampler();
+            spawnPos = findLandSpawn(world, template, sampler, radius, targetZ, seed);
+        } catch (Exception e) {
+            LOGGER.warn("[Latitude] Biome probe failed, using fallback spawn", e);
+            spawnPos = null;
+        }
 
         if (spawnPos == null) {
             LOGGER.warn("[Latitude] Could not find land spawn for zone={} targetZ={}. Falling back to (0, seaLevel+2).", zoneId, targetZ);
@@ -363,6 +405,38 @@ public class GlobeMod implements ModInitializer {
         BlockPos teleportPos = clampSpawnAwayFromEwWarning(clampedSpawnPos, radius);
         player.teleport(world, teleportPos.getX() + 0.5, teleportPos.getY(), teleportPos.getZ() + 0.5, EnumSet.noneOf(PositionFlag.class), player.getYaw(), player.getPitch(), true);
         player.addCommandTag(SPAWN_CHOSEN_TAG);
+        LatitudeWorldState.get(world).setSpawnPickerDismissed(true);
+    }
+
+    public static void logBuildMetadata(String side) {
+        Optional<ModContainer> mod = FabricLoader.getInstance().getModContainer(MOD_ID);
+        String version = mod.map(c -> c.getMetadata().getVersion().getFriendlyString()).orElse("?");
+        String commit = "?";
+        String branch = "?";
+        String time = "?";
+        String dirty = "?";
+
+        if (mod.isPresent()) {
+            try (InputStream is = mod.get().findPath("META-INF/MANIFEST.MF").map(path -> {
+                try {
+                    return java.nio.file.Files.newInputStream(path);
+                } catch (Exception e) {
+                    return null;
+                }
+            }).orElse(null)) {
+                if (is != null) {
+                    Manifest mf = new Manifest(is);
+                    Attributes attrs = mf.getMainAttributes();
+                    commit = Optional.ofNullable(attrs.getValue("Git-Commit")).orElse(commit);
+                    branch = Optional.ofNullable(attrs.getValue("Git-Branch")).orElse(branch);
+                    time = Optional.ofNullable(attrs.getValue("Build-Time")).orElse(time);
+                    dirty = Optional.ofNullable(attrs.getValue("Build-Dirty")).orElse(dirty);
+                }
+            } catch (Exception ignored) {
+            }
+        }
+
+        LOGGER.info("[LAT][BUILD] side={} version={} commit={} branch={} dirty={} time={}", side, version, commit, branch, dirty, time);
     }
 
     private static BlockPos clampSpawnAwayFromEwWarning(BlockPos spawnPos, int radiusBlocks) {
@@ -385,7 +459,9 @@ public class GlobeMod implements ModInitializer {
         return new BlockPos(clampedX, spawnPos.getY(), spawnPos.getZ());
     }
 
-    private static BlockPos findLandSpawn(ServerWorld world, int borderHalf, int targetZ, long seed) {
+    private static BlockPos findLandSpawn(ServerWorld world, SamplerTemplate template,
+                                          MultiNoiseUtil.MultiNoiseSampler sampler,
+                                          int borderHalf, int targetZ, long seed) {
         final int margin = 320;
         final int max = Math.max(0, borderHalf - margin);
 
@@ -396,67 +472,78 @@ public class GlobeMod implements ModInitializer {
         final int attemptsWithZJitter = 96;
         final int zJitter = 96;
 
+        // Size-invariance: active radius is source of truth, borderHalf is fallback only.
+        int radiusBlocks = LatitudeBiomes.getActiveRadiusBlocks();
+        if (radiusBlocks <= 0) radiusBlocks = borderHalf;
+        int classifyY = LatitudeBiomes.SURFACE_CLASSIFY_Y;
+
+        LatitudeBiomes.setWorldSeed(seed);
+
         Random rng = Random.create(seed ^ 0x9E3779B97F4A7C15L ^ (long) targetZ);
 
-        BlockPos best = null;
-        int bestY = Integer.MIN_VALUE;
-
-        // Pass 1: X-only
+        // Pass 1: X-only — biome probe then single-chunk Y placement
         for (int i = 0; i < attemptsXOnly; i++) {
             int x = rng.nextBetween(-max, max);
             int z = targetZ;
 
-            BlockPos candidate = tryLandAt(world, x, z);
-            if (candidate == null) continue;
-
-            int y = candidate.getY();
-            if (y > bestY) {
-                bestY = y;
-                best = candidate;
-            }
+            if (!isLandBiome(template, sampler, x, z, classifyY, radiusBlocks)) continue;
+            BlockPos candidate = placeSafeY(world, x, z);
+            if (candidate != null) return candidate;
         }
-        if (best != null) return best;
 
         // Pass 2: X + small Z jitter
         for (int i = 0; i < attemptsWithZJitter; i++) {
             int x = rng.nextBetween(-max, max);
             int z = MathHelper.clamp(targetZ + rng.nextBetween(-zJitter, zJitter), -max, max);
 
-            BlockPos candidate = tryLandAt(world, x, z);
-            if (candidate == null) continue;
-
-            int y = candidate.getY();
-            if (y > bestY) {
-                bestY = y;
-                best = candidate;
-            }
+            if (!isLandBiome(template, sampler, x, z, classifyY, radiusBlocks)) continue;
+            BlockPos candidate = placeSafeY(world, x, z);
+            if (candidate != null) return candidate;
         }
 
-        return best;
+        return null;
     }
 
-    private static BlockPos tryLandAt(ServerWorld world, int x, int z) {
-        // Ensure chunk exists
+    /**
+     * Pure biome-source probe — no chunk generation. Returns true if the biome
+     * at (blockX, blockZ) is land (not ocean or river).
+     */
+    private static boolean isLandBiome(SamplerTemplate template,
+                                        MultiNoiseUtil.MultiNoiseSampler sampler,
+                                        int blockX, int blockZ,
+                                        int classifyY, int radiusBlocks) {
+        int noiseX = Math.floorDiv(blockX, 4);
+        int noiseZ = Math.floorDiv(blockZ, 4);
+        int noiseY = Math.floorDiv(classifyY, 4);
+
+        RegistryEntry<Biome> base = template.baseSource().getBiome(noiseX, noiseY, noiseZ, sampler);
+        RegistryEntry<Biome> picked = LatitudeBiomes.pick(
+                template.biomeRegistry(), base,
+                blockX, blockZ, classifyY, radiusBlocks,
+                sampler, "SPAWN_PROBE");
+        RegistryEntry<Biome> resolved = picked != null ? picked : base;
+
+        // Tag-based checks — safe against substring false positives
+        return !resolved.isIn(BiomeTags.IS_OCEAN) && !resolved.isIn(BiomeTags.IS_RIVER);
+    }
+
+    /**
+     * Generates exactly ONE chunk to get a safe spawn Y via heightmap.
+     * Returns a valid spawn BlockPos, or null if the terrain fails validation.
+     */
+    private static BlockPos placeSafeY(ServerWorld world, int x, int z) {
         world.getChunk(x >> 4, z >> 4);
 
         BlockPos ground = world.getTopPosition(
                 Heightmap.Type.MOTION_BLOCKING_NO_LEAVES,
-                new BlockPos(x, world.getBottomY(), z)
-        );
-
-        // Spawn is one block above ground
+                new BlockPos(x, world.getBottomY(), z));
         BlockPos spawn = ground.up();
 
-        // Reject if water column / fluid at spawn space
+        // Same validation as the old tryLandAt
         if (!world.getFluidState(spawn).isEmpty()) return null;
         if (!world.getFluidState(spawn.up()).isEmpty()) return null;
-
-        // Need 2-block headroom
         if (!world.getBlockState(spawn).isAir()) return null;
         if (!world.getBlockState(spawn.up()).isAir()) return null;
-
-        // Reject "stand in water" edge cases (seafloor top can still be valid with water above)
-        // MOTION_BLOCKING_NO_LEAVES usually avoids water surfaces, but this double-check is cheap.
         if (!world.getFluidState(ground).isEmpty()) return null;
 
         return spawn;

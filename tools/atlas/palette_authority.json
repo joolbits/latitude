@@ -1,0 +1,10 @@
+{
+  "biomes": {
+    "minecraft:beach": "#E0C097",
+    "minecraft:snowy_beach": "#E9E1CC",
+    "minecraft:stony_shore": "#9A9A9A",
+    "minecraft:badlands": "#D47F34",
+    "minecraft:wooded_badlands": "#B86832",
+    "minecraft:eroded_badlands": "#E3B35A"
+  }
+}

@@ -24,11 +24,6 @@ public abstract class EwStormWallRendererMixin {
 
     @Inject(method = "pushEntityRenders", at = @At("HEAD"))
     private void latitude$injectRenderWall(MatrixStack matrices, WorldRenderState renderStates, OrderedRenderCommandQueue queue, CallbackInfo ci) {
-        if (!latitude$logged) {
-            latitude$logged = true;
-            System.out.println("[Latitude] EW wall hook alive");
-        }
-
         if (queue == null || matrices == null) {
             return;
         }
@@ -49,14 +44,6 @@ public abstract class EwStormWallRendererMixin {
 
         queue.submitCustom(matrices, RenderLayers.debugQuads(), (entry, vc) -> {
             var world = client.world;
-            if (world != null) {
-                long t = world.getTime();
-                if (t - latitude$lastLogTick >= 60L) {
-                    latitude$lastLogTick = t;
-                    System.out.println("[Latitude EW WALL] camX=" + camPos.x + " dist=" + dist + " west=" + westX + " east=" + eastX);
-                }
-            }
-
             GlStateManager._enableBlend();
             GlStateManager._blendFuncSeparate(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA, GL11.GL_ONE, GL11.GL_ONE_MINUS_SRC_ALPHA);
             GlStateManager._enableDepthTest();

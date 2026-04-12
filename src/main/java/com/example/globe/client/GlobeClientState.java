@@ -184,15 +184,14 @@ public final class GlobeClientState {
 
         double distToBorder = Math.min(Math.abs(player.getX() - border.getBoundWest()), Math.abs(border.getBoundEast() - player.getX()));
 
-        // Debug print every 10s to verify thresholds
-        long now = System.currentTimeMillis();
-        if (now - globe$ewLastLogMs >= 10_000L) {
-            globe$ewLastLogMs = now;
-            System.out.println("[Latitude EW] distToBorder=" + distToBorder
-                    + " x=" + player.getX()
-                    + " west=" + border.getBoundWest()
-                    + " east=" + border.getBoundEast()
-                    + " L1=500 L2=100");
+        // Debug print every 10s to verify thresholds (opt-in)
+        if (Boolean.getBoolean("latitude.debugEwWarn")) {
+            long now = System.currentTimeMillis();
+            if (now - globe$ewLastLogMs >= 10_000L) {
+                globe$ewLastLogMs = now;
+                GlobeMod.LOGGER.info("[Latitude EW] distToBorder={} x={} west={} east={} L1=500 L2=100",
+                        distToBorder, player.getX(), border.getBoundWest(), border.getBoundEast());
+            }
         }
 
         boolean ewTextWarn = distToBorder <= 500.0;
@@ -294,7 +293,7 @@ public final class GlobeClientState {
         }
 
         if (Boolean.getBoolean("latitude.debugEwWarn")) {
-            System.out.println("[LAT_EW_WARN] stage=" + stage + " d=" + d);
+            GlobeMod.LOGGER.info("[LAT_EW_WARN] stage={} d={}", stage, d);
         }
         return stage;
     }

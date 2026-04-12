@@ -20,15 +20,14 @@ public abstract class DownloadingTerrainScreenFirstLoadMessageMixin {
     @Shadow
     private float loadProgress;
 
-    private static final Text LINE_1 = Text.literal("Latitude is preparing your world for the first time.");
-    private static final Text LINE_2 = Text.literal("Subsequent loads will be much faster.");
+    private static final Text FIRST_LOAD_HELPER = Text.literal("Creating a new world may take a little longer.");
 
     @Inject(method = "render", at = @At("TAIL"))
     private void globe$renderFirstLoadMessage(DrawContext context, int mouseX, int mouseY, float delta, CallbackInfo ci) {
-        if (!LatitudeClientConfig.get().showFirstLoadMessage) {
-            return;
-        }
-        if (!LatitudeClientState.firstWorldLoad) {
+        boolean useLatitudeLoadingShell = LatitudeClientState.isLatitudeWorldLoading();
+        boolean showFirstLoadHelper = LatitudeClientState.firstWorldLoad && LatitudeClientConfig.get().showFirstLoadMessage;
+
+        if (!useLatitudeLoadingShell || !showFirstLoadHelper) {
             return;
         }
 
@@ -49,21 +48,13 @@ public abstract class DownloadingTerrainScreenFirstLoadMessageMixin {
 
         int shadowA = Math.round(alpha * 0.6f);
         int shadowColor = (shadowA << 24);
-        int line1Color = (alpha << 24) | 0x00D0D0D0;
-        int line2Color = (alpha << 24) | 0x00A0A0A0;
+        int helperColor = (alpha << 24) | 0x00D0D0D0;
 
-        int w1 = tr.getWidth(LINE_1);
-        int w2 = tr.getWidth(LINE_2);
+        int w = tr.getWidth(FIRST_LOAD_HELPER);
+        int x = cx - (w / 2);
 
-        int x1 = cx - (w1 / 2);
-        int x2 = cx - (w2 / 2);
-
-        context.drawText(tr, LINE_1, x1 + 1, baseY + 1, shadowColor, false);
-        context.drawText(tr, LINE_1, x1, baseY, line1Color, false);
-
-        int line2Y = baseY + 10;
-        context.drawText(tr, LINE_2, x2 + 1, line2Y + 1, shadowColor, false);
-        context.drawText(tr, LINE_2, x2, line2Y, line2Color, false);
+        context.drawText(tr, FIRST_LOAD_HELPER, x + 1, baseY + 1, shadowColor, false);
+        context.drawText(tr, FIRST_LOAD_HELPER, x, baseY, helperColor, false);
     }
 
     @Inject(method = "close", at = @At("HEAD"))
