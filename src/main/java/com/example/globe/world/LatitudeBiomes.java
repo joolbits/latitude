@@ -1735,17 +1735,100 @@ public final class LatitudeBiomes {
     }
 
     private static RegistryEntry<Biome> softenSubtropicalBadlands(Registry<Biome> biomes, RegistryEntry<Biome> base, RegistryEntry<Biome> pick) {
-        if (isBadlandsFamily(pick)) {
+        if (!isBadlandsFamily(pick)) {
             return pick;
         }
         return pick;
     }
 
     private static RegistryEntry<Biome> softenSubtropicalBadlands(Collection<RegistryEntry<Biome>> biomes, RegistryEntry<Biome> base, RegistryEntry<Biome> pick) {
-        if (isBadlandsFamily(pick)) {
-            return pick;
-        }
         return pick;
+    }
+
+    private static boolean badlandsProvinceAuthorityHit(long worldSeed, int blockX, int blockZ, int effectiveRadiusHint) {
+        int radius = effectiveRadiusHint > 0 ? effectiveRadiusHint : ACTIVE_RADIUS_BLOCKS;
+        if (radius <= 0) {
+            radius = REFERENCE_DIAMETER_BLOCKS / 2;
+        }
+        radius = Math.max(1, radius);
+
+        ProvinceAuthority.Province province = warmProvinceClass(
+                blockX,
+                blockZ,
+                authoritativeLandBandIndex(blockX, blockZ, radius));
+        if (province != ProvinceAuthority.Province.WARM_DRY) {
+            return false;
+        }
+
+        int minRadius = Math.min(radius - 1, Math.max(BADLANDS_REGION_MIN_RADIUS_BLOCKS, (int) Math.round(radius * BADLANDS_REGION_RADIUS_FRAC)));
+        if (minRadius <= 0) {
+            return false;
+        }
+
+        int xInset = Math.max(384, (int) Math.round(radius * BADLANDS_REGION_X_INSET_FRAC));
+        int minAnchorX = -radius + xInset;
+        int maxAnchorX = radius - xInset;
+        if (maxAnchorX <= minAnchorX) {
+            minAnchorX = -radius / 3;
+            maxAnchorX = radius / 3;
+        }
+        int anchorX = minAnchorX
+                + (int) Math.floor(toUnitDouble(mix64(worldSeed ^ BADLANDS_REGION_ANCHOR_X_SALT))
+                * (double) (Math.max(1, maxAnchorX - minAnchorX + 1)));
+
+        int dryMinAbsZ = bandBoundaryBlocks(1, radius);
+        int dryMaxAbsZ = bandBoundaryBlocks(2, radius);
+        if (dryMaxAbsZ <= dryMinAbsZ) {
+            return false;
+        }
+        int drySpan = dryMaxAbsZ - dryMinAbsZ;
+        int dryInset = Math.max(64, (int) Math.round(drySpan * 0.20));
+        int minAnchorAbsZ = Math.min(dryMaxAbsZ - 1, dryMinAbsZ + dryInset);
+        int maxAnchorAbsZ = Math.max(minAnchorAbsZ, dryMaxAbsZ - dryInset);
+        int anchorAbsZ = minAnchorAbsZ
+                + (int) Math.floor(toUnitDouble(mix64(worldSeed ^ BADLANDS_REGION_ANCHOR_Z_SALT))
+                * (double) (Math.max(1, maxAnchorAbsZ - minAnchorAbsZ + 1)));
+        int anchorZ = anchorAbsZ * (((mix64(worldSeed ^ BADLANDS_REGION_ANCHOR_Z_SALT) & 1L) == 0L) ? 1 : -1);
+
+        double dx = (double) blockX - (double) anchorX;
+        double dz = (double) blockZ - (double) anchorZ;
+        double theta = Math.atan2(dz, dx);
+        int shapeX = (int) Math.round(Math.cos(theta) * BADLANDS_REGION_ANGLE_SAMPLE_BLOCKS);
+        int shapeZ = (int) Math.round(Math.sin(theta) * BADLANDS_REGION_ANGLE_SAMPLE_BLOCKS);
+        double shapeNoise = ValueNoise2D.sampleBlocks(
+                worldSeed ^ BADLANDS_REGION_SHAPE_SALT,
+                shapeX,
+                shapeZ,
+                BADLANDS_REGION_WOBBLE_SCALE_BLOCKS);
+        double shapeSigned = (shapeNoise * 2.0) - 1.0;
+        double baseRadius = Math.max(minRadius, radius * BADLANDS_REGION_RADIUS_FRAC);
+        double regionRadius = baseRadius * (1.0 + shapeSigned * BADLANDS_REGION_WOBBLE_FRAC);
+        regionRadius = Math.max(baseRadius * (1.0 - BADLANDS_REGION_WOBBLE_FRAC), regionRadius);
+        return (dx * dx + dz * dz) <= (regionRadius * regionRadius);
+    }
+
+    private static boolean badlandsProvinceCoreHit(long worldSeed, int blockX, int blockZ, int effectiveRadiusHint) {
+        int radius = effectiveRadiusHint > 0 ? effectiveRadiusHint : ACTIVE_RADIUS_BLOCKS;
+        if (radius <= 0) {
+            radius = REFERENCE_DIAMETER_BLOCKS / 2;
+        }
+        radius = Math.max(1, radius);
+        if (!badlandsProvinceAuthorityHit(worldSeed, blockX, blockZ, radius)) {
+            return false;
+        }
+
+        double coreNoise = ValueNoise2D.sampleBlocks(worldSeed ^ BADLANDS_REGION_CORE_SHAPE_SALT, blockX, blockZ, Math.max(512, radius / 3));
+        return coreNoise < BADLANDS_REGION_CORE_WOBBLE_FRAC;
+    }
+
+    private static boolean badlandsProvinceWobbleHit(long worldSeed, int blockX, int blockZ, int effectiveRadiusHint) {
+        int radius = effectiveRadiusHint > 0 ? effectiveRadiusHint : ACTIVE_RADIUS_BLOCKS;
+        if (radius <= 0) {
+            radius = REFERENCE_DIAMETER_BLOCKS / 2;
+        }
+        radius = Math.max(1, radius);
+        double wobble = ValueNoise2D.sampleBlocks(worldSeed ^ BADLANDS_REGION_CORE_SHAPE_SALT, blockX, blockZ, Math.max(512, radius / 4));
+        return wobble > 0.72;
     }
 
     private static boolean aridHotspotHere(long worldSeed, int blockX, int blockZ) {
@@ -1816,6 +1899,18 @@ public final class LatitudeBiomes {
     private static final int BADLANDS_PATCH_SIZE_BLOCKS = 65536;
     private static final double BADLANDS_PATCH_CHANCE = 0.42;
     private static final long BADLANDS_PATCH_SALT = 0xBADD1A2DL;
+    private static final long BADLANDS_REGION_ANCHOR_X_SALT = 0x6261_646C_5F61_6E63L; // "badl_anc"
+    private static final long BADLANDS_REGION_ANCHOR_Z_SALT = 0x6261_646C_5F61_7A7AL; // "badl_azz"
+    private static final long BADLANDS_REGION_SHAPE_SALT = 0x6261_646C_5F736861L; // "badl_sha"
+    private static final long BADLANDS_REGION_CORE_SHAPE_SALT = 0x6261_646C_5F636F72L; // "badl_cor"
+    private static final double BADLANDS_REGION_RADIUS_FRAC = 0.17;
+    private static final int BADLANDS_REGION_MIN_RADIUS_BLOCKS = 960;
+    private static final double BADLANDS_REGION_WOBBLE_FRAC = 0.16;
+    private static final int BADLANDS_REGION_ANGLE_SAMPLE_BLOCKS = 2048;
+    private static final int BADLANDS_REGION_WOBBLE_SCALE_BLOCKS = 720;
+    private static final double BADLANDS_REGION_X_INSET_FRAC = 0.18;
+    private static final double BADLANDS_REGION_CORE_RADIUS_FRAC = 0.52;
+    private static final double BADLANDS_REGION_CORE_WOBBLE_FRAC = 0.10;
 
     private static final int SWAMP_PATCH_SIZE_BLOCKS = 1024;
     private static final double SWAMP_PATCH_CHANCE = 0.66;
@@ -6950,19 +7045,17 @@ public final class LatitudeBiomes {
         RegistryEntry<Biome> badlands = entryById(biomes, "minecraft:badlands");
         RegistryEntry<Biome> wooded = entryById(biomes, "minecraft:wooded_badlands");
         RegistryEntry<Biome> eroded = entryById(biomes, "minecraft:eroded_badlands");
-        double roll = blobNoise01(WORLD_SEED ^ BADLANDS_PATCH_SALT ^ 0xB11AD5L, blockX, blockZ, BADLANDS_PATCH_SIZE_BLOCKS * 2, 2);
-        RegistryEntry<Biome> chosen = null;
-        if (roll < 0.03 && eroded != null) {
-            chosen = eroded;
-        } else if (roll < 0.12 && wooded != null) {
-            chosen = wooded;
-        } else if (badlands != null) {
-            chosen = badlands;
+        int radiusHint = ACTIVE_RADIUS_BLOCKS > 0 ? ACTIVE_RADIUS_BLOCKS : (REFERENCE_DIAMETER_BLOCKS / 2);
+        if (!badlandsProvinceAuthorityHit(WORLD_SEED, blockX, blockZ, radiusHint)) {
+            return badlands != null ? badlands : (wooded != null ? wooded : eroded);
         }
-        if (chosen == null) {
-            chosen = badlands != null ? badlands : (wooded != null ? wooded : eroded);
+        if (badlandsProvinceCoreHit(WORLD_SEED, blockX, blockZ, radiusHint) && eroded != null) {
+            return eroded;
         }
-        return chosen;
+        if (wooded != null && badlandsProvinceWobbleHit(WORLD_SEED, blockX, blockZ, radiusHint)) {
+            return wooded;
+        }
+        return badlands != null ? badlands : (wooded != null ? wooded : eroded);
     }
 
     private static RegistryEntry<Biome> pickAridRegionFallback(Registry<Biome> biomes,
@@ -6977,28 +7070,15 @@ public final class LatitudeBiomes {
         if (warmProvince != ProvinceAuthority.Province.WARM_DRY) {
             return base;
         }
-        boolean provinceBadlands = badlandsPatchHere(WORLD_SEED, blockX, blockZ);
-        if (!provinceBadlands) {
-            // Allow a small, continuous badlands variant inside WARM_DRY without reintroducing stripe-led dry seams.
-            double provinceVariant = blobNoise01(WORLD_SEED ^ BADLANDS_PATCH_SALT ^ 0xBAD1A11L, blockX, blockZ, BADLANDS_PATCH_SIZE_BLOCKS * 3, 2);
-            provinceBadlands = provinceVariant < 0.12;
+        if (!badlandsProvinceAuthorityHit(WORLD_SEED, blockX, blockZ, radiusHint)) {
+            return enforceWarmProvinceFamily(biomes, base, warmProvince);
         }
-        if (provinceBadlands) {
-            RegistryEntry<Biome> variant = chooseBadlandsVariant(biomes, blockX, blockZ);
-            if (variant != null) {
-                return variant;
-            }
+        RegistryEntry<Biome> variant = chooseBadlandsVariant(biomes, blockX, blockZ);
+        if (variant != null) {
+            return variant;
         }
         if (!aridHotspotHere(WORLD_SEED, blockX, blockZ)) {
             return enforceWarmProvinceFamily(biomes, base, warmProvince);
-        }
-
-        // Inside an arid hotspot: prefer badlands family when patch noise hits, else desert.
-        if (badlandsPatchHere(WORLD_SEED, blockX, blockZ)) {
-            RegistryEntry<Biome> variant = chooseBadlandsVariant(biomes, blockX, blockZ);
-            if (variant != null) {
-                return variant;
-            }
         }
         try {
             return biome(biomes, "minecraft:desert");
@@ -7019,32 +7099,18 @@ public final class LatitudeBiomes {
         if (warmProvince != ProvinceAuthority.Province.WARM_DRY) {
             return base;
         }
-        boolean provinceBadlands = badlandsPatchHere(WORLD_SEED, blockX, blockZ);
-        if (!provinceBadlands) {
-            double provinceVariant = blobNoise01(WORLD_SEED ^ BADLANDS_PATCH_SALT ^ 0xBAD1A11L, blockX, blockZ, BADLANDS_PATCH_SIZE_BLOCKS * 3, 2);
-            provinceBadlands = provinceVariant < 0.12;
+        if (!badlandsProvinceAuthorityHit(WORLD_SEED, blockX, blockZ, radiusHint)) {
+            return enforceWarmProvinceFamily(biomes, base, warmProvince);
         }
-        if (provinceBadlands) {
-            RegistryEntry<Biome> variant = chooseBadlandsVariant(biomes, blockX, blockZ);
-            if (variant != null) {
-                return variant;
-            }
+        RegistryEntry<Biome> variant = chooseBadlandsVariant(biomes, blockX, blockZ);
+        if (variant != null) {
+            return variant;
         }
         if (!aridHotspotHere(WORLD_SEED, blockX, blockZ)) {
             return enforceWarmProvinceFamily(biomes, base, warmProvince);
         }
-
-        if (badlandsPatchHere(WORLD_SEED, blockX, blockZ)) {
-            RegistryEntry<Biome> variant = chooseBadlandsVariant(biomes, blockX, blockZ);
-            if (variant != null) {
-                return variant;
-            }
-        }
         RegistryEntry<Biome> desert = entryById(biomes, "minecraft:desert");
-        if (desert != null) {
-            return desert;
-        }
-        return enforceWarmProvinceFamily(biomes, base, warmProvince);
+        return desert != null ? desert : enforceWarmProvinceFamily(biomes, base, warmProvince);
     }
 
     private static void logSubtropicalJungleReturn(String pathLabel,
