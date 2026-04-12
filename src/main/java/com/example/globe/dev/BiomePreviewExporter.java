@@ -51,6 +51,19 @@ public final class BiomePreviewExporter {
     private static final long DEFAULT_BUDGET_MS = 10L;
     private static final double SEAM_LAT_MIN_DEG = 32.0;
     private static final double SEAM_LAT_MAX_DEG = 38.0;
+    private static final double TEMPERATE_SHOULDER_MIN_DEG = 35.28;
+    private static final double TEMPERATE_SHOULDER_MAX_DEG = 37.88;
+    private static final int BAND_INDEX_TEMPERATE = 2;
+    private static final List<String> TEMPERATE_SHOULDER_KEY_BIOMES = List.of(
+            "minecraft:plains",
+            "minecraft:sunflower_plains",
+            "minecraft:meadow",
+            "minecraft:flower_forest",
+            "minecraft:birch_forest",
+            "minecraft:forest",
+            "minecraft:dark_forest",
+            "minecraft:windswept_hills",
+            "minecraft:stony_peaks");
     private static final int DEFAULT_INVENTORY_DISCOVERY_STEP = 32;
     private static final Identifier MANGROVE_SWAMP_BIOME_ID = Identifier.of("minecraft:mangrove_swamp");
     private static final DateTimeFormatter RUN_LABEL_TIMESTAMP = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss")
@@ -138,6 +151,7 @@ public final class BiomePreviewExporter {
         BufferedImage chosenBandsImage = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
         BufferedImage landBandsImage = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
         Map<Integer, SeamRowSummary> seamRows = new TreeMap<>();
+        Map<Integer, TemperateShoulderCompositionRow> temperateShoulderRows = new TreeMap<>();
         Map<BiomeMaskLayer, BufferedImage> maskImages = new LinkedHashMap<>();
         for (BiomeMaskLayer maskLayer : maskTargets) {
             maskImages.put(maskLayer, new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB));
@@ -244,6 +258,10 @@ public final class BiomePreviewExporter {
                         row.finalTemperate++;
                     }
                 }
+                if (isTemperateShoulderProfileRow(latDeg, landBandIndex)) {
+                    TemperateShoulderCompositionRow row = temperateShoulderRows.computeIfAbsent(blockZ, ignored -> new TemperateShoulderCompositionRow(latDeg));
+                    row.addSample(sampledBiomeId);
+                }
 
                 if (renderBands) {
                     LatitudeBands.Band band = bandForBlockZ(radiusBlocks, blockZ);
@@ -322,6 +340,7 @@ public final class BiomePreviewExporter {
                 radiusBlocks,
                 zMin,
                 stepBlocks);
+        writeTemperateShoulderComposition(outputDir.resolve("seam_temperate_composition.txt"), temperateShoulderRows);
         if (emitBiomeIndex && biomeIndexImage != null) {
             biomeIndexPath = outputDir.resolve("biome_ids.png");
             boolean wrote = ImageIO.write(biomeIndexImage, "png", biomeIndexPath.toFile());
@@ -437,6 +456,7 @@ public final class BiomePreviewExporter {
         private final Map<String, Integer> biomeIndices = new LinkedHashMap<>();
         private final Map<String, Integer> bandCounts = new HashMap<>();
         private final Map<Integer, SeamRowSummary> seamRows = new TreeMap<>();
+        private final Map<Integer, TemperateShoulderCompositionRow> temperateShoulderRows = new TreeMap<>();
 
         private final ChunkGenerator generator;
         private final BiomeSource baseSource;
@@ -608,6 +628,10 @@ public final class BiomePreviewExporter {
                         row.finalTemperate++;
                     }
                 }
+                if (isTemperateShoulderProfileRow(latDeg, landBandIndex)) {
+                    TemperateShoulderCompositionRow row = temperateShoulderRows.computeIfAbsent(blockZ, ignored -> new TemperateShoulderCompositionRow(latDeg));
+                    row.addSample(sampledBiomeId);
+                }
 
                 if (layers.contains(Layer.BANDS)) {
                     LatitudeBands.Band band = bandForBlockZ(radiusBlocks, blockZ);
@@ -708,6 +732,7 @@ public final class BiomePreviewExporter {
                         radiusBlocks,
                         zMin,
                         stepBlocks);
+                writeTemperateShoulderComposition(outputDir.resolve("seam_temperate_composition.txt"), temperateShoulderRows);
                 if (emitBiomeIndex && biomeIndexImage != null) {
                     biomeIndexPath = outputDir.resolve("biome_ids.png");
                     boolean wrote = ImageIO.write(biomeIndexImage, "png", biomeIndexPath.toFile());
@@ -1595,6 +1620,56 @@ public final class BiomePreviewExporter {
                 snappedLat));
     }
 
+    private static boolean isTemperateShoulderProfileRow(double latDeg, int landBandIndex) {
+        return landBandIndex == BAND_INDEX_TEMPERATE
+                && latDeg >= TEMPERATE_SHOULDER_MIN_DEG
+                && latDeg <= TEMPERATE_SHOULDER_MAX_DEG;
+    }
+
+    private static void writeTemperateShoulderComposition(Path outputPath,
+                                                          Map<Integer, TemperateShoulderCompositionRow> rows) throws IOException {
+        if (rows == null || rows.isEmpty()) {
+            Files.writeString(outputPath, String.format(Locale.ROOT,
+                    "no snapped temperate rows in %.2f..%.2f latitude window%n",
+                    TEMPERATE_SHOULDER_MIN_DEG,
+                    TEMPERATE_SHOULDER_MAX_DEG));
+            return;
+        }
+        StringBuilder out = new StringBuilder();
+        out.append(String.format(Locale.ROOT,
+                "temperate_shoulder_window=%.2f..%.2f (snapped temperate rows only)%n",
+                TEMPERATE_SHOULDER_MIN_DEG,
+                TEMPERATE_SHOULDER_MAX_DEG));
+        for (Map.Entry<Integer, TemperateShoulderCompositionRow> entry : rows.entrySet()) {
+            int z = entry.getKey();
+            TemperateShoulderCompositionRow row = entry.getValue();
+            out.append(String.format(Locale.ROOT,
+                    "z=%d latDeg=%.3f total=%d finalTemperate=%d warmDry=%d dominant=%s%n",
+                    z,
+                    row.latDeg,
+                    row.total,
+                    row.finalTemperate,
+                    row.warmDry,
+                    row.dominantBiomesLabel()));
+            out.append("  keyCounts:");
+            for (String biomeId : TEMPERATE_SHOULDER_KEY_BIOMES) {
+                int count = row.biomeCounts.getOrDefault(biomeId, 0);
+                out.append(' ').append(shortBiomeId(biomeId)).append('=').append(count);
+            }
+            out.append('\n');
+            out.append("  otherTop: ").append(row.otherTopBiomesLabel()).append('\n');
+        }
+        Files.writeString(outputPath, out.toString());
+    }
+
+    private static String shortBiomeId(String biomeId) {
+        if (biomeId == null) {
+            return "unknown";
+        }
+        int idx = biomeId.indexOf(':');
+        return idx >= 0 && idx + 1 < biomeId.length() ? biomeId.substring(idx + 1) : biomeId;
+    }
+
     private static final class SeamRowSummary {
         private final double latDeg;
         private int chosenSub;
@@ -1622,6 +1697,83 @@ public final class BiomePreviewExporter {
             } else if (bandIndex == 2) {
                 landTemp++;
             }
+        }
+    }
+
+    private static final class TemperateShoulderCompositionRow {
+        private final double latDeg;
+        private int total;
+        private int finalTemperate;
+        private int warmDry;
+        private final Map<String, Integer> biomeCounts = new HashMap<>();
+
+        private TemperateShoulderCompositionRow(double latDeg) {
+            this.latDeg = latDeg;
+        }
+
+        private void addSample(String biomeId) {
+            total++;
+            String key = biomeId != null ? biomeId : "unknown";
+            biomeCounts.merge(key, 1, Integer::sum);
+            if (isTemperateBiomeId(biomeId)) {
+                finalTemperate++;
+            }
+            if (isWarmDryBiomeId(biomeId)) {
+                warmDry++;
+            }
+        }
+
+        private String dominantBiomesLabel() {
+            if (biomeCounts.isEmpty()) {
+                return "none";
+            }
+            int max = 0;
+            for (int count : biomeCounts.values()) {
+                if (count > max) {
+                    max = count;
+                }
+            }
+            List<String> dominant = new ArrayList<>();
+            for (Map.Entry<String, Integer> e : biomeCounts.entrySet()) {
+                if (e.getValue() == max) {
+                    dominant.add(String.format(Locale.ROOT, "%s(%d,%.1f%%)",
+                            shortBiomeId(e.getKey()),
+                            e.getValue(),
+                            total > 0 ? (100.0 * e.getValue() / (double) total) : 0.0));
+                }
+            }
+            dominant.sort(String::compareTo);
+            return String.join(",", dominant);
+        }
+
+        private String otherTopBiomesLabel() {
+            List<Map.Entry<String, Integer>> others = new ArrayList<>();
+            for (Map.Entry<String, Integer> e : biomeCounts.entrySet()) {
+                if (!TEMPERATE_SHOULDER_KEY_BIOMES.contains(e.getKey())) {
+                    others.add(e);
+                }
+            }
+            if (others.isEmpty()) {
+                return "none";
+            }
+            others.sort((a, b) -> {
+                int byCount = Integer.compare(b.getValue(), a.getValue());
+                return byCount != 0 ? byCount : a.getKey().compareTo(b.getKey());
+            });
+            int limit = Math.min(5, others.size());
+            StringBuilder out = new StringBuilder();
+            for (int i = 0; i < limit; i++) {
+                if (i > 0) out.append(',');
+                Map.Entry<String, Integer> e = others.get(i);
+                double pct = total > 0 ? (100.0 * e.getValue() / (double) total) : 0.0;
+                out.append(shortBiomeId(e.getKey()))
+                        .append('(')
+                        .append(e.getValue())
+                        .append(',')
+                        .append(String.format(Locale.ROOT, "%.1f%%", pct))
+                        .append(')');
+            }
+            return out.toString();
         }
     }
 
