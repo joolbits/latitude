@@ -1141,6 +1141,20 @@ html, body {
 }
 [data-theme="dark"] #highlight-canvas { mix-blend-mode: screen; }
 #highlight-canvas.active { opacity: 1; }
+
+/* Confetti (fragmentation) overlay */
+#confetti-canvas {
+  position: absolute;
+  top: 0; left: 0;
+  transform-origin: 0 0;
+  pointer-events: none;
+  image-rendering: pixelated;
+  opacity: 0;
+  transition: opacity 0.25s var(--ease-smooth);
+  z-index: 7;
+}
+#confetti-canvas.active { opacity: 1; }
+
 #selection-marker {
   position: absolute;
   width: 18px;
@@ -1404,6 +1418,7 @@ html, body {
   <canvas id="map-canvas"></canvas>
   <canvas id="rugged-canvas"></canvas>
  <canvas id="highlight-canvas"></canvas>
+ <canvas id="confetti-canvas"></canvas>
  <canvas id="grid-canvas"></canvas>
  <canvas id="band-canvas"></canvas>
   <canvas id="band-violation-canvas"></canvas>
@@ -1646,6 +1661,19 @@ html, body {
        <option value="legacy">Legacy</option>
       </select>
      </div>
+     <div class="toggle-row" style="margin-top:8px">
+      <span class="toggle-label">Confetti Mode</span>
+      <label class="toggle-switch">
+       <input type="checkbox" id="tog-confetti">
+       <span class="toggle-track"></span>
+      </label>
+     </div>
+     <div class="toggle-row" id="confetti-threshold-row" style="display:none">
+      <span class="toggle-label">Tiny threshold (px)</span>
+      <input type="number" id="confetti-threshold" min="1" max="1000" value="50"
+        style="width:60px;font-family:var(--font-mono);font-size:11px;background:var(--bg-surface);color:var(--text-primary);border:1px solid var(--border-medium);border-radius:var(--r-sm);padding:2px 4px">
+     </div>
+     <div class="band-desc-hint" id="confetti-status" style="display:none;padding:4px 0 0"></div>
     </div>
    </div>
  
@@ -1729,6 +1757,12 @@ const gridCtx = gridCanvas.getContext('2d');
 const bandCtx = bandCanvas.getContext('2d');
 const bandViolationCtx = bandViolationCanvas.getContext('2d');
 const ruggedCtx = ruggedCanvas.getContext('2d');
+const confettiCanvas = $('#confetti-canvas');
+const confettiCtx = confettiCanvas.getContext('2d');
+const togConfetti = $('#tog-confetti');
+const confettiThresholdInput = $('#confetti-threshold');
+const confettiThresholdRow = $('#confetti-threshold-row');
+const confettiStatusEl = $('#confetti-status');
 const crosshair = $('#crosshair');
 const selectionMarker = $('#selection-marker');
 const inspectCard = $('#inspect-card');
@@ -1842,6 +1876,9 @@ const btnClearPaletteSelection = $('#btn-clear-palette-selection');
   generationPollTimer: null,
   selectedRunIds: new Set(),
   colorViewMode: 'identity',
+  confettiMode: false,
+  confettiThreshold: 50,
+  confettiBfsCache: {},   // run|layer|biomeId → sorted component array [{size, pixels|null}]
  };
  
  const LEGACY_BEACH_RED = [235, 72, 63];
@@ -2443,6 +2480,20 @@ function renderSelectionContext(biome = focusedSelectedBiome()) {
      <div class="context-k">Centroid (X,Z)</div><div class="context-v">${stats.centroidX}, ${stats.centroidZ}</div>
      <div class="context-k">Bounds (px)</div><div class="context-v">${stats.bboxW} × ${stats.bboxH}</div>`;
  }
+ if (state.confettiMode) {
+   const bfsComps = confettiBfsForBiome(biome);
+   const threshold = state.confettiThreshold || 50;
+   const m = confettiMetrics(bfsComps, threshold);
+   if (m) {
+     const verdictColor = m.verdict === 'clean' ? 'var(--lat-success)' : m.verdict === 'borderline' ? 'var(--lat-warn)' : 'var(--lat-error)';
+     html += `
+     <div class="context-k" style="margin-top:6px;color:var(--text-accent)">Confetti</div><div class="context-v"></div>
+     <div class="context-k">Components</div><div class="context-v">${m.componentCount.toLocaleString()}</div>
+     <div class="context-k">Tiny (&lt;${threshold}px)</div><div class="context-v">${m.tinyCount.toLocaleString()}</div>
+     <div class="context-k">Largest region</div><div class="context-v">${m.largestSize.toLocaleString()} px (${(m.largestShare*100).toFixed(1)}%)</div>
+     <div class="context-k">Verdict</div><div class="context-v" style="color:${verdictColor};font-weight:600">${m.verdict}</div>`;
+   }
+ }
  html += '\n   </div>';
  selectionContextBody.innerHTML = html;
 }
@@ -2467,6 +2518,10 @@ function clearBiomeSelection() {
  updateSelectedBiomesSummary();
  renderSelectionContext(null);
  clearHighlight();
+ clearConfettiOverlay();
+ if (confettiStatusEl && state.confettiMode) {
+   confettiStatusEl.textContent = 'Select a biome to see its confetti islands.';
+ }
  if (!state.selectedPoint) {
   coordReadout.textContent = '— , —';
  }
@@ -2494,6 +2549,7 @@ function selectBiomePersistent(biome) {
  } else {
   clearHighlight();
  }
+ renderConfettiOverlay();
 }
 
 function setTheme(theme) {
@@ -2542,6 +2598,7 @@ function applyTransform() {
  bandCanvas.style.transform = transform;
  bandViolationCanvas.style.transform = transform;
  ruggedCanvas.style.transform = transform;
+ confettiCanvas.style.transform = transform;
  updateSelectionMarker();
  zoomBadge.textContent = `${Math.round(state.zoom * 100)}%`;
 }
@@ -2807,6 +2864,134 @@ function clearHighlight() {
  state.hoveredBiomeId = null;
  state.renderedHighlightKey = null;
  hlCanvas.classList.remove('active');
+}
+
+/* ═══════════════════════════════════════════════
+   CONFETTI — connected-component fragmentation analysis
+   ═══════════════════════════════════════════════ */
+
+// Max pixel-list storage per component; components larger than this are
+// never "tiny" so we don't need their pixel coords for the overlay.
+const CONFETTI_PIXEL_STORE_LIMIT = 1500;
+
+// Run BFS flood-fill for all components of the given biome.
+// Returns sorted component array [{size, pixels|null}], cached per run+layer+biome.
+function confettiBfsForBiome(biome) {
+ if (!state.mapWidth || !state.mapHeight || !biome) return null;
+ const cacheKey = `${state.currentRun || ''}|${state.currentLayer || ''}|${biome.id}`;
+ if (state.confettiBfsCache[cacheKey]) return state.confettiBfsCache[cacheKey];
+
+ const W = state.mapWidth;
+ const H = state.mapHeight;
+ const useIndex = Number.isFinite(biome.index) && !!state.biomeIndices &&
+   state.biomeIndexWidth === W && state.biomeIndexHeight === H;
+ if (!useIndex && !state.imageData) return null;
+
+ const idx = useIndex ? (biome.index & 0xFF) : 0;
+ const imgData = useIndex ? null : state.imageData.data;
+ const [cr, cg, cb] = useIndex ? [0,0,0] : (biome.color || [0,0,0]);
+ const isTarget = useIndex
+   ? (p) => state.biomeIndices[p] === idx
+   : (p) => { const i = p * 4; return imgData[i] === cr && imgData[i+1] === cg && imgData[i+2] === cb; };
+
+ const visited = new Uint8Array(W * H);
+ const components = [];
+ const total = W * H;
+
+ for (let start = 0; start < total; start++) {
+   if (visited[start] || !isTarget(start)) continue;
+   // BFS using array as queue with head pointer (avoids O(n) shift)
+   const q = [start];
+   visited[start] = 1;
+   let head = 0;
+   while (head < q.length) {
+     const p = q[head++];
+     const x = p % W;
+     const y = (p / W) | 0;
+     const left = p - 1, right = p + 1, up = p - W, dn = p + W;
+     if (x > 0     && !visited[left]  && isTarget(left))  { visited[left]  = 1; q.push(left);  }
+     if (x < W - 1 && !visited[right] && isTarget(right)) { visited[right] = 1; q.push(right); }
+     if (y > 0     && !visited[up]    && isTarget(up))    { visited[up]    = 1; q.push(up);    }
+     if (y < H - 1 && !visited[dn]    && isTarget(dn))    { visited[dn]    = 1; q.push(dn);    }
+   }
+   const size = q.length;
+   components.push({ size, pixels: size <= CONFETTI_PIXEL_STORE_LIMIT ? q : null });
+ }
+
+ components.sort((a, b) => b.size - a.size);
+ state.confettiBfsCache[cacheKey] = components;
+ return components;
+}
+
+// Build fragmentation metrics from raw BFS result + current threshold.
+function confettiMetrics(components, threshold) {
+ if (!components || !components.length) return null;
+ const totalPixels = components.reduce((s, c) => s + c.size, 0);
+ const largestSize = components[0].size;
+ const largestShare = totalPixels ? largestSize / totalPixels : 0;
+ const tinyComponents = components.filter(c => c.size < threshold);
+ const tinyCount = tinyComponents.length;
+ let verdict;
+ if (tinyCount === 0 || (tinyCount <= 2 && largestShare >= 0.9)) verdict = 'clean';
+ else if (tinyCount <= 10 && largestShare >= 0.5)                 verdict = 'borderline';
+ else                                                              verdict = 'bad';
+ return { totalPixels, componentCount: components.length, largestSize, largestShare,
+          tinyCount, tinyComponents, verdict };
+}
+
+function renderConfettiOverlay() {
+ if (!state.confettiMode || !state.mapWidth || !state.mapHeight) {
+   clearConfettiOverlay();
+   return;
+ }
+ const biome = focusedSelectedBiome();
+ if (!biome) {
+   clearConfettiOverlay();
+   if (confettiStatusEl) {
+     confettiStatusEl.textContent = 'Select a biome to see its confetti islands.';
+     confettiStatusEl.style.display = '';
+   }
+   return;
+ }
+ if (confettiStatusEl) { confettiStatusEl.textContent = 'Analyzing…'; confettiStatusEl.style.display = ''; }
+ // Defer to next tick so the "Analyzing…" label paints first
+ setTimeout(() => {
+   const components = confettiBfsForBiome(biome);
+   const threshold = state.confettiThreshold || 50;
+   const m = confettiMetrics(components, threshold);
+   if (!m) {
+     if (confettiStatusEl) confettiStatusEl.textContent = 'Cannot analyze: biome index data unavailable.';
+     return;
+   }
+   // Build tiny-pixel overlay
+   const W = state.mapWidth, H = state.mapHeight;
+   confettiCanvas.width = W;
+   confettiCanvas.height = H;
+   const dst = confettiCtx.createImageData(W, H);
+   const dd = dst.data;
+   for (const comp of m.tinyComponents) {
+     if (!comp.pixels) continue; // stored only for size ≤ CONFETTI_PIXEL_STORE_LIMIT
+     for (const p of comp.pixels) {
+       const i = p * 4;
+       dd[i] = 255; dd[i+1] = 48; dd[i+2] = 48; dd[i+3] = 210;
+     }
+   }
+   confettiCtx.putImageData(dst, 0, 0);
+   confettiCanvas.classList.add('active');
+   if (confettiStatusEl) {
+     const verdictEmoji = m.verdict === 'clean' ? '✓' : m.verdict === 'borderline' ? '⚠' : '✗';
+     confettiStatusEl.textContent =
+       `${biome.name}: ${m.componentCount} region${m.componentCount===1?'':'s'}, `+
+       `${m.tinyCount} tiny (<${threshold}px). `+
+       `Largest ${(m.largestShare*100).toFixed(1)}%. `+
+       `${verdictEmoji} ${m.verdict}`;
+     confettiStatusEl.style.display = '';
+   }
+ }, 0);
+}
+
+function clearConfettiOverlay() {
+ confettiCanvas.classList.remove('active');
 }
 
 togHighlight.addEventListener('change', () => {
@@ -3454,6 +3639,29 @@ ${coarseSampling ? '<div class="sub">Coarse sampling may omit rare biomes; absen
 ${violationDetails.length
  ? `<table><thead><tr><th>Biome ID</th><th>Name</th><th>Reason</th><th>Observed Band</th><th>Allowed Bands</th><th>Pixels</th></tr></thead><tbody>${violationRows}</tbody></table>`
  : '<div class="empty">No band violations are currently recorded for this report scope.</div>'}
+<h2>Fragmentation (Confetti) Report</h2>
+<div class="sub">Connected-component analysis of the loaded biome raster. Tiny = component &lt; ${escapeHtml(String(state.confettiThreshold || 50))} pixels.</div>
+${(() => {
+ const rows = sampledBiomes.map((biome) => {
+   const bfsComps = confettiBfsForBiome(biome);
+   const threshold = state.confettiThreshold || 50;
+   const m = confettiMetrics(bfsComps, threshold);
+   if (!m) return `<tr><td>${escapeHtml(biome.id||'—')}</td><td>${escapeHtml(biome.name||'—')}</td><td colspan="5" style="color:#888">not available</td></tr>`;
+   const verdictStyle = m.verdict==='clean'?'color:#2a7':(m.verdict==='borderline'?'color:#c90':'color:#c33');
+   return `<tr>
+    <td>${escapeHtml(biome.id||'—')}</td>
+    <td>${escapeHtml(biome.name||'—')}</td>
+    <td>${m.totalPixels.toLocaleString()}</td>
+    <td>${m.componentCount.toLocaleString()}</td>
+    <td>${m.largestSize.toLocaleString()} (${(m.largestShare*100).toFixed(1)}%)</td>
+    <td>${m.tinyCount.toLocaleString()}</td>
+    <td style="${verdictStyle};font-weight:700">${m.verdict}</td>
+   </tr>`;
+ }).join('');
+ return sampledBiomes.length
+   ? `<table><thead><tr><th>Biome ID</th><th>Name</th><th>Total Pixels</th><th>Components</th><th>Largest (share)</th><th>Tiny Components</th><th>Verdict</th></tr></thead><tbody>${rows}</tbody></table>`
+   : '<div class="empty">No sampled biomes loaded.</div>';
+})()}
 <h2>Sampled Biome Palette Report</h2>
 ${sampledBiomes.length ? `<table><thead><tr><th>Biome ID</th><th>Name</th><th>Color</th><th>Index</th><th>Sampled Coverage</th></tr></thead><tbody>${tableRows}</tbody></table>` : '<div class="empty">No sampled biome rows are loaded for the current run.</div>'}
 <h2>Known Biomes In World</h2>
@@ -4625,6 +4833,7 @@ async function switchLayer(run, layer) {
   detailReadout.textContent = formatLayerLabel(layer);
   state.biomeInventory = [];
   state.selectionStatsCache = {};
+  state.confettiBfsCache = {};
   state.selectedBiomeIds = [];
   state.focusedBiomeId = null;
   state.hoveredBiomeId = null;
@@ -4693,6 +4902,26 @@ async function switchLayer(run, layer) {
   if (togRuggedness && togRuggedness.checked) {
     fetchAndRenderRuggedness(run, layer);
   }
+}
+
+togConfetti.addEventListener('change', () => {
+  state.confettiMode = togConfetti.checked;
+  if (confettiThresholdRow) confettiThresholdRow.style.display = state.confettiMode ? '' : 'none';
+  if (confettiStatusEl) confettiStatusEl.style.display = state.confettiMode ? '' : 'none';
+  if (!state.confettiMode) clearConfettiOverlay();
+  else renderConfettiOverlay();
+});
+
+if (confettiThresholdInput) {
+  confettiThresholdInput.addEventListener('change', () => {
+    const v = Math.max(1, Math.min(1000, parseInt(confettiThresholdInput.value, 10) || 50));
+    confettiThresholdInput.value = v;
+    state.confettiThreshold = v;
+    renderConfettiOverlay();
+    // Refresh sidebar metrics if a biome is focused
+    const focused = focusedSelectedBiome();
+    if (focused) renderSelectionContext(focused);
+  });
 }
 
 togGrid.addEventListener('change', toggleGrid);
