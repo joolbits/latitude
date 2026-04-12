@@ -80,6 +80,9 @@ public final class BiomeSamplerTools {
         scanGrid(template, seed, radiusBlocks, Math.max(1, stepBlocks), y, (blockX, blockZ, biomeId) -> {
             InventoryAccumulator acc = found.get(biomeId);
             if (acc == null) {
+                int rawBandIndex = bandIndexForBlockZ(radiusBlocks, blockZ);
+                int chosenBandIndex = LatitudeBiomes.authoritativeChosenBandIndex(blockX, blockZ, radiusBlocks);
+                int landBandIndex = LatitudeBiomes.authoritativeLandBandIndex(blockX, blockZ, radiusBlocks);
                 acc = new InventoryAccumulator(
                         biomeId,
                         biomeDisplayName(biomeId),
@@ -87,6 +90,9 @@ public final class BiomeSamplerTools {
                         blockX,
                         blockZ,
                         latitudeLabel(radiusBlocks, blockZ),
+                        bandIdForIndex(rawBandIndex),
+                        bandIdForIndex(chosenBandIndex),
+                        bandIdForIndex(landBandIndex),
                         0);
                 found.put(biomeId, acc);
             }
@@ -102,6 +108,9 @@ public final class BiomeSamplerTools {
                         acc.firstSeenX,
                         acc.firstSeenZ,
                         acc.latitudeLabel,
+                        acc.firstSeenRawBand,
+                        acc.firstSeenChosenBand,
+                        acc.firstSeenLandBand,
                         Math.max(1, stepBlocks),
                         acc.hitCount))
                 .toList();
@@ -289,6 +298,10 @@ public final class BiomeSamplerTools {
                     .append("\"first_seen_x\":").append(biome.firstSeenX()).append(",")
                     .append("\"first_seen_z\":").append(biome.firstSeenZ()).append(",")
                     .append("\"latitude_label\":\"").append(jsonEscape(biome.latitudeLabel())).append("\",")
+                    .append("\"first_seen_raw_band\":\"").append(jsonEscape(biome.firstSeenRawBand())).append("\",")
+                    .append("\"first_seen_land_band\":\"").append(jsonEscape(biome.firstSeenLandBand())).append("\",")
+                    .append("\"first_seen_chosen_band\":\"").append(jsonEscape(biome.firstSeenChosenBand())).append("\",")
+                    .append("\"first_seen_band_note\":\"raw latitude label may differ from resolved shoulder band\",")
                     .append("\"discovery_step_used\":").append(biome.discoveryStepUsed()).append(",")
                     .append("\"discovery_hits\":").append(biome.discoveryHits())
                     .append("}");
@@ -495,6 +508,31 @@ public final class BiomeSamplerTools {
         return zoneLabel + " " + deg + (blockZ < 0 ? "N" : "S");
     }
 
+    private static int bandIndexForBlockZ(int radiusBlocks, int blockZ) {
+        if (radiusBlocks <= 0) {
+            return 0;
+        }
+        double absLatDeg = Math.abs((double) blockZ) * 90.0 / (double) radiusBlocks;
+        return switch (LatitudeBands.fromAbsoluteLatitudeDeg(absLatDeg)) {
+            case TROPICAL -> 0;
+            case SUBTROPICAL -> 1;
+            case TEMPERATE -> 2;
+            case SUBPOLAR -> 3;
+            case POLAR -> 4;
+        };
+    }
+
+    private static String bandIdForIndex(int bandIndex) {
+        return switch (bandIndex) {
+            case 0 -> LatitudeBands.Band.TROPICAL.id();
+            case 1 -> LatitudeBands.Band.SUBTROPICAL.id();
+            case 2 -> LatitudeBands.Band.TEMPERATE.id();
+            case 3 -> LatitudeBands.Band.SUBPOLAR.id();
+            case 4 -> LatitudeBands.Band.POLAR.id();
+            default -> "unknown";
+        };
+    }
+
     private static String hexColor(int rgb) {
         return String.format(Locale.ROOT, "#%06X", rgb & 0x00FFFFFF);
     }
@@ -529,6 +567,9 @@ public final class BiomeSamplerTools {
         private final int firstSeenX;
         private final int firstSeenZ;
         private final String latitudeLabel;
+        private final String firstSeenRawBand;
+        private final String firstSeenChosenBand;
+        private final String firstSeenLandBand;
         private int hitCount;
 
         private InventoryAccumulator(String biomeId,
@@ -537,6 +578,9 @@ public final class BiomeSamplerTools {
                                      int firstSeenX,
                                      int firstSeenZ,
                                      String latitudeLabel,
+                                     String firstSeenRawBand,
+                                     String firstSeenChosenBand,
+                                     String firstSeenLandBand,
                                      int hitCount) {
             this.biomeId = biomeId;
             this.biomeName = biomeName;
@@ -544,6 +588,9 @@ public final class BiomeSamplerTools {
             this.firstSeenX = firstSeenX;
             this.firstSeenZ = firstSeenZ;
             this.latitudeLabel = latitudeLabel;
+            this.firstSeenRawBand = firstSeenRawBand;
+            this.firstSeenChosenBand = firstSeenChosenBand;
+            this.firstSeenLandBand = firstSeenLandBand;
             this.hitCount = hitCount;
         }
     }
@@ -589,6 +636,9 @@ public final class BiomeSamplerTools {
                                  int firstSeenX,
                                  int firstSeenZ,
                                  String latitudeLabel,
+                                 String firstSeenRawBand,
+                                 String firstSeenChosenBand,
+                                 String firstSeenLandBand,
                                  int discoveryStepUsed,
                                  int discoveryHits) {
     }
