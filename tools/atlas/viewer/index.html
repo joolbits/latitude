@@ -2528,7 +2528,8 @@ function renderSelectionContext(biome = focusedSelectedBiome()) {
      <div class="context-k">Tiny (&lt;${threshold}px)</div><div class="context-v">${m.tinyCount.toLocaleString()} (${(m.tinyPixelShare*100).toFixed(2)}% of biome)</div>
      <div class="context-k">Largest region</div><div class="context-v">${m.largestSize.toLocaleString()} px (${(m.largestShare*100).toFixed(1)}%)</div>
      <div class="context-k">Total biome px</div><div class="context-v">${m.totalPixels.toLocaleString()}${m.insufficient ? ' ⚠ too small to verdict' : ''}</div>
-     <div class="context-k">Verdict</div><div class="context-v" style="color:${verdictColor};font-weight:600">${m.verdict}</div>`;
+     <div class="context-k">Verdict</div><div class="context-v" style="color:${verdictColor};font-weight:600">${m.verdict}</div>
+     ${isConfettiExcluded(biome.id) ? `<div class="context-k" style="color:var(--text-tertiary)">Global scan</div><div class="context-v" style="color:var(--text-tertiary);font-style:italic">Excluded (expected multi-region / structural biome)</div>` : ''}`;
    }
  }
  html += '\n   </div>';
@@ -2921,6 +2922,31 @@ const CONFETTI_CLEAN_MIN_LARGEST     = 0.20;  // largestSize / totalPixels
 const CONFETTI_BORDER_MAX_TINY_SHARE = 0.08;
 const CONFETTI_BORDER_MIN_LARGEST    = 0.10;
 
+// Biomes excluded from global confetti scan by default.
+// These are structural, linear, water, or broad backbone biomes whose
+// fragmentation is expected and not diagnostic.
+// Single-biome inspection (scope = 'selected') still shows raw metrics.
+const CONFETTI_EXCLUDED_BIOME_IDS = new Set([
+  'minecraft:river', 'minecraft:frozen_river',
+  'minecraft:ocean', 'minecraft:deep_ocean',
+  'minecraft:warm_ocean', 'minecraft:lukewarm_ocean', 'minecraft:cold_ocean', 'minecraft:frozen_ocean',
+  'minecraft:deep_lukewarm_ocean', 'minecraft:deep_cold_ocean', 'minecraft:deep_frozen_ocean',
+  'minecraft:plains', 'minecraft:sunflower_plains',
+  'minecraft:forest', 'minecraft:birch_forest', 'minecraft:old_growth_birch_forest',
+  'minecraft:dark_forest',
+  'minecraft:savanna', 'minecraft:savanna_plateau', 'minecraft:windswept_savanna',
+  'minecraft:desert',
+  'minecraft:taiga', 'minecraft:old_growth_pine_taiga', 'minecraft:old_growth_spruce_taiga',
+  'minecraft:snowy_taiga', 'minecraft:snowy_plains',
+  'minecraft:jungle', 'minecraft:sparse_jungle', 'minecraft:bamboo_jungle',
+  'minecraft:swamp', 'minecraft:mangrove_swamp',
+  'minecraft:beach', 'minecraft:snowy_beach', 'minecraft:stony_shore',
+]);
+
+function isConfettiExcluded(biomeId) {
+  return CONFETTI_EXCLUDED_BIOME_IDS.has(biomeId);
+}
+
 // Run BFS flood-fill for all components of the given biome.
 // Returns sorted component array [{size, pixels|null}], cached per run+layer+biome.
 function confettiBfsForBiome(biome) {
@@ -3008,10 +3034,13 @@ function confettiScanAll() {
  for (const biome of (state.biomes || [])) {
    const comps = confettiBfsForBiome(biome);
    const m = confettiMetrics(comps, threshold);
-   if (m) results.push({ biome, m });
+   if (m) results.push({ biome, m, excluded: isConfettiExcluded(biome.id) });
  }
  const verdictOrder = { bad: 0, borderline: 1, clean: 2, insufficient: 3 };
  results.sort((a, b) => {
+   // Judged biomes first, then excluded
+   const ea = a.excluded ? 1 : 0, eb = b.excluded ? 1 : 0;
+   if (ea !== eb) return ea - eb;
    const vo = (verdictOrder[a.m.verdict] ?? 4) - (verdictOrder[b.m.verdict] ?? 4);
    if (vo !== 0) return vo;
    const sd = b.m.tinyPixelShare - a.m.tinyPixelShare;
@@ -3036,15 +3065,16 @@ function renderConfettiOffendersList() {
    if (!state.confettiMode) return;
    const all = confettiScanAll();
    const filter = state.confettiFilter || 'all';
-   const rows = all.filter(r => {
-     if (r.m.insufficient) return false;
-     return filter === 'bad' ? r.m.verdict === 'bad' : r.m.verdict !== 'clean';
-   });
-   const nBad  = all.filter(r => r.m.verdict === 'bad').length;
-   const nBord = all.filter(r => r.m.verdict === 'borderline').length;
-   const nClean= all.filter(r => r.m.verdict === 'clean').length;
+   const judged = all.filter(r => !r.excluded && !r.m.insufficient);
+   const rows = judged.filter(r =>
+     filter === 'bad' ? r.m.verdict === 'bad' : r.m.verdict !== 'clean'
+   );
+   const nBad   = judged.filter(r => r.m.verdict === 'bad').length;
+   const nBord  = judged.filter(r => r.m.verdict === 'borderline').length;
+   const nClean = judged.filter(r => r.m.verdict === 'clean').length;
+   const nExcl  = all.filter(r => r.excluded).length;
    if (confettiScanStatus) confettiScanStatus.textContent =
-     `${nBad}✗ ${nBord}⚠ ${nClean}✓`;
+     `${nBad}✗ ${nBord}⚠ ${nClean}✓` + (nExcl ? ` · ${nExcl} excl.` : '');
    if (!rows.length) {
      confettiOffendersBody.innerHTML = '<div style="padding:8px 12px;color:var(--text-tertiary);font-size:12px;font-style:italic">No offenders at current threshold.</div>';
      return;
@@ -3117,7 +3147,8 @@ function _renderAllBiomesConfetti() {
    if (!state.confettiMode) return;
    const all = confettiScanAll();
    const filter = state.confettiFilter || 'all';
-   const toRender = all.filter(r => filter === 'bad' ? r.m.verdict === 'bad' : r.m.verdict !== 'clean');
+   const toRender = all.filter(r => !r.excluded && !r.m.insufficient &&
+     (filter === 'bad' ? r.m.verdict === 'bad' : r.m.verdict !== 'clean'));
    const W = state.mapWidth, H = state.mapHeight;
    confettiCanvas.width = W;
    confettiCanvas.height = H;
@@ -3821,24 +3852,28 @@ ${(() => {
  const verdictOrder = { bad: 0, borderline: 1, clean: 2, insufficient: 3 };
  const withMetrics = sampledBiomes.map((biome) => {
    const m = confettiMetrics(confettiBfsForBiome(biome), threshold);
-   return { biome, m };
+   const excluded = isConfettiExcluded(biome.id);
+   return { biome, m, excluded };
  }).sort((a, b) => {
+   const ea = a.excluded ? 1 : 0, eb = b.excluded ? 1 : 0;
+   if (ea !== eb) return ea - eb;
    const vo = (verdictOrder[a.m?.verdict] ?? 4) - (verdictOrder[b.m?.verdict] ?? 4);
    if (vo !== 0) return vo;
    const sd = (b.m?.tinyPixelShare || 0) - (a.m?.tinyPixelShare || 0);
    return Math.abs(sd) > 0.001 ? sd : (b.m?.tinyCount || 0) - (a.m?.tinyCount || 0);
  });
- const rows = withMetrics.map(({ biome, m }) => {
+ const rows = withMetrics.map(({ biome, m, excluded }) => {
    if (!m) return `<tr><td>${escapeHtml(biome.id||'—')}</td><td>${escapeHtml(biome.name||'—')}</td><td colspan="6" style="color:#888">not available</td></tr>`;
-   const vs = m.verdict==='clean'?'color:#2a7':(m.verdict==='borderline'?'color:#c90':(m.verdict==='insufficient'?'color:#888':'color:#c33'));
-   return `<tr>
+   const vs = excluded ? 'color:#888' : m.verdict==='clean'?'color:#2a7':(m.verdict==='borderline'?'color:#c90':(m.verdict==='insufficient'?'color:#888':'color:#c33'));
+   const verdictLabel = excluded ? 'excluded' : m.verdict;
+   return `<tr${excluded ? ' style="opacity:0.55"' : ''}>
     <td>${escapeHtml(biome.id||'—')}</td>
     <td>${escapeHtml(biome.name||'—')}</td>
     <td>${m.totalPixels.toLocaleString()}</td>
     <td>${m.componentCount.toLocaleString()}</td>
     <td>${m.largestSize.toLocaleString()} (${(m.largestShare*100).toFixed(1)}%)</td>
     <td>${m.tinyCount.toLocaleString()} (${(m.tinyPixelShare*100).toFixed(2)}%)</td>
-    <td style="${vs};font-weight:700">${m.verdict}</td>
+    <td style="${vs};font-weight:700">${verdictLabel}</td>
    </tr>`;
  }).join('');
  return `<table><thead><tr><th>Biome ID</th><th>Name</th><th>Total Pixels</th><th>Components</th><th>Largest (share)</th><th>Tiny Components (frag%)</th><th>Verdict</th></tr></thead><tbody>${rows}</tbody></table>`;
