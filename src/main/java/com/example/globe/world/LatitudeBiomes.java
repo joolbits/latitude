@@ -2065,7 +2065,7 @@ public final class LatitudeBiomes {
     private static final int TEMPERATE_WARM_EDGE_SHOULDER_MIN_BLOCKS = 96;
     private static final int TEMPERATE_WARM_EDGE_SHOULDER_MAX_BLOCKS = 320;
     private static final double TEMPERATE_WARM_EDGE_LAT_MIN_DEG = 35.28;
-    private static final double TEMPERATE_WARM_EDGE_LAT_MAX_DEG = 37.88;
+    private static final double TEMPERATE_WARM_EDGE_LAT_MAX_DEG = 43.0;
     private static final long TEMPERATE_WARM_EDGE_ROLL_SALT = 0x74EAD9E54B0AL;
     private static final String[] TEMPERATE_WARM_EDGE_TRANSITION_BIOMES = {
             "minecraft:plains",
