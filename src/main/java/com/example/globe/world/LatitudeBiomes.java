@@ -1896,6 +1896,13 @@ public final class LatitudeBiomes {
     private static final double PALE_GARDEN_CORE_RADIUS_FRAC = 0.50; // fraction of outer base radius
     private static final double PALE_GARDEN_CORE_WOBBLE_FRAC = 0.12;
 
+    // dark_forest restoration density cap: outside the Pale Garden container,
+    // restrict guard restorations to a noise-defined fraction of shoulder cells
+    // to prevent overrepresentation of dark_forest outside the container region.
+    private static final long DARK_FOREST_RESTORE_DENSITY_SALT = 0xD4F0657DB100DL;
+    private static final int DARK_FOREST_RESTORE_DENSITY_SCALE = 2048;
+    private static final double DARK_FOREST_RESTORE_DENSITY_THRESHOLD = 0.55;
+
     private static final int BADLANDS_PATCH_SIZE_BLOCKS = 65536;
     private static final double BADLANDS_PATCH_CHANCE = 0.42;
     private static final long BADLANDS_PATCH_SALT = 0xBADD1A2DL;
@@ -2390,7 +2397,9 @@ public final class LatitudeBiomes {
                 && isBiomeId(base, "minecraft:dark_forest")
                 && !isBiomeId(chosen, "minecraft:dark_forest")
                 && !isBiomeId(chosen, "minecraft:pale_garden") // pale_garden is a valid dark_forest replacement
-                && isTemperateForestFamily(chosen)) {
+                && isTemperateForestFamily(chosen)
+                && (paleGardenRegionHit(WORLD_SEED, blockX, blockZ, effectiveRadius)
+                    || ValueNoise2D.sampleBlocks(WORLD_SEED ^ DARK_FOREST_RESTORE_DENSITY_SALT, blockX, blockZ, DARK_FOREST_RESTORE_DENSITY_SCALE) < DARK_FOREST_RESTORE_DENSITY_THRESHOLD)) {
             chosen = base;
         }
         if (landBandIndex == BAND_TEMPERATE
@@ -3005,7 +3014,9 @@ public final class LatitudeBiomes {
                 && isBiomeId(base, "minecraft:dark_forest")
                 && !isBiomeId(chosen, "minecraft:dark_forest")
                 && !isBiomeId(chosen, "minecraft:pale_garden") // pale_garden is a valid dark_forest replacement
-                && isTemperateForestFamily(chosen)) {
+                && isTemperateForestFamily(chosen)
+                && (paleGardenRegionHit(WORLD_SEED, blockX, blockZ, effectiveRadius)
+                    || ValueNoise2D.sampleBlocks(WORLD_SEED ^ DARK_FOREST_RESTORE_DENSITY_SALT, blockX, blockZ, DARK_FOREST_RESTORE_DENSITY_SCALE) < DARK_FOREST_RESTORE_DENSITY_THRESHOLD)) {
             chosen = base;
         }
         if (landBandIndex == BAND_TEMPERATE
