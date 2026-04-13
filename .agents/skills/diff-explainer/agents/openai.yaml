@@ -1,0 +1,4 @@
+interface:
+  display_name: "Diff Explainer"
+  short_description: "Read-only Git diff explainer for scope and risk"
+  default_prompt: "Use this skill to explain Git diffs in plain English for working tree, staged changes, or comparisons between refs. Summarize what changed, group by subsystem, and flag likely risk or scope creep without mutating repo state."

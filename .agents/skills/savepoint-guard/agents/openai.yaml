@@ -1,0 +1,4 @@
+interface:
+  display_name: "Savepoint Guard"
+  short_description: "Read-only pre-flight guard before savepoints"
+  default_prompt: "Use this skill to decide whether the current repo state is safe and narrow enough for a Git savepoint. Inspect repo root, branch, HEAD, staged and unstaged changes, and junk/generated artifacts, then return a safe-or-stop decision without mutating Git state."
