@@ -84,7 +84,9 @@ public final class LatitudeBiomes {
                     : pickFromWeightedTagsNoSwamp(biomes, base, blockX, blockZ, 100, 0x7A00,
                     LAT_ARID_PRIMARY, LAT_ARID_SECONDARY, LAT_ARID_ACCENT);
         };
-        return softenSubtropicalBadlands(biomes, base, pick);
+        RegistryEntry<Biome> out = softenSubtropicalBadlands(biomes, base, pick);
+        recordWarmDryPath("TROPICAL_GRADIENT", base, out, blockX, blockZ, BAND_SUBTROPICAL, warmProvinceClass(blockX, blockZ, BAND_SUBTROPICAL));
+        return out;
     }
 
     private static RegistryEntry<Biome> pickTropicalGradientNoSwamp(Registry<Biome> biomes, RegistryEntry<Biome> base, int blockX, int blockZ, double t) {
@@ -130,7 +132,9 @@ public final class LatitudeBiomes {
                     : pickFromWeightedTagsNoSwamp(biomes, base, blockX, blockZ, 100, 0x7A00,
                     LAT_ARID_PRIMARY, LAT_ARID_SECONDARY, LAT_ARID_ACCENT);
         };
-        return softenSubtropicalBadlands(biomes, base, pick);
+        RegistryEntry<Biome> out = softenSubtropicalBadlands(biomes, base, pick);
+        recordWarmDryPath("TROPICAL_GRADIENT", base, out, blockX, blockZ, BAND_SUBTROPICAL, warmProvinceClass(blockX, blockZ, BAND_SUBTROPICAL));
+        return out;
     }
 
     private static final int BAND_TROPICAL = 0;
@@ -360,8 +364,10 @@ public final class LatitudeBiomes {
     private static final boolean DEBUG_SUBTROPICAL_SWAMP_SOURCE_TRACE = Boolean.getBoolean("latitude.debugSubtropicalSwampSourceTrace");
     private static final boolean DEBUG_WARM_POOL_AUDIT = Boolean.getBoolean("latitude.debug.warmPoolAudit")
             || "true".equalsIgnoreCase(System.getenv("LATITUDE_DEBUG_WARM_POOL_AUDIT"));
+    private static final boolean DEBUG_WARM_DRY_PATHS = Boolean.getBoolean("latitude.debugWarmDryPaths");
     private static final boolean DEBUG_WETLANDS = Boolean.getBoolean("latitude.debugWetlands");
     private static final long WARM_POOL_AUDIT_LOG_EVERY = Long.getLong("latitude.warmPoolAudit.logEvery", 8192L);
+    private static final int WARM_DRY_PATH_AUDIT_SUMMARY_EVERY = Integer.getInteger("latitude.warmDryPaths.summaryEvery", 50000);
     private static final int SPARSE_JUNGLE_AUDIT_LOG_LIMIT = Integer.getInteger("latitude.sparseJungleAudit.maxLogs", 200);
     private static final int SAVANNA_GATE_AUDIT_LOG_LIMIT = Integer.getInteger("latitude.savannaGateAudit.maxLogs", 200);
     private static final int SAVANNA_GATE_AUDIT_SUMMARY_EVERY = Integer.getInteger("latitude.savannaGateAudit.summaryEvery", 50000);
@@ -417,6 +423,24 @@ public final class LatitudeBiomes {
     private static final AtomicLong WARM_POOL_AUDIT_NS_RETURN_BASE = new AtomicLong();
     private static final AtomicLong WARM_POOL_AUDIT_NS_RETURN_PLAINS_ATTEMPT = new AtomicLong();
     private static final AtomicLong WARM_POOL_AUDIT_NS_RETURN_OTHER = new AtomicLong();
+    private static final AtomicLong WARM_DRY_PATH_TOTAL = new AtomicLong();
+    private static final AtomicLong WARM_DRY_PATH_WARM_DRY_SELECTOR = new AtomicLong();
+    private static final AtomicLong WARM_DRY_PATH_TROPICAL_GRADIENT = new AtomicLong();
+    private static final AtomicLong WARM_DRY_PATH_OPEN_TROPICAL_FALLBACK = new AtomicLong();
+    private static final AtomicLong WARM_DRY_PATH_PICK_WARM_FALLBACK = new AtomicLong();
+    private static final AtomicLong WARM_DRY_PATH_FINAL_SAVANNA_CLAMP = new AtomicLong();
+    private static final AtomicLong WARM_DRY_PATH_ENFORCE_LAND_BAND_POOL_REWRITE = new AtomicLong();
+    private static final AtomicLong WARM_DRY_PATH_SANITIZE_REWRITE = new AtomicLong();
+    private static final AtomicLong WARM_DRY_PATH_DIRECT_POOL_PICK = new AtomicLong();
+    private static final AtomicLong WARM_DRY_PATH_SAVANNA = new AtomicLong();
+    private static final AtomicLong WARM_DRY_PATH_SAVANNA_PLATEAU = new AtomicLong();
+    private static final AtomicLong WARM_DRY_PATH_WINDSWEPT_SAVANNA = new AtomicLong();
+    private static final AtomicLong WARM_DRY_PATH_DESERT = new AtomicLong();
+    private static final AtomicLong WARM_DRY_PATH_BADLANDS = new AtomicLong();
+    private static final AtomicLong WARM_DRY_PATH_OTHER = new AtomicLong();
+    private static final AtomicReference<String> WARM_DRY_PATH_LAST_SOURCE = new AtomicReference<>("");
+    private static final AtomicReference<String> WARM_DRY_PATH_LAST_FROM = new AtomicReference<>("");
+    private static final AtomicReference<String> WARM_DRY_PATH_LAST_TO = new AtomicReference<>("");
     private static final AtomicReference<String> WARM_POOL_AUDIT_LAST_SOURCE = new AtomicReference<>("");
     private static final AtomicReference<String> WARM_POOL_AUDIT_LAST_PICK = new AtomicReference<>("");
     private static final AtomicReference<String> WARM_POOL_AUDIT_LAST_BUCKET = new AtomicReference<>("");
@@ -1732,6 +1756,100 @@ public final class LatitudeBiomes {
         return isBiomeId(entry, "minecraft:badlands")
                 || isBiomeId(entry, "minecraft:wooded_badlands")
                 || isBiomeId(entry, "minecraft:eroded_badlands");
+    }
+
+    private static String warmDryPathFamily(RegistryEntry<Biome> entry) {
+        if (entry == null) {
+            return "other";
+        }
+        if (isBiomeId(entry, "minecraft:savanna")) {
+            return "savanna";
+        }
+        if (isBiomeId(entry, "minecraft:savanna_plateau")) {
+            return "plateau";
+        }
+        if (isBiomeId(entry, "minecraft:windswept_savanna")) {
+            return "windswept";
+        }
+        if (isBiomeId(entry, "minecraft:desert")) {
+            return "desert";
+        }
+        if (isBadlandsFamily(entry)) {
+            return "badlands";
+        }
+        return "other";
+    }
+
+    private static boolean warmDryPathFamilyRelevant(RegistryEntry<Biome> entry) {
+        return isSavannaFamily(entry) || isBiomeId(entry, "minecraft:desert") || isBadlandsFamily(entry);
+    }
+
+    private static void recordWarmDryPath(String source,
+                                          RegistryEntry<Biome> before,
+                                          RegistryEntry<Biome> after,
+                                          int blockX,
+                                          int blockZ,
+                                          int bandIndex,
+                                          ProvinceAuthority.Province province) {
+        if (!DEBUG_WARM_DRY_PATHS || after == null || !warmDryPathFamilyRelevant(after)) {
+            return;
+        }
+
+        AtomicLong sourceCounter = switch (source) {
+            case "WARM_DRY_SELECTOR" -> WARM_DRY_PATH_WARM_DRY_SELECTOR;
+            case "TROPICAL_GRADIENT" -> WARM_DRY_PATH_TROPICAL_GRADIENT;
+            case "OPEN_TROPICAL_FALLBACK" -> WARM_DRY_PATH_OPEN_TROPICAL_FALLBACK;
+            case "PICK_WARM_FALLBACK" -> WARM_DRY_PATH_PICK_WARM_FALLBACK;
+            case "FINAL_SAVANNA_CLAMP" -> WARM_DRY_PATH_FINAL_SAVANNA_CLAMP;
+            case "ENFORCE_LAND_BAND_POOL_REWRITE" -> WARM_DRY_PATH_ENFORCE_LAND_BAND_POOL_REWRITE;
+            case "SANITIZE_REWRITE" -> WARM_DRY_PATH_SANITIZE_REWRITE;
+            case "DIRECT_POOL_PICK" -> WARM_DRY_PATH_DIRECT_POOL_PICK;
+            default -> null;
+        };
+        if (sourceCounter == null) {
+            return;
+        }
+
+        sourceCounter.incrementAndGet();
+        WARM_DRY_PATH_TOTAL.incrementAndGet();
+        switch (warmDryPathFamily(after)) {
+            case "savanna" -> WARM_DRY_PATH_SAVANNA.incrementAndGet();
+            case "plateau" -> WARM_DRY_PATH_SAVANNA_PLATEAU.incrementAndGet();
+            case "windswept" -> WARM_DRY_PATH_WINDSWEPT_SAVANNA.incrementAndGet();
+            case "desert" -> WARM_DRY_PATH_DESERT.incrementAndGet();
+            case "badlands" -> WARM_DRY_PATH_BADLANDS.incrementAndGet();
+            default -> WARM_DRY_PATH_OTHER.incrementAndGet();
+        }
+        WARM_DRY_PATH_LAST_SOURCE.set(source);
+        WARM_DRY_PATH_LAST_FROM.set(biomeId(before));
+        WARM_DRY_PATH_LAST_TO.set(biomeId(after));
+
+        long total = WARM_DRY_PATH_TOTAL.get();
+        if (WARM_DRY_PATH_AUDIT_SUMMARY_EVERY > 0 && total % WARM_DRY_PATH_AUDIT_SUMMARY_EVERY == 0) {
+            LOGGER.info("[LAT][WARM_DRY_PATHS] total={} source[sel={} trop={} open={} warm={} clamp={} pool={} sanitize={} direct={}] family[savanna={} plateau={} windswept={} desert={} badlands={} other={}] last[src={} from={} to={} band={} province={} x={} z={}]",
+                    total,
+                    WARM_DRY_PATH_WARM_DRY_SELECTOR.get(),
+                    WARM_DRY_PATH_TROPICAL_GRADIENT.get(),
+                    WARM_DRY_PATH_OPEN_TROPICAL_FALLBACK.get(),
+                    WARM_DRY_PATH_PICK_WARM_FALLBACK.get(),
+                    WARM_DRY_PATH_FINAL_SAVANNA_CLAMP.get(),
+                    WARM_DRY_PATH_ENFORCE_LAND_BAND_POOL_REWRITE.get(),
+                    WARM_DRY_PATH_SANITIZE_REWRITE.get(),
+                    WARM_DRY_PATH_DIRECT_POOL_PICK.get(),
+                    WARM_DRY_PATH_SAVANNA.get(),
+                    WARM_DRY_PATH_SAVANNA_PLATEAU.get(),
+                    WARM_DRY_PATH_WINDSWEPT_SAVANNA.get(),
+                    WARM_DRY_PATH_DESERT.get(),
+                    WARM_DRY_PATH_BADLANDS.get(),
+                    WARM_DRY_PATH_OTHER.get(),
+                    source,
+                    WARM_DRY_PATH_LAST_FROM.get(),
+                    WARM_DRY_PATH_LAST_TO.get(),
+                    bandIndex,
+                    province,
+                    blockX,
+                    blockZ);
+        }
     }
 
     private static RegistryEntry<Biome> softenSubtropicalBadlands(Registry<Biome> biomes, RegistryEntry<Biome> base, RegistryEntry<Biome> pick) {
@@ -3472,6 +3590,7 @@ public final class LatitudeBiomes {
         };
         RegistryEntry<Biome> softened = softenSubtropicalBadlands(biomes, base, pick);
         RegistryEntry<Biome> out = enforceWarmProvinceFamily(biomes, softened, warmProvince);
+        recordWarmDryPath("TROPICAL_GRADIENT", base, out, blockX, blockZ, BAND_SUBTROPICAL, warmProvince);
         return blockNewSubtropicalNonMountainWindswept(base, out, mountainLike, BAND_SUBTROPICAL);
     }
 
@@ -3578,6 +3697,7 @@ public final class LatitudeBiomes {
         };
         RegistryEntry<Biome> softened = softenSubtropicalBadlands(biomes, base, pick);
         RegistryEntry<Biome> out = enforceWarmProvinceFamily(biomes, softened, warmProvince);
+        recordWarmDryPath("TROPICAL_GRADIENT", base, out, blockX, blockZ, BAND_SUBTROPICAL, warmProvince);
         return blockNewSubtropicalNonMountainWindswept(base, out, mountainLike, BAND_SUBTROPICAL);
     }
 
@@ -5026,6 +5146,7 @@ public final class LatitudeBiomes {
                 }
             }
             out = pickFromAllowedLandPool(rerollPool, blockX, blockZ, bandIndex);
+            recordWarmDryPath("DIRECT_POOL_PICK", candidate, out, blockX, blockZ, bandIndex, warmProvinceClass(blockX, blockZ, bandIndex));
         }
         stashWarmPoolMembershipSnapshot(blockX, blockZ, bandIndex, candidate, out, preFilterPool, allowedPool);
         return out;
@@ -5063,6 +5184,7 @@ public final class LatitudeBiomes {
                 }
             }
             out = pickFromAllowedLandPool(rerollPool, blockX, blockZ, bandIndex);
+            recordWarmDryPath("DIRECT_POOL_PICK", candidate, out, blockX, blockZ, bandIndex, warmProvinceClass(blockX, blockZ, bandIndex));
         }
         stashWarmPoolMembershipSnapshot(blockX, blockZ, bandIndex, candidate, out, preFilterPool, allowedPool);
         return out;
@@ -6477,34 +6599,39 @@ public final class LatitudeBiomes {
     private static RegistryEntry<Biome> pickWarmFallback(Registry<Biome> biomes, int bandIndex) {
         String primary = bandIndex == BAND_TROPICAL ? "minecraft:sparse_jungle" : "minecraft:savanna";
         String secondary = bandIndex == BAND_TROPICAL ? "minecraft:jungle" : "minecraft:plains";
+        RegistryEntry<Biome> out = null;
         try {
-            return biome(biomes, primary);
+            out = biome(biomes, primary);
         } catch (Throwable ignored) {
             try {
-                return biome(biomes, secondary);
+                out = biome(biomes, secondary);
             } catch (Throwable ignoredAgain) {
                 try {
-                    return biome(biomes, "minecraft:forest");
+                    out = biome(biomes, "minecraft:forest");
                 } catch (Throwable ignoredLast) {
-                    return null;
+                    out = null;
                 }
             }
         }
+        recordWarmDryPath("PICK_WARM_FALLBACK", null, out, 0, 0, bandIndex, null);
+        return out;
     }
 
     private static RegistryEntry<Biome> pickWarmFallback(Collection<RegistryEntry<Biome>> biomes, int bandIndex) {
         String primary = bandIndex == BAND_TROPICAL ? "minecraft:sparse_jungle" : "minecraft:savanna";
         String secondary = bandIndex == BAND_TROPICAL ? "minecraft:jungle" : "minecraft:plains";
-        RegistryEntry<Biome> entry = entryById(biomes, primary);
-        if (entry != null) {
-            return entry;
+        RegistryEntry<Biome> out = entryById(biomes, primary);
+        if (out == null) {
+            out = entryById(biomes, secondary);
         }
-        entry = entryById(biomes, secondary);
-        if (entry != null) {
-            return entry;
+        if (out == null) {
+            out = entryById(biomes, "minecraft:forest");
         }
-        entry = entryById(biomes, "minecraft:forest");
-        return entry != null ? entry : biomes.stream().findFirst().orElse(null);
+        if (out == null) {
+            out = biomes.stream().findFirst().orElse(null);
+        }
+        recordWarmDryPath("PICK_WARM_FALLBACK", null, out, 0, 0, bandIndex, null);
+        return out;
     }
 
     private static boolean allowWetTropicalCanopy(int blockX, int blockZ, double t, RegistryEntry<Biome> candidate) {
@@ -6602,7 +6729,9 @@ public final class LatitudeBiomes {
             }
             if (compositionBias > 0.42 && opennessNoise < 0.18) {
                 try {
-                    return biome(biomes, "minecraft:savanna");
+                    RegistryEntry<Biome> pick = biome(biomes, "minecraft:savanna");
+                    recordWarmDryPath("OPEN_TROPICAL_FALLBACK", base, pick, blockX, blockZ, BAND_TROPICAL, province);
+                    return pick;
                 } catch (Throwable ignoredSavanna) {
                     // fall through
                 }
@@ -6820,6 +6949,10 @@ public final class LatitudeBiomes {
                         return desert;
                     }
                 }
+                RegistryEntry<Biome> desert = entryById(biomes, "minecraft:desert");
+                if (desert != null) {
+                    return desert;
+                }
                 return pickDryWarmFallback(biomes, base);
             }
             if ((u > 0.86 || opennessNoise > 0.82) && compositionBias < -0.06) {
@@ -6919,7 +7052,10 @@ public final class LatitudeBiomes {
                     return warmOpenAuditReturn("open_province_dry_desert_return", desert, desert != base, compositionBias, opennessNoise, strongOpen);
                 }
             }
-            RegistryEntry<Biome> pick = pickDryWarmFallback(biomes, base);
+            RegistryEntry<Biome> pick = entryById(biomes, "minecraft:desert");
+            if (pick == null) {
+                pick = pickDryWarmFallback(biomes, base);
+            }
             return warmOpenAuditReturn("open_province_dry_fallback_return", pick, pick != base, compositionBias, opennessNoise, strongOpen);
         }
         if ((u > 0.86 || opennessNoise > 0.82) && compositionBias < -0.06) {
@@ -6994,6 +7130,7 @@ public final class LatitudeBiomes {
                 if (savanna != null) {
                     WARM_POOL_AUDIT_NS_RETURN_SAVANNA.incrementAndGet();
                     recordWarmOpenNsBuckets("savanna", compositionBias, opennessNoise, strongOpen);
+                    recordWarmDryPath("OPEN_TROPICAL_FALLBACK", base, savanna, blockX, blockZ, BAND_TROPICAL, province);
                     return warmOpenAuditReturn("open_savanna_return", savanna, savanna != base, compositionBias, opennessNoise, strongOpen);
                 }
                 RegistryEntry<Biome> desert = entryById(biomes, "minecraft:desert");
@@ -7012,6 +7149,7 @@ public final class LatitudeBiomes {
         warmOpenBranchEnter("open_strong_open_branch_enter");
         RegistryEntry<Biome> savanna = entryById(biomes, "minecraft:savanna");
         if (savanna != null) {
+            recordWarmDryPath("OPEN_TROPICAL_FALLBACK", base, savanna, blockX, blockZ, BAND_TROPICAL, province);
             return warmOpenAuditReturn("open_savanna_return", savanna, savanna != base, compositionBias, opennessNoise, strongOpen);
         }
         RegistryEntry<Biome> desert = entryById(biomes, "minecraft:desert");
@@ -7021,24 +7159,30 @@ public final class LatitudeBiomes {
     }
 
     private static RegistryEntry<Biome> pickDryWarmFallback(Registry<Biome> biomes, RegistryEntry<Biome> base) {
+        RegistryEntry<Biome> out;
         try {
-            return biome(biomes, "minecraft:savanna");
+            out = biome(biomes, "minecraft:desert");
         } catch (Throwable ignored) {
             try {
-                return biome(biomes, "minecraft:desert");
+                out = biome(biomes, "minecraft:savanna");
             } catch (Throwable ignoredAgain) {
-                return base;
+                out = base;
             }
         }
+        recordWarmDryPath("WARM_DRY_SELECTOR", base, out, 0, 0, BAND_SUBTROPICAL, warmProvinceClass(0, 0, BAND_SUBTROPICAL));
+        return out;
     }
 
     private static RegistryEntry<Biome> pickDryWarmFallback(Collection<RegistryEntry<Biome>> biomes, RegistryEntry<Biome> base) {
-        RegistryEntry<Biome> savanna = entryById(biomes, "minecraft:savanna");
-        if (savanna != null) {
-            return savanna;
+        RegistryEntry<Biome> out = entryById(biomes, "minecraft:desert");
+        if (out == null) {
+            out = entryById(biomes, "minecraft:savanna");
         }
-        RegistryEntry<Biome> desert = entryById(biomes, "minecraft:desert");
-        return desert != null ? desert : base;
+        if (out == null) {
+            out = base;
+        }
+        recordWarmDryPath("WARM_DRY_SELECTOR", base, out, 0, 0, BAND_SUBTROPICAL, warmProvinceClass(0, 0, BAND_SUBTROPICAL));
+        return out;
     }
 
     private static RegistryEntry<Biome> chooseBadlandsVariant(Registry<Biome> biomes, int blockX, int blockZ) {
@@ -8116,7 +8260,9 @@ public final class LatitudeBiomes {
                     : pickFromWeightedTagsNoMangrove(biomes, base, blockX, blockZ, 100, 0x7A00,
                     LAT_ARID_PRIMARY, LAT_ARID_SECONDARY, LAT_ARID_ACCENT);
         };
-        return softenSubtropicalBadlands(biomes, base, pick);
+        RegistryEntry<Biome> out = softenSubtropicalBadlands(biomes, base, pick);
+        recordWarmDryPath("TROPICAL_GRADIENT", base, out, blockX, blockZ, BAND_SUBTROPICAL, warmProvinceClass(blockX, blockZ, BAND_SUBTROPICAL));
+        return out;
     }
 
     private static RegistryEntry<Biome> pickTropicalGradientNoMangrove(Collection<RegistryEntry<Biome>> biomes, RegistryEntry<Biome> base, int blockX, int blockZ, double t) {
@@ -8154,7 +8300,9 @@ public final class LatitudeBiomes {
                     : pickFromWeightedTagsNoMangrove(biomes, base, blockX, blockZ, 100, 0x7A00,
                     LAT_ARID_PRIMARY, LAT_ARID_SECONDARY, LAT_ARID_ACCENT);
         };
-        return softenSubtropicalBadlands(biomes, base, pick);
+        RegistryEntry<Biome> out = softenSubtropicalBadlands(biomes, base, pick);
+        recordWarmDryPath("TROPICAL_GRADIENT", base, out, blockX, blockZ, BAND_SUBTROPICAL, warmProvinceClass(blockX, blockZ, BAND_SUBTROPICAL));
+        return out;
     }
 
     private record MangroveDecision(boolean allow,
@@ -8367,7 +8515,9 @@ public final class LatitudeBiomes {
                         : entryById(biomes, "minecraft:sparse_jungle"));
                 if (entry == null) entry = entryById(biomes, "minecraft:sparse_jungle");
                 if (entry == null) entry = entryById(biomes, "minecraft:jungle");
-                return enforceWarmProvinceFamily(biomes, entry != null ? entry : pick, warmProvince);
+                RegistryEntry<Biome> out = enforceWarmProvinceFamily(biomes, entry != null ? entry : pick, warmProvince);
+                recordWarmDryPath("SANITIZE_REWRITE", pick, out, blockX, blockZ, bandIndex, warmProvince);
+                return out;
             }
         }
 
@@ -8473,6 +8623,7 @@ public final class LatitudeBiomes {
                 }
             }
         }
+        recordWarmDryPath("FINAL_SAVANNA_CLAMP", pick, out, blockX, blockZ, bandIndex, warmProvince);
         if (DEBUG_FINAL_SANITIZE && inSavannaRegion) {
             LOGGER.info("[LAT][FINAL_SANITIZE] inSavannaRegion={} y={} in={} outBefore={} outAfter={} x={} z={}",
                     inSavannaRegion, blockY, incomingId, incomingId, biomeId(out), blockX, blockZ);
