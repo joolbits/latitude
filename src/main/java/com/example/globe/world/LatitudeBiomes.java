@@ -829,7 +829,7 @@ public final class LatitudeBiomes {
         boolean isMountainCandidate = mountainNoiseLike || mountainLike;
         boolean activeWaterSurfaceAuthority = oceanDist == 0;
         // Mirror the raised-land veto from pick() so the explain path matches actual worldgen
-        if (activeWaterSurfaceAuthority && terrainPreviewAvailable && centerHeight > seaLevel + 3) {
+        if (activeWaterSurfaceAuthority && terrainPreviewAvailable && centerHeight >= seaLevel) {
             activeWaterSurfaceAuthority = false;
         }
         String decisionPath = inferDecisionPath(finalBiomeId, bandIndex, activeWaterSurfaceAuthority);
@@ -2397,7 +2397,7 @@ public final class LatitudeBiomes {
         if (oceanAuthority && !base.isIn(BiomeTags.IS_OCEAN)
                 && generator != null && noiseConfig != null && heightView != null) {
             int realHeight = previewHeight(generator, noiseConfig, heightView, blockX & ~3, blockZ & ~3);
-            if (realHeight > seaLevel + 3) {
+            if (realHeight >= seaLevel) {
                 oceanAuthority = false;
             }
         }
@@ -3043,7 +3043,7 @@ public final class LatitudeBiomes {
         if (oceanAuthority && !base.isIn(BiomeTags.IS_OCEAN)
                 && generator != null && noiseConfig != null && heightView != null) {
             int realHeight = previewHeight(generator, noiseConfig, heightView, blockX & ~3, blockZ & ~3);
-            if (realHeight > seaLevel + 3) {
+            if (realHeight >= seaLevel) {
                 oceanAuthority = false;
             }
         }
