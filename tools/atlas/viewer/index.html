@@ -1708,7 +1708,7 @@ html, body {
      <span class="panel-title">Biome Highlights</span>
      <div class="panel-actions">
       <button id="btn-open-report" class="panel-action-btn" title="Open a printable biome report">Open Report</button>
-      <button id="btn-export-report" class="panel-action-btn" title="Export biome report to an HTML file">Export Report</button>
+      <button id="btn-export-report" class="panel-action-btn" title="Export the full selected run folder">Export Run Data</button>
       <button id="btn-clear-selection" class="panel-action-btn" title="Clear selected biome highlight">Clear</button>
      </div>
     </div>
@@ -1890,6 +1890,9 @@ const btnClearPaletteSelection = $('#btn-clear-palette-selection');
   renderedHighlightKey: null,
   colorToBiome: {},
   biomeInventory: [],
+  biomeInventoryStatus: { ok: true, message: '' },
+  expectedBiomeIds: [],
+  expectedBiomeAuthorityStatus: { ok: true, message: '' },
   biomeByIdMap: {},
   biomeByIndex: {},
   legend: null,
@@ -2181,10 +2184,27 @@ function setGenerationStatus(active, text) {
   }
  }
 
-  async function apiFetch(path, options) {
+ async function apiFetch(path, options) {
    const resp = await fetch(API_BASE + path, options || {});
-   if (!resp.ok) throw new Error(`API ${resp.status}: ${path}`);
    const ct = resp.headers.get('content-type') || '';
+   if (!resp.ok) {
+    let detail = '';
+    try {
+     if (ct.includes('json')) {
+      const body = await resp.json();
+      detail = typeof body?.message === 'string'
+       ? body.message
+       : typeof body?.error === 'string'
+        ? body.error
+        : '';
+     } else {
+      detail = await resp.text();
+     }
+    } catch {
+     detail = '';
+    }
+    throw new Error(detail ? `API ${resp.status}: ${path} - ${detail}` : `API ${resp.status}: ${path}`);
+   }
    if (ct.includes('json')) return resp.json();
    if (ct.includes('image')) return resp.blob();
    return resp.text();
@@ -3730,6 +3750,42 @@ function currentInventoryBiomes() {
  return rows.filter((biome) => selectedIds.has(biome.id));
 }
 
+function normalizeBiomeAuthorityId(value) {
+ const id = String(value || '').trim().toLowerCase();
+ if (!id) return null;
+ return id.includes(':') ? id : `minecraft:${id}`;
+}
+
+function stableSortBiomeIds(ids) {
+ return Array.from(new Set((Array.isArray(ids) ? ids : []).map(normalizeBiomeAuthorityId).filter(Boolean)))
+  .sort((a, b) => a.localeCompare(b));
+}
+
+function discoveredBiomeIdsFromInventory(rows) {
+ return stableSortBiomeIds((Array.isArray(rows) ? rows : [])
+  .map((row) => row?.id)
+  .filter(Boolean));
+}
+
+function computeMissingBiomeIds(expectedIds, discoveredRows) {
+ const expected = stableSortBiomeIds(expectedIds);
+ if (!expected.length) {
+  return { missingIds: [], expectedIds: expected, discoveredIds: discoveredBiomeIdsFromInventory(discoveredRows) };
+ }
+ const discovered = new Set(discoveredBiomeIdsFromInventory(discoveredRows));
+ return {
+  missingIds: expected.filter((id) => !discovered.has(id)),
+  expectedIds: expected,
+  discoveredIds: Array.from(discovered).sort((a, b) => a.localeCompare(b)),
+ };
+}
+
+function missingBiomeStatusLabel() {
+ const status = state.biomeInventoryStatus || {};
+ if (status.ok === false) return `unavailable: ${status.message || 'inventory file missing or unreadable'}`;
+ return 'available';
+}
+
 function buildPrintableReportHtml() {
  const manifest = state.manifest || {};
  const radius = getWorldRadius(manifest);
@@ -3738,7 +3794,14 @@ const currentStep = getCurrentLayerStep();
 const coarseSampling = isCoarseSamplingStep(currentStep);
 const reportBiomes = currentReportBiomes();
 const sampledBiomes = currentSampledBiomes();
-const inventoryBiomes = currentInventoryBiomes();
+ const inventoryBiomes = Array.isArray(state.biomeInventory) ? state.biomeInventory.slice() : [];
+ const inventoryStatus = state.biomeInventoryStatus || { ok: true, message: '' };
+ const expectedStatus = state.expectedBiomeAuthorityStatus || { ok: true, message: '' };
+ const expectedBiomeIds = stableSortBiomeIds(state.expectedBiomeIds);
+ const missingBiomeState = inventoryStatus.ok === false || expectedStatus.ok === false
+  ? { missingIds: [], expectedIds: expectedBiomeIds, discoveredIds: discoveredBiomeIdsFromInventory(inventoryBiomes) }
+  : computeMissingBiomeIds(expectedBiomeIds, inventoryBiomes);
+ const missingBiomes = missingBiomeState.missingIds;
  const selected = selectedBiomes();
  const focused = focusedSelectedBiome();
 const point = state.selectedPoint;
@@ -3754,6 +3817,12 @@ const point = state.selectedPoint;
   ['Generated', formatRunTimestamp(state.currentRun || manifest.ts)],
   ['Palette Scope', coarseSampling ? `Sampled at current resolution (step ${currentStep})` : 'Sampled at current resolution'],
   ['Known World Biomes', inventoryBiomes.length ? inventoryBiomes.length.toLocaleString() : '—'],
+  ['Expected Biomes', expectedStatus.ok === false ? `unavailable: ${expectedStatus.message || 'expected biome authority unavailable'}` : (expectedBiomeIds.length ? expectedBiomeIds.length.toLocaleString() : '—')],
+  ['Missing Biomes', inventoryStatus.ok === false
+   ? `unavailable: ${inventoryStatus.message || 'inventory file missing or unreadable'}`
+   : expectedStatus.ok === false
+    ? `unavailable: ${expectedStatus.message || 'expected biome authority unavailable'}`
+    : (missingBiomes.length ? missingBiomes.length.toLocaleString() : 'none')],
  ];
  const selectionRows = [
   ['Selection Scope', selected.length ? `${selected.length} biome${selected.length === 1 ? '' : 's'}` : 'All biomes'],
@@ -3883,6 +3952,14 @@ ${sampledBiomes.length ? `<table><thead><tr><th>Biome ID</th><th>Name</th><th>Co
 <h2>Known Biomes In World</h2>
 <div class="sub">This inventory is discovery-based and separate from sampled coverage. A biome may be present in world even when sampled coverage is zero on the current atlas layer.</div>
 ${inventoryBiomes.length ? `<table><thead><tr><th>Biome ID</th><th>Name</th><th>Color</th><th>First Known X/Z</th><th>Latitude</th><th>Discovery Step</th><th>Sampled Coverage</th></tr></thead><tbody>${inventoryRows}</tbody></table>` : '<div class="empty">No world-biome inventory rows are loaded for the current run.</div>'}
+<h2>Missing Biomes</h2>
+${inventoryStatus.ok === false
+ ? `<div class="empty">Missing biome calculation unavailable: ${escapeHtml(inventoryStatus.message || 'world_biome_inventory.json was missing or unreadable.')}</div>`
+ : expectedStatus.ok === false
+  ? `<div class="empty">Missing biome calculation unavailable: ${escapeHtml(expectedStatus.message || 'expected biome authority unavailable.')}</div>`
+ : missingBiomes.length
+  ? `<div class="sub">Missing Biomes (${missingBiomes.length})</div><table><thead><tr><th>Biome ID</th></tr></thead><tbody>${missingBiomes.map((id) => `<tr><td>${escapeHtml(id)}</td></tr>`).join('')}</tbody></table>`
+  : '<div class="empty">Missing Biomes: none</div>'}
 </body>
 </html>`;
 }
@@ -3899,7 +3976,7 @@ function reportFilename() {
 }
 
 function openPrintableReport() {
- if (!state.currentRun || (!state.biomes.length && !state.biomeInventory.length)) {
+ if (!state.currentRun) {
   showToast('Load a run before opening a report.', 'error');
   return;
  }
@@ -3917,7 +3994,7 @@ function openPrintableReport() {
 }
 
 function exportPrintableReport() {
- if (!state.currentRun || (!state.biomes.length && !state.biomeInventory.length)) {
+ if (!state.currentRun) {
   showToast('Load a run before exporting a report.', 'error');
   return;
  }
@@ -4203,9 +4280,15 @@ biomeSearch.addEventListener('keydown', e => {
     updateRunActionButtons();
     return;
   }
-  const sizeName = formatWorldSizeLabel(manifest);
-  const radius = getWorldRadius(manifest);
-  const seedValue = manifest?.seed != null && String(manifest.seed).trim() ? String(manifest.seed) : '—';
+ const sizeName = formatWorldSizeLabel(manifest);
+ const radius = getWorldRadius(manifest);
+ const seedValue = manifest?.seed != null && String(manifest.seed).trim() ? String(manifest.seed) : '—';
+  const inventoryStatus = state.biomeInventoryStatus || { ok: true, message: '' };
+  const expectedStatus = state.expectedBiomeAuthorityStatus || { ok: true, message: '' };
+  const expectedBiomeIds = stableSortBiomeIds(state.expectedBiomeIds);
+  const missingBiomeState = inventoryStatus.ok === false || expectedStatus.ok === false
+    ? { missingIds: [] }
+    : computeMissingBiomeIds(expectedBiomeIds, state.biomeInventory);
  const rows = [
     { key: 'Run', value: state.currentRun || '—' },
     { key: 'Generated', value: formatRunTimestamp(state.currentRun || manifest.ts) },
@@ -4215,7 +4298,9 @@ biomeSearch.addEventListener('keydown', e => {
     { key: 'Current Detail', value: state.currentLayer ? formatLayerLabel(state.currentLayer) : (manifest.step ? formatLayerLabel(`step${manifest.step}`) : '—') },
     { key: 'Layers', value: state.availableLayers.length ? String(state.availableLayers.length) : '—' },
     { key: 'Sampled Palette Biomes', value: state.biomes.length ? state.biomes.length.toLocaleString() : '—' },
-    { key: 'Known World Biomes', value: state.biomeInventory.length ? state.biomeInventory.length.toLocaleString() : '—' },
+    { key: 'Known World Biomes', value: inventoryStatus.ok === false ? `unavailable: ${inventoryStatus.message || 'inventory file missing or unreadable'}` : (state.biomeInventory.length ? state.biomeInventory.length.toLocaleString() : '—') },
+    { key: 'Expected Biomes', value: expectedStatus.ok === false ? `unavailable: ${expectedStatus.message || 'expected biome authority unavailable'}` : (expectedBiomeIds.length ? expectedBiomeIds.length.toLocaleString() : '—') },
+    { key: 'Missing Biomes', value: inventoryStatus.ok === false ? `unavailable: ${inventoryStatus.message || 'inventory file missing or unreadable'}` : (expectedStatus.ok === false ? `unavailable: ${expectedStatus.message || 'expected biome authority unavailable'}` : (missingBiomeState.missingIds.length ? missingBiomeState.missingIds.length.toLocaleString() : 'none')) },
     { key: 'Sampling Note', value: isCoarseSamplingStep() ? 'Coarse sampling may omit rare biomes.' : 'Current step is detailed enough to reduce omission risk.' },
     { key: 'Branch', value: String(manifest.branch || '—') },
     { key: 'Commit', value: String(manifest.commit || '—') },
@@ -4286,8 +4371,8 @@ async function loadRunManifest(run, force = false) {
 
 function updateRunActionButtons() {
   if (btnSaveRun) btnSaveRun.disabled = !state.currentRun;
-  if (btnOpenReport) btnOpenReport.disabled = !state.currentRun || (!state.biomes.length && !state.biomeInventory.length);
-  if (btnExportReport) btnExportReport.disabled = !state.currentRun || (!state.biomes.length && !state.biomeInventory.length);
+  if (btnOpenReport) btnOpenReport.disabled = !state.currentRun;
+  if (btnExportReport) btnExportReport.disabled = !state.currentRun;
   if (btnDeleteRun) btnDeleteRun.style.display = state.currentRun ? '' : 'none';
 }
 
@@ -4341,8 +4426,37 @@ btnOpenReport.addEventListener('click', () => {
   openPrintableReport();
 });
 
-btnExportReport.addEventListener('click', () => {
-  exportPrintableReport();
+btnExportReport.addEventListener('click', async () => {
+  if (!state.currentRun) {
+    showToast('Load a run before exporting data.', 'error');
+    return;
+  }
+
+  const bridge = window.atlasDesktop;
+  if (!bridge || typeof bridge.exportRunData !== 'function') {
+    showToast('Desktop export is unavailable in this viewer.', 'error');
+    return;
+  }
+
+  const runLabel = runOptionLabel(state.currentRun, state.runManifestMap[state.currentRun]);
+  showToast('Choose an export folder…', 'loading');
+
+  const result = await bridge.exportRunData({
+    runId: state.currentRun,
+    runLabel,
+  });
+
+  if (result?.ok) {
+    showToast(`Exported run data to ${result.exportDir}`, 'success');
+    return;
+  }
+
+  if (result?.canceled) {
+    showToast('Export canceled.', 'error');
+    return;
+  }
+
+  showToast(result?.message || 'Export failed.', 'error');
 });
 
 if (genSeedInput) {
@@ -4562,10 +4676,45 @@ async function fetchBiomes(run, layer) {
 async function fetchBiomeInventory(run, layer) {
   try {
     const data = await apiFetch(`/api/runs/${run}/layers/${layer}/inventory`);
-    if (Array.isArray(data)) return data;
-    if (data && Array.isArray(data.biomes)) return data.biomes;
-    return [];
-  } catch { return []; }
+    if (Array.isArray(data)) {
+      return { ok: true, biomes: data, message: '' };
+    }
+    if (data && typeof data === 'object') {
+      return {
+        ok: data.ok !== false,
+        biomes: Array.isArray(data.biomes) ? data.biomes : [],
+        message: typeof data.message === 'string' ? data.message : '',
+        source: typeof data.source === 'string' ? data.source : '',
+      };
+    }
+    return { ok: true, biomes: [], message: '' };
+  } catch (error) {
+    return { ok: false, biomes: [], message: error?.message || 'Failed to load biome inventory.' };
+  }
+}
+
+async function fetchExpectedBiomeIds() {
+  const bridge = window.atlasDesktop;
+  if (!bridge || typeof bridge.getExpectedBiomeIds !== 'function') {
+    return { ok: false, ids: [], message: 'Desktop expected-biome authority is unavailable.' };
+  }
+  try {
+    const data = await bridge.getExpectedBiomeIds();
+    if (Array.isArray(data)) {
+      return { ok: true, ids: stableSortBiomeIds(data), message: '' };
+    }
+    if (data && typeof data === 'object') {
+      return {
+        ok: data.ok !== false,
+        ids: stableSortBiomeIds(data.ids),
+        message: typeof data.message === 'string' ? data.message : '',
+        source: typeof data.source === 'string' ? data.source : '',
+      };
+    }
+    return { ok: false, ids: [], message: 'Unexpected expected-biome authority response.' };
+  } catch (error) {
+    return { ok: false, ids: [], message: error?.message || 'Failed to load expected biome authority.' };
+  }
 }
 
 async function fetchLegend(run, layer) {
@@ -4990,6 +5139,9 @@ selRun.addEventListener('change', async () => {
     state.manifest = null;
     state.biomes = [];
     state.biomeInventory = [];
+    state.biomeInventoryStatus = { ok: true, message: '' };
+    state.expectedBiomeIds = [];
+    state.expectedBiomeAuthorityStatus = { ok: true, message: '' };
     state.selectedBiomeIds = [];
     state.focusedBiomeId = null;
     state.inspectedPoint = null;
@@ -5048,6 +5200,9 @@ async function switchLayer(run, layer) {
   updateSamplingDisclosure();
   detailReadout.textContent = formatLayerLabel(layer);
   state.biomeInventory = [];
+  state.biomeInventoryStatus = { ok: true, message: '' };
+  state.expectedBiomeIds = [];
+  state.expectedBiomeAuthorityStatus = { ok: true, message: '' };
   state.selectionStatsCache = {};
   state.confettiBfsCache = {};
   state.confettiScanCache = null;
@@ -5068,9 +5223,10 @@ async function switchLayer(run, layer) {
   renderSelectionContext(null);
 
   // Fetch biomes + image + ids concurrently
-  const [biomes, inventory, idsBlob, legend] = await Promise.all([
+  const [biomes, inventory, expectedBiomes, idsBlob, legend] = await Promise.all([
     fetchBiomes(run, layer),
     fetchBiomeInventory(run, layer),
+    fetchExpectedBiomeIds(),
     fetchBiomeIds(run, layer),
     fetchLegend(run, layer),
     loadMapImage(getImageUrl(run, layer)),
@@ -5078,10 +5234,22 @@ async function switchLayer(run, layer) {
   fitToView();
 
   const normalized = normalizeBiomePaletteForDisplay(biomes);
-  const normalizedInventory = normalizeBiomePaletteForDisplay(inventory);
+  const inventoryRows = Array.isArray(inventory?.biomes) ? inventory.biomes : [];
+  const normalizedInventory = normalizeBiomePaletteForDisplay(inventoryRows);
   state.legend = legend;
   state.biomes = normalized.biomes.sort((a, b) => (b.pct || 0) - (a.pct || 0));
   state.biomeInventory = normalizedInventory.biomes.sort((a, b) => String(a?.name || a?.id || '').localeCompare(String(b?.name || b?.id || '')));
+  state.biomeInventoryStatus = {
+    ok: inventory?.ok !== false,
+    message: inventory?.message || '',
+    source: inventory?.source || '',
+  };
+  state.expectedBiomeIds = Array.isArray(expectedBiomes?.ids) ? stableSortBiomeIds(expectedBiomes.ids) : [];
+  state.expectedBiomeAuthorityStatus = {
+    ok: expectedBiomes?.ok !== false,
+    message: expectedBiomes?.message || '',
+    source: expectedBiomes?.source || '',
+  };
   rebuildBiomeBandMasks();
 
   if (idsBlob) {
