@@ -2026,6 +2026,8 @@ public final class LatitudeBiomes {
     private static final long BADLANDS_REGION_ANCHOR_Z_SALT = 0x6261_646C_5F61_7A7AL; // "badl_azz"
     private static final long BADLANDS_REGION_SHAPE_SALT = 0x6261_646C_5F736861L; // "badl_sha"
     private static final long BADLANDS_REGION_CORE_SHAPE_SALT = 0x6261_646C_5F636F72L; // "badl_cor"
+    private static final long BADLANDS_OUTSIDE_PROVINCE_SALT = 0x6261_646C_5F6F7574L; // "badl_out"
+    private static final double BADLANDS_OUTSIDE_PROVINCE_THRESHOLD = 0.22;
     private static final double BADLANDS_REGION_RADIUS_FRAC = 0.30;
     private static final int BADLANDS_REGION_MIN_RADIUS_BLOCKS = 960;
     private static final double BADLANDS_REGION_WOBBLE_FRAC = 0.16;
@@ -7254,6 +7256,15 @@ public final class LatitudeBiomes {
             return base;
         }
         if (!badlandsProvinceAuthorityHit(WORLD_SEED, blockX, blockZ, radiusHint)) {
+            int outsideScale = Math.max(ARID_REGION_MIN_SCALE_BLOCKS, (int) Math.round(radiusHint * 0.45));
+            double outsideNoise = ValueNoise2D.sampleBlocks(
+                    WORLD_SEED ^ BADLANDS_OUTSIDE_PROVINCE_SALT, blockX, blockZ, outsideScale);
+            if (outsideNoise < BADLANDS_OUTSIDE_PROVINCE_THRESHOLD) {
+                RegistryEntry<Biome> outsideVariant = chooseBadlandsVariant(biomes, blockX, blockZ);
+                if (outsideVariant != null) {
+                    return outsideVariant;
+                }
+            }
             return enforceWarmProvinceFamily(biomes, base, warmProvince);
         }
         RegistryEntry<Biome> variant = chooseBadlandsVariant(biomes, blockX, blockZ);
@@ -7283,6 +7294,15 @@ public final class LatitudeBiomes {
             return base;
         }
         if (!badlandsProvinceAuthorityHit(WORLD_SEED, blockX, blockZ, radiusHint)) {
+            int outsideScale = Math.max(ARID_REGION_MIN_SCALE_BLOCKS, (int) Math.round(radiusHint * 0.45));
+            double outsideNoise = ValueNoise2D.sampleBlocks(
+                    WORLD_SEED ^ BADLANDS_OUTSIDE_PROVINCE_SALT, blockX, blockZ, outsideScale);
+            if (outsideNoise < BADLANDS_OUTSIDE_PROVINCE_THRESHOLD) {
+                RegistryEntry<Biome> outsideVariant = chooseBadlandsVariant(biomes, blockX, blockZ);
+                if (outsideVariant != null) {
+                    return outsideVariant;
+                }
+            }
             return enforceWarmProvinceFamily(biomes, base, warmProvince);
         }
         RegistryEntry<Biome> variant = chooseBadlandsVariant(biomes, blockX, blockZ);
