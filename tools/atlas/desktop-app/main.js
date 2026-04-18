@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, Menu, shell } = require("electron");
+const { app, BrowserWindow, dialog, Menu, ipcMain, shell } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const os = require("os");
@@ -229,6 +229,185 @@ function checkApiHealth(port, timeoutMs = 2000) {
   });
 }
 
+function sanitizeFolderName(value, fallback = "run") {
+  const raw = String(value ?? "").normalize("NFKC").trim();
+  if (!raw) return fallback;
+
+  const cleaned = raw
+    .replace(/[<>:"/\\|?*\x00-\x1F]+/g, "-")
+    .replace(/\s+/g, " ")
+    .replace(/[. ]+$/g, "")
+    .replace(/^[. ]+/g, "");
+
+  const slug = cleaned.replace(/\s+/g, "_").replace(/-+/g, "-").replace(/_+/g, "_");
+  return slug || fallback;
+}
+
+function formatTimestampForFolder(date = new Date()) {
+  const pad = (n) => String(n).padStart(2, "0");
+  return [
+    date.getFullYear(),
+    pad(date.getMonth() + 1),
+    pad(date.getDate()),
+    "-",
+    pad(date.getHours()),
+    pad(date.getMinutes()),
+    pad(date.getSeconds()),
+  ].join("");
+}
+
+function isPathInside(child, parent) {
+  const rel = path.relative(parent, child);
+  return !!rel && !rel.startsWith("..") && !path.isAbsolute(rel);
+}
+
+function resolveRunDir(runId) {
+  const runsRoot = path.join(currentRepoRoot, "run-headless", "latdev", "atlas-runs");
+  const runDir = path.resolve(runsRoot, String(runId || ""));
+  const rel = path.relative(runsRoot, runDir);
+  if (!rel || rel.startsWith("..") || path.isAbsolute(rel)) return null;
+  return fs.existsSync(runDir) ? runDir : null;
+}
+
+function copyRecursive(src, dest) {
+  if (typeof fs.cpSync === "function") {
+    fs.cpSync(src, dest, { recursive: true, force: true });
+    return;
+  }
+
+  const stat = fs.lstatSync(src);
+  if (stat.isDirectory()) {
+    fs.mkdirSync(dest, { recursive: true });
+    for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
+      copyRecursive(path.join(src, entry.name), path.join(dest, entry.name));
+    }
+    return;
+  }
+
+  if (stat.isSymbolicLink()) {
+    const linkTarget = fs.readlinkSync(src);
+    fs.symlinkSync(linkTarget, dest);
+    return;
+  }
+
+  fs.mkdirSync(path.dirname(dest), { recursive: true });
+  fs.copyFileSync(src, dest);
+}
+
+function buildExportFolderName(runId, runLabel) {
+  const timestamp = formatTimestampForFolder();
+  const baseLabel = sanitizeFolderName(runLabel || runId || "run", "run");
+  return `LatitudeAtlasExport_${baseLabel}_${timestamp}`;
+}
+
+function ensureUniqueExportDir(parentDir, baseName) {
+  let candidate = path.join(parentDir, baseName);
+  let suffix = 2;
+  while (fs.existsSync(candidate)) {
+    candidate = path.join(parentDir, `${baseName}-${suffix}`);
+    suffix += 1;
+  }
+  return candidate;
+}
+
+function loadExpectedBiomeIdsFromPolicy() {
+  if (!currentRepoRoot) {
+    return { ok: false, message: "Repository root is not available.", ids: [] };
+  }
+
+  const policyPath = path.join(currentRepoRoot, "src", "main", "java", "com", "example", "globe", "dev", "BiomeBandPolicy.java");
+  if (!fs.existsSync(policyPath)) {
+    return { ok: false, message: `Biome policy source not found: ${policyPath}`, ids: [] };
+  }
+
+  try {
+    const text = fs.readFileSync(policyPath, "utf8");
+    const ids = new Set();
+    const matcher = /\b(?:entry|exempt)\("([^"]+)"/g;
+    for (const match of text.matchAll(matcher)) {
+      const id = String(match[1] || "").trim().toLowerCase();
+      if (id) {
+        ids.add(id);
+      }
+    }
+
+    return {
+      ok: true,
+      source: policyPath,
+      ids: Array.from(ids).sort((a, b) => a.localeCompare(b)),
+    };
+  } catch (e) {
+    return {
+      ok: false,
+      message: `Failed to load biome policy source: ${e?.message || e}`,
+      ids: [],
+    };
+  }
+}
+
+async function exportRunDataFromDesktop({ runId, runLabel }) {
+  if (!currentRepoRoot) {
+    return { ok: false, message: "Repository root is not available." };
+  }
+
+  const runDir = resolveRunDir(runId);
+  if (!runDir) {
+    return { ok: false, message: "Selected run folder was not found." };
+  }
+
+  const picked = await dialog.showOpenDialog({
+    title: "Choose export destination folder",
+    properties: ["openDirectory", "createDirectory"],
+    message: "Pick a folder where Atlas should create the exported run data subfolder.",
+  });
+
+  if (picked.canceled || !picked.filePaths?.[0]) {
+    return { ok: false, canceled: true, message: "Export canceled." };
+  }
+
+  const destinationParent = path.resolve(picked.filePaths[0]);
+  if (destinationParent === runDir || isPathInside(destinationParent, runDir)) {
+    return {
+      ok: false,
+      message: "Choose a destination folder outside the selected run folder.",
+    };
+  }
+
+  fs.mkdirSync(destinationParent, { recursive: true });
+
+  const exportBaseName = buildExportFolderName(runId, runLabel);
+  const exportDir = ensureUniqueExportDir(destinationParent, exportBaseName);
+
+  copyRecursive(runDir, exportDir);
+
+  const manifestLines = [
+    "Latitude Atlas export",
+    `Run ID: ${String(runId || "")}`,
+    `Run label: ${String(runLabel || "").trim() || "(not provided)"}`,
+    `Source folder: ${runDir}`,
+    `Exported at: ${new Date().toString()}`,
+    "",
+    "This export was copied recursively from the selected headless run folder.",
+  ];
+  fs.writeFileSync(path.join(exportDir, "export_info.txt"), manifestLines.join("\n"), "utf8");
+
+  return {
+    ok: true,
+    exportDir,
+    message: `Exported run data to ${exportDir}`,
+  };
+}
+
+ipcMain.handle("atlas-get-expected-biome-ids", async () => {
+  try {
+    return loadExpectedBiomeIdsFromPolicy();
+  } catch (e) {
+    const message = e?.message || String(e);
+    LOG(`WARN: loadExpectedBiomeIdsFromPolicy failed: ${message}`);
+    return { ok: false, message: `Expected biome lookup failed: ${message}`, ids: [] };
+  }
+});
+
 async function stopPythonServer() {
   if (!py) return;
   try {
@@ -287,7 +466,10 @@ function ensureMainWindow() {
     width: 1200,
     height: 900,
     title: "Latitude Atlas Viewer",
-    webPreferences: { contextIsolation: true },
+    webPreferences: {
+      contextIsolation: true,
+      preload: path.join(__dirname, "preload.js"),
+    },
   });
 
   mainWindow.webContents.on("did-fail-load", (_e, code, desc, url) => {
@@ -540,6 +722,16 @@ async function handleSecondInstance(argv) {
     await loadViewer(runArg);
   }
 }
+
+ipcMain.handle("atlas-export-run-data", async (_event, payload = {}) => {
+  try {
+    return await exportRunDataFromDesktop(payload || {});
+  } catch (e) {
+    const message = e?.message || String(e);
+    LOG(`WARN: exportRunDataFromDesktop failed: ${message}`);
+    return { ok: false, message: `Export failed: ${message}` };
+  }
+});
 
 const singleInstance = app.requestSingleInstanceLock();
 if (!singleInstance) {
