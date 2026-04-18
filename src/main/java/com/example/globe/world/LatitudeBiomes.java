@@ -1906,10 +1906,8 @@ public final class LatitudeBiomes {
         int anchorAbsZ = minAnchorAbsZ
                 + (int) Math.floor(toUnitDouble(mix64(worldSeed ^ BADLANDS_REGION_ANCHOR_Z_SALT))
                 * (double) (Math.max(1, maxAnchorAbsZ - minAnchorAbsZ + 1)));
-        int anchorZ = anchorAbsZ * (((mix64(worldSeed ^ BADLANDS_REGION_ANCHOR_Z_SALT) & 1L) == 0L) ? 1 : -1);
-
         double dx = (double) blockX - (double) anchorX;
-        double dz = (double) blockZ - (double) anchorZ;
+        double dz = Math.abs((double) blockZ) - (double) anchorAbsZ;
         double theta = Math.atan2(dz, dx);
         int shapeX = (int) Math.round(Math.cos(theta) * BADLANDS_REGION_ANGLE_SAMPLE_BLOCKS);
         int shapeZ = (int) Math.round(Math.sin(theta) * BADLANDS_REGION_ANGLE_SAMPLE_BLOCKS);
@@ -2028,7 +2026,7 @@ public final class LatitudeBiomes {
     private static final long BADLANDS_REGION_ANCHOR_Z_SALT = 0x6261_646C_5F61_7A7AL; // "badl_azz"
     private static final long BADLANDS_REGION_SHAPE_SALT = 0x6261_646C_5F736861L; // "badl_sha"
     private static final long BADLANDS_REGION_CORE_SHAPE_SALT = 0x6261_646C_5F636F72L; // "badl_cor"
-    private static final double BADLANDS_REGION_RADIUS_FRAC = 0.17;
+    private static final double BADLANDS_REGION_RADIUS_FRAC = 0.30;
     private static final int BADLANDS_REGION_MIN_RADIUS_BLOCKS = 960;
     private static final double BADLANDS_REGION_WOBBLE_FRAC = 0.16;
     private static final int BADLANDS_REGION_ANGLE_SAMPLE_BLOCKS = 2048;
@@ -2189,7 +2187,7 @@ public final class LatitudeBiomes {
     private static final double TEMPERATE_WARM_EDGE_SHOULDER_FRAC = 0.18;
     private static final int TEMPERATE_WARM_EDGE_SHOULDER_MIN_BLOCKS = 96;
     private static final int TEMPERATE_WARM_EDGE_SHOULDER_MAX_BLOCKS = 320;
-    private static final double TEMPERATE_WARM_EDGE_LAT_MIN_DEG = 35.28;
+    private static final double TEMPERATE_WARM_EDGE_LAT_MIN_DEG = 35.0;
     private static final double TEMPERATE_WARM_EDGE_LAT_MAX_DEG = 43.0;
     private static final long TEMPERATE_WARM_EDGE_ROLL_SALT = 0x74EAD9E54B0AL;
     private static final String[] TEMPERATE_WARM_EDGE_TRANSITION_BIOMES = {
