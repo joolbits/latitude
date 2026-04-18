@@ -6173,14 +6173,20 @@ public final class LatitudeBiomes {
         if (landBandIndex != BAND_TEMPERATE || mountainLike || effectiveRadius <= 0) {
             return false;
         }
-        double latDeg = latitudeDegreesFromRadius(blockZ, effectiveRadius);
-        if (latDeg < TEMPERATE_WARM_EDGE_LAT_MIN_DEG || latDeg > TEMPERATE_WARM_EDGE_LAT_MAX_DEG) {
-            return false;
-        }
         double deltaBlocks = subtropicalTemperateBoundaryDeltaBlocks(blockX, blockZ, effectiveRadius);
         int shoulderBlocks = temperateWarmEdgeShoulderBlocks(effectiveRadius);
         if (sourceBandIndex <= BAND_SUBTROPICAL) {
-            return deltaBlocks >= 0.0 && deltaBlocks <= shoulderBlocks;
+            // Blend-elevated subtropical cell: crisp band is subtropical but resolved to temperate
+            // by stochastic blending. The block is geographically equatorward of the warped boundary
+            // so deltaBlocks is negative and latDeg < TEMPERATE_WARM_EDGE_LAT_MIN_DEG — both gates
+            // that follow would reject it. Skip the lat gate here; abs(deltaBlocks) <= shoulderBlocks
+            // already bounds the spatial reach to ±shoulderBlocks of the warped boundary.
+            return Math.abs(deltaBlocks) <= shoulderBlocks;
+        }
+        // Crisp-temperate cell: apply lat gate then check poleward-only shoulder (existing behavior).
+        double latDeg = latitudeDegreesFromRadius(blockZ, effectiveRadius);
+        if (latDeg < TEMPERATE_WARM_EDGE_LAT_MIN_DEG || latDeg > TEMPERATE_WARM_EDGE_LAT_MAX_DEG) {
+            return false;
         }
         return deltaBlocks >= 0.0 && deltaBlocks <= shoulderBlocks;
     }
