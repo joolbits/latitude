@@ -2114,6 +2114,7 @@ public final class LatitudeBiomes {
     private static final long JITTER_NOISE_SALT = -6795153568590067944L;
     private static final long DITHER_NOISE_SALT = 1161981756646125696L;
     private static final long BLEND_NOISE_SALT = 0x53EED5EEDL;
+    private static final long BLEND_SURVIVAL_NOISE_SALT = 0x626C64737572_7630L; // "bldsurv0"
     private static final long WARP_NOISE_SALT = 0x5A7A5EED0F00D123L;
     private static final long TROPICAL_DITHER_SALT = 0x5EEDBEEF5EEDBEEFL;
     private static final long SUBPOLAR_RAMP_SALT = 0x5EED5B09A5EEDL;
@@ -3982,12 +3983,18 @@ public final class LatitudeBiomes {
 
         int chosenBandIndex = blendNoise < blendT ? upperBandIndex : lowerBandIndex;
         int resolvedBandIndex = chosenBandIndex;
-        double latDegFromRadius = latitudeDegreesFromRadius(blockZ, radius);
         if (lowerBandIndex == BAND_SUBTROPICAL
                 && upperBandIndex == BAND_TEMPERATE
                 && resolvedBandIndex == BAND_SUBTROPICAL
-                && latDegFromRadius >= LatitudeBands.Band.TEMPERATE.lowDeg()) {
-            resolvedBandIndex = BAND_TEMPERATE;
+                && delta > 0.0) {
+            // Graduated attenuation in the poleward half of the blend zone.
+            // Survival probability fades smoothly from 1.0 at the boundary to 0.0 at the poleward edge,
+            // replacing the previous hard snap that clamped all subtropical picks at exactly 35 deg.
+            double survivalProb = 1.0 - smoothstep(clamp(delta / halfWidthBlocks, 0.0, 1.0));
+            double survivalNoise = blobNoise01ScaledBlocks(WORLD_SEED, blockX, blockZ, blendPatchBlocks, BLEND_SURVIVAL_NOISE_SALT);
+            if (survivalNoise >= survivalProb) {
+                resolvedBandIndex = BAND_TEMPERATE;
+            }
         }
 
         if (DEBUG_BLEND
