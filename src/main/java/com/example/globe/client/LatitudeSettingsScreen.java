@@ -134,7 +134,7 @@ public class LatitudeSettingsScreen extends Screen {
             y += 24;
 
             compassPreviewBaseY = y;
-            y += 36;
+            y += compassPreviewHeight(cfg);
         } else {
             compassPreviewBaseY = -1;
         }
@@ -226,8 +226,9 @@ public class LatitudeSettingsScreen extends Screen {
 
         if (compassExpanded && compassPreviewBaseY >= 0) {
             int previewY = compassPreviewBaseY - scrollY;
-            if (previewY >= panelTop && previewY + 28 <= this.footerY) {
-                drawCompassPreview(context, columnXCache, previewY, columnWCache, 28, CompassHudConfig.get());
+            int previewH = compassPreviewHeight(CompassHudConfig.get());
+            if (previewY >= panelTop && previewY + previewH <= this.footerY) {
+                drawCompassPreview(context, columnXCache, previewY, columnWCache, previewH, CompassHudConfig.get());
             }
         }
 
@@ -276,24 +277,27 @@ public class LatitudeSettingsScreen extends Screen {
     private void drawCompassPreview(DrawContext ctx, int x, int y, int w, int h, CompassHudConfig cfg) {
         int boxColor = 0x33111111;
         ctx.fill(x, y, x + w, y + h, boxColor);
-        int padding = 6;
-        if (cfg.style == CompassHudConfig.CompassStyle.ANALOG) {
-            int radius = Math.min(10, Math.min(w, h) / 3);
-            int cx = x + padding + radius;
-            int cy = y + h / 2;
-            ctx.fill(cx - radius, cy - radius, cx + radius, cy + radius, 0xAA1A1410);
-            ctx.fill(cx - radius, cy - radius, cx - radius + 1, cy + radius, 0xFFD4A74A);
-            ctx.fill(cx + radius - 1, cy - radius, cx + radius, cy + radius, 0xFFD4A74A);
-            ctx.fill(cx - radius, cy - radius, cx + radius, cy - radius + 1, 0xFFD4A74A);
-            ctx.fill(cx - radius, cy + radius - 1, cx + radius, cy + radius, 0xFFD4A74A);
-            ctx.fill(cx, cy - radius + 2, cx + 1, cy - radius + 6, 0xFFD4A74A);
-            ctx.drawText(this.textRenderer, "N", cx - 1, cy - radius + 7, 0xFFCC3333, true);
-            int textX = cx + radius + 6;
-            ctx.drawText(this.textRenderer, "57\u00b0S" + (cfg.compactHud ? " Tropics" : " · Tropics"), textX, cy - this.textRenderer.fontHeight / 2, 0xFFFFFFFF, true);
-        } else {
-            String text = cfg.compactHud ? "NW 57\u00b0S Tropics" : "NW · 57\u00b0S · Tropics";
-            ctx.drawText(this.textRenderer, text, x + padding, y + h / 2 - this.textRenderer.fontHeight / 2, 0xFFFFFFFF, true);
+
+        var mc = MinecraftClient.getInstance();
+        if (mc == null || mc.getWindow() == null) {
+            return;
         }
+
+        var bounds = CompassHud.computeBounds(mc, cfg);
+        int renderW = bounds.w();
+        int renderH = bounds.h();
+        int renderX = x + Math.max(6, (w - renderW) / 2);
+        int renderY = y + Math.max(6, (h - renderH) / 2);
+        CompassHud.renderPreview(ctx, mc, cfg, renderX, renderY);
+    }
+
+    private int compassPreviewHeight(CompassHudConfig cfg) {
+        var mc = MinecraftClient.getInstance();
+        if (mc == null || mc.getWindow() == null) {
+            return 36;
+        }
+        var bounds = CompassHud.computeBounds(mc, cfg);
+        return Math.max(36, bounds.h() + 12);
     }
 
 
