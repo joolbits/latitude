@@ -18,6 +18,9 @@ public final class CompassHud {
     private static final int ANALOG_N_COLOR = 0xFFCC3333;
     private static final int ANALOG_PREVIEW_BORDER = 0x55FFFFFF;
     private static final int ANALOG_LAT_GAP = 6;
+    private static final int PREVIEW_HOTBAR_BG = 0x33241814;
+    private static final int PREVIEW_HOTBAR_BORDER = 0x66A08972;
+    private static final int PREVIEW_HOTBAR_SLOT = 0x22382F26;
 
     private static long lastCheckWorldTime = Long.MIN_VALUE;
     private static boolean cachedHasCompass = false;
@@ -59,9 +62,13 @@ public final class CompassHud {
         }
 
         var cfg = CompassHudConfig.get();
+        boolean studioPreview = client.currentScreen instanceof LatitudeHudStudioScreen;
 
-        if (forceVisible && (client.player == null || client.world == null)) {
-            HudBounds previewBounds = computeBounds(client, cfg);
+        if (forceVisible && (studioPreview || client.player == null || client.world == null)) {
+            if (studioPreview && shouldRenderPreviewHotbar(cfg)) {
+                drawPreviewHotbar(ctx, screenW, screenH);
+            }
+            HudBounds previewBounds = computePreviewBounds(client, cfg);
             renderPreview(ctx, client, cfg, previewBounds.x(), previewBounds.y());
             return;
         }
@@ -160,11 +167,20 @@ public final class CompassHud {
         return computeBounds(screenW, screenH, client, cfg, lines);
     }
 
-    private static HudBounds computeBounds(int screenW, int screenH, MinecraftClient client, CompassHudConfig cfg, String[] lines) {
-        return computeDigitalBounds(screenW, screenH, client, cfg, lines);
+    private static HudBounds computePreviewBounds(MinecraftClient client, CompassHudConfig cfg) {
+        int screenW = client.getWindow().getScaledWidth();
+        int screenH = client.getWindow().getScaledHeight();
+        if (cfg.style == CompassHudConfig.CompassStyle.ANALOG) {
+            return computeAnalogBounds(screenW, screenH, client, cfg, analogSampleLatitude(cfg), cfg.zoneFollowsCompass ? sampleZone(cfg) : null);
+        }
+        return computeDigitalBounds(screenW, screenH, client, cfg, sampleLines(cfg), true);
     }
 
-    private static HudBounds computeDigitalBounds(int screenW, int screenH, MinecraftClient client, CompassHudConfig cfg, String[] lines) {
+    private static HudBounds computeBounds(int screenW, int screenH, MinecraftClient client, CompassHudConfig cfg, String[] lines) {
+        return computeDigitalBounds(screenW, screenH, client, cfg, lines, false);
+    }
+
+    private static HudBounds computeDigitalBounds(int screenW, int screenH, MinecraftClient client, CompassHudConfig cfg, String[] lines, boolean previewAttachToHotbar) {
 
         int pad = cfg.padding;
         int textW = maxLineWidth(client, lines);
@@ -179,21 +195,16 @@ public final class CompassHud {
 
         int x;
         int y;
-        if (cfg.style == CompassHudConfig.CompassStyle.DIGITAL && cfg.attachToHotbarCompass && client.player != null) {
+        if (cfg.style == CompassHudConfig.CompassStyle.DIGITAL && cfg.attachToHotbarCompass && previewAttachToHotbar) {
+            HudPoint attached = computeAttachedCompassPosition(screenW, screenH, cfg, scaledBoxW, scaledBoxH);
+            x = attached.x();
+            y = attached.y();
+        } else if (cfg.style == CompassHudConfig.CompassStyle.DIGITAL && cfg.attachToHotbarCompass && client.player != null) {
             int slotIndex = findHotbarCompassSlot(client.player);
             if (slotIndex >= 0) {
-                int hotbarLeft = screenW / 2 - 91;
-                int hotbarTop = screenH - 22;
-                int hotbarRight = hotbarLeft + 182;
-
-                int margin = 4;
-
-                x = hotbarRight + margin;
-                y = hotbarTop + (22 - scaledBoxH) / 2;
-
-                if (x + scaledBoxW > screenW - margin) {
-                    x = hotbarLeft - margin - scaledBoxW;
-                }
+                HudPoint attached = computeAttachedCompassPosition(screenW, screenH, cfg, scaledBoxW, scaledBoxH);
+                x = attached.x();
+                y = attached.y();
             } else {
                 x = anchoredX(cfg, screenW, scaledBoxW);
                 y = anchoredY(cfg, screenH, scaledBoxH);
@@ -539,6 +550,32 @@ public final class CompassHud {
         y = clamp(y, 0, Math.max(0, screenH - scaledBoxH));
 
         return new HudPoint(x, y);
+    }
+
+    private static boolean shouldRenderPreviewHotbar(CompassHudConfig cfg) {
+        return cfg.style == CompassHudConfig.CompassStyle.DIGITAL && cfg.attachToHotbarCompass;
+    }
+
+    private static void drawPreviewHotbar(DrawContext ctx, int screenW, int screenH) {
+        int hotbarW = 182;
+        int hotbarH = 22;
+        int hotbarX = (screenW - hotbarW) / 2;
+        int hotbarY = screenH - hotbarH;
+
+        ctx.fill(hotbarX, hotbarY, hotbarX + hotbarW, hotbarY + hotbarH, PREVIEW_HOTBAR_BG);
+        ctx.fill(hotbarX, hotbarY, hotbarX + hotbarW, hotbarY + 1, PREVIEW_HOTBAR_BORDER);
+        ctx.fill(hotbarX, hotbarY + hotbarH - 1, hotbarX + hotbarW, hotbarY + hotbarH, PREVIEW_HOTBAR_BORDER);
+        ctx.fill(hotbarX, hotbarY, hotbarX + 1, hotbarY + hotbarH, PREVIEW_HOTBAR_BORDER);
+        ctx.fill(hotbarX + hotbarW - 1, hotbarY, hotbarX + hotbarW, hotbarY + hotbarH, PREVIEW_HOTBAR_BORDER);
+
+        int slotX = hotbarX + 3;
+        int slotY = hotbarY + 3;
+        int slotSize = 16;
+        int slotStep = 20;
+        for (int i = 0; i < 9; i++) {
+            int x0 = slotX + i * slotStep;
+            ctx.fill(x0, slotY, x0 + slotSize, slotY + slotSize, PREVIEW_HOTBAR_SLOT);
+        }
     }
 
     private static int maxLineWidth(MinecraftClient client, String[] lines) {
