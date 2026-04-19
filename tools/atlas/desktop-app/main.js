@@ -256,6 +256,12 @@ function formatTimestampForFolder(date = new Date()) {
   ].join("");
 }
 
+function compactRunId(runId) {
+  const raw = String(runId ?? "").trim();
+  const normalized = raw.replace(/[^A-Za-z0-9._-]+/g, "");
+  return normalized || "run";
+}
+
 function isPathInside(child, parent) {
   const rel = path.relative(parent, child);
   return !!rel && !rel.startsWith("..") && !path.isAbsolute(rel);
@@ -294,10 +300,10 @@ function copyRecursive(src, dest) {
   fs.copyFileSync(src, dest);
 }
 
-function buildExportFolderName(runId, runLabel) {
+function buildExportFolderName(runId) {
   const timestamp = formatTimestampForFolder();
-  const baseLabel = sanitizeFolderName(runLabel || runId || "run", "run");
-  return `LatitudeAtlasExport_${baseLabel}_${timestamp}`;
+  const safeRunId = compactRunId(runId);
+  return `LatitudeAtlasExport_${safeRunId}_${timestamp}`;
 }
 
 function ensureUniqueExportDir(parentDir, baseName) {
@@ -346,6 +352,7 @@ function loadExpectedBiomeIdsFromPolicy() {
 }
 
 async function exportRunDataFromDesktop({ runId, runLabel }) {
+  LOG(`atlas-export-run-data invoked for runId=${String(runId || "")}`);
   if (!currentRepoRoot) {
     return { ok: false, message: "Repository root is not available." };
   }
@@ -375,8 +382,14 @@ async function exportRunDataFromDesktop({ runId, runLabel }) {
 
   fs.mkdirSync(destinationParent, { recursive: true });
 
-  const exportBaseName = buildExportFolderName(runId, runLabel);
-  const exportDir = ensureUniqueExportDir(destinationParent, exportBaseName);
+  const folderName = buildExportFolderName(runId);
+  const exportDir = ensureUniqueExportDir(destinationParent, folderName);
+
+  LOG(`[export] folderName=${folderName}`);
+  LOG(`[export] exportDir=${exportDir}`);
+  LOG(`[export] exportDir.length=${exportDir.length}`);
+  fs.mkdirSync(exportDir, { recursive: true });
+  LOG(`[export] exportDir exists before copy/write=${fs.existsSync(exportDir)}`);
 
   copyRecursive(runDir, exportDir);
 
@@ -389,7 +402,12 @@ async function exportRunDataFromDesktop({ runId, runLabel }) {
     "",
     "This export was copied recursively from the selected headless run folder.",
   ];
-  fs.writeFileSync(path.join(exportDir, "export_info.txt"), manifestLines.join("\n"), "utf8");
+  const manifestPath = path.join(exportDir, "export_info.txt");
+  fs.mkdirSync(path.dirname(manifestPath), { recursive: true });
+  LOG(`[export] manifestPath=${manifestPath}`);
+  LOG(`[export] manifestPath.length=${manifestPath.length}`);
+  LOG(`[export] manifest parent exists before write=${fs.existsSync(path.dirname(manifestPath))}`);
+  fs.writeFileSync(manifestPath, manifestLines.join("\n"), "utf8");
 
   return {
     ok: true,
@@ -400,12 +418,18 @@ async function exportRunDataFromDesktop({ runId, runLabel }) {
 
 ipcMain.handle("atlas-get-expected-biome-ids", async () => {
   try {
+    LOG("atlas-get-expected-biome-ids invoked");
     return loadExpectedBiomeIdsFromPolicy();
   } catch (e) {
     const message = e?.message || String(e);
     LOG(`WARN: loadExpectedBiomeIdsFromPolicy failed: ${message}`);
     return { ok: false, message: `Expected biome lookup failed: ${message}`, ids: [] };
   }
+});
+
+ipcMain.handle("atlas-ping", async () => {
+  LOG("atlas-ping invoked");
+  return { ok: true, process: "main" };
 });
 
 async function stopPythonServer() {
@@ -468,6 +492,7 @@ function ensureMainWindow() {
     title: "Latitude Atlas Viewer",
     webPreferences: {
       contextIsolation: true,
+      nodeIntegration: false,
       preload: path.join(__dirname, "preload.js"),
     },
   });

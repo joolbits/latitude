@@ -1712,6 +1712,7 @@ html, body {
       <button id="btn-clear-selection" class="panel-action-btn" title="Clear selected biome highlight">Clear</button>
      </div>
     </div>
+    <div id="atlas-desktop-diagnostics" style="margin:0 12px 8px;padding:6px 8px;border:1px solid var(--border-subtle);border-radius:var(--r-sm);background:var(--bg-surface);font-family:var(--font-mono);font-size:10px;line-height:1.45;color:var(--text-secondary);"></div>
     <div class="panel-body" id="selection-context-body">
      <div class="context-empty">No biome selected</div>
     </div>
@@ -1857,6 +1858,7 @@ const btnOpenReport = $('#btn-open-report');
 const btnExportReport = $('#btn-export-report');
 const btnClearSelection = $('#btn-clear-selection');
 const btnClearPaletteSelection = $('#btn-clear-palette-selection');
+const atlasDesktopDiagnosticsEl = $('#atlas-desktop-diagnostics');
  const selectionContextBody = $('#selection-context-body');
  const btnSaveRun = $('#btn-save-run');
  
@@ -1892,7 +1894,6 @@ const btnClearPaletteSelection = $('#btn-clear-palette-selection');
   biomeInventory: [],
   biomeInventoryStatus: { ok: true, message: '' },
   expectedBiomeIds: [],
-  expectedBiomeAuthorityStatus: { ok: true, message: '' },
   biomeByIdMap: {},
   biomeByIndex: {},
   legend: null,
@@ -1918,6 +1919,15 @@ const btnClearPaletteSelection = $('#btn-clear-palette-selection');
   confettiThreshold: 50,
   confettiBfsCache: {},       // run|layer|biomeId → sorted component array [{size, pixels|null}]
   confettiScanCache: null,    // { key, results } for all-biome scan
+  desktopBridge: {
+    available: false,
+    keys: [],
+    canExportRunData: false,
+    ping: 'idle',
+    lastExportResult: 'idle',
+    lastExportError: '',
+    lastExportDestination: '',
+  },
  };
  
  const LEGACY_BEACH_RED = [235, 72, 63];
@@ -1993,18 +2003,115 @@ const JAVA_LONG_MAX = BigInt('9223372036854775807');
  
  function colorKey(r, g, b) { return `${r},${g},${b}`; }
  
- function showToast(msg, type='loading') {
+function showToast(msg, type='loading') {
   const dot = $('.dot', statusToast);
   const m = $('.msg', statusToast);
   dot.className = 'dot ' + type;
   m.textContent = msg;
   statusToast.classList.add('visible');
   if (type !== 'loading') setTimeout(() => statusToast.classList.remove('visible'), 2200);
- }
- 
- function hideToast() {
+}
+
+function hideToast() {
   statusToast.classList.remove('visible');
- }
+}
+
+let desktopBridgeLogged = false;
+
+function getAtlasDesktopApi() {
+  return window.atlasDesktop || null;
+}
+
+function snapshotDesktopBridge() {
+  const atlasDesktopApi = getAtlasDesktopApi();
+  const desktopKeys = atlasDesktopApi ? Object.keys(atlasDesktopApi).sort() : [];
+  const canExportRunData = !!(atlasDesktopApi && typeof atlasDesktopApi.exportRunData === 'function');
+  const canPing = !!(atlasDesktopApi && typeof atlasDesktopApi.ping === 'function');
+  return {
+    available: !!atlasDesktopApi,
+    desktopKeys,
+    canExportRunData,
+    canPing,
+  };
+}
+
+function logDesktopBridgeState() {
+ if (desktopBridgeLogged) return;
+ desktopBridgeLogged = true;
+ const snapshot = snapshotDesktopBridge();
+ console.debug('[atlas] desktop bridge', snapshot.available ? snapshot.desktopKeys : []);
+}
+
+function setDesktopBridgeState(patch) {
+  state.desktopBridge = { ...state.desktopBridge, ...patch };
+  renderDesktopBridgeDiagnostics();
+}
+
+function renderDesktopBridgeDiagnostics() {
+  if (!atlasDesktopDiagnosticsEl) return;
+  const bridge = state.desktopBridge || {};
+  const bridgeLabel = bridge.available ? 'available' : 'unavailable';
+  const methodsLabel = bridge.available
+    ? (bridge.keys && bridge.keys.length ? bridge.keys.join(', ') : 'none')
+    : 'none';
+  const exportLabel = bridge.canExportRunData
+    ? 'yes'
+    : bridge.available
+      ? 'no (method missing)'
+      : 'no (bridge missing)';
+  const pingLabel = bridge.ping || 'idle';
+  const lastExportLabel = bridge.lastExportResult || 'idle';
+  const extraError = bridge.lastExportError ? `<div style="color:var(--lat-warn);margin-top:2px;white-space:pre-wrap;">Last error: ${escapeHtml(bridge.lastExportError)}</div>` : '';
+  atlasDesktopDiagnosticsEl.innerHTML = `
+    <div><strong>Desktop bridge:</strong> ${escapeHtml(bridgeLabel)}</div>
+    <div><strong>Exposed methods:</strong> ${escapeHtml(methodsLabel)}</div>
+    <div><strong>Export capability:</strong> ${escapeHtml(exportLabel)}</div>
+    <div><strong>Ping:</strong> ${escapeHtml(pingLabel)}</div>
+    <div><strong>Last export:</strong> ${escapeHtml(lastExportLabel)}</div>
+    ${bridge.lastExportDestination ? `<div><strong>Destination:</strong> ${escapeHtml(bridge.lastExportDestination)}</div>` : ''}
+    ${extraError}
+  `;
+}
+
+function applyDesktopBridgeSnapshot() {
+  const snapshot = snapshotDesktopBridge();
+  setDesktopBridgeState({
+    available: snapshot.available,
+    keys: snapshot.desktopKeys,
+    canExportRunData: snapshot.canExportRunData,
+  });
+  return snapshot;
+}
+
+async function pingDesktopBridgeOnce() {
+  const snapshot = applyDesktopBridgeSnapshot();
+  if (!snapshot.available || !snapshot.canPing) {
+    setDesktopBridgeState({
+      ping: snapshot.available ? 'ping unavailable' : 'bridge unavailable',
+    });
+    return;
+  }
+  setDesktopBridgeState({ ping: 'pinging...' });
+  try {
+    const result = await getAtlasDesktopApi().ping();
+    setDesktopBridgeState({
+      ping: result?.ok ? 'Ping ok' : `Ping failed: ${result?.message || 'unexpected response'}`,
+    });
+  } catch (error) {
+    setDesktopBridgeState({
+      ping: `Ping failed: ${error?.message || String(error)}`,
+    });
+  }
+}
+
+logDesktopBridgeState();
+applyDesktopBridgeSnapshot();
+renderDesktopBridgeDiagnostics();
+setTimeout(() => {
+  pingDesktopBridgeOnce().catch((error) => {
+    setDesktopBridgeState({ ping: `Ping failed: ${error?.message || String(error)}` });
+  });
+}, 0);
  
 function normalizeUiScale(value) {
   const n = Number(value);
@@ -3780,10 +3887,8 @@ function computeMissingBiomeIds(expectedIds, discoveredRows) {
  };
 }
 
-function missingBiomeStatusLabel() {
- const status = state.biomeInventoryStatus || {};
- if (status.ok === false) return `unavailable: ${status.message || 'inventory file missing or unreadable'}`;
- return 'available';
+function expectedBiomeIdsForCurrentRun() {
+ return stableSortBiomeIds((Array.isArray(state.biomes) ? state.biomes : []).map((biome) => biome?.id));
 }
 
 function buildPrintableReportHtml() {
@@ -3796,9 +3901,8 @@ const reportBiomes = currentReportBiomes();
 const sampledBiomes = currentSampledBiomes();
  const inventoryBiomes = Array.isArray(state.biomeInventory) ? state.biomeInventory.slice() : [];
  const inventoryStatus = state.biomeInventoryStatus || { ok: true, message: '' };
- const expectedStatus = state.expectedBiomeAuthorityStatus || { ok: true, message: '' };
- const expectedBiomeIds = stableSortBiomeIds(state.expectedBiomeIds);
- const missingBiomeState = inventoryStatus.ok === false || expectedStatus.ok === false
+ const expectedBiomeIds = expectedBiomeIdsForCurrentRun();
+ const missingBiomeState = inventoryStatus.ok === false
   ? { missingIds: [], expectedIds: expectedBiomeIds, discoveredIds: discoveredBiomeIdsFromInventory(inventoryBiomes) }
   : computeMissingBiomeIds(expectedBiomeIds, inventoryBiomes);
  const missingBiomes = missingBiomeState.missingIds;
@@ -3817,12 +3921,10 @@ const point = state.selectedPoint;
   ['Generated', formatRunTimestamp(state.currentRun || manifest.ts)],
   ['Palette Scope', coarseSampling ? `Sampled at current resolution (step ${currentStep})` : 'Sampled at current resolution'],
   ['Known World Biomes', inventoryBiomes.length ? inventoryBiomes.length.toLocaleString() : '—'],
-  ['Expected Biomes', expectedStatus.ok === false ? `unavailable: ${expectedStatus.message || 'expected biome authority unavailable'}` : (expectedBiomeIds.length ? expectedBiomeIds.length.toLocaleString() : '—')],
+  ['Expected Biomes', expectedBiomeIds.length ? expectedBiomeIds.length.toLocaleString() : '—'],
   ['Missing Biomes', inventoryStatus.ok === false
    ? `unavailable: ${inventoryStatus.message || 'inventory file missing or unreadable'}`
-   : expectedStatus.ok === false
-    ? `unavailable: ${expectedStatus.message || 'expected biome authority unavailable'}`
-    : (missingBiomes.length ? missingBiomes.length.toLocaleString() : 'none')],
+   : (missingBiomes.length ? missingBiomes.length.toLocaleString() : 'none')],
  ];
  const selectionRows = [
   ['Selection Scope', selected.length ? `${selected.length} biome${selected.length === 1 ? '' : 's'}` : 'All biomes'],
@@ -3953,10 +4055,9 @@ ${sampledBiomes.length ? `<table><thead><tr><th>Biome ID</th><th>Name</th><th>Co
 <div class="sub">This inventory is discovery-based and separate from sampled coverage. A biome may be present in world even when sampled coverage is zero on the current atlas layer.</div>
 ${inventoryBiomes.length ? `<table><thead><tr><th>Biome ID</th><th>Name</th><th>Color</th><th>First Known X/Z</th><th>Latitude</th><th>Discovery Step</th><th>Sampled Coverage</th></tr></thead><tbody>${inventoryRows}</tbody></table>` : '<div class="empty">No world-biome inventory rows are loaded for the current run.</div>'}
 <h2>Missing Biomes</h2>
+<div class="sub">Compared against the full sampled biome set for this run.</div>
 ${inventoryStatus.ok === false
  ? `<div class="empty">Missing biome calculation unavailable: ${escapeHtml(inventoryStatus.message || 'world_biome_inventory.json was missing or unreadable.')}</div>`
- : expectedStatus.ok === false
-  ? `<div class="empty">Missing biome calculation unavailable: ${escapeHtml(expectedStatus.message || 'expected biome authority unavailable.')}</div>`
  : missingBiomes.length
   ? `<div class="sub">Missing Biomes (${missingBiomes.length})</div><table><thead><tr><th>Biome ID</th></tr></thead><tbody>${missingBiomes.map((id) => `<tr><td>${escapeHtml(id)}</td></tr>`).join('')}</tbody></table>`
   : '<div class="empty">Missing Biomes: none</div>'}
@@ -4284,9 +4385,8 @@ biomeSearch.addEventListener('keydown', e => {
  const radius = getWorldRadius(manifest);
  const seedValue = manifest?.seed != null && String(manifest.seed).trim() ? String(manifest.seed) : '—';
   const inventoryStatus = state.biomeInventoryStatus || { ok: true, message: '' };
-  const expectedStatus = state.expectedBiomeAuthorityStatus || { ok: true, message: '' };
   const expectedBiomeIds = stableSortBiomeIds(state.expectedBiomeIds);
-  const missingBiomeState = inventoryStatus.ok === false || expectedStatus.ok === false
+  const missingBiomeState = inventoryStatus.ok === false
     ? { missingIds: [] }
     : computeMissingBiomeIds(expectedBiomeIds, state.biomeInventory);
  const rows = [
@@ -4299,8 +4399,8 @@ biomeSearch.addEventListener('keydown', e => {
     { key: 'Layers', value: state.availableLayers.length ? String(state.availableLayers.length) : '—' },
     { key: 'Sampled Palette Biomes', value: state.biomes.length ? state.biomes.length.toLocaleString() : '—' },
     { key: 'Known World Biomes', value: inventoryStatus.ok === false ? `unavailable: ${inventoryStatus.message || 'inventory file missing or unreadable'}` : (state.biomeInventory.length ? state.biomeInventory.length.toLocaleString() : '—') },
-    { key: 'Expected Biomes', value: expectedStatus.ok === false ? `unavailable: ${expectedStatus.message || 'expected biome authority unavailable'}` : (expectedBiomeIds.length ? expectedBiomeIds.length.toLocaleString() : '—') },
-    { key: 'Missing Biomes', value: inventoryStatus.ok === false ? `unavailable: ${inventoryStatus.message || 'inventory file missing or unreadable'}` : (expectedStatus.ok === false ? `unavailable: ${expectedStatus.message || 'expected biome authority unavailable'}` : (missingBiomeState.missingIds.length ? missingBiomeState.missingIds.length.toLocaleString() : 'none')) },
+    { key: 'Expected Biomes', value: expectedBiomeIds.length ? expectedBiomeIds.length.toLocaleString() : '—' },
+    { key: 'Missing Biomes', value: inventoryStatus.ok === false ? `unavailable: ${inventoryStatus.message || 'inventory file missing or unreadable'}` : (missingBiomeState.missingIds.length ? missingBiomeState.missingIds.length.toLocaleString() : 'none') },
     { key: 'Sampling Note', value: isCoarseSamplingStep() ? 'Coarse sampling may omit rare biomes.' : 'Current step is detailed enough to reduce omission risk.' },
     { key: 'Branch', value: String(manifest.branch || '—') },
     { key: 'Commit', value: String(manifest.commit || '—') },
@@ -4370,9 +4470,17 @@ async function loadRunManifest(run, force = false) {
 }
 
 function updateRunActionButtons() {
+  const desktopSnapshot = applyDesktopBridgeSnapshot();
   if (btnSaveRun) btnSaveRun.disabled = !state.currentRun;
   if (btnOpenReport) btnOpenReport.disabled = !state.currentRun;
-  if (btnExportReport) btnExportReport.disabled = !state.currentRun;
+  if (btnExportReport) {
+   btnExportReport.disabled = !state.currentRun || !desktopSnapshot.canExportRunData;
+   btnExportReport.title = desktopSnapshot.canExportRunData
+    ? 'Export the full selected run folder'
+    : desktopSnapshot.available
+      ? 'Desktop bridge loaded, but exportRunData is missing'
+      : 'Desktop-only feature unavailable outside Atlas Desktop';
+  }
   if (btnDeleteRun) btnDeleteRun.style.display = state.currentRun ? '' : 'none';
 }
 
@@ -4432,31 +4540,72 @@ btnExportReport.addEventListener('click', async () => {
     return;
   }
 
-  const bridge = window.atlasDesktop;
-  if (!bridge || typeof bridge.exportRunData !== 'function') {
-    showToast('Desktop export is unavailable in this viewer.', 'error');
+  const bridge = getAtlasDesktopApi();
+  const canExportRunData = !!(bridge && typeof bridge.exportRunData === 'function');
+  if (!canExportRunData) {
+    const reason = bridge
+      ? 'Desktop bridge loaded, but exportRunData is missing.'
+      : 'Desktop bridge is unavailable in this viewer.';
+    setDesktopBridgeState({
+      lastExportResult: 'failed',
+      lastExportError: reason,
+      lastExportDestination: '',
+      ping: state.desktopBridge.ping || 'idle',
+    });
+    showToast(reason, 'error');
     return;
   }
 
   const runLabel = runOptionLabel(state.currentRun, state.runManifestMap[state.currentRun]);
+  setDesktopBridgeState({
+    lastExportResult: 'Export invoked...',
+    lastExportError: '',
+    lastExportDestination: '',
+    canExportRunData: true,
+  });
   showToast('Choose an export folder…', 'loading');
 
-  const result = await bridge.exportRunData({
-    runId: state.currentRun,
-    runLabel,
-  });
+  try {
+    const result = await bridge.exportRunData({
+      runId: state.currentRun,
+      runLabel,
+    });
 
-  if (result?.ok) {
-    showToast(`Exported run data to ${result.exportDir}`, 'success');
-    return;
+    if (result?.ok) {
+      setDesktopBridgeState({
+        lastExportResult: 'success',
+        lastExportDestination: result.exportDir || '',
+        lastExportError: '',
+      });
+      showToast(`Exported run data to ${result.exportDir}`, 'success');
+      return;
+    }
+
+    if (result?.canceled) {
+      setDesktopBridgeState({
+        lastExportResult: 'canceled',
+        lastExportError: '',
+        lastExportDestination: '',
+      });
+      showToast('Export canceled.', 'error');
+      return;
+    }
+
+    setDesktopBridgeState({
+      lastExportResult: 'failed',
+      lastExportError: result?.message || 'Export failed.',
+      lastExportDestination: '',
+    });
+    showToast(result?.message || 'Export failed.', 'error');
+  } catch (error) {
+    const message = error?.message || 'Export failed.';
+    setDesktopBridgeState({
+      lastExportResult: 'failed',
+      lastExportError: message,
+      lastExportDestination: '',
+    });
+    showToast(message, 'error');
   }
-
-  if (result?.canceled) {
-    showToast('Export canceled.', 'error');
-    return;
-  }
-
-  showToast(result?.message || 'Export failed.', 'error');
 });
 
 if (genSeedInput) {
@@ -4690,30 +4839,6 @@ async function fetchBiomeInventory(run, layer) {
     return { ok: true, biomes: [], message: '' };
   } catch (error) {
     return { ok: false, biomes: [], message: error?.message || 'Failed to load biome inventory.' };
-  }
-}
-
-async function fetchExpectedBiomeIds() {
-  const bridge = window.atlasDesktop;
-  if (!bridge || typeof bridge.getExpectedBiomeIds !== 'function') {
-    return { ok: false, ids: [], message: 'Desktop expected-biome authority is unavailable.' };
-  }
-  try {
-    const data = await bridge.getExpectedBiomeIds();
-    if (Array.isArray(data)) {
-      return { ok: true, ids: stableSortBiomeIds(data), message: '' };
-    }
-    if (data && typeof data === 'object') {
-      return {
-        ok: data.ok !== false,
-        ids: stableSortBiomeIds(data.ids),
-        message: typeof data.message === 'string' ? data.message : '',
-        source: typeof data.source === 'string' ? data.source : '',
-      };
-    }
-    return { ok: false, ids: [], message: 'Unexpected expected-biome authority response.' };
-  } catch (error) {
-    return { ok: false, ids: [], message: error?.message || 'Failed to load expected biome authority.' };
   }
 }
 
@@ -5141,7 +5266,6 @@ selRun.addEventListener('change', async () => {
     state.biomeInventory = [];
     state.biomeInventoryStatus = { ok: true, message: '' };
     state.expectedBiomeIds = [];
-    state.expectedBiomeAuthorityStatus = { ok: true, message: '' };
     state.selectedBiomeIds = [];
     state.focusedBiomeId = null;
     state.inspectedPoint = null;
@@ -5202,7 +5326,6 @@ async function switchLayer(run, layer) {
   state.biomeInventory = [];
   state.biomeInventoryStatus = { ok: true, message: '' };
   state.expectedBiomeIds = [];
-  state.expectedBiomeAuthorityStatus = { ok: true, message: '' };
   state.selectionStatsCache = {};
   state.confettiBfsCache = {};
   state.confettiScanCache = null;
@@ -5223,10 +5346,9 @@ async function switchLayer(run, layer) {
   renderSelectionContext(null);
 
   // Fetch biomes + image + ids concurrently
-  const [biomes, inventory, expectedBiomes, idsBlob, legend] = await Promise.all([
+  const [biomes, inventory, idsBlob, legend] = await Promise.all([
     fetchBiomes(run, layer),
     fetchBiomeInventory(run, layer),
-    fetchExpectedBiomeIds(),
     fetchBiomeIds(run, layer),
     fetchLegend(run, layer),
     loadMapImage(getImageUrl(run, layer)),
@@ -5244,12 +5366,7 @@ async function switchLayer(run, layer) {
     message: inventory?.message || '',
     source: inventory?.source || '',
   };
-  state.expectedBiomeIds = Array.isArray(expectedBiomes?.ids) ? stableSortBiomeIds(expectedBiomes.ids) : [];
-  state.expectedBiomeAuthorityStatus = {
-    ok: expectedBiomes?.ok !== false,
-    message: expectedBiomes?.message || '',
-    source: expectedBiomes?.source || '',
-  };
+  state.expectedBiomeIds = expectedBiomeIdsForCurrentRun();
   rebuildBiomeBandMasks();
 
   if (idsBlob) {
