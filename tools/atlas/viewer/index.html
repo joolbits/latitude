@@ -2062,12 +2062,16 @@ function renderDesktopBridgeDiagnostics() {
   const pingLabel = bridge.ping || 'idle';
   const lastExportLabel = bridge.lastExportResult || 'idle';
   const extraError = bridge.lastExportError ? `<div style="color:var(--lat-warn);margin-top:2px;white-space:pre-wrap;">Last error: ${escapeHtml(bridge.lastExportError)}</div>` : '';
+  const runtimeIsElectron = /Electron\//i.test(navigator.userAgent);
+  const atlasDesktopType = typeof window.atlasDesktop;
   atlasDesktopDiagnosticsEl.innerHTML = `
     <div><strong>Desktop bridge:</strong> ${escapeHtml(bridgeLabel)}</div>
     <div><strong>Exposed methods:</strong> ${escapeHtml(methodsLabel)}</div>
     <div><strong>Export capability:</strong> ${escapeHtml(exportLabel)}</div>
     <div><strong>Ping:</strong> ${escapeHtml(pingLabel)}</div>
     <div><strong>Last export:</strong> ${escapeHtml(lastExportLabel)}</div>
+    <div><strong>Runtime:</strong> ${runtimeIsElectron ? 'Electron' : 'Browser (non-Electron)'} &nbsp; <strong>atlasDesktop:</strong> ${escapeHtml(atlasDesktopType)}</div>
+    <div style="color:var(--text-tertiary);word-break:break-all;"><strong>URL:</strong> ${escapeHtml(location.href)}</div>
     ${bridge.lastExportDestination ? `<div><strong>Destination:</strong> ${escapeHtml(bridge.lastExportDestination)}</div>` : ''}
     ${extraError}
   `;

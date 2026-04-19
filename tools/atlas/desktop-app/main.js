@@ -486,6 +486,11 @@ function buildViewerUrl(port, repoRoot, explicitRunId) {
 function ensureMainWindow() {
   if (mainWindow && !mainWindow.isDestroyed()) return mainWindow;
 
+  const preloadPath = path.join(__dirname, "preload.js");
+  LOG(`[bridge-probe] __dirname=${__dirname}`);
+  LOG(`[bridge-probe] preloadPath=${preloadPath}`);
+  LOG(`[bridge-probe] preloadExists=${fs.existsSync(preloadPath)}`);
+
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 900,
@@ -493,8 +498,16 @@ function ensureMainWindow() {
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
-      preload: path.join(__dirname, "preload.js"),
+      preload: preloadPath,
     },
+  });
+
+  mainWindow.webContents.on("console-message", (_e, level, message) => {
+    LOG(`[renderer-console L${level}] ${message}`);
+  });
+
+  mainWindow.webContents.on("preload-error", (_e, pPath, err) => {
+    LOG(`[bridge-probe] preload-error path=${pPath} err=${err?.message || err}`);
   });
 
   mainWindow.webContents.on("did-fail-load", (_e, code, desc, url) => {
@@ -503,7 +516,8 @@ function ensureMainWindow() {
   });
 
   mainWindow.webContents.on("did-finish-load", () => {
-    LOG("did-finish-load");
+    const actualUrl = mainWindow.webContents.getURL();
+    LOG(`did-finish-load actualUrl=${actualUrl}`);
     mainWindow.setTitle("Latitude Atlas Viewer");
   });
 
