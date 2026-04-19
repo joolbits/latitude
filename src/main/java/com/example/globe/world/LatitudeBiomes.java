@@ -7874,8 +7874,11 @@ public final class LatitudeBiomes {
         switch (province) {
             case WARM_WET -> {
                 if (isJungleFamily(pick)) return pick;
+                // Jungle is the WARM_WET core identity; sparse_jungle is the edge/shoulder.
+                // Default the late rewrite to jungle so non-jungle picks become jungle cores
+                // instead of being silently converted into sparse_jungle here.
                 try {
-                    return biome(biomes, "minecraft:sparse_jungle");
+                    return biome(biomes, "minecraft:jungle");
                 } catch (Throwable ignored) {
                 }
                 try {
@@ -7883,7 +7886,7 @@ public final class LatitudeBiomes {
                 } catch (Throwable ignored) {
                 }
                 try {
-                    return biome(biomes, "minecraft:jungle");
+                    return biome(biomes, "minecraft:sparse_jungle");
                 } catch (Throwable ignored) {
                 }
                 return pick;
@@ -7931,12 +7934,15 @@ public final class LatitudeBiomes {
         switch (province) {
             case WARM_WET -> {
                 if (isJungleFamily(pick)) return pick;
-                RegistryEntry<Biome> sparse = entryById(biomes, "minecraft:sparse_jungle");
-                if (sparse != null) return sparse;
-                RegistryEntry<Biome> bamboo = entryById(biomes, "minecraft:bamboo_jungle");
-                if (bamboo != null) return bamboo;
+                // Jungle is the WARM_WET core identity; sparse_jungle is the edge/shoulder.
+                // Default the late rewrite to jungle so non-jungle picks become jungle cores
+                // instead of being silently converted into sparse_jungle here.
                 RegistryEntry<Biome> jungle = entryById(biomes, "minecraft:jungle");
                 if (jungle != null) return jungle;
+                RegistryEntry<Biome> bamboo = entryById(biomes, "minecraft:bamboo_jungle");
+                if (bamboo != null) return bamboo;
+                RegistryEntry<Biome> sparse = entryById(biomes, "minecraft:sparse_jungle");
+                if (sparse != null) return sparse;
                 return pick;
             }
             case WARM_MEDIUM -> {
