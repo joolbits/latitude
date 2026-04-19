@@ -94,42 +94,6 @@ public class LatitudeSettingsScreen extends Screen {
         y += 24;
 
         baseY = y;
-        var wCaptureClipboard = this.addDrawableChild(CyclingButtonWidget.builder(v -> Text.literal(v ? "ON" : "OFF"), LatitudeConfig.screenshotClipboardEnabled)
-                .values(true, false)
-                .build(columnX, y, w, h, Text.translatable("option.globe.capture_clipboard"), (btn, value) -> LatitudeConfig.screenshotClipboardEnabled = value));
-        wCaptureClipboard.setTooltip(Tooltip.of(Text.translatable("option.globe.capture_clipboard.tooltip")));
-        layoutWidgets.add(wCaptureClipboard);
-        layoutBaseYs.add(baseY);
-        y += 24;
-
-        baseY = y;
-        var wCapturePowerShell = this.addDrawableChild(CyclingButtonWidget.builder(v -> Text.literal(v ? "ON" : "OFF"), LatitudeConfig.screenshotClipboardWindowsPowerShell)
-                .values(true, false)
-                .build(columnX, y, w, h, Text.translatable("option.globe.capture_windows_powershell"), (btn, value) -> LatitudeConfig.screenshotClipboardWindowsPowerShell = value));
-        wCapturePowerShell.setTooltip(Tooltip.of(Text.translatable("option.globe.capture_windows_powershell.tooltip")));
-        layoutWidgets.add(wCapturePowerShell);
-        layoutBaseYs.add(baseY);
-        y += 24;
-
-        baseY = y;
-        var wCaptureAlsoSave = this.addDrawableChild(CyclingButtonWidget.builder(v -> Text.literal(v ? "ON" : "OFF"), LatitudeConfig.screenshotAlsoSaveToDisk)
-                .values(true, false)
-                .build(columnX, y, w, h, Text.translatable("option.globe.capture_save_disk"), (btn, value) -> LatitudeConfig.screenshotAlsoSaveToDisk = value));
-        wCaptureAlsoSave.setTooltip(Tooltip.of(Text.translatable("option.globe.capture_save_disk.tooltip")));
-        layoutWidgets.add(wCaptureAlsoSave);
-        layoutBaseYs.add(baseY);
-        y += 24;
-
-        baseY = y;
-        var wCaptureCsv = this.addDrawableChild(CyclingButtonWidget.builder(v -> Text.literal(v ? "ON" : "OFF"), LatitudeConfig.captureWriteCsv)
-                .values(true, false)
-                .build(columnX, y, w, h, Text.translatable("option.globe.capture_write_csv"), (btn, value) -> LatitudeConfig.captureWriteCsv = value));
-        wCaptureCsv.setTooltip(Tooltip.of(Text.translatable("option.globe.capture_write_csv.tooltip")));
-        layoutWidgets.add(wCaptureCsv);
-        layoutBaseYs.add(baseY);
-        y += 24;
-
-        baseY = y;
         var wTitleSec = this.addDrawableChild(new StepSlider(columnX, y, w, h, Text.literal("Title Duration (seconds)"), 2.0, 10.0, 0.5, LatitudeConfig.zoneEnterTitleSeconds, v -> LatitudeConfig.zoneEnterTitleSeconds = v));
         layoutWidgets.add(wTitleSec);
         layoutBaseYs.add(baseY);
