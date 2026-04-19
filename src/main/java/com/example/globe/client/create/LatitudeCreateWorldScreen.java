@@ -1,6 +1,7 @@
 package com.example.globe.client.create;
 
 import com.example.globe.client.GlobeWorldSize;
+import com.example.globe.client.LatitudeHudStudioScreen;
 import com.example.globe.util.LatitudeBands;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.Click;
@@ -139,6 +140,7 @@ public class LatitudeCreateWorldScreen extends Screen {
     private ButtonWidget modePrevBtn;
     private ButtonWidget modeNextBtn;
     private ButtonWidget gameRulesBtn;
+    private ButtonWidget hudStudioBtn;
 
     // ── Layout cache (computed in init, used in render) ──
     private int headerY;
@@ -425,6 +427,11 @@ public class LatitudeCreateWorldScreen extends Screen {
                     .dimensions(settBtnX, panelTop, settBtnW, btnH)
                     .build();
             this.addDrawableChild(gameRulesBtn);
+
+            hudStudioBtn = ButtonWidget.builder(Text.literal("HUD Studio"), b -> openHudStudio())
+                    .dimensions(settBtnX, panelTop, settBtnW, btnH)
+                    .build();
+            this.addDrawableChild(hudStudioBtn);
             updateSettingsLayout();
         }
 
@@ -724,10 +731,13 @@ public class LatitudeCreateWorldScreen extends Screen {
         if (gameRulesBtn != null) {
             gameRulesBtn.active = gameRulesBtn.visible;
         }
+        if (hudStudioBtn != null) {
+            hudStudioBtn.active = hudStudioBtn.visible;
+        }
     }
 
     private void updateSettingsLayout() {
-        if (worldTypePrevBtn == null || worldTypeNextBtn == null || modePrevBtn == null || modeNextBtn == null || commandsBtn == null || compassBtn == null || bonusChestBtn == null || gameRulesBtn == null) {
+        if (worldTypePrevBtn == null || worldTypeNextBtn == null || modePrevBtn == null || modeNextBtn == null || commandsBtn == null || compassBtn == null || bonusChestBtn == null || gameRulesBtn == null || hudStudioBtn == null) {
             settingsViewportTop = 0;
             settingsViewportBottom = 0;
             settingsContentHeight = 0;
@@ -744,7 +754,7 @@ public class LatitudeCreateWorldScreen extends Screen {
         int viewportHeight = Math.max(0, settingsViewportBottom - settingsViewportTop);
         int contentTop = settingsViewportTop + scaledUi(4);
         int blockHeight = labelGap + btnH;
-        settingsContentHeight = blockHeight * 6 + rowGap * 5;
+        settingsContentHeight = blockHeight * 7 + rowGap * 6;
         int maxScroll = Math.max(0, settingsContentHeight - viewportHeight);
         if (settingsScroll < 0) settingsScroll = 0;
         if (settingsScroll > maxScroll) settingsScroll = maxScroll;
@@ -772,6 +782,9 @@ public class LatitudeCreateWorldScreen extends Screen {
         gameRulesRowY = y;
         positionSettingsButton(gameRulesBtn, settBtnX, settBtnW, y, btnH);
 
+        y += btnH + rowGap + labelGap;
+        positionSettingsButton(hudStudioBtn, settBtnX, settBtnW, y, btnH);
+
         updateSettingsButtons();
     }
 
@@ -798,6 +811,7 @@ public class LatitudeCreateWorldScreen extends Screen {
         setTabbedWidgetVisible(compassBtn, showRules);
         setTabbedWidgetVisible(bonusChestBtn, showRules && !isLatitudeWorld());
         setTabbedWidgetVisible(gameRulesBtn, showRules);
+        setTabbedWidgetVisible(hudStudioBtn, showRules);
     }
 
     private void setTabbedWidgetVisible(ClickableWidget widget, boolean visible) {
@@ -844,6 +858,11 @@ public class LatitudeCreateWorldScreen extends Screen {
             optional.ifPresent(rules -> this.gameRules = rules);
             this.client.setScreen(this);
         }));
+    }
+
+    private void openHudStudio() {
+        if (this.client == null) return;
+        this.client.setScreen(new LatitudeHudStudioScreen(this));
     }
 
     // ── Begin Expedition ──
