@@ -808,12 +808,19 @@ class Handler(BaseHTTPRequestHandler):
     def handle_inventory(self, run: str, layer: str):
         run_dir = run_path(run)
         if not run_dir.exists():
-            self._send_json([], HTTPStatus.NOT_FOUND)
+            self._send_json({"ok": False, "message": f"Run not found: {run}", "biomes": []}, HTTPStatus.NOT_FOUND)
             return
 
         inventory_path = layer_file(run_dir, layer, "world_biome_inventory.json")
         if not inventory_path or not inventory_path.exists():
-            self._send_json([])
+            self._send_json(
+                {
+                    "ok": False,
+                    "message": f"Inventory file missing: {inventory_path or 'world_biome_inventory.json'}",
+                    "biomes": [],
+                },
+                HTTPStatus.NOT_FOUND,
+            )
             return
 
         try:
@@ -844,9 +851,16 @@ class Handler(BaseHTTPRequestHandler):
                         "discovery_hits": row.get("discovery_hits"),
                     }
                 )
-            self._send_json(out)
+            self._send_json({"ok": True, "biomes": out, "message": "", "source": str(inventory_path)})
         except Exception:
-            self._send_json([])
+            self._send_json(
+                {
+                    "ok": False,
+                    "message": f"Inventory file unreadable: {inventory_path}",
+                    "biomes": [],
+                },
+                HTTPStatus.INTERNAL_SERVER_ERROR,
+            )
 
     def handle_legend(self, run: str, layer: str):
         run_dir = run_path(run)
