@@ -54,7 +54,19 @@ public final class CompassHud {
 
     private static void renderInternal(DrawContext ctx, int screenW, int screenH, boolean forceVisible) {
         MinecraftClient client = MinecraftClient.getInstance();
-        if (client == null || client.player == null || client.world == null) {
+        if (client == null || client.getWindow() == null) {
+            return;
+        }
+
+        var cfg = CompassHudConfig.get();
+
+        if (forceVisible && (client.player == null || client.world == null)) {
+            HudBounds previewBounds = computeBounds(client, cfg);
+            renderPreview(ctx, client, cfg, previewBounds.x(), previewBounds.y());
+            return;
+        }
+
+        if (client.player == null || client.world == null) {
             return;
         }
 
@@ -62,7 +74,6 @@ public final class CompassHud {
             return;
         }
 
-        var cfg = CompassHudConfig.get();
         if (!forceVisible && !cfg.enabled) {
             return;
         }
@@ -273,7 +284,8 @@ public final class CompassHud {
         int cx = x + radius;
         int cy = y + radius;
 
-        double angle = Math.toRadians(MathHelper.wrapDegrees(client.player.getYaw() + 180.0f));
+        float yaw = client.player != null ? client.player.getYaw() : -180.0f;
+        double angle = Math.toRadians(MathHelper.wrapDegrees(yaw + 180.0f));
 
         drawAnalogCompass(ctx, cfg, cx, cy, radius, angle);
 
