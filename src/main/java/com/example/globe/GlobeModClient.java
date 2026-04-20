@@ -12,6 +12,8 @@ import com.example.globe.client.SpawnZoneScreen;
 import com.example.globe.client.EwSandstormOverlayRenderer;
 import com.example.globe.client.EwStormWallRenderer;
 import com.example.globe.dev.DevCaptureKeybind;
+import com.example.globe.dev.client.SeamAuditClientBridge;
+import com.example.globe.dev.client.audit.SeamAuditHarness;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.api.ClientModInitializer;
@@ -73,6 +75,8 @@ public class GlobeModClient implements ClientModInitializer {
         ClientKeybinds.init();
         if (FabricLoader.getInstance().isDevelopmentEnvironment()) {
             DevCaptureKeybind.init();
+            SeamAuditClientBridge.init();
+            SeamAuditHarness.init();
         }
         ClientTickEvents.END_CLIENT_TICK.register(GlobeModClient::clientKeybindTick);
 
