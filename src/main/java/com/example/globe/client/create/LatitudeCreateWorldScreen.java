@@ -24,6 +24,7 @@ import net.minecraft.SharedConstants;
 import net.minecraft.server.command.CommandManager;
 import net.minecraft.command.permission.LeveledPermissionPredicate;
 import net.minecraft.text.Text;
+import net.minecraft.util.Formatting;
 import net.minecraft.util.Util;
 import net.minecraft.world.Difficulty;
 import net.minecraft.world.GameMode;
@@ -98,6 +99,10 @@ public class LatitudeCreateWorldScreen extends Screen {
             "Vast distances. Bring supplies.",
             "A world that could take a lifetime to cross."
     };
+
+    private static final Text SMALL_WORLD_WARNING = Text.literal(
+            "Smaller world sizes are still being tuned and may show biome distribution distortion."
+    ).formatted(Formatting.ITALIC, Formatting.GOLD);
 
     // ── Game mode constants ──
     private static final String[] MODE_NAMES = { "Survival", "Hardcore", "Creative" };
@@ -1025,6 +1030,10 @@ public class LatitudeCreateWorldScreen extends Screen {
         drawBoundedText(context, "World Name", new UiRect(inputX, worldFieldY - labelOff, leftTextWidth, uiFontHeight()), labelColor, false, false);
         drawBoundedText(context, "Seed", new UiRect(inputX, seedFieldY - labelOff, leftTextWidth, uiFontHeight()), labelColor, false, false);
         drawBoundedText(context, "World Size", new UiRect(inputX, sizeFieldY - labelOff, leftTextWidth, uiFontHeight()), labelColor, false, false);
+        if (shouldShowSmallWorldWarning()) {
+            int warningY = sizeFieldY - labelOff - uiFontHeight() - scaledUi(2);
+            drawBoundedStyledText(context, SMALL_WORLD_WARNING, new UiRect(inputX, warningY, leftTextWidth, uiFontHeight()), 0xFFF0A030, false, true);
+        }
         renderSizeLabel(context, inputX + stepperBtnW + scaledUi(4), sizeFieldY - 1, leftTextWidth - stepperBtnW * 2 - scaledUi(8));
         int separatorY = inputBottomY - 2;
         context.fill(leftX + 4, separatorY, leftX + leftW - 4 - SCROLLBAR_GUTTER, separatorY + 1, PANEL_BORDER);
@@ -1153,6 +1162,13 @@ public class LatitudeCreateWorldScreen extends Screen {
         drawCenteredBoundedText(context, shortName, new UiRect(x, y, availW, uiFontHeight()), WARM_WHITE, true, true);
         drawCenteredBoundedText(context, diameter, new UiRect(x, y + scaledUi(11), availW, uiFontHeight()), MUTED, false, true);
         drawWrappedTextBlock(context, desc, new UiRect(x, y + scaledUi(22), availW, Math.max(uiFontHeight(), computeSizeLabelBottom(y, availW) - (y + scaledUi(22)))), MUTED, false, 3, true, true);
+    }
+
+    private boolean shouldShowSmallWorldWarning() {
+        return switch (selectedSize) {
+            case ITTY_BITTY, TINY, SMALL -> true;
+            default -> false;
+        };
     }
 
     private void renderPlanispherePreview(DrawContext context, int areaLeft, int areaTop, int areaRight, int areaBottom) {
@@ -1437,6 +1453,20 @@ public class LatitudeCreateWorldScreen extends Screen {
         int drawX = clampToRect(rect.x, uiTextWidth(fitted), rect.x, rect.right());
         int drawY = clampToRect(rect.y, uiFontHeight(), rect.y, rect.bottom());
         drawUiText(context, fitted, drawX, drawY, color, shadow);
+        return true;
+    }
+
+    private boolean drawBoundedStyledText(DrawContext context, Text text, UiRect rect, int color, boolean shadow, boolean ellipsize) {
+        if (!fitsHeight(rect.h)) {
+            return false;
+        }
+        String fitted = ellipsize ? ellipsizeToWidth(text.getString(), rect.w) : text.getString();
+        if (fitted.isEmpty() || (!ellipsize && !fitsWidth(fitted, rect.w))) {
+            return false;
+        }
+        int drawX = clampToRect(rect.x, uiTextWidth(fitted), rect.x, rect.right());
+        int drawY = clampToRect(rect.y, uiFontHeight(), rect.y, rect.bottom());
+        context.drawText(this.textRenderer, Text.literal(fitted).setStyle(text.getStyle()), drawX, drawY, color, shadow);
         return true;
     }
 
