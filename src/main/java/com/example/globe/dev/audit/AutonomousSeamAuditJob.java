@@ -280,28 +280,29 @@ public final class AutonomousSeamAuditJob {
         Files.writeString(job.auditDir.resolve("metadata.json"), json.toString(), StandardCharsets.UTF_8);
     }
 
-    private static ProbeResult runProbe(Job job, int probeRadiusBlocks, int samples) {
+    /**
+     * Strip-constrained rectangular probe. Samples uniformly within [xMin,xMax]×[zMin,zMax].
+     * All bounds must lie within the prepared strip so loaded counts are meaningful.
+     */
+    private static ProbeResult runRectProbe(Job job, int xMin, int xMax, int zMin, int zMax, int samples) {
         ServerWorld world = job.world;
-        int centerX = job.targetX;
-        int centerZ = job.targetZ;
         int sampleY = job.targetY > 0
                 ? job.targetY
                 : MathHelper.clamp(96, world.getBottomY() + 1, world.getBottomY() + world.getHeight() - 1);
 
-        long seed = world.getSeed() ^ mix64(((long) centerX << 32) ^ (centerZ & 0xffffffffL) ^ probeRadiusBlocks);
+        long seed = world.getSeed() ^ mix64(((long) xMin << 32) ^ (xMax & 0xffffffffL) ^ (long) zMin ^ ((long) zMax << 16));
         Random rng = new Random(seed);
 
         Map<String, Integer> biomeCounts = new HashMap<>();
         Map<String, Integer> bandCounts = new HashMap<>();
         int unloaded = 0;
 
+        int xSpan = Math.max(1, xMax - xMin);
+        int zSpan = Math.max(1, zMax - zMin);
+
         for (int i = 0; i < samples; i++) {
-            double r = Math.sqrt(rng.nextDouble()) * probeRadiusBlocks;
-            double theta = rng.nextDouble() * (Math.PI * 2.0);
-            int dx = (int) Math.round(r * Math.cos(theta));
-            int dz = (int) Math.round(r * Math.sin(theta));
-            int sx = centerX + dx;
-            int sz = centerZ + dz;
+            int sx = xMin + (int) Math.floor(rng.nextDouble() * xSpan);
+            int sz = zMin + (int) Math.floor(rng.nextDouble() * zSpan);
 
             int cx = Math.floorDiv(sx, 16);
             int cz = Math.floorDiv(sz, 16);
@@ -319,7 +320,8 @@ public final class AutonomousSeamAuditJob {
         }
 
         int loaded = samples - unloaded;
-        return new ProbeResult(probeRadiusBlocks, samples, loaded, unloaded, seed, biomeCounts, bandCounts);
+        String geometry = "rect:" + xMin + "," + xMax + "," + zMin + "," + zMax;
+        return new ProbeResult(geometry, samples, loaded, unloaded, seed, biomeCounts, bandCounts);
     }
 
     private static void writeProbeFile(Job job, Path file, ProbeResult r) throws IOException {
@@ -329,7 +331,7 @@ public final class AutonomousSeamAuditJob {
         sb.append("edge=").append(job.edge.argName()).append("\n");
         sb.append("targetDeg=").append(fmt(job.targetDeg)).append("\n");
         sb.append("centerX=").append(job.targetX).append(" centerY=").append(job.targetY).append(" centerZ=").append(job.targetZ).append("\n");
-        sb.append("probeRadiusBlocks=").append(r.radiusBlocks).append("\n");
+        sb.append("geometry=").append(r.geometry).append("\n");
         sb.append("samples=").append(r.samples)
                 .append(" loaded=").append(r.loaded)
                 .append(" unloaded=").append(r.unloaded)
@@ -433,8 +435,8 @@ public final class AutonomousSeamAuditJob {
         json.append("    \"readinessWaitedTicks\": ").append(job.readinessWaitedTicks).append(",\n");
         json.append("    \"timedOut\": ").append(job.readinessTimedOut).append("\n");
         json.append("  },\n");
-        json.append("  \"probe512\": ").append(probeSummaryJson(job.probeSmall)).append(",\n");
-        json.append("  \"probe1024\": ").append(probeSummaryJson(job.probeLarge)).append(",\n");
+        json.append("  \"probeStrip\": ").append(probeSummaryJson(job.probeSmall)).append(",\n");
+        json.append("  \"probeSeam\": ").append(probeSummaryJson(job.probeLarge)).append(",\n");
         json.append("  \"validLoadedSampleRatio\": ").append(fmt(finalLoadedRatio)).append(",\n");
         json.append("  \"prepCompleted\": ").append(job.prepCompleted).append(",\n");
         json.append("  \"screenshotCaptured\": ").append(screenshotExists).append(",\n");
@@ -451,7 +453,7 @@ public final class AutonomousSeamAuditJob {
     private static String probeSummaryJson(ProbeResult r) {
         if (r == null) return "null";
         StringBuilder sb = new StringBuilder();
-        sb.append("{ \"radiusBlocks\": ").append(r.radiusBlocks);
+        sb.append("{ \"geometry\": \"").append(escape(r.geometry)).append("\"");
         sb.append(", \"samples\": ").append(r.samples);
         sb.append(", \"loaded\": ").append(r.loaded);
         sb.append(", \"unloaded\": ").append(r.unloaded);
@@ -564,7 +566,7 @@ public final class AutonomousSeamAuditJob {
     }
 
     private record ProbeResult(
-            int radiusBlocks,
+            String geometry,
             int samples,
             int loaded,
             int unloaded,
@@ -689,10 +691,16 @@ public final class AutonomousSeamAuditJob {
                     }
                 }
                 case PROBE -> {
-                    probeSmall = runProbe(this, 512, samples);
-                    probeLarge = runProbe(this, 1024, Math.min(4000, samples * 2));
-                    writeProbeFile(this, auditDir.resolve("probe_512.txt"), probeSmall);
-                    writeProbeFile(this, auditDir.resolve("probe_1024.txt"), probeLarge);
+                    int sxMin = plan.min().x * 16;
+                    int sxMax = plan.max().x * 16 + 15;
+                    int szMin = plan.min().z * 16;
+                    int szMax = plan.max().z * 16 + 15;
+                    // Tight seam-crossing zone: full along-seam width, inner 1/3 of cross-seam half-width.
+                    int seamZHalf = Math.max(16, plan.crossSeamHalfWidthBlocks() / 3);
+                    probeSmall = runRectProbe(this, sxMin, sxMax, szMin, szMax, samples);
+                    probeLarge = runRectProbe(this, sxMin, sxMax, targetZ - seamZHalf, targetZ + seamZHalf, Math.min(4000, samples * 2));
+                    writeProbeFile(this, auditDir.resolve("probe_strip.txt"), probeSmall);
+                    writeProbeFile(this, auditDir.resolve("probe_seam.txt"), probeLarge);
                     stage = Stage.HERE;
                 }
                 case HERE -> {
