@@ -6678,24 +6678,7 @@ public final class LatitudeBiomes {
             ProvinceAuthority.Province province = classifyProvince(blockX, blockZ);
             boolean strongOpen = opennessNoise >= 0.76 || (u > 0.82 && opennessNoise >= 0.68);
             if (province == ProvinceAuthority.Province.WARM_DRY) {
-                if ((u > 0.86 || opennessNoise > 0.82) && compositionBias < -0.06) {
-                    try {
-                        return biome(biomes, "minecraft:desert");
-                    } catch (Throwable ignored) {
-                        // fall through
-                    }
-                }
-                if (isJungleFamily(base)) {
-                    return pickDryWarmFallback(biomes, base);
-                }
-                if (u > 0.72 || strongOpen || compositionBias < 0.10) {
-                    try {
-                        return biome(biomes, "minecraft:desert");
-                    } catch (Throwable ignored) {
-                        // fall through
-                    }
-                }
-                return pickDryWarmFallback(biomes, base);
+                return pickAridRegionFallback(biomes, base, blockX, blockZ);
             }
             if ((u > 0.86 || opennessNoise > 0.82) && compositionBias < -0.06) {
                 try {
@@ -6792,28 +6775,8 @@ public final class LatitudeBiomes {
         ProvinceAuthority.Province province = classifyProvince(blockX, blockZ);
         boolean strongOpen = opennessNoise >= 0.76 || (u > 0.82 && opennessNoise >= 0.68);
         if (province == ProvinceAuthority.Province.WARM_DRY) {
-            if ((u > 0.86 || opennessNoise > 0.82) && compositionBias < -0.06) {
-                try {
-                    RegistryEntry<Biome> pick = biome(biomes, "minecraft:desert");
-                    return warmOpenAuditReturn("open_province_dry_desert_return", pick, pick != base, compositionBias, opennessNoise, strongOpen);
-                } catch (Throwable ignored) {
-                    // fall through
-                }
-            }
-            if (isJungleFamily(base)) {
-                RegistryEntry<Biome> pick = pickDryWarmFallback(biomes, base);
-                return warmOpenAuditReturn("open_province_dry_fallback_return", pick, pick != base, compositionBias, opennessNoise, strongOpen);
-            }
-            if (u > 0.72 || strongOpen || compositionBias < 0.10) {
-                try {
-                    RegistryEntry<Biome> pick = biome(biomes, "minecraft:desert");
-                    return warmOpenAuditReturn("open_province_dry_desert_return", pick, pick != base, compositionBias, opennessNoise, strongOpen);
-                } catch (Throwable ignored) {
-                    // fall through
-                }
-            }
-            RegistryEntry<Biome> pick = pickDryWarmFallback(biomes, base);
-            return warmOpenAuditReturn("open_province_dry_fallback_return", pick, pick != base, compositionBias, opennessNoise, strongOpen);
+            RegistryEntry<Biome> pick = pickAridRegionFallback(biomes, base, blockX, blockZ);
+            return warmOpenAuditReturn("open_province_dry_arid_return", pick, pick != base, compositionBias, opennessNoise, strongOpen);
         }
         if ((u > 0.86 || opennessNoise > 0.82) && compositionBias < -0.06) {
             try {
@@ -6947,26 +6910,7 @@ public final class LatitudeBiomes {
             ProvinceAuthority.Province province = classifyProvince(blockX, blockZ);
             boolean strongOpen = opennessNoise >= 0.76 || (u > 0.82 && opennessNoise >= 0.68);
             if (province == ProvinceAuthority.Province.WARM_DRY) {
-                if ((u > 0.86 || opennessNoise > 0.82) && compositionBias < -0.06) {
-                    RegistryEntry<Biome> desert = entryById(biomes, "minecraft:desert");
-                    if (desert != null) {
-                        return desert;
-                    }
-                }
-                if (isJungleFamily(base)) {
-                    return pickDryWarmFallback(biomes, base);
-                }
-                if (u > 0.72 || strongOpen || compositionBias < 0.10) {
-                    RegistryEntry<Biome> desert = entryById(biomes, "minecraft:desert");
-                    if (desert != null) {
-                        return desert;
-                    }
-                }
-                RegistryEntry<Biome> desert = entryById(biomes, "minecraft:desert");
-                if (desert != null) {
-                    return desert;
-                }
-                return pickDryWarmFallback(biomes, base);
+                return pickAridRegionFallback(biomes, base, blockX, blockZ);
             }
             if ((u > 0.86 || opennessNoise > 0.82) && compositionBias < -0.06) {
                 RegistryEntry<Biome> desert = entryById(biomes, "minecraft:desert");
@@ -7049,27 +6993,8 @@ public final class LatitudeBiomes {
         ProvinceAuthority.Province province = classifyProvince(blockX, blockZ);
         boolean strongOpen = opennessNoise >= 0.76 || (u > 0.82 && opennessNoise >= 0.68);
         if (province == ProvinceAuthority.Province.WARM_DRY) {
-            if ((u > 0.86 || opennessNoise > 0.82) && compositionBias < -0.06) {
-                RegistryEntry<Biome> desert = entryById(biomes, "minecraft:desert");
-                if (desert != null) {
-                    return warmOpenAuditReturn("open_province_dry_desert_return", desert, desert != base, compositionBias, opennessNoise, strongOpen);
-                }
-            }
-            if (isJungleFamily(base)) {
-                RegistryEntry<Biome> pick = pickDryWarmFallback(biomes, base);
-                return warmOpenAuditReturn("open_province_dry_fallback_return", pick, pick != base, compositionBias, opennessNoise, strongOpen);
-            }
-            if (u > 0.72 || strongOpen || compositionBias < 0.10) {
-                RegistryEntry<Biome> desert = entryById(biomes, "minecraft:desert");
-                if (desert != null) {
-                    return warmOpenAuditReturn("open_province_dry_desert_return", desert, desert != base, compositionBias, opennessNoise, strongOpen);
-                }
-            }
-            RegistryEntry<Biome> pick = entryById(biomes, "minecraft:desert");
-            if (pick == null) {
-                pick = pickDryWarmFallback(biomes, base);
-            }
-            return warmOpenAuditReturn("open_province_dry_fallback_return", pick, pick != base, compositionBias, opennessNoise, strongOpen);
+            RegistryEntry<Biome> pick = pickAridRegionFallback(biomes, base, blockX, blockZ);
+            return warmOpenAuditReturn("open_province_dry_arid_return", pick, pick != base, compositionBias, opennessNoise, strongOpen);
         }
         if ((u > 0.86 || opennessNoise > 0.82) && compositionBias < -0.06) {
             RegistryEntry<Biome> desert = entryById(biomes, "minecraft:desert");
@@ -8495,6 +8420,9 @@ public final class LatitudeBiomes {
         if (!tropicalBand && isJungleFamily(out) && warmProvince != ProvinceAuthority.Province.WARM_WET) {
             out = pickDryWarmFallback(biomes, out);
         }
+        if (tropicalBand && warmProvince == ProvinceAuthority.Province.WARM_DRY && isJungleFamily(out)) {
+            out = pickAridRegionFallback(biomes, out, blockX, blockZ);
+        }
         boolean allowWarmMediumSavannaClamp = warmProvince != ProvinceAuthority.Province.WARM_MEDIUM
                 || isSavannaFamily(out)
                 || isBiomeId(out, "minecraft:plains")
@@ -8633,6 +8561,9 @@ public final class LatitudeBiomes {
         }
         if (!tropicalBand && isJungleFamily(out) && warmProvince != ProvinceAuthority.Province.WARM_WET) {
             out = pickDryWarmFallback(biomes, out);
+        }
+        if (tropicalBand && warmProvince == ProvinceAuthority.Province.WARM_DRY && isJungleFamily(out)) {
+            out = pickAridRegionFallback(biomes, out, blockX, blockZ);
         }
         boolean allowWarmMediumSavannaClamp = warmProvince != ProvinceAuthority.Province.WARM_MEDIUM
                 || isSavannaFamily(out)
