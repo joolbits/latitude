@@ -1498,7 +1498,11 @@ public class LatitudeCreateWorldScreen extends Screen {
             }
             Text lineText = Text.literal(line).setStyle(text.getStyle());
             if (center) {
-                drawCenteredBoundedText(context, lineText.getString(), new UiRect(rect.x, y, rect.w, uiFontHeight()), color, shadow, true);
+                String fitted = ellipsizeToWidth(lineText.getString(), rect.w);
+                if (!fitted.isEmpty()) {
+                    int drawX = rect.x + Math.max(0, (rect.w - uiTextWidth(fitted)) / 2);
+                    context.drawText(this.textRenderer, Text.literal(fitted).setStyle(lineText.getStyle().withItalic(true)), drawX, y, color, shadow);
+                }
             } else {
                 drawBoundedStyledText(context, lineText, new UiRect(rect.x, y, rect.w, uiFontHeight()), color, shadow, true);
             }
