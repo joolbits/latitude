@@ -54,8 +54,11 @@ import java.util.concurrent.CompletableFuture;
 public final class LatitudeDevCommand {
     private static final List<String> TP_BAND_NAMES = LatitudeBands.canonicalIds();
     private static final List<String> TP_EDGE_NAMES = List.of("center", "low", "high");
+    private static final List<String> SEAM_EDGE_NAMES = SeamAuditCoordinator.EdgeChoice.argNames();
     private static final int WINDSWEPT_RUGGED_THRESH = 8;
     private static final int WINDSWEPT_RUGGED_HYST = 2;
+    private static final int SEAM_AUDIT_DEFAULT_SAMPLES = 300;
+    private static final int SEAM_AUDIT_DEFAULT_WAIT_TICKS = 60;
 
     private LatitudeDevCommand() {
     }
@@ -97,6 +100,19 @@ public final class LatitudeDevCommand {
                                 .then(CommandManager.argument("radiusBlocks", IntegerArgumentType.integer())
                                         .then(CommandManager.argument("samples", IntegerArgumentType.integer())
                                                 .executes(LatitudeDevCommand::probe))))
+                        .then(CommandManager.literal("seamAudit")
+                                .then(CommandManager.argument("bandA", StringArgumentType.word())
+                                        .suggests((context, builder) -> CommandSource.suggestMatching(TP_BAND_NAMES, builder))
+                                        .then(CommandManager.argument("bandB", StringArgumentType.word())
+                                                .suggests((context, builder) -> CommandSource.suggestMatching(TP_BAND_NAMES, builder))
+                                                .executes(ctx -> seamAudit(ctx, false, false, false))
+                                                .then(CommandManager.argument("edge", StringArgumentType.word())
+                                                        .suggests((context, builder) -> CommandSource.suggestMatching(SEAM_EDGE_NAMES, builder))
+                                                        .executes(ctx -> seamAudit(ctx, true, false, false))
+                                                        .then(CommandManager.argument("samples", IntegerArgumentType.integer(50, 4000))
+                                                                .executes(ctx -> seamAudit(ctx, true, true, false))
+                                                                .then(CommandManager.argument("waitTicks", IntegerArgumentType.integer(0, 600))
+                                                                        .executes(ctx -> seamAudit(ctx, true, true, true))))))))
                         .then(CommandManager.literal("biomePng")
                                 .executes(LatitudeDevCommand::biomePngDefault)
                                 .then(CommandManager.argument("stepBlocks", IntegerArgumentType.integer(8, 512))
@@ -124,7 +140,7 @@ public final class LatitudeDevCommand {
 
     private static int help(CommandContext<ServerCommandSource> ctx) {
         ServerCommandSource source = ctx.getSource();
-        source.sendFeedback(() -> Text.literal("[latdev] commands: here | explainHere | tpBand <tropical|subtropical|temperate|subpolar|polar> [center|low|high] | probe <radiusBlocks> <samples> | biomePng [stepBlocks] [y] | biomePngY [y] | regen|regenChunk [radiusChunks] [biomes] [seed] | transect | transectDeg | slicePoleNS | pause | resume | stop | status | budgetMs | budgetAuto <on|off>"), false);
+        source.sendFeedback(() -> Text.literal("[latdev] commands: here | explainHere | tpBand <tropical|subtropical|temperate|subpolar|polar> [center|low|high] | probe <radiusBlocks> <samples> | seamAudit <bandA> <bandB> [center|low|high] [samples] [waitTicks] | biomePng [stepBlocks] [y] | biomePngY [y] | regen|regenChunk [radiusChunks] [biomes] [seed] | transect | transectDeg | slicePoleNS | pause | resume | stop | status | budgetMs | budgetAuto <on|off>"), false);
         return 1;
     }
 
@@ -383,6 +399,26 @@ public final class LatitudeDevCommand {
             return loaded > 0 ? 1 : 0;
         } catch (Exception e) {
             ctx.getSource().sendError(Text.literal("[latdev] probe error: " + e.getMessage()));
+            e.printStackTrace();
+            return 0;
+        }
+    }
+
+    private static int seamAudit(CommandContext<ServerCommandSource> ctx,
+                                 boolean hasEdge,
+                                 boolean hasSamples,
+                                 boolean hasWaitTicks) {
+        try {
+            ServerCommandSource source = ctx.getSource();
+            String bandA = StringArgumentType.getString(ctx, "bandA");
+            String bandB = StringArgumentType.getString(ctx, "bandB");
+            String edge = hasEdge ? StringArgumentType.getString(ctx, "edge") : "center";
+            int samples = hasSamples ? IntegerArgumentType.getInteger(ctx, "samples") : SEAM_AUDIT_DEFAULT_SAMPLES;
+            int waitTicks = hasWaitTicks ? IntegerArgumentType.getInteger(ctx, "waitTicks") : SEAM_AUDIT_DEFAULT_WAIT_TICKS;
+            int radius = authoritativeRadius(source);
+            return SeamAuditCoordinator.start(source, bandA, bandB, edge, samples, waitTicks, radius);
+        } catch (Exception e) {
+            ctx.getSource().sendError(Text.literal("[latdev] seamAudit error: " + e.getMessage()));
             e.printStackTrace();
             return 0;
         }

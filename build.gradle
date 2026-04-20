@@ -29,6 +29,21 @@ loom {
             inherit client
             vmArg "-Dlatitude.fixSurfaceDripstone=false"
         }
+        clientSeamAudit {
+            inherit client
+            name "Seam Audit (Autonomous Client)"
+            programArg "--quickPlaySingleplayer"
+            programArg System.getProperty('latitude.audit.world', 'Latitude')
+            vmArg "-Dlatitude.audit.seam=true"
+            vmArg "-Dlatitude.audit.bandPair=${System.getProperty('latitude.audit.bandPair', 'temperate-subpolar')}"
+            vmArg "-Dlatitude.audit.edge=${System.getProperty('latitude.audit.edge', 'center')}"
+            vmArg "-Dlatitude.audit.exitWhenDone=${System.getProperty('latitude.audit.exitWhenDone', 'true')}"
+            vmArg "-Dlatitude.audit.alongSeamSpan=${System.getProperty('latitude.audit.alongSeamSpan', '256')}"
+            vmArg "-Dlatitude.audit.crossSeamHalfWidth=${System.getProperty('latitude.audit.crossSeamHalfWidth', '96')}"
+            vmArg "-Dlatitude.audit.chunksPerTick=${System.getProperty('latitude.audit.chunksPerTick', '6')}"
+            vmArg "-Dlatitude.audit.readinessTimeoutTicks=${System.getProperty('latitude.audit.readinessTimeoutTicks', '3600')}"
+            vmArg "-Dlatitude.audit.samples=${System.getProperty('latitude.audit.samples', '300')}"
+        }
         biomePreview {
             server()
             name "Biome Preview (Headless)"
