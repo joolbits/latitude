@@ -13,6 +13,7 @@ Latitude 1.3.0 is a major upgrade from the 1.2.x line. It makes the world read m
 
 ### Player-facing improvements
 - Refined the create-world and loading flow so starting a world feels more intentional and less abrupt.
+- Fixed the excessively long first-time world creation/loading delay from the 1.2.x line, so first entry now feels much closer to normal vanilla startup.
 - Improved first-entry behavior after world creation and after upgrading an existing save.
 - Improved the first-run experience so the mod feels smoother and more finished from the moment you create or open a world.
 
