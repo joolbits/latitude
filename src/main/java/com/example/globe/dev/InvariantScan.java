@@ -20,7 +20,7 @@ public final class InvariantScan {
 
         byte[] clazz = readClassBytes("/com/example/globe/mixin/client/DownloadingTerrainScreenFirstLoadMessageMixin.class");
         String clazzText = new String(clazz, StandardCharsets.ISO_8859_1);
-        requireContains(clazzText, "Creating a new world may take a little longer.", errors, "first-load line 1 missing in mixin class");
+        requireContains(clazzText, "Press F9 in-game for HUD options", errors, "loading hint missing in mixin class");
 
         if (!errors.isEmpty()) {
             System.err.println("[Latitude invariant scan] FAIL");
