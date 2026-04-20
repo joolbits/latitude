@@ -200,6 +200,8 @@ public class GlobeMod implements ModInitializer {
             return;
         }
 
+        LatitudeWorldState.get(overworld);
+
         long seed = overworld.getServer().getSaveProperties().getGeneratorOptions().getSeed();
         LatitudeBiomes.setWorldSeed(seed);
 
