@@ -28,7 +28,8 @@ public final class LatitudeWorldState extends PersistentState {
                             .forGetter(LatitudeWorldState::isSpawnPickerDismissed),
                     WORLDGEN_POLICY_CODEC.optionalFieldOf("worldgen_policy")
                             .forGetter(state -> Optional.ofNullable(state.worldgenPolicy))
-            ).apply(instance, LatitudeWorldState::new)),
+            ).apply(instance, (spawnPickerDismissed, worldgenPolicy) ->
+                    new LatitudeWorldState(spawnPickerDismissed, normalizeWorldgenPolicy(worldgenPolicy)))),
             DataFixTypes.SAVED_DATA_COMMAND_STORAGE
     );
 
@@ -36,12 +37,16 @@ public final class LatitudeWorldState extends PersistentState {
     private WorldgenPolicyVersion worldgenPolicy;
 
     public LatitudeWorldState() {
-        this(false, null);
+        this(false, Optional.empty());
     }
 
     private LatitudeWorldState(boolean spawnPickerDismissed, Optional<WorldgenPolicyVersion> worldgenPolicy) {
         this.spawnPickerDismissed = spawnPickerDismissed;
-        this.worldgenPolicy = worldgenPolicy.orElse(null);
+        this.worldgenPolicy = normalizeWorldgenPolicy(worldgenPolicy).orElse(null);
+    }
+
+    private static Optional<WorldgenPolicyVersion> normalizeWorldgenPolicy(Optional<WorldgenPolicyVersion> worldgenPolicy) {
+        return worldgenPolicy == null ? Optional.empty() : worldgenPolicy;
     }
 
     public static LatitudeWorldState get(ServerWorld world) {
