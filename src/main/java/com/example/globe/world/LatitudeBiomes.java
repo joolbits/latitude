@@ -355,6 +355,7 @@ public final class LatitudeBiomes {
     private static final boolean DEBUG_MANGROVE_ORIGIN = Boolean.getBoolean("latitude.debugMangroveOrigin");
     private static final boolean DEBUG_OCEAN_DIST = Boolean.getBoolean("latitude.debugOceanDist");
     private static final boolean DEBUG_MANGROVE_INVITE = Boolean.getBoolean("latitude.debugMangroveInvite");
+    private static final boolean DEBUG_MANGROVE_FINAL = Boolean.getBoolean("latitude.audit.mangroveFinal");
     private static final boolean DEBUG_SPARSE_JUNGLE_AUDIT = Boolean.getBoolean("latitude.debug.sparseJungleAudit");
     private static final boolean DEBUG_SAVANNA_GATE_AUDIT = Boolean.getBoolean("latitude.debug.savannaGateAudit");
     private static final boolean DEBUG_SAVANNA_SPAWN_GATE = Boolean.getBoolean("latitude.debugSpawnGate");
@@ -400,6 +401,8 @@ public final class LatitudeBiomes {
     private static final java.util.concurrent.atomic.AtomicInteger MANGROVE_EVAL_AUDIT_N =
             new java.util.concurrent.atomic.AtomicInteger(0);
     private static final java.util.concurrent.atomic.AtomicLong MANGROVE_INVITE_LOG_COUNT = new java.util.concurrent.atomic.AtomicLong();
+    private static final AtomicLong MANGROVE_FINAL_LOG_COUNT = new AtomicLong();
+    private static final long MANGROVE_FINAL_LOG_LIMIT = Long.getLong("latitude.audit.mangroveFinal.limit", 200L);
     private static final AtomicLong SPARSE_TAG_PICK_COUNT = new AtomicLong();
     private static final AtomicLong SPARSE_SANITIZE_REWRITE_COUNT = new AtomicLong();
     private static final AtomicLong SPARSE_CANOPY_FALLBACK_COUNT = new AtomicLong();
@@ -3258,7 +3261,7 @@ public final class LatitudeBiomes {
             } else {
             if (shouldTryMangroveOverride(chosen, landBandIndex)) {
                 MangroveDecision decision = evaluateMangroveWithSurface(blockX, blockZ, columnDecisionY, preview, seaLevel, sampler, nearOcean, hasReliableSurface, hasPreviewTerrainInputs, heightView);
-                if (Boolean.getBoolean("latitude.audit.mangroveFinal")) {
+                if (DEBUG_MANGROVE_FINAL && MANGROVE_FINAL_LOG_COUNT.incrementAndGet() <= MANGROVE_FINAL_LOG_LIMIT) {
                     LOGGER.info("[mangrove-final-live] x={} z={} resultBiome={}",
                             blockX, blockZ, biomeId(chosen));
                 }
@@ -3268,7 +3271,7 @@ public final class LatitudeBiomes {
                     if (mangrove != null) {
                         RegistryEntry<Biome> before = chosen;
                         chosen = mangrove;
-                        if (Boolean.getBoolean("latitude.audit.mangroveFinal")) {
+                        if (DEBUG_MANGROVE_FINAL && MANGROVE_FINAL_LOG_COUNT.incrementAndGet() <= MANGROVE_FINAL_LOG_LIMIT) {
                             LOGGER.info("[mangrove-rewrite-live] x={} z={} old={} new={}",
                                     blockX, blockZ, biomeId(before), biomeId(chosen));
                         }
@@ -3281,7 +3284,7 @@ public final class LatitudeBiomes {
                 }
             } else if (isMangroveCandidate(chosen)) {
                 MangroveDecision decision = evaluateMangroveWithSurface(blockX, blockZ, columnDecisionY, preview, seaLevel, sampler, nearOcean, hasReliableSurface, hasPreviewTerrainInputs, heightView);
-                if (Boolean.getBoolean("latitude.audit.mangroveFinal")) {
+                if (DEBUG_MANGROVE_FINAL && MANGROVE_FINAL_LOG_COUNT.incrementAndGet() <= MANGROVE_FINAL_LOG_LIMIT) {
                     LOGGER.info("[mangrove-final-live] x={} z={} resultBiome={}",
                             blockX, blockZ, biomeId(chosen));
                 }
@@ -3289,7 +3292,7 @@ public final class LatitudeBiomes {
                 if (!decision.allow()) {
                     RegistryEntry<Biome> before = chosen;
                     chosen = pickMangroveFallback(biomePool, base, blockX, blockZ, t, landBandIndex);
-                    if (Boolean.getBoolean("latitude.audit.mangroveFinal")) {
+                    if (DEBUG_MANGROVE_FINAL && MANGROVE_FINAL_LOG_COUNT.incrementAndGet() <= MANGROVE_FINAL_LOG_LIMIT) {
                         LOGGER.info("[mangrove-rewrite-live] x={} z={} old={} new={}",
                                 blockX, blockZ, biomeId(before), biomeId(chosen));
                     }
@@ -3304,7 +3307,7 @@ public final class LatitudeBiomes {
             if (!isMangroveCandidate(chosen) && shouldInviteMangrove(blockX, columnDecisionY, blockZ, bandIndex, sampler, nearOcean)) {
                 invitedMangrove = true;
                 MangroveDecision decision = evaluateMangroveWithSurface(blockX, blockZ, columnDecisionY, preview, seaLevel, sampler, nearOcean, hasReliableSurface, hasPreviewTerrainInputs, heightView);
-                if (Boolean.getBoolean("latitude.audit.mangroveFinal")) {
+                if (DEBUG_MANGROVE_FINAL && MANGROVE_FINAL_LOG_COUNT.incrementAndGet() <= MANGROVE_FINAL_LOG_LIMIT) {
                     LOGGER.info("[mangrove-final-live] x={} z={} resultBiome={}",
                             blockX, blockZ, biomeId(chosen));
                 }
@@ -3314,7 +3317,7 @@ public final class LatitudeBiomes {
                     if (mangrove != null) {
                         RegistryEntry<Biome> before = chosen;
                         chosen = mangrove;
-                        if (Boolean.getBoolean("latitude.audit.mangroveFinal")) {
+                        if (DEBUG_MANGROVE_FINAL && MANGROVE_FINAL_LOG_COUNT.incrementAndGet() <= MANGROVE_FINAL_LOG_LIMIT) {
                             LOGGER.info("[mangrove-rewrite-live] x={} z={} old={} new={}",
                                     blockX, blockZ, biomeId(before), biomeId(chosen));
                         }
@@ -7586,7 +7589,7 @@ public final class LatitudeBiomes {
                     decision.suitable, decision.patch, decision.allow);
         };
         final java.util.function.BiConsumer<MangroveDecision, String> auditFinal = (decision, decisionLabel) -> {
-            if (!Boolean.getBoolean("latitude.audit.mangroveFinal")) return;
+            if (!DEBUG_MANGROVE_FINAL) return;
             int n = MANGROVE_EVAL_AUDIT_N.incrementAndGet();
             if (n <= 50 || (n % 2000) == 0) {
                 LOGGER.info("[mangrove-eval] n={} x={} z={} sea={} surfY={} oceanDist={} cont={} ero={} weird={} robust={} decision={}",
