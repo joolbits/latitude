@@ -11,6 +11,7 @@ import com.example.globe.dev.LatitudeDevCommand;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerWorldEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.server.command.CommandManager;
@@ -130,6 +131,9 @@ public class GlobeMod implements ModInitializer {
             LatitudeDevCommand.register(dispatcher);
         });
 
+        // Initialize province authority at world-load time, before spawn-chunk generation fires
+        // for brand-new worlds. SERVER_STARTED fires too late (after spawn chunks are pregenerated).
+        ServerWorldEvents.LOAD.register(GlobeMod::initLatitudeBiomesForWorld);
         ServerLifecycleEvents.SERVER_STARTED.register(GlobeMod::applyWorldBorder);
         BiomePreviewHeadlessRunner.register();
         ServerLifecycleEvents.SERVER_STOPPED.register(server -> {
@@ -190,6 +194,28 @@ public class GlobeMod implements ModInitializer {
         ServerTickEvents.END_SERVER_TICK.register(GlobeMod::borderUxTick);
     }
 
+    /**
+     * Fires at world-load time — before Minecraft pre-generates spawn chunks for new worlds.
+     * Seeds {@link LatitudeBiomes} with the world seed and radius so that province authority
+     * is non-null when the first worldgen call arrives.
+     *
+     * <p>Only acts on the Globe overworld; other dimensions are ignored.
+     */
+    private static void initLatitudeBiomesForWorld(MinecraftServer server, ServerWorld world) {
+        if (world != server.getOverworld()) {
+            return;
+        }
+        if (!isGlobeOverworld(world)) {
+            return;
+        }
+        long seed = server.getSaveProperties().getGeneratorOptions().getSeed();
+        int radius = borderRadiusForGlobeOverworld(world);
+        // Radius first: ensures rebuildProvinceAuthority() has a valid radius when the seed fires.
+        LatitudeBiomes.setRadius(radius);
+        LatitudeBiomes.setWorldSeed(seed);
+        LOGGER.info("[Latitude] Early init: province authority seeded before spawn-chunk generation (seed={} radius={})", seed, radius);
+    }
+
     private static void applyWorldBorder(MinecraftServer server) {
         ServerWorld overworld = server.getOverworld();
         if (overworld == null) {
@@ -202,10 +228,13 @@ public class GlobeMod implements ModInitializer {
 
         LatitudeWorldState.get(overworld);
 
+        int borderRadiusBlocks = borderRadiusForGlobeOverworld(overworld);
+        // Radius must be set before seed so rebuildProvinceAuthority() builds the authority
+        // atomically the moment the seed is available (not on the next setRadius call).
+        LatitudeBiomes.setRadius(borderRadiusBlocks);
+
         long seed = overworld.getServer().getSaveProperties().getGeneratorOptions().getSeed();
         LatitudeBiomes.setWorldSeed(seed);
-
-        int borderRadiusBlocks = borderRadiusForGlobeOverworld(overworld);
 
         WorldBorder border = overworld.getWorldBorder();
         // radiusBlocks is e.g. 3750 / 5000 / 7500

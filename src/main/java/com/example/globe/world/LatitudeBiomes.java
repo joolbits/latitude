@@ -7861,6 +7861,10 @@ public final class LatitudeBiomes {
             return null;
         }
         ProvinceAuthority.Province province = classifyProvince(blockX, blockZ);
+        if (province == null) {
+            // Authority not yet initialized or returned an unexpected value; skip province shaping.
+            return null;
+        }
         return switch (province) {
             case WARM_WET, WARM_MEDIUM, WARM_DRY -> province;
             default -> null;
