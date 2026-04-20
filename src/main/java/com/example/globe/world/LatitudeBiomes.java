@@ -2011,6 +2011,9 @@ public final class LatitudeBiomes {
     private static final long PALE_GARDEN_CORE_SHAPE_SALT = 0x7061_6C65_5F63_6F72L; // "pale_cor"
     private static final double PALE_GARDEN_CORE_RADIUS_FRAC = 0.50; // fraction of outer base radius
     private static final double PALE_GARDEN_CORE_WOBBLE_FRAC = 0.12;
+    // Minimum ocean distance for a core cell to survive as pale_garden.
+    // Core cells closer than this to ocean revert to dark_forest (landlocked veto).
+    private static final int PALE_GARDEN_MIN_OCEAN_DISTANCE_BLOCKS = 384;
 
     // dark_forest restoration density cap: outside the Pale Garden container,
     // restrict guard restorations to a noise-defined fraction of shoulder cells
@@ -2760,7 +2763,7 @@ public final class LatitudeBiomes {
                 }
             }
         }
-        out = enforcePaleGardenRegion(biomeRegistry, out, base, blockX, blockZ, landBandIndex, effectiveRadius);
+        out = enforcePaleGardenRegion(biomeRegistry, out, base, blockX, blockZ, landBandIndex, effectiveRadius, oceanDistance);
         out = softenTemperateWarmEdgeTaigaJump(biomeRegistry, base, out, blockX, blockZ, effectiveRadius, bandIndex, landBandIndex, mountainLike);
         RegistryEntry<Biome> postBandEnforce = out;
         if (DEBUG_BIOMES && isMangroveCandidate(out)) {
@@ -3377,7 +3380,7 @@ public final class LatitudeBiomes {
                 }
             }
         }
-        out = enforcePaleGardenRegion(biomePool, out, base, blockX, blockZ, landBandIndex, effectiveRadius);
+        out = enforcePaleGardenRegion(biomePool, out, base, blockX, blockZ, landBandIndex, effectiveRadius, oceanDistance);
         out = softenTemperateWarmEdgeTaigaJump(biomePool, base, out, blockX, blockZ, effectiveRadius, bandIndex, landBandIndex, mountainLike);
         RegistryEntry<Biome> postBandEnforce = out;
         if (DEBUG_BIOMES && isMangroveCandidate(out)) {
@@ -5203,7 +5206,8 @@ public final class LatitudeBiomes {
                                                                 int blockX,
                                                                 int blockZ,
                                                                 int bandIndex,
-                                                                int effectiveRadius) {
+                                                                int effectiveRadius,
+                                                                int oceanDistance) {
         if (bandIndex != BAND_TEMPERATE) {
             return candidate;
         }
@@ -5226,13 +5230,18 @@ public final class LatitudeBiomes {
             }
             return candidate;
         }
-        // Inside dark-forest container: inner core => pale_garden, ring => dark_forest.
+        // Inside dark-forest container: inner core => pale_garden (if landlocked), ring => dark_forest.
         boolean inCore = paleGardenCoreHit(WORLD_SEED, blockX, blockZ, effectiveRadius);
         if (inCore) {
-            try {
-                return biome(biomes, "minecraft:pale_garden");
-            } catch (Throwable ignored) {
-                return candidate;
+            // Landlocked veto: beach cells or cells too close to ocean become dark_forest instead.
+            boolean tooWet = isBeachLike(base)
+                    || (oceanDistance >= 0 && oceanDistance < PALE_GARDEN_MIN_OCEAN_DISTANCE_BLOCKS);
+            if (!tooWet) {
+                try {
+                    return biome(biomes, "minecraft:pale_garden");
+                } catch (Throwable ignored) {
+                    return candidate;
+                }
             }
         }
         try {
@@ -5248,7 +5257,8 @@ public final class LatitudeBiomes {
                                                                 int blockX,
                                                                 int blockZ,
                                                                 int bandIndex,
-                                                                int effectiveRadius) {
+                                                                int effectiveRadius,
+                                                                int oceanDistance) {
         if (bandIndex != BAND_TEMPERATE) {
             return candidate;
         }
@@ -5271,11 +5281,16 @@ public final class LatitudeBiomes {
             }
             return candidate;
         }
-        // Inside dark-forest container: inner core => pale_garden, ring => dark_forest.
+        // Inside dark-forest container: inner core => pale_garden (if landlocked), ring => dark_forest.
         boolean inCore = paleGardenCoreHit(WORLD_SEED, blockX, blockZ, effectiveRadius);
         if (inCore) {
-            RegistryEntry<Biome> paleGarden = entryById(biomes, "minecraft:pale_garden");
-            return paleGarden != null ? paleGarden : candidate;
+            // Landlocked veto: beach cells or cells too close to ocean become dark_forest instead.
+            boolean tooWet = isBeachLike(base)
+                    || (oceanDistance >= 0 && oceanDistance < PALE_GARDEN_MIN_OCEAN_DISTANCE_BLOCKS);
+            if (!tooWet) {
+                RegistryEntry<Biome> paleGarden = entryById(biomes, "minecraft:pale_garden");
+                return paleGarden != null ? paleGarden : candidate;
+            }
         }
         RegistryEntry<Biome> darkForest = entryById(biomes, "minecraft:dark_forest");
         return darkForest != null ? darkForest : candidate;
