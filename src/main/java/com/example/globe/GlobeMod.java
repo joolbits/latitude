@@ -189,8 +189,6 @@ public class GlobeMod implements ModInitializer {
             context.server().execute(() -> applySpawnChoice(context.player(), payload.zoneId()));
         });
 
-        CommandRegistrationCallback.EVENT.register(LatitudeDevCommands::register);
-
         ServerTickEvents.END_SERVER_TICK.register(GlobeMod::borderUxTick);
     }
 
