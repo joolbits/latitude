@@ -101,7 +101,7 @@ public class LatitudeCreateWorldScreen extends Screen {
     };
 
     private static final Text SMALL_WORLD_WARNING = Text.literal(
-            "Smaller world sizes are still being tuned and may show biome distribution distortion."
+            "Smaller world sizes are still being tuned and may distort biome distribution."
     ).formatted(Formatting.ITALIC, Formatting.GOLD);
 
     // ── Game mode constants ──
@@ -1473,7 +1473,7 @@ public class LatitudeCreateWorldScreen extends Screen {
         }
         int drawX = clampToRect(rect.x, uiTextWidth(fitted), rect.x, rect.right());
         int drawY = clampToRect(rect.y, uiFontHeight(), rect.y, rect.bottom());
-        context.drawText(this.textRenderer, Text.literal(fitted).setStyle(text.getStyle()), drawX, drawY, color, shadow);
+        context.drawText(this.textRenderer, Text.literal(fitted).setStyle(text.getStyle().withItalic(true)), drawX, drawY, color, shadow);
         return true;
     }
 
