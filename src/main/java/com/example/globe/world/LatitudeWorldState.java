@@ -7,29 +7,47 @@ import net.minecraft.server.world.ServerWorld;
 import net.minecraft.world.PersistentState;
 import net.minecraft.world.PersistentStateType;
 
+import java.util.Optional;
+
 public final class LatitudeWorldState extends PersistentState {
+    public enum WorldgenPolicyVersion {
+        LEGACY_1_2_X,
+        MODERN_1_3
+    }
+
+    private static final Codec<WorldgenPolicyVersion> WORLDGEN_POLICY_CODEC = Codec.STRING.xmap(
+            WorldgenPolicyVersion::valueOf,
+            Enum::name
+    );
+
     private static final PersistentStateType<LatitudeWorldState> STATE_TYPE = new PersistentStateType<>(
             "globe_latitude_world_state",
             LatitudeWorldState::new,
             RecordCodecBuilder.create(instance -> instance.group(
                     Codec.BOOL.optionalFieldOf("spawn_picker_dismissed", false)
-                            .forGetter(LatitudeWorldState::isSpawnPickerDismissed)
+                            .forGetter(LatitudeWorldState::isSpawnPickerDismissed),
+                    WORLDGEN_POLICY_CODEC.optionalFieldOf("worldgen_policy")
+                            .forGetter(state -> Optional.ofNullable(state.worldgenPolicy))
             ).apply(instance, LatitudeWorldState::new)),
             DataFixTypes.SAVED_DATA_COMMAND_STORAGE
     );
 
     private boolean spawnPickerDismissed;
+    private WorldgenPolicyVersion worldgenPolicy;
 
     public LatitudeWorldState() {
-        this(false);
+        this(false, null);
     }
 
-    private LatitudeWorldState(boolean spawnPickerDismissed) {
+    private LatitudeWorldState(boolean spawnPickerDismissed, Optional<WorldgenPolicyVersion> worldgenPolicy) {
         this.spawnPickerDismissed = spawnPickerDismissed;
+        this.worldgenPolicy = worldgenPolicy.orElse(null);
     }
 
     public static LatitudeWorldState get(ServerWorld world) {
-        return world.getPersistentStateManager().getOrCreate(STATE_TYPE);
+        LatitudeWorldState state = world.getPersistentStateManager().getOrCreate(STATE_TYPE);
+        state.ensureWorldgenPolicy(world);
+        return state;
     }
 
     public boolean isSpawnPickerDismissed() {
@@ -41,5 +59,34 @@ public final class LatitudeWorldState extends PersistentState {
             this.spawnPickerDismissed = spawnPickerDismissed;
             markDirty();
         }
+    }
+
+    public WorldgenPolicyVersion getWorldgenPolicy() {
+        return worldgenPolicy != null ? worldgenPolicy : WorldgenPolicyVersion.MODERN_1_3;
+    }
+
+    public void setWorldgenPolicy(WorldgenPolicyVersion worldgenPolicy) {
+        WorldgenPolicyVersion normalized = worldgenPolicy != null ? worldgenPolicy : WorldgenPolicyVersion.MODERN_1_3;
+        if (this.worldgenPolicy != normalized) {
+            this.worldgenPolicy = normalized;
+            LatitudeBiomes.setWorldgenPolicy(normalized);
+            markDirty();
+        } else {
+            LatitudeBiomes.setWorldgenPolicy(normalized);
+        }
+    }
+
+    private void ensureWorldgenPolicy(ServerWorld world) {
+        if (worldgenPolicy == null) {
+            setWorldgenPolicy(inferWorldgenPolicy(world));
+            return;
+        }
+        LatitudeBiomes.setWorldgenPolicy(worldgenPolicy);
+    }
+
+    private static WorldgenPolicyVersion inferWorldgenPolicy(ServerWorld world) {
+        return world.getTime() < 100L
+                ? WorldgenPolicyVersion.MODERN_1_3
+                : WorldgenPolicyVersion.LEGACY_1_2_X;
     }
 }

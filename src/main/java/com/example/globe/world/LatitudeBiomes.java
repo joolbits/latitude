@@ -20,6 +20,7 @@ import org.slf4j.LoggerFactory;
 import com.example.globe.util.LatitudeBands;
 import com.example.globe.util.LatitudeMath;
 import com.example.globe.util.ValueNoise2D;
+import com.example.globe.world.LatitudeWorldState.WorldgenPolicyVersion;
 
 import net.minecraft.registry.Registry;
 import net.minecraft.registry.RegistryKey;
@@ -373,6 +374,7 @@ public final class LatitudeBiomes {
     private static final int SAVANNA_GATE_AUDIT_SUMMARY_EVERY = Integer.getInteger("latitude.savannaGateAudit.summaryEvery", 50000);
     private static final int DEBUG_LIMIT = Integer.getInteger("latitude.debugBiomes.limit", 200);
     private static volatile long WORLD_SEED = 0L;
+    private static volatile WorldgenPolicyVersion ACTIVE_WORLDGEN_POLICY = WorldgenPolicyVersion.MODERN_1_3;
     public static volatile int ACTIVE_RADIUS_BLOCKS = 0;
     private static OceanDistanceField OCEAN_DISTANCE_FIELD = null;
     private static final AtomicInteger DEBUG_COUNT = new AtomicInteger();
@@ -1864,6 +1866,50 @@ public final class LatitudeBiomes {
     }
 
     private static boolean badlandsProvinceAuthorityHit(long worldSeed, int blockX, int blockZ, int effectiveRadiusHint) {
+        if (useLegacyWorldgenPolicy()) {
+            return badlandsProvinceAuthorityHitLegacy(worldSeed, blockX, blockZ, effectiveRadiusHint);
+        }
+        return badlandsProvinceAuthorityHitModern(worldSeed, blockX, blockZ, effectiveRadiusHint);
+    }
+
+    private static boolean badlandsProvinceAuthorityHitModern(long worldSeed, int blockX, int blockZ, int effectiveRadiusHint) {
+        int radius = effectiveRadiusHint > 0 ? effectiveRadiusHint : ACTIVE_RADIUS_BLOCKS;
+        if (radius <= 0) {
+            radius = REFERENCE_DIAMETER_BLOCKS / 2;
+        }
+        radius = Math.max(1, radius);
+
+        ProvinceAuthority.Province province = warmProvinceClass(
+                blockX,
+                blockZ,
+                authoritativeLandBandIndex(blockX, blockZ, radius));
+        if (province != ProvinceAuthority.Province.WARM_DRY) {
+            return false;
+        }
+
+        // Coarse, world-size-safe dry sub-province authority: two low-frequency ValueNoise2D
+        // layers derive coherent badlands regions inside WARM_DRY without committing to a
+        // single anchored ellipse. Scale is proportional to the active world radius in the
+        // same style as aridHotspotHere(...). Z sampling is mirrored about the equator and
+        // shifted so the noise lattice is anchored to the subtropical (dry) band midpoint,
+        // which forces hemisphere symmetry and prevents the noise feature from drifting
+        // entirely outside the dry band on small worlds where band span < noise scale.
+        int dryBandLowAbsZ = bandBoundaryBlocks(0, radius);
+        int dryBandHighAbsZ = bandBoundaryBlocks(1, radius);
+        int dryBandMidZ = (dryBandLowAbsZ + dryBandHighAbsZ) / 2;
+        int sampleZ = Math.abs(blockZ) - dryBandMidZ;
+
+        int primaryScale = Math.max(ARID_REGION_MIN_SCALE_BLOCKS, (int) Math.round(radius * 0.28));
+        double primary = ValueNoise2D.sampleBlocks(worldSeed ^ BADLANDS_REGION_SHAPE_SALT, blockX, sampleZ, primaryScale);
+        if (primary >= 0.40) {
+            return false;
+        }
+        int wobbleScale = Math.max(ARID_REGION_MIN_SCALE_BLOCKS, primaryScale / 2);
+        double wobble = ValueNoise2D.sampleBlocks(worldSeed ^ BADLANDS_PROVINCE_WOBBLE_SALT, blockX, sampleZ, wobbleScale);
+        return wobble < 0.72;
+    }
+
+    private static boolean badlandsProvinceAuthorityHitLegacy(long worldSeed, int blockX, int blockZ, int effectiveRadiusHint) {
         int radius = effectiveRadiusHint > 0 ? effectiveRadiusHint : ACTIVE_RADIUS_BLOCKS;
         if (radius <= 0) {
             radius = REFERENCE_DIAMETER_BLOCKS / 2;
@@ -1970,6 +2016,18 @@ public final class LatitudeBiomes {
         return secondary < 0.46;
     }
 
+    public static void setWorldgenPolicy(WorldgenPolicyVersion worldgenPolicy) {
+        ACTIVE_WORLDGEN_POLICY = worldgenPolicy != null ? worldgenPolicy : WorldgenPolicyVersion.MODERN_1_3;
+    }
+
+    public static WorldgenPolicyVersion getWorldgenPolicy() {
+        return ACTIVE_WORLDGEN_POLICY;
+    }
+
+    private static boolean useLegacyWorldgenPolicy() {
+        return ACTIVE_WORLDGEN_POLICY == WorldgenPolicyVersion.LEGACY_1_2_X;
+    }
+
     private record PreviewTerrain(int centerHeight, int robustDelta) {
     }
 
@@ -2028,6 +2086,7 @@ public final class LatitudeBiomes {
     private static final long BADLANDS_REGION_ANCHOR_X_SALT = 0x6261_646C_5F61_6E63L; // "badl_anc"
     private static final long BADLANDS_REGION_ANCHOR_Z_SALT = 0x6261_646C_5F61_7A7AL; // "badl_azz"
     private static final long BADLANDS_REGION_SHAPE_SALT = 0x6261_646C_5F736861L; // "badl_sha"
+    private static final long BADLANDS_PROVINCE_WOBBLE_SALT = 0x6261_646C_5F70_776FL; // "badl_pwo"
     private static final long BADLANDS_REGION_CORE_SHAPE_SALT = 0x6261_646C_5F636F72L; // "badl_cor"
     private static final long BADLANDS_OUTSIDE_PROVINCE_SALT = 0x6261_646C_5F6F7574L; // "badl_out"
     private static final double BADLANDS_OUTSIDE_PROVINCE_THRESHOLD = 0.22;
