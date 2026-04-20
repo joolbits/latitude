@@ -765,7 +765,9 @@ public class LatitudeCreateWorldScreen extends Screen {
         int viewportHeight = Math.max(0, settingsViewportBottom - settingsViewportTop);
         int contentTop = settingsViewportTop + scaledUi(4);
         int blockHeight = labelGap + btnH;
-        settingsContentHeight = blockHeight * 7 + rowGap * 6;
+        // Leave a little trailing room so the HUD Studio row can scroll fully into view
+        // on short windows instead of sitting flush against the viewport edge.
+        settingsContentHeight = blockHeight * 7 + rowGap * 6 + scaledUi(12);
         int maxScroll = Math.max(0, settingsContentHeight - viewportHeight);
         if (settingsScroll < 0) settingsScroll = 0;
         if (settingsScroll > maxScroll) settingsScroll = maxScroll;
