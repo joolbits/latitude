@@ -539,6 +539,10 @@ public class LatitudeCreateWorldScreen extends Screen {
         return y + scaledUi(22) + wrapLineCount(SIZE_DESCRIPTIONS[selectedSize.ordinal()], Math.max(40, availW)) * uiFontHeight();
     }
 
+    private int getSmallWorldWarningHeight(int width) {
+        return wrapLineCount(SMALL_WORLD_WARNING.getString(), Math.max(40, width)) * uiFontHeight();
+    }
+
     private int computeZoneListTop() {
         return panelTop + scaledUi(22) + wrappedTextHeight("Choose the climate where your journey begins", Math.max(80, rightW - scaledUi(20) - SCROLLBAR_GUTTER)) + scaledUi(10);
     }
@@ -636,7 +640,9 @@ public class LatitudeCreateWorldScreen extends Screen {
         int previewHeight = Math.max(scaledUi(150), Math.min(leftW - scaledUi(20) - SCROLLBAR_GUTTER, Math.max(scaledUi(170), panelBottom - panelTop - scaledUi(80))));
         int baseWorldY = contentTop + labelFieldGap;
         int baseSeedY = baseWorldY + fieldGap1;
-        int baseSizeY = baseSeedY + fieldGap2;
+        int warningHeight = shouldShowSmallWorldWarning() ? getSmallWorldWarningHeight(inputW) : 0;
+        int warningGap = warningHeight > 0 ? scaledUi(4) : 0;
+        int baseSizeY = baseSeedY + fieldGap2 + warningHeight + warningGap;
         int baseInputBottom = Math.max(baseSizeY + btnH, computeSizeLabelBottom(baseSizeY - 1, inputW - stepperBtnW * 2 - scaledUi(8))) + scaledUi(12);
         int basePreviewTop = baseInputBottom + discGap + uiFontHeight();
         int basePreviewBottom = basePreviewTop + previewHeight;
@@ -1027,13 +1033,14 @@ public class LatitudeCreateWorldScreen extends Screen {
         int labelColor = GOLD;
         int labelOff = scaledUi(10);
         int leftTextWidth = Math.max(24, leftW - 8 - SCROLLBAR_GUTTER);
+        if (shouldShowSmallWorldWarning()) {
+            int warningHeight = getSmallWorldWarningHeight(leftTextWidth);
+            int warningY = sizeFieldY - labelOff - warningHeight - scaledUi(2);
+            drawWrappedStyledTextBlock(context, SMALL_WORLD_WARNING, new UiRect(inputX, warningY, leftTextWidth, warningHeight), 0xFFF0A030, false, 2, true, true);
+        }
         drawBoundedText(context, "World Name", new UiRect(inputX, worldFieldY - labelOff, leftTextWidth, uiFontHeight()), labelColor, false, false);
         drawBoundedText(context, "Seed", new UiRect(inputX, seedFieldY - labelOff, leftTextWidth, uiFontHeight()), labelColor, false, false);
         drawBoundedText(context, "World Size", new UiRect(inputX, sizeFieldY - labelOff, leftTextWidth, uiFontHeight()), labelColor, false, false);
-        if (shouldShowSmallWorldWarning()) {
-            int warningY = sizeFieldY - labelOff - uiFontHeight() - scaledUi(2);
-            drawBoundedStyledText(context, SMALL_WORLD_WARNING, new UiRect(inputX, warningY, leftTextWidth, uiFontHeight()), 0xFFF0A030, false, true);
-        }
         renderSizeLabel(context, inputX + stepperBtnW + scaledUi(4), sizeFieldY - 1, leftTextWidth - stepperBtnW * 2 - scaledUi(8));
         int separatorY = inputBottomY - 2;
         context.fill(leftX + 4, separatorY, leftX + leftW - 4 - SCROLLBAR_GUTTER, separatorY + 1, PANEL_BORDER);
@@ -1468,6 +1475,36 @@ public class LatitudeCreateWorldScreen extends Screen {
         int drawY = clampToRect(rect.y, uiFontHeight(), rect.y, rect.bottom());
         context.drawText(this.textRenderer, Text.literal(fitted).setStyle(text.getStyle()), drawX, drawY, color, shadow);
         return true;
+    }
+
+    private int drawWrappedStyledTextBlock(DrawContext context, Text text, UiRect rect, int color, boolean shadow, int maxLines, boolean center, boolean optional) {
+        if (rect.w <= 0 || rect.h < uiFontHeight()) {
+            return 0;
+        }
+        int maxVisibleLines = Math.min(maxLines, Math.max(1, rect.h / uiFontHeight()));
+        List<net.minecraft.text.StringVisitable> wrapped = wrapUiLines(text.getString(), rect.w);
+        if (wrapped.isEmpty()) {
+            return 0;
+        }
+        int drawCount = Math.min(maxVisibleLines, wrapped.size());
+        if (optional && drawCount <= 0) {
+            return 0;
+        }
+        int y = rect.y;
+        for (int i = 0; i < drawCount; i++) {
+            String line = wrapped.get(i).getString();
+            if (i == drawCount - 1 && wrapped.size() > drawCount) {
+                line = ellipsizeToWidth(line, rect.w);
+            }
+            Text lineText = Text.literal(line).setStyle(text.getStyle());
+            if (center) {
+                drawCenteredBoundedText(context, lineText.getString(), new UiRect(rect.x, y, rect.w, uiFontHeight()), color, shadow, true);
+            } else {
+                drawBoundedStyledText(context, lineText, new UiRect(rect.x, y, rect.w, uiFontHeight()), color, shadow, true);
+            }
+            y += uiFontHeight();
+        }
+        return drawCount * uiFontHeight();
     }
 
     private boolean drawCenteredBoundedText(DrawContext context, String text, UiRect rect, int color, boolean shadow, boolean ellipsize) {
