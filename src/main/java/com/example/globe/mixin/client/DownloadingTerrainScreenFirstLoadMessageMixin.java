@@ -1,6 +1,5 @@
 package com.example.globe.mixin.client;
 
-import com.example.globe.client.LatitudeClientConfig;
 import com.example.globe.client.LatitudeClientState;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.font.TextRenderer;
@@ -20,14 +19,11 @@ public abstract class DownloadingTerrainScreenFirstLoadMessageMixin {
     @Shadow
     private float loadProgress;
 
-    private static final Text FIRST_LOAD_HELPER = Text.literal("Creating a new world may take a little longer.");
+    private static final Text FIRST_LOAD_HELPER = Text.literal("Press F9 in-game for HUD options");
 
     @Inject(method = "render", at = @At("TAIL"))
     private void globe$renderFirstLoadMessage(DrawContext context, int mouseX, int mouseY, float delta, CallbackInfo ci) {
-        boolean useLatitudeLoadingShell = LatitudeClientState.isLatitudeWorldLoading();
-        boolean showFirstLoadHelper = LatitudeClientState.firstWorldLoad && LatitudeClientConfig.get().showFirstLoadMessage;
-
-        if (!useLatitudeLoadingShell || !showFirstLoadHelper) {
+        if (!LatitudeClientState.isLatitudeWorldLoading()) {
             return;
         }
 
