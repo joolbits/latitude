@@ -2,7 +2,7 @@ package com.example.globe.client;
 
 import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.network.chat.Component;
 import net.minecraft.util.Mth;
@@ -39,7 +39,7 @@ public final class CompassHud {
     // Keep for compatibility with existing GlobeModClient init call.
     public static void init() {}
 
-    public static void render(GuiGraphics ctx, DeltaTracker tickCounter) {
+    public static void render(GuiGraphicsExtractor ctx, DeltaTracker tickCounter) {
         Minecraft client = Minecraft.getInstance();
         if (client == null || client.getWindow() == null) {
             return;
@@ -47,15 +47,15 @@ public final class CompassHud {
         renderInternal(ctx, client.getWindow().getGuiScaledWidth(), client.getWindow().getGuiScaledHeight(), false);
     }
 
-    public static void render(GuiGraphics ctx, int screenW, int screenH) {
+    public static void render(GuiGraphicsExtractor ctx, int screenW, int screenH) {
         renderInternal(ctx, screenW, screenH, false);
     }
 
-    public static void renderAdjustPreview(GuiGraphics ctx, int screenW, int screenH) {
+    public static void renderAdjustPreview(GuiGraphicsExtractor ctx, int screenW, int screenH) {
         renderInternal(ctx, screenW, screenH, true);
     }
 
-    private static void renderInternal(GuiGraphics ctx, int screenW, int screenH, boolean forceVisible) {
+    private static void renderInternal(GuiGraphicsExtractor ctx, int screenW, int screenH, boolean forceVisible) {
         Minecraft client = Minecraft.getInstance();
         if (client == null || client.getWindow() == null) {
             return;
@@ -223,7 +223,7 @@ public final class CompassHud {
         return new HudBounds(x, y, scaledBoxW, scaledBoxH);
     }
 
-    public static void renderPreview(GuiGraphics ctx, Minecraft client, CompassHudConfig cfg, int x, int y) {
+    public static void renderPreview(GuiGraphicsExtractor ctx, Minecraft client, CompassHudConfig cfg, int x, int y) {
         if (cfg.style == CompassHudConfig.CompassStyle.ANALOG) {
             renderAnalogAt(ctx, client, cfg, analogSampleLatitude(cfg), cfg.zoneFollowsCompass ? sampleZone(cfg) : null, x, y, true);
             if (cfg.displayZoneInHud && !cfg.zoneFollowsCompass) {
@@ -237,7 +237,7 @@ public final class CompassHud {
         }
     }
 
-    private static void renderDigitalAt(GuiGraphics ctx, Minecraft client, CompassHudConfig cfg, String[] lines, int x, int y, boolean isPreview) {
+    private static void renderDigitalAt(GuiGraphicsExtractor ctx, Minecraft client, CompassHudConfig cfg, String[] lines, int x, int y, boolean isPreview) {
         int pad = cfg.padding;
         int textW = maxLineWidth(client, lines);
         int textH = client.font.lineHeight * lines.length;
@@ -279,9 +279,9 @@ public final class CompassHud {
                 int lineY = ty + i * client.font.lineHeight;
                 Component line = Component.literal(lines[i]);
                 if (cfg.shadow) {
-                    ctx.drawString(client.font, line, tx, lineY, color);
+                    ctx.text(client.font, line, tx, lineY, color);
                 } else {
-                    ctx.drawString(client.font, line, tx, lineY, color, false);
+                    ctx.text(client.font, line, tx, lineY, color, false);
                 }
             }
         } finally {
@@ -289,7 +289,7 @@ public final class CompassHud {
         }
     }
 
-    private static void renderAnalogAt(GuiGraphics ctx, Minecraft client, CompassHudConfig cfg, String latText, String zoneText, int x, int y, boolean isPreview) {
+    private static void renderAnalogAt(GuiGraphicsExtractor ctx, Minecraft client, CompassHudConfig cfg, String latText, String zoneText, int x, int y, boolean isPreview) {
         int diameter = analogDiameter(cfg);
         int radius = diameter / 2;
         int cx = x + radius;
@@ -335,7 +335,7 @@ public final class CompassHud {
         }
     }
 
-    private static void drawAnalogCompass(GuiGraphics ctx, CompassHudConfig cfg, int cx, int cy, int radius, double angle) {
+    private static void drawAnalogCompass(GuiGraphicsExtractor ctx, CompassHudConfig cfg, int cx, int cy, int radius, double angle) {
         int r2 = radius * radius;
         var colors = analogColors(cfg);
         for (int dy = -radius; dy <= radius; dy++) {
@@ -364,7 +364,7 @@ public final class CompassHud {
 
         String nLabel = "N";
         int nW = Minecraft.getInstance().font.width(nLabel);
-        ctx.drawString(Minecraft.getInstance().font, nLabel, cx - nW / 2 + 1, cy - radius + 2 + tickLen + 1, colors.needle(), true);
+        ctx.text(Minecraft.getInstance().font, nLabel, cx - nW / 2 + 1, cy - radius + 2 + tickLen + 1, colors.needle(), true);
 
         int needleLen = radius - 4;
         int nx = cx + (int) Math.round(Math.sin(angle) * needleLen);
@@ -383,7 +383,7 @@ public final class CompassHud {
         return (a << 24) | (faceRgb & 0xFFFFFF);
     }
 
-    private static void drawLine(GuiGraphics ctx, int x0, int y0, int x1, int y1, int color) {
+    private static void drawLine(GuiGraphicsExtractor ctx, int x0, int y0, int x1, int y1, int color) {
         int dx = Math.abs(x1 - x0);
         int dy = Math.abs(y1 - y0);
         int sx = x0 < x1 ? 1 : -1;
@@ -556,7 +556,7 @@ public final class CompassHud {
         return cfg.style == CompassHudConfig.CompassStyle.DIGITAL && cfg.attachToHotbarCompass;
     }
 
-    private static void drawPreviewHotbar(GuiGraphics ctx, int screenW, int screenH) {
+    private static void drawPreviewHotbar(GuiGraphicsExtractor ctx, int screenW, int screenH) {
         int hotbarW = 182;
         int hotbarH = 22;
         int hotbarX = (screenW - hotbarW) / 2;
@@ -610,8 +610,8 @@ public final class CompassHud {
         if (stack.is(Items.BUNDLE)) {
             BundleContents contents = stack.get(DataComponents.BUNDLE_CONTENTS);
             if (contents != null) {
-                for (ItemStack inside : contents.items()) {
-                    if (containsCompass(inside, depth + 1)) return true;
+                for (var inside : contents.items()) {
+                    if (containsCompass(inside.create(), depth + 1)) return true;
                 }
             }
         }
@@ -722,15 +722,15 @@ public final class CompassHud {
         };
     }
 
-    private static void drawText(GuiGraphics ctx, Minecraft client, CompassHudConfig cfg, String text, int x, int y, int color) {
+    private static void drawText(GuiGraphicsExtractor ctx, Minecraft client, CompassHudConfig cfg, String text, int x, int y, int color) {
         if (cfg.shadow) {
-            ctx.drawString(client.font, Component.literal(text), x, y, color);
+            ctx.text(client.font, Component.literal(text), x, y, color);
         } else {
-            ctx.drawString(client.font, Component.literal(text), x, y, color, false);
+            ctx.text(client.font, Component.literal(text), x, y, color, false);
         }
     }
 
-    private static void renderDetachedZone(GuiGraphics ctx, Minecraft client, CompassHudConfig cfg, boolean isPreview) {
+    private static void renderDetachedZone(GuiGraphicsExtractor ctx, Minecraft client, CompassHudConfig cfg, boolean isPreview) {
         String zone = zoneLabel(client, cfg, false);
         if (zone == null) return;
         HudBounds zb = computeZoneBounds(client, cfg);

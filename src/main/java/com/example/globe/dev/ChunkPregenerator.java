@@ -386,7 +386,7 @@ public final class ChunkPregenerator {
     }
 
     private static ServerBossEvent createBossBar(String summary, ServerLevel world) {
-        ServerBossEvent bossBar = new ServerBossEvent(Component.literal("LATDEV " + summary), BossEvent.BossBarColor.BLUE, BossEvent.BossBarOverlay.PROGRESS);
+        ServerBossEvent bossBar = new ServerBossEvent(java.util.UUID.randomUUID(), Component.literal("LATDEV " + summary), BossEvent.BossBarColor.BLUE, BossEvent.BossBarOverlay.PROGRESS);
         bossBar.setProgress(0.0F);
         for (ServerPlayer player : world.players()) {
             bossBar.addPlayer(player);
