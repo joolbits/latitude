@@ -19,10 +19,10 @@ public final class GlobeNet {
         }
         registered = true;
 
-        PayloadTypeRegistry.playS2C().register(GlobeStatePayload.ID, GlobeStatePayload.CODEC);
+        PayloadTypeRegistry.clientboundPlay().register(GlobeStatePayload.ID, GlobeStatePayload.CODEC);
 
-        PayloadTypeRegistry.playS2C().register(OpenSpawnPickerPayload.ID, OpenSpawnPickerPayload.CODEC);
-        PayloadTypeRegistry.playC2S().register(SetSpawnPickerPayload.ID, SetSpawnPickerPayload.CODEC);
+        PayloadTypeRegistry.clientboundPlay().register(OpenSpawnPickerPayload.ID, OpenSpawnPickerPayload.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(SetSpawnPickerPayload.ID, SetSpawnPickerPayload.CODEC);
     }
 
     public record GlobeStatePayload(boolean isGlobe) implements CustomPacketPayload {
