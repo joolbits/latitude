@@ -22,6 +22,7 @@ import net.minecraft.world.Difficulty;
 import net.minecraft.world.flag.FeatureFlags;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.LevelSettings;
+import net.minecraft.world.level.storage.LevelDataAndDimensions;
 import net.minecraft.world.level.gamerules.GameRules;
 import net.minecraft.world.level.levelgen.WorldDimensions;
 import net.minecraft.world.level.levelgen.presets.WorldPreset;
@@ -157,15 +158,12 @@ public final class LatitudeWorldLauncher {
             LevelSettings levelInfo = new LevelSettings(
                     wc.getName().trim(),
                     gameMode,
-                    hardcore,
-                    difficulty,
+                    new LevelSettings.DifficultySettings(difficulty, hardcore, false),
                     allowCommands,
-                    gameRules,
                     goh.dataConfiguration());
 
             PrimaryLevelData levelProperties = new PrimaryLevelData(
                     levelInfo,
-                    goh.options(),
                     dimensionsConfig.specialWorldProperty(),
                     lifecycle3);
 
@@ -204,7 +202,11 @@ public final class LatitudeWorldLauncher {
             LOGGER.info("[Latitude lifecycle] calling startNewWorld — {}ms elapsed", System.currentTimeMillis() - t0);
             try {
                 client.createWorldOpenFlows()
-                        .createLevelFromExistingSettings(session, goh.dataPackResources(), combinedDynamicRegistries, levelProperties);
+                        .createLevelFromExistingSettings(session, goh.dataPackResources(), combinedDynamicRegistries,
+                                new LevelDataAndDimensions.WorldDataAndGenSettings(
+                                        levelProperties,
+                                        new net.minecraft.world.level.levelgen.WorldGenSettings(goh.options(), goh.selectedDimensions())),
+                                Optional.ofNullable(gameRules));
             } catch (Exception e) {
                 LOGGER.error("Failed to start new world", e);
                 // Rollback Latitude state
