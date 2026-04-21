@@ -17,6 +17,7 @@ import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.border.WorldBorder;
 import net.minecraft.world.level.chunk.status.ChunkStatus;
 import net.minecraft.world.level.levelgen.Heightmap;
+import net.minecraft.world.level.storage.PrimaryLevelData;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -243,8 +244,13 @@ public final class AutonomousSeamAuditJob {
                 true);
 
         // Clamp time to noon and clear all weather for deterministic framing.
-        world.setDayTime(6000L);
-        world.setWeatherParameters(1_000_000, 0, false, false);
+        ((PrimaryLevelData) world.getServer().getWorldData()).setGameTime(6000L);
+        var weather = world.getWeatherData();
+        weather.setClearWeatherTime(1_000_000);
+        weather.setRainTime(0);
+        weather.setThunderTime(0);
+        weather.setRaining(false);
+        weather.setThundering(false);
     }
 
     private static void writeMetadata(Job job) throws IOException {

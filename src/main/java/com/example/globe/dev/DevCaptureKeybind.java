@@ -9,7 +9,7 @@ import com.mojang.blaze3d.pipeline.RenderTarget;
 import com.mojang.blaze3d.platform.InputConstants;
 import com.mojang.blaze3d.platform.NativeImage;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
-import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
+import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
@@ -43,14 +43,14 @@ public final class DevCaptureKeybind {
             return;
         }
 
-        captureKey = KeyBindingHelper.registerKeyBinding(new KeyMapping(
+        captureKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
                 "key.globe.dev_capture_overlay",
                 InputConstants.Type.KEYSYM,
                 InputConstants.KEY_NUMPAD0,
                 ClientKeybinds.CATEGORY
         ));
 
-        explainKey = KeyBindingHelper.registerKeyBinding(new KeyMapping(
+        explainKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
                 "key.globe.dev_explain_here",
                 InputConstants.Type.KEYSYM,
                 InputConstants.KEY_NUMPAD3,
@@ -242,7 +242,7 @@ public final class DevCaptureKeybind {
 
     private static void sendStatus(Minecraft client, String message) {
         if (client.player != null) {
-            client.player.displayClientMessage(Component.literal(message), false);
+            client.player.sendSystemMessage(Component.literal(message));
         }
     }
 }

@@ -71,18 +71,10 @@ public final class ChunkRegenerator {
         );
 
         Path tempDir = null;
-        WorldOptions previousGeneratorOptions = null;
         try {
             tempDir = Files.createTempDirectory("latdev-regen");
             LevelStorageSource levelStorage = LevelStorageSource.createDefault(tempDir);
             try (LevelStorageSource.LevelStorageAccess session = levelStorage.validateAndCreateAccess("LatDevTempGen")) {
-                WorldData saveProperties = realWorld.getServer().getWorldData();
-                if (seedOverride.isPresent()) {
-                    previousGeneratorOptions = saveProperties.worldGenOptions();
-                    WorldOptions patched = previousGeneratorOptions.withSeed(OptionalLong.of(seed));
-                    setGeneratorOptions(saveProperties, patched);
-                }
-
                 LevelStem dimensionOptions = new LevelStem(
                         realWorld.dimensionTypeRegistration(),
                         realWorld.getChunkSource().getGenerator()
@@ -99,8 +91,7 @@ public final class ChunkRegenerator {
                         realWorld.isDebug(),
                         seed,
                         List.of(),
-                        false,
-                        realWorld.getRandomSequences()
+                        false
                 )) {
                     Map<Long, ChunkAccess> generated = generateToFeatures(tempWorld, targets);
                     RegenStats stats = copyIntoLiveWorld(realWorld, targets, generated, copyBiomes);
@@ -123,13 +114,6 @@ public final class ChunkRegenerator {
             GlobeMod.LOGGER.error("latdev regenChunk failed", e);
             return 0;
         } finally {
-            if (previousGeneratorOptions != null) {
-                try {
-                    setGeneratorOptions(realWorld.getServer().getWorldData(), previousGeneratorOptions);
-                } catch (Exception restoreError) {
-                    GlobeMod.LOGGER.warn("Failed to restore generator options after regen", restoreError);
-                }
-            }
             if (tempDir != null) {
                 deleteTempDirectory(tempDir);
             }
