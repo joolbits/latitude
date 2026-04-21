@@ -13,6 +13,7 @@ import net.fabricmc.fabric.api.biome.v1.ModificationPhase;
 import net.minecraft.core.Holder;
 import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;
+import net.minecraft.world.level.biome.Biomes;
 import net.minecraft.world.level.levelgen.GenerationStep;
 import net.minecraft.world.level.levelgen.placement.PlacedFeature;
 
@@ -30,7 +31,7 @@ public final class BiomeFeatureStripping {
         }
         BiomeModifications.create(STRIP_FROZEN_RIVER_ID)
                 .add(ModificationPhase.REMOVALS,
-                        ctx -> ctx.getBiomeKey().equals(BiomeKeys.FROZEN_RIVER),
+                        ctx -> ctx.getBiomeKey().equals(Biomes.FROZEN_RIVER),
                         BiomeFeatureStripping::stripFrozenRiverVegetation);
     }
 
