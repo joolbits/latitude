@@ -395,8 +395,8 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
     private static void globe$populateBiomes(ChunkAccess chunk, BiomeResolver supplier, Climate.Sampler sampler) {
         int minQuartY = chunk.getMinY() >> 2;
         int heightQuarts = chunk.getHeight() >> 2;
-        int startQuartX = chunk.getPos().x << 2;
-        int startQuartZ = chunk.getPos().z << 2;
+        int startQuartX = chunk.getPos().x() << 2;
+        int startQuartZ = chunk.getPos().z() << 2;
         for (int localX = 0; localX < 4; localX++) {
             int quartX = startQuartX + localX;
             for (int localZ = 0; localZ < 4; localZ++) {

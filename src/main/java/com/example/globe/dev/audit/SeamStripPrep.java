@@ -66,8 +66,8 @@ public final class SeamStripPrep {
      */
     public static Deque<ChunkPos> buildQueue(Plan plan) {
         Deque<ChunkPos> queue = new ArrayDeque<>(plan.totalChunks());
-        for (int cz = plan.min().z; cz <= plan.max().z; cz++) {
-            for (int cx = plan.min().x; cx <= plan.max().x; cx++) {
+        for (int cz = plan.min().z(); cz <= plan.max().z(); cz++) {
+            for (int cx = plan.min().x(); cx <= plan.max().x(); cx++) {
                 queue.add(new ChunkPos(cx, cz));
             }
         }
@@ -80,8 +80,8 @@ public final class SeamStripPrep {
      */
     public static int countLoadedFull(ServerLevel world, Plan plan) {
         int loaded = 0;
-        for (int cz = plan.min().z; cz <= plan.max().z; cz++) {
-            for (int cx = plan.min().x; cx <= plan.max().x; cx++) {
+        for (int cz = plan.min().z(); cz <= plan.max().z(); cz++) {
+            for (int cx = plan.min().x(); cx <= plan.max().x(); cx++) {
                 if (world.getChunkSource().getChunk(cx, cz, ChunkStatus.FULL, false) != null) {
                     loaded++;
                 }
@@ -96,8 +96,8 @@ public final class SeamStripPrep {
      */
     public static int countLoadedBiomes(ServerLevel world, Plan plan) {
         int loaded = 0;
-        for (int cz = plan.min().z; cz <= plan.max().z; cz++) {
-            for (int cx = plan.min().x; cx <= plan.max().x; cx++) {
+        for (int cz = plan.min().z(); cz <= plan.max().z(); cz++) {
+            for (int cx = plan.min().x(); cx <= plan.max().x(); cx++) {
                 if (world.getChunkSource().getChunk(cx, cz, ChunkStatus.BIOMES, false) != null) {
                     loaded++;
                 }

@@ -35,13 +35,13 @@ public final class PolarCapScrubber {
                 continue;
             }
 
-            ChunkPos center = new ChunkPos(player.blockPosition());
+            ChunkPos center = ChunkPos.containing(player.blockPosition());
 
             boolean didScrub = false;
             for (int dz = -1; dz <= 1 && !didScrub; dz++) {
                 for (int dx = -1; dx <= 1 && !didScrub; dx++) {
-                    int cx = center.x + dx;
-                    int cz = center.z + dz;
+                    int cx = center.x() + dx;
+                    int cz = center.z() + dz;
 
                     long key = chunkKey(cx, cz);
                     if (scrubbedChunks.contains(key)) {
@@ -66,7 +66,7 @@ public final class PolarCapScrubber {
         int baseX = pos.getMinBlockX();
         int baseZ = pos.getMinBlockZ();
 
-        long key = chunkKey(pos.x, pos.z);
+        long key = chunkKey(pos.x(), pos.z());
         int startIndex = chunkProgress.getOrDefault(key, 0);
         int endIndex = Math.min(256, startIndex + COLUMNS_PER_TICK);
 
