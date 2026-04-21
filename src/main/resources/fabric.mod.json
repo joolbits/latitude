@@ -16,9 +16,6 @@
     ],
     "client": [
       "com.example.globe.GlobeModClient"
-    ],
-    "modmenu": [
-      "com.example.globe.client.GlobeModMenu"
     ]
   },
   "mixins": [
@@ -33,7 +30,6 @@
   "suggests": {
     "tectonic": "*",
     "lithostitched": "*",
-    "modmenu": "*",
     "cloth-config": "*"
   }
 }
