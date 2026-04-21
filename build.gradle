@@ -96,10 +96,6 @@ dependencies {
     compileOnly "io.github.llamalad7:mixinextras-common:0.5.0"
 // DISABLED (was crashing compile):     annotationProcessor "io.github.llamalad7:mixinextras-common:0.5.0"
     
-    // ModMenu API (compile-time only, optional at runtime)
-    compileOnly "com.terraformersmc:modmenu:${project.modmenu_version}"
-    runtimeOnly "com.terraformersmc:modmenu:${project.modmenu_version}"
-
     compileOnly "maven.modrinth:placeholder-api:${project.placeholder_api_version}"
     runtimeOnly "maven.modrinth:placeholder-api:${project.placeholder_api_version}"
 }
