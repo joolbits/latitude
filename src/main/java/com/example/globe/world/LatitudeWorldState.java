@@ -4,6 +4,7 @@ import com.mojang.serialization.codecs.RecordCodecBuilder;
 import com.mojang.serialization.Codec;
 import java.util.Optional;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.resources.Identifier;
 import net.minecraft.util.datafix.DataFixTypes;
 import net.minecraft.world.level.saveddata.SavedData;
 import net.minecraft.world.level.saveddata.SavedDataType;
@@ -20,13 +21,13 @@ public final class LatitudeWorldState extends SavedData {
     );
 
     private static final SavedDataType<LatitudeWorldState> STATE_TYPE = new SavedDataType<>(
-            "globe_latitude_world_state",
+            Identifier.fromNamespaceAndPath("globe", "latitude_world_state"),
             LatitudeWorldState::new,
-            RecordCodecBuilder.create(instance -> instance.group(
+            RecordCodecBuilder.<LatitudeWorldState>create(instance -> instance.group(
                     Codec.BOOL.optionalFieldOf("spawn_picker_dismissed", false)
                             .forGetter(LatitudeWorldState::isSpawnPickerDismissed),
                     WORLDGEN_POLICY_CODEC.optionalFieldOf("worldgen_policy")
-                            .forGetter(state -> Optional.ofNullable(state.worldgenPolicy))
+                            .forGetter((LatitudeWorldState state) -> Optional.ofNullable(state.worldgenPolicy))
             ).apply(instance, (spawnPickerDismissed, worldgenPolicy) ->
                     new LatitudeWorldState(spawnPickerDismissed, normalizeWorldgenPolicy(worldgenPolicy)))),
             DataFixTypes.SAVED_DATA_COMMAND_STORAGE
