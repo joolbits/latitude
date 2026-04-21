@@ -7,26 +7,26 @@ import com.example.globe.client.LatitudeClientConfig;
 import com.example.globe.client.LatitudeClientState;
 import com.example.globe.util.LatitudeBands;
 import com.mojang.serialization.Lifecycle;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.screen.MessageScreen;
-import net.minecraft.client.gui.screen.world.WorldCreator;
-import net.minecraft.client.world.GeneratorOptionsHolder;
-import net.minecraft.registry.Registry;
-import net.minecraft.registry.RegistryKey;
-import net.minecraft.registry.RegistryKeys;
-import net.minecraft.registry.entry.RegistryEntry;
-import net.minecraft.resource.featuretoggle.FeatureFlags;
-import net.minecraft.text.Text;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.GenericMessageScreen;
+import net.minecraft.client.gui.screens.worldselection.WorldCreationContext;
+import net.minecraft.client.gui.screens.worldselection.WorldCreationUiState;
+import net.minecraft.core.Holder;
+import net.minecraft.core.LayeredRegistryAccess;
+import net.minecraft.core.Registry;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.server.RegistryLayer;
 import net.minecraft.world.Difficulty;
-import net.minecraft.world.GameMode;
-import net.minecraft.world.rule.GameRules;
-import net.minecraft.world.dimension.DimensionOptionsRegistryHolder;
-import net.minecraft.world.gen.WorldPreset;
-import net.minecraft.world.level.LevelInfo;
-import net.minecraft.world.level.LevelProperties;
-import net.minecraft.world.level.storage.LevelStorage;
-import net.minecraft.registry.CombinedDynamicRegistries;
-import net.minecraft.registry.ServerDynamicRegistryType;
+import net.minecraft.world.flag.FeatureFlags;
+import net.minecraft.world.level.GameType;
+import net.minecraft.world.level.LevelSettings;
+import net.minecraft.world.level.gamerules.GameRules;
+import net.minecraft.world.level.levelgen.WorldDimensions;
+import net.minecraft.world.level.levelgen.presets.WorldPreset;
+import net.minecraft.world.level.storage.LevelStorageSource;
+import net.minecraft.world.level.storage.PrimaryLevelData;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -52,11 +52,11 @@ public final class LatitudeWorldLauncher {
      * immediately before startNewWorld (step 11). If any step 1–9 throws, no Latitude
      * state was written. If step 10 succeeds but step 11 throws, state is rolled back.</p>
      */
-    public static void beginExpedition(MinecraftClient client, LatitudeCreateWorldScreen screen,
-                                       GeneratorOptionsHolder holder,
+    public static void beginExpedition(Minecraft client, LatitudeCreateWorldScreen screen,
+                                       WorldCreationContext holder,
                                        String worldName, String seed,
                                        GlobeWorldSize size, LatitudeBands.Band spawnZone,
-                                       GameMode gameMode, boolean hardcore,
+                                       GameType gameMode, boolean hardcore,
                                        Difficulty difficulty, boolean allowCommands,
                                        boolean startWithCompass, boolean bonusChest,
                                        GameRules gameRules, int worldTypeIdx) {
@@ -71,91 +71,91 @@ public final class LatitudeWorldLauncher {
                 size.name(), spawnZone.id(), LatitudeClientState.elapsedSinceExpeditionMs());
         try {
             // ── 1. Size preset resolution ──
-            net.minecraft.util.Identifier presetId;
+            net.minecraft.resources.Identifier presetId;
             if (worldTypeIdx == 2) {
-                presetId = net.minecraft.util.Identifier.ofVanilla("flat");
+                presetId = net.minecraft.resources.Identifier.withDefaultNamespace("flat");
             } else if (worldTypeIdx == 1) {
-                presetId = net.minecraft.util.Identifier.ofVanilla("normal");
+                presetId = net.minecraft.resources.Identifier.withDefaultNamespace("normal");
             } else {
                 presetId = size.worldPresetId;
             }
-            RegistryKey<WorldPreset> presetKey = RegistryKey.of(RegistryKeys.WORLD_PRESET, presetId);
+            ResourceKey<WorldPreset> presetKey = ResourceKey.create(Registries.WORLD_PRESET, presetId);
 
             // ── 2. Create WorldCreator ──
-            WorldCreator wc = new WorldCreator(
-                    client.getLevelStorage().getSavesDirectory(),
+            WorldCreationUiState wc = new WorldCreationUiState(
+                    client.getLevelSource().getBaseDir(),
                     holder,
                     Optional.of(presetKey),
                     OptionalLong.empty());
 
             // ── 3. Set world name ──
-            wc.setWorldName(worldName);
+            wc.setName(worldName);
 
             // ── 4. Set seed (raw — vanilla's GeneratorOptions.parseSeed() trims internally) ──
             wc.setSeed(seed);
 
             // Apply the preset via setWorldType to ensure dimensions are updated
-            Registry<WorldPreset> presetRegistry = holder.getCombinedRegistryManager()
-                    .getOrThrow(RegistryKeys.WORLD_PRESET);
-            RegistryEntry<WorldPreset> presetEntry = presetRegistry.getOptional(presetKey).orElse(null);
+            Registry<WorldPreset> presetRegistry = holder.worldgenLoadContext()
+                    .lookupOrThrow(Registries.WORLD_PRESET);
+            Holder<WorldPreset> presetEntry = presetRegistry.get(presetKey).orElse(null);
             if (presetEntry == null) {
                 LOGGER.error("Latitude world preset '{}' was not present in the loaded registry; enabled packs={}",
-                        presetKey.getValue(), holder.dataConfiguration().dataPacks().getEnabled());
+                        presetKey.identifier(), holder.dataConfiguration().dataPacks().getEnabled());
                 if (isLatitude) {
                     LatitudeClientState.clearLatitudeLoadingState();
                 }
                 client.setScreen(screen);
                 return;
             }
-            wc.setWorldType(new WorldCreator.WorldType(presetEntry));
+            wc.setWorldType(new WorldCreationUiState.WorldTypeEntry(presetEntry));
 
             // ── 5. Apply game settings ──
-            WorldCreator.Mode wcMode = hardcore ? WorldCreator.Mode.HARDCORE
-                    : gameMode == GameMode.CREATIVE ? WorldCreator.Mode.CREATIVE
-                    : WorldCreator.Mode.SURVIVAL;
+            WorldCreationUiState.SelectedGameMode wcMode = hardcore ? WorldCreationUiState.SelectedGameMode.HARDCORE
+                    : gameMode == GameType.CREATIVE ? WorldCreationUiState.SelectedGameMode.CREATIVE
+                    : WorldCreationUiState.SelectedGameMode.SURVIVAL;
             wc.setGameMode(wcMode);
-            wc.setCheatsEnabled(allowCommands);
+            wc.setAllowCommands(allowCommands);
             wc.setDifficulty(difficulty);
-            wc.setBonusChestEnabled(bonusChest);
+            wc.setBonusChest(bonusChest);
 
             // ── 6. Sync structures/bonus into holder ──
-            wc.update();
+            wc.onChanged();
 
             // WorldCreator.update() can rebuild settings from generic defaults, so
             // reassert the selected Latitude preset before extracting the final holder.
-            GeneratorOptionsHolder goh = wc.getGeneratorOptionsHolder();
-            Registry<WorldPreset> updatedPresetRegistry = goh.getCombinedRegistryManager()
-                    .getOrThrow(RegistryKeys.WORLD_PRESET);
-            RegistryEntry<WorldPreset> updatedPresetEntry = updatedPresetRegistry.getOptional(presetKey).orElse(null);
+            WorldCreationContext goh = wc.getSettings();
+            Registry<WorldPreset> updatedPresetRegistry = goh.worldgenLoadContext()
+                    .lookupOrThrow(Registries.WORLD_PRESET);
+            Holder<WorldPreset> updatedPresetEntry = updatedPresetRegistry.get(presetKey).orElse(null);
             if (updatedPresetEntry == null) {
                 LOGGER.error("Latitude world preset '{}' disappeared after WorldCreator.update(); enabled packs={}",
-                        presetKey.getValue(), goh.dataConfiguration().dataPacks().getEnabled());
+                        presetKey.identifier(), goh.dataConfiguration().dataPacks().getEnabled());
                 if (isLatitude) {
                     LatitudeClientState.clearLatitudeLoadingState();
                 }
                 client.setScreen(screen);
                 return;
             }
-            wc.setWorldType(new WorldCreator.WorldType(updatedPresetEntry));
+            wc.setWorldType(new WorldCreationUiState.WorldTypeEntry(updatedPresetEntry));
 
             // ── 6. Extract updated holder ──
-            goh = wc.getGeneratorOptionsHolder();
+            goh = wc.getSettings();
 
             // ── 7. Build level metadata (replicates CreateWorldScreen.createLevel lines 284-298) ──
-            DimensionOptionsRegistryHolder.DimensionsConfig dimensionsConfig =
-                    goh.selectedDimensions().toConfig(goh.dimensionOptionsRegistry());
+            WorldDimensions.Complete dimensionsConfig =
+                    goh.selectedDimensions().bake(goh.datapackDimensions());
 
-            CombinedDynamicRegistries<ServerDynamicRegistryType> combinedDynamicRegistries =
-                    goh.combinedDynamicRegistries()
-                            .with(ServerDynamicRegistryType.DIMENSIONS, dimensionsConfig.toDynamicRegistryManager());
+            LayeredRegistryAccess<RegistryLayer> combinedDynamicRegistries =
+                    goh.worldgenRegistries()
+                            .replaceFrom(RegistryLayer.DIMENSIONS, dimensionsConfig.dimensionsRegistryAccess());
 
-            Lifecycle lifecycle = FeatureFlags.isNotVanilla(goh.dataConfiguration().enabledFeatures())
+            Lifecycle lifecycle = FeatureFlags.isExperimental(goh.dataConfiguration().enabledFeatures())
                     ? Lifecycle.experimental() : Lifecycle.stable();
-            Lifecycle lifecycle2 = combinedDynamicRegistries.getCombinedRegistryManager().getLifecycle();
+            Lifecycle lifecycle2 = combinedDynamicRegistries.compositeAccess().allRegistriesLifecycle();
             Lifecycle lifecycle3 = lifecycle2.add(lifecycle);
 
-            LevelInfo levelInfo = new LevelInfo(
-                    wc.getWorldName().trim(),
+            LevelSettings levelInfo = new LevelSettings(
+                    wc.getName().trim(),
                     gameMode,
                     hardcore,
                     difficulty,
@@ -163,21 +163,21 @@ public final class LatitudeWorldLauncher {
                     gameRules,
                     goh.dataConfiguration());
 
-            LevelProperties levelProperties = new LevelProperties(
+            PrimaryLevelData levelProperties = new PrimaryLevelData(
                     levelInfo,
-                    goh.generatorOptions(),
+                    goh.options(),
                     dimensionsConfig.specialWorldProperty(),
                     lifecycle3);
 
             // ── 8. Show "Preparing..." ──
-            client.setScreenAndRender(new MessageScreen(Text.translatable("createWorld.preparing")));
+            client.setScreenAndShow(new GenericMessageScreen(Component.translatable("createWorld.preparing")));
 
             // ── 9. Create session ──
-            LevelStorage.Session session;
+            LevelStorageSource.LevelStorageAccess session;
             try {
-                session = client.getLevelStorage().createSessionWithoutSymlinkCheck(wc.getWorldDirectoryName());
+                session = client.getLevelSource().createAccess(wc.getTargetFolder());
             } catch (Exception e) {
-                LOGGER.error("Failed to create world session for '{}'", wc.getWorldDirectoryName(), e);
+                LOGGER.error("Failed to create world session for '{}'", wc.getTargetFolder(), e);
                 if (isLatitude) {
                     LatitudeClientState.clearLatitudeLoadingState();
                 }
@@ -203,8 +203,8 @@ public final class LatitudeWorldLauncher {
             // ── 11. Launch ──
             LOGGER.info("[Latitude lifecycle] calling startNewWorld — {}ms elapsed", System.currentTimeMillis() - t0);
             try {
-                client.createIntegratedServerLoader()
-                        .startNewWorld(session, goh.dataPackContents(), combinedDynamicRegistries, levelProperties);
+                client.createWorldOpenFlows()
+                        .createLevelFromExistingSettings(session, goh.dataPackResources(), combinedDynamicRegistries, levelProperties);
             } catch (Exception e) {
                 LOGGER.error("Failed to start new world", e);
                 // Rollback Latitude state

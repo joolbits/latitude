@@ -2,7 +2,7 @@ package com.example.globe.mixin.client.compat.sodium;
 
 import com.example.globe.client.GlobeClientState;
 import net.fabricmc.loader.api.FabricLoader;
-import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.Minecraft;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Pseudo;
 import org.spongepowered.asm.mixin.Unique;
@@ -21,15 +21,15 @@ public class RenderSectionManagerVisibilityMixin {
         if (!cir.getReturnValueZ()) return;
         if (!FabricLoader.getInstance().isModLoaded("sodium")) return;
 
-        MinecraftClient mc = MinecraftClient.getInstance();
-        if (mc == null || mc.world == null || mc.player == null) return;
+        Minecraft mc = Minecraft.getInstance();
+        if (mc == null || mc.level == null || mc.player == null) return;
 
         double sectionCenterX = (sectionX << 4) + 8.0;
         double sectionCenterZ = (sectionZ << 4) + 8.0;
 
         int baseChunks;
         try {
-            baseChunks = mc.options.getViewDistance().getValue();
+            baseChunks = mc.options.renderDistance().get();
         } catch (Throwable t) {
             return;
         }

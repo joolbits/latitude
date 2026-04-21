@@ -2,15 +2,15 @@ package com.example.globe.client;
 
 import com.example.globe.GlobeNet;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
-import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.widget.ButtonWidget;
-import net.minecraft.text.Text;
-import net.minecraft.text.MutableText;
-import net.minecraft.util.Formatting;
+import net.minecraft.ChatFormatting;
+import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.MutableComponent;
 
 public class SpawnZoneScreen extends Screen {
     public SpawnZoneScreen() {
-        super(Text.literal("Choose Starting Latitude"));
+        super(Component.literal("Choose Starting Latitude"));
     }
 
     @Override
@@ -31,52 +31,52 @@ public class SpawnZoneScreen extends Screen {
         addZoneButton(cx, y, "Polar", "POLAR");
         y += 30;
 
-        this.addDrawableChild(ButtonWidget.builder(Text.literal("Cancel"), b -> close())
-                .dimensions(cx - 50, y, 100, 20)
+        this.addRenderableWidget(Button.builder(Component.literal("Cancel"), b -> onClose())
+                .bounds(cx - 50, y, 100, 20)
                 .build());
     }
 
     private void addZoneButton(int cx, int y, String label, String id) {
-        this.addDrawableChild(ButtonWidget.builder(Text.literal(label), b -> {
+        this.addRenderableWidget(Button.builder(Component.literal(label), b -> {
                     ClientPlayNetworking.send(new GlobeNet.SetSpawnPickerPayload(id));
-                    close();
+                    onClose();
                 })
-                .dimensions(cx - 90, y, 180, 20)
+                .bounds(cx - 90, y, 180, 20)
                 .build());
     }
 
-    private void addZoneButton(int cx, int y, Text label, String id) {
-        this.addDrawableChild(ButtonWidget.builder(label, b -> {
+    private void addZoneButton(int cx, int y, Component label, String id) {
+        this.addRenderableWidget(Button.builder(label, b -> {
                     ClientPlayNetworking.send(new GlobeNet.SetSpawnPickerPayload(id));
-                    close();
+                    onClose();
                 })
-                .dimensions(cx - 90, y, 180, 20)
+                .bounds(cx - 90, y, 180, 20)
                 .build());
     }
 
-    private static Text rainbowRandomText() {
-        Formatting[] colors = {
-                Formatting.RED,
-                Formatting.GOLD,
-                Formatting.YELLOW,
-                Formatting.GREEN,
-                Formatting.AQUA,
-                Formatting.BLUE,
-                Formatting.LIGHT_PURPLE
+    private static Component rainbowRandomText() {
+        ChatFormatting[] colors = {
+                ChatFormatting.RED,
+                ChatFormatting.GOLD,
+                ChatFormatting.YELLOW,
+                ChatFormatting.GREEN,
+                ChatFormatting.AQUA,
+                ChatFormatting.BLUE,
+                ChatFormatting.LIGHT_PURPLE
         };
 
         String s = "Random";
-        MutableText out = Text.empty();
+        MutableComponent out = Component.empty();
         for (int i = 0; i < s.length(); i++) {
-            out.append(Text.literal(String.valueOf(s.charAt(i))).formatted(colors[i % colors.length]));
+            out.append(Component.literal(String.valueOf(s.charAt(i))).withStyle(colors[i % colors.length]));
         }
-        return out.formatted(Formatting.ITALIC);
+        return out.withStyle(ChatFormatting.ITALIC);
     }
 
     @Override
-    public void close() {
-        if (this.client != null) {
-            this.client.setScreen(null);
+    public void onClose() {
+        if (this.minecraft != null) {
+            this.minecraft.setScreen(null);
         }
     }
 }

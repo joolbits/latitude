@@ -11,7 +11,7 @@ import org.spongepowered.asm.mixin.injection.invoke.arg.Args;
  * Controlled via -Dlatitude.fogClampIndex=N (0-5) and -Dlatitude.fogClampValue=16.0
  * Defaults to no clamp when property is absent.
  */
-@Mixin(net.minecraft.client.render.fog.FogRenderer.class)
+@Mixin(net.minecraft.client.renderer.fog.FogRenderer.class)
 public class FogUniformPackerClampMixin {
 
     private static final int CLAMP_INDEX = Integer.getInteger("latitude.fogClampIndex", -1);

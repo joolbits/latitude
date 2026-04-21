@@ -1,8 +1,8 @@
 package com.example.globe.client;
 
 import com.example.globe.GlobeMod;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.texture.NativeImage;
+import com.mojang.blaze3d.platform.NativeImage;
+import net.minecraft.client.Minecraft;
 import net.minecraft.util.Util;
 
 import java.awt.GraphicsEnvironment;
@@ -55,23 +55,23 @@ public final class ClipboardImageWriter {
         }
     }
 
-    public static File saveToDisk(MinecraftClient client, NativeImage image) throws IOException {
-        File capturesDir = ensureDirectory(new File(client.runDirectory, "Latitude/captures"));
+    public static File saveToDisk(Minecraft client, NativeImage image) throws IOException {
+        File capturesDir = ensureDirectory(new File(client.gameDirectory, "Latitude/captures"));
         File output = new File(capturesDir, nextCaptureName());
-        image.writeTo(output);
+        image.writeToFile(output);
         return output;
     }
 
-    public static File saveTempClipboardImage(MinecraftClient client, NativeImage image) throws IOException {
-        File capturesDir = ensureDirectory(new File(client.runDirectory, "Latitude/captures"));
+    public static File saveTempClipboardImage(Minecraft client, NativeImage image) throws IOException {
+        File capturesDir = ensureDirectory(new File(client.gameDirectory, "Latitude/captures"));
         File tempDir = ensureDirectory(new File(capturesDir, ".tmp"));
         File output = new File(tempDir, nextCaptureName());
-        image.writeTo(output);
+        image.writeToFile(output);
         return output;
     }
 
-    public static File moveTempCaptureToCaptures(MinecraftClient client, File tempFile) throws IOException {
-        File capturesDir = ensureDirectory(new File(client.runDirectory, "Latitude/captures"));
+    public static File moveTempCaptureToCaptures(Minecraft client, File tempFile) throws IOException {
+        File capturesDir = ensureDirectory(new File(client.gameDirectory, "Latitude/captures"));
         File destination = new File(capturesDir, tempFile.getName());
         if (destination.equals(tempFile)) {
             return destination;
@@ -144,7 +144,7 @@ public final class ClipboardImageWriter {
         }
     }
 
-    public static File moveTempCaptureToCaptures(MinecraftClient client, Path tempPath) throws IOException {
+    public static File moveTempCaptureToCaptures(Minecraft client, Path tempPath) throws IOException {
         return moveTempCaptureToCaptures(client, tempPath.toFile());
     }
 
@@ -152,13 +152,13 @@ public final class ClipboardImageWriter {
         int width = image.getWidth();
         int height = image.getHeight();
         BufferedImage bufferedImage = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
-        int[] pixels = image.copyPixelsArgb();
+        int[] pixels = image.getPixels();
         bufferedImage.setRGB(0, 0, width, height, pixels, 0, width);
         return bufferedImage;
     }
 
     private static String nextCaptureName() {
-        return "capture-" + Util.getFormattedCurrentTime() + ".png";
+        return "capture-" + Util.getFilenameFormattedDateTime() + ".png";
     }
 
     private static String truncate(String value, int maxChars) {

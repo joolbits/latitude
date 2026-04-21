@@ -5,19 +5,18 @@ import com.example.globe.util.LatitudeBands;
 import com.example.globe.util.LatitudeMath;
 import com.example.globe.world.LatitudeBiomes;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
-import net.minecraft.network.packet.s2c.play.PositionFlag;
-import net.minecraft.registry.entry.RegistryEntry;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Holder;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.ChunkPos;
-import net.minecraft.util.math.MathHelper;
-import net.minecraft.world.Heightmap;
-import net.minecraft.world.biome.Biome;
-import net.minecraft.world.border.WorldBorder;
-import net.minecraft.world.chunk.ChunkStatus;
-
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.util.Mth;
+import net.minecraft.world.entity.Relative;
+import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.biome.Biome;
+import net.minecraft.world.level.border.WorldBorder;
+import net.minecraft.world.level.chunk.status.ChunkStatus;
+import net.minecraft.world.level.levelgen.Heightmap;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -108,9 +107,9 @@ public final class AutonomousSeamAuditJob {
             double seamDeg = pair.higher.lowDeg();
             double targetDeg = edge.applyTo(seamDeg);
 
-            ServerPlayerEntity player = null;
-            if (!server.getPlayerManager().getPlayerList().isEmpty()) {
-                player = server.getPlayerManager().getPlayerList().get(0);
+            ServerPlayer player = null;
+            if (!server.getPlayerList().getPlayers().isEmpty()) {
+                player = server.getPlayerList().getPlayers().get(0);
             }
             if (player == null) {
                 GlobeMod.LOGGER.warn("[auditMode] no player on integrated server; aborting");
@@ -118,7 +117,7 @@ public final class AutonomousSeamAuditJob {
                 return;
             }
 
-            ServerWorld world = player.getEntityWorld();
+            ServerLevel world = player.level();
             int radiusBlocks = resolveRadius(world);
             if (radiusBlocks <= 0) {
                 GlobeMod.LOGGER.warn("[auditMode] invalid world radius {}; aborting", radiusBlocks);
@@ -129,11 +128,11 @@ public final class AutonomousSeamAuditJob {
             int absZ = LatitudeMath.zForLatitudeDeg(targetDeg, radiusBlocks);
             int sign = player.getZ() < 0.0 ? -1 : 1;
             int targetZ = sign * absZ;
-            int targetX = MathHelper.floor(player.getX());
+            int targetX = Mth.floor(player.getX());
 
             String timestamp = TIMESTAMP_FMT.format(LocalDateTime.now());
             String dirName = timestamp + "_auto_" + pair.lower.id() + "-" + pair.higher.id() + "_" + edge.argName();
-            Path auditDir = server.getRunDirectory()
+            Path auditDir = server.getServerDirectory()
                     .toAbsolutePath().normalize()
                     .resolve("latdev").resolve("seam-audits").resolve(dirName);
             Files.createDirectories(auditDir);
@@ -148,11 +147,11 @@ public final class AutonomousSeamAuditJob {
                     world, player, auditDir,
                     pair, edge, seamDeg, targetDeg, radiusBlocks,
                     targetX, targetZ,
-                    MathHelper.clamp(samples, 50, 4000),
+                    Mth.clamp(samples, 50, 4000),
                     plan, queue,
-                    MathHelper.clamp(loadedRatioThreshold, 0.1, 1.0),
+                    Mth.clamp(loadedRatioThreshold, 0.1, 1.0),
                     Math.max(0, settleTicks),
-                    MathHelper.clamp(chunksPerTick, 1, 64),
+                    Mth.clamp(chunksPerTick, 1, 64),
                     Math.max(60, readinessTimeoutTicks),
                     world.getSeed(),
                     onComplete);
@@ -181,7 +180,7 @@ public final class AutonomousSeamAuditJob {
         }
     }
 
-    private static int resolveRadius(ServerWorld world) {
+    private static int resolveRadius(ServerLevel world) {
         int active = LatitudeBiomes.getActiveRadiusBlocks();
         if (active > 0) return active;
         WorldBorder b = world.getWorldBorder();
@@ -219,33 +218,33 @@ public final class AutonomousSeamAuditJob {
     // ---------------- Stage operations ----------------
 
     private static void teleportAndFixEnvironment(Job job) {
-        ServerWorld world = job.world;
+        ServerLevel world = job.world;
         int cx = Math.floorDiv(job.targetX, 16);
         int cz = Math.floorDiv(job.targetZ, 16);
-        world.getChunkManager().getChunk(cx, cz, ChunkStatus.FULL, true);
+        world.getChunkSource().getChunk(cx, cz, ChunkStatus.FULL, true);
 
-        int topY = world.getTopY(Heightmap.Type.MOTION_BLOCKING_NO_LEAVES, job.targetX, job.targetZ);
-        int maxY = world.getBottomY() + world.getHeight() - 1;
-        int tpY = MathHelper.clamp(topY + 1, world.getBottomY() + 1, maxY);
+        int topY = world.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, job.targetX, job.targetZ);
+        int maxY = world.getMinY() + world.getHeight() - 1;
+        int tpY = Mth.clamp(topY + 1, world.getMinY() + 1, maxY);
         job.targetY = tpY;
 
         // Face the equator for a deterministic screenshot frame.
         float yaw = (job.targetZ < 0) ? 180.0f : 0.0f;
         float pitch = 10.0f; // slight look-down so the ground transition is visible
 
-        job.player.teleport(
+        job.player.teleportTo(
                 world,
                 job.targetX + 0.5,
                 tpY,
                 job.targetZ + 0.5,
-                EnumSet.noneOf(PositionFlag.class),
+                EnumSet.noneOf(Relative.class),
                 yaw,
                 pitch,
                 true);
 
         // Clamp time to noon and clear all weather for deterministic framing.
-        world.setTimeOfDay(6000L);
-        world.setWeather(1_000_000, 0, false, false);
+        world.setDayTime(6000L);
+        world.setWeatherParameters(1_000_000, 0, false, false);
     }
 
     private static void writeMetadata(Job job) throws IOException {
@@ -285,10 +284,10 @@ public final class AutonomousSeamAuditJob {
      * All bounds must lie within the prepared strip so loaded counts are meaningful.
      */
     private static ProbeResult runRectProbe(Job job, int xMin, int xMax, int zMin, int zMax, int samples) {
-        ServerWorld world = job.world;
+        ServerLevel world = job.world;
         int sampleY = job.targetY > 0
                 ? job.targetY
-                : MathHelper.clamp(96, world.getBottomY() + 1, world.getBottomY() + world.getHeight() - 1);
+                : Mth.clamp(96, world.getMinY() + 1, world.getMinY() + world.getHeight() - 1);
 
         long seed = world.getSeed() ^ mix64(((long) xMin << 32) ^ (xMax & 0xffffffffL) ^ (long) zMin ^ ((long) zMax << 16));
         Random rng = new Random(seed);
@@ -306,7 +305,7 @@ public final class AutonomousSeamAuditJob {
 
             int cx = Math.floorDiv(sx, 16);
             int cz = Math.floorDiv(sz, 16);
-            if (world.getChunkManager().getChunk(cx, cz, ChunkStatus.BIOMES, false) == null) {
+            if (world.getChunkSource().getChunk(cx, cz, ChunkStatus.BIOMES, false) == null) {
                 unloaded++;
                 continue;
             }
@@ -354,7 +353,7 @@ public final class AutonomousSeamAuditJob {
     }
 
     private static void writeHere(Job job) throws IOException {
-        ServerWorld world = job.world;
+        ServerLevel world = job.world;
         BlockPos pos = new BlockPos(job.targetX, job.targetY, job.targetZ);
         String bid = biomeId(world.getBiome(pos));
         double absLatDeg = Math.abs(job.targetZ) * 90.0 / (double) Math.max(1, job.radiusBlocks);
@@ -488,8 +487,8 @@ public final class AutonomousSeamAuditJob {
         return z ^ (z >>> 33);
     }
 
-    private static String biomeId(RegistryEntry<Biome> biome) {
-        return biome.getKey().map(k -> k.getValue().toString()).orElse("?");
+    private static String biomeId(Holder<Biome> biome) {
+        return biome.unwrapKey().map(k -> k.identifier().toString()).orElse("?");
     }
 
     private static String escape(String raw) {
@@ -576,8 +575,8 @@ public final class AutonomousSeamAuditJob {
     }
 
     private static final class Job {
-        final ServerWorld world;
-        final ServerPlayerEntity player;
+        final ServerLevel world;
+        final ServerPlayer player;
         final Path auditDir;
         final BandPair pair;
         final Edge edge;
@@ -613,8 +612,8 @@ public final class AutonomousSeamAuditJob {
         String hereBandId = "?";
         double hereDeg;
 
-        Job(ServerWorld world,
-            ServerPlayerEntity player,
+        Job(ServerLevel world,
+            ServerPlayer player,
             Path auditDir,
             BandPair pair,
             Edge edge,
@@ -667,7 +666,7 @@ public final class AutonomousSeamAuditJob {
                     int budget = chunksPerTick;
                     while (budget-- > 0 && !queue.isEmpty()) {
                         ChunkPos pos = queue.poll();
-                        world.getChunkManager().getChunk(pos.x, pos.z, ChunkStatus.FULL, true);
+                        world.getChunkSource().getChunk(pos.x, pos.z, ChunkStatus.FULL, true);
                     }
                     if (queue.isEmpty()) {
                         stage = Stage.READINESS;

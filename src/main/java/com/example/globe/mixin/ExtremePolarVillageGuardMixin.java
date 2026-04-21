@@ -2,17 +2,17 @@ package com.example.globe.mixin;
 
 import com.example.globe.GlobeMod;
 import com.example.globe.world.LatitudeBiomes;
-import net.minecraft.registry.Registry;
-import net.minecraft.registry.RegistryKeys;
-import net.minecraft.structure.StructureStart;
-import net.minecraft.util.Identifier;
-import net.minecraft.util.math.BlockBox;
-import net.minecraft.util.math.ChunkPos;
-import net.minecraft.util.math.random.Random;
-import net.minecraft.world.StructureWorldAccess;
-import net.minecraft.world.gen.StructureAccessor;
-import net.minecraft.world.gen.chunk.ChunkGenerator;
-import net.minecraft.world.gen.structure.Structure;
+import net.minecraft.core.Registry;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.resources.Identifier;
+import net.minecraft.util.RandomSource;
+import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.StructureManager;
+import net.minecraft.world.level.WorldGenLevel;
+import net.minecraft.world.level.chunk.ChunkGenerator;
+import net.minecraft.world.level.levelgen.structure.BoundingBox;
+import net.minecraft.world.level.levelgen.structure.Structure;
+import net.minecraft.world.level.levelgen.structure.StructureStart;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
@@ -33,21 +33,21 @@ public abstract class ExtremePolarVillageGuardMixin {
     public abstract ChunkPos getPos();
 
     @Inject(method = "place", at = @At("HEAD"), cancellable = true)
-    private void globe$blockVillagesInExtremePolar(StructureWorldAccess world,
-                                                    StructureAccessor structureAccessor,
+    private void globe$blockVillagesInExtremePolar(WorldGenLevel world,
+                                                    StructureManager structureAccessor,
                                                     ChunkGenerator chunkGenerator,
-                                                    Random random,
-                                                    BlockBox chunkBox,
+                                                    RandomSource random,
+                                                    BoundingBox chunkBox,
                                                     ChunkPos chunkPos,
                                                     CallbackInfo ci) {
-        int blockZ = this.getPos().getCenterZ();
+        int blockZ = this.getPos().getMiddleBlockZ();
         if (!LatitudeBiomes.isBlockInExtremePolarCap(blockZ, GlobeMod.BORDER_RADIUS)) {
             return;
         }
         Structure structure = this.getStructure();
         try {
-            Registry<Structure> registry = world.getRegistryManager().getOrThrow(RegistryKeys.STRUCTURE);
-            Identifier structureId = registry.getId(structure);
+            Registry<Structure> registry = world.registryAccess().lookupOrThrow(Registries.STRUCTURE);
+            Identifier structureId = registry.getKey(structure);
             if (structureId != null && structureId.getPath().startsWith("village")) {
                 ci.cancel();
             }

@@ -1,11 +1,10 @@
 package com.example.globe.dev.audit;
 
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.util.math.ChunkPos;
-import net.minecraft.world.chunk.ChunkStatus;
-
 import java.util.ArrayDeque;
 import java.util.Deque;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.chunk.status.ChunkStatus;
 
 /**
  * Strip-shaped chunk-prep plan for seam audits.
@@ -79,11 +78,11 @@ public final class SeamStripPrep {
      * Counts strip chunks that have reached at least {@link ChunkStatus#FULL} without
      * forcing load. Used by the readiness gate.
      */
-    public static int countLoadedFull(ServerWorld world, Plan plan) {
+    public static int countLoadedFull(ServerLevel world, Plan plan) {
         int loaded = 0;
         for (int cz = plan.min().z; cz <= plan.max().z; cz++) {
             for (int cx = plan.min().x; cx <= plan.max().x; cx++) {
-                if (world.getChunkManager().getChunk(cx, cz, ChunkStatus.FULL, false) != null) {
+                if (world.getChunkSource().getChunk(cx, cz, ChunkStatus.FULL, false) != null) {
                     loaded++;
                 }
             }
@@ -95,11 +94,11 @@ public final class SeamStripPrep {
      * Counts strip chunks that have reached at least {@link ChunkStatus#BIOMES}.
      * Used to sanity-check probe validity (probes only need biome data).
      */
-    public static int countLoadedBiomes(ServerWorld world, Plan plan) {
+    public static int countLoadedBiomes(ServerLevel world, Plan plan) {
         int loaded = 0;
         for (int cz = plan.min().z; cz <= plan.max().z; cz++) {
             for (int cx = plan.min().x; cx <= plan.max().x; cx++) {
-                if (world.getChunkManager().getChunk(cx, cz, ChunkStatus.BIOMES, false) != null) {
+                if (world.getChunkSource().getChunk(cx, cz, ChunkStatus.BIOMES, false) != null) {
                     loaded++;
                 }
             }

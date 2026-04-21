@@ -1,13 +1,13 @@
 package com.example.globe.client.ui;
 
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.font.TextRenderer;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.text.Text;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.Font;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.network.chat.Component;
 
 public final class ZoneTitleOverlay {
-    private static Text title;
-    private static Text subtitle;
+    private static Component title;
+    private static Component subtitle;
     private static long startWorldTime = Long.MIN_VALUE;
 
     private static final int FADE_IN_TICKS = 10;
@@ -18,26 +18,26 @@ public final class ZoneTitleOverlay {
     private ZoneTitleOverlay() {
     }
 
-    public static void show(Text title, Text subtitle) {
-        MinecraftClient client = MinecraftClient.getInstance();
-        if (client == null || client.world == null) {
+    public static void show(Component title, Component subtitle) {
+        Minecraft client = Minecraft.getInstance();
+        if (client == null || client.level == null) {
             return;
         }
         ZoneTitleOverlay.title = title;
         ZoneTitleOverlay.subtitle = subtitle;
-        ZoneTitleOverlay.startWorldTime = client.world.getTime();
+        ZoneTitleOverlay.startWorldTime = client.level.getGameTime();
     }
 
-    public static void render(DrawContext ctx, float tickDelta) {
-        MinecraftClient client = MinecraftClient.getInstance();
-        if (client == null || client.world == null || client.textRenderer == null) {
+    public static void render(GuiGraphics ctx, float tickDelta) {
+        Minecraft client = Minecraft.getInstance();
+        if (client == null || client.level == null || client.font == null) {
             return;
         }
         if (title == null || startWorldTime == Long.MIN_VALUE) {
             return;
         }
 
-        float age = (float) (client.world.getTime() - startWorldTime) + tickDelta;
+        float age = (float) (client.level.getGameTime() - startWorldTime) + tickDelta;
         if (age < 0.0f) {
             return;
         }
@@ -68,26 +68,26 @@ public final class ZoneTitleOverlay {
         int a = (int) (alpha * 255.0f);
         int argb = (a << 24) | 0xFFFFFF;
 
-        int screenW = client.getWindow().getScaledWidth();
-        int screenH = client.getWindow().getScaledHeight();
+        int screenW = client.getWindow().getGuiScaledWidth();
+        int screenH = client.getWindow().getGuiScaledHeight();
 
-        TextRenderer tr = client.textRenderer;
+        Font tr = client.font;
 
         int baseY = screenH / 2 - 24;
 
-        var m = ctx.getMatrices();
+        var m = ctx.pose();
         m.pushMatrix();
         try {
             m.translate(screenW / 2, baseY);
             m.scale(2.0f, 2.0f);
-            ctx.drawCenteredTextWithShadow(tr, title, 0, 0, argb);
+            ctx.drawCenteredString(tr, title, 0, 0, argb);
         } finally {
             m.popMatrix();
         }
 
         if (subtitle != null) {
-            int subY = baseY + (tr.fontHeight * 2) + 6;
-            ctx.drawCenteredTextWithShadow(tr, subtitle, screenW / 2, subY, argb);
+            int subY = baseY + (tr.lineHeight * 2) + 6;
+            ctx.drawCenteredString(tr, subtitle, screenW / 2, subY, argb);
         }
     }
 }

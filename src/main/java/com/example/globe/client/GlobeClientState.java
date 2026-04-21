@@ -1,12 +1,12 @@
 package com.example.globe.client;
 
 import com.example.globe.GlobeMod;
-import net.minecraft.world.border.WorldBorder;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.world.ClientWorld;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.world.World;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.border.WorldBorder;
 
 public final class GlobeClientState {
     public static boolean DEBUG_EW_WALL = true;
@@ -63,13 +63,13 @@ public final class GlobeClientState {
         public static final WarningState NONE = new WarningState(WarningType.NONE, PolarStage.NONE, 0);
     }
 
-    private static double axisDistanceInsideBorder(net.minecraft.world.border.WorldBorder border, double coord, boolean isX) {
+    private static double axisDistanceInsideBorder(net.minecraft.world.level.border.WorldBorder border, double coord, boolean isX) {
         double center = isX ? border.getCenterX() : border.getCenterZ();
         double radius = com.example.globe.util.LatitudeMath.halfSize(border);
         return radius - Math.abs(coord - center);
     }
 
-    private static int borderRadiusBlocks(ClientWorld world) {
+    private static int borderRadiusBlocks(ClientLevel world) {
         return (int) Math.round(com.example.globe.util.LatitudeMath.halfSize(world.getWorldBorder()));
     }
 
@@ -96,18 +96,18 @@ public final class GlobeClientState {
             return;
         }
 
-        MinecraftClient client = MinecraftClient.getInstance();
-        if (client.player == null || client.world == null) {
+        Minecraft client = Minecraft.getInstance();
+        if (client.player == null || client.level == null) {
             return;
         }
 
-        long time = client.world.getTime();
+        long time = client.level.getGameTime();
         if (time - lastEwFogLogTick < 20L) {
             return;
         }
 
         lastEwFogLogTick = time;
-        var border = client.world.getWorldBorder();
+        var border = client.level.getWorldBorder();
         double progress = com.example.globe.util.LatitudeMath.hazardProgress(border, camX);
         EwStormStage stage = ewStageForProgress(progress);
         GlobeMod.LOGGER.info("[LAT_EW_FOG] hook={} camX={} stage={} progress={} ewEnd={}",
@@ -119,22 +119,22 @@ public final class GlobeClientState {
             return;
         }
 
-        MinecraftClient client = MinecraftClient.getInstance();
-        if (client.player == null || client.world == null) {
+        Minecraft client = Minecraft.getInstance();
+        if (client.player == null || client.level == null) {
             return;
         }
 
-        if (!client.world.getRegistryKey().getValue().equals(World.OVERWORLD.getValue())) {
+        if (!client.level.dimension().identifier().equals(Level.OVERWORLD.identifier())) {
             return;
         }
 
-        long time = client.world.getTime();
+        long time = client.level.getGameTime();
         if (time - lastEwStateLogTick < 20L) {
             return;
         }
         lastEwStateLogTick = time;
 
-        var border = client.world.getWorldBorder();
+        var border = client.level.getWorldBorder();
         double half = com.example.globe.util.LatitudeMath.halfSize(border);
         double dist = half - Math.abs(camX);
         double progress = com.example.globe.util.LatitudeMath.hazardProgress(border, camX);
@@ -147,7 +147,7 @@ public final class GlobeClientState {
     /**
      * Clamp client-side view distance during EW storms (Sodium-proof). Only tightens; restores when inactive.
      */
-    public static void clampEwViewDistance(MinecraftClient client) {
+    public static void clampEwViewDistance(Minecraft client) {
         // Tripwire: no view-distance mutations allowed. Enable with -Dlatitude.debugEwClampTripwire=true if needed.
         if (Boolean.getBoolean("latitude.debugEwClampTripwire")) {
             GlobeMod.LOGGER.error("EW DISTANCE MUTATION PATH HIT");
@@ -172,7 +172,7 @@ public final class GlobeClientState {
         };
     }
 
-    public static WarningState computeWarningState(ClientWorld world, PlayerEntity player) {
+    public static WarningState computeWarningState(ClientLevel world, Player player) {
         if (DEBUG_DISABLE_WARNINGS) {
             return WarningState.NONE;
         }
@@ -182,7 +182,7 @@ public final class GlobeClientState {
         double progressZ = com.example.globe.util.LatitudeMath.hazardProgress(border, player.getZ());
         PolarStage polar = polarStageForProgress(border, player.getZ(), progressZ);
 
-        double distToBorder = Math.min(Math.abs(player.getX() - border.getBoundWest()), Math.abs(border.getBoundEast() - player.getX()));
+        double distToBorder = Math.min(Math.abs(player.getX() - border.getMinX()), Math.abs(border.getMaxX() - player.getX()));
 
         // Debug print every 10s to verify thresholds (opt-in)
         if (Boolean.getBoolean("latitude.debugEwWarn")) {
@@ -190,7 +190,7 @@ public final class GlobeClientState {
             if (now - globe$ewLastLogMs >= 10_000L) {
                 globe$ewLastLogMs = now;
                 GlobeMod.LOGGER.info("[Latitude EW] distToBorder={} x={} west={} east={} L1=500 L2=100",
-                        distToBorder, player.getX(), border.getBoundWest(), border.getBoundEast());
+                        distToBorder, player.getX(), border.getMinX(), border.getMaxX());
             }
         }
 
@@ -230,13 +230,13 @@ public final class GlobeClientState {
         return new WarningState(WarningType.STORM, ewTextStage, er);
     }
 
-    public static PolarStage computePolarStage(ClientWorld world, PlayerEntity player) {
+    public static PolarStage computePolarStage(ClientLevel world, Player player) {
         var border = world.getWorldBorder();
         double progressZ = com.example.globe.util.LatitudeMath.hazardProgress(border, player.getZ());
         return polarStageForProgress(border, player.getZ(), progressZ);
     }
 
-    public static EwStormStage computeEwStormStage(ClientWorld world, PlayerEntity player) {
+    public static EwStormStage computeEwStormStage(ClientLevel world, Player player) {
         var border = world.getWorldBorder();
         double progressX = com.example.globe.util.LatitudeMath.hazardProgress(border, player.getX());
         return ewStageForProgress(progressX);
@@ -249,18 +249,18 @@ public final class GlobeClientState {
     }
 
     public static double ewWestX() {
-        MinecraftClient mc = MinecraftClient.getInstance();
-        if (mc == null || mc.world == null) return Double.POSITIVE_INFINITY;
-        var border = mc.world.getWorldBorder();
+        Minecraft mc = Minecraft.getInstance();
+        if (mc == null || mc.level == null) return Double.POSITIVE_INFINITY;
+        var border = mc.level.getWorldBorder();
         double center = border.getCenterX();
         double radius = com.example.globe.util.LatitudeMath.halfSize(border);
         return center - radius;
     }
 
     public static double ewEastX() {
-        MinecraftClient mc = MinecraftClient.getInstance();
-        if (mc == null || mc.world == null) return Double.POSITIVE_INFINITY;
-        var border = mc.world.getWorldBorder();
+        Minecraft mc = Minecraft.getInstance();
+        if (mc == null || mc.level == null) return Double.POSITIVE_INFINITY;
+        var border = mc.level.getWorldBorder();
         double center = border.getCenterX();
         double radius = com.example.globe.util.LatitudeMath.halfSize(border);
         return center + radius;
@@ -276,9 +276,9 @@ public final class GlobeClientState {
     }
 
     public static double distanceToEwBorderBlocks(double x) {
-        var client = MinecraftClient.getInstance();
-        if (client == null || client.world == null) return Double.POSITIVE_INFINITY;
-        return distanceToEwBorderBlocks(client.world.getWorldBorder(), x);
+        var client = Minecraft.getInstance();
+        if (client == null || client.level == null) return Double.POSITIVE_INFINITY;
+        return distanceToEwBorderBlocks(client.level.getWorldBorder(), x);
     }
 
     public static int ewWarningStage(double x) {
@@ -320,13 +320,13 @@ public final class GlobeClientState {
     }
 
     public static double getDistanceToNearestEWBorder() {
-        var mc = net.minecraft.client.MinecraftClient.getInstance();
+        var mc = net.minecraft.client.Minecraft.getInstance();
         if (mc == null || mc.gameRenderer == null) return Double.NaN;
 
-        var cam = mc.gameRenderer.getCamera();
+        var cam = mc.gameRenderer.getMainCamera();
         if (cam == null) return Double.NaN;
 
-        double x = cam.getCameraPos().x;
+        double x = cam.position().x;
 
         double eastX = 3750.0;
         double westX = -3750.0;
@@ -346,7 +346,7 @@ public final class GlobeClientState {
         return endFar + (endNear - endFar) * a;
     }
 
-    private static float polarWhiteoutIntensity(ClientWorld world, PlayerEntity player) {
+    private static float polarWhiteoutIntensity(ClientLevel world, Player player) {
         var border = world.getWorldBorder();
         double progressZ = com.example.globe.util.LatitudeMath.hazardProgress(border, player.getZ());
         PolarStage stage = polarStageForProgress(border, player.getZ(), progressZ);
@@ -388,21 +388,21 @@ public final class GlobeClientState {
         public static final Eval INACTIVE = new Eval(false, false, 0, 0, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, false, false);
     }
 
-    public static Eval evaluate(MinecraftClient client) {
-        if (client.player == null || client.world == null) {
+    public static Eval evaluate(Minecraft client) {
+        if (client.player == null || client.level == null) {
             cachedEvalWorldTime = Long.MIN_VALUE;
             cachedEval = null;
             return Eval.INACTIVE;
         }
 
-        long worldTime = client.world.getTime();
+        long worldTime = client.level.getGameTime();
         if (cachedEval != null && cachedEvalWorldTime == worldTime) {
             return cachedEval;
         }
 
         cachedEvalWorldTime = worldTime;
 
-        BlockPos pos = client.player.getBlockPos();
+        BlockPos pos = client.player.blockPosition();
         int absX = (int) Math.floor(Math.abs(client.player.getX()));
         int absZ = (int) Math.floor(Math.abs(client.player.getZ()));
 
@@ -410,7 +410,7 @@ public final class GlobeClientState {
 
         boolean active = globeWorld;
         if (!active) {
-            double half = com.example.globe.util.LatitudeMath.halfSize(client.world.getWorldBorder());
+            double half = com.example.globe.util.LatitudeMath.halfSize(client.level.getWorldBorder());
             active = Math.abs(half - 3750.0) < 1.0
                     || Math.abs(half - 5000.0) < 1.0
                     || Math.abs(half - 7500.0) < 1.0
@@ -420,7 +420,7 @@ public final class GlobeClientState {
         }
 
         // If server says it's a globe world, trust it explicitly and ignore client-side registry key quirks.
-        if (!globeWorld && !client.world.getRegistryKey().getValue().equals(World.OVERWORLD.getValue())) {
+        if (!globeWorld && !client.level.dimension().identifier().equals(Level.OVERWORLD.identifier())) {
             active = false;
         }
 
@@ -429,7 +429,7 @@ public final class GlobeClientState {
             return cachedEval;
         }
 
-        var world = client.world;
+        var world = client.level;
         var player = client.player;
         if (world == null || player == null) {
             return Eval.INACTIVE;
@@ -468,8 +468,8 @@ public final class GlobeClientState {
         return cachedEval;
     }
 
-    private static boolean isSurfaceOk(MinecraftClient client, BlockPos pos) {
-        var world = client.world;
+    private static boolean isSurfaceOk(Minecraft client, BlockPos pos) {
+        var world = client.level;
         if (world == null) {
             return false;
         }
@@ -481,19 +481,19 @@ public final class GlobeClientState {
 
         // Reliable surface check: must be exposed to the sky.
         // Using sky visibility avoids false-negatives from nearby blocks and is stable across time-of-day.
-        return world.isSkyVisible(pos.up());
+        return world.canSeeSky(pos.above());
     }
 
     public static float computePoleFogEnd(double z) {
         if (DEBUG_DISABLE_WARNINGS) {
             return -1.0f;
         }
-        MinecraftClient client = MinecraftClient.getInstance();
-        if (client.player == null || client.world == null) {
+        Minecraft client = Minecraft.getInstance();
+        if (client.player == null || client.level == null) {
             return -1.0f;
         }
 
-        float intensity = polarWhiteoutIntensity(client.world, client.player);
+        float intensity = polarWhiteoutIntensity(client.level, client.player);
         intensity = Math.max(0.0f, Math.min(1.0f, intensity));
         if (intensity <= 0.001f) {
             return -1.0f;
@@ -510,12 +510,12 @@ public final class GlobeClientState {
         if (DEBUG_DISABLE_WARNINGS) {
             return -1.0f;
         }
-        MinecraftClient client = MinecraftClient.getInstance();
-        if (client.player == null || client.world == null) {
+        Minecraft client = Minecraft.getInstance();
+        if (client.player == null || client.level == null) {
             return -1.0f;
         }
 
-        var border = client.world.getWorldBorder();
+        var border = client.level.getWorldBorder();
         double radius = com.example.globe.util.LatitudeMath.halfSize(border);
         double warnStart = Math.min(1500.0, Math.max(300.0, radius / 8.0));
 
@@ -541,12 +541,12 @@ public final class GlobeClientState {
         if (DEBUG_DISABLE_WARNINGS) {
             return 0.0f;
         }
-        MinecraftClient client = MinecraftClient.getInstance();
-        if (client.player == null || client.world == null) {
+        Minecraft client = Minecraft.getInstance();
+        if (client.player == null || client.level == null) {
             return 0.0f;
         }
 
-        float intensity = polarWhiteoutIntensity(client.world, client.player);
+        float intensity = polarWhiteoutIntensity(client.level, client.player);
         intensity = Math.max(0.0f, Math.min(1.0f, intensity));
         if (intensity <= 0.001f) {
             return 0.0f;

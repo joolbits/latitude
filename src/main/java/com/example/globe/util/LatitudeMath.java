@@ -1,7 +1,7 @@
 package com.example.globe.util;
 
-import net.minecraft.util.math.MathHelper;
-import net.minecraft.world.border.WorldBorder;
+import net.minecraft.util.Mth;
+import net.minecraft.world.level.border.WorldBorder;
 
 public final class LatitudeMath {
     private LatitudeMath() {
@@ -50,7 +50,7 @@ public final class LatitudeMath {
     public static double latNormFromZ(WorldBorder border, double z) {
         double half = halfSize(border);
         double norm = z / half;
-        return MathHelper.clamp(norm, -1.0, 1.0);
+        return Mth.clamp(norm, -1.0, 1.0);
     }
 
     /** Returns degrees latitude in [-90..90]. */
@@ -88,7 +88,7 @@ public final class LatitudeMath {
     public static double hazardProgress(WorldBorder border, double coord) {
         double half = halfSize(border);
         if (half <= 0.0) return 1.0;
-        return MathHelper.clamp(Math.abs(coord) / half, 0.0, 1.0);
+        return Mth.clamp(Math.abs(coord) / half, 0.0, 1.0);
     }
 
     /** Returns hazard stage index (0..4) based on normalized progress. */
@@ -113,16 +113,16 @@ public final class LatitudeMath {
 
     public static int latitudeDegrees(WorldBorder border, double z) {
         int deg = (int) Math.round(Math.abs(degreesFromZ(border, z)));
-        return MathHelper.clamp(deg, 0, 90);
+        return Mth.clamp(deg, 0, 90);
     }
 
     /** Returns |z| in blocks for a target absolute latitude degree [0..90]. */
     public static int zForLatitudeDeg(double deg, int radiusBlocks) {
         if (radiusBlocks <= 0) return 0;
-        double clampedDeg = MathHelper.clamp(Math.abs(deg), 0.0, 90.0);
+        double clampedDeg = Mth.clamp(Math.abs(deg), 0.0, 90.0);
         double t = clampedDeg / 90.0;
         int z = (int) Math.round(t * radiusBlocks);
-        return MathHelper.clamp(z, 0, radiusBlocks);
+        return Mth.clamp(z, 0, radiusBlocks);
     }
 
     public static char hemisphere(WorldBorder border, double z) {
@@ -159,7 +159,7 @@ public final class LatitudeMath {
     public static LatitudeZone zoneForRadius(int radiusBlocks, double z) {
         if (radiusBlocks <= 0) return LatitudeZone.EQUATOR;
         double t = Math.abs(z) / (double) radiusBlocks;
-        t = MathHelper.clamp(t, 0.0, 1.0);
+        t = Mth.clamp(t, 0.0, 1.0);
         if (t < EQUATOR_MAX_FRAC) return LatitudeZone.EQUATOR;
         if (t < TROPICAL_MAX_FRAC) return LatitudeZone.TROPICAL;
         if (t < SUBTROPICAL_MAX_FRAC) return LatitudeZone.SUBTROPICAL;

@@ -1,15 +1,14 @@
 package com.example.globe.mixin.client;
 
 import com.example.globe.client.LatitudeClientState;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.nbt.NbtElement;
+import net.minecraft.client.Minecraft;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.NbtAccounter;
 import net.minecraft.nbt.NbtIo;
-import net.minecraft.nbt.NbtSizeTracker;
-import net.minecraft.resource.ResourcePackManager;
-import net.minecraft.server.SaveLoader;
-import net.minecraft.util.WorldSavePath;
-import net.minecraft.world.level.storage.LevelStorage;
+import net.minecraft.server.WorldStem;
+import net.minecraft.server.packs.repository.PackRepository;
+import net.minecraft.world.level.storage.LevelResource;
+import net.minecraft.world.level.storage.LevelStorageSource;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -19,13 +18,13 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Optional;
 
-@Mixin(MinecraftClient.class)
+@Mixin(Minecraft.class)
 public abstract class MinecraftClientStartIntegratedMixin {
 
     @Inject(method = "startIntegratedServer", at = @At("HEAD"))
-    private void globe$markLatitudeLoad(LevelStorage.Session session,
-                                        ResourcePackManager dataPackManager,
-                                        SaveLoader saveLoader,
+    private void globe$markLatitudeLoad(LevelStorageSource.LevelStorageAccess session,
+                                        PackRepository dataPackManager,
+                                        WorldStem saveLoader,
                                         boolean newWorld,
                                         CallbackInfo ci) {
         if (LatitudeClientState.isLatitudeWorldLoading()) {
@@ -37,30 +36,30 @@ public abstract class MinecraftClientStartIntegratedMixin {
         }
     }
 
-    private static boolean globe$isLatitudeWorld(LevelStorage.Session session) {
+    private static boolean globe$isLatitudeWorld(LevelStorageSource.LevelStorageAccess session) {
         try {
-            Path levelDat = session.getDirectory(WorldSavePath.ROOT).resolve("level.dat");
+            Path levelDat = session.getLevelPath(LevelResource.ROOT).resolve("level.dat");
             if (!Files.exists(levelDat)) {
                 return false;
             }
-            NbtCompound root = NbtIo.readCompressed(levelDat, NbtSizeTracker.ofUnlimitedBytes());
-            Optional<NbtCompound> dataOpt = root.getCompound("Data");
+            CompoundTag root = NbtIo.readCompressed(levelDat, NbtAccounter.unlimitedHeap());
+            Optional<CompoundTag> dataOpt = root.getCompound("Data");
             if (dataOpt.isEmpty()) return false;
-            Optional<NbtCompound> wgsOpt = dataOpt.get().getCompound("WorldGenSettings");
+            Optional<CompoundTag> wgsOpt = dataOpt.get().getCompound("WorldGenSettings");
             if (wgsOpt.isEmpty()) return false;
-            Optional<NbtCompound> dimsOpt = wgsOpt.get().getCompound("dimensions");
+            Optional<CompoundTag> dimsOpt = wgsOpt.get().getCompound("dimensions");
             if (dimsOpt.isEmpty()) return false;
-            Optional<NbtCompound> overworldOpt = dimsOpt.get().getCompound("minecraft:overworld");
+            Optional<CompoundTag> overworldOpt = dimsOpt.get().getCompound("minecraft:overworld");
             if (overworldOpt.isEmpty()) return false;
-            Optional<NbtCompound> generatorOpt = overworldOpt.get().getCompound("generator");
+            Optional<CompoundTag> generatorOpt = overworldOpt.get().getCompound("generator");
             if (generatorOpt.isEmpty()) return false;
-            NbtCompound generator = generatorOpt.get();
+            CompoundTag generator = generatorOpt.get();
 
             Optional<String> settingsId = generator.getString("settings");
             if (settingsId.isPresent() && settingsId.get().startsWith("globe:")) {
                 return true;
             }
-            Optional<NbtCompound> settingsTag = generator.getCompound("settings");
+            Optional<CompoundTag> settingsTag = generator.getCompound("settings");
             if (settingsTag.isPresent()) {
                 Optional<String> preset = settingsTag.get().getString("preset");
                 if (preset.isPresent() && preset.get().startsWith("globe:")) {

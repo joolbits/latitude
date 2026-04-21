@@ -2,15 +2,15 @@ package com.example.globe.mixin.client;
 
 import com.example.globe.client.LatitudeClientState;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.network.ClientPlayerEntity;
-import net.minecraft.client.world.ClientWorld;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.screen.world.LevelLoadingScreen;
-import net.minecraft.text.Text;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.screens.LevelLoadingScreen;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.network.chat.Component;
+import net.minecraft.util.Mth;
 import net.minecraft.util.Util;
-import net.minecraft.util.math.MathHelper;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
@@ -102,8 +102,8 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
                         sinceExpedition);
             }
 
-            ClientWorld world = client.world;
-            ClientPlayerEntity player = client.player;
+            ClientLevel world = client.world;
+            LocalPlayer player = client.player;
             if (world == null || player == null) {
                 return;
             }
@@ -113,24 +113,24 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
                     clearedAt);
 
             if (client.currentScreen instanceof LevelLoadingScreen screen) {
-                screen.close();
+                screen.onClose();
             }
         });
     }
 
-    protected LevelLoadingScreenLatitudeOverlayMixin(Text title) {
+    protected LevelLoadingScreenLatitudeOverlayMixin(Component title) {
         super(title);
     }
 
     @Inject(method = "render", at = @At("TAIL"))
-    private void globe$renderLatitudeOverlay(DrawContext context, int mouseX, int mouseY, float delta, CallbackInfo ci) {
+    private void globe$renderLatitudeOverlay(GuiGraphics context, int mouseX, int mouseY, float delta, CallbackInfo ci) {
         if (!LatitudeClientState.isLatitudeWorldLoading()) {
             globe$overlayStartMs = 0L;
             globe$displayProgress = 0f;
             return;
         }
 
-        long now = Util.getMeasuringTimeMs();
+        long now = Util.getMillis();
         if (globe$overlayStartMs == 0L) {
             globe$overlayStartMs = now;
             globe$lastDirectionChangeMs = now;
@@ -144,8 +144,8 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
         }
         long elapsed = now - globe$overlayStartMs;
 
-        int sw = context.getScaledWindowWidth();
-        int sh = context.getScaledWindowHeight();
+        int sw = context.guiWidth();
+        int sh = context.guiHeight();
 
         // ── Brown pane (centered, covers the vanilla chunk grid) ──
         int paneW = Math.min(sw - 40, 340);
@@ -183,7 +183,7 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
         int barW = Math.min(160, paneW - 40);
         int barX = cx - barW / 2;
         int barY = paneY + paneH - 20;
-        float rawProgress = MathHelper.clamp(this.loadProgress, 0f, 1f);
+        float rawProgress = Mth.clamp(this.loadProgress, 0f, 1f);
         LatitudeClientState.latitudeLoadingProgress = rawProgress;
         globe$displayProgress = rawProgress;
         float progress = rawProgress;
@@ -230,9 +230,9 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
     // ════════════════════════════════════════════
 
     @Unique
-    private void globe$drawCentered(DrawContext context, String text, int cx, int y, int color, boolean shadow) {
-        int w = this.textRenderer.getWidth(text);
-        context.drawText(this.textRenderer, text, cx - w / 2, y, color, shadow);
+    private void globe$drawCentered(GuiGraphics context, String text, int cx, int y, int color, boolean shadow) {
+        int w = this.font.width(text);
+        context.drawString(this.font, text, cx - w / 2, y, color, shadow);
     }
 
     @Unique
@@ -256,7 +256,7 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
     }
 
     @Unique
-    private void globe$drawCompass(DrawContext context, int cx, int cy, int radius) {
+    private void globe$drawCompass(GuiGraphics context, int cx, int cy, int radius) {
         // Compass face — dark circle with gold ring
         int r2 = radius * radius;
         for (int dy = -radius; dy <= radius; dy++) {
@@ -287,8 +287,8 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
 
         // Red 'N' label at north
         String nLabel = "N";
-        int nW = this.textRenderer.getWidth(nLabel);
-        context.drawText(this.textRenderer, nLabel, cx - nW / 2 + 1, cy - radius + 2 + tickLen + 1, 0xFFCC3333, true);
+        int nW = this.font.width(nLabel);
+        context.drawString(this.font, nLabel, cx - nW / 2 + 1, cy - radius + 2 + tickLen + 1, 0xFFCC3333, true);
 
         // Wandering needle
         double angle = globe$needleAngle;
@@ -309,7 +309,7 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
     }
 
     @Unique
-    private void globe$drawLine(DrawContext context, int x0, int y0, int x1, int y1, int color) {
+    private void globe$drawLine(GuiGraphics context, int x0, int y0, int x1, int y1, int color) {
         int dx = Math.abs(x1 - x0);
         int dy = Math.abs(y1 - y0);
         int sx = x0 < x1 ? 1 : -1;
@@ -325,7 +325,7 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
     }
 
     @Unique
-    private void globe$drawPhrase(DrawContext context, int cx, int y, long elapsedMs) {
+    private void globe$drawPhrase(GuiGraphics context, int cx, int y, long elapsedMs) {
         long cyclePos = elapsedMs % PHRASE_CYCLE_MS;
         int phraseIdx = (globe$phraseSeedIdx + (int) ((elapsedMs / PHRASE_CYCLE_MS) % PHRASES.length)) % PHRASES.length;
         String phrase = PHRASES[phraseIdx];
@@ -340,18 +340,18 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
         } else {
             alpha = 1.0f - (t - 0.75f) / 0.25f;
         }
-        alpha = MathHelper.clamp(alpha, 0f, 1f);
+        alpha = Mth.clamp(alpha, 0f, 1f);
 
         int a = Math.round(alpha * 255);
         if (a < 4) return;
         int color = (a << 24) | (WARM_WHITE & 0x00FFFFFF);
 
-        int w = this.textRenderer.getWidth(phrase);
-        context.drawText(this.textRenderer, phrase, cx - w / 2, y, color, false);
+        int w = this.font.width(phrase);
+        context.drawString(this.font, phrase, cx - w / 2, y, color, false);
     }
 
     @Unique
-    private static void globe$drawGrid(DrawContext context, int paneX, int paneY, int paneW, int paneH) {
+    private static void globe$drawGrid(GuiGraphics context, int paneX, int paneY, int paneW, int paneH) {
         for (int gy = GRID_STEP; gy < paneH; gy += GRID_STEP) {
             context.fill(paneX, paneY + gy, paneX + paneW, paneY + gy + 1, GRID_COLOR);
         }
@@ -361,7 +361,7 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
     }
 }
 
-@Mixin(MinecraftClient.class)
+@Mixin(Minecraft.class)
 class LatitudeLoadingClientTickMixin {
     @Unique
     private static final Logger GLOBE_LOGGER = LoggerFactory.getLogger("LatitudeLoadingOverlay");
@@ -369,10 +369,10 @@ class LatitudeLoadingClientTickMixin {
     private static final long FAIL_SAFE_CLEAR_MS = 10 * 60 * 1000L;
 
     @Shadow
-    public ClientWorld world;
+    public ClientLevel world;
 
     @Shadow
-    public ClientPlayerEntity player;
+    public LocalPlayer player;
 
     @Inject(method = "tick", at = @At("TAIL"))
     private void globe$clearLoadingOnClientReadyTick(CallbackInfo ci) {
@@ -397,15 +397,15 @@ class LatitudeLoadingClientTickMixin {
                     LatitudeClientState.elapsedSinceExpeditionMs());
         }
 
-        MinecraftClient client = (MinecraftClient) (Object) this;
-        boolean pastFirstPlayerTick = this.player.age > 1;
-        boolean noLongerLoadingScreen = !(client.currentScreen instanceof LevelLoadingScreen);
+        Minecraft client = (Minecraft) (Object) this;
+        boolean pastFirstPlayerTick = this.player.tickCount > 1;
+        boolean noLongerLoadingScreen = !(client.screen instanceof LevelLoadingScreen);
         if (!pastFirstPlayerTick && !noLongerLoadingScreen) {
             return;
         }
         GLOBE_LOGGER.info("[Latitude lifecycle] first safe playable tick — {}ms since beginExpedition (playerAge={}, loadingScreenVisible={})",
                 LatitudeClientState.elapsedSinceExpeditionMs(),
-                this.player.age,
+                this.player.tickCount,
                 !noLongerLoadingScreen);
 
         long clearedAt = LatitudeClientState.clearLatitudeLoadingState();

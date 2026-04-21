@@ -10,16 +10,15 @@ import org.slf4j.LoggerFactory;
 import net.fabricmc.fabric.api.biome.v1.BiomeModificationContext;
 import net.fabricmc.fabric.api.biome.v1.BiomeModifications;
 import net.fabricmc.fabric.api.biome.v1.ModificationPhase;
-import net.minecraft.registry.RegistryKey;
-import net.minecraft.registry.entry.RegistryEntry;
-import net.minecraft.util.Identifier;
-import net.minecraft.world.biome.BiomeKeys;
-import net.minecraft.world.gen.GenerationStep;
-import net.minecraft.world.gen.feature.PlacedFeature;
+import net.minecraft.core.Holder;
+import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.world.level.levelgen.GenerationStep;
+import net.minecraft.world.level.levelgen.placement.PlacedFeature;
 
 public final class BiomeFeatureStripping {
     private static final Logger LOGGER = LoggerFactory.getLogger("globe");
-    private static final Identifier STRIP_FROZEN_RIVER_ID = Identifier.of("globe", "strip_frozen_river_vegetal");
+    private static final Identifier STRIP_FROZEN_RIVER_ID = Identifier.fromNamespaceAndPath("globe", "strip_frozen_river_vegetal");
 
     private BiomeFeatureStripping() {
     }
@@ -36,16 +35,16 @@ public final class BiomeFeatureStripping {
     }
 
     private static void stripFrozenRiverVegetation(BiomeModificationContext ctx) {
-        GenerationStep.Feature step = GenerationStep.Feature.VEGETAL_DECORATION;
+        GenerationStep.Decoration step = GenerationStep.Decoration.VEGETAL_DECORATION;
         int attempted = 0;
         int removed = 0;
 
         boolean enumerated = false;
         try {
-            List<RegistryKey<PlacedFeature>> stepKeys = findStepFeatures(ctx, step);
+            List<ResourceKey<PlacedFeature>> stepKeys = findStepFeatures(ctx, step);
             enumerated = !stepKeys.isEmpty();
             attempted += stepKeys.size();
-            for (RegistryKey<PlacedFeature> key : stepKeys) {
+            for (ResourceKey<PlacedFeature> key : stepKeys) {
                 if (ctx.getGenerationSettings().removeFeature(step, key)) {
                     removed++;
                 }
@@ -61,8 +60,8 @@ public final class BiomeFeatureStripping {
         LOGGER.info("[Latitude] Frozen river vegetal removal attempted={} removed={} step={}", attempted, removed, step);
     }
 
-    private static List<RegistryKey<PlacedFeature>> findStepFeatures(BiomeModificationContext ctx, GenerationStep.Feature step) {
-        List<RegistryKey<PlacedFeature>> keys = new ArrayList<>();
+    private static List<ResourceKey<PlacedFeature>> findStepFeatures(BiomeModificationContext ctx, GenerationStep.Decoration step) {
+        List<ResourceKey<PlacedFeature>> keys = new ArrayList<>();
         Object generationSettings = extractGenerationSettings(ctx.getGenerationSettings());
         if (generationSettings == null) {
             return keys;
@@ -75,11 +74,11 @@ public final class BiomeFeatureStripping {
                     Object stepList = steps.get(idx);
                     if (stepList instanceof List<?> placedList) {
                         for (Object entry : placedList) {
-                            if (entry instanceof RegistryEntry<?> registryEntry) {
-                                Optional<? extends RegistryKey<?>> key = registryEntry.getKey();
+                            if (entry instanceof Holder<?> registryEntry) {
+                                Optional<? extends ResourceKey<?>> key = registryEntry.unwrapKey();
                                 if (key.isPresent()) {
                                     @SuppressWarnings("unchecked")
-                                    RegistryKey<PlacedFeature> cast = (RegistryKey<PlacedFeature>) key.get();
+                                    ResourceKey<PlacedFeature> cast = (ResourceKey<PlacedFeature>) key.get();
                                     keys.add(cast);
                                 }
                             }

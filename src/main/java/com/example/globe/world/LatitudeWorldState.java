@@ -2,14 +2,13 @@ package com.example.globe.world;
 
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 import com.mojang.serialization.Codec;
-import net.minecraft.datafixer.DataFixTypes;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.world.PersistentState;
-import net.minecraft.world.PersistentStateType;
-
 import java.util.Optional;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.util.datafix.DataFixTypes;
+import net.minecraft.world.level.saveddata.SavedData;
+import net.minecraft.world.level.saveddata.SavedDataType;
 
-public final class LatitudeWorldState extends PersistentState {
+public final class LatitudeWorldState extends SavedData {
     public enum WorldgenPolicyVersion {
         LEGACY_1_2_X,
         MODERN_1_3
@@ -20,7 +19,7 @@ public final class LatitudeWorldState extends PersistentState {
             Enum::name
     );
 
-    private static final PersistentStateType<LatitudeWorldState> STATE_TYPE = new PersistentStateType<>(
+    private static final SavedDataType<LatitudeWorldState> STATE_TYPE = new SavedDataType<>(
             "globe_latitude_world_state",
             LatitudeWorldState::new,
             RecordCodecBuilder.create(instance -> instance.group(
@@ -49,8 +48,8 @@ public final class LatitudeWorldState extends PersistentState {
         return worldgenPolicy == null ? Optional.empty() : worldgenPolicy;
     }
 
-    public static LatitudeWorldState get(ServerWorld world) {
-        LatitudeWorldState state = world.getPersistentStateManager().getOrCreate(STATE_TYPE);
+    public static LatitudeWorldState get(ServerLevel world) {
+        LatitudeWorldState state = world.getDataStorage().computeIfAbsent(STATE_TYPE);
         state.ensureWorldgenPolicy(world);
         return state;
     }
@@ -62,7 +61,7 @@ public final class LatitudeWorldState extends PersistentState {
     public void setSpawnPickerDismissed(boolean spawnPickerDismissed) {
         if (this.spawnPickerDismissed != spawnPickerDismissed) {
             this.spawnPickerDismissed = spawnPickerDismissed;
-            markDirty();
+            setDirty();
         }
     }
 
@@ -75,13 +74,13 @@ public final class LatitudeWorldState extends PersistentState {
         if (this.worldgenPolicy != normalized) {
             this.worldgenPolicy = normalized;
             LatitudeBiomes.setWorldgenPolicy(normalized);
-            markDirty();
+            setDirty();
         } else {
             LatitudeBiomes.setWorldgenPolicy(normalized);
         }
     }
 
-    private void ensureWorldgenPolicy(ServerWorld world) {
+    private void ensureWorldgenPolicy(ServerLevel world) {
         if (worldgenPolicy == null) {
             setWorldgenPolicy(inferWorldgenPolicy(world));
             return;
@@ -89,8 +88,8 @@ public final class LatitudeWorldState extends PersistentState {
         LatitudeBiomes.setWorldgenPolicy(worldgenPolicy);
     }
 
-    private static WorldgenPolicyVersion inferWorldgenPolicy(ServerWorld world) {
-        return world.getTime() < 100L
+    private static WorldgenPolicyVersion inferWorldgenPolicy(ServerLevel world) {
+        return world.getGameTime() < 100L
                 ? WorldgenPolicyVersion.MODERN_1_3
                 : WorldgenPolicyVersion.LEGACY_1_2_X;
     }

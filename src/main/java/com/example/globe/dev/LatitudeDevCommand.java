@@ -11,27 +11,6 @@ import com.mojang.brigadier.arguments.LongArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
-import net.minecraft.command.CommandSource;
-import net.minecraft.network.packet.s2c.play.PositionFlag;
-import net.minecraft.registry.RegistryKeys;
-import net.minecraft.registry.entry.RegistryEntry;
-import net.minecraft.server.command.CommandManager;
-import net.minecraft.server.command.ServerCommandSource;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.text.Text;
-import net.minecraft.fluid.FluidState;
-import net.minecraft.registry.tag.FluidTags;
-import net.minecraft.util.Identifier;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.ChunkPos;
-import net.minecraft.util.math.MathHelper;
-import net.minecraft.world.Heightmap;
-import net.minecraft.world.border.WorldBorder;
-import net.minecraft.world.biome.Biome;
-import net.minecraft.block.BlockState;
-import net.minecraft.world.chunk.ChunkStatus;
-
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -50,6 +29,26 @@ import java.util.Map;
 import java.util.OptionalLong;
 import java.util.Random;
 import java.util.concurrent.CompletableFuture;
+import net.minecraft.commands.CommandSourceStack;
+import net.minecraft.commands.Commands;
+import net.minecraft.commands.SharedSuggestionProvider;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Holder;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.network.chat.Component;
+import net.minecraft.resources.Identifier;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.tags.FluidTags;
+import net.minecraft.util.Mth;
+import net.minecraft.world.entity.Relative;
+import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.biome.Biome;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.border.WorldBorder;
+import net.minecraft.world.level.chunk.status.ChunkStatus;
+import net.minecraft.world.level.levelgen.Heightmap;
+import net.minecraft.world.level.material.FluidState;
 
 public final class LatitudeDevCommand {
     private static final List<String> TP_BAND_NAMES = LatitudeBands.canonicalIds();
@@ -63,96 +62,96 @@ public final class LatitudeDevCommand {
     private LatitudeDevCommand() {
     }
 
-    public static void register(CommandDispatcher<ServerCommandSource> dispatcher) {
+    public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
         dispatcher.register(
-                CommandManager.literal("latdev")
+                Commands.literal("latdev")
                         .executes(LatitudeDevCommand::help)
-                        .then(CommandManager.literal("help").executes(LatitudeDevCommand::help))
-                        .then(CommandManager.literal("transect")
-                                .then(CommandManager.argument("zStart", IntegerArgumentType.integer())
-                                        .then(CommandManager.argument("zEnd", IntegerArgumentType.integer())
-                                                .then(CommandManager.argument("xHalfWidthChunks", IntegerArgumentType.integer())
-                                                        .then(CommandManager.argument("chunksPerTick", IntegerArgumentType.integer())
+                        .then(Commands.literal("help").executes(LatitudeDevCommand::help))
+                        .then(Commands.literal("transect")
+                                .then(Commands.argument("zStart", IntegerArgumentType.integer())
+                                        .then(Commands.argument("zEnd", IntegerArgumentType.integer())
+                                                .then(Commands.argument("xHalfWidthChunks", IntegerArgumentType.integer())
+                                                        .then(Commands.argument("chunksPerTick", IntegerArgumentType.integer())
                                                                 .executes(LatitudeDevCommand::startTransectRaw))))))
-                        .then(CommandManager.literal("transectDeg")
-                                .then(CommandManager.argument("degStart", IntegerArgumentType.integer())
-                                        .then(CommandManager.argument("degEnd", IntegerArgumentType.integer())
-                                                .then(CommandManager.argument("xHalfWidthChunks", IntegerArgumentType.integer())
-                                                        .then(CommandManager.argument("chunksPerTick", IntegerArgumentType.integer())
+                        .then(Commands.literal("transectDeg")
+                                .then(Commands.argument("degStart", IntegerArgumentType.integer())
+                                        .then(Commands.argument("degEnd", IntegerArgumentType.integer())
+                                                .then(Commands.argument("xHalfWidthChunks", IntegerArgumentType.integer())
+                                                        .then(Commands.argument("chunksPerTick", IntegerArgumentType.integer())
                                                                 .executes(LatitudeDevCommand::startTransectDeg))))))
-                        .then(CommandManager.literal("slicePoleNS")
-                                .then(CommandManager.argument("centerX", IntegerArgumentType.integer())
+                        .then(Commands.literal("slicePoleNS")
+                                .then(Commands.argument("centerX", IntegerArgumentType.integer())
                                         .executes(LatitudeDevCommand::startSlicePoleNS)
-                                        .then(CommandManager.argument("widthChunks", IntegerArgumentType.integer(1, 64))
+                                        .then(Commands.argument("widthChunks", IntegerArgumentType.integer(1, 64))
                                                 .executes(LatitudeDevCommand::startSlicePoleNS)
-                                                .then(CommandManager.argument("chunksPerTick", IntegerArgumentType.integer(1, 2000))
+                                                .then(Commands.argument("chunksPerTick", IntegerArgumentType.integer(1, 2000))
                                                         .executes(LatitudeDevCommand::startSlicePoleNS)))))
-                        .then(CommandManager.literal("here").executes(LatitudeDevCommand::here))
-                        .then(CommandManager.literal("explainHere").executes(LatitudeDevCommand::explainHere))
-                        .then(CommandManager.literal("tpBand")
-                                .then(CommandManager.argument("band", StringArgumentType.word())
-                                        .suggests((context, builder) -> CommandSource.suggestMatching(TP_BAND_NAMES, builder))
+                        .then(Commands.literal("here").executes(LatitudeDevCommand::here))
+                        .then(Commands.literal("explainHere").executes(LatitudeDevCommand::explainHere))
+                        .then(Commands.literal("tpBand")
+                                .then(Commands.argument("band", StringArgumentType.word())
+                                        .suggests((context, builder) -> SharedSuggestionProvider.suggest(TP_BAND_NAMES, builder))
                                         .executes(ctx -> tpBand(ctx, false))
-                                        .then(CommandManager.argument("edge", StringArgumentType.word())
-                                                .suggests((context, builder) -> CommandSource.suggestMatching(TP_EDGE_NAMES, builder))
+                                        .then(Commands.argument("edge", StringArgumentType.word())
+                                                .suggests((context, builder) -> SharedSuggestionProvider.suggest(TP_EDGE_NAMES, builder))
                                                 .executes(ctx -> tpBand(ctx, true)))))
-                        .then(CommandManager.literal("probe")
-                                .then(CommandManager.argument("radiusBlocks", IntegerArgumentType.integer())
-                                        .then(CommandManager.argument("samples", IntegerArgumentType.integer())
+                        .then(Commands.literal("probe")
+                                .then(Commands.argument("radiusBlocks", IntegerArgumentType.integer())
+                                        .then(Commands.argument("samples", IntegerArgumentType.integer())
                                                 .executes(LatitudeDevCommand::probe))))
-                        .then(CommandManager.literal("seamAudit")
-                                .then(CommandManager.argument("bandA", StringArgumentType.word())
-                                        .suggests((context, builder) -> CommandSource.suggestMatching(TP_BAND_NAMES, builder))
-                                        .then(CommandManager.argument("bandB", StringArgumentType.word())
-                                                .suggests((context, builder) -> CommandSource.suggestMatching(TP_BAND_NAMES, builder))
+                        .then(Commands.literal("seamAudit")
+                                .then(Commands.argument("bandA", StringArgumentType.word())
+                                        .suggests((context, builder) -> SharedSuggestionProvider.suggest(TP_BAND_NAMES, builder))
+                                        .then(Commands.argument("bandB", StringArgumentType.word())
+                                                .suggests((context, builder) -> SharedSuggestionProvider.suggest(TP_BAND_NAMES, builder))
                                                 .executes(ctx -> seamAudit(ctx, false, false, false))
-                                                .then(CommandManager.argument("edge", StringArgumentType.word())
-                                                        .suggests((context, builder) -> CommandSource.suggestMatching(SEAM_EDGE_NAMES, builder))
+                                                .then(Commands.argument("edge", StringArgumentType.word())
+                                                        .suggests((context, builder) -> SharedSuggestionProvider.suggest(SEAM_EDGE_NAMES, builder))
                                                         .executes(ctx -> seamAudit(ctx, true, false, false))
-                                                        .then(CommandManager.argument("samples", IntegerArgumentType.integer(50, 4000))
+                                                        .then(Commands.argument("samples", IntegerArgumentType.integer(50, 4000))
                                                                 .executes(ctx -> seamAudit(ctx, true, true, false))
-                                                                .then(CommandManager.argument("waitTicks", IntegerArgumentType.integer(0, 600))
+                                                                .then(Commands.argument("waitTicks", IntegerArgumentType.integer(0, 600))
                                                                         .executes(ctx -> seamAudit(ctx, true, true, true))))))))
-                        .then(CommandManager.literal("biomePng")
+                        .then(Commands.literal("biomePng")
                                 .executes(LatitudeDevCommand::biomePngDefault)
-                                .then(CommandManager.argument("stepBlocks", IntegerArgumentType.integer(8, 512))
+                                .then(Commands.argument("stepBlocks", IntegerArgumentType.integer(8, 512))
                                         .executes(LatitudeDevCommand::biomePngWithStep)
-                                        .then(CommandManager.argument("y", IntegerArgumentType.integer(0, 320))
+                                        .then(Commands.argument("y", IntegerArgumentType.integer(0, 320))
                                                 .executes(LatitudeDevCommand::biomePngWithStepAndY))))
-                        .then(CommandManager.literal("biomePngY")
+                        .then(Commands.literal("biomePngY")
                                 .executes(LatitudeDevCommand::biomePngYDefault)
-                                .then(CommandManager.argument("y", IntegerArgumentType.integer(0, 320))
+                                .then(Commands.argument("y", IntegerArgumentType.integer(0, 320))
                                         .executes(LatitudeDevCommand::biomePngYWithY)))
                         .then(regenLiteral("regen"))
                         .then(regenLiteral("regenChunk"))
-                        .then(CommandManager.literal("pause").executes(LatitudeDevCommand::pauseTransect))
-                        .then(CommandManager.literal("resume").executes(LatitudeDevCommand::resumeTransect))
-                        .then(CommandManager.literal("stop").executes(LatitudeDevCommand::stopTransect))
-                        .then(CommandManager.literal("status").executes(LatitudeDevCommand::statusTransect))
-                        .then(CommandManager.literal("budgetMs")
-                                .then(CommandManager.argument("ms", IntegerArgumentType.integer())
+                        .then(Commands.literal("pause").executes(LatitudeDevCommand::pauseTransect))
+                        .then(Commands.literal("resume").executes(LatitudeDevCommand::resumeTransect))
+                        .then(Commands.literal("stop").executes(LatitudeDevCommand::stopTransect))
+                        .then(Commands.literal("status").executes(LatitudeDevCommand::statusTransect))
+                        .then(Commands.literal("budgetMs")
+                                .then(Commands.argument("ms", IntegerArgumentType.integer())
                                         .executes(LatitudeDevCommand::setBudgetMs)))
-                        .then(CommandManager.literal("budgetAuto")
-                                .then(CommandManager.literal("on").executes(LatitudeDevCommand::setBudgetAutoOn))
-                                .then(CommandManager.literal("off").executes(LatitudeDevCommand::setBudgetAutoOff)))
+                        .then(Commands.literal("budgetAuto")
+                                .then(Commands.literal("on").executes(LatitudeDevCommand::setBudgetAutoOn))
+                                .then(Commands.literal("off").executes(LatitudeDevCommand::setBudgetAutoOff)))
         );
     }
 
-    private static int help(CommandContext<ServerCommandSource> ctx) {
-        ServerCommandSource source = ctx.getSource();
-        source.sendFeedback(() -> Text.literal("[latdev] commands: here | explainHere | tpBand <tropical|subtropical|temperate|subpolar|polar> [center|low|high] | probe <radiusBlocks> <samples> | seamAudit <bandA> <bandB> [center|low|high] [samples] [waitTicks] | biomePng [stepBlocks] [y] | biomePngY [y] | regen|regenChunk [radiusChunks] [biomes] [seed] | transect | transectDeg | slicePoleNS | pause | resume | stop | status | budgetMs | budgetAuto <on|off>"), false);
+    private static int help(CommandContext<CommandSourceStack> ctx) {
+        CommandSourceStack source = ctx.getSource();
+        source.sendSuccess(() -> Component.literal("[latdev] commands: here | explainHere | tpBand <tropical|subtropical|temperate|subpolar|polar> [center|low|high] | probe <radiusBlocks> <samples> | seamAudit <bandA> <bandB> [center|low|high] [samples] [waitTicks] | biomePng [stepBlocks] [y] | biomePngY [y] | regen|regenChunk [radiusChunks] [biomes] [seed] | transect | transectDeg | slicePoleNS | pause | resume | stop | status | budgetMs | budgetAuto <on|off>"), false);
         return 1;
     }
 
-    private static int here(CommandContext<ServerCommandSource> ctx) {
+    private static int here(CommandContext<CommandSourceStack> ctx) {
         try {
-            ServerCommandSource source = ctx.getSource();
-            ServerPlayerEntity player = source.getPlayerOrThrow();
-            ServerWorld world = source.getWorld();
-            BlockPos pos = player.getBlockPos();
+            CommandSourceStack source = ctx.getSource();
+            ServerPlayer player = source.getPlayerOrException();
+            ServerLevel world = source.getLevel();
+            BlockPos pos = player.blockPosition();
             int radius = authoritativeRadius(source);
             double deg = LatitudeMath.absLatDegExact(world.getWorldBorder(), player.getZ());
-            double t = MathHelper.clamp(Math.abs(player.getZ()) / (double) radius, 0.0, 1.0);
+            double t = Mth.clamp(Math.abs(player.getZ()) / (double) radius, 0.0, 1.0);
 
             BandTarget band = BandTarget.fromZ(radius, player.getZ());
             String biomeId = biomeId(world.getBiome(pos));
@@ -161,15 +160,15 @@ public final class LatitudeDevCommand {
             double savUplandChance = Math.max(0.0, Math.min(1.0, uplandT));
             boolean savUplandActive = savUplandChance > 0.0;
             String savannaDebug = LatitudeBiomes.debugSavannaUplandDecision(pos.getX(), pos.getZ(), pos.getY());
-            net.minecraft.world.gen.noise.NoiseConfig noiseConfig = world.getChunkManager().getNoiseConfig();
-            net.minecraft.world.biome.source.util.MultiNoiseUtil.MultiNoiseSampler sampler = noiseConfig.getMultiNoiseSampler();
-            net.minecraft.world.gen.chunk.ChunkGenerator cg = world.getChunkManager().getChunkGenerator();
-            net.minecraft.world.gen.chunk.NoiseChunkGenerator ng = cg instanceof net.minecraft.world.gen.chunk.NoiseChunkGenerator n ? n : null;
+            net.minecraft.world.level.levelgen.RandomState noiseConfig = world.getChunkSource().randomState();
+            net.minecraft.world.level.biome.Climate.Sampler sampler = noiseConfig.sampler();
+            net.minecraft.world.level.chunk.ChunkGenerator cg = world.getChunkSource().getGenerator();
+            net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator ng = cg instanceof net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator n ? n : null;
             String savannaRule = LatitudeBiomes.debugSavannaRule(sampler, ng, noiseConfig, world, pos.getX(), pos.getZ());
             RuggednessSensor.Measurement ruggedness = RuggednessSensor.measure(world, pos, 24);
             double bumpinessScore = ruggedness.robustDelta(); // robust second-highest delta
 
-            source.sendFeedback(() -> Text.literal(String.format(Locale.ROOT,
+            source.sendSuccess(() -> Component.literal(String.format(Locale.ROOT,
                     "[latdev] here x=%d y=%d z=%d deg=%.2f band=%s(idx=%d) cut=%.2f..%.2f t=%.4f mtnLike=%s uplandT=%.3f savUpland=%s chance=%.3f biome=%s",
                     pos.getX(),
                     pos.getY(),
@@ -185,9 +184,9 @@ public final class LatitudeDevCommand {
                     savUplandActive,
                     savUplandChance,
                     biomeId)), false);
-            source.sendFeedback(() -> Text.literal("[latdev] here savUplandDebug " + savannaDebug), false);
-            source.sendFeedback(() -> Text.literal("[latdev] here savannaRule " + savannaRule), false);
-            source.sendFeedback(() -> Text.literal(String.format(Locale.ROOT,
+            source.sendSuccess(() -> Component.literal("[latdev] here savUplandDebug " + savannaDebug), false);
+            source.sendSuccess(() -> Component.literal("[latdev] here savannaRule " + savannaRule), false);
+            source.sendSuccess(() -> Component.literal(String.format(Locale.ROOT,
                     "[latdev] here rugged x=%d z=%d ring=%d topY[c=%d n=%d s=%d e=%d w=%d ne=%d nw=%d se=%d sw=%d] dMax=%d dMean=%.2f axis=%.2f robust=%d",
                     pos.getX(),
                     pos.getZ(),
@@ -205,7 +204,7 @@ public final class LatitudeDevCommand {
                     ruggedness.meanAbsDelta(),
                     ruggedness.axisGradient(),
                     ruggedness.robustDelta())), false);
-            source.sendFeedback(() -> Text.literal(String.format(Locale.ROOT,
+            source.sendSuccess(() -> Component.literal(String.format(Locale.ROOT,
                     "[latdev] dashboard bumpiness=%.2f robustDelta=%d dMax=%d dMean=%.2f thresh=%d hyst=%d → windswept_if>=%.0f",
                     bumpinessScore,
                     ruggedness.robustDelta(),
@@ -216,23 +215,23 @@ public final class LatitudeDevCommand {
                     (double) WINDSWEPT_RUGGED_THRESH + WINDSWEPT_RUGGED_HYST)), false);
             return 1;
         } catch (Exception e) {
-            ctx.getSource().sendError(Text.literal("[latdev] here error: " + e.getMessage()));
+            ctx.getSource().sendFailure(Component.literal("[latdev] here error: " + e.getMessage()));
             e.printStackTrace();
             return 0;
         }
     }
 
-    private static int explainHere(CommandContext<ServerCommandSource> ctx) {
+    private static int explainHere(CommandContext<CommandSourceStack> ctx) {
         try {
-            ServerCommandSource source = ctx.getSource();
-            ServerPlayerEntity player = source.getPlayerOrThrow();
-            ServerWorld world = source.getWorld();
-            BlockPos pos = player.getBlockPos();
+            CommandSourceStack source = ctx.getSource();
+            ServerPlayer player = source.getPlayerOrException();
+            ServerLevel world = source.getLevel();
+            BlockPos pos = player.blockPosition();
             int radius = authoritativeRadius(source);
-            net.minecraft.world.gen.noise.NoiseConfig noiseConfig = world.getChunkManager().getNoiseConfig();
-            net.minecraft.world.biome.source.util.MultiNoiseUtil.MultiNoiseSampler sampler = noiseConfig.getMultiNoiseSampler();
-            net.minecraft.world.gen.chunk.ChunkGenerator cg = world.getChunkManager().getChunkGenerator();
-            net.minecraft.world.gen.chunk.NoiseChunkGenerator ng = cg instanceof net.minecraft.world.gen.chunk.NoiseChunkGenerator n ? n : null;
+            net.minecraft.world.level.levelgen.RandomState noiseConfig = world.getChunkSource().randomState();
+            net.minecraft.world.level.biome.Climate.Sampler sampler = noiseConfig.sampler();
+            net.minecraft.world.level.chunk.ChunkGenerator cg = world.getChunkSource().getGenerator();
+            net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator ng = cg instanceof net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator n ? n : null;
             String finalBiomeId = biomeId(world.getBiome(pos));
             SurfaceTruth surfaceTruth = resolveSurfaceTruth(world, pos.getX(), pos.getZ());
 
@@ -254,40 +253,40 @@ public final class LatitudeDevCommand {
             final String summaryText = "Summary: " + diag.summaryLine();
             final String driversText = "Drivers:\n" + diag.driversBlock();
 
-            source.sendFeedback(() -> Text.literal(headerText), false);
-            source.sendFeedback(() -> Text.literal(summaryText), false);
-            source.sendFeedback(() -> Text.literal(driversText), false);
+            source.sendSuccess(() -> Component.literal(headerText), false);
+            source.sendSuccess(() -> Component.literal(summaryText), false);
+            source.sendSuccess(() -> Component.literal(driversText), false);
 
             String logPath = writeExplainLog(source, headerText, summaryText, driversText, pos.getX(), pos.getZ());
             if (logPath != null) {
-                source.sendFeedback(() -> Text.literal("[latdev] explain log → " + logPath), false);
+                source.sendSuccess(() -> Component.literal("[latdev] explain log → " + logPath), false);
             }
             return 1;
         } catch (Exception e) {
-            ctx.getSource().sendError(Text.literal("[latdev] explainHere error: " + e.getMessage()));
+            ctx.getSource().sendFailure(Component.literal("[latdev] explainHere error: " + e.getMessage()));
             e.printStackTrace();
             return 0;
         }
     }
 
-    private static int tpBand(CommandContext<ServerCommandSource> ctx, boolean hasEdgeArg) {
+    private static int tpBand(CommandContext<CommandSourceStack> ctx, boolean hasEdgeArg) {
         try {
-            ServerCommandSource source = ctx.getSource();
-            ServerPlayerEntity player = source.getPlayerOrThrow();
-            ServerWorld world = source.getWorld();
+            CommandSourceStack source = ctx.getSource();
+            ServerPlayer player = source.getPlayerOrException();
+            ServerLevel world = source.getLevel();
 
             String bandArg = StringArgumentType.getString(ctx, "band");
             String edgeArg = hasEdgeArg ? StringArgumentType.getString(ctx, "edge") : "center";
 
             BandTarget band = BandTarget.fromArg(bandArg);
             if (band == null) {
-                source.sendError(Text.literal("[latdev] tpBand band must be one of: " + String.join("|", TP_BAND_NAMES)));
+                source.sendFailure(Component.literal("[latdev] tpBand band must be one of: " + String.join("|", TP_BAND_NAMES)));
                 return 0;
             }
 
             EdgeMode edge = EdgeMode.fromArg(edgeArg);
             if (edge == null) {
-                source.sendError(Text.literal("[latdev] tpBand edge must be one of: " + String.join("|", TP_EDGE_NAMES)));
+                source.sendFailure(Component.literal("[latdev] tpBand edge must be one of: " + String.join("|", TP_EDGE_NAMES)));
                 return 0;
             }
 
@@ -296,24 +295,24 @@ public final class LatitudeDevCommand {
             int absTargetZ = LatitudeMath.zForLatitudeDeg(targetDeg, radius);
             int sign = player.getZ() < 0.0 ? -1 : 1;
             int targetZ = sign * absTargetZ;
-            int targetX = MathHelper.floor(player.getX());
+            int targetX = Mth.floor(player.getX());
 
-            world.getChunkManager().getChunk(Math.floorDiv(targetX, 16), Math.floorDiv(targetZ, 16), ChunkStatus.FULL, true);
-            int topY = world.getTopY(Heightmap.Type.MOTION_BLOCKING_NO_LEAVES, targetX, targetZ);
-            int worldMaxY = world.getBottomY() + world.getHeight() - 1;
-            int targetY = MathHelper.clamp(topY + 1, world.getBottomY() + 1, worldMaxY);
+            world.getChunkSource().getChunk(Math.floorDiv(targetX, 16), Math.floorDiv(targetZ, 16), ChunkStatus.FULL, true);
+            int topY = world.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, targetX, targetZ);
+            int worldMaxY = world.getMinY() + world.getHeight() - 1;
+            int targetY = Mth.clamp(topY + 1, world.getMinY() + 1, worldMaxY);
 
-            player.teleport(world,
+            player.teleportTo(world,
                     targetX + 0.5,
                     targetY,
                     targetZ + 0.5,
-                    EnumSet.noneOf(PositionFlag.class),
-                    player.getYaw(),
-                    player.getPitch(),
+                    EnumSet.noneOf(Relative.class),
+                    player.getYRot(),
+                    player.getXRot(),
                     true);
 
             String biomeId = biomeId(world.getBiome(new BlockPos(targetX, targetY, targetZ)));
-            source.sendFeedback(() -> Text.literal(String.format(Locale.ROOT,
+            source.sendSuccess(() -> Component.literal(String.format(Locale.ROOT,
                     "[latdev] tpBand band=%s edge=%s deg=%.2f R=%d -> x=%d y=%d z=%d biome=%s",
                     band.argName,
                     edge.argName,
@@ -325,29 +324,29 @@ public final class LatitudeDevCommand {
                     biomeId)), true);
             return 1;
         } catch (Exception e) {
-            ctx.getSource().sendError(Text.literal("[latdev] tpBand error: " + e.getMessage()));
+            ctx.getSource().sendFailure(Component.literal("[latdev] tpBand error: " + e.getMessage()));
             e.printStackTrace();
             return 0;
         }
     }
 
-    private static int probe(CommandContext<ServerCommandSource> ctx) {
+    private static int probe(CommandContext<CommandSourceStack> ctx) {
         try {
-            ServerCommandSource source = ctx.getSource();
-            ServerPlayerEntity player = source.getPlayerOrThrow();
-            ServerWorld world = source.getWorld();
+            CommandSourceStack source = ctx.getSource();
+            ServerPlayer player = source.getPlayerOrException();
+            ServerLevel world = source.getLevel();
 
             int requestedRadius = IntegerArgumentType.getInteger(ctx, "radiusBlocks");
             int requestedSamples = IntegerArgumentType.getInteger(ctx, "samples");
-            int radiusBlocks = MathHelper.clamp(requestedRadius, 32, 8192);
-            int samples = MathHelper.clamp(requestedSamples, 10, 5000);
+            int radiusBlocks = Mth.clamp(requestedRadius, 32, 8192);
+            int samples = Mth.clamp(requestedSamples, 10, 5000);
             int latitudeRadius = authoritativeRadius(source);
 
             int centerX = player.getBlockX();
             int centerZ = player.getBlockZ();
-            int worldMaxY = world.getBottomY() + world.getHeight() - 1;
-            int sampleY = MathHelper.clamp(player.getBlockY(), world.getBottomY() + 1, worldMaxY);
-            long seed = world.getSeed() ^ mix64(player.getBlockPos().asLong());
+            int worldMaxY = world.getMinY() + world.getHeight() - 1;
+            int sampleY = Mth.clamp(player.getBlockY(), world.getMinY() + 1, worldMaxY);
+            long seed = world.getSeed() ^ mix64(player.blockPosition().asLong());
             Random rng = new Random(seed);
 
             Map<String, Integer> biomeCounts = new HashMap<>();
@@ -365,7 +364,7 @@ public final class LatitudeDevCommand {
                 int chunkX = Math.floorDiv(sampleX, 16);
                 int chunkZ = Math.floorDiv(sampleZ, 16);
 
-                if (world.getChunkManager().getChunk(chunkX, chunkZ, ChunkStatus.BIOMES, false) == null) {
+                if (world.getChunkSource().getChunk(chunkX, chunkZ, ChunkStatus.BIOMES, false) == null) {
                     unloaded++;
                     continue;
                 }
@@ -387,29 +386,29 @@ public final class LatitudeDevCommand {
             int sampleCount = samples;
             long sampleSeed = seed;
 
-            source.sendFeedback(() -> Text.literal(String.format(Locale.ROOT,
+            source.sendSuccess(() -> Component.literal(String.format(Locale.ROOT,
                     "[latdev] probe r=%d n=%d loaded=%d unloaded=%d seed=%d",
                     probeRadius,
                     sampleCount,
                     loadedCount,
                     unloadedCount,
                     sampleSeed)), false);
-            source.sendFeedback(() -> Text.literal("[latdev] biomes: " + biomeSummary), false);
-            source.sendFeedback(() -> Text.literal("[latdev] bands: " + bandSummary), false);
+            source.sendSuccess(() -> Component.literal("[latdev] biomes: " + biomeSummary), false);
+            source.sendSuccess(() -> Component.literal("[latdev] bands: " + bandSummary), false);
             return loaded > 0 ? 1 : 0;
         } catch (Exception e) {
-            ctx.getSource().sendError(Text.literal("[latdev] probe error: " + e.getMessage()));
+            ctx.getSource().sendFailure(Component.literal("[latdev] probe error: " + e.getMessage()));
             e.printStackTrace();
             return 0;
         }
     }
 
-    private static int seamAudit(CommandContext<ServerCommandSource> ctx,
+    private static int seamAudit(CommandContext<CommandSourceStack> ctx,
                                  boolean hasEdge,
                                  boolean hasSamples,
                                  boolean hasWaitTicks) {
         try {
-            ServerCommandSource source = ctx.getSource();
+            CommandSourceStack source = ctx.getSource();
             String bandA = StringArgumentType.getString(ctx, "bandA");
             String bandB = StringArgumentType.getString(ctx, "bandB");
             String edge = hasEdge ? StringArgumentType.getString(ctx, "edge") : "center";
@@ -418,14 +417,14 @@ public final class LatitudeDevCommand {
             int radius = authoritativeRadius(source);
             return SeamAuditCoordinator.start(source, bandA, bandB, edge, samples, waitTicks, radius);
         } catch (Exception e) {
-            ctx.getSource().sendError(Text.literal("[latdev] seamAudit error: " + e.getMessage()));
+            ctx.getSource().sendFailure(Component.literal("[latdev] seamAudit error: " + e.getMessage()));
             e.printStackTrace();
             return 0;
         }
     }
 
-    private static int startTransectRaw(CommandContext<ServerCommandSource> ctx) {
-        ServerCommandSource source = ctx.getSource();
+    private static int startTransectRaw(CommandContext<CommandSourceStack> ctx) {
+        CommandSourceStack source = ctx.getSource();
 
         int zStart = Math.abs(IntegerArgumentType.getInteger(ctx, "zStart"));
         int zEnd = Math.abs(IntegerArgumentType.getInteger(ctx, "zEnd"));
@@ -438,12 +437,12 @@ public final class LatitudeDevCommand {
             zEnd = tmp;
         }
 
-        xHalfWidthChunks = MathHelper.clamp(xHalfWidthChunks, 0, 64);
-        chunksPerTick = MathHelper.clamp(chunksPerTick, 1, 50);
+        xHalfWidthChunks = Mth.clamp(xHalfWidthChunks, 0, 64);
+        chunksPerTick = Mth.clamp(chunksPerTick, 1, 50);
 
         int maxAbsZ = maxAbsZFromBorder(source);
-        zStart = MathHelper.clamp(zStart, 0, maxAbsZ);
-        zEnd = MathHelper.clamp(zEnd, 0, maxAbsZ);
+        zStart = Mth.clamp(zStart, 0, maxAbsZ);
+        zEnd = Mth.clamp(zEnd, 0, maxAbsZ);
 
         if (zStart > zEnd) {
             int tmp = zStart;
@@ -454,8 +453,8 @@ public final class LatitudeDevCommand {
         return ChunkPregenerator.startTransect(source.getServer(), source, zStart, zEnd, xHalfWidthChunks, chunksPerTick);
     }
 
-    private static int startTransectDeg(CommandContext<ServerCommandSource> ctx) {
-        ServerCommandSource source = ctx.getSource();
+    private static int startTransectDeg(CommandContext<CommandSourceStack> ctx) {
+        CommandSourceStack source = ctx.getSource();
 
         int degStart = Math.abs(IntegerArgumentType.getInteger(ctx, "degStart"));
         int degEnd = Math.abs(IntegerArgumentType.getInteger(ctx, "degEnd"));
@@ -468,15 +467,15 @@ public final class LatitudeDevCommand {
             degEnd = tmp;
         }
 
-        degStart = MathHelper.clamp(degStart, 0, 90);
-        degEnd = MathHelper.clamp(degEnd, 0, 90);
-        xHalfWidthChunks = MathHelper.clamp(xHalfWidthChunks, 0, 64);
-        chunksPerTick = MathHelper.clamp(chunksPerTick, 1, 50);
+        degStart = Mth.clamp(degStart, 0, 90);
+        degEnd = Mth.clamp(degEnd, 0, 90);
+        xHalfWidthChunks = Mth.clamp(xHalfWidthChunks, 0, 64);
+        chunksPerTick = Mth.clamp(chunksPerTick, 1, 50);
 
-        double radius = source.getWorld().getWorldBorder().getSize() * 0.5;
+        double radius = source.getLevel().getWorldBorder().getSize() * 0.5;
         int maxAbsZ = maxAbsZFromBorder(source);
-        int zStart = MathHelper.clamp((int) Math.round((degStart / 90.0) * radius), 0, maxAbsZ);
-        int zEnd = MathHelper.clamp((int) Math.round((degEnd / 90.0) * radius), 0, maxAbsZ);
+        int zStart = Mth.clamp((int) Math.round((degStart / 90.0) * radius), 0, maxAbsZ);
+        int zEnd = Mth.clamp((int) Math.round((degEnd / 90.0) * radius), 0, maxAbsZ);
 
         if (zStart > zEnd) {
             int tmp = zStart;
@@ -487,8 +486,8 @@ public final class LatitudeDevCommand {
         return ChunkPregenerator.startTransect(source.getServer(), source, zStart, zEnd, xHalfWidthChunks, chunksPerTick);
     }
 
-    private static int startSlicePoleNS(CommandContext<ServerCommandSource> ctx) {
-        ServerCommandSource source = ctx.getSource();
+    private static int startSlicePoleNS(CommandContext<CommandSourceStack> ctx) {
+        CommandSourceStack source = ctx.getSource();
 
         int centerXChunk = IntegerArgumentType.getInteger(ctx, "centerX");
         int widthChunks = ctx.getNodes().stream().anyMatch(node -> node.getNode().getName().equals("widthChunks"))
@@ -498,29 +497,29 @@ public final class LatitudeDevCommand {
                 ? IntegerArgumentType.getInteger(ctx, "chunksPerTick")
                 : 200;
 
-        widthChunks = MathHelper.clamp(widthChunks, 1, 64);
-        chunksPerTick = MathHelper.clamp(chunksPerTick, 1, 2000);
+        widthChunks = Mth.clamp(widthChunks, 1, 64);
+        chunksPerTick = Mth.clamp(chunksPerTick, 1, 2000);
 
         int radiusBlocks = maxAbsZFromBorder(source);
         return ChunkPregenerator.startSliceNS(source, centerXChunk, -radiusBlocks, radiusBlocks, widthChunks, chunksPerTick);
     }
 
-    private static LiteralArgumentBuilder<ServerCommandSource> regenLiteral(String name) {
-        return CommandManager.literal(name)
+    private static LiteralArgumentBuilder<CommandSourceStack> regenLiteral(String name) {
+        return Commands.literal(name)
                 .executes(ctx -> regenChunk(ctx, 0, false, OptionalLong.empty()))
-                .then(CommandManager.argument("radiusChunks", IntegerArgumentType.integer(0, 8))
+                .then(Commands.argument("radiusChunks", IntegerArgumentType.integer(0, 8))
                         .executes(ctx -> regenChunk(
                                 ctx,
                                 IntegerArgumentType.getInteger(ctx, "radiusChunks"),
                                 false,
                                 OptionalLong.empty()))
-                        .then(CommandManager.argument("biomes", BoolArgumentType.bool())
+                        .then(Commands.argument("biomes", BoolArgumentType.bool())
                                 .executes(ctx -> regenChunk(
                                         ctx,
                                         IntegerArgumentType.getInteger(ctx, "radiusChunks"),
                                         BoolArgumentType.getBool(ctx, "biomes"),
                                         OptionalLong.empty()))
-                                .then(CommandManager.argument("seed", LongArgumentType.longArg())
+                                .then(Commands.argument("seed", LongArgumentType.longArg())
                                         .executes(ctx -> regenChunk(
                                                 ctx,
                                                 IntegerArgumentType.getInteger(ctx, "radiusChunks"),
@@ -528,56 +527,56 @@ public final class LatitudeDevCommand {
                                                 OptionalLong.of(LongArgumentType.getLong(ctx, "seed")))))));
     }
 
-    private static int regenChunk(CommandContext<ServerCommandSource> ctx, int requestedRadius, boolean biomes, OptionalLong seedOverride) {
+    private static int regenChunk(CommandContext<CommandSourceStack> ctx, int requestedRadius, boolean biomes, OptionalLong seedOverride) {
         try {
-            ServerCommandSource source = ctx.getSource();
-            ServerPlayerEntity player = source.getPlayerOrThrow();
-            ServerWorld world = source.getWorld();
-            ChunkPos center = player.getChunkPos();
-            int radius = MathHelper.clamp(requestedRadius, 0, 8);
+            CommandSourceStack source = ctx.getSource();
+            ServerPlayer player = source.getPlayerOrException();
+            ServerLevel world = source.getLevel();
+            ChunkPos center = player.chunkPosition();
+            int radius = Mth.clamp(requestedRadius, 0, 8);
             return ChunkRegenerator.regenSquare(world, center.x, center.z, radius, biomes, seedOverride, source);
         } catch (Exception e) {
-            ctx.getSource().sendError(Text.literal("[latdev] regenChunk error: " + e.getMessage()));
+            ctx.getSource().sendFailure(Component.literal("[latdev] regenChunk error: " + e.getMessage()));
             e.printStackTrace();
             return 0;
         }
     }
 
-    private static int biomePngDefault(CommandContext<ServerCommandSource> ctx) {
+    private static int biomePngDefault(CommandContext<CommandSourceStack> ctx) {
         return startBiomePngExport(ctx.getSource(), 64, 64);
     }
 
-    private static int biomePngWithStep(CommandContext<ServerCommandSource> ctx) {
+    private static int biomePngWithStep(CommandContext<CommandSourceStack> ctx) {
         int stepBlocks = IntegerArgumentType.getInteger(ctx, "stepBlocks");
         return startBiomePngExport(ctx.getSource(), stepBlocks, 64);
     }
 
-    private static int biomePngWithStepAndY(CommandContext<ServerCommandSource> ctx) {
+    private static int biomePngWithStepAndY(CommandContext<CommandSourceStack> ctx) {
         int stepBlocks = IntegerArgumentType.getInteger(ctx, "stepBlocks");
         int y = IntegerArgumentType.getInteger(ctx, "y");
         return startBiomePngExport(ctx.getSource(), stepBlocks, y);
     }
 
-    private static int biomePngYDefault(CommandContext<ServerCommandSource> ctx) {
+    private static int biomePngYDefault(CommandContext<CommandSourceStack> ctx) {
         return startBiomePngYExport(ctx.getSource(), 32);
     }
 
-    private static int biomePngYWithY(CommandContext<ServerCommandSource> ctx) {
+    private static int biomePngYWithY(CommandContext<CommandSourceStack> ctx) {
         int y = IntegerArgumentType.getInteger(ctx, "y");
         return startBiomePngYExport(ctx.getSource(), y);
     }
 
-    private static int startBiomePngExport(ServerCommandSource source, int stepBlocks, int y) {
-        int clampedStep = MathHelper.clamp(stepBlocks, 8, 512);
-        int clampedY = MathHelper.clamp(y, 0, 320);
+    private static int startBiomePngExport(CommandSourceStack source, int stepBlocks, int y) {
+        int clampedStep = Mth.clamp(stepBlocks, 8, 512);
+        int clampedY = Mth.clamp(y, 0, 320);
         int radiusBlocks = authoritativeRadius(source);
         if (radiusBlocks <= 0) {
-            source.sendError(Text.literal("[latdev] biomePng failed: invalid radius " + radiusBlocks));
+            source.sendFailure(Component.literal("[latdev] biomePng failed: invalid radius " + radiusBlocks));
             return 0;
         }
 
-        long seed = source.getWorld().getSeed();
-        source.sendFeedback(() -> Text.literal("[latdev] biomePng start seed=" + seed
+        long seed = source.getLevel().getSeed();
+        source.sendSuccess(() -> Component.literal("[latdev] biomePng start seed=" + seed
                 + " R=" + radiusBlocks
                 + " step=" + clampedStep
                 + " y=" + clampedY), false);
@@ -586,11 +585,11 @@ public final class LatitudeDevCommand {
                 .supplyAsync(() -> {
                     try {
                         return BiomePreviewExporter.export(
-                                source.getWorld(),
+                                source.getLevel(),
                                 radiusBlocks,
                                 clampedStep,
                                 clampedY,
-                                source.getServer().getRunDirectory());
+                                source.getServer().getServerDirectory());
                     } catch (Exception e) {
                         throw new RuntimeException(e);
                     }
@@ -600,10 +599,10 @@ public final class LatitudeDevCommand {
                         Throwable cause = throwable instanceof RuntimeException && throwable.getCause() != null
                                 ? throwable.getCause()
                                 : throwable;
-                        source.sendError(Text.literal("[latdev] biomePng failed: " + cause.getMessage()));
+                        source.sendFailure(Component.literal("[latdev] biomePng failed: " + cause.getMessage()));
                         return;
                     }
-                    source.sendFeedback(() -> Text.literal("[latdev] biomePng done file="
+                    source.sendSuccess(() -> Component.literal("[latdev] biomePng done file="
                             + result.pngPath()
                             + " sidecar="
                             + result.txtPath()
@@ -619,16 +618,16 @@ public final class LatitudeDevCommand {
         return 1;
     }
 
-    private static int startBiomePngYExport(ServerCommandSource source, int y) {
-        int clampedY = MathHelper.clamp(y, 0, 320);
+    private static int startBiomePngYExport(CommandSourceStack source, int y) {
+        int clampedY = Mth.clamp(y, 0, 320);
         int radiusBlocks = authoritativeRadius(source);
         if (radiusBlocks <= 0) {
-            source.sendError(Text.literal("[latdev] biomePngY failed: invalid radius " + radiusBlocks));
+            source.sendFailure(Component.literal("[latdev] biomePngY failed: invalid radius " + radiusBlocks));
             return 0;
         }
 
-        long seed = source.getWorld().getSeed();
-        source.sendFeedback(() -> Text.literal("[latdev] biomePngY start seed=" + seed
+        long seed = source.getLevel().getSeed();
+        source.sendSuccess(() -> Component.literal("[latdev] biomePngY start seed=" + seed
                 + " R=" + radiusBlocks
                 + " step=64"
                 + " y=" + clampedY), false);
@@ -637,11 +636,11 @@ public final class LatitudeDevCommand {
                 .supplyAsync(() -> {
                     try {
                         return BiomePreviewExporter.export(
-                                source.getWorld(),
+                                source.getLevel(),
                                 radiusBlocks,
                                 64,
                                 clampedY,
-                                source.getServer().getRunDirectory());
+                                source.getServer().getServerDirectory());
                     } catch (Exception e) {
                         throw new RuntimeException(e);
                     }
@@ -651,10 +650,10 @@ public final class LatitudeDevCommand {
                         Throwable cause = throwable instanceof RuntimeException && throwable.getCause() != null
                                 ? throwable.getCause()
                                 : throwable;
-                        source.sendError(Text.literal("[latdev] biomePngY failed: " + cause.getMessage()));
+                        source.sendFailure(Component.literal("[latdev] biomePngY failed: " + cause.getMessage()));
                         return;
                     }
-                    source.sendFeedback(() -> Text.literal("[latdev] biomePngY done file="
+                    source.sendSuccess(() -> Component.literal("[latdev] biomePngY done file="
                             + result.pngPath()
                             + " sidecar="
                             + result.txtPath()
@@ -670,37 +669,37 @@ public final class LatitudeDevCommand {
         return 1;
     }
 
-    private static int pauseTransect(CommandContext<ServerCommandSource> ctx) {
+    private static int pauseTransect(CommandContext<CommandSourceStack> ctx) {
         return ChunkPregenerator.pauseJob(ctx.getSource());
     }
 
-    private static int resumeTransect(CommandContext<ServerCommandSource> ctx) {
+    private static int resumeTransect(CommandContext<CommandSourceStack> ctx) {
         return ChunkPregenerator.resumeJob(ctx.getSource());
     }
 
-    private static int stopTransect(CommandContext<ServerCommandSource> ctx) {
+    private static int stopTransect(CommandContext<CommandSourceStack> ctx) {
         return ChunkPregenerator.stopJob(ctx.getSource());
     }
 
-    private static int statusTransect(CommandContext<ServerCommandSource> ctx) {
+    private static int statusTransect(CommandContext<CommandSourceStack> ctx) {
         return ChunkPregenerator.status(ctx.getSource());
     }
 
-    private static int setBudgetMs(CommandContext<ServerCommandSource> ctx) {
-        ServerCommandSource source = ctx.getSource();
+    private static int setBudgetMs(CommandContext<CommandSourceStack> ctx) {
+        CommandSourceStack source = ctx.getSource();
         int ms = IntegerArgumentType.getInteger(ctx, "ms");
         if (ms < 1 || ms > 50) {
-            source.sendError(Text.literal("[latdev] budgetMs must be in [1..50]"));
+            source.sendFailure(Component.literal("[latdev] budgetMs must be in [1..50]"));
             return 0;
         }
         return ChunkPregenerator.setDefaultBudgetMs(source, ms);
     }
 
-    private static int setBudgetAutoOn(CommandContext<ServerCommandSource> ctx) {
+    private static int setBudgetAutoOn(CommandContext<CommandSourceStack> ctx) {
         return ChunkPregenerator.setAutoBudget(ctx.getSource(), true);
     }
 
-    private static int setBudgetAutoOff(CommandContext<ServerCommandSource> ctx) {
+    private static int setBudgetAutoOff(CommandContext<CommandSourceStack> ctx) {
         return ChunkPregenerator.setAutoBudget(ctx.getSource(), false);
     }
 
@@ -708,9 +707,9 @@ public final class LatitudeDevCommand {
             DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss");
 
     /** Writes explain output to run/latdev/explain/<timestamp>_x<X>_z<Z>.txt and latest.txt. Returns relative path string for user feedback, or null on failure. */
-    private static String writeExplainLog(ServerCommandSource source, String header, String summary, String drivers, int x, int z) {
+    private static String writeExplainLog(CommandSourceStack source, String header, String summary, String drivers, int x, int z) {
         try {
-            Path explainDir = source.getServer().getRunDirectory().resolve("latdev").resolve("explain");
+            Path explainDir = source.getServer().getServerDirectory().resolve("latdev").resolve("explain");
             Files.createDirectories(explainDir);
 
             String timestamp = EXPLAIN_TIMESTAMP_FMT.format(LocalDateTime.now());
@@ -728,17 +727,17 @@ public final class LatitudeDevCommand {
         }
     }
 
-    private static int authoritativeRadius(ServerCommandSource source) {
+    private static int authoritativeRadius(CommandSourceStack source) {
         int borderRadius = maxAbsZFromBorder(source);
         int activeRadius = LatitudeBiomes.getActiveRadiusBlocks();
         if (activeRadius > 0) {
-            return MathHelper.clamp(activeRadius, 1, Math.max(1, borderRadius));
+            return Mth.clamp(activeRadius, 1, Math.max(1, borderRadius));
         }
         return Math.max(1, borderRadius);
     }
 
-    private static int maxAbsZFromBorder(ServerCommandSource source) {
-        WorldBorder border = source.getWorld().getWorldBorder();
+    private static int maxAbsZFromBorder(CommandSourceStack source) {
+        WorldBorder border = source.getLevel().getWorldBorder();
         int radius = (int) Math.floor(border.getSize() * 0.5);
         return Math.max(0, radius - 16);
     }
@@ -759,13 +758,13 @@ public final class LatitudeDevCommand {
                 || id.contains("windswept");
     }
 
-    private static String biomeId(RegistryEntry<Biome> biome) {
-        return biome.getKey().map(key -> key.getValue().toString()).orElse("?");
+    private static String biomeId(Holder<Biome> biome) {
+        return biome.unwrapKey().map(key -> key.identifier().toString()).orElse("?");
     }
 
-    private static SurfaceTruth resolveSurfaceTruth(ServerWorld world, int x, int z) {
-        int top = world.getTopY(Heightmap.Type.WORLD_SURFACE, x, z) - 1;
-        if (top < world.getBottomY()) {
+    private static SurfaceTruth resolveSurfaceTruth(ServerLevel world, int x, int z) {
+        int top = world.getHeight(Heightmap.Types.WORLD_SURFACE, x, z) - 1;
+        if (top < world.getMinY()) {
             return new SurfaceTruth(false, "n/a(surface)", "n/a(surface)", false, Integer.MIN_VALUE);
         }
         BlockPos surfacePos = new BlockPos(x, top, z);
@@ -773,17 +772,17 @@ public final class LatitudeDevCommand {
         FluidState fluidState = world.getFluidState(surfacePos);
         String surfaceBlockId = blockId(world, blockState);
         String surfaceFluidId = fluidId(world, fluidState);
-        boolean isWaterSurface = fluidState.isIn(FluidTags.WATER);
+        boolean isWaterSurface = fluidState.is(FluidTags.WATER);
         return new SurfaceTruth(true, surfaceBlockId, surfaceFluidId, isWaterSurface, top);
     }
 
-    private static String blockId(ServerWorld world, BlockState state) {
-        Identifier id = world.getRegistryManager().getOrThrow(RegistryKeys.BLOCK).getId(state.getBlock());
+    private static String blockId(ServerLevel world, BlockState state) {
+        Identifier id = world.registryAccess().lookupOrThrow(Registries.BLOCK).getKey(state.getBlock());
         return id != null ? id.toString() : "minecraft:air";
     }
 
-    private static String fluidId(ServerWorld world, FluidState state) {
-        Identifier id = world.getRegistryManager().getOrThrow(RegistryKeys.FLUID).getId(state.getFluid());
+    private static String fluidId(ServerLevel world, FluidState state) {
+        Identifier id = world.registryAccess().lookupOrThrow(Registries.FLUID).getKey(state.getType());
         return id != null ? id.toString() : "minecraft:empty";
     }
 

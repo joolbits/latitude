@@ -1,6 +1,6 @@
 package com.example.globe.debug;
 
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.core.BlockPos;
 
 public final class WarmSnowTrapStats {
     public static volatile long calls = 0;

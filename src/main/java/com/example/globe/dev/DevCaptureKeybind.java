@@ -5,16 +5,16 @@ import com.example.globe.client.ClientKeybinds;
 import com.example.globe.client.ClipboardImageWriter;
 import com.example.globe.client.ClipboardImageWriter.ClipboardCopyResult;
 import com.example.globe.client.LatitudeConfig;
+import com.mojang.blaze3d.pipeline.RenderTarget;
+import com.mojang.blaze3d.platform.InputConstants;
+import com.mojang.blaze3d.platform.NativeImage;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.fabricmc.loader.api.FabricLoader;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gl.Framebuffer;
-import net.minecraft.client.option.KeyBinding;
-import net.minecraft.client.util.InputUtil;
-import net.minecraft.client.util.ScreenshotRecorder;
-import net.minecraft.client.texture.NativeImage;
-import net.minecraft.text.Text;
+import net.minecraft.client.KeyMapping;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.Screenshot;
+import net.minecraft.network.chat.Component;
 import net.minecraft.util.Util;
 
 import java.io.File;
@@ -30,8 +30,8 @@ public final class DevCaptureKeybind {
     private static final String CAPTURE_CSV_HEADER = "timestamp,file,x,y,z\n";
     private static final String CAPTURE_DIR_HINT = "run/Latitude/captures/";
 
-    private static KeyBinding captureKey;
-    private static KeyBinding explainKey;
+    private static KeyMapping captureKey;
+    private static KeyMapping explainKey;
     private static boolean initialized;
     private static long lastCaptureMillis;
 
@@ -43,17 +43,17 @@ public final class DevCaptureKeybind {
             return;
         }
 
-        captureKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+        captureKey = KeyBindingHelper.registerKeyBinding(new KeyMapping(
                 "key.globe.dev_capture_overlay",
-                InputUtil.Type.KEYSYM,
-                InputUtil.GLFW_KEY_KP_0,
+                InputConstants.Type.KEYSYM,
+                InputConstants.KEY_NUMPAD0,
                 ClientKeybinds.CATEGORY
         ));
 
-        explainKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+        explainKey = KeyBindingHelper.registerKeyBinding(new KeyMapping(
                 "key.globe.dev_explain_here",
-                InputUtil.Type.KEYSYM,
-                InputUtil.GLFW_KEY_KP_3,
+                InputConstants.Type.KEYSYM,
+                InputConstants.KEY_NUMPAD3,
                 ClientKeybinds.CATEGORY
         ));
 
@@ -61,12 +61,12 @@ public final class DevCaptureKeybind {
         initialized = true;
     }
 
-    private static void onEndClientTick(MinecraftClient client) {
+    private static void onEndClientTick(Minecraft client) {
         if (captureKey == null) {
             return;
         }
 
-        while (captureKey.wasPressed()) {
+        while (captureKey.consumeClick()) {
             long now = System.currentTimeMillis();
             if ((now - lastCaptureMillis) < DEBOUNCE_MS) {
                 continue;
@@ -76,29 +76,29 @@ public final class DevCaptureKeybind {
         }
 
         if (explainKey != null) {
-            while (explainKey.wasPressed()) {
-                if (client.player != null && client.player.networkHandler != null) {
-                    client.player.networkHandler.sendChatCommand("latdev explainHere");
+            while (explainKey.consumeClick()) {
+                if (client.player != null && client.player.connection != null) {
+                    client.player.connection.sendCommand("latdev explainHere");
                 }
             }
         }
     }
 
-    private static void capture(MinecraftClient client) {
-        if (client.player == null || client.world == null) {
+    private static void capture(Minecraft client) {
+        if (client.player == null || client.level == null) {
             return;
         }
 
         try {
-            Framebuffer framebuffer = client.getFramebuffer();
-            ScreenshotRecorder.takeScreenshot(framebuffer, image -> client.execute(() -> handleCapturedImage(client, image)));
+            RenderTarget framebuffer = client.getMainRenderTarget();
+            Screenshot.takeScreenshot(framebuffer, image -> client.execute(() -> handleCapturedImage(client, image)));
         } catch (Exception e) {
             GlobeMod.LOGGER.warn("[latdev] Capture pipeline failed", e);
             sendStatus(client, "[latdev] Capture failed: " + e.getMessage());
         }
     }
 
-    private static void handleCapturedImage(MinecraftClient client, NativeImage image) {
+    private static void handleCapturedImage(Minecraft client, NativeImage image) {
         try {
             boolean clipboardEnabled = LatitudeConfig.screenshotClipboardEnabled;
             boolean saveEnabled = LatitudeConfig.screenshotAlsoSaveToDisk;
@@ -157,7 +157,7 @@ public final class DevCaptureKeybind {
     }
 
     private static void handlePowerShellClipboardAsync(
-            MinecraftClient client,
+            Minecraft client,
             File captureFile,
             boolean keepOnSuccess,
             boolean csvEnabled
@@ -168,7 +168,7 @@ public final class DevCaptureKeybind {
     }
 
     private static void finalizePowerShellClipboard(
-            MinecraftClient client,
+            Minecraft client,
             boolean copied,
             File captureFile,
             boolean keepOnSuccess,
@@ -196,15 +196,15 @@ public final class DevCaptureKeybind {
         }
     }
 
-    private static void appendCaptureCsvIfEnabled(MinecraftClient client, Path capturePath) throws IOException {
+    private static void appendCaptureCsvIfEnabled(Minecraft client, Path capturePath) throws IOException {
         if (!LatitudeConfig.captureWriteCsv) {
             return;
         }
         appendCaptureCsv(client, capturePath);
     }
 
-    private static void appendCaptureCsv(MinecraftClient client, Path capturePath) throws IOException {
-        Path latdevDir = client.runDirectory.toPath().resolve("latdev");
+    private static void appendCaptureCsv(Minecraft client, Path capturePath) throws IOException {
+        Path latdevDir = client.gameDirectory.toPath().resolve("latdev");
         Files.createDirectories(latdevDir);
         Path csvPath = latdevDir.resolve("captures.csv");
 
@@ -222,7 +222,7 @@ public final class DevCaptureKeybind {
             z = Integer.toString(player.getBlockZ());
         }
 
-        String row = escapeCsv(Util.getFormattedCurrentTime())
+        String row = escapeCsv(Util.getFilenameFormattedDateTime())
                 + "," + escapeCsv(capturePath.getFileName().toString())
                 + "," + x
                 + "," + y
@@ -240,9 +240,9 @@ public final class DevCaptureKeybind {
         return LatitudeConfig.screenshotClipboardWindowsPowerShell && ClipboardImageWriter.isWindows();
     }
 
-    private static void sendStatus(MinecraftClient client, String message) {
+    private static void sendStatus(Minecraft client, String message) {
         if (client.player != null) {
-            client.player.sendMessage(Text.literal(message), false);
+            client.player.displayClientMessage(Component.literal(message), false);
         }
     }
 }

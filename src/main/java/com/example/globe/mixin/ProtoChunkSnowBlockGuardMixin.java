@@ -3,13 +3,13 @@ package com.example.globe.mixin;
 import com.example.globe.GlobeMod;
 import com.example.globe.util.LatitudeBands;
 import com.example.globe.world.LatitudeBiomes;
-import net.minecraft.block.BlockState;
-import net.minecraft.block.Blocks;
-import net.minecraft.registry.entry.RegistryEntry;
-import net.minecraft.registry.tag.BiomeTags;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.world.biome.Biome;
-import net.minecraft.world.chunk.ProtoChunk;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Holder;
+import net.minecraft.tags.BiomeTags;
+import net.minecraft.world.level.biome.Biome;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.chunk.ProtoChunk;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
@@ -38,16 +38,16 @@ public class ProtoChunkSnowBlockGuardMixin {
     private static final java.util.concurrent.atomic.AtomicInteger GUARD_LOG_COUNT = new java.util.concurrent.atomic.AtomicInteger();
 
     @Unique
-    private static final BlockState STONE_STATE = Blocks.STONE.getDefaultState();
+    private static final BlockState STONE_STATE = Blocks.STONE.defaultBlockState();
 
     @Unique
-    private static final BlockState DIRT_STATE = Blocks.DIRT.getDefaultState();
+    private static final BlockState DIRT_STATE = Blocks.DIRT.defaultBlockState();
 
     @Unique
-    private static final BlockState AIR_STATE = Blocks.AIR.getDefaultState();
+    private static final BlockState AIR_STATE = Blocks.AIR.defaultBlockState();
 
     @Unique
-    private static final BlockState GRAVEL_STATE = Blocks.GRAVEL.getDefaultState();
+    private static final BlockState GRAVEL_STATE = Blocks.GRAVEL.defaultBlockState();
 
     @Unique
     private static final boolean DEBUG_SNOW_GUARD = Boolean.getBoolean("latitude.debugSnowGuard");
@@ -76,10 +76,10 @@ public class ProtoChunkSnowBlockGuardMixin {
         // Ocean-surface coherence: prevent grass_block in ocean-family biome cells.
         // Biome data is already populated (BIOMES phase) by the time surface rules
         // place grass_block (SURFACE phase), so getBiomeForNoiseGen reads Latitude biome.
-        if (state.isOf(Blocks.GRASS_BLOCK)) {
-            RegistryEntry<Biome> biome = ((ProtoChunk) (Object) this).getBiomeForNoiseGen(
+        if (state.is(Blocks.GRASS_BLOCK)) {
+            Holder<Biome> biome = ((ProtoChunk) (Object) this).getNoiseBiome(
                     pos.getX() >> 2, pos.getY() >> 2, pos.getZ() >> 2);
-            if (biome.isIn(BiomeTags.IS_OCEAN)) {
+            if (biome.is(BiomeTags.IS_OCEAN)) {
                 if (DEBUG_OCEAN_SURFACE_GUARD) {
                     int count = OCEAN_GUARD_LOG_COUNT.incrementAndGet();
                     if (count <= 25) {
@@ -94,9 +94,9 @@ public class ProtoChunkSnowBlockGuardMixin {
 
         if (!globe$isWarmBand(pos.getZ())) return;
 
-        boolean isSnowBlock = state.isOf(Blocks.SNOW_BLOCK);
-        boolean isSnowLayer = state.isOf(Blocks.SNOW);
-        boolean isPowder = state.isOf(Blocks.POWDER_SNOW);
+        boolean isSnowBlock = state.is(Blocks.SNOW_BLOCK);
+        boolean isSnowLayer = state.is(Blocks.SNOW);
+        boolean isPowder = state.is(Blocks.POWDER_SNOW);
         if (!(isSnowBlock || isSnowLayer || isPowder)) return;
 
         BlockState replacement;

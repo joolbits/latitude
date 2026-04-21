@@ -7,19 +7,18 @@ import com.example.globe.world.LatitudeBiomes;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
-import net.minecraft.registry.Registry;
-import net.minecraft.registry.RegistryKeys;
-import net.minecraft.registry.entry.RegistryEntry;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.util.Identifier;
-import net.minecraft.util.math.MathHelper;
-import net.minecraft.world.biome.Biome;
-import net.minecraft.world.biome.source.BiomeSource;
-import net.minecraft.world.biome.source.util.MultiNoiseUtil;
-import net.minecraft.world.gen.chunk.ChunkGenerator;
-import net.minecraft.world.gen.noise.NoiseConfig;
-
 import javax.imageio.ImageIO;
+import net.minecraft.core.Holder;
+import net.minecraft.core.Registry;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.resources.Identifier;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.util.Mth;
+import net.minecraft.world.level.biome.Biome;
+import net.minecraft.world.level.biome.BiomeSource;
+import net.minecraft.world.level.biome.Climate;
+import net.minecraft.world.level.chunk.ChunkGenerator;
+import net.minecraft.world.level.levelgen.RandomState;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -65,7 +64,7 @@ public final class BiomePreviewExporter {
             "minecraft:windswept_hills",
             "minecraft:stony_peaks");
     private static final int DEFAULT_INVENTORY_DISCOVERY_STEP = 32;
-    private static final Identifier MANGROVE_SWAMP_BIOME_ID = Identifier.of("minecraft:mangrove_swamp");
+    private static final Identifier MANGROVE_SWAMP_BIOME_ID = Identifier.parse("minecraft:mangrove_swamp");
     private static final DateTimeFormatter RUN_LABEL_TIMESTAMP = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss")
             .withLocale(Locale.ROOT)
             .withZone(ZoneOffset.UTC);
@@ -74,7 +73,7 @@ public final class BiomePreviewExporter {
     private BiomePreviewExporter() {
     }
 
-    public static ExportResult export(ServerWorld world,
+    public static ExportResult export(ServerLevel world,
                                       int radiusBlocks,
                                       int stepBlocks,
                                       int y,
@@ -82,7 +81,7 @@ public final class BiomePreviewExporter {
         return export(world, radiusBlocks, stepBlocks, y, runDirectory, world.getSeed(), ExportOptions.singleBiome(), null);
     }
 
-    public static ExportResult export(ServerWorld world,
+    public static ExportResult export(ServerLevel world,
                                       int radiusBlocks,
                                       int stepBlocks,
                                       int y,
@@ -91,7 +90,7 @@ public final class BiomePreviewExporter {
         return export(world, radiusBlocks, stepBlocks, y, runDirectory, world.getSeed(), options, null);
     }
 
-    public static ExportResult export(ServerWorld world,
+    public static ExportResult export(ServerLevel world,
                                       int radiusBlocks,
                                       int stepBlocks,
                                       int y,
@@ -171,24 +170,24 @@ public final class BiomePreviewExporter {
         boolean renderBiomeMasks = !maskTargets.isEmpty();
         boolean needsBiomeSampling = renderBiomes || renderBiomeMasks || emitBiomeIndex;
 
-        ChunkGenerator generator = world.getChunkManager().getChunkGenerator();
+        ChunkGenerator generator = world.getChunkSource().getGenerator();
         BiomeSource biomeSource = generator.getBiomeSource();
         BiomeSource baseSource = biomeSource instanceof LatitudeBiomeSource latitudeSource
                 ? latitudeSource.original()
                 : biomeSource;
-        Registry<Biome> biomeRegistry = world.getRegistryManager().getOrThrow(RegistryKeys.BIOME);
-        NoiseConfig noiseConfig = NoiseConfig.create(
-                ((net.minecraft.world.gen.chunk.NoiseChunkGenerator) generator).getSettings().value(),
-                world.getRegistryManager().getOrThrow(RegistryKeys.NOISE_PARAMETERS),
+        Registry<Biome> biomeRegistry = world.registryAccess().lookupOrThrow(Registries.BIOME);
+        RandomState noiseConfig = RandomState.create(
+                ((net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator) generator).generatorSettings().value(),
+                world.registryAccess().lookupOrThrow(Registries.NOISE),
                 atlasSeed);
-        MultiNoiseUtil.MultiNoiseSampler sampler = noiseConfig.getMultiNoiseSampler();
-        net.minecraft.world.gen.chunk.NoiseChunkGenerator noiseGen =
-                generator instanceof net.minecraft.world.gen.chunk.NoiseChunkGenerator ng ? ng : null;
+        Climate.Sampler sampler = noiseConfig.sampler();
+        net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator noiseGen =
+                generator instanceof net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator ng ? ng : null;
         // Lightweight surface stub for atlas mode: keep sea level from the generator,
         // but skip expensive height probing by leaving noiseConfig/heightView unset.
-        net.minecraft.world.gen.chunk.NoiseChunkGenerator gatedNoiseGen = noiseGen;
-        NoiseConfig gatedNoiseConfig = null;
-        net.minecraft.world.HeightLimitView gatedHeightView = null;
+        net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator gatedNoiseGen = noiseGen;
+        RandomState gatedNoiseConfig = null;
+        net.minecraft.world.level.LevelHeightAccessor gatedHeightView = null;
 
         int noiseY = Math.floorDiv(y, 4);
         final String pickerContext = "ATLAS_SAMPLER";
@@ -199,8 +198,8 @@ public final class BiomePreviewExporter {
 
                 String sampledBiomeId = null;
                 if (needsBiomeSampling) {
-                    RegistryEntry<Biome> base = baseSource.getBiome(noiseX, noiseY, noiseZ, sampler);
-                    RegistryEntry<Biome> picked = LatitudeBiomes.pick(
+                    Holder<Biome> base = baseSource.getNoiseBiome(noiseX, noiseY, noiseZ, sampler);
+                    Holder<Biome> picked = LatitudeBiomes.pick(
                             biomeRegistry,
                             base,
                             blockX,
@@ -212,7 +211,7 @@ public final class BiomePreviewExporter {
                             gatedNoiseGen,
                             gatedNoiseConfig,
                             gatedHeightView);
-                    RegistryEntry<Biome> out = picked != null ? picked : base;
+                    Holder<Biome> out = picked != null ? picked : base;
                     sampledBiomeId = biomeId(biomeRegistry, out);
 
                     boolean mangroveMaskHit = false;
@@ -270,23 +269,23 @@ public final class BiomePreviewExporter {
                 }
 
                 if (renderTemperature || renderHumidity || renderContinentalness) {
-                    MultiNoiseUtil.NoiseValuePoint point = sampler.sample(noiseX, noiseY, noiseZ);
+                    Climate.TargetPoint point = sampler.sample(noiseX, noiseY, noiseZ);
                     if (renderTemperature) {
-                        double temperature01 = normalizeNoise(MultiNoiseUtil.toFloat(point.temperatureNoise()));
+                        double temperature01 = normalizeNoise(Climate.unquantizeCoord(point.temperature()));
                         images.get(Layer.TEMPERATURE).setRGB(imageX, imageZ, colorForTemperature(temperature01));
                     }
                     if (renderHumidity) {
-                        double humidity01 = normalizeNoise(MultiNoiseUtil.toFloat(point.humidityNoise()));
+                        double humidity01 = normalizeNoise(Climate.unquantizeCoord(point.humidity()));
                         images.get(Layer.HUMIDITY).setRGB(imageX, imageZ, colorForHumidity(humidity01));
                     }
                     if (renderContinentalness) {
-                        double continentalness = MathHelper.clamp(MultiNoiseUtil.toFloat(point.continentalnessNoise()), -1.0, 1.0);
+                        double continentalness = Mth.clamp(Climate.unquantizeCoord(point.continentalness()), -1.0, 1.0);
                         images.get(Layer.CONTINENTALNESS).setRGB(imageX, imageZ, colorForContinentalness(continentalness));
                     }
                 }
 
                 if (renderRuggedness &&
-                        noiseGen instanceof net.minecraft.world.gen.chunk.NoiseChunkGenerator) {
+                        noiseGen instanceof net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator) {
                     int delta = 0;
                     images.get(Layer.RUGGEDNESS).setRGB(imageX, imageZ, colorForRuggedness(delta));
                 }
@@ -422,7 +421,7 @@ public final class BiomePreviewExporter {
      * Stateful processor for height-enabled exports that can be advanced in small time-budgeted chunks.
      */
     public static final class HeightStepProcessor {
-        private final ServerWorld world;
+        private final ServerLevel world;
         private final int radiusBlocks;
         private final int stepBlocks;
         private final int y;
@@ -461,11 +460,11 @@ public final class BiomePreviewExporter {
         private final ChunkGenerator generator;
         private final BiomeSource baseSource;
         private final Registry<Biome> biomeRegistry;
-        private final NoiseConfig noiseConfig;
-        private final MultiNoiseUtil.MultiNoiseSampler sampler;
-        private final net.minecraft.world.gen.chunk.NoiseChunkGenerator gatedNoiseGen;
-        private final NoiseConfig gatedNoiseConfig;
-        private final net.minecraft.world.HeightLimitView gatedHeightView;
+        private final RandomState noiseConfig;
+        private final Climate.Sampler sampler;
+        private final net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator gatedNoiseGen;
+        private final RandomState gatedNoiseConfig;
+        private final net.minecraft.world.level.LevelHeightAccessor gatedHeightView;
         private final int noiseY;
 
         private int imageX = 0;
@@ -473,7 +472,7 @@ public final class BiomePreviewExporter {
         private final long startNanos;
         private ExportResult result;
 
-        private HeightStepProcessor(ServerWorld world,
+        private HeightStepProcessor(ServerLevel world,
                                      int radiusBlocks,
                                      int stepBlocks,
                                      int y,
@@ -505,19 +504,19 @@ public final class BiomePreviewExporter {
             this.chunkMinZ = Math.floorDiv(zMin, BLOCKS_PER_CHUNK);
             this.chunkMaxZ = Math.floorDiv(zMax, BLOCKS_PER_CHUNK);
 
-            this.generator = world.getChunkManager().getChunkGenerator();
+            this.generator = world.getChunkSource().getGenerator();
             BiomeSource biomeSource = generator.getBiomeSource();
             this.baseSource = biomeSource instanceof LatitudeBiomeSource latitudeSource
                     ? latitudeSource.original()
                     : biomeSource;
-            this.biomeRegistry = world.getRegistryManager().getOrThrow(RegistryKeys.BIOME);
-            this.noiseConfig = NoiseConfig.create(
-                    ((net.minecraft.world.gen.chunk.NoiseChunkGenerator) this.generator).getSettings().value(),
-                    world.getRegistryManager().getOrThrow(RegistryKeys.NOISE_PARAMETERS),
+            this.biomeRegistry = world.registryAccess().lookupOrThrow(Registries.BIOME);
+            this.noiseConfig = RandomState.create(
+                    ((net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator) this.generator).generatorSettings().value(),
+                    world.registryAccess().lookupOrThrow(Registries.NOISE),
                     atlasSeed);
-            this.sampler = noiseConfig.getMultiNoiseSampler();
-            net.minecraft.world.gen.chunk.NoiseChunkGenerator noiseGen =
-                    generator instanceof net.minecraft.world.gen.chunk.NoiseChunkGenerator ng ? ng : null;
+            this.sampler = noiseConfig.sampler();
+            net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator noiseGen =
+                    generator instanceof net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator ng ? ng : null;
             this.gatedNoiseGen = noiseGen;
             this.gatedNoiseConfig = noiseConfig;
             this.gatedHeightView = world;
@@ -538,7 +537,7 @@ public final class BiomePreviewExporter {
             this.startNanos = System.nanoTime();
         }
 
-        static HeightStepProcessor create(ServerWorld world,
+        static HeightStepProcessor create(ServerLevel world,
                                           int radiusBlocks,
                                           int stepBlocks,
                                           int y,
@@ -569,8 +568,8 @@ public final class BiomePreviewExporter {
 
                 String sampledBiomeId = null;
                 if (needsBiomeSampling()) {
-                    RegistryEntry<Biome> base = baseSource.getBiome(noiseX, noiseY, noiseZ, sampler);
-                    RegistryEntry<Biome> picked = LatitudeBiomes.pick(
+                    Holder<Biome> base = baseSource.getNoiseBiome(noiseX, noiseY, noiseZ, sampler);
+                    Holder<Biome> picked = LatitudeBiomes.pick(
                             biomeRegistry,
                             base,
                             blockX,
@@ -582,7 +581,7 @@ public final class BiomePreviewExporter {
                             gatedNoiseGen,
                             gatedNoiseConfig,
                             gatedHeightView);
-                    RegistryEntry<Biome> out = picked != null ? picked : base;
+                    Holder<Biome> out = picked != null ? picked : base;
                     sampledBiomeId = biomeId(biomeRegistry, out);
 
                     boolean mangroveMaskHit = false;
@@ -640,23 +639,23 @@ public final class BiomePreviewExporter {
                 }
 
                 if (layers.contains(Layer.TEMPERATURE) || layers.contains(Layer.HUMIDITY) || layers.contains(Layer.CONTINENTALNESS)) {
-                    MultiNoiseUtil.NoiseValuePoint point = sampler.sample(noiseX, noiseY, noiseZ);
+                    Climate.TargetPoint point = sampler.sample(noiseX, noiseY, noiseZ);
                     if (layers.contains(Layer.TEMPERATURE)) {
-                        double temperature01 = normalizeNoise(MultiNoiseUtil.toFloat(point.temperatureNoise()));
+                        double temperature01 = normalizeNoise(Climate.unquantizeCoord(point.temperature()));
                         images.get(Layer.TEMPERATURE).setRGB(imageX, imageZ, colorForTemperature(temperature01));
                     }
                     if (layers.contains(Layer.HUMIDITY)) {
-                        double humidity01 = normalizeNoise(MultiNoiseUtil.toFloat(point.humidityNoise()));
+                        double humidity01 = normalizeNoise(Climate.unquantizeCoord(point.humidity()));
                         images.get(Layer.HUMIDITY).setRGB(imageX, imageZ, colorForHumidity(humidity01));
                     }
                     if (layers.contains(Layer.CONTINENTALNESS)) {
-                        double continentalness = MathHelper.clamp(MultiNoiseUtil.toFloat(point.continentalnessNoise()), -1.0, 1.0);
+                        double continentalness = Mth.clamp(Climate.unquantizeCoord(point.continentalness()), -1.0, 1.0);
                         images.get(Layer.CONTINENTALNESS).setRGB(imageX, imageZ, colorForContinentalness(continentalness));
                     }
                 }
 
                 if (layers.contains(Layer.RUGGEDNESS) &&
-                        gatedNoiseGen instanceof net.minecraft.world.gen.chunk.NoiseChunkGenerator) {
+                        gatedNoiseGen instanceof net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator) {
                     int delta = com.example.globe.world.LatitudeBiomes.previewRobustDelta(
                             gatedNoiseGen, gatedNoiseConfig, gatedHeightView, blockX, blockZ);
                     images.get(Layer.RUGGEDNESS).setRGB(imageX, imageZ, colorForRuggedness(delta));
@@ -1343,7 +1342,7 @@ public final class BiomePreviewExporter {
                                                           int stepBlocks,
                                                           int height,
                                                           int color) {
-        int absZ = (int) Math.round(MathHelper.clamp(absFraction, 0.0, 1.0) * radiusBlocks);
+        int absZ = (int) Math.round(Mth.clamp(absFraction, 0.0, 1.0) * radiusBlocks);
         addGuideRow(rowColors, absZ, zMin, stepBlocks, height, color);
         if (absZ != 0) {
             addGuideRow(rowColors, -absZ, zMin, stepBlocks, height, color);
@@ -1357,7 +1356,7 @@ public final class BiomePreviewExporter {
                                     int height,
                                     int color) {
         int row = (int) Math.round((zBlocks - zMin) / (double) stepBlocks);
-        row = MathHelper.clamp(row, 0, Math.max(0, height - 1));
+        row = Mth.clamp(row, 0, Math.max(0, height - 1));
         rowColors.put(row, color);
     }
 
@@ -1427,7 +1426,7 @@ public final class BiomePreviewExporter {
     }
 
     private static double normalizeNoise(float noiseValue) {
-        return MathHelper.clamp((noiseValue + 1.0) * 0.5, 0.0, 1.0);
+        return Mth.clamp((noiseValue + 1.0) * 0.5, 0.0, 1.0);
     }
 
     private static int colorForBand(LatitudeBands.Band band) {
@@ -1778,7 +1777,7 @@ public final class BiomePreviewExporter {
     }
 
     private static int colorForTemperature(double value01) {
-        double t = MathHelper.clamp(value01, 0.0, 1.0);
+        double t = Mth.clamp(value01, 0.0, 1.0);
         if (t < 0.5) {
             return lerpRgb(0x2C7BB6, 0xFFF3B0, t * 2.0);
         }
@@ -1786,7 +1785,7 @@ public final class BiomePreviewExporter {
     }
 
     private static int colorForHumidity(double value01) {
-        double t = MathHelper.clamp(value01, 0.0, 1.0);
+        double t = Mth.clamp(value01, 0.0, 1.0);
         if (t < 0.5) {
             return lerpRgb(0xB07D3B, 0xE9E7C5, t * 2.0);
         }
@@ -1794,7 +1793,7 @@ public final class BiomePreviewExporter {
     }
 
     private static int colorForContinentalness(double valueSigned) {
-        double c = MathHelper.clamp(valueSigned, -1.0, 1.0);
+        double c = Mth.clamp(valueSigned, -1.0, 1.0);
         if (c < 0.0) {
             return lerpRgb(0x0B3D91, 0xE0C097, c + 1.0);
         }
@@ -1810,7 +1809,7 @@ public final class BiomePreviewExporter {
     }
 
     private static int lerpRgb(int from, int to, double t) {
-        double clamped = MathHelper.clamp(t, 0.0, 1.0);
+        double clamped = Mth.clamp(t, 0.0, 1.0);
         int fromR = (from >> 16) & 0xFF;
         int fromG = (from >> 8) & 0xFF;
         int fromB = from & 0xFF;
@@ -1828,12 +1827,12 @@ public final class BiomePreviewExporter {
         return String.format(Locale.ROOT, "#%06X", rgb & 0x00FFFFFF);
     }
 
-    private static String biomeId(Registry<Biome> biomeRegistry, RegistryEntry<Biome> biome) {
-        Identifier id = biomeRegistry.getId(biome.value());
+    private static String biomeId(Registry<Biome> biomeRegistry, Holder<Biome> biome) {
+        Identifier id = biomeRegistry.getKey(biome.value());
         if (id != null) {
             return id.toString();
         }
-        return biome.getKey().map(key -> key.getValue().toString()).orElse("minecraft:plains");
+        return biome.unwrapKey().map(key -> key.identifier().toString()).orElse("minecraft:plains");
     }
 
     private static Integer paletteOverrideFor(String biomeId) {
@@ -1902,7 +1901,7 @@ public final class BiomePreviewExporter {
 
     private static int inventoryDiscoveryStep(int stepBlocks) {
         int configured = Integer.getInteger("latitude.atlas.inventoryStep", DEFAULT_INVENTORY_DISCOVERY_STEP);
-        int clamped = MathHelper.clamp(configured, 8, 512);
+        int clamped = Mth.clamp(configured, 8, 512);
         return Math.min(Math.max(1, stepBlocks), clamped);
     }
 
@@ -1961,8 +1960,8 @@ public final class BiomePreviewExporter {
                 || token.equals("minecraft:mangrove_swamp");
     }
 
-    private static RegistryEntry<Biome> forceMangroveSwampForAtlas(Registry<Biome> biomeRegistry, RegistryEntry<Biome> fallback) {
-        RegistryEntry.Reference<Biome> mangrove = biomeRegistry.getEntry(MANGROVE_SWAMP_BIOME_ID).orElse(null);
+    private static Holder<Biome> forceMangroveSwampForAtlas(Registry<Biome> biomeRegistry, Holder<Biome> fallback) {
+        Holder.Reference<Biome> mangrove = biomeRegistry.get(MANGROVE_SWAMP_BIOME_ID).orElse(null);
         return mangrove != null ? mangrove : fallback;
     }
 

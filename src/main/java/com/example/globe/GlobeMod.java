@@ -14,35 +14,34 @@ import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerWorldEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
-import net.minecraft.server.command.CommandManager;
-import net.minecraft.entity.effect.StatusEffectInstance;
-import net.minecraft.entity.effect.StatusEffects;
-import net.minecraft.component.DataComponentTypes;
-import net.minecraft.component.type.BundleContentsComponent;
-import net.minecraft.item.ItemStack;
-import net.minecraft.item.Items;
-import net.minecraft.registry.RegistryKey;
+import net.minecraft.commands.Commands;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Holder;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.network.chat.Component;
+import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.text.Text;
-import net.minecraft.util.Identifier;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.world.Heightmap;
-import net.minecraft.world.border.WorldBorder;
-import net.minecraft.world.biome.Biome;
-import net.minecraft.world.biome.source.util.MultiNoiseUtil;
-import net.minecraft.world.gen.chunk.ChunkGenerator;
-import net.minecraft.world.gen.chunk.ChunkGeneratorSettings;
-import net.minecraft.world.gen.chunk.NoiseChunkGenerator;
-import net.minecraft.world.gen.noise.NoiseConfig;
-import net.minecraft.registry.Registry;
-import net.minecraft.registry.entry.RegistryEntry;
-import net.minecraft.registry.tag.BiomeTags;
-import net.minecraft.world.WorldProperties;
-import net.minecraft.network.packet.s2c.play.PositionFlag;
-import net.minecraft.util.math.MathHelper;
-import net.minecraft.util.math.random.Random;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.tags.BiomeTags;
+import net.minecraft.util.Mth;
+import net.minecraft.util.RandomSource;
+import net.minecraft.world.effect.MobEffectInstance;
+import net.minecraft.world.effect.MobEffects;
+import net.minecraft.world.entity.Relative;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.item.component.BundleContents;
+import net.minecraft.world.level.biome.Biome;
+import net.minecraft.world.level.biome.Climate;
+import net.minecraft.world.level.border.WorldBorder;
+import net.minecraft.world.level.chunk.ChunkGenerator;
+import net.minecraft.world.level.levelgen.Heightmap;
+import net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator;
+import net.minecraft.world.level.levelgen.NoiseGeneratorSettings;
+import net.minecraft.world.level.levelgen.RandomState;
+import net.minecraft.world.level.storage.LevelData;
 import net.fabricmc.loader.api.FabricLoader;
 import net.fabricmc.loader.api.ModContainer;
 import org.slf4j.Logger;
@@ -90,21 +89,21 @@ public class GlobeMod implements ModInitializer {
     private static final boolean ENABLE_POLAR_SCRUBBER = false;
 
 
-    private static final Identifier GLOBE_SETTINGS_ID = Identifier.of(MOD_ID, "overworld");
-    private static final Identifier GLOBE_SETTINGS_XSMALL_ID = Identifier.of(MOD_ID, "overworld_xsmall");
-    private static final Identifier GLOBE_SETTINGS_SMALL_ID = Identifier.of(MOD_ID, "overworld_small");
-    private static final Identifier GLOBE_SETTINGS_REGULAR_ID = Identifier.of(MOD_ID, "overworld_regular");
+    private static final Identifier GLOBE_SETTINGS_ID = Identifier.fromNamespaceAndPath(MOD_ID, "overworld");
+    private static final Identifier GLOBE_SETTINGS_XSMALL_ID = Identifier.fromNamespaceAndPath(MOD_ID, "overworld_xsmall");
+    private static final Identifier GLOBE_SETTINGS_SMALL_ID = Identifier.fromNamespaceAndPath(MOD_ID, "overworld_small");
+    private static final Identifier GLOBE_SETTINGS_REGULAR_ID = Identifier.fromNamespaceAndPath(MOD_ID, "overworld_regular");
 
-    private static final Identifier GLOBE_SETTINGS_LARGE_ID = Identifier.of(MOD_ID, "overworld_large");
-    private static final Identifier GLOBE_SETTINGS_MASSIVE_ID = Identifier.of(MOD_ID, "overworld_massive");
+    private static final Identifier GLOBE_SETTINGS_LARGE_ID = Identifier.fromNamespaceAndPath(MOD_ID, "overworld_large");
+    private static final Identifier GLOBE_SETTINGS_MASSIVE_ID = Identifier.fromNamespaceAndPath(MOD_ID, "overworld_massive");
 
-    private static final RegistryKey<ChunkGeneratorSettings> GLOBE_SETTINGS_KEY = RegistryKey.of(net.minecraft.registry.RegistryKeys.CHUNK_GENERATOR_SETTINGS, GLOBE_SETTINGS_ID);
-    private static final RegistryKey<ChunkGeneratorSettings> GLOBE_SETTINGS_XSMALL_KEY = RegistryKey.of(net.minecraft.registry.RegistryKeys.CHUNK_GENERATOR_SETTINGS, GLOBE_SETTINGS_XSMALL_ID);
-    private static final RegistryKey<ChunkGeneratorSettings> GLOBE_SETTINGS_SMALL_KEY = RegistryKey.of(net.minecraft.registry.RegistryKeys.CHUNK_GENERATOR_SETTINGS, GLOBE_SETTINGS_SMALL_ID);
-    private static final RegistryKey<ChunkGeneratorSettings> GLOBE_SETTINGS_REGULAR_KEY = RegistryKey.of(net.minecraft.registry.RegistryKeys.CHUNK_GENERATOR_SETTINGS, GLOBE_SETTINGS_REGULAR_ID);
+    private static final ResourceKey<NoiseGeneratorSettings> GLOBE_SETTINGS_KEY = ResourceKey.create(net.minecraft.core.registries.Registries.NOISE_SETTINGS, GLOBE_SETTINGS_ID);
+    private static final ResourceKey<NoiseGeneratorSettings> GLOBE_SETTINGS_XSMALL_KEY = ResourceKey.create(net.minecraft.core.registries.Registries.NOISE_SETTINGS, GLOBE_SETTINGS_XSMALL_ID);
+    private static final ResourceKey<NoiseGeneratorSettings> GLOBE_SETTINGS_SMALL_KEY = ResourceKey.create(net.minecraft.core.registries.Registries.NOISE_SETTINGS, GLOBE_SETTINGS_SMALL_ID);
+    private static final ResourceKey<NoiseGeneratorSettings> GLOBE_SETTINGS_REGULAR_KEY = ResourceKey.create(net.minecraft.core.registries.Registries.NOISE_SETTINGS, GLOBE_SETTINGS_REGULAR_ID);
 
-    private static final RegistryKey<ChunkGeneratorSettings> GLOBE_SETTINGS_LARGE_KEY = RegistryKey.of(net.minecraft.registry.RegistryKeys.CHUNK_GENERATOR_SETTINGS, GLOBE_SETTINGS_LARGE_ID);
-    private static final RegistryKey<ChunkGeneratorSettings> GLOBE_SETTINGS_MASSIVE_KEY = RegistryKey.of(net.minecraft.registry.RegistryKeys.CHUNK_GENERATOR_SETTINGS, GLOBE_SETTINGS_MASSIVE_ID);
+    private static final ResourceKey<NoiseGeneratorSettings> GLOBE_SETTINGS_LARGE_KEY = ResourceKey.create(net.minecraft.core.registries.Registries.NOISE_SETTINGS, GLOBE_SETTINGS_LARGE_ID);
+    private static final ResourceKey<NoiseGeneratorSettings> GLOBE_SETTINGS_MASSIVE_KEY = ResourceKey.create(net.minecraft.core.registries.Registries.NOISE_SETTINGS, GLOBE_SETTINGS_MASSIVE_ID);
 
     @Override
     public void onInitialize() {
@@ -116,15 +115,15 @@ public class GlobeMod implements ModInitializer {
         BiomeFeatureStripping.init();
 
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
-            dispatcher.register(CommandManager.literal("flyspeed")
-                    .then(CommandManager.argument("level", IntegerArgumentType.integer(1, 5))
+            dispatcher.register(Commands.literal("flyspeed")
+                    .then(Commands.argument("level", IntegerArgumentType.integer(1, 5))
                             .executes(ctx -> {
-                                ServerPlayerEntity player = ctx.getSource().getPlayerOrThrow();
+                                ServerPlayer player = ctx.getSource().getPlayerOrException();
                                 int level = IntegerArgumentType.getInteger(ctx, "level");
                                 float speed = 0.05f * (float) level;
-                                player.getAbilities().setFlySpeed(speed);
-                                player.sendAbilitiesUpdate();
-                                ctx.getSource().sendFeedback(() -> Text.literal("Fly speed set to " + level), false);
+                                player.getAbilities().setFlyingSpeed(speed);
+                                player.onUpdateAbilities();
+                                ctx.getSource().sendSuccess(() -> Component.literal("Fly speed set to " + level), false);
                                 return 1;
                             })));
 
@@ -141,7 +140,7 @@ public class GlobeMod implements ModInitializer {
         });
 
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
-            ServerWorld overworld = server.getOverworld();
+            ServerLevel overworld = server.overworld();
             if (overworld == null) {
                 return;
             }
@@ -151,13 +150,13 @@ public class GlobeMod implements ModInitializer {
             ServerPlayNetworking.send(handler.player, new GlobeNet.GlobeStatePayload(isGlobe));
 
             LatitudeWorldState worldState = LatitudeWorldState.get(overworld);
-            boolean isBrandNewWorld = overworld.getTime() < 100L;
+            boolean isBrandNewWorld = overworld.getGameTime() < 100L;
             boolean spawnAlreadyChosen = handler.player.getCommandTags().contains(SPAWN_CHOSEN_TAG);
 
-            String pendingZone = server.isDedicated() ? null : GlobePending.consume();
+            String pendingZone = server.isDedicatedServer() ? null : GlobePending.consume();
 
-            boolean startWithCompass = !server.isDedicated() && GlobePending.startWithCompass;
-            if (isGlobe && !server.isDedicated() && !StartCompass.hasReceived(handler.player)) {
+            boolean startWithCompass = !server.isDedicatedServer() && GlobePending.startWithCompass;
+            if (isGlobe && !server.isDedicatedServer() && !StartCompass.hasReceived(handler.player)) {
                 if (!startWithCompass) {
                     StartCompass.markReceived(handler.player);
                 } else if (hasCompassAnywhere(handler.player)) {
@@ -199,14 +198,14 @@ public class GlobeMod implements ModInitializer {
      *
      * <p>Only acts on the Globe overworld; other dimensions are ignored.
      */
-    private static void initLatitudeBiomesForWorld(MinecraftServer server, ServerWorld world) {
-        if (world != server.getOverworld()) {
+    private static void initLatitudeBiomesForWorld(MinecraftServer server, ServerLevel world) {
+        if (world != server.overworld()) {
             return;
         }
         if (!isGlobeOverworld(world)) {
             return;
         }
-        long seed = server.getSaveProperties().getGeneratorOptions().getSeed();
+        long seed = server.getWorldData().worldGenOptions().seed();
         int radius = borderRadiusForGlobeOverworld(world);
         // Radius first: ensures rebuildProvinceAuthority() has a valid radius when the seed fires.
         LatitudeBiomes.setRadius(radius);
@@ -215,7 +214,7 @@ public class GlobeMod implements ModInitializer {
     }
 
     private static void applyWorldBorder(MinecraftServer server) {
-        ServerWorld overworld = server.getOverworld();
+        ServerLevel overworld = server.overworld();
         if (overworld == null) {
             return;
         }
@@ -231,7 +230,7 @@ public class GlobeMod implements ModInitializer {
         // atomically the moment the seed is available (not on the next setRadius call).
         LatitudeBiomes.setRadius(borderRadiusBlocks);
 
-        long seed = overworld.getServer().getSaveProperties().getGeneratorOptions().getSeed();
+        long seed = overworld.getServer().getWorldData().worldGenOptions().seed();
         LatitudeBiomes.setWorldSeed(seed);
 
         WorldBorder border = overworld.getWorldBorder();
@@ -258,7 +257,7 @@ public class GlobeMod implements ModInitializer {
     }
 
     private static void borderUxTick(MinecraftServer server) {
-        ServerWorld overworld = server.getOverworld();
+        ServerLevel overworld = server.overworld();
         if (overworld == null) {
             return;
         }
@@ -267,15 +266,15 @@ public class GlobeMod implements ModInitializer {
             return;
         }
 
-        long worldTime = overworld.getTime();
+        long worldTime = overworld.getGameTime();
         if ((worldTime % 10L) != 0L) {
             return;
         }
 
         WorldBorder border = overworld.getWorldBorder();
 
-        for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
-            if (player.getEntityWorld() != overworld) {
+        for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+            if (player.level() != overworld) {
                 continue;
             }
 
@@ -301,66 +300,66 @@ public class GlobeMod implements ModInitializer {
             boolean showIcon = false;
 
             if (stage == PolarStage.IMPAIR) {
-                player.addStatusEffect(new StatusEffectInstance(StatusEffects.SLOWNESS, duration, 0, ambient, showParticles, showIcon));
-                player.addStatusEffect(new StatusEffectInstance(StatusEffects.WEAKNESS, duration, 0, ambient, showParticles, showIcon));
+                player.addEffect(new MobEffectInstance(MobEffects.SLOWNESS, duration, 0, ambient, showParticles, showIcon));
+                player.addEffect(new MobEffectInstance(MobEffects.WEAKNESS, duration, 0, ambient, showParticles, showIcon));
             } else if (stage == PolarStage.HOSTILE || stage == PolarStage.WHITEOUT) {
-                player.addStatusEffect(new StatusEffectInstance(StatusEffects.SLOWNESS, duration, 1, ambient, showParticles, showIcon));
-                player.addStatusEffect(new StatusEffectInstance(StatusEffects.WEAKNESS, duration, 0, ambient, showParticles, showIcon));
-                player.addStatusEffect(new StatusEffectInstance(StatusEffects.MINING_FATIGUE, duration, 0, ambient, showParticles, showIcon));
+                player.addEffect(new MobEffectInstance(MobEffects.SLOWNESS, duration, 1, ambient, showParticles, showIcon));
+                player.addEffect(new MobEffectInstance(MobEffects.WEAKNESS, duration, 0, ambient, showParticles, showIcon));
+                player.addEffect(new MobEffectInstance(MobEffects.MINING_FATIGUE, duration, 0, ambient, showParticles, showIcon));
             } else if (stage == PolarStage.LETHAL || stage == PolarStage.HOPELESS) {
-                player.addStatusEffect(new StatusEffectInstance(StatusEffects.SLOWNESS, duration, 2, ambient, showParticles, showIcon));
-                player.addStatusEffect(new StatusEffectInstance(StatusEffects.WEAKNESS, duration, 1, ambient, showParticles, showIcon));
-                player.addStatusEffect(new StatusEffectInstance(StatusEffects.BLINDNESS, duration, 0, ambient, showParticles, showIcon));
+                player.addEffect(new MobEffectInstance(MobEffects.SLOWNESS, duration, 2, ambient, showParticles, showIcon));
+                player.addEffect(new MobEffectInstance(MobEffects.WEAKNESS, duration, 1, ambient, showParticles, showIcon));
+                player.addEffect(new MobEffectInstance(MobEffects.BLINDNESS, duration, 0, ambient, showParticles, showIcon));
 
                 int max = 140;
                 int target = (int) Math.floor(max * 0.85);
                 if (target < 1) {
                     target = 1;
                 }
-                player.setFrozenTicks(Math.max(player.getFrozenTicks(), target));
+                player.setTicksFrozen(Math.max(player.getTicksFrozen(), target));
             }
         }
     }
 
-    private static void applyContinuousBlindness(ServerPlayerEntity player, boolean inFinalWhiteout) {
+    private static void applyContinuousBlindness(ServerPlayer player, boolean inFinalWhiteout) {
         if (!inFinalWhiteout) {
             return;
         }
 
-        StatusEffectInstance cur = player.getStatusEffect(StatusEffects.BLINDNESS);
+        MobEffectInstance cur = player.getEffect(MobEffects.BLINDNESS);
         if (cur == null || cur.getDuration() < 80) {
-            player.addStatusEffect(new StatusEffectInstance(StatusEffects.BLINDNESS, 200, 0, true, false, false));
+            player.addEffect(new MobEffectInstance(MobEffects.BLINDNESS, 200, 0, true, false, false));
         }
     }
 
-    private static boolean isGlobeOverworld(ServerWorld world) {
-        ChunkGenerator gen = world.getChunkManager().getChunkGenerator();
-        if (!(gen instanceof NoiseChunkGenerator noise)) return false;
+    private static boolean isGlobeOverworld(ServerLevel world) {
+        ChunkGenerator gen = world.getChunkSource().getGenerator();
+        if (!(gen instanceof NoiseBasedChunkGenerator noise)) return false;
 
-        return noise.matchesSettings(GLOBE_SETTINGS_KEY)
-                || noise.matchesSettings(GLOBE_SETTINGS_XSMALL_KEY)
-                || noise.matchesSettings(GLOBE_SETTINGS_SMALL_KEY)
-                || noise.matchesSettings(GLOBE_SETTINGS_REGULAR_KEY)
-                || noise.matchesSettings(GLOBE_SETTINGS_LARGE_KEY)
-                || noise.matchesSettings(GLOBE_SETTINGS_MASSIVE_KEY);
+        return noise.stable(GLOBE_SETTINGS_KEY)
+                || noise.stable(GLOBE_SETTINGS_XSMALL_KEY)
+                || noise.stable(GLOBE_SETTINGS_SMALL_KEY)
+                || noise.stable(GLOBE_SETTINGS_REGULAR_KEY)
+                || noise.stable(GLOBE_SETTINGS_LARGE_KEY)
+                || noise.stable(GLOBE_SETTINGS_MASSIVE_KEY);
     }
 
-    private static int borderRadiusForGlobeOverworld(ServerWorld world) {
-        ChunkGenerator gen = world.getChunkManager().getChunkGenerator();
-        if (!(gen instanceof NoiseChunkGenerator noise)) return BORDER_RADIUS;
+    private static int borderRadiusForGlobeOverworld(ServerLevel world) {
+        ChunkGenerator gen = world.getChunkSource().getGenerator();
+        if (!(gen instanceof NoiseBasedChunkGenerator noise)) return BORDER_RADIUS;
 
-        if (noise.matchesSettings(GLOBE_SETTINGS_KEY)) return 15000;
-        if (noise.matchesSettings(GLOBE_SETTINGS_XSMALL_KEY)) return 3750;
-        if (noise.matchesSettings(GLOBE_SETTINGS_SMALL_KEY)) return 5000;
-        if (noise.matchesSettings(GLOBE_SETTINGS_REGULAR_KEY)) return BORDER_RADIUS;
-        if (noise.matchesSettings(GLOBE_SETTINGS_LARGE_KEY)) return 10000;
-        if (noise.matchesSettings(GLOBE_SETTINGS_MASSIVE_KEY)) return 20000;
+        if (noise.stable(GLOBE_SETTINGS_KEY)) return 15000;
+        if (noise.stable(GLOBE_SETTINGS_XSMALL_KEY)) return 3750;
+        if (noise.stable(GLOBE_SETTINGS_SMALL_KEY)) return 5000;
+        if (noise.stable(GLOBE_SETTINGS_REGULAR_KEY)) return BORDER_RADIUS;
+        if (noise.stable(GLOBE_SETTINGS_LARGE_KEY)) return 10000;
+        if (noise.stable(GLOBE_SETTINGS_MASSIVE_KEY)) return 20000;
 
         return BORDER_RADIUS;
     }
 
-    private static void applySpawnChoice(ServerPlayerEntity player, String id) {
-        if (player.getCommandTags().contains(SPAWN_CHOSEN_TAG)) {
+    private static void applySpawnChoice(ServerPlayer player, String id) {
+        if (player.getTags().contains(SPAWN_CHOSEN_TAG)) {
             return;
         }
 
@@ -370,14 +369,14 @@ public class GlobeMod implements ModInitializer {
             return;
         }
 
-        ServerWorld world = (ServerWorld) player.getEntityWorld();
+        ServerLevel world = (ServerLevel) player.level();
         if (!isGlobeOverworld(world)) {
             return;
         }
 
         String zoneId = id;
         if (zoneId != null && zoneId.equals("RANDOM")) {
-            long seed = world.getServer().getSaveProperties().getGeneratorOptions().getSeed();
+            long seed = world.getServer().getWorldData().worldGenOptions().seed();
             zoneId = resolveSpawnZoneId(zoneId, seed);
             LOGGER.info("Resolved RANDOM spawn zone: player={}, seed={}, chosen={}", player.getName().getString(), seed, zoneId);
         }
@@ -394,7 +393,7 @@ public class GlobeMod implements ModInitializer {
             radius = (int) Math.round(com.example.globe.util.LatitudeMath.halfSize(border));
         }
 
-        long seed = world.getServer().getSaveProperties().getGeneratorOptions().getSeed();
+        long seed = world.getServer().getWorldData().worldGenOptions().seed();
         double v = hash01(seed, 1, 0, SPAWN_SALT);
         
         double spawnAbsLatFrac = com.example.globe.util.LatitudeMath.spawnFracForZoneKey(zoneId);
@@ -405,7 +404,7 @@ public class GlobeMod implements ModInitializer {
 
         int warnStartZ = Math.max(0, radius - POLE_WARNING_DISTANCE_BLOCKS);
         int maxAbsZ = Math.max(0, warnStartZ - 500);
-        z = MathHelper.clamp(z, -maxAbsZ, maxAbsZ);
+        z = Mth.clamp(z, -maxAbsZ, maxAbsZ);
 
         int targetZ = z;
 
@@ -414,9 +413,9 @@ public class GlobeMod implements ModInitializer {
         BlockPos spawnPos;
         try {
             SamplerTemplate template = BiomeSamplerTools.createTemplate(world);
-            NoiseConfig noiseConfig = NoiseConfig.create(
+            RandomState noiseConfig = RandomState.create(
                     template.settings().value(), template.noiseParameters(), seed);
-            MultiNoiseUtil.MultiNoiseSampler sampler = noiseConfig.getMultiNoiseSampler();
+            Climate.Sampler sampler = noiseConfig.sampler();
             spawnPos = findLandSpawn(world, template, sampler, radius, targetZ, seed);
         } catch (Exception e) {
             LOGGER.warn("[Latitude] Biome probe failed, using fallback spawn", e);
@@ -429,11 +428,11 @@ public class GlobeMod implements ModInitializer {
         }
 
         BlockPos clampedSpawnPos = clampSpawnAwayFromEwWarning(spawnPos, radius);
-        world.setSpawnPoint(WorldProperties.SpawnPoint.create(world.getRegistryKey(), clampedSpawnPos, 0.0f, 0.0f));
+        world.setRespawnData(LevelData.RespawnData.of(world.dimension(), clampedSpawnPos, 0.0f, 0.0f));
 
         BlockPos teleportPos = clampSpawnAwayFromEwWarning(clampedSpawnPos, radius);
-        player.teleport(world, teleportPos.getX() + 0.5, teleportPos.getY(), teleportPos.getZ() + 0.5, EnumSet.noneOf(PositionFlag.class), player.getYaw(), player.getPitch(), true);
-        player.addCommandTag(SPAWN_CHOSEN_TAG);
+        player.teleportTo(world, teleportPos.getX() + 0.5, teleportPos.getY(), teleportPos.getZ() + 0.5, EnumSet.noneOf(Relative.class), player.getYRot(), player.getXRot(), true);
+        player.addTag(SPAWN_CHOSEN_TAG);
         LatitudeWorldState.get(world).setSpawnPickerDismissed(true);
     }
 
@@ -488,8 +487,8 @@ public class GlobeMod implements ModInitializer {
         return new BlockPos(clampedX, spawnPos.getY(), spawnPos.getZ());
     }
 
-    private static BlockPos findLandSpawn(ServerWorld world, SamplerTemplate template,
-                                          MultiNoiseUtil.MultiNoiseSampler sampler,
+    private static BlockPos findLandSpawn(ServerLevel world, SamplerTemplate template,
+                                          Climate.Sampler sampler,
                                           int borderHalf, int targetZ, long seed) {
         final int margin = 320;
         final int max = Math.max(0, borderHalf - margin);
@@ -508,11 +507,11 @@ public class GlobeMod implements ModInitializer {
 
         LatitudeBiomes.setWorldSeed(seed);
 
-        Random rng = Random.create(seed ^ 0x9E3779B97F4A7C15L ^ (long) targetZ);
+        RandomSource rng = RandomSource.create(seed ^ 0x9E3779B97F4A7C15L ^ (long) targetZ);
 
         // Pass 1: X-only — biome probe then single-chunk Y placement
         for (int i = 0; i < attemptsXOnly; i++) {
-            int x = rng.nextBetween(-max, max);
+            int x = rng.nextIntBetweenInclusive(-max, max);
             int z = targetZ;
 
             if (!isLandBiome(template, sampler, x, z, classifyY, radiusBlocks)) continue;
@@ -522,8 +521,8 @@ public class GlobeMod implements ModInitializer {
 
         // Pass 2: X + small Z jitter
         for (int i = 0; i < attemptsWithZJitter; i++) {
-            int x = rng.nextBetween(-max, max);
-            int z = MathHelper.clamp(targetZ + rng.nextBetween(-zJitter, zJitter), -max, max);
+            int x = rng.nextIntBetweenInclusive(-max, max);
+            int z = Mth.clamp(targetZ + rng.nextIntBetweenInclusive(-zJitter, zJitter), -max, max);
 
             if (!isLandBiome(template, sampler, x, z, classifyY, radiusBlocks)) continue;
             BlockPos candidate = placeSafeY(world, x, z);
@@ -538,41 +537,41 @@ public class GlobeMod implements ModInitializer {
      * at (blockX, blockZ) is land (not ocean or river).
      */
     private static boolean isLandBiome(SamplerTemplate template,
-                                        MultiNoiseUtil.MultiNoiseSampler sampler,
+                                        Climate.Sampler sampler,
                                         int blockX, int blockZ,
                                         int classifyY, int radiusBlocks) {
         int noiseX = Math.floorDiv(blockX, 4);
         int noiseZ = Math.floorDiv(blockZ, 4);
         int noiseY = Math.floorDiv(classifyY, 4);
 
-        RegistryEntry<Biome> base = template.baseSource().getBiome(noiseX, noiseY, noiseZ, sampler);
-        RegistryEntry<Biome> picked = LatitudeBiomes.pick(
+        Holder<Biome> base = template.baseSource().getNoiseBiome(noiseX, noiseY, noiseZ, sampler);
+        Holder<Biome> picked = LatitudeBiomes.pick(
                 template.biomeRegistry(), base,
                 blockX, blockZ, classifyY, radiusBlocks,
                 sampler, "SPAWN_PROBE");
-        RegistryEntry<Biome> resolved = picked != null ? picked : base;
+        Holder<Biome> resolved = picked != null ? picked : base;
 
         // Tag-based checks — safe against substring false positives
-        return !resolved.isIn(BiomeTags.IS_OCEAN) && !resolved.isIn(BiomeTags.IS_RIVER);
+        return !resolved.is(BiomeTags.IS_OCEAN) && !resolved.is(BiomeTags.IS_RIVER);
     }
 
     /**
      * Generates exactly ONE chunk to get a safe spawn Y via heightmap.
      * Returns a valid spawn BlockPos, or null if the terrain fails validation.
      */
-    private static BlockPos placeSafeY(ServerWorld world, int x, int z) {
+    private static BlockPos placeSafeY(ServerLevel world, int x, int z) {
         world.getChunk(x >> 4, z >> 4);
 
-        BlockPos ground = world.getTopPosition(
-                Heightmap.Type.MOTION_BLOCKING_NO_LEAVES,
-                new BlockPos(x, world.getBottomY(), z));
-        BlockPos spawn = ground.up();
+        BlockPos ground = world.getHeightmapPos(
+                Heightmap.Types.MOTION_BLOCKING_NO_LEAVES,
+                new BlockPos(x, world.getMinY(), z));
+        BlockPos spawn = ground.above();
 
         // Same validation as the old tryLandAt
         if (!world.getFluidState(spawn).isEmpty()) return null;
-        if (!world.getFluidState(spawn.up()).isEmpty()) return null;
+        if (!world.getFluidState(spawn.above()).isEmpty()) return null;
         if (!world.getBlockState(spawn).isAir()) return null;
-        if (!world.getBlockState(spawn.up()).isAir()) return null;
+        if (!world.getBlockState(spawn.above()).isAir()) return null;
         if (!world.getFluidState(ground).isEmpty()) return null;
 
         return spawn;
@@ -603,25 +602,25 @@ public class GlobeMod implements ModInitializer {
         return options[idx];
     }
 
-    private static boolean hasCompassAnywhere(ServerPlayerEntity player) {
+    private static boolean hasCompassAnywhere(ServerPlayer player) {
         if (player == null) return false;
         var inv = player.getInventory();
-        for (int i = 0; i < inv.size(); i++) {
-            if (containsCompass(inv.getStack(i), 0)) return true;
+        for (int i = 0; i < inv.getContainerSize(); i++) {
+            if (containsCompass(inv.getItem(i), 0)) return true;
         }
         return false;
     }
 
     private static boolean containsCompass(ItemStack stack, int depth) {
         if (stack == null || stack.isEmpty()) return false;
-        if (stack.isOf(Items.COMPASS)) return true;
+        if (stack.is(Items.COMPASS)) return true;
 
         if (depth >= 6) return false;
 
-        if (stack.isOf(Items.BUNDLE)) {
-            BundleContentsComponent contents = stack.get(DataComponentTypes.BUNDLE_CONTENTS);
+        if (stack.is(Items.BUNDLE)) {
+            BundleContents contents = stack.get(DataComponents.BUNDLE_CONTENTS);
             if (contents != null) {
-                for (ItemStack inside : contents.iterate()) {
+                for (ItemStack inside : contents.items()) {
                     if (containsCompass(inside, depth + 1)) return true;
                 }
             }

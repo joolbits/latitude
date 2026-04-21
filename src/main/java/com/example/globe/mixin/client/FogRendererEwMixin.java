@@ -1,8 +1,8 @@
 package com.example.globe.mixin.client;
 
 import com.example.globe.client.GlobeClientState;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.render.fog.FogRenderer;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.fog.FogRenderer;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
@@ -24,8 +24,8 @@ public class FogRendererEwMixin {
 
     @Unique
     private static float latitude$tightenEnd(float currentEnd) {
-        MinecraftClient mc = MinecraftClient.getInstance();
-        if (mc == null || mc.world == null || mc.player == null) return currentEnd;
+        Minecraft mc = Minecraft.getInstance();
+        if (mc == null || mc.level == null || mc.player == null) return currentEnd;
 
         double x = mc.player.getX();
         double i = GlobeClientState.ewIntensity01(x);
@@ -39,8 +39,8 @@ public class FogRendererEwMixin {
 
     @Unique
     private static float latitude$tightenStart(float currentStart) {
-        MinecraftClient mc = MinecraftClient.getInstance();
-        if (mc == null || mc.world == null || mc.player == null) return currentStart;
+        Minecraft mc = Minecraft.getInstance();
+        if (mc == null || mc.level == null || mc.player == null) return currentStart;
 
         double x = mc.player.getX();
         double i = GlobeClientState.ewIntensity01(x);

@@ -5,16 +5,16 @@ import com.example.globe.client.EwSandstormOverlayHud;
 import com.example.globe.client.GlobeWarningOverlay;
 import com.example.globe.client.LatitudeHudStudioScreen;
 import com.example.globe.client.ZoneEnterTitleOverlay;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.hud.InGameHud;
-import net.minecraft.client.render.RenderTickCounter;
+import net.minecraft.client.DeltaTracker;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.Gui;
+import net.minecraft.client.gui.GuiGraphics;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-@Mixin(InGameHud.class)
+@Mixin(Gui.class)
 public class InGameHudMixin {
     @Inject(
         method = "renderMainHud",
@@ -23,28 +23,28 @@ public class InGameHudMixin {
             target = "Lnet/minecraft/client/gui/hud/InGameHud;renderHotbar(Lnet/minecraft/client/gui/DrawContext;Lnet/minecraft/client/render/RenderTickCounter;)V"
         )
     )
-    private void globe$renderEwHazeBeforeHotbar(DrawContext context, RenderTickCounter tickCounter, CallbackInfo ci) {
-        MinecraftClient client = MinecraftClient.getInstance();
+    private void globe$renderEwHazeBeforeHotbar(GuiGraphics context, DeltaTracker tickCounter, CallbackInfo ci) {
+        Minecraft client = Minecraft.getInstance();
         if (client != null
-                && client.currentScreen != null
-                && !(client.currentScreen instanceof LatitudeHudStudioScreen)) {
+                && client.screen != null
+                && !(client.screen instanceof LatitudeHudStudioScreen)) {
             return;
         }
         EwSandstormOverlayHud.render(context, tickCounter);
     }
 
     @Inject(method = "render", at = @At("TAIL"))
-    private void globe$renderOverlay(DrawContext context, RenderTickCounter tickCounter, CallbackInfo ci) {
-        MinecraftClient client = MinecraftClient.getInstance();
+    private void globe$renderOverlay(GuiGraphics context, DeltaTracker tickCounter, CallbackInfo ci) {
+        Minecraft client = Minecraft.getInstance();
         if (client != null
-                && client.currentScreen != null
-                && !(client.currentScreen instanceof LatitudeHudStudioScreen)) {
+                && client.screen != null
+                && !(client.screen instanceof LatitudeHudStudioScreen)) {
             return;
         }
         GlobeWarningOverlay.render(context, tickCounter);
         CompassHud.render(context, tickCounter);
         if (client != null && client.getWindow() != null) {
-            ZoneEnterTitleOverlay.render(context, client.getWindow().getScaledWidth(), client.getWindow().getScaledHeight());
+            ZoneEnterTitleOverlay.render(context, client.getWindow().getGuiScaledWidth(), client.getWindow().getGuiScaledHeight());
         }
     }
 }

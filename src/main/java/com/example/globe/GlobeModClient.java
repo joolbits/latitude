@@ -20,12 +20,12 @@ import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderEvents;
 import net.fabricmc.loader.api.FabricLoader;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.block.Blocks;
-import net.minecraft.particle.BlockStateParticleEffect;
-import net.minecraft.particle.ParticleEffect;
-import net.minecraft.particle.ParticleTypes;
-import net.minecraft.util.math.random.Random;
+import net.minecraft.client.Minecraft;
+import net.minecraft.core.particles.BlockParticleOption;
+import net.minecraft.core.particles.ParticleOptions;
+import net.minecraft.core.particles.ParticleTypes;
+import net.minecraft.util.RandomSource;
+import net.minecraft.world.level.block.Blocks;
 
 public class GlobeModClient implements ClientModInitializer {
     private static boolean pendingSpawnPickerOpen;
@@ -87,30 +87,30 @@ public class GlobeModClient implements ClientModInitializer {
         });
     }
 
-    private static void clientKeybindTick(MinecraftClient client) {
-        while (ClientKeybinds.TOGGLE_COMPASS.wasPressed()) {
+    private static void clientKeybindTick(Minecraft client) {
+        while (ClientKeybinds.TOGGLE_COMPASS.consumeClick()) {
             var cfg = CompassHudConfig.get();
             cfg.enabled = !cfg.enabled;
             CompassHudConfig.saveCurrent();
         }
 
-        while (ClientKeybinds.OPEN_SETTINGS.wasPressed()) {
-            if (client.currentScreen == null) {
+        while (ClientKeybinds.OPEN_SETTINGS.consumeClick()) {
+            if (client.screen == null) {
                 client.setScreen(new LatitudeSettingsScreen(null));
             } else {
-                client.setScreen(new LatitudeSettingsScreen(client.currentScreen));
+                client.setScreen(new LatitudeSettingsScreen(client.screen));
             }
         }
     }
 
-    private static void polarCapClientTick(MinecraftClient client) {
-        if (pendingSpawnPickerOpen && client.player != null && client.world != null && client.currentScreen == null) {
+    private static void polarCapClientTick(Minecraft client) {
+        if (pendingSpawnPickerOpen && client.player != null && client.level != null && client.screen == null) {
             pendingSpawnPickerOpen = false;
             client.setScreen(new SpawnZoneScreen());
             GlobeMod.LOGGER.info("Opened SpawnZoneScreen");
         }
 
-        if (client.player == null || client.world == null) {
+        if (client.player == null || client.level == null) {
             return;
         }
 
@@ -140,8 +140,8 @@ public class GlobeModClient implements ClientModInitializer {
             return;
         }
 
-        GlobeClientState.PolarStage polarStage = GlobeClientState.computePolarStage(client.world, client.player);
-        GlobeClientState.EwStormStage ewStage = GlobeClientState.computeEwStormStage(client.world, client.player);
+        GlobeClientState.PolarStage polarStage = GlobeClientState.computePolarStage(client.level, client.player);
+        GlobeClientState.EwStormStage ewStage = GlobeClientState.computeEwStormStage(client.level, client.player);
 
         boolean polarActive = polarStage != GlobeClientState.PolarStage.NONE;
         boolean ewActive = ewStage != GlobeClientState.EwStormStage.NONE;
@@ -150,7 +150,7 @@ public class GlobeModClient implements ClientModInitializer {
             return;
         }
 
-        if ((client.world.getTime() & 3) != 0) {
+        if ((client.level.getGameTime() & 3) != 0) {
             return;
         }
 
@@ -173,7 +173,7 @@ public class GlobeModClient implements ClientModInitializer {
 
             int count = 2 + (int) Math.round(intensity * 26.0);
             if (count > 6) count = 6;
-            Random random = client.player.getRandom();
+            RandomSource random = client.player.getRandom();
 
             double px = client.player.getX();
             double py = client.player.getY();
@@ -189,12 +189,12 @@ public class GlobeModClient implements ClientModInitializer {
                 double vz = (random.nextDouble() - 0.5) * 0.06;
 
                 double vHoriz = (vx + vz) * 0.5;
-                client.particleManager.addParticle(ParticleTypes.SNOWFLAKE, px + ox, py + 1.5 + oy, pz + oz, vHoriz, vy, vz);
+                client.particleEngine.createParticle(ParticleTypes.SNOWFLAKE, px + ox, py + 1.5 + oy, pz + oz, vHoriz, vy, vz);
             }
         }
     }
 
-    private static void ewSandstormClientTick(MinecraftClient client, GlobeClientState.EwStormStage stage) {
+    private static void ewSandstormClientTick(Minecraft client, GlobeClientState.EwStormStage stage) {
         int base = switch (stage) {
             case LEVEL_1 -> 6;
             case LEVEL_2 -> 20;
@@ -204,7 +204,7 @@ public class GlobeModClient implements ClientModInitializer {
             return;
         }
 
-        Random random = client.player.getRandom();
+        RandomSource random = client.player.getRandom();
         double px = client.player.getX();
         double py = client.player.getY();
         double pz = client.player.getZ();
@@ -214,28 +214,28 @@ public class GlobeModClient implements ClientModInitializer {
         // Use falling sand dust for a visible sandstorm wall, plus some haze.
         int sandCount = base;
         int hazeCount = Math.max(1, base / 3);
-        BlockStateParticleEffect sand = new BlockStateParticleEffect(ParticleTypes.FALLING_DUST, Blocks.SAND.getDefaultState());
+        BlockParticleOption sand = new BlockParticleOption(ParticleTypes.FALLING_DUST, Blocks.SAND.defaultBlockState());
         spawnCloudRing(client, sand, sandCount, random, px, py, pz, vx);
         spawnCloudRing(client, ParticleTypes.CLOUD, hazeCount, random, px, py, pz, vx * 0.6);
     }
 
-    private static void spawnCloudRing(MinecraftClient client, ParticleEffect particle, int count, Random random,
+    private static void spawnCloudRing(Minecraft client, ParticleOptions particle, int count, RandomSource random,
                                        double px, double py, double pz, double vx) {
         for (int i = 0; i < count; i++) {
             double ox = (random.nextDouble() - 0.5) * 16.0;
             double oy = 1.0 + random.nextDouble() * 6.0;
             double oz = (random.nextDouble() - 0.5) * 16.0;
-            client.particleManager.addParticle(particle, px + ox, py + oy, pz + oz, vx, 0.01, 0.0);
+            client.particleEngine.createParticle(particle, px + ox, py + oy, pz + oz, vx, 0.01, 0.0);
         }
     }
 
-    private static boolean isWarningParticleActive(MinecraftClient client) {
-        if (client.player == null || client.world == null) {
+    private static boolean isWarningParticleActive(Minecraft client) {
+        if (client.player == null || client.level == null) {
             return false;
         }
 
-        GlobeClientState.PolarStage polarStage = GlobeClientState.computePolarStage(client.world, client.player);
-        GlobeClientState.EwStormStage ewStage = GlobeClientState.computeEwStormStage(client.world, client.player);
+        GlobeClientState.PolarStage polarStage = GlobeClientState.computePolarStage(client.level, client.player);
+        GlobeClientState.EwStormStage ewStage = GlobeClientState.computeEwStormStage(client.level, client.player);
         return polarStage != GlobeClientState.PolarStage.NONE || ewStage != GlobeClientState.EwStormStage.NONE;
     }
 }
