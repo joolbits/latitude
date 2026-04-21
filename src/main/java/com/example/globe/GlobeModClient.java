@@ -18,7 +18,7 @@ import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
-import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderEvents;
+import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderEvents;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.particles.BlockParticleOption;
@@ -80,7 +80,7 @@ public class GlobeModClient implements ClientModInitializer {
         }
         ClientTickEvents.END_CLIENT_TICK.register(GlobeModClient::clientKeybindTick);
 
-        WorldRenderEvents.BEFORE_TRANSLUCENT.register(ctx -> {
+        LevelRenderEvents.BEFORE_TRANSLUCENT_TERRAIN.register(ctx -> {
             if (!GlobeClientState.DEBUG_EW_WALL) return;
             // Wall/overlay rendering happens in the HUD pass now to avoid POV seams.
             return;
