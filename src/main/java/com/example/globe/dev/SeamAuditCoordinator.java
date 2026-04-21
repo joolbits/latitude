@@ -5,19 +5,18 @@ import com.example.globe.util.LatitudeBands;
 import com.example.globe.util.LatitudeMath;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
-import net.minecraft.network.packet.s2c.play.PositionFlag;
-import net.minecraft.registry.entry.RegistryEntry;
+import net.minecraft.commands.CommandSourceStack;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Holder;
+import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.command.ServerCommandSource;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.text.Text;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.MathHelper;
-import net.minecraft.world.Heightmap;
-import net.minecraft.world.biome.Biome;
-import net.minecraft.world.chunk.ChunkStatus;
-
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.util.Mth;
+import net.minecraft.world.entity.Relative;
+import net.minecraft.world.level.biome.Biome;
+import net.minecraft.world.level.chunk.status.ChunkStatus;
+import net.minecraft.world.level.levelgen.Heightmap;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -79,7 +78,7 @@ public final class SeamAuditCoordinator {
      * @param radiusBlocks dynamic world radius in blocks (caller must supply the
      *                     authoritative value; this class does not guess).
      */
-    public static int start(ServerCommandSource source,
+    public static int start(CommandSourceStack source,
                             String bandAArg,
                             String bandBArg,
                             String edgeArg,
@@ -90,19 +89,19 @@ public final class SeamAuditCoordinator {
             ensureTickHook();
 
             if (activeJob != null) {
-                source.sendError(Text.literal("[seamAudit] job already active; wait for completion"));
+                source.sendFailure(Component.literal("[seamAudit] job already active; wait for completion"));
                 return 0;
             }
 
             LatitudeBands.Band bandA = LatitudeBands.fromCanonicalId(bandAArg);
             LatitudeBands.Band bandB = LatitudeBands.fromCanonicalId(bandBArg);
             if (bandA == null || bandB == null) {
-                source.sendError(Text.literal("[seamAudit] bandA/bandB must be canonical: "
+                source.sendFailure(Component.literal("[seamAudit] bandA/bandB must be canonical: "
                         + String.join("|", LatitudeBands.canonicalIds())));
                 return 0;
             }
             if (bandA == bandB || Math.abs(bandA.ordinal() - bandB.ordinal()) != 1) {
-                source.sendError(Text.literal("[seamAudit] bands must be adjacent "
+                source.sendFailure(Component.literal("[seamAudit] bands must be adjacent "
                         + "(tropical subtropical | subtropical temperate | temperate subpolar | subpolar polar)"));
                 return 0;
             }
@@ -115,25 +114,25 @@ public final class SeamAuditCoordinator {
             double targetDeg = edge.applyTo(seamDeg);
 
             if (radiusBlocks <= 0) {
-                source.sendError(Text.literal("[seamAudit] invalid world radius: " + radiusBlocks));
+                source.sendFailure(Component.literal("[seamAudit] invalid world radius: " + radiusBlocks));
                 return 0;
             }
 
-            ServerPlayerEntity player = source.getPlayerOrThrow();
-            ServerWorld world = source.getWorld();
+            ServerPlayer player = source.getPlayerOrException();
+            ServerLevel world = source.getLevel();
 
             int absZ = LatitudeMath.zForLatitudeDeg(targetDeg, radiusBlocks);
             int sign = player.getZ() < 0.0 ? -1 : 1;
             int targetZ = sign * absZ;
-            int targetX = MathHelper.floor(player.getX());
+            int targetX = Mth.floor(player.getX());
 
-            int clampedSamples = MathHelper.clamp(samples, 50, 4000);
-            int clampedWait = MathHelper.clamp(waitTicks, 0, 600);
+            int clampedSamples = Mth.clamp(samples, 50, 4000);
+            int clampedWait = Mth.clamp(waitTicks, 0, 600);
 
             String timestamp = TIMESTAMP_FMT.format(LocalDateTime.now());
             String pairId = lower.id() + "-" + higher.id();
             String dirName = timestamp + "_" + pairId + "_" + edge.argName();
-            Path auditDir = source.getServer().getRunDirectory()
+            Path auditDir = source.getServer().getServerDirectory()
                     .toAbsolutePath().normalize()
                     .resolve("latdev").resolve("seam-audits").resolve(dirName);
             Files.createDirectories(auditDir);
@@ -156,18 +155,18 @@ public final class SeamAuditCoordinator {
             activeJob = job;
 
             String outName = auditDir.getFileName() != null ? auditDir.getFileName().toString() : auditDir.toString();
-            ServerCommandSource src = source;
-            src.sendFeedback(() -> Text.literal(String.format(Locale.ROOT,
+            CommandSourceStack src = source;
+            src.sendSuccess(() -> Component.literal(String.format(Locale.ROOT,
                     "[seamAudit] started pair=%s edge=%s seamDeg=%.2f targetDeg=%.2f target=(%d,%d) R=%d waitTicks=%d samples=%d out=latdev/seam-audits/%s",
                     pairId, edge.argName(), seamDeg, targetDeg,
                     job.targetX, job.targetZ, radiusBlocks, clampedWait, clampedSamples,
                     outName)), false);
             return 1;
         } catch (CommandSyntaxException e) {
-            source.sendError(Text.literal("[seamAudit] command requires a player: " + e.getMessage()));
+            source.sendFailure(Component.literal("[seamAudit] command requires a player: " + e.getMessage()));
             return 0;
         } catch (Exception e) {
-            source.sendError(Text.literal("[seamAudit] start error: " + e.getMessage()));
+            source.sendFailure(Component.literal("[seamAudit] start error: " + e.getMessage()));
             GlobeMod.LOGGER.error("[seamAudit] start failed", e);
             activeJob = null;
             return 0;
@@ -201,15 +200,15 @@ public final class SeamAuditCoordinator {
             writeSummary(job);
 
             Path outDir = job.auditDir;
-            ServerCommandSource src = job.source;
-            src.sendFeedback(() -> Text.literal("[seamAudit] done → " + outDir), false);
+            CommandSourceStack src = job.source;
+            src.sendSuccess(() -> Component.literal("[seamAudit] done → " + outDir), false);
 
             job.completed = true;
             activeJob = null;
         } catch (Exception e) {
             GlobeMod.LOGGER.error("[seamAudit] tick stage failed", e);
             try {
-                job.source.sendError(Text.literal("[seamAudit] failed: " + e.getMessage()));
+                job.source.sendFailure(Component.literal("[seamAudit] failed: " + e.getMessage()));
             } catch (Exception ignored) {
             }
             activeJob = null;
@@ -217,29 +216,29 @@ public final class SeamAuditCoordinator {
     }
 
     private static void forceLoadAndTeleport(Job job) {
-        ServerWorld world = job.world;
+        ServerLevel world = job.world;
         int cx = Math.floorDiv(job.targetX, 16);
         int cz = Math.floorDiv(job.targetZ, 16);
 
         for (int dz = -1; dz <= 1; dz++) {
             for (int dx = -1; dx <= 1; dx++) {
-                world.getChunkManager().getChunk(cx + dx, cz + dz, ChunkStatus.FULL, true);
+                world.getChunkSource().getChunk(cx + dx, cz + dz, ChunkStatus.FULL, true);
             }
         }
 
-        int topY = world.getTopY(Heightmap.Type.MOTION_BLOCKING_NO_LEAVES, job.targetX, job.targetZ);
-        int worldMaxY = world.getBottomY() + world.getHeight() - 1;
-        int targetY = MathHelper.clamp(topY + 1, world.getBottomY() + 1, worldMaxY);
+        int topY = world.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, job.targetX, job.targetZ);
+        int worldMaxY = world.getMinY() + world.getHeight() - 1;
+        int targetY = Mth.clamp(topY + 1, world.getMinY() + 1, worldMaxY);
         job.targetY = targetY;
 
-        job.player.teleport(
+        job.player.teleportTo(
                 world,
                 job.targetX + 0.5,
                 targetY,
                 job.targetZ + 0.5,
-                EnumSet.noneOf(PositionFlag.class),
-                job.player.getYaw(),
-                job.player.getPitch(),
+                EnumSet.noneOf(Relative.class),
+                job.player.getYRot(),
+                job.player.getXRot(),
                 true);
     }
 
@@ -279,21 +278,21 @@ public final class SeamAuditCoordinator {
         Files.writeString(job.auditDir.resolve("probe_512.txt"), formatProbe(job, small), StandardCharsets.UTF_8);
         Files.writeString(job.auditDir.resolve("probe_1024.txt"), formatProbe(job, large), StandardCharsets.UTF_8);
 
-        ServerCommandSource src = job.source;
-        src.sendFeedback(() -> Text.literal("[seamAudit] probe r=512 top=" + topN(small.biomeCounts, small.loaded, 5)), false);
-        src.sendFeedback(() -> Text.literal("[seamAudit] probe r=1024 top=" + topN(large.biomeCounts, large.loaded, 5)), false);
+        CommandSourceStack src = job.source;
+        src.sendSuccess(() -> Component.literal("[seamAudit] probe r=512 top=" + topN(small.biomeCounts, small.loaded, 5)), false);
+        src.sendSuccess(() -> Component.literal("[seamAudit] probe r=1024 top=" + topN(large.biomeCounts, large.loaded, 5)), false);
     }
 
     private static ProbeResult runProbe(Job job, int probeRadiusBlocks, int samples) {
-        ServerWorld world = job.world;
+        ServerLevel world = job.world;
         int centerX = job.targetX;
         int centerZ = job.targetZ;
         int sampleY;
         if (job.targetY > 0) {
             sampleY = job.targetY;
         } else {
-            int top = world.getBottomY() + world.getHeight() - 1;
-            sampleY = MathHelper.clamp(96, world.getBottomY() + 1, top);
+            int top = world.getMinY() + world.getHeight() - 1;
+            sampleY = Mth.clamp(96, world.getMinY() + 1, top);
         }
 
         long seed = world.getSeed() ^ mix64(((long) centerX << 32) ^ (centerZ & 0xffffffffL) ^ probeRadiusBlocks);
@@ -313,7 +312,7 @@ public final class SeamAuditCoordinator {
 
             int cx = Math.floorDiv(sx, 16);
             int cz = Math.floorDiv(sz, 16);
-            if (world.getChunkManager().getChunk(cx, cz, ChunkStatus.BIOMES, false) == null) {
+            if (world.getChunkSource().getChunk(cx, cz, ChunkStatus.BIOMES, false) == null) {
                 unloaded++;
                 continue;
             }
@@ -379,7 +378,7 @@ public final class SeamAuditCoordinator {
     }
 
     private static void writeHereCapture(Job job) throws IOException {
-        ServerWorld world = job.world;
+        ServerLevel world = job.world;
         BlockPos pos = new BlockPos(job.targetX, job.targetY, job.targetZ);
         String bid = biomeId(world.getBiome(pos));
         double absLatDeg = Math.abs(job.targetZ) * 90.0 / (double) Math.max(1, job.radiusBlocks);
@@ -486,8 +485,8 @@ public final class SeamAuditCoordinator {
         return z ^ (z >>> 33);
     }
 
-    private static String biomeId(RegistryEntry<Biome> biome) {
-        return biome.getKey().map(k -> k.getValue().toString()).orElse("?");
+    private static String biomeId(Holder<Biome> biome) {
+        return biome.unwrapKey().map(k -> k.identifier().toString()).orElse("?");
     }
 
     private static String tryRunGit(String... args) {
@@ -565,9 +564,9 @@ public final class SeamAuditCoordinator {
     }
 
     private static final class Job {
-        final ServerCommandSource source;
-        final ServerWorld world;
-        final ServerPlayerEntity player;
+        final CommandSourceStack source;
+        final ServerLevel world;
+        final ServerPlayer player;
         final Path auditDir;
         final LatitudeBands.Band lower;
         final LatitudeBands.Band higher;
@@ -589,9 +588,9 @@ public final class SeamAuditCoordinator {
         String hereBandId = "?";
         double hereDeg;
 
-        Job(ServerCommandSource source,
-            ServerWorld world,
-            ServerPlayerEntity player,
+        Job(CommandSourceStack source,
+            ServerLevel world,
+            ServerPlayer player,
             Path auditDir,
             LatitudeBands.Band lower,
             LatitudeBands.Band higher,

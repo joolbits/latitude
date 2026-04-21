@@ -1,18 +1,17 @@
 package com.example.globe.client;
 
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.tooltip.Tooltip;
-import net.minecraft.client.gui.widget.ButtonWidget;
-import net.minecraft.client.gui.widget.ClickableWidget;
-import net.minecraft.client.gui.widget.CyclingButtonWidget;
-import net.minecraft.client.gui.widget.SliderWidget;
-import net.minecraft.text.Text;
-import net.minecraft.util.math.MathHelper;
-
 import java.util.ArrayList;
 import java.util.List;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.components.AbstractSliderButton;
+import net.minecraft.client.gui.components.AbstractWidget;
+import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.CycleButton;
+import net.minecraft.client.gui.components.Tooltip;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.network.chat.Component;
+import net.minecraft.util.Mth;
 
 public class LatitudeSettingsScreen extends Screen {
     // ── Theme constants shared with bespoke world-creation UI ──
@@ -35,16 +34,16 @@ public class LatitudeSettingsScreen extends Screen {
     private int panelBottom;
     private int columnXCache;
     private int columnWCache;
-    private final List<ClickableWidget> layoutWidgets = new ArrayList<>();
+    private final List<AbstractWidget> layoutWidgets = new ArrayList<>();
     private final List<Integer> layoutBaseYs = new ArrayList<>();
-    private ButtonWidget doneButton;
-    private ButtonWidget resetButton;
+    private Button doneButton;
+    private Button resetButton;
     private int footerY;
     private boolean compassExpanded = false;
     private int compassPreviewBaseY = -1;
 
     public LatitudeSettingsScreen(Screen parent) {
-        super(Text.literal("Latitude Settings"));
+        super(Component.literal("Latitude Settings"));
         this.parent = parent;
     }
 
@@ -74,38 +73,38 @@ public class LatitudeSettingsScreen extends Screen {
         int baseY;
 
         baseY = y;
-        var wZoneTitle = this.addDrawableChild(CyclingButtonWidget.builder(v -> Text.literal(v ? "ON" : "OFF"), LatitudeConfig.zoneEnterTitleEnabled)
-                .values(true, false)
-                .build(columnX, y, w, h, Text.literal("Zone Enter Title"), (btn, value) -> LatitudeConfig.zoneEnterTitleEnabled = value));
+        var wZoneTitle = this.addRenderableWidget(CycleButton.builder(v -> Component.literal(v ? "ON" : "OFF"), LatitudeConfig.zoneEnterTitleEnabled)
+                .withValues(true, false)
+                .create(columnX, y, w, h, Component.literal("Zone Enter Title"), (btn, value) -> LatitudeConfig.zoneEnterTitleEnabled = value));
         layoutWidgets.add(wZoneTitle);
         layoutBaseYs.add(baseY);
         y += 24;
 
         baseY = y;
-        var wWarnText = this.addDrawableChild(CyclingButtonWidget.builder(v -> Text.literal(v ? "ON" : "OFF"), LatitudeConfig.showWarningMessages)
-                .values(true, false)
-                .build(columnX, y, w, h, Text.literal("Warning messages"), (btn, value) -> {
+        var wWarnText = this.addRenderableWidget(CycleButton.builder(v -> Component.literal(v ? "ON" : "OFF"), LatitudeConfig.showWarningMessages)
+                .withValues(true, false)
+                .create(columnX, y, w, h, Component.literal("Warning messages"), (btn, value) -> {
                     LatitudeConfig.showWarningMessages = value;
                     LatitudeConfig.saveCurrent();
                 }));
-        wWarnText.setTooltip(Tooltip.of(Text.literal("Show/hide on-screen warning text (fog/particles/effects still apply).")));
+        wWarnText.setTooltip(Tooltip.create(Component.literal("Show/hide on-screen warning text (fog/particles/effects still apply).")));
         layoutWidgets.add(wWarnText);
         layoutBaseYs.add(baseY);
         y += 24;
 
         baseY = y;
-        var wTitleSec = this.addDrawableChild(new StepSlider(columnX, y, w, h, Text.literal("Title Duration (seconds)"), 2.0, 10.0, 0.5, LatitudeConfig.zoneEnterTitleSeconds, v -> LatitudeConfig.zoneEnterTitleSeconds = v));
+        var wTitleSec = this.addRenderableWidget(new StepSlider(columnX, y, w, h, Component.literal("Title Duration (seconds)"), 2.0, 10.0, 0.5, LatitudeConfig.zoneEnterTitleSeconds, v -> LatitudeConfig.zoneEnterTitleSeconds = v));
         layoutWidgets.add(wTitleSec);
         layoutBaseYs.add(baseY);
         y += 24;
 
         baseY = y;
-        var wCompassExpander = this.addDrawableChild(ButtonWidget.builder(Text.literal(compassSummary(cfg)), b -> {
+        var wCompassExpander = this.addRenderableWidget(Button.builder(Component.literal(compassSummary(cfg)), b -> {
                     compassExpanded = !compassExpanded;
-                    this.clearChildren();
+                    this.clearWidgets();
                     this.init();
                 })
-                .dimensions(columnX, y, w, h)
+                .bounds(columnX, y, w, h)
                 .build());
         layoutWidgets.add(wCompassExpander);
         layoutBaseYs.add(baseY);
@@ -113,12 +112,12 @@ public class LatitudeSettingsScreen extends Screen {
 
         if (compassExpanded) {
             baseY = y;
-            var wCompassStyle = this.addDrawableChild(CyclingButtonWidget.<CompassHudConfig.CompassStyle>builder(v -> Text.literal(v == CompassHudConfig.CompassStyle.ANALOG ? "Analog" : "Digital"), () -> cfg.style)
-                    .values(CompassHudConfig.CompassStyle.values())
-                    .build(columnX, y, w, h, Text.literal("Style"), (btn, value) -> {
+            var wCompassStyle = this.addRenderableWidget(CycleButton.<CompassHudConfig.CompassStyle>builder(v -> Component.literal(v == CompassHudConfig.CompassStyle.ANALOG ? "Analog" : "Digital"), () -> cfg.style)
+                    .withValues(CompassHudConfig.CompassStyle.values())
+                    .create(columnX, y, w, h, Component.literal("Style"), (btn, value) -> {
                         cfg.style = value;
                         CompassHudConfig.saveCurrent();
-                        this.clearChildren();
+                        this.clearWidgets();
                         this.init();
                     }));
             layoutWidgets.add(wCompassStyle);
@@ -126,9 +125,9 @@ public class LatitudeSettingsScreen extends Screen {
             y += 24;
 
             baseY = y;
-            var wCompassCompact = this.addDrawableChild(CyclingButtonWidget.<Boolean>builder(v -> Text.literal(v ? "ON" : "OFF"), () -> cfg.compactHud)
-                    .values(true, false)
-                    .build(columnX, y, w, h, Text.literal("Compact"), (btn, value) -> cfg.compactHud = value));
+            var wCompassCompact = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "ON" : "OFF"), () -> cfg.compactHud)
+                    .withValues(true, false)
+                    .create(columnX, y, w, h, Component.literal("Compact"), (btn, value) -> cfg.compactHud = value));
             layoutWidgets.add(wCompassCompact);
             layoutBaseYs.add(baseY);
             y += 24;
@@ -140,26 +139,26 @@ public class LatitudeSettingsScreen extends Screen {
         }
 
         baseY = y;
-        var wDisplayZone = this.addDrawableChild(CyclingButtonWidget.<Boolean>builder(v -> Text.literal(v ? "ON" : "OFF"), () -> cfg.displayZoneInHud)
-                .values(true, false)
-                .build(columnX, y, w, h, Text.literal("Zone Label"), (btn, value) -> cfg.displayZoneInHud = value));
+        var wDisplayZone = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "ON" : "OFF"), () -> cfg.displayZoneInHud)
+                .withValues(true, false)
+                .create(columnX, y, w, h, Component.literal("Zone Label"), (btn, value) -> cfg.displayZoneInHud = value));
         layoutWidgets.add(wDisplayZone);
         layoutBaseYs.add(baseY);
         y += 24;
 
         baseY = y;
-        var wShowMode = this.addDrawableChild(CyclingButtonWidget.<CompassHudConfig.ShowMode>builder(this::showModeLabel, () -> cfg.showMode)
-                .values(CompassHudConfig.ShowMode.values())
-                .build(columnX, y, w, h, Text.literal("Show Mode"), (btn, value) -> cfg.showMode = value));
+        var wShowMode = this.addRenderableWidget(CycleButton.<CompassHudConfig.ShowMode>builder(this::showModeLabel, () -> cfg.showMode)
+                .withValues(CompassHudConfig.ShowMode.values())
+                .create(columnX, y, w, h, Component.literal("Show Mode"), (btn, value) -> cfg.showMode = value));
         layoutWidgets.add(wShowMode);
         layoutBaseYs.add(baseY);
         y += 24;
 
         baseY = y;
-        var wHudStudio = this.addDrawableChild(ButtonWidget.builder(Text.literal("HUD Studio"), b -> {
-                    MinecraftClient.getInstance().setScreen(new LatitudeHudStudioScreen(this));
+        var wHudStudio = this.addRenderableWidget(Button.builder(Component.literal("HUD Studio"), b -> {
+                    Minecraft.getInstance().setScreen(new LatitudeHudStudioScreen(this));
                 })
-                .dimensions(columnX, y, w, 20)
+                .bounds(columnX, y, w, 20)
                 .build());
         layoutWidgets.add(wHudStudio);
         layoutBaseYs.add(baseY);
@@ -175,39 +174,39 @@ public class LatitudeSettingsScreen extends Screen {
 
         this.footerY = this.panelBottom - 28;
 
-        this.doneButton = this.addDrawableChild(ButtonWidget.builder(Text.literal("Done"), b -> {
+        this.doneButton = this.addRenderableWidget(Button.builder(Component.literal("Done"), b -> {
                     CompassHudConfig.saveCurrent();
                     LatitudeConfig.saveCurrent();
-                    if (this.client != null) {
-                        this.client.setScreen(this.parent);
+                    if (this.minecraft != null) {
+                        this.minecraft.setScreen(this.parent);
                     }
                 })
-                .dimensions(footerX, footerY, buttonWidth, 20)
+                .bounds(footerX, footerY, buttonWidth, 20)
                 .build());
 
-        this.resetButton = this.addDrawableChild(ButtonWidget.builder(Text.literal("Reset"), b -> {
+        this.resetButton = this.addRenderableWidget(Button.builder(Component.literal("Reset"), b -> {
                     applyDefaults(cfg);
                     applyDefaults(latCfg);
                     CompassHudConfig.saveCurrent();
                     LatitudeConfig.saveCurrent();
-                    this.clearChildren();
+                    this.clearWidgets();
                     this.init();
                 })
-                .dimensions(footerX + buttonWidth + buttonSpacing, footerY, buttonWidth, 20)
+                .bounds(footerX + buttonWidth + buttonSpacing, footerY, buttonWidth, 20)
                 .build());
     }
 
     @Override
-    public void render(DrawContext context, int mouseX, int mouseY, float delta) {
+    public void render(GuiGraphics context, int mouseX, int mouseY, float delta) {
         context.fill(0, 0, this.width, this.height, BG_COLOR);
         drawPanel(context);
         drawHeader(context);
 
         int maxScroll = Math.max(0, contentHeight - (this.footerY - this.panelTop));
-        scrollY = MathHelper.clamp(scrollY, 0, maxScroll);
+        scrollY = Mth.clamp(scrollY, 0, maxScroll);
 
         for (int i = 0; i < layoutWidgets.size(); i++) {
-            ClickableWidget w = layoutWidgets.get(i);
+            AbstractWidget w = layoutWidgets.get(i);
             int baseY = layoutBaseYs.get(i);
             int drawY = baseY - scrollY;
             w.setY(drawY);
@@ -240,16 +239,16 @@ public class LatitudeSettingsScreen extends Screen {
     public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
         int maxScroll = Math.max(0, contentHeight - (this.footerY - this.panelTop));
         scrollY -= (int) Math.signum(verticalAmount) * 18;
-        scrollY = MathHelper.clamp(scrollY, 0, maxScroll);
+        scrollY = Mth.clamp(scrollY, 0, maxScroll);
         return true;
     }
 
-    private Text showModeLabel(CompassHudConfig.ShowMode v) {
-        if (v == null) return Text.literal("Always");
+    private Component showModeLabel(CompassHudConfig.ShowMode v) {
+        if (v == null) return Component.literal("Always");
         return switch (v) {
-            case COMPASS_PRESENT -> Text.literal("When compass is in inventory");
-            case HOLDING_COMPASS -> Text.literal("When holding compass");
-            case ALWAYS -> Text.literal("Always");
+            case COMPASS_PRESENT -> Component.literal("When compass is in inventory");
+            case HOLDING_COMPASS -> Component.literal("When holding compass");
+            case ALWAYS -> Component.literal("Always");
         };
     }
 
@@ -259,7 +258,7 @@ public class LatitudeSettingsScreen extends Screen {
         return "Compass Style: " + style + " | " + compact;
     }
 
-    private void drawScrollbar(DrawContext context, int maxScroll) {
+    private void drawScrollbar(GuiGraphics context, int maxScroll) {
         if (maxScroll <= 0) return;
         int trackX = panelX + panelWidth - 5;
         int trackTop = panelTop + 4;
@@ -274,11 +273,11 @@ public class LatitudeSettingsScreen extends Screen {
         context.fill(trackX, thumbY, trackX + 3, thumbY + thumbH, GOLD);
     }
 
-    private void drawCompassPreview(DrawContext ctx, int x, int y, int w, int h, CompassHudConfig cfg) {
+    private void drawCompassPreview(GuiGraphics ctx, int x, int y, int w, int h, CompassHudConfig cfg) {
         int boxColor = 0x33111111;
         ctx.fill(x, y, x + w, y + h, boxColor);
 
-        var mc = MinecraftClient.getInstance();
+        var mc = Minecraft.getInstance();
         if (mc == null || mc.getWindow() == null) {
             return;
         }
@@ -292,7 +291,7 @@ public class LatitudeSettingsScreen extends Screen {
     }
 
     private int compassPreviewHeight(CompassHudConfig cfg) {
-        var mc = MinecraftClient.getInstance();
+        var mc = Minecraft.getInstance();
         if (mc == null || mc.getWindow() == null) {
             return 36;
         }
@@ -361,7 +360,7 @@ public class LatitudeSettingsScreen extends Screen {
         return os.toLowerCase(java.util.Locale.ROOT).contains("win");
     }
 
-    private void drawPanel(DrawContext context) {
+    private void drawPanel(GuiGraphics context) {
         int inset = 10;
         int x0 = panelX - inset;
         int y0 = panelTop - inset - 16;
@@ -383,35 +382,35 @@ public class LatitudeSettingsScreen extends Screen {
         context.fill(panelX + 2, panelBottom + 7, panelX + panelWidth - 2, panelBottom + 8, GOLD & 0x66FFFFFF);
     }
 
-    private void drawHeader(DrawContext context) {
+    private void drawHeader(GuiGraphics context) {
         int centerX = this.width / 2;
         int titleY = this.panelTop - 70;
         int subtitleY = titleY + 18;
         int helperY = subtitleY + 14;
         int sectionY = this.panelTop - 26;
 
-        drawScaledCenteredText(context, Text.literal("LATITUDE"), centerX, titleY, 1.4f, GOLD, false);
-        drawCenteredText(context, Text.literal("Settings"), centerX, subtitleY, WARM_WHITE, true);
-        drawCenteredText(context, Text.literal("Configure HUD, capture, and alerts"), centerX, helperY, MUTED, false);
-        drawCenteredText(context, Text.literal("Client"), centerX, sectionY, MUTED, true);
+        drawScaledCenteredText(context, Component.literal("LATITUDE"), centerX, titleY, 1.4f, GOLD, false);
+        drawCenteredText(context, Component.literal("Settings"), centerX, subtitleY, WARM_WHITE, true);
+        drawCenteredText(context, Component.literal("Configure HUD, capture, and alerts"), centerX, helperY, MUTED, false);
+        drawCenteredText(context, Component.literal("Client"), centerX, sectionY, MUTED, true);
     }
 
-    private void drawCenteredText(DrawContext context, Text text, int centerX, int y, int color, boolean shadow) {
-        int w = this.textRenderer.getWidth(text);
-        context.drawText(this.textRenderer, text, centerX - w / 2, y, color, shadow);
+    private void drawCenteredText(GuiGraphics context, Component text, int centerX, int y, int color, boolean shadow) {
+        int w = this.font.width(text);
+        context.drawString(this.font, text, centerX - w / 2, y, color, shadow);
     }
 
-    private void drawScaledCenteredText(DrawContext context, Text text, int centerX, int y, float scale, int color, boolean shadow) {
-        var matrices = context.getMatrices();
+    private void drawScaledCenteredText(GuiGraphics context, Component text, int centerX, int y, float scale, int color, boolean shadow) {
+        var matrices = context.pose();
         matrices.pushMatrix();
         matrices.translate((float) centerX, (float) y);
         matrices.scale(scale, scale);
-        int w = this.textRenderer.getWidth(text);
-        context.drawText(this.textRenderer, text, -w / 2, 0, color, shadow);
+        int w = this.font.width(text);
+        context.drawString(this.font, text, -w / 2, 0, color, shadow);
         matrices.popMatrix();
     }
 
-    private void drawGridDecoration(DrawContext context, int x, int y, int w, int h) {
+    private void drawGridDecoration(GuiGraphics context, int x, int y, int w, int h) {
         if (h < 20 || w < 20) return;
         for (int gy = GRID_STEP; gy < h; gy += GRID_STEP) {
             context.fill(x, y + gy, x + w, y + gy + 1, GRID_COLOR);
@@ -425,15 +424,15 @@ public class LatitudeSettingsScreen extends Screen {
         void accept(double v);
     }
 
-    private static final class StepSlider extends SliderWidget {
-        private final Text label;
+    private static final class StepSlider extends AbstractSliderButton {
+        private final Component label;
         private final double min;
         private final double max;
         private final double step;
         private final DoubleConsumer onChange;
 
-        private StepSlider(int x, int y, int width, int height, Text label, double min, double max, double step, double initial, DoubleConsumer onChange) {
-            super(x, y, width, height, Text.empty(), toNorm(initial, min, max));
+        private StepSlider(int x, int y, int width, int height, Component label, double min, double max, double step, double initial, DoubleConsumer onChange) {
+            super(x, y, width, height, Component.empty(), toNorm(initial, min, max));
             this.label = label;
             this.min = min;
             this.max = max;
@@ -444,7 +443,7 @@ public class LatitudeSettingsScreen extends Screen {
 
         @Override
         protected void updateMessage() {
-            this.setMessage(Text.literal(label.getString() + ": " + format(getValue())));
+            this.setMessage(Component.literal(label.getString() + ": " + format(getValue())));
         }
 
         @Override

@@ -5,9 +5,8 @@ import com.example.globe.world.LatitudeBiomes;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.util.math.MathHelper;
-
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.util.Mth;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -74,22 +73,22 @@ public final class BiomePreviewHeadlessRunner {
     }
 
     private static void runExportAndStop(MinecraftServer server, Config config) {
-        ServerWorld world = server.getOverworld();
+        ServerLevel world = server.overworld();
         if (world == null) {
             GlobeMod.LOGGER.error("[latdev][headless] no overworld available; stopping server");
-            server.stop(false);
+            server.halt(false);
             return;
         }
 
         try {
-            int y = MathHelper.clamp(config.y, 0, 320);
+            int y = Mth.clamp(config.y, 0, 320);
             int radius = config.radiusBlocks != null
                     ? Math.max(1, config.radiusBlocks)
                     : radiusFromSizeOrWorld(config.sizePreset, world);
             long worldSeed = world.getSeed();
             long effectiveSeed = config.seedOverride != null ? config.seedOverride : worldSeed;
             String runLabel = BiomePreviewExporter.resolveRunLabel(config.runLabel);
-            Path outputDir = config.outDir != null ? config.outDir : defaultOutDir(server.getRunDirectory());
+            Path outputDir = config.outDir != null ? config.outDir : defaultOutDir(server.getServerDirectory());
 
             LatitudeBiomes.setWorldSeed(effectiveSeed);
             LatitudeBiomes.setActiveRadiusBlocks(radius);
@@ -111,7 +110,7 @@ public final class BiomePreviewHeadlessRunner {
 
             for (int step : config.steps) {
                 BiomePreviewExporter.ExportResult result = BiomePreviewExporter.export(
-                        world, radius, step, y, server.getRunDirectory(), effectiveSeed, config.exportOptions, runLabel);
+                        world, radius, step, y, server.getServerDirectory(), effectiveSeed, config.exportOptions, runLabel);
                 BiomePreviewExporter.ExportResult finalized = finalizeOutput(result, effectiveSeed, outputDir, runLabel);
 
                 String finishMessage = String.format(
@@ -130,27 +129,27 @@ public final class BiomePreviewHeadlessRunner {
             GlobeMod.LOGGER.error("[latdev][headless] export failed", t);
         } finally {
             GlobeMod.LOGGER.info("[latdev][headless] stopping server");
-            server.stop(false);
+            server.halt(false);
         }
     }
 
     private static void runSearchAndStop(MinecraftServer server, SearchConfig config) {
-        ServerWorld world = server.getOverworld();
+        ServerLevel world = server.overworld();
         if (world == null) {
             GlobeMod.LOGGER.error("[latdev][search] no overworld available; stopping server");
-            server.stop(false);
+            server.halt(false);
             return;
         }
 
         try {
-            int y = MathHelper.clamp(config.y, 0, 320);
+            int y = Mth.clamp(config.y, 0, 320);
             int radius = config.radiusBlocks != null
                     ? Math.max(1, config.radiusBlocks)
                     : radiusFromSizeOrWorld(config.sizePreset, world);
             Instant generatedAt = Instant.now();
             Path outputRoot = config.outDir != null
                     ? config.outDir
-                    : server.getRunDirectory().toAbsolutePath().normalize().resolve("seed-search");
+                    : server.getServerDirectory().toAbsolutePath().normalize().resolve("seed-search");
             Path outputDir = outputRoot.resolve(SEARCH_TIMESTAMP.format(generatedAt));
             GitStamp gitStamp = currentGitStamp();
             BiomeSamplerTools.SearchOptions options = new BiomeSamplerTools.SearchOptions(
@@ -195,20 +194,20 @@ public final class BiomePreviewHeadlessRunner {
             GlobeMod.LOGGER.error("[latdev][search] seed search failed", t);
         } finally {
             GlobeMod.LOGGER.info("[latdev][search] stopping server");
-            server.stop(false);
+            server.halt(false);
         }
     }
 
     private static void runAuditAndStop(MinecraftServer server, AuditConfig config) {
-        ServerWorld world = server.getOverworld();
+        ServerLevel world = server.overworld();
         if (world == null) {
             GlobeMod.LOGGER.error("[latdev][audit] no overworld available; stopping server");
-            server.stop(false);
+            server.halt(false);
             return;
         }
 
         try {
-            int y = MathHelper.clamp(config.y, 0, 320);
+            int y = Mth.clamp(config.y, 0, 320);
             int radius = config.radiusBlocks != null
                     ? Math.max(1, config.radiusBlocks)
                     : radiusFromSizeOrWorld(config.sizePreset, world);
@@ -220,7 +219,7 @@ public final class BiomePreviewHeadlessRunner {
 
             Path outputDir = config.outDir != null
                     ? config.outDir
-                    : server.getRunDirectory().toAbsolutePath().normalize()
+                    : server.getServerDirectory().toAbsolutePath().normalize()
                             .getParent().resolve("run").resolve("latdev");
             Files.createDirectories(outputDir);
 
@@ -251,7 +250,7 @@ public final class BiomePreviewHeadlessRunner {
             GlobeMod.LOGGER.error("[latdev][audit] audit failed", t);
         } finally {
             GlobeMod.LOGGER.info("[latdev][audit] stopping server");
-            server.stop(false);
+            server.halt(false);
         }
     }
 
@@ -406,7 +405,7 @@ public final class BiomePreviewHeadlessRunner {
         return seedDir.getParent();
     }
 
-    private static int radiusFromSizeOrWorld(String sizePreset, ServerWorld world) {
+    private static int radiusFromSizeOrWorld(String sizePreset, ServerLevel world) {
         if (sizePreset != null) {
             String normalized = sizePreset.toLowerCase(Locale.ROOT);
             return switch (normalized) {
@@ -421,11 +420,11 @@ public final class BiomePreviewHeadlessRunner {
         return authoritativeRadius(world);
     }
 
-    private static int authoritativeRadius(ServerWorld world) {
+    private static int authoritativeRadius(ServerLevel world) {
         int borderRadius = Math.max(0, (int) Math.floor(world.getWorldBorder().getSize() * 0.5) - 16);
         int activeRadius = LatitudeBiomes.getActiveRadiusBlocks();
         if (activeRadius > 0) {
-            return MathHelper.clamp(activeRadius, 1, Math.max(1, borderRadius));
+            return Mth.clamp(activeRadius, 1, Math.max(1, borderRadius));
         }
         return Math.max(1, borderRadius);
     }
@@ -910,7 +909,7 @@ public final class BiomePreviewHeadlessRunner {
             if (parsed == null) {
                 continue;
             }
-            deduped.add(MathHelper.clamp(parsed, 8, 512));
+            deduped.add(Mth.clamp(parsed, 8, 512));
         }
         return new ArrayList<>(deduped);
     }

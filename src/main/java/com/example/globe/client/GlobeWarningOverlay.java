@@ -2,14 +2,14 @@ package com.example.globe.client;
 
 import com.example.globe.GlobeMod;
 import com.example.globe.util.LatitudeBands;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.font.TextRenderer;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.render.RenderTickCounter;
-import net.minecraft.text.Text;
-import net.minecraft.text.TextColor;
-import net.minecraft.util.Formatting;
-import net.minecraft.util.math.MathHelper;
+import net.minecraft.ChatFormatting;
+import net.minecraft.client.DeltaTracker;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.Font;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.TextColor;
+import net.minecraft.util.Mth;
 
 public final class GlobeWarningOverlay {
     private static long debugStartWorldTime = -1L;
@@ -64,14 +64,14 @@ public final class GlobeWarningOverlay {
         };
     }
 
-    private static String biomeName(MinecraftClient client) {
-        if (client.world == null || client.player == null) {
+    private static String biomeName(Minecraft client) {
+        if (client.level == null || client.player == null) {
             return "Unknown";
         }
-        var biomeEntry = client.world.getBiome(client.player.getBlockPos());
-        var optKey = biomeEntry.getKey();
+        var biomeEntry = client.level.getBiome(client.player.blockPosition());
+        var optKey = biomeEntry.unwrapKey();
         if (optKey.isPresent()) {
-            String path = optKey.get().getValue().getPath();
+            String path = optKey.get().identifier().getPath();
             return titleCase(path);
         }
         return "Unknown";
@@ -95,28 +95,28 @@ public final class GlobeWarningOverlay {
         return out.length() == 0 ? s : out.toString();
     }
 
-    private static Text poleTextForStage(GlobeClientState.PolarStage stage) {
+    private static Component poleTextForStage(GlobeClientState.PolarStage stage) {
         if (stage == null) return null;
         return switch (stage) {
-            case WARN_1 -> Text.literal(POLE_WARN_1_TEXT);
-            case WARN_2 -> Text.literal(POLE_WARN_2_TEXT);
-            case DANGER -> Text.literal(POLE_DANGER_TEXT).formatted(Formatting.RED, Formatting.BOLD);
-            case LETHAL -> Text.literal(POLE_LETHAL_TEXT).formatted(Formatting.RED, Formatting.BOLD);
+            case WARN_1 -> Component.literal(POLE_WARN_1_TEXT);
+            case WARN_2 -> Component.literal(POLE_WARN_2_TEXT);
+            case DANGER -> Component.literal(POLE_DANGER_TEXT).withStyle(ChatFormatting.RED, ChatFormatting.BOLD);
+            case LETHAL -> Component.literal(POLE_LETHAL_TEXT).withStyle(ChatFormatting.RED, ChatFormatting.BOLD);
             default -> null;
         };
     }
 
-    private static Text ewTextForStage(GlobeClientState.EwStormStage stage) {
+    private static Component ewTextForStage(GlobeClientState.EwStormStage stage) {
         if (stage == null) return null;
         return switch (stage) {
-            case LEVEL_1 -> Text.literal(EW_SAND_WARN_TEMPLATE);
-            case LEVEL_2 -> Text.literal(EW_SAND_DANGER_TEMPLATE).formatted(Formatting.RED, Formatting.BOLD);
+            case LEVEL_1 -> Component.literal(EW_SAND_WARN_TEMPLATE);
+            case LEVEL_2 -> Component.literal(EW_SAND_DANGER_TEMPLATE).withStyle(ChatFormatting.RED, ChatFormatting.BOLD);
             default -> null;
         };
     }
 
-    public static void render(DrawContext ctx, RenderTickCounter tickCounter) {
-        MinecraftClient client = MinecraftClient.getInstance();
+    public static void render(GuiGraphics ctx, DeltaTracker tickCounter) {
+        Minecraft client = Minecraft.getInstance();
 
         if (client == null) {
             return;
@@ -126,12 +126,12 @@ public final class GlobeWarningOverlay {
             return;
         }
 
-        if (client.player == null || client.world == null) {
+        if (client.player == null || client.level == null) {
             return;
         }
 
         try {
-            long worldTime = client.world.getTime();
+            long worldTime = client.level.getGameTime();
             if (debugStartWorldTime < 0L || worldTime < debugStartWorldTime) {
                 debugStartWorldTime = worldTime;
                 lastZoneKey = null;
@@ -139,7 +139,7 @@ public final class GlobeWarningOverlay {
 
             var eval = GlobeClientState.evaluate(client);
 
-            int screenW = client.getWindow().getScaledWidth();
+            int screenW = client.getWindow().getGuiScaledWidth();
 
             if (!eval.active()) {
                 return;
@@ -161,7 +161,7 @@ public final class GlobeWarningOverlay {
                 lastZoneUpdateX = px;
                 lastZoneUpdateZ = pz;
 
-                var border = client.world.getWorldBorder();
+                var border = client.level.getWorldBorder();
                 String canonicalZoneKey = canonicalTitleZoneKey(border, client.player.getZ());
                 if (lastZoneKey == null || !lastZoneKey.equals(canonicalZoneKey)) {
                     lastZoneKey = canonicalZoneKey;
@@ -176,8 +176,8 @@ public final class GlobeWarningOverlay {
                 maybeTriggerHemisphereTitle(client, client.player.getZ());
             }
 
-            Text bestText = null;
-            var state = GlobeClientState.computeWarningState(client.world, client.player);
+            Component bestText = null;
+            var state = GlobeClientState.computeWarningState(client.level, client.player);
             if (state.type() == GlobeClientState.WarningType.NONE) {
                 return;
             }
@@ -192,11 +192,11 @@ public final class GlobeWarningOverlay {
                 bestText = poleTextForStage(stage);
             } else if (state.type() == GlobeClientState.WarningType.STORM) {
                 GlobeClientState.EwStormStage stage = (GlobeClientState.EwStormStage) state.stage();
-                String dir = ewDangerDirection(client.world.getWorldBorder(), client.player.getX());
+                String dir = ewDangerDirection(client.level.getWorldBorder(), client.player.getX());
                 String escapeDir = oppositeDirection(dir);
-                Text base = ewTextForStage(stage);
+                Component base = ewTextForStage(stage);
                 if (base != null) {
-                    bestText = Text.literal(String.format(base.getString(), dir.toLowerCase(), escapeDir.toLowerCase())).setStyle(base.getStyle());
+                    bestText = Component.literal(String.format(base.getString(), dir.toLowerCase(), escapeDir.toLowerCase())).setStyle(base.getStyle());
                 }
             }
 
@@ -205,37 +205,37 @@ public final class GlobeWarningOverlay {
             }
 
             // Draw final warning (no scaling for now to avoid compilation issues)
-            int warnY = client.getWindow().getScaledHeight() - 68;
+            int warnY = client.getWindow().getGuiScaledHeight() - 68;
             if (warnY < 18) {
                 warnY = 18;
             }
             int color = warningColorWithPulse(bestText, client, tickCounter);
-            drawCenteredWarning(ctx, client.textRenderer, bestText, warnY, color);
+            drawCenteredWarning(ctx, client.font, bestText, warnY, color);
         } catch (Throwable t) {
             GlobeMod.LOGGER.error("GlobeWarningOverlay.render crashed", t);
         }
     }
 
-    private static int warningColorWithPulse(Text text, MinecraftClient client, RenderTickCounter tickCounter) {
+    private static int warningColorWithPulse(Component text, Minecraft client, DeltaTracker tickCounter) {
         TextColor styleColor = text.getStyle().getColor();
-        int rgb = styleColor != null ? styleColor.getRgb() : 0xFFFFFF;
-        long worldTime = client.world != null ? client.world.getTime() : 0L;
+        int rgb = styleColor != null ? styleColor.getValue() : 0xFFFFFF;
+        long worldTime = client.level != null ? client.level.getGameTime() : 0L;
         double phase = worldTime * 0.04; // gentle ~7.8s period
         float pulse = 0.55f + 0.45f * (float) ((Math.sin(phase) + 1.0) * 0.5);
-        int alpha = (int) MathHelper.clamp(pulse * 255.0f, 0.0f, 255.0f);
+        int alpha = (int) Mth.clamp(pulse * 255.0f, 0.0f, 255.0f);
         return (alpha << 24) | (rgb & 0x00FFFFFF);
     }
 
-    private static void drawCenteredWarning(DrawContext ctx, TextRenderer tr, Text text, int y, int argbColor) {
-        int screenW = MinecraftClient.getInstance().getWindow().getScaledWidth();
-        int w = tr.getWidth(text);
+    private static void drawCenteredWarning(GuiGraphics ctx, Font tr, Component text, int y, int argbColor) {
+        int screenW = Minecraft.getInstance().getWindow().getGuiScaledWidth();
+        int w = tr.width(text);
         int x = Math.max(4, (screenW - w) / 2);
-        ctx.drawTextWithShadow(tr, text, x, y, argbColor);
+        ctx.drawString(tr, text, x, y, argbColor);
     }
 
-    private static String ewDangerDirection(net.minecraft.world.border.WorldBorder border, double playerX) {
-        double distWest = Math.abs(playerX - border.getBoundWest());
-        double distEast = Math.abs(border.getBoundEast() - playerX);
+    private static String ewDangerDirection(net.minecraft.world.level.border.WorldBorder border, double playerX) {
+        double distWest = Math.abs(playerX - border.getMinX());
+        double distEast = Math.abs(border.getMaxX() - playerX);
         return distWest <= distEast ? "West" : "East";
     }
 
@@ -243,7 +243,7 @@ public final class GlobeWarningOverlay {
         return "West".equals(direction) ? "East" : "West";
     }
 
-    private static void maybeTriggerHemisphereTitle(MinecraftClient client, double playerZ) {
+    private static void maybeTriggerHemisphereTitle(Minecraft client, double playerZ) {
         char stableHemisphere = stableHemisphere(playerZ);
         boolean titleActive = ZoneEnterTitleOverlay.isActive();
         boolean updateSample = Math.abs(playerZ) >= EQUATOR_STABLE_DIST || Double.isNaN(lastObservedZ);
@@ -320,22 +320,22 @@ public final class GlobeWarningOverlay {
         return z > 0 ? 'N' : 'S';
     }
 
-    private static String buildZoneEnterTitle(MinecraftClient client, String canonicalZoneKey) {
+    private static String buildZoneEnterTitle(Minecraft client, String canonicalZoneKey) {
         String zoneName = zoneDisplayName(canonicalZoneKey).toUpperCase();
         if (!LatitudeConfig.showZoneBaseDegreesOnTitle) {
             return zoneName;
         }
 
-        if (client.player == null || client.world == null) {
+        if (client.player == null || client.level == null) {
             return zoneName;
         }
-        var border = client.world.getWorldBorder();
+        var border = client.level.getWorldBorder();
 
         String degText = com.example.globe.util.LatitudeMath.formatLatitudeDeg(border, client.player.getZ());
         return zoneName + " " + degText;
     }
 
-    private static String canonicalTitleZoneKey(net.minecraft.world.border.WorldBorder border, double z) {
+    private static String canonicalTitleZoneKey(net.minecraft.world.level.border.WorldBorder border, double z) {
         double absDeg = Math.abs(com.example.globe.util.LatitudeMath.degreesFromZ(border, z));
         LatitudeBands.Band band = LatitudeBands.fromAbsoluteLatitudeDeg(absDeg);
         return band.name();

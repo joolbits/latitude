@@ -1,12 +1,12 @@
 package com.example.globe.client;
 
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.font.TextRenderer;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.text.Text;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.Font;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.network.chat.Component;
 
 public final class ZoneEnterTitleOverlay {
-    private static Text title;
+    private static Component title;
     private static long startWorldTime = Long.MIN_VALUE;
     private static long endWorldTime = Long.MIN_VALUE;
     private static float scale = 1.8f;
@@ -17,37 +17,37 @@ public final class ZoneEnterTitleOverlay {
     }
 
     public static void trigger(String titleText, int durationTicks, double scale) {
-        MinecraftClient client = MinecraftClient.getInstance();
-        if (client == null || client.world == null) {
+        Minecraft client = Minecraft.getInstance();
+        if (client == null || client.level == null) {
             return;
         }
 
         int dt = Math.max(1, durationTicks);
         float s = (float) scale;
 
-        ZoneEnterTitleOverlay.title = Text.literal(titleText);
+        ZoneEnterTitleOverlay.title = Component.literal(titleText);
         ZoneEnterTitleOverlay.scale = s;
-        ZoneEnterTitleOverlay.startWorldTime = client.world.getTime();
+        ZoneEnterTitleOverlay.startWorldTime = client.level.getGameTime();
         ZoneEnterTitleOverlay.endWorldTime = ZoneEnterTitleOverlay.startWorldTime + dt;
     }
 
     public static boolean isActive() {
-        MinecraftClient client = MinecraftClient.getInstance();
-        if (client == null || client.world == null || title == null) {
+        Minecraft client = Minecraft.getInstance();
+        if (client == null || client.level == null || title == null) {
             return false;
         }
 
-        long now = client.world.getTime();
+        long now = client.level.getGameTime();
         return now >= startWorldTime && now < endWorldTime;
     }
 
-    public static void render(DrawContext ctx, int screenW, int screenH) {
-        MinecraftClient client = MinecraftClient.getInstance();
-        if (client == null || client.world == null || title == null) {
+    public static void render(GuiGraphics ctx, int screenW, int screenH) {
+        Minecraft client = Minecraft.getInstance();
+        if (client == null || client.level == null || title == null) {
             return;
         }
 
-        long now = client.world.getTime();
+        long now = client.level.getGameTime();
         if (now < startWorldTime || now >= endWorldTime) {
             return;
         }
@@ -69,71 +69,71 @@ public final class ZoneEnterTitleOverlay {
         int a = (int) (alpha * 255.0f);
         int argb = (a << 24) | 0xFFFFFF;
 
-        TextRenderer tr = client.textRenderer;
+        Font tr = client.font;
         int cx = (screenW / 2) + LatitudeConfig.zoneEnterTitleOffsetX;
         int cy = (screenH / 2) + LatitudeConfig.zoneEnterTitleOffsetY;
 
-        var m = ctx.getMatrices();
+        var m = ctx.pose();
         m.pushMatrix();
         try {
             m.translate(cx, cy);
             m.scale(scale, scale);
-            ctx.drawCenteredTextWithShadow(tr, title, 0, 0, argb);
+            ctx.drawCenteredString(tr, title, 0, 0, argb);
         } finally {
             m.popMatrix();
         }
     }
 
-    public static void renderStatic(DrawContext ctx, int screenW, int screenH, String titleText, double scale) {
+    public static void renderStatic(GuiGraphics ctx, int screenW, int screenH, String titleText, double scale) {
         int cx = screenW / 2;
         int cy = screenH / 2;
         renderStaticAt(ctx, cx, cy, titleText, scale);
     }
 
-    public static void renderStaticAt(DrawContext ctx, int screenW, int screenH, String text, double scale, int offsetX, int offsetY) {
+    public static void renderStaticAt(GuiGraphics ctx, int screenW, int screenH, String text, double scale, int offsetX, int offsetY) {
         int cx = (screenW / 2) + offsetX;
         int cy = (screenH / 2) + offsetY;
 
-        MinecraftClient client = MinecraftClient.getInstance();
-        if (client == null || client.textRenderer == null) {
+        Minecraft client = Minecraft.getInstance();
+        if (client == null || client.font == null) {
             return;
         }
 
-        TextRenderer tr = client.textRenderer;
+        Font tr = client.font;
         int argb = 0xFFFFFFFF;
 
-        var m = ctx.getMatrices();
+        var m = ctx.pose();
         m.pushMatrix();
         try {
             m.translate(cx, cy);
             float s = (float) scale;
             m.scale(s, s);
 
-            int w = tr.getWidth(text);
+            int w = tr.width(text);
             int x = -w / 2;
-            int y = -tr.fontHeight / 2;
-            ctx.drawText(tr, text, x, y, argb, true);
+            int y = -tr.lineHeight / 2;
+            ctx.drawString(tr, text, x, y, argb, true);
         } finally {
             m.popMatrix();
         }
     }
 
-    public static void renderStaticAt(DrawContext ctx, int cx, int cy, String titleText, double scale) {
-        MinecraftClient client = MinecraftClient.getInstance();
-        if (client == null || client.textRenderer == null) {
+    public static void renderStaticAt(GuiGraphics ctx, int cx, int cy, String titleText, double scale) {
+        Minecraft client = Minecraft.getInstance();
+        if (client == null || client.font == null) {
             return;
         }
 
-        TextRenderer tr = client.textRenderer;
+        Font tr = client.font;
         int argb = 0xFFFFFFFF;
 
-        var m = ctx.getMatrices();
+        var m = ctx.pose();
         m.pushMatrix();
         try {
             m.translate(cx, cy);
             float s = (float) scale;
             m.scale(s, s);
-            ctx.drawCenteredTextWithShadow(tr, Text.literal(titleText), 0, 0, argb);
+            ctx.drawCenteredString(tr, Component.literal(titleText), 0, 0, argb);
         } finally {
             m.popMatrix();
         }

@@ -3,37 +3,37 @@ package com.example.globe.client.create;
 import com.example.globe.client.GlobeWorldSize;
 import com.example.globe.client.LatitudeHudStudioScreen;
 import com.example.globe.util.LatitudeBands;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.Click;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.screen.MessageScreen;
-import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.screen.narration.NarrationMessageBuilder;
-import net.minecraft.client.gui.screen.world.EditGameRulesScreen;
-import net.minecraft.client.gui.widget.ButtonWidget;
-import net.minecraft.client.gui.widget.ClickableWidget;
-import net.minecraft.client.gui.widget.TextFieldWidget;
-import net.minecraft.client.world.GeneratorOptionsHolder;
-import net.minecraft.resource.DataConfiguration;
-import net.minecraft.resource.DataPackSettings;
-import net.minecraft.resource.ResourcePackManager;
-import net.minecraft.resource.VanillaDataPackProvider;
-import net.minecraft.resource.featuretoggle.FeatureFlags;
-import net.minecraft.server.SaveLoading;
+import net.minecraft.ChatFormatting;
 import net.minecraft.SharedConstants;
-import net.minecraft.server.command.CommandManager;
-import net.minecraft.command.permission.LeveledPermissionPredicate;
-import net.minecraft.text.Text;
-import net.minecraft.util.Formatting;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.components.AbstractWidget;
+import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.EditBox;
+import net.minecraft.client.gui.narration.NarrationElementOutput;
+import net.minecraft.client.gui.screens.GenericMessageScreen;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.gui.screens.worldselection.DataPackReloadCookie;
+import net.minecraft.client.gui.screens.worldselection.EditGameRulesScreen;
+import net.minecraft.client.gui.screens.worldselection.WorldCreationContext;
+import net.minecraft.client.gui.screens.worldselection.WorldCreationContextMapper;
+import net.minecraft.client.input.MouseButtonEvent;
+import net.minecraft.commands.Commands;
+import net.minecraft.network.chat.Component;
+import net.minecraft.server.WorldLoader;
+import net.minecraft.server.packs.repository.PackRepository;
+import net.minecraft.server.packs.repository.ServerPacksSource;
+import net.minecraft.server.permissions.LevelBasedPermissionSet;
 import net.minecraft.util.Util;
 import net.minecraft.world.Difficulty;
-import net.minecraft.world.GameMode;
-import net.minecraft.world.rule.GameRules;
-import net.minecraft.world.gen.GeneratorOptions;
-import net.minecraft.world.gen.WorldPresets;
-import net.minecraft.client.gui.screen.world.WorldCreationSettings;
-import net.minecraft.world.level.WorldGenSettings;
-import net.minecraft.client.world.GeneratorOptionsFactory;
+import net.minecraft.world.flag.FeatureFlags;
+import net.minecraft.world.level.DataPackConfig;
+import net.minecraft.world.level.GameType;
+import net.minecraft.world.level.WorldDataConfiguration;
+import net.minecraft.world.level.gamerules.GameRules;
+import net.minecraft.world.level.levelgen.WorldGenSettings;
+import net.minecraft.world.level.levelgen.WorldOptions;
+import net.minecraft.world.level.levelgen.presets.WorldPresets;
 import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -100,9 +100,9 @@ public class LatitudeCreateWorldScreen extends Screen {
             "A world that could take a lifetime to cross."
     };
 
-    private static final Text SMALL_WORLD_WARNING = Text.literal(
+    private static final Component SMALL_WORLD_WARNING = Component.literal(
             "Smaller world sizes are still being tuned and may distort biome distribution."
-    ).formatted(Formatting.ITALIC, Formatting.GOLD);
+    ).withStyle(ChatFormatting.ITALIC, ChatFormatting.GOLD);
 
     // ── Game mode constants ──
     private static final String[] MODE_NAMES = { "Survival", "Hardcore", "Creative" };
@@ -117,7 +117,7 @@ public class LatitudeCreateWorldScreen extends Screen {
     private final Runnable onClose;
     @Nullable
     private final Screen parent;
-    private final GeneratorOptionsHolder holder;
+    private final WorldCreationContext holder;
 
     // ── Local UI state (fresh each open) ──
     private GlobeWorldSize selectedSize = DEFAULT_SIZE;
@@ -130,22 +130,22 @@ public class LatitudeCreateWorldScreen extends Screen {
     private GameRules gameRules;
 
     private String worldNameInput = "New World";
-    private TextFieldWidget worldNameField;
-    private TextFieldWidget seedField;
-    private ButtonWidget sizePrevBtn;
-    private ButtonWidget sizeNextBtn;
+    private EditBox worldNameField;
+    private EditBox seedField;
+    private Button sizePrevBtn;
+    private Button sizeNextBtn;
     private final List<ZoneRowWidget> zoneRows = new ArrayList<>();
 
     // ── Settings rail toggle buttons (need message updates) ──
-    private ButtonWidget commandsBtn;
-    private ButtonWidget compassBtn;
-    private ButtonWidget bonusChestBtn;
-    private ButtonWidget worldTypePrevBtn;
-    private ButtonWidget worldTypeNextBtn;
-    private ButtonWidget modePrevBtn;
-    private ButtonWidget modeNextBtn;
-    private ButtonWidget gameRulesBtn;
-    private ButtonWidget hudStudioBtn;
+    private Button commandsBtn;
+    private Button compassBtn;
+    private Button bonusChestBtn;
+    private Button worldTypePrevBtn;
+    private Button worldTypeNextBtn;
+    private Button modePrevBtn;
+    private Button modeNextBtn;
+    private Button gameRulesBtn;
+    private Button hudStudioBtn;
 
     // ── Layout cache (computed in init, used in render) ──
     private int headerY;
@@ -213,15 +213,15 @@ public class LatitudeCreateWorldScreen extends Screen {
     private long debugSwitchSampleDeadlineMs;
     private int debugSwitchSeq;
 
-    private LatitudeCreateWorldScreen(Runnable onClose, @Nullable Screen parent, GeneratorOptionsHolder holder) {
-        super(Text.literal("New Expedition"));
+    private LatitudeCreateWorldScreen(Runnable onClose, @Nullable Screen parent, WorldCreationContext holder) {
+        super(Component.literal("New Expedition"));
         this.onClose = onClose;
         this.parent = parent;
         this.holder = holder;
         this.gameRules = new GameRules(holder.dataConfiguration().enabledFeatures());
     }
 
-    public static void openLoaded(MinecraftClient client, Runnable onClose, @Nullable Screen parent, GeneratorOptionsHolder holder) {
+    public static void openLoaded(Minecraft client, Runnable onClose, @Nullable Screen parent, WorldCreationContext holder) {
         client.setScreen(new LatitudeCreateWorldScreen(onClose, parent, holder));
     }
 
@@ -229,45 +229,45 @@ public class LatitudeCreateWorldScreen extends Screen {
      * Phase 5A: Load datapacks (vanilla "Preparing..." screen), then open the bespoke screen.
      * Replicates CreateWorldScreen.show() lines 166-196.
      */
-    public static void open(MinecraftClient client, Runnable onClose, @Nullable Screen parent) {
+    public static void open(Minecraft client, Runnable onClose, @Nullable Screen parent) {
         // Show "Preparing..." message (vanilla pattern)
-        client.setScreenAndRender(new MessageScreen(Text.translatable("createWorld.preparing")));
+        client.setScreenAndShow(new GenericMessageScreen(Component.translatable("createWorld.preparing")));
 
         try {
             // Build datapack configuration (replicates createServerConfig, lines 511-513)
-            ResourcePackManager resourcePackManager = new ResourcePackManager(new VanillaDataPackProvider(client.getSymlinkFinder()));
-            resourcePackManager.scanPacks();
-            List<String> enabledPackIds = SharedConstants.isDevelopment
+            PackRepository resourcePackManager = new PackRepository(new ServerPacksSource(client.directoryValidator()));
+            resourcePackManager.reload();
+            List<String> enabledPackIds = SharedConstants.IS_RUNNING_IN_IDE
                     ? List.of("vanilla", "tests", "globe")
                     : List.of("vanilla", "globe");
-            resourcePackManager.setEnabledProfiles(enabledPackIds);
-            DataConfiguration dataConfiguration = SharedConstants.isDevelopment
-                    ? new DataConfiguration(new DataPackSettings(enabledPackIds, List.of()), FeatureFlags.DEFAULT_ENABLED_FEATURES)
-                    : new DataConfiguration(new DataPackSettings(enabledPackIds, List.of()), FeatureFlags.DEFAULT_ENABLED_FEATURES);
-            SaveLoading.DataPacks dataPacks = new SaveLoading.DataPacks(resourcePackManager, dataConfiguration, false, true);
-            SaveLoading.ServerConfig serverConfig = new SaveLoading.ServerConfig(
-                    dataPacks, CommandManager.RegistrationEnvironment.INTEGRATED, LeveledPermissionPredicate.GAMEMASTERS);
+            resourcePackManager.setSelected(enabledPackIds);
+            WorldDataConfiguration dataConfiguration = SharedConstants.IS_RUNNING_IN_IDE
+                    ? new WorldDataConfiguration(new DataPackConfig(enabledPackIds, List.of()), FeatureFlags.DEFAULT_FLAGS)
+                    : new WorldDataConfiguration(new DataPackConfig(enabledPackIds, List.of()), FeatureFlags.DEFAULT_FLAGS);
+            WorldLoader.PackConfig dataPacks = new WorldLoader.PackConfig(resourcePackManager, dataConfiguration, false, true);
+            WorldLoader.InitConfig serverConfig = new WorldLoader.InitConfig(
+                    dataPacks, Commands.CommandSelection.INTEGRATED, LevelBasedPermissionSet.GAMEMASTER);
 
             // Generator options factory (replicates lines 131-133)
-            GeneratorOptionsFactory generatorOptionsFactory = (dataPackContents, dynamicRegistries, settings) ->
-                    new GeneratorOptionsHolder(settings.worldGenSettings(), dynamicRegistries, dataPackContents, settings.dataConfiguration());
+            WorldCreationContextMapper generatorOptionsFactory = (dataPackContents, dynamicRegistries, settings) ->
+                    new WorldCreationContext(settings.worldGenSettings(), dynamicRegistries, dataPackContents, settings.dataConfiguration());
 
             // Load datapacks async, block render thread (replicates lines 180-192)
-            CompletableFuture<GeneratorOptionsHolder> future = SaveLoading.load(
+            CompletableFuture<WorldCreationContext> future = WorldLoader.load(
                     serverConfig,
-                    context -> new SaveLoading.LoadContext<>(
-                            new WorldCreationSettings(
-                                    new WorldGenSettings(GeneratorOptions.createRandom(), WorldPresets.createDemoOptions(context.worldGenRegistryManager())),
+                    context -> new WorldLoader.DataLoadOutput<>(
+                            new DataPackReloadCookie(
+                                    new WorldGenSettings(WorldOptions.defaultWithRandomSeed(), WorldPresets.createNormalWorldDimensions(context.datapackWorldgen())),
                                     context.dataConfiguration()),
-                            context.dimensionsRegistryManager()),
+                            context.datapackDimensions()),
                     (resourceManager, dataPackContents, dynamicRegistries, settings) -> {
                         resourceManager.close();
                         return generatorOptionsFactory.apply(dataPackContents, dynamicRegistries, settings);
                     },
-                    Util.getMainWorkerExecutor(),
+                    Util.backgroundExecutor(),
                     client);
 
-            client.runTasks(future::isDone);
+            client.managedBlock(future::isDone);
 
             // Open the bespoke screen with the loaded holder
             client.setScreen(new LatitudeCreateWorldScreen(onClose, parent, future.join()));
@@ -275,7 +275,7 @@ public class LatitudeCreateWorldScreen extends Screen {
             LOGGER.error("Failed to load datapacks for Latitude create-world screen", e);
             // 5A error path: return to caller screen, never show bespoke screen
             onClose.run();
-            if (client.currentScreen == null || client.currentScreen instanceof MessageScreen) {
+            if (client.screen == null || client.screen instanceof GenericMessageScreen) {
                 client.setScreen(parent);
             }
         }
@@ -351,31 +351,31 @@ public class LatitudeCreateWorldScreen extends Screen {
 
         // ── 1. World Name ──
         worldFieldY = panelTop + labelFieldGap;
-        this.worldNameField = new TextFieldWidget(this.textRenderer, inputX, worldFieldY, inputW, fieldH, Text.literal("World Name"));
+        this.worldNameField = new EditBox(this.font, inputX, worldFieldY, inputW, fieldH, Component.literal("World Name"));
         this.worldNameField.setMaxLength(64);
-        this.worldNameField.setText(worldNameInput);
-        this.worldNameField.setChangedListener(text -> worldNameInput = text);
-        this.addDrawableChild(this.worldNameField);
+        this.worldNameField.setValue(worldNameInput);
+        this.worldNameField.setResponder(text -> worldNameInput = text);
+        this.addRenderableWidget(this.worldNameField);
 
         // ── 2. Seed ──
         seedFieldY = worldFieldY + fieldGap1;
-        this.seedField = new TextFieldWidget(this.textRenderer, inputX, seedFieldY, inputW, fieldH, Text.literal("Seed"));
+        this.seedField = new EditBox(this.font, inputX, seedFieldY, inputW, fieldH, Component.literal("Seed"));
         this.seedField.setMaxLength(64);
-        this.seedField.setPlaceholder(Text.literal("Leave blank for random"));
-        this.addDrawableChild(this.seedField);
+        this.seedField.setHint(Component.literal("Leave blank for random"));
+        this.addRenderableWidget(this.seedField);
 
         // ── 3. Size ◀ ──
         sizeFieldY = seedFieldY + fieldGap2;
-        sizePrevBtn = ButtonWidget.builder(Text.literal("\u25C0"), b -> cycleSize(-1))
-                .dimensions(inputX, sizeFieldY, stepperBtnW, btnH)
+        sizePrevBtn = Button.builder(Component.literal("\u25C0"), b -> cycleSize(-1))
+                .bounds(inputX, sizeFieldY, stepperBtnW, btnH)
                 .build();
-        this.addDrawableChild(sizePrevBtn);
+        this.addRenderableWidget(sizePrevBtn);
 
         // ── 4. Size ▶ ──
-        sizeNextBtn = ButtonWidget.builder(Text.literal("\u25B6"), b -> cycleSize(1))
-                .dimensions(inputX + inputW - stepperBtnW, sizeFieldY, stepperBtnW, btnH)
+        sizeNextBtn = Button.builder(Component.literal("\u25B6"), b -> cycleSize(1))
+                .bounds(inputX + inputW - stepperBtnW, sizeFieldY, stepperBtnW, btnH)
                 .build();
-        this.addDrawableChild(sizeNextBtn);
+        this.addRenderableWidget(sizeNextBtn);
         updateLeftWidgets(inputX, inputW, fieldH, btnH, stepperBtnW);
 
         inputBottomY = Math.max(sizeFieldY + btnH, computeSizeLabelBottom(sizeFieldY - 1, inputW - 48)) + scaledUi(12);
@@ -386,7 +386,7 @@ public class LatitudeCreateWorldScreen extends Screen {
         for (LatitudeBands.Band band : LatitudeBands.Band.values()) {
             ZoneRowWidget row = new ZoneRowWidget(rightX + 2, panelTop, rightW - 4, zoneRowHeight, band);
             zoneRows.add(row);
-            this.addDrawableChild(row);
+            this.addRenderableWidget(row);
         }
         updateRightLayout();
 
@@ -394,49 +394,49 @@ public class LatitudeCreateWorldScreen extends Screen {
             int settBtnW = railW - 8;
             int settBtnX = railX + 4;
 
-            worldTypePrevBtn = ButtonWidget.builder(Text.literal("\u25C0"), b -> cycleWorldType(-1))
-                    .dimensions(settBtnX, panelTop, 20, btnH)
+            worldTypePrevBtn = Button.builder(Component.literal("\u25C0"), b -> cycleWorldType(-1))
+                    .bounds(settBtnX, panelTop, 20, btnH)
                     .build();
-            worldTypeNextBtn = ButtonWidget.builder(Text.literal("\u25B6"), b -> cycleWorldType(1))
-                    .dimensions(settBtnX + settBtnW - 20, panelTop, 20, btnH)
+            worldTypeNextBtn = Button.builder(Component.literal("\u25B6"), b -> cycleWorldType(1))
+                    .bounds(settBtnX + settBtnW - 20, panelTop, 20, btnH)
                     .build();
-            modePrevBtn = ButtonWidget.builder(Text.literal("\u25C0"), b -> cycleMode(-1))
-                    .dimensions(settBtnX, panelTop, 20, btnH)
+            modePrevBtn = Button.builder(Component.literal("\u25C0"), b -> cycleMode(-1))
+                    .bounds(settBtnX, panelTop, 20, btnH)
                     .build();
-            modeNextBtn = ButtonWidget.builder(Text.literal("\u25B6"), b -> cycleMode(1))
-                    .dimensions(settBtnX + settBtnW - 20, panelTop, 20, btnH)
+            modeNextBtn = Button.builder(Component.literal("\u25B6"), b -> cycleMode(1))
+                    .bounds(settBtnX + settBtnW - 20, panelTop, 20, btnH)
                     .build();
-            commandsBtn = ButtonWidget.builder(Text.literal(allowCommands ? "ON" : "OFF"), b -> {
+            commandsBtn = Button.builder(Component.literal(allowCommands ? "ON" : "OFF"), b -> {
                 allowCommands = !allowCommands;
-                b.setMessage(Text.literal(allowCommands ? "ON" : "OFF"));
-            }).dimensions(settBtnX, panelTop, settBtnW, btnH).build();
-            this.addDrawableChild(worldTypePrevBtn);
-            this.addDrawableChild(worldTypeNextBtn);
-            this.addDrawableChild(modePrevBtn);
-            this.addDrawableChild(modeNextBtn);
-            this.addDrawableChild(commandsBtn);
+                b.setMessage(Component.literal(allowCommands ? "ON" : "OFF"));
+            }).bounds(settBtnX, panelTop, settBtnW, btnH).build();
+            this.addRenderableWidget(worldTypePrevBtn);
+            this.addRenderableWidget(worldTypeNextBtn);
+            this.addRenderableWidget(modePrevBtn);
+            this.addRenderableWidget(modeNextBtn);
+            this.addRenderableWidget(commandsBtn);
 
-            compassBtn = ButtonWidget.builder(Text.literal(startWithCompass ? "ON" : "OFF"), b -> {
+            compassBtn = Button.builder(Component.literal(startWithCompass ? "ON" : "OFF"), b -> {
                 startWithCompass = !startWithCompass;
-                b.setMessage(Text.literal(startWithCompass ? "ON" : "OFF"));
-            }).dimensions(settBtnX, panelTop, settBtnW, btnH).build();
-            this.addDrawableChild(compassBtn);
+                b.setMessage(Component.literal(startWithCompass ? "ON" : "OFF"));
+            }).bounds(settBtnX, panelTop, settBtnW, btnH).build();
+            this.addRenderableWidget(compassBtn);
 
-            bonusChestBtn = ButtonWidget.builder(Text.literal(bonusChest ? "ON" : "OFF"), b -> {
+            bonusChestBtn = Button.builder(Component.literal(bonusChest ? "ON" : "OFF"), b -> {
                 bonusChest = !bonusChest;
-                b.setMessage(Text.literal(bonusChest ? "ON" : "OFF"));
-            }).dimensions(settBtnX, panelTop, settBtnW, btnH).build();
-            this.addDrawableChild(bonusChestBtn);
+                b.setMessage(Component.literal(bonusChest ? "ON" : "OFF"));
+            }).bounds(settBtnX, panelTop, settBtnW, btnH).build();
+            this.addRenderableWidget(bonusChestBtn);
 
-            gameRulesBtn = ButtonWidget.builder(Text.literal("Game Rules..."), b -> openGameRules())
-                    .dimensions(settBtnX, panelTop, settBtnW, btnH)
+            gameRulesBtn = Button.builder(Component.literal("Game Rules..."), b -> openGameRules())
+                    .bounds(settBtnX, panelTop, settBtnW, btnH)
                     .build();
-            this.addDrawableChild(gameRulesBtn);
+            this.addRenderableWidget(gameRulesBtn);
 
-            hudStudioBtn = ButtonWidget.builder(Text.literal("HUD Studio"), b -> openHudStudio())
-                    .dimensions(settBtnX, panelTop, settBtnW, btnH)
+            hudStudioBtn = Button.builder(Component.literal("HUD Studio"), b -> openHudStudio())
+                    .bounds(settBtnX, panelTop, settBtnW, btnH)
                     .build();
-            this.addDrawableChild(hudStudioBtn);
+            this.addRenderableWidget(hudStudioBtn);
             updateSettingsLayout();
         }
 
@@ -446,24 +446,24 @@ public class LatitudeCreateWorldScreen extends Screen {
 
         // ── 17. Begin Expedition ──
         int btnSpacing = scaledUi(8);
-        int beginW = Math.max(120, this.textRenderer.getWidth("Begin Expedition") + 20);
-        int cancelW = Math.max(70, this.textRenderer.getWidth("Cancel") + 20);
+        int beginW = Math.max(120, this.font.width("Begin Expedition") + 20);
+        int cancelW = Math.max(70, this.font.width("Cancel") + 20);
         int totalBtnW = beginW + btnSpacing + cancelW;
         int btnStartX = cx - totalBtnW / 2;
-        this.addDrawableChild(ButtonWidget.builder(Text.literal("Begin Expedition"), b -> beginExpedition())
-                .dimensions(btnStartX, bottomY, beginW, btnH)
+        this.addRenderableWidget(Button.builder(Component.literal("Begin Expedition"), b -> beginExpedition())
+                .bounds(btnStartX, bottomY, beginW, btnH)
                 .build());
 
         // ── 18. Cancel ──
-        this.addDrawableChild(ButtonWidget.builder(Text.literal("Cancel"), b -> close())
-                .dimensions(btnStartX + beginW + btnSpacing, bottomY, cancelW, btnH)
+        this.addRenderableWidget(Button.builder(Component.literal("Cancel"), b -> onClose())
+                .bounds(btnStartX + beginW + btnSpacing, bottomY, cancelW, btnH)
                 .build());
 
         // ── Focus: pre-select world name text for immediate overwrite ──
         this.worldNameField.setFocused(true);
         this.setFocused(this.worldNameField);
-        this.worldNameField.setCursorToEnd(false);
-        this.worldNameField.setSelectionEnd(0);
+        this.worldNameField.moveCursorToEnd(false);
+        this.worldNameField.setHighlightPos(0);
     }
 
     // ── Size stepper ──
@@ -475,9 +475,9 @@ public class LatitudeCreateWorldScreen extends Screen {
         if (idx >= sizes.length) idx = 0;
         selectedSize = sizes[idx];
         if (this.worldNameField != null) {
-            worldNameInput = this.worldNameField.getText();
+            worldNameInput = this.worldNameField.getValue();
         }
-        this.clearAndInit();
+        this.rebuildWidgets();
     }
 
     // ── Mode stepper ──
@@ -491,14 +491,14 @@ public class LatitudeCreateWorldScreen extends Screen {
     }
 
     private void cycleWorldType(int delta) {
-        long t0 = Util.getMeasuringTimeMs();
+        long t0 = Util.getMillis();
         worldTypeIdx = (worldTypeIdx + delta + WORLD_TYPE_NAMES.length) % WORLD_TYPE_NAMES.length;
         updateSettingsButtons();
         updateRightLayout();
         if (DEBUG_UI_SWITCH_LAG) {
             debugSwitchSeq++;
             debugSwitchSampleDeadlineMs = t0 + 2_000L; // sample for 2s after switch
-            long elapsed = Util.getMeasuringTimeMs() - t0;
+            long elapsed = Util.getMillis() - t0;
             LOGGER.info("[lat-ui] switchLag seq={} worldType={} handler_ms={}", debugSwitchSeq, currentWorldTypeName(), elapsed);
         }
     }
@@ -516,15 +516,15 @@ public class LatitudeCreateWorldScreen extends Screen {
     }
 
     private int uiFontHeight() {
-        return this.textRenderer.fontHeight;
+        return this.font.lineHeight;
     }
 
     private int uiTextWidth(String text) {
-        return this.textRenderer.getWidth(text);
+        return this.font.width(text);
     }
 
-    private List<net.minecraft.text.StringVisitable> wrapUiLines(String text, int width) {
-        return this.textRenderer.getTextHandler().wrapLines(text, Math.max(1, width), net.minecraft.text.Style.EMPTY);
+    private List<net.minecraft.network.chat.FormattedText> wrapUiLines(String text, int width) {
+        return this.font.getSplitter().splitLines(text, Math.max(1, width), net.minecraft.network.chat.Style.EMPTY);
     }
 
     private int wrapLineCount(String text, int width) {
@@ -551,7 +551,7 @@ public class LatitudeCreateWorldScreen extends Screen {
         int maxRangeW = 0;
         for (LatitudeBands.Band band : LatitudeBands.Band.values()) {
             String range = formatDegree(band.lowDeg()) + "–" + formatDegree(band.highDeg());
-            maxRangeW = Math.max(maxRangeW, this.textRenderer.getWidth(range));
+            maxRangeW = Math.max(maxRangeW, this.font.width(range));
         }
         int helperWidth = Math.max(60, rowWidth - 12 - maxRangeW - 10);
         int maxHelperLines = 1;
@@ -605,22 +605,22 @@ public class LatitudeCreateWorldScreen extends Screen {
 
     private void updateLeftWidgets(int inputX, int inputW, int fieldH, int btnH, int stepperBtnW) {
         if (worldNameField != null) {
-            worldNameField.setDimensionsAndPosition(inputW, fieldH, inputX, worldFieldY);
+            worldNameField.setRectangle(inputW, fieldH, inputX, worldFieldY);
             worldNameField.visible = true;
             worldNameField.active = true;
         }
         if (seedField != null) {
-            seedField.setDimensionsAndPosition(inputW, fieldH, inputX, seedFieldY);
+            seedField.setRectangle(inputW, fieldH, inputX, seedFieldY);
             seedField.visible = true;
             seedField.active = true;
         }
         if (sizePrevBtn != null) {
-            sizePrevBtn.setDimensionsAndPosition(stepperBtnW, btnH, inputX, sizeFieldY);
+            sizePrevBtn.setRectangle(stepperBtnW, btnH, inputX, sizeFieldY);
             sizePrevBtn.visible = true;
             sizePrevBtn.active = true;
         }
         if (sizeNextBtn != null) {
-            sizeNextBtn.setDimensionsAndPosition(stepperBtnW, btnH, inputX + inputW - stepperBtnW, sizeFieldY);
+            sizeNextBtn.setRectangle(stepperBtnW, btnH, inputX + inputW - stepperBtnW, sizeFieldY);
             sizeNextBtn.visible = true;
             sizeNextBtn.active = true;
         }
@@ -668,7 +668,7 @@ public class LatitudeCreateWorldScreen extends Screen {
         updateLeftWidgetVisibility(sizeNextBtn);
     }
 
-    private void updateLeftWidgetVisibility(ClickableWidget widget) {
+    private void updateLeftWidgetVisibility(AbstractWidget widget) {
         if (widget == null) return;
         boolean visible = (!tabbedMode || activeTab == 0)
                 && widget.getX() >= paneStripViewportLeft
@@ -713,7 +713,7 @@ public class LatitudeCreateWorldScreen extends Screen {
 
         int zoneY = zoneListTopY;
         for (ZoneRowWidget row : zoneRows) {
-            row.setDimensionsAndPosition(rightW - 4 - SCROLLBAR_GUTTER, zoneRowHeight, rightX + 2, zoneY);
+            row.setRectangle(rightW - 4 - SCROLLBAR_GUTTER, zoneRowHeight, rightX + 2, zoneY);
             boolean visible = isLatitudeWorld()
                     && (!tabbedMode || activeTab == 1)
                     && row.getX() >= paneStripViewportLeft
@@ -728,15 +728,15 @@ public class LatitudeCreateWorldScreen extends Screen {
 
     private void updateSettingsButtons() {
         if (commandsBtn != null) {
-            commandsBtn.setMessage(Text.literal(allowCommands ? "ON" : "OFF"));
+            commandsBtn.setMessage(Component.literal(allowCommands ? "ON" : "OFF"));
             commandsBtn.active = commandsBtn.visible;
         }
         if (compassBtn != null) {
-            compassBtn.setMessage(Text.literal(startWithCompass ? "ON" : "OFF"));
+            compassBtn.setMessage(Component.literal(startWithCompass ? "ON" : "OFF"));
             compassBtn.active = compassBtn.visible && isLatitudeWorld();
         }
         if (bonusChestBtn != null) {
-            bonusChestBtn.setMessage(Text.literal(bonusChest ? "ON" : "OFF"));
+            bonusChestBtn.setMessage(Component.literal(bonusChest ? "ON" : "OFF"));
             bonusChestBtn.active = !isLatitudeWorld() && bonusChestBtn.visible;
         }
         if (gameRulesBtn != null) {
@@ -827,7 +827,7 @@ public class LatitudeCreateWorldScreen extends Screen {
         setTabbedWidgetVisible(hudStudioBtn, showRules);
     }
 
-    private void setTabbedWidgetVisible(ClickableWidget widget, boolean visible) {
+    private void setTabbedWidgetVisible(AbstractWidget widget, boolean visible) {
         if (widget == null) return;
         widget.visible = visible;
         widget.active = visible;
@@ -839,10 +839,10 @@ public class LatitudeCreateWorldScreen extends Screen {
         applyTabbedVisibility();
     }
 
-    private void positionSettingsStepper(ButtonWidget left, ButtonWidget right, int x, int width, int y, int height) {
+    private void positionSettingsStepper(Button left, Button right, int x, int width, int y, int height) {
         int stepperW = left.getWidth();
-        left.setDimensionsAndPosition(stepperW, height, x, y);
-        right.setDimensionsAndPosition(stepperW, height, x + width - stepperW, y);
+        left.setRectangle(stepperW, height, x, y);
+        right.setRectangle(stepperW, height, x + width - stepperW, y);
         boolean visible = (!tabbedMode || activeTab == 2)
                 && left.getX() >= paneStripViewportLeft
                 && right.getX() + right.getWidth() <= paneStripViewportRight
@@ -854,8 +854,8 @@ public class LatitudeCreateWorldScreen extends Screen {
         right.active = visible;
     }
 
-    private void positionSettingsButton(ButtonWidget button, int x, int width, int y, int height) {
-        button.setDimensionsAndPosition(width - SCROLLBAR_GUTTER, height, x, y);
+    private void positionSettingsButton(Button button, int x, int width, int y, int height) {
+        button.setRectangle(width - SCROLLBAR_GUTTER, height, x, y);
         boolean visible = (!tabbedMode || activeTab == 2)
                 && button.getX() >= paneStripViewportLeft
                 && button.getX() + button.getWidth() <= paneStripViewportRight
@@ -866,31 +866,31 @@ public class LatitudeCreateWorldScreen extends Screen {
     }
 
     private void openGameRules() {
-        if (this.client == null) return;
-        this.client.setScreen(new EditGameRulesScreen(this.gameRules, optional -> {
+        if (this.minecraft == null) return;
+        this.minecraft.setScreen(new EditGameRulesScreen(this.gameRules, optional -> {
             optional.ifPresent(rules -> this.gameRules = rules);
-            this.client.setScreen(this);
+            this.minecraft.setScreen(this);
         }));
     }
 
     private void openHudStudio() {
-        if (this.client == null) return;
-        this.client.setScreen(new LatitudeHudStudioScreen(this));
+        if (this.minecraft == null) return;
+        this.minecraft.setScreen(new LatitudeHudStudioScreen(this));
     }
 
     // ── Begin Expedition ──
 
     private void beginExpedition() {
-        if (this.client == null) return;
-        String worldName = this.worldNameField.getText().trim();
+        if (this.minecraft == null) return;
+        String worldName = this.worldNameField.getValue().trim();
         if (worldName.isEmpty()) worldName = "New World";
-        String seed = this.seedField.getText(); // raw — no client-side trim
+        String seed = this.seedField.getValue(); // raw — no client-side trim
 
-        GameMode gameMode = selectedModeIdx == 2 ? GameMode.CREATIVE : GameMode.SURVIVAL;
+        GameType gameMode = selectedModeIdx == 2 ? GameType.CREATIVE : GameType.SURVIVAL;
         boolean hardcore = selectedModeIdx == 1;
         Difficulty difficulty = hardcore ? Difficulty.HARD : Difficulty.NORMAL;
 
-        LatitudeWorldLauncher.beginExpedition(this.client, this, this.holder,
+        LatitudeWorldLauncher.beginExpedition(this.minecraft, this, this.holder,
                 worldName, seed, this.selectedSize, this.selectedZone,
                 gameMode, hardcore, difficulty, allowCommands, startWithCompass, bonusChest,
                 this.gameRules, this.worldTypeIdx);
@@ -899,10 +899,10 @@ public class LatitudeCreateWorldScreen extends Screen {
     // ── Close behavior ──
 
     @Override
-    public void close() {
+    public void onClose() {
         this.onClose.run();
-        if (this.client != null && (this.client.currentScreen == this || this.client.currentScreen == null)) {
-            this.client.setScreen(this.parent);
+        if (this.minecraft != null && (this.minecraft.screen == this || this.minecraft.screen == null)) {
+            this.minecraft.setScreen(this.parent);
         }
     }
 
@@ -963,7 +963,7 @@ public class LatitudeCreateWorldScreen extends Screen {
     }
 
     @Override
-    public boolean mouseClicked(Click click, boolean doubled) {
+    public boolean mouseClicked(MouseButtonEvent click, boolean doubled) {
         if (click.button() == 0 && handleTabClick(click.x(), click.y())) {
             return true;
         }
@@ -981,7 +981,7 @@ public class LatitudeCreateWorldScreen extends Screen {
     }
 
     @Override
-    public boolean mouseDragged(Click click, double deltaX, double deltaY) {
+    public boolean mouseDragged(MouseButtonEvent click, double deltaX, double deltaY) {
         if (draggingPaneStripScrollbar && click.button() == 0) {
             setPaneStripScrollFromMouse(click.x());
             return true;
@@ -990,7 +990,7 @@ public class LatitudeCreateWorldScreen extends Screen {
     }
 
     @Override
-    public boolean mouseReleased(Click click) {
+    public boolean mouseReleased(MouseButtonEvent click) {
         if (draggingPaneStripScrollbar && click.button() == 0) {
             draggingPaneStripScrollbar = false;
             return true;
@@ -1003,7 +1003,7 @@ public class LatitudeCreateWorldScreen extends Screen {
     // ══════════════════════════════════════════════════════════════
 
     @Override
-    public void render(DrawContext context, int mouseX, int mouseY, float delta) {
+    public void render(GuiGraphics context, int mouseX, int mouseY, float delta) {
         int titlePaneX = threeCol ? rightX : 12;
         int titlePaneW = threeCol ? rightW : Math.max(1, this.width - 24);
         int headerBottom = tabbedMode ? tabStripY - 2 : panelTop;
@@ -1156,13 +1156,13 @@ public class LatitudeCreateWorldScreen extends Screen {
         }
 
         if (isLatitudeWorld() && bonusChestBtn != null && !bonusChestBtn.active && bonusChestBtn.isMouseOver(mouseX, mouseY)) {
-            context.drawTooltip(Text.literal("Bonus chest is not available in Latitude."), mouseX, mouseY);
+            context.setTooltipForNextFrame(Component.literal("Bonus chest is not available in Latitude."), mouseX, mouseY);
         }
 
         super.render(context, mouseX, mouseY, delta);
     }
 
-    private void renderSizeLabel(DrawContext context, int x, int y, int availW) {
+    private void renderSizeLabel(GuiGraphics context, int x, int y, int availW) {
         int idx = selectedSize.ordinal();
         String shortName = SIZE_SHORT_NAMES[idx];
         String diameter = formatDiameter(selectedSize.borderRadiusBlocks * 2) + " blocks";
@@ -1180,8 +1180,8 @@ public class LatitudeCreateWorldScreen extends Screen {
         };
     }
 
-    private void renderPlanispherePreview(DrawContext context, int areaLeft, int areaTop, int areaRight, int areaBottom) {
-        long dbgStart = DEBUG_UI_SWITCH_LAG ? Util.getMeasuringTimeMs() : 0L;
+    private void renderPlanispherePreview(GuiGraphics context, int areaLeft, int areaTop, int areaRight, int areaBottom) {
+        long dbgStart = DEBUG_UI_SWITCH_LAG ? Util.getMillis() : 0L;
         String caption = formatDiameter(selectedSize.borderRadiusBlocks * 2) + " blocks";
         float labelScale = previewLabelScale(selectedSize);
         float captionScale = previewCaptionScale(selectedSize);
@@ -1224,16 +1224,16 @@ public class LatitudeCreateWorldScreen extends Screen {
             drawScaledText(context, formatDegree(deg), layout.labelX, layout.labelYs[i], layout.labelScale, color, false);
         }
         drawScaledText(context, caption, layout.captionX, layout.captionY, layout.captionScale, MUTED, false);
-        if (DEBUG_UI_SWITCH_LAG && Util.getMeasuringTimeMs() <= debugSwitchSampleDeadlineMs) {
-            long elapsed = Util.getMeasuringTimeMs() - dbgStart;
+        if (DEBUG_UI_SWITCH_LAG && Util.getMillis() <= debugSwitchSampleDeadlineMs) {
+            long elapsed = Util.getMillis() - dbgStart;
             if (elapsed >= 1L) {
                 LOGGER.info("[lat-ui] switchLag seq={} worldType={} section=planispherePreview ms={}", debugSwitchSeq, currentWorldTypeName(), elapsed);
             }
         }
     }
 
-    private void renderSpawnZoneDisabled(DrawContext context) {
-        long dbgStart = DEBUG_UI_SWITCH_LAG ? Util.getMeasuringTimeMs() : 0L;
+    private void renderSpawnZoneDisabled(GuiGraphics context) {
+        long dbgStart = DEBUG_UI_SWITCH_LAG ? Util.getMillis() : 0L;
         int overlayTop = rightDividerY + 2;
         int overlayBottom = rightViewportBottom;
         if (overlayBottom <= overlayTop + 4) return;
@@ -1247,16 +1247,16 @@ public class LatitudeCreateWorldScreen extends Screen {
         int ty = midY - totalTextH / 2;
         drawCenteredBoundedText(context, line1, new UiRect(rightX + 4, ty, textW, uiFontHeight()), DISABLED_COLOR, false, true);
         drawCenteredBoundedText(context, line2, new UiRect(rightX + 4, ty + uiFontHeight() + gap, textW, uiFontHeight()), MUTED, false, true);
-        if (DEBUG_UI_SWITCH_LAG && Util.getMeasuringTimeMs() <= debugSwitchSampleDeadlineMs) {
-            long elapsed = Util.getMeasuringTimeMs() - dbgStart;
+        if (DEBUG_UI_SWITCH_LAG && Util.getMillis() <= debugSwitchSampleDeadlineMs) {
+            long elapsed = Util.getMillis() - dbgStart;
             if (elapsed >= 1L) {
                 LOGGER.info("[lat-ui] switchLag seq={} worldType={} section=spawnZoneDisabled ms={}", debugSwitchSeq, currentWorldTypeName(), elapsed);
             }
         }
     }
 
-    private void renderPlanisphereDisabled(DrawContext context, int areaLeft, int areaTop, int areaRight, int areaBottom) {
-        long dbgStart = DEBUG_UI_SWITCH_LAG ? Util.getMeasuringTimeMs() : 0L;
+    private void renderPlanisphereDisabled(GuiGraphics context, int areaLeft, int areaTop, int areaRight, int areaBottom) {
+        long dbgStart = DEBUG_UI_SWITCH_LAG ? Util.getMillis() : 0L;
         int areaW = Math.max(0, areaRight - areaLeft);
         int areaH = Math.max(0, areaBottom - areaTop);
         if (areaW <= 6 || areaH <= 6) return;
@@ -1284,8 +1284,8 @@ public class LatitudeCreateWorldScreen extends Screen {
 
         String label = "Preview available only for Latitude";
         drawCenteredBoundedText(context, label, new UiRect(boxLeft + pad, boxTop + pad, boxRight - boxLeft - pad * 2, uiFontHeight()), DISABLED_COLOR, false, true);
-        if (DEBUG_UI_SWITCH_LAG && Util.getMeasuringTimeMs() <= debugSwitchSampleDeadlineMs) {
-            long elapsed = Util.getMeasuringTimeMs() - dbgStart;
+        if (DEBUG_UI_SWITCH_LAG && Util.getMillis() <= debugSwitchSampleDeadlineMs) {
+            long elapsed = Util.getMillis() - dbgStart;
             if (elapsed >= 1L) {
                 LOGGER.info("[lat-ui] switchLag seq={} worldType={} section=planisphereDisabled ms={}", debugSwitchSeq, currentWorldTypeName(), elapsed);
             }
@@ -1385,14 +1385,14 @@ public class LatitudeCreateWorldScreen extends Screen {
     }
 
     private int scaledTextWidth(String text, float scale) {
-        return Math.round(this.textRenderer.getWidth(text) * scale);
+        return Math.round(this.font.width(text) * scale);
     }
 
     private int scaledFontHeight(float scale) {
-        return Math.max(5, Math.round(this.textRenderer.fontHeight * scale));
+        return Math.max(5, Math.round(this.font.lineHeight * scale));
     }
 
-    private void drawSettingsRowLabel(DrawContext context, String label, int x, int rowY, int color) {
+    private void drawSettingsRowLabel(GuiGraphics context, String label, int x, int rowY, int color) {
         int labelY = rowY - scaledUi(10);
         if (labelY + uiFontHeight() <= settingsViewportTop || labelY >= settingsViewportBottom) {
             return;
@@ -1400,7 +1400,7 @@ public class LatitudeCreateWorldScreen extends Screen {
         drawBoundedText(context, label, new UiRect(x, labelY, Math.max(20, railW - 8 - SCROLLBAR_GUTTER), uiFontHeight()), color, false, true);
     }
 
-    private void drawSettingsStepperValue(DrawContext context, String text, int color, int rowY) {
+    private void drawSettingsStepperValue(GuiGraphics context, String text, int color, int rowY) {
         if (rowY + uiFontHeight() <= settingsViewportTop || rowY >= settingsViewportBottom) {
             return;
         }
@@ -1415,11 +1415,11 @@ public class LatitudeCreateWorldScreen extends Screen {
         drawBoundedText(context, fitted, new UiRect(safeLeft + Math.max(0, (safeWidth - textW) / 2), drawY, safeWidth, uiFontHeight()), color, true, true);
     }
 
-    private void drawUiText(DrawContext context, String text, int x, int y, int color, boolean shadow) {
-        context.drawText(this.textRenderer, text, x, y, color, shadow);
+    private void drawUiText(GuiGraphics context, String text, int x, int y, int color, boolean shadow) {
+        context.drawString(this.font, text, x, y, color, shadow);
     }
 
-    private void drawCenteredUiText(DrawContext context, String text, int cx, int y, int color, boolean shadow) {
+    private void drawCenteredUiText(GuiGraphics context, String text, int cx, int y, int color, boolean shadow) {
         drawUiText(context, text, cx - uiTextWidth(text) / 2, y, color, shadow);
     }
 
@@ -1443,7 +1443,7 @@ public class LatitudeCreateWorldScreen extends Screen {
         if (ellipsisWidth > width) {
             return "";
         }
-        return this.textRenderer.trimToWidth(text, Math.max(1, width - ellipsisWidth)) + ellipsis;
+        return this.font.plainSubstrByWidth(text, Math.max(1, width - ellipsisWidth)) + ellipsis;
     }
 
     private int clampToRect(int value, int contentSize, int min, int maxExclusive) {
@@ -1451,7 +1451,7 @@ public class LatitudeCreateWorldScreen extends Screen {
         return Math.max(min, Math.min(max, value));
     }
 
-    private boolean drawBoundedText(DrawContext context, String text, UiRect rect, int color, boolean shadow, boolean ellipsize) {
+    private boolean drawBoundedText(GuiGraphics context, String text, UiRect rect, int color, boolean shadow, boolean ellipsize) {
         if (!fitsHeight(rect.h)) {
             return false;
         }
@@ -1465,7 +1465,7 @@ public class LatitudeCreateWorldScreen extends Screen {
         return true;
     }
 
-    private boolean drawBoundedStyledText(DrawContext context, Text text, UiRect rect, int color, boolean shadow, boolean ellipsize) {
+    private boolean drawBoundedStyledText(GuiGraphics context, Component text, UiRect rect, int color, boolean shadow, boolean ellipsize) {
         if (!fitsHeight(rect.h)) {
             return false;
         }
@@ -1475,16 +1475,16 @@ public class LatitudeCreateWorldScreen extends Screen {
         }
         int drawX = clampToRect(rect.x, uiTextWidth(fitted), rect.x, rect.right());
         int drawY = clampToRect(rect.y, uiFontHeight(), rect.y, rect.bottom());
-        context.drawText(this.textRenderer, Text.literal(fitted).setStyle(text.getStyle().withItalic(true)), drawX, drawY, color, shadow);
+        context.drawString(this.font, Component.literal(fitted).setStyle(text.getStyle().withItalic(true)), drawX, drawY, color, shadow);
         return true;
     }
 
-    private int drawWrappedStyledTextBlock(DrawContext context, Text text, UiRect rect, int color, boolean shadow, int maxLines, boolean center, boolean optional) {
+    private int drawWrappedStyledTextBlock(GuiGraphics context, Component text, UiRect rect, int color, boolean shadow, int maxLines, boolean center, boolean optional) {
         if (rect.w <= 0 || rect.h < uiFontHeight()) {
             return 0;
         }
         int maxVisibleLines = Math.min(maxLines, Math.max(1, rect.h / uiFontHeight()));
-        List<net.minecraft.text.StringVisitable> wrapped = wrapUiLines(text.getString(), rect.w);
+        List<net.minecraft.network.chat.FormattedText> wrapped = wrapUiLines(text.getString(), rect.w);
         if (wrapped.isEmpty()) {
             return 0;
         }
@@ -1498,12 +1498,12 @@ public class LatitudeCreateWorldScreen extends Screen {
             if (i == drawCount - 1 && wrapped.size() > drawCount) {
                 line = ellipsizeToWidth(line, rect.w);
             }
-            Text lineText = Text.literal(line).setStyle(text.getStyle());
+            Component lineText = Component.literal(line).setStyle(text.getStyle());
             if (center) {
                 String fitted = ellipsizeToWidth(lineText.getString(), rect.w);
                 if (!fitted.isEmpty()) {
                     int drawX = rect.x + Math.max(0, (rect.w - uiTextWidth(fitted)) / 2);
-                    context.drawText(this.textRenderer, Text.literal(fitted).setStyle(lineText.getStyle().withItalic(true)), drawX, y, color, shadow);
+                    context.drawString(this.font, Component.literal(fitted).setStyle(lineText.getStyle().withItalic(true)), drawX, y, color, shadow);
                 }
             } else {
                 drawBoundedStyledText(context, lineText, new UiRect(rect.x, y, rect.w, uiFontHeight()), color, shadow, true);
@@ -1513,7 +1513,7 @@ public class LatitudeCreateWorldScreen extends Screen {
         return drawCount * uiFontHeight();
     }
 
-    private boolean drawCenteredBoundedText(DrawContext context, String text, UiRect rect, int color, boolean shadow, boolean ellipsize) {
+    private boolean drawCenteredBoundedText(GuiGraphics context, String text, UiRect rect, int color, boolean shadow, boolean ellipsize) {
         if (!fitsHeight(rect.h)) {
             return false;
         }
@@ -1527,12 +1527,12 @@ public class LatitudeCreateWorldScreen extends Screen {
         return true;
     }
 
-    private int drawWrappedTextBlock(DrawContext context, String text, UiRect rect, int color, boolean shadow, int maxLines, boolean center, boolean optional) {
+    private int drawWrappedTextBlock(GuiGraphics context, String text, UiRect rect, int color, boolean shadow, int maxLines, boolean center, boolean optional) {
         if (rect.w <= 0 || rect.h < uiFontHeight()) {
             return 0;
         }
         int maxVisibleLines = Math.min(maxLines, Math.max(1, rect.h / uiFontHeight()));
-        List<net.minecraft.text.StringVisitable> wrapped = wrapUiLines(text, rect.w);
+        List<net.minecraft.network.chat.FormattedText> wrapped = wrapUiLines(text, rect.w);
         if (wrapped.isEmpty()) {
             return 0;
         }
@@ -1579,12 +1579,12 @@ public class LatitudeCreateWorldScreen extends Screen {
         }
     }
 
-    private void drawScaledText(DrawContext context, String text, int x, int y, float scale, int color, boolean shadow) {
-        var matrices = context.getMatrices();
+    private void drawScaledText(GuiGraphics context, String text, int x, int y, float scale, int color, boolean shadow) {
+        var matrices = context.pose();
         matrices.pushMatrix();
         matrices.translate((float) x, (float) y);
         matrices.scale(scale, scale);
-        context.drawText(this.textRenderer, text, 0, 0, color, shadow);
+        context.drawString(this.font, text, 0, 0, color, shadow);
         matrices.popMatrix();
     }
 
@@ -1604,7 +1604,7 @@ public class LatitudeCreateWorldScreen extends Screen {
     private static final int GRID_COLOR = 0x14504840;
     private static final int GRID_STEP = 16;  // large-ish squares
 
-    private void drawPanel(DrawContext context, int x, int y, int w, int h) {
+    private void drawPanel(GuiGraphics context, int x, int y, int w, int h) {
         // Border
         context.fill(x, y, x + w, y + 1, PANEL_BORDER);
         context.fill(x, y + h - 1, x + w, y + h, PANEL_BORDER);
@@ -1616,7 +1616,7 @@ public class LatitudeCreateWorldScreen extends Screen {
         drawGridDecoration(context, x + 1, y + 1, w - 2, h - 2);
     }
 
-    private static void drawGridDecoration(DrawContext context, int x, int y, int w, int h) {
+    private static void drawGridDecoration(GuiGraphics context, int x, int y, int w, int h) {
         if (h < 20 || w < 20) return;
         // Horizontal lines
         for (int gy = GRID_STEP; gy < h; gy += GRID_STEP) {
@@ -1628,12 +1628,12 @@ public class LatitudeCreateWorldScreen extends Screen {
         }
     }
 
-    private void drawCenteredString(DrawContext context, String text, int cx, int y, int color, boolean shadow) {
-        int textW = this.textRenderer.getWidth(text);
-        context.drawText(this.textRenderer, text, cx - textW / 2, y, color, shadow);
+    private void drawCenteredString(GuiGraphics context, String text, int cx, int y, int color, boolean shadow) {
+        int textW = this.font.width(text);
+        context.drawString(this.font, text, cx - textW / 2, y, color, shadow);
     }
 
-    private void drawViewportClippedPanel(DrawContext context, int x, int y, int w, int h) {
+    private void drawViewportClippedPanel(GuiGraphics context, int x, int y, int w, int h) {
         int clipLeft = Math.max(x, paneStripViewportLeft);
         int clipRight = Math.min(x + w, paneStripViewportRight);
         if (clipRight <= clipLeft) {
@@ -1644,7 +1644,7 @@ public class LatitudeCreateWorldScreen extends Screen {
         context.disableScissor();
     }
 
-    private void drawInlineHeading(DrawContext context, int paneX, int paneW, String label, int labelColor) {
+    private void drawInlineHeading(GuiGraphics context, int paneX, int paneW, String label, int labelColor) {
         int headingY = panelTop + compactUi(6);
         int availableW = paneW - scaledUi(12);
         if (availableW <= 0) return;
@@ -1664,7 +1664,7 @@ public class LatitudeCreateWorldScreen extends Screen {
                 labelColor, true, true);
     }
 
-    private void drawPaneScrollbar(DrawContext context, int paneX, int paneW, int viewportTop, int viewportBottom,
+    private void drawPaneScrollbar(GuiGraphics context, int paneX, int paneW, int viewportTop, int viewportBottom,
                                    int contentHeight, int scrollAmount) {
         int viewportHeight = Math.max(0, viewportBottom - viewportTop);
         int maxScroll = Math.max(0, contentHeight - viewportHeight);
@@ -1688,7 +1688,7 @@ public class LatitudeCreateWorldScreen extends Screen {
         }
     }
 
-    private void drawTabStrip(DrawContext context, int mouseX, int mouseY) {
+    private void drawTabStrip(GuiGraphics context, int mouseX, int mouseY) {
         int tabCount = TAB_LABELS.length;
         int totalW = paneStripViewportWidth;
         int tabW = (totalW - TAB_GAP * (tabCount - 1)) / tabCount;
@@ -1739,7 +1739,7 @@ public class LatitudeCreateWorldScreen extends Screen {
         return false;
     }
 
-    private void drawHorizontalScrollbar(DrawContext context) {
+    private void drawHorizontalScrollbar(GuiGraphics context) {
         int maxScroll = getPaneStripMaxScroll();
         if (maxScroll <= 0 || paneStripScrollbarH <= 0) {
             return;
@@ -1798,24 +1798,24 @@ public class LatitudeCreateWorldScreen extends Screen {
         }
     }
 
-    private class ZoneRowWidget extends ClickableWidget {
+    private class ZoneRowWidget extends AbstractWidget {
         private final LatitudeBands.Band band;
 
         ZoneRowWidget(int x, int y, int w, int h, LatitudeBands.Band band) {
-            super(x, y, w, h, Text.literal(band.displayName()));
+            super(x, y, w, h, Component.literal(band.displayName()));
             this.band = band;
         }
 
         @Override
-        public void onClick(net.minecraft.client.gui.Click click, boolean doubled) {
+        public void onClick(net.minecraft.client.input.MouseButtonEvent click, boolean doubled) {
             selectedZone = this.band;
         }
 
         @Override
-        public boolean keyPressed(net.minecraft.client.input.KeyInput input) {
-            if (!this.isInteractable()) return false;
-            if (input.isEnterOrSpace()) {
-                this.playDownSound(MinecraftClient.getInstance().getSoundManager());
+        public boolean keyPressed(net.minecraft.client.input.KeyEvent input) {
+            if (!this.isActive()) return false;
+            if (input.isSelection()) {
+                this.playDownSound(Minecraft.getInstance().getSoundManager());
                 selectedZone = this.band;
                 return true;
             }
@@ -1823,7 +1823,7 @@ public class LatitudeCreateWorldScreen extends Screen {
         }
 
         @Override
-        protected void renderWidget(DrawContext context, int mouseX, int mouseY, float deltaTicks) {
+        protected void renderWidget(GuiGraphics context, int mouseX, int mouseY, float deltaTicks) {
             boolean selected = selectedZone == this.band;
             int x = this.getX();
             int y = this.getY();
@@ -1859,18 +1859,18 @@ public class LatitudeCreateWorldScreen extends Screen {
             String helper = ZONE_HELPER[this.band.ordinal()];
             int helperWidth = Math.max(40, rangeX - textX - 6);
             int helperY = y + compactUi(2) + uiFontHeight() + compactUi(2);
-            for (net.minecraft.text.StringVisitable wrappedLine : wrapUiLines(helper, helperWidth)) {
+            for (net.minecraft.network.chat.FormattedText wrappedLine : wrapUiLines(helper, helperWidth)) {
                 if (helperY + uiFontHeight() > y + h - compactUi(2)) break;
                 drawUiText(context, wrappedLine.getString(), textX, helperY, MUTED, false);
                 helperY += uiFontHeight();
             }
 
-            this.setCursor(context);
+            this.handleCursor(context);
         }
 
         @Override
-        protected void appendClickableNarrations(NarrationMessageBuilder builder) {
-            this.appendDefaultNarrations(builder);
+        protected void updateWidgetNarration(NarrationElementOutput builder) {
+            this.defaultButtonNarrationText(builder);
         }
     }
 }

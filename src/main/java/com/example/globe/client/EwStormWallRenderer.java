@@ -1,17 +1,14 @@
 package com.example.globe.client;
 
-import net.minecraft.client.render.VertexConsumer;
-import net.minecraft.client.render.VertexConsumerProvider;
-import net.minecraft.client.render.Camera;
-import net.minecraft.client.render.RenderLayers;
-import net.minecraft.client.render.OverlayTexture;
-import net.minecraft.client.util.math.MatrixStack;
-import net.minecraft.util.Identifier;
+import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.blaze3d.vertex.VertexConsumer;
+import net.minecraft.client.renderer.MultiBufferSource;
+import net.minecraft.resources.Identifier;
 
 public final class EwStormWallRenderer {
     private static final int WALL_Z_HALFSPAN = 2048;
     private static final int WALL_Z_STEP = 16;
-    private static final Identifier WALL_TEXTURE = Identifier.of("minecraft", "textures/entity/beacon_beam.png");
+    private static final Identifier WALL_TEXTURE = Identifier.fromNamespaceAndPath("minecraft", "textures/entity/beacon_beam.png");
     private EwStormWallRenderer() {
     }
 
@@ -35,7 +32,7 @@ public final class EwStormWallRenderer {
         return dEast <= dWest;
     }
 
-    public static void renderWall(MatrixStack.Entry entry, VertexConsumer vc, double camX, double camZ,
+    public static void renderWall(PoseStack.Pose entry, VertexConsumer vc, double camX, double camZ,
                                   double westX, double eastX, double dist) {
         if (dist > 600.0) {
             return;
@@ -76,16 +73,16 @@ public final class EwStormWallRenderer {
             int argbBottom = (alphaBottom << 24) | (ir << 16) | (ig << 8) | ib;
             int argbTop = (alphaTop << 24) | (ir << 16) | (ig << 8) | ib;
 
-            vc.vertex(entry, rx, (float) y1, rz0).color(argbBottom);
-            vc.vertex(entry, rx, (float) y2, rz0).color(argbTop);
-            vc.vertex(entry, rx, (float) y2, rz1).color(argbTop);
-            vc.vertex(entry, rx, (float) y1, rz1).color(argbBottom);
+            vc.addVertex(entry, rx, (float) y1, rz0).setColor(argbBottom);
+            vc.addVertex(entry, rx, (float) y2, rz0).setColor(argbTop);
+            vc.addVertex(entry, rx, (float) y2, rz1).setColor(argbTop);
+            vc.addVertex(entry, rx, (float) y1, rz1).setColor(argbBottom);
         }
     }
 
-    public static void render(MatrixStack matrices, VertexConsumerProvider consumers) {
-        var mc = net.minecraft.client.MinecraftClient.getInstance();
-        if (mc == null || mc.world == null || mc.gameRenderer == null) return;
+    public static void render(PoseStack matrices, MultiBufferSource consumers) {
+        var mc = net.minecraft.client.Minecraft.getInstance();
+        if (mc == null || mc.level == null || mc.gameRenderer == null) return;
         if (!GlobeClientState.DEBUG_EW_WALL) return;
         // TEMP: fog-only verification (wall disabled)
         return;

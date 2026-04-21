@@ -2,16 +2,15 @@ package com.example.globe.dev;
 
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
-import net.minecraft.entity.boss.BossBar;
-import net.minecraft.entity.boss.ServerBossBar;
+import net.minecraft.commands.CommandSourceStack;
+import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.command.ServerCommandSource;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.text.Text;
-import net.minecraft.util.math.ChunkPos;
-import net.minecraft.world.chunk.ChunkStatus;
-
+import net.minecraft.server.level.ServerBossEvent;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.BossEvent;
+import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.chunk.status.ChunkStatus;
 import java.util.ArrayDeque;
 import java.util.Queue;
 
@@ -44,7 +43,7 @@ public final class ChunkPregenerator {
     }
 
     public static int startTransect(MinecraftServer server,
-                                    ServerCommandSource source,
+                                    CommandSourceStack source,
                                     int zStart,
                                     int zEnd,
                                     int xHalfWidthChunks,
@@ -52,11 +51,11 @@ public final class ChunkPregenerator {
         ensureTickHookRegistered();
 
         if (active) {
-            source.sendError(Text.literal("[latdev] job active; run /latdev stop"));
+            source.sendFailure(Component.literal("[latdev] job active; run /latdev stop"));
             return 0;
         }
 
-        ServerWorld world = source.getWorld();
+        ServerLevel world = source.getLevel();
         int zStartChunk = Math.floorDiv(zStart, BLOCKS_PER_CHUNK);
         int zEndChunk = Math.floorDiv(zEnd, BLOCKS_PER_CHUNK);
         int negStartChunk = Math.floorDiv(-zEnd, BLOCKS_PER_CHUNK);
@@ -87,7 +86,7 @@ public final class ChunkPregenerator {
                 + ", width=" + widthChunks + "]";
 
         long newJobId = ++nextJobId;
-        ServerBossBar bossBar = createBossBar(summary, world);
+        ServerBossEvent bossBar = createBossBar(summary, world);
         activeJob = new GenerationJob(server, world, source, queue, chunksPerTick, maxNanosPerTick, autoBudgetEnabled, bossBar);
         activeServer = server;
         active = true;
@@ -100,7 +99,7 @@ public final class ChunkPregenerator {
         activeAutoBudget = autoBudgetEnabled;
         jobSummary = summary;
 
-        source.sendFeedback(() -> Text.literal("[latdev] started job#" + newJobId
+        source.sendSuccess(() -> Component.literal("[latdev] started job#" + newJobId
                 + " planned=" + totalChunks
                 + " " + summary
                 + " chunksPerTick=" + chunksPerTick
@@ -109,7 +108,7 @@ public final class ChunkPregenerator {
         return 1;
     }
 
-    public static int startSliceNS(ServerCommandSource source,
+    public static int startSliceNS(CommandSourceStack source,
                                    int centerXChunk,
                                    int zStartBlocks,
                                    int zEndBlocks,
@@ -118,11 +117,11 @@ public final class ChunkPregenerator {
         ensureTickHookRegistered();
 
         if (active) {
-            source.sendError(Text.literal("[latdev] job active; run /latdev stop"));
+            source.sendFailure(Component.literal("[latdev] job active; run /latdev stop"));
             return 0;
         }
 
-        ServerWorld world = source.getWorld();
+        ServerLevel world = source.getLevel();
         int zStartChunk = Math.floorDiv(zStartBlocks, BLOCKS_PER_CHUNK);
         int zEndChunk = Math.floorDiv(zEndBlocks, BLOCKS_PER_CHUNK);
 
@@ -150,7 +149,7 @@ public final class ChunkPregenerator {
                 + ", centerXChunk=" + centerXChunk + "]";
 
         long newJobId = ++nextJobId;
-        ServerBossBar bossBar = createBossBar(summary, world);
+        ServerBossEvent bossBar = createBossBar(summary, world);
         activeJob = new GenerationJob(source.getServer(), world, source, queue, chunksPerTick, maxNanosPerTick, autoBudgetEnabled, bossBar);
         activeServer = source.getServer();
         active = true;
@@ -163,7 +162,7 @@ public final class ChunkPregenerator {
         activeAutoBudget = autoBudgetEnabled;
         jobSummary = summary;
 
-        source.sendFeedback(() -> Text.literal("[latdev] started job#" + newJobId
+        source.sendSuccess(() -> Component.literal("[latdev] started job#" + newJobId
                 + " planned=" + totalChunks
                 + " " + summary
                 + " chunksPerTick=" + chunksPerTick
@@ -172,56 +171,56 @@ public final class ChunkPregenerator {
         return 1;
     }
 
-    public static int setDefaultBudgetMs(ServerCommandSource source, int budgetMs) {
+    public static int setDefaultBudgetMs(CommandSourceStack source, int budgetMs) {
         long nanos = budgetMs * 1_000_000L;
         fixedMaxNanosPerTick = nanos;
-        source.sendFeedback(() -> Text.literal("[latdev] budgetMs=" + budgetMs + " (auto=" + autoBudget + ")"), false);
+        source.sendSuccess(() -> Component.literal("[latdev] budgetMs=" + budgetMs + " (auto=" + autoBudget + ")"), false);
         return 1;
     }
 
-    public static int setAutoBudget(ServerCommandSource source, boolean enabled) {
+    public static int setAutoBudget(CommandSourceStack source, boolean enabled) {
         autoBudget = enabled;
         long fixedMs = fixedMaxNanosPerTick / 1_000_000L;
-        source.sendFeedback(() -> Text.literal("[latdev] budgetAuto=" + (enabled ? "on" : "off")
+        source.sendSuccess(() -> Component.literal("[latdev] budgetAuto=" + (enabled ? "on" : "off")
                 + " (budgetMs=" + fixedMs + ")"), false);
         return 1;
     }
 
-    public static int pauseJob(ServerCommandSource source) {
+    public static int pauseJob(CommandSourceStack source) {
         if (!active) {
-            source.sendFeedback(() -> Text.literal("[latdev] no active job."), false);
+            source.sendSuccess(() -> Component.literal("[latdev] no active job."), false);
             return 0;
         }
 
         if (paused) {
-            source.sendFeedback(() -> Text.literal("[latdev] already paused " + progressText()), false);
+            source.sendSuccess(() -> Component.literal("[latdev] already paused " + progressText()), false);
             return 1;
         }
 
         paused = true;
-        source.sendFeedback(() -> Text.literal("[latdev] paused " + progressText()), false);
+        source.sendSuccess(() -> Component.literal("[latdev] paused " + progressText()), false);
         return 1;
     }
 
-    public static int resumeJob(ServerCommandSource source) {
+    public static int resumeJob(CommandSourceStack source) {
         if (!active) {
-            source.sendFeedback(() -> Text.literal("[latdev] no active job."), false);
+            source.sendSuccess(() -> Component.literal("[latdev] no active job."), false);
             return 0;
         }
 
         if (!paused) {
-            source.sendFeedback(() -> Text.literal("[latdev] already running " + progressText()), false);
+            source.sendSuccess(() -> Component.literal("[latdev] already running " + progressText()), false);
             return 1;
         }
 
         paused = false;
-        source.sendFeedback(() -> Text.literal("[latdev] resumed " + progressText()), false);
+        source.sendSuccess(() -> Component.literal("[latdev] resumed " + progressText()), false);
         return 1;
     }
 
-    public static int stopJob(ServerCommandSource source) {
+    public static int stopJob(CommandSourceStack source) {
         if (!active) {
-            source.sendFeedback(() -> Text.literal("[latdev] no active job."), false);
+            source.sendSuccess(() -> Component.literal("[latdev] no active job."), false);
             return 0;
         }
 
@@ -231,7 +230,7 @@ public final class ChunkPregenerator {
         String summary = jobSummary;
         clearState();
 
-        source.sendFeedback(() -> Text.literal("[latdev] stopped job#" + stoppedJobId
+        source.sendSuccess(() -> Component.literal("[latdev] stopped job#" + stoppedJobId
                 + " progress=" + completed + "/" + planned
                 + " " + summary), false);
         return 1;
@@ -250,19 +249,19 @@ public final class ChunkPregenerator {
         clearState();
 
         if (!quiet && job != null) {
-            job.source.sendFeedback(() -> Text.literal("[latdev] stopped job#" + stoppedJobId
+            job.source.sendSuccess(() -> Component.literal("[latdev] stopped job#" + stoppedJobId
                     + " progress=" + completed + "/" + planned
                     + " " + summary), false);
         }
     }
 
-    public static int status(ServerCommandSource source) {
+    public static int status(CommandSourceStack source) {
         if (!active) {
-            source.sendFeedback(() -> Text.literal("[latdev] status: active=false paused=false"), false);
+            source.sendSuccess(() -> Component.literal("[latdev] status: active=false paused=false"), false);
             return 1;
         }
 
-        source.sendFeedback(() -> Text.literal("[latdev] status: active=true paused=" + paused
+        source.sendSuccess(() -> Component.literal("[latdev] status: active=true paused=" + paused
                 + " jobId=" + jobId
                 + " progress=" + chunksCompleted + "/" + totalChunksPlanned
                 + " chunksPerTick=" + activeChunksPerTick
@@ -319,7 +318,7 @@ public final class ChunkPregenerator {
                 break;
             }
 
-            job.world.getChunkManager().getChunk(next.x, next.z, ChunkStatus.FULL, true);
+            job.world.getChunkSource().getChunk(next.x, next.z, ChunkStatus.FULL, true);
             chunksCompleted++;
 
             if ((chunksCompleted - job.lastBossbarUpdateChunks) >= BOSSBAR_UPDATE_CHUNK_INTERVAL || job.queue.isEmpty()) {
@@ -328,7 +327,7 @@ public final class ChunkPregenerator {
 
             if (chunksCompleted % PROGRESS_INTERVAL == 0) {
                 int remaining = totalChunksPlanned - chunksCompleted;
-                job.source.sendFeedback(() -> Text.literal("[latdev] progress job#" + jobId + " "
+                job.source.sendSuccess(() -> Component.literal("[latdev] progress job#" + jobId + " "
                         + chunksCompleted + "/" + totalChunksPlanned
                         + " chunks (remaining=" + remaining + ")"), false);
             }
@@ -349,7 +348,7 @@ public final class ChunkPregenerator {
         updateBossBar(job, true);
         clearState();
 
-        job.source.sendFeedback(() -> Text.literal("[latdev] complete job#" + completedJobId
+        job.source.sendSuccess(() -> Component.literal("[latdev] complete job#" + completedJobId
                 + " progress=" + completed + "/" + planned
                 + " " + summary), false);
     }
@@ -386,10 +385,10 @@ public final class ChunkPregenerator {
         return job.fixedMaxNanosPerTick;
     }
 
-    private static ServerBossBar createBossBar(String summary, ServerWorld world) {
-        ServerBossBar bossBar = new ServerBossBar(Text.literal("LATDEV " + summary), BossBar.Color.BLUE, BossBar.Style.PROGRESS);
-        bossBar.setPercent(0.0F);
-        for (ServerPlayerEntity player : world.getPlayers()) {
+    private static ServerBossEvent createBossBar(String summary, ServerLevel world) {
+        ServerBossEvent bossBar = new ServerBossEvent(Component.literal("LATDEV " + summary), BossEvent.BossBarColor.BLUE, BossEvent.BossBarOverlay.PROGRESS);
+        bossBar.setProgress(0.0F);
+        for (ServerPlayer player : world.players()) {
             bossBar.addPlayer(player);
         }
         return bossBar;
@@ -405,8 +404,8 @@ public final class ChunkPregenerator {
         float percent = totalChunksPlanned <= 0
                 ? 1.0F
                 : Math.min(1.0F, chunksCompleted / (float) totalChunksPlanned);
-        job.bossBar.setPercent(percent);
-        job.bossBar.setName(Text.literal("LATDEV " + jobSummary + " " + chunksCompleted + "/" + totalChunksPlanned));
+        job.bossBar.setProgress(percent);
+        job.bossBar.setName(Component.literal("LATDEV " + jobSummary + " " + chunksCompleted + "/" + totalChunksPlanned));
         job.lastBossbarUpdateChunks = chunksCompleted;
     }
 
@@ -414,7 +413,7 @@ public final class ChunkPregenerator {
         if (job.bossBar == null) {
             return;
         }
-        job.bossBar.clearPlayers();
+        job.bossBar.removeAllPlayers();
         job.bossBar = null;
     }
 
@@ -424,24 +423,24 @@ public final class ChunkPregenerator {
 
     private static final class GenerationJob {
         private final MinecraftServer server;
-        private final ServerWorld world;
-        private final ServerCommandSource source;
+        private final ServerLevel world;
+        private final CommandSourceStack source;
         private final Queue<ChunkPos> queue;
         private final int chunksPerTick;
         private final long fixedMaxNanosPerTick;
         private final boolean autoBudget;
         private long lastWorkDurationNanos;
-        private ServerBossBar bossBar;
+        private ServerBossEvent bossBar;
         private int lastBossbarUpdateChunks;
 
         private GenerationJob(MinecraftServer server,
-                              ServerWorld world,
-                              ServerCommandSource source,
+                              ServerLevel world,
+                              CommandSourceStack source,
                               Queue<ChunkPos> queue,
                               int chunksPerTick,
                               long fixedMaxNanosPerTick,
                               boolean autoBudget,
-                              ServerBossBar bossBar) {
+                              ServerBossEvent bossBar) {
             this.server = server;
             this.world = world;
             this.source = source;

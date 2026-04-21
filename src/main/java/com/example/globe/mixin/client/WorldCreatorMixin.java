@@ -1,13 +1,5 @@
 package com.example.globe.mixin.client;
 
-import net.minecraft.client.gui.screen.world.WorldCreator;
-import net.minecraft.client.world.GeneratorOptionsHolder;
-import net.minecraft.registry.Registry;
-import net.minecraft.registry.RegistryKey;
-import net.minecraft.registry.RegistryKeys;
-import net.minecraft.registry.entry.RegistryEntry;
-import net.minecraft.util.Identifier;
-import net.minecraft.world.gen.WorldPreset;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
@@ -16,31 +8,39 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import java.util.List;
+import net.minecraft.client.gui.screens.worldselection.WorldCreationContext;
+import net.minecraft.client.gui.screens.worldselection.WorldCreationUiState;
+import net.minecraft.core.Holder;
+import net.minecraft.core.Registry;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.world.level.levelgen.presets.WorldPreset;
 
-@Mixin(WorldCreator.class)
+@Mixin(WorldCreationUiState.class)
 public abstract class WorldCreatorMixin {
-    private static final Identifier GLOBE_WORLD_PRESET_ID = Identifier.of("globe", "globe");
+    private static final Identifier GLOBE_WORLD_PRESET_ID = Identifier.fromNamespaceAndPath("globe", "globe");
 
     @Shadow
-    public abstract GeneratorOptionsHolder getGeneratorOptionsHolder();
-
-    @Shadow
-    @Final
-    private List<WorldCreator.WorldType> normalWorldTypes;
+    public abstract WorldCreationContext getGeneratorOptionsHolder();
 
     @Shadow
     @Final
-    private List<WorldCreator.WorldType> extendedWorldTypes;
+    private List<WorldCreationUiState.WorldTypeEntry> normalWorldTypes;
+
+    @Shadow
+    @Final
+    private List<WorldCreationUiState.WorldTypeEntry> extendedWorldTypes;
 
     @Inject(method = "updateWorldTypeLists", at = @At("TAIL"))
     private void globe$ensureGlobePresetIsListed(CallbackInfo ci) {
         Registry<WorldPreset> presets = this.getGeneratorOptionsHolder()
-                .getCombinedRegistryManager()
-                .getOrThrow(RegistryKeys.WORLD_PRESET);
+                .worldgenLoadContext()
+                .lookupOrThrow(Registries.WORLD_PRESET);
 
-        RegistryKey<WorldPreset> key = RegistryKey.of(RegistryKeys.WORLD_PRESET, GLOBE_WORLD_PRESET_ID);
-        presets.getOptional(key).ifPresent(entry -> {
-            WorldCreator.WorldType globeType = new WorldCreator.WorldType((RegistryEntry<WorldPreset>) entry);
+        ResourceKey<WorldPreset> key = ResourceKey.create(Registries.WORLD_PRESET, GLOBE_WORLD_PRESET_ID);
+        presets.get(key).ifPresent(entry -> {
+            WorldCreationUiState.WorldTypeEntry globeType = new WorldCreationUiState.WorldTypeEntry((Holder<WorldPreset>) entry);
 
             if (!this.normalWorldTypes.contains(globeType)) {
                 int idx = this.normalWorldTypes.isEmpty() ? 0 : 1;

@@ -1,20 +1,20 @@
 package com.example.globe.client;
 
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.render.RenderTickCounter;
+import net.minecraft.client.DeltaTracker;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiGraphics;
 
 public final class OverlayProof {
-    public static void render(DrawContext ctx, RenderTickCounter tickCounter) {
+    public static void render(GuiGraphics ctx, DeltaTracker tickCounter) {
         // Draw a fat bar so it's obvious even if text is hard to see.
-        MinecraftClient client = MinecraftClient.getInstance();
+        Minecraft client = Minecraft.getInstance();
         if (client == null || client.getWindow() == null) return;
 
-        int w = client.getWindow().getScaledWidth();
+        int w = client.getWindow().getGuiScaledWidth();
         // Use a high Z-index or ensure render order (mixin does this)
         ctx.fill(0, 0, w, 18, 0xAA000000);
-        ctx.drawTextWithShadow(
-                client.textRenderer,
+        ctx.drawString(
+                client.font,
                 "PROOF OVERLAY LIVE (Globe - Mixin)",
                 4, 4,
                 0xFFFFFFFF

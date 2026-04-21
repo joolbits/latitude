@@ -1,35 +1,34 @@
 package com.example.globe.dev;
 
 import com.example.globe.GlobeMod;
-import net.minecraft.block.Block;
-import net.minecraft.block.BlockState;
-import net.minecraft.block.entity.BlockEntity;
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.network.packet.s2c.play.ChunkBiomeDataS2CPacket;
-import net.minecraft.registry.RegistryWrapper;
-import net.minecraft.registry.entry.RegistryEntry;
-import net.minecraft.server.command.ServerCommandSource;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.server.world.OptionalChunk;
-import net.minecraft.server.world.ServerLightingProvider;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.text.Text;
+import net.minecraft.commands.CommandSourceStack;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Holder;
+import net.minecraft.core.HolderLookup;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.protocol.game.ClientboundChunksBiomesPacket;
+import net.minecraft.server.level.ChunkResult;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.server.level.ThreadedLevelLightEngine;
 import net.minecraft.util.Util;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.ChunkPos;
-import net.minecraft.world.SaveProperties;
-import net.minecraft.world.biome.Biome;
-import net.minecraft.world.chunk.Chunk;
-import net.minecraft.world.chunk.ChunkSection;
-import net.minecraft.world.chunk.ChunkStatus;
-import net.minecraft.world.chunk.PalettedContainer;
-import net.minecraft.world.chunk.WorldChunk;
-import net.minecraft.world.dimension.DimensionOptions;
-import net.minecraft.world.gen.GeneratorOptions;
-import net.minecraft.world.level.LevelProperties;
-import net.minecraft.world.level.ServerWorldProperties;
-import net.minecraft.world.level.storage.LevelStorage;
-
+import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.biome.Biome;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.chunk.ChunkAccess;
+import net.minecraft.world.level.chunk.LevelChunk;
+import net.minecraft.world.level.chunk.LevelChunkSection;
+import net.minecraft.world.level.chunk.PalettedContainer;
+import net.minecraft.world.level.chunk.status.ChunkStatus;
+import net.minecraft.world.level.dimension.LevelStem;
+import net.minecraft.world.level.levelgen.WorldOptions;
+import net.minecraft.world.level.storage.LevelStorageSource;
+import net.minecraft.world.level.storage.PrimaryLevelData;
+import net.minecraft.world.level.storage.ServerLevelData;
+import net.minecraft.world.level.storage.WorldData;
 import java.io.IOException;
 import java.lang.reflect.Field;
 import java.nio.file.Files;
@@ -43,27 +42,27 @@ import java.util.OptionalLong;
 import java.util.concurrent.CompletableFuture;
 
 public final class ChunkRegenerator {
-    private static final int SET_BLOCK_FLAGS = Block.NOTIFY_LISTENERS | Block.FORCE_STATE | Block.SKIP_DROPS;
+    private static final int SET_BLOCK_FLAGS = Block.UPDATE_CLIENTS | Block.UPDATE_KNOWN_SHAPE | Block.UPDATE_SUPPRESS_DROPS;
 
     private ChunkRegenerator() {
     }
 
     public static int regenSquare(
-            ServerWorld realWorld,
+            ServerLevel realWorld,
             int centerChunkX,
             int centerChunkZ,
             int radiusChunks,
             boolean copyBiomes,
             OptionalLong seedOverride,
-            ServerCommandSource source
+            CommandSourceStack source
     ) {
         int clampedRadius = Math.max(0, Math.min(8, radiusChunks));
         List<ChunkPos> targets = computeChunkSquare(centerChunkX, centerChunkZ, clampedRadius);
         long seed = seedOverride.orElse(realWorld.getSeed());
         long startNanos = System.nanoTime();
 
-        source.sendFeedback(
-                () -> Text.literal("[latdev] regenChunk start center=(" + centerChunkX + "," + centerChunkZ + ")"
+        source.sendSuccess(
+                () -> Component.literal("[latdev] regenChunk start center=(" + centerChunkX + "," + centerChunkZ + ")"
                         + " radius=" + clampedRadius
                         + " chunks=" + targets.size()
                         + " biomes=" + copyBiomes
@@ -72,43 +71,43 @@ public final class ChunkRegenerator {
         );
 
         Path tempDir = null;
-        GeneratorOptions previousGeneratorOptions = null;
+        WorldOptions previousGeneratorOptions = null;
         try {
             tempDir = Files.createTempDirectory("latdev-regen");
-            LevelStorage levelStorage = LevelStorage.create(tempDir);
-            try (LevelStorage.Session session = levelStorage.createSession("LatDevTempGen")) {
-                SaveProperties saveProperties = realWorld.getServer().getSaveProperties();
+            LevelStorageSource levelStorage = LevelStorageSource.createDefault(tempDir);
+            try (LevelStorageSource.LevelStorageAccess session = levelStorage.validateAndCreateAccess("LatDevTempGen")) {
+                WorldData saveProperties = realWorld.getServer().getWorldData();
                 if (seedOverride.isPresent()) {
-                    previousGeneratorOptions = saveProperties.getGeneratorOptions();
-                    GeneratorOptions patched = previousGeneratorOptions.withSeed(OptionalLong.of(seed));
+                    previousGeneratorOptions = saveProperties.worldGenOptions();
+                    WorldOptions patched = previousGeneratorOptions.withSeed(OptionalLong.of(seed));
                     setGeneratorOptions(saveProperties, patched);
                 }
 
-                DimensionOptions dimensionOptions = new DimensionOptions(
-                        realWorld.getDimensionEntry(),
-                        realWorld.getChunkManager().getChunkGenerator()
+                LevelStem dimensionOptions = new LevelStem(
+                        realWorld.dimensionTypeRegistration(),
+                        realWorld.getChunkSource().getGenerator()
                 );
-                ServerWorldProperties worldProperties = asServerWorldProperties(realWorld);
+                ServerLevelData worldProperties = asServerWorldProperties(realWorld);
 
-                try (ServerWorld tempWorld = new ServerWorld(
+                try (ServerLevel tempWorld = new ServerLevel(
                         realWorld.getServer(),
-                        Util.getMainWorkerExecutor(),
+                        Util.backgroundExecutor(),
                         session,
                         worldProperties,
-                        realWorld.getRegistryKey(),
+                        realWorld.dimension(),
                         dimensionOptions,
-                        realWorld.isDebugWorld(),
+                        realWorld.isDebug(),
                         seed,
                         List.of(),
                         false,
                         realWorld.getRandomSequences()
                 )) {
-                    Map<Long, Chunk> generated = generateToFeatures(tempWorld, targets);
+                    Map<Long, ChunkAccess> generated = generateToFeatures(tempWorld, targets);
                     RegenStats stats = copyIntoLiveWorld(realWorld, targets, generated, copyBiomes);
 
                     long elapsedMs = (System.nanoTime() - startNanos) / 1_000_000L;
-                    source.sendFeedback(
-                            () -> Text.literal("[latdev] regenChunk done chunks=" + targets.size()
+                    source.sendSuccess(
+                            () -> Component.literal("[latdev] regenChunk done chunks=" + targets.size()
                                     + " blocksChanged=" + stats.blocksChanged
                                     + " blockEntities=" + stats.blockEntitiesApplied
                                     + " blockEntitiesCleared=" + stats.blockEntitiesCleared
@@ -120,13 +119,13 @@ public final class ChunkRegenerator {
             }
             return 1;
         } catch (Exception e) {
-            source.sendError(Text.literal("[latdev] regenChunk failed: " + e.getMessage()));
+            source.sendFailure(Component.literal("[latdev] regenChunk failed: " + e.getMessage()));
             GlobeMod.LOGGER.error("latdev regenChunk failed", e);
             return 0;
         } finally {
             if (previousGeneratorOptions != null) {
                 try {
-                    setGeneratorOptions(realWorld.getServer().getSaveProperties(), previousGeneratorOptions);
+                    setGeneratorOptions(realWorld.getServer().getWorldData(), previousGeneratorOptions);
                 } catch (Exception restoreError) {
                     GlobeMod.LOGGER.warn("Failed to restore generator options after regen", restoreError);
                 }
@@ -137,10 +136,10 @@ public final class ChunkRegenerator {
         }
     }
 
-    private static Map<Long, Chunk> generateToFeatures(ServerWorld tempWorld, List<ChunkPos> targets) {
-        List<CompletableFuture<OptionalChunk<Chunk>>> futures = new ArrayList<>(targets.size());
+    private static Map<Long, ChunkAccess> generateToFeatures(ServerLevel tempWorld, List<ChunkPos> targets) {
+        List<CompletableFuture<ChunkResult<ChunkAccess>>> futures = new ArrayList<>(targets.size());
         for (ChunkPos chunkPos : targets) {
-            futures.add(tempWorld.getChunkManager().getChunkFutureSyncOnMainThread(
+            futures.add(tempWorld.getChunkSource().getChunkFuture(
                     chunkPos.x,
                     chunkPos.z,
                     ChunkStatus.FEATURES,
@@ -151,11 +150,11 @@ public final class ChunkRegenerator {
         CompletableFuture<?>[] allFutures = futures.toArray(CompletableFuture[]::new);
         CompletableFuture.allOf(allFutures).join();
 
-        Map<Long, Chunk> generated = new HashMap<>(targets.size());
+        Map<Long, ChunkAccess> generated = new HashMap<>(targets.size());
         for (int i = 0; i < targets.size(); i++) {
             ChunkPos chunkPos = targets.get(i);
-            OptionalChunk<Chunk> maybeChunk = futures.get(i).join();
-            if (!maybeChunk.isPresent()) {
+            ChunkResult<ChunkAccess> maybeChunk = futures.get(i).join();
+            if (!maybeChunk.isSuccess()) {
                 throw new IllegalStateException("Failed to generate chunk " + chunkPos.x + "," + chunkPos.z
                         + " (" + maybeChunk.getError() + ")");
             }
@@ -166,32 +165,32 @@ public final class ChunkRegenerator {
     }
 
     private static RegenStats copyIntoLiveWorld(
-            ServerWorld realWorld,
+            ServerLevel realWorld,
             List<ChunkPos> targets,
-            Map<Long, Chunk> generated,
+            Map<Long, ChunkAccess> generated,
             boolean copyBiomes
     ) {
         RegenStats stats = new RegenStats();
-        RegistryWrapper.WrapperLookup registries = realWorld.getRegistryManager();
-        BlockPos.Mutable cursor = new BlockPos.Mutable();
-        List<WorldChunk> biomeRefreshChunks = copyBiomes ? new ArrayList<>(targets.size()) : List.of();
-        ServerLightingProvider lightingProvider = realWorld.getChunkManager().getLightingProvider();
+        HolderLookup.Provider registries = realWorld.registryAccess();
+        BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
+        List<LevelChunk> biomeRefreshChunks = copyBiomes ? new ArrayList<>(targets.size()) : List.of();
+        ThreadedLevelLightEngine lightingProvider = realWorld.getChunkSource().getLightEngine();
 
-        int minY = realWorld.getBottomY();
+        int minY = realWorld.getMinY();
         int maxY = minY + realWorld.getHeight();
 
         for (ChunkPos chunkPos : targets) {
-            Chunk sourceChunk = generated.get(chunkPos.toLong());
+            ChunkAccess sourceChunk = generated.get(chunkPos.toLong());
             if (sourceChunk == null) {
                 throw new IllegalStateException("Missing generated chunk " + chunkPos.x + "," + chunkPos.z);
             }
-            WorldChunk targetChunk = realWorld.getChunkManager().getWorldChunk(chunkPos.x, chunkPos.z);
+            LevelChunk targetChunk = realWorld.getChunkSource().getChunkNow(chunkPos.x, chunkPos.z);
             if (targetChunk == null) {
                 throw new IllegalStateException("Target chunk not loaded " + chunkPos.x + "," + chunkPos.z);
             }
 
-            int startX = chunkPos.getStartX();
-            int startZ = chunkPos.getStartZ();
+            int startX = chunkPos.getMinBlockX();
+            int startZ = chunkPos.getMinBlockZ();
 
             for (int localX = 0; localX < 16; localX++) {
                 int worldX = startX + localX;
@@ -201,25 +200,25 @@ public final class ChunkRegenerator {
                         cursor.set(worldX, y, worldZ);
                         BlockState sourceState = sourceChunk.getBlockState(cursor);
                         BlockState targetState = realWorld.getBlockState(cursor);
-                        NbtCompound sourceBlockEntityNbt = sourceChunk.getPackedBlockEntityNbt(cursor, registries);
+                        CompoundTag sourceBlockEntityNbt = sourceChunk.getBlockEntityNbtForSaving(cursor, registries);
 
                         boolean stateChanged = !targetState.equals(sourceState);
                         if (stateChanged) {
-                            realWorld.setBlockState(cursor, sourceState, SET_BLOCK_FLAGS, 0);
+                            realWorld.setBlock(cursor, sourceState, SET_BLOCK_FLAGS, 0);
                             stats.blocksChanged++;
                         }
 
                         if (sourceBlockEntityNbt != null) {
                             realWorld.removeBlockEntity(cursor);
-                            BlockEntity recreated = BlockEntity.createFromNbt(
+                            BlockEntity recreated = BlockEntity.loadStatic(
                                     cursor,
                                     sourceState,
                                     sourceBlockEntityNbt.copy(),
                                     registries
                             );
                             if (recreated != null) {
-                                realWorld.addBlockEntity(recreated);
-                                recreated.markDirty();
+                                realWorld.setBlockEntity(recreated);
+                                recreated.setChanged();
                                 stats.blockEntitiesApplied++;
                             }
                         } else if (!stateChanged && realWorld.getBlockEntity(cursor) != null) {
@@ -235,19 +234,19 @@ public final class ChunkRegenerator {
                 biomeRefreshChunks.add(targetChunk);
             }
 
-            targetChunk.markNeedsSaving();
-            lightingProvider.propagateLight(chunkPos);
+            targetChunk.markUnsaved();
+            lightingProvider.propagateLightSources(chunkPos);
         }
 
         if (copyBiomes && !biomeRefreshChunks.isEmpty()) {
-            ChunkBiomeDataS2CPacket biomePacket = ChunkBiomeDataS2CPacket.create(biomeRefreshChunks);
-            for (ServerPlayerEntity player : realWorld.getPlayers()) {
-                player.networkHandler.sendPacket(biomePacket);
+            ClientboundChunksBiomesPacket biomePacket = ClientboundChunksBiomesPacket.forChunks(biomeRefreshChunks);
+            for (ServerPlayer player : realWorld.players()) {
+                player.connection.send(biomePacket);
             }
         }
 
         for (int i = 0; i < 4096; i++) {
-            if (lightingProvider.doLightUpdates() <= 0) {
+            if (lightingProvider.runLightUpdates() <= 0) {
                 break;
             }
         }
@@ -256,19 +255,19 @@ public final class ChunkRegenerator {
     }
 
     @SuppressWarnings("unchecked")
-    private static void copyChunkBiomes(Chunk sourceChunk, WorldChunk targetChunk) {
-        ChunkSection[] sourceSections = sourceChunk.getSectionArray();
-        ChunkSection[] targetSections = targetChunk.getSectionArray();
+    private static void copyChunkBiomes(ChunkAccess sourceChunk, LevelChunk targetChunk) {
+        LevelChunkSection[] sourceSections = sourceChunk.getSections();
+        LevelChunkSection[] targetSections = targetChunk.getSections();
         int sectionCount = Math.min(sourceSections.length, targetSections.length);
 
         for (int sectionIndex = 0; sectionIndex < sectionCount; sectionIndex++) {
-            ChunkSection sourceSection = sourceSections[sectionIndex];
-            ChunkSection targetSection = targetSections[sectionIndex];
+            LevelChunkSection sourceSection = sourceSections[sectionIndex];
+            LevelChunkSection targetSection = targetSections[sectionIndex];
 
-            PalettedContainer<RegistryEntry<Biome>> sourceBiomes =
-                    (PalettedContainer<RegistryEntry<Biome>>) sourceSection.getBiomeContainer().copy();
-            PalettedContainer<RegistryEntry<Biome>> targetBiomes =
-                    (PalettedContainer<RegistryEntry<Biome>>) targetSection.getBiomeContainer();
+            PalettedContainer<Holder<Biome>> sourceBiomes =
+                    (PalettedContainer<Holder<Biome>>) sourceSection.getBiomes().copy();
+            PalettedContainer<Holder<Biome>> targetBiomes =
+                    (PalettedContainer<Holder<Biome>>) targetSection.getBiomes();
 
             for (int biomeX = 0; biomeX < 4; biomeX++) {
                 for (int biomeY = 0; biomeY < 4; biomeY++) {
@@ -291,19 +290,19 @@ public final class ChunkRegenerator {
         return chunks;
     }
 
-    private static ServerWorldProperties asServerWorldProperties(ServerWorld world) {
-        if (world.getLevelProperties() instanceof ServerWorldProperties properties) {
+    private static ServerLevelData asServerWorldProperties(ServerLevel world) {
+        if (world.getLevelData() instanceof ServerLevelData properties) {
             return properties;
         }
         throw new IllegalStateException("World properties do not implement ServerWorldProperties");
     }
 
-    private static void setGeneratorOptions(SaveProperties saveProperties, GeneratorOptions generatorOptions) throws Exception {
-        if (!(saveProperties instanceof LevelProperties levelProperties)) {
+    private static void setGeneratorOptions(WorldData saveProperties, WorldOptions generatorOptions) throws Exception {
+        if (!(saveProperties instanceof PrimaryLevelData levelProperties)) {
             throw new IllegalStateException("Unsupported save properties type: " + saveProperties.getClass().getName());
         }
 
-        Field generatorOptionsField = LevelProperties.class.getDeclaredField("generatorOptions");
+        Field generatorOptionsField = PrimaryLevelData.class.getDeclaredField("generatorOptions");
         generatorOptionsField.setAccessible(true);
         generatorOptionsField.set(levelProperties, generatorOptions);
     }

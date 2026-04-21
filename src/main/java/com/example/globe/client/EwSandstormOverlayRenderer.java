@@ -1,13 +1,13 @@
 package com.example.globe.client;
 
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.render.RenderLayer;
-import net.minecraft.client.render.RenderLayers;
-import net.minecraft.client.render.VertexConsumer;
-import net.minecraft.client.render.VertexConsumerProvider;
-import net.minecraft.client.render.VertexConsumerProvider.Immediate;
-import net.minecraft.client.util.math.MatrixStack;
-import net.minecraft.util.math.MathHelper;
+import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.blaze3d.vertex.VertexConsumer;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.MultiBufferSource;
+import net.minecraft.client.renderer.MultiBufferSource.BufferSource;
+import net.minecraft.client.renderer.rendertype.RenderType;
+import net.minecraft.client.renderer.rendertype.RenderTypes;
+import net.minecraft.util.Mth;
 import org.joml.Matrix4f;
 
 public final class EwSandstormOverlayRenderer {
@@ -15,9 +15,9 @@ public final class EwSandstormOverlayRenderer {
     private EwSandstormOverlayRenderer() {
     }
 
-    public static void render(MatrixStack matrices, VertexConsumerProvider consumers) {
-        MinecraftClient mc = MinecraftClient.getInstance();
-        if (mc == null || mc.player == null || mc.world == null) return;
+    public static void render(PoseStack matrices, MultiBufferSource consumers) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc == null || mc.player == null || mc.level == null) return;
 
         double dist = GlobeClientState.ewDistToBorder(mc.player.getX());
 
@@ -25,7 +25,7 @@ public final class EwSandstormOverlayRenderer {
         if (dist < 500.0) {
             double clamped = Math.max(dist, 100.0);
             t = (float) ((500.0 - clamped) / (500.0 - 100.0));
-            t = MathHelper.clamp(t, 0.0f, 1.0f);
+            t = Mth.clamp(t, 0.0f, 1.0f);
         }
         if (t <= 0.0f) return;
 
@@ -36,20 +36,20 @@ public final class EwSandstormOverlayRenderer {
         float b = 0.48f;
         float a = 0.40f * tt;
 
-        matrices.push();
-        Matrix4f m = matrices.peek().getPositionMatrix();
+        matrices.pushPose();
+        Matrix4f m = matrices.last().pose();
 
-        RenderLayer layer = RenderLayers.debugQuads();
+        RenderType layer = RenderTypes.debugQuads();
         VertexConsumer vc = consumers.getBuffer(layer);
 
-        vc.vertex(m, -1f, -1f, 0f).color(r, g, b, a).texture(0f, 1f).light(0xF000F0);
-        vc.vertex(m, 1f, -1f, 0f).color(r, g, b, a).texture(1f, 1f).light(0xF000F0);
-        vc.vertex(m, 1f, 1f, 0f).color(r, g, b, a).texture(1f, 0f).light(0xF000F0);
-        vc.vertex(m, -1f, 1f, 0f).color(r, g, b, a).texture(0f, 0f).light(0xF000F0);
+        vc.addVertex(m, -1f, -1f, 0f).setColor(r, g, b, a).setUv(0f, 1f).setLight(0xF000F0);
+        vc.addVertex(m, 1f, -1f, 0f).setColor(r, g, b, a).setUv(1f, 1f).setLight(0xF000F0);
+        vc.addVertex(m, 1f, 1f, 0f).setColor(r, g, b, a).setUv(1f, 0f).setLight(0xF000F0);
+        vc.addVertex(m, -1f, 1f, 0f).setColor(r, g, b, a).setUv(0f, 0f).setLight(0xF000F0);
 
-        if (consumers instanceof Immediate imm) {
-            imm.draw();
+        if (consumers instanceof BufferSource imm) {
+            imm.endBatch();
         }
-        matrices.pop();
+        matrices.popPose();
     }
 }

@@ -1,23 +1,23 @@
 package com.example.globe.mixin.client;
 
 import com.example.globe.client.create.LatitudeCreateWorldScreen;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.screen.world.CreateWorldScreen;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import java.lang.reflect.Field;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.gui.screens.worldselection.CreateWorldScreen;
 
 @Mixin(CreateWorldScreen.class)
 public abstract class CreateWorldScreenInitRedirectMixin {
 
     @Inject(method = "init", at = @At("HEAD"), cancellable = true)
     private void globe$redirectRecreateSafely(CallbackInfo ci) {
-        MinecraftClient client = MinecraftClient.getInstance();
-        if (client == null || client.currentScreen != (Object) this) {
+        Minecraft client = Minecraft.getInstance();
+        if (client == null || client.screen != (Object) this) {
             return;
         }
 
@@ -28,7 +28,7 @@ public abstract class CreateWorldScreenInitRedirectMixin {
                 client,
                 onClose,
                 parent,
-                ((CreateWorldScreenMixin) (Object) this).getWorldCreator().getGeneratorOptionsHolder());
+                ((CreateWorldScreenMixin) (Object) this).getWorldCreator().getSettings());
         ci.cancel();
     }
 

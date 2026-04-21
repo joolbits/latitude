@@ -1,12 +1,12 @@
 package com.example.globe.mixin.client;
 
 import com.example.globe.client.LatitudeClientState;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.font.TextRenderer;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.screen.world.LevelLoadingScreen;
-import net.minecraft.text.Text;
-import net.minecraft.util.math.MathHelper;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.Font;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.screens.LevelLoadingScreen;
+import net.minecraft.network.chat.Component;
+import net.minecraft.util.Mth;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
@@ -19,38 +19,38 @@ public abstract class DownloadingTerrainScreenFirstLoadMessageMixin {
     @Shadow
     private float loadProgress;
 
-    private static final Text FIRST_LOAD_HELPER = Text.literal("Press F9 in-game for HUD options");
+    private static final Component FIRST_LOAD_HELPER = Component.literal("Press F9 in-game for HUD options");
 
     @Inject(method = "render", at = @At("TAIL"))
-    private void globe$renderFirstLoadMessage(DrawContext context, int mouseX, int mouseY, float delta, CallbackInfo ci) {
+    private void globe$renderFirstLoadMessage(GuiGraphics context, int mouseX, int mouseY, float delta, CallbackInfo ci) {
         if (!LatitudeClientState.isLatitudeWorldLoading()) {
             return;
         }
 
-        MinecraftClient client = MinecraftClient.getInstance();
-        if (client == null || client.textRenderer == null) {
+        Minecraft client = Minecraft.getInstance();
+        if (client == null || client.font == null) {
             return;
         }
 
-        float p = MathHelper.clamp(this.loadProgress, 0.0f, 1.0f);
+        float p = Mth.clamp(this.loadProgress, 0.0f, 1.0f);
         float ease = 1.0f - (1.0f - p) * (1.0f - p) * (1.0f - p);
         int alpha = Math.round(ease * 255.0f);
         int yOffset = Math.round((1.0f - ease) * 10.0f);
 
-        TextRenderer tr = client.textRenderer;
-        int cx = context.getScaledWindowWidth() / 2;
-        int cy = context.getScaledWindowHeight() / 2;
+        Font tr = client.font;
+        int cx = context.guiWidth() / 2;
+        int cy = context.guiHeight() / 2;
         int baseY = cy + 40 + yOffset;
 
         int shadowA = Math.round(alpha * 0.6f);
         int shadowColor = (shadowA << 24);
         int helperColor = (alpha << 24) | 0x00D0D0D0;
 
-        int w = tr.getWidth(FIRST_LOAD_HELPER);
+        int w = tr.width(FIRST_LOAD_HELPER);
         int x = cx - (w / 2);
 
-        context.drawText(tr, FIRST_LOAD_HELPER, x + 1, baseY + 1, shadowColor, false);
-        context.drawText(tr, FIRST_LOAD_HELPER, x, baseY, helperColor, false);
+        context.drawString(tr, FIRST_LOAD_HELPER, x + 1, baseY + 1, shadowColor, false);
+        context.drawString(tr, FIRST_LOAD_HELPER, x, baseY, helperColor, false);
     }
 
     @Inject(method = "close", at = @At("HEAD"))

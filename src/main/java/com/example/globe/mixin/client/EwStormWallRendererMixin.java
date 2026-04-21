@@ -3,37 +3,37 @@ package com.example.globe.mixin.client;
 import com.example.globe.client.EwStormWallRenderer;
 import com.example.globe.client.GlobeClientState;
 import com.mojang.blaze3d.opengl.GlStateManager;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.render.RenderLayers;
-import net.minecraft.client.render.WorldRenderer;
-import net.minecraft.client.render.command.OrderedRenderCommandQueue;
-import net.minecraft.client.render.state.WorldRenderState;
-import net.minecraft.client.util.math.MatrixStack;
-import net.minecraft.util.math.Vec3d;
+import com.mojang.blaze3d.vertex.PoseStack;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.LevelRenderer;
+import net.minecraft.client.renderer.SubmitNodeCollector;
+import net.minecraft.client.renderer.rendertype.RenderTypes;
+import net.minecraft.client.renderer.state.LevelRenderState;
+import net.minecraft.world.phys.Vec3;
 import org.lwjgl.opengl.GL11;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-@Mixin(WorldRenderer.class)
+@Mixin(LevelRenderer.class)
 public abstract class EwStormWallRendererMixin {
 
     private static boolean latitude$logged = false;
     private static long latitude$lastLogTick = Long.MIN_VALUE;
 
     @Inject(method = "pushEntityRenders", at = @At("HEAD"))
-    private void latitude$injectRenderWall(MatrixStack matrices, WorldRenderState renderStates, OrderedRenderCommandQueue queue, CallbackInfo ci) {
+    private void latitude$injectRenderWall(PoseStack matrices, LevelRenderState renderStates, SubmitNodeCollector queue, CallbackInfo ci) {
         if (queue == null || matrices == null) {
             return;
         }
 
-        MinecraftClient client = MinecraftClient.getInstance();
+        Minecraft client = Minecraft.getInstance();
         if (client == null || client.gameRenderer == null) {
             return;
         }
 
-        Vec3d camPos = client.gameRenderer.getCamera().getCameraPos();
+        Vec3 camPos = client.gameRenderer.getMainCamera().position();
         double westX = GlobeClientState.ewWestX();
         double eastX = GlobeClientState.ewEastX();
         double dist = GlobeClientState.ewDistToBorder(camPos.x);
@@ -42,8 +42,8 @@ public abstract class EwStormWallRendererMixin {
             return;
         }
 
-        queue.submitCustom(matrices, RenderLayers.debugQuads(), (entry, vc) -> {
-            var world = client.world;
+        queue.submitCustomGeometry(matrices, RenderTypes.debugQuads(), (entry, vc) -> {
+            var world = client.level;
             GlStateManager._enableBlend();
             GlStateManager._blendFuncSeparate(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA, GL11.GL_ONE, GL11.GL_ONE_MINUS_SRC_ALPHA);
             GlStateManager._enableDepthTest();

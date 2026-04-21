@@ -1,10 +1,9 @@
 package com.example.globe.util;
 
-import net.minecraft.util.math.MathHelper;
-
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import net.minecraft.util.Mth;
 
 public final class LatitudeBands {
     private static final List<String> CANONICAL_IDS = List.of(
@@ -56,7 +55,7 @@ public final class LatitudeBands {
     }
 
     public static Band fromAbsoluteLatitudeDeg(double absLatDeg) {
-        double clamped = MathHelper.clamp(absLatDeg, 0.0, 90.0);
+        double clamped = Mth.clamp(absLatDeg, 0.0, 90.0);
         if (clamped < Band.SUBTROPICAL.lowDeg()) return Band.TROPICAL;
         if (clamped < Band.TEMPERATE.lowDeg()) return Band.SUBTROPICAL;
         if (clamped < Band.SUBPOLAR.lowDeg()) return Band.TEMPERATE;

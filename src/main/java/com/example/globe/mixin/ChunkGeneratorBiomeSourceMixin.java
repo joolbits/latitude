@@ -2,14 +2,14 @@ package com.example.globe.mixin;
 
 import com.example.globe.GlobeMod;
 import com.example.globe.world.LatitudeBiomeSource;
-import net.minecraft.registry.RegistryKey;
-import net.minecraft.registry.RegistryKeys;
-import net.minecraft.util.Identifier;
-import net.minecraft.world.gen.chunk.ChunkGenerator;
-import net.minecraft.world.gen.chunk.NoiseChunkGenerator;
-import net.minecraft.world.gen.chunk.ChunkGeneratorSettings;
-import net.minecraft.world.biome.Biome;
-import net.minecraft.world.biome.source.BiomeSource;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.world.level.biome.Biome;
+import net.minecraft.world.level.biome.BiomeSource;
+import net.minecraft.world.level.chunk.ChunkGenerator;
+import net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator;
+import net.minecraft.world.level.levelgen.NoiseGeneratorSettings;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Mutable;
@@ -33,25 +33,25 @@ public abstract class ChunkGeneratorBiomeSourceMixin {
     private static final String GLOBE_SETTINGS_CHECKED =
             "globe:overworld|globe:overworld_xsmall|globe:overworld_small|globe:overworld_regular|globe:overworld_large|globe:overworld_massive";
 
-    private static final Identifier GLOBE_SETTINGS_ID = Identifier.of("globe", "overworld");
-    private static final Identifier GLOBE_SETTINGS_XSMALL_ID = Identifier.of("globe", "overworld_xsmall");
-    private static final Identifier GLOBE_SETTINGS_SMALL_ID = Identifier.of("globe", "overworld_small");
-    private static final Identifier GLOBE_SETTINGS_REGULAR_ID = Identifier.of("globe", "overworld_regular");
-    private static final Identifier GLOBE_SETTINGS_LARGE_ID = Identifier.of("globe", "overworld_large");
-    private static final Identifier GLOBE_SETTINGS_MASSIVE_ID = Identifier.of("globe", "overworld_massive");
+    private static final Identifier GLOBE_SETTINGS_ID = Identifier.fromNamespaceAndPath("globe", "overworld");
+    private static final Identifier GLOBE_SETTINGS_XSMALL_ID = Identifier.fromNamespaceAndPath("globe", "overworld_xsmall");
+    private static final Identifier GLOBE_SETTINGS_SMALL_ID = Identifier.fromNamespaceAndPath("globe", "overworld_small");
+    private static final Identifier GLOBE_SETTINGS_REGULAR_ID = Identifier.fromNamespaceAndPath("globe", "overworld_regular");
+    private static final Identifier GLOBE_SETTINGS_LARGE_ID = Identifier.fromNamespaceAndPath("globe", "overworld_large");
+    private static final Identifier GLOBE_SETTINGS_MASSIVE_ID = Identifier.fromNamespaceAndPath("globe", "overworld_massive");
 
-    private static final RegistryKey<ChunkGeneratorSettings> GLOBE_SETTINGS_KEY =
-            RegistryKey.of(RegistryKeys.CHUNK_GENERATOR_SETTINGS, GLOBE_SETTINGS_ID);
-    private static final RegistryKey<ChunkGeneratorSettings> GLOBE_SETTINGS_XSMALL_KEY =
-            RegistryKey.of(RegistryKeys.CHUNK_GENERATOR_SETTINGS, GLOBE_SETTINGS_XSMALL_ID);
-    private static final RegistryKey<ChunkGeneratorSettings> GLOBE_SETTINGS_SMALL_KEY =
-            RegistryKey.of(RegistryKeys.CHUNK_GENERATOR_SETTINGS, GLOBE_SETTINGS_SMALL_ID);
-    private static final RegistryKey<ChunkGeneratorSettings> GLOBE_SETTINGS_REGULAR_KEY =
-            RegistryKey.of(RegistryKeys.CHUNK_GENERATOR_SETTINGS, GLOBE_SETTINGS_REGULAR_ID);
-    private static final RegistryKey<ChunkGeneratorSettings> GLOBE_SETTINGS_LARGE_KEY =
-            RegistryKey.of(RegistryKeys.CHUNK_GENERATOR_SETTINGS, GLOBE_SETTINGS_LARGE_ID);
-    private static final RegistryKey<ChunkGeneratorSettings> GLOBE_SETTINGS_MASSIVE_KEY =
-            RegistryKey.of(RegistryKeys.CHUNK_GENERATOR_SETTINGS, GLOBE_SETTINGS_MASSIVE_ID);
+    private static final ResourceKey<NoiseGeneratorSettings> GLOBE_SETTINGS_KEY =
+            ResourceKey.create(Registries.NOISE_SETTINGS, GLOBE_SETTINGS_ID);
+    private static final ResourceKey<NoiseGeneratorSettings> GLOBE_SETTINGS_XSMALL_KEY =
+            ResourceKey.create(Registries.NOISE_SETTINGS, GLOBE_SETTINGS_XSMALL_ID);
+    private static final ResourceKey<NoiseGeneratorSettings> GLOBE_SETTINGS_SMALL_KEY =
+            ResourceKey.create(Registries.NOISE_SETTINGS, GLOBE_SETTINGS_SMALL_ID);
+    private static final ResourceKey<NoiseGeneratorSettings> GLOBE_SETTINGS_REGULAR_KEY =
+            ResourceKey.create(Registries.NOISE_SETTINGS, GLOBE_SETTINGS_REGULAR_ID);
+    private static final ResourceKey<NoiseGeneratorSettings> GLOBE_SETTINGS_LARGE_KEY =
+            ResourceKey.create(Registries.NOISE_SETTINGS, GLOBE_SETTINGS_LARGE_ID);
+    private static final ResourceKey<NoiseGeneratorSettings> GLOBE_SETTINGS_MASSIVE_KEY =
+            ResourceKey.create(Registries.NOISE_SETTINGS, GLOBE_SETTINGS_MASSIVE_ID);
     @Shadow
     @Final
     @Mutable
@@ -83,7 +83,7 @@ public abstract class ChunkGeneratorBiomeSourceMixin {
         if (this.biomeSource instanceof LatitudeBiomeSource || this.globe$wrappedBiomeSource instanceof LatitudeBiomeSource) {
             return;
         }
-        if (!((Object) this instanceof NoiseChunkGenerator)) {
+        if (!((Object) this instanceof NoiseBasedChunkGenerator)) {
             if (DEBUG_WORLDGEN_PATH && DEBUG_WRAP_GATE_REJECT_LOGGED.compareAndSet(false, true)) {
                 GlobeMod.LOGGER.info("[Latitude] biomeSource wrap gate reject: generator is not NoiseChunkGenerator action=not wrapping biome source");
             }
@@ -96,7 +96,7 @@ public abstract class ChunkGeneratorBiomeSourceMixin {
             }
             return;
         }
-        java.util.Collection<net.minecraft.registry.entry.RegistryEntry<Biome>> biomes = this.biomeSource.getBiomes();
+        java.util.Collection<net.minecraft.core.Holder<Biome>> biomes = this.biomeSource.possibleBiomes();
         int borderRadiusBlocks = globe$borderRadiusBlocks();
         // Ensure structure placement and surface rules see the same Latitude biome override as terrain.
         this.globe$wrappedBiomeSource = new LatitudeBiomeSource(this.biomeSource, biomes, borderRadiusBlocks);
@@ -107,7 +107,7 @@ public abstract class ChunkGeneratorBiomeSourceMixin {
     }
 
     private boolean globe$isAnyGlobeSettings() {
-        if (!((Object) this instanceof NoiseChunkGenerator noise)) {
+        if (!((Object) this instanceof NoiseBasedChunkGenerator noise)) {
             return false;
         }
         // ChunkGenerator/NoiseChunkGenerator settings are not initialized yet in some constructor paths.
@@ -118,12 +118,12 @@ public abstract class ChunkGeneratorBiomeSourceMixin {
         if (accessor.globe$getSettings() == null) {
             return false;
         }
-        return noise.matchesSettings(GLOBE_SETTINGS_KEY)
-                || noise.matchesSettings(GLOBE_SETTINGS_XSMALL_KEY)
-                || noise.matchesSettings(GLOBE_SETTINGS_SMALL_KEY)
-                || noise.matchesSettings(GLOBE_SETTINGS_REGULAR_KEY)
-                || noise.matchesSettings(GLOBE_SETTINGS_LARGE_KEY)
-                || noise.matchesSettings(GLOBE_SETTINGS_MASSIVE_KEY);
+        return noise.stable(GLOBE_SETTINGS_KEY)
+                || noise.stable(GLOBE_SETTINGS_XSMALL_KEY)
+                || noise.stable(GLOBE_SETTINGS_SMALL_KEY)
+                || noise.stable(GLOBE_SETTINGS_REGULAR_KEY)
+                || noise.stable(GLOBE_SETTINGS_LARGE_KEY)
+                || noise.stable(GLOBE_SETTINGS_MASSIVE_KEY);
     }
 
     private boolean globe$hasResolvedSettings() {
@@ -134,31 +134,31 @@ public abstract class ChunkGeneratorBiomeSourceMixin {
     }
 
     private String globe$matchedSettingsLabel() {
-        if (!((Object) this instanceof NoiseChunkGenerator noise)) {
+        if (!((Object) this instanceof NoiseBasedChunkGenerator noise)) {
             return "not_noise_generator";
         }
         if (!globe$hasResolvedSettings()) {
             return "settings_unresolved";
         }
-        if (noise.matchesSettings(GLOBE_SETTINGS_KEY)) return "overworld";
-        if (noise.matchesSettings(GLOBE_SETTINGS_XSMALL_KEY)) return "overworld_xsmall";
-        if (noise.matchesSettings(GLOBE_SETTINGS_SMALL_KEY)) return "overworld_small";
-        if (noise.matchesSettings(GLOBE_SETTINGS_REGULAR_KEY)) return "overworld_regular";
-        if (noise.matchesSettings(GLOBE_SETTINGS_LARGE_KEY)) return "overworld_large";
-        if (noise.matchesSettings(GLOBE_SETTINGS_MASSIVE_KEY)) return "overworld_massive";
+        if (noise.stable(GLOBE_SETTINGS_KEY)) return "overworld";
+        if (noise.stable(GLOBE_SETTINGS_XSMALL_KEY)) return "overworld_xsmall";
+        if (noise.stable(GLOBE_SETTINGS_SMALL_KEY)) return "overworld_small";
+        if (noise.stable(GLOBE_SETTINGS_REGULAR_KEY)) return "overworld_regular";
+        if (noise.stable(GLOBE_SETTINGS_LARGE_KEY)) return "overworld_large";
+        if (noise.stable(GLOBE_SETTINGS_MASSIVE_KEY)) return "overworld_massive";
         return "unknown";
     }
 
     private int globe$borderRadiusBlocks() {
-        if (!((Object) this instanceof NoiseChunkGenerator noise)) {
+        if (!((Object) this instanceof NoiseBasedChunkGenerator noise)) {
             return 7500;
         }
-        if (noise.matchesSettings(GLOBE_SETTINGS_KEY)) return 15000;
-        if (noise.matchesSettings(GLOBE_SETTINGS_XSMALL_KEY)) return 3750;
-        if (noise.matchesSettings(GLOBE_SETTINGS_SMALL_KEY)) return 5000;
-        if (noise.matchesSettings(GLOBE_SETTINGS_REGULAR_KEY)) return 7500;
-        if (noise.matchesSettings(GLOBE_SETTINGS_LARGE_KEY)) return 10000;
-        if (noise.matchesSettings(GLOBE_SETTINGS_MASSIVE_KEY)) return 20000;
+        if (noise.stable(GLOBE_SETTINGS_KEY)) return 15000;
+        if (noise.stable(GLOBE_SETTINGS_XSMALL_KEY)) return 3750;
+        if (noise.stable(GLOBE_SETTINGS_SMALL_KEY)) return 5000;
+        if (noise.stable(GLOBE_SETTINGS_REGULAR_KEY)) return 7500;
+        if (noise.stable(GLOBE_SETTINGS_LARGE_KEY)) return 10000;
+        if (noise.stable(GLOBE_SETTINGS_MASSIVE_KEY)) return 20000;
         return 7500;
     }
 }

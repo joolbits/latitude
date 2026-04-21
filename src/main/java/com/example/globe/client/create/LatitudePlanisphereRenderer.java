@@ -2,9 +2,8 @@ package com.example.globe.client.create;
 
 import com.example.globe.client.GlobeWorldSize;
 import com.example.globe.util.LatitudeBands;
-import net.minecraft.client.gui.DrawContext;
-
 import java.util.Arrays;
+import net.minecraft.client.gui.GuiGraphics;
 
 /**
  * Renders a live 2D latitude disc for the bespoke create-world screen.
@@ -52,10 +51,10 @@ public final class LatitudePlanisphereRenderer {
      * @param panelBottom  bottom edge of the panel (for label clipping)
      * @param textRenderer text renderer for degree labels
      */
-    public static void render(DrawContext ctx, int cx, int cy, int maxRadius,
+    public static void render(GuiGraphics ctx, int cx, int cy, int maxRadius,
                               GlobeWorldSize size, LatitudeBands.Band selectedZone,
                               int panelRight, int panelTop, int panelBottom,
-                              net.minecraft.client.font.TextRenderer textRenderer) {
+                              net.minecraft.client.gui.Font textRenderer) {
 
         // Disc pixel radius scaled by world diameter ratio (mild easing to smooth jumps)
         int diameter = size.borderRadiusBlocks * 2;
@@ -150,7 +149,7 @@ public final class LatitudePlanisphereRenderer {
         for (double deg : labelDegs) {
             String label = LatitudeCreateWorldScreen.formatDegree(deg);
             int yOff = (int) (radius * deg / 90.0);
-            int labelY = cy + yOff - Math.round(textRenderer.fontHeight * labelScale / 2f); // center text vertically on the line
+            int labelY = cy + yOff - Math.round(textRenderer.lineHeight * labelScale / 2f); // center text vertically on the line
 
             // Disc edge X at this Y offset
             float frac = 1.0f - (float) (yOff * yOff) / (float) (radius * radius);
@@ -161,11 +160,11 @@ public final class LatitudePlanisphereRenderer {
             // (1) Normal placement 2px outside disc
             // (2) Nudge inward if overflows panel bounds
             // (3) Omit if still overflowing
-            int scaledW = Math.round(textRenderer.getWidth(label) * labelScale);
+            int scaledW = Math.round(textRenderer.width(label) * labelScale);
             if (labelX + scaledW > panelRight - 2) {
                 labelX = panelRight - 2 - scaledW; // nudge inward
             }
-            if (labelY < panelTop || labelY + Math.round(textRenderer.fontHeight * labelScale) > panelBottom) {
+            if (labelY < panelTop || labelY + Math.round(textRenderer.lineHeight * labelScale) > panelBottom) {
                 continue; // omit — vertical overflow
             }
             if (labelX + scaledW > panelRight - 2) {
@@ -179,9 +178,9 @@ public final class LatitudePlanisphereRenderer {
 
         // Optional diameter label below disc (single centered line)
         String diaLabel = String.format(java.util.Locale.ROOT, "%,d blocks", diameter);
-        int diaW = Math.round(textRenderer.getWidth(diaLabel) * labelScale);
+        int diaW = Math.round(textRenderer.width(diaLabel) * labelScale);
         int diaY = cy + radius + Math.max(6, (int) (radius * 0.08f));
-        if (diaY + Math.round(textRenderer.fontHeight * labelScale) <= panelBottom) {
+        if (diaY + Math.round(textRenderer.lineHeight * labelScale) <= panelBottom) {
             drawScaledText(ctx, textRenderer, diaLabel, cx - diaW / 2, diaY, labelScale, MUTED);
         }
     }
@@ -192,7 +191,7 @@ public final class LatitudePlanisphereRenderer {
     }
 
     // ── Draw a single horizontal latitude line clipped to the disc ──
-    private static void drawLatitudeLine(DrawContext ctx, int cx, int cy, int radius, int yOff, int color) {
+    private static void drawLatitudeLine(GuiGraphics ctx, int cx, int cy, int radius, int yOff, int color) {
         float frac = 1.0f - (float) (yOff * yOff) / (float) (radius * radius);
         if (frac <= 0) return;
         int halfW = (int) (Math.sqrt(frac) * radius);
@@ -205,18 +204,18 @@ public final class LatitudePlanisphereRenderer {
         return Math.max(LABEL_MIN_SCALE, Math.min(LABEL_MAX_SCALE, scaled * LABEL_BASE_SCALE / LABEL_MIN_SCALE));
     }
 
-    private static void drawScaledText(DrawContext ctx, net.minecraft.client.font.TextRenderer tr,
+    private static void drawScaledText(GuiGraphics ctx, net.minecraft.client.gui.Font tr,
                                        String text, int x, int y, float scale, int color) {
-        var matrices = ctx.getMatrices();
+        var matrices = ctx.pose();
         matrices.pushMatrix();
         matrices.translate((float) x, (float) y);
         matrices.scale(scale, scale);
-        ctx.drawText(tr, text, 0, 0, color, false);
+        ctx.drawString(tr, text, 0, 0, color, false);
         matrices.popMatrix();
     }
 
     // ── Dashed circle (decorative, for small worlds) ──
-    private static void drawDashedCircle(DrawContext ctx, int cx, int cy, int radius, int color) {
+    private static void drawDashedCircle(GuiGraphics ctx, int cx, int cy, int radius, int color) {
         int dashLen = 3;
         int gapLen = 3;
         for (int dy = -radius; dy <= radius; dy++) {
@@ -238,7 +237,7 @@ public final class LatitudePlanisphereRenderer {
     }
 
     // ── Fill a circular disc ──
-    private static void fillCircle(DrawContext ctx, int cx, int cy, int radius, int color) {
+    private static void fillCircle(GuiGraphics ctx, int cx, int cy, int radius, int color) {
         for (int dy = -radius; dy <= radius; dy++) {
             float frac = 1.0f - (float) (dy * dy) / (float) (radius * radius);
             if (frac <= 0) continue;
@@ -249,7 +248,7 @@ public final class LatitudePlanisphereRenderer {
     }
 
     // ── Fill a horizontal band strip within a circular disc ──
-    private static void fillBandStrip(DrawContext ctx, int cx, int cy, int radius, int yStart, int yEnd, int color) {
+    private static void fillBandStrip(GuiGraphics ctx, int cx, int cy, int radius, int yStart, int yEnd, int color) {
         for (int dy = yStart; dy < yEnd; dy++) {
             float frac = 1.0f - (float) (dy * dy) / (float) (radius * radius);
             if (frac <= 0) continue;
@@ -270,7 +269,7 @@ public final class LatitudePlanisphereRenderer {
      * @param size         both width and height of the bounding square (pixels)
      * @param selectedBand the currently selected latitude band
      */
-    public static void renderCompact(DrawContext context, int x, int y, int size, LatitudeBands.Band selectedBand) {
+    public static void renderCompact(GuiGraphics context, int x, int y, int size, LatitudeBands.Band selectedBand) {
         if (size < 20) return;
 
         int radius = size / 2;

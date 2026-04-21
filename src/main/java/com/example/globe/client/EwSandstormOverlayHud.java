@@ -1,9 +1,9 @@
 package com.example.globe.client;
 
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.render.RenderTickCounter;
-import net.minecraft.util.math.MathHelper;
+import net.minecraft.client.DeltaTracker;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.util.Mth;
 
 public final class EwSandstormOverlayHud {
     private EwSandstormOverlayHud() {}
@@ -17,10 +17,10 @@ public final class EwSandstormOverlayHud {
     private static final int DUST_G = 186;
     private static final int DUST_B = 132;
 
-    public static void render(DrawContext ctx, RenderTickCounter tickCounter) {
-        MinecraftClient mc = MinecraftClient.getInstance();
-        if (mc.player == null || mc.world == null) return;
-        if (mc.options.hudHidden) return;
+    public static void render(GuiGraphics ctx, DeltaTracker tickCounter) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null || mc.level == null) return;
+        if (mc.options.hideGui) return;
 
         double distToBorder = GlobeClientState.distanceToEwBorderBlocks(mc.player.getX());
 
@@ -29,11 +29,11 @@ public final class EwSandstormOverlayHud {
 
         // dist=500 => 0, dist=100 => 1
         double t = (FADE_START - distToBorder) / (FADE_START - FADE_FULL);
-        float a = (float) MathHelper.clamp(t, 0.0, 1.0);
+        float a = (float) Mth.clamp(t, 0.0, 1.0);
 
         a = a * a; // ramps up faster as you approach the border
 
-        if ((net.minecraft.client.MinecraftClient.getInstance().world.getTime() % 40L) == 0L) {
+        if ((net.minecraft.client.Minecraft.getInstance().level.getGameTime() % 40L) == 0L) {
             com.example.globe.GlobeMod.LOGGER.info("[Latitude] EW haze tick: x={} a={}", mc.player.getX(), a);
         }
 
@@ -43,8 +43,8 @@ public final class EwSandstormOverlayHud {
 
         int argb = (alpha << 24) | (DUST_R << 16) | (DUST_G << 8) | (DUST_B);
 
-        int w = ctx.getScaledWindowWidth();
-        int h = ctx.getScaledWindowHeight();
+        int w = ctx.guiWidth();
+        int h = ctx.guiHeight();
         ctx.fill(0, 0, w, h, argb);
     }
 }
