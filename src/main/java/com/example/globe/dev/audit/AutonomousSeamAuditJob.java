@@ -265,10 +265,10 @@ public final class AutonomousSeamAuditJob {
         json.append("  \"strip\": {\n");
         json.append("    \"alongSeamSpanBlocks\": ").append(job.plan.alongSeamSpanBlocks()).append(",\n");
         json.append("    \"crossSeamHalfWidthBlocks\": ").append(job.plan.crossSeamHalfWidthBlocks()).append(",\n");
-        json.append("    \"chunkMinX\": ").append(job.plan.min().x).append(",\n");
-        json.append("    \"chunkMinZ\": ").append(job.plan.min().z).append(",\n");
-        json.append("    \"chunkMaxX\": ").append(job.plan.max().x).append(",\n");
-        json.append("    \"chunkMaxZ\": ").append(job.plan.max().z).append(",\n");
+        json.append("    \"chunkMinX\": ").append(job.plan.min().x()).append(",\n");
+        json.append("    \"chunkMinZ\": ").append(job.plan.min().z()).append(",\n");
+        json.append("    \"chunkMaxX\": ").append(job.plan.max().x()).append(",\n");
+        json.append("    \"chunkMaxZ\": ").append(job.plan.max().z()).append(",\n");
         json.append("    \"totalChunks\": ").append(job.plan.totalChunks()).append("\n");
         json.append("  },\n");
         json.append("  \"loadedRatioThreshold\": ").append(fmt(job.loadedRatioThreshold)).append(",\n");
@@ -666,7 +666,7 @@ public final class AutonomousSeamAuditJob {
                     int budget = chunksPerTick;
                     while (budget-- > 0 && !queue.isEmpty()) {
                         ChunkPos pos = queue.poll();
-                        world.getChunkSource().getChunk(pos.x, pos.z, ChunkStatus.FULL, true);
+                        world.getChunkSource().getChunk(pos.x(), pos.z(), ChunkStatus.FULL, true);
                     }
                     if (queue.isEmpty()) {
                         stage = Stage.READINESS;
@@ -690,10 +690,10 @@ public final class AutonomousSeamAuditJob {
                     }
                 }
                 case PROBE -> {
-                    int sxMin = plan.min().x * 16;
-                    int sxMax = plan.max().x * 16 + 15;
-                    int szMin = plan.min().z * 16;
-                    int szMax = plan.max().z * 16 + 15;
+                    int sxMin = plan.min().x() * 16;
+                    int sxMax = plan.max().x() * 16 + 15;
+                    int szMin = plan.min().z() * 16;
+                    int szMax = plan.max().z() * 16 + 15;
                     // Tight seam-crossing zone: full along-seam width, inner 1/3 of cross-seam half-width.
                     int seamZHalf = Math.max(16, plan.crossSeamHalfWidthBlocks() / 3);
                     probeSmall = runRectProbe(this, sxMin, sxMax, szMin, szMax, samples);

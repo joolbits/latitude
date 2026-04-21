@@ -534,7 +534,7 @@ public final class LatitudeDevCommand {
             ServerLevel world = source.getLevel();
             ChunkPos center = player.chunkPosition();
             int radius = Mth.clamp(requestedRadius, 0, 8);
-            return ChunkRegenerator.regenSquare(world, center.x, center.z, radius, biomes, seedOverride, source);
+            return ChunkRegenerator.regenSquare(world, center.x(), center.z(), radius, biomes, seedOverride, source);
         } catch (Exception e) {
             ctx.getSource().sendFailure(Component.literal("[latdev] regenChunk error: " + e.getMessage()));
             e.printStackTrace();

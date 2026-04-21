@@ -318,7 +318,7 @@ public final class ChunkPregenerator {
                 break;
             }
 
-            job.world.getChunkSource().getChunk(next.x, next.z, ChunkStatus.FULL, true);
+            job.world.getChunkSource().getChunk(next.x(), next.z(), ChunkStatus.FULL, true);
             chunksCompleted++;
 
             if ((chunksCompleted - job.lastBossbarUpdateChunks) >= BOSSBAR_UPDATE_CHUNK_INTERVAL || job.queue.isEmpty()) {
