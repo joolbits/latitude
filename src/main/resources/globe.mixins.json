@@ -16,13 +16,7 @@
   "client": [
     "client.WorldRendererWorldBorderMixin",
     "client.SystemDetailsHardwareProbeMixin",
-    "client.CreateWorldScreenLatitudeToggleMixin",
-    "client.CreateWorldScreenSpawnZoneMixin",
-    "client.CreateWorldScreenMixin",
-    "client.CreateWorldScreenShowMixin",
-    "client.CreateWorldScreenInitRedirectMixin",
     "client.MinecraftClientStartIntegratedMixin",
-    "client.WorldCreatorMixin",
     "client.InGameHudMixin",
     "client.LatitudeLoadingClientTickMixin",
     "client.FogRendererEwMixin",
