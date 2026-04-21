@@ -14,8 +14,6 @@
     "ExtremePolarVillageGuardMixin"
   ],
   "client": [
-    "client.FogRendererMixin",
-    "client.EwStormWallRendererMixin",
     "client.WorldRendererWorldBorderMixin",
     "client.SystemDetailsHardwareProbeMixin",
     "client.CreateWorldScreenLatitudeToggleMixin",
