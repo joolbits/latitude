@@ -5,13 +5,8 @@
   "refmap": "globe.refmap.json",
   "compatibilityLevel": "JAVA_21",
   "mixins": [
-    "BiomeSourceAccessor",
     "ChunkGeneratorBiomeSourceMixin",
-    "BiomeNoSnowInWarmBandsMixin",
     "NoiseChunkGeneratorAccessor",
-    "ChunkGeneratorPopulateBiomesMixin",
-    "NoiseChunkGeneratorCarveMixin",
-    "SurfaceDripstoneLawnmowerMixin",
     "ProtoChunkSnowBlockGuardMixin",
     "FreezeTopLayerFeatureGuardMixin",
     "ChunkRegionWarmSnowTrapMixin",
@@ -31,9 +26,6 @@
     "client.MinecraftClientStartIntegratedMixin",
     "client.WorldCreatorMixin",
     "client.InGameHudMixin",
-    "HandledScreenCompassToggleMixin",
-    "client.DownloadingTerrainScreenFirstLoadMessageMixin",
-    "client.LevelLoadingScreenLatitudeOverlayMixin",
     "client.LatitudeLoadingClientTickMixin",
     "client.FogRendererEwMixin",
     "client.compat.sodium.RenderSectionManagerVisibilityMixin"
