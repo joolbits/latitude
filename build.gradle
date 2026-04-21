@@ -1,5 +1,5 @@
 plugins {
-    id 'fabric-loom' version '1.14.10'
+    id 'net.fabricmc.fabric-loom' version '1.15.5'
     id 'maven-publish'
 }
 
@@ -85,24 +85,23 @@ repositories {
 
 dependencies {
     minecraft "com.mojang:minecraft:${project.minecraft_version}"
-    mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
-    modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
+    implementation "net.fabricmc:fabric-loader:${project.loader_version}"
 
     // CRITICAL FIX: Fabric API only needed at RUNTIME (not compile-time)
     // The Mixin approach doesn't import any Fabric API classes
-modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+    implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
     // MixinExtras for descriptor-based injections
-    modImplementation "io.github.llamalad7:mixinextras-fabric:0.5.0"
+    implementation "io.github.llamalad7:mixinextras-fabric:0.5.0"
     include "io.github.llamalad7:mixinextras-fabric:0.5.0"
     compileOnly "io.github.llamalad7:mixinextras-common:0.5.0"
 // DISABLED (was crashing compile):     annotationProcessor "io.github.llamalad7:mixinextras-common:0.5.0"
     
     // ModMenu API (compile-time only, optional at runtime)
-    modCompileOnly "com.terraformersmc:modmenu:${project.modmenu_version}"
-    modLocalRuntime "com.terraformersmc:modmenu:${project.modmenu_version}"
+    compileOnly "com.terraformersmc:modmenu:${project.modmenu_version}"
+    runtimeOnly "com.terraformersmc:modmenu:${project.modmenu_version}"
 
-    modCompileOnly "maven.modrinth:placeholder-api:${project.placeholder_api_version}"
-    modLocalRuntime "maven.modrinth:placeholder-api:${project.placeholder_api_version}"
+    compileOnly "maven.modrinth:placeholder-api:${project.placeholder_api_version}"
+    runtimeOnly "maven.modrinth:placeholder-api:${project.placeholder_api_version}"
 }
 
 processResources {
@@ -114,14 +113,14 @@ processResources {
 }
 
 tasks.withType(JavaCompile).configureEach {
-    it.options.release = 21
+    it.options.release = 25
 }
 
 java {
     withSourcesJar()
 
-    sourceCompatibility = JavaVersion.VERSION_21
-    targetCompatibility = JavaVersion.VERSION_21
+    sourceCompatibility = JavaVersion.VERSION_25
+    targetCompatibility = JavaVersion.VERSION_25
 }
 
 jar {
