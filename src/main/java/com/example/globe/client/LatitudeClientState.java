@@ -9,6 +9,7 @@ public final class LatitudeClientState {
         WAITING_FOR_CREATE_SCREEN,
         WAITING_FOR_CONFIRM,
         WAITING_FOR_WORLD_OR_BLOCKER,
+        WAITING_FOR_POST_ENTRY_CAPTURE,
         TIMED_OUT,
         COMPLETE
     }
@@ -37,6 +38,8 @@ public final class LatitudeClientState {
     private static volatile boolean autoCreateWorldProbeConfirmed = false;
     /** Dev-only create-world route probe: world entry has been observed this launch. */
     private static volatile boolean autoCreateWorldProbeWorldEntered = false;
+    /** Dev-only create-world route probe: game time when world entry was first observed. */
+    private static volatile long autoCreateWorldProbeWorldEnteredGameTime = -1L;
     /** Dev-only create-world route probe: timeout has been reached. */
     private static volatile boolean autoCreateWorldProbeTimedOut = false;
     /** Dev-only create-world route probe: post-open screen log has been emitted. */
@@ -45,6 +48,8 @@ public final class LatitudeClientState {
     private static volatile boolean autoCreateWorldProbeScreenDetectedLogged = false;
     /** Dev-only create-world route probe: creative mode override has been applied. */
     private static volatile boolean autoCreateWorldProbeCreativeApplied = false;
+    /** Dev-only create-world route probe: post-entry diagnostics have been captured. */
+    private static volatile boolean autoCreateWorldProbeDiagnosticsCaptured = false;
 
     public static long elapsedSinceExpeditionMs() {
         return expeditionStartMs > 0L ? System.currentTimeMillis() - expeditionStartMs : -1L;
@@ -102,6 +107,8 @@ public final class LatitudeClientState {
         autoCreateWorldProbeLogged = false;
         autoCreateWorldProbeScreenDetectedLogged = false;
         autoCreateWorldProbeCreativeApplied = false;
+        autoCreateWorldProbeWorldEnteredGameTime = -1L;
+        autoCreateWorldProbeDiagnosticsCaptured = false;
     }
 
     public static synchronized AutoCreateWorldProbePhase getAutoCreateWorldProbePhase() {
@@ -144,6 +151,14 @@ public final class LatitudeClientState {
 
     public static synchronized void markAutoCreateWorldProbeWorldEntered() {
         autoCreateWorldProbeWorldEntered = true;
+        autoCreateWorldProbeWorldEnteredGameTime = -1L;
+        autoCreateWorldProbePhase = AutoCreateWorldProbePhase.WAITING_FOR_POST_ENTRY_CAPTURE;
+    }
+
+    public static synchronized void markAutoCreateWorldProbeWorldEntered(long gameTime) {
+        autoCreateWorldProbeWorldEntered = true;
+        autoCreateWorldProbeWorldEnteredGameTime = gameTime;
+        autoCreateWorldProbePhase = AutoCreateWorldProbePhase.WAITING_FOR_POST_ENTRY_CAPTURE;
     }
 
     public static synchronized boolean isAutoCreateWorldProbeTimedOut() {
@@ -178,5 +193,18 @@ public final class LatitudeClientState {
 
     public static synchronized void markAutoCreateWorldProbeCreativeApplied() {
         autoCreateWorldProbeCreativeApplied = true;
+    }
+
+    public static synchronized long getAutoCreateWorldProbeWorldEnteredGameTime() {
+        return autoCreateWorldProbeWorldEnteredGameTime;
+    }
+
+    public static synchronized boolean isAutoCreateWorldProbeDiagnosticsCaptured() {
+        return autoCreateWorldProbeDiagnosticsCaptured;
+    }
+
+    public static synchronized void markAutoCreateWorldProbeDiagnosticsCaptured() {
+        autoCreateWorldProbeDiagnosticsCaptured = true;
+        autoCreateWorldProbePhase = AutoCreateWorldProbePhase.COMPLETE;
     }
 }
