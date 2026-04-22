@@ -41,7 +41,7 @@ public class SurfaceDripstoneLawnmowerMixin {
         LOGGED_CHUNKS.defaultReturnValue(Long.MIN_VALUE);
     }
 
-    @Inject(method = "generate(Lnet/minecraft/world/gen/feature/util/FeatureContext;)Z", at = @At("HEAD"), cancellable = true)
+    @Inject(method = "place(Lnet/minecraft/world/level/levelgen/feature/FeaturePlaceContext;)Z", at = @At("HEAD"), cancellable = true)
     private void latitude$cancelSurfaceDripstone(FeaturePlaceContext<?> context, CallbackInfoReturnable<Boolean> cir) {
         if (!LATITUDE_FIX_SURFACE_DRIPSTONE) {
             return;

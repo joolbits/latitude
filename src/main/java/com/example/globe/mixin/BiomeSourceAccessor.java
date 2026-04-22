@@ -7,6 +7,6 @@ import org.spongepowered.asm.mixin.gen.Invoker;
 
 @Mixin(BiomeSource.class)
 public interface BiomeSourceAccessor {
-    @Invoker("getCodec")
-    MapCodec<? extends BiomeSource> globe$invokeGetCodec();
+    @Invoker("codec")
+    MapCodec<? extends BiomeSource> globe$invokeCodec();
 }

@@ -39,7 +39,7 @@ public final class LatitudeBiomeSource extends BiomeSource {
     @Override
     protected com.mojang.serialization.MapCodec<? extends BiomeSource> codec() {
         @SuppressWarnings("unchecked")
-        MapCodec<BiomeSource> delegate = (MapCodec<BiomeSource>) ((BiomeSourceAccessor) original).globe$invokeGetCodec();
+        MapCodec<BiomeSource> delegate = (MapCodec<BiomeSource>) ((BiomeSourceAccessor) original).globe$invokeCodec();
         return new MapCodec<>() {
             @Override
             public <T> RecordBuilder<T> encode(BiomeSource input, DynamicOps<T> ops, RecordBuilder<T> prefix) {
