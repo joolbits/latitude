@@ -27,7 +27,7 @@ public abstract class ChunkRegionWarmSnowTrapMixin {
     private static final BlockState AIR = Blocks.AIR.defaultBlockState();
 
     @ModifyVariable(
-        method = "setBlockState(Lnet/minecraft/util/math/BlockPos;Lnet/minecraft/block/BlockState;II)Z",
+        method = "setBlock(Lnet/minecraft/core/BlockPos;Lnet/minecraft/world/level/block/state/BlockState;II)Z",
         at = @At("HEAD"),
         argsOnly = true,
         index = 2

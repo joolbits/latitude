@@ -215,6 +215,9 @@ public class LatitudeCreateWorldScreen extends Screen {
 
     private LatitudeCreateWorldScreen(Runnable onClose, @Nullable Screen parent, WorldCreationContext holder) {
         super(Component.literal("New Expedition"));
+        LOGGER.info("[LAT][CWPATH] LatitudeCreateWorldScreen.<init> parent={} holder={}",
+                parent == null ? "null" : parent.getClass().getName(),
+                holder);
         this.onClose = onClose;
         this.parent = parent;
         this.holder = holder;
@@ -222,6 +225,9 @@ public class LatitudeCreateWorldScreen extends Screen {
     }
 
     public static void openLoaded(Minecraft client, Runnable onClose, @Nullable Screen parent, WorldCreationContext holder) {
+        LOGGER.info("[LAT][CWPATH] LatitudeCreateWorldScreen.openLoaded parent={} holder={}",
+                parent == null ? "null" : parent.getClass().getName(),
+                holder);
         client.setScreen(new LatitudeCreateWorldScreen(onClose, parent, holder));
     }
 
@@ -230,6 +236,8 @@ public class LatitudeCreateWorldScreen extends Screen {
      * Replicates CreateWorldScreen.show() lines 166-196.
      */
     public static void open(Minecraft client, Runnable onClose, @Nullable Screen parent) {
+        LOGGER.info("[LAT][CWPATH] LatitudeCreateWorldScreen.open parent={}",
+                parent == null ? "null" : parent.getClass().getName());
         // Show "Preparing..." message (vanilla pattern)
         client.setScreenAndShow(new GenericMessageScreen(Component.translatable("createWorld.preparing")));
 
@@ -268,19 +276,21 @@ public class LatitudeCreateWorldScreen extends Screen {
                     Util.backgroundExecutor(),
                     client);
 
-            future.whenComplete((loadedHolder, throwable) -> client.execute(() -> {
-                if (throwable != null) {
-                    LOGGER.error("Failed to load datapacks for Latitude create-world screen", throwable);
-                    onClose.run();
-                    if (client.screen == null || client.screen instanceof GenericMessageScreen) {
-                        client.setScreen(parent);
+            future.whenComplete((loadedHolder, throwable) -> {
+                client.execute(() -> {
+                    if (throwable != null) {
+                        LOGGER.error("Failed to load datapacks for Latitude create-world screen", throwable);
+                        onClose.run();
+                        if (client.screen == null || client.screen instanceof GenericMessageScreen) {
+                            client.setScreen(parent);
+                        }
+                        return;
                     }
-                    return;
-                }
 
-                // Open the bespoke screen with the loaded holder.
-                client.setScreen(new LatitudeCreateWorldScreen(onClose, parent, loadedHolder));
-            }));
+                    // Open the bespoke screen with the loaded holder.
+                    client.setScreen(new LatitudeCreateWorldScreen(onClose, parent, loadedHolder));
+                });
+            });
         } catch (Exception e) {
             LOGGER.error("Failed to load datapacks for Latitude create-world screen", e);
             // 5A error path: return to caller screen, never show bespoke screen
@@ -297,6 +307,8 @@ public class LatitudeCreateWorldScreen extends Screen {
 
     @Override
     protected void init() {
+        LOGGER.info("[LAT][CWPATH] LatitudeCreateWorldScreen.init screen={} holder={}",
+                this.getClass().getName(), this.holder);
         zoneRows.clear();
         int headerGap = scaledUi(10);
         int headerToPanel = scaledUi(42);
@@ -904,6 +916,19 @@ public class LatitudeCreateWorldScreen extends Screen {
                 worldName, seed, this.selectedSize, this.selectedZone,
                 gameMode, hardcore, difficulty, allowCommands, startWithCompass, bonusChest,
                 this.gameRules, this.worldTypeIdx);
+    }
+
+    public void probeAutoConfirmWorldCreation() {
+        LOGGER.info("[LAT][CWPATH] LatitudeCreateWorldScreen.probeAutoConfirmWorldCreation screen={}",
+                this.getClass().getName());
+        this.beginExpedition();
+    }
+
+    public void probeSetCreativeMode() {
+        this.selectedModeIdx = 2;
+        this.allowCommands = true;
+        LOGGER.info("[LAT][CWPATH] LatitudeCreateWorldScreen.probeSetCreativeMode screen={} mode={} allowCommands={}",
+                this.getClass().getName(), MODE_NAMES[this.selectedModeIdx], this.allowCommands);
     }
 
     // ── Close behavior ──

@@ -1,6 +1,8 @@
 package com.example.globe.mixin.client;
 
 import com.example.globe.client.create.LatitudeCreateWorldScreen;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -13,9 +15,11 @@ import net.minecraft.client.gui.screens.worldselection.CreateWorldScreen;
 
 @Mixin(CreateWorldScreen.class)
 public abstract class CreateWorldScreenInitRedirectMixin {
+    private static final Logger LOGGER = LoggerFactory.getLogger("globe");
 
     @Inject(method = "init", at = @At("HEAD"), cancellable = true)
     private void globe$redirectRecreateSafely(CallbackInfo ci) {
+        LOGGER.info("[LAT][CWPATH] CreateWorldScreenInitRedirectMixin.init screen={}", this.getClass().getName());
         Minecraft client = Minecraft.getInstance();
         if (client == null || client.screen != (Object) this) {
             return;
@@ -28,7 +32,7 @@ public abstract class CreateWorldScreenInitRedirectMixin {
                 client,
                 onClose,
                 parent,
-                ((CreateWorldScreenMixin) (Object) this).getWorldCreator().getSettings());
+                ((CreateWorldScreenMixin) (Object) this).getUiState().getSettings());
         ci.cancel();
     }
 
