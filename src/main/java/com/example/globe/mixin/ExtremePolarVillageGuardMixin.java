@@ -30,9 +30,10 @@ public abstract class ExtremePolarVillageGuardMixin {
     public abstract Structure getStructure();
 
     @Shadow
-    public abstract ChunkPos getPos();
+    public abstract ChunkPos getChunkPos();
 
-    @Inject(method = "place", at = @At("HEAD"), cancellable = true)
+    @Inject(method = "placeInChunk(Lnet/minecraft/world/level/WorldGenLevel;Lnet/minecraft/world/level/StructureManager;Lnet/minecraft/world/level/chunk/ChunkGenerator;Lnet/minecraft/util/RandomSource;Lnet/minecraft/world/level/levelgen/structure/BoundingBox;Lnet/minecraft/world/level/ChunkPos;)V",
+            at = @At("HEAD"), cancellable = true)
     private void globe$blockVillagesInExtremePolar(WorldGenLevel world,
                                                     StructureManager structureAccessor,
                                                     ChunkGenerator chunkGenerator,
@@ -40,7 +41,7 @@ public abstract class ExtremePolarVillageGuardMixin {
                                                     BoundingBox chunkBox,
                                                     ChunkPos chunkPos,
                                                     CallbackInfo ci) {
-        int blockZ = this.getPos().getMiddleBlockZ();
+        int blockZ = this.getChunkPos().getMiddleBlockZ();
         if (!LatitudeBiomes.isBlockInExtremePolarCap(blockZ, GlobeMod.BORDER_RADIUS)) {
             return;
         }
