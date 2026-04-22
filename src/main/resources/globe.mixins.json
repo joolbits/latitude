@@ -10,10 +10,12 @@
     "ProtoChunkSnowBlockGuardMixin",
     "FreezeTopLayerFeatureGuardMixin",
     "ChunkRegionWarmSnowTrapMixin",
-    "ExtremePolarVegetationGuardMixin",
-    "ExtremePolarVillageGuardMixin"
+    "ExtremePolarVegetationGuardMixin"
   ],
   "client": [
+    "client.CreateWorldScreenMixin",
+    "client.CreateWorldScreenInitRedirectMixin",
+    "client.WorldCreatorMixin",
     "client.WorldRendererWorldBorderMixin",
     "client.SystemDetailsHardwareProbeMixin",
     "client.MinecraftClientStartIntegratedMixin",

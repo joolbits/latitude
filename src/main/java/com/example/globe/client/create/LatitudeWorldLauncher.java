@@ -18,6 +18,7 @@ import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.RegistryLayer;
+import net.minecraft.util.Util;
 import net.minecraft.world.Difficulty;
 import net.minecraft.world.flag.FeatureFlags;
 import net.minecraft.world.level.GameType;
@@ -33,6 +34,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.Optional;
 import java.util.OptionalLong;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * Phase 5B: World launch logic for the bespoke Latitude create-world screen.
@@ -61,6 +63,8 @@ public final class LatitudeWorldLauncher {
                                        Difficulty difficulty, boolean allowCommands,
                                        boolean startWithCompass, boolean bonusChest,
                                        GameRules gameRules, int worldTypeIdx) {
+        LOGGER.info("[LAT][CWPATH] LatitudeWorldLauncher.beginExpedition screen={} worldTypeIdx={} worldName={}",
+                screen.getClass().getName(), worldTypeIdx, worldName);
         // worldTypeIdx: 0=Latitude, 1=Vanilla, 2=Vanilla Superflat
         boolean isLatitude = worldTypeIdx == 0;
         long t0 = System.currentTimeMillis();
@@ -167,61 +171,64 @@ public final class LatitudeWorldLauncher {
                     dimensionsConfig.specialWorldProperty(),
                     lifecycle3);
 
+            final WorldCreationContext launchHolder = goh;
+            final LayeredRegistryAccess<RegistryLayer> launchCombinedDynamicRegistries = combinedDynamicRegistries;
+            final PrimaryLevelData launchLevelProperties = levelProperties;
+            final GameRules launchGameRules = gameRules;
+
             // ── 8. Show "Preparing..." ──
             client.setScreenAndShow(new GenericMessageScreen(Component.translatable("createWorld.preparing")));
-
-            // ── 9. Create session ──
-            LevelStorageSource.LevelStorageAccess session;
-            try {
-                session = client.getLevelSource().createAccess(wc.getTargetFolder());
-            } catch (Exception e) {
-                LOGGER.error("Failed to create world session for '{}'", wc.getTargetFolder(), e);
-                if (isLatitude) {
-                    LatitudeClientState.clearLatitudeLoadingState();
-                }
-                client.setScreen(screen);
-                return;
-            }
-
-            LOGGER.info("[Latitude lifecycle] session created — {}ms elapsed", System.currentTimeMillis() - t0);
-
-            // ── 10. Write Latitude state (latest safe point — after session, before launch) ──
-            if (isLatitude) {
-                GlobeWorldSizeSelection.set(size);
-                GlobePending.set(spawnZone.id().toUpperCase(java.util.Locale.ROOT));
-                GlobePending.startWithCompass = startWithCompass;
-                LatitudeClientState.activateLatitudeLoading();
-                if (LatitudeClientConfig.get().showFirstLoadMessage) {
-                    LatitudeClientState.firstWorldLoad = true;
-                }
-                LOGGER.info("[Latitude lifecycle] bespoke overlay activated — {}ms since beginExpedition",
-                        LatitudeClientState.elapsedSinceExpeditionMs());
-            }
-
-            // ── 11. Launch ──
-            LOGGER.info("[Latitude lifecycle] calling startNewWorld — {}ms elapsed", System.currentTimeMillis() - t0);
-            try {
-                client.createWorldOpenFlows()
-                        .createLevelFromExistingSettings(session, goh.dataPackResources(), combinedDynamicRegistries,
-                                new LevelDataAndDimensions.WorldDataAndGenSettings(
-                                        levelProperties,
-                                        new net.minecraft.world.level.levelgen.WorldGenSettings(goh.options(), goh.selectedDimensions())),
-                                Optional.ofNullable(gameRules));
-            } catch (Exception e) {
-                LOGGER.error("Failed to start new world", e);
-                // Rollback Latitude state
-                GlobePending.consume();
-                GlobeWorldSizeSelection.set(GlobeWorldSize.REGULAR);
-                if (isLatitude) {
-                    LatitudeClientState.clearLatitudeLoadingState();
-                }
+            CompletableFuture.runAsync(() -> {
+                LevelStorageSource.LevelStorageAccess session;
                 try {
-                    session.close();
-                } catch (Exception closeEx) {
-                    LOGGER.warn("Failed to close session after launch failure", closeEx);
+                    session = client.getLevelSource().createAccess(wc.getTargetFolder());
+                } catch (Exception e) {
+                    client.execute(() -> {
+                        LOGGER.error("Failed to create world session for '{}'", wc.getTargetFolder(), e);
+                        if (isLatitude) {
+                            LatitudeClientState.clearLatitudeLoadingState();
+                        }
+                        client.setScreen(screen);
+                    });
+                    return;
                 }
-                client.setScreen(screen);
-            }
+
+                if (isLatitude) {
+                    GlobeWorldSizeSelection.set(size);
+                    GlobePending.set(spawnZone.id().toUpperCase(java.util.Locale.ROOT));
+                    GlobePending.startWithCompass = startWithCompass;
+                    LatitudeClientState.activateLatitudeLoading();
+                    if (LatitudeClientConfig.get().showFirstLoadMessage) {
+                        LatitudeClientState.firstWorldLoad = true;
+                    }
+                    LOGGER.info("[Latitude lifecycle] bespoke overlay activated — {}ms since beginExpedition",
+                            LatitudeClientState.elapsedSinceExpeditionMs());
+                }
+
+                client.execute(() -> {
+                    try {
+                        client.createWorldOpenFlows()
+                                .createLevelFromExistingSettings(session, launchHolder.dataPackResources(), launchCombinedDynamicRegistries,
+                                        new LevelDataAndDimensions.WorldDataAndGenSettings(
+                                                launchLevelProperties,
+                                                new net.minecraft.world.level.levelgen.WorldGenSettings(launchHolder.options(), launchHolder.selectedDimensions())),
+                                        Optional.ofNullable(launchGameRules));
+                    } catch (Exception e) {
+                        LOGGER.error("Failed to start new world", e);
+                        GlobePending.consume();
+                        GlobeWorldSizeSelection.set(GlobeWorldSize.REGULAR);
+                        if (isLatitude) {
+                            LatitudeClientState.clearLatitudeLoadingState();
+                        }
+                        try {
+                            session.close();
+                        } catch (Exception closeEx) {
+                            LOGGER.warn("Failed to close session after launch failure", closeEx);
+                        }
+                        client.setScreen(screen);
+                    }
+                });
+            }, Util.backgroundExecutor());
         } catch (Exception e) {
             LOGGER.error("Unexpected error in beginExpedition", e);
             // Steps 1-9 failed — no Latitude state was written
