@@ -28,7 +28,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
 
     @Shadow
-    private float loadProgress;
+    private float smoothedProgress;
 
     // ── Theme ──
     @Unique private static final int PANE_BG = 0xE62C2420;
@@ -136,7 +136,7 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
             globe$lastDirectionChangeMs = now;
             globe$displayProgress = 0f;
             globe$phraseSeedIdx = (int) (Math.random() * PHRASES.length);
-            GLOBE_LOGGER.info("[Latitude lifecycle] bespoke overlay first render — {}ms since beginExpedition",
+            GLOBE_LOGGER.info("[LAT][LOADUI] bespoke overlay first render — {}ms since beginExpedition",
                     LatitudeClientState.elapsedSinceExpeditionMs());
         } else if (LatitudeClientState.elapsedSinceExpeditionMs() >= FAIL_SAFE_CLEAR_MS) {
             globe$clearLoadingFlagNow(true);
@@ -183,7 +183,7 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
         int barW = Math.min(160, paneW - 40);
         int barX = cx - barW / 2;
         int barY = paneY + paneH - 20;
-        float rawProgress = Mth.clamp(this.loadProgress, 0f, 1f);
+        float rawProgress = Mth.clamp(this.smoothedProgress, 0f, 1f);
         LatitudeClientState.latitudeLoadingProgress = rawProgress;
         globe$displayProgress = rawProgress;
         float progress = rawProgress;
@@ -194,7 +194,7 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
         }
     }
 
-    @Inject(method = "close", at = @At("HEAD"), cancellable = true)
+    @Inject(method = "onClose", at = @At("HEAD"), cancellable = true)
     private void globe$clearLoadingFlag(CallbackInfo ci) {
         if (LatitudeClientState.isLatitudeWorldLoading()) {
             // Keep this screen as the bespoke presentation until the normal client-ready clear.
@@ -205,7 +205,7 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
         if (sinceExpedition < 0L) {
             sinceExpedition = LatitudeClientState.lastLifecycleClearElapsedMs();
         }
-        GLOBE_LOGGER.info("[Latitude lifecycle] loading screen closed — {}ms since beginExpedition",
+        GLOBE_LOGGER.info("[LAT][LOADUI] loading screen closed — {}ms since beginExpedition",
                 sinceExpedition);
         globe$overlayStartMs = 0L;
         globe$displayProgress = 0f;
@@ -215,10 +215,10 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
     private void globe$clearLoadingFlagNow(boolean failSafe) {
         long sinceExpedition = LatitudeClientState.clearLatitudeLoadingState();
         if (failSafe) {
-            GLOBE_LOGGER.info("[Latitude lifecycle] bespoke overlay cleared by fail-safe — {}ms since beginExpedition",
+            GLOBE_LOGGER.info("[LAT][LOADUI] bespoke overlay cleared by fail-safe — {}ms since beginExpedition",
                     sinceExpedition);
         } else {
-            GLOBE_LOGGER.info("[Latitude lifecycle] bespoke overlay cleared by normal client-ready path — {}ms since beginExpedition",
+            GLOBE_LOGGER.info("[LAT][LOADUI] bespoke overlay cleared by normal client-ready path — {}ms since beginExpedition",
                     sinceExpedition);
         }
         globe$overlayStartMs = 0L;

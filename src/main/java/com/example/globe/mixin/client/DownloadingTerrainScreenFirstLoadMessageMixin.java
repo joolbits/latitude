@@ -3,7 +3,7 @@ package com.example.globe.mixin.client;
 import com.example.globe.client.LatitudeClientState;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
-import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.screens.LevelLoadingScreen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.util.Mth;
@@ -17,12 +17,12 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public abstract class DownloadingTerrainScreenFirstLoadMessageMixin {
 
     @Shadow
-    private float loadProgress;
+    private float smoothedProgress;
 
     private static final Component FIRST_LOAD_HELPER = Component.literal("Press F9 in-game for HUD options");
 
-    @Inject(method = "render", at = @At("TAIL"))
-    private void globe$renderFirstLoadMessage(GuiGraphics context, int mouseX, int mouseY, float delta, CallbackInfo ci) {
+    @Inject(method = "extractRenderState", at = @At("TAIL"))
+    private void globe$renderFirstLoadMessage(GuiGraphicsExtractor context, int mouseX, int mouseY, float delta, CallbackInfo ci) {
         if (!LatitudeClientState.isLatitudeWorldLoading()) {
             return;
         }
@@ -32,7 +32,7 @@ public abstract class DownloadingTerrainScreenFirstLoadMessageMixin {
             return;
         }
 
-        float p = Mth.clamp(this.loadProgress, 0.0f, 1.0f);
+        float p = Mth.clamp(this.smoothedProgress, 0.0f, 1.0f);
         float ease = 1.0f - (1.0f - p) * (1.0f - p) * (1.0f - p);
         int alpha = Math.round(ease * 255.0f);
         int yOffset = Math.round((1.0f - ease) * 10.0f);
@@ -49,11 +49,11 @@ public abstract class DownloadingTerrainScreenFirstLoadMessageMixin {
         int w = tr.width(FIRST_LOAD_HELPER);
         int x = cx - (w / 2);
 
-        context.drawString(tr, FIRST_LOAD_HELPER, x + 1, baseY + 1, shadowColor, false);
-        context.drawString(tr, FIRST_LOAD_HELPER, x, baseY, helperColor, false);
+        context.text(tr, FIRST_LOAD_HELPER, x + 1, baseY + 1, shadowColor, false);
+        context.text(tr, FIRST_LOAD_HELPER, x, baseY, helperColor, false);
     }
 
-    @Inject(method = "close", at = @At("HEAD"))
+    @Inject(method = "onClose", at = @At("HEAD"))
     private void globe$clearFirstLoadFlag(CallbackInfo ci) {
         LatitudeClientState.firstWorldLoad = false;
         LatitudeClientState.firstWorldLoadStartMs = 0L;
