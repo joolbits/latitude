@@ -21,6 +21,7 @@
     "client.MinecraftClientStartIntegratedMixin",
     "client.InGameHudMixin",
     "client.LatitudeLoadingClientTickMixin",
+    "client.LevelLoadingScreenLatitudeOverlayMixin",
     "client.FogRendererEwMixin",
     "client.compat.sodium.RenderSectionManagerVisibilityMixin"
   ],
