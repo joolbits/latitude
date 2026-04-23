@@ -36,6 +36,8 @@ import java.util.Map;
 import java.util.Set;
 
 public final class BiomeSamplerTools {
+    private static final int ATLAS_HEARTBEAT_ROWS = 64;
+
     private BiomeSamplerTools() {
     }
 
@@ -74,38 +76,20 @@ public final class BiomeSamplerTools {
                                                     int radiusBlocks,
                                                     int stepBlocks,
                                                     int y) {
-        NoiseConfig noiseConfig = NoiseConfig.create(template.settings().value(), template.noiseParameters(), seed);
-        MultiNoiseUtil.MultiNoiseSampler sampler = noiseConfig.getMultiNoiseSampler();
-        Map<String, InventoryAccumulator> found = new LinkedHashMap<>();
-        scanGrid(template, seed, radiusBlocks, Math.max(1, stepBlocks), y, (blockX, blockZ, biomeId) -> {
-            InventoryAccumulator acc = found.get(biomeId);
-            if (acc == null) {
-                acc = new InventoryAccumulator(
-                        biomeId,
-                        biomeDisplayName(biomeId),
-                        BiomePreviewExporter.stableColorForBiomeId(biomeId),
-                        blockX,
-                        blockZ,
-                        latitudeLabel(radiusBlocks, blockZ),
-                        0);
-                found.put(biomeId, acc);
-            }
-            acc.hitCount++;
-        }, sampler);
+        InventoryScanProcessor processor = createInventoryScanProcessor(template, seed, radiusBlocks, stepBlocks, y);
+        InventoryReport report;
+        do {
+            report = processor.processBudget(Long.MAX_VALUE);
+        } while (report == null);
+        return report;
+    }
 
-        List<InventoryBiome> biomes = found.values().stream()
-                .map(acc -> new InventoryBiome(
-                        acc.biomeId,
-                        acc.biomeName,
-                        acc.displayColor,
-                        true,
-                        acc.firstSeenX,
-                        acc.firstSeenZ,
-                        acc.latitudeLabel,
-                        Math.max(1, stepBlocks),
-                        acc.hitCount))
-                .toList();
-        return new InventoryReport(seed, radiusBlocks, Math.max(1, stepBlocks), y, biomes);
+    public static InventoryScanProcessor createInventoryScanProcessor(SamplerTemplate template,
+                                                                      long seed,
+                                                                      int radiusBlocks,
+                                                                      int stepBlocks,
+                                                                      int y) {
+        return new InventoryScanProcessor(template, seed, radiusBlocks, Math.max(1, stepBlocks), y);
     }
 
     public static SearchReport searchSeeds(ServerWorld world,
@@ -359,6 +343,32 @@ public final class BiomeSamplerTools {
         }
     }
 
+    private static String sampleBiomeId(SamplerTemplate template,
+                                        int radiusBlocks,
+                                        int y,
+                                        int blockX,
+                                        int blockZ,
+                                        int noiseY,
+                                        int noiseZ,
+                                        MultiNoiseUtil.MultiNoiseSampler sampler) {
+        int noiseX = Math.floorDiv(blockX, 4);
+        RegistryEntry<Biome> base = template.baseSource().getBiome(noiseX, noiseY, noiseZ, sampler);
+        RegistryEntry<Biome> picked = LatitudeBiomes.pick(
+                template.biomeRegistry(),
+                base,
+                blockX,
+                blockZ,
+                y,
+                radiusBlocks,
+                sampler,
+                "ATLAS_SAMPLER",
+                null,
+                null,
+                null);
+        RegistryEntry<Biome> out = picked != null ? picked : base;
+        return biomeId(template.biomeRegistry(), out);
+    }
+
     private static Set<String> normalizeTargets(Collection<String> raw) {
         LinkedHashSet<String> normalized = new LinkedHashSet<>();
         if (raw == null) {
@@ -495,6 +505,145 @@ public final class BiomeSamplerTools {
         private String biomeId() {
             return biomeId;
         }
+    }
+
+    public static final class InventoryScanProcessor {
+        private final SamplerTemplate template;
+        private final long seed;
+        private final int radiusBlocks;
+        private final int stepBlocks;
+        private final int y;
+        private final NoiseConfig noiseConfig;
+        private final MultiNoiseUtil.MultiNoiseSampler sampler;
+        private final Map<String, InventoryAccumulator> found = new LinkedHashMap<>();
+        private final long originalSeed;
+        private final long startNanos = System.nanoTime();
+        private final int noiseY;
+        private int blockZ;
+        private int blockX;
+        private int rowCount;
+        private boolean started;
+        private boolean complete;
+
+        private InventoryScanProcessor(SamplerTemplate template,
+                                       long seed,
+                                       int radiusBlocks,
+                                       int stepBlocks,
+                                       int y) {
+            this.template = template;
+            this.seed = seed;
+            this.radiusBlocks = radiusBlocks;
+            this.stepBlocks = stepBlocks;
+            this.y = y;
+            this.noiseConfig = NoiseConfig.create(template.settings().value(), template.noiseParameters(), seed);
+            this.sampler = noiseConfig.getMultiNoiseSampler();
+            this.originalSeed = template.templateSeed();
+            this.noiseY = Math.floorDiv(y, 4);
+            this.blockZ = -radiusBlocks;
+            this.blockX = -radiusBlocks;
+        }
+
+        public InventoryReport processBudget(long budgetMs) {
+            if (complete) {
+                return buildReport();
+            }
+
+            if (!started) {
+                started = true;
+                LatitudeBiomes.setWorldSeed(seed);
+                atlasBatch(String.format(
+                        Locale.ROOT,
+                        "phase=discoverInventory-start seed=%d radius=%d step=%d y=%d",
+                        seed,
+                        radiusBlocks,
+                        stepBlocks,
+                        y));
+            }
+
+            long deadline = System.nanoTime() + Math.max(1L, budgetMs) * 1_000_000L;
+            while (blockZ <= radiusBlocks && System.nanoTime() <= deadline) {
+                int noiseZ = Math.floorDiv(blockZ, 4);
+                while (blockX <= radiusBlocks && System.nanoTime() <= deadline) {
+                    String biomeId = sampleBiomeId(template, radiusBlocks, y, blockX, blockZ, noiseY, noiseZ, sampler);
+                    InventoryAccumulator acc = found.get(biomeId);
+                    if (acc == null) {
+                        acc = new InventoryAccumulator(
+                                biomeId,
+                                biomeDisplayName(biomeId),
+                                BiomePreviewExporter.stableColorForBiomeId(biomeId),
+                                blockX,
+                                blockZ,
+                                latitudeLabel(radiusBlocks, blockZ),
+                                0);
+                        found.put(biomeId, acc);
+                    }
+                    acc.hitCount++;
+                    blockX += stepBlocks;
+                }
+
+                if (blockX > radiusBlocks) {
+                    rowCount++;
+                    if (rowCount % ATLAS_HEARTBEAT_ROWS == 0) {
+                        atlasBatch(String.format(
+                                Locale.ROOT,
+                                "phase=discoverInventory-heartbeat rows=%d blockZ=%d elapsedMs=%d",
+                                rowCount,
+                                blockZ,
+                                elapsedMs(startNanos)));
+                    }
+                    blockZ += stepBlocks;
+                    blockX = -radiusBlocks;
+                }
+            }
+
+            if (blockZ > radiusBlocks) {
+                complete = true;
+                restoreWorldSeed();
+                atlasBatch(String.format(
+                        Locale.ROOT,
+                        "phase=discoverInventory-complete rows=%d elapsedMs=%d",
+                        rowCount,
+                        elapsedMs(startNanos)));
+                return buildReport();
+            }
+
+            atlasBatch(String.format(
+                    Locale.ROOT,
+                    "phase=discoverInventory-yield rows=%d blockZ=%d blockX=%d elapsedMs=%d",
+                    rowCount,
+                    blockZ,
+                    blockX,
+                    elapsedMs(startNanos)));
+            return null;
+        }
+
+        private void restoreWorldSeed() {
+            LatitudeBiomes.setWorldSeed(originalSeed);
+        }
+
+        private InventoryReport buildReport() {
+            List<InventoryBiome> biomes = found.values().stream()
+                    .map(acc -> new InventoryBiome(
+                            acc.biomeId,
+                            acc.biomeName,
+                            acc.displayColor,
+                            true,
+                            acc.firstSeenX,
+                            acc.firstSeenZ,
+                            acc.latitudeLabel,
+                            stepBlocks,
+                            acc.hitCount))
+                    .toList();
+            return new InventoryReport(seed, radiusBlocks, stepBlocks, y, biomes);
+        }
+    }
+
+    private static long elapsedMs(long startNanos) {
+        return (System.nanoTime() - startNanos) / 1_000_000L;
+    }
+
+    private static void atlasBatch(String message) {
+        System.out.println("[LAT][ATLAS_BATCH] " + message);
     }
 
     public record SamplerTemplate(Registry<Biome> biomeRegistry,

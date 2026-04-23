@@ -375,11 +375,20 @@ public final class BiomePreviewExporter {
         private final NoiseConfig gatedNoiseConfig;
         private final net.minecraft.world.HeightLimitView gatedHeightView;
         private final int noiseY;
+        private final BiomeSamplerTools.SamplerTemplate template;
 
         private int imageX = 0;
         private int imageZ = 0;
         private final long startNanos;
         private ExportResult result;
+        private Phase phase = Phase.SAMPLING;
+        private BiomeSamplerTools.InventoryScanProcessor inventoryProcessor;
+        private BiomeSamplerTools.InventoryReport inventoryReport;
+        private Path outputDir;
+        private EnumMap<Layer, Path> layerPaths;
+        private Map<BiomeMaskLayer, Path> maskPaths;
+        private Path biomeIndexPath;
+        private Path primaryPng;
 
         private HeightStepProcessor(ServerWorld world,
                                      int radiusBlocks,
@@ -425,9 +434,10 @@ public final class BiomePreviewExporter {
             net.minecraft.world.gen.chunk.NoiseChunkGenerator noiseGen =
                     generator instanceof net.minecraft.world.gen.chunk.NoiseChunkGenerator ng ? ng : null;
             this.gatedNoiseGen = noiseGen;
-            this.gatedNoiseConfig = noiseConfig;
-            this.gatedHeightView = world;
+            this.gatedNoiseConfig = null;
+            this.gatedHeightView = null;
             this.noiseY = Math.floorDiv(y, 4);
+            this.template = BiomeSamplerTools.createTemplate(world);
 
             for (Layer layer : layers) {
                 images.put(layer, new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB));
@@ -463,85 +473,98 @@ public final class BiomePreviewExporter {
             long budgetNanos = Math.max(1L, budgetMs) * 1_000_000L;
             long deadline = System.nanoTime() + budgetNanos;
 
-            while (imageZ < height && System.nanoTime() <= deadline) {
-                int blockZ = zMin + (imageZ * stepBlocks);
-                int noiseZ = Math.floorDiv(blockZ, 4);
-                int blockX = xMin + (imageX * stepBlocks);
-                int noiseX = Math.floorDiv(blockX, 4);
+            if (phase == Phase.SAMPLING) {
+                while (imageZ < height && System.nanoTime() <= deadline) {
+                    int blockZ = zMin + (imageZ * stepBlocks);
+                    int noiseZ = Math.floorDiv(blockZ, 4);
+                    int blockX = xMin + (imageX * stepBlocks);
+                    int noiseX = Math.floorDiv(blockX, 4);
 
-                String sampledBiomeId = null;
-                if (needsBiomeSampling()) {
-                    RegistryEntry<Biome> base = baseSource.getBiome(noiseX, noiseY, noiseZ, sampler);
-                    RegistryEntry<Biome> picked = LatitudeBiomes.pick(
-                            biomeRegistry,
-                            base,
-                            blockX,
-                            blockZ,
-                            y,
-                            radiusBlocks,
-                            sampler,
-                            "SOURCE",
-                            gatedNoiseGen,
-                            gatedNoiseConfig,
-                            gatedHeightView);
-                    RegistryEntry<Biome> out = picked != null ? picked : base;
-                    sampledBiomeId = biomeId(biomeRegistry, out);
+                    String sampledBiomeId = null;
+                    if (needsBiomeSampling()) {
+                        RegistryEntry<Biome> base = baseSource.getBiome(noiseX, noiseY, noiseZ, sampler);
+                        RegistryEntry<Biome> picked = LatitudeBiomes.pick(
+                                biomeRegistry,
+                                base,
+                                blockX,
+                                blockZ,
+                                y,
+                                radiusBlocks,
+                                sampler,
+                                "SOURCE",
+                                gatedNoiseGen,
+                                gatedNoiseConfig,
+                                gatedHeightView);
+                        RegistryEntry<Biome> out = picked != null ? picked : base;
+                        sampledBiomeId = biomeId(biomeRegistry, out);
 
-                    boolean mangroveMaskHit = false;
-                    if (!maskTargets.isEmpty() && sampledBiomeId != null) {
-                        for (BiomeMaskLayer maskLayer : maskTargets) {
-                            boolean maskMatch = maskLayer.matches(sampledBiomeId);
-                            int maskColor = maskMatch ? MASK_MATCH_COLOR : MASK_MISS_COLOR;
-                            maskImages.get(maskLayer).setRGB(imageX, imageZ, maskColor);
-                            if (maskMatch && isMangroveMaskLayer(maskLayer)) {
-                                mangroveMaskHit = true;
+                        boolean mangroveMaskHit = false;
+                        if (!maskTargets.isEmpty() && sampledBiomeId != null) {
+                            for (BiomeMaskLayer maskLayer : maskTargets) {
+                                boolean maskMatch = maskLayer.matches(sampledBiomeId);
+                                int maskColor = maskMatch ? MASK_MATCH_COLOR : MASK_MISS_COLOR;
+                                maskImages.get(maskLayer).setRGB(imageX, imageZ, maskColor);
+                                if (maskMatch && isMangroveMaskLayer(maskLayer)) {
+                                    mangroveMaskHit = true;
+                                }
                             }
+                        }
+
+                        if (mangroveMaskHit) {
+                            out = forceMangroveSwampForAtlas(biomeRegistry, out);
+                            sampledBiomeId = biomeId(biomeRegistry, out);
+                        }
+
+                        biomeCounts.merge(sampledBiomeId, 1, Integer::sum);
+                        if (emitBiomeIndex && biomeIndexImage != null) {
+                            int biomeIndex = biomeIndices.computeIfAbsent(sampledBiomeId, ignored -> biomeIndices.size());
+                            biomeIndexImage.setRGB(imageX, imageZ, encodeBiomeIndexColor(biomeIndex));
+                        }
+                        if (layers.contains(Layer.BIOMES)) {
+                            int rgb = biomeColors.computeIfAbsent(sampledBiomeId, BiomePreviewExporter::stableColorForBiomeId);
+                            images.get(Layer.BIOMES).setRGB(imageX, imageZ, rgb);
                         }
                     }
 
-                    if (mangroveMaskHit) {
-                        out = forceMangroveSwampForAtlas(biomeRegistry, out);
-                        sampledBiomeId = biomeId(biomeRegistry, out);
+                    if (layers.contains(Layer.BANDS)) {
+                        LatitudeBands.Band band = bandForBlockZ(radiusBlocks, blockZ);
+                        images.get(Layer.BANDS).setRGB(imageX, imageZ, colorForBand(band));
+                        bandCounts.merge(band.id(), 1, Integer::sum);
                     }
 
-                    biomeCounts.merge(sampledBiomeId, 1, Integer::sum);
-                    if (emitBiomeIndex && biomeIndexImage != null) {
-                        int biomeIndex = biomeIndices.computeIfAbsent(sampledBiomeId, ignored -> biomeIndices.size());
-                        biomeIndexImage.setRGB(imageX, imageZ, encodeBiomeIndexColor(biomeIndex));
+                    if (layers.contains(Layer.TEMPERATURE) || layers.contains(Layer.HUMIDITY) || layers.contains(Layer.CONTINENTALNESS)) {
+                        MultiNoiseUtil.NoiseValuePoint point = sampler.sample(noiseX, noiseY, noiseZ);
+                        if (layers.contains(Layer.TEMPERATURE)) {
+                            double temperature01 = normalizeNoise(MultiNoiseUtil.toFloat(point.temperatureNoise()));
+                            images.get(Layer.TEMPERATURE).setRGB(imageX, imageZ, colorForTemperature(temperature01));
+                        }
+                        if (layers.contains(Layer.HUMIDITY)) {
+                            double humidity01 = normalizeNoise(MultiNoiseUtil.toFloat(point.humidityNoise()));
+                            images.get(Layer.HUMIDITY).setRGB(imageX, imageZ, colorForHumidity(humidity01));
+                        }
+                        if (layers.contains(Layer.CONTINENTALNESS)) {
+                            double continentalness = MathHelper.clamp(MultiNoiseUtil.toFloat(point.continentalnessNoise()), -1.0, 1.0);
+                            images.get(Layer.CONTINENTALNESS).setRGB(imageX, imageZ, colorForContinentalness(continentalness));
+                        }
                     }
-                    if (layers.contains(Layer.BIOMES)) {
-                        int rgb = biomeColors.computeIfAbsent(sampledBiomeId, BiomePreviewExporter::stableColorForBiomeId);
-                        images.get(Layer.BIOMES).setRGB(imageX, imageZ, rgb);
-                    }
+
+                    advanceCursor();
                 }
-
-                if (layers.contains(Layer.BANDS)) {
-                    LatitudeBands.Band band = bandForBlockZ(radiusBlocks, blockZ);
-                    images.get(Layer.BANDS).setRGB(imageX, imageZ, colorForBand(band));
-                    bandCounts.merge(band.id(), 1, Integer::sum);
-                }
-
-                if (layers.contains(Layer.TEMPERATURE) || layers.contains(Layer.HUMIDITY) || layers.contains(Layer.CONTINENTALNESS)) {
-                    MultiNoiseUtil.NoiseValuePoint point = sampler.sample(noiseX, noiseY, noiseZ);
-                    if (layers.contains(Layer.TEMPERATURE)) {
-                        double temperature01 = normalizeNoise(MultiNoiseUtil.toFloat(point.temperatureNoise()));
-                        images.get(Layer.TEMPERATURE).setRGB(imageX, imageZ, colorForTemperature(temperature01));
-                    }
-                    if (layers.contains(Layer.HUMIDITY)) {
-                        double humidity01 = normalizeNoise(MultiNoiseUtil.toFloat(point.humidityNoise()));
-                        images.get(Layer.HUMIDITY).setRGB(imageX, imageZ, colorForHumidity(humidity01));
-                    }
-                    if (layers.contains(Layer.CONTINENTALNESS)) {
-                        double continentalness = MathHelper.clamp(MultiNoiseUtil.toFloat(point.continentalnessNoise()), -1.0, 1.0);
-                        images.get(Layer.CONTINENTALNESS).setRGB(imageX, imageZ, colorForContinentalness(continentalness));
-                    }
-                }
-
-                advanceCursor();
             }
 
-            if (imageZ >= height) {
-                finalizeResult();
+            if (phase == Phase.SAMPLING && imageZ >= height) {
+                prepareInventoryPhase();
+            }
+
+            if (phase == Phase.INVENTORY && inventoryProcessor != null) {
+                long remainingMs = remainingBudgetMs(deadline);
+                if (remainingMs > 0L) {
+                    BiomeSamplerTools.InventoryReport report = inventoryProcessor.processBudget(remainingMs);
+                    if (report != null) {
+                        inventoryReport = report;
+                        finishExportArtifacts();
+                    }
+                }
             }
             return result;
         }
@@ -558,51 +581,104 @@ public final class BiomePreviewExporter {
             return layers.contains(Layer.BIOMES) || !maskTargets.isEmpty() || emitBiomeIndex;
         }
 
-        private void finalizeResult() {
+        private void prepareInventoryPhase() {
+            if (phase != Phase.SAMPLING) {
+                return;
+            }
             try {
-                if (!overlays.isEmpty()) {
-                    applyOverlays(images.values(), overlays, radiusBlocks, zMin, stepBlocks);
-                    applyOverlays(maskImages.values(), overlays, radiusBlocks, zMin, stepBlocks);
-                }
-
-                long seed = atlasSeed;
-                Path outputDir = atlasStepDirectory(defaultAtlasRoot(runDirectory), seed, radiusBlocks, stepBlocks);
-                Files.createDirectories(outputDir);
-
-                EnumMap<Layer, Path> layerPaths = new EnumMap<>(Layer.class);
-                Map<BiomeMaskLayer, Path> maskPaths = new LinkedHashMap<>();
-                Path biomeIndexPath = null;
-                for (Layer layer : layers) {
-                    Path pngPath = outputDir.resolve(layer.fileStem() + ".png");
-                    BufferedImage image = images.get(layer);
-                    boolean wrote = ImageIO.write(image, "png", pngPath.toFile());
-                    if (!wrote) {
-                        throw new IOException("PNG writer unavailable for layer " + layer.fileStem());
-                    }
-                    layerPaths.put(layer, pngPath);
-                }
-                for (BiomeMaskLayer maskLayer : maskTargets) {
-                    Path pngPath = outputDir.resolve(maskLayer.fileStem() + ".png");
-                    BufferedImage image = maskImages.get(maskLayer);
-                    boolean wrote = ImageIO.write(image, "png", pngPath.toFile());
-                    if (!wrote) {
-                        throw new IOException("PNG writer unavailable for layer " + maskLayer.fileStem());
-                    }
-                    maskPaths.put(maskLayer, pngPath);
-                }
-                if (emitBiomeIndex && biomeIndexImage != null) {
-                    biomeIndexPath = outputDir.resolve("biome_ids.png");
-                    boolean wrote = ImageIO.write(biomeIndexImage, "png", biomeIndexPath.toFile());
-                    if (!wrote) {
-                        throw new IOException("PNG writer unavailable for biome_ids");
-                    }
-                    writeBiomePalette(outputDir.resolve("biome_palette.json"), biomeIndices);
-                }
-
+                writeImageArtifacts();
                 int inventoryDiscoveryStep = inventoryDiscoveryStep(stepBlocks);
-                BiomeSamplerTools.InventoryReport inventoryReport = needsBiomeSampling()
-                        ? BiomeSamplerTools.discoverInventory(BiomeSamplerTools.createTemplate(world), seed, radiusBlocks, inventoryDiscoveryStep, y)
-                        : new BiomeSamplerTools.InventoryReport(seed, radiusBlocks, inventoryDiscoveryStep, y, List.of());
+                inventoryProcessor = needsBiomeSampling()
+                        ? BiomeSamplerTools.createInventoryScanProcessor(template, atlasSeed, radiusBlocks, inventoryDiscoveryStep, y)
+                        : null;
+                inventoryReport = inventoryProcessor == null
+                        ? new BiomeSamplerTools.InventoryReport(atlasSeed, radiusBlocks, inventoryDiscoveryStep, y, List.of())
+                        : null;
+                phase = Phase.INVENTORY;
+                System.out.println(String.format(
+                        Locale.ROOT,
+                        "[LAT][ATLAS_TIMING] phase=inventory-start seed=%d radius=%d step=%d y=%d",
+                        atlasSeed,
+                        radiusBlocks,
+                        inventoryDiscoveryStep,
+                        y));
+                if (inventoryProcessor == null) {
+                    finishExportArtifacts();
+                }
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        }
+
+        private void writeImageArtifacts() throws IOException {
+            if (!overlays.isEmpty()) {
+                applyOverlays(images.values(), overlays, radiusBlocks, zMin, stepBlocks);
+                applyOverlays(maskImages.values(), overlays, radiusBlocks, zMin, stepBlocks);
+            }
+
+            long seed = atlasSeed;
+            outputDir = atlasStepDirectory(defaultAtlasRoot(runDirectory), seed, radiusBlocks, stepBlocks);
+            Files.createDirectories(outputDir);
+
+            layerPaths = new EnumMap<>(Layer.class);
+            maskPaths = new LinkedHashMap<>();
+            biomeIndexPath = null;
+            for (Layer layer : layers) {
+                Path pngPath = outputDir.resolve(layer.fileStem() + ".png");
+                BufferedImage image = images.get(layer);
+                boolean wrote = ImageIO.write(image, "png", pngPath.toFile());
+                if (!wrote) {
+                    throw new IOException("PNG writer unavailable for layer " + layer.fileStem());
+                }
+                layerPaths.put(layer, pngPath);
+            }
+            for (BiomeMaskLayer maskLayer : maskTargets) {
+                Path pngPath = outputDir.resolve(maskLayer.fileStem() + ".png");
+                BufferedImage image = maskImages.get(maskLayer);
+                boolean wrote = ImageIO.write(image, "png", pngPath.toFile());
+                if (!wrote) {
+                    throw new IOException("PNG writer unavailable for layer " + maskLayer.fileStem());
+                }
+                maskPaths.put(maskLayer, pngPath);
+            }
+            if (emitBiomeIndex && biomeIndexImage != null) {
+                biomeIndexPath = outputDir.resolve("biome_ids.png");
+                boolean wrote = ImageIO.write(biomeIndexImage, "png", biomeIndexPath.toFile());
+                if (!wrote) {
+                    throw new IOException("PNG writer unavailable for biome_ids");
+                }
+                writeBiomePalette(outputDir.resolve("biome_palette.json"), biomeIndices);
+            }
+            primaryPng = layerPaths.get(Layer.BIOMES);
+            if (primaryPng == null && !layerPaths.isEmpty()) {
+                primaryPng = layerPaths.values().iterator().next();
+            }
+            if (primaryPng == null && !maskPaths.isEmpty()) {
+                primaryPng = maskPaths.values().iterator().next();
+            }
+            if (primaryPng == null && biomeIndexPath != null) {
+                primaryPng = biomeIndexPath;
+            }
+            if (primaryPng == null) {
+                throw new IOException("No export layers were generated");
+            }
+            System.out.println(String.format(
+                    Locale.ROOT,
+                    "[LAT][ATLAS_TIMING] phase=image-export-done seed=%d radius=%d step=%d",
+                    atlasSeed,
+                    radiusBlocks,
+                    stepBlocks));
+        }
+
+        private void finishExportArtifacts() {
+            try {
+                if (outputDir == null) {
+                    throw new IOException("Export output directory was not prepared");
+                }
+                int inventoryDiscoveryStep = inventoryDiscoveryStep(stepBlocks);
+                if (inventoryReport == null) {
+                    inventoryReport = new BiomeSamplerTools.InventoryReport(atlasSeed, radiusBlocks, inventoryDiscoveryStep, y, List.of());
+                }
                 Path inventoryPath = outputDir.resolve("world_biome_inventory.json");
                 BiomeSamplerTools.writeInventoryJson(inventoryPath, inventoryReport);
 
@@ -611,7 +687,7 @@ public final class BiomePreviewExporter {
                 long durationMs = (System.nanoTime() - startNanos) / 1_000_000L;
                 writeSummary(
                         summaryPath,
-                        seed,
+                        atlasSeed,
                         radiusBlocks,
                         stepBlocks,
                         y,
@@ -635,7 +711,7 @@ public final class BiomePreviewExporter {
                 if (options.writeLegends()) {
                     writeLegendFiles(
                             outputDir,
-                            seed,
+                            atlasSeed,
                             radiusBlocks,
                             stepBlocks,
                             y,
@@ -649,18 +725,40 @@ public final class BiomePreviewExporter {
                 }
 
                 this.result = new ExportResult(
+                        primaryPng,
                         summaryPath,
-                        summaryPath,
-                        seed,
+                        atlasSeed,
                         radiusBlocks,
                         stepBlocks,
                         width,
                         height,
                         totalSamples,
                         durationMs);
+                phase = Phase.COMPLETE;
+                System.out.println(String.format(
+                        Locale.ROOT,
+                        "[LAT][ATLAS_TIMING] phase=export-complete seed=%d radius=%d step=%d durationMs=%d",
+                        atlasSeed,
+                        radiusBlocks,
+                        stepBlocks,
+                        durationMs));
             } catch (IOException e) {
                 throw new RuntimeException(e);
             }
+        }
+
+        private long remainingBudgetMs(long deadlineNanos) {
+            long remainingNanos = deadlineNanos - System.nanoTime();
+            if (remainingNanos <= 0L) {
+                return 0L;
+            }
+            return Math.max(1L, remainingNanos / 1_000_000L);
+        }
+
+        private enum Phase {
+            SAMPLING,
+            INVENTORY,
+            COMPLETE
         }
     }
 
