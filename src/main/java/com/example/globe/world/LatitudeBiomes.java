@@ -6807,13 +6807,6 @@ public final class LatitudeBiomes {
                     // fall through
                 }
             }
-            if (u < 0.42 && opennessNoise >= 0.54 && opennessNoise < 0.74 && compositionBias > 0.08) {
-                try {
-                    return biome(biomes, "minecraft:plains");
-                } catch (Throwable ignored) {
-                    // fall through
-                }
-            }
             if (!strongOpen) {
                 if (isJungleFamily(base)) {
                     Holder<Biome> wetWarm = pickWarmFallback(biomes, BAND_TROPICAL);
@@ -6908,14 +6901,6 @@ public final class LatitudeBiomes {
                 Holder<Biome> pick = biome(biomes, "minecraft:savanna");
                 return warmOpenAuditReturn("open_savanna_return", pick, pick != base, compositionBias, opennessNoise, strongOpen);
             } catch (Throwable ignoredSavanna) {
-                // fall through
-            }
-        }
-        if (u < 0.42 && opennessNoise >= 0.54 && opennessNoise < 0.74 && compositionBias > 0.08) {
-            try {
-                Holder<Biome> pick = biome(biomes, "minecraft:plains");
-                return warmOpenAuditReturn("open_other_return", pick, pick != base, compositionBias, opennessNoise, strongOpen);
-            } catch (Throwable ignored) {
                 // fall through
             }
         }
@@ -7034,12 +7019,6 @@ public final class LatitudeBiomes {
                     return savanna;
                 }
             }
-            if (u < 0.42 && opennessNoise >= 0.54 && opennessNoise < 0.74 && compositionBias > 0.08) {
-                Holder<Biome> plains = entryById(biomes, "minecraft:plains");
-                if (plains != null) {
-                    return plains;
-                }
-            }
             if (!strongOpen) {
                 if (isJungleFamily(base)) {
                     Holder<Biome> savanna = entryById(biomes, "minecraft:savanna");
@@ -7118,12 +7097,6 @@ public final class LatitudeBiomes {
             Holder<Biome> savanna = entryById(biomes, "minecraft:savanna");
             if (savanna != null) {
                 return warmOpenAuditReturn("open_savanna_return", savanna, savanna != base, compositionBias, opennessNoise, strongOpen);
-            }
-        }
-        if (u < 0.42 && opennessNoise >= 0.54 && opennessNoise < 0.74 && compositionBias > 0.08) {
-            Holder<Biome> plains = entryById(biomes, "minecraft:plains");
-            if (plains != null) {
-                return warmOpenAuditReturn("open_other_return", plains, plains != base, compositionBias, opennessNoise, strongOpen);
             }
         }
         if (!strongOpen) {
