@@ -11,7 +11,7 @@ import com.example.globe.dev.LatitudeDevCommand;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
-import net.fabricmc.fabric.api.event.lifecycle.v1.ServerWorldEvents;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLevelEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.commands.Commands;
@@ -132,7 +132,7 @@ public class GlobeMod implements ModInitializer {
 
         // Initialize province authority at world-load time, before spawn-chunk generation fires
         // for brand-new worlds. SERVER_STARTED fires too late (after spawn chunks are pregenerated).
-        ServerWorldEvents.LOAD.register(GlobeMod::initLatitudeBiomesForWorld);
+        ServerLevelEvents.LOAD.register(GlobeMod::initLatitudeBiomesForWorld);
         ServerLifecycleEvents.SERVER_STARTED.register(GlobeMod::applyWorldBorder);
         BiomePreviewHeadlessRunner.register();
         ServerLifecycleEvents.SERVER_STOPPED.register(server -> {
@@ -205,7 +205,7 @@ public class GlobeMod implements ModInitializer {
         if (!isGlobeOverworld(world)) {
             return;
         }
-        long seed = server.getWorldData().worldGenOptions().seed();
+        long seed = server.getWorldGenSettings().options().seed();
         int radius = borderRadiusForGlobeOverworld(world);
         // Radius first: ensures rebuildProvinceAuthority() has a valid radius when the seed fires.
         LatitudeBiomes.setRadius(radius);
@@ -230,7 +230,7 @@ public class GlobeMod implements ModInitializer {
         // atomically the moment the seed is available (not on the next setRadius call).
         LatitudeBiomes.setRadius(borderRadiusBlocks);
 
-        long seed = overworld.getServer().getWorldData().worldGenOptions().seed();
+        long seed = overworld.getServer().getWorldGenSettings().options().seed();
         LatitudeBiomes.setWorldSeed(seed);
 
         WorldBorder border = overworld.getWorldBorder();
@@ -376,7 +376,7 @@ public class GlobeMod implements ModInitializer {
 
         String zoneId = id;
         if (zoneId != null && zoneId.equals("RANDOM")) {
-            long seed = world.getServer().getWorldData().worldGenOptions().seed();
+            long seed = world.getServer().getWorldGenSettings().options().seed();
             zoneId = resolveSpawnZoneId(zoneId, seed);
             LOGGER.info("Resolved RANDOM spawn zone: player={}, seed={}, chosen={}", player.getName().getString(), seed, zoneId);
         }
@@ -393,7 +393,7 @@ public class GlobeMod implements ModInitializer {
             radius = (int) Math.round(com.example.globe.util.LatitudeMath.halfSize(border));
         }
 
-        long seed = world.getServer().getWorldData().worldGenOptions().seed();
+        long seed = world.getServer().getWorldGenSettings().options().seed();
         double v = hash01(seed, 1, 0, SPAWN_SALT);
         
         double spawnAbsLatFrac = com.example.globe.util.LatitudeMath.spawnFracForZoneKey(zoneId);
@@ -620,8 +620,8 @@ public class GlobeMod implements ModInitializer {
         if (stack.is(Items.BUNDLE)) {
             BundleContents contents = stack.get(DataComponents.BUNDLE_CONTENTS);
             if (contents != null) {
-                for (ItemStack inside : contents.items()) {
-                    if (containsCompass(inside, depth + 1)) return true;
+                for (var inside : contents.items()) {
+                    if (containsCompass(inside.create(), depth + 1)) return true;
                 }
             }
         }
