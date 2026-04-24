@@ -8470,8 +8470,7 @@ public final class LatitudeBiomes {
                 jungleClamped = softened != out;
                 out = softened;
             } else if (isBadlandsFamily(out) && warmProvince == ProvinceAuthority.Province.WARM_WET) {
-                // Outside a true arid province, drop badlands to the narrow dry fallback to avoid seam leakage.
-                out = pickDryWarmFallback(biomes, out);
+                // Keep badlands-family intact outside dry provinces; province rewrite is suppressed below.
             } else if (warmProvince == ProvinceAuthority.Province.WARM_MEDIUM
                     && openness >= 0.66
                     && (isBiomeId(out, "minecraft:plains") || isBiomeId(out, "minecraft:sunflower_plains"))
@@ -8613,8 +8612,7 @@ public final class LatitudeBiomes {
                 jungleClamped = softened != out;
                 out = softened;
             } else if (isBadlandsFamily(out) && warmProvince == ProvinceAuthority.Province.WARM_WET) {
-                Holder<Biome> softened = pickDryWarmFallback(biomes, out);
-                out = softened != null ? softened : out;
+                // Keep badlands-family intact outside dry provinces; province rewrite is suppressed below.
             } else if (warmProvince == ProvinceAuthority.Province.WARM_MEDIUM
                     && openness >= 0.66
                     && (isBiomeId(out, "minecraft:plains") || isBiomeId(out, "minecraft:sunflower_plains"))
