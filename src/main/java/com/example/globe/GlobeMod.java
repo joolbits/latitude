@@ -151,7 +151,7 @@ public class GlobeMod implements ModInitializer {
 
             LatitudeWorldState worldState = LatitudeWorldState.get(overworld);
             boolean isBrandNewWorld = overworld.getGameTime() < 100L;
-            boolean spawnAlreadyChosen = handler.player.getCommandTags().contains(SPAWN_CHOSEN_TAG);
+            boolean spawnAlreadyChosen = handler.player.entityTags().contains(SPAWN_CHOSEN_TAG);
 
             String pendingZone = server.isDedicatedServer() ? null : GlobePending.consume();
 
@@ -162,7 +162,7 @@ public class GlobeMod implements ModInitializer {
                 } else if (hasCompassAnywhere(handler.player)) {
                     StartCompass.markReceived(handler.player);
                 } else {
-                    boolean given = handler.player.giveItemStack(new ItemStack(Items.COMPASS));
+                    boolean given = handler.player.addItem(new ItemStack(Items.COMPASS));
                     if (given) {
                         StartCompass.markReceived(handler.player);
                     }
@@ -359,7 +359,7 @@ public class GlobeMod implements ModInitializer {
     }
 
     private static void applySpawnChoice(ServerPlayer player, String id) {
-        if (player.getTags().contains(SPAWN_CHOSEN_TAG)) {
+        if (player.entityTags().contains(SPAWN_CHOSEN_TAG)) {
             return;
         }
 
