@@ -4,7 +4,7 @@ import com.example.globe.GlobePending;
 import com.example.globe.client.GlobeWorldSize;
 import com.example.globe.client.GlobeWorldSizeSelection;
 import net.minecraft.ChatFormatting;
-import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.CycleButton;
@@ -107,7 +107,7 @@ public abstract class CreateWorldScreenSpawnZoneMixin extends Screen {
     }
 
     @Inject(method = "render", at = @At("TAIL"))
-    private void globe$render(GuiGraphics context, int mouseX, int mouseY, float delta, CallbackInfo ci) {
+    private void globe$render(GuiGraphicsExtractor context, int mouseX, int mouseY, float delta, CallbackInfo ci) {
         globe$updateEnabledState();
     }
 

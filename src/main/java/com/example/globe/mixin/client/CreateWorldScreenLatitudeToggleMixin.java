@@ -1,7 +1,7 @@
 package com.example.globe.mixin.client;
 
 import net.minecraft.ChatFormatting;
-import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.events.GuiEventListener;
@@ -101,14 +101,14 @@ public abstract class CreateWorldScreenLatitudeToggleMixin extends Screen {
     }
 
     @Inject(method = "render(Lnet/minecraft/client/gui/DrawContext;IIF)V", at = @At("TAIL"))
-    private void latitude$render(GuiGraphics context, int mouseX, int mouseY, float delta, CallbackInfo ci) {
+    private void latitude$render(GuiGraphicsExtractor context, int mouseX, int mouseY, float delta, CallbackInfo ci) {
         latitude$syncFromSelectedPreset();
         if (this.latitude$toggleBtn == null) return;
         if (this.latitude$enabled) return;
 
         int x = this.latitude$toggleBtn.getX();
         int y = this.latitude$toggleBtn.getY() + this.latitude$toggleBtn.getHeight() + 4;
-        context.drawString(this.font, "Latitude is OFF — this world will use default generation.", x, y, 0xFFCCCCCC);
+        context.text(this.font, "Latitude is OFF — this world will use default generation.", x, y, 0xFFCCCCCC);
     }
 
     @Unique
