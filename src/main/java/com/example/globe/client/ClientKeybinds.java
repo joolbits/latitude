@@ -1,7 +1,6 @@
 package com.example.globe.client;
 
 import com.mojang.blaze3d.platform.InputConstants;
-import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.resources.Identifier;
 
@@ -14,18 +13,18 @@ public final class ClientKeybinds {
     private ClientKeybinds() {}
 
     public static void init() {
-        TOGGLE_COMPASS = KeyBindingHelper.registerKeyBinding(new KeyMapping(
+        TOGGLE_COMPASS = new KeyMapping(
                 "key.globe.toggle_compass_hud",
                 InputConstants.Type.KEYSYM,
                 InputConstants.KEY_COMMA,
                 CATEGORY
-        ));
+        );
 
-        OPEN_SETTINGS = KeyBindingHelper.registerKeyBinding(new KeyMapping(
+        OPEN_SETTINGS = new KeyMapping(
                 "key.globe.open_settings",
                 InputConstants.Type.KEYSYM,
                 InputConstants.KEY_F9,
                 CATEGORY
-        ));
+        );
     }
 }
