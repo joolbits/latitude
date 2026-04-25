@@ -7894,11 +7894,15 @@ public final class LatitudeBiomes {
             case WARM_DRY -> {
                 if (isDesertFamily(pick) || isBadlandsFamily(pick)) return pick;
                 try {
-                    return biome(biomes, "minecraft:desert");
+                    return biome(biomes, "minecraft:badlands");
                 } catch (Throwable ignored) {
                 }
                 try {
-                    return biome(biomes, "minecraft:badlands");
+                    return biome(biomes, "minecraft:savanna");
+                } catch (Throwable ignored) {
+                }
+                try {
+                    return biome(biomes, "minecraft:desert");
                 } catch (Throwable ignored) {
                     return pick;
                 }
