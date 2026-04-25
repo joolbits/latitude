@@ -82,9 +82,7 @@ public abstract class HandledScreenCompassToggleMixin {
         if (stack.is(Items.BUNDLE)) {
             BundleContents contents = stack.get(DataComponents.BUNDLE_CONTENTS);
             if (contents != null) {
-                for (ItemStack inside : contents.items()) {
-                    if (containsCompass(inside, depth + 1)) return true;
-                }
+                if (contents.itemCopyStream().anyMatch(inside -> containsCompass(inside, depth + 1))) return true;
             }
         }
 

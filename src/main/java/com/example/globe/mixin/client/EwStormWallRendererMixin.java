@@ -8,7 +8,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.LevelRenderer;
 import net.minecraft.client.renderer.SubmitNodeCollector;
 import net.minecraft.client.renderer.rendertype.RenderTypes;
-import net.minecraft.client.renderer.state.LevelRenderState;
+import net.minecraft.client.renderer.state.level.LevelRenderState;
 import net.minecraft.world.phys.Vec3;
 import org.lwjgl.opengl.GL11;
 import org.spongepowered.asm.mixin.Mixin;
@@ -16,6 +16,11 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
+// DEFERRED (26.1): not registered in globe.mixins.json. Target method
+// LevelRenderer.pushEntityRenders no longer exists in 26.1 (render pipeline
+// refactored to extract/render split). Render call body is also disabled.
+// Re-enabling requires (a) finding a 26.1 injection point for custom-geometry
+// submission and (b) re-adding "client.EwStormWallRendererMixin" to the config.
 @Mixin(LevelRenderer.class)
 public abstract class EwStormWallRendererMixin {
 
