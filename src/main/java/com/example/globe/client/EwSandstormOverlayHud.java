@@ -2,7 +2,7 @@ package com.example.globe.client;
 
 import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.util.Mth;
 
 public final class EwSandstormOverlayHud {
@@ -17,7 +17,7 @@ public final class EwSandstormOverlayHud {
     private static final int DUST_G = 186;
     private static final int DUST_B = 132;
 
-    public static void render(GuiGraphics ctx, DeltaTracker tickCounter) {
+    public static void render(GuiGraphicsExtractor ctx, DeltaTracker tickCounter) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null || mc.level == null) return;
         if (mc.options.hideGui) return;

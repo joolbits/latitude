@@ -2,7 +2,7 @@ package com.example.globe.client;
 
 import com.mojang.blaze3d.platform.InputConstants;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.AbstractSliderButton;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.Button;
@@ -111,8 +111,8 @@ public class LatitudeHudAdjustScreen extends Screen {
     }
 
     @Override
-    public void render(GuiGraphics ctx, int mouseX, int mouseY, float delta) {
-        this.renderTransparentBackground(ctx);
+    public void extractRenderState(GuiGraphicsExtractor ctx, int mouseX, int mouseY, float delta) {
+        this.extractTransparentBackground(ctx);
         ctx.fill(0, 0, this.width, this.height, 0x66000000);
 
         if (showSettings) {
@@ -121,11 +121,11 @@ public class LatitudeHudAdjustScreen extends Screen {
             int pw = 174;
             int ph = 7 * 24 + 10;
             ctx.fill(px, py, px + pw, py + ph, 0xAA000000);
-            ctx.drawString(this.font, "HUD Settings", px + 6, py + 6, 0xFFFFFFFF);
-            ctx.drawString(this.font, "Press L to hide/show settings", px + 6, py + 18, 0xFFCCCCCC);
+            ctx.text(this.font, "HUD Settings", px + 6, py + 6, 0xFFFFFFFF);
+            ctx.text(this.font, "Press L to hide/show settings", px + 6, py + 18, 0xFFCCCCCC);
         }
 
-        ctx.drawString(this.font,
+        ctx.text(this.font,
                 "Drag the zone title to reposition. Click Done when finished.",
                 8,
                 8,
@@ -155,7 +155,7 @@ public class LatitudeHudAdjustScreen extends Screen {
             CompassHud.renderAdjustPreview(ctx, this.width, this.height);
         }
 
-        super.render(ctx, mouseX, mouseY, delta);
+        super.extractRenderState(ctx, mouseX, mouseY, delta);
     }
 
     @Override

@@ -6,7 +6,7 @@ import net.minecraft.ChatFormatting;
 import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
-import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.TextColor;
 import net.minecraft.util.Mth;
@@ -115,7 +115,7 @@ public final class GlobeWarningOverlay {
         };
     }
 
-    public static void render(GuiGraphics ctx, DeltaTracker tickCounter) {
+    public static void render(GuiGraphicsExtractor ctx, DeltaTracker tickCounter) {
         Minecraft client = Minecraft.getInstance();
 
         if (client == null) {
@@ -226,11 +226,11 @@ public final class GlobeWarningOverlay {
         return (alpha << 24) | (rgb & 0x00FFFFFF);
     }
 
-    private static void drawCenteredWarning(GuiGraphics ctx, Font tr, Component text, int y, int argbColor) {
+    private static void drawCenteredWarning(GuiGraphicsExtractor ctx, Font tr, Component text, int y, int argbColor) {
         int screenW = Minecraft.getInstance().getWindow().getGuiScaledWidth();
         int w = tr.width(text);
         int x = Math.max(4, (screenW - w) / 2);
-        ctx.drawString(tr, text, x, y, argbColor);
+        ctx.text(tr, text, x, y, argbColor);
     }
 
     private static String ewDangerDirection(net.minecraft.world.level.border.WorldBorder border, double playerX) {

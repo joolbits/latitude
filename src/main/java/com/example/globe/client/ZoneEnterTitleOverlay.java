@@ -2,7 +2,7 @@ package com.example.globe.client;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
-import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.network.chat.Component;
 
 public final class ZoneEnterTitleOverlay {
@@ -41,7 +41,7 @@ public final class ZoneEnterTitleOverlay {
         return now >= startWorldTime && now < endWorldTime;
     }
 
-    public static void render(GuiGraphics ctx, int screenW, int screenH) {
+    public static void render(GuiGraphicsExtractor ctx, int screenW, int screenH) {
         Minecraft client = Minecraft.getInstance();
         if (client == null || client.level == null || title == null) {
             return;
@@ -78,19 +78,19 @@ public final class ZoneEnterTitleOverlay {
         try {
             m.translate(cx, cy);
             m.scale(scale, scale);
-            ctx.drawCenteredString(tr, title, 0, 0, argb);
+            ctx.centeredText(tr, title, 0, 0, argb);
         } finally {
             m.popMatrix();
         }
     }
 
-    public static void renderStatic(GuiGraphics ctx, int screenW, int screenH, String titleText, double scale) {
+    public static void renderStatic(GuiGraphicsExtractor ctx, int screenW, int screenH, String titleText, double scale) {
         int cx = screenW / 2;
         int cy = screenH / 2;
         renderStaticAt(ctx, cx, cy, titleText, scale);
     }
 
-    public static void renderStaticAt(GuiGraphics ctx, int screenW, int screenH, String text, double scale, int offsetX, int offsetY) {
+    public static void renderStaticAt(GuiGraphicsExtractor ctx, int screenW, int screenH, String text, double scale, int offsetX, int offsetY) {
         int cx = (screenW / 2) + offsetX;
         int cy = (screenH / 2) + offsetY;
 
@@ -112,13 +112,13 @@ public final class ZoneEnterTitleOverlay {
             int w = tr.width(text);
             int x = -w / 2;
             int y = -tr.lineHeight / 2;
-            ctx.drawString(tr, text, x, y, argb, true);
+            ctx.text(tr, text, x, y, argb, true);
         } finally {
             m.popMatrix();
         }
     }
 
-    public static void renderStaticAt(GuiGraphics ctx, int cx, int cy, String titleText, double scale) {
+    public static void renderStaticAt(GuiGraphicsExtractor ctx, int cx, int cy, String titleText, double scale) {
         Minecraft client = Minecraft.getInstance();
         if (client == null || client.font == null) {
             return;
@@ -133,7 +133,7 @@ public final class ZoneEnterTitleOverlay {
             m.translate(cx, cy);
             float s = (float) scale;
             m.scale(s, s);
-            ctx.drawCenteredString(tr, Component.literal(titleText), 0, 0, argb);
+            ctx.centeredText(tr, Component.literal(titleText), 0, 0, argb);
         } finally {
             m.popMatrix();
         }

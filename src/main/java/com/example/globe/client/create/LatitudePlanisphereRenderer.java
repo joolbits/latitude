@@ -3,7 +3,7 @@ package com.example.globe.client.create;
 import com.example.globe.client.GlobeWorldSize;
 import com.example.globe.util.LatitudeBands;
 import java.util.Arrays;
-import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 
 /**
  * Renders a live 2D latitude disc for the bespoke create-world screen.
@@ -51,7 +51,7 @@ public final class LatitudePlanisphereRenderer {
      * @param panelBottom  bottom edge of the panel (for label clipping)
      * @param textRenderer text renderer for degree labels
      */
-    public static void render(GuiGraphics ctx, int cx, int cy, int maxRadius,
+    public static void render(GuiGraphicsExtractor ctx, int cx, int cy, int maxRadius,
                               GlobeWorldSize size, LatitudeBands.Band selectedZone,
                               int panelRight, int panelTop, int panelBottom,
                               net.minecraft.client.gui.Font textRenderer) {
@@ -191,7 +191,7 @@ public final class LatitudePlanisphereRenderer {
     }
 
     // ── Draw a single horizontal latitude line clipped to the disc ──
-    private static void drawLatitudeLine(GuiGraphics ctx, int cx, int cy, int radius, int yOff, int color) {
+    private static void drawLatitudeLine(GuiGraphicsExtractor ctx, int cx, int cy, int radius, int yOff, int color) {
         float frac = 1.0f - (float) (yOff * yOff) / (float) (radius * radius);
         if (frac <= 0) return;
         int halfW = (int) (Math.sqrt(frac) * radius);
@@ -204,18 +204,18 @@ public final class LatitudePlanisphereRenderer {
         return Math.max(LABEL_MIN_SCALE, Math.min(LABEL_MAX_SCALE, scaled * LABEL_BASE_SCALE / LABEL_MIN_SCALE));
     }
 
-    private static void drawScaledText(GuiGraphics ctx, net.minecraft.client.gui.Font tr,
+    private static void drawScaledText(GuiGraphicsExtractor ctx, net.minecraft.client.gui.Font tr,
                                        String text, int x, int y, float scale, int color) {
         var matrices = ctx.pose();
         matrices.pushMatrix();
         matrices.translate((float) x, (float) y);
         matrices.scale(scale, scale);
-        ctx.drawString(tr, text, 0, 0, color, false);
+        ctx.text(tr, text, 0, 0, color, false);
         matrices.popMatrix();
     }
 
     // ── Dashed circle (decorative, for small worlds) ──
-    private static void drawDashedCircle(GuiGraphics ctx, int cx, int cy, int radius, int color) {
+    private static void drawDashedCircle(GuiGraphicsExtractor ctx, int cx, int cy, int radius, int color) {
         int dashLen = 3;
         int gapLen = 3;
         for (int dy = -radius; dy <= radius; dy++) {
@@ -237,7 +237,7 @@ public final class LatitudePlanisphereRenderer {
     }
 
     // ── Fill a circular disc ──
-    private static void fillCircle(GuiGraphics ctx, int cx, int cy, int radius, int color) {
+    private static void fillCircle(GuiGraphicsExtractor ctx, int cx, int cy, int radius, int color) {
         for (int dy = -radius; dy <= radius; dy++) {
             float frac = 1.0f - (float) (dy * dy) / (float) (radius * radius);
             if (frac <= 0) continue;
@@ -248,7 +248,7 @@ public final class LatitudePlanisphereRenderer {
     }
 
     // ── Fill a horizontal band strip within a circular disc ──
-    private static void fillBandStrip(GuiGraphics ctx, int cx, int cy, int radius, int yStart, int yEnd, int color) {
+    private static void fillBandStrip(GuiGraphicsExtractor ctx, int cx, int cy, int radius, int yStart, int yEnd, int color) {
         for (int dy = yStart; dy < yEnd; dy++) {
             float frac = 1.0f - (float) (dy * dy) / (float) (radius * radius);
             if (frac <= 0) continue;
@@ -269,7 +269,7 @@ public final class LatitudePlanisphereRenderer {
      * @param size         both width and height of the bounding square (pixels)
      * @param selectedBand the currently selected latitude band
      */
-    public static void renderCompact(GuiGraphics context, int x, int y, int size, LatitudeBands.Band selectedBand) {
+    public static void renderCompact(GuiGraphicsExtractor context, int x, int y, int size, LatitudeBands.Band selectedBand) {
         if (size < 20) return;
 
         int radius = size / 2;

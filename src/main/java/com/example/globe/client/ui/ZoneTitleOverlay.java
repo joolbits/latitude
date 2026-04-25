@@ -2,7 +2,7 @@ package com.example.globe.client.ui;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
-import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.network.chat.Component;
 
 public final class ZoneTitleOverlay {
@@ -28,7 +28,7 @@ public final class ZoneTitleOverlay {
         ZoneTitleOverlay.startWorldTime = client.level.getGameTime();
     }
 
-    public static void render(GuiGraphics ctx, float tickDelta) {
+    public static void render(GuiGraphicsExtractor ctx, float tickDelta) {
         Minecraft client = Minecraft.getInstance();
         if (client == null || client.level == null || client.font == null) {
             return;
@@ -80,14 +80,14 @@ public final class ZoneTitleOverlay {
         try {
             m.translate(screenW / 2, baseY);
             m.scale(2.0f, 2.0f);
-            ctx.drawCenteredString(tr, title, 0, 0, argb);
+            ctx.centeredText(tr, title, 0, 0, argb);
         } finally {
             m.popMatrix();
         }
 
         if (subtitle != null) {
             int subY = baseY + (tr.lineHeight * 2) + 6;
-            ctx.drawCenteredString(tr, subtitle, screenW / 2, subY, argb);
+            ctx.centeredText(tr, subtitle, screenW / 2, subY, argb);
         }
     }
 }
