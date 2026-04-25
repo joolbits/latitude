@@ -3,7 +3,7 @@ package com.example.globe.mixin;
 import com.example.globe.client.CompassHudConfig;
 import com.mojang.blaze3d.platform.InputConstants;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.core.component.DataComponents;
@@ -50,7 +50,7 @@ public abstract class HandledScreenCompassToggleMixin {
     }
 
     @Inject(method = "drawSlot", at = @At("TAIL"))
-    private void globe$drawCompassDisabledX(GuiGraphics ctx, Slot slot, int i, int j, CallbackInfo ci) {
+    private void globe$drawCompassDisabledX(GuiGraphicsExtractor ctx, Slot slot, int i, int j, CallbackInfo ci) {
         if (CompassHudConfig.get().enabled) return;
         if (slot == null) return;
 
