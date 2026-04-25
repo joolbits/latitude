@@ -4,7 +4,6 @@ import com.example.globe.GlobeMod;
 import com.example.globe.world.LatitudeBiomes;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.levelgen.feature.FeaturePlaceContext;
-import net.minecraft.world.level.levelgen.feature.RandomPatchFeature;
 import net.minecraft.world.level.levelgen.feature.TreeFeature;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
@@ -15,7 +14,8 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
  * Prevents trees and grass/flower patches from generating past the
  * extreme-polar-cap latitude cutoff, enforcing a dead barren cap.
  */
-@Mixin({TreeFeature.class, RandomPatchFeature.class})
+// RandomPatchFeature removed in 26.1; vegetation patch guard requires separate research
+@Mixin(TreeFeature.class)
 public class ExtremePolarVegetationGuardMixin {
 
     @Inject(method = "generate(Lnet/minecraft/world/gen/feature/util/FeatureContext;)Z",

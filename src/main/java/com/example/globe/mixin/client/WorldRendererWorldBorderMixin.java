@@ -2,7 +2,7 @@ package com.example.globe.mixin.client;
 
 import com.example.globe.client.GlobeClientState;
 import net.minecraft.client.renderer.WorldBorderRenderer;
-import net.minecraft.client.renderer.state.WorldBorderRenderState;
+import net.minecraft.client.renderer.state.level.WorldBorderRenderState;
 import net.minecraft.world.phys.Vec3;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
