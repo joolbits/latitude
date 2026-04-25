@@ -4,7 +4,7 @@ import com.mojang.blaze3d.platform.InputConstants;
 import java.util.ArrayList;
 import java.util.List;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.AbstractSliderButton;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.Button;
@@ -282,8 +282,8 @@ public class LatitudeHudStudioScreen extends Screen {
     }
 
     @Override
-    public void render(GuiGraphics ctx, int mouseX, int mouseY, float delta) {
-        this.renderTransparentBackground(ctx);
+    public void extractRenderState(GuiGraphicsExtractor ctx, int mouseX, int mouseY, float delta) {
+        this.extractTransparentBackground(ctx);
         ctx.fill(0, 0, this.width, this.height, 0x66000000);
 
         int sidebarX = 6;
@@ -323,12 +323,12 @@ public class LatitudeHudStudioScreen extends Screen {
 
         applySidebarScroll();
         drawSidebarScrollbar(ctx);
-        super.render(ctx, mouseX, mouseY, delta);
+        super.extractRenderState(ctx, mouseX, mouseY, delta);
 
         if (sidebarVisible) {
-            ctx.drawString(this.font, "Press L to hide settings", 8, 8, 0xAAFFFFFF);
+            ctx.text(this.font, "Press L to hide settings", 8, 8, 0xAAFFFFFF);
         } else {
-            ctx.drawString(this.font, "Press L to show settings", 8, 8, 0xFFFFFFFF);
+            ctx.text(this.font, "Press L to show settings", 8, 8, 0xFFFFFFFF);
         }
     }
 
@@ -538,7 +538,7 @@ public class LatitudeHudStudioScreen extends Screen {
         }
     }
 
-    private void drawSidebarScrollbar(GuiGraphics ctx) {
+    private void drawSidebarScrollbar(GuiGraphicsExtractor ctx) {
         if (!sidebarVisible) return;
         int viewportH = sidebarViewportBottom - sidebarViewportTop;
         int maxScroll = sidebarContentHeight - viewportH;

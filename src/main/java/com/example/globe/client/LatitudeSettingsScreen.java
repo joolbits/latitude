@@ -3,7 +3,7 @@ package com.example.globe.client;
 import java.util.ArrayList;
 import java.util.List;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.AbstractSliderButton;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.Button;
@@ -197,7 +197,7 @@ public class LatitudeSettingsScreen extends Screen {
     }
 
     @Override
-    public void render(GuiGraphics context, int mouseX, int mouseY, float delta) {
+    public void extractRenderState(GuiGraphicsExtractor context, int mouseX, int mouseY, float delta) {
         context.fill(0, 0, this.width, this.height, BG_COLOR);
         drawPanel(context);
         drawHeader(context);
@@ -232,7 +232,7 @@ public class LatitudeSettingsScreen extends Screen {
         }
 
         drawScrollbar(context, maxScroll);
-        super.render(context, mouseX, mouseY, delta);
+        super.extractRenderState(context, mouseX, mouseY, delta);
     }
 
     @Override
@@ -258,7 +258,7 @@ public class LatitudeSettingsScreen extends Screen {
         return "Compass Style: " + style + " | " + compact;
     }
 
-    private void drawScrollbar(GuiGraphics context, int maxScroll) {
+    private void drawScrollbar(GuiGraphicsExtractor context, int maxScroll) {
         if (maxScroll <= 0) return;
         int trackX = panelX + panelWidth - 5;
         int trackTop = panelTop + 4;
@@ -273,7 +273,7 @@ public class LatitudeSettingsScreen extends Screen {
         context.fill(trackX, thumbY, trackX + 3, thumbY + thumbH, GOLD);
     }
 
-    private void drawCompassPreview(GuiGraphics ctx, int x, int y, int w, int h, CompassHudConfig cfg) {
+    private void drawCompassPreview(GuiGraphicsExtractor ctx, int x, int y, int w, int h, CompassHudConfig cfg) {
         int boxColor = 0x33111111;
         ctx.fill(x, y, x + w, y + h, boxColor);
 
@@ -360,7 +360,7 @@ public class LatitudeSettingsScreen extends Screen {
         return os.toLowerCase(java.util.Locale.ROOT).contains("win");
     }
 
-    private void drawPanel(GuiGraphics context) {
+    private void drawPanel(GuiGraphicsExtractor context) {
         int inset = 10;
         int x0 = panelX - inset;
         int y0 = panelTop - inset - 16;
@@ -382,7 +382,7 @@ public class LatitudeSettingsScreen extends Screen {
         context.fill(panelX + 2, panelBottom + 7, panelX + panelWidth - 2, panelBottom + 8, GOLD & 0x66FFFFFF);
     }
 
-    private void drawHeader(GuiGraphics context) {
+    private void drawHeader(GuiGraphicsExtractor context) {
         int centerX = this.width / 2;
         int titleY = this.panelTop - 70;
         int subtitleY = titleY + 18;
@@ -395,22 +395,22 @@ public class LatitudeSettingsScreen extends Screen {
         drawCenteredText(context, Component.literal("Client"), centerX, sectionY, MUTED, true);
     }
 
-    private void drawCenteredText(GuiGraphics context, Component text, int centerX, int y, int color, boolean shadow) {
+    private void drawCenteredText(GuiGraphicsExtractor context, Component text, int centerX, int y, int color, boolean shadow) {
         int w = this.font.width(text);
-        context.drawString(this.font, text, centerX - w / 2, y, color, shadow);
+        context.text(this.font, text, centerX - w / 2, y, color, shadow);
     }
 
-    private void drawScaledCenteredText(GuiGraphics context, Component text, int centerX, int y, float scale, int color, boolean shadow) {
+    private void drawScaledCenteredText(GuiGraphicsExtractor context, Component text, int centerX, int y, float scale, int color, boolean shadow) {
         var matrices = context.pose();
         matrices.pushMatrix();
         matrices.translate((float) centerX, (float) y);
         matrices.scale(scale, scale);
         int w = this.font.width(text);
-        context.drawString(this.font, text, -w / 2, 0, color, shadow);
+        context.text(this.font, text, -w / 2, 0, color, shadow);
         matrices.popMatrix();
     }
 
-    private void drawGridDecoration(GuiGraphics context, int x, int y, int w, int h) {
+    private void drawGridDecoration(GuiGraphicsExtractor context, int x, int y, int w, int h) {
         if (h < 20 || w < 20) return;
         for (int gy = GRID_STEP; gy < h; gy += GRID_STEP) {
             context.fill(x, y + gy, x + w, y + gy + 1, GRID_COLOR);
