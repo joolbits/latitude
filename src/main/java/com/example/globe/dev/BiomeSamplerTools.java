@@ -35,6 +35,9 @@ import net.minecraft.world.level.levelgen.RandomState;
 import net.minecraft.world.level.levelgen.synth.NormalNoise;
 
 public final class BiomeSamplerTools {
+    private static final int ATLAS_HEARTBEAT_ROWS = 32;
+    private static final long DEFAULT_INVENTORY_BATCH_MS = 25L;
+
     private BiomeSamplerTools() {
     }
 
@@ -73,47 +76,16 @@ public final class BiomeSamplerTools {
                                                     int radiusBlocks,
                                                     int stepBlocks,
                                                     int y) {
-        RandomState noiseConfig = RandomState.create(template.settings().value(), template.noiseParameters(), seed);
-        Climate.Sampler sampler = noiseConfig.sampler();
-        Map<String, InventoryAccumulator> found = new LinkedHashMap<>();
-        scanGrid(template, seed, radiusBlocks, Math.max(1, stepBlocks), y, (blockX, blockZ, biomeId) -> {
-            InventoryAccumulator acc = found.get(biomeId);
-            if (acc == null) {
-                int rawBandIndex = bandIndexForBlockZ(radiusBlocks, blockZ);
-                int chosenBandIndex = LatitudeBiomes.authoritativeChosenBandIndex(blockX, blockZ, radiusBlocks);
-                int landBandIndex = LatitudeBiomes.authoritativeLandBandIndex(blockX, blockZ, radiusBlocks);
-                acc = new InventoryAccumulator(
-                        biomeId,
-                        biomeDisplayName(biomeId),
-                        BiomePreviewExporter.stableColorForBiomeId(biomeId),
-                        blockX,
-                        blockZ,
-                        latitudeLabel(radiusBlocks, blockZ),
-                        bandIdForIndex(rawBandIndex),
-                        bandIdForIndex(chosenBandIndex),
-                        bandIdForIndex(landBandIndex),
-                        0);
-                found.put(biomeId, acc);
-            }
-            acc.hitCount++;
-        }, sampler);
+        InventoryScanProcessor processor = createInventoryScanProcessor(template, seed, radiusBlocks, stepBlocks, y);
+        return processor.processAll();
+    }
 
-        List<InventoryBiome> biomes = found.values().stream()
-                .map(acc -> new InventoryBiome(
-                        acc.biomeId,
-                        acc.biomeName,
-                        acc.displayColor,
-                        true,
-                        acc.firstSeenX,
-                        acc.firstSeenZ,
-                        acc.latitudeLabel,
-                        acc.firstSeenRawBand,
-                        acc.firstSeenChosenBand,
-                        acc.firstSeenLandBand,
-                        Math.max(1, stepBlocks),
-                        acc.hitCount))
-                .toList();
-        return new InventoryReport(seed, radiusBlocks, Math.max(1, stepBlocks), y, biomes);
+    public static InventoryScanProcessor createInventoryScanProcessor(SamplerTemplate template,
+                                                                      long seed,
+                                                                      int radiusBlocks,
+                                                                      int stepBlocks,
+                                                                      int y) {
+        return new InventoryScanProcessor(template, seed, radiusBlocks, Math.max(1, stepBlocks), y);
     }
 
     public static SearchReport searchSeeds(ServerLevel world,
@@ -429,24 +401,228 @@ public final class BiomeSamplerTools {
         for (int blockZ = -radiusBlocks; blockZ <= radiusBlocks; blockZ += stepBlocks) {
             int noiseZ = Math.floorDiv(blockZ, 4);
             for (int blockX = -radiusBlocks; blockX <= radiusBlocks; blockX += stepBlocks) {
-                int noiseX = Math.floorDiv(blockX, 4);
-                Holder<Biome> base = template.baseSource().getNoiseBiome(noiseX, noiseY, noiseZ, sampler);
-                Holder<Biome> picked = LatitudeBiomes.pick(
-                        template.biomeRegistry(),
-                        base,
-                        blockX,
-                        blockZ,
-                        y,
-                        radiusBlocks,
-                        sampler,
-                        "ATLAS_SAMPLER",
-                        null,
-                        null,
-                        null);
-                Holder<Biome> out = picked != null ? picked : base;
-                consumer.accept(blockX, blockZ, biomeId(template.biomeRegistry(), out));
+                consumer.accept(blockX, blockZ, sampleBiomeId(template, radiusBlocks, y, blockX, blockZ, noiseY, noiseZ, sampler));
             }
         }
+    }
+
+    private static String sampleBiomeId(SamplerTemplate template,
+                                        int radiusBlocks,
+                                        int y,
+                                        int blockX,
+                                        int blockZ,
+                                        int noiseY,
+                                        int noiseZ,
+                                        Climate.Sampler sampler) {
+        int noiseX = Math.floorDiv(blockX, 4);
+        Holder<Biome> base = template.baseSource().getNoiseBiome(noiseX, noiseY, noiseZ, sampler);
+        Holder<Biome> picked = LatitudeBiomes.pick(
+                template.biomeRegistry(),
+                base,
+                blockX,
+                blockZ,
+                y,
+                radiusBlocks,
+                sampler,
+                "ATLAS_SAMPLER",
+                null,
+                null,
+                null);
+        Holder<Biome> out = picked != null ? picked : base;
+        return biomeId(template.biomeRegistry(), out);
+    }
+
+    public static final class InventoryScanProcessor {
+        private final SamplerTemplate template;
+        private final long seed;
+        private final int radiusBlocks;
+        private final int stepBlocks;
+        private final int y;
+        private final RandomState noiseConfig;
+        private final Climate.Sampler sampler;
+        private final Map<String, InventoryAccumulator> found = new LinkedHashMap<>();
+        private final long originalSeed;
+        private final long startNanos = System.nanoTime();
+        private final int noiseY;
+        private int blockZ;
+        private int blockX;
+        private int rowCount;
+        private boolean started;
+        private boolean complete;
+        private boolean seedActive;
+        private boolean seedRestored;
+
+        private InventoryScanProcessor(SamplerTemplate template,
+                                       long seed,
+                                       int radiusBlocks,
+                                       int stepBlocks,
+                                       int y) {
+            this.template = template;
+            this.seed = seed;
+            this.radiusBlocks = radiusBlocks;
+            this.stepBlocks = stepBlocks;
+            this.y = y;
+            this.noiseConfig = RandomState.create(template.settings().value(), template.noiseParameters(), seed);
+            this.sampler = noiseConfig.sampler();
+            this.originalSeed = template.templateSeed();
+            this.noiseY = Math.floorDiv(y, 4);
+            this.blockZ = -radiusBlocks;
+            this.blockX = -radiusBlocks;
+        }
+
+        public InventoryReport processBudget(long budgetMs) {
+            if (complete) {
+                return buildReport();
+            }
+            if (!started) {
+                started = true;
+                LatitudeBiomes.setWorldSeed(seed);
+                seedActive = true;
+                atlasTiming(String.format(
+                        Locale.ROOT,
+                        "phase=scan-inventory-start seed=%d radius=%d step=%d y=%d",
+                        seed,
+                        radiusBlocks,
+                        stepBlocks,
+                        y));
+            }
+
+            boolean unbounded = budgetMs <= 0L || budgetMs == Long.MAX_VALUE;
+            long deadline = unbounded ? Long.MAX_VALUE : safeDeadlineNanos(budgetMs);
+            try {
+                while (blockZ <= radiusBlocks && hasBudget(unbounded, deadline)) {
+                    int noiseZ = Math.floorDiv(blockZ, 4);
+                    while (blockX <= radiusBlocks && hasBudget(unbounded, deadline)) {
+                        String biomeId = sampleBiomeId(template, radiusBlocks, y, blockX, blockZ, noiseY, noiseZ, sampler);
+                        InventoryAccumulator acc = found.get(biomeId);
+                        if (acc == null) {
+                            int rawBandIndex = bandIndexForBlockZ(radiusBlocks, blockZ);
+                            int chosenBandIndex = LatitudeBiomes.authoritativeChosenBandIndex(blockX, blockZ, radiusBlocks);
+                            int landBandIndex = LatitudeBiomes.authoritativeLandBandIndex(blockX, blockZ, radiusBlocks);
+                            acc = new InventoryAccumulator(
+                                    biomeId,
+                                    biomeDisplayName(biomeId),
+                                    BiomePreviewExporter.stableColorForBiomeId(biomeId),
+                                    blockX,
+                                    blockZ,
+                                    latitudeLabel(radiusBlocks, blockZ),
+                                    bandIdForIndex(rawBandIndex),
+                                    bandIdForIndex(chosenBandIndex),
+                                    bandIdForIndex(landBandIndex),
+                                    0);
+                            found.put(biomeId, acc);
+                        }
+                        acc.hitCount++;
+                        blockX += stepBlocks;
+                    }
+
+                    if (blockX > radiusBlocks) {
+                        rowCount++;
+                        if (rowCount % ATLAS_HEARTBEAT_ROWS == 0) {
+                            atlasTiming(String.format(
+                                    Locale.ROOT,
+                                    "phase=scan-heartbeat rows=%d blockZ=%d elapsedMs=%d",
+                                    rowCount,
+                                    blockZ,
+                                    elapsedMs(startNanos)));
+                        }
+                        blockZ += stepBlocks;
+                        blockX = -radiusBlocks;
+                    }
+                }
+
+                if (blockZ > radiusBlocks) {
+                    complete = true;
+                    close();
+                    atlasTiming(String.format(
+                            Locale.ROOT,
+                            "phase=scan-complete rows=%d elapsedMs=%d",
+                            rowCount,
+                            elapsedMs(startNanos)));
+                    return buildReport();
+                }
+
+                atlasTiming(String.format(
+                        Locale.ROOT,
+                        "phase=scan-yield rows=%d blockZ=%d blockX=%d elapsedMs=%d",
+                        rowCount,
+                        blockZ,
+                        blockX,
+                        elapsedMs(startNanos)));
+                return null;
+            } catch (RuntimeException | Error e) {
+                close();
+                throw e;
+            }
+        }
+
+        public InventoryReport processAll() {
+            try {
+                InventoryReport report = processBudget(Long.MAX_VALUE);
+                if (report == null) {
+                    throw new IllegalStateException("Unbounded inventory scan yielded before completion");
+                }
+                return report;
+            } finally {
+                close();
+            }
+        }
+
+        public boolean isComplete() {
+            return complete;
+        }
+
+        public void close() {
+            if (seedActive && !seedRestored) {
+                restoreWorldSeed();
+                seedRestored = true;
+                seedActive = false;
+            }
+        }
+
+        private static boolean hasBudget(boolean unbounded, long deadlineNanos) {
+            return unbounded || System.nanoTime() <= deadlineNanos;
+        }
+
+        private static long safeDeadlineNanos(long budgetMs) {
+            long safeBudgetMs = Math.max(1L, budgetMs);
+            long budgetNanos = safeBudgetMs >= Long.MAX_VALUE / 1_000_000L
+                    ? Long.MAX_VALUE
+                    : safeBudgetMs * 1_000_000L;
+            long now = System.nanoTime();
+            return Long.MAX_VALUE - now <= budgetNanos ? Long.MAX_VALUE : now + budgetNanos;
+        }
+
+        private void restoreWorldSeed() {
+            LatitudeBiomes.setWorldSeed(originalSeed);
+        }
+
+        private InventoryReport buildReport() {
+            List<InventoryBiome> biomes = found.values().stream()
+                    .map(acc -> new InventoryBiome(
+                            acc.biomeId,
+                            acc.biomeName,
+                            acc.displayColor,
+                            true,
+                            acc.firstSeenX,
+                            acc.firstSeenZ,
+                            acc.latitudeLabel,
+                            acc.firstSeenRawBand,
+                            acc.firstSeenChosenBand,
+                            acc.firstSeenLandBand,
+                            stepBlocks,
+                            acc.hitCount))
+                    .toList();
+            return new InventoryReport(seed, radiusBlocks, stepBlocks, y, biomes);
+        }
+    }
+
+    private static long elapsedMs(long startNanos) {
+        return (System.nanoTime() - startNanos) / 1_000_000L;
+    }
+
+    private static void atlasTiming(String message) {
+        System.out.println("[LAT][ATLAS_TIMING] " + message);
     }
 
     private static Set<String> normalizeTargets(Collection<String> raw) {

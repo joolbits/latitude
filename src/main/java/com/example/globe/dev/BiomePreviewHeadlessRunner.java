@@ -80,12 +80,13 @@ public final class BiomePreviewHeadlessRunner {
             return;
         }
 
+        long worldSeed = world.getSeed();
+        ExportJob job = null;
         try {
             int y = Mth.clamp(config.y, 0, 320);
             int radius = config.radiusBlocks != null
                     ? Math.max(1, config.radiusBlocks)
                     : radiusFromSizeOrWorld(config.sizePreset, world);
-            long worldSeed = world.getSeed();
             long effectiveSeed = config.seedOverride != null ? config.seedOverride : worldSeed;
             String runLabel = BiomePreviewExporter.resolveRunLabel(config.runLabel);
             Path outputDir = config.outDir != null ? config.outDir : defaultOutDir(server.getServerDirectory());
@@ -107,27 +108,28 @@ public final class BiomePreviewHeadlessRunner {
                     outputDir,
                     runLabel);
             GlobeMod.LOGGER.info(startMessage);
+            if (config.steps.isEmpty()) {
+                GlobeMod.LOGGER.warn("[latdev][headless] no export steps configured; stopping server");
+                LatitudeBiomes.setWorldSeed(worldSeed);
+                server.halt(false);
+                return;
+            }
 
-            for (int step : config.steps) {
-                BiomePreviewExporter.ExportResult result = BiomePreviewExporter.export(
-                        world, radius, step, y, server.getServerDirectory(), effectiveSeed, config.exportOptions, runLabel);
-                BiomePreviewExporter.ExportResult finalized = finalizeOutput(result, effectiveSeed, outputDir, runLabel);
-
-                String finishMessage = String.format(
-                        Locale.ROOT,
-                        "[latdev][headless] finished export step=%d file=%s sidecar=%s image=%dx%d samples=%d durationMs=%d",
-                        step,
-                        finalized.pngPath(),
-                        finalized.txtPath(),
-                        finalized.width(),
-                        finalized.height(),
-                        finalized.totalSamples(),
-                        finalized.durationMs());
-                GlobeMod.LOGGER.info(finishMessage);
+            // Drain the export synchronously on the server thread. END_SERVER_TICK
+            // would otherwise stop firing once vanilla's pause-when-empty-seconds
+            // (60s) elapses, freezing tick-driven sampling at full radius.
+            job = new ExportJob(world, config, outputDir, effectiveSeed, worldSeed, radius, y, runLabel, server.getServerDirectory());
+            while (!job.isDone()) {
+                job.tick();
             }
         } catch (Throwable t) {
             GlobeMod.LOGGER.error("[latdev][headless] export failed", t);
         } finally {
+            if (job != null) {
+                job.close();
+            } else {
+                LatitudeBiomes.setWorldSeed(worldSeed);
+            }
             GlobeMod.LOGGER.info("[latdev][headless] stopping server");
             server.halt(false);
         }
@@ -418,6 +420,109 @@ public final class BiomePreviewHeadlessRunner {
             };
         }
         return authoritativeRadius(world);
+    }
+
+    private static final class ExportJob {
+        private final ServerLevel world;
+        private final Config config;
+        private final Path outputDir;
+        private final long effectiveSeed;
+        private final long originalSeed;
+        private final int radius;
+        private final int y;
+        private final String runLabel;
+        private final Path serverDirectory;
+        private int stepIndex;
+        private int currentStep;
+        private BiomePreviewExporter.HeightStepProcessor processor;
+        private boolean done;
+        private boolean closed;
+
+        private ExportJob(ServerLevel world,
+                          Config config,
+                          Path outputDir,
+                          long effectiveSeed,
+                          long originalSeed,
+                          int radius,
+                          int y,
+                          String runLabel,
+                          Path serverDirectory) {
+            this.world = world;
+            this.config = config;
+            this.outputDir = outputDir;
+            this.effectiveSeed = effectiveSeed;
+            this.originalSeed = originalSeed;
+            this.radius = radius;
+            this.y = y;
+            this.runLabel = runLabel;
+            this.serverDirectory = serverDirectory;
+        }
+
+        private void tick() throws IOException {
+            if (done) {
+                return;
+            }
+
+            if (processor == null) {
+                if (stepIndex >= config.steps.size()) {
+                    done = true;
+                    return;
+                }
+                currentStep = config.steps.get(stepIndex);
+                processor = BiomePreviewExporter.HeightStepProcessor.create(
+                        world,
+                        radius,
+                        currentStep,
+                        y,
+                        serverDirectory,
+                        effectiveSeed,
+                        config.exportOptions,
+                        runLabel);
+                GlobeMod.LOGGER.info("[latdev][headless] processing export step={} radius={} y={} out={}",
+                        currentStep,
+                        radius,
+                        y,
+                        outputDir);
+            }
+
+            long budgetMs = Math.max(1L, Long.getLong("latitude.atlas.exportBudgetMs", 250L));
+            BiomePreviewExporter.ExportResult result = processor.processBudget(budgetMs);
+            if (result == null) {
+                return;
+            }
+
+            BiomePreviewExporter.ExportResult finalized = finalizeOutput(result, effectiveSeed, outputDir, runLabel);
+            GlobeMod.LOGGER.info("[latdev][headless] finished export step={} file={} sidecar={} image={}x{} samples={} durationMs={}",
+                    currentStep,
+                    finalized.pngPath(),
+                    finalized.txtPath(),
+                    finalized.width(),
+                    finalized.height(),
+                    finalized.totalSamples(),
+                    finalized.durationMs());
+
+            stepIndex++;
+            processor = null;
+            if (stepIndex >= config.steps.size()) {
+                done = true;
+            }
+        }
+
+        private boolean isDone() {
+            return done;
+        }
+
+        private void close() {
+            if (closed) {
+                return;
+            }
+            closed = true;
+            if (processor != null) {
+                processor.close();
+                processor = null;
+            }
+            LatitudeBiomes.setWorldSeed(originalSeed);
+        }
     }
 
     private static int authoritativeRadius(ServerLevel world) {
