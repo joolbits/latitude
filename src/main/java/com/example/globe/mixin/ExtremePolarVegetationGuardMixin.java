@@ -18,7 +18,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 @Mixin(TreeFeature.class)
 public class ExtremePolarVegetationGuardMixin {
 
-    @Inject(method = "generate(Lnet/minecraft/world/gen/feature/util/FeatureContext;)Z",
+    @Inject(method = "place(Lnet/minecraft/world/level/levelgen/feature/FeaturePlaceContext;)Z",
             at = @At("HEAD"), cancellable = true)
     private void globe$blockVegetationInExtremePolar(FeaturePlaceContext<?> context,
                                                       CallbackInfoReturnable<Boolean> cir) {
