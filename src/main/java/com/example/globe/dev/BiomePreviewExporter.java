@@ -1,5 +1,7 @@
 package com.example.globe.dev;
 
+import com.example.globe.util.BiomeSamplerTools;
+import com.example.globe.util.BiomeColorUtil;
 import com.example.globe.util.LatitudeBands;
 import com.example.globe.util.LatitudeMath;
 import com.example.globe.world.LatitudeBiomeSource;
@@ -1987,47 +1989,7 @@ public final class BiomePreviewExporter {
     }
 
     static int stableColorForBiomeId(String biomeId) {
-        String id = biomeId.toLowerCase(Locale.ROOT);
-        Integer override = paletteOverrideFor(id);
-        if (override != null) {
-            return override;
-        }
-        if (id.contains("snowy_beach")) {
-            return 0xE9E1CC;
-        }
-        if (id.contains("stony_shore")) {
-            return 0x9A9A9A;
-        }
-        if (id.contains("beach") || id.contains("shore") || id.contains("coast")) {
-            return 0xE7D7A5;
-        }
-        if (id.contains("ocean") || id.contains("river")) {
-            return 0x2F6FA8;
-        }
-        if (id.contains("snow") || id.contains("frozen") || id.contains("ice")) {
-            return 0xE6F4FF;
-        }
-        if (id.contains("desert") || id.contains("badlands")) {
-            return 0xD39B4D;
-        }
-        if (id.contains("swamp") || id.contains("mangrove")) {
-            return 0x3C6B43;
-        }
-        if (id.contains("jungle")) {
-            return 0x2E8A57;
-        }
-        if (id.contains("taiga") || id.contains("forest") || id.contains("grove")) {
-            return 0x4A7B4D;
-        }
-        if (id.contains("plains") || id.contains("savanna") || id.contains("meadow")) {
-            return 0x8FBF63;
-        }
-        if (id.contains("mountain") || id.contains("peak") || id.contains("hills")) {
-            return 0x7A7A7A;
-        }
-
-        // Neutral fallback for unknown/custom biomes.
-        return 0x8A8A8A;
+        return BiomeColorUtil.stableColorForBiomeId(biomeId);
     }
 
     private static int inventoryDiscoveryStep(int stepBlocks) {

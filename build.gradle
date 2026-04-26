@@ -125,6 +125,45 @@ jar {
     }
 }
 
+def releaseArtifactExcludeSpec = { details ->
+    def path = details.path
+    if (path == null) {
+        return false
+    }
+
+    if (path == 'com/example/globe/dev' || path.startsWith('com/example/globe/dev/')) {
+        return true
+    }
+
+    if (path == 'com/example/globe/client/ClipboardImageWriter.class'
+            || path.startsWith('com/example/globe/client/ClipboardImageWriter$')) {
+        return true
+    }
+
+    return false
+}
+
+def releaseArtifactPatternExcludes = [
+        '**/*.sh',
+        '**/*.bat',
+        '**/*.exe',
+        '**/*.dll',
+        '**/*.dylib',
+        '**/*.so',
+        'tools/**',
+        'scripts/**'
+]
+
+tasks.named('jar', Jar).configure {
+    exclude(releaseArtifactExcludeSpec)
+    exclude(releaseArtifactPatternExcludes)
+}
+
+tasks.matching { it.name == 'remapJar' }.configureEach {
+    exclude(releaseArtifactExcludeSpec)
+    exclude(releaseArtifactPatternExcludes)
+}
+
 publishing {
     publications {
         mavenJava(MavenPublication) {
