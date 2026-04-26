@@ -4,10 +4,8 @@ import net.fabricmc.api.ModInitializer;
 import com.example.globe.world.LatitudeBiomes;
 import com.example.globe.world.BiomeFeatureStripping;
 import com.example.globe.world.LatitudeWorldState;
-import com.example.globe.dev.BiomePreviewHeadlessRunner;
-import com.example.globe.dev.BiomeSamplerTools;
-import com.example.globe.dev.BiomeSamplerTools.SamplerTemplate;
-import com.example.globe.dev.LatitudeDevCommand;
+import com.example.globe.util.BiomeSamplerTools;
+import com.example.globe.util.BiomeSamplerTools.SamplerTemplate;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
@@ -53,6 +51,7 @@ import java.util.EnumSet;
 import java.util.Optional;
 import java.util.jar.Attributes;
 import java.util.jar.Manifest;
+import java.lang.reflect.Method;
 
 import java.io.InputStream;
 
@@ -127,14 +126,14 @@ public class GlobeMod implements ModInitializer {
                                 return 1;
                             })));
 
-            LatitudeDevCommand.register(dispatcher);
+            registerDevOnlyCommand(dispatcher);
         });
 
         // Initialize province authority at world-load time, before spawn-chunk generation fires
         // for brand-new worlds. SERVER_STARTED fires too late (after spawn chunks are pregenerated).
         ServerLevelEvents.LOAD.register(GlobeMod::initLatitudeBiomesForWorld);
         ServerLifecycleEvents.SERVER_STARTED.register(GlobeMod::applyWorldBorder);
-        BiomePreviewHeadlessRunner.register();
+        registerDevOnlyHeadlessRunner();
         ServerLifecycleEvents.SERVER_STOPPED.register(server -> {
             POLAR_SCRUBBER = null;
         });
@@ -189,6 +188,52 @@ public class GlobeMod implements ModInitializer {
         });
 
         ServerTickEvents.END_SERVER_TICK.register(GlobeMod::borderUxTick);
+    }
+
+    private static void registerDevOnlyCommand(Object dispatcher) {
+        if (!FabricLoader.getInstance().isDevelopmentEnvironment()) {
+            return;
+        }
+        invokeDevRegister("com.example.globe.dev.LatitudeDevCommand", dispatcher);
+    }
+
+    private static void registerDevOnlyHeadlessRunner() {
+        if (!FabricLoader.getInstance().isDevelopmentEnvironment()) {
+            return;
+        }
+        invokeDevRegister("com.example.globe.dev.BiomePreviewHeadlessRunner");
+    }
+
+    private static void invokeDevRegister(String className, Object... args) {
+        try {
+            Class<?> clazz = Class.forName(className);
+            Method registerMethod = null;
+            for (Method method : clazz.getMethods()) {
+                if (!method.getName().equals("register") || method.getParameterCount() != args.length) {
+                    continue;
+                }
+                Class<?>[] parameterTypes = method.getParameterTypes();
+                boolean matches = true;
+                for (int i = 0; i < parameterTypes.length; i++) {
+                    if (args[i] != null && !parameterTypes[i].isAssignableFrom(args[i].getClass())) {
+                        matches = false;
+                        break;
+                    }
+                }
+                if (matches) {
+                    registerMethod = method;
+                    break;
+                }
+            }
+            if (registerMethod == null) {
+                throw new NoSuchMethodException("No compatible register method found");
+            }
+            registerMethod.invoke(null, args);
+        } catch (ClassNotFoundException e) {
+            LOGGER.debug("[latdev] Skipping missing dev class {}", className);
+        } catch (ReflectiveOperationException e) {
+            LOGGER.warn("[latdev] Failed to invoke {}.register", className, e);
+        }
     }
 
     /**

@@ -1,4 +1,4 @@
-package com.example.globe.dev;
+package com.example.globe.util;
 
 import com.example.globe.util.LatitudeBands;
 import com.example.globe.util.LatitudeMath;
@@ -503,7 +503,7 @@ public final class BiomeSamplerTools {
                             acc = new InventoryAccumulator(
                                     biomeId,
                                     biomeDisplayName(biomeId),
-                                    BiomePreviewExporter.stableColorForBiomeId(biomeId),
+                                    BiomeColorUtil.stableColorForBiomeId(biomeId),
                                     blockX,
                                     blockZ,
                                     latitudeLabel(radiusBlocks, blockZ),

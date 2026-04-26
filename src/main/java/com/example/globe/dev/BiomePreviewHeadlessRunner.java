@@ -1,6 +1,7 @@
 package com.example.globe.dev;
 
 import com.example.globe.GlobeMod;
+import com.example.globe.util.BiomeSamplerTools;
 import com.example.globe.world.LatitudeBiomes;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.loader.api.FabricLoader;
