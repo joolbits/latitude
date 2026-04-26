@@ -82,6 +82,10 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
             new java.util.concurrent.atomic.AtomicBoolean(false);
 
     @Unique
+    private static final java.util.concurrent.atomic.AtomicInteger DEBUG_POPBIO_LOG_COUNT =
+            new java.util.concurrent.atomic.AtomicInteger(0);
+
+    @Unique
     private static final String GLOBE_SETTINGS_CHECKED =
             "globe:overworld|globe:overworld_xsmall|globe:overworld_small|globe:overworld_regular|globe:overworld_large|globe:overworld_massive";
     @Unique
@@ -167,38 +171,49 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
     }
 
     @Shadow
-    public abstract boolean matchesSettings(ResourceKey<NoiseGeneratorSettings> settings);
+    public abstract boolean stable(ResourceKey<NoiseGeneratorSettings> settings);
 
     @Unique
     private boolean globe$isAnyGlobeSettings() {
-        return this.matchesSettings(GLOBE_SETTINGS_KEY)
-                || this.matchesSettings(GLOBE_SETTINGS_XSMALL_KEY)
-                || this.matchesSettings(GLOBE_SETTINGS_SMALL_KEY)
-                || this.matchesSettings(GLOBE_SETTINGS_REGULAR_KEY)
-                || this.matchesSettings(GLOBE_SETTINGS_LARGE_KEY)
-                || this.matchesSettings(GLOBE_SETTINGS_MASSIVE_KEY);
+        return this.stable(GLOBE_SETTINGS_KEY)
+                || this.stable(GLOBE_SETTINGS_XSMALL_KEY)
+                || this.stable(GLOBE_SETTINGS_SMALL_KEY)
+                || this.stable(GLOBE_SETTINGS_REGULAR_KEY)
+                || this.stable(GLOBE_SETTINGS_LARGE_KEY)
+                || this.stable(GLOBE_SETTINGS_MASSIVE_KEY);
     }
 
     @Unique
     private int globe$borderRadiusBlocks() {
-        if (this.matchesSettings(GLOBE_SETTINGS_XSMALL_KEY)) {
+        if (this.stable(GLOBE_SETTINGS_XSMALL_KEY)) {
             return BORDER_RADIUS_XSMALL_BLOCKS;
         }
-        if (this.matchesSettings(GLOBE_SETTINGS_SMALL_KEY)) {
+        if (this.stable(GLOBE_SETTINGS_SMALL_KEY)) {
             return BORDER_RADIUS_SMALL_BLOCKS;
         }
-        if (this.matchesSettings(GLOBE_SETTINGS_LARGE_KEY)) {
+        if (this.stable(GLOBE_SETTINGS_LARGE_KEY)) {
             return BORDER_RADIUS_LARGE_BLOCKS;
         }
-        if (this.matchesSettings(GLOBE_SETTINGS_MASSIVE_KEY)) {
+        if (this.stable(GLOBE_SETTINGS_MASSIVE_KEY)) {
             return BORDER_RADIUS_MASSIVE_BLOCKS;
         }
         return GlobeMod.BORDER_RADIUS;
     }
 
+    @Unique
+    private static void globe$logPopBio(String phase, String message) {
+        if (!DEBUG_WORLDGEN_PATH) {
+            return;
+        }
+        if (DEBUG_POPBIO_LOG_COUNT.getAndIncrement() >= 20) {
+            return;
+        }
+        LOGGER.info("[LAT][POPBIO][{}] {}", phase, message);
+    }
+
     // Capture StructureAccessor for the duration of the private populateBiomes call.
     @Inject(
-            method = "populateBiomes(Lnet/minecraft/world/gen/chunk/Blender;Lnet/minecraft/world/gen/noise/NoiseConfig;Lnet/minecraft/world/gen/StructureAccessor;Lnet/minecraft/world/chunk/Chunk;)V",
+            method = "doCreateBiomes(Lnet/minecraft/world/level/levelgen/blending/Blender;Lnet/minecraft/world/level/levelgen/RandomState;Lnet/minecraft/world/level/StructureManager;Lnet/minecraft/world/level/chunk/ChunkAccess;)V",
             at = @At("HEAD")
     )
     private void globe$captureStructureAccessor(Blender blender, RandomState noiseConfig, StructureManager structureAccessor, ChunkAccess chunk, CallbackInfo ci) {
@@ -207,7 +222,7 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
     }
 
     @Inject(
-            method = "populateBiomes(Lnet/minecraft/world/gen/chunk/Blender;Lnet/minecraft/world/gen/noise/NoiseConfig;Lnet/minecraft/world/gen/StructureAccessor;Lnet/minecraft/world/chunk/Chunk;)V",
+            method = "doCreateBiomes(Lnet/minecraft/world/level/levelgen/blending/Blender;Lnet/minecraft/world/level/levelgen/RandomState;Lnet/minecraft/world/level/StructureManager;Lnet/minecraft/world/level/chunk/ChunkAccess;)V",
             at = @At("RETURN")
     )
     private void globe$clearStructureAccessor(Blender blender, RandomState noiseConfig, StructureManager structureAccessor, ChunkAccess chunk, CallbackInfo ci) {
@@ -221,16 +236,19 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
      * If this Redirect doesn’t apply, Latitude won’t affect worldgen — but you’ll boot and can fix refmap next.
      */
     @Redirect(
-            method = "populateBiomes(Lnet/minecraft/world/gen/chunk/Blender;Lnet/minecraft/world/gen/noise/NoiseConfig;Lnet/minecraft/world/gen/StructureAccessor;Lnet/minecraft/world/chunk/Chunk;)V",
+            method = "doCreateBiomes(Lnet/minecraft/world/level/levelgen/blending/Blender;Lnet/minecraft/world/level/levelgen/RandomState;Lnet/minecraft/world/level/StructureManager;Lnet/minecraft/world/level/chunk/ChunkAccess;)V",
             at = @At(
                     value = "INVOKE",
-                    target = "Lnet/minecraft/world/chunk/Chunk;populateBiomes(Lnet/minecraft/world/biome/source/BiomeSupplier;Lnet/minecraft/world/biome/source/util/MultiNoiseUtil$MultiNoiseSampler;)V"
+                    target = "Lnet/minecraft/world/level/chunk/ChunkAccess;fillBiomesFromNoise(Lnet/minecraft/world/level/biome/BiomeResolver;Lnet/minecraft/world/level/biome/Climate$Sampler;)V"
             ),
             require = 0
     )
     private void globe$wrapBiomeSupplier(ChunkAccess chunk, BiomeResolver originalSupplier, Climate.Sampler sampler) {
+        var pos = chunk.getPos();
+        globe$logPopBio("ENTER", "chunk=" + pos.x() + "," + pos.z() + " settings=" + globe$matchedSettingsLabel());
         // Gate: only apply to your globe overworld settings.
         if (!this.globe$isAnyGlobeSettings()) {
+            globe$logPopBio("FALLBACK", "settings=" + globe$matchedSettingsLabel() + " action=vanilla populateBiomes");
             if (DEBUG_WORLDGEN_PATH && DEBUG_POPULATE_GATE_REJECT_LOGGED.compareAndSet(false, true)) {
                 LOGGER.info("[Latitude] populateBiomes gate reject: settings not Globe preset checked={} matched={} action=falling back to vanilla populateBiomes",
                         GLOBE_SETTINGS_CHECKED, globe$matchedSettingsLabel());
@@ -241,6 +259,7 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
 
         StructureManager structureAccessor = globe$structureAccessorTL.get();
         if (structureAccessor == null) {
+            globe$logPopBio("FALLBACK", "settings=" + globe$matchedSettingsLabel() + " action=vanilla populateBiomes reason=missing_structure_accessor");
             if (DEBUG_WORLDGEN_PATH && DEBUG_POPULATE_NO_STRUCTURE_LOGGED.compareAndSet(false, true)) {
                 LOGGER.info("[Latitude] populateBiomes gate reject: StructureAccessor unavailable settings={} action=falling back to vanilla populateBiomes",
                         globe$matchedSettingsLabel());
@@ -258,6 +277,7 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
         logWorldgenPathOnce(chunk, borderRadiusBlocks, globe$matchedSettingsLabel());
 
         BiomeResolver wrapped = (x, y, z, ignoredSampler) -> {
+            globe$logPopBio("LATITUDE_RESOLVER", "chunk=" + pos.x() + "," + pos.z() + " noise=" + x + "," + y + "," + z);
             // x/z are "noise biome coords" (4-block). Convert to block coords for your latitude math.
             int blockX = (x << 2) + 2;
             int blockZ = (z << 2) + 2;
@@ -311,6 +331,7 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
                 picked = LatitudeBiomes.pick(biomes, base, blockX, blockZ, blockY, borderRadiusBlocks, sampler, "MIXIN",
                         generator, noiseConfig, chunk);
             } catch (Throwable t) {
+                globe$logPopBio("ERROR", t.getClass().getSimpleName() + ": " + t.getMessage());
                 logPickFailOnce(blockX, blockZ, "exception", t.toString());
                 if (DEBUG_BIOME_PICK) {
                     LOGGER.debug("[Latitude] Biome pick exception", t);
@@ -326,6 +347,7 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
             return picked;
         };
 
+        globe$logPopBio("ENTER", "installing Latitude resolver chunk=" + pos.x() + "," + pos.z() + " radius=" + borderRadiusBlocks);
         globe$populateBiomes(chunk, wrapped, sampler);
     }
 
@@ -445,22 +467,22 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
 
     @Unique
     private String globe$matchedSettingsLabel() {
-        if (this.matchesSettings(GLOBE_SETTINGS_KEY)) {
+        if (this.stable(GLOBE_SETTINGS_KEY)) {
             return "overworld";
         }
-        if (this.matchesSettings(GLOBE_SETTINGS_XSMALL_KEY)) {
+        if (this.stable(GLOBE_SETTINGS_XSMALL_KEY)) {
             return "overworld_xsmall";
         }
-        if (this.matchesSettings(GLOBE_SETTINGS_SMALL_KEY)) {
+        if (this.stable(GLOBE_SETTINGS_SMALL_KEY)) {
             return "overworld_small";
         }
-        if (this.matchesSettings(GLOBE_SETTINGS_REGULAR_KEY)) {
+        if (this.stable(GLOBE_SETTINGS_REGULAR_KEY)) {
             return "overworld_regular";
         }
-        if (this.matchesSettings(GLOBE_SETTINGS_LARGE_KEY)) {
+        if (this.stable(GLOBE_SETTINGS_LARGE_KEY)) {
             return "overworld_large";
         }
-        if (this.matchesSettings(GLOBE_SETTINGS_MASSIVE_KEY)) {
+        if (this.stable(GLOBE_SETTINGS_MASSIVE_KEY)) {
             return "overworld_massive";
         }
         return "unknown";
