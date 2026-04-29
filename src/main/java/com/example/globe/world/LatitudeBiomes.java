@@ -250,6 +250,13 @@ public final class LatitudeBiomes {
     private static final boolean DEBUG_OCEAN_DIST = Boolean.getBoolean("latitude.debugOceanDist");
     private static final boolean DEBUG_MANGROVE_INVITE = Boolean.getBoolean("latitude.debugMangroveInvite");
     private static final int DEBUG_LIMIT = Integer.getInteger("latitude.debugBiomes.limit", 200);
+    // Cached launch-time property reads — these are JVM startup flags that never change at runtime.
+    private static final boolean DISABLE_RADIUS_OVERRIDE =
+            Boolean.getBoolean("latitude.disableRadiusOverride");
+    private static final boolean SKIP_PREVIEW_HEIGHT_FOR_BIOME_PNG =
+            Boolean.parseBoolean(System.getProperty("latitude.skipPreviewHeightForBiomePng", "true"));
+    private static final boolean SKIP_PREVIEW_HEIGHT_FOR_WORLDGEN =
+            Boolean.parseBoolean(System.getProperty("latitude.skipPreviewHeightForWorldgen", "true"));
     private static volatile long WORLD_SEED = 0L;
     public static volatile int ACTIVE_RADIUS_BLOCKS = 0;
     private static OceanDistanceField OCEAN_DISTANCE_FIELD = null;
@@ -387,10 +394,10 @@ public final class LatitudeBiomes {
         if ("BIOME_PNG".equals(normalized)
                 || "SOURCE".equals(normalized)
                 || "ATLAS_SAMPLER".equals(normalized)) {
-            return Boolean.parseBoolean(System.getProperty("latitude.skipPreviewHeightForBiomePng", "true"));
+            return SKIP_PREVIEW_HEIGHT_FOR_BIOME_PNG;
         }
         if ("MIXIN".equals(normalized) || "CAVE_CLAMP".equals(normalized)) {
-            return Boolean.parseBoolean(System.getProperty("latitude.skipPreviewHeightForWorldgen", "true"));
+            return SKIP_PREVIEW_HEIGHT_FOR_WORLDGEN;
         }
         return false;
     }
@@ -881,7 +888,7 @@ public final class LatitudeBiomes {
         int biomeY = (blockY < columnDecisionY - 16) ? blockY : columnDecisionY;
         assertSurfaceY(biomeY);
         int activeRadius = ACTIVE_RADIUS_BLOCKS;
-        boolean overrideDisabled = Boolean.getBoolean("latitude.disableRadiusOverride");
+        boolean overrideDisabled = DISABLE_RADIUS_OVERRIDE;
 
         if (activeRadius > 0 && borderRadiusBlocks != activeRadius && RADIUS_MISMATCH_LOGGED.compareAndSet(false, true)) {
             LOGGER.warn("[Latitude] RADIUS MISMATCH detected from {}! Arg: {}, Active: {}", callerContext, borderRadiusBlocks, activeRadius);
@@ -1116,7 +1123,7 @@ public final class LatitudeBiomes {
         int biomeY = (blockY < columnDecisionY - 16) ? blockY : columnDecisionY;
         assertSurfaceY(biomeY);
         int activeRadius = ACTIVE_RADIUS_BLOCKS;
-        boolean overrideDisabled = Boolean.getBoolean("latitude.disableRadiusOverride");
+        boolean overrideDisabled = DISABLE_RADIUS_OVERRIDE;
 
         if (activeRadius > 0 && borderRadiusBlocks != activeRadius && RADIUS_MISMATCH_LOGGED.compareAndSet(false, true)) {
             LOGGER.warn("[Latitude] RADIUS MISMATCH detected from {}! Arg: {}, Active: {}", callerContext, borderRadiusBlocks, activeRadius);
