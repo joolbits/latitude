@@ -20,14 +20,14 @@ public class BiomeNoSnowInWarmBandsMixin {
     }
 
     @Inject(method = "doesNotSnow", at = @At("HEAD"), cancellable = true)
-    private void globe$blockSnowInWarmBands(BlockPos pos, int seaLevel, CallbackInfoReturnable<Boolean> cir) {
+    private void globe$blockSnowInWarmBands(BlockPos pos, CallbackInfoReturnable<Boolean> cir) {
         if (globe$isWarmBand(pos.getZ())) {
             cir.setReturnValue(true);
         }
     }
 
     @Inject(method = "getPrecipitation", at = @At("HEAD"), cancellable = true)
-    private void globe$forceRainInWarmBands(BlockPos pos, int seaLevel, CallbackInfoReturnable<Biome.Precipitation> cir) {
+    private void globe$forceRainInWarmBands(BlockPos pos, CallbackInfoReturnable<Biome.Precipitation> cir) {
         if (globe$isWarmBand(pos.getZ())) {
             Biome self = (Biome) (Object) this;
             cir.setReturnValue(self.hasPrecipitation() ? Biome.Precipitation.RAIN : Biome.Precipitation.NONE);

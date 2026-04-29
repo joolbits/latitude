@@ -573,11 +573,19 @@ public class GlobeMod implements ModInitializer {
     }
 
     private static String resolveSpawnZoneId(String selected, long seed) {
-        if (selected == null || !selected.equals("RANDOM")) {
+        if (selected == null) {
+            return null;
+        }
+
+        if (selected.equals("EQUATOR")) {
+            return "TROPICAL";
+        }
+
+        if (!selected.equals("RANDOM")) {
             return selected;
         }
 
-        String[] options = {"EQUATOR", "TROPICAL", "SUBTROPICAL", "TEMPERATE", "SUBPOLAR", "POLAR"};
+        String[] options = {"TROPICAL", "SUBTROPICAL", "TEMPERATE", "SUBPOLAR", "POLAR"};
         long mixed = seed ^ 0x9E3779B97F4A7C15L;
         int idx = Math.floorMod(mixed, options.length);
         return options[idx];

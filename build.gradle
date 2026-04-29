@@ -66,10 +66,8 @@ modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
     
     // ModMenu API (compile-time only, optional at runtime)
     modCompileOnly "com.terraformersmc:modmenu:${project.modmenu_version}"
-    modLocalRuntime "com.terraformersmc:modmenu:${project.modmenu_version}"
 
     modCompileOnly "maven.modrinth:placeholder-api:${project.placeholder_api_version}"
-    modLocalRuntime "maven.modrinth:placeholder-api:${project.placeholder_api_version}"
 }
 
 processResources {

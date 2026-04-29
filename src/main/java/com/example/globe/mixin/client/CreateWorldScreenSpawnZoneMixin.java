@@ -31,7 +31,7 @@ public abstract class CreateWorldScreenSpawnZoneMixin extends Screen {
 
     @Unique
     private static final String[] GLOBE_ZONES = {
-            "EQUATOR", "TROPICAL", "SUBTROPICAL", "TEMPERATE", "SUBPOLAR", "POLAR", "RANDOM"
+            "TROPICAL", "SUBTROPICAL", "TEMPERATE", "SUBPOLAR", "POLAR", "RANDOM"
     };
 
     @Shadow
@@ -150,7 +150,6 @@ public abstract class CreateWorldScreenSpawnZoneMixin extends Screen {
         }
 
         return Text.literal(switch (id) {
-            case "EQUATOR" -> "Equator";
             case "TROPICAL" -> "Tropical";
             case "SUBTROPICAL" -> "Subtropical";
             case "TEMPERATE" -> "Temperate";

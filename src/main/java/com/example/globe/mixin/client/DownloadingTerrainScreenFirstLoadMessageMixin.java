@@ -9,16 +9,12 @@ import net.minecraft.client.gui.screen.world.LevelLoadingScreen;
 import net.minecraft.text.Text;
 import net.minecraft.util.math.MathHelper;
 import org.spongepowered.asm.mixin.Mixin;
-import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Mixin(LevelLoadingScreen.class)
 public abstract class DownloadingTerrainScreenFirstLoadMessageMixin {
-
-    @Shadow
-    private float loadProgress;
 
     private static final Text LINE_1 = Text.literal("Latitude is preparing your world for the first time.");
     private static final Text LINE_2 = Text.literal("Subsequent loads will be much faster.");
@@ -37,7 +33,10 @@ public abstract class DownloadingTerrainScreenFirstLoadMessageMixin {
             return;
         }
 
-        float p = MathHelper.clamp(this.loadProgress, 0.0f, 1.0f);
+        long elapsedMs = LatitudeClientState.firstWorldLoadStartMs > 0L
+                ? System.currentTimeMillis() - LatitudeClientState.firstWorldLoadStartMs
+                : 1000L;
+        float p = MathHelper.clamp(elapsedMs / 1000.0f, 0.0f, 1.0f);
         float ease = 1.0f - (1.0f - p) * (1.0f - p) * (1.0f - p);
         int alpha = Math.round(ease * 255.0f);
         int yOffset = Math.round((1.0f - ease) * 10.0f);
@@ -66,7 +65,7 @@ public abstract class DownloadingTerrainScreenFirstLoadMessageMixin {
         context.drawText(tr, LINE_2, x2, line2Y, line2Color, false);
     }
 
-    @Inject(method = "close", at = @At("HEAD"))
+    @Inject(method = "removed", at = @At("HEAD"))
     private void globe$clearFirstLoadFlag(CallbackInfo ci) {
         LatitudeClientState.firstWorldLoad = false;
         LatitudeClientState.firstWorldLoadStartMs = 0L;
