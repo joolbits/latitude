@@ -18,8 +18,6 @@
   ],
   "client": [
     "client.FogRendererMixin",
-    "client.EwStormWallRendererMixin",
-    "client.WorldRendererWorldBorderMixin",
     "client.CreateWorldScreenLatitudeToggleMixin",
     "client.CreateWorldScreenSpawnZoneMixin",
     "client.CreateWorldScreenMixin",

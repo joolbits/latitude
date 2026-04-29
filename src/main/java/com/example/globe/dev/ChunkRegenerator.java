@@ -10,6 +10,7 @@ import net.minecraft.registry.RegistryWrapper;
 import net.minecraft.registry.entry.RegistryEntry;
 import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.server.WorldGenerationProgressListener;
 import net.minecraft.server.world.OptionalChunk;
 import net.minecraft.server.world.ServerLightingProvider;
 import net.minecraft.server.world.ServerWorld;
@@ -23,6 +24,7 @@ import net.minecraft.world.chunk.Chunk;
 import net.minecraft.world.chunk.ChunkSection;
 import net.minecraft.world.chunk.ChunkStatus;
 import net.minecraft.world.chunk.PalettedContainer;
+import net.minecraft.world.chunk.ReadableContainer;
 import net.minecraft.world.chunk.WorldChunk;
 import net.minecraft.world.dimension.DimensionOptions;
 import net.minecraft.world.gen.GeneratorOptions;
@@ -44,6 +46,23 @@ import java.util.concurrent.CompletableFuture;
 
 public final class ChunkRegenerator {
     private static final int SET_BLOCK_FLAGS = Block.NOTIFY_LISTENERS | Block.FORCE_STATE | Block.SKIP_DROPS;
+    private static final WorldGenerationProgressListener NO_WORLD_GENERATION_PROGRESS = new WorldGenerationProgressListener() {
+        @Override
+        public void start(ChunkPos spawnPos) {
+        }
+
+        @Override
+        public void setChunkStatus(ChunkPos pos, ChunkStatus status) {
+        }
+
+        @Override
+        public void start() {
+        }
+
+        @Override
+        public void stop() {
+        }
+    };
 
     private ChunkRegenerator() {
     }
@@ -97,6 +116,7 @@ public final class ChunkRegenerator {
                         worldProperties,
                         realWorld.getRegistryKey(),
                         dimensionOptions,
+                        NO_WORLD_GENERATION_PROGRESS,
                         realWorld.isDebugWorld(),
                         seed,
                         List.of(),
@@ -235,7 +255,7 @@ public final class ChunkRegenerator {
                 biomeRefreshChunks.add(targetChunk);
             }
 
-            targetChunk.markNeedsSaving();
+            targetChunk.setNeedsSaving(true);
             lightingProvider.propagateLight(chunkPos);
         }
 
@@ -265,8 +285,7 @@ public final class ChunkRegenerator {
             ChunkSection sourceSection = sourceSections[sectionIndex];
             ChunkSection targetSection = targetSections[sectionIndex];
 
-            PalettedContainer<RegistryEntry<Biome>> sourceBiomes =
-                    (PalettedContainer<RegistryEntry<Biome>>) sourceSection.getBiomeContainer().copy();
+            ReadableContainer<RegistryEntry<Biome>> sourceBiomes = sourceSection.getBiomeContainer();
             PalettedContainer<RegistryEntry<Biome>> targetBiomes =
                     (PalettedContainer<RegistryEntry<Biome>>) targetSection.getBiomeContainer();
 

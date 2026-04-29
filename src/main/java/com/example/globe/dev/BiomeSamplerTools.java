@@ -49,9 +49,9 @@ public final class BiomeSamplerTools {
         BiomeSource baseSource = biomeSource instanceof LatitudeBiomeSource latitudeSource
                 ? latitudeSource.original()
                 : biomeSource;
-        Registry<Biome> biomeRegistry = world.getRegistryManager().getOrThrow(RegistryKeys.BIOME);
+        Registry<Biome> biomeRegistry = world.getRegistryManager().get(RegistryKeys.BIOME);
         RegistryEntryLookup<DoublePerlinNoiseSampler.NoiseParameters> noiseParameters =
-                world.getRegistryManager().getOrThrow(RegistryKeys.NOISE_PARAMETERS);
+                world.getRegistryManager().getOptionalWrapper(RegistryKeys.NOISE_PARAMETERS).orElseThrow();
 
         return new SamplerTemplate(
                 biomeRegistry,

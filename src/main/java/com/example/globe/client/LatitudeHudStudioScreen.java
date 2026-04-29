@@ -1,7 +1,6 @@
 package com.example.globe.client;
 
 import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.Click;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.ButtonWidget;
@@ -92,33 +91,39 @@ public class LatitudeHudStudioScreen extends Screen {
         this.wCompassTransparency = this.addDrawableChild(new IntSlider(panelX, y, panelW, rowH, Text.literal("Transparency"), 0, 255, cfg.backgroundAlpha, v -> cfg.backgroundAlpha = v));
         y += rowH + rowGap;
 
-        this.wCompassBackground = this.addDrawableChild(CyclingButtonWidget.<Boolean>builder(v -> Text.literal(v ? "ON" : "OFF"), () -> cfg.showBackground)
+        this.wCompassBackground = this.addDrawableChild(CyclingButtonWidget.<Boolean>builder(v -> Text.literal(v ? "ON" : "OFF"))
                 .values(true, false)
+                .initially(cfg.showBackground)
                 .build(panelX, y, panelW, rowH, Text.literal("Background"), (btn, value) -> cfg.showBackground = value));
         y += rowH + rowGap;
 
-        this.wCompassBgColor = this.addDrawableChild(CyclingButtonWidget.<String>builder(Text::literal, () -> bgColorName(cfg.backgroundRgb))
+        this.wCompassBgColor = this.addDrawableChild(CyclingButtonWidget.<String>builder(Text::literal)
                 .values("BLACK", "WHITE", "DARK_GRAY", "BLUE")
+                .initially(bgColorName(cfg.backgroundRgb))
                 .build(panelX, y, panelW, rowH, Text.literal("Background Color"), (btn, value) -> cfg.backgroundRgb = bgColorRgb(value)));
         y += rowH + rowGap;
 
-        this.wCompassTextColor = this.addDrawableChild(CyclingButtonWidget.<String>builder(Text::literal, () -> textColorName(cfg.textRgb))
+        this.wCompassTextColor = this.addDrawableChild(CyclingButtonWidget.<String>builder(Text::literal)
                 .values("WHITE", "BLACK", "YELLOW", "RED", "CYAN")
+                .initially(textColorName(cfg.textRgb))
                 .build(panelX, y, panelW, rowH, Text.literal("Text Color"), (btn, value) -> cfg.textRgb = textColorRgb(value)));
         y += rowH + rowGap;
 
-        this.wCompassShowLatitude = this.addDrawableChild(CyclingButtonWidget.<Boolean>builder(v -> Text.literal(v ? "ON" : "OFF"), () -> Boolean.TRUE.equals(cfg.showLatitude))
+        this.wCompassShowLatitude = this.addDrawableChild(CyclingButtonWidget.<Boolean>builder(v -> Text.literal(v ? "ON" : "OFF"))
                 .values(true, false)
+                .initially(Boolean.TRUE.equals(cfg.showLatitude))
                 .build(panelX, y, panelW, rowH, Text.literal("Show Latitude"), (btn, value) -> cfg.showLatitude = value));
         y += rowH + rowGap;
 
-        this.wCompassCompact = this.addDrawableChild(CyclingButtonWidget.<Boolean>builder(v -> Text.literal(v ? "ON" : "OFF"), () -> cfg.compactHud)
+        this.wCompassCompact = this.addDrawableChild(CyclingButtonWidget.<Boolean>builder(v -> Text.literal(v ? "ON" : "OFF"))
                 .values(true, false)
+                .initially(cfg.compactHud)
                 .build(panelX, y, panelW, rowH, Text.literal("Compact HUD"), (btn, value) -> cfg.compactHud = value));
         y += rowH + rowGap;
 
-        this.wCompassAttachHotbar = this.addDrawableChild(CyclingButtonWidget.<Boolean>builder(v -> Text.literal(v ? "ON" : "OFF"), () -> cfg.attachToHotbarCompass)
+        this.wCompassAttachHotbar = this.addDrawableChild(CyclingButtonWidget.<Boolean>builder(v -> Text.literal(v ? "ON" : "OFF"))
                 .values(true, false)
+                .initially(cfg.attachToHotbarCompass)
                 .build(panelX, y, panelW, rowH, Text.literal("Attach to Hotbar"), (btn, value) -> {
                     cfg.attachToHotbarCompass = value;
                     CompassHudConfig.saveCurrent();
@@ -206,7 +211,7 @@ public class LatitudeHudStudioScreen extends Screen {
         var mc = MinecraftClient.getInstance();
         if (mc == null || mc.getWindow() == null) return;
 
-        boolean lDown = InputUtil.isKeyPressed(mc.getWindow(), InputUtil.GLFW_KEY_L);
+        boolean lDown = InputUtil.isKeyPressed(mc.getWindow().getHandle(), InputUtil.GLFW_KEY_L);
         if (lDown && !wasLDown) {
             sidebarVisible = !sidebarVisible;
             updateSidebarVisibility();
@@ -215,15 +220,15 @@ public class LatitudeHudStudioScreen extends Screen {
     }
 
     @Override
-    public boolean mouseClicked(Click click, boolean doubleClick) {
-        if (super.mouseClicked(click, doubleClick)) {
+    public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        if (super.mouseClicked(mouseX, mouseY, button)) {
             return true;
         }
 
-        double mx = click.x();
-        double my = click.y();
+        double mx = mouseX;
+        double my = mouseY;
 
-        if (click.button() == 0) {
+        if (button == 0) {
             if (LatitudeConfig.zoneEnterTitleDraggable && isMouseOverTitle(mx, my)) {
                 dragElement = DragElement.TITLE;
                 int cx = (this.width / 2) + LatitudeConfig.zoneEnterTitleOffsetX;
@@ -245,15 +250,15 @@ public class LatitudeHudStudioScreen extends Screen {
     }
 
     @Override
-    public boolean mouseDragged(Click click, double deltaX, double deltaY) {
-        if (super.mouseDragged(click, deltaX, deltaY)) {
+    public boolean mouseDragged(double mouseX, double mouseY, int button, double deltaX, double deltaY) {
+        if (super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY)) {
             return true;
         }
 
-        double mx = click.x();
-        double my = click.y();
+        double mx = mouseX;
+        double my = mouseY;
 
-        if (click.button() != 0) {
+        if (button != 0) {
             return false;
         }
 
@@ -304,8 +309,8 @@ public class LatitudeHudStudioScreen extends Screen {
     }
 
     @Override
-    public boolean mouseReleased(Click click) {
-        if (click.button() == 0) {
+    public boolean mouseReleased(double mouseX, double mouseY, int button) {
+        if (button == 0) {
             if (dragElement == DragElement.TITLE) {
                 int x = (int) Math.round(titleOffsetXf);
                 int y = (int) Math.round(titleOffsetYf);
@@ -322,7 +327,7 @@ public class LatitudeHudStudioScreen extends Screen {
             }
             dragElement = DragElement.NONE;
         }
-        return super.mouseReleased(click);
+        return super.mouseReleased(mouseX, mouseY, button);
     }
 
     private static void resetHudDefaults() {

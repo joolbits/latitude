@@ -227,8 +227,7 @@ public final class LatitudeDevCommand {
                     targetZ + 0.5,
                     EnumSet.noneOf(PositionFlag.class),
                     player.getYaw(),
-                    player.getPitch(),
-                    true);
+                    player.getPitch());
 
             String biomeId = biomeId(world.getBiome(new BlockPos(targetX, targetY, targetZ)));
             source.sendFeedback(() -> Text.literal(String.format(Locale.ROOT,

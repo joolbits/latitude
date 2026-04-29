@@ -326,7 +326,7 @@ public final class GlobeClientState {
         var cam = mc.gameRenderer.getCamera();
         if (cam == null) return Double.NaN;
 
-        double x = cam.getCameraPos().x;
+        double x = cam.getPos().x;
 
         double eastX = 3750.0;
         double westX = -3750.0;

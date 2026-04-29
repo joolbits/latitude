@@ -43,16 +43,18 @@ public class LatitudeSettingsScreen extends Screen {
         int baseY;
 
         baseY = y;
-        var wZoneTitle = this.addDrawableChild(CyclingButtonWidget.builder(v -> Text.literal(v ? "ON" : "OFF"), LatitudeConfig.zoneEnterTitleEnabled)
+        var wZoneTitle = this.addDrawableChild(CyclingButtonWidget.<Boolean>builder(v -> Text.literal(v ? "ON" : "OFF"))
                 .values(true, false)
+                .initially(LatitudeConfig.zoneEnterTitleEnabled)
                 .build(columnX, y, w, h, Text.literal("Zone Enter Title"), (btn, value) -> LatitudeConfig.zoneEnterTitleEnabled = value));
         layoutWidgets.add(wZoneTitle);
         layoutBaseYs.add(baseY);
         y += 24;
 
         baseY = y;
-        var wWarnText = this.addDrawableChild(CyclingButtonWidget.builder(v -> Text.literal(v ? "ON" : "OFF"), LatitudeConfig.showWarningMessages)
+        var wWarnText = this.addDrawableChild(CyclingButtonWidget.<Boolean>builder(v -> Text.literal(v ? "ON" : "OFF"))
                 .values(true, false)
+                .initially(LatitudeConfig.showWarningMessages)
                 .build(columnX, y, w, h, Text.literal("Warning messages"), (btn, value) -> {
                     LatitudeConfig.showWarningMessages = value;
                     LatitudeConfig.saveCurrent();
@@ -63,8 +65,9 @@ public class LatitudeSettingsScreen extends Screen {
         y += 24;
 
         baseY = y;
-        var wCaptureClipboard = this.addDrawableChild(CyclingButtonWidget.builder(v -> Text.literal(v ? "ON" : "OFF"), LatitudeConfig.screenshotClipboardEnabled)
+        var wCaptureClipboard = this.addDrawableChild(CyclingButtonWidget.<Boolean>builder(v -> Text.literal(v ? "ON" : "OFF"))
                 .values(true, false)
+                .initially(LatitudeConfig.screenshotClipboardEnabled)
                 .build(columnX, y, w, h, Text.translatable("option.globe.capture_clipboard"), (btn, value) -> LatitudeConfig.screenshotClipboardEnabled = value));
         wCaptureClipboard.setTooltip(Tooltip.of(Text.translatable("option.globe.capture_clipboard.tooltip")));
         layoutWidgets.add(wCaptureClipboard);
@@ -72,8 +75,9 @@ public class LatitudeSettingsScreen extends Screen {
         y += 24;
 
         baseY = y;
-        var wCapturePowerShell = this.addDrawableChild(CyclingButtonWidget.builder(v -> Text.literal(v ? "ON" : "OFF"), LatitudeConfig.screenshotClipboardWindowsPowerShell)
+        var wCapturePowerShell = this.addDrawableChild(CyclingButtonWidget.<Boolean>builder(v -> Text.literal(v ? "ON" : "OFF"))
                 .values(true, false)
+                .initially(LatitudeConfig.screenshotClipboardWindowsPowerShell)
                 .build(columnX, y, w, h, Text.translatable("option.globe.capture_windows_powershell"), (btn, value) -> LatitudeConfig.screenshotClipboardWindowsPowerShell = value));
         wCapturePowerShell.setTooltip(Tooltip.of(Text.translatable("option.globe.capture_windows_powershell.tooltip")));
         layoutWidgets.add(wCapturePowerShell);
@@ -81,8 +85,9 @@ public class LatitudeSettingsScreen extends Screen {
         y += 24;
 
         baseY = y;
-        var wCaptureAlsoSave = this.addDrawableChild(CyclingButtonWidget.builder(v -> Text.literal(v ? "ON" : "OFF"), LatitudeConfig.screenshotAlsoSaveToDisk)
+        var wCaptureAlsoSave = this.addDrawableChild(CyclingButtonWidget.<Boolean>builder(v -> Text.literal(v ? "ON" : "OFF"))
                 .values(true, false)
+                .initially(LatitudeConfig.screenshotAlsoSaveToDisk)
                 .build(columnX, y, w, h, Text.translatable("option.globe.capture_save_disk"), (btn, value) -> LatitudeConfig.screenshotAlsoSaveToDisk = value));
         wCaptureAlsoSave.setTooltip(Tooltip.of(Text.translatable("option.globe.capture_save_disk.tooltip")));
         layoutWidgets.add(wCaptureAlsoSave);
@@ -90,8 +95,9 @@ public class LatitudeSettingsScreen extends Screen {
         y += 24;
 
         baseY = y;
-        var wCaptureCsv = this.addDrawableChild(CyclingButtonWidget.builder(v -> Text.literal(v ? "ON" : "OFF"), LatitudeConfig.captureWriteCsv)
+        var wCaptureCsv = this.addDrawableChild(CyclingButtonWidget.<Boolean>builder(v -> Text.literal(v ? "ON" : "OFF"))
                 .values(true, false)
+                .initially(LatitudeConfig.captureWriteCsv)
                 .build(columnX, y, w, h, Text.translatable("option.globe.capture_write_csv"), (btn, value) -> LatitudeConfig.captureWriteCsv = value));
         wCaptureCsv.setTooltip(Tooltip.of(Text.translatable("option.globe.capture_write_csv.tooltip")));
         layoutWidgets.add(wCaptureCsv);
@@ -105,8 +111,9 @@ public class LatitudeSettingsScreen extends Screen {
         y += 24;
 
         baseY = y;
-        var wShowMode = this.addDrawableChild(CyclingButtonWidget.<CompassHudConfig.ShowMode>builder(this::showModeLabel, () -> cfg.showMode)
+        var wShowMode = this.addDrawableChild(CyclingButtonWidget.<CompassHudConfig.ShowMode>builder(this::showModeLabel)
                 .values(CompassHudConfig.ShowMode.values())
+                .initially(cfg.showMode)
                 .build(columnX, y, w, h, Text.literal("Show Mode"), (btn, value) -> cfg.showMode = value));
         layoutWidgets.add(wShowMode);
         layoutBaseYs.add(baseY);

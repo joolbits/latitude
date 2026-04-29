@@ -1,20 +1,17 @@
 package com.example.globe.world;
 
-import com.mojang.serialization.codecs.RecordCodecBuilder;
-import com.mojang.serialization.Codec;
 import net.minecraft.datafixer.DataFixTypes;
+import net.minecraft.nbt.NbtCompound;
+import net.minecraft.registry.RegistryWrapper;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.world.PersistentState;
-import net.minecraft.world.PersistentStateType;
 
 public final class LatitudeWorldState extends PersistentState {
-    private static final PersistentStateType<LatitudeWorldState> STATE_TYPE = new PersistentStateType<>(
-            "globe_latitude_world_state",
+    private static final String SAVE_ID = "globe_latitude_world_state";
+    private static final String SPAWN_PICKER_DISMISSED_KEY = "spawn_picker_dismissed";
+    private static final Type<LatitudeWorldState> STATE_TYPE = new Type<>(
             LatitudeWorldState::new,
-            RecordCodecBuilder.create(instance -> instance.group(
-                    Codec.BOOL.optionalFieldOf("spawn_picker_dismissed", false)
-                            .forGetter(LatitudeWorldState::isSpawnPickerDismissed)
-            ).apply(instance, LatitudeWorldState::new)),
+            LatitudeWorldState::fromNbt,
             DataFixTypes.SAVED_DATA_COMMAND_STORAGE
     );
 
@@ -29,7 +26,17 @@ public final class LatitudeWorldState extends PersistentState {
     }
 
     public static LatitudeWorldState get(ServerWorld world) {
-        return world.getPersistentStateManager().getOrCreate(STATE_TYPE);
+        return world.getPersistentStateManager().getOrCreate(STATE_TYPE, SAVE_ID);
+    }
+
+    private static LatitudeWorldState fromNbt(NbtCompound nbt, RegistryWrapper.WrapperLookup registryLookup) {
+        return new LatitudeWorldState(nbt.getBoolean(SPAWN_PICKER_DISMISSED_KEY));
+    }
+
+    @Override
+    public NbtCompound writeNbt(NbtCompound nbt, RegistryWrapper.WrapperLookup registryLookup) {
+        nbt.putBoolean(SPAWN_PICKER_DISMISSED_KEY, spawnPickerDismissed);
+        return nbt;
     }
 
     public boolean isSpawnPickerDismissed() {

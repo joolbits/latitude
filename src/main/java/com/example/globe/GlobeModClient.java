@@ -9,13 +9,12 @@ import com.example.globe.client.GlobeWarningOverlay;
 import com.example.globe.client.LatitudeSettingsScreen;
 import com.example.globe.client.SpawnZoneScreen;
 import com.example.globe.client.EwSandstormOverlayRenderer;
-import com.example.globe.client.EwStormWallRenderer;
 import com.example.globe.dev.DevCaptureKeybind;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
-import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderEvents;
+import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderEvents;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.block.Blocks;
@@ -67,10 +66,10 @@ public class GlobeModClient implements ClientModInitializer {
         }
         ClientTickEvents.END_CLIENT_TICK.register(GlobeModClient::clientKeybindTick);
 
-        WorldRenderEvents.BEFORE_TRANSLUCENT.register(ctx -> {
+        WorldRenderEvents.AFTER_TRANSLUCENT.register(ctx -> {
             if (!GlobeClientState.DEBUG_EW_WALL) return;
             // EwStormWallRenderer.render(ctx.matrices(), ctx.consumers()); // TEMP: wall disabled (overlay bring-up)
-            EwSandstormOverlayRenderer.render(ctx.matrices(), ctx.consumers());
+            EwSandstormOverlayRenderer.render(ctx.matrixStack(), ctx.consumers());
         });
     }
 

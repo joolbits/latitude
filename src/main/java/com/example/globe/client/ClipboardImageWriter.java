@@ -152,7 +152,13 @@ public final class ClipboardImageWriter {
         int width = image.getWidth();
         int height = image.getHeight();
         BufferedImage bufferedImage = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
-        int[] pixels = image.copyPixelsArgb();
+        int[] pixels = image.copyPixelsRgba();
+        for (int i = 0; i < pixels.length; i++) {
+            int nativeColor = pixels[i];
+            pixels[i] = (nativeColor & 0xFF00FF00)
+                    | ((nativeColor & 0x00FF0000) >> 16)
+                    | ((nativeColor & 0x000000FF) << 16);
+        }
         bufferedImage.setRGB(0, 0, width, height, pixels, 0, width);
         return bufferedImage;
     }

@@ -137,10 +137,10 @@ public final class BiomePreviewExporter {
         BiomeSource baseSource = biomeSource instanceof LatitudeBiomeSource latitudeSource
                 ? latitudeSource.original()
                 : biomeSource;
-        Registry<Biome> biomeRegistry = world.getRegistryManager().getOrThrow(RegistryKeys.BIOME);
+        Registry<Biome> biomeRegistry = world.getRegistryManager().get(RegistryKeys.BIOME);
         NoiseConfig noiseConfig = NoiseConfig.create(
                 ((net.minecraft.world.gen.chunk.NoiseChunkGenerator) generator).getSettings().value(),
-                world.getRegistryManager().getOrThrow(RegistryKeys.NOISE_PARAMETERS),
+                world.getRegistryManager().getOptionalWrapper(RegistryKeys.NOISE_PARAMETERS).orElseThrow(),
                 atlasSeed);
         MultiNoiseUtil.MultiNoiseSampler sampler = noiseConfig.getMultiNoiseSampler();
         net.minecraft.world.gen.chunk.NoiseChunkGenerator noiseGen =
@@ -416,10 +416,10 @@ public final class BiomePreviewExporter {
             this.baseSource = biomeSource instanceof LatitudeBiomeSource latitudeSource
                     ? latitudeSource.original()
                     : biomeSource;
-            this.biomeRegistry = world.getRegistryManager().getOrThrow(RegistryKeys.BIOME);
+            this.biomeRegistry = world.getRegistryManager().get(RegistryKeys.BIOME);
             this.noiseConfig = NoiseConfig.create(
                     ((net.minecraft.world.gen.chunk.NoiseChunkGenerator) this.generator).getSettings().value(),
-                    world.getRegistryManager().getOrThrow(RegistryKeys.NOISE_PARAMETERS),
+                    world.getRegistryManager().getOptionalWrapper(RegistryKeys.NOISE_PARAMETERS).orElseThrow(),
                     atlasSeed);
             this.sampler = noiseConfig.getMultiNoiseSampler();
             net.minecraft.world.gen.chunk.NoiseChunkGenerator noiseGen =

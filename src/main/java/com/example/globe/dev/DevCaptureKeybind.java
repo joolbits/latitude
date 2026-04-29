@@ -75,7 +75,8 @@ public final class DevCaptureKeybind {
 
         try {
             Framebuffer framebuffer = client.getFramebuffer();
-            ScreenshotRecorder.takeScreenshot(framebuffer, image -> client.execute(() -> handleCapturedImage(client, image)));
+            NativeImage image = ScreenshotRecorder.takeScreenshot(framebuffer);
+            client.execute(() -> handleCapturedImage(client, image));
         } catch (Exception e) {
             GlobeMod.LOGGER.warn("[latdev] Capture pipeline failed", e);
             sendStatus(client, "[latdev] Capture failed: " + e.getMessage());

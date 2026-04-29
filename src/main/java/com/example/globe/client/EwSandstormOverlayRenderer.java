@@ -2,7 +2,6 @@ package com.example.globe.client;
 
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.render.RenderLayer;
-import net.minecraft.client.render.RenderLayers;
 import net.minecraft.client.render.VertexConsumer;
 import net.minecraft.client.render.VertexConsumerProvider;
 import net.minecraft.client.render.VertexConsumerProvider.Immediate;
@@ -39,7 +38,7 @@ public final class EwSandstormOverlayRenderer {
         matrices.push();
         Matrix4f m = matrices.peek().getPositionMatrix();
 
-        RenderLayer layer = RenderLayers.debugQuads();
+        RenderLayer layer = RenderLayer.getDebugQuads();
         VertexConsumer vc = consumers.getBuffer(layer);
 
         vc.vertex(m, -1f, -1f, 0f).color(r, g, b, a).texture(0f, 1f).light(0xF000F0);
