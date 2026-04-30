@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Supplier;
 
 import it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap;
@@ -242,6 +243,7 @@ public final class LatitudeBiomes {
     private static final Logger LOGGER = LoggerFactory.getLogger("LatitudeBiomes");
     private static final boolean DEBUG_BIOMES = Boolean.getBoolean("latitude.debugBiomes")
             || Boolean.getBoolean("latitude.debugBiomePick");
+    private static final boolean DEBUG_BIOME_COST = Boolean.getBoolean("latitude.debugBiomeCost");
     private static final boolean DEBUG_BLEND = Boolean.getBoolean("latitude.debugBlend");
     private static final boolean DEBUG_LEAK = Boolean.getBoolean("latitude.debugLeak");
     private static final boolean DEBUG_FINAL_SANITIZE = Boolean.getBoolean("latitude.debugFinalSanitize");
@@ -257,6 +259,19 @@ public final class LatitudeBiomes {
             Boolean.parseBoolean(System.getProperty("latitude.skipPreviewHeightForBiomePng", "true"));
     private static final boolean SKIP_PREVIEW_HEIGHT_FOR_WORLDGEN =
             Boolean.parseBoolean(System.getProperty("latitude.skipPreviewHeightForWorldgen", "true"));
+    private static final long BIOCOST_PICK_LOG_EVERY_CALLS = 250_000L;
+    private static final AtomicLong BIOCOST_PICK_CALLS = new AtomicLong();
+    private static final AtomicLong BIOCOST_PICK_TOTAL_NS = new AtomicLong();
+    private static final AtomicLong BIOCOST_PICK_BAND_SELECT_NS = new AtomicLong();
+    private static final AtomicLong BIOCOST_PICK_PREVIEW_OR_MOUNTAIN_NS = new AtomicLong();
+    private static final AtomicLong BIOCOST_PICK_TAG_CHECKS_NS = new AtomicLong();
+    private static final AtomicLong BIOCOST_PICK_TOP_Y_SETUP_NS = new AtomicLong();
+    private static final AtomicLong BIOCOST_PICK_TOP_RADIUS_PATH_SETUP_NS = new AtomicLong();
+    private static final AtomicLong BIOCOST_PICK_TOP_DEBUG_TRACE_TAIL_NS = new AtomicLong();
+    private static final AtomicLong BIOCOST_PICK_HELPER_SELECTOR_OR_BRANCH_BODY_NS = new AtomicLong();
+    private static final AtomicLong BIOCOST_PICK_BRANCH_PICKER_NS = new AtomicLong();
+    private static final AtomicLong BIOCOST_PICK_FINAL_ENFORCE_SANITIZE_NS = new AtomicLong();
+    private static final AtomicLong BIOCOST_PICK_REGISTRY_OR_KEY_NS = new AtomicLong();
     private static volatile long WORLD_SEED = 0L;
     public static volatile int ACTIVE_RADIUS_BLOCKS = 0;
     private static OceanDistanceField OCEAN_DISTANCE_FIELD = null;
@@ -400,6 +415,77 @@ public final class LatitudeBiomes {
             return SKIP_PREVIEW_HEIGHT_FOR_WORLDGEN;
         }
         return false;
+    }
+
+    private static boolean shouldUseConstantSurfaceYForWorldgen(String callerContext) {
+        if (!SKIP_PREVIEW_HEIGHT_FOR_WORLDGEN || callerContext == null) {
+            return false;
+        }
+        String normalized = callerContext.trim().toUpperCase(java.util.Locale.ROOT);
+        return "MIXIN".equals(normalized) || "CAVE_CLAMP".equals(normalized);
+    }
+
+    private static void recordBioCostPick(long totalNs, long bandSelectNs, long previewOrMountainNs, long tagChecksNs,
+                                          long topYSetupNs, long topRadiusPathSetupNs, long topDebugTraceTailNs,
+                                          long helperSelectorOrBranchBodyNs,
+                                          long branchPickerNs, long finalEnforceSanitizeNs, long registryOrKeyNs) {
+        long calls = BIOCOST_PICK_CALLS.incrementAndGet();
+        BIOCOST_PICK_TOTAL_NS.addAndGet(totalNs);
+        BIOCOST_PICK_BAND_SELECT_NS.addAndGet(bandSelectNs);
+        BIOCOST_PICK_PREVIEW_OR_MOUNTAIN_NS.addAndGet(previewOrMountainNs);
+        BIOCOST_PICK_TAG_CHECKS_NS.addAndGet(tagChecksNs);
+        BIOCOST_PICK_TOP_Y_SETUP_NS.addAndGet(topYSetupNs);
+        BIOCOST_PICK_TOP_RADIUS_PATH_SETUP_NS.addAndGet(topRadiusPathSetupNs);
+        BIOCOST_PICK_TOP_DEBUG_TRACE_TAIL_NS.addAndGet(topDebugTraceTailNs);
+        BIOCOST_PICK_HELPER_SELECTOR_OR_BRANCH_BODY_NS.addAndGet(helperSelectorOrBranchBodyNs);
+        BIOCOST_PICK_BRANCH_PICKER_NS.addAndGet(branchPickerNs);
+        BIOCOST_PICK_FINAL_ENFORCE_SANITIZE_NS.addAndGet(finalEnforceSanitizeNs);
+        BIOCOST_PICK_REGISTRY_OR_KEY_NS.addAndGet(registryOrKeyNs);
+        if (calls % BIOCOST_PICK_LOG_EVERY_CALLS == 0L) {
+            reportBioCostPick(calls);
+        }
+    }
+
+    private static void reportBioCostPick(long calls) {
+        long totalNs = BIOCOST_PICK_TOTAL_NS.get();
+        long bandSelectNs = BIOCOST_PICK_BAND_SELECT_NS.get();
+        long previewOrMountainNs = BIOCOST_PICK_PREVIEW_OR_MOUNTAIN_NS.get();
+        long tagChecksNs = BIOCOST_PICK_TAG_CHECKS_NS.get();
+        long topYSetupNs = BIOCOST_PICK_TOP_Y_SETUP_NS.get();
+        long topRadiusPathSetupNs = BIOCOST_PICK_TOP_RADIUS_PATH_SETUP_NS.get();
+        long topDebugTraceTailNs = BIOCOST_PICK_TOP_DEBUG_TRACE_TAIL_NS.get();
+        long helperSelectorOrBranchBodyNs = BIOCOST_PICK_HELPER_SELECTOR_OR_BRANCH_BODY_NS.get();
+        long branchPickerNs = BIOCOST_PICK_BRANCH_PICKER_NS.get();
+        long finalEnforceSanitizeNs = BIOCOST_PICK_FINAL_ENFORCE_SANITIZE_NS.get();
+        long registryOrKeyNs = BIOCOST_PICK_REGISTRY_OR_KEY_NS.get();
+        long accountedNs = bandSelectNs + previewOrMountainNs + tagChecksNs + topYSetupNs + topRadiusPathSetupNs + topDebugTraceTailNs
+                + helperSelectorOrBranchBodyNs + branchPickerNs + finalEnforceSanitizeNs + registryOrKeyNs;
+        long otherNs = Math.max(0L, totalNs - accountedNs);
+        long avgNs = calls > 0L ? totalNs / calls : 0L;
+        double bandPct = totalNs > 0L ? (100.0 * bandSelectNs) / totalNs : 0.0;
+        double previewPct = totalNs > 0L ? (100.0 * previewOrMountainNs) / totalNs : 0.0;
+        double tagPct = totalNs > 0L ? (100.0 * tagChecksNs) / totalNs : 0.0;
+        double topYSetupPct = totalNs > 0L ? (100.0 * topYSetupNs) / totalNs : 0.0;
+        double topRadiusPathSetupPct = totalNs > 0L ? (100.0 * topRadiusPathSetupNs) / totalNs : 0.0;
+        double topDebugTraceTailPct = totalNs > 0L ? (100.0 * topDebugTraceTailNs) / totalNs : 0.0;
+        double helperSelectorPct = totalNs > 0L ? (100.0 * helperSelectorOrBranchBodyNs) / totalNs : 0.0;
+        double branchPct = totalNs > 0L ? (100.0 * branchPickerNs) / totalNs : 0.0;
+        double finalPct = totalNs > 0L ? (100.0 * finalEnforceSanitizeNs) / totalNs : 0.0;
+        double registryPct = totalNs > 0L ? (100.0 * registryOrKeyNs) / totalNs : 0.0;
+        double otherPct = totalNs > 0L ? (100.0 * otherNs) / totalNs : 0.0;
+        LOGGER.info("[LAT][BIOCOST_PICK] calls={} avg={}ns total={}ms band_select={}ms({}%) preview_or_mountain={}ms({}%) tag_checks={}ms({}%) top_y_setup={}ms({}%) top_radius_path_setup={}ms({}%) top_debug_trace_tail={}ms({}%) helper_selector_or_branch_body={}ms({}%) branch_picker={}ms({}%) final_enforce_sanitize={}ms({}%) registry_or_key={}ms({}%) other={}ms({}%)",
+                calls, avgNs, totalNs / 1_000_000,
+                bandSelectNs / 1_000_000, bandPct,
+                previewOrMountainNs / 1_000_000, previewPct,
+                tagChecksNs / 1_000_000, tagPct,
+                topYSetupNs / 1_000_000, topYSetupPct,
+                topRadiusPathSetupNs / 1_000_000, topRadiusPathSetupPct,
+                topDebugTraceTailNs / 1_000_000, topDebugTraceTailPct,
+                helperSelectorOrBranchBodyNs / 1_000_000, helperSelectorPct,
+                branchPickerNs / 1_000_000, branchPct,
+                finalEnforceSanitizeNs / 1_000_000, finalPct,
+                registryOrKeyNs / 1_000_000, registryPct,
+                otherNs / 1_000_000, otherPct);
     }
 
     private static PreviewTerrain syntheticPreviewTerrain(boolean mountainNoiseLike, NoiseChunkGenerator generator) {
@@ -884,231 +970,348 @@ public final class LatitudeBiomes {
     public static RegistryEntry<Biome> pick(Registry<Biome> biomeRegistry, RegistryEntry<Biome> base, int blockX, int blockZ, int blockY, int borderRadiusBlocks,
                                             MultiNoiseUtil.MultiNoiseSampler sampler, String callerContext,
                                             NoiseChunkGenerator generator, NoiseConfig noiseConfig, HeightLimitView heightView) {
-        int columnDecisionY = surfaceDecisionY(generator, noiseConfig, heightView, blockX, blockZ);
-        int biomeY = (blockY < columnDecisionY - 16) ? blockY : columnDecisionY;
-        assertSurfaceY(biomeY);
-        int activeRadius = ACTIVE_RADIUS_BLOCKS;
-        boolean overrideDisabled = DISABLE_RADIUS_OVERRIDE;
-
-        if (activeRadius > 0 && borderRadiusBlocks != activeRadius && RADIUS_MISMATCH_LOGGED.compareAndSet(false, true)) {
-            LOGGER.warn("[Latitude] RADIUS MISMATCH detected from {}! Arg: {}, Active: {}", callerContext, borderRadiusBlocks, activeRadius);
-        }
-
-        int effectiveRadius = (!overrideDisabled && activeRadius > 0) ? activeRadius : borderRadiusBlocks;
-        if (effectiveRadius <= 0) {
-            return base;
-        }
-        LAST_SELECTION_PATH.remove();
-
-        int lat = Math.abs(blockZ);
-        double tBase = (double) lat / (double) effectiveRadius;
-        double t = applyBoundaryJitter(blockX, blockZ, effectiveRadius, tBase);
-        LatitudeBands.Band band = bandForAbsLatFraction(t);
-        int bandIndex = bandIndexForBand(band);
-
-        if (isBeachLike(base)) {
-            RegistryEntry<Biome> out = pickBeachForBand(biomeRegistry, base, blockX, blockZ, bandIndex);
-            debugPick(blockX, blockZ, effectiveRadius, t, band, base, out, true, false, null);
-            return out;
-        }
-
-        if (base.isIn(BiomeTags.IS_RIVER)) {
-            if (bandIndex >= 3) {
-                try {
-                    RegistryEntry<Biome> out = biome(biomeRegistry, "minecraft:frozen_river");
-                    debugPick(blockX, blockZ, effectiveRadius, t, band, base, out, false, false, null);
-                    return out;
-                } catch (Throwable ignored) {
-                    debugPick(blockX, blockZ, effectiveRadius, t, band, base, base, false, false, null);
-                    return base;
-                }
-            } else {
-                try {
-                    RegistryEntry<Biome> out = biome(biomeRegistry, "minecraft:river");
-                    debugPick(blockX, blockZ, effectiveRadius, t, band, base, out, false, false, null);
-                    return out;
-                } catch (Throwable ignored) {
-                    debugPick(blockX, blockZ, effectiveRadius, t, band, base, base, false, false, null);
-                    return base;
-                }
+        long bioCostPickStartNs = DEBUG_BIOME_COST ? System.nanoTime() : 0L;
+        long bioCostBandSelectNs = 0L;
+        long bioCostPreviewOrMountainNs = 0L;
+        long bioCostTagChecksNs = 0L;
+        long bioCostTopYSetupNs = 0L;
+        long bioCostTopRadiusPathSetupNs = 0L;
+        long bioCostTopDebugTraceTailNs = 0L;
+        long bioCostHelperSelectorOrBranchBodyNs = 0L;
+        long bioCostBranchPickerNs = 0L;
+        long bioCostFinalEnforceSanitizeNs = 0L;
+        long bioCostRegistryOrKeyNs = 0L;
+        try {
+            long bioTopYStartNs = DEBUG_BIOME_COST ? System.nanoTime() : 0L;
+            int columnDecisionY = shouldUseConstantSurfaceYForWorldgen(callerContext)
+                    ? SURFACE_CLASSIFY_Y
+                    : surfaceDecisionY(generator, noiseConfig, heightView, blockX, blockZ);
+            int biomeY = (blockY < columnDecisionY - 16) ? blockY : columnDecisionY;
+            assertSurfaceY(biomeY);
+            if (DEBUG_BIOME_COST) {
+                bioCostTopYSetupNs += System.nanoTime() - bioTopYStartNs;
             }
-        }
 
-        if (base.isIn(BiomeTags.IS_OCEAN)) {
-            RegistryEntry<Biome> oceanPick = oceanByLatitudeBandOrBase(biomeRegistry, base, blockX, blockZ, bandIndex);
-            RegistryEntry<Biome> out = mushroomIslandOverride(biomeRegistry, oceanPick, blockX, blockZ);
-            debugPick(blockX, blockZ, effectiveRadius, t, band, base, out, false, false, null);
-            return out;
-        }
+            long bioTopRadiusPathStartNs = DEBUG_BIOME_COST ? System.nanoTime() : 0L;
+            int activeRadius = ACTIVE_RADIUS_BLOCKS;
+            boolean overrideDisabled = DISABLE_RADIUS_OVERRIDE;
 
-        int landBandIndex = latitudeBandIndexWithBlend(blockX, blockZ, effectiveRadius, band, t);
-        boolean mountainNoiseLike = landBandIndex == BAND_TEMPERATE && isMountainLike(sampler, blockX, blockZ);
-        boolean skipPreview = shouldSkipPreviewTerrain(callerContext);
-        boolean hasReliableSurface = !skipPreview && generator != null && noiseConfig != null && heightView != null;
-        boolean allowSurfaceGates = hasReliableSurface;
-        PreviewTerrain preview;
-        if (skipPreview) {
-            preview = syntheticPreviewTerrain(mountainNoiseLike, generator);
-            if (PREVIEW_TERRAIN_SKIP_LOGGED.compareAndSet(false, true)) {
-                LOGGER.info("[Latitude] skipping previewHeight() for callerContext={} (atlas fast-path enabled)", callerContext);
+            if (activeRadius > 0 && borderRadiusBlocks != activeRadius && RADIUS_MISMATCH_LOGGED.compareAndSet(false, true)) {
+                LOGGER.warn("[Latitude] RADIUS MISMATCH detected from {}! Arg: {}, Active: {}", callerContext, borderRadiusBlocks, activeRadius);
             }
-        } else {
-            preview = previewTerrain(generator, noiseConfig, heightView, blockX, blockZ);
-        }
-        int seaLevel = previewSeaLevel(generator);
-        boolean previewHeightHigh = preview.centerHeight >= (seaLevel + PREVIEW_HEIGHT_MARGIN_BLOCKS);
-        boolean previewRuggedHigh = preview.robustDelta >= WINDSWEPT_RUGGED_THRESH;
-        boolean previewHeightModerate = preview.centerHeight >= (seaLevel + PREVIEW_HEIGHT_MARGIN_BLOCKS / 2);
-        boolean mountainLike = mountainNoiseLike && (previewHeightHigh || previewHeightModerate || previewRuggedHigh);
-        int oceanDistance = oceanDistanceBlocks(blockX, blockZ, sampler);
-        boolean nearOcean = oceanDistance <= MANGROVE_COASTAL_MAX_BLOCKS;
-        boolean forcedBadlands = false;
-        RegistryEntry<Biome> chosen = null;
-        if (chosen == null && (landBandIndex == BAND_TROPICAL || landBandIndex == BAND_SUBTROPICAL) && sampler != null) {
-            int noiseX = blockX >> 2;
-            int noiseZ = blockZ >> 2;
-            MultiNoiseUtil.NoiseValuePoint p = sampler.sample(noiseX, SURFACE_CLASSIFY_Y >> 2, noiseZ);
-            double cont = MultiNoiseUtil.toFloat(p.continentalnessNoise());
-            double erosion = MultiNoiseUtil.toFloat(p.erosionNoise());
-            double weird = MultiNoiseUtil.toFloat(p.weirdnessNoise());
-            boolean aridBlocked = isAridTropicalStepSymmetric(blockX, blockZ, t);
-            boolean swampPatch = swampPatchHere(WORLD_SEED, blockX, blockZ);
-            boolean swampPatchOk = swampOkInPatch(cont, erosion, weird);
-            double wetlandNoise = wetlandNoiseSymmetric(WORLD_SEED, blockX, blockZ);
-            double wetlandThreshold = wetlandThresholdForBand(bandIndex, t);
-            boolean subtropicalCoastalOk = landBandIndex != BAND_SUBTROPICAL
-                    || oceanDistance <= SWAMP_SUBTROPICAL_PATCH_MAX_OCEAN_DISTANCE;
-            if (!aridBlocked
-            && subtropicalCoastalOk
-            && swampPatch
-            && swampPatchOk
-            && wetlandNoise < wetlandThreshold) {
-                try {
-                    chosen = biome(biomeRegistry, SWAMP_ID);
-                } catch (Throwable ignored) {
-                    // keep null to fall through
+
+            int effectiveRadius = (!overrideDisabled && activeRadius > 0) ? activeRadius : borderRadiusBlocks;
+            if (effectiveRadius <= 0) {
+                if (DEBUG_BIOME_COST) {
+                    bioCostTopRadiusPathSetupNs += System.nanoTime() - bioTopRadiusPathStartNs;
                 }
+                return base;
             }
-        }
-        if (chosen == null) {
-            chosen = switch (landBandIndex) {
-                case BAND_TROPICAL -> pickFromWeightedTags(biomeRegistry, base, blockX, blockZ, BAND_TROPICAL, 0x1A21, LAT_EQUATOR_PRIMARY, LAT_EQUATOR_SECONDARY, LAT_EQUATOR_ACCENT);
-                case BAND_SUBTROPICAL -> pickTropicalGradient(biomeRegistry, base, blockX, blockZ, t);
-                case BAND_TEMPERATE -> pickTemperateLand(biomeRegistry, blockX, blockZ, columnDecisionY,
-                        () -> pickFromWeightedTags(biomeRegistry, base, blockX, blockZ, BAND_TEMPERATE, 0x2B32, LAT_TEMPERATE_PRIMARY, LAT_TEMPERATE_SECONDARY, LAT_TEMPERATE_ACCENT),
-                        mountainLike);
-                case BAND_SUBPOLAR -> pickSubpolarWithRamp(biomeRegistry, base, blockX, blockZ, t, BAND_SUBPOLAR, 0x3C43, LAT_SUBPOLAR_PRIMARY, LAT_SUBPOLAR_SECONDARY, LAT_SUBPOLAR_ACCENT);
-                default -> pickPolarWithFrontShoulder(biomeRegistry, base, blockX, blockZ, t, sampler != null && isMountainLike(sampler, blockX, blockZ));
-            };
-        }
-        String mangroveDecision = null;
-        RegistryEntry<Biome> sanitized = chosen;
-        RegistryEntry<Biome> safe = chosen;
-        RegistryEntry<Biome> out = chosen;
-        boolean finalSavannaRegion = false;
-        boolean invitedMangrove = false;
-        if (!forcedBadlands) {
-            boolean oceanChosen = chosen != null && chosen.isIn(BiomeTags.IS_OCEAN);
-            if (oceanChosen) {
-                // Do not allow swamp/mangrove overrides on ocean picks.
-                sanitized = chosen;
-                safe = chosen;
-                out = chosen;
-            } else {
-            if (shouldTryMangroveOverride(chosen, landBandIndex)) {
-                MangroveDecision decision = evaluateMangrove(blockX, blockZ, preview.centerHeight, seaLevel, preview.robustDelta, sampler, nearOcean, allowSurfaceGates, heightView);
-                mangroveDecision = decision.logLabel();
-                if (decision.allow()) {
+            LAST_SELECTION_PATH.remove();
+            if (DEBUG_BIOME_COST) {
+                bioCostTopRadiusPathSetupNs += System.nanoTime() - bioTopRadiusPathStartNs;
+            }
+
+            long bioBandStartNs = DEBUG_BIOME_COST ? System.nanoTime() : 0L;
+            int lat = Math.abs(blockZ);
+            double tBase = (double) lat / (double) effectiveRadius;
+            double t = applyBoundaryJitter(blockX, blockZ, effectiveRadius, tBase);
+            LatitudeBands.Band band = bandForAbsLatFraction(t);
+            int bandIndex = bandIndexForBand(band);
+            if (DEBUG_BIOME_COST) {
+                bioCostBandSelectNs += System.nanoTime() - bioBandStartNs;
+            }
+
+            long bioTagStartNs = DEBUG_BIOME_COST ? System.nanoTime() : 0L;
+            if (isBeachLike(base)) {
+                RegistryEntry<Biome> out = pickBeachForBand(biomeRegistry, base, blockX, blockZ, bandIndex);
+                debugPick(blockX, blockZ, effectiveRadius, t, band, base, out, true, false, null);
+                if (DEBUG_BIOME_COST) {
+                    bioCostTagChecksNs += System.nanoTime() - bioTagStartNs;
+                }
+                return out;
+            }
+
+            if (base.isIn(BiomeTags.IS_RIVER)) {
+                if (DEBUG_BIOME_COST) {
+                    bioCostTagChecksNs += System.nanoTime() - bioTagStartNs;
+                }
+                long bioRegistryStartNs = DEBUG_BIOME_COST ? System.nanoTime() : 0L;
+                if (bandIndex >= 3) {
                     try {
-                        chosen = biome(biomeRegistry, MANGROVE_ID);
-                        if (DEBUG_MANGROVE_ORIGIN) {
-                            LOGGER.info("[latdev] mangroveSelected x={} z={} surfaceY={} sea={} robustDelta={} origin={} reason={}",
-                                    blockX, blockZ, preview.centerHeight, seaLevel, preview.robustDelta,
-                                    mangroveOrigin(true, false), mangroveDecision);
+                        RegistryEntry<Biome> out = biome(biomeRegistry, "minecraft:frozen_river");
+                        debugPick(blockX, blockZ, effectiveRadius, t, band, base, out, false, false, null);
+                        if (DEBUG_BIOME_COST) {
+                            bioCostRegistryOrKeyNs += System.nanoTime() - bioRegistryStartNs;
                         }
+                        return out;
                     } catch (Throwable ignored) {
-                        // keep current choice
+                        debugPick(blockX, blockZ, effectiveRadius, t, band, base, base, false, false, null);
+                        if (DEBUG_BIOME_COST) {
+                            bioCostRegistryOrKeyNs += System.nanoTime() - bioRegistryStartNs;
+                        }
+                        return base;
+                    }
+                } else {
+                    try {
+                        RegistryEntry<Biome> out = biome(biomeRegistry, "minecraft:river");
+                        debugPick(blockX, blockZ, effectiveRadius, t, band, base, out, false, false, null);
+                        if (DEBUG_BIOME_COST) {
+                            bioCostRegistryOrKeyNs += System.nanoTime() - bioRegistryStartNs;
+                        }
+                        return out;
+                    } catch (Throwable ignored) {
+                        debugPick(blockX, blockZ, effectiveRadius, t, band, base, base, false, false, null);
+                        if (DEBUG_BIOME_COST) {
+                            bioCostRegistryOrKeyNs += System.nanoTime() - bioRegistryStartNs;
+                        }
+                        return base;
                     }
                 }
-            } else if (isMangroveCandidate(chosen)) {
-                MangroveDecision decision = evaluateMangrove(blockX, blockZ, preview.centerHeight, seaLevel, preview.robustDelta, sampler, nearOcean, allowSurfaceGates, heightView);
-                mangroveDecision = decision.logLabel();
-                if (!decision.allow()) {
-                    chosen = pickMangroveFallback(biomeRegistry, base, blockX, blockZ, t, landBandIndex);
-                }
             }
-            if (isSwampCandidate(chosen)) {
-                SwampDecision decision = evaluateSwamp(blockX, blockZ, sampler);
-                if (!decision.allow()) {
-                    chosen = pickSwampFallback(biomeRegistry, base, blockX, blockZ, t, landBandIndex);
+
+            if (base.isIn(BiomeTags.IS_OCEAN)) {
+                RegistryEntry<Biome> oceanPick = oceanByLatitudeBandOrBase(biomeRegistry, base, blockX, blockZ, bandIndex);
+                RegistryEntry<Biome> out = mushroomIslandOverride(biomeRegistry, oceanPick, blockX, blockZ);
+                debugPick(blockX, blockZ, effectiveRadius, t, band, base, out, false, false, null);
+                if (DEBUG_BIOME_COST) {
+                    bioCostTagChecksNs += System.nanoTime() - bioTagStartNs;
                 }
+                return out;
             }
-            if (!isMangroveCandidate(chosen) && shouldInviteMangrove(blockX, columnDecisionY, blockZ, bandIndex, sampler, nearOcean)) {
-                invitedMangrove = true;
-                MangroveDecision decision = evaluateMangrove(blockX, blockZ, preview.centerHeight, seaLevel, preview.robustDelta, sampler, nearOcean, allowSurfaceGates, heightView);
-                mangroveDecision = decision.logLabel();
-                if (decision.allow()) {
+            if (DEBUG_BIOME_COST) {
+                bioCostTagChecksNs += System.nanoTime() - bioTagStartNs;
+            }
+
+            long bioPreviewStartNs = DEBUG_BIOME_COST ? System.nanoTime() : 0L;
+            int landBandIndex = latitudeBandIndexWithBlend(blockX, blockZ, effectiveRadius, band, t);
+            boolean mountainNoiseLike = landBandIndex == BAND_TEMPERATE && isMountainLike(sampler, blockX, blockZ);
+            boolean skipPreview = shouldSkipPreviewTerrain(callerContext);
+            boolean hasReliableSurface = !skipPreview && generator != null && noiseConfig != null && heightView != null;
+            boolean allowSurfaceGates = hasReliableSurface;
+            PreviewTerrain preview;
+            if (skipPreview) {
+                preview = syntheticPreviewTerrain(mountainNoiseLike, generator);
+                if (PREVIEW_TERRAIN_SKIP_LOGGED.compareAndSet(false, true)) {
+                    LOGGER.info("[Latitude] skipping previewHeight() for callerContext={} (atlas fast-path enabled)", callerContext);
+                }
+            } else {
+                preview = previewTerrain(generator, noiseConfig, heightView, blockX, blockZ);
+            }
+            int seaLevel = previewSeaLevel(generator);
+            boolean previewHeightHigh = preview.centerHeight >= (seaLevel + PREVIEW_HEIGHT_MARGIN_BLOCKS);
+            boolean previewRuggedHigh = preview.robustDelta >= WINDSWEPT_RUGGED_THRESH;
+            boolean previewHeightModerate = preview.centerHeight >= (seaLevel + PREVIEW_HEIGHT_MARGIN_BLOCKS / 2);
+            boolean mountainLike = mountainNoiseLike && (previewHeightHigh || previewHeightModerate || previewRuggedHigh);
+            int oceanDistance = oceanDistanceBlocks(blockX, blockZ, sampler);
+            boolean nearOcean = oceanDistance <= MANGROVE_COASTAL_MAX_BLOCKS;
+            if (DEBUG_BIOME_COST) {
+                bioCostPreviewOrMountainNs += System.nanoTime() - bioPreviewStartNs;
+            }
+
+            long bioHelperSelectorStartNs = DEBUG_BIOME_COST ? System.nanoTime() : 0L;
+            boolean forcedBadlands = false;
+            RegistryEntry<Biome> chosen = null;
+            if (chosen == null && (landBandIndex == BAND_TROPICAL || landBandIndex == BAND_SUBTROPICAL) && sampler != null) {
+                int noiseX = blockX >> 2;
+                int noiseZ = blockZ >> 2;
+                MultiNoiseUtil.NoiseValuePoint p = sampler.sample(noiseX, SURFACE_CLASSIFY_Y >> 2, noiseZ);
+                double cont = MultiNoiseUtil.toFloat(p.continentalnessNoise());
+                double erosion = MultiNoiseUtil.toFloat(p.erosionNoise());
+                double weird = MultiNoiseUtil.toFloat(p.weirdnessNoise());
+                boolean aridBlocked = isAridTropicalStepSymmetric(blockX, blockZ, t);
+                boolean swampPatch = swampPatchHere(WORLD_SEED, blockX, blockZ);
+                boolean swampPatchOk = swampOkInPatch(cont, erosion, weird);
+                double wetlandNoise = wetlandNoiseSymmetric(WORLD_SEED, blockX, blockZ);
+                double wetlandThreshold = wetlandThresholdForBand(bandIndex, t);
+                boolean subtropicalCoastalOk = landBandIndex != BAND_SUBTROPICAL
+                        || oceanDistance <= SWAMP_SUBTROPICAL_PATCH_MAX_OCEAN_DISTANCE;
+                if (!aridBlocked
+                && subtropicalCoastalOk
+                && swampPatch
+                && swampPatchOk
+                && wetlandNoise < wetlandThreshold) {
+                    long bioRegistryStartNs = DEBUG_BIOME_COST ? System.nanoTime() : 0L;
                     try {
-                        chosen = biome(biomeRegistry, MANGROVE_ID);
-                        if (DEBUG_MANGROVE_INVITE) {
-                            LOGGER.info("[latdev] mangroveInvite ACCEPT x={} z={} oceanDist={} decision={}", blockX, blockZ, oceanDistance, mangroveDecision);
-                        }
+                        chosen = biome(biomeRegistry, SWAMP_ID);
                     } catch (Throwable ignored) {
-                        // keep chosen
+                        // keep null to fall through
                     }
-                } else if (DEBUG_MANGROVE_INVITE) {
-                    LOGGER.info("[latdev] mangroveInvite REJECT x={} z={} oceanDist={} decision={}", blockX, blockZ, oceanDistance, mangroveDecision);
+                    if (DEBUG_BIOME_COST) {
+                        bioCostRegistryOrKeyNs += System.nanoTime() - bioRegistryStartNs;
+                    }
                 }
             }
-            if (mountainLike) {
-                chosen = pickFromTagNoiseOrBase(biomeRegistry, LAT_TEMPERATE_MOUNTAIN, base, blockX, blockZ, landBandIndex);
-                if (isBiomeId(chosen, "minecraft:cherry_grove")) {
-                    return chosen;
+            if (chosen == null) {
+                chosen = switch (landBandIndex) {
+                    case BAND_TROPICAL -> pickFromWeightedTags(biomeRegistry, base, blockX, blockZ, BAND_TROPICAL, 0x1A21, LAT_EQUATOR_PRIMARY, LAT_EQUATOR_SECONDARY, LAT_EQUATOR_ACCENT);
+                    case BAND_SUBTROPICAL -> pickTropicalGradient(biomeRegistry, base, blockX, blockZ, t);
+                    case BAND_TEMPERATE -> pickTemperateLand(biomeRegistry, blockX, blockZ, columnDecisionY,
+                            () -> pickFromWeightedTags(biomeRegistry, base, blockX, blockZ, BAND_TEMPERATE, 0x2B32, LAT_TEMPERATE_PRIMARY, LAT_TEMPERATE_SECONDARY, LAT_TEMPERATE_ACCENT),
+                            mountainLike);
+                    case BAND_SUBPOLAR -> pickSubpolarWithRamp(biomeRegistry, base, blockX, blockZ, t, BAND_SUBPOLAR, 0x3C43, LAT_SUBPOLAR_PRIMARY, LAT_SUBPOLAR_SECONDARY, LAT_SUBPOLAR_ACCENT);
+                    default -> pickPolarWithFrontShoulder(biomeRegistry, base, blockX, blockZ, t, sampler != null && isMountainLike(sampler, blockX, blockZ));
+                };
+            }
+            if (DEBUG_BIOME_COST) {
+                bioCostHelperSelectorOrBranchBodyNs += System.nanoTime() - bioHelperSelectorStartNs;
+            }
+            long bioBranchStartNs = DEBUG_BIOME_COST ? System.nanoTime() : 0L;
+            String mangroveDecision = null;
+            RegistryEntry<Biome> sanitized = chosen;
+            RegistryEntry<Biome> safe = chosen;
+            RegistryEntry<Biome> out = chosen;
+            boolean finalSavannaRegion = false;
+            boolean invitedMangrove = false;
+            if (!forcedBadlands) {
+                boolean oceanChosen = chosen != null && chosen.isIn(BiomeTags.IS_OCEAN);
+                if (oceanChosen) {
+                    sanitized = chosen;
+                    safe = chosen;
+                    out = chosen;
+                } else {
+                    if (shouldTryMangroveOverride(chosen, landBandIndex)) {
+                        MangroveDecision decision = evaluateMangrove(blockX, blockZ, preview.centerHeight, seaLevel, preview.robustDelta, sampler, nearOcean, allowSurfaceGates, heightView);
+                        mangroveDecision = decision.logLabel();
+                        if (decision.allow()) {
+                            long bioRegistryStartNs = DEBUG_BIOME_COST ? System.nanoTime() : 0L;
+                            try {
+                                chosen = biome(biomeRegistry, MANGROVE_ID);
+                                if (DEBUG_MANGROVE_ORIGIN) {
+                                    LOGGER.info("[latdev] mangroveSelected x={} z={} surfaceY={} sea={} robustDelta={} origin={} reason={}",
+                                            blockX, blockZ, preview.centerHeight, seaLevel, preview.robustDelta,
+                                            mangroveOrigin(true, false), mangroveDecision);
+                                }
+                            } catch (Throwable ignored) {
+                                // keep current choice
+                            }
+                            if (DEBUG_BIOME_COST) {
+                                bioCostRegistryOrKeyNs += System.nanoTime() - bioRegistryStartNs;
+                            }
+                        }
+                    } else if (isMangroveCandidate(chosen)) {
+                        MangroveDecision decision = evaluateMangrove(blockX, blockZ, preview.centerHeight, seaLevel, preview.robustDelta, sampler, nearOcean, allowSurfaceGates, heightView);
+                        mangroveDecision = decision.logLabel();
+                        if (!decision.allow()) {
+                            chosen = pickMangroveFallback(biomeRegistry, base, blockX, blockZ, t, landBandIndex);
+                        }
+                    }
+                    if (isSwampCandidate(chosen)) {
+                        SwampDecision decision = evaluateSwamp(blockX, blockZ, sampler);
+                        if (!decision.allow()) {
+                            chosen = pickSwampFallback(biomeRegistry, base, blockX, blockZ, t, landBandIndex);
+                        }
+                    }
+                    if (!isMangroveCandidate(chosen) && shouldInviteMangrove(blockX, columnDecisionY, blockZ, bandIndex, sampler, nearOcean)) {
+                        invitedMangrove = true;
+                        MangroveDecision decision = evaluateMangrove(blockX, blockZ, preview.centerHeight, seaLevel, preview.robustDelta, sampler, nearOcean, allowSurfaceGates, heightView);
+                        mangroveDecision = decision.logLabel();
+                        if (decision.allow()) {
+                            long bioRegistryStartNs = DEBUG_BIOME_COST ? System.nanoTime() : 0L;
+                            try {
+                                chosen = biome(biomeRegistry, MANGROVE_ID);
+                                if (DEBUG_MANGROVE_INVITE) {
+                                    LOGGER.info("[latdev] mangroveInvite ACCEPT x={} z={} oceanDist={} decision={}", blockX, blockZ, oceanDistance, mangroveDecision);
+                                }
+                            } catch (Throwable ignored) {
+                                // keep chosen
+                            }
+                            if (DEBUG_BIOME_COST) {
+                                bioCostRegistryOrKeyNs += System.nanoTime() - bioRegistryStartNs;
+                            }
+                        } else if (DEBUG_MANGROVE_INVITE) {
+                            LOGGER.info("[latdev] mangroveInvite REJECT x={} z={} oceanDist={} decision={}", blockX, blockZ, oceanDistance, mangroveDecision);
+                        }
+                    }
+                    if (mountainLike) {
+                        chosen = pickFromTagNoiseOrBase(biomeRegistry, LAT_TEMPERATE_MOUNTAIN, base, blockX, blockZ, landBandIndex);
+                        if (isBiomeId(chosen, "minecraft:cherry_grove")) {
+                            if (DEBUG_BIOME_COST) {
+                                bioCostBranchPickerNs += System.nanoTime() - bioBranchStartNs;
+                            }
+                            return chosen;
+                        }
+                    }
+                    if (DEBUG_BIOME_COST) {
+                        bioCostBranchPickerNs += System.nanoTime() - bioBranchStartNs;
+                    }
+                    long bioFinalSectionNs = DEBUG_BIOME_COST ? System.nanoTime() : 0L;
+                    sanitized = sanitizeLandBiome(biomeRegistry, chosen, landBandIndex, blockX, blockZ);
+                    safe = repickIfSurfaceCave(biomeRegistry, base, sanitized, blockX, blockZ, t, landBandIndex);
+                    out = applyLandOverrides(biomeRegistry, safe, blockX, blockZ, landBandIndex);
+                    if (landBandIndex == BAND_TROPICAL && isJungleFamily(out) && !allowWetTropicalCanopy(blockX, blockZ, t, out)) {
+                        out = pickOpenTropicalFallback(biomeRegistry, out, blockX, blockZ, t);
+                    }
+                    boolean savannaGateInput = isSavannaFamily(out);
+                    out = applySavannaWindsweptGate(biomeRegistry, out, preview.robustDelta, previewHeightHigh);
+                    if (landBandIndex == BAND_SUBTROPICAL && tropicalBaseStep(blockX, Math.abs(blockZ), t) <= 1 && isJungleFamily(out)) {
+                        out = pickOpenTropicalFallback(biomeRegistry, out, blockX, blockZ, t);
+                    }
+                    finalSavannaRegion = isSavannaFamily(base) || savannaGateInput || isSavannaFamily(out);
+                    if (DEBUG_BIOME_COST) {
+                        bioCostFinalEnforceSanitizeNs += System.nanoTime() - bioFinalSectionNs;
+                    }
+                }
+            } else if (DEBUG_BIOME_COST) {
+                bioCostBranchPickerNs += System.nanoTime() - bioBranchStartNs;
+            }
+
+            long bioFinalSectionNs = DEBUG_BIOME_COST ? System.nanoTime() : 0L;
+            if (landBandIndex == BAND_TROPICAL || landBandIndex == BAND_SUBTROPICAL) {
+                if (isColdBiome(out)) {
+                    out = pickWarmFallback(biomeRegistry, landBandIndex);
                 }
             }
-            sanitized = sanitizeLandBiome(biomeRegistry, chosen, landBandIndex, blockX, blockZ);
-            safe = repickIfSurfaceCave(biomeRegistry, base, sanitized, blockX, blockZ, t, landBandIndex);
-            out = applyLandOverrides(biomeRegistry, safe, blockX, blockZ, landBandIndex);
-            if (landBandIndex == BAND_TROPICAL && isJungleFamily(out) && !allowWetTropicalCanopy(blockX, blockZ, t, out)) {
-                out = pickOpenTropicalFallback(biomeRegistry, out, blockX, blockZ, t);
+            out = enforceSnowyLatitudeRamp(biomeRegistry, out, base, blockX, blockZ, effectiveRadius, landBandIndex);
+            out = clampWarmInColdZone(biomeRegistry, base, out, band, blockX, blockZ);
+            out = applySubpolarSwampGuard(biomeRegistry, base, out, band);
+            if (landBandIndex >= BAND_SUBPOLAR && isJungleFamily(out)) {
+                out = pickColdFallback(biomeRegistry, base, blockX, blockZ, landBandIndex);
             }
-            boolean savannaGateInput = isSavannaFamily(out);
-            out = applySavannaWindsweptGate(biomeRegistry, out, preview.robustDelta, previewHeightHigh);
-            if (landBandIndex == BAND_SUBTROPICAL && tropicalBaseStep(blockX, Math.abs(blockZ), t) <= 1 && isJungleFamily(out)) {
-                out = pickOpenTropicalFallback(biomeRegistry, out, blockX, blockZ, t);
+            out = enforceLandBandPool(biomeRegistry, out, blockX, blockZ, t, landBandIndex);
+            if (DEBUG_BIOMES && isMangroveCandidate(out)) {
+                LOGGER.warn("[Latitude][MangroveLeak] mangrove escaped into land pool result (registry path) at x={} z={} bandIndex={} y={}",
+                        blockX, blockZ, landBandIndex, columnDecisionY);
             }
-            finalSavannaRegion = isSavannaFamily(base) || savannaGateInput || isSavannaFamily(out);
+            if (landBandIndex == BAND_TROPICAL && tropicalBaseStep(blockX, Math.abs(blockZ), t) <= 1 && isJungleFamily(out)) {
+                long bioRegistryStartNs = DEBUG_BIOME_COST ? System.nanoTime() : 0L;
+                try {
+                    out = biome(biomeRegistry, "minecraft:savanna");
+                } catch (Throwable ignored) {
+                    // keep current biome
+                }
+                if (DEBUG_BIOME_COST) {
+                    bioCostRegistryOrKeyNs += System.nanoTime() - bioRegistryStartNs;
+                }
+            }
+            if (landBandIndex <= BAND_SUBTROPICAL) {
+                out = applyFinalSavannaClimateClamp(biomeRegistry, out, finalSavannaRegion, columnDecisionY, blockX, blockZ);
+            }
+            if (DEBUG_BIOME_COST) {
+                bioCostFinalEnforceSanitizeNs += System.nanoTime() - bioFinalSectionNs;
+            }
+            long bioTailStartNs = DEBUG_BIOME_COST ? System.nanoTime() : 0L;
+            traceSubpolarJunglePick(blockX, blockZ, effectiveRadius, landBandIndex, base, out);
+            debugPick(blockX, blockZ, effectiveRadius, t, band, base, out, false, out != sanitized, mangroveDecision);
+            if (DEBUG_BIOME_COST) {
+                bioCostTopDebugTraceTailNs += System.nanoTime() - bioTailStartNs;
+            }
+            return out;
+        } finally {
+            if (DEBUG_BIOME_COST) {
+                recordBioCostPick(System.nanoTime() - bioCostPickStartNs,
+                        bioCostBandSelectNs,
+                        bioCostPreviewOrMountainNs,
+                        bioCostTagChecksNs,
+                        bioCostTopYSetupNs,
+                        bioCostTopRadiusPathSetupNs,
+                        bioCostTopDebugTraceTailNs,
+                        bioCostHelperSelectorOrBranchBodyNs,
+                        bioCostBranchPickerNs,
+                        bioCostFinalEnforceSanitizeNs,
+                        bioCostRegistryOrKeyNs);
             }
         }
-        if (landBandIndex == BAND_TROPICAL || landBandIndex == BAND_SUBTROPICAL) {
-            if (isColdBiome(out)) {
-                out = pickWarmFallback(biomeRegistry, landBandIndex);
-            }
-        }
-        out = enforceSnowyLatitudeRamp(biomeRegistry, out, base, blockX, blockZ, effectiveRadius, landBandIndex);
-        out = clampWarmInColdZone(biomeRegistry, base, out, band, blockX, blockZ);
-        out = applySubpolarSwampGuard(biomeRegistry, base, out, band);
-        if (landBandIndex >= BAND_SUBPOLAR && isJungleFamily(out)) {
-            out = pickColdFallback(biomeRegistry, base, blockX, blockZ, landBandIndex);
-        }
-        out = enforceLandBandPool(biomeRegistry, out, blockX, blockZ, t, landBandIndex);
-        if (DEBUG_BIOMES && isMangroveCandidate(out)) {
-            LOGGER.warn("[Latitude][MangroveLeak] mangrove escaped into land pool result (registry path) at x={} z={} bandIndex={} y={}",
-                    blockX, blockZ, landBandIndex, columnDecisionY);
-        }
-        if (landBandIndex == BAND_TROPICAL && tropicalBaseStep(blockX, Math.abs(blockZ), t) <= 1 && isJungleFamily(out)) {
-            try {
-                out = biome(biomeRegistry, "minecraft:savanna");
-            } catch (Throwable ignored) {
-                // keep current biome
-            }
-        }
-        if (landBandIndex <= BAND_SUBTROPICAL) {
-            out = applyFinalSavannaClimateClamp(biomeRegistry, out, finalSavannaRegion, columnDecisionY, blockX, blockZ);
-        }
-        traceSubpolarJunglePick(blockX, blockZ, effectiveRadius, landBandIndex, base, out);
-        debugPick(blockX, blockZ, effectiveRadius, t, band, base, out, false, out != sanitized, mangroveDecision);
-        return out;
     }
 
     public static RegistryEntry<Biome> pick(Collection<RegistryEntry<Biome>> biomePool, RegistryEntry<Biome> base, int blockX, int blockZ, int blockY, int borderRadiusBlocks,
