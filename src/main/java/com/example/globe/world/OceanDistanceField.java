@@ -25,6 +25,7 @@ public final class OceanDistanceField {
     private final long worldSeed;
     private final Long2IntOpenHashMap distanceCache = new Long2IntOpenHashMap();
     private final Short2BooleanOpenHashMap oceanFlagCache = new Short2BooleanOpenHashMap();
+    private final Object cacheLock = new Object();
 
     public OceanDistanceField(long worldSeed) {
         this.worldSeed = worldSeed;
@@ -57,12 +58,12 @@ public final class OceanDistanceField {
 
     private int cellDistance(int cx, int cz, MultiNoiseUtil.MultiNoiseSampler sampler) {
         long key = cellKey(cx, cz);
-        int cached = distanceCache.get(key);
+        int cached = cachedDistance(key);
         if (cached != Integer.MIN_VALUE) {
             return cached;
         }
         if (isOceanCell(cx, cz, sampler)) {
-            distanceCache.put(key, 0);
+            cacheDistance(key, 0);
             return 0;
         }
         // BFS in cell space (4-neighbor).
@@ -91,14 +92,15 @@ public final class OceanDistanceField {
                 q.add(new int[]{n[0], n[1], nextDist});
             }
         }
-        distanceCache.put(key, best);
+        cacheDistance(key, best);
         return best;
     }
 
     private boolean isOceanCell(int cx, int cz, MultiNoiseUtil.MultiNoiseSampler sampler) {
         short key = (short) ((cx * 131) ^ cz);
-        if (oceanFlagCache.containsKey(key)) {
-            return oceanFlagCache.get(key);
+        Boolean cached = cachedOceanFlag(key);
+        if (cached != null) {
+            return cached.booleanValue();
         }
         int sampleX = cx * CELL_SIZE + CELL_SIZE / 2;
         int sampleZ = cz * CELL_SIZE + CELL_SIZE / 2;
@@ -107,8 +109,32 @@ public final class OceanDistanceField {
         MultiNoiseUtil.NoiseValuePoint p = sampler.sample(nx, LatitudeBiomes.SURFACE_CLASSIFY_Y >> 2, nz);
         double cont = MultiNoiseUtil.toFloat(p.continentalnessNoise());
         boolean ocean = cont < OCEAN_LIKE_THRESHOLD;
-        oceanFlagCache.put(key, ocean);
+        cacheOceanFlag(key, ocean);
         return ocean;
+    }
+
+    private int cachedDistance(long key) {
+        synchronized (cacheLock) {
+            return distanceCache.get(key);
+        }
+    }
+
+    private void cacheDistance(long key, int distance) {
+        synchronized (cacheLock) {
+            distanceCache.put(key, distance);
+        }
+    }
+
+    private Boolean cachedOceanFlag(short key) {
+        synchronized (cacheLock) {
+            return oceanFlagCache.containsKey(key) ? Boolean.valueOf(oceanFlagCache.get(key)) : null;
+        }
+    }
+
+    private void cacheOceanFlag(short key, boolean ocean) {
+        synchronized (cacheLock) {
+            oceanFlagCache.put(key, ocean);
+        }
     }
 
     private static double lerp(double a, double b, double t) {
