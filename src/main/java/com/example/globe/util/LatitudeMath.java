@@ -174,13 +174,17 @@ public final class LatitudeMath {
         if (zoneKey == null) return 0.0;
         return switch (zoneKey) {
             case "EQUATOR" -> 0.05;
-            case "TROPICAL" -> 0.20;
-            case "SUBTROPICAL" -> 0.40;
-            case "TEMPERATE" -> 0.583;
-            case "SUBPOLAR" -> 0.725;
-            case "POLAR" -> 0.89;
+            case "TROPICAL" -> centerFrac(LatitudeBands.Band.TROPICAL);
+            case "SUBTROPICAL" -> centerFrac(LatitudeBands.Band.SUBTROPICAL);
+            case "TEMPERATE" -> centerFrac(LatitudeBands.Band.TEMPERATE);
+            case "SUBPOLAR" -> centerFrac(LatitudeBands.Band.SUBPOLAR);
+            case "POLAR" -> centerFrac(LatitudeBands.Band.POLAR);
             default -> 0.0;
         };
+    }
+
+    private static double centerFrac(LatitudeBands.Band band) {
+        return ((band.lowDeg() + band.highDeg()) * 0.5) / 90.0;
     }
 
     public static int zoneCenterDeg(String zoneKey) {
