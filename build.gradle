@@ -18,6 +18,8 @@ loom {
             vmArg "-Dlatitude.debugEwFog=true"
             vmArg "-Dlatitude.fogClampIndex=${System.getProperty('latitude.fogClampIndex', '-1')}"
             vmArg "-Dlatitude.fogClampValue=${System.getProperty('latitude.fogClampValue', '16.0')}"
+            vmArg "-Dlatitude.debugWorldgenPath=${System.getProperty('latitude.debugWorldgenPath', 'false')}"
+            vmArg "-Dlatitude.debugBiomeCost=${System.getProperty('latitude.debugBiomeCost', 'false')}"
         }
         clientNoSurfaceDripstoneFix {
             inherit client

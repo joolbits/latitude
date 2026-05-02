@@ -65,6 +65,28 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
             Boolean.getBoolean("latitude.debugBiomePick");
 
     @Unique
+    private static final boolean DEBUG_BIOME_COST =
+            Boolean.getBoolean("latitude.debugBiomeCost");
+    @Unique
+    private static final java.util.concurrent.atomic.AtomicLong BIOCOST_CALLS =
+            new java.util.concurrent.atomic.AtomicLong();
+    @Unique
+    private static final java.util.concurrent.atomic.AtomicLong BIOCOST_VANILLA_NS =
+            new java.util.concurrent.atomic.AtomicLong();
+    @Unique
+    private static final java.util.concurrent.atomic.AtomicLong BIOCOST_PICK_NS =
+            new java.util.concurrent.atomic.AtomicLong();
+    @Unique
+    private static final java.util.concurrent.atomic.AtomicLong BIOCOST_TOTAL_NS =
+            new java.util.concurrent.atomic.AtomicLong();
+    @Unique
+    private static final java.util.concurrent.atomic.AtomicLong BIOCOST_MAX_NS =
+            new java.util.concurrent.atomic.AtomicLong();
+    @Unique
+    private static final java.util.concurrent.atomic.AtomicLong BIOCOST_CHUNKS =
+            new java.util.concurrent.atomic.AtomicLong();
+
+    @Unique
     private static final java.util.concurrent.atomic.AtomicBoolean DEBUG_POPULATE_GATE_REJECT_LOGGED =
             new java.util.concurrent.atomic.AtomicBoolean(false);
 
@@ -250,12 +272,15 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
 
         BiomeSupplier wrapped = (x, y, z, ignoredSampler) -> {
             // x/z are "noise biome coords" (4-block). Convert to block coords for your latitude math.
+            long globe$t0 = DEBUG_BIOME_COST ? System.nanoTime() : 0L;
             int blockX = (x << 2) + 2;
             int blockZ = (z << 2) + 2;
             int blockY = (y << 2) + 2;
-            
+
+            long globe$tv0 = DEBUG_BIOME_COST ? System.nanoTime() : 0L;
             RegistryEntry<Biome> current = originalSupplier.getBiome(x, y, z, sampler);
             RegistryEntry<Biome> base = originalSupplier.getBiome(x, 0, z, sampler);
+            if (DEBUG_BIOME_COST) BIOCOST_VANILLA_NS.addAndGet(System.nanoTime() - globe$tv0);
 
             if (blockY > HARD_DECK_SURFACE_Y && isCaveBiome(biomes, base)) {
                 RegistryEntry<Biome> plains = biomes.getEntry(Identifier.of("minecraft", "plains")).orElse(null);
@@ -288,6 +313,7 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
             RegistryEntry<Biome> picked = null;
 
             // BlockY is forwarded so LatitudeBiomes can compute the upland ramp while horizontal selection remains unchanged.
+            long globe$tp0 = DEBUG_BIOME_COST ? System.nanoTime() : 0L;
             try {
                 picked = LatitudeBiomes.pick(biomes, base, blockX, blockZ, blockY, borderRadiusBlocks, sampler, "MIXIN",
                         (NoiseChunkGenerator)(Object) this, globe$noiseConfigTL.get(), chunk);
@@ -297,17 +323,23 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
                     LOGGER.debug("[Latitude] Biome pick exception", t);
                 }
             }
+            if (DEBUG_BIOME_COST) BIOCOST_PICK_NS.addAndGet(System.nanoTime() - globe$tp0);
+
             if (picked == null) {
                 logPickFailOnce(blockX, blockZ, "null", null);
                 if (DEBUG_BIOME_PICK) {
                     LOGGER.debug("[Latitude] Biome pick returned null at x={} z={}", blockX, blockZ);
                 }
+                if (DEBUG_BIOME_COST) globe$recordBioCost(System.nanoTime() - globe$t0);
                 return pickSafeFallback(biomes, blockZ);
             }
+            if (DEBUG_BIOME_COST) globe$recordBioCost(System.nanoTime() - globe$t0);
             return picked;
         };
 
+        long globe$tChunk0 = DEBUG_BIOME_COST ? System.nanoTime() : 0L;
         globe$populateBiomes(chunk, wrapped, sampler);
+        if (DEBUG_BIOME_COST) globe$reportChunkBioCost(chunk, System.nanoTime() - globe$tChunk0);
     }
 
     @Unique
@@ -391,6 +423,33 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
             actual = entry.getKey().map(key -> key.getValue()).orElse(null);
         }
         return DEEP_DARK_ID.equals(actual);
+    }
+
+    @Unique
+    private static void globe$recordBioCost(long elapsedNs) {
+        long calls = BIOCOST_CALLS.incrementAndGet();
+        BIOCOST_TOTAL_NS.addAndGet(elapsedNs);
+        long prev = BIOCOST_MAX_NS.get();
+        while (elapsedNs > prev && !BIOCOST_MAX_NS.compareAndSet(prev, elapsedNs)) {
+            prev = BIOCOST_MAX_NS.get();
+        }
+    }
+
+    @Unique
+    private static void globe$reportChunkBioCost(Chunk chunk, long chunkNs) {
+        long chunks = BIOCOST_CHUNKS.incrementAndGet();
+        long calls = BIOCOST_CALLS.get();
+        long totalNs = BIOCOST_TOTAL_NS.get();
+        long vanillaNs = BIOCOST_VANILLA_NS.get();
+        long pickNs = BIOCOST_PICK_NS.get();
+        long otherNs = totalNs - vanillaNs - pickNs;
+        long avgNs = calls > 0 ? totalNs / calls : 0;
+        long maxNs = BIOCOST_MAX_NS.get();
+        LOGGER.info("[LAT][BIOCOST] chunk={} chunkMs={} cumChunks={} cumCalls={} total={}ms vanilla={}ms pick={}ms other={}ms avg={}ns max={}ns",
+                chunk.getPos(), chunkNs / 1_000_000,
+                chunks, calls,
+                totalNs / 1_000_000, vanillaNs / 1_000_000, pickNs / 1_000_000, otherNs / 1_000_000,
+                avgNs, maxNs);
     }
 
     @Unique
