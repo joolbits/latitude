@@ -1,0 +1,30 @@
+# Latitude 1.3.0 -> 1.20.1 LatitudeBiomes Registry Retarget
+
+Root: `<home>/CascadeProjects/Latitude (Globe)`
+Branch: `port/1.3.0-1.20.1`
+Baseline: `c5317ab` / `save/1.20.1-populate-biomes-mixin-retarget`
+
+## Scope
+
+Retarget only the audited `LatitudeBiomes.java` registry and `Identifier` compile drift.
+
+## Fix
+
+- Replaced single-string biome ID parsing with `Identifier.tryParse(...)` through a local helper.
+- Replaced direct `Registry#getEntry(Identifier)` lookup with `RegistryKey.of(RegistryKeys.BIOME, ident)`.
+- Reused the existing biome ID comparison helper for the mangrove shoreline scan.
+
+## Proof
+
+`compileJava` no longer reports errors in `LatitudeBiomes.java`.
+
+Remaining compile failures are unrelated to this bucket and are still in:
+- `BiomePreviewHeadlessRunner.java`
+- `BiomePreviewExporter.java`
+- `ChunkRegenerator.java`
+- `LatitudeDevCommand.java`
+- client GUI / create-world files
+
+## Behavior
+
+No biome eligibility, picker, fallback, tuning, climate, tag, or worldgen JSON behavior was changed.

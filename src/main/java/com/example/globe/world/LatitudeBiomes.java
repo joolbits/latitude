@@ -2007,8 +2007,16 @@ public final class LatitudeBiomes {
     }
 
     private static RegistryEntry<Biome> biome(Registry<Biome> biomes, String id) {
-        Identifier ident = Identifier.of(id);
-        return biomes.getEntry(ident).orElseThrow();
+        Identifier ident = biomeIdentifier(id);
+        return biomes.getEntry(RegistryKey.of(RegistryKeys.BIOME, ident)).orElseThrow();
+    }
+
+    private static Identifier biomeIdentifier(String id) {
+        Identifier ident = Identifier.tryParse(id);
+        if (ident == null) {
+            throw new IllegalArgumentException("Invalid biome id: " + id);
+        }
+        return ident;
     }
 
     private static RegistryEntry<Biome> pickFrom(Registry<Biome> biomes, int blockX, int blockZ, int bandIndex, String... options) {
@@ -2725,7 +2733,7 @@ public final class LatitudeBiomes {
     }
 
     private static RegistryEntry<Biome> entryById(Collection<RegistryEntry<Biome>> biomes, String id) {
-        Identifier target = Identifier.of(id);
+        Identifier target = biomeIdentifier(id);
         for (RegistryEntry<Biome> entry : biomes) {
             var key = entry.getKey();
             if (key.isPresent() && key.get().getValue().equals(target)) {
@@ -2809,7 +2817,7 @@ public final class LatitudeBiomes {
         if (entry == null) {
             return false;
         }
-        Identifier target = Identifier.of(id);
+        Identifier target = biomeIdentifier(id);
         return entry.getKey()
                 .map(key -> key.getValue().equals(target))
                 .orElse(false);
@@ -3553,7 +3561,7 @@ public final class LatitudeBiomes {
             }
             boolean isWater = biome.isIn(BiomeTags.IS_OCEAN) || biome.isIn(BiomeTags.IS_RIVER);
             // Treat mangrove itself as land for the scan to avoid self-justification.
-            boolean isMangrove = biome.getKey().map(k -> k.getValue().equals(Identifier.of(MANGROVE_ID))).orElse(false);
+            boolean isMangrove = isBiomeId(biome, MANGROVE_ID);
             if (isWater && !isMangrove) {
                 waterCount++;
                 shallowWaterCount++; // biome-based scan cannot tell depth; count as shallow
