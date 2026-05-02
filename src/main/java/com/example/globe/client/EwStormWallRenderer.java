@@ -76,10 +76,11 @@ public final class EwStormWallRenderer {
             int argbBottom = (alphaBottom << 24) | (ir << 16) | (ig << 8) | ib;
             int argbTop = (alphaTop << 24) | (ir << 16) | (ig << 8) | ib;
 
-            vc.vertex(entry, rx, (float) y1, rz0).color(argbBottom);
-            vc.vertex(entry, rx, (float) y2, rz0).color(argbTop);
-            vc.vertex(entry, rx, (float) y2, rz1).color(argbTop);
-            vc.vertex(entry, rx, (float) y1, rz1).color(argbBottom);
+            var matrix = entry.getPositionMatrix();
+            vc.vertex(matrix, rx, (float) y1, rz0).color(argbBottom);
+            vc.vertex(matrix, rx, (float) y2, rz0).color(argbTop);
+            vc.vertex(matrix, rx, (float) y2, rz1).color(argbTop);
+            vc.vertex(matrix, rx, (float) y1, rz1).color(argbBottom);
         }
     }
 
