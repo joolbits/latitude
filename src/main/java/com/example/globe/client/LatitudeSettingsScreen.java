@@ -204,7 +204,7 @@ public class LatitudeSettingsScreen extends Screen {
     }
 
     @Override
-    public void renderBackground(DrawContext context, int mouseX, int mouseY, float delta) {
+    public void renderBackground(DrawContext context) {
         // Latitude paints its own background before widgets; avoid the vanilla blur pass.
     }
 
@@ -248,7 +248,7 @@ public class LatitudeSettingsScreen extends Screen {
     }
 
     @Override
-    public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
+    public boolean mouseScrolled(double mouseX, double mouseY, double verticalAmount) {
         int maxScroll = Math.max(0, contentHeight - (this.footerY - this.panelTop));
         scrollY -= (int) Math.signum(verticalAmount) * 18;
         scrollY = MathHelper.clamp(scrollY, 0, maxScroll);

@@ -292,7 +292,7 @@ public class LatitudeHudStudioScreen extends Screen {
     }
 
     @Override
-    public void renderBackground(DrawContext ctx, int mouseX, int mouseY, float delta) {
+    public void renderBackground(DrawContext ctx) {
         // HUD Studio owns its dim layer so Screen.render() cannot blur preview widgets.
     }
 
@@ -361,7 +361,7 @@ public class LatitudeHudStudioScreen extends Screen {
     }
 
     @Override
-    public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
+    public boolean mouseScrolled(double mouseX, double mouseY, double verticalAmount) {
         if (sidebarVisible && mouseX < sidebarWidth + 10) {
             int viewportH = sidebarViewportBottom - sidebarViewportTop;
             int maxScroll = Math.max(0, sidebarContentHeight - viewportH);
@@ -369,7 +369,7 @@ public class LatitudeHudStudioScreen extends Screen {
             sidebarScrollY = MathHelper.clamp(sidebarScrollY, 0, maxScroll);
             return true;
         }
-        return super.mouseScrolled(mouseX, mouseY, horizontalAmount, verticalAmount);
+        return super.mouseScrolled(mouseX, mouseY, verticalAmount);
     }
 
     @Override
