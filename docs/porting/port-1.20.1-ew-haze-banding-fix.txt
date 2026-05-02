@@ -1,0 +1,39 @@
+# Latitude 1.20.1 EW Haze Banding Audit
+
+Root: `<home>/CascadeProjects/Latitude (Globe)`
+Branch: `port/1.3.0-1.20.1`
+HEAD: `97ba297`
+Required tag: `save/1.20.1-runtime-smoke-partial`
+
+## Scope
+
+Audit/fix of the visible 1.20.1 EW haze banding only.
+
+## File Changed
+
+- `src/main/java/com/example/globe/client/EwSandstormOverlayHud.java`
+
+## Visual Change
+
+- Increased `FADE_BANDS` from `12` to `96`.
+- Kept the same border-distance math, the same HUD-safe bottom cutoff, and the same alpha ramp.
+- No fog mixins, render order, HUD, F9, loading, or worldgen code was touched.
+
+## Proof
+
+- `compileJava`: PASS
+- `runClient`: PASS
+- Manual visual result: PASS, the obvious horizontal 12-step banding is materially reduced and no longer reads as chunky blocks
+- HUD readability: PASS, hotbar and warning text remain readable
+- EW haze atmosphere: PASS, haze still renders and remains visible near the border
+- F1 hide/show: not regressed in the observed run
+
+## Log Evidence
+
+- `run/logs/latest.log` shows repeated `EW haze tick: x=9750.5 a=0.3921891` entries while the haze was visible.
+- The same run also showed normal world join/overlay-clear behavior and no new `MixinApplyError`, `ClassCastException`, or crash.
+
+## Result
+
+The banding fix is limited to a single visual subsystem and keeps the existing atmosphere and readability behavior intact.
+

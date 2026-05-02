@@ -17,7 +17,7 @@ public final class EwSandstormOverlayHud {
     private static final int DUST_G = 186;
     private static final int DUST_B = 132;
     private static final int HUD_SAFE_BOTTOM_PX = 86;
-    private static final int FADE_BANDS = 12;
+    private static final int FADE_BANDS = 96;
 
     public static void render(DrawContext ctx, RenderTickCounter tickCounter) {
         MinecraftClient mc = MinecraftClient.getInstance();
