@@ -1,0 +1,47 @@
+# Latitude 1.20.1 Runtime Smoke Proof
+
+Root: `<home>/CascadeProjects/Latitude (Globe)`
+Branch: `port/1.3.0-1.20.1`
+HEAD: `f54e076`
+Tag: `save/1.20.1-level-loading-text-retarget`
+
+## Scope
+
+Runtime proof only after the 1.20.1 compile-green and `LevelLoadingScreen` String/Text retarget.
+
+No source, fog, EW haze, HUD, worldgen, metadata, resource, packaging, `gradlew`, staging, commit, or tag work was performed in this slice.
+
+## Proof
+
+- `compileJava`: PASS
+- `runClient`: PASS; controlled the Temurin Java dev-client process, not the Minecraft launcher
+- Fresh-world proof: PASS
+- Existing-world proof: PASS
+- F9 proof: PASS for the Latitude settings/front-door screen; old debug/capture/CSV controls were not visible in the observed screen
+- HUD Studio proof: PASS by manual confirmation
+- EW haze proof: PASS; haze was visible near the east/west border, warning text and hotbar remained readable, and F1/manual HUD hide/restore did not reveal a crash
+- `/latdev` proof: PASS for `help`, `here`, and `probe 512 300`
+- Live biome hook proof: INCONCLUSIVE/PARTIAL; latest log did not contain enabled `Worldgen path active`, `populateBiomes`, `LatitudeBiomeSource`, or `BIOCOST` markers, but `/latdev probe` reported loaded samples, biome distribution, and band distribution with no contradiction
+
+## Log Evidence
+
+- Fresh-world evidence from archived log: `begin expedition`, `session created`, `bespoke overlay first render`, player login, `bespoke overlay cleared`, and `joined the game`.
+- Existing-world evidence from `run/logs/latest.log`: `bespoke overlay first render`, `Player480 logged in with entity id 106`, `Player480 joined the game`, and `bespoke overlay cleared as level loading screen closed`.
+- `/latdev` evidence from `run/logs/latest.log`: command list, `here x=9750 y=167 z=0 ...`, `probe r=512 n=300 loaded=300 unloaded=0`, biome distribution, and `bands: tropical 100.0%(300)`.
+- EW haze evidence from `run/logs/latest.log`: repeated `EW haze tick: x=9750.5 a=0.3921891`.
+- No `MixinApplyError` or `ClassCastException` was observed in the harvested proof evidence.
+- Non-blocking dev-client noise observed: offline auth/Realms warnings, LWJGL JNI warning, missing goat horn sounds, and Gradle deprecation warnings.
+
+## Caveat
+
+The known weird 1.20.1 fog gradient remains visible. It is the remaining visual caveat and was not touched in this slice.
+
+## Verdict
+
+RUNTIME SMOKE PARTIAL
+
+Core client startup, fresh-world entry, existing-world entry, loading overlay render/clear, HUD Studio, EW haze readability, and `/latdev` smoke checks passed. The remaining proof gap is the dedicated live-worldgen hook marker pass if desired.
+
+## Next Slice
+
+Run a HUD Studio and live-worldgen-marker proof-only slice; do not tune the fog gradient until that proof gap is closed or explicitly split into its own polish slice.
