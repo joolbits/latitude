@@ -19,9 +19,10 @@ public abstract class ExistingWorldLoadingOverlayStartMixin {
     private static final Logger GLOBE_LOGGER = LoggerFactory.getLogger("LatitudeLoadingOverlay");
 
     @Inject(
-            method = "startIntegratedServer(Lnet/minecraft/world/level/storage/LevelStorage$Session;Lnet/minecraft/resource/ResourcePackManager;Lnet/minecraft/server/SaveLoader;Z)V",
+            method = "startIntegratedServer(Ljava/lang/String;Lnet/minecraft/world/level/storage/LevelStorage$Session;Lnet/minecraft/resource/ResourcePackManager;Lnet/minecraft/server/SaveLoader;Z)V",
             at = @At("HEAD"))
-    private void globe$activateLatitudeOverlayForExistingWorld(LevelStorage.Session session,
+    private void globe$activateLatitudeOverlayForExistingWorld(String worldName,
+                                                               LevelStorage.Session session,
                                                                ResourcePackManager dataPackManager,
                                                                SaveLoader saveLoader,
                                                                boolean newWorld,

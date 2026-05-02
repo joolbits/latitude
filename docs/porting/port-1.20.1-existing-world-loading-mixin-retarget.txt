@@ -1,0 +1,29 @@
+# Latitude 1.20.1 Existing-World Loading Mixin Retarget
+
+Root: `<home>/CascadeProjects/Latitude (Globe)`
+Branch: `port/1.3.0-1.20.1`
+Baseline: `be6b378` / `save/1.20.1-create-world-client-retarget`
+
+## Scope
+
+Fixed only the 1.20.1 descriptor/signature mismatch in `ExistingWorldLoadingOverlayStartMixin`.
+
+## Files changed
+
+- `src/main/java/com/example/globe/mixin/client/ExistingWorldLoadingOverlayStartMixin.java`
+
+## Retarget
+
+Added the leading `String worldName` parameter and updated the `startIntegratedServer(...)` inject descriptor to the 1.20.1 method shape.
+
+## Proof
+
+- `compileJava`: passed
+- `runClient`: no longer fails on `ExistingWorldLoadingOverlayStartMixin`
+- previous `MixinApplyError` for this mixin: gone
+- existing-save visual proof: not reached yet
+- current blocker: unrelated `InGameHudMixin` runtime target failure
+
+## Status
+
+PARTIAL — descriptor blocker fixed; existing-save loading proof pending after `InGameHudMixin` retarget.
