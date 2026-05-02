@@ -20,24 +20,24 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(InGameHud.class)
 public class InGameHudMixin {
     @Inject(
-        method = "renderMainHud",
+        method = "render",
         at = @At(
             value = "INVOKE",
-            target = "Lnet/minecraft/client/gui/hud/InGameHud;renderHotbar(Lnet/minecraft/client/gui/DrawContext;Lnet/minecraft/client/render/RenderTickCounter;)V"
+            target = "Lnet/minecraft/client/gui/hud/InGameHud;renderHotbar(FLnet/minecraft/client/gui/DrawContext;)V"
         )
     )
-    private void globe$renderEwHazeBeforeHotbar(DrawContext context, RenderTickCounter tickCounter, CallbackInfo ci) {
+    private void globe$renderEwHazeBeforeHotbar(DrawContext context, float tickDelta, CallbackInfo ci) {
         MinecraftClient client = MinecraftClient.getInstance();
         if (client != null
                 && client.currentScreen != null
                 && !(client.currentScreen instanceof LatitudeHudStudioScreen)) {
             return;
         }
-        EwSandstormOverlayHud.render(context, tickCounter);
+        EwSandstormOverlayHud.render(context, new RenderTickCounter(tickDelta, System.currentTimeMillis()));
     }
 
     @Inject(method = "render", at = @At("TAIL"))
-    private void globe$renderOverlay(DrawContext context, RenderTickCounter tickCounter, CallbackInfo ci) {
+    private void globe$renderOverlay(DrawContext context, float tickDelta, CallbackInfo ci) {
         MinecraftClient client = MinecraftClient.getInstance();
         if (client != null
                 && client.currentScreen != null
@@ -47,6 +47,7 @@ public class InGameHudMixin {
         if (client != null && globe$isLatitudeHudConfigScreen(client.currentScreen)) {
             return;
         }
+        RenderTickCounter tickCounter = new RenderTickCounter(tickDelta, System.currentTimeMillis());
         GlobeWarningOverlay.render(context, tickCounter);
         CompassHud.render(context, tickCounter);
         if (client != null && client.getWindow() != null) {

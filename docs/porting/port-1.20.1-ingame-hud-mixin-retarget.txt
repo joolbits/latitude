@@ -1,0 +1,32 @@
+# Latitude 1.20.1 InGameHudMixin Retarget
+
+Root: `<home>/CascadeProjects/Latitude (Globe)`
+Branch: `port/1.3.0-1.20.1`
+Baseline: `f8297f1` / `save/1.20.1-existing-world-loading-mixin-retarget`
+
+## Scope
+
+Retargeted the 1.20.1 `InGameHudMixin` EW haze injection and kept the overlay gates intact.
+
+## Files changed
+
+- `src/main/java/com/example/globe/mixin/client/InGameHudMixin.java`
+
+## Retarget
+
+- changed the EW haze inject target from `renderMainHud` to `render`
+- changed the invoke anchor to 1.20.1 `renderHotbar(FLnet/minecraft/client/gui/DrawContext;)V`
+- changed the handler signature to `globe$renderEwHazeBeforeHotbar(DrawContext, float, CallbackInfo)`
+- bridged the existing EW overlay helper by constructing a `RenderTickCounter` from the 1.20.1 `float` tick delta inside the mixin
+- changed the tail overlay handler to the 1.20.1 `render(DrawContext, float)` signature and bridged the same helper path with a local `RenderTickCounter`
+
+## Proof
+
+- `compileJava`: passed
+- `runClient`: no longer fails on `InGameHudMixin`
+- current runtime log: no `InGameHudMixin` `MixinApplyError`
+- existing-save visual proof: not completed in this pass
+
+## Status
+
+PARTIAL — HUD target blocker fixed; existing-save visual proof still needs a manual load step.
