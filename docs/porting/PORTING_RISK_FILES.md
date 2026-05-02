@@ -47,6 +47,7 @@ This index was assembled from current repo paths using grep/file existence, not 
 
 ## Loading Overlay / First-Load UX
 
+- `src/main/java/com/example/globe/mixin/client/ExistingWorldLoadingOverlayStartMixin.java` - existing-save loading overlay coverage is a separate runtime proof path from new-world loading.
 - `src/main/java/com/example/globe/mixin/client/LevelLoadingScreenLatitudeOverlayMixin.java` - loading overlay injection can fail without obvious compile errors.
 - `src/main/java/com/example/globe/mixin/client/DownloadingTerrainScreenFirstLoadMessageMixin.java` - first-load messaging is part of the runtime proof path and easy to regress.
 - `src/main/java/com/example/globe/client/GlobeWarningOverlay.java` - runtime warnings can mask or confirm world-entry stall behavior.
@@ -54,6 +55,9 @@ This index was assembled from current repo paths using grep/file existence, not 
 
 ## Fog / EW Visuals
 
+- `src/main/java/com/example/globe/client/EwSandstormOverlayHud.java` - EW haze overlay controls HUD readability and can bury hotbar or warning text near the border.
+- `src/main/java/com/example/globe/mixin/client/InGameHudMixin.java` - renders EW haze and latitude overlays in the main HUD path; easy to regress hudHidden/currentScreen behavior.
+- `src/main/java/com/example/globe/client/GlobeWarningOverlay.java` - warning overlay can be hidden or obscured by EW haze or screen-state changes.
 - `src/main/java/com/example/globe/mixin/client/FogRendererMixin.java` - fog hooks are mapping-sensitive and frequently move between versions.
 - `src/main/java/com/example/globe/mixin/client/FogRendererEwMixin.java` - east/west visual adjustments can regress when render plumbing changes.
 - `src/main/java/com/example/globe/mixin/client/BackgroundRendererFogMixin.java` - background renderer hooks are another common render API drift point.
@@ -64,6 +68,8 @@ This index was assembled from current repo paths using grep/file existence, not 
 - `src/main/java/com/example/globe/dev/BiomePreviewExporter.java` - exporter code should stay out of public jars unless explicitly intended.
 - `src/main/java/com/example/globe/dev/BiomePreviewHeadlessRunner.java` - headless runner logic is tooling-only and must not leak into release artifacts.
 - `src/main/java/com/example/globe/client/LatitudeSettingsScreen.java` - client settings code sometimes drags in dev-only helpers during refactors.
+- `src/main/java/com/example/globe/client/LatitudeHudStudioScreen.java` - public UI should stay free of capture/dev-only controls and background blur leaks.
+- `src/main/java/com/example/globe/client/LatitudeClientState.java` - client state affects loading overlay timing and can couple UI proof to runtime proof.
 - `src/main/java/com/example/globe/GlobeModClient.java` - client bootstrap can accidentally keep dev tooling reachable in production.
 
 ## Symbols And Patterns To Grep During Future Ports
@@ -78,7 +84,10 @@ This index was assembled from current repo paths using grep/file existence, not 
 - `ProcessBuilder`
 - `Runtime.exec`
 - `Desktop.getDesktop`
+- `Capture Clipboard`
+- `Write CSV`
+- `PowerShell`
+- `Save PNG`
 - `modLocalRuntime`
 - `pale_garden`
 - `Equator`
-

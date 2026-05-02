@@ -66,12 +66,17 @@ PY
 
 show_section "Known Port-Risk Symbols"
 rg -n --no-heading --hidden --glob '!**/build/**' \
-  'populateBiomes|fillBiomesFromNoise|doCreateBiomes|LevelLoadingScreen|DownloadingTerrainScreen|CreateWorldScreen|BackgroundRenderer|ProcessBuilder|Runtime\.exec|Desktop\.getDesktop|modLocalRuntime|pale_garden|Equator' \
+  'populateBiomes|fillBiomesFromNoise|doCreateBiomes|LevelLoadingScreen|DownloadingTerrainScreen|CreateWorldScreen|BackgroundRenderer|EwSandstormOverlayHud|renderHotbar|ctx\.fill\(0, 0|hudHidden|currentScreen|ExistingWorldLoadingOverlayStartMixin|renderBackground|LatitudeHudStudioScreen|LatitudeSettingsScreen|ProcessBuilder|Runtime\.exec|Desktop\.getDesktop|modLocalRuntime|pale_garden|Equator|Capture Clipboard|Write CSV|PowerShell|Save PNG' \
   src/main/java src/main/resources build.gradle gradle.properties || true
 
 show_section "Process-Launch APIs"
 rg -n --no-heading --hidden --glob '!**/build/**' \
   'ProcessBuilder|Runtime\.exec|Desktop\.getDesktop' \
+  src/main/java src/main/resources build.gradle gradle.properties || true
+
+show_section "UI Parity Targets"
+rg -n --no-heading --hidden --glob '!**/build/**' \
+  'EwSandstormOverlayHud|renderHotbar|ctx\.fill\(0, 0|hudHidden|currentScreen|ExistingWorldLoadingOverlayStartMixin|renderBackground|LatitudeHudStudioScreen|LatitudeSettingsScreen|Capture Clipboard|Write CSV|PowerShell|Save PNG' \
   src/main/java src/main/resources build.gradle gradle.properties || true
 
 show_section "Dev / Tool / Headless Packages"
@@ -80,4 +85,3 @@ find src/main/java -type d \( -path '*/dev' -o -path '*/tool*' -o -path '*/headl
 show_section "Next Action"
 printf 'Work the first failing gate in order: dependency/mapping -> mixins -> UI hooks -> live biome proof -> timing -> /latdev -> artifact purity -> release gate.\n'
 printf 'Build success is not release proof; fresh runtime proof always wins over Atlas or direct preview evidence.\n'
-
