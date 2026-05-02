@@ -5,6 +5,7 @@ import com.example.globe.util.LatitudeMath;
 import com.example.globe.world.LatitudeBiomeSource;
 import com.example.globe.world.LatitudeBiomes;
 import net.minecraft.registry.Registry;
+import net.minecraft.registry.RegistryKey;
 import net.minecraft.registry.RegistryKeys;
 import net.minecraft.registry.entry.RegistryEntry;
 import net.minecraft.server.world.ServerWorld;
@@ -40,7 +41,7 @@ public final class BiomePreviewExporter {
     private static final int MASK_MISS_COLOR = 0x11161B;
     private static final long DEFAULT_BUDGET_MS = 10L;
     private static final int DEFAULT_INVENTORY_DISCOVERY_STEP = 32;
-    private static final Identifier MANGROVE_SWAMP_BIOME_ID = Identifier.of("minecraft:mangrove_swamp");
+    private static final Identifier MANGROVE_SWAMP_BIOME_ID = Identifier.of("minecraft", "mangrove_swamp");
 
     private BiomePreviewExporter() {
     }
@@ -1316,7 +1317,7 @@ public final class BiomePreviewExporter {
     }
 
     private static RegistryEntry<Biome> forceMangroveSwampForAtlas(Registry<Biome> biomeRegistry, RegistryEntry<Biome> fallback) {
-        RegistryEntry.Reference<Biome> mangrove = biomeRegistry.getEntry(MANGROVE_SWAMP_BIOME_ID).orElse(null);
+        RegistryEntry.Reference<Biome> mangrove = biomeRegistry.getEntry(RegistryKey.of(RegistryKeys.BIOME, MANGROVE_SWAMP_BIOME_ID)).orElse(null);
         return mangrove != null ? mangrove : fallback;
     }
 
