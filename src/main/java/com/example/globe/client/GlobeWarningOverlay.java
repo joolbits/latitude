@@ -1,6 +1,8 @@
 package com.example.globe.client;
 
 import com.example.globe.GlobeMod;
+import com.example.globe.util.LatitudeBands;
+import com.example.globe.util.LatitudeMath;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.gui.DrawContext;
@@ -54,6 +56,14 @@ public final class GlobeWarningOverlay {
             case "POLAR" -> "Polar";
             default -> zoneKey;
         };
+    }
+
+    private static String canonicalZoneKey(MinecraftClient client) {
+        if (client.world == null || client.player == null) {
+            return LatitudeBands.Band.TROPICAL.id().toUpperCase(java.util.Locale.ROOT);
+        }
+        double deg = LatitudeMath.absLatDegExact(client.world.getWorldBorder(), client.player.getZ());
+        return LatitudeBands.fromAbsoluteLatitudeDeg(deg).id().toUpperCase(java.util.Locale.ROOT);
     }
 
     private static String biomeName(MinecraftClient client) {
@@ -153,8 +163,7 @@ public final class GlobeWarningOverlay {
                 lastZoneUpdateX = px;
                 lastZoneUpdateZ = pz;
 
-                var border = client.world.getWorldBorder();
-                String zoneKey = com.example.globe.util.LatitudeMath.zoneKey(border, client.player.getZ());
+                String zoneKey = canonicalZoneKey(client);
                 if (lastZoneKey == null || !lastZoneKey.equals(zoneKey)) {
                     lastZoneKey = zoneKey;
                     if (LatitudeConfig.zoneEnterTitleEnabled) {
