@@ -190,10 +190,10 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
     }
 
     @Inject(method = "getPercentage", at = @At("RETURN"), cancellable = true)
-    private void globe$hideLoadingPercentCounter(CallbackInfoReturnable<Text> cir) {
-        Text text = cir.getReturnValue();
-        if (text != null && text.getString().indexOf('%') >= 0) {
-            cir.setReturnValue(Text.empty());
+    private void globe$hideLoadingPercentCounter(CallbackInfoReturnable<String> cir) {
+        String text = cir.getReturnValue();
+        if (text != null && text.indexOf('%') >= 0) {
+            cir.setReturnValue("");
         }
     }
 
