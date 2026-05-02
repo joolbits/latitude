@@ -1,0 +1,28 @@
+# Latitude 1.3.0 -> 1.20.1 BiomePreviewHeadlessRunner Path Retarget
+
+Root: `<home>/CascadeProjects/Latitude (Globe)`
+Branch: `port/1.3.0-1.20.1`
+Baseline: `62d888b` / `save/1.20.1-biome-preview-exporter-retarget`
+
+## Scope
+
+Retarget only the headless exporter path handling to the 1.20.1 `File`/`Path` API.
+
+## Fix
+
+- Converted `server.getRunDirectory()` to a `Path` once at the export entry point.
+- Reused that `Path` for the default output directory and exporter call.
+- Updated the search output-root derivation to call `toPath()` before `toAbsolutePath()`.
+
+## Proof
+
+`compileJava` no longer reports `BiomePreviewHeadlessRunner.java` path-type errors.
+
+Remaining compile failures are unrelated and still live in:
+- `ChunkRegenerator.java`
+- `LatitudeDevCommand.java`
+- client GUI files
+
+## Behavior
+
+No exporter behavior changed beyond 1.20.1 API compatibility.

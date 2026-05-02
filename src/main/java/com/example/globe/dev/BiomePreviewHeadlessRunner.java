@@ -80,7 +80,8 @@ public final class BiomePreviewHeadlessRunner {
                     : radiusFromSizeOrWorld(config.sizePreset, world);
             long worldSeed = world.getSeed();
             long effectiveSeed = config.seedOverride != null ? config.seedOverride : worldSeed;
-            Path outputDir = config.outDir != null ? config.outDir : defaultOutDir(server.getRunDirectory());
+            Path runDir = server.getRunDirectory().toPath();
+            Path outputDir = config.outDir != null ? config.outDir : defaultOutDir(runDir);
 
             LatitudeBiomes.setWorldSeed(effectiveSeed);
             String startMessage = String.format(
@@ -100,7 +101,7 @@ public final class BiomePreviewHeadlessRunner {
 
             for (int step : config.steps) {
                 BiomePreviewExporter.ExportResult result = BiomePreviewExporter.export(
-                        world, radius, step, y, server.getRunDirectory(), effectiveSeed, config.exportOptions);
+                        world, radius, step, y, runDir, effectiveSeed, config.exportOptions);
                 BiomePreviewExporter.ExportResult finalized = finalizeOutput(result, effectiveSeed, outputDir);
 
                 String finishMessage = String.format(
@@ -139,7 +140,7 @@ public final class BiomePreviewHeadlessRunner {
             Instant generatedAt = Instant.now();
             Path outputRoot = config.outDir != null
                     ? config.outDir
-                    : server.getRunDirectory().toAbsolutePath().normalize().resolve("seed-search");
+                    : server.getRunDirectory().toPath().toAbsolutePath().normalize().resolve("seed-search");
             Path outputDir = outputRoot.resolve(SEARCH_TIMESTAMP.format(generatedAt));
             GitStamp gitStamp = currentGitStamp();
             BiomeSamplerTools.SearchOptions options = new BiomeSamplerTools.SearchOptions(
