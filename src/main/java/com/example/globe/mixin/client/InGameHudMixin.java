@@ -3,10 +3,13 @@ package com.example.globe.mixin.client;
 import com.example.globe.client.CompassHud;
 import com.example.globe.client.EwSandstormOverlayHud;
 import com.example.globe.client.GlobeWarningOverlay;
+import com.example.globe.client.LatitudeHudAdjustScreen;
 import com.example.globe.client.LatitudeHudStudioScreen;
+import com.example.globe.client.LatitudeSettingsScreen;
 import com.example.globe.client.ZoneEnterTitleOverlay;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
+import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.hud.InGameHud;
 import net.minecraft.client.render.RenderTickCounter;
 import org.spongepowered.asm.mixin.Mixin;
@@ -41,10 +44,19 @@ public class InGameHudMixin {
                 && !(client.currentScreen instanceof LatitudeHudStudioScreen)) {
             return;
         }
+        if (client != null && globe$isLatitudeHudConfigScreen(client.currentScreen)) {
+            return;
+        }
         GlobeWarningOverlay.render(context, tickCounter);
         CompassHud.render(context, tickCounter);
         if (client != null && client.getWindow() != null) {
             ZoneEnterTitleOverlay.render(context, client.getWindow().getScaledWidth(), client.getWindow().getScaledHeight());
         }
+    }
+
+    private static boolean globe$isLatitudeHudConfigScreen(Screen screen) {
+        return screen instanceof LatitudeHudStudioScreen
+                || screen instanceof LatitudeSettingsScreen
+                || screen instanceof LatitudeHudAdjustScreen;
     }
 }

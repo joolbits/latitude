@@ -1,0 +1,48 @@
+# 1.21.1 F9 UI Parity Hotfix Proof
+
+Root: `<home>/CascadeProjects/Latitude (Globe)`
+Branch: `hotfix/1.21.1-f9-ui-parity`
+Base: `5118c7c`
+Scope: F9 settings/HUD Studio parity and screen blur/render-layer authority only
+
+## Problem
+
+The released 1.21.1 backport opened the older/pre-1.3 F9 UI surface. After initial donor restoration, old capture/CSV/dev controls were removed and the HUD Studio surface was restored, but the F9 settings screen and HUD Studio still appeared blurry. The scrollbar itself was blurry, proving this was not just a compass/title overlay issue: the screen content was still being affected by vanilla background/blur layering.
+
+Existing-save loading still uses the vanilla loading screen. That is a separate follow-up and was not touched in this slice.
+
+## Fix
+
+F9 UI parity was restored narrowly:
+- F9 opens the Latitude settings front door instead of going directly to HUD Studio.
+- Old capture/CSV/dev controls are no longer exposed on the public F9 front door.
+- HUD Studio remains reachable from the settings screen.
+- `LatitudeSettingsScreen` and `LatitudeHudStudioScreen` now use create-world-style background authority by suppressing the vanilla background/blur pass and letting Latitude own the dim/background layer.
+- HUD Studio no longer relies on the vanilla in-game background blur path for its screen layer.
+
+Files touched:
+- `src/main/java/com/example/globe/client/LatitudeSettingsScreen.java`
+- `src/main/java/com/example/globe/client/LatitudeHudStudioScreen.java`
+- `src/main/java/com/example/globe/client/CompassHud.java`
+- `src/main/java/com/example/globe/mixin/client/InGameHudMixin.java`
+
+## Proof
+
+- `./gradlew --no-daemon compileJava`: passed
+- `./gradlew --no-daemon runClient`: launched successfully
+- Manual proof by Maintainer: passed
+- F9 settings screen: opens correctly
+- old capture/CSV/dev controls: absent from front door
+- settings scrollbar/widgets: crisp after blur fix
+- HUD Studio: opens correctly
+- HUD Studio sidebar/previews: crisp after blur fix
+- crash/errors: none reported during manual proof
+
+## Status
+
+FIXED
+
+## Separate follow-up
+
+Existing-save loading still uses the vanilla loading screen. Track separately as:
+`1.21.1 existing-save bespoke loading overlay coverage`.

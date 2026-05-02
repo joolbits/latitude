@@ -1,0 +1,30 @@
+# 1.21.1 F9 UI Parity Hotfix Scout
+
+Root: <home>/CascadeProjects/Latitude (Globe)
+Branch: hotfix/1.21.1-f9-ui-parity
+HEAD: 5118c7c
+Released issue:
+The 1.21.1 backport opens the pre-1.3 F9/options UI. Missing expected 1.3 behavior includes analog compass / bespoke HUD Studio-style screen, while old `print csv` tooling is still visible.
+
+## Current route evidence
+
+- current F9 keybind file/path: src/main/java/com/example/globe/client/ClientKeybinds.java registers `OPEN_SETTINGS` on `InputUtil.GLFW_KEY_F9`.
+- current screen opened by F9: src/main/java/com/example/globe/GlobeModClient.java handles `ClientKeybinds.OPEN_SETTINGS` by opening `new LatitudeSettingsScreen(...)`.
+- old/pre-1.3 UI class/path: src/main/java/com/example/globe/client/LatitudeSettingsScreen.java still includes capture CSV controls and a nested `HUD Studio` button.
+- expected 1.3 UI class/path: src/main/java/com/example/globe/client/LatitudeHudStudioScreen.java exists, but the current copy lacks the analog compass controls found in donor `89e03e6`.
+- manifest/client init route: src/main/resources/globe.mixins.json includes HUD/client mixins, while src/main/java/com/example/globe/GlobeModClient.java initializes `CompassHud`, registers `ClientKeybinds`, and owns the F9 screen route.
+
+## Donor comparison
+
+- donor ref checked: `0380b61` and `89e03e6`.
+- donor files likely needed: from `89e03e6`, at least `CompassHud.java`, `CompassHudConfig.java`, and `LatitudeHudStudioScreen.java`; possibly `LatitudeSettingsScreen.java`, `LatitudeHudAdjustScreen.java`, `GlobeModClient.java`, `ClientKeybinds.java`, and `globe.mixins.json` if compile/API coupling requires them.
+- current files missing/stale: current `CompassHud.java` and `LatitudeHudStudioScreen.java` have no analog compass implementation; `89e03e6` contains analog bounds/rendering, analog Studio controls, analog themes, and analog defaults. `0380b61` matches the stale/non-analog shape more closely.
+- mapping/API risk level: medium. The likely donor set is UI/client-only, but it spans several coupled screen/config/HUD classes and must be retargeted to the current 1.21.1 branch before compile/runtime proof.
+
+## Classification
+
+MIXED PORT DRIFT - files exist but are stale/API mismatched
+
+## Recommended next slice
+
+Import/retarget the `89e03e6` analog HUD Studio surface only: start with `CompassHud.java`, `CompassHudConfig.java`, and `LatitudeHudStudioScreen.java`, then add only compile-required companion edits from the same donor UI set.
