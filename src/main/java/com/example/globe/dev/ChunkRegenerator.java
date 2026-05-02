@@ -190,7 +190,6 @@ public final class ChunkRegenerator {
             boolean copyBiomes
     ) {
         RegenStats stats = new RegenStats();
-        RegistryWrapper.WrapperLookup registries = realWorld.getRegistryManager();
         BlockPos.Mutable cursor = new BlockPos.Mutable();
         List<WorldChunk> biomeRefreshChunks = copyBiomes ? new ArrayList<>(targets.size()) : List.of();
         ServerLightingProvider lightingProvider = realWorld.getChunkManager().getLightingProvider();
@@ -219,7 +218,7 @@ public final class ChunkRegenerator {
                         cursor.set(worldX, y, worldZ);
                         BlockState sourceState = sourceChunk.getBlockState(cursor);
                         BlockState targetState = realWorld.getBlockState(cursor);
-                        NbtCompound sourceBlockEntityNbt = sourceChunk.getPackedBlockEntityNbt(cursor, registries);
+                        NbtCompound sourceBlockEntityNbt = sourceChunk.getPackedBlockEntityNbt(cursor);
 
                         boolean stateChanged = !targetState.equals(sourceState);
                         if (stateChanged) {
@@ -232,8 +231,7 @@ public final class ChunkRegenerator {
                             BlockEntity recreated = BlockEntity.createFromNbt(
                                     cursor,
                                     sourceState,
-                                    sourceBlockEntityNbt.copy(),
-                                    registries
+                                    sourceBlockEntityNbt.copy()
                             );
                             if (recreated != null) {
                                 realWorld.addBlockEntity(recreated);
