@@ -1,0 +1,30 @@
+# Latitude 1.3.0 -> 1.20.1 LatitudeDevCommand Drift Slice
+
+Root: `<home>/CascadeProjects/Latitude (Globe)`
+Branch: `port/1.3.0-1.20.1`
+Baseline: `9f7de4f` / `save/1.20.1-chunk-regenerator-nbt-retarget`
+
+## Scope
+
+Retarget only the `/latdev` biome PNG export path to the 1.20.1 API.
+
+## Fix
+
+- Converted `server.getRunDirectory()` to `Path` before passing it to `BiomePreviewExporter.export(...)`.
+- Typed the `CompletableFuture` as `BiomePreviewExporter.ExportResult` so the atlas result accessors are preserved instead of erasing to `Object`.
+
+## Proof
+
+`compileJava` no longer reports errors in `LatitudeDevCommand.java`.
+
+Remaining compile failures are unrelated and still live in:
+- `LatitudeSettingsScreen.java`
+- `LatitudeHudStudioScreen.java`
+- `LatitudeHudAdjustScreen.java`
+- `EwStormWallRenderer.java`
+- `LatitudeWorldLauncher.java`
+- `LatitudeCreateWorldScreen.java`
+
+## Behavior
+
+No `/latdev` command routing, band names, world-size math, or biome logic changed.

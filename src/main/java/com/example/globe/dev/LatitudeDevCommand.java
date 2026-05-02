@@ -470,15 +470,14 @@ public final class LatitudeDevCommand {
                 + " step=" + clampedStep
                 + " y=" + clampedY), false);
 
-        CompletableFuture
-                .supplyAsync(() -> {
+        CompletableFuture.<BiomePreviewExporter.ExportResult>supplyAsync(() -> {
                     try {
                         return BiomePreviewExporter.export(
                                 source.getWorld(),
                                 radiusBlocks,
                                 clampedStep,
                                 clampedY,
-                                source.getServer().getRunDirectory());
+                                source.getServer().getRunDirectory().toPath());
                     } catch (Exception e) {
                         throw new RuntimeException(e);
                     }
@@ -491,18 +490,19 @@ public final class LatitudeDevCommand {
                         source.sendError(Text.literal("[latdev] biomePng failed: " + cause.getMessage()));
                         return;
                     }
+                    BiomePreviewExporter.ExportResult exportResult = result;
                     source.sendFeedback(() -> Text.literal("[latdev] biomePng done file="
-                            + result.pngPath()
+                            + exportResult.pngPath()
                             + " sidecar="
-                            + result.txtPath()
+                            + exportResult.txtPath()
                             + " image="
-                            + result.width()
+                            + exportResult.width()
                             + "x"
-                            + result.height()
+                            + exportResult.height()
                             + " samples="
-                            + result.totalSamples()
+                            + exportResult.totalSamples()
                             + " durationMs="
-                            + result.durationMs()), false);
+                            + exportResult.durationMs()), false);
                 }));
         return 1;
     }
