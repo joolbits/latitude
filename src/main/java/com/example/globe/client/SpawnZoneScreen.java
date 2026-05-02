@@ -40,7 +40,7 @@ public class SpawnZoneScreen extends Screen {
 
     private void addZoneButton(int cx, int y, String label, String id) {
         this.addDrawableChild(ButtonWidget.builder(Text.literal(label), b -> {
-                    ClientPlayNetworking.send(new GlobeNet.SetSpawnPickerPayload(id));
+                    ClientPlayNetworking.send(GlobeNet.C2S_SET_SPAWN_PICKER, new GlobeNet.SetSpawnPickerPayload(id).write());
                     close();
                 })
                 .dimensions(cx - 90, y, 180, 20)
@@ -49,7 +49,7 @@ public class SpawnZoneScreen extends Screen {
 
     private void addZoneButton(int cx, int y, Text label, String id) {
         this.addDrawableChild(ButtonWidget.builder(label, b -> {
-                    ClientPlayNetworking.send(new GlobeNet.SetSpawnPickerPayload(id));
+                    ClientPlayNetworking.send(GlobeNet.C2S_SET_SPAWN_PICKER, new GlobeNet.SetSpawnPickerPayload(id).write());
                     close();
                 })
                 .dimensions(cx - 90, y, 180, 20)

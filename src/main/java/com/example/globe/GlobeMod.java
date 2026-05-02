@@ -12,8 +12,6 @@ import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.server.command.CommandManager;
 import net.minecraft.entity.effect.StatusEffectInstance;
 import net.minecraft.entity.effect.StatusEffects;
-import net.minecraft.component.DataComponentTypes;
-import net.minecraft.component.type.BundleContentsComponent;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
 import net.minecraft.registry.RegistryKey;
@@ -135,7 +133,7 @@ public class GlobeMod implements ModInitializer {
 
             boolean isGlobe = isGlobeOverworld(overworld);
             LOGGER.info("JOIN: player={}, isGlobeOverworld={}", handler.player.getName().getString(), isGlobe);
-            ServerPlayNetworking.send(handler.player, new GlobeNet.GlobeStatePayload(isGlobe));
+            ServerPlayNetworking.send(handler.player, GlobeNet.S2C_GLOBE_STATE, new GlobeNet.GlobeStatePayload(isGlobe).write());
 
             LatitudeWorldState worldState = LatitudeWorldState.get(overworld);
             boolean isBrandNewWorld = overworld.getTime() < 100L;
@@ -164,13 +162,14 @@ public class GlobeMod implements ModInitializer {
                 if (!worldState.isSpawnPickerDismissed()) {
                     worldState.setSpawnPickerDismissed(true);
                     LOGGER.info("Sending spawn picker open to player={}", handler.player.getName().getString());
-                    ServerPlayNetworking.send(handler.player, new GlobeNet.OpenSpawnPickerPayload(true));
+                    ServerPlayNetworking.send(handler.player, GlobeNet.S2C_OPEN_SPAWN_PICKER, new GlobeNet.OpenSpawnPickerPayload(true).write());
                 }
             }
         });
 
-        ServerPlayNetworking.registerGlobalReceiver(GlobeNet.SetSpawnPickerPayload.ID, (payload, context) -> {
-            context.server().execute(() -> applySpawnChoice(context.player(), payload.zoneId()));
+        ServerPlayNetworking.registerGlobalReceiver(GlobeNet.C2S_SET_SPAWN_PICKER, (server, player, handler2, buf, responseSender) -> {
+            GlobeNet.SetSpawnPickerPayload payload = GlobeNet.SetSpawnPickerPayload.read(buf);
+            server.execute(() -> applySpawnChoice(player, payload.zoneId()));
         });
 
         CommandRegistrationCallback.EVENT.register(LatitudeDevCommands::register);
@@ -606,15 +605,6 @@ public class GlobeMod implements ModInitializer {
         if (stack.isOf(Items.COMPASS)) return true;
 
         if (depth >= 6) return false;
-
-        if (stack.isOf(Items.BUNDLE)) {
-            BundleContentsComponent contents = stack.get(DataComponentTypes.BUNDLE_CONTENTS);
-            if (contents != null) {
-                for (ItemStack inside : contents.iterate()) {
-                    if (containsCompass(inside, depth + 1)) return true;
-                }
-            }
-        }
 
         return false;
     }

@@ -3,8 +3,6 @@ package com.example.globe.client;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.render.RenderTickCounter;
-import net.minecraft.component.DataComponentTypes;
-import net.minecraft.component.type.BundleContentsComponent;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
@@ -605,16 +603,6 @@ public final class CompassHud {
 
         // Prevent infinite recursion
         if (depth >= 6) return false;
-
-        // Bundle contents (modern data component)
-        if (stack.isOf(Items.BUNDLE)) {
-            BundleContentsComponent contents = stack.get(DataComponentTypes.BUNDLE_CONTENTS);
-            if (contents != null) {
-                for (ItemStack inside : contents.iterate()) {
-                    if (containsCompass(inside, depth + 1)) return true;
-                }
-            }
-        }
 
         return false;
     }

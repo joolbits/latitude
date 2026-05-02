@@ -39,19 +39,21 @@ public class GlobeModClient implements ClientModInitializer {
             pendingSpawnPickerOpen = false;
         });
 
-        ClientPlayNetworking.registerGlobalReceiver(GlobeNet.GlobeStatePayload.ID, (payload, context) -> {
-            context.client().execute(() -> {
+        ClientPlayNetworking.registerGlobalReceiver(GlobeNet.S2C_GLOBE_STATE, (client2, handler2, buf, responseSender) -> {
+            GlobeNet.GlobeStatePayload payload = GlobeNet.GlobeStatePayload.read(buf);
+            client2.execute(() -> {
                 GlobeClientState.setGlobeWorld(payload.isGlobe());
                 GlobeMod.LOGGER.info("S2C globe state: isGlobe={}", payload.isGlobe());
             });
         });
 
-        ClientPlayNetworking.registerGlobalReceiver(GlobeNet.OpenSpawnPickerPayload.ID, (payload, context) -> {
+        ClientPlayNetworking.registerGlobalReceiver(GlobeNet.S2C_OPEN_SPAWN_PICKER, (client2, handler2, buf, responseSender) -> {
+            GlobeNet.OpenSpawnPickerPayload payload = GlobeNet.OpenSpawnPickerPayload.read(buf);
             if (!payload.open()) {
                 return;
             }
 
-            context.client().execute(() -> {
+            client2.execute(() -> {
                 pendingSpawnPickerOpen = true;
                 GlobeMod.LOGGER.info("S2C open spawn picker received (pending=true)");
             });

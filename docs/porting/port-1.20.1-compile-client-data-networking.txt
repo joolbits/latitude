@@ -1,0 +1,31 @@
+# Latitude 1.20.1 Compile Bucket Hygiene
+
+Root: `<home>/CascadeProjects/Latitude (Globe)`
+Branch: `port/1.3.0-1.20.1`
+Baseline: `4f511ad` / `save/1.20.1-metadata-deps-baseline`
+
+## Scope
+
+Client/data-component/networking compile bucket only.
+
+## Changed source files
+
+- `src/main/java/com/example/globe/GlobeNet.java`
+- `src/main/java/com/example/globe/GlobeMod.java`
+- `src/main/java/com/example/globe/GlobeModClient.java`
+- `src/main/java/com/example/globe/client/SpawnZoneScreen.java`
+- `src/main/java/com/example/globe/client/CompassHud.java`
+- `src/main/java/com/example/globe/mixin/HandledScreenCompassToggleMixin.java`
+
+## Proof
+
+- `rg -n "DataComponentTypes|BundleContentsComponent|RegistryByteBuf|CustomPayload|PacketCodec" src/main/java src/main/resources` returned no hits.
+- `compileJava` now reaches unrelated buckets:
+  - `LevelLoadingScreen`
+  - `BiomeSource#getCodec`
+  - `LatitudeWorldState.Type`
+  - `OptionalChunk`
+
+## Status
+
+Bucket complete. Leave the remaining errors for the next slice.

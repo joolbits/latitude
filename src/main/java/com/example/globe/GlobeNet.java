@@ -1,10 +1,7 @@
 package com.example.globe;
 
-import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
-import net.minecraft.network.RegistryByteBuf;
-import net.minecraft.network.codec.PacketCodec;
-import net.minecraft.network.codec.PacketCodecs;
-import net.minecraft.network.packet.CustomPayload;
+import net.fabricmc.fabric.api.networking.v1.PacketByteBufs;
+import net.minecraft.network.PacketByteBuf;
 import net.minecraft.util.Identifier;
 
 public final class GlobeNet {
@@ -19,51 +16,46 @@ public final class GlobeNet {
         }
         registered = true;
 
-        PayloadTypeRegistry.playS2C().register(GlobeStatePayload.ID, GlobeStatePayload.CODEC);
-
-        PayloadTypeRegistry.playS2C().register(OpenSpawnPickerPayload.ID, OpenSpawnPickerPayload.CODEC);
-        PayloadTypeRegistry.playC2S().register(SetSpawnPickerPayload.ID, SetSpawnPickerPayload.CODEC);
+        // 1.20.1 Fabric networking uses raw channel identifiers; receivers register the channels.
     }
 
-    public record GlobeStatePayload(boolean isGlobe) implements CustomPayload {
-        public static final Id<GlobeStatePayload> ID = new Id<>(Identifier.of("globe", "s2c_globe_state"));
-        public static final PacketCodec<RegistryByteBuf, GlobeStatePayload> CODEC = PacketCodec.tuple(
-                PacketCodecs.BOOL,
-                GlobeStatePayload::isGlobe,
-                GlobeStatePayload::new
-        );
+    public static final Identifier S2C_GLOBE_STATE = new Identifier("globe", "s2c_globe_state");
+    public static final Identifier S2C_OPEN_SPAWN_PICKER = new Identifier("globe", "s2c_open_spawn_picker");
+    public static final Identifier C2S_SET_SPAWN_PICKER = new Identifier("globe", "c2s_set_spawn_picker");
 
-        @Override
-        public Id<? extends CustomPayload> getId() {
-            return ID;
+    public record GlobeStatePayload(boolean isGlobe) {
+        public PacketByteBuf write() {
+            PacketByteBuf buf = PacketByteBufs.create();
+            buf.writeBoolean(isGlobe);
+            return buf;
+        }
+
+        public static GlobeStatePayload read(PacketByteBuf buf) {
+            return new GlobeStatePayload(buf.readBoolean());
         }
     }
 
-    public record OpenSpawnPickerPayload(boolean open) implements CustomPayload {
-        public static final Id<OpenSpawnPickerPayload> ID = new Id<>(Identifier.of("globe", "s2c_open_spawn_picker"));
-        public static final PacketCodec<RegistryByteBuf, OpenSpawnPickerPayload> CODEC = PacketCodec.tuple(
-                PacketCodecs.BOOL,
-                OpenSpawnPickerPayload::open,
-                OpenSpawnPickerPayload::new
-        );
+    public record OpenSpawnPickerPayload(boolean open) {
+        public PacketByteBuf write() {
+            PacketByteBuf buf = PacketByteBufs.create();
+            buf.writeBoolean(open);
+            return buf;
+        }
 
-        @Override
-        public Id<? extends CustomPayload> getId() {
-            return ID;
+        public static OpenSpawnPickerPayload read(PacketByteBuf buf) {
+            return new OpenSpawnPickerPayload(buf.readBoolean());
         }
     }
 
-    public record SetSpawnPickerPayload(String zoneId) implements CustomPayload {
-        public static final Id<SetSpawnPickerPayload> ID = new Id<>(Identifier.of("globe", "c2s_set_spawn_picker"));
-        public static final PacketCodec<RegistryByteBuf, SetSpawnPickerPayload> CODEC = PacketCodec.tuple(
-                PacketCodecs.STRING,
-                SetSpawnPickerPayload::zoneId,
-                SetSpawnPickerPayload::new
-        );
+    public record SetSpawnPickerPayload(String zoneId) {
+        public PacketByteBuf write() {
+            PacketByteBuf buf = PacketByteBufs.create();
+            buf.writeString(zoneId);
+            return buf;
+        }
 
-        @Override
-        public Id<? extends CustomPayload> getId() {
-            return ID;
+        public static SetSpawnPickerPayload read(PacketByteBuf buf) {
+            return new SetSpawnPickerPayload(buf.readString());
         }
     }
 }
