@@ -1,0 +1,16 @@
+# Latitude 1.3.0 -> 1.20.1 PolarCapScrubber Compile Retarget
+
+Root: `<home>/CascadeProjects/Latitude (Globe)`
+Branch: `port/1.3.0-1.20.1`
+HEAD: `7d6a350`
+
+## Scope
+
+Retargeted the polar vegetation scrubber to the 1.20.1 block registry surface.
+
+## Notes
+
+- `Blocks.SHORT_GRASS` is not present in 1.20.1.
+- Replaced it with `Blocks.GRASS` in the vegetation scrub check.
+- Compile proof no longer fails on `PolarCapScrubber`.
+- No runtime worldgen behavior was changed.
