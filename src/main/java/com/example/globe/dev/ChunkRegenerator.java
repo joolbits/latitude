@@ -1,6 +1,7 @@
 package com.example.globe.dev;
 
 import com.example.globe.GlobeMod;
+import com.mojang.datafixers.util.Either;
 import net.minecraft.block.Block;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.entity.BlockEntity;
@@ -10,8 +11,8 @@ import net.minecraft.registry.RegistryWrapper;
 import net.minecraft.registry.entry.RegistryEntry;
 import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.server.world.ChunkHolder;
 import net.minecraft.server.WorldGenerationProgressListener;
-import net.minecraft.server.world.OptionalChunk;
 import net.minecraft.server.world.ServerLightingProvider;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.text.Text;
@@ -158,7 +159,7 @@ public final class ChunkRegenerator {
     }
 
     private static Map<Long, Chunk> generateToFeatures(ServerWorld tempWorld, List<ChunkPos> targets) {
-        List<CompletableFuture<OptionalChunk<Chunk>>> futures = new ArrayList<>(targets.size());
+        List<CompletableFuture<Either<Chunk, ChunkHolder.Unloaded>>> futures = new ArrayList<>(targets.size());
         for (ChunkPos chunkPos : targets) {
             futures.add(tempWorld.getChunkManager().getChunkFutureSyncOnMainThread(
                     chunkPos.x,
@@ -174,13 +175,10 @@ public final class ChunkRegenerator {
         Map<Long, Chunk> generated = new HashMap<>(targets.size());
         for (int i = 0; i < targets.size(); i++) {
             ChunkPos chunkPos = targets.get(i);
-            OptionalChunk<Chunk> maybeChunk = futures.get(i).join();
-            if (!maybeChunk.isPresent()) {
-                throw new IllegalStateException("Failed to generate chunk " + chunkPos.x + "," + chunkPos.z
-                        + " (" + maybeChunk.getError() + ")");
-            }
-            generated.put(chunkPos.toLong(), maybeChunk.orElseThrow(() ->
-                    new IllegalStateException("Chunk " + chunkPos.x + "," + chunkPos.z + " unavailable")));
+            Either<Chunk, ChunkHolder.Unloaded> maybeChunk = futures.get(i).join();
+            Chunk chunk = maybeChunk.left().orElseThrow(() ->
+                    new IllegalStateException("Chunk " + chunkPos.x + "," + chunkPos.z + " unavailable"));
+            generated.put(chunkPos.toLong(), chunk);
         }
         return generated;
     }
