@@ -231,7 +231,7 @@ public class LatitudeCreateWorldScreen extends Screen {
 
         try {
             // Build datapack configuration (replicates createServerConfig, lines 511-513)
-            ResourcePackManager resourcePackManager = new ResourcePackManager(new VanillaDataPackProvider(client.getSymlinkFinder()));
+            ResourcePackManager resourcePackManager = VanillaDataPackProvider.createManager(client.getLevelStorage().getSavesDirectory());
             resourcePackManager.scanPacks();
             List<String> enabledPackIds = SharedConstants.isDevelopment
                     ? List.of("vanilla", "tests", "globe")
@@ -454,7 +454,7 @@ public class LatitudeCreateWorldScreen extends Screen {
         // ── Focus: pre-select world name text for immediate overwrite ──
         this.worldNameField.setFocused(true);
         this.setFocused(this.worldNameField);
-        this.worldNameField.setCursorToEnd(false);
+        this.worldNameField.setCursorToEnd();
         this.worldNameField.setSelectionEnd(0);
     }
 
@@ -597,25 +597,31 @@ public class LatitudeCreateWorldScreen extends Screen {
 
     private void updateLeftWidgets(int inputX, int inputW, int fieldH, int btnH, int stepperBtnW) {
         if (worldNameField != null) {
-            worldNameField.setDimensionsAndPosition(inputW, fieldH, inputX, worldFieldY);
+            setWidgetBounds(worldNameField, inputW, inputX, worldFieldY);
             worldNameField.visible = true;
             worldNameField.active = true;
         }
         if (seedField != null) {
-            seedField.setDimensionsAndPosition(inputW, fieldH, inputX, seedFieldY);
+            setWidgetBounds(seedField, inputW, inputX, seedFieldY);
             seedField.visible = true;
             seedField.active = true;
         }
         if (sizePrevBtn != null) {
-            sizePrevBtn.setDimensionsAndPosition(stepperBtnW, btnH, inputX, sizeFieldY);
+            setWidgetBounds(sizePrevBtn, stepperBtnW, inputX, sizeFieldY);
             sizePrevBtn.visible = true;
             sizePrevBtn.active = true;
         }
         if (sizeNextBtn != null) {
-            sizeNextBtn.setDimensionsAndPosition(stepperBtnW, btnH, inputX + inputW - stepperBtnW, sizeFieldY);
+            setWidgetBounds(sizeNextBtn, stepperBtnW, inputX + inputW - stepperBtnW, sizeFieldY);
             sizeNextBtn.visible = true;
             sizeNextBtn.active = true;
         }
+    }
+
+    private static void setWidgetBounds(ClickableWidget widget, int width, int x, int y) {
+        widget.setWidth(width);
+        widget.setX(x);
+        widget.setY(y);
     }
 
     private void updateLeftLayout() {
@@ -705,7 +711,7 @@ public class LatitudeCreateWorldScreen extends Screen {
 
         int zoneY = zoneListTopY;
         for (ZoneRowWidget row : zoneRows) {
-            row.setDimensionsAndPosition(rightW - 4 - SCROLLBAR_GUTTER, zoneRowHeight, rightX + 2, zoneY);
+            row.setBounds(rightW - 4 - SCROLLBAR_GUTTER, zoneRowHeight, rightX + 2, zoneY);
             boolean visible = isLatitudeWorld()
                     && (!tabbedMode || activeTab == 1)
                     && row.getX() >= paneStripViewportLeft
@@ -831,8 +837,8 @@ public class LatitudeCreateWorldScreen extends Screen {
 
     private void positionSettingsStepper(ButtonWidget left, ButtonWidget right, int x, int width, int y, int height) {
         int stepperW = left.getWidth();
-        left.setDimensionsAndPosition(stepperW, height, x, y);
-        right.setDimensionsAndPosition(stepperW, height, x + width - stepperW, y);
+        setWidgetBounds(left, stepperW, x, y);
+        setWidgetBounds(right, stepperW, x + width - stepperW, y);
         boolean visible = (!tabbedMode || activeTab == 2)
                 && left.getX() >= paneStripViewportLeft
                 && right.getX() + right.getWidth() <= paneStripViewportRight
@@ -845,7 +851,7 @@ public class LatitudeCreateWorldScreen extends Screen {
     }
 
     private void positionSettingsButton(ButtonWidget button, int x, int width, int y, int height) {
-        button.setDimensionsAndPosition(width - SCROLLBAR_GUTTER, height, x, y);
+        setWidgetBounds(button, width - SCROLLBAR_GUTTER, x, y);
         boolean visible = (!tabbedMode || activeTab == 2)
                 && button.getX() >= paneStripViewportLeft
                 && button.getX() + button.getWidth() <= paneStripViewportRight
@@ -897,14 +903,15 @@ public class LatitudeCreateWorldScreen extends Screen {
     }
 
     @Override
-    public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
+    public boolean mouseScrolled(double mouseX, double mouseY, double verticalAmount) {
         if (getPaneStripMaxScroll() > 0
-                && horizontalAmount != 0.0D
+                && Screen.hasShiftDown()
+                && verticalAmount != 0.0D
                 && mouseX >= paneStripViewportLeft
                 && mouseX < paneStripViewportRight
                 && mouseY >= panelTop
                 && mouseY < panelBottom) {
-            applyPaneStripScroll(paneStripScroll - (int) Math.signum(horizontalAmount) * scaledUi(28));
+            applyPaneStripScroll(paneStripScroll - (int) Math.signum(verticalAmount) * scaledUi(28));
             return true;
         }
         if ((!tabbedMode || activeTab == 0) && mouseX >= Math.max(leftX, paneStripViewportLeft) && mouseX < Math.min(leftX + leftW, paneStripViewportRight) && mouseY >= panelTop && mouseY < panelBottom) {
@@ -949,7 +956,7 @@ public class LatitudeCreateWorldScreen extends Screen {
             applyPaneStripScroll(paneStripScroll - (int) Math.signum(verticalAmount) * scaledUi(28));
             return true;
         }
-        return super.mouseScrolled(mouseX, mouseY, horizontalAmount, verticalAmount);
+        return super.mouseScrolled(mouseX, mouseY, verticalAmount);
     }
 
     @Override
@@ -993,7 +1000,7 @@ public class LatitudeCreateWorldScreen extends Screen {
     // ══════════════════════════════════════════════════════════════
 
     @Override
-    public void renderBackground(DrawContext context, int mouseX, int mouseY, float delta) {
+    public void renderBackground(DrawContext context) {
         // The bespoke screen paints its own opaque background before panels.
         // Screen.render() calls this immediately before child widgets, which
         // would otherwise blur/cover the custom content while buttons remain.
@@ -1825,7 +1832,7 @@ public class LatitudeCreateWorldScreen extends Screen {
         }
 
         @Override
-        protected void renderWidget(DrawContext context, int mouseX, int mouseY, float deltaTicks) {
+        protected void renderButton(DrawContext context, int mouseX, int mouseY, float deltaTicks) {
             boolean selected = selectedZone == this.band;
             int x = this.getX();
             int y = this.getY();
@@ -1867,6 +1874,13 @@ public class LatitudeCreateWorldScreen extends Screen {
                 helperY += uiFontHeight();
             }
 
+        }
+
+        private void setBounds(int width, int height, int x, int y) {
+            this.setWidth(width);
+            this.height = height;
+            this.setX(x);
+            this.setY(y);
         }
 
         @Override

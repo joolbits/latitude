@@ -73,9 +73,9 @@ public final class LatitudeWorldLauncher {
             // ── 1. Size preset resolution ──
             net.minecraft.util.Identifier presetId;
             if (worldTypeIdx == 2) {
-                presetId = net.minecraft.util.Identifier.ofVanilla("flat");
+                presetId = net.minecraft.util.Identifier.of("minecraft", "flat");
             } else if (worldTypeIdx == 1) {
-                presetId = net.minecraft.util.Identifier.ofVanilla("normal");
+                presetId = net.minecraft.util.Identifier.of("minecraft", "normal");
             } else {
                 presetId = size.worldPresetId;
             }
@@ -204,7 +204,7 @@ public final class LatitudeWorldLauncher {
             LOGGER.info("[Latitude lifecycle] calling startNewWorld — {}ms elapsed", System.currentTimeMillis() - t0);
             try {
                 client.createIntegratedServerLoader()
-                        .startNewWorld(session, goh.dataPackContents(), combinedDynamicRegistries, levelProperties);
+                        .start(session, goh.dataPackContents(), combinedDynamicRegistries, levelProperties);
             } catch (Exception e) {
                 LOGGER.error("Failed to start new world", e);
                 // Rollback Latitude state
