@@ -1,0 +1,57 @@
+# Latitude 1.21.1 Final Release Readiness Re-Audit
+
+Root: `<home>/CascadeProjects/Latitude (Globe)`
+Branch: `port/1.3.0-1.21.1-bespoke-ui`
+HEAD: `6621f52`
+Tags at HEAD:
+`save/1.21.1-artifact-purity-debug-exclusion`
+
+Jar: `build/libs/latitude-1.3.0+1.21.1.jar`
+SHA-256: `dba290985e61773e648bf03498885fbeec359a0c5367ed7ba2db9f4dbdddcbda`
+
+## Proven savepoints
+
+- `save/port-bootstrap-kit`
+- `save/1.21.1-runtime-proof-passed`
+- `save/1.21.1-artifact-purity-debug-exclusion`
+
+## Build
+
+- `clean build`: pass
+
+## Runtime proof
+
+- fresh-world entry: passed
+- live biome hook: passed
+- bespoke overlay clear: passed
+- `/latdev` smoke: passed
+
+## Artifact purity
+
+- debug package entries: pass
+- dev/headless/tooling entries: pass
+- scripts/executables/native/node/electron/gradle wrapper: pass
+- process-launch bytecode: pass
+- artifact purity verdict: pass
+
+## Metadata
+
+- mod version: `1.3.0+1.21.1`
+- Minecraft target: `1.21.1`
+- Fabric dependency target: `fabric-api 0.115.6+1.21.1`, `fabricloader 0.17.3`
+- mismatch: no
+
+## Remaining caveats
+
+- `pale_garden` references still exist in source at `src/main/java/com/example/globe/world/LatitudeBiomes.java` and `src/main/java/com/example/globe/dev/BiomeBandPolicy.java`
+- EW/fog visual proof was not rechecked in this final audit
+- source process-launch risk still exists in `src/main/java/com/example/globe/client/ClipboardImageWriter.java` and `src/main/java/com/example/globe/dev/BiomePreviewHeadlessRunner.java`, but no such bytecode strings were found in the public jar
+
+## Final verdict
+
+RELEASE CANDIDATE WITH CAVEATS — no hard blockers found in this audit slice.
+
+## Next action
+
+Run the remaining visual/provenance caveat checks before a release decision.
+
