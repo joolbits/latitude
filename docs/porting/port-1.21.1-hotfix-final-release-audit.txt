@@ -1,0 +1,56 @@
+# Latitude 1.21.1 Hotfix Final Release Audit
+
+Root: <home>/CascadeProjects/Latitude (Globe)
+Branch: hotfix/1.21.1-ew-haze-hud-occlusion
+HEAD: 9d04241
+Tags at HEAD:
+save/1.21.1-ew-haze-hud-occlusion
+
+Jar: build/libs/latitude-1.3.0+1.21.1.jar
+SHA-256: 2d5ce7b53c205b3af449d9815c1c1f7de7ec7dc9c2292f1b74734b96e1af89bf
+
+## Included hotfix savepoints
+
+- 58be416 - save/1.21.1-f9-ui-parity-hotfix - F9 settings / HUD Studio parity
+- 19515dc - save/1.21.1-existing-world-loading-hotfix - existing-world bespoke loading overlay
+- 9d04241 - save/1.21.1-ew-haze-hud-occlusion - EW haze HUD readability
+
+## Build
+
+- clean build: PASSED
+
+## Runtime/manual proof already recorded
+
+- F9 settings / HUD Studio: passed manual proof
+- existing-world bespoke loading: passed manual proof
+- EW haze HUD readability: passed manual proof
+- prior runtime world entry / live hook / /latdev smoke: passed at save/1.21.1-runtime-proof-passed
+
+## Artifact purity
+
+debug package entries: none found
+dev/headless/tooling entries: none found
+scripts/executables/native/node/electron/gradle wrapper: none found
+process-launch bytecode: none found
+verdict: PASS
+
+## Metadata
+
+mod version: 1.3.0+1.21.1
+Minecraft target: 1.21.1
+loader/Fabric dependency: fabricloader >=0.17.3, fabric-api *, java >=21
+mismatch risk: low
+
+## Remaining caveats
+
+- gradlew mode-only local dirt excluded from artifact/staging
+- one suspicious jar entry remains expected: `com/example/globe/world/GlobeWorldSizeRuntime.class`
+
+## Final verdict
+
+RELEASE READY
+
+## Upload note
+
+Suggested user-facing note:
+"Hotfix for the 1.21.1 backport: restores the 1.3 F9 settings/HUD Studio interface, applies the bespoke Latitude loading overlay when opening existing worlds, and improves EW border haze readability so the hotbar and warning text remain visible."
