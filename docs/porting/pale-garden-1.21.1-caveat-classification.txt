@@ -1,0 +1,29 @@
+# Pale Garden 1.21.1 Caveat Classification
+
+Root: `<home>/CascadeProjects/Latitude (Globe)`
+Branch: `port/1.3.0-1.21.1-bespoke-ui`
+HEAD: `c0b2a5a`
+Tag baseline: `save/1.21.1-rc-audit-with-caveats`
+
+## Question
+
+Are remaining `pale_garden` references in the 1.21.1 port:
+- harmless source/reference residue,
+- a runtime missing-tag warning,
+- or a release blocker?
+
+## Evidence
+
+- Source references: `src/main/java/com/example/globe/world/LatitudeBiomes.java`, `src/main/java/com/example/globe/dev/BiomeBandPolicy.java`
+- Resource references: none found
+- Jar entries: none found
+- Runtime log warnings/errors: no `pale_garden` / missing-tag / unknown-biome warning found in `run/logs/latest.log`; only unrelated loader/mixin/shader warnings were present
+- Any Minecraft-version compatibility note: no direct compatibility mismatch exposed by this grep pass; the remaining hits are source-level biome names only
+
+## Classification
+
+HARMLESS SOURCE REFERENCE — not release-blocking
+
+## Recommended next action
+
+Leave it alone unless a future runtime repro shows a real missing-tag or wrong-biome warning tied to these references.
