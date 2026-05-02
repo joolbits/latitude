@@ -283,7 +283,7 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
             if (DEBUG_BIOME_COST) BIOCOST_VANILLA_NS.addAndGet(System.nanoTime() - globe$tv0);
 
             if (blockY > HARD_DECK_SURFACE_Y && isCaveBiome(biomes, base)) {
-                RegistryEntry<Biome> plains = biomes.getEntry(Identifier.of("minecraft", "plains")).orElse(null);
+                RegistryEntry<Biome> plains = biomeEntry(biomes, "minecraft:plains");
                 if (DEBUG_CAVE_DECK) {
                     LOGGER.info("[LAT_CAVE_DECK] replaced {} at blockY={} x={} z={}",
                             biomeId(biomes, base), blockY, blockX, blockZ);
@@ -518,33 +518,44 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
     @Unique
     private static RegistryEntry<Biome> pickSafeFallback(Registry<Biome> biomes, int blockZ) {
         boolean farNorth = Math.abs(blockZ) > 8000;
-        Identifier id = Identifier.of("minecraft", farNorth ? "snowy_plains" : "plains");
-        RegistryEntry<Biome> entry = biomes.getEntry(id).orElse(null);
+        RegistryEntry<Biome> entry = biomeEntry(biomes, farNorth ? "minecraft:snowy_plains" : "minecraft:plains");
         if (entry != null) {
             return entry;
         }
-        return biomes.getEntry(Identifier.of("minecraft", "plains")).orElse(null);
+        return biomeEntry(biomes, "minecraft:plains");
     }
 
     @Unique
     private static RegistryEntry<Biome> pickFallback(Registry<Biome> biomes, RegistryEntry<Biome> base, String... ids) {
         for (String id : ids) {
-            RegistryEntry<Biome> entry = biomes.getEntry(Identifier.of(id)).orElse(null);
+            RegistryEntry<Biome> entry = biomeEntry(biomes, id);
             if (entry != null) {
                 return entry;
             }
         }
-        return base != null ? base : biomes.getEntry(Identifier.of("minecraft", "plains")).orElse(null);
+        return base != null ? base : biomeEntry(biomes, "minecraft:plains");
     }
 
     @Unique
     private static boolean isBiomeId(Registry<Biome> biomes, RegistryEntry<Biome> entry, String id) {
-        Identifier target = Identifier.of(id);
+        Identifier target = Identifier.tryParse(id);
+        if (target == null) {
+            return false;
+        }
         Identifier actual = biomes.getId(entry.value());
         if (actual != null) {
             return actual.equals(target);
         }
         return entry.getKey().map(key -> key.getValue().equals(target)).orElse(false);
+    }
+
+    @Unique
+    private static RegistryEntry<Biome> biomeEntry(Registry<Biome> biomes, String id) {
+        Identifier target = Identifier.tryParse(id);
+        if (target == null) {
+            return null;
+        }
+        return biomes.getEntry(RegistryKey.of(RegistryKeys.BIOME, target)).orElse(null);
     }
 
     @Unique
