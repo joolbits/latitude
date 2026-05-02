@@ -25,6 +25,7 @@
     "client.CreateWorldScreenInitRedirectMixin",
     "client.WorldCreatorMixin",
     "client.InGameHudMixin",
+    "client.ExistingWorldLoadingOverlayStartMixin",
     "HandledScreenCompassToggleMixin",
     "client.LevelLoadingScreenLatitudeOverlayMixin",
     "client.DownloadingTerrainScreenFirstLoadMessageMixin",

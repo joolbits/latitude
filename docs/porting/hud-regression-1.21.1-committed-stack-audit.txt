@@ -1,0 +1,59 @@
+# 1.21.1 HUD Regression Committed-Stack Audit
+
+Root: `<home>/CascadeProjects/Latitude (Globe)`
+Branch: `hotfix/1.21.1-f9-ui-parity`
+HEAD: `58be416`
+Base compared: `5118c7c`
+Scope: audit only; no source edits.
+
+## Current manual state
+
+Passed:
+- F9 screen blur fixed.
+- Existing-world bespoke loading fixed.
+
+Broken:
+- Vanilla hotbar missing in normal gameplay.
+- Warning message missing.
+- F1 does not restore normal behavior.
+- Hand/crosshair remain visible, so this is not simple vanilla F1/hudHidden behavior.
+
+Disproven:
+- Rolling back dirty `InGameHudMixin.java` hudHidden gates did not restore hotbar.
+
+## Changed client/HUD files since base
+
+- `docs/porting/f9-ui-1.21.1-hotfix-proof.txt`
+- `docs/porting/f9-ui-1.21.1-hotfix-scout.txt`
+- `src/main/java/com/example/globe/client/CompassHud.java`
+- `src/main/java/com/example/globe/client/LatitudeHudStudioScreen.java`
+- `src/main/java/com/example/globe/client/LatitudeSettingsScreen.java`
+- `src/main/java/com/example/globe/mixin/client/InGameHudMixin.java`
+
+Current uncommitted client/loading files:
+- `src/main/java/com/example/globe/client/CompassHudConfig.java`
+- `src/main/resources/globe.mixins.json`
+- `src/main/java/com/example/globe/mixin/client/ExistingWorldLoadingOverlayStartMixin.java`
+
+## Suspect mechanisms
+
+- InGameHud mixin target/cancel behavior: no direct vanilla hotbar cancellation found. Current `InGameHudMixin` injects before vanilla `renderHotbar(...)` for EW haze and at `render` tail for Latitude overlays. It does not call `ci.cancel()`. The committed change only suppresses Latitude overlays when `currentScreen` is a Latitude HUD config screen.
+- CompassHud / overlay render callback: `CompassHud` now draws analog/digital HUD and a mock hotbar only in Studio preview (`forceVisible` + `LatitudeHudStudioScreen`). Normal gameplay `CompassHud.render(...)` returns when `currentScreen != null`, and does not call vanilla hotbar code.
+- settings/studio screen state leakage: possible but unproven. If `MinecraftClient.currentScreen` is somehow still a Latitude screen during "normal" gameplay, `InGameHudMixin` would suppress warnings/compass. That would not directly explain vanilla hotbar missing unless vanilla also sees a screen or another state gate.
+- client init/keybind state: no changed client init route since `5118c7c` in committed diff. F9 route changes are in the committed UI files, but no direct hotbar suppression was found.
+- mixin manifest change: dirty manifest only adds `client.ExistingWorldLoadingOverlayStartMixin`; that is loading-entry state and does not target HUD rendering.
+- other: uncommitted `CompassHudConfig.java` adds analog/zone fields required by the imported HUD code. It changes defaults for Latitude HUD behavior, but no evidence shows it can hide vanilla hotbar.
+
+## Most likely culprit
+
+Inconclusive. Static diff does not prove a source edit that can selectively remove the vanilla hotbar while leaving hand/crosshair visible.
+
+The most suspicious remaining mechanism is runtime state, not a proven static cancellation:
+- `client.options.hudHidden`
+- `client.currentScreen`
+- whether vanilla `InGameHud.renderMainHud` reaches `renderHotbar(...)`
+- whether a Latitude screen or loading-screen handoff leaves client state in an unexpected in-game state
+
+## Recommended next action
+
+add one temporary runtime marker for hudHidden/currentScreen/renderHotbar state

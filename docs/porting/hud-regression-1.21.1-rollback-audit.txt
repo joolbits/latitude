@@ -1,0 +1,45 @@
+# 1.21.1 HUD Regression Rollback Audit
+
+Root: `<home>/CascadeProjects/Latitude (Globe)`
+Branch: `hotfix/1.21.1-f9-ui-parity`
+HEAD: `58be416`
+Scope: audit only; no source edits.
+
+## Current manual state
+
+Passed:
+- F9 screen blur fixed.
+- Existing-world bespoke loading appears fixed.
+
+Broken:
+- Normal gameplay hotbar missing.
+- Warning message missing.
+- F1 no longer restores warning.
+- Prior HUD fix attempts did not restore behavior.
+
+## Dirty files
+
+- `gradlew` mode-only dirty: `100644 => 100755`
+- `src/main/java/com/example/globe/client/CompassHudConfig.java`
+- `src/main/java/com/example/globe/mixin/client/InGameHudMixin.java`
+- `src/main/resources/globe.mixins.json`
+- `src/main/java/com/example/globe/mixin/client/ExistingWorldLoadingOverlayStartMixin.java`
+
+## Most likely culprit
+
+- file: `src/main/java/com/example/globe/mixin/client/InGameHudMixin.java`
+- exact diff/condition:
+  - added `if (client != null && client.options.hudHidden) { return; }` to the EW haze injection before `renderHotbar(...)`
+  - added `if (client != null && client.options.hudHidden) { return; }` to the tail Latitude overlay injection
+- why it can affect vanilla hotbar or Latitude warnings:
+  - This does not cancel vanilla HUD rendering; no dirty HUD diff contains `ci.cancel()` or changes the vanilla hotbar call.
+  - It can suppress Latitude warning/compass/title overlays whenever F1 has set `hudHidden`, which matches the "F1 no longer restores warning" part of the current regression.
+  - It does not directly explain a missing vanilla hotbar with F1 off; that part is unproven from the current dirty diff.
+
+## Rollback recommendation
+
+Revert InGameHudMixin only, preserve screen/loading wins
+
+## Next action
+
+Rollback only the dirty `InGameHudMixin.java` change to restore the pre-attempt HUD overlay gating, then manually retest hotbar, warnings, F1, F9 screen blur, and existing-world loading overlay before any new fix attempt.
