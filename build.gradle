@@ -131,6 +131,10 @@ def releaseArtifactExcludeSpec = { details ->
         return false
     }
 
+    if (path == 'com/example/globe/debug' || path.startsWith('com/example/globe/debug/')) {
+        return true
+    }
+
     if (path == 'com/example/globe/dev' || path.startsWith('com/example/globe/dev/')) {
         return true
     }

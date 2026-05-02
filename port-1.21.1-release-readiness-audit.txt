@@ -1,0 +1,50 @@
+# Latitude 1.21.1 Release Readiness Audit
+
+Root: `<home>/CascadeProjects/Latitude (Globe)`
+Branch: `port/1.3.0-1.21.1-bespoke-ui`
+HEAD: `04bda71`
+Tags at HEAD:
+`save/1.21.1-runtime-proof-passed`
+
+Jar: `build/libs/latitude-1.3.0+1.21.1.jar`
+SHA-256: `dba290985e61773e648bf03498885fbeec359a0c5367ed7ba2db9f4dbdddcbda`
+
+## Current proven gates
+
+- Bootstrap kit: passed / savepointed.
+- compile/build: pass.
+- Fresh-world runtime entry: passed at `save/1.21.1-runtime-proof-passed`.
+- Live biome hook: passed in latest runtime proof.
+- Bespoke overlay clear: passed in latest runtime proof.
+- `/latdev` smoke: passed in latest runtime proof.
+
+## Artifact purity scan
+
+- dev/debug/headless/tooling classes in public jar: no. Debug package exclusion removed `com/example/globe/debug/WarmSnowTrapStats.class` from the public jar.
+- scripts/executables/native/electron/node/gradle wrapper in jar: no matches found in jar contents.
+- process-launch bytecode/source risk: yes in source, but no process-launch strings were found in the extracted class jar scan. Source paths still containing process-launch code are `src/main/java/com/example/globe/client/ClipboardImageWriter.java` and `src/main/java/com/example/globe/dev/BiomePreviewHeadlessRunner.java`.
+- verdict: pass for artifact purity.
+
+## Metadata check
+
+- mod version: `1.3.0+1.21.1`.
+- Minecraft target/dependency: `1.21.1`.
+- Fabric API/deps: `fabric-api 0.115.6+1.21.1`, `fabricloader 0.17.3`, `java >=21`.
+- manifest/provenance info: jar type `classes`; Loom `1.14.10`; loader `0.17.3`; Minecraft `1.21.1`.
+- mismatch risk: no immediate manifest mismatch found.
+
+## Known caveats
+
+- pale_garden missing-tag warning status: references still exist in source at `src/main/java/com/example/globe/dev/BiomeBandPolicy.java` and `src/main/java/com/example/globe/world/LatitudeBiomes.java`.
+- EW/fog visual proof status: not checked in this audit.
+- any disabled/inert mixins status: not checked in this audit.
+- any old release audit notes still relevant: build succeeded, and the public jar purity blocker was fixed.
+
+## Release verdict
+
+RELEASE CANDIDATE WITH CAVEATS — no hard blockers found in this audit slice.
+
+## Next smallest slice
+
+Run the remaining release-readiness checks for caveats only: visuals/fog, inert mixins, and any final provenance review.
+
