@@ -1,5 +1,5 @@
 plugins {
-    id 'fabric-loom' version '1.14.10'
+    id 'fabric-loom' version '1.9.2'
     id 'maven-publish'
 }
 
@@ -57,9 +57,7 @@ dependencies {
     mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
     modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
 
-    // CRITICAL FIX: Fabric API only needed at RUNTIME (not compile-time)
-    // The Mixin approach doesn't import any Fabric API classes
-modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+    modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
     // MixinExtras for descriptor-based injections
     modImplementation "io.github.llamalad7:mixinextras-fabric:0.5.0"
     include "io.github.llamalad7:mixinextras-fabric:0.5.0"
@@ -68,8 +66,6 @@ modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
     
     // ModMenu API (compile-time only, optional at runtime)
     modCompileOnly "com.terraformersmc:modmenu:${project.modmenu_version}"
-
-    modCompileOnly "maven.modrinth:placeholder-api:${project.placeholder_api_version}"
 }
 
 processResources {
@@ -81,14 +77,14 @@ processResources {
 }
 
 tasks.withType(JavaCompile).configureEach {
-    it.options.release = 21
+        it.options.release = 17
 }
 
 java {
     withSourcesJar()
 
-    sourceCompatibility = JavaVersion.VERSION_21
-    targetCompatibility = JavaVersion.VERSION_21
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
 }
 
 jar {

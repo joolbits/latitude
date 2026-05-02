@@ -1,0 +1,33 @@
+# Latitude 1.3.0 -> 1.20.1 Dependency Resolution
+
+Root: `<home>/CascadeProjects/Latitude (Globe)`
+Branch: `port/1.3.0-1.20.1`
+Base donor: `9d12f25` / `save/1.21.1-hotfix-final-audit`
+
+## Blocker
+
+`compileJava` failed before source compile while resolving `maven.modrinth:placeholder-api:2.3.0+1.20.1`.
+
+## Investigation
+
+- Placeholder dependency declarations: `build.gradle` had `modCompileOnly "maven.modrinth:placeholder-api:${project.placeholder_api_version}"`; `gradle.properties` had `placeholder_api_version=2.3.0+1.20.1`
+- Placeholder source references: none found under `src/main/java` or `src/main/resources`
+- Mod Menu dependency declarations: `build.gradle` keeps `modCompileOnly "com.terraformersmc:modmenu:${project.modmenu_version}"`
+- Mod Menu source references: `GlobeModMenu` is referenced from `fabric.mod.json` and imports Mod Menu API
+
+## Fix
+
+- removed dependency: Placeholder API compile-only declaration and its version property
+- retained optional dependency: Mod Menu compile-only
+- files changed: `build.gradle`, `gradle.properties`
+
+## Proof
+
+DEPENDENCY RESOLUTION PASSED / SOURCE COMPILE DRIFT BEGINS
+
+First new failure bucket:
+- 1.20.1 source/API drift in `LevelLoadingScreen`, `DataComponentTypes`, `BundleContentsComponent`, `RegistryByteBuf`, `CustomPayload`, `PacketCodec`, `OptionalChunk`, and `BiomeSource#getCodec` target resolution
+
+## Next slice
+
+Isolate the first source/API drift bucket, starting with the network/component and loading-screen incompatibilities surfaced by `compileJava`.

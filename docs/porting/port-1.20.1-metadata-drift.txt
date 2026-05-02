@@ -1,0 +1,37 @@
+# Latitude 1.3.0 -> 1.20.1 Metadata Drift Slice
+
+Root: `<home>/CascadeProjects/Latitude (Globe)`
+Branch: `port/1.3.0-1.20.1`
+Donor: `9d12f25` / `save/1.21.1-hotfix-final-audit`
+
+## Scope
+
+Metadata-only port initialization.
+
+## Files changed
+
+- `gradle.properties`
+- `build.gradle`
+- `src/main/resources/fabric.mod.json`
+
+## Metadata set
+
+- Minecraft: `1.20.1`
+- mappings: `1.20.1+build.10`
+- Fabric API: `0.92.6+1.20.1`
+- Fabric Loader: `0.16.14`
+- Loom: `1.9.2`
+- mod version: `1.3.0+1.20.1`
+
+## Proof
+
+- `compileJava`: failed during project configuration
+- failure bucket: dependency resolution for `maven.modrinth:placeholder-api:2.3.0+1.20.1`
+
+## Status
+
+METADATA SET / DEPENDENCY RESOLUTION FAILED
+
+## Next slice
+
+Resolve the 1.20.1 `placeholder-api`/compile-only dependency choice, or drop the optional dependency from the 1.20.1 port metadata if it is not required for the first port pass.
