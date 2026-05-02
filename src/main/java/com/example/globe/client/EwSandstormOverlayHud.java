@@ -16,6 +16,8 @@ public final class EwSandstormOverlayHud {
     private static final int DUST_R = 214;
     private static final int DUST_G = 186;
     private static final int DUST_B = 132;
+    private static final int HUD_SAFE_BOTTOM_PX = 86;
+    private static final int FADE_BANDS = 12;
 
     public static void render(DrawContext ctx, RenderTickCounter tickCounter) {
         MinecraftClient mc = MinecraftClient.getInstance();
@@ -41,10 +43,22 @@ public final class EwSandstormOverlayHud {
         int alpha = (int) (baseAlpha * 255.0f);
         if (alpha <= 0) return;
 
-        int argb = (alpha << 24) | (DUST_R << 16) | (DUST_G << 8) | (DUST_B);
-
         int w = ctx.getScaledWindowWidth();
         int h = ctx.getScaledWindowHeight();
-        ctx.fill(0, 0, w, h, argb);
+        int clearBottomStart = Math.max(0, h - HUD_SAFE_BOTTOM_PX);
+        if (clearBottomStart <= 0) return;
+
+        for (int i = 0; i < FADE_BANDS; i++) {
+            int y0 = i * clearBottomStart / FADE_BANDS;
+            int y1 = (i + 1) * clearBottomStart / FADE_BANDS;
+            float yNorm = ((y0 + y1) * 0.5f) / (float) clearBottomStart;
+            float tFade = MathHelper.clamp((yNorm - 0.55f) / 0.45f, 0.0f, 1.0f);
+            float fade = 1.0f - (tFade * tFade * (3.0f - 2.0f * tFade));
+            int bandAlpha = (int) (alpha * fade);
+            if (bandAlpha <= 0) continue;
+
+            int bandArgb = (bandAlpha << 24) | (DUST_R << 16) | (DUST_G << 8) | DUST_B;
+            ctx.fill(0, y0, w, y1, bandArgb);
+        }
     }
 }

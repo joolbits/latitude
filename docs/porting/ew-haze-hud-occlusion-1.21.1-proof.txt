@@ -1,0 +1,36 @@
+# 1.21.1 EW Haze HUD Occlusion Proof
+
+Root: `<home>/CascadeProjects/Latitude (Globe)`
+Branch: `hotfix/1.21.1-ew-haze-hud-occlusion`
+Base: `19515dc`
+Scope: EW haze HUD readability only
+
+## Problem
+
+Near the EW border, the sandstorm haze overlay visually buried the vanilla hotbar and Latitude warning text. Hand/crosshair remained visible, and opening chat made the haze disappear and the hotbar visible, proving this was not vanilla F1 behavior and not caused by the F9/existing-world loading hotfixes.
+
+## Fix
+
+`EwSandstormOverlayHud.java` now keeps the same HUD-pass render order and same EW distance math, but no longer paints a single high-alpha full-screen rectangle over the HUD. The first alpha-cap attempt restored insufficient readability. The final fix replaced the hard rectangular safe-zone with 12 horizontal alpha bands that fade toward the bottom HUD clear zone, preserving storm atmosphere while keeping the hotbar and warning text readable.
+
+Intentionally not changed:
+- F9 settings / HUD Studio files
+- existing-world loading overlay files
+- worldgen / biome logic
+- build metadata / release packaging
+- EW trigger distance math
+
+## Proof
+
+- `./gradlew --no-daemon compileJava`: passed
+- `./gradlew --no-daemon runClient`: launched and loaded EW haze test position at `x=9631`
+- Manual visual proof by Maintainer: passed
+- Hotbar readable near EW haze: yes
+- Warning readable near EW haze: yes
+- Big rectangular cutoff/box artifact: gone
+- Haze atmosphere retained: yes
+- F9/loading/worldgen untouched in this slice
+
+## Status
+
+FIXED
