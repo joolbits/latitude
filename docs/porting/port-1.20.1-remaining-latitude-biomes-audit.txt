@@ -1,0 +1,28 @@
+# Latitude 1.3.0 -> 1.20.1 LatitudeBiomes Audit
+
+Root: `<home>/CascadeProjects/Latitude (Globe)`
+Branch: `port/1.3.0-1.20.1`
+HEAD: `c5317ab`
+
+## Hard Errors in LatitudeBiomes.java
+
+Files:
+- `src/main/java/com/example/globe/world/LatitudeBiomes.java`
+
+Exact errors:
+- `Identifier.of(id)` at line 2010
+- `biomes.getEntry(ident)` at line 2011
+- `Identifier.of(id)` at line 2728
+- `Identifier.of(id)` at line 2812
+- `Identifier.of(MANGROVE_ID)` at line 3556
+- `orElse(false)` at line 3556 resolves to `Object`, not `boolean`
+
+## Interpretation
+
+The remaining 1.20.1 drift is still registry/Identifier API shape:
+- single-argument `Identifier.of(...)` calls are invalid in this 1.20.1 surface
+- biome registry lookup by raw `Identifier` is invalid; the code needs a `RegistryKey<Biome>` or an equivalent 1.20.1 lookup path
+
+## Smallest Next Bucket
+
+`LatitudeBiomes.java` itself remains the smallest focused next bucket.

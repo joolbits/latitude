@@ -1,0 +1,43 @@
+# Latitude 1.20.1 EW Haze HUD-Only Owner Fix
+
+Root: `<home>/CascadeProjects/Latitude (Globe)`
+Branch: `port/1.3.0-1.20.1`
+Baseline: `7c9db38` / `save/1.20.1-ew-haze-banding-fix`
+
+## Scope
+
+Fixed only the mixed EW visual ownership that was producing the 1.20.1 horizon/seam artifact.
+
+## Files changed
+
+- `src/main/java/com/example/globe/GlobeModClient.java`
+
+## Ownership change
+
+Disabled the active `WorldRenderEvents.AFTER_TRANSLUCENT` path that called `EwSandstormOverlayRenderer.render(...)`.
+
+The EW haze remains owned by the HUD path:
+
+- `InGameHudMixin`
+- `EwSandstormOverlayHud.render(...)`
+
+Fog state, EW distance math, warning text, hotbar behavior, and loading/UI/worldgen systems were not changed.
+
+## Proof
+
+- `compileJava`: passed
+- `runClient`: passed
+- runtime reached the EW proof save near `x=9917`
+- EW haze remained active in logs at alpha `1.0`
+- no `MixinApplyError`, crash, or exception blocked the run
+- world-pass `EwSandstormOverlayRenderer` is no longer referenced from `GlobeModClient`
+
+## Manual visual proof
+
+INCONCLUSIVE in this Codex turn.
+
+The dev client reached the correct EW proof position and quit cleanly, but no screenshot or user visual confirmation was captured after the owner change. The next visual check should confirm whether the horizon/seam artifact is gone or materially reduced while HUD haze, warning text, and hotbar readability remain intact.
+
+## Status
+
+HUD-ONLY OWNER FIX APPLIED / VISUAL CONFIRMATION PENDING

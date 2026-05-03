@@ -1,0 +1,44 @@
+# Latitude 1.20.1 EW Haze Seam Ownership Audit
+
+Root: `<home>/CascadeProjects/Latitude (Globe)`
+Branch: `port/1.3.0-1.20.1`
+Baseline: `7c9db38` / `save/1.20.1-ew-haze-banding-fix`
+
+## Scope
+
+Audit only. No source edits.
+
+## Active render owners
+
+- HUD path: `InGameHudMixin` calls `EwSandstormOverlayHud.render(...)`
+- World path: `GlobeModClient` registers `WorldRenderEvents.AFTER_TRANSLUCENT`
+- `GlobeClientState.DEBUG_EW_WALL` is currently `true`, so the `AFTER_TRANSLUCENT` world path is active
+- Active world path calls `EwSandstormOverlayRenderer.render(...)`
+
+## World-pass EW haze path
+
+Active.
+
+`EwSandstormOverlayRenderer` draws a translucent quad through `RenderLayer.getDebugQuads()` during `WorldRenderEvents.AFTER_TRANSLUCENT`. This means the live visual is not HUD-only.
+
+`EwStormWallRenderer` itself is not active for this effect. `GlobeModClient` comments out its call, and `EwStormWallRenderer.render(...)` currently returns immediately after its debug-wall gate.
+
+## Fog mutation
+
+No fog-state mutation was found.
+
+`FogRendererMixin` and `FogRendererEwMixin` are empty mixin shells targeting `BackgroundRenderer`; neither mutates fog state or color.
+
+## Diagnosis
+
+D) mixed ownership / double render path.
+
+The remaining seam is best explained by the active world-pass `EwSandstormOverlayRenderer` combining with the HUD `EwSandstormOverlayHud`. The HUD overlay can create horizontal cutoff/alpha artifacts, but a horizon-like seam is consistent with a world-rendered translucent quad being drawn before HUD.
+
+## FADE_BANDS
+
+Keep the `FADE_BANDS` increase as a HUD-overlay smoothing improvement, but do not treat it as the main seam fix. It is superseded by the render ownership problem.
+
+## Recommended next slice
+
+One visual-only slice: disable or gate the `EwSandstormOverlayRenderer.render(...)` call in `GlobeModClient` so the EW haze returns to HUD-only ownership, then retest the same border proof position. Do not touch fog mixins, warning text, compass, worldgen, or distance math.

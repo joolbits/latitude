@@ -1,0 +1,83 @@
+# Latitude 1.20.1 EW Haze Known-Good Parity Audit
+
+Root: `<home>/CascadeProjects/Latitude (Globe)`
+Branch: `port/1.3.0-1.20.1`
+Current HEAD: `7c9db38` / `save/1.20.1-ew-haze-banding-fix`
+
+## Scope
+
+Audit only. No source edits, staging, commits, or tags.
+
+## Known-good refs compared
+
+- `save/1.21.1-hotfix-final-audit`
+- `save/1.21.1-ew-haze-hud-occlusion`
+- `save/ew-haze-under-hud-1.21.11`
+
+`v1.2.5+1.20.1` was not comparable for the EW haze ownership path; the narrow grep only found the older warning overlay path in `InGameHudMixin`.
+
+## Known-good ownership
+
+The known-good 1.21.1 final/hotfix path is not HUD-only.
+
+It uses two active visual layers:
+
+- world pass: `GlobeModClient` registers `WorldRenderEvents.AFTER_TRANSLUCENT` and calls `EwSandstormOverlayRenderer.render(...)`
+- HUD pass: `InGameHudMixin` calls `EwSandstormOverlayHud.render(...)` before hotbar rendering
+
+The older 1.21.11 under-HUD savepoint also has two owners:
+
+- world pass: `WorldRenderEvents.BEFORE_TRANSLUCENT` calls `EwSandstormOverlayRenderer.render(...)`
+- HUD pass: `InGameHudMixin` calls `EwSandstormOverlayHud.render(...)`
+
+Fog mixins are present in the mixin manifest, but no active fog-state mutation was found in the compared EW haze path.
+
+## Known-good draw shape
+
+In `save/1.21.1-hotfix-final-audit`, the HUD overlay is not full-screen opaque to the bottom.
+
+It uses:
+
+- `HUD_SAFE_BOTTOM_PX = 86`
+- `FADE_BANDS = 12`
+- a vertical fade beginning around `yNorm = 0.55`
+- `ctx.fill(...)` horizontal bands down to `h - HUD_SAFE_BOTTOM_PX`
+
+The full-view storm immersion therefore appears to come from the combined model:
+
+- the world-pass `EwSandstormOverlayRenderer` supplies the broad full-screen/under-world veil
+- the HUD-pass `EwSandstormOverlayHud` supplies readable pre-hotbar haze and bottom protection
+- `GlobeWarningOverlay`, compass, and title overlays render after the haze
+
+## Current 1.20.1 difference
+
+The current WIP diverges in two ways:
+
+- `GlobeModClient` has the world-pass `EwSandstormOverlayRenderer.render(...)` path disabled
+- `EwSandstormOverlayHud` has been tuned to `HUD_SAFE_BOTTOM_PX = 44`, `FADE_BANDS = 256`, and a lower fade start around `yNorm = 0.82`
+
+That makes the active visual mostly HUD-pass only. Because the HUD pass is intentionally shaped to protect the lower HUD area, it cannot reproduce the known-good full-view storm immersion by itself.
+
+## Diagnosis
+
+The remaining 1.20.1 issue is a draw-shape / owner-parity mismatch.
+
+The previous `GlobeModClient` world-pass disable should be superseded, not preserved as the release fix. It removed a layer that known-good versions still rely on for full-screen EW storm coverage.
+
+`FADE_BANDS = 96` or higher can be kept as a banding smoother, but it does not fix the missing full-screen coverage on its own. The HUD overlay fade/cutoff should not be asked to do the world-pass layer's job.
+
+## Recommended next slice
+
+One visual-only owner-parity slice:
+
+- restore the world-pass EW haze owner in `GlobeModClient`
+- keep the HUD overlay owner in `InGameHudMixin`
+- keep fog mixins untouched
+- compare 1.20.1 `WorldRenderEvents.AFTER_TRANSLUCENT` versus the older `BEFORE_TRANSLUCENT` position if the restored world-pass still produces a horizon seam
+- do not change warning text, compass, EW distance math, worldgen, loading, or F9/HUD Studio
+
+Expected success condition: full-screen EW haze coverage returns while warning text, hotbar, and compass remain readable.
+
+## Status
+
+NOT RELEASE READY - EW haze parity still needs one visual owner/draw-shape slice.

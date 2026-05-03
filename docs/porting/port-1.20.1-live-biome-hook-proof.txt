@@ -1,0 +1,47 @@
+# Latitude 1.20.1 Live Biome Hook Proof
+
+Root: `<home>/CascadeProjects/Latitude (Globe)`
+Branch: `port/1.3.0-1.20.1`
+HEAD: `7c9db38`
+Required tag: `save/1.20.1-ew-haze-banding-fix`
+
+## Scope
+
+Runtime proof only. No source, metadata, resource, packaging, or worldgen logic edits.
+
+## Command
+
+`bash ./gradlew --no-daemon runClient -Dlatitude.debugWorldgenPath=true -Dlatitude.debugBiomeCost=true`
+
+## Proof
+
+- `runClient`: PASS
+- Client reached playable singleplayer world
+- Clean quit completed; Gradle reported `BUILD SUCCESSFUL`
+- No `MixinApplyError` was found in the harvested proof lines
+- No crash marker was found in the harvested proof lines
+
+## Live Biome Hook Evidence
+
+- `run/logs/latest.log:122`: `[Latitude] Worldgen path active: wrapped ChunkGenerator biomeSource settings=overworld_large ... radius=10000 action=using LatitudeBiomeSource`
+- `run/logs/latest.log:188`: `[Latitude] Worldgen path active: overriding populateBiomes settings=overworld_large ... chunk=[647, -12] radius=10000 writing=true`
+- `run/logs/latest.log:200`: `[LAT][BIOCOST] chunk=[647, -12] chunkMs=80 cumChunks=1 cumCalls=3869 total=263ms vanilla=62ms pick=199ms other=1ms avg=68009ns max=7838167ns`
+- `run/logs/latest.log:980`: `[LAT][BIOCOST] chunk=[656, -37] chunkMs=17 cumChunks=750 cumCalls=1145800 total=24269ms vanilla=9987ms pick=13708ms other=573ms avg=21180ns max=49160291ns`
+
+## /latdev
+
+- `/latdev here`: not confirmed in this run's harvested log
+- `/latdev probe 512 300`: not confirmed in this run's harvested log
+- Prior runtime smoke proof already covered `/latdev`; this note is limited to the live biome hook marker run
+
+## Visual Caveat
+
+During this proof pass, the user observed the EW haze still has a visible gradient issue where the upper half is hazed and the lower half remains clear. This is separate from the live biome hook result and was not edited in this slice.
+
+## Verdict
+
+Live biome hook proof: PASS
+
+## Final Audit Impact
+
+The live biome hook caveat is cleared. The final audit should not be promoted to uncaveated `RELEASE READY` while the newly observed EW haze gradient caveat remains unresolved.

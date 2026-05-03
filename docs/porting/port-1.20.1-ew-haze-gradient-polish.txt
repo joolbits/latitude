@@ -1,0 +1,42 @@
+# Latitude 1.20.1 EW Haze Gradient Polish
+
+Root: `<home>/CascadeProjects/Latitude (Globe)`
+Branch: `port/1.3.0-1.20.1`
+Baseline: `7c9db38` / `save/1.20.1-ew-haze-banding-fix`
+
+## Scope
+
+Visual-only EW haze overlay polish.
+
+## Files changed
+
+- `src/main/java/com/example/globe/client/EwSandstormOverlayHud.java`
+
+## Change
+
+- Increased `FADE_BANDS` from `96` to `256`
+- Kept the existing EW haze render path
+- Kept the existing EW border distance math
+- Kept bottom UI protection, reduced `HUD_SAFE_BOTTOM_PX` from `86` to `44`
+- Extended the vertical alpha hold so fade starts lower, at `0.82..1.0` of the renderable world area
+
+## Proof
+
+- `bash ./gradlew --no-daemon compileJava`: PASS
+- `bash ./gradlew --no-daemon runClient`: PASS
+- Runtime reached the same EW border proof position
+- EW haze still appeared
+- Hotbar remained readable
+- Warning/HUD readability was not regressed
+- Visible band stepping was reduced
+- Haze coverage moved lower than the previous attempt
+- User proof screenshots still show the haze does not cover the whole lower world view
+- No crash or mixin failure was observed
+
+## Status
+
+EW haze gradient polish: PARTIAL
+
+## Next slice
+
+Stop after two profile attempts. Next pass should decide whether the bottom cutoff can be further reduced or whether a separate HUD-safe overlay layer is needed for lower-world coverage without reducing warning, compass, or hotbar readability.

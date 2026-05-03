@@ -1,0 +1,77 @@
+# Latitude 1.3.0 -> 1.20.1 Remaining Compile Buckets After Chunk Regenerator
+
+Root: `<home>/CascadeProjects/Latitude (Globe)`
+Branch: `port/1.3.0-1.20.1`
+HEAD: `7d6a350`
+
+## Hard Errors
+
+### Registry / Identifier drift
+Files:
+- `src/main/java/com/example/globe/mixin/ChunkGeneratorPopulateBiomesMixin.java`
+- `src/main/java/com/example/globe/world/LatitudeBiomes.java`
+- `src/main/java/com/example/globe/dev/BiomePreviewExporter.java`
+
+Errors:
+- `Identifier.of("minecraft", "plains")` / `Identifier.of(id)` call shapes do not match 1.20.1
+- `Registry.getEntry(Identifier)` is not valid in 1.20.1; registry lookups want `RegistryKey<Biome>` or other supported keys
+- `Identifier.of("minecraft:mangrove_swamp")` is not a valid 1.20.1 overload
+- `biome.getKey().map(...).orElse(false)` resolves to `Object` and does not type-check as `boolean`
+
+### Client / filesystem API drift
+Files:
+- `src/main/java/com/example/globe/dev/BiomePreviewHeadlessRunner.java`
+- `src/main/java/com/example/globe/dev/LatitudeDevCommand.java`
+
+Errors:
+- `Server.getRunDirectory()` is a `File`, not a `Path`
+- `File` does not have `toAbsolutePath()`
+- result accessors on the biome preview output resolve as `Object` in the current 1.20.1 surface
+
+### Dev / chunk internals drift
+Files:
+- `src/main/java/com/example/globe/dev/ChunkRegenerator.java`
+
+Errors:
+- `getPackedBlockEntityNbt(cursor, registries)` no longer matches 1.20.1 `Chunk#getPackedBlockEntityNbt(BlockPos)`
+- `BlockEntity.createFromNbt(...)` no longer accepts the extra registry lookup argument
+
+### Client GUI / widget API drift
+Files:
+- `src/main/java/com/example/globe/client/LatitudeSettingsScreen.java`
+- `src/main/java/com/example/globe/client/LatitudeHudStudioScreen.java`
+- `src/main/java/com/example/globe/client/LatitudeHudAdjustScreen.java`
+- `src/main/java/com/example/globe/client/create/LatitudeWorldLauncher.java`
+- `src/main/java/com/example/globe/client/create/LatitudeCreateWorldScreen.java`
+- `src/main/java/com/example/globe/client/EwStormWallRenderer.java`
+
+Errors:
+- override annotations no longer match the 1.20.1 supertype surface
+- `mouseScrolled` arity changed
+- `renderInGameBackground(DrawContext)` is missing
+- `Identifier.ofVanilla(...)` is missing
+- `IntegratedServerLoader.startNewWorld(...)` signature drift
+- `MinecraftClient.getSymlinkFinder()` is missing
+- `TextFieldWidget.setCursorToEnd(boolean)` and `setDimensionsAndPosition(...)` are missing
+- `ClickableWidget` needs `renderButton(...)`
+- `VertexConsumer.vertex(...)` expects a matrix, not the current entry object
+
+### Worldgen / biome registry drift
+Files:
+- `src/main/java/com/example/globe/PolarCapScrubber.java`
+- `src/main/java/com/example/globe/mixin/ChunkGeneratorPopulateBiomesMixin.java`
+- `src/main/java/com/example/globe/world/LatitudeBiomes.java`
+- `src/main/java/com/example/globe/dev/BiomePreviewExporter.java`
+
+Errors:
+- `Blocks.SHORT_GRASS` is missing in 1.20.1
+- biome registry lookup code still assumes `Identifier`-based entry access
+
+## Warnings
+
+- `src/main/java/com/example/globe/mixin/client/InGameHudMixin.java`
+- `src/main/java/com/example/globe/mixin/client/ExistingWorldLoadingOverlayStartMixin.java`
+
+## Smallest Next Bucket
+
+`PolarCapScrubber.java` is the smallest isolated hard error bucket from this pass.

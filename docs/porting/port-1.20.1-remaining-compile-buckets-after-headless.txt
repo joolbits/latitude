@@ -1,0 +1,57 @@
+# Latitude 1.3.0 -> 1.20.1 Remaining Compile Buckets After Headless Paths
+
+Root: `<home>/CascadeProjects/Latitude (Globe)`
+Branch: `port/1.3.0-1.20.1`
+Baseline: `3142cc5` / `save/1.20.1-biome-preview-headless-paths`
+
+## Compile Proof
+
+`compileJava` no longer reports `BiomePreviewHeadlessRunner.java`.
+
+## Hard Errors by Subsystem
+
+### Dev / chunk internals
+
+- `src/main/java/com/example/globe/dev/ChunkRegenerator.java`
+  - `getPackedBlockEntityNbt(cursor, registries)` now expects only `BlockPos`
+  - `BlockEntity.createFromNbt(...)` now expects only `(BlockPos, BlockState, NbtCompound)`
+
+### Dev / command plumbing
+
+- `src/main/java/com/example/globe/dev/LatitudeDevCommand.java`
+  - `getRunDirectory()` is still `File`, but the caller expects `Path`
+  - `result` is inferred as `Object`, so the atlas result accessors are missing
+
+### Client / settings and HUD
+
+- `src/main/java/com/example/globe/client/LatitudeSettingsScreen.java`
+  - `@Override` methods no longer match the 1.20.1 supertype
+- `src/main/java/com/example/globe/client/LatitudeHudStudioScreen.java`
+  - `@Override` methods no longer match the 1.20.1 supertype
+  - `mouseScrolled(...)` arity mismatch
+- `src/main/java/com/example/globe/client/LatitudeHudAdjustScreen.java`
+  - `renderInGameBackground(DrawContext)` no longer exists
+- `src/main/java/com/example/globe/client/EwStormWallRenderer.java`
+  - `vertex(...)` overload mismatch: `Entry` is being passed where `Matrix4f` is now required
+
+### Client / create-world flow
+
+- `src/main/java/com/example/globe/client/create/LatitudeWorldLauncher.java`
+  - `Identifier.ofVanilla(...)` no longer exists in this shape
+  - `IntegratedServerLoader.startNewWorld(...)` signature drift
+- `src/main/java/com/example/globe/client/create/LatitudeCreateWorldScreen.java`
+  - `MinecraftClient.getSymlinkFinder()` missing
+  - `TextFieldWidget.setCursorToEnd(boolean)` arity drift
+  - multiple `setDimensionsAndPosition(...)` calls missing
+  - `mouseScrolled(...)` arity drift
+  - `ClickableWidget.renderButton(...)` signature drift
+  - several `@Override` methods no longer match supertype signatures
+
+### Mixin warnings only
+
+- `src/main/java/com/example/globe/mixin/client/InGameHudMixin.java`
+- `src/main/java/com/example/globe/mixin/client/ExistingWorldLoadingOverlayStartMixin.java`
+
+## Smallest Next Bucket
+
+`src/main/java/com/example/globe/dev/ChunkRegenerator.java` is the smallest remaining hard-error bucket after this headless-path pass.

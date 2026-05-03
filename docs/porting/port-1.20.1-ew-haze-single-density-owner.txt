@@ -1,0 +1,50 @@
+# Latitude 1.20.1 EW Haze Single Density Owner
+
+Root: `<home>/CascadeProjects/Latitude (Globe)`
+Branch: `port/1.3.0-1.20.1`
+Baseline: `7c9db38` / `save/1.20.1-ew-haze-banding-fix`
+
+## Scope
+
+One visual ownership fix only.
+
+## Files changed
+
+- `src/main/java/com/example/globe/client/EwSandstormOverlayHud.java`
+- `src/main/java/com/example/globe/client/EwSandstormOverlayRenderer.java` was already the active renderer-owned world veil from the prior projection fix and was left unchanged in this slice.
+
+## Exact HUD fill change
+
+Removed the tan band fill pass from `EwSandstormOverlayHud`.
+
+The HUD hook now keeps the existing guard checks and EW activity logging, but it does not paint a second vertical haze layer over the world view.
+
+## Exact renderer state
+
+No renderer edits were made in this slice.
+
+The current active renderer remains the owned fullscreen/world-pass veil introduced earlier:
+
+- orthographic projection
+- depth test disabled during the veil
+- depth writes disabled during the veil
+- blend enabled with default blend func during the veil
+- state restored afterward
+
+## Proof
+
+- `compileJava`: passed
+- `runClient`: passed
+- EW proof save loaded successfully
+- no crash or mixin error observed
+- EW haze tick continued to log at `owner=world-pass`
+
+## Manual visual verdict
+
+Partial success.
+
+The top-heavy dual-density look is gone because the HUD tan fill is gone, and the hotbar stays readable again. The remaining haze now reads as a single owner, with the world-pass veil carrying the atmosphere.
+
+## Remaining caveat
+
+No crash or regression was observed, but the final visual balance should still be checked at the exact proof camera pitch the user cares about, because the world-pass veil is now the sole density owner.

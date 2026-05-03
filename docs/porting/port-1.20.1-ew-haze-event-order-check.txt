@@ -1,0 +1,33 @@
+# Latitude 1.20.1 EW Haze Event-Order Check
+
+Root: `<home>/CascadeProjects/Latitude (Globe)`
+Branch: `port/1.3.0-1.20.1`
+Baseline: `7c9db38` / `save/1.20.1-ew-haze-banding-fix`
+
+## Scope
+
+Audit/probe only. No release work.
+
+## Requested change
+
+Attempted to change the world-pass EW haze owner in `GlobeModClient` from `WorldRenderEvents.AFTER_TRANSLUCENT` to `WorldRenderEvents.BEFORE_TRANSLUCENT`.
+
+## Result
+
+Compile failed:
+
+- `WorldRenderEvents.BEFORE_TRANSLUCENT` does not exist in the 1.20.1 Fabric API surface used by this branch.
+
+Because compile failed, `runClient` was not reached for this probe.
+
+## Observation
+
+This means the exact `BEFORE_TRANSLUCENT` event-order comparison cannot be performed on this branch without a different 1.20.1-compatible event or a separate render hook.
+
+## Status
+
+FAILED EVENT-ORDER CHECK - API surface does not expose `BEFORE_TRANSLUCENT` here.
+
+## Next smallest audit
+
+Identify the actual 1.20.1 world-render hook candidates available in the loaded Fabric API, then compare only the viable hook position(s) against `AFTER_TRANSLUCENT`.

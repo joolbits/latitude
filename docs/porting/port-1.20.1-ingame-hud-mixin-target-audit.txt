@@ -1,0 +1,66 @@
+# Latitude 1.20.1 InGameHudMixin Target Audit
+
+Root: `<home>/CascadeProjects/Latitude (Globe)`
+Branch: `port/1.3.0-1.20.1`
+Baseline: `f8297f1` / `save/1.20.1-existing-world-loading-mixin-retarget`
+
+## Scope
+
+Audit only for the 1.20.1 runtime target failure in `InGameHudMixin`.
+
+## Runtime result
+
+`bash ./gradlew --no-daemon runClient || true` still crashes during client initialization.
+
+Exact current failure:
+
+`Critical injection failure: @Inject annotation on globe$renderEwHazeBeforeHotbar could not find any targets matching 'renderMainHud' in net/minecraft/client/gui/hud/InGameHud. No refMap loaded.`
+
+Crash owner:
+
+- `globe.mixins.json:client.InGameHudMixin`
+- `net.minecraft.client.gui.hud.InGameHud`
+- handler: `globe$renderEwHazeBeforeHotbar(DrawContext, RenderTickCounter, CallbackInfo)`
+
+## Current mixin shape
+
+`InGameHudMixin` injects:
+
+- method: `renderMainHud`
+- anchor: invoke `InGameHud.renderHotbar(DrawContext, RenderTickCounter)`
+- handler params: `DrawContext`, `RenderTickCounter`, `CallbackInfo`
+
+## 1.20.1 target shape
+
+`javap` against the 1.20.1 named Minecraft jar shows:
+
+- HUD entrypoint: `public void render(DrawContext, float)`
+- hotbar method: `private void renderHotbar(float, DrawContext)`
+- bytecode call in `render`: `renderHotbar:(FLnet/minecraft/client/gui/DrawContext;)V`
+
+`mappings-base.tiny` agrees:
+
+- `method_1759` maps to `renderHotbar`
+- descriptor: `(FLnet/minecraft/class_332;)V`
+
+## Classification
+
+This is a real runtime target failure and a runClient blocker.
+
+The likely smallest retarget is:
+
+- change the first injection method from `renderMainHud` to `render`
+- change the invoke target to `renderHotbar(FLnet/minecraft/client/gui/DrawContext;)V`
+- change the handler signature from `DrawContext, RenderTickCounter, CallbackInfo` to `DrawContext, float, CallbackInfo`
+
+## Guardrails for the fix slice
+
+- Preserve EW haze intent and render timing: before vanilla hotbar.
+- Do not restyle F9/HUD Studio.
+- Do not touch `EwStormWallRenderer`.
+- Do not touch existing-world loading mixins.
+- Do not touch worldgen, build metadata, resources, release packaging, or `gradlew`.
+
+## Status
+
+AUDIT COMPLETE - source fix pending.

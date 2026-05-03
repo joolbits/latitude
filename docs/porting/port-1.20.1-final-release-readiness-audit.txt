@@ -1,0 +1,50 @@
+# Latitude 1.20.1 Final Release Readiness Audit
+
+Root: `<home>/CascadeProjects/Latitude (Globe)`
+Branch: `port/1.3.0-1.20.1`
+HEAD: `7c9db38`
+Tag at HEAD: `save/1.20.1-ew-haze-banding-fix`
+
+## Build
+
+- `bash ./gradlew --no-daemon clean build`: PASS
+- Runtime jar: `build/libs/latitude-1.3.0+1.20.1.jar`
+- Sources jar: `build/libs/latitude-1.3.0+1.20.1-sources.jar`
+- SHA-256 (runtime jar): `2b1d0c4e0df56e296229bf949cd658dc39cdea526cf701c4e316a9a5f2361246`
+- SHA-256 (sources jar): `ab34f9f1f19e514609ce1ca2da22d269b0cfa833c7d2835bbf942c2557cd4910`
+
+## Metadata
+
+- `fabric.mod.json` inside the jar reports version `1.3.0+1.20.1`
+- `fabric.mod.json` target is `~1.20.1`
+- Java target remains `>=17`
+
+## Jar Scans
+
+- Debug/dev/headless/tooling payloads are present in the runtime jar by design, including dev-facing classes such as `LatitudeDevCommands`, `LatitudeHudStudioScreen`, `LatitudeHudAdjustScreen`, `SpawnZoneScreen`, `OverlayProof`, and `LatitudeWorldLauncher`
+- `strings` scan did not find `Runtime.exec`, `ProcessBuilder`, or `Desktop.getDesktop`
+- `javap` on `LatitudeWorldLauncher` showed world/session/loading-overlay logic only, with no process-launch bytecode
+- `javap` on `LatitudeDevCommands` showed command registration only, with no process-launch bytecode
+
+## Runtime Proof Summary
+
+- Fresh world: PASS
+- Existing world: PASS
+- Loading overlay render/clear: PASS
+- F9/HUD Studio: PASS
+- EW haze readability and banding fix: PASS
+- `/latdev help/here/probe`: PASS
+
+## Live Biome Hook
+
+- Status: INCONCLUSIVE
+- The runtime proof set does not yet contain a final explicit marker run proving the live biome hook path end-to-end
+
+## Verdict
+
+HOTFIX RELEASE CANDIDATE WITH CAVEATS
+
+## Caveats
+
+- Live biome hook proof is still incomplete
+- Jar intentionally contains dev/tooling classes, but no process-launch bytecode was found

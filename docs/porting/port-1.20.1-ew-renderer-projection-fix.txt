@@ -1,0 +1,43 @@
+# Latitude 1.20.1 EW Renderer Projection Fix
+
+Root: `<home>/CascadeProjects/Latitude (Globe)`
+Branch: `port/1.3.0-1.20.1`
+Baseline: `7c9db38` / `save/1.20.1-ew-haze-banding-fix`
+
+## Scope
+
+Visual-only EW haze renderer work.
+
+## Files changed
+
+- `src/main/java/com/example/globe/client/EwSandstormOverlayRenderer.java`
+- `src/main/java/com/example/globe/client/EwSandstormOverlayHud.java`
+
+## Renderer retarget
+
+`EwSandstormOverlayRenderer` no longer draws a fixed `[-1, 1]` quad through the world render matrix and `ctx.consumers()`.
+
+It now draws a framebuffer-sized translucent veil with an owned orthographic projection, owned model-view reset, depth writes disabled during the veil, and blend enabled with the default blend function.
+
+The EW distance/math/color/alpha were preserved.
+
+## Hotbar state correction
+
+After manual proof showed the bottom HUD/hotbar area being obscured, the renderer cleanup now leaves blend enabled/defaulted for subsequent hand/HUD rendering instead of exiting with blend disabled.
+
+The experimental HUD bottom-fill profile was rolled back to the prior bottom-safe fade so the HUD overlay does not cover the hotbar strip.
+
+## Proof
+
+- `compileJava`: passed
+- `runClient`: passed
+- existing save loaded near the EW proof position
+- EW haze tick logged at `a=1.0`
+- no crash observed
+- no `MixinApplyError` observed
+
+## Visual status
+
+Partial pending manual confirmation.
+
+The renderer-owned projection removed the old world-matrix dependency and made the haze fill the view, but the first visual proof showed the bottom HUD area being obscured. A follow-up state cleanup and HUD bottom rollback compiled and ran successfully; final visual confirmation of hotbar readability is still pending.

@@ -1,0 +1,66 @@
+# Latitude 1.20.1 EW Haze Render Hook API Audit
+
+Root: `<home>/CascadeProjects/Latitude (Globe)`
+Branch: `port/1.3.0-1.20.1`
+HEAD: `7c9db38` / `save/1.20.1-ew-haze-banding-fix`
+
+## Scope
+
+Audit only. No source edits.
+
+## Actual Fabric 1.20.1 `WorldRenderEvents`
+
+From the loaded `fabric-rendering-v1` 1.20.1-era jar, the available events are:
+
+- `START`
+- `AFTER_SETUP`
+- `BEFORE_ENTITIES`
+- `AFTER_ENTITIES`
+- `BEFORE_BLOCK_OUTLINE`
+- `BLOCK_OUTLINE`
+- `BEFORE_DEBUG_RENDER`
+- `AFTER_TRANSLUCENT`
+- `LAST`
+- `END`
+
+`BEFORE_TRANSLUCENT` does not exist in this API surface, which is why the previous probe failed to compile.
+
+## Current hook used
+
+The current 1.20.1 branch registers EW world-pass haze from `GlobeModClient` at:
+
+- `WorldRenderEvents.AFTER_TRANSLUCENT`
+- callback body calls `EwSandstormOverlayRenderer.render(ctx.matrixStack(), ctx.consumers())`
+
+The HUD-pass EW overlay remains separately owned by `InGameHudMixin -> EwSandstormOverlayHud.render(...)`.
+
+## Viable alternative hook(s)
+
+The only later hook than `AFTER_TRANSLUCENT` is `LAST`, then `END`.
+
+`LAST` is the safest hook candidate to test next if the goal is to move the world-pass haze later in the frame:
+
+- it runs after all framebuffer writes are complete
+- it is explicitly meant for content that should appear on top of the world before hand/GUI rendering
+
+However, `LAST` is not directly compatible with the current renderer shape because `WorldRenderContext.consumers()` is not available that late. The current `EwSandstormOverlayRenderer` uses the consumer provider, so a `LAST` test would need a small renderer-path retarget to direct framebuffer drawing or a different rendering helper.
+
+`BEFORE_DEBUG_RENDER` is technically available but is earlier than `AFTER_TRANSLUCENT` and is therefore not a good first candidate for fixing a late-frame haze seam.
+
+## Safest first candidate
+
+`LAST`, with a renderer-path adaptation if the test is pursued.
+
+If the intent is to keep the renderer unchanged, then no better hook exists than `AFTER_TRANSLUCENT`, and the next audit should move to renderer depth/blend state instead of event order.
+
+## Recommendation
+
+One narrow next slice:
+
+- test `WorldRenderEvents.LAST` as the only later hook candidate
+- if that requires renderer changes, keep the event-order audit separate from the renderer-depth audit
+- otherwise, if the team wants to avoid renderer retargeting, stop on `AFTER_TRANSLUCENT` and inspect blend/depth state next
+
+## Status
+
+API surface audited. No edits made.

@@ -1,0 +1,36 @@
+# Latitude 1.20.1 Build Gate / Mixin Warning Audit
+
+Root:
+`<home>/CascadeProjects/Latitude (Globe)`
+
+Branch:
+`port/1.3.0-1.20.1`
+
+HEAD:
+`be6b378` / `save/1.20.1-create-world-client-retarget`
+
+Build:
+`bash ./gradlew --no-daemon clean build`
+
+Result:
+- `BUILD SUCCESSFUL`
+- Jar: `build/libs/latitude-1.3.0+1.20.1.jar`
+- Sources jar: `build/libs/latitude-1.3.0+1.20.1-sources.jar`
+
+Warnings:
+- `src/main/java/com/example/globe/mixin/client/InGameHudMixin.java:22`
+  - Message: `Unable to determine descriptor for @Inject target method`
+  - Classification: likely harmless compile-time descriptor warning
+  - Gate impact: not a hard blocker before `runClient`, but it should be rechecked at runtime because the descriptor match is not proven here
+
+- `src/main/java/com/example/globe/mixin/client/ExistingWorldLoadingOverlayStartMixin.java:21`
+  - Message: `Cannot find target method "startIntegratedServer(...)" ... in net.minecraft.client.MinecraftClient`
+  - Classification: likely runtime target failure
+  - Gate impact: likely a pre-runClient blocker if the mixin targets the same method shape at runtime; this needs runtime proof before release confidence
+
+Other notes:
+- One deprecated-API note appeared for `SurfaceDripstoneLawnmowerMixin`, but it was not a build blocker.
+- No source edits were made in this audit pass.
+
+Recommended next slice:
+- Run a targeted runtime proof for the two mixins above, starting with `ExistingWorldLoadingOverlayStartMixin`, before treating the client gate as release-safe.

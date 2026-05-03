@@ -1,0 +1,75 @@
+# Latitude 1.20.1 EW Haze Parity Restore
+
+Root: `<home>/CascadeProjects/Latitude (Globe)`
+Branch: `port/1.3.0-1.20.1`
+Baseline: `7c9db38` / `save/1.20.1-ew-haze-banding-fix`
+
+## Scope
+
+Restored the known-good EW haze ownership shape after the local HUD-only WIP.
+
+## Files changed
+
+No source diff remains against `HEAD`.
+
+The local WIP was superseded by returning these files to the baseline parity shape:
+
+- `src/main/java/com/example/globe/GlobeModClient.java`
+- `src/main/java/com/example/globe/client/EwSandstormOverlayHud.java`
+
+## Ownership restored
+
+`GlobeModClient` again registers the world-pass EW haze owner:
+
+- `WorldRenderEvents.AFTER_TRANSLUCENT`
+- `EwSandstormOverlayRenderer.render(...)`
+
+The HUD overlay remains active through:
+
+- `InGameHudMixin`
+- `EwSandstormOverlayHud.render(...)` before hotbar rendering
+
+Fog state, EW distance math, warning text, hotbar rendering, compass rendering, loading overlays, F9/HUD Studio, resources, metadata, and worldgen were not changed.
+
+## HUD overlay profile
+
+The local HUD fade experiment was superseded.
+
+The file is back to the committed smoothing baseline:
+
+- `HUD_SAFE_BOTTOM_PX = 86`
+- `FADE_BANDS = 96`
+- fade begins around `yNorm = 0.55`
+
+## Proof
+
+- `compileJava`: passed
+- `runClient`: passed
+- runtime reached the EW proof save near `x=9917`
+- log evidence showed EW haze active at `a=1.0`
+- no `MixinApplyError`, crash, or runtime blocker occurred
+- one shutdown-time sound-engine line appeared: `Stop: Invalid name parameter`
+
+## Visual result
+
+PARTIAL / IMPROVED.
+
+The supplied screenshots show broad storm haze returned and HUD/warning/hotbar readability preserved. The previous HUD-only direction was superseded.
+
+However, screenshots still show an angle-dependent horizon/vertical transition in some views. `AFTER_TRANSLUCENT` was tested first and was enough to restore broad coverage, but it did not fully prove seam-free release parity.
+
+## BEFORE_TRANSLUCENT
+
+Not tested in this slice.
+
+## Status
+
+AFTER_TRANSLUCENT PARITY RESTORED / VISUAL SEAM STILL NEEDS ONE CONTROLLED EVENT-ORDER CHECK
+
+## Next slice
+
+One visual-only event-order slice:
+
+- change only the world-pass event in `GlobeModClient`
+- test `WorldRenderEvents.BEFORE_TRANSLUCENT` versus `AFTER_TRANSLUCENT`
+- keep HUD overlay, fog mixins, warning text, compass, distance math, loading, F9/HUD Studio, resources, metadata, and worldgen untouched

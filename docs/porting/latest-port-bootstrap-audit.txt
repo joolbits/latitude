@@ -1,0 +1,165 @@
+
+== Repo State ==
+Root:  <home>/CascadeProjects/Latitude (Globe)
+Branch: port/1.3.0-1.20.1
+HEAD:  9d12f2555131d2023dfb93a3b29ef67872738e85
+Status:
+## port/1.3.0-1.20.1
+ M build.gradle
+ M gradle.properties
+ M gradlew
+ M src/main/resources/fabric.mod.json
+?? docs/porting/latest-port-bootstrap-audit.txt
+?? docs/porting/port-1.20.1-bootstrap-scout.txt
+?? docs/porting/port-1.20.1-dependency-resolution.txt
+?? docs/porting/port-1.20.1-metadata-drift.txt
+Tags at HEAD:
+save/1.21.1-hotfix-final-audit
+
+== Dependency / Mapping Scout ==
+5:org.gradle.java.home=/Library/Java/JavaVirtualMachines/temurin-21.jdk/Contents/Home
+9:minecraft_version=1.20.1
+10:yarn_mappings=1.20.1+build.10
+11:loader_version=0.16.14
+12:fabric_api_version=0.92.6+1.20.1
+15:mod_version=1.3.0+1.20.1
+16:maven_group=com.example
+17:archives_base_name=latitude
+20:fabric_version=0.92.6+1.20.1
+21:tectonic_version=3.0.19
+22:lithostitched_version=1.6.2
+23:modmenu_version=7.2.2
+24:cloth_config_version=15.0.128
+6:version = project.mod_version
+55:dependencies {
+4:  "version": "${version}",
+13:  "entrypoints": {
+24:  "mixins": [
+27:  "depends": {
+
+== Mixin Manifest Entries ==
+mixins:
+  - BiomeSourceAccessor
+  - ChunkGeneratorBiomeSourceMixin
+  - BiomeNoSnowInWarmBandsMixin
+  - NoiseChunkGeneratorAccessor
+  - ChunkGeneratorPopulateBiomesMixin
+  - NoiseChunkGeneratorCarveMixin
+  - SurfaceDripstoneLawnmowerMixin
+  - ProtoChunkSnowBlockGuardMixin
+  - FreezeTopLayerFeatureGuardMixin
+  - ChunkRegionWarmSnowTrapMixin
+client:
+  - client.FogRendererMixin
+  - client.CreateWorldScreenLatitudeToggleMixin
+  - client.CreateWorldScreenSpawnZoneMixin
+  - client.CreateWorldScreenMixin
+  - client.CreateWorldScreenShowMixin
+  - client.CreateWorldScreenInitRedirectMixin
+  - client.WorldCreatorMixin
+  - client.InGameHudMixin
+  - client.ExistingWorldLoadingOverlayStartMixin
+  - HandledScreenCompassToggleMixin
+  - client.LevelLoadingScreenLatitudeOverlayMixin
+  - client.DownloadingTerrainScreenFirstLoadMessageMixin
+  - client.LatitudeLoadingClientTickMixin
+  - client.FogRendererEwMixin
+  - client.compat.sodium.RenderSectionManagerVisibilityMixin
+
+== Known Port-Risk Symbols ==
+src/main/resources/globe.mixins.json:21:    "client.CreateWorldScreenLatitudeToggleMixin",
+src/main/resources/globe.mixins.json:22:    "client.CreateWorldScreenSpawnZoneMixin",
+src/main/resources/globe.mixins.json:23:    "client.CreateWorldScreenMixin",
+src/main/resources/globe.mixins.json:24:    "client.CreateWorldScreenShowMixin",
+src/main/resources/globe.mixins.json:25:    "client.CreateWorldScreenInitRedirectMixin",
+src/main/resources/globe.mixins.json:30:    "client.LevelLoadingScreenLatitudeOverlayMixin",
+src/main/resources/globe.mixins.json:31:    "client.DownloadingTerrainScreenFirstLoadMessageMixin",
+src/main/java/com/example/globe/client/GlobeWarningOverlay.java:51:            case "EQUATOR" -> "Equator";
+src/main/java/com/example/globe/client/create/LatitudeCreateWorldScreen.java:42:public class LatitudeCreateWorldScreen extends Screen {
+src/main/java/com/example/globe/client/create/LatitudeCreateWorldScreen.java:44:    private static final Logger LOGGER = LoggerFactory.getLogger("LatitudeCreateWorldScreen");
+src/main/java/com/example/globe/client/create/LatitudeCreateWorldScreen.java:212:    private LatitudeCreateWorldScreen(Runnable onClose, @Nullable Screen parent, GeneratorOptionsHolder holder) {
+src/main/java/com/example/globe/client/create/LatitudeCreateWorldScreen.java:221:        client.setScreen(new LatitudeCreateWorldScreen(onClose, parent, holder));
+src/main/java/com/example/globe/client/create/LatitudeCreateWorldScreen.java:226:     * Replicates CreateWorldScreen.show() lines 166-196.
+src/main/java/com/example/globe/client/create/LatitudeCreateWorldScreen.java:265:            client.setScreen(new LatitudeCreateWorldScreen(onClose, parent, future.join()));
+src/main/java/com/example/globe/client/create/LatitudeWorldLauncher.java:38: * Replicates CreateWorldScreen.createLevel() + startServer() without requiring
+src/main/java/com/example/globe/client/create/LatitudeWorldLauncher.java:39: * a CreateWorldScreen instance.
+src/main/java/com/example/globe/client/create/LatitudeWorldLauncher.java:55:    public static void beginExpedition(MinecraftClient client, LatitudeCreateWorldScreen screen,
+src/main/java/com/example/globe/client/create/LatitudeWorldLauncher.java:144:            // ── 7. Build level metadata (replicates CreateWorldScreen.createLevel lines 284-298) ──
+src/main/java/com/example/globe/client/create/LatitudePlanisphereRenderer.java:151:            String label = LatitudeCreateWorldScreen.formatDegree(deg);
+src/main/java/com/example/globe/client/ClipboardImageWriter.java:111:        ProcessBuilder builder = new ProcessBuilder(
+src/main/java/com/example/globe/client/ZoneEntryNotifier.java:41:            case "EQUATOR" -> "Equator";
+src/main/java/com/example/globe/client/SpawnZoneScreen.java:23:        addZoneButton(cx, y, "Equatorial", "EQUATOR");
+src/main/java/com/example/globe/dev/BiomePreviewHeadlessRunner.java:731:            Process process = new ProcessBuilder().command(commandWithGit(args)).start();
+src/main/java/com/example/globe/dev/BiomeBandPolicy.java:48:            entry("minecraft:pale_garden", LatitudeBands.Band.TEMPERATE),
+src/main/java/com/example/globe/dev/InvariantScan.java:18:        requireContains(mixins, "client.CreateWorldScreenMixin", errors, "globe.mixins.json missing client.CreateWorldScreenMixin");
+src/main/java/com/example/globe/dev/InvariantScan.java:19:        requireContains(mixins, "client.DownloadingTerrainScreenFirstLoadMessageMixin", errors, "globe.mixins.json missing client.DownloadingTerrainScreenFirstLoadMessageMixin");
+src/main/java/com/example/globe/dev/InvariantScan.java:21:        byte[] clazz = readClassBytes("/com/example/globe/mixin/client/DownloadingTerrainScreenFirstLoadMessageMixin.class");
+src/main/java/com/example/globe/world/LatitudeBiomes.java:194:                    pick = biome(biomes, "minecraft:pale_garden");
+src/main/java/com/example/globe/world/LatitudeBiomes.java:225:                RegistryEntry<Biome> entry = entryById(biomes, "minecraft:pale_garden");
+src/main/java/com/example/globe/world/LatitudeBiomes.java:2558:                    "minecraft:pale_garden",
+src/main/java/com/example/globe/mixin/client/LevelLoadingScreenLatitudeOverlayMixin.java:10:import net.minecraft.client.gui.screen.world.LevelLoadingScreen;
+src/main/java/com/example/globe/mixin/client/LevelLoadingScreenLatitudeOverlayMixin.java:30:@Mixin(LevelLoadingScreen.class)
+src/main/java/com/example/globe/mixin/client/LevelLoadingScreenLatitudeOverlayMixin.java:31:public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
+src/main/java/com/example/globe/mixin/client/LevelLoadingScreenLatitudeOverlayMixin.java:116:    protected LevelLoadingScreenLatitudeOverlayMixin(Text title) {
+src/main/java/com/example/globe/mixin/client/LevelLoadingScreenLatitudeOverlayMixin.java:381:        if (client.currentScreen instanceof LevelLoadingScreen) {
+src/main/java/com/example/globe/mixin/ChunkGeneratorPopulateBiomesMixin.java:216:    // Capture StructureAccessor for the duration of the private populateBiomes call.
+src/main/java/com/example/globe/mixin/ChunkGeneratorPopulateBiomesMixin.java:218:            method = "populateBiomes(Lnet/minecraft/world/gen/chunk/Blender;Lnet/minecraft/world/gen/noise/NoiseConfig;Lnet/minecraft/world/gen/StructureAccessor;Lnet/minecraft/world/chunk/Chunk;)V",
+src/main/java/com/example/globe/mixin/ChunkGeneratorPopulateBiomesMixin.java:227:            method = "populateBiomes(Lnet/minecraft/world/gen/chunk/Blender;Lnet/minecraft/world/gen/noise/NoiseConfig;Lnet/minecraft/world/gen/StructureAccessor;Lnet/minecraft/world/chunk/Chunk;)V",
+src/main/java/com/example/globe/mixin/ChunkGeneratorPopulateBiomesMixin.java:241:            method = "populateBiomes(Lnet/minecraft/world/gen/chunk/Blender;Lnet/minecraft/world/gen/noise/NoiseConfig;Lnet/minecraft/world/gen/StructureAccessor;Lnet/minecraft/world/chunk/Chunk;)V",
+src/main/java/com/example/globe/mixin/ChunkGeneratorPopulateBiomesMixin.java:244:                    target = "Lnet/minecraft/world/chunk/Chunk;populateBiomes(Lnet/minecraft/world/biome/source/BiomeSupplier;Lnet/minecraft/world/biome/source/util/MultiNoiseUtil$MultiNoiseSampler;)V"
+src/main/java/com/example/globe/mixin/ChunkGeneratorPopulateBiomesMixin.java:252:                LOGGER.info("[Latitude] populateBiomes gate reject: settings not Globe preset checked={} matched={} action=falling back to vanilla populateBiomes",
+src/main/java/com/example/globe/mixin/ChunkGeneratorPopulateBiomesMixin.java:255:            chunk.populateBiomes(originalSupplier, sampler);
+src/main/java/com/example/globe/mixin/ChunkGeneratorPopulateBiomesMixin.java:262:                LOGGER.info("[Latitude] populateBiomes gate reject: StructureAccessor unavailable settings={} action=falling back to vanilla populateBiomes",
+src/main/java/com/example/globe/mixin/ChunkGeneratorPopulateBiomesMixin.java:265:            chunk.populateBiomes(originalSupplier, sampler);
+src/main/java/com/example/globe/mixin/ChunkGeneratorPopulateBiomesMixin.java:341:        globe$populateBiomes(chunk, wrapped, sampler);
+src/main/java/com/example/globe/mixin/ChunkGeneratorPopulateBiomesMixin.java:389:    private static void globe$populateBiomes(Chunk chunk, BiomeSupplier supplier, MultiNoiseUtil.MultiNoiseSampler sampler) {
+src/main/java/com/example/globe/mixin/ChunkGeneratorPopulateBiomesMixin.java:463:        LOGGER.info("[Latitude] Worldgen path active: overriding populateBiomes settings={} checked={} chunk={} radius={} writing=true",
+src/main/java/com/example/globe/mixin/client/FogRendererEwMixin.java:3:import net.minecraft.client.render.BackgroundRenderer;
+src/main/java/com/example/globe/mixin/client/FogRendererEwMixin.java:6:@Mixin(BackgroundRenderer.class)
+src/main/java/com/example/globe/mixin/client/CreateWorldScreenLatitudeToggleMixin.java:6:import net.minecraft.client.gui.screen.world.CreateWorldScreen;
+src/main/java/com/example/globe/mixin/client/CreateWorldScreenLatitudeToggleMixin.java:27:@Mixin(CreateWorldScreen.class)
+src/main/java/com/example/globe/mixin/client/CreateWorldScreenLatitudeToggleMixin.java:28:public abstract class CreateWorldScreenLatitudeToggleMixin extends Screen {
+src/main/java/com/example/globe/mixin/client/CreateWorldScreenLatitudeToggleMixin.java:54:    protected CreateWorldScreenLatitudeToggleMixin(Text title) {
+src/main/java/com/example/globe/mixin/client/CreateWorldScreenLatitudeToggleMixin.java:62:        this.latitude$worldTypeWidget = latitude$findWorldTypeWidget((CreateWorldScreen) (Object) this);
+src/main/java/com/example/globe/mixin/client/CreateWorldScreenLatitudeToggleMixin.java:183:    private static ClickableWidget latitude$findWorldTypeWidget(CreateWorldScreen self) {
+src/main/java/com/example/globe/mixin/client/CreateWorldScreenShowMixin.java:3:import com.example.globe.client.create.LatitudeCreateWorldScreen;
+src/main/java/com/example/globe/mixin/client/CreateWorldScreenShowMixin.java:6:import net.minecraft.client.gui.screen.world.CreateWorldScreen;
+src/main/java/com/example/globe/mixin/client/CreateWorldScreenShowMixin.java:12:@Mixin(CreateWorldScreen.class)
+src/main/java/com/example/globe/mixin/client/CreateWorldScreenShowMixin.java:13:public abstract class CreateWorldScreenShowMixin {
+src/main/java/com/example/globe/mixin/client/CreateWorldScreenShowMixin.java:17:        if (client.currentScreen instanceof CreateWorldScreen createWorldScreen) {
+src/main/java/com/example/globe/mixin/client/CreateWorldScreenShowMixin.java:18:            LatitudeCreateWorldScreen.openLoaded(
+src/main/java/com/example/globe/mixin/client/CreateWorldScreenShowMixin.java:22:                    ((CreateWorldScreenMixin) (Object) createWorldScreen).getWorldCreator().getGeneratorOptionsHolder());
+src/main/java/com/example/globe/mixin/client/DownloadingTerrainScreenFirstLoadMessageMixin.java:4:import net.minecraft.client.gui.screen.DownloadingTerrainScreen;
+src/main/java/com/example/globe/mixin/client/DownloadingTerrainScreenFirstLoadMessageMixin.java:12:public abstract class DownloadingTerrainScreenFirstLoadMessageMixin {
+src/main/java/com/example/globe/mixin/client/DownloadingTerrainScreenFirstLoadMessageMixin.java:16:        if (!((Object) this instanceof DownloadingTerrainScreen)) {
+src/main/java/com/example/globe/mixin/client/CreateWorldScreenSpawnZoneMixin.java:9:import net.minecraft.client.gui.screen.world.CreateWorldScreen;
+src/main/java/com/example/globe/mixin/client/CreateWorldScreenSpawnZoneMixin.java:27:@Mixin(CreateWorldScreen.class)
+src/main/java/com/example/globe/mixin/client/CreateWorldScreenSpawnZoneMixin.java:28:public abstract class CreateWorldScreenSpawnZoneMixin extends Screen {
+src/main/java/com/example/globe/mixin/client/CreateWorldScreenSpawnZoneMixin.java:53:    protected CreateWorldScreenSpawnZoneMixin(Text title) {
+src/main/java/com/example/globe/mixin/client/CreateWorldScreenSpawnZoneMixin.java:64:        CreateWorldScreen self = (CreateWorldScreen) (Object) this;
+src/main/java/com/example/globe/mixin/client/CreateWorldScreenSpawnZoneMixin.java:83:        this.globe$spawnZoneButton = CyclingButtonWidget.builder(CreateWorldScreenSpawnZoneMixin::globe$zoneLabel)
+src/main/java/com/example/globe/mixin/client/CreateWorldScreenSpawnZoneMixin.java:196:    private static ClickableWidget globe$findWorldTypeWidget(CreateWorldScreen self) {
+src/main/java/com/example/globe/mixin/client/BackgroundRendererFogMixin.java:3:public final class BackgroundRendererFogMixin {
+src/main/java/com/example/globe/mixin/client/BackgroundRendererFogMixin.java:4:    private BackgroundRendererFogMixin() {
+src/main/java/com/example/globe/mixin/client/FogRendererMixin.java:3:import net.minecraft.client.render.BackgroundRenderer;
+src/main/java/com/example/globe/mixin/client/FogRendererMixin.java:6:@Mixin(value = BackgroundRenderer.class, priority = 2000)
+src/main/java/com/example/globe/mixin/client/CreateWorldScreenInitRedirectMixin.java:3:import com.example.globe.client.create.LatitudeCreateWorldScreen;
+src/main/java/com/example/globe/mixin/client/CreateWorldScreenInitRedirectMixin.java:6:import net.minecraft.client.gui.screen.world.CreateWorldScreen;
+src/main/java/com/example/globe/mixin/client/CreateWorldScreenInitRedirectMixin.java:14:@Mixin(CreateWorldScreen.class)
+src/main/java/com/example/globe/mixin/client/CreateWorldScreenInitRedirectMixin.java:15:public abstract class CreateWorldScreenInitRedirectMixin {
+src/main/java/com/example/globe/mixin/client/CreateWorldScreenInitRedirectMixin.java:27:        LatitudeCreateWorldScreen.openLoaded(
+src/main/java/com/example/globe/mixin/client/CreateWorldScreenInitRedirectMixin.java:31:                ((CreateWorldScreenMixin) (Object) this).getWorldCreator().getGeneratorOptionsHolder());
+src/main/java/com/example/globe/mixin/client/CreateWorldScreenMixin.java:7:import net.minecraft.client.gui.screen.world.CreateWorldScreen;
+src/main/java/com/example/globe/mixin/client/CreateWorldScreenMixin.java:21:@Mixin(CreateWorldScreen.class)
+src/main/java/com/example/globe/mixin/client/CreateWorldScreenMixin.java:22:public abstract class CreateWorldScreenMixin {
+
+== Process-Launch APIs ==
+src/main/java/com/example/globe/client/ClipboardImageWriter.java:111:        ProcessBuilder builder = new ProcessBuilder(
+src/main/java/com/example/globe/dev/BiomePreviewHeadlessRunner.java:731:            Process process = new ProcessBuilder().command(commandWithGit(args)).start();
+
+== Dev / Tool / Headless Packages ==
+src/main/java/com/example/globe/dev
+
+== Next Action ==
+Work the first failing gate in order: dependency/mapping -> mixins -> UI hooks -> live biome proof -> timing -> /latdev -> artifact purity -> release gate.
+Build success is not release proof; fresh runtime proof always wins over Atlas or direct preview evidence.

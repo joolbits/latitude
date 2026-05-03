@@ -1,0 +1,83 @@
+# Latitude 1.20.1 EW Renderer Depth/Blend Audit
+
+Root: `<home>/CascadeProjects/Latitude (Globe)`
+Branch: `port/1.3.0-1.20.1`
+HEAD: `7c9db38` / `save/1.20.1-ew-haze-banding-fix`
+
+## Scope
+
+Audit only. No source edits.
+
+## Files inspected
+
+- `src/main/java/com/example/globe/client/EwSandstormOverlayRenderer.java`
+- `src/main/java/com/example/globe/GlobeModClient.java`
+- `save/1.21.1-hotfix-final-audit:src/main/java/com/example/globe/client/EwSandstormOverlayRenderer.java`
+- `save/1.21.1-ew-haze-hud-occlusion:src/main/java/com/example/globe/client/EwSandstormOverlayRenderer.java`
+- `save/ew-haze-under-hud-1.21.11:src/main/java/com/example/globe/client/EwSandstormOverlayRenderer.java`
+
+## Current renderer shape
+
+`GlobeModClient` registers the world-pass EW haze at `WorldRenderEvents.AFTER_TRANSLUCENT` and calls:
+
+- `EwSandstormOverlayRenderer.render(ctx.matrixStack(), ctx.consumers())`
+
+`EwSandstormOverlayRenderer` computes EW distance intensity, then writes a single four-vertex quad through:
+
+- `RenderLayer.getDebugQuads()`
+- the current world render `MatrixStack`
+- `ctx.consumers()`
+
+The vertices are fixed at:
+
+- `(-1, -1, 0)`
+- `(1, -1, 0)`
+- `(1, 1, 0)`
+- `(-1, 1, 0)`
+
+The renderer does not explicitly set or restore:
+
+- depth test
+- depth mask
+- blend mode
+- projection matrix
+- camera-relative transform
+
+## Known-good comparison
+
+`save/1.21.1-hotfix-final-audit` and `save/1.21.1-ew-haze-hud-occlusion` have the same renderer body as the current 1.20.1 branch.
+
+`save/ew-haze-under-hud-1.21.11` has the same renderer body except for the API naming difference:
+
+- known-good older ref: `RenderLayers.debugQuads()`
+- current 1.20.1: `RenderLayer.getDebugQuads()`
+
+No known-good ref contains an explicit depth/blend/projection fix in this file.
+
+## Diagnosis
+
+The current artifact is most likely a geometry/projection mismatch in the world-pass renderer, not a missing known-good code path.
+
+The renderer is trying to create a full-screen storm veil by drawing a tiny fixed quad through a world-render matrix. That can appear screen-filling in one Minecraft/Fabric render pipeline and become camera-angle or horizon dependent in another. The screenshots match this failure mode: the haze behaves like projected world geometry instead of a stable full-view overlay.
+
+`RenderLayer.getDebugQuads()` may supply some useful render state, but this renderer does not own the full state needed for a reliable full-screen effect. The current shape can still intersect the world/sky differently as the camera angle changes.
+
+## Recommendation
+
+Recommended next slice:
+
+- Fix `EwSandstormOverlayRenderer` geometry/projection ownership.
+
+Smallest viable approach:
+
+- keep the existing `AFTER_TRANSLUCENT` registration,
+- keep the same EW distance/math/color/alpha,
+- replace the world-matrix `[-1, 1]` quad with a renderer-owned full-view draw shape that is stable in 1.20.1,
+- explicitly handle depth/blend state inside `EwSandstormOverlayRenderer`,
+- preserve the HUD overlay path for readability.
+
+Do not pursue a `LAST` hook rewrite first. `LAST` is only worth revisiting if the renderer cannot be made stable at `AFTER_TRANSLUCENT`, because `LAST` cannot use `ctx.consumers()` and would require a larger path change.
+
+## Verdict
+
+First fix slice should be a geometry/fullscreen projection fix in `EwSandstormOverlayRenderer`, not fog mutation, event-order probing, or HUD overlay tuning.
