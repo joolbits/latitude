@@ -23,11 +23,6 @@ public final class GlobeWarningOverlay {
     private static final String POLE_LETHAL_TEXT =
             "The cold overwhelms you.";
 
-    private static final String EW_SAND_WARN_TEXT =
-            "Sandstorms ahead. Consider turning back.";
-    private static final String EW_SAND_DANGER_TEXT =
-            "It is too dangerous to continue. Turn back.";
-
     private static long lastZoneUpdateWorldTime = Long.MIN_VALUE;
     private static int lastZoneUpdateX = Integer.MIN_VALUE;
     private static int lastZoneUpdateZ = Integer.MIN_VALUE;
@@ -108,11 +103,30 @@ public final class GlobeWarningOverlay {
         };
     }
 
-    private static Text ewTextForStage(GlobeClientState.EwStormStage stage) {
+    private static String ewHazardSide(MinecraftClient client) {
+        if (client.world == null || client.player == null) {
+            return "east";
+        }
+
+        var border = client.world.getWorldBorder();
+        double distToWest = Math.abs(client.player.getX() - border.getBoundWest());
+        double distToEast = Math.abs(border.getBoundEast() - client.player.getX());
+        return distToEast <= distToWest ? "east" : "west";
+    }
+
+    private static String ewEscapeSide(MinecraftClient client) {
+        return "east".equals(ewHazardSide(client)) ? "west" : "east";
+    }
+
+    private static Text ewTextForStage(MinecraftClient client, GlobeClientState.EwStormStage stage) {
         if (stage == null) return null;
+        String hazardSide = ewHazardSide(client);
+        String escapeSide = ewEscapeSide(client);
+
         return switch (stage) {
-            case LEVEL_1 -> Text.literal(EW_SAND_WARN_TEXT);
-            case LEVEL_2 -> Text.literal(EW_SAND_DANGER_TEXT).formatted(Formatting.RED, Formatting.BOLD);
+            case LEVEL_1 -> Text.literal("Sandstorms to the " + hazardSide + ". Head " + escapeSide + " to turn back.");
+            case LEVEL_2 -> Text.literal("It is too dangerous to continue. Head " + escapeSide + " immediately.")
+                    .formatted(Formatting.RED, Formatting.BOLD);
             default -> null;
         };
     }
@@ -191,7 +205,7 @@ public final class GlobeWarningOverlay {
                 bestText = poleTextForStage(stage);
             } else if (state.type() == GlobeClientState.WarningType.STORM) {
                 GlobeClientState.EwStormStage stage = (GlobeClientState.EwStormStage) state.stage();
-                bestText = ewTextForStage(stage);
+                bestText = ewTextForStage(client, stage);
             }
 
             if (bestText == null) {

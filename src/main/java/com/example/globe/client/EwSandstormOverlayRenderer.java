@@ -1,10 +1,15 @@
 package com.example.globe.client;
 
+import com.mojang.blaze3d.systems.RenderSystem;
+import com.mojang.blaze3d.systems.VertexSorter;
 import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.render.RenderLayer;
-import net.minecraft.client.render.VertexConsumer;
+import net.minecraft.client.render.BufferBuilder;
+import net.minecraft.client.render.BufferRenderer;
+import net.minecraft.client.render.GameRenderer;
+import net.minecraft.client.render.Tessellator;
+import net.minecraft.client.render.VertexFormat;
 import net.minecraft.client.render.VertexConsumerProvider;
-import net.minecraft.client.render.VertexConsumerProvider.Immediate;
+import net.minecraft.client.render.VertexFormats;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.util.math.MathHelper;
 import org.joml.Matrix4f;
@@ -33,22 +38,45 @@ public final class EwSandstormOverlayRenderer {
         float r = 0.78f;
         float g = 0.67f;
         float b = 0.48f;
-        float a = 0.40f * tt;
+        float a = 0.94f * tt;
 
-        matrices.push();
-        Matrix4f m = matrices.peek().getPositionMatrix();
-
-        RenderLayer layer = RenderLayer.getDebugQuads();
-        VertexConsumer vc = consumers.getBuffer(layer);
-
-        vc.vertex(m, -1f, -1f, 0f).color(r, g, b, a).texture(0f, 1f).light(0xF000F0);
-        vc.vertex(m, 1f, -1f, 0f).color(r, g, b, a).texture(1f, 1f).light(0xF000F0);
-        vc.vertex(m, 1f, 1f, 0f).color(r, g, b, a).texture(1f, 0f).light(0xF000F0);
-        vc.vertex(m, -1f, 1f, 0f).color(r, g, b, a).texture(0f, 0f).light(0xF000F0);
-
-        if (consumers instanceof Immediate imm) {
-            imm.draw();
+        int width = mc.getWindow().getFramebufferWidth();
+        int height = mc.getWindow().getFramebufferHeight();
+        if (width <= 0 || height <= 0) {
+            return;
         }
-        matrices.pop();
+
+        Matrix4f projection = new Matrix4f().setOrtho(0.0f, width, height, 0.0f, -1.0f, 1.0f);
+        MatrixStack modelView = RenderSystem.getModelViewStack();
+
+        RenderSystem.backupProjectionMatrix();
+        modelView.push();
+        try {
+            RenderSystem.setProjectionMatrix(projection, VertexSorter.BY_Z);
+            modelView.loadIdentity();
+            RenderSystem.applyModelViewMatrix();
+
+            RenderSystem.enableBlend();
+            RenderSystem.defaultBlendFunc();
+            RenderSystem.disableDepthTest();
+            RenderSystem.depthMask(false);
+            RenderSystem.setShader(GameRenderer::getPositionColorProgram);
+
+            BufferBuilder buffer = Tessellator.getInstance().getBuffer();
+            buffer.begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
+            buffer.vertex(0.0, height, 0.0).color(r, g, b, a).next();
+            buffer.vertex(width, height, 0.0).color(r, g, b, a).next();
+            buffer.vertex(width, 0.0, 0.0).color(r, g, b, a).next();
+            buffer.vertex(0.0, 0.0, 0.0).color(r, g, b, a).next();
+            BufferRenderer.drawWithGlobalProgram(buffer.end());
+        } finally {
+            RenderSystem.depthMask(true);
+            RenderSystem.enableDepthTest();
+            RenderSystem.enableBlend();
+            RenderSystem.defaultBlendFunc();
+            modelView.pop();
+            RenderSystem.applyModelViewMatrix();
+            RenderSystem.restoreProjectionMatrix();
+        }
     }
 }
