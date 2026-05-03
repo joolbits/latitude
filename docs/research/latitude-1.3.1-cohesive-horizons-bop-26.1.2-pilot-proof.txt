@@ -1,0 +1,9 @@
+Root: <home>/CascadeProjects/Latitude (Globe)
+Branch: feat/1.3.1-cohesive-horizons-26.1.2
+HEAD: 7c9a16885f87b377aee4cc1b42df349e527ac0b8
+Added BOP entries: lat_temperate_primary -> biomesoplenty:seasonal_forest, biomesoplenty:maple_woods; lat_subpolar_primary -> biomesoplenty:tundra, biomesoplenty:snowy_maple_woods; all added as {"required": false}
+Files changed: src/main/resources/data/globe/tags/worldgen/biome/lat_temperate_primary.json; src/main/resources/data/globe/tags/worldgen/biome/lat_subpolar_primary.json
+Compile result: JAVA_HOME="/Library/Java/JavaVirtualMachines/temurin-25.jdk/Contents/Home" ./gradlew --no-daemon compileJava -> BUILD SUCCESSFUL
+Diff-check result: git diff --check -> clean
+Safe to commit/tag: yes
+Next slice: if you want to continue, run the smallest fresh-world proof for these four optional BOP pilots
