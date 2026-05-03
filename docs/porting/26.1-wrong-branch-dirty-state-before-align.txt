@@ -1,0 +1,33 @@
+ M src/main/java/com/example/globe/client/ClientKeybinds.java
+ M src/main/java/com/example/globe/client/create/LatitudeCreateWorldScreen.java
+ M src/main/java/com/example/globe/client/create/LatitudePlanisphereRenderer.java
+ M src/main/java/com/example/globe/mixin/ExtremePolarVegetationGuardMixin.java
+ M src/main/java/com/example/globe/mixin/HandledScreenCompassToggleMixin.java
+ M src/main/java/com/example/globe/mixin/client/CreateWorldScreenLatitudeToggleMixin.java
+ M src/main/java/com/example/globe/mixin/client/CreateWorldScreenSpawnZoneMixin.java
+ M src/main/java/com/example/globe/mixin/client/EwStormWallRendererMixin.java
+ M src/main/resources/data/globe/tags/worldgen/biome/lat_subpolar_primary.json
+ M src/main/resources/data/globe/tags/worldgen/biome/lat_temperate_primary.json
+?? docs/porting/26.1-compile-drift-gate-before-cohesive-horizons.txt
+?? docs/porting/26.1-release-provenance-audit-before-cohesive-horizons.txt
+?? docs/porting/26.1-wrong-branch-dirty-state-before-align.patch
+?? docs/porting/26.1-wrong-branch-dirty-state-before-align.txt
+?? docs/research/latitude-1.3.1-cohesive-horizons-tiny-optional-tag-pilot.txt
+?? tmp/runtime-proof/runtime-proof-1.png
+?? tmp/runtime-proof/runtime-proof-2.png
+?? tmp/runtime-proof/runtime-proof-3.png
+?? tmp/runtime-proof/runtime-proof-4.png
+?? tmp/runtime-proof/runtime-proof-5.png
+?? tmp/runtime-proof/runtime-proof-6.png
+?? tmp/runtime-proof/runtime-proof-7.png
+?? tmp/runtime-proof/runtime-proof-8.png
+?? tmp/runtime-proof/runtime-proof-current.png
+?? tmp/runtime-proof/runtime-proof-latdev-attempt.png
+?? tmp/runtime-proof/runtime-proof-permission-check.png
+?? tmp/runtime-proof/runtime-proof-permission-dismissed.png
+?? tmp/runtime-proof/runtime-proof-resume-1.png
+?? tmp/runtime-proof/runtime-proof-resume-2.png
+?? tmp/runtime-proof/runtime-proof-resume-3.png
+?? tmp/runtime-proof/runtime-proof-resume-4.png
+?? tmp/runtime-proof/runtime-proof-resume-5.png
+?? tmp/runtime-proof/runtime-proof-resume-6.png
