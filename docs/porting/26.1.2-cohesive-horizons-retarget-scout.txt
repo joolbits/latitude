@@ -1,0 +1,37 @@
+Latitude 1.3.1 Cohesive Horizons 26.1.2 retarget scout
+
+Root: <home>/CascadeProjects/Latitude (Globe)
+Branch: feat/1.3.1-cohesive-horizons-26.1
+HEAD: 7c9a16885f87b377aee4cc1b42df349e527ac0b8
+Tags: save/cohesive-horizons-byg-optional-pilot
+Tree: clean except `tmp/runtime-proof/`
+
+Current metadata
+- `minecraft_version=26.1`
+- `loader_version=0.18.4`
+- `fabric_api_version=0.145.1+26.1`
+- `mod_version=1.3.0+26.1`
+- `fabric.mod.json` depends on `minecraft >=26.1` and `fabric-api *`
+- Java/toolchain target remains release 25 (`it.options.release = 25`, source/target 25)
+
+Local/docs evidence checked
+- `gradle.properties`
+- `src/main/resources/fabric.mod.json`
+- `build.gradle`
+- existing 26.1 porting notes under `docs/porting/` and `docs/research/`
+
+Public evidence
+- Minecraft 26.1.2 exists
+- Fabric API `0.145.4+26.1.2` exists, and later release builds also support 26.1.2
+- Terralith 2.6.2 has Fabric file `Terralith_26.1_v2.6.2_Fabric.jar` and lists game versions `26.1–26.1.2`
+- Biomes O' Plenty has Fabric 26.1.2 files
+- BYG/BWG 26.1.2 support remains unconfirmed from file-level evidence
+
+Recommendation
+- Stay on 26.1 for the Cohesive Horizons pilot until BYG/BWG 26.1.2 file metadata is proven
+- If retargeting later, the minimal metadata-only diff is:
+  - `minecraft_version=26.1.2`
+  - `fabric_api_version=0.145.4+26.1.2` or a later 26.1.2 Fabric API release
+  - `mod_version=1.3.0+26.1.2`
+  - `fabric.mod.json` `minecraft` dependency to `>=26.1.2`
+- Risk level: medium, because the base platform is ready but the current BYG pilot line is still not proven on 26.1.2

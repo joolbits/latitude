@@ -6,6 +6,14 @@
     {
       "id": "biomeswevegone:frosted_taiga",
       "required": false
+    },
+    {
+      "id": "biomesoplenty:tundra",
+      "required": false
+    },
+    {
+      "id": "biomesoplenty:snowy_maple_woods",
+      "required": false
     }
   ]
 }
