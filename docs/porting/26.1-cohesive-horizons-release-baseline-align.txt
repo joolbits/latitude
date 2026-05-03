@@ -1,0 +1,25 @@
+26.1 Cohesive Horizons release-baseline alignment
+
+Starting state:
+- Branch: `port/26.1-latitudebiomes-final`
+- HEAD: `1b2c1c77f87e056155eb09f5fe288a6b4ec07042`
+- Tag at HEAD: `save/26-1-latitudebiomes-final`
+
+Release provenance:
+- Confirmed release baseline commit: `36abd39ed0c9061fcdb898450a91063f2be1298c`
+- Release tag: `release/1.3.0+26.1-r2`
+- Branch provenance: `port/26.1-fog-mixin-bucket`
+- Ancestry check: current HEAD is a descendant of the release-purity commit, not the baseline itself
+
+Alignment action:
+- Preserved the dirty state snapshot in `docs/porting/26.1-wrong-branch-dirty-state-before-align.patch`
+- Created safety branch `safety/26.1-latitudebiomes-final-dirty-before-cohesive-align`
+- Switched to `feat/1.3.1-cohesive-horizons-26.1` from `release/1.3.0+26.1-r2`
+- Re-applied only the BYG-only pilot tag edits in `lat_temperate_primary.json` and `lat_subpolar_primary.json`
+
+Compile result:
+- `JAVA_HOME="/Library/Java/JavaVirtualMachines/temurin-25.jdk/Contents/Home" ./gradlew --no-daemon compileJava`
+- Result: `BUILD SUCCESSFUL`
+
+Current note:
+- Cohesive Horizons is now aligned to the released 26.1 r2 baseline with only the BYG pilot restored

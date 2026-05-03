@@ -4,6 +4,10 @@
     "minecraft:forest",
     "minecraft:plains",
     "minecraft:birch_forest",
-    "minecraft:taiga"
+    "minecraft:taiga",
+    {
+      "id": "biomeswevegone:temperate_grove",
+      "required": false
+    }
   ]
 }

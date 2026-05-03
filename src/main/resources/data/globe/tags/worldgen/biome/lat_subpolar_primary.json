@@ -2,6 +2,10 @@
   "replace": false,
   "values": [
     "minecraft:snowy_plains",
-    "minecraft:snowy_taiga"
+    "minecraft:snowy_taiga",
+    {
+      "id": "biomeswevegone:frosted_taiga",
+      "required": false
+    }
   ]
 }

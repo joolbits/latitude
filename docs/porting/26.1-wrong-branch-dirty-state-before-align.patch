@@ -1,0 +1,689 @@
+diff --git a/src/main/java/com/example/globe/client/ClientKeybinds.java b/src/main/java/com/example/globe/client/ClientKeybinds.java
+index 2735feb..3cf7902 100644
+--- a/src/main/java/com/example/globe/client/ClientKeybinds.java
++++ b/src/main/java/com/example/globe/client/ClientKeybinds.java
+@@ -1,7 +1,7 @@
+ package com.example.globe.client;
+ 
+ import com.mojang.blaze3d.platform.InputConstants;
+-import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
++import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
+ import net.minecraft.client.KeyMapping;
+ import net.minecraft.resources.Identifier;
+ 
+@@ -14,14 +14,14 @@ public final class ClientKeybinds {
+     private ClientKeybinds() {}
+ 
+     public static void init() {
+-        TOGGLE_COMPASS = KeyBindingHelper.registerKeyBinding(new KeyMapping(
++        TOGGLE_COMPASS = KeyMappingHelper.registerKeyMapping(new KeyMapping(
+                 "key.globe.toggle_compass_hud",
+                 InputConstants.Type.KEYSYM,
+                 InputConstants.KEY_COMMA,
+                 CATEGORY
+         ));
+ 
+-        OPEN_SETTINGS = KeyBindingHelper.registerKeyBinding(new KeyMapping(
++        OPEN_SETTINGS = KeyMappingHelper.registerKeyMapping(new KeyMapping(
+                 "key.globe.open_settings",
+                 InputConstants.Type.KEYSYM,
+                 InputConstants.KEY_F9,
+diff --git a/src/main/java/com/example/globe/client/create/LatitudeCreateWorldScreen.java b/src/main/java/com/example/globe/client/create/LatitudeCreateWorldScreen.java
+index 109a8a6..5a27982 100644
+--- a/src/main/java/com/example/globe/client/create/LatitudeCreateWorldScreen.java
++++ b/src/main/java/com/example/globe/client/create/LatitudeCreateWorldScreen.java
+@@ -6,7 +6,7 @@ import com.example.globe.util.LatitudeBands;
+ import net.minecraft.ChatFormatting;
+ import net.minecraft.SharedConstants;
+ import net.minecraft.client.Minecraft;
+-import net.minecraft.client.gui.GuiGraphics;
++import net.minecraft.client.gui.GuiGraphicsExtractor;
+ import net.minecraft.client.gui.components.AbstractWidget;
+ import net.minecraft.client.gui.components.Button;
+ import net.minecraft.client.gui.components.EditBox;
+@@ -14,7 +14,7 @@ import net.minecraft.client.gui.narration.NarrationElementOutput;
+ import net.minecraft.client.gui.screens.GenericMessageScreen;
+ import net.minecraft.client.gui.screens.Screen;
+ import net.minecraft.client.gui.screens.worldselection.DataPackReloadCookie;
+-import net.minecraft.client.gui.screens.worldselection.EditGameRulesScreen;
++import net.minecraft.client.gui.screens.worldselection.WorldCreationGameRulesScreen;
+ import net.minecraft.client.gui.screens.worldselection.WorldCreationContext;
+ import net.minecraft.client.gui.screens.worldselection.WorldCreationContextMapper;
+ import net.minecraft.client.input.MouseButtonEvent;
+@@ -867,7 +867,7 @@ public class LatitudeCreateWorldScreen extends Screen {
+ 
+     private void openGameRules() {
+         if (this.minecraft == null) return;
+-        this.minecraft.setScreen(new EditGameRulesScreen(this.gameRules, optional -> {
++        this.minecraft.setScreen(new WorldCreationGameRulesScreen(this.gameRules, optional -> {
+             optional.ifPresent(rules -> this.gameRules = rules);
+             this.minecraft.setScreen(this);
+         }));
+@@ -1003,7 +1003,7 @@ public class LatitudeCreateWorldScreen extends Screen {
+     // ══════════════════════════════════════════════════════════════
+ 
+     @Override
+-    public void render(GuiGraphics context, int mouseX, int mouseY, float delta) {
++    public void extractRenderState(GuiGraphicsExtractor context, int mouseX, int mouseY, float delta) {
+         int titlePaneX = threeCol ? rightX : 12;
+         int titlePaneW = threeCol ? rightW : Math.max(1, this.width - 24);
+         int headerBottom = tabbedMode ? tabStripY - 2 : panelTop;
+@@ -1159,10 +1159,10 @@ public class LatitudeCreateWorldScreen extends Screen {
+             context.setTooltipForNextFrame(Component.literal("Bonus chest is not available in Latitude."), mouseX, mouseY);
+         }
+ 
+-        super.render(context, mouseX, mouseY, delta);
++        super.extractRenderState(context, mouseX, mouseY, delta);
+     }
+ 
+-    private void renderSizeLabel(GuiGraphics context, int x, int y, int availW) {
++    private void renderSizeLabel(GuiGraphicsExtractor context, int x, int y, int availW) {
+         int idx = selectedSize.ordinal();
+         String shortName = SIZE_SHORT_NAMES[idx];
+         String diameter = formatDiameter(selectedSize.borderRadiusBlocks * 2) + " blocks";
+@@ -1180,7 +1180,7 @@ public class LatitudeCreateWorldScreen extends Screen {
+         };
+     }
+ 
+-    private void renderPlanispherePreview(GuiGraphics context, int areaLeft, int areaTop, int areaRight, int areaBottom) {
++    private void renderPlanispherePreview(GuiGraphicsExtractor context, int areaLeft, int areaTop, int areaRight, int areaBottom) {
+         long dbgStart = DEBUG_UI_SWITCH_LAG ? Util.getMillis() : 0L;
+         String caption = formatDiameter(selectedSize.borderRadiusBlocks * 2) + " blocks";
+         float labelScale = previewLabelScale(selectedSize);
+@@ -1232,7 +1232,7 @@ public class LatitudeCreateWorldScreen extends Screen {
+         }
+     }
+ 
+-    private void renderSpawnZoneDisabled(GuiGraphics context) {
++    private void renderSpawnZoneDisabled(GuiGraphicsExtractor context) {
+         long dbgStart = DEBUG_UI_SWITCH_LAG ? Util.getMillis() : 0L;
+         int overlayTop = rightDividerY + 2;
+         int overlayBottom = rightViewportBottom;
+@@ -1255,7 +1255,7 @@ public class LatitudeCreateWorldScreen extends Screen {
+         }
+     }
+ 
+-    private void renderPlanisphereDisabled(GuiGraphics context, int areaLeft, int areaTop, int areaRight, int areaBottom) {
++    private void renderPlanisphereDisabled(GuiGraphicsExtractor context, int areaLeft, int areaTop, int areaRight, int areaBottom) {
+         long dbgStart = DEBUG_UI_SWITCH_LAG ? Util.getMillis() : 0L;
+         int areaW = Math.max(0, areaRight - areaLeft);
+         int areaH = Math.max(0, areaBottom - areaTop);
+@@ -1392,7 +1392,7 @@ public class LatitudeCreateWorldScreen extends Screen {
+         return Math.max(5, Math.round(this.font.lineHeight * scale));
+     }
+ 
+-    private void drawSettingsRowLabel(GuiGraphics context, String label, int x, int rowY, int color) {
++    private void drawSettingsRowLabel(GuiGraphicsExtractor context, String label, int x, int rowY, int color) {
+         int labelY = rowY - scaledUi(10);
+         if (labelY + uiFontHeight() <= settingsViewportTop || labelY >= settingsViewportBottom) {
+             return;
+@@ -1400,7 +1400,7 @@ public class LatitudeCreateWorldScreen extends Screen {
+         drawBoundedText(context, label, new UiRect(x, labelY, Math.max(20, railW - 8 - SCROLLBAR_GUTTER), uiFontHeight()), color, false, true);
+     }
+ 
+-    private void drawSettingsStepperValue(GuiGraphics context, String text, int color, int rowY) {
++    private void drawSettingsStepperValue(GuiGraphicsExtractor context, String text, int color, int rowY) {
+         if (rowY + uiFontHeight() <= settingsViewportTop || rowY >= settingsViewportBottom) {
+             return;
+         }
+@@ -1415,11 +1415,11 @@ public class LatitudeCreateWorldScreen extends Screen {
+         drawBoundedText(context, fitted, new UiRect(safeLeft + Math.max(0, (safeWidth - textW) / 2), drawY, safeWidth, uiFontHeight()), color, true, true);
+     }
+ 
+-    private void drawUiText(GuiGraphics context, String text, int x, int y, int color, boolean shadow) {
+-        context.drawString(this.font, text, x, y, color, shadow);
++    private void drawUiText(GuiGraphicsExtractor context, String text, int x, int y, int color, boolean shadow) {
++        context.text(this.font, text, x, y, color, shadow);
+     }
+ 
+-    private void drawCenteredUiText(GuiGraphics context, String text, int cx, int y, int color, boolean shadow) {
++    private void drawCenteredUiText(GuiGraphicsExtractor context, String text, int cx, int y, int color, boolean shadow) {
+         drawUiText(context, text, cx - uiTextWidth(text) / 2, y, color, shadow);
+     }
+ 
+@@ -1451,7 +1451,7 @@ public class LatitudeCreateWorldScreen extends Screen {
+         return Math.max(min, Math.min(max, value));
+     }
+ 
+-    private boolean drawBoundedText(GuiGraphics context, String text, UiRect rect, int color, boolean shadow, boolean ellipsize) {
++    private boolean drawBoundedText(GuiGraphicsExtractor context, String text, UiRect rect, int color, boolean shadow, boolean ellipsize) {
+         if (!fitsHeight(rect.h)) {
+             return false;
+         }
+@@ -1465,7 +1465,7 @@ public class LatitudeCreateWorldScreen extends Screen {
+         return true;
+     }
+ 
+-    private boolean drawBoundedStyledText(GuiGraphics context, Component text, UiRect rect, int color, boolean shadow, boolean ellipsize) {
++    private boolean drawBoundedStyledText(GuiGraphicsExtractor context, Component text, UiRect rect, int color, boolean shadow, boolean ellipsize) {
+         if (!fitsHeight(rect.h)) {
+             return false;
+         }
+@@ -1475,11 +1475,11 @@ public class LatitudeCreateWorldScreen extends Screen {
+         }
+         int drawX = clampToRect(rect.x, uiTextWidth(fitted), rect.x, rect.right());
+         int drawY = clampToRect(rect.y, uiFontHeight(), rect.y, rect.bottom());
+-        context.drawString(this.font, Component.literal(fitted).setStyle(text.getStyle().withItalic(true)), drawX, drawY, color, shadow);
++        context.text(this.font, Component.literal(fitted).setStyle(text.getStyle().withItalic(true)), drawX, drawY, color, shadow);
+         return true;
+     }
+ 
+-    private int drawWrappedStyledTextBlock(GuiGraphics context, Component text, UiRect rect, int color, boolean shadow, int maxLines, boolean center, boolean optional) {
++    private int drawWrappedStyledTextBlock(GuiGraphicsExtractor context, Component text, UiRect rect, int color, boolean shadow, int maxLines, boolean center, boolean optional) {
+         if (rect.w <= 0 || rect.h < uiFontHeight()) {
+             return 0;
+         }
+@@ -1503,7 +1503,7 @@ public class LatitudeCreateWorldScreen extends Screen {
+                 String fitted = ellipsizeToWidth(lineText.getString(), rect.w);
+                 if (!fitted.isEmpty()) {
+                     int drawX = rect.x + Math.max(0, (rect.w - uiTextWidth(fitted)) / 2);
+-                    context.drawString(this.font, Component.literal(fitted).setStyle(lineText.getStyle().withItalic(true)), drawX, y, color, shadow);
++                    context.text(this.font, Component.literal(fitted).setStyle(lineText.getStyle().withItalic(true)), drawX, y, color, shadow);
+                 }
+             } else {
+                 drawBoundedStyledText(context, lineText, new UiRect(rect.x, y, rect.w, uiFontHeight()), color, shadow, true);
+@@ -1513,7 +1513,7 @@ public class LatitudeCreateWorldScreen extends Screen {
+         return drawCount * uiFontHeight();
+     }
+ 
+-    private boolean drawCenteredBoundedText(GuiGraphics context, String text, UiRect rect, int color, boolean shadow, boolean ellipsize) {
++    private boolean drawCenteredBoundedText(GuiGraphicsExtractor context, String text, UiRect rect, int color, boolean shadow, boolean ellipsize) {
+         if (!fitsHeight(rect.h)) {
+             return false;
+         }
+@@ -1527,7 +1527,7 @@ public class LatitudeCreateWorldScreen extends Screen {
+         return true;
+     }
+ 
+-    private int drawWrappedTextBlock(GuiGraphics context, String text, UiRect rect, int color, boolean shadow, int maxLines, boolean center, boolean optional) {
++    private int drawWrappedTextBlock(GuiGraphicsExtractor context, String text, UiRect rect, int color, boolean shadow, int maxLines, boolean center, boolean optional) {
+         if (rect.w <= 0 || rect.h < uiFontHeight()) {
+             return 0;
+         }
+@@ -1579,12 +1579,12 @@ public class LatitudeCreateWorldScreen extends Screen {
+         }
+     }
+ 
+-    private void drawScaledText(GuiGraphics context, String text, int x, int y, float scale, int color, boolean shadow) {
++    private void drawScaledText(GuiGraphicsExtractor context, String text, int x, int y, float scale, int color, boolean shadow) {
+         var matrices = context.pose();
+         matrices.pushMatrix();
+         matrices.translate((float) x, (float) y);
+         matrices.scale(scale, scale);
+-        context.drawString(this.font, text, 0, 0, color, shadow);
++        context.text(this.font, text, 0, 0, color, shadow);
+         matrices.popMatrix();
+     }
+ 
+@@ -1604,7 +1604,7 @@ public class LatitudeCreateWorldScreen extends Screen {
+     private static final int GRID_COLOR = 0x14504840;
+     private static final int GRID_STEP = 16;  // large-ish squares
+ 
+-    private void drawPanel(GuiGraphics context, int x, int y, int w, int h) {
++    private void drawPanel(GuiGraphicsExtractor context, int x, int y, int w, int h) {
+         // Border
+         context.fill(x, y, x + w, y + 1, PANEL_BORDER);
+         context.fill(x, y + h - 1, x + w, y + h, PANEL_BORDER);
+@@ -1616,7 +1616,7 @@ public class LatitudeCreateWorldScreen extends Screen {
+         drawGridDecoration(context, x + 1, y + 1, w - 2, h - 2);
+     }
+ 
+-    private static void drawGridDecoration(GuiGraphics context, int x, int y, int w, int h) {
++    private static void drawGridDecoration(GuiGraphicsExtractor context, int x, int y, int w, int h) {
+         if (h < 20 || w < 20) return;
+         // Horizontal lines
+         for (int gy = GRID_STEP; gy < h; gy += GRID_STEP) {
+@@ -1628,12 +1628,12 @@ public class LatitudeCreateWorldScreen extends Screen {
+         }
+     }
+ 
+-    private void drawCenteredString(GuiGraphics context, String text, int cx, int y, int color, boolean shadow) {
++    private void drawCenteredString(GuiGraphicsExtractor context, String text, int cx, int y, int color, boolean shadow) {
+         int textW = this.font.width(text);
+-        context.drawString(this.font, text, cx - textW / 2, y, color, shadow);
++        context.text(this.font, text, cx - textW / 2, y, color, shadow);
+     }
+ 
+-    private void drawViewportClippedPanel(GuiGraphics context, int x, int y, int w, int h) {
++    private void drawViewportClippedPanel(GuiGraphicsExtractor context, int x, int y, int w, int h) {
+         int clipLeft = Math.max(x, paneStripViewportLeft);
+         int clipRight = Math.min(x + w, paneStripViewportRight);
+         if (clipRight <= clipLeft) {
+@@ -1644,7 +1644,7 @@ public class LatitudeCreateWorldScreen extends Screen {
+         context.disableScissor();
+     }
+ 
+-    private void drawInlineHeading(GuiGraphics context, int paneX, int paneW, String label, int labelColor) {
++    private void drawInlineHeading(GuiGraphicsExtractor context, int paneX, int paneW, String label, int labelColor) {
+         int headingY = panelTop + compactUi(6);
+         int availableW = paneW - scaledUi(12);
+         if (availableW <= 0) return;
+@@ -1664,7 +1664,7 @@ public class LatitudeCreateWorldScreen extends Screen {
+                 labelColor, true, true);
+     }
+ 
+-    private void drawPaneScrollbar(GuiGraphics context, int paneX, int paneW, int viewportTop, int viewportBottom,
++    private void drawPaneScrollbar(GuiGraphicsExtractor context, int paneX, int paneW, int viewportTop, int viewportBottom,
+                                    int contentHeight, int scrollAmount) {
+         int viewportHeight = Math.max(0, viewportBottom - viewportTop);
+         int maxScroll = Math.max(0, contentHeight - viewportHeight);
+@@ -1688,7 +1688,7 @@ public class LatitudeCreateWorldScreen extends Screen {
+         }
+     }
+ 
+-    private void drawTabStrip(GuiGraphics context, int mouseX, int mouseY) {
++    private void drawTabStrip(GuiGraphicsExtractor context, int mouseX, int mouseY) {
+         int tabCount = TAB_LABELS.length;
+         int totalW = paneStripViewportWidth;
+         int tabW = (totalW - TAB_GAP * (tabCount - 1)) / tabCount;
+@@ -1739,7 +1739,7 @@ public class LatitudeCreateWorldScreen extends Screen {
+         return false;
+     }
+ 
+-    private void drawHorizontalScrollbar(GuiGraphics context) {
++    private void drawHorizontalScrollbar(GuiGraphicsExtractor context) {
+         int maxScroll = getPaneStripMaxScroll();
+         if (maxScroll <= 0 || paneStripScrollbarH <= 0) {
+             return;
+@@ -1823,7 +1823,7 @@ public class LatitudeCreateWorldScreen extends Screen {
+         }
+ 
+         @Override
+-        protected void renderWidget(GuiGraphics context, int mouseX, int mouseY, float deltaTicks) {
++        protected void extractWidgetRenderState(GuiGraphicsExtractor context, int mouseX, int mouseY, float deltaTicks) {
+             boolean selected = selectedZone == this.band;
+             int x = this.getX();
+             int y = this.getY();
+diff --git a/src/main/java/com/example/globe/client/create/LatitudePlanisphereRenderer.java b/src/main/java/com/example/globe/client/create/LatitudePlanisphereRenderer.java
+index ff76166..2dde733 100644
+--- a/src/main/java/com/example/globe/client/create/LatitudePlanisphereRenderer.java
++++ b/src/main/java/com/example/globe/client/create/LatitudePlanisphereRenderer.java
+@@ -3,7 +3,7 @@ package com.example.globe.client.create;
+ import com.example.globe.client.GlobeWorldSize;
+ import com.example.globe.util.LatitudeBands;
+ import java.util.Arrays;
+-import net.minecraft.client.gui.GuiGraphics;
++import net.minecraft.client.gui.GuiGraphicsExtractor;
+ 
+ /**
+  * Renders a live 2D latitude disc for the bespoke create-world screen.
+@@ -51,7 +51,7 @@ public final class LatitudePlanisphereRenderer {
+      * @param panelBottom  bottom edge of the panel (for label clipping)
+      * @param textRenderer text renderer for degree labels
+      */
+-    public static void render(GuiGraphics ctx, int cx, int cy, int maxRadius,
++    public static void render(GuiGraphicsExtractor ctx, int cx, int cy, int maxRadius,
+                               GlobeWorldSize size, LatitudeBands.Band selectedZone,
+                               int panelRight, int panelTop, int panelBottom,
+                               net.minecraft.client.gui.Font textRenderer) {
+@@ -191,7 +191,7 @@ public final class LatitudePlanisphereRenderer {
+     }
+ 
+     // ── Draw a single horizontal latitude line clipped to the disc ──
+-    private static void drawLatitudeLine(GuiGraphics ctx, int cx, int cy, int radius, int yOff, int color) {
++    private static void drawLatitudeLine(GuiGraphicsExtractor ctx, int cx, int cy, int radius, int yOff, int color) {
+         float frac = 1.0f - (float) (yOff * yOff) / (float) (radius * radius);
+         if (frac <= 0) return;
+         int halfW = (int) (Math.sqrt(frac) * radius);
+@@ -204,18 +204,18 @@ public final class LatitudePlanisphereRenderer {
+         return Math.max(LABEL_MIN_SCALE, Math.min(LABEL_MAX_SCALE, scaled * LABEL_BASE_SCALE / LABEL_MIN_SCALE));
+     }
+ 
+-    private static void drawScaledText(GuiGraphics ctx, net.minecraft.client.gui.Font tr,
++    private static void drawScaledText(GuiGraphicsExtractor ctx, net.minecraft.client.gui.Font tr,
+                                        String text, int x, int y, float scale, int color) {
+         var matrices = ctx.pose();
+         matrices.pushMatrix();
+         matrices.translate((float) x, (float) y);
+         matrices.scale(scale, scale);
+-        ctx.drawString(tr, text, 0, 0, color, false);
++        ctx.text(tr, net.minecraft.network.chat.Component.literal(text), 0, 0, color, false);
+         matrices.popMatrix();
+     }
+ 
+     // ── Dashed circle (decorative, for small worlds) ──
+-    private static void drawDashedCircle(GuiGraphics ctx, int cx, int cy, int radius, int color) {
++    private static void drawDashedCircle(GuiGraphicsExtractor ctx, int cx, int cy, int radius, int color) {
+         int dashLen = 3;
+         int gapLen = 3;
+         for (int dy = -radius; dy <= radius; dy++) {
+@@ -237,7 +237,7 @@ public final class LatitudePlanisphereRenderer {
+     }
+ 
+     // ── Fill a circular disc ──
+-    private static void fillCircle(GuiGraphics ctx, int cx, int cy, int radius, int color) {
++    private static void fillCircle(GuiGraphicsExtractor ctx, int cx, int cy, int radius, int color) {
+         for (int dy = -radius; dy <= radius; dy++) {
+             float frac = 1.0f - (float) (dy * dy) / (float) (radius * radius);
+             if (frac <= 0) continue;
+@@ -248,7 +248,7 @@ public final class LatitudePlanisphereRenderer {
+     }
+ 
+     // ── Fill a horizontal band strip within a circular disc ──
+-    private static void fillBandStrip(GuiGraphics ctx, int cx, int cy, int radius, int yStart, int yEnd, int color) {
++    private static void fillBandStrip(GuiGraphicsExtractor ctx, int cx, int cy, int radius, int yStart, int yEnd, int color) {
+         for (int dy = yStart; dy < yEnd; dy++) {
+             float frac = 1.0f - (float) (dy * dy) / (float) (radius * radius);
+             if (frac <= 0) continue;
+@@ -269,7 +269,7 @@ public final class LatitudePlanisphereRenderer {
+      * @param size         both width and height of the bounding square (pixels)
+      * @param selectedBand the currently selected latitude band
+      */
+-    public static void renderCompact(GuiGraphics context, int x, int y, int size, LatitudeBands.Band selectedBand) {
++    public static void renderCompact(GuiGraphicsExtractor context, int x, int y, int size, LatitudeBands.Band selectedBand) {
+         if (size < 20) return;
+ 
+         int radius = size / 2;
+diff --git a/src/main/java/com/example/globe/mixin/ExtremePolarVegetationGuardMixin.java b/src/main/java/com/example/globe/mixin/ExtremePolarVegetationGuardMixin.java
+index eae8cd3..af054d8 100644
+--- a/src/main/java/com/example/globe/mixin/ExtremePolarVegetationGuardMixin.java
++++ b/src/main/java/com/example/globe/mixin/ExtremePolarVegetationGuardMixin.java
+@@ -3,28 +3,109 @@ package com.example.globe.mixin;
+ import com.example.globe.GlobeMod;
+ import com.example.globe.world.LatitudeBiomes;
+ import net.minecraft.core.BlockPos;
+-import net.minecraft.world.level.levelgen.feature.FeaturePlaceContext;
+-import net.minecraft.world.level.levelgen.feature.RandomPatchFeature;
++import net.minecraft.core.registries.BuiltInRegistries;
++import net.minecraft.util.RandomSource;
++import net.minecraft.world.level.WorldGenLevel;
++import net.minecraft.world.level.block.state.BlockState;
++import net.minecraft.world.level.chunk.ChunkGenerator;
++import net.minecraft.world.level.levelgen.feature.BambooFeature;
++import net.minecraft.world.level.levelgen.feature.BlockColumnFeature;
++import net.minecraft.world.level.levelgen.feature.ConfiguredFeature;
++import net.minecraft.world.level.levelgen.feature.FallenTreeFeature;
++import net.minecraft.world.level.levelgen.feature.Feature;
++import net.minecraft.world.level.levelgen.feature.SimpleBlockFeature;
+ import net.minecraft.world.level.levelgen.feature.TreeFeature;
++import net.minecraft.world.level.levelgen.feature.configurations.BlockColumnConfiguration;
++import net.minecraft.world.level.levelgen.feature.configurations.FeatureConfiguration;
++import net.minecraft.world.level.levelgen.feature.configurations.SimpleBlockConfiguration;
++import net.minecraft.world.level.levelgen.feature.stateproviders.BlockStateProvider;
+ import org.spongepowered.asm.mixin.Mixin;
+ import org.spongepowered.asm.mixin.injection.At;
+ import org.spongepowered.asm.mixin.injection.Inject;
+ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
+ 
+ /**
+- * Prevents trees and grass/flower patches from generating past the
+- * extreme-polar-cap latitude cutoff, enforcing a dead barren cap.
++ * Prevents land vegetation from generating past the extreme-polar-cap latitude
++ * cutoff, enforcing a dead barren cap without blocking water, cave, or nether
++ * emitters.
+  */
+-@Mixin({TreeFeature.class, RandomPatchFeature.class})
++@Mixin(ConfiguredFeature.class)
+ public class ExtremePolarVegetationGuardMixin {
+ 
+-    @Inject(method = "generate(Lnet/minecraft/world/gen/feature/util/FeatureContext;)Z",
++    @Inject(method = "place(Lnet/minecraft/world/level/WorldGenLevel;Lnet/minecraft/world/level/chunk/ChunkGenerator;Lnet/minecraft/util/RandomSource;Lnet/minecraft/core/BlockPos;)Z",
+             at = @At("HEAD"), cancellable = true)
+-    private void globe$blockVegetationInExtremePolar(FeaturePlaceContext<?> context,
++    private void globe$blockVegetationInExtremePolar(WorldGenLevel level,
++                                                      ChunkGenerator chunkGenerator,
++                                                      RandomSource random,
++                                                      BlockPos origin,
+                                                       CallbackInfoReturnable<Boolean> cir) {
+-        BlockPos origin = context.origin();
+         if (LatitudeBiomes.isBlockInExtremePolarCap(origin.getZ(), GlobeMod.BORDER_RADIUS)) {
+-            cir.setReturnValue(false);
++            ConfiguredFeature<?, ?> configured = (ConfiguredFeature<?, ?>) (Object) this;
++            if (globe$isLandVegetation(configured.feature(), configured.config(), level, origin)) {
++                cir.setReturnValue(false);
++            }
+         }
+     }
++
++    private static boolean globe$isLandVegetation(Feature<?> feature,
++                                                  FeatureConfiguration config,
++                                                  WorldGenLevel level,
++                                                  BlockPos origin) {
++        if (feature instanceof TreeFeature || feature instanceof BambooFeature || feature instanceof FallenTreeFeature) {
++            return true;
++        }
++        if (feature instanceof SimpleBlockFeature && config instanceof SimpleBlockConfiguration simpleBlock) {
++            return globe$isLandVegetationProvider(simpleBlock.toPlace(), level, origin);
++        }
++        if (feature instanceof BlockColumnFeature && config instanceof BlockColumnConfiguration blockColumn) {
++            for (BlockColumnConfiguration.Layer layer : blockColumn.layers()) {
++                if (globe$isColumnVegetationProvider(layer.state(), level, origin)) {
++                    return true;
++                }
++            }
++        }
++        return false;
++    }
++
++    private static boolean globe$isLandVegetationProvider(BlockStateProvider provider,
++                                                          WorldGenLevel level,
++                                                          BlockPos origin) {
++        return globe$isLandVegetationBlock(globe$sampleProvider(provider, level, origin));
++    }
++
++    private static boolean globe$isColumnVegetationProvider(BlockStateProvider provider,
++                                                            WorldGenLevel level,
++                                                            BlockPos origin) {
++        String path = globe$blockPath(globe$sampleProvider(provider, level, origin));
++        return "cactus".equals(path) || "cactus_flower".equals(path) || "sugar_cane".equals(path);
++    }
++
++    private static BlockState globe$sampleProvider(BlockStateProvider provider,
++                                                   WorldGenLevel level,
++                                                   BlockPos origin) {
++        return provider.getState(level, RandomSource.create(0L), origin);
++    }
++
++    private static boolean globe$isLandVegetationBlock(BlockState state) {
++        String path = globe$blockPath(state);
++        return switch (path) {
++            case "short_grass", "tall_grass", "short_dry_grass", "tall_dry_grass",
++                    "fern", "large_fern", "dead_bush", "bush", "firefly_bush",
++                    "sweet_berry_bush", "leaf_litter", "brown_mushroom", "red_mushroom",
++                    "melon", "pumpkin", "poppy", "dandelion", "blue_orchid", "allium",
++                    "azure_bluet", "red_tulip", "orange_tulip", "white_tulip",
++                    "pink_tulip", "oxeye_daisy", "cornflower", "lily_of_the_valley",
++                    "sunflower", "lilac", "rose_bush", "peony", "wither_rose",
++                    "pink_petals", "wildflowers", "wildflower", "closed_eyeblossom",
++                    "open_eyeblossom", "torchflower" -> true;
++            default -> false;
++        };
++    }
++
++    private static String globe$blockPath(BlockState state) {
++        if (state == null) {
++            return "";
++        }
++        return BuiltInRegistries.BLOCK.getKey(state.getBlock()).getPath();
++    }
+ }
+diff --git a/src/main/java/com/example/globe/mixin/HandledScreenCompassToggleMixin.java b/src/main/java/com/example/globe/mixin/HandledScreenCompassToggleMixin.java
+index c2b6fd9..e2f6429 100644
+--- a/src/main/java/com/example/globe/mixin/HandledScreenCompassToggleMixin.java
++++ b/src/main/java/com/example/globe/mixin/HandledScreenCompassToggleMixin.java
+@@ -3,7 +3,7 @@ package com.example.globe.mixin;
+ import com.example.globe.client.CompassHudConfig;
+ import com.mojang.blaze3d.platform.InputConstants;
+ import net.minecraft.client.Minecraft;
+-import net.minecraft.client.gui.GuiGraphics;
++import net.minecraft.client.gui.GuiGraphicsExtractor;
+ import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
+ import net.minecraft.client.input.MouseButtonEvent;
+ import net.minecraft.core.component.DataComponents;
+@@ -20,8 +20,8 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
+ 
+ @Mixin(AbstractContainerScreen.class)
+ public abstract class HandledScreenCompassToggleMixin {
+-    @Shadow protected int x;
+-    @Shadow protected int y;
++    @Shadow protected int leftPos;
++    @Shadow protected int topPos;
+     @Shadow protected abstract Slot getSlotAt(double x, double y);
+ 
+     @Inject(method = "mouseClicked(Lnet/minecraft/client/gui/Click;Z)Z", at = @At("HEAD"), cancellable = true)
+@@ -49,8 +49,8 @@ public abstract class HandledScreenCompassToggleMixin {
+         cir.setReturnValue(true);
+     }
+ 
+-    @Inject(method = "drawSlot", at = @At("TAIL"))
+-    private void globe$drawCompassDisabledX(GuiGraphics ctx, Slot slot, int i, int j, CallbackInfo ci) {
++    @Inject(method = "extractSlot", at = @At("TAIL"))
++    private void globe$drawCompassDisabledX(GuiGraphicsExtractor ctx, Slot slot, int i, int j, CallbackInfo ci) {
+         if (CompassHudConfig.get().enabled) return;
+         if (slot == null) return;
+ 
+@@ -59,8 +59,8 @@ public abstract class HandledScreenCompassToggleMixin {
+ 
+         if (!(stack.is(Items.COMPASS) || containsCompass(stack, 0))) return;
+ 
+-        int iconX = this.x + slot.x;
+-        int iconY = this.y + slot.y;
++        int iconX = this.leftPos + slot.x;
++        int iconY = this.topPos + slot.y;
+ 
+         for (int k = 0; k < 5; k++) {
+             int px1 = iconX + 1 + k;
+@@ -82,9 +82,7 @@ public abstract class HandledScreenCompassToggleMixin {
+         if (stack.is(Items.BUNDLE)) {
+             BundleContents contents = stack.get(DataComponents.BUNDLE_CONTENTS);
+             if (contents != null) {
+-                for (ItemStack inside : contents.items()) {
+-                    if (containsCompass(inside, depth + 1)) return true;
+-                }
++                if (contents.itemCopyStream().anyMatch(inside -> containsCompass(inside, depth + 1))) return true;
+             }
+         }
+ 
+diff --git a/src/main/java/com/example/globe/mixin/client/CreateWorldScreenLatitudeToggleMixin.java b/src/main/java/com/example/globe/mixin/client/CreateWorldScreenLatitudeToggleMixin.java
+index d3abf08..91a3c12 100644
+--- a/src/main/java/com/example/globe/mixin/client/CreateWorldScreenLatitudeToggleMixin.java
++++ b/src/main/java/com/example/globe/mixin/client/CreateWorldScreenLatitudeToggleMixin.java
+@@ -1,7 +1,7 @@
+ package com.example.globe.mixin.client;
+ 
+ import net.minecraft.ChatFormatting;
+-import net.minecraft.client.gui.GuiGraphics;
++import net.minecraft.client.gui.GuiGraphicsExtractor;
+ import net.minecraft.client.gui.components.AbstractWidget;
+ import net.minecraft.client.gui.components.Button;
+ import net.minecraft.client.gui.components.events.GuiEventListener;
+@@ -34,7 +34,7 @@ public abstract class CreateWorldScreenLatitudeToggleMixin extends Screen {
+ 
+     @Shadow
+     @Final
+-    private WorldCreationUiState worldCreator;
++    private WorldCreationUiState uiState;
+ 
+     @Unique
+     private boolean latitude$enabled = true;
+@@ -61,7 +61,7 @@ public abstract class CreateWorldScreenLatitudeToggleMixin extends Screen {
+         this.latitude$previousPreset = null;
+         this.latitude$worldTypeWidget = latitude$findWorldTypeWidget((CreateWorldScreen) (Object) this);
+ 
+-        WorldCreationUiState.WorldTypeEntry type = this.worldCreator.getWorldType();
++        WorldCreationUiState.WorldTypeEntry type = this.uiState.getWorldType();
+         Holder<WorldPreset> preset = type != null ? type.preset() : null;
+         ResourceKey<WorldPreset> currentKey = preset != null ? preset.unwrapKey().orElse(null) : null;
+         Identifier currentId = currentKey != null ? currentKey.identifier() : null;
+@@ -100,22 +100,22 @@ public abstract class CreateWorldScreenLatitudeToggleMixin extends Screen {
+         this.addRenderableWidget(this.latitude$toggleBtn);
+     }
+ 
+-    @Inject(method = "render(Lnet/minecraft/client/gui/DrawContext;IIF)V", at = @At("TAIL"))
+-    private void latitude$render(GuiGraphics context, int mouseX, int mouseY, float delta, CallbackInfo ci) {
++    @Inject(method = "extractRenderState(Lnet/minecraft/client/gui/GuiGraphicsExtractor;IIF)V", at = @At("TAIL"))
++    private void latitude$render(GuiGraphicsExtractor context, int mouseX, int mouseY, float delta, CallbackInfo ci) {
+         latitude$syncFromSelectedPreset();
+         if (this.latitude$toggleBtn == null) return;
+         if (this.latitude$enabled) return;
+ 
+         int x = this.latitude$toggleBtn.getX();
+         int y = this.latitude$toggleBtn.getY() + this.latitude$toggleBtn.getHeight() + 4;
+-        context.drawString(this.font, "Latitude is OFF — this world will use default generation.", x, y, 0xFFCCCCCC);
++        context.text(this.font, "Latitude is OFF — this world will use default generation.", x, y, 0xFFCCCCCC);
+     }
+ 
+     @Unique
+     private void latitude$toggle() {
+         boolean newEnabled = !this.latitude$enabled;
+ 
+-        WorldCreationUiState.WorldTypeEntry type = this.worldCreator.getWorldType();
++        WorldCreationUiState.WorldTypeEntry type = this.uiState.getWorldType();
+         ResourceKey<WorldPreset> currentKey;
+         Holder<WorldPreset> preset = type != null ? type.preset() : null;
+         if (preset == null) {
+@@ -142,7 +142,7 @@ public abstract class CreateWorldScreenLatitudeToggleMixin extends Screen {
+ 
+     @Unique
+     private void latitude$syncFromSelectedPreset() {
+-        WorldCreationUiState.WorldTypeEntry type = this.worldCreator.getWorldType();
++        WorldCreationUiState.WorldTypeEntry type = this.uiState.getWorldType();
+         Identifier presetId;
+         Holder<WorldPreset> preset = type != null ? type.preset() : null;
+         if (preset == null) {
+@@ -169,14 +169,14 @@ public abstract class CreateWorldScreenLatitudeToggleMixin extends Screen {
+ 
+     @Unique
+     private void latitude$setWorldPreset(Identifier presetId) {
+-        if (this.worldCreator == null) return;
++        if (this.uiState == null) return;
+ 
+-        Registry<WorldPreset> presets = this.worldCreator.getSettings()
++        Registry<WorldPreset> presets = this.uiState.getSettings()
+                 .worldgenLoadContext()
+                 .lookupOrThrow(Registries.WORLD_PRESET);
+ 
+         ResourceKey<WorldPreset> key = ResourceKey.create(Registries.WORLD_PRESET, presetId);
+-        presets.get(key).ifPresent(entry -> this.worldCreator.setWorldType(new WorldCreationUiState.WorldTypeEntry((Holder<WorldPreset>) entry)));
++        presets.get(key).ifPresent(entry -> this.uiState.setWorldType(new WorldCreationUiState.WorldTypeEntry((Holder<WorldPreset>) entry)));
+     }
+ 
+     @Unique
+diff --git a/src/main/java/com/example/globe/mixin/client/EwStormWallRendererMixin.java b/src/main/java/com/example/globe/mixin/client/EwStormWallRendererMixin.java
+index a53e2f5..aebafac 100644
+--- a/src/main/java/com/example/globe/mixin/client/EwStormWallRendererMixin.java
++++ b/src/main/java/com/example/globe/mixin/client/EwStormWallRendererMixin.java
+@@ -8,7 +8,7 @@ import net.minecraft.client.Minecraft;
+ import net.minecraft.client.renderer.LevelRenderer;
+ import net.minecraft.client.renderer.SubmitNodeCollector;
+ import net.minecraft.client.renderer.rendertype.RenderTypes;
+-import net.minecraft.client.renderer.state.LevelRenderState;
++import net.minecraft.client.renderer.state.level.LevelRenderState;
+ import net.minecraft.world.phys.Vec3;
+ import org.lwjgl.opengl.GL11;
+ import org.spongepowered.asm.mixin.Mixin;
+@@ -22,7 +22,7 @@ public abstract class EwStormWallRendererMixin {
+     private static boolean latitude$logged = false;
+     private static long latitude$lastLogTick = Long.MIN_VALUE;
+ 
+-    @Inject(method = "pushEntityRenders", at = @At("HEAD"))
++    @Inject(method = "submitEntities", at = @At("HEAD"))
+     private void latitude$injectRenderWall(PoseStack matrices, LevelRenderState renderStates, SubmitNodeCollector queue, CallbackInfo ci) {
+         if (queue == null || matrices == null) {
+             return;
+diff --git a/src/main/resources/data/globe/tags/worldgen/biome/lat_subpolar_primary.json b/src/main/resources/data/globe/tags/worldgen/biome/lat_subpolar_primary.json
+index 162adfd..f484900 100644
+--- a/src/main/resources/data/globe/tags/worldgen/biome/lat_subpolar_primary.json
++++ b/src/main/resources/data/globe/tags/worldgen/biome/lat_subpolar_primary.json
+@@ -2,6 +2,7 @@
+   "replace": false,
+   "values": [
+     "minecraft:snowy_plains",
+-    "minecraft:snowy_taiga"
++    "minecraft:snowy_taiga",
++    { "id": "biomeswevegone:frosted_taiga", "required": false }
+   ]
+ }
+diff --git a/src/main/resources/data/globe/tags/worldgen/biome/lat_temperate_primary.json b/src/main/resources/data/globe/tags/worldgen/biome/lat_temperate_primary.json
+index 8b2db2b..8235852 100644
+--- a/src/main/resources/data/globe/tags/worldgen/biome/lat_temperate_primary.json
++++ b/src/main/resources/data/globe/tags/worldgen/biome/lat_temperate_primary.json
+@@ -4,6 +4,7 @@
+     "minecraft:forest",
+     "minecraft:plains",
+     "minecraft:birch_forest",
+-    "minecraft:taiga"
++    "minecraft:taiga",
++    { "id": "biomeswevegone:temperate_grove", "required": false }
+   ]
+ }

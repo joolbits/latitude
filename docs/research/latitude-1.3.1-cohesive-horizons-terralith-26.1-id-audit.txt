@@ -1,0 +1,20 @@
+26.1 Cohesive Horizons Terralith ID audit
+
+Root: <home>/CascadeProjects/Latitude (Globe)
+Branch: feat/1.3.1-cohesive-horizons-26.1
+HEAD: 36abd39ed0c9061fcdb898450a91063f2be1298c
+Tags at HEAD: release/1.3.0+26.1-r2, save/26-1-release-artifact-purity
+
+Local metadata confirmed:
+- gradle.properties sets minecraft_version=26.1
+- fabric.mod.json declares minecraft >=26.1
+
+Upstream Terralith evidence:
+- Git refs expose only `refs/heads/1.20`, `refs/heads/main`, and tags `v2.5.0`, `v2.5.1`, `v2.5.9`
+- No 1.21.11 or 26.1 Terralith branch/tag was found
+- Terralith namespace is `terralith`
+
+Verdict:
+- Terralith 26.1 / 1.21.11 support is not confirmed
+- No compatible Terralith biome IDs were selected for the 26.1.x pilot
+- Pilot remains BYG-only until a supported Terralith line is explicitly identified
