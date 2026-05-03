@@ -1,0 +1,96 @@
+Latitude 1.3.1 "Cohesive Horizons" 26.1.x baseline transfer audit
+Date: 2026-05-03
+Mode: audit only, no checkout performed
+
+Starting state
+- Root: <home>/CascadeProjects/Latitude (Globe)
+- Branch: port/1.3.0-1.20.1
+- HEAD: 961229b6d9f740cffbdc713c81a3ce9b922d41ae
+- Tags at HEAD: save/1.20.1-gradlew-executable
+- Tree: DIRTY only by untracked docs/research/ and tmp/
+
+26.1.x / 1.21.11 candidates seen locally
+- fix/1.21.11-release-artifact-purity @ 0380b61 (packaging-only release hygiene)
+- port/26.1-fog-mixin-bucket @ 36abd39
+- port/26.1-createworld-stall-audit @ 04f4984
+- port/26.1-runtime-mixin-bucket @ cc8a214
+- port/26.1-latitudebiomes-final @ 1b2c1c7
+- plus earlier bootstrap/mappings/worldstate/network/client-api buckets
+
+Recommended 26.1.x baseline branch
+- Recommended checkout target: port/26.1-latitudebiomes-final
+- Why:
+  - It is the most directly relevant worldgen/LatitudeBiomes consolidation branch in the local 26.1 line.
+  - fix/1.21.11-release-artifact-purity is explicitly packaging-only and not a worldgen/tag baseline.
+  - The target branch already carries 26.1 metadata and the tag-resolution code path needed for compat planning.
+
+Checkout safety now
+- Safe now from overwrite/conflict perspective, based on a narrow check:
+  - current dirt is only untracked docs/research/ and tmp/
+  - target branches tested do not track docs/research or tmp
+- I still did not switch, per request to avoid unnecessary movement on a dirty tree; branch contents were audited by ref.
+
+26.1.x metadata target
+- From port/26.1-latitudebiomes-final:
+  - gradle.properties -> minecraft_version=26.1, fabric_api_version=0.145.1+26.1, mod_version=1.3.0-alpha.26.1
+  - fabric.mod.json -> minecraft >=1.21.10 <=1.21.11, fabricloader >=0.17.3
+- Interpretation: this branch targets the 26.1 toolchain on the 1.21.10-1.21.11 MC line.
+
+26.1 tag structure vs 1.20.1
+- Same core tag container shape:
+  - data/globe/tags/worldgen/biome/*.json
+  - "replace": false
+  - "values": [ ... ]
+  - sample lat_temperate_primary.json still uses plain required string IDs only
+- Drift from 1.20.1:
+  - the 26.1 line includes lat_subtropical_humid_primary / secondary / accent tag files
+  - the resolver code uses Holder<Biome> and biomes.getTagOrEmpty(tag) / entry.is(tag) instead of the older RegistryEntry iterateEntries/isIn API
+
+Optional-entry safety on 26.1.x
+- Verdict: SAFE, same conclusion as the 1.20.1 branch-local audit
+- Why:
+  - 1.21.11-era Yarn still exposes optional tag entry APIs (TagEntry createOptional / createOptionalTag; 1.21.11 class-use and 1.21.8 TagEntry docs agree)
+  - the 26.1 Latitude runtime resolver does not require every referenced ID to exist; it collects resolved holders from biomes.getTagOrEmpty(tag), sorts them, and returns base if the list is empty
+  - the collection-backed path still filters by entry.is(tag), which naturally excludes unresolved optionals
+- Practical meaning:
+  - optional object-form biome refs should remain the safe way to carry absent-mod compat entries on the 26.1 line
+  - raw string external IDs would still be the unsafe form if the mod is absent
+
+Exact safe JSON shape for 26.1 planning
+```json
+{
+  "replace": false,
+  "values": [
+    "minecraft:forest",
+    { "id": "biomeswevegone:temperate_grove", "required": false },
+    { "id": "natures_spirit:aspen_forest", "required": false }
+  ]
+}
+```
+
+Evidence for 26.1 optional semantics
+- Branch snapshot evidence:
+  - port/26.1-latitudebiomes-final:gradle.properties
+  - port/26.1-latitudebiomes-final:src/main/resources/fabric.mod.json
+  - port/26.1-latitudebiomes-final:src/main/resources/data/globe/tags/worldgen/biome/lat_temperate_primary.json
+  - port/26.1-latitudebiomes-final:src/main/java/com/example/globe/world/LatitudeBiomes.java
+- API evidence:
+  - Registry 1.21.11: https://maven.fabricmc.net/docs/yarn-1.21.11%2Bbuild.1/net/minecraft/registry/Registry.html
+  - TagEntry 1.21.8: https://maven.fabricmc.net/docs/yarn-1.21.8%2Bbuild.1/net/minecraft/registry/tag/TagEntry.html
+  - TagEntry class-use 1.21.11: https://maven.fabricmc.net/docs/yarn-1.21.11%2Bbuild.4/net/minecraft/registry/tag/class-use/TagEntry.html
+
+Files inspected
+- <home>/CascadeProjects/Latitude (Globe)/gradle.properties
+- <home>/CascadeProjects/Latitude (Globe)/src/main/resources/fabric.mod.json
+- port/26.1-latitudebiomes-final:gradle.properties
+- port/26.1-latitudebiomes-final:src/main/resources/fabric.mod.json
+- port/26.1-latitudebiomes-final:src/main/resources/data/globe/tags/worldgen/biome/lat_temperate_primary.json
+- port/26.1-latitudebiomes-final:src/main/java/com/example/globe/world/LatitudeBiomes.java
+
+Conclusion
+- Cohesive Horizons planning should move to port/26.1-latitudebiomes-final before any compat-tag edits.
+- Optional external biome entries remain safe on that 26.1 baseline when written as object-form entries with "required": false.
+- No code-support change is indicated by this audit before a tiny BYG + Nature's Spirit pilot on 26.1.
+
+Next single recommended slice
+- On port/26.1-latitudebiomes-final, audit-and-edit one tiny land-only pilot tag pair for BYG + Nature's Spirit using optional object-form entries, then verify tag resolution/runtime fallback without touching band math.

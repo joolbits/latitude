@@ -1,0 +1,120 @@
+Latitude 1.3.1 "Cohesive Horizons" biome-mod compatibility scout
+Date: 2026-05-03
+Mode: audit only, no implementation
+
+Repo state
+- Root: <home>/CascadeProjects/Latitude (Globe)
+- Branch: port/1.3.0-1.20.1
+- HEAD: 961229b6d9f740cffbdc713c81a3ce9b922d41ae
+- Tags at HEAD: save/1.20.1-gradlew-executable
+- Tree: DIRTY (untracked tmp/runtime-proof PNG artifacts only; no source dirt seen in narrow check)
+
+Chosen canonical target
+- Canonical target for this checkout is Minecraft 1.20.1 / Latitude 1.3.0+1.20.1, not 1.21.11 or 26.1.x.
+- Why: local branch name is 1.20.1, gradle.properties pins minecraft_version=1.20.1 and mod_version=1.3.0+1.20.1, and fabric.mod.json depends on minecraft ~1.20.1.
+
+Latitude local policy findings
+- Biome eligibility is two-part:
+  1. Java authority in src/main/java/com/example/globe/world/LatitudeBiomes.java via globe:* TagKey<Biome> selectors such as globe:lat_temperate_primary, globe:lat_subpolar_primary, globe:lat_ocean_temperate, and river/ocean checks against vanilla BiomeTags.
+  2. Data membership in src/main/resources/data/globe/tags/worldgen/biome/*.json.
+- Current tag namespace is globe, not latitude.
+- Current tag files use plain required string IDs only. Example: lat_temperate_primary.json contains raw minecraft:* values; no optional entries are present anywhere in the current globe biome-tag set.
+
+Optional external biome ID safety
+- Safe only if Latitude uses optional tag entries for modded biome IDs.
+- Unsafe if absent-mod biome IDs are added as today's bare string entries, because current files encode required entries only.
+- Evidence: Minecraft's tag loader exposes optional entries in TagEntry.createOptional / createOptionalTag and Fabric datagen exposes addOptional, so the engine has a native optional path; Latitude just is not using it today.
+- Audit conclusion: native compatibility is technically feasible without hard requiring the biome mods, but only through optional-entry encoding in the Latitude tag JSONs.
+
+Target audit
+
+1. Terralith
+- Current support: Modrinth says 26.1.x, 1.21.x, 1.20.x; platforms Data Pack/Fabric/Forge/NeoForge/Quilt; Fabric on 1.20.1 is supported.
+- Source/data location: https://github.com/Stardust-Labs-MC/Terralith , branch 1.20, data/terralith/worldgen/biome and data/c/tags/worldgen/biome.
+- Namespace: terralith
+- Sample biome IDs: terralith:alpha_islands, terralith:alpine_grove, terralith:amethyst_rainforest, terralith:ashen_savanna, terralith:painted_mountains
+- Useful source tags: c climate_cold/climate_dry/climate_hot/climate_temperate/climate_wet, plus beach, mountain, river, ocean, swamp, taiga, jungle.
+- License/reuse: Stardust Labs License; compatibility add-ons are explicitly allowed, but copying/distributing modified Terralith content is restricted.
+- Classification: research more
+- Why: technically mappable and source-tag-rich, but it is a datapack/mod hybrid with a very large biome surface and stricter license language than the other candidates.
+
+2. Oh The Biomes We've Gone
+- Current support: Modrinth says 1.21.10-1.21.11, 1.21.8, 1.21.4, 1.21.1, 1.20.1; platforms Fabric/Forge/NeoForge/Quilt; Fabric on 1.20.1 is supported.
+- Source/data location: https://github.com/Potion-Studios/Oh-The-Biomes-Weve-Gone , branch 1.20.1, Common/src/main/generated/resources/data/biomeswevegone/worldgen/biome and .../tags/worldgen/biome.
+- Namespace: biomeswevegone
+- Sample biome IDs: biomeswevegone:atacama_outback, biomeswevegone:cypress_wetlands, biomeswevegone:tropical_rainforest, biomeswevegone:frosted_taiga, biomeswevegone:shattered_glacier
+- Useful source tags: climate/cold,dry,hot,temperate,wet plus mountain, ocean, swamp, beach, jungle, snowy, savanna, wasteland.
+- License/reuse: ARR on Modrinth; using IDs/tags is lower risk than copying content, but redistribution remains constrained.
+- Classification: first-wave ready
+- Why: exact 1.20.1 Fabric line exists, biome IDs are source-visible, and the generated climate tags map cleanly onto Latitude's band-first policy.
+
+3. Nature's Spirit
+- Current support: Modrinth says 1.21-1.21.1, 1.20.6, 1.20.4, 1.20.1; platforms Fabric/Forge/NeoForge/Quilt; Fabric on 1.20.1 is supported.
+- Source/data location: https://github.com/Team-Hibiscus/NaturesSpirit , branch 1.20.1, src/main/resources/data/natures_spirit/worldgen/biome and src/main/resources/data/c/tags/worldgen/biome.
+- Namespace: natures_spirit
+- Sample biome IDs: natures_spirit:alpine_clearings, natures_spirit:arid_savanna, natures_spirit:bamboo_wetlands, natures_spirit:boreal_taiga, natures_spirit:chaparral
+- Useful source tags: c is_beach, is_cold, is_desert, is_dry, is_floral, is_forest, is_hot, is_mountain, is_savanna, is_snowy, is_swamp, is_wet.
+- License/reuse: Nature's Spirit License.
+- Classification: first-wave ready
+- Why: exact 1.20.1 Fabric line exists and the source already publishes climate/terrain helper tags that line up with Latitude's selectors.
+
+4. Biomes O' Plenty
+- Current support: Modrinth says 1.21.3-1.21.11, 1.21-1.21.1, 1.20.6, 1.20.4, 1.20-1.20.2; platforms Fabric/Forge/NeoForge; Fabric on 1.20.1 is supported.
+- Source/data location: https://github.com/Glitchfiend/BiomesOPlenty , branch 1.20.1, common/src/generated/resources/data/biomesoplenty/worldgen/biome plus common/src/main/resources/data/forge|minecraft/tags/worldgen/biome.
+- Namespace: biomesoplenty
+- Sample biome IDs: biomesoplenty:bayou, biomesoplenty:bog, biomesoplenty:dune_beach, biomesoplenty:lush_savanna, biomesoplenty:muskeg, biomesoplenty:tropics, biomesoplenty:tundra
+- Useful source tags: forge is_cold, is_desert, is_dry, is_hot, is_mountain, is_swamp, is_wet; minecraft is_beach, is_forest, is_jungle, is_mountain, is_overworld, is_savanna, is_taiga.
+- License/reuse: ARR on Modrinth.
+- Classification: first-wave ready
+- Why: exact 1.20.1 branch exists, IDs are source-visible, and the biome set is broad enough to justify a first pass even though helper tags are not as cleanly cross-platform as BYG/Nature's Spirit.
+
+Second-wave candidates
+- Strongest obvious next candidate: Regions Unexplored. Modrinth exposes a Fabric 1.20.1 release and its changelog explicitly says biome tags were redone to reduce feature-order crashes.
+- Next likely candidates after that: Traverse, Terrestria, Promenade. All show Fabric support on 1.20.x; they look promising for a later scout, but I did not do ID-level source confirmation in this pass.
+
+First-wave recommendation
+- Start with Oh The Biomes We've Gone, Nature's Spirit, and Biomes O' Plenty.
+- Hold Terralith for the second scout slice unless the first implementation slice is limited to a very small optional-ID pilot.
+
+Proposed compatibility policy shape
+- Tropical: only source-tagged hot/wet jungle-rainforest-tropics biomes; no inland mangrove unless explicitly wetland/coastal.
+- Subtropical: hot/dry savanna, chaparral, mediterranean, dry woodland, warm scrub.
+- Temperate: plains, groves, deciduous forest, mixed forest, meadow, orchard, floral fields.
+- Subpolar: boreal/taiga/cold conifer/cool highland and other source-tagged cold land biomes short of full ice.
+- Polar: tundra, glacier, snowfield, icy wasteland, frozen barrens.
+- Coastal required: beaches, shores, dunes, coasts, mangrove marshes only when source tags or docs mark them coastal.
+- Mountain required: peaks, ridges, cliffs, crags, alpine/highland only when source tags or docs mark mountain/highland terrain.
+- Wetland required: bayou, bog, marsh, swamp, wetlands only when source tags or docs mark wet/swamp.
+- Ocean/river/frozen handling: keep Latitude's current vanilla river/ocean authority first; only add modded ocean/river/frozen biomes after a dedicated aquatic audit.
+- Ignore/non-overworld: nether, end, cave-only, structure/helper pseudo-biomes, and any biome whose source classification is contradictory or unclear.
+
+Blockers
+- Latitude cannot safely reference absent mods with the current bare-string tag encoding; optional entry form is required.
+- Terralith's license and datapack/mod hybrid status warrant a narrower follow-up before bulk inclusion.
+- BOP helper tags are less cleanly standardized on Fabric than BYG/Nature's Spirit, so the first BOP pass should stay conservative.
+
+Exact files inspected
+- <home>/CascadeProjects/Latitude (Globe)/gradle.properties
+- <home>/CascadeProjects/Latitude (Globe)/src/main/resources/fabric.mod.json
+- <home>/CascadeProjects/Latitude (Globe)/src/main/java/com/example/globe/world/LatitudeBiomes.java
+- <home>/CascadeProjects/Latitude (Globe)/src/main/resources/data/globe/tags/worldgen/biome/lat_temperate_primary.json
+- <home>/CascadeProjects/Latitude (Globe)/src/main/resources/data/globe/tags/worldgen/biome/lat_ocean_temperate.json
+
+Primary external sources used
+- https://modrinth.com/datapack/terralith
+- https://github.com/Stardust-Labs-MC/Terralith
+- https://modrinth.com/mod/oh-the-biomes-weve-gone/versions
+- https://github.com/Potion-Studios/Oh-The-Biomes-Weve-Gone
+- https://modrinth.com/mod/natures-spirit
+- https://github.com/Team-Hibiscus/NaturesSpirit
+- https://modrinth.com/mod/biomes-o-plenty
+- https://github.com/Glitchfiend/BiomesOPlenty
+- https://maven.fabricmc.net/docs/yarn-1.20.1%2Bbuild.5/net/minecraft/registry/tag/TagEntry.html
+- https://maven.fabricmc.net/docs/fabric-api-0.92.1%2B1.20.1/net/fabricmc/fabric/api/datagen/v1/provider/FabricTagProvider.FabricTagBuilder.html
+- https://modrinth.com/mod/regions-unexplored/versions
+- https://modrinth.com/mod/promenade/versions
+- https://modrinth.com/mod/traverse
+- https://modrinth.com/mod/lsUDPMOT
+
+Next single recommended slice
+- Audit-only follow-up on optional biome-tag entry encoding for Latitude's globe biome tags, then pilot one tiny first-wave matrix with BYG + Nature's Spirit only.

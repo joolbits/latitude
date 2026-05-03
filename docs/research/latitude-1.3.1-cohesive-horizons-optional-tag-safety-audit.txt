@@ -1,0 +1,116 @@
+Latitude 1.3.1 "Cohesive Horizons" optional biome-tag safety audit
+Date: 2026-05-03
+Mode: audit only
+
+Repo state
+- Root: <home>/CascadeProjects/Latitude (Globe)
+- Branch: port/1.3.0-1.20.1
+- HEAD: 961229b6d9f740cffbdc713c81a3ce9b922d41ae
+- Tags at HEAD: save/1.20.1-gradlew-executable
+- Tree: DIRTY only by untracked docs/research/ and tmp/
+
+Question
+- Can this 1.20.1 branch safely include optional external biome IDs in globe biome tag JSONs so BYG and Nature's Spirit are not hard requirements?
+
+Verdict
+- SAFE, with one constraint: use object-form optional tag entries for every external biome reference instead of raw strings.
+- Current Latitude Java code does not appear to require hard IDs. It consumes resolved registry/tag results and already falls back when a tag resolves empty.
+
+Current Latitude tag shape
+- Current files under src/main/resources/data/globe/tags/worldgen/biome/ use:
+  - "replace": false
+  - "values": [ ... ]
+  - plain required string IDs only, e.g. lat_temperate_primary.json contains minecraft:forest/plains/birch_forest/taiga.
+- No optional entries are present in the current globe biome tags.
+
+1.20.1 evidence for optional registry tag entries
+- Minecraft/Yarn 1.20.1 tag model is registry-generic:
+  - TagFile is List<TagEntry> + boolean replace.
+  - TagEntry has an id field, a required field, and optional constructors/helpers:
+    - createOptional(Identifier)
+    - createOptionalTag(Identifier)
+    - forEachOptionalTagId(...)
+    - forEachRequiredTagId(...)
+- Fabric API 0.92.1+1.20.1 tag datagen builder also exposes:
+  - addOptional(RegistryKey<? extends T>)
+  - addOptional(Identifier)
+  - addOptionalTag(TagKey<T>)
+  - addOptionalTag(Identifier)
+- Registry handling is tolerant at the tag-list layer:
+  - Registry.getEntryList(tag) returns empty optional if tag is not known.
+  - Registry.iterateEntries(tag) returns empty iterable if tag is not known.
+- Because TagEntry/TagFile/Registry are generic over T, this applies to biome registry tags as well, not just blocks/items.
+
+Primary evidence links
+- TagEntry 1.20.1:
+  https://maven.fabricmc.net/docs/yarn-1.20.1%2Bbuild.5/net/minecraft/registry/tag/TagEntry.html
+- TagFile 1.20.1:
+  https://maven.fabricmc.net/docs/yarn-1.20.1%2Bbuild.5/net/minecraft/registry/tag/TagFile.html
+- Registry 1.20.1:
+  https://maven.fabricmc.net/docs/yarn-1.20.1%2Bbuild.5/net/minecraft/registry/Registry.html
+- FabricTagBuilder 0.92.1+1.20.1:
+  https://maven.fabricmc.net/docs/fabric-api-0.92.1%2B1.20.1/net/fabricmc/fabric/api/datagen/v1/provider/FabricTagProvider.FabricTagBuilder.html
+
+Exact recommended JSON shape
+- Recommended direct optional biome entries:
+```json
+{
+  "replace": false,
+  "values": [
+    "minecraft:forest",
+    { "id": "biomeswevegone:temperate_grove", "required": false },
+    { "id": "natures_spirit:aspen_forest", "required": false }
+  ]
+}
+```
+- Optional external biome tags are also supported by the same tag-entry model:
+```json
+{ "id": "#some_mod:some_biome_tag", "required": false }
+```
+- For the first pilot, direct biome IDs are safer than optional third-party tags because they avoid inheriting another mod's changing taxonomy.
+
+Why current Latitude code should tolerate this
+- Registry-backed runtime path:
+  - LatitudeBiomes.pickFromTagNoiseOrBase(Registry<Biome>...) builds a list from biomes.iterateEntries(tag), sorts it, and returns base if the list is empty.
+  - pickFromTagNoiseOrBaseFiltered(...) and pickFromTagNoiseOrBaseFilteredSwamp(...) do the same and return base if the post-filter list is empty.
+- Collection-backed preview/export path:
+  - entriesForTag(Collection<RegistryEntry<Biome>>, TagKey<Biome>) filters by entry.isIn(tag); unresolved optional IDs would simply not contribute entries.
+- No local parser or custom tag loader was found. Latitude is not reading raw JSON values directly.
+- Result: absent optional biomes should disappear before Latitude selection logic runs, leaving either a smaller candidate set or the existing base fallback.
+
+Scope-limited caveats
+- This verdict is for this 1.20.1 branch only.
+- Safety here means "no hard requirement on absent mods from these tag entries"; it does not prove band placement quality.
+- Keep pilot scope to direct BYG + Nature's Spirit land biomes only. Do not include oceans/rivers/frozen/aquatic tags in the first pass.
+- Do not mix in Terralith yet.
+
+Safe pilot recommendation: BYG + Nature's Spirit only
+- Pilot tags:
+  - lat_temperate_primary / secondary / accent
+  - lat_subpolar_primary / secondary / accent
+  - optionally one subtropical land tag after a separate classification pass
+- Avoid first-pass pilot in:
+  - lat_ocean_*
+  - ocean_*
+  - anything river/frozen/beach-only unless coastal policy is explicitly being audited
+- Candidate pilot form:
+  - BYG direct IDs such as biomeswevegone:temperate_grove, biomeswevegone:orchard, biomeswevegone:maple_taiga, biomeswevegone:frosted_taiga
+  - Nature's Spirit direct IDs such as natures_spirit:aspen_forest, natures_spirit:boreal_taiga, natures_spirit:alpine_clearings
+- Every external entry should be object-form with "required": false.
+
+Secondary convention evidence
+- Existing datapack/mod examples in the wild use the same object form for worldgen biome tags, e.g. guidance/examples on CurseForge:
+  https://www.curseforge.com/minecraft/mc-mods/dcme-dynamic-contextual-music-engine/files/7805491
+  https://www.curseforge.com/minecraft/mc-mods/dcme-dynamic-contextual-music-engine/files/7712825
+- These are supporting examples only; the primary decision should rest on the 1.20.1 TagEntry/TagFile/Registry/FabricTagBuilder APIs above.
+
+Files inspected
+- <home>/CascadeProjects/Latitude (Globe)/src/main/resources/data/globe/tags/worldgen/biome/lat_temperate_primary.json
+- <home>/CascadeProjects/Latitude (Globe)/src/main/java/com/example/globe/world/LatitudeBiomes.java
+
+Conclusion
+- Optional external biome entries are safe for this branch if Latitude writes them as object entries with "required": false.
+- No Java changes are indicated by this audit before a tiny BYG + Nature's Spirit pilot.
+
+Next single recommended slice
+- Audit-and-edit one tiny pilot tag set only: add optional direct IDs to one temperate tag and one subpolar tag for BYG + Nature's Spirit, then verify tag load/runtime selection without touching band math.
