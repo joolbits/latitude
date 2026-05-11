@@ -6,10 +6,12 @@
   "compatibilityLevel": "JAVA_21",
   "mixins": [
     "ChunkGeneratorBiomeSourceMixin",
+    "ChunkGeneratorGenerateFeaturesBiomeSetMixin",
     "ChunkGeneratorPopulateBiomesMixin",
     "BiomeSourceAccessor",
     "NoiseChunkGeneratorAccessor",
     "NoiseChunkGeneratorCarveMixin",
+    "PlacedFeatureBopDebugMixin",
     "ProtoChunkSnowBlockGuardMixin",
     "FreezeTopLayerFeatureGuardMixin",
     "ChunkRegionWarmSnowTrapMixin",
