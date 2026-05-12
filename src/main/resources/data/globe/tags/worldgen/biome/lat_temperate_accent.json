@@ -9,10 +9,6 @@
     {
       "id": "biomesoplenty:prairie",
       "required": false
-    },
-    {
-      "id": "biomesoplenty:lavender_field",
-      "required": false
     }
   ]
 }
