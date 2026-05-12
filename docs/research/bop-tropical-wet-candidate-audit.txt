@@ -107,6 +107,11 @@ Current diagnosis
 - Likely reason `lat_tropics.json` did not count as `in_latitude_tag`: the live picker/audit path appears to read the tropics primary/secondary/accent tag set rather than the broad `lat_tropics.json` file itself.
 - Next recommended activation target, if later confirmed by code/path audit: one of the live `lat_tropics_*` authority files, not `lat_tropics.json`.
 
+Mechanism update
+- `lat_tropics_secondary` is audit-visible but not currently wired into live tropical selection authority.
+- Tropical/wet activation is blocked until picker authority design is resolved.
+- Do not add more tropical tag activation in this lane until the live tag/picker architecture is clarified.
+
 Live tropics tag authority audit - HEAD 08212305
 - Exact Java constants found: `LAT_TROPICS_PRIMARY`, `LAT_TROPICS_SECONDARY`, `LAT_TROPICS_ACCENT`.
 - Exact resource files matching those constants: `src/main/resources/data/globe/tags/worldgen/biome/lat_tropics_primary.json`, `src/main/resources/data/globe/tags/worldgen/biome/lat_tropics_secondary.json`, `src/main/resources/data/globe/tags/worldgen/biome/lat_tropics_accent.json`.
@@ -124,3 +129,54 @@ Single-candidate activation retry - live secondary tropics tag
 - Rainforest, wetland, and fantasy candidates remain inactive.
 - No Java, picker, or worldgen logic changed.
 - Proof target is `in_latitude_tag=true` first, `selected_count` second.
+
+Seed spot check — biomesoplenty:tropics live secondary candidate
+- Seeds checked: `24680`.
+- Sizes checked: Small and Tiny.
+- `in_latitude_tag` result:
+  - Small 24680: `biomesoplenty:tropics` => `in_latitude_tag=true`, `latitude_tags=globe:lat_tropics_secondary`.
+  - Tiny 24680: `biomesoplenty:tropics` => `in_latitude_tag=true`, `latitude_tags=globe:lat_tropics_secondary`.
+- `selected_count` result:
+  - Small 24680: `selected_count=0` (still unselected).
+  - Tiny 24680: `selected_count=0` (still unselected).
+- Tropical/wet BOP eligible/selected counts:
+  - Before spot-check: eligible 21 / selected 15.
+  - After spot-check runs: eligible 21 / selected 15.
+- `seasonal_forest_dominance` remained `false`.
+- Final classification: `PARTIAL`.
+- Recommended next slice: picker-pressure audit focused on the tropical secondary selection path to determine why `biomesoplenty:tropics` is pressure-starved despite being in live tag authority.
+
+Picker-pressure audit — biomesoplenty:tropics
+- Seeds/sizes checked in this slice:
+  - Small 12345
+  - Tiny 12345
+  - Small 24680
+  - Tiny 24680
+- Live membership proof:
+  - `biomesoplenty:tropics` is `registered=true`, `in_original_source=true`, `in_latitude_tag=true`, with `latitude_tags=globe:lat_tropics_secondary`.
+- Selection proof:
+  - `selected_count` stays `0` in all four checked seed/size runs.
+  - `minecraft:bamboo_jungle` and `minecraft:sparse_jungle` do select from the same live secondary tag pool:
+    - Small 12345: bamboo_jungle `657`, sparse_jungle `695`
+    - Tiny 12345: bamboo_jungle `657`, sparse_jungle `695`
+    - Small 24680: bamboo_jungle `220`, sparse_jungle `920`
+    - Tiny 24680: bamboo_jungle `220`, sparse_jungle `920`
+  - `minecraft:jungle` also selects in the checked runs, but through `globe:lat_tropics_primary` / `globe:lat_equator_primary`, not through `globe:lat_tropics_secondary`.
+- Exact `LAT_TROPICS_SECONDARY` use sites in this repo slice:
+  - `src/main/java/com/example/globe/world/LatitudeBiomes.java` defines the constant, but the picker search found no call site that passes `LAT_TROPICS_SECONDARY` into a selection helper.
+  - `src/main/java/com/example/globe/dev/BiomePreviewExporter.java` lists `globe:lat_tropics_secondary` as an exported tag spec for audit inventory.
+  - The live audit CSVs record membership for `biomesoplenty:tropics`, `minecraft:bamboo_jungle`, and `minecraft:sparse_jungle`, but only the vanilla entries show nonzero final selection counts.
+- Current `lat_tropics_secondary` members, in sorted order:
+  - `biomesoplenty:tropics`
+  - `minecraft:bamboo_jungle`
+  - `minecraft:sparse_jungle`
+- Best-fit mechanism:
+  - `E` another gate excludes it from final output despite tag membership.
+  - More specifically, the current picker path does not appear to route through `LAT_TROPICS_SECONDARY` at all, so `biomesoplenty:tropics` is live in audit membership but not live in selection authority.
+- Why vanilla secondary members are reachable while tropics is not:
+  - They are also selected through other live tropical/equator authority paths, while `biomesoplenty:tropics` is only present in `globe:lat_tropics_secondary`.
+- Post-pick demotion check:
+  - No later sanitize/clamp path found that specifically rewrites `biomesoplenty:tropics` after a pick.
+  - The tropical sanitize/clamp logic only rewrites warm-family or jungle-family outputs, so it does not explain the zero count for this biome.
+- Recommended next slice:
+  - Add gated debug counters for tropical secondary candidate hits vs final survival, or, if a tiny pressure fix is approved later, route one narrow tropical secondary authority path into the picker before any broader activation work.
