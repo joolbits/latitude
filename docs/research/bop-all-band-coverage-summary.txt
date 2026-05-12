@@ -72,8 +72,8 @@ Remaining unexpanded areas
 - polar-only/extreme-cold additions remain out of scope in this slice.
 
 Update
-- tropical/wet now has one test candidate activated pending validation: `biomesoplenty:tropics`.
-- The live retry uses `lat_tropics_secondary.json` after the `lat_tropics.json` mismatch was proved.
+- tropical/wet has one test candidate active in a live secondary path: `biomesoplenty:tropics` in `lat_tropics_secondary.json`.
+- Seed spot-check 24680 (Small/Tiny) kept `biomesoplenty:tropics` in `in_latitude_tag=true` with `selected_count=0` in both sizes.
 
 Current risks
 - Tropical/wet expansion may over-concentrate warm/jungle/magical signals (overgreen/jungle-confetti risk).
@@ -84,3 +84,7 @@ Recommendation
 - Next implementation slice if approved: BOP tropical/wet audit only; no activation in production tags until classification table is reviewed and run-order-safe placement evidence is complete.
 
 Current overall status: PASS (non-tropical BOP coverage is improved and currently not showing serious climate/order or artifact risk).
+
+Tropical/wet note
+- non-tropical BOP remains PASS
+- tropical/wet remains PARTIAL/BLOCKED due to the tropics secondary picker wiring mismatch
