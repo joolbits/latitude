@@ -212,3 +212,21 @@ Temperate-focused TXT/CSV consistency:
   - `biomesoplenty:lavender_field` (removed from `lat_temperate_accent.json`)
 - Justification: both biomes showed `selected_count=0` in repeated Small/Tiny seed checks and were tagged-but-never-selected.
 - Current expectation after cleanup: keep productive temperate candidates only while preserving higher-level band coherence and non-dominant `seasonal_forest`.
+
+BOP subpolar tag audit/expansion
+- Baseline entries before this slice: biomesoplenty:tundra, biomesoplenty:snowy_maple_woods
+- Entries added in this slice:
+  - biomesoplenty:coniferous_forest -> lat_subpolar_primary (required:false)
+  - biomesoplenty:fir_clearing -> lat_subpolar_primary (required:false)
+  - biomesoplenty:snowy_coniferous_forest -> lat_subpolar_primary (required:false)
+  - biomesoplenty:snowy_fir_clearing -> lat_subpolar_primary (required:false)
+- Candidates reviewed but not added (deferred):
+  - biomesoplenty:wintry_origin_valley (insufficient climate evidence in audit artifacts, seasonal/edge-band behavior not yet proven)
+  - biomesoplenty:old_growth_woodland (already retained as temperate band candidate from prior session)
+  - biomesoplenty:orchard / pastures / meadow-style entries already in temperate-only scope and intentionally excluded
+- Scope checks:
+  - No picker logic changes made.
+  - No Latitude Java logic changes made.
+  - No non-subpolar biome tags edited.
+  - Subpolar changes kept to optional entries only (`required: false`).
+  - No claim made that every eligible BOP biome will appear in every world; atlas acceptance remains sample-driven.

@@ -1,0 +1,78 @@
+biome_id | proposed_band_bucket | confidence | notes | source
+biomesoplenty:auroral_garden | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
+biomesoplenty:bayou | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
+biomesoplenty:bog | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
+biomesoplenty:cold_desert | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
+biomesoplenty:coniferous_forest | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
+biomesoplenty:crag | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
+biomesoplenty:crystalline_chasm | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
+biomesoplenty:dead_forest | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
+biomesoplenty:dryland | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
+biomesoplenty:dune_beach | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
+biomesoplenty:end_corruption | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
+biomesoplenty:end_flats | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
+biomesoplenty:end_reef | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
+biomesoplenty:end_wilds | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
+biomesoplenty:erupting_inferno | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
+biomesoplenty:field | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
+biomesoplenty:fir_clearing | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
+biomesoplenty:floodplain | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
+biomesoplenty:forested_field | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
+biomesoplenty:fungal_jungle | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
+biomesoplenty:glowing_grotto | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
+biomesoplenty:gravel_beach | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
+biomesoplenty:highland | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
+biomesoplenty:hot_springs | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
+biomesoplenty:jade_cliffs | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
+biomesoplenty:lavender_field | temperate / subtropical candidate | low | tentative only; name suggests lower-latitude warm temperate tendencies | audit + selected band hints
+biomesoplenty:lush_desert | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
+biomesoplenty:lush_savanna | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
+biomesoplenty:maple_woods | lat_temperate_primary | high | currently tagged and selected; selected_bands include temperate and subtropical | lat_temperate_primary tag
+biomesoplenty:marsh | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
+biomesoplenty:mediterranean_forest | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
+biomesoplenty:moor | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
+biomesoplenty:muskeg | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
+biomesoplenty:mystic_grove | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
+biomesoplenty:old_growth_dead_forest | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
+biomesoplenty:old_growth_woodland | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
+biomesoplenty:ominous_woods | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
+biomesoplenty:orchard | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
+biomesoplenty:origin_valley | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
+biomesoplenty:overgrown_greens | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
+biomesoplenty:pasture | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
+biomesoplenty:prairie | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
+biomesoplenty:pumpkin_patch | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
+biomesoplenty:rainforest | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
+biomesoplenty:redwood_forest | unclassified / needs policy review | low | no established policy review; unreviewed | audit baseline + tagged set
+biomesoplenty:rocky_rainforest | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
+biomesoplenty:rocky_shrubland | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
+biomesoplenty:scrubland | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
+biomesoplenty:seasonal_forest | lat_temperate_primary | high | currently tagged and selected; strong baseline match to audit output | lat_temperate_primary tag
+biomesoplenty:shrubland | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
+biomesoplenty:snowblossom_grove | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
+biomesoplenty:snowy_coniferous_forest | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
+biomesoplenty:snowy_fir_clearing | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
+biomesoplenty:snowy_maple_woods | lat_subpolar_primary | high | currently tagged and selected; selected in subpolar/polar in this audit run | lat_subpolar_primary tag
+biomesoplenty:spider_nest | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
+biomesoplenty:subtropics | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
+biomesoplenty:tropics | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
+biomesoplenty:tundra | lat_subpolar_primary | high | currently tagged and selected; selected mostly subpolar/polar in this audit | lat_subpolar_primary tag
+biomesoplenty:undergrowth | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
+biomesoplenty:visceral_heap | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
+biomesoplenty:volcanic_plains | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
+biomesoplenty:volcano | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
+biomesoplenty:wasteland | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
+biomesoplenty:wasteland_steppe | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
+biomesoplenty:wetland | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
+biomesoplenty:wintry_origin_valley | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
+biomesoplenty:withered_abyss | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
+biomesoplenty:woodland | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
+
+Subpolar conservative expansion notes (2026-05-11)
+- Added as subpolar candidates:
+  biomesoplenty:coniferous_forest | lat_subpolar_primary | medium | explicit conifer biome name; likely subpolar-suitable conifer woodland
+  biomesoplenty:fir_clearing | lat_subpolar_primary | medium | explicit fir biome name; likely cold forest clearing candidate
+  biomesoplenty:snowy_coniferous_forest | lat_subpolar_primary | high | explicit snowy conifer biome name; strong subpolar match
+  biomesoplenty:snowy_fir_clearing | lat_subpolar_primary | high | explicit snowy fir clearing name; strong subpolar match
+- Deferred this slice:
+  biomesoplenty:wintry_origin_valley | unclassified / needs policy review | low | origin-typed name is climate-ambiguous from current artifacts and needs direct climate evidence
