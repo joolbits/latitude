@@ -190,4 +190,17 @@ Temperate-focused TXT/CSV consistency:
   - Before selected set: biomesoplenty:maple_woods, biomesoplenty:seasonal_forest, biomesoplenty:snowy_maple_woods, biomesoplenty:tundra
   - After selected set: biomesoplenty:forested_field, biomesoplenty:maple_woods, biomesoplenty:mystic_grove, biomesoplenty:old_growth_woodland, biomesoplenty:orchard, biomesoplenty:pasture, biomesoplenty:prairie, biomesoplenty:seasonal_forest, biomesoplenty:snowy_maple_woods, biomesoplenty:tundra, biomesoplenty:woodland
   - New temperate-selected BOP IDs: biomesoplenty:forested_field, biomesoplenty:mystic_grove, biomesoplenty:old_growth_woodland, biomesoplenty:orchard, biomesoplenty:pasture, biomesoplenty:prairie, biomesoplenty:woodland
-  - Temperate-tagged but not selected in this rerun: biomesoplenty:field, biomesoplenty:lavender_field, biomesoplenty:mediterranean_forest
+- Temperate-tagged but not selected in this rerun: biomesoplenty:field, biomesoplenty:lavender_field, biomesoplenty:mediterranean_forest
+
+2026-05-11 temperate BOP accent rebalance follow-up:
+- Scope: temperate tags only, no picker logic change, no LatitudeBiomes.java changes.
+- Accents removed:
+  - biomesoplenty:mediterranean_forest
+  - biomesoplenty:mystic_grove
+- Small/tiny rebalance reruns:
+  - ./gradlew --no-daemon runBiomePreview -Platdev.syncPreviewMods=true --args="--seed 12345 --size Small --step 64 --y 64 --layers biome,stats,audit --out run/latdev/atlas/bop-temperate-rebalance-small": PASS
+  - ./gradlew --no-daemon runBiomePreview -Platdev.syncPreviewMods=true --args="--seed 12345 --size Tiny --step 64 --y 64 --layers biome,stats,audit --out run/latdev/atlas/bop-temperate-rebalance-tiny": PASS
+- BOP tagged count after rebalance: 12
+- BOP selected by final picker after rebalance: 9 (Small and Tiny matched)
+- seasonal_forest_in_temperate_count: 218
+- seasonal_forest_dominance: false
