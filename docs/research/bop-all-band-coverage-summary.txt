@@ -72,8 +72,8 @@ Remaining unexpanded areas
 - polar-only/extreme-cold additions remain out of scope in this slice.
 
 Update
-- tropical/wet remains audit-only; there is no active BOP tropical candidate yet.
-- The failed `biomesoplenty:tropics` attempt exposed a tag-path mismatch rather than a biome-selection problem.
+- tropical/wet now has one test candidate activated pending validation: `biomesoplenty:tropics`.
+- The live retry uses `lat_tropics_secondary.json` after the `lat_tropics.json` mismatch was proved.
 
 Current risks
 - Tropical/wet expansion may over-concentrate warm/jungle/magical signals (overgreen/jungle-confetti risk).
