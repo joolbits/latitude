@@ -204,3 +204,11 @@ Temperate-focused TXT/CSV consistency:
 - BOP selected by final picker after rebalance: 9 (Small and Tiny matched)
 - seasonal_forest_in_temperate_count: 218
 - seasonal_forest_dominance: false
+
+2026-05-11 final temperate dead-entry cleanup follow-up:
+- Scope: temperate secondary/accent tags only; no picker logic or Java changes.
+- Removed dead/non-contributing entries after multi-seed spot checks:
+  - `biomesoplenty:field` (removed from `lat_temperate_secondary.json`)
+  - `biomesoplenty:lavender_field` (removed from `lat_temperate_accent.json`)
+- Justification: both biomes showed `selected_count=0` in repeated Small/Tiny seed checks and were tagged-but-never-selected.
+- Current expectation after cleanup: keep productive temperate candidates only while preserving higher-level band coherence and non-dominant `seasonal_forest`.
