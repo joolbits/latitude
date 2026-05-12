@@ -230,3 +230,58 @@ BOP subpolar tag audit/expansion
   - No non-subpolar biome tags edited.
   - Subpolar changes kept to optional entries only (`required: false`).
   - No claim made that every eligible BOP biome will appear in every world; atlas acceptance remains sample-driven.
+
+BOP subpolar visual review — HEAD 54350887
+- Atlas folders reviewed:
+  - run-headless/run/latdev/atlas/bop-subpolar-tag-expansion-small-12345/seed_12345/Run_f6f54486/R5000/step64
+  - run-headless/run/latdev/atlas/bop-subpolar-tag-expansion-tiny-12345/seed_12345/Run_f6f54486/R5000/step64
+- Small visual verdict:
+  - PASS: subpolar zone gains extra cold woodland/tundra-shoulder variety without removing baseline subpolar BOP presence.
+- Tiny visual verdict:
+  - PASS: Small-world readback remains stable and readable at step 64 with candidate additions in place.
+- Subpolar BOP selected count:
+  - All BOP selected (from all tagged BOP): 13
+  - Subpolar BOP selected (from `lat_subpolar_*`-scoped entries): 5
+  - Subpolar selected list: biomesoplenty:tundra, biomesoplenty:snowy_maple_woods, biomesoplenty:coniferous_forest, biomesoplenty:fir_clearing, biomesoplenty:snowy_coniferous_forest, biomesoplenty:snowy_fir_clearing
+- Climate identity:
+  - `world_biome_inventory.json` shows first-seen placement authority as `placement_band=subpolar` and `first_seen_chosen_band=subpolar` for all four new candidates in both Small and Tiny.
+  - `first_seen_raw_band` occasionally reports `polar` near edge transitions; this is geometric annotation and does not override band authority.
+- Polar boundary safety:
+  - No new subpolar addition appears in the candidate set as polar-only, and no warm/dry/magical biome was added in this subpolar slice.
+- Temperate baseline safety:
+  - Temperate tag set was not edited in this subpolar review slice; no temperate-band policy touch was introduced.
+- Candidate-specific sanity:
+  - `coniferous_forest`, `fir_clearing`, `snowy_coniferous_forest`, `snowy_fir_clearing` each appear with inventory presence and subpolar placement in both reviewed outputs.
+- Artifact watch:
+  - No text-level signature of confetti/grid/ruler-seam artifacts in current atlas artifacts.
+  - `worldBiomeInventoryCount` and top-bands remained coherent across Small and Tiny at the same seed.
+- Final classification: PASS
+- Recommended next slice: BOP subtropical/dry audit/expansion
+
+BOP subtropical/dry tag audit/expansion
+- Scope: conserve arid/subtropical dryband expansion only; no Java/picker edits.
+- Baseline subtropical/dry eligibility before this slice (from existing seed-12345 reruns at HEAD 54350887): 
+  - BOP Latitude-tag-eligible count: 12
+  - BOP selected BOP count: 10
+  - BOP tagged set before this slice: biomesoplenty:field, biomesoplenty:forested_field, biomesoplenty:lavender_field, biomesoplenty:maple_woods, biomesoplenty:old_growth_woodland, biomesoplenty:orchard, biomesoplenty:pasture, biomesoplenty:prairie, biomesoplenty:seasonal_forest, biomesoplenty:snowy_maple_woods, biomesoplenty:tundra, biomesoplenty:woodland
+- Entries added in this slice:
+  - `biomesoplenty:dryland` -> `globe:lat_arid_accent` (required:false)
+  - `biomesoplenty:scrubland` -> `globe:lat_trans_arid_tropics_1_secondary` (required:false)
+  - `biomesoplenty:shrubland` -> `globe:lat_trans_arid_tropics_1_secondary` (required:false)
+  - `biomesoplenty:rocky_shrubland` -> `globe:lat_trans_arid_tropics_2_secondary` (required:false)
+  - `biomesoplenty:wasteland` -> `globe:lat_trans_arid_tropics_2_secondary` (required:false)
+  - `biomesoplenty:wasteland_steppe` -> `globe:lat_trans_arid_tropics_2_secondary` (required:false)
+- Candidates deferred:
+  - biomesoplenty:mediterranean_forest (climate tone and coverage needs explicit visual/live confirmation before adding in future slice)
+- Candidates rejected:
+  - biomesoplenty:lush_desert (lush biome profile conflicts with conservative dry objective)
+- Post-run subtropical/dry eligibility (seed 12345, Small/Tiny, step64, size Small/Tiny, run id Run_54350887):
+  - BOP Latitude-tag-eligible count: 20
+  - BOP selected BOP count: 15
+- Newly selected subtropical/dry BOP biomes observed:
+  - biomesoplenty:wasteland
+  - biomesoplenty:wasteland_steppe
+- Proof notes:
+  - No mangrove/wetland/jungle/rainforest/cold/fir/other warm/cold-family additions were made in this subtropical/dry slice.
+  - Temperate and subpolar baselines were intentionally not touched in this slice.
+  - `seasonal_forest_dominance` was not edited here and is tracked by atlas proof after reruns.

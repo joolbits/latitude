@@ -7,7 +7,7 @@ biomesoplenty:coniferous_forest | unclassified / needs policy review | low | no 
 biomesoplenty:crag | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
 biomesoplenty:crystalline_chasm | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
 biomesoplenty:dead_forest | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
-biomesoplenty:dryland | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
+biomesoplenty:dryland | subtropical/dry_activate_now | medium | conservative expansion candidate (explicit dryland climate) | subtropical dry baseline + keyword match
 biomesoplenty:dune_beach | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
 biomesoplenty:end_corruption | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
 biomesoplenty:end_flats | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
@@ -25,8 +25,8 @@ biomesoplenty:highland | unclassified / needs policy review | low | no establish
 biomesoplenty:hot_springs | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
 biomesoplenty:jade_cliffs | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
 biomesoplenty:lavender_field | temperate / subtropical candidate | low | tentative only; name suggests lower-latitude warm temperate tendencies | audit + selected band hints
-biomesoplenty:lush_desert | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
-biomesoplenty:lush_savanna | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
+biomesoplenty:lush_desert | reject | medium | lush/vegetation-heavy variant risks wetness and overgrowth assumptions | name indicates lush biome, not conservative dry subtropical candidate
+biomesoplenty:lush_savanna | defer | medium | wet-vegetation indicator in name; requires visual/live evidence before promotion | conservative staging rule: do not stack wet-biome-like dry candidates
 biomesoplenty:maple_woods | lat_temperate_primary | high | currently tagged and selected; selected_bands include temperate and subtropical | lat_temperate_primary tag
 biomesoplenty:marsh | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
 biomesoplenty:mediterranean_forest | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
@@ -45,10 +45,10 @@ biomesoplenty:pumpkin_patch | unclassified / needs policy review | low | no esta
 biomesoplenty:rainforest | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
 biomesoplenty:redwood_forest | unclassified / needs policy review | low | no established policy review; unreviewed | audit baseline + tagged set
 biomesoplenty:rocky_rainforest | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
-biomesoplenty:rocky_shrubland | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
-biomesoplenty:scrubland | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
+biomesoplenty:rocky_shrubland | subtropical/dry_activate_now | medium | explicit shrubland/rocky dryland phenotype | subtropical dry keyword + dryland family fit
+biomesoplenty:scrubland | subtropical/dry_activate_now | medium | explicit dry scrub biome with low wetness profile | subtropical dry keyword and first-order fit
 biomesoplenty:seasonal_forest | lat_temperate_primary | high | currently tagged and selected; strong baseline match to audit output | lat_temperate_primary tag
-biomesoplenty:shrubland | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
+biomesoplenty:shrubland | subtropical/dry_activate_now | medium | explicit dry shrubland family member | subtropical dry keyword + low wetness profile
 biomesoplenty:snowblossom_grove | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
 biomesoplenty:snowy_coniferous_forest | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
 biomesoplenty:snowy_fir_clearing | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
@@ -61,12 +61,34 @@ biomesoplenty:undergrowth | unclassified / needs policy review | low | no establ
 biomesoplenty:visceral_heap | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
 biomesoplenty:volcanic_plains | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
 biomesoplenty:volcano | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
-biomesoplenty:wasteland | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
-biomesoplenty:wasteland_steppe | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
+biomesoplenty:wasteland | subtropical/dry_activate_now | high | explicit dry open biome consistent with arid/subtropical fringe behavior | conservatively optional in transition tag
+biomesoplenty:wasteland_steppe | subtropical/dry_activate_now | high | explicit dry steppe-like basin biome; avoid warm/wet candidates | conservative optional dry subtropical entry
 biomesoplenty:wetland | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
 biomesoplenty:wintry_origin_valley | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
 biomesoplenty:withered_abyss | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
 biomesoplenty:woodland | unclassified / needs policy review | low | no established policy draft entry; unreviewed | audit baseline + tagged set
+
+
+Subtropical/dry conservative classification (this slice)
+
+1) Activate now
+- biomesoplenty:dryland
+- biomesoplenty:rocky_shrubland
+- biomesoplenty:scrubland
+- biomesoplenty:shrubland
+- biomesoplenty:wasteland
+- biomesoplenty:wasteland_steppe
+
+2) Defer
+- biomesoplenty:mediterranean_forest (climate fit uncertain; wet/forest tendency may intrude subtropical-only behavior)
+
+3) Reject
+- biomesoplenty:lush_desert (lush/vegetation-heavy profile not dry)
+
+Notes:
+- Keep batch size limited to 6 additions only this slice.
+- All entries are optional in tag files via required:false.
+- No wetland/mangrove/jungle/rainforest/wet or cold biomes promoted.
 
 Subpolar conservative expansion notes (2026-05-11)
 - Added as subpolar candidates:
