@@ -106,3 +106,21 @@ Current diagnosis
 - Exact Java constants/tag keys that appear to be read: `LAT_TROPICS_PRIMARY`, `LAT_TROPICS_SECONDARY`, `LAT_TROPICS_ACCENT`.
 - Likely reason `lat_tropics.json` did not count as `in_latitude_tag`: the live picker/audit path appears to read the tropics primary/secondary/accent tag set rather than the broad `lat_tropics.json` file itself.
 - Next recommended activation target, if later confirmed by code/path audit: one of the live `lat_tropics_*` authority files, not `lat_tropics.json`.
+
+Live tropics tag authority audit - HEAD 08212305
+- Exact Java constants found: `LAT_TROPICS_PRIMARY`, `LAT_TROPICS_SECONDARY`, `LAT_TROPICS_ACCENT`.
+- Exact resource files matching those constants: `src/main/resources/data/globe/tags/worldgen/biome/lat_tropics_primary.json`, `src/main/resources/data/globe/tags/worldgen/biome/lat_tropics_secondary.json`, `src/main/resources/data/globe/tags/worldgen/biome/lat_tropics_accent.json`.
+- Exact tag files proven live for audit membership: `lat_tropics_primary.json` and `lat_tropics_secondary.json`, because their vanilla entries show `in_latitude_tag=true` in the Small rollback audit CSV.
+- Exact tag file proven non-live for this audit path: `lat_tropics.json`, because the failed `biomesoplenty:tropics` activation there still produced `in_latitude_tag=false` and `selected_count=0`.
+- `lat_tropical.json` exists, but no live picker/audit code path read it in this scan, so treat it as broad/legacy for this specific tropical-tops authority question.
+- Recommended single future activation target: `lat_tropics_secondary.json`.
+- Reason: it is already a live tropics authority file, it already carries the non-primary vanilla jungle-family entries, and it is the narrowest proven live path that stays inside the tropics authority set.
+- No activation was performed in this slice.
+
+Single-candidate activation retry - live secondary tropics tag
+- Exact tag file changed: `src/main/resources/data/globe/tags/worldgen/biome/lat_tropics_secondary.json`
+- This follows the tag-path audit after `lat_tropics.json` failed to enter audit membership.
+- Activated candidate: `biomesoplenty:tropics` only.
+- Rainforest, wetland, and fantasy candidates remain inactive.
+- No Java, picker, or worldgen logic changed.
+- Proof target is `in_latitude_tag=true` first, `selected_count` second.
