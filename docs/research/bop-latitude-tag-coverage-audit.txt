@@ -1,0 +1,193 @@
+Root: <home>/CascadeProjects/Latitude (Globe)
+Branch: feat/1.3.1-cohesive-horizons-26.1.2
+HEAD: be5d593
+
+BOP audit source report paths inspected:
+- run-headless/run/latdev/atlas/bop-audit-bop-small-rerun/seed_12345/Run_be5d593/R5000/step64/biome-audit_seed-12345_R5000_step64.txt
+- run-headless/run/latdev/atlas/bop-audit-bop-small/seed_12345/Run_be5d593/R5000/step64/biome-audit_seed-12345_R5000_step64.txt
+
+BOP summary counts (from rerun report):
+- BOP registered count: 68
+- BOP original source count: 59
+- BOP Latitude-tag-eligible count: 4
+- BOP final selected count: 4
+- Selected BOP set: biomesoplenty:maple_woods, biomesoplenty:seasonal_forest, biomesoplenty:snowy_maple_woods, biomesoplenty:tundra
+
+Latitude tag files containing BOP entries:
+- src/main/resources/data/globe/tags/worldgen/biome/lat_temperate_primary.json
+  - biomesoplenty:seasonal_forest
+  - biomesoplenty:maple_woods
+- src/main/resources/data/globe/tags/worldgen/biome/lat_subpolar_primary.json
+  - biomesoplenty:tundra
+  - biomesoplenty:snowy_maple_woods
+
+BOP biomes present in any Latitude tag (4):
+- biomesoplenty:maple_woods
+- biomesoplenty:seasonal_forest
+- biomesoplenty:snowy_maple_woods
+- biomesoplenty:tundra
+
+BOP biomes registered but not tagged:
+- biomesoplenty:auroral_garden
+- biomesoplenty:bayou
+- biomesoplenty:bog
+- biomesoplenty:cold_desert
+- biomesoplenty:coniferous_forest
+- biomesoplenty:crag
+- biomesoplenty:crystalline_chasm
+- biomesoplenty:dead_forest
+- biomesoplenty:dryland
+- biomesoplenty:dune_beach
+- biomesoplenty:end_corruption
+- biomesoplenty:end_flats
+- biomesoplenty:end_reef
+- biomesoplenty:end_wilds
+- biomesoplenty:erupting_inferno
+- biomesoplenty:field
+- biomesoplenty:fir_clearing
+- biomesoplenty:floodplain
+- biomesoplenty:forested_field
+- biomesoplenty:fungal_jungle
+- biomesoplenty:glowing_grotto
+- biomesoplenty:gravel_beach
+- biomesoplenty:highland
+- biomesoplenty:hot_springs
+- biomesoplenty:jade_cliffs
+- biomesoplenty:lavender_field
+- biomesoplenty:lush_desert
+- biomesoplenty:lush_savanna
+- biomesoplenty:marsh
+- biomesoplenty:mediterranean_forest
+- biomesoplenty:moor
+- biomesoplenty:muskeg
+- biomesoplenty:mystic_grove
+- biomesoplenty:old_growth_dead_forest
+- biomesoplenty:old_growth_woodland
+- biomesoplenty:ominous_woods
+- biomesoplenty:orchard
+- biomesoplenty:origin_valley
+- biomesoplenty:overgrown_greens
+- biomesoplenty:pasture
+- biomesoplenty:prairie
+- biomesoplenty:pumpkin_patch
+- biomesoplenty:rainforest
+- biomesoplenty:redwood_forest
+- biomesoplenty:rocky_rainforest
+- biomesoplenty:rocky_shrubland
+- biomesoplenty:scrubland
+- biomesoplenty:shrubland
+- biomesoplenty:snowblossom_grove
+- biomesoplenty:snowy_coniferous_forest
+- biomesoplenty:snowy_fir_clearing
+- biomesoplenty:spider_nest
+- biomesoplenty:subtropics
+- biomesoplenty:tropics
+- biomesoplenty:undergrowth
+- biomesoplenty:visceral_heap
+- biomesoplenty:volcanic_plains
+- biomesoplenty:volcano
+- biomesoplenty:wasteland
+- biomesoplenty:wasteland_steppe
+- biomesoplenty:wetland
+- biomesoplenty:wintry_origin_valley
+- biomesoplenty:withered_abyss
+- biomesoplenty:woodland
+
+BOP biomes present in original source but not tagged:
+- biomesoplenty:auroral_garden
+- biomesoplenty:bayou
+- biomesoplenty:bog
+- biomesoplenty:cold_desert
+- biomesoplenty:coniferous_forest
+- biomesoplenty:crag
+- biomesoplenty:dead_forest
+- biomesoplenty:dryland
+- biomesoplenty:dune_beach
+- biomesoplenty:field
+- biomesoplenty:fir_clearing
+- biomesoplenty:floodplain
+- biomesoplenty:forested_field
+- biomesoplenty:fungal_jungle
+- biomesoplenty:glowing_grotto
+- biomesoplenty:gravel_beach
+- biomesoplenty:highland
+- biomesoplenty:hot_springs
+- biomesoplenty:jade_cliffs
+- biomesoplenty:lavender_field
+- biomesoplenty:lush_desert
+- biomesoplenty:lush_savanna
+- biomesoplenty:marsh
+- biomesoplenty:mediterranean_forest
+- biomesoplenty:moor
+- biomesoplenty:muskeg
+- biomesoplenty:mystic_grove
+- biomesoplenty:old_growth_dead_forest
+- biomesoplenty:old_growth_woodland
+- biomesoplenty:ominous_woods
+- biomesoplenty:orchard
+- biomesoplenty:origin_valley
+- biomesoplenty:overgrown_greens
+- biomesoplenty:pasture
+- biomesoplenty:prairie
+- biomesoplenty:pumpkin_patch
+- biomesoplenty:rainforest
+- biomesoplenty:redwood_forest
+- biomesoplenty:rocky_rainforest
+- biomesoplenty:rocky_shrubland
+- biomesoplenty:scrubland
+- biomesoplenty:shrubland
+- biomesoplenty:snowblossom_grove
+- biomesoplenty:snowy_coniferous_forest
+- biomesoplenty:snowy_fir_clearing
+- biomesoplenty:spider_nest
+- biomesoplenty:subtropics
+- biomesoplenty:tropics
+- biomesoplenty:volcanic_plains
+- biomesoplenty:volcano
+- biomesoplenty:wasteland
+- biomesoplenty:wasteland_steppe
+- biomesoplenty:wetland
+- biomesoplenty:wintry_origin_valley
+- biomesoplenty:woodland
+
+BOP biomes tagged and selected:
+- biomesoplenty:maple_woods
+- biomesoplenty:seasonal_forest
+- biomesoplenty:snowy_maple_woods
+- biomesoplenty:tundra
+
+BOP biomes tagged but never selected:
+- none
+
+Temperate-focused TXT/CSV consistency:
+- Before fix: TXT summary listed empty temperate-selected BOP list and seasonal_forest_in_temperate_count=0.
+- After fix (rerun): TXT now matches CSV per-band aggregates.
+  - seasonal_forest selected_bands (CSV): temperate=215
+  - TXT seasonal_forest_in_temperate_count=215
+  - TXT all final selected biomes in temperate band now includes biomesoplenty:maple_woods, biomesoplenty:seasonal_forest, biomesoplenty:tundra and others.
+
+2026-05-11 temperate BOP eligibility expansion session:
+- Scope: temperate tags only. No picker logic changed. No LatitudeBiomes.java changes.
+- Added to src/main/resources/data/globe/tags/worldgen/biome/lat_temperate_secondary.json:
+  - biomesoplenty:woodland
+  - biomesoplenty:old_growth_woodland
+  - biomesoplenty:field
+  - biomesoplenty:forested_field
+  - biomesoplenty:orchard
+  - biomesoplenty:pasture
+- Added to src/main/resources/data/globe/tags/worldgen/biome/lat_temperate_accent.json:
+  - biomesoplenty:prairie
+  - biomesoplenty:lavender_field
+  - biomesoplenty:mediterranean_forest
+  - biomesoplenty:mystic_grove
+- Validation:
+  - ./gradlew --no-daemon compileJava: PASS
+  - ./gradlew --no-daemon runBiomePreview -Platdev.syncPreviewMods=true --args="--seed 12345 --size Small --step 64 --y 64 --layers biome,stats,audit --out run/latdev/atlas/bop-temperate-tag-expansion-small": PASS
+  - ./gradlew --no-daemon runBiomePreview -Platdev.syncPreviewMods=true --args="--seed 12345 --size Tiny --step 64 --y 64 --layers biome,stats,audit --out run/latdev/atlas/bop-temperate-tag-expansion-tiny": PASS
+- Before/after proof from biome-audit output:
+  - BOP Latitude-tag-eligible count: 4 -> 14
+  - BOP final selected count: 4 -> 11
+  - Before selected set: biomesoplenty:maple_woods, biomesoplenty:seasonal_forest, biomesoplenty:snowy_maple_woods, biomesoplenty:tundra
+  - After selected set: biomesoplenty:forested_field, biomesoplenty:maple_woods, biomesoplenty:mystic_grove, biomesoplenty:old_growth_woodland, biomesoplenty:orchard, biomesoplenty:pasture, biomesoplenty:prairie, biomesoplenty:seasonal_forest, biomesoplenty:snowy_maple_woods, biomesoplenty:tundra, biomesoplenty:woodland
+  - New temperate-selected BOP IDs: biomesoplenty:forested_field, biomesoplenty:mystic_grove, biomesoplenty:old_growth_woodland, biomesoplenty:orchard, biomesoplenty:pasture, biomesoplenty:prairie, biomesoplenty:woodland
+  - Temperate-tagged but not selected in this rerun: biomesoplenty:field, biomesoplenty:lavender_field, biomesoplenty:mediterranean_forest
