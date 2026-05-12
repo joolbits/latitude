@@ -93,5 +93,16 @@ Risk notes
 - Tropical dry candidates belong to dry/subtropical review, not wet tropical admission.
 - Band-first placement must stay authoritative; near-equator naming alone is not enough.
 
-Next slice
-- Human review of tropical/wet candidate table before activation.
+Failed activation attempt - tag authority mismatch
+- Added `biomesoplenty:tropics` to `src/main/resources/data/globe/tags/worldgen/biome/lat_tropics.json` during the failed activation attempt.
+- Audit showed `registered=true` and `in_original_source=true`, but `in_latitude_tag=false` and `selected_count=0` for `biomesoplenty:tropics`.
+- The activation was removed and this file is now back to its prior vanilla-only tropics entries.
+- No rainforest, wetland, or fantasy candidates were activated in this slice.
+- The next work is a live tropical tag-path audit to identify the actual authority path used by Latitude before any new activation attempt.
+- Exact live-path clue from inspection: `LatitudeBiomes` defines `LAT_TROPICS_PRIMARY`, `LAT_TROPICS_SECONDARY`, and `LAT_TROPICS_ACCENT`; no `LAT_TROPICAL` constant appeared in the read-only scan.
+
+Current diagnosis
+- Exact tag files that exist in this slice: `lat_tropical.json`, `lat_tropics.json`, `lat_tropics_primary.json`, `lat_tropics_secondary.json`, `lat_tropics_accent.json`.
+- Exact Java constants/tag keys that appear to be read: `LAT_TROPICS_PRIMARY`, `LAT_TROPICS_SECONDARY`, `LAT_TROPICS_ACCENT`.
+- Likely reason `lat_tropics.json` did not count as `in_latitude_tag`: the live picker/audit path appears to read the tropics primary/secondary/accent tag set rather than the broad `lat_tropics.json` file itself.
+- Next recommended activation target, if later confirmed by code/path audit: one of the live `lat_tropics_*` authority files, not `lat_tropics.json`.
