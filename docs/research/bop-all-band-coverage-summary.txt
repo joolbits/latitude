@@ -71,6 +71,10 @@ Remaining unexpanded areas
 - ocean/coastal BOP candidates remain unexpanded unless policy supports.
 - polar-only/extreme-cold additions remain out of scope in this slice.
 
+Update
+- tropical/wet remains audit-only; there is no active BOP tropical candidate yet.
+- The failed `biomesoplenty:tropics` attempt exposed a tag-path mismatch rather than a biome-selection problem.
+
 Current risks
 - Tropical/wet expansion may over-concentrate warm/jungle/magical signals (overgreen/jungle-confetti risk).
 - Legacy `trans_arid_tropics` tag families still exist, while LCMM v2 treats humidity more as tendency than strict latitude band; this can mask expected dry progression if expanded too aggressively.
