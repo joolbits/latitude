@@ -1930,7 +1930,7 @@ const atlasDesktopDiagnosticsEl = $('#atlas-desktop-diagnostics');
   },
  };
  
- const LEGACY_BEACH_RED = [235, 72, 63];
+const LEGACY_BEACH_RED = [235, 72, 63];
 const BEACH_SAND = [231, 215, 165];
 const BIOME_COLOR_OVERRIDES = new Map([
   ['minecraft:warm_ocean', '#58D6FF'],
@@ -1975,6 +1975,41 @@ const BIOME_COLOR_OVERRIDES = new Map([
   ['minecraft:windswept_forest', '#4D7E57'],
   ['minecraft:stony_shore', '#7F7F7F']
 ]);
+const BOP_COLOR_RULES = [
+  { patterns: ['tropics'], color: '#4DBB78' },
+  { patterns: ['rainforest', 'jungle'], color: '#348F57' },
+  { patterns: ['bayou', 'bog', 'marsh', 'wetland', 'floodplain', 'muskeg'], color: '#5F8E7A' },
+  { patterns: ['seasonal_forest', 'woodland', 'forested_field', 'orchard', 'pasture', 'grove', 'meadow', 'field', 'clearing', 'undergrowth', 'overgrown'], color: '#5D9C57' },
+  { patterns: ['flower', 'blossom', 'cherry', 'wisteria', 'lavender', 'mystic'], color: '#C08CEB' },
+  { patterns: ['scrubland', 'shrubland', 'steppe', 'wasteland', 'subtropics', 'desert', 'savanna'], color: '#C5AC62' },
+  { patterns: ['alps', 'tundra', 'glacier', 'snow', 'frozen', 'ice'], color: '#D8EAF6' },
+  { patterns: ['hot_springs', 'volcanic', 'volcano'], color: '#D85B3F' },
+  { patterns: ['beach', 'shore', 'coast', 'dune'], color: '#E7D7A5' },
+  { patterns: ['coral', 'reef', 'kelp', 'ocean', 'river'], color: '#58D6FF' },
+  { patterns: ['dead', 'eerie', 'ominous', 'dark'], color: '#4C6550' }
+];
+
+function bopDisplayColorFor(shortId, fallbackRgb) {
+  for (const rule of BOP_COLOR_RULES) {
+    if (rule.patterns.some((pattern) => shortId === pattern || shortId.includes(pattern))) {
+      return hexToRgb(rule.color);
+    }
+  }
+  return fallbackRgb;
+}
+
+function biomeDisplayColorFor(biomeId, fallbackRgb) {
+  const key = String(biomeId || '').toLowerCase();
+  const exact = BIOME_COLOR_OVERRIDES.get(key);
+  if (exact) return hexToRgb(exact);
+  const short = key.includes(':') ? key.split(':', 2)[1] : key;
+  const shortExact = BIOME_COLOR_OVERRIDES.get(short);
+  if (shortExact) return hexToRgb(shortExact);
+  if (key.startsWith('biomesoplenty:') || key.startsWith('bop:')) {
+    return bopDisplayColorFor(short, fallbackRgb);
+  }
+  return fallbackRgb;
+}
 const GENERATION_PRESETS = {
   step128: { label: 'step128', resolution: 128 },
   step64:  { label: 'step64',  resolution: 64  },
@@ -4741,20 +4776,19 @@ function normalizeBiomePaletteForDisplay(rawBiomes) {
     if (!b || !Array.isArray(b.color)) return b;
     const legacyColor = [...b.color];
     const id = String(b.id || '').toLowerCase();
-    const overrideHex = BIOME_COLOR_OVERRIDES.get(id);
-    if (overrideHex) {
+    const overrideRgb = biomeDisplayColorFor(id, null);
+    if (Array.isArray(overrideRgb)) {
       const origColor = [...b.color];
-      const [r, g, bl] = hexToRgb(overrideHex);
       const exists = remaps.some(m =>
         m.from[0] === origColor[0] &&
         m.from[1] === origColor[1] &&
         m.from[2] === origColor[2] &&
-        m.to[0] === r &&
-        m.to[1] === g &&
-        m.to[2] === bl
+        m.to[0] === overrideRgb[0] &&
+        m.to[1] === overrideRgb[1] &&
+        m.to[2] === overrideRgb[2]
       );
-      if (!exists) remaps.push({ from: origColor, to: [r, g, bl] });
-      return { ...b, color: [r, g, bl], legacyColor };
+      if (!exists) remaps.push({ from: origColor, to: [...overrideRgb] });
+      return { ...b, color: [...overrideRgb], legacyColor };
     }
     const isBeachFamily = id.includes('beach') || id.includes('shore') || id.includes('coast');
     const isLegacyRed = b.color.length >= 3

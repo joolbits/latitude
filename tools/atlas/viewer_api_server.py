@@ -6,6 +6,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import threading
 from collections import Counter
 from datetime import datetime, timezone
@@ -20,12 +21,74 @@ ROOT = Path(__file__).resolve().parents[2]
 RUNS_ROOT = ROOT / "run-headless" / "latdev" / "atlas-runs"
 VIEWER_ROOT = ROOT / "tools" / "atlas" / "viewer"
 ATLAS_PS1 = ROOT / "tools" / "atlas" / "Atlas.ps1"
+ATLAS_RUNNER = ROOT / "tools" / "atlas" / "atlas_runner.py"
 PALETTE_AUTHORITY_PATH = ROOT / "tools" / "atlas" / "palette_authority.json"
 COARSE_RUGGEDNESS_STEP = 64
 COARSE_RUGGEDNESS_FILE = f"step{COARSE_RUGGEDNESS_STEP}_ruggedness.png"
 
 STEP_RE = re.compile(r"step(\d+)", re.IGNORECASE)
 HEX_RE = re.compile(r"^#?([0-9a-fA-F]{6})$")
+
+
+def _generation_command(step: int, seed: int | None = None, size: str | None = None) -> list[str]:
+    if os.name == "nt":
+        if not ATLAS_PS1.exists():
+            raise FileNotFoundError(f"Atlas launcher not found: {ATLAS_PS1}")
+        powershell = shutil.which("powershell.exe") or shutil.which("pwsh") or shutil.which("powershell")
+        if not powershell:
+            raise RuntimeError("PowerShell not found on PATH.")
+        command = [powershell, "-ExecutionPolicy", "Bypass", "-File", str(ATLAS_PS1), "-Step", str(step), "-NoViewerOpen"]
+        if size:
+            command.extend(["-Size", str(size)])
+        if seed is not None:
+            command.extend(["-Seed", str(seed)])
+        return command
+
+    if not ATLAS_RUNNER.exists():
+        raise FileNotFoundError(f"Atlas runner not found: {ATLAS_RUNNER}")
+
+    command = [sys.executable, str(ATLAS_RUNNER), "generate", "--step", str(step), "--no-viewer-open"]
+    if size:
+        command.extend(["--size", str(size)])
+    if seed is not None:
+        command.extend(["--seed", str(seed)])
+    return command
+
+
+def _ruggedness_command(run_id: str, step: int = COARSE_RUGGEDNESS_STEP) -> list[str]:
+    if os.name == "nt":
+        if not ATLAS_PS1.exists():
+            raise FileNotFoundError(f"Atlas launcher not found: {ATLAS_PS1}")
+        powershell = shutil.which("powershell.exe") or shutil.which("pwsh") or shutil.which("powershell")
+        if not powershell:
+            raise RuntimeError("PowerShell not found on PATH.")
+        return [
+            powershell,
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(ATLAS_PS1),
+            "-GenerateRuggednessOnly",
+            "-Run",
+            run_id,
+            "-RuggednessPreviewStep",
+            str(step),
+            "-NoViewerOpen",
+        ]
+
+    if not ATLAS_RUNNER.exists():
+        raise FileNotFoundError(f"Atlas runner not found: {ATLAS_RUNNER}")
+
+    return [
+        sys.executable,
+        str(ATLAS_RUNNER),
+        "ruggedness",
+        "--run",
+        run_id,
+        "--step",
+        str(step),
+        "--no-viewer-open",
+    ]
 
 def _load_palette_overrides() -> dict[str, list[int]]:
     if not PALETTE_AUTHORITY_PATH.exists():
@@ -71,6 +134,27 @@ DEFAULT_DISPLAY_COLOR_OVERRIDE = {
     "minecraft:stony_shore": [154, 154, 154], # #9A9A9A stone gray
 }
 
+BOP_COLOR_RULES = [
+    (["tropics"], [77, 187, 120]),
+    (["rainforest", "jungle"], [52, 143, 87]),
+    (["bayou", "bog", "marsh", "wetland", "floodplain", "muskeg"], [95, 142, 122]),
+    (["seasonal_forest", "woodland", "forested_field", "orchard", "pasture", "grove", "meadow", "field", "clearing", "undergrowth", "overgrown"], [93, 156, 87]),
+    (["flower", "blossom", "cherry", "wisteria", "lavender", "mystic"], [192, 140, 235]),
+    (["scrubland", "shrubland", "steppe", "wasteland", "subtropics", "desert", "savanna"], [197, 172, 98]),
+    (["alps", "tundra", "glacier", "snow", "frozen", "ice"], [216, 234, 246]),
+    (["hot_springs", "volcanic", "volcano"], [216, 91, 63]),
+    (["beach", "shore", "coast", "dune"], [231, 215, 165]),
+    (["coral", "reef", "kelp", "ocean", "river"], [88, 214, 255]),
+    (["dead", "eerie", "ominous", "dark"], [76, 101, 80]),
+]
+
+
+def _bop_display_color_for(short_id: str, fallback_rgb: list[int] | tuple[int, int, int]) -> list[int]:
+    for patterns, color in BOP_COLOR_RULES:
+        if any(short_id == pattern or pattern in short_id for pattern in patterns):
+            return list(color)
+    return list(fallback_rgb)
+
 def display_color_for(biome_id: str, fallback_rgb: list[int] | tuple[int, int, int]) -> list[int]:
     key = str(biome_id or "").lower()
     if key in PALETTE_OVERRIDES:
@@ -80,6 +164,8 @@ def display_color_for(biome_id: str, fallback_rgb: list[int] | tuple[int, int, i
         return list(PALETTE_OVERRIDES[short])
     if key in DEFAULT_DISPLAY_COLOR_OVERRIDE:
         return list(DEFAULT_DISPLAY_COLOR_OVERRIDE[key])
+    if key.startswith("biomesoplenty:") or key.startswith("bop:"):
+        return _bop_display_color_for(short, fallback_rgb)
     return list(fallback_rgb)
 
 GENERATION_LOCK = threading.Lock()
@@ -200,8 +286,6 @@ def start_generation(step: int, seed: int | None = None, size: str | None = None
 
     if step <= 0 or step > 4096:
         raise ValueError("step must be in range 1..4096")
-    if not ATLAS_PS1.exists():
-        raise FileNotFoundError(f"Atlas launcher not found: {ATLAS_PS1}")
 
     with GENERATION_LOCK:
         if GENERATION_STATE.get("active"):
@@ -219,16 +303,8 @@ def start_generation(step: int, seed: int | None = None, size: str | None = None
                 },
             )
 
-        powershell = shutil.which("powershell.exe") or shutil.which("pwsh") or shutil.which("powershell")
-        if not powershell:
-            raise RuntimeError("PowerShell not found on PATH.")
-
         creationflags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
-        command = [powershell, "-ExecutionPolicy", "Bypass", "-File", str(ATLAS_PS1), "-Step", str(step), "-NoViewerOpen"]
-        if size:
-            command.extend(["-Size", str(size)])
-        if seed is not None:
-            command.extend(["-Seed", str(seed)])
+        command = _generation_command(step, seed=seed, size=size)
         proc = subprocess.Popen(
             command,
             cwd=str(ROOT),
@@ -262,25 +338,13 @@ def start_ruggedness_generation(run_id: str, step: int = COARSE_RUGGEDNESS_STEP)
     if (run_dir / f"step{step}_ruggedness.png").exists():
         return False, {"already_exists": True, "message": "coarse ruggedness preview already present"}
 
-    if not ATLAS_PS1.exists():
-        raise FileNotFoundError(f"Atlas launcher not found: {ATLAS_PS1}")
-
     with GENERATION_LOCK:
         if GENERATION_STATE.get("active"):
             # Another job is running; return current state so caller polls.
             return False, generation_status()
 
-        powershell = shutil.which("powershell.exe") or shutil.which("pwsh") or shutil.which("powershell")
-        if not powershell:
-            raise RuntimeError("PowerShell not found on PATH.")
-
         creationflags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
-        command = [
-            powershell, "-ExecutionPolicy", "Bypass", "-File", str(ATLAS_PS1),
-            "-GenerateRuggednessOnly", "-Run", run_id,
-            "-RuggednessPreviewStep", str(step),
-            "-NoViewerOpen",
-        ]
+        command = _ruggedness_command(run_id, step)
         proc = subprocess.Popen(
             command,
             cwd=str(ROOT),
