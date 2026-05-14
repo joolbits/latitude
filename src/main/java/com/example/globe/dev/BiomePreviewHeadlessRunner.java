@@ -40,6 +40,12 @@ public final class BiomePreviewHeadlessRunner {
     private static final DateTimeFormatter SEARCH_TIMESTAMP = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss")
             .withLocale(Locale.ROOT)
             .withZone(ZoneOffset.UTC);
+    private static final int PREVIEW_RADIUS_ITTY = 3750;
+    private static final int PREVIEW_RADIUS_TINY = 5000;
+    private static final int PREVIEW_RADIUS_REGULAR = 7500;
+    private static final int PREVIEW_RADIUS_LARGE = 10000;
+    private static final int PREVIEW_RADIUS_MASSIVE = 20000;
+    private static final int PREVIEW_RADIUS_MAX = PREVIEW_RADIUS_MASSIVE;
 
     private BiomePreviewHeadlessRunner() {
     }
@@ -85,9 +91,8 @@ public final class BiomePreviewHeadlessRunner {
         ExportJob job = null;
         try {
             int y = Mth.clamp(config.y, 0, 320);
-            int radius = config.radiusBlocks != null
-                    ? Math.max(1, config.radiusBlocks)
-                    : radiusFromSizeOrWorld(config.sizePreset, world);
+            int radius = resolvePreviewRadius(world, config);
+            int firstStep = !config.steps().isEmpty() ? config.steps().get(0) : 64;
             long effectiveSeed = config.seedOverride != null ? config.seedOverride : worldSeed;
             String runLabel = BiomePreviewExporter.resolveRunLabel(config.runLabel);
             Path outputDir = config.outDir != null ? config.outDir : defaultOutDir(server.getServerDirectory());
@@ -109,6 +114,14 @@ public final class BiomePreviewHeadlessRunner {
                     outputDir,
                     runLabel);
             GlobeMod.LOGGER.info(startMessage);
+            long widthForLog = Math.max(1L, (2L * (long) radius) / Math.max(1, firstStep) + 1L);
+            GlobeMod.LOGGER.info(
+                    "[latdev][headless] preview params radius={} step={} width={} height={} out={}",
+                    radius,
+                    firstStep,
+                    widthForLog,
+                    widthForLog,
+                    outputDir);
             if (config.steps.isEmpty()) {
                 GlobeMod.LOGGER.warn("[latdev][headless] no export steps configured; stopping server");
                 LatitudeBiomes.setWorldSeed(worldSeed);
@@ -412,15 +425,52 @@ public final class BiomePreviewHeadlessRunner {
         if (sizePreset != null) {
             String normalized = sizePreset.toLowerCase(Locale.ROOT);
             return switch (normalized) {
-                case "itty", "xsmall" -> 3750;
-                case "tiny", "small" -> 5000;
-                case "regular" -> 7500;
-                case "large" -> 10000;
-                case "massive" -> 20000;
+                case "itty", "xsmall" -> PREVIEW_RADIUS_ITTY;
+                case "tiny", "small" -> PREVIEW_RADIUS_TINY;
+                case "regular" -> PREVIEW_RADIUS_REGULAR;
+                case "large" -> PREVIEW_RADIUS_LARGE;
+                case "massive" -> PREVIEW_RADIUS_MASSIVE;
                 default -> authoritativeRadius(world);
             };
         }
         return authoritativeRadius(world);
+    }
+
+    private static int resolvePreviewRadius(ServerLevel world, Config config) {
+        Integer configuredRadius = config != null ? config.radiusBlocks() : null;
+        if (configuredRadius != null) {
+            int radius = Math.max(1, configuredRadius);
+            if (!isCanonicalPreviewRadius(radius)) {
+                GlobeMod.LOGGER.warn(
+                        "[latdev][headless] configured preview radius {} is outside canonical Latitude preview radii. "
+                                + "using default radius {} to avoid invalid preview allocation.",
+                        radius,
+                        PREVIEW_RADIUS_REGULAR);
+                return PREVIEW_RADIUS_REGULAR;
+            }
+            return radius;
+        }
+
+        int resolvedRadius = radiusFromSizeOrWorld(config != null ? config.sizePreset() : null, world);
+        if (!isCanonicalPreviewRadius(resolvedRadius)) {
+            if (resolvedRadius > PREVIEW_RADIUS_MAX) {
+                GlobeMod.LOGGER.warn(
+                        "[latdev][headless] resolved preview radius {} is outside canonical Latitude bounds. "
+                                + "Using default radius {} instead of vanilla world-border radius.",
+                        resolvedRadius,
+                        PREVIEW_RADIUS_REGULAR);
+            }
+            return PREVIEW_RADIUS_REGULAR;
+        }
+        return resolvedRadius;
+    }
+
+    private static boolean isCanonicalPreviewRadius(int radius) {
+        return radius == PREVIEW_RADIUS_ITTY
+                || radius == PREVIEW_RADIUS_TINY
+                || radius == PREVIEW_RADIUS_REGULAR
+                || radius == PREVIEW_RADIUS_LARGE
+                || radius == PREVIEW_RADIUS_MASSIVE;
     }
 
     private static final class ExportJob {
@@ -564,15 +614,20 @@ public final class BiomePreviewHeadlessRunner {
         boolean emitHeightProp = parseBoolean(System.getProperty(EMIT_HEIGHT_PROP_KEY, ""));
         boolean emitBiomeIndex = parseBoolean(kv.get("emitbiomeindex"));
         boolean emitHeight = emitHeightProp || parseBoolean(kv.get("emitheight"));
-        BiomePreviewExporter.ExportOptions baseOptions = BiomePreviewExporter.ExportOptions.from(bundle, parsedLayers.layers(), overlays, masks);
+        BiomePreviewExporter.ExportOptions baseOptions = BiomePreviewExporter.ExportOptions.from(
+                bundle,
+                parsedLayers.layers(),
+                overlays,
+                masks,
+                parsedLayers.includeBiomeAudit());
         // --ruggedness true: append RUGGEDNESS to whatever layer set was chosen
         boolean addRuggedness = parseBoolean(kv.get("ruggedness"));
         if (addRuggedness && !baseOptions.layers().contains(BiomePreviewExporter.Layer.RUGGEDNESS)) {
             java.util.EnumSet<BiomePreviewExporter.Layer> ext = java.util.EnumSet.copyOf(baseOptions.layers());
             ext.add(BiomePreviewExporter.Layer.RUGGEDNESS);
             baseOptions = new BiomePreviewExporter.ExportOptions(
-                    ext, baseOptions.overlays(), baseOptions.maskLayers(), baseOptions.writeLegends(),
-                    false, false);
+                ext, baseOptions.overlays(), baseOptions.maskLayers(), baseOptions.writeLegends(),
+                    false, false, parsedLayers.includeBiomeAudit());
         }
         // Emit legend metadata whenever biome index output is requested so atlas runs
         // keep the policy/legend authority alongside the sampled layer payload.
@@ -582,7 +637,8 @@ public final class BiomePreviewHeadlessRunner {
                 baseOptions.maskLayers(),
                 baseOptions.writeLegends() || emitBiomeIndex,
                 emitBiomeIndex,
-                emitHeight);
+                emitHeight,
+                parsedLayers.includeBiomeAudit());
         Path out = kv.containsKey("out") && !kv.get("out").isBlank()
                 ? Path.of(kv.get("out")).toAbsolutePath().normalize()
                 : null;
@@ -904,11 +960,12 @@ public final class BiomePreviewHeadlessRunner {
 
     private static ParsedLayers parseLayers(String raw) {
         if (raw == null || raw.isBlank()) {
-            return new ParsedLayers(List.of(), List.of());
+            return new ParsedLayers(List.of(), List.of(), false);
         }
 
         LinkedHashSet<BiomePreviewExporter.Layer> layers = new LinkedHashSet<>();
         LinkedHashSet<String> masks = new LinkedHashSet<>();
+        boolean includeBiomeAudit = false;
         boolean collectingMaskValues = false;
         String[] parts = raw.split("[,|]");
         for (String part : parts) {
@@ -933,6 +990,11 @@ public final class BiomePreviewHeadlessRunner {
                 collectingMaskValues = true;
                 continue;
             }
+            if (normalized.equals("stats") || normalized.equals("audit")) {
+                includeBiomeAudit = true;
+                collectingMaskValues = false;
+                continue;
+            }
             BiomePreviewExporter.Layer layer = BiomePreviewExporter.Layer.fromToken(part);
             if (layer != null) {
                 layers.add(layer);
@@ -943,7 +1005,7 @@ public final class BiomePreviewHeadlessRunner {
                 masks.add(token);
             }
         }
-        return new ParsedLayers(new ArrayList<>(layers), new ArrayList<>(masks));
+        return new ParsedLayers(new ArrayList<>(layers), new ArrayList<>(masks), includeBiomeAudit);
     }
 
     private static List<String> parseMaskValues(String raw) {
@@ -1087,7 +1149,8 @@ public final class BiomePreviewHeadlessRunner {
     }
 
     private record ParsedLayers(List<BiomePreviewExporter.Layer> layers,
-                                List<String> masks) {
+                                List<String> masks,
+                                boolean includeBiomeAudit) {
     }
 
     private record GitStamp(String branch, String commit) {
