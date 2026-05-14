@@ -213,8 +213,22 @@ enable-command-block=false
     }
 }
 
+tasks.register('syncBiomePreviewMods', Copy) {
+    outputs.upToDateWhen { false }
+    doFirst {
+        delete file('run-headless/mods')
+    }
+    from(file('run/mods')) {
+        include '*.jar'
+    }
+    into file('run-headless/mods')
+}
+
 tasks.named('runBiomePreview').configure {
     dependsOn tasks.named('prepareBiomePreviewRunDir')
+    if (project.hasProperty('latdev.syncPreviewMods') && project.property('latdev.syncPreviewMods').toString().toBoolean()) {
+        dependsOn tasks.named('syncBiomePreviewMods')
+    }
     doFirst {
         def rawArgs = new ArrayList(args ?: [])
         def latdevOptions = [:]
