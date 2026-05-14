@@ -2547,7 +2547,7 @@ public final class LatitudeBiomes {
         }
         if (chosen == null) {
             chosen = switch (landBandIndex) {
-                case BAND_TROPICAL -> pickFromWeightedTags(biomeRegistry, base, blockX, blockZ, BAND_TROPICAL, 0x1A21, LAT_EQUATOR_PRIMARY, LAT_EQUATOR_SECONDARY, LAT_EQUATOR_ACCENT);
+                case BAND_TROPICAL -> pickFromWeightedTags(biomeRegistry, base, blockX, blockZ, BAND_TROPICAL, 0x1A21, LAT_TROPICS_PRIMARY, LAT_TROPICS_SECONDARY, LAT_TROPICS_ACCENT);
                 case BAND_SUBTROPICAL -> {
                     Holder<Biome> subtropicalPick = pickTropicalGradient(biomeRegistry, base, blockX, blockZ, t);
                     if (!mountainLike && isSwampCandidate(subtropicalPick)) {
@@ -3170,7 +3170,7 @@ public final class LatitudeBiomes {
         }
         if (chosen == null) {
             chosen = switch (landBandIndex) {
-                case BAND_TROPICAL -> pickFromWeightedTags(biomePool, base, blockX, blockZ, BAND_TROPICAL, 0x1A21, LAT_EQUATOR_PRIMARY, LAT_EQUATOR_SECONDARY, LAT_EQUATOR_ACCENT);
+                case BAND_TROPICAL -> pickFromWeightedTags(biomePool, base, blockX, blockZ, BAND_TROPICAL, 0x1A21, LAT_TROPICS_PRIMARY, LAT_TROPICS_SECONDARY, LAT_TROPICS_ACCENT);
                 case BAND_SUBTROPICAL -> pickTropicalGradient(biomePool, base, blockX, blockZ, t);
                 case BAND_TEMPERATE -> pickTemperateLand(biomePool, blockX, blockZ, columnDecisionY,
                         () -> pickFromWeightedTags(biomePool, base, blockX, blockZ, BAND_TEMPERATE, 0x2B32, LAT_TEMPERATE_PRIMARY, LAT_TEMPERATE_SECONDARY, LAT_TEMPERATE_ACCENT),
@@ -5075,9 +5075,9 @@ public final class LatitudeBiomes {
     private static List<TagKey<Biome>> landBandTags(int bandIndex) {
         return switch (bandIndex) {
             case BAND_TROPICAL -> List.of(
-                    LAT_EQUATOR_PRIMARY,
-                    LAT_EQUATOR_SECONDARY,
-                    LAT_EQUATOR_ACCENT);
+                    LAT_TROPICS_PRIMARY,
+                    LAT_TROPICS_SECONDARY,
+                    LAT_TROPICS_ACCENT);
             case BAND_SUBTROPICAL -> List.of(
                     LAT_ARID_PRIMARY,
                     LAT_ARID_SECONDARY,
@@ -8109,7 +8109,7 @@ public final class LatitudeBiomes {
 
     private static Holder<Biome> pickMangroveFallback(Registry<Biome> biomes, Holder<Biome> base, int blockX, int blockZ, double t, int bandIndex) {
         return switch (bandIndex) {
-            case BAND_TROPICAL -> pickFromWeightedTagsNoMangrove(biomes, base, blockX, blockZ, BAND_TROPICAL, 0x1A21, LAT_EQUATOR_PRIMARY, LAT_EQUATOR_SECONDARY, LAT_EQUATOR_ACCENT);
+            case BAND_TROPICAL -> pickFromWeightedTagsNoMangrove(biomes, base, blockX, blockZ, BAND_TROPICAL, 0x1A21, LAT_TROPICS_PRIMARY, LAT_TROPICS_SECONDARY, LAT_TROPICS_ACCENT);
             case BAND_SUBTROPICAL -> pickTropicalGradientNoMangrove(biomes, base, blockX, blockZ, t);
             case BAND_TEMPERATE -> pickFromWeightedTagsNoMangrove(biomes, base, blockX, blockZ, BAND_TEMPERATE, 0x2B32, LAT_TEMPERATE_PRIMARY, LAT_TEMPERATE_SECONDARY, LAT_TEMPERATE_ACCENT);
             case BAND_SUBPOLAR -> pickSubpolarWithRamp(biomes, base, blockX, blockZ, t, BAND_SUBPOLAR, 0x3C43, LAT_SUBPOLAR_PRIMARY, LAT_SUBPOLAR_SECONDARY, LAT_SUBPOLAR_ACCENT);
@@ -8119,7 +8119,7 @@ public final class LatitudeBiomes {
 
     private static Holder<Biome> pickMangroveFallback(Collection<Holder<Biome>> biomes, Holder<Biome> base, int blockX, int blockZ, double t, int bandIndex) {
         return switch (bandIndex) {
-            case BAND_TROPICAL -> pickFromWeightedTagsNoMangrove(biomes, base, blockX, blockZ, BAND_TROPICAL, 0x1A21, LAT_EQUATOR_PRIMARY, LAT_EQUATOR_SECONDARY, LAT_EQUATOR_ACCENT);
+            case BAND_TROPICAL -> pickFromWeightedTagsNoMangrove(biomes, base, blockX, blockZ, BAND_TROPICAL, 0x1A21, LAT_TROPICS_PRIMARY, LAT_TROPICS_SECONDARY, LAT_TROPICS_ACCENT);
             case BAND_SUBTROPICAL -> pickTropicalGradientNoMangrove(biomes, base, blockX, blockZ, t);
             case BAND_TEMPERATE -> pickFromWeightedTagsNoMangrove(biomes, base, blockX, blockZ, BAND_TEMPERATE, 0x2B32, LAT_TEMPERATE_PRIMARY, LAT_TEMPERATE_SECONDARY, LAT_TEMPERATE_ACCENT);
             case BAND_SUBPOLAR -> pickSubpolarWithRamp(biomes, base, blockX, blockZ, t, BAND_SUBPOLAR, 0x3C43, LAT_SUBPOLAR_PRIMARY, LAT_SUBPOLAR_SECONDARY, LAT_SUBPOLAR_ACCENT);
@@ -8129,7 +8129,7 @@ public final class LatitudeBiomes {
 
     private static Holder<Biome> pickSwampFallback(Registry<Biome> biomes, Holder<Biome> base, int blockX, int blockZ, double t, int bandIndex) {
         return switch (bandIndex) {
-            case BAND_TROPICAL -> pickFromWeightedTagsNoSwamp(biomes, base, blockX, blockZ, BAND_TROPICAL, 0x1A21, LAT_EQUATOR_PRIMARY, LAT_EQUATOR_SECONDARY, LAT_EQUATOR_ACCENT);
+            case BAND_TROPICAL -> pickFromWeightedTagsNoSwamp(biomes, base, blockX, blockZ, BAND_TROPICAL, 0x1A21, LAT_TROPICS_PRIMARY, LAT_TROPICS_SECONDARY, LAT_TROPICS_ACCENT);
             case BAND_SUBTROPICAL -> sanitizeSubtropicalSwampFallback(biomes, pickTropicalGradientNoSwamp(biomes, base, blockX, blockZ, t));
             case BAND_TEMPERATE -> pickFromWeightedTagsNoSwamp(biomes, base, blockX, blockZ, BAND_TEMPERATE, 0x2B32, LAT_TEMPERATE_PRIMARY, LAT_TEMPERATE_SECONDARY, LAT_TEMPERATE_ACCENT);
             case BAND_SUBPOLAR -> pickSubpolarWithRamp(biomes, base, blockX, blockZ, t, BAND_SUBPOLAR, 0x3C43, LAT_SUBPOLAR_PRIMARY, LAT_SUBPOLAR_SECONDARY, LAT_SUBPOLAR_ACCENT);
@@ -8139,7 +8139,7 @@ public final class LatitudeBiomes {
 
     private static Holder<Biome> pickSwampFallback(Collection<Holder<Biome>> biomes, Holder<Biome> base, int blockX, int blockZ, double t, int bandIndex) {
         return switch (bandIndex) {
-            case BAND_TROPICAL -> pickFromWeightedTagsNoSwamp(biomes, base, blockX, blockZ, BAND_TROPICAL, 0x1A21, LAT_EQUATOR_PRIMARY, LAT_EQUATOR_SECONDARY, LAT_EQUATOR_ACCENT);
+            case BAND_TROPICAL -> pickFromWeightedTagsNoSwamp(biomes, base, blockX, blockZ, BAND_TROPICAL, 0x1A21, LAT_TROPICS_PRIMARY, LAT_TROPICS_SECONDARY, LAT_TROPICS_ACCENT);
             case BAND_SUBTROPICAL -> sanitizeSubtropicalSwampFallback(biomes, pickTropicalGradientNoSwamp(biomes, base, blockX, blockZ, t));
             case BAND_TEMPERATE -> pickFromWeightedTagsNoSwamp(biomes, base, blockX, blockZ, BAND_TEMPERATE, 0x2B32, LAT_TEMPERATE_PRIMARY, LAT_TEMPERATE_SECONDARY, LAT_TEMPERATE_ACCENT);
             case BAND_SUBPOLAR -> pickSubpolarWithRamp(biomes, base, blockX, blockZ, t, BAND_SUBPOLAR, 0x3C43, LAT_SUBPOLAR_PRIMARY, LAT_SUBPOLAR_SECONDARY, LAT_SUBPOLAR_ACCENT);
