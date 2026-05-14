@@ -14,6 +14,7 @@ import net.minecraft.core.Holder;
 import net.minecraft.core.Registry;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.Identifier;
+import net.minecraft.tags.TagKey;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.Mth;
 import net.minecraft.world.level.biome.Biome;
@@ -23,6 +24,7 @@ import net.minecraft.world.level.chunk.ChunkGenerator;
 import net.minecraft.world.level.levelgen.RandomState;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
+import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.io.Reader;
@@ -30,12 +32,14 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.Collections;
 import java.util.EnumMap;
 import java.util.EnumSet;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -44,9 +48,12 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
 
+import net.fabricmc.loader.api.FabricLoader;
+
 public final class BiomePreviewExporter {
     private static final int BLOCKS_PER_CHUNK = 16;
     private static final int TOP_BIOME_COUNT = 20;
+    private static final String AUDIT_BAND_TEMPERATE = "temperate";
     private static final int MASK_MATCH_COLOR = 0xF2F5F8;
     private static final int MASK_MISS_COLOR = 0x11161B;
     private static final long DEFAULT_BUDGET_MS = 10L;
@@ -71,6 +78,37 @@ public final class BiomePreviewExporter {
             .withLocale(Locale.ROOT)
             .withZone(ZoneOffset.UTC);
     private static final Map<String, Integer> PALETTE_OVERRIDES = loadPaletteOverrides();
+    private static final List<TagSpec> LATITUDE_TAG_SPECS = List.of(
+            new TagSpec("globe:lat_equator_primary"),
+            new TagSpec("globe:lat_equator_secondary"),
+            new TagSpec("globe:lat_equator_accent"),
+            new TagSpec("globe:lat_tropics_primary"),
+            new TagSpec("globe:lat_tropics_secondary"),
+            new TagSpec("globe:lat_tropics_accent"),
+            new TagSpec("globe:lat_arid_primary"),
+            new TagSpec("globe:lat_arid_secondary"),
+            new TagSpec("globe:lat_arid_accent"),
+            new TagSpec("globe:lat_trans_arid_tropics_1_primary"),
+            new TagSpec("globe:lat_trans_arid_tropics_1_secondary"),
+            new TagSpec("globe:lat_trans_arid_tropics_1_accent"),
+            new TagSpec("globe:lat_trans_arid_tropics_2_primary"),
+            new TagSpec("globe:lat_trans_arid_tropics_2_secondary"),
+            new TagSpec("globe:lat_trans_arid_tropics_2_accent"),
+            new TagSpec("globe:lat_temperate_primary"),
+            new TagSpec("globe:lat_temperate_secondary"),
+            new TagSpec("globe:lat_temperate_accent"),
+            new TagSpec("globe:lat_temperate_mountain"),
+            new TagSpec("globe:lat_subpolar_primary"),
+            new TagSpec("globe:lat_subpolar_secondary"),
+            new TagSpec("globe:lat_subpolar_accent"),
+            new TagSpec("globe:lat_polar_primary"),
+            new TagSpec("globe:lat_polar_secondary"),
+            new TagSpec("globe:lat_polar_accent"),
+            new TagSpec("globe:lat_ocean_tropical"),
+            new TagSpec("globe:lat_ocean_temperate"),
+            new TagSpec("globe:lat_ocean_subpolar"),
+            new TagSpec("globe:lat_ocean_polar")
+    );
 
     private BiomePreviewExporter() {
     }
@@ -162,6 +200,8 @@ public final class BiomePreviewExporter {
         Map<String, Integer> biomeColors = new HashMap<>();
         Map<String, Integer> biomeIndices = new LinkedHashMap<>();
         Map<String, Integer> bandCounts = new HashMap<>();
+        Map<String, Integer> selectedBandCounts = new HashMap<>();
+        boolean includeBiomeAudit = effectiveOptions.includeBiomeAudit();
 
         boolean renderBiomes = layers.contains(Layer.BIOMES);
         boolean renderBands = layers.contains(Layer.BANDS);
@@ -178,6 +218,9 @@ public final class BiomePreviewExporter {
                 ? latitudeSource.original()
                 : biomeSource;
         Registry<Biome> biomeRegistry = world.registryAccess().lookupOrThrow(Registries.BIOME);
+        Map<String, BiomeAuditRecord> biomeAudit = includeBiomeAudit
+                ? collectBiomeAuditRows(biomeRegistry, baseSource)
+                : Map.of();
         RandomState noiseConfig = RandomState.create(
                 ((net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator) generator).generatorSettings().value(),
                 world.registryAccess().lookupOrThrow(Registries.NOISE),
@@ -245,9 +288,20 @@ public final class BiomePreviewExporter {
                 }
                 int chosenBandIndex = LatitudeBiomes.authoritativeChosenBandIndex(blockX, blockZ, radiusBlocks);
                 int landBandIndex = LatitudeBiomes.authoritativeLandBandIndex(blockX, blockZ, radiusBlocks);
+                LatitudeBands.Band selectedDisplayBand = bandForBlockZ(radiusBlocks, blockZ);
                 chosenBandsImage.setRGB(imageX, imageZ, colorForBandIndex(chosenBandIndex));
                 landBandsImage.setRGB(imageX, imageZ, colorForBandIndex(landBandIndex));
                 double latDeg = latitudeDegreesForBlockZ(radiusBlocks, blockZ);
+                    if (includeBiomeAudit && sampledBiomeId != null) {
+                        BiomeAuditRecord row = biomeAudit.get(sampledBiomeId);
+                        if (row != null) {
+                            row.recordSelection(blockX, blockZ, latDeg, selectedDisplayBand.id(), latitudeBandIdFromIndex(landBandIndex));
+                            String chosenBandKey = "chosen:" + selectedDisplayBand.id();
+                            selectedBandCounts.merge(chosenBandKey, 1, Integer::sum);
+                            String landBandKey = "land:" + latitudeBandIdFromIndex(landBandIndex);
+                            selectedBandCounts.merge(landBandKey, 1, Integer::sum);
+                        }
+                }
                 if (latDeg >= SEAM_LAT_MIN_DEG && latDeg <= SEAM_LAT_MAX_DEG) {
                     SeamRowSummary row = seamRows.computeIfAbsent(blockZ, ignored -> new SeamRowSummary(latDeg));
                     row.addChosen(chosenBandIndex);
@@ -386,6 +440,29 @@ public final class BiomePreviewExporter {
                 biomeCounts,
                 inventoryReport,
                 inventoryPath);
+        if (includeBiomeAudit) {
+            Path auditTxtPath = outputDir.resolve(auditTextFileName(seed, radiusBlocks, stepBlocks));
+            Path auditCsvPath = outputDir.resolve(auditCsvFileName(seed, radiusBlocks, stepBlocks));
+            writeBiomeAuditReport(
+                    auditTxtPath,
+                    auditCsvPath,
+                    seed,
+                    radiusBlocks,
+                    stepBlocks,
+                    y,
+                    xMin,
+                    zMin,
+                    xMax,
+                    zMax,
+                    width,
+                    height,
+                    totalSamples,
+                    inventoryReport,
+                    biomeCounts,
+                    selectedBandCounts,
+                    biomeAudit,
+                    effectiveOptions.includeBiomeAudit());
+        }
 
         if (effectiveOptions.writeLegends()) {
             writeLegendFiles(
@@ -443,6 +520,7 @@ public final class BiomePreviewExporter {
         private final EnumSet<Overlay> overlays;
         private final List<BiomeMaskLayer> maskTargets;
         private final boolean emitBiomeIndex;
+        private final boolean includeBiomeAudit;
 
         private final int xMin;
         private final int zMin;
@@ -462,6 +540,8 @@ public final class BiomePreviewExporter {
         private final Map<String, Integer> biomeCounts = new HashMap<>();
         private final Map<String, Integer> biomeColors = new HashMap<>();
         private final Map<String, Integer> biomeIndices = new LinkedHashMap<>();
+        private final Map<String, BiomeAuditRecord> biomeAuditRows;
+        private final Map<String, Integer> selectedBandCounts = new HashMap<>();
         private final Map<String, Integer> bandCounts = new HashMap<>();
         private final Map<Integer, SeamRowSummary> seamRows = new TreeMap<>();
         private final Map<Integer, TemperateShoulderCompositionRow> temperateShoulderRows = new TreeMap<>();
@@ -514,13 +594,59 @@ public final class BiomePreviewExporter {
             this.overlays = this.options.overlays();
             this.maskTargets = this.options.maskLayers();
             this.emitBiomeIndex = this.options.emitBiomeIndex();
+            this.includeBiomeAudit = this.options.includeBiomeAudit();
+
+            if (stepBlocks <= 0) {
+                throw new IllegalArgumentException(String.format(
+                        Locale.ROOT,
+                        "Invalid preview step size: radius=%d step=%d width=%d height=%d totalPixels=%d",
+                        radiusBlocks,
+                        stepBlocks,
+                        0,
+                        0,
+                        0L));
+            }
+            if (radiusBlocks <= 0) {
+                throw new IllegalArgumentException(String.format(
+                        Locale.ROOT,
+                        "Invalid preview radius: radius=%d step=%d width=%d height=%d totalPixels=%d",
+                        radiusBlocks,
+                        stepBlocks,
+                        0,
+                        0,
+                        0L));
+            }
 
             this.xMin = -radiusBlocks;
             this.zMin = -radiusBlocks;
             int xMax = radiusBlocks;
             int zMax = radiusBlocks;
-            this.width = ((xMax - xMin) / stepBlocks) + 1;
-            this.height = ((zMax - zMin) / stepBlocks) + 1;
+            long widthLong = Math.floorDiv((long) (xMax - xMin), stepBlocks) + 1L;
+            long heightLong = Math.floorDiv((long) (zMax - zMin), stepBlocks) + 1L;
+            long totalSamples = widthLong * heightLong;
+            if (widthLong <= 0 || heightLong <= 0 || totalSamples <= 0) {
+                throw new IllegalArgumentException(String.format(
+                        Locale.ROOT,
+                        "Invalid preview dimensions: radius=%d step=%d width=%d height=%d totalPixels=%d",
+                        radiusBlocks,
+                        stepBlocks,
+                        widthLong,
+                        heightLong,
+                        totalSamples));
+            }
+            if (widthLong > Integer.MAX_VALUE || heightLong > Integer.MAX_VALUE || totalSamples > Integer.MAX_VALUE) {
+                throw new IllegalArgumentException(String.format(
+                        Locale.ROOT,
+                        "Preview allocation too large: radius=%d step=%d width=%d height=%d totalPixels=%d",
+                        radiusBlocks,
+                        stepBlocks,
+                        widthLong,
+                        heightLong,
+                        totalSamples));
+            }
+
+            this.width = (int) widthLong;
+            this.height = (int) heightLong;
             this.chunkMinX = Math.floorDiv(xMin, BLOCKS_PER_CHUNK);
             this.chunkMaxX = Math.floorDiv(xMax, BLOCKS_PER_CHUNK);
             this.chunkMinZ = Math.floorDiv(zMin, BLOCKS_PER_CHUNK);
@@ -532,6 +658,9 @@ public final class BiomePreviewExporter {
                     ? latitudeSource.original()
                     : biomeSource;
             this.biomeRegistry = world.registryAccess().lookupOrThrow(Registries.BIOME);
+            this.biomeAuditRows = includeBiomeAudit
+                    ? collectBiomeAuditRows(this.biomeRegistry, this.baseSource)
+                    : Map.of();
             this.noiseConfig = RandomState.create(
                     ((net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator) this.generator).generatorSettings().value(),
                     world.registryAccess().lookupOrThrow(Registries.NOISE),
@@ -649,9 +778,20 @@ public final class BiomePreviewExporter {
                     }
                     int chosenBandIndex = LatitudeBiomes.authoritativeChosenBandIndex(blockX, blockZ, radiusBlocks);
                     int landBandIndex = LatitudeBiomes.authoritativeLandBandIndex(blockX, blockZ, radiusBlocks);
+                    LatitudeBands.Band selectedDisplayBand = bandForBlockZ(radiusBlocks, blockZ);
                     chosenBandsImage.setRGB(imageX, imageZ, colorForBandIndex(chosenBandIndex));
                     landBandsImage.setRGB(imageX, imageZ, colorForBandIndex(landBandIndex));
                     double latDeg = latitudeDegreesForBlockZ(radiusBlocks, blockZ);
+                    if (includeBiomeAudit && sampledBiomeId != null) {
+                        BiomeAuditRecord row = biomeAuditRows.get(sampledBiomeId);
+                        if (row != null) {
+                            row.recordSelection(blockX, blockZ, latDeg, selectedDisplayBand.id(), latitudeBandIdFromIndex(landBandIndex));
+                            String chosenBandKey = "chosen:" + selectedDisplayBand.id();
+                            selectedBandCounts.merge(chosenBandKey, 1, Integer::sum);
+                            String landBandKey = "land:" + latitudeBandIdFromIndex(landBandIndex);
+                            selectedBandCounts.merge(landBandKey, 1, Integer::sum);
+                        }
+                    }
                     if (latDeg >= SEAM_LAT_MIN_DEG && latDeg <= SEAM_LAT_MAX_DEG) {
                         SeamRowSummary row = seamRows.computeIfAbsent(blockZ, ignored -> new SeamRowSummary(latDeg));
                         row.addChosen(chosenBandIndex);
@@ -892,6 +1032,29 @@ public final class BiomePreviewExporter {
                         biomeCounts,
                         inventoryReport,
                         inventoryPath);
+                if (options.includeBiomeAudit()) {
+                    Path auditTxtPath = outputDir.resolve(auditTextFileName(atlasSeed, radiusBlocks, stepBlocks));
+                    Path auditCsvPath = outputDir.resolve(auditCsvFileName(atlasSeed, radiusBlocks, stepBlocks));
+                    writeBiomeAuditReport(
+                            auditTxtPath,
+                            auditCsvPath,
+                            atlasSeed,
+                            radiusBlocks,
+                            stepBlocks,
+                            y,
+                            xMin,
+                            zMin,
+                            xMin + (width - 1) * stepBlocks,
+                            zMin + (height - 1) * stepBlocks,
+                            width,
+                            height,
+                            totalSamples,
+                            inventoryReport,
+                            biomeCounts,
+                            selectedBandCounts,
+                            biomeAuditRows,
+                            options.includeBiomeAudit());
+                }
 
                 if (options.writeLegends()) {
                     writeLegendFiles(
@@ -1180,6 +1343,275 @@ public final class BiomePreviewExporter {
         }
 
         Files.writeString(txtPath, out.toString());
+    }
+
+    private static String auditTextFileName(long seed, int radiusBlocks, int stepBlocks) {
+        return String.format(Locale.ROOT, "biome-audit_seed-%d_R%d_step%d.txt", seed, radiusBlocks, stepBlocks);
+    }
+
+    private static String auditCsvFileName(long seed, int radiusBlocks, int stepBlocks) {
+        return String.format(Locale.ROOT, "biome-audit_seed-%d_R%d_step%d.csv", seed, radiusBlocks, stepBlocks);
+    }
+
+    private static void writeBiomeAuditReport(Path txtPath,
+                                             Path csvPath,
+                                             long seed,
+                                             int radiusBlocks,
+                                             int stepBlocks,
+                                             int y,
+                                             int xMin,
+                                             int zMin,
+                                             int xMax,
+                                             int zMax,
+                                             int width,
+                                             int height,
+                                             long totalSamples,
+                                             BiomeSamplerTools.InventoryReport inventoryReport,
+                                             Map<String, Integer> biomeCounts,
+                                             Map<String, Integer> selectedBandCounts,
+                                             Map<String, BiomeAuditRecord> biomeAuditRows,
+                                             boolean includeBiomeAudit) throws IOException {
+        if (!includeBiomeAudit) {
+            return;
+        }
+
+        writeBiomeAuditCsv(
+                csvPath,
+                biomeAuditRows,
+                selectedBandCounts);
+
+        List<BiomeAuditRecord> allRows = new ArrayList<>(biomeAuditRows != null ? biomeAuditRows.values() : List.of());
+        allRows.sort(Comparator.comparing(BiomeAuditRecord::biomeId));
+
+        List<String> loadedModIds = sortedLoadedModIds();
+        boolean bopLoaded = loadedModIds.contains("biomesoplenty");
+
+        Map<String, Integer> registeredByNamespace = countBiomeRowsByNamespace(allRows, row -> row.registered);
+        Map<String, Integer> inOriginalByNamespace = countBiomeRowsByNamespace(allRows, row -> row.inOriginalBiomeSource);
+        Map<String, Integer> inLatitudeByNamespace = countBiomeRowsByNamespace(allRows, row -> row.inLatitudeTag);
+        Map<String, Integer> selectedByNamespace = countBiomeRowsByNamespace(allRows, row -> row.selectedCount > 0);
+
+        List<BiomeAuditRecord> bopRows = new ArrayList<>();
+        for (BiomeAuditRecord row : allRows) {
+            if ("biomesoplenty".equals(row.namespace())) {
+                bopRows.add(row);
+            }
+        }
+
+        List<BiomeAuditRecord> temperateSelectedRows = new ArrayList<>();
+        int temperateTotal = 0;
+        for (BiomeAuditRecord row : allRows) {
+            int count = row.selectedCountForBand(AUDIT_BAND_TEMPERATE);
+            if (count > 0) {
+                temperateSelectedRows.add(row);
+                temperateTotal += count;
+            }
+        }
+        temperateSelectedRows.sort((a, b) -> {
+            int byCount = Integer.compare(
+                    b.selectedCountForBand(AUDIT_BAND_TEMPERATE),
+                    a.selectedCountForBand(AUDIT_BAND_TEMPERATE));
+            return byCount != 0 ? byCount : a.biomeId().compareTo(b.biomeId());
+        });
+
+        int seasonalForestTemperate = 0;
+        int maxTemperate = 0;
+        int maxTieCount = 0;
+        for (BiomeAuditRecord row : temperateSelectedRows) {
+            int count = row.selectedCountForBand(AUDIT_BAND_TEMPERATE);
+            if (count > maxTemperate) {
+                maxTemperate = count;
+                maxTieCount = 1;
+            } else if (count == maxTemperate && count > 0) {
+                maxTieCount++;
+            }
+            if ("biomesoplenty:seasonal_forest".equals(row.biomeId())) {
+                seasonalForestTemperate = count;
+            }
+        }
+        double seasonalPct = temperateTotal <= 0 ? 0.0 : (seasonalForestTemperate * 100.0) / temperateTotal;
+        boolean seasonalDominant = seasonalForestTemperate > 0
+                && seasonalForestTemperate == maxTemperate
+                && maxTieCount == 1
+                && seasonalForestTemperate >= (temperateTotal / 2.0);
+
+        StringBuilder out = new StringBuilder();
+        out.append("seed=").append(seed).append('\n');
+        out.append("radiusBlocks=").append(radiusBlocks).append('\n');
+        out.append("stepBlocks=").append(stepBlocks).append('\n');
+        out.append("y=").append(y).append('\n');
+        out.append("blockBounds=x[").append(xMin).append("..").append(xMax)
+                .append("],z[").append(zMin).append("..").append(zMax).append("]\n");
+        out.append("image=").append(width).append('x').append(height).append('\n');
+        out.append("totalSamples=").append(totalSamples).append('\n');
+        if (inventoryReport != null) {
+            out.append("worldBiomeInventoryCount=").append(inventoryReport.biomes().size()).append('\n');
+            out.append("worldBiomeInventoryStep=").append(inventoryReport.discoveryStepUsed()).append('\n');
+        }
+        out.append("Loaded mod biomesoplenty: ").append(bopLoaded).append('\n');
+        out.append("Loaded mod IDs: ").append(String.join(",", loadedModIds)).append('\n');
+        if (!bopLoaded) {
+            out.append("BOP is not loaded in the atlas runtime; no BOP selection conclusion can be drawn.").append('\n');
+        }
+        if (selectedBandCounts != null) {
+            out.append("selectedBandCounts=");
+            appendOrderedMapEntries(out, selectedBandCounts);
+            out.append('\n');
+        }
+        out.append("1. Registered biome counts by namespace\n");
+        appendNamespaceCounts(out, registeredByNamespace);
+        out.append("2. Original biome source biome counts by namespace\n");
+        appendNamespaceCounts(out, inOriginalByNamespace);
+        out.append("3. Latitude-tag-eligible biome counts by namespace\n");
+        appendNamespaceCounts(out, inLatitudeByNamespace);
+        out.append("4. Final selected biome counts by namespace\n");
+        appendNamespaceCounts(out, selectedByNamespace);
+
+        out.append("5. BOP-focused section\n");
+        out.append("  all registered BOP biomes: ").append(joinBiomeRows(bopRows)).append('\n');
+        out.append("  BOP biomes present in original biome source: ").append(listBiomeRows(bopRows, row -> row.inOriginalBiomeSource)).append('\n');
+        out.append("  BOP biomes present in any Latitude tag: ").append(listBiomeRows(bopRows, BiomeAuditRecord::inLatitudeTag)).append('\n');
+        out.append("  BOP biomes selected by final picker: ").append(listBiomeRows(bopRows, row -> row.selectedCount > 0)).append('\n');
+        out.append("  BOP biomes registered but not tagged: ").append(listBiomeRows(bopRows, row -> !row.inLatitudeTag && row.registered)).append('\n');
+        out.append("  BOP biomes tagged but never selected: ").append(listBiomeRows(bopRows, row -> row.inLatitudeTag && row.selectedCount == 0)).append('\n');
+        out.append("  BOP biomes selected despite no Latitude tag membership: ").append(listBiomeRows(bopRows, row -> row.selectedCount > 0 && !row.inLatitudeTag)).append('\n');
+
+        out.append("6. Temperate-focused section\n");
+        out.append("  all final selected biomes in temperate band: ").append(listBiomeRows(temperateSelectedRows)).append('\n');
+            out.append("  BOP selected biomes in temperate band: ").append(listBiomeRows(temperateSelectedRows, row -> "biomesoplenty".equals(row.namespace()))).append('\n');
+        out.append("  seasonal_forest_in_temperate_count=").append(seasonalForestTemperate).append('\n');
+        out.append("  seasonal_forest_dominance=").append(seasonalDominant).append('\n');
+        out.append("  seasonal_forest_in_temperate_ratio=").append(String.format(Locale.ROOT, "%.3f", seasonalPct)).append('\n');
+
+        Files.writeString(txtPath, out.toString());
+    }
+
+    private static void writeBiomeAuditCsv(Path csvPath,
+                                           Map<String, BiomeAuditRecord> rows,
+                                           Map<String, Integer> selectedBandCounts) throws IOException {
+        List<BiomeAuditRecord> orderedRows = new ArrayList<>(rows != null ? rows.values() : List.of());
+        orderedRows.sort(Comparator.comparing(BiomeAuditRecord::biomeId));
+
+        StringBuilder out = new StringBuilder();
+        out.append("biome_id,namespace,registered,in_original_source,in_latitude_tag,latitude_tags,selected_count,selected_bands,first_x,first_z,first_deg\n");
+        for (BiomeAuditRecord row : orderedRows) {
+            out.append(csvValue(row.biomeId())).append(',')
+                    .append(csvValue(row.namespace())).append(',')
+                    .append(row.registered).append(',')
+                    .append(row.inOriginalBiomeSource).append(',')
+                    .append(row.inLatitudeTag).append(',')
+                    .append(csvValue(String.join(";", row.latitudeTags())))
+                    .append(',')
+                    .append(row.selectedCount).append(',')
+                    .append(csvValue(row.selectedBandsSummary())).append(',')
+                    .append(row.firstSelectedX() != null ? row.firstSelectedX() : "").append(',')
+                    .append(row.firstSelectedZ() != null ? row.firstSelectedZ() : "").append(',')
+                    .append(row.firstSelectedDeg() != null ? String.format(Locale.ROOT, "%.3f", row.firstSelectedDeg()) : "")
+                    .append('\n');
+        }
+        Files.writeString(csvPath, out.toString());
+    }
+
+    private static String csvValue(String value) {
+        if (value == null) {
+            return "";
+        }
+        return "\"".concat(value.replace("\"", "\"\"")).concat("\"");
+    }
+
+    private static String joinBiomeRows(List<BiomeAuditRecord> rows) {
+        List<String> ids = new ArrayList<>();
+        for (BiomeAuditRecord row : rows) {
+            ids.add(row.biomeId());
+        }
+        return joinSortedBiomeList(ids);
+    }
+
+    private static String listBiomeRows(List<BiomeAuditRecord> rows, java.util.function.Predicate<BiomeAuditRecord> predicate) {
+        List<String> ids = new ArrayList<>();
+        for (BiomeAuditRecord row : rows) {
+            if (predicate.test(row)) {
+                ids.add(row.biomeId());
+            }
+        }
+        return joinSortedBiomeList(ids);
+    }
+
+    private static String listBiomeRows(List<BiomeAuditRecord> rows) {
+        return joinBiomeRows(rows);
+    }
+
+    private static String joinSortedBiomeList(List<String> ids) {
+        if (ids.isEmpty()) {
+            return "none";
+        }
+        Collections.sort(ids);
+        return String.join(", ", ids);
+    }
+
+    private static String normalizeBandId(String bandId) {
+        if (bandId == null) {
+            return null;
+        }
+        return bandId.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private static String selectedBandsSummaryFromCounts(Map<String, Integer> selectedBandCounts) {
+        if (selectedBandCounts == null || selectedBandCounts.isEmpty()) {
+            return "";
+        }
+        List<String> bands = new ArrayList<>(selectedBandCounts.keySet());
+        Collections.sort(bands);
+        List<String> rows = new ArrayList<>();
+        for (String band : bands) {
+            Integer count = selectedBandCounts.get(band);
+            if (count != null && count > 0) {
+                rows.add(band + "=" + count);
+            }
+        }
+        return String.join(";", rows);
+    }
+
+    private static Map<String, Integer> countBiomeRowsByNamespace(List<BiomeAuditRecord> rows,
+                                                                 java.util.function.Predicate<BiomeAuditRecord> predicate) {
+        Map<String, Integer> counts = new TreeMap<>();
+        for (BiomeAuditRecord row : rows) {
+            if (predicate.test(row)) {
+                counts.merge(row.namespace(), 1, Integer::sum);
+            }
+        }
+        return counts;
+    }
+
+    private static void appendNamespaceCounts(StringBuilder out, Map<String, Integer> namespaceCounts) {
+        if (namespaceCounts == null || namespaceCounts.isEmpty()) {
+            out.append("  none\n");
+            return;
+        }
+        for (Map.Entry<String, Integer> entry : namespaceCounts.entrySet()) {
+            out.append("  ").append(entry.getKey()).append("=").append(entry.getValue()).append('\n');
+        }
+    }
+
+    private static void appendOrderedMapEntries(StringBuilder out, Map<String, Integer> entries) {
+        List<Map.Entry<String, Integer>> ordered = new ArrayList<>(entries.entrySet());
+        ordered.sort(Map.Entry.comparingByKey());
+        for (int i = 0; i < ordered.size(); i++) {
+            if (i > 0) {
+                out.append(',');
+            }
+            Map.Entry<String, Integer> entry = ordered.get(i);
+            out.append(entry.getKey()).append("=").append(entry.getValue());
+        }
+    }
+
+    private static List<String> sortedLoadedModIds() {
+        List<String> modIds = new ArrayList<>();
+        for (net.fabricmc.loader.api.ModContainer mod : FabricLoader.getInstance().getAllMods()) {
+            modIds.add(mod.getMetadata().getId().toLowerCase(Locale.ROOT));
+        }
+        modIds.sort(String::compareTo);
+        return modIds;
     }
 
     private static void writeLegendFiles(Path outputDir,
@@ -1960,6 +2392,183 @@ public final class BiomePreviewExporter {
         return String.format(Locale.ROOT, "#%06X", rgb & 0x00FFFFFF);
     }
 
+    private static Map<String, BiomeAuditRecord> collectBiomeAuditRows(Registry<Biome> biomeRegistry,
+                                                                     BiomeSource baseSource) {
+        if (biomeRegistry == null) {
+            return Map.of();
+        }
+
+        Set<String> originalSourceBiomeIds = collectBiomeIdsFromSource(baseSource, biomeRegistry);
+        Map<String, Set<String>> latitudeTagBiomeIds = collectLatitudeTagBiomeIds(biomeRegistry);
+        Map<String, BiomeAuditRecord> rows = new HashMap<>();
+
+        for (Biome biome : biomeRegistry) {
+            String id = biomeIdFromBiomeValue(biomeRegistry, biome, null);
+            if (id == null) {
+                continue;
+            }
+            String normalizedId = normalizeBiomeId(id);
+            String namespace = namespaceFromBiomeId(normalizedId);
+            Set<String> tags = latitudeTagBiomeIds.getOrDefault(normalizedId, Collections.emptySet());
+            rows.put(normalizedId, new BiomeAuditRecord(
+                    normalizedId,
+                    namespace,
+                    true,
+                    originalSourceBiomeIds.contains(normalizedId),
+                    !tags.isEmpty(),
+                    new ArrayList<>(tags)));
+        }
+        return rows;
+    }
+
+    private static Map<String, Set<String>> collectLatitudeTagBiomeIds(Registry<Biome> biomeRegistry) {
+        Map<String, Set<String>> tagMembership = new HashMap<>();
+        if (biomeRegistry == null) {
+            return tagMembership;
+        }
+        for (TagSpec spec : LATITUDE_TAG_SPECS) {
+            for (Holder<Biome> holder : biomeRegistry.getTagOrEmpty(spec.tagKey())) {
+                String id = biomeId(biomeRegistry, holder);
+                if (id == null) {
+                    continue;
+                }
+                String normalizedId = normalizeBiomeId(id);
+                tagMembership.computeIfAbsent(normalizedId, ignored -> new HashSet<>()).add(spec.id());
+            }
+        }
+        return tagMembership;
+    }
+
+    private static Set<String> collectBiomeIdsFromSource(BiomeSource source, Registry<Biome> biomeRegistry) {
+        if (source == null || biomeRegistry == null) {
+            return Collections.emptySet();
+        }
+
+        Set<String> sourceBiomeIds = new HashSet<>();
+        try {
+            Method getBiomes = source.getClass().getMethod("possibleBiomes");
+            Object sourceBiomes = getBiomes.invoke(source);
+            collectBiomeIds(sourceBiomes, biomeRegistry, sourceBiomeIds);
+        } catch (Exception ignored) {
+            // fallback below
+        }
+        if (!sourceBiomeIds.isEmpty()) {
+            return sourceBiomeIds;
+        }
+
+        try {
+            Method getBiomes = source.getClass().getMethod("getBiomes");
+            Object sourceBiomes = getBiomes.invoke(source);
+            collectBiomeIds(sourceBiomes, biomeRegistry, sourceBiomeIds);
+        } catch (Exception ignored) {
+            // not all implementations expose this as a collection in the same way
+        }
+        return sourceBiomeIds;
+    }
+
+    private static void collectBiomeIds(Object rawBiomes,
+                                      Registry<Biome> biomeRegistry,
+                                      Set<String> out) {
+        if (rawBiomes == null || out == null) {
+            return;
+        }
+        if (rawBiomes instanceof Iterable<?> iterable) {
+            for (Object value : iterable) {
+                collectBiomeIds(value, biomeRegistry, out);
+            }
+            return;
+        }
+        if (rawBiomes.getClass().isArray()) {
+            int len = java.lang.reflect.Array.getLength(rawBiomes);
+            for (int i = 0; i < len; i++) {
+                collectBiomeIds(java.lang.reflect.Array.get(rawBiomes, i), biomeRegistry, out);
+            }
+            return;
+        }
+        if (rawBiomes instanceof java.util.stream.Stream<?> stream) {
+            stream.forEach(value -> collectBiomeIds(value, biomeRegistry, out));
+            return;
+        }
+
+        String id = normalizeBiomeIdForSource(rawBiomes, biomeRegistry);
+        if (id != null) {
+            out.add(id);
+        }
+    }
+
+    private static String normalizeBiomeIdForSource(Object value, Registry<Biome> biomeRegistry) {
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof Holder<?> holder) {
+            if (holder.value() instanceof Biome biome) {
+                String id = biomeIdFromBiomeValue(biomeRegistry, biome, holder);
+                if (id != null) {
+                    return normalizeBiomeId(id);
+                }
+            }
+            return null;
+        }
+        if (value instanceof Biome biome) {
+            String id = biomeIdFromBiomeValue(biomeRegistry, biome, null);
+            return id != null ? normalizeBiomeId(id) : null;
+        }
+        if (value instanceof String raw) {
+            return normalizeBiomeId(raw);
+        }
+        if (value instanceof Identifier id) {
+            return normalizeBiomeId(id.toString());
+        }
+        return null;
+    }
+
+    private static String biomeIdFromBiomeValue(Registry<Biome> biomeRegistry, Biome biome, Holder<?> fallbackHolder) {
+        if (biome == null) {
+            return null;
+        }
+        if (fallbackHolder != null) {
+            return fallbackHolder.unwrapKey()
+                    .map(key -> key.identifier().toString())
+                    .orElse(null);
+        }
+        if (biomeRegistry != null) {
+            Identifier id = biomeRegistry.getKey(biome);
+            if (id != null) {
+                return id.toString();
+            }
+        }
+        return null;
+    }
+
+    private static String latitudeBandIdFromIndex(int bandIndex) {
+        return switch (bandIndex) {
+            case 0 -> LatitudeBands.Band.TROPICAL.id();
+            case 1 -> LatitudeBands.Band.SUBTROPICAL.id();
+            case 2 -> LatitudeBands.Band.TEMPERATE.id();
+            case 3 -> LatitudeBands.Band.SUBPOLAR.id();
+            case 4 -> LatitudeBands.Band.POLAR.id();
+            default -> "lat_unknown";
+        };
+    }
+
+    private static String normalizeBiomeId(String raw) {
+        if (raw == null) {
+            return null;
+        }
+        return raw.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private static String namespaceFromBiomeId(String biomeId) {
+        if (biomeId == null) {
+            return "unknown";
+        }
+        int idx = biomeId.indexOf(':');
+        if (idx <= 0) {
+            return "minecraft";
+        }
+        return biomeId.substring(0, idx);
+    }
+
     private static String biomeId(Registry<Biome> biomeRegistry, Holder<Biome> biome) {
         Identifier id = biomeRegistry.getKey(biome.value());
         if (id != null) {
@@ -2076,6 +2685,107 @@ public final class BiomePreviewExporter {
         }
     }
 
+    private static final class BiomeAuditRecord {
+        private final String biomeId;
+        private final String namespace;
+        private final boolean registered;
+        private final boolean inOriginalBiomeSource;
+        private final boolean inLatitudeTag;
+        private final List<String> latitudeTags;
+        private final Map<String, Integer> selectedBandCounts = new HashMap<>();
+        private int selectedCount;
+        private Integer firstSelectedX;
+        private Integer firstSelectedZ;
+        private Double firstSelectedDeg;
+
+        private BiomeAuditRecord(String biomeId,
+                                 String namespace,
+                                 boolean registered,
+                                 boolean inOriginalBiomeSource,
+                                 boolean inLatitudeTag,
+                                 List<String> latitudeTags) {
+            this.biomeId = biomeId;
+            this.namespace = namespace != null ? namespace : "unknown";
+            this.registered = registered;
+            this.inOriginalBiomeSource = inOriginalBiomeSource;
+            this.inLatitudeTag = inLatitudeTag;
+            this.latitudeTags = new ArrayList<>(latitudeTags == null ? List.of() : latitudeTags);
+            this.latitudeTags.sort(String::compareTo);
+        }
+
+        private void recordSelection(int blockX, int blockZ, double latDeg, String selectedDisplayBandId, String selectedLandBandId) {
+            selectedCount++;
+            if (firstSelectedX == null) {
+                firstSelectedX = blockX;
+            }
+            if (firstSelectedZ == null) {
+                firstSelectedZ = blockZ;
+            }
+            if (firstSelectedDeg == null) {
+                firstSelectedDeg = latDeg;
+            }
+            incrementBand(selectedDisplayBandId);
+            incrementBand(selectedLandBandId);
+        }
+
+        private void incrementBand(String bandId) {
+            String normalized = normalizeBandId(bandId);
+            if (normalized == null || normalized.isBlank()) {
+                return;
+            }
+            selectedBandCounts.merge(normalized, 1, Integer::sum);
+        }
+
+        private int selectedCountForBand(String bandId) {
+            String normalized = normalizeBandId(bandId);
+            if (normalized == null || normalized.isBlank()) {
+                return 0;
+            }
+            return selectedBandCounts.getOrDefault(normalized, 0);
+        }
+
+        private String selectedBandsSummary() {
+            if (selectedBandCounts.isEmpty()) {
+                return "";
+            }
+            return selectedBandsSummaryFromCounts(selectedBandCounts);
+        }
+
+        private String biomeId() {
+            return biomeId;
+        }
+
+        private String namespace() {
+            return namespace;
+        }
+
+        private List<String> latitudeTags() {
+            return latitudeTags;
+        }
+
+        private boolean inLatitudeTag() {
+            return inLatitudeTag;
+        }
+
+        private Integer firstSelectedX() {
+            return firstSelectedX;
+        }
+
+        private Integer firstSelectedZ() {
+            return firstSelectedZ;
+        }
+
+        private Double firstSelectedDeg() {
+            return firstSelectedDeg;
+        }
+    }
+
+    private record TagSpec(String id, TagKey<Biome> tagKey) {
+        private TagSpec(String id) {
+            this(id, TagKey.create(Registries.BIOME, Identifier.parse(id)));
+        }
+    }
+
     public enum Layer {
         BIOMES("biomes"),
         BANDS("bands"),
@@ -2143,7 +2853,8 @@ public final class BiomePreviewExporter {
                                 List<BiomeMaskLayer> maskLayers,
                                 boolean writeLegends,
                                 boolean emitBiomeIndex,
-                                boolean emitHeight) {
+                                boolean emitHeight,
+                                boolean includeBiomeAudit) {
         public ExportOptions {
             if (layers == null) {
                 layers = EnumSet.of(Layer.BIOMES);
@@ -2171,7 +2882,7 @@ public final class BiomePreviewExporter {
         }
 
         public static ExportOptions singleBiome() {
-            return new ExportOptions(EnumSet.of(Layer.BIOMES), EnumSet.noneOf(Overlay.class), List.of(), false, false, false);
+            return new ExportOptions(EnumSet.of(Layer.BIOMES), EnumSet.noneOf(Overlay.class), List.of(), false, false, false, false);
         }
 
         public static ExportOptions bundle() {
@@ -2181,13 +2892,15 @@ public final class BiomePreviewExporter {
                     List.of(),
                     true,
                     false,
+                    false,
                     false);
         }
 
         public static ExportOptions from(boolean bundle,
                                          List<Layer> requestedLayers,
                                          List<Overlay> requestedOverlays,
-                                         List<String> requestedMasks) {
+                                         List<String> requestedMasks,
+                                         boolean includeBiomeAudit) {
             EnumSet<Overlay> overlaySet = requestedOverlays == null || requestedOverlays.isEmpty()
                     ? EnumSet.noneOf(Overlay.class)
                     : EnumSet.copyOf(requestedOverlays);
@@ -2198,10 +2911,10 @@ public final class BiomePreviewExporter {
                         ? EnumSet.copyOf(requestedLayers)
                         : EnumSet.noneOf(Layer.class);
                 boolean legends = bundle || layerSet.size() > 1 || !maskLayers.isEmpty();
-                return new ExportOptions(layerSet, overlaySet, maskLayers, legends, false, false);
+                return new ExportOptions(layerSet, overlaySet, maskLayers, legends, false, false, includeBiomeAudit);
             }
             ExportOptions base = bundle ? bundle() : singleBiome();
-            return new ExportOptions(base.layers(), overlaySet, base.maskLayers(), base.writeLegends(), false, false);
+            return new ExportOptions(base.layers(), overlaySet, base.maskLayers(), base.writeLegends(), false, false, includeBiomeAudit);
         }
 
         private static List<BiomeMaskLayer> parseMaskLayers(List<String> requestedMasks) {
