@@ -485,50 +485,51 @@ public class GlobeMod implements ModInitializer {
         final int margin = 320;
         final int max = Math.max(0, borderHalf - margin);
 
-        // First pass: vary X only (stay exactly in the selected latitude line)
-        final int attemptsXOnly = 96;
+        // Pre-screen with NoiseChunkGenerator.getHeight (noise-only, no chunk gen) so we never block
+        // the integrated server thread on hundreds of full-status chunk loads at JOIN time.
+        // Validation forces at most 2 real chunk loads on the top noise-height candidates.
+        ChunkGenerator chunkGenerator = world.getChunkManager().getChunkGenerator();
+        if (!(chunkGenerator instanceof NoiseChunkGenerator noiseGen)) {
+            return null;
+        }
+        net.minecraft.world.gen.noise.NoiseConfig noiseConfig = world.getChunkManager().getNoiseConfig();
+        int minLandY = world.getSeaLevel() + 2;
 
-        // Second pass: if still failing, allow small Z jitter while staying near the band
-        final int attemptsWithZJitter = 96;
+        final int samplesPerPass = 16;
         final int zJitter = 96;
-
         Random rng = Random.create(seed ^ 0x9E3779B97F4A7C15L ^ (long) targetZ);
 
-        BlockPos best = null;
-        int bestY = Integer.MIN_VALUE;
+        // Track top 2 land candidates by descending noise height.
+        int xA = Integer.MIN_VALUE, zA = targetZ, yA = Integer.MIN_VALUE;
+        int xB = Integer.MIN_VALUE, zB = targetZ, yB = Integer.MIN_VALUE;
 
-        // Pass 1: X-only
-        for (int i = 0; i < attemptsXOnly; i++) {
-            int x = rng.nextBetween(-max, max);
-            int z = targetZ;
-
-            BlockPos candidate = tryLandAt(world, x, z);
-            if (candidate == null) continue;
-
-            int y = candidate.getY();
-            if (y > bestY) {
-                bestY = y;
-                best = candidate;
-            }
-        }
-        if (best != null) return best;
-
-        // Pass 2: X + small Z jitter
-        for (int i = 0; i < attemptsWithZJitter; i++) {
-            int x = rng.nextBetween(-max, max);
-            int z = MathHelper.clamp(targetZ + rng.nextBetween(-zJitter, zJitter), -max, max);
-
-            BlockPos candidate = tryLandAt(world, x, z);
-            if (candidate == null) continue;
-
-            int y = candidate.getY();
-            if (y > bestY) {
-                bestY = y;
-                best = candidate;
+        // Pass 0: vary X only at z=targetZ. Pass 1: X with small Z jitter.
+        for (int pass = 0; pass < 2; pass++) {
+            for (int i = 0; i < samplesPerPass; i++) {
+                int x = rng.nextBetween(-max, max);
+                int z = (pass == 0)
+                        ? targetZ
+                        : MathHelper.clamp(targetZ + rng.nextBetween(-zJitter, zJitter), -max, max);
+                int y = noiseGen.getHeight(x, z, Heightmap.Type.WORLD_SURFACE_WG, world, noiseConfig);
+                if (y < minLandY) continue;
+                if (y > yA) {
+                    xB = xA; zB = zA; yB = yA;
+                    xA = x; zA = z; yA = y;
+                } else if (y > yB) {
+                    xB = x; zB = z; yB = y;
+                }
             }
         }
 
-        return best;
+        if (xA != Integer.MIN_VALUE) {
+            BlockPos a = tryLandAt(world, xA, zA);
+            if (a != null) return a;
+        }
+        if (xB != Integer.MIN_VALUE) {
+            BlockPos b = tryLandAt(world, xB, zB);
+            if (b != null) return b;
+        }
+        return null;
     }
 
     private static BlockPos tryLandAt(ServerWorld world, int x, int z) {
