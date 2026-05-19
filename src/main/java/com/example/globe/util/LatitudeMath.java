@@ -16,6 +16,8 @@ public final class LatitudeMath {
         POLAR
     }
 
+    // Legacy fractional thresholds remain for polar UX/public compatibility.
+    // Canonical LCMM v2 band classification must route through LatitudeBands.
     public static final double EQUATOR_MAX_FRAC = 0.10;
     public static final double TROPICAL_MAX_FRAC = 0.30;
     public static final double SUBTROPICAL_MAX_FRAC = 0.50;
@@ -136,38 +138,31 @@ public final class LatitudeMath {
     }
 
     public static LatitudeZone zoneForDeg(int deg) {
-        if (deg < EQUATOR_MAX_DEG) return LatitudeZone.EQUATOR;
-        if (deg < TROPICAL_MAX_DEG) return LatitudeZone.TROPICAL;
-        if (deg < SUBTROPICAL_MAX_DEG) return LatitudeZone.SUBTROPICAL;
-        if (deg < TEMPERATE_MAX_DEG) return LatitudeZone.TEMPERATE;
-        if (deg < SUBPOLAR_MAX_DEG) return LatitudeZone.SUBPOLAR;
-        return LatitudeZone.POLAR;
+        return zoneForCanonicalBand(LatitudeBands.fromAbsoluteLatitudeDeg(deg));
     }
 
     public static LatitudeZone zoneFor(WorldBorder border, double z) {
-        double t = absLatFraction(border, z);
-        if (t < EQUATOR_MAX_FRAC) return LatitudeZone.EQUATOR;
-        if (t < TROPICAL_MAX_FRAC) return LatitudeZone.TROPICAL;
-        if (t < SUBTROPICAL_MAX_FRAC) return LatitudeZone.SUBTROPICAL;
-        if (t < TEMPERATE_MAX_FRAC) return LatitudeZone.TEMPERATE;
-        if (t < SUBPOLAR_MAX_FRAC) return LatitudeZone.SUBPOLAR;
-        return LatitudeZone.POLAR;
+        return zoneForCanonicalBand(LatitudeBands.fromAbsoluteLatitudeDeg(absLatDegExact(border, z)));
     }
 
     public static LatitudeZone zoneForRadius(int radiusBlocks, double z) {
         if (radiusBlocks <= 0) return LatitudeZone.EQUATOR;
-        double t = Math.abs(z) / (double) radiusBlocks;
-        t = MathHelper.clamp(t, 0.0, 1.0);
-        if (t < EQUATOR_MAX_FRAC) return LatitudeZone.EQUATOR;
-        if (t < TROPICAL_MAX_FRAC) return LatitudeZone.TROPICAL;
-        if (t < SUBTROPICAL_MAX_FRAC) return LatitudeZone.SUBTROPICAL;
-        if (t < TEMPERATE_MAX_FRAC) return LatitudeZone.TEMPERATE;
-        if (t < SUBPOLAR_MAX_FRAC) return LatitudeZone.SUBPOLAR;
-        return LatitudeZone.POLAR;
+        double absLatDeg = MathHelper.clamp(Math.abs(z) * 90.0 / (double) radiusBlocks, 0.0, 90.0);
+        return zoneForCanonicalBand(LatitudeBands.fromAbsoluteLatitudeDeg(absLatDeg));
     }
 
     public static String zoneKey(WorldBorder border, double z) {
         return zoneFor(border, z).name();
+    }
+
+    private static LatitudeZone zoneForCanonicalBand(LatitudeBands.Band band) {
+        return switch (band) {
+            case TROPICAL -> LatitudeZone.TROPICAL;
+            case SUBTROPICAL -> LatitudeZone.SUBTROPICAL;
+            case TEMPERATE -> LatitudeZone.TEMPERATE;
+            case SUBPOLAR -> LatitudeZone.SUBPOLAR;
+            case POLAR -> LatitudeZone.POLAR;
+        };
     }
 
     public static double spawnFracForZoneKey(String zoneKey) {
