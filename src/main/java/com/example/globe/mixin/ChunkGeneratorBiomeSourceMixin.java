@@ -2,6 +2,7 @@ package com.example.globe.mixin;
 
 import com.example.globe.GlobeMod;
 import com.example.globe.world.LatitudeBiomeSource;
+import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.registry.RegistryKey;
 import net.minecraft.registry.RegistryKeys;
 import net.minecraft.util.Identifier;
@@ -21,10 +22,19 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 @Mixin(ChunkGenerator.class)
 public abstract class ChunkGeneratorBiomeSourceMixin {
+    private static final boolean DEBUG_COMPAT_WORLDGEN =
+            Boolean.getBoolean("latitude.debugCompatWorldgen");
+
     private static final boolean DEBUG_WORLDGEN_PATH =
             Boolean.getBoolean("latitude.debugWorldgenPath");
 
     private static final java.util.concurrent.atomic.AtomicBoolean DEBUG_WRAP_GATE_REJECT_LOGGED =
+            new java.util.concurrent.atomic.AtomicBoolean(false);
+
+    private static final java.util.concurrent.atomic.AtomicBoolean DEBUG_COMPAT_WRAP_GATE_REJECT_LOGGED =
+            new java.util.concurrent.atomic.AtomicBoolean(false);
+
+    private static final java.util.concurrent.atomic.AtomicBoolean DEBUG_COMPAT_WRAP_GATE_ACCEPT_LOGGED =
             new java.util.concurrent.atomic.AtomicBoolean(false);
 
     private static final java.util.concurrent.atomic.AtomicBoolean DEBUG_WRAP_SUCCESS_LOGGED =
@@ -32,6 +42,7 @@ public abstract class ChunkGeneratorBiomeSourceMixin {
 
     private static final String GLOBE_SETTINGS_CHECKED =
             "globe:overworld|globe:overworld_xsmall|globe:overworld_small|globe:overworld_regular|globe:overworld_large|globe:overworld_massive";
+    private static final String LITHOSPHERE_MOD_ID = "mr_lithosphere";
 
     private static final Identifier GLOBE_SETTINGS_ID = Identifier.of("globe", "overworld");
     private static final Identifier GLOBE_SETTINGS_XSMALL_ID = Identifier.of("globe", "overworld_xsmall");
@@ -84,22 +95,44 @@ public abstract class ChunkGeneratorBiomeSourceMixin {
             return;
         }
         if (!((Object) this instanceof NoiseChunkGenerator)) {
+            if (DEBUG_COMPAT_WORLDGEN && DEBUG_COMPAT_WRAP_GATE_REJECT_LOGGED.compareAndSet(false, true)) {
+                GlobeMod.LOGGER.info("[Latitude][compat] biomeSource wrap gate result=reject reason=non_noise_generator checked={} action=not_wrapping_biome_source",
+                        GLOBE_SETTINGS_CHECKED);
+            }
             if (DEBUG_WORLDGEN_PATH && DEBUG_WRAP_GATE_REJECT_LOGGED.compareAndSet(false, true)) {
                 GlobeMod.LOGGER.info("[Latitude] biomeSource wrap gate reject: generator is not NoiseChunkGenerator action=not wrapping biome source");
             }
             return;
         }
-        if (!globe$isAnyGlobeSettings()) {
+        String gateReason = globe$compatGateReason();
+        if (!globe$allowLatitudeBiomeBanding()) {
+            if (DEBUG_COMPAT_WORLDGEN && DEBUG_COMPAT_WRAP_GATE_REJECT_LOGGED.compareAndSet(false, true)) {
+                GlobeMod.LOGGER.info("[Latitude][compat] biomeSource wrap gate result=reject reason={} checked={} matched={} settingsReady={} lithosphereLoaded={} action=not_wrapping_biome_source",
+                        gateReason, GLOBE_SETTINGS_CHECKED, globe$matchedSettingsLabel(), globe$hasResolvedSettings(), globe$isLithosphereLoaded());
+            }
             if (DEBUG_WORLDGEN_PATH && DEBUG_WRAP_GATE_REJECT_LOGGED.compareAndSet(false, true)) {
-                GlobeMod.LOGGER.info("[Latitude] biomeSource wrap gate reject: settings not Globe preset checked={} matched={} settingsReady={} action=not wrapping biome source",
-                        GLOBE_SETTINGS_CHECKED, globe$matchedSettingsLabel(), globe$hasResolvedSettings());
+                GlobeMod.LOGGER.info("[Latitude] biomeSource wrap gate reject: reason={} checked={} matched={} settingsReady={} action=not wrapping biome source",
+                        gateReason, GLOBE_SETTINGS_CHECKED, globe$matchedSettingsLabel(), globe$hasResolvedSettings());
             }
             return;
         }
-        java.util.Collection<net.minecraft.registry.entry.RegistryEntry<Biome>> biomes = this.biomeSource.getBiomes();
+        java.util.Collection<net.minecraft.registry.entry.RegistryEntry<Biome>> biomes;
+        try {
+            biomes = this.biomeSource.getBiomes();
+        } catch (IllegalStateException ex) {
+            if (DEBUG_COMPAT_WORLDGEN && DEBUG_COMPAT_WRAP_GATE_REJECT_LOGGED.compareAndSet(false, true)) {
+                GlobeMod.LOGGER.info("[Latitude][compat] biomeSource wrap gate result=reject reason=lithosphere_compat_settings_unresolved checked={} matched={} settingsReady={} lithosphereLoaded={} action=defer_wrapping_biome_source",
+                        GLOBE_SETTINGS_CHECKED, globe$matchedSettingsLabel(), globe$hasResolvedSettings(), globe$isLithosphereLoaded());
+            }
+            return;
+        }
         int borderRadiusBlocks = globe$borderRadiusBlocks();
         // Ensure structure placement and surface rules see the same Latitude biome override as terrain.
         this.globe$wrappedBiomeSource = new LatitudeBiomeSource(this.biomeSource, biomes, borderRadiusBlocks);
+        if (DEBUG_COMPAT_WORLDGEN && DEBUG_COMPAT_WRAP_GATE_ACCEPT_LOGGED.compareAndSet(false, true)) {
+            GlobeMod.LOGGER.info("[Latitude][compat] biomeSource wrap gate result=accept reason={} checked={} matched={} settingsReady={} lithosphereLoaded={} radius={} action=wrapping_biome_source",
+                    gateReason, GLOBE_SETTINGS_CHECKED, globe$matchedSettingsLabel(), globe$hasResolvedSettings(), globe$isLithosphereLoaded(), borderRadiusBlocks);
+        }
         if (DEBUG_WORLDGEN_PATH && DEBUG_WRAP_SUCCESS_LOGGED.compareAndSet(false, true)) {
             GlobeMod.LOGGER.info("[Latitude] Worldgen path active: wrapped ChunkGenerator biomeSource settings={} checked={} radius={} action=using LatitudeBiomeSource",
                     globe$matchedSettingsLabel(), GLOBE_SETTINGS_CHECKED, borderRadiusBlocks);
@@ -133,6 +166,31 @@ public abstract class ChunkGeneratorBiomeSourceMixin {
         return accessor.globe$getSettings() != null;
     }
 
+    private boolean globe$isLithosphereLoaded() {
+        return FabricLoader.getInstance().isModLoaded(LITHOSPHERE_MOD_ID);
+    }
+
+    private boolean globe$isLithosphereCompatSettingsUnresolved() {
+        return globe$isLithosphereLoaded() && !globe$hasResolvedSettings();
+    }
+
+    private boolean globe$allowLatitudeBiomeBanding() {
+        return globe$isAnyGlobeSettings() || globe$isLithosphereCompatSettingsUnresolved();
+    }
+
+    private String globe$compatGateReason() {
+        if (globe$isAnyGlobeSettings()) {
+            return "globe_settings";
+        }
+        if (globe$isLithosphereCompatSettingsUnresolved()) {
+            return "lithosphere_compat_settings_unresolved";
+        }
+        if (!globe$hasResolvedSettings()) {
+            return "settings_unresolved";
+        }
+        return "non_globe_settings";
+    }
+
     private String globe$matchedSettingsLabel() {
         if (!((Object) this instanceof NoiseChunkGenerator noise)) {
             return "not_noise_generator";
@@ -151,6 +209,9 @@ public abstract class ChunkGeneratorBiomeSourceMixin {
 
     private int globe$borderRadiusBlocks() {
         if (!((Object) this instanceof NoiseChunkGenerator noise)) {
+            return 7500;
+        }
+        if (!globe$hasResolvedSettings()) {
             return 7500;
         }
         if (noise.matchesSettings(GLOBE_SETTINGS_KEY)) return 15000;
