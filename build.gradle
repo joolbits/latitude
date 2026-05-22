@@ -37,6 +37,12 @@ loom {
             runDir "run-headless"
             vmArg "-Dlatdev.biomeSearch=${System.getProperty('latdev.biomeSearch', 'enabled')}"
         }
+        lithosphereFreshChunkProof {
+            server()
+            name "Lithosphere Fresh Chunk Proof (Headless)"
+            runDir "tmp/lithosphere-fresh-chunk-harness-97591ddd/run-headless"
+            vmArg "-Dlatdev.lithoFreshChunkProof=enabled=true;out=${file('tmp/lithosphere-fresh-chunk-harness-97591ddd').absolutePath.replace('\\', '/')};radius=${System.getProperty('latdev.lithoFreshChunkProofRadius', '10000')}"
+        }
     }
 }
 
@@ -186,6 +192,49 @@ max-players=1
 enable-command-block=false
 """
         }
+    }
+}
+
+tasks.register('prepareLithosphereFreshChunkProofRunDir') {
+    doLast {
+        def dir = file('tmp/lithosphere-fresh-chunk-harness-97591ddd/run-headless')
+        def worldDir = file("${dir}/world")
+        delete worldDir
+
+        def modsDir = file("${dir}/mods")
+        modsDir.mkdirs()
+
+        def lithosphereJars = fileTree('run/mods') {
+            include '*lithosphere*.jar'
+            include '*Lithosphere*.jar'
+        }.files
+        if (lithosphereJars.isEmpty()) {
+            throw new GradleException('No Lithosphere jar found under run/mods for headless proof')
+        }
+        lithosphereJars.each { jar ->
+            copy {
+                from jar
+                into modsDir
+            }
+        }
+
+        def eulaFile = file("${dir}/eula.txt")
+        eulaFile.text = "eula=true\n"
+
+        def propsFile = file("${dir}/server.properties")
+        propsFile.text = """motd=Latitude Lithosphere Fresh Chunk Proof
+online-mode=false
+max-players=1
+enable-command-block=false
+server-port=25566
+level-name=world
+level-seed=${System.getProperty('latdev.lithoFreshChunkProofSeed', '2017670589144661416')}
+level-type=globe\\:globe_large
+initial-enabled-packs=vanilla,fabric,mr_lithosphere,globe,fabric-convention-tags-v2,fabric-gametest-api-v1
+view-distance=6
+simulation-distance=6
+pause-when-empty-seconds=0
+"""
     }
 }
 
@@ -350,6 +399,17 @@ tasks.named('runBiomeSeedSearch').configure {
             logger.lifecycle("[runBiomeSeedSearch] translated latdev --args to JVM property: {}", propValue)
         } else {
             setArgs(rawArgs)
+        }
+    }
+}
+
+tasks.named('runLithosphereFreshChunkProof').configure {
+    dependsOn tasks.named('prepareLithosphereFreshChunkProofRunDir')
+    doFirst {
+        def mapCandidatesPath = System.getProperty('latdev.lithoFreshChunkProofMapCandidates', '').trim()
+        if (!mapCandidatesPath.isEmpty()) {
+            jvmArgs "-Dlatdev.lithoFreshChunkProofMapCandidates=${mapCandidatesPath}"
+            logger.lifecycle("[runLithosphereFreshChunkProof] forwarding map candidates: {}", mapCandidatesPath)
         }
     }
 }

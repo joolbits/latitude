@@ -32,6 +32,7 @@ public final class BiomePreviewHeadlessRunner {
     private static final String PROP_KEY = "latdev.biomePng";
     private static final String SEARCH_ARG_FLAG = "latdevBiomeSearch";
     private static final String SEARCH_PROP_KEY = "latdev.biomeSearch";
+    private static final String FRESH_CHUNK_PROOF_PROP_KEY = "latdev.lithoFreshChunkProof";
     private static final String EMIT_HEIGHT_PROP_KEY = "latitude.emitHeight";
     private static final Pattern PROP_PAIR = Pattern.compile(
             "(?i)([a-z][a-z0-9_]*)\\s*=\\s*([^;]+?)(?=(?:\\s*[;,]\\s*[a-z][a-z0-9_]*\\s*=)|$)");
@@ -48,6 +49,13 @@ public final class BiomePreviewHeadlessRunner {
 
     private static void onServerStarted(MinecraftServer server) {
         if (!TRIGGERED.compareAndSet(false, true)) {
+            return;
+        }
+
+        LithosphereFreshChunkProofHarness.Config proofConfig =
+                LithosphereFreshChunkProofHarness.parseConfig(System.getProperty(FRESH_CHUNK_PROOF_PROP_KEY));
+        if (proofConfig.enabled()) {
+            server.execute(() -> LithosphereFreshChunkProofHarness.runAndStop(server, proofConfig));
             return;
         }
 
