@@ -315,9 +315,7 @@ public final class LithosphereFreshChunkProofHarness {
         int seaLevel = world.getSeaLevel();
         int cheapSamplesEvaluated = 0;
         int fullVerifications = 0;
-        String stopReason = unsafeSurfaceScoutEnabled
-                ? "cheap_candidate_limit_exhausted"
-                : "manual_candidate_mode_no_candidates";
+        String stopReason = "cheap_candidate_limit_exhausted";
         List<CandidateScout> shortlist = new ArrayList<>();
         List<ProbePoint> mapDerivedCandidates = loadMapDerivedCandidates(mapCandidatesPath);
         Set<ChunkPos> verifiedChunks = new LinkedHashSet<>();
@@ -375,7 +373,7 @@ public final class LithosphereFreshChunkProofHarness {
             }
         }
 
-        if (!unsafeSurfaceScoutEnabled) {
+        if (!unsafeSurfaceScoutEnabled && !mapDerivedCandidates.isEmpty()) {
             if (mapDerivedCandidates.isEmpty()) {
                 stopReason = "manual_candidate_mode_no_candidates";
             } else if (fullVerifications >= CONTROL_SEARCH_MAX_FULL_VERIFICATIONS) {
@@ -396,8 +394,11 @@ public final class LithosphereFreshChunkProofHarness {
                 break;
             }
             cheapSamplesEvaluated++;
-            CandidateScout scout = scoutCandidate(world, biomeRegistry, template, noiseConfig, sampler, radius,
-                    noiseGenerator, seaLevel, candidate);
+            CandidateScout scout = unsafeSurfaceScoutEnabled
+                    ? scoutCandidate(world, biomeRegistry, template, noiseConfig, sampler, radius,
+                    noiseGenerator, seaLevel, candidate)
+                    : scoutCandidateWithoutSurface(world, biomeRegistry, template, noiseConfig, sampler, radius,
+                    noiseGenerator, seaLevel, candidate, "safe_prefilter_no_surface_chunk_generation");
             scoutStats.count(scout);
             if (!scout.candidateWorthy()) {
                 cheapRejected.add(scout);
