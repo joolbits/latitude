@@ -68,6 +68,7 @@ public class GlobeMod implements ModInitializer {
     public static final int POLE_LETHAL_DISTANCE_BLOCKS = 96;
     public static final int POLE_LETHAL_WARNING_DISTANCE = POLE_WARNING_DISTANCE_BLOCKS;
     public static final int EFFECT_REFRESH_TICKS = 20;
+    private static final int EW_WARNING_DISTANCE_BLOCKS = 500;
     private static final int EW_SPAWN_PADDING_BLOCKS = 64;
     private static final long SPAWN_SALT = 0x7A3E21B5D4C1F7A9L;
 
@@ -517,63 +518,72 @@ public class GlobeMod implements ModInitializer {
             return spawnPos;
         }
 
-        int warningStartX = (int) Math.round(radiusBlocks * com.example.globe.util.LatitudeMath.POLAR_STAGE_1_PROGRESS);
-        if (warningStartX <= 0) {
-            return spawnPos;
-        }
-
         int absX = Math.abs(spawnPos.getX());
-        if (absX < warningStartX) {
+        int safeMaxAbsX = safeSpawnMaxAbsX(radiusBlocks);
+        if (absX <= safeMaxAbsX) {
             return spawnPos;
         }
 
-        int clampedAbsX = Math.max(0, warningStartX - EW_SPAWN_PADDING_BLOCKS);
-        int clampedX = spawnPos.getX() >= 0 ? clampedAbsX : -clampedAbsX;
+        int clampedX = spawnPos.getX() >= 0 ? safeMaxAbsX : -safeMaxAbsX;
         return new BlockPos(clampedX, spawnPos.getY(), spawnPos.getZ());
+    }
+
+    private static int safeSpawnMaxAbsX(int radiusBlocks) {
+        return Math.max(0, radiusBlocks - EW_WARNING_DISTANCE_BLOCKS - EW_SPAWN_PADDING_BLOCKS);
     }
 
     private static BlockPos findLandSpawn(ServerLevel world, SamplerTemplate template,
                                           Climate.Sampler sampler,
                                           int borderHalf, int targetZ, long seed) {
         final int margin = 320;
-        final int max = Math.max(0, borderHalf - margin);
 
-        // First pass: vary X only (stay exactly in the selected latitude line)
-        final int attemptsXOnly = 96;
-
-        // Second pass: if still failing, allow small Z jitter while staying near the band
-        final int attemptsWithZJitter = 96;
+        final int samplesPerPass = 16;
         final int zJitter = 96;
 
         // Size-invariance: active radius is source of truth, borderHalf is fallback only.
         int radiusBlocks = LatitudeBiomes.getActiveRadiusBlocks();
         if (radiusBlocks <= 0) radiusBlocks = borderHalf;
+        final int max = Math.min(Math.max(0, borderHalf - margin), safeSpawnMaxAbsX(radiusBlocks));
         int classifyY = LatitudeBiomes.SURFACE_CLASSIFY_Y;
 
         LatitudeBiomes.setWorldSeed(seed);
 
         RandomSource rng = RandomSource.create(seed ^ 0x9E3779B97F4A7C15L ^ (long) targetZ);
 
-        // Pass 1: X-only — biome probe then single-chunk Y placement
-        for (int i = 0; i < attemptsXOnly; i++) {
-            int x = rng.nextIntBetweenInclusive(-max, max);
-            int z = targetZ;
+        int firstX = Integer.MIN_VALUE;
+        int firstZ = targetZ;
+        int secondX = Integer.MIN_VALUE;
+        int secondZ = targetZ;
 
-            if (!isLandBiome(template, sampler, x, z, classifyY, radiusBlocks)) continue;
-            BlockPos candidate = placeSafeY(world, x, z);
-            if (candidate != null) return candidate;
+        for (int pass = 0; pass < 2; pass++) {
+            for (int i = 0; i < samplesPerPass; i++) {
+                int x = rng.nextIntBetweenInclusive(-max, max);
+                int z = pass == 0
+                        ? targetZ
+                        : Mth.clamp(targetZ + rng.nextIntBetweenInclusive(-zJitter, zJitter), -max, max);
+
+                if (!isLandBiome(template, sampler, x, z, classifyY, radiusBlocks)) continue;
+
+                if (firstX == Integer.MIN_VALUE) {
+                    firstX = x;
+                    firstZ = z;
+                } else {
+                    secondX = x;
+                    secondZ = z;
+                    break;
+                }
+            }
+            if (secondX != Integer.MIN_VALUE) break;
         }
 
-        // Pass 2: X + small Z jitter
-        for (int i = 0; i < attemptsWithZJitter; i++) {
-            int x = rng.nextIntBetweenInclusive(-max, max);
-            int z = Mth.clamp(targetZ + rng.nextIntBetweenInclusive(-zJitter, zJitter), -max, max);
-
-            if (!isLandBiome(template, sampler, x, z, classifyY, radiusBlocks)) continue;
-            BlockPos candidate = placeSafeY(world, x, z);
+        if (firstX != Integer.MIN_VALUE) {
+            BlockPos candidate = placeSafeY(world, firstX, firstZ);
             if (candidate != null) return candidate;
         }
-
+        if (secondX != Integer.MIN_VALUE) {
+            BlockPos candidate = placeSafeY(world, secondX, secondZ);
+            if (candidate != null) return candidate;
+        }
         return null;
     }
 

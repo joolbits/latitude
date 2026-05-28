@@ -107,14 +107,6 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
             if (world == null || player == null) {
                 return;
             }
-
-            long clearedAt = LatitudeClientState.clearLatitudeLoadingState();
-            GLOBE_LOGGER.info("[Latitude lifecycle] bespoke overlay cleared at game-join — {}ms since beginExpedition",
-                    clearedAt);
-
-            if (client.screen instanceof LevelLoadingScreen screen) {
-                screen.onClose();
-            }
         });
     }
 
@@ -197,9 +189,7 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
     @Inject(method = "onClose", at = @At("HEAD"), cancellable = true)
     private void globe$clearLoadingFlag(CallbackInfo ci) {
         if (LatitudeClientState.isLatitudeWorldLoading()) {
-            // Keep this screen as the bespoke presentation until the normal client-ready clear.
-            ci.cancel();
-            return;
+            globe$clearLoadingFlagNow(false);
         }
         long sinceExpedition = LatitudeClientState.elapsedSinceExpeditionMs();
         if (sinceExpedition < 0L) {
@@ -400,7 +390,7 @@ class LatitudeLoadingClientTickMixin {
         Minecraft client = (Minecraft) (Object) this;
         boolean pastFirstPlayerTick = this.player.tickCount > 1;
         boolean noLongerLoadingScreen = !(client.screen instanceof LevelLoadingScreen);
-        if (!pastFirstPlayerTick && !noLongerLoadingScreen) {
+        if (!pastFirstPlayerTick || !noLongerLoadingScreen) {
             return;
         }
         GLOBE_LOGGER.info("[Latitude lifecycle] first safe playable tick — {}ms since beginExpedition (playerAge={}, loadingScreenVisible={})",
