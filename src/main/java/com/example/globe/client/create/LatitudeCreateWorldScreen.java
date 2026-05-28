@@ -924,6 +924,25 @@ public class LatitudeCreateWorldScreen extends Screen {
         this.beginExpedition();
     }
 
+    public void probeSetWorldInputs(String worldName, String seed, GlobeWorldSize size) {
+        if (worldName != null && !worldName.isBlank() && this.worldNameField != null) {
+            String trimmed = worldName.trim();
+            this.worldNameField.setValue(trimmed);
+            this.worldNameInput = trimmed;
+        }
+        if (seed != null && !seed.isBlank() && this.seedField != null) {
+            this.seedField.setValue(seed.trim());
+        }
+        if (size != null) {
+            this.selectedSize = size;
+        }
+        LOGGER.info("[LAT][CWPATH] LatitudeCreateWorldScreen.probeSetWorldInputs screen={} worldName={} seedSet={} size={}",
+                this.getClass().getName(),
+                this.worldNameField != null ? this.worldNameField.getValue() : "<missing>",
+                seed != null && !seed.isBlank(),
+                this.selectedSize);
+    }
+
     public void probeSetCreativeMode() {
         this.selectedModeIdx = 2;
         this.allowCommands = true;

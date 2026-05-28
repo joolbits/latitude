@@ -500,11 +500,26 @@ public final class LatitudeBiomes {
     private static final int LEAK_LOG_LIMIT = Integer.getInteger("latitude.leakLogLimit", 200);
     private static final int SAVANNA_GATE_LOG_EVERY = Integer.getInteger("latitude.savannaGateLogEvery", 2048);
     private static final ThreadLocal<String> LAST_SELECTION_PATH = new ThreadLocal<>();
+    private static final ThreadLocal<BiomeAdmission> LAST_BIOME_ADMISSION = new ThreadLocal<>();
     private static final ThreadLocal<WarmPoolMembershipSnapshot> LAST_WARM_POOL_MEMBERSHIP_SNAPSHOT = new ThreadLocal<>();
     private static final String PATH_TAG_PICK = "tag-based pick";
     private static final String PATH_FALLBACK_PICK = "explicit fallback list pick";
     private static final String PATH_RETURN_BASE = "return base";
     private static boolean TAG_LOGGED = false;
+
+    private enum BiomeAdmissionKind {
+        LATITUDE_TAG,
+        LATITUDE_ALLOWED_POOL,
+        VANILLA_FALLBACK,
+        BASE_CARRY_THROUGH,
+        UNKNOWN_CUSTOM_QUARANTINE
+    }
+
+    private record BiomeAdmission(BiomeAdmissionKind kind, String source, String biomeId) {
+        String traceLabel() {
+            return kind + ":" + source + ":" + biomeId;
+        }
+    }
 
     private static void logMangroveDenial(String reason) {
         if (DEBUG_MANGROVE_DENIAL) {
@@ -2375,7 +2390,7 @@ public final class LatitudeBiomes {
         if (effectiveRadius <= 0) {
             return base;
         }
-        LAST_SELECTION_PATH.remove();
+        clearSelectionState();
 
         // Sparse jungle audit flags for final source classification.
         boolean auditTagPick = false;
@@ -2392,6 +2407,7 @@ public final class LatitudeBiomes {
 
         if (isBeachLike(base) && allowBeachShortcut(generator, columnDecisionY)) {
             Holder<Biome> out = pickBeachForBand(biomeRegistry, base, blockX, blockZ, bandIndex);
+            out = quarantineUnknownCustomLandBiome(biomeRegistry, out, base, blockX, blockZ, bandIndex, false);
             debugPick(blockX, blockZ, effectiveRadius, t, band, base, out, true, false, null);
             return out;
         }
@@ -2946,6 +2962,7 @@ public final class LatitudeBiomes {
                 mangroveFallbackReturned = out;
             }
         }
+        out = quarantineUnknownCustomLandBiome(biomeRegistry, out, base, blockX, blockZ, landBandIndex, mountainLike);
         logWetlandAudit("pick-registry-late",
                 callerContext,
                 base,
@@ -3027,7 +3044,7 @@ public final class LatitudeBiomes {
             return base;
         }
 
-        LAST_SELECTION_PATH.remove();
+        clearSelectionState();
         logTagPools(biomePool);
 
         int lat = Math.abs(blockZ);
@@ -3038,6 +3055,7 @@ public final class LatitudeBiomes {
 
         if (isBeachLike(base) && allowBeachShortcut(generator, columnDecisionY)) {
             Holder<Biome> out = pickBeachForBand(biomePool, base, blockX, blockZ, bandIndex);
+            out = quarantineUnknownCustomLandBiome(biomePool, out, base, blockX, blockZ, bandIndex, false);
             debugPick(blockX, blockZ, effectiveRadius, t, band, base, out, true, false, null);
             return out;
         }
@@ -3530,6 +3548,7 @@ public final class LatitudeBiomes {
                 mangroveFallbackReturned = out;
             }
         }
+        out = quarantineUnknownCustomLandBiome(biomePool, out, base, blockX, blockZ, landBandIndex, mountainLike);
         logWetlandAudit("pick-collection-late",
                 callerContext,
                 base,
@@ -3785,9 +3804,12 @@ public final class LatitudeBiomes {
         if (bandIndex == 0) {
             if (isDeepOcean(base)) {
                 try {
+                    Holder<Biome> out = biome(biomes, "minecraft:deep_lukewarm_ocean");
                     setSelectionPath(PATH_FALLBACK_PICK);
-                    return biome(biomes, "minecraft:deep_lukewarm_ocean");
+                    setAdmission(BiomeAdmissionKind.VANILLA_FALLBACK, "ocean_deep_lukewarm_fallback", out);
+                    return out;
                 } catch (Throwable ignored) {
+                    setAdmission(BiomeAdmissionKind.BASE_CARRY_THROUGH, "ocean_deep_lukewarm_missing", base);
                     return base;
                 }
             }
@@ -3814,8 +3836,10 @@ public final class LatitudeBiomes {
                 Holder<Biome> deep = entryById(biomes, "minecraft:deep_lukewarm_ocean");
                 if (deep != null) {
                     setSelectionPath(PATH_FALLBACK_PICK);
+                    setAdmission(BiomeAdmissionKind.VANILLA_FALLBACK, "ocean_deep_lukewarm_fallback", deep);
                     return deep;
                 }
+                setAdmission(BiomeAdmissionKind.BASE_CARRY_THROUGH, "ocean_deep_lukewarm_missing", base);
                 return base;
             }
             return pickShallowTropicalOcean(biomes, blockX, blockZ);
@@ -3864,7 +3888,9 @@ public final class LatitudeBiomes {
             idx = size - 1;
         }
         setSelectionPath(PATH_TAG_PICK);
-        return entries.get(idx);
+        Holder<Biome> out = entries.get(idx);
+        setAdmission(BiomeAdmissionKind.LATITUDE_TAG, LAT_OCEAN_TROPICAL.location().toString(), out);
+        return out;
     }
 
     private static Holder<Biome> pickShallowTropicalOcean(Collection<Holder<Biome>> biomes, int blockX, int blockZ) {
@@ -3890,7 +3916,9 @@ public final class LatitudeBiomes {
             idx = size - 1;
         }
         setSelectionPath(PATH_TAG_PICK);
-        return entries.get(idx);
+        Holder<Biome> out = entries.get(idx);
+        setAdmission(BiomeAdmissionKind.LATITUDE_TAG, LAT_OCEAN_TROPICAL.location().toString(), out);
+        return out;
     }
 
     private static Holder<Biome> mushroomIslandOverride(Registry<Biome> biomes, Holder<Biome> oceanPick, int blockX, int blockZ) {
@@ -4225,7 +4253,9 @@ public final class LatitudeBiomes {
         int cellZ = Math.floorDiv(blockZ, VARIANT_CELL_SIZE_BLOCKS);
         int idx = (int) Long.remainderUnsigned(hash64(cellX, cellZ, bandIndex), options.length);
         setSelectionPath(PATH_FALLBACK_PICK);
-        return biome(biomes, options[idx]);
+        Holder<Biome> out = biome(biomes, options[idx]);
+        setAdmission(BiomeAdmissionKind.VANILLA_FALLBACK, "fallback_list", out);
+        return out;
     }
 
     private static TagKey<Biome> weightedTagForRoll(int bandIndex, int roll, TagKey<Biome> primary, TagKey<Biome> secondary, TagKey<Biome> accent) {
@@ -4841,7 +4871,9 @@ public final class LatitudeBiomes {
             idx = size - 1;
         }
         setSelectionPath(PATH_TAG_PICK);
-        return entries.get(idx);
+        Holder<Biome> out = entries.get(idx);
+        setAdmission(BiomeAdmissionKind.LATITUDE_TAG, tag.location().toString(), out);
+        return out;
     }
 
     private static Holder<Biome> pickFromTagNoiseOrBaseFilteredSwamp(Collection<Holder<Biome>> biomes, TagKey<Biome> tag, Holder<Biome> base,
@@ -4853,6 +4885,7 @@ public final class LatitudeBiomes {
         int size = entries.size();
         if (size <= 0) {
             setSelectionPath(PATH_RETURN_BASE);
+            setAdmission(BiomeAdmissionKind.BASE_CARRY_THROUGH, tag.location().toString(), base);
             return base;
         }
 
@@ -4865,7 +4898,9 @@ public final class LatitudeBiomes {
             idx = size - 1;
         }
         setSelectionPath(PATH_TAG_PICK);
-        return entries.get(idx);
+        Holder<Biome> out = entries.get(idx);
+        setAdmission(BiomeAdmissionKind.LATITUDE_TAG, tag.location().toString(), out);
+        return out;
     }
 
     private static Holder<Biome> pickFromTagNoiseOrBaseFilteredSwamp(Registry<Biome> biomes, TagKey<Biome> tag, Holder<Biome> base,
@@ -4886,6 +4921,7 @@ public final class LatitudeBiomes {
         int size = entries.size();
         if (size <= 0) {
             setSelectionPath(PATH_RETURN_BASE);
+            setAdmission(BiomeAdmissionKind.BASE_CARRY_THROUGH, tag.location().toString(), base);
             return base;
         }
 
@@ -4898,7 +4934,9 @@ public final class LatitudeBiomes {
             idx = size - 1;
         }
         setSelectionPath(PATH_TAG_PICK);
-        return entries.get(idx);
+        Holder<Biome> out = entries.get(idx);
+        setAdmission(BiomeAdmissionKind.LATITUDE_TAG, tag.location().toString(), out);
+        return out;
     }
 
     private static Holder<Biome> pickFromTagNoiseOrBaseFiltered(Registry<Biome> biomes, TagKey<Biome> tag, Holder<Biome> base,
@@ -4919,6 +4957,7 @@ public final class LatitudeBiomes {
         int size = entries.size();
         if (size <= 0) {
             setSelectionPath(PATH_RETURN_BASE);
+            setAdmission(BiomeAdmissionKind.BASE_CARRY_THROUGH, tag.location().toString(), base);
             return base;
         }
 
@@ -4931,7 +4970,9 @@ public final class LatitudeBiomes {
             idx = size - 1;
         }
         setSelectionPath(PATH_TAG_PICK);
-        return entries.get(idx);
+        Holder<Biome> out = entries.get(idx);
+        setAdmission(BiomeAdmissionKind.LATITUDE_TAG, tag.location().toString(), out);
+        return out;
     }
 
     private static Holder<Biome> pickTemperateLand(Registry<Biome> biomes,
@@ -4998,6 +5039,7 @@ public final class LatitudeBiomes {
         int size = entries.size();
         if (size <= 0) {
             setSelectionPath(PATH_RETURN_BASE);
+            setAdmission(BiomeAdmissionKind.BASE_CARRY_THROUGH, tag.location().toString(), base);
             return base;
         }
 
@@ -5010,7 +5052,9 @@ public final class LatitudeBiomes {
             idx = size - 1;
         }
         setSelectionPath(PATH_TAG_PICK);
-        return entries.get(idx);
+        Holder<Biome> out = entries.get(idx);
+        setAdmission(BiomeAdmissionKind.LATITUDE_TAG, tag.location().toString(), out);
+        return out;
     }
 
     private static Holder<Biome> pickFromTagNoiseOrBase(Collection<Holder<Biome>> biomes, TagKey<Biome> tag, Holder<Biome> base, int blockX, int blockZ, int bandIndex) {
@@ -5018,6 +5062,7 @@ public final class LatitudeBiomes {
         int size = entries.size();
         if (size <= 0) {
             setSelectionPath(PATH_RETURN_BASE);
+            setAdmission(BiomeAdmissionKind.BASE_CARRY_THROUGH, tag.location().toString(), base);
             return base;
         }
 
@@ -5039,10 +5084,12 @@ public final class LatitudeBiomes {
                         ? entryById(biomes, "minecraft:savanna")
                         : entryById(biomes, "minecraft:jungle");
                 if (reroute != null) {
+                    setAdmission(BiomeAdmissionKind.VANILLA_FALLBACK, "tropical_sparse_jungle_reroute", reroute);
                     return reroute;
                 }
             }
         }
+        setAdmission(BiomeAdmissionKind.LATITUDE_TAG, tag.location().toString(), pick);
         return pick;
     }
 
@@ -5051,10 +5098,12 @@ public final class LatitudeBiomes {
             Holder<Biome> entry = entryById(biomes, fallback);
             if (entry != null) {
                 setSelectionPath(PATH_FALLBACK_PICK);
+                setAdmission(BiomeAdmissionKind.VANILLA_FALLBACK, "fallback_list", entry);
                 return entry;
             }
         }
         setSelectionPath(PATH_RETURN_BASE);
+        setAdmission(BiomeAdmissionKind.BASE_CARRY_THROUGH, "fallback_list_empty", base);
         return base;
     }
 
@@ -5184,6 +5233,100 @@ public final class LatitudeBiomes {
         return false;
     }
 
+    private static List<Holder<Biome>> filteredAllowedLandPool(List<Holder<Biome>> allowedPool,
+                                                               int bandIndex,
+                                                               boolean mountainLike) {
+        List<Holder<Biome>> out = allowedPool;
+        if (bandIndex == BAND_TEMPERATE && !mountainLike) {
+            out = removeTemperateMountainFamily(out);
+        }
+        if (bandIndex == BAND_SUBTROPICAL && !mountainLike) {
+            out = removeSubtropicalNonMountainWindsweptFamily(out);
+        }
+        if (bandIndex == BAND_POLAR) {
+            List<Holder<Biome>> polarNoTaiga = removePolarTaigaFamily(out);
+            if (!polarNoTaiga.isEmpty()) {
+                out = polarNoTaiga;
+            }
+        }
+        return out;
+    }
+
+    private static List<Holder<Biome>> rerollLandPoolForBand(List<Holder<Biome>> allowedPool,
+                                                             int bandIndex,
+                                                             boolean mountainLike) {
+        List<Holder<Biome>> out = allowedPool;
+        if (bandIndex == BAND_SUBTROPICAL && !mountainLike) {
+            List<Holder<Biome>> subtropicalNoForest = removeSubtropicalNonMountainForestFamily(out);
+            if (!subtropicalNoForest.isEmpty()) {
+                out = subtropicalNoForest;
+            }
+        }
+        return out;
+    }
+
+    private static Holder<Biome> quarantineUnknownCustomLandBiome(Registry<Biome> biomes,
+                                                                  Holder<Biome> candidate,
+                                                                  Holder<Biome> base,
+                                                                  int blockX,
+                                                                  int blockZ,
+                                                                  int bandIndex,
+                                                                  boolean mountainLike) {
+        if (!isCustomBiome(candidate)) {
+            return candidate;
+        }
+        List<Holder<Biome>> allowedPool = filteredAllowedLandPool(allowedLandPool(biomes, bandIndex), bandIndex, mountainLike);
+        if (isInAllowedLandPool(allowedPool, candidate)) {
+            setAllowedPoolAdmissionIfNeeded(candidate, "quarantine_allowed_land_pool");
+            return candidate;
+        }
+        List<Holder<Biome>> rerollPool = rerollLandPoolForBand(allowedPool, bandIndex, mountainLike);
+        if (!rerollPool.isEmpty()) {
+            Holder<Biome> out = pickFromAllowedLandPool(rerollPool, blockX, blockZ, bandIndex);
+            setAdmission(BiomeAdmissionKind.UNKNOWN_CUSTOM_QUARANTINE, "reroute_allowed_land_pool", out);
+            return out;
+        }
+        Holder<Biome> fallback = safeVanillaFallbackForBand(biomes, bandIndex);
+        if (fallback != null) {
+            setAdmission(BiomeAdmissionKind.UNKNOWN_CUSTOM_QUARANTINE, "safe_vanilla_band_fallback", fallback);
+            return fallback;
+        }
+        Holder<Biome> out = base;
+        setAdmission(BiomeAdmissionKind.UNKNOWN_CUSTOM_QUARANTINE, "no_safe_fallback", out);
+        return out;
+    }
+
+    private static Holder<Biome> quarantineUnknownCustomLandBiome(Collection<Holder<Biome>> biomes,
+                                                                  Holder<Biome> candidate,
+                                                                  Holder<Biome> base,
+                                                                  int blockX,
+                                                                  int blockZ,
+                                                                  int bandIndex,
+                                                                  boolean mountainLike) {
+        if (!isCustomBiome(candidate)) {
+            return candidate;
+        }
+        List<Holder<Biome>> allowedPool = filteredAllowedLandPool(allowedLandPool(biomes, bandIndex), bandIndex, mountainLike);
+        if (isInAllowedLandPool(allowedPool, candidate)) {
+            setAllowedPoolAdmissionIfNeeded(candidate, "quarantine_allowed_land_pool");
+            return candidate;
+        }
+        List<Holder<Biome>> rerollPool = rerollLandPoolForBand(allowedPool, bandIndex, mountainLike);
+        if (!rerollPool.isEmpty()) {
+            Holder<Biome> out = pickFromAllowedLandPool(rerollPool, blockX, blockZ, bandIndex);
+            setAdmission(BiomeAdmissionKind.UNKNOWN_CUSTOM_QUARANTINE, "reroute_allowed_land_pool", out);
+            return out;
+        }
+        Holder<Biome> fallback = safeVanillaFallbackForBand(biomes, bandIndex);
+        if (fallback != null) {
+            setAdmission(BiomeAdmissionKind.UNKNOWN_CUSTOM_QUARANTINE, "safe_vanilla_band_fallback", fallback);
+            return fallback;
+        }
+        Holder<Biome> out = base;
+        setAdmission(BiomeAdmissionKind.UNKNOWN_CUSTOM_QUARANTINE, "no_safe_fallback", out);
+        return out;
+    }
+
     private static Holder<Biome> enforceLandBandPool(Registry<Biome> biomes,
                                                             Holder<Biome> candidate,
                                                             int blockX,
@@ -5192,31 +5335,15 @@ public final class LatitudeBiomes {
                                                             int bandIndex,
                                                             boolean mountainLike) {
         List<Holder<Biome>> preFilterPool = allowedLandPool(biomes, bandIndex);
-        List<Holder<Biome>> allowedPool = preFilterPool;
-        if (bandIndex == BAND_TEMPERATE && !mountainLike) {
-            allowedPool = removeTemperateMountainFamily(allowedPool);
-        }
-        if (bandIndex == BAND_SUBTROPICAL && !mountainLike) {
-            allowedPool = removeSubtropicalNonMountainWindsweptFamily(allowedPool);
-        }
-        if (bandIndex == BAND_POLAR) {
-            List<Holder<Biome>> polarNoTaiga = removePolarTaigaFamily(allowedPool);
-            if (!polarNoTaiga.isEmpty()) {
-                allowedPool = polarNoTaiga;
-            }
-        }
+        List<Holder<Biome>> allowedPool = filteredAllowedLandPool(preFilterPool, bandIndex, mountainLike);
         Holder<Biome> out = candidate;
         if (!allowedPool.isEmpty() && !isInAllowedLandPool(allowedPool, candidate)) {
             maybeLogBandLeak(blockX, blockZ, t, bandIndex, candidate);
-            List<Holder<Biome>> rerollPool = allowedPool;
-            if (bandIndex == BAND_SUBTROPICAL && !mountainLike) {
-                List<Holder<Biome>> subtropicalNoForest = removeSubtropicalNonMountainForestFamily(rerollPool);
-                if (!subtropicalNoForest.isEmpty()) {
-                    rerollPool = subtropicalNoForest;
-                }
-            }
+            List<Holder<Biome>> rerollPool = rerollLandPoolForBand(allowedPool, bandIndex, mountainLike);
             out = pickFromAllowedLandPool(rerollPool, blockX, blockZ, bandIndex);
             recordWarmDryPath("DIRECT_POOL_PICK", candidate, out, blockX, blockZ, bandIndex, warmProvinceClass(blockX, blockZ, bandIndex));
+        } else {
+            setAllowedPoolAdmissionIfNeeded(candidate, "enforce_land_band_pool");
         }
         stashWarmPoolMembershipSnapshot(blockX, blockZ, bandIndex, candidate, out, preFilterPool, allowedPool);
         return out;
@@ -5230,31 +5357,15 @@ public final class LatitudeBiomes {
                                                             int bandIndex,
                                                             boolean mountainLike) {
         List<Holder<Biome>> preFilterPool = allowedLandPool(biomes, bandIndex);
-        List<Holder<Biome>> allowedPool = preFilterPool;
-        if (bandIndex == BAND_TEMPERATE && !mountainLike) {
-            allowedPool = removeTemperateMountainFamily(allowedPool);
-        }
-        if (bandIndex == BAND_SUBTROPICAL && !mountainLike) {
-            allowedPool = removeSubtropicalNonMountainWindsweptFamily(allowedPool);
-        }
-        if (bandIndex == BAND_POLAR) {
-            List<Holder<Biome>> polarNoTaiga = removePolarTaigaFamily(allowedPool);
-            if (!polarNoTaiga.isEmpty()) {
-                allowedPool = polarNoTaiga;
-            }
-        }
+        List<Holder<Biome>> allowedPool = filteredAllowedLandPool(preFilterPool, bandIndex, mountainLike);
         Holder<Biome> out = candidate;
         if (!allowedPool.isEmpty() && !isInAllowedLandPool(allowedPool, candidate)) {
             maybeLogBandLeak(blockX, blockZ, t, bandIndex, candidate);
-            List<Holder<Biome>> rerollPool = allowedPool;
-            if (bandIndex == BAND_SUBTROPICAL && !mountainLike) {
-                List<Holder<Biome>> subtropicalNoForest = removeSubtropicalNonMountainForestFamily(rerollPool);
-                if (!subtropicalNoForest.isEmpty()) {
-                    rerollPool = subtropicalNoForest;
-                }
-            }
+            List<Holder<Biome>> rerollPool = rerollLandPoolForBand(allowedPool, bandIndex, mountainLike);
             out = pickFromAllowedLandPool(rerollPool, blockX, blockZ, bandIndex);
             recordWarmDryPath("DIRECT_POOL_PICK", candidate, out, blockX, blockZ, bandIndex, warmProvinceClass(blockX, blockZ, bandIndex));
+        } else {
+            setAllowedPoolAdmissionIfNeeded(candidate, "enforce_land_band_pool");
         }
         stashWarmPoolMembershipSnapshot(blockX, blockZ, bandIndex, candidate, out, preFilterPool, allowedPool);
         return out;
@@ -5429,7 +5540,9 @@ public final class LatitudeBiomes {
         if (idx >= size) {
             idx = size - 1;
         }
-        return allowedPool.get(idx);
+        Holder<Biome> out = allowedPool.get(idx);
+        setAdmission(BiomeAdmissionKind.LATITUDE_ALLOWED_POOL, "allowed_land_pool", out);
+        return out;
     }
 
     private static void maybeLogBandLeak(int blockX, int blockZ, double t, int bandIndex, Holder<Biome> candidate) {
@@ -6187,6 +6300,67 @@ public final class LatitudeBiomes {
             return "null";
         }
         return entry.unwrapKey().map(key -> key.identifier().toString()).orElse("?");
+    }
+
+    private static boolean isCustomBiome(Holder<Biome> entry) {
+        Identifier id = biomeIdentifier(entry);
+        return id != null && !"minecraft".equals(id.getNamespace());
+    }
+
+    private static Identifier biomeIdentifier(Holder<Biome> entry) {
+        if (entry == null) {
+            return null;
+        }
+        return entry.unwrapKey().map(ResourceKey::identifier).orElse(null);
+    }
+
+    private static Holder<Biome> safeVanillaFallbackForBand(Registry<Biome> biomes, int bandIndex) {
+        for (String id : safeVanillaFallbackIdsForBand(bandIndex)) {
+            try {
+                Holder<Biome> entry = biome(biomes, id);
+                if (entry != null) {
+                    setAdmission(BiomeAdmissionKind.VANILLA_FALLBACK, "safe_vanilla_band_fallback", entry);
+                    return entry;
+                }
+            } catch (Throwable ignored) {
+                // try next fallback
+            }
+        }
+        return null;
+    }
+
+    private static Holder<Biome> safeVanillaFallbackForBand(Collection<Holder<Biome>> biomes, int bandIndex) {
+        for (String id : safeVanillaFallbackIdsForBand(bandIndex)) {
+            Holder<Biome> entry = entryById(biomes, id);
+            if (entry != null) {
+                setAdmission(BiomeAdmissionKind.VANILLA_FALLBACK, "safe_vanilla_band_fallback", entry);
+                return entry;
+            }
+        }
+        Holder<Biome> entry = firstVanillaBiome(biomes);
+        if (entry != null) {
+            setAdmission(BiomeAdmissionKind.VANILLA_FALLBACK, "first_vanilla_fallback", entry);
+        }
+        return entry;
+    }
+
+    private static Holder<Biome> firstVanillaBiome(Collection<Holder<Biome>> biomes) {
+        for (Holder<Biome> entry : biomes) {
+            if (!isCustomBiome(entry)) {
+                return entry;
+            }
+        }
+        return null;
+    }
+
+    private static String[] safeVanillaFallbackIdsForBand(int bandIndex) {
+        return switch (bandIndex) {
+            case BAND_TROPICAL -> new String[]{"minecraft:sparse_jungle", "minecraft:jungle", "minecraft:savanna"};
+            case BAND_SUBTROPICAL -> new String[]{"minecraft:savanna", "minecraft:plains", "minecraft:forest"};
+            case BAND_TEMPERATE -> new String[]{"minecraft:plains", "minecraft:forest", "minecraft:meadow"};
+            case BAND_SUBPOLAR -> new String[]{"minecraft:snowy_taiga", "minecraft:taiga", "minecraft:snowy_plains"};
+            default -> new String[]{"minecraft:snowy_plains", "minecraft:ice_spikes", "minecraft:snowy_taiga"};
+        };
     }
 
     private static boolean isColdBiome(Holder<Biome> entry) {
@@ -7372,6 +7546,34 @@ public final class LatitudeBiomes {
         LAST_SELECTION_PATH.set(path);
     }
 
+    private static void clearSelectionState() {
+        LAST_SELECTION_PATH.remove();
+        LAST_BIOME_ADMISSION.remove();
+    }
+
+    private static void setAdmission(BiomeAdmissionKind kind, String source, Holder<Biome> entry) {
+        LAST_BIOME_ADMISSION.set(new BiomeAdmission(kind, source, biomeId(entry)));
+    }
+
+    private static void setAllowedPoolAdmissionIfNeeded(Holder<Biome> entry, String source) {
+        if (!isCustomBiome(entry)) {
+            return;
+        }
+        BiomeAdmission current = LAST_BIOME_ADMISSION.get();
+        String id = biomeId(entry);
+        if (current != null
+                && id.equals(current.biomeId())
+                && current.kind() == BiomeAdmissionKind.LATITUDE_TAG) {
+            return;
+        }
+        setAdmission(BiomeAdmissionKind.LATITUDE_ALLOWED_POOL, source, entry);
+    }
+
+    private static String admissionForTrace() {
+        BiomeAdmission admission = LAST_BIOME_ADMISSION.get();
+        return admission != null ? admission.traceLabel() : "none";
+    }
+
     private static boolean isJungleFamily(Holder<Biome> entry) {
         return isBiomeId(entry, "minecraft:jungle")
                 || isBiomeId(entry, "minecraft:bamboo_jungle")
@@ -7442,7 +7644,7 @@ public final class LatitudeBiomes {
         if (!DEBUG_BIOMES) return;
         if (DEBUG_COUNT.incrementAndGet() > DEBUG_LIMIT) return;
         String decision = mangroveDecision != null ? mangroveDecision : "none";
-        LOGGER.info("[LAT_PICK] x={} z={} absZ={} radius={} t={} zone={} base={} out={} beachOverride={} rareOverride={} {}",
+        LOGGER.info("[LAT_PICK] x={} z={} absZ={} radius={} t={} zone={} base={} out={} admission={} beachOverride={} rareOverride={} {}",
                 blockX,
                 blockZ,
                 Math.abs(blockZ),
@@ -7451,6 +7653,7 @@ public final class LatitudeBiomes {
                 band.id(),
                 biomeId(base),
                 biomeId(out),
+                admissionForTrace(),
                 beachOverride,
                 rareOverride,
                 decision);
@@ -8718,7 +8921,9 @@ public final class LatitudeBiomes {
             idx = size - 1;
         }
         setSelectionPath(PATH_TAG_PICK);
-        return entries.get(idx);
+        Holder<Biome> out = entries.get(idx);
+        setAdmission(BiomeAdmissionKind.LATITUDE_TAG, tag.location().toString(), out);
+        return out;
     }
 
     private static Holder<Biome> pickFromTagNoiseOrBase(Registry<Biome> biomes, TagKey<Biome> tag, Holder<Biome> base, int blockX, int blockZ, int bandIndex) {
@@ -8734,6 +8939,7 @@ public final class LatitudeBiomes {
         int size = entries.size();
         if (size <= 0) {
             setSelectionPath(PATH_RETURN_BASE);
+            setAdmission(BiomeAdmissionKind.BASE_CARRY_THROUGH, tag.location().toString(), base);
             return base;
         }
 
@@ -8752,14 +8958,17 @@ public final class LatitudeBiomes {
             double compositionBias = tropicalCompositionBias(WORLD_SEED, blockX, blockZ);
             if (openness >= 0.55 || compositionBias <= 0.16) {
                 try {
-                    return openness >= 0.20
+                    Holder<Biome> reroute = openness >= 0.20
                             ? biome(biomes, "minecraft:savanna")
                             : biome(biomes, "minecraft:jungle");
+                    setAdmission(BiomeAdmissionKind.VANILLA_FALLBACK, "tropical_sparse_jungle_reroute", reroute);
+                    return reroute;
                 } catch (Throwable ignored) {
                     // keep the original sparse jungle pick if the reroute target is unavailable
                 }
             }
         }
+        setAdmission(BiomeAdmissionKind.LATITUDE_TAG, tag.location().toString(), pick);
         return pick;
     }
 

@@ -1493,7 +1493,7 @@ public final class BiomePreviewExporter {
         orderedRows.sort(Comparator.comparing(BiomeAuditRecord::biomeId));
 
         StringBuilder out = new StringBuilder();
-        out.append("biome_id,namespace,registered,in_original_source,in_latitude_tag,latitude_tags,selected_count,selected_bands,first_x,first_z,first_deg\n");
+        out.append("biome_id,namespace,registered,in_original_source,in_latitude_tag,latitude_tags,selected_count,selected_bands,first_x,first_z,first_deg,selected_display_bands,selected_land_bands\n");
         for (BiomeAuditRecord row : orderedRows) {
             out.append(csvValue(row.biomeId())).append(',')
                     .append(csvValue(row.namespace())).append(',')
@@ -1506,7 +1506,9 @@ public final class BiomePreviewExporter {
                     .append(csvValue(row.selectedBandsSummary())).append(',')
                     .append(row.firstSelectedX() != null ? row.firstSelectedX() : "").append(',')
                     .append(row.firstSelectedZ() != null ? row.firstSelectedZ() : "").append(',')
-                    .append(row.firstSelectedDeg() != null ? String.format(Locale.ROOT, "%.3f", row.firstSelectedDeg()) : "")
+                    .append(row.firstSelectedDeg() != null ? String.format(Locale.ROOT, "%.3f", row.firstSelectedDeg()) : "").append(',')
+                    .append(csvValue(row.selectedDisplayBandsSummary())).append(',')
+                    .append(csvValue(row.selectedLandBandsSummary()))
                     .append('\n');
         }
         Files.writeString(csvPath, out.toString());
@@ -2692,7 +2694,8 @@ public final class BiomePreviewExporter {
         private final boolean inOriginalBiomeSource;
         private final boolean inLatitudeTag;
         private final List<String> latitudeTags;
-        private final Map<String, Integer> selectedBandCounts = new HashMap<>();
+        private final Map<String, Integer> selectedDisplayBandCounts = new HashMap<>();
+        private final Map<String, Integer> selectedLandBandCounts = new HashMap<>();
         private int selectedCount;
         private Integer firstSelectedX;
         private Integer firstSelectedZ;
@@ -2724,16 +2727,16 @@ public final class BiomePreviewExporter {
             if (firstSelectedDeg == null) {
                 firstSelectedDeg = latDeg;
             }
-            incrementBand(selectedDisplayBandId);
-            incrementBand(selectedLandBandId);
+            incrementBand(selectedDisplayBandCounts, selectedDisplayBandId);
+            incrementBand(selectedLandBandCounts, selectedLandBandId);
         }
 
-        private void incrementBand(String bandId) {
+        private void incrementBand(Map<String, Integer> counts, String bandId) {
             String normalized = normalizeBandId(bandId);
             if (normalized == null || normalized.isBlank()) {
                 return;
             }
-            selectedBandCounts.merge(normalized, 1, Integer::sum);
+            counts.merge(normalized, 1, Integer::sum);
         }
 
         private int selectedCountForBand(String bandId) {
@@ -2741,14 +2744,19 @@ public final class BiomePreviewExporter {
             if (normalized == null || normalized.isBlank()) {
                 return 0;
             }
-            return selectedBandCounts.getOrDefault(normalized, 0);
+            return selectedLandBandCounts.getOrDefault(normalized, 0);
         }
 
         private String selectedBandsSummary() {
-            if (selectedBandCounts.isEmpty()) {
-                return "";
-            }
-            return selectedBandsSummaryFromCounts(selectedBandCounts);
+            return selectedLandBandsSummary();
+        }
+
+        private String selectedDisplayBandsSummary() {
+            return selectedBandsSummaryFromCounts(selectedDisplayBandCounts);
+        }
+
+        private String selectedLandBandsSummary() {
+            return selectedBandsSummaryFromCounts(selectedLandBandCounts);
         }
 
         private String biomeId() {

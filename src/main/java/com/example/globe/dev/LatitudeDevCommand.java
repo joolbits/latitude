@@ -143,6 +143,11 @@ public final class LatitudeDevCommand {
         return 1;
     }
 
+    private static void sendLatdevInfo(CommandSourceStack source, String message, boolean broadcast) {
+        GlobeMod.LOGGER.info(message);
+        source.sendSuccess(() -> Component.literal(message), broadcast);
+    }
+
     private static int here(CommandContext<CommandSourceStack> ctx) {
         try {
             CommandSourceStack source = ctx.getSource();
@@ -168,7 +173,7 @@ public final class LatitudeDevCommand {
             RuggednessSensor.Measurement ruggedness = RuggednessSensor.measure(world, pos, 24);
             double bumpinessScore = ruggedness.robustDelta(); // robust second-highest delta
 
-            source.sendSuccess(() -> Component.literal(String.format(Locale.ROOT,
+            sendLatdevInfo(source, String.format(Locale.ROOT,
                     "[latdev] here x=%d y=%d z=%d deg=%.2f band=%s(idx=%d) cut=%.2f..%.2f t=%.4f mtnLike=%s uplandT=%.3f savUpland=%s chance=%.3f biome=%s",
                     pos.getX(),
                     pos.getY(),
@@ -183,10 +188,10 @@ public final class LatitudeDevCommand {
                     uplandT,
                     savUplandActive,
                     savUplandChance,
-                    biomeId)), false);
-            source.sendSuccess(() -> Component.literal("[latdev] here savUplandDebug " + savannaDebug), false);
-            source.sendSuccess(() -> Component.literal("[latdev] here savannaRule " + savannaRule), false);
-            source.sendSuccess(() -> Component.literal(String.format(Locale.ROOT,
+                    biomeId), false);
+            sendLatdevInfo(source, "[latdev] here savUplandDebug " + savannaDebug, false);
+            sendLatdevInfo(source, "[latdev] here savannaRule " + savannaRule, false);
+            sendLatdevInfo(source, String.format(Locale.ROOT,
                     "[latdev] here rugged x=%d z=%d ring=%d topY[c=%d n=%d s=%d e=%d w=%d ne=%d nw=%d se=%d sw=%d] dMax=%d dMean=%.2f axis=%.2f robust=%d",
                     pos.getX(),
                     pos.getZ(),
@@ -203,8 +208,8 @@ public final class LatitudeDevCommand {
                     ruggedness.maxAbsDelta(),
                     ruggedness.meanAbsDelta(),
                     ruggedness.axisGradient(),
-                    ruggedness.robustDelta())), false);
-            source.sendSuccess(() -> Component.literal(String.format(Locale.ROOT,
+                    ruggedness.robustDelta()), false);
+            sendLatdevInfo(source, String.format(Locale.ROOT,
                     "[latdev] dashboard bumpiness=%.2f robustDelta=%d dMax=%d dMean=%.2f thresh=%d hyst=%d → windswept_if>=%.0f",
                     bumpinessScore,
                     ruggedness.robustDelta(),
@@ -212,7 +217,7 @@ public final class LatitudeDevCommand {
                     ruggedness.meanAbsDelta(),
                     WINDSWEPT_RUGGED_THRESH,
                     WINDSWEPT_RUGGED_HYST,
-                    (double) WINDSWEPT_RUGGED_THRESH + WINDSWEPT_RUGGED_HYST)), false);
+                    (double) WINDSWEPT_RUGGED_THRESH + WINDSWEPT_RUGGED_HYST), false);
             return 1;
         } catch (Exception e) {
             ctx.getSource().sendFailure(Component.literal("[latdev] here error: " + e.getMessage()));
@@ -386,15 +391,15 @@ public final class LatitudeDevCommand {
             int sampleCount = samples;
             long sampleSeed = seed;
 
-            source.sendSuccess(() -> Component.literal(String.format(Locale.ROOT,
+            sendLatdevInfo(source, String.format(Locale.ROOT,
                     "[latdev] probe r=%d n=%d loaded=%d unloaded=%d seed=%d",
                     probeRadius,
                     sampleCount,
                     loadedCount,
                     unloadedCount,
-                    sampleSeed)), false);
-            source.sendSuccess(() -> Component.literal("[latdev] biomes: " + biomeSummary), false);
-            source.sendSuccess(() -> Component.literal("[latdev] bands: " + bandSummary), false);
+                    sampleSeed), false);
+            sendLatdevInfo(source, "[latdev] biomes: " + biomeSummary, false);
+            sendLatdevInfo(source, "[latdev] bands: " + bandSummary, false);
             return loaded > 0 ? 1 : 0;
         } catch (Exception e) {
             ctx.getSource().sendFailure(Component.literal("[latdev] probe error: " + e.getMessage()));

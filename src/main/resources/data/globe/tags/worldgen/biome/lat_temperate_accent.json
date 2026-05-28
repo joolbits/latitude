@@ -9,6 +9,18 @@
     {
       "id": "biomesoplenty:prairie",
       "required": false
+    },
+    {
+      "id": "terralith:blooming_valley",
+      "required": false
+    },
+    {
+      "id": "terralith:lavender_valley",
+      "required": false
+    },
+    {
+      "id": "terralith:valley_clearing",
+      "required": false
     }
   ]
 }
