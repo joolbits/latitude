@@ -1904,6 +1904,9 @@ const atlasDesktopDiagnosticsEl = $('#atlas-desktop-diagnostics');
   biomeIndices: null,
   biomeIndexWidth: 0,
   biomeIndexHeight: 0,
+  authorityBandIndices: null,
+  authorityBandWidth: 0,
+  authorityBandHeight: 0,
   selectionStatsCache: {},
   bandOpacity: 0.24,
   lastManualSeed: '',
@@ -2026,6 +2029,14 @@ const CANONICAL_BAND_DEFINITIONS = [
 const BAND_KEYS = CANONICAL_BAND_DEFINITIONS.map((band) => band.id);
 const BAND_BIT_BY_KEY = new Map(BAND_KEYS.map((key, index) => [key, 1 << index]));
 const BAND_RANK_BY_KEY = new Map(BAND_KEYS.map((key, index) => [key, index]));
+const AUTHORITY_BAND_COLOR_TO_INDEX = new Map([
+  ['122,74,40', 0],
+  ['245,166,35', 1],
+  ['63,175,90', 2],
+  ['61,127,199', 3],
+  ['183,200,229', 4],
+]);
+const UNKNOWN_AUTHORITY_BAND_INDEX = 255;
 const SUBPOLAR_BAND_RANK = BAND_RANK_BY_KEY.get('subpolar');
 const DRAG_SELECT_THRESHOLD_PX = 4;
 const VIOLATION_REASON_NONE = 0;
@@ -2539,11 +2550,63 @@ function decodeBiomeIndexBlob(blob) {
  });
 }
 
+function decodeAuthorityBandImage(image) {
+ const width = image.naturalWidth || image.width || 1;
+ const height = image.naturalHeight || image.height || 1;
+ const temp = document.createElement('canvas');
+ temp.width = width;
+ temp.height = height;
+ const tempCtx = temp.getContext('2d', { willReadFrequently: true });
+ tempCtx.drawImage(image, 0, 0);
+ const pixels = tempCtx.getImageData(0, 0, width, height).data;
+ const indices = new Uint8Array(width * height);
+ indices.fill(UNKNOWN_AUTHORITY_BAND_INDEX);
+ for (let i = 0; i < indices.length; i++) {
+  const offset = i * 4;
+  const key = colorKey(pixels[offset], pixels[offset + 1], pixels[offset + 2]);
+  const bandIndex = AUTHORITY_BAND_COLOR_TO_INDEX.get(key);
+  if (Number.isInteger(bandIndex)) {
+   indices[i] = bandIndex;
+  }
+ }
+ return { width, height, indices };
+}
+
+function decodeAuthorityBandBlob(blob) {
+ if (!blob) return Promise.resolve(null);
+ return new Promise((resolve, reject) => {
+  const url = URL.createObjectURL(blob);
+  const img = new Image();
+  img.onload = () => {
+   try {
+    resolve(decodeAuthorityBandImage(img));
+   } catch (err) {
+    reject(err);
+   } finally {
+    URL.revokeObjectURL(url);
+   }
+  };
+  img.onerror = () => {
+   URL.revokeObjectURL(url);
+   reject(new Error('Authority bands image load failed'));
+  };
+  img.src = url;
+ });
+}
+
 function biomeIndexAtPixel(x, y) {
  if (!state.biomeIndices) return null;
  if (state.biomeIndexWidth !== state.mapWidth || state.biomeIndexHeight !== state.mapHeight) return null;
  if (x < 0 || y < 0 || x >= state.biomeIndexWidth || y >= state.biomeIndexHeight) return null;
  return state.biomeIndices[(y * state.biomeIndexWidth) + x];
+}
+
+function authorityBandKeyAtPixel(x, y) {
+ if (!state.authorityBandIndices) return null;
+ if (state.authorityBandWidth !== state.mapWidth || state.authorityBandHeight !== state.mapHeight) return null;
+ if (x < 0 || y < 0 || x >= state.authorityBandWidth || y >= state.authorityBandHeight) return null;
+ const bandIndex = state.authorityBandIndices[(y * state.authorityBandWidth) + x];
+ return bandIndex >= 0 && bandIndex < BAND_KEYS.length ? BAND_KEYS[bandIndex] : null;
 }
 
 function biomeAtPixel(x, y, rgb) {
@@ -3399,9 +3462,11 @@ const ATLAS_PRESET_RADII = {
  itty:    3750,
  xsmall:  3750,
  tiny:    5000,
- small:   5000,
- regular: 7500,
- large:   10000,
+ small:   7500,
+ medium:  7500,
+ regular: 10000,
+ large:   15000,
+ ginormous: 20000,
  massive: 20000,
 };
 
@@ -3597,6 +3662,23 @@ function latitudeContextForWorldZ(worldZ) {
  };
 }
 
+function expectedBandContextForPixel(pixelX, pixelY, worldPos) {
+ const authorityBand = authorityBandKeyAtPixel(pixelX, pixelY);
+ if (authorityBand) {
+  return {
+   id: authorityBand,
+   label: bandLabelForKey(authorityBand),
+   source: 'authority',
+  };
+ }
+ const latContext = worldPos ? latitudeContextForWorldZ(worldPos.z) : null;
+ return {
+  id: latContext?.zone?.id || null,
+  label: latContext?.zone?.label || 'Unknown',
+  source: 'geometric',
+ };
+}
+
 function zoneForFrac(t) {
  return bandForLatitudeDegrees(Math.abs(Number(t) || 0) * 90);
 }
@@ -3625,9 +3707,9 @@ function bandViolationInfoAtPixel(pixelX, pixelY, biome, worldPos) {
  const reasonCode = state.bandViolationReasonCodes[offset] || VIOLATION_REASON_NONE;
  if (!reasonCode) return null;
  const biomeIndex = biomeIndexAtPixel(pixelX, pixelY);
- const latContext = worldPos ? latitudeContextForWorldZ(worldPos.z) : null;
- const expectedBand = latContext?.zone?.id || null;
- const expectedLabel = latContext?.zone?.label || 'Unknown';
+ const expected = expectedBandContextForPixel(pixelX, pixelY, worldPos);
+ const expectedBand = expected.id;
+ const expectedLabel = expected.label;
  const allowedMask = biomeIndex != null && state.bandMaskByIndex instanceof Uint32Array
   ? (state.bandMaskByIndex[biomeIndex & 0xFF] || 0)
   : 0;
@@ -3679,7 +3761,7 @@ function renderBandViolations() {
    if (biomeIndex == null) continue;
    const worldPos = worldPositionForPixel(x, y);
    if (!worldPos) continue;
-   const expectedBand = latitudeContextForWorldZ(worldPos.z)?.zone?.id;
+   const expectedBand = expectedBandContextForPixel(x, y, worldPos).id;
    const expectedBit = expectedBand ? BAND_BIT_BY_KEY.get(expectedBand) : 0;
    if (!expectedBit) continue;
 
@@ -4895,6 +4977,14 @@ async function fetchBiomeIds(run, layer) {
   }
 }
 
+async function fetchLandBands(run, layer) {
+  try {
+    return await apiFetch(`/api/runs/${run}/layers/${layer}/land-bands-image`);
+  } catch {
+    return null;
+  }
+}
+
 function syncOverlayCanvasToMap() {
   if (!ruggedCanvas || !state.mapWidth) return;
   ruggedCanvas.width  = state.mapWidth;
@@ -5314,6 +5404,9 @@ selRun.addEventListener('change', async () => {
     state.jungleFamilyByIndex = null;
   state.bandViolationStats = null;
   state.bandViolationReasonCodes = null;
+  state.authorityBandIndices = null;
+  state.authorityBandWidth = 0;
+  state.authorityBandHeight = 0;
   refreshBandViolationLabel();
   bandViolationCanvas.classList.remove('active');
   detailReadout.textContent = 'Auto';
@@ -5380,14 +5473,18 @@ async function switchLayer(run, layer) {
   state.biomeIndices = null;
   state.biomeIndexWidth = 0;
   state.biomeIndexHeight = 0;
+  state.authorityBandIndices = null;
+  state.authorityBandWidth = 0;
+  state.authorityBandHeight = 0;
   updateSelectedBiomesSummary();
   renderSelectionContext(null);
 
   // Fetch biomes + image + ids concurrently
-  const [biomes, inventory, idsBlob, legend] = await Promise.all([
+  const [biomes, inventory, idsBlob, landBandsBlob, legend] = await Promise.all([
     fetchBiomes(run, layer),
     fetchBiomeInventory(run, layer),
     fetchBiomeIds(run, layer),
+    fetchLandBands(run, layer),
     fetchLegend(run, layer),
     loadMapImage(getImageUrl(run, layer)),
   ]);
@@ -5417,6 +5514,19 @@ async function switchLayer(run, layer) {
       }
     } catch (err) {
       console.warn('Failed to decode biome ids image', err);
+    }
+  }
+
+  if (landBandsBlob) {
+    try {
+      const decoded = await decodeAuthorityBandBlob(landBandsBlob);
+      if (decoded && decoded.width === state.mapWidth && decoded.height === state.mapHeight) {
+        state.authorityBandIndices = decoded.indices;
+        state.authorityBandWidth = decoded.width;
+        state.authorityBandHeight = decoded.height;
+      }
+    } catch (err) {
+      console.warn('Failed to decode authority bands image', err);
     }
   }
 

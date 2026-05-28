@@ -46,8 +46,10 @@ New-Item -ItemType Directory -Force -Path $runDir | Out-Null
 # Size -> expected radius map (canonical Latitude sizes)
 $sizeKey = $Size.ToLower()
 $expectedRadius = switch ($sizeKey) {
-  "itty" { 5000 }          # alias tiny (legacy UI wording)
-  "ittybitty" { 5000 }     # alias tiny (legacy UI wording)
+  "itty" { 3750 }
+  "ittybitty" { 3750 }
+  "itty_bitty" { 3750 }
+  "xsmall" { 3750 }
   "tiny" { 5000 }
   "small" { 7500 }
   "medium" { 7500 }        # keep legacy label but align to canonical "small"
