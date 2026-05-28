@@ -37,6 +37,10 @@
     {
       "id": "terralith:sakura_valley",
       "required": false
+    },
+    {
+      "id": "promenade:blush_sakura_grove",
+      "required": false
     }
   ]
 }

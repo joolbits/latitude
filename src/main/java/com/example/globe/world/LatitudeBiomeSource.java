@@ -61,7 +61,7 @@ public final class LatitudeBiomeSource extends BiomeSource {
 
     @Override
     protected Stream<Holder<Biome>> collectPossibleBiomes() {
-        return original.possibleBiomes().stream();
+        return LatitudeBiomes.expandSourceCandidatePool(original.possibleBiomes()).stream();
     }
 
     @Override
@@ -74,7 +74,8 @@ public final class LatitudeBiomeSource extends BiomeSource {
         if (shouldPreserveCave(current, base, blockY)) {
             return current;
         }
-        return LatitudeBiomes.pick(biomes, base, blockX, blockZ, blockY, borderRadiusBlocks, sampler, "SOURCE", null, null, null);
+        Collection<Holder<Biome>> sourceCandidates = LatitudeBiomes.expandSourceCandidatePool(biomes);
+        return LatitudeBiomes.pick(sourceCandidates, base, blockX, blockZ, blockY, borderRadiusBlocks, sampler, "SOURCE", null, null, null);
     }
 
     private static boolean shouldPreserveCave(Holder<Biome> current, Holder<Biome> surfaceBase, int blockY) {

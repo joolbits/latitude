@@ -269,6 +269,7 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
         }
 
         Registry<Biome> biomes = structureAccessor.registryAccess().lookupOrThrow(Registries.BIOME);
+        LatitudeBiomes.rememberSourcePolicyBiomeRegistry(biomes);
         int borderRadiusBlocks = this.globe$borderRadiusBlocks();
         NoiseBasedChunkGenerator generator = (NoiseBasedChunkGenerator)(Object) this;
         RandomState noiseConfig = globe$noiseConfigTL.get();

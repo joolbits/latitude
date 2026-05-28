@@ -3,6 +3,7 @@ package com.example.globe.dev;
 import com.example.globe.GlobeMod;
 import com.example.globe.util.LatitudeBands;
 import com.example.globe.util.LatitudeMath;
+import com.example.globe.world.LatitudeBiomeSource;
 import com.example.globe.world.LatitudeBiomes;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.BoolArgumentType;
@@ -218,12 +219,83 @@ public final class LatitudeDevCommand {
                     WINDSWEPT_RUGGED_THRESH,
                     WINDSWEPT_RUGGED_HYST,
                     (double) WINDSWEPT_RUGGED_THRESH + WINDSWEPT_RUGGED_HYST), false);
+            emitSourcePathProofIfEnabled(source, world, pos, sampler, biomeId);
             return 1;
         } catch (Exception e) {
             ctx.getSource().sendFailure(Component.literal("[latdev] here error: " + e.getMessage()));
             e.printStackTrace();
             return 0;
         }
+    }
+
+    private static void emitSourcePathProofIfEnabled(CommandSourceStack source,
+                                                     ServerLevel world,
+                                                     BlockPos pos,
+                                                     net.minecraft.world.level.biome.Climate.Sampler sampler,
+                                                     String liveBiomeId) {
+        if (!isSourcePathProofEnabled()) {
+            return;
+        }
+        try {
+            net.minecraft.core.Registry<Biome> biomes = world.registryAccess().lookupOrThrow(Registries.BIOME);
+            LatitudeBiomes.rememberSourcePolicyBiomeRegistry(biomes);
+            net.minecraft.world.level.chunk.ChunkGenerator generator = world.getChunkSource().getGenerator();
+            net.minecraft.world.level.biome.BiomeSource biomeSource = generator.getBiomeSource();
+            net.minecraft.world.level.biome.BiomeSource sourceSupplier = biomeSource instanceof LatitudeBiomeSource latitudeSource
+                    ? latitudeSource.original()
+                    : biomeSource;
+            int noiseX = Math.floorDiv(pos.getX(), 4);
+            int noiseY = Math.floorDiv(pos.getY(), 4);
+            int noiseZ = Math.floorDiv(pos.getZ(), 4);
+            int blockX = (noiseX << 2) + 2;
+            int blockY = (noiseY << 2) + 2;
+            int blockZ = (noiseZ << 2) + 2;
+            Holder<Biome> sourceBiome = sourceSupplier.getNoiseBiome(noiseX, noiseY, noiseZ, sampler);
+            Holder<Biome> baseBiome = sourceSupplier.getNoiseBiome(noiseX, LatitudeBiomes.SURFACE_CLASSIFY_Y >> 2, noiseZ, sampler);
+            net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator noiseGenerator =
+                    generator instanceof net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator ng ? ng : null;
+            net.minecraft.world.level.LevelHeightAccessor heightView = world;
+            net.minecraft.world.level.chunk.ChunkAccess chunk =
+                    world.getChunkSource().getChunk(Math.floorDiv(pos.getX(), 16), Math.floorDiv(pos.getZ(), 16), ChunkStatus.FULL, false);
+            if (chunk != null) {
+                heightView = chunk;
+            }
+            Holder<Biome> populateEquivalent = LatitudeBiomes.pick(biomes, baseBiome, blockX, blockZ, blockY,
+                    authoritativeRadius(source), sampler, "SOURCE_PROOF",
+                    noiseGenerator, world.getChunkSource().randomState(), heightView);
+            String sourceBiomeId = biomeId(sourceBiome);
+            String populateBiomeId = biomeId(populateEquivalent);
+            boolean latitudeSource = biomeSource instanceof LatitudeBiomeSource;
+            boolean matchesLive = populateBiomeId.equals(liveBiomeId);
+            String message = String.format(Locale.ROOT,
+                    "[latdev] sourceProof source=%s latitudeSource=%s noise=%d,%d,%d block=%d,%d,%d rawSourceBiome=%s populateEquivalentBiome=%s liveBiome=%s match=%s",
+                    biomeSource.getClass().getName(),
+                    latitudeSource,
+                    noiseX,
+                    noiseY,
+                    noiseZ,
+                    blockX,
+                    blockY,
+                    blockZ,
+                    sourceBiomeId,
+                    populateBiomeId,
+                    liveBiomeId,
+                    matchesLive);
+            sendLatdevInfo(source, message, false);
+            if (!matchesLive) {
+                GlobeMod.LOGGER.error("[LAT][SOURCE_PROOF][FAIL] populate-equivalent source proof mismatch source={} rawSourceBiome={} populateEquivalentBiome={} liveBiome={}",
+                        biomeSource.getClass().getName(), sourceBiomeId, populateBiomeId, liveBiomeId);
+            }
+        } catch (RuntimeException e) {
+            GlobeMod.LOGGER.error("[LAT][SOURCE_PROOF][FAIL] source path proof failed at x={} y={} z={}",
+                    pos.getX(), pos.getY(), pos.getZ(), e);
+            source.sendFailure(Component.literal("[latdev] sourceProof error: " + e.getMessage()));
+        }
+    }
+
+    private static boolean isSourcePathProofEnabled() {
+        return Boolean.getBoolean("latitude.debug.latdevSourceProof")
+                || Boolean.getBoolean("latitude.debug.autoCreateWorldProbe.latdevSourceProof");
     }
 
     private static int explainHere(CommandContext<CommandSourceStack> ctx) {

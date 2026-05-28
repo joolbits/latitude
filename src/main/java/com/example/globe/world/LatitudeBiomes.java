@@ -502,6 +502,7 @@ public final class LatitudeBiomes {
     private static final ThreadLocal<String> LAST_SELECTION_PATH = new ThreadLocal<>();
     private static final ThreadLocal<BiomeAdmission> LAST_BIOME_ADMISSION = new ThreadLocal<>();
     private static final ThreadLocal<WarmPoolMembershipSnapshot> LAST_WARM_POOL_MEMBERSHIP_SNAPSHOT = new ThreadLocal<>();
+    private static final AtomicReference<Registry<Biome>> SOURCE_POLICY_BIOME_REGISTRY = new AtomicReference<>();
     private static final String PATH_TAG_PICK = "tag-based pick";
     private static final String PATH_FALLBACK_PICK = "explicit fallback list pick";
     private static final String PATH_RETURN_BASE = "return base";
@@ -533,6 +534,30 @@ public final class LatitudeBiomes {
 
     public static String biomeIdPublic(Holder<Biome> entry) {
         return biomeId(entry);
+    }
+
+    public static void rememberSourcePolicyBiomeRegistry(Registry<Biome> biomes) {
+        if (biomes != null) {
+            SOURCE_POLICY_BIOME_REGISTRY.set(biomes);
+        }
+    }
+
+    public static Collection<Holder<Biome>> expandSourceCandidatePool(Collection<Holder<Biome>> basePool) {
+        Registry<Biome> biomes = SOURCE_POLICY_BIOME_REGISTRY.get();
+        if (biomes == null || basePool == null) {
+            return basePool;
+        }
+        List<Holder<Biome>> expanded = new ArrayList<>(basePool);
+        Set<Identifier> seen = biomeIdentifiers(expanded);
+        for (TagKey<Biome> tag : sourcePolicyTags()) {
+            for (Holder<Biome> entry : biomes.getTagOrEmpty(tag)) {
+                Identifier id = biomeIdentifier(entry);
+                if (id != null && !"minecraft".equals(id.getNamespace()) && seen.add(id)) {
+                    expanded.add(entry);
+                }
+            }
+        }
+        return expanded.size() == basePool.size() ? basePool : expanded;
     }
 
     public static boolean isBiomeIdPublic(Holder<Biome> entry, String id) {
@@ -5170,6 +5195,20 @@ public final class LatitudeBiomes {
         };
     }
 
+    private static List<TagKey<Biome>> sourcePolicyTags() {
+        List<TagKey<Biome>> tags = new ArrayList<>();
+        tags.addAll(landBandTags(BAND_TROPICAL));
+        tags.addAll(landBandTags(BAND_SUBTROPICAL));
+        tags.addAll(landBandTags(BAND_TEMPERATE));
+        tags.addAll(landBandTags(BAND_SUBPOLAR));
+        tags.addAll(landBandTags(BAND_POLAR));
+        tags.add(LAT_OCEAN_TROPICAL);
+        tags.add(LAT_OCEAN_TEMPERATE);
+        tags.add(LAT_OCEAN_SUBPOLAR);
+        tags.add(LAT_OCEAN_POLAR);
+        return tags;
+    }
+
     private static List<String> allowedExtraBiomeIdsForBand(int bandIndex) {
         return switch (bandIndex) {
             case BAND_TROPICAL -> List.of(
@@ -5231,6 +5270,17 @@ public final class LatitudeBiomes {
             return;
         }
         allowed.add(entry);
+    }
+
+    private static Set<Identifier> biomeIdentifiers(Collection<Holder<Biome>> entries) {
+        Set<Identifier> out = new HashSet<>();
+        for (Holder<Biome> entry : entries) {
+            Identifier id = biomeIdentifier(entry);
+            if (id != null) {
+                out.add(id);
+            }
+        }
+        return out;
     }
 
     private static boolean isInAllowedLandPool(List<Holder<Biome>> allowedPool, Holder<Biome> candidate) {
