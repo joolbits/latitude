@@ -9,6 +9,7 @@ import com.example.globe.client.GlobeWarningOverlay;
 import com.example.globe.client.LatitudeClientState;
 import com.example.globe.client.LatitudeSettingsScreen;
 import com.example.globe.client.SpawnZoneScreen;
+import com.example.globe.client.GlobeWorldSize;
 import com.example.globe.client.EwSandstormOverlayRenderer;
 import com.example.globe.client.EwStormWallRenderer;
 import com.example.globe.client.create.LatitudeCreateWorldScreen;
@@ -47,7 +48,18 @@ public class GlobeModClient implements ClientModInitializer {
     private static final int DEFAULT_AUTO_CREATE_WORLD_PROBE_POST_ENTRY_WAIT_TICKS = 60;
     private static final int DEFAULT_AUTO_CREATE_WORLD_PROBE_SPAWN_SCAN_RADIUS = 768;
     private static final int DEFAULT_AUTO_CREATE_WORLD_PROBE_SPAWN_SCAN_STEP = 32;
+    private static final int DEFAULT_AUTO_CREATE_WORLD_PROBE_LATDEV_WAIT_TICKS = 40;
+    private static final int DEFAULT_AUTO_CREATE_WORLD_PROBE_LATDEV_RADIUS = 512;
+    private static final int DEFAULT_AUTO_CREATE_WORLD_PROBE_LATDEV_SAMPLES = 1000;
+    private static final int DEFAULT_AUTO_CREATE_WORLD_PROBE_LATDEV_CUSTOM_SCAN_RADIUS = 1024;
+    private static final int DEFAULT_AUTO_CREATE_WORLD_PROBE_LATDEV_CUSTOM_SCAN_STEP = 32;
+    private static final int DEFAULT_AUTO_CREATE_WORLD_PROBE_LATDEV_TELEPORT_WAIT_TICKS = 40;
     private static boolean pendingSpawnPickerOpen;
+    private static boolean autoCreateWorldProbeLatdevCommandsSent;
+    private static boolean autoCreateWorldProbeLatdevCustomTeleportAttempted;
+    private static boolean autoCreateWorldProbeLatdevTargetVerified;
+    private static long autoCreateWorldProbeLatdevCommandsSentGameTime = Long.MIN_VALUE;
+    private static long autoCreateWorldProbeLatdevCustomTeleportGameTime = Long.MIN_VALUE;
     private static final boolean AUTO_CREATE_WORLD_PROBE_CREATIVE = isAutoCreateWorldProbeCreativeEnabled();
 
     @Override
@@ -101,6 +113,11 @@ public class GlobeModClient implements ClientModInitializer {
         ClientTickEvents.END_CLIENT_TICK.register(GlobeModClient::clientKeybindTick);
         if (isAutoCreateWorldProbeEnabled()) {
             long timeoutMs = getAutoCreateWorldProbeTimeoutMs();
+            autoCreateWorldProbeLatdevCommandsSent = false;
+            autoCreateWorldProbeLatdevCustomTeleportAttempted = false;
+            autoCreateWorldProbeLatdevTargetVerified = false;
+            autoCreateWorldProbeLatdevCommandsSentGameTime = Long.MIN_VALUE;
+            autoCreateWorldProbeLatdevCustomTeleportGameTime = Long.MIN_VALUE;
             LatitudeClientState.resetAutoCreateWorldProbe(timeoutMs);
             GlobeMod.LOGGER.info("[LAT][CWPATH] autoCreateWorldProbe enabled timeout={}s creative={}",
                     timeoutMs / 1000L, AUTO_CREATE_WORLD_PROBE_CREATIVE);
@@ -289,6 +306,7 @@ public class GlobeModClient implements ClientModInitializer {
                         return;
                     }
 
+                    applyAutoCreateWorldProbeInputs(currentLatitudeScreen);
                     if (AUTO_CREATE_WORLD_PROBE_CREATIVE && !LatitudeClientState.isAutoCreateWorldProbeCreativeApplied()) {
                         currentLatitudeScreen.probeSetCreativeMode();
                         LatitudeClientState.markAutoCreateWorldProbeCreativeApplied();
@@ -325,6 +343,34 @@ public class GlobeModClient implements ClientModInitializer {
 
             long waitTicks = getAutoCreateWorldProbePostEntryWaitTicks();
             if (client.level.getGameTime() - enteredGameTime >= waitTicks) {
+                if (isAutoCreateWorldProbeLatdevHereProbeEnabled()) {
+                    if (isAutoCreateWorldProbeLatdevPreferCustomHereEnabled()
+                            && !autoCreateWorldProbeLatdevCustomTeleportAttempted) {
+                        autoCreateWorldProbeLatdevCustomTeleportAttempted = true;
+                        if (sendAutoCreateWorldProbeCustomTeleport(client)) {
+                            return;
+                        }
+                    }
+                    if (autoCreateWorldProbeLatdevCustomTeleportGameTime != Long.MIN_VALUE) {
+                        long teleportWaitTicks = getAutoCreateWorldProbeLatdevTeleportWaitTicks();
+                        if (client.level.getGameTime() - autoCreateWorldProbeLatdevCustomTeleportGameTime < teleportWaitTicks) {
+                            return;
+                        }
+                        if (!verifyAutoCreateWorldProbeTargetBiome(client)) {
+                            LatitudeClientState.markAutoCreateWorldProbeDiagnosticsCaptured();
+                            client.stop();
+                            return;
+                        }
+                    }
+                    if (!autoCreateWorldProbeLatdevCommandsSent) {
+                        sendAutoCreateWorldProbeLatdevCommands(client);
+                        return;
+                    }
+                    long commandWaitTicks = getAutoCreateWorldProbeLatdevCommandWaitTicks();
+                    if (client.level.getGameTime() - autoCreateWorldProbeLatdevCommandsSentGameTime < commandWaitTicks) {
+                        return;
+                    }
+                }
                 captureSpawnProbeDiagnostics(client);
                 LatitudeClientState.markAutoCreateWorldProbeDiagnosticsCaptured();
                 GlobeMod.LOGGER.info("[LAT][CWPATH] spawn diagnostics captured; stopping client");
@@ -423,6 +469,106 @@ public class GlobeModClient implements ClientModInitializer {
         return Boolean.parseBoolean(explicit);
     }
 
+    private static boolean isAutoCreateWorldProbeLatdevHereProbeEnabled() {
+        return Boolean.getBoolean("latitude.debug.autoCreateWorldProbe.latdevHereProbe");
+    }
+
+    private static boolean isAutoCreateWorldProbeLatdevPreferCustomHereEnabled() {
+        return Boolean.getBoolean("latitude.debug.autoCreateWorldProbe.latdevPreferCustomHere");
+    }
+
+    private static String getAutoCreateWorldProbeWorldName() {
+        return trimmedProperty("latitude.debug.autoCreateWorldProbe.worldName");
+    }
+
+    private static String getAutoCreateWorldProbeSeed() {
+        return trimmedProperty("latitude.debug.autoCreateWorldProbe.seed");
+    }
+
+    private static GlobeWorldSize getAutoCreateWorldProbeWorldSize() {
+        String explicit = trimmedProperty("latitude.debug.autoCreateWorldProbe.worldSize");
+        if (explicit == null) {
+            return null;
+        }
+        String normalized = explicit.toUpperCase(Locale.ROOT).replace('-', '_').replace(' ', '_');
+        if ("ITTY".equals(normalized) || "XSMALL".equals(normalized)) {
+            return GlobeWorldSize.ITTY_BITTY;
+        }
+        if ("GINORMOUS".equals(normalized)) {
+            return GlobeWorldSize.MASSIVE;
+        }
+        try {
+            return GlobeWorldSize.valueOf(normalized);
+        } catch (IllegalArgumentException e) {
+            GlobeMod.LOGGER.warn("[LAT][CWPATH] invalid autoCreateWorldProbe worldSize='{}'; ignoring", explicit);
+            return null;
+        }
+    }
+
+    private static String getAutoCreateWorldProbeLatdevTargetBiomeId() {
+        String explicit = trimmedProperty("latitude.debug.autoCreateWorldProbe.latdevTargetBiomeId");
+        if (explicit != null) {
+            return explicit;
+        }
+        return trimmedProperty("latitude.debug.autoCreateWorldProbe.latdevTargetBiome");
+    }
+
+    private static boolean isAutoCreateWorldProbeLatdevTargetRequired() {
+        String explicit = trimmedProperty("latitude.debug.autoCreateWorldProbe.latdevRequireTargetBiome");
+        if (explicit != null) {
+            return Boolean.parseBoolean(explicit);
+        }
+        return getAutoCreateWorldProbeLatdevTargetBiomeId() != null;
+    }
+
+    private static long getAutoCreateWorldProbeLatdevCommandWaitTicks() {
+        return getIntProperty("latitude.debug.autoCreateWorldProbe.latdevCommandWaitTicks",
+                DEFAULT_AUTO_CREATE_WORLD_PROBE_LATDEV_WAIT_TICKS, 1, 600);
+    }
+
+    private static int getAutoCreateWorldProbeLatdevProbeRadius() {
+        return getIntProperty("latitude.debug.autoCreateWorldProbe.latdevProbeRadius",
+                DEFAULT_AUTO_CREATE_WORLD_PROBE_LATDEV_RADIUS, 32, 8192);
+    }
+
+    private static int getAutoCreateWorldProbeLatdevProbeSamples() {
+        return getIntProperty("latitude.debug.autoCreateWorldProbe.latdevProbeSamples",
+                DEFAULT_AUTO_CREATE_WORLD_PROBE_LATDEV_SAMPLES, 10, 5000);
+    }
+
+    private static int getAutoCreateWorldProbeLatdevCustomScanRadius() {
+        return getIntProperty("latitude.debug.autoCreateWorldProbe.latdevCustomScanRadius",
+                DEFAULT_AUTO_CREATE_WORLD_PROBE_LATDEV_CUSTOM_SCAN_RADIUS, 32, 4096);
+    }
+
+    private static int getAutoCreateWorldProbeLatdevCustomScanStep() {
+        return getIntProperty("latitude.debug.autoCreateWorldProbe.latdevCustomScanStep",
+                DEFAULT_AUTO_CREATE_WORLD_PROBE_LATDEV_CUSTOM_SCAN_STEP, 4, 128);
+    }
+
+    private static long getAutoCreateWorldProbeLatdevTeleportWaitTicks() {
+        return getIntProperty("latitude.debug.autoCreateWorldProbe.latdevTeleportWaitTicks",
+                DEFAULT_AUTO_CREATE_WORLD_PROBE_LATDEV_TELEPORT_WAIT_TICKS, 1, 600);
+    }
+
+    private static void applyAutoCreateWorldProbeInputs(LatitudeCreateWorldScreen screen) {
+        String worldName = getAutoCreateWorldProbeWorldName();
+        String seed = getAutoCreateWorldProbeSeed();
+        GlobeWorldSize size = getAutoCreateWorldProbeWorldSize();
+        if (worldName == null && seed == null && size == null) {
+            return;
+        }
+        screen.probeSetWorldInputs(worldName, seed, size);
+    }
+
+    private static String trimmedProperty(String name) {
+        String value = System.getProperty(name);
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        return value.trim();
+    }
+
     private static int getIntProperty(String name, int defaultValue, int minValue, int maxValue) {
         String explicit = System.getProperty(name);
         if (explicit == null || explicit.isBlank()) {
@@ -442,6 +588,150 @@ public class GlobeModClient implements ClientModInitializer {
             GlobeMod.LOGGER.warn("[LAT][CWPATH] invalid {}='{}'; using default {}", name, explicit, defaultValue);
             return defaultValue;
         }
+    }
+
+    private static Double getDoubleProperty(String name) {
+        String explicit = System.getProperty(name);
+        if (explicit == null || explicit.isBlank()) {
+            return null;
+        }
+        try {
+            return Double.parseDouble(explicit.trim());
+        } catch (NumberFormatException e) {
+            GlobeMod.LOGGER.warn("[LAT][CWPATH] invalid {}='{}'; ignoring configured target", name, explicit);
+            return null;
+        }
+    }
+
+    private static boolean sendAutoCreateWorldProbeCustomTeleport(Minecraft client) {
+        if (client.level == null || client.player == null || client.player.connection == null) {
+            return false;
+        }
+        if (sendAutoCreateWorldProbeConfiguredTeleport(client)) {
+            return true;
+        }
+        if (getAutoCreateWorldProbeLatdevTargetBiomeId() != null) {
+            GlobeMod.LOGGER.error("[LAT][CWPATH][PROOF_FAIL] target biome was requested but configured target teleport was unavailable; not falling back to loaded-chunk scan");
+            client.stop();
+            return true;
+        }
+        int radius = getAutoCreateWorldProbeLatdevCustomScanRadius();
+        int step = getAutoCreateWorldProbeLatdevCustomScanStep();
+        CustomBiomeHit hit = scanForNearestCustomBiome(client.level, client.player.blockPosition(), radius, step);
+        if (hit == null) {
+            GlobeMod.LOGGER.info("[LAT][CWPATH] no loaded custom biome found before latdev proof commands radius={} step={}",
+                    radius, step);
+            return false;
+        }
+        String command = String.format(Locale.ROOT, "tp @s %.1f ~ %.1f", hit.x + 0.5, hit.z + 0.5);
+        GlobeMod.LOGGER.info("[LAT][CWPATH] teleporting player to loaded custom biome before latdev proof: biome={} x={} z={} dist={}",
+                hit.biomeId, hit.x, hit.z, String.format(Locale.ROOT, "%.1f", hit.distanceBlocks));
+        client.player.connection.sendCommand(command);
+        autoCreateWorldProbeLatdevCustomTeleportGameTime = client.level.getGameTime();
+        return true;
+    }
+
+    private static boolean sendAutoCreateWorldProbeConfiguredTeleport(Minecraft client) {
+        Double x = getDoubleProperty("latitude.debug.autoCreateWorldProbe.latdevTargetX");
+        Double z = getDoubleProperty("latitude.debug.autoCreateWorldProbe.latdevTargetZ");
+        if (x == null || z == null) {
+            return false;
+        }
+        Double y = getDoubleProperty("latitude.debug.autoCreateWorldProbe.latdevTargetY");
+        double targetY = y != null ? y : client.player.getY();
+        String expectedBiome = getAutoCreateWorldProbeLatdevTargetBiomeId();
+        String command = String.format(Locale.ROOT, "tp @s %.1f %.1f %.1f", x, targetY, z);
+        GlobeMod.LOGGER.info("[LAT][CWPATH] teleporting player to configured latdev proof target: x={} y={} z={} expectedBiome={}",
+                String.format(Locale.ROOT, "%.1f", x),
+                String.format(Locale.ROOT, "%.1f", targetY),
+                String.format(Locale.ROOT, "%.1f", z),
+                expectedBiome != null ? expectedBiome : "<unspecified>");
+        client.player.connection.sendCommand(command);
+        autoCreateWorldProbeLatdevCustomTeleportGameTime = client.level.getGameTime();
+        return true;
+    }
+
+    private static boolean verifyAutoCreateWorldProbeTargetBiome(Minecraft client) {
+        String expectedBiome = getAutoCreateWorldProbeLatdevTargetBiomeId();
+        if (expectedBiome == null || !isAutoCreateWorldProbeLatdevTargetRequired()) {
+            return true;
+        }
+        if (autoCreateWorldProbeLatdevTargetVerified) {
+            return true;
+        }
+        if (client.level == null || client.player == null) {
+            GlobeMod.LOGGER.error("[LAT][CWPATH][PROOF_FAIL] cannot verify target biome because client world/player is unavailable expected={}",
+                    expectedBiome);
+            return false;
+        }
+        String actualBiome = biomeId(client.level.getBiome(client.player.blockPosition()));
+        if (expectedBiome.equals(actualBiome)) {
+            autoCreateWorldProbeLatdevTargetVerified = true;
+            GlobeMod.LOGGER.info("[LAT][CWPATH] configured latdev proof target verified: biome={} x={} y={} z={}",
+                    actualBiome,
+                    String.format(Locale.ROOT, "%.1f", client.player.getX()),
+                    String.format(Locale.ROOT, "%.1f", client.player.getY()),
+                    String.format(Locale.ROOT, "%.1f", client.player.getZ()));
+            return true;
+        }
+        GlobeMod.LOGGER.error("[LAT][CWPATH][PROOF_FAIL] configured latdev proof target biome mismatch expected={} actual={} x={} y={} z={}",
+                expectedBiome,
+                actualBiome,
+                String.format(Locale.ROOT, "%.1f", client.player.getX()),
+                String.format(Locale.ROOT, "%.1f", client.player.getY()),
+                String.format(Locale.ROOT, "%.1f", client.player.getZ()));
+        return false;
+    }
+
+    private static void sendAutoCreateWorldProbeLatdevCommands(Minecraft client) {
+        if (client.level == null || client.player == null || client.player.connection == null) {
+            return;
+        }
+        int radius = getAutoCreateWorldProbeLatdevProbeRadius();
+        int samples = getAutoCreateWorldProbeLatdevProbeSamples();
+        String probeCommand = "latdev probe " + radius + " " + samples;
+        GlobeMod.LOGGER.info("[LAT][CWPATH] sending player latdev proof commands: latdev here; {}", probeCommand);
+        client.player.connection.sendCommand("latdev here");
+        client.player.connection.sendCommand(probeCommand);
+        autoCreateWorldProbeLatdevCommandsSent = true;
+        autoCreateWorldProbeLatdevCommandsSentGameTime = client.level.getGameTime();
+    }
+
+    private static CustomBiomeHit scanForNearestCustomBiome(net.minecraft.world.level.Level world, BlockPos centerPos, int radiusBlocks, int stepBlocks) {
+        if (world == null || centerPos == null) {
+            return null;
+        }
+        int radius = Math.max(1, radiusBlocks);
+        int step = Math.max(1, stepBlocks);
+        int centerX = centerPos.getX();
+        int centerY = centerPos.getY();
+        int centerZ = centerPos.getZ();
+        CustomBiomeHit best = null;
+
+        for (int dz = -radius; dz <= radius; dz += step) {
+            for (int dx = -radius; dx <= radius; dx += step) {
+                int x = centerX + dx;
+                int z = centerZ + dz;
+                int chunkX = Math.floorDiv(x, 16);
+                int chunkZ = Math.floorDiv(z, 16);
+                if (!world.hasChunk(chunkX, chunkZ)) {
+                    continue;
+                }
+
+                BlockPos samplePos = new BlockPos(x, centerY, z);
+                String id = biomeId(world.getBiome(samplePos));
+                if (id.equals("unknown") || id.startsWith("minecraft:")) {
+                    continue;
+                }
+
+                double dist = Math.hypot(dx, dz);
+                if (best == null || dist < best.distanceBlocks) {
+                    best = new CustomBiomeHit(x, z, dist, id);
+                }
+            }
+        }
+
+        return best;
     }
 
     private static void captureSpawnProbeDiagnostics(Minecraft client) {
@@ -597,6 +887,9 @@ public class GlobeModClient implements ClientModInitializer {
     }
 
     private record MangroveHit(int x, int z, double distanceBlocks, String biomeId, double latDeg, LatitudeBands.Band band, String oceanContext) {
+    }
+
+    private record CustomBiomeHit(int x, int z, double distanceBlocks, String biomeId) {
     }
 
     private static void ewSandstormClientTick(Minecraft client, GlobeClientState.EwStormStage stage) {
