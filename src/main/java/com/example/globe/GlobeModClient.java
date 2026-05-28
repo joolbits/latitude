@@ -36,12 +36,22 @@ import net.minecraft.core.particles.BlockParticleOption;
 import net.minecraft.core.particles.ParticleOptions;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.resources.Identifier;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.util.RandomSource;
+import net.minecraft.world.entity.Relative;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.border.WorldBorder;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.chunk.ChunkGenerator;
+import net.minecraft.world.level.chunk.status.ChunkStatus;
+import net.minecraft.world.level.levelgen.Heightmap;
+import net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator;
+import net.minecraft.world.level.levelgen.RandomState;
 import net.minecraft.world.level.storage.LevelData;
+import java.util.EnumSet;
 import java.util.Locale;
+import java.util.UUID;
 
 public class GlobeModClient implements ClientModInitializer {
     private static final Identifier MANGROVE_SWAMP_ID = Identifier.fromNamespaceAndPath("minecraft", "mangrove_swamp");
@@ -58,6 +68,12 @@ public class GlobeModClient implements ClientModInitializer {
     private static boolean autoCreateWorldProbeLatdevCommandsSent;
     private static boolean autoCreateWorldProbeLatdevCustomTeleportAttempted;
     private static boolean autoCreateWorldProbeLatdevTargetVerified;
+    private static volatile boolean autoCreateWorldProbeLatdevServerTargetPending;
+    private static volatile boolean autoCreateWorldProbeLatdevServerTargetComplete;
+    private static volatile boolean autoCreateWorldProbeLatdevServerTargetFailed;
+    private static boolean autoCreateWorldProbePauseOnLostFocusOriginalValue = true;
+    private static boolean autoCreateWorldProbePauseOnLostFocusCaptured;
+    private static boolean autoCreateWorldProbePauseOnLostFocusDisabledLogged;
     private static long autoCreateWorldProbeLatdevCommandsSentGameTime = Long.MIN_VALUE;
     private static long autoCreateWorldProbeLatdevCustomTeleportGameTime = Long.MIN_VALUE;
     private static final boolean AUTO_CREATE_WORLD_PROBE_CREATIVE = isAutoCreateWorldProbeCreativeEnabled();
@@ -75,6 +91,11 @@ public class GlobeModClient implements ClientModInitializer {
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
             GlobeClientState.setGlobeWorld(false);
             pendingSpawnPickerOpen = false;
+            autoCreateWorldProbeLatdevServerTargetPending = false;
+            autoCreateWorldProbeLatdevServerTargetComplete = false;
+            autoCreateWorldProbeLatdevServerTargetFailed = false;
+            autoCreateWorldProbePauseOnLostFocusCaptured = false;
+            autoCreateWorldProbePauseOnLostFocusDisabledLogged = false;
         });
 
         ClientPlayNetworking.registerGlobalReceiver(GlobeNet.GlobeStatePayload.ID, (payload, context) -> {
@@ -116,6 +137,11 @@ public class GlobeModClient implements ClientModInitializer {
             autoCreateWorldProbeLatdevCommandsSent = false;
             autoCreateWorldProbeLatdevCustomTeleportAttempted = false;
             autoCreateWorldProbeLatdevTargetVerified = false;
+            autoCreateWorldProbeLatdevServerTargetPending = false;
+            autoCreateWorldProbeLatdevServerTargetComplete = false;
+            autoCreateWorldProbeLatdevServerTargetFailed = false;
+            autoCreateWorldProbePauseOnLostFocusCaptured = false;
+            autoCreateWorldProbePauseOnLostFocusDisabledLogged = false;
             autoCreateWorldProbeLatdevCommandsSentGameTime = Long.MIN_VALUE;
             autoCreateWorldProbeLatdevCustomTeleportGameTime = Long.MIN_VALUE;
             LatitudeClientState.resetAutoCreateWorldProbe(timeoutMs);
@@ -243,13 +269,15 @@ public class GlobeModClient implements ClientModInitializer {
             return;
         }
 
+        disableAutoCreateWorldProbePauseOnLostFocus(client);
+
         long timeoutMs = LatitudeClientState.getAutoCreateWorldProbeTimeoutMs();
         long startMs = LatitudeClientState.getAutoCreateWorldProbeStartMs();
         if (startMs > 0L && System.currentTimeMillis() - startMs >= timeoutMs) {
             if (!LatitudeClientState.isAutoCreateWorldProbeTimedOut()) {
                 emitAutoCreateWorldProbeTimeoutDiagnostics(client, startMs, timeoutMs);
                 LatitudeClientState.markAutoCreateWorldProbeTimedOut();
-                client.stop();
+                stopAutoCreateWorldProbeClient(client);
             }
             return;
         }
@@ -343,6 +371,9 @@ public class GlobeModClient implements ClientModInitializer {
 
             long waitTicks = getAutoCreateWorldProbePostEntryWaitTicks();
             if (client.level.getGameTime() - enteredGameTime >= waitTicks) {
+                if (waitForAutoCreateWorldProbePlayableClient(client)) {
+                    return;
+                }
                 if (isAutoCreateWorldProbeLatdevHereProbeEnabled()) {
                     if (isAutoCreateWorldProbeLatdevPreferCustomHereEnabled()
                             && !autoCreateWorldProbeLatdevCustomTeleportAttempted) {
@@ -351,6 +382,9 @@ public class GlobeModClient implements ClientModInitializer {
                             return;
                         }
                     }
+                    if (waitForAutoCreateWorldProbeServerTargetSetup(client)) {
+                        return;
+                    }
                     if (autoCreateWorldProbeLatdevCustomTeleportGameTime != Long.MIN_VALUE) {
                         long teleportWaitTicks = getAutoCreateWorldProbeLatdevTeleportWaitTicks();
                         if (client.level.getGameTime() - autoCreateWorldProbeLatdevCustomTeleportGameTime < teleportWaitTicks) {
@@ -358,7 +392,7 @@ public class GlobeModClient implements ClientModInitializer {
                         }
                         if (!verifyAutoCreateWorldProbeTargetBiome(client)) {
                             LatitudeClientState.markAutoCreateWorldProbeDiagnosticsCaptured();
-                            client.stop();
+                            stopAutoCreateWorldProbeClient(client);
                             return;
                         }
                     }
@@ -374,13 +408,44 @@ public class GlobeModClient implements ClientModInitializer {
                 captureSpawnProbeDiagnostics(client);
                 LatitudeClientState.markAutoCreateWorldProbeDiagnosticsCaptured();
                 GlobeMod.LOGGER.info("[LAT][CWPATH] spawn diagnostics captured; stopping client");
-                client.stop();
+                stopAutoCreateWorldProbeClient(client);
             }
         }
 
         if (LatitudeClientState.isAutoCreateWorldProbeTimedOut()) {
             return;
         }
+    }
+
+    private static void disableAutoCreateWorldProbePauseOnLostFocus(Minecraft client) {
+        if (client == null || client.options == null) {
+            return;
+        }
+        if (!autoCreateWorldProbePauseOnLostFocusCaptured) {
+            autoCreateWorldProbePauseOnLostFocusOriginalValue = client.options.pauseOnLostFocus;
+            autoCreateWorldProbePauseOnLostFocusCaptured = true;
+        }
+        if (!client.options.pauseOnLostFocus) {
+            return;
+        }
+        client.options.pauseOnLostFocus = false;
+        if (!autoCreateWorldProbePauseOnLostFocusDisabledLogged) {
+            autoCreateWorldProbePauseOnLostFocusDisabledLogged = true;
+            GlobeMod.LOGGER.info("[LAT][CWPATH] disabled pause-on-lost-focus for unattended proof harness");
+        }
+    }
+
+    private static void stopAutoCreateWorldProbeClient(Minecraft client) {
+        restoreAutoCreateWorldProbePauseOnLostFocus(client);
+        client.stop();
+    }
+
+    private static void restoreAutoCreateWorldProbePauseOnLostFocus(Minecraft client) {
+        if (!autoCreateWorldProbePauseOnLostFocusCaptured || client == null || client.options == null) {
+            return;
+        }
+        client.options.pauseOnLostFocus = autoCreateWorldProbePauseOnLostFocusOriginalValue;
+        autoCreateWorldProbePauseOnLostFocusCaptured = false;
     }
 
     private static void emitAutoCreateWorldProbeTimeoutDiagnostics(Minecraft client, long startMs, long timeoutMs) {
@@ -612,7 +677,7 @@ public class GlobeModClient implements ClientModInitializer {
         }
         if (getAutoCreateWorldProbeLatdevTargetBiomeId() != null) {
             GlobeMod.LOGGER.error("[LAT][CWPATH][PROOF_FAIL] target biome was requested but configured target teleport was unavailable; not falling back to loaded-chunk scan");
-            client.stop();
+            stopAutoCreateWorldProbeClient(client);
             return true;
         }
         int radius = getAutoCreateWorldProbeLatdevCustomScanRadius();
@@ -640,6 +705,9 @@ public class GlobeModClient implements ClientModInitializer {
         Double y = getDoubleProperty("latitude.debug.autoCreateWorldProbe.latdevTargetY");
         double targetY = y != null ? y : client.player.getY();
         String expectedBiome = getAutoCreateWorldProbeLatdevTargetBiomeId();
+        if (sendAutoCreateWorldProbeServerSurfaceTeleport(client, x, y, z, expectedBiome)) {
+            return true;
+        }
         String command = String.format(Locale.ROOT, "tp @s %.1f %.1f %.1f", x, targetY, z);
         GlobeMod.LOGGER.info("[LAT][CWPATH] teleporting player to configured latdev proof target: x={} y={} z={} expectedBiome={}",
                 String.format(Locale.ROOT, "%.1f", x),
@@ -649,6 +717,126 @@ public class GlobeModClient implements ClientModInitializer {
         client.player.connection.sendCommand(command);
         autoCreateWorldProbeLatdevCustomTeleportGameTime = client.level.getGameTime();
         return true;
+    }
+
+    private static boolean waitForAutoCreateWorldProbePlayableClient(Minecraft client) {
+        return client.screen != null;
+    }
+
+    private static boolean sendAutoCreateWorldProbeServerSurfaceTeleport(Minecraft client,
+                                                                         double x,
+                                                                         Double requestedY,
+                                                                         double z,
+                                                                         String expectedBiome) {
+        IntegratedServer server = client.getSingleplayerServer();
+        if (server == null || client.player == null) {
+            return false;
+        }
+
+        UUID playerId = client.player.getUUID();
+        int blockX = (int) Math.floor(x);
+        int blockZ = (int) Math.floor(z);
+        int chunkX = Math.floorDiv(blockX, 16);
+        int chunkZ = Math.floorDiv(blockZ, 16);
+        autoCreateWorldProbeLatdevServerTargetPending = true;
+        autoCreateWorldProbeLatdevServerTargetComplete = false;
+        autoCreateWorldProbeLatdevServerTargetFailed = false;
+        autoCreateWorldProbeLatdevCustomTeleportGameTime = Long.MIN_VALUE;
+        GlobeMod.LOGGER.info("[LAT][CWPATH] configured proof target queued for server-safe surface teleport chunk={},{} blockX={} requestedY={} blockZ={} expectedBiome={}",
+                chunkX,
+                chunkZ,
+                blockX,
+                requestedY != null ? String.format(Locale.ROOT, "%.1f", requestedY) : "<surface>",
+                blockZ,
+                expectedBiome != null ? expectedBiome : "<unspecified>");
+
+        server.execute(() -> {
+            try {
+                ServerPlayer serverPlayer = server.getPlayerList().getPlayer(playerId);
+                if (serverPlayer == null) {
+                    autoCreateWorldProbeLatdevServerTargetFailed = true;
+                    GlobeMod.LOGGER.error("[LAT][CWPATH][PROOF_FAIL] configured proof target surface teleport could not find server player expectedBiome={}",
+                            expectedBiome != null ? expectedBiome : "<unspecified>");
+                    return;
+                }
+
+                ServerLevel level = serverPlayer.level();
+                ChunkGenerator generator = level.getChunkSource().getGenerator();
+                if (!(generator instanceof NoiseBasedChunkGenerator noiseGenerator)) {
+                    autoCreateWorldProbeLatdevServerTargetFailed = true;
+                    GlobeMod.LOGGER.error("[LAT][CWPATH][PROOF_FAIL] configured proof target surface teleport requires a noise chunk generator expectedBiome={}",
+                            expectedBiome != null ? expectedBiome : "<unspecified>");
+                    return;
+                }
+
+                RandomState randomState = level.getChunkSource().randomState();
+                int loadedChunks = 0;
+                for (int dz = -1; dz <= 1; dz++) {
+                    for (int dx = -1; dx <= 1; dx++) {
+                        level.getChunkSource().getChunk(chunkX + dx, chunkZ + dz, ChunkStatus.FULL, true);
+                        loadedChunks++;
+                    }
+                }
+                int topY = noiseGenerator.getBaseHeight(
+                        blockX, blockZ, Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, level, randomState);
+                int worldMaxY = level.getMinY() + level.getHeight() - 1;
+                int safeY = Math.max(level.getMinY() + 1, Math.min(topY + 1, worldMaxY));
+                serverPlayer.teleportTo(level,
+                        x,
+                        safeY,
+                        z,
+                        EnumSet.noneOf(Relative.class),
+                        serverPlayer.getYRot(),
+                        serverPlayer.getXRot(),
+                        true);
+                serverPlayer.setDeltaMovement(0.0, 0.0, 0.0);
+                serverPlayer.fallDistance = 0.0F;
+                autoCreateWorldProbeLatdevServerTargetComplete = true;
+                GlobeMod.LOGGER.info("[LAT][CWPATH] server-safe configured proof target teleport complete chunk={},{} loadedChunks={} x={} requestedY={} safeY={} z={} biome={} expectedBiome={}",
+                        chunkX,
+                        chunkZ,
+                        loadedChunks,
+                        String.format(Locale.ROOT, "%.1f", x),
+                        requestedY != null ? String.format(Locale.ROOT, "%.1f", requestedY) : "<surface>",
+                        safeY,
+                        String.format(Locale.ROOT, "%.1f", z),
+                        "<deferred>",
+                        expectedBiome != null ? expectedBiome : "<unspecified>");
+            } catch (RuntimeException e) {
+                autoCreateWorldProbeLatdevServerTargetFailed = true;
+                GlobeMod.LOGGER.error("[LAT][CWPATH][PROOF_FAIL] configured proof target surface teleport failed chunk={},{} expectedBiome={}",
+                        chunkX,
+                        chunkZ,
+                        expectedBiome != null ? expectedBiome : "<unspecified>",
+                        e);
+            } finally {
+                autoCreateWorldProbeLatdevServerTargetPending = false;
+            }
+        });
+        return true;
+    }
+
+    private static boolean waitForAutoCreateWorldProbeServerTargetSetup(Minecraft client) {
+        if (autoCreateWorldProbeLatdevServerTargetFailed) {
+            GlobeMod.LOGGER.error("[LAT][CWPATH][PROOF_FAIL] configured proof target surface teleport failed before biome verification");
+            LatitudeClientState.markAutoCreateWorldProbeDiagnosticsCaptured();
+            stopAutoCreateWorldProbeClient(client);
+            return true;
+        }
+        if (autoCreateWorldProbeLatdevServerTargetPending) {
+            return true;
+        }
+        if (autoCreateWorldProbeLatdevServerTargetComplete) {
+            if (client.level == null) {
+                return true;
+            }
+            autoCreateWorldProbeLatdevServerTargetComplete = false;
+            autoCreateWorldProbeLatdevCustomTeleportGameTime = client.level.getGameTime();
+            GlobeMod.LOGGER.info("[LAT][CWPATH] client observed server-safe proof target teleport complete; waiting {} ticks before target biome verification",
+                    getAutoCreateWorldProbeLatdevTeleportWaitTicks());
+            return true;
+        }
+        return false;
     }
 
     private static boolean verifyAutoCreateWorldProbeTargetBiome(Minecraft client) {

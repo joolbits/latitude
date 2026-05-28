@@ -1135,6 +1135,14 @@ public final class LatitudeBiomes {
         return false;
     }
 
+    private static boolean shouldUseConstantSurfaceYForWorldgen(String callerContext) {
+        if (callerContext == null || !shouldSkipPreviewTerrain(callerContext)) {
+            return false;
+        }
+        String normalized = callerContext.trim().toUpperCase(java.util.Locale.ROOT);
+        return "MIXIN".equals(normalized) || "CAVE_CLAMP".equals(normalized);
+    }
+
     /**
      * True for caller contexts that never provide noiseConfig/heightView:
      * atlas export ("SOURCE"), headless sampler tools ("ATLAS_SAMPLER").
@@ -2376,7 +2384,10 @@ public final class LatitudeBiomes {
     public static Holder<Biome> pick(Registry<Biome> biomeRegistry, Holder<Biome> base, int blockX, int blockZ, int blockY, int borderRadiusBlocks,
                                             Climate.Sampler sampler, String callerContext,
                                             NoiseBasedChunkGenerator generator, RandomState noiseConfig, LevelHeightAccessor heightView) {
-        int columnDecisionY = surfaceDecisionY(generator, noiseConfig, heightView, blockX, blockZ);
+        boolean liveWorldgenFastPath = shouldUseConstantSurfaceYForWorldgen(callerContext);
+        int columnDecisionY = liveWorldgenFastPath
+                ? SURFACE_CLASSIFY_Y
+                : surfaceDecisionY(generator, noiseConfig, heightView, blockX, blockZ);
         int biomeY = (blockY < columnDecisionY - 16) ? blockY : columnDecisionY;
         assertSurfaceY(biomeY);
         int activeRadius = ACTIVE_RADIUS_BLOCKS;
@@ -2437,7 +2448,7 @@ public final class LatitudeBiomes {
         // available (MIXIN/CAVE_CLAMP), do a targeted probe so terrain must confirm before admission,
         // mirroring the polar probe below.  Atlas/headless callers (hasPreviewTerrainInputs=false)
         // remain noise-only, matching polar in atlas context.
-        if (skipPreview && landBandIndex == BAND_TEMPERATE && mountainNoiseLike && hasPreviewTerrainInputs) {
+        if (skipPreview && landBandIndex == BAND_TEMPERATE && mountainNoiseLike && hasPreviewTerrainInputs && !liveWorldgenFastPath) {
             PreviewTerrain temperateProbe = previewTerrain(generator, noiseConfig, heightView, blockX, blockZ);
             previewHeightHigh     = temperateProbe.centerHeight >= (seaLevel + PREVIEW_HEIGHT_MARGIN_BLOCKS);
             previewRuggedHigh     = temperateProbe.robustDelta >= WINDSWEPT_RUGGED_THRESH;
@@ -2458,7 +2469,7 @@ public final class LatitudeBiomes {
         // so that actual mountain terrain can earn polar mountain authority.
         int polarProbeHeight = preview.centerHeight;
         int polarProbeDelta  = preview.robustDelta;
-        if (skipPreview && landBandIndex >= BAND_POLAR && polarMountainNoiseLike && hasPreviewTerrainInputs) {
+        if (skipPreview && landBandIndex >= BAND_POLAR && polarMountainNoiseLike && hasPreviewTerrainInputs && !liveWorldgenFastPath) {
             PreviewTerrain polarProbe = previewTerrain(generator, noiseConfig, heightView, blockX, blockZ);
             polarProbeHeight = polarProbe.centerHeight;
             polarProbeDelta  = polarProbe.robustDelta;
@@ -2475,7 +2486,7 @@ public final class LatitudeBiomes {
         boolean oceanAuthority = oceanDistance == 0;
         // Veto coarse ODF ocean authority when real terrain is clearly raised land
         if (oceanAuthority && !base.is(BiomeTags.IS_OCEAN)
-                && generator != null && noiseConfig != null && heightView != null) {
+                && generator != null && noiseConfig != null && heightView != null && !liveWorldgenFastPath) {
             int realHeight = previewHeight(generator, noiseConfig, heightView, blockX & ~3, blockZ & ~3);
             if (realHeight >= seaLevel) {
                 oceanAuthority = false;
@@ -2613,7 +2624,7 @@ public final class LatitudeBiomes {
         if (skipPreview && landBandIndex >= BAND_SUBPOLAR && chosen != null) {
             int gateHeight = preview.centerHeight;
             int gateDelta = preview.robustDelta;
-            if (generator != null && noiseConfig != null && heightView != null) {
+            if (generator != null && noiseConfig != null && heightView != null && !liveWorldgenFastPath) {
                 gateHeight = previewHeight(generator, noiseConfig, heightView, blockX & ~3, blockZ & ~3);
             }
             chosen = applyTerrainCompatibilityGate(
@@ -3029,7 +3040,10 @@ public final class LatitudeBiomes {
     public static Holder<Biome> pick(Collection<Holder<Biome>> biomePool, Holder<Biome> base, int blockX, int blockZ, int blockY, int borderRadiusBlocks,
                                             Climate.Sampler sampler, String callerContext,
                                             NoiseBasedChunkGenerator generator, RandomState noiseConfig, LevelHeightAccessor heightView) {
-        int columnDecisionY = surfaceDecisionY(generator, noiseConfig, heightView, blockX, blockZ);
+        boolean liveWorldgenFastPath = shouldUseConstantSurfaceYForWorldgen(callerContext);
+        int columnDecisionY = liveWorldgenFastPath
+                ? SURFACE_CLASSIFY_Y
+                : surfaceDecisionY(generator, noiseConfig, heightView, blockX, blockZ);
         int biomeY = (blockY < columnDecisionY - 16) ? blockY : columnDecisionY;
         assertSurfaceY(biomeY);
         int activeRadius = ACTIVE_RADIUS_BLOCKS;
@@ -3085,7 +3099,7 @@ public final class LatitudeBiomes {
         // available (MIXIN/CAVE_CLAMP), do a targeted probe so terrain must confirm before admission,
         // mirroring the polar probe below.  Atlas/headless callers (hasPreviewTerrainInputs=false)
         // remain noise-only, matching polar in atlas context.
-        if (skipPreview && landBandIndex == BAND_TEMPERATE && mountainNoiseLike && hasPreviewTerrainInputs) {
+        if (skipPreview && landBandIndex == BAND_TEMPERATE && mountainNoiseLike && hasPreviewTerrainInputs && !liveWorldgenFastPath) {
             PreviewTerrain temperateProbe = previewTerrain(generator, noiseConfig, heightView, blockX, blockZ);
             previewHeightHigh     = temperateProbe.centerHeight >= (seaLevel + PREVIEW_HEIGHT_MARGIN_BLOCKS);
             previewRuggedHigh     = temperateProbe.robustDelta >= WINDSWEPT_RUGGED_THRESH;
@@ -3106,7 +3120,7 @@ public final class LatitudeBiomes {
         // so that actual mountain terrain can earn polar mountain authority.
         int polarProbeHeight = preview.centerHeight;
         int polarProbeDelta  = preview.robustDelta;
-        if (skipPreview && landBandIndex >= BAND_POLAR && polarMountainNoiseLike && hasPreviewTerrainInputs) {
+        if (skipPreview && landBandIndex >= BAND_POLAR && polarMountainNoiseLike && hasPreviewTerrainInputs && !liveWorldgenFastPath) {
             PreviewTerrain polarProbe = previewTerrain(generator, noiseConfig, heightView, blockX, blockZ);
             polarProbeHeight = polarProbe.centerHeight;
             polarProbeDelta  = polarProbe.robustDelta;
@@ -3123,7 +3137,7 @@ public final class LatitudeBiomes {
         boolean oceanAuthority = oceanDistance == 0;
         // Veto coarse ODF ocean authority when real terrain is clearly raised land
         if (oceanAuthority && !base.is(BiomeTags.IS_OCEAN)
-                && generator != null && noiseConfig != null && heightView != null) {
+                && generator != null && noiseConfig != null && heightView != null && !liveWorldgenFastPath) {
             int realHeight = previewHeight(generator, noiseConfig, heightView, blockX & ~3, blockZ & ~3);
             if (realHeight >= seaLevel) {
                 oceanAuthority = false;
@@ -3232,7 +3246,7 @@ public final class LatitudeBiomes {
         if (skipPreview && landBandIndex >= BAND_SUBPOLAR && chosen != null) {
             int gateHeight = preview.centerHeight;
             int gateDelta = preview.robustDelta;
-            if (generator != null && noiseConfig != null && heightView != null) {
+            if (generator != null && noiseConfig != null && heightView != null && !liveWorldgenFastPath) {
                 gateHeight = previewHeight(generator, noiseConfig, heightView, blockX & ~3, blockZ & ~3);
             }
             chosen = applyTerrainCompatibilityGate(
