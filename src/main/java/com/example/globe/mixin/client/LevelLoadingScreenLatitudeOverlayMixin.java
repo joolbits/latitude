@@ -189,7 +189,8 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
     @Inject(method = "onClose", at = @At("HEAD"), cancellable = true)
     private void globe$clearLoadingFlag(CallbackInfo ci) {
         if (LatitudeClientState.isLatitudeWorldLoading()) {
-            globe$clearLoadingFlagNow(false);
+            ci.cancel();
+            return;
         }
         long sinceExpedition = LatitudeClientState.elapsedSinceExpeditionMs();
         if (sinceExpedition < 0L) {
@@ -357,6 +358,16 @@ class LatitudeLoadingClientTickMixin {
     private static final Logger GLOBE_LOGGER = LoggerFactory.getLogger("LatitudeLoadingOverlay");
     @Unique
     private static final long FAIL_SAFE_CLEAR_MS = 10 * 60 * 1000L;
+    @Unique
+    private static final long PLAYABLE_READY_MAX_HOLD_MS = 15_000L;
+    @Unique
+    private static final int PLAYABLE_READY_MIN_PLAYER_TICKS = 20;
+    @Unique
+    private static final int PLAYABLE_READY_CHUNK_RADIUS = 1;
+    @Unique
+    private long globe$clientReadyObservedAtMs = Long.MIN_VALUE;
+    @Unique
+    private long globe$lastReadinessWaitLogTick = Long.MIN_VALUE;
 
     @Shadow
     public ClientLevel level;
@@ -367,6 +378,8 @@ class LatitudeLoadingClientTickMixin {
     @Inject(method = "tick", at = @At("TAIL"))
     private void globe$clearLoadingOnClientReadyTick(CallbackInfo ci) {
         if (!LatitudeClientState.isLatitudeWorldLoading()) {
+            globe$clientReadyObservedAtMs = Long.MIN_VALUE;
+            globe$lastReadinessWaitLogTick = Long.MIN_VALUE;
             return;
         }
 
@@ -375,6 +388,8 @@ class LatitudeLoadingClientTickMixin {
             long clearedAt = LatitudeClientState.clearLatitudeLoadingState();
             GLOBE_LOGGER.info("[Latitude lifecycle] bespoke overlay cleared by fail-safe — {}ms since beginExpedition",
                     clearedAt);
+            globe$clientReadyObservedAtMs = Long.MIN_VALUE;
+            globe$lastReadinessWaitLogTick = Long.MIN_VALUE;
             return;
         }
 
@@ -386,20 +401,66 @@ class LatitudeLoadingClientTickMixin {
             GLOBE_LOGGER.info("[Latitude lifecycle] player/world became client-ready — {}ms since beginExpedition",
                     LatitudeClientState.elapsedSinceExpeditionMs());
         }
+        if (globe$clientReadyObservedAtMs == Long.MIN_VALUE) {
+            globe$clientReadyObservedAtMs = Util.getMillis();
+        }
 
         Minecraft client = (Minecraft) (Object) this;
-        boolean pastFirstPlayerTick = this.player.tickCount > 1;
-        boolean noLongerLoadingScreen = !(client.screen instanceof LevelLoadingScreen);
-        if (!pastFirstPlayerTick || !noLongerLoadingScreen) {
+        boolean loadingScreenVisible = client.screen instanceof LevelLoadingScreen;
+        boolean playerSettled = this.player.tickCount >= PLAYABLE_READY_MIN_PLAYER_TICKS;
+        boolean spawnChunksReady = globe$clientSpawnChunkRingReady();
+        long clientReadyHoldMs = Math.max(0L, Util.getMillis() - globe$clientReadyObservedAtMs);
+        boolean readinessTimedOut = clientReadyHoldMs >= PLAYABLE_READY_MAX_HOLD_MS;
+        if ((!playerSettled || !spawnChunksReady) && !readinessTimedOut) {
+            globe$logReadinessWait(playerSettled, spawnChunksReady, loadingScreenVisible, clientReadyHoldMs);
             return;
         }
-        GLOBE_LOGGER.info("[Latitude lifecycle] first safe playable tick — {}ms since beginExpedition (playerAge={}, loadingScreenVisible={})",
+        GLOBE_LOGGER.info("[Latitude lifecycle] first safe playable tick — {}ms since beginExpedition (playerAge={}, loadingScreenVisible={}, spawnChunksReady={}, readyHoldMs={}, timedOut={})",
                 LatitudeClientState.elapsedSinceExpeditionMs(),
                 this.player.tickCount,
-                !noLongerLoadingScreen);
+                loadingScreenVisible,
+                spawnChunksReady,
+                clientReadyHoldMs,
+                readinessTimedOut);
 
         long clearedAt = LatitudeClientState.clearLatitudeLoadingState();
         GLOBE_LOGGER.info("[Latitude lifecycle] bespoke overlay cleared by normal client-ready path — {}ms since beginExpedition",
                 clearedAt);
+        globe$clientReadyObservedAtMs = Long.MIN_VALUE;
+        globe$lastReadinessWaitLogTick = Long.MIN_VALUE;
+    }
+
+    @Unique
+    private boolean globe$clientSpawnChunkRingReady() {
+        int chunkX = Math.floorDiv(Mth.floor(this.player.getX()), 16);
+        int chunkZ = Math.floorDiv(Mth.floor(this.player.getZ()), 16);
+        for (int dz = -PLAYABLE_READY_CHUNK_RADIUS; dz <= PLAYABLE_READY_CHUNK_RADIUS; dz++) {
+            for (int dx = -PLAYABLE_READY_CHUNK_RADIUS; dx <= PLAYABLE_READY_CHUNK_RADIUS; dx++) {
+                if (!this.level.hasChunk(chunkX + dx, chunkZ + dz)) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    @Unique
+    private void globe$logReadinessWait(boolean playerSettled,
+                                        boolean spawnChunksReady,
+                                        boolean loadingScreenVisible,
+                                        long clientReadyHoldMs) {
+        long gameTime = this.level.getGameTime();
+        if (globe$lastReadinessWaitLogTick != Long.MIN_VALUE
+                && gameTime - globe$lastReadinessWaitLogTick < 20L) {
+            return;
+        }
+        globe$lastReadinessWaitLogTick = gameTime;
+        GLOBE_LOGGER.info("[Latitude lifecycle] waiting for playable entry — {}ms since beginExpedition (playerAge={}, playerSettled={}, spawnChunksReady={}, loadingScreenVisible={}, readyHoldMs={})",
+                LatitudeClientState.elapsedSinceExpeditionMs(),
+                this.player.tickCount,
+                playerSettled,
+                spawnChunksReady,
+                loadingScreenVisible,
+                clientReadyHoldMs);
     }
 }
