@@ -6048,21 +6048,18 @@ public final class LatitudeBiomes {
             return out;
         }
         if (province == ProvinceAuthority.Province.WARM_MEDIUM) {
-            if (isBiomeId(out, "minecraft:sparse_jungle")) {
-                return out;
-            }
+            Holder<Biome> rerouted = enforceWarmProvinceFamily(biomes, out, province);
             if (DEBUG_PROVINCE) {
                 int count = PROVINCE_DEBUG_COUNT.get();
                 if (count <= PROVINCE_DEBUG_LIMIT) {
-                    LOGGER.info("[LAT][PROVINCE][WARM_JUNGLE_GATE] x={} z={} province={} biome={} -> sparse_jungle",
-                            blockX, blockZ, province, biomeId(out));
+                    LOGGER.info("[LAT][PROVINCE][WARM_JUNGLE_GATE] x={} z={} province={} biome={} -> {}",
+                            blockX, blockZ, province, biomeId(out), biomeId(rerouted));
                 }
             }
-            try {
-                return biome(biomes, "minecraft:sparse_jungle");
-            } catch (Throwable ignored) {
-                return out;
+            if (!sameBiomeId(out, rerouted)) {
+                setAdmission(BiomeAdmissionKind.VANILLA_FALLBACK, "warm_medium_jungle_gate", rerouted);
             }
+            return rerouted;
         }
         if (DEBUG_PROVINCE) {
             int count = PROVINCE_DEBUG_COUNT.get();
@@ -6086,18 +6083,18 @@ public final class LatitudeBiomes {
             return out;
         }
         if (province == ProvinceAuthority.Province.WARM_MEDIUM) {
-            if (isBiomeId(out, "minecraft:sparse_jungle")) {
-                return out;
-            }
+            Holder<Biome> rerouted = enforceWarmProvinceFamily(biomes, out, province);
             if (DEBUG_PROVINCE) {
                 int count = PROVINCE_DEBUG_COUNT.get();
                 if (count <= PROVINCE_DEBUG_LIMIT) {
-                    LOGGER.info("[LAT][PROVINCE][WARM_JUNGLE_GATE] x={} z={} province={} biome={} -> sparse_jungle",
-                            blockX, blockZ, province, biomeId(out));
+                    LOGGER.info("[LAT][PROVINCE][WARM_JUNGLE_GATE] x={} z={} province={} biome={} -> {}",
+                            blockX, blockZ, province, biomeId(out), biomeId(rerouted));
                 }
             }
-            Holder<Biome> sparse = entryById(biomes, "minecraft:sparse_jungle");
-            return sparse != null ? sparse : out;
+            if (!sameBiomeId(out, rerouted)) {
+                setAdmission(BiomeAdmissionKind.VANILLA_FALLBACK, "warm_medium_jungle_gate", rerouted);
+            }
+            return rerouted;
         }
         if (DEBUG_PROVINCE) {
             int count = PROVINCE_DEBUG_COUNT.get();
