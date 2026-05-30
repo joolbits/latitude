@@ -2445,8 +2445,11 @@ public final class LatitudeBiomes {
         }
         boolean mountainLike = mountainNoiseLike && (previewHeightHigh || previewHeightModerate || previewRuggedHigh);
         boolean polarMountainNoiseLike = sampler != null && isMountainLike(sampler, blockX, blockZ);
-        // Atlas/headless parity: when real terrain probes are absent, allow the noise signal to
-        // satisfy the terrain gate as a substitute for the missing preview terrain inputs.
+        boolean polarAtlasMountainCoherent = !hasPreviewTerrainInputs
+                && isAtlasHeadlessContext(callerContext)
+                && hasPolarAtlasMountainCoherence(sampler, blockX, blockZ);
+        // Atlas/headless parity: when real terrain probes are absent, allow only coherent
+        // mountain-noise regions to satisfy the terrain gate as a substitute for preview inputs.
         // Double-gated: !hasPreviewTerrainInputs (only SOURCE/ATLAS_SAMPLER paths, per call-site audit)
         // AND isAtlasHeadlessContext (explicit context gate to prevent silent future breakage).
         //
@@ -2463,7 +2466,7 @@ public final class LatitudeBiomes {
             polarProbeHeight = polarProbe.centerHeight;
             polarProbeDelta  = polarProbe.robustDelta;
         }
-        boolean polarTerrainMountainLike = (!hasPreviewTerrainInputs && isAtlasHeadlessContext(callerContext) && polarMountainNoiseLike)
+        boolean polarTerrainMountainLike = polarAtlasMountainCoherent
                 || (polarProbeDelta >= 12)
                 || (polarProbeHeight >= seaLevel + 20);
         boolean polarMountainLikeFinal = polarMountainNoiseLike && polarTerrainMountainLike;
@@ -2895,12 +2898,10 @@ public final class LatitudeBiomes {
             auditSparseJungle(bucket, blockX, blockZ, landBandIndex, detail, biomeId(preBandEnforce), biomeId(out));
         }
         // Atlas/headless parity: when terrain probes are absent, synthesize authority values
-        // that satisfy polarMountainAuthority() for noise-confirmed mountain cells.
+        // only for coherent noise-confirmed mountain regions.
         // POLAR_AUTHORITY_PARITY_DELTA / _HEIGHT match the existing authority thresholds exactly.
         // Double-gated: same conditions as the polarTerrainMountainLike fix above.
-        boolean polarAtlasMountainParity = !hasPreviewTerrainInputs
-                && isAtlasHeadlessContext(callerContext)
-                && polarMountainNoiseLike;
+        boolean polarAtlasMountainParity = polarAtlasMountainCoherent;
         int effectivePolarHeight = polarAtlasMountainParity ? POLAR_AUTHORITY_PARITY_HEIGHT : polarProbeHeight;
         int effectivePolarDelta  = polarAtlasMountainParity ? POLAR_AUTHORITY_PARITY_DELTA  : polarProbeDelta;
         // Capture pre-clamp state so instrumentation comparison is unambiguous.
@@ -3093,8 +3094,11 @@ public final class LatitudeBiomes {
         }
         boolean mountainLike = mountainNoiseLike && (previewHeightHigh || previewHeightModerate || previewRuggedHigh);
         boolean polarMountainNoiseLike = sampler != null && isMountainLike(sampler, blockX, blockZ);
-        // Atlas/headless parity: when real terrain probes are absent, allow the noise signal to
-        // satisfy the terrain gate as a substitute for the missing preview terrain inputs.
+        boolean polarAtlasMountainCoherent = !hasPreviewTerrainInputs
+                && isAtlasHeadlessContext(callerContext)
+                && hasPolarAtlasMountainCoherence(sampler, blockX, blockZ);
+        // Atlas/headless parity: when real terrain probes are absent, allow only coherent
+        // mountain-noise regions to satisfy the terrain gate as a substitute for preview inputs.
         // Double-gated: !hasPreviewTerrainInputs (only SOURCE/ATLAS_SAMPLER paths, per call-site audit)
         // AND isAtlasHeadlessContext (explicit context gate to prevent silent future breakage).
         //
@@ -3111,7 +3115,7 @@ public final class LatitudeBiomes {
             polarProbeHeight = polarProbe.centerHeight;
             polarProbeDelta  = polarProbe.robustDelta;
         }
-        boolean polarTerrainMountainLike = (!hasPreviewTerrainInputs && isAtlasHeadlessContext(callerContext) && polarMountainNoiseLike)
+        boolean polarTerrainMountainLike = polarAtlasMountainCoherent
                 || (polarProbeDelta >= 12)
                 || (polarProbeHeight >= seaLevel + 20);
         boolean polarMountainLikeFinal = polarMountainNoiseLike && polarTerrainMountainLike;
@@ -3481,12 +3485,10 @@ public final class LatitudeBiomes {
         logAtlasViewportJungleReturn("pick-collection", callerContext, blockX, blockZ, t, landBandIndex, overlayBandIndex, base, chosen, sanitized, preBandEnforce, postBandEnforce, postFinalClamp, out);
         traceSubpolarJunglePick(blockX, blockZ, effectiveRadius, landBandIndex, base, out);
         // Atlas/headless parity: when terrain probes are absent, synthesize authority values
-        // that satisfy polarMountainAuthority() for noise-confirmed mountain cells.
+        // only for coherent noise-confirmed mountain regions.
         // POLAR_AUTHORITY_PARITY_DELTA / _HEIGHT match the existing authority thresholds exactly.
         // Double-gated: same conditions as the polarTerrainMountainLike fix above.
-        boolean polarAtlasMountainParity = !hasPreviewTerrainInputs
-                && isAtlasHeadlessContext(callerContext)
-                && polarMountainNoiseLike;
+        boolean polarAtlasMountainParity = polarAtlasMountainCoherent;
         int effectivePolarHeight = polarAtlasMountainParity ? POLAR_AUTHORITY_PARITY_HEIGHT : polarProbeHeight;
         int effectivePolarDelta  = polarAtlasMountainParity ? POLAR_AUTHORITY_PARITY_DELTA  : polarProbeDelta;
         // Capture pre-clamp state so instrumentation comparison is unambiguous.
@@ -5830,6 +5832,10 @@ public final class LatitudeBiomes {
     // (robustDelta >= 18, centerHeight >= 110), producing parity with a confirmed-mountain cell.
     private static final int POLAR_AUTHORITY_PARITY_DELTA  = 18;
     private static final int POLAR_AUTHORITY_PARITY_HEIGHT = 111;
+    private static final int POLAR_ATLAS_MOUNTAIN_COHERENCE_RADIUS_BLOCKS = 96;
+    private static final int POLAR_ATLAS_MOUNTAIN_COHERENCE_MIN_CARDINAL_HITS = 2;
+    private static final int POLAR_ATLAS_MOUNTAIN_INNER_RADIUS_BLOCKS = 48;
+    private static final int POLAR_ATLAS_MOUNTAIN_MIN_INNER_CARDINAL_HITS = 1;
 
     private static boolean polarMountainAuthority(int robustDelta, int centerHeight, int landBandIndex) {
         if (landBandIndex != BAND_POLAR) {
@@ -7682,6 +7688,32 @@ public final class LatitudeBiomes {
         double erosion = Climate.unquantizeCoord(point.erosion());
         double weirdness = Climate.unquantizeCoord(point.weirdness());
         return cont > 0.10 && erosion < -0.25 && Math.abs(weirdness) > 0.25;
+    }
+
+    private static boolean hasPolarAtlasMountainCoherence(Climate.Sampler sampler, int blockX, int blockZ) {
+        if (!isMountainLike(sampler, blockX, blockZ)) {
+            return false;
+        }
+        int radius = POLAR_ATLAS_MOUNTAIN_COHERENCE_RADIUS_BLOCKS;
+        boolean east = isMountainLike(sampler, blockX + radius, blockZ);
+        boolean west = isMountainLike(sampler, blockX - radius, blockZ);
+        boolean south = isMountainLike(sampler, blockX, blockZ + radius);
+        boolean north = isMountainLike(sampler, blockX, blockZ - radius);
+        int hits = 0;
+        if (east) hits++;
+        if (west) hits++;
+        if (south) hits++;
+        if (north) hits++;
+        if (hits < POLAR_ATLAS_MOUNTAIN_COHERENCE_MIN_CARDINAL_HITS) {
+            return false;
+        }
+        int innerRadius = POLAR_ATLAS_MOUNTAIN_INNER_RADIUS_BLOCKS;
+        int innerHits = 0;
+        if (isMountainLike(sampler, blockX + innerRadius, blockZ)) innerHits++;
+        if (isMountainLike(sampler, blockX - innerRadius, blockZ)) innerHits++;
+        if (isMountainLike(sampler, blockX, blockZ + innerRadius)) innerHits++;
+        if (isMountainLike(sampler, blockX, blockZ - innerRadius)) innerHits++;
+        return innerHits >= POLAR_ATLAS_MOUNTAIN_MIN_INNER_CARDINAL_HITS;
     }
 
     private static Holder<Biome> mangroveOverride(Registry<Biome> biomes, Holder<Biome> fallback) {
