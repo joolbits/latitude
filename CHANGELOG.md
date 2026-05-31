@@ -1,5 +1,10 @@
 # Changelog
 
+## Latitude 1.3.0+1.20.1-r1
+- Fixed the 1.20.1 release jar mixin refmap name so the packaged `globe.mixins.json` points at the generated `latitude-refmap.json`.
+- Addresses startup crashes that reported `No refMap loaded` followed by failure resolving `removed` in `net.minecraft.class_437`.
+- No gameplay or worldgen behavior changes.
+
 ## Latitude 1.3.0 (MC 1.21.11)
 - Release hygiene pass for the v1.3 gate: removed dev-only mixins/probes and stray System.out logging from the shipping jar.
 - Updated version metadata to `1.3.0+1.21.11` and added release notes aligned to validated scope.
