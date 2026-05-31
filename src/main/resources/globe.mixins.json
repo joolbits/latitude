@@ -5,6 +5,7 @@
   "refmap": "latitude-refmap.json",
   "compatibilityLevel": "JAVA_21",
   "mixins": [
+    "MinecraftServerInitialSpawnMixin",
     "BiomeSourceAccessor",
     "ChunkGeneratorBiomeSourceMixin",
     "BiomeNoSnowInWarmBandsMixin",
