@@ -2175,6 +2175,9 @@ public final class LatitudeBiomes {
     private static final int REFERENCE_DIAMETER_BLOCKS = 20000;
 
     private static final int VARIANT_CELL_SIZE_BLOCKS = 38;
+    // Keep weighted primary/secondary/accent rolls more spatially coherent than
+    // fine-grained fallback identity picks so tier selection does not devolve into atlas confetti.
+    private static final int TIER_COHERENCE_BLOCKS = 64;
     private static final int BLEND_TRANSITION_WIDTH_BLOCKS = 1408;
     private static final int BLEND_DITHER_SCALE_BLOCKS = 512;
     private static final int BLEND_NOISE_PATCH_CHUNKS = 10;
@@ -4794,13 +4797,14 @@ public final class LatitudeBiomes {
     }
 
     private static int weightedRoll(int blockX, int blockZ, int salt) {
+        int coherenceBlocks = Math.max(16, TIER_COHERENCE_BLOCKS);
         double blob;
         if (DISABLE_GRID_DITHER) {
-            blob = blobNoise01Blocks(WORLD_SEED, blockX, blockZ, Math.max(16, VARIANT_CELL_SIZE_BLOCKS), salt);
+            blob = blobNoise01Blocks(WORLD_SEED, blockX, blockZ, coherenceBlocks, salt);
         } else {
             int chunkX = blockX >> 4;
             int chunkZ = blockZ >> 4;
-            int patchSizeChunks = Math.max(1, VARIANT_CELL_SIZE_BLOCKS >> 4);
+            int patchSizeChunks = Math.max(1, coherenceBlocks >> 4);
             blob = blobNoise01(WORLD_SEED, chunkX, chunkZ, patchSizeChunks, salt);
         }
         int roll = (int) Math.floor(blob * 100.0);
