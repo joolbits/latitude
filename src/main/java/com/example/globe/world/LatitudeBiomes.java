@@ -2178,6 +2178,7 @@ public final class LatitudeBiomes {
     // Keep weighted primary/secondary/accent rolls more spatially coherent than
     // fine-grained fallback identity picks so tier selection does not devolve into atlas confetti.
     private static final int TIER_COHERENCE_BLOCKS = 64;
+    private static final int FALLBACK_COHERENCE_BLOCKS = 64;
     private static final int BLEND_TRANSITION_WIDTH_BLOCKS = 1408;
     private static final int BLEND_DITHER_SCALE_BLOCKS = 512;
     private static final int BLEND_NOISE_PATCH_CHUNKS = 10;
@@ -4252,8 +4253,9 @@ public final class LatitudeBiomes {
     }
 
     private static Holder<Biome> pickFrom(Registry<Biome> biomes, int blockX, int blockZ, int bandIndex, String... options) {
-        int cellX = Math.floorDiv(blockX, VARIANT_CELL_SIZE_BLOCKS);
-        int cellZ = Math.floorDiv(blockZ, VARIANT_CELL_SIZE_BLOCKS);
+        int coherenceBlocks = Math.max(16, FALLBACK_COHERENCE_BLOCKS);
+        int cellX = Math.floorDiv(blockX, coherenceBlocks);
+        int cellZ = Math.floorDiv(blockZ, coherenceBlocks);
         int idx = (int) Long.remainderUnsigned(hash64(cellX, cellZ, bandIndex), options.length);
         setSelectionPath(PATH_FALLBACK_PICK);
         Holder<Biome> out = biome(biomes, options[idx]);
