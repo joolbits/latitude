@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import math
 import json
 import os
 import re
@@ -19,6 +20,7 @@ from PIL import Image
 
 ROOT = Path(__file__).resolve().parents[2]
 RUNS_ROOT = ROOT / "run-headless" / "latdev" / "atlas-runs"
+WORLD_MAP_RUNS_ROOT = ROOT / "run-headless" / "latdev" / "world-map-runs"
 VIEWER_ROOT = ROOT / "tools" / "atlas" / "viewer"
 ATLAS_PS1 = ROOT / "tools" / "atlas" / "Atlas.ps1"
 ATLAS_RUNNER = ROOT / "tools" / "atlas" / "atlas_runner.py"
@@ -28,6 +30,21 @@ COARSE_RUGGEDNESS_FILE = f"step{COARSE_RUGGEDNESS_STEP}_ruggedness.png"
 
 STEP_RE = re.compile(r"step(\d+)", re.IGNORECASE)
 HEX_RE = re.compile(r"^#?([0-9a-fA-F]{6})$")
+WORLD_MAP_JOB_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,79}$")
+WORLD_MAP_SIZES = {
+    "itty": 3750,
+    "ittybitty": 3750,
+    "itty_bitty": 3750,
+    "xsmall": 3750,
+    "tiny": 5000,
+    "small": 7500,
+    "medium": 7500,
+    "regular": 10000,
+    "large": 15000,
+    "ginormous": 20000,
+    "massive": 20000,
+}
+WORLD_MAP_CONTROL_COMMANDS = {"pause", "resume", "cancel"}
 
 
 def _generation_command(step: int, seed: int | None = None, size: str | None = None) -> list[str]:
@@ -180,6 +197,20 @@ GENERATION_STATE: dict[str, object | None] = {
     "exit_code": None,
     "message": "",
 }
+WORLD_MAP_LOCK = threading.Lock()
+WORLD_MAP_PROC: subprocess.Popen | None = None
+WORLD_MAP_STATE: dict[str, object | None] = {
+    "active": False,
+    "job": None,
+    "seed": None,
+    "size": None,
+    "tileSize": None,
+    "maxTiles": None,
+    "started_at": None,
+    "finished_at": None,
+    "exit_code": None,
+    "message": "",
+}
 
 
 def utc_now_iso() -> str:
@@ -249,6 +280,263 @@ def parse_java_long(raw) -> int | None:
     if value < -(2**63) or value > (2**63 - 1):
         raise ValueError("seed must be a signed 64-bit integer")
     return value
+
+
+def parse_required_java_long(raw, field: str) -> int:
+    value = parse_java_long(raw)
+    if value is None:
+        raise ValueError(f"{field} is required")
+    return value
+
+
+def parse_int_range(raw, field: str, *, minimum: int, maximum: int) -> int:
+    if raw is None or str(raw).strip() == "":
+        raise ValueError(f"{field} is required")
+    try:
+        value = int(str(raw).strip(), 10)
+    except Exception as exc:
+        raise ValueError(f"{field} must be an integer") from exc
+    if value < minimum or value > maximum:
+        raise ValueError(f"{field} must be in range {minimum}..{maximum}")
+    return value
+
+
+def normalize_world_map_size(raw) -> str:
+    value = str(raw or "ittybitty").strip().lower()
+    if not value:
+        value = "ittybitty"
+    if value not in WORLD_MAP_SIZES:
+        raise ValueError(f"size must be one of: {', '.join(sorted(WORLD_MAP_SIZES))}")
+    return value
+
+
+def validate_world_map_job_id(job) -> str:
+    value = str(job or "").strip()
+    if not WORLD_MAP_JOB_RE.fullmatch(value):
+        raise ValueError("job must match [A-Za-z0-9][A-Za-z0-9_.-]{0,79}")
+    return value
+
+
+def world_map_job_path(job: str) -> Path:
+    job_id = validate_world_map_job_id(job)
+    root = WORLD_MAP_RUNS_ROOT.resolve()
+    job_dir = (WORLD_MAP_RUNS_ROOT / job_id).resolve()
+    try:
+        job_dir.relative_to(root)
+    except ValueError as exc:
+        raise ValueError("job path escapes world-map run root") from exc
+    return job_dir
+
+
+def world_map_estimate(size: str, tile_size: int, max_tiles: int) -> dict:
+    radius = WORLD_MAP_SIZES[size]
+    width = (radius * 2) + 1
+    tiles_per_axis = max(1, math.ceil(width / tile_size))
+    tiles_total = min(max_tiles, tiles_per_axis * tiles_per_axis)
+    chunks_total = 0
+    pixel_total = 0
+    for index in range(tiles_total):
+        tile_x = index % tiles_per_axis
+        tile_z = index // tiles_per_axis
+        min_x = -radius + (tile_x * tile_size)
+        min_z = -radius + (tile_z * tile_size)
+        max_x = min(radius, min_x + tile_size - 1)
+        max_z = min(radius, min_z + tile_size - 1)
+        min_chunk_x = min_x // 16
+        max_chunk_x = max_x // 16
+        min_chunk_z = min_z // 16
+        max_chunk_z = max_z // 16
+        chunks_total += (max_chunk_x - min_chunk_x + 1) * (max_chunk_z - min_chunk_z + 1)
+        pixel_total += (max_x - min_x + 1) * (max_z - min_z + 1)
+    return {
+        "radius_blocks": radius,
+        "tile_size_blocks": tile_size,
+        "max_tiles": max_tiles,
+        "tiles_per_axis": tiles_per_axis,
+        "estimated_tiles": tiles_total,
+        "estimated_chunks": chunks_total,
+        "estimated_pixels": pixel_total,
+        "estimated_disk_bytes": pixel_total * 4,
+        "disk_estimate_model": "raw-rgba upper bound before PNG compression",
+    }
+
+
+def world_map_status() -> dict:
+    with WORLD_MAP_LOCK:
+        seed = WORLD_MAP_STATE.get("seed")
+        return {
+            "active": bool(WORLD_MAP_STATE.get("active")),
+            "job": WORLD_MAP_STATE.get("job"),
+            "seed": None if seed is None else str(seed),
+            "size": WORLD_MAP_STATE.get("size"),
+            "tileSize": WORLD_MAP_STATE.get("tileSize"),
+            "maxTiles": WORLD_MAP_STATE.get("maxTiles"),
+            "started_at": WORLD_MAP_STATE.get("started_at"),
+            "finished_at": WORLD_MAP_STATE.get("finished_at"),
+            "exit_code": WORLD_MAP_STATE.get("exit_code"),
+            "message": WORLD_MAP_STATE.get("message") or "",
+        }
+
+
+def _world_map_gradle_command(job: str, seed: int, size: str, tile_size: int, max_tiles: int) -> list[str]:
+    args = f"--seed {seed} --size {size} --tileSize {tile_size} --maxTiles {max_tiles} --job {job}"
+    return [
+        str(ROOT / "gradlew"),
+        "--no-daemon",
+        "--console",
+        "plain",
+        "runWorldMapPreview",
+        f"--args={args}",
+    ]
+
+
+def _world_map_env() -> dict[str, str]:
+    env = dict(os.environ)
+    env.pop("JAVA_TOOL_OPTIONS", None)
+    env.pop("_JAVA_OPTIONS", None)
+    java_home_tool = Path("/usr/libexec/java_home")
+    if java_home_tool.exists():
+        try:
+            result = subprocess.run(
+                [str(java_home_tool), "-v", "25"],
+                check=True,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+            )
+            java_home = result.stdout.strip()
+            if java_home:
+                env["JAVA_HOME"] = java_home
+        except Exception:
+            pass
+    return env
+
+
+def _watch_world_map_generation(proc: subprocess.Popen, job: str):
+    global WORLD_MAP_PROC
+    code = proc.wait()
+    with WORLD_MAP_LOCK:
+        if WORLD_MAP_PROC is proc:
+            WORLD_MAP_PROC = None
+        WORLD_MAP_STATE["active"] = False
+        WORLD_MAP_STATE["finished_at"] = utc_now_iso()
+        WORLD_MAP_STATE["exit_code"] = int(code)
+        if code == 0:
+            WORLD_MAP_STATE["message"] = f"World-map job {job} finished."
+        else:
+            WORLD_MAP_STATE["message"] = f"World-map job {job} failed (exit {code})."
+
+
+def start_world_map_job(job: str, seed: int, size: str, tile_size: int, max_tiles: int) -> tuple[bool, dict]:
+    global WORLD_MAP_PROC
+    job_dir = world_map_job_path(job)
+    estimate = world_map_estimate(size, tile_size, max_tiles)
+    command = _world_map_gradle_command(job, seed, size, tile_size, max_tiles)
+
+    with WORLD_MAP_LOCK:
+        if WORLD_MAP_STATE.get("active"):
+            return (
+                False,
+                {
+                    "world_map": {
+                        "active": bool(WORLD_MAP_STATE.get("active")),
+                        "job": WORLD_MAP_STATE.get("job"),
+                        "seed": WORLD_MAP_STATE.get("seed"),
+                        "size": WORLD_MAP_STATE.get("size"),
+                        "tileSize": WORLD_MAP_STATE.get("tileSize"),
+                        "maxTiles": WORLD_MAP_STATE.get("maxTiles"),
+                        "started_at": WORLD_MAP_STATE.get("started_at"),
+                        "finished_at": WORLD_MAP_STATE.get("finished_at"),
+                        "exit_code": WORLD_MAP_STATE.get("exit_code"),
+                        "message": WORLD_MAP_STATE.get("message") or "",
+                    },
+                    "estimate": estimate,
+                },
+            )
+
+        WORLD_MAP_RUNS_ROOT.mkdir(parents=True, exist_ok=True)
+        log_path = WORLD_MAP_RUNS_ROOT / f"{job}.api-run.log"
+        creationflags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+        with log_path.open("ab") as log_handle:
+            proc = subprocess.Popen(
+                command,
+                cwd=str(ROOT),
+                stdout=log_handle,
+                stderr=subprocess.STDOUT,
+                env=_world_map_env(),
+                creationflags=creationflags,
+            )
+        WORLD_MAP_PROC = proc
+        WORLD_MAP_STATE["active"] = True
+        WORLD_MAP_STATE["job"] = job
+        WORLD_MAP_STATE["seed"] = seed
+        WORLD_MAP_STATE["size"] = size
+        WORLD_MAP_STATE["tileSize"] = tile_size
+        WORLD_MAP_STATE["maxTiles"] = max_tiles
+        WORLD_MAP_STATE["started_at"] = utc_now_iso()
+        WORLD_MAP_STATE["finished_at"] = None
+        WORLD_MAP_STATE["exit_code"] = None
+        WORLD_MAP_STATE["message"] = f"Generating world-map job {job}."
+
+    watcher = threading.Thread(target=_watch_world_map_generation, args=(proc, job), daemon=True)
+    watcher.start()
+    payload = world_map_job_payload(job)
+    payload["world_map"] = world_map_status()
+    payload["estimate"] = estimate
+    payload["log"] = str(log_path)
+    return True, payload
+
+
+def read_optional_json(path: Path):
+    if not path.exists() or not path.is_file():
+        return None
+    try:
+        return read_json_file(path)
+    except Exception as exc:
+        return {"_error": f"{path.name} unreadable: {exc}"}
+
+
+def stringify_world_map_seed(payload):
+    if isinstance(payload, dict) and payload.get("seed") is not None:
+        payload = dict(payload)
+        payload["seed"] = str(payload["seed"])
+    return payload
+
+
+def world_map_job_payload(job: str) -> dict:
+    job_dir = world_map_job_path(job)
+    state = stringify_world_map_seed(read_optional_json(job_dir / "job_state.json")) if job_dir.exists() else None
+    manifest = stringify_world_map_seed(read_optional_json(job_dir / "world_map_manifest.json")) if job_dir.exists() else None
+    control = read_optional_json(job_dir / "control.json") if job_dir.exists() else None
+    tiles_dir = job_dir / "tiles" / "z0"
+    tile_count = len(list(tiles_dir.glob("x_*_z_*.png"))) if tiles_dir.exists() else 0
+    with WORLD_MAP_LOCK:
+        active = bool(WORLD_MAP_STATE.get("active") and WORLD_MAP_STATE.get("job") == job)
+    return {
+        "job": job,
+        "exists": job_dir.exists(),
+        "path": str(job_dir),
+        "active": active,
+        "state": state if isinstance(state, dict) else None,
+        "manifest": manifest if isinstance(manifest, dict) else None,
+        "control": control if isinstance(control, dict) else None,
+        "tile_count": tile_count,
+    }
+
+
+def list_world_map_jobs() -> list[dict]:
+    if not WORLD_MAP_RUNS_ROOT.exists():
+        return []
+    jobs = []
+    for child in WORLD_MAP_RUNS_ROOT.iterdir():
+        if not child.is_dir():
+            continue
+        try:
+            jobs.append(world_map_job_payload(child.name))
+        except Exception:
+            continue
+    jobs.sort(key=lambda row: row.get("job", ""), reverse=True)
+    return jobs
 
 
 def resolve_ruggedness_file(run_dir: Path, layer: str, step: int | None = None) -> Path | None:
@@ -585,9 +873,55 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
         self.end_headers()
 
+    def _read_json_body(self) -> dict:
+        length = int(self.headers.get("Content-Length", "0") or "0")
+        raw = self.rfile.read(length) if length > 0 else b"{}"
+        try:
+            payload = json.loads(raw.decode("utf-8")) if raw else {}
+        except Exception as exc:
+            raise ValueError("invalid JSON body") from exc
+        if not isinstance(payload, dict):
+            raise ValueError("request body must be a JSON object")
+        return payload
+
+    def _dispatch_world_map_api(self, method: str, path: str) -> bool:
+        segments = [segment for segment in path.strip("/").split("/") if segment]
+        if len(segments) < 2 or segments[:2] != ["api", "world-map"]:
+            return False
+
+        if segments == ["api", "world-map", "jobs"]:
+            if method == "GET":
+                self.handle_world_map_jobs()
+                return True
+            if method == "POST":
+                self.handle_world_map_create()
+                return True
+            self._send_json({"error": "method not allowed"}, HTTPStatus.METHOD_NOT_ALLOWED)
+            return True
+
+        if len(segments) == 4 and segments[:3] == ["api", "world-map", "jobs"]:
+            if method == "GET":
+                self.handle_world_map_job(segments[3])
+                return True
+            self._send_json({"error": "method not allowed"}, HTTPStatus.METHOD_NOT_ALLOWED)
+            return True
+
+        if len(segments) == 5 and segments[:3] == ["api", "world-map", "jobs"] and segments[4] == "control":
+            if method == "POST":
+                self.handle_world_map_control(segments[3])
+                return True
+            self._send_json({"error": "method not allowed"}, HTTPStatus.METHOD_NOT_ALLOWED)
+            return True
+
+        self._send_json({"error": "invalid world-map API route"}, HTTPStatus.BAD_REQUEST)
+        return True
+
     def do_POST(self):
         parsed = urlparse(self.path)
         path = unquote(parsed.path)
+
+        if self._dispatch_world_map_api("POST", path):
+            return
 
         if path == "/api/generate":
             self.handle_generate()
@@ -624,6 +958,9 @@ class Handler(BaseHTTPRequestHandler):
         path = unquote(parsed.path)
 
         # API routes
+        if self._dispatch_world_map_api("GET", path):
+            return
+
         if path == "/api/runs":
             self.handle_runs()
             return
@@ -698,6 +1035,85 @@ class Handler(BaseHTTPRequestHandler):
         runs = [d.name for d in RUNS_ROOT.iterdir() if d.is_dir()]
         runs.sort(reverse=True)
         self._send_json(runs)
+
+    def handle_world_map_jobs(self):
+        jobs = list_world_map_jobs()
+        status = world_map_status()
+        active_job = status.get("job")
+        if status.get("active") and active_job and not any(row.get("job") == active_job for row in jobs):
+            jobs.insert(0, world_map_job_payload(str(active_job)))
+        self._send_json({"jobs": jobs, "world_map": status})
+
+    def handle_world_map_job(self, job: str):
+        try:
+            job_id = validate_world_map_job_id(job)
+            payload = world_map_job_payload(job_id)
+        except ValueError as exc:
+            self._send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            return
+        status = world_map_status()
+        if not payload["exists"] and not (status.get("active") and status.get("job") == job_id):
+            self._send_json({"error": "world-map job not found", "job": job_id}, HTTPStatus.NOT_FOUND)
+            return
+        payload["world_map"] = status
+        self._send_json(payload)
+
+    def handle_world_map_create(self):
+        try:
+            payload = self._read_json_body()
+            job = validate_world_map_job_id(payload.get("job"))
+            seed = parse_required_java_long(payload.get("seed"), "seed")
+            size = normalize_world_map_size(payload.get("size", "ittybitty"))
+            tile_size = parse_int_range(
+                payload.get("tileSize", payload.get("tile_size", 512)),
+                "tileSize",
+                minimum=16,
+                maximum=2048,
+            )
+            max_tiles = parse_int_range(
+                payload.get("maxTiles", payload.get("max_tiles")),
+                "maxTiles",
+                minimum=1,
+                maximum=10000,
+            )
+            started, status = start_world_map_job(job, seed, size, tile_size, max_tiles)
+        except ValueError as exc:
+            self._send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            return
+        except FileNotFoundError as exc:
+            self._send_json({"error": str(exc)}, HTTPStatus.NOT_FOUND)
+            return
+        except Exception as exc:
+            self._send_json({"error": str(exc)}, HTTPStatus.INTERNAL_SERVER_ERROR)
+            return
+
+        self._send_json(status, HTTPStatus.ACCEPTED if started else HTTPStatus.CONFLICT)
+
+    def handle_world_map_control(self, job: str):
+        try:
+            payload = self._read_json_body()
+            job_id = validate_world_map_job_id(job)
+            command = str(payload.get("command", "")).strip().lower()
+            if command not in WORLD_MAP_CONTROL_COMMANDS:
+                raise ValueError("command must be pause, resume, or cancel")
+            job_dir = world_map_job_path(job_id)
+            if not job_dir.exists():
+                self._send_json({"error": "world-map job not found", "job": job_id}, HTTPStatus.NOT_FOUND)
+                return
+            control = {
+                "command": command,
+                "updated_at": utc_now_iso(),
+            }
+            tmp_path = job_dir / ".control.json.tmp"
+            tmp_path.write_text(json.dumps(control, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            tmp_path.replace(job_dir / "control.json")
+            out = world_map_job_payload(job_id)
+            out["world_map"] = world_map_status()
+            self._send_json(out)
+        except ValueError as exc:
+            self._send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+        except Exception as exc:
+            self._send_json({"error": str(exc)}, HTTPStatus.INTERNAL_SERVER_ERROR)
 
     def handle_delete_run(self, run: str):
         if GENERATION_STATE.get("active"):

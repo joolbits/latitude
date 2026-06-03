@@ -1072,6 +1072,110 @@ html, body {
 .biome-search::placeholder { color: var(--text-tertiary); }
 .biome-search:focus { border-color: var(--border-accent); }
 
+/* World map jobs */
+.world-map-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.world-map-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.world-map-field.wide {
+  grid-column: 1 / -1;
+}
+.world-map-field label {
+  color: var(--text-secondary);
+  font-size: 10.5px;
+}
+.world-map-input {
+  width: 100%;
+  min-width: 0;
+  height: 28px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-sm);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 5px 8px;
+  outline: none;
+  user-select: text;
+  -webkit-user-select: text;
+  pointer-events: auto;
+}
+.world-map-input:focus {
+  border-color: var(--border-accent);
+}
+.world-map-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+.world-map-status {
+  margin-top: 8px;
+  min-height: 18px;
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--text-secondary);
+}
+.world-map-status.error {
+  color: var(--lat-error);
+}
+.world-map-status.success {
+  color: var(--lat-success);
+}
+.world-map-job-list {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-top: 10px;
+}
+.world-map-job-list .lat-select-wrap {
+  flex: 1;
+  min-width: 0;
+}
+.world-map-chip {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--border-medium);
+  border-radius: 999px;
+  padding: 2px 7px;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+.world-map-chip[data-phase="running"] { color: var(--lat-warn); border-color: rgba(232, 167, 62, 0.35); }
+.world-map-chip[data-phase="complete"] { color: var(--lat-success); border-color: rgba(90, 232, 122, 0.35); }
+.world-map-chip[data-phase="failed"],
+.world-map-chip[data-phase="canceled"] { color: var(--lat-error); border-color: rgba(232, 90, 90, 0.35); }
+.world-map-detail {
+  margin-top: 8px;
+}
+.world-map-tiles {
+  margin-top: 8px;
+  max-height: 128px;
+  overflow-y: auto;
+  border-top: 1px solid var(--border-subtle);
+}
+.world-map-tile-row {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 8px;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--border-subtle);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-secondary);
+}
+.world-map-tile-row span:first-child {
+  color: var(--text-accent);
+}
+
 /* ═══════════════════════════════════════════════
    INSPECT CARD (Floating)
    ═══════════════════════════════════════════════ */
@@ -1692,6 +1796,63 @@ html, body {
     </div>
    </div>
  
+   <div class="panel-card" id="card-world-map">
+    <div class="panel-header">
+     <span class="panel-title">World Map Jobs</span>
+     <div class="panel-actions">
+      <button id="btn-world-map-refresh" class="panel-action-btn" type="button">Refresh</button>
+     </div>
+    </div>
+    <div class="panel-body">
+     <div class="world-map-form">
+      <div class="world-map-field wide">
+       <label for="world-map-job">Job ID</label>
+       <input id="world-map-job" class="world-map-input" type="text" autocomplete="off" spellcheck="false" placeholder="p3-ui-proof">
+      </div>
+      <div class="world-map-field wide">
+       <label for="world-map-seed">Seed</label>
+       <input id="world-map-seed" class="world-map-input" type="text" inputmode="numeric" autocomplete="off" spellcheck="false" placeholder="2591890304012655616">
+      </div>
+      <div class="world-map-field">
+       <label for="world-map-size">Size</label>
+       <select id="world-map-size" class="lat-select world-map-input">
+        <option value="ittybitty" selected>ittybitty</option>
+        <option value="tiny">tiny</option>
+        <option value="small">small</option>
+        <option value="regular">regular</option>
+        <option value="large">large</option>
+        <option value="ginormous">ginormous</option>
+       </select>
+      </div>
+      <div class="world-map-field">
+       <label for="world-map-tile-size">Tile Size</label>
+       <input id="world-map-tile-size" class="world-map-input" type="number" min="16" max="2048" step="1" value="128">
+      </div>
+      <div class="world-map-field wide">
+       <label for="world-map-max-tiles">Max Tiles</label>
+       <input id="world-map-max-tiles" class="world-map-input" type="number" min="1" max="10000" step="1" placeholder="required">
+      </div>
+     </div>
+     <div class="world-map-actions">
+      <button id="btn-world-map-create" class="panel-action-btn" type="button">Create</button>
+      <button id="btn-world-map-pause" class="panel-action-btn" type="button">Pause</button>
+      <button id="btn-world-map-resume" class="panel-action-btn" type="button">Resume</button>
+      <button id="btn-world-map-cancel" class="panel-action-btn" type="button">Cancel</button>
+     </div>
+     <div id="world-map-status" class="world-map-status">No world-map job selected.</div>
+     <div class="world-map-job-list">
+      <div class="lat-select-wrap">
+       <select id="world-map-job-select" class="lat-select">
+        <option value="">Select world-map job</option>
+       </select>
+      </div>
+     </div>
+     <div id="world-map-detail" class="world-map-detail">
+      <div class="context-empty">No world-map status loaded</div>
+     </div>
+    </div>
+   </div>
+
    <div class="panel-card" id="card-metadata">
     <div class="panel-header">
      <span class="panel-title">Run Summary</span>
@@ -1828,6 +1989,19 @@ const btnDeleteSelected  = $('#btn-delete-selected');
 const btnDeleteAllRuns   = $('#btn-delete-all-runs');
 const deleteSelectedCount = $('#delete-selected-count');
  const genQuality = $('#gen-quality');
+const worldMapJobInput = $('#world-map-job');
+const worldMapSeedInput = $('#world-map-seed');
+const worldMapSizeSelect = $('#world-map-size');
+const worldMapTileSizeInput = $('#world-map-tile-size');
+const worldMapMaxTilesInput = $('#world-map-max-tiles');
+const worldMapJobSelect = $('#world-map-job-select');
+const worldMapStatusEl = $('#world-map-status');
+const worldMapDetailEl = $('#world-map-detail');
+const btnWorldMapCreate = $('#btn-world-map-create');
+const btnWorldMapRefresh = $('#btn-world-map-refresh');
+const btnWorldMapPause = $('#btn-world-map-pause');
+const btnWorldMapResume = $('#btn-world-map-resume');
+const btnWorldMapCancel = $('#btn-world-map-cancel');
 const btnFit = $('#btn-fit');
 const btnReset = $('#btn-reset-zoom');
 const toolbarSizeSel = $('#toolbar-size');
@@ -1911,6 +2085,9 @@ const atlasDesktopDiagnosticsEl = $('#atlas-desktop-diagnostics');
   generationActive: false,
   pendingGenerationPreset: null,
   generationPollTimer: null,
+  worldMapJobs: [],
+  currentWorldMapJob: null,
+  worldMapPollTimer: null,
   selectedRunIds: new Set(),
   colorViewMode: 'identity',
   confettiMode: false,
@@ -2364,6 +2541,235 @@ function setGenerationStatus(active, text) {
    if (Number.isNaN(d.getTime())) return '—';
    return d.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
   }
+
+function formatIsoTimestamp(raw) {
+ const s = String(raw || '').trim();
+ if (!s) return '—';
+ const d = new Date(s);
+ if (Number.isNaN(d.getTime())) return s;
+ return d.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
+}
+
+function formatNumber(value) {
+ const n = Number(value);
+ return Number.isFinite(n) ? n.toLocaleString() : '—';
+}
+
+function formatPercent(value) {
+ const n = Number(value);
+ return Number.isFinite(n) ? `${n.toFixed(1)}%` : '—';
+}
+
+function formatBytes(value) {
+ const n = Number(value);
+ if (!Number.isFinite(n) || n < 0) return '—';
+ if (n < 1024) return `${n} B`;
+ if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KiB`;
+ if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MiB`;
+ return `${(n / 1024 / 1024 / 1024).toFixed(1)} GiB`;
+}
+
+function setWorldMapStatus(message, tone = '') {
+ if (!worldMapStatusEl) return;
+ worldMapStatusEl.textContent = message || '';
+ worldMapStatusEl.className = `world-map-status${tone ? ` ${tone}` : ''}`;
+}
+
+function worldMapJobLabel(job) {
+ const statePayload = job?.state || {};
+ const phase = statePayload.phase || (job?.active ? 'running' : 'new');
+ const done = statePayload.tiles_done ?? job?.tile_count ?? 0;
+ const total = statePayload.tiles_total ?? '';
+ return `${job?.job || 'unknown'} · ${phase}${total !== '' ? ` ${done}/${total}` : ''}`;
+}
+
+function selectedWorldMapPayload() {
+ const id = state.currentWorldMapJob || worldMapJobSelect?.value || '';
+ return state.worldMapJobs.find((job) => job.job === id) || null;
+}
+
+function normalizeWorldMapJobs(payload) {
+ const jobs = payload && Array.isArray(payload.jobs) ? payload.jobs : [];
+ return jobs.filter((job) => job && typeof job.job === 'string');
+}
+
+function worldMapPayloadFromResponse(payload) {
+ if (!payload || typeof payload !== 'object') return null;
+ if (payload.job) return payload;
+ if (payload.jobs && Array.isArray(payload.jobs)) return null;
+ return null;
+}
+
+async function fetchWorldMapJobs() {
+ const payload = await apiFetch('/api/world-map/jobs');
+ return { jobs: normalizeWorldMapJobs(payload), worldMap: payload?.world_map || null };
+}
+
+async function fetchWorldMapJob(job) {
+ return await apiFetch(`/api/world-map/jobs/${encodeURIComponent(job)}`);
+}
+
+async function postWorldMapJob(payload) {
+ return await apiFetch('/api/world-map/jobs', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify(payload),
+ });
+}
+
+async function postWorldMapControl(job, command) {
+ return await apiFetch(`/api/world-map/jobs/${encodeURIComponent(job)}/control`, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ command }),
+ });
+}
+
+function renderWorldMapJobOptions() {
+ if (!worldMapJobSelect) return;
+ const previous = state.currentWorldMapJob || worldMapJobSelect.value;
+ worldMapJobSelect.innerHTML = '<option value="">Select world-map job</option>';
+ for (const job of state.worldMapJobs) {
+  const opt = document.createElement('option');
+  opt.value = job.job;
+  opt.textContent = worldMapJobLabel(job);
+  worldMapJobSelect.appendChild(opt);
+ }
+ if (previous && state.worldMapJobs.some((job) => job.job === previous)) {
+  worldMapJobSelect.value = previous;
+  state.currentWorldMapJob = previous;
+ }
+}
+
+function renderWorldMapDetail(job) {
+ if (!worldMapDetailEl) return;
+ if (!job) {
+  worldMapDetailEl.innerHTML = '<div class="context-empty">No world-map status loaded</div>';
+  return;
+ }
+ const jobState = job.state || {};
+ const manifest = job.manifest || {};
+ const phase = jobState.phase || (job.active ? 'running' : 'new');
+ const tiles = Array.isArray(manifest.tiles) ? manifest.tiles : [];
+ const manifestRows = [
+  ['Job', job.job],
+  ['Phase', `<span class="world-map-chip" data-phase="${escapeHtml(phase)}">${escapeHtml(phase)}</span>`],
+  ['Progress', `${formatNumber(jobState.tiles_done)} / ${formatNumber(jobState.tiles_total)} tiles (${formatPercent(jobState.percent)})`],
+  ['Chunks', `${formatNumber(jobState.chunks_done)} / ${formatNumber(jobState.chunks_total)}`],
+  ['Seed', jobState.seed ?? manifest.seed ?? '—'],
+  ['Size', jobState.size ?? manifest.size ?? '—'],
+  ['Radius', formatNumber(jobState.radius_blocks ?? manifest.radius_blocks)],
+  ['Tile Size', formatNumber(jobState.tile_size_blocks ?? manifest.tile_size_blocks)],
+  ['Tiles on Disk', formatNumber(job.tile_count)],
+  ['Manifest Status', manifest.status || '—'],
+  ['Started', formatIsoTimestamp(jobState.started_at)],
+  ['Updated', formatIsoTimestamp(jobState.updated_at)],
+ ];
+ const rowsHtml = manifestRows.map(([key, value]) => `
+  <div class="meta-row">
+   <span class="meta-key">${escapeHtml(key)}</span>
+   <span class="meta-val">${typeof value === 'string' && value.includes('<span') ? value : escapeHtml(value)}</span>
+  </div>`).join('');
+ const errorHtml = jobState.error
+  ? `<div class="world-map-status error">${escapeHtml(jobState.error)}</div>`
+  : '';
+ const tileRows = tiles.slice(0, 8).map((tile) => `
+  <div class="world-map-tile-row">
+   <span>z${escapeHtml(tile.z)} ${escapeHtml(tile.tile_x)},${escapeHtml(tile.tile_z)}</span>
+   <span>${escapeHtml(tile.path)} · X ${escapeHtml(tile.min_x)}..${escapeHtml(tile.max_x)} · Z ${escapeHtml(tile.min_z)}..${escapeHtml(tile.max_z)}</span>
+  </div>`).join('');
+ const moreTiles = tiles.length > 8
+  ? `<div class="band-desc-hint">${tiles.length - 8} more tiles in manifest.</div>`
+  : '';
+ worldMapDetailEl.innerHTML = `
+  <div class="context-grid" style="display:block">${rowsHtml}</div>
+  ${errorHtml}
+  <div class="band-desc-hint">z0 tiles only. Future zoom levels are not generated in this proof lane.</div>
+  <div class="world-map-tiles">${tileRows || '<div class="context-empty" style="padding:8px 0">No manifest tiles yet</div>'}</div>
+  ${moreTiles}`;
+}
+
+function syncWorldMapControlButtons() {
+ const job = selectedWorldMapPayload();
+ const hasJob = !!job;
+ if (btnWorldMapPause) btnWorldMapPause.disabled = !hasJob;
+ if (btnWorldMapResume) btnWorldMapResume.disabled = !hasJob;
+ if (btnWorldMapCancel) btnWorldMapCancel.disabled = !hasJob;
+}
+
+async function refreshWorldMapJobs(options = {}) {
+ try {
+  const payload = await fetchWorldMapJobs();
+  state.worldMapJobs = payload.jobs;
+  renderWorldMapJobOptions();
+  const selected = selectedWorldMapPayload();
+  renderWorldMapDetail(selected);
+  syncWorldMapControlButtons();
+  if (options.announce) setWorldMapStatus(`Loaded ${state.worldMapJobs.length} world-map jobs.`, 'success');
+ } catch (error) {
+  setWorldMapStatus(error?.message || 'Failed to load world-map jobs.', 'error');
+ }
+}
+
+function validateWorldMapForm() {
+ const job = String(worldMapJobInput?.value || '').trim();
+ const seed = String(worldMapSeedInput?.value || '').trim();
+ const size = String(worldMapSizeSelect?.value || 'ittybitty').trim();
+ const tileSize = Number(worldMapTileSizeInput?.value);
+ const maxTiles = Number(worldMapMaxTilesInput?.value);
+ if (!job) throw new Error('Job ID is required.');
+ if (!/^[A-Za-z0-9][A-Za-z0-9_.-]{0,79}$/.test(job)) throw new Error('Job ID must start with a letter or number and use only letters, numbers, dot, dash, or underscore.');
+ const seedState = validateManualSeed(seed);
+ if (!seedState.ok || !seedState.value) throw new Error(seedState.message || 'Seed is required.');
+ if (!Number.isInteger(tileSize) || tileSize < 16 || tileSize > 2048) throw new Error('Tile size must be 16..2048.');
+ if (!Number.isInteger(maxTiles) || maxTiles < 1 || maxTiles > 10000) throw new Error('Max Tiles is required and must be 1..10000.');
+ return { job, seed: seedState.value, size, tileSize, maxTiles };
+}
+
+async function createWorldMapFromUi() {
+ try {
+  const payload = validateWorldMapForm();
+  setWorldMapStatus(`Starting ${payload.job} with maxTiles=${payload.maxTiles}…`, 'success');
+  const response = await postWorldMapJob(payload);
+  const estimate = response?.estimate || {};
+  const created = worldMapPayloadFromResponse(response);
+  if (created?.job) {
+   state.currentWorldMapJob = created.job;
+   if (worldMapJobSelect) worldMapJobSelect.value = created.job;
+  } else {
+   state.currentWorldMapJob = payload.job;
+  }
+  const estimateText = estimate.estimated_tiles != null
+   ? `Estimated ${formatNumber(estimate.estimated_tiles)} tiles, ${formatNumber(estimate.estimated_chunks)} chunk actions, ${formatBytes(estimate.estimated_disk_bytes)} raw.`
+   : 'Job submitted.';
+  setWorldMapStatus(estimateText, 'success');
+  await refreshWorldMapJobs();
+ } catch (error) {
+  setWorldMapStatus(error?.message || 'World-map create failed.', 'error');
+ }
+}
+
+async function sendWorldMapControl(command) {
+ const job = state.currentWorldMapJob || worldMapJobSelect?.value || '';
+ if (!job) {
+  setWorldMapStatus('Select a world-map job first.', 'error');
+  return;
+ }
+ try {
+  const response = await postWorldMapControl(job, command);
+  const updated = worldMapPayloadFromResponse(response);
+  if (updated?.job) state.currentWorldMapJob = updated.job;
+  setWorldMapStatus(`${command} written for ${job}.`, command === 'cancel' ? 'error' : 'success');
+  await refreshWorldMapJobs();
+ } catch (error) {
+  setWorldMapStatus(error?.message || `World-map ${command} failed.`, 'error');
+ }
+}
+
+function startWorldMapPolling() {
+ if (state.worldMapPollTimer) clearInterval(state.worldMapPollTimer);
+ state.worldMapPollTimer = setInterval(() => refreshWorldMapJobs(), 2500);
+}
  
 function boolLabel(value) {
  return value ? 'Yes' : 'No';
@@ -4699,6 +5105,44 @@ if (btnDeleteAllRuns) {
   btnDeleteAllRuns.addEventListener('click', () => deleteAllRuns());
 }
 
+if (btnWorldMapRefresh) {
+ btnWorldMapRefresh.addEventListener('click', () => refreshWorldMapJobs({ announce: true }));
+}
+
+if (worldMapJobSelect) {
+ worldMapJobSelect.addEventListener('change', async () => {
+  state.currentWorldMapJob = worldMapJobSelect.value || null;
+  if (state.currentWorldMapJob && worldMapJobInput && !worldMapJobInput.value) {
+   worldMapJobInput.value = state.currentWorldMapJob;
+  }
+  renderWorldMapDetail(selectedWorldMapPayload());
+  syncWorldMapControlButtons();
+  if (state.currentWorldMapJob) {
+   try {
+    const job = await fetchWorldMapJob(state.currentWorldMapJob);
+    state.worldMapJobs = state.worldMapJobs.map((item) => item.job === job.job ? job : item);
+    renderWorldMapDetail(job);
+    setWorldMapStatus(`Loaded ${job.job}.`, 'success');
+   } catch (error) {
+    setWorldMapStatus(error?.message || 'Failed to load selected world-map job.', 'error');
+   }
+  }
+ });
+}
+
+if (btnWorldMapCreate) {
+ btnWorldMapCreate.addEventListener('click', createWorldMapFromUi);
+}
+if (btnWorldMapPause) {
+ btnWorldMapPause.addEventListener('click', () => sendWorldMapControl('pause'));
+}
+if (btnWorldMapResume) {
+ btnWorldMapResume.addEventListener('click', () => sendWorldMapControl('resume'));
+}
+if (btnWorldMapCancel) {
+ btnWorldMapCancel.addEventListener('click', () => sendWorldMapControl('cancel'));
+}
+
 /* ─── MAP IMAGE LOADING ─── */
 async function loadMapImage(url) {
   showToast('Loading map…', 'loading');
@@ -5285,7 +5729,9 @@ async function init() {
     if (state.runs.length === 0) {
       showToast('No runs found — is the server running?', 'error');
     }
+    await refreshWorldMapJobs();
     startGenerationPolling();
+    startWorldMapPolling();
   } catch (err) {
     showToast('Cannot reach server', 'error');
     console.error(err);
