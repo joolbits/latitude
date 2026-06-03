@@ -2951,8 +2951,10 @@ public final class LatitudeBiomes {
             }
         }
         out = gateWarmJungleSurvival(biomeRegistry, out, landBandIndex, blockX, blockZ);
+        out = gateWarmWetSparseJungleSurvival(biomeRegistry, base, out, landBandIndex, blockX, blockZ);
         out = gateDryWarmIdentity(biomeRegistry, out, landBandIndex, blockX, blockZ);
         out = gatePolarTaigaSurvival(biomeRegistry, out, landBandIndex, finalLatDeg, blockX, blockZ);
+        out = gateTemperateTaigaInterior(biomeRegistry, base, out, blockX, blockZ, effectiveRadius, bandIndex, landBandIndex, mountainLike);
         Holder<Biome> beforeLateWetlandClamp = out;
         out = clampLateWetlandSurvival(biomeRegistry, out, base, blockX, blockZ, t, landBandIndex, mountainLike, oceanDistance);
         if (!sameBiomeId(beforeLateWetlandClamp, out)) {
@@ -3537,8 +3539,10 @@ public final class LatitudeBiomes {
             }
         }
         out = gateWarmJungleSurvival(biomePool, out, landBandIndex, blockX, blockZ);
+        out = gateWarmWetSparseJungleSurvival(biomePool, base, out, landBandIndex, blockX, blockZ);
         out = gateDryWarmIdentity(biomePool, out, landBandIndex, blockX, blockZ);
         out = gatePolarTaigaSurvival(biomePool, out, landBandIndex, finalLatDeg, blockX, blockZ);
+        out = gateTemperateTaigaInterior(biomePool, base, out, blockX, blockZ, effectiveRadius, bandIndex, landBandIndex, mountainLike);
         Holder<Biome> beforeLateWetlandClamp = out;
         out = clampLateWetlandSurvival(biomePool, out, base, blockX, blockZ, t, landBandIndex, mountainLike, oceanDistance);
         if (!sameBiomeId(beforeLateWetlandClamp, out)) {
@@ -4903,6 +4907,10 @@ public final class LatitudeBiomes {
         }
         setSelectionPath(PATH_TAG_PICK);
         Holder<Biome> out = entries.get(idx);
+        Holder<Biome> guarded = guardWarmMediumSparseJungleExplicitTag(biomes, tag, out, blockX, blockZ, bandIndex);
+        if (!sameBiomeId(out, guarded)) {
+            return guarded;
+        }
         setAdmission(BiomeAdmissionKind.LATITUDE_TAG, tag.location().toString(), out);
         return out;
     }
@@ -4939,6 +4947,10 @@ public final class LatitudeBiomes {
         }
         setSelectionPath(PATH_TAG_PICK);
         Holder<Biome> out = entries.get(idx);
+        Holder<Biome> guarded = guardWarmMediumSparseJungleExplicitTag(biomes, tag, out, blockX, blockZ, bandIndex);
+        if (!sameBiomeId(out, guarded)) {
+            return guarded;
+        }
         setAdmission(BiomeAdmissionKind.LATITUDE_TAG, tag.location().toString(), out);
         return out;
     }
@@ -4975,6 +4987,10 @@ public final class LatitudeBiomes {
         }
         setSelectionPath(PATH_TAG_PICK);
         Holder<Biome> out = entries.get(idx);
+        Holder<Biome> guarded = guardWarmMediumSparseJungleExplicitTag(biomes, tag, out, blockX, blockZ, bandIndex);
+        if (!sameBiomeId(out, guarded)) {
+            return guarded;
+        }
         setAdmission(BiomeAdmissionKind.LATITUDE_TAG, tag.location().toString(), out);
         return out;
     }
@@ -5057,6 +5073,10 @@ public final class LatitudeBiomes {
         }
         setSelectionPath(PATH_TAG_PICK);
         Holder<Biome> out = entries.get(idx);
+        Holder<Biome> guarded = guardWarmMediumSparseJungleExplicitTag(biomes, tag, out, blockX, blockZ, bandIndex);
+        if (!sameBiomeId(out, guarded)) {
+            return guarded;
+        }
         setAdmission(BiomeAdmissionKind.LATITUDE_TAG, tag.location().toString(), out);
         return out;
     }
@@ -5091,6 +5111,10 @@ public final class LatitudeBiomes {
                     setAdmission(BiomeAdmissionKind.VANILLA_FALLBACK, "tropical_sparse_jungle_reroute", reroute);
                     return reroute;
                 }
+            }
+            Holder<Biome> guarded = guardWarmMediumSparseJungleExplicitTag(biomes, tag, pick, blockX, blockZ, bandIndex);
+            if (!sameBiomeId(pick, guarded)) {
+                return guarded;
             }
         }
         setAdmission(BiomeAdmissionKind.LATITUDE_TAG, tag.location().toString(), pick);
@@ -6052,21 +6076,18 @@ public final class LatitudeBiomes {
             return out;
         }
         if (province == ProvinceAuthority.Province.WARM_MEDIUM) {
-            if (isBiomeId(out, "minecraft:sparse_jungle")) {
-                return out;
-            }
+            Holder<Biome> rerouted = enforceWarmProvinceFamily(biomes, out, province);
             if (DEBUG_PROVINCE) {
                 int count = PROVINCE_DEBUG_COUNT.get();
                 if (count <= PROVINCE_DEBUG_LIMIT) {
-                    LOGGER.info("[LAT][PROVINCE][WARM_JUNGLE_GATE] x={} z={} province={} biome={} -> sparse_jungle",
-                            blockX, blockZ, province, biomeId(out));
+                    LOGGER.info("[LAT][PROVINCE][WARM_JUNGLE_GATE] x={} z={} province={} biome={} -> {}",
+                            blockX, blockZ, province, biomeId(out), biomeId(rerouted));
                 }
             }
-            try {
-                return biome(biomes, "minecraft:sparse_jungle");
-            } catch (Throwable ignored) {
-                return out;
+            if (!sameBiomeId(out, rerouted)) {
+                setAdmission(BiomeAdmissionKind.VANILLA_FALLBACK, "warm_medium_jungle_gate", rerouted);
             }
+            return rerouted;
         }
         if (DEBUG_PROVINCE) {
             int count = PROVINCE_DEBUG_COUNT.get();
@@ -6090,18 +6111,18 @@ public final class LatitudeBiomes {
             return out;
         }
         if (province == ProvinceAuthority.Province.WARM_MEDIUM) {
-            if (isBiomeId(out, "minecraft:sparse_jungle")) {
-                return out;
-            }
+            Holder<Biome> rerouted = enforceWarmProvinceFamily(biomes, out, province);
             if (DEBUG_PROVINCE) {
                 int count = PROVINCE_DEBUG_COUNT.get();
                 if (count <= PROVINCE_DEBUG_LIMIT) {
-                    LOGGER.info("[LAT][PROVINCE][WARM_JUNGLE_GATE] x={} z={} province={} biome={} -> sparse_jungle",
-                            blockX, blockZ, province, biomeId(out));
+                    LOGGER.info("[LAT][PROVINCE][WARM_JUNGLE_GATE] x={} z={} province={} biome={} -> {}",
+                            blockX, blockZ, province, biomeId(out), biomeId(rerouted));
                 }
             }
-            Holder<Biome> sparse = entryById(biomes, "minecraft:sparse_jungle");
-            return sparse != null ? sparse : out;
+            if (!sameBiomeId(out, rerouted)) {
+                setAdmission(BiomeAdmissionKind.VANILLA_FALLBACK, "warm_medium_jungle_gate", rerouted);
+            }
+            return rerouted;
         }
         if (DEBUG_PROVINCE) {
             int count = PROVINCE_DEBUG_COUNT.get();
@@ -6111,6 +6132,132 @@ public final class LatitudeBiomes {
             }
         }
         return pickDryWarmFallback(biomes, out);
+    }
+
+    private static Holder<Biome> guardWarmMediumSparseJungleExplicitTag(Registry<Biome> biomes,
+                                                                        TagKey<Biome> tag,
+                                                                        Holder<Biome> pick,
+                                                                        int blockX,
+                                                                        int blockZ,
+                                                                        int bandIndex) {
+        if (bandIndex != BAND_TROPICAL
+                || !isBiomeId(pick, "minecraft:sparse_jungle")
+                || !java.util.Objects.equals(tag.location(), LAT_TROPICS_SECONDARY.location())) {
+            return pick;
+        }
+        ProvinceAuthority.Province province = warmProvinceClass(blockX, blockZ, bandIndex);
+        if (province != ProvinceAuthority.Province.WARM_MEDIUM) {
+            return pick;
+        }
+        Holder<Biome> rerouted = enforceWarmProvinceFamily(biomes, pick, province);
+        if (!sameBiomeId(pick, rerouted)) {
+            setAdmission(BiomeAdmissionKind.VANILLA_FALLBACK, "warm_medium_sparse_jungle_explicit_tag_guard", rerouted);
+        }
+        return rerouted;
+    }
+
+    private static Holder<Biome> guardWarmMediumSparseJungleExplicitTag(Collection<Holder<Biome>> biomes,
+                                                                        TagKey<Biome> tag,
+                                                                        Holder<Biome> pick,
+                                                                        int blockX,
+                                                                        int blockZ,
+                                                                        int bandIndex) {
+        if (bandIndex != BAND_TROPICAL
+                || !isBiomeId(pick, "minecraft:sparse_jungle")
+                || !java.util.Objects.equals(tag.location(), LAT_TROPICS_SECONDARY.location())) {
+            return pick;
+        }
+        ProvinceAuthority.Province province = warmProvinceClass(blockX, blockZ, bandIndex);
+        if (province != ProvinceAuthority.Province.WARM_MEDIUM) {
+            return pick;
+        }
+        Holder<Biome> rerouted = enforceWarmProvinceFamily(biomes, pick, province);
+        if (!sameBiomeId(pick, rerouted)) {
+            setAdmission(BiomeAdmissionKind.VANILLA_FALLBACK, "warm_medium_sparse_jungle_explicit_tag_guard", rerouted);
+        }
+        return rerouted;
+    }
+
+    private static boolean hasStrongLatitudeTagAdmission(Holder<Biome> out) {
+        BiomeAdmission admission = LAST_BIOME_ADMISSION.get();
+        return admission != null
+                && admission.kind() == BiomeAdmissionKind.LATITUDE_TAG
+                && java.util.Objects.equals(admission.biomeId(), biomeId(out));
+    }
+
+    private static Holder<Biome> warmWetCoreJungleFallback(Registry<Biome> biomes, Holder<Biome> fallback) {
+        try {
+            return biome(biomes, "minecraft:jungle");
+        } catch (Throwable ignored) {
+            try {
+                return biome(biomes, "minecraft:bamboo_jungle");
+            } catch (Throwable ignoredAgain) {
+                return fallback;
+            }
+        }
+    }
+
+    private static Holder<Biome> warmWetCoreJungleFallback(Collection<Holder<Biome>> biomes, Holder<Biome> fallback) {
+        Holder<Biome> jungle = entryById(biomes, "minecraft:jungle");
+        if (jungle != null) {
+            return jungle;
+        }
+        Holder<Biome> bamboo = entryById(biomes, "minecraft:bamboo_jungle");
+        return bamboo != null ? bamboo : fallback;
+    }
+
+    private static Holder<Biome> gateWarmWetSparseJungleSurvival(Registry<Biome> biomes,
+                                                                  Holder<Biome> base,
+                                                                  Holder<Biome> out,
+                                                                  int landBandIndex,
+                                                                  int blockX, int blockZ) {
+        if (landBandIndex > BAND_SUBTROPICAL || !isBiomeId(out, "minecraft:sparse_jungle")) {
+            return out;
+        }
+        ProvinceAuthority.Province province = classifyProvince(blockX, blockZ);
+        if (province != ProvinceAuthority.Province.WARM_WET) {
+            return out;
+        }
+        if (isJungleFamily(base)) {
+            return out;
+        }
+        boolean explicitSparseTag = hasStrongLatitudeTagAdmission(out);
+        Holder<Biome> rerouted = warmWetCoreJungleFallback(biomes, out);
+        if (!sameBiomeId(out, rerouted)) {
+            String source = explicitSparseTag
+                    ? "warm_wet_sparse_jungle_explicit_tag_guard"
+                    : "warm_wet_sparse_jungle_base_guard";
+            setAdmission(BiomeAdmissionKind.VANILLA_FALLBACK, source, rerouted);
+            return rerouted;
+        }
+        return out;
+    }
+
+    private static Holder<Biome> gateWarmWetSparseJungleSurvival(Collection<Holder<Biome>> biomes,
+                                                                  Holder<Biome> base,
+                                                                  Holder<Biome> out,
+                                                                  int landBandIndex,
+                                                                  int blockX, int blockZ) {
+        if (landBandIndex > BAND_SUBTROPICAL || !isBiomeId(out, "minecraft:sparse_jungle")) {
+            return out;
+        }
+        ProvinceAuthority.Province province = classifyProvince(blockX, blockZ);
+        if (province != ProvinceAuthority.Province.WARM_WET) {
+            return out;
+        }
+        if (isJungleFamily(base)) {
+            return out;
+        }
+        boolean explicitSparseTag = hasStrongLatitudeTagAdmission(out);
+        Holder<Biome> rerouted = warmWetCoreJungleFallback(biomes, out);
+        if (!sameBiomeId(out, rerouted)) {
+            String source = explicitSparseTag
+                    ? "warm_wet_sparse_jungle_explicit_tag_guard"
+                    : "warm_wet_sparse_jungle_base_guard";
+            setAdmission(BiomeAdmissionKind.VANILLA_FALLBACK, source, rerouted);
+            return rerouted;
+        }
+        return out;
     }
 
     private static boolean isDryWarmIdentity(Holder<Biome> entry) {
@@ -6395,6 +6542,13 @@ public final class LatitudeBiomes {
                 || isBiomeId(entry, "minecraft:old_growth_spruce_taiga");
     }
 
+    private static boolean isTaigaNamedBiome(Holder<Biome> entry) {
+        if (entry == null) return false;
+        if (isTaigaFamilyBiome(entry)) return true;
+        String path = entry.unwrapKey().map(key -> key.identifier().getPath()).orElse("");
+        return path.contains("taiga");
+    }
+
     private static int temperateWarmEdgeShoulderBlocks(int effectiveRadius) {
         if (effectiveRadius <= 0) {
             return TEMPERATE_WARM_EDGE_SHOULDER_MIN_BLOCKS;
@@ -6470,7 +6624,7 @@ public final class LatitudeBiomes {
         return isBiomeId(biome, "minecraft:forest")
                 || isBiomeId(biome, "minecraft:dark_forest")
                 || isBiomeId(biome, "minecraft:windswept_forest")
-                || isTaigaFamilyBiome(biome);
+                || isTaigaNamedBiome(biome);
     }
 
     private static int temperateWarmEdgeFallbackStartIndex(int blockX, int blockZ, int size) {
@@ -6540,6 +6694,42 @@ public final class LatitudeBiomes {
         }
         Holder<Biome> fallback = pickTemperateWarmEdgeTransitionFallback(biomes, base, blockX, blockZ);
         return fallback != null ? fallback : out;
+    }
+
+    private static Holder<Biome> gateTemperateTaigaInterior(Registry<Biome> biomes, Holder<Biome> base,
+                                                                    Holder<Biome> out,
+                                                                    int blockX, int blockZ, int effectiveRadius,
+                                                                    int sourceBandIndex, int landBandIndex, boolean mountainLike) {
+        if (landBandIndex != BAND_TEMPERATE || mountainLike || !isTaigaNamedBiome(out)) {
+            return out;
+        }
+        if (isTemperateWarmEdgeShoulderCell(blockX, blockZ, effectiveRadius, sourceBandIndex, landBandIndex, false)) {
+            return out;
+        }
+        Holder<Biome> fallback = pickTemperateWarmEdgeTransitionFallback(biomes, base, blockX, blockZ);
+        if (fallback != null && !sameBiomeId(fallback, out)) {
+            setAdmission(BiomeAdmissionKind.VANILLA_FALLBACK, "temperate_nonshoulder_taiga_gate", fallback);
+            return fallback;
+        }
+        return out;
+    }
+
+    private static Holder<Biome> gateTemperateTaigaInterior(Collection<Holder<Biome>> biomes, Holder<Biome> base,
+                                                                    Holder<Biome> out,
+                                                                    int blockX, int blockZ, int effectiveRadius,
+                                                                    int sourceBandIndex, int landBandIndex, boolean mountainLike) {
+        if (landBandIndex != BAND_TEMPERATE || mountainLike || !isTaigaNamedBiome(out)) {
+            return out;
+        }
+        if (isTemperateWarmEdgeShoulderCell(blockX, blockZ, effectiveRadius, sourceBandIndex, landBandIndex, false)) {
+            return out;
+        }
+        Holder<Biome> fallback = pickTemperateWarmEdgeTransitionFallback(biomes, base, blockX, blockZ);
+        if (fallback != null && !sameBiomeId(fallback, out)) {
+            setAdmission(BiomeAdmissionKind.VANILLA_FALLBACK, "temperate_nonshoulder_taiga_gate", fallback);
+            return fallback;
+        }
+        return out;
     }
 
     private static double snowyRampAlpha(double deg) {
@@ -8970,6 +9160,10 @@ public final class LatitudeBiomes {
                 } catch (Throwable ignored) {
                     // keep the original sparse jungle pick if the reroute target is unavailable
                 }
+            }
+            Holder<Biome> guarded = guardWarmMediumSparseJungleExplicitTag(biomes, tag, pick, blockX, blockZ, bandIndex);
+            if (!sameBiomeId(pick, guarded)) {
+                return guarded;
             }
         }
         setAdmission(BiomeAdmissionKind.LATITUDE_TAG, tag.location().toString(), pick);
