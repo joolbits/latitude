@@ -69,3 +69,9 @@ Beaches in cold bands must match the environment.
 
 ### T5: Polar Integrity
 - [ ] No taiga, meadow, or green forest biomes found at >70°.
+
+## 6. Exact-ID Biome Coherence Gates
+- `LatitudeBiomes` owns the late exact-family/province coherence gates that prevent tiny tag-valid biome families from surviving as biome-ID confetti after candidate selection.
+- Sparse jungle may survive only when the warm province/base context still has jungle authority. Warm-wet/base and warm-medium explicit-tag residuals are rerouted through existing jungle/savanna-family fallbacks instead of being interpreted from atlas preview colors.
+- Temperate taiga outputs use the same named-taiga classification across the non-shoulder interior gate and the warm-edge shoulder softener, so custom taiga IDs such as `terralith:birch_taiga` do not survive as tiny plains-contact fragments.
+- Acceptance is an exact-ID gate over `step16_biome_ids.png` plus `step16_biome_palette.json`, not visual palette similarity. Current savepoint proof is `run-headless/latdev/atlas-runs/20260603-145101` and `tmp/latitude-confetti-exact-id-gate-930f7966/green-20260603-145101.json`: sparse-jungle/desert `0`, old-growth-pine-taiga/plains `0`, and Terralith birch-taiga/plains `0` contact edges.
