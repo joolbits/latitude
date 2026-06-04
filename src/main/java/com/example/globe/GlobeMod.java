@@ -437,10 +437,9 @@ public class GlobeMod implements ModInitializer {
             zoneId = "TEMPERATE";
         }
 
-        int radius = LatitudeBiomes.getActiveRadiusBlocks();
-        if (radius <= 0) {
-            radius = borderRadiusForGlobeOverworld(world);
-        }
+        // Early setupSpawn runs before SERVER_STARTED refreshes ACTIVE_RADIUS_BLOCKS,
+        // so derive spawn bounds from the new world's generator settings directly.
+        int radius = borderRadiusForGlobeOverworld(world);
 
         double v = hash01(seed, 1, 0, SPAWN_SALT);
         double spawnAbsLatFrac = com.example.globe.util.LatitudeMath.spawnFracForZoneKey(zoneId);

@@ -1,0 +1,55 @@
+# Latitude 1.20.1 PR #6 Early Spawn Radius Review Fix
+
+Root: `<home>/CascadeProjects/Latitude-issue5-1.20.1`
+Branch: `fix/1.20.1-refmap-name`
+HEAD: `c2180ebe`
+Tag at HEAD: `save/1.20.1-early-initial-spawn-radius`
+
+## Scope
+
+- Address only the unresolved PR #6 review thread on `src/main/java/com/example/globe/GlobeMod.java`
+- Do not publish, merge, savepoint, tag, push, or close issue #5
+
+## Review Thread
+
+- PR: `joolbits/latitude#6`
+- Thread: unresolved on `GlobeMod.java` lines 440-442
+- Review comment id: `3357063569`
+- Claim: early `setupSpawn` can reuse stale positive `ACTIVE_RADIUS_BLOCKS` from a previous Latitude world before `SERVER_STARTED` refreshes it
+
+## Classification
+
+- Reproduced from current source: yes
+- Failing boundary before patch: `resolveSpawnChoice(...)` read `LatitudeBiomes.getActiveRadiusBlocks()` before consulting the new world's generator radius
+- Risk: a smaller second Latitude world created after a larger one can compute and persist a spawn outside the new border while dismissing the picker
+
+## Files Changed
+
+- `src/main/java/com/example/globe/GlobeMod.java`
+- `docs/porting/port-1.20.1-pr6-early-spawn-radius-review-fix.txt`
+- `tmp/latitude-pr6-early-radius-20260604/source-proof.sh`
+
+## Fix
+
+- `resolveSpawnChoice(...)` now derives spawn radius directly from `borderRadiusForGlobeOverworld(world)`
+- The early `setupSpawn` path no longer depends on `ACTIVE_RADIUS_BLOCKS`
+- Normal spawn-choice math, land search, and warning-zone clamping remain unchanged
+
+## Proof
+
+- `./tmp/latitude-pr6-early-radius-20260604/source-proof.sh`
+  - Before patch: `FAIL: resolveSpawnChoice still depends on ACTIVE_RADIUS_BLOCKS, so early setupSpawn can reuse stale radius state.`
+  - After patch: `PASS: resolveSpawnChoice no longer depends on ACTIVE_RADIUS_BLOCKS for spawn radius.`
+- `./gradlew --no-daemon compileJava`
+  - Result: `BUILD SUCCESSFUL`
+  - Note: existing deprecated-API note from `SurfaceDripstoneLawnmowerMixin.java`, unrelated to this slice
+
+## Limits
+
+- No fresh runtime/client repro was rerun in this slice
+- At proof time, the PR review thread was only locally addressed; refresh GitHub thread state after any later reply/resolution
+- Release readiness is improved for this blocker only, not re-proven end to end
+
+## Next Recommended Slice
+
+- Run a focused manual two-world client repro on this 1.20.1 hotfix line: create a larger Latitude world, return to title, create a smaller Latitude world, and confirm the early spawn stays inside the smaller border without losing the picker flow
