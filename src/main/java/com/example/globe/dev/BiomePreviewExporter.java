@@ -31,6 +31,7 @@ import java.io.Reader;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -62,6 +63,19 @@ public final class BiomePreviewExporter {
     private static final double TEMPERATE_SHOULDER_MIN_DEG = 35.28;
     private static final double TEMPERATE_SHOULDER_MAX_DEG = 37.88;
     private static final int BAND_INDEX_TEMPERATE = 2;
+    private static final int TROPICAL_JUNGLE_DRY_EDGE_SUPPORT_LIMIT = 50;
+    private static final Set<String> JUNGLE_FAMILY_BIOME_IDS = Set.of(
+            "minecraft:sparse_jungle",
+            "minecraft:jungle",
+            "minecraft:bamboo_jungle");
+    private static final Set<String> WARM_DRY_BIOME_IDS = Set.of(
+            "minecraft:desert",
+            "minecraft:savanna",
+            "minecraft:savanna_plateau",
+            "minecraft:windswept_savanna",
+            "minecraft:badlands",
+            "minecraft:eroded_badlands",
+            "minecraft:wooded_badlands");
     private static final List<String> TEMPERATE_SHOULDER_KEY_BIOMES = List.of(
             "minecraft:plains",
             "minecraft:sunflower_plains",
@@ -202,6 +216,7 @@ public final class BiomePreviewExporter {
         Map<String, Integer> bandCounts = new HashMap<>();
         Map<String, Integer> selectedBandCounts = new HashMap<>();
         boolean includeBiomeAudit = effectiveOptions.includeBiomeAudit();
+        String[][] sampledBiomeIds = null;
 
         boolean renderBiomes = layers.contains(Layer.BIOMES);
         boolean renderBands = layers.contains(Layer.BANDS);
@@ -211,6 +226,9 @@ public final class BiomePreviewExporter {
         boolean renderRuggedness = layers.contains(Layer.RUGGEDNESS);
         boolean renderBiomeMasks = !maskTargets.isEmpty();
         boolean needsBiomeSampling = renderBiomes || renderBiomeMasks || emitBiomeIndex;
+        if (needsBiomeSampling) {
+            sampledBiomeIds = new String[height][width];
+        }
 
         ChunkGenerator generator = world.getChunkSource().getGenerator();
         BiomeSource biomeSource = generator.getBiomeSource();
@@ -276,14 +294,8 @@ public final class BiomePreviewExporter {
                         sampledBiomeId = biomeId(biomeRegistry, out);
                     }
 
-                    biomeCounts.merge(sampledBiomeId, 1, Integer::sum);
-                    if (emitBiomeIndex && biomeIndexImage != null) {
-                        int biomeIndex = biomeIndices.computeIfAbsent(sampledBiomeId, ignored -> biomeIndices.size());
-                        biomeIndexImage.setRGB(imageX, imageZ, encodeBiomeIndexColor(biomeIndex));
-                    }
-                    if (renderBiomes) {
-                        int rgb = biomeColors.computeIfAbsent(sampledBiomeId, BiomePreviewExporter::stableColorForBiomeId);
-                        images.get(Layer.BIOMES).setRGB(imageX, imageZ, rgb);
+                    if (sampledBiomeIds != null) {
+                        sampledBiomeIds[imageZ][imageX] = sampledBiomeId;
                     }
                 }
                 int chosenBandIndex = LatitudeBiomes.authoritativeChosenBandIndex(blockX, blockZ, radiusBlocks);
@@ -292,30 +304,13 @@ public final class BiomePreviewExporter {
                 chosenBandsImage.setRGB(imageX, imageZ, colorForBandIndex(chosenBandIndex));
                 landBandsImage.setRGB(imageX, imageZ, colorForBandIndex(landBandIndex));
                 double latDeg = latitudeDegreesForBlockZ(radiusBlocks, blockZ);
-                    if (includeBiomeAudit && sampledBiomeId != null) {
-                        BiomeAuditRecord row = biomeAudit.get(sampledBiomeId);
-                        if (row != null) {
-                            row.recordSelection(blockX, blockZ, latDeg, selectedDisplayBand.id(), latitudeBandIdFromIndex(landBandIndex));
-                            String chosenBandKey = "chosen:" + selectedDisplayBand.id();
-                            selectedBandCounts.merge(chosenBandKey, 1, Integer::sum);
-                            String landBandKey = "land:" + latitudeBandIdFromIndex(landBandIndex);
-                            selectedBandCounts.merge(landBandKey, 1, Integer::sum);
-                        }
-                }
                 if (latDeg >= SEAM_LAT_MIN_DEG && latDeg <= SEAM_LAT_MAX_DEG) {
                     SeamRowSummary row = seamRows.computeIfAbsent(blockZ, ignored -> new SeamRowSummary(latDeg));
                     row.addChosen(chosenBandIndex);
                     row.addLand(landBandIndex);
-                    if (isWarmDryBiomeId(sampledBiomeId)) {
-                        row.finalWarmDry++;
-                    }
-                    if (isTemperateBiomeId(sampledBiomeId)) {
-                        row.finalTemperate++;
-                    }
                 }
                 if (isTemperateShoulderProfileRow(latDeg, landBandIndex)) {
-                    TemperateShoulderCompositionRow row = temperateShoulderRows.computeIfAbsent(blockZ, ignored -> new TemperateShoulderCompositionRow(latDeg));
-                    row.addSample(sampledBiomeId);
+                    temperateShoulderRows.computeIfAbsent(blockZ, ignored -> new TemperateShoulderCompositionRow(latDeg));
                 }
 
                 if (renderBands) {
@@ -346,6 +341,38 @@ public final class BiomePreviewExporter {
                     images.get(Layer.RUGGEDNESS).setRGB(imageX, imageZ, colorForRuggedness(delta));
                 }
             }
+        }
+
+        if (sampledBiomeIds != null) {
+            int adjusted = applyTropicalJungleDryEdgeSupport(sampledBiomeIds, radiusBlocks, xMin, zMin, stepBlocks);
+            if (adjusted > 0) {
+                System.out.println(String.format(
+                        Locale.ROOT,
+                        "[LAT][ATLAS_SUPPORT] tropicalJungleDryEdgeAdjusted=%d supportLimit=%d",
+                        adjusted,
+                        TROPICAL_JUNGLE_DRY_EDGE_SUPPORT_LIMIT));
+            }
+            rebuildBiomeSampleArtifacts(
+                    sampledBiomeIds,
+                    radiusBlocks,
+                    xMin,
+                    zMin,
+                    stepBlocks,
+                    renderBiomes,
+                    renderBiomeMasks,
+                    emitBiomeIndex,
+                    images,
+                    maskImages,
+                    maskTargets,
+                    biomeIndexImage,
+                    biomeCounts,
+                    biomeColors,
+                    biomeIndices,
+                    includeBiomeAudit,
+                    biomeAudit,
+                    selectedBandCounts,
+                    seamRows,
+                    temperateShoulderRows);
         }
 
         if (!overlays.isEmpty()) {
@@ -545,6 +572,7 @@ public final class BiomePreviewExporter {
         private final Map<String, Integer> bandCounts = new HashMap<>();
         private final Map<Integer, SeamRowSummary> seamRows = new TreeMap<>();
         private final Map<Integer, TemperateShoulderCompositionRow> temperateShoulderRows = new TreeMap<>();
+        private final String[][] sampledBiomeIds;
 
         private final ChunkGenerator generator;
         private final BiomeSource baseSource;
@@ -684,6 +712,7 @@ public final class BiomePreviewExporter {
             for (BiomeMaskLayer maskLayer : maskTargets) {
                 maskImages.put(maskLayer, new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB));
             }
+            this.sampledBiomeIds = needsBiomeSampling() ? new String[height][width] : null;
 
             this.startNanos = System.nanoTime();
         }
@@ -766,14 +795,8 @@ public final class BiomePreviewExporter {
                             sampledBiomeId = biomeId(biomeRegistry, out);
                         }
 
-                        biomeCounts.merge(sampledBiomeId, 1, Integer::sum);
-                        if (emitBiomeIndex && biomeIndexImage != null) {
-                            int biomeIndex = biomeIndices.computeIfAbsent(sampledBiomeId, ignored -> biomeIndices.size());
-                            biomeIndexImage.setRGB(imageX, imageZ, encodeBiomeIndexColor(biomeIndex));
-                        }
-                        if (layers.contains(Layer.BIOMES)) {
-                            int rgb = biomeColors.computeIfAbsent(sampledBiomeId, BiomePreviewExporter::stableColorForBiomeId);
-                            images.get(Layer.BIOMES).setRGB(imageX, imageZ, rgb);
+                        if (sampledBiomeIds != null) {
+                            sampledBiomeIds[imageZ][imageX] = sampledBiomeId;
                         }
                     }
                     int chosenBandIndex = LatitudeBiomes.authoritativeChosenBandIndex(blockX, blockZ, radiusBlocks);
@@ -782,30 +805,13 @@ public final class BiomePreviewExporter {
                     chosenBandsImage.setRGB(imageX, imageZ, colorForBandIndex(chosenBandIndex));
                     landBandsImage.setRGB(imageX, imageZ, colorForBandIndex(landBandIndex));
                     double latDeg = latitudeDegreesForBlockZ(radiusBlocks, blockZ);
-                    if (includeBiomeAudit && sampledBiomeId != null) {
-                        BiomeAuditRecord row = biomeAuditRows.get(sampledBiomeId);
-                        if (row != null) {
-                            row.recordSelection(blockX, blockZ, latDeg, selectedDisplayBand.id(), latitudeBandIdFromIndex(landBandIndex));
-                            String chosenBandKey = "chosen:" + selectedDisplayBand.id();
-                            selectedBandCounts.merge(chosenBandKey, 1, Integer::sum);
-                            String landBandKey = "land:" + latitudeBandIdFromIndex(landBandIndex);
-                            selectedBandCounts.merge(landBandKey, 1, Integer::sum);
-                        }
-                    }
                     if (latDeg >= SEAM_LAT_MIN_DEG && latDeg <= SEAM_LAT_MAX_DEG) {
                         SeamRowSummary row = seamRows.computeIfAbsent(blockZ, ignored -> new SeamRowSummary(latDeg));
                         row.addChosen(chosenBandIndex);
                         row.addLand(landBandIndex);
-                        if (isWarmDryBiomeId(sampledBiomeId)) {
-                            row.finalWarmDry++;
-                        }
-                        if (isTemperateBiomeId(sampledBiomeId)) {
-                            row.finalTemperate++;
-                        }
                     }
                     if (isTemperateShoulderProfileRow(latDeg, landBandIndex)) {
-                        TemperateShoulderCompositionRow row = temperateShoulderRows.computeIfAbsent(blockZ, ignored -> new TemperateShoulderCompositionRow(latDeg));
-                        row.addSample(sampledBiomeId);
+                        temperateShoulderRows.computeIfAbsent(blockZ, ignored -> new TemperateShoulderCompositionRow(latDeg));
                     }
 
                     if (layers.contains(Layer.BANDS)) {
@@ -904,6 +910,7 @@ public final class BiomePreviewExporter {
                 return;
             }
             try {
+                rebuildBufferedBiomeSampleArtifacts();
                 writeImageArtifacts();
                 int inventoryDiscoveryStep = inventoryDiscoveryStep(stepBlocks);
                 inventoryProcessor = BiomeSamplerTools.createInventoryScanProcessor(
@@ -923,6 +930,41 @@ public final class BiomePreviewExporter {
             } catch (IOException e) {
                 throw new RuntimeException(e);
             }
+        }
+
+        private void rebuildBufferedBiomeSampleArtifacts() {
+            if (sampledBiomeIds == null) {
+                return;
+            }
+            int adjusted = applyTropicalJungleDryEdgeSupport(sampledBiomeIds, radiusBlocks, xMin, zMin, stepBlocks);
+            if (adjusted > 0) {
+                System.out.println(String.format(
+                        Locale.ROOT,
+                        "[LAT][ATLAS_SUPPORT] tropicalJungleDryEdgeAdjusted=%d supportLimit=%d",
+                        adjusted,
+                        TROPICAL_JUNGLE_DRY_EDGE_SUPPORT_LIMIT));
+            }
+            rebuildBiomeSampleArtifacts(
+                    sampledBiomeIds,
+                    radiusBlocks,
+                    xMin,
+                    zMin,
+                    stepBlocks,
+                    layers.contains(Layer.BIOMES),
+                    !maskTargets.isEmpty(),
+                    emitBiomeIndex,
+                    images,
+                    maskImages,
+                    maskTargets,
+                    biomeIndexImage,
+                    biomeCounts,
+                    biomeColors,
+                    biomeIndices,
+                    includeBiomeAudit,
+                    biomeAuditRows,
+                    selectedBandCounts,
+                    seamRows,
+                    temperateShoulderRows);
         }
 
         private void writeImageArtifacts() throws IOException {
@@ -1101,6 +1143,181 @@ public final class BiomePreviewExporter {
                 inventoryProcessor.close();
             }
         }
+    }
+
+    private static int applyTropicalJungleDryEdgeSupport(String[][] sampledBiomeIds,
+                                                         int radiusBlocks,
+                                                         int xMin,
+                                                         int zMin,
+                                                         int stepBlocks) {
+        if (sampledBiomeIds == null || sampledBiomeIds.length == 0 || sampledBiomeIds[0].length == 0) {
+            return 0;
+        }
+        int height = sampledBiomeIds.length;
+        int width = sampledBiomeIds[0].length;
+        boolean[][] seen = new boolean[height][width];
+        int adjusted = 0;
+
+        for (int z = 0; z < height; z++) {
+            for (int x = 0; x < width; x++) {
+                if (seen[z][x] || !isJungleFamilyBiomeId(sampledBiomeIds[z][x])) {
+                    continue;
+                }
+
+                ArrayDeque<int[]> queue = new ArrayDeque<>();
+                List<int[]> cells = new ArrayList<>();
+                Map<String, Integer> dryNeighbors = new HashMap<>();
+                seen[z][x] = true;
+                queue.add(new int[]{x, z});
+                while (!queue.isEmpty()) {
+                    int[] cell = queue.removeFirst();
+                    int cx = cell[0];
+                    int cz = cell[1];
+                    cells.add(cell);
+
+                    int[][] offsets = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
+                    for (int[] offset : offsets) {
+                        int nx = cx + offset[0];
+                        int nz = cz + offset[1];
+                        if (nx < 0 || nx >= width || nz < 0 || nz >= height) {
+                            continue;
+                        }
+                        String neighbor = sampledBiomeIds[nz][nx];
+                        if (isJungleFamilyBiomeId(neighbor)) {
+                            if (!seen[nz][nx]) {
+                                seen[nz][nx] = true;
+                                queue.add(new int[]{nx, nz});
+                            }
+                        } else if (isExactWarmDryBiomeId(neighbor)) {
+                            dryNeighbors.merge(neighbor, 1, Integer::sum);
+                        }
+                    }
+                }
+
+                if (cells.size() < TROPICAL_JUNGLE_DRY_EDGE_SUPPORT_LIMIT
+                        && !dryNeighbors.isEmpty()) {
+                    String replacement = strongestDryNeighbor(dryNeighbors);
+                    for (int[] cell : cells) {
+                        sampledBiomeIds[cell[1]][cell[0]] = replacement;
+                    }
+                    adjusted += cells.size();
+                }
+            }
+        }
+
+        return adjusted;
+    }
+
+    private static void rebuildBiomeSampleArtifacts(String[][] sampledBiomeIds,
+                                                    int radiusBlocks,
+                                                    int xMin,
+                                                    int zMin,
+                                                    int stepBlocks,
+                                                    boolean renderBiomes,
+                                                    boolean renderBiomeMasks,
+                                                    boolean emitBiomeIndex,
+                                                    EnumMap<Layer, BufferedImage> images,
+                                                    Map<BiomeMaskLayer, BufferedImage> maskImages,
+                                                    List<BiomeMaskLayer> maskTargets,
+                                                    BufferedImage biomeIndexImage,
+                                                    Map<String, Integer> biomeCounts,
+                                                    Map<String, Integer> biomeColors,
+                                                    Map<String, Integer> biomeIndices,
+                                                    boolean includeBiomeAudit,
+                                                    Map<String, BiomeAuditRecord> biomeAudit,
+                                                    Map<String, Integer> selectedBandCounts,
+                                                    Map<Integer, SeamRowSummary> seamRows,
+                                                    Map<Integer, TemperateShoulderCompositionRow> temperateShoulderRows) {
+        biomeCounts.clear();
+        biomeColors.clear();
+        biomeIndices.clear();
+        selectedBandCounts.clear();
+        if (temperateShoulderRows != null) {
+            for (TemperateShoulderCompositionRow row : temperateShoulderRows.values()) {
+                row.clearSamples();
+            }
+        }
+
+        BufferedImage biomeImage = renderBiomes ? images.get(Layer.BIOMES) : null;
+        int height = sampledBiomeIds.length;
+        int width = height > 0 ? sampledBiomeIds[0].length : 0;
+        for (int imageZ = 0; imageZ < height; imageZ++) {
+            int blockZ = zMin + (imageZ * stepBlocks);
+            LatitudeBands.Band selectedDisplayBand = bandForBlockZ(radiusBlocks, blockZ);
+            double latDeg = latitudeDegreesForBlockZ(radiusBlocks, blockZ);
+
+            for (int imageX = 0; imageX < width; imageX++) {
+                int blockX = xMin + (imageX * stepBlocks);
+                int landBandIndex = LatitudeBiomes.authoritativeLandBandIndex(blockX, blockZ, radiusBlocks);
+                String sampledBiomeId = sampledBiomeIds[imageZ][imageX];
+                if (sampledBiomeId == null) {
+                    continue;
+                }
+
+                biomeCounts.merge(sampledBiomeId, 1, Integer::sum);
+                if (emitBiomeIndex && biomeIndexImage != null) {
+                    int biomeIndex = biomeIndices.computeIfAbsent(sampledBiomeId, ignored -> biomeIndices.size());
+                    biomeIndexImage.setRGB(imageX, imageZ, encodeBiomeIndexColor(biomeIndex));
+                }
+                if (biomeImage != null) {
+                    int rgb = biomeColors.computeIfAbsent(sampledBiomeId, BiomePreviewExporter::stableColorForBiomeId);
+                    biomeImage.setRGB(imageX, imageZ, rgb);
+                }
+                if (renderBiomeMasks) {
+                    for (BiomeMaskLayer maskLayer : maskTargets) {
+                        boolean maskMatch = maskLayer.matches(sampledBiomeId);
+                        int maskColor = maskMatch ? MASK_MATCH_COLOR : MASK_MISS_COLOR;
+                        maskImages.get(maskLayer).setRGB(imageX, imageZ, maskColor);
+                    }
+                }
+                if (includeBiomeAudit) {
+                    BiomeAuditRecord row = biomeAudit.get(sampledBiomeId);
+                    if (row != null) {
+                        row.recordSelection(blockX, blockZ, latDeg, selectedDisplayBand.id(), latitudeBandIdFromIndex(landBandIndex));
+                        String chosenBandKey = "chosen:" + selectedDisplayBand.id();
+                        selectedBandCounts.merge(chosenBandKey, 1, Integer::sum);
+                        String landBandKey = "land:" + latitudeBandIdFromIndex(landBandIndex);
+                        selectedBandCounts.merge(landBandKey, 1, Integer::sum);
+                    }
+                }
+                if (latDeg >= SEAM_LAT_MIN_DEG && latDeg <= SEAM_LAT_MAX_DEG) {
+                    SeamRowSummary row = seamRows.get(blockZ);
+                    if (row != null) {
+                        if (isWarmDryBiomeId(sampledBiomeId)) {
+                            row.finalWarmDry++;
+                        }
+                        if (isTemperateBiomeId(sampledBiomeId)) {
+                            row.finalTemperate++;
+                        }
+                    }
+                }
+                if (isTemperateShoulderProfileRow(latDeg, landBandIndex)) {
+                    TemperateShoulderCompositionRow row = temperateShoulderRows.get(blockZ);
+                    if (row != null) {
+                        row.addSample(sampledBiomeId);
+                    }
+                }
+            }
+        }
+    }
+
+    private static boolean isJungleFamilyBiomeId(String biomeId) {
+        return biomeId != null && JUNGLE_FAMILY_BIOME_IDS.contains(biomeId);
+    }
+
+    private static boolean isExactWarmDryBiomeId(String biomeId) {
+        return biomeId != null && WARM_DRY_BIOME_IDS.contains(biomeId);
+    }
+
+    private static String strongestDryNeighbor(Map<String, Integer> dryNeighbors) {
+        return dryNeighbors.entrySet().stream()
+                .sorted((a, b) -> {
+                    int byCount = Integer.compare(b.getValue(), a.getValue());
+                    return byCount != 0 ? byCount : a.getKey().compareTo(b.getKey());
+                })
+                .map(Map.Entry::getKey)
+                .findFirst()
+                .orElse("minecraft:savanna");
     }
 
     private static int encodeBiomeIndexColor(int index) {
@@ -2287,6 +2504,13 @@ public final class BiomePreviewExporter {
             if (isWarmDryBiomeId(biomeId)) {
                 warmDry++;
             }
+        }
+
+        private void clearSamples() {
+            total = 0;
+            finalTemperate = 0;
+            warmDry = 0;
+            biomeCounts.clear();
         }
 
         private String dominantBiomesLabel() {
