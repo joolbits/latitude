@@ -26,7 +26,7 @@ import net.minecraft.world.border.WorldBorder;
 import net.minecraft.world.gen.chunk.ChunkGenerator;
 import net.minecraft.world.gen.chunk.ChunkGeneratorSettings;
 import net.minecraft.world.gen.chunk.NoiseChunkGenerator;
-import net.minecraft.world.WorldProperties;
+import net.minecraft.world.level.ServerWorldProperties;
 import net.minecraft.network.packet.s2c.play.PositionFlag;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.random.Random;
@@ -76,6 +76,9 @@ public class GlobeMod implements ModInitializer {
     private static PolarCapScrubber POLAR_SCRUBBER;
 
     private static final boolean ENABLE_POLAR_SCRUBBER = false;
+
+    private record SpawnChoice(String zoneId, BlockPos pos, int radius, int targetZ) {
+    }
 
 
     private static final Identifier GLOBE_SETTINGS_ID = Identifier.of(MOD_ID, "overworld");
@@ -363,6 +366,39 @@ public class GlobeMod implements ModInitializer {
         return BORDER_RADIUS;
     }
 
+    public static boolean trySetInitialLatitudeSpawn(ServerWorld world,
+                                                     ServerWorldProperties worldProperties,
+                                                     boolean bonusChest,
+                                                     boolean debugWorld) {
+        if (world == null || worldProperties == null || bonusChest || debugWorld || !isGlobeOverworld(world)) {
+            return false;
+        }
+
+        String pendingZone = GlobePending.peek();
+        if (pendingZone == null) {
+            return false;
+        }
+
+        try {
+            SpawnChoice spawnChoice = resolveSpawnChoice(world, pendingZone);
+            BlockPos spawnPos = spawnChoice.pos();
+            if (!isValidSpawnChoice(spawnChoice)) {
+                LOGGER.warn("[Latitude] Early initial spawn declined invalid choice: zone={} x={} y={} z={} radius={} targetZ={}",
+                        spawnChoice.zoneId(), spawnPos.getX(), spawnPos.getY(), spawnPos.getZ(), spawnChoice.radius(), spawnChoice.targetZ());
+                return false;
+            }
+
+            worldProperties.setSpawnPos(spawnPos, 0.0f);
+            LatitudeWorldState.get(world).setSpawnPickerDismissed(true);
+            LOGGER.info("[Latitude] Early initial spawn set before player-spawn pregen: zone={} x={} y={} z={} radius={}",
+                    spawnChoice.zoneId(), spawnPos.getX(), spawnPos.getY(), spawnPos.getZ(), spawnChoice.radius());
+            return true;
+        } catch (RuntimeException e) {
+            LOGGER.warn("[Latitude] Early initial spawn failed; falling back to vanilla initial spawn", e);
+            return false;
+        }
+    }
+
     private static void applySpawnChoice(ServerPlayerEntity player, String id) {
         if (player.getCommandTags().contains(SPAWN_CHOSEN_TAG)) {
             return;
@@ -379,28 +415,33 @@ public class GlobeMod implements ModInitializer {
             return;
         }
 
-        String zoneId = id;
+        SpawnChoice spawnChoice = resolveSpawnChoice(world, id);
+        LOGGER.info("Applying spawn choice: player={}, zoneId={}", player.getName().getString(), spawnChoice.zoneId());
+        world.setSpawnPos(spawnChoice.pos(), 0.0f);
+
+        BlockPos teleportPos = spawnChoice.pos();
+        player.teleport(world, teleportPos.getX() + 0.5, teleportPos.getY(), teleportPos.getZ() + 0.5, EnumSet.noneOf(PositionFlag.class), player.getYaw(), player.getPitch());
+        player.addCommandTag(SPAWN_CHOSEN_TAG);
+        LatitudeWorldState.get(world).setSpawnPickerDismissed(true);
+    }
+
+    private static SpawnChoice resolveSpawnChoice(ServerWorld world, String selectedZoneId) {
+        String zoneId = selectedZoneId;
+        long seed = world.getServer().getSaveProperties().getGeneratorOptions().getSeed();
+
         if (zoneId != null && zoneId.equals("RANDOM")) {
-            long seed = world.getServer().getSaveProperties().getGeneratorOptions().getSeed();
             zoneId = resolveSpawnZoneId(zoneId, seed);
-            LOGGER.info("Resolved RANDOM spawn zone: player={}, seed={}, chosen={}", player.getName().getString(), seed, zoneId);
         }
 
         if (zoneId == null) {
             zoneId = "TEMPERATE";
         }
 
-        LOGGER.info("Applying spawn choice: player={}, zoneId={}", player.getName().getString(), zoneId);
+        // Early setupSpawn runs before SERVER_STARTED refreshes ACTIVE_RADIUS_BLOCKS,
+        // so derive spawn bounds from the new world's generator settings directly.
+        int radius = borderRadiusForGlobeOverworld(world);
 
-        int radius = LatitudeBiomes.getActiveRadiusBlocks();
-        if (radius <= 0) {
-            WorldBorder border = world.getWorldBorder();
-            radius = (int) Math.round(com.example.globe.util.LatitudeMath.halfSize(border));
-        }
-
-        long seed = world.getServer().getSaveProperties().getGeneratorOptions().getSeed();
         double v = hash01(seed, 1, 0, SPAWN_SALT);
-        
         double spawnAbsLatFrac = com.example.globe.util.LatitudeMath.spawnFracForZoneKey(zoneId);
         int z = (int) Math.round(radius * spawnAbsLatFrac);
         if (v < 0.5) {
@@ -409,24 +450,28 @@ public class GlobeMod implements ModInitializer {
 
         int warnStartZ = Math.max(0, radius - POLE_WARNING_DISTANCE_BLOCKS);
         int maxAbsZ = Math.max(0, warnStartZ - 500);
-        z = MathHelper.clamp(z, -maxAbsZ, maxAbsZ);
-
-        int targetZ = z;
+        int targetZ = MathHelper.clamp(z, -maxAbsZ, maxAbsZ);
 
         BlockPos spawnPos = findLandSpawn(world, radius, targetZ, seed);
-
         if (spawnPos == null) {
             LOGGER.warn("[Latitude] Could not find land spawn for zone={} targetZ={}. Falling back to (0, seaLevel+2).", zoneId, targetZ);
             spawnPos = new BlockPos(0, world.getSeaLevel() + 2, targetZ);
         }
 
         BlockPos clampedSpawnPos = clampSpawnAwayFromEwWarning(spawnPos, radius);
-        world.setSpawnPos(clampedSpawnPos, 0.0f);
+        return new SpawnChoice(zoneId, clampedSpawnPos, radius, targetZ);
+    }
 
-        BlockPos teleportPos = clampSpawnAwayFromEwWarning(clampedSpawnPos, radius);
-        player.teleport(world, teleportPos.getX() + 0.5, teleportPos.getY(), teleportPos.getZ() + 0.5, EnumSet.noneOf(PositionFlag.class), player.getYaw(), player.getPitch());
-        player.addCommandTag(SPAWN_CHOSEN_TAG);
-        LatitudeWorldState.get(world).setSpawnPickerDismissed(true);
+    private static boolean isValidSpawnChoice(SpawnChoice spawnChoice) {
+        if (spawnChoice == null || spawnChoice.pos() == null || spawnChoice.radius() <= 0) {
+            return false;
+        }
+
+        BlockPos pos = spawnChoice.pos();
+        int radius = spawnChoice.radius();
+        return Math.abs(pos.getX()) <= radius
+                && Math.abs(pos.getZ()) <= radius
+                && Math.abs(spawnChoice.targetZ()) <= radius;
     }
 
     public static void logBuildMetadata(String side) {

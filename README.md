@@ -21,7 +21,7 @@ See: docs/design-spec.md
 
 ## Dependencies
 
-- Fabric Loader (Minecraft 1.21.11)
+- Fabric Loader (Minecraft 1.20.1)
 - Fabric API
 
 ## Biome tag integration

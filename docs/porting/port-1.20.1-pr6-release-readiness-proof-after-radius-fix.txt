@@ -1,0 +1,95 @@
+# Latitude 1.20.1 PR #6 Release-Readiness Proof After Radius Fix
+
+Date: 2026-06-04
+Root: `<home>/CascadeProjects/Latitude-issue5-1.20.1`
+Branch: `fix/1.20.1-refmap-name`
+HEAD: `c2180ebe`
+Tag at HEAD: `save/1.20.1-early-initial-spawn-radius`
+
+## Scope
+
+- Preserve dirty WIP/evidence and the manual client evidence.
+- Run release-readiness proof after the local early-spawn-radius fix.
+- Stop before PR merge, publication, issue closure, cleanup, staging, commit, tag, or push.
+
+## Working Tree
+
+- Tracked source diff:
+  - `src/main/java/com/example/globe/GlobeMod.java`
+- New local evidence/handoff files:
+  - `docs/porting/port-1.20.1-pr6-early-spawn-radius-review-fix.txt`
+  - `docs/porting/port-1.20.1-pr6-release-readiness-proof-after-radius-fix.txt`
+  - `tmp/latitude-pr6-early-radius-20260604/source-proof.sh`
+  - `tmp/latitude-manual-run-20260604-1710/runClient-console.log`
+
+## PR / Review Status
+
+- PR: `https://github.com/joolbits/latitude/pull/6`
+- Title: `Release 1.3.0+1.20.1-r1 refmap hotfix`
+- State: open
+- Draft: false
+- Mergeable: true
+- Mergeable state: clean
+- Remote PR head: `fix/1.20.1-refmap-name` at `c2180ebe5fe7fbf85b63868b32ee58a84c1d6b57`
+- Base: `port/1.3.0-1.20.1` at `e23cf3eaeaf366c8e9f011fa7e8764bacb5b5780`
+- Review thread: still unresolved on `GlobeMod.java` lines 440-442
+- Commit statuses on `c2180ebe`: none
+- Pull-request workflow runs on `c2180ebe`: none returned
+
+## Local Fix State
+
+- `resolveSpawnChoice(...)` no longer reads `LatitudeBiomes.getActiveRadiusBlocks()`.
+- Early spawn radius is derived from `borderRadiusForGlobeOverworld(world)`.
+- At proof time, this fix was local WIP against PR head `c2180ebe`; refresh PR head state after any later savepoint/push.
+
+## Proof Commands
+
+- `./tmp/latitude-pr6-early-radius-20260604/source-proof.sh`
+  - Result: PASS
+  - Evidence: `resolveSpawnChoice no longer depends on ACTIVE_RADIUS_BLOCKS for spawn radius.`
+- `./gradlew --no-daemon --console plain build`
+  - Result: BUILD SUCCESSFUL
+  - Tasks reached: `compileJava`, `jar`, `remapJar`, `remapSourcesJar`, `assemble`, `build`
+  - Test status: `compileTestJava NO-SOURCE`, `test NO-SOURCE`
+- Prior branch-local manual run:
+  - Command: `./gradlew --no-daemon runClient --console plain`
+  - Result: BUILD SUCCESSFUL
+  - Log: `tmp/latitude-manual-run-20260604-1710/runClient-console.log`
+  - Runtime loaded: Minecraft `1.20.1`, Fabric Loader `0.16.14`, globe `1.3.0+1.20.1-r1`
+  - Early spawn marker: `[Latitude] Early initial spawn set before player-spawn pregen: zone=TEMPERATE x=-7464 y=112 z=-4684 radius=10000`
+
+## Artifact Findings
+
+- Runtime jar: `build/libs/latitude-1.3.0+1.20.1-r1.jar`
+  - SHA-256: `2a70381fe067e69a7732b9c42e801f5404e3369fcb34e8744947a766d4af06f5`
+- Sources jar: `build/libs/latitude-1.3.0+1.20.1-r1-sources.jar`
+  - SHA-256: `3f9b9502f8ad231e4959d45edcecd397cc0cff29ec9de29736a55e22d4d3dbd1`
+- `fabric.mod.json` in runtime jar:
+  - version: `1.3.0+1.20.1-r1`
+  - minecraft dependency: `~1.20.1`
+  - mixin config: `globe.mixins.json`
+- `META-INF/MANIFEST.MF` in runtime jar:
+  - `Fabric-Minecraft-Version: 1.20.1`
+  - `Fabric-Loader-Version: 0.16.14`
+  - `Fabric-Loom-Mixin-Remap-Type: mixin`
+  - `Fabric-Mapping-Namespace: intermediary`
+- Runtime jar contains:
+  - `globe.mixins.json`
+  - `latitude-refmap.json`
+  - `com/example/globe/mixin/MinecraftServerInitialSpawnMixin.class`
+  - `com/example/globe/GlobeMod.class`
+  - `com/example/globe/GlobePending.class`
+- `globe.mixins.json` points to `latitude-refmap.json`.
+- `latitude-refmap.json` contains `MinecraftServerInitialSpawnMixin` mapping for `setupSpawn`.
+- Jar scan found no hits for dev/debug package payloads, scripts, native binaries, or `ClipboardImageWriter`.
+
+## Limits / Gated Items
+
+- At proof time, the GitHub review thread was still unresolved.
+- At proof time, PR remote head did not include the local early-spawn-radius fix yet.
+- At proof time, no release actions had been performed.
+- At proof time, no Modrinth/CurseForge publication, issue #5 closure, PR merge, stage, commit, tag, push, cleanup, reset, stash, delete, or restore had been performed.
+
+## Next Recommended Release Step
+
+- Proof-time Maintainer approval gate: stage/commit/push the local `GlobeMod.java` fix plus the intended proof note, then resolve/respond to the PR #6 review thread and rerun/confirm PR checks before merge or publication.
