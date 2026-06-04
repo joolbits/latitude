@@ -3,6 +3,8 @@
 ## Latitude 1.3.0+1.20.1-r1
 - Fixed the 1.20.1 release jar mixin refmap name so the packaged `globe.mixins.json` points at the generated `latitude-refmap.json`.
 - Addresses startup crashes that reported `No refMap loaded` followed by failure resolving `removed` in `net.minecraft.class_437`.
+- Set the packaged mixin compatibility level to Java 17 so 1.20.1 launcher profiles do not reject `globe.mixins.json` during Mixin bootstrap.
+- Removed a production warm-snow guard dependency on excluded debug stats so release jars no longer crash with `NoClassDefFoundError: com/example/globe/debug/WarmSnowTrapStats` during world generation.
 - No gameplay or worldgen behavior changes.
 
 ## Latitude 1.3.0 (MC 1.21.11)
