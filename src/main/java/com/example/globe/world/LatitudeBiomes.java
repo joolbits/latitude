@@ -1917,7 +1917,7 @@ public final class LatitudeBiomes {
 
         int primaryScale = Math.max(ARID_REGION_MIN_SCALE_BLOCKS, (int) Math.round(radius * 0.28));
         double primary = ValueNoise2D.sampleBlocks(worldSeed ^ BADLANDS_REGION_SHAPE_SALT, blockX, sampleZ, primaryScale);
-        if (primary >= 0.40) {
+        if (primary >= 0.52) {
             return false;
         }
         int wobbleScale = Math.max(ARID_REGION_MIN_SCALE_BLOCKS, primaryScale / 2);
@@ -2105,7 +2105,9 @@ public final class LatitudeBiomes {
     private static final long BADLANDS_PROVINCE_WOBBLE_SALT = 0x6261_646C_5F70_776FL; // "badl_pwo"
     private static final long BADLANDS_REGION_CORE_SHAPE_SALT = 0x6261_646C_5F636F72L; // "badl_cor"
     private static final long BADLANDS_OUTSIDE_PROVINCE_SALT = 0x6261_646C_5F6F7574L; // "badl_out"
-    private static final double BADLANDS_OUTSIDE_PROVINCE_THRESHOLD = 0.22;
+    private static final double BADLANDS_OUTSIDE_PROVINCE_THRESHOLD = 0.34;
+    private static final long BADLANDS_VARIANT_PATCH_SALT = 0x6261_646C_5F766172L; // "badl_var"
+    private static final int BADLANDS_VARIANT_PATCH_SCALE_BLOCKS = 384;
     private static final double BADLANDS_REGION_RADIUS_FRAC = 0.30;
     private static final int BADLANDS_REGION_MIN_RADIUS_BLOCKS = 960;
     private static final double BADLANDS_REGION_WOBBLE_FRAC = 0.16;
@@ -2177,7 +2179,8 @@ public final class LatitudeBiomes {
     private static final int VARIANT_CELL_SIZE_BLOCKS = 38;
     // Keep weighted primary/secondary/accent rolls more spatially coherent than
     // fine-grained fallback identity picks so tier selection does not devolve into atlas confetti.
-    private static final int TIER_COHERENCE_BLOCKS = 64;
+    private static final int TIER_COHERENCE_BLOCKS = 160;
+    private static final int FALLBACK_COHERENCE_BLOCKS = 128;
     private static final int BLEND_TRANSITION_WIDTH_BLOCKS = 1408;
     private static final int BLEND_DITHER_SCALE_BLOCKS = 512;
     private static final int BLEND_NOISE_PATCH_CHUNKS = 10;
@@ -4256,8 +4259,9 @@ public final class LatitudeBiomes {
     }
 
     private static Holder<Biome> pickFrom(Registry<Biome> biomes, int blockX, int blockZ, int bandIndex, String... options) {
-        int cellX = Math.floorDiv(blockX, VARIANT_CELL_SIZE_BLOCKS);
-        int cellZ = Math.floorDiv(blockZ, VARIANT_CELL_SIZE_BLOCKS);
+        int coherenceBlocks = Math.max(16, FALLBACK_COHERENCE_BLOCKS);
+        int cellX = Math.floorDiv(blockX, coherenceBlocks);
+        int cellZ = Math.floorDiv(blockZ, coherenceBlocks);
         int idx = (int) Long.remainderUnsigned(hash64(cellX, cellZ, bandIndex), options.length);
         setSelectionPath(PATH_FALLBACK_PICK);
         Holder<Biome> out = biome(biomes, options[idx]);
@@ -7555,18 +7559,19 @@ public final class LatitudeBiomes {
             eroded = biome(biomes, "minecraft:eroded_badlands");
         } catch (Throwable ignored) {
         }
-        // Deterministic uniform split so rare variants can actually win.
-        int salt = (int) (BADLANDS_PATCH_SALT ^ 0xB11AD5L);
-        long h = hash64(blockX, blockZ, salt);
-        double roll = (double) Long.remainderUnsigned(h, 10_000_000L) / 10_000_000.0; // [0,1)
-        if (roll < 0.90 && badlands != null) {
+        // Coherent variant patches: sample a smooth noise field (NOT a per-block hash) so
+        // wooded/eroded badlands form contiguous sub-regions inside a badlands province
+        // instead of single-block confetti scattered through the regular badlands.
+        double roll = ValueNoise2D.sampleBlocks(
+                WORLD_SEED ^ BADLANDS_VARIANT_PATCH_SALT, blockX, blockZ, BADLANDS_VARIANT_PATCH_SCALE_BLOCKS);
+        if (roll < 0.80 && badlands != null) {
             return badlands;                 // dominant default
         }
-        if (roll < 0.99 && wooded != null) {
-            return wooded;                   // uncommon
+        if (roll < 0.94 && wooded != null) {
+            return wooded;                   // coherent wooded patches
         }
         if (eroded != null) {
-            return eroded;                   // very rare
+            return eroded;                   // coherent eroded patches (rare)
         }
         if (wooded != null) {
             return wooded;
@@ -8255,6 +8260,13 @@ public final class LatitudeBiomes {
         switch (province) {
             case WARM_WET -> {
                 if (isJungleFamily(pick)) return pick;
+                // Preserve humid-compatible variety so the equatorial belt is not flattened into a
+                // jungle monoculture: keep tropical wetlands (swamp/mangrove) and any admitted
+                // custom biome the band tags placed here on purpose. Only out-of-place vanilla
+                // biomes fall through to the jungle core identity below.
+                if (isCustomBiome(pick) || isSwampCandidate(pick) || isMangroveCandidate(pick)) {
+                    return pick;
+                }
                 // Jungle is the WARM_WET core identity; sparse_jungle is the edge/shoulder.
                 // Default the late rewrite to jungle so non-jungle picks become jungle cores
                 // instead of being silently converted into sparse_jungle here.
@@ -8319,6 +8331,13 @@ public final class LatitudeBiomes {
         switch (province) {
             case WARM_WET -> {
                 if (isJungleFamily(pick)) return pick;
+                // Preserve humid-compatible variety so the equatorial belt is not flattened into a
+                // jungle monoculture: keep tropical wetlands (swamp/mangrove) and any admitted
+                // custom biome the band tags placed here on purpose. Only out-of-place vanilla
+                // biomes fall through to the jungle core identity below.
+                if (isCustomBiome(pick) || isSwampCandidate(pick) || isMangroveCandidate(pick)) {
+                    return pick;
+                }
                 // Jungle is the WARM_WET core identity; sparse_jungle is the edge/shoulder.
                 // Default the late rewrite to jungle so non-jungle picks become jungle cores
                 // instead of being silently converted into sparse_jungle here.
