@@ -53,6 +53,20 @@ public final class ProvinceAuthority {
     private static final double COLD_DRY_THRESHOLD = 0.38;
     private static final double COLD_WET_THRESHOLD = 0.62;
 
+    // Earth-analog latitude wet-bias for the warm side.
+    //
+    // The raw moisture field above is latitude-independent, so WARM_DRY desert pockets
+    // scatter uniformly across the whole warm zone — including the equator. That is
+    // physically backwards: the equatorial ITCZ is the wettest place on Earth, and the
+    // arid belt sits in the subtropics (~15-30deg). This bias adds moisture in the deep
+    // tropics, fading smoothly to zero by the tropical/subtropical boundary, so the
+    // equator reads "mostly humid, rare arid" while subtropical desert/badlands behaviour
+    // is left untouched. Only the driest coherent noise pockets still punch through to
+    // WARM_DRY near the equator, which yields rare, large, coherent arid pockets rather
+    // than a desert-choked equator. Tune TROPICAL_WET_BIAS to trade equatorial arid share.
+    static final double TROPICAL_LAT_END_DEG = 23.5; // == LatitudeBands.Band.SUBTROPICAL.lowDeg()
+    static final double TROPICAL_WET_BIAS = 0.20;    // moisture units added at the equator
+
     private final long seed;
     private final int effectiveRadius;
 
@@ -136,6 +150,14 @@ public final class ProvinceAuthority {
         // Both are in [0,1]. Average gives a smooth combined signal in [0,1].
         double moisture = (humidity + (1.0 - openness)) * 0.5;
 
+        // Earth-analog latitude wet-bias: wettest at the equator, fading to neutral by the
+        // tropical/subtropical boundary (see TROPICAL_WET_BIAS doc above).
+        double latDeg = Math.min(90.0, Math.abs((double) blockZ) / (double) effectiveRadius * 90.0);
+        if (latDeg < TROPICAL_LAT_END_DEG) {
+            double wetFrac = smoothstep(1.0 - latDeg / TROPICAL_LAT_END_DEG);
+            moisture += TROPICAL_WET_BIAS * wetFrac;
+        }
+
         if (moisture < WARM_DRY_THRESHOLD) {
             return Province.WARM_DRY;
         }
@@ -143,6 +165,17 @@ public final class ProvinceAuthority {
             return Province.WARM_WET;
         }
         return Province.WARM_MEDIUM;
+    }
+
+    /** Hermite smoothstep on [0,1]; used for the latitude wet-bias ramp. */
+    private static double smoothstep(double t) {
+        if (t <= 0.0) {
+            return 0.0;
+        }
+        if (t >= 1.0) {
+            return 1.0;
+        }
+        return t * t * (3.0 - 2.0 * t);
     }
 
     // --- Cold-side province classification ---
