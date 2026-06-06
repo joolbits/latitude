@@ -4465,7 +4465,7 @@ function clearBiomeSelection() {
  highlightBiomeInList();
  updateSelectedBiomesSummary();
  renderSelectionContext(null);
- clearHighlight();
+ renderSelectedHighlights(); // clearing biome selection keeps the namespace veil if active
  clearConfettiOverlay();
  if (confettiStatusEl && state.confettiMode) {
    confettiStatusEl.textContent = 'Select a biome to see its confetti islands.';
@@ -4492,11 +4492,7 @@ function selectBiomePersistent(biome) {
  updateSelectedBiomesSummary();
  renderSelectionContext();
  if (!togHighlight.checked && state.selectedBiomeIds.length) togHighlight.checked = true;
- if (state.selectedBiomeIds.length) {
-  renderSelectedHighlights();
- } else {
-  clearHighlight();
- }
+ renderSelectedHighlights(); // handles selection highlight AND the namespace veil (persists when no biome selected)
  renderConfettiOverlay();
 }
 
@@ -4686,7 +4682,7 @@ function updateInspect(e) {
   inspectCard.classList.remove('visible');
   state.inspectedPoint = null;
   if (state.selectedBiomeIds.length) renderSelectionContext();
-  if (!state.selectedBiomeIds.length) clearHighlight();
+  if (!state.selectedBiomeIds.length) renderSelectedHighlights(); // keep the namespace veil if active
   return;
  }
  if (togCrosshair.checked) {
@@ -4720,7 +4716,7 @@ viewport.addEventListener('mouseleave', () => {
  if (state.selectedPoint && Number.isFinite(state.selectedPoint.worldX) && Number.isFinite(state.selectedPoint.worldZ)) {
   coordReadout.textContent = `${state.selectedPoint.worldX} , ${state.selectedPoint.worldZ}`;
  }
- if (!state.selectedBiomeIds.length) clearHighlight();
+ if (!state.selectedBiomeIds.length) renderSelectedHighlights(); // keep the namespace veil if active
 });
 
 viewport.addEventListener('click', e => {
@@ -4757,7 +4753,7 @@ function renderSelectedHighlights() {
   const f = state.namespaceFilter;
   for (let k = 0; k < state.nsList.length; k++) nsShownMask[k] = (!f || f.has(state.nsList[k])) ? 1 : 0;
  }
- const veilAlpha = state.namespaceIsolate ? 230 : 150;
+ const veilAlpha = state.namespaceIsolate ? 255 : 190; // hide = opaque (others vanish); dim = strong mute
  const nsKey = nsVeil
   ? `ns:${state.namespaceFilter ? [...state.namespaceFilter].sort().join(',') : 'all'}:${state.namespaceIsolate ? 'hide' : 'dim'}`
   : 'ns:none';
@@ -4799,7 +4795,7 @@ function renderSelectedHighlights() {
    if (nsShownMask) {
     const nsId = state.nsIdByIndex[state.biomeIndices[p] & 0xFF];
     const shown = (nsId === 255) ? 1 : nsShownMask[nsId]; // empty/background index → no veil
-    if (!shown) { dd[i] = 128; dd[i + 1] = 128; dd[i + 2] = 128; dd[i + 3] = veilAlpha; }
+    if (!shown) { dd[i] = 13; dd[i + 1] = 17; dd[i + 2] = 25; dd[i + 3] = veilAlpha; } // dark veil (matches canvas backdrop)
     else { dd[i + 3] = 0; }
    } else {
     dd[i + 3] = 0;
