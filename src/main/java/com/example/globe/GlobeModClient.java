@@ -112,7 +112,6 @@ public class GlobeModClient implements ClientModInitializer {
             if (payload.isGlobe()) {
                 // Flip the bespoke loading flag as soon as the handshake packet arrives (network thread).
                 LatitudeClientState.activateLatitudeLoading();
-                LatitudeClientState.firstWorldLoad = false;
             }
             context.client().execute(() -> {
                 GlobeClientState.setGlobeWorld(payload.isGlobe());
