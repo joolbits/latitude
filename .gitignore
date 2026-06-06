@@ -46,3 +46,10 @@ run-headless/.mixin.out/
 run-headless/config/
 run-headless/mods/
 run-headless-base/
+
+# Generated manual atlas image exports (not source)
+/Manual atlas/
+
+# Claude Code local state (per-user, not shared)
+.claude/settings.local.json
+.claude/*.lock
