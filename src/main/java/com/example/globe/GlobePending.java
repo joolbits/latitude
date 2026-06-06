@@ -12,6 +12,10 @@ public final class GlobePending {
         pendingSpawnZone = zoneId;
     }
 
+    public static String peek() {
+        return pendingSpawnZone;
+    }
+
     public static String consume() {
         String v = pendingSpawnZone;
         pendingSpawnZone = null;

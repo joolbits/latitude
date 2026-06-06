@@ -11,6 +11,7 @@
     "BiomeSourceAccessor",
     "NoiseChunkGeneratorAccessor",
     "NoiseChunkGeneratorCarveMixin",
+    "MinecraftServerInitialSpawnMixin",
     "PlacedFeatureBopDebugMixin",
     "ProtoChunkSnowBlockGuardMixin",
     "FreezeTopLayerFeatureGuardMixin",
