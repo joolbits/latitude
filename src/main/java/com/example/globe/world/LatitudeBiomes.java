@@ -2127,6 +2127,17 @@ public final class LatitudeBiomes {
     private static final double BADLANDS_LAT_RAMP_LOW_DEG = 10.0;
     private static final double BADLANDS_LAT_RAMP_HIGH_DEG = 18.0;
     private static final long BADLANDS_LAT_KEEP_SALT = 0x6261_646C_5F6C6174L; // "badl_lat"
+    // Earth-analog deep-equator desert thinning. Unlike badlands, Earth DOES have rare
+    // equatorial desert (Horn of Africa ~3-5degN), so this is a PARTIAL demotion (tighten,
+    // do not eliminate): below DESERT_LAT_RAMP_HIGH_DEG a coherent ValueNoise2D field retains
+    // only a fraction of WARM_DRY desert -- DESERT_EQUATOR_KEEP_FRAC at the equator, ramping
+    // to 1.0 (keep all) by the high edge -- with the rest demoted to savanna. Noise-warped
+    // boundary (Art VI); the subtropical desert belt (>=high edge) is untouched. Targeting
+    // desert directly here (not via the moisture classifier) avoids inflating the equatorial
+    // jungle share / WARM_WET monoculture risk.
+    private static final double DESERT_LAT_RAMP_HIGH_DEG = 12.0;
+    private static final double DESERT_EQUATOR_KEEP_FRAC = 0.40;
+    private static final long DESERT_LAT_KEEP_SALT = 0x6465_7365_7274_6C61L; // "desertla"
     private static final long BADLANDS_VARIANT_PATCH_SALT = 0x6261_646C_5F766172L; // "badl_var"
     private static final int BADLANDS_VARIANT_PATCH_SCALE_BLOCKS = 384;
     private static final double BADLANDS_REGION_RADIUS_FRAC = 0.30;
@@ -7752,6 +7763,58 @@ public final class LatitudeBiomes {
         return keepNoise >= latGate;
     }
 
+    /**
+     * Earth-analog deep-equator desert thinning (PARTIAL — Earth keeps rare equatorial desert).
+     * Rewrites a WARM_DRY desert pick to savanna on the coherent-noise complement of
+     * {@code keepFrac}, where keepFrac ramps from {@link #DESERT_EQUATOR_KEEP_FRAC} at the
+     * equator to 1.0 (keep all) by {@link #DESERT_LAT_RAMP_HIGH_DEG}. Noise-warped (Art VI);
+     * the subtropical belt is untouched. Targets desert directly, so the equatorial
+     * jungle/savanna balance (and the WARM_WET monoculture guard) is unaffected.
+     */
+    private static Holder<Biome> demoteEquatorialDesert(Registry<Biome> biomes,
+                                                                Holder<Biome> pick,
+                                                                int blockX,
+                                                                int blockZ) {
+        if (!shouldDemoteEquatorialDesert(pick, blockX, blockZ)) {
+            return pick;
+        }
+        try {
+            return biome(biomes, "minecraft:savanna");
+        } catch (Throwable ignored) {
+            return pick;
+        }
+    }
+
+    private static Holder<Biome> demoteEquatorialDesert(Collection<Holder<Biome>> biomes,
+                                                                Holder<Biome> pick,
+                                                                int blockX,
+                                                                int blockZ) {
+        if (!shouldDemoteEquatorialDesert(pick, blockX, blockZ)) {
+            return pick;
+        }
+        Holder<Biome> savanna = entryById(biomes, "minecraft:savanna");
+        return savanna != null ? savanna : pick;
+    }
+
+    /** Shared latitude/noise predicate for {@link #demoteEquatorialDesert}. */
+    private static boolean shouldDemoteEquatorialDesert(Holder<Biome> pick, int blockX, int blockZ) {
+        if (pick == null || !isBiomeId(pick, "minecraft:desert")) {
+            return false;
+        }
+        int radius = ACTIVE_RADIUS_BLOCKS > 0 ? ACTIVE_RADIUS_BLOCKS : (REFERENCE_DIAMETER_BLOCKS / 2);
+        radius = Math.max(1, radius);
+        double latDeg = Math.min(90.0, Math.abs((double) blockZ) / (double) radius * 90.0);
+        if (latDeg >= DESERT_LAT_RAMP_HIGH_DEG) {
+            return false; // outer tropics + subtropics: keep all desert
+        }
+        // keepFrac: fraction of desert retained, DESERT_EQUATOR_KEEP_FRAC at equator -> 1.0 by high.
+        double latFrac = smoothstep(latDeg / DESERT_LAT_RAMP_HIGH_DEG);
+        double keepFrac = DESERT_EQUATOR_KEEP_FRAC + (1.0 - DESERT_EQUATOR_KEEP_FRAC) * latFrac;
+        int keepScale = Math.max(ARID_REGION_MIN_SCALE_BLOCKS, (int) Math.round(radius * 0.28));
+        double keepNoise = ValueNoise2D.sampleBlocks(WORLD_SEED ^ DESERT_LAT_KEEP_SALT, blockX, blockZ, keepScale);
+        return keepNoise >= keepFrac; // demote the (1 - keepFrac) noise complement
+    }
+
     private static Holder<Biome> pickAridRegionFallback(Collection<Holder<Biome>> biomes,
                                                                 Holder<Biome> base,
                                                                 int blockX,
@@ -9040,6 +9103,9 @@ public final class LatitudeBiomes {
         // the equator ramp here (the final warm clamp, after the province rewrite) so the savanna
         // tier pass below still applies; badlands survives only in the subtropical arid belt.
         out = demoteEquatorialBadlands(biomes, out, blockX, blockZ);
+        // Partial deep-equator desert thinning (Earth keeps rare equatorial desert): coherent
+        // fraction demoted to savanna below the ramp; subtropical desert belt untouched.
+        out = demoteEquatorialDesert(biomes, out, blockX, blockZ);
         if (isSavannaFamily(out)) {
             try {
                 if (!isBiomeId(out, "minecraft:windswept_savanna")) {
@@ -9192,6 +9258,9 @@ public final class LatitudeBiomes {
         // the equator ramp here (the final warm clamp, after the province rewrite) so the savanna
         // tier pass below still applies; badlands survives only in the subtropical arid belt.
         out = demoteEquatorialBadlands(biomes, out, blockX, blockZ);
+        // Partial deep-equator desert thinning (Earth keeps rare equatorial desert): coherent
+        // fraction demoted to savanna below the ramp; subtropical desert belt untouched.
+        out = demoteEquatorialDesert(biomes, out, blockX, blockZ);
         if (isSavannaFamily(out)) {
             if (!isBiomeId(out, "minecraft:windswept_savanna")) {
                 String targetId = savannaTierByY(blockY);
