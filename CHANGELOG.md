@@ -27,6 +27,9 @@ Latitude 1.4 "Cohesive Horizons" is a worldgen-quality and compatibility release
 ### Validation
 - Atlas biome-preview balance audited across multiple seeds and world sizes (small and regular) with a band-aware balance analyzer (`tools/atlas/band_balance_analyze.py`).
 
+### Known limitations
+- **With several custom biome packs installed at once, not every biome will appear.** Each latitude band draws from a finite weighted pool, so the more biomes you add, the smaller each one's share — rarer/accent biomes from large stacks can fall below visible frequency. This is expected behavior, not a bug; you'll still get a coherent, climate-appropriate mix, just not 100% coverage of every biome in every installed pack. (Configurable per-pack representation weighting is on the roadmap.)
+
 ## Latitude 1.3.0+1.20.1-r1 (MC 1.20.1)
 - Hotfix release for the 1.20.1 startup/refmap crash tracked in issue #5 and PR #6.
 - Corrects the 1.20.1 mixin/refmap surface so `globe.mixins.json` uses `latitude-refmap.json` and Java 17 compatible mixin initialization.
