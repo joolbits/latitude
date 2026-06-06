@@ -2114,6 +2114,19 @@ public final class LatitudeBiomes {
     private static final long BADLANDS_REGION_CORE_SHAPE_SALT = 0x6261_646C_5F636F72L; // "badl_cor"
     private static final long BADLANDS_OUTSIDE_PROVINCE_SALT = 0x6261_646C_5F6F7574L; // "badl_out"
     private static final double BADLANDS_OUTSIDE_PROVINCE_THRESHOLD = 0.34;
+    // Earth-analog latitude gate for badlands. MC badlands/mesa is an American-SW
+    // (~35deg N) subtropical landform; Earth's deep equator has ZERO badlands. WARM_DRY
+    // dry pockets are latitude-independent, so on some seeds badlands leaks to 0-5deg
+    // (observed up to 8.8% on one seed) via the arid-region fallback. demoteEquatorialBadlands
+    // rewrites any WARM_DRY badlands pick to savanna below this smoothstep ramp -- fully
+    // suppressed at the deep equator (latGate==0), fully allowed by the subtropics
+    // (latGate==1) -- so equatorial dry pockets read as savanna clearings (Earth-true)
+    // and badlands concentrates in the subtropical arid belt where it belongs. The keep
+    // decision uses a coherent ValueNoise2D field so the badlands<->savanna boundary is
+    // noise-warped, not a hard horizontal line (Art VI: block-space continuous).
+    private static final double BADLANDS_LAT_RAMP_LOW_DEG = 10.0;
+    private static final double BADLANDS_LAT_RAMP_HIGH_DEG = 18.0;
+    private static final long BADLANDS_LAT_KEEP_SALT = 0x6261_646C_5F6C6174L; // "badl_lat"
     private static final long BADLANDS_VARIANT_PATCH_SALT = 0x6261_646C_5F766172L; // "badl_var"
     private static final int BADLANDS_VARIANT_PATCH_SCALE_BLOCKS = 384;
     private static final double BADLANDS_REGION_RADIUS_FRAC = 0.30;
@@ -7684,6 +7697,61 @@ public final class LatitudeBiomes {
         }
     }
 
+    /**
+     * Earth-analog latitude gate: rewrite a WARM_DRY badlands pick to savanna below the
+     * {@link #BADLANDS_LAT_RAMP_LOW_DEG}-{@link #BADLANDS_LAT_RAMP_HIGH_DEG} ramp, so badlands
+     * never appears at the deep equator (where Earth has none) and concentrates in the
+     * subtropical arid belt. The keep decision compares a coherent ValueNoise2D field against
+     * the smoothstep latitude gate, so the badlands<->savanna boundary is noise-warped rather
+     * than a hard horizontal line (Art VI: block-space continuous). Demotes to savanna (an
+     * Earth-true tropical dry-warm identity) rather than desert so the secondary equatorial
+     * desert share is not inflated; non-badlands picks pass through untouched.
+     */
+    private static Holder<Biome> demoteEquatorialBadlands(Registry<Biome> biomes,
+                                                                 Holder<Biome> pick,
+                                                                 int blockX,
+                                                                 int blockZ) {
+        if (!shouldDemoteEquatorialBadlands(pick, blockX, blockZ)) {
+            return pick;
+        }
+        try {
+            return biome(biomes, "minecraft:savanna");
+        } catch (Throwable ignored) {
+            return pick;
+        }
+    }
+
+    private static Holder<Biome> demoteEquatorialBadlands(Collection<Holder<Biome>> biomes,
+                                                                 Holder<Biome> pick,
+                                                                 int blockX,
+                                                                 int blockZ) {
+        if (!shouldDemoteEquatorialBadlands(pick, blockX, blockZ)) {
+            return pick;
+        }
+        Holder<Biome> savanna = entryById(biomes, "minecraft:savanna");
+        return savanna != null ? savanna : pick;
+    }
+
+    /** Shared latitude/noise predicate for {@link #demoteEquatorialBadlands}. */
+    private static boolean shouldDemoteEquatorialBadlands(Holder<Biome> pick, int blockX, int blockZ) {
+        if (pick == null || !isBadlandsFamily(pick)) {
+            return false;
+        }
+        int radius = ACTIVE_RADIUS_BLOCKS > 0 ? ACTIVE_RADIUS_BLOCKS : (REFERENCE_DIAMETER_BLOCKS / 2);
+        radius = Math.max(1, radius);
+        double latDeg = Math.min(90.0, Math.abs((double) blockZ) / (double) radius * 90.0);
+        double latGate = smoothstep((latDeg - BADLANDS_LAT_RAMP_LOW_DEG)
+                / (BADLANDS_LAT_RAMP_HIGH_DEG - BADLANDS_LAT_RAMP_LOW_DEG));
+        if (latGate >= 1.0) {
+            return false; // subtropics: badlands fully allowed
+        }
+        // Keep badlands only on the coherent-noise fraction latGate of cells; at the deep
+        // equator latGate==0 so the whole low band demotes. Scale tracks the dry-region noise.
+        int keepScale = Math.max(ARID_REGION_MIN_SCALE_BLOCKS, (int) Math.round(radius * 0.28));
+        double keepNoise = ValueNoise2D.sampleBlocks(WORLD_SEED ^ BADLANDS_LAT_KEEP_SALT, blockX, blockZ, keepScale);
+        return keepNoise >= latGate;
+    }
+
     private static Holder<Biome> pickAridRegionFallback(Collection<Holder<Biome>> biomes,
                                                                 Holder<Biome> base,
                                                                 int blockX,
@@ -8967,6 +9035,11 @@ public final class LatitudeBiomes {
         if (allowProvinceFamilyRewrite) {
             out = enforceWarmProvinceFamily(biomes, out, warmProvince);
         }
+        // Earth-analog latitude gate: enforceWarmProvinceFamily defaults WARM_DRY to badlands,
+        // which leaks mesa to the deep equator on some seeds. Demote badlands -> savanna below
+        // the equator ramp here (the final warm clamp, after the province rewrite) so the savanna
+        // tier pass below still applies; badlands survives only in the subtropical arid belt.
+        out = demoteEquatorialBadlands(biomes, out, blockX, blockZ);
         if (isSavannaFamily(out)) {
             try {
                 if (!isBiomeId(out, "minecraft:windswept_savanna")) {
@@ -9114,6 +9187,11 @@ public final class LatitudeBiomes {
         if (allowProvinceFamilyRewrite) {
             out = enforceWarmProvinceFamily(biomes, out, warmProvince);
         }
+        // Earth-analog latitude gate: enforceWarmProvinceFamily defaults WARM_DRY to badlands,
+        // which leaks mesa to the deep equator on some seeds. Demote badlands -> savanna below
+        // the equator ramp here (the final warm clamp, after the province rewrite) so the savanna
+        // tier pass below still applies; badlands survives only in the subtropical arid belt.
+        out = demoteEquatorialBadlands(biomes, out, blockX, blockZ);
         if (isSavannaFamily(out)) {
             if (!isBiomeId(out, "minecraft:windswept_savanna")) {
                 String targetId = savannaTierByY(blockY);
