@@ -37,3 +37,12 @@ tools/atlas/desktop-app/.electron-builder/
 run-headless/latdev/atlas-runs/
 
 run-headless/warm_ocean_debug_trace.txt
+
+# run-headless runtime state (regenerated on every headless gen — never commit)
+run-headless/world/
+run-headless/dimensions/
+run-headless/.fabric/
+run-headless/.mixin.out/
+run-headless/config/
+run-headless/mods/
+run-headless-base/
