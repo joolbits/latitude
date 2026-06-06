@@ -2189,6 +2189,8 @@ public final class LatitudeBiomes {
     // fine-grained fallback identity picks so tier selection does not devolve into atlas confetti.
     private static final int TIER_COHERENCE_BLOCKS = 160;
     private static final int FALLBACK_COHERENCE_BLOCKS = 128;
+    // Art VI: salt for the fallback-list pick's coherent ValueNoise2D fields (no floorDiv cell-hash).
+    private static final long FALLBACK_PICK_SALT = 0x46414C4C5049434BL; // "FALLPICK"
     private static final int BLEND_TRANSITION_WIDTH_BLOCKS = 1408;
     private static final int BLEND_DITHER_SCALE_BLOCKS = 512;
     private static final int BLEND_NOISE_PATCH_CHUNKS = 10;
@@ -4267,10 +4269,25 @@ public final class LatitudeBiomes {
     }
 
     private static Holder<Biome> pickFrom(Registry<Biome> biomes, int blockX, int blockZ, int bandIndex, String... options) {
-        int coherenceBlocks = Math.max(16, FALLBACK_COHERENCE_BLOCKS);
-        int cellX = Math.floorDiv(blockX, coherenceBlocks);
-        int cellZ = Math.floorDiv(blockZ, coherenceBlocks);
-        int idx = (int) Long.remainderUnsigned(hash64(cellX, cellZ, bandIndex), options.length);
+        // Art VI compliance: pick by argmax over N independent coherent ValueNoise2D fields (one per
+        // option) instead of a Math.floorDiv cell-grid + hash64. By symmetry each option wins ~1/N of
+        // the area (uniform per-option share preserved, so this is distribution-neutral), but as
+        // coherent ~FALLBACK_COHERENCE_BLOCKS-scale regions rather than hard-edged per-cell confetti.
+        // Seed-dependent (the old hash64 path was seed-independent), band-differentiated.
+        int idx = 0;
+        if (options.length > 1) {
+            int scaleBlocks = Math.max(16, FALLBACK_COHERENCE_BLOCKS);
+            long bandSeed = WORLD_SEED ^ FALLBACK_PICK_SALT ^ ((long) bandIndex * 0x9E3779B97F4A7C15L);
+            double best = Double.NEGATIVE_INFINITY;
+            for (int i = 0; i < options.length; i++) {
+                double n = ValueNoise2D.sampleBlocks(
+                        bandSeed ^ ((long) (i + 1) * 0xC2B2AE3D27D4EB4FL), blockX, blockZ, scaleBlocks);
+                if (n > best) {
+                    best = n;
+                    idx = i;
+                }
+            }
+        }
         setSelectionPath(PATH_FALLBACK_PICK);
         Holder<Biome> out = biome(biomes, options[idx]);
         setAdmission(BiomeAdmissionKind.VANILLA_FALLBACK, "fallback_list", out);
