@@ -6875,7 +6875,9 @@ function oklabToRgb(lab) {
   ];
 }
 function deltaEOklab(a, b) { const dL = a.L - b.L, da = a.a - b.a, db = a.b - b.b; return 100 * Math.sqrt(dL * dL + da * da + db * db); }
-const DISTINCT_DELTA_E_MIN = 12;
+const DISTINCT_DELTA_E_MIN = 12;     // target separation the packer reaches for (crisp on normal maps)
+const DISTINCT_DELTA_E_FLOOR = 8;    // acceptance floor: sRGB holds only ~43 colours at ΔE 12, so large
+                                     // stacks relax toward this still-clearly-distinct floor (zero exact collisions always)
 // Build the distinct palette over the FULL inventory id set; returns id → [r,g,b].
 function buildDistinctPalette() {
   const rows = mergeBiomePresenceRows(state.biomes, state.biomeInventory);
@@ -6941,9 +6943,14 @@ function distinctThin(cand, threshold) {
 // the palette is then provably maximally separated (best any sRGB palette can do) rather than failing.
 function distinctLattice(count) {
   const cand = distinctCandidates();
-  let anchors = distinctThin(cand, DISTINCT_DELTA_E_MIN);  // try ΔE 12 first
-  for (let t2 = 2 * DISTINCT_DELTA_E_MIN - 1; anchors.length < count && t2 >= 8; t2--) {
-    anchors = distinctThin(cand, t2 / 2);                  // relax in 0.5 steps until enough anchors
+  let anchors = distinctThin(cand, DISTINCT_DELTA_E_MIN);  // try the ΔE 12 target first
+  // Relax from the target down toward the 8 floor (0.5 steps) until enough anchors fit the biome count.
+  for (let t2 = 2 * DISTINCT_DELTA_E_MIN - 1; anchors.length < count && t2 >= 2 * DISTINCT_DELTA_E_FLOOR; t2--) {
+    anchors = distinctThin(cand, t2 / 2);
+  }
+  // Only for stacks too large even for the floor (>~90 biomes) drop below it, to preserve zero exact collisions.
+  for (let t2 = 2 * DISTINCT_DELTA_E_FLOOR - 1; anchors.length < count && t2 >= 8; t2--) {
+    anchors = distinctThin(cand, t2 / 2);
   }
   return anchors;
 }

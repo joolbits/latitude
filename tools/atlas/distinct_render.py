@@ -30,7 +30,9 @@ NS_HUE_ARCS = {
     "terralith": (200, 260),
     "promenade": (280, 340),
 }
-DISTINCT_DELTA_E_MIN = 12.0
+DISTINCT_DELTA_E_MIN = 12.0    # target separation the packer reaches for (crisp on normal maps)
+DISTINCT_DELTA_E_FLOOR = 8.0   # acceptance floor: sRGB holds only ~43 colours at deltaE 12, so large
+#                                stacks relax toward this still-clearly-distinct floor (zero exact collisions always)
 
 try:
     _cbrt = math.cbrt  # Python 3.11+ (matches JS Math.cbrt via libm)
@@ -179,6 +181,11 @@ def distinct_lattice(count):
     cand = distinct_candidates()
     anchors = distinct_thin(cand, DISTINCT_DELTA_E_MIN)
     t2 = 2 * int(DISTINCT_DELTA_E_MIN) - 1
+    # Relax from the target down toward the 8 floor until enough anchors fit the biome count.
+    while len(anchors) < count and t2 >= 2 * int(DISTINCT_DELTA_E_FLOOR):
+        anchors = distinct_thin(cand, t2 / 2)
+        t2 -= 1
+    # Only for stacks too large even for the floor (>~90 biomes) drop below it, to preserve zero exact collisions.
     while len(anchors) < count and t2 >= 8:
         anchors = distinct_thin(cand, t2 / 2)
         t2 -= 1
