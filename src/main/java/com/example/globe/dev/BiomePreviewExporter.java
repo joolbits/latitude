@@ -200,6 +200,7 @@ public final class BiomePreviewExporter {
         Map<String, Integer> biomeColors = new HashMap<>();
         Map<String, Integer> biomeIndices = new LinkedHashMap<>();
         Map<String, Integer> bandCounts = new HashMap<>();
+        Map<String, Integer> authorityBandCounts = new TreeMap<>();
         Map<String, Integer> selectedBandCounts = new HashMap<>();
         boolean includeBiomeAudit = effectiveOptions.includeBiomeAudit();
 
@@ -289,6 +290,7 @@ public final class BiomePreviewExporter {
                 int chosenBandIndex = LatitudeBiomes.authoritativeChosenBandIndex(blockX, blockZ, radiusBlocks);
                 int landBandIndex = LatitudeBiomes.authoritativeLandBandIndex(blockX, blockZ, radiusBlocks);
                 LatitudeBands.Band selectedDisplayBand = bandForBlockZ(radiusBlocks, blockZ);
+                authorityBandCounts.merge(latitudeBandIdFromIndex(landBandIndex), 1, Integer::sum);
                 chosenBandsImage.setRGB(imageX, imageZ, colorForBandIndex(chosenBandIndex));
                 landBandsImage.setRGB(imageX, imageZ, colorForBandIndex(landBandIndex));
                 double latDeg = latitudeDegreesForBlockZ(radiusBlocks, blockZ);
@@ -438,6 +440,7 @@ public final class BiomePreviewExporter {
                 totalSamples,
                 durationMs,
                 biomeCounts,
+                authorityBandCounts,
                 inventoryReport,
                 inventoryPath);
         if (includeBiomeAudit) {
@@ -477,6 +480,7 @@ public final class BiomePreviewExporter {
                     layerPaths,
                     maskPaths,
                     bandCounts,
+                    authorityBandCounts,
                     totalSamples);
         }
 
@@ -543,6 +547,7 @@ public final class BiomePreviewExporter {
         private final Map<String, BiomeAuditRecord> biomeAuditRows;
         private final Map<String, Integer> selectedBandCounts = new HashMap<>();
         private final Map<String, Integer> bandCounts = new HashMap<>();
+        private final Map<String, Integer> authorityBandCounts = new TreeMap<>();
         private final Map<Integer, SeamRowSummary> seamRows = new TreeMap<>();
         private final Map<Integer, TemperateShoulderCompositionRow> temperateShoulderRows = new TreeMap<>();
 
@@ -779,6 +784,7 @@ public final class BiomePreviewExporter {
                     int chosenBandIndex = LatitudeBiomes.authoritativeChosenBandIndex(blockX, blockZ, radiusBlocks);
                     int landBandIndex = LatitudeBiomes.authoritativeLandBandIndex(blockX, blockZ, radiusBlocks);
                     LatitudeBands.Band selectedDisplayBand = bandForBlockZ(radiusBlocks, blockZ);
+                    authorityBandCounts.merge(latitudeBandIdFromIndex(landBandIndex), 1, Integer::sum);
                     chosenBandsImage.setRGB(imageX, imageZ, colorForBandIndex(chosenBandIndex));
                     landBandsImage.setRGB(imageX, imageZ, colorForBandIndex(landBandIndex));
                     double latDeg = latitudeDegreesForBlockZ(radiusBlocks, blockZ);
@@ -1030,6 +1036,7 @@ public final class BiomePreviewExporter {
                         totalSamples,
                         durationMs,
                         biomeCounts,
+                        authorityBandCounts,
                         inventoryReport,
                         inventoryPath);
                 if (options.includeBiomeAudit()) {
@@ -1069,6 +1076,7 @@ public final class BiomePreviewExporter {
                             layerPaths,
                             maskPaths,
                             bandCounts,
+                            authorityBandCounts,
                             totalSamples);
                 }
 
@@ -1304,6 +1312,7 @@ public final class BiomePreviewExporter {
                                      long totalSamples,
                                      long durationMs,
                                      Map<String, Integer> biomeCounts,
+                                     Map<String, Integer> authorityBandCounts,
                                      BiomeSamplerTools.InventoryReport inventoryReport,
                                      Path inventoryPath) throws IOException {
         List<Map.Entry<String, Integer>> top = new ArrayList<>(biomeCounts.entrySet());
@@ -1321,6 +1330,9 @@ public final class BiomePreviewExporter {
         out.append("totalChunks=").append(totalChunks).append('\n');
         out.append("image=").append(width).append('x').append(height).append('\n');
         out.append("totalSamples=").append(totalSamples).append('\n');
+        out.append("authorityBandCounts=");
+        appendBandCountEntries(out, authorityBandCounts);
+        out.append('\n');
         out.append("durationMs=").append(durationMs).append('\n');
         if (inventoryReport != null) {
             out.append("worldBiomeInventoryCount=").append(inventoryReport.biomes().size()).append('\n');
@@ -1627,9 +1639,10 @@ public final class BiomePreviewExporter {
                                          Map<Layer, Path> layerPaths,
                                          Map<BiomeMaskLayer, Path> maskPaths,
                                          Map<String, Integer> bandCounts,
+                                         Map<String, Integer> authorityBandCounts,
                                          long totalSamples) throws IOException {
-        writeLegendTxt(outputDir.resolve("legend.txt"), seed, radiusBlocks, stepBlocks, y, layers, overlays, maskTargets, layerPaths, maskPaths, bandCounts, totalSamples);
-        writeLegendJson(outputDir.resolve("legend.json"), seed, radiusBlocks, stepBlocks, y, layers, overlays, maskTargets, layerPaths, maskPaths);
+        writeLegendTxt(outputDir.resolve("legend.txt"), seed, radiusBlocks, stepBlocks, y, layers, overlays, maskTargets, layerPaths, maskPaths, bandCounts, authorityBandCounts, totalSamples);
+        writeLegendJson(outputDir.resolve("legend.json"), seed, radiusBlocks, stepBlocks, y, layers, overlays, maskTargets, layerPaths, maskPaths, authorityBandCounts, totalSamples);
     }
 
     private static void writeLegendTxt(Path legendPath,
@@ -1643,6 +1656,7 @@ public final class BiomePreviewExporter {
                                        Map<Layer, Path> layerPaths,
                                        Map<BiomeMaskLayer, Path> maskPaths,
                                        Map<String, Integer> bandCounts,
+                                       Map<String, Integer> authorityBandCounts,
                                        long totalSamples) throws IOException {
         StringBuilder out = new StringBuilder();
         out.append("seed=").append(seed).append('\n');
@@ -1681,6 +1695,8 @@ public final class BiomePreviewExporter {
                 appendBandLegendTxt(out, band, band.lowDeg() / 90.0, band.highDeg() / 90.0, bandCounts, totalSamples);
             }
         }
+
+        appendAuthorityBandCountsTxt(out, authorityBandCounts, totalSamples);
 
         if (layers.contains(Layer.TEMPERATURE)) {
             out.append("temperatureScale=-1.0..1.0 (blue -> cream -> red)\n");
@@ -1726,6 +1742,53 @@ public final class BiomePreviewExporter {
                 pct));
     }
 
+    private static void appendAuthorityBandCountsTxt(StringBuilder out,
+                                                     Map<String, Integer> authorityBandCounts,
+                                                     long totalSamples) {
+        out.append("authorityBands:\n");
+        for (LatitudeBands.Band band : LatitudeBands.Band.values()) {
+            int count = authorityBandCounts != null ? authorityBandCounts.getOrDefault(band.id(), 0) : 0;
+            double pct = totalSamples <= 0 ? 0.0 : (count * 100.0) / totalSamples;
+            out.append(String.format(
+                    Locale.ROOT,
+                    "  - %-11s count=%d (%.2f%%)%n",
+                    band.id(),
+                    count,
+                    pct));
+        }
+    }
+
+    private static void appendBandCountEntries(StringBuilder out,
+                                               Map<String, Integer> bandCounts) {
+        int index = 0;
+        for (LatitudeBands.Band band : LatitudeBands.Band.values()) {
+            if (index++ > 0) {
+                out.append(',');
+            }
+            out.append(band.id()).append('=')
+                    .append(bandCounts != null ? bandCounts.getOrDefault(band.id(), 0) : 0);
+        }
+    }
+
+    private static void appendAuthorityBandCountsJson(StringBuilder json,
+                                                      Map<String, Integer> authorityBandCounts,
+                                                      long totalSamples) {
+        json.append("  \"authorityBands\": {\n");
+        json.append("    \"source\": \"LatitudeBiomes.authoritativeLandBandIndex\",\n");
+        json.append("    \"totalSamples\": ").append(totalSamples).append(",\n");
+        json.append("    \"counts\": {");
+        int index = 0;
+        for (LatitudeBands.Band band : LatitudeBands.Band.values()) {
+            if (index++ > 0) {
+                json.append(", ");
+            }
+            json.append("\"").append(band.id()).append("\": ")
+                    .append(authorityBandCounts != null ? authorityBandCounts.getOrDefault(band.id(), 0) : 0);
+        }
+        json.append("}\n");
+        json.append("  },\n");
+    }
+
     private static void writeLegendJson(Path legendPath,
                                         long seed,
                                         int radiusBlocks,
@@ -1735,7 +1798,9 @@ public final class BiomePreviewExporter {
                                         EnumSet<Overlay> overlays,
                                         List<BiomeMaskLayer> maskTargets,
                                         Map<Layer, Path> layerPaths,
-                                        Map<BiomeMaskLayer, Path> maskPaths) throws IOException {
+                                        Map<BiomeMaskLayer, Path> maskPaths,
+                                        Map<String, Integer> authorityBandCounts,
+                                        long totalSamples) throws IOException {
         StringBuilder json = new StringBuilder();
         json.append("{\n");
         json.append("  \"seed\": ").append(seed).append(",\n");
@@ -1800,6 +1865,7 @@ public final class BiomePreviewExporter {
             appendBandLegendJson(json, band, band.lowDeg() / 90.0, band.highDeg() / 90.0, i + 1 < bands.length);
         }
         json.append("  ],\n");
+        appendAuthorityBandCountsJson(json, authorityBandCounts, totalSamples);
         json.append("  \"biomeBands\": {\n");
         List<Map.Entry<String, List<LatitudeBands.Band>>> bandEntries = new ArrayList<>(BiomeBandPolicy.policy().entrySet());
         bandEntries.sort(Map.Entry.comparingByKey());
