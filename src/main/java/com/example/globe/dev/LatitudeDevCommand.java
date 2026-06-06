@@ -3,6 +3,7 @@ package com.example.globe.dev;
 import com.example.globe.GlobeMod;
 import com.example.globe.util.LatitudeBands;
 import com.example.globe.util.LatitudeMath;
+import com.example.globe.world.LatitudeBiomeSource;
 import com.example.globe.world.LatitudeBiomes;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.BoolArgumentType;
@@ -159,6 +160,8 @@ public final class LatitudeDevCommand {
             double t = Mth.clamp(Math.abs(player.getZ()) / (double) radius, 0.0, 1.0);
 
             BandTarget band = BandTarget.fromZ(radius, player.getZ());
+            int authorityBandIndex = LatitudeBiomes.authoritativeLandBandIndex(pos.getX(), pos.getZ(), radius);
+            LatitudeBands.Band authorityBand = LatitudeBiomes.bandFromIndex(authorityBandIndex);
             String biomeId = biomeId(world.getBiome(pos));
             boolean mountainLike = isMountainLikeBiome(biomeId);
             double uplandT = LatitudeBiomes.uplandRampForY(pos.getY());
@@ -174,13 +177,15 @@ public final class LatitudeDevCommand {
             double bumpinessScore = ruggedness.robustDelta(); // robust second-highest delta
 
             sendLatdevInfo(source, String.format(Locale.ROOT,
-                    "[latdev] here x=%d y=%d z=%d deg=%.2f band=%s(idx=%d) cut=%.2f..%.2f t=%.4f mtnLike=%s uplandT=%.3f savUpland=%s chance=%.3f biome=%s",
+                    "[latdev] here x=%d y=%d z=%d deg=%.2f band=%s(idx=%d) authorityBand=%s(idx=%d) cut=%.2f..%.2f t=%.4f mtnLike=%s uplandT=%.3f savUpland=%s chance=%.3f biome=%s",
                     pos.getX(),
                     pos.getY(),
                     pos.getZ(),
                     deg,
                     band.argName,
                     band.ordinal(),
+                    authorityBand.id(),
+                    authorityBandIndex,
                     band.lowDeg,
                     band.highDeg,
                     t,
@@ -218,12 +223,83 @@ public final class LatitudeDevCommand {
                     WINDSWEPT_RUGGED_THRESH,
                     WINDSWEPT_RUGGED_HYST,
                     (double) WINDSWEPT_RUGGED_THRESH + WINDSWEPT_RUGGED_HYST), false);
+            emitSourcePathProofIfEnabled(source, world, pos, sampler, biomeId);
             return 1;
         } catch (Exception e) {
             ctx.getSource().sendFailure(Component.literal("[latdev] here error: " + e.getMessage()));
             e.printStackTrace();
             return 0;
         }
+    }
+
+    private static void emitSourcePathProofIfEnabled(CommandSourceStack source,
+                                                     ServerLevel world,
+                                                     BlockPos pos,
+                                                     net.minecraft.world.level.biome.Climate.Sampler sampler,
+                                                     String liveBiomeId) {
+        if (!isSourcePathProofEnabled()) {
+            return;
+        }
+        try {
+            net.minecraft.core.Registry<Biome> biomes = world.registryAccess().lookupOrThrow(Registries.BIOME);
+            LatitudeBiomes.rememberSourcePolicyBiomeRegistry(biomes);
+            net.minecraft.world.level.chunk.ChunkGenerator generator = world.getChunkSource().getGenerator();
+            net.minecraft.world.level.biome.BiomeSource biomeSource = generator.getBiomeSource();
+            net.minecraft.world.level.biome.BiomeSource sourceSupplier = biomeSource instanceof LatitudeBiomeSource latitudeSource
+                    ? latitudeSource.original()
+                    : biomeSource;
+            int noiseX = Math.floorDiv(pos.getX(), 4);
+            int noiseY = Math.floorDiv(pos.getY(), 4);
+            int noiseZ = Math.floorDiv(pos.getZ(), 4);
+            int blockX = (noiseX << 2) + 2;
+            int blockY = (noiseY << 2) + 2;
+            int blockZ = (noiseZ << 2) + 2;
+            Holder<Biome> sourceBiome = sourceSupplier.getNoiseBiome(noiseX, noiseY, noiseZ, sampler);
+            Holder<Biome> baseBiome = sourceSupplier.getNoiseBiome(noiseX, LatitudeBiomes.SURFACE_CLASSIFY_Y >> 2, noiseZ, sampler);
+            net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator noiseGenerator =
+                    generator instanceof net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator ng ? ng : null;
+            net.minecraft.world.level.LevelHeightAccessor heightView = world;
+            net.minecraft.world.level.chunk.ChunkAccess chunk =
+                    world.getChunkSource().getChunk(Math.floorDiv(pos.getX(), 16), Math.floorDiv(pos.getZ(), 16), ChunkStatus.FULL, false);
+            if (chunk != null) {
+                heightView = chunk;
+            }
+            Holder<Biome> populateEquivalent = LatitudeBiomes.pick(biomes, baseBiome, blockX, blockZ, blockY,
+                    authoritativeRadius(source), sampler, "SOURCE_PROOF",
+                    noiseGenerator, world.getChunkSource().randomState(), heightView);
+            String sourceBiomeId = biomeId(sourceBiome);
+            String populateBiomeId = biomeId(populateEquivalent);
+            boolean latitudeSource = biomeSource instanceof LatitudeBiomeSource;
+            boolean matchesLive = populateBiomeId.equals(liveBiomeId);
+            String message = String.format(Locale.ROOT,
+                    "[latdev] sourceProof source=%s latitudeSource=%s noise=%d,%d,%d block=%d,%d,%d rawSourceBiome=%s populateEquivalentBiome=%s liveBiome=%s match=%s",
+                    biomeSource.getClass().getName(),
+                    latitudeSource,
+                    noiseX,
+                    noiseY,
+                    noiseZ,
+                    blockX,
+                    blockY,
+                    blockZ,
+                    sourceBiomeId,
+                    populateBiomeId,
+                    liveBiomeId,
+                    matchesLive);
+            sendLatdevInfo(source, message, false);
+            if (!matchesLive) {
+                GlobeMod.LOGGER.error("[LAT][SOURCE_PROOF][FAIL] populate-equivalent source proof mismatch source={} rawSourceBiome={} populateEquivalentBiome={} liveBiome={}",
+                        biomeSource.getClass().getName(), sourceBiomeId, populateBiomeId, liveBiomeId);
+            }
+        } catch (RuntimeException e) {
+            GlobeMod.LOGGER.error("[LAT][SOURCE_PROOF][FAIL] source path proof failed at x={} y={} z={}",
+                    pos.getX(), pos.getY(), pos.getZ(), e);
+            source.sendFailure(Component.literal("[latdev] sourceProof error: " + e.getMessage()));
+        }
+    }
+
+    private static boolean isSourcePathProofEnabled() {
+        return Boolean.getBoolean("latitude.debug.latdevSourceProof")
+                || Boolean.getBoolean("latitude.debug.autoCreateWorldProbe.latdevSourceProof");
     }
 
     private static int explainHere(CommandContext<CommandSourceStack> ctx) {
@@ -356,6 +432,7 @@ public final class LatitudeDevCommand {
 
             Map<String, Integer> biomeCounts = new HashMap<>();
             EnumMap<BandTarget, Integer> bandCounts = new EnumMap<>(BandTarget.class);
+            EnumMap<BandTarget, Integer> authorityBandCounts = new EnumMap<>(BandTarget.class);
             int unloaded = 0;
 
             for (int i = 0; i < samples; i++) {
@@ -380,11 +457,15 @@ public final class LatitudeDevCommand {
 
                 BandTarget band = BandTarget.fromZ(latitudeRadius, sampleZ);
                 bandCounts.merge(band, 1, Integer::sum);
+                int authorityBandIndex = LatitudeBiomes.authoritativeLandBandIndex(sampleX, sampleZ, latitudeRadius);
+                BandTarget authorityBand = BandTarget.fromBand(LatitudeBiomes.bandFromIndex(authorityBandIndex));
+                authorityBandCounts.merge(authorityBand, 1, Integer::sum);
             }
 
             int loaded = samples - unloaded;
             String biomeSummary = summarizeTopBiomes(biomeCounts, loaded, 10);
             String bandSummary = summarizeBands(bandCounts, loaded);
+            String authorityBandSummary = summarizeBands(authorityBandCounts, loaded);
             int loadedCount = loaded;
             int unloadedCount = unloaded;
             int probeRadius = radiusBlocks;
@@ -400,6 +481,7 @@ public final class LatitudeDevCommand {
                     sampleSeed), false);
             sendLatdevInfo(source, "[latdev] biomes: " + biomeSummary, false);
             sendLatdevInfo(source, "[latdev] bands: " + bandSummary, false);
+            sendLatdevInfo(source, "[latdev] authorityBands: " + authorityBandSummary, false);
             return loaded > 0 ? 1 : 0;
         } catch (Exception e) {
             ctx.getSource().sendFailure(Component.literal("[latdev] probe error: " + e.getMessage()));

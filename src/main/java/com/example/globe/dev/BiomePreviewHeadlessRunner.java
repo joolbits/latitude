@@ -42,8 +42,9 @@ public final class BiomePreviewHeadlessRunner {
             .withZone(ZoneOffset.UTC);
     private static final int PREVIEW_RADIUS_ITTY = 3750;
     private static final int PREVIEW_RADIUS_TINY = 5000;
-    private static final int PREVIEW_RADIUS_REGULAR = 7500;
-    private static final int PREVIEW_RADIUS_LARGE = 10000;
+    private static final int PREVIEW_RADIUS_SMALL = 7500;
+    private static final int PREVIEW_RADIUS_REGULAR = 10000;
+    private static final int PREVIEW_RADIUS_LARGE = 15000;
     private static final int PREVIEW_RADIUS_MASSIVE = 20000;
     private static final int PREVIEW_RADIUS_MAX = PREVIEW_RADIUS_MASSIVE;
 
@@ -425,11 +426,12 @@ public final class BiomePreviewHeadlessRunner {
         if (sizePreset != null) {
             String normalized = sizePreset.toLowerCase(Locale.ROOT);
             return switch (normalized) {
-                case "itty", "xsmall" -> PREVIEW_RADIUS_ITTY;
-                case "tiny", "small" -> PREVIEW_RADIUS_TINY;
+                case "itty", "ittybitty", "itty_bitty", "xsmall" -> PREVIEW_RADIUS_ITTY;
+                case "tiny" -> PREVIEW_RADIUS_TINY;
+                case "small", "medium" -> PREVIEW_RADIUS_SMALL;
                 case "regular" -> PREVIEW_RADIUS_REGULAR;
                 case "large" -> PREVIEW_RADIUS_LARGE;
-                case "massive" -> PREVIEW_RADIUS_MASSIVE;
+                case "ginormous", "massive" -> PREVIEW_RADIUS_MASSIVE;
                 default -> authoritativeRadius(world);
             };
         }
@@ -468,6 +470,7 @@ public final class BiomePreviewHeadlessRunner {
     private static boolean isCanonicalPreviewRadius(int radius) {
         return radius == PREVIEW_RADIUS_ITTY
                 || radius == PREVIEW_RADIUS_TINY
+                || radius == PREVIEW_RADIUS_SMALL
                 || radius == PREVIEW_RADIUS_REGULAR
                 || radius == PREVIEW_RADIUS_LARGE
                 || radius == PREVIEW_RADIUS_MASSIVE;
