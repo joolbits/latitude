@@ -2191,6 +2191,14 @@ public final class LatitudeBiomes {
     private static final int FALLBACK_COHERENCE_BLOCKS = 128;
     // Art VI: salt for the fallback-list pick's coherent ValueNoise2D fields (no floorDiv cell-hash).
     private static final long FALLBACK_PICK_SALT = 0x46414C4C5049434BL; // "FALLPICK"
+    // Polar forest/taiga sanitize: coherent ice_spikes accent over a snowy_taiga/snowy_plains base
+    // (caps the ice_spikes over-representation; keeps it present as a coherent polar accent).
+    private static final long POLAR_SANITIZE_ICE_SALT = 0x6963655F73706B73L; // "ice_spks"
+    private static final int POLAR_ICE_ACCENT_PATCH_BLOCKS = 256;
+    // Keep ice_spikes where its coherent noise >= this. Tuned so ice_spikes lands just under its ~6%
+    // cap (keeping as much as the cap allows minimizes how much of the converted area piles into the
+    // snowy_plains primary). Lower threshold => keep more ice_spikes.
+    private static final double POLAR_ICE_KEEP_THRESHOLD = 0.45;
     private static final int BLEND_TRANSITION_WIDTH_BLOCKS = 1408;
     private static final int BLEND_DITHER_SCALE_BLOCKS = 512;
     private static final int BLEND_NOISE_PATCH_CHUNKS = 10;
@@ -7006,6 +7014,22 @@ public final class LatitudeBiomes {
         return base;
     }
 
+    // Snowy base for polar sanitize: snowy_plains, the natural flat-polar primary. (snowy_taiga was
+    // tried for variety but a downstream polar stage re-forces it to snowy_plains, so it is omitted
+    // here to keep the code honest; restoring snowy_taiga variety is a separate follow-up.)
+    private static String polarSnowyBase(int blockX, int blockZ) {
+        return "minecraft:snowy_plains";
+    }
+
+    // ice_spikes cap: keep it only on coherent high-noise patches (caps its polar share from ~9% of
+    // the world / ~34% of the polar band, over its accent cap, down to a coherent minority accent),
+    // converting the rest to the snowy base. Source-agnostic — applies wherever the pick is ice_spikes.
+    private static boolean keepPolarIceSpike(int blockX, int blockZ) {
+        double ice = ValueNoise2D.sampleBlocks(WORLD_SEED ^ POLAR_SANITIZE_ICE_SALT, blockX, blockZ,
+                POLAR_ICE_ACCENT_PATCH_BLOCKS);
+        return ice >= POLAR_ICE_KEEP_THRESHOLD;
+    }
+
     private static Holder<Biome> pickSubpolarForestSanitizeFallback(Registry<Biome> biomes, Holder<Biome> pick) {
         String[] options = new String[]{
                 "minecraft:snowy_taiga",
@@ -8848,10 +8872,19 @@ public final class LatitudeBiomes {
         }
 
         if (bandIndex >= BAND_POLAR) {
-            String path = pick.unwrapKey().map(key -> key.identifier().getPath()).orElse("");
-            if (path.contains("forest") || path.contains("taiga") || isBiomeId(pick, "minecraft:cherry_grove")) {
+            // Cap base-source ice_spikes to coherent accent patches (the dominant over-rep source).
+            if (isBiomeId(pick, "minecraft:ice_spikes") && !keepPolarIceSpike(blockX, blockZ)) {
                 try {
-                    return biome(biomes, "minecraft:ice_spikes");
+                    return biome(biomes, polarSnowyBase(blockX, blockZ));
+                } catch (Throwable ignored) {
+                    return pick;
+                }
+            }
+            String path = pick.unwrapKey().map(key -> key.identifier().getPath()).orElse("");
+            if (!path.contains("snowy")
+                    && (path.contains("forest") || path.contains("taiga") || isBiomeId(pick, "minecraft:cherry_grove"))) {
+                try {
+                    return biome(biomes, polarSnowyBase(blockX, blockZ));
                 } catch (Throwable ignored) {
                     return pick;
                 }
@@ -8993,9 +9026,15 @@ public final class LatitudeBiomes {
         }
 
         if (bandIndex >= BAND_POLAR) {
+            // Cap base-source ice_spikes to coherent accent patches (the dominant over-rep source).
+            if (isBiomeId(pick, "minecraft:ice_spikes") && !keepPolarIceSpike(blockX, blockZ)) {
+                Holder<Biome> snowy = entryById(biomes, polarSnowyBase(blockX, blockZ));
+                return snowy != null ? snowy : pick;
+            }
             String path = pick.unwrapKey().map(key -> key.identifier().getPath()).orElse("");
-            if (path.contains("forest") || path.contains("taiga") || isBiomeId(pick, "minecraft:cherry_grove")) {
-                Holder<Biome> entry = entryById(biomes, "minecraft:ice_spikes");
+            if (!path.contains("snowy")
+                    && (path.contains("forest") || path.contains("taiga") || isBiomeId(pick, "minecraft:cherry_grove"))) {
+                Holder<Biome> entry = entryById(biomes, polarSnowyBase(blockX, blockZ));
                 return entry != null ? entry : pick;
             }
         }
