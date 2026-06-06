@@ -7774,6 +7774,10 @@ async function switchLayer(run, layer) {
   clearHighlight();
   highlightBiomeInList();
   renderSelectedHighlights();
+  // Refresh the confetti overlay for the NEW run: re-renders at the new map dimensions if confetti is
+  // on (else clears). Prevents a stale, larger-run confetti canvas from overhanging a smaller new map.
+  state.confettiScanCache = null;
+  renderConfettiOverlay();
   toggleGrid();
   if (togBands.checked) { renderBands(); renderBandLegend(); }
   renderBandViolations();
