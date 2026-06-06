@@ -12,7 +12,6 @@ import net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator;
 import net.minecraft.world.level.levelgen.NoiseGeneratorSettings;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
-import org.spongepowered.asm.mixin.Mutable;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -28,6 +27,12 @@ public abstract class ChunkGeneratorBiomeSourceMixin {
             new java.util.concurrent.atomic.AtomicBoolean(false);
 
     private static final java.util.concurrent.atomic.AtomicBoolean DEBUG_WRAP_SUCCESS_LOGGED =
+            new java.util.concurrent.atomic.AtomicBoolean(false);
+
+    private static final java.util.concurrent.atomic.AtomicBoolean DEBUG_WRAP_DEFERRED_LOGGED =
+            new java.util.concurrent.atomic.AtomicBoolean(false);
+
+    private static final java.util.concurrent.atomic.AtomicBoolean DEBUG_WRAP_BIOLITH_DEFERRED_LOGGED =
             new java.util.concurrent.atomic.AtomicBoolean(false);
 
     private static final String GLOBE_SETTINGS_CHECKED =
@@ -54,18 +59,17 @@ public abstract class ChunkGeneratorBiomeSourceMixin {
             ResourceKey.create(Registries.NOISE_SETTINGS, GLOBE_SETTINGS_MASSIVE_ID);
     @Shadow
     @Final
-    @Mutable
     private BiomeSource biomeSource;
 
     @org.spongepowered.asm.mixin.Unique
     private BiomeSource globe$wrappedBiomeSource;
 
-    @Inject(method = "<init>(Lnet/minecraft/world/biome/source/BiomeSource;)V", at = @At("TAIL"), require = 0)
+    @Inject(method = "<init>(Lnet/minecraft/world/level/biome/BiomeSource;)V", at = @At("TAIL"), require = 0)
     private void globe$wrapBiomeSource(BiomeSource biomeSource, CallbackInfo ci) {
         globe$maybeWrapBiomeSource();
     }
 
-    @Inject(method = "<init>(Lnet/minecraft/world/biome/source/BiomeSource;Ljava/util/function/Function;)V", at = @At("TAIL"), require = 0)
+    @Inject(method = "<init>(Lnet/minecraft/world/level/biome/BiomeSource;Ljava/util/function/Function;)V", at = @At("TAIL"), require = 0)
     private void globe$wrapBiomeSource(BiomeSource biomeSource, java.util.function.Function<?, ?> settingsLookup, CallbackInfo ci) {
         globe$maybeWrapBiomeSource();
     }
@@ -80,7 +84,12 @@ public abstract class ChunkGeneratorBiomeSourceMixin {
     }
 
     private void globe$maybeWrapBiomeSource() {
-        if (this.biomeSource instanceof LatitudeBiomeSource || this.globe$wrappedBiomeSource instanceof LatitudeBiomeSource) {
+        if (this.biomeSource instanceof LatitudeBiomeSource latitudeSource) {
+            this.globe$wrappedBiomeSource = latitudeSource;
+            return;
+        }
+        if (this.globe$wrappedBiomeSource instanceof LatitudeBiomeSource latitudeSource
+                && latitudeSource.original() == this.biomeSource) {
             return;
         }
         if (!((Object) this instanceof NoiseBasedChunkGenerator)) {
@@ -96,14 +105,65 @@ public abstract class ChunkGeneratorBiomeSourceMixin {
             }
             return;
         }
-        java.util.Collection<net.minecraft.core.Holder<Biome>> biomes = this.biomeSource.possibleBiomes();
+        java.util.Collection<net.minecraft.core.Holder<Biome>> biomes = globe$resolvedPossibleBiomes();
+        if (biomes == null) {
+            return;
+        }
         int borderRadiusBlocks = globe$borderRadiusBlocks();
         // Ensure structure placement and surface rules see the same Latitude biome override as terrain.
-        this.globe$wrappedBiomeSource = new LatitudeBiomeSource(this.biomeSource, biomes, borderRadiusBlocks);
+        LatitudeBiomeSource wrapped = new LatitudeBiomeSource(this.biomeSource, biomes, borderRadiusBlocks);
+        this.globe$wrappedBiomeSource = wrapped;
         if (DEBUG_WORLDGEN_PATH && DEBUG_WRAP_SUCCESS_LOGGED.compareAndSet(false, true)) {
-            GlobeMod.LOGGER.info("[Latitude] Worldgen path active: wrapped ChunkGenerator biomeSource settings={} checked={} radius={} action=using LatitudeBiomeSource",
+            GlobeMod.LOGGER.info("[Latitude] Worldgen path active: wrapped ChunkGenerator biomeSource settings={} checked={} radius={} action=using LatitudeBiomeSource getterOnly=true",
                     globe$matchedSettingsLabel(), GLOBE_SETTINGS_CHECKED, borderRadiusBlocks);
         }
+    }
+
+    private java.util.Collection<net.minecraft.core.Holder<Biome>> globe$resolvedPossibleBiomes() {
+        try {
+            return this.biomeSource.possibleBiomes();
+        } catch (IllegalStateException e) {
+            if (!globe$isUnboundRegistryValue(e)) {
+                throw e;
+            }
+            if (DEBUG_WORLDGEN_PATH && DEBUG_WRAP_DEFERRED_LOGGED.compareAndSet(false, true)) {
+                GlobeMod.LOGGER.info("[Latitude] biomeSource wrap deferred: possible biomes not registry-bound yet settings={} action=retry later",
+                        globe$matchedSettingsLabel());
+            }
+            return null;
+        } catch (java.util.NoSuchElementException e) {
+            if (!globe$isBiolithLookupMissingDuringStabilityCheck(e)) {
+                throw e;
+            }
+            if (DEBUG_WORLDGEN_PATH && DEBUG_WRAP_BIOLITH_DEFERRED_LOGGED.compareAndSet(false, true)) {
+                GlobeMod.LOGGER.info("[Latitude] biomeSource wrap deferred: Biolith biome lookup not ready during stability check settings={} action=retry later",
+                        globe$matchedSettingsLabel());
+            }
+            return null;
+        }
+    }
+
+    private static boolean globe$isUnboundRegistryValue(IllegalStateException e) {
+        String message = e.getMessage();
+        return message != null && message.contains("unbound value");
+    }
+
+    private static boolean globe$isBiolithLookupMissingDuringStabilityCheck(java.util.NoSuchElementException e) {
+        boolean fromBiolithLookup = false;
+        boolean duringWorldDimensionsStabilityCheck = false;
+        for (StackTraceElement element : e.getStackTrace()) {
+            String className = element.getClassName();
+            String methodName = element.getMethodName();
+            if ("com.terraformersmc.biolith.impl.biome.BiomeCoordinator".equals(className)
+                    && "getBiomeLookupOrThrow".equals(methodName)) {
+                fromBiolithLookup = true;
+            }
+            if ("net.minecraft.world.level.levelgen.WorldDimensions".equals(className)
+                    && ("checkStability".equals(methodName) || "bake".equals(methodName))) {
+                duringWorldDimensionsStabilityCheck = true;
+            }
+        }
+        return fromBiolithLookup && duringWorldDimensionsStabilityCheck;
     }
 
     private boolean globe$isAnyGlobeSettings() {
@@ -161,4 +221,5 @@ public abstract class ChunkGeneratorBiomeSourceMixin {
         if (noise.stable(GLOBE_SETTINGS_MASSIVE_KEY)) return 20000;
         return 7500;
     }
+
 }

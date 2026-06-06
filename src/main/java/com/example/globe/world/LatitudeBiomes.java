@@ -539,6 +539,14 @@ public final class LatitudeBiomes {
         return isBiomeId(entry, id);
     }
 
+    public static Collection<Holder<Biome>> expandSourceCandidatePool(Collection<Holder<Biome>> basePool) {
+        return basePool;
+    }
+
+    public static void rememberSourcePolicyBiomeRegistry(Registry<Biome> biomes) {
+        // no-op: compile gate only
+    }
+
     public static void auditSparseJungleExternal(String bucket, int blockX, int blockZ, int landBandIndex, String detail, Holder<Biome> pre, Holder<Biome> post) {
         auditSparseJungle(bucket, blockX, blockZ, landBandIndex, detail, biomeId(pre), biomeId(post));
     }
