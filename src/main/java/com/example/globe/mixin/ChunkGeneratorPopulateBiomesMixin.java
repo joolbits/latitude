@@ -2,6 +2,7 @@ package com.example.globe.mixin;
 
 import com.example.globe.GlobeMod;
 import com.example.globe.util.LatitudeBands;
+import com.example.globe.world.LatitudeBiomeSource;
 import com.example.globe.world.LatitudeBiomes;
 import it.unimi.dsi.fastutil.longs.Long2LongOpenHashMap;
 import net.minecraft.core.Holder;
@@ -269,12 +270,16 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
         }
 
         Registry<Biome> biomes = structureAccessor.registryAccess().lookupOrThrow(Registries.BIOME);
+        LatitudeBiomes.rememberSourcePolicyBiomeRegistry(biomes);
         int borderRadiusBlocks = this.globe$borderRadiusBlocks();
         NoiseBasedChunkGenerator generator = (NoiseBasedChunkGenerator)(Object) this;
         RandomState noiseConfig = globe$noiseConfigTL.get();
         Long2LongOpenHashMap surfaceYCache = new Long2LongOpenHashMap();
         surfaceYCache.defaultReturnValue(Long.MIN_VALUE);
         logWorldgenPathOnce(chunk, borderRadiusBlocks, globe$matchedSettingsLabel());
+        BiomeResolver sourceSupplier = originalSupplier instanceof LatitudeBiomeSource latitudeSource
+                ? latitudeSource.original()
+                : originalSupplier;
 
         BiomeResolver wrapped = (x, y, z, ignoredSampler) -> {
             globe$logPopBio("LATITUDE_RESOLVER", "chunk=" + pos.x() + "," + pos.z() + " noise=" + x + "," + y + "," + z);
@@ -283,8 +288,8 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
             int blockZ = (z << 2) + 2;
             int blockY = (y << 2) + 2;
             
-            Holder<Biome> current = originalSupplier.getNoiseBiome(x, y, z, sampler);
-            Holder<Biome> base = originalSupplier.getNoiseBiome(x, LatitudeBiomes.SURFACE_CLASSIFY_Y >> 2, z, sampler);
+            Holder<Biome> current = sourceSupplier.getNoiseBiome(x, y, z, sampler);
+            Holder<Biome> base = sourceSupplier.getNoiseBiome(x, LatitudeBiomes.SURFACE_CLASSIFY_Y >> 2, z, sampler);
             boolean caveCurrent = isCaveBiome(biomes, current);
 
             if (blockY > HARD_DECK_SURFACE_Y && isCaveBiome(biomes, base)) {
