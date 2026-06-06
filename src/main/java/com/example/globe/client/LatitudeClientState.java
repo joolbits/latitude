@@ -14,8 +14,6 @@ public final class LatitudeClientState {
         COMPLETE
     }
 
-    public static boolean firstWorldLoad = false;
-    public static long firstWorldLoadStartMs = 0L;
     /** Timestamp (System.currentTimeMillis) when beginExpedition was called. */
     public static long expeditionStartMs = 0L;
     /** Last observed vanilla loading progress (0..1), used across loading-screen handoff. */
@@ -92,7 +90,6 @@ public final class LatitudeClientState {
         lastLifecycleClearElapsedMs = sinceExpedition;
         expeditionStartMs = 0L;
         latitudeLoadingProgress = 0f;
-        firstWorldLoad = false;
         return sinceExpedition;
     }
 

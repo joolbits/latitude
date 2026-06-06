@@ -3,7 +3,6 @@ package com.example.globe.client.create;
 import com.example.globe.GlobePending;
 import com.example.globe.client.GlobeWorldSize;
 import com.example.globe.client.GlobeWorldSizeSelection;
-import com.example.globe.client.LatitudeClientConfig;
 import com.example.globe.client.LatitudeClientState;
 import com.example.globe.util.LatitudeBands;
 import com.mojang.serialization.Lifecycle;
@@ -198,9 +197,6 @@ public final class LatitudeWorldLauncher {
                     GlobePending.set(spawnZone.id().toUpperCase(java.util.Locale.ROOT));
                     GlobePending.startWithCompass = startWithCompass;
                     LatitudeClientState.activateLatitudeLoading();
-                    if (LatitudeClientConfig.get().showFirstLoadMessage) {
-                        LatitudeClientState.firstWorldLoad = true;
-                    }
                     LOGGER.info("[Latitude lifecycle] bespoke overlay activated — {}ms since beginExpedition",
                             LatitudeClientState.elapsedSinceExpeditionMs());
                 }

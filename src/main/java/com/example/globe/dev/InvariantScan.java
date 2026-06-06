@@ -1,7 +1,6 @@
 package com.example.globe.dev;
 
 import java.io.IOException;
-import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
@@ -16,11 +15,6 @@ public final class InvariantScan {
 
         String mixins = readFile("src/main/resources/globe.mixins.json");
         requireContains(mixins, "client.CreateWorldScreenMixin", errors, "globe.mixins.json missing client.CreateWorldScreenMixin");
-        requireContains(mixins, "client.DownloadingTerrainScreenFirstLoadMessageMixin", errors, "globe.mixins.json missing client.DownloadingTerrainScreenFirstLoadMessageMixin");
-
-        byte[] clazz = readClassBytes("/com/example/globe/mixin/client/DownloadingTerrainScreenFirstLoadMessageMixin.class");
-        String clazzText = new String(clazz, StandardCharsets.ISO_8859_1);
-        requireContains(clazzText, "Press F9 in-game for HUD options", errors, "loading hint missing in mixin class");
 
         if (!errors.isEmpty()) {
             System.err.println("[Latitude invariant scan] FAIL");
@@ -33,15 +27,6 @@ public final class InvariantScan {
 
     private static String readFile(String path) throws IOException {
         return Files.readString(Paths.get(path), StandardCharsets.UTF_8);
-    }
-
-    private static byte[] readClassBytes(String resourcePath) throws IOException {
-        try (InputStream in = InvariantScan.class.getResourceAsStream(resourcePath)) {
-            if (in == null) {
-                throw new IOException("Missing resource: " + resourcePath);
-            }
-            return in.readAllBytes();
-        }
     }
 
     private static void requireContains(String haystack, String needle, List<String> errors, String message) {
