@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -68,7 +69,6 @@ def generate_run(*, step: int, seed: int, size: str) -> None:
     validate_step(step)
     size_key = normalize_size(size)
     run_id = allocate_run_id()
-    radius = radius_for_size(size_key)
     target_run_dir = RUNS_ROOT / run_id
 
     ensure_clean_target(target_run_dir)
@@ -79,9 +79,13 @@ def generate_run(*, step: int, seed: int, size: str) -> None:
         step=step,
         layers=None,
     )
-    source_step_dir = find_fresh_step_dir(seed=seed, radius=radius, step=step, started_at=started_at)
+    source_step_dir = find_fresh_step_dir(seed=seed, step=step, started_at=started_at)
     if not source_step_dir.exists():
         raise FileNotFoundError(f"Atlas step output not found: {source_step_dir}")
+    # The exporter's size->radius mapping is authoritative (it can differ from SIZE_TO_RADIUS), so use
+    # the radius it actually wrote (parsed from the R<radius> dir) rather than a guess from the size key.
+    radius_match = re.search(r"[/\\]R(\d+)[/\\]", str(source_step_dir) + os.sep)
+    radius = int(radius_match.group(1)) if radius_match else radius_for_size(size_key)
 
     RUNS_ROOT.mkdir(parents=True, exist_ok=True)
     target_run_dir.mkdir(parents=True, exist_ok=False)
@@ -164,15 +168,16 @@ def ensure_clean_target(target_run_dir: Path) -> None:
         raise FileExistsError(f"Run folder already exists: {target_run_dir}")
 
 
-def find_fresh_step_dir(*, seed: int, radius: int, step: int, started_at: float) -> Path:
+def find_fresh_step_dir(*, seed: int, step: int, started_at: float) -> Path:
     seed_root = ATLAS_ROOT / f"seed_{seed}"
     if not seed_root.exists():
         raise FileNotFoundError(f"Atlas seed output root not found: {seed_root}")
 
+    # Radius-agnostic: the exporter chooses the radius for a size (and that mapping can differ from
+    # SIZE_TO_RADIUS), so match ANY R*/step<step> dir for this seed by recency rather than a guessed radius.
     candidates: list[Path] = []
-    for run_dir in seed_root.glob("Run_*"):
-        step_dir = run_dir / f"R{radius}" / f"step{step}"
-        if not step_dir.exists():
+    for step_dir in seed_root.glob(f"Run_*/R*/step{step}"):
+        if not step_dir.is_dir():
             continue
         try:
             mtime = step_dir.stat().st_mtime
@@ -183,7 +188,7 @@ def find_fresh_step_dir(*, seed: int, radius: int, step: int, started_at: float)
 
     if not candidates:
         raise FileNotFoundError(
-            f"No fresh atlas step directory found under {seed_root} for radius {radius} step {step}"
+            f"No fresh atlas step directory found under {seed_root} for step {step}"
         )
 
     candidates.sort(key=lambda path: path.stat().st_mtime)
