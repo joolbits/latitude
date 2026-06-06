@@ -38,6 +38,10 @@
     {
       "id": "terralith:wintry_forest",
       "required": false
+    },
+    {
+      "id": "promenade:glacarian_taiga",
+      "required": false
     }
   ]
 }
