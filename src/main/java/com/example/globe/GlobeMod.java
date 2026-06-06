@@ -202,6 +202,7 @@ public class GlobeMod implements ModInitializer {
             return;
         }
         invokeDevRegister("com.example.globe.dev.BiomePreviewHeadlessRunner");
+        invokeDevRegister("com.example.globe.dev.WorldMapPreviewHeadlessRunner");
     }
 
     private static void invokeDevRegister(String className, Object... args) {

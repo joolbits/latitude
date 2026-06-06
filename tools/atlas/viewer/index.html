@@ -43,8 +43,10 @@
   --bg-base:     #151b23;
   --bg-surface:  #1c2333;
   --bg-elevated: #222d3d;
-  --bg-glass:    rgba(22, 30, 44, 0.72);
-  --bg-glass-hover: rgba(30, 40, 58, 0.82);
+  --bg-glass:    rgba(22, 30, 44, 0.84);
+  --bg-glass-hover: rgba(30, 40, 58, 0.94);
+  --bg-popover:  rgba(19, 27, 40, 0.96);
+  --bg-control:  rgba(34, 45, 61, 0.96);
   --border-subtle:  rgba(62, 232, 214, 0.08);
   --border-medium:  rgba(62, 232, 214, 0.15);
   --border-accent:  rgba(62, 232, 214, 0.35);
@@ -64,8 +66,10 @@
   --bg-base:     #f8f9fb;
   --bg-surface:  #ffffff;
   --bg-elevated: #ffffff;
-  --bg-glass:    rgba(255, 255, 255, 0.72);
-  --bg-glass-hover: rgba(255, 255, 255, 0.85);
+  --bg-glass:    rgba(255, 255, 255, 0.9);
+  --bg-glass-hover: rgba(255, 255, 255, 0.97);
+  --bg-popover:  rgba(255, 255, 255, 0.97);
+  --bg-control:  rgba(255, 255, 255, 0.98);
   --border-subtle:  rgba(0, 0, 0, 0.06);
   --border-medium:  rgba(0, 0, 0, 0.12);
   --border-accent:  rgba(45, 170, 156, 0.4);
@@ -87,6 +91,19 @@
    ═══════════════════════════════════════════════ */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+button,
+input,
+select {
+  font: inherit;
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: 2px solid var(--lat-accent);
+  outline-offset: 2px;
+}
+
 html, body {
   height: 100%;
   overflow: hidden;
@@ -96,6 +113,17 @@ html, body {
   background: var(--bg-deep);
   -webkit-font-smoothing: antialiased;
   user-select: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.001ms !important;
+  }
 }
 
 /* Scrollbar styling */
@@ -424,11 +452,13 @@ html, body {
   left: 50%;
   transform: translateX(-50%) translateY(-6px);
   min-width: 200px;
-  max-width: min(360px, calc(100vw - 36px));
+  max-width: min(520px, calc(100vw - 36px));
+  max-height: calc(100vh - 136px);
+  overflow: auto;
   padding: 12px;
   border-radius: 20px;
-  border: 1px solid var(--border-subtle);
-  background: var(--bg-glass);
+  border: 1px solid var(--border-medium);
+  background: var(--bg-popover);
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
   box-shadow: var(--shadow-float), var(--shadow-glow);
@@ -453,6 +483,16 @@ html, body {
 .toolbar-bubble[data-align="right"].open .toolbar-bubble-panel {
   transform: translateY(0);
 }
+#control-pill:not([data-layout="expanded"]) .toolbar-bubble[data-toolbar-bubble="generate"] .toolbar-bubble-panel {
+  position: fixed;
+  top: 98px;
+  left: 50%;
+  right: auto;
+  transform: translateX(-50%) translateY(-6px);
+}
+#control-pill:not([data-layout="expanded"]) .toolbar-bubble[data-toolbar-bubble="generate"].open .toolbar-bubble-panel {
+  transform: translateX(-50%) translateY(0);
+}
 .toolbar-panel-label {
   font-family: var(--font-display);
   font-size: 10px;
@@ -466,6 +506,94 @@ html, body {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+.generation-panel {
+  width: min(430px, calc(100vw - 40px));
+  gap: 10px;
+}
+.generation-mode-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.generation-mode-btn {
+  min-height: 52px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 14px;
+  background: var(--bg-control);
+  color: var(--text-secondary);
+  font-family: var(--font-display);
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.25;
+  padding: 10px 12px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.2s var(--ease-smooth), border-color 0.2s var(--ease-smooth), color 0.2s var(--ease-smooth), box-shadow 0.2s var(--ease-smooth);
+}
+.generation-mode-btn:hover,
+.generation-mode-btn.active {
+  border-color: var(--border-accent);
+  color: var(--text-primary);
+  background: linear-gradient(180deg, rgba(62, 232, 214, 0.13), rgba(61, 160, 227, 0.08)), var(--bg-control);
+  box-shadow: inset 0 0 0 1px rgba(62, 232, 214, 0.08);
+}
+.generation-mode-btn span {
+  display: block;
+  margin-top: 3px;
+  font-family: var(--font-body);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+.generation-mode-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.generation-mode-body[hidden] {
+  display: none;
+}
+.generation-helper {
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.generation-field-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.generation-field-grid .wide {
+  grid-column: 1 / -1;
+}
+.generation-inline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.world-map-safety-note {
+  border: 1px solid rgba(232, 167, 62, 0.36);
+  border-radius: var(--r-md);
+  background: rgba(232, 167, 62, 0.1);
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  line-height: 1.45;
+  padding: 9px 10px;
+}
+.generation-panel .seed-controls {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 6px;
+}
+.generation-panel .seed-status {
+  grid-column: 1 / -1;
+}
+.generation-panel #btn-random-seed {
+  width: 34px;
+  height: 34px;
+  margin-left: 0 !important;
+  padding: 0 !important;
 }
 
 /* Custom Select */
@@ -874,6 +1002,7 @@ html, body {
 .meta-key {
   color: var(--text-secondary);
   font-size: 11px;
+  flex: 0 0 auto;
 }
 .meta-key.seed-copyable {
   display: inline-flex;
@@ -886,6 +1015,8 @@ html, body {
   font-size: 11.5px;
   font-weight: 400;
   text-align: right;
+  min-width: 0;
+  overflow-wrap: anywhere;
   word-break: break-all;
   line-height: 1.4;
 }
@@ -1072,6 +1203,463 @@ html, body {
 .biome-search::placeholder { color: var(--text-tertiary); }
 .biome-search:focus { border-color: var(--border-accent); }
 
+/* World map jobs */
+.world-map-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.world-map-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.world-map-field.wide {
+  grid-column: 1 / -1;
+}
+.world-map-field label {
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 500;
+}
+.world-map-input {
+  width: 100%;
+  min-width: 0;
+  height: 34px;
+  background: var(--bg-control);
+  border: 1px solid var(--border-medium);
+  border-radius: var(--r-md);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  padding: 7px 10px;
+  outline: none;
+  user-select: text;
+  -webkit-user-select: text;
+  pointer-events: auto;
+}
+.world-map-input:focus {
+  border-color: var(--lat-accent);
+  box-shadow: 0 0 0 2px rgba(62, 232, 214, 0.14);
+}
+.world-map-seed-row {
+  display: grid;
+  grid-template-columns: 1fr 34px;
+  gap: 6px;
+  align-items: center;
+}
+.world-map-random-seed-btn {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  font-size: 14px;
+}
+.world-map-form-hint {
+  color: var(--text-tertiary);
+  font-size: 10.5px;
+  line-height: 1.35;
+}
+.world-map-cap-actions {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+.world-map-cap-btn {
+  min-height: 28px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  font-family: var(--font-display);
+  font-size: 10.5px;
+  font-weight: 650;
+  cursor: pointer;
+  transition: border-color 0.18s, color 0.18s, background 0.18s, transform 0.18s;
+}
+.world-map-cap-btn:hover:not(:disabled),
+.world-map-cap-btn:focus-visible {
+  border-color: var(--lat-accent);
+  color: var(--text-accent);
+  background: rgba(62, 232, 214, 0.08);
+}
+.world-map-cap-btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+.world-map-cap-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+.world-map-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+.world-map-actions .panel-action-btn {
+  min-height: 30px;
+}
+#btn-world-map-create {
+  min-width: 146px;
+  border-color: transparent;
+  background: var(--lat-accent);
+  color: #061815;
+}
+[data-theme="light"] #btn-world-map-create {
+  color: #ffffff;
+}
+#btn-world-map-create:hover {
+  color: #061815;
+  filter: brightness(1.05);
+}
+.world-map-status {
+  margin-top: 0;
+  min-height: 18px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+  background: rgba(127, 146, 170, 0.08);
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--text-secondary);
+  padding: 8px 10px;
+}
+.world-map-status.error {
+  color: var(--lat-error);
+  border-color: rgba(232, 90, 90, 0.35);
+  background: rgba(232, 90, 90, 0.08);
+}
+.world-map-status.success {
+  color: var(--text-secondary);
+  border-color: rgba(90, 232, 122, 0.28);
+  background: rgba(90, 232, 122, 0.08);
+}
+.world-map-job-list {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-top: 10px;
+}
+.world-map-job-list .lat-select-wrap {
+  flex: 1;
+  min-width: 0;
+}
+.world-map-chip {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--border-medium);
+  border-radius: 999px;
+  padding: 2px 7px;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+.world-map-chip[data-phase="running"] { color: var(--lat-warn); border-color: rgba(232, 167, 62, 0.35); }
+.world-map-chip[data-phase="paused"] { color: var(--lat-warn); border-color: rgba(232, 167, 62, 0.35); }
+.world-map-chip[data-phase="complete"] { color: var(--lat-success); border-color: rgba(90, 232, 122, 0.35); }
+.world-map-chip[data-phase="failed"],
+.world-map-chip[data-phase="canceled"] { color: var(--lat-error); border-color: rgba(232, 90, 90, 0.35); }
+.world-map-detail {
+  margin-top: 8px;
+  min-width: 0;
+}
+.world-map-summary-card {
+  border: 1px solid var(--border-medium);
+  border-radius: var(--r-md);
+  background: rgba(127, 146, 170, 0.08);
+  padding: 10px;
+  margin-bottom: 8px;
+}
+.world-map-summary-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+.world-map-summary-head > div {
+  min-width: 0;
+}
+.world-map-summary-label {
+  color: var(--text-tertiary);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.world-map-summary-title {
+  color: var(--text-primary);
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.25;
+  margin-top: 2px;
+  overflow-wrap: anywhere;
+}
+.world-map-progress-track {
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(127, 146, 170, 0.18);
+  border: 1px solid var(--border-subtle);
+  overflow: hidden;
+  margin-top: 10px;
+}
+.world-map-progress-track span {
+  display: block;
+  height: 100%;
+  min-width: 0;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--lat-accent), var(--lat-accent2));
+}
+.world-map-progress-copy {
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  line-height: 1.35;
+  margin-top: 7px;
+}
+.world-map-next-step {
+  margin-top: 8px;
+  border: 1px solid rgba(62, 232, 214, 0.22);
+  border-radius: var(--r-md);
+  background: rgba(62, 232, 214, 0.08);
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  line-height: 1.4;
+  padding: 8px 10px;
+}
+.world-map-meta-grid {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+  overflow: hidden;
+}
+.world-map-viewer {
+  margin-top: 10px;
+  border: 1px solid var(--border-medium);
+  border-radius: var(--r-md);
+  background: rgba(127, 146, 170, 0.08);
+  overflow: hidden;
+}
+.world-map-viewer-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.world-map-viewer-title {
+  color: var(--text-primary);
+  font-family: var(--font-display);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+.world-map-viewer-copy {
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.35;
+  margin-top: 3px;
+}
+.world-map-stitched-wrap {
+  padding: 10px;
+}
+.world-map-stitched-frame {
+  position: relative;
+  border: 1px solid var(--border-medium);
+  border-radius: var(--r-md);
+  background:
+    linear-gradient(45deg, rgba(127, 146, 170, 0.12) 25%, transparent 25%),
+    linear-gradient(-45deg, rgba(127, 146, 170, 0.12) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, rgba(127, 146, 170, 0.12) 75%),
+    linear-gradient(-45deg, transparent 75%, rgba(127, 146, 170, 0.12) 75%);
+  background-size: 16px 16px;
+  background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+  overflow: hidden;
+}
+.world-map-mosaic-canvas {
+  display: block;
+  width: 100%;
+  max-height: 320px;
+  background: rgba(8, 14, 22, 0.45);
+  image-rendering: pixelated;
+}
+.world-map-stitched-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 120px;
+  color: var(--text-tertiary);
+  font-size: 11px;
+  line-height: 1.4;
+  padding: 16px;
+  text-align: center;
+}
+.world-map-coverage {
+  display: grid;
+  grid-template-columns: 96px 1fr;
+  gap: 10px;
+  align-items: center;
+  padding: 0 10px 10px;
+}
+.world-map-coverage-map {
+  width: 96px;
+  height: 96px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-sm);
+  background: rgba(127, 146, 170, 0.12);
+}
+.world-map-coverage-map svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.world-map-coverage-copy {
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.4;
+}
+.world-map-world-access {
+  margin-top: 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+  background: rgba(127, 146, 170, 0.08);
+  padding: 10px;
+}
+.world-map-world-access-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: flex-start;
+}
+.world-map-world-title {
+  color: var(--text-primary);
+  font-family: var(--font-display);
+  font-size: 12px;
+  font-weight: 700;
+}
+.world-map-world-copy {
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.4;
+  margin-top: 3px;
+}
+.world-map-world-path {
+  margin-top: 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-sm);
+  background: var(--bg-control);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1.35;
+  padding: 6px 8px;
+  overflow-wrap: anywhere;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.world-map-world-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 9px;
+}
+.world-map-world-actions .panel-action-btn {
+  min-height: 28px;
+}
+.world-map-viewer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+.world-map-viewer-action {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  border: 1px solid var(--border-medium);
+  border-radius: 999px;
+  color: var(--text-secondary);
+  background: var(--bg-elevated);
+  font-family: var(--font-display);
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 4px 9px;
+  text-decoration: none;
+}
+.world-map-viewer-action:hover,
+.world-map-viewer-action:focus-visible {
+  border-color: var(--lat-accent);
+  color: var(--text-accent);
+}
+.world-map-preview-grid {
+  --world-map-preview-cols: 4;
+  display: grid;
+  grid-template-columns: repeat(var(--world-map-preview-cols), minmax(0, 1fr));
+  gap: 5px;
+  padding: 10px;
+}
+.world-map-preview-tile {
+  display: grid;
+  grid-template-rows: 1fr auto;
+  min-width: 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-sm);
+  background: var(--bg-control);
+  color: var(--text-secondary);
+  text-decoration: none;
+  overflow: hidden;
+}
+.world-map-preview-tile:hover,
+.world-map-preview-tile:focus-visible {
+  border-color: var(--lat-accent);
+}
+.world-map-preview-tile img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  object-fit: cover;
+  image-rendering: pixelated;
+  background: rgba(127, 146, 170, 0.12);
+}
+.world-map-preview-tile span {
+  display: block;
+  padding: 4px 5px;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+.world-map-tiles {
+  margin-top: 8px;
+  max-height: 128px;
+  overflow-y: auto;
+  border-top: 1px solid var(--border-subtle);
+}
+.world-map-tiles-title {
+  color: var(--text-tertiary);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  margin-top: 10px;
+}
+.world-map-tile-row {
+  display: grid;
+  grid-template-columns: minmax(74px, auto) 1fr;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border-subtle);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-secondary);
+  align-items: start;
+}
+.world-map-tile-row span:first-child {
+  color: var(--text-accent);
+  white-space: nowrap;
+}
+.world-map-tile-row span:last-child {
+  overflow-wrap: anywhere;
+}
+
 /* ═══════════════════════════════════════════════
    INSPECT CARD (Floating)
    ═══════════════════════════════════════════════ */
@@ -1141,6 +1729,68 @@ html, body {
 }
 [data-theme="dark"] #highlight-canvas { mix-blend-mode: screen; }
 #highlight-canvas.active { opacity: 1; }
+
+/* ─── Namespace (mod) filter chips ─── */
+#ns-chip-bar { padding: 0 18px 8px 18px; display: flex; flex-direction: column; gap: 6px; }
+#ns-chip-bar .ns-chip-row { display: flex; flex-wrap: wrap; gap: 5px; }
+.ns-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  font: 500 10px var(--font-sans, sans-serif);
+  padding: 2px 7px; border-radius: 11px; cursor: pointer;
+  border: 1px solid var(--border, rgba(127,127,127,0.35));
+  background: var(--surface-2, rgba(127,127,127,0.08));
+  color: var(--text-secondary, #aaa); opacity: 0.5; transition: opacity .12s, border-color .12s;
+}
+.ns-chip:hover { opacity: 0.85; }
+.ns-chip.active { opacity: 1; color: var(--text-primary, #eee); border-color: var(--lat-accent, #3ee8d6); }
+.ns-chip .ns-dot { width: 9px; height: 9px; border-radius: 50%; flex: 0 0 auto; }
+.ns-chip .ns-chip-count { font-family: var(--font-mono, monospace); font-size: 9px; opacity: 0.75; }
+#ns-chip-bar .ns-chip-controls { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.ns-seg { display: inline-flex; border: 1px solid var(--border, rgba(127,127,127,0.35)); border-radius: 6px; overflow: hidden; }
+.ns-seg-btn, .ns-mini {
+  font: 500 9px var(--font-sans, sans-serif); padding: 2px 7px; cursor: pointer;
+  background: transparent; color: var(--text-tertiary, #888); border: none;
+}
+.ns-seg-btn + .ns-seg-btn { border-left: 1px solid var(--border, rgba(127,127,127,0.35)); }
+.ns-seg-btn.active { background: var(--lat-accent, #3ee8d6); color: #07211d; }
+.ns-mini { border: 1px solid var(--border, rgba(127,127,127,0.35)); border-radius: 6px; }
+.ns-mini:hover, .ns-seg-btn:hover:not(.active) { color: var(--text-primary, #eee); }
+.biome-ns-group {
+  display: flex; align-items: center; gap: 6px;
+  font: 600 9px var(--font-sans, sans-serif); text-transform: uppercase; letter-spacing: 0.04em;
+  color: var(--text-tertiary, #888); padding: 6px 2px 2px 2px; margin-top: 2px;
+  border-bottom: 1px solid var(--border, rgba(127,127,127,0.2));
+}
+.biome-ns-group .ns-dot { width: 8px; height: 8px; border-radius: 50%; }
+.biome-ns-group .ns-group-agg { margin-left: auto; font-family: var(--font-mono, monospace); opacity: 0.8; }
+
+/* ─── Representation report modal ─── */
+.rep-modal { position: fixed; inset: 0; background: rgba(0,0,0,0.55); display: none; align-items: center; justify-content: center; z-index: 9000; }
+.rep-modal-box { background: var(--surface, #16202b); color: var(--text-primary, #e6edf3); width: min(960px, 94vw); max-height: 88vh; border-radius: 10px; display: flex; flex-direction: column; box-shadow: 0 18px 60px rgba(0,0,0,0.5); border: 1px solid var(--border, rgba(127,127,127,0.3)); }
+.rep-modal-head { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--border, rgba(127,127,127,0.3)); }
+.rep-modal-title { font: 600 14px var(--font-sans, sans-serif); }
+.rep-modal-actions { margin-left: auto; display: flex; gap: 6px; }
+.rep-modal-actions button { font: 500 11px var(--font-sans, sans-serif); padding: 4px 9px; border-radius: 6px; cursor: pointer; background: var(--surface-2, rgba(127,127,127,0.12)); color: var(--text-secondary, #aab); border: 1px solid var(--border, rgba(127,127,127,0.3)); }
+.rep-modal-actions button:hover { color: var(--text-primary, #fff); }
+.rep-modal-body { padding: 14px 16px; overflow: auto; }
+.rep-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; margin-bottom: 14px; }
+.rep-card { border: 1px solid var(--border, rgba(127,127,127,0.25)); border-radius: 8px; padding: 9px 11px; }
+.rep-card h4 { margin: 0 0 6px; font: 600 12px var(--font-sans, sans-serif); text-transform: capitalize; }
+.rep-card.rep-gauge { border-color: var(--lat-accent, #3ee8d6); }
+.rep-dim { color: var(--text-tertiary, #889); font-weight: 400; font-size: 10px; }
+.rep-fam { display: grid; grid-template-columns: 64px 1fr auto; gap: 6px; align-items: center; font: 500 10px var(--font-mono, monospace); margin: 2px 0; }
+.rep-fam-name { color: var(--text-secondary, #aab); }
+.rep-fam-bar { height: 7px; background: rgba(127,127,127,0.18); border-radius: 4px; overflow: hidden; }
+.rep-fam-bar i { display: block; height: 100%; background: var(--lat-accent, #3ee8d6); }
+.rep-fam-exp { grid-column: 2 / 4; color: var(--text-tertiary, #889); font-size: 9px; }
+.rep-pill { display: inline-block; padding: 1px 6px; border-radius: 9px; color: #fff; font: 600 8px var(--font-sans, sans-serif); letter-spacing: 0.03em; }
+.rep-table { border: 1px solid var(--border, rgba(127,127,127,0.25)); border-radius: 8px; margin-bottom: 8px; padding: 4px 10px; }
+.rep-table summary { cursor: pointer; font: 600 12px var(--font-sans, sans-serif); padding: 4px 0; }
+.rep-table .rep-count { font-family: var(--font-mono, monospace); color: var(--text-tertiary, #889); margin-left: 6px; }
+.rep-table table { width: 100%; border-collapse: collapse; font: 500 10px var(--font-mono, monospace); }
+.rep-table th, .rep-table td { text-align: left; padding: 3px 6px; border-bottom: 1px solid var(--border, rgba(127,127,127,0.12)); }
+.rep-table th { color: var(--text-tertiary, #889); font-weight: 600; }
+.rep-empty { color: var(--text-tertiary, #889); font-style: italic; padding: 4px 0; }
 
 /* Confetti (fragmentation) overlay */
 #confetti-canvas {
@@ -1510,32 +2160,131 @@ html, body {
    <div class="toolbar-bubble toolbar-essential" data-toolbar-bubble="generate" data-align="right">
     <button type="button" class="toolbar-bubble-trigger" data-toolbar-trigger="generate" aria-expanded="false">Generate</button>
     <div class="toolbar-bubble-panel">
-     <div class="toolbar-panel-stack">
-      <span class="toolbar-panel-label">Run Generation</span>
-      <div class="lat-select-wrap">
-       <select id="gen-quality" class="lat-select" title="Generate a new run at a selected quality">
-        <option value="">Choose…</option>
-        <option value="step128">step128</option>
-        <option value="step64">step64</option>
-        <option value="step32">step32</option>
-        <option value="step16">step16</option>
-       </select>
+     <div class="toolbar-panel-stack generation-panel">
+      <span class="toolbar-panel-label">Choose What To Generate</span>
+      <div class="generation-mode-tabs" role="group" aria-label="Generation type">
+       <button id="gen-mode-atlas" class="generation-mode-btn active" type="button" data-generation-mode="atlas" aria-pressed="true">
+        Regular Atlas Preview
+        <span>sampled biome map</span>
+       </button>
+       <button id="gen-mode-world-map" class="generation-mode-btn" type="button" data-generation-mode="world-map" aria-pressed="false">
+        Pregenerated World Map
+        <span>chunk-derived tiles</span>
+       </button>
       </div>
-      <div class="seed-controls">
-       <input id="gen-seed" class="seed-input" type="text" inputmode="numeric" spellcheck="false" autocomplete="off" placeholder="2591890304012655616" title="Optional signed 64-bit seed">
-       <button id="btn-random-seed" class="pill-icon-btn" type="button" title="Fill a random seed" style="margin-left:4px;font-size:11px;padding:1px 6px;height:20px;vertical-align:middle">⚄</button>
-       <span id="gen-seed-status" class="seed-status"></span>
+
+      <div id="gen-regular-panel" class="generation-mode-body" data-generation-mode-body="atlas">
+       <div class="generation-helper">Create the regular sampled Atlas run used by this viewer.</div>
+       <div class="generation-field-grid">
+        <div class="wide">
+         <div class="lat-select-wrap">
+          <select id="gen-quality" class="lat-select" title="Generate a new Atlas preview at a selected detail">
+           <option value="">Choose preview detail…</option>
+           <option value="step128">quick preview (step128)</option>
+           <option value="step64">coarse preview (step64)</option>
+           <option value="step32">balanced preview (step32)</option>
+           <option value="step16">detailed preview (step16)</option>
+          </select>
+         </div>
+        </div>
+        <div class="wide">
+         <div class="lat-select-wrap">
+          <select id="gen-size" class="lat-select" title="Generate a selected Latitude world size">
+           <option value="ittybitty">Itty Bitty</option>
+           <option value="tiny">Tiny</option>
+           <option value="small" selected>Small</option>
+           <option value="regular">Regular</option>
+           <option value="large">Large</option>
+           <option value="ginormous">Ginormous</option>
+          </select>
+         </div>
+        </div>
+        <div class="wide">
+         <div class="lat-select-wrap">
+          <select id="gen-source" class="lat-select" title="Select the Latitude source identity recorded in Atlas provenance"></select>
+         </div>
+        </div>
+        <div id="source-status" class="generation-helper wide">Loading source options...</div>
+       </div>
+       <div class="seed-controls">
+        <input id="gen-seed" class="seed-input" type="text" inputmode="numeric" spellcheck="false" autocomplete="off" placeholder="2591890304012655616" title="Optional signed 64-bit seed">
+        <button id="btn-random-seed" class="pill-icon-btn" type="button" title="Fill a random seed" aria-label="Fill a random seed" style="margin-left:4px;font-size:11px;padding:1px 6px;height:20px;vertical-align:middle">⚄</button>
+        <span id="gen-seed-status" class="seed-status"></span>
+       </div>
+       <div id="generation-status" role="status" aria-live="polite">
+        <span class="hg"></span>
+        <span class="gen-copy">
+         <span id="generation-status-text">Generating a new Atlas preview</span>
+         <span id="generation-status-detail">Preview generation can take several minutes.</span>
+        </span>
+        <span class="gen-actions">
+         <button type="button" class="gen-action-btn cancel" id="generation-cancel" title="Cancel">×</button>
+         <button type="button" class="gen-action-btn confirm" id="generation-confirm" title="Confirm">✓</button>
+        </span>
+       </div>
       </div>
-      <div id="generation-status">
-       <span class="hg"></span>
-       <span class="gen-copy">
-        <span id="generation-status-text">Generating a new world</span>
-        <span id="generation-status-detail">World generation can take several minutes.</span>
-       </span>
-       <span class="gen-actions">
-        <button type="button" class="gen-action-btn cancel" id="generation-cancel" title="Cancel">×</button>
-        <button type="button" class="gen-action-btn confirm" id="generation-confirm" title="Confirm">✓</button>
-       </span>
+
+      <div id="gen-world-map-panel" class="generation-mode-body" data-generation-mode-body="world-map" hidden>
+       <div class="generation-helper">Create a finite tiled map from generated chunks. When it finishes, the generated tiles appear in this panel so you can view them immediately.</div>
+       <div class="world-map-safety-note"><strong>Safety cap required.</strong> Max Tiles is how many pieces of the full map this run will generate. Use a preview cap first, or set the cap to the full preset after checking the estimate.</div>
+       <div class="world-map-form">
+        <div class="world-map-field wide">
+         <label for="world-map-job">Map Name</label>
+         <input id="world-map-job" class="world-map-input" type="text" autocomplete="off" spellcheck="false" placeholder="morning-small-world-sample">
+        </div>
+        <div class="world-map-field wide">
+         <label for="world-map-seed">Seed</label>
+         <div class="world-map-seed-row">
+          <input id="world-map-seed" class="world-map-input" type="text" inputmode="numeric" autocomplete="off" spellcheck="false" placeholder="Random seed will be filled for you">
+          <button id="btn-world-map-random-seed" class="pill-icon-btn world-map-random-seed-btn" type="button" title="Fill a random seed" aria-label="Fill a random seed">⚄</button>
+         </div>
+        </div>
+        <div class="world-map-field">
+         <label for="world-map-size">World Size</label>
+         <select id="world-map-size" class="lat-select world-map-input">
+          <option value="ittybitty" selected>Itty Bitty</option>
+          <option value="tiny">Tiny</option>
+          <option value="small">Small</option>
+          <option value="regular">Regular</option>
+          <option value="large">Large</option>
+          <option value="ginormous">Ginormous</option>
+         </select>
+        </div>
+        <div class="world-map-field">
+         <label for="world-map-tile-size">Tile Size (blocks)</label>
+         <input id="world-map-tile-size" class="world-map-input" type="number" min="16" max="2048" step="1" value="128">
+         <div class="world-map-form-hint">One tile covers this many Minecraft blocks wide and tall. Smaller tiles make more files.</div>
+        </div>
+        <div class="world-map-field wide">
+         <label for="world-map-max-tiles">Max Tiles</label>
+         <input id="world-map-max-tiles" class="world-map-input" type="number" min="1" max="10000" step="1" placeholder="Choose a safety cap">
+         <div class="world-map-cap-actions" aria-label="Tile cap shortcuts">
+          <button type="button" class="world-map-cap-btn" data-world-map-cap="4">Preview 4</button>
+          <button type="button" class="world-map-cap-btn" data-world-map-cap="16">Useful 16</button>
+          <button type="button" class="world-map-cap-btn" data-world-map-cap="64">Larger 64</button>
+          <button type="button" class="world-map-cap-btn" data-world-map-cap="full" id="btn-world-map-cap-full">Full preset</button>
+         </div>
+         <div id="world-map-cap-hint" class="world-map-form-hint">Full-map estimate will appear here.</div>
+        </div>
+       </div>
+       <div id="world-map-estimate" class="world-map-status" role="status" aria-live="polite">Enter Max Tiles to estimate this map before starting.</div>
+       <div class="world-map-actions">
+        <button id="btn-world-map-create" class="panel-action-btn" type="button">Start World Map</button>
+        <button id="btn-world-map-pause" class="panel-action-btn" type="button" aria-label="Pause selected world map">Pause</button>
+        <button id="btn-world-map-resume" class="panel-action-btn" type="button" aria-label="Resume selected world map">Resume</button>
+        <button id="btn-world-map-cancel" class="panel-action-btn" type="button" aria-label="Cancel selected world map">Cancel</button>
+       </div>
+       <div id="world-map-status" class="world-map-status" role="status" aria-live="polite">No world map selected.</div>
+       <div class="world-map-job-list">
+        <div class="lat-select-wrap">
+         <select id="world-map-job-select" class="lat-select" aria-label="Saved generated maps">
+          <option value="">Select generated map</option>
+         </select>
+        </div>
+       </div>
+       <div id="world-map-detail" class="world-map-detail" aria-live="polite">
+        <div class="context-empty">No world map status loaded</div>
+       </div>
       </div>
      </div>
     </div>
@@ -1659,6 +2408,7 @@ html, body {
       <select id="sel-color-view" class="lat-select" style="font-size:11px;padding:1px 4px;height:20px;vertical-align:middle">
        <option value="identity" selected>Identity</option>
        <option value="legacy">Legacy</option>
+       <option value="distinct">Distinct</option>
       </select>
      </div>
      <div class="toggle-row" style="margin-top:8px">
@@ -1738,6 +2488,7 @@ html, body {
     </div>
     <div id="selected-biomes-summary" class="band-desc-hint" style="padding:0 18px 8px 18px;color:var(--text-secondary);">Selected biomes: none</div>
     <div class="band-desc-hint" id="biome-sampling-note" style="padding:0 18px 8px 18px;color:var(--lat-warn);display:none;">Coarse sampling may omit rare biomes; absence here does not prove world absence.</div>
+    <div id="ns-chip-bar" style="display:none;"></div>
     <div class="biome-search-wrap">
      <input type="text" class="biome-search" id="biome-search" placeholder="Filter biomes…" disabled>
     </div>
@@ -1763,9 +2514,64 @@ html, body {
  (() => {
  'use strict';
  
- const API_BASE = window.location.origin;
+ let API_BASE = window.location.protocol === 'file:' ? '' : window.location.origin;
+ let apiBaseReady = false;
  const $ = (s, p=document) => p.querySelector(s);
  const $$ = (s, p=document) => [...p.querySelectorAll(s)];
+
+ function normalizedApiBase(value) {
+  const raw = String(value || '').trim().replace(/\/+$/, '');
+  if (!raw) return '';
+  try {
+   const url = new URL(raw);
+   if (!/^https?:$/.test(url.protocol)) return '';
+   if (url.hostname !== '127.0.0.1' && url.hostname !== 'localhost') return '';
+   return url.origin;
+  } catch {
+   return '';
+  }
+ }
+
+ function apiBaseCandidates() {
+  const params = new URLSearchParams(window.location.search || '');
+  const candidates = [
+   params.get('api'),
+   params.get('apiBase'),
+   API_BASE,
+   'http://127.0.0.1:8000',
+   'http://localhost:8000',
+   localStorage.getItem('latitudeAtlas.apiBase'),
+   'http://127.0.0.1:5129',
+   'http://localhost:5129',
+  ];
+  const seen = new Set();
+  return candidates
+   .map(normalizedApiBase)
+   .filter((candidate) => candidate && !seen.has(candidate) && seen.add(candidate));
+ }
+
+ async function probeApiBase(candidate) {
+  const response = await fetch(`${candidate}/api/runs`, { cache: 'no-store' });
+  if (!response.ok) throw new Error(`Atlas API ${candidate} returned ${response.status}`);
+  return candidate;
+ }
+
+ async function resolveApiBase(force = false) {
+  if (apiBaseReady && API_BASE && !force) return API_BASE;
+  const candidates = apiBaseCandidates();
+  for (const candidate of candidates) {
+   try {
+    API_BASE = await probeApiBase(candidate);
+    apiBaseReady = true;
+    localStorage.setItem('latitudeAtlas.apiBase', API_BASE);
+    return API_BASE;
+   } catch (error) {
+    console.warn('Atlas API probe failed', candidate, error);
+   }
+  }
+  apiBaseReady = false;
+  throw new Error(`Cannot reach Atlas API server. Tried: ${candidates.join(', ') || 'no local API candidates'}`);
+ }
  
 const viewport = $('#canvas-viewport');
 const controlPill = $('#control-pill');
@@ -1828,6 +2634,29 @@ const btnDeleteSelected  = $('#btn-delete-selected');
 const btnDeleteAllRuns   = $('#btn-delete-all-runs');
 const deleteSelectedCount = $('#delete-selected-count');
  const genQuality = $('#gen-quality');
+const genSize = $('#gen-size');
+const genSource = $('#gen-source');
+const sourceStatus = $('#source-status');
+const generationModeButtons = $$('[data-generation-mode]');
+const generationModeBodies = $$('[data-generation-mode-body]');
+const worldMapJobInput = $('#world-map-job');
+const worldMapSeedInput = $('#world-map-seed');
+const worldMapSizeSelect = $('#world-map-size');
+const worldMapTileSizeInput = $('#world-map-tile-size');
+const worldMapMaxTilesInput = $('#world-map-max-tiles');
+const worldMapEstimateEl = $('#world-map-estimate');
+const worldMapCapHintEl = $('#world-map-cap-hint');
+const worldMapJobSelect = $('#world-map-job-select');
+const worldMapStatusEl = $('#world-map-status');
+const worldMapDetailEl = $('#world-map-detail');
+const btnWorldMapCreate = $('#btn-world-map-create');
+const btnWorldMapRandomSeed = $('#btn-world-map-random-seed');
+const btnWorldMapFullCap = $('#btn-world-map-cap-full');
+const btnWorldMapRefresh = $('#btn-world-map-refresh');
+const btnWorldMapPause = $('#btn-world-map-pause');
+const btnWorldMapResume = $('#btn-world-map-resume');
+const btnWorldMapCancel = $('#btn-world-map-cancel');
+const worldMapCapButtons = $$('[data-world-map-cap]');
 const btnFit = $('#btn-fit');
 const btnReset = $('#btn-reset-zoom');
 const toolbarSizeSel = $('#toolbar-size');
@@ -1909,10 +2738,19 @@ const atlasDesktopDiagnosticsEl = $('#atlas-desktop-diagnostics');
   lastManualSeed: '',
   activeToolbarBubble: '',
   generationActive: false,
+  generationMode: 'atlas',
   pendingGenerationPreset: null,
   generationPollTimer: null,
+  worldMapJobs: [],
+  currentWorldMapJob: null,
+  worldMapPollTimer: null,
   selectedRunIds: new Set(),
   colorViewMode: 'identity',
+  namespaceFilter: null,        // Set of shown namespaces, or null = all shown
+  namespaceIsolate: false,      // false = dim others, true = hide others (map veil intensity)
+  nsIdByIndex: null,            // Uint8Array(256): biome index → nsList position (255 = unknown/empty)
+  nsList: [],                   // present namespaces, stable order
+  distinctColorById: null,      // id → [r,g,b] distinct palette (Phase 5)
   confettiMode: false,
   confettiScope: 'selected',  // 'selected' | 'all' | 'offenders'
   confettiFilter: 'all',      // 'all' (bad+borderline) | 'bad'
@@ -1928,6 +2766,8 @@ const atlasDesktopDiagnosticsEl = $('#atlas-desktop-diagnostics');
     lastExportError: '',
     lastExportDestination: '',
   },
+  repoStatus: null,
+  sourceStatus: null,
  };
  
 const LEGACY_BEACH_RED = [235, 72, 63];
@@ -2016,6 +2856,23 @@ const GENERATION_PRESETS = {
   step32:  { label: 'step32',  resolution: 32  },
   step16:  { label: 'step16',  resolution: 16  },
  };
+const GENERATION_SIZE_PRESETS = {
+  ittybitty: { key: 'ittybitty', label: 'Itty Bitty' },
+  tiny: { key: 'tiny', label: 'Tiny' },
+  small: { key: 'small', label: 'Small' },
+  regular: { key: 'regular', label: 'Regular' },
+  large: { key: 'large', label: 'Large' },
+  ginormous: { key: 'ginormous', label: 'Ginormous' },
+};
+const WORLD_MAP_RADIUS_BLOCKS = {
+  ittybitty: 3750,
+  tiny: 5000,
+  small: 7500,
+  regular: 10000,
+  large: 15000,
+  ginormous: 20000,
+};
+const WORLD_MAP_MAX_SAFE_TILES = 10000;
 const CANONICAL_BAND_DEFINITIONS = [
  { id: 'tropical', label: 'Tropical', minDeg: 0.0, maxDeg: 23.5, color: [232, 112, 62] },
  { id: 'subtropical', label: 'Subtropical', minDeg: 23.5, maxDeg: 35.0, color: [232, 182, 62] },
@@ -2082,6 +2939,67 @@ function setDesktopBridgeState(patch) {
   renderDesktopBridgeDiagnostics();
 }
 
+function formatSourceLabel(source) {
+  if (!source || typeof source !== 'object') return '—';
+  const label = String(source.label || source.id || '').trim() || 'Unnamed source';
+  const mode = String(source.mode || '').trim().replace(/_/g, ' ');
+  return mode ? `${label} (${mode})` : label;
+}
+
+function formatSourceState(source) {
+  if (!source || typeof source !== 'object') return 'unknown';
+  const status = String(source.status || (source.configured === false ? 'needs_configuration' : 'ready')).replace(/_/g, ' ');
+  const dirtyLabel = source.dirty ? 'dirty' : 'clean';
+  const dirtyPaths = Array.isArray(source.dirty_source_paths) ? source.dirty_source_paths.length : 0;
+  if (source.dirty && dirtyPaths > 0) {
+    return `${status}; ${dirtyLabel}; ${dirtyPaths} source path${dirtyPaths === 1 ? '' : 's'}`;
+  }
+  return `${status}; ${dirtyLabel}`;
+}
+
+function selectedSourceId() {
+  return genSource?.value || state.sourceStatus?.selected_id || state.sourceStatus?.selected?.id || 'dirty-worktree-candidate';
+}
+
+function selectedSourceOption() {
+  const options = Array.isArray(state.sourceStatus?.options) ? state.sourceStatus.options : [];
+  const wanted = selectedSourceId();
+  return options.find(option => option.id === wanted) || state.sourceStatus?.selected || null;
+}
+
+function renderSourceSelector() {
+  const payload = state.sourceStatus || {};
+  const options = Array.isArray(payload.options) ? payload.options : [];
+  const selectedId = payload.selected_id || payload.selected?.id || 'dirty-worktree-candidate';
+  if (genSource) {
+    const current = genSource.value || selectedId;
+    const fallback = payload.selected || {
+      id: 'dirty-worktree-candidate',
+      label: 'Dirty worktree snapshot candidate',
+      status: 'unknown',
+      dirty: true,
+    };
+    const choices = options.length ? options : [fallback];
+    genSource.innerHTML = choices.map(option => {
+      const id = String(option.id || '');
+      const label = String(option.label || id || 'Unknown source');
+      return `<option value="${escapeHtml(id)}">${escapeHtml(label)}</option>`;
+    }).join('');
+    const next = choices.some(option => option.id === current) ? current : selectedId;
+    genSource.value = next;
+    if (state.sourceStatus) {
+      state.sourceStatus.selected_id = next;
+      state.sourceStatus.selected = choices.find(option => option.id === next) || payload.selected || fallback;
+    }
+  }
+  if (sourceStatus) {
+    const selected = selectedSourceOption();
+    sourceStatus.textContent = selected
+      ? `${formatSourceLabel(selected)}: ${formatSourceState(selected)}`
+      : `Source unavailable: ${payload.error || 'API status is not available'}`;
+  }
+}
+
 function renderDesktopBridgeDiagnostics() {
   if (!atlasDesktopDiagnosticsEl) return;
   const bridge = state.desktopBridge || {};
@@ -2099,12 +3017,25 @@ function renderDesktopBridgeDiagnostics() {
   const extraError = bridge.lastExportError ? `<div style="color:var(--lat-warn);margin-top:2px;white-space:pre-wrap;">Last error: ${escapeHtml(bridge.lastExportError)}</div>` : '';
   const runtimeIsElectron = /Electron\//i.test(navigator.userAgent);
   const atlasDesktopType = typeof window.atlasDesktop;
+  const repo = state.repoStatus || {};
+  const repoTone = repo.blocked || repo.ok === false ? 'var(--lat-warn)' : 'var(--text-tertiary)';
+  const repoLabel = repo.branch || repo.commit
+    ? `${repo.branch || 'detached'} ${repo.commit || ''}`.trim()
+    : 'checking...';
+  const updateCopy = repo.message || 'Checking for latest commit...';
+  const selectedSource = selectedSourceOption() || repo.source || null;
+  const sourceLabel = formatSourceLabel(selectedSource);
+  const sourceState = formatSourceState(selectedSource);
   atlasDesktopDiagnosticsEl.innerHTML = `
     <div><strong>Desktop bridge:</strong> ${escapeHtml(bridgeLabel)}</div>
     <div><strong>Exposed methods:</strong> ${escapeHtml(methodsLabel)}</div>
     <div><strong>Export capability:</strong> ${escapeHtml(exportLabel)}</div>
     <div><strong>Ping:</strong> ${escapeHtml(pingLabel)}</div>
     <div><strong>Last export:</strong> ${escapeHtml(lastExportLabel)}</div>
+    <div><strong>Code:</strong> ${escapeHtml(repoLabel)}</div>
+    <div><strong>Source:</strong> ${escapeHtml(sourceLabel)}</div>
+    <div><strong>Source state:</strong> ${escapeHtml(sourceState)}</div>
+    <div style="color:${repoTone};white-space:pre-wrap;"><strong>Update:</strong> ${escapeHtml(updateCopy)}</div>
     <div><strong>Runtime:</strong> ${runtimeIsElectron ? 'Electron' : 'Browser (non-Electron)'} &nbsp; <strong>atlasDesktop:</strong> ${escapeHtml(atlasDesktopType)}</div>
     <div style="color:var(--text-tertiary);word-break:break-all;"><strong>URL:</strong> ${escapeHtml(location.href)}</div>
     ${bridge.lastExportDestination ? `<div><strong>Destination:</strong> ${escapeHtml(bridge.lastExportDestination)}</div>` : ''}
@@ -2186,6 +3117,17 @@ function validateManualSeed(rawValue) {
   } catch {
     return { ok: false, value: raw, parsed: null, message: 'Seed must be a signed 64-bit integer.' };
   }
+}
+
+function preserveNativeTextEditing(input) {
+  if (!input) return;
+  const stopOnly = (event) => event.stopPropagation();
+  for (const type of ['pointerdown', 'mousedown', 'mouseup', 'click', 'dblclick', 'copy', 'cut', 'paste', 'beforeinput']) {
+    input.addEventListener(type, stopOnly);
+  }
+  input.addEventListener('keydown', (event) => {
+    event.stopPropagation();
+  });
 }
 
 function setSeedValidationMessage(message = '', isError = false) {
@@ -2294,19 +3236,188 @@ function setToolbarSizeMode(mode) {
   state.pendingGenerationPreset = null;
   generationStatus.classList.remove('mode-confirm');
  }
+
+function selectedGenerationSize() {
+  const key = String(genSize?.value || 'small').trim().toLowerCase();
+  return GENERATION_SIZE_PRESETS[key] || GENERATION_SIZE_PRESETS.small;
+}
+
+function defaultWorldMapJobName() {
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  return `world-map-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}`;
+}
+
+function ensureWorldMapDefaults() {
+  if (worldMapJobInput && !String(worldMapJobInput.value || '').trim()) {
+    worldMapJobInput.value = defaultWorldMapJobName();
+  }
+  if (worldMapSeedInput && !String(worldMapSeedInput.value || '').trim()) {
+    worldMapSeedInput.value = randomSignedLongString();
+  }
+}
+
+function randomizeWorldMapSeed({ announce = true } = {}) {
+  if (!worldMapSeedInput) return;
+  worldMapSeedInput.value = randomSignedLongString();
+  if (announce) setWorldMapStatus('Random seed filled. You can start the map without typing one.', 'success');
+}
+
+function setGenerationMode(mode) {
+  const normalized = mode === 'world-map' ? 'world-map' : 'atlas';
+  state.generationMode = normalized;
+  for (const btn of generationModeButtons) {
+    const active = btn.dataset.generationMode === normalized;
+    btn.classList.toggle('active', active);
+    btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+  }
+  for (const body of generationModeBodies) {
+    body.hidden = body.dataset.generationModeBody !== normalized;
+  }
+  if (normalized === 'world-map') {
+    clearPendingGeneration();
+    ensureWorldMapDefaults();
+    updateWorldMapEstimate();
+    refreshWorldMapJobs({ preserveStatus: true }).catch(() => {});
+  }
+}
+
+function worldMapLayoutFromForm() {
+  const size = String(worldMapSizeSelect?.value || 'ittybitty').trim().toLowerCase();
+  const radius = WORLD_MAP_RADIUS_BLOCKS[size];
+  const tileSize = Number(worldMapTileSizeInput?.value);
+  if (!radius) return { ok: false, message: 'Choose a world size.' };
+  if (!Number.isInteger(tileSize) || tileSize < 16 || tileSize > 2048) {
+    return { ok: false, message: 'Tile Size must be between 16 and 2048 blocks.' };
+  }
+  const width = (radius * 2) + 1;
+  const tilesPerAxis = Math.max(1, Math.ceil(width / tileSize));
+  const fullTiles = tilesPerAxis * tilesPerAxis;
+  return {
+    ok: true,
+    size,
+    sizeLabel: GENERATION_SIZE_PRESETS[size]?.label || size,
+    radius,
+    tileSize,
+    width,
+    tilesPerAxis,
+    fullTiles,
+  };
+}
+
+function worldMapCoverageText(estimate) {
+  const n = estimate.estimatedTiles;
+  const axis = estimate.tilesPerAxis;
+  if (n >= estimate.fullTiles) {
+    return `That creates the full ${estimate.sizeLabel} map at this tile size.`;
+  }
+  const rows = Math.floor(n / axis);
+  const remainder = n % axis;
+  if (rows === 0) {
+    return `That is the first ${formatNumber(n)}-tile strip along the north edge, starting in the northwest corner.`;
+  }
+  if (remainder === 0) {
+    return `That is the first ${formatNumber(rows)} complete north-edge row${rows === 1 ? '' : 's'}, starting in the northwest corner.`;
+  }
+  return `That is ${formatNumber(rows)} complete north-edge row${rows === 1 ? '' : 's'} plus ${formatNumber(remainder)} tile${remainder === 1 ? '' : 's'} of the next row.`;
+}
+
+function updateWorldMapCapHint(layout) {
+  if (!worldMapCapHintEl) return;
+  if (!layout?.ok) {
+    worldMapCapHintEl.textContent = layout?.message || 'Full-map estimate will appear here.';
+    if (btnWorldMapFullCap) btnWorldMapFullCap.disabled = true;
+    return;
+  }
+  const fullText = `Full ${layout.sizeLabel} at ${formatNumber(layout.tileSize)}-block tiles is ${formatNumber(layout.fullTiles)} tiles (${formatNumber(layout.tilesPerAxis)} by ${formatNumber(layout.tilesPerAxis)}).`;
+  if (layout.fullTiles > WORLD_MAP_MAX_SAFE_TILES) {
+    worldMapCapHintEl.textContent = `${fullText} That is above the ${formatNumber(WORLD_MAP_MAX_SAFE_TILES)}-tile safety limit, so generate it in capped sections.`;
+    if (btnWorldMapFullCap) {
+      btnWorldMapFullCap.disabled = true;
+      btnWorldMapFullCap.title = `Full preset needs ${formatNumber(layout.fullTiles)} tiles, above the current safety limit.`;
+    }
+    return;
+  }
+  worldMapCapHintEl.textContent = `${fullText} Full preset sets Max Tiles to that exact bounded count.`;
+  if (btnWorldMapFullCap) {
+    btnWorldMapFullCap.disabled = false;
+    btnWorldMapFullCap.title = `Set Max Tiles to ${formatNumber(layout.fullTiles)} for this full preset.`;
+  }
+}
+
+function worldMapEstimateFromForm() {
+  const layout = worldMapLayoutFromForm();
+  updateWorldMapCapHint(layout);
+  if (!layout.ok) return layout;
+
+  const maxTiles = Number(worldMapMaxTilesInput?.value);
+  if (!Number.isInteger(maxTiles) || maxTiles < 1 || maxTiles > WORLD_MAP_MAX_SAFE_TILES) {
+    return {
+      ok: false,
+      message: `Choose Max Tiles before starting. Try Preview 4, Useful 16, Larger 64, or Full preset after reading the estimate.`,
+      layout,
+    };
+  }
+  const { radius, tileSize, tilesPerAxis, fullTiles } = layout;
+  const estimatedTiles = Math.min(maxTiles, fullTiles);
+  let estimatedChunks = 0;
+  let estimatedPixels = 0;
+  for (let index = 0; index < estimatedTiles; index += 1) {
+    const tileX = index % tilesPerAxis;
+    const tileZ = Math.floor(index / tilesPerAxis);
+    const minX = -radius + (tileX * tileSize);
+    const minZ = -radius + (tileZ * tileSize);
+    const maxX = Math.min(radius, minX + tileSize - 1);
+    const maxZ = Math.min(radius, minZ + tileSize - 1);
+    const minChunkX = Math.floor(minX / 16);
+    const maxChunkX = Math.floor(maxX / 16);
+    const minChunkZ = Math.floor(minZ / 16);
+    const maxChunkZ = Math.floor(maxZ / 16);
+    estimatedChunks += (maxChunkX - minChunkX + 1) * (maxChunkZ - minChunkZ + 1);
+    estimatedPixels += (maxX - minX + 1) * (maxZ - minZ + 1);
+  }
+  return {
+    ...layout,
+    ok: true,
+    maxTiles,
+    estimatedTiles,
+    estimatedChunks,
+    estimatedDiskBytes: estimatedPixels * 4,
+  };
+}
+
+function updateWorldMapEstimate() {
+  if (!worldMapEstimateEl) return;
+  const estimate = worldMapEstimateFromForm();
+  if (!estimate.ok) {
+    worldMapEstimateEl.textContent = estimate.message;
+    worldMapEstimateEl.className = 'world-map-status';
+    return;
+  }
+  const coverage = Math.min(100, (estimate.estimatedTiles / estimate.fullTiles) * 100);
+  const capText = estimate.maxTiles < estimate.fullTiles
+    ? `${worldMapCoverageText(estimate)} Full ${estimate.sizeLabel} would be ${formatNumber(estimate.fullTiles)} tiles.`
+    : `${worldMapCoverageText(estimate)} The cap reaches every base tile for this preset.`;
+  worldMapEstimateEl.textContent =
+    `This run will render ${formatNumber(estimate.estimatedTiles)} of ${formatNumber(estimate.fullTiles)} tiles (${formatPercent(coverage)} of the full map), about ${formatNumber(estimate.estimatedChunks)} chunk actions, ` +
+    `and up to ${formatBytes(estimate.estimatedDiskBytes)} raw image data. ${capText}`;
+  worldMapEstimateEl.className = 'world-map-status success';
+}
  
  function showGenerationConfirm(presetKey) {
    const preset = GENERATION_PRESETS[presetKey];
    if (!preset || state.generationActive) return;
+   setGenerationMode('atlas');
    openToolbarBubble('generate');
    const seedState = syncSeedInputStatus({ announce: true });
    if (!seedState.ok) return;
+   const sizePreset = selectedGenerationSize();
    state.pendingGenerationPreset = presetKey;
-   generationStatusText.textContent = `Generate ${preset.label} world?`;
+   generationStatusText.textContent = `Generate ${sizePreset.label} ${preset.label} Atlas preview?`;
    if (generationStatusDetail) {
     generationStatusDetail.textContent = seedState.value
-     ? `Seed ${seedState.value} will be used for this run.`
-     : 'World generation can take several minutes.';
+     ? `Seed ${seedState.value} will be used for this sampled preview.`
+     : `${sizePreset.label} preview generation can take several minutes.`;
    }
    generationStatus.classList.remove('mode-running');
    generationStatus.classList.add('visible', 'mode-confirm');
@@ -2315,13 +3426,14 @@ function setToolbarSizeMode(mode) {
 function setGenerationStatus(active, text) {
   if (active) {
    openToolbarBubble('generate');
+   setGenerationMode('atlas');
    clearPendingGeneration();
-   generationStatusText.textContent = text || 'Generating a new world';
+   generationStatusText.textContent = text || 'Generating Atlas preview';
    if (generationStatusDetail) {
     const seedState = validateManualSeed(genSeedInput?.value || '');
     generationStatusDetail.textContent = seedState.ok && seedState.value
-     ? `Seed ${seedState.value} · World generation can take several minutes.`
-     : 'World generation can take several minutes.';
+     ? `Seed ${seedState.value} · Preparing Minecraft and rendering the sampled preview.`
+     : 'Preparing Minecraft and rendering the sampled preview.';
    }
    generationStatus.classList.add('mode-running', 'visible');
   } else {
@@ -2330,8 +3442,25 @@ function setGenerationStatus(active, text) {
   }
  }
 
+ async function apiRawFetch(path, options) {
+   if (!apiBaseReady || !API_BASE) {
+    await resolveApiBase();
+   }
+   const runFetch = async () => await fetch(API_BASE + path, options || {});
+   try {
+    return await runFetch();
+   } catch (error) {
+    if (error instanceof TypeError || /Failed to fetch|Load failed|NetworkError/i.test(String(error?.message || error))) {
+     const previousBase = API_BASE;
+     await resolveApiBase(true);
+     if (API_BASE && API_BASE !== previousBase) return await runFetch();
+    }
+    throw error;
+   }
+  }
+
  async function apiFetch(path, options) {
-   const resp = await fetch(API_BASE + path, options || {});
+   const resp = await apiRawFetch(path, options);
    const ct = resp.headers.get('content-type') || '';
    if (!resp.ok) {
     let detail = '';
@@ -2342,6 +3471,10 @@ function setGenerationStatus(active, text) {
        ? body.message
        : typeof body?.error === 'string'
         ? body.error
+        : typeof body?.world_map?.message === 'string' && body.world_map.message
+         ? body.world_map.message
+        : body?.world_map?.active
+         ? 'Another world map is already running. Wait for it to finish or cancel it before starting a new one.'
         : '';
      } else {
       detail = await resp.text();
@@ -2364,6 +3497,579 @@ function setGenerationStatus(active, text) {
    if (Number.isNaN(d.getTime())) return '—';
    return d.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
   }
+
+function formatIsoTimestamp(raw) {
+ const s = String(raw || '').trim();
+ if (!s) return '—';
+ const d = new Date(s);
+ if (Number.isNaN(d.getTime())) return s;
+ return d.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
+}
+
+function formatNumber(value) {
+ const n = Number(value);
+ return Number.isFinite(n) ? n.toLocaleString() : '—';
+}
+
+function formatPercent(value) {
+ const n = Number(value);
+ return Number.isFinite(n) ? `${n.toFixed(1)}%` : '—';
+}
+
+function formatBytes(value) {
+ const n = Number(value);
+ if (!Number.isFinite(n) || n < 0) return '—';
+ if (n < 1024) return `${n} B`;
+ if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KiB`;
+ if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MiB`;
+ return `${(n / 1024 / 1024 / 1024).toFixed(1)} GiB`;
+}
+
+function setWorldMapStatus(message, tone = '') {
+ if (!worldMapStatusEl) return;
+ worldMapStatusEl.textContent = message || '';
+ worldMapStatusEl.className = `world-map-status${tone ? ` ${tone}` : ''}`;
+}
+
+function humanWorldMapPhase(phase, active = false) {
+ const normalized = String(phase || '').trim().toLowerCase();
+ if (active && (!normalized || normalized === 'new')) return 'starting';
+ if (normalized === 'running') return active ? 'generating tiles' : 'last run finished';
+ if (normalized === 'complete') return 'complete';
+ if (normalized === 'failed') return 'failed';
+ if (normalized === 'blocked') return 'blocked';
+ if (normalized === 'paused') return 'paused';
+ if (normalized === 'canceled' || normalized === 'cancelled') return 'canceled';
+ return normalized || 'not started';
+}
+
+function worldMapJobLabel(job) {
+ const statePayload = job?.state || {};
+ const phase = statePayload.phase || (job?.active ? 'running' : 'new');
+ const done = statePayload.tiles_done ?? job?.tile_count ?? 0;
+ const total = statePayload.tiles_total ?? '';
+ return `${job?.job || 'unknown'} · ${humanWorldMapPhase(phase, job?.active)}${total !== '' ? ` ${done}/${total}` : ''}`;
+}
+
+function selectedWorldMapPayload() {
+ const id = state.currentWorldMapJob || worldMapJobSelect?.value || '';
+ return state.worldMapJobs.find((job) => job.job === id) || null;
+}
+
+function normalizeWorldMapJobs(payload) {
+ const jobs = payload && Array.isArray(payload.jobs) ? payload.jobs : [];
+ return jobs.filter((job) => job && typeof job.job === 'string');
+}
+
+function worldMapPayloadFromResponse(payload) {
+ if (!payload || typeof payload !== 'object') return null;
+ if (payload.job) return payload;
+ if (payload.jobs && Array.isArray(payload.jobs)) return null;
+ return null;
+}
+
+async function fetchWorldMapJobs() {
+ const payload = await apiFetch('/api/world-map/jobs');
+ return { jobs: normalizeWorldMapJobs(payload), worldMap: payload?.world_map || null };
+}
+
+async function fetchWorldMapJob(job) {
+ return await apiFetch(`/api/world-map/jobs/${encodeURIComponent(job)}`);
+}
+
+async function postWorldMapJob(payload) {
+ return await apiFetch('/api/world-map/jobs', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify(payload),
+ });
+}
+
+async function postWorldMapControl(job, command) {
+ return await apiFetch(`/api/world-map/jobs/${encodeURIComponent(job)}/control`, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ command }),
+ });
+}
+
+async function postWorldMapReveal(job, target = 'world') {
+ return await apiFetch(`/api/world-map/jobs/${encodeURIComponent(job)}/world/reveal`, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ target }),
+ });
+}
+
+function isViewableWorldMapJob(job) {
+ const tiles = job?.manifest?.tiles;
+ return Array.isArray(tiles) && tiles.length > 0;
+}
+
+function renderWorldMapJobOptions() {
+ if (!worldMapJobSelect) return;
+ const previous = state.currentWorldMapJob || worldMapJobSelect.value;
+ const previousJob = previous ? state.worldMapJobs.find((job) => job.job === previous) : null;
+ const firstViewable = state.worldMapJobs.find(isViewableWorldMapJob);
+ worldMapJobSelect.innerHTML = '<option value="">Select generated map</option>';
+ for (const job of state.worldMapJobs) {
+  const opt = document.createElement('option');
+  opt.value = job.job;
+  opt.textContent = worldMapJobLabel(job);
+  worldMapJobSelect.appendChild(opt);
+ }
+ const keepPrevious = previousJob && (previousJob.active || isViewableWorldMapJob(previousJob) || !firstViewable);
+ const preferred = keepPrevious
+  ? previous
+  : firstViewable?.job || state.worldMapJobs.find((job) => job.job === 'morning-small-world-sample')?.job || state.worldMapJobs[0]?.job || '';
+ if (preferred) {
+  worldMapJobSelect.value = preferred;
+  state.currentWorldMapJob = preferred;
+ }
+}
+
+function worldMapTileImageUrl(jobId, tile) {
+ const rawPath = String(tile?.path || '').trim();
+ let zLevel = '';
+ let filename = '';
+ const pathMatch = rawPath.match(/^tiles\/(z\d+)\/(x_\d+_z_\d+\.png)$/);
+ if (pathMatch) {
+  zLevel = pathMatch[1];
+  filename = pathMatch[2];
+ } else if (tile && Number.isInteger(Number(tile.tile_x)) && Number.isInteger(Number(tile.tile_z))) {
+  const z = Number.isInteger(Number(tile.z)) ? Number(tile.z) : 0;
+  zLevel = `z${z}`;
+  filename = `x_${Number(tile.tile_x)}_z_${Number(tile.tile_z)}.png`;
+ } else {
+  return '';
+ }
+ return `${API_BASE}/api/world-map/jobs/${encodeURIComponent(jobId)}/tiles/${encodeURIComponent(zLevel)}/${encodeURIComponent(filename)}`;
+}
+
+function worldMapFullTileStats(job) {
+ const jobState = job?.state || {};
+ const manifest = job?.manifest || {};
+ const radius = Number(jobState.radius_blocks ?? manifest.radius_blocks);
+ const tileSize = Number(jobState.tile_size_blocks ?? manifest.tile_size_blocks);
+ if (!Number.isFinite(radius) || radius <= 0 || !Number.isFinite(tileSize) || tileSize <= 0) {
+  return { ok: false, tilesPerAxis: 0, fullTiles: 0 };
+ }
+ const tilesPerAxis = Math.max(1, Math.ceil(((radius * 2) + 1) / tileSize));
+ return { ok: true, radius, tileSize, tilesPerAxis, fullTiles: tilesPerAxis * tilesPerAxis };
+}
+
+function worldMapTileItems(job, tiles) {
+ return tiles
+  .map((tile) => ({ tile, url: worldMapTileImageUrl(job.job, tile) }))
+  .filter((item) => item.url)
+  .sort((a, b) => (Number(a.tile.tile_z) - Number(b.tile.tile_z)) || (Number(a.tile.tile_x) - Number(b.tile.tile_x)));
+}
+
+function worldMapPartialSummary(job, tiles) {
+ const stats = worldMapFullTileStats(job);
+ if (!stats.ok) return `${formatNumber(tiles.length)} generated pieces.`;
+ const generated = tiles.length;
+ if (generated >= stats.fullTiles) return `Full map generated: all ${formatNumber(stats.fullTiles)} pieces are present.`;
+ const rows = Math.floor(generated / stats.tilesPerAxis);
+ const remainder = generated % stats.tilesPerAxis;
+ let position = '';
+ if (rows === 0) {
+  position = `north edge preview: the first ${formatNumber(generated)} piece${generated === 1 ? '' : 's'} from the northwest corner`;
+ } else if (remainder === 0) {
+  position = `north edge preview: the first ${formatNumber(rows)} complete row${rows === 1 ? '' : 's'}`;
+ } else {
+  position = `north edge preview: ${formatNumber(rows)} complete row${rows === 1 ? '' : 's'} plus ${formatNumber(remainder)} piece${remainder === 1 ? '' : 's'} of the next row`;
+ }
+ return `${formatNumber(generated)} of ${formatNumber(stats.fullTiles)} pieces: ${position}, not the full map.`;
+}
+
+function renderWorldMapCoverageSvg(tiles, stats) {
+ if (!stats.ok) return '';
+ const generated = tiles
+  .map((tile) => ({ x: Number(tile.tile_x), z: Number(tile.tile_z) }))
+  .filter((tile) => Number.isFinite(tile.x) && Number.isFinite(tile.z));
+ const unit = 100 / stats.tilesPerAxis;
+ const rects = generated.slice(0, 1200).map((tile) => {
+  const x = Math.max(0, Math.min(100 - unit, tile.x * unit));
+  const z = Math.max(0, Math.min(100 - unit, tile.z * unit));
+  return `<rect x="${x.toFixed(3)}" y="${z.toFixed(3)}" width="${unit.toFixed(3)}" height="${unit.toFixed(3)}" rx="0.08" />`;
+ }).join('');
+ const xs = generated.map((tile) => tile.x);
+ const zs = generated.map((tile) => tile.z);
+ const minX = xs.length ? Math.min(...xs) : 0;
+ const maxX = xs.length ? Math.max(...xs) : 0;
+ const minZ = zs.length ? Math.min(...zs) : 0;
+ const maxZ = zs.length ? Math.max(...zs) : 0;
+ const focusX = Math.max(0, Math.min(96, minX * unit));
+ const focusY = Math.max(0, Math.min(96, minZ * unit));
+ const focusW = Math.max(6, ((maxX - minX + 1) * unit));
+ const focusH = Math.max(5, ((maxZ - minZ + 1) * unit));
+ const omitted = tiles.length > 1200
+  ? `<text x="50" y="54" text-anchor="middle" font-size="8" fill="currentColor">+${tiles.length - 1200}</text>`
+  : '';
+ return `
+  <svg viewBox="0 0 100 100" role="img" aria-label="Generated coverage map">
+   <rect x="0" y="0" width="100" height="100" fill="rgba(127,146,170,0.16)" />
+   <g fill="rgba(62,232,214,0.88)">${rects}</g>
+   <rect x="${focusX.toFixed(3)}" y="${focusY.toFixed(3)}" width="${Math.min(100 - focusX, focusW).toFixed(3)}" height="${Math.min(100 - focusY, focusH).toFixed(3)}" fill="none" stroke="rgba(62,232,214,0.95)" stroke-width="2.4" />
+   ${omitted}
+  </svg>`;
+}
+
+function renderWorldMapWorldAccess(job) {
+ const world = job?.world || {};
+ const available = !!world.available;
+ const path = String(world.path || '');
+ const regionPath = String(world.region_path || '');
+ const regionCount = Number(world.region_count || 0);
+ const copy = available
+  ? `This job retained a generated world folder with level.dat and ${formatNumber(regionCount)} overworld region file${regionCount === 1 ? '' : 's'}. Use the Region Files Folder for tools that ask for a region folder; the Atlas overview above is still the primary map view.`
+  : (world.reason || 'No retained generated world folder is available for this job yet.');
+ return `
+  <div class="world-map-world-access">
+   <div class="world-map-world-access-head">
+    <div>
+	     <div class="world-map-world-title">Generated world folder</div>
+     <div class="world-map-world-copy">${escapeHtml(copy)}</div>
+    </div>
+    <span class="world-map-chip" data-phase="${available ? 'complete' : 'blocked'}">${available ? 'available' : 'unavailable'}</span>
+   </div>
+   ${path ? `
+    <div class="world-map-form-hint">Generated world root</div>
+    <div class="world-map-world-path">${escapeHtml(path)}</div>` : ''}
+   ${regionPath ? `
+    <div class="world-map-form-hint">Region files folder</div>
+    <div class="world-map-world-path">${escapeHtml(regionPath)}</div>` : ''}
+   <div class="world-map-world-actions">
+    <button class="panel-action-btn" type="button" data-world-map-action="reveal-world" ${available ? '' : 'disabled'}>Reveal Generated World Folder</button>
+    <button class="panel-action-btn" type="button" data-world-map-action="copy-world-path" ${path ? '' : 'disabled'}>Copy World Folder Path</button>
+    <button class="panel-action-btn" type="button" data-world-map-action="reveal-region" ${regionPath ? '' : 'disabled'}>Reveal Region Files</button>
+    <button class="panel-action-btn" type="button" data-world-map-action="copy-region-path" ${regionPath ? '' : 'disabled'}>Copy Region Folder Path</button>
+   </div>
+  </div>`;
+}
+
+function renderWorldMapOutputPreview(job, tiles, phase) {
+ const tileItems = worldMapTileItems(job, tiles);
+ if (!tileItems.length) {
+  return `
+   <div class="world-map-next-step">
+    When the first tile finishes, the Atlas overview will appear here. You will not need to open a folder or use the terminal.
+   </div>`;
+ }
+ const stats = worldMapFullTileStats(job);
+ const firstTile = tileItems[0];
+ const coverageCopy = stats.ok
+  ? `Coverage: bright area is generated (${formatNumber(tiles.length)} pieces); muted area is not rendered yet (${formatNumber(Math.max(0, stats.fullTiles - tiles.length))} pieces).`
+  : 'Coverage: bright area is generated; muted area is not rendered yet.';
+ const title = String(phase || '').toLowerCase() === 'complete'
+  ? 'Latitude generated-world overview'
+  : 'Latitude overview so far';
+ const coverageSvg = renderWorldMapCoverageSvg(tiles, stats);
+ const rawTiles = tileItems.slice(0, 16).map(({ tile, url }) => {
+  const tileLabel = `x${tile.tile_x} z${tile.tile_z}`;
+  const bounds = `X ${tile.min_x}..${tile.max_x}, Z ${tile.min_z}..${tile.max_z}`;
+  return `
+   <a class="world-map-preview-tile" href="${escapeHtml(url)}" target="_blank" rel="noopener" title="Open tile ${escapeHtml(tileLabel)}">
+    <img src="${escapeHtml(url)}" alt="World map tile ${escapeHtml(tileLabel)} covering ${escapeHtml(bounds)}" loading="lazy">
+    <span>${escapeHtml(tileLabel)}</span>
+   </a>`;
+ }).join('');
+ return `
+  <div class="world-map-viewer">
+   <div class="world-map-viewer-head">
+    <div>
+     <div class="world-map-viewer-title">${escapeHtml(title)}</div>
+     <div class="world-map-viewer-copy">${escapeHtml(worldMapPartialSummary(job, tiles))}</div>
+    </div>
+   </div>
+   <div class="world-map-stitched-wrap">
+    <div class="world-map-stitched-frame">
+     <canvas class="world-map-mosaic-canvas" aria-label="Latitude stitched generated-world overview"></canvas>
+	     <div class="world-map-stitched-empty">Loading Atlas overview...</div>
+    </div>
+   </div>
+   <div class="world-map-coverage">
+    <div class="world-map-coverage-map">${coverageSvg}</div>
+    <div class="world-map-coverage-copy">${escapeHtml(coverageCopy)} This shows where the Atlas overview sits inside the selected preset.</div>
+   </div>
+   <details class="world-map-tiles">
+    <summary class="world-map-tiles-title">Raw tile files</summary>
+    <div class="world-map-preview-grid" style="--world-map-preview-cols:${Math.max(1, Math.min(4, new Set(tileItems.map((item) => String(item.tile.tile_x))).size || tileItems.length))}">
+     ${rawTiles}
+    </div>
+   </details>
+  </div>`;
+}
+
+function loadWorldMapTileImage(url) {
+ return new Promise((resolve, reject) => {
+  const img = new Image();
+  img.onload = () => resolve(img);
+  img.onerror = reject;
+  img.src = url;
+ });
+}
+
+async function hydrateWorldMapMosaicCanvas(job, tiles) {
+ const canvas = $('.world-map-mosaic-canvas', worldMapDetailEl);
+ if (!canvas) return;
+ const empty = $('.world-map-stitched-empty', worldMapDetailEl);
+ const items = worldMapTileItems(job, tiles);
+ if (!items.length) return;
+ const xs = items.map((item) => Number(item.tile.tile_x)).filter(Number.isFinite);
+ const zs = items.map((item) => Number(item.tile.tile_z)).filter(Number.isFinite);
+ if (!xs.length || !zs.length) return;
+ const minX = Math.min(...xs);
+ const maxX = Math.max(...xs);
+ const minZ = Math.min(...zs);
+ const maxZ = Math.max(...zs);
+ const cols = Math.max(1, maxX - minX + 1);
+ const rows = Math.max(1, maxZ - minZ + 1);
+ const maxCanvasDim = 1600;
+ const tilePx = Number(job?.state?.tile_size_blocks ?? job?.manifest?.tile_size_blocks) || 128;
+ const scale = Math.min(1, maxCanvasDim / Math.max(cols * tilePx, rows * tilePx));
+ const drawTilePx = Math.max(1, Math.floor(tilePx * scale));
+ canvas.width = Math.max(1, cols * drawTilePx);
+ canvas.height = Math.max(1, rows * drawTilePx);
+ canvas.style.aspectRatio = `${canvas.width} / ${canvas.height}`;
+ const ctx = canvas.getContext('2d');
+ ctx.imageSmoothingEnabled = false;
+ ctx.fillStyle = 'rgba(127,146,170,0.18)';
+ ctx.fillRect(0, 0, canvas.width, canvas.height);
+ ctx.strokeStyle = 'rgba(62,232,214,0.24)';
+ ctx.lineWidth = 1;
+ for (let z = 0; z < rows; z += 1) {
+  for (let x = 0; x < cols; x += 1) {
+   ctx.strokeRect(x * drawTilePx + 0.5, z * drawTilePx + 0.5, drawTilePx, drawTilePx);
+  }
+ }
+ let loaded = 0;
+ for (const item of items) {
+  try {
+   const img = await loadWorldMapTileImage(item.url);
+   const x = (Number(item.tile.tile_x) - minX) * drawTilePx;
+   const z = (Number(item.tile.tile_z) - minZ) * drawTilePx;
+   ctx.drawImage(img, x, z, drawTilePx, drawTilePx);
+   loaded += 1;
+  } catch (error) {
+   console.warn('world map tile failed to load', item.url, error);
+  }
+ }
+ if (empty) {
+  empty.textContent = loaded
+	   ? `Stitched ${formatNumber(loaded)} generated piece${loaded === 1 ? '' : 's'} into the Atlas overview.`
+	   : 'No tile images could be loaded for the Atlas overview.';
+  empty.style.display = loaded ? 'none' : '';
+ }
+}
+
+function renderWorldMapDetail(job) {
+ if (!worldMapDetailEl) return;
+ if (!job) {
+  worldMapDetailEl.innerHTML = '<div class="context-empty">No world-map status loaded</div>';
+  return;
+ }
+ const jobState = job.state || {};
+ const manifest = job.manifest || {};
+ const phase = jobState.phase || (job.active ? 'running' : 'new');
+ const displayPhase = humanWorldMapPhase(phase, job.active);
+ const tiles = Array.isArray(manifest.tiles) ? manifest.tiles : [];
+ const tilesDone = Number(jobState.tiles_done ?? job.tile_count ?? 0);
+ const tilesTotal = Number(jobState.tiles_total ?? tiles.length ?? 0);
+ const percentRaw = Number(jobState.percent);
+ const progressValue = Number.isFinite(percentRaw)
+  ? Math.max(0, Math.min(100, percentRaw))
+  : (tilesTotal > 0 ? Math.max(0, Math.min(100, (tilesDone / tilesTotal) * 100)) : 0);
+ const progressText = job.active && tilesDone === 0
+  ? 'Starting Minecraft and preparing the first chunk batch...'
+  : `${formatNumber(tilesDone)} / ${formatNumber(tilesTotal)} tiles (${formatPercent(progressValue)})`;
+ const nextStep = tilesDone > 0
+  ? `${displayPhase === 'complete' ? 'Complete. ' : ''}View the generated-world overview below. The folder controls are optional export tools for the retained generated world.`
+  : 'No tiles are viewable yet. The Atlas overview will appear below as soon as the first tile is written.';
+ const manifestRows = [
+  ['Chunks', `${formatNumber(jobState.chunks_done)} / ${formatNumber(jobState.chunks_total)}`],
+  ['Seed', jobState.seed ?? manifest.seed ?? '—'],
+  ['Size', jobState.size ?? manifest.size ?? '—'],
+  ['Radius', `${formatNumber(jobState.radius_blocks ?? manifest.radius_blocks)} blocks`],
+  ['Tile Size', `${formatNumber(jobState.tile_size_blocks ?? manifest.tile_size_blocks)} blocks per tile edge`],
+  ['Tiles on Disk', formatNumber(job.tile_count)],
+  ['Generated World Folder', job?.world?.available ? `${formatNumber(job.world.region_count)} region files` : (job?.world?.reason || '—')],
+  ['Manifest Status', manifest.status || '—'],
+  ['Started', formatIsoTimestamp(jobState.started_at)],
+  ['Updated', formatIsoTimestamp(jobState.updated_at)],
+ ];
+ const rowsHtml = manifestRows.map(([key, value]) => `
+  <div class="meta-row">
+   <span class="meta-key">${escapeHtml(key)}</span>
+   <span class="meta-val">${typeof value === 'string' && value.includes('<span') ? value : escapeHtml(value)}</span>
+  </div>`).join('');
+ const errorHtml = jobState.error
+  ? `<div class="world-map-status error">${escapeHtml(jobState.error)}</div>`
+  : '';
+ const tileRows = tiles.slice(0, 8).map((tile) => {
+  const zLabel = String(tile.z ?? 0).startsWith('z') ? String(tile.z) : `z${tile.z ?? 0}`;
+  return `
+   <div class="world-map-tile-row">
+    <span>${escapeHtml(zLabel)} · x${escapeHtml(tile.tile_x)} · z${escapeHtml(tile.tile_z)}</span>
+    <span>${escapeHtml(tile.path)} · X ${escapeHtml(tile.min_x)}..${escapeHtml(tile.max_x)} · Z ${escapeHtml(tile.min_z)}..${escapeHtml(tile.max_z)}</span>
+   </div>`;
+ }).join('');
+ const moreTiles = tiles.length > 8
+  ? `<div class="band-desc-hint">${tiles.length - 8} more tiles in manifest.</div>`
+  : '';
+ const tilePreview = renderWorldMapOutputPreview(job, tiles, phase);
+ const worldAccess = renderWorldMapWorldAccess(job);
+ worldMapDetailEl.innerHTML = `
+  <div class="world-map-summary-card">
+   <div class="world-map-summary-head">
+    <div>
+     <div class="world-map-summary-label">Selected world map</div>
+     <div class="world-map-summary-title">${escapeHtml(job.job)}</div>
+    </div>
+    <span class="world-map-chip" data-phase="${escapeHtml(phase)}">${escapeHtml(displayPhase)}</span>
+   </div>
+   <div class="world-map-progress-track" aria-label="World map progress">
+    <span style="width:${progressValue}%"></span>
+   </div>
+   <div class="world-map-progress-copy">${escapeHtml(progressText)}</div>
+   <div class="world-map-next-step">${escapeHtml(nextStep)}</div>
+  </div>
+  ${tilePreview}
+  ${worldAccess}
+  <div class="context-grid world-map-meta-grid" style="display:block">${rowsHtml}</div>
+  ${errorHtml}
+	  <div class="band-desc-hint">This is Latitude Atlas's own stitched overview of generated base tiles. Full pan-and-zoom navigation is still a later slice.</div>
+  <div class="world-map-tiles-title">Tiles</div>
+  <div class="world-map-tiles">${tileRows || '<div class="context-empty" style="padding:8px 0">No manifest tiles yet</div>'}</div>
+  ${moreTiles}`;
+ hydrateWorldMapMosaicCanvas(job, tiles);
+}
+
+function syncWorldMapControlButtons() {
+ const job = selectedWorldMapPayload();
+ const hasJob = !!job;
+ if (btnWorldMapPause) btnWorldMapPause.disabled = !hasJob;
+ if (btnWorldMapResume) btnWorldMapResume.disabled = !hasJob;
+ if (btnWorldMapCancel) btnWorldMapCancel.disabled = !hasJob;
+}
+
+async function refreshWorldMapJobs(options = {}) {
+ try {
+  const payload = await fetchWorldMapJobs();
+  state.worldMapJobs = payload.jobs;
+  renderWorldMapJobOptions();
+  const selected = selectedWorldMapPayload();
+	  renderWorldMapDetail(selected);
+	  syncWorldMapControlButtons();
+	  if (options.announce) setWorldMapStatus(`Loaded ${state.worldMapJobs.length} world map${state.worldMapJobs.length === 1 ? '' : 's'}.`, 'success');
+	  else if (selected && /No world map selected/i.test(worldMapStatusEl?.textContent || '')) setWorldMapStatus(`Showing "${selected.job}".`, 'success');
+	 } catch (error) {
+	  if (!options.preserveStatus) setWorldMapStatus(error?.message || 'Failed to load world maps.', 'error');
+	 }
+}
+
+function validateWorldMapForm() {
+ ensureWorldMapDefaults();
+ const job = String(worldMapJobInput?.value || '').trim();
+ const seed = String(worldMapSeedInput?.value || '').trim();
+ const size = String(worldMapSizeSelect?.value || 'ittybitty').trim();
+ const tileSize = Number(worldMapTileSizeInput?.value);
+ const maxTiles = Number(worldMapMaxTilesInput?.value);
+ if (!job) throw new Error('Map Name is required.');
+ if (!/^[A-Za-z0-9][A-Za-z0-9_.-]{0,79}$/.test(job)) throw new Error('Map Name must start with a letter or number and use only letters, numbers, dot, dash, or underscore.');
+ const seedState = validateManualSeed(seed);
+ if (!seedState.ok || !seedState.value) throw new Error(seedState.message || 'Seed is required.');
+ if (!Number.isInteger(tileSize) || tileSize < 16 || tileSize > 2048) throw new Error('Tile Size must be between 16 and 2048 blocks.');
+ if (!Number.isInteger(maxTiles) || maxTiles < 1 || maxTiles > WORLD_MAP_MAX_SAFE_TILES) throw new Error(`Max Tiles is required and must be between 1 and ${formatNumber(WORLD_MAP_MAX_SAFE_TILES)}.`);
+ return { job, seed: seedState.value, size, tileSize, maxTiles };
+}
+
+async function createWorldMapFromUi() {
+ try {
+	  const payload = validateWorldMapForm();
+	  updateWorldMapEstimate();
+	  setWorldMapStatus(`Starting "${payload.job}" with a ${payload.maxTiles}-tile safety cap. Minecraft may take a moment before the first tile appears.`, 'success');
+  const response = await postWorldMapJob(payload);
+  const estimate = response?.estimate || {};
+  const created = worldMapPayloadFromResponse(response);
+  if (created?.job) {
+   state.currentWorldMapJob = created.job;
+   if (worldMapJobSelect) worldMapJobSelect.value = created.job;
+  } else {
+   state.currentWorldMapJob = payload.job;
+  }
+	  const estimateText = estimate.estimated_tiles != null
+	   ? `Started safely: ${formatNumber(estimate.estimated_tiles)} tile(s), about ${formatNumber(estimate.estimated_chunks)} chunk actions, up to ${formatBytes(estimate.estimated_disk_bytes)} raw image data.`
+	   : 'World map started.';
+	  setWorldMapStatus(estimateText, 'success');
+  await refreshWorldMapJobs();
+ } catch (error) {
+	  setWorldMapStatus(error?.message || 'World map could not be started.', 'error');
+ }
+}
+
+async function sendWorldMapControl(command) {
+ const job = state.currentWorldMapJob || worldMapJobSelect?.value || '';
+ if (!job) {
+	  setWorldMapStatus('Select a world map first.', 'error');
+  return;
+ }
+ try {
+  const response = await postWorldMapControl(job, command);
+  const updated = worldMapPayloadFromResponse(response);
+  if (updated?.job) state.currentWorldMapJob = updated.job;
+	  setWorldMapStatus(`${command} sent for ${job}.`, command === 'cancel' ? 'error' : 'success');
+  await refreshWorldMapJobs();
+ } catch (error) {
+	  setWorldMapStatus(error?.message || `World map ${command} failed.`, 'error');
+ }
+}
+
+async function copySelectedWorldMapPath(target = 'world') {
+ const job = selectedWorldMapPayload();
+ const isRegion = target === 'region';
+ const path = String((isRegion ? job?.world?.region_path : job?.world?.path) || '');
+ const label = isRegion ? 'Region files folder' : 'Generated world folder';
+ if (!path) {
+  setWorldMapStatus(`No ${label.toLowerCase()} path is available for this map yet.`, 'error');
+  return;
+ }
+ try {
+  if (navigator.clipboard?.writeText) {
+   await navigator.clipboard.writeText(path);
+		  setWorldMapStatus(`${label} path copied.`, 'success');
+   return;
+  }
+ } catch {}
+	 window.prompt(`Copy this ${label.toLowerCase()} path:`, path);
+	 setWorldMapStatus(`${label} path shown for copying.`, 'success');
+}
+
+async function revealSelectedWorldMapFolder(target = 'world') {
+ const job = selectedWorldMapPayload();
+ const isRegion = target === 'region';
+ const label = isRegion ? 'region files folder' : 'generated world folder';
+ if (!job?.job) {
+  setWorldMapStatus('Select a generated map first.', 'error');
+  return;
+ }
+ if (!job?.world?.available || (isRegion && !job?.world?.region_path)) {
+		  setWorldMapStatus(job?.world?.reason || `No retained ${label} is available for this map yet.`, 'error');
+  return;
+ }
+ try {
+  await postWorldMapReveal(job.job, target);
+		  setWorldMapStatus(`${label[0].toUpperCase()}${label.slice(1)} revealed.`, 'success');
+ } catch (error) {
+  setWorldMapStatus(error?.message || `Could not reveal the ${label}.`, 'error');
+ }
+}
+
+function startWorldMapPolling() {
+ if (state.worldMapPollTimer) clearInterval(state.worldMapPollTimer);
+ state.worldMapPollTimer = setInterval(() => refreshWorldMapJobs(), 2500);
+}
  
 function boolLabel(value) {
  return value ? 'Yes' : 'No';
@@ -2499,6 +4205,44 @@ function biomeById(id) {
 function biomeByIndex(index) {
  if (!Number.isFinite(index)) return null;
  return state.biomeByIndex[index & 0xFF] || null;
+}
+
+/* ─── Namespace (mod) helpers ─── */
+const NAMESPACE_META = {
+  minecraft:     { label: 'Vanilla',    accent: '#9AA7B2' },
+  biomesoplenty: { label: 'BoP',        accent: '#6FBF73' },
+  terralith:     { label: 'Terralith',  accent: '#C98BDB' },
+  promenade:     { label: 'Promenade',  accent: '#E0A050' },
+};
+const NS_STABLE_ORDER = ['minecraft', 'biomesoplenty', 'terralith', 'promenade'];
+function namespaceOf(id) {
+  const s = String(id || '');
+  const i = s.indexOf(':');
+  return i > 0 ? s.slice(0, i) : 'unknown';
+}
+function nsLabel(ns) {
+  if (NAMESPACE_META[ns]) return NAMESPACE_META[ns].label;
+  if (ns === 'unknown') return 'Unknown';
+  return ns.charAt(0).toUpperCase() + ns.slice(1);
+}
+function nsAccent(ns) {
+  if (NAMESPACE_META[ns]) return NAMESPACE_META[ns].accent;
+  return ns === 'unknown' ? '#6b7280' : '#9AA7B2';
+}
+function orderedNamespaces(present) {
+  const set = new Set(present);
+  const out = [];
+  for (const ns of NS_STABLE_ORDER) { if (set.has(ns)) { out.push(ns); set.delete(ns); } }
+  for (const ns of [...set].sort()) out.push(ns);
+  return out;
+}
+// veil active when a filter is set AND at least one present namespace is hidden
+function namespaceVeilActive() {
+  const f = state.namespaceFilter;
+  if (!f) return false;
+  const present = state.nsList || [];
+  if (!present.length) return false;
+  return present.some((ns) => !f.has(ns));
 }
 
 function decodeBiomeIndexImage(image) {
@@ -2997,13 +4741,27 @@ viewport.addEventListener('click', e => {
 function renderSelectedHighlights() {
  if (!state.imageData) return;
  const selected = selectedBiomes();
- if (!selected.length) {
+ const nsVeil = namespaceVeilActive();
+ if (!selected.length && !nsVeil) {
   clearHighlight();
   return;
  }
+ const hasSelection = selected.length > 0;
  const selectedIds = selectedBiomeIdsSet();
  const useHighContrast = !!togHiContrast.checked;
- const renderKey = `${Array.from(selectedIds).sort().join('|')}|${useHighContrast ? 'hc' : 'normal'}`;
+ const haveIdx = state.biomeIndices && state.biomeIndexWidth === state.mapWidth && state.biomeIndexHeight === state.mapHeight;
+ // Precompute namespace-shown mask over nsList positions (no per-pixel string work).
+ let nsShownMask = null;
+ if (nsVeil && haveIdx && state.nsIdByIndex && state.nsList) {
+  nsShownMask = new Uint8Array(state.nsList.length);
+  const f = state.namespaceFilter;
+  for (let k = 0; k < state.nsList.length; k++) nsShownMask[k] = (!f || f.has(state.nsList[k])) ? 1 : 0;
+ }
+ const veilAlpha = state.namespaceIsolate ? 230 : 150;
+ const nsKey = nsVeil
+  ? `ns:${state.namespaceFilter ? [...state.namespaceFilter].sort().join(',') : 'all'}:${state.namespaceIsolate ? 'hide' : 'dim'}`
+  : 'ns:none';
+ const renderKey = `${Array.from(selectedIds).sort().join('|')}|${useHighContrast ? 'hc' : 'normal'}|${nsKey}`;
  if (state.renderedHighlightKey === renderKey && hlCanvas.classList.contains('active')) return;
  hlCanvas.width = state.mapWidth;
  hlCanvas.height = state.mapHeight;
@@ -3015,47 +4773,57 @@ function renderSelectedHighlights() {
  for (let p = 0; p < pixelCount; p++) {
   const i = p * 4;
   let match = false;
-  if (state.biomeIndices && state.biomeIndexWidth === state.mapWidth && state.biomeIndexHeight === state.mapHeight) {
-   const biome = biomeByIndex(state.biomeIndices[p]);
-   match = !!(biome && selectedIds.has(biome.id));
-  } else {
-   for (const biome of selected) {
-    if (pixelMatchesBiome(biome, p, src)) {
-     match = true;
-     break;
+  if (hasSelection) {
+   if (haveIdx) {
+    const biome = biomeByIndex(state.biomeIndices[p]);
+    match = !!(biome && selectedIds.has(biome.id));
+   } else {
+    for (const biome of selected) {
+     if (pixelMatchesBiome(biome, p, src)) { match = true; break; }
     }
    }
   }
   matchedMask[p] = match ? 1 : 0;
-  if (useHighContrast) {
-   if (match) {
-    dd[i] = 255; dd[i + 1] = 255; dd[i + 2] = 255; dd[i + 3] = 255;
-   } else {
-    dd[i] = 0; dd[i + 1] = 0; dd[i + 2] = 0; dd[i + 3] = 220;
+  let painted = false;
+  if (hasSelection) {
+   if (useHighContrast) {
+    if (match) { dd[i] = 255; dd[i + 1] = 255; dd[i + 2] = 255; dd[i + 3] = 255; }
+    else { dd[i] = 0; dd[i + 1] = 0; dd[i + 2] = 0; dd[i + 3] = 220; }
+    painted = true;
+   } else if (match) {
+    dd[i] = 255; dd[i + 1] = 0; dd[i + 2] = 255; dd[i + 3] = 170;
+    painted = true;
    }
-  } else if (match) {
-   dd[i] = 255; dd[i + 1] = 0; dd[i + 2] = 255; dd[i + 3] = 170;
-  } else {
-   dd[i + 3] = 0;
+  }
+  if (!painted) {
+   if (nsShownMask) {
+    const nsId = state.nsIdByIndex[state.biomeIndices[p] & 0xFF];
+    const shown = (nsId === 255) ? 1 : nsShownMask[nsId]; // empty/background index → no veil
+    if (!shown) { dd[i] = 128; dd[i + 1] = 128; dd[i + 2] = 128; dd[i + 3] = veilAlpha; }
+    else { dd[i + 3] = 0; }
+   } else {
+    dd[i + 3] = 0;
+   }
   }
  }
- const outlineColor = useHighContrast
-  ? [62, 232, 214, 255]
-  : [255, 255, 255, 255];
- for (let y = 0; y < state.mapHeight; y++) {
-  for (let x = 0; x < state.mapWidth; x++) {
-   const p = (y * state.mapWidth) + x;
-   if (!matchedMask[p]) continue;
-   const left = x > 0 ? matchedMask[p - 1] : 0;
-   const right = x + 1 < state.mapWidth ? matchedMask[p + 1] : 0;
-   const up = y > 0 ? matchedMask[p - state.mapWidth] : 0;
-   const down = y + 1 < state.mapHeight ? matchedMask[p + state.mapWidth] : 0;
-   if (left && right && up && down) continue;
-   const i = p * 4;
-   dd[i] = outlineColor[0];
-   dd[i + 1] = outlineColor[1];
-   dd[i + 2] = outlineColor[2];
-   dd[i + 3] = outlineColor[3];
+ // Biome magenta/hi-contrast outline paints AFTER the veil.
+ if (hasSelection) {
+  const outlineColor = useHighContrast ? [62, 232, 214, 255] : [255, 255, 255, 255];
+  for (let y = 0; y < state.mapHeight; y++) {
+   for (let x = 0; x < state.mapWidth; x++) {
+    const p = (y * state.mapWidth) + x;
+    if (!matchedMask[p]) continue;
+    const left = x > 0 ? matchedMask[p - 1] : 0;
+    const right = x + 1 < state.mapWidth ? matchedMask[p + 1] : 0;
+    const up = y > 0 ? matchedMask[p - state.mapWidth] : 0;
+    const down = y + 1 < state.mapHeight ? matchedMask[p + state.mapWidth] : 0;
+    if (left && right && up && down) continue;
+    const i = p * 4;
+    dd[i] = outlineColor[0];
+    dd[i + 1] = outlineColor[1];
+    dd[i + 2] = outlineColor[2];
+    dd[i + 3] = outlineColor[3];
+   }
   }
  }
  hlCtx.putImageData(dst, 0, 0);
@@ -3456,6 +5224,7 @@ function normalizeManifest(manifest, run = '') {
  const ts = pickManifestValue(manifest, ['ts', 'timestamp', 'generatedAt', 'generated_at']) || run;
  const emitBiomeIndex = pickManifestValue(manifest, ['emitBiomeIndex', 'emit_biome_index']);
  const emitHeight = pickManifestValue(manifest, ['emitHeight', 'emit_height']);
+ const sourceProvenance = manifest.source_provenance || manifest.sourceProvenance || null;
  return {
   ...manifest,
   ts: ts || '',
@@ -3469,6 +5238,7 @@ function normalizeManifest(manifest, run = '') {
   commit: commit == null ? '' : String(commit),
   emitBiomeIndex: emitBiomeIndex == null ? !!manifest.emitBiomeIndex : !!emitBiomeIndex,
   emitHeight: emitHeight == null ? !!manifest.emitHeight : !!emitHeight,
+  sourceProvenance,
  };
 }
 
@@ -4311,30 +6081,137 @@ function renderBiomeList(biomes) {
   return;
  }
  biomeCountEl.textContent = `${rows.length} known`;
- const frag = document.createDocumentFragment();
+ // group rows by namespace (stable order), with collapsible sub-headers + aggregate %
+ const groups = new Map();
  for (const b of rows) {
-  const row = document.createElement('div');
-  row.className = 'biome-entry';
-  row.dataset.biomeId = b.id;
-  const pctText = b.pct != null
-   ? `${b.pct.toFixed(1)}%`
-   : (b.present_in_world ? 'Present in world' : '');
-  const statusTitle = b.pct != null
-   ? 'Sampled on the current atlas layer'
-   : (b.present_in_world && b.latitude_label
-      ? `Present in world; not observed at current resolution. First seen near ${b.first_seen_x}, ${b.first_seen_z} (${b.latitude_label}).`
-      : 'Present in world; not observed at current resolution.');
-  row.innerHTML = `
-     <div class="biome-swatch" style="background:rgb(${b.color.join(',')})"></div>
-     <div class="biome-name" title="${b.id}">${b.name}</div>
-     <div class="biome-pct" title="${statusTitle}">${pctText}</div>
-   `;
-  row.addEventListener('click', () => {
-   selectBiomePersistent(b);
-  });
-  frag.appendChild(row);
+  const ns = namespaceOf(b.id);
+  if (!groups.has(ns)) groups.set(ns, []);
+  groups.get(ns).push(b);
+ }
+ const orderedNs = orderedNamespaces([...groups.keys()]);
+ const frag = document.createDocumentFragment();
+ for (const ns of orderedNs) {
+  const groupRows = groups.get(ns);
+  const agg = groupRows.reduce((sum, b) => sum + (Number.isFinite(b.pct) ? b.pct : 0), 0);
+  const header = document.createElement('div');
+  header.className = 'biome-ns-group';
+  header.dataset.namespace = ns;
+  header.innerHTML = `<span class="ns-dot" style="background:${nsAccent(ns)}"></span><span class="ns-group-label">${nsLabel(ns)}</span><span class="ns-group-agg">${agg > 0 ? agg.toFixed(1) + '%' : ''}</span>`;
+  frag.appendChild(header);
+  for (const b of groupRows) {
+   const row = document.createElement('div');
+   row.className = 'biome-entry';
+   row.dataset.biomeId = b.id;
+   row.dataset.namespace = ns;
+   const pctText = b.pct != null
+    ? `${b.pct.toFixed(1)}%`
+    : (b.present_in_world ? 'Present in world' : '');
+   const statusTitle = b.pct != null
+    ? 'Sampled on the current atlas layer'
+    : (b.present_in_world && b.latitude_label
+       ? `Present in world; not observed at current resolution. First seen near ${b.first_seen_x}, ${b.first_seen_z} (${b.latitude_label}).`
+       : 'Present in world; not observed at current resolution.');
+   row.innerHTML = `
+      <div class="biome-swatch" style="background:rgb(${biomeRowColor(b).join(',')})"></div>
+      <div class="biome-name" title="${b.id}">${b.name}</div>
+      <div class="biome-pct" title="${statusTitle}">${pctText}</div>
+    `;
+   row.addEventListener('click', () => {
+    selectBiomePersistent(b);
+   });
+   frag.appendChild(row);
+  }
  }
  biomeListBody.appendChild(frag);
+ applyBiomeRowVisibility();
+}
+
+// Swatch/legend color follows the active color-view mode (identity/legacy/distinct).
+function biomeRowColor(b) {
+ if (state.colorViewMode === 'distinct' && Array.isArray(b.distinctColor)) return b.distinctColor;
+ if (state.colorViewMode === 'legacy' && Array.isArray(b.legacyColor)) return b.legacyColor;
+ return Array.isArray(b.color) ? b.color : [128, 128, 128];
+}
+
+// Compose namespace filter AND search: a row shows only if it passes both.
+function applyBiomeRowVisibility() {
+ const q = (biomeSearch.value || '').toLowerCase();
+ const filt = state.namespaceFilter; // Set | null
+ const groupShown = {};
+ $$('.biome-entry', biomeListBody).forEach((el) => {
+  const id = String(el.dataset.biomeId || '').toLowerCase();
+  const label = $('.biome-name', el)?.textContent?.toLowerCase() || '';
+  const ns = el.dataset.namespace || 'unknown';
+  const matchSearch = !q || id.includes(q) || label.includes(q);
+  const matchNs = !filt || filt.has(ns);
+  const show = matchSearch && matchNs;
+  el.style.display = show ? '' : 'none';
+  if (show) groupShown[ns] = true;
+ });
+ $$('.biome-ns-group', biomeListBody).forEach((h) => {
+  const ns = h.dataset.namespace || 'unknown';
+  h.style.display = groupShown[ns] ? '' : 'none';
+ });
+}
+
+// Render the namespace (mod) chip bar with live counts + isolate controls.
+function renderNamespaceChips() {
+ const bar = document.getElementById('ns-chip-bar');
+ if (!bar) return;
+ const rows = mergeBiomePresenceRows(state.biomes, state.biomeInventory);
+ const counts = {};
+ for (const b of rows) { const ns = namespaceOf(b.id); counts[ns] = (counts[ns] || 0) + 1; }
+ const present = (state.nsList && state.nsList.length) ? state.nsList : orderedNamespaces(Object.keys(counts));
+ if (!present.length) { bar.innerHTML = ''; bar.style.display = 'none'; return; }
+ bar.style.display = '';
+ const filt = state.namespaceFilter;
+ const chipHtml = present.map((ns) => {
+  const active = !filt || filt.has(ns);
+  return `<button type="button" class="ns-chip${active ? ' active' : ''}" data-namespace="${ns}" title="${nsLabel(ns)} — ${counts[ns] || 0} biomes">`
+   + `<span class="ns-dot" style="background:${nsAccent(ns)}"></span>`
+   + `<span class="ns-chip-label">${nsLabel(ns)}</span>`
+   + `<span class="ns-chip-count">${counts[ns] || 0}</span></button>`;
+ }).join('');
+ const mode = state.namespaceIsolate ? 'hide' : 'dim';
+ bar.innerHTML = `
+   <div class="ns-chip-row">${chipHtml}</div>
+   <div class="ns-chip-controls">
+     <div class="ns-seg" role="group" aria-label="Isolate mode">
+       <button type="button" class="ns-seg-btn${mode === 'dim' ? ' active' : ''}" data-iso="dim">Dim others</button>
+       <button type="button" class="ns-seg-btn${mode === 'hide' ? ' active' : ''}" data-iso="hide">Hide others</button>
+     </div>
+     <button type="button" class="ns-mini" data-ns-all>All</button>
+     <button type="button" class="ns-mini" data-ns-none>None</button>
+   </div>`;
+ bar.querySelectorAll('.ns-chip').forEach((btn) => {
+  btn.addEventListener('click', () => toggleNamespaceChip(btn.dataset.namespace));
+ });
+ bar.querySelectorAll('.ns-seg-btn').forEach((btn) => {
+  btn.addEventListener('click', () => {
+   state.namespaceIsolate = (btn.dataset.iso === 'hide');
+   renderNamespaceChips();
+   renderSelectedHighlights();
+  });
+ });
+ const allBtn = bar.querySelector('[data-ns-all]');
+ if (allBtn) allBtn.addEventListener('click', () => setNamespaceFilter(null));
+ const noneBtn = bar.querySelector('[data-ns-none]');
+ if (noneBtn) noneBtn.addEventListener('click', () => setNamespaceFilter(new Set()));
+}
+
+function toggleNamespaceChip(ns) {
+ const present = state.nsList || [];
+ let f = state.namespaceFilter ? new Set(state.namespaceFilter) : new Set(present);
+ if (f.has(ns)) f.delete(ns); else f.add(ns);
+ if (present.length && present.every((n) => f.has(n))) f = null; // all selected → collapse to "all"
+ setNamespaceFilter(f);
+}
+
+function setNamespaceFilter(f) {
+ state.namespaceFilter = f;
+ renderNamespaceChips();
+ applyBiomeRowVisibility();
+ renderSelectedHighlights();
 }
 
 function renderGrid() {
@@ -4396,12 +6273,7 @@ function isTextEntryTarget(el) {
 }
 
 biomeSearch.addEventListener('input', () => {
-  const q = biomeSearch.value.toLowerCase();
-  $$('.biome-entry', biomeListBody).forEach(el => {
-    const name = String(el.dataset.biomeId || '').toLowerCase();
-    const label = $('.biome-name', el)?.textContent?.toLowerCase() || '';
-    el.style.display = name.includes(q) || label.includes(q) ? '' : 'none';
-  });
+  applyBiomeRowVisibility();
 });
 biomeSearch.addEventListener('pointerdown', e => {
   e.stopPropagation();
@@ -4423,11 +6295,12 @@ biomeSearch.addEventListener('keydown', e => {
  const sizeName = formatWorldSizeLabel(manifest);
  const radius = getWorldRadius(manifest);
  const seedValue = manifest?.seed != null && String(manifest.seed).trim() ? String(manifest.seed) : '—';
-  const inventoryStatus = state.biomeInventoryStatus || { ok: true, message: '' };
+ const inventoryStatus = state.biomeInventoryStatus || { ok: true, message: '' };
   const expectedBiomeIds = stableSortBiomeIds(state.expectedBiomeIds);
   const missingBiomeState = inventoryStatus.ok === false
     ? { missingIds: [] }
     : computeMissingBiomeIds(expectedBiomeIds, state.biomeInventory);
+ const sourceProvenance = manifest.sourceProvenance || manifest.source_provenance || null;
  const rows = [
     { key: 'Run', value: state.currentRun || '—' },
     { key: 'Generated', value: formatRunTimestamp(state.currentRun || manifest.ts) },
@@ -4443,6 +6316,8 @@ biomeSearch.addEventListener('keydown', e => {
     { key: 'Sampling Note', value: isCoarseSamplingStep() ? 'Coarse sampling may omit rare biomes.' : 'Current step is detailed enough to reduce omission risk.' },
     { key: 'Branch', value: String(manifest.branch || '—') },
     { key: 'Commit', value: String(manifest.commit || '—') },
+    { key: 'Source', value: sourceProvenance ? formatSourceLabel(sourceProvenance) : '—' },
+    { key: 'Source State', value: sourceProvenance ? formatSourceState(sourceProvenance) : '—' },
     { key: 'Biome Index', value: boolLabel(!!manifest.emitBiomeIndex) },
     { key: 'Height Export', value: boolLabel(!!manifest.emitHeight) },
   ];
@@ -4569,8 +6444,107 @@ btnSaveRun.addEventListener('click', () => {
   showToast('Downloading run archive…', 'success');
 });
 
+/* ─── Representation report (Phase 6) ─── */
+function repVerdictPill(v) {
+  const map = {
+    green: ['#1f7a4d', 'GREEN'], ok: ['#1f7a4d', 'OK'], amber: ['#9a7a1f', 'AMBER'],
+    red: ['#9a2f2f', 'RED'], missing: ['#555', 'MISSING'], 'red-confetti': ['#9a2f2f', 'CONFETTI'],
+    over: ['#9a2f2f', 'OVER'], under: ['#9a7a1f', 'UNDER'],
+  };
+  const [c, t] = map[v] || ['#555', String(v || '').toUpperCase()];
+  return `<span class="rep-pill" style="background:${c}">${t}</span>`;
+}
+function repPct(v) { return (v == null) ? '—' : (v * 100).toFixed(1) + '%'; }
+function repTable(title, rows, cols) {
+  if (!rows || !rows.length) {
+    return `<details class="rep-table"><summary>${title} <span class="rep-count">0</span></summary><div class="rep-empty">none</div></details>`;
+  }
+  const head = cols.map((c) => `<th>${c.label}</th>`).join('');
+  const body = rows.map((r) =>
+    `<tr title="largest_share=${r.largest_share ?? '—'} · tiny_share=${r.tiny_share ?? '—'} · marooned_pct=${r.marooned_pct ?? '—'}">`
+    + cols.map((c) => `<td>${c.fmt ? c.fmt(r[c.key], r) : (r[c.key] ?? '—')}</td>`).join('') + `</tr>`).join('');
+  return `<details class="rep-table" open><summary>${title} <span class="rep-count">${rows.length}</span></summary>`
+    + `<table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></details>`;
+}
+function renderRepresentationReport(data) {
+  const s = data.sections || {};
+  const ig = s.per_band_composition && s.per_band_composition.inner_equator;
+  const gauge = ig ? `<div class="rep-card rep-gauge"><h4>Inner equator (0–12°) ${repVerdictPill(ig.verdict)}</h4>`
+    + `<div class="rep-fam"><span class="rep-fam-name">jungle</span><span class="rep-fam-bar"><i style="width:${Math.min(100, ig.jungle_share * 100)}%"></i></span><span>${repPct(ig.jungle_share)} <span class="rep-dim">min ${repPct(ig.jungle_min)}</span></span></div>`
+    + `<div class="rep-fam"><span class="rep-fam-name">arid</span><span class="rep-fam-bar"><i style="width:${Math.min(100, ig.arid_share * 100)}%"></i></span><span>${repPct(ig.arid_share)} <span class="rep-dim">max ${repPct(ig.arid_max)}</span></span></div></div>` : '';
+  const bands = ((s.per_band_composition && s.per_band_composition.bands) || []).map((b) => {
+    const fams = b.families.map((f) =>
+      `<div class="rep-fam"><span class="rep-fam-name">${f.family}</span><span class="rep-fam-bar"><i style="width:${Math.min(100, f.share * 100)}%"></i></span>`
+      + `<span>${repPct(f.share)} ${repVerdictPill(f.verdict)}</span><span class="rep-fam-exp">exp ${(f.expected_lo * 100).toFixed(0)}–${(f.expected_hi * 100).toFixed(0)}%</span></div>`).join('');
+    return `<div class="rep-card"><h4>${b.band} <span class="rep-dim">${b.land_pixels.toLocaleString()} land px</span></h4>${fams}</div>`;
+  }).join('');
+  const idCol = { key: 'biome_id', label: 'biome' };
+  const cols = [idCol, { key: 'tier', label: 'tier' }, { key: 'actual_share', label: 'actual', fmt: repPct },
+    { key: 'expected_lo', label: 'exp lo', fmt: repPct }, { key: 'expected_hi', label: 'exp hi', fmt: repPct },
+    { key: 'verdict', label: 'verdict', fmt: (v) => repVerdictPill(v) }];
+  const confCols = [idCol, { key: 'marooned_pct', label: 'marooned', fmt: repPct }, { key: 'tiny_share', label: 'tiny', fmt: repPct },
+    { key: 'largest_share', label: 'largest', fmt: repPct }, { key: 'verdict', label: '', fmt: (v) => repVerdictPill(v) }];
+  const tables = repTable('Over-represented', s.over_represented, cols)
+    + repTable('Under-represented + missing', s.under_represented, cols)
+    + repTable('Confetti offenders (marooned ≥ 15%)', s.confetti_offenders, confCols)
+    + repTable('Accent over-rep', s.accent_over_rep, cols);
+  return `<div class="rep-cards">${gauge}${bands}</div><div class="rep-tables">${tables}</div>`;
+}
+function representationReportMarkdown(data) {
+  const s = data.sections || {};
+  const L = [`# Representation report — ${data.run} (R${data.radius} step${data.step})`, ''];
+  const ig = s.per_band_composition && s.per_band_composition.inner_equator;
+  if (ig) L.push(`**Inner equator (0–12°):** ${String(ig.verdict).toUpperCase()} — jungle ${repPct(ig.jungle_share)} (min ${repPct(ig.jungle_min)}), arid ${repPct(ig.arid_share)} (max ${repPct(ig.arid_max)})`, '');
+  for (const b of ((s.per_band_composition && s.per_band_composition.bands) || [])) {
+    L.push(`## ${b.band} (${b.land_pixels} land px)`);
+    for (const f of b.families) L.push(`- ${f.family}: ${repPct(f.share)} (exp ${(f.expected_lo * 100).toFixed(0)}–${(f.expected_hi * 100).toFixed(0)}%) — ${f.verdict}`);
+    L.push('');
+  }
+  const sec = (title, rows) => { if (rows && rows.length) { L.push(`## ${title}`); for (const r of rows) L.push(`- ${r.biome_id} [${r.tier || ''}] actual ${repPct(r.actual_share)} → ${r.verdict}`); L.push(''); } };
+  sec('Over-represented', s.over_represented);
+  sec('Under-represented + missing', s.under_represented);
+  sec('Confetti offenders', s.confetti_offenders);
+  sec('Accent over-rep', s.accent_over_rep);
+  return L.join('\n');
+}
+async function openRepresentationReport() {
+  if (!state.currentRun) { showToast('Load a run first.', 'error'); return; }
+  let modal = document.getElementById('rep-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'rep-modal';
+    modal.className = 'rep-modal';
+    modal.innerHTML = `<div class="rep-modal-box"><div class="rep-modal-head"><span class="rep-modal-title">Representation Report</span>`
+      + `<span class="rep-modal-actions"><button id="rep-dl">Download report.json</button><button id="rep-md">Copy markdown</button><button id="rep-close">✕</button></span></div>`
+      + `<div class="rep-modal-body" id="rep-body">Loading…</div></div>`;
+    document.body.appendChild(modal);
+    modal.querySelector('#rep-close').addEventListener('click', () => { modal.style.display = 'none'; });
+    modal.addEventListener('click', (e) => { if (e.target === modal) modal.style.display = 'none'; });
+  }
+  modal.style.display = 'flex';
+  const body = modal.querySelector('#rep-body');
+  body.textContent = 'Loading…';
+  try {
+    const layer = state.currentLayer || '';
+    const data = await apiFetch(`/api/report/representation?run=${encodeURIComponent(state.currentRun)}&layer=${encodeURIComponent(layer)}`);
+    body.innerHTML = renderRepresentationReport(data);
+    modal.querySelector('#rep-dl').onclick = () => {
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `representation-${state.currentRun}.json`;
+      a.click();
+    };
+    modal.querySelector('#rep-md').onclick = () => {
+      navigator.clipboard.writeText(representationReportMarkdown(data)).then(() => showToast('Markdown copied', 'success'));
+    };
+  } catch (err) {
+    body.innerHTML = `<div class="rep-empty">Report failed: ${err && err.message ? err.message : err}</div>`;
+  }
+}
+
 btnOpenReport.addEventListener('click', () => {
-  openPrintableReport();
+  openRepresentationReport();
 });
 
 btnExportReport.addEventListener('click', async () => {
@@ -4648,6 +6622,7 @@ btnExportReport.addEventListener('click', async () => {
 });
 
 if (genSeedInput) {
+ preserveNativeTextEditing(genSeedInput);
  genSeedInput.addEventListener('input', () => {
   syncSeedInputStatus();
  });
@@ -4677,6 +6652,14 @@ if (btnRandomSeed) {
   });
 }
 
+preserveNativeTextEditing(worldMapSeedInput);
+
+if (btnWorldMapRandomSeed) {
+ btnWorldMapRandomSeed.addEventListener('click', () => {
+  randomizeWorldMapSeed();
+ });
+}
+
 if (btnDeleteRun) {
   btnDeleteRun.addEventListener('click', () => {
     deleteRun(state.currentRun);
@@ -4697,6 +6680,93 @@ if (btnDeleteSelected) {
 
 if (btnDeleteAllRuns) {
   btnDeleteAllRuns.addEventListener('click', () => deleteAllRuns());
+}
+
+if (btnWorldMapRefresh) {
+ btnWorldMapRefresh.addEventListener('click', () => refreshWorldMapJobs({ announce: true }));
+}
+
+if (worldMapJobSelect) {
+ worldMapJobSelect.addEventListener('change', async () => {
+  state.currentWorldMapJob = worldMapJobSelect.value || null;
+  if (state.currentWorldMapJob && worldMapJobInput && !worldMapJobInput.value) {
+   worldMapJobInput.value = state.currentWorldMapJob;
+  }
+	  renderWorldMapDetail(selectedWorldMapPayload());
+	  syncWorldMapControlButtons();
+	  if (state.currentWorldMapJob) {
+	   try {
+	    const job = await fetchWorldMapJob(state.currentWorldMapJob);
+	    state.worldMapJobs = state.worldMapJobs.map((item) => item.job === job.job ? job : item);
+	    renderWorldMapDetail(job);
+	    setWorldMapStatus(`Loaded ${job.job}.`, 'success');
+	   } catch (error) {
+	    setWorldMapStatus(error?.message || 'Failed to load selected world map.', 'error');
+	   }
+	  }
+	 });
+}
+
+if (worldMapDetailEl) {
+ worldMapDetailEl.addEventListener('click', (event) => {
+  const button = event.target?.closest?.('[data-world-map-action]');
+  if (!button) return;
+  const action = button.dataset.worldMapAction;
+  if (action === 'copy-world-path') {
+   copySelectedWorldMapPath();
+  } else if (action === 'reveal-world') {
+   revealSelectedWorldMapFolder();
+  } else if (action === 'copy-region-path') {
+   copySelectedWorldMapPath('region');
+  } else if (action === 'reveal-region') {
+   revealSelectedWorldMapFolder('region');
+  }
+ });
+}
+
+for (const input of [worldMapSizeSelect, worldMapTileSizeInput, worldMapMaxTilesInput]) {
+ if (input) {
+  input.addEventListener('input', updateWorldMapEstimate);
+  input.addEventListener('change', updateWorldMapEstimate);
+ }
+}
+
+for (const button of worldMapCapButtons) {
+ if (!button) continue;
+ button.addEventListener('click', () => {
+  const cap = String(button.dataset.worldMapCap || '').trim();
+  let value = Number(cap);
+  if (cap === 'full') {
+   const layout = worldMapLayoutFromForm();
+   updateWorldMapCapHint(layout);
+   if (!layout.ok) {
+    setWorldMapStatus(layout.message || 'Choose a valid world size and tile size first.', 'error');
+    return;
+   }
+   if (layout.fullTiles > WORLD_MAP_MAX_SAFE_TILES) {
+    setWorldMapStatus(`Full preset needs ${formatNumber(layout.fullTiles)} tiles, above the current ${formatNumber(WORLD_MAP_MAX_SAFE_TILES)}-tile safety limit.`, 'error');
+    return;
+   }
+   value = layout.fullTiles;
+  }
+  if (!Number.isInteger(value) || value < 1 || value > WORLD_MAP_MAX_SAFE_TILES) return;
+  if (worldMapMaxTilesInput) worldMapMaxTilesInput.value = String(value);
+  updateWorldMapEstimate();
+  setWorldMapStatus(`Max Tiles set to ${formatNumber(value)}.`, 'success');
+ });
+}
+
+if (btnWorldMapCreate) {
+ btnWorldMapCreate.addEventListener('click', createWorldMapFromUi);
+}
+if (btnWorldMapPause) {
+ btnWorldMapPause.addEventListener('click', () => sendWorldMapControl('pause'));
+}
+if (btnWorldMapResume) {
+ btnWorldMapResume.addEventListener('click', () => sendWorldMapControl('resume'));
+}
+if (btnWorldMapCancel) {
+ btnWorldMapCancel.addEventListener('click', () => sendWorldMapControl('cancel'));
 }
 
 /* ─── MAP IMAGE LOADING ─── */
@@ -4730,6 +6800,177 @@ async function loadMapImage(url) {
   });
 }
 
+/* ═══════════════════════════════════════════════
+   DISTINCT PALETTE — namespace hue arcs + OKLab ΔE separation
+   Keyed on stable biome-id rank (NOT volatile palette index — the
+   distinct_render.py defect being fixed). Offline parity: tools/atlas/distinct_render.py
+   implements the identical scheme so offline PNG == live viewer.
+   ═══════════════════════════════════════════════ */
+const NS_HUE_ARCS = {
+  minecraft:     [20, 70],
+  biomesoplenty: [90, 160],
+  terralith:     [200, 260],
+  promenade:     [280, 340],
+};
+function nsHueArc(ns) {
+  if (NS_HUE_ARCS[ns]) return NS_HUE_ARCS[ns];
+  // deterministic fallback arc for unmapped namespaces (vanilla-only / extra mods)
+  let h = 0;
+  for (let i = 0; i < ns.length; i++) h = (Math.imul(h, 31) + ns.charCodeAt(i)) >>> 0;
+  const start = h % 330;
+  return [start, start + 30];
+}
+// Reserved muted colors (override arc; excluded from arc local-rank count).
+function reservedMutedColor(id) {
+  const s = String(id).toLowerCase();
+  const local = s.includes(':') ? s.slice(s.indexOf(':') + 1) : s;
+  if (s.includes('ocean')) return [0x1C, 0x2A, 0x4A];
+  if (local === 'river' || local === 'frozen_river' || s.includes('river')) return [0x28, 0x46, 0x6E];
+  if (/beach|shore|coast|dune/.test(s)) return [0xC9, 0xB9, 0x8A];
+  return null;
+}
+function distinctRankIds(ids) {
+  // Stable, deterministic, code-point id rank (matches Python sorted(set(...))
+  // for ascii biome ids → JS/offline parity). Lowercased, namespace preserved.
+  return Array.from(new Set((ids || []).map((x) => String(x || '').trim().toLowerCase()).filter(Boolean))).sort();
+}
+function hsvToRgb(h, s, v) {
+  const i = Math.floor(h * 6);
+  const f = h * 6 - i;
+  const p = v * (1 - s), q = v * (1 - f * s), t = v * (1 - (1 - f) * s);
+  let r, g, b;
+  switch (((i % 6) + 6) % 6) {
+    case 0: r = v; g = t; b = p; break;
+    case 1: r = q; g = v; b = p; break;
+    case 2: r = p; g = v; b = t; break;
+    case 3: r = p; g = q; b = v; break;
+    case 4: r = t; g = p; b = v; break;
+    default: r = v; g = p; b = q; break;
+  }
+  return [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255)];
+}
+function srgbToLinear(c) { c /= 255; return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); }
+function linearToSrgb(c) { const v = c <= 0.0031308 ? 12.92 * c : 1.055 * Math.pow(c, 1 / 2.4) - 0.055; return Math.max(0, Math.min(255, Math.round(v * 255))); }
+function rgbToOklab(rgb) {
+  const r = srgbToLinear(rgb[0]), g = srgbToLinear(rgb[1]), b = srgbToLinear(rgb[2]);
+  const l = 0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b;
+  const m = 0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b;
+  const s = 0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b;
+  const l_ = Math.cbrt(l), m_ = Math.cbrt(m), s_ = Math.cbrt(s);
+  return {
+    L: 0.2104542553 * l_ + 0.7936177850 * m_ - 0.0040720468 * s_,
+    a: 1.9779984951 * l_ - 2.4285922050 * m_ + 0.4505937099 * s_,
+    b: 0.0259040371 * l_ + 0.7827717662 * m_ - 0.8086757660 * s_,
+  };
+}
+function oklabToRgb(lab) {
+  const l_ = lab.L + 0.3963377774 * lab.a + 0.2158037573 * lab.b;
+  const m_ = lab.L - 0.1055613458 * lab.a - 0.0638541728 * lab.b;
+  const s_ = lab.L - 0.0894841775 * lab.a - 1.2914855480 * lab.b;
+  const l = l_ * l_ * l_, m = m_ * m_ * m_, s = s_ * s_ * s_;
+  return [
+    linearToSrgb(4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s),
+    linearToSrgb(-1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s),
+    linearToSrgb(-0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s),
+  ];
+}
+function deltaEOklab(a, b) { const dL = a.L - b.L, da = a.a - b.a, db = a.b - b.b; return 100 * Math.sqrt(dL * dL + da * da + db * db); }
+const DISTINCT_DELTA_E_MIN = 12;
+// Build the distinct palette over the FULL inventory id set; returns id → [r,g,b].
+function buildDistinctPalette() {
+  const rows = mergeBiomePresenceRows(state.biomes, state.biomeInventory);
+  const rankedIds = distinctRankIds(rows.map((r) => r.id));
+  const byNs = {};       // ns → [ids in rank order, reserved excluded]
+  const reserved = {};   // id → [r,g,b]
+  for (const id of rankedIds) {
+    const muted = reservedMutedColor(id);
+    if (muted) { reserved[id] = muted; continue; }
+    const ns = namespaceOf(id);
+    (byNs[ns] = byNs[ns] || []).push(id);
+  }
+  const colorById = {};
+  for (const ns of Object.keys(byNs)) {
+    const [arcStart, arcEnd] = nsHueArc(ns);
+    byNs[ns].forEach((id, k) => {
+      const h = (arcStart + (arcEnd - arcStart) * ((k * 0.618033) % 1)) / 360;
+      const s = 0.62 + 0.30 * (((k * 2) % 3) / 2);
+      const v = 0.70 + 0.25 * (((k * 5) % 4) / 3);
+      colorById[id] = hsvToRgb(h, s, v);
+    });
+  }
+  for (const id of Object.keys(reserved)) colorById[id] = reserved[id];
+  // ΔE sweep separates only ARC (non-reserved) biomes; reserved muted colors are
+  // intentionally shared (oceans/rivers/beaches de-emphasised so land pops).
+  const arcRanked = rankedIds.filter((id) => !reserved[id]);
+  enforceDistinctDeltaE(colorById, arcRanked);
+  state.distinctColorById = colorById;
+  // Assign onto source objects so mergeBiomePresenceRows() spreads carry it through.
+  for (const b of (state.biomes || [])) if (b && b.id) { const k = String(b.id).toLowerCase(); if (colorById[k]) b.distinctColor = colorById[k]; }
+  for (const b of (state.biomeInventory || [])) if (b && b.id) { const k = String(b.id).toLowerCase(); if (colorById[k]) b.distinctColor = colorById[k]; }
+  return colorById;
+}
+// In-gamut HSV candidate grid (every point a valid sRGB colour — no out-of-gamut degeneracy).
+// Deterministic order → identical grid in distinct_render.py.
+function distinctCandidates() {
+  const cand = [];
+  for (let hi = 0; hi < 180; hi++) {                       // hue 0..358 step 2°
+    const h = (hi * 2) / 360;
+    for (const s of [0.45, 0.60, 0.75, 0.90, 1.00]) {
+      for (const v of [0.35, 0.50, 0.65, 0.80, 0.92, 1.00]) {
+        const rgb = hsvToRgb(h, s, v);
+        cand.push({ rgb, lab: rgbToOklab(rgb) });
+      }
+    }
+  }
+  return cand; // 180*5*6 = 5400
+}
+// Greedy thin to a mutual-ΔE≥threshold packing (occupying one anchor never blocks another).
+function distinctThin(cand, threshold) {
+  const kept = [];
+  for (let i = 0; i < cand.length; i++) {
+    let ok = true;
+    for (let j = 0; j < kept.length; j++) {
+      if (deltaEOklab(cand[i].lab, kept[j].lab) < threshold) { ok = false; break; }
+    }
+    if (ok) kept.push(cand[i]);
+  }
+  return kept;
+}
+// Anchor set sized to fit `count` biomes at the LARGEST threshold ≤ target the sRGB gamut allows.
+// The sRGB gamut only holds ~43 ΔE≥12 colours, so for larger biome stacks the threshold relaxes —
+// the palette is then provably maximally separated (best any sRGB palette can do) rather than failing.
+function distinctLattice(count) {
+  const cand = distinctCandidates();
+  let anchors = distinctThin(cand, DISTINCT_DELTA_E_MIN);  // try ΔE 12 first
+  for (let t2 = 2 * DISTINCT_DELTA_E_MIN - 1; anchors.length < count && t2 >= 8; t2--) {
+    anchors = distinctThin(cand, t2 / 2);                  // relax in 0.5 steps until enough anchors
+  }
+  return anchors;
+}
+// Assign every (non-reserved) biome to its NEAREST-to-arc-colour UNTAKEN anchor. Anchors are mutually
+// ΔE≥12, so distinct anchors ⇒ every pair of biomes is automatically ΔE≥12 apart with zero exact RGB
+// collisions — a hard guarantee, not a best-effort sweep. "Nearest to arc base" keeps each biome inside
+// its namespace hue region (coherence). Fully deterministic (rank order + lattice order tiebreak) →
+// byte-parity with distinct_render.py.
+function enforceDistinctDeltaE(colorById, rankedIds) {
+  const ids = rankedIds.filter((id) => Array.isArray(colorById[id]));
+  const lattice = distinctLattice(ids.length);
+  const taken = new Uint8Array(lattice.length);
+  for (let i = 0; i < ids.length; i++) {
+    const baseLab = rgbToOklab(colorById[ids[i]]);
+    let bestIdx = -1, bestD = Infinity;
+    for (let j = 0; j < lattice.length; j++) {
+      if (taken[j]) continue;
+      const d = deltaEOklab(lattice[j].lab, baseLab);
+      if (d < bestD) { bestD = d; bestIdx = j; } // strict < → lowest-index anchor wins ties
+    }
+    if (bestIdx >= 0) {
+      taken[bestIdx] = 1;
+      colorById[ids[i]] = lattice[bestIdx].rgb;
+    }
+  }
+}
+
 function buildColorLookup() {
   state.colorToBiome = {};
   state.biomeByIdMap = {};
@@ -4748,18 +6989,41 @@ function buildColorLookup() {
       state.colorToBiome[key] = b;
     }
   }
+  buildNamespaceLookups(allBiomes);
+}
+
+// Build state.nsList (present namespaces, stable order) + state.nsIdByIndex
+// (Uint8Array(256): biome index → nsList position, 255 = unknown/empty). Pure
+// integer mask so per-pixel veil never does a string split.
+function buildNamespaceLookups(allBiomes) {
+  const present = new Set();
+  for (const b of (allBiomes || [])) { if (b?.id) present.add(namespaceOf(b.id)); }
+  state.nsList = orderedNamespaces([...present]);
+  const nsPos = {};
+  state.nsList.forEach((ns, i) => { nsPos[ns] = i; });
+  const nsIdByIndex = new Uint8Array(256).fill(255);
+  for (let idx = 0; idx < 256; idx++) {
+    const b = state.biomeByIndex[idx];
+    if (b?.id) {
+      const pos = nsPos[namespaceOf(b.id)];
+      nsIdByIndex[idx] = (pos == null) ? 255 : pos;
+    }
+  }
+  state.nsIdByIndex = nsIdByIndex;
 }
 
 function paintCanvasFromBiomeIndices() {
   if (!state.biomeIndices || !state.imageData) return;
   if (state.biomeIndexWidth !== state.mapWidth || state.biomeIndexHeight !== state.mapHeight) return;
-  const useLegacy = state.colorViewMode === 'legacy';
+  const mode = state.colorViewMode;
   const data = state.imageData.data;
   const indices = state.biomeIndices;
   for (let i = 0; i < indices.length; i++) {
     const b = state.biomeByIndex[indices[i] & 0xFF];
     if (!b) continue;
-    const c = useLegacy && Array.isArray(b.legacyColor) ? b.legacyColor : b.color;
+    const c = (mode === 'distinct' && Array.isArray(b.distinctColor)) ? b.distinctColor
+            : (mode === 'legacy' && Array.isArray(b.legacyColor)) ? b.legacyColor
+            : b.color;
     if (Array.isArray(c)) {
       const off = i * 4;
       data[off]     = c[0];
@@ -4831,11 +7095,45 @@ async function fetchRuns() {
   try {
     const data = await apiFetch('/api/runs');
     return Array.isArray(data) ? data : [];
-  } catch {
-    // Fallback: try listing from /runs directory pattern
-    console.warn('Could not fetch runs from /api/runs');
-    return [];
+  } catch (error) {
+    console.warn('Could not fetch runs from /api/runs', error);
+    throw error;
   }
+}
+
+async function refreshRepoStatus() {
+  try {
+    state.repoStatus = await apiFetch('/api/repo-status');
+  } catch (error) {
+    state.repoStatus = {
+      ok: false,
+      blocked: true,
+      message: `Could not read update status: ${error?.message || error}`,
+    };
+  }
+  renderDesktopBridgeDiagnostics();
+}
+
+async function refreshSourceStatus() {
+  try {
+    state.sourceStatus = await apiFetch('/api/source-status');
+  } catch (error) {
+    const fallback = state.repoStatus?.source || {
+      id: 'dirty-worktree-candidate',
+      label: 'Dirty worktree snapshot candidate',
+      status: 'unavailable',
+      dirty: true,
+      dirty_source_paths: [],
+    };
+    state.sourceStatus = {
+      error: `Could not read source status: ${error?.message || error}`,
+      selected_id: fallback.id || 'dirty-worktree-candidate',
+      selected: fallback,
+      options: [fallback],
+    };
+  }
+  renderSourceSelector();
+  renderDesktopBridgeDiagnostics();
 }
 
 async function fetchManifest(run) {
@@ -4950,8 +7248,8 @@ async function promptAndGenerateRuggedness(run, layer) {
   setRuggednessStatus(`Starting Terrain Relief step${step} generation…`);
 
   try {
-    const resp = await fetch(
-      `${API_BASE}/api/runs/${encodeURIComponent(run)}/generate-ruggedness`,
+    const resp = await apiRawFetch(
+      `/api/runs/${encodeURIComponent(run)}/generate-ruggedness`,
       { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ step }) }
     );
     const data = resp.headers.get('content-type')?.includes('json')
@@ -4990,7 +7288,7 @@ async function fetchAndRenderRuggedness(run, layer) {
   }
   try {
     const step = Number(ruggedQuality?.value || 64);
-    const resp = await fetch(`${API_BASE}/api/runs/${encodeURIComponent(run)}/layers/${encodeURIComponent(layer)}/ruggedness-image?step=${step}`);
+    const resp = await apiRawFetch(`/api/runs/${encodeURIComponent(run)}/layers/${encodeURIComponent(layer)}/ruggedness-image?step=${step}`);
     if (!resp.ok) {
       clearRuggedness();
       if (resp.status === 404) {
@@ -5036,16 +7334,19 @@ async function startGeneration(presetKey) {
   const preset = GENERATION_PRESETS[presetKey];
   if (!preset) return;
   const resolution = Number(preset.resolution);
+  const sizePreset = selectedGenerationSize();
   const seedState = syncSeedInputStatus({ announce: true });
   if (!seedState.ok) return;
-  const requestPayload = { step: resolution, size: 'small' };
+  const requestPayload = { step: resolution, size: sizePreset.key };
+  const sourceId = selectedSourceId();
+  if (sourceId) requestPayload.sourceId = sourceId;
   if (seedState.value) requestPayload.seed = seedState.value;
 
   const dot = $('.dot', statusToast);
   const msg = $('.msg', statusToast);
   try {
-    setGenerationStatus(true, 'Generating a new world');
-    const resp = await fetch(`${API_BASE}/api/generate`, {
+    setGenerationStatus(true, `Generating ${sizePreset.label} Atlas preview`);
+    const resp = await apiRawFetch('/api/generate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(requestPayload),
@@ -5073,12 +7374,15 @@ function syncGenerationUi(status, fromPoll) {
   const wasActive = !!state.generationActive;
   const isActive = !!status.active;
   const label = generationLabelForResolution(status.step);
+  const sizePreset = GENERATION_SIZE_PRESETS[String(status.size || '').trim().toLowerCase()] || selectedGenerationSize();
   const seedLabel = status.seed != null && String(status.seed).trim() ? ` seed ${status.seed}` : '';
   state.generationActive = isActive;
   if (genQuality) genQuality.disabled = isActive;
+  if (genSize) genSize.disabled = isActive;
+  if (genSource) genSource.disabled = isActive;
   if (genSeedInput) genSeedInput.disabled = isActive;
   if (isActive) {
-    setGenerationStatus(true, `Generating ${label}${seedLabel}`);
+    setGenerationStatus(true, `Generating ${sizePreset.label} ${label} Atlas preview${seedLabel}`);
   } else if (!state.pendingGenerationPreset) {
     setGenerationStatus(false, '');
   }
@@ -5088,7 +7392,7 @@ function syncGenerationUi(status, fromPoll) {
 
   const exitCode = Number(status.exit_code);
   if (exitCode === 0) {
-    showToast(`Generation complete (${label}${seedLabel}).`, 'success');
+    showToast(`Atlas preview complete (${sizePreset.label} ${label}${seedLabel}).`, 'success');
     refreshRuns().then(() => {
       if (state.runs.length > 0) {
         const newest = state.runs[0];
@@ -5097,7 +7401,7 @@ function syncGenerationUi(status, fromPoll) {
       }
     });
   } else {
-    showToast(`Generation failed (${label}${seedLabel}).`, 'error');
+    showToast(`Atlas preview failed (${sizePreset.label} ${label}${seedLabel}).`, 'error');
   }
 }
 
@@ -5132,7 +7436,7 @@ async function deleteSelectedRuns() {
   );
   if (!confirmed) return;
   try {
-    const resp = await fetch(`${API_BASE}/api/runs/bulk-delete`, {
+    const resp = await apiRawFetch('/api/runs/bulk-delete', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ runs: ids }),
@@ -5169,7 +7473,7 @@ async function deleteAllRuns() {
   );
   if (!confirmed) return;
   try {
-    const resp = await fetch(`${API_BASE}/api/runs/delete-all`, {
+    const resp = await apiRawFetch('/api/runs/delete-all', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: '{}',
@@ -5206,7 +7510,7 @@ async function deleteRun(runId) {
   );
   if (!confirmed) return;
   try {
-    const resp = await fetch(`${API_BASE}/api/runs/${encodeURIComponent(runId)}`, { method: 'DELETE' });
+    const resp = await apiRawFetch(`/api/runs/${encodeURIComponent(runId)}`, { method: 'DELETE' });
     if (resp.status === 409) {
       showToast('Cannot delete: generation is in progress.', 'error');
       return;
@@ -5275,6 +7579,8 @@ function formatLayerLabel(layerId) {
 async function init() {
   showToast('Connecting…', 'loading');
   try {
+    await refreshRepoStatus();
+    await refreshSourceStatus();
     await refreshRuns();
     hideToast();
     const requestedRun = requestedRunFromUrl();
@@ -5283,12 +7589,16 @@ async function init() {
       selRun.dispatchEvent(new Event('change'));
     }
     if (state.runs.length === 0) {
-      showToast('No runs found — is the server running?', 'error');
+      showToast('No sampled Atlas previews yet. Use Generate to create one, or open Pregenerated World Map for tiled maps.', 'success');
     }
-    startGenerationPolling();
-  } catch (err) {
-    showToast('Cannot reach server', 'error');
-    console.error(err);
+	    await refreshWorldMapJobs();
+	    startGenerationPolling();
+	    startWorldMapPolling();
+	    setGenerationMode('atlas');
+	    updateWorldMapEstimate();
+	  } catch (err) {
+	    showToast('Cannot reach server', 'error');
+	    console.error(err);
   }
 }
 
@@ -5357,6 +7667,28 @@ genQuality.addEventListener('change', async () => {
   showGenerationConfirm(key);
 });
 
+if (genSize) {
+  genSize.addEventListener('change', () => {
+    if (state.pendingGenerationPreset) showGenerationConfirm(state.pendingGenerationPreset);
+  });
+}
+
+if (genSource) {
+  genSource.addEventListener('change', () => {
+    if (state.sourceStatus) {
+      state.sourceStatus.selected_id = genSource.value;
+      state.sourceStatus.selected = selectedSourceOption();
+    }
+    renderSourceSelector();
+    renderDesktopBridgeDiagnostics();
+    if (state.pendingGenerationPreset) showGenerationConfirm(state.pendingGenerationPreset);
+  });
+}
+
+for (const btn of generationModeButtons) {
+  btn.addEventListener('click', () => setGenerationMode(btn.dataset.generationMode));
+}
+
 async function switchLayer(run, layer) {
   state.currentLayer = layer;
   updateSamplingDisclosure();
@@ -5420,9 +7752,11 @@ async function switchLayer(run, layer) {
     }
   }
 
+  buildDistinctPalette();   // assigns b.distinctColor over the full inventory (before buildColorLookup)
   buildColorLookup();
   paintCanvasFromBiomeIndices();
   renderBiomeList(state.biomes);
+  renderNamespaceChips();
   biomeSearch.disabled = false;
   biomeSearch.removeAttribute('disabled');
   biomeSearch.value = '';
@@ -5432,6 +7766,7 @@ async function switchLayer(run, layer) {
 
   clearHighlight();
   highlightBiomeInList();
+  renderSelectedHighlights();
   toggleGrid();
   if (togBands.checked) { renderBands(); renderBandLegend(); }
   renderBandViolations();
@@ -5502,7 +7837,9 @@ togTooltip.addEventListener('change', () => {
 if (selColorView) {
   selColorView.addEventListener('change', () => {
     state.colorViewMode = selColorView.value;
-    paintCanvasFromBiomeIndices();
+    paintCanvasFromBiomeIndices();   // pure repaint, no network
+    renderBiomeList(state.biomes);   // Biome Presence swatches follow the active mode (= the legend)
+    highlightBiomeInList();
   });
 }
 

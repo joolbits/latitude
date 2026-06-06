@@ -1,0 +1,158 @@
+{
+  "arid": {
+    "accent": [
+      "biomesoplenty:dryland"
+    ],
+    "primary": [
+      "minecraft:badlands",
+      "minecraft:desert"
+    ],
+    "secondary": [
+      "minecraft:eroded_badlands",
+      "minecraft:wooded_badlands"
+    ]
+  },
+  "equator": {
+    "accent": [
+      "minecraft:bamboo_jungle"
+    ],
+    "primary": [
+      "minecraft:jungle"
+    ],
+    "secondary": [
+      "minecraft:bamboo_jungle",
+      "minecraft:sparse_jungle"
+    ]
+  },
+  "polar": {
+    "accent": [
+      "minecraft:ice_spikes"
+    ],
+    "primary": [
+      "minecraft:snowy_slopes"
+    ],
+    "secondary": [
+      "minecraft:frozen_peaks",
+      "minecraft:jagged_peaks"
+    ]
+  },
+  "subpolar": {
+    "accent": [
+      "minecraft:grove"
+    ],
+    "primary": [
+      "biomesoplenty:coniferous_forest",
+      "biomesoplenty:fir_clearing",
+      "biomesoplenty:snowy_coniferous_forest",
+      "biomesoplenty:snowy_fir_clearing",
+      "biomesoplenty:snowy_maple_woods",
+      "biomesoplenty:tundra",
+      "biomeswevegone:frosted_taiga",
+      "minecraft:snowy_plains",
+      "minecraft:snowy_taiga",
+      "terralith:siberian_taiga",
+      "terralith:wintry_forest"
+    ],
+    "secondary": [
+      "minecraft:old_growth_spruce_taiga",
+      "minecraft:snowy_plains",
+      "minecraft:snowy_taiga",
+      "minecraft:taiga",
+      "terralith:siberian_grove",
+      "terralith:snowy_maple_forest",
+      "terralith:snowy_shield",
+      "terralith:wintry_lowlands"
+    ]
+  },
+  "subtropical_humid": {
+    "accent": [
+      "minecraft:flower_forest"
+    ],
+    "primary": [
+      "minecraft:birch_forest",
+      "minecraft:forest"
+    ],
+    "secondary": [
+      "minecraft:dark_forest"
+    ]
+  },
+  "temperate": {
+    "accent": [
+      "biomesoplenty:prairie",
+      "minecraft:meadow",
+      "minecraft:stony_peaks",
+      "minecraft:windswept_forest",
+      "minecraft:windswept_gravelly_hills",
+      "minecraft:windswept_hills",
+      "terralith:blooming_valley",
+      "terralith:lavender_valley",
+      "terralith:valley_clearing"
+    ],
+    "primary": [
+      "biomesoplenty:maple_woods",
+      "biomesoplenty:seasonal_forest",
+      "biomeswevegone:temperate_grove",
+      "minecraft:birch_forest",
+      "minecraft:forest",
+      "minecraft:plains",
+      "minecraft:taiga"
+    ],
+    "secondary": [
+      "biomesoplenty:forested_field",
+      "biomesoplenty:old_growth_woodland",
+      "biomesoplenty:orchard",
+      "biomesoplenty:pasture",
+      "biomesoplenty:woodland",
+      "minecraft:dark_forest",
+      "minecraft:flower_forest",
+      "minecraft:old_growth_birch_forest",
+      "minecraft:old_growth_pine_taiga",
+      "minecraft:taiga",
+      "terralith:birch_taiga",
+      "terralith:sakura_grove",
+      "terralith:sakura_valley"
+    ]
+  },
+  "trans_arid_tropics_1": {
+    "accent": [
+      "minecraft:windswept_hills"
+    ],
+    "primary": [
+      "minecraft:savanna",
+      "minecraft:savanna_plateau"
+    ],
+    "secondary": [
+      "biomesoplenty:scrubland",
+      "biomesoplenty:shrubland",
+      "minecraft:savanna_plateau",
+      "minecraft:windswept_savanna"
+    ]
+  },
+  "trans_arid_tropics_2": {
+    "accent": [
+      "minecraft:meadow"
+    ],
+    "primary": [
+      "minecraft:savanna",
+      "minecraft:savanna_plateau"
+    ],
+    "secondary": [
+      "biomesoplenty:rocky_shrubland",
+      "biomesoplenty:wasteland",
+      "biomesoplenty:wasteland_steppe",
+      "minecraft:savanna_plateau",
+      "minecraft:windswept_savanna"
+    ]
+  },
+  "tropics": {
+    "accent": [],
+    "primary": [
+      "minecraft:jungle"
+    ],
+    "secondary": [
+      "biomesoplenty:tropics",
+      "minecraft:bamboo_jungle",
+      "minecraft:sparse_jungle"
+    ]
+  }
+}

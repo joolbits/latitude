@@ -52,6 +52,14 @@ loom {
             vmArg "-Xmx8G"
             vmArg "-Dlatdev.biomePng=${System.getProperty('latdev.biomePng', 'enabled')}"
         }
+        worldMapPreview {
+            server()
+            name "World Map Preview (Headless)"
+            runDir "run-headless-worldmap"
+            vmArg "-Xms2G"
+            vmArg "-Xmx8G"
+            vmArg "-Dlatdev.worldMap=${System.getProperty('latdev.worldMap', 'enabled')}"
+        }
         biomeSeedSearch {
             server()
             name "Biome Seed Search (Headless)"
@@ -213,6 +221,50 @@ enable-command-block=false
     }
 }
 
+tasks.register('prepareWorldMapPreviewRunDir') {
+    doLast {
+        def dir = file('run-headless-worldmap')
+        if (!dir.exists()) {
+            dir.mkdirs()
+        }
+
+        def eulaFile = file("${dir}/eula.txt")
+        eulaFile.text = "eula=true\n"
+
+        def propsFile = file("${dir}/server.properties")
+        if (!propsFile.exists()) {
+            propsFile.text = """motd=Latitude World Map Preview
+online-mode=false
+max-players=1
+enable-command-block=false
+server-port=0
+level-name=world-map-preview
+initial-enabled-packs=vanilla,fabric-convention-tags-v2,fabric-gametest-api-v1,globe
+level-type=globe\\:globe_xsmall
+"""
+        }
+    }
+}
+
+def worldMapPresetForSize = { raw ->
+    def size = (raw ?: 'ittybitty').toString().trim().toLowerCase(Locale.ROOT)
+    switch (size) {
+        case ['itty', 'ittybitty', 'itty_bitty', 'xsmall']:
+            return 'globe:globe_xsmall'
+        case 'small':
+        case 'medium':
+            return 'globe:globe_small'
+        case 'regular':
+            return 'globe:globe_regular'
+        case 'large':
+            return 'globe:globe_large'
+        case ['ginormous', 'massive']:
+            return 'globe:globe_massive'
+        default:
+            return 'globe:globe'
+    }
+}
+
 tasks.register('syncBiomePreviewMods', Copy) {
     outputs.upToDateWhen { false }
     doFirst {
@@ -222,6 +274,17 @@ tasks.register('syncBiomePreviewMods', Copy) {
         include '*.jar'
     }
     into file('run-headless/mods')
+}
+
+tasks.register('syncWorldMapPreviewMods', Copy) {
+    outputs.upToDateWhen { false }
+    doFirst {
+        delete file('run-headless-worldmap/mods')
+    }
+    from(file('run/mods')) {
+        include '*.jar'
+    }
+    into file('run-headless-worldmap/mods')
 }
 
 tasks.named('runBiomePreview').configure {
@@ -309,6 +372,103 @@ tasks.named('runBiomePreview').configure {
             jvmArgs "-Dlatdev.biomePng=${propValue}"
             setArgs(passthrough)
             logger.lifecycle("[runBiomePreview] translated latdev --args to JVM property: {}", propValue)
+        } else {
+            setArgs(rawArgs)
+        }
+    }
+}
+
+tasks.named('runWorldMapPreview').configure {
+    dependsOn tasks.named('prepareWorldMapPreviewRunDir')
+    if (project.hasProperty('latdev.syncPreviewMods') && project.property('latdev.syncPreviewMods').toString().toBoolean()) {
+        dependsOn tasks.named('syncWorldMapPreviewMods')
+    }
+    doFirst {
+        def rawArgs = new ArrayList(args ?: [])
+        def latdevOptions = [:]
+        def passthrough = []
+        def latdevKeys = ['enabled', 'seed', 'size', 'tilesize', 'out', 'job', 'maxtiles'] as Set
+        boolean enabled = false
+
+        for (int i = 0; i < rawArgs.size(); i++) {
+            def token = rawArgs[i]
+            if (!(token instanceof String) || !token.startsWith('--')) {
+                passthrough << token
+                continue
+            }
+
+            def body = token.substring(2)
+            if (body.equalsIgnoreCase('latdevWorldMap')) {
+                enabled = true
+                continue
+            }
+
+            int eq = body.indexOf('=')
+            if (eq >= 0) {
+                def key = body.substring(0, eq).toLowerCase(Locale.ROOT)
+                def value = body.substring(eq + 1)
+                if (latdevKeys.contains(key)) {
+                    latdevOptions[key] = value
+                    enabled = true
+                } else {
+                    passthrough << token
+                }
+                continue
+            }
+
+            def key = body.toLowerCase(Locale.ROOT)
+            if (latdevKeys.contains(key)) {
+                if (i + 1 < rawArgs.size() && rawArgs[i + 1] instanceof String && !rawArgs[i + 1].startsWith('--')) {
+                    latdevOptions[key] = rawArgs[i + 1]
+                    i++
+                } else {
+                    latdevOptions[key] = 'true'
+                }
+                enabled = true
+            } else {
+                passthrough << token
+            }
+        }
+
+        if (enabled || !latdevOptions.isEmpty()) {
+            if (!latdevOptions.containsKey('out')) {
+                latdevOptions['out'] = file('run-headless/latdev/world-map-runs').absolutePath.replace('\\', '/')
+            }
+            if (!latdevOptions.containsKey('job')) {
+                latdevOptions['job'] = new Date().format('yyyyMMdd-HHmmss')
+            }
+
+            def propParts = ['enabled=true']
+            latdevOptions.each { key, value ->
+                propParts << "${key}=${value}"
+            }
+            def propValue = propParts.join(';')
+
+            def runDir = file('run-headless-worldmap')
+            runDir.mkdirs()
+            def propsFile = file("${runDir}/server.properties")
+            def props = new Properties()
+            if (propsFile.exists()) {
+                propsFile.withInputStream { props.load(it) }
+            }
+            props.setProperty('motd', props.getProperty('motd', 'Latitude World Map Preview'))
+            props.setProperty('online-mode', props.getProperty('online-mode', 'false'))
+            props.setProperty('max-players', props.getProperty('max-players', '1'))
+            props.setProperty('enable-command-block', props.getProperty('enable-command-block', 'false'))
+            props.setProperty('server-port', '0')
+            props.setProperty('initial-enabled-packs', 'vanilla,fabric-convention-tags-v2,fabric-gametest-api-v1,globe')
+            props.setProperty('level-type', worldMapPresetForSize(latdevOptions['size']))
+            props.setProperty('level-name', "world-map-${latdevOptions['job'].toString().replaceAll('[^A-Za-z0-9_.-]', '_')}")
+            if (latdevOptions.containsKey('seed') && latdevOptions['seed'] != null && latdevOptions['seed'].toString().trim().length() > 0) {
+                props.setProperty('level-seed', latdevOptions['seed'].toString().trim())
+            } else {
+                props.remove('level-seed')
+            }
+            propsFile.withOutputStream { props.store(it, 'Latitude world map preview scratch settings') }
+
+            jvmArgs "-Dlatdev.worldMap=${propValue}"
+            setArgs(passthrough)
+            logger.lifecycle("[runWorldMapPreview] translated latdev --args to JVM property: {}", propValue)
         } else {
             setArgs(rawArgs)
         }
