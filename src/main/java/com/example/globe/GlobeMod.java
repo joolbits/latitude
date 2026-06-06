@@ -22,6 +22,7 @@ import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.server.level.progress.LevelLoadListener;
 import net.minecraft.tags.BiomeTags;
 import net.minecraft.util.Mth;
 import net.minecraft.util.RandomSource;
@@ -31,15 +32,18 @@ import net.minecraft.world.entity.Relative;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.component.BundleContents;
+import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.biome.Climate;
 import net.minecraft.world.level.border.WorldBorder;
 import net.minecraft.world.level.chunk.ChunkGenerator;
+import net.minecraft.world.level.chunk.status.ChunkStatus;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator;
 import net.minecraft.world.level.levelgen.NoiseGeneratorSettings;
 import net.minecraft.world.level.levelgen.RandomState;
 import net.minecraft.world.level.storage.LevelData;
+import net.minecraft.world.level.storage.ServerLevelData;
 import net.fabricmc.loader.api.FabricLoader;
 import net.fabricmc.loader.api.ModContainer;
 import org.slf4j.Logger;
@@ -68,6 +72,7 @@ public class GlobeMod implements ModInitializer {
     public static final int POLE_LETHAL_DISTANCE_BLOCKS = 96;
     public static final int POLE_LETHAL_WARNING_DISTANCE = POLE_WARNING_DISTANCE_BLOCKS;
     public static final int EFFECT_REFRESH_TICKS = 20;
+    private static final int EW_WARNING_DISTANCE_BLOCKS = 500;
     private static final int EW_SPAWN_PADDING_BLOCKS = 64;
     private static final long SPAWN_SALT = 0x7A3E21B5D4C1F7A9L;
 
@@ -403,6 +408,40 @@ public class GlobeMod implements ModInitializer {
         return BORDER_RADIUS;
     }
 
+    public static boolean trySetInitialLatitudeSpawn(ServerLevel world,
+                                                     ServerLevelData levelData,
+                                                     boolean generateBonusChest,
+                                                     boolean debugWorld,
+                                                     LevelLoadListener loadListener) {
+        if (world == null || levelData == null || generateBonusChest || debugWorld || !isGlobeOverworld(world)) {
+            return false;
+        }
+        String pendingZone = GlobePending.peek();
+        if (pendingZone == null) {
+            return false;
+        }
+
+        try {
+            SpawnChoice spawnChoice = resolveSpawnChoice(world, pendingZone);
+            BlockPos spawnPos = spawnChoice.pos();
+            if (loadListener != null) {
+                loadListener.start(LevelLoadListener.Stage.PREPARE_GLOBAL_SPAWN, 0);
+                loadListener.updateFocus(world.dimension(), ChunkPos.containing(spawnPos));
+            }
+            levelData.setSpawn(LevelData.RespawnData.of(world.dimension(), spawnPos, 0.0f, 0.0f));
+            LatitudeWorldState.get(world).setSpawnPickerDismissed(true);
+            LOGGER.info("[Latitude] Early initial spawn set before player-spawn pregen: zone={} x={} y={} z={} radius={}",
+                    spawnChoice.zoneId(), spawnPos.getX(), spawnPos.getY(), spawnPos.getZ(), spawnChoice.radius());
+            if (loadListener != null) {
+                loadListener.finish(LevelLoadListener.Stage.PREPARE_GLOBAL_SPAWN);
+            }
+            return true;
+        } catch (RuntimeException e) {
+            LOGGER.warn("[Latitude] Early initial spawn failed; falling back to vanilla initial spawn", e);
+            return false;
+        }
+    }
+
     private static void applySpawnChoice(ServerPlayer player, String id) {
         if (player.entityTags().contains(SPAWN_CHOSEN_TAG)) {
             return;
@@ -419,18 +458,31 @@ public class GlobeMod implements ModInitializer {
             return;
         }
 
+        SpawnChoice spawnChoice = resolveSpawnChoice(world, id);
+        LOGGER.info("Applying spawn choice: player={}, zoneId={}", player.getName().getString(), spawnChoice.zoneId());
+
+        BlockPos clampedSpawnPos = spawnChoice.pos();
+        world.setRespawnData(LevelData.RespawnData.of(world.dimension(), clampedSpawnPos, 0.0f, 0.0f));
+
+        BlockPos teleportPos = clampedSpawnPos;
+        player.teleportTo(world, teleportPos.getX() + 0.5, teleportPos.getY(), teleportPos.getZ() + 0.5, EnumSet.noneOf(Relative.class), player.getYRot(), player.getXRot(), true);
+        player.setDeltaMovement(0.0, 0.0, 0.0);
+        player.fallDistance = 0.0F;
+        player.addTag(SPAWN_CHOSEN_TAG);
+        LatitudeWorldState.get(world).setSpawnPickerDismissed(true);
+    }
+
+    private static SpawnChoice resolveSpawnChoice(ServerLevel world, String id) {
         String zoneId = id;
+        long seed = world.getServer().getWorldGenSettings().options().seed();
         if (zoneId != null && zoneId.equals("RANDOM")) {
-            long seed = world.getServer().getWorldGenSettings().options().seed();
             zoneId = resolveSpawnZoneId(zoneId, seed);
-            LOGGER.info("Resolved RANDOM spawn zone: player={}, seed={}, chosen={}", player.getName().getString(), seed, zoneId);
+            LOGGER.info("Resolved RANDOM spawn zone: seed={}, chosen={}", seed, zoneId);
         }
 
         if (zoneId == null) {
             zoneId = "TEMPERATE";
         }
-
-        LOGGER.info("Applying spawn choice: player={}, zoneId={}", player.getName().getString(), zoneId);
 
         int radius = LatitudeBiomes.getActiveRadiusBlocks();
         if (radius <= 0) {
@@ -438,9 +490,8 @@ public class GlobeMod implements ModInitializer {
             radius = (int) Math.round(com.example.globe.util.LatitudeMath.halfSize(border));
         }
 
-        long seed = world.getServer().getWorldGenSettings().options().seed();
         double v = hash01(seed, 1, 0, SPAWN_SALT);
-        
+
         double spawnAbsLatFrac = com.example.globe.util.LatitudeMath.spawnFracForZoneKey(zoneId);
         int z = (int) Math.round(radius * spawnAbsLatFrac);
         if (v < 0.5) {
@@ -452,9 +503,6 @@ public class GlobeMod implements ModInitializer {
         z = Mth.clamp(z, -maxAbsZ, maxAbsZ);
 
         int targetZ = z;
-
-        // Biome-probe spawn finding: sample noise to find land X,Z (no chunk gen),
-        // then generate only the chosen chunk for safe Y placement.
         BlockPos spawnPos;
         try {
             SamplerTemplate template = BiomeSamplerTools.createTemplate(world);
@@ -472,13 +520,7 @@ public class GlobeMod implements ModInitializer {
             spawnPos = new BlockPos(0, world.getSeaLevel() + 2, targetZ);
         }
 
-        BlockPos clampedSpawnPos = clampSpawnAwayFromEwWarning(spawnPos, radius);
-        world.setRespawnData(LevelData.RespawnData.of(world.dimension(), clampedSpawnPos, 0.0f, 0.0f));
-
-        BlockPos teleportPos = clampSpawnAwayFromEwWarning(clampedSpawnPos, radius);
-        player.teleportTo(world, teleportPos.getX() + 0.5, teleportPos.getY(), teleportPos.getZ() + 0.5, EnumSet.noneOf(Relative.class), player.getYRot(), player.getXRot(), true);
-        player.addTag(SPAWN_CHOSEN_TAG);
-        LatitudeWorldState.get(world).setSpawnPickerDismissed(true);
+        return new SpawnChoice(zoneId, clampSpawnAwayFromEwWarning(spawnPos, radius), radius);
     }
 
     public static void logBuildMetadata(String side) {
@@ -517,18 +559,13 @@ public class GlobeMod implements ModInitializer {
             return spawnPos;
         }
 
-        int warningStartX = (int) Math.round(radiusBlocks * com.example.globe.util.LatitudeMath.POLAR_STAGE_1_PROGRESS);
-        if (warningStartX <= 0) {
-            return spawnPos;
-        }
-
         int absX = Math.abs(spawnPos.getX());
-        if (absX < warningStartX) {
+        int safeMaxAbsX = Math.max(0, radiusBlocks - EW_WARNING_DISTANCE_BLOCKS - EW_SPAWN_PADDING_BLOCKS);
+        if (absX <= safeMaxAbsX) {
             return spawnPos;
         }
 
-        int clampedAbsX = Math.max(0, warningStartX - EW_SPAWN_PADDING_BLOCKS);
-        int clampedX = spawnPos.getX() >= 0 ? clampedAbsX : -clampedAbsX;
+        int clampedX = spawnPos.getX() >= 0 ? safeMaxAbsX : -safeMaxAbsX;
         return new BlockPos(clampedX, spawnPos.getY(), spawnPos.getZ());
     }
 
@@ -538,11 +575,7 @@ public class GlobeMod implements ModInitializer {
         final int margin = 320;
         final int max = Math.max(0, borderHalf - margin);
 
-        // First pass: vary X only (stay exactly in the selected latitude line)
-        final int attemptsXOnly = 96;
-
-        // Second pass: if still failing, allow small Z jitter while staying near the band
-        final int attemptsWithZJitter = 96;
+        final int samplesPerPass = 16;
         final int zJitter = 96;
 
         // Size-invariance: active radius is source of truth, borderHalf is fallback only.
@@ -554,26 +587,23 @@ public class GlobeMod implements ModInitializer {
 
         RandomSource rng = RandomSource.create(seed ^ 0x9E3779B97F4A7C15L ^ (long) targetZ);
 
-        // Pass 1: X-only — biome probe then single-chunk Y placement
-        for (int i = 0; i < attemptsXOnly; i++) {
-            int x = rng.nextIntBetweenInclusive(-max, max);
-            int z = targetZ;
+        for (int pass = 0; pass < 2; pass++) {
+            for (int i = 0; i < samplesPerPass; i++) {
+                int x = rng.nextIntBetweenInclusive(-max, max);
+                int z = pass == 0
+                        ? targetZ
+                        : Mth.clamp(targetZ + rng.nextIntBetweenInclusive(-zJitter, zJitter), -max, max);
 
-            if (!isLandBiome(template, sampler, x, z, classifyY, radiusBlocks)) continue;
-            BlockPos candidate = placeSafeY(world, x, z);
-            if (candidate != null) return candidate;
+                if (!isLandBiome(template, sampler, x, z, classifyY, radiusBlocks)) {
+                    continue;
+                }
+
+                BlockPos candidate = placeSafeY(world, x, z);
+                if (candidate != null) {
+                    return candidate;
+                }
+            }
         }
-
-        // Pass 2: X + small Z jitter
-        for (int i = 0; i < attemptsWithZJitter; i++) {
-            int x = rng.nextIntBetweenInclusive(-max, max);
-            int z = Mth.clamp(targetZ + rng.nextIntBetweenInclusive(-zJitter, zJitter), -max, max);
-
-            if (!isLandBiome(template, sampler, x, z, classifyY, radiusBlocks)) continue;
-            BlockPos candidate = placeSafeY(world, x, z);
-            if (candidate != null) return candidate;
-        }
-
         return null;
     }
 
@@ -605,7 +635,7 @@ public class GlobeMod implements ModInitializer {
      * Returns a valid spawn BlockPos, or null if the terrain fails validation.
      */
     private static BlockPos placeSafeY(ServerLevel world, int x, int z) {
-        world.getChunk(x >> 4, z >> 4);
+        int loadedChunks = loadSpawnTargetChunkRing(world, x, z);
 
         BlockPos ground = world.getHeightmapPos(
                 Heightmap.Types.MOTION_BLOCKING_NO_LEAVES,
@@ -619,7 +649,25 @@ public class GlobeMod implements ModInitializer {
         if (!world.getBlockState(spawn.above()).isAir()) return null;
         if (!world.getFluidState(ground).isEmpty()) return null;
 
+        LOGGER.info("[Latitude] Prepared spawn target surface: x={} y={} z={} loadedTeleportChunks={}",
+                x, spawn.getY(), z, loadedChunks);
         return spawn;
+    }
+
+    private static int loadSpawnTargetChunkRing(ServerLevel world, int x, int z) {
+        int chunkX = Math.floorDiv(x, 16);
+        int chunkZ = Math.floorDiv(z, 16);
+        int loadedChunks = 0;
+        for (int dz = -1; dz <= 1; dz++) {
+            for (int dx = -1; dx <= 1; dx++) {
+                world.getChunkSource().getChunk(chunkX + dx, chunkZ + dz, ChunkStatus.FULL, true);
+                loadedChunks++;
+            }
+        }
+        return loadedChunks;
+    }
+
+    private record SpawnChoice(String zoneId, BlockPos pos, int radius) {
     }
 
     private static double lerp(double a, double b, double t) {
