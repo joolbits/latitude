@@ -7014,9 +7014,10 @@ public final class LatitudeBiomes {
         return base;
     }
 
-    // Snowy base for polar sanitize: snowy_plains, the natural flat-polar primary. (snowy_taiga was
-    // tried for variety but a downstream polar stage re-forces it to snowy_plains, so it is omitted
-    // here to keep the code honest; restoring snowy_taiga variety is a separate follow-up.)
+    // Snowy base for polar sanitize: snowy_plains, the natural deep-polar primary. snowy_taiga is
+    // intentionally NOT used here — gatePolarTaigaSurvival deliberately excludes the taiga family
+    // (incl. snowy_taiga) from the polar band and converts it to snowy_plains (the established
+    // polar-taiga-exclusion design). So the capped ice_spikes share correctly flows to snowy_plains.
     private static String polarSnowyBase(int blockX, int blockZ) {
         return "minecraft:snowy_plains";
     }
