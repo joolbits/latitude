@@ -29,7 +29,9 @@ public final class GlobeWarningOverlay {
     private static final String EW_SAND_DANGER_TEMPLATE =
             "Extreme danger to the %s. Head %s immediately.";
 
+    private static final boolean DEBUG_ENTRY_TITLES = Boolean.getBoolean("latitude.debugEntryTitles");
     private static final int EQUATOR_STABLE_DIST = 64;
+    private static final int HEMISPHERE_TITLE_MAX_STEP_BLOCKS = 256;
     private static final long HEMISPHERE_TITLE_COOLDOWN_MS = 15_000L;
 
     private static long lastZoneUpdateWorldTime = Long.MIN_VALUE;
@@ -38,6 +40,8 @@ public final class GlobeWarningOverlay {
     private static char lastStableHemisphere = '\0';
     private static double lastObservedZ = Double.NaN;
     private static long lastHemisphereTitleAtMs = Long.MIN_VALUE;
+    private static long lastWarningDebugWorldTime = Long.MIN_VALUE;
+    private static String lastWarningDebugText;
 
     private static boolean registered;
 
@@ -133,8 +137,7 @@ public final class GlobeWarningOverlay {
         try {
             long worldTime = client.level.getGameTime();
             if (debugStartWorldTime < 0L || worldTime < debugStartWorldTime) {
-                debugStartWorldTime = worldTime;
-                lastZoneKey = null;
+                resetWorldEntryState(worldTime);
             }
 
             var eval = GlobeClientState.evaluate(client);
@@ -169,6 +172,7 @@ public final class GlobeWarningOverlay {
                         String titleText = buildZoneEnterTitle(client, canonicalZoneKey);
                         int durationTicks = (int) Math.round(clamp(LatitudeConfig.zoneEnterTitleSeconds, 2.0, 10.0) * 20.0);
                         double scale = clamp(LatitudeConfig.zoneEnterTitleScale, 1.0, 3.0);
+                        logEntryTitle("zone_trigger", titleText, client, client.player.getZ(), '\0', 0.0);
                         ZoneEnterTitleOverlay.trigger(titleText, durationTicks, scale);
                     }
                 }
@@ -209,6 +213,7 @@ public final class GlobeWarningOverlay {
             if (warnY < 18) {
                 warnY = 18;
             }
+            maybeLogWarningRender(client, state, bestText);
             int color = warningColorWithPulse(bestText, client, tickCounter);
             drawCenteredWarning(ctx, client.font, bestText, warnY, color);
         } catch (Throwable t) {
@@ -243,10 +248,27 @@ public final class GlobeWarningOverlay {
         return "West".equals(direction) ? "East" : "West";
     }
 
+    private static void resetWorldEntryState(long worldTime) {
+        debugStartWorldTime = worldTime;
+        lastZoneKey = null;
+        lastZoneUpdateWorldTime = Long.MIN_VALUE;
+        lastZoneUpdateX = Integer.MIN_VALUE;
+        lastZoneUpdateZ = Integer.MIN_VALUE;
+        lastStableHemisphere = '\0';
+        lastObservedZ = Double.NaN;
+        lastWarningDebugWorldTime = Long.MIN_VALUE;
+        lastWarningDebugText = null;
+        if (DEBUG_ENTRY_TITLES) {
+            GlobeMod.LOGGER.info("[LAT][ENTRY_TITLE] action=reset worldTime={}", worldTime);
+        }
+    }
+
     private static void maybeTriggerHemisphereTitle(Minecraft client, double playerZ) {
-        char stableHemisphere = stableHemisphere(playerZ);
+        var border = client.level != null ? client.level.getWorldBorder() : null;
+        double centerZ = border != null ? border.getCenterZ() : 0.0;
+        char stableHemisphere = stableHemisphere(border, playerZ);
         boolean titleActive = ZoneEnterTitleOverlay.isActive();
-        boolean updateSample = Math.abs(playerZ) >= EQUATOR_STABLE_DIST || Double.isNaN(lastObservedZ);
+        boolean updateSample = Math.abs(playerZ - centerZ) >= EQUATOR_STABLE_DIST || Double.isNaN(lastObservedZ);
 
         if (!LatitudeConfig.zoneEnterTitleEnabled) {
             if (stableHemisphere != '\0') {
@@ -255,6 +277,7 @@ public final class GlobeWarningOverlay {
             if (updateSample) {
                 lastObservedZ = playerZ;
             }
+            logEntryTitle("hemisphere_disabled", "", client, playerZ, stableHemisphere, 0.0);
             return;
         }
 
@@ -265,17 +288,20 @@ public final class GlobeWarningOverlay {
             if (updateSample) {
                 lastObservedZ = playerZ;
             }
+            logEntryTitle("hemisphere_suppressed_title_active", "", client, playerZ, stableHemisphere, 0.0);
             return;
         }
 
         if (Double.isNaN(lastObservedZ) && updateSample) {
             lastObservedZ = playerZ;
+            logEntryTitle("hemisphere_seed_observed_z", "", client, playerZ, stableHemisphere, 0.0);
         }
 
         if (stableHemisphere == '\0') {
             if (updateSample) {
                 lastObservedZ = playerZ;
             }
+            logEntryTitle("hemisphere_suppressed_equator", "", client, playerZ, stableHemisphere, 0.0);
             return;
         }
 
@@ -284,19 +310,33 @@ public final class GlobeWarningOverlay {
             if (updateSample) {
                 lastObservedZ = playerZ;
             }
+            logEntryTitle("hemisphere_seed_stable", "", client, playerZ, stableHemisphere, 0.0);
             return;
         }
 
-        boolean crossedNorth = lastObservedZ < 0 && playerZ > 0;
-        boolean crossedSouth = lastObservedZ > 0 && playerZ < 0;
+        double stepBlocks = Math.abs(playerZ - lastObservedZ);
+        if (stepBlocks > HEMISPHERE_TITLE_MAX_STEP_BLOCKS) {
+            lastStableHemisphere = stableHemisphere;
+            if (updateSample) {
+                lastObservedZ = playerZ;
+            }
+            logEntryTitle("hemisphere_suppressed_large_step", "", client, playerZ, stableHemisphere, stepBlocks);
+            return;
+        }
+
+        boolean crossedNorth = lastObservedZ > centerZ && playerZ < centerZ;
+        boolean crossedSouth = lastObservedZ < centerZ && playerZ > centerZ;
         boolean changedHemisphere = stableHemisphere != lastStableHemisphere && (crossedNorth || crossedSouth);
 
         if (changedHemisphere && canFireHemisphereTitle()) {
             String hemisphereTitle = crossedNorth ? "NORTHERN HEMISPHERE" : "SOUTHERN HEMISPHERE";
             int durationTicks = (int) Math.round(clamp(LatitudeConfig.zoneEnterTitleSeconds, 2.0, 10.0) * 20.0);
             double scale = clamp(LatitudeConfig.zoneEnterTitleScale, 1.0, 3.0);
+            logEntryTitle("hemisphere_trigger", hemisphereTitle, client, playerZ, stableHemisphere, stepBlocks);
             ZoneEnterTitleOverlay.trigger(hemisphereTitle, durationTicks, scale);
             lastHemisphereTitleAtMs = System.currentTimeMillis();
+        } else {
+            logEntryTitle("hemisphere_no_trigger", "", client, playerZ, stableHemisphere, stepBlocks);
         }
 
         lastStableHemisphere = stableHemisphere;
@@ -313,11 +353,67 @@ public final class GlobeWarningOverlay {
         return (now - lastHemisphereTitleAtMs) >= HEMISPHERE_TITLE_COOLDOWN_MS;
     }
 
-    private static char stableHemisphere(double z) {
-        if (Math.abs(z) < EQUATOR_STABLE_DIST) {
+    private static char stableHemisphere(net.minecraft.world.level.border.WorldBorder border, double z) {
+        double centerZ = border != null ? border.getCenterZ() : 0.0;
+        if (Math.abs(z - centerZ) < EQUATOR_STABLE_DIST) {
             return '\0';
         }
-        return z > 0 ? 'N' : 'S';
+        return com.example.globe.util.LatitudeMath.hemisphere(border, z);
+    }
+
+    private static void logEntryTitle(String action, String title, Minecraft client, double playerZ, char stableHemisphere, double stepBlocks) {
+        if (!DEBUG_ENTRY_TITLES || client == null || client.level == null || client.player == null) {
+            return;
+        }
+        var border = client.level.getWorldBorder();
+        String canonicalZoneKey = canonicalTitleZoneKey(border, playerZ);
+        char canonicalHemisphere = com.example.globe.util.LatitudeMath.hemisphere(border, playerZ);
+        double latDeg = com.example.globe.util.LatitudeMath.degreesFromZ(border, playerZ);
+        GlobeMod.LOGGER.info("[LAT][ENTRY_TITLE] action={} title=\"{}\" x={} z={} centerZ={} worldTime={} zone={} latDeg={} canonicalHemisphere={} stableHemisphere={} lastStableHemisphere={} lastObservedZ={} stepBlocks={}",
+                action,
+                title,
+                client.player.getX(),
+                playerZ,
+                border.getCenterZ(),
+                client.level.getGameTime(),
+                canonicalZoneKey,
+                latDeg,
+                canonicalHemisphere,
+                stableHemisphere == '\0' ? "none" : Character.toString(stableHemisphere),
+                lastStableHemisphere == '\0' ? "none" : Character.toString(lastStableHemisphere),
+                Double.isNaN(lastObservedZ) ? "nan" : Double.toString(lastObservedZ),
+                stepBlocks);
+    }
+
+    private static void maybeLogWarningRender(Minecraft client, GlobeClientState.WarningState state, Component bestText) {
+        if (!Boolean.getBoolean("latitude.debugEwWarn") || client == null || client.level == null || client.player == null || bestText == null
+                || state.type() != GlobeClientState.WarningType.STORM) {
+            return;
+        }
+        long worldTime = client.level.getGameTime();
+        String text = bestText.getString();
+        if (text.equals(lastWarningDebugText) && lastWarningDebugWorldTime != Long.MIN_VALUE && worldTime - lastWarningDebugWorldTime < 20L) {
+            return;
+        }
+        lastWarningDebugWorldTime = worldTime;
+        lastWarningDebugText = text;
+        var border = client.level.getWorldBorder();
+        double x = client.player.getX();
+        double distWest = Math.abs(x - border.getMinX());
+        double distEast = Math.abs(border.getMaxX() - x);
+        GlobeMod.LOGGER.info("[LAT][WARNING_RENDER] text=\"{}\" type={} stage={} x={} z={} worldTime={} distWest={} distEast={} borderWest={} borderEast={} titleActive={} zoneTitleEnabled={}",
+                text,
+                state.type(),
+                state.stage(),
+                x,
+                client.player.getZ(),
+                worldTime,
+                distWest,
+                distEast,
+                border.getMinX(),
+                border.getMaxX(),
+                ZoneEnterTitleOverlay.isActive(),
+                LatitudeConfig.zoneEnterTitleEnabled);
     }
 
     private static String buildZoneEnterTitle(Minecraft client, String canonicalZoneKey) {
