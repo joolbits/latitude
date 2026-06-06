@@ -27,6 +27,7 @@ import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderEvents;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.server.IntegratedServer;
+import net.minecraft.client.gui.screens.PauseScreen;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.TitleScreen;
 import net.minecraft.client.gui.screens.worldselection.CreateWorldScreen;
@@ -36,12 +37,23 @@ import net.minecraft.core.particles.BlockParticleOption;
 import net.minecraft.core.particles.ParticleOptions;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.resources.Identifier;
+import net.minecraft.server.level.ChunkResult;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.util.RandomSource;
+import net.minecraft.world.entity.Relative;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.border.WorldBorder;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.chunk.ChunkAccess;
+import net.minecraft.world.level.chunk.status.ChunkStatus;
+import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.level.storage.LevelData;
+import java.util.ArrayDeque;
+import java.util.EnumSet;
 import java.util.Locale;
+import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 
 public class GlobeModClient implements ClientModInitializer {
     private static final Identifier MANGROVE_SWAMP_ID = Identifier.fromNamespaceAndPath("minecraft", "mangrove_swamp");
@@ -54,12 +66,28 @@ public class GlobeModClient implements ClientModInitializer {
     private static final int DEFAULT_AUTO_CREATE_WORLD_PROBE_LATDEV_CUSTOM_SCAN_RADIUS = 1024;
     private static final int DEFAULT_AUTO_CREATE_WORLD_PROBE_LATDEV_CUSTOM_SCAN_STEP = 32;
     private static final int DEFAULT_AUTO_CREATE_WORLD_PROBE_LATDEV_TELEPORT_WAIT_TICKS = 40;
+    private static final int DEFAULT_AUTO_CREATE_WORLD_PROBE_LATDEV_TARGET_VERIFY_EXTRA_WAIT_TICKS = 0;
+    private static final int DEFAULT_AUTO_CREATE_WORLD_PROBE_LATDEV_TARGET_SEARCH_RADIUS = 1024;
+    private static final int DEFAULT_AUTO_CREATE_WORLD_PROBE_LATDEV_TARGET_SEARCH_STEP = 4;
+    private static final int DEFAULT_AUTO_CREATE_WORLD_PROBE_LATDEV_TARGET_SEARCH_MAX_SAMPLES = 50000;
+    private static final int DEFAULT_AUTO_CREATE_WORLD_PROBE_LATDEV_TARGET_SEARCH_MAX_CHUNKS = 2048;
+    private static final int DEFAULT_AUTO_CREATE_WORLD_PROBE_LATDEV_TARGET_SEARCH_CHUNKS_PER_BATCH = 4;
+    private static final int DEFAULT_AUTO_CREATE_WORLD_PROBE_LATDEV_TARGET_SEARCH_PROGRESS_CHUNKS = 64;
     private static boolean pendingSpawnPickerOpen;
     private static boolean autoCreateWorldProbeLatdevCommandsSent;
     private static boolean autoCreateWorldProbeLatdevCustomTeleportAttempted;
     private static boolean autoCreateWorldProbeLatdevTargetVerified;
+    private static boolean autoCreateWorldProbeLatdevTargetPendingLogged;
+    private static volatile boolean autoCreateWorldProbeLatdevServerTargetSetupPending;
+    private static volatile boolean autoCreateWorldProbeLatdevServerTargetSetupComplete;
+    private static volatile boolean autoCreateWorldProbeLatdevServerTargetSetupCompleteObserved;
+    private static volatile boolean autoCreateWorldProbeLatdevServerTargetSetupFailed;
+    private static volatile boolean autoCreateWorldProbeLatdevLiveTargetSearchBatchQueued;
+    private static volatile LiveTargetSearchState autoCreateWorldProbeLatdevLiveTargetSearchState;
     private static long autoCreateWorldProbeLatdevCommandsSentGameTime = Long.MIN_VALUE;
     private static long autoCreateWorldProbeLatdevCustomTeleportGameTime = Long.MIN_VALUE;
+    private static long autoCreateWorldProbeLatdevCommandsSentWallTimeMs = Long.MIN_VALUE;
+    private static long autoCreateWorldProbeLatdevCustomTeleportWallTimeMs = Long.MIN_VALUE;
     private static final boolean AUTO_CREATE_WORLD_PROBE_CREATIVE = isAutoCreateWorldProbeCreativeEnabled();
 
     @Override
@@ -75,6 +103,9 @@ public class GlobeModClient implements ClientModInitializer {
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
             GlobeClientState.setGlobeWorld(false);
             pendingSpawnPickerOpen = false;
+            autoCreateWorldProbeLatdevLiveTargetSearchState = null;
+            autoCreateWorldProbeLatdevLiveTargetSearchBatchQueued = false;
+            autoCreateWorldProbeLatdevServerTargetSetupPending = false;
         });
 
         ClientPlayNetworking.registerGlobalReceiver(GlobeNet.GlobeStatePayload.ID, (payload, context) -> {
@@ -116,8 +147,17 @@ public class GlobeModClient implements ClientModInitializer {
             autoCreateWorldProbeLatdevCommandsSent = false;
             autoCreateWorldProbeLatdevCustomTeleportAttempted = false;
             autoCreateWorldProbeLatdevTargetVerified = false;
+            autoCreateWorldProbeLatdevTargetPendingLogged = false;
+            autoCreateWorldProbeLatdevServerTargetSetupPending = false;
+            autoCreateWorldProbeLatdevServerTargetSetupComplete = false;
+            autoCreateWorldProbeLatdevServerTargetSetupCompleteObserved = false;
+            autoCreateWorldProbeLatdevServerTargetSetupFailed = false;
+            autoCreateWorldProbeLatdevLiveTargetSearchBatchQueued = false;
+            autoCreateWorldProbeLatdevLiveTargetSearchState = null;
             autoCreateWorldProbeLatdevCommandsSentGameTime = Long.MIN_VALUE;
             autoCreateWorldProbeLatdevCustomTeleportGameTime = Long.MIN_VALUE;
+            autoCreateWorldProbeLatdevCommandsSentWallTimeMs = Long.MIN_VALUE;
+            autoCreateWorldProbeLatdevCustomTeleportWallTimeMs = Long.MIN_VALUE;
             LatitudeClientState.resetAutoCreateWorldProbe(timeoutMs);
             GlobeMod.LOGGER.info("[LAT][CWPATH] autoCreateWorldProbe enabled timeout={}s creative={}",
                     timeoutMs / 1000L, AUTO_CREATE_WORLD_PROBE_CREATIVE);
@@ -330,6 +370,13 @@ public class GlobeModClient implements ClientModInitializer {
             LatitudeClientState.markAutoCreateWorldProbeWorldEntered(client.level.getGameTime());
         }
 
+        screen = clearAutoCreateWorldProbePauseScreen(client, screen);
+
+        if (LatitudeClientState.isAutoCreateWorldProbeWorldEntered()
+                && LatitudeClientState.isLatitudeWorldLoading()) {
+            return;
+        }
+
         if (LatitudeClientState.isAutoCreateWorldProbeWorldEntered()
                 && !LatitudeClientState.isAutoCreateWorldProbeDiagnosticsCaptured()
                 && client.level != null
@@ -351,12 +398,27 @@ public class GlobeModClient implements ClientModInitializer {
                             return;
                         }
                     }
+                    if (waitForAutoCreateWorldProbeServerTargetSetup(client)) {
+                        return;
+                    }
                     if (autoCreateWorldProbeLatdevCustomTeleportGameTime != Long.MIN_VALUE) {
                         long teleportWaitTicks = getAutoCreateWorldProbeLatdevTeleportWaitTicks();
-                        if (client.level.getGameTime() - autoCreateWorldProbeLatdevCustomTeleportGameTime < teleportWaitTicks) {
+                        if (!hasAutoCreateWorldProbeWaitElapsed(client,
+                                autoCreateWorldProbeLatdevCustomTeleportGameTime,
+                                autoCreateWorldProbeLatdevCustomTeleportWallTimeMs,
+                                teleportWaitTicks)) {
                             return;
                         }
-                        if (!verifyAutoCreateWorldProbeTargetBiome(client)) {
+                        long targetVerifyExtraWaitTicks = getAutoCreateWorldProbeLatdevTargetVerifyExtraWaitTicks();
+                        boolean finalTargetVerifyAttempt = targetVerifyExtraWaitTicks <= 0
+                                || hasAutoCreateWorldProbeWaitElapsed(client,
+                                autoCreateWorldProbeLatdevCustomTeleportGameTime,
+                                autoCreateWorldProbeLatdevCustomTeleportWallTimeMs,
+                                teleportWaitTicks + targetVerifyExtraWaitTicks);
+                        if (!verifyAutoCreateWorldProbeTargetBiome(client, finalTargetVerifyAttempt)) {
+                            if (!finalTargetVerifyAttempt) {
+                                return;
+                            }
                             LatitudeClientState.markAutoCreateWorldProbeDiagnosticsCaptured();
                             client.stop();
                             return;
@@ -367,7 +429,10 @@ public class GlobeModClient implements ClientModInitializer {
                         return;
                     }
                     long commandWaitTicks = getAutoCreateWorldProbeLatdevCommandWaitTicks();
-                    if (client.level.getGameTime() - autoCreateWorldProbeLatdevCommandsSentGameTime < commandWaitTicks) {
+                    if (!hasAutoCreateWorldProbeWaitElapsed(client,
+                            autoCreateWorldProbeLatdevCommandsSentGameTime,
+                            autoCreateWorldProbeLatdevCommandsSentWallTimeMs,
+                            commandWaitTicks)) {
                         return;
                     }
                 }
@@ -381,6 +446,23 @@ public class GlobeModClient implements ClientModInitializer {
         if (LatitudeClientState.isAutoCreateWorldProbeTimedOut()) {
             return;
         }
+    }
+
+    private static Screen clearAutoCreateWorldProbePauseScreen(Minecraft client, Screen screen) {
+        if (!(screen instanceof PauseScreen)
+                || !LatitudeClientState.isAutoCreateWorldProbeWorldEntered()
+                || LatitudeClientState.isAutoCreateWorldProbeDiagnosticsCaptured()
+                || LatitudeClientState.isAutoCreateWorldProbeTimedOut()
+                || client.level == null
+                || client.player == null) {
+            return screen;
+        }
+
+        GlobeMod.LOGGER.info("[LAT][CWPATH] clearing pause screen during autoCreateWorldProbe phase={} worldTime={}",
+                LatitudeClientState.getAutoCreateWorldProbePhase(),
+                client.level.getGameTime());
+        client.setScreen(null);
+        return client.screen;
     }
 
     private static void emitAutoCreateWorldProbeTimeoutDiagnostics(Minecraft client, long startMs, long timeoutMs) {
@@ -513,6 +595,22 @@ public class GlobeModClient implements ClientModInitializer {
         return trimmedProperty("latitude.debug.autoCreateWorldProbe.latdevTargetBiome");
     }
 
+    private static String getAutoCreateWorldProbeLatdevTargetBandRaw() {
+        String explicit = trimmedProperty("latitude.debug.autoCreateWorldProbe.latdevTargetBand");
+        if (explicit == null) {
+            explicit = trimmedProperty("latitude.debug.autoCreateWorldProbe.latdevRequiredBand");
+        }
+        return explicit;
+    }
+
+    private static LatitudeBands.Band getAutoCreateWorldProbeLatdevTargetBand() {
+        return LatitudeBands.fromCanonicalId(getAutoCreateWorldProbeLatdevTargetBandRaw());
+    }
+
+    private static String bandProofLabel(LatitudeBands.Band band) {
+        return band != null ? band.id() : "<any>";
+    }
+
     private static boolean isAutoCreateWorldProbeLatdevTargetRequired() {
         String explicit = trimmedProperty("latitude.debug.autoCreateWorldProbe.latdevRequireTargetBiome");
         if (explicit != null) {
@@ -546,9 +644,52 @@ public class GlobeModClient implements ClientModInitializer {
                 DEFAULT_AUTO_CREATE_WORLD_PROBE_LATDEV_CUSTOM_SCAN_STEP, 4, 128);
     }
 
+    private static boolean isAutoCreateWorldProbeLatdevLiveTargetSearchEnabled() {
+        return Boolean.getBoolean("latitude.debug.autoCreateWorldProbe.latdevLiveTargetSearch");
+    }
+
+    private static int getAutoCreateWorldProbeLatdevLiveTargetSearchRadius() {
+        return getIntProperty("latitude.debug.autoCreateWorldProbe.latdevLiveTargetSearchRadius",
+                DEFAULT_AUTO_CREATE_WORLD_PROBE_LATDEV_TARGET_SEARCH_RADIUS, 16, 7500);
+    }
+
+    private static int getAutoCreateWorldProbeLatdevLiveTargetSearchStep() {
+        return getIntProperty("latitude.debug.autoCreateWorldProbe.latdevLiveTargetSearchStep",
+                DEFAULT_AUTO_CREATE_WORLD_PROBE_LATDEV_TARGET_SEARCH_STEP, 4, 128);
+    }
+
+    private static int getAutoCreateWorldProbeLatdevLiveTargetSearchMaxSamples() {
+        return getIntProperty("latitude.debug.autoCreateWorldProbe.latdevLiveTargetSearchMaxSamples",
+                DEFAULT_AUTO_CREATE_WORLD_PROBE_LATDEV_TARGET_SEARCH_MAX_SAMPLES, 100, 250000);
+    }
+
+    private static int getAutoCreateWorldProbeLatdevLiveTargetSearchMaxChunks() {
+        return getIntProperty("latitude.debug.autoCreateWorldProbe.latdevLiveTargetSearchMaxChunks",
+                DEFAULT_AUTO_CREATE_WORLD_PROBE_LATDEV_TARGET_SEARCH_MAX_CHUNKS, 1, 20000);
+    }
+
+    private static int getAutoCreateWorldProbeLatdevLiveTargetSearchChunksPerBatch() {
+        return getIntProperty("latitude.debug.autoCreateWorldProbe.latdevLiveTargetSearchChunksPerBatch",
+                DEFAULT_AUTO_CREATE_WORLD_PROBE_LATDEV_TARGET_SEARCH_CHUNKS_PER_BATCH, 1, 64);
+    }
+
+    private static int getAutoCreateWorldProbeLatdevLiveTargetSearchProgressChunks() {
+        return getIntProperty("latitude.debug.autoCreateWorldProbe.latdevLiveTargetSearchProgressChunks",
+                DEFAULT_AUTO_CREATE_WORLD_PROBE_LATDEV_TARGET_SEARCH_PROGRESS_CHUNKS, 1, 4096);
+    }
+
     private static long getAutoCreateWorldProbeLatdevTeleportWaitTicks() {
         return getIntProperty("latitude.debug.autoCreateWorldProbe.latdevTeleportWaitTicks",
                 DEFAULT_AUTO_CREATE_WORLD_PROBE_LATDEV_TELEPORT_WAIT_TICKS, 1, 600);
+    }
+
+    private static long getAutoCreateWorldProbeLatdevTargetVerifyExtraWaitTicks() {
+        return getIntProperty("latitude.debug.autoCreateWorldProbe.latdevTargetVerifyExtraWaitTicks",
+                DEFAULT_AUTO_CREATE_WORLD_PROBE_LATDEV_TARGET_VERIFY_EXTRA_WAIT_TICKS, 0, 1200);
+    }
+
+    private static boolean isAutoCreateWorldProbeLatdevForceLoadTargetEnabled() {
+        return Boolean.getBoolean("latitude.debug.autoCreateWorldProbe.latdevForceLoadTarget");
     }
 
     private static void applyAutoCreateWorldProbeInputs(LatitudeCreateWorldScreen screen) {
@@ -610,7 +751,11 @@ public class GlobeModClient implements ClientModInitializer {
         if (sendAutoCreateWorldProbeConfiguredTeleport(client)) {
             return true;
         }
-        if (getAutoCreateWorldProbeLatdevTargetBiomeId() != null) {
+        String targetBiomeId = getAutoCreateWorldProbeLatdevTargetBiomeId();
+        if (targetBiomeId != null && sendAutoCreateWorldProbeServerLiveTargetSearch(client, targetBiomeId)) {
+            return true;
+        }
+        if (targetBiomeId != null) {
             GlobeMod.LOGGER.error("[LAT][CWPATH][PROOF_FAIL] target biome was requested but configured target teleport was unavailable; not falling back to loaded-chunk scan");
             client.stop();
             return true;
@@ -628,7 +773,426 @@ public class GlobeModClient implements ClientModInitializer {
                 hit.biomeId, hit.x, hit.z, String.format(Locale.ROOT, "%.1f", hit.distanceBlocks));
         client.player.connection.sendCommand(command);
         autoCreateWorldProbeLatdevCustomTeleportGameTime = client.level.getGameTime();
+        autoCreateWorldProbeLatdevCustomTeleportWallTimeMs = System.currentTimeMillis();
         return true;
+    }
+
+    private static boolean sendAutoCreateWorldProbeServerLiveTargetSearch(Minecraft client, String expectedBiome) {
+        if (!isAutoCreateWorldProbeLatdevLiveTargetSearchEnabled() || expectedBiome == null) {
+            return false;
+        }
+        IntegratedServer server = client.getSingleplayerServer();
+        if (server == null || client.player == null || client.level == null) {
+            return false;
+        }
+
+        UUID playerId = client.player.getUUID();
+        int centerX = liveTargetSearchCenterBlockX(client);
+        int centerZ = liveTargetSearchCenterBlockZ(client);
+        int sampleY = liveTargetSearchSampleY(client);
+        int radius = getAutoCreateWorldProbeLatdevLiveTargetSearchRadius();
+        int step = getAutoCreateWorldProbeLatdevLiveTargetSearchStep();
+        int maxSamples = getAutoCreateWorldProbeLatdevLiveTargetSearchMaxSamples();
+        int maxChunks = getAutoCreateWorldProbeLatdevLiveTargetSearchMaxChunks();
+        int chunksPerBatch = getAutoCreateWorldProbeLatdevLiveTargetSearchChunksPerBatch();
+        int progressChunks = getAutoCreateWorldProbeLatdevLiveTargetSearchProgressChunks();
+        boolean forceLoad = isAutoCreateWorldProbeLatdevForceLoadTargetEnabled();
+        String requiredBandRaw = getAutoCreateWorldProbeLatdevTargetBandRaw();
+        LatitudeBands.Band requiredBand = getAutoCreateWorldProbeLatdevTargetBand();
+        if (requiredBandRaw != null && requiredBand == null) {
+            GlobeMod.LOGGER.error("[LAT][CWPATH][PROOF_FAIL] invalid live target search band='{}' validBands={}",
+                    requiredBandRaw, LatitudeBands.canonicalIds());
+            client.stop();
+            return true;
+        }
+        int localStep = liveTargetSearchLocalStep(step);
+        ArrayDeque<Long> chunksToSearch = planLiveTargetSearchChunks(centerX, centerZ, radius, maxChunks);
+        if (chunksToSearch.isEmpty()) {
+            GlobeMod.LOGGER.error("[LAT][CWPATH][PROOF_FAIL] [LATDEV_LIVE_TARGET_SEARCH] no chunks planned target={} centerX={} centerZ={} radius={} maxChunks={}",
+                    expectedBiome, centerX, centerZ, radius, maxChunks);
+            client.stop();
+            return true;
+        }
+        autoCreateWorldProbeLatdevServerTargetSetupPending = true;
+        autoCreateWorldProbeLatdevServerTargetSetupComplete = false;
+        autoCreateWorldProbeLatdevServerTargetSetupCompleteObserved = false;
+        autoCreateWorldProbeLatdevServerTargetSetupFailed = false;
+        autoCreateWorldProbeLatdevLiveTargetSearchBatchQueued = false;
+        autoCreateWorldProbeLatdevCustomTeleportGameTime = Long.MIN_VALUE;
+        LiveTargetSearchState searchState = new LiveTargetSearchState(
+                playerId,
+                expectedBiome,
+                centerX,
+                centerZ,
+                sampleY,
+                radius,
+                step,
+                localStep,
+                maxSamples,
+                maxChunks,
+                chunksPerBatch,
+                progressChunks,
+                forceLoad,
+                requiredBand,
+                chunksToSearch);
+        autoCreateWorldProbeLatdevLiveTargetSearchState = searchState;
+        GlobeMod.LOGGER.info("[LATDEV_LIVE_TARGET_SEARCH] queued target={} targetBand={} centerX={} centerZ={} y={} radius={} step={} localStep={} maxSamples={} maxChunks={} plannedChunks={} chunksPerBatch={} progressChunks={}",
+                expectedBiome, bandProofLabel(requiredBand), centerX, centerZ, sampleY, radius, step, localStep, maxSamples, maxChunks,
+                chunksToSearch.size(), chunksPerBatch, progressChunks);
+        scheduleAutoCreateWorldProbeLiveTargetSearchBatch(server, searchState);
+        return true;
+    }
+
+    private static void scheduleAutoCreateWorldProbeLiveTargetSearchBatch(IntegratedServer server,
+                                                                          LiveTargetSearchState state) {
+        if (server == null || state == null || autoCreateWorldProbeLatdevLiveTargetSearchState != state
+                || autoCreateWorldProbeLatdevLiveTargetSearchBatchQueued) {
+            return;
+        }
+        autoCreateWorldProbeLatdevLiveTargetSearchBatchQueued = true;
+        server.execute(() -> runAutoCreateWorldProbeLiveTargetSearchBatch(server, state));
+    }
+
+    private static void runAutoCreateWorldProbeLiveTargetSearchBatch(IntegratedServer server,
+                                                                     LiveTargetSearchState state) {
+        try {
+            if (autoCreateWorldProbeLatdevLiveTargetSearchState != state) {
+                return;
+            }
+            ServerPlayer serverPlayer = server.getPlayerList().getPlayer(state.playerId);
+            if (serverPlayer == null) {
+                autoCreateWorldProbeLatdevServerTargetSetupFailed = true;
+                autoCreateWorldProbeLatdevServerTargetSetupPending = false;
+                autoCreateWorldProbeLatdevLiveTargetSearchState = null;
+                GlobeMod.LOGGER.error("[LAT][CWPATH][PROOF_FAIL] live target search could not find server player expectedBiome={}",
+                        state.expectedBiome);
+                return;
+            }
+
+            ServerLevel level = serverPlayer.level();
+            if (tryCompletePendingLiveTargetSearchHit(level, serverPlayer, state)) {
+                return;
+            }
+            if (!state.startedLogged) {
+                state.startedLogged = true;
+                GlobeMod.LOGGER.info("[LATDEV_LIVE_TARGET_SEARCH] started target={} targetBand={} centerX={} centerZ={} y={} radius={} step={} localStep={} maxSamples={} maxChunks={} plannedChunks={} chunksPerBatch={} level={}",
+                        state.expectedBiome, bandProofLabel(state.requiredBand), state.centerX, state.centerZ, state.sampleY, state.radius, state.step,
+                        state.localStep, state.maxSamples, state.maxChunks, state.plannedChunks,
+                        state.chunksPerBatch, level.dimension().identifier());
+            }
+
+            LiveTargetSearchHit hit = null;
+            int batchChunks = 0;
+            while (batchChunks < state.chunksPerBatch
+                    && !state.chunksToSearch.isEmpty()
+                    && state.samples < state.maxSamples
+                    && hit == null) {
+                long packedChunk = state.chunksToSearch.removeFirst();
+                int chunkX = unpackChunkX(packedChunk);
+                int chunkZ = unpackChunkZ(packedChunk);
+                hit = searchLiveTargetChunk(level, state, chunkX, chunkZ);
+                batchChunks++;
+            }
+
+            if (hit != null) {
+                if (beginOrCompleteLiveTargetSearchHit(level, serverPlayer, state, hit)) {
+                    return;
+                }
+                return;
+            }
+
+            maybeLogLiveTargetSearchProgress(state);
+            if (state.chunksToSearch.isEmpty() || state.samples >= state.maxSamples) {
+                autoCreateWorldProbeLatdevServerTargetSetupFailed = true;
+                autoCreateWorldProbeLatdevServerTargetSetupPending = false;
+                autoCreateWorldProbeLatdevLiveTargetSearchState = null;
+                GlobeMod.LOGGER.error("[LAT][CWPATH][PROOF_FAIL] [LATDEV_LIVE_TARGET_SEARCH] miss target={} targetBand={} centerX={} centerZ={} y={} radius={} step={} localStep={} samples={} chunksLoaded={} plannedChunks={} remainingChunks={} maxChunks={} bandRejectedHits={} elapsedMs={}",
+                        state.expectedBiome, bandProofLabel(state.requiredBand), state.centerX, state.centerZ, state.sampleY, state.radius, state.step,
+                        state.localStep, state.samples, state.chunksSearched, state.plannedChunks,
+                        state.chunksToSearch.size(), state.maxChunks, state.bandRejectedHits, state.elapsedMs());
+            }
+        } catch (RuntimeException e) {
+            autoCreateWorldProbeLatdevServerTargetSetupFailed = true;
+            autoCreateWorldProbeLatdevServerTargetSetupPending = false;
+            autoCreateWorldProbeLatdevLiveTargetSearchState = null;
+            GlobeMod.LOGGER.error("[LAT][CWPATH][PROOF_FAIL] live target search failed target={} targetBand={} centerX={} centerZ={} y={} radius={} step={} samples={} chunksLoaded={} remainingChunks={} maxChunks={} bandRejectedHits={}",
+                    state.expectedBiome, bandProofLabel(state.requiredBand), state.centerX, state.centerZ, state.sampleY, state.radius, state.step,
+                    state.samples, state.chunksSearched, state.chunksToSearch.size(), state.maxChunks, state.bandRejectedHits, e);
+        } finally {
+            autoCreateWorldProbeLatdevLiveTargetSearchBatchQueued = false;
+        }
+    }
+
+    private static void completeLiveTargetSearchHit(ServerLevel level,
+                                                    ServerPlayer serverPlayer,
+                                                    LiveTargetSearchState state,
+                                                    LiveTargetSearchHit hit) {
+        int hitChunkX = Math.floorDiv(hit.x(), 16);
+        int hitChunkZ = Math.floorDiv(hit.z(), 16);
+        if (!state.pendingHitFullChunkRequested) {
+            state.pendingHitFullChunkRequested = true;
+            GlobeMod.LOGGER.info("[LATDEV_LIVE_TARGET_SEARCH] request full chunk async chunk={},{} target={} targetBand={} forceLoadRequested={} action=await_full_chunk_future",
+                    hitChunkX, hitChunkZ, state.expectedBiome, bandProofLabel(state.requiredBand), state.forceLoad);
+            CompletableFuture<ChunkResult<ChunkAccess>> future = level.getChunkSource()
+                    .getChunkFuture(hitChunkX, hitChunkZ, ChunkStatus.FULL, true);
+            future.whenComplete((result, throwable) -> level.getServer().execute(() ->
+                    finishLiveTargetSearchHitAfterFullChunk(level, state, hit, result, throwable)));
+            if (!state.pendingHitWaitingLogged) {
+                state.pendingHitWaitingLogged = true;
+                GlobeMod.LOGGER.info("[LATDEV_LIVE_TARGET_SEARCH] hit pending full chunk target={} x={} z={} action=retry_next_tick",
+                        state.expectedBiome, hit.x(), hit.z());
+            }
+            return;
+        }
+
+        if (!state.pendingHitWaitingLogged) {
+            state.pendingHitWaitingLogged = true;
+            GlobeMod.LOGGER.info("[LATDEV_LIVE_TARGET_SEARCH] hit pending full chunk target={} x={} z={} action=await_existing_future",
+                    state.expectedBiome, hit.x(), hit.z());
+        }
+    }
+
+    private static void finishLiveTargetSearchHitAfterFullChunk(ServerLevel level,
+                                                                LiveTargetSearchState state,
+                                                                LiveTargetSearchHit hit,
+                                                                ChunkResult<ChunkAccess> result,
+                                                                Throwable throwable) {
+        if (autoCreateWorldProbeLatdevLiveTargetSearchState != state || state.pendingHit != hit) {
+            return;
+        }
+        if (throwable != null) {
+            autoCreateWorldProbeLatdevServerTargetSetupFailed = true;
+            autoCreateWorldProbeLatdevServerTargetSetupPending = false;
+            autoCreateWorldProbeLatdevLiveTargetSearchState = null;
+            GlobeMod.LOGGER.error("[LAT][CWPATH][PROOF_FAIL] live target async full chunk failed target={} x={} z={}",
+                    state.expectedBiome, hit.x(), hit.z(), throwable);
+            return;
+        }
+        ChunkAccess chunk = result != null ? result.orElse(null) : null;
+        if (chunk == null) {
+            autoCreateWorldProbeLatdevServerTargetSetupFailed = true;
+            autoCreateWorldProbeLatdevServerTargetSetupPending = false;
+            autoCreateWorldProbeLatdevLiveTargetSearchState = null;
+            String error = result != null ? result.getError() : "missing chunk result";
+            GlobeMod.LOGGER.error("[LAT][CWPATH][PROOF_FAIL] live target async full chunk unavailable target={} x={} z={} error={}",
+                    state.expectedBiome, hit.x(), hit.z(), error);
+            return;
+        }
+        ServerPlayer serverPlayer = level.getServer().getPlayerList().getPlayer(state.playerId);
+        if (serverPlayer == null) {
+            autoCreateWorldProbeLatdevServerTargetSetupFailed = true;
+            autoCreateWorldProbeLatdevServerTargetSetupPending = false;
+            autoCreateWorldProbeLatdevLiveTargetSearchState = null;
+            GlobeMod.LOGGER.error("[LAT][CWPATH][PROOF_FAIL] live target async full chunk could not find server player expectedBiome={}",
+                    state.expectedBiome);
+            return;
+        }
+        finishLiveTargetSearchHit(level, serverPlayer, state, hit);
+    }
+
+    private static void finishLiveTargetSearchHit(ServerLevel level,
+                                                  ServerPlayer serverPlayer,
+                                                  LiveTargetSearchState state,
+                                                  LiveTargetSearchHit hit) {
+        SurfaceTeleportTarget surfaceTarget = prepareAutoCreateWorldProbeSurfaceTarget(level, hit.x(), hit.z());
+        String verifyBiome = biomeId(level.getBiome(new BlockPos(hit.x(), surfaceTarget.safeY(), hit.z())));
+        GlobeMod.LOGGER.info("[LATDEV_LIVE_TARGET_SEARCH] hit target={} biome={} x={} sampleY={} safeY={} z={} latDeg={} band={} targetBand={} dist={} samples={} chunksLoaded={} loadedTeleportChunks={} plannedChunks={} bandRejectedHits={} elapsedMs={}",
+                state.expectedBiome,
+                verifyBiome,
+                hit.x(),
+                state.sampleY,
+                surfaceTarget.safeY(),
+                hit.z(),
+                String.format(Locale.ROOT, "%.2f", hit.latDeg()),
+                hit.band().id(),
+                bandProofLabel(state.requiredBand),
+                String.format(Locale.ROOT, "%.1f", hit.distanceBlocks()),
+                state.samples,
+                state.chunksSearched,
+                surfaceTarget.loadedChunks(),
+                state.plannedChunks,
+                state.bandRejectedHits,
+                state.elapsedMs());
+        teleportAutoCreateWorldProbePlayerToSurface(level, serverPlayer, hit.x() + 0.5, surfaceTarget.safeY(), hit.z() + 0.5);
+        autoCreateWorldProbeLatdevLiveTargetSearchState = null;
+        autoCreateWorldProbeLatdevServerTargetSetupComplete = true;
+        autoCreateWorldProbeLatdevServerTargetSetupPending = false;
+        GlobeMod.LOGGER.info("[LAT][CWPATH] server teleported player to live target search hit: x={} sampleY={} safeY={} z={} expectedBiome={} expectedBand={}",
+                String.format(Locale.ROOT, "%.1f", hit.x() + 0.5),
+                state.sampleY,
+                surfaceTarget.safeY(),
+                String.format(Locale.ROOT, "%.1f", hit.z() + 0.5),
+                state.expectedBiome,
+                bandProofLabel(state.requiredBand));
+    }
+
+    private static boolean beginOrCompleteLiveTargetSearchHit(ServerLevel level,
+                                                              ServerPlayer serverPlayer,
+                                                              LiveTargetSearchState state,
+                                                              LiveTargetSearchHit hit) {
+        state.pendingHit = hit;
+        completeLiveTargetSearchHit(level, serverPlayer, state, hit);
+        return autoCreateWorldProbeLatdevLiveTargetSearchState == null;
+    }
+
+    private static boolean tryCompletePendingLiveTargetSearchHit(ServerLevel level,
+                                                                 ServerPlayer serverPlayer,
+                                                                 LiveTargetSearchState state) {
+        if (state.pendingHit == null) {
+            return false;
+        }
+        completeLiveTargetSearchHit(level, serverPlayer, state, state.pendingHit);
+        return true;
+    }
+
+    private static void maybeLogLiveTargetSearchProgress(LiveTargetSearchState state) {
+        if (state.chunksSearched - state.lastProgressChunks < state.progressChunks
+                && !state.chunksToSearch.isEmpty()
+                && state.samples < state.maxSamples) {
+            return;
+        }
+        state.lastProgressChunks = state.chunksSearched;
+        GlobeMod.LOGGER.info("[LATDEV_LIVE_TARGET_SEARCH] progress target={} targetBand={} samples={} chunksLoaded={} plannedChunks={} remainingChunks={} bandRejectedHits={} elapsedMs={}",
+                state.expectedBiome,
+                bandProofLabel(state.requiredBand),
+                state.samples,
+                state.chunksSearched,
+                state.plannedChunks,
+                state.chunksToSearch.size(),
+                state.bandRejectedHits,
+                state.elapsedMs());
+    }
+
+    private static ArrayDeque<Long> planLiveTargetSearchChunks(int centerX, int centerZ, int radius, int maxChunks) {
+        ArrayDeque<Long> chunks = new ArrayDeque<>();
+        int centerChunkX = Math.floorDiv(centerX, 16);
+        int centerChunkZ = Math.floorDiv(centerZ, 16);
+        int chunkRadius = Math.max(0, Math.floorDiv(radius + 15, 16));
+        addLiveTargetSearchChunk(chunks, centerX, centerZ, radius, maxChunks, centerChunkX, centerChunkZ);
+        for (int ring = 1; ring <= chunkRadius && chunks.size() < maxChunks; ring++) {
+            for (int offset = -ring; offset <= ring && chunks.size() < maxChunks; offset++) {
+                addLiveTargetSearchChunk(chunks, centerX, centerZ, radius, maxChunks,
+                        centerChunkX + offset, centerChunkZ - ring);
+                addLiveTargetSearchChunk(chunks, centerX, centerZ, radius, maxChunks,
+                        centerChunkX + offset, centerChunkZ + ring);
+            }
+            for (int offset = -ring + 1; offset <= ring - 1 && chunks.size() < maxChunks; offset++) {
+                addLiveTargetSearchChunk(chunks, centerX, centerZ, radius, maxChunks,
+                        centerChunkX - ring, centerChunkZ + offset);
+                addLiveTargetSearchChunk(chunks, centerX, centerZ, radius, maxChunks,
+                        centerChunkX + ring, centerChunkZ + offset);
+            }
+        }
+        return chunks;
+    }
+
+    private static void addLiveTargetSearchChunk(ArrayDeque<Long> chunks,
+                                                 int centerX,
+                                                 int centerZ,
+                                                 int radius,
+                                                 int maxChunks,
+                                                 int chunkX,
+                                                 int chunkZ) {
+        if (chunks.size() >= maxChunks || !liveTargetSearchChunkIntersectsRadius(centerX, centerZ, radius, chunkX, chunkZ)) {
+            return;
+        }
+        chunks.add(packChunk(chunkX, chunkZ));
+    }
+
+    private static boolean liveTargetSearchChunkIntersectsRadius(int centerX, int centerZ, int radius, int chunkX, int chunkZ) {
+        int minX = chunkX << 4;
+        int minZ = chunkZ << 4;
+        int maxX = minX + 15;
+        int maxZ = minZ + 15;
+        long dx = centerX < minX ? (long) minX - centerX : (centerX > maxX ? (long) centerX - maxX : 0L);
+        long dz = centerZ < minZ ? (long) minZ - centerZ : (centerZ > maxZ ? (long) centerZ - maxZ : 0L);
+        long radiusLong = radius;
+        return dx * dx + dz * dz <= radiusLong * radiusLong;
+    }
+
+    private static long packChunk(int chunkX, int chunkZ) {
+        return (((long) chunkX) << 32) ^ (chunkZ & 0xffffffffL);
+    }
+
+    private static int unpackChunkX(long packed) {
+        return (int) (packed >> 32);
+    }
+
+    private static int unpackChunkZ(long packed) {
+        return (int) packed;
+    }
+
+    private static int liveTargetSearchCenterBlockX(Minecraft client) {
+        Double explicit = getDoubleProperty("latitude.debug.autoCreateWorldProbe.latdevLiveTargetSearchCenterX");
+        if (explicit == null) {
+            explicit = getDoubleProperty("latitude.debug.autoCreateWorldProbe.latdevTargetSearchCenterX");
+        }
+        if (explicit == null) {
+            explicit = getDoubleProperty("latitude.debug.autoCreateWorldProbe.latdevTargetX");
+        }
+        return explicit != null ? (int) Math.floor(explicit) : client.player.blockPosition().getX();
+    }
+
+    private static int liveTargetSearchCenterBlockZ(Minecraft client) {
+        Double explicit = getDoubleProperty("latitude.debug.autoCreateWorldProbe.latdevLiveTargetSearchCenterZ");
+        if (explicit == null) {
+            explicit = getDoubleProperty("latitude.debug.autoCreateWorldProbe.latdevTargetSearchCenterZ");
+        }
+        if (explicit == null) {
+            explicit = getDoubleProperty("latitude.debug.autoCreateWorldProbe.latdevTargetZ");
+        }
+        return explicit != null ? (int) Math.floor(explicit) : client.player.blockPosition().getZ();
+    }
+
+    private static int liveTargetSearchSampleY(Minecraft client) {
+        Double explicit = getDoubleProperty("latitude.debug.autoCreateWorldProbe.latdevLiveTargetSearchY");
+        if (explicit == null) {
+            explicit = getDoubleProperty("latitude.debug.autoCreateWorldProbe.latdevTargetSearchY");
+        }
+        if (explicit == null) {
+            explicit = getDoubleProperty("latitude.debug.autoCreateWorldProbe.latdevTargetY");
+        }
+        return explicit != null ? (int) Math.floor(explicit) : client.player.blockPosition().getY();
+    }
+
+    private static int liveTargetSearchLocalStep(int configuredStep) {
+        if (configuredStep <= 4) {
+            return 4;
+        }
+        if (configuredStep <= 8) {
+            return 8;
+        }
+        return 16;
+    }
+
+    private static LiveTargetSearchHit searchLiveTargetChunk(ServerLevel level,
+                                                            LiveTargetSearchState state,
+                                                            int chunkX,
+                                                            int chunkZ) {
+        state.chunksSearched++;
+        level.getChunkSource().getChunk(chunkX, chunkZ, ChunkStatus.BIOMES, true);
+
+        int firstLocal = state.localStep >= 16 ? 8 : (state.localStep >= 8 ? 4 : 2);
+        for (int localZ = firstLocal; localZ < 16 && state.samples < state.maxSamples; localZ += state.localStep) {
+            for (int localX = firstLocal; localX < 16 && state.samples < state.maxSamples; localX += state.localStep) {
+                state.samples++;
+                int x = (chunkX << 4) + localX;
+                int z = (chunkZ << 4) + localZ;
+                String biome = biomeId(level.getBiome(new BlockPos(x, state.sampleY, z)));
+                if (!state.expectedBiome.equals(biome)) {
+                    continue;
+                }
+                double latDeg = LatitudeMath.absLatDegExact(level.getWorldBorder(), z);
+                LatitudeBands.Band band = LatitudeBands.fromAbsoluteLatitudeDeg(latDeg);
+                if (state.requiredBand != null && state.requiredBand != band) {
+                    state.bandRejectedHits++;
+                    continue;
+                }
+                double dist = Math.hypot(x - state.centerX, z - state.centerZ);
+                return new LiveTargetSearchHit(x, z, dist, latDeg, band);
+            }
+        }
+        return null;
     }
 
     private static boolean sendAutoCreateWorldProbeConfiguredTeleport(Minecraft client) {
@@ -641,6 +1205,9 @@ public class GlobeModClient implements ClientModInitializer {
         double targetY = y != null ? y : client.player.getY();
         String expectedBiome = getAutoCreateWorldProbeLatdevTargetBiomeId();
         String command = String.format(Locale.ROOT, "tp @s %.1f %.1f %.1f", x, targetY, z);
+        if (sendAutoCreateWorldProbeServerTargetSetup(client, x, targetY, z, expectedBiome)) {
+            return true;
+        }
         GlobeMod.LOGGER.info("[LAT][CWPATH] teleporting player to configured latdev proof target: x={} y={} z={} expectedBiome={}",
                 String.format(Locale.ROOT, "%.1f", x),
                 String.format(Locale.ROOT, "%.1f", targetY),
@@ -648,10 +1215,211 @@ public class GlobeModClient implements ClientModInitializer {
                 expectedBiome != null ? expectedBiome : "<unspecified>");
         client.player.connection.sendCommand(command);
         autoCreateWorldProbeLatdevCustomTeleportGameTime = client.level.getGameTime();
+        autoCreateWorldProbeLatdevCustomTeleportWallTimeMs = System.currentTimeMillis();
         return true;
     }
 
-    private static boolean verifyAutoCreateWorldProbeTargetBiome(Minecraft client) {
+    private static boolean sendAutoCreateWorldProbeServerTargetSetup(Minecraft client, double x, double y, double z,
+                                                                     String expectedBiome) {
+        IntegratedServer server = client.getSingleplayerServer();
+        if (server == null || client.player == null || client.level == null) {
+            return false;
+        }
+
+        UUID playerId = client.player.getUUID();
+        int targetBlockX = (int) Math.floor(x);
+        int targetBlockZ = (int) Math.floor(z);
+        int chunkX = Math.floorDiv(targetBlockX, 16);
+        int chunkZ = Math.floorDiv(targetBlockZ, 16);
+        boolean forceLoad = isAutoCreateWorldProbeLatdevForceLoadTargetEnabled();
+        autoCreateWorldProbeLatdevServerTargetSetupPending = true;
+        autoCreateWorldProbeLatdevServerTargetSetupComplete = false;
+        autoCreateWorldProbeLatdevServerTargetSetupCompleteObserved = false;
+        autoCreateWorldProbeLatdevServerTargetSetupFailed = false;
+        autoCreateWorldProbeLatdevCustomTeleportGameTime = Long.MIN_VALUE;
+        GlobeMod.LOGGER.info("[LAT][CWPATH] server target setup queued chunk={},{} blockX={} blockZ={} expectedBiome={}",
+                chunkX,
+                chunkZ,
+                targetBlockX,
+                targetBlockZ,
+                expectedBiome != null ? expectedBiome : "<unspecified>");
+        server.execute(() -> {
+            try {
+                GlobeMod.LOGGER.info("[LAT][CWPATH] server target setup started chunk={},{} blockX={} blockZ={} expectedBiome={}",
+                        chunkX,
+                        chunkZ,
+                        targetBlockX,
+                        targetBlockZ,
+                        expectedBiome != null ? expectedBiome : "<unspecified>");
+                ServerPlayer serverPlayer = server.getPlayerList().getPlayer(playerId);
+                if (serverPlayer == null) {
+                    autoCreateWorldProbeLatdevServerTargetSetupFailed = true;
+                    GlobeMod.LOGGER.error("[LAT][CWPATH][PROOF_FAIL] configured latdev proof target setup could not find server player expectedBiome={}",
+                            expectedBiome != null ? expectedBiome : "<unspecified>");
+                    return;
+                }
+                ServerLevel level = serverPlayer.level();
+                GlobeMod.LOGGER.info("[LAT][CWPATH] server requesting configured latdev proof target full chunk async chunk={},{} blockX={} blockZ={} forceLoadRequested={}",
+                        chunkX, chunkZ, targetBlockX, targetBlockZ, forceLoad);
+                CompletableFuture<ChunkResult<ChunkAccess>> future = level.getChunkSource()
+                        .getChunkFuture(chunkX, chunkZ, ChunkStatus.FULL, true);
+                future.whenComplete((result, throwable) -> server.execute(() ->
+                        finishAutoCreateWorldProbeServerTargetSetup(level, playerId, x, y, z,
+                                expectedBiome, targetBlockX, targetBlockZ, chunkX, chunkZ, result, throwable)));
+            } catch (RuntimeException e) {
+                autoCreateWorldProbeLatdevServerTargetSetupFailed = true;
+                autoCreateWorldProbeLatdevServerTargetSetupPending = false;
+                GlobeMod.LOGGER.error("[LAT][CWPATH][PROOF_FAIL] configured latdev proof target setup failed chunk={},{} expectedBiome={}",
+                        chunkX,
+                        chunkZ,
+                        expectedBiome != null ? expectedBiome : "<unspecified>",
+                        e);
+            }
+        });
+        return true;
+    }
+
+    private static void finishAutoCreateWorldProbeServerTargetSetup(ServerLevel level,
+                                                                    UUID playerId,
+                                                                    double x,
+                                                                    double y,
+                                                                    double z,
+                                                                    String expectedBiome,
+                                                                    int targetBlockX,
+                                                                    int targetBlockZ,
+                                                                    int chunkX,
+                                                                    int chunkZ,
+                                                                    ChunkResult<ChunkAccess> result,
+                                                                    Throwable throwable) {
+        try {
+            if (throwable != null) {
+                autoCreateWorldProbeLatdevServerTargetSetupFailed = true;
+                GlobeMod.LOGGER.error("[LAT][CWPATH][PROOF_FAIL] configured latdev proof target async full chunk failed chunk={},{} expectedBiome={}",
+                        chunkX,
+                        chunkZ,
+                        expectedBiome != null ? expectedBiome : "<unspecified>",
+                        throwable);
+                return;
+            }
+            ChunkAccess chunk = result != null ? result.orElse(null) : null;
+            if (chunk == null) {
+                autoCreateWorldProbeLatdevServerTargetSetupFailed = true;
+                String error = result != null ? result.getError() : "missing chunk result";
+                GlobeMod.LOGGER.error("[LAT][CWPATH][PROOF_FAIL] configured latdev proof target async full chunk unavailable chunk={},{} expectedBiome={} error={}",
+                        chunkX,
+                        chunkZ,
+                        expectedBiome != null ? expectedBiome : "<unspecified>",
+                        error);
+                return;
+            }
+            ServerPlayer serverPlayer = level.getServer().getPlayerList().getPlayer(playerId);
+            if (serverPlayer == null) {
+                autoCreateWorldProbeLatdevServerTargetSetupFailed = true;
+                GlobeMod.LOGGER.error("[LAT][CWPATH][PROOF_FAIL] configured latdev proof target setup could not find server player expectedBiome={}",
+                        expectedBiome != null ? expectedBiome : "<unspecified>");
+                return;
+            }
+            SurfaceTeleportTarget surfaceTarget = prepareAutoCreateWorldProbeSurfaceTarget(level, targetBlockX, targetBlockZ);
+            String serverBiome = biomeId(level.getBiome(new BlockPos(targetBlockX, surfaceTarget.safeY(), targetBlockZ)));
+            GlobeMod.LOGGER.info("[LAT][CWPATH] server loaded configured latdev proof target async chunk={},{} biome={} blockX={} requestedY={} safeY={} blockZ={} loadedTeleportChunks={}",
+                    chunkX,
+                    chunkZ,
+                    serverBiome,
+                    targetBlockX,
+                    (int) Math.floor(y),
+                    surfaceTarget.safeY(),
+                    targetBlockZ,
+                    surfaceTarget.loadedChunks());
+            teleportAutoCreateWorldProbePlayerToSurface(level, serverPlayer, x, surfaceTarget.safeY(), z);
+            autoCreateWorldProbeLatdevServerTargetSetupComplete = true;
+            GlobeMod.LOGGER.info("[LAT][CWPATH] server teleported player to configured latdev proof target: x={} requestedY={} safeY={} z={} expectedBiome={}",
+                    String.format(Locale.ROOT, "%.1f", x),
+                    String.format(Locale.ROOT, "%.1f", y),
+                    surfaceTarget.safeY(),
+                    String.format(Locale.ROOT, "%.1f", z),
+                    expectedBiome != null ? expectedBiome : "<unspecified>");
+        } finally {
+            autoCreateWorldProbeLatdevServerTargetSetupPending = false;
+        }
+    }
+
+    private static SurfaceTeleportTarget prepareAutoCreateWorldProbeSurfaceTarget(ServerLevel level, int blockX, int blockZ) {
+        int chunkX = Math.floorDiv(blockX, 16);
+        int chunkZ = Math.floorDiv(blockZ, 16);
+        int loadedChunks = 0;
+        for (int dz = -1; dz <= 1; dz++) {
+            for (int dx = -1; dx <= 1; dx++) {
+                level.getChunkSource().getChunk(chunkX + dx, chunkZ + dz, ChunkStatus.FULL, true);
+                loadedChunks++;
+            }
+        }
+        BlockPos ground = level.getHeightmapPos(
+                Heightmap.Types.MOTION_BLOCKING_NO_LEAVES,
+                new BlockPos(blockX, level.getMinY(), blockZ));
+        int worldMaxY = level.getMinY() + level.getHeight() - 1;
+        int safeY = Math.max(level.getMinY() + 1, Math.min(ground.getY() + 1, worldMaxY));
+        return new SurfaceTeleportTarget(safeY, loadedChunks);
+    }
+
+    private static void teleportAutoCreateWorldProbePlayerToSurface(ServerLevel level,
+                                                                    ServerPlayer serverPlayer,
+                                                                    double x,
+                                                                    int safeY,
+                                                                    double z) {
+        serverPlayer.teleportTo(level,
+                x,
+                safeY,
+                z,
+                EnumSet.noneOf(Relative.class),
+                serverPlayer.getYRot(),
+                serverPlayer.getXRot(),
+                true);
+        serverPlayer.setDeltaMovement(0.0, 0.0, 0.0);
+        serverPlayer.fallDistance = 0.0F;
+    }
+
+    private static boolean waitForAutoCreateWorldProbeServerTargetSetup(Minecraft client) {
+        if (autoCreateWorldProbeLatdevServerTargetSetupFailed) {
+            GlobeMod.LOGGER.error("[LAT][CWPATH][PROOF_FAIL] configured latdev proof target setup failed before biome verification");
+            LatitudeClientState.markAutoCreateWorldProbeDiagnosticsCaptured();
+            client.stop();
+            return true;
+        }
+        LiveTargetSearchState liveTargetSearchState = autoCreateWorldProbeLatdevLiveTargetSearchState;
+        if (liveTargetSearchState != null
+                && autoCreateWorldProbeLatdevServerTargetSetupPending
+                && !autoCreateWorldProbeLatdevLiveTargetSearchBatchQueued) {
+            IntegratedServer server = client.getSingleplayerServer();
+            if (server == null) {
+                autoCreateWorldProbeLatdevServerTargetSetupFailed = true;
+                autoCreateWorldProbeLatdevServerTargetSetupPending = false;
+                autoCreateWorldProbeLatdevLiveTargetSearchState = null;
+                GlobeMod.LOGGER.error("[LAT][CWPATH][PROOF_FAIL] live target search lost integrated server target={}",
+                        liveTargetSearchState.expectedBiome);
+                return true;
+            }
+            scheduleAutoCreateWorldProbeLiveTargetSearchBatch(server, liveTargetSearchState);
+        }
+        if (autoCreateWorldProbeLatdevServerTargetSetupPending) {
+            return true;
+        }
+        if (autoCreateWorldProbeLatdevServerTargetSetupComplete
+                && !autoCreateWorldProbeLatdevServerTargetSetupCompleteObserved) {
+            if (client.level == null) {
+                return true;
+            }
+            autoCreateWorldProbeLatdevServerTargetSetupCompleteObserved = true;
+            autoCreateWorldProbeLatdevTargetPendingLogged = false;
+            autoCreateWorldProbeLatdevCustomTeleportGameTime = client.level.getGameTime();
+            autoCreateWorldProbeLatdevCustomTeleportWallTimeMs = System.currentTimeMillis();
+            GlobeMod.LOGGER.info("[LAT][CWPATH] client observed server target setup complete; waiting {} ticks before target biome verification",
+                    getAutoCreateWorldProbeLatdevTeleportWaitTicks());
+            return true;
+        }
+        return false;
+    }
+
+    private static boolean verifyAutoCreateWorldProbeTargetBiome(Minecraft client, boolean finalAttempt) {
         String expectedBiome = getAutoCreateWorldProbeLatdevTargetBiomeId();
         if (expectedBiome == null || !isAutoCreateWorldProbeLatdevTargetRequired()) {
             return true;
@@ -660,23 +1428,57 @@ public class GlobeModClient implements ClientModInitializer {
             return true;
         }
         if (client.level == null || client.player == null) {
+            if (!finalAttempt) {
+                return false;
+            }
             GlobeMod.LOGGER.error("[LAT][CWPATH][PROOF_FAIL] cannot verify target biome because client world/player is unavailable expected={}",
                     expectedBiome);
             return false;
         }
         String actualBiome = biomeId(client.level.getBiome(client.player.blockPosition()));
-        if (expectedBiome.equals(actualBiome)) {
+        String expectedBandRaw = getAutoCreateWorldProbeLatdevTargetBandRaw();
+        LatitudeBands.Band expectedBand = getAutoCreateWorldProbeLatdevTargetBand();
+        if (expectedBandRaw != null && expectedBand == null) {
+            GlobeMod.LOGGER.error("[LAT][CWPATH][PROOF_FAIL] invalid configured latdev proof target band='{}' validBands={}",
+                    expectedBandRaw, LatitudeBands.canonicalIds());
+            return false;
+        }
+        double actualLatDeg = LatitudeMath.absLatDegExact(client.level.getWorldBorder(), client.player.getZ());
+        LatitudeBands.Band actualBand = LatitudeBands.fromAbsoluteLatitudeDeg(actualLatDeg);
+        boolean bandMatches = expectedBand == null || expectedBand == actualBand;
+        if (expectedBiome.equals(actualBiome) && bandMatches) {
             autoCreateWorldProbeLatdevTargetVerified = true;
-            GlobeMod.LOGGER.info("[LAT][CWPATH] configured latdev proof target verified: biome={} x={} y={} z={}",
+            GlobeMod.LOGGER.info("[LAT][CWPATH] configured latdev proof target verified: biome={} latDeg={} band={} targetBand={} x={} y={} z={}",
                     actualBiome,
+                    String.format(Locale.ROOT, "%.2f", actualLatDeg),
+                    actualBand.id(),
+                    bandProofLabel(expectedBand),
                     String.format(Locale.ROOT, "%.1f", client.player.getX()),
                     String.format(Locale.ROOT, "%.1f", client.player.getY()),
                     String.format(Locale.ROOT, "%.1f", client.player.getZ()));
             return true;
         }
-        GlobeMod.LOGGER.error("[LAT][CWPATH][PROOF_FAIL] configured latdev proof target biome mismatch expected={} actual={} x={} y={} z={}",
+        if (!finalAttempt) {
+            if (!autoCreateWorldProbeLatdevTargetPendingLogged) {
+                autoCreateWorldProbeLatdevTargetPendingLogged = true;
+                GlobeMod.LOGGER.info("[LAT][CWPATH] configured latdev proof target pending expected={} actual={} expectedBand={} actualBand={} latDeg={} x={} y={} z={} action=retry",
+                        expectedBiome,
+                        actualBiome,
+                        bandProofLabel(expectedBand),
+                        actualBand.id(),
+                        String.format(Locale.ROOT, "%.2f", actualLatDeg),
+                        String.format(Locale.ROOT, "%.1f", client.player.getX()),
+                        String.format(Locale.ROOT, "%.1f", client.player.getY()),
+                        String.format(Locale.ROOT, "%.1f", client.player.getZ()));
+            }
+            return false;
+        }
+        GlobeMod.LOGGER.error("[LAT][CWPATH][PROOF_FAIL] configured latdev proof target mismatch expectedBiome={} actualBiome={} expectedBand={} actualBand={} latDeg={} x={} y={} z={}",
                 expectedBiome,
                 actualBiome,
+                bandProofLabel(expectedBand),
+                actualBand.id(),
+                String.format(Locale.ROOT, "%.2f", actualLatDeg),
                 String.format(Locale.ROOT, "%.1f", client.player.getX()),
                 String.format(Locale.ROOT, "%.1f", client.player.getY()),
                 String.format(Locale.ROOT, "%.1f", client.player.getZ()));
@@ -695,6 +1497,24 @@ public class GlobeModClient implements ClientModInitializer {
         client.player.connection.sendCommand(probeCommand);
         autoCreateWorldProbeLatdevCommandsSent = true;
         autoCreateWorldProbeLatdevCommandsSentGameTime = client.level.getGameTime();
+        autoCreateWorldProbeLatdevCommandsSentWallTimeMs = System.currentTimeMillis();
+    }
+
+    private static boolean hasAutoCreateWorldProbeWaitElapsed(Minecraft client,
+                                                              long startGameTime,
+                                                              long startWallTimeMs,
+                                                              long waitTicks) {
+        if (waitTicks <= 0L) {
+            return true;
+        }
+        if (client.level != null && startGameTime != Long.MIN_VALUE) {
+            long currentGameTime = client.level.getGameTime();
+            if (currentGameTime >= startGameTime && currentGameTime - startGameTime >= waitTicks) {
+                return true;
+            }
+        }
+        return startWallTimeMs != Long.MIN_VALUE
+                && System.currentTimeMillis() - startWallTimeMs >= waitTicks * 50L;
     }
 
     private static CustomBiomeHit scanForNearestCustomBiome(net.minecraft.world.level.Level world, BlockPos centerPos, int radiusBlocks, int stepBlocks) {
@@ -890,6 +1710,78 @@ public class GlobeModClient implements ClientModInitializer {
     }
 
     private record CustomBiomeHit(int x, int z, double distanceBlocks, String biomeId) {
+    }
+
+    private static final class LiveTargetSearchState {
+        private final UUID playerId;
+        private final String expectedBiome;
+        private final int centerX;
+        private final int centerZ;
+        private final int sampleY;
+        private final int radius;
+        private final int step;
+        private final int localStep;
+        private final int maxSamples;
+        private final int maxChunks;
+        private final int chunksPerBatch;
+        private final int progressChunks;
+        private final boolean forceLoad;
+        private final LatitudeBands.Band requiredBand;
+        private final ArrayDeque<Long> chunksToSearch;
+        private final int plannedChunks;
+        private final long startedMs;
+        private boolean startedLogged;
+        private int samples;
+        private int chunksSearched;
+        private int lastProgressChunks;
+        private int bandRejectedHits;
+        private LiveTargetSearchHit pendingHit;
+        private boolean pendingHitFullChunkRequested;
+        private boolean pendingHitWaitingLogged;
+
+        private LiveTargetSearchState(UUID playerId,
+                                      String expectedBiome,
+                                      int centerX,
+                                      int centerZ,
+                                      int sampleY,
+                                      int radius,
+                                      int step,
+                                      int localStep,
+                                      int maxSamples,
+                                      int maxChunks,
+                                      int chunksPerBatch,
+                                      int progressChunks,
+                                      boolean forceLoad,
+                                      LatitudeBands.Band requiredBand,
+                                      ArrayDeque<Long> chunksToSearch) {
+            this.playerId = playerId;
+            this.expectedBiome = expectedBiome;
+            this.centerX = centerX;
+            this.centerZ = centerZ;
+            this.sampleY = sampleY;
+            this.radius = radius;
+            this.step = step;
+            this.localStep = localStep;
+            this.maxSamples = maxSamples;
+            this.maxChunks = maxChunks;
+            this.chunksPerBatch = chunksPerBatch;
+            this.progressChunks = progressChunks;
+            this.forceLoad = forceLoad;
+            this.requiredBand = requiredBand;
+            this.chunksToSearch = chunksToSearch;
+            this.plannedChunks = chunksToSearch.size();
+            this.startedMs = System.currentTimeMillis();
+        }
+
+        private long elapsedMs() {
+            return Math.max(0L, System.currentTimeMillis() - startedMs);
+        }
+    }
+
+    private record LiveTargetSearchHit(int x, int z, double distanceBlocks, double latDeg, LatitudeBands.Band band) {
+    }
+
+    private record SurfaceTeleportTarget(int safeY, int loadedChunks) {
     }
 
     private static void ewSandstormClientTick(Minecraft client, GlobeClientState.EwStormStage stage) {
