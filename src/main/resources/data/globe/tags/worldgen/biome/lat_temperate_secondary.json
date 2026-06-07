@@ -141,6 +141,10 @@
     {
       "id": "wilderwild:sparse_forest",
       "required": false
+    },
+    {
+      "id": "clifftree:sparse_forest",
+      "required": false
     }
   ]
 }

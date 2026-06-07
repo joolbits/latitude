@@ -81,6 +81,18 @@
     {
       "id": "traverse:desert_shrubland",
       "required": false
+    },
+    {
+      "id": "clifftree:shrubland",
+      "required": false
+    },
+    {
+      "id": "clifftree:oasis",
+      "required": false
+    },
+    {
+      "id": "clifftree:coniferous_badlands",
+      "required": false
     }
   ]
 }
