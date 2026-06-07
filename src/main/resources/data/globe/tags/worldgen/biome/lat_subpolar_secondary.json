@@ -28,6 +28,38 @@
     {
       "id": "regions_unexplored:pine_slopes",
       "required": false
+    },
+    {
+      "id": "byg:maple_taiga",
+      "required": false
+    },
+    {
+      "id": "byg:autumnal_taiga",
+      "required": false
+    },
+    {
+      "id": "byg:canadian_shield",
+      "required": false
+    },
+    {
+      "id": "terrestria:snowy_hemlock_treeline",
+      "required": false
+    },
+    {
+      "id": "wilderwild:dark_taiga",
+      "required": false
+    },
+    {
+      "id": "wilderwild:old_growth_birch_taiga",
+      "required": false
+    },
+    {
+      "id": "wilderwild:birch_taiga",
+      "required": false
+    },
+    {
+      "id": "traverse:coniferous_forest",
+      "required": false
     }
   ]
 }

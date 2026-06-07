@@ -57,6 +57,42 @@
     {
       "id": "regions_unexplored:poppy_fields",
       "required": false
+    },
+    {
+      "id": "byg:rose_fields",
+      "required": false
+    },
+    {
+      "id": "byg:allium_fields",
+      "required": false
+    },
+    {
+      "id": "byg:amaranth_fields",
+      "required": false
+    },
+    {
+      "id": "byg:prairie",
+      "required": false
+    },
+    {
+      "id": "byg:orchard",
+      "required": false
+    },
+    {
+      "id": "byg:coconino_meadow",
+      "required": false
+    },
+    {
+      "id": "byg:twilight_meadow",
+      "required": false
+    },
+    {
+      "id": "wilderwild:flower_field",
+      "required": false
+    },
+    {
+      "id": "traverse:flatlands",
+      "required": false
     }
   ]
 }
