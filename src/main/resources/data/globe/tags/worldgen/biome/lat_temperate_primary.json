@@ -4,6 +4,34 @@
     "minecraft:forest",
     "minecraft:plains",
     "minecraft:birch_forest",
-    "minecraft:taiga"
+    "minecraft:taiga",
+    {
+      "id": "biomesoplenty:seasonal_forest",
+      "required": false
+    },
+    {
+      "id": "biomesoplenty:maple_woods",
+      "required": false
+    },
+    {
+      "id": "natures_spirit:aspen_forest",
+      "required": false
+    },
+    {
+      "id": "natures_spirit:maple_woodlands",
+      "required": false
+    },
+    {
+      "id": "regions_unexplored:deciduous_forest",
+      "required": false
+    },
+    {
+      "id": "regions_unexplored:maple_forest",
+      "required": false
+    },
+    {
+      "id": "regions_unexplored:silver_birch_forest",
+      "required": false
+    }
   ]
 }

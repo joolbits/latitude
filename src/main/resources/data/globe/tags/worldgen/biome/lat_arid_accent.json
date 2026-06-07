@@ -1,6 +1,38 @@
 {
   "replace": false,
   "values": [
-    "minecraft:windswept_gravelly_hills"
+    "minecraft:windswept_gravelly_hills",
+    {
+      "id": "biomesoplenty:dryland",
+      "required": false
+    },
+    {
+      "id": "natures_spirit:drylands",
+      "required": false
+    },
+    {
+      "id": "natures_spirit:blooming_dunes",
+      "required": false
+    },
+    {
+      "id": "natures_spirit:lively_dunes",
+      "required": false
+    },
+    {
+      "id": "regions_unexplored:joshua_desert",
+      "required": false
+    },
+    {
+      "id": "regions_unexplored:saguaro_desert",
+      "required": false
+    },
+    {
+      "id": "regions_unexplored:outback",
+      "required": false
+    },
+    {
+      "id": "regions_unexplored:arid_mountains",
+      "required": false
+    }
   ]
 }
