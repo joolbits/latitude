@@ -142,32 +142,25 @@ public final class LatitudeWorldLauncher {
             goh = wc.getGeneratorOptionsHolder();
 
             // ── 7. Build level metadata (replicates CreateWorldScreen.createLevel lines 284-298) ──
-            // DimensionOptionsRegistryHolder.toConfig() is DATAPACK-WINS: for each dimension key it
-            // prefers the datapack dimension registry over the world-preset's dimensions
-            // (existingRegistry.getOptionalValue(key).or(preset)). A datapack that ships
-            // data/minecraft/dimension/overworld.json — e.g. Terralith — therefore OVERRIDES the globe
-            // overworld the preset selected. The saved world becomes vanilla, so the runtime gate
-            // isGlobeOverworld() reads false and no WorldBorder / start-compass / latitude is applied
-            // (and worldgen is plain Terralith, not latitude-banded). The 26.1.2 launcher sidesteps this
-            // by persisting the preset's selectedDimensions directly. For Latitude worlds we rebuild the
-            // dimensions from the datapack registry but FORCE the overworld back to the globe preset's
-            // generator, keeping every other dimension (nether / end / modded) the packs provide.
-            DimensionOptionsRegistryHolder.DimensionsConfig dimensionsConfig;
+            // DIAGNOSTIC (beta.10): in-game worlds have been generating as vanilla, not Globe. Log the
+            // actual overworld settings id at each stage so we can pinpoint exactly where the globe
+            // overworld is lost. The dimensions are still built with the original (working) path so the
+            // world loads — this build does NOT change behavior, only instruments it.
             if (isLatitude) {
-                net.minecraft.world.gen.chunk.ChunkGenerator globeOverworldGen =
-                        goh.selectedDimensions().getChunkGenerator();
-                DimensionOptionsRegistryHolder globeForcedHolder =
-                        new DimensionOptionsRegistryHolder(goh.dimensionOptionsRegistry())
-                                .with(goh.getCombinedRegistryManager(), globeOverworldGen);
-                // toConfig() against an empty registry leaves no datapack value to override the overworld,
-                // so the holder's globe overworld survives (nether/end/modded dims come from the holder).
-                Registry<net.minecraft.world.dimension.DimensionOptions> noDatapackOverride =
-                        new net.minecraft.registry.SimpleRegistry<>(RegistryKeys.DIMENSION, Lifecycle.stable()).freeze();
-                dimensionsConfig = globeForcedHolder.toConfig(noDatapackOverride);
-                LOGGER.info("[Latitude] create-world: forced overworld to globe preset generator (class={}) so datapack dimension overrides (e.g. Terralith) cannot revert it to vanilla",
-                        globeOverworldGen.getClass().getSimpleName());
-            } else {
-                dimensionsConfig = goh.selectedDimensions().toConfig(goh.dimensionOptionsRegistry());
+                LOGGER.info("[Latitude diag] selectedDimensions.overworld settings = {}",
+                        settingsIdOf(goh.selectedDimensions().getChunkGenerator()));
+                LOGGER.info("[Latitude diag] dimensionOptionsRegistry: hasOverworld={} overworldSettings={} keys={}",
+                        goh.dimensionOptionsRegistry().getOptionalValue(net.minecraft.world.dimension.DimensionOptions.OVERWORLD).isPresent(),
+                        goh.dimensionOptionsRegistry().getOptionalValue(net.minecraft.world.dimension.DimensionOptions.OVERWORLD)
+                                .map(d -> settingsIdOf(d.chunkGenerator())).orElse("<none>"),
+                        goh.dimensionOptionsRegistry().getKeys());
+            }
+            DimensionOptionsRegistryHolder.DimensionsConfig dimensionsConfig =
+                    goh.selectedDimensions().toConfig(goh.dimensionOptionsRegistry());
+            if (isLatitude) {
+                LOGGER.info("[Latitude diag] FINAL saved overworld settings = {}",
+                        dimensionsConfig.dimensions().getOptionalValue(net.minecraft.world.dimension.DimensionOptions.OVERWORLD)
+                                .map(d -> settingsIdOf(d.chunkGenerator())).orElse("<none>"));
             }
 
             CombinedDynamicRegistries<ServerDynamicRegistryType> combinedDynamicRegistries =
@@ -253,5 +246,13 @@ public final class LatitudeWorldLauncher {
             }
             client.setScreen(screen);
         }
+    }
+
+    /** Best-effort settings id of a chunk generator, for create-world diagnostics. */
+    private static String settingsIdOf(net.minecraft.world.gen.chunk.ChunkGenerator gen) {
+        if (gen instanceof net.minecraft.world.gen.chunk.NoiseChunkGenerator ncg) {
+            return ncg.getSettings().getKey().map(k -> k.getValue().toString()).orElse("<unkeyed-noise-settings>");
+        }
+        return gen.getClass().getSimpleName();
     }
 }
