@@ -134,17 +134,8 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
     private static final RegistryKey<ChunkGeneratorSettings> GLOBE_SETTINGS_MASSIVE_KEY =
             RegistryKey.of(RegistryKeys.CHUNK_GENERATOR_SETTINGS, GLOBE_SETTINGS_MASSIVE_ID);
 
-    @Unique
-    private static final int BORDER_RADIUS_XSMALL_BLOCKS = 3750;
-
-    @Unique
-    private static final int BORDER_RADIUS_SMALL_BLOCKS = 5000;
-
-    @Unique
-    private static final int BORDER_RADIUS_LARGE_BLOCKS = 10000;
-
-    @Unique
-    private static final int BORDER_RADIUS_MASSIVE_BLOCKS = 20000;
+    // Border radius per size key now lives in GlobeMod.borderRadiusForNoiseGenerator
+    // (single source of truth shared with the runtime border + biome-source mixin).
 
     // Thread-local so the Redirect (which cannot see outer args) can still access StructureAccessor safely.
     @Unique
@@ -176,19 +167,12 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
 
     @Unique
     private int globe$borderRadiusBlocks() {
-        if (this.matchesSettings(GLOBE_SETTINGS_XSMALL_KEY)) {
-            return BORDER_RADIUS_XSMALL_BLOCKS;
-        }
-        if (this.matchesSettings(GLOBE_SETTINGS_SMALL_KEY)) {
-            return BORDER_RADIUS_SMALL_BLOCKS;
-        }
-        if (this.matchesSettings(GLOBE_SETTINGS_LARGE_KEY)) {
-            return BORDER_RADIUS_LARGE_BLOCKS;
-        }
-        if (this.matchesSettings(GLOBE_SETTINGS_MASSIVE_KEY)) {
-            return BORDER_RADIUS_MASSIVE_BLOCKS;
-        }
-        return GlobeMod.BORDER_RADIUS;
+        // Delegate to the single source of truth so the worldgen seeding radius can never
+        // drift from the runtime WorldBorder size. Previously this method omitted the bare
+        // globe:overworld (Large preset) case and fell through to 7500, while the border
+        // was set to 15000 — a RADIUS MISMATCH. RADIUS MAPPING ONLY; biome selection
+        // (LatitudeBiomes.pick / tags / demote gates) is unaffected.
+        return GlobeMod.borderRadiusForNoiseGenerator((NoiseChunkGenerator) (Object) this);
     }
 
     // Capture StructureAccessor for the duration of the private populateBiomes call.

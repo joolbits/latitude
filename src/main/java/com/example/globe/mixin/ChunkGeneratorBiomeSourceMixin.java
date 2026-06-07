@@ -150,15 +150,11 @@ public abstract class ChunkGeneratorBiomeSourceMixin {
     }
 
     private int globe$borderRadiusBlocks() {
+        // Single source of truth (GlobeMod) so the worldgen radius can never drift from the
+        // runtime WorldBorder size. RADIUS MAPPING ONLY; biome selection is unaffected.
         if (!((Object) this instanceof NoiseChunkGenerator noise)) {
-            return 7500;
+            return GlobeMod.BORDER_RADIUS;
         }
-        if (noise.matchesSettings(GLOBE_SETTINGS_KEY)) return 15000;
-        if (noise.matchesSettings(GLOBE_SETTINGS_XSMALL_KEY)) return 3750;
-        if (noise.matchesSettings(GLOBE_SETTINGS_SMALL_KEY)) return 5000;
-        if (noise.matchesSettings(GLOBE_SETTINGS_REGULAR_KEY)) return 7500;
-        if (noise.matchesSettings(GLOBE_SETTINGS_LARGE_KEY)) return 10000;
-        if (noise.matchesSettings(GLOBE_SETTINGS_MASSIVE_KEY)) return 20000;
-        return 7500;
+        return GlobeMod.borderRadiusForNoiseGenerator(noise);
     }
 }

@@ -147,6 +147,9 @@ public class GlobeMod implements ModInitializer {
 
             LatitudeWorldState worldState = LatitudeWorldState.get(overworld);
             boolean isBrandNewWorld = overworld.getTime() < 100L;
+            // Yarn getCommandTags() == Mojmap entityTags(): persisted per-player tags.
+            // Guards against re-running the spawn/picker flow on rejoin (26.1.2 parity).
+            boolean spawnAlreadyChosen = handler.player.getCommandTags().contains(SPAWN_CHOSEN_TAG);
 
             String pendingZone = server.isDedicated() ? null : GlobePending.consume();
 
@@ -164,7 +167,7 @@ public class GlobeMod implements ModInitializer {
                 }
             }
 
-            if (isGlobe && !worldState.isSpawnPickerDismissed() && isBrandNewWorld) {
+            if (isGlobe && !spawnAlreadyChosen && !worldState.isSpawnPickerDismissed() && isBrandNewWorld) {
                 if (pendingZone != null) {
                     applySpawnChoice(handler.player, pendingZone);
                 }
@@ -250,6 +253,17 @@ public class GlobeMod implements ModInitializer {
         LatitudeBiomes.setRadius(radius);
         LatitudeBiomes.setWorldSeed(seed);
         LOGGER.info("[Latitude] Early init: province authority seeded before spawn-chunk generation (seed={} radius={})", seed, radius);
+
+        // Apply the WorldBorder here too, NOT only on SERVER_STARTED. On the bespoke
+        // integrated launch path (client.startIntegratedServer) the SERVER_STARTED
+        // handler does not reliably resize/broadcast the border before the first
+        // client connects, which leaves the border at the vanilla ~60M default and
+        // makes the HUD latitude read ~0° everywhere. ServerWorldEvents.LOAD fires
+        // per-world during createWorlds, before prepareStartRegion, with the overworld
+        // present — so the border is correct before any client snapshot is taken.
+        // setGlobeBorder is idempotent; SERVER_STARTED's applyWorldBorder is a harmless
+        // second pass.
+        setGlobeBorder(world, radius);
     }
 
     private static void applyWorldBorder(MinecraftServer server) {
@@ -266,7 +280,17 @@ public class GlobeMod implements ModInitializer {
         LatitudeBiomes.setWorldSeed(seed);
 
         int borderRadiusBlocks = borderRadiusForGlobeOverworld(overworld);
+        setGlobeBorder(overworld, borderRadiusBlocks);
+    }
 
+    /**
+     * Idempotent: resizes the Globe WorldBorder to {@code 2 * radiusBlocks}, centers it
+     * on (0,0), and syncs {@link LatitudeBiomes} active radius + the polar-band start.
+     * Setting the same diameter twice is harmless, so this is safe to call from both
+     * {@link ServerWorldEvents#LOAD} (primary, fires before any client connects) and
+     * {@link ServerLifecycleEvents#SERVER_STARTED} (authoritative second pass).
+     */
+    private static void setGlobeBorder(ServerWorld overworld, int borderRadiusBlocks) {
         WorldBorder border = overworld.getWorldBorder();
         // radiusBlocks is e.g. 3750 / 5000 / 7500
         double diameter = borderRadiusBlocks * 2.0;
@@ -275,7 +299,7 @@ public class GlobeMod implements ModInitializer {
 
         int activeRadius = (int) (border.getSize() / 2);
         LatitudeBiomes.setRadius(activeRadius);
-        LOGGER.info("[Latitude] Radius Sync: WorldBorder/2 = {}, ACTIVE_RADIUS_BLOCKS = {}", 
+        LOGGER.info("[Latitude] Radius Sync: WorldBorder/2 = {}, ACTIVE_RADIUS_BLOCKS = {}",
                 activeRadius, LatitudeBiomes.getActiveRadiusBlocks());
 
         int activeRadiusForCheck = (int) Math.round(border.getSize() * 0.5);
@@ -381,14 +405,28 @@ public class GlobeMod implements ModInitializer {
     private static int borderRadiusForGlobeOverworld(ServerWorld world) {
         ChunkGenerator gen = world.getChunkManager().getChunkGenerator();
         if (!(gen instanceof NoiseChunkGenerator noise)) return BORDER_RADIUS;
+        return borderRadiusForNoiseGenerator(noise);
+    }
 
+    /**
+     * Single source of truth for the Globe border radius (in blocks) per size key.
+     * Used by the runtime border ({@link #applyWorldBorder}/{@link #initLatitudeBiomesForWorld})
+     * AND both worldgen radius mappers (ChunkGeneratorPopulateBiomesMixin /
+     * ChunkGeneratorBiomeSourceMixin) so the runtime WorldBorder size and the worldgen
+     * ACTIVE_RADIUS can never disagree. This is RADIUS MAPPING only — it does not affect
+     * biome selection (LatitudeBiomes.pick / tags / demote gates).
+     *
+     * <p>Mapping: overworld=15000, xsmall=3750, small=5000, regular=7500, large=10000,
+     * massive=20000.
+     */
+    public static int borderRadiusForNoiseGenerator(NoiseChunkGenerator noise) {
+        if (noise == null) return BORDER_RADIUS;
         if (noise.matchesSettings(GLOBE_SETTINGS_KEY)) return 15000;
         if (noise.matchesSettings(GLOBE_SETTINGS_XSMALL_KEY)) return 3750;
         if (noise.matchesSettings(GLOBE_SETTINGS_SMALL_KEY)) return 5000;
         if (noise.matchesSettings(GLOBE_SETTINGS_REGULAR_KEY)) return BORDER_RADIUS;
         if (noise.matchesSettings(GLOBE_SETTINGS_LARGE_KEY)) return 10000;
         if (noise.matchesSettings(GLOBE_SETTINGS_MASSIVE_KEY)) return 20000;
-
         return BORDER_RADIUS;
     }
 
