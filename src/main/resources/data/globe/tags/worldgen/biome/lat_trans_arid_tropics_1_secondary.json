@@ -10,6 +10,22 @@
     {
       "id": "biomesoplenty:shrubland",
       "required": false
+    },
+    {
+      "id": "byg:baobab_savanna",
+      "required": false
+    },
+    {
+      "id": "byg:araucaria_savanna",
+      "required": false
+    },
+    {
+      "id": "byg:firecracker_shrubland",
+      "required": false
+    },
+    {
+      "id": "wilderwild:arid_savanna",
+      "required": false
     }
   ]
 }

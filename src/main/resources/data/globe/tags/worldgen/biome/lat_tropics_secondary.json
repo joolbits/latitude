@@ -6,6 +6,74 @@
     {
       "id": "biomesoplenty:tropics",
       "required": false
+    },
+    {
+      "id": "byg:tropical_rainforest",
+      "required": false
+    },
+    {
+      "id": "byg:guiana_shield",
+      "required": false
+    },
+    {
+      "id": "byg:bayou",
+      "required": false
+    },
+    {
+      "id": "byg:white_mangrove_marshes",
+      "required": false
+    },
+    {
+      "id": "byg:cypress_swamplands",
+      "required": false
+    },
+    {
+      "id": "byg:temperate_rainforest",
+      "required": false
+    },
+    {
+      "id": "byg:lush_stacks",
+      "required": false
+    },
+    {
+      "id": "byg:coniferous_forest",
+      "required": false
+    },
+    {
+      "id": "terrestria:cypress_swamp",
+      "required": false
+    },
+    {
+      "id": "terrestria:rainbow_rainforest",
+      "required": false
+    },
+    {
+      "id": "terrestria:oasis",
+      "required": false
+    },
+    {
+      "id": "terrestria:volcanic_island",
+      "required": false
+    },
+    {
+      "id": "wilderwild:rainforest",
+      "required": false
+    },
+    {
+      "id": "wilderwild:temperate_rainforest",
+      "required": false
+    },
+    {
+      "id": "wilderwild:birch_jungle",
+      "required": false
+    },
+    {
+      "id": "wilderwild:sparse_birch_jungle",
+      "required": false
+    },
+    {
+      "id": "traverse:lush_swamp",
+      "required": false
     }
   ]
 }
