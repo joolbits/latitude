@@ -688,6 +688,91 @@ public final class LatitudeBiomes {
                 || isBiomeId(entry, "minecraft:eroded_badlands");
     }
 
+    // ice_spikes cap: keep it only on coherent high-noise patches (caps its polar share from ~9% of
+    // the world / ~34% of the polar band, over its accent cap, down to a coherent minority accent),
+    // converting the rest to the snowy base. Source-agnostic — applies wherever the pick is ice_spikes.
+    private static boolean keepPolarIceSpike(int blockX, int blockZ) {
+        double ice = ValueNoise2D.sampleBlocks(WORLD_SEED ^ POLAR_SANITIZE_ICE_SALT, blockX, blockZ,
+                POLAR_ICE_ACCENT_PATCH_BLOCKS);
+        return ice >= POLAR_ICE_KEEP_THRESHOLD;
+    }
+
+    // --- Earth-analog equatorial dry-biome latitude gates (1.4 equator overhaul, Stage 1 backport) ---
+    // These run at the END of applyFinalSavannaClimateClamp. Unlike the 26.1.2 source they are NOT
+    // gated on the WARM_DRY province (this 1.3.0 line predates the province/moisture subsystem); they
+    // key purely on the picked biome family + latitude + a coherent noise field, which reproduces the
+    // Earth-analog intent (no badlands at the deep equator; thinned-but-present equatorial desert)
+    // without requiring the province scaffolding.
+
+    private static double equatorLatDeg(int blockZ) {
+        int radius = ACTIVE_RADIUS_BLOCKS > 0 ? ACTIVE_RADIUS_BLOCKS : (REFERENCE_DIAMETER_BLOCKS / 2);
+        radius = Math.max(1, radius);
+        return Math.min(90.0, Math.abs((double) blockZ) / (double) radius * 90.0);
+    }
+
+    private static int equatorKeepScale() {
+        int radius = ACTIVE_RADIUS_BLOCKS > 0 ? ACTIVE_RADIUS_BLOCKS : (REFERENCE_DIAMETER_BLOCKS / 2);
+        radius = Math.max(1, radius);
+        return Math.max(ARID_REGION_MIN_SCALE_BLOCKS, (int) Math.round(radius * 0.28));
+    }
+
+    /** True when a badlands pick should be demoted to savanna (deep-equator gate). */
+    private static boolean shouldDemoteEquatorialBadlands(RegistryEntry<Biome> pick, int blockX, int blockZ) {
+        if (pick == null || !isBadlandsFamily(pick)) {
+            return false;
+        }
+        double latDeg = equatorLatDeg(blockZ);
+        double latGate = smoothstep((latDeg - BADLANDS_LAT_RAMP_LOW_DEG)
+                / (BADLANDS_LAT_RAMP_HIGH_DEG - BADLANDS_LAT_RAMP_LOW_DEG));
+        if (latGate >= 1.0) {
+            return false; // subtropics: badlands fully allowed
+        }
+        double keepNoise = ValueNoise2D.sampleBlocks(WORLD_SEED ^ BADLANDS_LAT_KEEP_SALT, blockX, blockZ, equatorKeepScale());
+        return keepNoise >= latGate;
+    }
+
+    /** True when a desert pick should be (partially) demoted to savanna at the deep equator. */
+    private static boolean shouldDemoteEquatorialDesert(RegistryEntry<Biome> pick, int blockX, int blockZ) {
+        if (pick == null || !isBiomeId(pick, "minecraft:desert")) {
+            return false;
+        }
+        double latDeg = equatorLatDeg(blockZ);
+        if (latDeg >= DESERT_LAT_RAMP_HIGH_DEG) {
+            return false; // outer tropics + subtropics: keep all desert
+        }
+        double latFrac = smoothstep(latDeg / DESERT_LAT_RAMP_HIGH_DEG);
+        double keepFrac = DESERT_EQUATOR_KEEP_FRAC + (1.0 - DESERT_EQUATOR_KEEP_FRAC) * latFrac;
+        double keepNoise = ValueNoise2D.sampleBlocks(WORLD_SEED ^ DESERT_LAT_KEEP_SALT, blockX, blockZ, equatorKeepScale());
+        return keepNoise >= keepFrac; // demote the (1 - keepFrac) noise complement
+    }
+
+    private static RegistryEntry<Biome> demoteEquatorialDryBiomes(Registry<Biome> biomes,
+                                                                  RegistryEntry<Biome> pick,
+                                                                  int blockX,
+                                                                  int blockZ) {
+        if (shouldDemoteEquatorialBadlands(pick, blockX, blockZ)
+                || shouldDemoteEquatorialDesert(pick, blockX, blockZ)) {
+            try {
+                return biome(biomes, "minecraft:savanna");
+            } catch (Throwable ignored) {
+                return pick;
+            }
+        }
+        return pick;
+    }
+
+    private static RegistryEntry<Biome> demoteEquatorialDryBiomes(Collection<RegistryEntry<Biome>> biomes,
+                                                                  RegistryEntry<Biome> pick,
+                                                                  int blockX,
+                                                                  int blockZ) {
+        if (shouldDemoteEquatorialBadlands(pick, blockX, blockZ)
+                || shouldDemoteEquatorialDesert(pick, blockX, blockZ)) {
+            RegistryEntry<Biome> savanna = entryById(biomes, "minecraft:savanna");
+            return savanna != null ? savanna : pick;
+        }
+        return pick;
+    }
+
     private static RegistryEntry<Biome> softenSubtropicalBadlands(Registry<Biome> biomes, RegistryEntry<Biome> base, RegistryEntry<Biome> pick) {
         if (!isBadlandsFamily(pick)) {
             return pick;
@@ -793,6 +878,29 @@ public final class LatitudeBiomes {
     private static final int REFERENCE_DIAMETER_BLOCKS = 20000;
 
     private static final int VARIANT_CELL_SIZE_BLOCKS = 38;
+    // 1.4 "Cohesive Horizons" worldgen backport (Stage 1) — see docs/binder/1.4-beta-backport-1.20.1-report.
+    // Keep weighted/fallback identity picks more spatially coherent than fine cell picks so tier
+    // selection does not devolve into atlas confetti (supersedes the old 38-block VARIANT_CELL tier).
+    private static final int FALLBACK_COHERENCE_BLOCKS = 128;
+    // Art VI: salt for the fallback-list pick's coherent ValueNoise2D fields (no floorDiv cell-hash).
+    private static final long FALLBACK_PICK_SALT = 0x46414C4C5049434BL; // "FALLPICK"
+    // Minimum noise scale floor reused by the equatorial dry-biome latitude gates.
+    private static final int ARID_REGION_MIN_SCALE_BLOCKS = 1024;
+    // --- Earth-analog equatorial badlands latitude gate ---
+    // MC badlands/mesa is an American-SW (~35deg N) subtropical landform; Earth's deep equator has
+    // ZERO badlands. Below this smoothstep ramp a coherent ValueNoise2D field demotes badlands picks
+    // to savanna so the badlands<->savanna boundary is noise-warped, not a hard line (Art VI).
+    private static final double BADLANDS_LAT_RAMP_LOW_DEG = 10.0;
+    private static final double BADLANDS_LAT_RAMP_HIGH_DEG = 18.0;
+    private static final long BADLANDS_LAT_KEEP_SALT = 0x6261_646C_5F6C6174L; // "badl_lat"
+    // --- Earth-analog deep-equator desert thinning (PARTIAL — Earth keeps rare equatorial desert) ---
+    private static final double DESERT_LAT_RAMP_HIGH_DEG = 12.0;
+    private static final double DESERT_EQUATOR_KEEP_FRAC = 0.40;
+    private static final long DESERT_LAT_KEEP_SALT = 0x6465_7365_7274_6C61L; // "desertla"
+    // --- Polar ice_spikes over-representation cap ---
+    private static final long POLAR_SANITIZE_ICE_SALT = 0x6963655F73706B73L; // "ice_spks"
+    private static final int POLAR_ICE_ACCENT_PATCH_BLOCKS = 256;
+    private static final double POLAR_ICE_KEEP_THRESHOLD = 0.45;
     private static final int BLEND_TRANSITION_WIDTH_BLOCKS = 1408;
     private static final int BLEND_DITHER_SCALE_BLOCKS = 512;
     private static final int BLEND_NOISE_PATCH_CHUNKS = 10;
@@ -2020,9 +2128,25 @@ public final class LatitudeBiomes {
     }
 
     private static RegistryEntry<Biome> pickFrom(Registry<Biome> biomes, int blockX, int blockZ, int bandIndex, String... options) {
-        int cellX = Math.floorDiv(blockX, VARIANT_CELL_SIZE_BLOCKS);
-        int cellZ = Math.floorDiv(blockZ, VARIANT_CELL_SIZE_BLOCKS);
-        int idx = (int) Long.remainderUnsigned(hash64(cellX, cellZ, bandIndex), options.length);
+        // Art VI compliance: pick by argmax over N independent coherent ValueNoise2D fields (one per
+        // option) instead of a Math.floorDiv cell-grid + hash64. By symmetry each option wins ~1/N of
+        // the area (uniform per-option share preserved, so this is distribution-neutral), but as
+        // coherent ~FALLBACK_COHERENCE_BLOCKS-scale regions rather than hard-edged per-cell confetti.
+        // Seed-dependent (the old hash64 path was seed-independent), band-differentiated.
+        int idx = 0;
+        if (options.length > 1) {
+            int scaleBlocks = Math.max(16, FALLBACK_COHERENCE_BLOCKS);
+            long bandSeed = WORLD_SEED ^ FALLBACK_PICK_SALT ^ ((long) bandIndex * 0x9E3779B97F4A7C15L);
+            double best = Double.NEGATIVE_INFINITY;
+            for (int i = 0; i < options.length; i++) {
+                double n = ValueNoise2D.sampleBlocks(
+                        bandSeed ^ ((long) (i + 1) * 0xC2B2AE3D27D4EB4FL), blockX, blockZ, scaleBlocks);
+                if (n > best) {
+                    best = n;
+                    idx = i;
+                }
+            }
+        }
         setSelectionPath(PATH_FALLBACK_PICK);
         return biome(biomes, options[idx]);
     }
@@ -3854,10 +3978,19 @@ private static boolean swampPatchHere(long seed, int blockX, int blockZ) {
         }
 
         if (bandIndex >= BAND_POLAR) {
-            String path = pick.getKey().map(key -> key.getValue().getPath()).orElse("");
-            if (path.contains("forest") || path.contains("taiga") || isBiomeId(pick, "minecraft:grove") || isBiomeId(pick, "minecraft:cherry_grove")) {
+            // Cap base-source ice_spikes to coherent accent patches (the dominant over-rep source).
+            if (isBiomeId(pick, "minecraft:ice_spikes") && !keepPolarIceSpike(blockX, blockZ)) {
                 try {
-                    return biome(biomes, "minecraft:ice_spikes");
+                    return biome(biomes, "minecraft:snowy_plains");
+                } catch (Throwable ignored) {
+                    return pick;
+                }
+            }
+            String path = pick.getKey().map(key -> key.getValue().getPath()).orElse("");
+            if (!path.contains("snowy")
+                    && (path.contains("forest") || path.contains("taiga") || isBiomeId(pick, "minecraft:grove") || isBiomeId(pick, "minecraft:cherry_grove"))) {
+                try {
+                    return biome(biomes, "minecraft:snowy_plains");
                 } catch (Throwable ignored) {
                     return pick;
                 }
@@ -3899,6 +4032,10 @@ private static boolean swampPatchHere(long seed, int blockX, int blockZ) {
                         blockY, incomingId, biomeId(out), blockX, blockZ);
             }
         }
+        // Earth-analog equatorial dry-biome gates: no badlands at the deep equator, thinned-but-present
+        // equatorial desert; both demote to savanna here (before the savanna tier pass, so a demoted
+        // savanna still gets Y-tiered). Subtropical arid belt (above the ramps) is untouched.
+        out = demoteEquatorialDryBiomes(biomes, out, blockX, blockZ);
         if (isSavannaFamily(out)) {
             try {
                 if (!isBiomeId(out, "minecraft:windswept_savanna")) {
@@ -3951,9 +4088,15 @@ private static boolean swampPatchHere(long seed, int blockX, int blockZ) {
         }
 
         if (bandIndex >= BAND_POLAR) {
+            // Cap base-source ice_spikes to coherent accent patches (the dominant over-rep source).
+            if (isBiomeId(pick, "minecraft:ice_spikes") && !keepPolarIceSpike(blockX, blockZ)) {
+                RegistryEntry<Biome> snowy = entryById(biomes, "minecraft:snowy_plains");
+                return snowy != null ? snowy : pick;
+            }
             String path = pick.getKey().map(key -> key.getValue().getPath()).orElse("");
-            if (path.contains("forest") || path.contains("taiga") || isBiomeId(pick, "minecraft:grove") || isBiomeId(pick, "minecraft:cherry_grove")) {
-                RegistryEntry<Biome> entry = entryById(biomes, "minecraft:ice_spikes");
+            if (!path.contains("snowy")
+                    && (path.contains("forest") || path.contains("taiga") || isBiomeId(pick, "minecraft:grove") || isBiomeId(pick, "minecraft:cherry_grove"))) {
+                RegistryEntry<Biome> entry = entryById(biomes, "minecraft:snowy_plains");
                 return entry != null ? entry : pick;
             }
         }
@@ -3992,6 +4135,8 @@ private static boolean swampPatchHere(long seed, int blockX, int blockZ) {
                         blockY, incomingId, biomeId(out), blockX, blockZ);
             }
         }
+        // Earth-analog equatorial dry-biome gates (see Registry overload above).
+        out = demoteEquatorialDryBiomes(biomes, out, blockX, blockZ);
         if (isSavannaFamily(out)) {
             if (!isBiomeId(out, "minecraft:windswept_savanna")) {
                 String targetId = savannaTierByY(blockY);
