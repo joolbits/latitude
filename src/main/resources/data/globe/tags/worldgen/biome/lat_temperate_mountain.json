@@ -25,6 +25,30 @@
     {
       "id": "regions_unexplored:highland_fields",
       "required": false
+    },
+    {
+      "id": "byg:howling_peaks",
+      "required": false
+    },
+    {
+      "id": "byg:skyris_vale",
+      "required": false
+    },
+    {
+      "id": "byg:dacite_ridges",
+      "required": false
+    },
+    {
+      "id": "byg:crag_gardens",
+      "required": false
+    },
+    {
+      "id": "terrestria:caldera",
+      "required": false
+    },
+    {
+      "id": "terrestria:canyon",
+      "required": false
     }
   ]
 }
