@@ -44,15 +44,15 @@ public final class GlobeWarningOverlay {
         registered = true;
     }
 
-    private static String zoneDisplayName(String zoneKey) {
-        return switch (zoneKey) {
-            case "EQUATOR" -> "Equator";
-            case "TROPICAL" -> "Tropics";
-            case "SUBTROPICAL" -> "Subtropics";
+    private static String zoneDisplayName(String canonicalKey) {
+        return switch (canonicalKey) {
+            // Equator is no longer canon naming; tropical band absorbs it.
+            case "EQUATOR", "TROPICAL" -> "Tropical";
+            case "SUBTROPICAL" -> "Subtropical";
             case "TEMPERATE" -> "Temperate";
             case "SUBPOLAR" -> "Subpolar";
             case "POLAR" -> "Polar";
-            default -> zoneKey;
+            default -> canonicalKey;
         };
     }
 
@@ -208,7 +208,13 @@ public final class GlobeWarningOverlay {
     }
 
     private static String buildZoneEnterTitle(MinecraftClient client, String zoneKey) {
-        String zoneName = zoneDisplayName(zoneKey).toUpperCase();
+        // Title naming follows the canonical latitude bands (TROPICAL is the lowest
+        // band; "EQUATOR" is no longer a canon display name).
+        String canonicalKey = zoneKey;
+        if (client.player != null && client.world != null) {
+            canonicalKey = canonicalTitleZoneKey(client.world.getWorldBorder(), client.player.getZ());
+        }
+        String zoneName = zoneDisplayName(canonicalKey).toUpperCase();
         if (!LatitudeConfig.showZoneBaseDegreesOnTitle) {
             return zoneName;
         }
@@ -220,6 +226,12 @@ public final class GlobeWarningOverlay {
 
         String degText = com.example.globe.util.LatitudeMath.formatLatitudeDeg(border, client.player.getZ());
         return zoneName + " " + degText;
+    }
+
+    private static String canonicalTitleZoneKey(net.minecraft.world.border.WorldBorder border, double z) {
+        double absDeg = Math.abs(com.example.globe.util.LatitudeMath.degreesFromZ(border, z));
+        com.example.globe.util.LatitudeBands.Band band = com.example.globe.util.LatitudeBands.fromAbsoluteLatitudeDeg(absDeg);
+        return band.name();
     }
 
     private static double clamp(double v, double lo, double hi) {

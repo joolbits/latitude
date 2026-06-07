@@ -31,7 +31,7 @@ public abstract class CreateWorldScreenSpawnZoneMixin extends Screen {
 
     @Unique
     private static final String[] GLOBE_ZONES = {
-            "EQUATOR", "TROPICAL", "SUBTROPICAL", "TEMPERATE", "SUBPOLAR", "POLAR", "RANDOM"
+            "TROPICAL", "SUBTROPICAL", "TEMPERATE", "SUBPOLAR", "POLAR", "RANDOM"
     };
 
     @Shadow
