@@ -82,6 +82,10 @@
     {
       "id": "traverse:snowy_coniferous_forest",
       "required": false
+    },
+    {
+      "id": "clifftree:snowy_old_growth_taiga",
+      "required": false
     }
   ]
 }
