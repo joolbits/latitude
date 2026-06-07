@@ -12,7 +12,7 @@ Usage:
     apply_custom_biome_tags.py <tagdir> <modset>
       tagdir : .../data/globe/tags/worldgen/biome
       modset : comma list from {bop,terralith,promenade,natures_spirit,
-               regions_unexplored,byg,terrestria,wilder_wild,traverse}
+               regions_unexplored,byg,terrestria,wilder_wild,traverse,clifftree}
 """
 import json
 import sys
@@ -322,6 +322,50 @@ MODSETS = {
         "lat_tropics_secondary": [
             "traverse:lush_swamp",              # REVIEW: warm wetland -> tropics; could be temperate
         ],
+    },
+    # ======================================================================
+    # STAGE 4 (2026-06-06): CliffTree (Modrinth slug `clifftree`), Maintainer-
+    # requested. A vanilla-styled worldgen DATAPACK that ADDS new biomes
+    # (`clifftree:*`); supports the FULL range, so admitted on EVERY line
+    # incl. 26.1.2. IDs + temperature/downfall read straight from the
+    # version-matched datapack zips' data/clifftree/worldgen/biome/*.json
+    # (26.1.2: CliffTree 3.2.1; 1.21.11: 3.1.5-MoM; 1.21.1: 3.1.5-backport;
+    # 1.20.1: Clifftree 1.7.2 backport). Only SURFACE-LAND biomes get a lat
+    # band; caves / oceans / rivers / shores+beaches+cliffs / sky-dimension
+    # biomes are EXCLUDED (they need cave/coast/river/ocean/dimension gates,
+    # not latitude bands — same discipline as WW caves/coast/river in Stage 3).
+    # All entries required:false (absent-mod-safe). 1.20.1's datapack omits
+    # `coniferous_badlands` (+ a few specials); the entry stays harmless there.
+    # ======================================================================
+    "clifftree": {
+        "lat_polar_secondary": [
+            "clifftree:glacier_valley",         # T0.0/D0.5 snowy ice/glacier -> polar
+        ],
+        "lat_subpolar_primary": [
+            "clifftree:snowy_old_growth_taiga", # T0.0/D0.4 snowy boreal taiga
+        ],
+        "lat_subpolar_secondary": [
+            "clifftree:tundra",                 # T0.25/D0.5 cold tundra
+            "clifftree:bog",                    # T0.25/D0.8 cold wet boreal wetland
+        ],
+        "lat_temperate_secondary": [
+            "clifftree:sparse_forest",          # T0.7/D0.8 temperate humid forest
+        ],
+        "lat_arid_accent": [
+            "clifftree:shrubland",              # T2.0/D0.0 hot dry shrub -> arid
+            "clifftree:oasis",                  # REVIEW: T2.0/D0.0 desert water-feature; placed arid (hot-desert), could be a tropics-humid pocket
+            "clifftree:coniferous_badlands",    # REVIEW: name says "coniferous" (cold) but the JSON registers it HOT+DRY (T2.0/D0.0, no_precip, in dry_badlands family) -> placed arid by its real climate; flag name/climate mismatch
+        ],
+        # EXCLUDED on purpose (need a non-latitude gate):
+        #   caves: caves, warm_caves, lukewarm_caves, cold_caves, frozen_caves,
+        #          mushroom_caves, dirt_caves, pale_grotto, inferno (deep cave)
+        #   oceans: stone_ocean, kelp_forest
+        #   rivers: warm_river, cold_river, tropical_river
+        #   shores/beaches/cliffs: diorite_shore, snowy_diorite_shore,
+        #          granite_shore, glacier_cliff, desert_cliff, gravelly_beach,
+        #          tropical_beach, temperate_beach
+        #   sky dimension (26.1 only): sky/* (azure/celadon/cerulean/indigo/
+        #          viridian skies, atmospore, the_frontier, jagged/stony/frozen summit)
     },
 }
 

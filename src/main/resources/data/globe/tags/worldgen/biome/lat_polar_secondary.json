@@ -6,6 +6,10 @@
     {
       "id": "byg:shattered_glacier",
       "required": false
+    },
+    {
+      "id": "clifftree:glacier_valley",
+      "required": false
     }
   ]
 }
