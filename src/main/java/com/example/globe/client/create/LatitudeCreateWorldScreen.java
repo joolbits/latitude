@@ -1,6 +1,7 @@
 package com.example.globe.client.create;
 
 import com.example.globe.client.GlobeWorldSize;
+import com.example.globe.client.LatitudeHudStudioScreen;
 import com.example.globe.util.LatitudeBands;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.Click;
@@ -23,6 +24,7 @@ import net.minecraft.SharedConstants;
 import net.minecraft.server.command.CommandManager;
 import net.minecraft.command.permission.LeveledPermissionPredicate;
 import net.minecraft.text.Text;
+import net.minecraft.util.Formatting;
 import net.minecraft.util.Util;
 import net.minecraft.world.Difficulty;
 import net.minecraft.world.GameMode;
@@ -98,6 +100,10 @@ public class LatitudeCreateWorldScreen extends Screen {
             "A world that could take a lifetime to cross."
     };
 
+    private static final Text SMALL_WORLD_WARNING = Text.literal(
+            "Smaller world sizes are still being tuned and may distort biome distribution."
+    ).formatted(Formatting.ITALIC, Formatting.GOLD);
+
     // ── Game mode constants ──
     private static final String[] MODE_NAMES = { "Survival", "Hardcore", "Creative" };
     private static final int[] MODE_COLORS = { WARM_WHITE, 0xFFFF5555, 0xFFFFAA00 };
@@ -139,6 +145,7 @@ public class LatitudeCreateWorldScreen extends Screen {
     private ButtonWidget modePrevBtn;
     private ButtonWidget modeNextBtn;
     private ButtonWidget gameRulesBtn;
+    private ButtonWidget hudStudioBtn;
 
     // ── Layout cache (computed in init, used in render) ──
     private int headerY;
@@ -425,6 +432,11 @@ public class LatitudeCreateWorldScreen extends Screen {
                     .dimensions(settBtnX, panelTop, settBtnW, btnH)
                     .build();
             this.addDrawableChild(gameRulesBtn);
+
+            hudStudioBtn = ButtonWidget.builder(Text.literal("HUD Studio"), b -> openHudStudio())
+                    .dimensions(settBtnX, panelTop, settBtnW, btnH)
+                    .build();
+            this.addDrawableChild(hudStudioBtn);
             updateSettingsLayout();
         }
 
@@ -527,6 +539,17 @@ public class LatitudeCreateWorldScreen extends Screen {
         return y + scaledUi(22) + wrapLineCount(SIZE_DESCRIPTIONS[selectedSize.ordinal()], Math.max(40, availW)) * uiFontHeight();
     }
 
+    private boolean shouldShowSmallWorldWarning() {
+        return switch (selectedSize) {
+            case ITTY_BITTY, TINY, SMALL -> true;
+            default -> false;
+        };
+    }
+
+    private int getSmallWorldWarningHeight(int width) {
+        return wrapLineCount(SMALL_WORLD_WARNING.getString(), Math.max(40, width)) * uiFontHeight();
+    }
+
     private int computeZoneListTop() {
         return panelTop + scaledUi(22) + wrappedTextHeight("Choose the climate where your journey begins", Math.max(80, rightW - scaledUi(20) - SCROLLBAR_GUTTER)) + scaledUi(10);
     }
@@ -624,7 +647,9 @@ public class LatitudeCreateWorldScreen extends Screen {
         int previewHeight = Math.max(scaledUi(150), Math.min(leftW - scaledUi(20) - SCROLLBAR_GUTTER, Math.max(scaledUi(170), panelBottom - panelTop - scaledUi(80))));
         int baseWorldY = contentTop + labelFieldGap;
         int baseSeedY = baseWorldY + fieldGap1;
-        int baseSizeY = baseSeedY + fieldGap2;
+        int warningHeight = shouldShowSmallWorldWarning() ? getSmallWorldWarningHeight(inputW) : 0;
+        int warningGap = warningHeight > 0 ? scaledUi(4) : 0;
+        int baseSizeY = baseSeedY + fieldGap2 + warningHeight + warningGap;
         int baseInputBottom = Math.max(baseSizeY + btnH, computeSizeLabelBottom(baseSizeY - 1, inputW - stepperBtnW * 2 - scaledUi(8))) + scaledUi(12);
         int basePreviewTop = baseInputBottom + discGap + uiFontHeight();
         int basePreviewBottom = basePreviewTop + previewHeight;
@@ -724,10 +749,13 @@ public class LatitudeCreateWorldScreen extends Screen {
         if (gameRulesBtn != null) {
             gameRulesBtn.active = gameRulesBtn.visible;
         }
+        if (hudStudioBtn != null) {
+            hudStudioBtn.active = hudStudioBtn.visible;
+        }
     }
 
     private void updateSettingsLayout() {
-        if (worldTypePrevBtn == null || worldTypeNextBtn == null || modePrevBtn == null || modeNextBtn == null || commandsBtn == null || compassBtn == null || bonusChestBtn == null || gameRulesBtn == null) {
+        if (worldTypePrevBtn == null || worldTypeNextBtn == null || modePrevBtn == null || modeNextBtn == null || commandsBtn == null || compassBtn == null || bonusChestBtn == null || gameRulesBtn == null || hudStudioBtn == null) {
             settingsViewportTop = 0;
             settingsViewportBottom = 0;
             settingsContentHeight = 0;
@@ -744,7 +772,9 @@ public class LatitudeCreateWorldScreen extends Screen {
         int viewportHeight = Math.max(0, settingsViewportBottom - settingsViewportTop);
         int contentTop = settingsViewportTop + scaledUi(4);
         int blockHeight = labelGap + btnH;
-        settingsContentHeight = blockHeight * 6 + rowGap * 5;
+        // Leave a little trailing room so the HUD Studio row can scroll fully into view
+        // on short windows instead of sitting flush against the viewport edge.
+        settingsContentHeight = blockHeight * 7 + rowGap * 6 + scaledUi(12);
         int maxScroll = Math.max(0, settingsContentHeight - viewportHeight);
         if (settingsScroll < 0) settingsScroll = 0;
         if (settingsScroll > maxScroll) settingsScroll = maxScroll;
@@ -772,6 +802,9 @@ public class LatitudeCreateWorldScreen extends Screen {
         gameRulesRowY = y;
         positionSettingsButton(gameRulesBtn, settBtnX, settBtnW, y, btnH);
 
+        y += btnH + rowGap + labelGap;
+        positionSettingsButton(hudStudioBtn, settBtnX, settBtnW, y, btnH);
+
         updateSettingsButtons();
     }
 
@@ -798,6 +831,7 @@ public class LatitudeCreateWorldScreen extends Screen {
         setTabbedWidgetVisible(compassBtn, showRules);
         setTabbedWidgetVisible(bonusChestBtn, showRules && !isLatitudeWorld());
         setTabbedWidgetVisible(gameRulesBtn, showRules);
+        setTabbedWidgetVisible(hudStudioBtn, showRules);
     }
 
     private void setTabbedWidgetVisible(ClickableWidget widget, boolean visible) {
@@ -844,6 +878,11 @@ public class LatitudeCreateWorldScreen extends Screen {
             optional.ifPresent(rules -> this.gameRules = rules);
             this.client.setScreen(this);
         }));
+    }
+
+    private void openHudStudio() {
+        if (this.client == null) return;
+        this.client.setScreen(new LatitudeHudStudioScreen(this));
     }
 
     // ── Begin Expedition ──
@@ -1003,6 +1042,11 @@ public class LatitudeCreateWorldScreen extends Screen {
         int labelColor = GOLD;
         int labelOff = scaledUi(10);
         int leftTextWidth = Math.max(24, leftW - 8 - SCROLLBAR_GUTTER);
+        if (shouldShowSmallWorldWarning()) {
+            int warningHeight = getSmallWorldWarningHeight(leftTextWidth);
+            int warningY = sizeFieldY - labelOff - warningHeight - scaledUi(2);
+            drawWrappedStyledTextBlock(context, SMALL_WORLD_WARNING, new UiRect(inputX, warningY, leftTextWidth, warningHeight), 0xFFF0A030, false, 2, true, true);
+        }
         drawBoundedText(context, "World Name", new UiRect(inputX, worldFieldY - labelOff, leftTextWidth, uiFontHeight()), labelColor, false, false);
         drawBoundedText(context, "Seed", new UiRect(inputX, seedFieldY - labelOff, leftTextWidth, uiFontHeight()), labelColor, false, false);
         drawBoundedText(context, "World Size", new UiRect(inputX, sizeFieldY - labelOff, leftTextWidth, uiFontHeight()), labelColor, false, false);
@@ -1459,6 +1503,54 @@ public class LatitudeCreateWorldScreen extends Screen {
                 drawCenteredBoundedText(context, line, lineRect, color, shadow, true);
             } else {
                 drawBoundedText(context, line, lineRect, color, shadow, true);
+            }
+            y += uiFontHeight();
+        }
+        return drawCount * uiFontHeight();
+    }
+
+    private boolean drawBoundedStyledText(DrawContext context, Text text, UiRect rect, int color, boolean shadow, boolean ellipsize) {
+        if (!fitsHeight(rect.h)) {
+            return false;
+        }
+        String fitted = ellipsize ? ellipsizeToWidth(text.getString(), rect.w) : text.getString();
+        if (fitted.isEmpty() || (!ellipsize && !fitsWidth(fitted, rect.w))) {
+            return false;
+        }
+        int drawX = clampToRect(rect.x, uiTextWidth(fitted), rect.x, rect.right());
+        int drawY = clampToRect(rect.y, uiFontHeight(), rect.y, rect.bottom());
+        context.drawText(this.textRenderer, Text.literal(fitted).setStyle(text.getStyle().withItalic(true)), drawX, drawY, color, shadow);
+        return true;
+    }
+
+    private int drawWrappedStyledTextBlock(DrawContext context, Text text, UiRect rect, int color, boolean shadow, int maxLines, boolean center, boolean optional) {
+        if (rect.w <= 0 || rect.h < uiFontHeight()) {
+            return 0;
+        }
+        int maxVisibleLines = Math.min(maxLines, Math.max(1, rect.h / uiFontHeight()));
+        List<net.minecraft.text.StringVisitable> wrapped = wrapUiLines(text.getString(), rect.w);
+        if (wrapped.isEmpty()) {
+            return 0;
+        }
+        int drawCount = Math.min(maxVisibleLines, wrapped.size());
+        if (optional && drawCount <= 0) {
+            return 0;
+        }
+        int y = rect.y;
+        for (int i = 0; i < drawCount; i++) {
+            String line = wrapped.get(i).getString();
+            if (i == drawCount - 1 && wrapped.size() > drawCount) {
+                line = ellipsizeToWidth(line, rect.w);
+            }
+            Text lineText = Text.literal(line).setStyle(text.getStyle());
+            if (center) {
+                String fitted = ellipsizeToWidth(lineText.getString(), rect.w);
+                if (!fitted.isEmpty()) {
+                    int drawX = rect.x + Math.max(0, (rect.w - uiTextWidth(fitted)) / 2);
+                    context.drawText(this.textRenderer, Text.literal(fitted).setStyle(lineText.getStyle().withItalic(true)), drawX, y, color, shadow);
+                }
+            } else {
+                drawBoundedStyledText(context, lineText, new UiRect(rect.x, y, rect.w, uiFontHeight()), color, shadow, true);
             }
             y += uiFontHeight();
         }

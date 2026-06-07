@@ -31,6 +31,16 @@ public final class ZoneEnterTitleOverlay {
         ZoneEnterTitleOverlay.endWorldTime = ZoneEnterTitleOverlay.startWorldTime + dt;
     }
 
+    public static boolean isActive() {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client == null || client.world == null || title == null) {
+            return false;
+        }
+
+        long now = client.world.getTime();
+        return now >= startWorldTime && now < endWorldTime;
+    }
+
     public static void render(DrawContext ctx, int screenW, int screenH) {
         MinecraftClient client = MinecraftClient.getInstance();
         if (client == null || client.world == null || title == null) {

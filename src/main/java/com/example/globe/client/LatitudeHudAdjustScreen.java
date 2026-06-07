@@ -140,7 +140,7 @@ public class LatitudeHudAdjustScreen extends Screen {
         }
 
         String degText = (border != null) ? LatitudeMath.formatLatitudeDeg(z, border) : "0\u00b0";
-        String sampleTitle = "EQUATOR " + degText;
+        String sampleTitle = "TROPICAL " + degText;
 
         ZoneEnterTitleOverlay.renderStaticAt(
                 ctx,
@@ -439,7 +439,7 @@ public class LatitudeHudAdjustScreen extends Screen {
     }
 
     private boolean isMouseOverTitle(double mx, double my) {
-        String s = "EQUATOR 0\u00b0";
+        String s = "TROPICAL 0\u00b0";
         int w = this.textRenderer.getWidth(s);
         int h = this.textRenderer.fontHeight;
 
