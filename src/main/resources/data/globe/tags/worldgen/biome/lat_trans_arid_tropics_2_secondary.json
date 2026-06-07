@@ -2,6 +2,30 @@
   "replace": false,
   "values": [
     "minecraft:savanna_plateau",
-    "minecraft:windswept_savanna"
+    "minecraft:windswept_savanna",
+    {
+      "id": "biomesoplenty:rocky_shrubland",
+      "required": false
+    },
+    {
+      "id": "biomesoplenty:wasteland",
+      "required": false
+    },
+    {
+      "id": "biomesoplenty:wasteland_steppe",
+      "required": false
+    },
+    {
+      "id": "natures_spirit:arid_highlands",
+      "required": false
+    },
+    {
+      "id": "natures_spirit:flowering_shrubland",
+      "required": false
+    },
+    {
+      "id": "regions_unexplored:shrubland",
+      "required": false
+    }
   ]
 }

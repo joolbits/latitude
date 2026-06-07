@@ -6,6 +6,58 @@
     "minecraft:windswept_hills",
     "minecraft:windswept_forest",
     "minecraft:windswept_gravelly_hills",
-    "minecraft:stony_peaks"
+    "minecraft:stony_peaks",
+    {
+      "id": "biomesoplenty:prairie",
+      "required": false
+    },
+    {
+      "id": "terralith:blooming_valley",
+      "required": false
+    },
+    {
+      "id": "terralith:lavender_valley",
+      "required": false
+    },
+    {
+      "id": "terralith:valley_clearing",
+      "required": false
+    },
+    {
+      "id": "natures_spirit:lavender_fields",
+      "required": false
+    },
+    {
+      "id": "natures_spirit:heather_fields",
+      "required": false
+    },
+    {
+      "id": "natures_spirit:marigold_meadows",
+      "required": false
+    },
+    {
+      "id": "natures_spirit:carnation_fields",
+      "required": false
+    },
+    {
+      "id": "natures_spirit:prairie",
+      "required": false
+    },
+    {
+      "id": "regions_unexplored:flower_fields",
+      "required": false
+    },
+    {
+      "id": "regions_unexplored:prairie",
+      "required": false
+    },
+    {
+      "id": "regions_unexplored:clover_plains",
+      "required": false
+    },
+    {
+      "id": "regions_unexplored:poppy_fields",
+      "required": false
+    }
   ]
 }

@@ -4,6 +4,30 @@
     "minecraft:snowy_plains",
     "minecraft:taiga",
     "minecraft:snowy_taiga",
-    "minecraft:old_growth_spruce_taiga"
+    "minecraft:old_growth_spruce_taiga",
+    {
+      "id": "terralith:siberian_grove",
+      "required": false
+    },
+    {
+      "id": "terralith:wintry_lowlands",
+      "required": false
+    },
+    {
+      "id": "terralith:snowy_maple_forest",
+      "required": false
+    },
+    {
+      "id": "terralith:snowy_shield",
+      "required": false
+    },
+    {
+      "id": "regions_unexplored:golden_boreal_taiga",
+      "required": false
+    },
+    {
+      "id": "regions_unexplored:pine_slopes",
+      "required": false
+    }
   ]
 }

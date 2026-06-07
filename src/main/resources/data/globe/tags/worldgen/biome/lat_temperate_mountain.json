@@ -5,6 +5,26 @@
     "minecraft:cherry_grove",
     "minecraft:grove",
     "minecraft:windswept_hills",
-    "minecraft:stony_peaks"
+    "minecraft:stony_peaks",
+    {
+      "id": "natures_spirit:alpine_highlands",
+      "required": false
+    },
+    {
+      "id": "natures_spirit:alpine_clearings",
+      "required": false
+    },
+    {
+      "id": "natures_spirit:red_peaks",
+      "required": false
+    },
+    {
+      "id": "regions_unexplored:mountains",
+      "required": false
+    },
+    {
+      "id": "regions_unexplored:highland_fields",
+      "required": false
+    }
   ]
 }
