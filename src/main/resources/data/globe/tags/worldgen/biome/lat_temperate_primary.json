@@ -16,6 +16,70 @@
     {
       "id": "biomesoplenty:maple_woods",
       "required": false
+    },
+    {
+      "id": "byg:aspen_forest",
+      "required": false
+    },
+    {
+      "id": "byg:red_oak_forest",
+      "required": false
+    },
+    {
+      "id": "byg:zelkova_forest",
+      "required": false
+    },
+    {
+      "id": "byg:temperate_grove",
+      "required": false
+    },
+    {
+      "id": "byg:autumnal_forest",
+      "required": false
+    },
+    {
+      "id": "byg:autumnal_valley",
+      "required": false
+    },
+    {
+      "id": "terrestria:redwood_forest",
+      "required": false
+    },
+    {
+      "id": "terrestria:lush_redwood_forest",
+      "required": false
+    },
+    {
+      "id": "terrestria:dense_woodlands",
+      "required": false
+    },
+    {
+      "id": "terrestria:japanese_maple_forest",
+      "required": false
+    },
+    {
+      "id": "wilderwild:mixed_forest",
+      "required": false
+    },
+    {
+      "id": "wilderwild:maple_forest",
+      "required": false
+    },
+    {
+      "id": "wilderwild:dark_birch_forest",
+      "required": false
+    },
+    {
+      "id": "wilderwild:semi_birch_forest",
+      "required": false
+    },
+    {
+      "id": "traverse:woodlands",
+      "required": false
+    },
+    {
+      "id": "traverse:autumnal_woods",
+      "required": false
     }
   ]
 }

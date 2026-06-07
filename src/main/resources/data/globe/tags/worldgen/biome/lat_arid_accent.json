@@ -4,6 +4,54 @@
     {
       "id": "biomesoplenty:dryland",
       "required": false
+    },
+    {
+      "id": "byg:mojave_desert",
+      "required": false
+    },
+    {
+      "id": "byg:atacama_desert",
+      "required": false
+    },
+    {
+      "id": "byg:windswept_desert",
+      "required": false
+    },
+    {
+      "id": "byg:red_rock_valley",
+      "required": false
+    },
+    {
+      "id": "byg:dead_sea",
+      "required": false
+    },
+    {
+      "id": "byg:sierra_badlands",
+      "required": false
+    },
+    {
+      "id": "terrestria:dunes",
+      "required": false
+    },
+    {
+      "id": "terrestria:lush_desert",
+      "required": false
+    },
+    {
+      "id": "terrestria:outback",
+      "required": false
+    },
+    {
+      "id": "wilderwild:arid_forest",
+      "required": false
+    },
+    {
+      "id": "wilderwild:parched_forest",
+      "required": false
+    },
+    {
+      "id": "traverse:desert_shrubland",
+      "required": false
     }
   ]
 }
