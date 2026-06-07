@@ -4,6 +4,14 @@
     "minecraft:forest",
     "minecraft:plains",
     "minecraft:birch_forest",
-    "minecraft:taiga"
+    "minecraft:taiga",
+    {
+      "id": "biomesoplenty:seasonal_forest",
+      "required": false
+    },
+    {
+      "id": "biomesoplenty:maple_woods",
+      "required": false
+    }
   ]
 }

@@ -5,6 +5,46 @@
     "minecraft:old_growth_pine_taiga",
     "minecraft:dark_forest",
     "minecraft:flower_forest",
-    "minecraft:old_growth_birch_forest"
+    "minecraft:old_growth_birch_forest",
+    {
+      "id": "biomesoplenty:woodland",
+      "required": false
+    },
+    {
+      "id": "biomesoplenty:old_growth_woodland",
+      "required": false
+    },
+    {
+      "id": "biomesoplenty:forested_field",
+      "required": false
+    },
+    {
+      "id": "biomesoplenty:orchard",
+      "required": false
+    },
+    {
+      "id": "biomesoplenty:pasture",
+      "required": false
+    },
+    {
+      "id": "terralith:birch_taiga",
+      "required": false
+    },
+    {
+      "id": "terralith:sakura_grove",
+      "required": false
+    },
+    {
+      "id": "terralith:sakura_valley",
+      "required": false
+    },
+    {
+      "id": "promenade:blush_sakura_grove",
+      "required": false
+    },
+    {
+      "id": "promenade:cotton_sakura_grove",
+      "required": false
+    }
   ]
 }

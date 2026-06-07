@@ -1,6 +1,10 @@
 {
   "replace": false,
   "values": [
-    "minecraft:windswept_gravelly_hills"
+    "minecraft:windswept_gravelly_hills",
+    {
+      "id": "biomesoplenty:dryland",
+      "required": false
+    }
   ]
 }

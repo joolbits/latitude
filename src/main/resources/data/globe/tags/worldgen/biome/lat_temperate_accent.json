@@ -6,6 +6,22 @@
     "minecraft:windswept_hills",
     "minecraft:windswept_forest",
     "minecraft:windswept_gravelly_hills",
-    "minecraft:stony_peaks"
+    "minecraft:stony_peaks",
+    {
+      "id": "biomesoplenty:prairie",
+      "required": false
+    },
+    {
+      "id": "terralith:blooming_valley",
+      "required": false
+    },
+    {
+      "id": "terralith:lavender_valley",
+      "required": false
+    },
+    {
+      "id": "terralith:valley_clearing",
+      "required": false
+    }
   ]
 }
