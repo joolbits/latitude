@@ -38,6 +38,46 @@
     {
       "id": "promenade:glacarian_taiga",
       "required": false
+    },
+    {
+      "id": "byg:frosted_taiga",
+      "required": false
+    },
+    {
+      "id": "byg:frosted_coniferous_forest",
+      "required": false
+    },
+    {
+      "id": "byg:cardinal_tundra",
+      "required": false
+    },
+    {
+      "id": "byg:borealis_grove",
+      "required": false
+    },
+    {
+      "id": "terrestria:snowy_hemlock_forest",
+      "required": false
+    },
+    {
+      "id": "wilderwild:snowy_old_growth_pine_taiga",
+      "required": false
+    },
+    {
+      "id": "wilderwild:snowy_dying_mixed_forest",
+      "required": false
+    },
+    {
+      "id": "wilderwild:snowy_dying_forest",
+      "required": false
+    },
+    {
+      "id": "wilderwild:tundra",
+      "required": false
+    },
+    {
+      "id": "traverse:snowy_coniferous_forest",
+      "required": false
     }
   ]
 }
