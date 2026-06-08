@@ -90,6 +90,21 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
             "Minding the alpine line..."
     };
 
+    // The Latitude-feature splashes are the last FEATURED_PHRASE_COUNT entries of PHRASES. Bias the
+    // loading sequence to START within that block ~70% of the time so they generally lead — still
+    // random, and because phrases walk forward sequentially from the seed they tend to show first.
+    @Unique private static final int FEATURED_PHRASE_COUNT = 14;
+
+    @Unique
+    private static int globe$pickSeedIndex() {
+        int n = PHRASES.length;
+        int featuredStart = Math.max(0, n - FEATURED_PHRASE_COUNT);
+        if (Math.random() < 0.70 && featuredStart < n) {
+            return featuredStart + (int) (Math.random() * (n - featuredStart));
+        }
+        return (int) (Math.random() * n);
+    }
+
     @Unique private static final long PHRASE_CYCLE_MS = 4800;
     @Unique private static final long FAIL_SAFE_CLEAR_MS = 10 * 60 * 1000L;
     @Unique private long globe$overlayStartMs = 0L;
@@ -148,7 +163,7 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
             globe$overlayStartMs = now;
             globe$lastDirectionChangeMs = now;
             globe$displayProgress = 0f;
-            globe$phraseSeedIdx = (int) (Math.random() * PHRASES.length);
+            globe$phraseSeedIdx = globe$pickSeedIndex();
             GLOBE_LOGGER.info("[Latitude lifecycle] bespoke overlay first render — {}ms since beginExpedition",
                     LatitudeClientState.elapsedSinceExpeditionMs());
         } else if (LatitudeClientState.elapsedSinceExpeditionMs() >= FAIL_SAFE_CLEAR_MS) {
