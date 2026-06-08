@@ -2,25 +2,34 @@ package com.example.globe.mixin.client;
 
 import com.example.globe.client.LatitudeClientState;
 import net.minecraft.client.MinecraftClient;
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.nbt.NbtElement;
-import net.minecraft.nbt.NbtIo;
-import net.minecraft.nbt.NbtSizeTracker;
+import net.minecraft.registry.Registry;
+import net.minecraft.registry.RegistryKey;
+import net.minecraft.registry.RegistryKeys;
 import net.minecraft.resource.ResourcePackManager;
 import net.minecraft.server.SaveLoader;
-import net.minecraft.util.WorldSavePath;
+import net.minecraft.util.Identifier;
+import net.minecraft.world.dimension.DimensionOptions;
 import net.minecraft.world.level.storage.LevelStorage;
+import net.minecraft.world.gen.chunk.ChunkGenerator;
+import net.minecraft.world.gen.chunk.ChunkGeneratorSettings;
+import net.minecraft.world.gen.chunk.NoiseChunkGenerator;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
-
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.util.Optional;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 @Mixin(MinecraftClient.class)
 public abstract class MinecraftClientStartIntegratedMixin {
+    @Unique private static final Logger GLOBE_LOGGER = LoggerFactory.getLogger("LatitudeLoadingOverlay");
+    @Unique private static final RegistryKey<ChunkGeneratorSettings> GLOBE_SETTINGS_KEY = globe$settingsKey("overworld");
+    @Unique private static final RegistryKey<ChunkGeneratorSettings> GLOBE_SETTINGS_XSMALL_KEY = globe$settingsKey("overworld_xsmall");
+    @Unique private static final RegistryKey<ChunkGeneratorSettings> GLOBE_SETTINGS_SMALL_KEY = globe$settingsKey("overworld_small");
+    @Unique private static final RegistryKey<ChunkGeneratorSettings> GLOBE_SETTINGS_REGULAR_KEY = globe$settingsKey("overworld_regular");
+    @Unique private static final RegistryKey<ChunkGeneratorSettings> GLOBE_SETTINGS_LARGE_KEY = globe$settingsKey("overworld_large");
+    @Unique private static final RegistryKey<ChunkGeneratorSettings> GLOBE_SETTINGS_MASSIVE_KEY = globe$settingsKey("overworld_massive");
 
     @Inject(method = "startIntegratedServer", at = @At("HEAD"))
     private void globe$markLatitudeLoad(LevelStorage.Session session,
@@ -31,46 +40,45 @@ public abstract class MinecraftClientStartIntegratedMixin {
         if (LatitudeClientState.isLatitudeWorldLoading()) {
             return;
         }
-        if (globe$isLatitudeWorld(session)) {
+        if (globe$isLatitudeWorld(saveLoader)) {
+            LatitudeClientState.beginExpedition(System.currentTimeMillis());
             LatitudeClientState.activateLatitudeLoading();
             LatitudeClientState.firstWorldLoad = false;
+            GLOBE_LOGGER.info("[Latitude lifecycle] existing Latitude save loading overlay activated — {}ms since beginExpedition",
+                    LatitudeClientState.elapsedSinceExpeditionMs());
         }
     }
 
-    private static boolean globe$isLatitudeWorld(LevelStorage.Session session) {
+    @Unique
+    private static boolean globe$isLatitudeWorld(SaveLoader saveLoader) {
         try {
-            Path levelDat = session.getDirectory(WorldSavePath.ROOT).resolve("level.dat");
-            if (!Files.exists(levelDat)) {
-                return false;
-            }
-            NbtCompound root = NbtIo.readCompressed(levelDat, NbtSizeTracker.ofUnlimitedBytes());
-            Optional<NbtCompound> dataOpt = root.getCompound("Data");
-            if (dataOpt.isEmpty()) return false;
-            Optional<NbtCompound> wgsOpt = dataOpt.get().getCompound("WorldGenSettings");
-            if (wgsOpt.isEmpty()) return false;
-            Optional<NbtCompound> dimsOpt = wgsOpt.get().getCompound("dimensions");
-            if (dimsOpt.isEmpty()) return false;
-            Optional<NbtCompound> overworldOpt = dimsOpt.get().getCompound("minecraft:overworld");
-            if (overworldOpt.isEmpty()) return false;
-            Optional<NbtCompound> generatorOpt = overworldOpt.get().getCompound("generator");
-            if (generatorOpt.isEmpty()) return false;
-            NbtCompound generator = generatorOpt.get();
-
-            Optional<String> settingsId = generator.getString("settings");
-            if (settingsId.isPresent() && settingsId.get().startsWith("globe:")) {
-                return true;
-            }
-            Optional<NbtCompound> settingsTag = generator.getCompound("settings");
-            if (settingsTag.isPresent()) {
-                Optional<String> preset = settingsTag.get().getString("preset");
-                if (preset.isPresent() && preset.get().startsWith("globe:")) {
-                    return true;
-                }
-            }
-            Optional<String> typeId = generator.getString("type");
-            return typeId.isPresent() && typeId.get().startsWith("globe:");
-        } catch (Exception ignored) {
+            Registry<DimensionOptions> dimensions = saveLoader.combinedDynamicRegistries()
+                    .getCombinedRegistryManager()
+                    .getOrThrow(RegistryKeys.DIMENSION);
+            DimensionOptions overworld = dimensions.get(DimensionOptions.OVERWORLD);
+            return overworld != null && globe$isLatitudeGenerator(overworld.chunkGenerator());
+        } catch (Exception e) {
+            GLOBE_LOGGER.warn("[Latitude lifecycle] existing-save loading overlay detection failed", e);
             return false;
         }
+    }
+
+    @Unique
+    private static boolean globe$isLatitudeGenerator(ChunkGenerator generator) {
+        if (!(generator instanceof NoiseChunkGenerator noise) || noise.getSettings() == null) {
+            return false;
+        }
+
+        return noise.matchesSettings(GLOBE_SETTINGS_KEY)
+                || noise.matchesSettings(GLOBE_SETTINGS_XSMALL_KEY)
+                || noise.matchesSettings(GLOBE_SETTINGS_SMALL_KEY)
+                || noise.matchesSettings(GLOBE_SETTINGS_REGULAR_KEY)
+                || noise.matchesSettings(GLOBE_SETTINGS_LARGE_KEY)
+                || noise.matchesSettings(GLOBE_SETTINGS_MASSIVE_KEY);
+    }
+
+    @Unique
+    private static RegistryKey<ChunkGeneratorSettings> globe$settingsKey(String path) {
+        return RegistryKey.of(RegistryKeys.CHUNK_GENERATOR_SETTINGS, Identifier.of("globe", path));
     }
 }
