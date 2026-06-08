@@ -89,7 +89,7 @@ public abstract class ChunkGeneratorBiomeSourceMixin {
             }
             return;
         }
-        if (!globe$isAnyGlobeSettings()) {
+        if (!GlobeMod.shouldApplyLatitudeWorldgen((NoiseChunkGenerator) (Object) this)) {
             if (DEBUG_WORLDGEN_PATH && DEBUG_WRAP_GATE_REJECT_LOGGED.compareAndSet(false, true)) {
                 GlobeMod.LOGGER.info("[Latitude] biomeSource wrap gate reject: settings not Globe preset checked={} matched={} settingsReady={} action=not wrapping biome source",
                         GLOBE_SETTINGS_CHECKED, globe$matchedSettingsLabel(), globe$hasResolvedSettings());

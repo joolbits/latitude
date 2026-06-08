@@ -166,10 +166,8 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
         int titleY = paneY + 12;
         globe$drawCentered(context, "LATITUDE", cx, titleY, GOLD, true);
 
-        // ── First-creation note ──
-        if (LatitudeClientState.firstWorldLoad) {
-            globe$drawCentered(context, "Creating a new world may take a little longer.", cx, titleY + 12, MUTED, false);
-        }
+        // ── Loading hint ── (same line for new + reloaded worlds, matching 26.1.2)
+        globe$drawCentered(context, "Press F9 in-game for HUD options", cx, titleY + 12, MUTED, false);
 
         // ── Compass with wandering needle ──
         int compassCY = paneY + paneH / 2 - 4;

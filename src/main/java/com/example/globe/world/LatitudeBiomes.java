@@ -309,6 +309,29 @@ public final class LatitudeBiomes {
         return ACTIVE_RADIUS_BLOCKS;
     }
 
+    // ── Tree line ──────────────────────────────────────────────────────────────
+    // Above TREE_LINE_Y trees/foliage are fully suppressed (alpine bald zone); within the fade
+    // band just below, they thin out smoothly so the line reads natural instead of a buzz-cut.
+    // MC clouds render at Y=192; the line sits a little below so peaks crest bare into the sky.
+    public static final int TREE_LINE_Y = 168;
+    public static final int TREE_LINE_FADE_BAND = 28;
+
+    /**
+     * Probability in [0,1] that a tree/large-foliage feature originating at {@code blockY} should be
+     * SUPPRESSED by the tree line: 0 below the fade band, smoothstep through the band, 1 at/above the line.
+     */
+    public static double treeLineSuppression(int blockY) {
+        if (blockY >= TREE_LINE_Y) {
+            return 1.0;
+        }
+        int bandStart = TREE_LINE_Y - TREE_LINE_FADE_BAND;
+        if (blockY <= bandStart) {
+            return 0.0;
+        }
+        double t = (double) (blockY - bandStart) / (double) TREE_LINE_FADE_BAND;
+        return t * t * (3.0 - 2.0 * t); // smoothstep
+    }
+
     public static int oceanDistanceBlocks(int blockX, int blockZ, MultiNoiseUtil.MultiNoiseSampler sampler) {
         if (OCEAN_DISTANCE_FIELD == null) {
             return Integer.MAX_VALUE;

@@ -142,26 +142,13 @@ public final class LatitudeWorldLauncher {
             goh = wc.getGeneratorOptionsHolder();
 
             // ── 7. Build level metadata (replicates CreateWorldScreen.createLevel lines 284-298) ──
-            // DIAGNOSTIC (beta.10): in-game worlds have been generating as vanilla, not Globe. Log the
-            // actual overworld settings id at each stage so we can pinpoint exactly where the globe
-            // overworld is lost. The dimensions are still built with the original (working) path so the
-            // world loads — this build does NOT change behavior, only instruments it.
-            if (isLatitude) {
-                LOGGER.info("[Latitude diag] selectedDimensions.overworld settings = {}",
-                        settingsIdOf(goh.selectedDimensions().getChunkGenerator()));
-                LOGGER.info("[Latitude diag] dimensionOptionsRegistry: hasOverworld={} overworldSettings={} keys={}",
-                        goh.dimensionOptionsRegistry().getOptionalValue(net.minecraft.world.dimension.DimensionOptions.OVERWORLD).isPresent(),
-                        goh.dimensionOptionsRegistry().getOptionalValue(net.minecraft.world.dimension.DimensionOptions.OVERWORLD)
-                                .map(d -> settingsIdOf(d.chunkGenerator())).orElse("<none>"),
-                        goh.dimensionOptionsRegistry().getKeys());
-            }
+            // NOTE: do NOT replace the overworld generator's biomeSource here. The latitude biome wrap is a
+            // RUNTIME-only override (ChunkGenerator#getBiomeSource + the populateBiomes redirect, gated by
+            // GlobeMod.shouldApplyLatitudeWorldgen) — the serialized biomeSource must stay the vanilla
+            // multi_noise source, or WorldGenSettings fails to serialize (LatitudeBiomeSource is not a
+            // registered biome-source type) and the world cannot be reloaded.
             DimensionOptionsRegistryHolder.DimensionsConfig dimensionsConfig =
                     goh.selectedDimensions().toConfig(goh.dimensionOptionsRegistry());
-            if (isLatitude) {
-                LOGGER.info("[Latitude diag] FINAL saved overworld settings = {}",
-                        dimensionsConfig.dimensions().getOptionalValue(net.minecraft.world.dimension.DimensionOptions.OVERWORLD)
-                                .map(d -> settingsIdOf(d.chunkGenerator())).orElse("<none>"));
-            }
 
             CombinedDynamicRegistries<ServerDynamicRegistryType> combinedDynamicRegistries =
                     goh.combinedDynamicRegistries()
@@ -206,6 +193,10 @@ public final class LatitudeWorldLauncher {
             LOGGER.info("[Latitude lifecycle] session created — {}ms elapsed", System.currentTimeMillis() - t0);
 
             // ── 10. Write Latitude state (latest safe point — after session, before launch) ──
+            // Record the chosen border radius so the server can persist the world's Globe-ness +
+            // size into LatitudeWorldState at first load (the generator's globe settings key does
+            // not survive level.dat serialization on this MC line). 0 for non-Latitude worlds.
+            GlobePending.pendingGlobeRadius = isLatitude ? size.borderRadiusBlocks : 0;
             if (isLatitude) {
                 GlobeWorldSizeSelection.set(size);
                 GlobePending.set(spawnZone.id().toUpperCase(java.util.Locale.ROOT));
@@ -246,13 +237,5 @@ public final class LatitudeWorldLauncher {
             }
             client.setScreen(screen);
         }
-    }
-
-    /** Best-effort settings id of a chunk generator, for create-world diagnostics. */
-    private static String settingsIdOf(net.minecraft.world.gen.chunk.ChunkGenerator gen) {
-        if (gen instanceof net.minecraft.world.gen.chunk.NoiseChunkGenerator ncg) {
-            return ncg.getSettings().getKey().map(k -> k.getValue().toString()).orElse("<unkeyed-noise-settings>");
-        }
-        return gen.getClass().getSimpleName();
     }
 }

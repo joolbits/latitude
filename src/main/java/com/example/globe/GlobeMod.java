@@ -133,6 +133,9 @@ public class GlobeMod implements ModInitializer {
         registerDevOnlyHeadlessRunner();
         ServerLifecycleEvents.SERVER_STOPPED.register(server -> {
             POLAR_SCRUBBER = null;
+            // Reset the process-global Globe radius so it cannot leak into a different world
+            // loaded later in the same client session (the worldgen gate keys off this).
+            LatitudeBiomes.setRadius(0);
         });
 
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
@@ -244,6 +247,19 @@ public class GlobeMod implements ModInitializer {
         if (world != server.getOverworld()) {
             return;
         }
+
+        // Adopt the border radius the bespoke create-world launcher recorded for a brand-new world and
+        // persist it into LatitudeWorldState. The globe ChunkGeneratorSettings key does not survive
+        // level.dat serialization on this MC line (it reloads unkeyed/inline), so this persisted radius —
+        // not the generator — is the source of truth for the world's Globe-ness and size on every load.
+        LatitudeWorldState worldState = LatitudeWorldState.get(world);
+        int pending = GlobePending.pendingGlobeRadius;
+        GlobePending.pendingGlobeRadius = 0; // one-shot consume
+        if (worldState.getGlobeRadius() <= 0 && pending > 0 && world.getTime() < 100L) {
+            worldState.setGlobeRadius(pending);
+            LOGGER.info("[Latitude] Recorded Globe world: border radius {} (from create-world selection)", pending);
+        }
+
         if (!isGlobeOverworld(world)) {
             return;
         }
@@ -390,10 +406,19 @@ public class GlobeMod implements ModInitializer {
         }
     }
 
+    /**
+     * Whether {@code world} is a Globe overworld. Primary signal: the per-world
+     * {@link LatitudeWorldState#getGlobeRadius()} persisted at first load (survives reload). The
+     * generator's globe ChunkGeneratorSettings key does NOT survive level.dat serialization on this
+     * MC line (it reloads as an unkeyed/inline entry), so {@code matchesSettings()} is only a
+     * best-effort fallback for setups where the key does survive.
+     */
     private static boolean isGlobeOverworld(ServerWorld world) {
+        if (LatitudeWorldState.get(world).getGlobeRadius() > 0) {
+            return true;
+        }
         ChunkGenerator gen = world.getChunkManager().getChunkGenerator();
         if (!(gen instanceof NoiseChunkGenerator noise)) return false;
-
         return noise.matchesSettings(GLOBE_SETTINGS_KEY)
                 || noise.matchesSettings(GLOBE_SETTINGS_XSMALL_KEY)
                 || noise.matchesSettings(GLOBE_SETTINGS_SMALL_KEY)
@@ -402,7 +427,38 @@ public class GlobeMod implements ModInitializer {
                 || noise.matchesSettings(GLOBE_SETTINGS_MASSIVE_KEY);
     }
 
+    /**
+     * Whether Latitude worldgen (the biome-source wrap + the populateBiomes redirect) should apply to
+     * this chunk generator. The keyed-globe fast path works where the settings key survives. The fallback
+     * handles the inlined/unkeyed globe overworld after a level.dat round-trip: a Globe world is loaded
+     * ({@code ACTIVE_RADIUS_BLOCKS} is set at world load) AND this generator's settings entry has lost its
+     * registry key. Vanilla dimensions (nether/end/overworld) keep keyed BUILT-IN settings, so they are
+     * excluded — only the globe overworld's mod-datapack settings inline to an unkeyed entry.
+     */
+    public static boolean shouldApplyLatitudeWorldgen(NoiseChunkGenerator noise) {
+        if (noise == null) {
+            return false;
+        }
+        net.minecraft.registry.entry.RegistryEntry<ChunkGeneratorSettings> settings = noise.getSettings();
+        if (settings == null) {
+            return false; // settings not initialized yet (early constructor path)
+        }
+        if (noise.matchesSettings(GLOBE_SETTINGS_KEY)
+                || noise.matchesSettings(GLOBE_SETTINGS_XSMALL_KEY)
+                || noise.matchesSettings(GLOBE_SETTINGS_SMALL_KEY)
+                || noise.matchesSettings(GLOBE_SETTINGS_REGULAR_KEY)
+                || noise.matchesSettings(GLOBE_SETTINGS_LARGE_KEY)
+                || noise.matchesSettings(GLOBE_SETTINGS_MASSIVE_KEY)) {
+            return true;
+        }
+        return com.example.globe.world.LatitudeBiomes.ACTIVE_RADIUS_BLOCKS > 0 && settings.getKey().isEmpty();
+    }
+
     private static int borderRadiusForGlobeOverworld(ServerWorld world) {
+        int persisted = LatitudeWorldState.get(world).getGlobeRadius();
+        if (persisted > 0) {
+            return persisted;
+        }
         ChunkGenerator gen = world.getChunkManager().getChunkGenerator();
         if (!(gen instanceof NoiseChunkGenerator noise)) return BORDER_RADIUS;
         return borderRadiusForNoiseGenerator(noise);
@@ -598,30 +654,20 @@ public class GlobeMod implements ModInitializer {
     }
 
     private static BlockPos tryLandAt(ServerWorld world, int x, int z) {
-        // Ensure chunk exists
-        world.getChunk(x >> 4, z >> 4);
-
-        BlockPos ground = world.getTopPosition(
-                Heightmap.Type.MOTION_BLOCKING_NO_LEAVES,
-                new BlockPos(x, world.getBottomY(), z)
-        );
-
-        // Spawn is one block above ground
-        BlockPos spawn = ground.up();
-
-        // Reject if water column / fluid at spawn space
-        if (!world.getFluidState(spawn).isEmpty()) return null;
-        if (!world.getFluidState(spawn.up()).isEmpty()) return null;
-
-        // Need 2-block headroom
-        if (!world.getBlockState(spawn).isAir()) return null;
-        if (!world.getBlockState(spawn.up()).isAir()) return null;
-
-        // Reject "stand in water" edge cases (seafloor top can still be valid with water above)
-        // MOTION_BLOCKING_NO_LEAVES usually avoids water surfaces, but this double-check is cheap.
-        if (!world.getFluidState(ground).isEmpty()) return null;
-
-        return spawn;
+        // CHEAP land probe — samples the generator's terrain height column only, with NO full chunk
+        // generation. The previous version called world.getChunk(x>>4, z>>4) on every attempt, which
+        // generated a complete custom-biome chunk (surface, features, structures) each time; with ~192
+        // attempts at a far latitude band — none of it pre-generated — that froze the server thread for
+        // minutes during world entry. getHeight() is what vanilla spawn-finding uses and costs microseconds.
+        ChunkGenerator gen = world.getChunkManager().getChunkGenerator();
+        net.minecraft.world.gen.noise.NoiseConfig noiseConfig = world.getChunkManager().getNoiseConfig();
+        // OCEAN_FLOOR_WG = top of the solid column (ignoring fluid); its value is the standable Y above it.
+        int standY = gen.getHeight(x, z, Heightmap.Type.OCEAN_FLOOR_WG, world, noiseConfig);
+        // Reject ocean / coastline below sea level — we want a dry-land spawn.
+        if (standY <= gen.getSeaLevel()) {
+            return null;
+        }
+        return new BlockPos(x, standY, z);
     }
 
     private static double lerp(double a, double b, double t) {

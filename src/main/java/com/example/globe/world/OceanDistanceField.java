@@ -1,7 +1,7 @@
 package com.example.globe.world;
 
+import it.unimi.dsi.fastutil.longs.Long2BooleanOpenHashMap;
 import it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap;
-import it.unimi.dsi.fastutil.shorts.Short2BooleanOpenHashMap;
 import net.minecraft.world.biome.source.util.MultiNoiseUtil;
 
 import java.util.ArrayDeque;
@@ -24,7 +24,7 @@ public final class OceanDistanceField {
 
     private final long worldSeed;
     private final Long2IntOpenHashMap distanceCache = new Long2IntOpenHashMap();
-    private final Short2BooleanOpenHashMap oceanFlagCache = new Short2BooleanOpenHashMap();
+    private final Long2BooleanOpenHashMap oceanFlagCache = new Long2BooleanOpenHashMap();
 
     public OceanDistanceField(long worldSeed) {
         this.worldSeed = worldSeed;
@@ -55,7 +55,7 @@ public final class OceanDistanceField {
         return (int) Math.round(interp * CELL_SIZE);
     }
 
-    private int cellDistance(int cx, int cz, MultiNoiseUtil.MultiNoiseSampler sampler) {
+    private synchronized int cellDistance(int cx, int cz, MultiNoiseUtil.MultiNoiseSampler sampler) {
         long key = cellKey(cx, cz);
         int cached = distanceCache.get(key);
         if (cached != Integer.MIN_VALUE) {
@@ -96,7 +96,7 @@ public final class OceanDistanceField {
     }
 
     private boolean isOceanCell(int cx, int cz, MultiNoiseUtil.MultiNoiseSampler sampler) {
-        short key = (short) ((cx * 131) ^ cz);
+        long key = cellKey(cx, cz);
         if (oceanFlagCache.containsKey(key)) {
             return oceanFlagCache.get(key);
         }

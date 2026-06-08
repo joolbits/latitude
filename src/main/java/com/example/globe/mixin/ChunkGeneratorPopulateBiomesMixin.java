@@ -208,8 +208,9 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
             require = 0
     )
     private void globe$wrapBiomeSupplier(Chunk chunk, BiomeSupplier originalSupplier, MultiNoiseUtil.MultiNoiseSampler sampler) {
-        // Gate: only apply to your globe overworld settings.
-        if (!this.globe$isAnyGlobeSettings()) {
+        // Gate: only apply to the globe overworld (keyed fast path, or the inlined/unkeyed globe overworld
+        // when a Globe world is loaded — see GlobeMod.shouldApplyLatitudeWorldgen).
+        if (!GlobeMod.shouldApplyLatitudeWorldgen((NoiseChunkGenerator) (Object) this)) {
             if (DEBUG_WORLDGEN_PATH && DEBUG_POPULATE_GATE_REJECT_LOGGED.compareAndSet(false, true)) {
                 LOGGER.info("[Latitude] populateBiomes gate reject: settings not Globe preset checked={} matched={} action=falling back to vanilla populateBiomes",
                         GLOBE_SETTINGS_CHECKED, globe$matchedSettingsLabel());

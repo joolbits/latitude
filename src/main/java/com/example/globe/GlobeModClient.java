@@ -6,6 +6,7 @@ import com.example.globe.client.CompassHud;
 import com.example.globe.client.CompassHudConfig;
 import com.example.globe.client.ClientKeybinds;
 import com.example.globe.client.GlobeWarningOverlay;
+import com.example.globe.client.LatitudeClientState;
 import com.example.globe.client.LatitudeSettingsScreen;
 import com.example.globe.client.SpawnZoneScreen;
 import com.example.globe.client.EwSandstormOverlayRenderer;
@@ -41,6 +42,12 @@ public class GlobeModClient implements ClientModInitializer {
         });
 
         ClientPlayNetworking.registerGlobalReceiver(GlobeNet.GlobeStatePayload.ID, (payload, context) -> {
+            if (payload.isGlobe()) {
+                // Flip the bespoke loading flag as soon as the handshake packet arrives (network thread)
+                // so the Latitude loading overlay shows when RELOADING an existing Globe world, not only
+                // on the create-world path (which sets it in LatitudeWorldLauncher).
+                LatitudeClientState.activateLatitudeLoading();
+            }
             context.client().execute(() -> {
                 GlobeClientState.setGlobeWorld(payload.isGlobe());
                 GlobeMod.LOGGER.info("S2C globe state: isGlobe={}", payload.isGlobe());

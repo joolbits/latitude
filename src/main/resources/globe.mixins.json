@@ -14,7 +14,8 @@
     "SurfaceDripstoneLawnmowerMixin",
     "ProtoChunkSnowBlockGuardMixin",
     "FreezeTopLayerFeatureGuardMixin",
-    "ChunkRegionWarmSnowTrapMixin"
+    "ChunkRegionWarmSnowTrapMixin",
+    "TreeLineVegetationGuardMixin"
   ],
   "client": [
     "client.FogRendererMixin",
@@ -28,7 +29,6 @@
     "client.WorldCreatorMixin",
     "client.InGameHudMixin",
     "HandledScreenCompassToggleMixin",
-    "client.DownloadingTerrainScreenFirstLoadMessageMixin",
     "client.LevelLoadingScreenLatitudeOverlayMixin",
     "client.LatitudeLoadingClientTickMixin",
     "client.FogRendererEwMixin",

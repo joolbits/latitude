@@ -13,19 +13,24 @@ public final class LatitudeWorldState extends PersistentState {
             LatitudeWorldState::new,
             RecordCodecBuilder.create(instance -> instance.group(
                     Codec.BOOL.optionalFieldOf("spawn_picker_dismissed", false)
-                            .forGetter(LatitudeWorldState::isSpawnPickerDismissed)
+                            .forGetter(LatitudeWorldState::isSpawnPickerDismissed),
+                    Codec.INT.optionalFieldOf("globe_radius", 0)
+                            .forGetter(LatitudeWorldState::getGlobeRadius)
             ).apply(instance, LatitudeWorldState::new)),
             DataFixTypes.SAVED_DATA_COMMAND_STORAGE
     );
 
     private boolean spawnPickerDismissed;
+    /** Globe overworld border radius (blocks). >0 marks this world as a Globe world; 0 = not Globe. */
+    private int globeRadius;
 
     public LatitudeWorldState() {
-        this(false);
+        this(false, 0);
     }
 
-    private LatitudeWorldState(boolean spawnPickerDismissed) {
+    private LatitudeWorldState(boolean spawnPickerDismissed, int globeRadius) {
         this.spawnPickerDismissed = spawnPickerDismissed;
+        this.globeRadius = globeRadius;
     }
 
     public static LatitudeWorldState get(ServerWorld world) {
@@ -39,6 +44,17 @@ public final class LatitudeWorldState extends PersistentState {
     public void setSpawnPickerDismissed(boolean spawnPickerDismissed) {
         if (this.spawnPickerDismissed != spawnPickerDismissed) {
             this.spawnPickerDismissed = spawnPickerDismissed;
+            markDirty();
+        }
+    }
+
+    public int getGlobeRadius() {
+        return globeRadius;
+    }
+
+    public void setGlobeRadius(int globeRadius) {
+        if (this.globeRadius != globeRadius) {
+            this.globeRadius = globeRadius;
             markDirty();
         }
     }
