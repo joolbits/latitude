@@ -332,6 +332,47 @@ public final class LatitudeBiomes {
         return t * t * (3.0 - 2.0 * t); // smoothstep
     }
 
+    // ── Alpine surface (rock the very highest bits + cold-latitude snow caps) ──────────────────
+    // Above ALPINE_ROCK_Y the natural surface turns to stone (alpine rock), with a patchy fade just
+    // above the line so meadow survives between the tree line and the rock — i.e. we rock the "very
+    // highest bits", not the whole zone above the tree line. Cold-latitude peaks (subpolar/polar) get
+    // snow instead of bare rock; warmer peaks stay rocky (latitude-correct, like real mountains).
+    public static final int ALPINE_ROCK_Y = 184;
+    public static final int ALPINE_ROCK_FADE = 10;
+
+    private static double globe$hash01(int x, int z) {
+        long h = (x * 0x9E3779B97F4A7C15L) ^ ((long) z * 0xC2B2AE3D27D4EB4FL);
+        h ^= (h >>> 29);
+        h *= 0xBF58476D1CE4E5B9L;
+        h ^= (h >>> 32);
+        return (h >>> 11) * 0x1.0p-53;
+    }
+
+    /**
+     * What a natural surface block at (x,y,z) should become for the alpine zone:
+     * 0 = leave unchanged, 1 = stone (rock), 2 = snow_block. Returns 0 below the rock line and for
+     * the meadow patches that survive the fade.
+     */
+    public static int alpineSurfaceKind(int blockX, int blockY, int blockZ, int radius) {
+        if (blockY < ALPINE_ROCK_Y || radius <= 0) {
+            return 0;
+        }
+        // Patchy fade just above the rock line: leave some meadow poking through near the boundary.
+        double rockT = blockY >= ALPINE_ROCK_Y + ALPINE_ROCK_FADE
+                ? 1.0
+                : (double) (blockY - ALPINE_ROCK_Y) / (double) ALPINE_ROCK_FADE;
+        if (globe$hash01(blockX, blockZ) > rockT) {
+            return 0; // meadow patch survives
+        }
+        double absLatDeg = Math.abs((double) blockZ) * 90.0 / Math.max(1, radius);
+        com.example.globe.util.LatitudeBands.Band band =
+                com.example.globe.util.LatitudeBands.fromAbsoluteLatitudeDeg(absLatDeg);
+        // Cold bands cap with snow; warmer peaks stay bare rock.
+        boolean snow = band == com.example.globe.util.LatitudeBands.Band.SUBPOLAR
+                || band == com.example.globe.util.LatitudeBands.Band.POLAR;
+        return snow ? 2 : 1;
+    }
+
     public static int oceanDistanceBlocks(int blockX, int blockZ, MultiNoiseUtil.MultiNoiseSampler sampler) {
         if (OCEAN_DISTANCE_FIELD == null) {
             return Integer.MAX_VALUE;

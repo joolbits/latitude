@@ -15,7 +15,8 @@
     "ProtoChunkSnowBlockGuardMixin",
     "FreezeTopLayerFeatureGuardMixin",
     "ChunkRegionWarmSnowTrapMixin",
-    "TreeLineVegetationGuardMixin"
+    "TreeLineVegetationGuardMixin",
+    "AlpineSurfaceMixin"
   ],
   "client": [
     "client.FogRendererMixin",

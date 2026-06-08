@@ -74,7 +74,20 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
             "Convincing bees to pollinate...",
             "Laying down riverbeds...",
             "Rotating the planet...",
-            "Aligning magnetic north..."
+            "Aligning magnetic north...",
+            "Plentifying biomes...",
+            "Sorting biomes by latitude...",
+            "Trimming the treeline...",
+            "Talking trees down from the peaks...",
+            "Giving the mountaintops a trim...",
+            "Capping peaks with snow...",
+            "Frosting the summits...",
+            "Dusting the peaks with powder...",
+            "Welcoming guest biomes...",
+            "Inviting Terralith over for tea...",
+            "Finding homes for visiting biomes...",
+            "Making room for everyone's biomes...",
+            "Minding the alpine line..."
     };
 
     @Unique private static final long PHRASE_CYCLE_MS = 4800;
