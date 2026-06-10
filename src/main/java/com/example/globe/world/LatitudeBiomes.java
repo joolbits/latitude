@@ -313,8 +313,12 @@ public final class LatitudeBiomes {
     // Above TREE_LINE_Y trees/foliage are fully suppressed (alpine bald zone); within the fade
     // band just below, they thin out smoothly so the line reads natural instead of a buzz-cut.
     // MC clouds render at Y=192; the line sits a little below so peaks crest bare into the sky.
-    public static final int TREE_LINE_Y = 168;
-    public static final int TREE_LINE_FADE_BAND = 28;
+    // MC clouds render at Y=192. Canon (Maintainer, 2026-06-08): trees only thin/vanish as peaks crest
+    // into the clouds — NOT across ordinary (even moderately elevated) terrain. The old line (168,
+    // fade to Y140) bit normal forests on tall Terralith terrain → bald world. Lift it to cloud level.
+    // Stack (low→high): forest → TREE_LINE_Y (trees gone) → thin meadow → ALPINE_ROCK_Y (rock) → snow.
+    public static final int TREE_LINE_Y = 180;
+    public static final int TREE_LINE_FADE_BAND = 16;
 
     /**
      * Probability in [0,1] that a tree/large-foliage feature originating at {@code blockY} should be
@@ -337,40 +341,46 @@ public final class LatitudeBiomes {
     // above the line so meadow survives between the tree line and the rock — i.e. we rock the "very
     // highest bits", not the whole zone above the tree line. Cold-latitude peaks (subpolar/polar) get
     // snow instead of bare rock; warmer peaks stay rocky (latitude-correct, like real mountains).
+    // Sits just above TREE_LINE_Y (180) so a thin meadow band survives between the last trees and the
+    // bare rock, then snow caps above (per-band offsets below). Raised from 172 in lock-step with the
+    // tree line so the forest→meadow→rock→snow stack stays ordered on tall terrain.
     public static final int ALPINE_ROCK_Y = 184;
-    public static final int ALPINE_ROCK_FADE = 10;
-
-    private static double globe$hash01(int x, int z) {
-        long h = (x * 0x9E3779B97F4A7C15L) ^ ((long) z * 0xC2B2AE3D27D4EB4FL);
-        h ^= (h >>> 29);
-        h *= 0xBF58476D1CE4E5B9L;
-        h ^= (h >>> 32);
-        return (h >>> 11) * 0x1.0p-53;
-    }
+    public static final int ALPINE_ROCK_FADE = 14;
+    private static final long ALPINE_NOISE_SALT = 0x416C70696E6553L; // "AlpineS"
+    private static final int ALPINE_SCALE_BLOCKS = 30; // coherent rock/meadow + snow-edge blob size
 
     /**
      * What a natural surface block at (x,y,z) should become for the alpine zone:
-     * 0 = leave unchanged, 1 = stone (rock), 2 = snow_block. Returns 0 below the rock line and for
-     * the meadow patches that survive the fade.
+     * 0 = leave unchanged, 1 = stone (rock), 2 = snow_block. Rock dominates above the rock line, with
+     * meadow surviving as shrinking minority blobs near it. Snow caps appear above a latitude-graded
+     * snow line (lower toward the poles), so cold peaks are snowy and equatorial peaks stay bare rock.
+     * Boundaries are warped by one coherent {@link ValueNoise2D} field (Art-VI-style blobs, not speckle).
      */
     public static int alpineSurfaceKind(int blockX, int blockY, int blockZ, int radius) {
         if (blockY < ALPINE_ROCK_Y || radius <= 0) {
             return 0;
         }
-        // Patchy fade just above the rock line: leave some meadow poking through near the boundary.
-        double rockT = blockY >= ALPINE_ROCK_Y + ALPINE_ROCK_FADE
-                ? 1.0
-                : (double) (blockY - ALPINE_ROCK_Y) / (double) ALPINE_ROCK_FADE;
-        if (globe$hash01(blockX, blockZ) > rockT) {
-            return 0; // meadow patch survives
+        // Coherent blob field — same field warps the meadow patches AND the snow edge so they're natural.
+        double n = ValueNoise2D.sampleBlocks(WORLD_SEED ^ ALPINE_NOISE_SALT, blockX, blockZ, ALPINE_SCALE_BLOCKS);
+        int aboveLine = blockY - ALPINE_ROCK_Y;
+        // Rock dominates from the line up; meadow blobs are a shrinking minority that fade out by the band top.
+        double meadowChance = 0.38 * (1.0 - Math.min(1.0, aboveLine / (double) ALPINE_ROCK_FADE));
+        if (n < meadowChance) {
+            return 0; // meadow blob survives
         }
+        // Latitude-graded snow line: snow starts lower toward the poles; equator never snows.
         double absLatDeg = Math.abs((double) blockZ) * 90.0 / Math.max(1, radius);
         com.example.globe.util.LatitudeBands.Band band =
                 com.example.globe.util.LatitudeBands.fromAbsoluteLatitudeDeg(absLatDeg);
-        // Cold bands cap with snow; warmer peaks stay bare rock.
-        boolean snow = band == com.example.globe.util.LatitudeBands.Band.SUBPOLAR
-                || band == com.example.globe.util.LatitudeBands.Band.POLAR;
-        return snow ? 2 : 1;
+        int snowMinY = switch (band) {
+            case POLAR -> ALPINE_ROCK_Y;
+            case SUBPOLAR -> ALPINE_ROCK_Y + 3;
+            case TEMPERATE -> ALPINE_ROCK_Y + 10;
+            case SUBTROPICAL -> ALPINE_ROCK_Y + 18;
+            case TROPICAL -> Integer.MAX_VALUE;
+        };
+        double snowWarp = (n - 0.5) * 8.0; // wavy snow line, not a clean ring
+        return (blockY >= snowMinY + snowWarp) ? 2 : 1;
     }
 
     public static int oceanDistanceBlocks(int blockX, int blockZ, MultiNoiseUtil.MultiNoiseSampler sampler) {
@@ -1251,6 +1261,7 @@ public final class LatitudeBiomes {
             }
         }
         out = enforceSnowyLatitudeRamp(biomeRegistry, out, base, blockX, blockZ, effectiveRadius, landBandIndex);
+        out = enforcePaleGardenRegion(biomeRegistry, out, base, blockX, blockZ, landBandIndex, effectiveRadius, oceanDistance);
         out = clampWarmInColdZone(biomeRegistry, base, out, band, blockX, blockZ);
         out = applySubpolarSwampGuard(biomeRegistry, base, out, band);
         if (landBandIndex >= BAND_SUBPOLAR && isJungleFamily(out)) {
@@ -1500,6 +1511,7 @@ public final class LatitudeBiomes {
             }
         }
         out = enforceSnowyLatitudeRamp(biomePool, out, base, blockX, blockZ, effectiveRadius, landBandIndex);
+        out = enforcePaleGardenRegion(biomePool, out, base, blockX, blockZ, landBandIndex, effectiveRadius, oceanDistance);
         out = clampWarmInColdZone(biomePool, base, out, band, blockX, blockZ);
         out = applySubpolarSwampGuard(biomePool, base, out, band);
         if (landBandIndex >= BAND_SUBPOLAR && isJungleFamily(out)) {
@@ -2962,6 +2974,225 @@ public final class LatitudeBiomes {
             return pickSnowyTaigaRampFallback(biomes, base, bandIndex);
         }
         return pickNonSnowyFallback(biomes, base, bandIndex);
+    }
+
+    // ── Pale Garden single-region containment (ported from canonical 26.1.2) ──────────────────────
+    // Pale Garden uses one deterministic world-scale temperate region per world (per-hemisphere
+    // anchor). The outer region is a dark-forest container; inside it a smaller nested core is the
+    // Pale Garden blob. Outside the outer region pale_garden is BLOCKED (reverted to dark_forest), so
+    // it can never appear as scattered specks — only as one concentrated region. Replaces the old
+    // per-chunk dark_forest→pale_garden speckle roll that the 1.21.11 port shipped with.
+    private static final long PALE_GARDEN_REGION_ANCHOR_X_SALT = 0x7061_6C65_5F61_6E63L; // "pale_anc"
+    private static final long PALE_GARDEN_REGION_ANCHOR_Z_SALT = 0x7061_6C65_5F61_7A7AL; // "pale_azz"
+    private static final long PALE_GARDEN_REGION_HEMI_SALT = 0x7061_6C65_5F68_656DL; // "pale_hem"
+    private static final long PALE_GARDEN_REGION_SHAPE_SALT = 0x7061_6C65_5F73_6861L; // "pale_sha"
+    private static final double PALE_GARDEN_REGION_RADIUS_FRAC = 0.18;
+    private static final int PALE_GARDEN_REGION_MIN_RADIUS_BLOCKS = 720;
+    private static final double PALE_GARDEN_REGION_WOBBLE_FRAC = 0.18;
+    private static final int PALE_GARDEN_REGION_ANGLE_SAMPLE_BLOCKS = 2048;
+    private static final int PALE_GARDEN_REGION_WOBBLE_SCALE_BLOCKS = 640;
+    private static final double PALE_GARDEN_REGION_X_INSET_FRAC = 0.20;
+    private static final double PALE_GARDEN_REGION_TEMPERATE_INSET_FRAC = 0.18;
+    private static final long PALE_GARDEN_CORE_SHAPE_SALT = 0x7061_6C65_5F63_6F72L; // "pale_cor"
+    private static final double PALE_GARDEN_CORE_RADIUS_FRAC = 0.50;
+    private static final double PALE_GARDEN_CORE_WOBBLE_FRAC = 0.12;
+    private static final int PALE_GARDEN_MIN_OCEAN_DISTANCE_BLOCKS = 384;
+
+    private static RegistryEntry<Biome> enforcePaleGardenRegion(Registry<Biome> biomes,
+                                                                RegistryEntry<Biome> candidate,
+                                                                RegistryEntry<Biome> base,
+                                                                int blockX,
+                                                                int blockZ,
+                                                                int bandIndex,
+                                                                int effectiveRadius,
+                                                                int oceanDistance) {
+        if (bandIndex != BAND_TEMPERATE) {
+            return candidate;
+        }
+        boolean inOuter = paleGardenRegionHit(WORLD_SEED, blockX, blockZ, effectiveRadius);
+        if (!inOuter) {
+            // Outside dark-forest container: suppress any stray pale_garden.
+            if (isBiomeId(candidate, "minecraft:pale_garden")) {
+                if (isBiomeId(base, "minecraft:dark_forest")) {
+                    return base;
+                }
+                try {
+                    return biome(biomes, "minecraft:dark_forest");
+                } catch (Throwable ignored) {
+                    try {
+                        return biome(biomes, "minecraft:forest");
+                    } catch (Throwable ignoredAgain) {
+                        return isBiomeId(base, "minecraft:pale_garden") ? candidate : base;
+                    }
+                }
+            }
+            return candidate;
+        }
+        // Inside dark-forest container: inner core => pale_garden (if landlocked), ring => dark_forest.
+        boolean inCore = paleGardenCoreHit(WORLD_SEED, blockX, blockZ, effectiveRadius);
+        if (inCore) {
+            boolean tooWet = isBeachLike(base)
+                    || (oceanDistance >= 0 && oceanDistance < PALE_GARDEN_MIN_OCEAN_DISTANCE_BLOCKS);
+            if (!tooWet) {
+                try {
+                    return biome(biomes, "minecraft:pale_garden");
+                } catch (Throwable ignored) {
+                    return candidate;
+                }
+            }
+        }
+        try {
+            return biome(biomes, "minecraft:dark_forest");
+        } catch (Throwable ignored) {
+            return candidate;
+        }
+    }
+
+    private static RegistryEntry<Biome> enforcePaleGardenRegion(Collection<RegistryEntry<Biome>> biomes,
+                                                                RegistryEntry<Biome> candidate,
+                                                                RegistryEntry<Biome> base,
+                                                                int blockX,
+                                                                int blockZ,
+                                                                int bandIndex,
+                                                                int effectiveRadius,
+                                                                int oceanDistance) {
+        if (bandIndex != BAND_TEMPERATE) {
+            return candidate;
+        }
+        boolean inOuter = paleGardenRegionHit(WORLD_SEED, blockX, blockZ, effectiveRadius);
+        if (!inOuter) {
+            if (isBiomeId(candidate, "minecraft:pale_garden")) {
+                if (isBiomeId(base, "minecraft:dark_forest")) {
+                    return base;
+                }
+                RegistryEntry<Biome> darkForest = entryById(biomes, "minecraft:dark_forest");
+                if (darkForest != null) {
+                    return darkForest;
+                }
+                RegistryEntry<Biome> forest = entryById(biomes, "minecraft:forest");
+                if (forest != null) {
+                    return forest;
+                }
+                return isBiomeId(base, "minecraft:pale_garden") ? candidate : base;
+            }
+            return candidate;
+        }
+        boolean inCore = paleGardenCoreHit(WORLD_SEED, blockX, blockZ, effectiveRadius);
+        if (inCore) {
+            boolean tooWet = isBeachLike(base)
+                    || (oceanDistance >= 0 && oceanDistance < PALE_GARDEN_MIN_OCEAN_DISTANCE_BLOCKS);
+            if (!tooWet) {
+                RegistryEntry<Biome> paleGarden = entryById(biomes, "minecraft:pale_garden");
+                return paleGarden != null ? paleGarden : candidate;
+            }
+        }
+        RegistryEntry<Biome> darkForest = entryById(biomes, "minecraft:dark_forest");
+        return darkForest != null ? darkForest : candidate;
+    }
+
+    private static boolean paleGardenRegionHit(long worldSeed, int blockX, int blockZ, int effectiveRadiusHint) {
+        int radius = effectiveRadiusHint > 0 ? effectiveRadiusHint : ACTIVE_RADIUS_BLOCKS;
+        if (radius <= 0) {
+            radius = REFERENCE_DIAMETER_BLOCKS / 2;
+        }
+        radius = Math.max(1, radius);
+
+        int temperateMinAbsZ = bandBoundaryBlocks(1, radius);
+        int temperateMaxAbsZ = bandBoundaryBlocks(2, radius);
+        if (temperateMaxAbsZ <= temperateMinAbsZ) {
+            return false;
+        }
+
+        int temperateSpan = temperateMaxAbsZ - temperateMinAbsZ;
+        int temperateInset = Math.max(64, (int) Math.round(temperateSpan * PALE_GARDEN_REGION_TEMPERATE_INSET_FRAC));
+        int minAnchorAbsZ = Math.min(temperateMaxAbsZ - 1, temperateMinAbsZ + temperateInset);
+        int maxAnchorAbsZ = Math.max(minAnchorAbsZ, temperateMaxAbsZ - temperateInset);
+        int anchorAbsZ = minAnchorAbsZ
+                + (int) Math.floor(toUnitDouble(mix64(worldSeed ^ PALE_GARDEN_REGION_ANCHOR_Z_SALT))
+                * (double) (maxAnchorAbsZ - minAnchorAbsZ + 1));
+        int hemisphereSign = (mix64(worldSeed ^ PALE_GARDEN_REGION_HEMI_SALT) & 1L) == 0L ? 1 : -1;
+        int anchorZ = anchorAbsZ * hemisphereSign;
+
+        int xInset = Math.max(512, (int) Math.round(radius * PALE_GARDEN_REGION_X_INSET_FRAC));
+        int minAnchorX = -radius + xInset;
+        int maxAnchorX = radius - xInset;
+        if (maxAnchorX <= minAnchorX) {
+            minAnchorX = -radius / 3;
+            maxAnchorX = radius / 3;
+        }
+        int anchorX = minAnchorX
+                + (int) Math.floor(toUnitDouble(mix64(worldSeed ^ PALE_GARDEN_REGION_ANCHOR_X_SALT))
+                * (double) (Math.max(1, maxAnchorX - minAnchorX + 1)));
+
+        double dx = (double) blockX - (double) anchorX;
+        double dz = (double) blockZ - (double) anchorZ;
+        double theta = Math.atan2(dz, dx);
+        int shapeX = (int) Math.round(Math.cos(theta) * PALE_GARDEN_REGION_ANGLE_SAMPLE_BLOCKS);
+        int shapeZ = (int) Math.round(Math.sin(theta) * PALE_GARDEN_REGION_ANGLE_SAMPLE_BLOCKS);
+        double shapeNoise = ValueNoise2D.sampleBlocks(
+                worldSeed ^ PALE_GARDEN_REGION_SHAPE_SALT,
+                shapeX,
+                shapeZ,
+                PALE_GARDEN_REGION_WOBBLE_SCALE_BLOCKS);
+        double shapeSigned = (shapeNoise * 2.0) - 1.0;
+        double baseRadius = Math.max(PALE_GARDEN_REGION_MIN_RADIUS_BLOCKS, radius * PALE_GARDEN_REGION_RADIUS_FRAC);
+        double regionRadius = baseRadius * (1.0 + shapeSigned * PALE_GARDEN_REGION_WOBBLE_FRAC);
+        regionRadius = Math.max(baseRadius * (1.0 - PALE_GARDEN_REGION_WOBBLE_FRAC), regionRadius);
+
+        return (dx * dx + dz * dz) <= (regionRadius * regionRadius);
+    }
+
+    private static boolean paleGardenCoreHit(long worldSeed, int blockX, int blockZ, int effectiveRadiusHint) {
+        int radius = effectiveRadiusHint > 0 ? effectiveRadiusHint : ACTIVE_RADIUS_BLOCKS;
+        if (radius <= 0) {
+            radius = REFERENCE_DIAMETER_BLOCKS / 2;
+        }
+        radius = Math.max(1, radius);
+
+        int temperateMinAbsZ = bandBoundaryBlocks(1, radius);
+        int temperateMaxAbsZ = bandBoundaryBlocks(2, radius);
+        if (temperateMaxAbsZ <= temperateMinAbsZ) {
+            return false;
+        }
+
+        int temperateSpan = temperateMaxAbsZ - temperateMinAbsZ;
+        int temperateInset = Math.max(64, (int) Math.round(temperateSpan * PALE_GARDEN_REGION_TEMPERATE_INSET_FRAC));
+        int minAnchorAbsZ = Math.min(temperateMaxAbsZ - 1, temperateMinAbsZ + temperateInset);
+        int maxAnchorAbsZ = Math.max(minAnchorAbsZ, temperateMaxAbsZ - temperateInset);
+        int anchorAbsZ = minAnchorAbsZ
+                + (int) Math.floor(toUnitDouble(mix64(worldSeed ^ PALE_GARDEN_REGION_ANCHOR_Z_SALT))
+                * (double) (maxAnchorAbsZ - minAnchorAbsZ + 1));
+        int hemisphereSign = (mix64(worldSeed ^ PALE_GARDEN_REGION_HEMI_SALT) & 1L) == 0L ? 1 : -1;
+        int anchorZ = anchorAbsZ * hemisphereSign;
+
+        int xInset = Math.max(512, (int) Math.round(radius * PALE_GARDEN_REGION_X_INSET_FRAC));
+        int minAnchorX = -radius + xInset;
+        int maxAnchorX = radius - xInset;
+        if (maxAnchorX <= minAnchorX) {
+            minAnchorX = -radius / 3;
+            maxAnchorX = radius / 3;
+        }
+        int anchorX = minAnchorX
+                + (int) Math.floor(toUnitDouble(mix64(worldSeed ^ PALE_GARDEN_REGION_ANCHOR_X_SALT))
+                * (double) (Math.max(1, maxAnchorX - minAnchorX + 1)));
+
+        double dx = (double) blockX - (double) anchorX;
+        double dz = (double) blockZ - (double) anchorZ;
+        double theta = Math.atan2(dz, dx);
+        int shapeX = (int) Math.round(Math.cos(theta) * PALE_GARDEN_REGION_ANGLE_SAMPLE_BLOCKS);
+        int shapeZ = (int) Math.round(Math.sin(theta) * PALE_GARDEN_REGION_ANGLE_SAMPLE_BLOCKS);
+        double shapeNoise = ValueNoise2D.sampleBlocks(
+                worldSeed ^ PALE_GARDEN_CORE_SHAPE_SALT,
+                shapeX,
+                shapeZ,
+                PALE_GARDEN_REGION_WOBBLE_SCALE_BLOCKS);
+        double shapeSigned = (shapeNoise * 2.0) - 1.0;
+        double outerBaseRadius = Math.max(PALE_GARDEN_REGION_MIN_RADIUS_BLOCKS, radius * PALE_GARDEN_REGION_RADIUS_FRAC);
+        double coreBaseRadius = outerBaseRadius * PALE_GARDEN_CORE_RADIUS_FRAC;
+        double coreRadius = coreBaseRadius * (1.0 + shapeSigned * PALE_GARDEN_CORE_WOBBLE_FRAC);
+        coreRadius = Math.max(coreBaseRadius * (1.0 - PALE_GARDEN_CORE_WOBBLE_FRAC), coreRadius);
+
+        return (dx * dx + dz * dz) <= (coreRadius * coreRadius);
     }
 
     private static RegistryEntry<Biome> clampWarmInColdZone(Registry<Biome> biomes, RegistryEntry<Biome> base,

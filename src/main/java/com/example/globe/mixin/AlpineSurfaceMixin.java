@@ -25,6 +25,9 @@ public abstract class AlpineSurfaceMixin {
 
     @Unique private static final BlockState GLOBE_ALPINE_STONE = Blocks.STONE.getDefaultState();
     @Unique private static final BlockState GLOBE_ALPINE_SNOW = Blocks.SNOW_BLOCK.getDefaultState();
+    @Unique private static final boolean DEBUG_ALPINE = Boolean.getBoolean("latitude.debugAlpine");
+    @Unique private static final java.util.concurrent.atomic.AtomicBoolean GLOBE_ALPINE_LOGGED =
+            new java.util.concurrent.atomic.AtomicBoolean(false);
 
     @ModifyVariable(
             method = "setBlockState(Lnet/minecraft/util/math/BlockPos;Lnet/minecraft/block/BlockState;I)Lnet/minecraft/block/BlockState;",
@@ -47,6 +50,11 @@ public abstract class AlpineSurfaceMixin {
             return state;
         }
         int kind = LatitudeBiomes.alpineSurfaceKind(pos.getX(), pos.getY(), pos.getZ(), radius);
+        if (DEBUG_ALPINE && kind != 0 && GLOBE_ALPINE_LOGGED.compareAndSet(false, true)) {
+            com.example.globe.GlobeMod.LOGGER.info(
+                    "[Latitude] Alpine surface active — first {} at y={} (rockLine={})",
+                    kind == 2 ? "snow" : "rock", pos.getY(), LatitudeBiomes.ALPINE_ROCK_Y);
+        }
         return switch (kind) {
             case 1 -> GLOBE_ALPINE_STONE;
             case 2 -> GLOBE_ALPINE_SNOW;

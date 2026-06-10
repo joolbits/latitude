@@ -54,6 +54,9 @@ public class ProtoChunkSnowBlockGuardMixin {
     @Inject(method = "setBlockState", at = @At("HEAD"), cancellable = true)
     private void globe$blockSnowInWarmBands(BlockPos pos, BlockState state, int flags, CallbackInfoReturnable<BlockState> cir) {
         if (state == null || !globe$isWarmBand(pos.getZ())) return;
+        // Allow alpine snow caps on high peaks even in warm/temperate bands — the warm-band guard only
+        // exists to keep snow out of LOW warm terrain, not off the mountaintops.
+        if (pos.getY() >= LatitudeBiomes.ALPINE_ROCK_Y) return;
 
         boolean isSnowBlock = state.isOf(Blocks.SNOW_BLOCK);
         boolean isSnowLayer = state.isOf(Blocks.SNOW);

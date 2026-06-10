@@ -49,6 +49,8 @@ public class TreeLineVegetationGuardMixin {
         if (suppress <= 0.0) {
             return;
         }
+        // Canon (Maintainer, 2026-06-08): NO trees above the tree line — cherry blossoms included.
+        // The tree line is altitude law; cherry groves get no exemption.
         if (suppress >= 1.0 || context.getRandom().nextDouble() < suppress) {
             cir.setReturnValue(false);
         }
