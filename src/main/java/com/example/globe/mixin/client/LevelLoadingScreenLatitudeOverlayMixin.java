@@ -130,19 +130,8 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
                         sinceExpedition);
             }
 
-            ClientWorld world = client.world;
-            ClientPlayerEntity player = client.player;
-            if (world == null || player == null) {
-                return;
-            }
-
-            long clearedAt = LatitudeClientState.clearLatitudeLoadingState();
-            GLOBE_LOGGER.info("[Latitude lifecycle] bespoke overlay cleared at game-join — {}ms since beginExpedition",
-                    clearedAt);
-
-            if (client.currentScreen instanceof LevelLoadingScreen screen) {
-                screen.close();
-            }
+            // JOIN can fire before the GlobeStatePayload handler. Keep this callback as an observation
+            // point only; the client-ready tick owns the clear so late payload fallback cannot reactivate.
         });
     }
 
