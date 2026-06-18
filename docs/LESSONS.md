@@ -140,3 +140,18 @@ Required future behavior:
 
 Evidence:
 - Local workflow audit on 2026-06-18.
+
+## L8 - Scenic GREEN Needs The Full Live Checklist
+
+Trigger: any claim that Latitude scenic proof, live visual release-readiness, EW haze/fog, border warnings, or biome cohesion is GREEN.
+
+Lesson: A partial scenic pass can prove the world is loaded without proving release-readiness. The scenic phase is only GREEN when control, world identity, EW haze/fog, border warnings, latitude/biome cohesion, decoration sanity, HUD/settings, persistence, performance, and evidence artifacts are all checked.
+
+Required future behavior:
+- Use `docs/release/scenic-drive-green-checklist.md` before declaring the scenic phase GREEN.
+- Treat ordinary control failures, missing command routes, or incomplete screenshots as engineering work, not as a Maintainer decision gate.
+- Stop before cleanup, savepoint, release, upload, publication, or public communication unless Maintainer explicitly authorizes that separate lane.
+
+Evidence:
+- `docs/release/scenic-drive-green-checklist.md`
+- `<home>/.codex/tmp/latitude-scenic-green-20260618-172628/commands/092-final-scenic-verifier.txt`
