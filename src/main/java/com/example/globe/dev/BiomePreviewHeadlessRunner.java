@@ -1,14 +1,34 @@
 package com.example.globe.dev;
 
 import com.example.globe.GlobeMod;
+import com.example.globe.mixin.NoiseChunkGeneratorAccessor;
 import com.example.globe.util.BiomeSamplerTools;
+import com.example.globe.world.LatitudeBiomeSource;
 import com.example.globe.world.LatitudeBiomes;
+import com.mojang.datafixers.util.Pair;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.loader.api.FabricLoader;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Holder;
+import net.minecraft.core.Registry;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.Mth;
+import net.minecraft.world.level.LevelHeightAccessor;
+import net.minecraft.world.level.biome.Biome;
+import net.minecraft.world.level.biome.BiomeSource;
+import net.minecraft.world.level.biome.Climate;
+import net.minecraft.world.level.chunk.ChunkAccess;
+import net.minecraft.world.level.chunk.ChunkGenerator;
+import net.minecraft.world.level.chunk.status.ChunkStatus;
+import net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator;
+import net.minecraft.world.level.levelgen.NoiseGeneratorSettings;
+import net.minecraft.world.level.levelgen.RandomState;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
@@ -16,6 +36,7 @@ import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -34,6 +55,7 @@ public final class BiomePreviewHeadlessRunner {
     private static final String SEARCH_PROP_KEY = "latdev.biomeSearch";
     private static final String AUDIT_ARG_FLAG = "latdevBandAudit";
     private static final String AUDIT_PROP_KEY = "latdev.bandAudit";
+    private static final String LOCATE_BOUNDARY_PROP_KEY = "latdev.locateBoundary";
     private static final String EMIT_HEIGHT_PROP_KEY = "latitude.emitHeight";
     private static final Pattern PROP_PAIR = Pattern.compile(
             "(?i)([a-z][a-z0-9_]*)\\s*=\\s*([^;]+?)(?=(?:\\s*[;,]\\s*[a-z][a-z0-9_]*\\s*=)|$)");
@@ -47,6 +69,8 @@ public final class BiomePreviewHeadlessRunner {
     private static final int PREVIEW_RADIUS_LARGE = 15000;
     private static final int PREVIEW_RADIUS_MASSIVE = 20000;
     private static final int PREVIEW_RADIUS_MAX = PREVIEW_RADIUS_MASSIVE;
+    private static final ResourceKey<NoiseGeneratorSettings> GLOBE_REGULAR_SETTINGS_KEY =
+            ResourceKey.create(Registries.NOISE_SETTINGS, Identifier.fromNamespaceAndPath("globe", "overworld_regular"));
 
     private BiomePreviewHeadlessRunner() {
     }
@@ -57,6 +81,12 @@ public final class BiomePreviewHeadlessRunner {
 
     private static void onServerStarted(MinecraftServer server) {
         if (!TRIGGERED.compareAndSet(false, true)) {
+            return;
+        }
+
+        LocateBoundaryConfig locateBoundaryConfig = parseLocateBoundaryConfig();
+        if (locateBoundaryConfig.enabled) {
+            server.execute(() -> runLocateBoundaryAndStop(server, locateBoundaryConfig));
             return;
         }
 
@@ -269,6 +299,340 @@ public final class BiomePreviewHeadlessRunner {
             GlobeMod.LOGGER.info("[latdev][audit] stopping server");
             server.halt(false);
         }
+    }
+
+    private static void runLocateBoundaryAndStop(MinecraftServer server, LocateBoundaryConfig config) {
+        ServerLevel world = server.overworld();
+        if (world == null) {
+            GlobeMod.LOGGER.error("[latdev][locate-boundary] no overworld available; stopping server");
+            server.halt(false);
+            return;
+        }
+
+        long worldSeed = world.getSeed();
+        Path outputDir = config.outDir != null
+                ? config.outDir
+                : server.getServerDirectory().toAbsolutePath().normalize().resolve("locate-boundary");
+        Path proofFile = outputDir.resolve("proof.txt");
+        try {
+            Files.createDirectories(outputDir);
+            if (!config.valid) {
+                writeLocateBoundaryProof(proofFile, List.of(
+                        "status=fail",
+                        "error=" + config.validationError,
+                        "verdict=fail"));
+                GlobeMod.LOGGER.error("[latdev][locate-boundary] invalid config: {}", config.validationError);
+                return;
+            }
+
+            int y = Mth.clamp(config.y, world.getMinY(), world.getMaxY() - 1);
+            int radius = config.radiusBlocks != null
+                    ? Math.max(1, config.radiusBlocks)
+                    : radiusFromSizeOrWorld(config.sizePreset, world);
+            long effectiveSeed = config.seedOverride != null ? config.seedOverride : worldSeed;
+
+            LatitudeBiomes.setWorldSeed(effectiveSeed);
+            LatitudeBiomes.setActiveRadiusBlocks(radius);
+
+            ChunkGenerator generator = world.getChunkSource().getGenerator();
+            if (!(generator instanceof NoiseBasedChunkGenerator noiseGen)) {
+                writeLocateBoundaryProof(proofFile, List.of(
+                        "status=fail",
+                        "seed=" + effectiveSeed,
+                        "world_seed=" + worldSeed,
+                        "radius=" + radius,
+                        "x_y_z=" + config.x + "," + y + "," + config.z,
+                        "error=generator_not_noise_based",
+                        "generator_class=" + generator.getClass().getName(),
+                        "verdict=fail"));
+                GlobeMod.LOGGER.error("[latdev][locate-boundary] generator is not NoiseBasedChunkGenerator: {}",
+                        generator.getClass().getName());
+                return;
+            }
+
+            BiomeSource biomeSource = generator.getBiomeSource();
+            BiomeSource baseSource = biomeSource instanceof LatitudeBiomeSource latitudeSource
+                    ? latitudeSource.original()
+                    : biomeSource;
+            boolean settingsAccessorReady = ((NoiseChunkGeneratorAccessor) (Object) noiseGen).globe$getSettings() != null;
+            boolean stableRegular = noiseGen.stable(GLOBE_REGULAR_SETTINGS_KEY);
+            boolean shouldApplyLatitudeWorldgen = GlobeMod.shouldApplyLatitudeWorldgen(noiseGen);
+            Registry<Biome> biomes = world.registryAccess().lookupOrThrow(Registries.BIOME);
+            LatitudeBiomes.rememberSourcePolicyBiomeRegistry(biomes);
+            RandomState noiseConfig = RandomState.create(
+                    noiseGen.generatorSettings().value(),
+                    world.registryAccess().lookupOrThrow(Registries.NOISE),
+                    effectiveSeed);
+            Climate.Sampler sampler = noiseConfig.sampler();
+
+            int noiseX = Math.floorDiv(config.x, 4);
+            int noiseY = Math.floorDiv(y, 4);
+            int noiseZ = Math.floorDiv(config.z, 4);
+            int sourceBlockX = noiseX << 2;
+            int sourceBlockY = noiseY << 2;
+            int sourceBlockZ = noiseZ << 2;
+            int populateBlockX = sourceBlockX + 2;
+            int populateBlockY = sourceBlockY + 2;
+            int populateBlockZ = sourceBlockZ + 2;
+
+            Holder<Biome> rawSource = baseSource.getNoiseBiome(noiseX, noiseY, noiseZ, sampler);
+            Holder<Biome> base = baseSource.getNoiseBiome(noiseX, LatitudeBiomes.SURFACE_CLASSIFY_Y >> 2, noiseZ, sampler);
+            Collection<Holder<Biome>> sourcePool = baseSource.possibleBiomes();
+            Holder<Biome> wrappedSource = new LatitudeBiomeSource(baseSource, sourcePool, radius)
+                    .getNoiseBiome(noiseX, noiseY, noiseZ, sampler);
+            Holder<Biome> sourceEquivalent = LatitudeBiomes.pick(
+                    LatitudeBiomes.expandSourceCandidatePool(sourcePool),
+                    base,
+                    sourceBlockX,
+                    sourceBlockZ,
+                    sourceBlockY,
+                    radius,
+                    sampler,
+                    "SOURCE",
+                    null,
+                    null,
+                    null);
+
+            int chunkX = Math.floorDiv(config.x, 16);
+            int chunkZ = Math.floorDiv(config.z, 16);
+            ChunkAccess chunk = world.getChunkSource().getChunk(chunkX, chunkZ, ChunkStatus.FULL, true);
+            LevelHeightAccessor heightView = chunk != null ? chunk : world;
+            Holder<Biome> populateEquivalent = LatitudeBiomes.pick(
+                    biomes,
+                    base,
+                    populateBlockX,
+                    populateBlockZ,
+                    populateBlockY,
+                    radius,
+                    sampler,
+                    "MIXIN",
+                    noiseGen,
+                    noiseConfig,
+                    heightView);
+            Holder<Biome> liveBiome = world.getBiome(new BlockPos(config.x, y, config.z));
+
+            String rawSourceId = biomeId(biomes, rawSource);
+            String baseId = biomeId(biomes, base);
+            String wrappedSourceId = biomeId(biomes, wrappedSource);
+            String sourceEquivalentId = biomeId(biomes, sourceEquivalent);
+            String populateEquivalentId = biomeId(biomes, populateEquivalent);
+            String liveBiomeId = biomeId(biomes, liveBiome);
+            String savedProfileBiome = config.savedProfileBiome == null || config.savedProfileBiome.isBlank()
+                    ? "unknown"
+                    : config.savedProfileBiome;
+            boolean liveProfileComparable = biomeSource instanceof LatitudeBiomeSource;
+            boolean boundaryPassed = savedProfileBiome.equals(wrappedSourceId)
+                    && savedProfileBiome.equals(sourceEquivalentId)
+                    && savedProfileBiome.equals(populateEquivalentId)
+                    && (!liveProfileComparable || savedProfileBiome.equals(liveBiomeId));
+            String mismatch = locateBoundaryMismatch(
+                    savedProfileBiome,
+                    wrappedSourceId,
+                    sourceEquivalentId,
+                    populateEquivalentId,
+                    liveBiomeId,
+                    liveProfileComparable);
+
+            LocateSearchProof locateSearchProof = runLocateSearchProof(
+                    config,
+                    world,
+                    biomes,
+                    baseSource,
+                    radius,
+                    sampler,
+                    noiseGen,
+                    noiseConfig);
+            boolean passed = boundaryPassed && locateSearchProof.passed();
+
+            List<String> proofLines = new ArrayList<>(List.of(
+                    "status=ok",
+                    "seed=" + effectiveSeed,
+                    "world_seed=" + worldSeed,
+                    "radius=" + radius,
+                    "generator_class=" + generator.getClass().getName(),
+                    "biome_source_class=" + biomeSource.getClass().getName(),
+                    "base_source_class=" + baseSource.getClass().getName(),
+                    "settings_accessor_ready=" + settingsAccessorReady,
+                    "stable_globe_overworld_regular=" + stableRegular,
+                    "active_radius=" + LatitudeBiomes.getActiveRadiusBlocks(),
+                    "should_apply_latitude_worldgen=" + shouldApplyLatitudeWorldgen,
+                    "x_y_z=" + config.x + "," + y + "," + config.z,
+                    "noise_x_y_z=" + noiseX + "," + noiseY + "," + noiseZ,
+                    "source_block_x_y_z=" + sourceBlockX + "," + sourceBlockY + "," + sourceBlockZ,
+                    "populate_block_x_y_z=" + populateBlockX + "," + populateBlockY + "," + populateBlockZ,
+                    "raw_source_biome=" + rawSourceId,
+                    "source_surface_base_biome=" + baseId,
+                    "wrapped_source_biome=" + wrappedSourceId,
+                    "source_equivalent_biome=" + sourceEquivalentId,
+                    "populate_equivalent_biome=" + populateEquivalentId,
+                    "live_biome=" + liveBiomeId,
+                    "live_biome_mode=" + (liveProfileComparable ? "latitude_biome_source" : "headless_unwrapped"),
+                    "saved_profile_biome=" + savedProfileBiome,
+                    "mismatch=" + mismatch));
+            proofLines.addAll(locateSearchProof.lines());
+            proofLines.add("verdict=" + (passed ? "pass" : "fail"));
+            writeLocateBoundaryProof(proofFile, proofLines);
+            GlobeMod.LOGGER.info("[latdev][locate-boundary] proof={} verdict={} mismatch={}",
+                    proofFile, passed ? "pass" : "fail", mismatch);
+        } catch (Throwable t) {
+            GlobeMod.LOGGER.error("[latdev][locate-boundary] proof failed", t);
+            try {
+                Files.createDirectories(outputDir);
+                writeLocateBoundaryProof(proofFile, List.of(
+                        "status=fail",
+                        "error=" + t.getClass().getSimpleName() + ":" + String.valueOf(t.getMessage()).replace('\n', ' '),
+                        "verdict=fail"));
+            } catch (IOException io) {
+                GlobeMod.LOGGER.error("[latdev][locate-boundary] failed to write failure proof", io);
+            }
+        } finally {
+            LatitudeBiomes.setWorldSeed(worldSeed);
+            GlobeMod.LOGGER.info("[latdev][locate-boundary] stopping server");
+            server.halt(false);
+        }
+    }
+
+    private static LocateSearchProof runLocateSearchProof(LocateBoundaryConfig config,
+                                                          ServerLevel world,
+                                                          Registry<Biome> biomes,
+                                                          BiomeSource baseSource,
+                                                          int radius,
+                                                          Climate.Sampler sampler,
+                                                          NoiseBasedChunkGenerator noiseGen,
+                                                          RandomState noiseConfig) {
+        if (config.targetBiome == null || config.targetBiome.isBlank()) {
+            return new LocateSearchProof(true, List.of());
+        }
+
+        List<String> lines = new ArrayList<>();
+        String targetBiome = config.targetBiome.trim().toLowerCase(Locale.ROOT);
+        lines.add("locate_target_biome=" + targetBiome);
+        lines.add("locate_start_x_y_z=" + config.startX + "," + config.startY + "," + config.startZ);
+        lines.add("locate_search_radius=" + config.searchRadius);
+        lines.add("locate_horizontal_step=" + config.horizontalStep);
+        lines.add("locate_vertical_step=" + config.verticalStep);
+
+        Identifier targetId = Identifier.tryParse(targetBiome);
+        if (targetId == null) {
+            lines.add("locate_result_error=invalid_target_identifier");
+            lines.add("locate_result_final_matches_target=false");
+            return new LocateSearchProof(false, lines);
+        }
+        Holder<Biome> targetHolder = biomes.get(targetId).orElse(null);
+        if (targetHolder == null) {
+            lines.add("locate_result_error=target_not_registered");
+            lines.add("locate_result_final_matches_target=false");
+            return new LocateSearchProof(false, lines);
+        }
+
+        int startY = Mth.clamp(config.startY, world.getMinY(), world.getMaxY() - 1);
+        Pair<BlockPos, Holder<Biome>> result = world.findClosestBiome3d(
+                candidate -> candidate.is(targetHolder),
+                new BlockPos(config.startX, startY, config.startZ),
+                Math.max(1, config.searchRadius),
+                Math.max(1, config.horizontalStep),
+                Math.max(1, config.verticalStep));
+        if (result == null) {
+            lines.add("locate_result_x_y_z=null");
+            lines.add("locate_result_holder=null");
+            lines.add("locate_result_final_matches_target=false");
+            return new LocateSearchProof(false, lines);
+        }
+
+        BlockPos pos = result.getFirst();
+        Holder<Biome> resultHolder = result.getSecond();
+        int noiseX = Math.floorDiv(pos.getX(), 4);
+        int noiseY = Math.floorDiv(pos.getY(), 4);
+        int noiseZ = Math.floorDiv(pos.getZ(), 4);
+        int sourceBlockX = noiseX << 2;
+        int sourceBlockY = noiseY << 2;
+        int sourceBlockZ = noiseZ << 2;
+        int populateBlockX = sourceBlockX + 2;
+        int populateBlockY = sourceBlockY + 2;
+        int populateBlockZ = sourceBlockZ + 2;
+
+        Holder<Biome> rawSource = baseSource.getNoiseBiome(noiseX, noiseY, noiseZ, sampler);
+        Holder<Biome> base = baseSource.getNoiseBiome(noiseX, LatitudeBiomes.SURFACE_CLASSIFY_Y >> 2, noiseZ, sampler);
+        Collection<Holder<Biome>> sourcePool = baseSource.possibleBiomes();
+        Holder<Biome> wrappedSource = new LatitudeBiomeSource(baseSource, sourcePool, radius)
+                .getNoiseBiome(noiseX, noiseY, noiseZ, sampler);
+        int chunkX = Math.floorDiv(pos.getX(), 16);
+        int chunkZ = Math.floorDiv(pos.getZ(), 16);
+        ChunkAccess chunk = world.getChunkSource().getChunk(chunkX, chunkZ, ChunkStatus.FULL, true);
+        LevelHeightAccessor heightView = chunk != null ? chunk : world;
+        Holder<Biome> populateEquivalent = LatitudeBiomes.pick(
+                biomes,
+                base,
+                populateBlockX,
+                populateBlockZ,
+                populateBlockY,
+                radius,
+                sampler,
+                "LOCATE_PROOF",
+                noiseGen,
+                noiseConfig,
+                heightView);
+        Holder<Biome> liveBiome = world.getBiome(pos);
+
+        String resultHolderId = biomeId(biomes, resultHolder);
+        String rawSourceId = biomeId(biomes, rawSource);
+        String wrappedSourceId = biomeId(biomes, wrappedSource);
+        String populateEquivalentId = biomeId(biomes, populateEquivalent);
+        String liveBiomeId = biomeId(biomes, liveBiome);
+        boolean finalMatchesTarget = targetBiome.equals(liveBiomeId) && targetBiome.equals(populateEquivalentId);
+
+        lines.add("locate_result_x_y_z=" + pos.getX() + "," + pos.getY() + "," + pos.getZ());
+        lines.add("locate_result_holder=" + resultHolderId);
+        lines.add("locate_result_noise_x_y_z=" + noiseX + "," + noiseY + "," + noiseZ);
+        lines.add("locate_result_source_block_x_y_z=" + sourceBlockX + "," + sourceBlockY + "," + sourceBlockZ);
+        lines.add("locate_result_populate_block_x_y_z=" + populateBlockX + "," + populateBlockY + "," + populateBlockZ);
+        lines.add("locate_result_raw_source_biome=" + rawSourceId);
+        lines.add("locate_result_wrapped_source_biome=" + wrappedSourceId);
+        lines.add("locate_result_populate_equivalent_biome=" + populateEquivalentId);
+        lines.add("locate_result_live_biome=" + liveBiomeId);
+        lines.add("locate_result_final_matches_target=" + finalMatchesTarget);
+        return new LocateSearchProof(finalMatchesTarget, lines);
+    }
+
+    private static String locateBoundaryMismatch(String expected,
+                                                 String wrappedSource,
+                                                 String sourceEquivalent,
+                                                 String populateEquivalent,
+                                                 String liveBiome,
+                                                 boolean liveProfileComparable) {
+        List<String> mismatches = new ArrayList<>();
+        if (!expected.equals(wrappedSource)) {
+            mismatches.add("wrapped_source=" + wrappedSource);
+        }
+        if (!expected.equals(sourceEquivalent)) {
+            mismatches.add("source_equivalent=" + sourceEquivalent);
+        }
+        if (!expected.equals(populateEquivalent)) {
+            mismatches.add("populate_equivalent=" + populateEquivalent);
+        }
+        if (liveProfileComparable && !expected.equals(liveBiome)) {
+            mismatches.add("live=" + liveBiome);
+        }
+        return mismatches.isEmpty() ? "none" : String.join("|", mismatches);
+    }
+
+    private static void writeLocateBoundaryProof(Path proofFile, List<String> lines) throws IOException {
+        Files.createDirectories(proofFile.getParent());
+        Files.writeString(
+                proofFile,
+                String.join(System.lineSeparator(), lines) + System.lineSeparator(),
+                StandardCharsets.UTF_8);
+    }
+
+    private static String biomeId(Registry<Biome> biomeRegistry, Holder<Biome> biome) {
+        if (biome == null) {
+            return "null";
+        }
+        Identifier id = biomeRegistry.getKey(biome.value());
+        if (id != null) {
+            return id.toString();
+        }
+        return biome.unwrapKey().map(key -> key.identifier().toString()).orElse("?");
     }
 
     private static Path defaultOutDir(Path runDir) {
@@ -737,6 +1101,63 @@ public final class BiomePreviewHeadlessRunner {
         return new AuditConfig(enabled, seed, radius, size, step, y, windows, watched, control, out);
     }
 
+    private static LocateBoundaryConfig parseLocateBoundaryConfig() {
+        Map<String, String> kv = new HashMap<>();
+        String prop = System.getProperty(LOCATE_BOUNDARY_PROP_KEY, "");
+        if (prop.isBlank()) {
+            return new LocateBoundaryConfig(false, false, null, null, null, 0, 0, 0,
+                    null, 0, 0, 0, 6400, 32, 64, null, null, "");
+        }
+
+        parsePropertyOptions(prop, kv);
+        boolean enabled = parseBoolean(kv.get("enabled")) || kv.containsKey("x") || kv.containsKey("y") || kv.containsKey("z");
+        Integer x = parseInt(kv.get("x"));
+        Integer y = parseInt(kv.get("y"));
+        Integer z = parseInt(kv.get("z"));
+        String validationError = "";
+        if (enabled && (x == null || y == null || z == null)) {
+            validationError = "locate-boundary requires x, y, and z";
+        }
+
+        Long seed = parseLong(kv.get("seed"));
+        Integer radius = parseInt(kv.get("radius"));
+        String size = kv.get("size");
+        String saved = kv.get("saved");
+        String target = kv.get("target");
+        if (target == null || target.isBlank()) {
+            target = kv.get("targetbiome");
+        }
+        Integer startX = parseInt(kv.get("startx"));
+        Integer startY = parseInt(kv.get("starty"));
+        Integer startZ = parseInt(kv.get("startz"));
+        Integer searchRadius = parseInt(kv.get("searchradius"));
+        Integer horizontalStep = parseInt(kv.get("horizontalstep"));
+        Integer verticalStep = parseInt(kv.get("verticalstep"));
+        Path out = kv.containsKey("out") && !kv.get("out").isBlank()
+                ? Path.of(kv.get("out")).toAbsolutePath().normalize()
+                : null;
+
+        return new LocateBoundaryConfig(
+                enabled,
+                validationError.isBlank(),
+                seed,
+                radius,
+                size,
+                x != null ? x : 0,
+                y != null ? y : 0,
+                z != null ? z : 0,
+                target,
+                startX != null ? startX : (x != null ? x : 0),
+                startY != null ? startY : (y != null ? y : 0),
+                startZ != null ? startZ : (z != null ? z : 0),
+                searchRadius != null ? searchRadius : 6400,
+                horizontalStep != null ? horizontalStep : 32,
+                verticalStep != null ? verticalStep : 64,
+                saved,
+                out,
+                validationError);
+    }
+
     private static boolean collectAuditProgramArgs(List<String> args, Map<String, String> out) {
         boolean enabled = false;
         List<String> auditKeys = List.of("seed", "radius", "size", "step", "y", "out", "windows", "watched", "control");
@@ -1157,6 +1578,29 @@ public final class BiomePreviewHeadlessRunner {
     }
 
     private record GitStamp(String branch, String commit) {
+    }
+
+    private record LocateBoundaryConfig(boolean enabled,
+                                        boolean valid,
+                                        Long seedOverride,
+                                        Integer radiusBlocks,
+                                        String sizePreset,
+                                        int x,
+                                        int y,
+                                        int z,
+                                        String targetBiome,
+                                        int startX,
+                                        int startY,
+                                        int startZ,
+                                        int searchRadius,
+                                        int horizontalStep,
+                                        int verticalStep,
+                                        String savedProfileBiome,
+                                        Path outDir,
+                                        String validationError) {
+    }
+
+    private record LocateSearchProof(boolean passed, List<String> lines) {
     }
 
     private record AuditConfig(boolean enabled,

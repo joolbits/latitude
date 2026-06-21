@@ -615,10 +615,10 @@ public final class LatitudeBiomes {
     }
 
     // --- Tree line / alpine surface ---
-    // Above TREE_LINE_Y trees and large foliage are suppressed. A short fade band below the line
-    // thins high vegetation instead of cutting a hard stripe across tall terrain.
-    public static final int TREE_LINE_Y = 180;
-    public static final int TREE_LINE_FADE_BAND = 16;
+    // Above TREE_LINE_Y trees and large foliage are suppressed. The wider original fade
+    // band keeps the transition gradual before exposed alpine rock begins.
+    public static final int TREE_LINE_Y = 168;
+    public static final int TREE_LINE_FADE_BAND = 28;
 
     public static double treeLineSuppression(int blockY) {
         if (blockY >= TREE_LINE_Y) {
@@ -895,9 +895,14 @@ public final class LatitudeBiomes {
         boolean mountainLike;
         int seaLevel = previewSeaLevel(generator);
         if (terrainPreviewAvailable) {
-            mountainLike = mountainNoiseLike
-                    && (centerHeight >= seaLevel + PREVIEW_HEIGHT_MARGIN_BLOCKS / 2
-                        || robustDelta >= WINDSWEPT_RUGGED_THRESH);
+            mountainLike = temperateMountainTerrainAuthority(
+                    bandIndex,
+                    centerHeight,
+                    robustDelta,
+                    seaLevel,
+                    mountainNoiseLike,
+                    true,
+                    "EXPLAIN");
         } else {
             mountainLike = false;
         }
@@ -1208,6 +1213,24 @@ public final class LatitudeBiomes {
         if (callerContext == null) return false;
         String n = callerContext.trim().toUpperCase(java.util.Locale.ROOT);
         return "SOURCE".equals(n) || "ATLAS_SAMPLER".equals(n);
+    }
+
+    private static boolean temperateMountainTerrainAuthority(int landBandIndex,
+                                                             int terrainGateHeight,
+                                                             int terrainGateDelta,
+                                                             int seaLevel,
+                                                             boolean mountainNoiseLike,
+                                                             boolean hasPreviewTerrainInputs,
+                                                             String callerContext) {
+        if (landBandIndex != BAND_TEMPERATE) {
+            return false;
+        }
+        if (!hasPreviewTerrainInputs && isAtlasHeadlessContext(callerContext)) {
+            return mountainNoiseLike;
+        }
+        boolean highEnough = terrainGateHeight >= (seaLevel + TEMPERATE_MOUNTAIN_MIN_HEIGHT_ABOVE_SEA);
+        boolean ruggedEnough = terrainGateDelta >= TEMPERATE_MOUNTAIN_MIN_RUGGED_DELTA;
+        return highEnough && (ruggedEnough || mountainNoiseLike);
     }
 
     /** Coordinate gate for polar cap live trace — matches x=0/z=9702, x=14/z=9668, x=2133/z=9722 (±4 blocks). */
@@ -2355,6 +2378,8 @@ public final class LatitudeBiomes {
     private static final int WINDSWEPT_RUGGED_THRESH = 8;
     private static final int WINDSWEPT_RUGGED_HYST = 2;
     private static final int PREVIEW_HEIGHT_MARGIN_BLOCKS = 25;
+    private static final int TEMPERATE_MOUNTAIN_MIN_HEIGHT_ABOVE_SEA = 56;
+    private static final int TEMPERATE_MOUNTAIN_MIN_RUGGED_DELTA = WINDSWEPT_RUGGED_THRESH + WINDSWEPT_RUGGED_HYST;
 
     private static final ThreadLocal<Long2IntOpenHashMap> PREVIEW_HEIGHT_CACHE =
             ThreadLocal.withInitial(Long2IntOpenHashMap::new);
@@ -2532,25 +2557,14 @@ public final class LatitudeBiomes {
         int seaLevel = previewSeaLevel(generator);
         int terrainGateHeight = skipPreview && hasPreviewTerrainInputs ? columnDecisionY : preview.centerHeight;
         int terrainGateDelta = preview.robustDelta;
-        boolean previewHeightHigh = terrainGateHeight >= (seaLevel + PREVIEW_HEIGHT_MARGIN_BLOCKS);
-        boolean previewRuggedHigh = preview.robustDelta >= WINDSWEPT_RUGGED_THRESH;
-        boolean previewHeightModerate = terrainGateHeight >= (seaLevel + PREVIEW_HEIGHT_MARGIN_BLOCKS / 2);
-        // Temperate terrain-authority probe: syntheticPreviewTerrain is noise-circular for temperate —
-        // it sets height/ruggedness high when mountainNoiseLike=true, making mountainLike trivially
-        // equal to mountainNoiseLike (no actual terrain confirmation).  When live worldgen skipped
-        // the full previewTerrain() probe, reuse the already-computed column height; re-entering
-        // previewTerrain() from MIXIN/CAVE_CLAMP can stall spawn chunk generation.
-        if (skipPreview && landBandIndex == BAND_TEMPERATE && mountainNoiseLike && hasPreviewTerrainInputs) {
-            previewHeightHigh     = columnDecisionY >= (seaLevel + PREVIEW_HEIGHT_MARGIN_BLOCKS);
-            previewRuggedHigh     = false;
-            previewHeightModerate = columnDecisionY >= (seaLevel + PREVIEW_HEIGHT_MARGIN_BLOCKS / 2);
-        }
-        boolean liveRaisedTemperateColumn = skipPreview
-                && hasPreviewTerrainInputs
-                && landBandIndex == BAND_TEMPERATE
-                && terrainGateHeight >= (seaLevel + PREVIEW_HEIGHT_MARGIN_BLOCKS);
-        boolean mountainLike = (mountainNoiseLike || liveRaisedTemperateColumn)
-                && (previewHeightHigh || previewHeightModerate || previewRuggedHigh);
+        boolean mountainLike = temperateMountainTerrainAuthority(
+                landBandIndex,
+                terrainGateHeight,
+                terrainGateDelta,
+                seaLevel,
+                mountainNoiseLike,
+                hasPreviewTerrainInputs,
+                callerContext);
         boolean polarMountainNoiseLike = sampler != null && isMountainLike(sampler, blockX, blockZ);
         // Atlas/headless parity: when real terrain probes are absent, allow the noise signal to
         // satisfy the terrain gate as a substitute for the missing preview terrain inputs.
@@ -2824,12 +2838,10 @@ public final class LatitudeBiomes {
                 // Firing the temperate-mountain override there overwrites the polar result and
                 // routes it through enforceLandBandPool with a fixed-seed noise pattern that
                 // makes frozen_peaks inaccessible in atlas runs.  Only run this block for
-                // bands below POLAR (i.e. temperate and subpolar, where mountainLike can
-                // legitimately be true via the terrain-preview path).
+                // temperate band, where the dedicated terrain-authority gate now requires
+                // higher terrain plus ruggedness or vanilla mountain-noise authority.
                 boolean mountainPromotion = mountainLike
-                        && landBandIndex < BAND_POLAR
-                        && (terrainGateDelta >= (WINDSWEPT_RUGGED_THRESH + WINDSWEPT_RUGGED_HYST)
-                        || terrainGateHeight >= (seaLevel + PREVIEW_HEIGHT_MARGIN_BLOCKS));
+                        && landBandIndex == BAND_TEMPERATE;
                 if (mountainPromotion) {
                     temperateMountainRewriteRan = true;
                     chosen = pickFromTagNoiseOrBase(biomeRegistry, LAT_TEMPERATE_MOUNTAIN, base, blockX, blockZ, landBandIndex);
@@ -2855,7 +2867,7 @@ public final class LatitudeBiomes {
                 }
                 boolean savannaGateInput = isSavannaFamily(out);
                 int savannaRobustDelta = preview.robustDelta;
-                boolean savannaUpland = previewHeightHigh;
+                boolean savannaUpland = terrainGateHeight >= (seaLevel + PREVIEW_HEIGHT_MARGIN_BLOCKS);
                 // MIXIN and CAVE_CLAMP must not re-enter real previewTerrain here — stay on the synthetic path.
                 boolean forceSyntheticTerrain = skipPreview && ("MIXIN".equalsIgnoreCase(callerContext) || "CAVE_CLAMP".equalsIgnoreCase(callerContext));
                 if (skipPreview && savannaGateInput && generator != null && noiseConfig != null && heightView != null && !forceSyntheticTerrain) {
@@ -3189,25 +3201,14 @@ public final class LatitudeBiomes {
         int seaLevel = previewSeaLevel(generator);
         int terrainGateHeight = skipPreview && hasPreviewTerrainInputs ? columnDecisionY : preview.centerHeight;
         int terrainGateDelta = preview.robustDelta;
-        boolean previewHeightHigh = terrainGateHeight >= (seaLevel + PREVIEW_HEIGHT_MARGIN_BLOCKS);
-        boolean previewRuggedHigh = preview.robustDelta >= WINDSWEPT_RUGGED_THRESH;
-        boolean previewHeightModerate = terrainGateHeight >= (seaLevel + PREVIEW_HEIGHT_MARGIN_BLOCKS / 2);
-        // Temperate terrain-authority probe: syntheticPreviewTerrain is noise-circular for temperate —
-        // it sets height/ruggedness high when mountainNoiseLike=true, making mountainLike trivially
-        // equal to mountainNoiseLike (no actual terrain confirmation).  When live worldgen skipped
-        // the full previewTerrain() probe, reuse the already-computed column height; re-entering
-        // previewTerrain() from MIXIN/CAVE_CLAMP can stall spawn chunk generation.
-        if (skipPreview && landBandIndex == BAND_TEMPERATE && mountainNoiseLike && hasPreviewTerrainInputs) {
-            previewHeightHigh     = columnDecisionY >= (seaLevel + PREVIEW_HEIGHT_MARGIN_BLOCKS);
-            previewRuggedHigh     = false;
-            previewHeightModerate = columnDecisionY >= (seaLevel + PREVIEW_HEIGHT_MARGIN_BLOCKS / 2);
-        }
-        boolean liveRaisedTemperateColumn = skipPreview
-                && hasPreviewTerrainInputs
-                && landBandIndex == BAND_TEMPERATE
-                && terrainGateHeight >= (seaLevel + PREVIEW_HEIGHT_MARGIN_BLOCKS);
-        boolean mountainLike = (mountainNoiseLike || liveRaisedTemperateColumn)
-                && (previewHeightHigh || previewHeightModerate || previewRuggedHigh);
+        boolean mountainLike = temperateMountainTerrainAuthority(
+                landBandIndex,
+                terrainGateHeight,
+                terrainGateDelta,
+                seaLevel,
+                mountainNoiseLike,
+                hasPreviewTerrainInputs,
+                callerContext);
         boolean polarMountainNoiseLike = sampler != null && isMountainLike(sampler, blockX, blockZ);
         // Atlas/headless parity: when real terrain probes are absent, allow the noise signal to
         // satisfy the terrain gate as a substitute for the missing preview terrain inputs.
@@ -3466,9 +3467,7 @@ public final class LatitudeBiomes {
             // Guard: polar land has its own mountain picker (pickPolarWithFrontShoulder).
             // See parallel Registry<Biome> overload for full rationale.
             boolean mountainPromotion = mountainLike
-                    && landBandIndex < BAND_POLAR
-                    && (terrainGateDelta >= (WINDSWEPT_RUGGED_THRESH + WINDSWEPT_RUGGED_HYST)
-                    || terrainGateHeight >= (seaLevel + PREVIEW_HEIGHT_MARGIN_BLOCKS));
+                    && landBandIndex == BAND_TEMPERATE;
             if (mountainPromotion) {
                 temperateMountainRewriteRan = true;
                 chosen = pickFromTagNoiseOrBase(biomePool, LAT_TEMPERATE_MOUNTAIN, base, blockX, blockZ, landBandIndex);
@@ -3488,7 +3487,7 @@ public final class LatitudeBiomes {
             }
             boolean savannaGateInput = isSavannaFamily(out);
             int savannaRobustDelta = preview.robustDelta;
-            boolean savannaUpland = previewHeightHigh;
+            boolean savannaUpland = terrainGateHeight >= (seaLevel + PREVIEW_HEIGHT_MARGIN_BLOCKS);
             // MIXIN and CAVE_CLAMP must not re-enter real previewTerrain here — stay on the synthetic path.
             boolean forceSyntheticTerrain = skipPreview && ("MIXIN".equalsIgnoreCase(callerContext) || "CAVE_CLAMP".equalsIgnoreCase(callerContext));
             if (skipPreview && savannaGateInput && generator != null && noiseConfig != null && heightView != null && !forceSyntheticTerrain) {

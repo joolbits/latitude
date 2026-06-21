@@ -75,6 +75,8 @@ loom {
             vmArg "-Xms2G"
             vmArg "-Xmx8G"
             vmArg "-Dlatdev.biomePng=${System.getProperty('latdev.biomePng', 'enabled')}"
+            vmArg "-Dlatdev.locateBoundary=${System.getProperty('latdev.locateBoundary', '')}"
+            vmArg "-Dlatitude.debugWorldgenPath=${System.getProperty('latitude.debugWorldgenPath', 'false')}"
         }
         biomeSeedSearch {
             server()
@@ -247,6 +249,24 @@ online-mode=false
 max-players=1
 enable-command-block=false
 """
+        }
+
+        def previewLevelName = (findProperty('latdev.preview.levelName') ?: System.getProperty('latdev.preview.levelName') ?: '').toString()
+        def previewLevelSeed = (findProperty('latdev.preview.levelSeed') ?: System.getProperty('latdev.preview.levelSeed') ?: '').toString()
+        def previewLevelType = (findProperty('latdev.preview.levelType') ?: System.getProperty('latdev.preview.levelType') ?: '').toString()
+        if (previewLevelName || previewLevelSeed || previewLevelType) {
+            def props = new Properties()
+            propsFile.withInputStream { props.load(it) }
+            if (previewLevelName) {
+                props.setProperty('level-name', previewLevelName)
+            }
+            if (previewLevelSeed) {
+                props.setProperty('level-seed', previewLevelSeed)
+            }
+            if (previewLevelType) {
+                props.setProperty('level-type', previewLevelType)
+            }
+            propsFile.withOutputStream { props.store(it, 'Minecraft server properties') }
         }
     }
 }
