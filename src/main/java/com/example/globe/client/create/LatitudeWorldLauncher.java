@@ -12,6 +12,7 @@ import net.minecraft.client.gui.screens.worldselection.WorldCreationContext;
 import net.minecraft.client.gui.screens.worldselection.WorldCreationUiState;
 import net.minecraft.core.Holder;
 import net.minecraft.core.LayeredRegistryAccess;
+import net.minecraft.core.MappedRegistry;
 import net.minecraft.core.Registry;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
@@ -22,6 +23,9 @@ import net.minecraft.world.Difficulty;
 import net.minecraft.world.flag.FeatureFlags;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.LevelSettings;
+import net.minecraft.world.level.chunk.ChunkGenerator;
+import net.minecraft.world.level.dimension.LevelStem;
+import net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator;
 import net.minecraft.world.level.storage.LevelDataAndDimensions;
 import net.minecraft.world.level.gamerules.GameRules;
 import net.minecraft.world.level.levelgen.WorldDimensions;
@@ -31,6 +35,8 @@ import net.minecraft.world.level.storage.PrimaryLevelData;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.concurrent.CompletableFuture;
@@ -146,8 +152,16 @@ public final class LatitudeWorldLauncher {
             goh = wc.getSettings();
 
             // ── 7. Build level metadata (replicates CreateWorldScreen.createLevel lines 284-298) ──
-            WorldDimensions.Complete dimensionsConfig =
-                    goh.selectedDimensions().bake(goh.datapackDimensions());
+            WorldDimensions launchDimensions;
+            WorldDimensions.Complete dimensionsConfig;
+            if (isLatitude) {
+                launchDimensions = forceLatitudeOverworld(goh, updatedPresetEntry);
+                Registry<LevelStem> noDatapackOverride = emptyLevelStemRegistry();
+                dimensionsConfig = launchDimensions.bake(noDatapackOverride);
+            } else {
+                launchDimensions = goh.selectedDimensions();
+                dimensionsConfig = launchDimensions.bake(goh.datapackDimensions());
+            }
 
             LayeredRegistryAccess<RegistryLayer> combinedDynamicRegistries =
                     goh.worldgenRegistries()
@@ -171,6 +185,7 @@ public final class LatitudeWorldLauncher {
                     lifecycle3);
 
             final WorldCreationContext launchHolder = goh;
+            final WorldDimensions launchWorldDimensions = launchDimensions;
             final LayeredRegistryAccess<RegistryLayer> launchCombinedDynamicRegistries = combinedDynamicRegistries;
             final PrimaryLevelData launchLevelProperties = levelProperties;
             final GameRules launchGameRules = gameRules;
@@ -193,6 +208,7 @@ public final class LatitudeWorldLauncher {
                 }
 
                 if (isLatitude) {
+                    GlobePending.pendingGlobeRadius = size.borderRadiusBlocks;
                     GlobeWorldSizeSelection.set(size);
                     GlobePending.set(spawnZone.id().toUpperCase(java.util.Locale.ROOT));
                     GlobePending.startWithCompass = startWithCompass;
@@ -207,11 +223,12 @@ public final class LatitudeWorldLauncher {
                                 .createLevelFromExistingSettings(session, launchHolder.dataPackResources(), launchCombinedDynamicRegistries,
                                         new LevelDataAndDimensions.WorldDataAndGenSettings(
                                                 launchLevelProperties,
-                                                new net.minecraft.world.level.levelgen.WorldGenSettings(launchHolder.options(), launchHolder.selectedDimensions())),
+                                                new net.minecraft.world.level.levelgen.WorldGenSettings(launchHolder.options(), launchWorldDimensions)),
                                         Optional.ofNullable(launchGameRules));
                     } catch (Exception e) {
                         LOGGER.error("Failed to start new world", e);
                         GlobePending.consume();
+                        GlobePending.pendingGlobeRadius = 0;
                         GlobeWorldSizeSelection.set(GlobeWorldSize.REGULAR);
                         if (isLatitude) {
                             LatitudeClientState.clearLatitudeLoadingState();
@@ -233,5 +250,42 @@ public final class LatitudeWorldLauncher {
             }
             client.setScreen(screen);
         }
+    }
+
+    private static WorldDimensions forceLatitudeOverworld(WorldCreationContext context, Holder<WorldPreset> presetEntry) {
+        WorldDimensions presetDimensions = presetEntry.value().createWorldDimensions();
+        ChunkGenerator globeOverworldGen = presetDimensions.overworld();
+        Map<ResourceKey<LevelStem>, LevelStem> mergedDimensions =
+                new LinkedHashMap<>(presetDimensions.dimensions());
+        context.datapackDimensions().entrySet().forEach(entry -> {
+            if (!LevelStem.OVERWORLD.equals(entry.getKey())) {
+                mergedDimensions.put(entry.getKey(), entry.getValue());
+            }
+        });
+
+        WorldDimensions launchDimensions = new WorldDimensions(mergedDimensions)
+                .replaceOverworldGenerator(context.worldgenLoadContext(), globeOverworldGen);
+        LOGGER.info("[Latitude] create-world: forced overworld to Latitude preset generator (preset={} class={} settings={}); presetDimensions={}, datapackDimensions={}, launchDimensions={}",
+                presetEntry.unwrapKey().map(key -> key.identifier().toString()).orElse("<unbound>"),
+                globeOverworldGen.getClass().getSimpleName(),
+                noiseSettingsId(globeOverworldGen),
+                presetDimensions.dimensions().size(),
+                context.datapackDimensions().entrySet().size(),
+                launchDimensions.dimensions().size());
+        return launchDimensions;
+    }
+
+    private static String noiseSettingsId(ChunkGenerator generator) {
+        if (generator instanceof NoiseBasedChunkGenerator noise) {
+            return noise.generatorSettings()
+                    .unwrapKey()
+                    .map(key -> key.identifier().toString())
+                    .orElse("<inline>");
+        }
+        return "<non-noise>";
+    }
+
+    private static Registry<LevelStem> emptyLevelStemRegistry() {
+        return new MappedRegistry<LevelStem>(Registries.LEVEL_STEM, Lifecycle.stable()).freeze();
     }
 }

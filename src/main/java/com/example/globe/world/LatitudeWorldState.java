@@ -27,22 +27,26 @@ public final class LatitudeWorldState extends SavedData {
                     Codec.BOOL.optionalFieldOf("spawn_picker_dismissed", false)
                             .forGetter(LatitudeWorldState::isSpawnPickerDismissed),
                     WORLDGEN_POLICY_CODEC.optionalFieldOf("worldgen_policy")
-                            .forGetter((LatitudeWorldState state) -> Optional.ofNullable(state.worldgenPolicy))
-            ).apply(instance, (spawnPickerDismissed, worldgenPolicy) ->
-                    new LatitudeWorldState(spawnPickerDismissed, normalizeWorldgenPolicy(worldgenPolicy)))),
+                            .forGetter((LatitudeWorldState state) -> Optional.ofNullable(state.worldgenPolicy)),
+                    Codec.INT.optionalFieldOf("globe_radius", 0)
+                            .forGetter(LatitudeWorldState::getGlobeRadius)
+            ).apply(instance, (spawnPickerDismissed, worldgenPolicy, globeRadius) ->
+                    new LatitudeWorldState(spawnPickerDismissed, normalizeWorldgenPolicy(worldgenPolicy), globeRadius))),
             DataFixTypes.SAVED_DATA_COMMAND_STORAGE
     );
 
     private boolean spawnPickerDismissed;
     private WorldgenPolicyVersion worldgenPolicy;
+    private int globeRadius;
 
     public LatitudeWorldState() {
-        this(false, Optional.empty());
+        this(false, Optional.empty(), 0);
     }
 
-    private LatitudeWorldState(boolean spawnPickerDismissed, Optional<WorldgenPolicyVersion> worldgenPolicy) {
+    private LatitudeWorldState(boolean spawnPickerDismissed, Optional<WorldgenPolicyVersion> worldgenPolicy, int globeRadius) {
         this.spawnPickerDismissed = spawnPickerDismissed;
         this.worldgenPolicy = normalizeWorldgenPolicy(worldgenPolicy).orElse(null);
+        this.globeRadius = Math.max(0, globeRadius);
     }
 
     private static Optional<WorldgenPolicyVersion> normalizeWorldgenPolicy(Optional<WorldgenPolicyVersion> worldgenPolicy) {
@@ -78,6 +82,18 @@ public final class LatitudeWorldState extends SavedData {
             setDirty();
         } else {
             LatitudeBiomes.setWorldgenPolicy(normalized);
+        }
+    }
+
+    public int getGlobeRadius() {
+        return globeRadius;
+    }
+
+    public void setGlobeRadius(int globeRadius) {
+        int normalized = Math.max(0, globeRadius);
+        if (this.globeRadius != normalized) {
+            this.globeRadius = normalized;
+            setDirty();
         }
     }
 

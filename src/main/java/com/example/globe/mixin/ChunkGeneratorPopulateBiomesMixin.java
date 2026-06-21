@@ -144,18 +144,6 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
     private static final ResourceKey<NoiseGeneratorSettings> GLOBE_SETTINGS_MASSIVE_KEY =
             ResourceKey.create(Registries.NOISE_SETTINGS, GLOBE_SETTINGS_MASSIVE_ID);
 
-    @Unique
-    private static final int BORDER_RADIUS_XSMALL_BLOCKS = 3750;
-
-    @Unique
-    private static final int BORDER_RADIUS_SMALL_BLOCKS = 5000;
-
-    @Unique
-    private static final int BORDER_RADIUS_LARGE_BLOCKS = 10000;
-
-    @Unique
-    private static final int BORDER_RADIUS_MASSIVE_BLOCKS = 20000;
-
     // Thread-local so the Redirect (which cannot see outer args) can still access StructureAccessor safely.
     @Unique
     private static final ThreadLocal<StructureManager> globe$structureAccessorTL = new ThreadLocal<>();
@@ -176,29 +164,12 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
 
     @Unique
     private boolean globe$isAnyGlobeSettings() {
-        return this.stable(GLOBE_SETTINGS_KEY)
-                || this.stable(GLOBE_SETTINGS_XSMALL_KEY)
-                || this.stable(GLOBE_SETTINGS_SMALL_KEY)
-                || this.stable(GLOBE_SETTINGS_REGULAR_KEY)
-                || this.stable(GLOBE_SETTINGS_LARGE_KEY)
-                || this.stable(GLOBE_SETTINGS_MASSIVE_KEY);
+        return GlobeMod.shouldApplyLatitudeWorldgen((NoiseBasedChunkGenerator) (Object) this);
     }
 
     @Unique
     private int globe$borderRadiusBlocks() {
-        if (this.stable(GLOBE_SETTINGS_XSMALL_KEY)) {
-            return BORDER_RADIUS_XSMALL_BLOCKS;
-        }
-        if (this.stable(GLOBE_SETTINGS_SMALL_KEY)) {
-            return BORDER_RADIUS_SMALL_BLOCKS;
-        }
-        if (this.stable(GLOBE_SETTINGS_LARGE_KEY)) {
-            return BORDER_RADIUS_LARGE_BLOCKS;
-        }
-        if (this.stable(GLOBE_SETTINGS_MASSIVE_KEY)) {
-            return BORDER_RADIUS_MASSIVE_BLOCKS;
-        }
-        return GlobeMod.BORDER_RADIUS;
+        return GlobeMod.borderRadiusForNoiseGenerator((NoiseBasedChunkGenerator) (Object) this);
     }
 
     @Unique
@@ -489,6 +460,9 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
         }
         if (this.stable(GLOBE_SETTINGS_MASSIVE_KEY)) {
             return "overworld_massive";
+        }
+        if (GlobeMod.shouldApplyLatitudeWorldgen((NoiseBasedChunkGenerator) (Object) this)) {
+            return "inline_globe";
         }
         return "unknown";
     }

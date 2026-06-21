@@ -98,6 +98,7 @@ public class ProtoChunkSnowBlockGuardMixin {
         boolean isSnowLayer = state.is(Blocks.SNOW);
         boolean isPowder = state.is(Blocks.POWDER_SNOW);
         if (!(isSnowBlock || isSnowLayer || isPowder)) return;
+        if (pos.getY() >= LatitudeBiomes.ALPINE_ROCK_Y) return;
 
         BlockState replacement;
         if (isSnowBlock) {

@@ -44,15 +44,12 @@ public abstract class MinecraftClientStartIntegratedMixin {
                                                          Optional<GameRules> gameRules,
                                                          boolean safeMode,
                                                          CallbackInfo ci) {
-        if (!globe$isLatitudeWorld(worldStem)) {
-            return;
-        }
-
         if (!LatitudeClientState.isLatitudeWorldLoading()) {
             LatitudeClientState.beginExpedition(System.currentTimeMillis());
             LatitudeClientState.activateLatitudeLoading();
-            GLOBE_LOGGER.info("[Latitude lifecycle] existing Latitude save loading overlay activated — {}ms since beginExpedition",
-                    LatitudeClientState.elapsedSinceExpeditionMs());
+            boolean detectedLatitudeWorld = globe$isLatitudeWorld(worldStem);
+            GLOBE_LOGGER.info("[Latitude lifecycle] integrated-world loading overlay activated — {}ms since beginExpedition (latitudeWorldDetected={})",
+                    LatitudeClientState.elapsedSinceExpeditionMs(), detectedLatitudeWorld);
         }
     }
 

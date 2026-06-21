@@ -41,6 +41,9 @@ public abstract class ChunkRegionWarmSnowTrapMixin {
             && state.getBlock() != Blocks.SNOW) {
             return state;
         }
+        if (pos.getY() >= LatitudeBiomes.ALPINE_ROCK_Y) {
+            return state;
+        }
 
         WarmSnowTrapStats.snowHits++;
         WarmSnowTrapStats.lastBlock = state.getBlock().toString();

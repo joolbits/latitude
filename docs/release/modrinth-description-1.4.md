@@ -2,6 +2,10 @@
 
 ---
 
+> Draft status, 2026-06-18: this is candidate release copy, not publication-ready text. Do not upload or paste it publicly until the current `1.4.1-beta.2+26.1.2` candidate checklist is green, Maintainer chooses the public version name, and Maintainer explicitly authorizes publication. Current readiness truth lives in `<home>/CascadeProjects/Latitude-custom-biome-expansion-26.1.2/docs/release/checklist.md`.
+
+---
+
 _**A world generation mod built around *geography* instead of randomness.**_
 
 Latitude reorganizes Minecraft's biomes by latitude — jungles near the equator, tundra at the poles, and everything in between laid out the way it would actually be on a planet. The world has a center (the equator) and edges (the poles), and biomes shift as you travel between them.
@@ -20,16 +24,16 @@ Latitude runs on several Minecraft versions — **always download the file that 
 
 | Minecraft | Latitude | What you get |
 |---|---|---|
-| **26.1.2** | **1.4 "Cohesive Horizons"** (latest) | Everything below, including custom biome support and the latest worldgen pass |
+| **26.1.2** | **1.4 "Cohesive Horizons"** (candidate; public version name undecided) | Everything below, including custom biome support and the latest worldgen pass |
 | 1.21.11 / 1.21.1 / 1.20.1 | 1.3.0 | Core latitude worldgen + compass/HUD — the 1.4 additions below are **planned to come to these versions** |
 
-_This page has two parts: **① What's new in 1.4** (the latest version, Minecraft 26.1.2), then **② Core features** — the foundation that's in **every** version of Latitude. The 1.4 additions are being brought to the older versions over time._
+_This page has two parts: **① What's new in 1.4** (the current 26.1.2 candidate), then **② Core features** — the foundation that's in **every** version of Latitude. The 1.4 additions are planned for older versions over time._
 
 ---
 
 # ① What's new in 1.4 — "Cohesive Horizons" *(Minecraft 26.1.2)*
 
-This release is all about making the map read like a **coherent, Earth-like world** — and opening the climate system up to other biome mods. *(These items are on the latest version; older versions are on 1.3.0 — see the table above.)*
+This release candidate is all about making the map read like a **coherent, Earth-like world** — and opening the climate system up to other biome mods. *(These items are on the 26.1.2 candidate; older versions are on 1.3.0 — see the table above.)*
 
 - **🧩 First-class custom biome support.** Biomes from **Biomes O' Plenty, Terralith, and Promenade** now sort themselves into the right climate bands automatically — no setup, no config. A built-in safety rail keeps biomes from landing in a climate they don't belong in, and missing mods are simply skipped (no hard dependencies). *(Advanced users and pack authors can add support for other biome mods via datapack biome tags.)*
 - **🌎 A more believable climate map.** The equator now reads as a humid, *varied* rainforest belt — a mix of jungle, bamboo, sparse-jungle and savanna clearings, plus tropical biomes from any installed packs — instead of a desert-choked or single-biome equator. True arid country (desert, badlands) is pushed out to the **subtropics** where it belongs, grading into a natural jungle → savanna → desert transition toward the poleward edge.

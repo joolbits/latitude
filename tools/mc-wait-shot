@@ -1,0 +1,114 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+OUT=""
+TIMEOUT=30
+INTERVAL=1
+DRY_RUN=0
+
+screen_locked() {
+  swift - <<'SWIFT'
+import Foundation
+import CoreGraphics
+
+if let session = CGSessionCopyCurrentDictionary() as? [String: Any],
+   let locked = session["CGSSessionScreenIsLocked"] as? NSNumber,
+   locked.intValue != 0 {
+    print("locked")
+}
+SWIFT
+}
+
+usage() {
+  cat >&2 <<'EOF'
+Usage: mc-wait-shot [--timeout SECONDS] [--interval SECONDS] [--dry-run] [path]
+
+Polls for an accepted Minecraft Java window and captures the first exact-window
+screenshot that succeeds. Use this for fragile launch windows that may appear
+briefly before normal `mc-shot` can catch them.
+EOF
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --timeout)
+      [[ $# -ge 2 ]] || { usage; exit 2; }
+      TIMEOUT="$2"
+      shift 2
+      ;;
+    --interval)
+      [[ $# -ge 2 ]] || { usage; exit 2; }
+      INTERVAL="$2"
+      shift 2
+      ;;
+    --dry-run)
+      DRY_RUN=1
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    --)
+      shift
+      break
+      ;;
+    -*)
+      echo "mc-wait-shot: unknown option $1" >&2
+      usage
+      exit 2
+      ;;
+    *)
+      [[ -z "$OUT" ]] || { echo "mc-wait-shot: multiple output paths supplied" >&2; usage; exit 2; }
+      OUT="$1"
+      shift
+      ;;
+  esac
+done
+
+if [[ $# -gt 0 ]]; then
+  [[ -z "$OUT" ]] || { echo "mc-wait-shot: multiple output paths supplied" >&2; usage; exit 2; }
+  OUT="$1"
+fi
+
+if ! [[ "$TIMEOUT" =~ ^[0-9]+$ && "$INTERVAL" =~ ^[0-9]+$ ]]; then
+  echo "mc-wait-shot: timeout and interval must be integer seconds" >&2
+  exit 2
+fi
+
+OUT="${OUT:-$ROOT/tmp/minecraft-wait-shot-$(date +%Y%m%d-%H%M%S)-pid$$.png}"
+
+if [[ "$DRY_RUN" == "1" ]]; then
+  echo "DRY_RUN: would poll mc-window for up to ${TIMEOUT}s every ${INTERVAL}s"
+  echo "DRY_RUN: would capture first exact Minecraft window screenshot to $OUT"
+  exit 0
+fi
+
+mkdir -p "$(dirname "$OUT")"
+deadline=$(( $(date +%s) + TIMEOUT ))
+last_status=""
+
+while (( $(date +%s) <= deadline )); do
+  if [[ "$(screen_locked)" == "locked" ]]; then
+    echo "mc-wait-shot: screen is locked; exact window capture is unavailable until the session is unlocked" >&2
+    exit 13
+  fi
+  if info="$("$ROOT/tools/mc-window" 2>&1)"; then
+    eval "$("$ROOT/tools/mc-window" --shell)"
+    if [[ -n "${MC_WINDOW_ID:-}" ]] && screencapture -x -l "$MC_WINDOW_ID" "$OUT" 2>/dev/null; then
+      printf '%s\n' "$OUT"
+      exit 0
+    fi
+    last_status="accepted window id ${MC_WINDOW_ID:-} but exact capture failed"
+  else
+    last_status="$info"
+  fi
+  sleep "$INTERVAL"
+done
+
+echo "mc-wait-shot: no exact Minecraft window capture succeeded within ${TIMEOUT}s" >&2
+if [[ -n "$last_status" ]]; then
+  printf '%s\n' "$last_status" >&2
+fi
+exit 12

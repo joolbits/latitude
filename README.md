@@ -2,6 +2,10 @@
 
 A globe-style world + latitude-based biome bands with a customizable compass HUD and warnings.
 
+## Current 1.4 candidate status
+
+This checkout is the canonical Minecraft `26.1.2` Latitude 1.4 candidate root. Current release-readiness truth lives in `docs/release/checklist.md`; do not treat older published `1.4.0+26.1.2` or `1.21.11` records as the active candidate gate.
+
 ## Features
 
 - **Latitude biome bands** via biome tags under `globe:lat_*`.
@@ -21,7 +25,7 @@ See: docs/design-spec.md
 
 ## Dependencies
 
-- Fabric Loader (Minecraft 26.1)
+- Fabric Loader (Minecraft 26.1.2)
 - Fabric API
 
 ## Biome tag integration

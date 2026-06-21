@@ -252,6 +252,15 @@ public class GlobeMod implements ModInitializer {
         if (world != server.overworld()) {
             return;
         }
+
+        LatitudeWorldState worldState = LatitudeWorldState.get(world);
+        int pendingRadius = GlobePending.pendingGlobeRadius;
+        GlobePending.pendingGlobeRadius = 0;
+        if (worldState.getGlobeRadius() <= 0 && pendingRadius > 0 && world.getGameTime() < 100L) {
+            worldState.setGlobeRadius(pendingRadius);
+            LOGGER.info("[Latitude] Recorded Globe world: border radius {} (from create-world selection)", pendingRadius);
+        }
+
         if (!isGlobeOverworld(world)) {
             return;
         }
@@ -261,6 +270,7 @@ public class GlobeMod implements ModInitializer {
         LatitudeBiomes.setRadius(radius);
         LatitudeBiomes.setWorldSeed(seed);
         LOGGER.info("[Latitude] Early init: province authority seeded before spawn-chunk generation (seed={} radius={})", seed, radius);
+        setGlobeBorder(world, radius);
     }
 
     private static void applyWorldBorder(MinecraftServer server) {
@@ -283,6 +293,10 @@ public class GlobeMod implements ModInitializer {
         long seed = overworld.getServer().getWorldGenSettings().options().seed();
         LatitudeBiomes.setWorldSeed(seed);
 
+        setGlobeBorder(overworld, borderRadiusBlocks);
+    }
+
+    private static void setGlobeBorder(ServerLevel overworld, int borderRadiusBlocks) {
         WorldBorder border = overworld.getWorldBorder();
         // radiusBlocks is e.g. 3750 / 5000 / 7500
         double diameter = borderRadiusBlocks * 2.0;
@@ -383,27 +397,57 @@ public class GlobeMod implements ModInitializer {
     }
 
     private static boolean isGlobeOverworld(ServerLevel world) {
+        if (LatitudeWorldState.get(world).getGlobeRadius() > 0) {
+            return true;
+        }
         ChunkGenerator gen = world.getChunkSource().getGenerator();
         if (!(gen instanceof NoiseBasedChunkGenerator noise)) return false;
 
-        return noise.stable(GLOBE_SETTINGS_KEY)
+        return isGlobeNoiseGenerator(noise);
+    }
+
+    private static boolean isGlobeNoiseGenerator(NoiseBasedChunkGenerator noise) {
+        return noise != null && (noise.stable(GLOBE_SETTINGS_KEY)
                 || noise.stable(GLOBE_SETTINGS_XSMALL_KEY)
                 || noise.stable(GLOBE_SETTINGS_SMALL_KEY)
                 || noise.stable(GLOBE_SETTINGS_REGULAR_KEY)
                 || noise.stable(GLOBE_SETTINGS_LARGE_KEY)
-                || noise.stable(GLOBE_SETTINGS_MASSIVE_KEY);
+                || noise.stable(GLOBE_SETTINGS_MASSIVE_KEY));
+    }
+
+    private static boolean hasInlineSettings(NoiseBasedChunkGenerator noise) {
+        Holder<NoiseGeneratorSettings> settings = noise != null ? noise.generatorSettings() : null;
+        return settings != null && settings.unwrapKey().isEmpty();
+    }
+
+    public static boolean shouldApplyLatitudeWorldgen(NoiseBasedChunkGenerator noise) {
+        if (isGlobeNoiseGenerator(noise)) {
+            return true;
+        }
+        return LatitudeBiomes.getActiveRadiusBlocks() > 0 && hasInlineSettings(noise);
     }
 
     private static int borderRadiusForGlobeOverworld(ServerLevel world) {
+        int persisted = LatitudeWorldState.get(world).getGlobeRadius();
+        if (persisted > 0) {
+            return persisted;
+        }
         ChunkGenerator gen = world.getChunkSource().getGenerator();
         if (!(gen instanceof NoiseBasedChunkGenerator noise)) return BORDER_RADIUS;
+        return borderRadiusForNoiseGenerator(noise);
+    }
 
+    public static int borderRadiusForNoiseGenerator(NoiseBasedChunkGenerator noise) {
+        if (noise == null) return BORDER_RADIUS;
         if (noise.stable(GLOBE_SETTINGS_KEY)) return 15000;
         if (noise.stable(GLOBE_SETTINGS_XSMALL_KEY)) return 3750;
         if (noise.stable(GLOBE_SETTINGS_SMALL_KEY)) return 5000;
         if (noise.stable(GLOBE_SETTINGS_REGULAR_KEY)) return BORDER_RADIUS;
         if (noise.stable(GLOBE_SETTINGS_LARGE_KEY)) return 10000;
         if (noise.stable(GLOBE_SETTINGS_MASSIVE_KEY)) return 20000;
+        if (hasInlineSettings(noise) && LatitudeBiomes.getActiveRadiusBlocks() > 0) {
+            return LatitudeBiomes.getActiveRadiusBlocks();
+        }
 
         return BORDER_RADIUS;
     }

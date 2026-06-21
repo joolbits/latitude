@@ -1,0 +1,110 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+mode="${1:-}"
+
+swift - "$mode" <<'SWIFT'
+import CoreGraphics
+import Foundation
+
+let mode = CommandLine.arguments.dropFirst().first ?? ""
+let opts: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]
+let requiredTitle = ProcessInfo.processInfo.environment["MC_WINDOW_TITLE_CONTAINS"] ?? ""
+
+func isMinecraftGameWindow(owner: String, title: String, layer: Int, width: Int, height: Int) -> Bool {
+    let lowerTitle = title.lowercased()
+    guard owner == "java" else { return false }
+    guard title.hasPrefix("Minecraft") else { return false }
+    if !requiredTitle.isEmpty && !title.contains(requiredTitle) { return false }
+    guard !lowerTitle.contains("launcher") else { return false }
+    guard !lowerTitle.contains("modrinth") else { return false }
+    guard layer == 0 else { return false }
+    guard width > 100 && height > 100 else { return false }
+    return true
+}
+
+if mode == "--self-test" {
+    let cases: [(String, String, Int, Int, Int, Bool)] = [
+        ("java", "Minecraft* 26.1.2 - Singleplayer", 0, 1728, 1117, true),
+        ("java", "Minecraft 26.1.2", 0, 1280, 720, true),
+        ("java", "Minecraft Launcher", 0, 1280, 720, false),
+        ("java", "Minecraft Launcher 1.6.93", 0, 1280, 720, false),
+        ("Modrinth App", "Minecraft* 26.1.2 - Singleplayer", 0, 1280, 720, false),
+        ("java", "Modrinth Minecraft", 0, 1280, 720, false),
+        ("java", "Not Minecraft", 0, 1280, 720, false),
+        ("java", "Minecraft* 26.1.2 - Singleplayer", 1, 1280, 720, false),
+        ("java", "Minecraft* 26.1.2 - Singleplayer", 0, 80, 720, false)
+    ]
+    for (owner, title, layer, width, height, expected) in cases {
+        let actual = isMinecraftGameWindow(owner: owner, title: title, layer: layer, width: width, height: height)
+        if actual != expected {
+            fputs("mc-window self-test failed for owner=\(owner) title=\(title): expected \(expected), got \(actual)\n", stderr)
+            exit(3)
+        }
+    }
+    print("mc-window self-test passed")
+    exit(0)
+}
+
+guard let windows = CGWindowListCopyWindowInfo(opts, kCGNullWindowID) as? [[String: Any]] else {
+    fputs("mc-window: unable to read window list\n", stderr)
+    exit(2)
+}
+
+func number(_ value: Any?) -> Int {
+    if let n = value as? NSNumber { return n.intValue }
+    if let d = value as? Double { return Int(d.rounded()) }
+    if let i = value as? Int { return i }
+    return 0
+}
+
+struct Candidate {
+    let id: Int
+    let owner: String
+    let title: String
+    let x: Int
+    let y: Int
+    let width: Int
+    let height: Int
+    var area: Int { width * height }
+}
+
+let candidates = windows.compactMap { window -> Candidate? in
+    let owner = window[kCGWindowOwnerName as String] as? String ?? ""
+    let title = window[kCGWindowName as String] as? String ?? ""
+    let layer = number(window[kCGWindowLayer as String])
+    guard let bounds = window[kCGWindowBounds as String] as? [String: Any] else { return nil }
+    let id = number(window[kCGWindowNumber as String])
+    let x = number(bounds["X"])
+    let y = number(bounds["Y"])
+    let width = number(bounds["Width"])
+    let height = number(bounds["Height"])
+    guard id > 0 else { return nil }
+    guard isMinecraftGameWindow(owner: owner, title: title, layer: layer, width: width, height: height) else { return nil }
+    return Candidate(id: id, owner: owner, title: title, x: x, y: y, width: width, height: height)
+}.sorted { a, b in
+    if a.area != b.area { return a.area > b.area }
+    return a.id > b.id
+}
+
+guard let mc = candidates.first else {
+    fputs("mc-window: no on-screen Minecraft java window found\n", stderr)
+    exit(1)
+}
+
+let cx = mc.x + mc.width / 2
+let cy = mc.y + mc.height / 2
+
+if mode == "--shell" {
+    print("MC_WINDOW_ID=\(mc.id)")
+    print("MC_WINDOW_TITLE='\(mc.title.replacingOccurrences(of: "'", with: "'\\''"))'")
+    print("MC_WINDOW_X=\(mc.x)")
+    print("MC_WINDOW_Y=\(mc.y)")
+    print("MC_WINDOW_WIDTH=\(mc.width)")
+    print("MC_WINDOW_HEIGHT=\(mc.height)")
+    print("MC_WINDOW_CX=\(cx)")
+    print("MC_WINDOW_CY=\(cy)")
+} else {
+    print("id=\(mc.id) owner=\(mc.owner) title=\(mc.title) bounds=\(mc.x),\(mc.y),\(mc.width),\(mc.height) center=\(cx),\(cy)")
+}
+SWIFT

@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+"$ROOT/tools/mc-window" >/dev/null
+
+osascript <<'OSA'
+tell application "System Events"
+  if not (exists process "java") then error "No java process"
+  tell process "java"
+    set requiredTitle to system attribute "MC_WINDOW_TITLE_CONTAINS"
+    if requiredTitle is missing value then set requiredTitle to ""
+    set raisedMinecraft to false
+    repeat with w in windows
+      set windowName to name of w
+      if windowName starts with "Minecraft" and windowName does not contain "Launcher" and windowName does not contain "launcher" and (requiredTitle is "" or windowName contains requiredTitle) then
+        perform action "AXRaise" of w
+        set raisedMinecraft to true
+        exit repeat
+      end if
+    end repeat
+    if raisedMinecraft is false then error "No non-launcher Minecraft java window"
+    set frontmost to true
+  end tell
+end tell
+OSA
+
+sleep 0.1
+eval "$("$ROOT/tools/mc-window" --shell)"
+
+swift - "$MC_WINDOW_CX" "$MC_WINDOW_CY" <<'SWIFT'
+import CoreGraphics
+import Foundation
+
+let args = CommandLine.arguments
+guard args.count >= 3, let x = Double(args[1]), let y = Double(args[2]) else {
+    fputs("mc-focus: missing center point\n", stderr)
+    exit(2)
+}
+
+let point = CGPoint(x: x, y: y)
+CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: point, mouseButton: .left)?.post(tap: .cghidEventTap)
+usleep(120_000)
+CGEvent(mouseEventSource: nil, mouseType: .leftMouseDown, mouseCursorPosition: point, mouseButton: .left)?.post(tap: .cghidEventTap)
+usleep(120_000)
+CGEvent(mouseEventSource: nil, mouseType: .leftMouseUp, mouseCursorPosition: point, mouseButton: .left)?.post(tap: .cghidEventTap)
+SWIFT
+
+printf 'focused Minecraft window %s at center %s,%s\n' "$MC_WINDOW_ID" "$MC_WINDOW_CX" "$MC_WINDOW_CY"
