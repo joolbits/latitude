@@ -74,8 +74,35 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
             "Convincing bees to pollinate...",
             "Laying down riverbeds...",
             "Rotating the planet...",
-            "Aligning magnetic north..."
+            "Aligning magnetic north...",
+            "Plentifying biomes...",
+            "Sorting biomes by latitude...",
+            "Trimming the treeline...",
+            "Talking trees down from the peaks...",
+            "Giving the mountaintops a trim...",
+            "Capping peaks with snow...",
+            "Frosting the summits...",
+            "Dusting the peaks with powder...",
+            "Welcoming guest biomes...",
+            "Inviting Terralith over for tea...",
+            "Finding homes for visiting biomes...",
+            "Making room for everyone's biomes...",
+            "Minding the alpine line..."
     };
+
+    // The Latitude-feature splashes are the last FEATURED_PHRASE_COUNT entries of PHRASES. Bias the
+    // starting point into that block most of the time so the newer 1.4 phrases usually lead.
+    @Unique private static final int FEATURED_PHRASE_COUNT = 14;
+
+    @Unique
+    private static int globe$pickSeedIndex() {
+        int total = PHRASES.length;
+        int featuredStart = Math.max(0, total - FEATURED_PHRASE_COUNT);
+        if (Math.random() < 0.70 && featuredStart < total) {
+            return featuredStart + (int) (Math.random() * (total - featuredStart));
+        }
+        return (int) (Math.random() * total);
+    }
 
     @Unique private static final long PHRASE_CYCLE_MS = 4800;
     @Unique private static final long FAIL_SAFE_CLEAR_MS = 10 * 60 * 1000L;
@@ -127,7 +154,7 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
             globe$overlayStartMs = now;
             globe$lastDirectionChangeMs = now;
             globe$displayProgress = 0f;
-            globe$phraseSeedIdx = (int) (Math.random() * PHRASES.length);
+            globe$phraseSeedIdx = globe$pickSeedIndex();
             GLOBE_LOGGER.info("[LAT][LOADUI] bespoke overlay first render — {}ms since beginExpedition",
                     LatitudeClientState.elapsedSinceExpeditionMs());
         } else if (LatitudeClientState.elapsedSinceExpeditionMs() >= FAIL_SAFE_CLEAR_MS) {
