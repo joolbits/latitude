@@ -35,6 +35,12 @@ public abstract class ChunkGeneratorBiomeSourceMixin {
     private static final java.util.concurrent.atomic.AtomicBoolean DEBUG_WRAP_BIOLITH_DEFERRED_LOGGED =
             new java.util.concurrent.atomic.AtomicBoolean(false);
 
+    private static final java.util.concurrent.atomic.AtomicInteger DEBUG_WRAP_ATTEMPT_LOG_COUNT =
+            new java.util.concurrent.atomic.AtomicInteger(0);
+
+    private static final java.util.concurrent.atomic.AtomicInteger DEBUG_WRAP_READY_LOG_COUNT =
+            new java.util.concurrent.atomic.AtomicInteger(0);
+
     private static final String GLOBE_SETTINGS_CHECKED =
             "globe:overworld|globe:overworld_xsmall|globe:overworld_small|globe:overworld_regular|globe:overworld_large|globe:overworld_massive";
 
@@ -98,6 +104,7 @@ public abstract class ChunkGeneratorBiomeSourceMixin {
             }
             return;
         }
+        globe$logWrapAttempt();
         if (!globe$isAnyGlobeSettings()) {
             if (DEBUG_WORLDGEN_PATH && DEBUG_WRAP_GATE_REJECT_LOGGED.compareAndSet(false, true)) {
                 GlobeMod.LOGGER.info("[Latitude] biomeSource wrap gate reject: settings not Globe preset checked={} matched={} settingsReady={} action=not wrapping biome source",
@@ -210,6 +217,30 @@ public abstract class ChunkGeneratorBiomeSourceMixin {
             return GlobeMod.BORDER_RADIUS;
         }
         return GlobeMod.borderRadiusForNoiseGenerator(noise);
+    }
+
+    private void globe$logWrapAttempt() {
+        if (!DEBUG_WORLDGEN_PATH) {
+            return;
+        }
+        boolean settingsReady = globe$hasResolvedSettings();
+        int activeRadius = com.example.globe.world.LatitudeBiomes.getActiveRadiusBlocks();
+        boolean apply = settingsReady && GlobeMod.shouldApplyLatitudeWorldgen((NoiseBasedChunkGenerator) (Object) this);
+        boolean readyAttempt = settingsReady || activeRadius > 0 || apply;
+        if (readyAttempt) {
+            if (DEBUG_WRAP_READY_LOG_COUNT.getAndIncrement() >= 20) {
+                return;
+            }
+        } else if (DEBUG_WRAP_ATTEMPT_LOG_COUNT.getAndIncrement() >= 20) {
+            return;
+        }
+        GlobeMod.LOGGER.info("[Latitude] biomeSource wrap attempt source={} wrapped={} settingsReady={} matched={} activeRadius={} apply={}",
+                this.biomeSource.getClass().getName(),
+                this.globe$wrappedBiomeSource == null ? "null" : this.globe$wrappedBiomeSource.getClass().getName(),
+                settingsReady,
+                globe$matchedSettingsLabel(),
+                activeRadius,
+                apply);
     }
 
 }

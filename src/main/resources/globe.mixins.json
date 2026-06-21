@@ -8,6 +8,7 @@
     "ChunkGeneratorBiomeSourceMixin",
     "ChunkGeneratorGenerateFeaturesBiomeSetMixin",
     "ChunkGeneratorPopulateBiomesMixin",
+    "ServerLevelFindClosestBiomeMixin",
     "BiomeSourceAccessor",
     "NoiseChunkGeneratorAccessor",
     "NoiseChunkGeneratorCarveMixin",

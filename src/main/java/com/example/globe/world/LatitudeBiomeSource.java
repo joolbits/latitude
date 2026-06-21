@@ -9,10 +9,14 @@ import com.mojang.serialization.RecordBuilder;
 import java.util.Collection;
 import java.util.stream.Stream;
 import net.minecraft.core.Holder;
+import net.minecraft.core.Registry;
 import net.minecraft.resources.Identifier;
+import net.minecraft.world.level.LevelHeightAccessor;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.biome.BiomeSource;
 import net.minecraft.world.level.biome.Climate;
+import net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator;
+import net.minecraft.world.level.levelgen.RandomState;
 
 public final class LatitudeBiomeSource extends BiomeSource {
     private static final int MAX_CAVE_BIOME_Y = Integer.getInteger("latitude.maxCaveBiomeY", 96);
@@ -24,12 +28,43 @@ public final class LatitudeBiomeSource extends BiomeSource {
 
     private final BiomeSource original;
     private final Collection<Holder<Biome>> biomes;
+    private final Registry<Biome> biomeRegistry;
     private final int borderRadiusBlocks;
+    private final NoiseBasedChunkGenerator generator;
+    private final RandomState noiseConfig;
+    private final LevelHeightAccessor heightView;
+    private final String callerContext;
 
     public LatitudeBiomeSource(BiomeSource original, Collection<Holder<Biome>> biomes, int borderRadiusBlocks) {
+        this(original, biomes, null, borderRadiusBlocks, null, null, null, "SOURCE");
+    }
+
+    public static LatitudeBiomeSource forLocate(BiomeSource original,
+                                                Registry<Biome> biomeRegistry,
+                                                int borderRadiusBlocks,
+                                                NoiseBasedChunkGenerator generator,
+                                                RandomState noiseConfig,
+                                                LevelHeightAccessor heightView) {
+        return new LatitudeBiomeSource(original, original.possibleBiomes(), biomeRegistry,
+                borderRadiusBlocks, generator, noiseConfig, heightView, "MIXIN");
+    }
+
+    private LatitudeBiomeSource(BiomeSource original,
+                                Collection<Holder<Biome>> biomes,
+                                Registry<Biome> biomeRegistry,
+                                int borderRadiusBlocks,
+                                NoiseBasedChunkGenerator generator,
+                                RandomState noiseConfig,
+                                LevelHeightAccessor heightView,
+                                String callerContext) {
         this.original = original;
         this.biomes = biomes;
+        this.biomeRegistry = biomeRegistry;
         this.borderRadiusBlocks = borderRadiusBlocks;
+        this.generator = generator;
+        this.noiseConfig = noiseConfig;
+        this.heightView = heightView;
+        this.callerContext = callerContext == null || callerContext.isBlank() ? "SOURCE" : callerContext;
     }
 
     public BiomeSource original() {
@@ -74,8 +109,13 @@ public final class LatitudeBiomeSource extends BiomeSource {
         if (shouldPreserveCave(current, base, blockY)) {
             return current;
         }
+        if (biomeRegistry != null) {
+            return LatitudeBiomes.pick(biomeRegistry, base, blockX, blockZ, blockY, borderRadiusBlocks, sampler,
+                    callerContext, generator, noiseConfig, heightView);
+        }
         Collection<Holder<Biome>> sourceCandidates = LatitudeBiomes.expandSourceCandidatePool(biomes);
-        return LatitudeBiomes.pick(sourceCandidates, base, blockX, blockZ, blockY, borderRadiusBlocks, sampler, "SOURCE", null, null, null);
+        return LatitudeBiomes.pick(sourceCandidates, base, blockX, blockZ, blockY, borderRadiusBlocks, sampler,
+                callerContext, generator, noiseConfig, heightView);
     }
 
     private static boolean shouldPreserveCave(Holder<Biome> current, Holder<Biome> surfaceBase, int blockY) {
