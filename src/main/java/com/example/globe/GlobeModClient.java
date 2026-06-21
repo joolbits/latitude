@@ -1,5 +1,8 @@
 package com.example.globe;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import com.example.globe.client.LatitudeConfig;
 import com.example.globe.client.GlobeClientState;
 import com.example.globe.client.CompassHud;
@@ -18,17 +21,29 @@ import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderEvents;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.color.block.BlockTintSources;
 import net.minecraft.core.particles.BlockParticleOption;
 import net.minecraft.core.particles.ParticleOptions;
 import net.minecraft.core.particles.ParticleTypes;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.Identifier;
 import net.minecraft.util.RandomSource;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 
 public class GlobeModClient implements ClientModInitializer {
     private static boolean pendingSpawnPickerOpen;
+    private static final int PROMENADE_PALM_LEAVES_OPAQUE_TINT = 0xFF7DB22E;
+    private static final String[] PROMENADE_PALM_TINT_BLOCKS = {
+            "promenade:palm_leaves",
+            "promenade:snowy_palm_leaves",
+            "promenade:palm_hanging_leaves",
+            "promenade:palm_leaf_pile"
+    };
 
     @Override
     public void onInitializeClient() {
@@ -39,6 +54,7 @@ public class GlobeModClient implements ClientModInitializer {
         }
 
         LatitudeConfig.get();
+        ClientLifecycleEvents.CLIENT_STARTED.register(GlobeModClient::registerPromenadePalmTintCompat);
 
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
             GlobeClientState.setGlobeWorld(false);
@@ -49,6 +65,8 @@ public class GlobeModClient implements ClientModInitializer {
             if (payload.isGlobe()) {
                 // Flip the bespoke loading flag as soon as the handshake packet arrives (network thread).
                 LatitudeClientState.activateLatitudeLoading();
+            } else if (LatitudeClientState.isLatitudeWorldLoading()) {
+                LatitudeClientState.clearLatitudeLoadingState();
             }
             context.client().execute(() -> {
                 GlobeClientState.setGlobeWorld(payload.isGlobe());
@@ -87,6 +105,36 @@ public class GlobeModClient implements ClientModInitializer {
             // Wall/overlay rendering happens in the HUD pass now to avoid POV seams.
             return;
         });
+    }
+
+    private static void registerPromenadePalmTintCompat(Minecraft client) {
+        if (!FabricLoader.getInstance().isModLoaded("promenade")) {
+            return;
+        }
+
+        List<Block> blocks = new ArrayList<>();
+        for (String blockId : PROMENADE_PALM_TINT_BLOCKS) {
+            Identifier id = Identifier.parse(blockId);
+            if (BuiltInRegistries.BLOCK.containsKey(id)) {
+                blocks.add(BuiltInRegistries.BLOCK.getValue(id));
+            }
+        }
+
+        if (blocks.isEmpty()) {
+            GlobeMod.LOGGER.info("[Latitude] Promenade palm tint compat skipped; no palm leaf blocks found");
+            return;
+        }
+
+        if (client.getBlockColors() == null) {
+            GlobeMod.LOGGER.info("[Latitude] Promenade palm tint compat deferred; block colors not ready");
+            return;
+        }
+
+        client.getBlockColors().register(
+                List.of(BlockTintSources.constant(PROMENADE_PALM_LEAVES_OPAQUE_TINT)),
+                blocks.toArray(Block[]::new)
+        );
+        GlobeMod.LOGGER.info("[Latitude] Promenade palm tint compat applied to {} block(s)", blocks.size());
     }
 
     private static void clientKeybindTick(Minecraft client) {

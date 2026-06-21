@@ -178,12 +178,7 @@ public abstract class ChunkGeneratorBiomeSourceMixin {
         if (accessor.globe$getSettings() == null) {
             return false;
         }
-        return noise.stable(GLOBE_SETTINGS_KEY)
-                || noise.stable(GLOBE_SETTINGS_XSMALL_KEY)
-                || noise.stable(GLOBE_SETTINGS_SMALL_KEY)
-                || noise.stable(GLOBE_SETTINGS_REGULAR_KEY)
-                || noise.stable(GLOBE_SETTINGS_LARGE_KEY)
-                || noise.stable(GLOBE_SETTINGS_MASSIVE_KEY);
+        return GlobeMod.shouldApplyLatitudeWorldgen(noise);
     }
 
     private boolean globe$hasResolvedSettings() {
@@ -206,20 +201,15 @@ public abstract class ChunkGeneratorBiomeSourceMixin {
         if (noise.stable(GLOBE_SETTINGS_REGULAR_KEY)) return "overworld_regular";
         if (noise.stable(GLOBE_SETTINGS_LARGE_KEY)) return "overworld_large";
         if (noise.stable(GLOBE_SETTINGS_MASSIVE_KEY)) return "overworld_massive";
+        if (GlobeMod.shouldApplyLatitudeWorldgen(noise)) return "inline_globe";
         return "unknown";
     }
 
     private int globe$borderRadiusBlocks() {
         if (!((Object) this instanceof NoiseBasedChunkGenerator noise)) {
-            return 7500;
+            return GlobeMod.BORDER_RADIUS;
         }
-        if (noise.stable(GLOBE_SETTINGS_KEY)) return 15000;
-        if (noise.stable(GLOBE_SETTINGS_XSMALL_KEY)) return 3750;
-        if (noise.stable(GLOBE_SETTINGS_SMALL_KEY)) return 5000;
-        if (noise.stable(GLOBE_SETTINGS_REGULAR_KEY)) return 7500;
-        if (noise.stable(GLOBE_SETTINGS_LARGE_KEY)) return 10000;
-        if (noise.stable(GLOBE_SETTINGS_MASSIVE_KEY)) return 20000;
-        return 7500;
+        return GlobeMod.borderRadiusForNoiseGenerator(noise);
     }
 
 }

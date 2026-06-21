@@ -101,7 +101,7 @@ public class LatitudeCreateWorldScreen extends Screen {
     };
 
     private static final Component SMALL_WORLD_WARNING = Component.literal(
-            "Smaller world sizes are still being tuned and may distort biome distribution."
+            "Smaller worlds compress the journey and may include slightly fewer total biome variants."
     ).withStyle(ChatFormatting.ITALIC, ChatFormatting.GOLD);
 
     // ── Game mode constants ──

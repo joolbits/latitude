@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+OUT_DIR="${1:-"$ROOT/tmp/live-cruise-helpers"}"
+PROFILE="${MC_PROFILE:-"$HOME/Library/Application Support/ModrinthApp/profiles/Lat 1.4+26.1.2"}"
+LOG="${MC_LOG:-"$PROFILE/logs/latest.log"}"
+STAMP="$(date +%Y%m%d-%H%M%S)"
+BASELINE="$OUT_DIR/latest-log-baseline.txt"
+SHOT="$OUT_DIR/preflight-window-$STAMP.png"
+
+mkdir -p "$OUT_DIR"
+"$ROOT/tools/mc-window"
+"$ROOT/tools/mc-focus" >/dev/null
+"$ROOT/tools/mc-shot" "$SHOT" >/dev/null
+"$ROOT/tools/lat-cruise-gate" --log "$LOG" --write-baseline "$BASELINE" >/dev/null
+
+printf 'screenshot=%s\n' "$SHOT"
+printf 'baseline=%s\n' "$BASELINE"
+printf 'next_gate=%s\n' "$ROOT/tools/lat-cruise-gate --log \"$LOG\" --since-file \"$BASELINE\""

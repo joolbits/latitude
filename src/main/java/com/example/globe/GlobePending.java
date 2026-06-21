@@ -8,6 +8,12 @@ public final class GlobePending {
 
     public static volatile boolean startWithCompass = true;
 
+    /**
+     * Border radius selected by the bespoke create-world screen. Consumed once
+     * by the server on first overworld load and persisted into LatitudeWorldState.
+     */
+    public static volatile int pendingGlobeRadius = 0;
+
     public static void set(String zoneId) {
         pendingSpawnZone = zoneId;
     }

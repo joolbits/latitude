@@ -16,13 +16,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Mixin(Gui.class)
 public class InGameHudMixin {
-    @Inject(
-        method = "extractHotbarAndDecorations",
-        at = @At(
-            value = "INVOKE",
-            target = "Lnet/minecraft/client/gui/Gui;extractItemHotbar(Lnet/minecraft/client/gui/GuiGraphicsExtractor;Lnet/minecraft/client/DeltaTracker;)V"
-        )
-    )
+    @Inject(method = "extractHotbarAndDecorations", at = @At("HEAD"))
     private void globe$renderEwHazeBeforeHotbar(GuiGraphicsExtractor context, DeltaTracker tickCounter, CallbackInfo ci) {
         Minecraft client = Minecraft.getInstance();
         if (client != null

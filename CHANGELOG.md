@@ -8,7 +8,7 @@ Latitude 1.4 "Cohesive Horizons" is a worldgen-quality and compatibility release
 - Custom biomes from other mods and datapacks (Biomes O' Plenty, Terralith, Promenade, and similar) can now be slotted into the latitude bands through the `globe:lat_*` biome tags.
 - Added a custom-biome admission safety rail so unknown or climate-incompatible biomes cannot leak into the wrong band; anything not admitted falls back to a sensible vanilla biome for that band.
 - Placed Promenade's Glacarian Taiga in the subpolar band and its Blush/Cotton Sakura Groves in the temperate band, as accent biomes that form coherent patches in their climate zone (all marked optional, so they're simply skipped when Promenade isn't installed).
-- Made the custom-biome source wrapping more robust on the 26.1 stack: corrected the biome-source hook so structure and surface placement follow the latitude biome map, and deferred wrapping safely when a source mod's biome registry isn't ready yet (fixes a class of world-load crashes with source-side biome mods).
+- Made the custom-biome source wrapping more robust on the 26.1.2 stack: corrected the biome-source hook so structure and surface placement follow the latitude biome map, and deferred wrapping safely when a source mod's biome registry isn't ready yet (fixes a class of world-load crashes with source-side biome mods).
 
 ### Worldgen rebalance
 - **Fixed "overwhelming desert in the tropics."** The warm-side moisture model was latitude-independent, so dry/desert pockets scattered uniformly across every warm latitude — including the equator. A new Earth-analog latitude wet-bias keeps the equatorial belt humid (rainforest/ITCZ) and pushes arid country out to the subtropics where it belongs, grading into a believable jungle→savanna→desert transition toward the poleward edge.
@@ -29,6 +29,9 @@ Latitude 1.4 "Cohesive Horizons" is a worldgen-quality and compatibility release
 
 ### Known limitations
 - **With several custom biome packs installed at once, not every biome will appear.** Each latitude band draws from a finite weighted pool, so the more biomes you add, the smaller each one's share — rarer/accent biomes from large stacks can fall below visible frequency. This is expected behavior, not a bug; you'll still get a coherent, climate-appropriate mix, just not 100% coverage of every biome in every installed pack. (Configurable per-pack representation weighting is on the roadmap.)
+
+## Historical released entries
+Entries below are retained for already-published or older-version lines. They are not the active `1.4.1-beta.2+26.1.2` candidate gate.
 
 ## Latitude 1.3.0+1.20.1-r1 (MC 1.20.1)
 - Hotfix release for the 1.20.1 startup/refmap crash tracked in issue #5 and PR #6.

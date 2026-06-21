@@ -1,0 +1,192 @@
+#!/usr/bin/env bash
+set -u
+
+ROOT="${LATITUDE_ROOT:-<home>/CascadeProjects/Latitude-custom-biome-expansion-26.1.2}"
+PROFILE="${LATITUDE_PROFILE:-$HOME/Library/Application Support/ModrinthApp/profiles/Lat 1.4+26.1.2}"
+JAR_NAME="latitude-1.4.1-beta.2+26.1.2.jar"
+EXPECTED_SHA="e09ea00313307ae84f8e32a0470db523874fe11d8314d133ddadfe9d85bf2458"
+PROFILE_JAR="$PROFILE/mods/$JAR_NAME"
+
+errors=0
+warnings=0
+
+pass() { printf 'PASS: %s\n' "$*"; }
+warn() { warnings=$((warnings + 1)); printf 'WARN: %s\n' "$*"; }
+fail() { errors=$((errors + 1)); printf 'FAIL: %s\n' "$*"; }
+
+require_file() {
+  label="$1"
+  path="$2"
+  if [ -f "$path" ]; then
+    pass "$label exists: $path"
+  else
+    fail "$label missing: $path"
+  fi
+}
+
+require_contains() {
+  label="$1"
+  path="$2"
+  needle="$3"
+  if grep -Fq -- "$needle" "$path"; then
+    pass "$label"
+  else
+    fail "$label missing expected text: $needle"
+  fi
+}
+
+require_jar_entry() {
+  label="$1"
+  jar="$2"
+  entry="$3"
+  if unzip -l "$jar" "$entry" >/dev/null 2>&1; then
+    pass "$label present in jar: $entry"
+  else
+    fail "$label missing from jar: $entry"
+  fi
+}
+
+require_jar_contains() {
+  label="$1"
+  jar="$2"
+  entry="$3"
+  needle="$4"
+  if unzip -p "$jar" "$entry" 2>/dev/null | grep -Fq -- "$needle"; then
+    pass "$label"
+  else
+    fail "$label missing expected jar text: $needle"
+  fi
+}
+
+tag_count() {
+  jq '.values | length' "$1"
+}
+
+tag_optional_provider_count() {
+  jq '[.values[] | if type == "object" then .id else . end | select(test("^(biomesoplenty|biomeswevegone|terralith|promenade|byg|terrestria|wilderwild|traverse|clifftree):"))] | length' "$1"
+}
+
+jar_tag_count() {
+  unzip -p "$PROFILE_JAR" "$1" 2>/dev/null | jq '.values | length'
+}
+
+jar_tag_optional_provider_count() {
+  unzip -p "$PROFILE_JAR" "$1" 2>/dev/null \
+    | jq '[.values[] | if type == "object" then .id else . end | select(test("^(biomesoplenty|biomeswevegone|terralith|promenade|byg|terrestria|wilderwild|traverse|clifftree):"))] | length'
+}
+
+require_javap_contains() {
+  label="$1"
+  class_name="$2"
+  needle="$3"
+  if javap -classpath "$PROFILE_JAR" -p "$class_name" 2>/dev/null | grep -Fq -- "$needle"; then
+    pass "$label"
+  else
+    fail "$label missing expected method/member: $needle"
+  fi
+}
+
+printf 'Latitude post-1.4.0 findings classifier\n'
+printf 'root=%s\n' "$ROOT"
+printf 'profile_jar=%s\n' "$PROFILE_JAR"
+printf '\n'
+
+cd "$ROOT" || {
+  fail "could not cd to root: $ROOT"
+  exit 1
+}
+
+actual_root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+if [ "$actual_root" = "$ROOT" ]; then
+  pass "canonical root matches"
+else
+  fail "canonical root mismatch: $actual_root"
+fi
+
+require_file "profile jar" "$PROFILE_JAR"
+if [ -f "$PROFILE_JAR" ]; then
+  sha="$(shasum -a 256 "$PROFILE_JAR" | awk '{print $1}')"
+  if [ "$sha" = "$EXPECTED_SHA" ]; then
+    pass "profile jar SHA matches current candidate $EXPECTED_SHA"
+  else
+    fail "profile jar SHA expected $EXPECTED_SHA but found $sha"
+  fi
+fi
+
+printf '\n[Finding 1] custom-biome feature retention after decoration indexing\n'
+require_contains "source mixin list registers feature-retention mixin" src/main/resources/globe.mixins.json "ChunkGeneratorGenerateFeaturesBiomeSetMixin"
+require_file "feature-retention mixin source" src/main/java/com/example/globe/mixin/ChunkGeneratorGenerateFeaturesBiomeSetMixin.java
+require_contains "feature-retention source references featuresPerStep" src/main/java/com/example/globe/mixin/ChunkGeneratorGenerateFeaturesBiomeSetMixin.java "featuresPerStep"
+require_contains "feature-retention source intercepts retainAll" src/main/java/com/example/globe/mixin/ChunkGeneratorGenerateFeaturesBiomeSetMixin.java "retainAll"
+require_jar_contains "profile jar mixin list registers feature-retention mixin" "$PROFILE_JAR" globe.mixins.json "ChunkGeneratorGenerateFeaturesBiomeSetMixin"
+require_jar_entry "profile jar feature-retention mixin class" "$PROFILE_JAR" com/example/globe/mixin/ChunkGeneratorGenerateFeaturesBiomeSetMixin.class
+
+printf '\n[Finding 2] latitude tag pools collapsed to vanilla-only or empty\n'
+for tag in \
+  lat_arid_accent \
+  lat_temperate_secondary \
+  lat_subpolar_primary \
+  lat_tropics_secondary; do
+  src="src/main/resources/data/globe/tags/worldgen/biome/$tag.json"
+  jar_entry="data/globe/tags/worldgen/biome/$tag.json"
+  require_file "source tag $tag" "$src"
+  if [ -f "$src" ]; then
+    count="$(tag_count "$src")"
+    optional_count="$(tag_optional_provider_count "$src")"
+    if [ "$count" -gt 0 ]; then
+      pass "source tag $tag has $count value(s)"
+    else
+      fail "source tag $tag is empty"
+    fi
+    if [ "$optional_count" -gt 0 ]; then
+      pass "source tag $tag has $optional_count optional/modded provider value(s)"
+    else
+      fail "source tag $tag has no optional/modded provider values"
+    fi
+  fi
+  if unzip -p "$PROFILE_JAR" "$jar_entry" >/dev/null 2>&1; then
+    jar_count="$(jar_tag_count "$jar_entry")"
+    jar_optional_count="$(jar_tag_optional_provider_count "$jar_entry")"
+    if [ "$jar_count" -gt 0 ]; then
+      pass "profile jar tag $tag has $jar_count value(s)"
+    else
+      fail "profile jar tag $tag is empty"
+    fi
+    if [ "$jar_optional_count" -gt 0 ]; then
+      pass "profile jar tag $tag has $jar_optional_count optional/modded provider value(s)"
+    else
+      fail "profile jar tag $tag has no optional/modded provider values"
+    fi
+  else
+    fail "profile jar tag missing: $jar_entry"
+  fi
+done
+
+printf '\n[Finding 3] equatorial anti-arid safeguards removed\n'
+require_file "ProvinceAuthority source" src/main/java/com/example/globe/world/ProvinceAuthority.java
+require_contains "ProvinceAuthority source keeps latitude wet-bias" src/main/java/com/example/globe/world/ProvinceAuthority.java "latitude wet-bias"
+require_contains "LatitudeBiomes source keeps demoteEquatorialBadlands" src/main/java/com/example/globe/world/LatitudeBiomes.java "demoteEquatorialBadlands"
+require_contains "LatitudeBiomes source keeps demoteEquatorialDesert" src/main/java/com/example/globe/world/LatitudeBiomes.java "demoteEquatorialDesert"
+require_javap_contains "profile jar ProvinceAuthority keeps classifyWarm" com.example.globe.world.ProvinceAuthority "classifyWarm"
+require_javap_contains "profile jar LatitudeBiomes keeps demoteEquatorialBadlands" com.example.globe.world.LatitudeBiomes "demoteEquatorialBadlands"
+require_javap_contains "profile jar LatitudeBiomes keeps demoteEquatorialDesert" com.example.globe.world.LatitudeBiomes "demoteEquatorialDesert"
+
+printf '\n[Finding 4] polar sanitize hard-remaps forest/taiga/cherry to ice_spikes\n'
+require_contains "LatitudeBiomes source keeps keepPolarIceSpike cap" src/main/java/com/example/globe/world/LatitudeBiomes.java "keepPolarIceSpike"
+require_contains "LatitudeBiomes source keeps polarSnowyBase fallback" src/main/java/com/example/globe/world/LatitudeBiomes.java "polarSnowyBase"
+require_javap_contains "profile jar LatitudeBiomes keeps keepPolarIceSpike" com.example.globe.world.LatitudeBiomes "keepPolarIceSpike"
+require_javap_contains "profile jar LatitudeBiomes keeps polarSnowyBase" com.example.globe.world.LatitudeBiomes "polarSnowyBase"
+
+printf '\n[Open question] chunk lag / live-worldgen cost\n'
+require_contains "LatitudeBiomes source documents no previewTerrain re-entry for MIXIN/CAVE_CLAMP" src/main/java/com/example/globe/world/LatitudeBiomes.java "MIXIN and CAVE_CLAMP must not re-enter"
+require_contains "LatitudeBiomes source uses surfaceDecisionY" src/main/java/com/example/globe/world/LatitudeBiomes.java "surfaceDecisionY"
+warn "performance remains a live gate: current source avoids the earlier previewTerrain re-entry pattern, but clean single-client movement soak is still required"
+
+printf '\n'
+if [ "$errors" -eq 0 ]; then
+  printf 'CLASSIFIER STATUS: PASS-PARTIAL (%d warning(s)); concrete post-1.4.0 source findings are fixed/present in current source/profile jar, while live performance and visual gates remain partial/open.\n' "$warnings"
+  exit 0
+fi
+
+printf 'CLASSIFIER STATUS: FAIL (%d error(s), %d warning(s)); do not claim findings closed.\n' "$errors" "$warnings"
+exit 1

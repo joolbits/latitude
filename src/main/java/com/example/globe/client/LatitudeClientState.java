@@ -62,6 +62,9 @@ public final class LatitudeClientState {
     }
 
     public static synchronized void activateLatitudeLoading() {
+        if (expeditionStartMs <= 0L) {
+            expeditionStartMs = System.currentTimeMillis();
+        }
         latitudeWorldLoading = true;
         latitudeLoadingProgress = 0f;
         clientReadyObserved = false;

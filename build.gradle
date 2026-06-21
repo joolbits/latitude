@@ -6,6 +6,30 @@ plugins {
 version = project.mod_version
 group = project.maven_group
 
+def latitudeGitOutput = { String... args ->
+    try {
+        def process = new ProcessBuilder(['git'] + args.toList())
+                .directory(rootDir)
+                .redirectErrorStream(true)
+                .start()
+        def output = process.inputStream.getText('UTF-8').trim()
+        return process.waitFor() == 0 ? output : 'unknown'
+    } catch (Exception ignored) {
+        return 'unknown'
+    }
+}
+
+def latitudeBuildTimeUtc = {
+    def format = new java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'")
+    format.setTimeZone(TimeZone.getTimeZone('UTC'))
+    return format.format(new Date())
+}
+
+def latitudeGitCommit = latitudeGitOutput('rev-parse', 'HEAD')
+def latitudeGitBranch = latitudeGitOutput('branch', '--show-current')
+def latitudeGitDirty = latitudeGitOutput('status', '--porcelain') == '' ? 'false' : 'true'
+def latitudeBuildTime = latitudeBuildTimeUtc()
+
 def latitudeClientXms = (findProperty('latitudeClientXms') ?: System.getProperty('latitudeClientXms') ?: '1G').toString()
 def latitudeClientXmx = (findProperty('latitudeClientXmx') ?: System.getProperty('latitudeClientXmx') ?: '2G').toString()
 def latitudeSkipSystemDetailsHardware = (findProperty('latitudeSkipSystemDetailsHardware') ?: 'true').toString()
@@ -117,6 +141,20 @@ java {
 
     sourceCompatibility = JavaVersion.VERSION_25
     targetCompatibility = JavaVersion.VERSION_25
+}
+
+tasks.withType(Jar).configureEach {
+    manifest {
+        attributes(
+                'Implementation-Title': project.base.archivesName.get(),
+                'Implementation-Version': project.version,
+                'Minecraft-Version': project.minecraft_version,
+                'Git-Commit': latitudeGitCommit,
+                'Git-Branch': latitudeGitBranch,
+                'Build-Time': latitudeBuildTime,
+                'Build-Dirty': latitudeGitDirty
+        )
+    }
 }
 
 jar {
