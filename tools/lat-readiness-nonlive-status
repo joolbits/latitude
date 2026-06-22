@@ -2,25 +2,26 @@
 set -u
 
 EXPECTED_ROOT="<home>/CascadeProjects/Latitude-custom-biome-expansion-26.1.2"
-ROUTER_ROOT="<home>/CascadeProjects/Latitude (Globe)"
 EXPECTED_BRANCH="feat/custom-biome-expansion-26.1.2"
-EXPECTED_HEAD="e5d092ca7f09a397afc413137f62ea409566e1e7"
-EXPECTED_TAG="save/clifftree-expansion-26.1.2"
+CANDIDATE_COMMIT="c9da0f93029f7f16c50a7bc89eb766c576a85b48"
+CANDIDATE_TAG="save/biome-tuning-followup-26.1.2"
 JAR_NAME="latitude-1.4.1-beta.2+26.1.2.jar"
-EXPECTED_SHA="e09ea00313307ae84f8e32a0470db523874fe11d8314d133ddadfe9d85bf2458"
+EXPECTED_SHA="1f50c5954cef3c91de1b071e78172ad6940a41abe5bace3e6febde5ac449a477"
 PROFILE="${LATITUDE_PROFILE:-$HOME/Library/Application Support/ModrinthApp/profiles/Lat 1.4+26.1.2}"
-EVIDENCE_DIR="$EXPECTED_ROOT/tmp/readiness-1.4-candidate-20260618-184901"
-FIX_EVIDENCE_DIR="$EXPECTED_ROOT/tmp/itty-terrain-render-bug-20260620-072856"
-CODE_RED_EVIDENCE_DIR="$EXPECTED_ROOT/tmp/code-red-deep-dig-20260620-203501"
-E09_STAGE_EVIDENCE_DIR="$EXPECTED_ROOT/tmp/post-140-hardening-continuation-20260620-220852"
-E09_ITTY_CONTINUATION_DIR="$E09_STAGE_EVIDENCE_DIR/live-continue-20260621"
-HISTORICAL_LIVE_EVIDENCE_DIR="$EXPECTED_ROOT/tmp/readiness-1.4-candidate-20260618-live-20260618-211834"
-ROUTER_GRADLE="$ROUTER_ROOT/gradle.properties"
+
+REBUILD_EVIDENCE_DIR="$EXPECTED_ROOT/tmp/closeout-1.4-20260621/rebuild-c9da0f93-175345"
+PROFILE_STAGE_EVIDENCE_DIR="$EXPECTED_ROOT/tmp/closeout-1.4-20260621/profile-stage-c9da0f93-175416"
+BIOME_TUNING_EVIDENCE_DIR="$EXPECTED_ROOT/tmp/biome-tuning-20260621/live-registry-locate-after-stage-20260621-1703"
+FINAL_LIVE_EVIDENCE_DIR="$EXPECTED_ROOT/tmp/closeout-1.4-20260621/final-live-c9-192419"
+STONY_FOLLOWUP_EVIDENCE_DIR="$EXPECTED_ROOT/tmp/closeout-1.4-20260621/stony-followup-c9-195009"
+HISTORICAL_E09_EVIDENCE_DIR="$EXPECTED_ROOT/tmp/post-140-hardening-continuation-20260620-220852"
+
 CANONICAL_CHECKLIST="$EXPECTED_ROOT/docs/release/checklist.md"
-ROUTER_CHECKLIST="$ROUTER_ROOT/docs/release/checklist.md"
 READINESS_AUDIT="$EXPECTED_ROOT/docs/release/current-readiness-audit.md"
 LIVE_RUNBOOK="$EXPECTED_ROOT/docs/release/live-proof-runbook.md"
 GATE_MANIFEST="$EXPECTED_ROOT/docs/release/current-gates.json"
+BINDER_INDEX="$EXPECTED_ROOT/docs/binder/index.md"
+BINDER_REGISTRY="$EXPECTED_ROOT/docs/binder/evidence-registry.md"
 
 errors=0
 warnings=0
@@ -82,7 +83,7 @@ expect_contains() {
   label="$1"
   path="$2"
   needle="$3"
-  if grep -Fq -- "$needle" "$path"; then
+  if [ -f "$path" ] && grep -Fq -- "$needle" "$path"; then
     pass "$label"
   else
     fail "$label missing expected text: $needle"
@@ -99,7 +100,7 @@ check_manifest() {
     for needle in \
       "Implementation-Version: 1.4.1-beta.2+26.1.2" \
       "Minecraft-Version: 26.1.2" \
-      "Git-Commit: $EXPECTED_HEAD" \
+      "Git-Commit: $CANDIDATE_COMMIT" \
       "Git-Branch: $EXPECTED_BRANCH" \
       "Build-Dirty: true"; do
       if grep -Fq "$needle" "$manifest"; then
@@ -114,8 +115,8 @@ check_manifest() {
   rm -f "$manifest_tmp" "$manifest_tmp.clean"
 }
 
-say "Latitude 1.4 readiness status"
-say "This command is read-only and verifies recorded source, jar, profile, docs, and live evidence without controlling Minecraft, Modrinth, Launcher, or Java windows."
+say "Latitude 1.4 current non-live readiness status"
+say "This read-only command verifies the c9da0f93 savepoint candidate, staged profile jar, release docs, green live state, and evidence folders."
 say ""
 
 actual_root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
@@ -125,17 +126,18 @@ actual_branch="$(git branch --show-current 2>/dev/null || true)"
 expect_equal "branch" "$EXPECTED_BRANCH" "$actual_branch"
 
 actual_head="$(git rev-parse HEAD 2>/dev/null || true)"
-expect_equal "HEAD" "$EXPECTED_HEAD" "$actual_head"
+if git merge-base --is-ancestor "$CANDIDATE_COMMIT" HEAD 2>/dev/null; then
+  pass "branch HEAD contains candidate savepoint $CANDIDATE_COMMIT (current HEAD $actual_head)"
+else
+  fail "branch HEAD $actual_head does not contain candidate savepoint $CANDIDATE_COMMIT"
+fi
 
-tags_at_head="$(git tag --points-at HEAD 2>/dev/null | tr '\n' ' ' | sed 's/[[:space:]]*$//')"
-case " $tags_at_head " in
-  *" $EXPECTED_TAG "*) pass "tag at HEAD includes $EXPECTED_TAG" ;;
-  *) fail "tag at HEAD missing $EXPECTED_TAG; found: ${tags_at_head:-<none>}" ;;
-esac
+tag_target="$(git rev-list -n 1 "$CANDIDATE_TAG" 2>/dev/null || true)"
+expect_equal "candidate tag $CANDIDATE_TAG target" "$CANDIDATE_COMMIT" "$tag_target"
 
 dirty_state="$(git status --porcelain 2>/dev/null || true)"
 if [ -n "$dirty_state" ]; then
-  warn "working tree is dirty; this is expected for the current candidate/proof state, but not a release savepoint"
+  warn "working tree is not clean; this is expected while release docs/evidence are being synced, but commit only after final proof is accepted"
 else
   pass "working tree is clean"
 fi
@@ -146,18 +148,14 @@ profile_jar="$PROFILE/mods/$JAR_NAME"
 expect_file "candidate jar" "$candidate_jar"
 if [ -f "$candidate_jar" ]; then
   candidate_sha="$(sha256_file "$candidate_jar")"
-  if [ "$candidate_sha" = "$EXPECTED_SHA" ]; then
-    pass "candidate jar SHA-256 matches staged profile = $candidate_sha"
-  else
-    warn "local build/libs jar SHA-256 is $candidate_sha; staged profile/runtime candidate remains $EXPECTED_SHA. Restage before live proof if the local build jar is intended as the new runtime candidate."
-  fi
+  expect_equal "candidate jar SHA-256" "$EXPECTED_SHA" "$candidate_sha"
 fi
 
 if [ -d "$PROFILE/mods" ]; then
   jars=()
   while IFS= read -r jar; do
     jars+=("$jar")
-  done < <(find "$PROFILE/mods" -maxdepth 1 -type f -name 'latitude*.jar' -print)
+  done < <(find "$PROFILE/mods" -maxdepth 1 -type f -name 'latitude*.jar' ! -name '*.bak' ! -name '*.pre-*' -print)
 
   expect_equal "active profile latitude jar count" "1" "${#jars[@]}"
   if [ "${#jars[@]}" -eq 1 ]; then
@@ -176,198 +174,58 @@ fi
 check_manifest "local build/libs jar" "$candidate_jar"
 check_manifest "profile jar" "$profile_jar"
 
+expect_dir "rebuild evidence folder" "$REBUILD_EVIDENCE_DIR"
+expect_file "rebuild clean-build log" "$REBUILD_EVIDENCE_DIR/clean-build.log"
+expect_file "rebuild manifest proof" "$REBUILD_EVIDENCE_DIR/build-manifest.txt"
+expect_file "rebuild SHA proof" "$REBUILD_EVIDENCE_DIR/build-jar.sha256"
+
+expect_dir "profile-stage evidence folder" "$PROFILE_STAGE_EVIDENCE_DIR"
+expect_file "profile-stage log" "$PROFILE_STAGE_EVIDENCE_DIR/profile-stage.log"
+
+expect_dir "biome-tuning live proof folder" "$BIOME_TUNING_EVIDENCE_DIR"
+expect_file "desert live proof summary" "$BIOME_TUNING_EVIDENCE_DIR/desert-live-proof-summary.md"
+expect_file "stony treeline proof summary" "$BIOME_TUNING_EVIDENCE_DIR/stony-treeline-proof-summary.md"
+expect_dir "final c9 live proof folder" "$FINAL_LIVE_EVIDENCE_DIR"
+expect_file "final c9 live summary" "$FINAL_LIVE_EVIDENCE_DIR/summary.md"
+expect_dir "stony follow-up proof folder" "$STONY_FOLLOWUP_EVIDENCE_DIR"
+expect_file "stony follow-up summary" "$STONY_FOLLOWUP_EVIDENCE_DIR/summary.md"
+
 expect_file "canonical release checklist" "$CANONICAL_CHECKLIST"
 expect_file "current readiness audit" "$READINESS_AUDIT"
 expect_file "live proof runbook" "$LIVE_RUNBOOK"
 expect_file "current gate manifest" "$GATE_MANIFEST"
-expect_file "router release checklist" "$ROUTER_CHECKLIST"
-expect_file "scenic checklist" "$ROUTER_ROOT/docs/release/scenic-drive-green-checklist.md"
-expect_file "router historical gradle metadata guard" "$ROUTER_GRADLE"
+expect_file "binder index" "$BINDER_INDEX"
+expect_file "binder evidence registry" "$BINDER_REGISTRY"
 
-if [ -f "$CANONICAL_CHECKLIST" ]; then
-  if grep -Fq "$EXPECTED_SHA" "$CANONICAL_CHECKLIST"; then
-    pass "canonical checklist records expected SHA"
-  else
-    fail "canonical checklist does not record expected SHA"
-  fi
-  expect_contains "canonical checklist records partial status" "$CANONICAL_CHECKLIST" "Status: partial, not release-authorized."
-  expect_contains "canonical checklist records fresh first-load gate green for SMALL" "$CANONICAL_CHECKLIST" "- [x] PASS: Fresh \`New Expedition\` / first-load smoke on current candidate SHA"
-  expect_contains "canonical checklist records headless Itty Atlas diversity gate" "$CANONICAL_CHECKLIST" "- [x] PASS: Headless Itty Atlas diversity/no-collapse proof on current candidate SHA"
-  expect_contains "canonical checklist records post-1.4.0 findings classifier gate" "$CANONICAL_CHECKLIST" "- [x] PASS: Repeatable post-1.4.0 findings classifier on current candidate SHA"
-  expect_contains "canonical checklist records scenic delta gate open" "$CANONICAL_CHECKLIST" "- [ ] OPEN: Scenic-drive delta"
-  expect_contains "canonical checklist records manual-green loading/chunk gate" "$CANONICAL_CHECKLIST" "- [x] PASS (manual Maintainer): Loading screen and chunk loading are green"
-  expect_contains "canonical checklist records non-teleport soak gate partial" "$CANONICAL_CHECKLIST" "- [ ] PARTIAL: Clean non-teleport live movement soak/performance"
-  expect_contains "canonical checklist records shutdown gate green" "$CANONICAL_CHECKLIST" "- [x] PASS: Save/quit shutdown on current candidate SHA"
-  expect_contains "canonical checklist keeps savepoint/release manual" "$CANONICAL_CHECKLIST" "- [ ] MANUAL PEETSA: savepoint/tag/push/release/upload authorization."
-fi
-
-if [ -f "$READINESS_AUDIT" ]; then
-  if grep -Fq "status: partial" "$READINESS_AUDIT" \
-    && grep -Fq "Latitude 1.4 is **partial, not pre-release-ready**" "$READINESS_AUDIT" \
-    && grep -Fq "$EXPECTED_SHA" "$READINESS_AUDIT"; then
-    pass "current readiness audit records partial verdict and expected SHA"
-  else
-    fail "current readiness audit does not record partial verdict and expected SHA"
-  fi
-  expect_contains "current readiness audit marks checklist closure green" "$READINESS_AUDIT" "| P0: Close actual release checklist | GREEN for pre-release proof; MANUAL for publication/savepoint |"
-  expect_contains "current readiness audit marks first-load and manual loading/chunk green" "$READINESS_AUDIT" "| P1: Run fresh first-load smoke | GREEN for current-SHA SMALL; GREEN by Maintainer manual retest for existing-world load/chunk entry |"
-  expect_contains "current readiness audit marks headless Itty Atlas and manual chunk green" "$READINESS_AUDIT" "| P1/P2: Itty headless Atlas diversity | GREEN for non-live Atlas; GREEN by Maintainer manual retest for live chunk loading |"
-  expect_contains "current readiness audit marks post-1.4.0 findings classifier green" "$READINESS_AUDIT" "| P1/P2: Post-1.4.0 report source findings | GREEN for concrete source/jar findings; PARTIAL overall |"
-  expect_contains "current readiness audit marks scenic delta open" "$READINESS_AUDIT" "| P2: Scenic delta on current SHA | OPEN on current SHA |"
-  expect_contains "current readiness audit marks non-teleport soak partial" "$READINESS_AUDIT" "| P2: Clean non-teleport soak/perf pass | PARTIAL on current SHA |"
-  expect_contains "current readiness audit marks shutdown green" "$READINESS_AUDIT" "| P2: Save/quit shutdown | GREEN for current-SHA SMALL |"
-  expect_contains "current readiness audit keeps public release manual" "$READINESS_AUDIT" "Maintainer chooses final public version name"
-fi
-
-if [ -f "$LIVE_RUNBOOK" ]; then
-  if grep -Fq "Do not use the vanilla Minecraft Launcher as a control surface." "$LIVE_RUNBOOK"; then
-    pass "live proof runbook records launcher prohibition"
-  else
-    fail "live proof runbook is missing launcher prohibition"
-  fi
-  if grep -Fq "historical-candidate-sha256: 972159d1c825dff5803ff1e56eaa881a40c470c4a4e9f9640a06680856545b84" "$LIVE_RUNBOOK"; then
-    pass "live proof runbook remains historical for superseded SHA 972159d1"
-  else
-    warn "live proof runbook no longer records the historical 972159d1 run"
-  fi
-  expect_contains "live proof runbook records current SHA" "$LIVE_RUNBOOK" "current-candidate-sha256: $EXPECTED_SHA"
-fi
-
-if [ -f "$GATE_MANIFEST" ]; then
-  expect_contains "gate manifest records partial release readiness" "$GATE_MANIFEST" '"releaseReadiness": "partial"'
-  expect_contains "gate manifest records release not authorized" "$GATE_MANIFEST" '"releaseAuthorized": false'
-  expect_contains "gate manifest records expected SHA" "$GATE_MANIFEST" "\"candidateSha256\": \"$EXPECTED_SHA\""
-  expect_contains "gate manifest records current blocker evidence folder" "$GATE_MANIFEST" '"finalLiveEvidence": "tmp/post-140-hardening-continuation-20260620-220852"'
-  expect_contains "gate manifest records active blocker" "$GATE_MANIFEST" '"activeBlocker":'
-  expect_contains "gate manifest records fresh first-load gate" "$GATE_MANIFEST" '"id": "fresh_new_expedition_smoke"'
-  expect_contains "gate manifest records headless Itty Atlas diversity gate" "$GATE_MANIFEST" '"id": "itty_headless_atlas_diversity"'
-  expect_contains "gate manifest records green non-live Itty Atlas status" "$GATE_MANIFEST" '"status": "green_nonlive"'
-  expect_contains "gate manifest records post-1.4.0 findings classifier gate" "$GATE_MANIFEST" '"id": "post_140_source_findings_classifier"'
-  expect_contains "gate manifest records scenic delta gate" "$GATE_MANIFEST" '"id": "scenic_delta_current_sha"'
-  expect_contains "gate manifest records non-teleport soak gate" "$GATE_MANIFEST" '"id": "non_teleport_soak_perf"'
-  expect_contains "gate manifest records shutdown gate" "$GATE_MANIFEST" '"id": "fresh_small_shutdown"'
-  expect_contains "gate manifest records Itty-specific gate" "$GATE_MANIFEST" '"id": "itty_specific_load_terrain"'
-  expect_contains "gate manifest records open live gates" "$GATE_MANIFEST" '"status": "open"'
-  expect_contains "gate manifest records partial performance gate" "$GATE_MANIFEST" '"status": "partial"'
-  expect_contains "gate manifest records savepoint/release as manual" "$GATE_MANIFEST" '"id": "savepoint_tag_push_upload_release"'
-  expect_contains "gate manifest forbids launcher control without authorization" "$GATE_MANIFEST" '"vanilla Minecraft Launcher control"'
-fi
-
-if [ -f "$ROUTER_CHECKLIST" ]; then
-  if grep -Fq "Do not use the vanilla Minecraft Launcher as a control surface." "$LIVE_RUNBOOK" \
-    && grep -Fq "$EXPECTED_SHA" "$ROUTER_CHECKLIST"; then
-    pass "router checklist records launcher prohibition context and expected SHA"
-  else
-    fail "router checklist missing expected SHA or launcher context"
-  fi
-  expect_contains "router checklist records partial status" "$ROUTER_CHECKLIST" "status: partial proof, release not authorized"
-  expect_contains "router checklist records fresh first-load gate green for SMALL" "$ROUTER_CHECKLIST" "| Fresh \`New Expedition\` first-load smoke | GREEN for current-SHA SMALL; Itty still open |"
-  expect_contains "router checklist records headless Itty Atlas diversity gate" "$ROUTER_CHECKLIST" "| Itty headless Atlas diversity/no-collapse | GREEN for non-live Atlas; live proof still open |"
-  expect_contains "router checklist records scenic delta gate open" "$ROUTER_CHECKLIST" "| Scenic-drive rerun/delta | OPEN on current SHA |"
-  expect_contains "router checklist records Itty-specific gate open" "$ROUTER_CHECKLIST" "| Itty-specific load/terrain proof | OPEN on current SHA |"
-  expect_contains "router checklist records non-teleport soak gate partial" "$ROUTER_CHECKLIST" "| Non-teleport movement soak/performance | PARTIAL on current SHA |"
-  expect_contains "router checklist records shutdown gate green" "$ROUTER_CHECKLIST" "| Save/quit shutdown | GREEN for current-SHA SMALL |"
-  expect_contains "router checklist keeps release manual" "$ROUTER_CHECKLIST" "| Savepoint/tag/push/upload/release | MANUAL PEETSA |"
-fi
-
-if [ -f "$ROUTER_GRADLE" ]; then
-  if grep -Fq "not the active Latitude 1.4 / Minecraft 26.1.2 candidate" "$ROUTER_GRADLE" \
-    && grep -Fq "historical 1.21.11 / 1.3.0 line" "$ROUTER_GRADLE"; then
-    pass "router gradle.properties labels 1.21.11 / 1.3.0 values as historical"
-  else
-    fail "router gradle.properties does not label historical build values"
-  fi
-fi
-
-for proof in \
-  "compileJava-final-nonlive-refresh.log" \
-  "clean-build-final-nonlive-refresh.log" \
-  "latitudeInvariantScan-final-nonlive-refresh.log" \
-  "final-nonlive-candidate-purity-and-manifest.txt" \
-  "live-control-helper-safety-20260618.log"; do
-  expect_file "evidence $proof" "$EVIDENCE_DIR/$proof"
+for doc in "$CANONICAL_CHECKLIST" "$READINESS_AUDIT" "$LIVE_RUNBOOK" "$GATE_MANIFEST" "$BINDER_INDEX" "$BINDER_REGISTRY"; do
+  expect_contains "$(basename "$doc") records c9 savepoint" "$doc" "$CANDIDATE_COMMIT"
+  expect_contains "$(basename "$doc") records staged SHA" "$doc" "$EXPECTED_SHA"
 done
 
-expect_dir "render-load fix evidence folder" "$FIX_EVIDENCE_DIR"
-for proof in \
-  "compileJava-after-lifecycle-fix.log" \
-  "build-after-lifecycle-fix.log" \
-  "chunk-nbt-probe.md" \
-  "new-candidate-jar-sha256.txt" \
-  "new-candidate-manifest.txt" \
-  "profile-stage-lifecycle-fix.txt" \
-  "profile-jar-after-lifecycle-fix.sha256" \
-  "profile-jar-after-lifecycle-fix-manifest.txt" \
-  "javap-profile-after-lifecycle-fix-LevelLoadingScreenLatitudeOverlayMixin.txt"; do
-  expect_file "render-load fix evidence $proof" "$FIX_EVIDENCE_DIR/$proof"
-done
+expect_contains "checklist records live proof green but release unauthorized" "$CANONICAL_CHECKLIST" "Status: live-proof green, not release-authorized."
+expect_contains "checklist records stony follow-up" "$CANONICAL_CHECKLIST" "stony follow-up"
+expect_contains "readiness audit records live proof green but release unauthorized" "$READINESS_AUDIT" "Latitude 1.4 is **live-proof green but not release-authorized**"
+expect_contains "gate manifest keeps release unauthorized" "$GATE_MANIFEST" '"releaseAuthorized": false'
+expect_contains "gate manifest records green live stony follow-up state" "$GATE_MANIFEST" '"finalLiveEvidence": "green_live_c9_stony_followup"'
+expect_contains "live runbook forbids launcher control" "$LIVE_RUNBOOK" "Do not use the vanilla Minecraft Launcher as a control surface."
+expect_contains "binder registry records green stony follow-up" "$BINDER_REGISTRY" "20260621-c9-stony-followup-live-green"
 
-expect_dir "code-red hardening evidence folder" "$CODE_RED_EVIDENCE_DIR"
-for proof in \
-  "live-lat-launch-d51eace9.png" \
-  "live-lat-menu-d51eace9.png" \
-  "live-after-itty-doubleclick.png" \
-  "live-itty-inworld-after-entry.png" \
-  "live-lat-thread-dump-33531.txt"; do
-  expect_file "code-red hardening evidence $proof" "$CODE_RED_EVIDENCE_DIR/$proof"
-done
-expect_file "code-red binder note" "$EXPECTED_ROOT/docs/binder/code-red-itty-palm-performance-20260620.md"
-expect_file "post-1.4.0 findings review note" "$EXPECTED_ROOT/docs/binder/post-140-findings-review-20260620.md"
-expect_file "shutdown watchdog crash evidence" "$PROFILE/crash-reports/crash-2026-06-20_21.23.54-client.txt"
-
-expect_dir "current e09 profile-stage evidence folder" "$E09_STAGE_EVIDENCE_DIR"
-for proof in \
-  "profile-active-latitude-jars.txt" \
-  "profile-jar-before-e09-stage.sha256" \
-  "profile-jar-after-e09-stage.sha256" \
-  "profile-jar-after-e09-stage-manifest.txt" \
-  "profile-options-before-clean-proof-config.txt" \
-  "profile-options-after-clean-proof-config.txt" \
-  "readiness-status-after-e09-stage.txt" \
-  "live-e09-fresh-small-clean-log-lines.txt" \
-  "live-e09-new-expedition-current.png" \
-  "live-e09-new-expedition-after-210s-static.png" \
-  "live-e09-savequit-log-final.txt" \
-  "live-e09-crash-reports-after-savequit.txt" \
-  "live-e09-after-savequit-final.png"; do
-  expect_file "current e09 profile-stage evidence $proof" "$E09_STAGE_EVIDENCE_DIR/$proof"
-done
-expect_file "current e09 profile-stage binder note" "$EXPECTED_ROOT/docs/binder/e09-profile-stage-clean-proof-settings-20260620.md"
-expect_file "current e09 fresh SMALL smoke/shutdown binder note" "$EXPECTED_ROOT/docs/binder/e09-fresh-small-live-smoke-shutdown-20260620.md"
-expect_file "current e09 Itty headless/live-lock binder note" "$EXPECTED_ROOT/docs/binder/e09-itty-headless-atlas-live-lock-20260621.md"
-expect_file "post-1.4.0 findings classifier helper" "$EXPECTED_ROOT/tools/lat-post140-findings-classifier"
-
-expect_dir "current e09 Itty continuation evidence folder" "$E09_ITTY_CONTINUATION_DIR"
-for proof in \
-  "preflight-profile-truth-current.txt" \
-  "window-identity-initial.txt" \
-  "initial-exact-window.png" \
-  "locked-session-capture-attempt.txt" \
-  "lock-state-current.txt" \
-  "headless-itty-step64-inventory-summary.txt"; do
-  expect_file "current e09 Itty continuation evidence $proof" "$E09_ITTY_CONTINUATION_DIR/$proof"
-done
-
-expect_dir "post-1.4.0 findings classifier evidence folder" "$E09_STAGE_EVIDENCE_DIR/findings-classifier-20260621"
-expect_file "post-1.4.0 findings classifier output" "$E09_STAGE_EVIDENCE_DIR/findings-classifier-20260621/post140-findings-classifier-current.txt"
-
-expect_dir "historical 972 live evidence folder" "$HISTORICAL_LIVE_EVIDENCE_DIR"
-if [ -d "$HISTORICAL_LIVE_EVIDENCE_DIR" ]; then
-  warn "historical live evidence exists for superseded SHA 972159d1; do not use it as green proof for current SHA $EXPECTED_SHA"
+if [ -d "$HISTORICAL_E09_EVIDENCE_DIR" ]; then
+  warn "historical e09 evidence exists and is retained as support, not final proof for current SHA $EXPECTED_SHA"
 fi
 
-warn "Itty live/scenic/clean movement-soak performance proof remains open or partial for current SHA $EXPECTED_SHA; fresh SMALL smoke, save/quit shutdown, and headless Itty Atlas diversity are green"
+warn "Public version name, filename, upload, publication, branch push, tag push, cleanup, and porting remain manual gates."
 
 say ""
 say "Manual gates this read-only helper intentionally does not close:"
 say "- Maintainer-owned public version name, final filename, final public release text"
-say "- Maintainer-owned savepoint, tag, push, upload, and release authorization"
+say "- Branch/tag push, upload, publication, cleanup, and porting"
 say ""
 
 if [ "$errors" -eq 0 ]; then
-  say "READINESS STATUS: PASS-PARTIAL (${warnings} warning(s)); current candidate/profile truth is consistent, but Latitude 1.4 is not pre-release-ready until Itty-specific live proof, scenic delta, and clean movement-soak performance are green or explicitly deferred."
+  say "READINESS STATUS: PASS-PARTIAL (${warnings} warning(s)); c9/profile truth and live proof are green, with only Maintainer-owned release actions left open."
   exit 0
 fi
 
-say "READINESS STATUS: FAIL (${errors} error(s), ${warnings} warning(s)); fix mismatched local truth before savepoint or release work."
+say "READINESS STATUS: FAIL (${errors} error(s), ${warnings} warning(s)); fix mismatched local truth before live proof or release work."
 exit 1
