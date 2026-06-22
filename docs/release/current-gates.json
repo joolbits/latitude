@@ -7,107 +7,104 @@
   "modVersion": "1.4.1-beta.2+26.1.2",
   "canonicalRoot": "<home>/CascadeProjects/Latitude-custom-biome-expansion-26.1.2",
   "canonicalBranch": "feat/custom-biome-expansion-26.1.2",
-  "canonicalHead": "e5d092ca7f09a397afc413137f62ea409566e1e7",
-  "tagAtHead": "save/clifftree-expansion-26.1.2",
+  "candidateSourceCommit": "c9da0f93029f7f16c50a7bc89eb766c576a85b48",
+  "candidateTag": "save/biome-tuning-followup-26.1.2",
   "candidateJar": "<home>/Library/Application Support/ModrinthApp/profiles/Lat 1.4+26.1.2/mods/latitude-1.4.1-beta.2+26.1.2.jar",
-  "candidateSha256": "e09ea00313307ae84f8e32a0470db523874fe11d8314d133ddadfe9d85bf2458",
+  "candidateSha256": "1f50c5954cef3c91de1b071e78172ad6940a41abe5bace3e6febde5ac449a477",
   "latestLocalBuildJar": "build/libs/latitude-1.4.1-beta.2+26.1.2.jar",
-  "latestLocalBuildSha256": "e09ea00313307ae84f8e32a0470db523874fe11d8314d133ddadfe9d85bf2458",
+  "latestLocalBuildSha256": "1f50c5954cef3c91de1b071e78172ad6940a41abe5bace3e6febde5ac449a477",
   "latestLocalBuildStaged": true,
   "profile": "<home>/Library/Application Support/ModrinthApp/profiles/Lat 1.4+26.1.2",
   "profileJar": "<home>/Library/Application Support/ModrinthApp/profiles/Lat 1.4+26.1.2/mods/latitude-1.4.1-beta.2+26.1.2.jar",
-  "profileJarSha256": "e09ea00313307ae84f8e32a0470db523874fe11d8314d133ddadfe9d85bf2458",
-  "finalLiveEvidence": "tmp/post-140-hardening-continuation-20260620-220852",
-  "activeBlocker": "2026-06-21: current profile jar e09ea003 includes the d51eace9 code-red fixes/mitigations for existing-save overlay timing, live-worldgen re-entry, high-column arid admission, Promenade palm-leaf alpha, and SavannaGate log pressure, and the local proof profile is now renderDistance=16/simulationDistance=8. Current-SHA fresh SMALL New Expedition proof and save/quit shutdown are green. Current-SHA headless Itty Atlas diversity evidence for seed 220220260619002 is green for non-live diversity/no-collapse. the maintainer's manual retest reports loading screen and chunk loading green in the staged Modrinth profile. Release remains partial because scenic delta, direct palm-canopy visual proof, broader decoration/biome visual review, and clean single-client non-teleport movement soak/performance proof remain open or partial.",
+  "profileJarSha256": "1f50c5954cef3c91de1b071e78172ad6940a41abe5bace3e6febde5ac449a477",
+  "finalLiveEvidence": "green_live_c9_stony_followup",
+  "activeBlocker": "2026-06-21: c9/profile non-live truth is consistent and the staged profile jar SHA is 1f50c5954cef3c91de1b071e78172ad6940a41abe5bace3e6febde5ac449a477. The earlier Modrinth windowless launcher blocker is superseded by a later successful launch. Final live evidence in tmp/closeout-1.4-20260621/final-live-c9-192419 proves exact Java-owned Minecraft window, c9 build line, existing Globe load, isGlobe=true, 20000-block border, command control, desert locate/HUD, short non-teleport soak with zero new warnings, and clean save/quit. The narrow stony follow-up in tmp/closeout-1.4-20260621/stony-followup-c9-195009 resolved the remaining caveat: fresh /locate biome minecraft:stony_peaks returned [1452,170,4201], HUD at that coordinate read minecraft:stony_peaks, and /execute if biome ~ ~ ~ minecraft:stony_peaks run say stony_peaks_here passed. No known live blocker remains. Do not push, publish, upload, clean proof clutter, or port until Maintainer authorizes the release closeout actions.",
   "publicVersionName": {
     "status": "manual",
     "owner": "Maintainer",
-    "value": "undecided"
+    "value": "undecided",
+    "recommended": "1.4.1+26.1.2 unless Maintainer chooses beta wording"
   },
   "gates": [
     {
       "id": "source_truth",
       "status": "green",
-      "evidence": "docs/release/checklist.md"
+      "evidence": "Branch feat/custom-biome-expansion-26.1.2 at c9da0f93029f7f16c50a7bc89eb766c576a85b48; tag save/biome-tuning-followup-26.1.2; docs/release/checklist.md"
+    },
+    {
+      "id": "savepoint_local",
+      "status": "green_local",
+      "evidence": "Local commit c9da0f93 and tag save/biome-tuning-followup-26.1.2 exist; branch/tag push remains pending the maintainer's release authorization"
     },
     {
       "id": "non_live_build_provenance_profile",
       "status": "green",
-      "evidence": "tmp/code-red-deep-dig-20260620-203501; docs/binder/code-red-itty-palm-performance-20260620.md; tmp/post-140-hardening-continuation-20260620-220852; staged profile/runtime jar SHA e09ea00313307ae84f8e32a0470db523874fe11d8314d133ddadfe9d85bf2458 with manifest Build-Time=2026-06-21T01:59:22Z; prior d51eace9 profile jar preserved as .pre-e09-stage-20260620-220852.bak"
+      "evidence": "tmp/closeout-1.4-20260621/rebuild-c9da0f93-175345; build/libs/latitude-1.4.1-beta.2+26.1.2.jar SHA 1f50c5954cef3c91de1b071e78172ad6940a41abe5bace3e6febde5ac449a477; manifest Git-Commit=c9da0f93029f7f16c50a7bc89eb766c576a85b48, Build-Time=2026-06-21T21:53:47Z, Build-Dirty=true; tools/lat-readiness-nonlive-status returns PASS-PARTIAL for c9/profile truth and green live proof"
     },
     {
-      "id": "post_140_findings_review",
-      "status": "partial",
-      "evidence": "docs/binder/post-140-findings-review-20260620.md; report source findings are fixed/present in active candidate/profile jar, but front-door main still differs historically and performance remains partial"
-    },
-    {
-      "id": "existing_itty_overlay_render",
-      "status": "green_manual",
-      "evidence": "Prior d51eace9 proof: tmp/code-red-deep-dig-20260620-203501/live-after-itty-doubleclick.png; tmp/code-red-deep-dig-20260620-203501/live-itty-inworld-after-entry.png; latest.log showed integrated-world loading overlay, first safe playable tick, then loading screen closed. Current e09ea003 profile was manually retested by Maintainer on 2026-06-21; Maintainer reports loading screen and chunk loading green."
-    },
-    {
-      "id": "latdev_policy",
+      "id": "profile_stage_c9_candidate",
       "status": "green",
-      "evidence": "docs/release/checklist.md"
+      "evidence": "tmp/closeout-1.4-20260621/profile-stage-c9da0f93-175416/profile-stage.log; active profile jar SHA 1f50c5954cef3c91de1b071e78172ad6940a41abe5bace3e6febde5ac449a477; prior af1579b2 jar preserved as latitude-1.4.1-beta.2+26.1.2.jar.pre-c9da0f93-20260621-175417"
     },
     {
-      "id": "public_copy_local",
+      "id": "launcher_startup_current_sha",
+      "status": "superseded_by_successful_launch",
+      "evidence": "tmp/closeout-1.4-20260621/final-live-launch-blocker-181416/summary.md retained as historical evidence; superseded by successful live launch evidence in tmp/closeout-1.4-20260621/final-live-c9-192419"
+    },
+    {
+      "id": "desert_locate",
       "status": "green",
-      "evidence": "README.md; CHANGELOG.md; release/README-beta.txt; docs/release/modrinth-description-1.4.md"
+      "evidence": "tmp/biome-tuning-20260621/desert-locate-proof-live-start-after-registry-locate-20260621-1658; tmp/biome-tuning-20260621/live-registry-locate-after-stage-20260621-1703/desert-live-proof-summary.md; included in savepoint c9da0f93"
     },
     {
-      "id": "fresh_new_expedition_smoke",
+      "id": "stony_peaks_treeline",
       "status": "green",
-      "evidence": "Green for SMALL on current profile jar SHA e09ea00313307ae84f8e32a0470db523874fe11d8314d133ddadfe9d85bf2458: tmp/post-140-hardening-continuation-20260620-220852/live-e09-fresh-small-clean-log-lines.txt; live-e09-new-expedition-current.png; live-e09-new-expedition-after-210s-static.png. The world name said Itty, but lifecycle log says size=SMALL, so Itty-specific proof remains open."
+      "evidence": "tmp/biome-tuning-20260621/live-registry-locate-after-stage-20260621-1703/stony-treeline-proof-summary.md; Maintainer accepted stony-peaks visual; treeline constants TREE_LINE_Y=168 and TREE_LINE_FADE_BAND=28 included in savepoint c9da0f93"
     },
     {
-      "id": "itty_headless_atlas_diversity",
-      "status": "green_nonlive",
-      "evidence": "Current e09ea003 headless Itty Atlas seed 220220260619002 radius 3750 step64 discovered 74 biomes across minecraft:43, biomesoplenty:17, terralith:11, promenade:3, with all five placement bands represented. Evidence: docs/binder/e09-itty-headless-atlas-live-lock-20260621.md; tmp/post-140-hardening-continuation-20260620-220852/live-continue-20260621/headless-itty-step64-inventory-summary.txt. the maintainer's 2026-06-21 manual retest separately reports live chunk loading green. Scenic/palm/decoration/performance proof remains separate."
+      "id": "fresh_existing_load_sanity_current_sha",
+      "status": "green_existing_load_only",
+      "evidence": "tmp/closeout-1.4-20260621/final-live-c9-192419/summary.md; existing New World loaded as Globe with isGlobe=true, radius 10000, border 20000, first safe playable tick, and clean overlay close; fresh new-world creation was not rerun"
     },
     {
-      "id": "post_140_source_findings_classifier",
-      "status": "green_nonlive",
-      "evidence": "tools/lat-post140-findings-classifier returns PASS-PARTIAL on current profile jar SHA e09ea003, with PASS for custom-biome feature retention, optional latitude tag pools, equatorial anti-arid safeguards, and polar ice-spike cap/snowy fallback in current source and active profile jar. Evidence: tmp/post-140-hardening-continuation-20260620-220852/findings-classifier-20260621/post140-findings-classifier-current.txt. PASS-PARTIAL keeps live performance/visual gates open."
+      "id": "scenic_palm_decoration_current_sha",
+      "status": "green_with_stony_followup",
+      "evidence": "tmp/closeout-1.4-20260621/final-live-c9-192419/summary.md; tmp/closeout-1.4-20260621/stony-followup-c9-195009/summary.md; desert locate/HUD and tropics/decor visuals are supportive; current-world stony locate/HUD/server predicate are green after follow-up"
     },
     {
-      "id": "scenic_delta_current_sha",
-      "status": "open",
-      "evidence": "Must be rerun on current profile jar SHA e09ea00313307ae84f8e32a0470db523874fe11d8314d133ddadfe9d85bf2458 after report findings are accepted as fixed/deferred"
+      "id": "stony_locate_hud_current_sha",
+      "status": "green",
+      "evidence": "tmp/closeout-1.4-20260621/stony-followup-c9-195009/commands/013-locate-stony-peaks.txt; tmp/closeout-1.4-20260621/stony-followup-c9-195009/commands/014-tp-stony-locate-exact.txt; tmp/closeout-1.4-20260621/stony-followup-c9-195009/screens/014-stony-locate-exact-settled.png; tmp/closeout-1.4-20260621/stony-followup-c9-195009/commands/015-execute-if-biome-stony.txt; locate returned [1452,170,4201], HUD read minecraft:stony_peaks, and server-side biome predicate emitted stony_peaks_here"
     },
     {
       "id": "non_teleport_soak_perf",
-      "status": "partial",
-      "evidence": "Current e09ea003 SMALL static run reached playable terrain and later went quiet, but logged three early 2.0-2.7s Can't keep up warnings under high machine pressure with a second Java client running; thread sample points at LatitudeBiomes.previewHeight/surfaceDecisionY/pick through populateBiomes. Evidence: tmp/post-140-hardening-continuation-20260620-220852/live-e09-log-review-after-static-soak.txt; live-e09-thread-dump-after-static-soak.txt; live-e09-vm-stat-after-static-soak.txt"
+      "status": "green_with_prior_chunkload_warnings",
+      "evidence": "tmp/closeout-1.4-20260621/final-live-c9-192419/logs/026-nonteleport-soak-summary.txt; 20s W-key movement soak produced zero new WARN/ERROR/crash lines; prior locate/teleport chunk-load warnings retained as caveat"
     },
     {
-      "id": "fresh_small_shutdown",
+      "id": "savequit_shutdown",
       "status": "green",
-      "evidence": "Save/quit shutdown green for current e09ea003 SMALL run: tmp/post-140-hardening-continuation-20260620-220852/live-e09-savequit-log-final.txt; live-e09-crash-reports-after-savequit.txt; live-e09-after-savequit-final.png"
+      "evidence": "tmp/closeout-1.4-20260621/final-live-c9-192419/logs/029-savequit-new-log.txt; server stopped, chunks saved, all dimensions saved; title screenshot in tmp/closeout-1.4-20260621/final-live-c9-192419/screens/029-after-save-and-quit-click.png"
     },
     {
-      "id": "itty_specific_load_terrain",
-      "status": "green_manual",
-      "evidence": "Current e09ea003 live proof created a SMALL world despite the Itty name. the maintainer's later 2026-06-21 manual retest reports loading screen and chunk loading green in the staged Modrinth profile. Treat this as scoped loading/chunk proof, not scenic/palm/decoration/performance proof."
-    },
-    {
-      "id": "atlas_worldsize_live_parity",
-      "status": "open",
-      "evidence": "Atlas/live parity remains historically green on older SHA; current SHA e09ea003 includes the code-red fixes but still needs fresh scenic/performance closeout"
+      "id": "public_release_identity",
+      "status": "manual",
+      "owner": "Maintainer",
+      "evidence": "Recommended public identity is 1.4.1+26.1.2 unless Maintainer chooses beta wording"
     },
     {
       "id": "savepoint_tag_push_upload_release",
-      "status": "manual",
+      "status": "manual_after_live_green",
       "owner": "Maintainer"
     }
   ],
   "forbiddenWithoutAuthorization": [
     "vanilla Minecraft Launcher control",
-    "jar/profile mutation",
-    "savepoint",
-    "tag",
+    "jar/profile mutation after the c9 stage",
     "push",
     "upload",
-    "publication"
+    "publication",
+    "porting",
+    "proof-clutter cleanup"
   ]
 }
