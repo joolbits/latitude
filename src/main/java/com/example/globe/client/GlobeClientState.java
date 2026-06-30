@@ -179,7 +179,7 @@ public final class GlobeClientState {
 
         var border = world.getWorldBorder();
 
-        double progressZ = com.example.globe.util.LatitudeMath.hazardProgress(border, player.getZ());
+        double progressZ = com.example.globe.util.LatitudeMath.hazardProgressZ(border, player.getZ());
         PolarStage polar = polarStageForProgress(border, player.getZ(), progressZ);
 
         double distToBorder = Math.min(Math.abs(player.getX() - border.getMinX()), Math.abs(border.getMaxX() - player.getX()));
@@ -232,7 +232,7 @@ public final class GlobeClientState {
 
     public static PolarStage computePolarStage(ClientLevel world, Player player) {
         var border = world.getWorldBorder();
-        double progressZ = com.example.globe.util.LatitudeMath.hazardProgress(border, player.getZ());
+        double progressZ = com.example.globe.util.LatitudeMath.hazardProgressZ(border, player.getZ());
         return polarStageForProgress(border, player.getZ(), progressZ);
     }
 
@@ -348,7 +348,7 @@ public final class GlobeClientState {
 
     private static float polarWhiteoutIntensity(ClientLevel world, Player player) {
         var border = world.getWorldBorder();
-        double progressZ = com.example.globe.util.LatitudeMath.hazardProgress(border, player.getZ());
+        double progressZ = com.example.globe.util.LatitudeMath.hazardProgressZ(border, player.getZ());
         PolarStage stage = polarStageForProgress(border, player.getZ(), progressZ);
 
         if (stage == PolarStage.NONE) {
@@ -441,7 +441,7 @@ public final class GlobeClientState {
         double z = player.getZ();
 
         double progressX = com.example.globe.util.LatitudeMath.hazardProgress(border, x);
-        double progressZ = com.example.globe.util.LatitudeMath.hazardProgress(border, z);
+        double progressZ = com.example.globe.util.LatitudeMath.hazardProgressZ(border, z);
 
         PolarStage polarStage = polarStageForProgress(border, z, progressZ);
         EwStormStage stormStage = ewStageForProgress(progressX);

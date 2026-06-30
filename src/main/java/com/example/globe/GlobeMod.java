@@ -150,8 +150,10 @@ public class GlobeMod implements ModInitializer {
             }
 
             boolean isGlobe = isGlobeOverworld(overworld);
-            LOGGER.info("JOIN: player={}, isGlobeOverworld={}", handler.player.getName().getString(), isGlobe);
-            ServerPlayNetworking.send(handler.player, new GlobeNet.GlobeStatePayload(isGlobe));
+            int latitudeZRadius = isGlobe ? LatitudeBiomes.getActiveRadiusBlocks() : 0;
+            LOGGER.info("JOIN: player={}, isGlobeOverworld={}, latitudeZRadius={}",
+                    handler.player.getName().getString(), isGlobe, latitudeZRadius);
+            ServerPlayNetworking.send(handler.player, new GlobeNet.GlobeStatePayload(isGlobe, latitudeZRadius));
 
             LatitudeWorldState worldState = LatitudeWorldState.get(overworld);
             boolean isBrandNewWorld = overworld.getGameTime() < 100L;
@@ -261,6 +263,17 @@ public class GlobeMod implements ModInitializer {
             LOGGER.info("[Latitude] Recorded Globe world: border radius {} (from create-world selection)", pendingRadius);
         }
 
+        // World shape: NEW Globe worlds are always Mercator (2:1) — there is no user choice. Pre-existing /
+        // legacy saves have no persisted globe_shape (deserialize to "classic") and are NOT touched, so they
+        // stay square (legacy-worldgen-policy-pin). gameTime < 100 is the established "brand-new world" signal
+        // (mirrors the radius + worldgen-policy consume above).
+        if (world.getGameTime() < 100L && "classic".equals(worldState.getGlobeShape())) {
+            worldState.setGlobeShape("mercator");
+            LOGGER.info("[Latitude] New Globe world: shape=mercator (2:1 default)");
+        }
+        // Ensure the live cache reflects the persisted shape before the border is sized (covers existing worlds).
+        LatitudeBiomes.setGlobeShape(LatitudeBiomes.shapeFromString(worldState.getGlobeShape()));
+
         if (!isGlobeOverworld(world)) {
             return;
         }
@@ -298,26 +311,32 @@ public class GlobeMod implements ModInitializer {
 
     private static void setGlobeBorder(ServerLevel overworld, int borderRadiusBlocks) {
         WorldBorder border = overworld.getWorldBorder();
-        // radiusBlocks is e.g. 3750 / 5000 / 7500
-        double diameter = borderRadiusBlocks * 2.0;
+        // borderRadiusBlocks is the Z (latitude) radius, e.g. 3750 / 5000 / 7500.
+        int zRadius = borderRadiusBlocks;
+        // Mercator worlds are 2:1: the playable X extent is ASPECT * the Z radius. Minecraft's WorldBorder
+        // is square-only, so we size the square border to the WIDER (X) axis; the N/S poles stay interior
+        // at |Z| = zRadius (enforced by the pole hazard band), and the E-W storm wall lands at the X edge.
+        int xRadius = LatitudeBiomes.isMercator()
+                ? (int) Math.round(zRadius * LatitudeBiomes.MERCATOR_ASPECT)
+                : zRadius;
+        double diameter = xRadius * 2.0;
         border.setCenter(0.0, 0.0);
         border.setSize(diameter);
 
-        int activeRadius = (int) (border.getSize() / 2);
-        LatitudeBiomes.setRadius(activeRadius);
-        LOGGER.info("[Latitude] Radius Sync: WorldBorder/2 = {}, ACTIVE_RADIUS_BLOCKS = {}", 
-                activeRadius, LatitudeBiomes.getActiveRadiusBlocks());
+        // Latitude authority stays the Z radius (poles at |Z| = zRadius, NOT at the X border edge).
+        LatitudeBiomes.setRadius(zRadius);
+        LatitudeBiomes.setActiveRadiusBlocks(zRadius);
+        // Tell the latitude math the Z radius so HUD/zone/pole calcs divide Z by zRadius (not the X border half).
+        com.example.globe.util.LatitudeMath.setLatitudeZRadius(zRadius);
+        LOGGER.info("[Latitude] Radius Sync: shape={} zRadius={} xRadius={} borderDiameter={} ACTIVE_RADIUS_BLOCKS={}",
+                LatitudeBiomes.getGlobeShape(), zRadius, xRadius, diameter, LatitudeBiomes.getActiveRadiusBlocks());
 
-        int activeRadiusForCheck = (int) Math.round(border.getSize() * 0.5);
-        LatitudeBiomes.setActiveRadiusBlocks(activeRadiusForCheck);
-        GlobeMod.LOGGER.info("[Latitude] Radius Sync: Border/2 = {}, ACTIVE_RADIUS_BLOCKS = {}",
-                activeRadiusForCheck, LatitudeBiomes.getActiveRadiusBlocks());
+        // Pole hazard band starts at a fraction of the Z radius (the geographic pole), interior to the border.
+        activePoleBandStartAbsZ = (int) Math.round(zRadius * com.example.globe.util.LatitudeMath.POLAR_START_FRAC);
+        POLAR_SCRUBBER = ENABLE_POLAR_SCRUBBER ? new PolarCapScrubber(zRadius, activePoleBandStartAbsZ) : null;
 
-        activePoleBandStartAbsZ = (int) Math.round(activeRadius * com.example.globe.util.LatitudeMath.POLAR_START_FRAC);
-        POLAR_SCRUBBER = ENABLE_POLAR_SCRUBBER ? new PolarCapScrubber(activeRadius, activePoleBandStartAbsZ) : null;
-
-        GlobeMod.LOGGER.info("[Latitude] WorldBorder set: radius={} diameter={} center=0,0 polarStart={}",
-                borderRadiusBlocks, diameter, activePoleBandStartAbsZ);
+        GlobeMod.LOGGER.info("[Latitude] WorldBorder set: shape={} zRadius={} xRadius={} diameter={} center=0,0 polarStart={}",
+                LatitudeBiomes.getGlobeShape(), zRadius, xRadius, diameter, activePoleBandStartAbsZ);
     }
 
     private static void borderUxTick(MinecraftServer server) {
@@ -342,7 +361,7 @@ public class GlobeMod implements ModInitializer {
                 continue;
             }
 
-            double progressZ = com.example.globe.util.LatitudeMath.hazardProgress(border, player.getZ());
+            double progressZ = com.example.globe.util.LatitudeMath.hazardProgressZ(border, player.getZ());
             int stageIndex = com.example.globe.util.LatitudeMath.hazardStageIndex(border, player.getZ(), progressZ);
 
             // Check if player is in the active polar band for effects
@@ -528,11 +547,13 @@ public class GlobeMod implements ModInitializer {
             zoneId = "TEMPERATE";
         }
 
-        int radius = LatitudeBiomes.getActiveRadiusBlocks();
+        int radius = LatitudeBiomes.getActiveRadiusBlocks();   // Z (latitude) radius
         if (radius <= 0) {
             WorldBorder border = world.getWorldBorder();
             radius = (int) Math.round(com.example.globe.util.LatitudeMath.halfSize(border));
         }
+        int xRadius = LatitudeBiomes.getActiveXRadiusBlocks();  // X (E-W) radius: wider in Mercator
+        if (xRadius <= 0) xRadius = radius;
 
         double v = hash01(seed, 1, 0, SPAWN_SALT);
 
@@ -553,7 +574,7 @@ public class GlobeMod implements ModInitializer {
             RandomState noiseConfig = RandomState.create(
                     template.settings().value(), template.noiseParameters(), seed);
             Climate.Sampler sampler = noiseConfig.sampler();
-            spawnPos = findLandSpawn(world, template, sampler, radius, targetZ, seed);
+            spawnPos = findLandSpawn(world, template, sampler, xRadius, radius, targetZ, seed);
         } catch (Exception e) {
             LOGGER.warn("[Latitude] Biome probe failed, using fallback spawn", e);
             spawnPos = null;
@@ -564,7 +585,7 @@ public class GlobeMod implements ModInitializer {
             spawnPos = new BlockPos(0, world.getSeaLevel() + 2, targetZ);
         }
 
-        return new SpawnChoice(zoneId, clampSpawnAwayFromEwWarning(spawnPos, radius), radius);
+        return new SpawnChoice(zoneId, clampSpawnAwayFromEwWarning(spawnPos, xRadius), radius);
     }
 
     public static void logBuildMetadata(String side) {
@@ -598,13 +619,13 @@ public class GlobeMod implements ModInitializer {
         LOGGER.info("[LAT][BUILD] side={} version={} commit={} branch={} dirty={} time={}", side, version, commit, branch, dirty, time);
     }
 
-    private static BlockPos clampSpawnAwayFromEwWarning(BlockPos spawnPos, int radiusBlocks) {
-        if (spawnPos == null || radiusBlocks <= 0) {
+    private static BlockPos clampSpawnAwayFromEwWarning(BlockPos spawnPos, int xRadiusBlocks) {
+        if (spawnPos == null || xRadiusBlocks <= 0) {
             return spawnPos;
         }
 
         int absX = Math.abs(spawnPos.getX());
-        int safeMaxAbsX = Math.max(0, radiusBlocks - EW_WARNING_DISTANCE_BLOCKS - EW_SPAWN_PADDING_BLOCKS);
+        int safeMaxAbsX = Math.max(0, xRadiusBlocks - EW_WARNING_DISTANCE_BLOCKS - EW_SPAWN_PADDING_BLOCKS);
         if (absX <= safeMaxAbsX) {
             return spawnPos;
         }
@@ -615,16 +636,18 @@ public class GlobeMod implements ModInitializer {
 
     private static BlockPos findLandSpawn(ServerLevel world, SamplerTemplate template,
                                           Climate.Sampler sampler,
-                                          int borderHalf, int targetZ, long seed) {
+                                          int xRadius, int zRadius, int targetZ, long seed) {
         final int margin = 320;
-        final int max = Math.max(0, borderHalf - margin);
+        // X is drawn over the (wider, in Mercator) E-W extent; Z-jitter is clamped to the latitude extent.
+        final int maxX = Math.max(0, xRadius - margin);
+        final int maxZ = Math.max(0, zRadius - margin);
 
         final int samplesPerPass = 16;
         final int zJitter = 96;
 
-        // Size-invariance: active radius is source of truth, borderHalf is fallback only.
+        // Size-invariance: active radius (Z) is source of truth for the latitude probe; zRadius is fallback.
         int radiusBlocks = LatitudeBiomes.getActiveRadiusBlocks();
-        if (radiusBlocks <= 0) radiusBlocks = borderHalf;
+        if (radiusBlocks <= 0) radiusBlocks = zRadius;
         int classifyY = LatitudeBiomes.SURFACE_CLASSIFY_Y;
 
         LatitudeBiomes.setWorldSeed(seed);
@@ -633,10 +656,10 @@ public class GlobeMod implements ModInitializer {
 
         for (int pass = 0; pass < 2; pass++) {
             for (int i = 0; i < samplesPerPass; i++) {
-                int x = rng.nextIntBetweenInclusive(-max, max);
+                int x = rng.nextIntBetweenInclusive(-maxX, maxX);
                 int z = pass == 0
                         ? targetZ
-                        : Mth.clamp(targetZ + rng.nextIntBetweenInclusive(-zJitter, zJitter), -max, max);
+                        : Mth.clamp(targetZ + rng.nextIntBetweenInclusive(-zJitter, zJitter), -maxZ, maxZ);
 
                 if (!isLandBiome(template, sampler, x, z, classifyY, radiusBlocks)) {
                     continue;
