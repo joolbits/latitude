@@ -25,11 +25,16 @@ public final class GlobeNet {
         PayloadTypeRegistry.serverboundPlay().register(SetSpawnPickerPayload.ID, SetSpawnPickerPayload.CODEC);
     }
 
-    public record GlobeStatePayload(boolean isGlobe) implements CustomPacketPayload {
+    public record GlobeStatePayload(boolean isGlobe, int latitudeZRadius) implements CustomPacketPayload {
         public static final Type<GlobeStatePayload> ID = new Type<>(Identifier.fromNamespaceAndPath("globe", "s2c_globe_state"));
+        // latitudeZRadius is the Z (latitude) radius in blocks. For Mercator worlds this differs from the
+        // (X-sized) WorldBorder half, so the client needs it to render correct latitude/zone/pole HUD.
+        // 0 means "use the border half" (Classic / unknown).
         public static final StreamCodec<RegistryFriendlyByteBuf, GlobeStatePayload> CODEC = StreamCodec.composite(
                 ByteBufCodecs.BOOL,
                 GlobeStatePayload::isGlobe,
+                ByteBufCodecs.VAR_INT,
+                GlobeStatePayload::latitudeZRadius,
                 GlobeStatePayload::new
         );
 

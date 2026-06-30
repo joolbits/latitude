@@ -38,7 +38,7 @@ public final class LatitudeMath {
     public static final double POLAR_STAGE_3_PROGRESS = 0.990;
     public static final double POLAR_STAGE_LETHAL_PROGRESS = 0.995;
 
-    /** WorldBorder#getSize() is DIAMETER. Half-size is radius in blocks. */
+    /** WorldBorder#getSize() is DIAMETER. Half-size is radius in blocks. This is the X (border) radius. */
     public static double halfSize(WorldBorder border) {
         if (border == null) return 1.0;
         double size = border.getSize();
@@ -46,9 +46,30 @@ public final class LatitudeMath {
         return size * 0.5;
     }
 
-    /** Returns normalized latitude in [-1..1] from Z using border half-size. */
+    // --- Mercator latitude radius override (Phase 1) ---
+    // In a Mercator world the square WorldBorder is sized to the WIDER (X) axis, so halfSize(border) is the
+    // X radius, NOT the latitude (Z) radius. Latitude/pole math must divide Z by the Z radius. Both server
+    // (GlobeMod.setGlobeBorder) and client (GlobeStatePayload handler) push the Z radius here. 0 = use the
+    // border half-size (Classic: Z radius == border half, so latitudeRadius == halfSize → byte-identical).
+    private static volatile int latitudeZRadiusOverride = 0;
+
+    public static void setLatitudeZRadius(int zRadius) {
+        latitudeZRadiusOverride = Math.max(0, zRadius);
+    }
+
+    public static int getLatitudeZRadiusOverride() {
+        return latitudeZRadiusOverride;
+    }
+
+    /** The latitude (Z) radius: the override if set (Mercator), else the border half-size (Classic). */
+    public static double latitudeRadius(WorldBorder border) {
+        int o = latitudeZRadiusOverride;
+        return o > 0 ? o : halfSize(border);
+    }
+
+    /** Returns normalized latitude in [-1..1] from Z using the latitude (Z) radius. */
     public static double latNormFromZ(WorldBorder border, double z) {
-        double half = halfSize(border);
+        double half = latitudeRadius(border);
         double norm = z / half;
         return Mth.clamp(norm, -1.0, 1.0);
     }
@@ -70,25 +91,34 @@ public final class LatitudeMath {
         return absLatFraction(border, z) * 90.0;
     }
 
-    /** Returns remaining distance to the N/S border in blocks (>= 0). */
+    /** Returns remaining distance to the N/S pole in blocks (>= 0), measured against the latitude radius. */
     public static double poleRemainingBlocks(WorldBorder border, double z) {
-        double half = halfSize(border);
+        double half = latitudeRadius(border);
         double remaining = half - Math.abs(z);
         return Math.max(0.0, remaining);
     }
 
-    /** Returns remaining distance to the N/S border as a fraction of half-size. */
+    /** Returns remaining distance to the N/S pole as a fraction of the latitude radius. */
     public static double poleRemainingFrac(WorldBorder border, double z) {
-        double half = halfSize(border);
+        double half = latitudeRadius(border);
         if (half <= 0.0) return 0.0;
         return poleRemainingBlocks(border, z) / half;
     }
 
-    /** Returns normalized progress to border in [0..1] for the given coordinate. */
+    /** Returns normalized progress to the X (E-W) border in [0..1]. Use for east-west storm hazards. */
     public static double hazardProgress(WorldBorder border, double coord) {
         double half = halfSize(border);
         if (half <= 0.0) return 1.0;
         return Mth.clamp(Math.abs(coord) / half, 0.0, 1.0);
+    }
+
+    /** Returns normalized progress to the N/S pole in [0..1], measured against the latitude (Z) radius.
+     *  Use for pole hazards: in Mercator the pole is interior to the (X-sized) border, so this differs
+     *  from {@link #hazardProgress} which would only reach 1.0 at the far X border. */
+    public static double hazardProgressZ(WorldBorder border, double z) {
+        double half = latitudeRadius(border);
+        if (half <= 0.0) return 1.0;
+        return Mth.clamp(Math.abs(z) / half, 0.0, 1.0);
     }
 
     /** Returns hazard stage index (0..4) based on normalized progress. */

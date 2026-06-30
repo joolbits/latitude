@@ -381,6 +381,7 @@ public final class LatitudeBiomes {
     private static volatile long WORLD_SEED = 0L;
     private static volatile WorldgenPolicyVersion ACTIVE_WORLDGEN_POLICY = WorldgenPolicyVersion.MODERN_1_3;
     public static volatile int ACTIVE_RADIUS_BLOCKS = 0;
+    private static volatile GlobeShape ACTIVE_GLOBE_SHAPE = GlobeShape.CLASSIC;
     private static OceanDistanceField OCEAN_DISTANCE_FIELD = null;
     private static final AtomicInteger DEBUG_COUNT = new AtomicInteger();
     private static final AtomicInteger BLEND_DEBUG_COUNT = new AtomicInteger();
@@ -618,6 +619,55 @@ public final class LatitudeBiomes {
 
     public static int getActiveRadiusBlocks() {
         return ACTIVE_RADIUS_BLOCKS;
+    }
+
+    // --- Mercator world shape (Phase 1: wider world, more biomes per band) ---
+    // CLASSIC = square globe (X radius == Z radius). MERCATOR = 2:1 face: the playable X extent is
+    // ASPECT * the Z radius, so each latitude band is twice as long E-W. We deliberately do NOT stretch
+    // the biome map (no coordinate transform): the band is twice as wide and biome regions stay normal
+    // size, so each band holds ~2x more distinct biomes (Peetsa 2026-06-23: "more biome representation by
+    // widening the world"). pick() is therefore UNCHANGED — a Mercator world produces the same biome at
+    // any (X,Z) as Classic would; it is simply a bigger world. Only the border + spawn X extent widen and
+    // the pole hazard is re-denominated to the Z radius. Latitude stays |Z|/Z_RADIUS. Classic is byte-identical.
+    public enum GlobeShape { CLASSIC, MERCATOR }
+
+    /** Phase 1 fixed aspect: Mercator worlds are 2:1 (X half-extent = 2x the Z radius). */
+    public static final double MERCATOR_ASPECT = 2.0;
+
+    public static void setGlobeShape(GlobeShape shape) {
+        ACTIVE_GLOBE_SHAPE = (shape == null) ? GlobeShape.CLASSIC : shape;
+    }
+
+    public static GlobeShape getGlobeShape() {
+        return ACTIVE_GLOBE_SHAPE;
+    }
+
+    public static boolean isMercator() {
+        return ACTIVE_GLOBE_SHAPE == GlobeShape.MERCATOR;
+    }
+
+    /** Null/blank-safe parse; unknown values fall back to CLASSIC (mirrors worldgen-policy handling). */
+    public static GlobeShape shapeFromString(String s) {
+        if (s == null || s.isBlank()) return GlobeShape.CLASSIC;
+        try {
+            return GlobeShape.valueOf(s.trim().toUpperCase(java.util.Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            return GlobeShape.CLASSIC;
+        }
+    }
+
+    public static String shapeToString(GlobeShape s) {
+        return (s == null ? GlobeShape.CLASSIC : s).name().toLowerCase(java.util.Locale.ROOT);
+    }
+
+    /**
+     * X authority for the world border, spawn search, and E-W warning. In Mercator the playable X extent
+     * is ASPECT * the Z radius; in Classic it equals the Z radius. Latitude/pole math must NOT use this —
+     * it uses {@link #getActiveRadiusBlocks()} (the Z radius) so poles stay at the geographic pole.
+     */
+    public static int getActiveXRadiusBlocks() {
+        int z = ACTIVE_RADIUS_BLOCKS;
+        return isMercator() ? (int) Math.round(z * MERCATOR_ASPECT) : z;
     }
 
     // --- Tree line / alpine surface ---

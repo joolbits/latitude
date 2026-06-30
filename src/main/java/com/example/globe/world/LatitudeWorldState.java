@@ -29,24 +29,28 @@ public final class LatitudeWorldState extends SavedData {
                     WORLDGEN_POLICY_CODEC.optionalFieldOf("worldgen_policy")
                             .forGetter((LatitudeWorldState state) -> Optional.ofNullable(state.worldgenPolicy)),
                     Codec.INT.optionalFieldOf("globe_radius", 0)
-                            .forGetter(LatitudeWorldState::getGlobeRadius)
-            ).apply(instance, (spawnPickerDismissed, worldgenPolicy, globeRadius) ->
-                    new LatitudeWorldState(spawnPickerDismissed, normalizeWorldgenPolicy(worldgenPolicy), globeRadius))),
+                            .forGetter(LatitudeWorldState::getGlobeRadius),
+                    Codec.STRING.optionalFieldOf("globe_shape", "classic")
+                            .forGetter(LatitudeWorldState::getGlobeShape)
+            ).apply(instance, (spawnPickerDismissed, worldgenPolicy, globeRadius, globeShape) ->
+                    new LatitudeWorldState(spawnPickerDismissed, normalizeWorldgenPolicy(worldgenPolicy), globeRadius, globeShape))),
             DataFixTypes.SAVED_DATA_COMMAND_STORAGE
     );
 
     private boolean spawnPickerDismissed;
     private WorldgenPolicyVersion worldgenPolicy;
     private int globeRadius;
+    private String globeShape;
 
     public LatitudeWorldState() {
-        this(false, Optional.empty(), 0);
+        this(false, Optional.empty(), 0, "classic");
     }
 
-    private LatitudeWorldState(boolean spawnPickerDismissed, Optional<WorldgenPolicyVersion> worldgenPolicy, int globeRadius) {
+    private LatitudeWorldState(boolean spawnPickerDismissed, Optional<WorldgenPolicyVersion> worldgenPolicy, int globeRadius, String globeShape) {
         this.spawnPickerDismissed = spawnPickerDismissed;
         this.worldgenPolicy = normalizeWorldgenPolicy(worldgenPolicy).orElse(null);
         this.globeRadius = Math.max(0, globeRadius);
+        this.globeShape = (globeShape == null || globeShape.isBlank()) ? "classic" : globeShape;
     }
 
     private static Optional<WorldgenPolicyVersion> normalizeWorldgenPolicy(Optional<WorldgenPolicyVersion> worldgenPolicy) {
@@ -56,6 +60,7 @@ public final class LatitudeWorldState extends SavedData {
     public static LatitudeWorldState get(ServerLevel world) {
         LatitudeWorldState state = world.getDataStorage().computeIfAbsent(STATE_TYPE);
         state.ensureWorldgenPolicy(world);
+        state.ensureGlobeShape();
         return state;
     }
 
@@ -95,6 +100,23 @@ public final class LatitudeWorldState extends SavedData {
             this.globeRadius = normalized;
             setDirty();
         }
+    }
+
+    public String getGlobeShape() {
+        return (globeShape == null || globeShape.isBlank()) ? "classic" : globeShape;
+    }
+
+    public void setGlobeShape(String globeShape) {
+        String normalized = (globeShape == null || globeShape.isBlank()) ? "classic" : globeShape;
+        if (!normalized.equals(this.globeShape)) {
+            this.globeShape = normalized;
+            setDirty();
+        }
+        LatitudeBiomes.setGlobeShape(LatitudeBiomes.shapeFromString(normalized));
+    }
+
+    private void ensureGlobeShape() {
+        LatitudeBiomes.setGlobeShape(LatitudeBiomes.shapeFromString(getGlobeShape()));
     }
 
     private void ensureWorldgenPolicy(ServerLevel world) {

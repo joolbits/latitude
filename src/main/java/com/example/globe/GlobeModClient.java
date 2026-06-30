@@ -58,6 +58,7 @@ public class GlobeModClient implements ClientModInitializer {
 
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
             GlobeClientState.setGlobeWorld(false);
+            com.example.globe.util.LatitudeMath.setLatitudeZRadius(0);
             pendingSpawnPickerOpen = false;
         });
 
@@ -70,7 +71,9 @@ public class GlobeModClient implements ClientModInitializer {
             }
             context.client().execute(() -> {
                 GlobeClientState.setGlobeWorld(payload.isGlobe());
-                GlobeMod.LOGGER.info("S2C globe state: isGlobe={}", payload.isGlobe());
+                // Mercator: latitude (Z) radius differs from the X-sized border half; drive HUD/zone/pole off it.
+                com.example.globe.util.LatitudeMath.setLatitudeZRadius(payload.isGlobe() ? payload.latitudeZRadius() : 0);
+                GlobeMod.LOGGER.info("S2C globe state: isGlobe={} latitudeZRadius={}", payload.isGlobe(), payload.latitudeZRadius());
             });
         });
 
