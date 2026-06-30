@@ -76,6 +76,15 @@ loom {
             vmArg "-Xmx8G"
             vmArg "-Dlatdev.biomePng=${System.getProperty('latdev.biomePng', 'enabled')}"
             vmArg "-Dlatdev.locateBoundary=${System.getProperty('latdev.locateBoundary', '')}"
+            vmArg "-Dlatdev.alpineAudit=${System.getProperty('latdev.alpineAudit', '')}"
+            vmArg "-Dlatdev.probe=${System.getProperty('latdev.probe', '')}"
+            vmArg "-Dlatdev.probe.target=${System.getProperty('latdev.probe.target', '')}"
+            vmArg "-Dlatdev.probe.types=${System.getProperty('latdev.probe.types', '')}"
+            vmArg "-Dlatdev.probe.names=${System.getProperty('latdev.probe.names', '')}"
+            vmArg "-Dlatdev.probe.grid=${System.getProperty('latdev.probe.grid', '')}"
+            vmArg "-Dlatdev.probe.out=${System.getProperty('latdev.probe.out', '')}"
+            vmArg "-Dlatdev.probe.radius=${System.getProperty('latdev.probe.radius', '')}"
+            vmArg "-Dlatdev.probe.maxCombos=${System.getProperty('latdev.probe.maxCombos', '')}"
             vmArg "-Dlatitude.debugWorldgenPath=${System.getProperty('latitude.debugWorldgenPath', 'false')}"
         }
         biomeSeedSearch {
