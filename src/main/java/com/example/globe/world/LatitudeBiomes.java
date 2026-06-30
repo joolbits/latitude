@@ -2425,6 +2425,16 @@ public final class LatitudeBiomes {
     // cap (keeping as much as the cap allows minimizes how much of the converted area piles into the
     // snowy_plains primary). Lower threshold => keep more ice_spikes.
     private static final double POLAR_ICE_KEEP_THRESHOLD = 0.45;
+    // Alpine peak smoothing: peak biomes (snowy_slopes/frozen_peaks/jagged_peaks) are emitted on a per-column
+    // terrain gate with no spatial coherence, so they salt-and-pepper into many tiny components (the only
+    // genuinely-confetti biomes, in every config incl. vanilla). Gate them with a coherent ValueNoise field so
+    // kept peaks form fewer, larger massifs; suppressed fringe cells fall through to the cohesive cold base
+    // (snowy_plains / temperate base pick). This ANDs onto the EXISTING mountain decision — it can never create
+    // a peak or add warm-band snow, only consolidate existing ones. -D-tunable.
+    private static final long ALPINE_PATCH_SALT = 0x416C70696E655047L; // "AlpinePG"
+    private static final int ALPINE_PATCH_BLOCKS = Integer.getInteger("latitude.alpinePatchBlocks", 384);
+    private static final double ALPINE_KEEP_THRESHOLD =
+            Double.parseDouble(System.getProperty("latitude.alpineKeepThreshold", "0.42"));
     private static final int BLEND_TRANSITION_WIDTH_BLOCKS = 1408;
     private static final int BLEND_DITHER_SCALE_BLOCKS = 512;
     private static final int BLEND_NOISE_PATCH_CHUNKS = 10;
@@ -2992,7 +3002,8 @@ public final class LatitudeBiomes {
                 // temperate band, where the dedicated terrain-authority gate now requires
                 // higher terrain plus ruggedness or vanilla mountain-noise authority.
                 boolean mountainPromotion = mountainLike
-                        && landBandIndex == BAND_TEMPERATE;
+                        && landBandIndex == BAND_TEMPERATE
+                        && keepAlpinePeak(blockX, blockZ);
                 if (mountainPromotion) {
                     temperateMountainRewriteRan = true;
                     chosen = pickFromTagNoiseOrBase(biomeRegistry, LAT_TEMPERATE_MOUNTAIN, base, blockX, blockZ, landBandIndex);
@@ -3619,7 +3630,8 @@ public final class LatitudeBiomes {
             // Guard: polar land has its own mountain picker (pickPolarWithFrontShoulder).
             // See parallel Registry<Biome> overload for full rationale.
             boolean mountainPromotion = mountainLike
-                    && landBandIndex == BAND_TEMPERATE;
+                    && landBandIndex == BAND_TEMPERATE
+                    && keepAlpinePeak(blockX, blockZ);
             if (mountainPromotion) {
                 temperateMountainRewriteRan = true;
                 chosen = pickFromTagNoiseOrBase(biomePool, LAT_TEMPERATE_MOUNTAIN, base, blockX, blockZ, landBandIndex);
@@ -4857,7 +4869,7 @@ public final class LatitudeBiomes {
         Holder<Biome> pick = pickFromWeightedTags(biomes, base, blockX, blockZ, BAND_POLAR, 0x4D54, LAT_POLAR_PRIMARY, LAT_POLAR_SECONDARY, LAT_POLAR_ACCENT);
         double deg = LatitudeMath.clamp(absLatFraction * 90.0, 0.0, 90.0);
         double shoulderMaxDeg = LatitudeBands.Band.POLAR.lowDeg() + 8.0;
-        if (coldMountainLike) {
+        if (coldMountainLike && keepAlpinePeak(blockX, blockZ)) {
             Holder<Biome> mountain = flatPolarShelf ? null : pickFrom(biomes, blockX, blockZ, BAND_POLAR,
                     "minecraft:snowy_slopes",
                     "minecraft:frozen_peaks",
@@ -5041,7 +5053,7 @@ public final class LatitudeBiomes {
         Holder<Biome> pick = pickFromWeightedTags(biomes, base, blockX, blockZ, BAND_POLAR, 0x4D54, LAT_POLAR_PRIMARY, LAT_POLAR_SECONDARY, LAT_POLAR_ACCENT);
         double deg = LatitudeMath.clamp(absLatFraction * 90.0, 0.0, 90.0);
         double shoulderMaxDeg = LatitudeBands.Band.POLAR.lowDeg() + 8.0;
-        if (coldMountainLike) {
+        if (coldMountainLike && keepAlpinePeak(blockX, blockZ)) {
             List<Holder<Biome>> options = new ArrayList<>();
             Holder<Biome> slope = entryById(biomes, "minecraft:snowy_slopes");
             Holder<Biome> frozen = entryById(biomes, "minecraft:frozen_peaks");
@@ -7404,6 +7416,14 @@ public final class LatitudeBiomes {
         double ice = ValueNoise2D.sampleBlocks(WORLD_SEED ^ POLAR_SANITIZE_ICE_SALT, blockX, blockZ,
                 POLAR_ICE_ACCENT_PATCH_BLOCKS);
         return ice >= POLAR_ICE_KEEP_THRESHOLD;
+    }
+
+    /** Coherent keep-field for alpine peak biomes: true where the peak should survive (forming large massifs).
+     *  ANDed onto the existing mountain-terrain gate, so it only SUPPRESSES the incoherent peak fringe (which
+     *  falls through to the cohesive cold base) — it never creates a peak. Lower threshold = keep more peaks. */
+    private static boolean keepAlpinePeak(int blockX, int blockZ) {
+        double n = ValueNoise2D.sampleBlocks(WORLD_SEED ^ ALPINE_PATCH_SALT, blockX, blockZ, ALPINE_PATCH_BLOCKS);
+        return n >= ALPINE_KEEP_THRESHOLD;
     }
 
     private static Holder<Biome> pickSubpolarForestSanitizeFallback(Registry<Biome> biomes, Holder<Biome> pick) {
