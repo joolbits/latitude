@@ -4953,6 +4953,15 @@ public final class LatitudeBiomes {
         return ValueNoise2D.sampleBlocks(WORLD_SEED ^ SUBTROPICAL_HUMIDITY_SALT, blockX, blockZ, WARM_PROVINCE_HUMIDITY_SCALE_BLOCKS);
     }
 
+    // Tropical diversify: sparse_jungle (open-canopy jungle) is a legit drier-tropical-margin biome, but the
+    // old reroute culled it in ~70% of cells (a compositionBias<=0.16 clause), so it essentially never
+    // appeared and the tropics read as near-pure jungle. It now survives the tropical margins and only
+    // reroutes to savanna where the canopy is genuinely OPEN (openness >= this threshold). The wettest core
+    // (WARM_WET) still excludes it via gateWarmWetSparseJungleSurvival, so dense rainforest stays dense —
+    // Earth-like: dense jungle at the wet equator, sparse jungle on the drier margins. -D-tunable.
+    private static final double SPARSE_JUNGLE_OPEN_REROUTE =
+            Double.parseDouble(System.getProperty("latitude.sparseJungleOpenReroute", "0.72"));
+
     private static double subtropicalHumidityThreshold(int step) {
         return switch (step) {
             case 1 -> 0.40;
@@ -5409,8 +5418,10 @@ public final class LatitudeBiomes {
         Holder<Biome> pick = entries.get(idx);
         if (bandIndex == BAND_TROPICAL && isBiomeId(pick, "minecraft:sparse_jungle")) {
             double openness = tropicalOpennessNoise(blockX, blockZ);
-            double compositionBias = tropicalCompositionBias(WORLD_SEED, blockX, blockZ);
-            if (openness >= 0.55 || compositionBias <= 0.16) {
+            // Earth-like: keep sparse_jungle in the drier tropical margins; only reroute to savanna where the
+            // canopy is genuinely open. (Dropped the old compositionBias<=0.16 culler that deleted it in ~70%
+            // of cells; the wettest core still excludes it downstream via gateWarmWetSparseJungleSurvival.)
+            if (openness >= SPARSE_JUNGLE_OPEN_REROUTE) {
                 Holder<Biome> reroute = openness >= 0.20
                         ? entryById(biomes, "minecraft:savanna")
                         : entryById(biomes, "minecraft:jungle");
@@ -9807,8 +9818,10 @@ public final class LatitudeBiomes {
         Holder<Biome> pick = entries.get(idx);
         if (bandIndex == BAND_TROPICAL && isBiomeId(pick, "minecraft:sparse_jungle")) {
             double openness = tropicalOpennessNoise(blockX, blockZ);
-            double compositionBias = tropicalCompositionBias(WORLD_SEED, blockX, blockZ);
-            if (openness >= 0.55 || compositionBias <= 0.16) {
+            // Earth-like: keep sparse_jungle in the drier tropical margins; only reroute to savanna where the
+            // canopy is genuinely open. (Dropped the old compositionBias<=0.16 culler that deleted it in ~70%
+            // of cells; the wettest core still excludes it downstream via gateWarmWetSparseJungleSurvival.)
+            if (openness >= SPARSE_JUNGLE_OPEN_REROUTE) {
                 try {
                     Holder<Biome> reroute = openness >= 0.20
                             ? biome(biomes, "minecraft:savanna")
