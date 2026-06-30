@@ -126,6 +126,7 @@ public class LatitudeCreateWorldScreen extends Screen {
     private boolean allowCommands = false;
     private boolean startWithCompass = true;
     private boolean bonusChest = false;
+    private boolean generateStructures = true;
     private int worldTypeIdx = 0;  // 0=Latitude, 1=Vanilla, 2=Vanilla Superflat
     private GameRules gameRules;
 
@@ -140,6 +141,7 @@ public class LatitudeCreateWorldScreen extends Screen {
     private Button commandsBtn;
     private Button compassBtn;
     private Button bonusChestBtn;
+    private Button structuresBtn;
     private Button worldTypePrevBtn;
     private Button worldTypeNextBtn;
     private Button modePrevBtn;
@@ -199,6 +201,7 @@ public class LatitudeCreateWorldScreen extends Screen {
     private int modeRowY;
     private int commandsRowY;
     private int compassRowY;
+    private int structuresRowY;
     private int bonusChestRowY;
     private int gameRulesRowY;
 
@@ -443,6 +446,12 @@ public class LatitudeCreateWorldScreen extends Screen {
                 b.setMessage(Component.literal(startWithCompass ? "ON" : "OFF"));
             }).bounds(settBtnX, panelTop, settBtnW, btnH).build();
             this.addRenderableWidget(compassBtn);
+
+            structuresBtn = Button.builder(Component.literal(generateStructures ? "ON" : "OFF"), b -> {
+                generateStructures = !generateStructures;
+                b.setMessage(Component.literal(generateStructures ? "ON" : "OFF"));
+            }).bounds(settBtnX, panelTop, settBtnW, btnH).build();
+            this.addRenderableWidget(structuresBtn);
 
             bonusChestBtn = Button.builder(Component.literal(bonusChest ? "ON" : "OFF"), b -> {
                 bonusChest = !bonusChest;
@@ -757,9 +766,13 @@ public class LatitudeCreateWorldScreen extends Screen {
             compassBtn.setMessage(Component.literal(startWithCompass ? "ON" : "OFF"));
             compassBtn.active = compassBtn.visible && isLatitudeWorld();
         }
+        if (structuresBtn != null) {
+            structuresBtn.setMessage(Component.literal(generateStructures ? "ON" : "OFF"));
+            structuresBtn.active = structuresBtn.visible;
+        }
         if (bonusChestBtn != null) {
             bonusChestBtn.setMessage(Component.literal(bonusChest ? "ON" : "OFF"));
-            bonusChestBtn.active = !isLatitudeWorld() && bonusChestBtn.visible;
+            bonusChestBtn.active = bonusChestBtn.visible;
         }
         if (gameRulesBtn != null) {
             gameRulesBtn.active = gameRulesBtn.visible;
@@ -770,7 +783,7 @@ public class LatitudeCreateWorldScreen extends Screen {
     }
 
     private void updateSettingsLayout() {
-        if (worldTypePrevBtn == null || worldTypeNextBtn == null || modePrevBtn == null || modeNextBtn == null || commandsBtn == null || compassBtn == null || bonusChestBtn == null || gameRulesBtn == null || hudStudioBtn == null) {
+        if (worldTypePrevBtn == null || worldTypeNextBtn == null || modePrevBtn == null || modeNextBtn == null || commandsBtn == null || compassBtn == null || structuresBtn == null || bonusChestBtn == null || gameRulesBtn == null || hudStudioBtn == null) {
             settingsViewportTop = 0;
             settingsViewportBottom = 0;
             settingsContentHeight = 0;
@@ -789,7 +802,7 @@ public class LatitudeCreateWorldScreen extends Screen {
         int blockHeight = labelGap + btnH;
         // Leave a little trailing room so the HUD Studio row can scroll fully into view
         // on short windows instead of sitting flush against the viewport edge.
-        settingsContentHeight = blockHeight * 7 + rowGap * 6 + scaledUi(12);
+        settingsContentHeight = blockHeight * 8 + rowGap * 7 + scaledUi(12);
         int maxScroll = Math.max(0, settingsContentHeight - viewportHeight);
         if (settingsScroll < 0) settingsScroll = 0;
         if (settingsScroll > maxScroll) settingsScroll = maxScroll;
@@ -809,6 +822,10 @@ public class LatitudeCreateWorldScreen extends Screen {
         y += btnH + rowGap + labelGap;
         compassRowY = y;
         positionSettingsButton(compassBtn, settBtnX, settBtnW, y, btnH);
+
+        y += btnH + rowGap + labelGap;
+        structuresRowY = y;
+        positionSettingsButton(structuresBtn, settBtnX, settBtnW, y, btnH);
 
         y += btnH + rowGap + labelGap;
         bonusChestRowY = y;
@@ -844,7 +861,8 @@ public class LatitudeCreateWorldScreen extends Screen {
         setTabbedWidgetVisible(modeNextBtn, showRules);
         setTabbedWidgetVisible(commandsBtn, showRules);
         setTabbedWidgetVisible(compassBtn, showRules);
-        setTabbedWidgetVisible(bonusChestBtn, showRules && !isLatitudeWorld());
+        setTabbedWidgetVisible(structuresBtn, showRules);
+        setTabbedWidgetVisible(bonusChestBtn, showRules);
         setTabbedWidgetVisible(gameRulesBtn, showRules);
         setTabbedWidgetVisible(hudStudioBtn, showRules);
     }
@@ -915,7 +933,7 @@ public class LatitudeCreateWorldScreen extends Screen {
         LatitudeWorldLauncher.beginExpedition(this.minecraft, this, this.holder,
                 worldName, seed, this.selectedSize, this.selectedZone,
                 gameMode, hardcore, difficulty, allowCommands, startWithCompass, bonusChest,
-                this.gameRules, this.worldTypeIdx);
+                generateStructures, this.gameRules, this.worldTypeIdx);
     }
 
     public void probeAutoConfirmWorldCreation() {
@@ -1198,7 +1216,8 @@ public class LatitudeCreateWorldScreen extends Screen {
             drawSettingsStepperValue(context, MODE_NAMES[selectedModeIdx], MODE_COLORS[selectedModeIdx], modeRowY);
             drawSettingsRowLabel(context, "Commands", settLabelX, commandsRowY, MUTED);
             drawSettingsRowLabel(context, "Starting Compass", settLabelX, compassRowY, isLatitudeWorld() ? MUTED : DISABLED_COLOR);
-            drawSettingsRowLabel(context, "Bonus Chest", settLabelX, bonusChestRowY, isLatitudeWorld() ? DISABLED_COLOR : MUTED);
+            drawSettingsRowLabel(context, "Generate Structures", settLabelX, structuresRowY, MUTED);
+            drawSettingsRowLabel(context, "Bonus Chest", settLabelX, bonusChestRowY, MUTED);
             drawSettingsRowLabel(context, "Game Rules", settLabelX, gameRulesRowY, MUTED);
             context.disableScissor();
             }
@@ -1207,10 +1226,6 @@ public class LatitudeCreateWorldScreen extends Screen {
 
         if (!tabbedMode) {
             drawHorizontalScrollbar(context);
-        }
-
-        if (isLatitudeWorld() && bonusChestBtn != null && !bonusChestBtn.active && bonusChestBtn.isMouseOver(mouseX, mouseY)) {
-            context.setTooltipForNextFrame(Component.literal("Bonus chest is not available in Latitude."), mouseX, mouseY);
         }
 
         super.extractRenderState(context, mouseX, mouseY, delta);
