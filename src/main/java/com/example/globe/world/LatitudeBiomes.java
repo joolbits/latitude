@@ -1213,6 +1213,11 @@ public final class LatitudeBiomes {
             return false;
         }
         String normalized = callerContext.trim().toUpperCase(java.util.Locale.ROOT);
+        if ("ATLAS_TERRAIN".equals(normalized)) {
+            // Terrain-aware atlas: always probe real terrain so terrain-correlated gates (plains-on-steep,
+            // etc.) fire and become map-provable. The exporter feeds a real RandomState+heightView for this.
+            return false;
+        }
         if ("BIOME_PNG".equals(normalized)
                 || "SOURCE".equals(normalized)
                 || "ATLAS_SAMPLER".equals(normalized)) {
@@ -2450,6 +2455,13 @@ public final class LatitudeBiomes {
     private static final int PREVIEW_HEIGHT_MARGIN_BLOCKS = 25;
     private static final int TEMPERATE_MOUNTAIN_MIN_HEIGHT_ABOVE_SEA = 56;
     private static final int TEMPERATE_MOUNTAIN_MIN_RUGGED_DELTA = WINDSWEPT_RUGGED_THRESH + WINDSWEPT_RUGGED_HYST;
+    // Temperate "amplified plains" fix: the terrain-compatibility reroll (plains-on-steep → hills/peaks) ran
+    // only for SUBPOLAR/POLAR. Extend it to TEMPERATE, but ONLY on genuinely rugged/high columns so gently
+    // rolling temperate plains survive. Tunable live via -D to dial the threshold in against Terralith relief.
+    private static final int TEMPERATE_PLAINS_RUGGED_RELIEF =
+            Integer.getInteger("latitude.temperatePlainsRelief", 6);
+    private static final int TEMPERATE_PLAINS_HIGH_ABOVE_SEA =
+            Integer.getInteger("latitude.temperatePlainsHighAboveSea", 40);
 
     private static final ThreadLocal<Long2IntOpenHashMap> PREVIEW_HEIGHT_CACHE =
             ThreadLocal.withInitial(Long2IntOpenHashMap::new);
@@ -2801,7 +2813,7 @@ public final class LatitudeBiomes {
                 || isBiomeId(chosen, "minecraft:old_growth_pine_taiga"))) {
             chosen = base;
         }
-        if (skipPreview && landBandIndex >= BAND_SUBPOLAR && chosen != null) {
+        if (skipPreview && shouldApplyTerrainGate(landBandIndex, preview.robustDelta, preview.centerHeight, seaLevel) && chosen != null) {
             int gateHeight = preview.centerHeight;
             int gateDelta = preview.robustDelta;
             if (generator != null && noiseConfig != null && heightView != null) {
@@ -2821,7 +2833,7 @@ public final class LatitudeBiomes {
                     oceanDistance,
                     mountainNoiseLike,
                     mountainLike);
-        } else if (!skipPreview && landBandIndex >= BAND_SUBPOLAR && chosen != null) {
+        } else if (!skipPreview && shouldApplyTerrainGate(landBandIndex, preview.robustDelta, preview.centerHeight, seaLevel) && chosen != null) {
             chosen = applyTerrainCompatibilityGate(
                     biomeRegistry,
                     chosen,
@@ -3416,7 +3428,7 @@ public final class LatitudeBiomes {
                 || isBiomeId(chosen, "minecraft:old_growth_pine_taiga"))) {
             chosen = base;
         }
-        if (skipPreview && landBandIndex >= BAND_SUBPOLAR && chosen != null) {
+        if (skipPreview && shouldApplyTerrainGate(landBandIndex, preview.robustDelta, preview.centerHeight, seaLevel) && chosen != null) {
             int gateHeight = preview.centerHeight;
             int gateDelta = preview.robustDelta;
             if (generator != null && noiseConfig != null && heightView != null) {
@@ -3436,7 +3448,7 @@ public final class LatitudeBiomes {
                     oceanDistance,
                     mountainNoiseLike,
                     mountainLike);
-        } else if (!skipPreview && landBandIndex >= BAND_SUBPOLAR && chosen != null) {
+        } else if (!skipPreview && shouldApplyTerrainGate(landBandIndex, preview.robustDelta, preview.centerHeight, seaLevel) && chosen != null) {
             chosen = applyTerrainCompatibilityGate(
                     biomePool,
                     chosen,
@@ -5808,6 +5820,23 @@ public final class LatitudeBiomes {
     private static final int TERRAIN_CLASS_MOUNTAIN = 3;
     private static final int TERRAIN_POOL_SELECTION_SCALE_BLOCKS = 1152;
     private static final int COLD_SIBLING_SELECTION_SCALE_BLOCKS = 1536;
+
+    /**
+     * Whether the terrain-compatibility reroll (plains-on-steep → hills/peaks) should run for this band.
+     * SUBPOLAR/POLAR always run (unchanged — preserves prior behavior). TEMPERATE runs only on genuinely
+     * rugged/high columns, so the fix targets dramatic Terralith terrain (the "amplified plains" report)
+     * without erasing gently-rolling temperate plains. TROPICAL/SUBTROPICAL are unaffected.
+     */
+    private static boolean shouldApplyTerrainGate(int bandIndex, int robustDelta, int centerHeight, int seaLevel) {
+        if (bandIndex >= BAND_SUBPOLAR) {
+            return true;
+        }
+        if (bandIndex == BAND_TEMPERATE) {
+            return robustDelta >= TEMPERATE_PLAINS_RUGGED_RELIEF
+                    || centerHeight >= seaLevel + TEMPERATE_PLAINS_HIGH_ABOVE_SEA;
+        }
+        return false;
+    }
 
     private static Holder<Biome> applyTerrainCompatibilityGate(Registry<Biome> biomes,
                                                                       Holder<Biome> chosen,
