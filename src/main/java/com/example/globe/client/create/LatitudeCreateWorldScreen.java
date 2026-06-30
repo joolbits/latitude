@@ -95,7 +95,7 @@ public class LatitudeCreateWorldScreen extends Screen {
             "A pocket world. Every horizon feels close.",
             "Compact but complete. Good for focused journeys.",
             "Room to roam. Familiar landmarks within reach.",
-            "The standard expedition. A full planet awaits.",
+            "The standard world. A full planet awaits.",
             "Vast distances. Bring supplies.",
             "A world that could take a lifetime to cross."
     };
@@ -214,7 +214,7 @@ public class LatitudeCreateWorldScreen extends Screen {
     private int debugSwitchSeq;
 
     private LatitudeCreateWorldScreen(Runnable onClose, @Nullable Screen parent, WorldCreationContext holder) {
-        super(Component.literal("New Expedition"));
+        super(Component.literal("New World"));
         LOGGER.info("[LAT][CWPATH] LatitudeCreateWorldScreen.<init> parent={} holder={}",
                 parent == null ? "null" : parent.getClass().getName(),
                 holder);
@@ -466,13 +466,13 @@ public class LatitudeCreateWorldScreen extends Screen {
             applyTabbedVisibility();
         }
 
-        // ── 17. Begin Expedition ──
+        // ── 17. Create World ──
         int btnSpacing = scaledUi(8);
-        int beginW = Math.max(120, this.font.width("Begin Expedition") + 20);
+        int beginW = Math.max(120, this.font.width("Create World") + 20);
         int cancelW = Math.max(70, this.font.width("Cancel") + 20);
         int totalBtnW = beginW + btnSpacing + cancelW;
         int btnStartX = cx - totalBtnW / 2;
-        this.addRenderableWidget(Button.builder(Component.literal("Begin Expedition"), b -> beginExpedition())
+        this.addRenderableWidget(Button.builder(Component.literal("Create World"), b -> beginExpedition())
                 .bounds(btnStartX, bottomY, beginW, btnH)
                 .build());
 
@@ -1066,7 +1066,7 @@ public class LatitudeCreateWorldScreen extends Screen {
         if (drawCenteredBoundedText(context, "LATITUDE", new UiRect(headerRect.x, headerLineY, headerRect.w, uiFontHeight()), GOLD, true, false)) {
             headerLineY += uiFontHeight() + scaledUi(6);
         }
-        if (drawCenteredBoundedText(context, "New Expedition", new UiRect(headerRect.x, headerLineY, headerRect.w, uiFontHeight()), WARM_WHITE, true, false)) {
+        if (drawCenteredBoundedText(context, "New World", new UiRect(headerRect.x, headerLineY, headerRect.w, uiFontHeight()), WARM_WHITE, true, false)) {
             headerLineY += uiFontHeight() + scaledUi(4);
         }
         drawWrappedTextBlock(context, "Prepare your journey across the globe", new UiRect(headerRect.x, headerLineY, headerRect.w, Math.max(0, headerRect.bottom() - headerLineY)), MUTED, false, 2, true, true);
@@ -1189,7 +1189,7 @@ public class LatitudeCreateWorldScreen extends Screen {
             context.enableScissor(railClipLeft, settingsViewportTop, railClipRight, settingsViewportBottom);
             int railTextWidth = Math.max(40, railW - 8 - SCROLLBAR_GUTTER);
             if (!threeCol) {
-                drawCenteredBoundedText(context, "EXPEDITION", new UiRect(railX + 4, panelTop + scaledUi(4), railTextWidth, uiFontHeight()), GOLD, false, true);
+                drawCenteredBoundedText(context, "WORLD", new UiRect(railX + 4, panelTop + scaledUi(4), railTextWidth, uiFontHeight()), GOLD, false, true);
                 drawCenteredBoundedText(context, "SETTINGS", new UiRect(railX + 4, panelTop + scaledUi(14), railTextWidth, uiFontHeight()), GOLD, false, true);
             }
             drawSettingsRowLabel(context, "World Type", settLabelX, worldTypeRowY, MUTED);
