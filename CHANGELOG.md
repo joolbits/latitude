@@ -16,8 +16,26 @@ Latitude 1.4 "Cohesive Horizons" is a worldgen-quality and compatibility release
 - **Greatly reduced biome "confetti."** Raised the tier-selection coherence wavelength so secondary/accent biomes (old-growth taiga, sparse jungle, savanna, and similar) form coherent patches instead of single-cell speckles sprinkled through the dominant biome. Across validation seeds, jungle small-fragment share dropped from roughly a quarter to under a tenth, and savanna/desert/taiga fragment counts fell by half or more.
 - **Reduced cross-province bleed** — jungle blobs marooned in desert and desert specks inside jungle are substantially reduced.
 - **Restored a believable arid mix.** Both desert and badlands remain visibly present in the arid belt (with coherent wooded/eroded badlands sub-regions rather than scattered specks), avoiding the earlier over-correction that thinned them out.
-- **No more badlands at the equator.** Badlands/mesa is a subtropical landform on Earth, never an equatorial one, but on some seeds it was leaking into the deep tropics. It's now gated out of the equatorial belt (smoothly fading in toward the subtropics where it belongs) and replaced there by savanna clearings, while the subtropical arid belt is left exactly as-is.
-- **Thinned desert at the deep equator.** True hot desert is essentially absent from Earth's rainforest equator, so the innermost tropics (0–10°) now carry noticeably less desert — partially replaced by savanna clearings — fading back to the full subtropical desert belt by ~12°. Desert is thinned, not removed: it stays present and is untouched everywhere outside the deep equator.
+- **No badlands or deserts anywhere in the tropics (geography law).** Badlands/mesa and hot desert are subtropical landforms on Earth, never tropical ones. Both are now fully excluded across the entire tropical band (0–23.5°) — replaced there by savanna — and phase back in across the lower subtropics. (Strengthens the earlier deep-equator-only thinning into a clean band-wide rule; the boundary is noise-warped, not a hard line.)
+
+### Worldgen refinements (1.4.1, 2026-06-23)
+- **Snow on the mountains, where it belongs.** The alpine snow line was set too high to ever catch the peaks that actually generate, so temperate/subtropical summits stayed bare. The snow-cap onset is lowered and shaped after Earth's real snowline (lowest toward the poles, highest in the dry subtropics), so cold-band peaks cap fully and temperate peaks get snow well down the slope — while the tropics stay snow-free and warm-latitude snow creep remains impossible.
+- **No more grass poking through alpine snow.** The snowy alpine zone is now bare snow/stone; the grassy meadow shelf stays strictly below the snow line.
+- **Less polar sameness.** The poles were dominated by snowy plains and ice spikes; the polar pool now draws on more cold biomes (snowy taiga, grove, and installed-pack cold variants such as Terralith's snowy shield / siberian taiga / wintry forests), so ice spikes drop to a rare accent and the cap reads with real variety.
+- **A varied savanna belt.** The subtropical dry belt was a savanna monoculture; warm picks from installed packs are now preserved instead of being flattened to vanilla savanna, so the belt reads as a mix of savanna, prairie, and other warm grasslands.
+- **Mushroom islands only in open ocean.** Mushroom fields can no longer splotch onto inland deep-water pockets on high terrain — they appear only in genuine open ocean.
+- **More compass themes.** Six new analog compass colour schemes (Obsidian & Red, Arctic Blue, Emerald, Royal Purple, Sunset, Monochrome) are selectable in the HUD Studio; the default is unchanged.
+- **A proper, Earth-like arid belt.** The subtropical desert/badlands belt previously filled in only across a thin 30–35° sliver, with savanna dominating even at its peak. It now phases in from ~26° and reads as a continuous, genuinely arid belt across roughly 26–35° (savanna remains present at the equatorward fringe — this isn't a desert monoculture).
+- **No badlands, desert, frozen rivers, or ice spires leaking into the temperate band.** A latitude-blending edge case could place small patches of subtropical-arid terrain, or subpolar frozen rivers (with their associated ice-spire structures), noticeably out of their home band. Both are now clamped to their true latitude.
+- **Plains stay flat.** Plains was occasionally generating on dramatic, steep terrain (it should always be a relatively flat biome). Gently rolling plains are unaffected; only genuinely rugged or high columns reroute to a more terrain-appropriate biome (hills, peaks, meadow).
+
+### World shape
+- **Mercator world type.** New worlds are wider — roughly twice as wide east-west as they are tall north-south — giving every latitude band more east-west room and more biome variety per band. Existing worlds are completely unaffected.
+
+### World creation
+- **Fixed the bonus chest.** The bonus-chest option could silently fail to generate a chest in your new world; it now works correctly.
+- **Added a "Generate Structures" toggle** to the create-world screen, alongside the existing options (defaults on, matching vanilla).
+- Renamed "Expedition" to "World" throughout the create-world screen for clarity.
 
 ### World entry & interface
 - **Smoother first entry into a new world.** The bespoke loading screen now stays up until the world around you has actually finished rendering, so you no longer drop into a half-loaded or empty-looking frame for a moment when entering. (Held until the spawn chunks are loaded and the surrounding terrain is compiled and visible, with a safety timeout.)

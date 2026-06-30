@@ -73,6 +73,55 @@ This section records the 1.4 work landed after the warm-band rebalance (atop `8c
 - **Entry-title hemisphere authority fix (`save/entry-title-hemisphere-center-fix`, `c96a4eaf`).** `GlobeWarningOverlay` zone/hemisphere announcement titles now use the canonical `LatitudeMath.hemisphere(border, z)` (world-border-center-relative; North = −Z) instead of a divergent, inverted `z > 0 ? 'N'` test with the equator hardcoded at z=0, plus large-step (>256 block) suppression to avoid spurious crossing titles on teleports. Live-proven (`-Dlatitude.debugEntryTitles`): a northern spawn (`z=-4725`, `centerZ=0`) reads "TEMPERATE 43°N" with `canonicalHemisphere == stableHemisphere == N` (the old logic mislabeled it South).
 - **Release / invariant hygiene.** The stale `DownloadingTerrainScreenFirstLoadMessageMixin` first-load-message feature — deliberately unregistered on the 26.1 port as a startup blocker but with its class/config/state/invariant-lock left orphaned — was discarded (`eec31d79`), so `./gradlew -PenableInvariantScan latitudeInvariantScan` passes again. The 26.1.x release jar is official-Mojang-mapped (no `remapJar`/refmap by design; that was a 1.20.1-intermediary-only concern); `clean build` → `latitude-1.4.0+26.1.2.jar`, dev tooling (`com/example/globe/dev/*`) excluded.
 
+### 2.6 Latitude 1.4.1 worldgen refinements (2026-06-23)
+Post-1.4 tuning from Peetsa's live review. Each is map-proven (headless atlas + per-band analysis) or
+source-proven where altitude-gated; full evidence in the binder (`worldgen-correctness`,
+`worldgen-quickfixes`, `overrep-polar-enrichment`, `overrep-enforcement-warm-medium`,
+`amplitude-df-wrapper-design`, `worldgen-jank-earmark` 2026-06-22/23).
+
+- **Alpine snow-line floor.** `ALPINE_ROCK_Y 184→168`; per-band `snowMinY` auto-rebases (POLAR 168 /
+  SUBPOLAR 170 / TEMPERATE 174 / SUBTROPICAL 182 / TROPICAL none), shaped after Earth's climatic
+  snowline (lowest at poles, highest in the dry subtropics). Catches the peaks that actually generate
+  (~Y176–185) without warm-latitude creep (rock line fixed → both snow-creep guards stay authoritative;
+  tropical stays `Integer.MAX_VALUE`). Altitude-gated → live eyeball is the proof.
+- **Alpine vegetation suppression.** `alpineSurfaceKind` no longer carves a meadow (grass_block) cell at
+  or above the snow line, so grass/flowers have no substrate in the snow zone (a `RandomPatchFeature`
+  feature-guard was abandoned — that class is absent in 26.1 mojmap). Meadow shelf stays below the line.
+- **Tropical-arid LAW (strengthens 1.4 `demoteEquatorial*`).** Badlands AND desert are fully excluded
+  across the whole tropical band: ramps moved to `BADLANDS_LAT_RAMP_LOW/HIGH = 23.5/32` and a new
+  `DESERT_LAT_RAMP_LOW/HIGH = 23.5/32` (the old desert `EQUATOR_KEEP_FRAC` partial-thinning removed).
+  Demote-to-savanna, noise-warped (Art VI). Atlas: tropical badlands/desert 0.00%, arid belt in the
+  subtropics. NOTE/dead-end: redirecting the tropical demote target to sparse_jungle to make the equator
+  humid-DOMINANT was tried and reverted (it did not move savanna and re-leaked desert — tropical savanna
+  is the dry-province demote, not the WARM_MEDIUM coercion).
+- **Polar pool diversification (REVISES §2.5's "snowy_plains-dominant is intended").** Per Peetsa's
+  over-rep concern, `lat_polar_primary/secondary` enriched with coherent cold biomes so the
+  flat-polar-shelf pool stops collapsing to ice_spikes. Atlas: `snowy_plains 67%→52%`, `ice_spikes
+  27%→5%`, with Terralith snowy_shield / siberian_grove / wintry + BoP snowy conifer sharing the band.
+  CAVEAT: the added `minecraft:snowy_taiga` / `terralith:siberian_taiga` are still stripped by the
+  existing `removePolarTaigaFamily` guard (no-taiga-in-polar), so the diversity is carried by the
+  non-taiga additions; the taiga-family tag entries are presently inert (harmless). Residual:
+  snowy_plains ~52% (the non-flat fallback hardcodes it; surgery deferred — interacts with the shoulder ramp).
+- **WARM_MEDIUM enforcement softening (subtropical savanna).** `enforceWarmProvinceFamily` WARM_MEDIUM
+  now preserves custom biomes (mirrors WARM_WET) instead of coercing every non-savanna pick to vanilla
+  savanna; `lat_trans_arid_tropics_1/2_primary` enriched (bop:lush_savanna, bop:prairie). **WARM_DRY is
+  deliberately NOT changed** — the tropical-arid law relies on the downstream demote catching VANILLA
+  badlands/desert, which a custom arid would bypass. Atlas: subtropical `savanna 53%→43%` + diversified;
+  law intact. Residual: subtropical savanna ~43% (just over target).
+- **Mushroom-island gate.** `mushroomIslandOverride` now requires genuine open ocean
+  (`oceanDistanceBlocks <= 0`) so deep-ocean pockets that generate as inland high/rocky terrain no
+  longer mushroom-ify; real ocean islands kept (null sampler → off, safe).
+- **Terrain amplitude — DESIGNED, prototype deferred.** Coastal "reefs" + over-dramatic high deserts are
+  Terralith/vanilla terrain shape (`globe:overworld` delegates terrain to `minecraft:overworld/sloped_cheese`;
+  the globe's own base_terrain DFs are orphaned), so amplitude is not data-tunable. Chosen fix: a runtime
+  DF wrapper (hook `RandomState`, wrap `NoiseRouter.finalDensity` with a height-dependent downward bias,
+  keep Terralith terrain). Scoped in `amplitude-df-wrapper-design-20260622.md`; prototype held for a
+  focused live-test session (terrain is only verifiable live).
+
+> 1.4.1 UI note: a redesigned (book, then planisphere-centric) create-world screen was prototyped and
+> **rejected**; the create screen + launcher were reverted to the original bespoke UI. Six new analog
+> compass themes shipped (HUD Studio, default unchanged). See the release punch list.
+
 ## 3. Rare Overrides
 Specific biomes are removed from all tags and handled via ultra-rare post-pick overrides.
 
