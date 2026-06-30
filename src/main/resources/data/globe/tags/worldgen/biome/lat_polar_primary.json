@@ -1,6 +1,17 @@
 {
   "replace": false,
   "values": [
-    "minecraft:snowy_slopes"
+    "minecraft:snowy_slopes",
+    "minecraft:snowy_plains",
+    "minecraft:snowy_taiga",
+    "minecraft:grove",
+    {
+      "id": "terralith:snowy_shield",
+      "required": false
+    },
+    {
+      "id": "terralith:siberian_taiga",
+      "required": false
+    }
   ]
 }
