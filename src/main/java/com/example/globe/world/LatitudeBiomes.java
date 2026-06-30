@@ -71,8 +71,11 @@ public final class LatitudeBiomes {
         boolean coldShoulderArid = step == 0 && u >= SUBTROPICAL_ARID_SHOULDER_U;
 
         Holder<Biome> pick = switch (step) {
-            case 1 -> pickFromWeightedTagsNoSwamp(biomes, base, blockX, blockZ, 101, 0x7A11,
-                    LAT_TRANS_ARID_TROPICS_1_PRIMARY, LAT_TRANS_ARID_TROPICS_1_SECONDARY, LAT_TRANS_ARID_TROPICS_1_ACCENT);
+            // Earth-like densify (2026-06-25): step 1 (the poleward ~29-31deg core) now draws the FULL arid
+            // pool (badlands/desert) instead of the softer trans-arid-1, so the desert core reads
+            // desert-dominant. Steps 2-3 stay savanna/scrub (equatorward transition), keeping variety (Art X).
+            case 1 -> pickFromWeightedTagsNoSwamp(biomes, base, blockX, blockZ, 100, 0x7A01,
+                    LAT_ARID_PRIMARY, LAT_ARID_SECONDARY, LAT_ARID_ACCENT);
             case 2 -> pickFromWeightedTagsNoSwamp(biomes, base, blockX, blockZ, 102, 0x7A22,
                     LAT_TRANS_ARID_TROPICS_2_PRIMARY, LAT_TRANS_ARID_TROPICS_2_SECONDARY, LAT_TRANS_ARID_TROPICS_2_ACCENT);
             case 3 -> pickFromWeightedTagsNoSwamp(biomes, base, blockX, blockZ, 103, 0x7A33,
@@ -119,8 +122,11 @@ public final class LatitudeBiomes {
         boolean coldShoulderArid = step == 0 && u >= SUBTROPICAL_ARID_SHOULDER_U;
 
         Holder<Biome> pick = switch (step) {
-            case 1 -> pickFromWeightedTagsNoSwamp(biomes, base, blockX, blockZ, 101, 0x7A11,
-                    LAT_TRANS_ARID_TROPICS_1_PRIMARY, LAT_TRANS_ARID_TROPICS_1_SECONDARY, LAT_TRANS_ARID_TROPICS_1_ACCENT);
+            // Earth-like densify (2026-06-25): step 1 (the poleward ~29-31deg core) now draws the FULL arid
+            // pool (badlands/desert) instead of the softer trans-arid-1, so the desert core reads
+            // desert-dominant. Steps 2-3 stay savanna/scrub (equatorward transition), keeping variety (Art X).
+            case 1 -> pickFromWeightedTagsNoSwamp(biomes, base, blockX, blockZ, 100, 0x7A01,
+                    LAT_ARID_PRIMARY, LAT_ARID_SECONDARY, LAT_ARID_ACCENT);
             case 2 -> pickFromWeightedTagsNoSwamp(biomes, base, blockX, blockZ, 102, 0x7A22,
                     LAT_TRANS_ARID_TROPICS_2_PRIMARY, LAT_TRANS_ARID_TROPICS_2_SECONDARY, LAT_TRANS_ARID_TROPICS_2_ACCENT);
             case 3 -> pickFromWeightedTagsNoSwamp(biomes, base, blockX, blockZ, 103, 0x7A33,
@@ -1877,6 +1883,24 @@ public final class LatitudeBiomes {
                 || isBiomeId(entry, "minecraft:eroded_badlands");
     }
 
+    /**
+     * Any arid/dry biome the mod treats as belonging to the arid belt — vanilla badlands family + desert,
+     * PLUS modded arid variants (Terralith desert_canyon/spires/ancient_sands, BoP dryland/wasteland, etc.)
+     * via the lat_arid tags. Used by the equatorward (tropical-law) and poleward (temperate) demotes so they
+     * clamp the WHOLE arid family out of the wrong bands, not just the two vanilla ids (the band-correctness
+     * check caught modded arid variants leaking into tropical/temperate that the vanilla-only checks missed).
+     */
+    private static boolean isAridFamily(Holder<Biome> entry) {
+        if (entry == null) {
+            return false;
+        }
+        return isBadlandsFamily(entry)
+                || isBiomeId(entry, "minecraft:desert")
+                || entry.is(LAT_ARID_PRIMARY)
+                || entry.is(LAT_ARID_SECONDARY)
+                || entry.is(LAT_ARID_ACCENT);
+    }
+
     private static String warmDryPathFamily(Holder<Biome> entry) {
         if (entry == null) {
             return "other";
@@ -2217,20 +2241,50 @@ public final class LatitudeBiomes {
     // and badlands concentrates in the subtropical arid belt where it belongs. The keep
     // decision uses a coherent ValueNoise2D field so the badlands<->savanna boundary is
     // noise-warped, not a hard horizontal line (Art VI: block-space continuous).
-    private static final double BADLANDS_LAT_RAMP_LOW_DEG = 10.0;
-    private static final double BADLANDS_LAT_RAMP_HIGH_DEG = 18.0;
+    // LAW (Peetsa): badlands may NEVER appear in the tropical band (0-23.5deg) — Earth geography
+    // forbids it. So the ramp LOW edge sits at the tropical/subtropical boundary (23.5deg): the
+    // entire tropical band has latGate==0 -> all badlands demoted to savanna; badlands phases in
+    // across the lower subtropics and is fully allowed by the mid-subtropical arid belt.
+    private static final double BADLANDS_LAT_RAMP_LOW_DEG = 23.5;
+    // Earth-like widening (2026-06-25): arid was squeezed into 30-35deg (thin belt). Lower the ramp HIGH so
+    // arid phases in from ~24-27deg, giving a proper subtropical desert belt (~24-35deg). LOW stays 23.5
+    // (the tropical-no-arid law boundary). -D tunable so the belt width can be dialed against the atlas.
+    private static final double BADLANDS_LAT_RAMP_HIGH_DEG =
+            Double.parseDouble(System.getProperty("latitude.aridRampHigh", "27.0"));
     private static final long BADLANDS_LAT_KEEP_SALT = 0x6261_646C_5F6C6174L; // "badl_lat"
-    // Earth-analog deep-equator desert thinning. Unlike badlands, Earth DOES have rare
-    // equatorial desert (Horn of Africa ~3-5degN), so this is a PARTIAL demotion (tighten,
-    // do not eliminate): below DESERT_LAT_RAMP_HIGH_DEG a coherent ValueNoise2D field retains
-    // only a fraction of WARM_DRY desert -- DESERT_EQUATOR_KEEP_FRAC at the equator, ramping
-    // to 1.0 (keep all) by the high edge -- with the rest demoted to savanna. Noise-warped
-    // boundary (Art VI); the subtropical desert belt (>=high edge) is untouched. Targeting
-    // desert directly here (not via the moisture classifier) avoids inflating the equatorial
-    // jungle share / WARM_WET monoculture risk.
-    private static final double DESERT_LAT_RAMP_HIGH_DEG = 12.0;
-    private static final double DESERT_EQUATOR_KEEP_FRAC = 0.40;
+    // LAW (Peetsa): desert may NEVER appear in the tropical band (0-23.5deg) — same Earth-geography
+    // rule as badlands. So desert is fully demoted to savanna across the whole tropical band
+    // (below DESERT_LAT_RAMP_LOW_DEG), phases in across the lower subtropics via a coherent
+    // ValueNoise2D field, and is fully allowed by the mid-subtropical desert belt (>= high edge).
+    // Noise-warped boundary (Art VI: block-space continuous). (Supersedes the earlier PARTIAL
+    // equatorial-thinning that kept rare equatorial desert — the law forbids any tropical desert.)
+    private static final double DESERT_LAT_RAMP_LOW_DEG = 23.5;
+    // Same Earth-like widening as badlands (shares the -D knob): desert phases in from ~24-27deg.
+    private static final double DESERT_LAT_RAMP_HIGH_DEG =
+            Double.parseDouble(System.getProperty("latitude.aridRampHigh", "27.0"));
     private static final long DESERT_LAT_KEEP_SALT = 0x6465_7365_7274_6C61L; // "desertla"
+    // Poleward arid clamp: badlands + desert leak past the 35deg subtropical/temperate boundary via the
+    // band-blend warp (a column geographically in TEMPERATE gets classified subtropical and picks from the
+    // arid pool), appearing as little out-of-band patches. Symmetric to the equatorward demote: keep arid in
+    // the subtropical belt (<= LOW), ramp it out across LOW..HIGH, fully demote poleward of HIGH — using TRUE
+    // latitude (not the leaky band index), noise-warped (Art VI). Tunable live via -D against observed leak depth.
+    // Sharp (noise-warped) clamp straddling the 35deg subtropical/temperate boundary: keep arid <=34.5deg
+    // (the full subtropical belt), fully demote >=35.5deg (temperate). A wider ramp left a residual in
+    // 35-38deg temperate; a tight warped band keeps the belt intact while clearing temperate.
+    private static final double ARID_POLEWARD_RAMP_LOW_DEG =
+            Double.parseDouble(System.getProperty("latitude.aridPolewardRampLow", "34.5"));
+    private static final double ARID_POLEWARD_RAMP_HIGH_DEG =
+            Double.parseDouble(System.getProperty("latitude.aridPolewardRampHigh", "35.5"));
+    private static final long ARID_POLEWARD_KEEP_SALT = 0x6172_6964_5F70_6F6CL; // "arid_pol"
+    // Frozen-river latitude clamp: frozen_river was assigned whenever the BLENDED band index was >= subpolar,
+    // but the blend warp leaks the subpolar classification ~10deg equatorward, so frozen rivers (and the
+    // Terralith ice spires gated to frozen_river) appeared in TEMPERATE (~40N). Decide freeze from TRUE
+    // latitude with a noise-warped boundary near the 50deg temperate/subpolar line instead. -D tunable.
+    private static final double FROZEN_RIVER_RAMP_LOW_DEG =
+            Double.parseDouble(System.getProperty("latitude.frozenRiverRampLow", "48.0"));
+    private static final double FROZEN_RIVER_RAMP_HIGH_DEG =
+            Double.parseDouble(System.getProperty("latitude.frozenRiverRampHigh", "52.0"));
+    private static final long FROZEN_RIVER_KEEP_SALT = 0x6672_7A6E_5F72_6976L; // "frzn_riv"
     private static final long BADLANDS_VARIANT_PATCH_SALT = 0x6261_646C_5F766172L; // "badl_var"
     private static final int BADLANDS_VARIANT_PATCH_SCALE_BLOCKS = 384;
     private static final double BADLANDS_REGION_RADIUS_FRAC = 0.30;
@@ -2620,7 +2674,7 @@ public final class LatitudeBiomes {
         }
 
         if (base.is(BiomeTags.IS_RIVER)) {
-            if (blendedBandIndex >= 3) {
+            if (shouldFreezeRiver(blockX, blockZ)) {
                 try {
                     Holder<Biome> out = biome(biomeRegistry, "minecraft:frozen_river");
                     debugPick(blockX, blockZ, effectiveRadius, t, band, base, out, false, false, null);
@@ -3264,7 +3318,7 @@ public final class LatitudeBiomes {
         }
 
         if (base.is(BiomeTags.IS_RIVER)) {
-            if (blendedBandIndex >= 3) {
+            if (shouldFreezeRiver(blockX, blockZ)) {
                 Holder<Biome> frozen = entryById(biomePool, "minecraft:frozen_river");
                 Holder<Biome> out = frozen != null ? frozen : base;
                 debugPick(blockX, blockZ, effectiveRadius, t, band, base, out, false, false, null);
@@ -7806,13 +7860,9 @@ public final class LatitudeBiomes {
 
     /**
      * Earth-analog latitude gate: rewrite a WARM_DRY badlands pick to savanna below the
-     * {@link #BADLANDS_LAT_RAMP_LOW_DEG}-{@link #BADLANDS_LAT_RAMP_HIGH_DEG} ramp, so badlands
-     * never appears at the deep equator (where Earth has none) and concentrates in the
-     * subtropical arid belt. The keep decision compares a coherent ValueNoise2D field against
-     * the smoothstep latitude gate, so the badlands<->savanna boundary is noise-warped rather
-     * than a hard horizontal line (Art VI: block-space continuous). Demotes to savanna (an
-     * Earth-true tropical dry-warm identity) rather than desert so the secondary equatorial
-     * desert share is not inflated; non-badlands picks pass through untouched.
+     * {@link #BADLANDS_LAT_RAMP_LOW_DEG}-{@link #BADLANDS_LAT_RAMP_HIGH_DEG} ramp, so badlands never
+     * appears in the tropical band (where Earth has none) and concentrates in the subtropical arid
+     * belt. Noise-warped boundary (Art VI); non-badlands picks pass through untouched.
      */
     private static Holder<Biome> demoteEquatorialBadlands(Registry<Biome> biomes,
                                                                  Holder<Biome> pick,
@@ -7839,9 +7889,10 @@ public final class LatitudeBiomes {
         return savanna != null ? savanna : pick;
     }
 
-    /** Shared latitude/noise predicate for {@link #demoteEquatorialBadlands}. */
+    /** Shared latitude/noise predicate for {@link #demoteEquatorialBadlands}. Matches the whole arid family
+     *  (vanilla badlands/desert + modded arid variants) so the tropical-no-arid law covers them all. */
     private static boolean shouldDemoteEquatorialBadlands(Holder<Biome> pick, int blockX, int blockZ) {
-        if (pick == null || !isBadlandsFamily(pick)) {
+        if (pick == null || !isAridFamily(pick)) {
             return false;
         }
         int radius = ACTIVE_RADIUS_BLOCKS > 0 ? ACTIVE_RADIUS_BLOCKS : (REFERENCE_DIAMETER_BLOCKS / 2);
@@ -7860,11 +7911,11 @@ public final class LatitudeBiomes {
     }
 
     /**
-     * Earth-analog deep-equator desert thinning (PARTIAL — Earth keeps rare equatorial desert).
-     * Rewrites a WARM_DRY desert pick to savanna on the coherent-noise complement of
-     * {@code keepFrac}, where keepFrac ramps from {@link #DESERT_EQUATOR_KEEP_FRAC} at the
-     * equator to 1.0 (keep all) by {@link #DESERT_LAT_RAMP_HIGH_DEG}. Noise-warped (Art VI);
-     * the subtropical belt is untouched. Targets desert directly, so the equatorial
+     * LAW: no desert in the tropical band. Rewrites a WARM_DRY desert pick to savanna across the
+     * entire tropics (below {@link #DESERT_LAT_RAMP_LOW_DEG}=23.5deg, where latGate==0), then ramps
+     * desert back in across the lower subtropics on a coherent ValueNoise2D field, fully allowed by
+     * {@link #DESERT_LAT_RAMP_HIGH_DEG}. Noise-warped (Art VI); the subtropical belt is untouched.
+     * Targets desert directly, so the equatorial
      * jungle/savanna balance (and the WARM_WET monoculture guard) is unaffected.
      */
     private static Holder<Biome> demoteEquatorialDesert(Registry<Biome> biomes,
@@ -7901,14 +7952,94 @@ public final class LatitudeBiomes {
         radius = Math.max(1, radius);
         double latDeg = Math.min(90.0, Math.abs((double) blockZ) / (double) radius * 90.0);
         if (latDeg >= DESERT_LAT_RAMP_HIGH_DEG) {
-            return false; // outer tropics + subtropics: keep all desert
+            return false; // mid-subtropical desert belt and beyond: keep all desert
         }
-        // keepFrac: fraction of desert retained, DESERT_EQUATOR_KEEP_FRAC at equator -> 1.0 by high.
-        double latFrac = smoothstep(latDeg / DESERT_LAT_RAMP_HIGH_DEG);
-        double keepFrac = DESERT_EQUATOR_KEEP_FRAC + (1.0 - DESERT_EQUATOR_KEEP_FRAC) * latFrac;
+        // LAW: the whole tropical band (latDeg < LOW=23.5) has latGate==0 -> demote ALL desert;
+        // the lower subtropics (LOW..HIGH) ramp desert in via the coherent keep-noise field.
+        double latGate = smoothstep((latDeg - DESERT_LAT_RAMP_LOW_DEG)
+                / (DESERT_LAT_RAMP_HIGH_DEG - DESERT_LAT_RAMP_LOW_DEG));
         int keepScale = Math.max(ARID_REGION_MIN_SCALE_BLOCKS, (int) Math.round(radius * 0.28));
         double keepNoise = ValueNoise2D.sampleBlocks(WORLD_SEED ^ DESERT_LAT_KEEP_SALT, blockX, blockZ, keepScale);
-        return keepNoise >= keepFrac; // demote the (1 - keepFrac) noise complement
+        return keepNoise >= latGate; // demote where keepNoise >= latGate (all of tropics; ramped subtropics)
+    }
+
+    /**
+     * LAW: no badlands/desert in the TEMPERATE band. They leak past the 35deg subtropical/temperate
+     * boundary via the band-blend warp (a column geographically in temperate gets classified subtropical
+     * and picks from the arid pool), producing little out-of-band patches (the "tiny badlands speck in
+     * temperate" report). This is the symmetric poleward partner to {@link #demoteEquatorialBadlands} /
+     * {@link #demoteEquatorialDesert}: rewrite a badlands/desert pick to plains once TRUE latitude crosses
+     * the poleward ramp, regardless of the (leaky) band classification. Noise-warped (Art VI); the
+     * subtropical arid belt (<= LOW) is untouched. Plains is temperate-appropriate and chains into the
+     * plains terrain-compatibility gate if the column is steep.
+     */
+    private static Holder<Biome> demotePolewardArid(Registry<Biome> biomes,
+                                                           Holder<Biome> pick,
+                                                           int blockX,
+                                                           int blockZ) {
+        if (!shouldDemotePolewardArid(pick, blockX, blockZ)) {
+            return pick;
+        }
+        try {
+            return biome(biomes, "minecraft:plains");
+        } catch (Throwable ignored) {
+            return pick;
+        }
+    }
+
+    private static Holder<Biome> demotePolewardArid(Collection<Holder<Biome>> biomes,
+                                                           Holder<Biome> pick,
+                                                           int blockX,
+                                                           int blockZ) {
+        if (!shouldDemotePolewardArid(pick, blockX, blockZ)) {
+            return pick;
+        }
+        Holder<Biome> plains = entryById(biomes, "minecraft:plains");
+        return plains != null ? plains : pick;
+    }
+
+    /** Shared latitude/noise predicate for {@link #demotePolewardArid}. Matches badlands-family + desert. */
+    private static boolean shouldDemotePolewardArid(Holder<Biome> pick, int blockX, int blockZ) {
+        if (pick == null || !isAridFamily(pick)) {
+            return false;
+        }
+        int radius = ACTIVE_RADIUS_BLOCKS > 0 ? ACTIVE_RADIUS_BLOCKS : (REFERENCE_DIAMETER_BLOCKS / 2);
+        radius = Math.max(1, radius);
+        double latDeg = Math.min(90.0, Math.abs((double) blockZ) / (double) radius * 90.0);
+        if (latDeg <= ARID_POLEWARD_RAMP_LOW_DEG) {
+            return false; // subtropical arid belt and equatorward: keep all arid
+        }
+        // poleGate: ~1 just past LOW (keep most), 0 at/above HIGH (demote all). Demote where keepNoise >= poleGate,
+        // so badlands/desert thins out coherently across LOW..HIGH and is fully gone poleward of HIGH.
+        double poleGate = smoothstep((ARID_POLEWARD_RAMP_HIGH_DEG - latDeg)
+                / (ARID_POLEWARD_RAMP_HIGH_DEG - ARID_POLEWARD_RAMP_LOW_DEG));
+        int keepScale = Math.max(ARID_REGION_MIN_SCALE_BLOCKS, (int) Math.round(radius * 0.28));
+        double keepNoise = ValueNoise2D.sampleBlocks(WORLD_SEED ^ ARID_POLEWARD_KEEP_SALT, blockX, blockZ, keepScale);
+        return keepNoise >= poleGate;
+    }
+
+    /**
+     * Whether a river should be FROZEN at this column, decided from TRUE latitude (not the leaky blended
+     * band index). Frozen rivers belong in the subpolar/polar bands; the previous `blendedBandIndex >= 3`
+     * test leaked them ~10deg equatorward into TEMPERATE via the band-blend warp (which is also why the
+     * Terralith ice-spire dungeon — gated to frozen_river — showed up at ~40N). Noise-warped boundary
+     * (Art VI) around the 50deg temperate/subpolar line so the freeze line isn't a straight cut.
+     */
+    private static boolean shouldFreezeRiver(int blockX, int blockZ) {
+        int radius = ACTIVE_RADIUS_BLOCKS > 0 ? ACTIVE_RADIUS_BLOCKS : (REFERENCE_DIAMETER_BLOCKS / 2);
+        radius = Math.max(1, radius);
+        double latDeg = Math.min(90.0, Math.abs((double) blockZ) / (double) radius * 90.0);
+        if (latDeg >= FROZEN_RIVER_RAMP_HIGH_DEG) {
+            return true;  // genuinely subpolar+ : freeze
+        }
+        if (latDeg <= FROZEN_RIVER_RAMP_LOW_DEG) {
+            return false; // temperate and equatorward : never freeze
+        }
+        double gate = smoothstep((latDeg - FROZEN_RIVER_RAMP_LOW_DEG)
+                / (FROZEN_RIVER_RAMP_HIGH_DEG - FROZEN_RIVER_RAMP_LOW_DEG));
+        int keepScale = Math.max(ARID_REGION_MIN_SCALE_BLOCKS, (int) Math.round(radius * 0.28));
+        double freezeNoise = ValueNoise2D.sampleBlocks(WORLD_SEED ^ FROZEN_RIVER_KEEP_SALT, blockX, blockZ, keepScale);
+        return freezeNoise < gate; // freeze fraction rises poleward across the warped boundary
     }
 
     private static Holder<Biome> pickAridRegionFallback(Collection<Holder<Biome>> biomes,
@@ -9208,6 +9339,8 @@ public final class LatitudeBiomes {
         // Partial deep-equator desert thinning (Earth keeps rare equatorial desert): coherent
         // fraction demoted to savanna below the ramp; subtropical desert belt untouched.
         out = demoteEquatorialDesert(biomes, out, blockX, blockZ);
+        // Poleward partner: keep badlands/desert out of the TEMPERATE band (the band-blend leak past 35deg).
+        out = demotePolewardArid(biomes, out, blockX, blockZ);
         if (isSavannaFamily(out)) {
             try {
                 if (!isBiomeId(out, "minecraft:windswept_savanna")) {
@@ -9363,6 +9496,8 @@ public final class LatitudeBiomes {
         // Partial deep-equator desert thinning (Earth keeps rare equatorial desert): coherent
         // fraction demoted to savanna below the ramp; subtropical desert belt untouched.
         out = demoteEquatorialDesert(biomes, out, blockX, blockZ);
+        // Poleward partner: keep badlands/desert out of the TEMPERATE band (the band-blend leak past 35deg).
+        out = demotePolewardArid(biomes, out, blockX, blockZ);
         if (isSavannaFamily(out)) {
             if (!isBiomeId(out, "minecraft:windswept_savanna")) {
                 String targetId = savannaTierByY(blockY);
