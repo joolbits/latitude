@@ -632,9 +632,12 @@ public final class LatitudeBiomes {
         return t * t * (3.0 - 2.0 * t);
     }
 
-    // The rock line sits just above the tree line, leaving a narrow meadow shelf before
-    // natural surface blocks become alpine rock or latitude-graded snow caps.
-    public static final int ALPINE_ROCK_Y = 184;
+    // The rock line sits at/just above the tree line; above it natural surface blocks become
+    // alpine rock or latitude-graded snow caps. Lowered 184->168 so caps actually land on the
+    // peaks that generate here (terrain commonly tops out ~Y176-185; the old 184 floor + 190+
+    // onsets meant snow almost never appeared). The per-band snowMinY offsets below auto-rebase
+    // off this constant, and both warm-snow-creep guards key off it, so warm-creep stays safe.
+    public static final int ALPINE_ROCK_Y = 168;
     public static final int ALPINE_ROCK_FADE = 14;
     private static final long ALPINE_NOISE_SALT = 0x416C70696E6553L;
     private static final int ALPINE_SCALE_BLOCKS = 30;
@@ -649,24 +652,37 @@ public final class LatitudeBiomes {
         }
 
         double n = ValueNoise2D.sampleBlocks(WORLD_SEED ^ ALPINE_NOISE_SALT, blockX, blockZ, ALPINE_SCALE_BLOCKS);
+        int snowMinY = alpineSnowMinY(blockZ, radius);
+        double snowWarp = (n - 0.5) * 8.0;
+        if (blockY >= snowMinY + snowWarp) {
+            // Snow zone: always snow cap. Crucially NO meadow carve-out here, so there is no
+            // grass_block in the snow zone for grass/flowers to grow on -> no vegetation poking
+            // through the snow (the meadow shelf lives strictly below the snow line).
+            return 2;
+        }
+        // Below the snow line: a fading meadow shelf of unchanged grass near the rock line, else rock.
         int aboveLine = blockY - ALPINE_ROCK_Y;
         double meadowChance = 0.38 * (1.0 - Math.min(1.0, aboveLine / (double) ALPINE_ROCK_FADE));
-        if (n < meadowChance) {
-            return 0;
-        }
-
-        double absLatDeg = Math.abs((double) blockZ) * 90.0 / Math.max(1, radius);
-        LatitudeBands.Band band = LatitudeBands.fromAbsoluteLatitudeDeg(absLatDeg);
-        int snowMinY = switch (band) {
-            case POLAR -> ALPINE_ROCK_Y;
-            case SUBPOLAR -> ALPINE_ROCK_Y + 3;
-            case TEMPERATE -> ALPINE_ROCK_Y + 10;
-            case SUBTROPICAL -> ALPINE_ROCK_Y + 18;
-            case TROPICAL -> Integer.MAX_VALUE;
-        };
-        double snowWarp = (n - 0.5) * 8.0;
-        return (blockY >= snowMinY + snowWarp) ? 2 : 1;
+        return (n < meadowChance) ? 0 : 1;
     }
+
+    /**
+     * Per-latitude-band alpine snow-cap onset Y (offsets auto-rebase off ALPINE_ROCK_Y). Shaped after
+     * Earth's climatic snowline: lowest near the poles, rising fastest toward the dry subtropical belt.
+     * Tropical alpine snow stays disabled (the deliberate warm-creep safety floor). Shared by the snow
+     * cap and the vegetation guard so they agree on where snow begins.
+     */
+    private static int alpineSnowMinY(int blockZ, int radius) {
+        double absLatDeg = Math.abs((double) blockZ) * 90.0 / Math.max(1, radius);
+        return switch (LatitudeBands.fromAbsoluteLatitudeDeg(absLatDeg)) {
+            case POLAR -> ALPINE_ROCK_Y;            // 168: snow on essentially all high polar terrain
+            case SUBPOLAR -> ALPINE_ROCK_Y + 2;     // 170: low snowline, near-full alpine cover
+            case TEMPERATE -> ALPINE_ROCK_Y + 6;    // 174: snow on temperate peaks (~Y176-185 terrain)
+            case SUBTROPICAL -> ALPINE_ROCK_Y + 14; // 182: only the upper peaks, dry-belt high snowline
+            case TROPICAL -> Integer.MAX_VALUE;     // none: equatorial glaciers excluded
+        };
+    }
+
 
     // --- Province authority (scaffolding) ---
 
@@ -2640,7 +2656,7 @@ public final class LatitudeBiomes {
             if (oceanPick == null || !oceanPick.is(BiomeTags.IS_OCEAN)) {
                 oceanPick = firstPresentOcean(biomeRegistry);
             }
-            Holder<Biome> out = mushroomIslandOverride(biomeRegistry, oceanPick, blockX, blockZ);
+            Holder<Biome> out = mushroomIslandOverride(biomeRegistry, oceanPick, blockX, blockZ, sampler);
             debugPick(blockX, blockZ, effectiveRadius, t, band, base, out, false, false, null);
             return out;
         }
@@ -3271,7 +3287,7 @@ public final class LatitudeBiomes {
             if (oceanPick == null || !oceanPick.is(BiomeTags.IS_OCEAN)) {
                 oceanPick = firstPresentOcean(biomePool);
             }
-            Holder<Biome> out = mushroomIslandOverride(biomePool, oceanPick, blockX, blockZ);
+            Holder<Biome> out = mushroomIslandOverride(biomePool, oceanPick, blockX, blockZ, sampler);
             debugPick(blockX, blockZ, effectiveRadius, t, band, base, out, false, false, null);
             return out;
         }
@@ -4040,8 +4056,8 @@ public final class LatitudeBiomes {
         return out;
     }
 
-    private static Holder<Biome> mushroomIslandOverride(Registry<Biome> biomes, Holder<Biome> oceanPick, int blockX, int blockZ) {
-        if (!isDeepOcean(oceanPick)) {
+    private static Holder<Biome> mushroomIslandOverride(Registry<Biome> biomes, Holder<Biome> oceanPick, int blockX, int blockZ, Climate.Sampler sampler) {
+        if (!isDeepOcean(oceanPick) || !isGenuineOpenOcean(blockX, blockZ, sampler)) {
             return oceanPick;
         }
 
@@ -4057,6 +4073,19 @@ public final class LatitudeBiomes {
         } catch (Throwable ignored) {
             return oceanPick;
         }
+    }
+
+    /**
+     * True only where the column is genuinely deep-ocean continentalness (ocean-distance field == 0),
+     * so the mushroom-island override fires in real open ocean and never on an inland deep-ocean
+     * pocket whose terrain generated high/rocky (the "mushroom splotch on land" bug). A null sampler
+     * (e.g. atlas fast-path) returns false -> no override, which is the safe default.
+     */
+    private static boolean isGenuineOpenOcean(int blockX, int blockZ, Climate.Sampler sampler) {
+        if (sampler == null) {
+            return false;
+        }
+        return oceanDistanceBlocks(blockX, blockZ, sampler) <= 0;
     }
 
     private static Holder<Biome> firstPresentOcean(Registry<Biome> biomes) {
@@ -4087,8 +4116,8 @@ public final class LatitudeBiomes {
         return firstPresentOcean(biomes);
     }
 
-    private static Holder<Biome> mushroomIslandOverride(Collection<Holder<Biome>> biomes, Holder<Biome> oceanPick, int blockX, int blockZ) {
-        if (!isDeepOcean(oceanPick)) {
+    private static Holder<Biome> mushroomIslandOverride(Collection<Holder<Biome>> biomes, Holder<Biome> oceanPick, int blockX, int blockZ, Climate.Sampler sampler) {
+        if (!isDeepOcean(oceanPick) || !isGenuineOpenOcean(blockX, blockZ, sampler)) {
             return oceanPick;
         }
 
@@ -8534,6 +8563,12 @@ public final class LatitudeBiomes {
             }
             case WARM_MEDIUM -> {
                 if (isSavannaFamily(pick)) return pick;
+                // Preserve climate-appropriate variety so the warm-medium belt isn't flattened into a
+                // savanna monoculture: keep any custom biome the band tags placed here on purpose
+                // (mirrors WARM_WET). Only out-of-place vanilla biomes fall through to savanna.
+                // NOTE: WARM_DRY intentionally does NOT preserve custom — the tropical-arid LAW relies
+                // on the downstream demote catching VANILLA badlands/desert, which a custom arid would bypass.
+                if (isCustomBiome(pick)) return pick;
                 try {
                     return biome(biomes, "minecraft:savanna");
                 } catch (Throwable ignored) {
