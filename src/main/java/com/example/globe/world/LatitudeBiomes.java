@@ -2451,6 +2451,25 @@ public final class LatitudeBiomes {
     private static final double SNOWY_RAMP_FULL_DEG = 68.0;
     private static final double GROVE_MIN_DEG = 54.0;
     private static final double EXTREME_POLAR_CAP_MIN_DEG = 74.5;
+    // Earth-like polar tree line. The real Arctic tree line sits ~66-72N, so boreal forest (snowy_taiga)
+    // extends INTO the lower polar band before giving way to treeless tundra — a hard taiga ban at 66.5 is
+    // NOT Earthlike. Taiga survives with probability 1.0 up to POLAR_TREELINE_FULL_DEG, smoothstep-fading to
+    // 0 by POLAR_TREELINE_FADE_DEG. The fade end is pinned to EXTREME_POLAR_CAP_MIN_DEG (74.5) so that above
+    // the tree line the EXISTING extreme-polar cap already keeps things treeless — no village/vegetation
+    // guard (mixin) changes needed. -D-tunable.
+    private static final double POLAR_TREELINE_FULL_DEG =
+            Double.parseDouble(System.getProperty("latitude.polarTreelineFullDeg", "66.5"));
+    private static final double POLAR_TREELINE_FADE_DEG =
+            Double.parseDouble(System.getProperty("latitude.polarTreelineFadeDeg", "74.5"));
+    private static final long POLAR_TREELINE_SALT = 0x706F6C6172746C6EL; // "polartln"
+    // Active boreal-forest introduction: the polar candidate pool strips taiga (removePolarTaigaFamily), so
+    // sparing taiga isn't enough to break the snowy_plains tundra monoculture — we convert a coherent,
+    // tree-line-graded share of snowy_plains -> snowy_taiga in the lower polar so it reads as Earth-like
+    // boreal forest fading to tundra. POLAR_BOREAL_SHARE = peak share of tundra converted at the tree-line
+    // FULL latitude (fades to 0 by FADE). -D-tunable for live feel.
+    private static final long POLAR_BOREAL_SALT = 0x706F6C626F7265L; // "polbore"
+    private static final double POLAR_BOREAL_SHARE =
+            Double.parseDouble(System.getProperty("latitude.polarBorealShare", "0.6"));
     private static final int SUBPOLAR_RAMP_PATCH_BLOCKS = 224;
     private static final int SNOWY_RAMP_PATCH_BLOCKS = 288;
 
@@ -3204,6 +3223,7 @@ public final class LatitudeBiomes {
         out = gateWarmWetSparseJungleSurvival(biomeRegistry, base, out, landBandIndex, blockX, blockZ);
         out = gateDryWarmIdentity(biomeRegistry, out, landBandIndex, blockX, blockZ);
         out = gatePolarTaigaSurvival(biomeRegistry, out, landBandIndex, finalLatDeg, blockX, blockZ);
+        out = applyPolarBorealForest(biomeRegistry, out, landBandIndex, finalLatDeg, blockX, blockZ);
         out = gateTemperateTaigaInterior(biomeRegistry, base, out, blockX, blockZ, effectiveRadius, bandIndex, landBandIndex, mountainLike);
         Holder<Biome> beforeLateWetlandClamp = out;
         out = clampLateWetlandSurvival(biomeRegistry, out, base, blockX, blockZ, t, landBandIndex, mountainLike, oceanDistance);
@@ -3786,6 +3806,7 @@ public final class LatitudeBiomes {
         out = gateWarmWetSparseJungleSurvival(biomePool, base, out, landBandIndex, blockX, blockZ);
         out = gateDryWarmIdentity(biomePool, out, landBandIndex, blockX, blockZ);
         out = gatePolarTaigaSurvival(biomePool, out, landBandIndex, finalLatDeg, blockX, blockZ);
+        out = applyPolarBorealForest(biomePool, out, landBandIndex, finalLatDeg, blockX, blockZ);
         out = gateTemperateTaigaInterior(biomePool, base, out, blockX, blockZ, effectiveRadius, bandIndex, landBandIndex, mountainLike);
         Holder<Biome> beforeLateWetlandClamp = out;
         out = clampLateWetlandSurvival(biomePool, out, base, blockX, blockZ, t, landBandIndex, mountainLike, oceanDistance);
@@ -6320,6 +6341,15 @@ public final class LatitudeBiomes {
         if (!polarRange || !isTaigaFamilyBiome(out)) {
             return out;
         }
+        // Earth-like polar tree line: snowy_taiga survives as boreal forest in the lower polar band, fading
+        // out by POLAR_TREELINE_FADE_DEG on a coherent ~288-block field (Art VI — vast taiga, not specks).
+        // Above the fade the existing extreme-polar cap keeps things treeless; only the demoted remainder
+        // (and everything past the tree line) falls through to the snowy_plains tundra conversion below.
+        double treelineKeep = polarTreelineKeepAlpha(latDeg);
+        if (treelineKeep > 0.0
+                && ValueNoise2D.sampleBlocks(WORLD_SEED ^ POLAR_TREELINE_SALT, blockX, blockZ, SNOWY_RAMP_PATCH_BLOCKS) < treelineKeep) {
+            return out;
+        }
         if (DEBUG_PROVINCE) {
             int count = PROVINCE_DEBUG_COUNT.get();
             if (count <= PROVINCE_DEBUG_LIMIT) {
@@ -6343,6 +6373,15 @@ public final class LatitudeBiomes {
         if (!polarRange || !isTaigaFamilyBiome(out)) {
             return out;
         }
+        // Earth-like polar tree line: snowy_taiga survives as boreal forest in the lower polar band, fading
+        // out by POLAR_TREELINE_FADE_DEG on a coherent ~288-block field (Art VI — vast taiga, not specks).
+        // Above the fade the existing extreme-polar cap keeps things treeless; only the demoted remainder
+        // (and everything past the tree line) falls through to the snowy_plains tundra conversion below.
+        double treelineKeep = polarTreelineKeepAlpha(latDeg);
+        if (treelineKeep > 0.0
+                && ValueNoise2D.sampleBlocks(WORLD_SEED ^ POLAR_TREELINE_SALT, blockX, blockZ, SNOWY_RAMP_PATCH_BLOCKS) < treelineKeep) {
+            return out;
+        }
         if (DEBUG_PROVINCE) {
             int count = PROVINCE_DEBUG_COUNT.get();
             if (count <= PROVINCE_DEBUG_LIMIT) {
@@ -6352,6 +6391,52 @@ public final class LatitudeBiomes {
         }
         Holder<Biome> safe = entryById(biomes, "minecraft:snowy_plains");
         return safe != null ? safe : out;
+    }
+
+    // Earth-like polar boreal forest. The polar pick is a snowy_plains/ice_spikes tundra duopoly (taiga is
+    // stripped from the pool by removePolarTaigaFamily), so we actively convert a coherent, tree-line-graded
+    // share of the snowy_plains tundra to snowy_taiga in the LOWER polar — boreal forest like Earth's Arctic
+    // taiga (~66-72N), fading to treeless tundra by POLAR_TREELINE_FADE_DEG (where the extreme-polar cap takes
+    // over). Only rewrites snowy_plains (leaves ice_spikes / alpine / mod biomes); ~288-block coherent patches.
+    private static Holder<Biome> applyPolarBorealForest(Registry<Biome> biomes, Holder<Biome> out,
+                                                        int landBandIndex, double latDeg, int blockX, int blockZ) {
+        if (!(landBandIndex >= BAND_POLAR || latDeg >= LatitudeBands.Band.POLAR.lowDeg())
+                || !isBiomeId(out, "minecraft:snowy_plains")) {
+            return out;
+        }
+        double keep = polarTreelineKeepAlpha(latDeg);
+        if (keep <= 0.0) {
+            return out;
+        }
+        double n = ValueNoise2D.sampleBlocks(WORLD_SEED ^ POLAR_BOREAL_SALT, blockX, blockZ, SNOWY_RAMP_PATCH_BLOCKS);
+        if (n < POLAR_BOREAL_SHARE * keep) {
+            try {
+                return biome(biomes, "minecraft:snowy_taiga");
+            } catch (Throwable ignored) {
+                return out;
+            }
+        }
+        return out;
+    }
+
+    private static Holder<Biome> applyPolarBorealForest(Collection<Holder<Biome>> biomes, Holder<Biome> out,
+                                                        int landBandIndex, double latDeg, int blockX, int blockZ) {
+        if (!(landBandIndex >= BAND_POLAR || latDeg >= LatitudeBands.Band.POLAR.lowDeg())
+                || !isBiomeId(out, "minecraft:snowy_plains")) {
+            return out;
+        }
+        double keep = polarTreelineKeepAlpha(latDeg);
+        if (keep <= 0.0) {
+            return out;
+        }
+        double n = ValueNoise2D.sampleBlocks(WORLD_SEED ^ POLAR_BOREAL_SALT, blockX, blockZ, SNOWY_RAMP_PATCH_BLOCKS);
+        if (n < POLAR_BOREAL_SHARE * keep) {
+            Holder<Biome> taiga = entryById(biomes, "minecraft:snowy_taiga");
+            if (taiga != null) {
+                return taiga;
+            }
+        }
+        return out;
     }
 
     private static Holder<Biome> gateWarmJungleSurvival(Registry<Biome> biomes,
@@ -7031,6 +7116,19 @@ public final class LatitudeBiomes {
         }
         double t = clamp((deg - SNOWY_RAMP_START_DEG) / (SNOWY_RAMP_FULL_DEG - SNOWY_RAMP_START_DEG), 0.0, 1.0);
         return smoothstep(t);
+    }
+
+    /** Earth-like polar tree-line keep probability: 1.0 (boreal forest fully allowed) up to
+     *  POLAR_TREELINE_FULL_DEG, smoothstep-fading to 0.0 (treeless tundra) by POLAR_TREELINE_FADE_DEG. */
+    private static double polarTreelineKeepAlpha(double deg) {
+        if (deg <= POLAR_TREELINE_FULL_DEG) {
+            return 1.0;
+        }
+        if (deg >= POLAR_TREELINE_FADE_DEG) {
+            return 0.0;
+        }
+        double t = clamp((deg - POLAR_TREELINE_FULL_DEG) / (POLAR_TREELINE_FADE_DEG - POLAR_TREELINE_FULL_DEG), 0.0, 1.0);
+        return 1.0 - smoothstep(t);
     }
 
     private static Holder<Biome> pickNonSnowyFallback(Registry<Biome> biomes, Holder<Biome> base, int blockX, int blockZ, int bandIndex) {
