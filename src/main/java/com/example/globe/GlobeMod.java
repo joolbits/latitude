@@ -476,7 +476,7 @@ public class GlobeMod implements ModInitializer {
                                                      boolean generateBonusChest,
                                                      boolean debugWorld,
                                                      LevelLoadListener loadListener) {
-        if (world == null || levelData == null || generateBonusChest || debugWorld || !isGlobeOverworld(world)) {
+        if (world == null || levelData == null || debugWorld || !isGlobeOverworld(world)) {
             return false;
         }
         String pendingZone = GlobePending.peek();
@@ -493,8 +493,13 @@ public class GlobeMod implements ModInitializer {
             }
             levelData.setSpawn(LevelData.RespawnData.of(world.dimension(), spawnPos, 0.0f, 0.0f));
             LatitudeWorldState.get(world).setSpawnPickerDismissed(true);
-            LOGGER.info("[Latitude] Early initial spawn set before player-spawn pregen: zone={} x={} y={} z={} radius={}",
-                    spawnChoice.zoneId(), spawnPos.getX(), spawnPos.getY(), spawnPos.getZ(), spawnChoice.radius());
+            // Bonus chest: vanilla setInitialSpawn places it at the vanilla spawn, but we cancel that
+            // path and set the Latitude zone spawn instead — so place the bonus chest at OUR spawn.
+            if (generateBonusChest) {
+                placeLatitudeBonusChest(world, spawnPos);
+            }
+            LOGGER.info("[Latitude] Early initial spawn set before player-spawn pregen: zone={} x={} y={} z={} radius={} bonusChest={}",
+                    spawnChoice.zoneId(), spawnPos.getX(), spawnPos.getY(), spawnPos.getZ(), spawnChoice.radius(), generateBonusChest);
             if (loadListener != null) {
                 loadListener.finish(LevelLoadListener.Stage.PREPARE_GLOBAL_SPAWN);
             }
@@ -502,6 +507,28 @@ public class GlobeMod implements ModInitializer {
         } catch (RuntimeException e) {
             LOGGER.warn("[Latitude] Early initial spawn failed; falling back to vanilla initial spawn", e);
             return false;
+        }
+    }
+
+    /**
+     * Place the vanilla bonus chest at the Latitude globe spawn. We cancel vanilla setInitialSpawn
+     * (which would place it at the vanilla-computed spawn), so this re-creates that placement at our
+     * zone-based spawn. Mirrors vanilla MinecraftServer.setInitialSpawn's bonus-chest block.
+     */
+    private static void placeLatitudeBonusChest(ServerLevel world, BlockPos spawnPos) {
+        try {
+            // Ensure the spawn chunk is loaded so feature placement actually writes (vanilla's
+            // getSpawnHeight loads it; our spawn path may not have).
+            world.getChunk(spawnPos);
+            world.registryAccess()
+                    .lookupOrThrow(net.minecraft.core.registries.Registries.CONFIGURED_FEATURE)
+                    .get(net.minecraft.data.worldgen.features.MiscOverworldFeatures.BONUS_CHEST)
+                    .ifPresent(ref -> ref.value().place(
+                            world, world.getChunkSource().getGenerator(), world.getRandom(), spawnPos));
+            LOGGER.info("[Latitude] Placed bonus chest at globe spawn x={} y={} z={}",
+                    spawnPos.getX(), spawnPos.getY(), spawnPos.getZ());
+        } catch (Throwable t) {
+            LOGGER.warn("[Latitude] Failed to place bonus chest at globe spawn (continuing without)", t);
         }
     }
 
