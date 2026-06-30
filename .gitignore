@@ -53,3 +53,7 @@ run-headless-base/
 # Claude Code local state (per-user, not shared)
 .claude/settings.local.json
 .claude/*.lock
+
+# Scratch/working-session notes, recon, and proof artifacts — never commit. Durable conclusions
+# belong in docs/binder/ or docs/release/, not here.
+tmp/
