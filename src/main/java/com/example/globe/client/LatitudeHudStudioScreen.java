@@ -718,6 +718,12 @@ public class LatitudeHudStudioScreen extends Screen {
             case RED_IVORY -> "Red & Ivory";
             case CYAN_STEEL -> "Cyan Steel";
             case MINT_BRASS -> "Mint Brass";
+            case OBSIDIAN_RED -> "Obsidian & Red";
+            case ARCTIC_BLUE -> "Arctic Blue";
+            case EMERALD -> "Emerald";
+            case ROYAL_PURPLE -> "Royal Purple";
+            case SUNSET -> "Sunset";
+            case MONOCHROME -> "Monochrome";
             case CLASSIC_GOLD -> "Classic Gold";
         };
     }
