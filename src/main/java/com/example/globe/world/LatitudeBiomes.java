@@ -4930,14 +4930,27 @@ public final class LatitudeBiomes {
         return (broad * 0.18) + (medium * 0.10);
     }
 
+    // Province wavelength (contiguity / "vast expanses"). ONE multiplier enlarges every warm-province field
+    // so dry/savanna/jungle provinces form vast contiguous regions — badlands reads as a vast mesa, not a
+    // blurp — WITHOUT changing province FREQUENCY (WARM_DRY_THRESHOLD is untouched, so the band stays as
+    // diverse as before; provinces just get bigger, not more common). The province classifier
+    // (ProvinceAuthority) and these in-picker climate fields MUST share salt+scale so province edges align
+    // with in-province decisions, so the SAME multiplier drives both (ProvinceAuthority reads the same -D
+    // with the identical formula). Clamped [1.0, 2.5] — beyond ~2x a single province can span the band and
+    // alias across the equator. -D-tunable for live feel; 1.0 = legacy wavelength.
+    public static final double PROVINCE_WAVELENGTH_MULT =
+            Math.min(2.5, Math.max(1.0, Double.parseDouble(System.getProperty("latitude.provinceWavelength", "1.7"))));
+    private static final int WARM_PROVINCE_OPENNESS_SCALE_BLOCKS = (int) Math.round(1792 * PROVINCE_WAVELENGTH_MULT);
+    private static final int WARM_PROVINCE_HUMIDITY_SCALE_BLOCKS = (int) Math.round(1536 * PROVINCE_WAVELENGTH_MULT);
+
     private static double tropicalOpennessNoise(int blockX, int blockZ) {
-        return ValueNoise2D.sampleBlocks(WORLD_SEED ^ TROPICAL_OPENNESS_SALT, blockX, blockZ, 1792);
+        return ValueNoise2D.sampleBlocks(WORLD_SEED ^ TROPICAL_OPENNESS_SALT, blockX, blockZ, WARM_PROVINCE_OPENNESS_SCALE_BLOCKS);
     }
 
     private static final long SUBTROPICAL_HUMIDITY_SALT = 0xDECAF_50B7_0001L;
 
     private static double subtropicalHumidityNoise(int blockX, int blockZ) {
-        return ValueNoise2D.sampleBlocks(WORLD_SEED ^ SUBTROPICAL_HUMIDITY_SALT, blockX, blockZ, 1536);
+        return ValueNoise2D.sampleBlocks(WORLD_SEED ^ SUBTROPICAL_HUMIDITY_SALT, blockX, blockZ, WARM_PROVINCE_HUMIDITY_SCALE_BLOCKS);
     }
 
     private static double subtropicalHumidityThreshold(int step) {
