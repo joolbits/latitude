@@ -48,6 +48,13 @@ def main() -> int:
     generate.add_argument("--seed", type=int, default=DEFAULT_SEED)
     generate.add_argument("--size", default=DEFAULT_SIZE)
     generate.add_argument("--no-viewer-open", action="store_true")
+    # The shipping world shape is Mercator 2:1, so the canonical atlas renders the true E-W width
+    # (X extent = 2x the latitude radius). Pass --square for the legacy 1:1 half-width render (a
+    # regression/diff reference only; it understates cohesion and overstates biome starvation).
+    generate.add_argument("--aspect", type=float, default=2.0,
+                          help="X-axis aspect vs latitude radius (default 2.0 = Mercator 2:1).")
+    generate.add_argument("--square", action="store_true",
+                          help="Legacy square (1:1) render; equivalent to --aspect 1.0.")
 
     ruggedness = subparsers.add_parser("ruggedness", help="Generate ruggedness for an existing viewer run.")
     ruggedness.add_argument("--run", required=True)
@@ -56,7 +63,8 @@ def main() -> int:
 
     args = parser.parse_args()
     if args.command == "generate":
-        generate_run(step=args.step, seed=args.seed, size=args.size)
+        aspect = 1.0 if getattr(args, "square", False) else args.aspect
+        generate_run(step=args.step, seed=args.seed, size=args.size, aspect=aspect)
         return 0
     if args.command == "ruggedness":
         generate_ruggedness(run_id=args.run, step=args.step)
@@ -65,7 +73,7 @@ def main() -> int:
     return 2
 
 
-def generate_run(*, step: int, seed: int, size: str) -> None:
+def generate_run(*, step: int, seed: int, size: str, aspect: float = 2.0) -> None:
     validate_step(step)
     size_key = normalize_size(size)
     run_id = allocate_run_id()
@@ -78,6 +86,7 @@ def generate_run(*, step: int, seed: int, size: str) -> None:
         size=size_key,
         step=step,
         layers=None,
+        aspect=aspect,
     )
     source_step_dir = find_fresh_step_dir(seed=seed, step=step, started_at=started_at)
     if not source_step_dir.exists():
@@ -125,7 +134,7 @@ def generate_ruggedness(*, run_id: str, step: int) -> None:
     shutil.copy2(ruggedness_path, run_dir / f"step{step}_ruggedness.png")
 
 
-def run_gradle_preview(*, seed: int, size: str, step: int, layers: str | None) -> None:
+def run_gradle_preview(*, seed: int, size: str, step: int, layers: str | None, aspect: float = 2.0) -> None:
     gradlew = "gradlew.bat" if os.name == "nt" else "./gradlew"
     args = [
         f"--seed {seed}",
@@ -139,7 +148,7 @@ def run_gradle_preview(*, seed: int, size: str, step: int, layers: str | None) -
         args.append(f"--layers {layers}")
 
     command = [gradlew, "--no-daemon", "runBiomePreview", f"--args={' '.join(args)}"]
-    subprocess.run(command, cwd=ROOT, env=gradle_env(), check=True)
+    subprocess.run(command, cwd=ROOT, env=gradle_env(aspect=aspect), check=True)
 
 
 def copy_step_bundle(source_step_dir: Path, target_run_dir: Path, step: int) -> None:
@@ -252,13 +261,19 @@ def validate_step(step: int) -> None:
         raise ValueError("step must be in range 1..4096")
 
 
-def gradle_env() -> dict[str, str]:
+def gradle_env(*, aspect: float = 2.0) -> dict[str, str]:
     env = os.environ.copy()
     if os.name != "nt" and not env.get("JAVA_HOME"):
         java_home = detect_java_home_25()
         if java_home:
             env["JAVA_HOME"] = java_home
             env["PATH"] = f"{Path(java_home) / 'bin'}:{env.get('PATH', '')}"
+    # The forked server JVM picks up JAVA_TOOL_OPTIONS automatically; this is how the exporter's
+    # Mercator-width knob (-Dlatitude.atlasXAspect) reaches it. Preserve any caller-set options.
+    if abs(aspect - 1.0) > 1e-9:
+        prior = env.get("JAVA_TOOL_OPTIONS", "").strip()
+        opt = f"-Dlatitude.atlasXAspect={aspect}"
+        env["JAVA_TOOL_OPTIONS"] = f"{prior} {opt}".strip() if prior else opt
     return env
 
 

@@ -626,9 +626,16 @@ public final class BiomePreviewExporter {
                         0L));
             }
 
-            this.xMin = -radiusBlocks;
+            // Mercator-width render (dev-only, opt-in): -Dlatitude.atlasXAspect=2.0 widens the X sample extent
+            // to aspect*radius (the Mercator world's true E-W half-width) while Z stays at the latitude radius,
+            // so the atlas captures the full 2:1 horizontal extent instead of a square half-width sub-region.
+            // Default 1.0 = square, byte-identical to prior behavior. Bands are Z-derived, so wider X only
+            // samples MORE of each band (more representation) — exactly what this measures.
+            double xAspect = Double.parseDouble(System.getProperty("latitude.atlasXAspect", "1.0"));
+            int xExtent = (int) Math.round(radiusBlocks * Math.max(1.0, xAspect));
+            this.xMin = -xExtent;
             this.zMin = -radiusBlocks;
-            int xMax = radiusBlocks;
+            int xMax = xExtent;
             int zMax = radiusBlocks;
             long widthLong = Math.floorDiv((long) (xMax - xMin), stepBlocks) + 1L;
             long heightLong = Math.floorDiv((long) (zMax - zMin), stepBlocks) + 1L;
