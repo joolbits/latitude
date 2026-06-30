@@ -36,11 +36,16 @@ public final class ProvinceAuthority {
     private static final int BAND_SUBTROPICAL = 1;
 
     // Warm-side noise: re-uses the same salts/scales as LatitudeBiomes so province
-    // boundaries align with existing picker climate signals.
+    // boundaries align with existing picker climate signals. The scales are driven by the SAME
+    // -Dlatitude.provinceWavelength multiplier (identical formula) as LatitudeBiomes.tropicalOpennessNoise /
+    // subtropicalHumidityNoise, so enlarging province wavelength for vast contiguous regions keeps the
+    // province boundary aligned with the in-province climate decisions (no seams). 1.0 = legacy.
+    private static final double PROVINCE_WAVELENGTH_MULT =
+            Math.min(2.5, Math.max(1.0, Double.parseDouble(System.getProperty("latitude.provinceWavelength", "1.7"))));
     static final long WARM_OPENNESS_SALT = 0x7472_6F70_6F70_656EL;   // same as TROPICAL_OPENNESS_SALT
-    static final int  WARM_OPENNESS_SCALE_BLOCKS = 1792;              // same as tropicalOpennessNoise scale
+    static final int  WARM_OPENNESS_SCALE_BLOCKS = (int) Math.round(1792 * PROVINCE_WAVELENGTH_MULT); // == tropicalOpennessNoise
     static final long WARM_HUMIDITY_SALT = 0xDECAF_50B7_0001L;        // same as SUBTROPICAL_HUMIDITY_SALT
-    static final int  WARM_HUMIDITY_SCALE_BLOCKS = 1536;              // same as subtropicalHumidityNoise scale
+    static final int  WARM_HUMIDITY_SCALE_BLOCKS = (int) Math.round(1536 * PROVINCE_WAVELENGTH_MULT); // == subtropicalHumidityNoise
 
     // Cold-side moisture: new dedicated noise layer at comparable scale.
     // Uses a fresh salt so it does not alias with any existing noise field.
