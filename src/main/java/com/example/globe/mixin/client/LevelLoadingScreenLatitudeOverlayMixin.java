@@ -154,7 +154,10 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
     @Unique private static final long FAIL_SAFE_CLEAR_MS = 10 * 60 * 1000L;
     @Unique private long globe$overlayStartMs = 0L;
     @Unique private float globe$displayProgress = 0f;
-    @Unique private int globe$phraseSeedIdx = 0;
+    // -1 = "not yet picked this overlay lifetime" (a real Unique field default of 0 would collide with a
+    // legitimately-picked index of 0 -- unreachable today given the current PHRASES/FEATURED_PHRASE_COUNT
+    // sizes, but not guaranteed to stay that way, and -1 is never a valid pickSeedIndex() result either way).
+    @Unique private int globe$phraseSeedIdx = -1;
     @Unique private long globe$lastCycleNo = -1L;
     @Unique private int globe$currentPhraseIdx = 0;
 
@@ -398,7 +401,7 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
             if (globe$lastCycleNo < 0) {
                 // First shown phrase leads with a Latitude-feature line (preserves the fast-load property:
                 // even a single-phrase load shows a newer 1.4 splash, not a generic one).
-                globe$currentPhraseIdx = globe$phraseSeedIdx > 0 ? globe$phraseSeedIdx : globe$pickSeedIndex();
+                globe$currentPhraseIdx = globe$phraseSeedIdx >= 0 ? globe$phraseSeedIdx : globe$pickSeedIndex();
             } else {
                 globe$currentPhraseIdx = globe$pickNextPhrase();
             }
