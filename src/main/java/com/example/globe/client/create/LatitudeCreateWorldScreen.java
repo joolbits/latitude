@@ -1355,13 +1355,14 @@ public class LatitudeCreateWorldScreen extends Screen {
             return;
         }
 
+        int frameBorder = previewFrameBorder(radius);
         LatitudePlanisphereRenderer.drawAtlasFrame(context,
                 layout.globeLeft, layout.globeTop, layout.globeWidth, layout.globeHeight);
         LatitudePlanisphereRenderer.renderCompact(context,
-                layout.globeLeft,
-                layout.globeTop,
-                layout.globeWidth,
-                layout.globeHeight,
+                layout.globeLeft + frameBorder,
+                layout.globeTop + frameBorder,
+                layout.globeWidth - frameBorder * 2,
+                layout.globeHeight - frameBorder * 2,
                 selectedZone,
                 shape);
 
@@ -1439,6 +1440,12 @@ public class LatitudeCreateWorldScreen extends Screen {
         }
     }
 
+    // Width of the vanilla map-texture frame border that surrounds the atlas (also the amount the climate map
+    // is inset inside the frame). Shared by the layout (label alignment) and the render (atlas inset + frame).
+    private int previewFrameBorder(int radius) {
+        return Math.max(4, Math.round(radius * 0.16f));
+    }
+
     private PreviewLayout computePreviewLayout(int areaLeft, int areaTop, int areaRight, int areaBottom,
                                                int radius, float labelScale, float captionScale, String caption,
                                                LatitudeBiomes.GlobeShape shape) {
@@ -1473,7 +1480,9 @@ public class LatitudeCreateWorldScreen extends Screen {
         int globeCenterY = globeTop + radius;
         int labelX = globeLeft + globeWidth + labelPad;
         int labelHeight = scaledFontHeight(labelScale);
-        int[] labelYs = computePreviewLabelYs(globeCenterY, radius, labelHeight);
+        // The map frame insets the atlas content by previewFrameBorder(radius) on each side, so latitude labels
+        // must map to the INNER atlas radius to stay aligned with the inset latitude lines.
+        int[] labelYs = computePreviewLabelYs(globeCenterY, radius - previewFrameBorder(radius), labelHeight);
         int lastLabelBottom = labelYs[labelYs.length - 1] + labelHeight;
         int captionY = Math.max(globeTop + globeHeight + captionGap, lastLabelBottom + 4);
         if (captionY + captionHeight > areaBottom) {
