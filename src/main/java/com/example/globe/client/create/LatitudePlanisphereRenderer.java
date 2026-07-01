@@ -262,16 +262,22 @@ public final class LatitudePlanisphereRenderer {
     }
 
     // ── Rectangle equivalents of the circle primitives above, for the Mercator (2:1) atlas preview: same
-    // shapes, just without the chord-mask clip — a constant halfW instead of a per-scanline sqrt(frac)*radius. ──
+    // shapes, just without the chord-mask clip — a constant halfW instead of a per-scanline sqrt(frac)*radius.
+    // Guarded the same way the circle primitives above are (halfW <= 0 -> no-op): width is now an
+    // independently-supplied parameter rather than derived from a single radius, so a degenerate caller-
+    // supplied width can't be assumed away the way it could when width and height always came from one value. ──
     private static void fillRect(GuiGraphicsExtractor ctx, int cx, int cy, int halfW, int halfH, int color) {
+        if (halfW <= 0) return;
         ctx.fill(cx - halfW, cy - halfH, cx + halfW, cy + halfH, color);
     }
 
     private static void fillBandStripRect(GuiGraphicsExtractor ctx, int cx, int cy, int halfW, int yStart, int yEnd, int color) {
+        if (halfW <= 0) return;
         ctx.fill(cx - halfW, cy + yStart, cx + halfW, cy + yEnd, color);
     }
 
     private static void drawLatitudeLineRect(GuiGraphicsExtractor ctx, int cx, int cy, int halfW, int yOff, int color) {
+        if (halfW <= 0) return;
         ctx.fill(cx - halfW, cy + yOff, cx + halfW, cy + yOff + 1, color);
     }
 
