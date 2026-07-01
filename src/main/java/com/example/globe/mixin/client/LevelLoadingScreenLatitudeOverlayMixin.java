@@ -84,15 +84,20 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
             "Frosting the summits...",
             "Dusting the peaks with powder...",
             "Welcoming guest biomes...",
-            "Inviting Terralith over for tea...",
+            "Untangling Terralith's roots...",
+            "Evicting a few biome squatters...",
             "Finding homes for visiting biomes...",
             "Making room for everyone's biomes...",
-            "Minding the alpine line..."
+            "Minding the alpine line...",
+            "Unrolling more map...",
+            "Giving the compass more to point at...",
+            "Making room for two more oceans...",
+            "Packing extra biomes for the road..."
     };
 
     // The Latitude-feature splashes are the last FEATURED_PHRASE_COUNT entries of PHRASES. Bias the
     // starting point into that block most of the time so the newer 1.4 phrases usually lead.
-    @Unique private static final int FEATURED_PHRASE_COUNT = 14;
+    @Unique private static final int FEATURED_PHRASE_COUNT = 19;
 
     @Unique
     private static int globe$pickSeedIndex() {
