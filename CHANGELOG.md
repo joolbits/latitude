@@ -1,8 +1,8 @@
 # Changelog
 
-## Latitude 1.4 — Cohesive Horizons (MC 26.1.2)
+## Latitude 2.0 — Cohesive Horizons (MC 26.1.2)
 
-Latitude 1.4 "Cohesive Horizons" is a worldgen-quality and compatibility release. It makes the climate map read like a coherent, Earth-like world and adds first-class support for custom biome mods.
+Latitude 2.0 "Cohesive Horizons" is a worldgen-quality and compatibility release. It makes the climate map read like a coherent, Earth-like world, adds first-class support for custom biome mods, and introduces the Mercator world shape — a wider, 2:1 world with more room for every latitude band. (Bumped from 1.4 to 2.0: Mercator is a new world type, not a tweak, and the custom-biome integration + geography-law overhaul below are each substantial on their own; the version number also cleanly separates this tested release from the accidental partial `1.4` push to GitHub.)
 
 ### Custom biome support
 - Custom biomes from other mods and datapacks (Biomes O' Plenty, Terralith, Promenade, and similar) can now be slotted into the latitude bands through the `globe:lat_*` biome tags.
@@ -18,7 +18,7 @@ Latitude 1.4 "Cohesive Horizons" is a worldgen-quality and compatibility release
 - **Restored a believable arid mix.** Both desert and badlands remain visibly present in the arid belt (with coherent wooded/eroded badlands sub-regions rather than scattered specks), avoiding the earlier over-correction that thinned them out.
 - **No badlands or deserts anywhere in the tropics (geography law).** Badlands/mesa and hot desert are subtropical landforms on Earth, never tropical ones. Both are now fully excluded across the entire tropical band (0–23.5°) — replaced there by savanna — and phase back in across the lower subtropics. (Strengthens the earlier deep-equator-only thinning into a clean band-wide rule; the boundary is noise-warped, not a hard line.)
 
-### Worldgen refinements (1.4.1, 2026-06-23)
+### Worldgen refinements (2026-06-23)
 - **Snow on the mountains, where it belongs.** The alpine snow line was set too high to ever catch the peaks that actually generate, so temperate/subtropical summits stayed bare. The snow-cap onset is lowered and shaped after Earth's real snowline (lowest toward the poles, highest in the dry subtropics), so cold-band peaks cap fully and temperate peaks get snow well down the slope — while the tropics stay snow-free and warm-latitude snow creep remains impossible.
 - **No more grass poking through alpine snow.** The snowy alpine zone is now bare snow/stone; the grassy meadow shelf stays strictly below the snow line.
 - **Less polar sameness.** The poles were dominated by snowy plains and ice spikes; the polar pool now draws on more cold biomes (snowy taiga, grove, and installed-pack cold variants such as Terralith's snowy shield / siberian taiga / wintry forests), so ice spikes drop to a rare accent and the cap reads with real variety.
@@ -49,7 +49,7 @@ Latitude 1.4 "Cohesive Horizons" is a worldgen-quality and compatibility release
 - **With several custom biome packs installed at once, not every biome will appear.** Each latitude band draws from a finite weighted pool, so the more biomes you add, the smaller each one's share — rarer/accent biomes from large stacks can fall below visible frequency. This is expected behavior, not a bug; you'll still get a coherent, climate-appropriate mix, just not 100% coverage of every biome in every installed pack. (Configurable per-pack representation weighting is on the roadmap.)
 
 ## Historical released entries
-Entries below are retained for already-published or older-version lines. They are not the active `1.4.1-beta.2+26.1.2` candidate gate.
+Entries below are retained for already-published or older-version lines. They are not the active `2.0-beta.1+26.1.2` candidate gate.
 
 ## Latitude 1.3.0+1.20.1-r1 (MC 1.20.1)
 - Hotfix release for the 1.20.1 startup/refmap crash tracked in issue #5 and PR #6.
