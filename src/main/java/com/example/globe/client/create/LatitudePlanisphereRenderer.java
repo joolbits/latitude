@@ -284,7 +284,9 @@ public final class LatitudePlanisphereRenderer {
      * @param width        bounding width in pixels (== height for Legacy, == 2×height for Mercator)
      * @param height       bounding height in pixels
      * @param selectedBand the currently selected latitude band
-     * @param shape        which world shape to draw — CLASSIC (circle) or MERCATOR (rectangle)
+     * @param shape        world shape (Legacy 1:1 → square, Mercator → 2:1 rectangle). Retained for
+     *                     call-site clarity; the actual square-vs-rectangle difference is carried by the
+     *                     width:height ratio passed in, not branched on here.
      */
     public static void renderCompact(GuiGraphicsExtractor context, int x, int y, int width, int height,
                                      LatitudeBands.Band selectedBand, com.example.globe.world.LatitudeBiomes.GlobeShape shape) {
@@ -294,17 +296,17 @@ public final class LatitudePlanisphereRenderer {
         int halfH = height / 2;
         int cx = x + halfW;
         int cy = y + halfH;
-        boolean mercator = shape == com.example.globe.world.LatitudeBiomes.GlobeShape.MERCATOR;
+        // Both shapes draw as rectangles: a wide 2:1 rectangle for Mercator, and a SQUARE for Legacy 1:1
+        // (where halfW == halfH). The atlas matches the world border shape — square for Legacy — per Peetsa's
+        // TEST 1 feedback (finding A2). The square-vs-rectangle difference is carried entirely by the
+        // width:height ratio, computed upstream in computePreviewLayout; band-boundary math stays halfH-based
+        // (bands vary along the vertical/latitude axis in both shapes), only the horizontal extent (halfW)
+        // differs between the two world shapes.
 
         // ── Ocean base ──
-        if (mercator) {
-            fillRect(context, cx, cy, halfW, halfH, OCEAN_COLOR);
-        } else {
-            fillCircle(context, cx, cy, halfH, OCEAN_COLOR); // halfH == halfW == radius for CLASSIC
-        }
+        fillRect(context, cx, cy, halfW, halfH, OCEAN_COLOR);
 
-        // ── Band fills ── (band-boundary math is always halfH-based: bands vary by latitude, i.e. the
-        // vertical axis, in both shapes — only the fill primitive's horizontal extent differs)
+        // ── Band fills ──
         LatitudeBands.Band[] bands = LatitudeBands.Band.values();
         for (int i = 0; i < bands.length; i++) {
             LatitudeBands.Band band = bands[i];
@@ -324,29 +326,17 @@ public final class LatitudePlanisphereRenderer {
             int yLow  = (int) (halfH * band.lowDeg()  / 90.0);
             int yHigh = (int) (halfH * band.highDeg() / 90.0);
 
-            if (mercator) {
-                fillBandStripRect(context, cx, cy, halfW, yLow,  yHigh,  fillColor);
-                fillBandStripRect(context, cx, cy, halfW, -yHigh, -yLow, fillColor);
-            } else {
-                fillBandStrip(context, cx, cy, halfH, yLow,  yHigh,  fillColor);
-                fillBandStrip(context, cx, cy, halfH, -yHigh, -yLow, fillColor);
-            }
+            fillBandStripRect(context, cx, cy, halfW, yLow,  yHigh,  fillColor);
+            fillBandStripRect(context, cx, cy, halfW, -yHigh, -yLow, fillColor);
         }
 
-        // ── Gold outline on selected band edges ── (the existing "spawn zone highlight" — a brightened
-        // stripe + these edge lines; ported to the rectangle case via the *Rect primitives)
+        // ── Gold outline on selected band edges ── (the "spawn zone highlight": a brightened stripe + these
+        // edge lines)
         int selLow  = (int) (halfH * selectedBand.lowDeg()  / 90.0);
         int selHigh = (int) (halfH * selectedBand.highDeg() / 90.0);
-        if (mercator) {
-            drawLatitudeLineRect(context, cx, cy, halfW,  selLow,  GOLD);
-            drawLatitudeLineRect(context, cx, cy, halfW,  selHigh, GOLD);
-            drawLatitudeLineRect(context, cx, cy, halfW, -selLow,  GOLD);
-            drawLatitudeLineRect(context, cx, cy, halfW, -selHigh, GOLD);
-        } else {
-            drawLatitudeLine(context, cx, cy, halfH,  selLow,  GOLD);
-            drawLatitudeLine(context, cx, cy, halfH,  selHigh, GOLD);
-            drawLatitudeLine(context, cx, cy, halfH, -selLow,  GOLD);
-            drawLatitudeLine(context, cx, cy, halfH, -selHigh, GOLD);
-        }
+        drawLatitudeLineRect(context, cx, cy, halfW,  selLow,  GOLD);
+        drawLatitudeLineRect(context, cx, cy, halfW,  selHigh, GOLD);
+        drawLatitudeLineRect(context, cx, cy, halfW, -selLow,  GOLD);
+        drawLatitudeLineRect(context, cx, cy, halfW, -selHigh, GOLD);
     }
 }
