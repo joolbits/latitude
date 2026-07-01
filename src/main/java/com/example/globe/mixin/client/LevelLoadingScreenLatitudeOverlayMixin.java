@@ -112,11 +112,51 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
         return (int) (Math.random() * total);
     }
 
+    // Once per phrase cycle, pick the next splash at RANDOM with a ~70% bias toward the newer
+    // Latitude-feature block, avoiding an immediate repeat and back-to-back peak/mountain-themed lines.
+    // The "3 peak messages in a row" report (TEST 1 B1) came from the OLD sequential walk through adjacent
+    // array entries; this replaces that walk with a weighted random draw — "70% newer, but ultimately random."
+    @Unique
+    private int globe$pickNextPhrase() {
+        int total = PHRASES.length;
+        int featuredStart = Math.max(0, total - FEATURED_PHRASE_COUNT);
+        int prev = globe$currentPhraseIdx;
+        int idx = prev;
+        for (int guard = 0; guard < 8; guard++) {
+            boolean featured = featuredStart < total && Math.random() < 0.70;
+            if (featured) {
+                idx = featuredStart + (int) (Math.random() * (total - featuredStart));
+            } else if (featuredStart > 0) {
+                idx = (int) (Math.random() * featuredStart);
+            } else {
+                idx = (int) (Math.random() * total);
+            }
+            boolean sameAsPrev = (idx == prev);
+            boolean peakClash = globe$isPeakThemed(idx) && globe$isPeakThemed(prev);
+            if (!sameAsPrev && !peakClash) {
+                break;
+            }
+        }
+        return idx;
+    }
+
+    @Unique
+    private static boolean globe$isPeakThemed(int idx) {
+        if (idx < 0 || idx >= PHRASES.length) {
+            return false;
+        }
+        String s = PHRASES[idx].toLowerCase(java.util.Locale.ROOT);
+        return s.contains("peak") || s.contains("summit") || s.contains("alpine")
+                || s.contains("treeline") || s.contains("mountain") || s.contains("powder");
+    }
+
     @Unique private static final long PHRASE_CYCLE_MS = 4800;
     @Unique private static final long FAIL_SAFE_CLEAR_MS = 10 * 60 * 1000L;
     @Unique private long globe$overlayStartMs = 0L;
     @Unique private float globe$displayProgress = 0f;
     @Unique private int globe$phraseSeedIdx = 0;
+    @Unique private long globe$lastCycleNo = -1L;
+    @Unique private int globe$currentPhraseIdx = 0;
 
     // ── Compass needle animation state ──
     @Unique private double globe$needleAngle = 0.0;
@@ -353,7 +393,18 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
     @Unique
     private void globe$drawPhrase(GuiGraphicsExtractor context, int cx, int y, long elapsedMs) {
         long cyclePos = elapsedMs % PHRASE_CYCLE_MS;
-        int phraseIdx = (globe$phraseSeedIdx + (int) ((elapsedMs / PHRASE_CYCLE_MS) % PHRASES.length)) % PHRASES.length;
+        long cycleNo = elapsedMs / PHRASE_CYCLE_MS;
+        if (cycleNo != globe$lastCycleNo) {
+            if (globe$lastCycleNo < 0) {
+                // First shown phrase leads with a Latitude-feature line (preserves the fast-load property:
+                // even a single-phrase load shows a newer 1.4 splash, not a generic one).
+                globe$currentPhraseIdx = globe$phraseSeedIdx > 0 ? globe$phraseSeedIdx : globe$pickSeedIndex();
+            } else {
+                globe$currentPhraseIdx = globe$pickNextPhrase();
+            }
+            globe$lastCycleNo = cycleNo;
+        }
+        int phraseIdx = globe$currentPhraseIdx;
         String phrase = PHRASES[phraseIdx];
 
         // Fade: quick in (first 15%), steady (60%), quick out (last 25%)
