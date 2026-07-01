@@ -255,6 +255,7 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
         columnDecisionYCache.defaultReturnValue(Integer.MIN_VALUE);
         Long2ObjectOpenHashMap<Holder<Biome>> columnPickCache = new Long2ObjectOpenHashMap<>();
         Long2ObjectOpenHashMap<Holder<Biome>> columnPickBase = new Long2ObjectOpenHashMap<>();
+        Long2ObjectOpenHashMap<Holder<Biome>> columnBaseCache = new Long2ObjectOpenHashMap<>();
         logWorldgenPathOnce(chunk, borderRadiusBlocks, globe$matchedSettingsLabel());
         BiomeResolver sourceSupplier = originalSupplier instanceof LatitudeBiomeSource latitudeSource
                 ? latitudeSource.original()
@@ -266,9 +267,16 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
             int blockX = (x << 2) + 2;
             int blockZ = (z << 2) + 2;
             int blockY = (y << 2) + 2;
-            
+            long colKey = (((long) x) << 32) ^ (z & 0xFFFF_FFFFL);
+
             Holder<Biome> current = sourceSupplier.getNoiseBiome(x, y, z, sampler);
-            Holder<Biome> base = sourceSupplier.getNoiseBiome(x, LatitudeBiomes.SURFACE_CLASSIFY_Y >> 2, z, sampler);
+            // `base` is sampled at a FIXED classify-Y, so it is identical for every cell in this (x,z) column —
+            // cache it instead of re-sampling the (Terralith) source ~96x per column (TEST 7 C3 lag follow-up).
+            Holder<Biome> base = columnBaseCache.get(colKey);
+            if (base == null) {
+                base = sourceSupplier.getNoiseBiome(x, LatitudeBiomes.SURFACE_CLASSIFY_Y >> 2, z, sampler);
+                columnBaseCache.put(colKey, base);
+            }
             boolean caveCurrent = isCaveBiome(biomes, current);
 
             if (blockY > HARD_DECK_SURFACE_Y && isCaveBiome(biomes, base)) {
@@ -315,7 +323,6 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
             // each time. Compute pick() once per column for those surface-and-above cells and reuse it; only
             // the rarer deep cells (below the surface band, where biomeY genuinely varies) fall through to an
             // exact per-cell pick, so behavior is preserved everywhere.
-            long colKey = (((long) x) << 32) ^ (z & 0xFFFF_FFFFL);
             int colDecisionY = columnDecisionYCache.get(colKey);
             if (colDecisionY == Integer.MIN_VALUE) {
                 colDecisionY = LatitudeBiomes.surfaceDecisionY(generator, noiseConfig, chunk, blockX, blockZ);
