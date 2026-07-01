@@ -6945,11 +6945,17 @@ public final class LatitudeBiomes {
         return Long.remainderUnsigned(roll, denominator) == 0L;
     }
 
+    // Memoize Identifier.parse of the constant id strings passed here — isBiomeId runs dozens of times per
+    // biome cell during worldgen, and Identifier.parse validates + splits the string (allocating) on every
+    // call. The parse is a pure function of the constant id, so caching is behavior-identical (TEST 1 C3).
+    private static final java.util.concurrent.ConcurrentHashMap<String, Identifier> ID_PARSE_CACHE =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
     private static boolean isBiomeId(Holder<Biome> entry, String id) {
         if (entry == null) {
             return false;
         }
-        Identifier target = Identifier.parse(id);
+        Identifier target = ID_PARSE_CACHE.computeIfAbsent(id, Identifier::parse);
         return entry.unwrapKey()
                 .map(key -> key.identifier().equals(target))
                 .orElse(false);
