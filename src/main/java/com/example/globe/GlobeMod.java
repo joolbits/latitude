@@ -271,21 +271,23 @@ public class GlobeMod implements ModInitializer {
             LOGGER.info("[Latitude] Recorded Globe world: border radius {} (from create-world selection)", pendingRadius);
         }
 
-        // World shape: NEW Globe worlds default to Mercator (2:1) unless the create-world screen's shape
-        // toggle explicitly requested Legacy 1:1 (GlobePending.pendingGlobeShape). Pre-existing / legacy saves
-        // have no persisted globe_shape (deserialize to "classic") and are NOT touched, so they stay square
-        // (legacy-worldgen-policy-pin). gameTime < 100 is the established "brand-new world" signal (mirrors
-        // the radius + worldgen-policy consume above).
+        // World shape stamping. The bespoke create-world screen is the ONLY way to make a Globe world, and it
+        // ALWAYS sets GlobePending.pendingGlobeShape (Mercator by default, or Legacy 1:1 if the toggle chose
+        // it). So a non-null pendingShape is the reliable "brand-new world" signal; existing/legacy saves never
+        // set it and are never re-stamped. We also require the persisted shape to be genuinely unset
+        // (hasGlobeShape() == false) so a stale pending value can't overwrite an already-stamped world.
+        //
+        // This replaces the old `gameTime < 100 && "classic".equals(getGlobeShape())` guard, which could
+        // silently flip an existing SQUARE (Classic/pre-2.0) save to Mercator: an absent globe_shape field used
+        // to deserialize to the concrete "classic", so a legacy save was indistinguishable from an explicitly-
+        // Legacy one, and any existing world that happened to load with gameTime < 100 got re-stamped to
+        // Mercator — enlarging its border from 2*zRadius to 4*zRadius (bug-catcher #1). globe_shape now has a
+        // real unset sentinel (Optional, no default), so legacy saves stay Classic.
         String pendingShape = GlobePending.pendingGlobeShape;
         GlobePending.pendingGlobeShape = null;
-        if (world.getGameTime() < 100L && "classic".equals(worldState.getGlobeShape())) {
-            if (pendingShape != null) {
-                worldState.setGlobeShape(pendingShape);
-                LOGGER.info("[Latitude] New Globe world: shape={} (from create-world selection)", pendingShape);
-            } else {
-                worldState.setGlobeShape("mercator");
-                LOGGER.info("[Latitude] New Globe world: shape=mercator (2:1 default, no explicit selection)");
-            }
+        if (pendingShape != null && !worldState.hasGlobeShape()) {
+            worldState.setGlobeShape(pendingShape);
+            LOGGER.info("[Latitude] New Globe world: shape={} (from create-world selection)", pendingShape);
         }
         // Ensure the live cache reflects the persisted shape before the border is sized (covers existing worlds).
         LatitudeBiomes.setGlobeShape(LatitudeBiomes.shapeFromString(worldState.getGlobeShape()));

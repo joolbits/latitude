@@ -30,8 +30,8 @@ public final class LatitudeWorldState extends SavedData {
                             .forGetter((LatitudeWorldState state) -> Optional.ofNullable(state.worldgenPolicy)),
                     Codec.INT.optionalFieldOf("globe_radius", 0)
                             .forGetter(LatitudeWorldState::getGlobeRadius),
-                    Codec.STRING.optionalFieldOf("globe_shape", "classic")
-                            .forGetter(LatitudeWorldState::getGlobeShape)
+                    Codec.STRING.optionalFieldOf("globe_shape")
+                            .forGetter(LatitudeWorldState::getGlobeShapeOptional)
             ).apply(instance, (spawnPickerDismissed, worldgenPolicy, globeRadius, globeShape) ->
                     new LatitudeWorldState(spawnPickerDismissed, normalizeWorldgenPolicy(worldgenPolicy), globeRadius, globeShape))),
             DataFixTypes.SAVED_DATA_COMMAND_STORAGE
@@ -43,14 +43,17 @@ public final class LatitudeWorldState extends SavedData {
     private String globeShape;
 
     public LatitudeWorldState() {
-        this(false, Optional.empty(), 0, "classic");
+        this(false, Optional.empty(), 0, Optional.empty());
     }
 
-    private LatitudeWorldState(boolean spawnPickerDismissed, Optional<WorldgenPolicyVersion> worldgenPolicy, int globeRadius, String globeShape) {
+    private LatitudeWorldState(boolean spawnPickerDismissed, Optional<WorldgenPolicyVersion> worldgenPolicy, int globeRadius, Optional<String> globeShape) {
         this.spawnPickerDismissed = spawnPickerDismissed;
         this.worldgenPolicy = normalizeWorldgenPolicy(worldgenPolicy).orElse(null);
         this.globeRadius = Math.max(0, globeRadius);
-        this.globeShape = (globeShape == null || globeShape.isBlank()) ? "classic" : globeShape;
+        // null = "never stamped" (unset). Kept DISTINCT from an explicit "classic" so an existing/legacy save
+        // (absent globe_shape field) is never mistaken for a brand-new world and re-stamped to Mercator
+        // (bug-catcher #1: silent Classic->Mercator flip + world-border regression).
+        this.globeShape = globeShape.filter(s -> !s.isBlank()).orElse(null);
     }
 
     private static Optional<WorldgenPolicyVersion> normalizeWorldgenPolicy(Optional<WorldgenPolicyVersion> worldgenPolicy) {
@@ -102,8 +105,19 @@ public final class LatitudeWorldState extends SavedData {
         }
     }
 
+    /** Effective shape for live rendering / border math: "classic" when never stamped. */
     public String getGlobeShape() {
         return (globeShape == null || globeShape.isBlank()) ? "classic" : globeShape;
+    }
+
+    /** Raw persisted shape: empty when never stamped (absent field / legacy save), distinct from "classic". */
+    public Optional<String> getGlobeShapeOptional() {
+        return (globeShape == null || globeShape.isBlank()) ? Optional.empty() : Optional.of(globeShape);
+    }
+
+    /** True once a shape has been explicitly stamped (a brand-new world). False for legacy / pre-2.0 saves. */
+    public boolean hasGlobeShape() {
+        return globeShape != null && !globeShape.isBlank();
     }
 
     public void setGlobeShape(String globeShape) {
