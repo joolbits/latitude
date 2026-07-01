@@ -110,7 +110,7 @@ public final class CompassHud {
         }
 
         if (cfg.style == CompassHudConfig.CompassStyle.ANALOG) {
-            String latText = analogLatitudeText(client, cfg);
+            String latText = analogLatLonText(client, cfg);
             String zoneText = cfg.zoneFollowsCompass ? zoneLabel(client, cfg, false) : null;
             HudBounds b = computeAnalogBounds(screenW, screenH, client, cfg, latText, zoneText);
             renderAnalogAt(ctx, client, cfg, latText, zoneText, b.x, b.y, forceVisible);
@@ -124,7 +124,8 @@ public final class CompassHud {
                 case DEGREES -> degrees(client.player.getYRot());
             };
 
-            String hudText = buildDigitalLine(directionText, latitudeText(client, cfg), zoneLabel(client, cfg, true), cfg.compactHud);
+            String latLonText = joinLatLon(latitudeText(client, cfg), longitudeText(client, cfg));
+            String hudText = buildDigitalLine(directionText, latLonText, zoneLabel(client, cfg, true), cfg.compactHud);
 
             String[] lines = new String[]{hudText};
             HudBounds b = computeBounds(screenW, screenH, client, cfg, lines);
@@ -137,14 +138,14 @@ public final class CompassHud {
 
     public static HudBounds computeBounds(Minecraft client, CompassHudConfig cfg) {
         if (cfg.style == CompassHudConfig.CompassStyle.ANALOG) {
-            return computeAnalogBounds(client.getWindow().getGuiScaledWidth(), client.getWindow().getGuiScaledHeight(), client, cfg, analogSampleLatitude(cfg), cfg.zoneFollowsCompass ? sampleZone(cfg) : null);
+            return computeAnalogBounds(client.getWindow().getGuiScaledWidth(), client.getWindow().getGuiScaledHeight(), client, cfg, analogSampleLatLon(cfg), cfg.zoneFollowsCompass ? sampleZone(cfg) : null);
         }
         return computeBounds(client, cfg, sampleLines(cfg));
     }
 
     public static HudPoint computeBasePosition(Minecraft client, CompassHudConfig cfg) {
         if (cfg.style == CompassHudConfig.CompassStyle.ANALOG) {
-            return computeAnalogBasePosition(client, cfg, analogSampleLatitude(cfg), cfg.zoneFollowsCompass ? sampleZone(cfg) : null);
+            return computeAnalogBasePosition(client, cfg, analogSampleLatLon(cfg), cfg.zoneFollowsCompass ? sampleZone(cfg) : null);
         }
         return computeDigitalBasePosition(client, cfg, sampleLines(cfg));
     }
@@ -153,7 +154,7 @@ public final class CompassHud {
         int screenW = client.getWindow().getGuiScaledWidth();
         int screenH = client.getWindow().getGuiScaledHeight();
         if (cfg.style == CompassHudConfig.CompassStyle.ANALOG) {
-            return computeAnalogBounds(screenW, screenH, client, cfg, analogSampleLatitude(cfg), cfg.zoneFollowsCompass ? sampleZone(cfg) : null);
+            return computeAnalogBounds(screenW, screenH, client, cfg, analogSampleLatLon(cfg), cfg.zoneFollowsCompass ? sampleZone(cfg) : null);
         }
         return computeBounds(screenW, screenH, client, cfg, new String[]{text.getString()});
     }
@@ -162,7 +163,7 @@ public final class CompassHud {
         int screenW = client.getWindow().getGuiScaledWidth();
         int screenH = client.getWindow().getGuiScaledHeight();
         if (cfg.style == CompassHudConfig.CompassStyle.ANALOG) {
-            return computeAnalogBounds(screenW, screenH, client, cfg, analogSampleLatitude(cfg), cfg.zoneFollowsCompass ? sampleZone(cfg) : null);
+            return computeAnalogBounds(screenW, screenH, client, cfg, analogSampleLatLon(cfg), cfg.zoneFollowsCompass ? sampleZone(cfg) : null);
         }
         return computeBounds(screenW, screenH, client, cfg, lines);
     }
@@ -171,7 +172,7 @@ public final class CompassHud {
         int screenW = client.getWindow().getGuiScaledWidth();
         int screenH = client.getWindow().getGuiScaledHeight();
         if (cfg.style == CompassHudConfig.CompassStyle.ANALOG) {
-            return computeAnalogBounds(screenW, screenH, client, cfg, analogSampleLatitude(cfg), cfg.zoneFollowsCompass ? sampleZone(cfg) : null);
+            return computeAnalogBounds(screenW, screenH, client, cfg, analogSampleLatLon(cfg), cfg.zoneFollowsCompass ? sampleZone(cfg) : null);
         }
         return computeDigitalBounds(screenW, screenH, client, cfg, sampleLines(cfg), true);
     }
@@ -225,7 +226,7 @@ public final class CompassHud {
 
     public static void renderPreview(GuiGraphicsExtractor ctx, Minecraft client, CompassHudConfig cfg, int x, int y) {
         if (cfg.style == CompassHudConfig.CompassStyle.ANALOG) {
-            renderAnalogAt(ctx, client, cfg, analogSampleLatitude(cfg), cfg.zoneFollowsCompass ? sampleZone(cfg) : null, x, y, true);
+            renderAnalogAt(ctx, client, cfg, analogSampleLatLon(cfg), cfg.zoneFollowsCompass ? sampleZone(cfg) : null, x, y, true);
             if (cfg.displayZoneInHud && !cfg.zoneFollowsCompass) {
                 renderDetachedZone(ctx, client, cfg, true);
             }
@@ -401,32 +402,50 @@ public final class CompassHud {
     private static String[] sampleLines(CompassHudConfig cfg) {
         String dir = sampleDirection(cfg);
         String lat = Boolean.TRUE.equals(cfg.showLatitude) ? "1\u00b0S" : null;
+        String lon = Boolean.TRUE.equals(cfg.showLongitude) ? "15\u00b0E" : null;
         String zone = cfg.displayZoneInHud && cfg.zoneFollowsCompass ? sampleZone(cfg) : null;
-        return new String[]{buildDigitalLine(dir, lat, zone, cfg.compactHud)};
+        return new String[]{buildDigitalLine(dir, joinLatLon(lat, lon), zone, cfg.compactHud)};
     }
 
-    private static String analogSampleLatitude(CompassHudConfig cfg) {
-        if (!Boolean.TRUE.equals(cfg.analogShowLatitude)) return null;
-        return "1\u00b0S";
+    private static String analogSampleLatLon(CompassHudConfig cfg) {
+        String lat = Boolean.TRUE.equals(cfg.analogShowLatitude) ? "1\u00b0S" : null;
+        String lon = Boolean.TRUE.equals(cfg.analogShowLongitude) ? "15\u00b0E" : null;
+        return joinLatLon(lat, lon);
     }
 
-    // Sample latitude used for previews/placeholders is 1°S (see sampleLines/analogSampleLatitude), which is
-    // in the Tropics — keep the sample zone word consistent with that latitude so the placeholder never shows
-    // an impossible pairing like "1°S · Temperate".
+    private static String joinLatLon(String lat, String lon) {
+        if (lat == null) return lon;
+        if (lon == null) return lat;
+        return lat + ", " + lon;
+    }
+
+    // Sample latitude used for previews/placeholders is 1S (see sampleLines/analogSampleLatLon), which is in
+    // the Tropics -- keep the sample zone word consistent with that latitude so the placeholder never shows
+    // an impossible pairing like "1S / Temperate". Longitude's sample value doesn't affect the zone word.
     private static String sampleZone(CompassHudConfig cfg) {
         return cfg.displayZoneInHud ? "Tropics" : null;
     }
 
-    private static String analogLatitudeText(Minecraft client, CompassHudConfig cfg) {
-        if (!Boolean.TRUE.equals(cfg.analogShowLatitude)) return null;
-        if (client.player == null || client.level == null) return analogSampleLatitude(cfg);
-        return LatitudeMath.formatLatitudeDeg(client.player.getZ(), client.level.getWorldBorder());
+    private static String analogLatLonText(Minecraft client, CompassHudConfig cfg) {
+        String lat = Boolean.TRUE.equals(cfg.analogShowLatitude)
+                ? (client.player == null || client.level == null ? "1\u00b0S" : LatitudeMath.formatLatitudeDeg(client.player.getZ(), client.level.getWorldBorder()))
+                : null;
+        String lon = Boolean.TRUE.equals(cfg.analogShowLongitude)
+                ? (client.player == null || client.level == null ? "15\u00b0E" : LatitudeMath.formatLongitudeDeg(client.player.getX(), client.level.getWorldBorder()))
+                : null;
+        return joinLatLon(lat, lon);
     }
 
     private static String latitudeText(Minecraft client, CompassHudConfig cfg) {
         if (!Boolean.TRUE.equals(cfg.showLatitude)) return null;
         if (client.player == null || client.level == null) return "0\u00b0";
         return LatitudeMath.formatLatitudeDeg(client.player.getZ(), client.level.getWorldBorder());
+    }
+
+    private static String longitudeText(Minecraft client, CompassHudConfig cfg) {
+        if (!Boolean.TRUE.equals(cfg.showLongitude)) return null;
+        if (client.player == null || client.level == null) return "0\u00b0";
+        return LatitudeMath.formatLongitudeDeg(client.player.getX(), client.level.getWorldBorder());
     }
 
     private static String buildDigitalLine(String directionText, String latText, String zoneText, boolean compact) {

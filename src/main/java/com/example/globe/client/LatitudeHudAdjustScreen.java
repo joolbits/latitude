@@ -33,6 +33,7 @@ public class LatitudeHudAdjustScreen extends Screen {
     private AbstractWidget settingsBackground;
     private AbstractWidget settingsTransparency;
     private AbstractWidget settingsShowLatitude;
+    private AbstractWidget settingsShowLongitude;
     private AbstractWidget settingsCompactHud;
 
     private boolean wasLDown = false;
@@ -72,6 +73,11 @@ public class LatitudeHudAdjustScreen extends Screen {
         this.settingsShowLatitude = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "ON" : "OFF"), () -> Boolean.TRUE.equals(cfg.showLatitude))
                 .withValues(true, false)
                 .create(panelX, py, panelW, rowH, Component.literal("Show Latitude"), (btn, value) -> cfg.showLatitude = value));
+        py += rowH + rowGap;
+
+        this.settingsShowLongitude = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "ON" : "OFF"), () -> Boolean.TRUE.equals(cfg.showLongitude))
+                .withValues(true, false)
+                .create(panelX, py, panelW, rowH, Component.literal("Show Longitude"), (btn, value) -> cfg.showLongitude = value));
         py += rowH + rowGap;
 
         this.settingsCompactHud = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "ON" : "OFF"), () -> cfg.compactHud)
@@ -272,6 +278,7 @@ public class LatitudeHudAdjustScreen extends Screen {
         setVisible(settingsBackground, showSettings);
         setVisible(settingsTransparency, showSettings);
         setVisible(settingsShowLatitude, showSettings);
+        setVisible(settingsShowLongitude, showSettings);
         setVisible(settingsCompactHud, showSettings);
     }
 

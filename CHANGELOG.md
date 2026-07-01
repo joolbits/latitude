@@ -1,8 +1,8 @@
 # Changelog
 
-## Latitude 2.0 — Cohesive Horizons (MC 26.1.2)
+## Latitude 2.0 — Longitude (MC 26.1.2)
 
-Latitude 2.0 "Cohesive Horizons" is a worldgen-quality and compatibility release. It makes the climate map read like a coherent, Earth-like world, adds first-class support for custom biome mods, and introduces the Mercator world shape — a wider, 2:1 world with more room for every latitude band. (Bumped from 1.4 to 2.0: Mercator is a new world type, not a tweak, and the custom-biome integration + geography-law overhaul below are each substantial on their own; the version number also cleanly separates this tested release from the accidental partial `1.4` push to GitHub.)
+Latitude 2.0 "Longitude" is a worldgen-quality and compatibility release. It makes the climate map read like a coherent, Earth-like world, adds first-class support for custom biome mods, and introduces the Mercator world shape — a wider, 2:1 world with more room for every latitude band (and, fittingly, the mod's first real reason to care about the east-west axis). (Bumped from 1.4 to 2.0: Mercator is a new world type, not a tweak, and the custom-biome integration + geography-law overhaul below are each substantial on their own; the version number also cleanly separates this tested release from the accidental partial `1.4` push to GitHub.)
 
 ### Custom biome support
 - Custom biomes from other mods and datapacks (Biomes O' Plenty, Terralith, Promenade, and similar) can now be slotted into the latitude bands through the `globe:lat_*` biome tags.

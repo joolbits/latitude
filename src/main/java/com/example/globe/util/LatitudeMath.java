@@ -167,6 +167,31 @@ public final class LatitudeMath {
         return deg + "\u00b0" + hemi;
     }
 
+    // --- Longitude (2.0 "Longitude" release) ---
+    // West = negative X, East = positive X (matches vanilla F3's "Towards negative X (West)" convention and
+    // the existing /latdev tpedge west/east mapping). Measured against halfSize(border) \u2014 the X/border
+    // radius \u2014 which is ALREADY the correct radius on both Classic (== Z radius) and Mercator (== 2x Z
+    // radius) worlds, so this needs no shape branching. 0 at the world's center X, 180 at the E/W border.
+    public static char hemisphereEW(WorldBorder border, double x) {
+        double centerX = border != null ? border.getCenterX() : 0.0;
+        return x < centerX ? 'W' : 'E';
+    }
+
+    public static int longitudeDegrees(WorldBorder border, double x) {
+        double half = halfSize(border);
+        if (half <= 0.0) return 0;
+        double norm = Mth.clamp(Math.abs(x) / half, 0.0, 1.0);
+        int deg = (int) Math.round(norm * 180.0);
+        return Mth.clamp(deg, 0, 180);
+    }
+
+    public static String formatLongitudeDeg(WorldBorder border, double x) {
+        int deg = longitudeDegrees(border, x);
+        if (deg == 0) return "0\u00b0";
+        char hemi = hemisphereEW(border, x);
+        return deg + "\u00b0" + hemi;
+    }
+
     public static LatitudeZone zoneForDeg(int deg) {
         if (deg < EQUATOR_MAX_DEG) return LatitudeZone.EQUATOR;
         if (deg < TROPICAL_MAX_DEG) return LatitudeZone.TROPICAL;

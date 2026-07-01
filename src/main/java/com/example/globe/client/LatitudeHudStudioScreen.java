@@ -52,6 +52,8 @@ public class LatitudeHudStudioScreen extends Screen {
     private AbstractWidget wCompassTextColor;
     private AbstractWidget wCompassShowLatitude;
     private AbstractWidget wCompassAnalogShowLatitude;
+    private AbstractWidget wCompassShowLongitude;
+    private AbstractWidget wCompassAnalogShowLongitude;
     private AbstractWidget wCompassCompact;
     private AbstractWidget wCompassAttachHotbar;
     private AbstractWidget wZoneDisplay;
@@ -104,6 +106,8 @@ public class LatitudeHudStudioScreen extends Screen {
         this.wCompassTextColor = null;
         this.wCompassShowLatitude = null;
         this.wCompassAnalogShowLatitude = null;
+        this.wCompassShowLongitude = null;
+        this.wCompassAnalogShowLongitude = null;
         this.wCompassCompact = null;
         this.wCompassAttachHotbar = null;
         this.wZoneDisplay = null;
@@ -203,12 +207,26 @@ public class LatitudeHudStudioScreen extends Screen {
             tooltip(this.wCompassAnalogShowLatitude, "Shows latitude next to the analog compass.");
             trackSidebarWidget(this.wCompassAnalogShowLatitude, y);
             y += rowH + rowGap;
+
+            this.wCompassAnalogShowLongitude = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "ON" : "OFF"), () -> Boolean.TRUE.equals(cfg.analogShowLongitude))
+                    .withValues(true, false)
+                    .create(panelX, y, widgetW, rowH, Component.literal("Analog Longitude"), (btn, value) -> cfg.analogShowLongitude = value));
+            tooltip(this.wCompassAnalogShowLongitude, "Shows longitude next to the analog compass.");
+            trackSidebarWidget(this.wCompassAnalogShowLongitude, y);
+            y += rowH + rowGap;
         } else {
             this.wCompassShowLatitude = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "ON" : "OFF"), () -> Boolean.TRUE.equals(cfg.showLatitude))
                     .withValues(true, false)
                     .create(panelX, y, widgetW, rowH, Component.literal("Show Latitude"), (btn, value) -> cfg.showLatitude = value));
             tooltip(this.wCompassShowLatitude, "Shows latitude inside the digital compass line.");
             trackSidebarWidget(this.wCompassShowLatitude, y);
+            y += rowH + rowGap;
+
+            this.wCompassShowLongitude = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "ON" : "OFF"), () -> Boolean.TRUE.equals(cfg.showLongitude))
+                    .withValues(true, false)
+                    .create(panelX, y, widgetW, rowH, Component.literal("Show Longitude"), (btn, value) -> cfg.showLongitude = value));
+            tooltip(this.wCompassShowLongitude, "Shows longitude inside the digital compass line.");
+            trackSidebarWidget(this.wCompassShowLongitude, y);
             y += rowH + rowGap;
 
             this.wCompassCompact = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "ON" : "OFF"), () -> cfg.compactHud)
@@ -579,6 +597,8 @@ public class LatitudeHudStudioScreen extends Screen {
         setVisible(wCompassTextColor, showCompassControls);
         setVisible(wCompassShowLatitude, showCompassControls && !analog);
         setVisible(wCompassAnalogShowLatitude, showCompassControls && analog);
+        setVisible(wCompassShowLongitude, showCompassControls && !analog);
+        setVisible(wCompassAnalogShowLongitude, showCompassControls && analog);
         setVisible(wCompassCompact, showCompassControls && !analog);
         setVisible(wCompassAttachHotbar, showCompassControls && !analog);
         setVisible(wZoneDisplay, showCompassControls);
@@ -626,6 +646,8 @@ public class LatitudeHudStudioScreen extends Screen {
         cfg.showLatitude = true;
         cfg.analogShowLatitude = true;
         cfg.latitudeDecimals = 0;
+        cfg.showLongitude = true;
+        cfg.analogShowLongitude = true;
         cfg.attachToHotbarCompass = false;
         cfg.compactHud = false;
         cfg.displayZoneInHud = false;

@@ -322,6 +322,8 @@ public class LatitudeSettingsScreen extends Screen {
         cfg.showLatitude = true;
         cfg.analogShowLatitude = true;
         cfg.latitudeDecimals = 0;
+        cfg.showLongitude = true;
+        cfg.analogShowLongitude = true;
         cfg.attachToHotbarCompass = false;
         cfg.compactHud = false;
         cfg.displayZoneInHud = false;
