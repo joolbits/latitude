@@ -29,6 +29,9 @@ public final class LatitudePlanisphereRenderer {
     };
 
     private static final int OCEAN_COLOR = 0xFF162A3F;
+    // Muted map-land tones for the continent outline drawn under the (now translucent) climate bands.
+    private static final int LAND_COLOR = 0xFF4E6B41;
+    private static final int LAND_COLOR_2 = 0xFF5A7049;
     private static final int GOLD = 0xFFD4A74A;
     private static final int MUTED = 0xFF8C8078;
     private static final int GRID_COLOR = 0x60FFFFFF; // semi-transparent white for latitude lines
@@ -303,10 +306,17 @@ public final class LatitudePlanisphereRenderer {
         // (bands vary along the vertical/latitude axis in both shapes), only the horizontal extent (halfW)
         // differs between the two world shapes.
 
+        int left = cx - halfW, top = cy - halfH, right = cx + halfW, bottom = cy + halfH;
+
         // ── Ocean base ──
         fillRect(context, cx, cy, halfW, halfH, OCEAN_COLOR);
 
-        // ── Band fills ──
+        // ── Continent outline ── stylized landmasses so the latitude bands read as a climate overlay on a
+        // world map (not a flag). Deterministic blobs positioned by fraction of the atlas, clipped to bounds;
+        // scales with both shapes (Peetsa TEST 4 A1).
+        drawContinents(context, cx, cy, halfW, halfH, left, top, right, bottom);
+
+        // ── Latitude bands as a TRANSLUCENT climate wash over ocean + land ──
         LatitudeBands.Band[] bands = LatitudeBands.Band.values();
         for (int i = 0; i < bands.length; i++) {
             LatitudeBands.Band band = bands[i];
@@ -315,12 +325,12 @@ public final class LatitudePlanisphereRenderer {
 
             int fillColor;
             if (selected) {
-                int r = Math.min(255, (int) (((baseColor >> 16) & 0xFF) * 1.25f));
-                int g = Math.min(255, (int) (((baseColor >> 8) & 0xFF) * 1.25f));
-                int b = Math.min(255, (int) ((baseColor & 0xFF) * 1.25f));
-                fillColor = 0xFF000000 | (r << 16) | (g << 8) | b;
+                int r = Math.min(255, (int) (((baseColor >> 16) & 0xFF) * 1.30f));
+                int g = Math.min(255, (int) (((baseColor >> 8) & 0xFF) * 1.30f));
+                int b = Math.min(255, (int) ((baseColor & 0xFF) * 1.30f));
+                fillColor = (0xC0 << 24) | (r << 16) | (g << 8) | b;   // selected band: strong, still translucent
             } else {
-                fillColor = (baseColor & 0x00FFFFFF) | (0x8C << 24);
+                fillColor = (baseColor & 0x00FFFFFF) | (0x4E << 24);   // others: light wash so land shows through
             }
 
             int yLow  = (int) (halfH * band.lowDeg()  / 90.0);
@@ -330,13 +340,77 @@ public final class LatitudePlanisphereRenderer {
             fillBandStripRect(context, cx, cy, halfW, -yHigh, -yLow, fillColor);
         }
 
-        // ── Gold outline on selected band edges ── (the "spawn zone highlight": a brightened stripe + these
-        // edge lines)
+        // ── Faint graticule at each band boundary + equator (map look) ──
+        for (LatitudeBands.Band band : bands) {
+            int yb = (int) (halfH * band.highDeg() / 90.0);
+            drawLatitudeLineRect(context, cx, cy, halfW,  yb, GRID_COLOR);
+            drawLatitudeLineRect(context, cx, cy, halfW, -yb, GRID_COLOR);
+        }
+        drawLatitudeLineRect(context, cx, cy, halfW, 0, GRID_COLOR);
+
+        // ── Gold outline on the selected band's edges (spawn-zone highlight) ──
         int selLow  = (int) (halfH * selectedBand.lowDeg()  / 90.0);
         int selHigh = (int) (halfH * selectedBand.highDeg() / 90.0);
         drawLatitudeLineRect(context, cx, cy, halfW,  selLow,  GOLD);
         drawLatitudeLineRect(context, cx, cy, halfW,  selHigh, GOLD);
         drawLatitudeLineRect(context, cx, cy, halfW, -selLow,  GOLD);
         drawLatitudeLineRect(context, cx, cy, halfW, -selHigh, GOLD);
+    }
+
+    // A handful of deterministic elliptical landmasses, positioned/sized by fraction of the atlas half-extents
+    // and clipped to the atlas rectangle. Intentionally simple — a suggestive continent silhouette under the
+    // climate wash, consistent for both world shapes.
+    // Parchment map frame around the atlas. NOTE (Peetsa TEST 4 A1): the intent is the VANILLA
+    // minecraft:textures/map/map_background texture; the blit is GuiGraphicsExtractor.drawTexture(RenderPipeline,
+    // Identifier, x, y, u, v, w, h, texW, texH) — but the RenderPipelines.GUI_TEXTURED constant's package in
+    // this mapping isn't resolvable offline (yarn's net.minecraft.client.gl doesn't exist here). Until that's
+    // confirmed live, draw a parchment-toned border so the atlas is still framed; swapping to the real texture
+    // is then a one-line change in this method.
+    private static final int FRAME_PARCHMENT = 0xFFC8B78E;
+    private static final int FRAME_INK = 0xFF3A2E1E;
+
+    public static void drawAtlasFrame(GuiGraphicsExtractor ctx, int atlasLeft, int atlasTop, int atlasW, int atlasH) {
+        int border = Math.max(3, Math.min(atlasW, atlasH) / 12);
+        int fx = atlasLeft - border, fy = atlasTop - border;
+        int fw = atlasW + border * 2, fh = atlasH + border * 2;
+        // Parchment field behind the atlas (its center is covered when the atlas draws on top).
+        ctx.fill(fx, fy, fx + fw, fy + fh, FRAME_PARCHMENT);
+        drawFrameOutline(ctx, fx, fy, fw, fh);                                   // outer ink edge
+        drawFrameOutline(ctx, atlasLeft - 2, atlasTop - 2, atlasW + 4, atlasH + 4); // inner ink edge hugging the map
+    }
+
+    private static void drawFrameOutline(GuiGraphicsExtractor ctx, int x, int y, int w, int h) {
+        ctx.fill(x, y, x + w, y + 1, FRAME_INK);
+        ctx.fill(x, y + h - 1, x + w, y + h, FRAME_INK);
+        ctx.fill(x, y, x + 1, y + h, FRAME_INK);
+        ctx.fill(x + w - 1, y, x + w, y + h, FRAME_INK);
+    }
+
+    private static void drawContinents(GuiGraphicsExtractor ctx, int cx, int cy, int halfW, int halfH,
+                                       int clipL, int clipT, int clipR, int clipB) {
+        fillEllipse(ctx, cx + (int) (-0.45 * halfW), cy + (int) (-0.38 * halfH),
+                (int) (0.42 * halfW), (int) (0.30 * halfH), LAND_COLOR, clipL, clipT, clipR, clipB);
+        fillEllipse(ctx, cx + (int) (0.40 * halfW), cy + (int) (-0.05 * halfH),
+                (int) (0.34 * halfW), (int) (0.26 * halfH), LAND_COLOR_2, clipL, clipT, clipR, clipB);
+        fillEllipse(ctx, cx + (int) (-0.22 * halfW), cy + (int) (0.46 * halfH),
+                (int) (0.30 * halfW), (int) (0.22 * halfH), LAND_COLOR, clipL, clipT, clipR, clipB);
+        fillEllipse(ctx, cx + (int) (0.56 * halfW), cy + (int) (0.52 * halfH),
+                (int) (0.18 * halfW), (int) (0.15 * halfH), LAND_COLOR_2, clipL, clipT, clipR, clipB);
+    }
+
+    private static void fillEllipse(GuiGraphicsExtractor ctx, int ecx, int ecy, int erx, int ery, int color,
+                                    int clipL, int clipT, int clipR, int clipB) {
+        if (erx <= 0 || ery <= 0) return;
+        for (int dy = -ery; dy <= ery; dy++) {
+            double fy = (double) dy / ery;
+            double f = 1.0 - fy * fy;
+            if (f <= 0) continue;
+            int hw = (int) (Math.sqrt(f) * erx);
+            int y = ecy + dy;
+            if (y < clipT || y >= clipB) continue;
+            int x1 = Math.max(clipL, ecx - hw);
+            int x2 = Math.min(clipR, ecx + hw);
+            if (x2 > x1) ctx.fill(x1, y, x2, y + 1, color);
+        }
     }
 }

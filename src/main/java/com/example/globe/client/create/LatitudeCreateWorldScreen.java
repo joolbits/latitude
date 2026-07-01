@@ -1338,6 +1338,8 @@ public class LatitudeCreateWorldScreen extends Screen {
             return;
         }
 
+        LatitudePlanisphereRenderer.drawAtlasFrame(context,
+                layout.globeLeft, layout.globeTop, layout.globeWidth, layout.globeHeight);
         LatitudePlanisphereRenderer.renderCompact(context,
                 layout.globeLeft,
                 layout.globeTop,
@@ -1466,17 +1468,28 @@ public class LatitudeCreateWorldScreen extends Screen {
     }
 
     private int[] computePreviewLabelYs(int globeCenterY, int radius, int labelHeight) {
-        int[] labelYs = new int[PREVIEW_LABEL_DEGREES.length];
-        for (int i = 0; i < PREVIEW_LABEL_DEGREES.length; i++) {
-            double deg = PREVIEW_LABEL_DEGREES[i];
-            int yOff = (int) Math.round(radius * deg / 90.0);
+        int n = PREVIEW_LABEL_DEGREES.length;
+        int[] labelYs = new int[n];
+        for (int i = 0; i < n; i++) {
+            int yOff = (int) Math.round(radius * PREVIEW_LABEL_DEGREES[i] / 90.0);
             labelYs[i] = globeCenterY + yOff - labelHeight / 2;
         }
 
-        int minGap = isTinyPreview(selectedSize) ? Math.max(labelHeight, 9) : Math.max(labelHeight - 1, 7);
-        for (int i = 1; i < labelYs.length; i++) {
+        // De-collide downward so labels never overlap...
+        int minGap = isTinyPreview(selectedSize) ? Math.max(labelHeight + 1, 9) : Math.max(labelHeight, 8);
+        for (int i = 1; i < n; i++) {
             if (labelYs[i] < labelYs[i - 1] + minGap) {
                 labelYs[i] = labelYs[i - 1] + minGap;
+            }
+        }
+        // ...then, if the cascade pushed the bottom label past the atlas bottom edge, slide the whole column
+        // up by the overflow so the labels stay tidily WITHIN the atlas height instead of spilling below it
+        // (TEST 4 A3: "latitudes are super crammed"). The column stays aligned to its lines where there's room.
+        int atlasBottom = globeCenterY + radius;
+        int overflow = (labelYs[n - 1] + labelHeight) - atlasBottom;
+        if (overflow > 0) {
+            for (int i = 0; i < n; i++) {
+                labelYs[i] -= overflow;
             }
         }
         return labelYs;
