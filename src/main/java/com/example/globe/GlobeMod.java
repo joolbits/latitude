@@ -271,13 +271,21 @@ public class GlobeMod implements ModInitializer {
             LOGGER.info("[Latitude] Recorded Globe world: border radius {} (from create-world selection)", pendingRadius);
         }
 
-        // World shape: NEW Globe worlds are always Mercator (2:1) — there is no user choice. Pre-existing /
-        // legacy saves have no persisted globe_shape (deserialize to "classic") and are NOT touched, so they
-        // stay square (legacy-worldgen-policy-pin). gameTime < 100 is the established "brand-new world" signal
-        // (mirrors the radius + worldgen-policy consume above).
+        // World shape: NEW Globe worlds default to Mercator (2:1) unless the create-world screen's shape
+        // toggle explicitly requested Legacy 1:1 (GlobePending.pendingGlobeShape). Pre-existing / legacy saves
+        // have no persisted globe_shape (deserialize to "classic") and are NOT touched, so they stay square
+        // (legacy-worldgen-policy-pin). gameTime < 100 is the established "brand-new world" signal (mirrors
+        // the radius + worldgen-policy consume above).
+        String pendingShape = GlobePending.pendingGlobeShape;
+        GlobePending.pendingGlobeShape = null;
         if (world.getGameTime() < 100L && "classic".equals(worldState.getGlobeShape())) {
-            worldState.setGlobeShape("mercator");
-            LOGGER.info("[Latitude] New Globe world: shape=mercator (2:1 default)");
+            if (pendingShape != null) {
+                worldState.setGlobeShape(pendingShape);
+                LOGGER.info("[Latitude] New Globe world: shape={} (from create-world selection)", pendingShape);
+            } else {
+                worldState.setGlobeShape("mercator");
+                LOGGER.info("[Latitude] New Globe world: shape=mercator (2:1 default, no explicit selection)");
+            }
         }
         // Ensure the live cache reflects the persisted shape before the border is sized (covers existing worlds).
         LatitudeBiomes.setGlobeShape(LatitudeBiomes.shapeFromString(worldState.getGlobeShape()));

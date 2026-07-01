@@ -3,6 +3,7 @@ package com.example.globe.client.create;
 import com.example.globe.client.GlobeWorldSize;
 import com.example.globe.client.LatitudeHudStudioScreen;
 import com.example.globe.util.LatitudeBands;
+import com.example.globe.world.LatitudeBiomes;
 import net.minecraft.ChatFormatting;
 import net.minecraft.SharedConstants;
 import net.minecraft.client.Minecraft;
@@ -111,6 +112,12 @@ public class LatitudeCreateWorldScreen extends Screen {
     // ── World type constants ──
     private static final String[] WORLD_TYPE_NAMES = { "Latitude", "Vanilla", "Vanilla Superflat" };
     private static final int[] WORLD_TYPE_COLORS = { GOLD, WARM_WHITE, MUTED };
+
+    // ── World shape constants (2.0 "Longitude" release) ──
+    // Index 0 = Mercator (the current forced default for every new world; MUST stay index 0 so
+    // worldShapeIdx=0 preserves today's behavior for anyone who never touches this toggle).
+    private static final String[] WORLD_SHAPE_NAMES = { "Mercator 2:1", "Legacy 1:1" };
+    private static final int[] WORLD_SHAPE_COLORS = { GOLD, MUTED };
     private static final int DISABLED_COLOR = 0xFF605850;
     private static final boolean DEBUG_UI_SWITCH_LAG = Boolean.getBoolean("latitude.debug.uiSwitchLag");
 
@@ -128,6 +135,7 @@ public class LatitudeCreateWorldScreen extends Screen {
     private boolean bonusChest = false;
     private boolean generateStructures = true;
     private int worldTypeIdx = 0;  // 0=Latitude, 1=Vanilla, 2=Vanilla Superflat
+    private int worldShapeIdx = 0;  // 0=Mercator 2:1 (default), 1=Legacy 1:1
     private GameRules gameRules;
 
     private String worldNameInput = "New World";
@@ -144,6 +152,8 @@ public class LatitudeCreateWorldScreen extends Screen {
     private Button structuresBtn;
     private Button worldTypePrevBtn;
     private Button worldTypeNextBtn;
+    private Button worldShapePrevBtn;
+    private Button worldShapeNextBtn;
     private Button modePrevBtn;
     private Button modeNextBtn;
     private Button gameRulesBtn;
@@ -198,6 +208,7 @@ public class LatitudeCreateWorldScreen extends Screen {
     private int settingsContentHeight;
     private int menuScaleRowY;
     private int worldTypeRowY;
+    private int worldShapeRowY;
     private int modeRowY;
     private int commandsRowY;
     private int compassRowY;
@@ -425,6 +436,12 @@ public class LatitudeCreateWorldScreen extends Screen {
             worldTypeNextBtn = Button.builder(Component.literal("\u25B6"), b -> cycleWorldType(1))
                     .bounds(settBtnX + settBtnW - 20, panelTop, 20, btnH)
                     .build();
+            worldShapePrevBtn = Button.builder(Component.literal("\u25C0"), b -> cycleWorldShape(-1))
+                    .bounds(settBtnX, panelTop, 20, btnH)
+                    .build();
+            worldShapeNextBtn = Button.builder(Component.literal("\u25B6"), b -> cycleWorldShape(1))
+                    .bounds(settBtnX + settBtnW - 20, panelTop, 20, btnH)
+                    .build();
             modePrevBtn = Button.builder(Component.literal("\u25C0"), b -> cycleMode(-1))
                     .bounds(settBtnX, panelTop, 20, btnH)
                     .build();
@@ -437,6 +454,8 @@ public class LatitudeCreateWorldScreen extends Screen {
             }).bounds(settBtnX, panelTop, settBtnW, btnH).build();
             this.addRenderableWidget(worldTypePrevBtn);
             this.addRenderableWidget(worldTypeNextBtn);
+            this.addRenderableWidget(worldShapePrevBtn);
+            this.addRenderableWidget(worldShapeNextBtn);
             this.addRenderableWidget(modePrevBtn);
             this.addRenderableWidget(modeNextBtn);
             this.addRenderableWidget(commandsBtn);
@@ -532,6 +551,13 @@ public class LatitudeCreateWorldScreen extends Screen {
             long elapsed = Util.getMillis() - t0;
             LOGGER.info("[lat-ui] switchLag seq={} worldType={} handler_ms={}", debugSwitchSeq, currentWorldTypeName(), elapsed);
         }
+    }
+
+    private void cycleWorldShape(int delta) {
+        worldShapeIdx = (worldShapeIdx + delta + WORLD_SHAPE_NAMES.length) % WORLD_SHAPE_NAMES.length;
+        // Unlike cycleMode, this MUST re-run the World-pane layout: changing shape changes worldDimsLabel()'s
+        // output and the atlas preview's aspect (circle vs rectangle), both computed by updateLeftLayout().
+        updateLeftLayout();
     }
 
     private boolean isLatitudeWorld() {
@@ -783,7 +809,7 @@ public class LatitudeCreateWorldScreen extends Screen {
     }
 
     private void updateSettingsLayout() {
-        if (worldTypePrevBtn == null || worldTypeNextBtn == null || modePrevBtn == null || modeNextBtn == null || commandsBtn == null || compassBtn == null || structuresBtn == null || bonusChestBtn == null || gameRulesBtn == null || hudStudioBtn == null) {
+        if (worldTypePrevBtn == null || worldTypeNextBtn == null || worldShapePrevBtn == null || worldShapeNextBtn == null || modePrevBtn == null || modeNextBtn == null || commandsBtn == null || compassBtn == null || structuresBtn == null || bonusChestBtn == null || gameRulesBtn == null || hudStudioBtn == null) {
             settingsViewportTop = 0;
             settingsViewportBottom = 0;
             settingsContentHeight = 0;
@@ -802,7 +828,9 @@ public class LatitudeCreateWorldScreen extends Screen {
         int blockHeight = labelGap + btnH;
         // Leave a little trailing room so the HUD Studio row can scroll fully into view
         // on short windows instead of sitting flush against the viewport edge.
-        settingsContentHeight = blockHeight * 8 + rowGap * 7 + scaledUi(12);
+        // 9 rows: World Type, World Shape, Game Mode, Commands, Starting Compass, Generate Structures,
+        // Bonus Chest, Game Rules, HUD Studio.
+        settingsContentHeight = blockHeight * 9 + rowGap * 8 + scaledUi(12);
         int maxScroll = Math.max(0, settingsContentHeight - viewportHeight);
         if (settingsScroll < 0) settingsScroll = 0;
         if (settingsScroll > maxScroll) settingsScroll = maxScroll;
@@ -810,6 +838,10 @@ public class LatitudeCreateWorldScreen extends Screen {
         int y = contentTop - settingsScroll + labelGap;
         worldTypeRowY = y;
         positionSettingsStepper(worldTypePrevBtn, worldTypeNextBtn, settBtnX, settBtnW, y, btnH);
+
+        y += btnH + rowGap + labelGap;
+        worldShapeRowY = y;
+        positionSettingsStepper(worldShapePrevBtn, worldShapeNextBtn, settBtnX, settBtnW, y, btnH);
 
         y += btnH + rowGap + labelGap;
         modeRowY = y;
@@ -857,6 +889,8 @@ public class LatitudeCreateWorldScreen extends Screen {
         boolean showRules = activeTab == 2;
         setTabbedWidgetVisible(worldTypePrevBtn, showRules);
         setTabbedWidgetVisible(worldTypeNextBtn, showRules);
+        setTabbedWidgetVisible(worldShapePrevBtn, showRules);
+        setTabbedWidgetVisible(worldShapeNextBtn, showRules);
         setTabbedWidgetVisible(modePrevBtn, showRules);
         setTabbedWidgetVisible(modeNextBtn, showRules);
         setTabbedWidgetVisible(commandsBtn, showRules);
@@ -931,7 +965,7 @@ public class LatitudeCreateWorldScreen extends Screen {
         Difficulty difficulty = hardcore ? Difficulty.HARD : Difficulty.NORMAL;
 
         LatitudeWorldLauncher.beginExpedition(this.minecraft, this, this.holder,
-                worldName, seed, this.selectedSize, this.selectedZone,
+                worldName, seed, this.selectedSize, this.selectedZone, currentWorldShape(),
                 gameMode, hardcore, difficulty, allowCommands, startWithCompass, bonusChest,
                 generateStructures, this.gameRules, this.worldTypeIdx);
     }
@@ -1120,7 +1154,7 @@ public class LatitudeCreateWorldScreen extends Screen {
         context.fill(leftX + 4, separatorY, leftX + leftW - 4 - SCROLLBAR_GUTTER, separatorY + 1, PANEL_BORDER);
         boolean latWorld = isLatitudeWorld();
         int planisphereLabelY = leftPreviewTopY - uiFontHeight() - scaledUi(6);
-        drawCenteredBoundedText(context, "PLANISPHERE", new UiRect(leftX + 4, planisphereLabelY, leftTextWidth, uiFontHeight()), latWorld ? GOLD : DISABLED_COLOR, false, true);
+        drawCenteredBoundedText(context, "ATLAS", new UiRect(leftX + 4, planisphereLabelY, leftTextWidth, uiFontHeight()), latWorld ? GOLD : DISABLED_COLOR, false, true);
         if (leftPreviewBottomY - leftPreviewTopY >= 30) {
             if (latWorld) {
                 renderPlanispherePreview(context, leftX + 4, leftPreviewTopY, leftX + leftW - 4 - SCROLLBAR_GUTTER, leftPreviewBottomY);
@@ -1212,6 +1246,8 @@ public class LatitudeCreateWorldScreen extends Screen {
             }
             drawSettingsRowLabel(context, "World Type", settLabelX, worldTypeRowY, MUTED);
             drawSettingsStepperValue(context, WORLD_TYPE_NAMES[worldTypeIdx], WORLD_TYPE_COLORS[worldTypeIdx], worldTypeRowY);
+            drawSettingsRowLabel(context, "World Shape", settLabelX, worldShapeRowY, MUTED);
+            drawSettingsStepperValue(context, WORLD_SHAPE_NAMES[worldShapeIdx], WORLD_SHAPE_COLORS[worldShapeIdx], worldShapeRowY);
             drawSettingsRowLabel(context, "Game Mode", settLabelX, modeRowY, MUTED);
             drawSettingsStepperValue(context, MODE_NAMES[selectedModeIdx], MODE_COLORS[selectedModeIdx], modeRowY);
             drawSettingsRowLabel(context, "Commands", settLabelX, commandsRowY, MUTED);
@@ -1234,7 +1270,7 @@ public class LatitudeCreateWorldScreen extends Screen {
     private void renderSizeLabel(GuiGraphicsExtractor context, int x, int y, int availW) {
         int idx = selectedSize.ordinal();
         String shortName = SIZE_SHORT_NAMES[idx];
-        String diameter = mercatorDimsLabel();
+        String diameter = worldDimsLabel();
         String desc = SIZE_DESCRIPTIONS[idx];
 
         drawCenteredBoundedText(context, shortName, new UiRect(x, y, availW, uiFontHeight()), WARM_WHITE, true, true);
@@ -1250,7 +1286,7 @@ public class LatitudeCreateWorldScreen extends Screen {
 
     private void renderPlanispherePreview(GuiGraphicsExtractor context, int areaLeft, int areaTop, int areaRight, int areaBottom) {
         long dbgStart = DEBUG_UI_SWITCH_LAG ? Util.getMillis() : 0L;
-        String caption = mercatorDimsLabel();
+        String caption = worldDimsLabel();
         float labelScale = previewLabelScale(selectedSize);
         float captionScale = previewCaptionScale(selectedSize);
         int labelHeight = scaledFontHeight(labelScale);
@@ -1260,17 +1296,21 @@ public class LatitudeCreateWorldScreen extends Screen {
             maxLabelWidth = Math.max(maxLabelWidth, scaledTextWidth(formatDegree(deg), labelScale));
         }
 
+        LatitudeBiomes.GlobeShape shape = currentWorldShape();
+        // A Mercator globe is MERCATOR_ASPECT times as wide as it is tall for the same radius, so the
+        // width-derived radius budget must shrink by that same factor (a Legacy square keeps the old /2).
+        double widthDivisor = shape == LatitudeBiomes.GlobeShape.MERCATOR ? 2.0 * LatitudeBiomes.MERCATOR_ASPECT : 2.0;
         int labelPad = isTinyPreview(selectedSize) ? scaledUi(10) : scaledUi(8);
         int rightPadding = scaledUi(8);
         int captionGap = Math.max(6, captionHeight / 2);
-        int maxRadiusByWidth = Math.max(18, (areaRight - areaLeft - maxLabelWidth - labelPad - rightPadding) / 2);
+        int maxRadiusByWidth = Math.max(18, (int) ((areaRight - areaLeft - maxLabelWidth - labelPad - rightPadding) / widthDivisor));
         int maxRadiusByHeight = Math.max(18, (areaBottom - areaTop - captionHeight - captionGap) / 2);
         int radius = Math.round(Math.min(maxRadiusByWidth, maxRadiusByHeight) * previewDiscFill(selectedSize));
         radius = Math.max(18, radius);
 
         PreviewLayout layout = null;
         while (radius >= 18) {
-            layout = computePreviewLayout(areaLeft, areaTop, areaRight, areaBottom, radius, labelScale, captionScale, caption);
+            layout = computePreviewLayout(areaLeft, areaTop, areaRight, areaBottom, radius, labelScale, captionScale, caption, shape);
             if (layout != null) {
                 break;
             }
@@ -1283,8 +1323,10 @@ public class LatitudeCreateWorldScreen extends Screen {
         LatitudePlanisphereRenderer.renderCompact(context,
                 layout.globeLeft,
                 layout.globeTop,
-                layout.globeDiameter,
-                selectedZone);
+                layout.globeWidth,
+                layout.globeHeight,
+                selectedZone,
+                shape);
 
         for (int i = 0; i < PREVIEW_LABEL_DEGREES.length; i++) {
             double deg = PREVIEW_LABEL_DEGREES[i];
@@ -1361,22 +1403,29 @@ public class LatitudeCreateWorldScreen extends Screen {
     }
 
     private PreviewLayout computePreviewLayout(int areaLeft, int areaTop, int areaRight, int areaBottom,
-                                               int radius, float labelScale, float captionScale, String caption) {
-        int globeDiameter = radius * 2;
+                                               int radius, float labelScale, float captionScale, String caption,
+                                               LatitudeBiomes.GlobeShape shape) {
+        // globeHeight (N-S) is always driven by radius, same meaning in both shapes. globeWidth (E-W) matches
+        // it 1:1 for a Legacy square, or widens by MERCATOR_ASPECT for a Mercator rectangle — mirroring the
+        // real world's own getActiveXRadiusBlocks() relationship between the X and Z radii.
+        int globeHeight = radius * 2;
+        int globeWidth = shape == LatitudeBiomes.GlobeShape.MERCATOR
+                ? (int) Math.round(globeHeight * LatitudeBiomes.MERCATOR_ASPECT)
+                : globeHeight;
         int labelWidth = 0;
         for (double deg : PREVIEW_LABEL_DEGREES) {
             labelWidth = Math.max(labelWidth, scaledTextWidth(formatDegree(deg), labelScale));
         }
         int labelPad = Math.max(8, Math.round(radius * 0.10f));
         int rightPadding = 8;
-        int compositionWidth = globeDiameter + labelPad + labelWidth + rightPadding;
+        int compositionWidth = globeWidth + labelPad + labelWidth + rightPadding;
         if (compositionWidth > areaRight - areaLeft) {
             return null;
         }
 
         int captionHeight = scaledFontHeight(captionScale);
         int captionGap = Math.max(6, Math.round(radius * 0.10f));
-        int compositionHeight = globeDiameter + captionGap + captionHeight;
+        int compositionHeight = globeHeight + captionGap + captionHeight;
         if (compositionHeight > areaBottom - areaTop) {
             return null;
         }
@@ -1385,17 +1434,17 @@ public class LatitudeCreateWorldScreen extends Screen {
         int globeLeft = compositionLeft;
         int globeTop = areaTop + (areaBottom - areaTop - compositionHeight) / 2;
         int globeCenterY = globeTop + radius;
-        int labelX = globeLeft + globeDiameter + labelPad;
+        int labelX = globeLeft + globeWidth + labelPad;
         int labelHeight = scaledFontHeight(labelScale);
         int[] labelYs = computePreviewLabelYs(globeCenterY, radius, labelHeight);
         int lastLabelBottom = labelYs[labelYs.length - 1] + labelHeight;
-        int captionY = Math.max(globeTop + globeDiameter + captionGap, lastLabelBottom + 4);
+        int captionY = Math.max(globeTop + globeHeight + captionGap, lastLabelBottom + 4);
         if (captionY + captionHeight > areaBottom) {
             return null;
         }
 
         int captionX = compositionLeft + (compositionWidth - scaledTextWidth(caption, captionScale)) / 2;
-        return new PreviewLayout(globeLeft, globeTop, globeDiameter, labelX, labelYs, captionX, captionY, labelScale, captionScale);
+        return new PreviewLayout(globeLeft, globeTop, globeWidth, globeHeight, labelX, labelYs, captionX, captionY, labelScale, captionScale);
     }
 
     private int[] computePreviewLabelYs(int globeCenterY, int radius, int labelHeight) {
@@ -1836,12 +1885,23 @@ public class LatitudeCreateWorldScreen extends Screen {
         return String.format(Locale.ROOT, "%,d", diameter);
     }
 
-    /** World extent label, honest about the Mercator 2:1 shape: E-W spans 4x the latitude radius (the border
-     *  = 2*xRadius = 4*zRadius) and N-S spans 2x, so a Tiny world reads "20,000 × 10,000 blocks" — matching
-     *  the in-game "world border is 20000 wide" message instead of only showing the 10,000 N-S figure. */
-    private String mercatorDimsLabel() {
+    /** Single source of truth for "which shape is this screen about to create," derived from worldShapeIdx.
+     *  Every consumer (the dims label, the atlas preview layout/render, and the beginExpedition call) branches
+     *  off this instead of duplicating the index-to-enum mapping. */
+    private LatitudeBiomes.GlobeShape currentWorldShape() {
+        return worldShapeIdx == 0 ? LatitudeBiomes.GlobeShape.MERCATOR : LatitudeBiomes.GlobeShape.CLASSIC;
+    }
+
+    /** World extent label, honest about whichever shape is currently selected: Mercator's E-W spans 4x the
+     *  latitude radius (the border = 2*xRadius = 4*zRadius) and N-S spans 2x, so a Tiny Mercator world reads
+     *  "20,000 × 10,000 blocks" — matching the in-game "world border is 20000 wide" message. Legacy 1:1 is a
+     *  true square, both axes = 2x the radius (matching getActiveXRadiusBlocks() == zRadius for CLASSIC). */
+    private String worldDimsLabel() {
         int z = selectedSize.borderRadiusBlocks;
-        return formatDiameter(z * 4) + " × " + formatDiameter(z * 2) + " blocks";
+        if (currentWorldShape() == LatitudeBiomes.GlobeShape.MERCATOR) {
+            return formatDiameter(z * 4) + " × " + formatDiameter(z * 2) + " blocks";
+        }
+        return formatDiameter(z * 2) + " × " + formatDiameter(z * 2) + " blocks";
     }
 
     // ══════════════════════════════════════════════════════════════
@@ -1851,7 +1911,8 @@ public class LatitudeCreateWorldScreen extends Screen {
     private static final class PreviewLayout {
         private final int globeLeft;
         private final int globeTop;
-        private final int globeDiameter;
+        private final int globeWidth;
+        private final int globeHeight;
         private final int labelX;
         private final int[] labelYs;
         private final int captionX;
@@ -1859,12 +1920,13 @@ public class LatitudeCreateWorldScreen extends Screen {
         private final float labelScale;
         private final float captionScale;
 
-        private PreviewLayout(int globeLeft, int globeTop, int globeDiameter,
+        private PreviewLayout(int globeLeft, int globeTop, int globeWidth, int globeHeight,
                               int labelX, int[] labelYs, int captionX, int captionY,
                               float labelScale, float captionScale) {
             this.globeLeft = globeLeft;
             this.globeTop = globeTop;
-            this.globeDiameter = globeDiameter;
+            this.globeWidth = globeWidth;
+            this.globeHeight = globeHeight;
             this.labelX = labelX;
             this.labelYs = labelYs;
             this.captionX = captionX;

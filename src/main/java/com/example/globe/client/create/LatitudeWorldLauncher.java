@@ -5,6 +5,7 @@ import com.example.globe.client.GlobeWorldSize;
 import com.example.globe.client.GlobeWorldSizeSelection;
 import com.example.globe.client.LatitudeClientState;
 import com.example.globe.util.LatitudeBands;
+import com.example.globe.world.LatitudeBiomes;
 import com.mojang.serialization.Lifecycle;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.GenericMessageScreen;
@@ -64,6 +65,7 @@ public final class LatitudeWorldLauncher {
                                        WorldCreationContext holder,
                                        String worldName, String seed,
                                        GlobeWorldSize size, LatitudeBands.Band spawnZone,
+                                       LatitudeBiomes.GlobeShape worldShape,
                                        GameType gameMode, boolean hardcore,
                                        Difficulty difficulty, boolean allowCommands,
                                        boolean startWithCompass, boolean bonusChest,
@@ -214,6 +216,7 @@ public final class LatitudeWorldLauncher {
                     GlobeWorldSizeSelection.set(size);
                     GlobePending.set(spawnZone.id().toUpperCase(java.util.Locale.ROOT));
                     GlobePending.startWithCompass = startWithCompass;
+                    GlobePending.pendingGlobeShape = LatitudeBiomes.shapeToString(worldShape);
                     LatitudeClientState.activateLatitudeLoading();
                     LOGGER.info("[Latitude lifecycle] bespoke overlay activated — {}ms since beginExpedition",
                             LatitudeClientState.elapsedSinceExpeditionMs());
@@ -238,6 +241,7 @@ public final class LatitudeWorldLauncher {
                         LOGGER.error("Failed to start new world", e);
                         GlobePending.consume();
                         GlobePending.pendingGlobeRadius = 0;
+                        GlobePending.pendingGlobeShape = null;
                         GlobeWorldSizeSelection.set(GlobeWorldSize.REGULAR);
                         if (isLatitude) {
                             LatitudeClientState.clearLatitudeLoadingState();

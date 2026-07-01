@@ -14,6 +14,14 @@ public final class GlobePending {
      */
     public static volatile int pendingGlobeRadius = 0;
 
+    /**
+     * World shape ("mercator"/"classic") chosen on the create-world screen. Consumed once by the server on
+     * first overworld load (GlobeMod.initLatitudeBiomesForWorld) and persisted into LatitudeWorldState. Null
+     * means no explicit choice reached the server (legacy launch path / launch failed before this was set),
+     * in which case the existing mercator-default behavior applies.
+     */
+    public static volatile String pendingGlobeShape = null;
+
     public static void set(String zoneId) {
         pendingSpawnZone = zoneId;
     }
