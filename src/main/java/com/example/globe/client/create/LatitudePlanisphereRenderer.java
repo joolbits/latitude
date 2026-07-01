@@ -337,9 +337,9 @@ public final class LatitudePlanisphereRenderer {
                 int r = Math.min(255, (int) (((baseColor >> 16) & 0xFF) * 1.30f));
                 int g = Math.min(255, (int) (((baseColor >> 8) & 0xFF) * 1.30f));
                 int b = Math.min(255, (int) ((baseColor & 0xFF) * 1.30f));
-                fillColor = (0xD6 << 24) | (r << 16) | (g << 8) | b;   // selected band: pops
+                fillColor = (0xE6 << 24) | (r << 16) | (g << 8) | b;   // selected band: pops
             } else {
-                fillColor = (baseColor & 0x00FFFFFF) | (0x62 << 24);   // others: present but land still shows
+                fillColor = (baseColor & 0x00FFFFFF) | (0x86 << 24);   // others: bands read clearly, land still shows
             }
 
             int yLow  = (int) (halfH * band.lowDeg()  / 90.0);
@@ -370,13 +370,14 @@ public final class LatitudePlanisphereRenderer {
     // don't invent one"). Drawn slightly larger than the atlas so the texture's decorative wooden border
     // surrounds the climate map; the parchment center is covered by the atlas drawn on top.
     private static final net.minecraft.resources.Identifier MAP_BG =
-            net.minecraft.resources.Identifier.fromNamespaceAndPath("minecraft", "textures/map/map_background");
+            net.minecraft.resources.Identifier.fromNamespaceAndPath("minecraft", "textures/map/map_background.png");
 
-    public static void drawAtlasFrame(GuiGraphicsExtractor ctx, int atlasLeft, int atlasTop, int atlasW, int atlasH) {
-        int inset = Math.max(6, Math.min(atlasW, atlasH) / 8);
+    public static void drawAtlasFrame(GuiGraphicsExtractor ctx, int frameLeft, int frameTop, int frameW, int frameH) {
+        // Fill the reserved box with the vanilla map texture; the climate map draws inset on top, leaving the
+        // texture's decorative border showing as a frame. Keeps the frame INSIDE the layout box (no overflow /
+        // clipping), so the atlas sits centered in the frame (Peetsa TEST 9).
         ctx.blit(net.minecraft.client.renderer.RenderPipelines.GUI_TEXTURED, MAP_BG,
-                atlasLeft - inset, atlasTop - inset, 0.0f, 0.0f,
-                atlasW + inset * 2, atlasH + inset * 2, 128, 128);
+                frameLeft, frameTop, 0.0f, 0.0f, frameW, frameH, 128, 128);
     }
 
     private static final long CONTINENT_SEED = 0x1A7D0BE59C4F3E21L;
