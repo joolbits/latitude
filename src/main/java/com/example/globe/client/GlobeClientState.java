@@ -182,24 +182,24 @@ public final class GlobeClientState {
         double progressZ = com.example.globe.util.LatitudeMath.hazardProgressZ(border, player.getZ());
         PolarStage polar = polarStageForProgress(border, player.getZ(), progressZ);
 
-        double distToBorder = Math.min(Math.abs(player.getX() - border.getMinX()), Math.abs(border.getMaxX() - player.getX()));
+        // Derive the E/W warning stage from the SAME progress fraction the particle tick uses
+        // (computeEwStormStage -> hazardProgress -> ewStageForProgress). The old hardcoded 500/100-block test
+        // fired ~400 blocks LATER than the particles (which start at progress 0.94 = ~6% of xRadius, i.e. 600+
+        // blocks out), so the player saw sandstorm with no message. Now message + particles share one
+        // threshold and one per-tick input, so they appear together.
+        double progressX = com.example.globe.util.LatitudeMath.hazardProgress(border, player.getX());
+        EwStormStage ewTextStage = ewStageForProgress(progressX);
 
-        // Debug print every 10s to verify thresholds (opt-in)
         if (Boolean.getBoolean("latitude.debugEwWarn")) {
             long now = System.currentTimeMillis();
             if (now - globe$ewLastLogMs >= 10_000L) {
                 globe$ewLastLogMs = now;
-                GlobeMod.LOGGER.info("[Latitude EW] distToBorder={} x={} west={} east={} L1=500 L2=100",
-                        distToBorder, player.getX(), border.getMinX(), border.getMaxX());
+                GlobeMod.LOGGER.info("[Latitude EW] progressX={} stage={} x={}", progressX, ewTextStage, player.getX());
             }
         }
 
-        boolean ewTextWarn = distToBorder <= 500.0;
-        boolean ewTextDanger = distToBorder <= 100.0;
-        EwStormStage ewTextStage = ewTextDanger ? EwStormStage.LEVEL_2 : (ewTextWarn ? EwStormStage.LEVEL_1 : EwStormStage.NONE);
-
-        // Visual stage (fog/particles) mirrors text stage for now
-        EwStormStage ewVisual = ewTextStage;
+        boolean ewTextWarn = ewTextStage != EwStormStage.NONE;
+        boolean ewTextDanger = ewTextStage == EwStormStage.LEVEL_2;
 
         int pr = polarRank(polar);
         int er = ewRank(ewTextStage);
