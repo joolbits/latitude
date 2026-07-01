@@ -263,6 +263,12 @@ public class GlobeMod implements ModInitializer {
             return;
         }
 
+        // Release the world-creation-in-flight claim (LatitudeWorldLauncher.beginExpedition) now that SOME
+        // world's overworld has actually loaded and is about to consume whatever pending values exist below.
+        // Unconditional and harmless if nothing was claimed (e.g. loading a pre-existing save rather than
+        // creating a new one) -- see GlobePending.tryClaimWorldCreationInFlight for what this closes.
+        GlobePending.clearWorldCreationInFlight();
+
         LatitudeWorldState worldState = LatitudeWorldState.get(world);
         int pendingRadius = GlobePending.pendingGlobeRadius;
         GlobePending.pendingGlobeRadius = 0;

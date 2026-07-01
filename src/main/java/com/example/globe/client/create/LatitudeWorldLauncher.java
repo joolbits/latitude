@@ -194,7 +194,15 @@ public final class LatitudeWorldLauncher {
             final PrimaryLevelData launchLevelProperties = levelProperties;
             final GameRules launchGameRules = gameRules;
 
-            // ── 8. Show "Preparing..." ──
+            // ── 8. Claim the world-creation-in-flight slot, then show "Preparing..." ──
+            // Applies to every world type, not just Latitude: a plain vanilla world's first-load can just as
+            // easily steal a still-pending Latitude pendingGlobeShape as another Latitude launch can (see
+            // GlobePending.tryClaimWorldCreationInFlight). A rejected claim means some earlier launch's world
+            // hasn't finished loading yet; refuse this one rather than risking the race.
+            if (!GlobePending.tryClaimWorldCreationInFlight(System.currentTimeMillis())) {
+                LOGGER.warn("Refusing to start a new world: a previous world creation is still in flight");
+                return;
+            }
             client.setScreenAndShow(new GenericMessageScreen(Component.translatable("createWorld.preparing")));
             CompletableFuture.runAsync(() -> {
                 LevelStorageSource.LevelStorageAccess session;
@@ -203,6 +211,7 @@ public final class LatitudeWorldLauncher {
                 } catch (Exception e) {
                     client.execute(() -> {
                         LOGGER.error("Failed to create world session for '{}'", wc.getTargetFolder(), e);
+                        GlobePending.clearWorldCreationInFlight();
                         if (isLatitude) {
                             LatitudeClientState.clearLatitudeLoadingState();
                         }
@@ -242,6 +251,7 @@ public final class LatitudeWorldLauncher {
                         GlobePending.consume();
                         GlobePending.pendingGlobeRadius = 0;
                         GlobePending.pendingGlobeShape = null;
+                        GlobePending.clearWorldCreationInFlight();
                         GlobeWorldSizeSelection.set(GlobeWorldSize.REGULAR);
                         if (isLatitude) {
                             LatitudeClientState.clearLatitudeLoadingState();
