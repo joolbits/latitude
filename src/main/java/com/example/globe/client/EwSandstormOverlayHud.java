@@ -37,11 +37,35 @@ public final class EwSandstormOverlayHud {
             com.example.globe.GlobeMod.LOGGER.info("[Latitude] EW haze tick: x={} a={}", mc.player.getX(), a);
         }
 
-        float baseAlpha = Math.min(0.90f, 0.10f + a * 0.80f);
+        // Climate-aware haze (TEST 1 E1): warm bands get a tan dust haze; the cold bands (subpolar/polar) get
+        // a cool grey fog that lerps toward a near-white whiteout as you close on the border.
+        var border = mc.level.getWorldBorder();
+        double absDeg = Math.abs(com.example.globe.util.LatitudeMath.degreesFromZ(border, mc.player.getZ()));
+        com.example.globe.util.LatitudeBands.Band band =
+                com.example.globe.util.LatitudeBands.fromAbsoluteLatitudeDeg(absDeg);
+        boolean cold = band == com.example.globe.util.LatitudeBands.Band.SUBPOLAR
+                || band == com.example.globe.util.LatitudeBands.Band.POLAR;
+
+        int r, g, b;
+        float maxAlpha;
+        if (cold) {
+            // cool grey -> near-white whiteout as `a` ramps toward the border
+            r = 200 + (int) ((238 - 200) * a);
+            g = 208 + (int) ((242 - 208) * a);
+            b = 218 + (int) ((248 - 218) * a);
+            maxAlpha = 0.96f;
+        } else {
+            r = DUST_R;
+            g = DUST_G;
+            b = DUST_B;
+            maxAlpha = 0.90f;
+        }
+
+        float baseAlpha = Math.min(maxAlpha, 0.10f + a * (maxAlpha - 0.10f));
         int alpha = (int) (baseAlpha * 255.0f);
         if (alpha <= 0) return;
 
-        int argb = (alpha << 24) | (DUST_R << 16) | (DUST_G << 8) | (DUST_B);
+        int argb = (alpha << 24) | (r << 16) | (g << 8) | (b);
 
         int w = ctx.guiWidth();
         int h = ctx.guiHeight();

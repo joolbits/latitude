@@ -24,10 +24,10 @@ public final class GlobeWarningOverlay {
     private static final String POLE_LETHAL_TEXT =
             "The cold overwhelms you.";
 
-    private static final String EW_SAND_WARN_TEMPLATE =
-            "Sandstorms to the %s. Head %s to turn back.";
-    private static final String EW_SAND_DANGER_TEMPLATE =
-            "Extreme danger to the %s. Head %s immediately.";
+    private static final String EW_STORM_WARN_TEMPLATE =
+            "Storms to the %s. Head %s to turn back.";
+    private static final String EW_STORM_DANGER_TEMPLATE =
+            "Low visibility to the %s. Head %s to turn back.";
 
     private static final boolean DEBUG_ENTRY_TITLES = Boolean.getBoolean("latitude.debugEntryTitles");
     private static final int EQUATOR_STABLE_DIST = 64;
@@ -113,8 +113,8 @@ public final class GlobeWarningOverlay {
     private static Component ewTextForStage(GlobeClientState.EwStormStage stage) {
         if (stage == null) return null;
         return switch (stage) {
-            case LEVEL_1 -> Component.literal(EW_SAND_WARN_TEMPLATE);
-            case LEVEL_2 -> Component.literal(EW_SAND_DANGER_TEMPLATE).withStyle(ChatFormatting.RED, ChatFormatting.BOLD);
+            case LEVEL_1 -> Component.literal(EW_STORM_WARN_TEMPLATE);
+            case LEVEL_2 -> Component.literal(EW_STORM_DANGER_TEMPLATE).withStyle(ChatFormatting.YELLOW, ChatFormatting.BOLD);
             default -> null;
         };
     }
