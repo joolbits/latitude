@@ -240,18 +240,23 @@ public class LatitudeCreateWorldScreen extends Screen {
     }
 
     public static void openLoaded(Minecraft client, Runnable onClose, @Nullable Screen parent, WorldCreationContext holder,
-                                  @Nullable String seed) {
-        LOGGER.info("[LAT][CWPATH] LatitudeCreateWorldScreen.openLoaded parent={} holder={} seedPreset={}",
+                                  @Nullable String seed, @Nullable String worldName) {
+        LOGGER.info("[LAT][CWPATH] LatitudeCreateWorldScreen.openLoaded parent={} holder={} seedPreset={} namePreset={}",
                 parent == null ? "null" : parent.getClass().getName(),
                 holder,
-                seed != null && !seed.isBlank());
+                seed != null && !seed.isBlank(),
+                worldName != null && !worldName.isBlank());
         LatitudeCreateWorldScreen screen = new LatitudeCreateWorldScreen(onClose, parent, holder);
         client.setScreen(screen);
-        // Carry over the seed vanilla was holding: the original world's seed on "Re-create", empty on a fresh
-        // create. This makes recreate pre-fill the seed field instead of leaving it blank (TEST 1 A5).
-        // probeSetWorldInputs no-ops on a blank seed, so fresh create still starts empty (random).
-        if (seed != null && !seed.isBlank()) {
-            screen.probeSetWorldInputs(null, seed, null);
+        // Carry over the seed AND world name vanilla was holding. On "Re-create" both come from the source
+        // world (seed via getSeed(), name via getName()); on a fresh create they are the defaults. This makes
+        // recreate pre-fill both fields instead of resetting them (TEST 1 A5 + bug-catcher #2: recreate used to
+        // drop the source name and always create "New World"). probeSetWorldInputs no-ops on a blank seed/name,
+        // so fresh create still starts empty/default.
+        boolean hasSeed = seed != null && !seed.isBlank();
+        boolean hasName = worldName != null && !worldName.isBlank();
+        if (hasSeed || hasName) {
+            screen.probeSetWorldInputs(hasName ? worldName : null, hasSeed ? seed : null, null);
         }
     }
 
