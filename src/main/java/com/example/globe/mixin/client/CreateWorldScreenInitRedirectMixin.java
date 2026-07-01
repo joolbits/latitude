@@ -28,11 +28,13 @@ public abstract class CreateWorldScreenInitRedirectMixin {
         Screen parent = globe$getParentSafe((Object) this);
         Runnable onClose = () -> client.setScreen(parent);
 
+        CreateWorldScreenMixin self = (CreateWorldScreenMixin) (Object) this;
         LatitudeCreateWorldScreen.openLoaded(
                 client,
                 onClose,
                 parent,
-                ((CreateWorldScreenMixin) (Object) this).getUiState().getSettings());
+                self.getUiState().getSettings(),
+                self.getUiState().getSeed());
         ci.cancel();
     }
 

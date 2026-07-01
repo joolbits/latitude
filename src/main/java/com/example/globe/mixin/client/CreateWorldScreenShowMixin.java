@@ -20,7 +20,8 @@ public abstract class CreateWorldScreenShowMixin {
                     client,
                     onClose,
                     parent,
-                    ((CreateWorldScreenMixin) (Object) createWorldScreen).getUiState().getSettings());
+                    ((CreateWorldScreenMixin) (Object) createWorldScreen).getUiState().getSettings(),
+                    ((CreateWorldScreenMixin) (Object) createWorldScreen).getUiState().getSeed());
         }
     }
 }
