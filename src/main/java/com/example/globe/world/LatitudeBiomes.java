@@ -6171,12 +6171,21 @@ public final class LatitudeBiomes {
         return TERRAIN_CLASS_FLAT_LOWLAND;
     }
 
+    /** Flat wetlands (bog/swamp/marsh/…) need standing water, so like plains they must not generate on
+     *  raised/mountain terrain (the "bog climbing a mountain" report). Substring match so it also covers
+     *  modded wetlands (clifftree:bog, BoP marsh/wetland/mire, byg bayou, …), not just vanilla swamp. */
+    private static boolean isFlatWetlandBiome(Holder<Biome> candidate) {
+        String id = candidate.unwrapKey().map(k -> k.identifier().toString()).orElse("");
+        return id.contains("swamp") || id.contains("bog") || id.contains("marsh")
+                || id.contains("wetland") || id.contains("fen") || id.contains("bayou") || id.contains("mire");
+    }
+
     private static boolean isBiomeCompatibleWithTerrain(Holder<Biome> candidate,
                                                         int terrainClass,
                                                         boolean mountainNoiseLike,
                                                         boolean mountainLike) {
         boolean mountainPick = isMountainCodedColdPick(candidate);
-        boolean plainsPick = isPlainsFamily(candidate);
+        boolean plainsPick = isPlainsFamily(candidate) || isFlatWetlandBiome(candidate);
         if (terrainClass == TERRAIN_CLASS_FLAT_SHELF && mountainPick) {
             return false;
         }
