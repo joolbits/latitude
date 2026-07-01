@@ -24,10 +24,15 @@ public final class GlobeWarningOverlay {
     private static final String POLE_LETHAL_TEXT =
             "The cold overwhelms you.";
 
+    // Approach tier (LEVEL_1) — generic, mentions both storm + reduced visibility. Escalates to a
+    // climate-specific tier-2 line below.
     private static final String EW_STORM_WARN_TEMPLATE =
-            "Storms to the %s. Head %s to turn back.";
-    private static final String EW_STORM_DANGER_TEMPLATE =
-            "Low visibility to the %s. Head %s to turn back.";
+            "Storms and low visibility to the %s. Head %s to turn back.";
+    // Near-edge tier (LEVEL_2), climate-specific: whiteout in the cold bands, blinding sandstorm elsewhere.
+    private static final String EW_WHITEOUT_DANGER_TEMPLATE =
+            "Whiteout conditions to the %s. Head %s immediately.";
+    private static final String EW_SANDSTORM_DANGER_TEMPLATE =
+            "Blinding sandstorm to the %s. Head %s immediately.";
 
     private static final boolean DEBUG_ENTRY_TITLES = Boolean.getBoolean("latitude.debugEntryTitles");
     private static final int EQUATOR_STABLE_DIST = 64;
@@ -110,13 +115,20 @@ public final class GlobeWarningOverlay {
         };
     }
 
-    private static Component ewTextForStage(GlobeClientState.EwStormStage stage) {
+    private static Component ewTextForStage(GlobeClientState.EwStormStage stage, boolean cold) {
         if (stage == null) return null;
         return switch (stage) {
             case LEVEL_1 -> Component.literal(EW_STORM_WARN_TEMPLATE);
-            case LEVEL_2 -> Component.literal(EW_STORM_DANGER_TEMPLATE).withStyle(ChatFormatting.YELLOW, ChatFormatting.BOLD);
+            case LEVEL_2 -> Component.literal(cold ? EW_WHITEOUT_DANGER_TEMPLATE : EW_SANDSTORM_DANGER_TEMPLATE)
+                    .withStyle(ChatFormatting.YELLOW, ChatFormatting.BOLD);
             default -> null;
         };
+    }
+
+    private static boolean ewIsColdBand(net.minecraft.world.level.border.WorldBorder border, double playerZ) {
+        double absDeg = Math.abs(com.example.globe.util.LatitudeMath.degreesFromZ(border, playerZ));
+        LatitudeBands.Band band = LatitudeBands.fromAbsoluteLatitudeDeg(absDeg);
+        return band == LatitudeBands.Band.SUBPOLAR || band == LatitudeBands.Band.POLAR;
     }
 
     public static void render(GuiGraphicsExtractor ctx, DeltaTracker tickCounter) {
@@ -198,7 +210,8 @@ public final class GlobeWarningOverlay {
                 GlobeClientState.EwStormStage stage = (GlobeClientState.EwStormStage) state.stage();
                 String dir = ewDangerDirection(client.level.getWorldBorder(), client.player.getX());
                 String escapeDir = oppositeDirection(dir);
-                Component base = ewTextForStage(stage);
+                boolean cold = ewIsColdBand(client.level.getWorldBorder(), client.player.getZ());
+                Component base = ewTextForStage(stage, cold);
                 if (base != null) {
                     bestText = Component.literal(String.format(base.getString(), dir.toLowerCase(), escapeDir.toLowerCase())).setStyle(base.getStyle());
                 }
