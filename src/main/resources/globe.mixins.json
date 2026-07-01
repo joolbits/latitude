@@ -21,7 +21,8 @@
     "AlpineSurfaceMixin",
     "SurfaceDripstoneLawnmowerMixin",
     "ExtremePolarVillageGuardMixin",
-    "ExtremePolarVegetationGuardMixin"
+    "ExtremePolarVegetationGuardMixin",
+    "StructureBiomeMatchGuardMixin"
   ],
   "client": [
     "client.CreateWorldScreenMixin",

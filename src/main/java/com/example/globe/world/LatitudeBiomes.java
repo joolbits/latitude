@@ -1956,6 +1956,54 @@ public final class LatitudeBiomes {
                 || entry.is(LAT_ARID_ACCENT);
     }
 
+    private static boolean biomeIdContainsAny(String id, String... needles) {
+        for (String n : needles) {
+            if (id.contains(n)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * True when a structure whose id DECLARES a climate (village_desert, village_savanna, a modded
+     * desert/snowy outpost, etc.) is being placed in a biome of the WRONG climate — e.g. a savanna village in
+     * a forest, or a desert-styled outpost in a tundra. Because Latitude repaints biomes at the populate step
+     * (after vanilla picks the structure type from the raw biome source), the structure variant can disagree
+     * with the biome you actually stand in; a guard mixin cancels those. Conservative: only judges structures
+     * whose id names a climate, and fails "match" (no cancel) when unsure, so plains villages / neutral
+     * structures are never touched.
+     */
+    public static boolean structureClimateMismatch(String structurePath, Holder<Biome> biome) {
+        if (structurePath == null || biome == null) {
+            return false;
+        }
+        String p = structurePath.toLowerCase(java.util.Locale.ROOT);
+        String b = biome.unwrapKey().map(k -> k.identifier().toString()).orElse("").toLowerCase(java.util.Locale.ROOT);
+        if (b.isEmpty()) {
+            return false;
+        }
+        if (p.contains("desert")) {
+            return !(isAridFamily(biome) || biomeIdContainsAny(b, "desert", "badlands", "mesa", "dune", "sand", "arid", "oasis", "outback"));
+        }
+        if (p.contains("savanna")) {
+            return !biomeIdContainsAny(b, "savanna", "shrubland", "prairie", "dryland", "scrub", "steppe");
+        }
+        if (p.contains("badlands") || p.contains("mesa")) {
+            return !(isBadlandsFamily(biome) || biomeIdContainsAny(b, "badlands", "mesa"));
+        }
+        if (p.contains("jungle")) {
+            return !biomeIdContainsAny(b, "jungle", "tropical", "rainforest", "bamboo");
+        }
+        if (p.contains("snowy") || p.contains("frozen") || p.contains("glacier")) {
+            return !biomeIdContainsAny(b, "snow", "frozen", "ice", "glacier", "tundra", "cold", "wintry", "polar", "frost");
+        }
+        if (p.contains("taiga")) {
+            return !biomeIdContainsAny(b, "taiga", "spruce", "conifer", "boreal", "grove", "cold", "snow", "tundra");
+        }
+        return false; // no declared climate (plains village, generic outpost, modded neutral structures) -> allow
+    }
+
     private static String warmDryPathFamily(Holder<Biome> entry) {
         if (entry == null) {
             return "other";
