@@ -4,7 +4,9 @@ import com.example.globe.GlobeMod;
 import com.example.globe.util.LatitudeBands;
 import com.example.globe.world.LatitudeBiomeSource;
 import com.example.globe.world.LatitudeBiomes;
+import it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap;
 import it.unimi.dsi.fastutil.longs.Long2LongOpenHashMap;
+import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import net.minecraft.core.Holder;
 import net.minecraft.core.Registry;
 import net.minecraft.core.registries.Registries;
@@ -247,6 +249,12 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
         RandomState noiseConfig = globe$noiseConfigTL.get();
         Long2LongOpenHashMap surfaceYCache = new Long2LongOpenHashMap();
         surfaceYCache.defaultReturnValue(Long.MIN_VALUE);
+        // Per-column memoization for the surface-and-above biome pick (TEST 1 C3 lag fix). This chunk's
+        // resolver runs on one thread, so these plain maps need no synchronization.
+        Long2IntOpenHashMap columnDecisionYCache = new Long2IntOpenHashMap();
+        columnDecisionYCache.defaultReturnValue(Integer.MIN_VALUE);
+        Long2ObjectOpenHashMap<Holder<Biome>> columnPickCache = new Long2ObjectOpenHashMap<>();
+        Long2ObjectOpenHashMap<Holder<Biome>> columnPickBase = new Long2ObjectOpenHashMap<>();
         logWorldgenPathOnce(chunk, borderRadiusBlocks, globe$matchedSettingsLabel());
         BiomeResolver sourceSupplier = originalSupplier instanceof LatitudeBiomeSource latitudeSource
                 ? latitudeSource.original()
@@ -300,31 +308,66 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
                 return current;
             }
 
-            Holder<Biome> picked = null;
+            // Per-column memoization of the biome pick (TEST 1 C3 lag fix). pick() depends on blockY ONLY
+            // through its internal biomeY = (blockY < columnDecisionY-16 ? blockY : columnDecisionY), so every
+            // cell at or above (columnDecisionY-16) selects the SAME biome for a given column+base. But this
+            // resolver runs for ~96 Y-quarts per column and pick() re-runs its expensive terrain/noise probes
+            // each time. Compute pick() once per column for those surface-and-above cells and reuse it; only
+            // the rarer deep cells (below the surface band, where biomeY genuinely varies) fall through to an
+            // exact per-cell pick, so behavior is preserved everywhere.
+            long colKey = (((long) x) << 32) ^ (z & 0xFFFF_FFFFL);
+            int colDecisionY = columnDecisionYCache.get(colKey);
+            if (colDecisionY == Integer.MIN_VALUE) {
+                colDecisionY = LatitudeBiomes.surfaceDecisionY(generator, noiseConfig, chunk, blockX, blockZ);
+                columnDecisionYCache.put(colKey, colDecisionY);
+            }
 
-            // BlockY is forwarded so LatitudeBiomes can compute the upland ramp while horizontal selection remains unchanged.
-            try {
-                picked = LatitudeBiomes.pick(biomes, base, blockX, blockZ, blockY, borderRadiusBlocks, sampler, "MIXIN",
-                        generator, noiseConfig, chunk);
-            } catch (Throwable t) {
-                globe$logPopBio("ERROR", t.getClass().getSimpleName() + ": " + t.getMessage());
-                logPickFailOnce(blockX, blockZ, "exception", t.toString());
-                if (DEBUG_BIOME_PICK) {
-                    LOGGER.debug("[Latitude] Biome pick exception", t);
+            if (blockY >= colDecisionY - 16) {
+                Holder<Biome> cachedPick = columnPickCache.get(colKey);
+                if (cachedPick != null && columnPickBase.get(colKey) == base) {
+                    return cachedPick;
                 }
+                Holder<Biome> picked = globe$pickOrFallback(biomes, base, blockX, blockZ, blockY, borderRadiusBlocks,
+                        sampler, generator, noiseConfig, chunk);
+                columnPickCache.put(colKey, picked);
+                columnPickBase.put(colKey, base);
+                return picked;
             }
-            if (picked == null) {
-                logPickFailOnce(blockX, blockZ, "null", null);
-                if (DEBUG_BIOME_PICK) {
-                    LOGGER.debug("[Latitude] Biome pick returned null at x={} z={}", blockX, blockZ);
-                }
-                return pickSafeFallback(biomes, blockZ);
-            }
-            return picked;
+            return globe$pickOrFallback(biomes, base, blockX, blockZ, blockY, borderRadiusBlocks,
+                    sampler, generator, noiseConfig, chunk);
         };
 
         globe$logPopBio("ENTER", "installing Latitude resolver chunk=" + pos.x() + "," + pos.z() + " radius=" + borderRadiusBlocks);
         globe$populateBiomes(chunk, wrapped, sampler);
+    }
+
+    // The pick() call plus its exception/null fallback, shared by the cached (surface-and-above) and the
+    // uncached (deep-cell) paths of the resolver. blockY is forwarded so pick() can clamp its internal
+    // decision Y; horizontal biome selection stays unchanged.
+    @Unique
+    private static Holder<Biome> globe$pickOrFallback(Registry<Biome> biomes, Holder<Biome> base,
+                                                      int blockX, int blockZ, int blockY, int borderRadiusBlocks,
+                                                      Climate.Sampler sampler, NoiseBasedChunkGenerator generator,
+                                                      RandomState noiseConfig, ChunkAccess chunk) {
+        Holder<Biome> picked = null;
+        try {
+            picked = LatitudeBiomes.pick(biomes, base, blockX, blockZ, blockY, borderRadiusBlocks, sampler, "MIXIN",
+                    generator, noiseConfig, chunk);
+        } catch (Throwable t) {
+            globe$logPopBio("ERROR", t.getClass().getSimpleName() + ": " + t.getMessage());
+            logPickFailOnce(blockX, blockZ, "exception", t.toString());
+            if (DEBUG_BIOME_PICK) {
+                LOGGER.debug("[Latitude] Biome pick exception", t);
+            }
+        }
+        if (picked == null) {
+            logPickFailOnce(blockX, blockZ, "null", null);
+            if (DEBUG_BIOME_PICK) {
+                LOGGER.debug("[Latitude] Biome pick returned null at x={} z={}", blockX, blockZ);
+            }
+            return pickSafeFallback(biomes, blockZ);
+        }
+        return picked;
     }
 
     @Unique

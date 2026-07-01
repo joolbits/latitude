@@ -1350,7 +1350,9 @@ public final class LatitudeBiomes {
         return generator == null ? 63 : generator.getSeaLevel();
     }
 
-    private static int surfaceDecisionY(NoiseBasedChunkGenerator generator,
+    // Public so the populate mixin can compute the same column decision Y that pick() uses internally, to
+    // memoize pick() per column (TEST 1 C3). Pure function of (generator, noiseConfig, heightView, x, z).
+    public static int surfaceDecisionY(NoiseBasedChunkGenerator generator,
                                         RandomState noiseConfig,
                                         LevelHeightAccessor heightView,
                                         int blockX,
