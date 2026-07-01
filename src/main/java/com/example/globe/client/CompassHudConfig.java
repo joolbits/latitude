@@ -68,6 +68,10 @@ public final class CompassHudConfig {
     public Boolean analogShowLatitude = true;
     public Integer latitudeDecimals = 0;
 
+    // Longitude display (2.0 "Longitude" release)
+    public Boolean showLongitude = true; // digital mode
+    public Boolean analogShowLongitude = true;
+
     // Inline formatting
     public boolean compactHud = false;
 
@@ -145,6 +149,8 @@ public final class CompassHudConfig {
         if (analogShowLatitude == null) analogShowLatitude = true;
         if (latitudeDecimals == null) latitudeDecimals = 0;
         if (latitudeDecimals < 0) latitudeDecimals = 0;
+        if (showLongitude == null) showLongitude = true;
+        if (analogShowLongitude == null) analogShowLongitude = true;
         if (latitudeDecimals > 3) latitudeDecimals = 3;
         if (scale < 0.25f) scale = 0.25f;
         if (scale > 4.0f) scale = 4.0f;
