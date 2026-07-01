@@ -2012,6 +2012,37 @@ public final class LatitudeBiomes {
         return false; // no declared climate (plains village, generic outpost, modded neutral structures) -> allow
     }
 
+    /**
+     * Coarser, biome-independent companion to {@link #structureClimateMismatch}. During worldgen the biome
+     * sampled at structure-placement time can still be the RAW source biome (what vanilla used to pick the
+     * variant) rather than Latitude's repaint, so the biome check can wrongly see "savanna village in savanna"
+     * and allow it — then the surface is repainted temperate and you get "a savanna village in a temperate
+     * forest zone" (TEST 1 C1). This check judges the structure's declared climate against the authoritative
+     * latitude BAND instead: warm-climate structures (desert/savanna/badlands/jungle) don't belong in
+     * temperate/subpolar/polar; cold ones (snowy/frozen/taiga) don't belong in the tropics. Conservative — only
+     * the clear cross-climate cases, fails open (no cancel) otherwise, so plains/neutral structures and
+     * same-band mixes are never touched. Callers must only apply this in a globe/latitude world.
+     */
+    public static boolean structureClimateVsBandMismatch(String structurePath, com.example.globe.util.LatitudeBands.Band band) {
+        if (structurePath == null || band == null) {
+            return false;
+        }
+        String p = structurePath.toLowerCase(java.util.Locale.ROOT);
+        boolean warmDeclared = p.contains("desert") || p.contains("savanna") || p.contains("badlands")
+                || p.contains("mesa") || p.contains("jungle");
+        boolean coldDeclared = p.contains("snowy") || p.contains("frozen") || p.contains("glacier")
+                || p.contains("taiga");
+        boolean warmBand = band == com.example.globe.util.LatitudeBands.Band.TROPICAL
+                || band == com.example.globe.util.LatitudeBands.Band.SUBTROPICAL;
+        boolean coldBand = band == com.example.globe.util.LatitudeBands.Band.TEMPERATE
+                || band == com.example.globe.util.LatitudeBands.Band.SUBPOLAR
+                || band == com.example.globe.util.LatitudeBands.Band.POLAR;
+        if (warmDeclared && coldBand) {
+            return true;
+        }
+        return coldDeclared && warmBand;
+    }
+
     private static String warmDryPathFamily(Holder<Biome> entry) {
         if (entry == null) {
             return "other";
