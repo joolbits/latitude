@@ -5523,7 +5523,9 @@ public final class LatitudeBiomes {
                     MANGROVE_ID);
             case BAND_TEMPERATE -> List.of(
                     "minecraft:sunflower_plains",
-                    "minecraft:pale_garden",
+                    // pale_garden removed from the band-wide selector — it sprinkled as confetti. It now
+                    // reaches the map ONLY via enforcePaleGardenRegion, which forces it into one contiguous
+                    // core blob (the user wants all pale_garden in a single contiguous area).
                     "minecraft:stony_peaks");
             case BAND_POLAR -> List.of(
                     "minecraft:ice_spikes",
