@@ -740,6 +740,12 @@ public class LatitudeCreateWorldScreen extends Screen {
         updateLeftWidgetVisibility(seedField);
         updateLeftWidgetVisibility(sizePrevBtn);
         updateLeftWidgetVisibility(sizeNextBtn);
+        // World Size only applies to Latitude worlds — grey the stepper out for Vanilla / Vanilla Superflat
+        // (Peetsa TEST 7: "mercator/regular should be greyed out for vanilla, not just vanilla superflat").
+        if (!isLatitudeWorld()) {
+            if (sizePrevBtn != null) sizePrevBtn.active = false;
+            if (sizeNextBtn != null) sizeNextBtn.active = false;
+        }
     }
 
     private void updateLeftWidgetVisibility(AbstractWidget widget) {
@@ -801,6 +807,13 @@ public class LatitudeCreateWorldScreen extends Screen {
     }
 
     private void updateSettingsButtons() {
+        // World Shape (Mercator/Legacy) only applies to Latitude worlds — grey the stepper for Vanilla types.
+        if (worldShapePrevBtn != null) {
+            worldShapePrevBtn.active = worldShapePrevBtn.visible && isLatitudeWorld();
+        }
+        if (worldShapeNextBtn != null) {
+            worldShapeNextBtn.active = worldShapeNextBtn.visible && isLatitudeWorld();
+        }
         if (commandsBtn != null) {
             commandsBtn.setMessage(Component.literal(allowCommands ? "ON" : "OFF"));
             commandsBtn.active = commandsBtn.visible;
@@ -1166,8 +1179,9 @@ public class LatitudeCreateWorldScreen extends Screen {
         }
         drawBoundedText(context, "World Name", new UiRect(inputX, worldFieldY - labelOff, leftTextWidth, uiFontHeight()), labelColor, false, false);
         drawBoundedText(context, "Seed", new UiRect(inputX, seedFieldY - labelOff, leftTextWidth, uiFontHeight()), labelColor, false, false);
-        drawBoundedText(context, "World Size", new UiRect(inputX, sizeFieldY - labelOff, leftTextWidth, uiFontHeight()), labelColor, false, false);
-        renderSizeLabel(context, inputX + stepperBtnW + scaledUi(4), sizeFieldY - 1, leftTextWidth - stepperBtnW * 2 - scaledUi(8));
+        boolean sizeEnabled = isLatitudeWorld();
+        drawBoundedText(context, "World Size", new UiRect(inputX, sizeFieldY - labelOff, leftTextWidth, uiFontHeight()), sizeEnabled ? labelColor : DISABLED_COLOR, false, false);
+        renderSizeLabel(context, inputX + stepperBtnW + scaledUi(4), sizeFieldY - 1, leftTextWidth - stepperBtnW * 2 - scaledUi(8), sizeEnabled);
         int separatorY = inputBottomY - 2;
         context.fill(leftX + 4, separatorY, leftX + leftW - 4 - SCROLLBAR_GUTTER, separatorY + 1, PANEL_BORDER);
         boolean latWorld = isLatitudeWorld();
@@ -1264,8 +1278,9 @@ public class LatitudeCreateWorldScreen extends Screen {
             }
             drawSettingsRowLabel(context, "World Type", settLabelX, worldTypeRowY, MUTED);
             drawSettingsStepperValue(context, WORLD_TYPE_NAMES[worldTypeIdx], WORLD_TYPE_COLORS[worldTypeIdx], worldTypeRowY);
-            drawSettingsRowLabel(context, "World Shape", settLabelX, worldShapeRowY, MUTED);
-            drawSettingsStepperValue(context, WORLD_SHAPE_NAMES[worldShapeIdx], WORLD_SHAPE_COLORS[worldShapeIdx], worldShapeRowY);
+            boolean shapeEnabled = isLatitudeWorld();
+            drawSettingsRowLabel(context, "World Shape", settLabelX, worldShapeRowY, shapeEnabled ? MUTED : DISABLED_COLOR);
+            drawSettingsStepperValue(context, WORLD_SHAPE_NAMES[worldShapeIdx], shapeEnabled ? WORLD_SHAPE_COLORS[worldShapeIdx] : DISABLED_COLOR, worldShapeRowY);
             drawSettingsRowLabel(context, "Game Mode", settLabelX, modeRowY, MUTED);
             drawSettingsStepperValue(context, MODE_NAMES[selectedModeIdx], MODE_COLORS[selectedModeIdx], modeRowY);
             drawSettingsRowLabel(context, "Commands", settLabelX, commandsRowY, MUTED);
@@ -1285,15 +1300,17 @@ public class LatitudeCreateWorldScreen extends Screen {
         super.extractRenderState(context, mouseX, mouseY, delta);
     }
 
-    private void renderSizeLabel(GuiGraphicsExtractor context, int x, int y, int availW) {
+    private void renderSizeLabel(GuiGraphicsExtractor context, int x, int y, int availW, boolean enabled) {
         int idx = selectedSize.ordinal();
         String shortName = SIZE_SHORT_NAMES[idx];
         String diameter = worldDimsLabel();
         String desc = SIZE_DESCRIPTIONS[idx];
 
-        drawCenteredBoundedText(context, shortName, new UiRect(x, y, availW, uiFontHeight()), WARM_WHITE, true, true);
-        drawCenteredBoundedText(context, diameter, new UiRect(x, y + scaledUi(11), availW, uiFontHeight()), MUTED, false, true);
-        drawWrappedTextBlock(context, desc, new UiRect(x, y + scaledUi(22), availW, Math.max(uiFontHeight(), computeSizeLabelBottom(y, availW) - (y + scaledUi(22)))), MUTED, false, 3, true, true);
+        int nameCol = enabled ? WARM_WHITE : DISABLED_COLOR;
+        int subCol = enabled ? MUTED : DISABLED_COLOR;
+        drawCenteredBoundedText(context, shortName, new UiRect(x, y, availW, uiFontHeight()), nameCol, true, true);
+        drawCenteredBoundedText(context, diameter, new UiRect(x, y + scaledUi(11), availW, uiFontHeight()), subCol, false, true);
+        drawWrappedTextBlock(context, desc, new UiRect(x, y + scaledUi(22), availW, Math.max(uiFontHeight(), computeSizeLabelBottom(y, availW) - (y + scaledUi(22)))), subCol, false, 3, true, true);
     }
 
     private boolean shouldShowSmallWorldWarning() {
