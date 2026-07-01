@@ -238,11 +238,20 @@ public class LatitudeCreateWorldScreen extends Screen {
         this.gameRules = new GameRules(holder.dataConfiguration().enabledFeatures());
     }
 
-    public static void openLoaded(Minecraft client, Runnable onClose, @Nullable Screen parent, WorldCreationContext holder) {
-        LOGGER.info("[LAT][CWPATH] LatitudeCreateWorldScreen.openLoaded parent={} holder={}",
+    public static void openLoaded(Minecraft client, Runnable onClose, @Nullable Screen parent, WorldCreationContext holder,
+                                  @Nullable String seed) {
+        LOGGER.info("[LAT][CWPATH] LatitudeCreateWorldScreen.openLoaded parent={} holder={} seedPreset={}",
                 parent == null ? "null" : parent.getClass().getName(),
-                holder);
-        client.setScreen(new LatitudeCreateWorldScreen(onClose, parent, holder));
+                holder,
+                seed != null && !seed.isBlank());
+        LatitudeCreateWorldScreen screen = new LatitudeCreateWorldScreen(onClose, parent, holder);
+        client.setScreen(screen);
+        // Carry over the seed vanilla was holding: the original world's seed on "Re-create", empty on a fresh
+        // create. This makes recreate pre-fill the seed field instead of leaving it blank (TEST 1 A5).
+        // probeSetWorldInputs no-ops on a blank seed, so fresh create still starts empty (random).
+        if (seed != null && !seed.isBlank()) {
+            screen.probeSetWorldInputs(null, seed, null);
+        }
     }
 
     /**
