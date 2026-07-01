@@ -57,8 +57,24 @@ public abstract class StructureBiomeMatchGuardMixin {
                 return;
             }
             ChunkPos cp = this.getChunkPos();
+            String path = id.getPath();
+            // Band-based cross-climate check first — independent of world.getBiome(), which during worldgen can
+            // still return the raw source biome rather than Latitude's repaint (the reason a savanna village
+            // survived into a temperate zone, TEST 1 C1). Gated to globe worlds via the small globe world border
+            // (a vanilla ~30M border maps everything to ~0deg and must not trip this).
+            var border = world.getWorldBorder();
+            double halfSize = com.example.globe.util.LatitudeMath.halfSize(border);
+            if (halfSize > 0.0 && halfSize < 1_000_000.0) {
+                double absDeg = Math.abs(com.example.globe.util.LatitudeMath.degreesFromZ(border, cp.getMiddleBlockZ()));
+                com.example.globe.util.LatitudeBands.Band band =
+                        com.example.globe.util.LatitudeBands.fromAbsoluteLatitudeDeg(absDeg);
+                if (LatitudeBiomes.structureClimateVsBandMismatch(path, band)) {
+                    ci.cancel();
+                    return;
+                }
+            }
             BlockPos center = new BlockPos(cp.getMiddleBlockX(), chunkBox.minY(), cp.getMiddleBlockZ());
-            if (LatitudeBiomes.structureClimateMismatch(id.getPath(), world.getBiome(center))) {
+            if (LatitudeBiomes.structureClimateMismatch(path, world.getBiome(center))) {
                 ci.cancel();
             }
         } catch (Throwable ignored) {
