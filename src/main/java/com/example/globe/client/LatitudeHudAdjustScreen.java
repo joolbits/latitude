@@ -140,7 +140,9 @@ public class LatitudeHudAdjustScreen extends Screen {
         }
 
         String degText = (border != null) ? LatitudeMath.formatLatitudeDeg(z, border) : "0\u00b0";
-        String sampleTitle = "TROPICAL " + degText;
+        // Derive the zone word from the same latitude so it matches degText (was hardcoded "TROPICAL",
+        // producing nonsense like "TROPICAL 60\u00b0S").
+        String sampleTitle = ((border != null) ? com.example.globe.util.LatitudeMath.zoneKey(border, z).toUpperCase(java.util.Locale.ROOT) : "TROPICAL") + " " + degText;
 
         ZoneEnterTitleOverlay.renderStaticAt(
                 ctx,

@@ -410,8 +410,11 @@ public final class CompassHud {
         return "1\u00b0S";
     }
 
+    // Sample latitude used for previews/placeholders is 1°S (see sampleLines/analogSampleLatitude), which is
+    // in the Tropics — keep the sample zone word consistent with that latitude so the placeholder never shows
+    // an impossible pairing like "1°S · Temperate".
     private static String sampleZone(CompassHudConfig cfg) {
-        return cfg.displayZoneInHud ? "Temperate" : null;
+        return cfg.displayZoneInHud ? "Tropics" : null;
     }
 
     private static String analogLatitudeText(Minecraft client, CompassHudConfig cfg) {
