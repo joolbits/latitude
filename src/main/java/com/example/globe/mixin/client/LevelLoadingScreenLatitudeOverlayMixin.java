@@ -98,7 +98,10 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
     private static int globe$pickSeedIndex() {
         int total = PHRASES.length;
         int featuredStart = Math.max(0, total - FEATURED_PHRASE_COUNT);
-        if (Math.random() < 0.70 && featuredStart < total) {
+        // ALWAYS start in the Latitude-feature block (was gated behind a 70% roll, so on a fast Mercator load
+        // the single shown phrase was often a generic one — the "feature messages disappeared" report). The
+        // compass screen now always leads with a Latitude-feature line.
+        if (featuredStart < total) {
             return featuredStart + (int) (Math.random() * (total - featuredStart));
         }
         return (int) (Math.random() * total);
