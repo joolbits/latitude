@@ -132,6 +132,9 @@ public class GlobeMod implements ModInitializer {
                             })));
 
             registerDevOnlyCommand(dispatcher);
+            // Shippable /latdev subset (band teleport + here-readout) for testers, opt-in via
+            // -Dlatitude.devCommands=true; no-op in dev (the full command owns /latdev) or without the flag.
+            LatitudeDevCommands.registerIfEnabled(dispatcher);
         });
 
         // Initialize province authority at world-load time, before spawn-chunk generation fires
