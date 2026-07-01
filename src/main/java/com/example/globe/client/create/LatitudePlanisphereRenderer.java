@@ -20,12 +20,15 @@ public final class LatitudePlanisphereRenderer {
             .orElse(40000);
 
     // ── Band native colors (ARGB, indexed by Band.ordinal()) ──
+    // Chosen for a clear climate progression with real value+hue contrast between adjacent bands (Peetsa TEST 7:
+    // "bands don't have enough contrast, they all compete"): deep tropical green -> warm arid ochre ->
+    // temperate green -> cool subpolar blue -> pale polar ice.
     private static final int[] BAND_COLORS = {
-            0xFF1A6B3C, // tropical
-            0xFF8B7332, // subtropical
-            0xFF3D6B4A, // temperate
-            0xFF4A6A7D, // subpolar
-            0xFF6A8599  // polar
+            0xFF157A34, // tropical    — deep green
+            0xFFC7A648, // subtropical — warm arid ochre
+            0xFF5FA85C, // temperate   — lighter green
+            0xFF5A86AC, // subpolar    — cool blue
+            0xFFBBD3E0  // polar        — pale ice
     };
 
     private static final int OCEAN_COLOR = 0xFF162A3F;
@@ -334,9 +337,9 @@ public final class LatitudePlanisphereRenderer {
                 int r = Math.min(255, (int) (((baseColor >> 16) & 0xFF) * 1.30f));
                 int g = Math.min(255, (int) (((baseColor >> 8) & 0xFF) * 1.30f));
                 int b = Math.min(255, (int) ((baseColor & 0xFF) * 1.30f));
-                fillColor = (0xC0 << 24) | (r << 16) | (g << 8) | b;   // selected band: strong, still translucent
+                fillColor = (0xD6 << 24) | (r << 16) | (g << 8) | b;   // selected band: pops
             } else {
-                fillColor = (baseColor & 0x00FFFFFF) | (0x4E << 24);   // others: light wash so land shows through
+                fillColor = (baseColor & 0x00FFFFFF) | (0x62 << 24);   // others: present but land still shows
             }
 
             int yLow  = (int) (halfH * band.lowDeg()  / 90.0);
@@ -363,60 +366,77 @@ public final class LatitudePlanisphereRenderer {
         drawLatitudeLineRect(context, cx, cy, halfW, -selHigh, GOLD);
     }
 
-    // A handful of deterministic elliptical landmasses, positioned/sized by fraction of the atlas half-extents
-    // and clipped to the atlas rectangle. Intentionally simple — a suggestive continent silhouette under the
-    // climate wash, consistent for both world shapes.
-    // Parchment map frame around the atlas. NOTE (Peetsa TEST 4 A1): the intent is the VANILLA
-    // minecraft:textures/map/map_background texture; the blit is GuiGraphicsExtractor.drawTexture(RenderPipeline,
-    // Identifier, x, y, u, v, w, h, texW, texH) — but the RenderPipelines.GUI_TEXTURED constant's package in
-    // this mapping isn't resolvable offline (yarn's net.minecraft.client.gl doesn't exist here). Until that's
-    // confirmed live, draw a parchment-toned border so the atlas is still framed; swapping to the real texture
-    // is then a one-line change in this method.
-    private static final int FRAME_PARCHMENT = 0xFFC8B78E;
-    private static final int FRAME_INK = 0xFF3A2E1E;
+    // Frame the atlas with the VANILLA parchment map texture (Peetsa TEST 7: "grab the minecraft map graphic ...
+    // don't invent one"). Drawn slightly larger than the atlas so the texture's decorative wooden border
+    // surrounds the climate map; the parchment center is covered by the atlas drawn on top.
+    private static final net.minecraft.resources.Identifier MAP_BG =
+            net.minecraft.resources.Identifier.fromNamespaceAndPath("minecraft", "textures/map/map_background");
 
     public static void drawAtlasFrame(GuiGraphicsExtractor ctx, int atlasLeft, int atlasTop, int atlasW, int atlasH) {
-        int border = Math.max(3, Math.min(atlasW, atlasH) / 12);
-        int fx = atlasLeft - border, fy = atlasTop - border;
-        int fw = atlasW + border * 2, fh = atlasH + border * 2;
-        // Parchment field behind the atlas (its center is covered when the atlas draws on top).
-        ctx.fill(fx, fy, fx + fw, fy + fh, FRAME_PARCHMENT);
-        drawFrameOutline(ctx, fx, fy, fw, fh);                                   // outer ink edge
-        drawFrameOutline(ctx, atlasLeft - 2, atlasTop - 2, atlasW + 4, atlasH + 4); // inner ink edge hugging the map
+        int inset = Math.max(6, Math.min(atlasW, atlasH) / 8);
+        ctx.blit(net.minecraft.client.renderer.RenderPipelines.GUI_TEXTURED, MAP_BG,
+                atlasLeft - inset, atlasTop - inset, 0.0f, 0.0f,
+                atlasW + inset * 2, atlasH + inset * 2, 128, 128);
     }
 
-    private static void drawFrameOutline(GuiGraphicsExtractor ctx, int x, int y, int w, int h) {
-        ctx.fill(x, y, x + w, y + 1, FRAME_INK);
-        ctx.fill(x, y + h - 1, x + w, y + h, FRAME_INK);
-        ctx.fill(x, y, x + 1, y + h, FRAME_INK);
-        ctx.fill(x + w - 1, y, x + w, y + h, FRAME_INK);
-    }
+    private static final long CONTINENT_SEED = 0x1A7D0BE59C4F3E21L;
 
+    // Organic continents from fractal value-noise instead of ovals (Peetsa TEST 7: "the continents are just
+    // ovals, looks dumb"). Land where the noise field, suppressed toward the atlas edges so seas surround the
+    // landmasses, exceeds sea level. Filled as horizontal runs per row (few draw calls, not per-pixel).
     private static void drawContinents(GuiGraphicsExtractor ctx, int cx, int cy, int halfW, int halfH,
                                        int clipL, int clipT, int clipR, int clipB) {
-        fillEllipse(ctx, cx + (int) (-0.45 * halfW), cy + (int) (-0.38 * halfH),
-                (int) (0.42 * halfW), (int) (0.30 * halfH), LAND_COLOR, clipL, clipT, clipR, clipB);
-        fillEllipse(ctx, cx + (int) (0.40 * halfW), cy + (int) (-0.05 * halfH),
-                (int) (0.34 * halfW), (int) (0.26 * halfH), LAND_COLOR_2, clipL, clipT, clipR, clipB);
-        fillEllipse(ctx, cx + (int) (-0.22 * halfW), cy + (int) (0.46 * halfH),
-                (int) (0.30 * halfW), (int) (0.22 * halfH), LAND_COLOR, clipL, clipT, clipR, clipB);
-        fillEllipse(ctx, cx + (int) (0.56 * halfW), cy + (int) (0.52 * halfH),
-                (int) (0.18 * halfW), (int) (0.15 * halfH), LAND_COLOR_2, clipL, clipT, clipR, clipB);
+        int w = clipR - clipL, h = clipB - clipT;
+        if (w <= 1 || h <= 1) return;
+        double scale = Math.max(7.0, Math.min(w, h) / 6.0); // noise cell size in px
+        for (int py = clipT; py < clipB; py++) {
+            double v = (double) (py - clipT) / (h - 1);
+            int runStart = -1, runCol = 0;
+            for (int px = clipL; px <= clipR; px++) {
+                int col = 0;
+                if (px < clipR) {
+                    double u = (double) (px - clipL) / (w - 1);
+                    double edge = Math.min(Math.min(u, 1 - u), Math.min(v, 1 - v)); // 0 at border, ~0.5 center
+                    double land = fbm((px - clipL) / scale, (py - clipT) / scale) - 0.52 + edge * 0.55;
+                    if (land > 0.0) {
+                        col = land > 0.14 ? LAND_COLOR_2 : LAND_COLOR; // interior slightly lighter than coast
+                    }
+                }
+                if (col != runCol) {
+                    if (runStart >= 0 && runCol != 0) ctx.fill(runStart, py, px, py + 1, runCol);
+                    runStart = col != 0 ? px : -1;
+                    runCol = col;
+                }
+            }
+        }
     }
 
-    private static void fillEllipse(GuiGraphicsExtractor ctx, int ecx, int ecy, int erx, int ery, int color,
-                                    int clipL, int clipT, int clipR, int clipB) {
-        if (erx <= 0 || ery <= 0) return;
-        for (int dy = -ery; dy <= ery; dy++) {
-            double fy = (double) dy / ery;
-            double f = 1.0 - fy * fy;
-            if (f <= 0) continue;
-            int hw = (int) (Math.sqrt(f) * erx);
-            int y = ecy + dy;
-            if (y < clipT || y >= clipB) continue;
-            int x1 = Math.max(clipL, ecx - hw);
-            int x2 = Math.min(clipR, ecx + hw);
-            if (x2 > x1) ctx.fill(x1, y, x2, y + 1, color);
+    private static double fbm(double x, double y) {
+        double sum = 0, amp = 0.5, freq = 1.0;
+        for (int o = 0; o < 3; o++) {
+            sum += amp * valueNoise(x * freq, y * freq, CONTINENT_SEED + o * 1013L);
+            freq *= 2.03;
+            amp *= 0.5;
         }
+        return sum; // ~[0,1]
+    }
+
+    private static double valueNoise(double x, double y, long seed) {
+        int x0 = (int) Math.floor(x), y0 = (int) Math.floor(y);
+        double fx = x - x0, fy = y - y0;
+        double sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy);
+        double n00 = hash01(x0, y0, seed), n10 = hash01(x0 + 1, y0, seed);
+        double n01 = hash01(x0, y0 + 1, seed), n11 = hash01(x0 + 1, y0 + 1, seed);
+        double a = n00 + (n10 - n00) * sx;
+        double b = n01 + (n11 - n01) * sx;
+        return a + (b - a) * sy;
+    }
+
+    private static double hash01(int x, int y, long seed) {
+        long h = x * 0x9E3779B97F4A7C15L ^ y * 0xC2B2AE3D27D4EB4FL ^ seed;
+        h ^= (h >>> 29);
+        h *= 0xBF58476D1CE4E5B9L;
+        h ^= (h >>> 32);
+        return ((h >>> 40) & 0xFFFFFFL) / (double) 0xFFFFFF;
     }
 }
