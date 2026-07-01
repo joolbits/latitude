@@ -1234,7 +1234,7 @@ public class LatitudeCreateWorldScreen extends Screen {
     private void renderSizeLabel(GuiGraphicsExtractor context, int x, int y, int availW) {
         int idx = selectedSize.ordinal();
         String shortName = SIZE_SHORT_NAMES[idx];
-        String diameter = formatDiameter(selectedSize.borderRadiusBlocks * 2) + " blocks";
+        String diameter = mercatorDimsLabel();
         String desc = SIZE_DESCRIPTIONS[idx];
 
         drawCenteredBoundedText(context, shortName, new UiRect(x, y, availW, uiFontHeight()), WARM_WHITE, true, true);
@@ -1243,15 +1243,14 @@ public class LatitudeCreateWorldScreen extends Screen {
     }
 
     private boolean shouldShowSmallWorldWarning() {
-        return switch (selectedSize) {
-            case ITTY_BITTY, TINY, SMALL -> true;
-            default -> false;
-        };
+        // Retired: smaller worlds no longer carry a meaningful biome-diversity penalty (Mercator widens every
+        // band + the representation work fills them), so the "fewer biome variants" warning is obsolete.
+        return false;
     }
 
     private void renderPlanispherePreview(GuiGraphicsExtractor context, int areaLeft, int areaTop, int areaRight, int areaBottom) {
         long dbgStart = DEBUG_UI_SWITCH_LAG ? Util.getMillis() : 0L;
-        String caption = formatDiameter(selectedSize.borderRadiusBlocks * 2) + " blocks";
+        String caption = mercatorDimsLabel();
         float labelScale = previewLabelScale(selectedSize);
         float captionScale = previewCaptionScale(selectedSize);
         int labelHeight = scaledFontHeight(labelScale);
@@ -1835,6 +1834,14 @@ public class LatitudeCreateWorldScreen extends Screen {
     // ── Diameter formatting: "7,500", "10,000", etc. ──
     private static String formatDiameter(int diameter) {
         return String.format(Locale.ROOT, "%,d", diameter);
+    }
+
+    /** World extent label, honest about the Mercator 2:1 shape: E-W spans 4x the latitude radius (the border
+     *  = 2*xRadius = 4*zRadius) and N-S spans 2x, so a Tiny world reads "20,000 × 10,000 blocks" — matching
+     *  the in-game "world border is 20000 wide" message instead of only showing the 10,000 N-S figure. */
+    private String mercatorDimsLabel() {
+        int z = selectedSize.borderRadiusBlocks;
+        return formatDiameter(z * 4) + " × " + formatDiameter(z * 2) + " blocks";
     }
 
     // ══════════════════════════════════════════════════════════════
