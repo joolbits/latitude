@@ -21,7 +21,8 @@ public abstract class CreateWorldScreenShowMixin {
                     onClose,
                     parent,
                     ((CreateWorldScreenMixin) (Object) createWorldScreen).getUiState().getSettings(),
-                    ((CreateWorldScreenMixin) (Object) createWorldScreen).getUiState().getSeed());
+                    ((CreateWorldScreenMixin) (Object) createWorldScreen).getUiState().getSeed(),
+                    ((CreateWorldScreenMixin) (Object) createWorldScreen).getUiState().getName());
         }
     }
 }

@@ -34,7 +34,8 @@ public abstract class CreateWorldScreenInitRedirectMixin {
                 onClose,
                 parent,
                 self.getUiState().getSettings(),
-                self.getUiState().getSeed());
+                self.getUiState().getSeed(),
+                self.getUiState().getName());
         ci.cancel();
     }
 
