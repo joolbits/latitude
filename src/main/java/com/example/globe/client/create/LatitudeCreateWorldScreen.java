@@ -139,6 +139,7 @@ public class LatitudeCreateWorldScreen extends Screen {
     private GameRules gameRules;
 
     private String worldNameInput = "New World";
+    private String seedInput = "";
     private EditBox worldNameField;
     private EditBox seedField;
     private Button sizePrevBtn;
@@ -407,6 +408,8 @@ public class LatitudeCreateWorldScreen extends Screen {
         this.seedField = new EditBox(this.font, inputX, seedFieldY, inputW, fieldH, Component.literal("Seed"));
         this.seedField.setMaxLength(64);
         this.seedField.setHint(Component.literal("Leave blank for random"));
+        this.seedField.setValue(seedInput);
+        this.seedField.setResponder(text -> seedInput = text);
         this.addRenderableWidget(this.seedField);
 
         // ── 3. Size ◀ ──
@@ -992,7 +995,8 @@ public class LatitudeCreateWorldScreen extends Screen {
             this.worldNameInput = trimmed;
         }
         if (seed != null && !seed.isBlank() && this.seedField != null) {
-            this.seedField.setValue(seed.trim());
+            this.seedInput = seed.trim();
+            this.seedField.setValue(this.seedInput);
         }
         if (size != null) {
             this.selectedSize = size;
