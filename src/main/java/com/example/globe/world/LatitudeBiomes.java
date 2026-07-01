@@ -1983,6 +1983,14 @@ public final class LatitudeBiomes {
         if (b.isEmpty()) {
             return false;
         }
+        // Villages must never sit in a bog/swamp/marsh. Vanilla places a village on the raw (dry) biome at the
+        // STRUCTURE_STARTS phase, then Latitude can repaint the surface to a flat wetland underneath at the
+        // later BIOMES phase — leaving "A BOG village" (TEST 1 finding C2). This has no declared climate in the
+        // structure id (plains villages read as neutral below), so cancel it explicitly here. Matches vanilla
+        // swamp + modded bog/marsh/fen/bayou/mire.
+        if (p.contains("village") && biomeIdContainsAny(b, "swamp", "bog", "marsh", "wetland", "fen", "bayou", "mire")) {
+            return true;
+        }
         if (p.contains("desert")) {
             return !(isAridFamily(biome) || biomeIdContainsAny(b, "desert", "badlands", "mesa", "dune", "sand", "arid", "oasis", "outback"));
         }
