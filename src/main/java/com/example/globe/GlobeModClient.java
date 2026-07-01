@@ -208,7 +208,7 @@ public class GlobeModClient implements ClientModInitializer {
         }
 
         if (ewActive) {
-            ewSandstormClientTick(client, ewStage);
+            ewStormClientTick(client, ewStage);
         }
 
         if (polarActive) {
@@ -247,7 +247,7 @@ public class GlobeModClient implements ClientModInitializer {
         }
     }
 
-    private static void ewSandstormClientTick(Minecraft client, GlobeClientState.EwStormStage stage) {
+    private static void ewStormClientTick(Minecraft client, GlobeClientState.EwStormStage stage) {
         int base = switch (stage) {
             case LEVEL_1 -> 6;
             case LEVEL_2 -> 20;
@@ -264,11 +264,24 @@ public class GlobeModClient implements ClientModInitializer {
 
         double vx = client.player.getX() >= 0.0 ? -0.10 : 0.10;
 
-        // Use falling sand dust for a visible sandstorm wall, plus some haze.
-        int sandCount = base;
+        int mainCount = base;
         int hazeCount = Math.max(1, base / 3);
-        BlockParticleOption sand = new BlockParticleOption(ParticleTypes.FALLING_DUST, Blocks.SAND.defaultBlockState());
-        spawnCloudRing(client, sand, sandCount, random, px, py, pz, vx);
+
+        // Climate-aware E/W storm (TEST 1 E1): in the cold bands (subpolar/polar) the border storm is a SNOW
+        // blizzard — snowflakes + pale haze building toward whiteout — instead of a desert sandstorm.
+        var border = client.level.getWorldBorder();
+        double absDeg = Math.abs(com.example.globe.util.LatitudeMath.degreesFromZ(border, pz));
+        com.example.globe.util.LatitudeBands.Band band =
+                com.example.globe.util.LatitudeBands.fromAbsoluteLatitudeDeg(absDeg);
+        boolean cold = band == com.example.globe.util.LatitudeBands.Band.SUBPOLAR
+                || band == com.example.globe.util.LatitudeBands.Band.POLAR;
+
+        if (cold) {
+            spawnCloudRing(client, ParticleTypes.SNOWFLAKE, mainCount, random, px, py, pz, vx);
+        } else {
+            BlockParticleOption sand = new BlockParticleOption(ParticleTypes.FALLING_DUST, Blocks.SAND.defaultBlockState());
+            spawnCloudRing(client, sand, mainCount, random, px, py, pz, vx);
+        }
         spawnCloudRing(client, ParticleTypes.CLOUD, hazeCount, random, px, py, pz, vx * 0.6);
     }
 
