@@ -258,28 +258,53 @@ public final class LatitudePlanisphereRenderer {
         }
     }
 
+    // ── Rectangle equivalents of the circle primitives above, for the Mercator (2:1) atlas preview: same
+    // shapes, just without the chord-mask clip — a constant halfW instead of a per-scanline sqrt(frac)*radius. ──
+    private static void fillRect(GuiGraphicsExtractor ctx, int cx, int cy, int halfW, int halfH, int color) {
+        ctx.fill(cx - halfW, cy - halfH, cx + halfW, cy + halfH, color);
+    }
+
+    private static void fillBandStripRect(GuiGraphicsExtractor ctx, int cx, int cy, int halfW, int yStart, int yEnd, int color) {
+        ctx.fill(cx - halfW, cy + yStart, cx + halfW, cy + yEnd, color);
+    }
+
+    private static void drawLatitudeLineRect(GuiGraphicsExtractor ctx, int cx, int cy, int halfW, int yOff, int color) {
+        ctx.fill(cx - halfW, cy + yOff, cx + halfW, cy + yOff + 1, color);
+    }
+
     /**
-     * Render a compact latitude disc within a {@code size × size} pixel area.
-     * 5-band filled disc with a warm-gold ring outline on the selected band arc.
-     * No labels, no grid lines. Returns immediately if {@code size < 20}.
+     * Render a compact latitude preview within a {@code width × height} pixel area — a circle for a Legacy 1:1
+     * (CLASSIC) world, a rectangle for a Mercator 2:1 world (width == 2 × height). 5-band fill with a
+     * warm-gold outline on the selected band's edges. No labels, no grid lines. Returns immediately if
+     * {@code height < 20}.
      *
      * @param context      draw context
-     * @param x            top-left X of the bounding square
-     * @param y            top-left Y of the bounding square
-     * @param size         both width and height of the bounding square (pixels)
+     * @param x            top-left X of the bounding area
+     * @param y            top-left Y of the bounding area
+     * @param width        bounding width in pixels (== height for Legacy, == 2×height for Mercator)
+     * @param height       bounding height in pixels
      * @param selectedBand the currently selected latitude band
+     * @param shape        which world shape to draw — CLASSIC (circle) or MERCATOR (rectangle)
      */
-    public static void renderCompact(GuiGraphicsExtractor context, int x, int y, int size, LatitudeBands.Band selectedBand) {
-        if (size < 20) return;
+    public static void renderCompact(GuiGraphicsExtractor context, int x, int y, int width, int height,
+                                     LatitudeBands.Band selectedBand, com.example.globe.world.LatitudeBiomes.GlobeShape shape) {
+        if (height < 20) return;
 
-        int radius = size / 2;
-        int cx = x + radius;
-        int cy = y + radius;
+        int halfW = width / 2;
+        int halfH = height / 2;
+        int cx = x + halfW;
+        int cy = y + halfH;
+        boolean mercator = shape == com.example.globe.world.LatitudeBiomes.GlobeShape.MERCATOR;
 
         // ── Ocean base ──
-        fillCircle(context, cx, cy, radius, OCEAN_COLOR);
+        if (mercator) {
+            fillRect(context, cx, cy, halfW, halfH, OCEAN_COLOR);
+        } else {
+            fillCircle(context, cx, cy, halfH, OCEAN_COLOR); // halfH == halfW == radius for CLASSIC
+        }
 
-        // ── Band fills ──
+        // ── Band fills ── (band-boundary math is always halfH-based: bands vary by latitude, i.e. the
+        // vertical axis, in both shapes — only the fill primitive's horizontal extent differs)
         LatitudeBands.Band[] bands = LatitudeBands.Band.values();
         for (int i = 0; i < bands.length; i++) {
             LatitudeBands.Band band = bands[i];
@@ -296,19 +321,32 @@ public final class LatitudePlanisphereRenderer {
                 fillColor = (baseColor & 0x00FFFFFF) | (0x8C << 24);
             }
 
-            int yLow  = (int) (radius * band.lowDeg()  / 90.0);
-            int yHigh = (int) (radius * band.highDeg() / 90.0);
+            int yLow  = (int) (halfH * band.lowDeg()  / 90.0);
+            int yHigh = (int) (halfH * band.highDeg() / 90.0);
 
-            fillBandStrip(context, cx, cy, radius, yLow,  yHigh,  fillColor);
-            fillBandStrip(context, cx, cy, radius, -yHigh, -yLow, fillColor);
+            if (mercator) {
+                fillBandStripRect(context, cx, cy, halfW, yLow,  yHigh,  fillColor);
+                fillBandStripRect(context, cx, cy, halfW, -yHigh, -yLow, fillColor);
+            } else {
+                fillBandStrip(context, cx, cy, halfH, yLow,  yHigh,  fillColor);
+                fillBandStrip(context, cx, cy, halfH, -yHigh, -yLow, fillColor);
+            }
         }
 
-        // ── Gold ring outline on selected band edges ──
-        int selLow  = (int) (radius * selectedBand.lowDeg()  / 90.0);
-        int selHigh = (int) (radius * selectedBand.highDeg() / 90.0);
-        drawLatitudeLine(context, cx, cy, radius,  selLow,  GOLD);
-        drawLatitudeLine(context, cx, cy, radius,  selHigh, GOLD);
-        drawLatitudeLine(context, cx, cy, radius, -selLow,  GOLD);
-        drawLatitudeLine(context, cx, cy, radius, -selHigh, GOLD);
+        // ── Gold outline on selected band edges ── (the existing "spawn zone highlight" — a brightened
+        // stripe + these edge lines; ported to the rectangle case via the *Rect primitives)
+        int selLow  = (int) (halfH * selectedBand.lowDeg()  / 90.0);
+        int selHigh = (int) (halfH * selectedBand.highDeg() / 90.0);
+        if (mercator) {
+            drawLatitudeLineRect(context, cx, cy, halfW,  selLow,  GOLD);
+            drawLatitudeLineRect(context, cx, cy, halfW,  selHigh, GOLD);
+            drawLatitudeLineRect(context, cx, cy, halfW, -selLow,  GOLD);
+            drawLatitudeLineRect(context, cx, cy, halfW, -selHigh, GOLD);
+        } else {
+            drawLatitudeLine(context, cx, cy, halfH,  selLow,  GOLD);
+            drawLatitudeLine(context, cx, cy, halfH,  selHigh, GOLD);
+            drawLatitudeLine(context, cx, cy, halfH, -selLow,  GOLD);
+            drawLatitudeLine(context, cx, cy, halfH, -selHigh, GOLD);
+        }
     }
 }
