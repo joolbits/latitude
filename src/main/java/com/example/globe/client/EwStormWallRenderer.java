@@ -2,7 +2,6 @@ package com.example.globe.client;
 
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
-import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.resources.Identifier;
 
 public final class EwStormWallRenderer {
@@ -80,7 +79,11 @@ public final class EwStormWallRenderer {
         }
     }
 
-    public static void render(PoseStack matrices, MultiBufferSource consumers) {
+    // 26.2 removed net.minecraft.client.renderer.MultiBufferSource (immediate-mode world rendering was replaced
+    // by the FrameGraph/extract render pipeline). This entrypoint is currently disabled (wall off) and is not
+    // called anywhere; the live east-west haze is EwSandstormOverlayHud. If the world-space storm wall is ever
+    // re-enabled it must be re-ported to the 26.2 render API. Signature de-coupled from the removed type for now.
+    public static void render(PoseStack matrices) {
         var mc = net.minecraft.client.Minecraft.getInstance();
         if (mc == null || mc.level == null || mc.gameRenderer == null) return;
         if (!GlobeClientState.DEBUG_EW_WALL) return;

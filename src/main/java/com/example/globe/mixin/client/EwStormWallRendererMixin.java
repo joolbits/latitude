@@ -38,7 +38,7 @@ public abstract class EwStormWallRendererMixin {
             return;
         }
 
-        Vec3 camPos = client.gameRenderer.getMainCamera().position();
+        Vec3 camPos = client.gameRenderer.mainCamera().position();
         double westX = GlobeClientState.ewWestX();
         double eastX = GlobeClientState.ewEastX();
         double dist = GlobeClientState.ewDistToBorder(camPos.x);
@@ -49,7 +49,9 @@ public abstract class EwStormWallRendererMixin {
 
         queue.submitCustomGeometry(matrices, RenderTypes.debugQuads(), (entry, vc) -> {
             var world = client.level;
-            GlStateManager._enableBlend();
+            // 26.2: GlStateManager._enableBlend/_disableBlend now take an int context/binding index; 0 = default
+            // context, matching the prior zero-arg behavior. (This mixin is deferred/unregistered dead code.)
+            GlStateManager._enableBlend(0);
             GlStateManager._blendFuncSeparate(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA, GL11.GL_ONE, GL11.GL_ONE_MINUS_SRC_ALPHA);
             GlStateManager._enableDepthTest();
             GlStateManager._depthMask(false);
@@ -60,7 +62,7 @@ public abstract class EwStormWallRendererMixin {
             } finally {
                 GlStateManager._disablePolygonOffset();
                 GlStateManager._depthMask(true);
-                GlStateManager._disableBlend();
+                GlStateManager._disableBlend(0);
                 GlStateManager._enableCull();
                 GlStateManager._enableDepthTest();
             }

@@ -76,7 +76,7 @@ public class SpawnZoneScreen extends Screen {
     @Override
     public void onClose() {
         if (this.minecraft != null) {
-            this.minecraft.setScreen(null);
+            this.minecraft.setScreenAndShow(null);
         }
     }
 }

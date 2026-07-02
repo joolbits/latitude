@@ -14,8 +14,8 @@ public abstract class CreateWorldScreenShowMixin {
 
     @Inject(method = "show(Lnet/minecraft/client/MinecraftClient;Ljava/lang/Runnable;)V", at = @At("TAIL"))
     private static void globe$redirectToLatitudeScreen(Minecraft client, Runnable onClose, CallbackInfo ci) {
-        Screen parent = client.screen;
-        if (client.screen instanceof CreateWorldScreen createWorldScreen) {
+        Screen parent = client.gui.screen();
+        if (client.gui.screen() instanceof CreateWorldScreen createWorldScreen) {
             LatitudeCreateWorldScreen.openLoaded(
                     client,
                     onClose,

@@ -247,7 +247,7 @@ public class LatitudeCreateWorldScreen extends Screen {
                 seed != null && !seed.isBlank(),
                 worldName != null && !worldName.isBlank());
         LatitudeCreateWorldScreen screen = new LatitudeCreateWorldScreen(onClose, parent, holder);
-        client.setScreen(screen);
+        client.setScreenAndShow(screen);
         // Carry over the seed AND world name vanilla was holding. On "Re-create" both come from the source
         // world (seed via getSeed(), name via getName()); on a fresh create they are the defaults. This makes
         // recreate pre-fill both fields instead of resetting them (TEST 1 A5 + bug-catcher #2: recreate used to
@@ -310,22 +310,22 @@ public class LatitudeCreateWorldScreen extends Screen {
                     if (throwable != null) {
                         LOGGER.error("Failed to load datapacks for Latitude create-world screen", throwable);
                         onClose.run();
-                        if (client.screen == null || client.screen instanceof GenericMessageScreen) {
-                            client.setScreen(parent);
+                        if (client.gui.screen() == null || client.gui.screen() instanceof GenericMessageScreen) {
+                            client.setScreenAndShow(parent);
                         }
                         return;
                     }
 
                     // Open the bespoke screen with the loaded holder.
-                    client.setScreen(new LatitudeCreateWorldScreen(onClose, parent, loadedHolder));
+                    client.setScreenAndShow(new LatitudeCreateWorldScreen(onClose, parent, loadedHolder));
                 });
             });
         } catch (Exception e) {
             LOGGER.error("Failed to load datapacks for Latitude create-world screen", e);
             // 5A error path: return to caller screen, never show bespoke screen
             onClose.run();
-            if (client.screen == null || client.screen instanceof GenericMessageScreen) {
-                client.setScreen(parent);
+            if (client.gui.screen() == null || client.gui.screen() instanceof GenericMessageScreen) {
+                client.setScreenAndShow(parent);
             }
         }
     }
@@ -971,15 +971,15 @@ public class LatitudeCreateWorldScreen extends Screen {
 
     private void openGameRules() {
         if (this.minecraft == null) return;
-        this.minecraft.setScreen(new WorldCreationGameRulesScreen(this.gameRules, optional -> {
+        this.minecraft.setScreenAndShow(new WorldCreationGameRulesScreen(this.gameRules, optional -> {
             optional.ifPresent(rules -> this.gameRules = rules);
-            this.minecraft.setScreen(this);
+            this.minecraft.setScreenAndShow(this);
         }));
     }
 
     private void openHudStudio() {
         if (this.minecraft == null) return;
-        this.minecraft.setScreen(new LatitudeHudStudioScreen(this));
+        this.minecraft.setScreenAndShow(new LatitudeHudStudioScreen(this));
     }
 
     // ── Begin Expedition ──
@@ -1038,8 +1038,8 @@ public class LatitudeCreateWorldScreen extends Screen {
     @Override
     public void onClose() {
         this.onClose.run();
-        if (this.minecraft != null && (this.minecraft.screen == this || this.minecraft.screen == null)) {
-            this.minecraft.setScreen(this.parent);
+        if (this.minecraft != null && (this.minecraft.gui.screen() == this || this.minecraft.gui.screen() == null)) {
+            this.minecraft.setScreenAndShow(this.parent);
         }
     }
 

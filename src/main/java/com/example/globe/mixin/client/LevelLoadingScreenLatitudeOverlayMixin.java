@@ -499,7 +499,7 @@ class LatitudeLoadingClientTickMixin {
         }
 
         Minecraft client = (Minecraft) (Object) this;
-        boolean loadingScreenVisible = client.screen instanceof LevelLoadingScreen;
+        boolean loadingScreenVisible = client.gui.screen() instanceof LevelLoadingScreen;
         boolean playerSettled = this.player.tickCount >= PLAYABLE_READY_MIN_PLAYER_TICKS;
         boolean spawnChunksReady = globe$clientSpawnChunkRingReady();
         RenderReadiness renderReadiness = globe$clientRenderReadiness(client);
@@ -555,7 +555,7 @@ class LatitudeLoadingClientTickMixin {
             return RenderReadiness.unavailable();
         }
         boolean renderQueueEmpty = client.levelRenderer.hasRenderedAllSections();
-        int renderedSections = client.levelRenderer.countRenderedSections();
+        int renderedSections = client.levelRenderer.visibleSections().size();
         boolean playerSectionVisible = client.levelRenderer.isSectionCompiledAndVisible(this.player.blockPosition());
         net.minecraft.core.BlockPos feetPos = net.minecraft.core.BlockPos.containing(
                 this.player.getX(), this.player.getY() - 1.0, this.player.getZ());
