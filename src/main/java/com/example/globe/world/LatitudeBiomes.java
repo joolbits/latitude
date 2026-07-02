@@ -2620,6 +2620,23 @@ public final class LatitudeBiomes {
     private static final int SAVANNA_RUGGED_RING_BLOCKS = 24;
     private static final int WINDSWEPT_RUGGED_THRESH = 8;
     private static final int WINDSWEPT_RUGGED_HYST = 2;
+    // Ring radius (in noise-coord cells, each 4 blocks) used to sample Climate.Sampler weirdness
+    // around a polar column for polarClimateRuggednessProxy(). Sampler queries never touch the
+    // chunk generator, unlike previewHeight()/previewTerrain() (see the 2026-06-20 spawn-prep
+    // worldgen stall from generator re-entry, fixed in 4ae1bec5).
+    private static final int POLAR_CLIMATE_RUGGED_RING_NOISE_CELLS = 2;
+    // Kill switch for isolating whether polarClimateRuggednessProxy() contributes to live chunk-gen
+    // lag: -Dlatitude.polarClimateRuggedProxy=false skips the extra sampler queries entirely and
+    // reverts to the old polarProbeDelta=0 behavior, without needing a rebuild to A/B.
+    private static final boolean POLAR_CLIMATE_RUGGED_PROXY_ENABLED =
+            Boolean.parseBoolean(System.getProperty("latitude.polarClimateRuggedProxy", "true"));
+    // Scales a raw weirdness swing (climate-noise units, roughly 0..2) up into the same rough
+    // magnitude as a real block-height robustDelta, so the existing polarProbeDelta >= 12 and
+    // polarMountainAuthority's robustDelta >= 18 thresholds stay meaningful. Chosen as a starting
+    // point, not yet atlas-calibrated -- retune via -Dlatitude.polarClimateRuggedScale after
+    // measuring live polar mountain-biome share against the pre-4ae1bec5 baseline.
+    private static final double POLAR_CLIMATE_RUGGED_SCALE =
+            Double.parseDouble(System.getProperty("latitude.polarClimateRuggedScale", "20.0"));
     private static final int PREVIEW_HEIGHT_MARGIN_BLOCKS = 25;
     private static final int TEMPERATE_MOUNTAIN_MIN_HEIGHT_ABOVE_SEA = 56;
     private static final int TEMPERATE_MOUNTAIN_MIN_RUGGED_DELTA = WINDSWEPT_RUGGED_THRESH + WINDSWEPT_RUGGED_HYST;
@@ -2825,12 +2842,20 @@ public final class LatitudeBiomes {
         // syntheticPreviewTerrain uses temperate-gated mountainNoiseLike, which is always false
         // for polar band, producing flat placeholder values that suppress polarTerrainMountainLike.
         // When the noise says "mountain" in a polar cell during live worldgen, use the cached
-        // columnDecisionY instead of a targeted previewTerrain() probe to avoid generator re-entry.
+        // columnDecisionY instead of a targeted previewTerrain() probe to avoid generator re-entry
+        // (previewHeight() calls back into the chunk generator, which caused the 2026-06-20
+        // spawn-prep worldgen stall). Ruggedness has no such cache, so it used to be hardcoded to
+        // 0 here -- an unintentional side effect that permanently disabled the polarProbeDelta >= 12
+        // OR-branch below on the live path (dbf6ac86 added that branch deliberately so ruggedness
+        // alone, not just height, could earn polar mountain authority). Recover it from a
+        // non-reentrant Climate.Sampler-only proxy instead of zeroing it.
         int polarProbeHeight = preview.centerHeight;
         int polarProbeDelta  = preview.robustDelta;
         if (skipPreview && landBandIndex >= BAND_POLAR && polarMountainNoiseLike && hasPreviewTerrainInputs) {
             polarProbeHeight = columnDecisionY;
-            polarProbeDelta  = 0;
+            polarProbeDelta  = POLAR_CLIMATE_RUGGED_PROXY_ENABLED
+                    ? polarClimateRuggednessProxy(sampler, blockX, blockZ)
+                    : 0;
         }
         boolean polarTerrainMountainLike = (!hasPreviewTerrainInputs && isAtlasHeadlessContext(callerContext) && polarMountainNoiseLike)
                 || (polarProbeDelta >= 12)
@@ -3471,12 +3496,20 @@ public final class LatitudeBiomes {
         // syntheticPreviewTerrain uses temperate-gated mountainNoiseLike, which is always false
         // for polar band, producing flat placeholder values that suppress polarTerrainMountainLike.
         // When the noise says "mountain" in a polar cell during live worldgen, use the cached
-        // columnDecisionY instead of a targeted previewTerrain() probe to avoid generator re-entry.
+        // columnDecisionY instead of a targeted previewTerrain() probe to avoid generator re-entry
+        // (previewHeight() calls back into the chunk generator, which caused the 2026-06-20
+        // spawn-prep worldgen stall). Ruggedness has no such cache, so it used to be hardcoded to
+        // 0 here -- an unintentional side effect that permanently disabled the polarProbeDelta >= 12
+        // OR-branch below on the live path (dbf6ac86 added that branch deliberately so ruggedness
+        // alone, not just height, could earn polar mountain authority). Recover it from a
+        // non-reentrant Climate.Sampler-only proxy instead of zeroing it.
         int polarProbeHeight = preview.centerHeight;
         int polarProbeDelta  = preview.robustDelta;
         if (skipPreview && landBandIndex >= BAND_POLAR && polarMountainNoiseLike && hasPreviewTerrainInputs) {
             polarProbeHeight = columnDecisionY;
-            polarProbeDelta  = 0;
+            polarProbeDelta  = POLAR_CLIMATE_RUGGED_PROXY_ENABLED
+                    ? polarClimateRuggednessProxy(sampler, blockX, blockZ)
+                    : 0;
         }
         boolean polarTerrainMountainLike = (!hasPreviewTerrainInputs && isAtlasHeadlessContext(callerContext) && polarMountainNoiseLike)
                 || (polarProbeDelta >= 12)
@@ -8619,6 +8652,32 @@ public final class LatitudeBiomes {
         double erosion = Climate.unquantizeCoord(point.erosion());
         double weirdness = Climate.unquantizeCoord(point.weirdness());
         return cont > 0.10 && erosion < -0.25 && Math.abs(weirdness) > 0.25;
+    }
+
+    /**
+     * Non-reentrant ruggedness proxy for the live-worldgen polar mountain bridge in pick().
+     * Samples Climate.Sampler weirdness at a small ring of offsets around the column -- the same
+     * kind of query isMountainLike() already performs -- instead of calling previewTerrain()/
+     * previewHeight(), which re-enter the chunk generator and caused the 2026-06-20 spawn-prep
+     * worldgen stall. A large weirdness swing across the ring approximates jagged terrain without
+     * ever touching the generator. Returns 0 if sampler is null.
+     */
+    private static int polarClimateRuggednessProxy(Climate.Sampler sampler, int blockX, int blockZ) {
+        if (sampler == null) {
+            return 0;
+        }
+        int noiseX = blockX >> 2;
+        int noiseZ = blockZ >> 2;
+        int ring = POLAR_CLIMATE_RUGGED_RING_NOISE_CELLS;
+        int noiseY = SURFACE_CLASSIFY_Y >> 2;
+        double center = Climate.unquantizeCoord(sampler.sample(noiseX, noiseY, noiseZ).weirdness());
+        double maxDelta = 0.0;
+        int[][] offsets = {{ring, 0}, {-ring, 0}, {0, ring}, {0, -ring}};
+        for (int[] off : offsets) {
+            double w = Climate.unquantizeCoord(sampler.sample(noiseX + off[0], noiseY, noiseZ + off[1]).weirdness());
+            maxDelta = Math.max(maxDelta, Math.abs(w - center));
+        }
+        return (int) Math.round(maxDelta * POLAR_CLIMATE_RUGGED_SCALE);
     }
 
     private static Holder<Biome> mangroveOverride(Registry<Biome> biomes, Holder<Biome> fallback) {
