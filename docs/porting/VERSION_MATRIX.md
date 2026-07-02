@@ -5,15 +5,24 @@
 
 ## 26.2 Pivot Status (2026-07-02)
 
-Build-metadata retarget is done and compiles cleanly at the toolchain level (Gradle 9.5.1, Loom 1.17.13,
-Fabric Loader 0.19.3, Fabric API 0.154.0+26.2 all resolve; MC 26.2 deobf jars download). `compileJava` is
-**RED**: 70 errors / 23 files, spanning four independent subsystems (client screen management, camera/render-
-target access, `MultiBufferSource` relocation, and a real removal/consolidation of the
-`DripstoneClusterFeature`/`PointedDripstoneFeature` worldgen classes). This is a Hard Stop per
-`docs/LATITUDE_2_0_OVERHAUL.md` and `docs/porting/PORTING.md` — broad API drift, not a small isolatable cause.
-Full detail in `docs/binder/canonical-26.2-pivot-20260702.md`. Headless Atlas/exact-ID proof was not attempted
-(blocked behind compile). Root: `<home>/CascadeProjects/Latitude-2.0-26.2-pivot`, branch
-`port/canonical-26.2-pivot`.
+**GREEN for the deterministic-headless proof gate.** Build-metadata retarget + narrow API-drift repair are
+done; `compileJava` is green (134 → 0 errors) and the headless Atlas proof runs green on 26.2.
+
+- Toolchain: Gradle 9.5.1, Loom 1.17.13, Fabric Loader 0.19.3, Fabric API 0.154.0+26.2, MC 26.2, Java 25.
+- `compileJava`: green.
+- Headless Atlas (`runBiomePreview`): green — mod loads as `globe 2.0-beta.1+26.2`, mixins apply, biome export
+  succeeds, distribution is banded and sane, and output is **deterministic** across consecutive runs (no
+  seed/shape/radius leak).
+- The 134-error drift turned out to be mostly mechanical renames (screen state moved to `Gui.screen()`,
+  `setScreen`→`setScreenAndShow`, camera/render-target getters, dripstone→speleothem feature renames) plus
+  dead-code stubs — NOT the architectural wall the first pass feared. Full detail + before/after table + the
+  three flagged follow-ups in `docs/binder/canonical-26.2-pivot-20260702.md`.
+
+Flagged follow-ups before release-ready (separate lanes): (1) frozen-river vegetal stripping silently no-ops
+(reflection `getFeatures`→`features` rename); (2) client-side repairs are compile-proven only — need a live
+26.2 client pass; (3) no cross-version byte-identical flag-off diff (not meaningful across MC versions).
+
+Root: `<home>/CascadeProjects/Latitude-2.0-26.2-pivot`, branch `port/canonical-26.2-pivot`.
 
 This matrix records the intended port/pivot truth for Latitude work. Verify upstream metadata before implementation because Minecraft, Fabric API, Loader, and Loom move quickly.
 
@@ -21,7 +30,7 @@ This matrix records the intended port/pivot truth for Latitude work. Verify upst
 
 | Line | Minecraft | Role | Local status | Notes |
 | --- | --- | --- | --- | --- |
-| Latitude 2.0 overhaul | 26.2 | planned canonical target | pivot in progress, compile RED | Build metadata retargeted; `compileJava` blocked on broad API drift (Hard Stop). See pivot status above. |
+| Latitude 2.0 overhaul | 26.2 | planned canonical target | pivot GREEN (compile + headless Atlas) | Build metadata + narrow API-drift repair done; deterministic headless proof green. Live client pass + frozen-river reflection fix still pending. See pivot status above. |
 | Latitude 2.0 current feature branch | 26.1.2 | active planning/source reference | current local branch | Do not build the large overhaul here and port later. |
 | Latitude 1.4 / early 2.0 reference | 26.1.2 | proven reference | local proof history exists | Use for behavioral comparison and regression baselines. |
 | Older backport | 1.21.11 | backport target | structurally partial historically | Do not patch as primary without explicit Maintainer decision. |
