@@ -1,5 +1,10 @@
 # Mercator World Type — Phase 1 Implementation Plan (canonical 26.1.2)
 
+> **2026-07-02 direction update:** This is a historical implementation plan for the first 2:1 world-shape
+> slice. For the current Latitude 2.0 overhaul, read `docs/LATITUDE_2_0_OVERHAUL.md` first. Current terminology
+> should prefer "Longitude world" or "2:1 projected planet"; the next large implementation should pivot to
+> Minecraft `26.2` and begin with measurement/portability, not another direct world-shape behavior change.
+
 > ## ⚠️ IMPLEMENTATION NOTE (2026-06-23) — pivoted to NO-STRETCH; this plan's Step (d) was DROPPED
 > Peetsa chose **"wider world, more biomes"** over the literal coordinate stretch. The coordinate
 > transform (`effectiveX = blockX/2`, Step (d) below) would have shown the *same* biomes drawn 2× wide

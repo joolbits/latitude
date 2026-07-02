@@ -1,5 +1,10 @@
 # E-W Horizontal World Wrapping — Feasibility Verdict & Recommendation
 
+> **2026-07-02 direction update:** This remains useful feasibility archaeology, but E/W wrapping is not the
+> Latitude 2.0 centerpiece. The current overhaul front door is `docs/LATITUDE_2_0_OVERHAUL.md`, which retires
+> seamless/teleport wrapping from the core plan and instead treats the E/W edge as a finite projection edge to
+> be made visually intentional after macro geography is proven.
+
 **Date:** 2026-06-23
 **Target:** Latitude mod, MC 26.1.2 (canonical, Art II)
 **Goal stated:** Remove the E-W border + sandstorm walls; make the world wrap E-W (travel east → reappear from the west). N-S stays walled (poles). World width `W = 2 * X_RADIUS`.

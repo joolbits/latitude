@@ -1,5 +1,11 @@
 # Revamped World Shape — Design Document
 
+> **2026-07-02 direction update:** This document is a historical design record. The current Latitude 2.0
+> overhaul front door is `docs/LATITUDE_2_0_OVERHAUL.md`. The new plan keeps the 2:1 projected-planet
+> foundation, but avoids treating it as literal Mercator, moves the planned canonical implementation target
+> to Minecraft `26.2` after a pivot phase, and starts with measurement plus `GeoAuthority`/`ClimateAuthority`
+> contracts rather than reviving the older continent-mask or wrap/seam work directly.
+
 ## 1. Concept and Motivation
 
 Latitude's current world shape is a square globe where biome bands run east-west and provinces scatter

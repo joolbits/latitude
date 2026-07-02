@@ -1,5 +1,9 @@
 # Release checklist
 
+> **Latitude 2.0 overhaul note (2026-07-02):** The future overhaul plan lives at
+> `docs/LATITUDE_2_0_OVERHAUL.md`. That plan does not authorize release, upload, branch/tag push, or profile
+> mutation. This release checklist remains the current 26.1.2 release/readiness gate.
+
 ## Latitude 1.4.1-beta.2+26.1.2 candidate readiness
 
 Status: live-proof green, not release-authorized. The current savepoint is `c9da0f93029f7f16c50a7bc89eb766c576a85b48` / `save/biome-tuning-followup-26.1.2`. A fresh build from that savepoint has been staged into the `Lat 1.4+26.1.2` Modrinth profile as SHA `1f50c5954cef3c91de1b071e78172ad6940a41abe5bace3e6febde5ac449a477`, with manifest commit `c9da0f93029f7f16c50a7bc89eb766c576a85b48`. The 2026-06-21 final live attempt proves the c9 jar launches, loads an existing Globe world, accepts commands, reports a 20,000-block border, locates/renders real desert, survives a short non-teleport movement soak with no new warnings, and save/quits cleanly. A narrow stony follow-up then resolved the remaining caveat: fresh `/locate biome minecraft:stony_peaks` returned `[1452,170,4201]`, the settled HUD at that coordinate read `minecraft:stony_peaks`, and `/execute if biome ~ ~ ~ minecraft:stony_peaks run say stony_peaks_here` passed. Do not publish, push, upload, or public-release without the maintainer's separate explicit authorization.

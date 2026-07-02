@@ -1,5 +1,10 @@
 # Port Risk File Index
 
+> **2026-07-02 update:** This risk index is still useful, but the current porting front door is
+> `docs/porting/PORTING.md`. The Latitude 2.0 overhaul adds a portability-spine requirement in
+> `docs/porting/PORTABILITY_ARCHITECTURE.md` so future ports do not rely on hand-transplanting worldgen
+> algorithms.
+
 This index was assembled from current repo paths using grep/file existence, not broad source reading.
 
 ## Build / Dependency Metadata

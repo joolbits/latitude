@@ -1,5 +1,10 @@
 # Design Specification: Latitude Hazard & Biome Tuning
 
+> **Latitude 2.0 overhaul note (2026-07-02):** The comprehensive future overhaul plan is
+> `docs/LATITUDE_2_0_OVERHAUL.md`. This design spec remains the detailed record for existing hazard,
+> band, biome, HUD, and 1.4/early-2.0 behavior. Future earthlike-world work should start from the overhaul
+> plan and its measurement/portability gates before changing this behavior.
+
 ## 1. Hazards Staging
 Hazards must scale with normalized latitude progress to ensure consistent difficulty across all world sizes.
 
