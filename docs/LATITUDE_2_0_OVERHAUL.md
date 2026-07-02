@@ -24,6 +24,18 @@ The key decisions are:
 - Build measurement first, then macro geography, then climate, then terrain, then boundary experience.
 - Treat portability as a first-class deliverable, not cleanup after the overhaul.
 
+## Execution Model & Reasoning-Effort Strategy
+
+Read `docs/binder/model-effort-strategy-20260702.md` before starting any phase below. Short version: most of
+this roadmap (Phases -2, -1, 0, 1, 5, 6) is bounded, test-gated engineering work suited to a fast/cheap model at
+low-to-medium reasoning effort. The two phases that genuinely warrant premium reasoning are **Phase 2
+(GeoAuthority)** and **Phase 3 (ClimateAuthority)** — from-scratch algorithm design with the highest blast
+radius. That note also answers whether a thread can self-select model/effort automatically as it works (short
+answer: it can delegate bounded sub-tasks to a chosen model via the `Agent`/`Workflow` tools' `model` param, but
+cannot change its own ambient model without the user running `/model`), and states plainly that Fable is not in
+the default rotation for this project (cost/cadence mismatch with a many-small-phases roadmap, not a capability
+judgment).
+
 ## Current Red
 
 The current 2:1 atlas can have decent biome variety while still reading as a flat rectangle. The red Atlas run `20260702-064708` showed:
@@ -598,7 +610,11 @@ Stop immediately if:
 - Terrain proof needs broad density rewiring before measurement and authority are green.
 - A worker tries to fix visual ugliness with another one-off biome clamp instead of shared authority logic.
 
-## Fable 5 First Tasks
+## First Tasks
+
+This checklist was originally addressed to Fable 5 by name; it is generalized now (see the Execution Model
+section above — Fable is not in the default rotation). The tasks themselves are unchanged and apply regardless
+of which model/thread executes them:
 
 1. Refresh `docs/porting/PORTING.md` and `docs/porting/VERSION_MATRIX.md`.
 2. Create/switch to the agreed 26.2 pivot branch/worktree.
@@ -613,6 +629,8 @@ Do not start with visible continent generation. The first green is a proven 26.2
 
 ## Linked Docs
 
+- `docs/binder/model-effort-strategy-20260702.md` — which model/reasoning-effort per phase, and what a future
+  thread can/can't self-adjust automatically.
 - `docs/binder/longitude-earthlike-world-overhaul-20260702.md`
 - `docs/binder/current-state-handoff-20260701.md`
 - `docs/binder/test1-live-findings-20260701.md`
