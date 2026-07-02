@@ -7,14 +7,17 @@ import com.example.globe.client.LatitudeHudStudioScreen;
 import com.example.globe.client.ZoneEnterTitleOverlay;
 import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.Gui;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.Hud;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-@Mixin(Gui.class)
+// 26.2 moved the whole extract*(GuiGraphicsExtractor, DeltaTracker) HUD-rendering method family (including
+// extractHotbarAndDecorations and this 2-arg extractRenderState) off Gui and onto a new Hud class
+// (Gui.hud.extractRenderState(...)). Same method names/signatures, different owning class -- retarget only.
+@Mixin(Hud.class)
 public class InGameHudMixin {
     @Inject(method = "extractHotbarAndDecorations", at = @At("HEAD"))
     private void globe$renderEwHazeBeforeHotbar(GuiGraphicsExtractor context, DeltaTracker tickCounter, CallbackInfo ci) {
