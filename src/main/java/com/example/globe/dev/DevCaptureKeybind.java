@@ -90,7 +90,7 @@ public final class DevCaptureKeybind {
         }
 
         try {
-            RenderTarget framebuffer = client.getMainRenderTarget();
+            RenderTarget framebuffer = client.gameRenderer.mainRenderTarget();
             Screenshot.takeScreenshot(framebuffer, image -> client.execute(() -> handleCapturedImage(client, image)));
         } catch (Exception e) {
             GlobeMod.LOGGER.warn("[latdev] Capture pipeline failed", e);

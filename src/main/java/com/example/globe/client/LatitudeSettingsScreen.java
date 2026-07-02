@@ -156,7 +156,7 @@ public class LatitudeSettingsScreen extends Screen {
 
         baseY = y;
         var wHudStudio = this.addRenderableWidget(Button.builder(Component.literal("HUD Studio"), b -> {
-                    Minecraft.getInstance().setScreen(new LatitudeHudStudioScreen(this));
+                    Minecraft.getInstance().setScreenAndShow(new LatitudeHudStudioScreen(this));
                 })
                 .bounds(columnX, y, w, 20)
                 .build());
@@ -178,7 +178,7 @@ public class LatitudeSettingsScreen extends Screen {
                     CompassHudConfig.saveCurrent();
                     LatitudeConfig.saveCurrent();
                     if (this.minecraft != null) {
-                        this.minecraft.setScreen(this.parent);
+                        this.minecraft.setScreenAndShow(this.parent);
                     }
                 })
                 .bounds(footerX, footerY, buttonWidth, 20)

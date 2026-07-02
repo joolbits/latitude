@@ -323,7 +323,7 @@ public final class GlobeClientState {
         var mc = net.minecraft.client.Minecraft.getInstance();
         if (mc == null || mc.gameRenderer == null) return Double.NaN;
 
-        var cam = mc.gameRenderer.getMainCamera();
+        var cam = mc.gameRenderer.mainCamera();
         if (cam == null) return Double.NaN;
 
         double x = cam.position().x;

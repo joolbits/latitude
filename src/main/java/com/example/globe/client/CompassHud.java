@@ -62,7 +62,7 @@ public final class CompassHud {
         }
 
         var cfg = CompassHudConfig.get();
-        boolean studioPreview = client.screen instanceof LatitudeHudStudioScreen;
+        boolean studioPreview = client.gui.screen() instanceof LatitudeHudStudioScreen;
 
         if (forceVisible && (studioPreview || client.player == null || client.level == null)) {
             if (studioPreview && shouldRenderPreviewHotbar(cfg)) {
@@ -77,7 +77,7 @@ public final class CompassHud {
             return;
         }
 
-        if (!forceVisible && client.screen != null) {
+        if (!forceVisible && client.gui.screen() != null) {
             return;
         }
 

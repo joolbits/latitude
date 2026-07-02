@@ -20,7 +20,7 @@ public final class EwSandstormOverlayHud {
     public static void render(GuiGraphicsExtractor ctx, DeltaTracker tickCounter) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null || mc.level == null) return;
-        if (mc.options.hideGui) return;
+        if (mc.gui.hud.isHidden()) return;
 
         double distToBorder = GlobeClientState.distanceToEwBorderBlocks(mc.player.getX());
 

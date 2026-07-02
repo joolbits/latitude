@@ -117,7 +117,7 @@ public final class LatitudeWorldLauncher {
                 if (isLatitude) {
                     LatitudeClientState.clearLatitudeLoadingState();
                 }
-                client.setScreen(screen);
+                client.setScreenAndShow(screen);
                 return;
             }
             wc.setWorldType(new WorldCreationUiState.WorldTypeEntry(presetEntry));
@@ -147,7 +147,7 @@ public final class LatitudeWorldLauncher {
                 if (isLatitude) {
                     LatitudeClientState.clearLatitudeLoadingState();
                 }
-                client.setScreen(screen);
+                client.setScreenAndShow(screen);
                 return;
             }
             wc.setWorldType(new WorldCreationUiState.WorldTypeEntry(updatedPresetEntry));
@@ -215,7 +215,7 @@ public final class LatitudeWorldLauncher {
                         if (isLatitude) {
                             LatitudeClientState.clearLatitudeLoadingState();
                         }
-                        client.setScreen(screen);
+                        client.setScreenAndShow(screen);
                     });
                     return;
                 }
@@ -261,7 +261,7 @@ public final class LatitudeWorldLauncher {
                         } catch (Exception closeEx) {
                             LOGGER.warn("Failed to close session after launch failure", closeEx);
                         }
-                        client.setScreen(screen);
+                        client.setScreenAndShow(screen);
                     }
                 });
             }, Util.backgroundExecutor());
@@ -271,7 +271,7 @@ public final class LatitudeWorldLauncher {
             if (isLatitude) {
                 LatitudeClientState.clearLatitudeLoadingState();
             }
-            client.setScreen(screen);
+            client.setScreenAndShow(screen);
         }
     }
 

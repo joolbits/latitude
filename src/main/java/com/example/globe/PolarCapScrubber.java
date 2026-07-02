@@ -7,7 +7,10 @@ import it.unimi.dsi.fastutil.longs.LongSet;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.resources.Identifier;
 import net.minecraft.tags.BlockTags;
+import net.minecraft.tags.TagKey;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
@@ -16,6 +19,11 @@ import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.levelgen.Heightmap;
 
 public final class PolarCapScrubber {
+    // 26.2 removed the BlockTags.SAPLINGS Java constant but kept the minecraft:saplings block tag in data.
+    // Reconstruct the TagKey locally to preserve the exact prior vegetation-scrub behavior.
+    private static final TagKey<Block> SAPLINGS =
+            TagKey.create(Registries.BLOCK, Identifier.fromNamespaceAndPath("minecraft", "saplings"));
+
     private final int borderRadius;
     private final int poleBandStartAbsZ;
     private final LongSet scrubbedChunks = new LongOpenHashSet();
@@ -137,7 +145,7 @@ public final class PolarCapScrubber {
     private boolean isVegetation(BlockState state) {
         return state.is(BlockTags.LEAVES)
                 || state.is(BlockTags.LOGS)
-                || state.is(BlockTags.SAPLINGS)
+                || state.is(SAPLINGS)
                 || state.is(BlockTags.FLOWERS)
                 || state.is(BlockTags.CROPS)
                 || state.getBlock() == Blocks.SHORT_GRASS

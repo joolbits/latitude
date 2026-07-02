@@ -21,12 +21,12 @@ public abstract class CreateWorldScreenInitRedirectMixin {
     private void globe$redirectRecreateSafely(CallbackInfo ci) {
         LOGGER.info("[LAT][CWPATH] CreateWorldScreenInitRedirectMixin.init screen={}", this.getClass().getName());
         Minecraft client = Minecraft.getInstance();
-        if (client == null || client.screen != (Object) this) {
+        if (client == null || client.gui.screen() != (Object) this) {
             return;
         }
 
         Screen parent = globe$getParentSafe((Object) this);
-        Runnable onClose = () -> client.setScreen(parent);
+        Runnable onClose = () -> client.setScreenAndShow(parent);
 
         CreateWorldScreenMixin self = (CreateWorldScreenMixin) (Object) this;
         LatitudeCreateWorldScreen.openLoaded(
