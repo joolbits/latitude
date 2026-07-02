@@ -2575,6 +2575,7 @@ public final class LatitudeBiomes {
     private static final Set<String> SURFACE_CAVE_DENYLIST = Set.of(
             "minecraft:dripstone_caves",
             "minecraft:lush_caves",
+            "minecraft:sulfur_caves", // 26.2 "Chaos Cubed" cave biome — never use as a surface pick
             "minecraft:deep_dark"
     );
 

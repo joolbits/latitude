@@ -119,6 +119,12 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
     @Unique
     private static final Identifier DRIPSTONE_CAVES_ID = Identifier.fromNamespaceAndPath("minecraft", "dripstone_caves");
 
+    // 26.2 "Chaos Cubed" added the sulfur_caves cave biome. Treat it like the other cave biomes so it is
+    // preserved underground instead of being reclassified as a surface latitude biome (which would prevent it
+    // from ever generating).
+    @Unique
+    private static final Identifier SULFUR_CAVES_ID = Identifier.fromNamespaceAndPath("minecraft", "sulfur_caves");
+
     @Unique
     private static final Identifier DEEP_DARK_ID = Identifier.fromNamespaceAndPath("minecraft", "deep_dark");
 
@@ -388,6 +394,7 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
         }
         return actual.equals(LUSH_CAVES_ID)
                 || actual.equals(DRIPSTONE_CAVES_ID)
+                || actual.equals(SULFUR_CAVES_ID)
                 || actual.equals(DEEP_DARK_ID);
     }
 
