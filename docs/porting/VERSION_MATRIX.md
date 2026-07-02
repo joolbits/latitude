@@ -13,14 +13,19 @@ done; `compileJava` is green (134 → 0 errors) and the headless Atlas proof run
 - Headless Atlas (`runBiomePreview`): green — mod loads as `globe 2.0-beta.1+26.2`, mixins apply, biome export
   succeeds, distribution is banded and sane, and output is **deterministic** across consecutive runs (no
   seed/shape/radius leak).
+- Full production `build`: green — `latitude-2.0-beta.1+26.2.jar` produced. Its mixin-apply structure
+  (`"refmap"` declared, no standalone refmap file) is **identical to the live-proven 26.1.2 jar**, so mixins
+  will apply in the Modrinth runtime the same way.
 - The 134-error drift turned out to be mostly mechanical renames (screen state moved to `Gui.screen()`,
   `setScreen`→`setScreenAndShow`, camera/render-target getters, dripstone→speleothem feature renames) plus
-  dead-code stubs — NOT the architectural wall the first pass feared. Full detail + before/after table + the
-  three flagged follow-ups in `docs/binder/canonical-26.2-pivot-20260702.md`.
+  dead-code stubs — NOT the architectural wall the first pass feared. Full detail + before/after table in
+  `docs/binder/canonical-26.2-pivot-20260702.md`.
 
-Flagged follow-ups before release-ready (separate lanes): (1) frozen-river vegetal stripping silently no-ops
-(reflection `getFeatures`→`features` rename); (2) client-side repairs are compile-proven only — need a live
-26.2 client pass; (3) no cross-version byte-identical flag-off diff (not meaningful across MC versions).
+Remaining before release-ready (separate lanes): (1) **live 26.2 client pass** — client mixins/HUD/menus are
+compile-proven only, the one item needing Peetsa at the keyboard; (2) no cross-version byte-identical flag-off
+diff (not meaningful across MC versions). NOTE: the earlier "frozen-river reflection" item was investigated and
+is **not** a regression — that feature has been inert since before 26.1.2 (the `getFeatures` name never existed
+in current mappings), so it was correctly left untouched to preserve behavior.
 
 Root: `<home>/CascadeProjects/Latitude-2.0-26.2-pivot`, branch `port/canonical-26.2-pivot`.
 
