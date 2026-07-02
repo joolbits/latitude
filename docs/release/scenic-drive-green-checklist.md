@@ -29,6 +29,12 @@ Use this checklist before calling a Latitude scenic pass, release-readiness scen
    - `<home>/.codex/skills/minecraft-live-control/SKILL.md`
 5. Create one evidence folder for the run. Preserve prior evidence; do not delete or overwrite it.
 
+## Rerun Contract
+
+- Always pair this checklist with the current canonical candidate ledger in `<home>/CascadeProjects/Latitude-custom-biome-expansion-26.1.2/docs/release/checklist.md`.
+- If the candidate jar SHA changes, the prior scenic GREEN does not automatically carry forward. Refresh the canonical non-live proof first, then rerun this checklist or a justified delta-smoke against the new SHA.
+- If the live-control lane is contained, unauthorized, or cannot prove focus on the real `java` game window, stop as partial/blocked instead of continuing to poke at Minecraft or the launcher.
+
 ## Runtime Truth Table
 
 Record these before touring:
@@ -171,3 +177,4 @@ The checklist was first driven green against:
 - World: `Codex Cruise Large 30000`
 - Border: radius `15000`, diameter `30000`
 
+That baseline does not certify later rebuilt jars by itself. Any future candidate SHA change requires at least a canonical checklist refresh plus a scenic rerun or delta-smoke tied to the new SHA.

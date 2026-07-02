@@ -1,6 +1,6 @@
 # Latitude Lessons
 
-`scope: durable project lessons` · `status: active` · `updated: 2026-06-18`
+`scope: durable project lessons` · `status: active` · `updated: 2026-06-19`
 
 This is the short "do not relearn this" file for Latitude. It is not the session log. The dated session log stays in `docs/binder/`, and the live resume pointer stays in `docs/HANDOFF.md`.
 
@@ -155,3 +155,36 @@ Required future behavior:
 Evidence:
 - `docs/release/scenic-drive-green-checklist.md`
 - `<home>/.codex/tmp/latitude-scenic-green-20260618-172628/commands/092-final-scenic-verifier.txt`
+
+## L9 - Docs Coherence Is Part Of Done
+
+Trigger: any non-trivial Latitude code, proof, release-readiness, port/backport, live-client, or docs slice that changes current truth, evidence, blocker status, or future resume state.
+
+Lesson: Reading docs first is not enough. If the work changes what future workers need to know, Codex must update the live handoff and binder surfaces before reporting done. Maintainer should not have to notice stale docs and ask for the cleanup pass.
+
+Required future behavior:
+- Update `docs/HANDOFF.md` whenever the resume point, release/readiness state, root/profile truth, blocker status, or next gate changed.
+- Add or update a dated `docs/binder/` note for chronology, evidence, decisions, or proof that future workers need to reconstruct.
+- Update `docs/binder/README.md` when adding a binder note.
+- Update this lessons file only for durable rules or repeated mistakes, not for ordinary dated narration.
+- Keep current truth, historical audit entries, and speculative next work clearly separate.
+
+Evidence:
+- `AGENTS.md`
+- `docs/binder/agent-doc-upkeep-rule-20260619.md`
+- 2026-07-01: the 2.0 line shipped the Longitude compass reading and the Atlas/World Shape toggle with **no binder note for either**, and accumulated the whole Mercator/custom-biome/2.0-rename era on the feature branch with no top-level handoff — Peetsa had to ask for the doc-sync pass. Repeat L9 violation; the fix pass is `Latitude-custom-biome-expansion-26.1.2/docs/binder/current-state-handoff-20260701.md` + `atlas-worldshape-longitude-20260701.md` + `test1-live-findings-20260701.md`.
+
+## L10 - Latitude Docs Are Split Across Two Worktrees; Update The Right Surface
+
+Trigger: any "update the docs / handoff / lessons / binder" instruction, or any non-trivial 2.0-era work on the canonical 26.1.2 root.
+
+Lesson: The Latitude doc surfaces do not all live in one place. The `main` worktree (`<home>/CascadeProjects/Latitude (Globe)`, a pre-2.0 lineage) owns the canonical single-file surfaces: `docs/HANDOFF.md`, `docs/LESSONS.md`, and `docs/binder/README.md`. The canonical 26.1.2 feature branch (`<home>/CascadeProjects/Latitude-custom-biome-expansion-26.1.2`, branch `feat/custom-biome-expansion-26.1.2`) owns the **active** `docs/binder/` — `index.md` plus all the dated 2.0-era notes — but has **no** top-level `docs/HANDOFF.md` or `docs/LESSONS.md`. "Update the docs" in only one worktree silently leaves the other stale, and it is easy to forget the feature branch entirely because that is where the code lives but not where HANDOFF/LESSONS are.
+
+Required future behavior:
+- Put the dated binder note + the `binder/index.md` (and `evidence-registry.md`) update on the **feature branch**, where the work and the active binder are.
+- Put durable lessons and the general resume pointer on **main** (`docs/LESSONS.md`, `docs/HANDOFF.md`), and/or keep a dated `current-state-handoff-YYYYMMDD.md` on the feature branch to serve as its handoff until the branches reconcile.
+- When you say "docs updated," name which worktree each file is in, and whether it is committed. Do not assume one edit makes both surfaces coherent.
+
+Evidence:
+- `Latitude-custom-biome-expansion-26.1.2/docs/binder/current-state-handoff-20260701.md`
+- `docs/binder/agent-doc-upkeep-rule-20260619.md`

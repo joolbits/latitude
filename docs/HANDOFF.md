@@ -1,47 +1,77 @@
 # Latitude Handoff
 
-`scope: Latitude (Globe) main repo` · `status: PAUSED with canonical 26.1.2 recorded` · `branch: main` · `date: 2026-06-18`
+`scope: Latitude (Globe) main docs/history repo` · `status: partial candidate hardening; release not authorized` · `branch: main` · `updated: 2026-06-21`
 
-> **What this doc is.** The single live "start here / resume here" pointer for `<home>/CascadeProjects/Latitude (Globe)`. It states the current repo state, the immediate next decision, and the load-bearing boundaries. It is meant to be overwritten as current truth changes. Durable lessons live in `docs/LESSONS.md`; port/backport operating rules live in `docs/porting/PORTING.md`; the chronological running log lives in `docs/binder/`.
+> **What this doc is.** The single live "start here / resume here" pointer for `<home>/CascadeProjects/Latitude (Globe)`. It states the current repo state, the active source-of-truth split, and the next Maintainer-owned gate. It is meant to be overwritten as current truth changes. Durable lessons live in `docs/LESSONS.md`; port/backport operating rules live in `docs/porting/PORTING.md`; the chronological running log lives in `docs/binder/`.
 
 ---
 
+## 2.0 "Longitude" line — resume on the feature branch (added 2026-07-01)
+
+> **This file is the `main`/history pointer, and it is a pre-2.0 lineage.** Active development is now the
+> **2.0 "Longitude"** line on the canonical 26.1.2 root
+> (`<home>/CascadeProjects/Latitude-custom-biome-expansion-26.1.2`, branch
+> `feat/custom-biome-expansion-26.1.2`, HEAD `30db22fc`, version `2.0-beta.1+26.1.2`). That branch's resume
+> pointer, feature notes, and open punch-list live in its binder — not here:
+> - `docs/binder/current-state-handoff-20260701.md` — start-here / resume pointer for the 2.0 line.
+> - `docs/binder/test1-live-findings-20260701.md` — open TEST 1 live-test punch-list (the next work gate).
+> - `docs/binder/atlas-worldshape-longitude-20260701.md` — Longitude compass reading + Atlas / World Shape toggle.
+>
+> See `docs/LESSONS.md` **L10** for why the doc surfaces are split across two worktrees. The "Current state"
+> section below describes this `main` history checkout and predates the 2.0 work.
+
 ## Current state
 
-`Latitude (Globe)` was re-anchored and hygiene-synced on 2026-06-15. The repo is on `main` at `f05b73ff` (`Latitude 1.x world 2.0 concept`) with pre-existing documentation updates in progress as of 2026-06-18. The only local documentation surface that should carry active chronology is `docs/binder/`, which is intentional: Maintainer uses binder notes as the running local log of Latitude work. Durable lessons and porting rules are kept separate so future workers do not have to rediscover the same mistakes from dated entries. The earlier pull-blocking headless-world files were moved out to an external archive so `main` could fast-forward cleanly from `7f55a30f` to `4fcdee31`; `main` has since advanced to `f05b73ff`.
+`Latitude (Globe)` is the main docs/history checkout on `main` at `fe660b50` (`docs: save scenic drive green checklist`). It is ahead of `origin/main` by 2 and currently carries local documentation/release-surface edits that point this historical 1.21.11 checkout at the active canonical 26.1.2 release-readiness truth.
 
-## Project truth recorded 2026-06-18
+This checkout is **not** the active Latitude 1.4 / Minecraft 26.1.2 source root. Its `gradle.properties` still describes the historical `1.21.11` / `1.3.0` line and is intentionally fenced as historical metadata. Current Latitude 1.4 candidate truth lives in:
 
-Maintainer resolved the structural question raised in the 2026-06-14 binder note:
+- Canonical source root: `<home>/CascadeProjects/Latitude-custom-biome-expansion-26.1.2`
+- Canonical branch / HEAD: `feat/custom-biome-expansion-26.1.2` / `e5d092ca7f09a397afc413137f62ea409566e1e7`
+- Candidate/profile jar SHA-256: `e09ea00313307ae84f8e32a0470db523874fe11d8314d133ddadfe9d85bf2458`
+- Profile proof settings: `renderDistance=16`, `simulationDistance=8`; prior `32/12` settings are preserved as a timestamped options backup in the Modrinth profile.
+- Canonical release checklist: `<home>/CascadeProjects/Latitude-custom-biome-expansion-26.1.2/docs/release/checklist.md`
+- Local release front door: `docs/release/checklist.md`
+- Local scenic rerun checklist: `docs/release/scenic-drive-green-checklist.md`
 
-- **Current canonical line:** Minecraft **26.1.2**.
-- **1.21.11 status:** future backport, not the active canonical development line, and not ready to resume until the 26.1.2 truth is stabilized.
-- **26.2 note:** Maintainer noted that Minecraft **26.2** is now released; treat it as an external target to consider later, not as a change to the immediate canonical choice. For now, continue treating **26.1.2** as the active canon.
+## Current release-readiness truth
 
-Practical consequence: do not continue patching the 1.21.11 beta line as if it were primary. If older-version work resumes, it should be framed as a backport from the accepted 26.1.2 source of truth, with an explicit scope and proof gate.
+The 26.1.2 candidate is recorded as **partial, release not authorized**. The prior `972159d1...` pre-release-ready state was invalidated by the 2026-06-20 Itty render/load, worldgen stall, high-column terrain, palm-rendering, and performance/shutdown findings. The code-red fixes were staged and proved on `d51eace9...` for existing-save overlay/render and palm tint, then the latest local build `e09ea003...` was staged into the Modrinth test profile with cleaner render/simulation settings. Current `e09ea003...` proof is now green for exact Java-window launch, fresh SMALL `New Expedition` entry, render-gated overlay order, playable terrain, save/quit shutdown, non-live Itty Atlas diversity/no-collapse for seed `220220260619002`, and repeatable source/jar classification of the pasted post-1.4.0 findings.
 
-## What changed in the hygiene pass
+The current evidence folders recorded by the release checklist are:
 
-- Fast-forwarded `main` from `7f55a30f` to `4fcdee31` after removing three pull blockers from `run-headless/world/`.
-- Moved the three pull blockers to `<home>/CascadeProjects/Latitude-Globe-main-pull-blockers-20260615-103718/`.
-- Moved Altitude-specific docs out of this repo and into `<home>/CascadeProjects/Altitude/`.
-- Archived `Manual atlas/` to `<home>/CascadeProjects/Latitude-Globe-manual-atlas-archive-20260615/`.
-- Archived `run-headless-base/` to `<home>/CascadeProjects/Latitude-Globe-run-headless-base-archive-20260615/`.
-- Left `docs/binder/` in place on purpose as the continuing log surface.
+- Historical completed live route: `<home>/CascadeProjects/Latitude-custom-biome-expansion-26.1.2/tmp/readiness-1.4-candidate-20260618-live-20260618-211834`
+- Code-red `d51eace9...` live evidence: `<home>/CascadeProjects/Latitude-custom-biome-expansion-26.1.2/tmp/code-red-deep-dig-20260620-203501`
+- Current `e09ea003...` profile-stage plus SMALL smoke/shutdown evidence: `<home>/CascadeProjects/Latitude-custom-biome-expansion-26.1.2/tmp/post-140-hardening-continuation-20260620-220852`
+- Current `e09ea003...` Itty headless Atlas/live-lock continuation evidence: `<home>/CascadeProjects/Latitude-custom-biome-expansion-26.1.2/tmp/post-140-hardening-continuation-20260620-220852/live-continue-20260621`
+
+The remaining release-readiness proof is not green yet. Itty-specific live fresh/existing load and terrain proof, scenic delta, direct palm-canopy visual proof, and clean single-client non-teleport movement soak/performance must be rerun on profile jar SHA `e09ea003...` or explicitly deferred with evidence. The fresh SMALL smoke and save/quit shutdown proof are recorded; the headless Itty Atlas run does not show a one-biome/one-provider collapse; and `tools/lat-post140-findings-classifier` proves the report's concrete source findings are fixed/present in the active source/profile jar. None of those close the live Itty or scenic gates. The latest live continuation hit a macOS locked-session gate, so future live proof must start by re-proving exact Java-window capture after unlock.
+
+## Maintainer-owned gates still open
+
+The following are **not** completed by the readiness proof and remain separate Maintainer-owned actions:
+
+- savepoint / commit / tag decisions
+- push / upload / publication
+- final public version name and public release copy
+- future 26.2 evaluation
+- future 1.21.11 or older-version backports
+
+Do not treat `pre-release-ready proof` as permission to release.
 
 ## Read this next
 
-1. `docs/LESSONS.md` for durable "do not relearn this" rules.
-2. `docs/porting/PORTING.md` before any port/backport work.
-3. `docs/binder/main-repo-hygiene-sync-20260615.md` for the repo-hygiene chronology and archive paths.
-4. `docs/binder/canonical-26-1-2-decision-20260618.md` for the maintainer's decision that 26.1.2 is the current canonical line.
-5. `docs/binder/1211-province-gap-and-structure-question-20260614.md` for the investigation that led to the canonical-vs-port question.
-6. `docs/binder/1211-worldgen-treeline-alpine-status-20260608.md` for the older 1.21.11 tree-line/alpine status note that remains historical context, not the current controlling task.
+1. `docs/release/checklist.md` for the local release-readiness front door and candidate truth table.
+2. `docs/release/scenic-drive-green-checklist.md` before any future live scenic rerun.
+3. `docs/binder/pre-release-readiness-doc-sync-20260619.md` for the dated docs-coherence update.
+4. `docs/LESSONS.md` for durable "do not relearn this" rules.
+5. `docs/porting/PORTING.md` before any port/backport or version-family carryover work.
+6. `docs/binder/canonical-26-1-2-decision-20260618.md` for the maintainer's decision that 26.1.2 is the current canonical line.
 
 ## Active boundary
 
-Do not resume cruise-control work, release/upload/savepoint work, or 1.21.11 implementation work from this repo handoff unless Maintainer explicitly reactivates that slice. The current repo is hygienic and paused around **26.1.2 as canonical**; the next real implementation work should start from a fresh 26.1.2 scope and proof gate, not from leftover 1.21.11 beta dirt.
+Do not resume savepoint/release/upload work, 1.21.11 backport work, or 26.2 planning from this handoff unless Maintainer explicitly reactivates that lane. The current state is: **Latitude 1.4 / 26.1.2 is partial on current SHA `e09ea003...`; fresh SMALL smoke and shutdown are green, Itty/scenic/performance remain open/partial, and publication/savepoint actions are still separate Maintainer decisions.**
 
 ## Immediate next
 
-The main product decision is now recorded: 26.1.2 is the current canonical line, and 1.21.11 is a later backport. The immediate next work should be a narrow 26.1.2 status/proof slice before any 1.21.11 or 26.2 planning work.
+Continue candidate hardening on the canonical root. First re-anchor both this docs/history root and the canonical 26.1.2 root, verify the candidate/profile jar SHA still matches `e09ea00313307ae84f8e32a0470db523874fe11d8314d133ddadfe9d85bf2458`, confirm exact Java-window capture works after the screen is unlocked, then run a clean single-client Itty/scenic/palm/movement-soak proof before any savepoint, tag, push, upload, or publication step.

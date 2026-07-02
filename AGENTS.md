@@ -16,6 +16,19 @@ Before non-trivial Latitude work, automatically read the repo front-door docs th
 4. `docs/porting/PORTING.md` for ports, backports, release-state checks, profile/jar checks, biome/world-shape carryovers, or version migration work
 5. Relevant `docs/binder/*` notes for the active blocker or decision
 
+## Automatic Documentation Upkeep
+
+Documentation coherence is part of finishing non-trivial Latitude work. Maintainer should not need to ask for it separately.
+
+Before reporting a non-trivial code, proof, release-readiness, port/backport, live-client, or docs slice as done:
+
+- Update `docs/HANDOFF.md` when the current resume point, release/readiness state, root/profile truth, blocker status, or next gate changed.
+- Add or update a dated `docs/binder/` note when the slice created chronology, evidence, decisions, or proof that future workers need to reconstruct.
+- Update `docs/binder/README.md` when adding a binder note.
+- Update `docs/LESSONS.md` only when a durable rule, repeated mistake, or future required behavior changed.
+- Keep current truth, historical notes, and speculative next work separate.
+- Do not wait for Maintainer to say "$docs" when the work itself changed the docs truth.
+
 ## Working Card
 
 Use the maintainer's six-line working card before acting on non-trivial code, docs, proof, port, release, automation, or live-client work:
