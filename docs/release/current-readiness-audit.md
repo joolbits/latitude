@@ -2,6 +2,10 @@
 
 `status: live-proof green, release not authorized` · `updated: 2026-06-21` · `candidate: 1.4.1-beta.2+26.1.2` · `sha256: 1f50c5954cef3c91de1b071e78172ad6940a41abe5bace3e6febde5ac449a477`
 
+> **Latitude 2.0 overhaul note (2026-07-02):** The future overhaul plan lives at
+> `docs/LATITUDE_2_0_OVERHAUL.md`. It is a planning/front-door document for 26.2 pivot and earthlike-world
+> work, not a change to this 26.1.2 readiness verdict.
+
 This audit maps the release-readiness objective to current evidence. It is not a release authorization. The active Modrinth profile/runtime jar has now been rebuilt from savepoint commit `c9da0f93029f7f16c50a7bc89eb766c576a85b48` and staged into `Lat 1.4+26.1.2` as SHA `1f50c5954cef3c91de1b071e78172ad6940a41abe5bace3e6febde5ac449a477`. The prior biome-tuning runtime jar SHA `af1579b2...` is preserved as a timestamped backup. A final live attempt on 2026-06-21 proves the c9 candidate launches, loads a Globe world, accepts commands, locates and renders a real desert, survives a short non-teleport movement soak without new warnings, and save/quits cleanly. A narrow stony follow-up then resolved the only remaining live caveat: fresh `/locate biome minecraft:stony_peaks` returned `[1452,170,4201]`, the settled HUD at that coordinate read `minecraft:stony_peaks`, and the server-side `/execute if biome` predicate emitted `stony_peaks_here`.
 
 ## Source Of Truth

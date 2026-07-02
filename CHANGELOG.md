@@ -1,5 +1,11 @@
 # Changelog
 
+## Planning - Latitude 2.0 Overhaul
+
+The comprehensive Latitude 2.0 overhaul plan now lives at `docs/LATITUDE_2_0_OVERHAUL.md`, with the research log at `docs/binder/longitude-earthlike-world-overhaul-20260702.md`.
+
+Planning direction: pivot the 2.0 canonical implementation to Minecraft `26.2` first, add a portability spine, keep the 2:1 projected-planet foundation, retire E/W wrap/ocean-seam terrain sinking as the centerpiece, and build measurement/GeoAuthority/ClimateAuthority/terrain/boundary phases in that order.
+
 ## Latitude 2.0 — Longitude (MC 26.1.2)
 
 Latitude 2.0 "Longitude" is a worldgen-quality and compatibility release. It makes the climate map read like a coherent, Earth-like world, adds first-class support for custom biome mods, and introduces the Mercator world shape — a wider, 2:1 world with more room for every latitude band (and, fittingly, the mod's first real reason to care about the east-west axis). (Bumped from 1.4 to 2.0: Mercator is a new world type, not a tweak, and the custom-biome integration + geography-law overhaul below are each substantial on their own; the version number also cleanly separates this tested release from the accidental partial `1.4` push to GitHub.)

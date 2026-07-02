@@ -1,5 +1,9 @@
 # Latitude Porting Bootstrap Kit
 
+> **2026-07-02 update:** Use `docs/porting/PORTING.md` as the current porting front door. For the Latitude
+> 2.0 overhaul, read `docs/LATITUDE_2_0_OVERHAUL.md` first; the planned canonical target is Minecraft `26.2`
+> after an isolated pivot/proof phase.
+
 Purpose: make future Minecraft version ports faster by front-loading the known drift checks before any source edits.
 
 ## Port Phases

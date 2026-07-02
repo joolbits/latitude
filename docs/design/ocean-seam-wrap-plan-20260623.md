@@ -1,5 +1,9 @@
 # E-W Wrap via Ocean Seam — Implementation Plan (canonical 26.1.2)
 
+> **2026-07-02 direction update:** This is a scrapped historical record, not a future Latitude 2.0 plan. The
+> current overhaul front door is `docs/LATITUDE_2_0_OVERHAUL.md`; it explicitly retires E/W wrap and ocean-seam
+> terrain sinking as the 2.0 centerpiece.
+
 `status: SCRAPPED 2026-06-24 — feature abandoned after live testing` · `scope: worldgen + server + client` · `date: 2026-06-23`
 
 > ## ❌ SCRAPPED (Peetsa, 2026-06-24) — E-W wrapping abandoned
