@@ -2,6 +2,10 @@
 
 A globe-style world + latitude-based biome bands with a customizable compass HUD and warnings.
 
+## Current 1.4 status
+
+The current Latitude 1.4 source of truth is the Minecraft `26.1.2` worktree at `<home>/CascadeProjects/Latitude-custom-biome-expansion-26.1.2`. Use [docs/release/checklist.md](<home>/CascadeProjects/Latitude%20(Globe)/docs/release/checklist.md) as the permanent rerun front door and [docs/release/scenic-drive-green-checklist.md](<home>/CascadeProjects/Latitude%20(Globe)/docs/release/scenic-drive-green-checklist.md) for the live scenic pass. This checkout remains the main docs/history root and still contains older `1.21.11`-era build metadata.
+
 ## Features
 
 - **Latitude biome bands** via biome tags under `globe:lat_*`.
@@ -21,7 +25,8 @@ See: docs/design-spec.md
 
 ## Dependencies
 
-- Fabric Loader (Minecraft 1.21.11)
+- Current Latitude 1.4 candidate: Fabric Loader for Minecraft `26.1.2` in `<home>/CascadeProjects/Latitude-custom-biome-expansion-26.1.2`
+- This checkout's `gradle.properties` still describes the historical `1.21.11` / `1.3.0` line and is not the active 1.4 release source of truth.
 - Fabric API
 
 ## Biome tag integration
@@ -51,6 +56,8 @@ Compass HUD configuration is stored in:
 The release jar to upload is in:
 
 - `build/libs/` (the remapped main jar, not `-dev` / `-sources`)
+
+For Latitude 1.4 readiness, build from the canonical `26.1.2` worktree named above, not from this historical `1.21.11` checkout.
 
 ## Support
 
