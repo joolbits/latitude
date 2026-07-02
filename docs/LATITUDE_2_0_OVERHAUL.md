@@ -637,6 +637,11 @@ slices with their own working cards, not bundled into this one.
 Kick off Latitude 2.0 overhaul work: Phase -2 (Version Truth) + Phase -1 (Canonical 26.2 Pivot) only.
 Stop before Phase 0 or Phase 1 — those are separate slices with their own working cards.
 
+The isolated pivot worktree/branch already exist (created 2026-07-02, branched off
+feat/custom-biome-expansion-26.1.2 @ 1f4b8f6d): worktree <home>/CascadeProjects/Latitude-2.0-26.2-pivot,
+branch port/canonical-26.2-pivot, pushed to origin and tracking. Work in that directory — do not create another
+one.
+
 MODEL: Sonnet, low-to-medium reasoning effort. This is bounded, compiler/proof-gated work,
 not novel design — do not switch to Opus or run ultracode for this slice. See
 <external-notes>/model-effort-strategy-20260702.md for why.
@@ -655,10 +660,10 @@ WORKING CARD — fill this in before touching anything:
 - Root/profile: confirm current root, branch, HEAD, and Modrinth profile truth
   before any edit (repo preflight per LESSONS L3).
 - Allowed work: verify 26.2/Fabric/Fabric-API/Loom/Gradle/Java toolchain truth;
-  create/switch to an isolated 26.2 pivot branch or worktree (recommended name
-  `port/canonical-26.2-pivot` or `feat/latitude-2.0-26.2`); bump build/version
-  metadata ONLY; run compileJava; repair API/mixin drift NARROWLY; run the
-  existing headless Atlas + exact-ID biome proof to confirm nothing broke.
+  work in the existing `port/canonical-26.2-pivot` worktree (already created, see
+  above — do not create a second one); bump build/version metadata ONLY; run
+  compileJava; repair API/mixin drift NARROWLY; run the existing headless Atlas +
+  exact-ID biome proof to confirm nothing broke.
 - Forbidden lanes: no GeoAuthority/ClimateAuthority code, no analyzer work, no
   portability-layer scaffolding, no visible geography/continent behavior, no
   Modrinth profile smoke until deterministic proof is green, no tag/push
