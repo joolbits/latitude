@@ -627,6 +627,63 @@ of which model/thread executes them:
 
 Do not start with visible continent generation. The first green is a proven 26.2 baseline plus a measurement harness that can show the current red honestly.
 
+## Kickoff Slice Prompt (Phase -2 + Phase -1 only)
+
+Copy-pasteable prompt for starting a fresh thread on the first slice. Deliberately scoped to just items 1-4 of
+First Tasks above (Version Truth + the 26.2 pivot) — items 5-8 (analyzer, no-op summary contracts) are separate
+slices with their own working cards, not bundled into this one.
+
+```
+Kick off Latitude 2.0 overhaul work: Phase -2 (Version Truth) + Phase -1 (Canonical 26.2 Pivot) only.
+Stop before Phase 0 or Phase 1 — those are separate slices with their own working cards.
+
+MODEL: Sonnet, low-to-medium reasoning effort. This is bounded, compiler/proof-gated work,
+not novel design — do not switch to Opus or run ultracode for this slice. See
+docs/binder/model-effort-strategy-20260702.md for why.
+
+READ FIRST (in order):
+1. docs/LATITUDE_2_0_OVERHAUL.md (front door — read the whole thing)
+2. docs/binder/model-effort-strategy-20260702.md
+3. docs/binder/longitude-earthlike-world-overhaul-20260702.md
+4. docs/porting/PORTING.md and docs/porting/VERSION_MATRIX.md
+5. docs/LESSONS.md (main worktree) — especially L7 (working card discipline)
+
+WORKING CARD — fill this in before touching anything:
+- Objective: prove the existing 2.0-beta.1 line compiles and passes deterministic
+  headless proof on Minecraft 26.2, with build-metadata-only changes. No worldgen
+  behavior changes, no visible continent/geography work.
+- Root/profile: confirm current root, branch, HEAD, and Modrinth profile truth
+  before any edit (repo preflight per LESSONS L3).
+- Allowed work: verify 26.2/Fabric/Fabric-API/Loom/Gradle/Java toolchain truth;
+  create/switch to an isolated 26.2 pivot branch or worktree (recommended name
+  `port/canonical-26.2-pivot` or `feat/latitude-2.0-26.2`); bump build/version
+  metadata ONLY; run compileJava; repair API/mixin drift NARROWLY; run the
+  existing headless Atlas + exact-ID biome proof to confirm nothing broke.
+- Forbidden lanes: no GeoAuthority/ClimateAuthority code, no analyzer work, no
+  portability-layer scaffolding, no visible geography/continent behavior, no
+  Modrinth profile smoke until deterministic proof is green, no tag/push
+  without explicit authorization.
+- Proof gate: compileJava green AND headless Atlas/exact-ID proof green on the
+  new 26.2 branch, with flag-off/Classic output unchanged from the 26.1.2
+  baseline.
+- Stop condition (pulled verbatim from the plan's Hard Stops):
+  - the worktree has unexplained source/runtime dirt in files this slice touches
+  - 26.2 coordinates are unavailable or contradictory
+  - compileJava fails from broad API drift and a second repair pass can't isolate
+    a small cause
+  - a mixin target can't prove it applies
+  - flag-off output differs for Classic/current Longitude
+  If any of these trigger, stop and write up what's blocking rather than pushing
+  through with a bigger hammer (that's also the cue to reconsider model/effort
+  per the strategy doc, not to brute-force it on the current tier).
+
+DELIVERABLE: a dated binder note recording what was verified, the branch/worktree
+created, the before/after build metadata, compile + Atlas/exact-ID proof results,
+and an updated docs/porting/VERSION_MATRIX.md. Local commits only — ask before
+tagging or pushing. End by stating clearly whether Phase 0 (portability
+foundation) is next, or whether something needs Peetsa's input first.
+```
+
 ## Linked Docs
 
 - `docs/binder/model-effort-strategy-20260702.md` — which model/reasoning-effort per phase, and what a future
