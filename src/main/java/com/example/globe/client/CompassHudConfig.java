@@ -49,13 +49,35 @@ public final class CompassHudConfig {
     // Analog styling. Lower = more transparent inner disc.
     public float analogInnerAlpha = 0.50f; // 0..1
 
-    // Zone label
+    // Zone (band) label
     public boolean displayZoneInHud = false;
     public boolean zoneFollowsCompass = true;
     public HAnchor zoneHAnchor = HAnchor.CENTER;
     public VAnchor zoneVAnchor = VAnchor.TOP;
     public int zoneOffsetX = 0;
     public int zoneOffsetY = 0;
+
+    // Biome label -- same follow/detach/anchor/offset shape as the zone label above, so it can independently
+    // ride with the compass or be dragged to its own spot in the HUD Studio.
+    public boolean displayBiomeInHud = false;
+    public boolean biomeFollowsCompass = true;
+    public HAnchor biomeHAnchor = HAnchor.CENTER;
+    public VAnchor biomeVAnchor = VAnchor.TOP;
+    public int biomeOffsetX = 0;
+    public int biomeOffsetY = 0;
+    // When zone and biome are BOTH attached to the compass line, which comes first. false = "Zone, Biome"
+    // (band before biome); true = "Biome, Zone".
+    public boolean biomeBeforeZone = false;
+
+    // Coordinates (lat/lon) detachability. Previously always fused to the compass; now can ride with it
+    // (default, unchanged behavior) or detach to its own anchor+offset like zone/biome. The actual lat/lon
+    // digits still come from showLatitude/showLongitude (digital) or analogShowLatitude/analogShowLongitude
+    // (analog) -- this only controls WHERE that text renders, not whether it exists.
+    public boolean coordsFollowsCompass = true;
+    public HAnchor coordsHAnchor = HAnchor.CENTER;
+    public VAnchor coordsVAnchor = VAnchor.TOP;
+    public int coordsOffsetX = 0;
+    public int coordsOffsetY = 0;
 
     // Styling
     public boolean showBackground = true;
@@ -172,6 +194,10 @@ public final class CompassHudConfig {
         if (analogInnerAlpha > 1.0f) analogInnerAlpha = 1.0f;
         if (zoneHAnchor == null) zoneHAnchor = HAnchor.CENTER;
         if (zoneVAnchor == null) zoneVAnchor = VAnchor.TOP;
+        if (biomeHAnchor == null) biomeHAnchor = HAnchor.CENTER;
+        if (biomeVAnchor == null) biomeVAnchor = VAnchor.TOP;
+        if (coordsHAnchor == null) coordsHAnchor = HAnchor.CENTER;
+        if (coordsVAnchor == null) coordsVAnchor = VAnchor.TOP;
         if (padding < 0) padding = 0;
         if (backgroundAlpha < 0) backgroundAlpha = 0;
         if (backgroundAlpha > 255) backgroundAlpha = 255;

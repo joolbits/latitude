@@ -651,7 +651,7 @@ public final class BiomeSamplerTools {
         return biome.unwrapKey().map(key -> key.identifier().toString()).orElse("minecraft:plains");
     }
 
-    private static String biomeDisplayName(String biomeId) {
+    public static String biomeDisplayName(String biomeId) {
         String raw = (biomeId == null ? "unknown" : biomeId).split(":")[biomeId != null && biomeId.contains(":") ? 1 : 0];
         String[] parts = raw.replace('_', ' ').trim().split("\\s+");
         StringBuilder out = new StringBuilder();

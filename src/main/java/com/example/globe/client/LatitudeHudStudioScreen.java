@@ -24,7 +24,7 @@ public class LatitudeHudStudioScreen extends Screen {
     private enum Target { COMPASS, TITLE, BOTH }
     private Target target = Target.COMPASS;
 
-    private enum DragElement { NONE, COMPASS, TITLE, ZONE }
+    private enum DragElement { NONE, COMPASS, TITLE, ZONE, BIOME, COORDS }
     private DragElement dragElement = DragElement.NONE;
 
     private boolean wasLDown = false;
@@ -33,6 +33,10 @@ public class LatitudeHudStudioScreen extends Screen {
     private int compassGrabDy;
     private int zoneGrabDx;
     private int zoneGrabDy;
+    private int biomeGrabDx;
+    private int biomeGrabDy;
+    private int coordsGrabDx;
+    private int coordsGrabDy;
 
     private double titleOffsetXf;
     private double titleOffsetYf;
@@ -58,6 +62,12 @@ public class LatitudeHudStudioScreen extends Screen {
     private AbstractWidget wCompassAttachHotbar;
     private AbstractWidget wZoneDisplay;
     private AbstractWidget wZoneFollow;
+    private AbstractWidget wBiomeDisplay;
+    private AbstractWidget wBiomeFollow;
+    private AbstractWidget wZoneBiomeOrder;
+    private AbstractWidget wCoordsFollow;
+    private AbstractWidget wHudSnap;
+    private AbstractWidget wHudSnapPixels;
 
     private AbstractWidget wTitleScale;
 
@@ -112,6 +122,12 @@ public class LatitudeHudStudioScreen extends Screen {
         this.wCompassAttachHotbar = null;
         this.wZoneDisplay = null;
         this.wZoneFollow = null;
+        this.wBiomeDisplay = null;
+        this.wBiomeFollow = null;
+        this.wZoneBiomeOrder = null;
+        this.wCoordsFollow = null;
+        this.wHudSnap = null;
+        this.wHudSnapPixels = null;
 
         this.titleOffsetXf = LatitudeConfig.zoneEnterTitleOffsetX;
         this.titleOffsetYf = LatitudeConfig.zoneEnterTitleOffsetY;
@@ -273,6 +289,65 @@ public class LatitudeHudStudioScreen extends Screen {
         trackSidebarWidget(this.wZoneFollow, y);
         y += rowH + rowGap;
 
+        this.wBiomeDisplay = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "ON" : "OFF"), () -> cfg.displayBiomeInHud)
+                .withValues(true, false)
+                .create(panelX, y, widgetW, rowH, Component.literal("Display Biome in HUD"), (btn, value) -> {
+                    cfg.displayBiomeInHud = value;
+                    CompassHudConfig.saveCurrent();
+                    updateSidebarVisibility();
+                }));
+        tooltip(this.wBiomeDisplay, "Shows the current biome (e.g. Plains, Jungle) as small HUD text.");
+        trackSidebarWidget(this.wBiomeDisplay, y);
+        y += rowH + rowGap;
+
+        this.wBiomeFollow = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "FOLLOW" : "DETACH"), () -> cfg.biomeFollowsCompass)
+                .withValues(true, false)
+                .create(panelX, y, widgetW, rowH, Component.literal("Biome Placement"), (btn, value) -> {
+                    cfg.biomeFollowsCompass = value;
+                    CompassHudConfig.saveCurrent();
+                    updateSidebarVisibility();
+                }));
+        tooltip(this.wBiomeFollow, "Let the biome label ride with the compass or detach it for dragging.");
+        trackSidebarWidget(this.wBiomeFollow, y);
+        y += rowH + rowGap;
+
+        this.wZoneBiomeOrder = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "Biome, Zone" : "Zone, Biome"), () -> cfg.biomeBeforeZone)
+                .withValues(false, true)
+                .create(panelX, y, widgetW, rowH, Component.literal("Zone/Biome Order"), (btn, value) -> {
+                    cfg.biomeBeforeZone = value;
+                    CompassHudConfig.saveCurrent();
+                }));
+        tooltip(this.wZoneBiomeOrder, "When zone and biome are both attached to the compass, which reads first.");
+        trackSidebarWidget(this.wZoneBiomeOrder, y);
+        y += rowH + rowGap;
+
+        this.wCoordsFollow = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "FOLLOW" : "DETACH"), () -> cfg.coordsFollowsCompass)
+                .withValues(true, false)
+                .create(panelX, y, widgetW, rowH, Component.literal("Coords Placement"), (btn, value) -> {
+                    cfg.coordsFollowsCompass = value;
+                    CompassHudConfig.saveCurrent();
+                    updateSidebarVisibility();
+                }));
+        tooltip(this.wCoordsFollow, "Let the latitude/longitude readout ride with the compass or detach it for dragging.");
+        trackSidebarWidget(this.wCoordsFollow, y);
+        y += rowH + rowGap;
+
+        this.wHudSnap = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "Snap to Grid" : "Free Move"), () -> LatitudeConfig.hudSnapEnabled)
+                .withValues(true, false)
+                .create(panelX, y, widgetW, rowH, Component.literal("Dragging"), (btn, value) -> {
+                    LatitudeConfig.hudSnapEnabled = value;
+                    LatitudeConfig.saveCurrent();
+                    updateSidebarVisibility();
+                }));
+        tooltip(this.wHudSnap, "Snap dragged HUD elements to a grid, or move them freely to any pixel.");
+        trackSidebarWidget(this.wHudSnap, y);
+        y += rowH + rowGap;
+
+        this.wHudSnapPixels = this.addRenderableWidget(new IntSlider(panelX, y, widgetW, rowH, Component.literal("Grid Size"), 1, 32, LatitudeConfig.hudSnapPixels, v -> LatitudeConfig.hudSnapPixels = v));
+        tooltip(this.wHudSnapPixels, "Grid spacing in pixels used while Snap to Grid is on.");
+        trackSidebarWidget(this.wHudSnapPixels, y);
+        y += rowH + rowGap;
+
         this.wTitleScale = this.addRenderableWidget(new StepSlider(panelX, y, widgetW, rowH, Component.literal("Title Size"), 1.0, 3.0, 0.1, LatitudeConfig.zoneEnterTitleScale, v -> LatitudeConfig.zoneEnterTitleScale = v));
         tooltip(this.wTitleScale, "Scales the zone enter title preview.");
         trackSidebarWidget(this.wTitleScale, y);
@@ -419,6 +494,16 @@ public class LatitudeHudStudioScreen extends Screen {
                 dragElement = DragElement.ZONE;
                 return true;
             }
+
+            if (isMouseOverBiome(mx, my)) {
+                dragElement = DragElement.BIOME;
+                return true;
+            }
+
+            if (isMouseOverCoords(mx, my)) {
+                dragElement = DragElement.COORDS;
+                return true;
+            }
         }
 
         return false;
@@ -510,6 +595,68 @@ public class LatitudeHudStudioScreen extends Screen {
             return true;
         }
 
+        // Mirrors the ZONE block above, for the biome label.
+        if (dragElement == DragElement.BIOME) {
+            var mc = Minecraft.getInstance();
+            if (mc == null || mc.getWindow() == null) return true;
+            var cfg = CompassHudConfig.get();
+            if (!cfg.displayBiomeInHud || cfg.biomeFollowsCompass) return true;
+
+            int screenW = mc.getWindow().getGuiScaledWidth();
+            int screenH = mc.getWindow().getGuiScaledHeight();
+            var bb = CompassHud.computeBiomeBounds(mc, cfg);
+            if (bb == null) return true;
+
+            int targetX = (int) Math.round(mx) - biomeGrabDx;
+            int targetY = (int) Math.round(my) - biomeGrabDy;
+            int boxW = bb.w();
+            int boxH = bb.h();
+            targetX = clamp(targetX, 0, Math.max(0, screenW - boxW));
+            targetY = clamp(targetY, 0, Math.max(0, screenH - boxH));
+
+            int baseX = anchoredBiomeX(cfg, screenW, boxW);
+            int baseY = anchoredBiomeY(cfg, screenH, boxH);
+            cfg.biomeOffsetX = targetX - baseX;
+            cfg.biomeOffsetY = targetY - baseY;
+
+            if (LatitudeConfig.hudSnapEnabled) {
+                cfg.biomeOffsetX = snap(cfg.biomeOffsetX, LatitudeConfig.hudSnapPixels);
+                cfg.biomeOffsetY = snap(cfg.biomeOffsetY, LatitudeConfig.hudSnapPixels);
+            }
+            return true;
+        }
+
+        // Mirrors the ZONE block above, for the detached coords (lat/lon) label.
+        if (dragElement == DragElement.COORDS) {
+            var mc = Minecraft.getInstance();
+            if (mc == null || mc.getWindow() == null) return true;
+            var cfg = CompassHudConfig.get();
+            if (cfg.coordsFollowsCompass) return true;
+
+            int screenW = mc.getWindow().getGuiScaledWidth();
+            int screenH = mc.getWindow().getGuiScaledHeight();
+            var cb = CompassHud.computeCoordsBounds(mc, cfg);
+            if (cb == null) return true;
+
+            int targetX = (int) Math.round(mx) - coordsGrabDx;
+            int targetY = (int) Math.round(my) - coordsGrabDy;
+            int boxW = cb.w();
+            int boxH = cb.h();
+            targetX = clamp(targetX, 0, Math.max(0, screenW - boxW));
+            targetY = clamp(targetY, 0, Math.max(0, screenH - boxH));
+
+            int baseX = anchoredCoordsX(cfg, screenW, boxW);
+            int baseY = anchoredCoordsY(cfg, screenH, boxH);
+            cfg.coordsOffsetX = targetX - baseX;
+            cfg.coordsOffsetY = targetY - baseY;
+
+            if (LatitudeConfig.hudSnapEnabled) {
+                cfg.coordsOffsetX = snap(cfg.coordsOffsetX, LatitudeConfig.hudSnapPixels);
+                cfg.coordsOffsetY = snap(cfg.coordsOffsetY, LatitudeConfig.hudSnapPixels);
+            }
+            return true;
+        }
+
         return false;
     }
 
@@ -533,6 +680,12 @@ public class LatitudeHudStudioScreen extends Screen {
             if (dragElement == DragElement.ZONE) {
                 CompassHudConfig.saveCurrent();
             }
+            if (dragElement == DragElement.BIOME) {
+                CompassHudConfig.saveCurrent();
+            }
+            if (dragElement == DragElement.COORDS) {
+                CompassHudConfig.saveCurrent();
+            }
             dragElement = DragElement.NONE;
         }
         return super.mouseReleased(click);
@@ -546,6 +699,11 @@ public class LatitudeHudStudioScreen extends Screen {
         LatitudeConfig.zoneEnterTitleScale = 1.8;
         LatitudeConfig.zoneEnterTitleOffsetX = 0;
         LatitudeConfig.zoneEnterTitleOffsetY = -40;
+        // Matches LatitudeConfig's own field-initializer defaults (hudSnapEnabled=true, hudSnapPixels=8) --
+        // there's no fresh()-style factory on LatitudeConfig (unlike CompassHudConfig), so this follows the same
+        // hardcoded-literal pattern already used for the zoneEnterTitle* resets above.
+        LatitudeConfig.hudSnapEnabled = true;
+        LatitudeConfig.hudSnapPixels = 8;
         LatitudeConfig.saveCurrent();
     }
 
@@ -607,9 +765,22 @@ public class LatitudeHudStudioScreen extends Screen {
         setVisible(wCompassAttachHotbar, showCompassControls && !analog);
         setVisible(wZoneDisplay, showCompassControls);
         setVisible(wZoneFollow, showCompassControls && CompassHudConfig.get().displayZoneInHud);
+        setVisible(wBiomeDisplay, showCompassControls);
+        setVisible(wBiomeFollow, showCompassControls && CompassHudConfig.get().displayBiomeInHud);
+        // Order only matters when zone AND biome are both attached to the SAME compass line.
+        var liveCfg = CompassHudConfig.get();
+        boolean bothAttached = liveCfg.displayZoneInHud && liveCfg.zoneFollowsCompass
+                && liveCfg.displayBiomeInHud && liveCfg.biomeFollowsCompass;
+        setVisible(wZoneBiomeOrder, showCompassControls && bothAttached);
+        setVisible(wCoordsFollow, showCompassControls);
 
         boolean showTitleControls = sidebarVisible && (target == Target.TITLE || target == Target.BOTH);
         setVisible(wTitleScale, showTitleControls);
+
+        // Dragging behavior (snap vs free) is global -- it governs the compass, zone, biome, coords, AND the
+        // title, so it's visible regardless of which target is selected, same as Reset HUD below.
+        setVisible(wHudSnap, sidebarVisible);
+        setVisible(wHudSnapPixels, sidebarVisible && LatitudeConfig.hudSnapEnabled);
 
         setVisible(wResetHud, sidebarVisible);
     }
@@ -624,6 +795,34 @@ public class LatitudeHudStudioScreen extends Screen {
         if (mx < b.x() || mx >= (b.x() + b.w()) || my < b.y() || my >= (b.y() + b.h())) return false;
         zoneGrabDx = (int) Math.round(mx) - b.x();
         zoneGrabDy = (int) Math.round(my) - b.y();
+        return true;
+    }
+
+    // Mirrors isMouseOverZone exactly, for the biome label.
+    private boolean isMouseOverBiome(double mx, double my) {
+        var mc = Minecraft.getInstance();
+        if (mc == null) return false;
+        var cfg = CompassHudConfig.get();
+        if (!cfg.displayBiomeInHud || cfg.biomeFollowsCompass) return false;
+        var b = CompassHud.computeBiomeBounds(mc, cfg);
+        if (b == null) return false;
+        if (mx < b.x() || mx >= (b.x() + b.w()) || my < b.y() || my >= (b.y() + b.h())) return false;
+        biomeGrabDx = (int) Math.round(mx) - b.x();
+        biomeGrabDy = (int) Math.round(my) - b.y();
+        return true;
+    }
+
+    // Mirrors isMouseOverZone exactly, for the detached coords (lat/lon) label.
+    private boolean isMouseOverCoords(double mx, double my) {
+        var mc = Minecraft.getInstance();
+        if (mc == null) return false;
+        var cfg = CompassHudConfig.get();
+        if (cfg.coordsFollowsCompass) return false;
+        var b = CompassHud.computeCoordsBounds(mc, cfg);
+        if (b == null) return false;
+        if (mx < b.x() || mx >= (b.x() + b.w()) || my < b.y() || my >= (b.y() + b.h())) return false;
+        coordsGrabDx = (int) Math.round(mx) - b.x();
+        coordsGrabDy = (int) Math.round(my) - b.y();
         return true;
     }
 
@@ -666,6 +865,18 @@ public class LatitudeHudStudioScreen extends Screen {
         cfg.zoneVAnchor = fresh.zoneVAnchor;
         cfg.zoneOffsetX = fresh.zoneOffsetX;
         cfg.zoneOffsetY = fresh.zoneOffsetY;
+        cfg.displayBiomeInHud = fresh.displayBiomeInHud;
+        cfg.biomeFollowsCompass = fresh.biomeFollowsCompass;
+        cfg.biomeHAnchor = fresh.biomeHAnchor;
+        cfg.biomeVAnchor = fresh.biomeVAnchor;
+        cfg.biomeOffsetX = fresh.biomeOffsetX;
+        cfg.biomeOffsetY = fresh.biomeOffsetY;
+        cfg.biomeBeforeZone = fresh.biomeBeforeZone;
+        cfg.coordsFollowsCompass = fresh.coordsFollowsCompass;
+        cfg.coordsHAnchor = fresh.coordsHAnchor;
+        cfg.coordsVAnchor = fresh.coordsVAnchor;
+        cfg.coordsOffsetX = fresh.coordsOffsetX;
+        cfg.coordsOffsetY = fresh.coordsOffsetY;
     }
 
     private static void setVisible(AbstractWidget w, boolean v) {
@@ -760,6 +971,38 @@ public class LatitudeHudStudioScreen extends Screen {
 
     private static int anchoredZoneY(CompassHudConfig cfg, int screenH, int boxH) {
         return switch (cfg.zoneVAnchor) {
+            case TOP -> 4;
+            case CENTER -> (screenH - boxH) / 2;
+            case BOTTOM -> screenH - boxH - 4;
+        };
+    }
+
+    private static int anchoredBiomeX(CompassHudConfig cfg, int screenW, int boxW) {
+        return switch (cfg.biomeHAnchor) {
+            case LEFT -> 4;
+            case CENTER -> (screenW - boxW) / 2;
+            case RIGHT -> screenW - boxW - 4;
+        };
+    }
+
+    private static int anchoredBiomeY(CompassHudConfig cfg, int screenH, int boxH) {
+        return switch (cfg.biomeVAnchor) {
+            case TOP -> 4;
+            case CENTER -> (screenH - boxH) / 2;
+            case BOTTOM -> screenH - boxH - 4;
+        };
+    }
+
+    private static int anchoredCoordsX(CompassHudConfig cfg, int screenW, int boxW) {
+        return switch (cfg.coordsHAnchor) {
+            case LEFT -> 4;
+            case CENTER -> (screenW - boxW) / 2;
+            case RIGHT -> screenW - boxW - 4;
+        };
+    }
+
+    private static int anchoredCoordsY(CompassHudConfig cfg, int screenH, int boxH) {
+        return switch (cfg.coordsVAnchor) {
             case TOP -> 4;
             case CENTER -> (screenH - boxH) / 2;
             case BOTTOM -> screenH - boxH - 4;

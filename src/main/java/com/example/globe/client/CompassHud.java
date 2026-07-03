@@ -11,6 +11,7 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.component.BundleContents;
+import com.example.globe.util.BiomeSamplerTools;
 
 public final class CompassHud {
     private static final int ANALOG_FACE_RGB = 0x1A1410;
@@ -111,12 +112,18 @@ public final class CompassHud {
         }
 
         if (cfg.style == CompassHudConfig.CompassStyle.ANALOG) {
-            String latText = analogLatLonText(client, cfg);
-            String zoneText = cfg.zoneFollowsCompass ? zoneLabel(client, cfg, false) : null;
+            String latText = cfg.coordsFollowsCompass ? analogLatLonText(client, cfg) : null;
+            String zoneText = attachedZoneBiomeLive(client, cfg);
             HudBounds b = computeAnalogBounds(screenW, screenH, client, cfg, latText, zoneText);
             renderAnalogAt(ctx, client, cfg, latText, zoneText, b.x, b.y, forceVisible);
             if (cfg.displayZoneInHud && !cfg.zoneFollowsCompass) {
                 renderDetachedZone(ctx, client, cfg, forceVisible);
+            }
+            if (cfg.displayBiomeInHud && !cfg.biomeFollowsCompass) {
+                renderDetachedBiome(ctx, client, cfg, forceVisible);
+            }
+            if (!cfg.coordsFollowsCompass) {
+                renderDetachedCoords(ctx, client, cfg, forceVisible);
             }
         } else {
             String directionText = switch (cfg.directionMode) {
@@ -125,8 +132,8 @@ public final class CompassHud {
                 case DEGREES -> degrees(client.player.getYRot());
             };
 
-            String latLonText = joinLatLon(latitudeText(client, cfg), longitudeText(client, cfg));
-            String hudText = buildDigitalLine(directionText, latLonText, zoneLabel(client, cfg, true), cfg.compactHud);
+            String latLonText = cfg.coordsFollowsCompass ? joinLatLon(latitudeText(client, cfg), longitudeText(client, cfg)) : null;
+            String hudText = buildDigitalLine(directionText, latLonText, attachedZoneBiomeLive(client, cfg), cfg.compactHud);
 
             String[] lines = new String[]{hudText};
             HudBounds b = computeBounds(screenW, screenH, client, cfg, lines);
@@ -134,19 +141,25 @@ public final class CompassHud {
             if (cfg.displayZoneInHud && !cfg.zoneFollowsCompass) {
                 renderDetachedZone(ctx, client, cfg, forceVisible);
             }
+            if (cfg.displayBiomeInHud && !cfg.biomeFollowsCompass) {
+                renderDetachedBiome(ctx, client, cfg, forceVisible);
+            }
+            if (!cfg.coordsFollowsCompass) {
+                renderDetachedCoords(ctx, client, cfg, forceVisible);
+            }
         }
     }
 
     public static HudBounds computeBounds(Minecraft client, CompassHudConfig cfg) {
         if (cfg.style == CompassHudConfig.CompassStyle.ANALOG) {
-            return computeAnalogBounds(client.getWindow().getGuiScaledWidth(), client.getWindow().getGuiScaledHeight(), client, cfg, analogSampleLatLon(cfg), cfg.zoneFollowsCompass ? sampleZone(cfg) : null);
+            return computeAnalogBounds(client.getWindow().getGuiScaledWidth(), client.getWindow().getGuiScaledHeight(), client, cfg, cfg.coordsFollowsCompass ? analogSampleLatLon(cfg) : null, attachedZoneBiomeSample(cfg));
         }
         return computeBounds(client, cfg, sampleLines(cfg));
     }
 
     public static HudPoint computeBasePosition(Minecraft client, CompassHudConfig cfg) {
         if (cfg.style == CompassHudConfig.CompassStyle.ANALOG) {
-            return computeAnalogBasePosition(client, cfg, analogSampleLatLon(cfg), cfg.zoneFollowsCompass ? sampleZone(cfg) : null);
+            return computeAnalogBasePosition(client, cfg, cfg.coordsFollowsCompass ? analogSampleLatLon(cfg) : null, attachedZoneBiomeSample(cfg));
         }
         return computeDigitalBasePosition(client, cfg, sampleLines(cfg));
     }
@@ -155,7 +168,7 @@ public final class CompassHud {
         int screenW = client.getWindow().getGuiScaledWidth();
         int screenH = client.getWindow().getGuiScaledHeight();
         if (cfg.style == CompassHudConfig.CompassStyle.ANALOG) {
-            return computeAnalogBounds(screenW, screenH, client, cfg, analogSampleLatLon(cfg), cfg.zoneFollowsCompass ? sampleZone(cfg) : null);
+            return computeAnalogBounds(screenW, screenH, client, cfg, cfg.coordsFollowsCompass ? analogSampleLatLon(cfg) : null, attachedZoneBiomeSample(cfg));
         }
         return computeBounds(screenW, screenH, client, cfg, new String[]{text.getString()});
     }
@@ -164,7 +177,7 @@ public final class CompassHud {
         int screenW = client.getWindow().getGuiScaledWidth();
         int screenH = client.getWindow().getGuiScaledHeight();
         if (cfg.style == CompassHudConfig.CompassStyle.ANALOG) {
-            return computeAnalogBounds(screenW, screenH, client, cfg, analogSampleLatLon(cfg), cfg.zoneFollowsCompass ? sampleZone(cfg) : null);
+            return computeAnalogBounds(screenW, screenH, client, cfg, cfg.coordsFollowsCompass ? analogSampleLatLon(cfg) : null, attachedZoneBiomeSample(cfg));
         }
         return computeBounds(screenW, screenH, client, cfg, lines);
     }
@@ -173,7 +186,7 @@ public final class CompassHud {
         int screenW = client.getWindow().getGuiScaledWidth();
         int screenH = client.getWindow().getGuiScaledHeight();
         if (cfg.style == CompassHudConfig.CompassStyle.ANALOG) {
-            return computeAnalogBounds(screenW, screenH, client, cfg, analogSampleLatLon(cfg), cfg.zoneFollowsCompass ? sampleZone(cfg) : null);
+            return computeAnalogBounds(screenW, screenH, client, cfg, cfg.coordsFollowsCompass ? analogSampleLatLon(cfg) : null, attachedZoneBiomeSample(cfg));
         }
         return computeDigitalBounds(screenW, screenH, client, cfg, sampleLines(cfg), true);
     }
@@ -227,15 +240,18 @@ public final class CompassHud {
 
     public static void renderPreview(GuiGraphicsExtractor ctx, Minecraft client, CompassHudConfig cfg, int x, int y) {
         if (cfg.style == CompassHudConfig.CompassStyle.ANALOG) {
-            renderAnalogAt(ctx, client, cfg, analogSampleLatLon(cfg), cfg.zoneFollowsCompass ? sampleZone(cfg) : null, x, y, true);
-            if (cfg.displayZoneInHud && !cfg.zoneFollowsCompass) {
-                renderDetachedZone(ctx, client, cfg, true);
-            }
+            renderAnalogAt(ctx, client, cfg, cfg.coordsFollowsCompass ? analogSampleLatLon(cfg) : null, attachedZoneBiomeSample(cfg), x, y, true);
         } else {
             renderDigitalAt(ctx, client, cfg, sampleLines(cfg), x, y, true);
-            if (cfg.displayZoneInHud && !cfg.zoneFollowsCompass) {
-                renderDetachedZone(ctx, client, cfg, true);
-            }
+        }
+        if (cfg.displayZoneInHud && !cfg.zoneFollowsCompass) {
+            renderDetachedZone(ctx, client, cfg, true);
+        }
+        if (cfg.displayBiomeInHud && !cfg.biomeFollowsCompass) {
+            renderDetachedBiome(ctx, client, cfg, true);
+        }
+        if (!cfg.coordsFollowsCompass) {
+            renderDetachedCoords(ctx, client, cfg, true);
         }
     }
 
@@ -320,7 +336,11 @@ public final class CompassHud {
                 extraTextW += ANALOG_LAT_GAP + client.font.width(latText);
                 extraTextH = Math.max(extraTextH, client.font.lineHeight);
             }
-            if (cfg.displayZoneInHud && cfg.zoneFollowsCompass && zoneText != null && !zoneText.isEmpty()) {
+            // zoneText here is already the combined, order-respecting zone+biome text (see attachedZoneBiomeLive/
+            // Sample) -- the caller only passes non-null when there's something to show, so no need to re-check
+            // displayZoneInHud/zoneFollowsCompass here (that check would wrongly hide biome-only text when zone
+            // display is off but biome display is on).
+            if (zoneText != null && !zoneText.isEmpty()) {
                 if (extraTextW == 0) extraTextW += ANALOG_LAT_GAP;
                 else extraTextW += (cfg.compactHud ? 1 : 6);
                 extraTextW += client.font.width(zoneText);
@@ -341,7 +361,7 @@ public final class CompassHud {
             drawText(ctx, client, cfg, latText, textX, textY, color);
             textX += client.font.width(latText) + (cfg.compactHud ? 1 : 6);
         }
-        if (cfg.displayZoneInHud && cfg.zoneFollowsCompass && zoneText != null && !zoneText.isEmpty()) {
+        if (zoneText != null && !zoneText.isEmpty()) {
             drawText(ctx, client, cfg, zoneText, textX, textY, color);
         }
     }
@@ -442,10 +462,9 @@ public final class CompassHud {
 
     private static String[] sampleLines(CompassHudConfig cfg) {
         String dir = sampleDirection(cfg);
-        String lat = Boolean.TRUE.equals(cfg.showLatitude) ? "1\u00b0S" : null;
-        String lon = Boolean.TRUE.equals(cfg.showLongitude) ? "15\u00b0E" : null;
-        String zone = cfg.displayZoneInHud && cfg.zoneFollowsCompass ? sampleZone(cfg) : null;
-        return new String[]{buildDigitalLine(dir, joinLatLon(lat, lon), zone, cfg.compactHud)};
+        String latLon = cfg.coordsFollowsCompass ? coordsSample(cfg) : null;
+        String zoneBiome = attachedZoneBiomeSample(cfg);
+        return new String[]{buildDigitalLine(dir, latLon, zoneBiome, cfg.compactHud)};
     }
 
     private static String analogSampleLatLon(CompassHudConfig cfg) {
@@ -514,7 +533,9 @@ public final class CompassHud {
             boxW += ANALOG_LAT_GAP + client.font.width(latText);
             boxH = Math.max(boxH, client.font.lineHeight);
         }
-        if (cfg.displayZoneInHud && cfg.zoneFollowsCompass && zoneText != null && !zoneText.isEmpty()) {
+        // zoneText is the combined zone+biome text (see attachedZoneBiomeLive/Sample); caller already filters, so
+        // just check for non-empty content here.
+        if (zoneText != null && !zoneText.isEmpty()) {
             boxW += (cfg.compactHud ? 1 : 6) + client.font.width(zoneText);
             boxH = Math.max(boxH, client.font.lineHeight);
         }
@@ -538,7 +559,9 @@ public final class CompassHud {
             boxW += ANALOG_LAT_GAP + client.font.width(latText);
             boxH = Math.max(boxH, client.font.lineHeight);
         }
-        if (cfg.displayZoneInHud && cfg.zoneFollowsCompass && zoneText != null && !zoneText.isEmpty()) {
+        // zoneText is the combined zone+biome text (see attachedZoneBiomeLive/Sample); caller already filters, so
+        // just check for non-empty content here.
+        if (zoneText != null && !zoneText.isEmpty()) {
             boxW += (cfg.compactHud ? 1 : 6) + client.font.width(zoneText);
             boxH = Math.max(boxH, client.font.lineHeight);
         }
@@ -722,6 +745,38 @@ public final class CompassHud {
         };
     }
 
+    private static int anchoredBiomeX(CompassHudConfig cfg, int screenW, int boxW) {
+        return switch (cfg.biomeHAnchor) {
+            case LEFT -> 4;
+            case CENTER -> (screenW - boxW) / 2;
+            case RIGHT -> screenW - boxW - 4;
+        };
+    }
+
+    private static int anchoredBiomeY(CompassHudConfig cfg, int screenH, int boxH) {
+        return switch (cfg.biomeVAnchor) {
+            case TOP -> 4;
+            case CENTER -> (screenH - boxH) / 2;
+            case BOTTOM -> screenH - boxH - 4;
+        };
+    }
+
+    private static int anchoredCoordsX(CompassHudConfig cfg, int screenW, int boxW) {
+        return switch (cfg.coordsHAnchor) {
+            case LEFT -> 4;
+            case CENTER -> (screenW - boxW) / 2;
+            case RIGHT -> screenW - boxW - 4;
+        };
+    }
+
+    private static int anchoredCoordsY(CompassHudConfig cfg, int screenH, int boxH) {
+        return switch (cfg.coordsVAnchor) {
+            case TOP -> 4;
+            case CENTER -> (screenH - boxH) / 2;
+            case BOTTOM -> screenH - boxH - 4;
+        };
+    }
+
     private static String direction4(float yawDegrees) {
         float yaw = Mth.wrapDegrees(yawDegrees); // -180..180
         int idx = Mth.floor((yaw + 180.0f + 45.0f) / 90.0f) & 3;
@@ -785,6 +840,62 @@ public final class CompassHud {
         };
     }
 
+    // Biome label -- mirrors zoneLabel/sampleZone/displayZoneName above (same shape: respectFollow governs
+    // whether this is used for the ATTACHED line, where it should be null if detached, vs the DETACHED render,
+    // where follow state doesn't matter).
+    private static String biomeLabel(Minecraft client, CompassHudConfig cfg, boolean respectFollow) {
+        if (!cfg.displayBiomeInHud) return null;
+        if (respectFollow && !cfg.biomeFollowsCompass) return null;
+        if (client == null || client.player == null || client.level == null) return sampleBiome(cfg);
+        var biomeHolder = client.level.getBiome(client.player.blockPosition());
+        String biomeId = biomeHolder.unwrapKey().map(k -> k.identifier().toString()).orElse(null);
+        return BiomeSamplerTools.biomeDisplayName(biomeId);
+    }
+
+    private static String sampleBiome(CompassHudConfig cfg) {
+        return cfg.displayBiomeInHud ? "Plains" : null;
+    }
+
+    // Combines the zone (band) and biome text into the single opaque string that gets glued onto the compass
+    // line (digital) or appended after the coords (analog), in whichever order cfg.biomeBeforeZone picks. Callers
+    // just treat the result as one more optional text segment -- exactly like "zoneText" worked before biome
+    // existed -- so nothing downstream needs to know biome exists at all.
+    private static String attachedZoneBiomeLive(Minecraft client, CompassHudConfig cfg) {
+        return joinOrdered(zoneLabel(client, cfg, true), biomeLabel(client, cfg, true), cfg.biomeBeforeZone, cfg.compactHud);
+    }
+
+    private static String attachedZoneBiomeSample(CompassHudConfig cfg) {
+        String zone = cfg.zoneFollowsCompass ? sampleZone(cfg) : null;
+        String biome = cfg.biomeFollowsCompass ? sampleBiome(cfg) : null;
+        return joinOrdered(zone, biome, cfg.biomeBeforeZone, cfg.compactHud);
+    }
+
+    private static String joinOrdered(String zone, String biome, boolean biomeFirst, boolean compact) {
+        if (zone == null || zone.isEmpty()) return (biome == null || biome.isEmpty()) ? null : biome;
+        if (biome == null || biome.isEmpty()) return zone;
+        String sep = compact ? " " : " · ";
+        return biomeFirst ? (biome + sep + zone) : (zone + sep + biome);
+    }
+
+    // Canonical "what does the coords text say" formatter, usable both when coords rides with the compass
+    // (existing behavior) and when detached to its own element. Style-aware since digital/analog have separate
+    // show-latitude/show-longitude flag pairs.
+    private static String coordsText(Minecraft client, CompassHudConfig cfg) {
+        if (cfg.style == CompassHudConfig.CompassStyle.ANALOG) {
+            return analogLatLonText(client, cfg);
+        }
+        return joinLatLon(latitudeText(client, cfg), longitudeText(client, cfg));
+    }
+
+    private static String coordsSample(CompassHudConfig cfg) {
+        if (cfg.style == CompassHudConfig.CompassStyle.ANALOG) {
+            return analogSampleLatLon(cfg);
+        }
+        String lat = Boolean.TRUE.equals(cfg.showLatitude) ? "1°S" : null;
+        String lon = Boolean.TRUE.equals(cfg.showLongitude) ? "15°E" : null;
+        return joinLatLon(lat, lon);
+    }
+
     private static void drawText(GuiGraphicsExtractor ctx, Minecraft client, CompassHudConfig cfg, String text, int x, int y, int color) {
         if (cfg.shadow) {
             ctx.text(client.font, Component.literal(text), x, y, color);
@@ -825,7 +936,80 @@ public final class CompassHud {
         y = clamp(y, 0, Math.max(0, screenH - h));
         return new HudBounds(x, y, w, h);
     }
-    
+
+    // Detached biome label support -- mirrors renderDetachedZone/computeZoneBounds exactly.
+    private static void renderDetachedBiome(GuiGraphicsExtractor ctx, Minecraft client, CompassHudConfig cfg, boolean isPreview) {
+        String biome = biomeLabel(client, cfg, false);
+        if (biome == null) return;
+        HudBounds bb = computeBiomeBounds(client, cfg);
+        if (bb == null) return;
+        if (isPreview) {
+            int border = ANALOG_PREVIEW_BORDER;
+            ctx.fill(bb.x, bb.y, bb.x + bb.w, bb.y + 1, border);
+            ctx.fill(bb.x, bb.y + bb.h - 1, bb.x + bb.w, bb.y + bb.h, border);
+            ctx.fill(bb.x, bb.y, bb.x + 1, bb.y + bb.h, border);
+            ctx.fill(bb.x + bb.w - 1, bb.y, bb.x + bb.w, bb.y + bb.h, border);
+        }
+        int color = cfg.textArgb();
+        drawText(ctx, client, cfg, biome, bb.x, bb.y, color);
+    }
+
+    public static HudBounds computeBiomeBounds(Minecraft client, CompassHudConfig cfg) {
+        String biome = biomeLabel(client, cfg, false);
+        if (biome == null) return null;
+        int screenW = client.getWindow().getGuiScaledWidth();
+        int screenH = client.getWindow().getGuiScaledHeight();
+        int w = client.font.width(biome);
+        int h = client.font.lineHeight;
+        int x = anchoredBiomeX(cfg, screenW, w);
+        int y = anchoredBiomeY(cfg, screenH, h);
+        x += cfg.biomeOffsetX;
+        y += cfg.biomeOffsetY;
+        x = clamp(x, 0, Math.max(0, screenW - w));
+        y = clamp(y, 0, Math.max(0, screenH - h));
+        return new HudBounds(x, y, w, h);
+    }
+
+    // Detached coords label support -- mirrors renderDetachedZone/computeZoneBounds. coordsText() is the same
+    // formatter used when coords rides with the compass; here it's rendered standalone.
+    private static void renderDetachedCoords(GuiGraphicsExtractor ctx, Minecraft client, CompassHudConfig cfg, boolean isPreview) {
+        String coords = coordsLabelForDetached(client, cfg);
+        if (coords == null || coords.isEmpty()) return;
+        HudBounds cb = computeCoordsBounds(client, cfg);
+        if (cb == null) return;
+        if (isPreview) {
+            int border = ANALOG_PREVIEW_BORDER;
+            ctx.fill(cb.x, cb.y, cb.x + cb.w, cb.y + 1, border);
+            ctx.fill(cb.x, cb.y + cb.h - 1, cb.x + cb.w, cb.y + cb.h, border);
+            ctx.fill(cb.x, cb.y, cb.x + 1, cb.y + cb.h, border);
+            ctx.fill(cb.x + cb.w - 1, cb.y, cb.x + cb.w, cb.y + cb.h, border);
+        }
+        int color = cfg.textArgb();
+        drawText(ctx, client, cfg, coords, cb.x, cb.y, color);
+    }
+
+    private static String coordsLabelForDetached(Minecraft client, CompassHudConfig cfg) {
+        if (cfg.coordsFollowsCompass) return null;
+        if (client == null || client.player == null || client.level == null) return coordsSample(cfg);
+        return coordsText(client, cfg);
+    }
+
+    public static HudBounds computeCoordsBounds(Minecraft client, CompassHudConfig cfg) {
+        String coords = coordsLabelForDetached(client, cfg);
+        if (coords == null || coords.isEmpty()) return null;
+        int screenW = client.getWindow().getGuiScaledWidth();
+        int screenH = client.getWindow().getGuiScaledHeight();
+        int w = client.font.width(coords);
+        int h = client.font.lineHeight;
+        int x = anchoredCoordsX(cfg, screenW, w);
+        int y = anchoredCoordsY(cfg, screenH, h);
+        x += cfg.coordsOffsetX;
+        y += cfg.coordsOffsetY;
+        x = clamp(x, 0, Math.max(0, screenW - w));
+        y = clamp(y, 0, Math.max(0, screenH - h));
+        return new HudBounds(x, y, w, h);
+    }
+
     private record AnalogColors(int face, int ring, int muted, int needle) {}
 
     private static AnalogColors analogColors(CompassHudConfig cfg) {
