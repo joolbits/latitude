@@ -353,6 +353,18 @@ public class LatitudeSettingsScreen extends Screen {
         cfg.zoneVAnchor = fresh.zoneVAnchor;
         cfg.zoneOffsetX = fresh.zoneOffsetX;
         cfg.zoneOffsetY = fresh.zoneOffsetY;
+        cfg.displayBiomeInHud = fresh.displayBiomeInHud;
+        cfg.biomeFollowsCompass = fresh.biomeFollowsCompass;
+        cfg.biomeHAnchor = fresh.biomeHAnchor;
+        cfg.biomeVAnchor = fresh.biomeVAnchor;
+        cfg.biomeOffsetX = fresh.biomeOffsetX;
+        cfg.biomeOffsetY = fresh.biomeOffsetY;
+        cfg.biomeBeforeZone = fresh.biomeBeforeZone;
+        cfg.coordsFollowsCompass = fresh.coordsFollowsCompass;
+        cfg.coordsHAnchor = fresh.coordsHAnchor;
+        cfg.coordsVAnchor = fresh.coordsVAnchor;
+        cfg.coordsOffsetX = fresh.coordsOffsetX;
+        cfg.coordsOffsetY = fresh.coordsOffsetY;
     }
 
     private static void applyDefaults(LatitudeConfig cfg) {
