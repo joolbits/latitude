@@ -59,6 +59,12 @@ public class LatitudeCreateWorldScreen extends Screen {
     private static final int MIN_LEFT_W = 108;   // World: text fields (leftW-8) + padding
     private static final int MIN_RIGHT_W = 130;  // Spawn Zone: zone rows + description
     private static final int MIN_RAIL_W = 130;   // Rules: enough for world-type label (safeWidth = railW-66 >= 64px)
+    // Minimum GUI-scaled width to use the three-column layout instead of tabs. Deliberately well above
+    // MIN_LEFT_W+MIN_RIGHT_W+MIN_RAIL_W+gaps (~384, the point where columns merely *fit*): three columns need
+    // breathing room to *read well*. Without this, a mid GUI scale on a small screen (e.g. GUI 4 on a 13"
+    // laptop, ~456px viewport) squeezes three columns into a cramped, heavily-wrapping mess. At ~530 GUI 3
+    // (~616px) stays three-column while GUI 4 drops to the tabbed layout, and every column has comfortable room.
+    private static final int COMFORTABLE_THREE_COL_W = 530;
     private static final double[] PREVIEW_LABEL_DEGREES = {0.0, 23.5, 35.0, 50.0, 66.5, 90.0};
 
     private static final GlobeWorldSize DEFAULT_SIZE = GlobeWorldSize.REGULAR;
@@ -373,7 +379,8 @@ public class LatitudeCreateWorldScreen extends Screen {
         paneStripScrollbarW = paneStripViewportWidth;
         paneStripScrollbarY = panelBottom + 2;
         paneStripScrollbarH = Math.max(4, Math.min(Math.max(4, scaledUi(6)), Math.max(4, bottomY - paneStripScrollbarY - 2)));
-        int minThreeColWidth = MIN_LEFT_W + MIN_RIGHT_W + MIN_RAIL_W + paneGap * 2;
+        // Use the comfortable threshold, not the bare fit-width, so cramped mid-GUI-scale cases go tabbed.
+        int minThreeColWidth = Math.max(COMFORTABLE_THREE_COL_W, MIN_LEFT_W + MIN_RIGHT_W + MIN_RAIL_W + paneGap * 2);
         tabbedMode = paneStripViewportWidth < minThreeColWidth;
         threeCol = !tabbedMode;
         if (tabbedMode) {
