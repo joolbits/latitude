@@ -27,7 +27,9 @@ public final class CompassHudConfig {
     public boolean enabled = true;
 
     public ShowMode showMode = ShowMode.COMPASS_PRESENT;
-    public CompassStyle style = CompassStyle.DIGITAL;
+    // Default to the analog compass for the 2.0 release (Peetsa's chosen default layout: analog @ size 32,
+    // inner alpha 0.50, lat+long readout on). Existing users keep whatever their saved config has.
+    public CompassStyle style = CompassStyle.ANALOG;
     public AnalogCompassTheme analogTheme = AnalogCompassTheme.CLASSIC_GOLD;
     public DirectionMode directionMode = DirectionMode.CARDINAL_8;
 
@@ -42,10 +44,10 @@ public final class CompassHudConfig {
     public int padding = 3;
 
     // Sizing (analog disc diameter, unscaled)
-    public float analogSize = 48.0f; // pixels
+    public float analogSize = 32.0f; // pixels
 
-    // Analog styling
-    public float analogInnerAlpha = 0.65f; // 0..1
+    // Analog styling. Lower = more transparent inner disc.
+    public float analogInnerAlpha = 0.50f; // 0..1
 
     // Zone label
     public boolean displayZoneInHud = false;

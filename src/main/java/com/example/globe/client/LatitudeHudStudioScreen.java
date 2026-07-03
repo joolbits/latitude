@@ -155,7 +155,7 @@ public class LatitudeHudStudioScreen extends Screen {
             trackSidebarWidget(this.wCompassAnalogSize, y);
             y += rowH + rowGap;
             this.wCompassAnalogInnerAlpha = this.addRenderableWidget(new FloatSlider(panelX, y, widgetW, rowH, Component.literal("Inner Transparency"), 0.0f, 1.0f, cfg.analogInnerAlpha, v -> cfg.analogInnerAlpha = v));
-            tooltip(this.wCompassAnalogInnerAlpha, "Controls how transparent the analog inner disc is.");
+            tooltip(this.wCompassAnalogInnerAlpha, "Inner disc opacity. Slide left (lower) = more transparent / see-through; right (higher) = more solid.");
             trackSidebarWidget(this.wCompassAnalogInnerAlpha, y);
             y += rowH + rowGap;
             this.wCompassAnalogTheme = this.addRenderableWidget(CycleButton.<CompassHudConfig.AnalogCompassTheme>builder(v -> Component.literal(themeLabel(v)), () -> cfg.analogTheme)
