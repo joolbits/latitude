@@ -929,12 +929,6 @@ public class LatitudeCreateWorldScreen extends Screen {
         settingsMaxScroll = maxScroll;
 
         int y = contentTop - Math.round(settingsScrollDisplay) + labelGap;
-        // HUD Studio first, per live feedback: the editor entry gets top billing instead of being buried at the
-        // bottom of the scroll list.
-        hudStudioRowY = y;
-        positionSettingsButton(hudStudioBtn, settBtnX, settBtnW, y, btnH);
-
-        y += btnH + rowGap + labelGap;
         worldTypeRowY = y;
         positionSettingsStepper(worldTypePrevBtn, worldTypeNextBtn, settBtnX, settBtnW, y, btnH);
 
@@ -949,6 +943,12 @@ public class LatitudeCreateWorldScreen extends Screen {
         y += btnH + rowGap + labelGap;
         compassRowY = y;
         positionSettingsButton(compassBtn, settBtnX, settBtnW, y, btnH);
+
+        // HUD Studio right after Starting Compass, per live feedback (this screen only -- the pause-menu
+        // Latitude Settings screen keeps HUD Studio first, unchanged from the prior round).
+        y += btnH + rowGap + labelGap;
+        hudStudioRowY = y;
+        positionSettingsButton(hudStudioBtn, settBtnX, settBtnW, y, btnH);
 
         y += btnH + rowGap + labelGap;
         structuresRowY = y;
@@ -1380,7 +1380,11 @@ public class LatitudeCreateWorldScreen extends Screen {
         } // end tab 1 (Spawn Zone)
 
         if (!tabbedMode || activeTab == 2) {
-            updateSettingsLayout();
+            // NOTE: updateSettingsLayout() already ran unconditionally at the top of extractRenderState (matching
+            // how the World/Spawn Zone tabs only call their own layout once, at the top). A second call here was
+            // redundant -- every Rules-panel widget's rectangle got set twice per extract, once via each call,
+            // which is suspected to be the cause of the "two overlapping scrolling layers" glitch reported only
+            // on this panel (the only one with this double-layout pattern).
             drawViewportClippedPanel(context, railX, panelTop, railW, panelBottom - panelTop);
             int settLabelX = railX + 4;
             int railClipLeft = Math.max(railX + 1, paneStripViewportLeft);
