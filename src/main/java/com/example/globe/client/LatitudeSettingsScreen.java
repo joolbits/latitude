@@ -35,7 +35,7 @@ public class LatitudeSettingsScreen extends Screen {
     private int columnXCache;
     private int columnWCache;
     private final List<AbstractWidget> layoutWidgets = new ArrayList<>();
-    private AbstractWidget wHudStudio; // gold-framed in render() so the editor entry stands out among the options
+    private AbstractWidget wHudStudio; // rainbow-lettered in render() (blank label on the button itself)
     private final List<Integer> layoutBaseYs = new ArrayList<>();
     private Button doneButton;
     private Button resetButton;
@@ -72,6 +72,21 @@ public class LatitudeSettingsScreen extends Screen {
         int y = this.panelTop + 24;
 
         int baseY;
+
+        // HUD Studio first, per live feedback: it's the editor entry (not a plain option toggle), so it gets
+        // top billing instead of being buried at the bottom of the scroll list. Message is blank -- vanilla
+        // buttons force their label white (Button.extractContents/extractWidgetRenderState are sealed in 26.2,
+        // so we can't recolor them directly), so RainbowText draws the "HUD Studio" lettering ourselves on top
+        // of the button in render(), one color per letter, after the button's own (blank) extraction.
+        baseY = y;
+        this.wHudStudio = this.addRenderableWidget(Button.builder(Component.empty(), b -> {
+                    Minecraft.getInstance().setScreenAndShow(new LatitudeHudStudioScreen(this));
+                })
+                .bounds(columnX, y, w, 20)
+                .build());
+        layoutWidgets.add(wHudStudio);
+        layoutBaseYs.add(baseY);
+        y += 24;
 
         baseY = y;
         var wZoneTitle = this.addRenderableWidget(CycleButton.builder(v -> Component.literal(v ? "ON" : "OFF"), LatitudeConfig.zoneEnterTitleEnabled)
@@ -155,16 +170,6 @@ public class LatitudeSettingsScreen extends Screen {
         layoutBaseYs.add(baseY);
         y += 24;
 
-        baseY = y;
-        this.wHudStudio = this.addRenderableWidget(Button.builder(Component.literal("HUD Studio"), b -> {
-                    Minecraft.getInstance().setScreenAndShow(new LatitudeHudStudioScreen(this));
-                })
-                .bounds(columnX, y, w, 20)
-                .build());
-        layoutWidgets.add(wHudStudio);
-        layoutBaseYs.add(baseY);
-        y += 24;
-
         this.contentHeight = y - this.panelTop;
 
         int footerY = this.panelBottom - 26;
@@ -235,18 +240,13 @@ public class LatitudeSettingsScreen extends Screen {
         drawScrollbar(context, maxScroll);
         super.extractRenderState(context, mouseX, mouseY, delta);
 
-        // Restrained gold frame around HUD Studio so the editor entry reads as a distinct action among the
-        // gray option buttons (vanilla forces the label white, so we accent the frame instead). Drawn after
-        // super so it sits on top of the button; only when the button is actually in the scroll viewport.
+        // HUD Studio's label is drawn ourselves (blank Component on the button itself) so it can be rainbow
+        // lettered instead of forced white. Drawn after super so it sits on top of the button; only when the
+        // button is actually in the scroll viewport.
         if (wHudStudio != null && wHudStudio.visible) {
-            int bx = wHudStudio.getX();
-            int by = wHudStudio.getY();
-            int bw = wHudStudio.getWidth();
-            int bh = wHudStudio.getHeight();
-            context.fill(bx, by, bx + bw, by + 1, GOLD);            // top
-            context.fill(bx, by + bh - 1, bx + bw, by + bh, GOLD);  // bottom
-            context.fill(bx, by, bx + 1, by + bh, GOLD);            // left
-            context.fill(bx + bw - 1, by, bx + bw, by + bh, GOLD);  // right
+            int centerX = wHudStudio.getX() + wHudStudio.getWidth() / 2;
+            int centerY = wHudStudio.getY() + wHudStudio.getHeight() / 2;
+            RainbowText.drawCentered(context, this.font, "HUD Studio", centerX, centerY, true);
         }
     }
 

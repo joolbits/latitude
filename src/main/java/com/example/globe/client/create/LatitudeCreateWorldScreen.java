@@ -2,6 +2,7 @@ package com.example.globe.client.create;
 
 import com.example.globe.client.GlobeWorldSize;
 import com.example.globe.client.LatitudeHudStudioScreen;
+import com.example.globe.client.RainbowText;
 import com.example.globe.util.LatitudeBands;
 import com.example.globe.world.LatitudeBiomes;
 import net.minecraft.ChatFormatting;
@@ -230,6 +231,7 @@ public class LatitudeCreateWorldScreen extends Screen {
     private int settingsViewportBottom;
     private int settingsContentHeight;
     private int menuScaleRowY;
+    private int hudStudioRowY;
     private int worldTypeRowY;
     private int modeRowY;
     private int commandsRowY;
@@ -531,7 +533,11 @@ public class LatitudeCreateWorldScreen extends Screen {
                     .build();
             addSettingsScrollWidget(gameRulesBtn);
 
-            hudStudioBtn = Button.builder(Component.literal("HUD Studio"), b -> openHudStudio())
+            // Blank label: vanilla forces a Button's own text white and 26.2 sealed Button's render pipeline
+            // (extractWidgetRenderState final, extractContents package-private), so we can't recolor it directly.
+            // renderSettingsScrollWidgets draws the button first, then a RainbowText.drawCentered call right
+            // after paints the real "HUD Studio" lettering on top, one color per letter.
+            hudStudioBtn = Button.builder(Component.empty(), b -> openHudStudio())
                     .bounds(settBtnX, panelTop, settBtnW, btnH)
                     .build();
             addSettingsScrollWidget(hudStudioBtn);
@@ -923,6 +929,12 @@ public class LatitudeCreateWorldScreen extends Screen {
         settingsMaxScroll = maxScroll;
 
         int y = contentTop - Math.round(settingsScrollDisplay) + labelGap;
+        // HUD Studio first, per live feedback: the editor entry gets top billing instead of being buried at the
+        // bottom of the scroll list.
+        hudStudioRowY = y;
+        positionSettingsButton(hudStudioBtn, settBtnX, settBtnW, y, btnH);
+
+        y += btnH + rowGap + labelGap;
         worldTypeRowY = y;
         positionSettingsStepper(worldTypePrevBtn, worldTypeNextBtn, settBtnX, settBtnW, y, btnH);
 
@@ -948,9 +960,6 @@ public class LatitudeCreateWorldScreen extends Screen {
         y += btnH + rowGap + labelGap;
         gameRulesRowY = y;
         positionSettingsButton(gameRulesBtn, settBtnX, settBtnW, y, btnH);
-
-        y += btnH + rowGap + labelGap;
-        positionSettingsButton(hudStudioBtn, settBtnX, settBtnW, y, btnH);
 
         updateSettingsButtons();
     }
@@ -1396,6 +1405,13 @@ public class LatitudeCreateWorldScreen extends Screen {
             // buttons") exactly like the labels above, instead of popping. They are addWidget'd (not auto-
             // rendered by super), so this is the only place they get drawn.
             renderSettingsScrollWidgets(context, mouseX, mouseY, delta);
+            // HUD Studio's button has a blank label (see its creation site); paint the real rainbow-lettered
+            // text on top now that the button itself has drawn, still inside the same scissor so it clips too.
+            if (hudStudioBtn != null && hudStudioBtn.visible) {
+                int centerX = hudStudioBtn.getX() + hudStudioBtn.getWidth() / 2;
+                int centerY = hudStudioBtn.getY() + hudStudioBtn.getHeight() / 2;
+                RainbowText.drawCentered(context, this.font, "HUD Studio", centerX, centerY, true);
+            }
             context.disableScissor();
             }
             drawPaneScrollbar(context, railX, railW, settingsViewportTop, settingsViewportBottom, settingsContentHeight, Math.round(settingsScrollDisplay));
