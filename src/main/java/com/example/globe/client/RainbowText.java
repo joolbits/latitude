@@ -53,4 +53,10 @@ public final class RainbowText {
             x += font.width(s);
         }
     }
+
+    /** Bare 0xRRGGBB (no alpha) for palette color at {@code index}, cycling. Lets other renderers (e.g. the
+     *  zone-enter title's letter-spacing draw loop) reuse this exact palette/order without duplicating it. */
+    public static int paletteColor(int index) {
+        return PALETTE[Math.floorMod(index, PALETTE.length)] & 0xFFFFFF;
+    }
 }

@@ -339,7 +339,8 @@ public final class GlobeWarningOverlay {
         boolean changedHemisphere = stableHemisphere != lastStableHemisphere && (crossedNorth || crossedSouth);
 
         if (changedHemisphere && canFireHemisphereTitle()) {
-            String hemisphereTitle = crossedNorth ? "NORTHERN HEMISPHERE" : "SOUTHERN HEMISPHERE";
+            // Natural case, same reasoning as buildZoneEnterTitle() above -- applyCase() controls final casing.
+            String hemisphereTitle = crossedNorth ? "Northern Hemisphere" : "Southern Hemisphere";
             int durationTicks = (int) Math.round(clamp(LatitudeConfig.zoneEnterTitleSeconds, 2.0, 10.0) * 20.0);
             double scale = clamp(LatitudeConfig.zoneEnterTitleScale, 1.0, 3.0);
             logEntryTitle("hemisphere_trigger", hemisphereTitle, client, playerZ, stableHemisphere, stepBlocks);
@@ -427,7 +428,10 @@ public final class GlobeWarningOverlay {
     }
 
     private static String buildZoneEnterTitle(Minecraft client, String canonicalZoneKey) {
-        String zoneName = zoneDisplayName(canonicalZoneKey).toUpperCase();
+        // Natural case -- ZoneEnterTitleOverlay's applyCase() applies the player's chosen title-case option
+        // (Normal/UPPERCASE/lowercase/Mocking) at render time, so forcing uppercase here would make "Normal"
+        // indistinguishable from "UPPERCASE".
+        String zoneName = zoneDisplayName(canonicalZoneKey);
         if (!LatitudeConfig.showZoneBaseDegreesOnTitle) {
             return zoneName;
         }
