@@ -94,6 +94,9 @@ public final class CompassHudConfig {
     public int backgroundAlpha = 64; // 0..255 (lower = less dark)
     public int textRgb = 0xFFFFFF;
     public int textAlpha = 255; // 0..255
+    // Overrides textRgb (and the Custom RGB sliders) with a per-letter rainbow cycle when true, on the compass
+    // digital line and every zone/biome/coords label (attached or detached).
+    public boolean textRainbow = false;
     public boolean shadow = true;
 
     // Latitude display

@@ -73,6 +73,7 @@ public class LatitudeHudStudioScreen extends Screen {
     private AbstractWidget wCompassBgColor;
     private AbstractWidget wCompassTextColor;
     private AbstractWidget wCompassTextAlpha;
+    private AbstractWidget wCompassTextRainbow;
     private AbstractWidget wCompassShowLatitude;
     private AbstractWidget wCompassAnalogShowLatitude;
     private AbstractWidget wCompassShowLongitude;
@@ -163,6 +164,7 @@ public class LatitudeHudStudioScreen extends Screen {
         this.wCompassBgColor = null;
         this.wCompassTextColor = null;
         this.wCompassTextAlpha = null;
+        this.wCompassTextRainbow = null;
         this.wCompassShowLatitude = null;
         this.wCompassAnalogShowLatitude = null;
         this.wCompassShowLongitude = null;
@@ -296,6 +298,16 @@ public class LatitudeHudStudioScreen extends Screen {
             this.wCompassTextAlpha = this.addRenderableWidget(new IntSlider(panelX, y, widgetW, rowH, Component.literal("Text Opacity"), 0, 255, cfg.textAlpha, v -> cfg.textAlpha = v));
             tooltip(this.wCompassTextAlpha, "Adjusts the opacity of the compass/zone/biome/coords text.");
             trackSidebarWidget(this.wCompassTextAlpha, y);
+            y += rowH + rowGap;
+
+            this.wCompassTextRainbow = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "ON" : "OFF"), () -> cfg.textRainbow)
+                    .withValues(true, false)
+                    .create(panelX, y, widgetW, rowH, Component.literal("Rainbow Text"), (btn, value) -> {
+                        cfg.textRainbow = value;
+                        CompassHudConfig.saveCurrent();
+                    }));
+            tooltip(this.wCompassTextRainbow, "Cycles the compass/zone/biome/coords text through rainbow colors, overriding the Text Color above.");
+            trackSidebarWidget(this.wCompassTextRainbow, y);
             y += rowH + rowGap;
 
             if (analog) {
@@ -1032,6 +1044,7 @@ public class LatitudeHudStudioScreen extends Screen {
         setVisible(wCompassBgColor, sidebarVisible);
         setVisible(wCompassTextColor, sidebarVisible);
         setVisible(wCompassTextAlpha, sidebarVisible);
+        setVisible(wCompassTextRainbow, sidebarVisible);
         setRgbGroupVisible(rgbTextColor, sidebarVisible);
         setRgbGroupVisible(rgbCustomFace, sidebarVisible);
         setRgbGroupVisible(rgbCustomRing, sidebarVisible);
@@ -1143,6 +1156,7 @@ public class LatitudeHudStudioScreen extends Screen {
         cfg.backgroundAlpha = fresh.backgroundAlpha;
         cfg.textRgb = fresh.textRgb;
         cfg.textAlpha = fresh.textAlpha;
+        cfg.textRainbow = fresh.textRainbow;
         cfg.shadow = fresh.shadow;
         cfg.showLatitude = fresh.showLatitude;
         cfg.analogShowLatitude = fresh.analogShowLatitude;

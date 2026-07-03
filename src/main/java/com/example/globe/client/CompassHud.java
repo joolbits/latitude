@@ -295,6 +295,11 @@ public final class CompassHud {
 
             for (int i = 0; i < lines.length; i++) {
                 int lineY = ty + i * client.font.lineHeight;
+                if (cfg.textRainbow) {
+                    int alphaByte = (color >>> 24) & 0xFF;
+                    drawRainbowLeftAligned(ctx, client.font, lines[i], tx, lineY, cfg.shadow, alphaByte);
+                    continue;
+                }
                 Component line = Component.literal(lines[i]);
                 if (cfg.shadow) {
                     ctx.text(client.font, line, tx, lineY, color);
@@ -897,10 +902,34 @@ public final class CompassHud {
     }
 
     private static void drawText(GuiGraphicsExtractor ctx, Minecraft client, CompassHudConfig cfg, String text, int x, int y, int color) {
+        if (cfg.textRainbow) {
+            int alphaByte = (color >>> 24) & 0xFF;
+            drawRainbowLeftAligned(ctx, client.font, text, x, y, cfg.shadow, alphaByte);
+            return;
+        }
         if (cfg.shadow) {
             ctx.text(client.font, Component.literal(text), x, y, color);
         } else {
             ctx.text(client.font, Component.literal(text), x, y, color, false);
+        }
+    }
+
+    // Left-aligned rainbow draw (RainbowText itself only offers centered drawing) -- shared by drawText() above
+    // (analog-attached + all 3 detached labels) and renderDigitalAt()'s per-line loop below, so both compass
+    // styles get the same rainbow behavior from one place.
+    private static void drawRainbowLeftAligned(GuiGraphicsExtractor ctx, Font font, String text, int x, int y, boolean shadow, int alphaByte) {
+        int alphaMask = (alphaByte & 0xFF) << 24;
+        int visibleIdx = 0;
+        int cx = x;
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            String s = String.valueOf(c);
+            if (c != ' ') {
+                int color = alphaMask | RainbowText.paletteColor(visibleIdx);
+                ctx.text(font, s, cx, y, color, shadow);
+                visibleIdx++;
+            }
+            cx += font.width(s);
         }
     }
 

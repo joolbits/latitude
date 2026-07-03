@@ -339,6 +339,7 @@ public class LatitudeSettingsScreen extends Screen {
         cfg.backgroundAlpha = fresh.backgroundAlpha;
         cfg.textRgb = fresh.textRgb;
         cfg.textAlpha = fresh.textAlpha;
+        cfg.textRainbow = fresh.textRainbow;
         cfg.shadow = fresh.shadow;
         cfg.showLatitude = fresh.showLatitude;
         cfg.analogShowLatitude = fresh.analogShowLatitude;
