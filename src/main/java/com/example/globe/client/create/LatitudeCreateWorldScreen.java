@@ -772,7 +772,9 @@ public class LatitudeCreateWorldScreen extends Screen {
 
     private void updateRightLayout() {
         int contentTop = panelTop + scaledUi(8);
-        int titleBlockHeight = uiFontHeight() + scaledUi(4);
+        // threeCol draws an inline heading that needs this reserved strip; tabbed mode skips the redundant
+        // "Spawn Zone" title (the tab strip labels it), so zero the strip there and let content start at the top.
+        int titleBlockHeight = threeCol ? (uiFontHeight() + scaledUi(4)) : 0;
         int subtitleWidth = Math.max(80, rightW - scaledUi(28) - SCROLLBAR_GUTTER);
         int subtitleHeight = wrappedTextHeight("Choose the climate where your journey begins", subtitleWidth);
         int descTextWidth = Math.max(60, rightW - 16 - SCROLLBAR_GUTTER);
@@ -807,14 +809,19 @@ public class LatitudeCreateWorldScreen extends Screen {
         int zoneY = zoneListTopY;
         for (ZoneRowWidget row : zoneRows) {
             row.setRectangle(rightW - 4 - SCROLLBAR_GUTTER, zoneRowHeight, rightX + 2, zoneY);
+            // Vertical gate is INTERSECT (not fully-contained) so a row stays visible while it's partway past the
+            // top/bottom edge; extractWidgetRenderState scissors it to the viewport, so it slides and clips (a
+            // "half row" at the edge) instead of popping in/out. Horizontal stays fully-contained (that's the
+            // separate pane-strip axis).
             boolean visible = isLatitudeWorld()
                     && (!tabbedMode || activeTab == 1)
                     && row.getX() >= paneStripViewportLeft
                     && row.getX() + row.getWidth() <= paneStripViewportRight
-                    && zoneY >= rightViewportTop
-                    && zoneY + zoneRowHeight <= rightViewportBottom;
+                    && zoneY + zoneRowHeight > rightViewportTop
+                    && zoneY < rightViewportBottom;
             row.visible = visible;
-            row.active = visible;
+            // Only fully-visible rows are click-active, so a sliver at the clipped edge isn't a stray click target.
+            row.active = visible && zoneY >= rightViewportTop && zoneY + zoneRowHeight <= rightViewportBottom;
             zoneY += zoneRowStep;
         }
     }
@@ -1255,7 +1262,9 @@ public class LatitudeCreateWorldScreen extends Screen {
         if (threeCol) {
             drawInlineHeading(context, rightX, rightW, TAB_LABELS[1], latWorld ? GOLD : DISABLED_COLOR);
         } else {
-        drawCenteredBoundedText(context, "Spawn Zone", new UiRect(rightX + 4, paneTitleY, rightTextWidth, uiFontHeight()), latWorld ? GOLD : DISABLED_COLOR, false, false);
+        // Tabbed mode: the tab strip already labels this pane "Spawn Zone", so the in-panel title is redundant
+        // and just eats vertical space — skip it (updateRightLayout zeroes its reserved height in tabbed mode so
+        // the content moves up). Keep the instructional subtitle.
         drawWrappedTextBlock(context, "Choose the climate where your journey begins", new UiRect(rightX + 4, rightSubtitleY, rightTextWidth, Math.max(uiFontHeight(), rightDividerY - rightSubtitleY - scaledUi(2))), latWorld ? MUTED : DISABLED_COLOR, false, 2, true, true);
         }
         if (latWorld) {
@@ -2073,6 +2082,16 @@ public class LatitudeCreateWorldScreen extends Screen {
             int w = this.getWidth();
             int h = this.getHeight();
 
+            // Clip to the Spawn Zone panel viewport so a row scrolling past the top/bottom edge renders as a
+            // partial "half row" (smooth) instead of the whole widget popping in/out. Rows extract during
+            // super.extractRenderState() with no outer scissor active, so this enable/disable pair is balanced.
+            int clipLeft = Math.max(rightX + 1, paneStripViewportLeft);
+            int clipRight = Math.min(rightX + rightW - 1, paneStripViewportRight);
+            boolean clipped = clipRight > clipLeft && rightViewportBottom > rightViewportTop;
+            if (clipped) {
+                context.enableScissor(clipLeft, rightViewportTop, clipRight, rightViewportBottom);
+            }
+
             if (selected) {
                 // Warm gold background highlight
                 context.fill(x, y, x + w, y + h, 0x40D4A74A);
@@ -2108,6 +2127,9 @@ public class LatitudeCreateWorldScreen extends Screen {
                 helperY += uiFontHeight();
             }
 
+            if (clipped) {
+                context.disableScissor();
+            }
             this.handleCursor(context);
         }
 

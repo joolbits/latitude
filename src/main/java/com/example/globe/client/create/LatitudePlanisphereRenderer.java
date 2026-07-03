@@ -376,8 +376,15 @@ public final class LatitudePlanisphereRenderer {
         // Fill the reserved box with the vanilla map texture; the climate map draws inset on top, leaving the
         // texture's decorative border showing as a frame. Keeps the frame INSIDE the layout box (no overflow /
         // clipping), so the atlas sits centered in the frame (Peetsa TEST 9).
+        //
+        // map_background.png is 64x64. Use the region-blit overload (destination size separate from source
+        // region) to STRETCH the whole texture over the frame box, so the parchment border scales evenly on all
+        // four sides. The prior call passed 128x128 as the texture size on the 1:1-mapping overload, which made
+        // the frame sample texels 1:1 into a 128-space that was really 64px — so the right/bottom of the frame
+        // read past the real texture (garbage border that changed with each atlas size). Args:
+        // (x, y, uOffset, vOffset, destWidth, destHeight, regionWidth, regionHeight, textureWidth, textureHeight).
         ctx.blit(net.minecraft.client.renderer.RenderPipelines.GUI_TEXTURED, MAP_BG,
-                frameLeft, frameTop, 0.0f, 0.0f, frameW, frameH, 128, 128);
+                frameLeft, frameTop, 0.0f, 0.0f, frameW, frameH, 64, 64, 64, 64);
     }
 
     private static final long CONTINENT_SEED = 0x1A7D0BE59C4F3E21L;
