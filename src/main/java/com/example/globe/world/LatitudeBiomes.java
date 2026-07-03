@@ -31,6 +31,12 @@ import it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.example.globe.adapter.climate.ClimateSummaryProvider;
+import com.example.globe.adapter.climate.NoOpClimateSummaryProvider;
+import com.example.globe.adapter.geo.GeoSummaryProvider;
+import com.example.globe.adapter.geo.NoOpGeoSummaryProvider;
+import com.example.globe.core.LatitudeV2Flags;
+import com.example.globe.core.climate.LatitudeBand;
 import com.example.globe.util.LatitudeBands;
 import com.example.globe.util.LatitudeMath;
 import com.example.globe.util.ValueNoise2D;
@@ -2800,6 +2806,20 @@ public final class LatitudeBiomes {
         LatitudeBands.Band band = bandForAbsLatFraction(t);
         int bandIndex = bandIndexForBand(band);
 
+        // Phase 0 portability scaffolding: disabled-by-default no-op call sites for the future
+        // GeoAuthority (Phase 2) / ClimateAuthority (Phase 3) summaries. Both flags default to
+        // false, so these branches never execute and never affect biome selection; see
+        // docs/porting/PORTABILITY_ARCHITECTURE.md.
+        if (LatitudeV2Flags.GEO_V2_ENABLED) {
+            GeoSummaryProvider geoSummaryProvider = NoOpGeoSummaryProvider.INSTANCE;
+            geoSummaryProvider.summarize(blockX, blockZ);
+        }
+        if (LatitudeV2Flags.CLIMATE_V2_ENABLED) {
+            ClimateSummaryProvider climateSummaryProvider = NoOpClimateSummaryProvider.INSTANCE;
+            climateSummaryProvider.summarize(
+                    latitudeDegreesFromRadius(blockZ, effectiveRadius), LatitudeBand.valueOf(band.name()));
+        }
+
         if (isBeachLike(base) && allowBeachShortcut(generator, columnDecisionY)) {
             Holder<Biome> out = pickBeachForBand(biomeRegistry, base, blockX, blockZ, bandIndex);
             out = quarantineUnknownCustomLandBiome(biomeRegistry, out, base, blockX, blockZ, bandIndex, false);
@@ -3453,6 +3473,20 @@ public final class LatitudeBiomes {
         double t = applyBoundaryJitter(blockX, blockZ, effectiveRadius, tBase);
         LatitudeBands.Band band = bandForAbsLatFraction(t);
         int bandIndex = bandIndexForBand(band);
+
+        // Phase 0 portability scaffolding: disabled-by-default no-op call sites for the future
+        // GeoAuthority (Phase 2) / ClimateAuthority (Phase 3) summaries. Both flags default to
+        // false, so these branches never execute and never affect biome selection; see
+        // docs/porting/PORTABILITY_ARCHITECTURE.md.
+        if (LatitudeV2Flags.GEO_V2_ENABLED) {
+            GeoSummaryProvider geoSummaryProvider = NoOpGeoSummaryProvider.INSTANCE;
+            geoSummaryProvider.summarize(blockX, blockZ);
+        }
+        if (LatitudeV2Flags.CLIMATE_V2_ENABLED) {
+            ClimateSummaryProvider climateSummaryProvider = NoOpClimateSummaryProvider.INSTANCE;
+            climateSummaryProvider.summarize(
+                    latitudeDegreesFromRadius(blockZ, effectiveRadius), LatitudeBand.valueOf(band.name()));
+        }
 
         if (isBeachLike(base) && allowBeachShortcut(generator, columnDecisionY)) {
             Holder<Biome> out = pickBeachForBand(biomePool, base, blockX, blockZ, bandIndex);
