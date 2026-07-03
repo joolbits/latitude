@@ -151,6 +151,12 @@ public class LatitudeCreateWorldScreen extends Screen {
     private Button sizePrevBtn;
     private Button sizeNextBtn;
     private final List<ZoneRowWidget> zoneRows = new ArrayList<>();
+    // Rules-panel buttons are added via addWidget (input/focus only, NOT auto-rendered by super) and rendered
+    // manually inside the panel's scissor in extractRenderState, so they clip into partial "half buttons" at
+    // the scroll edges (like vanilla option lists) instead of popping. 26.2 sealed Button's own render
+    // (final extractWidgetRenderState + package-private extractContents), so a self-clipping subclass isn't
+    // possible -- manual scissor rendering is the way vanilla itself does scrollable lists.
+    private final List<AbstractWidget> settingsScrollWidgets = new ArrayList<>();
 
     // ── Settings rail toggle buttons (need message updates) ──
     private Button commandsBtn;
@@ -488,41 +494,43 @@ public class LatitudeCreateWorldScreen extends Screen {
                 allowCommands = !allowCommands;
                 b.setMessage(Component.literal(allowCommands ? "ON" : "OFF"));
             }).bounds(settBtnX, panelTop, settBtnW, btnH).build();
-            this.addRenderableWidget(worldTypePrevBtn);
-            this.addRenderableWidget(worldTypeNextBtn);
-            this.addRenderableWidget(worldShapePrevBtn);
-            this.addRenderableWidget(worldShapeNextBtn);
-            this.addRenderableWidget(modePrevBtn);
-            this.addRenderableWidget(modeNextBtn);
-            this.addRenderableWidget(commandsBtn);
+            // addWidget (not addRenderableWidget): these get input/focus but are NOT auto-rendered by super --
+            // renderSettingsScrollWidgets() draws them inside the Rules-panel scissor so they clip when scrolled.
+            addSettingsScrollWidget(worldTypePrevBtn);
+            addSettingsScrollWidget(worldTypeNextBtn);
+            addSettingsScrollWidget(worldShapePrevBtn);
+            addSettingsScrollWidget(worldShapeNextBtn);
+            addSettingsScrollWidget(modePrevBtn);
+            addSettingsScrollWidget(modeNextBtn);
+            addSettingsScrollWidget(commandsBtn);
 
             compassBtn = Button.builder(Component.literal(startWithCompass ? "ON" : "OFF"), b -> {
                 startWithCompass = !startWithCompass;
                 b.setMessage(Component.literal(startWithCompass ? "ON" : "OFF"));
             }).bounds(settBtnX, panelTop, settBtnW, btnH).build();
-            this.addRenderableWidget(compassBtn);
+            addSettingsScrollWidget(compassBtn);
 
             structuresBtn = Button.builder(Component.literal(generateStructures ? "ON" : "OFF"), b -> {
                 generateStructures = !generateStructures;
                 b.setMessage(Component.literal(generateStructures ? "ON" : "OFF"));
             }).bounds(settBtnX, panelTop, settBtnW, btnH).build();
-            this.addRenderableWidget(structuresBtn);
+            addSettingsScrollWidget(structuresBtn);
 
             bonusChestBtn = Button.builder(Component.literal(bonusChest ? "ON" : "OFF"), b -> {
                 bonusChest = !bonusChest;
                 b.setMessage(Component.literal(bonusChest ? "ON" : "OFF"));
             }).bounds(settBtnX, panelTop, settBtnW, btnH).build();
-            this.addRenderableWidget(bonusChestBtn);
+            addSettingsScrollWidget(bonusChestBtn);
 
             gameRulesBtn = Button.builder(Component.literal("Game Rules..."), b -> openGameRules())
                     .bounds(settBtnX, panelTop, settBtnW, btnH)
                     .build();
-            this.addRenderableWidget(gameRulesBtn);
+            addSettingsScrollWidget(gameRulesBtn);
 
             hudStudioBtn = Button.builder(Component.literal("HUD Studio"), b -> openHudStudio())
                     .bounds(settBtnX, panelTop, settBtnW, btnH)
                     .build();
-            this.addRenderableWidget(hudStudioBtn);
+            addSettingsScrollWidget(hudStudioBtn);
             updateSettingsLayout();
         }
 
@@ -982,11 +990,13 @@ public class LatitudeCreateWorldScreen extends Screen {
         int stepperW = left.getWidth();
         left.setRectangle(stepperW, height, x, y);
         right.setRectangle(stepperW, height, x + width - stepperW, y);
+        // INTERSECT gate (see positionSettingsButton): keep the pair visible while partway past the edge so they
+        // render clipped instead of popping; hidden only when fully off-viewport or on another tab.
         boolean visible = (!tabbedMode || activeTab == 2)
-                && left.getX() >= paneStripViewportLeft
-                && right.getX() + right.getWidth() <= paneStripViewportRight
-                && y >= settingsViewportTop
-                && y + height <= settingsViewportBottom;
+                && left.getX() < paneStripViewportRight
+                && right.getX() + right.getWidth() > paneStripViewportLeft
+                && y + height > settingsViewportTop
+                && y < settingsViewportBottom;
         left.visible = visible;
         right.visible = visible;
         left.active = visible;
@@ -995,13 +1005,33 @@ public class LatitudeCreateWorldScreen extends Screen {
 
     private void positionSettingsButton(Button button, int x, int width, int y, int height) {
         button.setRectangle(width - SCROLLBAR_GUTTER, height, x, y);
+        // INTERSECT gate (not fully-contained): a button that's partway past the top/bottom edge stays visible so
+        // renderSettingsScrollWidgets can draw it clipped ("half button"). Fully off-viewport rows are hidden so
+        // they don't render or take clicks.
         boolean visible = (!tabbedMode || activeTab == 2)
-                && button.getX() >= paneStripViewportLeft
-                && button.getX() + button.getWidth() <= paneStripViewportRight
-                && y >= settingsViewportTop
-                && y + height <= settingsViewportBottom;
+                && button.getX() < paneStripViewportRight
+                && button.getX() + button.getWidth() > paneStripViewportLeft
+                && y + height > settingsViewportTop
+                && y < settingsViewportBottom;
         button.visible = visible;
         button.active = visible;
+    }
+
+    private void addSettingsScrollWidget(AbstractWidget widget) {
+        if (widget == null) return;
+        this.addWidget(widget);          // input + focus + narration, but NOT auto-rendered by super
+        settingsScrollWidgets.add(widget);
+    }
+
+    // Draw the addWidget'd Rules buttons manually; the caller wraps this in the Rules-panel scissor so they clip
+    // at the viewport edges. Skips hidden (fully off-viewport / wrong-tab) widgets; their own extractRenderState
+    // also no-ops when !visible, so this is belt-and-suspenders.
+    private void renderSettingsScrollWidgets(GuiGraphicsExtractor context, int mouseX, int mouseY, float delta) {
+        for (AbstractWidget w : settingsScrollWidgets) {
+            if (w != null && w.visible) {
+                w.extractRenderState(context, mouseX, mouseY, delta);
+            }
+        }
     }
 
     private void openGameRules() {
@@ -1352,6 +1382,10 @@ public class LatitudeCreateWorldScreen extends Screen {
             drawSettingsRowLabel(context, "Generate Structures", settLabelX, structuresRowY, MUTED);
             drawSettingsRowLabel(context, "Bonus Chest", settLabelX, bonusChestRowY, MUTED);
             drawSettingsRowLabel(context, "Game Rules", settLabelX, gameRulesRowY, MUTED);
+            // Draw the Rules buttons INSIDE this same scissor so they clip at the viewport edges (partial "half
+            // buttons") exactly like the labels above, instead of popping. They are addWidget'd (not auto-
+            // rendered by super), so this is the only place they get drawn.
+            renderSettingsScrollWidgets(context, mouseX, mouseY, delta);
             context.disableScissor();
             }
             drawPaneScrollbar(context, railX, railW, settingsViewportTop, settingsViewportBottom, settingsContentHeight, Math.round(settingsScrollDisplay));
