@@ -1026,6 +1026,7 @@ public final class CompassHud {
             case SUNSET -> new AnalogColors(0x261712, 0xFFF2A65A, 0xFFB07E62, 0xFFFF5E5B);
             case MONOCHROME -> new AnalogColors(0x1B1B1E, 0xFFD8D8DC, 0xFF80808A, 0xFFF2F2F2);
             case CLASSIC_GOLD -> new AnalogColors(ANALOG_FACE_RGB, ANALOG_RING, ANALOG_MUTED, ANALOG_N_COLOR);
+            case CUSTOM -> new AnalogColors(cfg.customFaceRgb, cfg.customRingArgb, cfg.customMutedArgb, cfg.customNeedleArgb);
             default -> new AnalogColors(ANALOG_FACE_RGB, ANALOG_RING, ANALOG_MUTED, ANALOG_N_COLOR);
         };
     }
