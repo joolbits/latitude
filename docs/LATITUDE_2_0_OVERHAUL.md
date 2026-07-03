@@ -684,6 +684,74 @@ tagging or pushing. End by stating clearly whether Phase 0 (portability
 foundation) is next, or whether something needs Peetsa's input first.
 ```
 
+## Kickoff Slice Prompt (Phase 0 only)
+
+Added 2026-07-03, once Phase -2 + Phase -1 proof-completed and were tagged `save/canonical-26.2-baseline`
+(HEAD `93c21a6a` on `port/canonical-26.2-pivot`, pushed). Copy-pasteable prompt for starting a fresh thread on
+the Portability Foundation slice, following the same discipline as the prompt above.
+
+```
+Kick off Latitude 2.0 overhaul work: Phase 0 (Portability Foundation) only.
+Stop before Phase 1 (Measurement Harness) -- that is a separate slice with its own working card.
+
+MODEL: Sonnet, low-to-medium reasoning effort. This is bounded, test-gated scaffolding
+work, not novel design -- do not switch to Opus or run ultracode for this slice. See
+docs/binder/model-effort-strategy-20260702.md for why.
+
+READ FIRST (in order):
+1. docs/LATITUDE_2_0_OVERHAUL.md (front door -- read the whole thing, especially Phase 0)
+2. docs/porting/PORTABILITY_ARCHITECTURE.md (the 5-layer target structure and the
+   GeoSummary/ClimateSummary field contracts this slice scaffolds)
+3. docs/porting/PORTING_RISK_FILES.md (files a future port would touch -- do not further
+   entangle these while adding adapter shells)
+4. docs/binder/model-effort-strategy-20260702.md
+5. docs/porting/VERSION_MATRIX.md (confirms the Phase -1 proof-complete state and the
+   save/canonical-26.2-baseline tag this slice builds on)
+
+WORKING CARD -- fill this in before touching anything:
+- Objective: split pure world logic from Minecraft adapter/mixin logic per
+  docs/porting/PORTABILITY_ARCHITECTURE.md's 5-layer target structure (Core Logic /
+  Platform Adapters / Mixin Hooks / Data+Config / Proof Tools). Add no-op GeoSummary
+  and ClimateSummary contracts (field lists already specified in that doc) and thin
+  adapter interfaces, all behind disabled flags (latitude.geoV2.enabled=false,
+  latitude.climateV2.enabled=false). No behavior change of any kind.
+- Root/profile: confirm current root, branch, HEAD, and Modrinth profile truth before
+  any edit (repo preflight per LESSONS L3). Expected: port/canonical-26.2-pivot, HEAD
+  93c21a6a or later, tag save/canonical-26.2-baseline present and pushed.
+- Allowed work: add pure-Java no-op GeoSummary/ClimateSummary record/class types (zero
+  Minecraft imports, live in the Core Logic layer); add thin adapter interface shells
+  for the Platform Adapters layer (biome registry lookup, tag/provider membership,
+  Holder<Biome> conversion, Climate.Sampler access) -- interfaces plus trivial
+  pass-through implementations only, no new algorithm; add the two disabled feature
+  flags; add pure JVM tests for the no-op types; prove flag-off output is byte-identical
+  (headless Atlas + exact-ID) before and after against the save/canonical-26.2-baseline
+  tag.
+- Forbidden lanes: no GeoAuthority/ClimateAuthority algorithm work (Phase 2/3), no
+  analyzer/measurement work (Phase 1), no visible geography/climate behavior change, no
+  touching existing biome-selection hot paths beyond wiring in a disabled-by-default
+  call site, no tag/push without explicit authorization. Do not "clean up while in
+  there" -- e.g. the confirmed-dead ZoneEntryNotifier.java/ui/ZoneTitleOverlay.java
+  (already flagged as its own follow-up, task_7003cfac, still open) is exactly the kind
+  of adjacent temptation to leave alone unless the user asks for it in this slice.
+- Proof gate: compileJava green; new pure-Java tests green; headless Atlas + exact-ID
+  proof byte-identical to the save/canonical-26.2-baseline tag with both flags left at
+  their disabled defaults.
+- Stop condition (pulled verbatim from the plan's Hard Stops, filtered to this slice):
+  - flag-off output differs for Classic/current Longitude at all
+  - new authority code leaks seed/radius/shape across consecutive world loads
+  - static world state leaks across loads
+  - a worker is tempted to over-refactor beyond the minimum no-op/adapter shells
+  If any of these trigger, stop and write up what's blocking rather than pushing
+  through with a bigger hammer.
+
+DELIVERABLE: a dated binder note recording what layers/types/flags were added, the
+before/after compile + test + Atlas/exact-ID proof results, and an updated
+docs/porting/PORTABILITY_ARCHITECTURE.md marking which contracts are now scaffolded
+vs. still target-only. Local commits only -- ask before tagging or pushing. End by
+stating clearly whether Phase 1 (Measurement Harness) is next, or whether something
+needs Peetsa's input first.
+```
+
 ## Linked Docs
 
 - `docs/binder/model-effort-strategy-20260702.md` — which model/reasoning-effort per phase, and what a future
