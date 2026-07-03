@@ -1206,7 +1206,7 @@ public class LatitudeHudStudioScreen extends Screen {
                 && my <= (cy + halfH + pad);
     }
 
-    /** Uppercase zone title word, matching ZoneEntryNotifier's display names (so the preview reads like the real title). */
+    /** Uppercase zone title word, matching the real zone-enter title's display names (so the preview reads like the real title). */
     private static String zoneTitleWord(String zoneKey) {
         String name = switch (zoneKey) {
             case "EQUATOR", "TROPICAL" -> "Tropics";

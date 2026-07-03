@@ -15,11 +15,6 @@ public final class LatitudeConfig {
     public static boolean showWarningMessages = true;
     public static boolean enableEwStormWall = true;
 
-    public enum ZoneEntryNotifyMode { OFF, TOAST, TITLE }
-    public static ZoneEntryNotifyMode zoneEntryNotifyMode = ZoneEntryNotifyMode.TITLE;
-    public static boolean showLatitudeDegrees = true;
-    public static boolean latitudeDegreesOnCompass = true;
-
     // Append-only, like CompassHudConfig.AnalogCompassTheme: keep WHITE first (default/matches pre-existing
     // hardcoded-white behavior) and never reorder -- presets persist by name.
     public enum TitleColorPreset { WHITE, GOLD, RED, CYAN, GREEN, CUSTOM, RAINBOW }
@@ -56,9 +51,6 @@ public final class LatitudeConfig {
     private boolean enableWarningParticlesValue = true;
     private boolean showWarningMessagesValue = true;
     private boolean enableEwStormWallValue = true;
-    private ZoneEntryNotifyMode zoneEntryNotifyModeValue = ZoneEntryNotifyMode.TITLE;
-    private boolean showLatitudeDegreesValue = true;
-    private boolean latitudeDegreesOnCompassValue = true;
 
     private boolean zoneEnterTitleEnabledValue = true;
     private double zoneEnterTitleSecondsValue = 6.0;
@@ -121,9 +113,6 @@ public final class LatitudeConfig {
                         enableWarningParticles = cfg.enableWarningParticlesValue;
                         showWarningMessages = cfg.showWarningMessagesValue;
                         enableEwStormWall = cfg.enableEwStormWallValue;
-                        zoneEntryNotifyMode = cfg.zoneEntryNotifyModeValue;
-                        showLatitudeDegrees = cfg.showLatitudeDegreesValue;
-                        latitudeDegreesOnCompass = cfg.latitudeDegreesOnCompassValue;
 
                         zoneEnterTitleEnabled = cfg.zoneEnterTitleEnabledValue;
                         zoneEnterTitleSeconds = cfg.zoneEnterTitleSecondsValue;
@@ -164,9 +153,6 @@ public final class LatitudeConfig {
         enableWarningParticles = fresh.enableWarningParticlesValue;
         showWarningMessages = fresh.showWarningMessagesValue;
         enableEwStormWall = fresh.enableEwStormWallValue;
-        zoneEntryNotifyMode = fresh.zoneEntryNotifyModeValue;
-        showLatitudeDegrees = fresh.showLatitudeDegreesValue;
-        latitudeDegreesOnCompass = fresh.latitudeDegreesOnCompassValue;
 
         zoneEnterTitleEnabled = fresh.zoneEnterTitleEnabledValue;
         zoneEnterTitleSeconds = fresh.zoneEnterTitleSecondsValue;
@@ -204,9 +190,6 @@ public final class LatitudeConfig {
             cfg.enableWarningParticlesValue = enableWarningParticles;
             cfg.showWarningMessagesValue = showWarningMessages;
             cfg.enableEwStormWallValue = enableEwStormWall;
-            cfg.zoneEntryNotifyModeValue = zoneEntryNotifyMode;
-            cfg.showLatitudeDegreesValue = showLatitudeDegrees;
-            cfg.latitudeDegreesOnCompassValue = showLatitudeDegrees && latitudeDegreesOnCompass;
 
             cfg.zoneEnterTitleEnabledValue = zoneEnterTitleEnabled;
             cfg.zoneEnterTitleSecondsValue = zoneEnterTitleSeconds;
@@ -245,8 +228,6 @@ public final class LatitudeConfig {
     }
 
     private void sanitize() {
-        if (zoneEntryNotifyModeValue == null) zoneEntryNotifyModeValue = ZoneEntryNotifyMode.TITLE;
-        if (!showLatitudeDegreesValue) latitudeDegreesOnCompassValue = false;
         if (zoneEnterTitleColorPresetValue == null) zoneEnterTitleColorPresetValue = TitleColorPreset.WHITE;
         if (zoneEnterTitleCaseValue == null) zoneEnterTitleCaseValue = TitleCaseMode.NORMAL;
 
