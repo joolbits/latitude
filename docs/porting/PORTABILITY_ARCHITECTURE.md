@@ -1,9 +1,34 @@
 # Latitude Portability Architecture
 
-`status: target architecture`
-`updated: 2026-07-02`
+`status: target architecture, Phase 0 no-op scaffolding landed`
+`updated: 2026-07-03`
 
 This document describes the target structure for making future Latitude Minecraft-version ports less painful.
+
+## Phase 0 scaffolding status (2026-07-03)
+
+Phase 0 (`docs/LATITUDE_2_0_OVERHAUL.md`) added the no-op contracts and adapter shells below, all behind
+disabled flags, with a flag-off byte-identical proof against `save/canonical-26.2-baseline`. Full detail in
+`docs/binder/phase0-portability-foundation-20260703.md`.
+
+- **`GeoSummary`: scaffolded, not implemented.** All 15 fields exist as a pure-Java record
+  (`com.example.globe.core.geo.GeoSummary`) with a neutral constant. No GeoAuthority populates real
+  intent yet — that's Phase 2.
+- **`ClimateSummary`: scaffolded, not implemented.** All 14 fields exist as a pure-Java record
+  (`com.example.globe.core.climate.ClimateSummary`), plus a `LatitudeBand` enum reusing the existing
+  `LatitudeBiomes` band names. No ClimateAuthority populates real intent yet — that's Phase 3.
+  `seasonalityClass`/`climateClass` are deliberately untyped (empty strings) since Phase 3 owns that
+  taxonomy design, not Phase 0.
+- **Flags: implemented.** `latitude.geoV2.enabled` / `latitude.climateV2.enabled`
+  (`com.example.globe.core.LatitudeV2Flags`), both default `false`.
+- **Biome registry lookup / tag membership / Holder conversion / Climate.Sampler adapters: scaffolded,
+  not wired.** Four interfaces under `com.example.globe.adapter.biome` and
+  `com.example.globe.adapter.climate`, each with one trivial pass-through implementation. Nothing calls
+  them yet — they exist so a future port or Phase 2/3 consumer has a stable seam to replace instead of
+  touching `LatitudeBiomes` directly.
+- **Disabled-by-default call site: wired.** Both `LatitudeBiomes.pick(...)` overloads call
+  `NoOpGeoSummaryProvider`/`NoOpClimateSummaryProvider` behind their respective flags. Dead code while
+  the flags stay off; this is the seam Phase 2/3 replace.
 
 ## Problem
 
