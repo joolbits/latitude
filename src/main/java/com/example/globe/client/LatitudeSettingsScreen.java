@@ -315,38 +315,44 @@ public class LatitudeSettingsScreen extends Screen {
     }
 
 
+    // Copies every field from a fresh CompassHudConfig so this screen's "Reset" always matches CompassHudConfig's
+    // own field-initializer defaults -- there was previously a second hand-duplicated copy of the defaults here
+    // (independent of the one in LatitudeHudStudioScreen), which had silently drifted to the old DIGITAL/48.0/
+    // 0.65 compass instead of the current ANALOG/32.0/0.50 default. See CompassHudConfig.fresh().
     private static void applyDefaults(CompassHudConfig cfg) {
-        cfg.enabled = true;
-        cfg.showMode = CompassHudConfig.ShowMode.COMPASS_PRESENT;
-        cfg.style = CompassHudConfig.CompassStyle.DIGITAL;
-        cfg.directionMode = CompassHudConfig.DirectionMode.CARDINAL_8;
-        cfg.hAnchor = CompassHudConfig.HAnchor.CENTER;
-        cfg.vAnchor = CompassHudConfig.VAnchor.TOP;
-        cfg.offsetX = 0;
-        cfg.offsetY = 0;
-        cfg.scale = 1.0f;
-        cfg.analogSize = 48.0f;
-        cfg.analogInnerAlpha = 0.65f;
-        cfg.padding = 3;
-        cfg.showBackground = true;
-        cfg.backgroundRgb = 0x000000;
-        cfg.backgroundAlpha = 64;
-        cfg.textRgb = 0xFFFFFF;
-        cfg.textAlpha = 255;
-        cfg.shadow = true;
-        cfg.showLatitude = true;
-        cfg.analogShowLatitude = true;
-        cfg.latitudeDecimals = 0;
-        cfg.showLongitude = true;
-        cfg.analogShowLongitude = true;
-        cfg.attachToHotbarCompass = false;
-        cfg.compactHud = false;
-        cfg.displayZoneInHud = false;
-        cfg.zoneFollowsCompass = true;
-        cfg.zoneHAnchor = CompassHudConfig.HAnchor.CENTER;
-        cfg.zoneVAnchor = CompassHudConfig.VAnchor.TOP;
-        cfg.zoneOffsetX = 0;
-        cfg.zoneOffsetY = 0;
+        CompassHudConfig fresh = CompassHudConfig.fresh();
+        cfg.enabled = fresh.enabled;
+        cfg.showMode = fresh.showMode;
+        cfg.style = fresh.style;
+        cfg.directionMode = fresh.directionMode;
+        cfg.hAnchor = fresh.hAnchor;
+        cfg.vAnchor = fresh.vAnchor;
+        cfg.offsetX = fresh.offsetX;
+        cfg.offsetY = fresh.offsetY;
+        cfg.scale = fresh.scale;
+        cfg.analogSize = fresh.analogSize;
+        cfg.analogInnerAlpha = fresh.analogInnerAlpha;
+        cfg.analogTheme = fresh.analogTheme;
+        cfg.padding = fresh.padding;
+        cfg.showBackground = fresh.showBackground;
+        cfg.backgroundRgb = fresh.backgroundRgb;
+        cfg.backgroundAlpha = fresh.backgroundAlpha;
+        cfg.textRgb = fresh.textRgb;
+        cfg.textAlpha = fresh.textAlpha;
+        cfg.shadow = fresh.shadow;
+        cfg.showLatitude = fresh.showLatitude;
+        cfg.analogShowLatitude = fresh.analogShowLatitude;
+        cfg.latitudeDecimals = fresh.latitudeDecimals;
+        cfg.showLongitude = fresh.showLongitude;
+        cfg.analogShowLongitude = fresh.analogShowLongitude;
+        cfg.attachToHotbarCompass = fresh.attachToHotbarCompass;
+        cfg.compactHud = fresh.compactHud;
+        cfg.displayZoneInHud = fresh.displayZoneInHud;
+        cfg.zoneFollowsCompass = fresh.zoneFollowsCompass;
+        cfg.zoneHAnchor = fresh.zoneHAnchor;
+        cfg.zoneVAnchor = fresh.zoneVAnchor;
+        cfg.zoneOffsetX = fresh.zoneOffsetX;
+        cfg.zoneOffsetY = fresh.zoneOffsetY;
     }
 
     private static void applyDefaults(LatitudeConfig cfg) {
