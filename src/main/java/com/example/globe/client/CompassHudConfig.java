@@ -93,6 +93,13 @@ public final class CompassHudConfig {
         return INSTANCE;
     }
 
+    /** A brand-new config with only the field-initializer defaults above (no disk read/write). Single source of
+     *  truth for "what are the defaults" -- used by both first-load and any reset-to-defaults action, so they
+     *  can never drift apart. */
+    public static CompassHudConfig fresh() {
+        return new CompassHudConfig();
+    }
+
     public static void reload() {
         INSTANCE = load();
     }
@@ -156,7 +163,10 @@ public final class CompassHudConfig {
         if (latitudeDecimals > 3) latitudeDecimals = 3;
         if (scale < 0.25f) scale = 0.25f;
         if (scale > 4.0f) scale = 4.0f;
-        if (analogSize < 24.0f) analogSize = 24.0f;
+        // Floor lowered to match the HUD Studio slider's new minimum (16) so that value isn't clamped back up;
+        // ceiling left generous as a backstop for hand-edited configs even though the slider itself now tops
+        // out at 72.
+        if (analogSize < 16.0f) analogSize = 16.0f;
         if (analogSize > 128.0f) analogSize = 128.0f;
         if (analogInnerAlpha < 0.0f) analogInnerAlpha = 0.0f;
         if (analogInnerAlpha > 1.0f) analogInnerAlpha = 1.0f;
