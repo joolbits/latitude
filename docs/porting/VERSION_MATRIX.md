@@ -21,13 +21,25 @@ done; `compileJava` is green (134 → 0 errors) and the headless Atlas proof run
   dead-code stubs — NOT the architectural wall the first pass feared. Full detail + before/after table in
   `docs/binder/canonical-26.2-pivot-20260702.md`.
 
-Remaining before release-ready (separate lanes): (1) **live 26.2 client pass** — client mixins/HUD/menus are
-compile-proven only, the one item needing Peetsa at the keyboard; (2) no cross-version byte-identical flag-off
-diff (not meaningful across MC versions). NOTE: the earlier "frozen-river reflection" item was investigated and
+**Live 26.2 client pass: DONE and extensive (2026-07-02/03).** What was the one open item above has since gone
+through ~20 staged test jars (`TEST 1.jar` through `TEST 20.jar`) with Peetsa live-testing every round: the
+initial client-mixin crash (`InGameHudMixin`→`Hud` retarget) was fixed and confirmed clean, followed by a long
+polish arc across the World Creation screen (atlas frame, clipped scroll, tab strip, World Shape placement) and
+a major HUD Studio feature buildout (biome/coords detachability, snap-to-grid toggle, a 4-tab redesign with RGB
+color pickers for the compass AND the zone-enter title including a Rainbow option, letter-case and
+letter-spacing controls, and a Rainbow Text option for the compass/zone/biome/coords readout). Every round
+re-verified headless `runBiomePreview` byte-identical (all client-UI-only changes, zero worldgen impact). Full
+narrative in `docs/binder/canonical-26.2-pivot-20260702.md`; the RGB/tabs/title/rainbow feature arc specifically
+in `docs/binder/hud-studio-custom-theme-20260703.md` and `docs/binder/hud-studio-title-rainbow-and-polish-20260703.md`.
+
+Remaining before release-ready (separate lanes): (1) no cross-version byte-identical flag-off diff (not
+meaningful across MC versions); (2) an unrelated confirmed-dead parallel title-notification system
+(`ZoneEntryNotifier`/`ui.ZoneTitleOverlay`) was found during the title-styling work and flagged for a follow-up
+investigation, not yet resolved. NOTE: the earlier "frozen-river reflection" item was investigated and
 is **not** a regression — that feature has been inert since before 26.1.2 (the `getFeatures` name never existed
 in current mappings), so it was correctly left untouched to preserve behavior.
 
-Root: `<home>/CascadeProjects/Latitude-2.0-26.2-pivot`, branch `port/canonical-26.2-pivot`.
+Root: `<home>/CascadeProjects/Latitude-2.0-26.2-pivot`, branch `port/canonical-26.2-pivot`, HEAD `61d51782`.
 
 This matrix records the intended port/pivot truth for Latitude work. Verify upstream metadata before implementation because Minecraft, Fabric API, Loader, and Loom move quickly.
 
@@ -35,7 +47,7 @@ This matrix records the intended port/pivot truth for Latitude work. Verify upst
 
 | Line | Minecraft | Role | Local status | Notes |
 | --- | --- | --- | --- | --- |
-| Latitude 2.0 overhaul | 26.2 | planned canonical target | pivot GREEN (compile + headless Atlas) | Build metadata + narrow API-drift repair done; deterministic headless proof green. Live client pass + frozen-river reflection fix still pending. See pivot status above. |
+| Latitude 2.0 overhaul | 26.2 | planned canonical target | pivot GREEN (compile + headless Atlas + live client pass) | Build metadata + narrow API-drift repair done; deterministic headless proof green; live client pass done across ~20 staged test jars (crash fix + World Creation polish + HUD Studio feature buildout). See pivot status above. |
 | Latitude 2.0 current feature branch | 26.1.2 | active planning/source reference | current local branch | Do not build the large overhaul here and port later. |
 | Latitude 1.4 / early 2.0 reference | 26.1.2 | proven reference | local proof history exists | Use for behavioral comparison and regression baselines. |
 | Older backport | 1.21.11 | backport target | structurally partial historically | Do not patch as primary without explicit Maintainer decision. |
