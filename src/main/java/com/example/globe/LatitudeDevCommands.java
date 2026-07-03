@@ -22,11 +22,20 @@ import net.minecraft.world.level.chunk.status.ChunkStatus;
 import net.minecraft.world.level.levelgen.Heightmap;
 
 /**
- * Shippable subset of the dev `/latdev` command — just band teleport + a here-readout, so testers can jump
- * between latitude bands without the heavy dev toolchain (the full {@code dev.LatitudeDevCommand} pulls in the
- * seam auditor + PNG exporter and is stripped from the release jar). Registered only when NOT in a dev
- * environment (there the full command owns {@code /latdev}) AND {@code -Dlatitude.devCommands=true} is set, so
- * normal players never see it. All latitude math uses the Z (latitude) radius, so it is correct on Mercator.
+ * Shippable subset of the dev `/latdev` command — band/edge teleport + here/probe readouts, so testers can jump
+ * between latitude bands and to the E/W edge without the heavy dev toolchain (the full
+ * {@code dev.LatitudeDevCommand} pulls in the seam auditor + PNG exporter and is stripped from the release jar).
+ *
+ * <p>Registration policy (never in a dev environment — there the full command owns {@code /latdev}):
+ * <ul>
+ *   <li>Auto-ON for pre-release builds (version contains beta/alpha/rc/pre/snapshot), so testers always have the
+ *       teleport/readout tools without touching launch args.</li>
+ *   <li>Auto-OFF for stable releases, so normal players never see it.</li>
+ *   <li>Explicit override wins either way: {@code -Dlatitude.devCommands=true} force-enables (e.g. on a stable
+ *       jar), {@code -Dlatitude.devCommands=false} force-disables (e.g. on a beta jar).</li>
+ * </ul>
+ * The commands still require command permission (cheats/op). All latitude math uses the Z (latitude) radius, so
+ * it is correct on Mercator.
  */
 public final class LatitudeDevCommands {
     private LatitudeDevCommands() {}
@@ -35,10 +44,26 @@ public final class LatitudeDevCommands {
         if (FabricLoader.getInstance().isDevelopmentEnvironment()) {
             return; // the full dev.LatitudeDevCommand already owns /latdev in dev
         }
-        if (!Boolean.getBoolean("latitude.devCommands")) {
-            return; // opt-in only: add -Dlatitude.devCommands=true to the launch JVM args
+        if (!devCommandsEnabled()) {
+            return;
         }
         register(dispatcher);
+    }
+
+    private static boolean devCommandsEnabled() {
+        String explicit = System.getProperty("latitude.devCommands");
+        if (explicit != null) {
+            return Boolean.parseBoolean(explicit); // explicit -Dlatitude.devCommands=true/false always wins
+        }
+        return isPrereleaseBuild(); // otherwise on for beta/alpha/rc builds, off for stable
+    }
+
+    private static boolean isPrereleaseBuild() {
+        return FabricLoader.getInstance().getModContainer("globe")
+                .map(c -> c.getMetadata().getVersion().getFriendlyString().toLowerCase(Locale.ROOT))
+                .map(v -> v.contains("beta") || v.contains("alpha") || v.contains("-rc")
+                        || v.contains("-pre") || v.contains("snapshot"))
+                .orElse(false);
     }
 
     private static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
