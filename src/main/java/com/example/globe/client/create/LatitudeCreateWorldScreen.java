@@ -193,6 +193,7 @@ public class LatitudeCreateWorldScreen extends Screen {
     private boolean threeCol;
     private int worldFieldY;
     private int seedFieldY;
+    private int worldShapeFieldY;
     private int sizeFieldY;
     private int inputBottomY;
     private int leftScroll;
@@ -230,7 +231,6 @@ public class LatitudeCreateWorldScreen extends Screen {
     private int settingsContentHeight;
     private int menuScaleRowY;
     private int worldTypeRowY;
-    private int worldShapeRowY;
     private int modeRowY;
     private int commandsRowY;
     private int compassRowY;
@@ -442,14 +442,26 @@ public class LatitudeCreateWorldScreen extends Screen {
         this.seedField.setResponder(text -> seedInput = text);
         this.addRenderableWidget(this.seedField);
 
-        // ── 3. Size ◀ ──
-        sizeFieldY = seedFieldY + fieldGap2;
+        // ── 3. World Shape ◀▶ (moved here from the Rules panel per live feedback -- it's a "what is
+        // this world" property, so it reads more naturally alongside World Size than buried in Rules) ──
+        worldShapeFieldY = seedFieldY + fieldGap2;
+        worldShapePrevBtn = Button.builder(Component.literal("\u25C0"), b -> cycleWorldShape(-1))
+                .bounds(inputX, worldShapeFieldY, stepperBtnW, btnH)
+                .build();
+        this.addRenderableWidget(worldShapePrevBtn);
+        worldShapeNextBtn = Button.builder(Component.literal("\u25B6"), b -> cycleWorldShape(1))
+                .bounds(inputX + inputW - stepperBtnW, worldShapeFieldY, stepperBtnW, btnH)
+                .build();
+        this.addRenderableWidget(worldShapeNextBtn);
+
+        // ── 4. Size ◀ ──
+        sizeFieldY = worldShapeFieldY + fieldGap2;
         sizePrevBtn = Button.builder(Component.literal("\u25C0"), b -> cycleSize(-1))
                 .bounds(inputX, sizeFieldY, stepperBtnW, btnH)
                 .build();
         this.addRenderableWidget(sizePrevBtn);
 
-        // ── 4. Size ▶ ──
+        // ── 5. Size ▶ ──
         sizeNextBtn = Button.builder(Component.literal("\u25B6"), b -> cycleSize(1))
                 .bounds(inputX + inputW - stepperBtnW, sizeFieldY, stepperBtnW, btnH)
                 .build();
@@ -478,12 +490,6 @@ public class LatitudeCreateWorldScreen extends Screen {
             worldTypeNextBtn = Button.builder(Component.literal("\u25B6"), b -> cycleWorldType(1))
                     .bounds(settBtnX + settBtnW - 20, panelTop, 20, btnH)
                     .build();
-            worldShapePrevBtn = Button.builder(Component.literal("\u25C0"), b -> cycleWorldShape(-1))
-                    .bounds(settBtnX, panelTop, 20, btnH)
-                    .build();
-            worldShapeNextBtn = Button.builder(Component.literal("\u25B6"), b -> cycleWorldShape(1))
-                    .bounds(settBtnX + settBtnW - 20, panelTop, 20, btnH)
-                    .build();
             modePrevBtn = Button.builder(Component.literal("\u25C0"), b -> cycleMode(-1))
                     .bounds(settBtnX, panelTop, 20, btnH)
                     .build();
@@ -498,8 +504,6 @@ public class LatitudeCreateWorldScreen extends Screen {
             // renderSettingsScrollWidgets() draws them inside the Rules-panel scissor so they clip when scrolled.
             addSettingsScrollWidget(worldTypePrevBtn);
             addSettingsScrollWidget(worldTypeNextBtn);
-            addSettingsScrollWidget(worldShapePrevBtn);
-            addSettingsScrollWidget(worldShapeNextBtn);
             addSettingsScrollWidget(modePrevBtn);
             addSettingsScrollWidget(modeNextBtn);
             addSettingsScrollWidget(commandsBtn);
@@ -715,6 +719,16 @@ public class LatitudeCreateWorldScreen extends Screen {
             seedField.visible = true;
             seedField.active = true;
         }
+        if (worldShapePrevBtn != null) {
+            worldShapePrevBtn.setRectangle(stepperBtnW, btnH, inputX, worldShapeFieldY);
+            worldShapePrevBtn.visible = true;
+            worldShapePrevBtn.active = true;
+        }
+        if (worldShapeNextBtn != null) {
+            worldShapeNextBtn.setRectangle(stepperBtnW, btnH, inputX + inputW - stepperBtnW, worldShapeFieldY);
+            worldShapeNextBtn.visible = true;
+            worldShapeNextBtn.active = true;
+        }
         if (sizePrevBtn != null) {
             sizePrevBtn.setRectangle(stepperBtnW, btnH, inputX, sizeFieldY);
             sizePrevBtn.visible = true;
@@ -741,9 +755,10 @@ public class LatitudeCreateWorldScreen extends Screen {
         int previewHeight = Math.max(scaledUi(150), Math.min(leftW - scaledUi(20) - SCROLLBAR_GUTTER, Math.max(scaledUi(170), panelBottom - panelTop - scaledUi(80))));
         int baseWorldY = contentTop + labelFieldGap;
         int baseSeedY = baseWorldY + fieldGap1;
+        int baseWorldShapeY = baseSeedY + fieldGap2;
         int warningHeight = shouldShowSmallWorldWarning() ? getSmallWorldWarningHeight(inputW) : 0;
         int warningGap = warningHeight > 0 ? scaledUi(4) : 0;
-        int baseSizeY = baseSeedY + fieldGap2 + warningHeight + warningGap;
+        int baseSizeY = baseWorldShapeY + fieldGap2 + warningHeight + warningGap;
         int baseInputBottom = Math.max(baseSizeY + btnH, computeSizeLabelBottom(baseSizeY - 1, inputW - stepperBtnW * 2 - scaledUi(8))) + scaledUi(12);
         int basePreviewTop = baseInputBottom + discGap + uiFontHeight();
         int basePreviewBottom = basePreviewTop + previewHeight;
@@ -759,6 +774,7 @@ public class LatitudeCreateWorldScreen extends Screen {
 
         worldFieldY = baseWorldY - vis;
         seedFieldY = baseSeedY - vis;
+        worldShapeFieldY = baseWorldShapeY - vis;
         sizeFieldY = baseSizeY - vis;
         inputBottomY = baseInputBottom - vis;
         leftPreviewTopY = basePreviewTop - vis;
@@ -767,11 +783,16 @@ public class LatitudeCreateWorldScreen extends Screen {
         updateLeftWidgets(inputX, inputW, fieldH, btnH, stepperBtnW);
         updateLeftWidgetVisibility(worldNameField);
         updateLeftWidgetVisibility(seedField);
+        updateLeftWidgetVisibility(worldShapePrevBtn);
+        updateLeftWidgetVisibility(worldShapeNextBtn);
         updateLeftWidgetVisibility(sizePrevBtn);
         updateLeftWidgetVisibility(sizeNextBtn);
-        // World Size only applies to Latitude worlds — grey the stepper out for Vanilla / Vanilla Superflat
-        // (Peetsa TEST 7: "mercator/regular should be greyed out for vanilla, not just vanilla superflat").
+        // World Shape and World Size only apply to Latitude worlds — grey the steppers out for Vanilla /
+        // Vanilla Superflat (Peetsa TEST 7: "mercator/regular should be greyed out for vanilla, not just vanilla
+        // superflat" -- World Shape moved here from the Rules panel keeps the same gating it had there).
         if (!isLatitudeWorld()) {
+            if (worldShapePrevBtn != null) worldShapePrevBtn.active = false;
+            if (worldShapeNextBtn != null) worldShapeNextBtn.active = false;
             if (sizePrevBtn != null) sizePrevBtn.active = false;
             if (sizeNextBtn != null) sizeNextBtn.active = false;
         }
@@ -845,13 +866,6 @@ public class LatitudeCreateWorldScreen extends Screen {
     }
 
     private void updateSettingsButtons() {
-        // World Shape (Mercator/Legacy) only applies to Latitude worlds — grey the stepper for Vanilla types.
-        if (worldShapePrevBtn != null) {
-            worldShapePrevBtn.active = worldShapePrevBtn.visible && isLatitudeWorld();
-        }
-        if (worldShapeNextBtn != null) {
-            worldShapeNextBtn.active = worldShapeNextBtn.visible && isLatitudeWorld();
-        }
         if (commandsBtn != null) {
             commandsBtn.setMessage(Component.literal(allowCommands ? "ON" : "OFF"));
             commandsBtn.active = commandsBtn.visible;
@@ -877,7 +891,7 @@ public class LatitudeCreateWorldScreen extends Screen {
     }
 
     private void updateSettingsLayout() {
-        if (worldTypePrevBtn == null || worldTypeNextBtn == null || worldShapePrevBtn == null || worldShapeNextBtn == null || modePrevBtn == null || modeNextBtn == null || commandsBtn == null || compassBtn == null || structuresBtn == null || bonusChestBtn == null || gameRulesBtn == null || hudStudioBtn == null) {
+        if (worldTypePrevBtn == null || worldTypeNextBtn == null || modePrevBtn == null || modeNextBtn == null || commandsBtn == null || compassBtn == null || structuresBtn == null || bonusChestBtn == null || gameRulesBtn == null || hudStudioBtn == null) {
             settingsViewportTop = 0;
             settingsViewportBottom = 0;
             settingsContentHeight = 0;
@@ -900,9 +914,9 @@ public class LatitudeCreateWorldScreen extends Screen {
         int blockHeight = labelGap + btnH;
         // Leave a little trailing room so the HUD Studio row can scroll fully into view
         // on short windows instead of sitting flush against the viewport edge.
-        // 9 rows: World Type, World Shape, Game Mode, Commands, Starting Compass, Generate Structures,
-        // Bonus Chest, Game Rules, HUD Studio.
-        settingsContentHeight = blockHeight * 9 + rowGap * 8 + scaledUi(12);
+        // 8 rows: World Type, Game Mode, Commands, Starting Compass, Generate Structures,
+        // Bonus Chest, Game Rules, HUD Studio. (World Shape moved to the World panel per live feedback.)
+        settingsContentHeight = blockHeight * 8 + rowGap * 7 + scaledUi(12);
         int maxScroll = Math.max(0, settingsContentHeight - viewportHeight);
         if (settingsScroll < 0) settingsScroll = 0;
         if (settingsScroll > maxScroll) settingsScroll = maxScroll;
@@ -911,10 +925,6 @@ public class LatitudeCreateWorldScreen extends Screen {
         int y = contentTop - Math.round(settingsScrollDisplay) + labelGap;
         worldTypeRowY = y;
         positionSettingsStepper(worldTypePrevBtn, worldTypeNextBtn, settBtnX, settBtnW, y, btnH);
-
-        y += btnH + rowGap + labelGap;
-        worldShapeRowY = y;
-        positionSettingsStepper(worldShapePrevBtn, worldShapeNextBtn, settBtnX, settBtnW, y, btnH);
 
         y += btnH + rowGap + labelGap;
         modeRowY = y;
@@ -951,6 +961,8 @@ public class LatitudeCreateWorldScreen extends Screen {
         boolean showWorld = activeTab == 0;
         setTabbedWidgetVisible(worldNameField, showWorld);
         setTabbedWidgetVisible(seedField, showWorld);
+        setTabbedWidgetVisible(worldShapePrevBtn, showWorld);
+        setTabbedWidgetVisible(worldShapeNextBtn, showWorld);
         setTabbedWidgetVisible(sizePrevBtn, showWorld);
         setTabbedWidgetVisible(sizeNextBtn, showWorld);
         // Tab 1 = Spawn Zone (right panel widgets)
@@ -962,8 +974,6 @@ public class LatitudeCreateWorldScreen extends Screen {
         boolean showRules = activeTab == 2;
         setTabbedWidgetVisible(worldTypePrevBtn, showRules);
         setTabbedWidgetVisible(worldTypeNextBtn, showRules);
-        setTabbedWidgetVisible(worldShapePrevBtn, showRules);
-        setTabbedWidgetVisible(worldShapeNextBtn, showRules);
         setTabbedWidgetVisible(modePrevBtn, showRules);
         setTabbedWidgetVisible(modeNextBtn, showRules);
         setTabbedWidgetVisible(commandsBtn, showRules);
@@ -1274,6 +1284,9 @@ public class LatitudeCreateWorldScreen extends Screen {
         }
         drawBoundedText(context, "World Name", new UiRect(inputX, worldFieldY - labelOff, leftTextWidth, uiFontHeight()), labelColor, false, false);
         drawBoundedText(context, "Seed", new UiRect(inputX, seedFieldY - labelOff, leftTextWidth, uiFontHeight()), labelColor, false, false);
+        boolean shapeEnabled = isLatitudeWorld();
+        drawBoundedText(context, "World Shape", new UiRect(inputX, worldShapeFieldY - labelOff, leftTextWidth, uiFontHeight()), shapeEnabled ? labelColor : DISABLED_COLOR, false, false);
+        renderWorldShapeLabel(context, inputX + stepperBtnW + scaledUi(4), worldShapeFieldY, leftTextWidth - stepperBtnW * 2 - scaledUi(8), shapeEnabled);
         boolean sizeEnabled = isLatitudeWorld();
         drawBoundedText(context, "World Size", new UiRect(inputX, sizeFieldY - labelOff, leftTextWidth, uiFontHeight()), sizeEnabled ? labelColor : DISABLED_COLOR, false, false);
         renderSizeLabel(context, inputX + stepperBtnW + scaledUi(4), sizeFieldY - 1, leftTextWidth - stepperBtnW * 2 - scaledUi(8), sizeEnabled);
@@ -1372,9 +1385,6 @@ public class LatitudeCreateWorldScreen extends Screen {
             // drawing it here just clipped against the scissor and left the dead "invisible header bar".)
             drawSettingsRowLabel(context, "World Type", settLabelX, worldTypeRowY, MUTED);
             drawSettingsStepperValue(context, WORLD_TYPE_NAMES[worldTypeIdx], WORLD_TYPE_COLORS[worldTypeIdx], worldTypeRowY);
-            boolean shapeEnabled = isLatitudeWorld();
-            drawSettingsRowLabel(context, "World Shape", settLabelX, worldShapeRowY, shapeEnabled ? MUTED : DISABLED_COLOR);
-            drawSettingsStepperValue(context, WORLD_SHAPE_NAMES[worldShapeIdx], shapeEnabled ? WORLD_SHAPE_COLORS[worldShapeIdx] : DISABLED_COLOR, worldShapeRowY);
             drawSettingsRowLabel(context, "Game Mode", settLabelX, modeRowY, MUTED);
             drawSettingsStepperValue(context, MODE_NAMES[selectedModeIdx], MODE_COLORS[selectedModeIdx], modeRowY);
             drawSettingsRowLabel(context, "Commands", settLabelX, commandsRowY, MUTED);
@@ -1396,6 +1406,18 @@ public class LatitudeCreateWorldScreen extends Screen {
         }
 
         super.extractRenderState(context, mouseX, mouseY, delta);
+    }
+
+    // Single-line stepper value, vertically centered against the World Shape row's button height -- unlike
+    // renderSizeLabel below (a multi-line block: name/dims/description), World Shape only ever shows one short
+    // value ("Mercator 2:1" / "Legacy 1:1"), so it's centered like the Rules-panel stepper rows instead of
+    // top-anchored like the size block.
+    private void renderWorldShapeLabel(GuiGraphicsExtractor context, int x, int rowY, int availW, boolean enabled) {
+        String value = WORLD_SHAPE_NAMES[worldShapeIdx];
+        int color = enabled ? WORLD_SHAPE_COLORS[worldShapeIdx] : DISABLED_COLOR;
+        int btnH = worldShapePrevBtn != null ? worldShapePrevBtn.getHeight() : Math.max(18, scaledUi(20));
+        int drawY = rowY + Math.max(0, (btnH - uiFontHeight()) / 2);
+        drawCenteredBoundedText(context, value, new UiRect(x, drawY, availW, uiFontHeight()), color, true, true);
     }
 
     private void renderSizeLabel(GuiGraphicsExtractor context, int x, int y, int availW, boolean enabled) {

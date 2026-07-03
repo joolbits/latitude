@@ -2,6 +2,7 @@ package com.example.globe.client;
 
 import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.network.chat.Component;
@@ -390,9 +391,22 @@ public final class CompassHud {
         // West tick
         ctx.fill(cx - radius + 2, cy, cx - radius + 2 + tickLen, cy + 1, colors.muted());
 
+        // Scale the "N" glyph with the compass radius instead of drawing it at a fixed vanilla-font size --
+        // at small analog sizes (the slider now goes down to radius 8) the unscaled letter was as tall as the
+        // whole disc and overtook it. Scale up to the glyph's natural (unscaled) size once the compass is big
+        // enough that it fits proportionately (radius >= 24, the pre-2.0 default), with a floor so it never
+        // disappears entirely on a tiny compass. Anchored just under the north tick, which itself already scales
+        // with radius (tickLen = radius / 6), so the label stays pinned to the top of the disc at every size.
         String nLabel = "N";
-        int nW = Minecraft.getInstance().font.width(nLabel);
-        ctx.text(Minecraft.getInstance().font, nLabel, cx - nW / 2 + 1, cy - radius + 2 + tickLen + 1, colors.needle(), true);
+        Font font = Minecraft.getInstance().font;
+        int nW = font.width(nLabel);
+        float nScale = Mth.clamp(radius / 24.0f, 0.4f, 1.0f);
+        var poseMatrices = ctx.pose();
+        poseMatrices.pushMatrix();
+        poseMatrices.translate((float) (cx + 1), (float) (cy - radius + 2 + tickLen + 1));
+        poseMatrices.scale(nScale, nScale);
+        ctx.text(font, nLabel, -nW / 2, 0, colors.needle(), true);
+        poseMatrices.popMatrix();
 
         int needleLen = radius - 4;
         int nx = cx + (int) Math.round(Math.sin(angle) * needleLen);
