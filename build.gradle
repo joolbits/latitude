@@ -133,6 +133,15 @@ dependencies {
     
     compileOnly "maven.modrinth:placeholder-api:${project.placeholder_api_version}"
     runtimeOnly "maven.modrinth:placeholder-api:${project.placeholder_api_version}"
+
+    // Pure-JVM unit tests for the Core Logic layer (no Minecraft imports, no Loom test-mod wiring).
+    testImplementation platform('org.junit:junit-bom:5.11.3')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+test {
+    useJUnitPlatform()
 }
 
 processResources {
