@@ -184,6 +184,15 @@ public class LatitudeCreateWorldScreen extends Screen {
     private int sizeFieldY;
     private int inputBottomY;
     private int leftScroll;
+    // Smooth-scroll: *Scroll is the target set by wheel/scrollbar; *ScrollDisplay eases toward it each frame so
+    // the panel content (and its widgets) glides instead of snapping. *MaxScroll caches the clamp bound so the
+    // per-frame easing can clamp the display without recomputing layout. See advanceScrollAnimation().
+    private float leftScrollDisplay;
+    private float rightScrollDisplay;
+    private float settingsScrollDisplay;
+    private int leftMaxScroll;
+    private int rightMaxScroll;
+    private int settingsMaxScroll;
     private int leftViewportTop;
     private int leftViewportBottom;
     private int leftContentHeight;
@@ -727,13 +736,15 @@ public class LatitudeCreateWorldScreen extends Screen {
         int maxScroll = Math.max(0, leftContentHeight - viewportHeight);
         if (leftScroll < 0) leftScroll = 0;
         if (leftScroll > maxScroll) leftScroll = maxScroll;
+        leftMaxScroll = maxScroll;
+        int vis = Math.round(leftScrollDisplay);
 
-        worldFieldY = baseWorldY - leftScroll;
-        seedFieldY = baseSeedY - leftScroll;
-        sizeFieldY = baseSizeY - leftScroll;
-        inputBottomY = baseInputBottom - leftScroll;
-        leftPreviewTopY = basePreviewTop - leftScroll;
-        leftPreviewBottomY = basePreviewBottom - leftScroll;
+        worldFieldY = baseWorldY - vis;
+        seedFieldY = baseSeedY - vis;
+        sizeFieldY = baseSizeY - vis;
+        inputBottomY = baseInputBottom - vis;
+        leftPreviewTopY = basePreviewTop - vis;
+        leftPreviewBottomY = basePreviewBottom - vis;
 
         updateLeftWidgets(inputX, inputW, fieldH, btnH, stepperBtnW);
         updateLeftWidgetVisibility(worldNameField);
@@ -781,14 +792,16 @@ public class LatitudeCreateWorldScreen extends Screen {
         int maxScroll = Math.max(0, rightContentHeight - viewportHeight);
         if (rightScroll < 0) rightScroll = 0;
         if (rightScroll > maxScroll) rightScroll = maxScroll;
+        rightMaxScroll = maxScroll;
+        int vis = Math.round(rightScrollDisplay);
 
-        rightSubtitleY = baseSubtitleY - rightScroll;
-        rightDividerY = baseDividerY - rightScroll;
-        zoneListTopY = baseZoneListTop - rightScroll;
-        zoneListBottomY = baseZoneListBottom - rightScroll;
-        rightBarY = baseBarY - rightScroll;
+        rightSubtitleY = baseSubtitleY - vis;
+        rightDividerY = baseDividerY - vis;
+        zoneListTopY = baseZoneListTop - vis;
+        zoneListBottomY = baseZoneListBottom - vis;
+        rightBarY = baseBarY - vis;
         rightBarH = baseBarH;
-        rightDescPanelY = baseDescY - rightScroll;
+        rightDescPanelY = baseDescY - vis;
         rightDescPanelH = descHeight;
 
         int zoneY = zoneListTopY;
@@ -864,8 +877,9 @@ public class LatitudeCreateWorldScreen extends Screen {
         int maxScroll = Math.max(0, settingsContentHeight - viewportHeight);
         if (settingsScroll < 0) settingsScroll = 0;
         if (settingsScroll > maxScroll) settingsScroll = maxScroll;
+        settingsMaxScroll = maxScroll;
 
-        int y = contentTop - settingsScroll + labelGap;
+        int y = contentTop - Math.round(settingsScrollDisplay) + labelGap;
         worldTypeRowY = y;
         positionSettingsStepper(worldTypePrevBtn, worldTypeNextBtn, settBtnX, settBtnW, y, btnH);
 
@@ -1139,8 +1153,38 @@ public class LatitudeCreateWorldScreen extends Screen {
     // Rendering
     // ══════════════════════════════════════════════════════════════
 
+    // Ease each panel's display scroll toward its target once per rendered frame, then recompute all three
+    // layouts from the advanced display so content (and its widgets) glides instead of snapping. delta is the
+    // frame partial-tick, so the glide runs at a consistent speed regardless of framerate.
+    private void advanceScrollAnimation(float delta) {
+        leftScrollDisplay = easeScroll(leftScrollDisplay, leftScroll, leftMaxScroll, delta);
+        rightScrollDisplay = easeScroll(rightScrollDisplay, rightScroll, rightMaxScroll, delta);
+        settingsScrollDisplay = easeScroll(settingsScrollDisplay, settingsScroll, settingsMaxScroll, delta);
+    }
+
+    private static float easeScroll(float display, int target, int maxScroll, float delta) {
+        float clampedTarget = Math.max(0f, Math.min(target, maxScroll));
+        float d = display;
+        if (d < 0f) d = 0f;
+        if (d > maxScroll) d = maxScroll;
+        float diff = clampedTarget - d;
+        if (Math.abs(diff) < 0.5f) {
+            return clampedTarget;
+        }
+        // Exponential ease-out; factor derived from delta so speed is framerate-independent. delta is ~1.0 per
+        // tick, so at 60fps (~0.83 tick/frame) this settles in a few frames. Clamp the factor to [0,1].
+        float factor = 1f - (float) Math.exp(-0.45f * Math.max(0.001f, delta) * 3f);
+        if (factor < 0f) factor = 0f;
+        if (factor > 1f) factor = 1f;
+        return d + diff * factor;
+    }
+
     @Override
     public void extractRenderState(GuiGraphicsExtractor context, int mouseX, int mouseY, float delta) {
+        advanceScrollAnimation(delta);
+        updateLeftLayout();
+        updateRightLayout();
+        updateSettingsLayout();
         int titlePaneX = threeCol ? rightX : 12;
         int titlePaneW = threeCol ? rightW : Math.max(1, this.width - 24);
         int headerBottom = tabbedMode ? tabStripY - 2 : panelTop;
@@ -1196,7 +1240,7 @@ public class LatitudeCreateWorldScreen extends Screen {
         }
         context.disableScissor();
         }
-        drawPaneScrollbar(context, leftX, leftW, leftViewportTop, leftViewportBottom, leftContentHeight, leftScroll);
+        drawPaneScrollbar(context, leftX, leftW, leftViewportTop, leftViewportBottom, leftContentHeight, Math.round(leftScrollDisplay));
         } // end tab 0 (World)
 
         if (!tabbedMode || activeTab == 1) {
@@ -1257,7 +1301,7 @@ public class LatitudeCreateWorldScreen extends Screen {
         }
         context.disableScissor();
         }
-        drawPaneScrollbar(context, rightX, rightW, rightViewportTop, rightViewportBottom, rightContentHeight, rightScroll);
+        drawPaneScrollbar(context, rightX, rightW, rightViewportTop, rightViewportBottom, rightContentHeight, Math.round(rightScrollDisplay));
         } // end tab 1 (Spawn Zone)
 
         if (!tabbedMode || activeTab == 2) {
@@ -1290,7 +1334,7 @@ public class LatitudeCreateWorldScreen extends Screen {
             drawSettingsRowLabel(context, "Game Rules", settLabelX, gameRulesRowY, MUTED);
             context.disableScissor();
             }
-            drawPaneScrollbar(context, railX, railW, settingsViewportTop, settingsViewportBottom, settingsContentHeight, settingsScroll);
+            drawPaneScrollbar(context, railX, railW, settingsViewportTop, settingsViewportBottom, settingsContentHeight, Math.round(settingsScrollDisplay));
         } // end tab 2 (Rules)
 
         if (!tabbedMode) {
@@ -1548,13 +1592,17 @@ public class LatitudeCreateWorldScreen extends Screen {
     }
 
     private float previewDiscFill(GlobeWorldSize size) {
+        // Fraction of the available area the atlas disc fills. Still graded by world size (bigger world = bigger
+        // disc) so the preview conveys relative scale, but nudged up across the board per live feedback that the
+        // atlas read too small. Safe to raise: renderPlanispherePreview's fit loop shrinks the radius until the
+        // composition fits, so an over-large request can never overflow the panel.
         return switch (size) {
-            case ITTY_BITTY -> 0.44f;
-            case TINY -> 0.52f;
-            case SMALL -> 0.62f;
-            case REGULAR -> 0.72f;
-            case LARGE -> 0.82f;
-            case MASSIVE -> 0.90f;
+            case ITTY_BITTY -> 0.56f;
+            case TINY -> 0.68f;
+            case SMALL -> 0.78f;
+            case REGULAR -> 0.86f;
+            case LARGE -> 0.93f;
+            case MASSIVE -> 0.98f;
         };
     }
 
