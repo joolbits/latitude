@@ -67,27 +67,20 @@ public final class ZoneEnterTitleOverlay {
         }
 
         int a = (int) (alpha * 255.0f);
-        int argb = (a << 24) | 0xFFFFFF;
-
         Font tr = client.font;
         int cx = (screenW / 2) + LatitudeConfig.zoneEnterTitleOffsetX;
         int cy = (screenH / 2) + LatitudeConfig.zoneEnterTitleOffsetY;
+        String text = applyCase(title.getString(), LatitudeConfig.zoneEnterTitleCase);
 
         var m = ctx.pose();
         m.pushMatrix();
         try {
             m.translate(cx, cy);
             m.scale(scale, scale);
-            ctx.centeredText(tr, title, 0, 0, argb);
+            drawStyledTitle(ctx, tr, text, a);
         } finally {
             m.popMatrix();
         }
-    }
-
-    public static void renderStatic(GuiGraphicsExtractor ctx, int screenW, int screenH, String titleText, double scale) {
-        int cx = screenW / 2;
-        int cy = screenH / 2;
-        renderStaticAt(ctx, cx, cy, titleText, scale);
     }
 
     public static void renderStaticAt(GuiGraphicsExtractor ctx, int screenW, int screenH, String text, double scale, int offsetX, int offsetY) {
@@ -100,7 +93,7 @@ public final class ZoneEnterTitleOverlay {
         }
 
         Font tr = client.font;
-        int argb = 0xFFFFFFFF;
+        String styled = applyCase(text, LatitudeConfig.zoneEnterTitleCase);
 
         var m = ctx.pose();
         m.pushMatrix();
@@ -108,34 +101,59 @@ public final class ZoneEnterTitleOverlay {
             m.translate(cx, cy);
             float s = (float) scale;
             m.scale(s, s);
-
-            int w = tr.width(text);
-            int x = -w / 2;
-            int y = -tr.lineHeight / 2;
-            ctx.text(tr, text, x, y, argb, true);
+            drawStyledTitle(ctx, tr, styled, 0xFF);
         } finally {
             m.popMatrix();
         }
     }
 
-    public static void renderStaticAt(GuiGraphicsExtractor ctx, int cx, int cy, String titleText, double scale) {
-        Minecraft client = Minecraft.getInstance();
-        if (client == null || client.font == null) {
+    // Shared by both render() (real gameplay) and renderStaticAt() (the HUD Studio live preview) so the two
+    // paths can never drift out of sync on color/case styling. text is drawn centered at the local (0,0)
+    // origin -- caller is expected to have already translated/scaled the pose matrix.
+    private static void drawStyledTitle(GuiGraphicsExtractor ctx, Font font, String text, int alphaByte) {
+        if (LatitudeConfig.zoneEnterTitleColorPreset == LatitudeConfig.TitleColorPreset.RAINBOW) {
+            RainbowText.drawCentered(ctx, font, text, 0, 0, true, alphaByte);
             return;
         }
+        int rgb = titleColorRgb(LatitudeConfig.zoneEnterTitleColorPreset);
+        int argb = (alphaByte << 24) | (rgb & 0xFFFFFF);
+        ctx.centeredText(font, Component.literal(text), 0, 0, argb);
+    }
 
-        Font tr = client.font;
-        int argb = 0xFFFFFFFF;
+    private static int titleColorRgb(LatitudeConfig.TitleColorPreset preset) {
+        return switch (preset) {
+            case GOLD -> 0xD4A74A;
+            case RED -> 0xFF5555;
+            case CYAN -> 0x55FFFF;
+            case GREEN -> 0x55FF55;
+            case CUSTOM -> LatitudeConfig.zoneEnterTitleRgb;
+            case WHITE, RAINBOW -> 0xFFFFFF; // RAINBOW never reaches here -- handled above.
+        };
+    }
 
-        var m = ctx.pose();
-        m.pushMatrix();
-        try {
-            m.translate(cx, cy);
-            float s = (float) scale;
-            m.scale(s, s);
-            ctx.centeredText(tr, Component.literal(titleText), 0, 0, argb);
-        } finally {
-            m.popMatrix();
+    private static String applyCase(String text, LatitudeConfig.TitleCaseMode mode) {
+        return switch (mode) {
+            case UPPERCASE -> text.toUpperCase(java.util.Locale.ROOT);
+            case LOWERCASE -> text.toLowerCase(java.util.Locale.ROOT);
+            case MOCKING -> mockingCase(text);
+            case NORMAL -> text;
+        };
+    }
+
+    // "mOcKiNg SpOnGeBoB" style: alternates lower/upper per LETTER (spaces/punctuation pass through untouched
+    // without breaking the alternation), starting lowercase.
+    private static String mockingCase(String text) {
+        StringBuilder sb = new StringBuilder(text.length());
+        boolean upper = false;
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (Character.isLetter(c)) {
+                sb.append(upper ? Character.toUpperCase(c) : Character.toLowerCase(c));
+                upper = !upper;
+            } else {
+                sb.append(c);
+            }
         }
+        return sb.toString();
     }
 }

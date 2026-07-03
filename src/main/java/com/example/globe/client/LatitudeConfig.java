@@ -20,9 +20,17 @@ public final class LatitudeConfig {
     public static boolean showLatitudeDegrees = true;
     public static boolean latitudeDegreesOnCompass = true;
 
+    // Append-only, like CompassHudConfig.AnalogCompassTheme: keep WHITE first (default/matches pre-existing
+    // hardcoded-white behavior) and never reorder -- presets persist by name.
+    public enum TitleColorPreset { WHITE, GOLD, RED, CYAN, GREEN, CUSTOM, RAINBOW }
+    public enum TitleCaseMode { NORMAL, UPPERCASE, LOWERCASE, MOCKING }
+
     public static boolean zoneEnterTitleEnabled = true;
     public static double zoneEnterTitleSeconds = 6.0;
     public static double zoneEnterTitleScale = 1.8;
+    public static TitleColorPreset zoneEnterTitleColorPreset = TitleColorPreset.WHITE;
+    public static int zoneEnterTitleRgb = 0xFFFFFF;
+    public static TitleCaseMode zoneEnterTitleCase = TitleCaseMode.NORMAL;
 
     public static int zoneEnterTitleOffsetX = 0;
     public static int zoneEnterTitleOffsetY = -40;
@@ -55,6 +63,9 @@ public final class LatitudeConfig {
     private boolean zoneEnterTitleEnabledValue = true;
     private double zoneEnterTitleSecondsValue = 6.0;
     private double zoneEnterTitleScaleValue = 1.8;
+    private TitleColorPreset zoneEnterTitleColorPresetValue = TitleColorPreset.WHITE;
+    private int zoneEnterTitleRgbValue = 0xFFFFFF;
+    private TitleCaseMode zoneEnterTitleCaseValue = TitleCaseMode.NORMAL;
 
     private int zoneEnterTitleOffsetXValue = 0;
     private int zoneEnterTitleOffsetYValue = -40;
@@ -117,6 +128,9 @@ public final class LatitudeConfig {
                         zoneEnterTitleEnabled = cfg.zoneEnterTitleEnabledValue;
                         zoneEnterTitleSeconds = cfg.zoneEnterTitleSecondsValue;
                         zoneEnterTitleScale = cfg.zoneEnterTitleScaleValue;
+                        zoneEnterTitleColorPreset = cfg.zoneEnterTitleColorPresetValue;
+                        zoneEnterTitleRgb = cfg.zoneEnterTitleRgbValue;
+                        zoneEnterTitleCase = cfg.zoneEnterTitleCaseValue;
 
                         zoneEnterTitleOffsetX = cfg.zoneEnterTitleOffsetXValue;
                         zoneEnterTitleOffsetY = cfg.zoneEnterTitleOffsetYValue;
@@ -157,6 +171,9 @@ public final class LatitudeConfig {
         zoneEnterTitleEnabled = fresh.zoneEnterTitleEnabledValue;
         zoneEnterTitleSeconds = fresh.zoneEnterTitleSecondsValue;
         zoneEnterTitleScale = fresh.zoneEnterTitleScaleValue;
+        zoneEnterTitleColorPreset = fresh.zoneEnterTitleColorPresetValue;
+        zoneEnterTitleRgb = fresh.zoneEnterTitleRgbValue;
+        zoneEnterTitleCase = fresh.zoneEnterTitleCaseValue;
 
         zoneEnterTitleOffsetX = fresh.zoneEnterTitleOffsetXValue;
         zoneEnterTitleOffsetY = fresh.zoneEnterTitleOffsetYValue;
@@ -194,6 +211,9 @@ public final class LatitudeConfig {
             cfg.zoneEnterTitleEnabledValue = zoneEnterTitleEnabled;
             cfg.zoneEnterTitleSecondsValue = zoneEnterTitleSeconds;
             cfg.zoneEnterTitleScaleValue = zoneEnterTitleScale;
+            cfg.zoneEnterTitleColorPresetValue = zoneEnterTitleColorPreset;
+            cfg.zoneEnterTitleRgbValue = zoneEnterTitleRgb;
+            cfg.zoneEnterTitleCaseValue = zoneEnterTitleCase;
 
             cfg.zoneEnterTitleOffsetXValue = zoneEnterTitleOffsetX;
             cfg.zoneEnterTitleOffsetYValue = zoneEnterTitleOffsetY;
@@ -227,6 +247,8 @@ public final class LatitudeConfig {
     private void sanitize() {
         if (zoneEntryNotifyModeValue == null) zoneEntryNotifyModeValue = ZoneEntryNotifyMode.TITLE;
         if (!showLatitudeDegreesValue) latitudeDegreesOnCompassValue = false;
+        if (zoneEnterTitleColorPresetValue == null) zoneEnterTitleColorPresetValue = TitleColorPreset.WHITE;
+        if (zoneEnterTitleCaseValue == null) zoneEnterTitleCaseValue = TitleCaseMode.NORMAL;
 
         zoneEnterTitleSecondsValue = clamp(zoneEnterTitleSecondsValue, 2.0, 10.0);
         zoneEnterTitleScaleValue = clamp(zoneEnterTitleScaleValue, 1.0, 3.0);
