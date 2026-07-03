@@ -386,10 +386,13 @@ public class LatitudeCreateWorldScreen extends Screen {
         } else {
             tabStripY = 0;
             tabPanelTop = panelTop;
-            // Rail gets its minimum first; left/right split remainder at original 32:42 ratio.
+            // Rail gets its minimum first; left/right split the remainder. Left (World + Atlas) is widened and
+            // the middle (Spawn Zone) narrowed vs the original 43:57 split, per live feedback — a wider left pane
+            // gives the 2:1 atlas more width budget (maxRadiusByWidth) so it renders larger and the latitude
+            // labels fit, and lets the size descriptions wrap to two lines instead of three.
             railW = Math.max(MIN_RAIL_W, (int) (paneStripContentWidth * 0.26f));
             int rem = paneStripContentWidth - railW - paneGap * 2;
-            leftW = Math.max(MIN_LEFT_W, (int) (rem * 0.432f)); // 32/(32+42)
+            leftW = Math.max(MIN_LEFT_W, (int) (rem * 0.48f)); // left:right ~48:52 (was 43:57)
             rightW = Math.max(MIN_RIGHT_W, rem - leftW);
         }
         int maxPaneStripScroll = getPaneStripMaxScroll();
@@ -871,7 +874,11 @@ public class LatitudeCreateWorldScreen extends Screen {
         int btnH = worldTypePrevBtn.getHeight();
         int labelGap = scaledUi(10);
         int rowGap = scaledUi(10);
-        settingsViewportTop = panelTop + scaledUi(36);
+        // threeCol reserves a top strip for the "World Settings" inline heading. Tabbed mode has the tab strip
+        // instead, so drop that reserved strip — otherwise content scrolls up into a blank ~36px "invisible
+        // header bar" (the old WORLD/SETTINGS header was drawn inside the scissor above its own top edge, so it
+        // was clipped away and just left dead space). Matches the panel-2 Spawn Zone tabbed-mode fix.
+        settingsViewportTop = threeCol ? (panelTop + scaledUi(36)) : (panelTop + scaledUi(8));
         settingsViewportBottom = panelBottom - scaledUi(8);
         int viewportHeight = Math.max(0, settingsViewportBottom - settingsViewportTop);
         int contentTop = settingsViewportTop + scaledUi(4);
@@ -1324,11 +1331,8 @@ public class LatitudeCreateWorldScreen extends Screen {
                 drawInlineHeading(context, railX, railW, TAB_LABELS[2], GOLD);
             }
             context.enableScissor(railClipLeft, settingsViewportTop, railClipRight, settingsViewportBottom);
-            int railTextWidth = Math.max(40, railW - 8 - SCROLLBAR_GUTTER);
-            if (!threeCol) {
-                drawCenteredBoundedText(context, "WORLD", new UiRect(railX + 4, panelTop + scaledUi(4), railTextWidth, uiFontHeight()), GOLD, false, true);
-                drawCenteredBoundedText(context, "SETTINGS", new UiRect(railX + 4, panelTop + scaledUi(14), railTextWidth, uiFontHeight()), GOLD, false, true);
-            }
+            // (Tabbed mode: no in-panel "WORLD SETTINGS" header — the tab strip already labels this pane, and
+            // drawing it here just clipped against the scissor and left the dead "invisible header bar".)
             drawSettingsRowLabel(context, "World Type", settLabelX, worldTypeRowY, MUTED);
             drawSettingsStepperValue(context, WORLD_TYPE_NAMES[worldTypeIdx], WORLD_TYPE_COLORS[worldTypeIdx], worldTypeRowY);
             boolean shapeEnabled = isLatitudeWorld();
@@ -1606,12 +1610,12 @@ public class LatitudeCreateWorldScreen extends Screen {
         // atlas read too small. Safe to raise: renderPlanispherePreview's fit loop shrinks the radius until the
         // composition fits, so an over-large request can never overflow the panel.
         return switch (size) {
-            case ITTY_BITTY -> 0.56f;
-            case TINY -> 0.68f;
-            case SMALL -> 0.78f;
-            case REGULAR -> 0.86f;
-            case LARGE -> 0.93f;
-            case MASSIVE -> 0.98f;
+            case ITTY_BITTY -> 0.70f;
+            case TINY -> 0.78f;
+            case SMALL -> 0.84f;
+            case REGULAR -> 0.89f;
+            case LARGE -> 0.94f;
+            case MASSIVE -> 0.99f;
         };
     }
 

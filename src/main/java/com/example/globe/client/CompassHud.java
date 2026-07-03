@@ -299,6 +299,13 @@ public final class CompassHud {
         float yaw = client.player != null ? client.player.getYRot() : -180.0f;
         double angle = Math.toRadians(Mth.wrapDegrees(yaw + 180.0f));
 
+        if (isPreview) {
+            // Transparency preview aid (HUD studio only): a checkerboard directly behind the disc so the
+            // see-through inner disc is actually visible. On a plain dark screen a transparent disc looks
+            // identical to an opaque dark one, so the Inner Transparency slider appeared to do nothing.
+            drawTransparencyCheckerboard(ctx, cx - radius, cy - radius, diameter);
+        }
+
         drawAnalogCompass(ctx, cfg, cx, cy, radius, angle);
 
         if (isPreview) {
@@ -333,6 +340,24 @@ public final class CompassHud {
         }
         if (cfg.displayZoneInHud && cfg.zoneFollowsCompass && zoneText != null && !zoneText.isEmpty()) {
             drawText(ctx, client, cfg, zoneText, textX, textY, color);
+        }
+    }
+
+    // Photoshop-style transparency checkerboard, drawn behind the analog disc in the HUD studio preview only so
+    // the Inner Transparency slider's effect is visible against it instead of against a flat dark screen.
+    private static void drawTransparencyCheckerboard(GuiGraphicsExtractor ctx, int x, int y, int size) {
+        int cell = Math.max(3, size / 6);
+        int light = 0xFFBFBFBF;
+        int dark = 0xFF6E6E6E;
+        for (int gy = 0; gy < size; gy += cell) {
+            for (int gx = 0; gx < size; gx += cell) {
+                boolean isLight = (((gx / cell) + (gy / cell)) & 1) == 0;
+                int x0 = x + gx;
+                int y0 = y + gy;
+                int x1 = Math.min(x + size, x0 + cell);
+                int y1 = Math.min(y + size, y0 + cell);
+                ctx.fill(x0, y0, x1, y1, isLight ? light : dark);
+            }
         }
     }
 
