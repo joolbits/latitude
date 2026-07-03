@@ -365,6 +365,10 @@ public class LatitudeSettingsScreen extends Screen {
         cfg.coordsVAnchor = fresh.coordsVAnchor;
         cfg.coordsOffsetX = fresh.coordsOffsetX;
         cfg.coordsOffsetY = fresh.coordsOffsetY;
+        cfg.customFaceRgb = fresh.customFaceRgb;
+        cfg.customRingArgb = fresh.customRingArgb;
+        cfg.customMutedArgb = fresh.customMutedArgb;
+        cfg.customNeedleArgb = fresh.customNeedleArgb;
     }
 
     private static void applyDefaults(LatitudeConfig cfg) {

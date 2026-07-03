@@ -18,7 +18,7 @@ public final class CompassHudConfig {
     // and the cycle button uses declaration order.
     public enum AnalogCompassTheme {
         CLASSIC_GOLD, PALE_GOLD, RED_IVORY, CYAN_STEEL, MINT_BRASS,
-        OBSIDIAN_RED, ARCTIC_BLUE, EMERALD, ROYAL_PURPLE, SUNSET, MONOCHROME
+        OBSIDIAN_RED, ARCTIC_BLUE, EMERALD, ROYAL_PURPLE, SUNSET, MONOCHROME, CUSTOM
     }
     public enum HAnchor { LEFT, CENTER, RIGHT }
     public enum VAnchor { TOP, CENTER, BOTTOM }
@@ -48,6 +48,15 @@ public final class CompassHudConfig {
 
     // Analog styling. Lower = more transparent inner disc.
     public float analogInnerAlpha = 0.50f; // 0..1
+
+    // Custom analog theme colors (only used when analogTheme == CUSTOM). Defaults mirror CLASSIC_GOLD so a
+    // fresh Custom theme doesn't look black/broken before the player touches a slider. face is bare 0xRRGGBB
+    // (alpha comes from analogInnerAlpha above, same as every other theme); ring/muted/needle are full ARGB
+    // with alpha pinned to 0xFF, matching the packing convention CompassHud.analogColors() relies on.
+    public int customFaceRgb = 0x1A1410;
+    public int customRingArgb = 0xFFD4A74A;
+    public int customMutedArgb = 0xFF8C8078;
+    public int customNeedleArgb = 0xFFEDE0D0;
 
     // Zone (band) label
     public boolean displayZoneInHud = false;
