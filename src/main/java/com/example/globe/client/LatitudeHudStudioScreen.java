@@ -83,23 +83,32 @@ public class LatitudeHudStudioScreen extends Screen {
     private AbstractWidget wCoordsFollow;
     private AbstractWidget wHudSnap;
     private AbstractWidget wHudSnapPixels;
+    private AbstractWidget wTitleDraggable;
 
     private AbstractWidget wTitleScale;
+    private AbstractWidget wTitleEnabled;
+    private AbstractWidget wTitleDuration;
+    private AbstractWidget wTitleShowBaseDegrees;
+    private AbstractWidget wTitleColorPreset;
+    private AbstractWidget wTitleCase;
 
     private AbstractWidget wResetHud;
 
-    // RGB picker groups (Custom analog theme colors + text color). Constructed only when relevant to the
-    // active tab/style/theme, mirroring how digital-vs-analog widgets are already conditionally constructed.
+    // RGB picker groups (Custom analog theme colors + text color + title color). Constructed only when relevant
+    // to the active tab/style/theme, mirroring how digital-vs-analog widgets are already conditionally
+    // constructed.
     private RgbPickerGroup rgbTextColor;
     private RgbPickerGroup rgbCustomFace;
     private RgbPickerGroup rgbCustomRing;
     private RgbPickerGroup rgbCustomMuted;
     private RgbPickerGroup rgbCustomNeedle;
+    private RgbPickerGroup rgbTitleColor;
     private SwatchSlot swatchTextColor;
     private SwatchSlot swatchCustomFace;
     private SwatchSlot swatchCustomRing;
     private SwatchSlot swatchCustomMuted;
     private SwatchSlot swatchCustomNeedle;
+    private SwatchSlot swatchTitleColor;
     private final List<SwatchSlot> sidebarSwatches = new ArrayList<>();
 
     private int sidebarScrollY = 0;
@@ -163,17 +172,25 @@ public class LatitudeHudStudioScreen extends Screen {
         this.wCoordsFollow = null;
         this.wHudSnap = null;
         this.wHudSnapPixels = null;
+        this.wTitleDraggable = null;
         this.wTitleScale = null;
+        this.wTitleEnabled = null;
+        this.wTitleDuration = null;
+        this.wTitleShowBaseDegrees = null;
+        this.wTitleColorPreset = null;
+        this.wTitleCase = null;
         this.rgbTextColor = null;
         this.rgbCustomFace = null;
         this.rgbCustomRing = null;
         this.rgbCustomMuted = null;
         this.rgbCustomNeedle = null;
+        this.rgbTitleColor = null;
         this.swatchTextColor = null;
         this.swatchCustomFace = null;
         this.swatchCustomRing = null;
         this.swatchCustomMuted = null;
         this.swatchCustomNeedle = null;
+        this.swatchTitleColor = null;
 
         this.titleOffsetXf = LatitudeConfig.zoneEnterTitleOffsetX;
         this.titleOffsetYf = LatitudeConfig.zoneEnterTitleOffsetY;
@@ -387,9 +404,62 @@ public class LatitudeHudStudioScreen extends Screen {
             trackSidebarWidget(this.wCoordsFollow, y);
             y += rowH + rowGap;
         } else if (activeTab == TAB_TITLE) {
+            this.wTitleEnabled = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "ON" : "OFF"), () -> LatitudeConfig.zoneEnterTitleEnabled)
+                    .withValues(true, false)
+                    .create(panelX, y, widgetW, rowH, Component.literal("Zone Title"), (btn, value) -> {
+                        LatitudeConfig.zoneEnterTitleEnabled = value;
+                        LatitudeConfig.saveCurrent();
+                    }));
+            tooltip(this.wTitleEnabled, "Master on/off for the big title that pops up when crossing a latitude zone.");
+            trackSidebarWidget(this.wTitleEnabled, y);
+            y += rowH + rowGap;
+
             this.wTitleScale = this.addRenderableWidget(new StepSlider(panelX, y, widgetW, rowH, Component.literal("Title Size"), 1.0, 3.0, 0.1, LatitudeConfig.zoneEnterTitleScale, v -> LatitudeConfig.zoneEnterTitleScale = v));
             tooltip(this.wTitleScale, "Scales the zone enter title preview.");
             trackSidebarWidget(this.wTitleScale, y);
+            y += rowH + rowGap;
+
+            this.wTitleDuration = this.addRenderableWidget(new StepSlider(panelX, y, widgetW, rowH, Component.literal("Title Duration"), 2.0, 10.0, 0.5, LatitudeConfig.zoneEnterTitleSeconds, v -> LatitudeConfig.zoneEnterTitleSeconds = v));
+            tooltip(this.wTitleDuration, "How many seconds the zone-enter title stays on screen.");
+            trackSidebarWidget(this.wTitleDuration, y);
+            y += rowH + rowGap;
+
+            this.wTitleShowBaseDegrees = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "ON" : "OFF"), () -> LatitudeConfig.showZoneBaseDegreesOnTitle)
+                    .withValues(true, false)
+                    .create(panelX, y, widgetW, rowH, Component.literal("Show Degrees"), (btn, value) -> {
+                        LatitudeConfig.showZoneBaseDegreesOnTitle = value;
+                        LatitudeConfig.saveCurrent();
+                    }));
+            tooltip(this.wTitleShowBaseDegrees, "Includes the latitude-degree readout in the title text.");
+            trackSidebarWidget(this.wTitleShowBaseDegrees, y);
+            y += rowH + rowGap;
+
+            this.wTitleColorPreset = this.addRenderableWidget(CycleButton.<LatitudeConfig.TitleColorPreset>builder(v -> Component.literal(titleColorLabel(v)), () -> LatitudeConfig.zoneEnterTitleColorPreset)
+                    .withValues(LatitudeConfig.TitleColorPreset.values())
+                    .create(panelX, y, widgetW, rowH, Component.literal("Title Color"), (btn, value) -> {
+                        LatitudeConfig.zoneEnterTitleColorPreset = value;
+                        LatitudeConfig.saveCurrent();
+                        // Custom needs its own RGB sliders constructed/torn down -- same reason the compass
+                        // Color Scheme cycle button forces a full re-init when picking Custom.
+                        this.init();
+                    }));
+            tooltip(this.wTitleColorPreset, "Pick a color for the zone-enter title, choose Custom to dial in exact colors, or Rainbow for a letter-by-letter cycle.");
+            trackSidebarWidget(this.wTitleColorPreset, y);
+            y += rowH + rowGap;
+
+            if (LatitudeConfig.zoneEnterTitleColorPreset == LatitudeConfig.TitleColorPreset.CUSTOM) {
+                y = placeRgbPicker(panelX, y, widgetW, rowH, rowGap, "Title", LatitudeConfig.zoneEnterTitleRgb,
+                        v -> LatitudeConfig.zoneEnterTitleRgb = v, g -> this.rgbTitleColor = g, s -> this.swatchTitleColor = s);
+            }
+
+            this.wTitleCase = this.addRenderableWidget(CycleButton.<LatitudeConfig.TitleCaseMode>builder(v -> Component.literal(titleCaseLabel(v)), () -> LatitudeConfig.zoneEnterTitleCase)
+                    .withValues(LatitudeConfig.TitleCaseMode.values())
+                    .create(panelX, y, widgetW, rowH, Component.literal("Title Case"), (btn, value) -> {
+                        LatitudeConfig.zoneEnterTitleCase = value;
+                        LatitudeConfig.saveCurrent();
+                    }));
+            tooltip(this.wTitleCase, "Changes the letter casing of the zone-enter title text.");
+            trackSidebarWidget(this.wTitleCase, y);
             y += rowH + rowGap;
         } else {
             this.wHudSnap = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "Snap to Grid" : "Free Move"), () -> LatitudeConfig.hudSnapEnabled)
@@ -406,6 +476,16 @@ public class LatitudeHudStudioScreen extends Screen {
             this.wHudSnapPixels = this.addRenderableWidget(new IntSlider(panelX, y, widgetW, rowH, Component.literal("Grid Size"), 1, 32, LatitudeConfig.hudSnapPixels, v -> LatitudeConfig.hudSnapPixels = v));
             tooltip(this.wHudSnapPixels, "Grid spacing in pixels used while Snap to Grid is on.");
             trackSidebarWidget(this.wHudSnapPixels, y);
+            y += rowH + rowGap;
+
+            this.wTitleDraggable = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "ON" : "OFF"), () -> LatitudeConfig.zoneEnterTitleDraggable)
+                    .withValues(true, false)
+                    .create(panelX, y, widgetW, rowH, Component.literal("Title Draggable"), (btn, value) -> {
+                        LatitudeConfig.zoneEnterTitleDraggable = value;
+                        LatitudeConfig.saveCurrent();
+                    }));
+            tooltip(this.wTitleDraggable, "Allows the zone-enter title to be repositioned by dragging it in this editor.");
+            trackSidebarWidget(this.wTitleDraggable, y);
             y += rowH + rowGap;
         }
 
@@ -781,6 +861,13 @@ public class LatitudeHudStudioScreen extends Screen {
         LatitudeConfig.zoneEnterTitleScale = 1.8;
         LatitudeConfig.zoneEnterTitleOffsetX = 0;
         LatitudeConfig.zoneEnterTitleOffsetY = -40;
+        LatitudeConfig.zoneEnterTitleEnabled = true;
+        LatitudeConfig.zoneEnterTitleSeconds = 6.0;
+        LatitudeConfig.showZoneBaseDegreesOnTitle = true;
+        LatitudeConfig.zoneEnterTitleColorPreset = LatitudeConfig.TitleColorPreset.WHITE;
+        LatitudeConfig.zoneEnterTitleRgb = 0xFFFFFF;
+        LatitudeConfig.zoneEnterTitleCase = LatitudeConfig.TitleCaseMode.NORMAL;
+        LatitudeConfig.zoneEnterTitleDraggable = true;
         // Matches LatitudeConfig's own field-initializer defaults (hudSnapEnabled=true, hudSnapPixels=8) --
         // there's no fresh()-style factory on LatitudeConfig (unlike CompassHudConfig), so this follows the same
         // hardcoded-literal pattern already used for the zoneEnterTitle* resets above.
@@ -947,10 +1034,17 @@ public class LatitudeHudStudioScreen extends Screen {
         setVisible(wZoneBiomeOrder, sidebarVisible && bothAttached);
         setVisible(wCoordsFollow, sidebarVisible);
 
+        setVisible(wTitleEnabled, sidebarVisible);
         setVisible(wTitleScale, sidebarVisible);
+        setVisible(wTitleDuration, sidebarVisible);
+        setVisible(wTitleShowBaseDegrees, sidebarVisible);
+        setVisible(wTitleColorPreset, sidebarVisible);
+        setRgbGroupVisible(rgbTitleColor, sidebarVisible);
+        setVisible(wTitleCase, sidebarVisible);
 
         setVisible(wHudSnap, sidebarVisible);
         setVisible(wHudSnapPixels, sidebarVisible && LatitudeConfig.hudSnapEnabled);
+        setVisible(wTitleDraggable, sidebarVisible);
 
         setVisible(wResetHud, sidebarVisible);
     }
@@ -1196,6 +1290,28 @@ public class LatitudeHudStudioScreen extends Screen {
             case MONOCHROME -> "Monochrome";
             case CLASSIC_GOLD -> "Classic Gold";
             case CUSTOM -> "Custom";
+        };
+    }
+
+    private static String titleColorLabel(LatitudeConfig.TitleColorPreset preset) {
+        return switch (preset) {
+            case WHITE -> "White";
+            case GOLD -> "Gold";
+            case RED -> "Red";
+            case CYAN -> "Cyan";
+            case GREEN -> "Green";
+            case CUSTOM -> "Custom";
+            case RAINBOW -> "Rainbow";
+        };
+    }
+
+    // Each label is styled in its own case, so the button doubles as a live preview of the effect.
+    private static String titleCaseLabel(LatitudeConfig.TitleCaseMode mode) {
+        return switch (mode) {
+            case NORMAL -> "Normal";
+            case UPPERCASE -> "UPPERCASE";
+            case LOWERCASE -> "lowercase";
+            case MOCKING -> "mOcKiNg";
         };
     }
 

@@ -375,6 +375,9 @@ public class LatitudeSettingsScreen extends Screen {
         LatitudeConfig.zoneEnterTitleEnabled = true;
         LatitudeConfig.zoneEnterTitleSeconds = 6.0;
         LatitudeConfig.zoneEnterTitleScale = 1.8;
+        LatitudeConfig.zoneEnterTitleColorPreset = LatitudeConfig.TitleColorPreset.WHITE;
+        LatitudeConfig.zoneEnterTitleRgb = 0xFFFFFF;
+        LatitudeConfig.zoneEnterTitleCase = LatitudeConfig.TitleCaseMode.NORMAL;
         LatitudeConfig.zoneEnterTitleOffsetX = 0;
         LatitudeConfig.zoneEnterTitleOffsetY = -40;
         LatitudeConfig.zoneEnterTitleDraggable = true;

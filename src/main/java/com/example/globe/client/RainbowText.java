@@ -30,15 +30,24 @@ public final class RainbowText {
 
     /** Draws {@code text} centered at (centerX, centerY), cycling one palette color per non-space character. */
     public static void drawCentered(GuiGraphicsExtractor ctx, Font font, String text, int centerX, int centerY, boolean shadow) {
+        drawCentered(ctx, font, text, centerX, centerY, shadow, 0xFF);
+    }
+
+    /** Same as {@link #drawCentered(GuiGraphicsExtractor, Font, String, int, int, boolean)}, but with an extra
+     *  alpha byte (0-255) applied to every palette color -- lets callers with a fade-in/out effect (e.g. the
+     *  zone-enter title) use the Rainbow preset without losing their fade. */
+    public static void drawCentered(GuiGraphicsExtractor ctx, Font font, String text, int centerX, int centerY, boolean shadow, int alpha) {
         int totalWidth = font.width(text);
         int x = centerX - totalWidth / 2;
         int y = centerY - font.lineHeight / 2;
+        int alphaMask = (alpha & 0xFF) << 24;
         int colorIdx = 0;
         for (int i = 0; i < text.length(); i++) {
             char c = text.charAt(i);
             String s = String.valueOf(c);
             if (c != ' ') {
-                ctx.text(font, s, x, y, PALETTE[colorIdx % PALETTE.length], shadow);
+                int color = alphaMask | (PALETTE[colorIdx % PALETTE.length] & 0xFFFFFF);
+                ctx.text(font, s, x, y, color, shadow);
                 colorIdx++;
             }
             x += font.width(s);
