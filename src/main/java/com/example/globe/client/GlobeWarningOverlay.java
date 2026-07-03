@@ -25,14 +25,16 @@ public final class GlobeWarningOverlay {
             "The cold overwhelms you.";
 
     // Approach tier (LEVEL_1) — generic, mentions both storm + reduced visibility. Escalates to a
-    // climate-specific tier-2 line below.
+    // climate-specific tier-2 line below. Simplified from "...Head <direction> to turn back/immediately." to a
+    // plain "Turn back." per live feedback -- smoother read, and the player already knows which way is back
+    // (they just came from there); naming the escape direction was redundant.
     private static final String EW_STORM_WARN_TEMPLATE =
-            "Storms and low visibility to the %s. Head %s to turn back.";
+            "Storms and low visibility to the %s. Turn back.";
     // Near-edge tier (LEVEL_2), climate-specific: whiteout in the cold bands, blinding sandstorm elsewhere.
     private static final String EW_WHITEOUT_DANGER_TEMPLATE =
-            "Whiteout conditions to the %s. Head %s immediately.";
+            "Whiteout conditions to the %s. Turn back.";
     private static final String EW_SANDSTORM_DANGER_TEMPLATE =
-            "Blinding sandstorm to the %s. Head %s immediately.";
+            "Blinding sandstorm to the %s. Turn back.";
 
     private static final boolean DEBUG_ENTRY_TITLES = Boolean.getBoolean("latitude.debugEntryTitles");
     private static final int EQUATOR_STABLE_DIST = 64;
@@ -209,11 +211,10 @@ public final class GlobeWarningOverlay {
             } else if (state.type() == GlobeClientState.WarningType.STORM) {
                 GlobeClientState.EwStormStage stage = (GlobeClientState.EwStormStage) state.stage();
                 String dir = ewDangerDirection(client.level.getWorldBorder(), client.player.getX());
-                String escapeDir = oppositeDirection(dir);
                 boolean cold = ewIsColdBand(client.level.getWorldBorder(), client.player.getZ());
                 Component base = ewTextForStage(stage, cold);
                 if (base != null) {
-                    bestText = Component.literal(String.format(base.getString(), dir.toLowerCase(), escapeDir.toLowerCase())).setStyle(base.getStyle());
+                    bestText = Component.literal(String.format(base.getString(), dir.toLowerCase())).setStyle(base.getStyle());
                 }
             }
 
@@ -255,10 +256,6 @@ public final class GlobeWarningOverlay {
         double distWest = Math.abs(playerX - border.getMinX());
         double distEast = Math.abs(border.getMaxX() - playerX);
         return distWest <= distEast ? "West" : "East";
-    }
-
-    private static String oppositeDirection(String direction) {
-        return "West".equals(direction) ? "East" : "West";
     }
 
     private static void resetWorldEntryState(long worldTime) {
