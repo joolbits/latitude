@@ -299,10 +299,12 @@ public final class CompassHud {
         float yaw = client.player != null ? client.player.getYRot() : -180.0f;
         double angle = Math.toRadians(Mth.wrapDegrees(yaw + 180.0f));
 
-        if (isPreview) {
-            // Transparency preview aid (HUD studio only): a checkerboard directly behind the disc so the
-            // see-through inner disc is actually visible. On a plain dark screen a transparent disc looks
-            // identical to an opaque dark one, so the Inner Transparency slider appeared to do nothing.
+        if (isPreview && client.gui.screen() instanceof LatitudeHudStudioScreen) {
+            // Transparency preview aid — HUD STUDIO ONLY (that's the only screen with the Inner Transparency
+            // slider). A checkerboard behind the disc makes the see-through inner disc visible; on a plain dark
+            // screen a transparent disc looks identical to an opaque one. Deliberately NOT drawn on other compass
+            // previews (e.g. the Latitude Settings screen), where there's no transparency control and it just
+            // looks confusing.
             drawTransparencyCheckerboard(ctx, cx - radius, cy - radius, diameter);
         }
 
