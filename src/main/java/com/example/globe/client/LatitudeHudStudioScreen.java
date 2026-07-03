@@ -31,11 +31,15 @@ public class LatitudeHudStudioScreen extends Screen {
     private static final int TAB_GENERAL = 3;
     private static final int TAB_H = 20;
     private static final int TAB_GAP = 4;
+    // Extra headroom on top of the wider sidebar so even "Placement" sits comfortably clear of its borders.
+    private static final float TAB_LABEL_SCALE = 0.85f;
 
     private final Screen parent;
 
     private boolean sidebarVisible = true;
-    private int sidebarWidth = 180;
+    // Widened from 180 -- at 180 the 4-tab strip (~43px/tab) was too narrow for "Placement" to fit without
+    // touching its button's borders.
+    private int sidebarWidth = 208;
 
     private int activeTab = TAB_COMPASS;
     private int tabStripY;
@@ -91,6 +95,7 @@ public class LatitudeHudStudioScreen extends Screen {
     private AbstractWidget wTitleShowBaseDegrees;
     private AbstractWidget wTitleColorPreset;
     private AbstractWidget wTitleCase;
+    private AbstractWidget wTitleLetterSpacing;
 
     private AbstractWidget wResetHud;
 
@@ -179,6 +184,7 @@ public class LatitudeHudStudioScreen extends Screen {
         this.wTitleShowBaseDegrees = null;
         this.wTitleColorPreset = null;
         this.wTitleCase = null;
+        this.wTitleLetterSpacing = null;
         this.rgbTextColor = null;
         this.rgbCustomFace = null;
         this.rgbCustomRing = null;
@@ -460,6 +466,11 @@ public class LatitudeHudStudioScreen extends Screen {
                     }));
             tooltip(this.wTitleCase, "Changes the letter casing of the zone-enter title text.");
             trackSidebarWidget(this.wTitleCase, y);
+            y += rowH + rowGap;
+
+            this.wTitleLetterSpacing = this.addRenderableWidget(new IntSlider(panelX, y, widgetW, rowH, Component.literal("Letter Spacing"), -4, 16, LatitudeConfig.zoneEnterTitleLetterSpacing, v -> LatitudeConfig.zoneEnterTitleLetterSpacing = v));
+            tooltip(this.wTitleLetterSpacing, "Adds (or removes) extra space between letters in the zone-enter title.");
+            trackSidebarWidget(this.wTitleLetterSpacing, y);
             y += rowH + rowGap;
         } else {
             this.wHudSnap = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "Snap to Grid" : "Free Move"), () -> LatitudeConfig.hudSnapEnabled)
@@ -867,6 +878,7 @@ public class LatitudeHudStudioScreen extends Screen {
         LatitudeConfig.zoneEnterTitleColorPreset = LatitudeConfig.TitleColorPreset.WHITE;
         LatitudeConfig.zoneEnterTitleRgb = 0xFFFFFF;
         LatitudeConfig.zoneEnterTitleCase = LatitudeConfig.TitleCaseMode.NORMAL;
+        LatitudeConfig.zoneEnterTitleLetterSpacing = 0;
         LatitudeConfig.zoneEnterTitleDraggable = true;
         // Matches LatitudeConfig's own field-initializer defaults (hudSnapEnabled=true, hudSnapPixels=8) --
         // there's no fresh()-style factory on LatitudeConfig (unlike CompassHudConfig), so this follows the same
@@ -947,9 +959,17 @@ public class LatitudeHudStudioScreen extends Screen {
             int labelColor = active ? GOLD : (hovered ? WARM_WHITE : MUTED);
             String label = TAB_LABELS[i];
             int labelW = this.font.width(label);
-            int labelX = x + (tabW - labelW) / 2;
-            int labelY = tabStripY + (TAB_H - this.font.lineHeight) / 2;
-            ctx.text(this.font, label, labelX, labelY, labelColor);
+            int cx = x + tabW / 2;
+            int cy = tabStripY + TAB_H / 2;
+            var m = ctx.pose();
+            m.pushMatrix();
+            try {
+                m.translate(cx, cy);
+                m.scale(TAB_LABEL_SCALE, TAB_LABEL_SCALE);
+                ctx.text(this.font, label, -labelW / 2, -this.font.lineHeight / 2, labelColor);
+            } finally {
+                m.popMatrix();
+            }
             x += tabW + TAB_GAP;
         }
     }
@@ -1041,6 +1061,7 @@ public class LatitudeHudStudioScreen extends Screen {
         setVisible(wTitleColorPreset, sidebarVisible);
         setRgbGroupVisible(rgbTitleColor, sidebarVisible);
         setVisible(wTitleCase, sidebarVisible);
+        setVisible(wTitleLetterSpacing, sidebarVisible);
 
         setVisible(wHudSnap, sidebarVisible);
         setVisible(wHudSnapPixels, sidebarVisible && LatitudeConfig.hudSnapEnabled);
@@ -1206,9 +1227,12 @@ public class LatitudeHudStudioScreen extends Screen {
                 && my <= (cy + halfH + pad);
     }
 
-    /** Uppercase zone title word, matching ZoneEntryNotifier's display names (so the preview reads like the real title). */
+    /** Natural-case zone title word, matching GlobeWarningOverlay's real title text (so the preview reads like
+     *  the real title). Left in natural case rather than forced uppercase so the "Normal" title-case option
+     *  actually looks different from "UPPERCASE" -- ZoneEnterTitleOverlay's applyCase() is what controls the
+     *  final displayed casing. */
     private static String zoneTitleWord(String zoneKey) {
-        String name = switch (zoneKey) {
+        return switch (zoneKey) {
             case "EQUATOR", "TROPICAL" -> "Tropics";
             case "SUBTROPICAL" -> "Subtropics";
             case "TEMPERATE" -> "Temperate";
@@ -1216,7 +1240,6 @@ public class LatitudeHudStudioScreen extends Screen {
             case "POLAR" -> "Polar";
             default -> zoneKey == null ? "Tropics" : zoneKey;
         };
-        return name.toUpperCase(java.util.Locale.ROOT);
     }
 
     private static int snap(int v, int step) {

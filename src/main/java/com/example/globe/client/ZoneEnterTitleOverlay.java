@@ -108,16 +108,51 @@ public final class ZoneEnterTitleOverlay {
     }
 
     // Shared by both render() (real gameplay) and renderStaticAt() (the HUD Studio live preview) so the two
-    // paths can never drift out of sync on color/case styling. text is drawn centered at the local (0,0)
-    // origin -- caller is expected to have already translated/scaled the pose matrix.
+    // paths can never drift out of sync on color/case/spacing styling. text is drawn centered at the local
+    // (0,0) origin -- caller is expected to have already translated/scaled the pose matrix. Always goes through
+    // the per-character drawSpacedText loop (even at spacing=0) rather than branching to ctx.centeredText, so
+    // there is exactly one code path to keep in sync, not two.
     private static void drawStyledTitle(GuiGraphicsExtractor ctx, Font font, String text, int alphaByte) {
+        int spacing = LatitudeConfig.zoneEnterTitleLetterSpacing;
+        int alphaMask = (alphaByte & 0xFF) << 24;
         if (LatitudeConfig.zoneEnterTitleColorPreset == LatitudeConfig.TitleColorPreset.RAINBOW) {
-            RainbowText.drawCentered(ctx, font, text, 0, 0, true, alphaByte);
+            drawSpacedText(ctx, font, text, 0, 0, true, spacing, idx -> alphaMask | RainbowText.paletteColor(idx));
             return;
         }
-        int rgb = titleColorRgb(LatitudeConfig.zoneEnterTitleColorPreset);
-        int argb = (alphaByte << 24) | (rgb & 0xFFFFFF);
-        ctx.centeredText(font, Component.literal(text), 0, 0, argb);
+        int argb = alphaMask | (titleColorRgb(LatitudeConfig.zoneEnterTitleColorPreset) & 0xFFFFFF);
+        drawSpacedText(ctx, font, text, 0, 0, true, spacing, idx -> argb);
+    }
+
+    // Draws text centered at (centerX, centerY), inserting `spacing` extra pixels between adjacent characters
+    // (negative tightens, positive widens). colorForVisibleIndex is called once per non-space character, in
+    // order, so callers can either return one fixed color or cycle a palette (e.g. RainbowText's).
+    private static void drawSpacedText(GuiGraphicsExtractor ctx, Font font, String text, int centerX, int centerY,
+                                        boolean shadow, int spacing, java.util.function.IntUnaryOperator colorForVisibleIndex) {
+        int n = text.length();
+        int totalWidth = 0;
+        for (int i = 0; i < n; i++) {
+            totalWidth += font.width(String.valueOf(text.charAt(i)));
+        }
+        if (n > 1) {
+            totalWidth += spacing * (n - 1);
+        }
+
+        int x = centerX - totalWidth / 2;
+        int y = centerY - font.lineHeight / 2;
+        int visibleIdx = 0;
+        for (int i = 0; i < n; i++) {
+            char c = text.charAt(i);
+            String s = String.valueOf(c);
+            int charWidth = font.width(s);
+            if (c != ' ') {
+                ctx.text(font, s, x, y, colorForVisibleIndex.applyAsInt(visibleIdx), shadow);
+                visibleIdx++;
+            }
+            x += charWidth;
+            if (i < n - 1) {
+                x += spacing;
+            }
+        }
     }
 
     private static int titleColorRgb(LatitudeConfig.TitleColorPreset preset) {

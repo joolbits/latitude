@@ -31,6 +31,7 @@ public final class LatitudeConfig {
     public static TitleColorPreset zoneEnterTitleColorPreset = TitleColorPreset.WHITE;
     public static int zoneEnterTitleRgb = 0xFFFFFF;
     public static TitleCaseMode zoneEnterTitleCase = TitleCaseMode.NORMAL;
+    public static int zoneEnterTitleLetterSpacing = 0; // extra pixels between characters; negative = tighter
 
     public static int zoneEnterTitleOffsetX = 0;
     public static int zoneEnterTitleOffsetY = -40;
@@ -66,6 +67,7 @@ public final class LatitudeConfig {
     private TitleColorPreset zoneEnterTitleColorPresetValue = TitleColorPreset.WHITE;
     private int zoneEnterTitleRgbValue = 0xFFFFFF;
     private TitleCaseMode zoneEnterTitleCaseValue = TitleCaseMode.NORMAL;
+    private int zoneEnterTitleLetterSpacingValue = 0;
 
     private int zoneEnterTitleOffsetXValue = 0;
     private int zoneEnterTitleOffsetYValue = -40;
@@ -131,6 +133,7 @@ public final class LatitudeConfig {
                         zoneEnterTitleColorPreset = cfg.zoneEnterTitleColorPresetValue;
                         zoneEnterTitleRgb = cfg.zoneEnterTitleRgbValue;
                         zoneEnterTitleCase = cfg.zoneEnterTitleCaseValue;
+                        zoneEnterTitleLetterSpacing = cfg.zoneEnterTitleLetterSpacingValue;
 
                         zoneEnterTitleOffsetX = cfg.zoneEnterTitleOffsetXValue;
                         zoneEnterTitleOffsetY = cfg.zoneEnterTitleOffsetYValue;
@@ -174,6 +177,7 @@ public final class LatitudeConfig {
         zoneEnterTitleColorPreset = fresh.zoneEnterTitleColorPresetValue;
         zoneEnterTitleRgb = fresh.zoneEnterTitleRgbValue;
         zoneEnterTitleCase = fresh.zoneEnterTitleCaseValue;
+        zoneEnterTitleLetterSpacing = fresh.zoneEnterTitleLetterSpacingValue;
 
         zoneEnterTitleOffsetX = fresh.zoneEnterTitleOffsetXValue;
         zoneEnterTitleOffsetY = fresh.zoneEnterTitleOffsetYValue;
@@ -214,6 +218,7 @@ public final class LatitudeConfig {
             cfg.zoneEnterTitleColorPresetValue = zoneEnterTitleColorPreset;
             cfg.zoneEnterTitleRgbValue = zoneEnterTitleRgb;
             cfg.zoneEnterTitleCaseValue = zoneEnterTitleCase;
+            cfg.zoneEnterTitleLetterSpacingValue = zoneEnterTitleLetterSpacing;
 
             cfg.zoneEnterTitleOffsetXValue = zoneEnterTitleOffsetX;
             cfg.zoneEnterTitleOffsetYValue = zoneEnterTitleOffsetY;
@@ -252,6 +257,7 @@ public final class LatitudeConfig {
 
         zoneEnterTitleSecondsValue = clamp(zoneEnterTitleSecondsValue, 2.0, 10.0);
         zoneEnterTitleScaleValue = clamp(zoneEnterTitleScaleValue, 1.0, 3.0);
+        zoneEnterTitleLetterSpacingValue = clampInt(zoneEnterTitleLetterSpacingValue, -4, 16);
 
         hudSnapPixelsValue = clampInt(hudSnapPixelsValue, 1, 64);
 
