@@ -31,13 +31,14 @@ import it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.example.globe.adapter.climate.ClimateAuthorityProvider;
 import com.example.globe.adapter.climate.ClimateSummaryProvider;
 import com.example.globe.adapter.climate.NoOpClimateSummaryProvider;
 import com.example.globe.adapter.geo.GeoAuthorityProvider;
 import com.example.globe.adapter.geo.GeoSummaryProvider;
 import com.example.globe.adapter.geo.NoOpGeoSummaryProvider;
 import com.example.globe.core.LatitudeV2Flags;
-import com.example.globe.core.climate.LatitudeBand;
+import com.example.globe.core.climate.ClimateAuthority;
 import com.example.globe.core.geo.GeoAuthority;
 import com.example.globe.util.LatitudeBands;
 import com.example.globe.util.LatitudeMath;
@@ -612,6 +613,7 @@ public final class LatitudeBiomes {
     // Phase 2 GeoAuthority (opt-in via latitude.geoV2.enabled). Rebuilt on seed/radius/shape change,
     // but ONLY when the flag is on; otherwise it stays the no-op provider so flag-off is inert.
     private static volatile GeoSummaryProvider GEO_V2_PROVIDER = NoOpGeoSummaryProvider.INSTANCE;
+    private static volatile ClimateSummaryProvider CLIMATE_V2_PROVIDER = NoOpClimateSummaryProvider.INSTANCE;
 
     private static void rebuildGeoAuthority() {
         if (!LatitudeV2Flags.GEO_V2_ENABLED) {
@@ -626,23 +628,41 @@ public final class LatitudeBiomes {
         }
     }
 
+    private static void rebuildClimateAuthority() {
+        if (!LatitudeV2Flags.CLIMATE_V2_ENABLED) {
+            CLIMATE_V2_PROVIDER = NoOpClimateSummaryProvider.INSTANCE;
+            return;
+        }
+        long seed = WORLD_SEED;
+        int zRadius = ACTIVE_RADIUS_BLOCKS;
+        if (seed != 0L && zRadius > 0) {
+            int xRadius = getActiveXRadiusBlocks();
+            // ClimateAuthority consumes a GeoAuthority; build a dedicated one (independent of the geoV2 flag).
+            CLIMATE_V2_PROVIDER = new ClimateAuthorityProvider(
+                    new ClimateAuthority(new GeoAuthority(seed, zRadius, xRadius)));
+        }
+    }
+
     public static void setWorldSeed(long seed) {
         WORLD_SEED = seed;
         OCEAN_DISTANCE_FIELD = new OceanDistanceField(seed);
         rebuildProvinceAuthority();
         rebuildGeoAuthority();
+        rebuildClimateAuthority();
     }
 
     public static void setRadius(int radius) {
         ACTIVE_RADIUS_BLOCKS = radius;
         rebuildProvinceAuthority();
         rebuildGeoAuthority();
+        rebuildClimateAuthority();
     }
 
     public static void setActiveRadiusBlocks(int radiusBlocks) {
         ACTIVE_RADIUS_BLOCKS = Math.max(0, radiusBlocks);
         rebuildProvinceAuthority();
         rebuildGeoAuthority();
+        rebuildClimateAuthority();
     }
 
     public static int getActiveRadiusBlocks() {
@@ -665,6 +685,7 @@ public final class LatitudeBiomes {
     public static void setGlobeShape(GlobeShape shape) {
         ACTIVE_GLOBE_SHAPE = (shape == null) ? GlobeShape.CLASSIC : shape;
         rebuildGeoAuthority(); // xRadius depends on shape (Mercator = 2x zRadius)
+        rebuildClimateAuthority();
     }
 
     public static GlobeShape getGlobeShape() {
@@ -2839,9 +2860,9 @@ public final class LatitudeBiomes {
             GEO_V2_PROVIDER.summarize(blockX, blockZ);
         }
         if (LatitudeV2Flags.CLIMATE_V2_ENABLED) {
-            ClimateSummaryProvider climateSummaryProvider = NoOpClimateSummaryProvider.INSTANCE;
-            climateSummaryProvider.summarize(
-                    latitudeDegreesFromRadius(blockZ, effectiveRadius), LatitudeBand.valueOf(band.name()));
+            // Phase 3: exercise ClimateAuthority (visible/measured via the offline Atlas tool); the
+            // result is intentionally discarded here so biome selection is unchanged until a later phase.
+            CLIMATE_V2_PROVIDER.summarize(blockX, blockZ);
         }
 
         if (isBeachLike(base) && allowBeachShortcut(generator, columnDecisionY)) {
@@ -3508,9 +3529,9 @@ public final class LatitudeBiomes {
             GEO_V2_PROVIDER.summarize(blockX, blockZ);
         }
         if (LatitudeV2Flags.CLIMATE_V2_ENABLED) {
-            ClimateSummaryProvider climateSummaryProvider = NoOpClimateSummaryProvider.INSTANCE;
-            climateSummaryProvider.summarize(
-                    latitudeDegreesFromRadius(blockZ, effectiveRadius), LatitudeBand.valueOf(band.name()));
+            // Phase 3: exercise ClimateAuthority (visible/measured via the offline Atlas tool); the
+            // result is intentionally discarded here so biome selection is unchanged until a later phase.
+            CLIMATE_V2_PROVIDER.summarize(blockX, blockZ);
         }
 
         if (isBeachLike(base) && allowBeachShortcut(generator, columnDecisionY)) {

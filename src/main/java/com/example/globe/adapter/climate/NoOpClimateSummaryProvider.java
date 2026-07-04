@@ -4,8 +4,8 @@ import com.example.globe.core.climate.ClimateSummary;
 import com.example.globe.core.climate.LatitudeBand;
 
 /**
- * Always returns {@link ClimateSummary#neutral(double, LatitudeBand)}. The only implementation
- * in use while {@code latitude.climateV2.enabled} is {@code false}.
+ * Always returns a neutral {@link ClimateSummary}. The only implementation in use while
+ * {@code latitude.climateV2.enabled} is {@code false}.
  */
 public final class NoOpClimateSummaryProvider implements ClimateSummaryProvider {
 
@@ -15,7 +15,7 @@ public final class NoOpClimateSummaryProvider implements ClimateSummaryProvider 
     }
 
     @Override
-    public ClimateSummary summarize(double latitudeDeg, LatitudeBand band) {
-        return ClimateSummary.neutral(latitudeDeg, band);
+    public ClimateSummary summarize(int blockX, int blockZ) {
+        return ClimateSummary.neutral(0.0, LatitudeBand.TROPICAL);
     }
 }

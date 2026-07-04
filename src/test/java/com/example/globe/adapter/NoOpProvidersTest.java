@@ -3,12 +3,12 @@ package com.example.globe.adapter;
 import com.example.globe.adapter.climate.NoOpClimateSummaryProvider;
 import com.example.globe.adapter.geo.NoOpGeoSummaryProvider;
 import com.example.globe.core.climate.ClimateSummary;
-import com.example.globe.core.climate.LatitudeBand;
 import com.example.globe.core.geo.GeoSummary;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * These two provider implementations are the only ones wired into
@@ -25,10 +25,10 @@ class NoOpProvidersTest {
     }
 
     @Test
-    void climateProviderAlwaysReturnsNeutralForGivenLatitudeAndBand() {
-        ClimateSummary summary = NoOpClimateSummaryProvider.INSTANCE.summarize(51.0, LatitudeBand.SUBPOLAR);
-        assertEquals(51.0, summary.latitudeDeg());
-        assertEquals(LatitudeBand.SUBPOLAR, summary.band());
+    void climateProviderAlwaysReturnsNeutral() {
+        ClimateSummary summary = NoOpClimateSummaryProvider.INSTANCE.summarize(123, -456);
         assertEquals(0.0, summary.temperature01());
+        assertEquals(0.0, summary.precipitation01());
+        assertTrue(summary.diagnosticFlags().isEmpty());
     }
 }
