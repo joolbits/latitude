@@ -243,6 +243,15 @@ tasks.register('geoAuthorityAtlas', JavaExec) {
     dependsOn classes
 }
 
+// Phase 3 ClimateAuthority offline proof tool (pure Java, no Minecraft server).
+tasks.register('climateAtlas', JavaExec) {
+    group = 'verification'
+    description = 'Rasterize + measure ClimateAuthority (temperature/precip/climateClass distribution)'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'com.example.globe.dev.ClimateAtlas'
+    dependsOn classes
+}
+
 // Invariant scan: ensure first-load messaging stays wired
 tasks.register('latitudeInvariantScan', JavaExec) {
     group = 'verification'
