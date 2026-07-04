@@ -17,11 +17,14 @@ disabled flags, with a flag-off byte-identical proof against `save/canonical-26.
   (`drainageBasinId`/`flowDirection`/`coastOutletId`, still neutral). Flag defaults off → worldgen
   byte-identical; the Phase 2 consumer discards the summary (does not yet drive biome selection). Design:
   `docs/design/geoauthority-design-20260703.md`; proof: `docs/binder/phase2-geoauthority-20260703.md`.
-- **`ClimateSummary`: scaffolded, not implemented.** All 14 fields exist as a pure-Java record
-  (`com.example.globe.core.climate.ClimateSummary`), plus a `LatitudeBand` enum reusing the existing
-  `LatitudeBiomes` band names. No ClimateAuthority populates real intent yet — that's Phase 3.
-  `seasonalityClass`/`climateClass` are deliberately untyped (empty strings) since Phase 3 owns that
-  taxonomy design, not Phase 0.
+- **`ClimateSummary`: IMPLEMENTED behind `latitude.climateV2.enabled` (Phase 3, 2026-07-03).**
+  `com.example.globe.core.climate.ClimateAuthority` ("Fetch & Lift") populates all 14 fields with a real
+  earthlike climate transported from Phase 2's geography (bounded upwind ocean-fetch, three-cell winds,
+  basin-relative currents, diagnostic orography). `seasonalityClass`/`climateClass` are now typed
+  taxonomies (`SeasonalityClass`, `ClimateClass`) with a vanilla biome family per class. Flag defaults
+  off → worldgen byte-identical; the Phase 3 consumer discards the summary (does not yet drive biome
+  selection). Design: `docs/design/climateauthority-design-20260703.md`; proof:
+  `docs/binder/phase3-climateauthority-20260703.md`.
 - **Flags: implemented.** `latitude.geoV2.enabled` / `latitude.climateV2.enabled`
   (`com.example.globe.core.LatitudeV2Flags`), both default `false`.
 - **Biome registry lookup / tag membership / Holder conversion / Climate.Sampler adapters: scaffolded,
