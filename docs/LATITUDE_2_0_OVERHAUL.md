@@ -752,6 +752,97 @@ stating clearly whether Phase 1 (Measurement Harness) is next, or whether someth
 needs Peetsa's input first.
 ```
 
+## Kickoff Slice Prompt (Biome Consumer only)
+
+Added 2026-07-03, once Phase 0 (Portability Foundation), Phase 1 (Measurement Harness), Phase 2
+(GeoAuthority Prototype), and Phase 3 (ClimateAuthority Prototype) all proof-completed. This is the
+first slice where a flag flip changes what a generated world actually looks like — everything before
+it was provably inert (flag-off byte-identical, flag-on computed-and-discarded). Read the stakes
+paragraph in the working card before starting; this is not a "green checkmark = done" phase.
+
+```
+Kick off Latitude 2.0 overhaul work: the Biome Consumer slice only (wiring GeoAuthority + ClimateAuthority
+into actual biome selection). Stop before Phase 4 (Terrain Integration Spike) — that is a separate,
+higher-risk slice (documented prior ocean-sink seam failure) with its own working card.
+
+MODEL: Sonnet, medium reasoning effort by default. Escalate to Opus (or delegate a bounded sub-question
+to an Opus sub-agent) ONLY for a specific integration-design fork you can't resolve mechanically — e.g.
+"does GeoAuthority-driven ocean placement replace OceanDistanceField outright, or run alongside it."
+This is consumer/integration work on an already-locked design, not from-scratch algorithm design, so it
+does not default to Opus the way Phase 2/3 did. See docs/binder/model-effort-strategy-20260702.md.
+
+STAKES (read this before touching anything):
+Phases 0-3 were deliberately inert: every proof was mechanical (SHA-256 diff, unit-test assertions), and
+nothing a player has ever seen could change, because both v2 flags default off and every consumer so far
+discards its computed summary. This slice is the first one where flipping a flag changes generated
+terrain/biomes for real. That flips the proof model: a green checkmark here is necessary but NOT
+sufficient. The gate is Peetsa's live eyeball on a real generated world, not just automated diffs.
+Two disclosed tuning risks from Phase 2/3 could become visible problems here instead of diagnostic
+curiosities: the supercontinent tail (docs/binder/phase2-geoauthority-20260703.md residual risk #1,
+tune via -Dlatitude.geoV2.lplateRatio) and the aggressive alpine cooling (docs/binder/phase3-
+climateauthority-20260703.md residual risk #1, tune via -Dlatitude.climateV2.kAlt). Have both knobs in
+hand when doing the live pass. Slow down, use small worlds first, and stop and ask rather than pushing
+through if something looks wrong that you can't explain.
+
+READ FIRST (in order):
+1. docs/LATITUDE_2_0_OVERHAUL.md (front door — read the whole thing, especially Portability Spine,
+   Architecture, and this working card)
+2. docs/design/geoauthority-design-20260703.md (GeoAuthority field contract + residual risks)
+3. docs/design/climateauthority-design-20260703.md (ClimateAuthority field contract + residual risks)
+4. docs/binder/phase2-geoauthority-20260703.md and docs/binder/phase3-climateauthority-20260703.md
+   (what was measured, what was deliberately deferred to this slice)
+5. docs/porting/PORTABILITY_ARCHITECTURE.md (current scaffolded-vs-implemented status)
+6. Vanilla-first constraint (memory: vanilla-first-overhaul-constraint) — this slice is where it becomes
+   load-bearing instead of automatic. Phases 0-3 satisfied it for free (pure math, no biome lookups);
+   this slice is exactly the place it could quietly fail (a climateClass resolving to a family whose
+   vanilla biome doesn't exist in some registry state, or silently depending on a pack tag).
+7. src/main/java/com/example/globe/world/LatitudeBiomes.java's existing pick() cascade (10,000+ lines of
+   tuned province/band/tag logic) — understand what this slice needs to coexist with, not fight or
+   silently duplicate.
+
+WORKING CARD — fill this in before touching anything:
+- Objective: decide and implement the integration boundary where GeoAuthority's isOceanIntent/
+  continentId/land01 and ClimateAuthority's climateClass/seasonalityClass actually select a vanilla
+  biome family for a column, behind BOTH latitude.geoV2.enabled and latitude.climateV2.enabled staying
+  the on/off gate (or a new dedicated consumer flag if the integration-design fork above resolves that
+  way — state which and why). Vanilla-first: climateClass -> vanilla family must resolve correctly with
+  zero datapacks; custom-pack biomes are optional enrichment within that family, never required.
+- Root/profile: confirm current root, branch, HEAD, and Modrinth profile truth before any edit (repo
+  preflight per LESSONS L3). Expected: port/canonical-26.2-pivot, HEAD 8de7b832 or later.
+- Allowed work: a new biome-selection path (or a clearly-scoped modification to the existing pick()
+  cascade) that consumes GeoSummary/ClimateSummary to choose a biome family, gated behind the agreed
+  flag(s); vanilla-biome resolution logic; the mapping from ClimateClass's vanillaFamily() to concrete
+  Holder<Biome> lookups; whatever adapter-layer plumbing (BiomeRegistryAdapter etc., already scaffolded
+  in Phase 0 but unwired) this needs.
+- Forbidden lanes: no Phase 4 terrain work (density functions, height integration); no changing
+  flag-off behavior (Classic/current Longitude with both flags off must stay byte-identical — this is
+  still a Hard Stop); no silently rewriting the existing province/band cascade wholesale — integrate
+  alongside it first, replace pieces only with a clear before/after rationale; no shipping this with the
+  flags defaulted on.
+- Proof gate (both required, neither alone is sufficient):
+  1. Mechanical: compileJava green; unit tests green; flag-off byte-identical headless exact-ID atlas
+     proof (same discipline as Phases 0-3); a VANILLA-ONLY headless atlas run (zero datapacks) with the
+     flag(s) on, proving every reachable climateClass/geography combination resolves to a real vanilla
+     biome (no fallback-to-base-biome silent failures).
+  2. Live: a real generated world, small size first, with Peetsa looking at it — does it read as a
+     believable world, not just a technically-correct one. Do not consider this slice done from
+     automated proof alone.
+- Stop condition (in addition to the plan's own Hard Stops):
+  - flag-off output differs for Classic/current Longitude at all (unchanged Hard Stop)
+  - a climateClass or geography combination has no reachable vanilla biome under a vanilla-only run
+  - the new consumer path silently depends on a pack tag/biome being present
+  - the existing tuned province/band behavior visibly regresses (e.g. a previously-fixed overrep/leak
+    issue reappears) without an explicit, reasoned decision to accept that tradeoff
+  - anything looks wrong live that can't be explained by a known, disclosed tuning knob
+  If any of these trigger, stop and write up what's blocking rather than pushing through.
+
+DELIVERABLE: a dated binder note recording the integration-boundary decision, what was wired, the
+vanilla-only + flag-off proof results, and (once Peetsa has done a live pass) the live-eyeball findings
+and any tuning-knob adjustments made. Local commits only — ask before tagging or pushing. End by stating
+plainly whether this slice is ready for a live session with Peetsa at the keyboard, or whether something
+needs his input first.
+```
+
 ## Linked Docs
 
 - `docs/binder/model-effort-strategy-20260702.md` — which model/reasoning-effort per phase, and what a future
@@ -767,3 +858,10 @@ needs Peetsa's input first.
 - `docs/porting/PORTING.md`
 - `docs/porting/VERSION_MATRIX.md`
 - `docs/porting/PORTABILITY_ARCHITECTURE.md`
+- `docs/binder/phase0-portability-foundation-20260703.md`
+- `docs/binder/phase1-measurement-harness-20260703.md`
+- `docs/design/atlas-geography-overlay-plan-20260703.md`
+- `docs/design/geoauthority-design-20260703.md`
+- `docs/binder/phase2-geoauthority-20260703.md`
+- `docs/design/climateauthority-design-20260703.md`
+- `docs/binder/phase3-climateauthority-20260703.md`
