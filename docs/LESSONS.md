@@ -1,6 +1,6 @@
 # Latitude Lessons
 
-`scope: durable project lessons` · `status: active` · `updated: 2026-06-19`
+`scope: durable project lessons` · `status: active` · `updated: 2026-07-03`
 
 This is the short "do not relearn this" file for Latitude. It is not the session log. The dated session log stays in `docs/binder/`, and the live resume pointer stays in `docs/HANDOFF.md`.
 
@@ -187,4 +187,56 @@ Required future behavior:
 
 Evidence:
 - `Latitude-custom-biome-expansion-26.1.2/docs/binder/current-state-handoff-20260701.md`
+
+## L11 - "Docs Updated" Means Every Required Surface, Not Just The Dated Note
+
+Trigger: any slice that adds a dated `docs/binder/` note (design note, phase note, proof note).
+
+Lesson: a dated binder note is necessary but not sufficient. This repo's own entrypoint rule says every
+binder update must also land a row in `evidence-registry.md` and a topic entry in `index.md` (see the
+"Entrypoint rule" at the bottom of `index.md` on the active worktree). During the Latitude 2.0
+GeoAuthority/ClimateAuthority phases (0-3, `Latitude-2.0-26.2-pivot`), four dated binder notes and two
+design notes were written and linked from the front-door doc, but `evidence-registry.md` and `index.md`
+were not updated until Peetsa directly asked "did you update the binder, handoff, and lessons." A repeat
+of the exact failure mode L9 already named.
+
+Required future behavior:
+- Whenever a dated binder note is added on any worktree, add its `evidence-registry.md` row and
+  `index.md` topic entry in the SAME pass, not as a follow-up prompted by the user noticing.
+- When asked "did you update docs," check all three surfaces explicitly (binder note + registry/index +
+  this lessons file if a durable rule emerged) before answering yes.
+- Treat "I linked it from the front-door doc" as necessary, not sufficient — the registry/index is the
+  machine-checkable surface this project's own contract requires.
+
+Evidence:
+- `Latitude-2.0-26.2-pivot/docs/binder/evidence-registry.md` rows `20260703-phase0-portability-foundation`
+  through `20260703-phase3-climateauthority` (added retroactively, 2026-07-03, after Peetsa asked).
+- `Latitude-2.0-26.2-pivot/docs/binder/index.md` — "2026-07-03 additions (GeoAuthority/ClimateAuthority
+  phases 0-3)" section (same retroactive pass).
+
+## L12 - A Type Bit XORed Into A Hash Does Not Guarantee Disjoint Namespaces; Parity Does
+
+Trigger: any scheme that assigns stable ids to two mutually-exclusive categories (land/ocean,
+continent/basin, etc.) by mixing a "which category" bit into a hash before taking the result as an id.
+
+Lesson: during Phase 2 (GeoAuthority), the synthesized design assigned `compId = mix64(key ^ typeBit)`
+and asserted land ids and ocean ids would never collide because the type bit differed. A JVM test
+(`idNamespacesDisjoint`) found a real collision: two different keys, one land-typed and one ocean-typed,
+mixed to the same output value. XOR-then-hash does not preserve any structural separation — the hash
+scrambles it away. The fix that actually guarantees disjointness is to force a parity bit on the FINAL
+id (land ids even, ocean ids odd) after hashing, not to fold the type into the hash input.
+
+Required future behavior:
+- When two categories must never share an id space, enforce it structurally on the final value (parity,
+  a reserved high bit, or two disjoint integer ranges) — never rely on "the hash of different inputs
+  will probably differ."
+- Write the adversarial test for this BEFORE trusting a design document's own disjointness claim, even
+  (especially) when the claim came from a rigorous multi-agent design/judge process — a design panel can
+  simulate the happy path and still miss a structural guarantee a plain unit test catches immediately.
+
+Evidence:
+- `Latitude-2.0-26.2-pivot/src/main/java/com/example/globe/core/geo/GeoNoise.java` (`typedCompId`,
+  parity-based fix) and `GeoAuthority.java` (parity enforced on the final `compId` from the column's own
+  type, not just the table-lookup path).
+- `Latitude-2.0-26.2-pivot/docs/binder/phase2-geoauthority-20260703.md` ("Findings / decisions" section).
 - `docs/binder/agent-doc-upkeep-rule-20260619.md`
