@@ -17,4 +17,10 @@ class LatitudeV2FlagsTest {
         assertFalse(LatitudeV2Flags.CLIMATE_V2_ENABLED,
                 "Phase 0 must ship with ClimateAuthority v2 disabled by default");
     }
+
+    @Test
+    void biomeConsumerV2DefaultsToDisabled() {
+        assertFalse(LatitudeV2Flags.BIOME_CONSUMER_V2_ENABLED,
+                "Biome Consumer slice must ship with the consumer flag disabled by default");
+    }
 }
