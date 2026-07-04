@@ -33,10 +33,12 @@ import org.slf4j.LoggerFactory;
 
 import com.example.globe.adapter.climate.ClimateSummaryProvider;
 import com.example.globe.adapter.climate.NoOpClimateSummaryProvider;
+import com.example.globe.adapter.geo.GeoAuthorityProvider;
 import com.example.globe.adapter.geo.GeoSummaryProvider;
 import com.example.globe.adapter.geo.NoOpGeoSummaryProvider;
 import com.example.globe.core.LatitudeV2Flags;
 import com.example.globe.core.climate.LatitudeBand;
+import com.example.globe.core.geo.GeoAuthority;
 import com.example.globe.util.LatitudeBands;
 import com.example.globe.util.LatitudeMath;
 import com.example.globe.util.ValueNoise2D;
@@ -607,20 +609,40 @@ public final class LatitudeBiomes {
                 SPARSE_JUNGLE_AUDIT_LOG_LIMIT);
     }
 
+    // Phase 2 GeoAuthority (opt-in via latitude.geoV2.enabled). Rebuilt on seed/radius/shape change,
+    // but ONLY when the flag is on; otherwise it stays the no-op provider so flag-off is inert.
+    private static volatile GeoSummaryProvider GEO_V2_PROVIDER = NoOpGeoSummaryProvider.INSTANCE;
+
+    private static void rebuildGeoAuthority() {
+        if (!LatitudeV2Flags.GEO_V2_ENABLED) {
+            GEO_V2_PROVIDER = NoOpGeoSummaryProvider.INSTANCE;
+            return;
+        }
+        long seed = WORLD_SEED;
+        int zRadius = ACTIVE_RADIUS_BLOCKS;
+        if (seed != 0L && zRadius > 0) {
+            int xRadius = getActiveXRadiusBlocks();
+            GEO_V2_PROVIDER = new GeoAuthorityProvider(new GeoAuthority(seed, zRadius, xRadius));
+        }
+    }
+
     public static void setWorldSeed(long seed) {
         WORLD_SEED = seed;
         OCEAN_DISTANCE_FIELD = new OceanDistanceField(seed);
         rebuildProvinceAuthority();
+        rebuildGeoAuthority();
     }
 
     public static void setRadius(int radius) {
         ACTIVE_RADIUS_BLOCKS = radius;
         rebuildProvinceAuthority();
+        rebuildGeoAuthority();
     }
 
     public static void setActiveRadiusBlocks(int radiusBlocks) {
         ACTIVE_RADIUS_BLOCKS = Math.max(0, radiusBlocks);
         rebuildProvinceAuthority();
+        rebuildGeoAuthority();
     }
 
     public static int getActiveRadiusBlocks() {
@@ -642,6 +664,7 @@ public final class LatitudeBiomes {
 
     public static void setGlobeShape(GlobeShape shape) {
         ACTIVE_GLOBE_SHAPE = (shape == null) ? GlobeShape.CLASSIC : shape;
+        rebuildGeoAuthority(); // xRadius depends on shape (Mercator = 2x zRadius)
     }
 
     public static GlobeShape getGlobeShape() {
@@ -2811,8 +2834,9 @@ public final class LatitudeBiomes {
         // false, so these branches never execute and never affect biome selection; see
         // docs/porting/PORTABILITY_ARCHITECTURE.md.
         if (LatitudeV2Flags.GEO_V2_ENABLED) {
-            GeoSummaryProvider geoSummaryProvider = NoOpGeoSummaryProvider.INSTANCE;
-            geoSummaryProvider.summarize(blockX, blockZ);
+            // Phase 2: exercise GeoAuthority (visible/measured via the offline Atlas tool); the result
+            // is intentionally discarded here so biome selection is unchanged until a later phase.
+            GEO_V2_PROVIDER.summarize(blockX, blockZ);
         }
         if (LatitudeV2Flags.CLIMATE_V2_ENABLED) {
             ClimateSummaryProvider climateSummaryProvider = NoOpClimateSummaryProvider.INSTANCE;
@@ -3479,8 +3503,9 @@ public final class LatitudeBiomes {
         // false, so these branches never execute and never affect biome selection; see
         // docs/porting/PORTABILITY_ARCHITECTURE.md.
         if (LatitudeV2Flags.GEO_V2_ENABLED) {
-            GeoSummaryProvider geoSummaryProvider = NoOpGeoSummaryProvider.INSTANCE;
-            geoSummaryProvider.summarize(blockX, blockZ);
+            // Phase 2: exercise GeoAuthority (visible/measured via the offline Atlas tool); the result
+            // is intentionally discarded here so biome selection is unchanged until a later phase.
+            GEO_V2_PROVIDER.summarize(blockX, blockZ);
         }
         if (LatitudeV2Flags.CLIMATE_V2_ENABLED) {
             ClimateSummaryProvider climateSummaryProvider = NoOpClimateSummaryProvider.INSTANCE;
