@@ -760,6 +760,14 @@ first slice where a flag flip changes what a generated world actually looks like
 it was provably inert (flag-off byte-identical, flag-on computed-and-discarded). Read the stakes
 paragraph in the working card before starting; this is not a "green checkmark = done" phase.
 
+**Status (2026-07-04): implemented, flag-off byte-identical, NOT ready for a live pass.** The stakes
+paragraph's caution was warranted — a real finding surfaced before a live session was reached: with the
+consumer flag on, live land fraction collapses to ~13% (vs GeoAuthority's own calibrated ~39%) because
+the existing `base.is(BiomeTags.IS_OCEAN) || oceanAuthority` union in `pick()` compounds two now-largely-
+independent "is this ocean" fields instead of the old, highly-overlapping ODF-vs-terrain pair. Full
+mechanism, diagnostic evidence, and three options for how to proceed in
+`docs/binder/biome-consumer-slice-20260704.md`. Needs Peetsa's decision before the next thread proceeds.
+
 ```
 Kick off Latitude 2.0 overhaul work: the Biome Consumer slice only (wiring GeoAuthority + ClimateAuthority
 into actual biome selection). Stop before Phase 4 (Terrain Integration Spike) — that is a separate,
