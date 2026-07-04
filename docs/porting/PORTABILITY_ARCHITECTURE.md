@@ -11,9 +11,12 @@ Phase 0 (`docs/LATITUDE_2_0_OVERHAUL.md`) added the no-op contracts and adapter 
 disabled flags, with a flag-off byte-identical proof against `save/canonical-26.2-baseline`. Full detail in
 `docs/binder/phase0-portability-foundation-20260703.md`.
 
-- **`GeoSummary`: scaffolded, not implemented.** All 15 fields exist as a pure-Java record
-  (`com.example.globe.core.geo.GeoSummary`) with a neutral constant. No GeoAuthority populates real
-  intent yet — that's Phase 2.
+- **`GeoSummary`: IMPLEMENTED behind `latitude.geoV2.enabled` (Phase 2, 2026-07-03).**
+  `com.example.globe.core.geo.GeoAuthority` populates real macro-geography intent (coherent continents +
+  a dominant connected ocean basin) into all 15 fields except the reserved hydrology trio
+  (`drainageBasinId`/`flowDirection`/`coastOutletId`, still neutral). Flag defaults off → worldgen
+  byte-identical; the Phase 2 consumer discards the summary (does not yet drive biome selection). Design:
+  `docs/design/geoauthority-design-20260703.md`; proof: `docs/binder/phase2-geoauthority-20260703.md`.
 - **`ClimateSummary`: scaffolded, not implemented.** All 14 fields exist as a pure-Java record
   (`com.example.globe.core.climate.ClimateSummary`), plus a `LatitudeBand` enum reusing the existing
   `LatitudeBiomes` band names. No ClimateAuthority populates real intent yet — that's Phase 3.
