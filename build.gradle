@@ -234,6 +234,15 @@ publishing {
     }
 }
 
+// Phase 2 GeoAuthority offline proof tool (pure Java, no Minecraft server).
+tasks.register('geoAuthorityAtlas', JavaExec) {
+    group = 'verification'
+    description = 'Rasterize + measure GeoAuthority macro-geography (analyzer-compatible artifacts)'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'com.example.globe.dev.GeoAuthorityAtlas'
+    dependsOn classes
+}
+
 // Invariant scan: ensure first-load messaging stays wired
 tasks.register('latitudeInvariantScan', JavaExec) {
     group = 'verification'
