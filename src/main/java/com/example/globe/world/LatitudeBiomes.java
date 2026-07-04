@@ -39,7 +39,10 @@ import com.example.globe.adapter.geo.GeoSummaryProvider;
 import com.example.globe.adapter.geo.NoOpGeoSummaryProvider;
 import com.example.globe.core.LatitudeV2Flags;
 import com.example.globe.core.climate.ClimateAuthority;
+import com.example.globe.core.climate.ClimateClass;
+import com.example.globe.core.climate.ClimateSummary;
 import com.example.globe.core.geo.GeoAuthority;
+import com.example.globe.core.geo.GeoSummary;
 import com.example.globe.util.LatitudeBands;
 import com.example.globe.util.LatitudeMath;
 import com.example.globe.util.ValueNoise2D;
@@ -2850,20 +2853,14 @@ public final class LatitudeBiomes {
         LatitudeBands.Band band = bandForAbsLatFraction(t);
         int bandIndex = bandIndexForBand(band);
 
-        // Phase 0 portability scaffolding: disabled-by-default no-op call sites for the future
         // GeoAuthority (Phase 2) / ClimateAuthority (Phase 3) summaries. Both flags default to
-        // false, so these branches never execute and never affect biome selection; see
-        // docs/porting/PORTABILITY_ARCHITECTURE.md.
-        if (LatitudeV2Flags.GEO_V2_ENABLED) {
-            // Phase 2: exercise GeoAuthority (visible/measured via the offline Atlas tool); the result
-            // is intentionally discarded here so biome selection is unchanged until a later phase.
-            GEO_V2_PROVIDER.summarize(blockX, blockZ);
-        }
-        if (LatitudeV2Flags.CLIMATE_V2_ENABLED) {
-            // Phase 3: exercise ClimateAuthority (visible/measured via the offline Atlas tool); the
-            // result is intentionally discarded here so biome selection is unchanged until a later phase.
-            CLIMATE_V2_PROVIDER.summarize(blockX, blockZ);
-        }
+        // false, so this stays a no-op computation. Whether the summary actually CHANGES biome
+        // selection is gated separately below by LatitudeV2Flags.BIOME_CONSUMER_V2_ENABLED (the
+        // Biome Consumer slice) -- see docs/porting/PORTABILITY_ARCHITECTURE.md.
+        GeoSummary geoV2Summary = LatitudeV2Flags.GEO_V2_ENABLED
+                ? GEO_V2_PROVIDER.summarize(blockX, blockZ) : null;
+        ClimateSummary climateV2Summary = LatitudeV2Flags.CLIMATE_V2_ENABLED
+                ? CLIMATE_V2_PROVIDER.summarize(blockX, blockZ) : null;
 
         if (isBeachLike(base) && allowBeachShortcut(generator, columnDecisionY)) {
             Holder<Biome> out = pickBeachForBand(biomeRegistry, base, blockX, blockZ, bandIndex);
@@ -2933,6 +2930,14 @@ public final class LatitudeBiomes {
         int oceanDistance = oceanDistanceBlocks(blockX, blockZ, sampler);
         boolean nearOcean = oceanDistance <= MANGROVE_COASTAL_MAX_BLOCKS;
         boolean oceanAuthority = oceanDistance == 0;
+        // Biome Consumer slice: GeoAuthority's coherent continent/ocean-basin intent replaces the
+        // coarse per-cell OceanDistanceField threshold as land/ocean AUTHORITY -- this is the actual
+        // Phase 2 fix (coherent continents, a dominant ocean basin) reaching live worldgen instead of
+        // only the offline proof tool. Requires BOTH the consumer flag and geoV2 to be on; with either
+        // off this is a no-op and oceanAuthority keeps its original ODF-derived value.
+        if (LatitudeV2Flags.BIOME_CONSUMER_V2_ENABLED && geoV2Summary != null) {
+            oceanAuthority = geoV2Summary.isOceanIntent();
+        }
         // Veto coarse ODF ocean authority when real terrain is clearly raised land
         if (oceanAuthority && !base.is(BiomeTags.IS_OCEAN)
                 && generator != null && noiseConfig != null && heightView != null) {
@@ -3323,6 +3328,13 @@ public final class LatitudeBiomes {
             }
         }
         Holder<Biome> postFinalSavannaClamp = out;
+        // Biome Consumer slice: ClimateAuthority as a live version of the existing offline
+        // band-correctness law (arid forbidden in wet tropics, frozen forbidden equatorward, etc.) --
+        // reroll ONLY on a clear climate/biome-family mismatch the existing province/band cascade
+        // above did not anticipate; leave every compatible pick from that cascade untouched.
+        if (LatitudeV2Flags.BIOME_CONSUMER_V2_ENABLED && climateV2Summary != null) {
+            out = applyClimateCompatReroll(biomeRegistry, out, climateV2Summary, blockX, blockZ);
+        }
         logSubtropicalSwampTrace(
                 blockX,
                 blockZ,
@@ -3519,20 +3531,14 @@ public final class LatitudeBiomes {
         LatitudeBands.Band band = bandForAbsLatFraction(t);
         int bandIndex = bandIndexForBand(band);
 
-        // Phase 0 portability scaffolding: disabled-by-default no-op call sites for the future
         // GeoAuthority (Phase 2) / ClimateAuthority (Phase 3) summaries. Both flags default to
-        // false, so these branches never execute and never affect biome selection; see
-        // docs/porting/PORTABILITY_ARCHITECTURE.md.
-        if (LatitudeV2Flags.GEO_V2_ENABLED) {
-            // Phase 2: exercise GeoAuthority (visible/measured via the offline Atlas tool); the result
-            // is intentionally discarded here so biome selection is unchanged until a later phase.
-            GEO_V2_PROVIDER.summarize(blockX, blockZ);
-        }
-        if (LatitudeV2Flags.CLIMATE_V2_ENABLED) {
-            // Phase 3: exercise ClimateAuthority (visible/measured via the offline Atlas tool); the
-            // result is intentionally discarded here so biome selection is unchanged until a later phase.
-            CLIMATE_V2_PROVIDER.summarize(blockX, blockZ);
-        }
+        // false, so this stays a no-op computation. Whether the summary actually CHANGES biome
+        // selection is gated separately below by LatitudeV2Flags.BIOME_CONSUMER_V2_ENABLED (the
+        // Biome Consumer slice) -- see docs/porting/PORTABILITY_ARCHITECTURE.md.
+        GeoSummary geoV2Summary = LatitudeV2Flags.GEO_V2_ENABLED
+                ? GEO_V2_PROVIDER.summarize(blockX, blockZ) : null;
+        ClimateSummary climateV2Summary = LatitudeV2Flags.CLIMATE_V2_ENABLED
+                ? CLIMATE_V2_PROVIDER.summarize(blockX, blockZ) : null;
 
         if (isBeachLike(base) && allowBeachShortcut(generator, columnDecisionY)) {
             Holder<Biome> out = pickBeachForBand(biomePool, base, blockX, blockZ, bandIndex);
@@ -3602,6 +3608,14 @@ public final class LatitudeBiomes {
         int oceanDistance = oceanDistanceBlocks(blockX, blockZ, sampler);
         boolean nearOcean = oceanDistance <= MANGROVE_COASTAL_MAX_BLOCKS;
         boolean oceanAuthority = oceanDistance == 0;
+        // Biome Consumer slice: GeoAuthority's coherent continent/ocean-basin intent replaces the
+        // coarse per-cell OceanDistanceField threshold as land/ocean AUTHORITY -- this is the actual
+        // Phase 2 fix (coherent continents, a dominant ocean basin) reaching live worldgen instead of
+        // only the offline proof tool. Requires BOTH the consumer flag and geoV2 to be on; with either
+        // off this is a no-op and oceanAuthority keeps its original ODF-derived value.
+        if (LatitudeV2Flags.BIOME_CONSUMER_V2_ENABLED && geoV2Summary != null) {
+            oceanAuthority = geoV2Summary.isOceanIntent();
+        }
         // Veto coarse ODF ocean authority when real terrain is clearly raised land
         if (oceanAuthority && !base.is(BiomeTags.IS_OCEAN)
                 && generator != null && noiseConfig != null && heightView != null) {
@@ -3959,6 +3973,9 @@ public final class LatitudeBiomes {
             out = applyFinalSavannaClimateClamp(biomePool, out, finalSavannaRegion, landBandIndex, columnDecisionY, blockX, blockZ);
         }
         Holder<Biome> postFinalSavannaClamp = out;
+        if (LatitudeV2Flags.BIOME_CONSUMER_V2_ENABLED && climateV2Summary != null) {
+            out = applyClimateCompatReroll(biomePool, out, climateV2Summary, blockX, blockZ);
+        }
         Holder<Biome> postFinalClamp = out;
         int overlayBandIndex = authoritativeLandBandIndex(blockX, blockZ, effectiveRadius);
         logSubtropicalJungleReturn("pick-collection", blockX, blockZ, t, landBandIndex, base, chosen, sanitized, preBandEnforce, postBandEnforce, postFinalClamp, out);
@@ -9723,6 +9740,84 @@ public final class LatitudeBiomes {
             }
         }
 
+        return pick;
+    }
+
+    // Biome Consumer slice (ClimateAuthority live law). Coherent variant-selection noise so a reroll
+    // patch reads as one region, not per-block dither (Art VI: no floorDiv/cell-hash).
+    private static final long CLIMATE_COMPAT_VARIANT_SALT = 0x636C696D5F636D70L; // "clim_cmp"
+    private static final int CLIMATE_COMPAT_VARIANT_SCALE_BLOCKS = 256;
+
+    /**
+     * Whether {@code biome}'s family is a clear structural mismatch for {@code climateClass} -- the
+     * live analogue of {@code tools/atlas/band_correctness_check.py}'s offline wrong-band-contamination
+     * check. Deliberately conservative: only the most obviously-wrong combinations reroll (frozen biome
+     * in a hot climate, jungle in a desert climate, desert/snow in a rainforest climate); anything not
+     * listed here is treated as compatible and left untouched, so the existing province/band cascade's
+     * tuned variety survives everywhere except genuine mismatches.
+     */
+    private static boolean climateFamilyMismatch(ClimateClass climateClass, Holder<Biome> biome) {
+        return switch (climateClass) {
+            case ICE_CAP, TUNDRA, BOREAL, COLD_STEPPE ->
+                    isJungleFamily(biome) || isDesertFamily(biome) || isBadlandsFamily(biome) || isSavannaFamily(biome);
+            case HOT_DESERT, COOL_DESERT -> isJungleFamily(biome);
+            case TROPICAL_RAINFOREST, TROPICAL_MONSOON ->
+                    isDesertFamily(biome) || isBadlandsFamily(biome) || isSnowyVariant(biome);
+            default -> false; // no live law for this class yet; conservative no-op
+        };
+    }
+
+    /** Picks a coherent index into a non-empty vanilla-family list (never per-block dither). */
+    private static int climateCompatVariantIndex(int blockX, int blockZ, int size) {
+        double v = ValueNoise2D.sampleBlocks(WORLD_SEED ^ CLIMATE_COMPAT_VARIANT_SALT, blockX, blockZ,
+                CLIMATE_COMPAT_VARIANT_SCALE_BLOCKS);
+        int idx = (int) Math.floor(v * size);
+        return Math.max(0, Math.min(size - 1, idx));
+    }
+
+    private static Holder<Biome> applyClimateCompatReroll(Registry<Biome> biomes, Holder<Biome> pick,
+                                                            ClimateSummary climate, int blockX, int blockZ) {
+        ClimateClass climateClass;
+        try {
+            climateClass = ClimateClass.valueOf(climate.climateClass());
+        } catch (IllegalArgumentException unknown) {
+            return pick;
+        }
+        if (climateClass.isOcean() || !climateFamilyMismatch(climateClass, pick)) {
+            return pick;
+        }
+        List<String> family = climateClass.vanillaFamily();
+        int idx = climateCompatVariantIndex(blockX, blockZ, family.size());
+        for (int i = 0; i < family.size(); i++) {
+            String candidateId = "minecraft:" + family.get((idx + i) % family.size());
+            try {
+                return biome(biomes, candidateId);
+            } catch (Throwable ignored) {
+                // try the next family member
+            }
+        }
+        return pick; // no family member resolved; keep the existing pick rather than fail
+    }
+
+    private static Holder<Biome> applyClimateCompatReroll(Collection<Holder<Biome>> biomes, Holder<Biome> pick,
+                                                            ClimateSummary climate, int blockX, int blockZ) {
+        ClimateClass climateClass;
+        try {
+            climateClass = ClimateClass.valueOf(climate.climateClass());
+        } catch (IllegalArgumentException unknown) {
+            return pick;
+        }
+        if (climateClass.isOcean() || !climateFamilyMismatch(climateClass, pick)) {
+            return pick;
+        }
+        List<String> family = climateClass.vanillaFamily();
+        int idx = climateCompatVariantIndex(blockX, blockZ, family.size());
+        for (int i = 0; i < family.size(); i++) {
+            Holder<Biome> candidate = entryById(biomes, "minecraft:" + family.get((idx + i) % family.size()));
+            if (candidate != null) {
+                return candidate;
+            }
+        }
         return pick;
     }
 
