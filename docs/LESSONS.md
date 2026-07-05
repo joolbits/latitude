@@ -240,3 +240,40 @@ Evidence:
   type, not just the table-lookup path).
 - `Latitude-2.0-26.2-pivot/docs/binder/phase2-geoauthority-20260703.md` ("Findings / decisions" section).
 - `docs/binder/agent-doc-upkeep-rule-20260619.md`
+
+## L13 - A New Independent Signal Can Silently Break An Old Composition That Assumed Overlap
+
+Trigger: wiring a brand-new authority/signal into an existing decision that already OR's/unions together
+multiple "is this X" signals from different sources.
+
+Lesson: during the Biome Consumer slice (`Latitude-2.0-26.2-pivot`), `LatitudeBiomes.pick()`'s ocean
+decision has always been `base.is(IS_OCEAN) || oceanAuthority` — a union, not a replacement. This was
+safe for years because the old `oceanAuthority` (from `OceanDistanceField`) measured the same underlying
+terrain-continentalness noise that `base` already reflected, so the two terms overlapped heavily and the
+union stayed close to either one alone. Nobody wrote that overlap assumption down anywhere; it was just
+quietly true by coincidence of how the two systems happened to be built. When `oceanAuthority` was
+swapped to GeoAuthority — a deliberately INDEPENDENT noise field, which is exactly what makes it able to
+draw coherent continents — the hidden overlap assumption broke, and the union of two largely-independent
+~60%/~36% water fields produced ~87% water instead of ~36%. Both signals were individually correct and
+proven in isolation; the combination was still wrong, and no amount of testing either signal alone would
+have caught it.
+
+Required future behavior:
+- Before replacing one input to an existing OR/union (or AND/intersection) composition with a new,
+  independently-computed signal, ask explicitly: did the old composition's behavior depend on its inputs
+  overlapping/correlating in some way that was never written down? If yes, expect the composition's
+  aggregate behavior to shift even though every individual input is still "correct."
+- Prove a new signal in isolation first (as GeoAuthority/ClimateAuthority both were, Phases 2-3), but
+  do NOT treat that as sufficient — run it combined with the real, pre-existing system it has to coexist
+  with (a live/headless test, not just an offline proof tool) before calling a slice done.
+- When a combination surprises you, prefer pulling the risky half back apart (its own flag/gate) over
+  patching the old composition's assumption under time pressure — the old assumption may be load-bearing
+  in ways not yet understood (see: the ocean-authority swap staying flagged off pending Phase 4 terrain
+  integration, rather than a quick constant-tuning workaround).
+
+Evidence:
+- `Latitude-2.0-26.2-pivot/docs/binder/biome-consumer-slice-20260704.md` (land fraction 39%→13% finding,
+  the `-Dlatitude.geoV2.seaLevel=0.0` diagnostic that ruled out a GeoAuthority-side fix, and the
+  `latitude.biomeConsumerV2.oceanAuthority.enabled` flag split that resulted).
+- `Latitude-2.0-26.2-pivot/src/main/java/com/example/globe/world/LatitudeBiomes.java` (the
+  `base.is(BiomeTags.IS_OCEAN) || oceanAuthority` composition, both `pick()` overloads).
