@@ -76,6 +76,11 @@ public final class GeoTerrainBiasFunction implements DensityFunction.SimpleFunct
         try {
             double base = delegate.compute(ctx);
 
+            // Sweeper finding #23 -- DECISION: a NEGATIVE strength is INTENTIONALLY ALLOWED, not clamped. It
+            // is a deliberate "flip" knob: S<0 inverts the bias direction (land columns sink, ocean columns
+            // rise), which is a legitimate live-tuning experiment (e.g. probing the sign convention, or an
+            // inverted-relief aesthetic). It is bounds-safe (maxAbsBias() uses Math.abs(s)) and stays a true
+            // no-op at exactly S==0. This comment is the explicit record of the decision-not-to-clamp.
             double s = LatitudeV2Flags.TERRAIN_V2_STRENGTH;
             if (s == 0.0) {
                 // Exact no-op fast path (design §2): biased == base, bit-for-bit, for every column/Y.
@@ -114,15 +119,22 @@ public final class GeoTerrainBiasFunction implements DensityFunction.SimpleFunct
     }
 
     /**
-     * Widen the delegate's bounds by the maximum possible bias {@code B = |S| * K * max(1.0, oceanRatio)}.
+     * Widen the delegate's bounds by the maximum possible bias {@code B = |S| * K * max(1.0, |oceanRatio|)}.
      * At {@code S == 0} this is {@code 0}, so the bounds equal the delegate's exactly (no-op). A safe
-     * over-estimate is fine and required (density bounds must contain every value {@code compute} can
-     * return), so {@code max(1.0, oceanRatio)} covers both the symmetric and ocean-amplified branches.
+     * over-estimate is fine and required (the {@link DensityFunction} bounds contract says
+     * {@code min/maxValue} must contain every value {@code compute} can return).
+     *
+     * <p><b>Sweeper findings #15/#22:</b> the gain factor uses {@code Math.max(1.0, Math.abs(r))}, NOT
+     * {@code Math.max(1.0, r)}. A NEGATIVE {@code oceanStrengthRatio} amplifies the ocean-side push by
+     * {@code |r|}; using the un-abs'd {@code r} would under-estimate the true bias bound (e.g. {@code r=-3}
+     * pushes ocean columns by {@code 3*K*S} but {@code max(1.0,-3)=1.0} would claim only {@code K*S}),
+     * violating the bounds contract. {@code Math.abs(s)} likewise covers a negative strength (the documented
+     * "flip" knob -- see {@code compute}).
      */
     private double maxAbsBias() {
         double s = LatitudeV2Flags.TERRAIN_V2_STRENGTH;
         double r = LatitudeV2Flags.TERRAIN_V2_OCEAN_STRENGTH_RATIO;
-        return Math.abs(s) * K * Math.max(1.0, r);
+        return Math.abs(s) * K * Math.max(1.0, Math.abs(r));
     }
 
     @Override

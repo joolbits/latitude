@@ -5,6 +5,7 @@ import com.example.globe.adapter.geo.GeoSummaryProvider;
 import com.example.globe.core.LatitudeV2Flags;
 import com.example.globe.core.geo.GeoAuthority;
 import com.example.globe.terrain.TerrainRouterWrapping;
+import com.example.globe.terrain.TerrainRouterWrapping.InstallResult;
 import com.example.globe.world.LatitudeBiomes;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.server.MinecraftServer;
@@ -59,20 +60,62 @@ import java.util.List;
  * {@code latitude.terrainV2.strength}, {@code latitude.terrainV2.oceanStrengthRatio},
  * {@code latitude.geoV2.enabled}) -- this harness does not re-invent flag plumbing, it reads the same
  * flags the shipped code reads.
+ *
+ * <p><b>Honest coverage-gap statement (sweeper finding #10).</b> This harness calls
+ * {@link TerrainRouterWrapping#installIfArmed(RandomState, ServerLevel)} DIRECTLY (the same helper the
+ * dev/atlas {@code BiomePreviewExporter} path uses), so it proves the WRAPPER LOGIC end-to-end: the triple
+ * gate, the seed-0/NoOp-provider refusal, the 15-field router rebuild, the bias formula, structure-preserving
+ * {@code mapChildren}, and the byte-identity legs. It does **NOT** prove that the shipped REAL-GAMEPLAY
+ * {@code RandomStateRouterTerrainMixin} on {@code ChunkMap} specifically fires at the right moment -- that
+ * requires a real client/server world boot through {@code ChunkMap} construction, which is the live-pass
+ * territory, not a headless probe. (The two paths are additionally indistinguishable at the log level because
+ * the install log is a once-per-JVM latch.) The definitive {@code installResult}/{@code wrapperInstalled}
+ * fields this harness records are for the direct-helper call it makes; the ChunkMap-mixin firing is asserted
+ * separately by the live pass. This is a documented, accepted coverage boundary, not a hidden gap.
  */
 public final class TerrainProofHarness {
 
     private static final String TRIGGER_PROP = "latdev.terrainProof";
-    private static final String SEED_PROP = "latdev.terrainProof.seed";
     private static final String RADIUS_PROP = "latdev.terrainProof.radius";
     private static final String SHAPE_PROP = "latdev.terrainProof.shape";
     private static final String OUT_PROP = "latdev.terrainProof.out";
     private static final String NONGLOBE_PROP = "latdev.terrainProof.nonGlobe";
 
-    private static final long DEFAULT_SEED = 2591890304012655616L;
+    // NOTE (sweeper findings #14/#21): there is deliberately NO {@code latdev.terrainProof.seed} read here.
+    // The harness always uses the BOOTED world's own seed ({@code world.getSeed()}), because the shipped
+    // GEO_V2_PROVIDER / GeoAuthority are armed for THAT seed by GlobeMod.initLatitudeBiomesForWorld; re-driving
+    // a different requested seed here would test a GeoAuthority the shipped provider is NOT actually using
+    // (see runAll's own comment). The old dead {@code SEED_PROP}/{@code DEFAULT_SEED} constants were removed.
+    // {@code latdev.terrainProof.radius} is used ONLY as a fallback for CHOOSING probe columns on the
+    // non-globe leg (where the real radius is legitimately 0); it never overrides the booted world's radius.
     private static final int DEFAULT_RADIUS = 10000;
 
     private TerrainProofHarness() {
+    }
+
+    /**
+     * Parse an {@code int} system property that may arrive as an EMPTY STRING (not just absent). Sweeper
+     * finding #1: build.gradle forwards {@code -Dlatdev.terrainProof.radius=${System.getProperty(...,'')}} so
+     * an un-passed radius reaches the JVM as {@code -Dlatdev.terrainProof.radius=} (present-but-empty). The
+     * two-arg {@link System#getProperty(String, String)} default only fires when the property is ABSENT, so
+     * a naive {@code Integer.parseInt(getProperty(k,"10000").trim())} throws {@link NumberFormatException} on
+     * the empty string -- which is exactly the case for the non-globe/globe-gate-isolation leg (radius 0).
+     * This helper treats null-OR-blank (after trim) as "use the default".
+     */
+    private static int intPropOrDefault(String key, int fallback) {
+        String raw = System.getProperty(key);
+        if (raw == null) {
+            return fallback;
+        }
+        raw = raw.trim();
+        if (raw.isEmpty()) {
+            return fallback;
+        }
+        try {
+            return Integer.parseInt(raw);
+        } catch (NumberFormatException e) {
+            return fallback;
+        }
     }
 
     static boolean isTriggered() {
@@ -131,6 +174,23 @@ public final class TerrainProofHarness {
         String shape;
         boolean nonGlobeWorld;
 
+        // Definitive install-status (sweeper findings #2-6/#8): what the shipped install helper actually
+        // decided for THIS RandomState, asserted directly (not scraped from a once-per-JVM install log that
+        // cannot tell "did not install" from "already logged earlier in this JVM"). A comparator can assert
+        // e.g. wrapperInstalled==false on the non-globe leg and the geoV2-off leg, ==true on the armed legs.
+        String installResult;      // TerrainRouterWrapping.InstallResult name
+        boolean wrapperInstalled;  // installResult == INSTALLED
+        // The actual runtime provider class the terrain gate saw (GeoAuthorityProvider vs NoOpGeoSummaryProvider)
+        // -- lets the seed-0 test (finding #7) assert the gate correctly refused to install on a NoOp provider.
+        String geoProviderClass;
+        // Non-globe leg self-verification (sweeper findings #2-6/#17): whether the booted world was ACTUALLY
+        // a genuine non-globe world (radius never armed AND generator is not a globe preset). If the harness
+        // was told nonGlobe=true but the boot came up armed (stale server.properties), this is false and
+        // harnessFailure is set -- so the leg can NEVER pass for the wrong reason by testing an armed world.
+        boolean nonGlobeBootVerified;
+        int activeRadiusAtBoot;    // LatitudeBiomes.getActiveRadiusBlocks() as actually booted
+        boolean generatorIsGlobePreset;
+
         // §6.2 direct density-output numeric probe: one entry per probed column.
         final List<ColumnProbe> columnProbes = new ArrayList<>();
 
@@ -155,6 +215,12 @@ public final class TerrainProofHarness {
             sb.append("  \"radius\": ").append(radius).append(",\n");
             sb.append("  \"shape\": \"").append(shape).append("\",\n");
             sb.append("  \"nonGlobeWorld\": ").append(nonGlobeWorld).append(",\n");
+            sb.append("  \"installResult\": ").append(jsonStringOrNull(installResult)).append(",\n");
+            sb.append("  \"wrapperInstalled\": ").append(wrapperInstalled).append(",\n");
+            sb.append("  \"geoProviderClass\": ").append(jsonStringOrNull(geoProviderClass)).append(",\n");
+            sb.append("  \"nonGlobeBootVerified\": ").append(nonGlobeBootVerified).append(",\n");
+            sb.append("  \"activeRadiusAtBoot\": ").append(activeRadiusAtBoot).append(",\n");
+            sb.append("  \"generatorIsGlobePreset\": ").append(generatorIsGlobePreset).append(",\n");
             sb.append("  \"columnProbes\": [\n");
             for (int i = 0; i < columnProbes.size(); i++) {
                 sb.append(columnProbes.get(i).toJson());
@@ -320,24 +386,57 @@ public final class TerrainProofHarness {
         report.seed = seed;
         report.nonGlobeWorld = nonGlobe;
 
-        if (nonGlobe) {
-            // Globe-gate-isolation leg: this leg's world is booted with a NON-globe level-type (plain
-            // minecraft:normal, run-headless/server.properties' default) and radius/seed are deliberately
-            // NOT touched here, so neither half of the two-mechanism globe check
-            // (LatitudeBiomes.getActiveRadiusBlocks() > 0, or GlobeMod.isGlobeOverworld(world)) can fire.
-            report.radius = radius; // expected to be 0 (never armed) for a genuine non-globe boot
-            report.shape = LatitudeBiomes.shapeToString(LatitudeBiomes.getGlobeShape());
-            GlobeMod.LOGGER.info("[latdev][terrainProof] non-globe leg: activeRadius={} (expected 0)", radius);
-        } else {
-            LatitudeBiomes.setGlobeShape(shape);
-            report.radius = radius;
-            report.shape = LatitudeBiomes.shapeToString(shape);
-        }
-
         ChunkGenerator genRaw = world.getChunkSource().getGenerator();
         if (!(genRaw instanceof NoiseBasedChunkGenerator generator)) {
             report.harnessFailure = "world generator is not a NoiseBasedChunkGenerator: " + genRaw;
             return;
+        }
+
+        // Definitively classify the booted world (sweeper findings #2-6/#17). generatorIsGlobePreset is the
+        // real positive globe check the shipped mixin uses; activeRadiusAtBoot is the dev/atlas mechanism.
+        boolean generatorIsGlobePreset = GlobeMod.isGlobeNoiseGenerator(generator);
+        report.generatorIsGlobePreset = generatorIsGlobePreset;
+        report.activeRadiusAtBoot = radius;
+
+        if (nonGlobe) {
+            // Globe-gate-isolation leg: the world MUST have booted as a genuine non-globe world (plain
+            // minecraft:normal level-type -- driven by -Dlatdev.preview.levelType=minecraft:normal in the
+            // gradle invocation). A genuine non-globe boot leaves the radius unarmed (0) AND the generator is
+            // not one of the six globe:overworld* presets, so NEITHER half of the two-mechanism globe check
+            // can fire. We ASSERT that here rather than trusting the label: if the boot came up armed (e.g.
+            // stale run-headless/server.properties still on a globe level-type), the leg would test an armed
+            // world and pass for the wrong reason -- so instead we set harnessFailure, which a comparator is
+            // required to treat as INVALID data (finding #12). This closes findings #2-6/#17.
+            boolean bootIsGenuinelyNonGlobe = (radius <= 0) && !generatorIsGlobePreset && !GlobeMod.isGlobeOverworld(world);
+            report.nonGlobeBootVerified = bootIsGenuinelyNonGlobe;
+            report.radius = radius; // expected 0
+            report.shape = LatitudeBiomes.shapeToString(LatitudeBiomes.getGlobeShape());
+            GlobeMod.LOGGER.info(
+                    "[latdev][terrainProof] non-globe leg: activeRadius={} generatorIsGlobePreset={} isGlobeOverworld={} (all must be 0/false)",
+                    radius, generatorIsGlobePreset, GlobeMod.isGlobeOverworld(world));
+            if (!bootIsGenuinelyNonGlobe) {
+                report.harnessFailure = "non-globe leg booted an ARMED/globe world (radius=" + radius
+                        + ", generatorIsGlobePreset=" + generatorIsGlobePreset
+                        + ", isGlobeOverworld=" + GlobeMod.isGlobeOverworld(world)
+                        + "); this leg is INVALID -- boot a real minecraft:normal world "
+                        + "(-Dlatdev.preview.levelType=minecraft:normal) so the globe gate is genuinely exercised.";
+                GlobeMod.LOGGER.error("[latdev][terrainProof] {}", report.harnessFailure);
+                return;
+            }
+        } else {
+            // Armed leg: MUST have booted a real globe world, else the "armed" probes below would silently
+            // run against a non-globe world and prove nothing. Assert it (finding #2-6 for the positive side).
+            LatitudeBiomes.setGlobeShape(shape);
+            report.nonGlobeBootVerified = false; // n/a for the armed leg
+            report.radius = radius;
+            report.shape = LatitudeBiomes.shapeToString(shape);
+            if (!generatorIsGlobePreset && radius <= 0 && !GlobeMod.isGlobeOverworld(world)) {
+                report.harnessFailure = "armed leg expected a real globe world but booted a non-globe one "
+                        + "(radius=" + radius + ", generatorIsGlobePreset=false); boot a globe level-type "
+                        + "(-Dlatdev.preview.levelType=globe:globe_regular) so the wrapper can actually arm.";
+                GlobeMod.LOGGER.error("[latdev][terrainProof] {}", report.harnessFailure);
+                return;
+            }
         }
 
         RandomState randomState = RandomState.create(
@@ -347,12 +446,19 @@ public final class TerrainProofHarness {
 
         // Reuse the EXACT same install call the real dev/atlas tooling path uses (see
         // com.example.globe.dev.BiomePreviewExporter) so this harness proves the actual shipped
-        // integration point, not a hand-rolled substitute.
-        TerrainRouterWrapping.installIfArmed(randomState, world);
+        // integration point, not a hand-rolled substitute -- and capture its DEFINITIVE result (findings
+        // #2-6/#8) so a comparator can assert wrapperInstalled directly, not scrape a once-per-JVM log.
+        InstallResult installResult = TerrainRouterWrapping.installIfArmed(randomState, world);
+        report.installResult = installResult.name();
+        report.wrapperInstalled = (installResult == InstallResult.INSTALLED);
+        GeoSummaryProvider bootProvider = LatitudeBiomes.geoProviderForTerrain();
+        report.geoProviderClass = (bootProvider == null) ? "null" : bootProvider.getClass().getSimpleName();
+        GlobeMod.LOGGER.info(
+                "[latdev][terrainProof] install result={} wrapperInstalled={} geoProvider={}",
+                installResult, report.wrapperInstalled, report.geoProviderClass);
 
         DensityFunction finalDensity = randomState.router().finalDensity();
 
-        GeoSummaryProvider geoProvider = LatitudeBiomes.geoProviderForTerrain();
         int xRadius = LatitudeBiomes.getActiveXRadiusBlocks();
         int zRadius = LatitudeBiomes.getActiveRadiusBlocks();
 
@@ -362,7 +468,8 @@ public final class TerrainProofHarness {
         // ASSERTION under test on the non-globe leg is simply "does finalDensity change AT ALL", so
         // exact geography doesn't matter here -- it must NOT change, full stop).
         if (zRadius <= 0) {
-            int fallbackRadius = Integer.parseInt(System.getProperty(RADIUS_PROP, Integer.toString(DEFAULT_RADIUS)).trim());
+            // Empty-string-safe parse (sweeper finding #1): the forwarded -D can be present-but-empty.
+            int fallbackRadius = intPropOrDefault(RADIUS_PROP, DEFAULT_RADIUS);
             zRadius = fallbackRadius;
             xRadius = shape == LatitudeBiomes.GlobeShape.MERCATOR
                     ? (int) Math.round(fallbackRadius * LatitudeBiomes.MERCATOR_ASPECT)

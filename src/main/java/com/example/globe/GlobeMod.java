@@ -263,6 +263,11 @@ public class GlobeMod implements ModInitializer {
             return;
         }
 
+        // Sweeper finding #16: re-arm the Phase 4 terrain-bias once-per-JVM log latches on each overworld
+        // load, so an install (or install failure) on a SECOND world loaded in the same JVM is logged again
+        // rather than silently suppressed. Behaviorally inert (only affects the informational one-shot logs).
+        com.example.globe.terrain.TerrainRouterWrapping.resetLogLatchesForNewWorld();
+
         // Release the world-creation-in-flight claim (LatitudeWorldLauncher.beginExpedition) now that SOME
         // world's overworld has actually loaded and is about to consume whatever pending values exist below.
         // Unconditional and harmless if nothing was claimed (e.g. loading a pre-existing save rather than
