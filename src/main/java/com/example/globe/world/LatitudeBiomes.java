@@ -2856,7 +2856,9 @@ public final class LatitudeBiomes {
         // GeoAuthority (Phase 2) / ClimateAuthority (Phase 3) summaries. Both flags default to
         // false, so this stays a no-op computation. Whether the summary actually CHANGES biome
         // selection is gated separately below by LatitudeV2Flags.BIOME_CONSUMER_V2_ENABLED (the
-        // Biome Consumer slice) -- see docs/porting/PORTABILITY_ARCHITECTURE.md.
+        // Biome Consumer slice; the ocean-authority swap specifically ALSO requires
+        // BIOME_CONSUMER_V2_OCEAN_AUTHORITY_ENABLED, still off by default -- see
+        // docs/binder/biome-consumer-slice-20260704.md) -- see docs/porting/PORTABILITY_ARCHITECTURE.md.
         GeoSummary geoV2Summary = LatitudeV2Flags.GEO_V2_ENABLED
                 ? GEO_V2_PROVIDER.summarize(blockX, blockZ) : null;
         ClimateSummary climateV2Summary = LatitudeV2Flags.CLIMATE_V2_ENABLED
@@ -2930,12 +2932,17 @@ public final class LatitudeBiomes {
         int oceanDistance = oceanDistanceBlocks(blockX, blockZ, sampler);
         boolean nearOcean = oceanDistance <= MANGROVE_COASTAL_MAX_BLOCKS;
         boolean oceanAuthority = oceanDistance == 0;
-        // Biome Consumer slice: GeoAuthority's coherent continent/ocean-basin intent replaces the
+        // Biome Consumer slice: GeoAuthority's coherent continent/ocean-basin intent CAN replace the
         // coarse per-cell OceanDistanceField threshold as land/ocean AUTHORITY -- this is the actual
         // Phase 2 fix (coherent continents, a dominant ocean basin) reaching live worldgen instead of
-        // only the offline proof tool. Requires BOTH the consumer flag and geoV2 to be on; with either
-        // off this is a no-op and oceanAuthority keeps its original ODF-derived value.
-        if (LatitudeV2Flags.BIOME_CONSUMER_V2_ENABLED && geoV2Summary != null) {
+        // only the offline proof tool. Gated behind its OWN sub-flag (not just the consumer flag):
+        // the 2026-07-04 proof pass found this collapses live land fraction to ~13% (GeoAuthority's own
+        // calibrated ~39%) because it now compounds with base.is(IS_OCEAN)'s independent terrain-noise
+        // ocean instead of overlapping with it the way ODF did -- a terrain-integration gap (Phase 4),
+        // not a bug here. See docs/binder/biome-consumer-slice-20260704.md. Stays off by default and
+        // requires an explicit second flag so it can't be enabled by accident.
+        if (LatitudeV2Flags.BIOME_CONSUMER_V2_ENABLED && LatitudeV2Flags.BIOME_CONSUMER_V2_OCEAN_AUTHORITY_ENABLED
+                && geoV2Summary != null) {
             oceanAuthority = geoV2Summary.isOceanIntent();
         }
         // Veto coarse ODF ocean authority when real terrain is clearly raised land
@@ -3534,7 +3541,9 @@ public final class LatitudeBiomes {
         // GeoAuthority (Phase 2) / ClimateAuthority (Phase 3) summaries. Both flags default to
         // false, so this stays a no-op computation. Whether the summary actually CHANGES biome
         // selection is gated separately below by LatitudeV2Flags.BIOME_CONSUMER_V2_ENABLED (the
-        // Biome Consumer slice) -- see docs/porting/PORTABILITY_ARCHITECTURE.md.
+        // Biome Consumer slice; the ocean-authority swap specifically ALSO requires
+        // BIOME_CONSUMER_V2_OCEAN_AUTHORITY_ENABLED, still off by default -- see
+        // docs/binder/biome-consumer-slice-20260704.md) -- see docs/porting/PORTABILITY_ARCHITECTURE.md.
         GeoSummary geoV2Summary = LatitudeV2Flags.GEO_V2_ENABLED
                 ? GEO_V2_PROVIDER.summarize(blockX, blockZ) : null;
         ClimateSummary climateV2Summary = LatitudeV2Flags.CLIMATE_V2_ENABLED
@@ -3608,12 +3617,17 @@ public final class LatitudeBiomes {
         int oceanDistance = oceanDistanceBlocks(blockX, blockZ, sampler);
         boolean nearOcean = oceanDistance <= MANGROVE_COASTAL_MAX_BLOCKS;
         boolean oceanAuthority = oceanDistance == 0;
-        // Biome Consumer slice: GeoAuthority's coherent continent/ocean-basin intent replaces the
+        // Biome Consumer slice: GeoAuthority's coherent continent/ocean-basin intent CAN replace the
         // coarse per-cell OceanDistanceField threshold as land/ocean AUTHORITY -- this is the actual
         // Phase 2 fix (coherent continents, a dominant ocean basin) reaching live worldgen instead of
-        // only the offline proof tool. Requires BOTH the consumer flag and geoV2 to be on; with either
-        // off this is a no-op and oceanAuthority keeps its original ODF-derived value.
-        if (LatitudeV2Flags.BIOME_CONSUMER_V2_ENABLED && geoV2Summary != null) {
+        // only the offline proof tool. Gated behind its OWN sub-flag (not just the consumer flag):
+        // the 2026-07-04 proof pass found this collapses live land fraction to ~13% (GeoAuthority's own
+        // calibrated ~39%) because it now compounds with base.is(IS_OCEAN)'s independent terrain-noise
+        // ocean instead of overlapping with it the way ODF did -- a terrain-integration gap (Phase 4),
+        // not a bug here. See docs/binder/biome-consumer-slice-20260704.md. Stays off by default and
+        // requires an explicit second flag so it can't be enabled by accident.
+        if (LatitudeV2Flags.BIOME_CONSUMER_V2_ENABLED && LatitudeV2Flags.BIOME_CONSUMER_V2_OCEAN_AUTHORITY_ENABLED
+                && geoV2Summary != null) {
             oceanAuthority = geoV2Summary.isOceanIntent();
         }
         // Veto coarse ODF ocean authority when real terrain is clearly raised land
