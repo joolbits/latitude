@@ -67,6 +67,9 @@ public final class ClimateAuthority {
         double windX = w[0], windZ = w[1];
         double wh = Math.hypot(windX, windZ);
         double uX, uZ;
+        // Sweeper audit #2 finding #14 (2026-07-05): unreachable under the current ZONAL_FLOOR=0.15
+        // (windRaw guarantees |windX|>=ZONAL_FLOOR, so wh>=0.15 always), kept as a defensive floor in
+        // case ZONAL_FLOOR is ever lowered/removed -- a genuine calm-wind input must not divide by ~0.
         if (wh < 1e-9) { uX = -1; uZ = 0; } else { uX = windX / wh; uZ = windZ / wh; }
 
         // --- fetch: 4 upwind probes (all sampled up front; the run only truncates arithmetic) ---
@@ -242,7 +245,13 @@ public final class ClimateAuthority {
         if (band == LatitudeBand.TROPICAL && cont < 0.4 && fetch > 0.15 * R && a <= 12) {
             return SeasonalityClass.EQUATORIAL;
         }
-        boolean bigContinent = center.continentId() != -1 && cont >= 0.15 && cont <= 0.70;
+        // Sweeper audit #2 finding #11/#18 (2026-07-05): this used to also require
+        // `center.continentId() != -1`, read as "on a real (connected-component-labeled) continent."
+        // That id is only ever -1 for ocean (already returned MARITIME above); no live or proof path
+        // attaches a GeoIdTable to the GeoAuthority a ClimateAuthority wraps, so continentId() is a
+        // non-negative typedCompId() for every land column and the clause was an always-true
+        // tautology. Removed -- cont in [0.15,0.70] is the only real filter here.
+        boolean bigContinent = cont >= 0.15 && cont <= 0.70;
         if ((band == LatitudeBand.TROPICAL || band == LatitudeBand.SUBTROPICAL)
                 && bigContinent && fetch > 0.15 * R && curr > 0.05 && a >= 5 && a <= 32) {
             return SeasonalityClass.MONSOON;

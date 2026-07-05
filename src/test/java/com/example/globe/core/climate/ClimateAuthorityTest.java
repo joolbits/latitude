@@ -183,7 +183,13 @@ class ClimateAuthorityTest {
     // I3 — no rainforest in a dry interior.
     @Test
     void noRainforestInDesert() {
-        String c = cls(25, land(2500, 0), 0.0, 0, 0, 0);
+        // Sweeper audit #2 finding #7 (2026-07-05): this used to sit at phi=25 (SUBTROPICAL band, per
+        // bandFor), where TROPICAL_RAINFOREST/TROPICAL_MONSOON are structurally unreachable regardless
+        // of precipitation (classifyBase only ever produces them from the TROPICAL band case) -- the
+        // assertion held by band alone, never actually exercising the dry-interior gate it claims to.
+        // Moved into TROPICAL band (phi=15) so a regression that let a dry TROPICAL interior reach
+        // rainforest/monsoon would actually be caught.
+        String c = cls(15, land(2500, 0), 0.0, 0, 0, 0);
         assertNotEquals("TROPICAL_RAINFOREST", c);
         assertNotEquals("TROPICAL_MONSOON", c);
     }

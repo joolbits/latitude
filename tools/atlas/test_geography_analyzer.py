@@ -203,5 +203,62 @@ class SizeGateTest(unittest.TestCase):
         self.assertFalse(gate["exact_match"])
 
 
+class LargestWeightedShareTest(unittest.TestCase):
+    """Sweeper audit #2 findings #1-4/#6/#9/#20/#24 (2026-07-05): component_shares() sorts by RAW
+    cell count only, so `largest_share()` used to reuse the raw-largest component's weighted_sum as
+    if it were the maximum weighted share -- silently understating true weighted dominance whenever a
+    raw-large, low-cosine-weight (e.g. polar) component out-counts a raw-small, high-weight (e.g.
+    equatorial) one. This is exactly the missing coverage finding #6 called out: every prior fixture
+    happened to have raw-largest == weighted-largest.
+    """
+
+    def test_equatorial_blob_is_weighted_largest_despite_fewer_raw_cells(self):
+        ids = np.full((181, 4), OCEAN_IDX, dtype=np.int32)
+        ids[0:5, :] = LAND_IDX    # 20 cells near the pole (lat 86-90 deg, near-zero cosine weight)
+        ids[89:91, 0] = LAND_IDX  # 2 cells at the equator (lat 0-1 deg, weight ~= 1.0)
+        run = make_run(ids, radius=90, z_min=-90, z_max=90)
+        weights = row_weights(run)
+        polar_weighted = float(weights[0:5].sum() * 4)
+        equator_weighted = float(weights[89:91].sum() * 1)
+        total_weighted = polar_weighted + equator_weighted  # no other land cells exist in this fixture
+
+        report = analyze(run)
+        land = report["components"]["land"]
+        self.assertEqual(land["count"], 2)
+        # Raw share: the polar blob genuinely has more raw cells (20 vs 2) -- correctly raw-largest.
+        self.assertAlmostEqual(land["largest_share"]["raw"], 20 / 22, places=6)
+        # Weighted share: the EQUATORIAL blob is the true weighted-largest despite fewer raw cells.
+        expected_weighted = equator_weighted / total_weighted
+        self.assertGreater(expected_weighted, 0.5,
+                            "fixture sanity check: equatorial blob should dominate by weighted area")
+        self.assertAlmostEqual(land["largest_share"]["weighted"], expected_weighted, places=6)
+
+
+class UnknownPixelTest(unittest.TestCase):
+    """Sweeper audit #2 findings #5/#20 (2026-07-05): an unhandled palette index used to be silently
+    folded into "land" (a palette gap) or onto whatever family the max index happens to be (an
+    out-of-range raw pixel value), corrupting land/water shares with no warning.
+    """
+
+    def test_out_of_range_index_is_not_silently_land(self):
+        ids = np.full((5, 5), LAND_IDX, dtype=np.int32)
+        ids[2, 2] = 99  # far beyond this fixture's max palette index (RIVER_IDX=2)
+        run = make_run(ids)
+        report = analyze(run)
+        self.assertEqual(report["unknown_pixels"]["raw_count"], 1)
+        self.assertAlmostEqual(report["shares"]["raw"]["land"], 24 / 25)
+
+    def test_in_range_palette_gap_is_not_silently_land(self):
+        ids = np.full((4, 4), LAND_IDX, dtype=np.int32)
+        ids[0, 0] = 5  # inside [0, max(idx2id)] but with no palette entry -- a real gap, not an overflow
+        idx2id_with_gap = {LAND_IDX: "minecraft:plains", OCEAN_IDX: "minecraft:ocean",
+                            RIVER_IDX: "minecraft:river", 6: "minecraft:jungle"}
+        run = AtlasRun(seed="1", radius=1000, step=10, width=4, height=4,
+                       z_min=-1000.0, z_max=1000.0, ids=ids, idx2id=idx2id_with_gap)
+        report = analyze(run)
+        self.assertEqual(report["unknown_pixels"]["raw_count"], 1)
+        self.assertAlmostEqual(report["shares"]["raw"]["land"], 15 / 16)
+
+
 if __name__ == "__main__":
     unittest.main()
