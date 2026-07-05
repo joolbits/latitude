@@ -22,8 +22,14 @@ ray of GeoAuthority probes measures open-ocean **fetch**, so wet-west-coast vs d
   removes the 30°/60° zero-vector singularity (all four candidate designs shared that bug — it NaN'd the
   fetch ray).
 - **temperature01**: insolation base `1.02·cos(a)^1.30` − altitude cooling (`mountainIntent01` proxy,
-  weight `K_ALT=0.60`) − continental winter depression (mid/high lat only) + a coastal current nudge + a
-  tiny dither. Poles freeze (ICE_CAP), boreal sits at 55–66°.
+  pre-scaled by `ALT_GAIN=0.85` then weighted `K_ALT=0.60` — the effective coefficient on
+  `mountainIntent01` is `0.85·0.60=0.51`, not `0.60`; corrected 2026-07-05 sweeper finding #27, which
+  found the pre-scale undocumented) − continental winter depression (mid/high lat only) + a coastal
+  current nudge + a tiny dither. Poles freeze (ICE_CAP), boreal sits at 55–66°. The same pre-scaled `alt`
+  also gates the ALPINE step (below): the true `mountainIntent01` threshold for alpine-stepping is
+  `ALPINE_ALT/ALT_GAIN = 0.45/0.85 ≈ 0.529`, not the raw `ALPINE_ALT=0.45`. Ocean columns zero `alt`
+  entirely (finding #19 fix, 2026-07-05) — `mountainIntent01` is a land-oriented intent signal with no
+  submarine-terrain meaning.
 - **continentality01**: `smoothstep(0, 0.14R, coastDistanceBlocks)·land01` — maritime coast → deep interior.
 - **precipitation01** (10-step transport pipeline): latitudinal lobes (ITCZ peak, mid-lat storm track) −
   a **continentality-and-fetch-gated** subtropical dry trough (wet windward coasts escape the arid belt;
@@ -35,7 +41,11 @@ ray of GeoAuthority probes measures open-ocean **fetch**, so wet-west-coast vs d
   open-ocean run from the coast (land blocks fetch → dries interiors/lees). Flag `SHORT_FETCH_BLOCKED`.
 - **windwardLift01 / rainShadow01**: bounded probes (windward reuses fetch probes 0–1; 2 new downwind),
   DIAGNOSTIC (`mountainIntent` is intent, not measured height) — flagged `OROGRAPHIC_DIAGNOSTIC`, enters
-  precip only via the ±15% cap, never hard-overrides `climateClass`.
+  precip only via the ±15% cap, never hard-overrides `climateClass`. **This "never hard-overrides" rule is
+  specific to lift/shadow.** The ALPINE step below is driven by the same `mountainIntent01` intent signal
+  but *is* a hard, unconditional `climateClass` rewrite (corrected 2026-07-05 sweeper finding #28, which
+  found the doc's "orographic signals are advisory" framing read as covering alpine too) — see residual
+  risk 2.
 - **currentModifier01**: schematic, **basin-relative** — 2 lateral ocean probes give a `boundarySign`
   (ocean to the east → warm western-boundary +; ocean to the west → cold eastern-boundary −; both/neither
   → 0). NO `sign(x)` stripe; hemisphere-independent; cold eastern-boundary + short fetch = coastal deserts
@@ -65,8 +75,22 @@ split); subpolar = boreal 41%; polar = ice cap 82%.
 1. **Aggressive alpine cooling** — `mountainIntent01`-driven `altitudeCooling` pushes ~20% of tropical
    land into cold classes (boreal/tundra/steppe), more than Earth. Tunable via `-Dlatitude.climateV2.kAlt`
    (lower = less). The deeper fix is real terrain height (Phase 4), which retires the intent proxy.
+   **Corrected 2026-07-05 (sweeper findings #1-#12, #14-#15, #23; LESSONS L14):** the pre-fix
+   `classifyBase` gated its TROPICAL/SUBTROPICAL productive branches on `T >= T_WARM(0.60)`, so a cooled
+   column landing in `[T_BOREAL_HI, T_WARM)` didn't gently alpine-step down at all — it fell through the
+   band switch entirely into a band-blind default (`HUMID_CONTINENTAL`, further alpine-stepped to
+   `BOREAL`), a discontinuous jump the doc never disclosed. Fixed: `classifyBase` now switches
+   exhaustively over `LatitudeBand` for every `T >= T_BOREAL_HI` column, so a cooled column classifies via
+   its own band's normal precipitation logic and *then* the alpine step (below) demotes it one tier — the
+   smooth, monotone behavior this risk always claimed. `mountainIntent01` remaining a land-oriented,
+   terrain-decoupled proxy (finding #18) is unchanged and is still this risk's real substance; only the
+   silent-fallthrough discontinuity is resolved.
 2. **Orographic + rain-shadow are advisory** (intent, not measured height) — bounded + flagged; consumers
-   must not promote them to hard terrain truth until Phase 4.
+   must not promote them to hard terrain truth until Phase 4. **This applies to lift/shadow only.** The
+   ALPINE class step-down is driven by the same `mountainIntent01` proxy but *is* promoted to a hard
+   `climateClass` rewrite today, ahead of Phase 4's real terrain — the same terrain-decoupling risk this
+   item discloses for lift/shadow applies to it too (sweeper finding #18, disclosed here 2026-07-05, not
+   yet fixed: doing so requires Phase 4 real terrain height, not a Biome Consumer-slice-sized change).
 3. **Currents resolve cleanly only on N–S-trending coasts**; E–W coasts degrade to neutral
    (`CURRENT_INDETERMINATE`).
 4. **Fetch resolution floor** ~0.06R (sub-15-block straits invisible on small worlds).
