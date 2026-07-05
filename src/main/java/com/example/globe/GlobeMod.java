@@ -439,7 +439,21 @@ public class GlobeMod implements ModInitializer {
         }
     }
 
-    private static boolean isGlobeOverworld(ServerLevel world) {
+    /**
+     * Full positive globe check for a {@link ServerLevel}: true if EITHER the world's persisted
+     * {@link LatitudeWorldState#getGlobeRadius()} is armed (the mechanism this mod's own headless/dev
+     * tooling drives via {@code LatitudeBiomes.setActiveRadiusBlocks(...)}, which runs on a plain
+     * {@code minecraft:normal} level-type and never touches the {@code globe:overworld*} noise-settings
+     * keys) OR the generator itself is keyed to one of the six {@code globe:overworld*} presets (real
+     * gameplay worlds created via the globe world-type). Widened from private to public so the Phase 4
+     * terrain-bias helper ({@code com.example.globe.terrain.TerrainRouterWrapping}) can reuse the SAME
+     * two-branch check dev/atlas tooling needs -- {@link #isGlobeNoiseGenerator(NoiseBasedChunkGenerator)}
+     * alone is correct for real gameplay but is blind to the dev-tooling path, which never sets the noise
+     * settings key at all (design {@code docs/design/terrain-wrapper-design-20260705.md} §1.2, corrected
+     * after review found the {@code ChunkMap}-only gate missed
+     * {@code com.example.globe.dev.BiomePreviewExporter}'s direct {@code RandomState.create} calls).
+     */
+    public static boolean isGlobeOverworld(ServerLevel world) {
         if (LatitudeWorldState.get(world).getGlobeRadius() > 0) {
             return true;
         }
@@ -449,7 +463,16 @@ public class GlobeMod implements ModInitializer {
         return isGlobeNoiseGenerator(noise);
     }
 
-    private static boolean isGlobeNoiseGenerator(NoiseBasedChunkGenerator noise) {
+    /**
+     * Strict, positive globe check: true iff the generator's keyed settings stably resolve to one of the
+     * six {@code globe:overworld*} presets, false for vanilla/Terralith/other-mod/non-globe worlds. This
+     * is the real positive-and-exclusive gate the Phase 4 terrain-bias mixin
+     * ({@code com.example.globe.mixin.terrain.RandomStateRouterTerrainMixin}) reuses so it can NEVER arm
+     * on a non-globe {@code RandomState} (design {@code docs/design/terrain-wrapper-design-20260705.md}
+     * §1.2 -- a process-global boolean-only gate is explicitly forbidden). Widened from private to public
+     * for that reuse; the semantics are unchanged.
+     */
+    public static boolean isGlobeNoiseGenerator(NoiseBasedChunkGenerator noise) {
         return noise != null && (noise.stable(GLOBE_SETTINGS_KEY)
                 || noise.stable(GLOBE_SETTINGS_XSMALL_KEY)
                 || noise.stable(GLOBE_SETTINGS_SMALL_KEY)
