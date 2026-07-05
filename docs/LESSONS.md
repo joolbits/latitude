@@ -429,3 +429,58 @@ Evidence:
   `wf_ccd1545c-362` (the 4-lens adversarial review + verify pass that caught the `preliminarySurfaceLevel`
   unit-mismatch and the nonexistent `isGlobeWorld(RandomState)` gate, both CONFIRMED on independent
   verification, plus 10 further survivor findings).
+
+## L17 - A Flag Being "On" Does Not Mean The Thing It Guards Is Actually Live; Gate On The Real State, Not Its Proxy
+
+Trigger: a Phase 4 (Latitude-2.0-26.2-pivot) sweeper audit found that `TerrainRouterWrapping`'s install
+gate checked `LatitudeV2Flags.GEO_V2_ENABLED` (a `static final boolean`, true whenever the JVM was launched
+with `-Dlatitude.geoV2.enabled=true`) as its proof that `GeoAuthority`'s land/ocean field was live and
+meaningful. It is not the same thing. `LatitudeBiomes.rebuildGeoAuthority()` only builds a real
+`GeoAuthorityProvider` when `seed != 0L && zRadius > 0`; if a world's seed happens to be exactly `0`
+(a real, pickable seed — some players deliberately choose it), `GEO_V2_PROVIDER` stays
+`NoOpGeoSummaryProvider.INSTANCE` (`land01 = 0.0` for every column) even though `GEO_V2_ENABLED` is `true`.
+The terrain wrapper's gate only asked "is the flag on," never "is the provider actually the real one," so
+on a seed-0 world with both flags armed, every column reads as 100%-ocean and the wrapper pushes the
+*entire world* downward — a whole-world, silent, only-live-testable defect that a flag-off/flag-on
+mechanical proof would never surface (both legs it actually ran used a non-zero seed).
+
+The same sweeper also found the mechanical proof gate that was reported "34/34 PASS" one commit earlier
+was not trustworthy: the harness's own non-globe/globe-gate-isolation leg crashed with an unguarded
+`Integer.parseInt` on an empty-string property (Gradle's `-D` forwarding sends `""`, not "absent", when a
+knob is unset, defeating the two-arg `getProperty` default) — and, separately, that leg's "non-globe"
+world was actually booted as a real globe world (armed radius left over from a prior committed
+`server.properties`), so the wrapper genuinely installed on the world the leg claimed was excluded. A
+report full of these silent failures/mislabels can still look like data a comparator diffs to "PASS."
+
+Required future behavior:
+- When a feature depends on an authority/provider that has its OWN internal preconditions for going live
+  (a seed check, a radius check, an initialization order), the feature's gate must check that the
+  authority is *actually* live (e.g. read back a real value and sanity-check it, or expose an explicit
+  "is this the real provider or the no-op" query) — not just that the flag which is SUPPOSED to arm it is
+  set to true. A flag and the state it is meant to represent can silently diverge whenever the guarded
+  system has its own independent condition for real activation.
+- Seed `0` (and other seemingly-arbitrary "special" values: radius `0`, empty string, `NaN`) are exactly
+  the edge cases most likely to be silently mishandled by a nearby unrelated `!= 0`/`> 0` guard written for
+  a different purpose — enumerate them explicitly for any new gate that composes with existing authority
+  code, don't assume "the flag is on" is the only precondition that matters.
+- Before trusting a mechanical proof's "N/N PASS," verify AT LEAST ONCE that a leg which is supposed to
+  test the negative/excluded case (here: "a non-globe world must not get the wrapper") actually executed
+  against a genuinely negative-case input, not a same-labeled-but-actually-positive one left over from
+  stale on-disk state (a committed `server.properties`, a leftover world save, a previous run's
+  artifacts). A harness that silently mislabels its own test conditions produces evidence that looks
+  identical to real proof.
+- Property/argument forwarding through build tooling (Gradle `vmArg`, shell wrappers, CI env
+  passthrough) commonly turns "the user didn't set this" into "an empty string was set" rather than
+  "the property is absent" — any `System.getProperty(key, default)` fed by such forwarding needs an
+  explicit `isEmpty()`/`isBlank()` check before parsing, not just the two-arg default, or the default
+  silently never applies.
+
+Evidence:
+- `Latitude-2.0-26.2-pivot/src/main/java/com/example/globe/terrain/TerrainRouterWrapping.java` (the
+  `GEO_V2_ENABLED`-only gate, seed-0 finding) and `LatitudeBiomes.java` `rebuildGeoAuthority()` (the
+  `seed != 0L` precondition it doesn't cross-check).
+- `Latitude-2.0-26.2-pivot/src/main/java/com/example/globe/dev/TerrainProofHarness.java` (the unguarded
+  `Integer.parseInt` on an empty-string-forwarded property, and the non-globe leg that booted an actually-
+  armed globe world) and `build.gradle` (the `vmArg` forwarding that turns "unset" into `""`).
+- Sweeper audit workflow `wf_2de5fa57-e76` (6 lenses, 26 raw findings, 23 survived independent
+  verification) — the highest-confirmation-rate sweep this project has run to date.
