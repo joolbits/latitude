@@ -46,7 +46,9 @@ ray of GeoAuthority probes measures open-ocean **fetch**, so wet-west-coast vs d
   but *is* a hard, unconditional `climateClass` rewrite (corrected 2026-07-05 sweeper finding #28, which
   found the doc's "orographic signals are advisory" framing read as covering alpine too) — see residual
   risk 2.
-- **currentModifier01**: schematic, **basin-relative** — 2 lateral ocean probes give a `boundarySign`
+- **currentModifierSigned** (renamed 2026-07-05 from `currentModifier01`, sweeper audit #2 finding #8 —
+  SIGNED [-1,+1], unlike every other `*01`-suffixed field above): schematic, **basin-relative** — 2
+  lateral ocean probes give a `boundarySign`
   (ocean to the east → warm western-boundary +; ocean to the west → cold eastern-boundary −; both/neither
   → 0). NO `sign(x)` stripe; hemisphere-independent; cold eastern-boundary + short fetch = coastal deserts
   (Atacama/Namib), warm western-boundary = humid subtropical / mild-wet oceanic.
@@ -94,8 +96,22 @@ split); subpolar = boreal 41%; polar = ice cap 82%.
 3. **Currents resolve cleanly only on N–S-trending coasts**; E–W coasts degrade to neutral
    (`CURRENT_INDETERMINATE`).
 4. **Fetch resolution floor** ~0.06R (sub-15-block straits invisible on small worlds).
-5. **cos/pow in temperature** are the only non-polynomial ops; tabulate if strict cross-JVM parity is ever
-   demanded (as `GeoNoiseParityTest` enforces for noise).
+5. **cos/pow in temperature, plus `Math.hypot` in wind-unit normalization** (corrected 2026-07-05,
+   sweeper audit #2 finding #21 -- the prior wording said cos/pow were the *only* non-polynomial ops,
+   omitting `sample()`'s `Math.hypot` call, which per the Java spec is likewise only guaranteed within
+   1 ulp, not correctly rounded, the same cross-JVM parity hazard as cos/pow) are the non-polynomial
+   ops; tabulate if strict cross-JVM parity is ever demanded (as `GeoNoiseParityTest` enforces for
+   noise). `Math.sqrt`/`Math.round` elsewhere in both authorities are IEEE-754 correctly-rounded and
+   are not a hazard.
+6. **`seasonality()` falls through to the generic `SEASONAL` class for a near-equator TROPICAL column
+   with high continentality or short fetch** (added 2026-07-05, sweeper audit #2 finding #17): the
+   `EQUATORIAL` gate requires `cont<0.4 && fetch>0.15R && a<=12`; a TROPICAL column at `a<=12` failing
+   that (via `cont>=0.4` or `fetch<=0.15R`) skips every other named branch and lands on the same
+   `SEASONAL` default a TEMPERATE/SUBTROPICAL column with no special rhythm would get. Currently
+   harmless -- `classifyBase`'s TROPICAL case does not gate on `seas==EQUATORIAL`, and no consumer reads
+   `seasonalityClass` yet (same latent-field status as sweep #1 finding #30) -- but a future consumer
+   keying behavior on "is this column equatorial-rhythm" would silently misclassify these columns.
+   Flagged for whichever future phase starts consuming `seasonalityClass`, alongside finding #30.
 
 ## Where this lives
 
