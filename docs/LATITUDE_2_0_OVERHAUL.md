@@ -774,6 +774,19 @@ baseline); the ocean-authority swap requires an additional, still-off-by-default
 in `docs/binder/biome-consumer-slice-20260704.md`. The land-reroll half is ready to enable; the
 ocean-authority half stays parked until Phase 4 or a deliberate redesign.
 
+**Status update (2026-07-05): the "proven-safe" land reroll shipped a real live bug, now fixed.** The
+FIRST live in-game session with `latitude.biomeConsumerV2.enabled=true` showed Snowy Taiga next to
+jungle at 18°N — `classifyBase`'s classification cascade had a silent-fallthrough bug (LESSONS L14 in
+the main worktree). Root-caused, fixed via a compile-time-exhaustive `switch` rewrite over
+`LatitudeBand`. A "sweeper" adversarial audit practice (find→verify→synthesize, Opus, now a standing
+workflow at `.claude/workflows/latitude-sweeper-audit.js`) was run twice: once scoped to this bug (30
+findings, all fixed/dispositioned — `docs/binder/biome-consumer-sweeper-fixes-20260705.md`) and once
+comprehensively over the rest of Phases 0-3 (27 more findings, all fixed/dispositioned —
+`docs/binder/sweeper-audit-2-phases-0-3-20260705.md`). Flag-off byte-identical re-confirmed after both
+rounds. **Both sweeper audits are now fully resolved; this slice is done pending Peetsa's live re-test.
+The Phase 4 kickoff prompt below has not yet been drafted** (prep research exists at
+`docs/binder/phase4-prep-research-20260705.md`).
+
 ```
 Kick off Latitude 2.0 overhaul work: the Biome Consumer slice only (wiring GeoAuthority + ClimateAuthority
 into actual biome selection). Stop before Phase 4 (Terrain Integration Spike) — that is a separate,
