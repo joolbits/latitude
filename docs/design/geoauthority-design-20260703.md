@@ -23,7 +23,15 @@ relocated). The field is:
    `Lc=0.42R` — the dominant low octave gives few-large continents, not confetti.
 3. **Rank-normalized plate bias**: a jittered Worley plate lattice (`Lplate=0.24R`, ~209 plates any
    size); each plate's continentalness is its **rank** among all plates mapped to `[0,1]` (a deterministic
-   uniform distribution → seed-variance-free land fraction), added as a smooth 0-mean bias (`PLATE_BIAS_W=0.34`).
+   uniform distribution, 0-mean by construction), added as a smooth bias (`PLATE_BIAS_W=0.34`).
+   **Correction (2026-07-05, sweeper audit #2 finding #22):** this used to also claim the rank
+   normalization gives a "seed-variance-free land fraction." That overstates it — rank-normalization
+   only makes the *plate-bias term itself* seed-invariant in distribution and mean; `contEdged` sums
+   three terms (the seed-dependent 4-octave FBM above, this plate bias, and the edge/pole bias below),
+   and the FBM term is fully seed-dependent. Land fraction is NOT seed-invariant: `phase2-geoauthority-
+   20260703.md`'s own seed sweep measured 31.1–44.3% (a 13-point spread) at the same `SEA_LEVEL`. What
+   the rank normalization actually buys is a bounded, well-distributed *bias* term with no seed able to
+   push it to a degenerate extreme — not a fixed land fraction.
 4. **Edge + pole ocean bias**: subtract `1.30·smoothstep(0.80,1,|x|/xRadius)` and
    `0.75·smoothstep(0.92,1,|z|/zRadius)` so the projection edge and poles are always ocean/ice, never a
    land cliff.
@@ -84,6 +92,16 @@ length, no BFS/height-probe/lock, one allocation (the returned record). The per-
    `-Dlatitude.geoV2.lplateRatio=0.22` to fragment more if a flatter distribution is wanted.
 2. **Coastal id fringe** — within `COAST_BAND` an id-cell's majority type can disagree with a pixel; ids
    there are unreliable. Contractual mitigation: consumers gate on `|coastDistanceBlocks| > coastBand`.
+   **Why the fringe is unreliable (added 2026-07-05, sweeper audit #2 finding #19):**
+   `coastDistanceBlocks` is `(contEdged - SEA_LEVEL) / gradConst`, where `gradConst` is the analytic
+   per-block slope of ONLY the dominant FBM octave. `contEdged` also sums 3 more octaves (each
+   comparable in slope to the dominant one), the domain warp, a piecewise-constant plate-bias term that
+   steps at plate seams, and the edge/pole ramps (whose local slope is ~3.7x `gradConst` near their
+   transition) — so `coastDistanceBlocks` over/under-estimates true distance-to-coast depending on
+   whether the local field happens to be flatter or steeper than the dominant octave alone. Currently
+   latent (no live consumer implements the `|coastDistanceBlocks| > coastBand` gate this risk itself
+   prescribes yet), but any future consumer relying on that gate for id reliability should know it is
+   only approximate, not exact.
 3. **Offline-table lifecycle** — connected-component ids need `GeoIdLabeling.build`; the live hot path
    uses the plate-id fallback until a table is baked/persisted. Fine for Phase 2 (ids don't drive biomes
    yet); persisting the table into level data is a later-phase task.
@@ -91,6 +109,32 @@ length, no BFS/height-probe/lock, one allocation (the returned record). The per-
    correctness issue.
 5. **Mercator-aspect calibration** — `SEA_LEVEL` was tuned at `xRadius = 2·zRadius`; formulas read the real
    radii and stay radius-relative, but a materially different aspect should re-check land fraction.
+   **Related, added 2026-07-05 (sweeper audit #2 finding #26, PLAUSIBLE):** the pole ocean bias
+   (`poleB`, keyed solely on `|z|/zRadius`) has no `xRadius` dependence, so at an EXTREME non-2:1 aspect
+   (`zRadius` much smaller than `xRadius`) the poleward ocean band could fragment into thin strips
+   rather than one dominant basin, breaking the "ocean is the connected complement" invariant
+   `dominantOceanBasin`/`largestContinentNotHalfTheWorld` assert. Not reachable at the two currently
+   shipped world shapes (Classic 1:1, Mercator 2:1) — flagged for whenever a materially different aspect
+   ratio is considered, not a live bug today.
+6. **Plate bias defaults to neutral (0.5) beyond the world's populated plate-cell range** (added
+   2026-07-05, sweeper audit #2 finding #15): `buildPlateNorm()` only populates plate-cell keys for a
+   1-cell pad around `[-xRadius, +xRadius] x [-zRadius, +zRadius]`. ClimateAuthority's fetch/orographic
+   probes can sample `geo.sample()` up to `0.42*R` beyond a column near the world edge, landing in an
+   unpopulated plate cell and silently getting zero plate-continentality bias for that probe. Confirmed
+   deterministic and edge-of-world-only; not fixed this pass (would mean widening `buildPlateNorm`'s
+   padding to cover the maximum possible probe reach) -- worth a robustness pass alongside Phase 4.
+7. **`seed == 0` is treated as an "uninitialized" sentinel** (added 2026-07-05, sweeper audit #2 finding
+   #13): `LatitudeBiomes.rebuildGeoAuthority`/`rebuildClimateAuthority` guard on `seed != 0L`, mirroring
+   the pre-existing `rebuildProvinceAuthority` convention -- a world genuinely seeded `0` would keep the
+   NoOp provider even with the flag on. Pre-existing, shared, mod-wide convention (not new to Phase 2/3);
+   out of this design's scope to change unilaterally.
+8. **JUnit `GeoAuthorityTest` land/ocean metrics are raw-pixel, not cosine-latitude area-weighted**
+   (added 2026-07-05, sweeper audit #2 finding #10, PLAUSIBLE): `GeoIdLabeling.computeMetrics` (consumed
+   by `landFractionInTargetBand`/`dominantOceanBasin`/`largestContinentNotHalfTheWorld`) computes plain
+   raw-pixel shares, while `tools/atlas/geography_analyzer.py` (used for the offline proof numbers this
+   design and the binder cite) IS cosine-latitude area-weighted. The two are measuring different
+   quantities that happen to correlate on the canonical 2:1 grid; not reconciled this pass (would need
+   either porting area-weighting into the JUnit metrics or re-deriving their thresholds under it).
 
 ## Where this lives
 

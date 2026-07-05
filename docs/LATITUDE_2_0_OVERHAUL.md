@@ -222,7 +222,8 @@ Minimum summary fields:
 - `precipitation01`
 - `windwardLift01`
 - `rainShadow01`
-- `currentModifier01`
+- `currentModifierSigned` (SIGNED [-1,+1], unlike the `*01`-suffixed fields above -- renamed
+  2026-07-05, sweeper audit #2 finding #8)
 - `seasonalityClass`
 - `climateClass`
 - `diagnosticFlags`

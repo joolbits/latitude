@@ -159,7 +159,9 @@ Minimum intended fields:
 - `precipitation01`
 - `windwardLift01`
 - `rainShadow01`
-- `currentModifier01`
+- `currentModifierSigned` (SIGNED [-1,+1], unlike the `*01`-suffixed fields above which are [0,1]
+  magnitudes -- renamed 2026-07-05, sweeper audit #2 finding #8, to stop implying a magnitude contract
+  the field never had)
 - `seasonalityClass`
 - `climateClass`
 - `diagnosticFlags`
