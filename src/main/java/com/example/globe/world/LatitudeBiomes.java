@@ -3335,13 +3335,6 @@ public final class LatitudeBiomes {
             }
         }
         Holder<Biome> postFinalSavannaClamp = out;
-        // Biome Consumer slice: ClimateAuthority as a live version of the existing offline
-        // band-correctness law (arid forbidden in wet tropics, frozen forbidden equatorward, etc.) --
-        // reroll ONLY on a clear climate/biome-family mismatch the existing province/band cascade
-        // above did not anticipate; leave every compatible pick from that cascade untouched.
-        if (LatitudeV2Flags.BIOME_CONSUMER_V2_ENABLED && climateV2Summary != null) {
-            out = applyClimateCompatReroll(biomeRegistry, out, climateV2Summary, blockX, blockZ);
-        }
         logSubtropicalSwampTrace(
                 blockX,
                 blockZ,
@@ -3502,6 +3495,17 @@ public final class LatitudeBiomes {
                 swampFallbackCalled,
                 swampFallbackReturned,
                 out);
+        // Biome Consumer slice: ClimateAuthority as a live version of the existing offline
+        // band-correctness law (arid forbidden in wet tropics, frozen forbidden equatorward, etc.) --
+        // reroll ONLY on a clear climate/biome-family mismatch. Runs LAST (sweeper audit 2026-07-05
+        // finding #16: this used to run before ~9 downstream land laws -- clampFinalPolarNonMountain-
+        // AlpineOutput, gateWarmJungleSurvival, gateWarmWetSparseJungleSurvival, gateDryWarmIdentity,
+        // gatePolarTaigaSurvival, applyPolarBorealForest, gateTemperateTaigaInterior,
+        // clampLateWetlandSurvival, quarantineUnknownCustomLandBiome -- any of which could silently
+        // undo the correction). Placed here, after all of them, it is genuinely the final word.
+        if (LatitudeV2Flags.BIOME_CONSUMER_V2_ENABLED && climateV2Summary != null) {
+            out = applyClimateCompatReroll(biomeRegistry, out, climateV2Summary, blockX, blockZ);
+        }
         debugPick(blockX, blockZ, effectiveRadius, t, band, base, out, false, out != sanitized, mangroveDecision);
         return out;
     }
@@ -3987,9 +3991,6 @@ public final class LatitudeBiomes {
             out = applyFinalSavannaClimateClamp(biomePool, out, finalSavannaRegion, landBandIndex, columnDecisionY, blockX, blockZ);
         }
         Holder<Biome> postFinalSavannaClamp = out;
-        if (LatitudeV2Flags.BIOME_CONSUMER_V2_ENABLED && climateV2Summary != null) {
-            out = applyClimateCompatReroll(biomePool, out, climateV2Summary, blockX, blockZ);
-        }
         Holder<Biome> postFinalClamp = out;
         int overlayBandIndex = authoritativeLandBandIndex(blockX, blockZ, effectiveRadius);
         logSubtropicalJungleReturn("pick-collection", blockX, blockZ, t, landBandIndex, base, chosen, sanitized, preBandEnforce, postBandEnforce, postFinalClamp, out);
@@ -4121,6 +4122,11 @@ public final class LatitudeBiomes {
                 swampFallbackCalled,
                 swampFallbackReturned,
                 out);
+        // Biome Consumer slice: see the Registry overload's identical comment above (sweeper audit
+        // 2026-07-05 finding #16) -- runs LAST, after every downstream land law, not before them.
+        if (LatitudeV2Flags.BIOME_CONSUMER_V2_ENABLED && climateV2Summary != null) {
+            out = applyClimateCompatReroll(biomePool, out, climateV2Summary, blockX, blockZ);
+        }
         debugPick(blockX, blockZ, effectiveRadius, t, band, base, out, false, out != sanitized, mangroveDecision);
         return out;
     }
@@ -9769,15 +9775,32 @@ public final class LatitudeBiomes {
      * in a hot climate, jungle in a desert climate, desert/snow in a rainforest climate); anything not
      * listed here is treated as compatible and left untouched, so the existing province/band cascade's
      * tuned variety survives everywhere except genuine mismatches.
+     *
+     * <p>Sweeper audit 2026-07-05 (findings #13/#14/#17/#20): the original version only covered the
+     * cold-family and hot-desert/rainforest classes, leaving every mid-range class (HUMID_CONTINENTAL,
+     * TEMPERATE_OCEANIC, HUMID_SUBTROPICAL, SAVANNA, TROPICAL_SAVANNA, MEDITERRANEAN) with NO guard at
+     * all -- so a column misclassified into one of those (exactly what the classifyBase fallthrough
+     * bug above used to produce) could carry an obviously-wrong pick (a desert or frozen biome) with
+     * zero correction. Also the desert classes only rejected jungle contamination, not frozen
+     * contamination. Both gaps are closed below; ocean classes are still excluded (`default -> false`)
+     * since this reroll only ever runs on the land pick path (the caller short-circuits on
+     * {@code climateClass.isOcean()} before reaching this method).
      */
     private static boolean climateFamilyMismatch(ClimateClass climateClass, Holder<Biome> biome) {
+        boolean cold = isSnowyVariant(biome);
+        boolean desert = isDesertFamily(biome) || isBadlandsFamily(biome);
+        boolean jungle = isJungleFamily(biome);
         return switch (climateClass) {
-            case ICE_CAP, TUNDRA, BOREAL, COLD_STEPPE ->
-                    isJungleFamily(biome) || isDesertFamily(biome) || isBadlandsFamily(biome) || isSavannaFamily(biome);
-            case HOT_DESERT, COOL_DESERT -> isJungleFamily(biome);
-            case TROPICAL_RAINFOREST, TROPICAL_MONSOON ->
-                    isDesertFamily(biome) || isBadlandsFamily(biome) || isSnowyVariant(biome);
-            default -> false; // no live law for this class yet; conservative no-op
+            case ICE_CAP, TUNDRA, BOREAL, COLD_STEPPE -> jungle || desert || isSavannaFamily(biome);
+            case HOT_DESERT, COOL_DESERT -> jungle || cold;
+            case TROPICAL_RAINFOREST, TROPICAL_MONSOON -> desert || cold;
+            // Savanna/tropical-savanna are dry-ish and legitimately border jungle in reality; only a
+            // frozen pick there is an obvious mismatch worth correcting.
+            case SAVANNA, TROPICAL_SAVANNA -> cold;
+            // Warm/temperate forest-family classes: a frozen or true-desert pick under one of these
+            // is the obvious mismatch (jungle-adjacency is a legitimate, common transition here).
+            case HUMID_SUBTROPICAL, TEMPERATE_OCEANIC, HUMID_CONTINENTAL, MEDITERRANEAN -> cold || desert;
+            default -> false; // OCEAN_* classes never reach this method (isOcean() short-circuits first)
         };
     }
 
