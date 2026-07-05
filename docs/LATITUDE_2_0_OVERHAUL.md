@@ -870,6 +870,134 @@ plainly whether this slice is ready for a live session with Peetsa at the keyboa
 needs his input first.
 ```
 
+## Kickoff Slice Prompt (Phase 4 only)
+
+Added 2026-07-05, once the Biome Consumer slice's live bug was fixed and BOTH sweeper audits (Biome
+Consumer bug scope, then a comprehensive Phases 0-3 sweep — 57 findings total, all fixed or deliberately
+deferred with a stated reason) were resolved. Document-review prep for this exact phase already happened
+and lives in `docs/binder/phase4-prep-research-20260705.md` — read that in full before this prompt; it is
+not optional background, it is where most of the hard-won context below comes from.
+
+**This is a materially different, higher-risk slice than anything before it.** Phases 0-3 were provably
+inert. The Biome Consumer slice changed biome *selection* only, behind flags, and was still caught
+shipping a real live bug on its very first session despite a full mechanical proof gate. Phase 4 changes
+actual generated *terrain height* — the one thing Latitude has genuinely never touched before (its own
+density functions are confirmed orphaned dead code; live terrain is 100% vanilla/Terralith) — and terrain
+amplitude/placement is **only verifiable by a human looking at a live generated world**, not by any atlas
+diff (the atlas is a fixed-Y biome map; it cannot see terrain height at all). A structurally similar idea
+(an E-W ocean-seam terrain sink) was already fully built, compiled, staged, and live-tested once, and
+Peetsa scrapped it directly ("It's broken... let's scrap the project") after the teleport-loop it depended
+on proved impossible to make seamless. That specific mechanism (teleport-loop, seam-wrap, terrain-sink-
+at-the-edge) is closed — do not revive it under any framing. Phase 4's own idea (a position-dependent
+density bias toward GeoAuthority's land/ocean map, no wrapping/teleporting involved) is a different,
+narrower thing, but it still touches the same `NoiseRouter`/`RandomState` machinery the scrapped attempt
+did, so read that history before writing a single line.
+
+```
+Kick off Latitude 2.0 overhaul work: Phase 4 (Terrain Integration Spike) only. Stop before Phase 5
+(Boundary Experience) -- that is a separate slice with its own working card.
+
+MODEL: Sonnet by default for the mechanical prerequisite work (enabling/validating height export, running
+Spark captures, writing the proof harness). Escalate to Opus, high reasoning effort, for the actual
+density-function wrapper design itself — this is closer to Phase 2/3's from-scratch design work (a novel
+algorithm decision with real failure modes, not integration onto an already-locked design) than to the
+Biome Consumer slice's model tier. Consider a judge-panel workflow (per `docs/binder/model-effort-
+strategy-20260702.md`) for the wrapper's exact bias formula/safety discipline before implementing, given
+the prior attempt's failure mode was discovered only by live testing, not by design review — more eyes on
+the design *before* code exists is cheaper than another live-tested scrap.
+
+STAKES (read this before touching anything):
+Every phase before this one could be fully proven by mechanical means (SHA-256 diffs, unit tests,
+aggregate biome-share statistics) with a live pass as a secondary confirmation. This phase inverts that:
+the core claim ("does terrain now look like it respects the land/ocean map, without looking broken, cliffy,
+or performance-regressed") cannot be verified any way other than a human generating and walking a real
+world. A green compile and a passing Spark capture are necessary but do not answer the actual question.
+Budget for this to need Peetsa at the keyboard, more than once, tuning a strength knob interactively — the
+already-designed-but-unimplemented amplitude wrapper (`docs/binder/amplitude-df-wrapper-design-20260622.md`)
+was explicitly deferred for exactly this reason ("Peetsa wants to be at the keyboard to tune K"), and that
+wrapper is Y-only (simpler) than what Phase 4 needs (position-dependent). Also carry forward LESSONS L14/
+L15 from this project's most recent hard lesson: a full mechanical proof gate already once wasn't enough
+to catch a real live bug, and a fix's own blast radius needs the same adversarial scrutiny as the bug it
+fixes — do not let a green Spark run or a clean compile substitute for actually looking at generated
+terrain from multiple vantage points (coastline, deep ocean, deep interior, a mountain range, the poles).
+
+READ FIRST (in order):
+1. `docs/binder/phase4-prep-research-20260705.md` (this phase's own document-review step, done ahead of
+   this prompt — the prior-failure record, current dead-code terrain wiring, the amplitude-wrapper
+   distinction, height-export status, and the unresolved Spark-freeze ambiguity, all summarized with
+   exact file/line pointers)
+2. `docs/design/ocean-seam-wrap-plan-20260623.md` + `docs/design/horizontal-wrapping-feasibility-
+   20260623.md` (the scrapped attempt and why seamless wrapping specifically fails — read to avoid
+   rediscovering the same dead end under a different name)
+3. `docs/binder/amplitude-df-wrapper-design-20260622.md` (a related-but-different, still-unimplemented
+   Y-only wrapper at the same interception point — understand why it is NOT this phase's scope without a
+   separate explicit decision to fold it in)
+4. `docs/binder/spark-profile-analysis-20260701.md` (the unresolved ~3-minute freeze; neither a code
+   hotspot nor a memory-pressure explanation was eliminated — this phase's own Spark proof must not repeat
+   that ambiguity)
+5. The current, only-active terrain-touching mixin (`NoiseChunkGeneratorCarveMixin` — grep for it) as the
+   precedent for how a new terrain hook should gate itself (check the `globe:overworld` settings holder,
+   no-op on non-globe worlds).
+6. `docs/LATITUDE_2_0_OVERHAUL.md`'s Hard Stops section in full.
+
+WORKING CARD — fill this in before touching anything:
+- Objective: (1) enable and validate height-export tooling (`-Dlatitude.emitHeight`,
+  `-Dlatitude.atlasTerrainAware`) as a prerequisite proof tool, not an afterthought — this phase cannot be
+  proven without it; (2) design and, only if that design review is clean, implement ONE narrow
+  `RandomState`-attached density wrapper (mirroring `NoiseChunkGeneratorCarveMixin`'s gating pattern) that
+  reads `GeoAuthority.sample(x,z)`'s `land01`/`isOceanIntent` per column and biases terrain height toward
+  the macro land/ocean map, behind a new disabled-by-default flag (propose `latitude.terrainV2.enabled`,
+  matching the existing `geoV2`/`climateV2`/`biomeConsumerV2` naming convention) with a single tunable
+  strength knob defaulting to a true no-op (0 = vanilla-identical), and a try/catch fallback to vanilla
+  terrain on any failure.
+- Root/profile: confirm current root, branch, HEAD, and Modrinth profile truth before any edit (repo
+  preflight per LESSONS L3). Expected: `port/canonical-26.2-pivot`, HEAD `a34e8c1e` or later.
+- Allowed work: height-export enable/validate; a Spark baseline capture (all-thread, `--thread *`, on a
+  machine confirmed NOT under memory pressure) BEFORE any code change; the single narrow density wrapper
+  described above, gated on its own new flag; `initialDensityWithoutJaggedness` wrapped alongside
+  `finalDensity` if the design calls for it (per the amplitude-wrapper note's own disclosed risk that
+  skipping it makes spawn-height-finding disagree with rendered terrain); a second all-thread Spark
+  capture after, for comparison.
+- Forbidden lanes: NO teleport-loop, ocean-seam, or terrain-sink-at-the-edge revival in any form — closed,
+  per Peetsa's direct decision; no broad `NoiseRouter` rewrite or touching `globe:overworld`'s
+  `final_density`/`initial_density_without_jaggedness` routing beyond the one narrow wrapper; do not fold
+  in the still-open, still-unimplemented amplitude wrapper (Y-only dampening) as part of this work without
+  a separate explicit decision from Peetsa — it is adjacent, not this phase's objective; no shipping with
+  the new flag defaulted on; no calling this phase done from Spark/compile/test green alone.
+- Proof gate (both required, neither alone is sufficient — same discipline as the Biome Consumer slice,
+  raised a tier because this phase changes terrain, not just biome labels):
+  1. Mechanical: `compileJava` green; unit tests green; flag-off byte-identical headless exact-ID atlas
+     proof (same discipline as every prior phase); height-export validated and producing sane numbers on
+     a small test world; an all-thread Spark capture before AND after the change, on an unloaded machine,
+     showing no generation-time regression (not just "no crash").
+  2. Live: Peetsa generating and walking a real small world with the new flag on — coastlines, deep
+     ocean, deep interior, at least one mountain range, and a polar cap, looked at directly, not inferred
+     from a fixed-Y map. Do not consider this phase done from automated proof alone, and do not be
+     surprised if this step requires more than one iteration on the strength knob.
+- Stop condition (pulled from the plan's own Hard Stops, filtered to this slice, plus phase-specific
+  additions):
+  - flag-off output differs for Classic/current Longitude at all (unchanged Hard Stop)
+  - a mixin target cannot prove it applies
+  - Spark or counters show generation stalls regressing, OR the before/after Spark comparison is itself
+    ambiguous (main-thread-only capture, or a machine under memory pressure — do not repeat the
+    2026-07-01 mistake)
+  - the wrapper needs broad density rewiring before it can be proven narrow and safe
+  - anything resembling the scrapped ocean-seam failure mode (artificial-looking edges, a visible seam, a
+    teleport-like discontinuity) shows up anywhere, even somewhere this phase didn't intend to touch
+  - spawn-height-finding disagrees with rendered terrain after the wrap
+  - anything looks wrong live that can't be explained by the known strength knob
+  If any of these trigger, stop and write up what's blocking rather than pushing through with a bigger
+  hammer or a broader rewrite.
+
+DELIVERABLE: a dated binder note recording the height-export validation results, the before/after
+all-thread Spark comparison, the wrapper's exact design (interception point, formula, safety discipline,
+flag name), the mechanical proof results, and — once Peetsa has done a live pass, possibly iterating on
+the strength knob — the live-eyeball findings and a plain terrain go/no-go decision (this phase's roadmap
+entry explicitly calls for a "terrain go/no-go decision note" as its documentation deliverable). Local
+commits only — ask before tagging or pushing. End by stating plainly whether Phase 5 (Boundary Experience)
+is next, or whether Phase 4 needs another live-tuning round before anyone calls it done.
+```
+
 ## Linked Docs
 
 - `docs/binder/model-effort-strategy-20260702.md` — which model/reasoning-effort per phase, and what a future
