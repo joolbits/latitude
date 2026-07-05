@@ -821,7 +821,7 @@ public final class LatitudeBiomes {
 
     /**
      * Read-only view of the current GeoAuthority-backed provider for the Phase 4 terrain-bias wrapper
-     * ({@code com.example.globe.mixin.terrain.GeoTerrainBiasFunction}). Kept as a narrow accessor so the
+     * ({@code com.example.globe.terrain.GeoTerrainBiasFunction}). Kept as a narrow accessor so the
      * {@code GEO_V2_PROVIDER} field stays {@code private static volatile}; the wrapper must read it
      * lazily per {@code compute()} call (NOT capture it once), because this volatile static may not hold
      * its final per-world value at the instant a {@code RandomState} is constructed early in world load

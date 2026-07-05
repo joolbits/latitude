@@ -1,6 +1,8 @@
 package com.example.globe.terrain;
 
 import com.example.globe.GlobeMod;
+import com.example.globe.adapter.geo.GeoAuthorityProvider;
+import com.example.globe.adapter.geo.GeoSummaryProvider;
 import com.example.globe.core.LatitudeV2Flags;
 import com.example.globe.mixin.terrain.RandomStateAccessor;
 import com.example.globe.world.LatitudeBiomes;
@@ -71,8 +73,34 @@ public final class TerrainRouterWrapping {
 
     private static final AtomicBoolean INSTALL_LOGGED = new AtomicBoolean(false);
     private static final AtomicBoolean FAILURE_LOGGED = new AtomicBoolean(false);
+    private static final AtomicBoolean NOOP_PROVIDER_SKIP_LOGGED = new AtomicBoolean(false);
 
     private TerrainRouterWrapping() {
+    }
+
+    /**
+     * Result of an {@code installIfArmed} attempt -- lets a caller (notably
+     * {@code com.example.globe.dev.TerrainProofHarness}) assert DEFINITIVELY whether the wrapper was
+     * installed on a given {@link RandomState}, instead of scraping a once-per-JVM install log (which cannot
+     * distinguish "did not install" from "already logged on an earlier world in this JVM"). Sweeper audit
+     * findings #2-6/#8: the report needs an install-status field it can assert on, not just a label.
+     */
+    public enum InstallResult {
+        /** The 15-field {@link NoiseRouter} was rebuilt and {@code finalDensity} (#12) is now wrapped. */
+        INSTALLED,
+        /** Gate (2) {@link LatitudeV2Flags#TERRAIN_V2_ENABLED} or (3) {@link LatitudeV2Flags#GEO_V2_ENABLED} is off. */
+        SKIPPED_FLAG_OFF,
+        /** The real positive globe check returned false (vanilla / Terralith-only / non-globe world). */
+        SKIPPED_NOT_GLOBE,
+        /**
+         * The globe/flag gates passed but {@code GEO_V2_PROVIDER} is still the {@code NoOpGeoSummaryProvider}
+         * (land01 == 0.0 everywhere) rather than a real {@link GeoAuthorityProvider} -- e.g. a seed-0 world
+         * whose {@code rebuildGeoAuthority()} never built a real authority ({@code seed != 0 && zRadius > 0}).
+         * Installing here would silently push the ENTIRE world downward (100%-ocean bias). Sweeper finding #7.
+         */
+        SKIPPED_NOOP_PROVIDER,
+        /** {@code randomState} was null, its router was null, or the rebuild threw (fell back to vanilla). */
+        SKIPPED_NULL_OR_ERROR
     }
 
     /**
@@ -81,9 +109,11 @@ public final class TerrainRouterWrapping {
      * a site (like the {@code ChunkMap} constructor) where a fully-constructed {@code ServerLevel} is NOT
      * yet safely available -- see the class javadoc for why {@code isGlobeOverworld(ServerLevel)} cannot be
      * used there.
+     *
+     * @return the {@link InstallResult} so callers can assert on the outcome directly.
      */
-    public static void installIfArmed(RandomState randomState, NoiseBasedChunkGenerator generator) {
-        installIfArmedCore(randomState, () -> GlobeMod.isGlobeNoiseGenerator(generator));
+    public static InstallResult installIfArmed(RandomState randomState, NoiseBasedChunkGenerator generator) {
+        return installIfArmedCore(randomState, () -> GlobeMod.isGlobeNoiseGenerator(generator));
     }
 
     /**
@@ -102,9 +132,22 @@ public final class TerrainRouterWrapping {
      * reads is live at all. Use this overload only from a site where {@code world.getChunkSource()} is
      * already safely non-null (i.e. NOT from inside {@code ChunkMap}'s own constructor -- see the class
      * javadoc).
+     *
+     * <p><b>Process-global leak note (sweeper finding #18).</b> The {@code getActiveRadiusBlocks() > 0} branch
+     * reads a JVM-static radius. If a globe world armed it and a DIFFERENT world (e.g. a second world booted in
+     * the same JVM, or a dev/atlas run that set the static radius directly) then calls this overload, that
+     * second world would be treated as armed even if it is not itself a globe world. In real gameplay this is
+     * a non-issue (one JVM = one world; and the {@code isGlobeOverworld(world)} branch is the authoritative
+     * per-world check), but for dev-tooling/harness contexts where multiple worlds may boot in one JVM it is a
+     * real hazard. The two mitigations already in place: (1) the seed-0 / NoOp-provider gate in
+     * {@code installIfArmedCore} refuses to install unless {@code GEO_V2_PROVIDER} is a real
+     * {@link GeoAuthorityProvider} for the CURRENT world's seed/radius (finding #7), which un-arms this leak
+     * whenever the static radius does not correspond to a live GeoAuthority; and (2) the proof harness boots
+     * exactly one world per forked JVM. The {@code ChunkMap} real-gameplay path uses the OTHER
+     * ({@code NoiseBasedChunkGenerator}) overload, which has no static-radius branch at all.
      */
-    public static void installIfArmed(RandomState randomState, ServerLevel world) {
-        installIfArmedCore(randomState, () ->
+    public static InstallResult installIfArmed(RandomState randomState, ServerLevel world) {
+        return installIfArmedCore(randomState, () ->
                 LatitudeBiomes.getActiveRadiusBlocks() > 0 || (world != null && GlobeMod.isGlobeOverworld(world)));
     }
 
@@ -125,24 +168,43 @@ public final class TerrainRouterWrapping {
      * vanilla {@link NoiseRouter} untouched (design §4.2, the outer of the two independent fallback layers;
      * {@link GeoTerrainBiasFunction#compute} is the inner one).
      */
-    private static void installIfArmedCore(RandomState randomState, BooleanSupplier globeCheck) {
+    private static InstallResult installIfArmedCore(RandomState randomState, BooleanSupplier globeCheck) {
         if (!LatitudeV2Flags.TERRAIN_V2_ENABLED || !LatitudeV2Flags.GEO_V2_ENABLED) {
-            return;
+            return InstallResult.SKIPPED_FLAG_OFF;
         }
         try {
             if (randomState == null) {
-                return;
+                return InstallResult.SKIPPED_NULL_OR_ERROR;
             }
             // Real positive globe check: true for a genuine Latitude globe world (mechanism depends on
             // caller -- see class javadoc), false for vanilla / Terralith-only / other-mod / non-globe
             // worlds (design §1.2).
             if (!globeCheck.getAsBoolean()) {
-                return;
+                return InstallResult.SKIPPED_NOT_GLOBE;
+            }
+
+            // Sweeper finding #7 (CRITICAL / hard blocker): the flag gates above are NECESSARY but NOT
+            // SUFFICIENT. LatitudeBiomes.rebuildGeoAuthority() only builds a real GeoAuthorityProvider when
+            // seed != 0 && zRadius > 0; on a seed-0 world (or any world where it never got a real seed/radius)
+            // GEO_V2_PROVIDER stays NoOpGeoSummaryProvider.INSTANCE (land01 == 0.0 for EVERY column) even with
+            // GEO_V2_ENABLED == true. Installing the wrapper then would push the ENTIRE world downward
+            // (100%-ocean bias everywhere at strength>0), the single worst failure in this batch. Gate on the
+            // ACTUAL provider being real (an instanceof GeoAuthorityProvider), not merely on the boolean flag.
+            GeoSummaryProvider provider = LatitudeBiomes.geoProviderForTerrain();
+            if (!(provider instanceof GeoAuthorityProvider)) {
+                if (NOOP_PROVIDER_SKIP_LOGGED.compareAndSet(false, true)) {
+                    GlobeMod.LOGGER.warn(
+                            "[Latitude] Phase 4 terrain bias NOT installed: geo provider is still the NoOp "
+                                    + "(land01==0.0 everywhere -- e.g. a seed-0 world); refusing to bias the whole "
+                                    + "world downward despite geoV2.enabled=true. (provider={})",
+                            provider == null ? "null" : provider.getClass().getSimpleName());
+                }
+                return InstallResult.SKIPPED_NOOP_PROVIDER;
             }
 
             NoiseRouter original = randomState.router();
             if (original == null) {
-                return;
+                return InstallResult.SKIPPED_NULL_OR_ERROR;
             }
             DensityFunction originalFinalDensity = original.finalDensity();
 
@@ -174,11 +236,25 @@ public final class TerrainRouterWrapping {
                         LatitudeV2Flags.TERRAIN_V2_STRENGTH,
                         LatitudeV2Flags.TERRAIN_V2_OCEAN_STRENGTH_RATIO);
             }
+            return InstallResult.INSTALLED;
         } catch (Throwable t) {
             // Any failure: leave the vanilla NoiseRouter untouched, log once (design §4.2).
             if (FAILURE_LOGGED.compareAndSet(false, true)) {
                 GlobeMod.LOGGER.warn("[Latitude] Phase 4 terrain-bias install failed; leaving vanilla NoiseRouter in place.", t);
             }
+            return InstallResult.SKIPPED_NULL_OR_ERROR;
         }
+    }
+
+    /**
+     * Resets the once-per-JVM "log latches" so an install (or install failure) on a SECOND world loaded in
+     * the same JVM is logged again instead of silently suppressed (sweeper finding #16). Call on world
+     * unload/reload. This does NOT affect install behavior -- it only re-arms the informational one-shot
+     * logs; the actual install decision is recomputed per {@code RandomState} regardless.
+     */
+    public static void resetLogLatchesForNewWorld() {
+        INSTALL_LOGGED.set(false);
+        FAILURE_LOGGED.set(false);
+        NOOP_PROVIDER_SKIP_LOGGED.set(false);
     }
 }

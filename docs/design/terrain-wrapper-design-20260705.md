@@ -32,6 +32,19 @@ Repo facts re-verified this session:
 
 ## 1. Interception point and mixin shape
 
+> **Implementation-decision addendum (post-implementation correction, sweeper finding #20).** §1.2/§8 below
+> frame the `RandomState`-constructor injection as the *primary* target with a `ChunkMap`-relocation *fallback*.
+> That framing is now stale: the **shipped implementation unconditionally uses the `ChunkMap`-constructor-TAIL
+> relocation** (`com.example.globe.mixin.terrain.RandomStateRouterTerrainMixin` on `ChunkMap`, calling
+> `TerrainRouterWrapping.installIfArmed(RandomState, NoiseBasedChunkGenerator)`), because the `RandomState`
+> construction site has no reliable positive globe check in scope (the six globe presets' flattened
+> `NoiseGeneratorSettings` values are structurally indistinguishable from vanilla's coarse fields, so neither
+> the (1a) value-identity nor the (1b) fingerprint mechanism is reliable — see `TerrainRouterWrapping`'s class
+> javadoc). The `RandomState`-TAIL approach and its (1a)/(1b) sub-mechanisms were **NOT adopted**; the
+> relocation is the FINAL decision, not a contingency. The dev/atlas + proof-harness path additionally uses
+> the `installIfArmed(RandomState, ServerLevel)` overload (full `isGlobeOverworld` check) at its own direct
+> `RandomState.create` call sites. Read the rest of §1 with that correction in mind.
+
 ### 1.1 Target and injection
 - Target class: `net.minecraft.world.level.levelgen.RandomState`.
 - Injection: `@Inject` at `@At("TAIL")` of the `RandomState` constructor -- the same point/technique proven to compile/apply headless/produce byte-identical Classic atlas in the reverted `RandomStateOceanSinkMixin`.
@@ -166,6 +179,8 @@ Every §6.1/§6.2 probe MUST be run in **two datapack configurations**: (A) the 
 ### 6.5 What proof cannot cover (aesthetics + absolute-Y surface bands)
 Whether the aesthetic result reads as believable coastlines (no artificial shelves, no cloud-pop, character preserved) is Peetsa's live-pass call, with K/strength/oceanStrengthRatio dialed at the keyboard. **The live-pass checklist MUST explicitly include a badlands/coastal surface-band visual check** — see §9-R3 for why absolute-Y-anchored surface rules (badlands terracotta banding at abs y 63/74, sea-level water/beach fill at abs 60/62, mountain coarse_dirt at abs 97) do not track the lifted/sunk surface and can detach from the new waterline. This artifact class is invisible to the density probe.
 
+**The live-pass checklist MUST ALSO specifically eyeball a lifted mountain in a WARM (subtropical) band for anachronistic snow** (§9-R7): the alpine snow-line (`LatitudeBiomes.alpineSnowMinY`, absolute block-Y based) does not track latitude, so a subtropical peak lifted past ~Y182 by the bias can acquire a cold snow cap it would never have naturally — the "cold surface in a warm latitude" failure class (LESSONS L14). This is a distinct, higher-visibility item from the badlands/coastal band check above and must be verified separately at the chosen live strength. Also invisible to the density probe.
+
 ---
 
 ## 7. Explicit non-goals / hard-stop compliance summary
@@ -202,6 +217,7 @@ Each item below is a survivor finding that is NOT fixed by a design change becau
 - **R4 — Single compile-time `K` may be mis-scaled between vanilla and Terralith density ranges.** Accepted at ship as "K is a starting constant, S is the live knob"; a per-terrain `K` is a possible follow-up. **Guard:** §6.4 vanilla-only proof leg produces the density-scale ratio and shows whether S alone can cover both, or whether a per-terrain K is needed before the live pass.
 - **R5 — Installed-but-S=0 byte-identity is proven in sampled value, not yet in pipeline structure.** The opaque `SimpleFunction` wrapper may alter interpolation/cache structure even at S=0. **Guard:** §6.1 adds a real NoiseChunk-build S=0 byte-identity leg that exercises `fillArray`/`mapChildren`/caching; §5 item 4 mandates a structure-preserving override if that leg is not green. Until that leg is green, the accurate claim is "byte-identical in sampled value (path b) / byte-identical end-to-end (path a, never-install)."
 - **R6 — Vanilla biome `depth` climate parameter (router field #9, unwrapped) is now computed relative to a surface `finalDensity` has moved.** On pure vanilla (no Terralith), a lifted column can have its shore/beach-vs-inland biome variant chosen as if still at the lower elevation, producing coastal/shore biome bands at a slightly wrong elevation relative to the new coastline. Leaving #9 unwrapped is correct (wrapping it would move biome climate, out of scope and against the vanilla-first "geography, not climate" separation). **Guard:** documented caveat; the §6.2 land-fraction/veto assertion and §6.5 coastal visual check are the observation points; if the shore-band mismatch is objectionable on vanilla it is a scoped follow-up, not a change to this wrapper.
+- **R7 — Absolute-Y alpine snow-line can put cold snow-capped surface into WARM latitudes on lifted columns (sweeper finding #11; a specific, higher-risk instance of the R3 class the register previously understated).** This is called out separately from R3 because R3 focused on absolute-Y *surface bands* (badlands terracotta at abs y 63/74, sea-level fill, mountain coarse_dirt) — but the alpine snow/rock system is a distinct, more visible mechanism: `LatitudeBiomes.alpineSurfaceKind`/`alpineSnowMinY` (LatitudeBiomes.java ~758-793) key snow onset on **absolute block Y** (`ALPINE_ROCK_Y=168`, per-band `snowMinY`), NOT on latitude-relative surface height. When the terrain bias **lifts a land column** in a warm band, that column's surface can cross the absolute alpine snow-line Y even though its latitude would never naturally reach it — producing a **snow-capped mountain in a SUBTROPICAL (or, on strong lift, near-tropical) band**, the exact "cold biome/surface in a warm latitude" failure class this project has been repeatedly burned by (LESSONS L14; the standing "watch for cold biomes in tropical/subtropical" instruction). Note the alpine band gating already **disables tropical alpine snow entirely** (`TROPICAL -> Integer.MAX_VALUE`) and holds the subtropical snowline high (`ALPINE_ROCK_Y + 14 = 182`), so the residual risk is concentrated in **SUBTROPICAL peaks that the bias lifts past ~Y182**, not the equator. Fixing this by changing the alpine logic is **explicitly out of scope** (a separate surface system, not this density wrapper — altering it here would be exactly the kind of cross-system entanglement this narrow wrapper avoids). **Guards:** (1) the effect scales with `S` and vanishes at `S=0`, so it is dialable to zero; (2) **the live-pass checklist MUST specifically eyeball a lifted mountain in a warm (subtropical) band for anachronistic snow after this change** — this is now an explicit, named item on the §6.5 checklist, not a general "surface-band check." If subtropical snow-creep is objectionable at the chosen live strength, the follow-up lever is a per-band or geography-aware alpine snowline (a separate scoped task), not a change to this wrapper.
 
 ---
 
