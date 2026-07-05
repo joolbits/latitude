@@ -23,4 +23,11 @@ class LatitudeV2FlagsTest {
         assertFalse(LatitudeV2Flags.BIOME_CONSUMER_V2_ENABLED,
                 "Biome Consumer slice must ship with the consumer flag disabled by default");
     }
+
+    @Test
+    void biomeConsumerV2OceanAuthorityDefaultsToDisabled() {
+        assertFalse(LatitudeV2Flags.BIOME_CONSUMER_V2_OCEAN_AUTHORITY_ENABLED,
+                "The known-land-fraction-collapse ocean-authority swap must stay off by default, "
+                        + "independent of the consumer flag, until Phase 4 or a redesign fixes it");
+    }
 }

@@ -12,6 +12,17 @@ package com.example.globe.core;
  * biomes" would silently break that contract. The consumer flag depends on its authority's flag also
  * being on (if geoV2 is off, there is no GeoSummary to consume no matter what this flag says).
  *
+ * <p>{@link #BIOME_CONSUMER_V2_OCEAN_AUTHORITY_ENABLED} is a further, independently-gated sub-flag
+ * (2026-07-04). The Biome Consumer slice's proof gate found that letting GeoAuthority's
+ * {@code isOceanIntent} replace {@code OceanDistanceField} collapses live land fraction from
+ * GeoAuthority's own calibrated ~39% to ~13% (see docs/binder/biome-consumer-slice-20260704.md) --
+ * a terrain-integration gap (Phase 4), not a GeoAuthority miscalibration. Rather than gate that known-bad
+ * behavior behind a code comment saying "don't flip this yet," it gets its OWN flag: with
+ * {@code BIOME_CONSUMER_V2_ENABLED=true} alone, only the proven-safe ClimateAuthority land-family reroll
+ * is active; the ocean-authority swap additionally requires this flag, so it cannot be enabled by
+ * accident and stays clearly walled off until Phase 4 (or an explicit decision to revisit the ocean
+ * composition logic) makes it safe to turn on by default.
+ *
  * <p>Pure Java, no Minecraft imports -- this class belongs to the Core Logic layer per
  * {@code docs/porting/PORTABILITY_ARCHITECTURE.md}.
  */
@@ -25,6 +36,9 @@ public final class LatitudeV2Flags {
 
     public static final boolean BIOME_CONSUMER_V2_ENABLED =
             Boolean.parseBoolean(System.getProperty("latitude.biomeConsumerV2.enabled", "false"));
+
+    public static final boolean BIOME_CONSUMER_V2_OCEAN_AUTHORITY_ENABLED =
+            Boolean.parseBoolean(System.getProperty("latitude.biomeConsumerV2.oceanAuthority.enabled", "false"));
 
     private LatitudeV2Flags() {
     }
