@@ -8,6 +8,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -32,6 +33,11 @@ class ClimateAuthorityTest {
 
     private static GeoSummary ocean() {
         return new GeoSummary(0.0, true, -1, 1, -50.0, 0.0, 0, 0, 0, -1, 0, 0, -1, 0, -1);
+    }
+
+    /** ocean column near a plate boundary: mountainIntent01 is nonzero despite being open ocean. */
+    private static GeoSummary oceanNearMountainIntent(double mtn) {
+        return new GeoSummary(0.0, true, -1, 1, -50.0, 0.0, 0, 0, mtn, -1, 0, 0, -1, 0, -1);
     }
 
     private String cls(double phi, GeoSummary c, double fetch, double curr, double lift, double shadow) {
@@ -67,8 +73,13 @@ class ClimateAuthorityTest {
         assertEquals("TEMPERATE_OCEANIC", cls(45, land(100, 0), 0.30, 0.30, 0, 0.9), "row12");
         // 13 tropical savanna, dry winter -> savanna
         assertEquals("TROPICAL_SAVANNA", cls(15, land(1000, 0), 0.10, 0, 0, 0), "row13");
-        // 14 equatorial alpine (mountainIntent 1.0) -> boreal (alpine step-down)
-        assertEquals("BOREAL", cls(3, land(100, 1.0), 0.35, 0, 0, 0), "row14");
+        // 14 equatorial alpine (mountainIntent 1.0) -> rainforest alpine-stepped down one tier.
+        // Pre-fix this asserted BOREAL, which matched the *old* classifyBase's fallthrough bug
+        // (an uncooled-below-T_WARM tropical column fell through to a band-blind HUMID_CONTINENTAL
+        // default, which alpineStep then demoted to BOREAL) -- not the design's actual intent. The
+        // design comment already said "ALPINE step-down from rainforest"; TEMPERATE_OCEANIC is what
+        // alpineStep(TROPICAL_RAINFOREST) actually yields (see LESSONS L14).
+        assertEquals("TEMPERATE_OCEANIC", cls(3, land(100, 1.0), 0.35, 0, 0, 0), "row14");
     }
 
     // Row 12 paired control: rain shadow is a bounded diagnostic, cannot desertify.
@@ -80,6 +91,77 @@ class ClimateAuthorityTest {
         assertEquals("TEMPERATE_OCEANIC",
                 ca.assemble(0, zFor(45), land(100, 0), 0.30 * R, 0.30, 0, 0.0, List.of()).climateClass(),
                 "shadow flipped the class");
+    }
+
+    // ---- Sweeper audit 2026-07-05 (LESSONS L14) regressions ----
+
+    // Finding #13/#20 shape: a SUBTROPICAL column cooled into the old T-gap ([T_BOREAL_HI, T_WARM) =
+    // [0.42, 0.60), reachable from altitude cooling alone) with wet precipitation used to fall through
+    // to a band-blind COLD_STEPPE (snowy_plains) default -- UNMASKED here, since T=0.50 is below the
+    // alpine-step threshold so no alpineStep demotion runs to obscure it. Calls classifyBase directly
+    // (now package-private for exactly this purpose) rather than reverse-engineering geography that
+    // hits T=0.50 through the full assemble() pipeline.
+    @Test
+    void subtropicalCooledGapNoLongerFallsToColdSteppe() {
+        ClimateClass c = ca.classifyBase(0.50, 0.55, LatitudeBand.SUBTROPICAL, SeasonalityClass.SEASONAL,
+                land(500, 0), 0);
+        assertEquals(ClimateClass.TEMPERATE_OCEANIC, c);
+    }
+
+    // Finding #19: mountainIntent01 is a land-oriented orographic INTENT signal (GeoAuthority has no
+    // real submarine-terrain concept), but an ocean column near a plate boundary can still carry a
+    // nonzero value. Applying altitude cooling to it used to crash equatorial ocean temperature toward
+    // OCEAN_FROZEN with no physical basis; alt is now zeroed for ocean columns in assemble().
+    @Test
+    void oceanColumnNearMountainIntentStaysWarmAtEquator() {
+        String c = cls(2, oceanNearMountainIntent(1.0), 0.42, 0, 0, 0);
+        assertEquals("OCEAN_WARM", c, "ocean altitude-cooling bug: mountainIntent01 chilled an equatorial ocean column");
+    }
+
+    // L14 exhaustiveness sweep: classifyBase is called directly across every LatitudeBand and a
+    // representative T/P grid spanning every threshold tier, so a future change that reintroduces a
+    // silent gap (an uncovered T/P/band combination quietly matching some unrelated band's default)
+    // fails this test loudly instead of only showing up as a plausible-looking wrong biome in play.
+    @Test
+    void classifyBaseNeverFallsThroughAcrossFullTPBandGrid() {
+        double[] tSamples = {0.05, 0.15, 0.30, 0.45, 0.55, 0.65, 0.75, 0.95};
+        double[] pSamples = {0.10, 0.30, 0.45, 0.55, 0.70};
+        GeoSummary col = land(500, 0);
+        for (LatitudeBand band : LatitudeBand.values()) {
+            for (double T : tSamples) {
+                for (double P : pSamples) {
+                    ClimateClass c = ca.classifyBase(T, P, band, SeasonalityClass.SEASONAL, col, 0);
+                    assertNotNull(c, "null classification at T=" + T + " P=" + P + " band=" + band);
+                    // Universal cold tiers (T < T_BOREAL_HI) are band-independent by design; above
+                    // that threshold a TROPICAL/SUBTROPICAL column must never resolve to a purely
+                    // arctic class -- the exact shape of the pre-fix fallthrough bug.
+                    if (T >= ClimateAuthorityParams.T_BOREAL_HI
+                            && (band == LatitudeBand.TROPICAL || band == LatitudeBand.SUBTROPICAL)) {
+                        assertNotEquals(ClimateClass.TUNDRA, c, "T=" + T + " P=" + P + " band=" + band);
+                        assertNotEquals(ClimateClass.ICE_CAP, c, "T=" + T + " P=" + P + " band=" + band);
+                    }
+                }
+            }
+        }
+    }
+
+    // Sweeper finding #22 (PLAUSIBLE, not fixed -- pinned as documented, intentional behavior): the
+    // SUBPOLAR classifyBase branch is temperature-blind (`P >= P_STEPPE ? BOREAL : COLD_STEPPE`), so a
+    // mild current-warmed coastal column one band above TEMPERATE snaps straight to a cold taiga family
+    // at the phi=50 band edge, where the same T/P one band below would give TEMPERATE_OCEANIC. This is
+    // a real, previously-untested discontinuity, but "SUBPOLAR is always cool" is the band's actual
+    // design intent (bandFor has no smoothing), not a fallthrough default -- unlike L14's bug, every
+    // SUBPOLAR input hits an explicit, intended case. Pinning current behavior here so a future change
+    // to this boundary is a deliberate design decision, not an accidental regression.
+    @Test
+    void subpolarBandBoundaryIsTemperatureBlindByDesign() {
+        double T = 0.66, P = 0.89;
+        assertEquals(ClimateClass.TEMPERATE_OCEANIC,
+                ca.classifyBase(T, P, LatitudeBand.TEMPERATE, SeasonalityClass.SEASONAL, land(500, 0), 0.5),
+                "TEMPERATE side of the phi=50 edge");
+        assertEquals(ClimateClass.BOREAL,
+                ca.classifyBase(T, P, LatitudeBand.SUBPOLAR, SeasonalityClass.SEASONAL, land(500, 0), 0.5),
+                "SUBPOLAR side of the phi=50 edge -- same T/P, cold family by design");
     }
 
     // I1 — same latitude, different geography => different climate (no pure latitude stripe).

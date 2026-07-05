@@ -93,10 +93,15 @@ public final class ClimateAuthority {
         }
         if (blocked) flags.add(F_SHORT_FETCH);
 
-        // --- current: 2 lateral probes, only in gyre latitudes on coastal land ---
+        // --- current: 2 lateral probes, only in gyre/drift latitudes on coastal land ---
+        // Sweeper audit 2026-07-05 (finding #29): currentModifierFor's warm-boundary drift term
+        // (bump(a, DRIFT_LO, DRIFT_HI)) is documented as extending "up the mid-latitudes" to
+        // DRIFT_HI=62, but this call site used to gate on GYRE_HI=55, so a in [55,62) always got
+        // curr=0 live -- the disclosed drift band was dead in production. Gate on DRIFT_HI so the
+        // documented behavior is actually reachable.
         double curr = 0.0;
         boolean coastalLand = !center.isOceanIntent() && center.coastDistanceBlocks() < COASTAL_LAND_MAX_R * R;
-        if (a < GYRE_HI && coastalLand) {
+        if (a < DRIFT_HI && coastalLand) {
             int lc = (int) Math.round(LCUR_R * R);
             GeoSummary gW = geo.sample(x - lc, z), gE = geo.sample(x + lc, z);
             boolean oW = gW.isOceanIntent(), oE = gE.isOceanIntent();
@@ -138,7 +143,11 @@ public final class ClimateAuthority {
 
         // --- temperature ---
         double tbase = clamp01(TB_HOT * Math.pow(Math.cos(a * Math.PI / 180.0), INSOL_EXP));
-        double alt = clamp01(center.mountainIntent01() * ALT_GAIN); // altitudeCooling01
+        // Sweeper audit 2026-07-05 (finding #19): mountainIntent01 is a land-oriented orographic
+        // INTENT signal (GeoAuthority has no real submarine-terrain concept); applying it to ocean
+        // columns let a nonzero intent near a plate boundary crash equatorial ocean temperature
+        // toward OCEAN_FROZEN with no physical basis. Zero it for ocean columns.
+        double alt = center.isOceanIntent() ? 0.0 : clamp01(center.mountainIntent01() * ALT_GAIN); // altitudeCooling01
         double coastProx = center.isOceanIntent() ? 0.0 : clamp01(1.0 - center.coastDistanceBlocks() / (0.10 * R));
         double dither = (valueNoise(seed ^ S_TEMP, x, z, Math.max(1, (int) Math.round(TDITHER_SCALE_R * R))) - 0.5) * TDITHER_AMP;
         double T = clamp01(tbase - alt * K_ALT - CONT_COOL * cont * smoothstep(20.0, 50.0, a)
@@ -254,7 +263,31 @@ public final class ClimateAuthority {
         return SeasonalityClass.SEASONAL;
     }
 
-    private ClimateClass classifyBase(double T, double P, LatitudeBand band, SeasonalityClass seas,
+    /**
+     * Sweeper audit 2026-07-05 (LESSONS L14): the previous version of this cascade gated the
+     * TROPICAL and SUBTROPICAL productive branches on {@code T >= T_WARM}, so any column in either
+     * band whose temperature was cooled into {@code [T_BOREAL_HI, T_WARM)} -- reachable from
+     * altitude cooling alone, with no unusual precipitation -- matched no explicit case and fell
+     * through to a band-blind default: {@code HUMID_CONTINENTAL} for TROPICAL (masked into BOREAL by
+     * the alpine step only by numerical coincidence -- the confirmed 18N "snowy taiga next to
+     * jungle" defect), or {@code COLD_STEPPE} (snowy_plains) for SUBTROPICAL, UNMASKED, since that
+     * gap is reachable below the alpine-step threshold.
+     *
+     * <p>Fix: band is now the exhaustive driver for every {@code T >= T_BOREAL_HI} column (a
+     * {@code switch} over the 5-value {@link LatitudeBand} enum, so a future 6th band is a compile
+     * error, not a silent fallthrough). Temperature only distinguishes hot-vs-cool WITHIN a band's
+     * desert branch, matching how the original tropical productive block already worked for
+     * rainforest-vs-savanna (precipitation-driven, not temperature-gated). A cooled column now
+     * classifies via its band's normal precipitation-driven logic, and the existing
+     * {@link #alpineStep} (unchanged) demotes it appropriately -- this is what the design's own
+     * acceptance-table comment for the equatorial-alpine case ("ALPINE step-down from rainforest")
+     * already intended, but the T-gate prevented from happening.
+     */
+    // Package-private (not private), matching bump()/currentModifierFor()'s existing convention in
+    // this file, so ClimateAuthorityTest can exercise the classification cascade exhaustively and
+    // directly (T/P/band/seasonality) instead of reverse-engineering geography inputs that hit exact
+    // (T,P) targets through the full assemble() pipeline (sweeper audit 2026-07-05, LESSONS L14).
+    ClimateClass classifyBase(double T, double P, LatitudeBand band, SeasonalityClass seas,
                                       GeoSummary center, double curr) {
         if (center.isOceanIntent()) {
             if (T > OCEAN_WARM_T) return ClimateClass.OCEAN_WARM;
@@ -262,34 +295,39 @@ public final class ClimateAuthority {
             if (T >= OCEAN_COLD_T) return ClimateClass.OCEAN;
             return ClimateClass.OCEAN_FROZEN;
         }
+        // Universal cold tiers: below T_BOREAL_HI a column is never tropical/warm-looking, in any band.
         if (T < T_ICE) return ClimateClass.ICE_CAP;
         if (T < T_TUNDRA) return ClimateClass.TUNDRA;
         if (T < T_BOREAL_HI) return P < P_STEPPE ? ClimateClass.COLD_STEPPE : ClimateClass.BOREAL;
+        // seasonality() only ever assigns MEDITERRANEAN for SUBTROPICAL/TEMPERATE at 30<=a<45, so
+        // this cannot misfire for TROPICAL/SUBPOLAR/POLAR columns.
         if (seas == SeasonalityClass.MEDITERRANEAN) return ClimateClass.MEDITERRANEAN;
-        if (band == LatitudeBand.TROPICAL && T >= T_WARM) {
-            if (P >= P_RAINFOREST) return ClimateClass.TROPICAL_RAINFOREST;
-            if (P >= P_WET && seas != SeasonalityClass.TROPICAL_WETDRY) {
-                return seas == SeasonalityClass.MONSOON ? ClimateClass.TROPICAL_MONSOON : ClimateClass.TROPICAL_RAINFOREST;
+
+        boolean hot = T >= T_HOT;
+        if (P < P_DESERT) return hot ? ClimateClass.HOT_DESERT : ClimateClass.COOL_DESERT;
+
+        // T >= T_BOREAL_HI, P >= P_DESERT, not Mediterranean: band is the exhaustive driver.
+        return switch (band) {
+            case TROPICAL -> {
+                if (P < P_STEPPE) yield ClimateClass.TROPICAL_SAVANNA;
+                if (P >= P_RAINFOREST) yield ClimateClass.TROPICAL_RAINFOREST;
+                if (seas == SeasonalityClass.TROPICAL_WETDRY) yield ClimateClass.TROPICAL_SAVANNA;
+                yield seas == SeasonalityClass.MONSOON ? ClimateClass.TROPICAL_MONSOON : ClimateClass.TROPICAL_RAINFOREST;
             }
-            return ClimateClass.TROPICAL_SAVANNA;
-        }
-        if (T >= T_HOT && P < P_DESERT) return ClimateClass.HOT_DESERT;
-        if (T < T_HOT && P < P_DESERT) return ClimateClass.COOL_DESERT;
-        if (P < P_STEPPE) return T >= T_WARM ? ClimateClass.SAVANNA : ClimateClass.COLD_STEPPE;
-        if (band == LatitudeBand.SUBTROPICAL) {
-            if (P >= P_WET && T >= T_WARM) return ClimateClass.HUMID_SUBTROPICAL;
-            if (P >= P_STEPPE && T >= T_WARM) return ClimateClass.TROPICAL_SAVANNA;
-            return ClimateClass.COLD_STEPPE;
-        }
-        if (band == LatitudeBand.TEMPERATE) {
-            if (seas == SeasonalityClass.OCEANIC && P >= P_WET) return ClimateClass.TEMPERATE_OCEANIC;
-            if (seas == SeasonalityClass.CONTINENTAL) return ClimateClass.HUMID_CONTINENTAL;
-            if (P >= P_WET) return ClimateClass.TEMPERATE_OCEANIC;
-            return ClimateClass.HUMID_CONTINENTAL;
-        }
-        if (band == LatitudeBand.SUBPOLAR) return P >= P_STEPPE ? ClimateClass.BOREAL : ClimateClass.COLD_STEPPE;
-        if (band == LatitudeBand.POLAR) return ClimateClass.TUNDRA;
-        return ClimateClass.HUMID_CONTINENTAL;
+            case SUBTROPICAL -> {
+                if (P < P_STEPPE) yield hot ? ClimateClass.SAVANNA : ClimateClass.COLD_STEPPE;
+                if (P >= P_WET) yield hot ? ClimateClass.HUMID_SUBTROPICAL : ClimateClass.TEMPERATE_OCEANIC;
+                yield hot ? ClimateClass.TROPICAL_SAVANNA : ClimateClass.HUMID_CONTINENTAL;
+            }
+            case TEMPERATE -> {
+                if (P < P_STEPPE) yield ClimateClass.COLD_STEPPE;
+                if (seas == SeasonalityClass.OCEANIC && P >= P_WET) yield ClimateClass.TEMPERATE_OCEANIC;
+                if (seas == SeasonalityClass.CONTINENTAL) yield ClimateClass.HUMID_CONTINENTAL;
+                yield P >= P_WET ? ClimateClass.TEMPERATE_OCEANIC : ClimateClass.HUMID_CONTINENTAL;
+            }
+            case SUBPOLAR -> P >= P_STEPPE ? ClimateClass.BOREAL : ClimateClass.COLD_STEPPE;
+            case POLAR -> ClimateClass.TUNDRA;
+        };
     }
 
     private static ClimateClass alpineStep(ClimateClass c) {

@@ -67,8 +67,12 @@ public final class ClimateAuthorityParams {
     public static final double COASTAL_LAND_MAX_R = 0.12; // coastDistance < this*R => coastal
 
     // --- class thresholds ---
-    public static final double T_ICE = 0.10, T_TUNDRA = 0.20, T_BOREAL_HI = 0.42,
-            T_COOL = 0.48, T_WARM = 0.60, T_HOT = 0.70;
+    // (T_COOL=0.48 from the original design synthesis was never wired into classifyBase -- removed
+    // 2026-07-05 sweeper audit finding #24 rather than left as dead/misleading code. T_WARM=0.60 was
+    // the old classifyBase's T-gate for the TROPICAL/SUBTROPICAL productive branches -- the root
+    // cause of LESSONS L14's fallthrough bug -- and is no longer referenced now that band is the
+    // exhaustive driver for T >= T_BOREAL_HI; removed for the same never-truly-load-bearing reason.)
+    public static final double T_ICE = 0.10, T_TUNDRA = 0.20, T_BOREAL_HI = 0.42, T_HOT = 0.70;
     public static final double P_DESERT = 0.24, P_STEPPE = 0.38, P_WET = 0.50, P_RAINFOREST = 0.62;
 
     // --- ocean temp cutoffs (for OCEAN_* subclass) ---
