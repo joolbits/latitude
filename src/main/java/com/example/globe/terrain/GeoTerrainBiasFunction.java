@@ -140,7 +140,32 @@ public final class GeoTerrainBiasFunction implements DensityFunction.SimpleFunct
         return codec;
     }
 
-    // SimpleFunction supplies default fillArray/mapChildren; correct for a leaf wrapper (design §4.1).
-    // Not overridden unless a structural byte-identity proof leg (design §6.1/§9-R5) shows the default
-    // strips interpolation/cache markers -- that is separate follow-up work, not part of this task.
+    /**
+     * Overridden -- the design's own §6.1(b)(ii)/§9-R5 structural byte-identity leg found the default
+     * {@code SimpleFunction.mapChildren} ({@code return this;}, verified via javap on the 26.2 jar) breaks
+     * {@code NoiseChunk}'s cache/interpolation substitution: {@code NoiseChunk}'s constructor calls
+     * {@code NoiseRouter.mapAll(visitor)}, which recursively walks the router's density graph via
+     * {@code mapChildren} so the visitor can swap in chunk-scoped cache/interpolation nodes (e.g. the
+     * {@code interpolated(blendDensity(...))} node buried inside vanilla's real {@code finalDensity}
+     * graph, per §0). Returning {@code this} verbatim (the default) hides {@code delegate} from that
+     * visitor entirely, so the ORIGINAL RandomState-construction-time density graph is used instead of
+     * NoiseChunk's per-chunk one -- an installed-but-S=0 run then differs from the never-install run in
+     * specific generated blocks (confirmed empirically: this exact defect was caught by the §6.1(b)(ii)
+     * structural probe before this override existed).
+     *
+     * <p>The fix mirrors vanilla's own single-child wrapper pattern (e.g.
+     * {@code DensityFunctions.MulOrAdd.mapChildren}, verified via javap): call {@code visitor.apply(delegate)}
+     * to get the (possibly substituted) child, and construct a NEW {@code GeoTerrainBiasFunction} wrapping
+     * it -- never mutate or return {@code this} directly, since visitors may run more than once with
+     * different substitution behavior.
+     */
+    @Override
+    public DensityFunction mapChildren(Visitor visitor) {
+        return new GeoTerrainBiasFunction(visitor.apply(delegate));
+    }
+
+    // fillArray keeps SimpleFunction's default (per-cell delegation to compute() via
+    // ContextProvider.fillAllDirectly) -- that is value-correct or this class's compute() itself would be
+    // wrong, and the structural concern was specifically about mapChildren/cache-substitution, not
+    // fillArray's per-cell evaluation strategy.
 }

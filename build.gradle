@@ -86,6 +86,20 @@ loom {
             vmArg "-Dlatdev.probe.radius=${System.getProperty('latdev.probe.radius', '')}"
             vmArg "-Dlatdev.probe.maxCombos=${System.getProperty('latdev.probe.maxCombos', '')}"
             vmArg "-Dlatitude.debugWorldgenPath=${System.getProperty('latitude.debugWorldgenPath', 'false')}"
+            // Phase 4 terrain-wrapper mechanical proof harness (com.example.globe.dev.TerrainProofHarness).
+            // See docs/design/terrain-wrapper-design-20260705.md §6/§8 items 7-9.
+            vmArg "-Dlatdev.terrainProof=${System.getProperty('latdev.terrainProof', 'false')}"
+            vmArg "-Dlatdev.terrainProof.seed=${System.getProperty('latdev.terrainProof.seed', '')}"
+            vmArg "-Dlatdev.terrainProof.radius=${System.getProperty('latdev.terrainProof.radius', '')}"
+            vmArg "-Dlatdev.terrainProof.shape=${System.getProperty('latdev.terrainProof.shape', '')}"
+            vmArg "-Dlatdev.terrainProof.out=${System.getProperty('latdev.terrainProof.out', '')}"
+            vmArg "-Dlatdev.terrainProof.nonGlobe=${System.getProperty('latdev.terrainProof.nonGlobe', 'false')}"
+            // LatitudeV2Flags -- static final, read once at class-init, so these MUST reach the forked JVM
+            // as real -D launch args (see LatitudeV2Flags's own "Testing note" javadoc).
+            vmArg "-Dlatitude.terrainV2.enabled=${System.getProperty('latitude.terrainV2.enabled', 'false')}"
+            vmArg "-Dlatitude.terrainV2.strength=${System.getProperty('latitude.terrainV2.strength', '0.0')}"
+            vmArg "-Dlatitude.terrainV2.oceanStrengthRatio=${System.getProperty('latitude.terrainV2.oceanStrengthRatio', '1.0')}"
+            vmArg "-Dlatitude.geoV2.enabled=${System.getProperty('latitude.geoV2.enabled', 'false')}"
         }
         biomeSeedSearch {
             server()
