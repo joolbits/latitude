@@ -22,7 +22,9 @@
     "SurfaceDripstoneLawnmowerMixin",
     "ExtremePolarVillageGuardMixin",
     "ExtremePolarVegetationGuardMixin",
-    "StructureBiomeMatchGuardMixin"
+    "StructureBiomeMatchGuardMixin",
+    "terrain.RandomStateAccessor",
+    "terrain.RandomStateRouterTerrainMixin"
   ],
   "client": [
     "client.CreateWorldScreenMixin",

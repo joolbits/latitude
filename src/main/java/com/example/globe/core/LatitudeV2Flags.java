@@ -49,6 +49,43 @@ public final class LatitudeV2Flags {
     public static final boolean BIOME_CONSUMER_V2_OCEAN_AUTHORITY_ENABLED =
             Boolean.parseBoolean(System.getProperty("latitude.biomeConsumerV2.oceanAuthority.enabled", "false"));
 
+    // --- Phase 4 (Terrain Integration Spike) flags -------------------------------------------------
+    // These gate the one narrow density-function wrapper (GeoTerrainBiasFunction) that biases terrain
+    // surface height toward GeoAuthority's continuous land/ocean field. Design:
+    // docs/design/terrain-wrapper-design-20260705.md (locked r2). All default to the true no-op:
+    // ENABLED=false means the wrapper is never installed (byte-identical flag-off); STRENGTH=0.0 is a
+    // second belt-and-suspenders no-op (biased == base); OCEAN_STRENGTH_RATIO=1.0 is the symmetric form.
+    //
+    // The doubles are parsed defensively: a malformed -D degrades to the no-op default rather than
+    // throwing at class-init (a class-init failure here would take down all worldgen). See design §3.
+
+    /** Phase 4 install gate. Default false -> the terrain-bias wrapper is never installed. */
+    public static final boolean TERRAIN_V2_ENABLED =
+            Boolean.parseBoolean(System.getProperty("latitude.terrainV2.enabled", "false"));
+
+    /** Phase 4 primary strength knob (the live-tuning knob). Default 0.0 -> installed-but-no-op. */
+    public static final double TERRAIN_V2_STRENGTH =
+            parseDoubleOrDefault(System.getProperty("latitude.terrainV2.strength"), 0.0);
+
+    /** Phase 4 optional ocean-side asymmetry knob. Default 1.0 -> symmetric (land push == ocean push). */
+    public static final double TERRAIN_V2_OCEAN_STRENGTH_RATIO =
+            parseDoubleOrDefault(System.getProperty("latitude.terrainV2.oceanStrengthRatio"), 1.0);
+
+    /**
+     * Defensive double parse for the Phase 4 knobs: a {@code null} (property unset) or malformed value
+     * degrades to {@code fallback} instead of throwing {@link NumberFormatException} at class-init.
+     */
+    private static double parseDoubleOrDefault(String raw, double fallback) {
+        if (raw == null) {
+            return fallback;
+        }
+        try {
+            return Double.parseDouble(raw.trim());
+        } catch (NumberFormatException e) {
+            return fallback;
+        }
+    }
+
     private LatitudeV2Flags() {
     }
 }

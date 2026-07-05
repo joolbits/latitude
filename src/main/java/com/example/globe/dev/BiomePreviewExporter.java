@@ -226,6 +226,14 @@ public final class BiomePreviewExporter {
                 ((net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator) generator).generatorSettings().value(),
                 world.registryAccess().lookupOrThrow(Registries.NOISE),
                 atlasSeed);
+        // Phase 4 terrain-bias wrapper (docs/design/terrain-wrapper-design-20260705.md): this RandomState
+        // is constructed directly by dev/atlas tooling, bypassing ChunkMap's constructor (the mixin that
+        // installs the wrapper for real gameplay), so the atlas/proof-harness path must install it here too
+        // -- otherwise a flag-ON atlas run would silently never exercise the wrapper. No-op unless
+        // latitude.terrainV2.enabled AND latitude.geoV2.enabled AND this is a genuine globe world (checked
+        // via GlobeMod.isGlobeOverworld(world), which also covers this tooling's plain-minecraft:normal +
+        // persisted-LatitudeWorldState-radius way of marking a world as "globe").
+        com.example.globe.terrain.TerrainRouterWrapping.installIfArmed(noiseConfig, world);
         Climate.Sampler sampler = noiseConfig.sampler();
         net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator noiseGen =
                 generator instanceof net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator ng ? ng : null;
@@ -681,9 +689,13 @@ public final class BiomePreviewExporter {
                     ((net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator) this.generator).generatorSettings().value(),
                     world.registryAccess().lookupOrThrow(Registries.NOISE),
                     atlasSeed);
+            // Phase 4 terrain-bias wrapper (docs/design/terrain-wrapper-design-20260705.md): see the
+            // matching comment at the other RandomState.create call site in this file (export()) for why
+            // this direct-construction path also needs the install call, not just the ChunkMap mixin.
+            com.example.globe.terrain.TerrainRouterWrapping.installIfArmed(this.noiseConfig, world);
             this.sampler = noiseConfig.sampler();
             net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator noiseGen =
-                    generator instanceof net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator ng ? ng : null;
+                    this.generator instanceof net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator ng ? ng : null;
             // Opt-in terrain-aware atlas (-Dlatitude.atlasTerrainAware=true): feed real terrain so terrain
             // gates fire (map-proves plains-on-steep etc.). Default off → byte-identical normal runs.
             boolean terrainAware = Boolean.getBoolean("latitude.atlasTerrainAware");

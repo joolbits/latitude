@@ -820,6 +820,21 @@ public final class LatitudeBiomes {
     }
 
     /**
+     * Read-only view of the current GeoAuthority-backed provider for the Phase 4 terrain-bias wrapper
+     * ({@code com.example.globe.mixin.terrain.GeoTerrainBiasFunction}). Kept as a narrow accessor so the
+     * {@code GEO_V2_PROVIDER} field stays {@code private static volatile}; the wrapper must read it
+     * lazily per {@code compute()} call (NOT capture it once), because this volatile static may not hold
+     * its final per-world value at the instant a {@code RandomState} is constructed early in world load
+     * (see design {@code docs/design/terrain-wrapper-design-20260705.md} §1.1). While
+     * {@code latitude.geoV2.enabled} is false this returns {@link com.example.globe.adapter.geo.NoOpGeoSummaryProvider}
+     * (land01 == 0.0 for every column) -- the terrain wrapper's own {@code GEO_V2_ENABLED} gate is what
+     * keeps that NEUTRAL/all-ocean trap from ever biasing terrain.
+     */
+    public static GeoSummaryProvider geoProviderForTerrain() {
+        return GEO_V2_PROVIDER;
+    }
+
+    /**
      * Classifies the given block position into a coarse humidity/moisture province.
      * Returns null if the province authority has not been initialized.
      *
