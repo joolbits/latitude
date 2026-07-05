@@ -168,6 +168,15 @@ class GeoAuthorityTest {
     }
 
     // T15 — land and ocean id namespaces are disjoint.
+    // Sweeper audit #2 findings #16/#23 (2026-07-05): this can ONLY ever pass, by construction, and
+    // does NOT verify the attached GeoIdTable/labeling is correct. sample() (GeoAuthority.java L241)
+    // unconditionally re-applies a parity mask (compId | 1 for ocean, compId & ~1 for land) using the
+    // column's OWN type, AFTER the table lookup -- so continentId is always even and oceanBasinId
+    // always odd regardless of whether the attached table's connected-component labeling is right or
+    // scrambled. That parity enforcement is real, deliberate code (see the comment at that line) worth
+    // testing on its own -- this test genuinely covers "the disjointness mechanism didn't regress" --
+    // but it is NOT a test of labeling/table correctness. That coverage is continentIdStableWithinBlob
+    // above (same real landmass -> same id across sampled points).
     @Test
     void idNamespacesDisjoint() {
         GeoAuthority geo = new GeoAuthority(SEED, 3750, 7500);

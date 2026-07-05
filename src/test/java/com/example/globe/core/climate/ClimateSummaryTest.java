@@ -26,7 +26,7 @@ class ClimateSummaryTest {
         assertEquals(0.0, summary.precipitation01());
         assertEquals(0.0, summary.windwardLift01());
         assertEquals(0.0, summary.rainShadow01());
-        assertEquals(0.0, summary.currentModifier01());
+        assertEquals(0.0, summary.currentModifierSigned());
     }
 
     @Test

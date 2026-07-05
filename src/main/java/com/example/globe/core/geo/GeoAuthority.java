@@ -55,7 +55,12 @@ public final class GeoAuthority {
         this.xRadius = xRadius;
         this.lc = Math.max(1, (int) Math.round(LC_RATIO * zRadius));
         this.lwarp = Math.max(1, (int) Math.round(LWARP_RATIO * zRadius));
-        this.warpAmp = (int) Math.round(WARP_AMP_RATIO * zRadius);
+        // Sweeper audit #2 finding #12/#25 (2026-07-05): every sibling radius-relative scale on this
+        // line and below is floored at 1 via Math.max(1, ...); this one wasn't, so zRadius<=8 rounded
+        // warpAmp to 0 and silently collapsed the domain warp to identity (warpedX==x) instead of
+        // erroring -- unreachable at any canonical world size (itty=3750+ gives warpAmp=225) but an
+        // inconsistency vs. every other scale here. Floored for the same robustness/consistency reason.
+        this.warpAmp = Math.max(1, (int) Math.round(WARP_AMP_RATIO * zRadius));
         this.lplate = Math.max(1, (int) Math.round(LPLATE_RATIO * zRadius));
         this.lid = Math.max(1, (int) Math.round(LID_RATIO * zRadius));
         this.shelfW = Math.max(1, (int) Math.round(SHELF_W_RATIO * zRadius));

@@ -27,7 +27,11 @@ public record ClimateSummary(
         double precipitation01,
         double windwardLift01,
         double rainShadow01,
-        double currentModifier01,
+        // Sweeper audit #2 finding #8 (2026-07-05): SIGNED [-1,+1] (+ = warm western-boundary
+        // current, - = cold eastern-boundary current), unlike every other `*01` field in this record
+        // which is a [0,1] magnitude -- named without the misleading suffix so a future consumer
+        // doesn't clamp01()/treat-negative-as-none on the assumption implied by the naming convention.
+        double currentModifierSigned,
         String seasonalityClass,
         String climateClass,
         List<String> diagnosticFlags

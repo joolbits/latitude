@@ -129,15 +129,24 @@ def load_run(run_dir: str, prefix: str | None = None) -> AtlasRun:
 
 
 def family_grid(run: AtlasRun) -> np.ndarray:
-    """Returns an (H, W) array of dtype '<U5' with values 'land'/'ocean'/'river'."""
+    """Returns an (H, W) array of dtype '<U7' with values 'land'/'ocean'/'river'/'unknown'.
+
+    'unknown' (sweeper audit #2 findings #5/#20, 2026-07-05) covers two cases this used to silently
+    fold into other families instead of flagging: (1) a palette index in [0, max_index] with no entry
+    in biome_palette.json -- classify_biome("unknown") used to fall through both its guards to "land";
+    (2) a raw pixel value greater than max_index -- np.clip used to fold it onto whatever family
+    max_index's own biome happens to be. Both silently corrupted land/water shares with no warning for
+    a tool whose entire job is trustworthy geography measurement. Callers should check
+    unknown_pixel_count in the report rather than have it invisibly inflate "land".
+    """
     max_index = max(run.idx2id.keys()) if run.idx2id else -1
-    lut = np.empty(max_index + 1, dtype="<U5")
+    lut = np.empty(max_index + 2, dtype="<U7")  # last slot is the "no palette entry" sentinel bucket
     for i in range(max_index + 1):
         biome_id = run.idx2id.get(i)
-        short = biome_id.split(":", 1)[-1] if biome_id else "unknown"
-        lut[i] = classify_biome(short)
-    clipped = np.clip(run.ids, 0, max_index)
-    return lut[clipped]
+        lut[i] = classify_biome(biome_id.split(":", 1)[-1]) if biome_id else "unknown"
+    lut[max_index + 1] = "unknown"
+    idx = np.minimum(np.maximum(run.ids, 0), max_index + 1) if max_index >= 0 else np.zeros_like(run.ids)
+    return lut[idx]
 
 
 def row_latitudes_deg(run: AtlasRun) -> np.ndarray:
@@ -283,6 +292,7 @@ def analyze(run: AtlasRun, edge_frac: float = 0.02) -> dict:
     land = families == "land"
     ocean = families == "ocean"
     river = families == "river"
+    unknown = families == "unknown"
     water = ocean | river
     coast = coast_mask(land, water)
 
@@ -309,14 +319,23 @@ def analyze(run: AtlasRun, edge_frac: float = 0.02) -> dict:
     coast_comp = component_shares(coast_labels_4, weights_2d)
 
     def largest_share(components: list[dict], mask: np.ndarray) -> dict:
+        # Sweeper audit #2 findings #1-4/#9/#20/#24 (2026-07-05, found independently by nearly every
+        # lens): component_shares() sorts its list by RAW cell count (largest-raw-first), so
+        # components[0] is the raw-largest component, not necessarily the weighted-largest under
+        # cosine-latitude area weighting. Reusing components[0] for BOTH metrics silently reported
+        # "largest area-weighted share" as the weighted share OF the raw-largest component instead of
+        # the true maximum weighted share -- understating dominance by 5x+ whenever a raw-large,
+        # low-weight (e.g. polar) component out-counts a raw-small, high-weight (e.g. equatorial) one.
+        # Rank each metric independently.
         if not components:
             return {"raw": 0.0, "weighted": 0.0}
         total_raw = int(mask.sum())
         total_weighted = float((mask * weights_2d).sum())
-        top = components[0]
+        top_raw = components[0]  # component_shares already sorts largest-raw-first
+        top_weighted = max(components, key=lambda c: c["weighted_sum"])
         return {
-            "raw": (top["raw_count"] / total_raw) if total_raw else 0.0,
-            "weighted": (top["weighted_sum"] / total_weighted) if total_weighted else 0.0,
+            "raw": (top_raw["raw_count"] / total_raw) if total_raw else 0.0,
+            "weighted": (top_weighted["weighted_sum"] / total_weighted) if total_weighted else 0.0,
         }
 
     # Bridge sensitivity: land/ocean at 8-connectivity vs 4-connectivity.
@@ -331,6 +350,9 @@ def analyze(run: AtlasRun, edge_frac: float = 0.02) -> dict:
             "width": run.width, "height": run.height,
         },
         "size_gate": size_gate(run.radius),
+        # Sweeper audit #2 findings #5/#20 (2026-07-05): surfaced rather than silently folded into
+        # "land" -- a palette gap or a stray out-of-range pixel value should be visible, not invisible.
+        "unknown_pixels": {"raw_count": int(unknown.sum()), "raw_fraction": raw_share(unknown)},
         "shares": {
             "raw": {"land": raw_share(land), "water": raw_share(water),
                     "ocean": raw_share(ocean), "river": raw_share(river),
@@ -373,6 +395,12 @@ def format_text_report(report: dict) -> str:
         lines.append(f"  NOTE: step={r['stepBlocks']} is coarser than step16 -- component counts are "
                       f"provisional per this analyzer's proof rules; re-run at step16 or better before "
                       f"treating them as final evidence.")
+    up = report["unknown_pixels"]
+    if up["raw_count"] > 0:
+        lines.append(f"  WARNING: {up['raw_count']} pixel(s) ({up['raw_fraction']*100:.4f}%) had no "
+                      f"palette entry or exceeded it -- excluded from land/water/coast shares, not "
+                      f"counted as land. Check biome_palette.json for a gap or biome_ids.png for a "
+                      f"stray out-of-range value.")
     lines.append("")
     lines.append("--- shares (raw vs cosine-latitude-area-weighted) ---")
     for key in ("land", "water", "ocean", "river", "coast"):

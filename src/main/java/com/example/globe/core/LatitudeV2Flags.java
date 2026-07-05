@@ -25,6 +25,15 @@ package com.example.globe.core;
  *
  * <p>Pure Java, no Minecraft imports -- this class belongs to the Core Logic layer per
  * {@code docs/porting/PORTABILITY_ARCHITECTURE.md}.
+ *
+ * <p><b>Testing note (sweeper audit #2 finding #27, 2026-07-05):</b> every flag below is
+ * {@code static final}, read from {@code System.getProperty} exactly once at class-init -- correct
+ * and zero-cost for the shipping default-off path (a real JVM {@code -D} at launch), but it means
+ * {@code System.setProperty(...)} called AFTER this class has already loaded has no effect. A test
+ * that sets a property post-load and expects the flag to flip will silently keep exercising the
+ * flag-off path and can pass for the wrong reason -- exactly the failure class this sweep targets.
+ * Flag-on proof/tests must set the property before this class is first touched (e.g. via a forked JVM
+ * with {@code -D}, as the headless atlas runner does), not via {@code setProperty} mid-test.
  */
 public final class LatitudeV2Flags {
 
