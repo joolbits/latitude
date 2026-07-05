@@ -373,3 +373,59 @@ Evidence:
   vs. `docs/LATITUDE_2_0_OVERHAUL.md`, `docs/binder/longitude-earthlike-world-overhaul-20260702.md`,
   `docs/design/climateauthority-design-20260703.md` (the 3 places that still said `currentModifier01`
   after the first editing pass).
+
+## L16 - A Design That Cites Real, Verified Facts Can Still Be Wrong; Verification Of Facts Is Not Verification Of Reasoning
+
+Trigger: locking the Phase 4 (Terrain Integration Spike) density-wrapper design. A judge-panel workflow's
+intended multi-candidate fan-out failed outright (all 3 parallel design agents hit a structured-output
+retry-cap and errored; the 3 judges correctly refused to score empty candidates) but the workflow's final
+synthesis step recovered solo by decompiling the actual MC-26.2 dependency jar itself and writing a
+design grounded in real, javap-verified facts (exact `NoiseRouter` field order, `RandomState` internals,
+`DensityFunction` interface shape). That design read as trustworthy specifically because it cited
+concrete, checkable facts rather than guesses — and it was still wrong in two load-bearing ways: (1) it
+wrapped both `finalDensity` (a density value, ~[-1,+1] scale) and `preliminarySurfaceLevel` (a Y-block
+level, hundreds scale) with the *same* additive bias term, which is unit-incommensurable and would have
+desynced the rendered surface from the surface-rule/spawn estimate — justified by a stated rationale
+("spawn/heightmap reads `preliminarySurfaceLevel`") that was itself false (spawn actually re-samples
+`finalDensity`); (2) its gating design cited `GlobeMod.isGlobeWorld(RandomState)`, a method that does not
+exist and cannot be implemented as described from inside a `RandomState` (which holds no `ServerLevel`/
+`ChunkGenerator`/settings key to check against). Neither defect was a hallucinated fact in isolation — the
+individual facts cited (field order, interface shape) were all real — the defect was in the *reasoning
+that combined verified facts*, which a solo author re-reading its own verified citations did not catch.
+A dedicated second pass — 4 independent adversarial lenses (mixin mechanics, safety/regression, biome
+side-effects, scope/proof-honesty) each finding candidate problems, then independent skeptics verifying
+each raw finding before it counted — caught both defects (plus 10 more, including that the geography
+field the whole bias is keyed on is itself edge/pole-coupled, meaning a "no edge/seam revival" hard stop
+was satisfied in letter but not fully in spirit until disclosed and dispositioned as an accepted residual).
+
+Required future behavior:
+- A design or fix that cites real, independently-checkable facts (decompiled bytecode, grep'd call
+  sites, javap output) is not thereby proven correct — verifying that individual facts are true is a
+  different act from verifying that the reasoning connecting them is sound. Do not let "this design did
+  its own verification and cited exact evidence" substitute for a separate adversarial pass; the two
+  catch different failure classes (per [[L14]], [[L15]]).
+- When a workflow's intended fan-out/diversity step fails (errors, retry-cap, empty results) but a later
+  synthesis/judge step still produces a plausible-looking final result by recovering solo, treat that as
+  a signal the intended adversarial diversity never actually happened — check the workflow's own error
+  log/agent count, do not just accept a clean-looking final artifact at face value. Route the
+  single-author result through a genuine second, independent adversarial pass before treating it as
+  locked, exactly as if no verification had been attempted yet.
+- For any density-function/DF-graph design touching more than one field of a shared record (e.g. a
+  `NoiseRouter`), explicitly verify the UNIT and SCALE of each field before assuming one bias term can
+  apply to all of them identically — "these two fields both determine terrain height" does not mean they
+  share units, and an identical additive term across mismatched units is a specific, checkable defect
+  class (not a vague style concern) that a dedicated reviewer should always test for.
+- When a design's stated rationale for touching field B is "consumer X reads field B," verify that claim
+  against the actual consumer code path, not just the field's doc comment or its name's plausibility — a
+  false premise stated confidently reads identically to a true one until someone traces the real call
+  path.
+
+Evidence:
+- `Latitude-2.0-26.2-pivot/docs/design/terrain-wrapper-design-20260705.md` (revision r2, "Revision note"
+  and "Change-Impact block" in §1, and the §9 Residual-Risk register) — the corrected design, its
+  Change-Impact block explaining exactly what the r1 design got wrong and why, and the residual-risk
+  register (R1-R6) disclosing what remains an accepted, guarded risk rather than silently dropped.
+- Workflow runs `wf_f03af3e6-cca` (failed 3-candidate design fan-out, solo-recovered synthesis) and
+  `wf_ccd1545c-362` (the 4-lens adversarial review + verify pass that caught the `preliminarySurfaceLevel`
+  unit-mismatch and the nonexistent `isGlobeWorld(RandomState)` gate, both CONFIRMED on independent
+  verification, plus 10 further survivor findings).
