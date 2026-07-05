@@ -97,6 +97,11 @@ public final class BiomePreviewHeadlessRunner {
             return;
         }
 
+        if (TerrainProofHarness.isTriggered()) {
+            server.execute(() -> TerrainProofHarness.runAndStop(server));
+            return;
+        }
+
         if (parseBoolean(System.getProperty(PROBE_PROP_KEY, ""))) {
             server.execute(() -> runFunctionProbeAndStop(server));
             return;
