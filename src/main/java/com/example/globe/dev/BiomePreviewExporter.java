@@ -21,6 +21,7 @@ import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.biome.BiomeSource;
 import net.minecraft.world.level.biome.Climate;
 import net.minecraft.world.level.chunk.ChunkGenerator;
+import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.level.levelgen.RandomState;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
@@ -552,6 +553,8 @@ public final class BiomePreviewExporter {
         private BufferedImage biomeIndexImage;
         private BufferedImage chosenBandsImage;
         private BufferedImage landBandsImage;
+        private final BufferedImage heightImage;
+        private final int heightEncodeOffset;
 
         private final Map<String, Integer> biomeCounts = new HashMap<>();
         private final Map<String, Integer> biomeColors = new HashMap<>();
@@ -715,6 +718,10 @@ public final class BiomePreviewExporter {
             for (BiomeMaskLayer maskLayer : maskTargets) {
                 maskImages.put(maskLayer, new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB));
             }
+            // The whole point of this processor (vs. the direct export() path) is emitHeight=true, so the
+            // height raster is unconditional here, not gated on an options flag.
+            this.heightImage = new BufferedImage(width, height, BufferedImage.TYPE_USHORT_GRAY);
+            this.heightEncodeOffset = -world.getMinY();
 
             this.startNanos = System.nanoTime();
         }
@@ -870,6 +877,15 @@ public final class BiomePreviewExporter {
                         images.get(Layer.RUGGEDNESS).setRGB(imageX, imageZ, colorForRuggedness(delta));
                     }
 
+                    // Real per-column terrain height. This generator call is the expensive part this
+                    // processor's tick-budgeted stepping exists to spread out — not gated on
+                    // atlasTerrainAware, since getBaseHeight() only needs noiseConfig + a height view,
+                    // both already held unconditionally by this processor.
+                    int realHeight = generator.getBaseHeight(
+                            blockX, blockZ, Heightmap.Types.WORLD_SURFACE_WG, world, noiseConfig);
+                    int encodedHeight = Mth.clamp(realHeight + heightEncodeOffset, 0, 0xFFFF);
+                    heightImage.getRaster().setSample(imageX, imageZ, 0, encodedHeight);
+
                     advanceCursor();
                     if (imageX == 0 && imageZ > 0
                             && imageZ - lastSamplingHeartbeatZ >= ATLAS_SAMPLING_HEARTBEAT_ROWS) {
@@ -997,6 +1013,12 @@ public final class BiomePreviewExporter {
             if (!ImageIO.write(landBandsImage, "png", landBandsPath.toFile())) {
                 throw new IOException("PNG writer unavailable for land_bands");
             }
+            Path heightPath = outputDir.resolve("height.png");
+            if (!ImageIO.write(heightImage, "png", heightPath.toFile())) {
+                throw new IOException("PNG writer unavailable for height");
+            }
+            writeHeightMeta(outputDir.resolve("height_meta.json"), heightEncodeOffset,
+                    world.getMinY(), world.getMaxY());
             writeSeamRowSummary(outputDir.resolve("seam_rows.txt"), seamRows);
             writeSeamCropArtifacts(
                     outputDir,
@@ -1166,6 +1188,20 @@ public final class BiomePreviewExporter {
         out.append("  ]\n");
         out.append("}\n");
         Files.writeString(palettePath, out.toString());
+    }
+
+    private static void writeHeightMeta(Path metaPath, int offsetY, int minY, int maxY)
+            throws IOException {
+        StringBuilder out = new StringBuilder();
+        out.append("{\n");
+        out.append("  \"format\": \"height.png is a single-channel 16-bit grayscale (TYPE_USHORT_GRAY) raster, one pixel per sampled column, same width/height/order as biomes.png\",\n");
+        out.append("  \"decode\": \"realY = pixelValue - offsetY\",\n");
+        out.append("  \"offsetY\": ").append(offsetY).append(",\n");
+        out.append("  \"minY\": ").append(minY).append(",\n");
+        out.append("  \"maxY\": ").append(maxY).append(",\n");
+        out.append("  \"heightmapType\": \"WORLD_SURFACE_WG\"\n");
+        out.append("}\n");
+        Files.writeString(metaPath, out.toString());
     }
 
     private static void writePaletteAuthority(Path outputDir) throws IOException {
