@@ -332,3 +332,44 @@ Evidence:
   alpine-stepped-rainforest path).
 - Live screenshot, 2026-07-05: 18°N showing "Snowy Taiga" next to jungle foliage; reported by Peetsa
   directly from an in-game session run with `latitude.biomeConsumerV2.enabled=true`.
+
+## L15 - A Fix's Own Blast Radius Needs The Same Adversarial Check As The Bug It Fixes, Especially For Renames
+
+Trigger: fixing a sweeper-confirmed finding by renaming a field/method/constant that is documented in
+prose (a design doc's field list, an architecture contract) rather than only referenced via compiler-
+checked call sites.
+
+Lesson: sweeper audit #2 (2026-07-05) confirmed `ClimateSummary.currentModifier01` was misleadingly named
+— a SIGNED [-1,+1] value using the record's `*01` suffix convention that means [0,1] everywhere else —
+and the fix was to rename it to `currentModifierSigned` before any consumer existed. Before committing,
+`grep` was used to confirm zero remaining Java references to the old name, and the two doc files already
+open in that editing pass (`PORTABILITY_ARCHITECTURE.md`, the design doc itself) were updated. That felt
+complete. A separate adversarial-review pass (an independent agent given only the diff, tasked with
+checking the FIX for correctness rather than re-checking the original finding) found **3 stale
+references still calling it `currentModifier01`** in prose-only doc locations: `docs/
+LATITUDE_2_0_OVERHAUL.md`'s field contract (an exact duplicate list of the one doc that WAS updated,
+living in a different file), `docs/binder/longitude-earthlike-world-overhaul-20260702.md`'s field list,
+and — most tellingly — a second, un-updated heading inside the SAME design-doc file that had already been
+touched for an unrelated correction earlier in the same editing pass. A grep across `*.java` alone would
+never have caught these; only a grep across `*.md` (or a genuinely independent second look) would.
+
+Required future behavior:
+- Any rename of a field, method, or named contract that appears in more than one file must be verified
+  complete with a repo-wide grep across EVERY relevant extension (`*.java`, `*.py`, `*.md`, `*.json` —
+  whatever this project's doc/code mix actually is), not just the language whose compiler would catch a
+  miss. Docs don't fail to compile when a rename misses them.
+- Do not assume a file is fully updated just because you already edited it once in the same pass for a
+  different reason — a second, unrelated reference in that same file is exactly the kind of thing that
+  slips past "I already handled that file."
+- Per the sweeper-as-standing-practice discipline (`docs/binder/sweeper-audit-standing-practice-20260705.md`),
+  run an adversarial check on your OWN fix batch, not only on the original findings — a reviewer told to check "is this fix
+  correct and complete" catches a different class of mistake than one re-verifying "is the original bug
+  real."
+
+Evidence:
+- `Latitude-2.0-26.2-pivot/docs/binder/sweeper-audit-2-phases-0-3-20260705.md` ("Adversarial verification
+  of this fix batch itself" section, listing the 3 stale references and the fix commit that followed).
+- `Latitude-2.0-26.2-pivot/src/main/java/com/example/globe/core/climate/ClimateSummary.java` (the rename)
+  vs. `docs/LATITUDE_2_0_OVERHAUL.md`, `docs/binder/longitude-earthlike-world-overhaul-20260702.md`,
+  `docs/design/climateauthority-design-20260703.md` (the 3 places that still said `currentModifier01`
+  after the first editing pass).
