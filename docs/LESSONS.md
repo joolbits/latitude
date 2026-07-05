@@ -277,3 +277,58 @@ Evidence:
   `latitude.biomeConsumerV2.oceanAuthority.enabled` flag split that resulted).
 - `Latitude-2.0-26.2-pivot/src/main/java/com/example/globe/world/LatitudeBiomes.java` (the
   `base.is(BiomeTags.IS_OCEAN) || oceanAuthority` composition, both `pick()` overloads).
+
+## L14 - A Silent Classification Fallthrough Fails Plausibly, Not Loudly; Aggregate Proof And Label-Only Tests Both Miss It
+
+Trigger: any classification cascade (if/else or switch chain producing one label from several input
+dimensions) that has a "return SOME_DEFAULT" catch-all for combinations not explicitly handled; any proof
+gate for such a system that only checks aggregate/statistical output.
+
+Lesson: the very first live in-game session with the Biome Consumer slice's ClimateAuthority reroll
+enabled showed "Snowy Taiga" immediately next to visible jungle trees at 18°N (tropical latitude), plus
+"windswept gravelly hills" (a cold-climate biome) at what was visibly flat, low, sea-level terrain.
+Root-caused by direct reproduction (`ClimateAuthority.assemble` at latitude 18°, `mountainIntent01=1.0`):
+`temperature01` came out to 0.45 — GeoAuthority's altitude-cooling proxy (itself decoupled from real
+generated terrain per L13) crashed the temperature enough to drop below `classifyBase`'s
+`band==TROPICAL && T>=T_WARM` threshold, but not below the cold-climate thresholds either. With no
+explicit case for "tropical band, moderately cooled," the cascade silently fell through every check and
+landed on the generic default `HUMID_CONTINENTAL`, which then got alpine-stepped colder still into
+`BOREAL` (vanilla family: taiga/snowy_taiga) — a serious, visually obvious wrong-biome result that read
+as a perfectly ordinary (if misplaced) snowy forest, not a crash or garbage output. TWO verification
+layers had already been trusted and both missed it:
+1. The unit test for this exact "equatorial alpine" scenario asserted the FINAL LABEL equaled
+   `"BOREAL"` and passed — but for the wrong reason. The intended path (tropical rainforest, alpine-
+   stepped down) and the actual path taken (fallthrough default, alpine-stepped down) both happen to
+   produce the string `"BOREAL"`, so the test could not tell a correct classification from a coincidence.
+2. The proof gate that called this piece "safe to enable" checked land fraction, vanilla-biome-
+   completeness, and crash-freedom — all aggregate/statistical measures. None of them can ever catch one
+   wrong biome at one location, however obvious that wrong biome would look to an actual player standing
+   there.
+
+Required future behavior:
+- Any classification cascade over more than one or two input dimensions must have an explicit case for
+  every combination it can actually receive from its own valid input ranges — not a silent
+  "return SOME_DEFAULT" catch-all. If a combination is believed unreachable, assert/throw or log loudly
+  so a wrong assumption about reachability fails fast instead of silently returning a plausible-looking
+  wrong answer.
+- A test asserting only the final output label is not sufficient for a classification cascade with a
+  fallthrough default, because a bug in the fallthrough can coincidentally produce the same label the
+  intended path would have produced. Either assert on which branch/diagnostic path was taken, or add
+  adversarial inputs specifically chosen to make the fallthrough and the intended path disagree, so a
+  regression in either one is visible.
+- Aggregate/statistical proof (percentages, counts, crash-freedom) is necessary but NOT sufficient before
+  calling a system safe for a human to look at directly. Before that claim, spot-check individually-
+  described concrete scenarios (a real mountain in the tropics, a real coastline, a real polar interior)
+  against what a player would actually see there — the same discipline `docs/design/*-20260703.md`'s own
+  acceptance tables were meant to provide, but a passing test on a coincidentally-correct label does not
+  actually exercise that discipline.
+
+Evidence:
+- `Latitude-2.0-26.2-pivot/src/main/java/com/example/globe/core/climate/ClimateAuthority.java`
+  (`classifyBase`'s `TROPICAL`-band branch requiring `T>=T_WARM`, with no case for a cooled-but-not-cold
+  tropical column; falls through to the final `return HUMID_CONTINENTAL`).
+- `Latitude-2.0-26.2-pivot/src/test/java/com/example/globe/core/climate/ClimateAuthorityTest.java`
+  (`acceptanceTable`'s row14 assertion, which passed via the fallthrough path rather than the intended
+  alpine-stepped-rainforest path).
+- Live screenshot, 2026-07-05: 18°N showing "Snowy Taiga" next to jungle foliage; reported by Peetsa
+  directly from an in-game session run with `latitude.biomeConsumerV2.enabled=true`.
