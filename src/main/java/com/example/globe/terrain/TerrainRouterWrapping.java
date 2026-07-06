@@ -2,7 +2,6 @@ package com.example.globe.terrain;
 
 import com.example.globe.GlobeMod;
 import com.example.globe.adapter.geo.GeoAuthorityProvider;
-import com.example.globe.adapter.geo.GeoSummaryProvider;
 import com.example.globe.core.LatitudeV2Flags;
 import com.example.globe.mixin.terrain.RandomStateAccessor;
 import com.example.globe.world.LatitudeBiomes;
@@ -73,7 +72,6 @@ public final class TerrainRouterWrapping {
 
     private static final AtomicBoolean INSTALL_LOGGED = new AtomicBoolean(false);
     private static final AtomicBoolean FAILURE_LOGGED = new AtomicBoolean(false);
-    private static final AtomicBoolean NOOP_PROVIDER_SKIP_LOGGED = new AtomicBoolean(false);
 
     private TerrainRouterWrapping() {
     }
@@ -86,19 +84,19 @@ public final class TerrainRouterWrapping {
      * findings #2-6/#8: the report needs an install-status field it can assert on, not just a label.
      */
     public enum InstallResult {
-        /** The 15-field {@link NoiseRouter} was rebuilt and {@code finalDensity} (#12) is now wrapped. */
+        /**
+         * The 15-field {@link NoiseRouter} was rebuilt and {@code finalDensity} (#12) is now structurally
+         * wrapped by {@link GeoTerrainBiasFunction}. This does NOT guarantee the bias is currently taking
+         * effect: {@code GeoTerrainBiasFunction.compute()} independently re-checks, on every call, whether
+         * {@code GEO_V2_PROVIDER} is a real {@link GeoAuthorityProvider} yet (not the {@code NoOp}
+         * placeholder) and silently passes through the unmodified delegate value until it is -- see that
+         * class's javadoc for why this check lives there now, not here.
+         */
         INSTALLED,
         /** Gate (2) {@link LatitudeV2Flags#TERRAIN_V2_ENABLED} or (3) {@link LatitudeV2Flags#GEO_V2_ENABLED} is off. */
         SKIPPED_FLAG_OFF,
         /** The real positive globe check returned false (vanilla / Terralith-only / non-globe world). */
         SKIPPED_NOT_GLOBE,
-        /**
-         * The globe/flag gates passed but {@code GEO_V2_PROVIDER} is still the {@code NoOpGeoSummaryProvider}
-         * (land01 == 0.0 everywhere) rather than a real {@link GeoAuthorityProvider} -- e.g. a seed-0 world
-         * whose {@code rebuildGeoAuthority()} never built a real authority ({@code seed != 0 && zRadius > 0}).
-         * Installing here would silently push the ENTIRE world downward (100%-ocean bias). Sweeper finding #7.
-         */
-        SKIPPED_NOOP_PROVIDER,
         /** {@code randomState} was null, its router was null, or the rebuild threw (fell back to vanilla). */
         SKIPPED_NULL_OR_ERROR
     }
@@ -139,12 +137,13 @@ public final class TerrainRouterWrapping {
      * second world would be treated as armed even if it is not itself a globe world. In real gameplay this is
      * a non-issue (one JVM = one world; and the {@code isGlobeOverworld(world)} branch is the authoritative
      * per-world check), but for dev-tooling/harness contexts where multiple worlds may boot in one JVM it is a
-     * real hazard. The two mitigations already in place: (1) the seed-0 / NoOp-provider gate in
-     * {@code installIfArmedCore} refuses to install unless {@code GEO_V2_PROVIDER} is a real
-     * {@link GeoAuthorityProvider} for the CURRENT world's seed/radius (finding #7), which un-arms this leak
-     * whenever the static radius does not correspond to a live GeoAuthority; and (2) the proof harness boots
-     * exactly one world per forked JVM. The {@code ChunkMap} real-gameplay path uses the OTHER
-     * ({@code NoiseBasedChunkGenerator}) overload, which has no static-radius branch at all.
+     * real hazard. The two mitigations already in place: (1) {@code GeoTerrainBiasFunction.compute()} still
+     * independently re-checks, on every call, that {@code GEO_V2_PROVIDER} is a real {@link GeoAuthorityProvider}
+     * (finding #7's original protection, now checked per-call rather than once at install time -- see that
+     * class's javadoc), which no-ops the bias whenever the currently-active provider isn't real for whatever
+     * world is actually generating; and (2) the proof harness boots exactly one world per forked JVM. The
+     * {@code ChunkMap} real-gameplay path uses the OTHER ({@code NoiseBasedChunkGenerator}) overload, which
+     * has no static-radius branch at all.
      */
     public static InstallResult installIfArmed(RandomState randomState, ServerLevel world) {
         return installIfArmedCore(randomState, () ->
@@ -183,25 +182,19 @@ public final class TerrainRouterWrapping {
                 return InstallResult.SKIPPED_NOT_GLOBE;
             }
 
-            // Sweeper finding #7 (CRITICAL / hard blocker): the flag gates above are NECESSARY but NOT
-            // SUFFICIENT. LatitudeBiomes.rebuildGeoAuthority() only builds a real GeoAuthorityProvider when
-            // seed != 0 && zRadius > 0; on a seed-0 world (or any world where it never got a real seed/radius)
-            // GEO_V2_PROVIDER stays NoOpGeoSummaryProvider.INSTANCE (land01 == 0.0 for EVERY column) even with
-            // GEO_V2_ENABLED == true. Installing the wrapper then would push the ENTIRE world downward
-            // (100%-ocean bias everywhere at strength>0), the single worst failure in this batch. Gate on the
-            // ACTUAL provider being real (an instanceof GeoAuthorityProvider), not merely on the boolean flag.
-            GeoSummaryProvider provider = LatitudeBiomes.geoProviderForTerrain();
-            if (!(provider instanceof GeoAuthorityProvider)) {
-                if (NOOP_PROVIDER_SKIP_LOGGED.compareAndSet(false, true)) {
-                    GlobeMod.LOGGER.warn(
-                            "[Latitude] Phase 4 terrain bias NOT installed: geo provider is still the NoOp "
-                                    + "(land01==0.0 everywhere -- e.g. a seed-0 world); refusing to bias the whole "
-                                    + "world downward despite geoV2.enabled=true. (provider={})",
-                            provider == null ? "null" : provider.getClass().getSimpleName());
-                }
-                return InstallResult.SKIPPED_NOOP_PROVIDER;
-            }
-
+            // Sweeper finding #7 (CRITICAL) originally added an `instanceof GeoAuthorityProvider` check
+            // HERE, at one-time install time, to stop the wrapper installing while GEO_V2_PROVIDER is still
+            // NoOpGeoSummaryProvider.INSTANCE (land01==0.0 everywhere -- reads as "100% ocean", not "no
+            // signal"). That was necessary but wrongly homed: a real ordering bug (found live, 2026-07-06)
+            // showed this install path (the ChunkMap-constructor mixin, real gameplay) runs BEFORE
+            // GlobeMod's create-world flow rebuilds GEO_V2_PROVIDER for the new world's actual seed/radius,
+            // so the one-time check always saw the still-NoOp provider and PERMANENTLY refused to install --
+            // on every freshly created world, not just seed-0 ones. The realness check now lives instead in
+            // GeoTerrainBiasFunction.compute() itself (see that class's javadoc), re-evaluated on every call
+            // rather than snapshotted once here, so the wrapper always installs structurally once the gates
+            // above pass, and simply no-ops per-column until the real provider is ready -- which resolves
+            // itself moments after world load, long before any chunk is actually generated for a player, and
+            // stays a no-op forever on a genuine seed-0 world where the provider never becomes real at all.
             NoiseRouter original = randomState.router();
             if (original == null) {
                 return InstallResult.SKIPPED_NULL_OR_ERROR;
@@ -255,6 +248,5 @@ public final class TerrainRouterWrapping {
     public static void resetLogLatchesForNewWorld() {
         INSTALL_LOGGED.set(false);
         FAILURE_LOGGED.set(false);
-        NOOP_PROVIDER_SKIP_LOGGED.set(false);
     }
 }

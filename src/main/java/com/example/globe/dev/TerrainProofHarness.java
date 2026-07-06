@@ -61,13 +61,19 @@ import java.util.List;
  * {@code latitude.geoV2.enabled}) -- this harness does not re-invent flag plumbing, it reads the same
  * flags the shipped code reads.
  *
- * <p><b>Honest coverage-gap statement (sweeper finding #10).</b> This harness calls
- * {@link TerrainRouterWrapping#installIfArmed(RandomState, ServerLevel)} DIRECTLY (the same helper the
+ * <p><b>Honest coverage-gap statement (sweeper finding #10) -- CONFIRMED LIVE, 2026-07-06.</b> This harness
+ * calls {@link TerrainRouterWrapping#installIfArmed(RandomState, ServerLevel)} DIRECTLY (the same helper the
  * dev/atlas {@code BiomePreviewExporter} path uses), so it proves the WRAPPER LOGIC end-to-end: the triple
- * gate, the seed-0/NoOp-provider refusal, the 15-field router rebuild, the bias formula, structure-preserving
- * {@code mapChildren}, and the byte-identity legs. It does **NOT** prove that the shipped REAL-GAMEPLAY
- * {@code RandomStateRouterTerrainMixin} on {@code ChunkMap} specifically fires at the right moment -- that
- * requires a real client/server world boot through {@code ChunkMap} construction, which is the live-pass
+ * gate, the per-call NoOp-provider no-op in {@code GeoTerrainBiasFunction.compute()}, the 15-field router
+ * rebuild, the bias formula, structure-preserving {@code mapChildren}, and the byte-identity legs. It does
+ * **NOT** prove that the shipped REAL-GAMEPLAY {@code RandomStateRouterTerrainMixin} on {@code ChunkMap}
+ * fires with the SAME provider-readiness timing a live create-world flow has -- and this gap was not
+ * theoretical: it is exactly how a real ordering bug slipped through every headless proof gate here and
+ * only surfaced on Peetsa's first live create-world test. This harness's own dev/atlas {@code ServerLevel}
+ * always boots with a fully-initialized {@code GEO_V2_PROVIDER} already in place (the exporter runs well
+ * after world load completes), so it can never reproduce "install fires before the real provider exists" --
+ * only a genuine client/server create-world boot through {@code ChunkMap} construction can. That requires a
+ * real client/server world boot through {@code ChunkMap} construction, which is the live-pass
  * territory, not a headless probe. (The two paths are additionally indistinguishable at the log level because
  * the install log is a once-per-JVM latch.) The definitive {@code installResult}/{@code wrapperInstalled}
  * fields this harness records are for the direct-helper call it makes; the ChunkMap-mixin firing is asserted
@@ -180,8 +186,12 @@ public final class TerrainProofHarness {
         // e.g. wrapperInstalled==false on the non-globe leg and the geoV2-off leg, ==true on the armed legs.
         String installResult;      // TerrainRouterWrapping.InstallResult name
         boolean wrapperInstalled;  // installResult == INSTALLED
-        // The actual runtime provider class the terrain gate saw (GeoAuthorityProvider vs NoOpGeoSummaryProvider)
-        // -- lets the seed-0 test (finding #7) assert the gate correctly refused to install on a NoOp provider.
+        // The actual runtime provider class at report-write time (GeoAuthorityProvider vs
+        // NoOpGeoSummaryProvider). NOTE: since the 2026-07-06 live-ordering fix, wrapperInstalled==true is
+        // expected even on a NoOp-provider (e.g. seed-0) world -- the wrapper always installs structurally
+        // once the flag/globe gates pass; GeoTerrainBiasFunction.compute() is what no-ops per call when this
+        // field shows NoOpGeoSummaryProvider. Assert on ACTUAL DENSITY VALUES being unchanged for the seed-0
+        // no-op case, not on installResult/wrapperInstalled -- those no longer distinguish the NoOp case.
         String geoProviderClass;
         // Non-globe leg self-verification (sweeper findings #2-6/#17): whether the booted world was ACTUALLY
         // a genuine non-globe world (radius never armed AND generator is not a globe preset). If the harness

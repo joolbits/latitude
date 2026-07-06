@@ -1,5 +1,6 @@
 package com.example.globe.terrain;
 
+import com.example.globe.adapter.geo.GeoAuthorityProvider;
 import com.example.globe.adapter.geo.GeoSummaryProvider;
 import com.example.globe.core.LatitudeV2Flags;
 import com.example.globe.core.geo.GeoSummary;
@@ -37,6 +38,17 @@ import net.minecraft.world.level.levelgen.DensityFunction;
  *       {@link LatitudeBiomes#geoProviderForTerrain()}, NOT captured at construction -- the volatile
  *       static may not hold its final per-world value when the {@code RandomState} is built early in
  *       world load, but it does by the time any gameplay chunk is generated (design §1.1).</li>
+ *   <li><b>The {@code instanceof GeoAuthorityProvider} realness check happens HERE, per call, not once
+ *       at install time.</b> A real-world ordering bug (found live, 2026-07-06) showed the terrain-bias
+ *       mixin fires on {@code ChunkMap} construction BEFORE {@code GlobeMod}'s create-world flow rebuilds
+ *       {@code GEO_V2_PROVIDER} for that world's actual seed/radius -- so an install-time-only check saw
+ *       the still-NoOp provider and permanently refused to ever install, on every freshly created world,
+ *       regardless of seed. Checking here instead means the wrapper structurally installs unconditionally
+ *       (once the flag/globe gates pass) and simply no-ops on any call where the provider isn't real
+ *       <i>yet</i> -- which naturally resolves itself moments later once the real world-load rebuild runs,
+ *       long before any player-visible chunk is generated. On a genuine seed-0 world the provider never
+ *       becomes real for that world's entire lifetime, so this correctly stays a no-op forever there too --
+ *       do not move this check back to the one-time install gate.</li>
  *   <li>{@code S == 0.0} is an exact bit-for-bit no-op fast path that returns {@code delegate.compute(ctx)}
  *       verbatim (design §2 "true no-op at S=0").</li>
  *   <li>{@code compute()} is wrapped in {@code try/catch(Throwable)}; any failure falls back to the
@@ -87,8 +99,17 @@ public final class GeoTerrainBiasFunction implements DensityFunction.SimpleFunct
                 return base;
             }
 
+            // Real per-call safety net (moved here from the one-time install gate -- see
+            // TerrainRouterWrapping's class javadoc "Install-time-vs-per-call provider check" note for the
+            // full story). GEO_V2_PROVIDER may still be the NoOpGeoSummaryProvider (land01==0.0 everywhere,
+            // i.e. reads as "100% ocean") at THIS exact call, either because a seed-0 world never builds a
+            // real GeoAuthorityProvider at all (rebuildGeoAuthority()'s own seed!=0 guard is permanent for
+            // that world), or -- the bug this re-homing fixes -- because a brand-new world is still mid-load
+            // and simply hasn't rebuilt it YET. Checking this per call (not once at install time) means the
+            // wrapper engages automatically the instant the real provider becomes available, instead of a
+            // stale install-time snapshot permanently disabling it for the rest of the world's life.
             GeoSummaryProvider provider = LatitudeBiomes.geoProviderForTerrain();
-            if (provider == null) {
+            if (!(provider instanceof GeoAuthorityProvider)) {
                 return base;
             }
             GeoSummary summary = provider.summarize(ctx.blockX(), ctx.blockZ());
