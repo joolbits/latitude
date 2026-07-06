@@ -2612,6 +2612,24 @@ public final class LatitudeBiomes {
     private static final long BLEND_SURVIVAL_NOISE_SALT = 0x626C64737572_7630L; // "bldsurv0"
     private static final long WARP_NOISE_SALT = 0x5A7A5EED0F00D123L;
     private static final long TROPICAL_DITHER_SALT = 0x5EEDBEEF5EEDBEEFL;
+    // Arid<->savanna (tropical step 0->1) edge fray. The base dither compares a single smooth
+    // ~144-block noise patch against stepFrac; every field involved (the coarse dither, the ladder
+    // jitter, the composition bias) is bilinearly-interpolated and therefore locally near-monotonic
+    // over spans much shorter than its own wavelength. Near a boundary that near-monotonic drift
+    // crosses the threshold exactly once, which is why the desert->savanna edge reads as a razor
+    // cliff (verified empirically: a two-octave *blend* of coarse+fine smooth noise was tried first
+    // and only shifted the cliff by a few blocks without fraying it, because averaging two smooth
+    // fields is still smooth). To reliably fray ONLY this boundary we instead perturb the *decision
+    // threshold* (stepFrac) with a small per-BLOCK independent hash (hash01, not the interpolated
+    // ValueNoise2D.sampleBlocks) -- true uncorrelated noise between adjacent blocks, so the
+    // comparison flips back and forth near the crossing regardless of local gradient direction.
+    // The wiggle is symmetric around 0 (mean-preserving: E[wiggle]=0 over the uniform hash), so it
+    // does not shift the aggregate fraction of step-0 cells nudged to savanna -- it only frays the
+    // contour into an organic multi-block mixing band. Far from the crossing (stepFrac near the
+    // opposite extreme from dither) the wiggle has no effect, so the arid interior stays speckle-
+    // free. baseStep>=1 boundaries (savanna->step2, step2->step3) are untouched.
+    private static final long TROPICAL_ARID_FRAY_SALT = 0x5A17F2A75A17F2A7L;
+    private static final double TROPICAL_ARID_FRAY_AMPLITUDE = 0.08;
     private static final long SUBPOLAR_RAMP_SALT = 0x5EED5B09A5EEDL;
     private static final long SNOWY_RAMP_SALT = 0x5EEDB17A5EEDL;
     private static final double SNOWY_RAMP_START_DEG = 54.0;
@@ -2782,7 +2800,20 @@ public final class LatitudeBiomes {
         }
         int patchBlocks = DISABLE_GRID_DITHER ? TROPICAL_STEP_PATCH_BLOCKS : DITHER_SCALE_BLOCKS;
         double dither = ValueNoise2D.sampleBlocks(seed ^ TROPICAL_DITHER_SALT, blockX, blockZ, patchBlocks);
-        return dither < stepFrac ? baseStep + 1 : baseStep;
+        double effectiveStepFrac = stepFrac;
+        if (baseStep == 0) {
+            // Arid<->savanna boundary only: perturb the decision THRESHOLD with a small per-block
+            // independent hash (see TROPICAL_ARID_FRAY_* notes above -- a smooth-noise blend was
+            // tried first and only shifted the cliff a few blocks without fraying it). hash01 has
+            // no spatial correlation between adjacent blocks, so near the crossing the comparison
+            // flips back and forth into a genuine multi-block mixing band; the wiggle is symmetric
+            // around 0 (mean-preserving), so it does not move the aggregate step-0->savanna
+            // fraction, and far from the crossing it has no effect (interior stays speckle-free).
+            double whiteNoise = hash01(seed, blockX, blockZ, TROPICAL_ARID_FRAY_SALT);
+            double wiggle = (whiteNoise * 2.0 - 1.0) * TROPICAL_ARID_FRAY_AMPLITUDE;
+            effectiveStepFrac = clamp(stepFrac + wiggle, 0.0, 1.0);
+        }
+        return dither < effectiveStepFrac ? baseStep + 1 : baseStep;
     }
 
     private static double blobNoise01(long seed, int chunkX, int chunkZ, int patchSizeChunks, long salt) {
