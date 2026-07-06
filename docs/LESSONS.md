@@ -484,3 +484,86 @@ Evidence:
   armed globe world) and `build.gradle` (the `vmArg` forwarding that turns "unset" into `""`).
 - Sweeper audit workflow `wf_2de5fa57-e76` (6 lenses, 26 raw findings, 23 survived independent
   verification) — the highest-confirmation-rate sweep this project has run to date.
+
+## L18 - A Proof Harness Sharing Production Code Can Still Have A Structural Blind Spot If It Can't Reproduce The Real Call's Timing
+
+Trigger: after Phase 4's terrain wrapper passed a locked design, a full mechanical proof gate (byte-
+identity, structural NoiseChunk checks, the seed-0 NoOp-provider defense from L17), AND a 6-lens sweeper
+audit, Peetsa's first live create-world test showed the wrapper installed on **zero** worlds, regardless
+of seed or strength. Root cause, confirmed directly from the client log: the real-gameplay install site
+(`RandomStateRouterTerrainMixin` on `ChunkMap`'s constructor) fires and evaluates the "is GeoAuthority
+actually real yet" safety check (added for L17) *before* `GlobeMod`'s create-world flow finishes rebuilding
+`GEO_V2_PROVIDER` for that new world's seed/radius. The one-time install-time check therefore always saw
+the still-uninitialized placeholder and permanently refused to install — on every freshly created world,
+not just seed-0 ones. Every prior proof (mechanical AND sweeper) passed cleanly because none of them could
+have caught this: `TerrainProofHarness` and the atlas/dev tooling build their `RandomState` through
+`BiomePreviewExporter`, which only ever runs on an already-fully-loaded `ServerLevel` — `GEO_V2_PROVIDER`
+is *already real* by the time those paths call `installIfArmed`, so the exact ordering hazard that broke
+real gameplay structurally cannot occur on the harness's own call path. The harness was calling the real
+production helper, at a real `RandomState`, with real flags — and still never touched the one thing that
+was actually broken, because "which call site, in what order" was invisible to it by construction.
+
+Required future behavior:
+- When a fix or a new safety check depends on a *world-load ordering* assumption (a rebuild happens before
+  X reads it, an initializer runs before Y checks it), state that assumption as an explicit, checkable fact
+  ("check runs after the rebuild") and ask: does every real caller actually satisfy it, not just the one
+  the design doc happened to describe first? Two structurally different callers of the same helper
+  (`ChunkMap`'s constructor vs. dev-tooling's already-loaded `ServerLevel`) can have opposite answers.
+  This project's own design doc even *disclosed* the two call sites existed (`TerrainRouterWrapping`'s own
+  class javadoc) without independently checking whether both actually see the same provider-readiness
+  timing — disclosure of a difference is not the same as verifying the difference doesn't matter.
+  Ordering conditions are not symmetric between similar-looking call paths and must be checked as such.
+- A proof harness inheriting a shared helper from production code is necessary but not sufficient for
+  proving that helper is really exercised the way live gameplay exercises it — additionally ask "does MY
+  harness's own construction path reach this exact ordering window, or does it structurally always land on
+  one side of it?" If the harness's own bootstrap sequence is different from the real path (dev tool boots
+  post-load; real gameplay boots mid-load), assume any load-order-dependent behavior is unverified by that
+  harness until proven otherwise, and say so plainly in the harness's own documentation (which is what this
+  project's `TerrainProofHarness` already did for a *different*, correctly-anticipated gap — see its
+  "Honest coverage-gap statement" — but did not extend to this specific provider-timing question until
+  after the live bug was found).
+- The fix itself is a durable pattern: re-home a state-freshness check from a one-time snapshot at
+  install/construction time into the place that's re-evaluated on every actual use (see
+  `GeoTerrainBiasFunction.compute()`, checked per density-function call instead of once in
+  `TerrainRouterWrapping`'s install gate). A install-time-only check is only as good as the guarantee that
+  nothing relevant changes between install and first real use — when that guarantee doesn't hold (a
+  world-load sequence where dependencies finish initializing progressively), move the check to the
+  consumption site, not the construction site.
+
+Evidence:
+- `Latitude-2.0-26.2-pivot/src/main/java/com/example/globe/terrain/TerrainRouterWrapping.java` (the removed
+  install-time check) and `GeoTerrainBiasFunction.java` (the re-homed per-call check, with the fix's
+  reasoning recorded directly in both classes' javadoc).
+- Peetsa's live client log, 2026-07-06: `"[Latitude] Phase 4 terrain bias NOT installed..."` appearing one
+  line before the province-authority seed/radius log line that would have made the check pass.
+- A related, same-session finding: once the wrapper actually started installing live, chunk generation
+  slowed noticeably at any nonzero strength — `GeoAuthority.sample(x,z)` doesn't depend on Y but
+  `compute()` is invoked once per vertical noise-lattice cell (tens of times per column), so the wrapper
+  was redundantly repeating the same expensive sample every call. Fixed with a per-thread, single-column
+  memo. This performance cost was also invisible to every prior proof: the Phase 4 Spark baseline was
+  captured at `strength=0`, which short-circuits before the code path in question is ever reached.
+
+## L19 - Manual Live-Tuning A Vertical Bias By Eye, Alone, Is Slow And Error-Prone; Use Real Geography Data To Pick The Test Point, Not The Displayed Biome Map
+
+Trigger: after the Phase 4 terrain wrapper was confirmed working live, Peetsa reported flying around a
+world at various `strength` values and not being able to tell whether they looked meaningfully different,
+plus a genuine chunk-generation slowdown (see L18) making iteration painful. Picking a "coastline" from the
+*displayed* biome map is unreliable here specifically because `GeoAuthority`'s land/ocean field is
+independent of the legacy biome-placement system whenever `latitude.biomeConsumerV2.enabled` is off (the
+default) — the visible coastline and the terrain wrapper's own idea of "coast" are two different,
+unrelated fields until that flag is turned on. A test coordinate chosen by eye from the map can land
+somewhere the bias has no reason to do anything at all.
+
+Required future behavior:
+- When a live-tunable numeric knob is hard to evaluate by wandering, compute a small number of concrete,
+  good test coordinates directly from the authoritative field the knob reads (here: querying
+  `GeoAuthority.sample(x,z).land01()` directly, as a tiny standalone Java program against the compiled
+  `core` classes — no Minecraft bootstrap needed, since Core Logic is plain Java by construction) rather
+  than reading it off a rendered map that may be driven by a different system entirely.
+- Give the live tester ONE specific, reproducible before/after test recipe (fixed seed, fixed coordinate,
+  note the exact spot, change one number, look at the same spot in fresh terrain) instead of leaving them to
+  free-fly and try to remember what a different number looked like ten minutes ago.
+
+Evidence: `Latitude-2.0-26.2-pivot` session scratchpad `FindTestSpot2.java` / `FullProfile.java` — a
+graduated seed-0 coastline located directly via `GeoAuthority`, independent of the (unrelated, in this
+configuration) displayed biome map.
