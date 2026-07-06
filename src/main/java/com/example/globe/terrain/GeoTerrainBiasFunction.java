@@ -72,6 +72,37 @@ public final class GeoTerrainBiasFunction implements DensityFunction.SimpleFunct
     private final DensityFunction delegate;
 
     /**
+     * Per-thread, single-entry memo of the last {@code (blockX, blockZ)} column's {@code land01} sample.
+     *
+     * <p><b>Why this exists.</b> {@code GeoAuthority.sample(x, z)} does real work (domain warp, plate-cell
+     * lookup, several noise evaluations) and does NOT depend on Y at all -- but {@code compute()} is invoked
+     * once per vertical noise-lattice cell (roughly every 8 blocks of world height, so on the order of a few
+     * dozen times per column for a full-height world), not once per column. Without this memo, every one of
+     * those calls redundantly re-ran the full {@code GeoAuthority.sample()} cost for the exact same
+     * {@code (x, z)} -- a real, previously-unmeasured performance cost that only shows up at a nonzero
+     * strength (the {@code S == 0.0} fast path above never reaches this code at all, which is exactly why
+     * the Phase 4 Spark baseline, captured at strength 0, never caught it). Found live 2026-07-06 as
+     * noticeably slower chunk generation once the terrain-install-timing fix let the wrapper actually engage.
+     *
+     * <p>Chunk generation genuinely visits a column's Y-levels back-to-back before moving to the next column
+     * (that is how {@code NoiseChunk} fills its lattice), so a single last-value memo -- not a full LRU --
+     * is sufficient to catch essentially all of the redundancy; it is intentionally NOT sized larger, to keep
+     * this a trivial, allocation-free check. {@code ThreadLocal} because chunk generation is multi-threaded
+     * (a worker-pool-shared cache would need synchronization for a benefit this cheap check doesn't need).
+     */
+    private static final ThreadLocal<ColumnMemo> COLUMN_MEMO = ThreadLocal.withInitial(ColumnMemo::new);
+
+    private static final class ColumnMemo {
+        int blockX = Integer.MIN_VALUE;
+        int blockZ = Integer.MIN_VALUE;
+        /** Reference to the provider this memo's land01 was computed against; invalidated if it changes
+         *  (e.g. the world-load provider-rebuild the terrain-install-timing fix depends on) so a memo entry
+         *  populated against the NoOp placeholder is never reused once the real provider is in place. */
+        GeoSummaryProvider provider;
+        double land01;
+    }
+
+    /**
      * Cached, never-serialized codec. Constructed in-JVM at {@code RandomState}-build time and never round
      * -tripped through data, so a trivial unit codec is sufficient and correct (design §4.1
      * "documented non-serializable").
@@ -112,11 +143,26 @@ public final class GeoTerrainBiasFunction implements DensityFunction.SimpleFunct
             if (!(provider instanceof GeoAuthorityProvider)) {
                 return base;
             }
-            GeoSummary summary = provider.summarize(ctx.blockX(), ctx.blockZ());
-            if (summary == null) {
-                return base;
+
+            int blockX = ctx.blockX();
+            int blockZ = ctx.blockZ();
+            ColumnMemo memo = COLUMN_MEMO.get();
+            double land01;
+            if (memo.provider == provider && memo.blockX == blockX && memo.blockZ == blockZ) {
+                // Same column, same provider instance as last call on this thread -- reuse the sample
+                // instead of re-running GeoAuthority's real work for the Nth time this column.
+                land01 = memo.land01;
+            } else {
+                GeoSummary summary = provider.summarize(blockX, blockZ);
+                if (summary == null) {
+                    return base;
+                }
+                land01 = summary.land01();
+                memo.provider = provider;
+                memo.blockX = blockX;
+                memo.blockZ = blockZ;
+                memo.land01 = land01;
             }
-            double land01 = summary.land01();
 
             // (a) Signed drive centered at the neutral midpoint: d in [-1, +1]; land01 == 0.5 -> d == 0.
             double d = 2.0 * land01 - 1.0;
