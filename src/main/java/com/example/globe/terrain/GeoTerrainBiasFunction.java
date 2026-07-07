@@ -89,6 +89,98 @@ public final class GeoTerrainBiasFunction implements DensityFunction.SimpleFunct
     private static final int TAPER_TOP_START_Y = 96;
     private static final int TAPER_TOP_END_Y = 160;
 
+    // --- Slice C-2 (TEST 27 live finding 1): ocean-side "bathymetry" regime -----------------------------
+    //
+    // The additive negative bias SHATTERED terrain: a uniform subtraction flips every marginal-positive
+    // pocket in a column negative, and ocean-intent columns' undergrounds sit at +0.03..+0.11 density
+    // (measured at Peetsa's spawn: ONE solid mass [-64..98] became FOUR fragments + 63 void blocks at
+    // S=0.4). A subtraction cannot be Y-windowed out of this, because the marginal band IS the seabed band
+    // on other columns. The ocean side therefore stops being additive entirely: geography prescribes a
+    // TARGET FLOOR Y* = seaLevel − depth(land01, shelf01), and the density becomes min(base, ramp(Y* − y)).
+    // Properties, all structural: min() can never RAISE density (no slab, ever); below Y* the ramp is
+    // large-positive and stops binding (the underground is UNTOUCHED — no hollowing, ever); above Y* it
+    // carves air down to the target floor (real bathymetry); shelf01 (1 at the coastline, fading over the
+    // shelf width) keeps a shallow apron near shore so coasts get a continental shelf instead of a
+    // cliff-then-deep drop (TEST 27 finding 4). depth scales with |S|·|r|·smoothstep(|d|): r=0 keeps the
+    // ocean side byte-identical to unbiased (the verified live recipe), and depth→0 as land01→0.5, so the
+    // regime meets the additive land side continuously at the coast crossing.
+    /** Max carve depth in blocks at |sd|=1, no shelf, |S·r|=1 (S=0.4,r=1 → 24 blocks of open-ocean depth). */
+    private static final double K_DEPTH_BLOCKS = 60.0;
+    /** The vanilla sea surface; the carve ceiling is measured down from here. */
+    private static final double SEA_LEVEL_Y = 63.0;
+    /** Density-per-block slope of the carve ramp around Y* (comparable to vanilla near-surface gradients). */
+    private static final double CEIL_SLOPE = 0.08;
+    /** Ramp floor: caps how negative the carve can force a cell (≈ vanilla sky density), keeps bounds tight. */
+    private static final double CEIL_FLOOR = -0.5;
+    /** On-shelf depth fraction: at shelf01=1 (the shoreline) only 20% of full depth — the shallow apron. */
+    private static double shelfApron(double shelf01) {
+        double s01 = Math.max(0.0, Math.min(1.0, shelf01));
+        return 1.0 - 0.8 * s01;
+    }
+
+    /**
+     * Slice C-2: the ocean-carve ceiling Y for a column, or {@code +Infinity} when no carve applies
+     * (S==0, r==0, NoOp provider, land side, or degenerate depth). THE single source of the bathymetry
+     * target, shared by this class's compute() and by {@link GeoTerrainPrelimSurfaceFunction} — the
+     * {@code preliminarySurfaceLevel} companion wrapper. Wrapping #11 became necessary (and, unlike the r1
+     * design's rejected additive form, UNIT-CORRECT: both quantities are block-Y levels) when the first
+     * bathymetry gate run showed carved sea cavities NOT flooding: the aquifer/fluid system distinguishes
+     * open-to-sea from underground via the preliminary surface, which still claimed the old (uncarved)
+     * height — so a 24-block carve read as a giant cave and got perched aquifers + air pockets instead of
+     * open ocean. Uses the same per-thread column memo as compute(), so the second consumer is
+     * effectively free on the hot path.
+     */
+    static double carveCeilYOrInfinity(int blockX, int blockZ) {
+        double s = LatitudeV2Flags.TERRAIN_V2_STRENGTH;
+        double r = LatitudeV2Flags.TERRAIN_V2_OCEAN_STRENGTH_RATIO;
+        if (s == 0.0 || r == 0.0) {
+            return Double.POSITIVE_INFINITY;
+        }
+        GeoSummaryProvider provider = LatitudeBiomes.geoProviderForTerrain();
+        if (!(provider instanceof GeoAuthorityProvider)) {
+            return Double.POSITIVE_INFINITY;
+        }
+        ColumnMemo memo = COLUMN_MEMO.get();
+        double land01;
+        double shelf01;
+        if (memo.provider == provider && memo.blockX == blockX && memo.blockZ == blockZ) {
+            land01 = memo.land01;
+            shelf01 = memo.shelf01;
+        } else {
+            GeoSummary summary = provider.summarize(blockX, blockZ);
+            if (summary == null) {
+                return Double.POSITIVE_INFINITY;
+            }
+            land01 = summary.land01();
+            shelf01 = summary.shelf01();
+            memo.provider = provider;
+            memo.blockX = blockX;
+            memo.blockZ = blockZ;
+            memo.land01 = land01;
+            memo.shelf01 = shelf01;
+        }
+        double d = 2.0 * land01 - 1.0;
+        if (d >= 0.0) {
+            return Double.POSITIVE_INFINITY;
+        }
+        double m = -d;
+        double sm = m * m * (3.0 - 2.0 * m);
+        double depthBlocks = Math.abs(s) * Math.abs(r) * K_DEPTH_BLOCKS * sm * shelfApron(shelf01);
+        if (depthBlocks <= 0.0) {
+            return Double.POSITIVE_INFINITY;
+        }
+        return SEA_LEVEL_Y - depthBlocks;
+    }
+
+    /** Package hook so the prelim companion wrapper shares this class's one-shot failure log. */
+    static void logBiasFailureOnce(Throwable t) {
+        if (!BIAS_FAILURE_LOGGED.get() && BIAS_FAILURE_LOGGED.compareAndSet(false, true)) {
+            com.example.globe.GlobeMod.LOGGER.warn(
+                    "[Latitude] Phase 4 terrain-bias computation failed; passing through unbiased vanilla "
+                            + "density (logs once per world).", t);
+        }
+    }
+
     /** Smoothstep envelope in [0,1]: 0 outside [BOTTOM_START, TOP_END], 1 across [BOTTOM_END, TOP_START]. */
     private static double taperWeight(int y) {
         if (y >= TAPER_TOP_END_Y || y <= TAPER_BOTTOM_START_Y) {
@@ -137,6 +229,8 @@ public final class GeoTerrainBiasFunction implements DensityFunction.SimpleFunct
          *  populated against the NoOp placeholder is never reused once the real provider is in place. */
         GeoSummaryProvider provider;
         double land01;
+        /** Slice C-2: the bathymetry regime also needs the column's shelf01 (Y-independent, same memo). */
+        double shelf01;
     }
 
     // --- Slice B observability latches (audit P1-2). Re-armed per world via resetLogLatchesForNewWorld()
@@ -222,20 +316,24 @@ public final class GeoTerrainBiasFunction implements DensityFunction.SimpleFunct
             int blockZ = ctx.blockZ();
             ColumnMemo memo = COLUMN_MEMO.get();
             double land01;
+            double shelf01;
             if (memo.provider == provider && memo.blockX == blockX && memo.blockZ == blockZ) {
                 // Same column, same provider instance as last call on this thread -- reuse the sample
                 // instead of re-running GeoAuthority's real work for the Nth time this column.
                 land01 = memo.land01;
+                shelf01 = memo.shelf01;
             } else {
                 GeoSummary summary = provider.summarize(blockX, blockZ);
                 if (summary == null) {
                     return base;
                 }
                 land01 = summary.land01();
+                shelf01 = summary.shelf01();
                 memo.provider = provider;
                 memo.blockX = blockX;
                 memo.blockZ = blockZ;
                 memo.land01 = land01;
+                memo.shelf01 = shelf01;
             }
 
             // (a) Signed drive centered at the neutral midpoint: d in [-1, +1]; land01 == 0.5 -> d == 0.
@@ -245,14 +343,27 @@ public final class GeoTerrainBiasFunction implements DensityFunction.SimpleFunct
             //     so the transform is C1 across d=0 (no slope kink at the neutral point).
             double m = Math.abs(d);
             double sm = m * m * (3.0 - 2.0 * m);
-            double sd = Math.signum(d) * sm;
 
-            // Optional ocean-side asymmetry (off by default; r == 1.0 collapses to the symmetric form).
-            // The two branches meet at value 0 at d == 0 regardless of r, so it stays continuous there.
-            double r = LatitudeV2Flags.TERRAIN_V2_OCEAN_STRENGTH_RATIO;
-            double gain = (r == 1.0 || d >= 0.0) ? 1.0 : r;
+            if (d >= 0.0) {
+                // LAND side (Slice C, unchanged): additive lift under the Y-taper -- proven no-slab,
+                // gap-healing. NOTE the documented negative-strength "flip" knob (sweeper #23) survives
+                // here, but post-C-2 honesty: S<0 turns this into a SUBTRACTION on land and reintroduces
+                // the shatter hazard TEST 27 exposed -- it remains a diagnostics-only knob, never a
+                // shipping configuration.
+                return base + s * K * sm * taperWeight(ctx.blockY());
+            }
 
-            return base + s * K * gain * sd * taperWeight(ctx.blockY());
+            // OCEAN side (Slice C-2 bathymetry -- see the K_DEPTH_BLOCKS block comment): carve down to a
+            // geography-prescribed floor; never add, never touch below the floor. The ceiling comes from
+            // the shared helper (memo already warm from the fetch above) so this class and the
+            // preliminarySurfaceLevel companion wrapper can never disagree about the target.
+            double ceilY = carveCeilYOrInfinity(blockX, blockZ);
+            if (Double.isInfinite(ceilY)) {
+                // r == 0 (the TEST 27 retry recipe) or degenerate: ocean side exactly untouched.
+                return base;
+            }
+            double ceil = Math.max(CEIL_FLOOR, CEIL_SLOPE * (ceilY - ctx.blockY()));
+            return Math.min(base, ceil);
         } catch (Throwable t) {
             // Bias-math failure only (the delegate already evaluated fine above): fall back to the unbiased
             // value -- and say so ONCE (Slice B, audit P1-2 / Lane 8): the old fully-silent catch could
@@ -267,27 +378,28 @@ public final class GeoTerrainBiasFunction implements DensityFunction.SimpleFunct
     }
 
     /**
-     * Widen the delegate's bounds by the maximum possible bias {@code B = |S| * K * max(1.0, |oceanRatio|)}.
-     * At {@code S == 0} this is {@code 0}, so the bounds equal the delegate's exactly (no-op). A safe
-     * over-estimate is fine and required (the {@link DensityFunction} bounds contract says
-     * {@code min/maxValue} must contain every value {@code compute} can return).
-     *
-     * <p><b>Sweeper findings #15/#22:</b> the gain factor uses {@code Math.max(1.0, Math.abs(r))}, NOT
-     * {@code Math.max(1.0, r)}. A NEGATIVE {@code oceanStrengthRatio} amplifies the ocean-side push by
-     * {@code |r|}; using the un-abs'd {@code r} would under-estimate the true bias bound (e.g. {@code r=-3}
-     * pushes ocean columns by {@code 3*K*S} but {@code max(1.0,-3)=1.0} would claim only {@code K*S}),
-     * violating the bounds contract. {@code Math.abs(s)} likewise covers a negative strength (the documented
-     * "flip" knob -- see {@code compute}).
+     * Bounds post-C-2. The ADDITIVE regime now exists only on the land side and never uses the ocean
+     * ratio, so its bound is {@code |S| * K} ({@code Math.abs(s)} still covers the documented negative-
+     * strength "flip" knob; sweeper #15/#22's r-amplification concern is retired with the r-multiplied
+     * additive path itself). The CLAMP (bathymetry) regime can only LOWER values, never raise them, and
+     * its ramp is floored at {@link #CEIL_FLOOR} -- so when it can bind at all ({@code S != 0} and
+     * {@code r != 0}), {@code minValue} must additionally admit {@code CEIL_FLOOR}. At {@code S == 0}
+     * (or {@code r == 0} for the min side's clamp term) the corresponding widening vanishes, so the
+     * S=0 bounds equal the delegate's exactly (the byte-identity contract).
      */
     private double maxAbsBias() {
-        double s = LatitudeV2Flags.TERRAIN_V2_STRENGTH;
-        double r = LatitudeV2Flags.TERRAIN_V2_OCEAN_STRENGTH_RATIO;
-        return Math.abs(s) * K * Math.max(1.0, Math.abs(r));
+        return Math.abs(LatitudeV2Flags.TERRAIN_V2_STRENGTH) * K;
+    }
+
+    private static boolean clampRegimeCanBind() {
+        return LatitudeV2Flags.TERRAIN_V2_STRENGTH != 0.0
+                && LatitudeV2Flags.TERRAIN_V2_OCEAN_STRENGTH_RATIO != 0.0;
     }
 
     @Override
     public double minValue() {
-        return delegate.minValue() - maxAbsBias();
+        double additiveMin = delegate.minValue() - maxAbsBias();
+        return clampRegimeCanBind() ? Math.min(additiveMin, CEIL_FLOOR) : additiveMin;
     }
 
     @Override

@@ -713,8 +713,10 @@ public final class LatitudeBiomes {
      * moving terrain RIGHT NOW -- terrainV2 + geoV2 armed, strength nonzero, and the provider genuinely
      * real (not the NoOp placeholder). Gates the sunk-land mirror veto in pick() so that flag-off runs AND
      * armed-but-strength-0 runs stay byte-identical to pre-Phase-4 biome behavior (the S=0 identity gate).
+     * Public since Slice C-2: GlobeMod's spawn search also consults it to exclude the projection edge band
+     * (TEST 27 finding 1b).
      */
-    private static boolean terrainBiasActivelyBiasing() {
+    public static boolean terrainBiasActivelyBiasing() {
         return LatitudeV2Flags.TERRAIN_V2_ENABLED
                 && LatitudeV2Flags.GEO_V2_ENABLED
                 && LatitudeV2Flags.TERRAIN_V2_STRENGTH != 0.0
@@ -1460,6 +1462,33 @@ public final class LatitudeBiomes {
                 ? (WINDSWEPT_RUGGED_THRESH + WINDSWEPT_RUGGED_HYST)
                 : 0; // flat/unknown-safe: do not fabricate raised-land roughness for skipped-preview ocean shelf
         return new PreviewTerrain(centerHeight, robustDelta);
+    }
+
+    // Slice C-2: solid-floor twin of previewHeight (OCEAN_FLOOR_WG -- ignores fluid). Needed because the
+    // bathymetry+prelim fix makes carved ocean columns FLOOD correctly, which in turn makes the
+    // fluid-inclusive WORLD_SURFACE_WG read the waterline (63) -- blinding the sunk-land mirror veto that
+    // must see the SOLID floor. Own per-chunk thread-local cache, same pattern as previewHeight's.
+    private static final ThreadLocal<Long> PREVIEW_FLOOR_CACHE_CHUNK = ThreadLocal.withInitial(() -> Long.MIN_VALUE);
+    private static final ThreadLocal<Long2IntOpenHashMap> PREVIEW_FLOOR_CACHE =
+            ThreadLocal.withInitial(Long2IntOpenHashMap::new);
+
+    private static int previewFloorHeight(NoiseBasedChunkGenerator generator, RandomState noiseConfig,
+                                          LevelHeightAccessor heightView, int blockX, int blockZ) {
+        long chunkKey = net.minecraft.world.level.ChunkPos.pack(blockX >> 4, blockZ >> 4);
+        long cachedChunk = PREVIEW_FLOOR_CACHE_CHUNK.get();
+        Long2IntOpenHashMap cache = PREVIEW_FLOOR_CACHE.get();
+        if (chunkKey != cachedChunk) {
+            cache.clear();
+            PREVIEW_FLOOR_CACHE_CHUNK.set(chunkKey);
+        }
+        long key = (((long) blockX) << 32) ^ (blockZ & 0xffffffffL);
+        int cached = cache.getOrDefault(key, Integer.MIN_VALUE);
+        if (cached != Integer.MIN_VALUE) {
+            return cached;
+        }
+        int value = generator.getBaseHeight(blockX, blockZ, Heightmap.Types.OCEAN_FLOOR_WG, heightView, noiseConfig);
+        cache.put(key, value);
+        return value;
     }
 
     private static int previewHeight(NoiseBasedChunkGenerator generator, RandomState noiseConfig, LevelHeightAccessor heightView,
@@ -3081,11 +3110,18 @@ public final class LatitudeBiomes {
         // the real terrain-aware height check. Rivers keep their own branch below.
         if (!oceanAuthority && !base.is(BiomeTags.IS_OCEAN) && !base.is(BiomeTags.IS_RIVER)
                 && terrainBiasActivelyBiasing()
+                // Slice C-2: the mirror exists to follow CARVED terrain, so it additionally requires the
+                // carve to be possible at all (r != 0). Without this, the floor-based check below would
+                // fire on ordinary vanilla shore columns under the r=0 recipe and change its biome output.
+                && LatitudeV2Flags.TERRAIN_V2_OCEAN_STRENGTH_RATIO != 0.0
                 && geoV2Summary != null && geoV2Summary.isOceanIntent()
                 && generator != null && noiseConfig != null && heightView != null) {
+            // Slice C-2: SOLID floor, not the fluid-inclusive surface -- a correctly-flooded carved column
+            // reads WORLD_SURFACE_WG == waterline (63), which blinded this veto on its first gate run
+            // (26/81 grid columns were land-family biomes floating over 24 blocks of open water).
             int realHeight = skipPreview && hasPreviewTerrainInputs
                     ? columnDecisionY
-                    : previewHeight(generator, noiseConfig, heightView, blockX & ~3, blockZ & ~3);
+                    : previewFloorHeight(generator, noiseConfig, heightView, blockX & ~3, blockZ & ~3);
             if (realHeight < seaLevel - 2) {
                 oceanAuthority = true;
             }
@@ -3792,11 +3828,18 @@ public final class LatitudeBiomes {
         // the real terrain-aware height check. Rivers keep their own branch below.
         if (!oceanAuthority && !base.is(BiomeTags.IS_OCEAN) && !base.is(BiomeTags.IS_RIVER)
                 && terrainBiasActivelyBiasing()
+                // Slice C-2: the mirror exists to follow CARVED terrain, so it additionally requires the
+                // carve to be possible at all (r != 0). Without this, the floor-based check below would
+                // fire on ordinary vanilla shore columns under the r=0 recipe and change its biome output.
+                && LatitudeV2Flags.TERRAIN_V2_OCEAN_STRENGTH_RATIO != 0.0
                 && geoV2Summary != null && geoV2Summary.isOceanIntent()
                 && generator != null && noiseConfig != null && heightView != null) {
+            // Slice C-2: SOLID floor, not the fluid-inclusive surface -- a correctly-flooded carved column
+            // reads WORLD_SURFACE_WG == waterline (63), which blinded this veto on its first gate run
+            // (26/81 grid columns were land-family biomes floating over 24 blocks of open water).
             int realHeight = skipPreview && hasPreviewTerrainInputs
                     ? columnDecisionY
-                    : previewHeight(generator, noiseConfig, heightView, blockX & ~3, blockZ & ~3);
+                    : previewFloorHeight(generator, noiseConfig, heightView, blockX & ~3, blockZ & ~3);
             if (realHeight < seaLevel - 2) {
                 oceanAuthority = true;
             }

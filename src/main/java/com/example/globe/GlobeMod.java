@@ -728,8 +728,20 @@ public class GlobeMod implements ModInitializer {
                                           int xRadius, int zRadius, int targetZ, long seed) {
         final int margin = 320;
         // X is drawn over the (wider, in Mercator) E-W extent; Z-jitter is clamped to the latitude extent.
-        final int maxX = Math.max(0, xRadius - margin);
+        int maxX = Math.max(0, xRadius - margin);
         final int maxZ = Math.max(0, zRadius - margin);
+        // Slice C-2 (TEST 27 finding 1b): when the Phase 4 terrain bias is actively shaping terrain, never
+        // even SEARCH for spawn inside the projection edge band (|x| >= EDGE_START * xRadius = outer 20%).
+        // Geography deliberately ramps that band to ocean-intent, so its biased terrain is carved -- but
+        // this land test below is BIOME-driven (the old map paints land biomes there while biomeConsumerV2
+        // is off), which is exactly how Peetsa's first live run spawned at |x| = 0.86 * xRadius inside a
+        // shattered column. The pre-existing post-hoc clamp (clampSpawnAwayFromEwWarning, ~0.9 * xRadius)
+        // is not tight enough to exclude the band.
+        if (LatitudeBiomes.terrainBiasActivelyBiasing()) {
+            int edgeSafeX = (int) Math.floor(
+                    com.example.globe.core.geo.GeoAuthorityParams.EDGE_START * xRadius) - 64;
+            maxX = Math.max(0, Math.min(maxX, edgeSafeX));
+        }
 
         final int samplesPerPass = 16;
         final int zJitter = 96;
