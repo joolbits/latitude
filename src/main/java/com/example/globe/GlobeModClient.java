@@ -89,6 +89,10 @@ public class GlobeModClient implements ClientModInitializer {
             GlobeClientState.setGlobeWorld(false);
             com.example.globe.util.LatitudeMath.setLatitudeZRadius(0);
             pendingSpawnPickerOpen = false;
+            // U-D world-switch hygiene: per-world caches (HUD strings, compass presence, dial-texture
+            // presence) and any in-flight zone title must not leak across worlds.
+            com.example.globe.client.CompassHud.onWorldSwitch();
+            com.example.globe.client.ZoneEnterTitleOverlay.reset();
         });
 
         ClientPlayNetworking.registerGlobalReceiver(GlobeNet.GlobeStatePayload.ID, (payload, context) -> {

@@ -134,6 +134,8 @@ public class LatitudeHudStudioScreen extends Screen {
 
     @Override
     protected void init() {
+        CompassDialRenderer.invalidateTextures(); // pack may have been toggled since last check
+
         this.clearWidgets();
 
         int hintLaneH = 20;         // 8px padding + ~9px font + 3px bottom margin
@@ -239,6 +241,16 @@ public class LatitudeHudStudioScreen extends Screen {
             y += rowH + rowGap;
 
             if (analog) {
+                var wLook = this.addRenderableWidget(CycleButton.<CompassHudConfig.CompassLook>builder(v -> Component.literal(lookLabel(v)), () -> cfg.analogLook)
+                        .withValues(CompassHudConfig.CompassLook.values())
+                        .create(panelX, y, widgetW, rowH, Component.literal("Compass Look"), (btn, value) -> {
+                            cfg.analogLook = value;
+                            CompassHudConfig.saveCurrent();
+                        }));
+                tooltip(wLook, "The dial's shape: classic disc, open ring, compass rose, a linear heading tape, or a minimal needle. Resource packs can reskin any look (globe:textures/gui/compass/<look>.png).");
+                trackSidebarWidget(wLook, y);
+                y += rowH + rowGap;
+
                 // Range narrowed from 32-128 per live feedback: 128 renders absurdly huge, and even ~30% along
                 // that old range (~60px) already dwarfs the readout box, while 32 (the smallest the old range
                 // allowed) was already the default. New range keeps the useful huge-vs-tiny span but adds real
@@ -380,6 +392,7 @@ public class LatitudeHudStudioScreen extends Screen {
                         cfg.analogSize = fresh.analogSize;
                         cfg.analogInnerAlpha = fresh.analogInnerAlpha;
                         cfg.analogTheme = fresh.analogTheme;
+                        cfg.analogLook = fresh.analogLook;
                         cfg.scale = fresh.scale;
                         cfg.showBackground = fresh.showBackground;
                         cfg.backgroundRgb = fresh.backgroundRgb;
@@ -1275,6 +1288,7 @@ public class LatitudeHudStudioScreen extends Screen {
         cfg.showMode = fresh.showMode;
         cfg.directionMode = fresh.directionMode;
         cfg.style = fresh.style;
+        cfg.analogLook = fresh.analogLook;
         cfg.hAnchor = fresh.hAnchor;
         cfg.vAnchor = fresh.vAnchor;
         cfg.offsetX = fresh.offsetX;
@@ -1430,6 +1444,16 @@ public class LatitudeHudStudioScreen extends Screen {
 
     private static int clamp(int v, int lo, int hi) {
         return Math.max(lo, Math.min(hi, v));
+    }
+
+    private static String lookLabel(CompassHudConfig.CompassLook look) {
+        return switch (look) {
+            case DISC -> "Disc";
+            case RING -> "Ring";
+            case ROSE -> "Rose";
+            case TAPE -> "Tape";
+            case MINIMAL -> "Minimal";
+        };
     }
 
     private static String themeLabel(CompassHudConfig.AnalogCompassTheme theme) {

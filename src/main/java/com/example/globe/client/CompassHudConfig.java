@@ -24,6 +24,8 @@ public final class CompassHudConfig {
     public enum VAnchor { TOP, CENTER, BOTTOM }
     /** Where the compass group docks. Replaces the old boolean attach (kept below for migration). */
     public enum DockMode { NONE, HOTBAR_RIGHT }
+    // Append-only: keep DISC first (the pre-U-D dial, default) and never reorder — looks persist by name.
+    public enum CompassLook { DISC, RING, ROSE, TAPE, MINIMAL }
 
     /**
      * Pin &amp; Grow layout version (design: hud-layout-overhaul-design-20260707.md). Field default is 0 so a
@@ -42,6 +44,7 @@ public final class CompassHudConfig {
     // inner alpha 0.50, lat+long readout on). Existing users keep whatever their saved config has.
     public CompassStyle style = CompassStyle.ANALOG;
     public AnalogCompassTheme analogTheme = AnalogCompassTheme.CLASSIC_GOLD;
+    public CompassLook analogLook = CompassLook.DISC;
     public DirectionMode directionMode = DirectionMode.CARDINAL_8;
 
     // Positioning (screen-space). LEGACY (layoutVersion 0): hAnchor/vAnchor anchored a CONTENT-MEASURED
@@ -173,6 +176,10 @@ public final class CompassHudConfig {
     public static CompassHudConfig fresh() {
         CompassHudConfig cfg = new CompassHudConfig();
         cfg.layoutVersion = CURRENT_LAYOUT_VERSION; // born migrated; only disk-loaded legacies stay at 0
+        // Boss-bar nudge (U-D): the raw default pin (top-center, y=EDGE_INSET) sits exactly where vanilla
+        // stacks boss bars. Fresh installs (and Reset) start the compass ~15% down the screen instead —
+        // below a typical boss-bar stack at common GUI heights. Existing configs are untouched.
+        cfg.offYFrac = 0.15;
         return cfg;
     }
 
@@ -233,6 +240,7 @@ public final class CompassHudConfig {
         if (showMode == null) showMode = ShowMode.COMPASS_PRESENT;
         if (style == null) style = CompassStyle.DIGITAL;
         if (analogTheme == null) analogTheme = AnalogCompassTheme.CLASSIC_GOLD;
+        if (analogLook == null) analogLook = CompassLook.DISC;
         if (directionMode == null) directionMode = DirectionMode.CARDINAL_8;
         if (hAnchor == null) hAnchor = HAnchor.CENTER;
         if (vAnchor == null) vAnchor = VAnchor.TOP;
