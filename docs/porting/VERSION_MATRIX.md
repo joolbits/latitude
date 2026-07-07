@@ -1,7 +1,17 @@
 # Latitude Version Matrix
 
 `status: planning matrix`
-`updated: 2026-07-02`
+`updated: 2026-07-06`
+
+## Status update (2026-07-06, Fable 5 audit Slice A)
+
+**The 26.2 pivot root IS the active Latitude line.** Since the section below froze (TEST 20 / HEAD
+`61d51782`), the pivot has additionally landed the whole overhaul ladder behind default-off flags:
+GeoAuthority/ClimateAuthority Phases 0-3, the Biome Consumer slice, and Phase 4 (terrain density wrapper,
+`latitude.terrainV2.enabled`). Phase 4 is mechanically closed but NOT live-closed — the Fable 5 audit
+measured an empty usable strength window on the current formula; a Y-aware taper is prerequisite. Current
+truth: `../binder/fable5-overhaul-audit-report-20260706.md` (slices A–E, gates G1–G3). The 26.1.2 feature
+branch is now a prior-era reference, not the active planning/source line.
 
 ## 26.2 Pivot Status (2026-07-02)
 
@@ -39,7 +49,7 @@ investigation, not yet resolved. NOTE: the earlier "frozen-river reflection" ite
 is **not** a regression — that feature has been inert since before 26.1.2 (the `getFeatures` name never existed
 in current mappings), so it was correctly left untouched to preserve behavior.
 
-Root: `<home>/CascadeProjects/Latitude-2.0-26.2-pivot`, branch `port/canonical-26.2-pivot`, HEAD `61d51782`.
+Root: `<home>/CascadeProjects/Latitude-2.0-26.2-pivot`, branch `port/canonical-26.2-pivot`, HEAD `61d51782` (as of 2026-07-03 — see the 2026-07-06 status update above for what landed after).
 
 This matrix records the intended port/pivot truth for Latitude work. Verify upstream metadata before implementation because Minecraft, Fabric API, Loader, and Loom move quickly.
 
@@ -48,7 +58,7 @@ This matrix records the intended port/pivot truth for Latitude work. Verify upst
 | Line | Minecraft | Role | Local status | Notes |
 | --- | --- | --- | --- | --- |
 | Latitude 2.0 overhaul | 26.2 | planned canonical target | pivot GREEN (compile + headless Atlas + live client pass) | Build metadata + narrow API-drift repair done; deterministic headless proof green; live client pass done across ~20 staged test jars (crash fix + World Creation polish + HUD Studio feature buildout). See pivot status above. |
-| Latitude 2.0 current feature branch | 26.1.2 | active planning/source reference | current local branch | Do not build the large overhaul here and port later. |
+| Latitude 2.0 prior feature branch | 26.1.2 | prior-era reference (superseded by the 26.2 pivot, 2026-07-06) | historical local branch | Superseded as the active line; use for behavioral comparison only. |
 | Latitude 1.4 / early 2.0 reference | 26.1.2 | proven reference | local proof history exists | Use for behavioral comparison and regression baselines. |
 | Older backport | 1.21.11 | backport target | structurally partial historically | Do not patch as primary without explicit Maintainer decision. |
 | Older backport | 1.21.1 | backport target | historical port line | Requires scoped backport plan. |
