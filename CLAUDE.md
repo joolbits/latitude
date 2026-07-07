@@ -3,6 +3,20 @@
 Claude Code project guidance. (Codex-native agent instructions live in `AGENTS.md`; the
 Latitude binder/evidence workflow rules in `AGENTS.md` apply to Claude too.)
 
+## Subagents spawning sub-subagents leaves unstoppable ghost entries — forbid it in delegated prompts
+
+Observed 2026-07-06 (Fable audit): two audit lanes legally spawned their own child agents because the
+lane prompts forbade backgrounding/long commands/Monitor but never the `Agent` tool itself. The children
+finished quickly and the parents returned complete reports — no work was lost — but the children's task
+entries live in the PARENT's context, not the orchestrator's: the orchestrator's `TaskStop` cannot see
+their ids ("No task found"), so once the parent exits they linger in the UI as permanently-"running"
+ghosts that alarm the user. Diagnosis pattern (cheap, do this before assuming anything is stuck): compare
+`ls -lt` mtimes on `~/.claude/projects/<session>/subagents/agent-*.jsonl` (a silent transcript = dead
+agent, regardless of UI state) + `ps aux` for real processes + `list_sessions` for other running
+sessions. **Rule: delegated-agent prompts should say "do not spawn subagents" unless child fan-out is
+explicitly part of the design — and if it is, the parent must report its children's ids in its summary so
+the orchestrator can supervise them.**
+
 ## Orchestrating subagents that run LONG shell commands (READ BEFORE DELEGATING)
 
 A subagent spawned via the `Agent` tool is NOT the main loop. It has **no way to sleep its
