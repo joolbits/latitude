@@ -95,6 +95,8 @@ loom {
             vmArg "-Dlatdev.terrainProof.out=${System.getProperty('latdev.terrainProof.out', '')}"
             vmArg "-Dlatdev.terrainProof.nonGlobe=${System.getProperty('latdev.terrainProof.nonGlobe', 'false')}"
             vmArg "-Dlatdev.terrainProof.replayProbe=${System.getProperty('latdev.terrainProof.replayProbe', 'false')}"
+            vmArg "-Dlatdev.terrainProof.probes=${System.getProperty('latdev.terrainProof.probes', '')}"
+            vmArg "-Dlatdev.terrainProof.coherence=${System.getProperty('latdev.terrainProof.coherence', 'false')}"
             // LatitudeV2Flags -- static final, read once at class-init, so these MUST reach the forked JVM
             // as real -D launch args (see LatitudeV2Flags's own "Testing note" javadoc).
             vmArg "-Dlatitude.terrainV2.enabled=${System.getProperty('latitude.terrainV2.enabled', 'false')}"
