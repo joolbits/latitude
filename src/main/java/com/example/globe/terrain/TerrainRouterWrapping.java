@@ -228,8 +228,13 @@ public final class TerrainRouterWrapping {
                     original.erosion(),                    // 8
                     original.depth(),                      // 9
                     original.ridges(),                     // 10
-                    original.preliminarySurfaceLevel(),    // 11 (passed through UNCHANGED)
-                    new GeoTerrainBiasFunction(originalFinalDensity), // 12 (the ONLY wrapped field)
+                    // 11: Slice C-2 — wrapped with the block-unit-correct bathymetry ceiling clamp
+                    // (min(prelim, carveCeilY)); exact pass-through whenever no carve applies. See
+                    // GeoTerrainPrelimSurfaceFunction's javadoc for why the locked design's refusal to
+                    // touch #11 (an additive DENSITY term — a unit mismatch, L16) does not apply to a
+                    // block-Y clamp, and why the fluid/aquifer system requires it once real carving exists.
+                    new GeoTerrainPrelimSurfaceFunction(original.preliminarySurfaceLevel()),
+                    new GeoTerrainBiasFunction(originalFinalDensity), // 12
                     original.veinToggle(),                 // 13
                     original.veinRidged(),                 // 14
                     original.veinGap());                   // 15

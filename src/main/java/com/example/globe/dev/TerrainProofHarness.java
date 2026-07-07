@@ -392,10 +392,58 @@ public final class TerrainProofHarness {
         final List<String> blockNames = new ArrayList<>();
         int minY;
 
+        /**
+         * Slice C-2 gap-delta tripwire (the TEST 27 lesson): comparators must assert the DELTA of interior
+         * hollowness vs a baseline run, not eyeball stack shapes -- the pre-C-2 gate had multi-range stacks
+         * in its data and misread bias-shattered columns as ordinary cave layering. Derived once at emit
+         * time: {@code gapBlocks} = non-solid cells strictly inside the solid envelope (first..last solid),
+         * {@code solidRanges} = count of contiguous solid runs (1 = monolithic).
+         */
+        int gapBlocks;
+        int solidRanges;
+
+        void computeGapMetrics() {
+            int first = -1;
+            int last = -1;
+            for (int i = 0; i < blockNames.size(); i++) {
+                String n = blockNames.get(i).toLowerCase(java.util.Locale.ROOT);
+                boolean solid = !n.contains("air") && !n.contains("water");
+                if (solid) {
+                    if (first < 0) {
+                        first = i;
+                    }
+                    last = i;
+                }
+            }
+            if (first < 0) {
+                gapBlocks = 0;
+                solidRanges = 0;
+                return;
+            }
+            int gaps = 0;
+            int ranges = 0;
+            boolean inSolid = false;
+            for (int i = first; i <= last; i++) {
+                String n = blockNames.get(i).toLowerCase(java.util.Locale.ROOT);
+                boolean solid = !n.contains("air") && !n.contains("water");
+                if (solid && !inSolid) {
+                    ranges++;
+                }
+                if (!solid) {
+                    gaps++;
+                }
+                inSolid = solid;
+            }
+            gapBlocks = gaps;
+            solidRanges = ranges;
+        }
+
         String toJson() {
             StringBuilder sb = new StringBuilder();
             sb.append("    {\"label\": \"").append(label).append("\", \"x\": ").append(x)
                     .append(", \"z\": ").append(z).append(", \"minY\": ").append(minY)
+                    .append(", \"gapBlocks\": ").append(gapBlocks)
+                    .append(", \"solidRanges\": ").append(solidRanges)
                     .append(", \"blockNames\": [");
             for (int i = 0; i < blockNames.size(); i++) {
                 sb.append("\"").append(blockNames.get(i)).append("\"");
@@ -561,11 +609,19 @@ public final class TerrainProofHarness {
         String biomeId;
         boolean oceanFamily;
         int baseHeight;
+        /**
+         * Slice C-2: the SOLID floor (OCEAN_FLOOR_WG), alongside the fluid-inclusive baseHeight
+         * (WORLD_SURFACE_WG). Post-bathymetry, carved columns read baseHeight == waterline (63), which
+         * blinded the drowned-land tripwire -- a land-family biome floating over deep carved water needs
+         * the solid floor to be visible to the comparator.
+         */
+        int floorHeight;
 
         String toJson() {
             return "    {\"x\": " + x + ", \"z\": " + z + ", \"latDeg\": " + latDeg
                     + ", \"land01\": " + land01 + ", \"biomeId\": " + jsonStringOrNull(biomeId)
-                    + ", \"oceanFamily\": " + oceanFamily + ", \"baseHeight\": " + baseHeight + "}";
+                    + ", \"oceanFamily\": " + oceanFamily + ", \"baseHeight\": " + baseHeight
+                    + ", \"floorHeight\": " + floorHeight + "}";
         }
     }
 
@@ -614,6 +670,7 @@ public final class TerrainProofHarness {
                 probe.biomeId = key == null ? "unknown" : key.toString();
                 probe.oceanFamily = out.is(net.minecraft.tags.BiomeTags.IS_OCEAN);
                 probe.baseHeight = generator.getBaseHeight(x, z, Heightmap.Types.WORLD_SURFACE_WG, world, randomState);
+                probe.floorHeight = generator.getBaseHeight(x, z, Heightmap.Types.OCEAN_FLOOR_WG, world, randomState);
                 report.coherenceProbes.add(probe);
             }
         }
@@ -895,6 +952,7 @@ public final class TerrainProofHarness {
                 var key = state.getBlock().builtInRegistryHolder().unwrapKey();
                 probe.blockNames.add(key.isPresent() ? key.get().toString() : state.toString());
             }
+            probe.computeGapMetrics();
             report.structuralProbes.add(probe);
         }
     }
