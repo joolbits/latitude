@@ -12,7 +12,6 @@ import com.example.globe.client.GlobeWarningOverlay;
 import com.example.globe.client.LatitudeClientState;
 import com.example.globe.client.LatitudeHudStudioScreen;
 import com.example.globe.client.SpawnZoneScreen;
-import com.example.globe.client.EwSandstormOverlayRenderer;
 import com.example.globe.client.EwStormWallRenderer;
 import com.example.globe.dev.DevCaptureKeybind;
 import com.example.globe.dev.client.SeamAuditClientBridge;

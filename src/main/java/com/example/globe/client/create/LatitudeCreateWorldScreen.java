@@ -147,6 +147,8 @@ public class LatitudeCreateWorldScreen extends Screen {
 
     private String worldNameInput = "New World";
     private String seedInput = "";
+    private Button seedRandomBtn;
+    private Button seedCopyBtn;
     private EditBox worldNameField;
     private EditBox seedField;
     private Button sizePrevBtn;
@@ -435,14 +437,35 @@ public class LatitudeCreateWorldScreen extends Screen {
         this.worldNameField.setResponder(text -> worldNameInput = text);
         this.addRenderableWidget(this.worldNameField);
 
-        // ── 2. Seed ──
+        // ── 2. Seed (with dice-reroll and copy affordances, U-E) ──
         seedFieldY = worldFieldY + fieldGap1;
-        this.seedField = new EditBox(this.font, inputX, seedFieldY, inputW, fieldH, Component.literal("Seed"));
+        int seedBtnW = fieldH; // square buttons, field-height sized
+        this.seedField = new EditBox(this.font, inputX, seedFieldY, inputW - 2 * (seedBtnW + 2), fieldH, Component.literal("Seed"));
         this.seedField.setMaxLength(64);
         this.seedField.setHint(Component.literal("Leave blank for random"));
         this.seedField.setValue(seedInput);
         this.seedField.setResponder(text -> seedInput = text);
         this.addRenderableWidget(this.seedField);
+
+        this.seedRandomBtn = Button.builder(Component.literal("\u2684"), b -> {
+                    String rolled = Long.toString(java.util.concurrent.ThreadLocalRandom.current().nextLong());
+                    seedInput = rolled;
+                    if (seedField != null) seedField.setValue(rolled);
+                })
+                .bounds(inputX + inputW - 2 * seedBtnW - 2, seedFieldY, seedBtnW, fieldH)
+                .tooltip(net.minecraft.client.gui.components.Tooltip.create(Component.literal("Roll a random seed")))
+                .build();
+        this.addRenderableWidget(this.seedRandomBtn);
+
+        this.seedCopyBtn = Button.builder(Component.literal("\u29c9"), b -> {
+                    if (this.minecraft != null && !seedInput.isBlank()) {
+                        this.minecraft.keyboardHandler.setClipboard(seedInput);
+                    }
+                })
+                .bounds(inputX + inputW - seedBtnW, seedFieldY, seedBtnW, fieldH)
+                .tooltip(net.minecraft.client.gui.components.Tooltip.create(Component.literal("Copy seed to clipboard")))
+                .build();
+        this.addRenderableWidget(this.seedCopyBtn);
 
         // ── 3. World Shape ◀▶ (moved here from the Rules panel per live feedback -- it's a "what is
         // this world" property, so it reads more naturally alongside World Size than buried in Rules) ──
@@ -721,9 +744,20 @@ public class LatitudeCreateWorldScreen extends Screen {
             worldNameField.active = true;
         }
         if (seedField != null) {
-            seedField.setRectangle(inputW, fieldH, inputX, seedFieldY);
+            int seedBtnW = fieldH;
+            seedField.setRectangle(inputW - 2 * (seedBtnW + 2), fieldH, inputX, seedFieldY);
             seedField.visible = true;
             seedField.active = true;
+            if (seedRandomBtn != null) {
+                seedRandomBtn.setRectangle(seedBtnW, fieldH, inputX + inputW - 2 * seedBtnW - 2, seedFieldY);
+                seedRandomBtn.visible = true;
+                seedRandomBtn.active = true;
+            }
+            if (seedCopyBtn != null) {
+                seedCopyBtn.setRectangle(seedBtnW, fieldH, inputX + inputW - seedBtnW, seedFieldY);
+                seedCopyBtn.visible = true;
+                seedCopyBtn.active = true;
+            }
         }
         if (worldShapePrevBtn != null) {
             worldShapePrevBtn.setRectangle(stepperBtnW, btnH, inputX, worldShapeFieldY);
@@ -789,6 +823,8 @@ public class LatitudeCreateWorldScreen extends Screen {
         updateLeftWidgets(inputX, inputW, fieldH, btnH, stepperBtnW);
         updateLeftWidgetVisibility(worldNameField);
         updateLeftWidgetVisibility(seedField);
+        updateLeftWidgetVisibility(seedRandomBtn);
+        updateLeftWidgetVisibility(seedCopyBtn);
         updateLeftWidgetVisibility(worldShapePrevBtn);
         updateLeftWidgetVisibility(worldShapeNextBtn);
         updateLeftWidgetVisibility(sizePrevBtn);

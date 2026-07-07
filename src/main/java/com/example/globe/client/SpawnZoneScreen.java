@@ -3,12 +3,22 @@ package com.example.globe.client;
 import com.example.globe.GlobeNet;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.ChatFormatting;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
 
+/**
+ * In-world spawn-zone picker (opened by the server's spawn-picker payload). U-E Chartroom restyle:
+ * the screen now says what it is (gold title + hint — it previously showed seven bare buttons with no
+ * heading), and each zone button carries its climate color and a what-you'll-find tooltip.
+ */
 public class SpawnZoneScreen extends Screen {
+    private static final int GOLD = 0xFFE8B64A;
+    private static final int MUTED = 0xFF8C8078;
+
     public SpawnZoneScreen() {
         super(Component.literal("Choose Starting Latitude"));
     }
@@ -18,17 +28,23 @@ public class SpawnZoneScreen extends Screen {
         int cx = this.width / 2;
         int y = this.height / 2 - 60;
 
-        addZoneButton(cx, y, rainbowRandomText(), "RANDOM");
+        addZoneButton(cx, y, rainbowRandomText(), "RANDOM",
+                "Throw the compass and see where it lands.");
         y += 22;
-        addZoneButton(cx, y, "Tropical", "TROPICAL");
+        addZoneButton(cx, y, zoneLabel("Tropical", ChatFormatting.GREEN), "TROPICAL",
+                "Jungles, bamboo, warm seas. Equator to 23.5°.");
         y += 22;
-        addZoneButton(cx, y, "Subtropical", "SUBTROPICAL");
+        addZoneButton(cx, y, zoneLabel("Subtropical", ChatFormatting.YELLOW), "SUBTROPICAL",
+                "Savannas, deserts, badlands. 23.5° to 35°.");
         y += 22;
-        addZoneButton(cx, y, "Temperate", "TEMPERATE");
+        addZoneButton(cx, y, zoneLabel("Temperate", ChatFormatting.DARK_AQUA), "TEMPERATE",
+                "Forests, plains, birch and oak. 35° to 50°.");
         y += 22;
-        addZoneButton(cx, y, "Subpolar", "SUBPOLAR");
+        addZoneButton(cx, y, zoneLabel("Subpolar", ChatFormatting.AQUA), "SUBPOLAR",
+                "Taiga, spruce, first snows. 50° to 66.5°.");
         y += 22;
-        addZoneButton(cx, y, "Polar", "POLAR");
+        addZoneButton(cx, y, zoneLabel("Polar", ChatFormatting.WHITE), "POLAR",
+                "Ice, snowfields, frozen seas. 66.5° poleward.");
         y += 30;
 
         this.addRenderableWidget(Button.builder(Component.literal("Cancel"), b -> onClose())
@@ -36,21 +52,28 @@ public class SpawnZoneScreen extends Screen {
                 .build());
     }
 
-    private void addZoneButton(int cx, int y, String label, String id) {
-        this.addRenderableWidget(Button.builder(Component.literal(label), b -> {
-                    ClientPlayNetworking.send(new GlobeNet.SetSpawnPickerPayload(id));
-                    onClose();
-                })
-                .bounds(cx - 90, y, 180, 20)
-                .build());
+    @Override
+    public void extractRenderState(GuiGraphicsExtractor ctx, int mouseX, int mouseY, float delta) {
+        super.extractRenderState(ctx, mouseX, mouseY, delta);
+        int cx = this.width / 2;
+        int titleY = this.height / 2 - 88;
+        String title = "CHOOSE STARTING LATITUDE";
+        ctx.text(this.font, title, cx - this.font.width(title) / 2, titleY, GOLD, true);
+        String hint = "The climate band where your expedition begins";
+        ctx.text(this.font, hint, cx - this.font.width(hint) / 2, titleY + 12, MUTED, false);
     }
 
-    private void addZoneButton(int cx, int y, Component label, String id) {
+    private static MutableComponent zoneLabel(String name, ChatFormatting color) {
+        return Component.literal(name).withStyle(color);
+    }
+
+    private void addZoneButton(int cx, int y, Component label, String id, String tooltip) {
         this.addRenderableWidget(Button.builder(label, b -> {
                     ClientPlayNetworking.send(new GlobeNet.SetSpawnPickerPayload(id));
                     onClose();
                 })
                 .bounds(cx - 90, y, 180, 20)
+                .tooltip(Tooltip.create(Component.literal(tooltip)))
                 .build());
     }
 

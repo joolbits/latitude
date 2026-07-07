@@ -4,6 +4,12 @@ import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 
+/**
+ * TRAP (documented after it bit a live session): the PRESET ids do NOT track the UI names — UI "Small"
+ * is preset {@code globe_regular} (radius 7,500) and UI "Regular" is preset {@code globe_large}
+ * (radius 10,000). Renaming the presets would orphan existing worlds, so the ids stay; every launch
+ * log line spells out size + presetId + radius (LatitudeWorldLauncher) so logs are unambiguous.
+ */
 public enum GlobeWorldSize {
     ITTY_BITTY(Component.literal("Itty Bitty (7,500 x 7,500)"), Identifier.fromNamespaceAndPath("globe", "globe_xsmall"), 3750),
     TINY(Component.literal("Tiny (10,000 x 10,000)"),           Identifier.fromNamespaceAndPath("globe", "globe_small"), 5000),
