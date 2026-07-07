@@ -1,5 +1,6 @@
 package com.example.globe.client;
 
+import com.example.globe.core.config.LatitudeConfigData;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
@@ -129,7 +130,7 @@ public final class ZoneEnterTitleOverlay {
     private static void drawStyledTitle(GuiGraphicsExtractor ctx, Font font, String text, int alphaByte) {
         int spacing = LatitudeConfig.zoneEnterTitleLetterSpacing;
         int alphaMask = (alphaByte & 0xFF) << 24;
-        if (LatitudeConfig.zoneEnterTitleColorPreset == LatitudeConfig.TitleColorPreset.RAINBOW) {
+        if (LatitudeConfig.zoneEnterTitleColorPreset == LatitudeConfigData.TitleColorPreset.RAINBOW) {
             drawSpacedText(ctx, font, text, 0, 0, true, spacing, idx -> alphaMask | RainbowText.paletteColor(idx));
             return;
         }
@@ -169,7 +170,7 @@ public final class ZoneEnterTitleOverlay {
         }
     }
 
-    private static int titleColorRgb(LatitudeConfig.TitleColorPreset preset) {
+    private static int titleColorRgb(LatitudeConfigData.TitleColorPreset preset) {
         return switch (preset) {
             case GOLD -> 0xD4A74A;
             case RED -> 0xFF5555;
@@ -180,7 +181,7 @@ public final class ZoneEnterTitleOverlay {
         };
     }
 
-    private static String applyCase(String text, LatitudeConfig.TitleCaseMode mode) {
+    private static String applyCase(String text, LatitudeConfigData.TitleCaseMode mode) {
         return switch (mode) {
             case UPPERCASE -> text.toUpperCase(java.util.Locale.ROOT);
             case LOWERCASE -> text.toLowerCase(java.util.Locale.ROOT);
