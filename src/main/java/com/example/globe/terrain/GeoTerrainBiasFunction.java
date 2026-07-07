@@ -68,6 +68,43 @@ public final class GeoTerrainBiasFunction implements DensityFunction.SimpleFunct
      */
     private static final double K = 0.25;
 
+    // --- Slice C (audit P0-1, refutation-hardened): Y-aware taper ---------------------------------------
+    //
+    // The audit's threshold sweeps proved the Y-UNIFORM bias has an EMPTY usable strength window: the
+    // high-altitude density margin over land is a near-constant ~0.023-0.025 of the vanilla/Terralith noise
+    // config, so any uniform bias >= that detaches a solid stone slab at Y256-319 (measured at S=0.10 on
+    // 3/3 seeds) while the walkable ground moves <= +-1 block below it; pushing the ocean side instead
+    // (oceanStrengthRatio) hollows lava-floored voids at Y-64..-55 before the sea floor moves meaningfully.
+    // The bias's job is to shape the SURFACE zone (sea floors ~Y30-62, land surfaces ~Y60-130); it has no
+    // business adding density to the upper sky or the deepslate floor. taperWeight(y) therefore scales the
+    // bias by a smoothstep envelope: zero at/below TAPER_BOTTOM_START_Y (protects the measured lava-void
+    // band), full across [TAPER_BOTTOM_END_Y, TAPER_TOP_START_Y] (the whole surface-shaping band), fading
+    // to zero by TAPER_TOP_END_Y (well below both the slab band and the alpine/tree-line constants at
+    // Y=168+, so the wrapper structurally cannot manufacture warm-band snowcaps either). Continuous in y
+    // (C1 via smoothstep), so it introduces no new discontinuity in the density field. The column memo is
+    // unaffected: it caches land01, which stays Y-independent; the taper applies AFTER the memo read.
+    // maxAbsBias() stays a valid (now slightly generous) bound because taperWeight is in [0,1].
+    private static final int TAPER_BOTTOM_START_Y = -32;
+    private static final int TAPER_BOTTOM_END_Y = 0;
+    private static final int TAPER_TOP_START_Y = 96;
+    private static final int TAPER_TOP_END_Y = 160;
+
+    /** Smoothstep envelope in [0,1]: 0 outside [BOTTOM_START, TOP_END], 1 across [BOTTOM_END, TOP_START]. */
+    private static double taperWeight(int y) {
+        if (y >= TAPER_TOP_END_Y || y <= TAPER_BOTTOM_START_Y) {
+            return 0.0;
+        }
+        if (y > TAPER_TOP_START_Y) {
+            double t = (TAPER_TOP_END_Y - y) / (double) (TAPER_TOP_END_Y - TAPER_TOP_START_Y);
+            return t * t * (3.0 - 2.0 * t);
+        }
+        if (y < TAPER_BOTTOM_END_Y) {
+            double t = (y - TAPER_BOTTOM_START_Y) / (double) (TAPER_BOTTOM_END_Y - TAPER_BOTTOM_START_Y);
+            return t * t * (3.0 - 2.0 * t);
+        }
+        return 1.0;
+    }
+
     /** The original {@code finalDensity} (#12); passed through untouched at S=0 and on any failure. */
     private final DensityFunction delegate;
 
@@ -215,7 +252,7 @@ public final class GeoTerrainBiasFunction implements DensityFunction.SimpleFunct
             double r = LatitudeV2Flags.TERRAIN_V2_OCEAN_STRENGTH_RATIO;
             double gain = (r == 1.0 || d >= 0.0) ? 1.0 : r;
 
-            return base + s * K * gain * sd;
+            return base + s * K * gain * sd * taperWeight(ctx.blockY());
         } catch (Throwable t) {
             // Bias-math failure only (the delegate already evaluated fine above): fall back to the unbiased
             // value -- and say so ONCE (Slice B, audit P1-2 / Lane 8): the old fully-silent catch could

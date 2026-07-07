@@ -708,6 +708,19 @@ public final class LatitudeBiomes {
         V2_INERT_WARNED.set(false);
     }
 
+    /**
+     * Slice C (audit P2-1 / Lane 6 "drowned land"): true only when the Phase 4 terrain bias is actually
+     * moving terrain RIGHT NOW -- terrainV2 + geoV2 armed, strength nonzero, and the provider genuinely
+     * real (not the NoOp placeholder). Gates the sunk-land mirror veto in pick() so that flag-off runs AND
+     * armed-but-strength-0 runs stay byte-identical to pre-Phase-4 biome behavior (the S=0 identity gate).
+     */
+    private static boolean terrainBiasActivelyBiasing() {
+        return LatitudeV2Flags.TERRAIN_V2_ENABLED
+                && LatitudeV2Flags.GEO_V2_ENABLED
+                && LatitudeV2Flags.TERRAIN_V2_STRENGTH != 0.0
+                && GEO_V2_PROVIDER instanceof GeoAuthorityProvider;
+    }
+
     public static void setRadius(int radius) {
         ACTIVE_RADIUS_BLOCKS = radius;
         rebuildProvinceAuthority();
@@ -3055,6 +3068,28 @@ public final class LatitudeBiomes {
                 oceanAuthority = false;
             }
         }
+        // Slice C mirror (audit P2-1 / Lane 6, "fix-or-assert" -> FIXED): the veto above is one-directional
+        // -- it demotes ocean-authority on RAISED land, but nothing handled a LAND-family biome whose
+        // terrain the Phase 4 bias genuinely sank below sea level (drowned land: swimming over plains).
+        // Unreachable pre-taper (ground moved <= +-1 block at any sub-slab strength); reachable the moment
+        // the Y-taper made terrain actually move -- caught by the Slice C coherence tripwire (1/81 grid
+        // columns at S=0.4). Terrain is the authority at the waterline in BOTH directions, same doctrine as
+        // the raised-land veto above. Gates, cheapest first: bias actively biasing (flags + nonzero
+        // strength + real provider -- keeps flag-off and armed-S=0 byte-identical), geography actually
+        // ocean-intent (the bias only sinks where land01 says ocean, and geoV2Summary is computed whenever
+        // geoV2 is on -- so the previewHeight cost is paid only on the small geography-ocean subset), then
+        // the real terrain-aware height check. Rivers keep their own branch below.
+        if (!oceanAuthority && !base.is(BiomeTags.IS_OCEAN) && !base.is(BiomeTags.IS_RIVER)
+                && terrainBiasActivelyBiasing()
+                && geoV2Summary != null && geoV2Summary.isOceanIntent()
+                && generator != null && noiseConfig != null && heightView != null) {
+            int realHeight = skipPreview && hasPreviewTerrainInputs
+                    ? columnDecisionY
+                    : previewHeight(generator, noiseConfig, heightView, blockX & ~3, blockZ & ~3);
+            if (realHeight < seaLevel - 2) {
+                oceanAuthority = true;
+            }
+        }
 
         if (base.is(BiomeTags.IS_RIVER)) {
             if (shouldFreezeRiver(blockX, blockZ)) {
@@ -3742,6 +3777,28 @@ public final class LatitudeBiomes {
                     : previewHeight(generator, noiseConfig, heightView, blockX & ~3, blockZ & ~3);
             if (realHeight >= seaLevel) {
                 oceanAuthority = false;
+            }
+        }
+        // Slice C mirror (audit P2-1 / Lane 6, "fix-or-assert" -> FIXED): the veto above is one-directional
+        // -- it demotes ocean-authority on RAISED land, but nothing handled a LAND-family biome whose
+        // terrain the Phase 4 bias genuinely sank below sea level (drowned land: swimming over plains).
+        // Unreachable pre-taper (ground moved <= +-1 block at any sub-slab strength); reachable the moment
+        // the Y-taper made terrain actually move -- caught by the Slice C coherence tripwire (1/81 grid
+        // columns at S=0.4). Terrain is the authority at the waterline in BOTH directions, same doctrine as
+        // the raised-land veto above. Gates, cheapest first: bias actively biasing (flags + nonzero
+        // strength + real provider -- keeps flag-off and armed-S=0 byte-identical), geography actually
+        // ocean-intent (the bias only sinks where land01 says ocean, and geoV2Summary is computed whenever
+        // geoV2 is on -- so the previewHeight cost is paid only on the small geography-ocean subset), then
+        // the real terrain-aware height check. Rivers keep their own branch below.
+        if (!oceanAuthority && !base.is(BiomeTags.IS_OCEAN) && !base.is(BiomeTags.IS_RIVER)
+                && terrainBiasActivelyBiasing()
+                && geoV2Summary != null && geoV2Summary.isOceanIntent()
+                && generator != null && noiseConfig != null && heightView != null) {
+            int realHeight = skipPreview && hasPreviewTerrainInputs
+                    ? columnDecisionY
+                    : previewHeight(generator, noiseConfig, heightView, blockX & ~3, blockZ & ~3);
+            if (realHeight < seaLevel - 2) {
+                oceanAuthority = true;
             }
         }
 

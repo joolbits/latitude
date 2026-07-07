@@ -95,6 +95,22 @@ public final class TerrainProofHarness {
      * V2 statics; the server halts immediately after the report is written.
      */
     private static final String REPLAY_PROP = "latdev.terrainProof.replayProbe";
+    /**
+     * Slice C (audit Lane 10 / live-diagnostics design §4): caller-specified probe columns,
+     * {@code -Dlatdev.terrainProof.probes=x1,z1;x2,z2;...} -- added to BOTH the density column probes and
+     * the structural block-stack probes, so a live-observed anomaly (or the pinned calibration coordinate)
+     * can be reproduced headlessly on demand instead of relying only on the three auto-selected columns.
+     */
+    private static final String PROBES_PROP = "latdev.terrainProof.probes";
+    /**
+     * Slice C (audit P2-1 / Lane 6's composed probe): opt-in composition-coherence grid,
+     * {@code -Dlatdev.terrainProof.coherence=true}. Samples an interior grid and records, per column, the
+     * FINAL Latitude-picked biome (terrain-aware pick, exporter-identical call), its ocean-family tag, and
+     * the biased baseHeight -- so an external comparator can assert the three tripwires across configs:
+     * no ocean-family biome stranded above the biased sea level, no land-family biome sunk below it, and
+     * no wrapper-caused warm-band snowcap (baseHeight crossing the alpine snow line only when armed).
+     */
+    private static final String COHERENCE_PROP = "latdev.terrainProof.coherence";
 
     // NOTE (sweeper findings #14/#21): there is deliberately NO {@code latdev.terrainProof.seed} read here.
     // The harness always uses the BOOTED world's own seed ({@code world.getSeed()}), because the shipped
@@ -237,6 +253,10 @@ public final class TerrainProofHarness {
         // Slice B stale-provider replay probe (null unless -Dlatdev.terrainProof.replayProbe=true).
         ReplayProbe replayProbe;
 
+        // Slice C composition-coherence grid (empty unless -Dlatdev.terrainProof.coherence=true).
+        final List<CoherenceProbe> coherenceProbes = new ArrayList<>();
+        int coherenceSeaLevel;
+
         String toJson() {
             StringBuilder sb = new StringBuilder();
             sb.append("{\n");
@@ -273,6 +293,13 @@ public final class TerrainProofHarness {
             for (int i = 0; i < structuralProbes.size(); i++) {
                 sb.append(structuralProbes.get(i).toJson());
                 sb.append(i < structuralProbes.size() - 1 ? ",\n" : "\n");
+            }
+            sb.append("  ],\n");
+            sb.append("  \"coherenceSeaLevel\": ").append(coherenceSeaLevel).append(",\n");
+            sb.append("  \"coherenceProbes\": [\n");
+            for (int i = 0; i < coherenceProbes.size(); i++) {
+                sb.append(coherenceProbes.get(i).toJson());
+                sb.append(i < coherenceProbes.size() - 1 ? ",\n" : "\n");
             }
             sb.append("  ]\n");
             sb.append("}\n");
@@ -521,6 +548,77 @@ public final class TerrainProofHarness {
         runTransectProbes(report, finalDensity, referenceAuthority, zRadius, xRadius);
         runLandFractionProbe(report, generator, randomState, world, referenceAuthority, zRadius, xRadius);
         runStructuralProbes(report, generator, randomState, world, referenceAuthority, zRadius, xRadius);
+        runCoherenceProbes(report, generator, randomState, world, referenceAuthority, zRadius, xRadius);
+    }
+
+    // --- Slice C composition-coherence tripwire grid (audit P2-1 / Lane 6's composed probe) -----------
+
+    static final class CoherenceProbe {
+        int x;
+        int z;
+        double latDeg;
+        double land01;
+        String biomeId;
+        boolean oceanFamily;
+        int baseHeight;
+
+        String toJson() {
+            return "    {\"x\": " + x + ", \"z\": " + z + ", \"latDeg\": " + latDeg
+                    + ", \"land01\": " + land01 + ", \"biomeId\": " + jsonStringOrNull(biomeId)
+                    + ", \"oceanFamily\": " + oceanFamily + ", \"baseHeight\": " + baseHeight + "}";
+        }
+    }
+
+    /**
+     * Samples an interior grid and records, per column: the FINAL Latitude-picked biome (the exporter's own
+     * base-then-pick call, ALWAYS terrain-aware here -- coherence against the BIASED terrain is the entire
+     * point), its ocean-family tag membership, and the biased vanilla baseHeight. The three tripwire
+     * assertions themselves live in the external cross-config comparator (one JVM = one flag config):
+     * ocean-family biome above biased sea level, land-family biome below it, and warm-band columns whose
+     * baseHeight crosses the alpine snow line only in the armed run.
+     */
+    private static void runCoherenceProbes(Report report, NoiseBasedChunkGenerator generator, RandomState randomState,
+                                            ServerLevel world, GeoAuthority authority, int zRadius, int xRadius) {
+        if (!Boolean.parseBoolean(System.getProperty(COHERENCE_PROP, "false"))) {
+            return;
+        }
+        net.minecraft.core.Registry<net.minecraft.world.level.biome.Biome> biomeRegistry =
+                world.registryAccess().lookupOrThrow(Registries.BIOME);
+        net.minecraft.world.level.biome.BiomeSource biomeSource = generator.getBiomeSource();
+        net.minecraft.world.level.biome.BiomeSource baseSource =
+                biomeSource instanceof com.example.globe.world.LatitudeBiomeSource latitudeSource
+                        ? latitudeSource.original()
+                        : biomeSource;
+        net.minecraft.world.level.biome.Climate.Sampler sampler = randomState.sampler();
+        int seaLevel = generator.generatorSettings().value().seaLevel();
+        report.coherenceSeaLevel = seaLevel;
+
+        int y = 64;
+        int noiseY = Math.floorDiv(y, 4);
+        int limit = (int) (Math.min(zRadius, xRadius) * 0.55);
+        int step = Math.max(96, limit / 4);
+        for (int x = -limit; x <= limit; x += step) {
+            for (int z = -limit; z <= limit; z += step) {
+                CoherenceProbe probe = new CoherenceProbe();
+                probe.x = x;
+                probe.z = z;
+                probe.latDeg = Math.abs(z) * 90.0 / zRadius;
+                probe.land01 = authority.sample(x, z).land01();
+                net.minecraft.core.Holder<net.minecraft.world.level.biome.Biome> base =
+                        baseSource.getNoiseBiome(Math.floorDiv(x, 4), noiseY, Math.floorDiv(z, 4), sampler);
+                net.minecraft.core.Holder<net.minecraft.world.level.biome.Biome> picked = LatitudeBiomes.pick(
+                        biomeRegistry, base, x, z, y, zRadius, sampler,
+                        "TERRAIN_PROOF_COHERENCE", generator, randomState, world);
+                net.minecraft.core.Holder<net.minecraft.world.level.biome.Biome> out = picked != null ? picked : base;
+                var key = biomeRegistry.getKey(out.value());
+                probe.biomeId = key == null ? "unknown" : key.toString();
+                probe.oceanFamily = out.is(net.minecraft.tags.BiomeTags.IS_OCEAN);
+                probe.baseHeight = generator.getBaseHeight(x, z, Heightmap.Types.WORLD_SURFACE_WG, world, randomState);
+                report.coherenceProbes.add(probe);
+            }
+        }
+        GlobeMod.LOGGER.info("[latdev][terrainProof] coherence grid: {} columns (seaLevel={})",
+                report.coherenceProbes.size(), seaLevel);
     }
 
     // --- §6.2 direct density-output numeric probe ----------------------------------------------------
@@ -528,8 +626,11 @@ public final class TerrainProofHarness {
     private static void runColumnProbes(Report report, DensityFunction finalDensity, GeoAuthority authority,
                                          NoiseBasedChunkGenerator generator, RandomState randomState, ServerLevel world,
                                          int zRadius, int xRadius) {
-        int[] ys = {40, 48, 56, 60, 62, 64, 66, 70, 80, 100};
-        for (ColumnPick pick : findColumnsByLand01(authority, zRadius, xRadius)) {
+        // Slice C: the Y ladder now reaches the build ceiling. The audit's detached-slab finding (solid
+        // stone at Y256-319 from S=0.10) was invisible to the old {40..100} cap -- the flip altitude could
+        // not be seen in the density numbers at all, only inferred from getBaseHeight/structural stacks.
+        int[] ys = {40, 48, 56, 60, 62, 64, 66, 70, 80, 100, 140, 180, 220, 260, 300, 319};
+        for (ColumnPick pick : probeColumns(authority, zRadius, xRadius)) {
             ColumnProbe probe = new ColumnProbe();
             probe.label = pick.label;
             probe.x = pick.x;
@@ -589,6 +690,34 @@ public final class TerrainProofHarness {
     }
 
     private record ColumnPick(String label, int x, int z, double land01) {
+    }
+
+    /**
+     * Slice C: the shared probe-column list -- the three auto-selected land01 representatives plus any
+     * caller-specified columns from {@code -Dlatdev.terrainProof.probes}. Used by BOTH the density column
+     * probes and the structural stack probes so caller columns get slab detection too.
+     */
+    private static List<ColumnPick> probeColumns(GeoAuthority authority, int zRadius, int xRadius) {
+        List<ColumnPick> picks = new ArrayList<>(findColumnsByLand01(authority, zRadius, xRadius));
+        String raw = System.getProperty(PROBES_PROP, "").trim();
+        if (!raw.isEmpty()) {
+            for (String pair : raw.split(";")) {
+                String[] xz = pair.trim().split(",");
+                if (xz.length != 2) {
+                    continue;
+                }
+                try {
+                    int px = Integer.parseInt(xz[0].trim());
+                    int pz = Integer.parseInt(xz[1].trim());
+                    picks.add(new ColumnPick("probe(" + px + "," + pz + ")", px, pz,
+                            authority.sample(px, pz).land01()));
+                } catch (NumberFormatException ignored) {
+                    // Malformed pair: skip it rather than fail the whole harness (the report will simply
+                    // lack that probe, which the external comparator will notice by its absence).
+                }
+            }
+        }
+        return picks;
     }
 
     // --- Slice B stale-provider replay probe (audit P1-1 / refute-A) --------------------------------
@@ -748,7 +877,7 @@ public final class TerrainProofHarness {
 
     private static void runStructuralProbes(Report report, NoiseBasedChunkGenerator generator, RandomState randomState,
                                              ServerLevel world, GeoAuthority authority, int zRadius, int xRadius) {
-        for (ColumnPick pick : findColumnsByLand01(authority, zRadius, xRadius)) {
+        for (ColumnPick pick : probeColumns(authority, zRadius, xRadius)) {
             StructuralColumnProbe probe = new StructuralColumnProbe();
             probe.label = pick.label;
             probe.x = pick.x;
