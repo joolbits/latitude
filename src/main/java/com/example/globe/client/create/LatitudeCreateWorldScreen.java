@@ -136,6 +136,10 @@ public class LatitudeCreateWorldScreen extends Screen {
     // ── Local UI state (fresh each open) ──
     private GlobeWorldSize selectedSize = DEFAULT_SIZE;
     private LatitudeBands.Band selectedZone = LatitudeBands.Band.TEMPERATE;
+    // "Random" spawn-zone row (TEST 28 request): when true, selectedZone is ignored in the UI (no band
+    // highlighted anywhere) and beginExpedition rolls a concrete band at create time.
+    private boolean randomZone = false;
+    private static final String RANDOM_ZONE_HELPER = "Sealed orders — your starting climate is drawn when the expedition begins";
     private int selectedModeIdx = 0;  // 0=Survival, 1=Hardcore, 2=Creative
     private boolean allowCommands = false;
     private boolean startWithCompass = true;
@@ -503,6 +507,10 @@ public class LatitudeCreateWorldScreen extends Screen {
             zoneRows.add(row);
             this.addRenderableWidget(row);
         }
+        // The sixth row: Random — a null-band ZoneRowWidget; the concrete band is rolled at create time.
+        ZoneRowWidget randomRow = new ZoneRowWidget(rightX + 2, panelTop, rightW - 4, zoneRowHeight, null);
+        zoneRows.add(randomRow);
+        this.addRenderableWidget(randomRow);
         updateRightLayout();
 
         {
@@ -692,6 +700,7 @@ public class LatitudeCreateWorldScreen extends Screen {
         for (String helper : ZONE_HELPER) {
             maxHelperLines = Math.max(maxHelperLines, wrapLineCount(helper, helperWidth));
         }
+        maxHelperLines = Math.max(maxHelperLines, wrapLineCount(RANDOM_ZONE_HELPER, helperWidth));
         return scaledUi(4) + uiFontHeight() + scaledUi(2) + maxHelperLines * uiFontHeight() + scaledUi(4);
     }
 
@@ -851,6 +860,16 @@ public class LatitudeCreateWorldScreen extends Screen {
         widget.active = visible;
     }
 
+    /** The spawn-zone description line — one source for the layout measure AND the render, so the
+     *  panel can never be sized for a different string than it draws (random-aware). */
+    private String spawnZoneDescription() {
+        if (randomZone) {
+            return "Your starting latitude is drawn at random when the world is created — anywhere from the Tropics to the Poles.";
+        }
+        return "You will spawn between " + formatDegree(selectedZone.lowDeg()) + "–" + formatDegree(selectedZone.highDeg())
+                + " latitude. " + ZONE_HELPER[selectedZone.ordinal()] + ".";
+    }
+
     private void updateRightLayout() {
         int contentTop = panelTop + scaledUi(8);
         // threeCol draws an inline heading that needs this reserved strip; tabbed mode skips the redundant
@@ -859,7 +878,7 @@ public class LatitudeCreateWorldScreen extends Screen {
         int subtitleWidth = Math.max(80, rightW - scaledUi(28) - SCROLLBAR_GUTTER);
         int subtitleHeight = wrappedTextHeight("Choose the climate where your journey begins", subtitleWidth);
         int descTextWidth = Math.max(60, rightW - 16 - SCROLLBAR_GUTTER);
-        String spawnLine = "You will spawn between " + formatDegree(selectedZone.lowDeg()) + "–" + formatDegree(selectedZone.highDeg()) + " latitude. " + ZONE_HELPER[selectedZone.ordinal()] + ".";
+        String spawnLine = spawnZoneDescription();
         int descHeight = scaledUi(6) + uiFontHeight() + scaledUi(5) + wrappedTextHeight(spawnLine, descTextWidth) + scaledUi(4) + uiFontHeight() + scaledUi(6);
         int baseSubtitleY = contentTop + titleBlockHeight;
         int baseDividerY = baseSubtitleY + subtitleHeight + scaledUi(2);
@@ -1114,8 +1133,17 @@ public class LatitudeCreateWorldScreen extends Screen {
         boolean hardcore = selectedModeIdx == 1;
         Difficulty difficulty = hardcore ? Difficulty.HARD : Difficulty.NORMAL;
 
+        // Random spawn zone resolves to a concrete band HERE, so everything downstream (launcher,
+        // server spawn placement, saved state) keeps its existing single-band contract.
+        LatitudeBands.Band spawnZone = this.selectedZone;
+        if (randomZone) {
+            LatitudeBands.Band[] all = LatitudeBands.Band.values();
+            spawnZone = all[new java.util.Random().nextInt(all.length)];
+            LOGGER.info("[lat-ui] Random spawn zone rolled: {}", spawnZone.name());
+        }
+
         LatitudeWorldLauncher.beginExpedition(this.minecraft, this, this.holder,
-                worldName, seed, this.selectedSize, this.selectedZone, currentWorldShape(),
+                worldName, seed, this.selectedSize, spawnZone, currentWorldShape(),
                 gameMode, hardcore, difficulty, allowCommands, startWithCompass, bonusChest,
                 generateStructures, this.gameRules, this.worldTypeIdx);
     }
@@ -1376,7 +1404,7 @@ public class LatitudeCreateWorldScreen extends Screen {
         for (int i = 0; i < allBands.length; i++) {
             int segX = rightX + barInset + (barTotalW * i / allBands.length);
             int segXEnd = rightX + barInset + (barTotalW * (i + 1) / allBands.length);
-            boolean sel = allBands[i] == selectedZone;
+            boolean sel = !randomZone && allBands[i] == selectedZone;
             int bandColor = BAND_COLORS[i];
             if (sel) {
                 context.fill(segX, rightBarY, segXEnd, rightBarY + rightBarH, GOLD);
@@ -1390,21 +1418,22 @@ public class LatitudeCreateWorldScreen extends Screen {
         int descPanelX = rightX + 2;
         int descPanelW = rightW - 4 - SCROLLBAR_GUTTER;
         int textMaxW = descPanelW - 12;
-        String spawnLine = "You will spawn between " + formatDegree(selectedZone.lowDeg()) + "\u2013" + formatDegree(selectedZone.highDeg()) + " latitude. " + ZONE_HELPER[selectedZone.ordinal()] + ".";
+        String spawnLine = spawnZoneDescription();
         if (rightDescPanelH > scaledUi(24)) {
             context.fill(descPanelX, rightDescPanelY, descPanelX + descPanelW, rightDescPanelY + rightDescPanelH, PANEL_BG);
-            int sideColor = BAND_COLORS[selectedZone.ordinal()];
+            int sideColor = randomZone ? 0xFF8C8078 : BAND_COLORS[selectedZone.ordinal()];
             context.fill(descPanelX, rightDescPanelY, descPanelX + 2, rightDescPanelY + rightDescPanelH, sideColor);
 
             int textX = descPanelX + 6;
             int ty = rightDescPanelY + scaledUi(3);
-            String zoneHeader = selectedZone.displayName() + " zone selected";
+            String zoneHeader = (randomZone ? "Random" : selectedZone.displayName()) + " zone selected";
             drawBoundedText(context, zoneHeader, new UiRect(textX, ty, textMaxW, uiFontHeight()), GOLD, true, true);
             ty += uiFontHeight() + scaledUi(5);
             ty += drawWrappedTextBlock(context, spawnLine, new UiRect(textX, ty, textMaxW, Math.max(0, rightDescPanelY + rightDescPanelH - ty - uiFontHeight() - scaledUi(4))), WARM_WHITE, false, 3, false, true);
             ty += scaledUi(4);
             if (ty + uiFontHeight() <= rightDescPanelY + rightDescPanelH) {
-                drawBoundedText(context, "Climate: " + ZONE_CLIMATE[selectedZone.ordinal()], new UiRect(textX, ty, textMaxW, uiFontHeight()), MUTED, false, true);
+                String climate = randomZone ? "A surprise" : ZONE_CLIMATE[selectedZone.ordinal()];
+                drawBoundedText(context, "Climate: " + climate, new UiRect(textX, ty, textMaxW, uiFontHeight()), MUTED, false, true);
             }
         }
         } else {
@@ -1539,12 +1568,12 @@ public class LatitudeCreateWorldScreen extends Screen {
                 layout.globeTop + frameBorder,
                 layout.globeWidth - frameBorder * 2,
                 layout.globeHeight - frameBorder * 2,
-                selectedZone,
+                randomZone ? null : selectedZone,
                 shape);
 
         for (int i = 0; i < PREVIEW_LABEL_DEGREES.length; i++) {
             double deg = PREVIEW_LABEL_DEGREES[i];
-            int color = isOnSelectedEdge(deg, selectedZone) ? GOLD : MUTED;
+            int color = !randomZone && isOnSelectedEdge(deg, selectedZone) ? GOLD : MUTED;
             drawScaledText(context, formatDegree(deg), layout.labelX, layout.labelYs[i], layout.labelScale, color, false);
         }
         drawScaledText(context, caption, layout.captionX, layout.captionY, layout.captionScale, MUTED, false);
@@ -1650,8 +1679,13 @@ public class LatitudeCreateWorldScreen extends Screen {
             return null;
         }
 
-        int compositionLeft = areaLeft + (areaRight - areaLeft - compositionWidth) / 2;
-        int globeLeft = compositionLeft;
+        // Center the MAP itself, not the map+label composition: centering the composition pushed the
+        // atlas left of visual center by half the label column (TEST 28: "make the atlas a little more
+        // centered"). The labels take the right-hand slack; when there is none, this degrades to the
+        // old composition-centered position.
+        int idealGlobeLeft = areaLeft + (areaRight - areaLeft - globeWidth) / 2;
+        int maxGlobeLeft = areaRight - rightPadding - labelWidth - labelPad - globeWidth;
+        int globeLeft = Math.max(areaLeft, Math.min(idealGlobeLeft, maxGlobeLeft));
         int globeTop = areaTop + (areaBottom - areaTop - compositionHeight) / 2;
         int globeCenterY = globeTop + radius;
         int labelX = globeLeft + globeWidth + labelPad;
@@ -1665,7 +1699,7 @@ public class LatitudeCreateWorldScreen extends Screen {
             return null;
         }
 
-        int captionX = compositionLeft + (compositionWidth - scaledTextWidth(caption, captionScale)) / 2;
+        int captionX = globeLeft + (globeWidth - scaledTextWidth(caption, captionScale)) / 2;
         return new PreviewLayout(globeLeft, globeTop, globeWidth, globeHeight, labelX, labelYs, captionX, captionY, labelScale, captionScale);
     }
 
@@ -2174,16 +2208,24 @@ public class LatitudeCreateWorldScreen extends Screen {
     }
 
     private class ZoneRowWidget extends AbstractWidget {
+        /** The row's band, or null for the "Random" row (rolled to a concrete band at create time). */
         private final LatitudeBands.Band band;
 
         ZoneRowWidget(int x, int y, int w, int h, LatitudeBands.Band band) {
-            super(x, y, w, h, Component.literal(band.displayName()));
+            super(x, y, w, h, Component.literal(band == null ? "Random" : band.displayName()));
             this.band = band;
+        }
+
+        private void select() {
+            randomZone = this.band == null;
+            if (this.band != null) {
+                selectedZone = this.band;
+            }
         }
 
         @Override
         public void onClick(net.minecraft.client.input.MouseButtonEvent click, boolean doubled) {
-            selectedZone = this.band;
+            select();
         }
 
         @Override
@@ -2191,7 +2233,7 @@ public class LatitudeCreateWorldScreen extends Screen {
             if (!this.isActive()) return false;
             if (input.isSelection()) {
                 this.playDownSound(Minecraft.getInstance().getSoundManager());
-                selectedZone = this.band;
+                select();
                 return true;
             }
             return false;
@@ -2199,7 +2241,7 @@ public class LatitudeCreateWorldScreen extends Screen {
 
         @Override
         protected void extractWidgetRenderState(GuiGraphicsExtractor context, int mouseX, int mouseY, float deltaTicks) {
-            boolean selected = selectedZone == this.band;
+            boolean selected = this.band == null ? randomZone : (!randomZone && selectedZone == this.band);
             int x = this.getX();
             int y = this.getY();
             int w = this.getWidth();
@@ -2218,8 +2260,8 @@ public class LatitudeCreateWorldScreen extends Screen {
             if (selected) {
                 // Warm gold background highlight
                 context.fill(x, y, x + w, y + h, 0x40D4A74A);
-                // Native band color left accent border (3px wide)
-                int bandColor = BAND_COLORS[this.band.ordinal()];
+                // Native band color left accent border (3px wide); neutral parchment-gray for Random
+                int bandColor = this.band == null ? 0xFF8C8078 : BAND_COLORS[this.band.ordinal()];
                 context.fill(x, y, x + 3, y + h, bandColor);
             }
 
@@ -2234,14 +2276,16 @@ public class LatitudeCreateWorldScreen extends Screen {
             int textColor = selected ? GOLD : MUTED;
             int textX = x + 6;
 
-            drawUiText(context, this.band.displayName(), textX, y + compactUi(2), textColor, selected);
+            drawUiText(context, this.band == null ? "Random" : this.band.displayName(), textX, y + compactUi(2), textColor, selected);
 
-            String range = formatDegree(this.band.lowDeg()) + "\u2013" + formatDegree(this.band.highDeg());
+            String range = this.band == null
+                    ? formatDegree(0.0) + "\u2013" + formatDegree(90.0)
+                    : formatDegree(this.band.lowDeg()) + "\u2013" + formatDegree(this.band.highDeg());
             int rangeW = uiTextWidth(range);
             int rangeX = x + w - rangeW - 4;
             drawUiText(context, range, rangeX, y + compactUi(2), selected ? WARM_WHITE : MUTED, false);
 
-            String helper = ZONE_HELPER[this.band.ordinal()];
+            String helper = this.band == null ? RANDOM_ZONE_HELPER : ZONE_HELPER[this.band.ordinal()];
             int helperWidth = Math.max(40, rangeX - textX - 6);
             int helperY = y + compactUi(2) + uiFontHeight() + compactUi(2);
             for (net.minecraft.network.chat.FormattedText wrappedLine : wrapUiLines(helper, helperWidth)) {

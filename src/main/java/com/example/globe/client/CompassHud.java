@@ -362,25 +362,27 @@ public final class CompassHud {
         int totalTextW = analogAttachedTextWidth(client, cfg, latText, zoneText);
         boolean textBelow = totalTextW > 0 && analogTextBelow(screenWForText, x, diameter, totalTextW);
         int lineH = client.font.lineHeight;
+        int contentH = CompassDialRenderer.lookContentHeight(cfg, diameter);
+        int contentTop = y + (diameter - contentH) / 2;
 
         if (isPreview) {
             // Border mirrors computeAnalogBounds' union exactly (same inputs, same math) so the Studio
             // hitbox and the visible outline can't disagree.
             int bx = x;
-            int by = y;
+            int by = contentTop;
             int boxW;
             int boxH;
             if (totalTextW <= 0) {
                 boxW = diameter;
-                boxH = diameter;
+                boxH = contentH;
             } else if (textBelow) {
                 int textXb = clamp(cx - totalTextW / 2, 4, Math.max(4, screenWForText - 4 - totalTextW));
                 bx = Math.min(x, textXb);
                 boxW = Math.max(x + diameter, textXb + totalTextW) - bx;
-                boxH = diameter + 2 + lineH;
+                boxH = contentH + 2 + lineH;
             } else {
                 boxW = diameter + ANALOG_LAT_GAP + totalTextW;
-                boxH = Math.max(diameter, lineH);
+                boxH = Math.max(contentH, lineH);
             }
             ctx.fill(bx, by, bx + boxW, by + 1, ANALOG_PREVIEW_BORDER);
             ctx.fill(bx, by + boxH - 1, bx + boxW, by + boxH, ANALOG_PREVIEW_BORDER);
@@ -393,8 +395,10 @@ public final class CompassHud {
         if (textBelow) {
             // Pin & Grow overflow guard: the dial never moves for text; when rightward text would run
             // off-screen it wraps BELOW the dial instead (deterministic, screen-geometry-keyed).
+            // Hangs off the CONTENT bottom (== dial-box bottom for every look but TAPE), so the tape's
+            // wrapped text doesn't strand a phantom-margin gap below the strip.
             textX = clamp(cx - totalTextW / 2, 4, Math.max(4, screenWForText - 4 - totalTextW));
-            textY = y + diameter + 2;
+            textY = contentTop + contentH + 2;
         } else {
             textX = x + diameter + ANALOG_LAT_GAP;
             textY = cy - lineH / 2;
@@ -530,17 +534,21 @@ public final class CompassHud {
         int diameter = analogDiameter(cfg);
         int textW = analogAttachedTextWidth(client, cfg, latText, zoneText);
         int lineH = client.font.lineHeight;
+        // Bounds wrap the look's TRUE content (TAPE: the strip, centered in the dial box), so the
+        // Studio border/hitbox never claims the tape's phantom top/bottom margins.
+        int contentH = CompassDialRenderer.lookContentHeight(cfg, diameter);
+        int contentTop = dial.y() + (diameter - contentH) / 2;
         if (textW <= 0) {
-            return new HudBounds(dial.x(), dial.y(), diameter, diameter);
+            return new HudBounds(dial.x(), contentTop, diameter, contentH);
         }
         if (analogTextBelow(screenW, dial.x(), diameter, textW)) {
             int cx = dial.x() + diameter / 2;
             int textX = clamp(cx - textW / 2, 4, Math.max(4, screenW - 4 - textW));
             int x = Math.min(dial.x(), textX);
             int right = Math.max(dial.x() + diameter, textX + textW);
-            return new HudBounds(x, dial.y(), right - x, diameter + 2 + lineH);
+            return new HudBounds(x, contentTop, right - x, contentH + 2 + lineH);
         }
-        return new HudBounds(dial.x(), dial.y(), diameter + ANALOG_LAT_GAP + textW, Math.max(diameter, lineH));
+        return new HudBounds(dial.x(), contentTop, diameter + ANALOG_LAT_GAP + textW, Math.max(contentH, lineH));
     }
 
 
@@ -557,7 +565,10 @@ public final class CompassHud {
     }
 
     private static boolean shouldRenderPreviewHotbar(CompassHudConfig cfg) {
-        return cfg.style == CompassHudConfig.CompassStyle.DIGITAL && cfg.attachToHotbarCompass;
+        // Any docked compass (either style — dockMode superseded the digital-only legacy boolean)
+        // gets the ghost hotbar in the Studio preview, so "attached" placement is judged against
+        // the geometry it actually docks to.
+        return cfg.dockMode == CompassHudConfig.DockMode.HOTBAR_RIGHT;
     }
 
     private static void drawPreviewHotbar(GuiGraphicsExtractor ctx, int screenW, int screenH) {
@@ -776,16 +787,25 @@ public final class CompassHud {
         int lineH = client.font.lineHeight;
         if (cfg.dockMode == CompassHudConfig.DockMode.HOTBAR_RIGHT) {
             int textW = analogAttachedTextWidth(client, cfg, latText, zoneText);
+            // Dock with the look's TRUE content height, not the diameter box: TAPE's strip is a
+            // fraction of its box, and docking the phantom box floated the strip high above the
+            // hotbar (TEST 28). At tape content heights (16-22px) the BESIDE rung now centers the
+            // strip on the hotbar row like a native element.
+            int contentH = CompassDialRenderer.lookContentHeight(cfg, diameter);
             int besideW = diameter + (textW > 0 ? ANALOG_LAT_GAP + textW : 0);
-            int besideH = Math.max(diameter, lineH);
+            int besideH = Math.max(contentH, lineH);
             int stackedW = Math.max(diameter, textW);
-            int stackedH = diameter + (textW > 0 ? 2 + lineH : 0);
+            int stackedH = contentH + (textW > 0 ? 2 + lineH : 0);
             // Analog keeps a two-rung ladder in U-A (beside -> stacked -> lifted); a shrink rung would
             // need dial-scale plumbed through the renderer and is deferred to U-D's look system.
             var dockResult = com.example.globe.core.ui.HudLayoutMath.dock(screenW, screenH,
                     new com.example.globe.core.ui.HudLayoutMath.DockBoxes(besideW, besideH, stackedW, stackedH, stackedW, stackedH),
                     dockOffhandOnRight(client), dockAttackIndicatorOnHotbar(client));
-            return new HudPoint(dockResult.x(), dockResult.y());
+            // The dock slot holds the CONTENT; convert back to the dial-box top-left the renderer
+            // expects (content is vertically centered in the box, so the box may start above the slot
+            // — only content pixels draw there). contentH == diameter for every non-tape look, making
+            // this a no-op for them.
+            return new HudPoint(dockResult.x(), dockResult.y() - (diameter - contentH) / 2);
         }
         int x = pinPlaceX(cfg.hAnchor, cfg.offXFrac, cfg.growH, diameter, screenW);
         int y = pinPlaceY(cfg.vAnchor, cfg.offYFrac, cfg.growV, diameter, screenH);
@@ -904,6 +924,10 @@ public final class CompassHud {
         if (cfg.style == CompassHudConfig.CompassStyle.ANALOG) {
             refW = analogDiameter(cfg);
             refH = analogDiameter(cfg);
+            // The dragged box (computeAnalogBounds) is content-true; the pin's reference is the dial
+            // BOX. Convert the dragged content top back to the box top so a drag round-trips exactly
+            // (no per-drag drift). No-op for non-tape looks (content == box).
+            targetY -= (refH - CompassDialRenderer.lookContentHeight(cfg, refH)) / 2;
         } else {
             HudBounds b = computeBounds(client, cfg);
             refW = b.w;

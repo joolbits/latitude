@@ -226,19 +226,24 @@ public class LatitudeHudStudioScreen extends Screen {
             trackSidebarWidget(this.wCompassStyle, y);
             y += rowH + rowGap;
 
-            var wDirectionMode = this.addRenderableWidget(CycleButton.<CompassHudConfig.DirectionMode>builder(v -> Component.literal(switch (v) {
-                        case CARDINAL_4 -> "N / E / S / W";
-                        case CARDINAL_8 -> "8 winds (N, NE...)";
-                        case DEGREES -> "Degrees (0-359\u00b0)";
-                    }), () -> cfg.directionMode)
-                    .withValues(CompassHudConfig.DirectionMode.values())
-                    .create(panelX, y, widgetW, rowH, Component.literal("Direction Format"), (btn, value) -> {
-                        cfg.directionMode = value;
-                        CompassHudConfig.saveCurrent();
-                    }));
-            tooltip(wDirectionMode, "How the facing readout is written: four cardinals, eight winds, or exact degrees. (Was config-file-only before; surfaced in U-C.)");
-            trackSidebarWidget(wDirectionMode, y);
-            y += rowH + rowGap;
+            // Direction Format only exists where it has a visible effect: the digital line's facing
+            // segment, or the Tape look's heading labels (TEST 28: the button read as dead on the
+            // dial looks, which show facing with their needle and have no formatted text to change).
+            if (!analog || cfg.analogLook == CompassHudConfig.CompassLook.TAPE) {
+                var wDirectionMode = this.addRenderableWidget(CycleButton.<CompassHudConfig.DirectionMode>builder(v -> Component.literal(switch (v) {
+                            case CARDINAL_4 -> "N / E / S / W";
+                            case CARDINAL_8 -> "8 winds (N, NE...)";
+                            case DEGREES -> "Degrees (0-359\u00b0)";
+                        }), () -> cfg.directionMode)
+                        .withValues(CompassHudConfig.DirectionMode.values())
+                        .create(panelX, y, widgetW, rowH, Component.literal("Direction Format"), (btn, value) -> {
+                            cfg.directionMode = value;
+                            CompassHudConfig.saveCurrent();
+                        }));
+                tooltip(wDirectionMode, "How the facing readout is written: four cardinals, eight winds, or exact degrees. Applies to the digital compass line and the Tape look's heading labels.");
+                trackSidebarWidget(wDirectionMode, y);
+                y += rowH + rowGap;
+            }
 
             if (analog) {
                 var wLook = this.addRenderableWidget(CycleButton.<CompassHudConfig.CompassLook>builder(v -> Component.literal(lookLabel(v)), () -> cfg.analogLook)
@@ -246,6 +251,9 @@ public class LatitudeHudStudioScreen extends Screen {
                         .create(panelX, y, widgetW, rowH, Component.literal("Compass Look"), (btn, value) -> {
                             cfg.analogLook = value;
                             CompassHudConfig.saveCurrent();
+                            // Re-init like the style/theme buttons: the Direction Format row exists
+                            // only for TAPE, so the panel's row set changes with the look.
+                            this.init();
                         }));
                 tooltip(wLook, "The dial's shape: classic disc, open ring, compass rose, a linear heading tape, or a minimal needle. Resource packs can reskin any look (globe:textures/gui/compass/<look>.png).");
                 trackSidebarWidget(wLook, y);
@@ -386,7 +394,7 @@ public class LatitudeHudStudioScreen extends Screen {
             trackSidebarWidget(this.wCompassAttachHotbar, y);
             y += rowH + rowGap;
 
-            this.addRenderableWidget(Button.builder(Component.literal("Reset Compass"), b -> {
+            var wResetCompass = this.addRenderableWidget(Button.builder(Component.literal("Reset Compass"), b -> {
                         var fresh = CompassHudConfig.fresh();
                         cfg.style = fresh.style;
                         cfg.analogSize = fresh.analogSize;
@@ -413,6 +421,10 @@ public class LatitudeHudStudioScreen extends Screen {
                     })
                     .bounds(panelX, y, widgetW, rowH)
                     .build());
+            tooltip(wResetCompass, "Restore the compass section to its defaults: style, look, size, colors, and placement.");
+            // Tracked like every other row (TEST 28: untracked, it neither scrolled with the panel
+            // nor hid with the L toggle).
+            trackSidebarWidget(wResetCompass, y);
             y += rowH + rowGap;
         } else if (activeTab == TAB_LABELS) {
             this.wZoneDisplay = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "ON" : "OFF"), () -> cfg.displayZoneInHud)
@@ -1179,6 +1191,14 @@ public class LatitudeHudStudioScreen extends Screen {
 
     private void updateSidebarVisibility() {
         var cfg = CompassHudConfig.get();
+
+        // Blanket pass first: EVERY tracked sidebar row follows the L toggle. The named calls below
+        // then re-apply their conditional rules. Widgets created as locals (Direction Format, Compass
+        // Look, the General tab's cyclers, Reset Compass) are only reachable through the tracker —
+        // relying on the hand-maintained field list alone left them visible when hidden (TEST 28).
+        for (AbstractWidget w : sidebarScrollWidgets) {
+            setVisible(w, sidebarVisible);
+        }
 
         setVisible(wCompassStyle, sidebarVisible);
         setVisible(wCompassScale, sidebarVisible);

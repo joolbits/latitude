@@ -64,7 +64,8 @@ public final class LatitudePlanisphereRenderer {
      * @param y            top-left Y of the bounding area
      * @param width        bounding width in pixels (== height for Legacy, == 2×height for Mercator)
      * @param height       bounding height in pixels
-     * @param selectedBand the currently selected latitude band
+     * @param selectedBand the currently selected latitude band, or null for no highlight (the create
+     *                     screen's "Random" spawn-zone selection — every band renders unselected)
      * @param shape        world shape (Legacy 1:1 → square, Mercator → 2:1 rectangle). Retained for
      *                     call-site clarity; the actual square-vs-rectangle difference is carried by the
      *                     width:height ratio passed in, not branched on here.
@@ -126,13 +127,15 @@ public final class LatitudePlanisphereRenderer {
         }
         drawLatitudeLineRect(context, cx, cy, halfW, 0, GRID_COLOR);
 
-        // ── Gold outline on the selected band's edges (spawn-zone highlight) ──
-        int selLow  = (int) (halfH * selectedBand.lowDeg()  / 90.0);
-        int selHigh = (int) (halfH * selectedBand.highDeg() / 90.0);
-        drawLatitudeLineRect(context, cx, cy, halfW,  selLow,  GOLD);
-        drawLatitudeLineRect(context, cx, cy, halfW,  selHigh, GOLD);
-        drawLatitudeLineRect(context, cx, cy, halfW, -selLow,  GOLD);
-        drawLatitudeLineRect(context, cx, cy, halfW, -selHigh, GOLD);
+        // ── Gold outline on the selected band's edges (spawn-zone highlight; none for Random) ──
+        if (selectedBand != null) {
+            int selLow  = (int) (halfH * selectedBand.lowDeg()  / 90.0);
+            int selHigh = (int) (halfH * selectedBand.highDeg() / 90.0);
+            drawLatitudeLineRect(context, cx, cy, halfW,  selLow,  GOLD);
+            drawLatitudeLineRect(context, cx, cy, halfW,  selHigh, GOLD);
+            drawLatitudeLineRect(context, cx, cy, halfW, -selLow,  GOLD);
+            drawLatitudeLineRect(context, cx, cy, halfW, -selHigh, GOLD);
+        }
     }
 
     // Frame the atlas with the VANILLA parchment map texture (Peetsa TEST 7: "grab the minecraft map graphic ...
