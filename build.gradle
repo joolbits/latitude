@@ -103,6 +103,13 @@ loom {
             vmArg "-Dlatitude.terrainV2.strength=${System.getProperty('latitude.terrainV2.strength', '0.0')}"
             vmArg "-Dlatitude.terrainV2.oceanStrengthRatio=${System.getProperty('latitude.terrainV2.oceanStrengthRatio', '1.0')}"
             vmArg "-Dlatitude.geoV2.enabled=${System.getProperty('latitude.geoV2.enabled', 'false')}"
+            // Slice C follow-up (the L17 forwarding class, caught a SECOND time 2026-07-07): climateV2 and
+            // biomeConsumerV2 were never forwarded, so a headless "consumer-on" atlas silently ran with the
+            // consumer OFF and produced a byte-identical map (0.00% diff was the tell). Forward every
+            // LatitudeV2Flags enable so a headless config claim can actually be true.
+            vmArg "-Dlatitude.climateV2.enabled=${System.getProperty('latitude.climateV2.enabled', 'false')}"
+            vmArg "-Dlatitude.biomeConsumerV2.enabled=${System.getProperty('latitude.biomeConsumerV2.enabled', 'false')}"
+            vmArg "-Dlatitude.biomeConsumerV2.oceanAuthority.enabled=${System.getProperty('latitude.biomeConsumerV2.oceanAuthority.enabled', 'false')}"
         }
         biomeSeedSearch {
             server()
