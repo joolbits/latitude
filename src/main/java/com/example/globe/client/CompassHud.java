@@ -64,6 +64,7 @@ public final class CompassHud {
         }
 
         var cfg = CompassHudConfig.get();
+        ensureLayoutMigrated(client, cfg);
         boolean studioPreview = client.gui.screen() instanceof LatitudeHudStudioScreen;
 
         if (forceVisible && (studioPreview || client.player == null || client.level == null)) {
@@ -114,8 +115,8 @@ public final class CompassHud {
         if (cfg.style == CompassHudConfig.CompassStyle.ANALOG) {
             String latText = cfg.coordsFollowsCompass ? analogLatLonText(client, cfg) : null;
             String zoneText = attachedZoneBiomeLive(client, cfg);
-            HudBounds b = computeAnalogBounds(screenW, screenH, client, cfg, latText, zoneText);
-            renderAnalogAt(ctx, client, cfg, latText, zoneText, b.x, b.y, forceVisible);
+            HudPoint dial = computeAnalogDialPos(screenW, screenH, client, cfg, latText, zoneText);
+            renderAnalogAt(ctx, client, cfg, latText, zoneText, dial.x(), dial.y(), forceVisible);
             if (cfg.displayZoneInHud && !cfg.zoneFollowsCompass) {
                 renderDetachedZone(ctx, client, cfg, forceVisible);
             }
@@ -198,7 +199,7 @@ public final class CompassHud {
     private static HudBounds computeDigitalBounds(int screenW, int screenH, Minecraft client, CompassHudConfig cfg, String[] lines, boolean previewAttachToHotbar) {
 
         int pad = cfg.padding;
-        int textW = maxLineWidth(client, lines);
+        int textW = measuredLineWidth(client, cfg, lines);
         int textH = client.font.lineHeight * lines.length;
 
         int boxW = textW + pad * 2;
@@ -210,27 +211,22 @@ public final class CompassHud {
 
         int x;
         int y;
-        if (cfg.style == CompassHudConfig.CompassStyle.DIGITAL && cfg.attachToHotbarCompass && previewAttachToHotbar) {
-            HudPoint attached = computeAttachedCompassPosition(screenW, screenH, cfg, scaledBoxW, scaledBoxH);
-            x = attached.x();
-            y = attached.y();
-        } else if (cfg.style == CompassHudConfig.CompassStyle.DIGITAL && cfg.attachToHotbarCompass && client.player != null) {
-            int slotIndex = findHotbarCompassSlot(client.player);
-            if (slotIndex >= 0) {
-                HudPoint attached = computeAttachedCompassPosition(screenW, screenH, cfg, scaledBoxW, scaledBoxH);
-                x = attached.x();
-                y = attached.y();
-            } else {
-                x = anchoredX(cfg, screenW, scaledBoxW);
-                y = anchoredY(cfg, screenH, scaledBoxH);
-            }
+        if (cfg.dockMode == CompassHudConfig.DockMode.HOTBAR_RIGHT) {
+            // Pin & Grow v1 hotbar dock (design Pillar 1b): position is a pure function of screen
+            // geometry, growth is structurally away from the hotbar. Digital has no stacked/shrunk shape,
+            // so those rungs reuse the beside box and the ladder falls through to LIFTED when the right
+            // side can't fit it. (The old attach centered/side-teleported and ignored the offhand slot and
+            // hotbar attack indicator -- the audited clipping class.)
+            var dockBoxes = new com.example.globe.core.ui.HudLayoutMath.DockBoxes(
+                    scaledBoxW, scaledBoxH, scaledBoxW, scaledBoxH, scaledBoxW, scaledBoxH);
+            var dockResult = com.example.globe.core.ui.HudLayoutMath.dock(
+                    screenW, screenH, dockBoxes, dockOffhandOnRight(client), dockAttackIndicatorOnHotbar(client));
+            x = dockResult.x();
+            y = dockResult.y();
         } else {
-            x = anchoredX(cfg, screenW, scaledBoxW);
-            y = anchoredY(cfg, screenH, scaledBoxH);
+            x = pinPlaceX(cfg.hAnchor, cfg.offXFrac, cfg.growH, scaledBoxW, screenW);
+            y = pinPlaceY(cfg.vAnchor, cfg.offYFrac, cfg.growV, scaledBoxH, screenH);
         }
-
-        x += cfg.offsetX;
-        y += cfg.offsetY;
 
         x = clamp(x, 0, Math.max(0, screenW - scaledBoxW));
         y = clamp(y, 0, Math.max(0, screenH - scaledBoxH));
@@ -257,7 +253,7 @@ public final class CompassHud {
 
     private static void renderDigitalAt(GuiGraphicsExtractor ctx, Minecraft client, CompassHudConfig cfg, String[] lines, int x, int y, boolean isPreview) {
         int pad = cfg.padding;
-        int textW = maxLineWidth(client, lines);
+        int textW = measuredLineWidth(client, cfg, lines);
         int textH = client.font.lineHeight * lines.length;
 
         int boxW = textW + pad * 2;
@@ -332,35 +328,47 @@ public final class CompassHud {
 
         drawAnalogCompass(ctx, cfg, cx, cy, radius, angle);
 
+        int screenWForText = Minecraft.getInstance().getWindow().getGuiScaledWidth();
+        int totalTextW = analogAttachedTextWidth(client, cfg, latText, zoneText);
+        boolean textBelow = totalTextW > 0 && analogTextBelow(screenWForText, x, diameter, totalTextW);
+        int lineH = client.font.lineHeight;
+
         if (isPreview) {
-            int boxW = diameter;
-            int boxH = diameter;
-            int extraTextW = 0;
-            int extraTextH = 0;
-            if (latText != null && !latText.isEmpty()) {
-                extraTextW += ANALOG_LAT_GAP + client.font.width(latText);
-                extraTextH = Math.max(extraTextH, client.font.lineHeight);
+            // Border mirrors computeAnalogBounds' union exactly (same inputs, same math) so the Studio
+            // hitbox and the visible outline can't disagree.
+            int bx = x;
+            int by = y;
+            int boxW;
+            int boxH;
+            if (totalTextW <= 0) {
+                boxW = diameter;
+                boxH = diameter;
+            } else if (textBelow) {
+                int textXb = clamp(cx - totalTextW / 2, 4, Math.max(4, screenWForText - 4 - totalTextW));
+                bx = Math.min(x, textXb);
+                boxW = Math.max(x + diameter, textXb + totalTextW) - bx;
+                boxH = diameter + 2 + lineH;
+            } else {
+                boxW = diameter + ANALOG_LAT_GAP + totalTextW;
+                boxH = Math.max(diameter, lineH);
             }
-            // zoneText here is already the combined, order-respecting zone+biome text (see attachedZoneBiomeLive/
-            // Sample) -- the caller only passes non-null when there's something to show, so no need to re-check
-            // displayZoneInHud/zoneFollowsCompass here (that check would wrongly hide biome-only text when zone
-            // display is off but biome display is on).
-            if (zoneText != null && !zoneText.isEmpty()) {
-                if (extraTextW == 0) extraTextW += ANALOG_LAT_GAP;
-                else extraTextW += (cfg.compactHud ? 1 : 6);
-                extraTextW += client.font.width(zoneText);
-                extraTextH = Math.max(extraTextH, client.font.lineHeight);
-            }
-            boxW += extraTextW;
-            if (extraTextH > 0) boxH = Math.max(boxH, extraTextH);
-            ctx.fill(x, y, x + boxW, y + 1, ANALOG_PREVIEW_BORDER);
-            ctx.fill(x, y + boxH - 1, x + boxW, y + boxH, ANALOG_PREVIEW_BORDER);
-            ctx.fill(x, y, x + 1, y + boxH, ANALOG_PREVIEW_BORDER);
-            ctx.fill(x + boxW - 1, y, x + boxW, y + boxH, ANALOG_PREVIEW_BORDER);
+            ctx.fill(bx, by, bx + boxW, by + 1, ANALOG_PREVIEW_BORDER);
+            ctx.fill(bx, by + boxH - 1, bx + boxW, by + boxH, ANALOG_PREVIEW_BORDER);
+            ctx.fill(bx, by, bx + 1, by + boxH, ANALOG_PREVIEW_BORDER);
+            ctx.fill(bx + boxW - 1, by, bx + boxW, by + boxH, ANALOG_PREVIEW_BORDER);
         }
 
-        int textX = x + diameter + ANALOG_LAT_GAP;
-        int textY = cy - client.font.lineHeight / 2;
+        int textX;
+        int textY;
+        if (textBelow) {
+            // Pin & Grow overflow guard: the dial never moves for text; when rightward text would run
+            // off-screen it wraps BELOW the dial instead (deterministic, screen-geometry-keyed).
+            textX = clamp(cx - totalTextW / 2, 4, Math.max(4, screenWForText - 4 - totalTextW));
+            textY = y + diameter + 2;
+        } else {
+            textX = x + diameter + ANALOG_LAT_GAP;
+            textY = cy - lineH / 2;
+        }
         int color = cfg.textArgb();
         if (latText != null && !latText.isEmpty()) {
             drawText(ctx, client, cfg, latText, textX, textY, color);
@@ -530,76 +538,32 @@ public final class CompassHud {
     private static HudPoint computeAnalogBasePosition(Minecraft client, CompassHudConfig cfg, String latText, String zoneText) {
         int screenW = client.getWindow().getGuiScaledWidth();
         int screenH = client.getWindow().getGuiScaledHeight();
-
-        int diameter = analogDiameter(cfg);
-        int boxW = diameter;
-        int boxH = diameter;
-        if (latText != null && !latText.isEmpty()) {
-            boxW += ANALOG_LAT_GAP + client.font.width(latText);
-            boxH = Math.max(boxH, client.font.lineHeight);
-        }
-        // zoneText is the combined zone+biome text (see attachedZoneBiomeLive/Sample); caller already filters, so
-        // just check for non-empty content here.
-        if (zoneText != null && !zoneText.isEmpty()) {
-            boxW += (cfg.compactHud ? 1 : 6) + client.font.width(zoneText);
-            boxH = Math.max(boxH, client.font.lineHeight);
-        }
-
-        int x;
-        int y;
-        x = anchoredX(cfg, screenW, boxW);
-        y = anchoredY(cfg, screenH, boxH);
-
-        x = clamp(x, 0, Math.max(0, screenW - boxW));
-        y = clamp(y, 0, Math.max(0, screenH - boxH));
-
-        return new HudPoint(x, y);
+        return computeAnalogDialPos(screenW, screenH, client, cfg, latText, zoneText);
     }
 
     private static HudBounds computeAnalogBounds(int screenW, int screenH, Minecraft client, CompassHudConfig cfg, String latText, String zoneText) {
+        // Pin & Grow v1: the DIAL's own box is what gets placed; attached text extends AWAY from it
+        // (rightward, or wrapped below when the right side would run off-screen). The returned bounds are
+        // the full visual union -- used for Studio hitboxes -- but the dial position never depends on the
+        // text width (the audited root cause #1).
+        HudPoint dial = computeAnalogDialPos(screenW, screenH, client, cfg, latText, zoneText);
         int diameter = analogDiameter(cfg);
-        int boxW = diameter;
-        int boxH = diameter;
-        if (latText != null && !latText.isEmpty()) {
-            boxW += ANALOG_LAT_GAP + client.font.width(latText);
-            boxH = Math.max(boxH, client.font.lineHeight);
+        int textW = analogAttachedTextWidth(client, cfg, latText, zoneText);
+        int lineH = client.font.lineHeight;
+        if (textW <= 0) {
+            return new HudBounds(dial.x(), dial.y(), diameter, diameter);
         }
-        // zoneText is the combined zone+biome text (see attachedZoneBiomeLive/Sample); caller already filters, so
-        // just check for non-empty content here.
-        if (zoneText != null && !zoneText.isEmpty()) {
-            boxW += (cfg.compactHud ? 1 : 6) + client.font.width(zoneText);
-            boxH = Math.max(boxH, client.font.lineHeight);
+        if (analogTextBelow(screenW, dial.x(), diameter, textW)) {
+            int cx = dial.x() + diameter / 2;
+            int textX = clamp(cx - textW / 2, 4, Math.max(4, screenW - 4 - textW));
+            int x = Math.min(dial.x(), textX);
+            int right = Math.max(dial.x() + diameter, textX + textW);
+            return new HudBounds(x, dial.y(), right - x, diameter + 2 + lineH);
         }
-
-        int x;
-        int y;
-        x = anchoredX(cfg, screenW, boxW);
-        y = anchoredY(cfg, screenH, boxH);
-        x += cfg.offsetX;
-        y += cfg.offsetY;
-
-        x = clamp(x, 0, Math.max(0, screenW - boxW));
-        y = clamp(y, 0, Math.max(0, screenH - boxH));
-        return new HudBounds(x, y, boxW, boxH);
+        return new HudBounds(dial.x(), dial.y(), diameter + ANALOG_LAT_GAP + textW, Math.max(diameter, lineH));
     }
 
-    private static HudPoint computeAttachedCompassPosition(int screenW, int screenH, CompassHudConfig cfg, int boxW, int boxH) {
-        int hotbarLeft = screenW / 2 - 91;
-        int hotbarTop = screenH - 22;
-        if (cfg.style == CompassHudConfig.CompassStyle.ANALOG) {
-            int x = hotbarLeft + (182 - boxW) / 2;
-            int y = hotbarTop + (22 - boxH) / 2;
-            return new HudPoint(x, y);
-        }
-        int hotbarRight = hotbarLeft + 182;
-        int margin = 4;
-        int x = hotbarRight + margin;
-        int y = hotbarTop + (22 - boxH) / 2;
-        if (x + boxW > screenW - margin) {
-            x = hotbarLeft - margin - boxW;
-        }
-        return new HudPoint(x, y);
-    }
+
 
     private static int analogDiameter(CompassHudConfig cfg) {
         return (int) Math.ceil(cfg.analogSize);
@@ -608,39 +572,8 @@ public final class CompassHud {
     private static HudPoint computeDigitalBasePosition(Minecraft client, CompassHudConfig cfg, String[] lines) {
         int screenW = client.getWindow().getGuiScaledWidth();
         int screenH = client.getWindow().getGuiScaledHeight();
-
-        int pad = cfg.padding;
-        int textW = maxLineWidth(client, lines);
-        int textH = client.font.lineHeight * lines.length;
-
-        int boxW = textW + pad * 2;
-        int boxH = textH + pad * 2;
-
-        float s = cfg.scale;
-        int scaledBoxW = (int) Math.ceil(boxW * s);
-        int scaledBoxH = (int) Math.ceil(boxH * s);
-
-        int x;
-        int y;
-        if (cfg.attachToHotbarCompass && client.player != null) {
-            int slotIndex = findHotbarCompassSlot(client.player);
-            if (slotIndex >= 0) {
-                var attached = computeAttachedCompassPosition(screenW, screenH, cfg, scaledBoxW, scaledBoxH);
-                x = attached.x;
-                y = attached.y;
-            } else {
-                x = anchoredX(cfg, screenW, scaledBoxW);
-                y = anchoredY(cfg, screenH, scaledBoxH);
-            }
-        } else {
-            x = anchoredX(cfg, screenW, scaledBoxW);
-            y = anchoredY(cfg, screenH, scaledBoxH);
-        }
-
-        x = clamp(x, 0, Math.max(0, screenW - scaledBoxW));
-        y = clamp(y, 0, Math.max(0, screenH - scaledBoxH));
-
-        return new HudPoint(x, y);
+        HudBounds b = computeDigitalBounds(screenW, screenH, client, cfg, lines, false);
+        return new HudPoint(b.x, b.y);
     }
 
     private static boolean shouldRenderPreviewHotbar(CompassHudConfig cfg) {
@@ -710,12 +643,323 @@ public final class CompassHud {
         return false;
     }
 
-    private static int findHotbarCompassSlot(Player player) {
-        var inv = player.getInventory();
-        for (int i = 0; i < 9 && i < inv.getContainerSize(); i++) {
-            if (containsCompass(inv.getItem(i), 0)) return i;
+
+
+    // ------------------------------------------------------------------------------------------------
+    // Pin & Grow v1 (design: docs/design/hud-layout-overhaul-design-20260707.md). The pure math lives in
+    // core.ui.HudLayoutMath (unit-tested); everything here is the thin client glue: config-enum mapping,
+    // font-measured boxes, the legacy one-time migration, and the Studio drag persistence helpers.
+    // ------------------------------------------------------------------------------------------------
+
+    private static int gridCol(CompassHudConfig.HAnchor a) {
+        return switch (a) {
+            case LEFT -> 0;
+            case CENTER -> 1;
+            case RIGHT -> 2;
+        };
+    }
+
+    private static int gridRow(CompassHudConfig.VAnchor a) {
+        return switch (a) {
+            case TOP -> 0;
+            case CENTER -> 1;
+            case BOTTOM -> 2;
+        };
+    }
+
+    private static int pinPlaceX(CompassHudConfig.HAnchor grid, double offFrac, com.example.globe.core.ui.HudLayoutMath.GrowH grow, int boxW, int screenW) {
+        int pin = com.example.globe.core.ui.HudLayoutMath.pinX(gridCol(grid), offFrac, screenW);
+        return com.example.globe.core.ui.HudLayoutMath.placeX(pin, boxW, grow);
+    }
+
+    private static int pinPlaceY(CompassHudConfig.VAnchor grid, double offFrac, com.example.globe.core.ui.HudLayoutMath.GrowV grow, int boxH, int screenH) {
+        int pin = com.example.globe.core.ui.HudLayoutMath.pinY(gridRow(grid), offFrac, screenH);
+        return com.example.globe.core.ui.HudLayoutMath.placeY(pin, boxH, grow);
+    }
+
+    private static com.example.globe.core.ui.HudLayoutMath.GrowH legacyGrowH(CompassHudConfig.HAnchor a) {
+        return switch (a) {
+            case LEFT -> com.example.globe.core.ui.HudLayoutMath.GrowH.LEFT;
+            case CENTER -> com.example.globe.core.ui.HudLayoutMath.GrowH.CENTER;
+            case RIGHT -> com.example.globe.core.ui.HudLayoutMath.GrowH.RIGHT;
+        };
+    }
+
+    private static com.example.globe.core.ui.HudLayoutMath.GrowV legacyGrowV(CompassHudConfig.VAnchor a) {
+        return switch (a) {
+            case TOP -> com.example.globe.core.ui.HudLayoutMath.GrowV.TOP;
+            case CENTER -> com.example.globe.core.ui.HudLayoutMath.GrowV.MIDDLE;
+            case BOTTOM -> com.example.globe.core.ui.HudLayoutMath.GrowV.BOTTOM;
+        };
+    }
+
+    /** Vanilla renders the offhand slot on the side OPPOSITE the main hand: left-handed players get it
+     *  RIGHT of the hotbar -- one of the two overlaps the old attach mode ignored. */
+    private static boolean dockOffhandOnRight(Minecraft client) {
+        try {
+            return client.options.mainHand().get() == net.minecraft.world.entity.HumanoidArm.LEFT;
+        } catch (Throwable t) {
+            return false;
         }
-        return -1;
+    }
+
+    /** The hotbar-mode attack indicator draws right of the hotbar -- the other ignored overlap. */
+    private static boolean dockAttackIndicatorOnHotbar(Minecraft client) {
+        try {
+            return client.options.attackIndicator().get() == net.minecraft.client.AttackIndicatorStatus.HOTBAR;
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    // Longest biome display-name in the current world's registry, cached per registry identity. Used by
+    // reserved-width mode and by the Studio's "Longest" preview text source (U-B).
+    private static Object longestBiomeCacheKey;
+    private static String longestBiomeCache = "Windswept Gravelly Hills";
+
+    static String longestBiomeName(Minecraft client) {
+        try {
+            if (client == null || client.level == null) return longestBiomeCache;
+            var registry = client.level.registryAccess().lookupOrThrow(net.minecraft.core.registries.Registries.BIOME);
+            if (registry == longestBiomeCacheKey) return longestBiomeCache;
+            Font font = client.font;
+            String longest = "Plains";
+            int widest = -1;
+            for (var key : registry.registryKeySet()) {
+                String name = BiomeSamplerTools.biomeDisplayName(key.identifier().toString());
+                if (name == null) continue;
+                int w = font.width(name);
+                if (w > widest) {
+                    widest = w;
+                    longest = name;
+                }
+            }
+            longestBiomeCacheKey = registry;
+            longestBiomeCache = longest;
+            return longest;
+        } catch (Throwable t) {
+            return longestBiomeCache;
+        }
+    }
+
+    /** The zone+biome segment at its widest plausible size (longest zone word + longest biome name). */
+    private static String reservedZoneBiomeSample(Minecraft client, CompassHudConfig cfg) {
+        String zone = (cfg.displayZoneInHud && cfg.zoneFollowsCompass) ? "Subtropics" : null;
+        String biome = (cfg.displayBiomeInHud && cfg.biomeFollowsCompass) ? longestBiomeName(client) : null;
+        return joinOrdered(zone, biome, cfg.biomeBeforeZone, cfg.compactHud);
+    }
+
+    /** Digital line width, optionally reserved to the widest text this world can produce so the box (and
+     *  any CENTER/RIGHT-grown placement of it) goes fully static. */
+    private static int measuredLineWidth(Minecraft client, CompassHudConfig cfg, String[] lines) {
+        int w = maxLineWidth(client, lines);
+        if (cfg.reservedTextWidth && cfg.style == CompassHudConfig.CompassStyle.DIGITAL) {
+            String reservedLine = buildDigitalLine(
+                    sampleDirection(cfg),
+                    cfg.coordsFollowsCompass ? coordsText(client, cfg) : null,
+                    reservedZoneBiomeSample(client, cfg),
+                    cfg.compactHud);
+            w = Math.max(w, client.font.width(reservedLine));
+        }
+        return w;
+    }
+
+    private static int analogAttachedTextWidth(Minecraft client, CompassHudConfig cfg, String latText, String zoneText) {
+        int w = 0;
+        boolean any = false;
+        if (latText != null && !latText.isEmpty()) {
+            w += client.font.width(latText);
+            any = true;
+        }
+        if (zoneText != null && !zoneText.isEmpty()) {
+            if (any) w += (cfg.compactHud ? 1 : 6);
+            int zw = client.font.width(zoneText);
+            if (cfg.reservedTextWidth) {
+                String reserved = reservedZoneBiomeSample(client, cfg);
+                if (reserved != null) zw = Math.max(zw, client.font.width(reserved));
+            }
+            w += zw;
+            any = true;
+        }
+        return any ? w : 0;
+    }
+
+    /** Rightward attached text wraps below the dial when it would run off-screen (never moves the dial). */
+    private static boolean analogTextBelow(int screenW, int dialX, int diameter, int textW) {
+        return dialX + diameter + ANALOG_LAT_GAP + textW > screenW - 4;
+    }
+
+    /** v1 dial position: pin+grow on the DIAL's own box, or the hotbar-dock ladder. Attached text never
+     *  participates -- the audited root cause #1 is structurally dead here. */
+    private static HudPoint computeAnalogDialPos(int screenW, int screenH, Minecraft client, CompassHudConfig cfg, String latText, String zoneText) {
+        int diameter = analogDiameter(cfg);
+        int lineH = client.font.lineHeight;
+        if (cfg.dockMode == CompassHudConfig.DockMode.HOTBAR_RIGHT) {
+            int textW = analogAttachedTextWidth(client, cfg, latText, zoneText);
+            int besideW = diameter + (textW > 0 ? ANALOG_LAT_GAP + textW : 0);
+            int besideH = Math.max(diameter, lineH);
+            int stackedW = Math.max(diameter, textW);
+            int stackedH = diameter + (textW > 0 ? 2 + lineH : 0);
+            // Analog keeps a two-rung ladder in U-A (beside -> stacked -> lifted); a shrink rung would
+            // need dial-scale plumbed through the renderer and is deferred to U-D's look system.
+            var dockResult = com.example.globe.core.ui.HudLayoutMath.dock(screenW, screenH,
+                    new com.example.globe.core.ui.HudLayoutMath.DockBoxes(besideW, besideH, stackedW, stackedH, stackedW, stackedH),
+                    dockOffhandOnRight(client), dockAttackIndicatorOnHotbar(client));
+            return new HudPoint(dockResult.x(), dockResult.y());
+        }
+        int x = pinPlaceX(cfg.hAnchor, cfg.offXFrac, cfg.growH, diameter, screenW);
+        int y = pinPlaceY(cfg.vAnchor, cfg.offYFrac, cfg.growV, diameter, screenH);
+        x = clamp(x, 0, Math.max(0, screenW - diameter));
+        y = clamp(y, 0, Math.max(0, screenH - diameter));
+        return new HudPoint(x, y);
+    }
+
+    /**
+     * One-time legacy (layoutVersion 0) -> Pin & Grow (v1) migration. Runs on the first frame with a real
+     * window (pixel offsets can't convert to screen fractions without dimensions). Grow defaults mirror
+     * the legacy anchor side and the pin is derived from the position the OLD math produced with the OLD
+     * sample text -- day-one placement matches what the player last saw; stability is what changes.
+     */
+    private static void ensureLayoutMigrated(Minecraft client, CompassHudConfig cfg) {
+        if (cfg.layoutVersion >= CompassHudConfig.CURRENT_LAYOUT_VERSION) return;
+        var window = client.getWindow();
+        if (window == null) return;
+        int screenW = window.getGuiScaledWidth();
+        int screenH = window.getGuiScaledHeight();
+        if (screenW <= 0 || screenH <= 0) return;
+        Font font = client.font;
+
+        cfg.growH = legacyGrowH(cfg.hAnchor);
+        cfg.growV = legacyGrowV(cfg.vAnchor);
+        cfg.zoneGrowH = legacyGrowH(cfg.zoneHAnchor);
+        cfg.zoneGrowV = legacyGrowV(cfg.zoneVAnchor);
+        cfg.biomeGrowH = legacyGrowH(cfg.biomeHAnchor);
+        cfg.biomeGrowV = legacyGrowV(cfg.biomeVAnchor);
+        cfg.coordsGrowH = legacyGrowH(cfg.coordsHAnchor);
+        cfg.coordsGrowV = legacyGrowV(cfg.coordsVAnchor);
+
+        // Compass: legacy box under the old math (sample text), then pin the v1 reference box (the dial
+        // for analog, the whole line for digital) at the equivalent alignment point.
+        int boxW;
+        int boxH;
+        int refW;
+        int refH;
+        if (cfg.style == CompassHudConfig.CompassStyle.ANALOG) {
+            String latText = cfg.coordsFollowsCompass ? analogSampleLatLon(cfg) : null;
+            String zoneText = attachedZoneBiomeSample(cfg);
+            int diameter = analogDiameter(cfg);
+            boxW = diameter;
+            boxH = diameter;
+            if (latText != null && !latText.isEmpty()) {
+                boxW += ANALOG_LAT_GAP + font.width(latText);
+                boxH = Math.max(boxH, font.lineHeight);
+            }
+            if (zoneText != null && !zoneText.isEmpty()) {
+                boxW += (cfg.compactHud ? 1 : 6) + font.width(zoneText);
+                boxH = Math.max(boxH, font.lineHeight);
+            }
+            refW = diameter;
+            refH = diameter;
+        } else {
+            String[] lines = sampleLines(cfg);
+            boxW = (int) Math.ceil((maxLineWidth(client, lines) + cfg.padding * 2) * cfg.scale);
+            boxH = (int) Math.ceil((font.lineHeight * lines.length + cfg.padding * 2) * cfg.scale);
+            refW = boxW;
+            refH = boxH;
+        }
+        int legacyX = clamp(anchoredX(cfg, screenW, boxW) + cfg.offsetX, 0, Math.max(0, screenW - boxW));
+        int legacyY = clamp(anchoredY(cfg, screenH, boxH) + cfg.offsetY, 0, Math.max(0, screenH - boxH));
+        cfg.offXFrac = com.example.globe.core.ui.HudLayoutMath.offXFracFor(
+                com.example.globe.core.ui.HudLayoutMath.alignPointX(legacyX, refW, cfg.growH), gridCol(cfg.hAnchor), screenW);
+        cfg.offYFrac = com.example.globe.core.ui.HudLayoutMath.offYFracFor(
+                com.example.globe.core.ui.HudLayoutMath.alignPointY(legacyY, refH, cfg.growV), gridRow(cfg.vAnchor), screenH);
+
+        // Detached labels (legacy sample text, same conversion).
+        int zw = font.width("Tropics");
+        int zh = font.lineHeight;
+        int zx = clamp(anchoredZoneX(cfg, screenW, zw) + cfg.zoneOffsetX, 0, Math.max(0, screenW - zw));
+        int zy = clamp(anchoredZoneY(cfg, screenH, zh) + cfg.zoneOffsetY, 0, Math.max(0, screenH - zh));
+        cfg.zoneOffXFrac = com.example.globe.core.ui.HudLayoutMath.offXFracFor(
+                com.example.globe.core.ui.HudLayoutMath.alignPointX(zx, zw, cfg.zoneGrowH), gridCol(cfg.zoneHAnchor), screenW);
+        cfg.zoneOffYFrac = com.example.globe.core.ui.HudLayoutMath.offYFracFor(
+                com.example.globe.core.ui.HudLayoutMath.alignPointY(zy, zh, cfg.zoneGrowV), gridRow(cfg.zoneVAnchor), screenH);
+
+        int bw = font.width("Plains");
+        int bx = clamp(anchoredBiomeX(cfg, screenW, bw) + cfg.biomeOffsetX, 0, Math.max(0, screenW - bw));
+        int by = clamp(anchoredBiomeY(cfg, screenH, zh) + cfg.biomeOffsetY, 0, Math.max(0, screenH - zh));
+        cfg.biomeOffXFrac = com.example.globe.core.ui.HudLayoutMath.offXFracFor(
+                com.example.globe.core.ui.HudLayoutMath.alignPointX(bx, bw, cfg.biomeGrowH), gridCol(cfg.biomeHAnchor), screenW);
+        cfg.biomeOffYFrac = com.example.globe.core.ui.HudLayoutMath.offYFracFor(
+                com.example.globe.core.ui.HudLayoutMath.alignPointY(by, zh, cfg.biomeGrowV), gridRow(cfg.biomeVAnchor), screenH);
+
+        String coordsSampleText = coordsSample(cfg);
+        int cw = coordsSampleText == null ? 20 : font.width(coordsSampleText);
+        int cxx = clamp(anchoredCoordsX(cfg, screenW, cw) + cfg.coordsOffsetX, 0, Math.max(0, screenW - cw));
+        int cyy = clamp(anchoredCoordsY(cfg, screenH, zh) + cfg.coordsOffsetY, 0, Math.max(0, screenH - zh));
+        cfg.coordsOffXFrac = com.example.globe.core.ui.HudLayoutMath.offXFracFor(
+                com.example.globe.core.ui.HudLayoutMath.alignPointX(cxx, cw, cfg.coordsGrowH), gridCol(cfg.coordsHAnchor), screenW);
+        cfg.coordsOffYFrac = com.example.globe.core.ui.HudLayoutMath.offYFracFor(
+                com.example.globe.core.ui.HudLayoutMath.alignPointY(cyy, zh, cfg.coordsGrowV), gridRow(cfg.coordsVAnchor), screenH);
+
+        cfg.layoutVersion = CompassHudConfig.CURRENT_LAYOUT_VERSION;
+        CompassHudConfig.saveCurrent();
+        com.example.globe.GlobeMod.LOGGER.info(
+                "[Latitude] Compass HUD layout migrated to Pin & Grow (v1): placements converted to scale-independent pins.");
+    }
+
+    private static int maybeSnap(int v) {
+        return LatitudeConfig.hudSnapEnabled ? snapTo(v, LatitudeConfig.hudSnapPixels) : v;
+    }
+
+    private static int snapTo(int v, int grid) {
+        return grid <= 1 ? v : Math.round(v / (float) grid) * grid;
+    }
+
+    /** Studio drag persistence (v1): the drag moves the PIN. targetX/Y is the dragged box's top-left. */
+    public static void applyCompassDrag(Minecraft client, CompassHudConfig cfg, int targetX, int targetY) {
+        int screenW = client.getWindow().getGuiScaledWidth();
+        int screenH = client.getWindow().getGuiScaledHeight();
+        int refW;
+        int refH;
+        if (cfg.style == CompassHudConfig.CompassStyle.ANALOG) {
+            refW = analogDiameter(cfg);
+            refH = analogDiameter(cfg);
+        } else {
+            HudBounds b = computeBounds(client, cfg);
+            refW = b.w;
+            refH = b.h;
+        }
+        int pinPX = maybeSnap(com.example.globe.core.ui.HudLayoutMath.alignPointX(targetX, refW, cfg.growH));
+        int pinPY = maybeSnap(com.example.globe.core.ui.HudLayoutMath.alignPointY(targetY, refH, cfg.growV));
+        cfg.offXFrac = com.example.globe.core.ui.HudLayoutMath.offXFracFor(pinPX, gridCol(cfg.hAnchor), screenW);
+        cfg.offYFrac = com.example.globe.core.ui.HudLayoutMath.offYFracFor(pinPY, gridRow(cfg.vAnchor), screenH);
+    }
+
+    public static void applyZoneDrag(Minecraft client, CompassHudConfig cfg, int targetX, int targetY, int boxW, int boxH) {
+        int screenW = client.getWindow().getGuiScaledWidth();
+        int screenH = client.getWindow().getGuiScaledHeight();
+        int pinPX = maybeSnap(com.example.globe.core.ui.HudLayoutMath.alignPointX(targetX, boxW, cfg.zoneGrowH));
+        int pinPY = maybeSnap(com.example.globe.core.ui.HudLayoutMath.alignPointY(targetY, boxH, cfg.zoneGrowV));
+        cfg.zoneOffXFrac = com.example.globe.core.ui.HudLayoutMath.offXFracFor(pinPX, gridCol(cfg.zoneHAnchor), screenW);
+        cfg.zoneOffYFrac = com.example.globe.core.ui.HudLayoutMath.offYFracFor(pinPY, gridRow(cfg.zoneVAnchor), screenH);
+    }
+
+    public static void applyBiomeDrag(Minecraft client, CompassHudConfig cfg, int targetX, int targetY, int boxW, int boxH) {
+        int screenW = client.getWindow().getGuiScaledWidth();
+        int screenH = client.getWindow().getGuiScaledHeight();
+        int pinPX = maybeSnap(com.example.globe.core.ui.HudLayoutMath.alignPointX(targetX, boxW, cfg.biomeGrowH));
+        int pinPY = maybeSnap(com.example.globe.core.ui.HudLayoutMath.alignPointY(targetY, boxH, cfg.biomeGrowV));
+        cfg.biomeOffXFrac = com.example.globe.core.ui.HudLayoutMath.offXFracFor(pinPX, gridCol(cfg.biomeHAnchor), screenW);
+        cfg.biomeOffYFrac = com.example.globe.core.ui.HudLayoutMath.offYFracFor(pinPY, gridRow(cfg.biomeVAnchor), screenH);
+    }
+
+    public static void applyCoordsDrag(Minecraft client, CompassHudConfig cfg, int targetX, int targetY, int boxW, int boxH) {
+        int screenW = client.getWindow().getGuiScaledWidth();
+        int screenH = client.getWindow().getGuiScaledHeight();
+        int pinPX = maybeSnap(com.example.globe.core.ui.HudLayoutMath.alignPointX(targetX, boxW, cfg.coordsGrowH));
+        int pinPY = maybeSnap(com.example.globe.core.ui.HudLayoutMath.alignPointY(targetY, boxH, cfg.coordsGrowV));
+        cfg.coordsOffXFrac = com.example.globe.core.ui.HudLayoutMath.offXFracFor(pinPX, gridCol(cfg.coordsHAnchor), screenW);
+        cfg.coordsOffYFrac = com.example.globe.core.ui.HudLayoutMath.offYFracFor(pinPY, gridRow(cfg.coordsVAnchor), screenH);
     }
 
     private static int anchoredX(CompassHudConfig cfg, int screenW, int scaledBoxW) {
@@ -957,10 +1201,9 @@ public final class CompassHud {
         int screenH = client.getWindow().getGuiScaledHeight();
         int w = client.font.width(zone);
         int h = client.font.lineHeight;
-        int x = anchoredZoneX(cfg, screenW, w);
-        int y = anchoredZoneY(cfg, screenH, h);
-        x += cfg.zoneOffsetX;
-        y += cfg.zoneOffsetY;
+        if (cfg.reservedTextWidth) w = Math.max(w, client.font.width("Subtropics"));
+        int x = pinPlaceX(cfg.zoneHAnchor, cfg.zoneOffXFrac, cfg.zoneGrowH, w, screenW);
+        int y = pinPlaceY(cfg.zoneVAnchor, cfg.zoneOffYFrac, cfg.zoneGrowV, h, screenH);
         x = clamp(x, 0, Math.max(0, screenW - w));
         y = clamp(y, 0, Math.max(0, screenH - h));
         return new HudBounds(x, y, w, h);
@@ -990,10 +1233,9 @@ public final class CompassHud {
         int screenH = client.getWindow().getGuiScaledHeight();
         int w = client.font.width(biome);
         int h = client.font.lineHeight;
-        int x = anchoredBiomeX(cfg, screenW, w);
-        int y = anchoredBiomeY(cfg, screenH, h);
-        x += cfg.biomeOffsetX;
-        y += cfg.biomeOffsetY;
+        if (cfg.reservedTextWidth) w = Math.max(w, client.font.width(longestBiomeName(client)));
+        int x = pinPlaceX(cfg.biomeHAnchor, cfg.biomeOffXFrac, cfg.biomeGrowH, w, screenW);
+        int y = pinPlaceY(cfg.biomeVAnchor, cfg.biomeOffYFrac, cfg.biomeGrowV, h, screenH);
         x = clamp(x, 0, Math.max(0, screenW - w));
         y = clamp(y, 0, Math.max(0, screenH - h));
         return new HudBounds(x, y, w, h);
@@ -1030,10 +1272,8 @@ public final class CompassHud {
         int screenH = client.getWindow().getGuiScaledHeight();
         int w = client.font.width(coords);
         int h = client.font.lineHeight;
-        int x = anchoredCoordsX(cfg, screenW, w);
-        int y = anchoredCoordsY(cfg, screenH, h);
-        x += cfg.coordsOffsetX;
-        y += cfg.coordsOffsetY;
+        int x = pinPlaceX(cfg.coordsHAnchor, cfg.coordsOffXFrac, cfg.coordsGrowH, w, screenW);
+        int y = pinPlaceY(cfg.coordsVAnchor, cfg.coordsOffYFrac, cfg.coordsGrowV, h, screenH);
         x = clamp(x, 0, Math.max(0, screenW - w));
         y = clamp(y, 0, Math.max(0, screenH - h));
         return new HudBounds(x, y, w, h);

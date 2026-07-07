@@ -346,13 +346,14 @@ public class LatitudeHudStudioScreen extends Screen {
                 trackSidebarWidget(this.wCompassCompact, y);
                 y += rowH + rowGap;
 
-                this.wCompassAttachHotbar = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "ON" : "OFF"), () -> cfg.attachToHotbarCompass)
+                this.wCompassAttachHotbar = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "ON" : "OFF"), () -> cfg.dockMode == CompassHudConfig.DockMode.HOTBAR_RIGHT)
                         .withValues(true, false)
                         .create(panelX, y, widgetW, rowH, Component.literal("Attach to Hotbar"), (btn, value) -> {
-                            cfg.attachToHotbarCompass = value;
+                            cfg.dockMode = value ? CompassHudConfig.DockMode.HOTBAR_RIGHT : CompassHudConfig.DockMode.NONE;
+                            cfg.attachToHotbarCompass = value; // legacy mirror for older jars reading this file
                             CompassHudConfig.saveCurrent();
                         }));
-                tooltip(this.wCompassAttachHotbar, "Snaps the digital compass to the hotbar. Analog ignores this for now.");
+                tooltip(this.wCompassAttachHotbar, "Docks the compass (either style) to the right of the hotbar. It grows away from the hotbar and steps inward stages on narrow screens -- it can never clip the hotbar or run off-screen.");
                 trackSidebarWidget(this.wCompassAttachHotbar, y);
                 y += rowH + rowGap;
             }
@@ -722,8 +723,8 @@ public class LatitudeHudStudioScreen extends Screen {
             }
 
             var cfg = CompassHudConfig.get();
-            if (cfg.attachToHotbarCompass) {
-                return true;
+            if (cfg.dockMode != CompassHudConfig.DockMode.NONE) {
+                return true; // docked position is computed from the hotbar, not draggable
             }
 
             int screenW = mc.getWindow().getGuiScaledWidth();
@@ -739,14 +740,8 @@ public class LatitudeHudStudioScreen extends Screen {
             targetX = clamp(targetX, 0, Math.max(0, screenW - boxW));
             targetY = clamp(targetY, 0, Math.max(0, screenH - boxH));
 
-            var base = CompassHud.computeBasePosition(mc, cfg);
-            cfg.offsetX = targetX - base.x();
-            cfg.offsetY = targetY - base.y();
-
-            if (LatitudeConfig.hudSnapEnabled) {
-                cfg.offsetX = snap(cfg.offsetX, LatitudeConfig.hudSnapPixels);
-                cfg.offsetY = snap(cfg.offsetY, LatitudeConfig.hudSnapPixels);
-            }
+            // Pin & Grow v1: the drag moves the PIN (snap applies to the pin point inside the helper).
+            CompassHud.applyCompassDrag(mc, cfg, targetX, targetY);
             return true;
         }
 
@@ -768,15 +763,7 @@ public class LatitudeHudStudioScreen extends Screen {
             targetX = clamp(targetX, 0, Math.max(0, screenW - boxW));
             targetY = clamp(targetY, 0, Math.max(0, screenH - boxH));
 
-            int baseX = anchoredZoneX(cfg, screenW, boxW);
-            int baseY = anchoredZoneY(cfg, screenH, boxH);
-            cfg.zoneOffsetX = targetX - baseX;
-            cfg.zoneOffsetY = targetY - baseY;
-
-            if (LatitudeConfig.hudSnapEnabled) {
-                cfg.zoneOffsetX = snap(cfg.zoneOffsetX, LatitudeConfig.hudSnapPixels);
-                cfg.zoneOffsetY = snap(cfg.zoneOffsetY, LatitudeConfig.hudSnapPixels);
-            }
+            CompassHud.applyZoneDrag(mc, cfg, targetX, targetY, boxW, boxH);
             return true;
         }
 
@@ -799,15 +786,7 @@ public class LatitudeHudStudioScreen extends Screen {
             targetX = clamp(targetX, 0, Math.max(0, screenW - boxW));
             targetY = clamp(targetY, 0, Math.max(0, screenH - boxH));
 
-            int baseX = anchoredBiomeX(cfg, screenW, boxW);
-            int baseY = anchoredBiomeY(cfg, screenH, boxH);
-            cfg.biomeOffsetX = targetX - baseX;
-            cfg.biomeOffsetY = targetY - baseY;
-
-            if (LatitudeConfig.hudSnapEnabled) {
-                cfg.biomeOffsetX = snap(cfg.biomeOffsetX, LatitudeConfig.hudSnapPixels);
-                cfg.biomeOffsetY = snap(cfg.biomeOffsetY, LatitudeConfig.hudSnapPixels);
-            }
+            CompassHud.applyBiomeDrag(mc, cfg, targetX, targetY, boxW, boxH);
             return true;
         }
 
@@ -830,15 +809,7 @@ public class LatitudeHudStudioScreen extends Screen {
             targetX = clamp(targetX, 0, Math.max(0, screenW - boxW));
             targetY = clamp(targetY, 0, Math.max(0, screenH - boxH));
 
-            int baseX = anchoredCoordsX(cfg, screenW, boxW);
-            int baseY = anchoredCoordsY(cfg, screenH, boxH);
-            cfg.coordsOffsetX = targetX - baseX;
-            cfg.coordsOffsetY = targetY - baseY;
-
-            if (LatitudeConfig.hudSnapEnabled) {
-                cfg.coordsOffsetX = snap(cfg.coordsOffsetX, LatitudeConfig.hudSnapPixels);
-                cfg.coordsOffsetY = snap(cfg.coordsOffsetY, LatitudeConfig.hudSnapPixels);
-            }
+            CompassHud.applyCoordsDrag(mc, cfg, targetX, targetY, boxW, boxH);
             return true;
         }
 
@@ -1146,6 +1117,13 @@ public class LatitudeHudStudioScreen extends Screen {
         cfg.vAnchor = fresh.vAnchor;
         cfg.offsetX = fresh.offsetX;
         cfg.offsetY = fresh.offsetY;
+        cfg.offXFrac = fresh.offXFrac;
+        cfg.offYFrac = fresh.offYFrac;
+        cfg.growH = fresh.growH;
+        cfg.growV = fresh.growV;
+        cfg.dockMode = fresh.dockMode;
+        cfg.reservedTextWidth = fresh.reservedTextWidth;
+        cfg.layoutVersion = fresh.layoutVersion;
         cfg.scale = fresh.scale;
         cfg.analogSize = fresh.analogSize;
         cfg.analogInnerAlpha = fresh.analogInnerAlpha;
@@ -1170,18 +1148,30 @@ public class LatitudeHudStudioScreen extends Screen {
         cfg.zoneHAnchor = fresh.zoneHAnchor;
         cfg.zoneVAnchor = fresh.zoneVAnchor;
         cfg.zoneOffsetX = fresh.zoneOffsetX;
+        cfg.zoneOffXFrac = fresh.zoneOffXFrac;
+        cfg.zoneOffYFrac = fresh.zoneOffYFrac;
+        cfg.zoneGrowH = fresh.zoneGrowH;
+        cfg.zoneGrowV = fresh.zoneGrowV;
         cfg.zoneOffsetY = fresh.zoneOffsetY;
         cfg.displayBiomeInHud = fresh.displayBiomeInHud;
         cfg.biomeFollowsCompass = fresh.biomeFollowsCompass;
         cfg.biomeHAnchor = fresh.biomeHAnchor;
         cfg.biomeVAnchor = fresh.biomeVAnchor;
         cfg.biomeOffsetX = fresh.biomeOffsetX;
+        cfg.biomeOffXFrac = fresh.biomeOffXFrac;
+        cfg.biomeOffYFrac = fresh.biomeOffYFrac;
+        cfg.biomeGrowH = fresh.biomeGrowH;
+        cfg.biomeGrowV = fresh.biomeGrowV;
         cfg.biomeOffsetY = fresh.biomeOffsetY;
         cfg.biomeBeforeZone = fresh.biomeBeforeZone;
         cfg.coordsFollowsCompass = fresh.coordsFollowsCompass;
         cfg.coordsHAnchor = fresh.coordsHAnchor;
         cfg.coordsVAnchor = fresh.coordsVAnchor;
         cfg.coordsOffsetX = fresh.coordsOffsetX;
+        cfg.coordsOffXFrac = fresh.coordsOffXFrac;
+        cfg.coordsOffYFrac = fresh.coordsOffYFrac;
+        cfg.coordsGrowH = fresh.coordsGrowH;
+        cfg.coordsGrowV = fresh.coordsGrowV;
         cfg.coordsOffsetY = fresh.coordsOffsetY;
         cfg.customFaceRgb = fresh.customFaceRgb;
         cfg.customRingArgb = fresh.customRingArgb;
@@ -1201,7 +1191,7 @@ public class LatitudeHudStudioScreen extends Screen {
             return false;
         }
         var cfg = CompassHudConfig.get();
-        if (cfg.attachToHotbarCompass) {
+        if (cfg.dockMode != CompassHudConfig.DockMode.NONE) {
             return false;
         }
         var b = CompassHud.computeBounds(mc, cfg);

@@ -22,6 +22,17 @@ public final class CompassHudConfig {
     }
     public enum HAnchor { LEFT, CENTER, RIGHT }
     public enum VAnchor { TOP, CENTER, BOTTOM }
+    /** Where the compass group docks. Replaces the old boolean attach (kept below for migration). */
+    public enum DockMode { NONE, HOTBAR_RIGHT }
+
+    /**
+     * Pin &amp; Grow layout version (design: hud-layout-overhaul-design-20260707.md). Field default is 0 so a
+     * legacy JSON with no such key deserializes as LEGACY and gets a one-time migration on first render
+     * (screen dims are needed to convert pixel offsets to fractions, so migration cannot happen at load);
+     * {@link #fresh()} stamps {@link #CURRENT_LAYOUT_VERSION} so new configs are born migrated.
+     */
+    public static final int CURRENT_LAYOUT_VERSION = 1;
+    public int layoutVersion = 0;
 
     // Master toggle
     public boolean enabled = true;
@@ -33,11 +44,28 @@ public final class CompassHudConfig {
     public AnalogCompassTheme analogTheme = AnalogCompassTheme.CLASSIC_GOLD;
     public DirectionMode directionMode = DirectionMode.CARDINAL_8;
 
-    // Positioning (screen-space)
+    // Positioning (screen-space). LEGACY (layoutVersion 0): hAnchor/vAnchor anchored a CONTENT-MEASURED
+    // box and offsetX/offsetY were absolute gui-scaled pixels — the audited root cause of the
+    // biome-name-moves-the-dial bug and of placements not surviving GUI-scale changes.
+    // V1 (Pin & Grow): hAnchor/vAnchor become the PIN GRID (a point), offXFrac/offYFrac are
+    // screen-fraction offsets from that grid point, and growH/growV say how the content box extends from
+    // the pin. The legacy pixel offsets are retained purely as migration input.
     public HAnchor hAnchor = HAnchor.CENTER;
     public VAnchor vAnchor = VAnchor.TOP;
     public int offsetX = 0;
     public int offsetY = 0;
+    public double offXFrac = 0.0;
+    public double offYFrac = 0.0;
+    public com.example.globe.core.ui.HudLayoutMath.GrowH growH = com.example.globe.core.ui.HudLayoutMath.GrowH.CENTER;
+    public com.example.globe.core.ui.HudLayoutMath.GrowV growV = com.example.globe.core.ui.HudLayoutMath.GrowV.TOP;
+
+    // Hotbar dock (v1). Growth is structurally away from the hotbar; see HudLayoutMath.dock.
+    public DockMode dockMode = DockMode.NONE;
+
+    // When true, variable-width HUD text elements reserve the width of the longest biome name in the
+    // current world's registry, so even the text box's edges are static (Pin & Grow makes the PIN stable
+    // regardless; this stabilizes the box outline too).
+    public boolean reservedTextWidth = false;
 
     // Sizing (digital text)
     public float scale = 1.0f; // 0.5 .. 3.0 recommended
@@ -65,6 +93,10 @@ public final class CompassHudConfig {
     public VAnchor zoneVAnchor = VAnchor.TOP;
     public int zoneOffsetX = 0;
     public int zoneOffsetY = 0;
+    public double zoneOffXFrac = 0.0;
+    public double zoneOffYFrac = 0.0;
+    public com.example.globe.core.ui.HudLayoutMath.GrowH zoneGrowH = com.example.globe.core.ui.HudLayoutMath.GrowH.CENTER;
+    public com.example.globe.core.ui.HudLayoutMath.GrowV zoneGrowV = com.example.globe.core.ui.HudLayoutMath.GrowV.TOP;
 
     // Biome label -- same follow/detach/anchor/offset shape as the zone label above, so it can independently
     // ride with the compass or be dragged to its own spot in the HUD Studio.
@@ -74,6 +106,10 @@ public final class CompassHudConfig {
     public VAnchor biomeVAnchor = VAnchor.TOP;
     public int biomeOffsetX = 0;
     public int biomeOffsetY = 0;
+    public double biomeOffXFrac = 0.0;
+    public double biomeOffYFrac = 0.0;
+    public com.example.globe.core.ui.HudLayoutMath.GrowH biomeGrowH = com.example.globe.core.ui.HudLayoutMath.GrowH.CENTER;
+    public com.example.globe.core.ui.HudLayoutMath.GrowV biomeGrowV = com.example.globe.core.ui.HudLayoutMath.GrowV.TOP;
     // When zone and biome are BOTH attached to the compass line, which comes first. false = "Zone, Biome"
     // (band before biome); true = "Biome, Zone".
     public boolean biomeBeforeZone = false;
@@ -87,6 +123,10 @@ public final class CompassHudConfig {
     public VAnchor coordsVAnchor = VAnchor.TOP;
     public int coordsOffsetX = 0;
     public int coordsOffsetY = 0;
+    public double coordsOffXFrac = 0.0;
+    public double coordsOffYFrac = 0.0;
+    public com.example.globe.core.ui.HudLayoutMath.GrowH coordsGrowH = com.example.globe.core.ui.HudLayoutMath.GrowH.CENTER;
+    public com.example.globe.core.ui.HudLayoutMath.GrowV coordsGrowV = com.example.globe.core.ui.HudLayoutMath.GrowV.TOP;
 
     // Styling
     public boolean showBackground = true;
@@ -131,7 +171,9 @@ public final class CompassHudConfig {
      *  truth for "what are the defaults" -- used by both first-load and any reset-to-defaults action, so they
      *  can never drift apart. */
     public static CompassHudConfig fresh() {
-        return new CompassHudConfig();
+        CompassHudConfig cfg = new CompassHudConfig();
+        cfg.layoutVersion = CURRENT_LAYOUT_VERSION; // born migrated; only disk-loaded legacies stay at 0
+        return cfg;
     }
 
     public static void reload() {
@@ -165,7 +207,7 @@ public final class CompassHudConfig {
             GlobeMod.LOGGER.warn("Failed to read compass HUD config; using defaults", e);
         }
 
-        CompassHudConfig fresh = new CompassHudConfig();
+        CompassHudConfig fresh = fresh();
         save(fresh);
         return fresh;
     }
@@ -179,6 +221,12 @@ public final class CompassHudConfig {
         } catch (Exception e) {
             GlobeMod.LOGGER.warn("Failed to write compass HUD config", e);
         }
+    }
+
+    /** Pins live within one screen of their grid base; anything wilder is a corrupt/hand-edited value. */
+    private static double clampFrac(double v) {
+        if (Double.isNaN(v) || Double.isInfinite(v)) return 0.0;
+        return Math.max(-1.0, Math.min(1.0, v));
     }
 
     private void sanitize() {
@@ -211,6 +259,31 @@ public final class CompassHudConfig {
         if (coordsHAnchor == null) coordsHAnchor = HAnchor.CENTER;
         if (coordsVAnchor == null) coordsVAnchor = VAnchor.TOP;
         if (padding < 0) padding = 0;
+        // Pin & Grow v1 fields (null-safe for hand-edited/legacy JSON; fracs clamped so a pin can never
+        // be persisted off-screen — render-time clamping stays as the second belt).
+        if (growH == null) growH = com.example.globe.core.ui.HudLayoutMath.GrowH.CENTER;
+        if (growV == null) growV = com.example.globe.core.ui.HudLayoutMath.GrowV.TOP;
+        if (zoneGrowH == null) zoneGrowH = com.example.globe.core.ui.HudLayoutMath.GrowH.CENTER;
+        if (zoneGrowV == null) zoneGrowV = com.example.globe.core.ui.HudLayoutMath.GrowV.TOP;
+        if (biomeGrowH == null) biomeGrowH = com.example.globe.core.ui.HudLayoutMath.GrowH.CENTER;
+        if (biomeGrowV == null) biomeGrowV = com.example.globe.core.ui.HudLayoutMath.GrowV.TOP;
+        if (coordsGrowH == null) coordsGrowH = com.example.globe.core.ui.HudLayoutMath.GrowH.CENTER;
+        if (coordsGrowV == null) coordsGrowV = com.example.globe.core.ui.HudLayoutMath.GrowV.TOP;
+        if (dockMode == null) dockMode = DockMode.NONE;
+        offXFrac = clampFrac(offXFrac);
+        offYFrac = clampFrac(offYFrac);
+        zoneOffXFrac = clampFrac(zoneOffXFrac);
+        zoneOffYFrac = clampFrac(zoneOffYFrac);
+        biomeOffXFrac = clampFrac(biomeOffXFrac);
+        biomeOffYFrac = clampFrac(biomeOffYFrac);
+        coordsOffXFrac = clampFrac(coordsOffXFrac);
+        coordsOffYFrac = clampFrac(coordsOffYFrac);
+        if (layoutVersion < 0) layoutVersion = 0;
+        if (layoutVersion > CURRENT_LAYOUT_VERSION) layoutVersion = CURRENT_LAYOUT_VERSION;
+        // Legacy boolean attach migrates to the dock enum (position semantics live in HudLayoutMath now).
+        if (attachToHotbarCompass && dockMode == DockMode.NONE) {
+            dockMode = DockMode.HOTBAR_RIGHT;
+        }
         if (backgroundAlpha < 0) backgroundAlpha = 0;
         if (backgroundAlpha > 255) backgroundAlpha = 255;
         if (textAlpha < 0) textAlpha = 0;
