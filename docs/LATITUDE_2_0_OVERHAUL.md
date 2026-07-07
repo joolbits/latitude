@@ -872,6 +872,17 @@ needs his input first.
 
 ## Kickoff Slice Prompt (Phase 4 only)
 
+> **STATUS (2026-07-06): EXECUTED — do not run this prompt again.** Phase 4 ran 2026-07-05/06 from this
+> prompt: design locked (r2) → implemented behind `latitude.terrainV2.enabled` → mechanical proof gate →
+> 6-lens sweeper audit → live pass. The live pass found and fixed two real bugs no mechanical gate could
+> reach (install-timing `95bca16c`, per-column perf memo `0be832f2`); the mechanism is live-confirmed at
+> stress strengths. **Phase 4 is mechanically closed but NOT live-closed:** the Fable 5 audit (2026-07-06)
+> measured an EMPTY usable strength window on the Y-uniform bias formula, so the strength calibration this
+> prompt scoped is unsatisfiable until a Y-aware taper lands. Current truth + path forward (slices A–E,
+> gates G1–G3): `docs/binder/fable5-overhaul-audit-report-20260706.md`. Execution log:
+> `docs/binder/phase4-terrain-wrapper-20260705.md`. The prompt below is retained as the historical working
+> card.
+
 Added 2026-07-05, once the Biome Consumer slice's live bug was fixed and BOTH sweeper audits (Biome
 Consumer bug scope, then a comprehensive Phases 0-3 sweep — 57 findings total, all fixed or deliberately
 deferred with a stated reason) were resolved. Document-review prep for this exact phase already happened
