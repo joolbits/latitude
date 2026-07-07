@@ -249,6 +249,40 @@ public final class CompassHud {
         if (!cfg.coordsFollowsCompass) {
             renderDetachedCoords(ctx, client, cfg, true);
         }
+        drawPinMarkers(ctx, client, cfg);
+    }
+
+    /** U-B pin visualization: a small gold crosshair at each element's PIN, so "what am I dragging" is a
+     *  visible point, not a guess. Skipped for the compass while docked (the dock computes its own pin). */
+    private static void drawPinMarkers(GuiGraphicsExtractor ctx, Minecraft client, CompassHudConfig cfg) {
+        int screenW = client.getWindow().getGuiScaledWidth();
+        int screenH = client.getWindow().getGuiScaledHeight();
+        if (cfg.dockMode == CompassHudConfig.DockMode.NONE) {
+            drawPin(ctx,
+                    com.example.globe.core.ui.HudLayoutMath.pinX(gridCol(cfg.hAnchor), cfg.offXFrac, screenW),
+                    com.example.globe.core.ui.HudLayoutMath.pinY(gridRow(cfg.vAnchor), cfg.offYFrac, screenH));
+        }
+        if (cfg.displayZoneInHud && !cfg.zoneFollowsCompass) {
+            drawPin(ctx,
+                    com.example.globe.core.ui.HudLayoutMath.pinX(gridCol(cfg.zoneHAnchor), cfg.zoneOffXFrac, screenW),
+                    com.example.globe.core.ui.HudLayoutMath.pinY(gridRow(cfg.zoneVAnchor), cfg.zoneOffYFrac, screenH));
+        }
+        if (cfg.displayBiomeInHud && !cfg.biomeFollowsCompass) {
+            drawPin(ctx,
+                    com.example.globe.core.ui.HudLayoutMath.pinX(gridCol(cfg.biomeHAnchor), cfg.biomeOffXFrac, screenW),
+                    com.example.globe.core.ui.HudLayoutMath.pinY(gridRow(cfg.biomeVAnchor), cfg.biomeOffYFrac, screenH));
+        }
+        if (!cfg.coordsFollowsCompass) {
+            drawPin(ctx,
+                    com.example.globe.core.ui.HudLayoutMath.pinX(gridCol(cfg.coordsHAnchor), cfg.coordsOffXFrac, screenW),
+                    com.example.globe.core.ui.HudLayoutMath.pinY(gridRow(cfg.coordsVAnchor), cfg.coordsOffYFrac, screenH));
+        }
+    }
+
+    private static void drawPin(GuiGraphicsExtractor ctx, int px, int py) {
+        int gold = 0xFFE8B64A;
+        ctx.fill(px - 3, py, px + 4, py + 1, gold);
+        ctx.fill(px, py - 3, px + 1, py + 4, gold);
     }
 
     private static void renderDigitalAt(GuiGraphicsExtractor ctx, Minecraft client, CompassHudConfig cfg, String[] lines, int x, int y, boolean isPreview) {
@@ -481,8 +515,13 @@ public final class CompassHud {
     }
 
     private static String analogSampleLatLon(CompassHudConfig cfg) {
-        String lat = Boolean.TRUE.equals(cfg.analogShowLatitude) ? "1\u00b0S" : null;
-        String lon = Boolean.TRUE.equals(cfg.analogShowLongitude) ? "15\u00b0E" : null;
+        Minecraft mc = Minecraft.getInstance();
+        if (previewTextSource == PreviewTextSource.LIVE && mc != null && mc.player != null && mc.level != null) {
+            return analogLatLonText(mc, cfg);
+        }
+        boolean widest = previewTextSource == PreviewTextSource.LONGEST;
+        String lat = Boolean.TRUE.equals(cfg.analogShowLatitude) ? (widest ? "89\u00b0S" : "1\u00b0S") : null;
+        String lon = Boolean.TRUE.equals(cfg.analogShowLongitude) ? (widest ? "179\u00b0W" : "15\u00b0E") : null;
         return joinLatLon(lat, lon);
     }
 
@@ -495,8 +534,29 @@ public final class CompassHud {
     // Sample latitude used for previews/placeholders is 1S (see sampleLines/analogSampleLatLon), which is in
     // the Tropics -- keep the sample zone word consistent with that latitude so the placeholder never shows
     // an impossible pairing like "1S / Temperate". Longitude's sample value doesn't affect the zone word.
+    /**
+     * U-B truthful preview: what text the Studio preview measures and draws. SAMPLE is the legacy short
+     * placeholder (the audited source of "the Studio lied about placement"); LONGEST is the honest
+     * worst case (default); LIVE uses the real in-world values when available.
+     */
+    public enum PreviewTextSource { SAMPLE, LONGEST, LIVE }
+
+    /** Studio-session state, deliberately not persisted (an editor view option, not a player setting). */
+    public static PreviewTextSource previewTextSource = PreviewTextSource.LONGEST;
+
     private static String sampleZone(CompassHudConfig cfg) {
-        return cfg.displayZoneInHud ? "Tropics" : null;
+        if (!cfg.displayZoneInHud) return null;
+        Minecraft mc = Minecraft.getInstance();
+        return switch (previewTextSource) {
+            case SAMPLE -> "Tropics";
+            case LONGEST -> "Subtropics";
+            case LIVE -> {
+                if (mc != null && mc.player != null && mc.level != null) {
+                    yield displayZoneName(com.example.globe.util.LatitudeMath.zoneKey(mc.level.getWorldBorder(), mc.player.getZ()));
+                }
+                yield "Subtropics";
+            }
+        };
     }
 
     private static String analogLatLonText(Minecraft client, CompassHudConfig cfg) {
@@ -1102,7 +1162,21 @@ public final class CompassHud {
     }
 
     private static String sampleBiome(CompassHudConfig cfg) {
-        return cfg.displayBiomeInHud ? "Plains" : null;
+        if (!cfg.displayBiomeInHud) return null;
+        Minecraft mc = Minecraft.getInstance();
+        return switch (previewTextSource) {
+            case SAMPLE -> "Plains";
+            case LONGEST -> longestBiomeName(mc);
+            case LIVE -> {
+                if (mc != null && mc.player != null && mc.level != null) {
+                    var biomeHolder = mc.level.getBiome(mc.player.blockPosition());
+                    String biomeId = biomeHolder.unwrapKey().map(k -> k.identifier().toString()).orElse(null);
+                    String name = BiomeSamplerTools.biomeDisplayName(biomeId);
+                    if (name != null) yield name;
+                }
+                yield longestBiomeName(mc);
+            }
+        };
     }
 
     // Combines the zone (band) and biome text into the single opaque string that gets glued onto the compass
@@ -1140,8 +1214,13 @@ public final class CompassHud {
         if (cfg.style == CompassHudConfig.CompassStyle.ANALOG) {
             return analogSampleLatLon(cfg);
         }
-        String lat = Boolean.TRUE.equals(cfg.showLatitude) ? "1°S" : null;
-        String lon = Boolean.TRUE.equals(cfg.showLongitude) ? "15°E" : null;
+        Minecraft mc = Minecraft.getInstance();
+        if (previewTextSource == PreviewTextSource.LIVE && mc != null && mc.player != null && mc.level != null) {
+            return joinLatLon(latitudeText(mc, cfg), longitudeText(mc, cfg));
+        }
+        boolean widest = previewTextSource == PreviewTextSource.LONGEST;
+        String lat = Boolean.TRUE.equals(cfg.showLatitude) ? (widest ? "89°S" : "1°S") : null;
+        String lon = Boolean.TRUE.equals(cfg.showLongitude) ? (widest ? "179°W" : "15°E") : null;
         return joinLatLon(lat, lon);
     }
 

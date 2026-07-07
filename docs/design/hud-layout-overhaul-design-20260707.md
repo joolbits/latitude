@@ -1,8 +1,10 @@
 # HUD & UI Overhaul Design — pin-and-grow layout, truthful Studio, one front door (2026-07-07)
 
-`status: PROPOSED r2 — Pin & Grow direction APPROVED by Peetsa 2026-07-07; r2 adds his four requests
-(hotbar dock, compass visual looks, Studio IA v2, deeper create/loading refinements); implementation
-awaits slice green-light` · companion evaluation: `../binder/ui-audit-20260707.md` (every claim there is
+`status: APPROVED r3 — Peetsa approved ALL implementations 2026-07-07 ("I absolutely love all of these
+ideas and approve their implementations"); r3 adds Pillar 6, the "Chartroom" visual language for the
+create/loading screens ("prettier and smoother, meaningful for Lat 2.0"). U-E absorbs Pillar 6.
+Implementation in progress; the UI test jar is built but HELD until the parallel worldgen Slice E live
+session (TEST 27) concludes, so staging can't clobber an in-flight test` · companion evaluation: `../binder/ui-audit-20260707.md` (every claim there is
 Read-verified with file:line) · honors the 2026-06-22 create-screen decision: the create screen gets
 refinements only, no new direction.
 
@@ -205,6 +207,35 @@ stub).
 10. Delete the dead set (`OverlayProof`, `ZoneEntryNotifier` + `ui/ZoneTitleOverlay`,
     `EwSandstormOverlayRenderer` + its stale import, `GlobeModMenu`, old planisphere `render()`) —
     subtractive commit, compile + S=0 byte-identity gate.
+
+## Pillar 6 — the "Chartroom" visual language for create + loading (r3, requested: "prettier and smoother, meaningful for Lat 2.0")
+
+Structure stays exactly as-is (the 06-22 decision holds); this is a visual and motion elevation with one
+coherent identity: **a cartographer's chartroom** — the aesthetic the planisphere, the atlas frame, and
+the gold compass already gesture at, made consistent and alive.
+
+**Tokens** (formalized from what's already in use): latitude gold `#E8B64A` (accents, focus, needles) ·
+deep-sea `#1E3A5F` (ocean fills) · parchment `#E8DCC0` on ink `#2B2620` (map surfaces) · slate panel base
+matching MC dark UI. One 9-slice map-frame border used by EVERY bespoke panel (create screen, Studio,
+loading plaque, restyled SpawnZoneScreen) with small compass-rose corner ornaments on major panels only.
+Section headers: gold smallcaps with a thin rule — the same hierarchy everywhere.
+
+**Motion inventory** (each ≤200-300ms, every one gated on reduced-motion/accessibility):
+1. Screen open: panels fade + rise 8px, staggered left→planisphere→right (~40ms stagger).
+2. Shape toggle: the planisphere ASPECT animates (200ms lerp) between 2:1 and 1:1; band lines slide with
+   it — the toggle becomes a little moment instead of a swap.
+3. Size change: the world-dims label rolls to its new numbers; planisphere border gives a single soft pulse.
+4. Hover: 1px gold underglow fade-in on interactive elements; press: brief fill sweep.
+5. Seed randomize: die button spins ~300ms; the seed text settles new digits in.
+6. Create: the button fills gold left→right, then the screen crossfades into loading (no hard cut).
+7. Loading: a compass rose DRAWS ITSELF in (stroke sweep) as the centerpiece; the progress bar is a
+   latitude band that fills through the band colors (tropics→polar) as real progress advances; the
+   truthful phase captions (Pillar 5 #8) crossfade beneath; the world summary plaque (Pillar 5 #7) slides
+   up when the render gate reaches its final stage; 300ms fade into the world at reveal (the render gate
+   already guarantees no void frame — the fade makes the handoff feel intentional).
+
+Progress stays strictly bound to vanilla's real `smoothedProgress`; motion NEVER masks state (the
+truthful phase labels are the source of truth, the animation is their presentation).
 
 ## Proposed slice plan r2 (fix-all-then-test-once, per the standing workflow)
 
