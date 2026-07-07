@@ -78,10 +78,27 @@ public final class LatitudeWorldLauncher {
         long t0 = System.currentTimeMillis();
         if (isLatitude) {
             LatitudeClientState.beginExpedition(t0);
+            // U-E seed-0 guard: a literal seed of 0 permanently disables GeoAuthority (seed 0 is the
+            // library's "no seed" sentinel), which silently degrades the whole geography system. Mirror
+            // vanilla's parse (numeric else String#hashCode) and substitute a random seed when it lands
+            // on 0, telling the log exactly what happened.
+            String guarded = guardSeedZero(seed);
+            if (!java.util.Objects.equals(guarded, seed)) {
+                LOGGER.warn("[Latitude lifecycle] seed '{}' parses to 0, which disables Latitude geography — substituted random seed {}",
+                        seed, guarded);
+                seed = guarded;
+            }
+            int d = size.borderRadiusBlocks * 2;
+            LatitudeClientState.loadingSummary = String.format(java.util.Locale.ROOT,
+                    "%s \u00b7 %,d \u00d7 %,d \u00b7 %s start",
+                    sizeDisplayName(size), d, d, spawnZone.id().charAt(0) + spawnZone.id().substring(1).toLowerCase(java.util.Locale.ROOT));
         }
-        LOGGER.info("[Latitude lifecycle] begin expedition — type={}, size={}, zone={}, {}ms since beginExpedition",
+        // presetId + radius spelled out because the preset names DON'T track the UI names (the audited
+        // trap: UI "Small" = globe_regular/7500, UI "Regular" = globe_large/10000).
+        LOGGER.info("[Latitude lifecycle] begin expedition — type={}, size={}, presetId={}, radius={}, zone={}, {}ms since beginExpedition",
                 isLatitude ? "latitude" : worldTypeIdx == 1 ? "vanilla" : "superflat",
-                size.name(), spawnZone.id(), LatitudeClientState.elapsedSinceExpeditionMs());
+                size.name(), size.worldPresetId, size.borderRadiusBlocks, spawnZone.id(),
+                LatitudeClientState.elapsedSinceExpeditionMs());
         try {
             // ── 1. Size preset resolution ──
             net.minecraft.resources.Identifier presetId;
@@ -310,5 +327,27 @@ public final class LatitudeWorldLauncher {
 
     private static Registry<LevelStem> emptyLevelStemRegistry() {
         return new MappedRegistry<LevelStem>(Registries.LEVEL_STEM, Lifecycle.stable()).freeze();
+    }
+
+    /** Vanilla seed parse (Long.parseLong else String#hashCode); returns a substitute when it yields 0. */
+    private static String guardSeedZero(String seed) {
+        if (seed == null || seed.isBlank()) return seed; // blank = vanilla random, never 0
+        long parsed;
+        try {
+            parsed = Long.parseLong(seed.trim());
+        } catch (NumberFormatException e) {
+            parsed = seed.trim().hashCode();
+        }
+        if (parsed != 0L) return seed;
+        long substitute = new java.util.Random().nextLong();
+        if (substitute == 0L) substitute = 2591890304012655616L; // one-in-2^64 backstop
+        return Long.toString(substitute);
+    }
+
+    /** The UI label's leading word ("Regular", "Ginormous!"), without the dimension suffix. */
+    private static String sizeDisplayName(GlobeWorldSize size) {
+        String label = size.label.getString();
+        int paren = label.indexOf(" (");
+        return paren > 0 ? label.substring(0, paren) : label;
     }
 }

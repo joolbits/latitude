@@ -33,7 +33,7 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
     // ── Theme ──
     @Unique private static final int PANE_BG = 0xE62C2420;
     @Unique private static final int PANE_BORDER = 0xFF5C4A3A;
-    @Unique private static final int GOLD = 0xFFD4A74A;
+    @Unique private static final int GOLD = 0xFFE8B64A; // Chartroom latitude gold (Pillar 6 token)
     @Unique private static final int WARM_WHITE = 0xFFEDE0D0;
     @Unique private static final int MUTED = 0xFF8C8078;
     @Unique private static final int GRID_COLOR = 0x14504840;
@@ -153,7 +153,6 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
     @Unique private static final long PHRASE_CYCLE_MS = 4800;
     @Unique private static final long FAIL_SAFE_CLEAR_MS = 10 * 60 * 1000L;
     @Unique private long globe$overlayStartMs = 0L;
-    @Unique private float globe$displayProgress = 0f;
     // -1 = "not yet picked this overlay lifetime" (a real Unique field default of 0 would collide with a
     // legitimately-picked index of 0 -- unreachable today given the current PHRASES/FEATURED_PHRASE_COUNT
     // sizes, but not guaranteed to stay that way, and -1 is never a valid pickSeedIndex() result either way).
@@ -196,7 +195,6 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
     private void globe$renderLatitudeOverlay(GuiGraphicsExtractor context, int mouseX, int mouseY, float delta, CallbackInfo ci) {
         if (!LatitudeClientState.isLatitudeWorldLoading()) {
             globe$overlayStartMs = 0L;
-            globe$displayProgress = 0f;
             return;
         }
 
@@ -204,7 +202,6 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
         if (globe$overlayStartMs == 0L) {
             globe$overlayStartMs = now;
             globe$lastDirectionChangeMs = now;
-            globe$displayProgress = 0f;
             globe$phraseSeedIdx = globe$pickSeedIndex();
             GLOBE_LOGGER.info("[LAT][LOADUI] bespoke overlay first render — {}ms since beginExpedition",
                     LatitudeClientState.elapsedSinceExpeditionMs());
@@ -223,6 +220,10 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
         int paneX = (sw - paneW) / 2;
         int paneY = (sh - paneH) / 2;
 
+        // Chartroom frame (Pillar 6): the same vanilla parchment map frame the create screen's planisphere
+        // uses, drawn just outside the pane so the loading card and the create screen read as one family.
+        com.example.globe.client.create.LatitudePlanisphereRenderer.drawAtlasFrame(
+                context, paneX - 10, paneY - 10, paneW + 20, paneH + 20);
         // Border
         context.fill(paneX - 1, paneY - 1, paneX + paneW + 1, paneY + paneH + 1, PANE_BORDER);
         // Fill
@@ -236,8 +237,14 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
         int titleY = paneY + 12;
         globe$drawCentered(context, "LATITUDE", cx, titleY, GOLD, true);
 
+        // ── World summary (set at beginExpedition; truthful — straight from the chosen options) ──
+        String summary = LatitudeClientState.loadingSummary;
+        if (summary != null) {
+            globe$drawCentered(context, summary, cx, titleY + 12, WARM_WHITE, false);
+        }
+
         // ── Loading hint ──
-        globe$drawCentered(context, "Press F9 in-game for HUD options", cx, titleY + 12, MUTED, false);
+        globe$drawCentered(context, "Press F9 in-game for HUD options", cx, titleY + (summary != null ? 24 : 12), MUTED, false);
 
         // ── Compass with wandering needle ──
         int compassCY = paneY + paneH / 2 - 4;
@@ -255,12 +262,18 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
         int barY = paneY + paneH - 20;
         float rawProgress = Mth.clamp(this.smoothedProgress, 0f, 1f);
         LatitudeClientState.latitudeLoadingProgress = rawProgress;
-        globe$displayProgress = rawProgress;
         float progress = rawProgress;
         context.fill(barX, barY, barX + barW, barY + 3, 0xFF1A1410);
         int fillW = Math.round(progress * barW);
         if (fillW > 0) {
             context.fill(barX, barY, barX + fillW, barY + 3, GOLD);
+        }
+
+        // ── Truthful stage line (bound to the readiness gate's REAL booleans; see
+        // LatitudeLoadingClientTickMixin below — never a made-up phase) ──
+        String stage = LatitudeClientState.loadingStageLabel;
+        if (stage != null) {
+            globe$drawCentered(context, stage, cx, barY + 7, MUTED, false);
         }
     }
 
@@ -277,7 +290,6 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
         GLOBE_LOGGER.info("[LAT][LOADUI] loading screen closed — {}ms since beginExpedition",
                 sinceExpedition);
         globe$overlayStartMs = 0L;
-        globe$displayProgress = 0f;
     }
 
     @Unique
@@ -291,7 +303,6 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
                     sinceExpedition);
         }
         globe$overlayStartMs = 0L;
-        globe$displayProgress = 0f;
     }
 
     // ════════════════════════════════════════════
@@ -326,20 +337,22 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
 
     @Unique
     private void globe$drawCompass(GuiGraphicsExtractor context, int cx, int cy, int radius) {
-        // Compass face — dark circle with gold ring
-        int r2 = radius * radius;
+        // Compass face — dark circle with gold ring, span-batched (one fill per row segment; same
+        // technique as CompassDialRenderer, ~2·diameter fills instead of πr² per-pixel fills)
+        int rIn = radius - 2;
         for (int dy = -radius; dy <= radius; dy++) {
-            for (int dx = -radius; dx <= radius; dx++) {
-                int dist2 = dx * dx + dy * dy;
-                if (dist2 <= r2) {
-                    int px = cx + dx;
-                    int py = cy + dy;
-                    if (dist2 > (radius - 2) * (radius - 2)) {
-                        context.fill(px, py, px + 1, py + 1, GOLD);
-                    } else {
-                        context.fill(px, py, px + 1, py + 1, 0xFF1A1410);
-                    }
-                }
+            int rem = radius * radius - dy * dy;
+            if (rem < 0) continue;
+            int half = (int) Math.sqrt(rem);
+            int py = cy + dy;
+            int remIn = rIn * rIn - dy * dy;
+            int halfIn = remIn < 0 ? -1 : (int) Math.sqrt(remIn);
+            if (halfIn < 0) {
+                context.fill(cx - half, py, cx + half + 1, py + 1, GOLD);
+            } else {
+                context.fill(cx - half, py, cx - halfIn, py + 1, GOLD);
+                context.fill(cx + halfIn + 1, py, cx + half + 1, py + 1, GOLD);
+                context.fill(cx - halfIn, py, cx + halfIn + 1, py + 1, 0xFF1A1410);
             }
         }
 
@@ -481,12 +494,15 @@ class LatitudeLoadingClientTickMixin {
             long clearedAt = LatitudeClientState.clearLatitudeLoadingState();
             GLOBE_LOGGER.info("[Latitude lifecycle] bespoke overlay cleared by fail-safe — {}ms since beginExpedition",
                     clearedAt);
+            globe$notifyFailSafe(clearedAt);
             globe$clientReadyObservedAtMs = Long.MIN_VALUE;
             globe$lastReadinessWaitLogTick = Long.MIN_VALUE;
             return;
         }
 
         if (this.level == null || this.player == null) {
+            // Server is still building the dimension — the only stage where no client world exists yet.
+            LatitudeClientState.loadingStageLabel = "Shaping the world...";
             return;
         }
 
@@ -509,6 +525,10 @@ class LatitudeLoadingClientTickMixin {
         boolean renderReady = renderReadiness.ready() || renderSignalTimedOut;
         boolean readinessTimedOut = clientReadyHoldMs >= PLAYABLE_READY_MAX_HOLD_MS;
         if ((!playerSettled || !spawnChunksReady || !renderWarmupElapsed || !renderReady) && !readinessTimedOut) {
+            // Truthful stage: named after the FIRST gate condition actually blocking, in gate order.
+            LatitudeClientState.loadingStageLabel = !playerSettled ? "Placing you on the map..."
+                    : !spawnChunksReady ? "Laying out the nearby land..."
+                    : "Painting the horizon...";
             globe$logReadinessWait(playerSettled, spawnChunksReady, renderWarmupElapsed, renderReady,
                     renderSignalTimedOut, loadingScreenVisible, clientReadyHoldMs, renderReadiness);
             return;
@@ -533,6 +553,19 @@ class LatitudeLoadingClientTickMixin {
                 clearedAt);
         globe$clientReadyObservedAtMs = Long.MIN_VALUE;
         globe$lastReadinessWaitLogTick = Long.MIN_VALUE;
+    }
+
+    @Unique
+    private void globe$notifyFailSafe(long sinceExpeditionMs) {
+        try {
+            if (this.player != null) {
+                this.player.sendSystemMessage(Component.literal(
+                        "Latitude: loading overlay cleared by its 10-minute fail-safe ("
+                                + (sinceExpeditionMs / 1000) + "s). The world may still be generating in the background."));
+            }
+        } catch (Throwable t) {
+            GLOBE_LOGGER.warn("[Latitude lifecycle] fail-safe chat notice failed", t);
+        }
     }
 
     @Unique

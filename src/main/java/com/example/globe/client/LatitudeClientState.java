@@ -18,6 +18,12 @@ public final class LatitudeClientState {
     public static long expeditionStartMs = 0L;
     /** Last observed vanilla loading progress (0..1), used across loading-screen handoff. */
     public static volatile float latitudeLoadingProgress = 0f;
+    /** Truthful loading-stage line for the bespoke overlay — set ONLY from the readiness gate's real
+     *  booleans (LatitudeLoadingClientTickMixin), so the label can never claim a stage that isn't the
+     *  actual one being waited on. Null = no stage to show. */
+    public static volatile String loadingStageLabel = null;
+    /** One-line world summary ("Regular · 20,000 × 20,000 · Temperate start"), set at beginExpedition. */
+    public static volatile String loadingSummary = null;
     /** Single source of truth for bespoke loading overlay lifecycle. */
     private static volatile boolean latitudeWorldLoading = false;
     /** Latches first client-ready observation to avoid log spam across ticks. */
@@ -59,6 +65,8 @@ public final class LatitudeClientState {
         latitudeWorldLoading = false;
         clientReadyObserved = false;
         lastLifecycleClearElapsedMs = -1L;
+        loadingStageLabel = null;
+        loadingSummary = null;
     }
 
     public static synchronized void activateLatitudeLoading() {
@@ -93,6 +101,8 @@ public final class LatitudeClientState {
         lastLifecycleClearElapsedMs = sinceExpedition;
         expeditionStartMs = 0L;
         latitudeLoadingProgress = 0f;
+        loadingStageLabel = null;
+        loadingSummary = null;
         return sinceExpedition;
     }
 
