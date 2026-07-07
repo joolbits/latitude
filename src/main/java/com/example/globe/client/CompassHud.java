@@ -127,11 +127,7 @@ public final class CompassHud {
                 renderDetachedCoords(ctx, client, cfg, forceVisible);
             }
         } else {
-            String directionText = switch (cfg.directionMode) {
-                case CARDINAL_8 -> direction8(client.player.getYRot());
-                case CARDINAL_4 -> direction4(client.player.getYRot());
-                case DEGREES -> degrees(client.player.getYRot());
-            };
+            String directionText = liveDirection(client, cfg);
 
             String latLonText = cfg.coordsFollowsCompass ? joinLatLon(latitudeText(client, cfg), longitudeText(client, cfg)) : null;
             String hudText = buildDigitalLine(directionText, latLonText, attachedZoneBiomeLive(client, cfg), cfg.compactHud);
@@ -360,7 +356,7 @@ public final class CompassHud {
             drawTransparencyCheckerboard(ctx, cx - radius, cy - radius, diameter);
         }
 
-        drawAnalogCompass(ctx, cfg, cx, cy, radius, angle);
+        CompassDialRenderer.draw(ctx, client.font, cfg, cx, cy, radius, angle, yaw, analogColors(cfg));
 
         int screenWForText = Minecraft.getInstance().getWindow().getGuiScaledWidth();
         int totalTextW = analogAttachedTextWidth(client, cfg, latText, zoneText);
@@ -431,82 +427,6 @@ public final class CompassHud {
         }
     }
 
-    private static void drawAnalogCompass(GuiGraphicsExtractor ctx, CompassHudConfig cfg, int cx, int cy, int radius, double angle) {
-        int r2 = radius * radius;
-        var colors = analogColors(cfg);
-        for (int dy = -radius; dy <= radius; dy++) {
-            for (int dx = -radius; dx <= radius; dx++) {
-                int dist2 = dx * dx + dy * dy;
-                if (dist2 > r2) continue;
-                int px = cx + dx;
-                int py = cy + dy;
-                if (dist2 > (radius - 2) * (radius - 2)) {
-                    ctx.fill(px, py, px + 1, py + 1, colors.ring());
-                } else {
-                    ctx.fill(px, py, px + 1, py + 1, analogInnerColor(cfg, colors.face()));
-                }
-            }
-        }
-
-        int tickLen = Math.max(2, radius / 6);
-        // North tick (up)
-        ctx.fill(cx, cy - radius + 2, cx + 1, cy - radius + 2 + tickLen, colors.ring());
-        // South tick
-        ctx.fill(cx, cy + radius - 2 - tickLen, cx + 1, cy + radius - 2, colors.muted());
-        // East tick
-        ctx.fill(cx + radius - 2 - tickLen, cy, cx + radius - 2, cy + 1, colors.muted());
-        // West tick
-        ctx.fill(cx - radius + 2, cy, cx - radius + 2 + tickLen, cy + 1, colors.muted());
-
-        // Scale the "N" glyph with the compass radius instead of drawing it at a fixed vanilla-font size --
-        // at small analog sizes (the slider now goes down to radius 8) the unscaled letter was as tall as the
-        // whole disc and overtook it. Scale up to the glyph's natural (unscaled) size once the compass is big
-        // enough that it fits proportionately (radius >= 24, the pre-2.0 default), with a floor so it never
-        // disappears entirely on a tiny compass. Anchored just under the north tick, which itself already scales
-        // with radius (tickLen = radius / 6), so the label stays pinned to the top of the disc at every size.
-        String nLabel = "N";
-        Font font = Minecraft.getInstance().font;
-        int nW = font.width(nLabel);
-        float nScale = Mth.clamp(radius / 24.0f, 0.4f, 1.0f);
-        var poseMatrices = ctx.pose();
-        poseMatrices.pushMatrix();
-        poseMatrices.translate((float) (cx + 1), (float) (cy - radius + 2 + tickLen + 1));
-        poseMatrices.scale(nScale, nScale);
-        ctx.text(font, nLabel, -nW / 2, 0, colors.needle(), true);
-        poseMatrices.popMatrix();
-
-        int needleLen = radius - 4;
-        int nx = cx + (int) Math.round(Math.sin(angle) * needleLen);
-        int ny = cy - (int) Math.round(Math.cos(angle) * needleLen);
-        drawLine(ctx, cx, cy, nx, ny, colors.needle());
-
-        int sx = cx - (int) Math.round(Math.sin(angle) * (needleLen * 0.6));
-        int sy = cy + (int) Math.round(Math.cos(angle) * (needleLen * 0.6));
-        drawLine(ctx, cx, cy, sx, sy, colors.ring());
-
-        ctx.fill(cx - 1, cy - 1, cx + 2, cy + 2, colors.ring());
-    }
-
-    private static int analogInnerColor(CompassHudConfig cfg, int faceRgb) {
-        int a = Mth.clamp((int) Math.round(cfg.analogInnerAlpha * 255.0f), 0, 255);
-        return (a << 24) | (faceRgb & 0xFFFFFF);
-    }
-
-    private static void drawLine(GuiGraphicsExtractor ctx, int x0, int y0, int x1, int y1, int color) {
-        int dx = Math.abs(x1 - x0);
-        int dy = Math.abs(y1 - y0);
-        int sx = x0 < x1 ? 1 : -1;
-        int sy = y0 < y1 ? 1 : -1;
-        int err = dx - dy;
-        while (true) {
-            ctx.fill(x0, y0, x0 + 1, y0 + 1, color);
-            if (x0 == x1 && y0 == y1) break;
-            int e2 = 2 * err;
-            if (e2 > -dy) { err -= dy; x0 += sx; }
-            if (e2 < dx) { err += dx; y0 += sy; }
-        }
-    }
-
     private static String[] sampleLines(CompassHudConfig cfg) {
         String dir = sampleDirection(cfg);
         String latLon = cfg.coordsFollowsCompass ? coordsSample(cfg) : null;
@@ -560,25 +480,25 @@ public final class CompassHud {
     }
 
     private static String analogLatLonText(Minecraft client, CompassHudConfig cfg) {
-        String lat = Boolean.TRUE.equals(cfg.analogShowLatitude)
-                ? (client.player == null || client.level == null ? "1\u00b0S" : LatitudeMath.formatLatitudeDeg(client.player.getZ(), client.level.getWorldBorder()))
-                : null;
-        String lon = Boolean.TRUE.equals(cfg.analogShowLongitude)
-                ? (client.player == null || client.level == null ? "15\u00b0E" : LatitudeMath.formatLongitudeDeg(client.player.getX(), client.level.getWorldBorder()))
-                : null;
+        boolean live = client.player != null && client.level != null;
+        if (live) refreshLivePosText(client, cfg);
+        String lat = Boolean.TRUE.equals(cfg.analogShowLatitude) ? (live ? liveLatStr : "1\u00b0S") : null;
+        String lon = Boolean.TRUE.equals(cfg.analogShowLongitude) ? (live ? liveLonStr : "15\u00b0E") : null;
         return joinLatLon(lat, lon);
     }
 
     private static String latitudeText(Minecraft client, CompassHudConfig cfg) {
         if (!Boolean.TRUE.equals(cfg.showLatitude)) return null;
         if (client.player == null || client.level == null) return "0\u00b0";
-        return LatitudeMath.formatLatitudeDeg(client.player.getZ(), client.level.getWorldBorder());
+        refreshLivePosText(client, cfg);
+        return liveLatStr;
     }
 
     private static String longitudeText(Minecraft client, CompassHudConfig cfg) {
         if (!Boolean.TRUE.equals(cfg.showLongitude)) return null;
         if (client.player == null || client.level == null) return "0\u00b0";
-        return LatitudeMath.formatLongitudeDeg(client.player.getX(), client.level.getWorldBorder());
+        refreshLivePosText(client, cfg);
+        return liveLonStr;
     }
 
     private static String buildDigitalLine(String directionText, String latText, String zoneText, boolean compact) {
@@ -1128,13 +1048,85 @@ public final class CompassHud {
         };
     }
 
+    // ---- U-D live-text cache: HUD strings rebuild only when their INPUTS change, not every frame ----
+    // Position-derived strings (lat/lon/zone/biome) share one key: player pos quantized to 1/4 block,
+    // the 4-block biome quad, and the display-affecting config bits. The direction string has its own
+    // 1-degree yaw key. Standing still costs zero string work; the per-frame biome registry resolve,
+    // degree formatting, and zone lookup all collapse to change-driven.
+    private static long livePosQ = Long.MIN_VALUE;
+    private static long liveBiomeQuad = Long.MIN_VALUE;
+    private static int livePosCfgHash;
+    private static String liveLatStr;
+    private static String liveLonStr;
+    private static String liveZoneStr;
+    private static String liveBiomeStr;
+    private static int liveYawQ = Integer.MIN_VALUE;
+    private static CompassHudConfig.DirectionMode liveDirMode;
+    private static String liveDirStr = "N";
+
+    /** Called on client disconnect so nothing from the previous world (cache keys tied to its coords and
+     *  game time, compass-presence, dial-texture presence) leaks into the next one. */
+    public static void onWorldSwitch() {
+        livePosQ = Long.MIN_VALUE;
+        liveBiomeQuad = Long.MIN_VALUE;
+        liveYawQ = Integer.MIN_VALUE;
+        liveLatStr = null;
+        liveLonStr = null;
+        liveZoneStr = null;
+        liveBiomeStr = null;
+        liveDirMode = null;
+        lastCheckWorldTime = Long.MIN_VALUE;
+        cachedHasCompass = false;
+        CompassDialRenderer.invalidateTextures();
+    }
+
+    private static void refreshLivePosText(Minecraft client, CompassHudConfig cfg) {
+        var player = client.player;
+        var level = client.level;
+        if (player == null || level == null) return;
+        long posQ = ((long) Mth.floor(player.getX() * 4.0) << 32) ^ (Mth.floor(player.getZ() * 4.0) & 0xFFFFFFFFL);
+        var bp = player.blockPosition();
+        long quad = (((long) (bp.getX() >> 2)) << 42) ^ (((long) (bp.getY() >> 2) & 0x1FFFFFL) << 21)
+                ^ ((long) (bp.getZ() >> 2) & 0x1FFFFFL);
+        int cfgH = java.util.Objects.hash(cfg.latitudeDecimals, cfg.displayZoneInHud, cfg.displayBiomeInHud);
+        if (posQ == livePosQ && quad == liveBiomeQuad && cfgH == livePosCfgHash && liveLatStr != null) return;
+        livePosQ = posQ;
+        liveBiomeQuad = quad;
+        livePosCfgHash = cfgH;
+        var border = level.getWorldBorder();
+        liveLatStr = LatitudeMath.formatLatitudeDeg(player.getZ(), border);
+        liveLonStr = LatitudeMath.formatLongitudeDeg(player.getX(), border);
+        liveZoneStr = displayZoneName(com.example.globe.util.LatitudeMath.zoneKey(border, player.getZ()));
+        if (cfg.displayBiomeInHud) {
+            var biomeHolder = level.getBiome(bp);
+            String biomeId = biomeHolder.unwrapKey().map(k -> k.identifier().toString()).orElse(null);
+            liveBiomeStr = BiomeSamplerTools.biomeDisplayName(biomeId);
+        } else {
+            liveBiomeStr = null;
+        }
+    }
+
+    private static String liveDirection(Minecraft client, CompassHudConfig cfg) {
+        float yawDeg = client.player != null ? client.player.getYRot() : 0f;
+        int yawQ = Math.round(Mth.wrapDegrees(yawDeg));
+        if (yawQ != liveYawQ || cfg.directionMode != liveDirMode) {
+            liveYawQ = yawQ;
+            liveDirMode = cfg.directionMode;
+            liveDirStr = switch (cfg.directionMode) {
+                case CARDINAL_8 -> direction8(yawDeg);
+                case CARDINAL_4 -> direction4(yawDeg);
+                case DEGREES -> degrees(yawDeg);
+            };
+        }
+        return liveDirStr;
+    }
+
     private static String zoneLabel(Minecraft client, CompassHudConfig cfg, boolean respectFollow) {
         if (!cfg.displayZoneInHud) return null;
         if (respectFollow && !cfg.zoneFollowsCompass) return null;
         if (client == null || client.player == null || client.level == null) return sampleZone(cfg);
-        var border = client.level.getWorldBorder();
-        String zoneKey = com.example.globe.util.LatitudeMath.zoneKey(border, client.player.getZ());
-        return displayZoneName(zoneKey);
+        refreshLivePosText(client, cfg);
+        return liveZoneStr;
     }
 
     private static String displayZoneName(String zoneKey) {
@@ -1156,9 +1148,8 @@ public final class CompassHud {
         if (!cfg.displayBiomeInHud) return null;
         if (respectFollow && !cfg.biomeFollowsCompass) return null;
         if (client == null || client.player == null || client.level == null) return sampleBiome(cfg);
-        var biomeHolder = client.level.getBiome(client.player.blockPosition());
-        String biomeId = biomeHolder.unwrapKey().map(k -> k.identifier().toString()).orElse(null);
-        return BiomeSamplerTools.biomeDisplayName(biomeId);
+        refreshLivePosText(client, cfg);
+        return liveBiomeStr;
     }
 
     private static String sampleBiome(CompassHudConfig cfg) {
@@ -1358,24 +1349,22 @@ public final class CompassHud {
         return new HudBounds(x, y, w, h);
     }
 
-    private record AnalogColors(int face, int ring, int muted, int needle) {}
-
-    private static AnalogColors analogColors(CompassHudConfig cfg) {
+    static CompassDialRenderer.DialColors analogColors(CompassHudConfig cfg) {
         return switch (cfg.analogTheme) {
-            case PALE_GOLD -> new AnalogColors(0x233029, 0xFFE5C07B, 0xFFA58C6F, 0xFFDD845A);
-            case RED_IVORY -> new AnalogColors(0x292221, 0xFFE3D4C8, 0xFF9E8B83, 0xFFE05B4F);
-            case CYAN_STEEL -> new AnalogColors(0x1A232A, 0xFF5CC8FF, 0xFF8FB7CC, 0xFF52E0FF);
-            case MINT_BRASS -> new AnalogColors(0x1C2823, 0xFFD4B87A, 0xFF8FA58F, 0xFF6AE6B8);
+            case PALE_GOLD -> new CompassDialRenderer.DialColors(0x233029, 0xFFE5C07B, 0xFFA58C6F, 0xFFDD845A);
+            case RED_IVORY -> new CompassDialRenderer.DialColors(0x292221, 0xFFE3D4C8, 0xFF9E8B83, 0xFFE05B4F);
+            case CYAN_STEEL -> new CompassDialRenderer.DialColors(0x1A232A, 0xFF5CC8FF, 0xFF8FB7CC, 0xFF52E0FF);
+            case MINT_BRASS -> new CompassDialRenderer.DialColors(0x1C2823, 0xFFD4B87A, 0xFF8FA58F, 0xFF6AE6B8);
             // face is plain 0xRRGGBB (alpha re-applied by analogInnerColor); ring/muted/needle are full 0xFF ARGB.
-            case OBSIDIAN_RED -> new AnalogColors(0x14110F, 0xFFB0A8A0, 0xFF6E6862, 0xFFE2402E);
-            case ARCTIC_BLUE -> new AnalogColors(0x16202B, 0xFFCFE8FF, 0xFF7F9DB5, 0xFF4FC3FF);
-            case EMERALD -> new AnalogColors(0x122019, 0xFF7BE0A0, 0xFF6F9C82, 0xFFFFD56A);
-            case ROYAL_PURPLE -> new AnalogColors(0x1A1426, 0xFFC9A6F0, 0xFF8C7AA0, 0xFFFFC04D);
-            case SUNSET -> new AnalogColors(0x261712, 0xFFF2A65A, 0xFFB07E62, 0xFFFF5E5B);
-            case MONOCHROME -> new AnalogColors(0x1B1B1E, 0xFFD8D8DC, 0xFF80808A, 0xFFF2F2F2);
-            case CLASSIC_GOLD -> new AnalogColors(ANALOG_FACE_RGB, ANALOG_RING, ANALOG_MUTED, ANALOG_N_COLOR);
-            case CUSTOM -> new AnalogColors(cfg.customFaceRgb, cfg.customRingArgb, cfg.customMutedArgb, cfg.customNeedleArgb);
-            default -> new AnalogColors(ANALOG_FACE_RGB, ANALOG_RING, ANALOG_MUTED, ANALOG_N_COLOR);
+            case OBSIDIAN_RED -> new CompassDialRenderer.DialColors(0x14110F, 0xFFB0A8A0, 0xFF6E6862, 0xFFE2402E);
+            case ARCTIC_BLUE -> new CompassDialRenderer.DialColors(0x16202B, 0xFFCFE8FF, 0xFF7F9DB5, 0xFF4FC3FF);
+            case EMERALD -> new CompassDialRenderer.DialColors(0x122019, 0xFF7BE0A0, 0xFF6F9C82, 0xFFFFD56A);
+            case ROYAL_PURPLE -> new CompassDialRenderer.DialColors(0x1A1426, 0xFFC9A6F0, 0xFF8C7AA0, 0xFFFFC04D);
+            case SUNSET -> new CompassDialRenderer.DialColors(0x261712, 0xFFF2A65A, 0xFFB07E62, 0xFFFF5E5B);
+            case MONOCHROME -> new CompassDialRenderer.DialColors(0x1B1B1E, 0xFFD8D8DC, 0xFF80808A, 0xFFF2F2F2);
+            case CLASSIC_GOLD -> new CompassDialRenderer.DialColors(ANALOG_FACE_RGB, ANALOG_RING, ANALOG_MUTED, ANALOG_N_COLOR);
+            case CUSTOM -> new CompassDialRenderer.DialColors(cfg.customFaceRgb, cfg.customRingArgb, cfg.customMutedArgb, cfg.customNeedleArgb);
+            default -> new CompassDialRenderer.DialColors(ANALOG_FACE_RGB, ANALOG_RING, ANALOG_MUTED, ANALOG_N_COLOR);
         };
     }
 }

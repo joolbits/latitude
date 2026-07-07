@@ -17,6 +17,14 @@ public final class ZoneEnterTitleOverlay {
     private ZoneEnterTitleOverlay() {
     }
 
+    /** Clears any in-flight title on disconnect. World-time keys are per-world; without this, a title
+     *  started in one world could resurrect mid-fade in the next (whose game time may be behind). */
+    public static void reset() {
+        title = null;
+        startWorldTime = Long.MIN_VALUE;
+        endWorldTime = Long.MIN_VALUE;
+    }
+
     public static void trigger(String titleText, int durationTicks, double scale) {
         Minecraft client = Minecraft.getInstance();
         if (client == null || client.level == null) {
