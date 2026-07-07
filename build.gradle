@@ -162,6 +162,9 @@ dependencies {
     testImplementation platform('org.junit:junit-bom:5.11.3')
     testImplementation 'org.junit.jupiter:junit-jupiter'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+    // Gson for the pure-JVM config round-trip tests (main code gets gson from the Minecraft
+    // libraries, which are not on the test classpath).
+    testImplementation 'com.google.code.gson:gson:2.11.0'
 }
 
 test {

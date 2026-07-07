@@ -1,5 +1,6 @@
 package com.example.globe.client;
 
+import com.example.globe.core.config.LatitudeConfigData;
 import com.mojang.blaze3d.platform.InputConstants;
 import java.util.ArrayList;
 import java.util.List;
@@ -221,6 +222,20 @@ public class LatitudeHudStudioScreen extends Screen {
                     }));
             tooltip(this.wCompassStyle, "Switch between the digital bar and the analog round compass.");
             trackSidebarWidget(this.wCompassStyle, y);
+            y += rowH + rowGap;
+
+            var wDirectionMode = this.addRenderableWidget(CycleButton.<CompassHudConfig.DirectionMode>builder(v -> Component.literal(switch (v) {
+                        case CARDINAL_4 -> "N / E / S / W";
+                        case CARDINAL_8 -> "8 winds (N, NE...)";
+                        case DEGREES -> "Degrees (0-359\u00b0)";
+                    }), () -> cfg.directionMode)
+                    .withValues(CompassHudConfig.DirectionMode.values())
+                    .create(panelX, y, widgetW, rowH, Component.literal("Direction Format"), (btn, value) -> {
+                        cfg.directionMode = value;
+                        CompassHudConfig.saveCurrent();
+                    }));
+            tooltip(wDirectionMode, "How the facing readout is written: four cardinals, eight winds, or exact degrees. (Was config-file-only before; surfaced in U-C.)");
+            trackSidebarWidget(wDirectionMode, y);
             y += rowH + rowGap;
 
             if (analog) {
@@ -551,8 +566,8 @@ public class LatitudeHudStudioScreen extends Screen {
             trackSidebarWidget(this.wTitleShowBaseDegrees, y);
             y += rowH + rowGap;
 
-            this.wTitleColorPreset = this.addRenderableWidget(CycleButton.<LatitudeConfig.TitleColorPreset>builder(v -> Component.literal(titleColorLabel(v)), () -> LatitudeConfig.zoneEnterTitleColorPreset)
-                    .withValues(LatitudeConfig.TitleColorPreset.values())
+            this.wTitleColorPreset = this.addRenderableWidget(CycleButton.<LatitudeConfigData.TitleColorPreset>builder(v -> Component.literal(titleColorLabel(v)), () -> LatitudeConfig.zoneEnterTitleColorPreset)
+                    .withValues(LatitudeConfigData.TitleColorPreset.values())
                     .create(panelX, y, widgetW, rowH, Component.literal("Title Color"), (btn, value) -> {
                         LatitudeConfig.zoneEnterTitleColorPreset = value;
                         LatitudeConfig.saveCurrent();
@@ -564,13 +579,13 @@ public class LatitudeHudStudioScreen extends Screen {
             trackSidebarWidget(this.wTitleColorPreset, y);
             y += rowH + rowGap;
 
-            if (LatitudeConfig.zoneEnterTitleColorPreset == LatitudeConfig.TitleColorPreset.CUSTOM) {
+            if (LatitudeConfig.zoneEnterTitleColorPreset == LatitudeConfigData.TitleColorPreset.CUSTOM) {
                 y = placeRgbPicker(panelX, y, widgetW, rowH, rowGap, "Title", LatitudeConfig.zoneEnterTitleRgb,
                         v -> LatitudeConfig.zoneEnterTitleRgb = v, g -> this.rgbTitleColor = g, s -> this.swatchTitleColor = s);
             }
 
-            this.wTitleCase = this.addRenderableWidget(CycleButton.<LatitudeConfig.TitleCaseMode>builder(v -> Component.literal(titleCaseLabel(v)), () -> LatitudeConfig.zoneEnterTitleCase)
-                    .withValues(LatitudeConfig.TitleCaseMode.values())
+            this.wTitleCase = this.addRenderableWidget(CycleButton.<LatitudeConfigData.TitleCaseMode>builder(v -> Component.literal(titleCaseLabel(v)), () -> LatitudeConfig.zoneEnterTitleCase)
+                    .withValues(LatitudeConfigData.TitleCaseMode.values())
                     .create(panelX, y, widgetW, rowH, Component.literal("Title Case"), (btn, value) -> {
                         LatitudeConfig.zoneEnterTitleCase = value;
                         LatitudeConfig.saveCurrent();
@@ -1005,9 +1020,9 @@ public class LatitudeHudStudioScreen extends Screen {
         LatitudeConfig.zoneEnterTitleEnabled = true;
         LatitudeConfig.zoneEnterTitleSeconds = 6.0;
         LatitudeConfig.showZoneBaseDegreesOnTitle = true;
-        LatitudeConfig.zoneEnterTitleColorPreset = LatitudeConfig.TitleColorPreset.WHITE;
+        LatitudeConfig.zoneEnterTitleColorPreset = LatitudeConfigData.TitleColorPreset.WHITE;
         LatitudeConfig.zoneEnterTitleRgb = 0xFFFFFF;
-        LatitudeConfig.zoneEnterTitleCase = LatitudeConfig.TitleCaseMode.NORMAL;
+        LatitudeConfig.zoneEnterTitleCase = LatitudeConfigData.TitleCaseMode.NORMAL;
         LatitudeConfig.zoneEnterTitleLetterSpacing = 0;
         LatitudeConfig.zoneEnterTitleDraggable = true;
         // Matches LatitudeConfig's own field-initializer defaults (hudSnapEnabled=true, hudSnapPixels=8) --
@@ -1434,7 +1449,7 @@ public class LatitudeHudStudioScreen extends Screen {
         };
     }
 
-    private static String titleColorLabel(LatitudeConfig.TitleColorPreset preset) {
+    private static String titleColorLabel(LatitudeConfigData.TitleColorPreset preset) {
         return switch (preset) {
             case WHITE -> "White";
             case GOLD -> "Gold";
@@ -1447,7 +1462,7 @@ public class LatitudeHudStudioScreen extends Screen {
     }
 
     // Each label is styled in its own case, so the button doubles as a live preview of the effect.
-    private static String titleCaseLabel(LatitudeConfig.TitleCaseMode mode) {
+    private static String titleCaseLabel(LatitudeConfigData.TitleCaseMode mode) {
         return switch (mode) {
             case NORMAL -> "Normal";
             case UPPERCASE -> "UPPERCASE";
