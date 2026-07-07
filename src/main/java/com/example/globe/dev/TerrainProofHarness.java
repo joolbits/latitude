@@ -86,6 +86,15 @@ public final class TerrainProofHarness {
     private static final String SHAPE_PROP = "latdev.terrainProof.shape";
     private static final String OUT_PROP = "latdev.terrainProof.out";
     private static final String NONGLOBE_PROP = "latdev.terrainProof.nonGlobe";
+    /**
+     * Slice B (audit P1-1): opt-in stale-provider replay probe ({@code -Dlatdev.terrainProof.replayProbe=true}).
+     * After the normal probes complete, replays the exact world-load setter order a seed-0 world B would run
+     * after this (real-seed) world A -- {@code setGlobeShape}, {@code setRadius}, {@code setWorldSeed(0)} --
+     * and asserts the provider ends NoOp (the refutation-confirmed leak: the old decline path kept, and the
+     * shape/radius setters even re-seeded, world A's provider). Runs LAST because it deliberately mutates the
+     * V2 statics; the server halts immediately after the report is written.
+     */
+    private static final String REPLAY_PROP = "latdev.terrainProof.replayProbe";
 
     // NOTE (sweeper findings #14/#21): there is deliberately NO {@code latdev.terrainProof.seed} read here.
     // The harness always uses the BOOTED world's own seed ({@code world.getSeed()}), because the shipped
@@ -141,6 +150,18 @@ public final class TerrainProofHarness {
             } catch (Throwable t) {
                 report.harnessFailure = describeThrowable(t);
                 GlobeMod.LOGGER.error("[latdev][terrainProof] harness failed", t);
+            }
+            // Slice B stale-provider replay probe -- ALWAYS after runAll (it mutates the V2 statics).
+            if (Boolean.parseBoolean(System.getProperty(REPLAY_PROP, "false"))) {
+                try {
+                    report.replayProbe = runStaleProviderReplayProbe(world);
+                } catch (Throwable t) {
+                    ReplayProbe failed = new ReplayProbe();
+                    failed.pass = false;
+                    failed.detail = "replay probe threw: " + describeThrowable(t);
+                    report.replayProbe = failed;
+                    GlobeMod.LOGGER.error("[latdev][terrainProof] replay probe failed", t);
+                }
             }
             Path outPath = resolveOutPath(server);
             Files.createDirectories(outPath.getParent());
@@ -213,6 +234,9 @@ public final class TerrainProofHarness {
         // §6.1(b)(ii) structural NoiseChunk-build check (getBaseColumn), one per probed column.
         final List<StructuralColumnProbe> structuralProbes = new ArrayList<>();
 
+        // Slice B stale-provider replay probe (null unless -Dlatdev.terrainProof.replayProbe=true).
+        ReplayProbe replayProbe;
+
         String toJson() {
             StringBuilder sb = new StringBuilder();
             sb.append("{\n");
@@ -231,6 +255,7 @@ public final class TerrainProofHarness {
             sb.append("  \"nonGlobeBootVerified\": ").append(nonGlobeBootVerified).append(",\n");
             sb.append("  \"activeRadiusAtBoot\": ").append(activeRadiusAtBoot).append(",\n");
             sb.append("  \"generatorIsGlobePreset\": ").append(generatorIsGlobePreset).append(",\n");
+            sb.append("  \"replayProbe\": ").append(replayProbe == null ? "null" : replayProbe.toJson()).append(",\n");
             sb.append("  \"columnProbes\": [\n");
             for (int i = 0; i < columnProbes.size(); i++) {
                 sb.append(columnProbes.get(i).toJson());
@@ -564,6 +589,80 @@ public final class TerrainProofHarness {
     }
 
     private record ColumnPick(String label, int x, int z, double land01) {
+    }
+
+    // --- Slice B stale-provider replay probe (audit P1-1 / refute-A) --------------------------------
+
+    static final class ReplayProbe {
+        String beforeProviderClass;
+        boolean beforeWasReal;
+        String afterProviderClass;
+        boolean afterIsNoOp;
+        boolean sampledPostReset;
+        double postResetSample;
+        boolean pass;
+        String detail;
+
+        String toJson() {
+            return "{\"beforeProviderClass\": " + jsonStringOrNull(beforeProviderClass)
+                    + ", \"beforeWasReal\": " + beforeWasReal
+                    + ", \"afterProviderClass\": " + jsonStringOrNull(afterProviderClass)
+                    + ", \"afterIsNoOp\": " + afterIsNoOp
+                    + ", \"sampledPostReset\": " + sampledPostReset
+                    + ", \"postResetSample\": " + postResetSample
+                    + ", \"pass\": " + pass
+                    + ", \"detail\": " + jsonStringOrNull(detail) + "}";
+        }
+    }
+
+    /**
+     * Replays, inside this one JVM, the exact setter order {@code GlobeMod.initLatitudeBiomesForWorld} runs
+     * for a subsequent SEED-0 world B after this (real-seed) world A: shape, then radius, then
+     * {@code setWorldSeed(0)}. PASS = the provider was real before and is NoOp after (the audit's
+     * refutation-confirmed leak was exactly this sequence ending on world A's still-real provider). Also
+     * samples the booted world's own installed router once post-reset, which (a) proves the per-call check
+     * passes vanilla density through against a NoOp provider and (b) deliberately trips the
+     * installed-but-not-ready one-shot log so the warn is observable in this run's output. Restores the real
+     * seed/radius afterwards (the server halts right after, but the statics are left coherent).
+     */
+    private static ReplayProbe runStaleProviderReplayProbe(ServerLevel world) {
+        ReplayProbe rp = new ReplayProbe();
+        GeoSummaryProvider before = LatitudeBiomes.geoProviderForTerrain();
+        rp.beforeProviderClass = before == null ? "null" : before.getClass().getSimpleName();
+        rp.beforeWasReal = before instanceof com.example.globe.adapter.geo.GeoAuthorityProvider;
+
+        long realSeed = world.getSeed();
+        int realRadius = LatitudeBiomes.getActiveRadiusBlocks();
+        LatitudeBiomes.GlobeShape shape = LatitudeBiomes.getGlobeShape();
+
+        // World B's load order for a literal seed-0 globe world (GlobeMod.initLatitudeBiomesForWorld).
+        LatitudeBiomes.setGlobeShape(shape);
+        LatitudeBiomes.setRadius(realRadius > 0 ? realRadius : DEFAULT_RADIUS);
+        LatitudeBiomes.setWorldSeed(0L);
+
+        GeoSummaryProvider after = LatitudeBiomes.geoProviderForTerrain();
+        rp.afterProviderClass = after == null ? "null" : after.getClass().getSimpleName();
+        rp.afterIsNoOp = !(after instanceof com.example.globe.adapter.geo.GeoAuthorityProvider);
+
+        try {
+            DensityFunction installed = world.getChunkSource().randomState().router().finalDensity();
+            rp.postResetSample = installed.compute(ctx(0, 64, 0));
+            rp.sampledPostReset = true;
+        } catch (Throwable t) {
+            rp.sampledPostReset = false;
+        }
+
+        rp.pass = rp.beforeWasReal && rp.afterIsNoOp;
+        rp.detail = rp.pass
+                ? "provider correctly reset to NoOp by the seed-0 world-load replay"
+                : ("LEAK or invalid precondition: before=" + rp.beforeProviderClass + " after=" + rp.afterProviderClass);
+        GlobeMod.LOGGER.info("[latdev][terrainProof] replayProbe: before={} after={} pass={}",
+                rp.beforeProviderClass, rp.afterProviderClass, rp.pass);
+
+        // Restore the booted world's real arming.
+        LatitudeBiomes.setRadius(realRadius);
+        LatitudeBiomes.setWorldSeed(realSeed);
+        return rp;
     }
 
     // --- §6.2 three-transect Lipschitz / smoothness probe ---------------------------------------------

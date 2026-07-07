@@ -102,6 +102,25 @@ public final class GeoTerrainBiasFunction implements DensityFunction.SimpleFunct
         double land01;
     }
 
+    // --- Slice B observability latches (audit P1-2). Re-armed per world via resetLogLatchesForNewWorld()
+    // (chained from TerrainRouterWrapping.resetLogLatchesForNewWorld, which GlobeMod already calls on each
+    // overworld load). All are informational one-shots in the codebase's debugAlpine CAS idiom; none affect
+    // computed values. Each is guarded by a plain get() before the CAS so the latched hot path costs one
+    // predictable volatile read, not a CAS attempt per density sample.
+    private static final java.util.concurrent.atomic.AtomicBoolean PROVIDER_NOT_READY_LOGGED =
+            new java.util.concurrent.atomic.AtomicBoolean(false);
+    private static final java.util.concurrent.atomic.AtomicBoolean BIAS_ENGAGED_LOGGED =
+            new java.util.concurrent.atomic.AtomicBoolean(false);
+    private static final java.util.concurrent.atomic.AtomicBoolean BIAS_FAILURE_LOGGED =
+            new java.util.concurrent.atomic.AtomicBoolean(false);
+
+    /** Re-arms the one-shot logs above for a newly loaded world (see TerrainRouterWrapping's counterpart). */
+    public static void resetLogLatchesForNewWorld() {
+        PROVIDER_NOT_READY_LOGGED.set(false);
+        BIAS_ENGAGED_LOGGED.set(false);
+        BIAS_FAILURE_LOGGED.set(false);
+    }
+
     /**
      * Cached, never-serialized codec. Constructed in-JVM at {@code RandomState}-build time and never round
      * -tripped through data, so a trivial unit codec is sufficient and correct (design §4.1
@@ -116,9 +135,12 @@ public final class GeoTerrainBiasFunction implements DensityFunction.SimpleFunct
 
     @Override
     public double compute(FunctionContext ctx) {
+        // Delegate evaluation deliberately OUTSIDE the safety try (Slice B, audit P1-2): if the DELEGATE
+        // itself throws, that is a vanilla/Terralith failure that must propagate exactly as it would with no
+        // wrapper installed. The old shape re-invoked the delegate from inside the catch, which doubled the
+        // delegate's cost on the failure path and let a second throw escape the "safety" net uncaught anyway.
+        double base = delegate.compute(ctx);
         try {
-            double base = delegate.compute(ctx);
-
             // Sweeper finding #23 -- DECISION: a NEGATIVE strength is INTENTIONALLY ALLOWED, not clamped. It
             // is a deliberate "flip" knob: S<0 inverts the bias direction (land columns sink, ocean columns
             // rise), which is a legitimate live-tuning experiment (e.g. probing the sign convention, or an
@@ -141,7 +163,22 @@ public final class GeoTerrainBiasFunction implements DensityFunction.SimpleFunct
             // stale install-time snapshot permanently disabling it for the rest of the world's life.
             GeoSummaryProvider provider = LatitudeBiomes.geoProviderForTerrain();
             if (!(provider instanceof GeoAuthorityProvider)) {
+                // Slice B observability (audit P1-2 / Lane 1 F6): "working", "not yet ready", and
+                // "never will (seed-0)" used to read identically in the log. Say once per world that the
+                // wrapper is installed but geography is not live.
+                if (!PROVIDER_NOT_READY_LOGGED.get() && PROVIDER_NOT_READY_LOGGED.compareAndSet(false, true)) {
+                    com.example.globe.GlobeMod.LOGGER.info(
+                            "[Latitude] Phase 4 terrain bias is INSTALLED but GeoAuthority is not (yet) real -- "
+                                    + "passing vanilla density through per column. Normal transiently during world "
+                                    + "load; PERMANENT on a literal seed-0 / zero-radius world (logs once per world).");
+                }
                 return base;
+            }
+            if (!BIAS_ENGAGED_LOGGED.get() && BIAS_ENGAGED_LOGGED.compareAndSet(false, true)) {
+                com.example.globe.GlobeMod.LOGGER.info(
+                        "[Latitude] Phase 4 terrain bias ENGAGED: real GeoAuthority provider live "
+                                + "(strength={}, oceanStrengthRatio={}).",
+                        LatitudeV2Flags.TERRAIN_V2_STRENGTH, LatitudeV2Flags.TERRAIN_V2_OCEAN_STRENGTH_RATIO);
             }
 
             int blockX = ctx.blockX();
@@ -180,8 +217,15 @@ public final class GeoTerrainBiasFunction implements DensityFunction.SimpleFunct
 
             return base + s * K * gain * sd;
         } catch (Throwable t) {
-            // Provider-null/throw safety and any other failure: fall back to the unmodified delegate value.
-            return delegate.compute(ctx);
+            // Bias-math failure only (the delegate already evaluated fine above): fall back to the unbiased
+            // value -- and say so ONCE (Slice B, audit P1-2 / Lane 8): the old fully-silent catch could
+            // erase the entire feature with zero log trace.
+            if (!BIAS_FAILURE_LOGGED.get() && BIAS_FAILURE_LOGGED.compareAndSet(false, true)) {
+                com.example.globe.GlobeMod.LOGGER.warn(
+                        "[Latitude] Phase 4 terrain-bias computation failed; passing through unbiased vanilla "
+                                + "density (logs once per world).", t);
+            }
+            return base;
         }
     }
 

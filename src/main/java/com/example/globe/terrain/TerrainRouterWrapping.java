@@ -72,6 +72,13 @@ public final class TerrainRouterWrapping {
 
     private static final AtomicBoolean INSTALL_LOGGED = new AtomicBoolean(false);
     private static final AtomicBoolean FAILURE_LOGGED = new AtomicBoolean(false);
+    /**
+     * Slice B (audit P1-2): {@code terrainV2} armed while {@code geoV2} is off is a silently-nonsensical
+     * combo (the wrapper reads GeoAuthority's geography and can never install). Warn once per JVM --
+     * deliberately NOT re-armed per world, because both flags are {@code static final} and the condition
+     * cannot change within a JVM.
+     */
+    private static final AtomicBoolean TERRAINV2_WITHOUT_GEOV2_WARNED = new AtomicBoolean(false);
 
     private TerrainRouterWrapping() {
     }
@@ -169,6 +176,13 @@ public final class TerrainRouterWrapping {
      */
     private static InstallResult installIfArmedCore(RandomState randomState, BooleanSupplier globeCheck) {
         if (!LatitudeV2Flags.TERRAIN_V2_ENABLED || !LatitudeV2Flags.GEO_V2_ENABLED) {
+            if (LatitudeV2Flags.TERRAIN_V2_ENABLED && !LatitudeV2Flags.GEO_V2_ENABLED
+                    && TERRAINV2_WITHOUT_GEOV2_WARNED.compareAndSet(false, true)) {
+                GlobeMod.LOGGER.warn(
+                        "[Latitude] latitude.terrainV2.enabled=true but latitude.geoV2.enabled is OFF -- the "
+                                + "terrain wrapper reads GeoAuthority's geography and will NEVER install in this "
+                                + "configuration. Add -Dlatitude.geoV2.enabled=true (or drop the terrainV2 flag).");
+            }
             return InstallResult.SKIPPED_FLAG_OFF;
         }
         try {
@@ -248,5 +262,9 @@ public final class TerrainRouterWrapping {
     public static void resetLogLatchesForNewWorld() {
         INSTALL_LOGGED.set(false);
         FAILURE_LOGGED.set(false);
+        // Slice B: the per-call wrapper's own one-shots (not-ready / engaged / bias-failure) and the
+        // "authorities inert for this world" warn re-arm per world too, so a second world's story is told.
+        GeoTerrainBiasFunction.resetLogLatchesForNewWorld();
+        LatitudeBiomes.resetV2InertWarnLatchForNewWorld();
     }
 }

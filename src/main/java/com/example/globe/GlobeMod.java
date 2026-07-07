@@ -149,6 +149,10 @@ public class GlobeMod implements ModInitializer {
         registerDevOnlyHeadlessRunner();
         ServerLifecycleEvents.SERVER_STOPPED.register(server -> {
             POLAR_SCRUBBER = null;
+            // Slice B (audit P1-1): tear down the V2 worldgen statics so a subsequent world in this JVM can
+            // never inherit this world's GeoAuthority/ClimateAuthority. The seed-0/zero-radius decline path
+            // in rebuild* historically never overwrote them (see LatitudeBiomes.resetWorldgenStateForServerStop).
+            LatitudeBiomes.resetWorldgenStateForServerStop();
         });
 
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
