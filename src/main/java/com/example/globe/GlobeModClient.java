@@ -37,6 +37,34 @@ import net.minecraft.world.level.block.Blocks;
 
 public class GlobeModClient implements ClientModInitializer {
     private static boolean pendingSpawnPickerOpen;
+
+    /**
+     * Slice B (audit P1-2 / Lane 8): the Sodium E-W section-culling compat mixin
+     * ({@code RenderSectionManagerVisibilityMixin}) targets Sodium's internal
+     * {@code RenderSectionManager.isSectionVisible(III)Z}, which Sodium 0.9.0+mc26.2 removed; the injection
+     * uses {@code require = 0} so a missing target degrades silently instead of crashing the client — but
+     * "silently" meant NOTHING anywhere said the optimization was off (a future "why is E-W culling not
+     * working" mystery). A mixin cannot log its own non-application, so this client-init reflection check
+     * carries the warn: if Sodium is loaded and the target method is absent, say so once.
+     */
+    private static void warnIfSodiumCullHookInactive() {
+        try {
+            if (!net.fabricmc.loader.api.FabricLoader.getInstance().isModLoaded("sodium")) {
+                return;
+            }
+            Class<?> rsm = Class.forName("net.caffeinemc.mods.sodium.client.render.chunk.RenderSectionManager");
+            rsm.getDeclaredMethod("isSectionVisible", int.class, int.class, int.class);
+            // Method present -> the compat injection applied; the E-W culling optimization is active.
+        } catch (ClassNotFoundException | NoSuchMethodException e) {
+            GlobeMod.LOGGER.warn(
+                    "[Latitude] Sodium is installed but RenderSectionManager.isSectionVisible(III)Z is absent "
+                            + "on this Sodium version -- Latitude's E-W section-culling render-distance "
+                            + "optimization is INACTIVE (safely skipped; everything else unaffected). "
+                            + "Expected on Sodium >= 0.9.0.");
+        } catch (Throwable ignored) {
+            // Reflection failure here must never affect client init; the check is purely informational.
+        }
+    }
     private static final int PROMENADE_PALM_LEAVES_OPAQUE_TINT = 0xFF7DB22E;
     private static final String[] PROMENADE_PALM_TINT_BLOCKS = {
             "promenade:palm_leaves",
@@ -52,6 +80,7 @@ public class GlobeModClient implements ClientModInitializer {
         if (GlobeClientState.DEBUG_EW_FOG) {
             GlobeMod.LOGGER.info("[Latitude] debugEwFog=true");
         }
+        warnIfSodiumCullHookInactive();
 
         LatitudeConfig.get();
         ClientLifecycleEvents.CLIENT_STARTED.register(GlobeModClient::registerPromenadePalmTintCompat);

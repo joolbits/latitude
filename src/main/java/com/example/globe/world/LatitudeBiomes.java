@@ -628,6 +628,16 @@ public final class LatitudeBiomes {
         if (seed != 0L && zRadius > 0) {
             int xRadius = getActiveXRadiusBlocks();
             GEO_V2_PROVIDER = new GeoAuthorityProvider(new GeoAuthority(seed, zRadius, xRadius));
+        } else {
+            // Slice B (audit P1-1, refutation-confirmed stale-provider leak): the old silent fall-through
+            // KEPT whatever provider was already here, so a seed-0/zero-radius world loaded after a
+            // real-seed world in the same JVM silently served the earlier world's geography (world B's own
+            // load even re-seeds the provider with world A's seed via the shape/radius setters before
+            // setWorldSeed(0) lands on this branch). Reset explicitly: an inert world must read NEUTRAL,
+            // never a stale world's field. The warn for the FINAL inert state lives in setWorldSeed(), not
+            // here -- this branch is hit transiently mid-sequence on every normal world load (shape and
+            // radius are set before the seed).
+            GEO_V2_PROVIDER = NoOpGeoSummaryProvider.INSTANCE;
         }
     }
 
@@ -643,6 +653,9 @@ public final class LatitudeBiomes {
             // ClimateAuthority consumes a GeoAuthority; build a dedicated one (independent of the geoV2 flag).
             CLIMATE_V2_PROVIDER = new ClimateAuthorityProvider(
                     new ClimateAuthority(new GeoAuthority(seed, zRadius, xRadius)));
+        } else {
+            // Slice B: same stale-provider reset as rebuildGeoAuthority (see its comment).
+            CLIMATE_V2_PROVIDER = NoOpClimateSummaryProvider.INSTANCE;
         }
     }
 
@@ -652,6 +665,47 @@ public final class LatitudeBiomes {
         rebuildProvinceAuthority();
         rebuildGeoAuthority();
         rebuildClimateAuthority();
+        // Slice B (audit P1-2 / Lane 1 F6): the seed is the LAST setter in the world-load sequence
+        // (GlobeMod.initLatitudeBiomesForWorld: shape, then radius, then seed), so this is the one place
+        // where "the V2 authorities ended up inert for this world" is a FINAL state rather than the normal
+        // mid-load transient the rebuilds pass through. A literal typed seed of 0 is the classic trigger --
+        // it cost a real live-testing round on 2026-07-06 precisely because nothing said this out loud.
+        if ((LatitudeV2Flags.GEO_V2_ENABLED || LatitudeV2Flags.CLIMATE_V2_ENABLED)
+                && seed == 0L && ACTIVE_RADIUS_BLOCKS > 0
+                && !V2_INERT_WARNED.get() && V2_INERT_WARNED.compareAndSet(false, true)) {
+            LOGGER.warn("[Latitude] geoV2/climateV2 enabled but the authorities are INERT for this world "
+                    + "(seed=0, zRadius={}): a literal seed-0 world never arms geography, so terrainV2 and "
+                    + "V2 biome features silently no-op for this world's whole life. Type a nonzero seed "
+                    + "(or leave the seed field blank for a random one) to arm them.", ACTIVE_RADIUS_BLOCKS);
+        }
+    }
+
+    /**
+     * Slice B (audit P1-1): world-teardown reset for the V2 provider statics and the seed/radius they key
+     * on. Before this, NOTHING reset these on unload -- safety rested entirely on the next world's load
+     * overwriting them, which the seed-0/zero-radius decline path historically never did (see
+     * rebuildGeoAuthority). Called from GlobeMod's SERVER_STOPPED handler. Scoped deliberately to the V2
+     * statics: the pre-2.0 statics (province authority, ocean field, shape cache) are unconditionally
+     * overwritten by every world's own load sequence and have no decline path, so they keep the existing
+     * next-load-overwrite behavior.
+     */
+    public static void resetWorldgenStateForServerStop() {
+        WORLD_SEED = 0L;
+        ACTIVE_RADIUS_BLOCKS = 0;
+        GEO_V2_PROVIDER = NoOpGeoSummaryProvider.INSTANCE;
+        CLIMATE_V2_PROVIDER = NoOpClimateSummaryProvider.INSTANCE;
+        LOGGER.info("[Latitude] V2 worldgen statics reset on server stop (providers -> NoOp, seed/radius cleared).");
+    }
+
+    // Slice B (audit P1-2): one-shot latch for the "authorities inert for this world" warn above. Re-armed
+    // per world via resetV2InertWarnLatchForNewWorld(), chained from
+    // TerrainRouterWrapping.resetLogLatchesForNewWorld() (which GlobeMod calls on each overworld load,
+    // BEFORE the shape/radius/seed setters run -- so the warn can fire freshly for each world).
+    private static final java.util.concurrent.atomic.AtomicBoolean V2_INERT_WARNED =
+            new java.util.concurrent.atomic.AtomicBoolean(false);
+
+    public static void resetV2InertWarnLatchForNewWorld() {
+        V2_INERT_WARNED.set(false);
     }
 
     public static void setRadius(int radius) {

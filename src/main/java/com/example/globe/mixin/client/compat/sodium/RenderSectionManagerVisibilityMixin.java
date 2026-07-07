@@ -14,7 +14,10 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 @Mixin(targets = "net.caffeinemc.mods.sodium.client.render.chunk.RenderSectionManager", remap = false)
 public class RenderSectionManagerVisibilityMixin {
 
-    @Unique private static long latitude$lastLogMs = 0L;
+    // NOTE (Slice B, audit P1-2): a dead `latitude$lastLogMs` throttle field lived here -- logging was
+    // intended but never wired, and a mixin body cannot log its own NON-application anyway (require = 0
+    // skips at apply time). The user-visible "this optimization is inactive on your Sodium version" warn
+    // therefore lives in GlobeModClient.warnIfSodiumCullHookInactive(), a client-init reflection check.
 
     // require = 0: this hook is a render-distance/performance nicety (E-W edge section culling), not a
     // correctness-critical feature. globe.mixins.json sets "defaultRequire": 1, so without this override a
