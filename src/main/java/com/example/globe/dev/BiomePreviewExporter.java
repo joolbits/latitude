@@ -430,6 +430,7 @@ public final class BiomePreviewExporter {
         Path inventoryPath = outputDir.resolve("world_biome_inventory.json");
         BiomeSamplerTools.writeInventoryJson(inventoryPath, inventoryReport);
 
+        writeRunFlagsSidecar(outputDir, seed, radiusBlocks, stepBlocks, y);
         Path summaryPath = outputDir.resolve("biomes.txt");
         long totalSamples = (long) width * height;
         long durationMs = (System.nanoTime() - startNanos) / 1_000_000L;
@@ -1062,6 +1063,7 @@ public final class BiomePreviewExporter {
                 Path inventoryPath = outputDir.resolve("world_biome_inventory.json");
                 BiomeSamplerTools.writeInventoryJson(inventoryPath, inventoryReport);
 
+                writeRunFlagsSidecar(outputDir, atlasSeed, radiusBlocks, stepBlocks, y);
                 summaryPath = outputDir.resolve("biomes.txt");
                 long totalSamples = (long) width * height;
                 long durationMs = (System.nanoTime() - startNanos) / 1_000_000L;
@@ -1354,6 +1356,34 @@ public final class BiomePreviewExporter {
         } catch (Exception ignored) {
         }
         return "";
+    }
+
+    /**
+     * Slice D (Fable audit P1-5): every atlas bundle self-describes the flag configuration that produced
+     * it. Written as a SIDECAR next to biomes.txt rather than into biomes.txt itself, deliberately: the
+     * project's flag-off byte-identity proofs diff biomes.txt across runs whose flags DIFFER, and an
+     * in-file echo would make two map-identical runs diff on the echo line alone.
+     */
+    private static void writeRunFlagsSidecar(Path outputDir, long seed, int radiusBlocks, int stepBlocks, int y) {
+        try {
+            String json = "{\n"
+                    + "  \"seed\": " + seed + ",\n"
+                    + "  \"radiusBlocks\": " + radiusBlocks + ",\n"
+                    + "  \"stepBlocks\": " + stepBlocks + ",\n"
+                    + "  \"y\": " + y + ",\n"
+                    + "  \"shape\": \"" + LatitudeBiomes.shapeToString(LatitudeBiomes.getGlobeShape()) + "\",\n"
+                    + "  \"geoV2Enabled\": " + com.example.globe.core.LatitudeV2Flags.GEO_V2_ENABLED + ",\n"
+                    + "  \"climateV2Enabled\": " + com.example.globe.core.LatitudeV2Flags.CLIMATE_V2_ENABLED + ",\n"
+                    + "  \"biomeConsumerV2Enabled\": " + com.example.globe.core.LatitudeV2Flags.BIOME_CONSUMER_V2_ENABLED + ",\n"
+                    + "  \"biomeConsumerV2OceanAuthorityEnabled\": " + com.example.globe.core.LatitudeV2Flags.BIOME_CONSUMER_V2_OCEAN_AUTHORITY_ENABLED + ",\n"
+                    + "  \"terrainV2Enabled\": " + com.example.globe.core.LatitudeV2Flags.TERRAIN_V2_ENABLED + ",\n"
+                    + "  \"terrainV2Strength\": " + com.example.globe.core.LatitudeV2Flags.TERRAIN_V2_STRENGTH + ",\n"
+                    + "  \"terrainV2OceanStrengthRatio\": " + com.example.globe.core.LatitudeV2Flags.TERRAIN_V2_OCEAN_STRENGTH_RATIO + "\n"
+                    + "}\n";
+            Files.writeString(outputDir.resolve("run_flags.json"), json);
+        } catch (Throwable t) {
+            com.example.globe.GlobeMod.LOGGER.warn("[latdev][atlas] failed to write run_flags.json sidecar", t);
+        }
     }
 
     private static void writeSummary(Path txtPath,

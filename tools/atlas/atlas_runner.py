@@ -82,6 +82,7 @@ def generate_run(*, step: int, seed: int, size: str, aspect: float = 2.0,
                   sysprops: list[str] | None = None) -> None:
     validate_step(step)
     size_key = normalize_size(size)
+    preflight_no_concurrent_run()
     run_id = allocate_run_id()
     target_run_dir = RUNS_ROOT / run_id
 
@@ -113,6 +114,7 @@ def generate_run(*, step: int, seed: int, size: str, aspect: float = 2.0,
         size=size_key,
         radius=radius,
         step=step,
+        sysprops=sysprops,
     )
     validate_bundle(target_run_dir, step, radius)
 
@@ -209,7 +211,17 @@ def find_fresh_step_dir(*, seed: int, step: int, started_at: float) -> Path:
     return candidates[-1]
 
 
-def write_manifest(path: Path, *, run_id: str, seed: int, size: str, radius: int, step: int) -> None:
+def write_manifest(path: Path, *, run_id: str, seed: int, size: str, radius: int, step: int,
+                   sysprops: list[str] | None = None) -> None:
+    # Slice D (Fable audit P1-5): the manifest used to HARDCODE "emitHeight": False and record no -D
+    # config at all, so a bundle could not prove which flags produced it (a real run dir was found with
+    # height artifacts while its manifest said emitHeight:false). Record the actual sysprops verbatim and
+    # derive emitHeight from them instead of asserting a constant.
+    sysprop_map: dict[str, str] = {}
+    for kv in (sysprops or []):
+        if "=" in kv:
+            k, v = kv.split("=", 1)
+            sysprop_map[k.strip()] = v.strip()
     payload = {
         "ts": run_id,
         "branch": git_text("branch", "--show-current"),
@@ -219,11 +231,50 @@ def write_manifest(path: Path, *, run_id: str, seed: int, size: str, radius: int
         "radiusBlocks": radius,
         "step": step,
         "emitBiomeIndex": True,
-        "emitHeight": False,
+        "emitHeight": sysprop_map.get("latitude.emitHeight", "false").lower() == "true",
+        "sysprops": sysprop_map,
         "legacyRun": f"Run_{run_id}",
         "migratedFrom": "run/latdev/atlas",
     }
     path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+
+
+def preflight_no_concurrent_run() -> None:
+    """Slice D (Fable audit P1-5): refuse to start when another headless worldgen run is alive.
+
+    Two concurrent runs against the same run-headless/world don't fail loudly -- they contend on
+    Minecraft's session.lock and both crawl, which reads as a hang (this burned a real session on
+    2026-07-06; see CLAUDE.md's shared-lockable-resources rule). Checks: (1) any live process whose
+    command line mentions runBiomePreview; (2) if run-headless/world/session.lock exists, probe whether
+    something actually HOLDS the lock (the file itself persists after clean shutdowns, so existence
+    alone proves nothing).
+    """
+    try:
+        proc = subprocess.run(["pgrep", "-f", "runBiomePreview"], capture_output=True, text=True)
+        live = [pid for pid in proc.stdout.split() if pid.strip() and int(pid) != os.getpid()]
+        if live:
+            raise SystemExit(
+                f"[atlas_runner] PREFLIGHT ABORT: a runBiomePreview process is already alive (pid(s) "
+                f"{', '.join(live)}). Two headless runs against the same run-headless/world contend on "
+                f"session.lock and both crawl. Wait for it (or kill it) before starting a new run.")
+    except FileNotFoundError:
+        pass  # no pgrep on this platform; fall through to the lock probe
+    lock_path = ROOT / "run-headless" / "world" / "session.lock"
+    if lock_path.exists():
+        try:
+            import fcntl
+            with open(lock_path, "r+b") as fh:
+                try:
+                    fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    fcntl.flock(fh, fcntl.LOCK_UN)
+                except OSError:
+                    raise SystemExit(
+                        "[atlas_runner] PREFLIGHT ABORT: run-headless/world/session.lock is HELD by a "
+                        "live process. Wait for the current run to finish before starting a new one.")
+        except SystemExit:
+            raise
+        except Exception:
+            pass  # probe is best-effort; the pgrep check above is the primary guard
 
 
 def git_text(*args: str) -> str:
