@@ -176,10 +176,10 @@ public final class CompassHudConfig {
     public static CompassHudConfig fresh() {
         CompassHudConfig cfg = new CompassHudConfig();
         cfg.layoutVersion = CURRENT_LAYOUT_VERSION; // born migrated; only disk-loaded legacies stay at 0
-        // Boss-bar nudge (U-D): the raw default pin (top-center, y=EDGE_INSET) sits exactly where vanilla
-        // stacks boss bars. Fresh installs (and Reset) start the compass ~15% down the screen instead —
-        // below a typical boss-bar stack at common GUI heights. Existing configs are untouched.
-        cfg.offYFrac = 0.15;
+        // Default pin: classic top-center, tucked at the screen edge (y=EDGE_INSET). U-D shipped a 15%
+        // downward "boss-bar nudge" here; TEST 28 live feedback read that as the compass floating
+        // mid-screen after a Reset, which is worse than the transient boss-bar overlap it avoided
+        // (boss bars only exist during boss fights, and the Studio makes moving the compass trivial).
         return cfg;
     }
 

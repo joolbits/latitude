@@ -182,6 +182,24 @@ final class CompassDialRenderer {
     private static final String[] TAPE_POINTS = {"N", "NE", "E", "SE", "S", "SW", "W", "NW"};
     private static final float TAPE_WINDOW_DEG = 60.0f; // headings shown within ±window
 
+    private static int tapeStripHeight(int radius) {
+        return Math.max(12, radius / 2);
+    }
+
+    /**
+     * The look's TRUE content height inside its diameter×diameter dial box. TAPE draws a short strip
+     * (plus the 2px caret overhang top and bottom) vertically centered in the box; every other look
+     * fills the disc. Layout that positions the compass against other HUD geometry (the hotbar dock,
+     * the Studio hitbox/border) must use this, not the box height — docking the phantom box was TEST
+     * 28's "tape floats high above the hotbar" bug.
+     */
+    static int lookContentHeight(CompassHudConfig cfg, int diameter) {
+        if (cfg.analogLook == CompassHudConfig.CompassLook.TAPE) {
+            return Math.min(diameter, tapeStripHeight(diameter / 2) + 4);
+        }
+        return diameter;
+    }
+
     private static void drawTape(GuiGraphicsExtractor ctx, Font font, CompassHudConfig cfg,
                                  int cx, int cy, int radius, float yawDegrees, DialColors colors) {
         int halfW = radius;
@@ -217,17 +235,27 @@ final class CompassDialRenderer {
             ctx.fill(x, y1 - 1 - tickH, x + 1, y1 - 1, major ? colors.ring() : colors.muted());
         }
 
-        // Cardinal / intercardinal labels, scaled down on small strips.
+        // Cardinal / intercardinal labels, scaled down on small strips. The label set honors the
+        // Direction Format setting (TEST 28: the format button was inert for every analog look):
+        // CARDINAL_4 labels only N/E/S/W (the 45° major ticks stay), DEGREES swaps letters for bare
+        // heading numbers (0/45/90...), CARDINAL_8 is the classic full set.
+        CompassHudConfig.DirectionMode dirMode =
+                cfg.directionMode == null ? CompassHudConfig.DirectionMode.CARDINAL_8 : cfg.directionMode;
         float labelScale = Mth.clamp(radius / 32.0f, 0.55f, 1.0f);
         var pose = ctx.pose();
         for (int i = 0; i < TAPE_POINTS.length; i++) {
             int deg = i * 45;
+            boolean cardinal = i % 2 == 0;
+            if (dirMode == CompassHudConfig.DirectionMode.CARDINAL_4 && !cardinal) continue;
             float rel = Mth.wrapDegrees(deg - heading);
             if (Math.abs(rel) > TAPE_WINDOW_DEG) continue;
-            String label = TAPE_POINTS[i];
-            boolean cardinal = i % 2 == 0;
+            String label = dirMode == CompassHudConfig.DirectionMode.DEGREES
+                    ? Integer.toString(deg) : TAPE_POINTS[i];
             int color = i == 0 ? colors.needle() : (cardinal ? colors.ring() : colors.muted());
             float scale = cardinal ? labelScale : labelScale * 0.8f;
+            if (dirMode == CompassHudConfig.DirectionMode.DEGREES) {
+                scale = labelScale * (cardinal ? 0.9f : 0.8f); // 3-digit numbers need the trim
+            }
             int x = cx + Math.round(rel / TAPE_WINDOW_DEG * usableHalf);
             pose.pushMatrix();
             pose.translate(x, y0 + 2);
