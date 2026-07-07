@@ -1,8 +1,22 @@
 # HUD & UI Overhaul Design — pin-and-grow layout, truthful Studio, one front door (2026-07-07)
 
-`status: PROPOSED — awaiting Peetsa's approval; no implementation yet` · companion evaluation:
-`../binder/ui-audit-20260707.md` (every claim there is Read-verified with file:line) · honors the
-2026-06-22 create-screen decision: the create screen gets refinements only, no new direction.
+`status: PROPOSED r2 — Pin & Grow direction APPROVED by Peetsa 2026-07-07; r2 adds his four requests
+(hotbar dock, compass visual looks, Studio IA v2, deeper create/loading refinements); implementation
+awaits slice green-light` · companion evaluation: `../binder/ui-audit-20260707.md` (every claim there is
+Read-verified with file:line) · honors the 2026-06-22 create-screen decision: the create screen gets
+refinements only, no new direction.
+
+> **r2 revision note (same day):** Peetsa approved Pin & Grow and asked for: (1) free player placement
+> confirmed as a first-class property; (2) an "attach to hotbar" dock (compass + text to the RIGHT of the
+> hotbar, never off-screen, never clipping the hotbar — the historical failure); (3) improved compass
+> visuals beyond color themes; (4) better organization/flow for the Settings/Studio menus; (5) a deeper
+> improvement pass on the create + loading screens. All five are folded in below. The historical clipping
+> bug is now precisely understood: `computeAttachedCompassPosition` CENTERS the analog dial ON the hotbar
+> (`CompassHud.java:589-592` — a ~74px dial into the 22px hotbar row), which is why analog attach was
+> disabled outright in commit `4778a5ed`; the digital path (:594-601) side-teleports to the hotbar's LEFT
+> when text outgrows the right side, and accounts for neither the offhand slot (renders RIGHT of the
+> hotbar for left-handed players) nor the attack-indicator-on-hotbar. The dock design below makes hotbar
+> overlap structurally impossible rather than tuned-around.
 
 ## Design goal, in one sentence
 
@@ -33,11 +47,39 @@ center-grown biome label breathes symmetrically beneath a stationary dial — vi
 **reserved-width mode** per text element (measure the longest biome display-name in the registry once per
 world join) makes even the text box fully static for players who want zero motion.
 
+**Free placement is unchanged and first-class:** dragging in the Studio moves the pin — anywhere on
+screen, snap-to-grid optional. Pin & Grow does not constrain WHERE elements go; it only makes WHERE
+independent of content width.
+
 **Migration:** on first load of an old config, compute each element's CURRENT effective position using
 the old math with the old sample text, convert to pin+grow (grow defaults to the old anchor side), bump a
 new `configVersion` field (the config finally gets one). Behavior-preserving on day one; stable forever
 after. `sanitize()` clamps pins into the visible screen at load AND save (kills the invisible
 out-of-range-offset class).
+
+### 1b. The hotbar dock (requested; replaces `attachToHotbarCompass`)
+
+A dock is a special pin that is COMPUTED each frame from live HUD geometry instead of stored:
+
+- **Dock point:** `dockX = screenW/2 + 91 + offhandRight + attackIndicatorRight + GAP(6)`, where
+  `offhandRight = 29` only when the player's main hand is LEFT (vanilla renders the offhand slot on the
+  opposite side), and `attackIndicatorRight = 22` only when the attack-indicator setting is HOTBAR (it
+  draws right of the hotbar). `dockY =` vertical center of the hotbar row (`screenH - 11`). These two
+  conditional offsets are exactly the overlaps the old implementation missed.
+- **Grow: rightward only.** The dial is left-aligned AT the dock point; text sits right of the dial (or
+  stacked beneath it), left-aligned — growth is structurally AWAY from the hotbar. No configuration can
+  make the box extend left into the hotbar, so the historical clipping class is unreachable, not patched.
+- **Fit ladder (deterministic, no side-teleporting):** available width = `screenW - dockX - margin`.
+  If dial + longest text doesn't fit: (1) stack the text under the dial (half the width); still no fit →
+  (2) scale the dial down to a floor (e.g. 48px); still no fit (extreme GUI scale) → (3) lift the whole
+  dock to sit ABOVE the hotbar's right end, right-aligned to the screen edge — above the offhand/armor
+  row, never overlapping. Each rung is a pure function of screen size + reserved text width, so the dock
+  never jumps because a biome NAME changed — only when the SCREEN changes.
+- Works for both looks (this re-enables analog attach, closing the `4778a5ed` disablement) and for the
+  satellites: zone/biome/coords in dock mode join the dock's own layout flow instead of free pins.
+- The compass-ITEM gate stays orthogonal: `showMode=COMPASS_PRESENT` continues to control visibility;
+  the dock only controls position. (Today's attach silently requires a compass item in the hotbar to
+  attach at all — position and visibility rules were tangled; they separate.)
 
 ## Pillar 2 — the truthful Studio
 
@@ -58,12 +100,60 @@ The preview already renders through the real `CompassHud` code — only its inpu
 - **Title hit-test** measures the actual styled title (case/letter-spacing aware), not `"TROPICAL 0°"`.
 - **Per-element reset** (and per-tab), alongside the existing global reset.
 
-## Pillar 3 — one front door (F9 → Studio) + config hygiene
+## Pillar 2b — compass looks: visuals beyond color (requested)
 
-- **F9 opens the Studio.** Fold the two Settings-only fields (`showMode`, `showWarningMessages`) into the
-  Studio's General tab; `LatitudeSettingsScreen` is deleted (or left one release as a stub that opens the
-  Studio). This removes the five duplicated fields, the Esc-loses-Settings-edits asymmetry, and the
-  `compactHud` visibility mismatch in one move. No config migration needed — same fields.
+A new `CompassLook` axis, orthogonal to the existing 12 color themes (theme = palette; look = shape).
+Five looks, all sharing the pin/dock/needle/degree machinery:
+
+- **DISC** — today's filled dial (kept as default; migrates silently).
+- **RING** — open bezel: rim ticks + cardinal letters with the world visible through the center; reads
+  lighter, doesn't block view at large sizes.
+- **ROSE** — an 8-point compass rose (cartographic star, alternating long/short points), matching the
+  planisphere/atlas identity of the mod; the needle becomes the north point's highlight.
+- **TAPE** — a horizontal bearing strip (FPS-style): fixed center caret, cardinal + intercardinal letters
+  and tick marks sliding with yaw, degree readout beneath. Pairs naturally with the hotbar dock and with
+  top-center placement; inherently width-stable (fixed strip width setting).
+- **MINIMAL** — needle + N glyph only, no chrome; for players who want a whisper.
+
+**Rendering change that makes this feasible:** the current disc is drawn with one `fill` per pixel
+(~4k-16k quads/frame — the Pillar-4 finding). Looks are instead baked as a small texture atlas in mod
+resources (`assets/globe/textures/gui/compass/<look>.png`, one file per look, needle/ticks/degree text
+still drawn procedurally in theme colors on top). One `blit` per frame instead of thousands of fills,
+AND resource packs can reskin every look without touching code — the modding-culture win. Procedural
+fallback stays behind a flag for packs that delete the textures.
+
+Studio integration: the Compass page gets a Look selector rendered as five live thumbnails (the preview
+machinery already renders the real draw path — each thumbnail is the real renderer at small scale).
+
+## Pillar 3 — one front door (F9 → Studio) + Studio IA v2 (requested: "convoluted and clunky")
+
+**Why it feels clunky today:** settings for ONE element are scattered across CONCERN-tabs — the Compass
+tab holds style/theme, the Placement tab holds anchors for everything, the Title tab holds title style,
+General mixes global and per-element toggles — and a second screen (F9 Settings) duplicates five fields
+with different save semantics. Configuring "the biome readout" means visiting three tabs on two screens.
+
+**IA v2 — element-centric pages.** One surface (the Studio), F9 opens it. Sidebar (or tab row) of
+ELEMENTS matching the Pin & Grow model, so the mental model and the menu are the same shape:
+
+- **Compass** — visibility + show-mode · Look (5 thumbnails) · Theme/colors · size/scale ·
+  Placement (pin/grow/dock card + "drag in preview" hint + per-element reset) · degree readout options
+  (incl. the currently-hidden-but-live `directionMode` knob, surfaced here or deleted).
+- **Zone & Biome** — visibility, attach-to-compass vs free pin, order (biome↔zone), compact separator,
+  rainbow, placement card.
+- **Coordinates** — lat/lon toggles, format, attach vs free pin, placement card.
+- **Title (zone entry)** — enable, duration, style (color/rainbow/case/spacing), draggable toggle,
+  placement card.
+- **General** — global HUD scale, show mode, warning messages, preview text source (Sample / Longest /
+  Live), Reset ALL, and layout presets (save/load named layouts — small, optional, high delight).
+
+Every page = the same top-to-bottom rhythm: *Visibility → Look → Placement → Extras*. The preview stays
+live behind the panel the whole time (existing machinery). Single save model: changes apply live,
+persist on close, one Revert button — killing the Esc-loses-Settings-edits asymmetry by having exactly
+one screen with exactly one rule. `LatitudeSettingsScreen` is deleted (or one release as a redirect
+stub).
+
+## Pillar 3 (continued) — config hygiene
+
 - **Config model**: add `configVersion`; give `LatitudeConfig` a `fresh()`-style single default source
   (ending the three-hardcoded-default-sites drift class); unified save-on-close semantics everywhere;
   prune the dead fields (`zoneEntryNotifyMode`, `showLatitudeDegrees`, `latitudeBandBlend*`,
@@ -81,42 +171,66 @@ The preview already renders through the real `CompassHud` code — only its inpu
 - Nudge the default compass position out of the vanilla boss-bar band (only for FRESH configs; existing
   pins untouched).
 
-## Pillar 5 — create screen + loading refinements (small; respects the 06-22 decision)
+## Pillar 5 — create screen + loading refinements (deeper pass, requested; respects the 06-22 decision)
 
+**Create screen** (healthy per the audit — these sharpen, none redirect):
 1. **Seed-0 guard** (top accuracy item, ties to worldgen audit P0-2): as-you-type amber hint under the
    seed field when the parsed seed is literally `0` — "Seed 0 disables Latitude's geography engine — pick
    any other number, or leave blank for random." On launch attempt with 0: one confirm dialog. Never
    silently launch an inert world from the bespoke screen.
-2. Fix/retire the stale `GlobeWorldSize.label` square block-counts (screen already computes honest
-   Mercator-aware dims); log `size.worldPresetId` at launch (the UI-Small=`globe_regular` trap becomes
-   observable in every log).
-3. Delete the dead set (`OverlayProof`, `ZoneEntryNotifier` + `ui/ZoneTitleOverlay`,
-   `EwSandstormOverlayRenderer` + its stale import, `GlobeModMenu`, old planisphere `render()`, loading
-   overlay's unused `globe$displayProgress`) — subtractive commit, compile + S=0 byte-identity gate.
-4. Wire-or-inline the `scaledUi`/`compactUi` identity no-ops; restyle `SpawnZoneScreen` to the bespoke
-   look (it's the last vanilla-look Latitude screen).
-5. Planisphere: stays decorative (it is honest about shape/size/latitude/spawn-band). A real
-   GeoAuthority land-mask preview is noted as a FUTURE feature behind cost analysis (needs debounced
-   background sampling at ~64×32) — not part of this overhaul.
+2. Seed affordances: a randomize (die) button and a copy-seed button on the field, if not already
+   present — cheap, standard, and pairs with the guard.
+3. Size selector honesty: fix/retire the stale `GlobeWorldSize.label` square block-counts (the screen
+   already computes honest Mercator-aware dims via `worldDimsLabel`); add one info line tying size to
+   meaning — "≈ N blocks pole-to-pole · M-block latitude bands" — so size reads as gameplay, not just
+   numbers. Log `size.worldPresetId` at launch (makes the UI-Small=`globe_regular` preset trap observable
+   in every log/report).
+4. Planisphere upgrades that stay honest AND cheap (no GeoAuthority): latitude gridlines with degree
+   labels at the real band edges (23.5°/35°/50°/66.5°) — the create screen becomes a quiet teacher of the
+   zone system; spawn-band highlight stays. The REAL land-mask preview remains a flagged future feature
+   (needs debounced background sampling at ~64×32) — not in this overhaul.
+5. Wire-or-inline the `scaledUi`/`compactUi` identity no-ops; per-tab scroll memory in the narrow
+   (tabbed) fallback layout; keyboard navigation across panes.
+6. Restyle `SpawnZoneScreen` to the bespoke look (the last vanilla-look Latitude screen).
 
-## Proposed slice plan (fix-all-then-test-once, per the standing workflow)
+**Loading screen** (honest and robust per the audit — additions are informational, not structural):
+7. **World summary card** during load: shape · size · the typed seed — reinforces the bespoke identity
+   with data already in hand, and doubles as L20-friendly evidence in screenshots.
+8. **Truthful phase label**: the render gate already runs discrete stages (player settle → spawn-ring →
+   renderer warmup → render signal) — surface the CURRENT stage as the status line instead of generic
+   flavor phrases. If a fail-safe tier (6s/15s) fires, say "taking longer than usual…" rather than
+   staying silent; flavor phrases can remain as a secondary rotating line.
+9. Remove (or actually render) the dead `globe$displayProgress` field; keep the progress bar strictly
+   bound to vanilla `smoothedProgress` (already true — preserve in any refactor).
+10. Delete the dead set (`OverlayProof`, `ZoneEntryNotifier` + `ui/ZoneTitleOverlay`,
+    `EwSandstormOverlayRenderer` + its stale import, `GlobeModMenu`, old planisphere `render()`) —
+    subtractive commit, compile + S=0 byte-identity gate.
 
-- **U-A — layout model**: pin+grow + satellites + migration + normalized storage. Gate: mechanical — a
-  layout unit probe asserting pin invariance under biome-name sweep (longest/shortest names, all 9
-  anchors, scales 1-4); compile+test; S=0 byte-identity untouched (HUD-only).
-- **U-B — truthful Studio**: text-source selector, pin visualization, one drag model, show-mode honesty,
-  cosmetic truth, per-element reset, title hit-test. Gate: Studio-vs-live position parity probe (place at
-  known pins, assert live bounds equal Studio bounds for Longest text).
-- **U-C — front door + config hygiene**: F9→Studio, Settings fold-in, configVersion + defaults
-  unification + dead-field pruning + `directionMode` decision. Gate: config round-trip tests (old file →
-  migrated → stable), duplicated-field list empty.
-- **U-D — hygiene + refinements**: render-path caching + disc batching, world-switch resets, boss-bar
-  default nudge, seed-0 guard, size-label fix, dead-class deletion, SpawnZoneScreen restyle. Gate:
-  compile + S=0 byte-identity + the worldgen suite untouched.
-- Then ONE live UI pass on a single staged TEST jar: the 10-minute checklist (drag each element with a
-  long-name biome underfoot, GUI scale 1→4→Auto flip, resize, dimension hop for title reset, F9 flow,
-  create-screen seed-0 hint, boss-bar clearance).
+## Proposed slice plan r2 (fix-all-then-test-once, per the standing workflow)
 
-Estimated shape: U-A and U-B are the substance (roughly a day's focused work together); U-C/U-D are
-mechanical. Nothing here touches worldgen, terrain, or the consumer — fully parallel to the Phase-4/5
-track.
+- **U-A — layout model + dock**: pin+grow + satellites + normalized storage + versioned migration + the
+  hotbar dock (offsets, fit ladder, analog re-enable). Gate: mechanical — a layout unit probe asserting
+  (a) pin invariance under a biome-name sweep (longest/shortest names, all 9 anchors, scales 1-4) and
+  (b) dock non-overlap invariants (dock box ∩ hotbar/offhand/attack-indicator rects = ∅ across screen
+  widths 320-3840, both hand modes, both indicator modes); compile+test; S=0 byte-identity untouched.
+- **U-B — truthful Studio + IA v2**: element-centric pages, F9→Studio + Settings fold-in/delete,
+  text-source selector, pin visualization, one drag model, show-mode honesty, cosmetic truth,
+  per-element reset, title hit-test fix. Gate: Studio-vs-live position parity probe (place at known
+  pins, assert live bounds equal Studio bounds for Longest text) + duplicated-field list empty.
+- **U-C — config hygiene**: configVersion + defaults unification + dead-field pruning + `directionMode`
+  decision + unified save model. Gate: config round-trip tests (old file → migrated → stable).
+- **U-D — compass looks + render hygiene**: the 5-look system with texture-atlas rendering (replacing
+  per-pixel fills), state-change string caching, world-switch resets, boss-bar default nudge for fresh
+  configs. Gate: compile + a frame-cost sanity probe (fills-per-frame counter) + look thumbnails render
+  in Studio.
+- **U-E — create + loading refinements**: seed-0 guard + seed affordances, size-label fix + preset-id
+  log, planisphere band gridlines, loading summary card + truthful phase label, dead-class deletion,
+  SpawnZoneScreen restyle. Gate: compile + S=0 byte-identity + worldgen suite untouched.
+- Then ONE live UI pass on a single staged TEST jar: the ~15-minute checklist (drag each element with a
+  long-name biome underfoot; hotbar dock with offhand + hotbar attack indicator + narrow window; GUI
+  scale 1→4→Auto; resize; dimension hop for title reset; F9 flow; each compass look; create-screen
+  seed-0 hint; loading phase labels; boss-bar clearance).
+
+Estimated shape: U-A and U-B are the substance; U-C mechanical; U-D is the visual craft slice; U-E is a
+half-day of small wins. Nothing here touches worldgen, terrain, or the consumer — fully parallel to the
+Phase-4/5 track.
