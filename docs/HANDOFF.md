@@ -1,24 +1,27 @@
 # Latitude Handoff
 
-`scope: Latitude (Globe) main docs/history repo` · `status: partial candidate hardening; release not authorized` · `branch: main` · `updated: 2026-06-21`
+`scope: Latitude (Globe) main docs/history repo` · `status: historical pointer — active line is the 26.2 pivot (see banner)` · `branch: main` · `updated: 2026-07-06`
 
 > **What this doc is.** The single live "start here / resume here" pointer for `<home>/CascadeProjects/Latitude (Globe)`. It states the current repo state, the active source-of-truth split, and the next Maintainer-owned gate. It is meant to be overwritten as current truth changes. Durable lessons live in `docs/LESSONS.md`; port/backport operating rules live in `docs/porting/PORTING.md`; the chronological running log lives in `docs/binder/`.
 
 ---
 
-## 2.0 "Longitude" line — resume on the feature branch (added 2026-07-01)
+## 2.0 line — resume on the 26.2 pivot (updated 2026-07-06; the 2026-07-01 banner below-referenced line is itself now historical)
 
-> **This file is the `main`/history pointer, and it is a pre-2.0 lineage.** Active development is now the
-> **2.0 "Longitude"** line on the canonical 26.1.2 root
-> (`<home>/CascadeProjects/Latitude-custom-biome-expansion-26.1.2`, branch
-> `feat/custom-biome-expansion-26.1.2`, HEAD `30db22fc`, version `2.0-beta.1+26.1.2`). That branch's resume
-> pointer, feature notes, and open punch-list live in its binder — not here:
-> - `docs/binder/current-state-handoff-20260701.md` — start-here / resume pointer for the 2.0 line.
-> - `docs/binder/test1-live-findings-20260701.md` — open TEST 1 live-test punch-list (the next work gate).
-> - `docs/binder/atlas-worldshape-longitude-20260701.md` — Longitude compass reading + Atlas / World Shape toggle.
+> **This file is the `main`/history pointer, and it is a pre-2.0 lineage.** Active development is the
+> **Latitude 2.0 overhaul on the 26.2 pivot root**:
+> `<home>/CascadeProjects/Latitude-2.0-26.2-pivot`, branch `port/canonical-26.2-pivot`
+> (version `2.0-beta.1+26.2`). Start there:
+> - `docs/binder/fable5-overhaul-audit-report-20260706.md` — current truth + path forward (slices A–E,
+>   gates G1–G3). Phase 4 is mechanically closed, live-blocked on a Y-taper prerequisite.
+> - `docs/binder/index.md` — dated sections through the present.
+> - `docs/LATITUDE_2_0_OVERHAUL.md` — overhaul front door (its Phase-4 section carries an EXECUTED status block).
 >
-> See `docs/LESSONS.md` **L10** for why the doc surfaces are split across two worktrees. The "Current state"
-> section below describes this `main` history checkout and predates the 2.0 work.
+> The previous (2026-07-01) version of this banner pointed at the 26.1.2 feature worktree
+> (`Latitude-custom-biome-expansion-26.1.2` @ `30db22fc`); that line is now a prior-era reference and its
+> binder resume notes carry supersession banners. See `docs/LESSONS.md` **L10** for the two-worktree doc
+> split. Everything below this banner — including "Current state" and "Immediate next" — describes this
+> `main` history checkout's pre-2.0 era and is **HISTORICAL**: do not resume candidate hardening from it.
 
 ## Current state
 
@@ -72,6 +75,6 @@ Do not treat `pre-release-ready proof` as permission to release.
 
 Do not resume savepoint/release/upload work, 1.21.11 backport work, or 26.2 planning from this handoff unless Maintainer explicitly reactivates that lane. The current state is: **Latitude 1.4 / 26.1.2 is partial on current SHA `e09ea003...`; fresh SMALL smoke and shutdown are green, Itty/scenic/performance remain open/partial, and publication/savepoint actions are still separate Maintainer decisions.**
 
-## Immediate next
+## Immediate next (HISTORICAL — superseded 2026-07-06; see the 2.0 banner at the top; do not resume this)
 
 Continue candidate hardening on the canonical root. First re-anchor both this docs/history root and the canonical 26.1.2 root, verify the candidate/profile jar SHA still matches `e09ea00313307ae84f8e32a0470db523874fe11d8314d133ddadfe9d85bf2458`, confirm exact Java-window capture works after the screen is unlocked, then run a clean single-client Itty/scenic/palm/movement-soak proof before any savepoint, tag, push, upload, or publication step.

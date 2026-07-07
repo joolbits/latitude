@@ -1,6 +1,6 @@
 # Latitude Lessons
 
-`scope: durable project lessons` · `status: active` · `updated: 2026-07-03`
+`scope: durable project lessons` · `status: active` · `updated: 2026-07-06`
 
 This is the short "do not relearn this" file for Latitude. It is not the session log. The dated session log stays in `docs/binder/`, and the live resume pointer stays in `docs/HANDOFF.md`.
 
@@ -566,4 +566,36 @@ Required future behavior:
 
 Evidence: `Latitude-2.0-26.2-pivot` session scratchpad `FindTestSpot2.java` / `FullProfile.java` — a
 graduated seed-0 coastline located directly via `GeoAuthority`, independent of the (unrelated, in this
-configuration) displayed biome map.
+configuration) displayed biome map. (NB: the seed-0 half of that first coordinate was itself a mistake —
+see L20 — the corrected, durable coordinate lives in the pivot's `phase4-terrain-wrapper-20260705.md`
+correction block: typed seed `2591890304012655616`, `x=-3300, z=-3636`.)
+
+## L20 - A Mid-Session Correction Isn't Done Until Every Durable Record That Carried The Mistake Is Amended
+
+Trigger: correcting any recorded value or protocol (a coordinate, a seed, a command, a threshold) that was
+already written into a binder note, registry row, handoff, or cross-session memory before the correction
+happened; recording any armed live-evidence row.
+
+Lesson: during Phase 4 live tuning, a calibration coordinate derived at seed 0 was handed to Peetsa and
+written into the binder handoff. Peetsa caught the seed-0 error live ("I thought you said not to do seed
+0") and a corrected coordinate was derived at the pinned standard seed — but only the conversation got the
+correction. The binder kept the seed-0 coordinate and remained the standing protocol; cross-session memory
+carried it too. The Fable 5 audit later flagged it as a P0 (its synthesis critic's headline catch):
+following the recorded handoff verbatim would reproduce the "wrapper does nothing" symptom (literal-seed-0
+worlds never arm GeoAuthority) or, worse, silently exercise the stale-provider hazard — a full wasted live
+session queued up inside the project's own documentation. A compounding record gap: the live evidence rows
+paired "seed 0" with armed-terrainV2 observations (behaviorally impossible as written) because nobody
+recorded the ACTUAL typed seed or the same-JVM world-load history — the two variables the seed-0-inert and
+stale-provider failure classes hinge on.
+
+Required future behavior:
+- When a recorded value is corrected mid-session, grep binder + registry + handoffs + cross-session memory
+  for the stale value in the SAME pass and amend every surface that carries it. L15's rename discipline
+  applies to VALUES, not just identifiers — a stale number doesn't fail to compile either.
+- Armed live-evidence records must pin the actual typed seed and the same-JVM world-load history (fresh
+  JVM? which worlds loaded before this one?), not just the intended flag config.
+
+Evidence:
+- Pivot `docs/binder/fable5-overhaul-audit-report-20260706.md` (§1 P0-2, §8 repair map).
+- Pivot `docs/binder/phase4-terrain-wrapper-20260705.md` (2026-07-06 correction block) and registry row
+  `20260706-fable5-slice-a-truth-restore` (the annotation of rows :123/:124).
