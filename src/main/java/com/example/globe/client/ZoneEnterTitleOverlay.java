@@ -112,6 +112,20 @@ public final class ZoneEnterTitleOverlay {
     // (0,0) origin -- caller is expected to have already translated/scaled the pose matrix. Always goes through
     // the per-character drawSpacedText loop (even at spacing=0) rather than branching to ctx.centeredText, so
     // there is exactly one code path to keep in sync, not two.
+    /** U-B: the styled title's real measured width (case + letter-spacing applied) — used by the Studio's
+     *  drag hit-test so the grab box matches the letters actually drawn, at every case/spacing setting. */
+    public static int styledWidth(Font font, String rawText) {
+        String styled = applyCase(rawText, LatitudeConfig.zoneEnterTitleCase);
+        int spacing = LatitudeConfig.zoneEnterTitleLetterSpacing;
+        int n = styled.length();
+        int totalWidth = 0;
+        for (int i = 0; i < n; i++) {
+            totalWidth += font.width(String.valueOf(styled.charAt(i)));
+        }
+        if (n > 1) totalWidth += spacing * (n - 1);
+        return totalWidth;
+    }
+
     private static void drawStyledTitle(GuiGraphicsExtractor ctx, Font font, String text, int alphaByte) {
         int spacing = LatitudeConfig.zoneEnterTitleLetterSpacing;
         int alphaMask = (alphaByte & 0xFF) << 24;

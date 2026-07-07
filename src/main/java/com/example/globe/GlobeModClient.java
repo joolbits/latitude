@@ -10,7 +10,7 @@ import com.example.globe.client.CompassHudConfig;
 import com.example.globe.client.ClientKeybinds;
 import com.example.globe.client.GlobeWarningOverlay;
 import com.example.globe.client.LatitudeClientState;
-import com.example.globe.client.LatitudeSettingsScreen;
+import com.example.globe.client.LatitudeHudStudioScreen;
 import com.example.globe.client.SpawnZoneScreen;
 import com.example.globe.client.EwSandstormOverlayRenderer;
 import com.example.globe.client.EwStormWallRenderer;
@@ -177,10 +177,13 @@ public class GlobeModClient implements ClientModInitializer {
         }
 
         while (ClientKeybinds.OPEN_SETTINGS.consumeClick()) {
+            // U-B one-front-door: F9 opens the HUD Studio directly (the legacy LatitudeSettingsScreen was a
+            // duplicated subset with different save semantics; its two unique fields moved to the Studio's
+            // General tab).
             if (client.gui.screen() == null) {
-                client.setScreenAndShow(new LatitudeSettingsScreen(null));
+                client.setScreenAndShow(new LatitudeHudStudioScreen(null));
             } else {
-                client.setScreenAndShow(new LatitudeSettingsScreen(client.gui.screen()));
+                client.setScreenAndShow(new LatitudeHudStudioScreen(client.gui.screen()));
             }
         }
     }

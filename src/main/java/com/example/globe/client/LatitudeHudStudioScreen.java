@@ -24,9 +24,9 @@ public class LatitudeHudStudioScreen extends Screen {
     private static final int PANEL_BORDER = 0xFF5C4A3A;
     private static final int PANEL_BG = 0xFF3A302A;
 
-    private static final String[] TAB_LABELS = {"Compass", "Placement", "Title", "General"};
+    private static final String[] TAB_NAMES = {"Compass", "Labels", "Title", "General"};
     private static final int TAB_COMPASS = 0;
-    private static final int TAB_PLACEMENT = 1;
+    private static final int TAB_LABELS = 1;
     private static final int TAB_TITLE = 2;
     private static final int TAB_GENERAL = 3;
     private static final int TAB_H = 20;
@@ -346,18 +346,47 @@ public class LatitudeHudStudioScreen extends Screen {
                 trackSidebarWidget(this.wCompassCompact, y);
                 y += rowH + rowGap;
 
-                this.wCompassAttachHotbar = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "ON" : "OFF"), () -> cfg.dockMode == CompassHudConfig.DockMode.HOTBAR_RIGHT)
-                        .withValues(true, false)
-                        .create(panelX, y, widgetW, rowH, Component.literal("Attach to Hotbar"), (btn, value) -> {
-                            cfg.dockMode = value ? CompassHudConfig.DockMode.HOTBAR_RIGHT : CompassHudConfig.DockMode.NONE;
-                            cfg.attachToHotbarCompass = value; // legacy mirror for older jars reading this file
-                            CompassHudConfig.saveCurrent();
-                        }));
-                tooltip(this.wCompassAttachHotbar, "Docks the compass (either style) to the right of the hotbar. It grows away from the hotbar and steps inward stages on narrow screens -- it can never clip the hotbar or run off-screen.");
-                trackSidebarWidget(this.wCompassAttachHotbar, y);
-                y += rowH + rowGap;
             }
-        } else if (activeTab == TAB_PLACEMENT) {
+
+            this.wCompassAttachHotbar = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "ON" : "OFF"), () -> cfg.dockMode == CompassHudConfig.DockMode.HOTBAR_RIGHT)
+                    .withValues(true, false)
+                    .create(panelX, y, widgetW, rowH, Component.literal("Attach to Hotbar"), (btn, value) -> {
+                        cfg.dockMode = value ? CompassHudConfig.DockMode.HOTBAR_RIGHT : CompassHudConfig.DockMode.NONE;
+                        cfg.attachToHotbarCompass = value; // legacy mirror for older jars reading this file
+                        CompassHudConfig.saveCurrent();
+                    }));
+            tooltip(this.wCompassAttachHotbar, "Docks the compass (either style) to the right of the hotbar. It grows away from the hotbar and steps inward stages on narrow screens -- it can never clip the hotbar or run off-screen.");
+            trackSidebarWidget(this.wCompassAttachHotbar, y);
+            y += rowH + rowGap;
+
+            this.addRenderableWidget(Button.builder(Component.literal("Reset Compass"), b -> {
+                        var fresh = CompassHudConfig.fresh();
+                        cfg.style = fresh.style;
+                        cfg.analogSize = fresh.analogSize;
+                        cfg.analogInnerAlpha = fresh.analogInnerAlpha;
+                        cfg.analogTheme = fresh.analogTheme;
+                        cfg.scale = fresh.scale;
+                        cfg.showBackground = fresh.showBackground;
+                        cfg.backgroundRgb = fresh.backgroundRgb;
+                        cfg.backgroundAlpha = fresh.backgroundAlpha;
+                        cfg.textRgb = fresh.textRgb;
+                        cfg.textAlpha = fresh.textAlpha;
+                        cfg.textRainbow = fresh.textRainbow;
+                        cfg.hAnchor = fresh.hAnchor;
+                        cfg.vAnchor = fresh.vAnchor;
+                        cfg.offXFrac = fresh.offXFrac;
+                        cfg.offYFrac = fresh.offYFrac;
+                        cfg.growH = fresh.growH;
+                        cfg.growV = fresh.growV;
+                        cfg.dockMode = fresh.dockMode;
+                        cfg.attachToHotbarCompass = fresh.attachToHotbarCompass;
+                        CompassHudConfig.saveCurrent();
+                        this.init();
+                    })
+                    .bounds(panelX, y, widgetW, rowH)
+                    .build());
+            y += rowH + rowGap;
+        } else if (activeTab == TAB_LABELS) {
             this.wZoneDisplay = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "ON" : "OFF"), () -> cfg.displayZoneInHud)
                     .withValues(true, false)
                     .create(panelX, y, widgetW, rowH, Component.literal("Display Zone in HUD"), (btn, value) -> {
@@ -422,6 +451,75 @@ public class LatitudeHudStudioScreen extends Screen {
             tooltip(this.wCoordsFollow, "Let the latitude/longitude readout ride with the compass or detach it for dragging.");
             trackSidebarWidget(this.wCoordsFollow, y);
             y += rowH + rowGap;
+
+            var growLabels = new java.util.LinkedHashMap<com.example.globe.core.ui.HudLayoutMath.GrowH, String>();
+            growLabels.put(com.example.globe.core.ui.HudLayoutMath.GrowH.LEFT, "Grow Right");
+            growLabels.put(com.example.globe.core.ui.HudLayoutMath.GrowH.CENTER, "Grow Both Ways");
+            growLabels.put(com.example.globe.core.ui.HudLayoutMath.GrowH.RIGHT, "Grow Left");
+
+            var wZoneGrow = this.addRenderableWidget(CycleButton.<com.example.globe.core.ui.HudLayoutMath.GrowH>builder(v -> Component.literal(growLabels.get(v)), () -> cfg.zoneGrowH)
+                    .withValues(com.example.globe.core.ui.HudLayoutMath.GrowH.values())
+                    .create(panelX, y, widgetW, rowH, Component.literal("Zone Text Grow"), (btn, value) -> {
+                        cfg.zoneGrowH = value;
+                        CompassHudConfig.saveCurrent();
+                    }));
+            tooltip(wZoneGrow, "How the detached zone label extends from its pin when its text length changes. The pin itself never moves.");
+            trackSidebarWidget(wZoneGrow, y);
+            y += rowH + rowGap;
+
+            var wBiomeGrow = this.addRenderableWidget(CycleButton.<com.example.globe.core.ui.HudLayoutMath.GrowH>builder(v -> Component.literal(growLabels.get(v)), () -> cfg.biomeGrowH)
+                    .withValues(com.example.globe.core.ui.HudLayoutMath.GrowH.values())
+                    .create(panelX, y, widgetW, rowH, Component.literal("Biome Text Grow"), (btn, value) -> {
+                        cfg.biomeGrowH = value;
+                        CompassHudConfig.saveCurrent();
+                    }));
+            tooltip(wBiomeGrow, "How the detached biome label extends from its pin when the biome name changes length. The pin itself never moves.");
+            trackSidebarWidget(wBiomeGrow, y);
+            y += rowH + rowGap;
+
+            var wReserved = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "ON" : "OFF"), () -> cfg.reservedTextWidth)
+                    .withValues(true, false)
+                    .create(panelX, y, widgetW, rowH, Component.literal("Reserved Width"), (btn, value) -> {
+                        cfg.reservedTextWidth = value;
+                        CompassHudConfig.saveCurrent();
+                    }));
+            tooltip(wReserved, "Sizes text boxes to this world's longest biome name so even their edges never move, whatever biome you're in.");
+            trackSidebarWidget(wReserved, y);
+            y += rowH + rowGap;
+
+            this.addRenderableWidget(Button.builder(Component.literal("Reset Labels"), b -> {
+                        var fresh = CompassHudConfig.fresh();
+                        cfg.displayZoneInHud = fresh.displayZoneInHud;
+                        cfg.zoneFollowsCompass = fresh.zoneFollowsCompass;
+                        cfg.zoneHAnchor = fresh.zoneHAnchor;
+                        cfg.zoneVAnchor = fresh.zoneVAnchor;
+                        cfg.zoneOffXFrac = fresh.zoneOffXFrac;
+                        cfg.zoneOffYFrac = fresh.zoneOffYFrac;
+                        cfg.zoneGrowH = fresh.zoneGrowH;
+                        cfg.zoneGrowV = fresh.zoneGrowV;
+                        cfg.displayBiomeInHud = fresh.displayBiomeInHud;
+                        cfg.biomeFollowsCompass = fresh.biomeFollowsCompass;
+                        cfg.biomeHAnchor = fresh.biomeHAnchor;
+                        cfg.biomeVAnchor = fresh.biomeVAnchor;
+                        cfg.biomeOffXFrac = fresh.biomeOffXFrac;
+                        cfg.biomeOffYFrac = fresh.biomeOffYFrac;
+                        cfg.biomeGrowH = fresh.biomeGrowH;
+                        cfg.biomeGrowV = fresh.biomeGrowV;
+                        cfg.biomeBeforeZone = fresh.biomeBeforeZone;
+                        cfg.coordsFollowsCompass = fresh.coordsFollowsCompass;
+                        cfg.coordsHAnchor = fresh.coordsHAnchor;
+                        cfg.coordsVAnchor = fresh.coordsVAnchor;
+                        cfg.coordsOffXFrac = fresh.coordsOffXFrac;
+                        cfg.coordsOffYFrac = fresh.coordsOffYFrac;
+                        cfg.coordsGrowH = fresh.coordsGrowH;
+                        cfg.coordsGrowV = fresh.coordsGrowV;
+                        cfg.reservedTextWidth = fresh.reservedTextWidth;
+                        CompassHudConfig.saveCurrent();
+                        this.init();
+                    })
+                    .bounds(panelX, y, widgetW, rowH)
+                    .build());
+            y += rowH + rowGap;
         } else if (activeTab == TAB_TITLE) {
             this.wTitleEnabled = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "ON" : "OFF"), () -> LatitudeConfig.zoneEnterTitleEnabled)
                     .withValues(true, false)
@@ -485,6 +583,30 @@ public class LatitudeHudStudioScreen extends Screen {
             tooltip(this.wTitleLetterSpacing, "Adds (or removes) extra space between letters in the zone-enter title.");
             trackSidebarWidget(this.wTitleLetterSpacing, y);
             y += rowH + rowGap;
+
+            this.wTitleDraggable = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "ON" : "OFF"), () -> LatitudeConfig.zoneEnterTitleDraggable)
+                    .withValues(true, false)
+                    .create(panelX, y, widgetW, rowH, Component.literal("Title Draggable"), (btn, value) -> {
+                        LatitudeConfig.zoneEnterTitleDraggable = value;
+                        LatitudeConfig.saveCurrent();
+                    }));
+            tooltip(this.wTitleDraggable, "Allows the zone-enter title to be repositioned by dragging it in this editor.");
+            trackSidebarWidget(this.wTitleDraggable, y);
+            y += rowH + rowGap;
+
+            this.addRenderableWidget(Button.builder(Component.literal("Reset Title"), b -> {
+                        LatitudeConfig.zoneEnterTitleOffsetX = 0;
+                        LatitudeConfig.zoneEnterTitleOffsetY = 0;
+                        LatitudeConfig.zoneEnterTitleScale = 1.6;
+                        LatitudeConfig.zoneEnterTitleSeconds = 4.0;
+                        LatitudeConfig.saveCurrent();
+                        this.titleOffsetXf = 0;
+                        this.titleOffsetYf = 0;
+                        this.init();
+                    })
+                    .bounds(panelX, y, widgetW, rowH)
+                    .build());
+            y += rowH + rowGap;
         } else {
             this.wHudSnap = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "Snap to Grid" : "Free Move"), () -> LatitudeConfig.hudSnapEnabled)
                     .withValues(true, false)
@@ -502,14 +624,39 @@ public class LatitudeHudStudioScreen extends Screen {
             trackSidebarWidget(this.wHudSnapPixels, y);
             y += rowH + rowGap;
 
-            this.wTitleDraggable = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "ON" : "OFF"), () -> LatitudeConfig.zoneEnterTitleDraggable)
+            var wShowMode = this.addRenderableWidget(CycleButton.<CompassHudConfig.ShowMode>builder(v -> Component.literal(switch (v) {
+                        case ALWAYS -> "Always";
+                        case COMPASS_PRESENT -> "Compass in inventory";
+                        case HOLDING_COMPASS -> "Holding compass";
+                    }), () -> cfg.showMode)
+                    .withValues(CompassHudConfig.ShowMode.values())
+                    .create(panelX, y, widgetW, rowH, Component.literal("Show HUD"), (btn, value) -> {
+                        cfg.showMode = value;
+                        CompassHudConfig.saveCurrent();
+                    }));
+            tooltip(wShowMode, "When the compass HUD is visible in-game. The Studio preview always shows everything; in-game visibility follows this rule. (Folded in from the old F9 Settings screen.)");
+            trackSidebarWidget(wShowMode, y);
+            y += rowH + rowGap;
+
+            var wWarnings = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "ON" : "OFF"), () -> LatitudeConfig.showWarningMessages)
                     .withValues(true, false)
-                    .create(panelX, y, widgetW, rowH, Component.literal("Title Draggable"), (btn, value) -> {
-                        LatitudeConfig.zoneEnterTitleDraggable = value;
+                    .create(panelX, y, widgetW, rowH, Component.literal("Warning Messages"), (btn, value) -> {
+                        LatitudeConfig.showWarningMessages = value;
                         LatitudeConfig.saveCurrent();
                     }));
-            tooltip(this.wTitleDraggable, "Allows the zone-enter title to be repositioned by dragging it in this editor.");
-            trackSidebarWidget(this.wTitleDraggable, y);
+            tooltip(wWarnings, "Shows Latitude's warning overlays (world border, polar hazards). (Folded in from the old F9 Settings screen.)");
+            trackSidebarWidget(wWarnings, y);
+            y += rowH + rowGap;
+
+            var wPreviewText = this.addRenderableWidget(CycleButton.<CompassHud.PreviewTextSource>builder(v -> Component.literal(switch (v) {
+                        case SAMPLE -> "Short sample";
+                        case LONGEST -> "Longest real text";
+                        case LIVE -> "Live values";
+                    }), () -> CompassHud.previewTextSource)
+                    .withValues(CompassHud.PreviewTextSource.values())
+                    .create(panelX, y, widgetW, rowH, Component.literal("Preview Text"), (btn, value) -> CompassHud.previewTextSource = value));
+            tooltip(wPreviewText, "What text the preview measures and draws. 'Longest real text' (default) shows the true worst case, so what you place is what you get in-game.");
+            trackSidebarWidget(wPreviewText, y);
             y += rowH + rowGap;
         }
 
@@ -563,7 +710,7 @@ public class LatitudeHudStudioScreen extends Screen {
             ctx.fill(px + 2, py + 2, px + pw - 2, py + 3, GOLD & 0x66FFFFFF);
             ctx.fill(px + 2, py + ph - 3, px + pw - 2, py + ph - 2, GOLD & 0x66FFFFFF);
 
-            String heading = TAB_LABELS[activeTab];
+            String heading = TAB_NAMES[activeTab];
             int headingW = this.font.width(heading);
             int headingX = px + (pw - headingW) / 2;
             int headingY = py + 6;
@@ -921,7 +1068,7 @@ public class LatitudeHudStudioScreen extends Screen {
     }
 
     private void drawTabStrip(GuiGraphicsExtractor ctx, int mouseX, int mouseY) {
-        int tabCount = TAB_LABELS.length;
+        int tabCount = TAB_NAMES.length;
         int totalW = sidebarWidth + 4;
         int tabW = (totalW - TAB_GAP * (tabCount - 1)) / tabCount;
         int x = 6;
@@ -940,7 +1087,7 @@ public class LatitudeHudStudioScreen extends Screen {
                 ctx.fill(x, tabStripY + TAB_H - 1, x + tabW, tabStripY + TAB_H, PANEL_BORDER);
             }
             int labelColor = active ? GOLD : (hovered ? WARM_WHITE : MUTED);
-            String label = TAB_LABELS[i];
+            String label = TAB_NAMES[i];
             int labelW = this.font.width(label);
             int cx = x + tabW / 2;
             int cy = tabStripY + TAB_H / 2;
@@ -960,7 +1107,7 @@ public class LatitudeHudStudioScreen extends Screen {
     private boolean handleTabClick(double mouseX, double mouseY) {
         if (!sidebarVisible) return false;
         if (mouseY < tabStripY || mouseY >= tabStripY + TAB_H) return false;
-        int tabCount = TAB_LABELS.length;
+        int tabCount = TAB_NAMES.length;
         int totalW = sidebarWidth + 4;
         int tabW = (totalW - TAB_GAP * (tabCount - 1)) / tabCount;
         int x = 6;
@@ -1212,8 +1359,10 @@ public class LatitudeHudStudioScreen extends Screen {
             return false;
         }
 
-        String s = "TROPICAL 0\u00b0";
-        int w = mc.font.width(s);
+        // U-B: measure the SAME string the preview draws, with case + letter-spacing applied, so the grab
+        // box always matches the letters on screen (was a hardcoded "TROPICAL 0\u00b0" measurement).
+        String s = studioPreviewTitle(mc);
+        int w = ZoneEnterTitleOverlay.styledWidth(mc.font, s);
         int h = mc.font.lineHeight;
 
         double scale = Mth.clamp(LatitudeConfig.zoneEnterTitleScale, 1.0, 3.0);
@@ -1229,6 +1378,19 @@ public class LatitudeHudStudioScreen extends Screen {
                 && mx <= (cx + halfW + pad)
                 && my >= (cy - halfH - pad)
                 && my <= (cy + halfH + pad);
+    }
+
+    /** The exact string the title preview renders (shared by the render path and the drag hit-test). */
+    private static String studioPreviewTitle(Minecraft mc) {
+        var level = mc.level;
+        var player = mc.player;
+        if (level != null && player != null) {
+            var border = level.getWorldBorder();
+            String degText = com.example.globe.util.LatitudeMath.formatLatitudeDeg(border, player.getZ());
+            String zoneWord = zoneTitleWord(com.example.globe.util.LatitudeMath.zoneKey(border, player.getZ()));
+            return zoneWord + " " + degText;
+        }
+        return "TROPICS 12\u00b0S";
     }
 
     /** Natural-case zone title word, matching GlobeWarningOverlay's real title text (so the preview reads like
@@ -1253,54 +1415,6 @@ public class LatitudeHudStudioScreen extends Screen {
 
     private static int clamp(int v, int lo, int hi) {
         return Math.max(lo, Math.min(hi, v));
-    }
-
-    private static int anchoredZoneX(CompassHudConfig cfg, int screenW, int boxW) {
-        return switch (cfg.zoneHAnchor) {
-            case LEFT -> 4;
-            case CENTER -> (screenW - boxW) / 2;
-            case RIGHT -> screenW - boxW - 4;
-        };
-    }
-
-    private static int anchoredZoneY(CompassHudConfig cfg, int screenH, int boxH) {
-        return switch (cfg.zoneVAnchor) {
-            case TOP -> 4;
-            case CENTER -> (screenH - boxH) / 2;
-            case BOTTOM -> screenH - boxH - 4;
-        };
-    }
-
-    private static int anchoredBiomeX(CompassHudConfig cfg, int screenW, int boxW) {
-        return switch (cfg.biomeHAnchor) {
-            case LEFT -> 4;
-            case CENTER -> (screenW - boxW) / 2;
-            case RIGHT -> screenW - boxW - 4;
-        };
-    }
-
-    private static int anchoredBiomeY(CompassHudConfig cfg, int screenH, int boxH) {
-        return switch (cfg.biomeVAnchor) {
-            case TOP -> 4;
-            case CENTER -> (screenH - boxH) / 2;
-            case BOTTOM -> screenH - boxH - 4;
-        };
-    }
-
-    private static int anchoredCoordsX(CompassHudConfig cfg, int screenW, int boxW) {
-        return switch (cfg.coordsHAnchor) {
-            case LEFT -> 4;
-            case CENTER -> (screenW - boxW) / 2;
-            case RIGHT -> screenW - boxW - 4;
-        };
-    }
-
-    private static int anchoredCoordsY(CompassHudConfig cfg, int screenH, int boxH) {
-        return switch (cfg.coordsVAnchor) {
-            case TOP -> 4;
-            case CENTER -> (screenH - boxH) / 2;
-            case BOTTOM -> screenH - boxH - 4;
-        };
     }
 
     private static String themeLabel(CompassHudConfig.AnalogCompassTheme theme) {
