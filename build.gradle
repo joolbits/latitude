@@ -102,6 +102,7 @@ loom {
             vmArg "-Dlatitude.terrainV2.enabled=${System.getProperty('latitude.terrainV2.enabled', 'false')}"
             vmArg "-Dlatitude.terrainV2.strength=${System.getProperty('latitude.terrainV2.strength', '0.0')}"
             vmArg "-Dlatitude.terrainV2.oceanStrengthRatio=${System.getProperty('latitude.terrainV2.oceanStrengthRatio', '1.0')}"
+            vmArg "-Dlatitude.terrainV2.gripWidth=${System.getProperty('latitude.terrainV2.gripWidth', '0.8')}"
             vmArg "-Dlatitude.geoV2.enabled=${System.getProperty('latitude.geoV2.enabled', 'false')}"
             // Slice C follow-up (the L17 forwarding class, caught a SECOND time 2026-07-07): climateV2 and
             // biomeConsumerV2 were never forwarded, so a headless "consumer-on" atlas silently ran with the

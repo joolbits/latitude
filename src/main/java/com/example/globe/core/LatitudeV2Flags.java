@@ -72,6 +72,19 @@ public final class LatitudeV2Flags {
             parseDoubleOrDefault(System.getProperty("latitude.terrainV2.oceanStrengthRatio"), 1.0);
 
     /**
+     * Slice C-3 "grade the grip" (TEST 29 live wall): the land01-halfwidth over which the ocean carve
+     * takes hold beyond the coastline. The carve's DEPTH was always distance-graded, but its GRIP was
+     * instant at the coastline contour, planing tall old-map hills into sheer walls. Full carve applies
+     * from |d| >= this value (d = 2*land01-1). 0 disables the ramp (legacy instant grip). Default 0.8:
+     * the wall-transect calibration showed 0.4 maps to only ~50 blocks on steep coastline gradients
+     * (still cliffy); 0.8 spreads the descent across the land01 0.5->0.1 band (~100-150 blocks there)
+     * while land01 <= 0.1 still carves at full strength, so open ocean is untouched. Live-tunable like
+     * the other terrainV2 knobs.
+     */
+    public static final double TERRAIN_V2_GRIP_WIDTH =
+            parseDoubleOrDefault(System.getProperty("latitude.terrainV2.gripWidth"), 0.8);
+
+    /**
      * Defensive double parse for the Phase 4 knobs: a {@code null} (property unset) or malformed value
      * degrades to {@code fallback} instead of throwing {@link NumberFormatException} at class-init.
      */
