@@ -1133,6 +1133,11 @@ public class LatitudeCreateWorldScreen extends Screen {
         boolean hardcore = selectedModeIdx == 1;
         Difficulty difficulty = hardcore ? Difficulty.HARD : Difficulty.NORMAL;
 
+        // Always log the selection state at the create click — TEST 29 produced a world whose zone
+        // didn't match what the player believed was selected, and the log had nothing to distinguish
+        // "user re-clicked a band" from "selection state bug". Now it always says.
+        LOGGER.info("[lat-ui] create-world spawn zone selection: random={} selectedZone={}", randomZone, selectedZone.name());
+
         // Random spawn zone resolves to a concrete band HERE, so everything downstream (launcher,
         // server spawn placement, saved state) keeps its existing single-band contract.
         LatitudeBands.Band spawnZone = this.selectedZone;
@@ -1324,7 +1329,10 @@ public class LatitudeCreateWorldScreen extends Screen {
         int headerBottom = tabbedMode ? tabStripY - 2 : panelTop;
         UiRect headerRect = new UiRect(titlePaneX, headerY, Math.max(1, titlePaneW), Math.max(1, headerBottom - headerY - 6));
         int headerLineY = headerRect.y;
-        if (drawCenteredBoundedText(context, "LATITUDE", new UiRect(headerRect.x, headerLineY, headerRect.w, uiFontHeight()), GOLD, true, false)) {
+        int wordmarkH = drawLatitudeWordmark(context, new UiRect(headerRect.x, headerLineY, headerRect.w, headerRect.h));
+        if (wordmarkH > 0) {
+            headerLineY += wordmarkH + scaledUi(6);
+        } else if (drawCenteredBoundedText(context, "LATITUDE", new UiRect(headerRect.x, headerLineY, headerRect.w, uiFontHeight()), GOLD, true, false)) {
             headerLineY += uiFontHeight() + scaledUi(6);
         }
         if (drawCenteredBoundedText(context, "New World", new UiRect(headerRect.x, headerLineY, headerRect.w, uiFontHeight()), WARM_WHITE, true, false)) {
@@ -1686,7 +1694,10 @@ public class LatitudeCreateWorldScreen extends Screen {
         int idealGlobeLeft = areaLeft + (areaRight - areaLeft - globeWidth) / 2;
         int maxGlobeLeft = areaRight - rightPadding - labelWidth - labelPad - globeWidth;
         int globeLeft = Math.max(areaLeft, Math.min(idealGlobeLeft, maxGlobeLeft));
-        int globeTop = areaTop + (areaBottom - areaTop - compositionHeight) / 2;
+        // Top-aligned, not v-centered: centering parked the map halfway down the panel with dead space
+        // between it and the ATLAS label above (TEST 29: "atlas still is too low"). The fit loop already
+        // guarantees the composition fits, so leftover space falls harmlessly below the caption.
+        int globeTop = areaTop;
         int globeCenterY = globeTop + radius;
         int labelX = globeLeft + globeWidth + labelPad;
         int labelHeight = scaledFontHeight(labelScale);
@@ -1805,6 +1816,70 @@ public class LatitudeCreateWorldScreen extends Screen {
 
     private void drawUiText(GuiGraphicsExtractor context, String text, int x, int y, int color, boolean shadow) {
         context.text(this.font, text, x, y, color, shadow);
+    }
+
+    /**
+     * The LATITUDE wordmark (TEST 29: "I thought 'LATITUDE' at the top was going to look a little more
+     * special"): scaled-up, letter-spaced gold with a dark-bronze letterpress under-layer and flanking
+     * rules with diamond tips — chartroom-brass, matching the panel-heading motif. Returns the height
+     * consumed, or 0 when the rect can't fit it (caller falls back to the plain line).
+     */
+    private int drawLatitudeWordmark(GuiGraphicsExtractor context, UiRect rect) {
+        final String text = "LATITUDE";
+        final float scale = 1.5f;
+        int spacing = Math.max(1, scaledUi(2));
+        int rawW = 0;
+        for (int i = 0; i < text.length(); i++) {
+            rawW += this.font.width(String.valueOf(text.charAt(i)));
+            if (i + 1 < text.length()) rawW += spacing;
+        }
+        int drawW = Math.round(rawW * scale);
+        int drawH = Math.round(this.font.lineHeight * scale);
+        if (drawW > rect.w - 8 || drawH > rect.h) {
+            return 0;
+        }
+        int startX = rect.x + (rect.w - drawW) / 2;
+        var m = context.pose();
+        m.pushMatrix();
+        try {
+            m.translate(startX, rect.y);
+            m.scale(scale, scale);
+            int cx = 0;
+            for (int i = 0; i < text.length(); i++) {
+                String s = String.valueOf(text.charAt(i));
+                context.text(this.font, s, cx + 1, 1, 0xFF3A2410, false); // letterpress under-layer
+                context.text(this.font, s, cx, 0, GOLD, false);
+                cx += this.font.width(s) + spacing;
+            }
+        } finally {
+            m.popMatrix();
+        }
+        // Flanking rules with a small diamond at each inner end, vertically centered on the wordmark.
+        int midY = rect.y + drawH / 2;
+        int gap = scaledUi(8);
+        int lineLen = (rect.w - drawW) / 2 - gap * 2;
+        if (lineLen >= scaledUi(10)) {
+            int lw = 0x66000000 | (GOLD & 0xFFFFFF);
+            context.fill(startX - gap - lineLen, midY, startX - gap, midY + 1, lw);
+            context.fill(startX + drawW + gap, midY, startX + drawW + gap + lineLen, midY + 1, lw);
+            context.fill(startX - gap - 2, midY - 1, startX - gap + 1, midY + 2, GOLD);
+            context.fill(startX + drawW + gap - 1, midY - 1, startX + drawW + gap + 2, midY + 2, GOLD);
+        }
+        return drawH;
+    }
+
+    /** Per-letter rainbow, italicized — the selected "Random" spawn-zone row's name treatment (TEST 29). */
+    private void drawRainbowItalicUiText(GuiGraphicsExtractor context, String text, int x, int y) {
+        int cx = x;
+        int visibleIdx = 0;
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            Component ch = Component.literal(String.valueOf(c)).withStyle(net.minecraft.ChatFormatting.ITALIC);
+            int color = 0xFF000000 | com.example.globe.client.RainbowText.paletteColor(visibleIdx);
+            context.text(this.font, ch, cx, y, color, true);
+            if (c != ' ') visibleIdx++;
+            cx += this.font.width(ch);
+        }
     }
 
     private void drawCenteredUiText(GuiGraphicsExtractor context, String text, int cx, int y, int color, boolean shadow) {
@@ -2276,7 +2351,11 @@ public class LatitudeCreateWorldScreen extends Screen {
             int textColor = selected ? GOLD : MUTED;
             int textX = x + 6;
 
-            drawUiText(context, this.band == null ? "Random" : this.band.displayName(), textX, y + compactUi(2), textColor, selected);
+            if (this.band == null && selected) {
+                drawRainbowItalicUiText(context, "Random", textX, y + compactUi(2));
+            } else {
+                drawUiText(context, this.band == null ? "Random" : this.band.displayName(), textX, y + compactUi(2), textColor, selected);
+            }
 
             String range = this.band == null
                     ? formatDegree(0.0) + "\u2013" + formatDegree(90.0)
