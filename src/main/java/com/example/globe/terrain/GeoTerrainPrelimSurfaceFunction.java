@@ -40,6 +40,8 @@ public final class GeoTerrainPrelimSurfaceFunction implements DensityFunction.Si
         // exactly as they would unwrapped.
         double base = delegate.compute(ctx);
         try {
+            // Slice C-3 note: the helper's ceiling is already grip-graded, so this stays C-2's pure
+            // min() clamp and the two wrappers keep reading the SAME effective ceiling per column.
             double ceilY = GeoTerrainBiasFunction.carveCeilYOrInfinity(ctx.blockX(), ctx.blockZ());
             return Double.isInfinite(ceilY) ? base : Math.min(base, ceilY);
         } catch (Throwable t) {

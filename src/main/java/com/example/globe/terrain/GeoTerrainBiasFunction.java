@@ -118,6 +118,38 @@ public final class GeoTerrainBiasFunction implements DensityFunction.SimpleFunct
         return 1.0 - 0.8 * s01;
     }
 
+    // --- Slice C-3 (TEST 29 live finding: the "cursed giant wall") -- grade the GRIP ---------------------
+    //
+    // C-2 graded the carve's DEPTH with ocean-ward distance, but its GRIP was instant: the moment a column
+    // crossed to ocean-intent (d<0), min(base, ceil) erased everything above the (still-shallow) ceiling,
+    // no matter how tall the old-map terrain stood -- so wherever the geography coastline crossed tall
+    // vanilla hills, the d=0 contour became a sheer planing cliff with aquifer/lava bleeds (live-confirmed
+    // at 40S 135E; headless transect test29wall-r1.json: land01 ramps 1->0 over ~300 blocks while the
+    // surface snapped 80->63 at the contour).
+    //
+    // The fix grades the CEILING'S HEIGHT, not the density: the effective ceiling descends from
+    // CEIL_ONSET_Y (above the bias's whole operating envelope -- nothing to bite) down to the C-2 target
+    // Y* as grip01 = smoothstep(|d| / GRIP_WIDTH) goes 0 -> 1 across the coastal band. min() semantics are
+    // PRESERVED EXACTLY, which matters: the first C-3 attempt blended densities
+    // (base + grip*(carved-base)) and the gap tripwire immediately caught it re-creating the TEST 27
+    // hollowing class at partial grip (probe(14950,4426): gapBlocks 0->8 -- marginal pockets sandwiched
+    // under the graded surface). A graded-height ceiling under min() cannot do that: air strictly above
+    // the effective ceiling, untouched terrain below it, no intermediate densities anywhere.
+    /** Where the graded ceiling STARTS its descent: the top of the bias's own operating envelope
+     *  (== TAPER_TOP_END_Y). A ceiling at/above this height can only touch terrain the wrapper never
+     *  shapes at all (rare vanilla 160+ coastal peaks get a flat cut there — accepted, bounded). */
+    private static final double CEIL_ONSET_Y = 160.0;
+
+    /** grip01 for an ocean-side magnitude m=|d|: 0 at the coastline, 1 from GRIP_WIDTH outward. */
+    private static double gripAt(double m) {
+        double w = LatitudeV2Flags.TERRAIN_V2_GRIP_WIDTH;
+        if (w <= 0.0) {
+            return 1.0; // ramp disabled: legacy instant grip
+        }
+        double t = Math.min(1.0, m / w);
+        return t * t * (3.0 - 2.0 * t);
+    }
+
     /**
      * Slice C-2: the ocean-carve ceiling Y for a column, or {@code +Infinity} when no carve applies
      * (S==0, r==0, NoOp provider, land side, or degenerate depth). THE single source of the bathymetry
@@ -169,7 +201,18 @@ public final class GeoTerrainBiasFunction implements DensityFunction.SimpleFunct
         if (depthBlocks <= 0.0) {
             return Double.POSITIVE_INFINITY;
         }
-        return SEA_LEVEL_Y - depthBlocks;
+        double target = SEA_LEVEL_Y - depthBlocks;
+        // Slice C-3: grade the grip (see the CEIL_ONSET_Y block comment). The returned ceiling is
+        // ALREADY gripped — both consumers (compute() and the prelim wrapper) keep pure min()
+        // semantics against it, so they can never disagree and never hollow.
+        double grip = gripAt(m);
+        if (grip >= 1.0) {
+            return target;
+        }
+        if (grip <= 0.0) {
+            return Double.POSITIVE_INFINITY;
+        }
+        return CEIL_ONSET_Y + grip * (target - CEIL_ONSET_Y);
     }
 
     /** Package hook so the prelim companion wrapper shares this class's one-shot failure log. */
@@ -362,6 +405,8 @@ public final class GeoTerrainBiasFunction implements DensityFunction.SimpleFunct
                 // r == 0 (the TEST 27 retry recipe) or degenerate: ocean side exactly untouched.
                 return base;
             }
+            // The ceiling is already grip-graded (Slice C-3) inside the shared helper; pure min()
+            // semantics stay untouched here.
             double ceil = Math.max(CEIL_FLOOR, CEIL_SLOPE * (ceilY - ctx.blockY()));
             return Math.min(base, ceil);
         } catch (Throwable t) {
