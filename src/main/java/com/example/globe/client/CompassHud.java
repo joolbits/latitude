@@ -343,17 +343,19 @@ public final class CompassHud {
         int radius = diameter / 2;
         int cx = x + radius;
         int cy = y + radius;
+        int contentH = CompassDialRenderer.lookContentHeight(cfg, diameter);
+        int contentTop = y + (diameter - contentH) / 2;
 
         float yaw = client.player != null ? client.player.getYRot() : -180.0f;
         double angle = Math.toRadians(Mth.wrapDegrees(yaw + 180.0f));
 
-        if (isPreview && client.gui.screen() instanceof LatitudeHudStudioScreen) {
-            // Transparency preview aid — HUD STUDIO ONLY (that's the only screen with the Inner Transparency
-            // slider). A checkerboard behind the disc makes the see-through inner disc visible; on a plain dark
-            // screen a transparent disc looks identical to an opaque one. Deliberately NOT drawn on other compass
-            // previews (e.g. the Latitude Settings screen), where there's no transparency control and it just
-            // looks confusing.
-            drawTransparencyCheckerboard(ctx, cx - radius, cy - radius, diameter);
+        if (isPreview && client.gui.screen() instanceof LatitudeHudStudioScreen studio
+                && studio.transparencyAdjustActive()) {
+            // Transparency preview aid — HUD STUDIO ONLY, and only WHILE the Inner Transparency slider
+            // is hovered/focused (TEST 29: always-on it read as noise, inflated the compass's apparent
+            // footprint, and unbalanced the docked preview). Sized to the look's TRUE content box so a
+            // tape strip gets a strip-shaped aid, not a phantom square.
+            drawTransparencyCheckerboard(ctx, cx - radius, contentTop, diameter, contentH);
         }
 
         CompassDialRenderer.draw(ctx, client.font, cfg, cx, cy, radius, angle, yaw, analogColors(cfg));
@@ -362,8 +364,6 @@ public final class CompassHud {
         int totalTextW = analogAttachedTextWidth(client, cfg, latText, zoneText);
         boolean textBelow = totalTextW > 0 && analogTextBelow(screenWForText, x, diameter, totalTextW);
         int lineH = client.font.lineHeight;
-        int contentH = CompassDialRenderer.lookContentHeight(cfg, diameter);
-        int contentTop = y + (diameter - contentH) / 2;
 
         if (isPreview) {
             // Border mirrors computeAnalogBounds' union exactly (same inputs, same math) so the Studio
@@ -413,19 +413,19 @@ public final class CompassHud {
         }
     }
 
-    // Photoshop-style transparency checkerboard, drawn behind the analog disc in the HUD studio preview only so
-    // the Inner Transparency slider's effect is visible against it instead of against a flat dark screen.
-    private static void drawTransparencyCheckerboard(GuiGraphicsExtractor ctx, int x, int y, int size) {
-        int cell = Math.max(3, size / 6);
+    // Photoshop-style transparency checkerboard, drawn behind the analog compass in the HUD studio preview,
+    // only while the Inner Transparency slider is being adjusted, and sized to the look's content rect.
+    private static void drawTransparencyCheckerboard(GuiGraphicsExtractor ctx, int x, int y, int w, int h) {
+        int cell = Math.max(3, Math.min(w, h) / 6);
         int light = 0xFFBFBFBF;
         int dark = 0xFF6E6E6E;
-        for (int gy = 0; gy < size; gy += cell) {
-            for (int gx = 0; gx < size; gx += cell) {
+        for (int gy = 0; gy < h; gy += cell) {
+            for (int gx = 0; gx < w; gx += cell) {
                 boolean isLight = (((gx / cell) + (gy / cell)) & 1) == 0;
                 int x0 = x + gx;
                 int y0 = y + gy;
-                int x1 = Math.min(x + size, x0 + cell);
-                int y1 = Math.min(y + size, y0 + cell);
+                int x1 = Math.min(x + w, x0 + cell);
+                int y1 = Math.min(y + h, y0 + cell);
                 ctx.fill(x0, y0, x1, y1, isLight ? light : dark);
             }
         }
@@ -465,8 +465,11 @@ public final class CompassHud {
      */
     public enum PreviewTextSource { SAMPLE, LONGEST, LIVE }
 
-    /** Studio-session state, deliberately not persisted (an editor view option, not a player setting). */
-    public static PreviewTextSource previewTextSource = PreviewTextSource.LONGEST;
+    /** Studio-session state, deliberately not persisted (an editor view option, not a player setting).
+     *  Defaults to LIVE (TEST 29: a Studio opened in-world showing "89°S" while the title preview showed
+     *  the real latitude read as broken). Out of world, LIVE falls back to short samples; the cycle
+     *  button still offers LONGEST for worst-case placement checks. */
+    public static PreviewTextSource previewTextSource = PreviewTextSource.LIVE;
 
     private static String sampleZone(CompassHudConfig cfg) {
         if (!cfg.displayZoneInHud) return null;

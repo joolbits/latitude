@@ -527,7 +527,26 @@ public class LatitudeHudStudioScreen extends Screen {
             trackSidebarWidget(wReserved, y);
             y += rowH + rowGap;
 
-            this.addRenderableWidget(Button.builder(Component.literal("Reset Labels"), b -> {
+            // Drag/snap controls live with the other placement controls (moved from General per TEST 29
+            // feedback) — they govern how every draggable element moves, and Labels is where dragging
+            // gets configured.
+            this.wHudSnap = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "Snap to Grid" : "Free Move"), () -> LatitudeConfig.hudSnapEnabled)
+                    .withValues(true, false)
+                    .create(panelX, y, widgetW, rowH, Component.literal("Dragging"), (btn, value) -> {
+                        LatitudeConfig.hudSnapEnabled = value;
+                        LatitudeConfig.saveCurrent();
+                        updateSidebarVisibility();
+                    }));
+            tooltip(this.wHudSnap, "Snap dragged HUD elements to a grid, or move them freely to any pixel.");
+            trackSidebarWidget(this.wHudSnap, y);
+            y += rowH + rowGap;
+
+            this.wHudSnapPixels = this.addRenderableWidget(new IntSlider(panelX, y, widgetW, rowH, Component.literal("Grid Size"), 1, 32, LatitudeConfig.hudSnapPixels, v -> LatitudeConfig.hudSnapPixels = v));
+            tooltip(this.wHudSnapPixels, "Grid spacing in pixels used while Snap to Grid is on.");
+            trackSidebarWidget(this.wHudSnapPixels, y);
+            y += rowH + rowGap;
+
+            var wResetLabels = this.addRenderableWidget(Button.builder(Component.literal("Reset Labels"), b -> {
                         var fresh = CompassHudConfig.fresh();
                         cfg.displayZoneInHud = fresh.displayZoneInHud;
                         cfg.zoneFollowsCompass = fresh.zoneFollowsCompass;
@@ -559,6 +578,8 @@ public class LatitudeHudStudioScreen extends Screen {
                     })
                     .bounds(panelX, y, widgetW, rowH)
                     .build());
+            tooltip(wResetLabels, "Restore the zone/biome/coords label settings to their defaults.");
+            trackSidebarWidget(wResetLabels, y);
             y += rowH + rowGap;
         } else if (activeTab == TAB_TITLE) {
             this.wTitleEnabled = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "ON" : "OFF"), () -> LatitudeConfig.zoneEnterTitleEnabled)
@@ -634,7 +655,7 @@ public class LatitudeHudStudioScreen extends Screen {
             trackSidebarWidget(this.wTitleDraggable, y);
             y += rowH + rowGap;
 
-            this.addRenderableWidget(Button.builder(Component.literal("Reset Title"), b -> {
+            var wResetTitle = this.addRenderableWidget(Button.builder(Component.literal("Reset Title"), b -> {
                         LatitudeConfig.zoneEnterTitleOffsetX = 0;
                         LatitudeConfig.zoneEnterTitleOffsetY = 0;
                         LatitudeConfig.zoneEnterTitleScale = 1.6;
@@ -646,24 +667,10 @@ public class LatitudeHudStudioScreen extends Screen {
                     })
                     .bounds(panelX, y, widgetW, rowH)
                     .build());
+            tooltip(wResetTitle, "Restore the zone-enter title settings to their defaults.");
+            trackSidebarWidget(wResetTitle, y);
             y += rowH + rowGap;
         } else {
-            this.wHudSnap = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "Snap to Grid" : "Free Move"), () -> LatitudeConfig.hudSnapEnabled)
-                    .withValues(true, false)
-                    .create(panelX, y, widgetW, rowH, Component.literal("Dragging"), (btn, value) -> {
-                        LatitudeConfig.hudSnapEnabled = value;
-                        LatitudeConfig.saveCurrent();
-                        updateSidebarVisibility();
-                    }));
-            tooltip(this.wHudSnap, "Snap dragged HUD elements to a grid, or move them freely to any pixel.");
-            trackSidebarWidget(this.wHudSnap, y);
-            y += rowH + rowGap;
-
-            this.wHudSnapPixels = this.addRenderableWidget(new IntSlider(panelX, y, widgetW, rowH, Component.literal("Grid Size"), 1, 32, LatitudeConfig.hudSnapPixels, v -> LatitudeConfig.hudSnapPixels = v));
-            tooltip(this.wHudSnapPixels, "Grid spacing in pixels used while Snap to Grid is on.");
-            trackSidebarWidget(this.wHudSnapPixels, y);
-            y += rowH + rowGap;
-
             var wShowMode = this.addRenderableWidget(CycleButton.<CompassHudConfig.ShowMode>builder(v -> Component.literal(switch (v) {
                         case ALWAYS -> "Always";
                         case COMPASS_PRESENT -> "Compass in inventory";
@@ -727,8 +734,24 @@ public class LatitudeHudStudioScreen extends Screen {
         updateSidebarVisibility();
     }
 
+    /** Last render-pass mouse position, for hover checks outside the widget event flow (the compass
+     *  preview asks {@link #transparencyAdjustActive()} during its own draw). */
+    private int lastMouseX = -1;
+    private int lastMouseY = -1;
+
+    /** True while the player is plausibly adjusting Inner Transparency (slider hovered or focused).
+     *  The checkerboard transparency aid draws only then — always-on it read as visual noise and made
+     *  the compass graphic look bigger than it is (TEST 29). */
+    public boolean transparencyAdjustActive() {
+        return wCompassAnalogInnerAlpha != null && wCompassAnalogInnerAlpha.visible
+                && (wCompassAnalogInnerAlpha.isFocused()
+                    || wCompassAnalogInnerAlpha.isMouseOver(lastMouseX, lastMouseY));
+    }
+
     @Override
     public void extractRenderState(GuiGraphicsExtractor ctx, int mouseX, int mouseY, float delta) {
+        this.lastMouseX = mouseX;
+        this.lastMouseY = mouseY;
         this.extractTransparentBackground(ctx);
         ctx.fill(0, 0, this.width, this.height, 0x66000000);
 
@@ -859,6 +882,21 @@ public class LatitudeHudStudioScreen extends Screen {
             }
 
             if (isMouseOverCompass(mx, my)) {
+                var cfg = CompassHudConfig.get();
+                if (cfg.dockMode == CompassHudConfig.DockMode.HOTBAR_RIGHT) {
+                    // Grabbing a docked compass UNDOCKS it (TEST 29 request): the pin is seeded at the
+                    // docked position first so nothing jumps before the first drag event, then the drag
+                    // proceeds exactly like any detached drag. init() refreshes the Attach button to OFF.
+                    var mc = Minecraft.getInstance();
+                    var b = CompassHud.computeBounds(mc, cfg);
+                    cfg.dockMode = CompassHudConfig.DockMode.NONE;
+                    cfg.attachToHotbarCompass = false; // legacy mirror
+                    if (b != null) {
+                        CompassHud.applyCompassDrag(mc, cfg, b.x(), b.y());
+                    }
+                    CompassHudConfig.saveCurrent();
+                    this.init();
+                }
                 dragElement = DragElement.COMPASS;
                 return true;
             }
