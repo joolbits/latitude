@@ -31,7 +31,12 @@ public final class LatitudeConfigData {
 
     public enum TitleColorPreset { WHITE, GOLD, RED, CYAN, GREEN, CUSTOM, RAINBOW }
 
-    public enum TitleCaseMode { NORMAL, UPPERCASE, LOWERCASE, MOCKING }
+    // NORMAL was removed 2026-07-08 (Peetsa: "normal and uppercase are the same thing" -- in the one
+    // place that mattered, the HUD Studio's no-world sample title, both the sample AND the fallback were
+    // hardcoded ALL-CAPS, so NORMAL's no-op case transform was indistinguishable from UPPERCASE's). Gson
+    // maps an unrecognized saved constant name to null (see sanitize() below), not a parse failure, so an
+    // existing config with the old "NORMAL" value degrades safely to the new default on next load.
+    public enum TitleCaseMode { UPPERCASE, LOWERCASE, MOCKING }
 
     @SerializedName(value = "zoneEnterTitleEnabled", alternate = {"zoneEnterTitleEnabledValue"})
     public boolean zoneEnterTitleEnabled = true;
@@ -49,7 +54,7 @@ public final class LatitudeConfigData {
     public int zoneEnterTitleRgb = 0xFFFFFF;
 
     @SerializedName(value = "zoneEnterTitleCase", alternate = {"zoneEnterTitleCaseValue"})
-    public TitleCaseMode zoneEnterTitleCase = TitleCaseMode.NORMAL;
+    public TitleCaseMode zoneEnterTitleCase = TitleCaseMode.UPPERCASE;
 
     /** Extra pixels between characters; negative = tighter. */
     @SerializedName(value = "zoneEnterTitleLetterSpacing", alternate = {"zoneEnterTitleLetterSpacingValue"})
@@ -95,7 +100,7 @@ public final class LatitudeConfigData {
     /** Null-guard enums (Gson leaves unknown enum constants null) and clamp ranges to the UI's bounds. */
     public void sanitize() {
         if (zoneEnterTitleColorPreset == null) zoneEnterTitleColorPreset = TitleColorPreset.WHITE;
-        if (zoneEnterTitleCase == null) zoneEnterTitleCase = TitleCaseMode.NORMAL;
+        if (zoneEnterTitleCase == null) zoneEnterTitleCase = TitleCaseMode.UPPERCASE;
 
         zoneEnterTitleSeconds = clamp(zoneEnterTitleSeconds, 2.0, 10.0);
         zoneEnterTitleScale = clamp(zoneEnterTitleScale, 1.0, 3.0);

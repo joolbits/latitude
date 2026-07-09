@@ -263,12 +263,17 @@ public class LatitudeHudStudioScreen extends Screen {
                 // that old range (~60px) already dwarfs the readout box, while 32 (the smallest the old range
                 // allowed) was already the default. New range keeps the useful huge-vs-tiny span but adds real
                 // room below the default to go smaller, instead of the default sitting pinned at the floor.
-                this.wCompassAnalogSize = this.addRenderableWidget(new FloatSlider(panelX, y, widgetW, rowH, Component.literal("Analog Size"), 16.0f, 72.0f, cfg.analogSize, v -> cfg.analogSize = v));
-                tooltip(this.wCompassAnalogSize, "Sets the analog compass diameter.");
+                // Tape raises its own minimum (TEST 32: below ~32 its heading labels squeeze illegible) --
+                // the slider's displayed/draggable range matches CompassDialRenderer's floor exactly, so the
+                // number shown is always what's actually rendered, never a lie.
+                float analogSizeMin = cfg.analogLook == CompassHudConfig.CompassLook.TAPE
+                        ? CompassDialRenderer.TAPE_MIN_DIAMETER : 16.0f;
+                this.wCompassAnalogSize = this.addRenderableWidget(new FloatSlider(panelX, y, widgetW, rowH, Component.literal("Analog Size"), analogSizeMin, 72.0f, cfg.analogSize, v -> cfg.analogSize = v));
+                tooltip(this.wCompassAnalogSize, "Sets how big the analog compass is.");
                 trackSidebarWidget(this.wCompassAnalogSize, y);
                 y += rowH + rowGap;
                 this.wCompassAnalogInnerAlpha = this.addRenderableWidget(new FloatSlider(panelX, y, widgetW, rowH, Component.literal("Inner Transparency"), 0.0f, 1.0f, cfg.analogInnerAlpha, v -> cfg.analogInnerAlpha = v));
-                tooltip(this.wCompassAnalogInnerAlpha, "Inner disc opacity. Slide left (lower) = more transparent / see-through; right (higher) = more solid.");
+                tooltip(this.wCompassAnalogInnerAlpha, "How see-through the compass's inner face is. Left = more see-through, right = more solid.");
                 trackSidebarWidget(this.wCompassAnalogInnerAlpha, y);
                 y += rowH + rowGap;
                 this.wCompassAnalogTheme = this.addRenderableWidget(CycleButton.<CompassHudConfig.AnalogCompassTheme>builder(v -> Component.literal(themeLabel(v)), () -> cfg.analogTheme)
@@ -301,7 +306,7 @@ public class LatitudeHudStudioScreen extends Screen {
                 y += rowH + rowGap;
 
                 this.wCompassTransparency = this.addRenderableWidget(new IntSlider(panelX, y, widgetW, rowH, Component.literal("Transparency"), 0, 255, cfg.backgroundAlpha, v -> cfg.backgroundAlpha = v));
-                tooltip(this.wCompassTransparency, "Adjusts the opacity of the digital compass background bar.");
+                tooltip(this.wCompassTransparency, "How see-through the digital compass's background bar is.");
                 trackSidebarWidget(this.wCompassTransparency, y);
                 y += rowH + rowGap;
 
@@ -331,7 +336,7 @@ public class LatitudeHudStudioScreen extends Screen {
                     v -> cfg.textRgb = v, g -> this.rgbTextColor = g, s -> this.swatchTextColor = s);
 
             this.wCompassTextAlpha = this.addRenderableWidget(new IntSlider(panelX, y, widgetW, rowH, Component.literal("Text Opacity"), 0, 255, cfg.textAlpha, v -> cfg.textAlpha = v));
-            tooltip(this.wCompassTextAlpha, "Adjusts the opacity of the compass/zone/biome/coords text.");
+            tooltip(this.wCompassTextAlpha, "How see-through the compass, zone, biome, and coordinate text are.");
             trackSidebarWidget(this.wCompassTextAlpha, y);
             y += rowH + rowGap;
 
@@ -341,7 +346,7 @@ public class LatitudeHudStudioScreen extends Screen {
                         cfg.textRainbow = value;
                         CompassHudConfig.saveCurrent();
                     }));
-            tooltip(this.wCompassTextRainbow, "Cycles the compass/zone/biome/coords text through rainbow colors, overriding the Text Color above.");
+            tooltip(this.wCompassTextRainbow, "Makes the compass, zone, biome, and coordinate text cycle through rainbow colors instead of using the Text Color above.");
             trackSidebarWidget(this.wCompassTextRainbow, y);
             y += rowH + rowGap;
 
@@ -377,7 +382,7 @@ public class LatitudeHudStudioScreen extends Screen {
                 this.wCompassCompact = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "ON" : "OFF"), () -> cfg.compactHud)
                         .withValues(true, false)
                         .create(panelX, y, widgetW, rowH, Component.literal("Compact HUD"), (btn, value) -> cfg.compactHud = value));
-                tooltip(this.wCompassCompact, "Uses a tighter layout with minimal spacing.");
+                tooltip(this.wCompassCompact, "Packs the digital compass line closer together, with less space between parts.");
                 trackSidebarWidget(this.wCompassCompact, y);
                 y += rowH + rowGap;
 
@@ -390,7 +395,7 @@ public class LatitudeHudStudioScreen extends Screen {
                         cfg.attachToHotbarCompass = value; // legacy mirror for older jars reading this file
                         CompassHudConfig.saveCurrent();
                     }));
-            tooltip(this.wCompassAttachHotbar, "Docks the compass (either style) to the right of the hotbar. It grows away from the hotbar and steps inward stages on narrow screens -- it can never clip the hotbar or run off-screen.");
+            tooltip(this.wCompassAttachHotbar, "Docks the compass next to your hotbar. It automatically shrinks or moves out of the way on narrow screens, so it can never overlap the hotbar or run off-screen.");
             trackSidebarWidget(this.wCompassAttachHotbar, y);
             y += rowH + rowGap;
 
@@ -477,7 +482,7 @@ public class LatitudeHudStudioScreen extends Screen {
                         cfg.biomeBeforeZone = value;
                         CompassHudConfig.saveCurrent();
                     }));
-            tooltip(this.wZoneBiomeOrder, "When zone and biome are both attached to the compass, which reads first.");
+            tooltip(this.wZoneBiomeOrder, "If both the zone and biome are shown next to the compass, choose which one appears first.");
             trackSidebarWidget(this.wZoneBiomeOrder, y);
             y += rowH + rowGap;
 
@@ -503,7 +508,7 @@ public class LatitudeHudStudioScreen extends Screen {
                         cfg.zoneGrowH = value;
                         CompassHudConfig.saveCurrent();
                     }));
-            tooltip(wZoneGrow, "How the detached zone label extends from its pin when its text length changes. The pin itself never moves.");
+            tooltip(wZoneGrow, "If the zone name changes length (like \"Tropics\" vs \"Subtropics\"), pick which side the label grows from -- left, right, or evenly on both sides. Where you've placed the label on screen never moves, only which direction the text stretches from it.");
             trackSidebarWidget(wZoneGrow, y);
             y += rowH + rowGap;
 
@@ -513,7 +518,7 @@ public class LatitudeHudStudioScreen extends Screen {
                         cfg.biomeGrowH = value;
                         CompassHudConfig.saveCurrent();
                     }));
-            tooltip(wBiomeGrow, "How the detached biome label extends from its pin when the biome name changes length. The pin itself never moves.");
+            tooltip(wBiomeGrow, "If the biome name changes length (like \"Plains\" vs \"Windswept Gravelly Hills\"), pick which side the label grows from -- left, right, or evenly on both sides. Where you've placed the label on screen never moves, only which direction the text stretches from it.");
             trackSidebarWidget(wBiomeGrow, y);
             y += rowH + rowGap;
 
@@ -523,7 +528,7 @@ public class LatitudeHudStudioScreen extends Screen {
                         cfg.reservedTextWidth = value;
                         CompassHudConfig.saveCurrent();
                     }));
-            tooltip(wReserved, "Sizes text boxes to this world's longest biome name so even their edges never move, whatever biome you're in.");
+            tooltip(wReserved, "Makes the text boxes as wide as this world's longest biome name, so their edges never shift as you move between biomes.");
             trackSidebarWidget(wReserved, y);
             y += rowH + rowGap;
 
@@ -542,7 +547,7 @@ public class LatitudeHudStudioScreen extends Screen {
             y += rowH + rowGap;
 
             this.wHudSnapPixels = this.addRenderableWidget(new IntSlider(panelX, y, widgetW, rowH, Component.literal("Grid Size"), 1, 32, LatitudeConfig.hudSnapPixels, v -> LatitudeConfig.hudSnapPixels = v));
-            tooltip(this.wHudSnapPixels, "Grid spacing in pixels used while Snap to Grid is on.");
+            tooltip(this.wHudSnapPixels, "How far apart the grid lines are when Snap to Grid is on.");
             trackSidebarWidget(this.wHudSnapPixels, y);
             y += rowH + rowGap;
 
@@ -593,7 +598,7 @@ public class LatitudeHudStudioScreen extends Screen {
             y += rowH + rowGap;
 
             this.wTitleScale = this.addRenderableWidget(new StepSlider(panelX, y, widgetW, rowH, Component.literal("Title Size"), 1.0, 3.0, 0.1, LatitudeConfig.zoneEnterTitleScale, v -> LatitudeConfig.zoneEnterTitleScale = v));
-            tooltip(this.wTitleScale, "Scales the zone enter title preview.");
+            tooltip(this.wTitleScale, "Changes how big the zone-entry title appears when it pops up.");
             trackSidebarWidget(this.wTitleScale, y);
             y += rowH + rowGap;
 
@@ -608,7 +613,7 @@ public class LatitudeHudStudioScreen extends Screen {
                         LatitudeConfig.showZoneBaseDegreesOnTitle = value;
                         LatitudeConfig.saveCurrent();
                     }));
-            tooltip(this.wTitleShowBaseDegrees, "Includes the latitude-degree readout in the title text.");
+            tooltip(this.wTitleShowBaseDegrees, "Adds your latitude in degrees to the title text (e.g. \"Tropics 12°S\" instead of just \"Tropics\").");
             trackSidebarWidget(this.wTitleShowBaseDegrees, y);
             y += rowH + rowGap;
 
@@ -636,7 +641,7 @@ public class LatitudeHudStudioScreen extends Screen {
                         LatitudeConfig.zoneEnterTitleCase = value;
                         LatitudeConfig.saveCurrent();
                     }));
-            tooltip(this.wTitleCase, "Changes the letter casing of the zone-enter title text.");
+            tooltip(this.wTitleCase, "Changes how the title's letters are written: UPPERCASE, lowercase, or mOcKiNg.");
             trackSidebarWidget(this.wTitleCase, y);
             y += rowH + rowGap;
 
@@ -681,7 +686,7 @@ public class LatitudeHudStudioScreen extends Screen {
                         cfg.showMode = value;
                         CompassHudConfig.saveCurrent();
                     }));
-            tooltip(wShowMode, "When the compass HUD is visible in-game. The Studio preview always shows everything; in-game visibility follows this rule. (Folded in from the old F9 Settings screen.)");
+            tooltip(wShowMode, "Controls when the compass appears while you're playing. This screen always shows it so you can edit it, but in-game it only shows under this rule.");
             trackSidebarWidget(wShowMode, y);
             y += rowH + rowGap;
 
@@ -691,7 +696,7 @@ public class LatitudeHudStudioScreen extends Screen {
                         LatitudeConfig.showWarningMessages = value;
                         LatitudeConfig.saveCurrent();
                     }));
-            tooltip(wWarnings, "Shows Latitude's warning overlays (world border, polar hazards). (Folded in from the old F9 Settings screen.)");
+            tooltip(wWarnings, "Shows on-screen warnings for things like nearing the world border or polar hazards.");
             trackSidebarWidget(wWarnings, y);
             y += rowH + rowGap;
 
@@ -702,7 +707,7 @@ public class LatitudeHudStudioScreen extends Screen {
                     }), () -> CompassHud.previewTextSource)
                     .withValues(CompassHud.PreviewTextSource.values())
                     .create(panelX, y, widgetW, rowH, Component.literal("Preview Text"), (btn, value) -> CompassHud.previewTextSource = value));
-            tooltip(wPreviewText, "What text the preview measures and draws. 'Longest real text' (default) shows the true worst case, so what you place is what you get in-game.");
+            tooltip(wPreviewText, "What sample text this screen uses to show you where things sit. \"Longest real text\" (default) uses the biggest it could realistically get, so where you place things here matches what you'll see in-game.");
             trackSidebarWidget(wPreviewText, y);
             y += rowH + rowGap;
         }
@@ -791,23 +796,10 @@ public class LatitudeHudStudioScreen extends Screen {
         }
 
         var mc = Minecraft.getInstance();
-        double z = 0.0;
-        var border = mc.level != null ? mc.level.getWorldBorder() : null;
-        if (mc.player != null) {
-            z = mc.player.getZ();
-        }
-
-        // Derive BOTH the degree text and the zone word from the same latitude (Z) radius so the preview
-        // is always climatically consistent. When there is no level (main-menu preview), use a sane sample
-        // whose zone word matches its latitude rather than a hardcoded "TROPICAL <realDeg>" mismatch.
-        String sampleTitle;
-        if (border != null) {
-            String degText = LatitudeMath.formatLatitudeDeg(z, border);
-            String zoneWord = zoneTitleWord(com.example.globe.util.LatitudeMath.zoneKey(border, z));
-            sampleTitle = zoneWord + " " + degText;
-        } else {
-            sampleTitle = "TROPICS 12\u00b0S";
-        }
+        // Shared with the drag hit-test (studioPreviewTitle) so the rendered text and the grabbable area
+        // can never drift apart -- and so "Show Degrees" (TEST 32: reported as doing nothing) has exactly
+        // one place to be honored instead of a second, easily-forgotten inline copy.
+        String sampleTitle = studioPreviewTitle(mc);
 
         int titleOffsetX = (dragElement == DragElement.TITLE) ? (int) Math.round(titleOffsetXf) : LatitudeConfig.zoneEnterTitleOffsetX;
         int titleOffsetY = (dragElement == DragElement.TITLE) ? (int) Math.round(titleOffsetYf) : LatitudeConfig.zoneEnterTitleOffsetY;
@@ -1090,7 +1082,7 @@ public class LatitudeHudStudioScreen extends Screen {
         LatitudeConfig.showZoneBaseDegreesOnTitle = true;
         LatitudeConfig.zoneEnterTitleColorPreset = LatitudeConfigData.TitleColorPreset.WHITE;
         LatitudeConfig.zoneEnterTitleRgb = 0xFFFFFF;
-        LatitudeConfig.zoneEnterTitleCase = LatitudeConfigData.TitleCaseMode.NORMAL;
+        LatitudeConfig.zoneEnterTitleCase = LatitudeConfigData.TitleCaseMode.UPPERCASE;
         LatitudeConfig.zoneEnterTitleLetterSpacing = 0;
         LatitudeConfig.zoneEnterTitleDraggable = true;
         // Matches LatitudeConfig's own field-initializer defaults (hudSnapEnabled=true, hudSnapPixels=8) --
@@ -1472,17 +1464,23 @@ public class LatitudeHudStudioScreen extends Screen {
                 && my <= (cy + halfH + pad);
     }
 
-    /** The exact string the title preview renders (shared by the render path and the drag hit-test). */
+    /** The exact string the title preview renders (shared by the render path and the drag hit-test) --
+     *  the single place "Show Degrees" is honored (TEST 32: previously duplicated inline at the render
+     *  call site, which never checked the flag, so toggling it visibly did nothing in the Studio). */
     private static String studioPreviewTitle(Minecraft mc) {
         var level = mc.level;
         var player = mc.player;
+        boolean showDegrees = LatitudeConfig.showZoneBaseDegreesOnTitle;
         if (level != null && player != null) {
             var border = level.getWorldBorder();
-            String degText = com.example.globe.util.LatitudeMath.formatLatitudeDeg(border, player.getZ());
             String zoneWord = zoneTitleWord(com.example.globe.util.LatitudeMath.zoneKey(border, player.getZ()));
+            if (!showDegrees) {
+                return zoneWord;
+            }
+            String degText = com.example.globe.util.LatitudeMath.formatLatitudeDeg(border, player.getZ());
             return zoneWord + " " + degText;
         }
-        return "TROPICS 12\u00b0S";
+        return showDegrees ? "TROPICS 12\u00b0S" : "TROPICS";
     }
 
     /** Natural-case zone title word, matching GlobeWarningOverlay's real title text (so the preview reads like
@@ -1551,7 +1549,6 @@ public class LatitudeHudStudioScreen extends Screen {
     // Each label is styled in its own case, so the button doubles as a live preview of the effect.
     private static String titleCaseLabel(LatitudeConfigData.TitleCaseMode mode) {
         return switch (mode) {
-            case NORMAL -> "Normal";
             case UPPERCASE -> "UPPERCASE";
             case LOWERCASE -> "lowercase";
             case MOCKING -> "mOcKiNg";
