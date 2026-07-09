@@ -42,6 +42,30 @@ public enum ClimateClass {
         return vanillaFamily;
     }
 
+    /**
+     * Altitude/alpine biome family for a cold class, consumed by the biome consumer when a reroll
+     * repaint is accepted below the 45&deg; snowy-plains acceptance line (P1-B, audit
+     * {@code fable5-biome-geography-audit-20260707.md} §5). {@link #vanillaFamily()} for the cold
+     * classes LEADS with FLAT-POLAR biomes ({@code snowy_plains}, {@code ice_spikes},
+     * {@code windswept_gravelly_hills}) that carry no altitude meaning; painting them at 10-45&deg;
+     * latitude produced the confirmed "snowy_plains in the warm band" defect. This returns the
+     * ALTITUDE-family subset ({@code grove}, {@code snowy_slopes}, {@code frozen_peaks} — vanilla
+     * mountain-slope biomes) so an elevated warm-band column reads as an alpine cap, never flat polar.
+     * Classes with no flat-polar family member fall back to {@link #vanillaFamily()} unchanged (e.g.
+     * {@code BOREAL} = taiga, itself a legitimate montane biome).
+     *
+     * <p>ADDITIVE: {@link #vanillaFamily()} and every other class's behavior are untouched. Vanilla-only
+     * (see class doc — {@code snowy_slopes}/{@code grove}/{@code frozen_peaks} are all {@code minecraft:}
+     * mountain biomes, so a vanilla-only world resolves fully); never empty.
+     */
+    public List<String> alpineFamily() {
+        return switch (this) {
+            case COLD_STEPPE, TUNDRA -> List.of("grove", "snowy_slopes");
+            case ICE_CAP -> List.of("frozen_peaks", "snowy_slopes");
+            default -> vanillaFamily();
+        };
+    }
+
     public boolean isOcean() {
         return this == OCEAN_WARM || this == OCEAN_LUKEWARM || this == OCEAN || this == OCEAN_FROZEN;
     }

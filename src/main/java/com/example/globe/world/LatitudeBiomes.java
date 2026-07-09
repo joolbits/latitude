@@ -39,6 +39,7 @@ import com.example.globe.adapter.geo.GeoSummaryProvider;
 import com.example.globe.adapter.geo.NoOpGeoSummaryProvider;
 import com.example.globe.core.LatitudeV2Flags;
 import com.example.globe.core.climate.ClimateAuthority;
+import com.example.globe.core.climate.ClimateAuthorityParams;
 import com.example.globe.core.climate.ClimateClass;
 import com.example.globe.core.climate.ClimateSummary;
 import com.example.globe.core.geo.GeoAuthority;
@@ -3675,7 +3676,8 @@ public final class LatitudeBiomes {
         // clampLateWetlandSurvival, quarantineUnknownCustomLandBiome -- any of which could silently
         // undo the correction). Placed here, after all of them, it is genuinely the final word.
         if (LatitudeV2Flags.BIOME_CONSUMER_V2_ENABLED && climateV2Summary != null) {
-            out = applyClimateCompatReroll(biomeRegistry, out, climateV2Summary, blockX, blockZ);
+            out = applyClimateCompatReroll(biomeRegistry, out, climateV2Summary, blockX, blockZ,
+                    preview, seaLevel, hasReliableSurface);
         }
         debugPick(blockX, blockZ, effectiveRadius, t, band, base, out, false, out != sanitized, mangroveDecision);
         return out;
@@ -4325,7 +4327,8 @@ public final class LatitudeBiomes {
         // Biome Consumer slice: see the Registry overload's identical comment above (sweeper audit
         // 2026-07-05 finding #16) -- runs LAST, after every downstream land law, not before them.
         if (LatitudeV2Flags.BIOME_CONSUMER_V2_ENABLED && climateV2Summary != null) {
-            out = applyClimateCompatReroll(biomePool, out, climateV2Summary, blockX, blockZ);
+            out = applyClimateCompatReroll(biomePool, out, climateV2Summary, blockX, blockZ,
+                    preview, seaLevel, hasReliableSurface);
         }
         debugPick(blockX, blockZ, effectiveRadius, t, band, base, out, false, out != sanitized, mangroveDecision);
         return out;
@@ -10013,6 +10016,95 @@ public final class LatitudeBiomes {
     }
 
     /**
+     * P1-B acceptance line (audit fable5-biome-geography-audit-20260707.md §5): "zero snowy_plains cells
+     * below 45deg". Below this latitude a cold-class reroll repaint resolves against the ALTITUDE family
+     * ({@link ClimateClass#alpineFamily()}), never the flat-polar {@code vanillaFamily()}; at/above it the
+     * flat-polar families (snowy_plains, ice_spikes) are legitimate near the poles, so existing behavior
+     * stands. One named constant so the gate is a single, auditable citation of the acceptance line.
+     */
+    private static final double SNOWY_PLAINS_MIN_LAT_DEG = 45.0;
+
+    /**
+     * P1-B: the alpine-steppable COLD classes whose {@link ClimateClass#vanillaFamily()} LEADS with
+     * flat-polar biomes with no altitude meaning (audit fable5-biome-geography-audit-20260707.md §5).
+     * These are exactly the classes ClimateAuthority's {@code alpineStep} can demote a warm-band column
+     * into, and the only classes {@link #climateFamilyMismatch} lets reroll on a warm (jungle/desert/
+     * savanna) pick. BOREAL is included for the veto even though its family carries no snowy_plains.
+     */
+    private static boolean isColdAltitudeClimateClass(ClimateClass c) {
+        return c == ClimateClass.ICE_CAP || c == ClimateClass.TUNDRA
+                || c == ClimateClass.BOREAL || c == ClimateClass.COLD_STEPPE;
+    }
+
+    /**
+     * Latitude in degrees at this column, derived the SAME way the equatorial-dry law predicates do
+     * ({@link #shouldDemoteEquatorialBadlands} L8576-8578: {@code abs(blockZ)/ACTIVE_RADIUS*90}) so the
+     * P1-B 45deg gate and the audit's map-proof latitude binning agree exactly.
+     */
+    private static double rerollLatitudeDeg(int blockZ) {
+        int radius = ACTIVE_RADIUS_BLOCKS > 0 ? ACTIVE_RADIUS_BLOCKS : (REFERENCE_DIAMETER_BLOCKS / 2);
+        radius = Math.max(1, radius);
+        return Math.min(90.0, Math.abs((double) blockZ) / (double) radius * 90.0);
+    }
+
+    /**
+     * P1-B REAL-TERRAIN VETO (defect i, audit fable5-biome-geography-audit-20260707.md §5).
+     * ClimateAuthority's altitude proxy is terrain-BLIND ({@code alt = mountainIntent01 * ALT_GAIN});
+     * when {@code alt >= ALPINE_ALT} its {@code alpineStep} demotes a warm-band class one rung colder
+     * (e.g. SAVANNA -> COLD_STEPPE) even where the REAL terrain is flat -- intent is not actual
+     * elevation, especially now that Phase 4's wrapper is what shapes terrain. So: below the 45deg
+     * acceptance line, when a COLD class was reached by that altitude cooling
+     * ({@code altitudeCooling01 >= ALPINE_ALT} -- the SAME 0.45 anchor the classifier's alpineStep
+     * fires on, cited from {@link ClimateAuthorityParams#ALPINE_ALT}) but the real terrain here is NOT
+     * genuinely elevated, the alpine-cold is spurious: skip the repaint and keep the already-lawful
+     * warm pick.
+     *
+     * <p>"Genuinely elevated" reuses the temperate mountain-terrain authority's own two-part test
+     * (see {@link #temperateMountainTerrainAuthority} / debugSavannaRule L965-966): real
+     * {@code centerHeight >= seaLevel + PREVIEW_HEIGHT_MARGIN_BLOCKS} (25) OR
+     * {@code robustDelta >= WINDSWEPT_RUGGED_THRESH} (8) -- no new magic numbers. When real terrain is
+     * not known ({@code realTerrainKnown == false}: synthetic or absent preview -- the atlas/headless
+     * SOURCE/ATLAS_SAMPLER paths AND the live MIXIN/CAVE_CLAMP path, which use a synthetic preview by
+     * default) we treat the column as NOT elevated: the director's conservative default (veto the cold
+     * repaint below the gate). A non-altitude-driven cold classification (a genuinely cold climate, not
+     * the proxy) is NOT vetoed here -- {@link #rerollFamilyFor}'s (B) mapping still routes it away from
+     * snowy_plains below 45deg.
+     */
+    private static boolean rerollColdAltitudeVetoed(ClimateClass climateClass, ClimateSummary climate,
+                                                    int blockZ, PreviewTerrain preview, int seaLevel,
+                                                    boolean realTerrainKnown) {
+        if (!isColdAltitudeClimateClass(climateClass)) {
+            return false;
+        }
+        if (rerollLatitudeDeg(blockZ) >= SNOWY_PLAINS_MIN_LAT_DEG) {
+            return false; // >=45deg: alpine-cold near the poles is legitimate; existing behavior stands
+        }
+        boolean altitudeDriven = climate.altitudeCooling01() >= ClimateAuthorityParams.ALPINE_ALT;
+        if (!altitudeDriven) {
+            return false; // genuinely-cold classification, not the terrain-blind proxy -- let (B) remap it
+        }
+        boolean genuinelyElevated = realTerrainKnown
+                && (preview.centerHeight >= seaLevel + PREVIEW_HEIGHT_MARGIN_BLOCKS
+                    || preview.robustDelta >= WINDSWEPT_RUGGED_THRESH);
+        return !genuinelyElevated;
+    }
+
+    /**
+     * P1-B ALTITUDE-FAMILY MAPPING (defect ii, audit fable5-biome-geography-audit-20260707.md §5). A
+     * cold-class repaint accepted below the 45deg acceptance line resolves against the ALTITUDE family
+     * ({@link ClimateClass#alpineFamily()}: grove/snowy_slopes/frozen_peaks) instead of the flat-polar
+     * {@code vanillaFamily()} (COLD_STEPPE = snowy_plains/windswept_gravelly_hills), guaranteeing zero
+     * snowy_plains below 45deg even for a non-vetoed cold repaint. At/above 45deg, and for every
+     * non-cold class, the normal {@code vanillaFamily()} stands unchanged.
+     */
+    private static List<String> rerollFamilyFor(ClimateClass climateClass, int blockZ) {
+        if (isColdAltitudeClimateClass(climateClass) && rerollLatitudeDeg(blockZ) < SNOWY_PLAINS_MIN_LAT_DEG) {
+            return climateClass.alpineFamily();
+        }
+        return climateClass.vanillaFamily();
+    }
+
+    /**
      * P1-A veto (audit doc fable5-biome-geography-audit-20260707.md). The climate-compat reroll runs
      * LAST -- after {@link #applyFinalSavannaClimateClamp}'s tropical-dry laws
      * ({@link #demoteEquatorialBadlands}/{@link #demoteEquatorialDesert}) have already scrubbed arid
@@ -10036,7 +10128,9 @@ public final class LatitudeBiomes {
     }
 
     private static Holder<Biome> applyClimateCompatReroll(Registry<Biome> biomes, Holder<Biome> pick,
-                                                            ClimateSummary climate, int blockX, int blockZ) {
+                                                            ClimateSummary climate, int blockX, int blockZ,
+                                                            PreviewTerrain preview, int seaLevel,
+                                                            boolean realTerrainKnown) {
         ClimateClass climateClass;
         try {
             climateClass = ClimateClass.valueOf(climate.climateClass());
@@ -10046,7 +10140,13 @@ public final class LatitudeBiomes {
         if (climateClass.isOcean() || !climateFamilyMismatch(climateClass, pick)) {
             return pick;
         }
-        List<String> family = climateClass.vanillaFamily();
+        // P1-B (fable5-biome-geography-audit-20260707.md §5): (A) veto a spurious altitude-cold repaint
+        // on flat warm terrain -- keep the already-lawful pick (never repaint-then-demote).
+        if (rerollColdAltitudeVetoed(climateClass, climate, blockZ, preview, seaLevel, realTerrainKnown)) {
+            return pick;
+        }
+        // P1-B: (B) below 45deg a cold-class repaint uses the ALTITUDE family, never flat-polar snowy_plains.
+        List<String> family = rerollFamilyFor(climateClass, blockZ);
         int idx = climateCompatVariantIndex(blockX, blockZ, family.size());
         for (int i = 0; i < family.size(); i++) {
             String candidateId = "minecraft:" + family.get((idx + i) % family.size());
@@ -10066,7 +10166,9 @@ public final class LatitudeBiomes {
     }
 
     private static Holder<Biome> applyClimateCompatReroll(Collection<Holder<Biome>> biomes, Holder<Biome> pick,
-                                                            ClimateSummary climate, int blockX, int blockZ) {
+                                                            ClimateSummary climate, int blockX, int blockZ,
+                                                            PreviewTerrain preview, int seaLevel,
+                                                            boolean realTerrainKnown) {
         ClimateClass climateClass;
         try {
             climateClass = ClimateClass.valueOf(climate.climateClass());
@@ -10076,7 +10178,13 @@ public final class LatitudeBiomes {
         if (climateClass.isOcean() || !climateFamilyMismatch(climateClass, pick)) {
             return pick;
         }
-        List<String> family = climateClass.vanillaFamily();
+        // P1-B (fable5-biome-geography-audit-20260707.md §5): (A) veto a spurious altitude-cold repaint
+        // on flat warm terrain -- keep the already-lawful pick (never repaint-then-demote).
+        if (rerollColdAltitudeVetoed(climateClass, climate, blockZ, preview, seaLevel, realTerrainKnown)) {
+            return pick;
+        }
+        // P1-B: (B) below 45deg a cold-class repaint uses the ALTITUDE family, never flat-polar snowy_plains.
+        List<String> family = rerollFamilyFor(climateClass, blockZ);
         int idx = climateCompatVariantIndex(blockX, blockZ, family.size());
         for (int i = 0; i < family.size(); i++) {
             Holder<Biome> candidate = entryById(biomes, "minecraft:" + family.get((idx + i) % family.size()));
