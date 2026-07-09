@@ -85,6 +85,36 @@ public final class LatitudeV2Flags {
             parseDoubleOrDefault(System.getProperty("latitude.terrainV2.gripWidth"), 0.8);
 
     /**
+     * Phase 5 Slice B-2 (Fix 2) sub-flag: floor-sight the live sunk-land mirror veto. Default false.
+     * <p>The mirror veto's cheap ({@code skipPreview}, live MIXIN) branch currently reads the
+     * fluid-inclusive {@code columnDecisionY} ({@code WORLD_SURFACE_WG}), so a correctly-flooded carved
+     * column reads the waterline (63) and the veto never fires -- live shows ocean water tagged
+     * savanna/jungle (wrong identity). When this flag is on, that branch instead uses an
+     * {@code OCEAN_FLOOR_WG}-based floor estimate (the same source {@code previewFloorHeight} already
+     * trusts in the harness {@code !skipPreview} branch), completing C-2's documented intent live.
+     * <p>Its own sub-flag (not folded into {@code TERRAIN_V2_ENABLED}) because it is honestly a MAP-WIDE
+     * change to the current live config (~30% of sampled columns flip to their C-2-intended ocean
+     * identity, with chunk-boundary discontinuities in existing worlds), so it must be independently
+     * switchable at B-4 (B-1 amendment 3). Flag-off is byte-identical: the mirror veto only runs while
+     * {@code terrainBiasActivelyBiasing()}, and with this off the branch is the unchanged
+     * {@code columnDecisionY}.
+     */
+    public static final boolean TERRAIN_V2_FLOOR_SIGHTED_VETO =
+            Boolean.parseBoolean(System.getProperty("latitude.terrainV2.floorSightedVeto", "false"));
+
+    /**
+     * Phase 5 Slice B-2 (Fix 1) gate: latitude-aware EDGE OCEAN intent at the projection X-edge.
+     * Default false. When on (and geoV2 is live and the terrain bias is actively biasing), {@code pick()}
+     * consumes the X-only edge term ({@code GeoSummary.projectionEdgeXOnly01()}) and, frayed on a
+     * coherent province-noise field, promotes the outer east/west band to ocean-authority so the world
+     * edge reads as an intentional ocean moat (the existing latitude-correct ocean-family logic paints
+     * frozen oceans at the poles, so the "ice" edge comes free). No biome clamps; columns with edgeB==0
+     * are bitwise-unaffected. See {@code docs/binder/phase5-boundary-experience-plan-20260709.md}.
+     */
+    public static final boolean BOUNDARY_V2_ENABLED =
+            Boolean.parseBoolean(System.getProperty("latitude.boundaryV2.enabled", "false"));
+
+    /**
      * Defensive double parse for the Phase 4 knobs: a {@code null} (property unset) or malformed value
      * degrades to {@code fallback} instead of throwing {@link NumberFormatException} at class-init.
      */

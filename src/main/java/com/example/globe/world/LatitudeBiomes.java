@@ -42,6 +42,7 @@ import com.example.globe.core.climate.ClimateAuthority;
 import com.example.globe.core.climate.ClimateAuthorityParams;
 import com.example.globe.core.climate.ClimateClass;
 import com.example.globe.core.climate.ClimateSummary;
+import com.example.globe.core.geo.EdgeOceanRamp;
 import com.example.globe.core.geo.GeoAuthority;
 import com.example.globe.core.geo.GeoSummary;
 import com.example.globe.util.LatitudeBands;
@@ -2561,6 +2562,12 @@ public final class LatitudeBiomes {
     private static final double BADLANDS_LAT_RAMP_HIGH_DEG =
             Double.parseDouble(System.getProperty("latitude.aridRampHigh", "27.0"));
     private static final long BADLANDS_LAT_KEEP_SALT = 0x6261_646C_5F6C6174L; // "badl_lat"
+    // Phase 5 Slice B-2 (Fix 1): coherent fray field for the edge-ocean moat. Own salt (independent of
+    // every other keep field) + province-scale noise so the moat's coast is jagged, not a straight ring
+    // (Art VI). Scale tracks world radius: max(256, ~0.12*radius) -> ~900 blocks at R7500.
+    private static final long EDGE_OCEAN_KEEP_SALT = 0x6564_6765_5F6F_636EL; // "edge_ocn"
+    private static final int EDGE_OCEAN_FRAY_MIN_SCALE_BLOCKS = 256;
+    private static final double EDGE_OCEAN_FRAY_SCALE_FACTOR = 0.12;
     // LAW (Peetsa): desert may NEVER appear in the tropical band (0-23.5deg) — same Earth-geography
     // rule as badlands. So desert is fully demoted to savanna across the whole tropical band
     // (below DESERT_LAT_RAMP_LOW_DEG), phases in across the lower subtropics via a coherent
@@ -3098,6 +3105,35 @@ public final class LatitudeBiomes {
                 oceanAuthority = false;
             }
         }
+        // Phase 5 Slice B-2 (Fix 1): latitude-aware EDGE OCEAN intent at the projection X-edge. The
+        // east/west world border otherwise paints ~50% ordinary land guillotined by the border; bias the
+        // outer band toward the ocean family so the edge reads as an intentional ocean moat (the existing
+        // oceanByLatitudeBand logic paints frozen oceans at polar rows, so the "ice" edge comes free -- NO
+        // biome clamp here). Consumes the X-only edge term (projectionEdgeXOnly01), NOT
+        // projectionEdgeSuitability01 = max(edgeB, poleB): the poleB component would convert the already-good
+        // icy pole LAND shelf into frozen ocean, a regression (B-1 amendment 1). Gates mirror the C-2 mirror
+        // veto (boundaryV2 on + geoV2 live + terrainBiasActivelyBiasing + nonzero ocean-strength ratio) and
+        // this sits AFTER the raised-land veto so that veto's fluid-inclusive WORLD_SURFACE_WG read can't
+        // clobber it live while the terrain-blind atlas shows it working -- the atlas!=live failure class
+        // this phase exists to kill (B-1 amendment 2). Frayed on a coherent province-noise field (Art VI --
+        // no straight ring); the ocean share ramps smoothly with edgeB and columns with edgeB==0
+        // (|x| <= 0.80*xRadius) never flip -> bitwise-unaffected. Threshold/ramp math lives in the pure
+        // EdgeOceanRamp helper; rivers keep their own branch below (river check runs first).
+        if (LatitudeV2Flags.BOUNDARY_V2_ENABLED
+                && geoV2Summary != null
+                && terrainBiasActivelyBiasing()
+                && LatitudeV2Flags.TERRAIN_V2_OCEAN_STRENGTH_RATIO != 0.0) {
+            double edgeB = geoV2Summary.projectionEdgeXOnly01();
+            if (edgeB > 0.0) {
+                int frayRadius = ACTIVE_RADIUS_BLOCKS > 0 ? ACTIVE_RADIUS_BLOCKS : (REFERENCE_DIAMETER_BLOCKS / 2);
+                int frayScale = Math.max(EDGE_OCEAN_FRAY_MIN_SCALE_BLOCKS,
+                        (int) Math.round(frayRadius * EDGE_OCEAN_FRAY_SCALE_FACTOR));
+                double frayNoise = ValueNoise2D.sampleBlocks(WORLD_SEED ^ EDGE_OCEAN_KEEP_SALT, blockX, blockZ, frayScale);
+                if (EdgeOceanRamp.frayedEdgeOcean(edgeB, frayNoise)) {
+                    oceanAuthority = true;
+                }
+            }
+        }
         // Slice C mirror (audit P2-1 / Lane 6, "fix-or-assert" -> FIXED): the veto above is one-directional
         // -- it demotes ocean-authority on RAISED land, but nothing handled a LAND-family biome whose
         // terrain the Phase 4 bias genuinely sank below sea level (drowned land: swimming over plains).
@@ -3120,8 +3156,17 @@ public final class LatitudeBiomes {
             // Slice C-2: SOLID floor, not the fluid-inclusive surface -- a correctly-flooded carved column
             // reads WORLD_SURFACE_WG == waterline (63), which blinded this veto on its first gate run
             // (26/81 grid columns were land-family biomes floating over 24 blocks of open water).
+            // Phase 5 Slice B-2 (Fix 2): the cheap skipPreview (live MIXIN) branch reads the
+            // fluid-inclusive columnDecisionY (WORLD_SURFACE_WG) -- a correctly-flooded carved column reads
+            // the waterline (63), blinding this veto live, so C-2's floor-sight fix (previewFloorHeight /
+            // OCEAN_FLOOR_WG) was wired only into the harness !skipPreview branch. When
+            // TERRAIN_V2_FLOOR_SIGHTED_VETO is on, use the OCEAN_FLOOR_WG floor here too so the live veto
+            // sees the solid seabed. Flag-off keeps the unchanged columnDecisionY (byte-identical); the
+            // !skipPreview branch is untouched.
             int realHeight = skipPreview && hasPreviewTerrainInputs
-                    ? columnDecisionY
+                    ? (LatitudeV2Flags.TERRAIN_V2_FLOOR_SIGHTED_VETO
+                            ? previewFloorHeight(generator, noiseConfig, heightView, blockX & ~3, blockZ & ~3)
+                            : columnDecisionY)
                     : previewFloorHeight(generator, noiseConfig, heightView, blockX & ~3, blockZ & ~3);
             if (realHeight < seaLevel - 2) {
                 oceanAuthority = true;
@@ -3817,6 +3862,35 @@ public final class LatitudeBiomes {
                 oceanAuthority = false;
             }
         }
+        // Phase 5 Slice B-2 (Fix 1): latitude-aware EDGE OCEAN intent at the projection X-edge. The
+        // east/west world border otherwise paints ~50% ordinary land guillotined by the border; bias the
+        // outer band toward the ocean family so the edge reads as an intentional ocean moat (the existing
+        // oceanByLatitudeBand logic paints frozen oceans at polar rows, so the "ice" edge comes free -- NO
+        // biome clamp here). Consumes the X-only edge term (projectionEdgeXOnly01), NOT
+        // projectionEdgeSuitability01 = max(edgeB, poleB): the poleB component would convert the already-good
+        // icy pole LAND shelf into frozen ocean, a regression (B-1 amendment 1). Gates mirror the C-2 mirror
+        // veto (boundaryV2 on + geoV2 live + terrainBiasActivelyBiasing + nonzero ocean-strength ratio) and
+        // this sits AFTER the raised-land veto so that veto's fluid-inclusive WORLD_SURFACE_WG read can't
+        // clobber it live while the terrain-blind atlas shows it working -- the atlas!=live failure class
+        // this phase exists to kill (B-1 amendment 2). Frayed on a coherent province-noise field (Art VI --
+        // no straight ring); the ocean share ramps smoothly with edgeB and columns with edgeB==0
+        // (|x| <= 0.80*xRadius) never flip -> bitwise-unaffected. Threshold/ramp math lives in the pure
+        // EdgeOceanRamp helper; rivers keep their own branch below (river check runs first).
+        if (LatitudeV2Flags.BOUNDARY_V2_ENABLED
+                && geoV2Summary != null
+                && terrainBiasActivelyBiasing()
+                && LatitudeV2Flags.TERRAIN_V2_OCEAN_STRENGTH_RATIO != 0.0) {
+            double edgeB = geoV2Summary.projectionEdgeXOnly01();
+            if (edgeB > 0.0) {
+                int frayRadius = ACTIVE_RADIUS_BLOCKS > 0 ? ACTIVE_RADIUS_BLOCKS : (REFERENCE_DIAMETER_BLOCKS / 2);
+                int frayScale = Math.max(EDGE_OCEAN_FRAY_MIN_SCALE_BLOCKS,
+                        (int) Math.round(frayRadius * EDGE_OCEAN_FRAY_SCALE_FACTOR));
+                double frayNoise = ValueNoise2D.sampleBlocks(WORLD_SEED ^ EDGE_OCEAN_KEEP_SALT, blockX, blockZ, frayScale);
+                if (EdgeOceanRamp.frayedEdgeOcean(edgeB, frayNoise)) {
+                    oceanAuthority = true;
+                }
+            }
+        }
         // Slice C mirror (audit P2-1 / Lane 6, "fix-or-assert" -> FIXED): the veto above is one-directional
         // -- it demotes ocean-authority on RAISED land, but nothing handled a LAND-family biome whose
         // terrain the Phase 4 bias genuinely sank below sea level (drowned land: swimming over plains).
@@ -3839,8 +3913,17 @@ public final class LatitudeBiomes {
             // Slice C-2: SOLID floor, not the fluid-inclusive surface -- a correctly-flooded carved column
             // reads WORLD_SURFACE_WG == waterline (63), which blinded this veto on its first gate run
             // (26/81 grid columns were land-family biomes floating over 24 blocks of open water).
+            // Phase 5 Slice B-2 (Fix 2): the cheap skipPreview (live MIXIN) branch reads the
+            // fluid-inclusive columnDecisionY (WORLD_SURFACE_WG) -- a correctly-flooded carved column reads
+            // the waterline (63), blinding this veto live, so C-2's floor-sight fix (previewFloorHeight /
+            // OCEAN_FLOOR_WG) was wired only into the harness !skipPreview branch. When
+            // TERRAIN_V2_FLOOR_SIGHTED_VETO is on, use the OCEAN_FLOOR_WG floor here too so the live veto
+            // sees the solid seabed. Flag-off keeps the unchanged columnDecisionY (byte-identical); the
+            // !skipPreview branch is untouched.
             int realHeight = skipPreview && hasPreviewTerrainInputs
-                    ? columnDecisionY
+                    ? (LatitudeV2Flags.TERRAIN_V2_FLOOR_SIGHTED_VETO
+                            ? previewFloorHeight(generator, noiseConfig, heightView, blockX & ~3, blockZ & ~3)
+                            : columnDecisionY)
                     : previewFloorHeight(generator, noiseConfig, heightView, blockX & ~3, blockZ & ~3);
             if (realHeight < seaLevel - 2) {
                 oceanAuthority = true;

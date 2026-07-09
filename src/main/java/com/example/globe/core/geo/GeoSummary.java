@@ -28,10 +28,15 @@ public record GeoSummary(
         double projectionEdgeSuitability01,
         int drainageBasinId,
         double flowDirection,
-        int coastOutletId
+        int coastOutletId,
+        // Phase 5 Slice B-2 (Fix 1): the X-only projection-edge term (= smoothstep(EDGE_START,1,|x|/xR)),
+        // exposed separately from projectionEdgeSuitability01 (= max(edgeB, poleB)) so the edge-ocean
+        // consumer can bias the east/west border toward ocean WITHOUT touching the icy pole LAND shelf
+        // that the poleB component would otherwise convert to frozen ocean (B-1 amendment 1). 0.0 = interior.
+        double projectionEdgeXOnly01
 ) {
 
     /** Neutral/no-op summary: not land, not ocean, no ids assigned, no intent signaled. */
     public static final GeoSummary NEUTRAL = new GeoSummary(
-            0.0, false, -1, -1, 0.0, 0.0, 0.0, 0.0, 0.0, -1, 0.0, 0.0, -1, 0.0, -1);
+            0.0, false, -1, -1, 0.0, 0.0, 0.0, 0.0, 0.0, -1, 0.0, 0.0, -1, 0.0, -1, 0.0);
 }

@@ -270,7 +270,8 @@ public final class GeoAuthority {
 
         return new GeoSummary(land01, ocean, continentId, oceanBasinId, coastDist,
                 shelf01, islandArc01, archipelago01, mountainIntent01, orogenId,
-                rugged, edgeSuit, -1, 0.0, -1); // hydrology reserved this phase
+                rugged, edgeSuit, -1, 0.0, -1, // hydrology reserved this phase
+                edgeB); // Phase 5 Slice B-2 (Fix 1): X-only edge term, separate from edgeSuit=max(edgeB,poleB)
     }
 
     private static int sign(double v) {
