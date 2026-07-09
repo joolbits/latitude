@@ -103,6 +103,10 @@ loom {
             vmArg "-Dlatitude.terrainV2.strength=${System.getProperty('latitude.terrainV2.strength', '0.0')}"
             vmArg "-Dlatitude.terrainV2.oceanStrengthRatio=${System.getProperty('latitude.terrainV2.oceanStrengthRatio', '1.0')}"
             vmArg "-Dlatitude.terrainV2.gripWidth=${System.getProperty('latitude.terrainV2.gripWidth', '0.8')}"
+            // Phase 5 Slice B-2: Fix 2 floor-sighted live veto sub-flag + Fix 1 edge-ocean gate. Both
+            // default false (byte-identical flag-off); forwarded so a headless flag-on atlas is honest.
+            vmArg "-Dlatitude.terrainV2.floorSightedVeto=${System.getProperty('latitude.terrainV2.floorSightedVeto', 'false')}"
+            vmArg "-Dlatitude.boundaryV2.enabled=${System.getProperty('latitude.boundaryV2.enabled', 'false')}"
             vmArg "-Dlatitude.geoV2.enabled=${System.getProperty('latitude.geoV2.enabled', 'false')}"
             // Slice C follow-up (the L17 forwarding class, caught a SECOND time 2026-07-07): climateV2 and
             // biomeConsumerV2 were never forwarded, so a headless "consumer-on" atlas silently ran with the

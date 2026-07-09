@@ -38,7 +38,7 @@ class GeoSummaryTest {
     void isPureDataNoMinecraftDependency() {
         // Compile-time proof: this test module has no Minecraft classpath at all, so the mere
         // fact that GeoSummary compiles here proves it is a Core Logic type.
-        GeoSummary custom = new GeoSummary(0.5, true, 3, 4, 120.0, 0.2, 0.0, 0.0, 0.8, 7, 0.6, 0.1, 9, 1.57, 2);
+        GeoSummary custom = new GeoSummary(0.5, true, 3, 4, 120.0, 0.2, 0.0, 0.0, 0.8, 7, 0.6, 0.1, 9, 1.57, 2, 0.0);
         assertEquals(3, custom.continentId());
     }
 }

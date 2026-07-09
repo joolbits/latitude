@@ -28,16 +28,16 @@ class ClimateAuthorityTest {
 
     /** land column: continentality is driven by coastDist (cont≈1 by ~0.14R inland). */
     private static GeoSummary land(double coastDist, double mtn) {
-        return new GeoSummary(1.0, false, 1, -1, coastDist, 0, 0, 0, mtn, -1, 0, 0, -1, 0, -1);
+        return new GeoSummary(1.0, false, 1, -1, coastDist, 0, 0, 0, mtn, -1, 0, 0, -1, 0, -1, 0);
     }
 
     private static GeoSummary ocean() {
-        return new GeoSummary(0.0, true, -1, 1, -50.0, 0.0, 0, 0, 0, -1, 0, 0, -1, 0, -1);
+        return new GeoSummary(0.0, true, -1, 1, -50.0, 0.0, 0, 0, 0, -1, 0, 0, -1, 0, -1, 0);
     }
 
     /** ocean column near a plate boundary: mountainIntent01 is nonzero despite being open ocean. */
     private static GeoSummary oceanNearMountainIntent(double mtn) {
-        return new GeoSummary(0.0, true, -1, 1, -50.0, 0.0, 0, 0, mtn, -1, 0, 0, -1, 0, -1);
+        return new GeoSummary(0.0, true, -1, 1, -50.0, 0.0, 0, 0, mtn, -1, 0, 0, -1, 0, -1, 0);
     }
 
     private String cls(double phi, GeoSummary c, double fetch, double curr, double lift, double shadow) {
