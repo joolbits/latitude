@@ -28,7 +28,7 @@ class LatitudeConfigDataTest {
         assertEquals(6.0, d.zoneEnterTitleSeconds);
         assertEquals(1.8, d.zoneEnterTitleScale);
         assertEquals(TitleColorPreset.WHITE, d.zoneEnterTitleColorPreset);
-        assertEquals(TitleCaseMode.NORMAL, d.zoneEnterTitleCase);
+        assertEquals(TitleCaseMode.UPPERCASE, d.zoneEnterTitleCase);
         assertEquals(-40, d.zoneEnterTitleOffsetY);
         assertTrue(d.hudSnapEnabled);
         assertEquals(8, d.hudSnapPixels);
@@ -147,7 +147,22 @@ class LatitudeConfigDataTest {
         assertEquals(-4, d.zoneEnterTitleLetterSpacing);
         assertEquals(64, d.hudSnapPixels);
         assertEquals(TitleColorPreset.WHITE, d.zoneEnterTitleColorPreset, "unknown enum constant -> default");
-        assertEquals(TitleCaseMode.NORMAL, d.zoneEnterTitleCase);
+        assertEquals(TitleCaseMode.UPPERCASE, d.zoneEnterTitleCase);
         assertEquals(LatitudeConfigData.CURRENT_CONFIG_VERSION, d.configVersion, "future version clamped");
+    }
+
+    /** L23-class regression guard: TitleCaseMode.NORMAL was removed 2026-07-08 (it was indistinguishable
+     *  from UPPERCASE in the Studio's no-world sample title). A config saved by an OLDER jar that still
+     *  wrote "NORMAL" must degrade to the new default, not fail to load or throw. */
+    @Test
+    void removedNormalTitleCaseDegradesToUppercaseDefault() {
+        LatitudeConfigData d = GSON.fromJson("""
+                {
+                  "zoneEnterTitleCase": "NORMAL"
+                }
+                """, LatitudeConfigData.class);
+        assertEquals(null, d.zoneEnterTitleCase, "Gson maps an unrecognized enum constant to null, not a throw");
+        d.sanitize();
+        assertEquals(TitleCaseMode.UPPERCASE, d.zoneEnterTitleCase);
     }
 }

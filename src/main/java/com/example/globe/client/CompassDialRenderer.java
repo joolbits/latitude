@@ -200,6 +200,30 @@ final class CompassDialRenderer {
         return diameter;
     }
 
+    /**
+     * Tape's readability floor, in diameter units (TEST 32: "when you're adjusting the size of the tape,
+     * it shrinks... and gets narrower... at its narrowest you can't read any of the numbers"). Tape's
+     * legibility is governed by its WIDTH -- the heading labels (N/NE/E...) spread across
+     * {@code usableHalf = radius - 3}, and {@code labelScale} floors at 0.55 -- so as the shared Analog
+     * Size slider (16-72) approaches its bottom, both the available room AND the text scale shrink at
+     * once, compounding into illegible "squish". Every other look (a disc/ring/rose/needle) stays legible
+     * at any slider value; only Tape needs a higher floor. 32 is the smallest size already validated live
+     * with no legibility complaints (TEST 29/30 screenshots), so it becomes Tape's effective minimum: the
+     * slider (and the diameter it drives) never drops below it FOR TAPE specifically, while every other
+     * look keeps the full 16-72 range. This changes one number, not a new width/box split (no risk of the
+     * content-vs-box mismatch class of bug -- L23 -- since dock/hitbox/render all still agree on one
+     * "diameter" value, just floored for this one look).
+     */
+    static final float TAPE_MIN_DIAMETER = 32.0f;
+
+    /** The effective diameter after applying the look's own floor (only Tape has one, currently). */
+    static float effectiveAnalogSize(CompassHudConfig cfg) {
+        if (cfg.analogLook == CompassHudConfig.CompassLook.TAPE) {
+            return Math.max(cfg.analogSize, TAPE_MIN_DIAMETER);
+        }
+        return cfg.analogSize;
+    }
+
     private static void drawTape(GuiGraphicsExtractor ctx, Font font, CompassHudConfig cfg,
                                  int cx, int cy, int radius, float yawDegrees, DialColors colors) {
         int halfW = radius;

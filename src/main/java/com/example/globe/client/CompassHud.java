@@ -565,7 +565,7 @@ public final class CompassHud {
 
 
     private static int analogDiameter(CompassHudConfig cfg) {
-        return (int) Math.ceil(cfg.analogSize);
+        return (int) Math.ceil(CompassDialRenderer.effectiveAnalogSize(cfg));
     }
 
     private static HudPoint computeDigitalBasePosition(Minecraft client, CompassHudConfig cfg, String[] lines) {

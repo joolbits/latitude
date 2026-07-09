@@ -194,7 +194,6 @@ public final class ZoneEnterTitleOverlay {
             case UPPERCASE -> text.toUpperCase(java.util.Locale.ROOT);
             case LOWERCASE -> text.toLowerCase(java.util.Locale.ROOT);
             case MOCKING -> mockingCase(text);
-            case NORMAL -> text;
         };
     }
 
