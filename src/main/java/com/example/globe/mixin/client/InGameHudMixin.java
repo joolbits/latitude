@@ -28,6 +28,8 @@ public class InGameHudMixin {
             return;
         }
         EwSandstormOverlayHud.render(context, tickCounter);
+        // B-3b: polar whiteout fill, same layer as the EW haze -- alpha ramps continuously 85->90 deg.
+        com.example.globe.client.PolarWhiteoutOverlayHud.render(context, tickCounter);
     }
 
     @Inject(method = "extractRenderState", at = @At("TAIL"))
