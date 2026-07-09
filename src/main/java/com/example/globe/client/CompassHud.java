@@ -262,9 +262,21 @@ public final class CompassHud {
         int screenW = client.getWindow().getGuiScaledWidth();
         int screenH = client.getWindow().getGuiScaledHeight();
         if (cfg.dockMode == CompassHudConfig.DockMode.NONE) {
-            drawPin(ctx,
-                    com.example.globe.core.ui.HudLayoutMath.pinX(gridCol(cfg.hAnchor), cfg.offXFrac, screenW),
-                    com.example.globe.core.ui.HudLayoutMath.pinY(gridRow(cfg.vAnchor), cfg.offYFrac, screenH));
+            int pinX = com.example.globe.core.ui.HudLayoutMath.pinX(gridCol(cfg.hAnchor), cfg.offXFrac, screenW);
+            int pinY = com.example.globe.core.ui.HudLayoutMath.pinY(gridRow(cfg.vAnchor), cfg.offYFrac, screenH);
+            if (cfg.style == CompassHudConfig.CompassStyle.ANALOG) {
+                // Pin & Grow's own contract stores the pin in BOX space (diameter x diameter) -- but
+                // the marker's whole PURPOSE is showing the grabbable point, and for TAPE the drawn
+                // content is centered in a shorter strip than that box (lookContentHeight), so the raw
+                // box-space pin floats above the actual strip (TEST 34: "only happens when Tape is
+                // chosen" -- confirmed live). Apply the same box->content offset applyCompassDrag
+                // already applies in reverse when you grab the visible content and drag it, so the
+                // marker lands exactly on what you'd click. No-op for every other look (content==box).
+                int diameter = analogDiameter(cfg);
+                int contentH = CompassDialRenderer.lookContentHeight(cfg, diameter);
+                pinY += (diameter - contentH) / 2;
+            }
+            drawPin(ctx, pinX, pinY);
         }
         if (cfg.displayZoneInHud && !cfg.zoneFollowsCompass) {
             drawPin(ctx,
@@ -371,7 +383,10 @@ public final class CompassHud {
         int screenWForText = Minecraft.getInstance().getWindow().getGuiScaledWidth();
         int totalTextW = analogAttachedTextWidth(client, cfg, latText, zoneText);
         boolean textBelow = totalTextW > 0 && analogTextBelow(screenWForText, x, diameter, totalTextW);
+        // Unscaled lineH still centers the right-side text on the dial (textY below); the scaled height is
+        // only for the box that must CONTAIN scaled-up text (border here, hitbox in computeAnalogBounds).
         int lineH = client.font.lineHeight;
+        int textLineH = attachedTextLineHeight(client, cfg, latText, zoneText);
 
         if (isPreview) {
             // Border mirrors computeAnalogBounds' union exactly (same inputs, same math) so the Studio
@@ -387,10 +402,10 @@ public final class CompassHud {
                 int textXb = clamp(cx - totalTextW / 2, 4, Math.max(4, screenWForText - 4 - totalTextW));
                 bx = Math.min(x, textXb);
                 boxW = Math.max(x + diameter, textXb + totalTextW) - bx;
-                boxH = contentH + 2 + lineH;
+                boxH = contentH + 2 + textLineH;
             } else {
                 boxW = diameter + ANALOG_LAT_GAP + totalTextW;
-                boxH = Math.max(contentH, lineH);
+                boxH = Math.max(contentH, textLineH);
             }
             ctx.fill(bx, by, bx + boxW, by + 1, ANALOG_PREVIEW_BORDER);
             ctx.fill(bx, by + boxH - 1, bx + boxW, by + boxH, ANALOG_PREVIEW_BORDER);
@@ -413,11 +428,11 @@ public final class CompassHud {
         }
         int color = cfg.textArgb();
         if (latText != null && !latText.isEmpty()) {
-            drawText(ctx, client, cfg, latText, textX, textY, color);
-            textX += client.font.width(latText) + (cfg.compactHud ? 1 : 6);
+            drawTextScaled(ctx, client, cfg, latText, textX, textY, color, cfg.coordsTextScale);
+            textX += Math.round(client.font.width(latText) * cfg.coordsTextScale) + (cfg.compactHud ? 1 : 6);
         }
         if (zoneText != null && !zoneText.isEmpty()) {
-            drawText(ctx, client, cfg, zoneText, textX, textY, color);
+            drawTextScaled(ctx, client, cfg, zoneText, textX, textY, color, attachedZoneScale(cfg));
         }
     }
 
@@ -544,7 +559,7 @@ public final class CompassHud {
         HudPoint dial = computeAnalogDialPos(screenW, screenH, client, cfg, latText, zoneText);
         int diameter = analogDiameter(cfg);
         int textW = analogAttachedTextWidth(client, cfg, latText, zoneText);
-        int lineH = client.font.lineHeight;
+        int lineH = attachedTextLineHeight(client, cfg, latText, zoneText);
         // Bounds wrap the look's TRUE content (TAPE: the strip, centered in the dial box), so the
         // Studio border/hitbox never claims the tape's phantom top/bottom margins.
         int contentH = CompassDialRenderer.lookContentHeight(cfg, diameter);
@@ -766,11 +781,32 @@ public final class CompassHud {
         return w;
     }
 
+    /** Text scale for the attached zone/biome segment. Zone wins when it's part of the attached string
+     *  (covers both the zone-only case and the documented "zone+biome fused share one size" case); when
+     *  ONLY biome rides attached, biomeTextScale applies so its slider isn't a silent no-op. Mirrors the
+     *  respect-follow logic of attachedZoneBiomeLive/Sample, whose joined string this scales. */
+    private static float attachedZoneScale(CompassHudConfig cfg) {
+        if (cfg.displayZoneInHud && cfg.zoneFollowsCompass) return cfg.zoneTextScale;
+        if (cfg.displayBiomeInHud && cfg.biomeFollowsCompass) return cfg.biomeTextScale;
+        return 1.0f;
+    }
+
+    /** Height (px) of the attached lat/zone text line, accounting for each present segment's own text
+     *  scale (tallest present segment wins). Kept in one helper so computeAnalogBounds' drag hitbox and
+     *  renderAnalogAt's preview border use identical math -- scaled-up attached text must not spill past
+     *  the box that claims it. */
+    private static int attachedTextLineHeight(Minecraft client, CompassHudConfig cfg, String latText, String zoneText) {
+        float s = 1.0f;
+        if (latText != null && !latText.isEmpty()) s = Math.max(s, cfg.coordsTextScale);
+        if (zoneText != null && !zoneText.isEmpty()) s = Math.max(s, attachedZoneScale(cfg));
+        return Math.round(client.font.lineHeight * s);
+    }
+
     private static int analogAttachedTextWidth(Minecraft client, CompassHudConfig cfg, String latText, String zoneText) {
         int w = 0;
         boolean any = false;
         if (latText != null && !latText.isEmpty()) {
-            w += client.font.width(latText);
+            w += Math.round(client.font.width(latText) * cfg.coordsTextScale);
             any = true;
         }
         if (zoneText != null && !zoneText.isEmpty()) {
@@ -780,7 +816,7 @@ public final class CompassHud {
                 String reserved = reservedZoneBiomeSample(client, cfg);
                 if (reserved != null) zw = Math.max(zw, client.font.width(reserved));
             }
-            w += zw;
+            w += Math.round(zw * attachedZoneScale(cfg));
             any = true;
         }
         return any ? w : 0;
@@ -1263,6 +1299,24 @@ public final class CompassHud {
         }
     }
 
+    /** Same as {@link #drawText} but at an independent text size (zone/biome/coords text-size sliders,
+     *  2026-07-08) -- scales around the (x,y) anchor so the label's pinned corner never moves, only its size. */
+    private static void drawTextScaled(GuiGraphicsExtractor ctx, Minecraft client, CompassHudConfig cfg, String text, int x, int y, int color, float scale) {
+        if (scale == 1.0f) {
+            drawText(ctx, client, cfg, text, x, y, color);
+            return;
+        }
+        var m = ctx.pose();
+        m.pushMatrix();
+        try {
+            m.translate(x, y);
+            m.scale(scale, scale);
+            drawText(ctx, client, cfg, text, 0, 0, color);
+        } finally {
+            m.popMatrix();
+        }
+    }
+
     // Left-aligned rainbow draw (RainbowText itself only offers centered drawing) -- shared by drawText() above
     // (analog-attached + all 3 detached labels) and renderDigitalAt()'s per-line loop below, so both compass
     // styles get the same rainbow behavior from one place.
@@ -1295,7 +1349,7 @@ public final class CompassHud {
             ctx.fill(zb.x + zb.w - 1, zb.y, zb.x + zb.w, zb.y + zb.h, border);
         }
         int color = cfg.textArgb();
-        drawText(ctx, client, cfg, zone, zb.x, zb.y, color);
+        drawTextScaled(ctx, client, cfg, zone, zb.x, zb.y, color, cfg.zoneTextScale);
     }
 
     // Detached zone label support
@@ -1307,6 +1361,8 @@ public final class CompassHud {
         int w = client.font.width(zone);
         int h = client.font.lineHeight;
         if (cfg.reservedTextWidth) w = Math.max(w, client.font.width("Subtropics"));
+        w = Math.round(w * cfg.zoneTextScale);
+        h = Math.round(h * cfg.zoneTextScale);
         int x = pinPlaceX(cfg.zoneHAnchor, cfg.zoneOffXFrac, cfg.zoneGrowH, w, screenW);
         int y = pinPlaceY(cfg.zoneVAnchor, cfg.zoneOffYFrac, cfg.zoneGrowV, h, screenH);
         x = clamp(x, 0, Math.max(0, screenW - w));
@@ -1328,7 +1384,7 @@ public final class CompassHud {
             ctx.fill(bb.x + bb.w - 1, bb.y, bb.x + bb.w, bb.y + bb.h, border);
         }
         int color = cfg.textArgb();
-        drawText(ctx, client, cfg, biome, bb.x, bb.y, color);
+        drawTextScaled(ctx, client, cfg, biome, bb.x, bb.y, color, cfg.biomeTextScale);
     }
 
     public static HudBounds computeBiomeBounds(Minecraft client, CompassHudConfig cfg) {
@@ -1339,6 +1395,8 @@ public final class CompassHud {
         int w = client.font.width(biome);
         int h = client.font.lineHeight;
         if (cfg.reservedTextWidth) w = Math.max(w, client.font.width(longestBiomeName(client)));
+        w = Math.round(w * cfg.biomeTextScale);
+        h = Math.round(h * cfg.biomeTextScale);
         int x = pinPlaceX(cfg.biomeHAnchor, cfg.biomeOffXFrac, cfg.biomeGrowH, w, screenW);
         int y = pinPlaceY(cfg.biomeVAnchor, cfg.biomeOffYFrac, cfg.biomeGrowV, h, screenH);
         x = clamp(x, 0, Math.max(0, screenW - w));
@@ -1361,7 +1419,7 @@ public final class CompassHud {
             ctx.fill(cb.x + cb.w - 1, cb.y, cb.x + cb.w, cb.y + cb.h, border);
         }
         int color = cfg.textArgb();
-        drawText(ctx, client, cfg, coords, cb.x, cb.y, color);
+        drawTextScaled(ctx, client, cfg, coords, cb.x, cb.y, color, cfg.coordsTextScale);
     }
 
     private static String coordsLabelForDetached(Minecraft client, CompassHudConfig cfg) {
@@ -1375,8 +1433,8 @@ public final class CompassHud {
         if (coords == null || coords.isEmpty()) return null;
         int screenW = client.getWindow().getGuiScaledWidth();
         int screenH = client.getWindow().getGuiScaledHeight();
-        int w = client.font.width(coords);
-        int h = client.font.lineHeight;
+        int w = Math.round(client.font.width(coords) * cfg.coordsTextScale);
+        int h = Math.round(client.font.lineHeight * cfg.coordsTextScale);
         int x = pinPlaceX(cfg.coordsHAnchor, cfg.coordsOffXFrac, cfg.coordsGrowH, w, screenW);
         int y = pinPlaceY(cfg.coordsVAnchor, cfg.coordsOffYFrac, cfg.coordsGrowV, h, screenH);
         x = clamp(x, 0, Math.max(0, screenW - w));
@@ -1398,8 +1456,26 @@ public final class CompassHud {
             case SUNSET -> new CompassDialRenderer.DialColors(0x261712, 0xFFF2A65A, 0xFFB07E62, 0xFFFF5E5B);
             case MONOCHROME -> new CompassDialRenderer.DialColors(0x1B1B1E, 0xFFD8D8DC, 0xFF80808A, 0xFFF2F2F2);
             case CLASSIC_GOLD -> new CompassDialRenderer.DialColors(ANALOG_FACE_RGB, ANALOG_RING, ANALOG_MUTED, ANALOG_N_COLOR);
+            case RAINBOW -> rainbowColors(cfg);
             case CUSTOM -> new CompassDialRenderer.DialColors(cfg.customFaceRgb, cfg.customRingArgb, cfg.customMutedArgb, cfg.customNeedleArgb);
             default -> new CompassDialRenderer.DialColors(ANALOG_FACE_RGB, ANALOG_RING, ANALOG_MUTED, ANALOG_N_COLOR);
         };
+    }
+
+    /** Slowly cycles the whole dial through the color wheel ("Aurora" in the UI) using wall-clock time --
+     *  the same {@code System.currentTimeMillis()} idiom used elsewhere for animation in this codebase.
+     *  Ring and needle sit opposite each other on the wheel so they stay visually distinct at every hue;
+     *  muted/face are lower-saturation/darker versions of the same hue so the dial always reads as one
+     *  coherent moment rather than four unrelated colors. Loop length is player-tunable (Color Cycle
+     *  Speed slider, Compass tab) -- deliberately defaults slow and the slider's own range skews slow
+     *  (2026-07-08: a fast cycle reads as strobing and can give people a headache). */
+    private static CompassDialRenderer.DialColors rainbowColors(CompassHudConfig cfg) {
+        long periodMs = Math.max(1000L, Math.round(cfg.rainbowCycleSeconds * 1000.0));
+        float hue = (System.currentTimeMillis() % periodMs) / (float) periodMs;
+        int ring = java.awt.Color.HSBtoRGB(hue, 0.85f, 1.0f);
+        int needle = java.awt.Color.HSBtoRGB((hue + 0.5f) % 1f, 0.9f, 1.0f);
+        int muted = java.awt.Color.HSBtoRGB(hue, 0.35f, 0.65f);
+        int face = java.awt.Color.HSBtoRGB(hue, 0.45f, 0.16f) & 0xFFFFFF;
+        return new CompassDialRenderer.DialColors(face, ring, muted, needle);
     }
 }

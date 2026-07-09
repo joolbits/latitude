@@ -75,6 +75,15 @@ public final class LatitudeConfig {
         save(captureTo());
     }
 
+    /** Clamp the LIVE static fields to their valid ranges, using {@link LatitudeConfigData#sanitize()} as
+     *  the single source of truth (captureTo() sanitizes then applyFrom() writes back). saveCurrent() only
+     *  sanitizes the on-disk copy, so any caller that sets live fields from an untrusted source -- a preset
+     *  import / hand-edited slot -- must call this to clamp what's actually on screen, not just what's saved. */
+    public static void sanitizeLive() {
+        get();
+        applyFrom(captureTo());
+    }
+
     private static void load() {
         loaded = true;
         try {
