@@ -33,10 +33,13 @@ public final class LatitudeMath {
     public static final double POLAR_START_FRAC = SUBPOLAR_MAX_FRAC;
     public static final int POLAR_START_DEG = (int) Math.floor(POLAR_START_FRAC * 90.0);
 
-    public static final double POLAR_STAGE_1_PROGRESS = 0.940;
-    public static final double POLAR_STAGE_2_PROGRESS = 0.970;
-    public static final double POLAR_STAGE_3_PROGRESS = 0.990;
-    public static final double POLAR_STAGE_LETHAL_PROGRESS = 0.995;
+    // Polar WARNING-ladder thresholds (progress = |z|/latitudeRadius = deg/90). Re-anchored (B-3-P3)
+    // to P1's PolarHazardWindow milestones so each warning fires at or just before the mechanic it warns
+    // about: snow onset 85, hazard/slowness onset 87, blindness ~89, freeze near-max ~89.7 (death at 90).
+    public static final double POLAR_STAGE_1_PROGRESS = 0.9444;      // 85.0 deg -- snow onset (ambient window opens)
+    public static final double POLAR_STAGE_2_PROGRESS = 0.9667;      // 87.0 deg -- hazard onset (slowness begins)
+    public static final double POLAR_STAGE_3_PROGRESS = 0.9889;      // 89.0 deg -- ~blindness; ~1 deg lead before freeze damage
+    public static final double POLAR_STAGE_LETHAL_PROGRESS = 0.9967; // 89.7 deg -- freeze near-max (death at 90.0)
 
     /** WorldBorder#getSize() is DIAMETER. Half-size is radius in blocks. This is the X (border) radius. */
     public static double halfSize(WorldBorder border) {
