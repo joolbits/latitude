@@ -41,7 +41,20 @@ public final class LatitudePlanisphereRenderer {
     private static final double POLE_FADE_DEG = 108.0;
     // Fraction of each loop spent easing the pulse in (at the equator restart) and out (past the pole), so
     // the wrap breathes instead of popping. 0 = hard pop (old behavior); larger = longer, gentler fades.
+    // Shared by the Random vertical sweep and the selected-band horizontal sweep below.
     private static final double SWEEP_FADE_FRAC = 0.22;
+
+    // ── Selected-band horizontal glow (Peetsa) ── a picked band's OWN highlight shimmers with a glow crest
+    // sweeping left→right across it, the same Gaussian idea as the Random sweep turned on its side. The band
+    // never drops below SELECTED_BASE_GLOW so it always reads as clearly selected; the crest brightens it to
+    // the full selected pop (glow == 1) as it passes. SIGMA is in fraction-of-width units.
+    private static final long SELECTED_SWEEP_PERIOD_MS = 2600L;
+    private static final double SELECTED_SWEEP_SIGMA = 0.18;
+    // Lowered floor + stronger peak so the crest reads BOLD like the Random sweep (Peetsa: the shimmer was
+    // too subtle). Base 0.35 still keeps the band clearly selected between crests; the crest drives it to a
+    // brighter, fully-opaque pop (bolder than Random's 1.30x/0xE6).
+    private static final double SELECTED_BASE_GLOW = 0.35;
+    private static final float SELECTED_BRIGHT_GAIN = 0.45f;
 
     // ── Rectangle equivalents of the circle primitives above, for the Mercator (2:1) atlas preview: same
     // shapes, just without the chord-mask clip — a constant halfW instead of a per-scanline sqrt(frac)*radius.
@@ -67,6 +80,34 @@ public final class LatitudePlanisphereRenderer {
     private static void drawLatitudeLineRect(GuiGraphicsExtractor ctx, int cx, int cy, int halfW, int yOff, int color) {
         if (halfW <= 0) return;
         ctx.fill(cx - halfW, cy + yOff, cx + halfW, cy + yOff + 1, color);
+    }
+
+    // Draws a band strip whose HIGHLIGHT sweeps left→right: each vertical column's brightness/opacity follows
+    // a Gaussian crest centered on `front` (fraction across the strip width), floored at SELECTED_BASE_GLOW so
+    // the strip always reads as selected. Uses the exact bright/alpha mapping the Random sweep uses, so at the
+    // crest peak (glow == 1) it matches the old static selected pop. Drawn in short column slices — a handful
+    // of extra fills, only for the one selected band, only on a menu screen.
+    private static void fillSelectedGlowStrip(GuiGraphicsExtractor ctx, int cx, int cy, int halfW,
+                                              int yStart, int yEnd, int baseColor, double front, double env) {
+        if (halfW <= 0) return;
+        int left = cx - halfW, right = cx + halfW, width = right - left;
+        if (width <= 0) return;
+        int br = (baseColor >> 16) & 0xFF, bg = (baseColor >> 8) & 0xFF, bb = baseColor & 0xFF;
+        int step = 2;
+        for (int px = left; px < right; px += step) {
+            double u = (px + step * 0.5 - left) / (double) width;   // column-center fraction 0..1
+            double d = u - front;
+            double crest = Math.exp(-(d * d) / (2.0 * SELECTED_SWEEP_SIGMA * SELECTED_SWEEP_SIGMA)) * env;
+            double glow = SELECTED_BASE_GLOW + (1.0 - SELECTED_BASE_GLOW) * crest;
+            float bright = 1.0f + SELECTED_BRIGHT_GAIN * (float) glow;
+            int r = Math.min(255, (int) (br * bright));
+            int g = Math.min(255, (int) (bg * bright));
+            int b = Math.min(255, (int) (bb * bright));
+            int a = 0x86 + (int) ((0xFF - 0x86) * glow);
+            int col = (a << 24) | (r << 16) | (g << 8) | b;
+            int x1 = Math.min(px + step, right);
+            ctx.fill(px, cy + yStart, x1, cy + yEnd, col);
+        }
     }
 
     /**
@@ -132,35 +173,46 @@ public final class LatitudePlanisphereRenderer {
             // (Peetsa: visual harmony). Peak (env == 1) holds across the middle of the sweep.
             sweepEnv = smoothstep(0.0, SWEEP_FADE_FRAC, phase) * smoothstep(0.0, SWEEP_FADE_FRAC, 1.0 - phase);
         }
+        // A picked band gets a glow crest sweeping left→right across its own highlighted color (Peetsa) --
+        // the Random idea turned on its side. The band holds a SELECTED_BASE_GLOW floor so it always reads
+        // selected; the crest brightens it to the full pop as it passes. Same seam-fade envelope as above.
+        double selFront = 0.0, selEnv = 0.0;
+        if (selectedBand != null) {
+            double sp = (System.currentTimeMillis() % SELECTED_SWEEP_PERIOD_MS) / (double) SELECTED_SWEEP_PERIOD_MS;
+            selFront = sp;
+            selEnv = smoothstep(0.0, SWEEP_FADE_FRAC, sp) * smoothstep(0.0, SWEEP_FADE_FRAC, 1.0 - sp);
+        }
         for (int i = 0; i < bands.length; i++) {
             LatitudeBands.Band band = bands[i];
             int baseColor = BAND_COLORS[i];
-
-            int fillColor;
-            if (randomSweep) {
-                // Gaussian glow keyed on how close this band's center latitude is to the advancing pulse:
-                // near the front the band brightens and turns nearly opaque (like a selected band), away
-                // from it it settles to the same muted wash every other band uses.
-                double mid = (band.lowDeg() + band.highDeg()) / 2.0;
-                double d = mid - frontDeg;
-                double glow = Math.exp(-(d * d) / (2.0 * RANDOM_SWEEP_SIGMA_DEG * RANDOM_SWEEP_SIGMA_DEG)) * sweepEnv;
-                float bright = 1.0f + 0.30f * (float) glow;
-                int r = Math.min(255, (int) (((baseColor >> 16) & 0xFF) * bright));
-                int g = Math.min(255, (int) (((baseColor >> 8) & 0xFF) * bright));
-                int b = Math.min(255, (int) ((baseColor & 0xFF) * bright));
-                int a = 0x86 + (int) ((0xE6 - 0x86) * glow);
-                fillColor = (a << 24) | (r << 16) | (g << 8) | b;
-            } else if (band == selectedBand) {
-                int r = Math.min(255, (int) (((baseColor >> 16) & 0xFF) * 1.30f));
-                int g = Math.min(255, (int) (((baseColor >> 8) & 0xFF) * 1.30f));
-                int b = Math.min(255, (int) ((baseColor & 0xFF) * 1.30f));
-                fillColor = (0xE6 << 24) | (r << 16) | (g << 8) | b;   // selected band: pops
-            } else {
-                fillColor = (baseColor & 0x00FFFFFF) | (0x86 << 24);   // others: bands read clearly, land still shows
-            }
-
             int yLow  = (int) (halfH * band.lowDeg()  / 90.0);
             int yHigh = (int) (halfH * band.highDeg() / 90.0);
+
+            if (band == selectedBand) {
+                fillSelectedGlowStrip(context, cx, cy, halfW, yLow,  yHigh,  baseColor, selFront, selEnv);
+                fillSelectedGlowStrip(context, cx, cy, halfW, -yHigh, -yLow, baseColor, selFront, selEnv);
+                continue;
+            }
+
+            if (!randomSweep) {
+                // A specific zone IS selected: every OTHER band stays fully transparent so the atlas map
+                // graphic (ocean + continents + the faint latitude graticule) shows through cleanly -- only
+                // the picked band carries color (Peetsa). The selected band was already drawn above.
+                continue;
+            }
+
+            // Random sweep: every band animates. Gaussian glow keyed on how close this band's center
+            // latitude is to the advancing pulse -- near the front it brightens and turns nearly opaque,
+            // away from it it settles to the muted wash.
+            double mid = (band.lowDeg() + band.highDeg()) / 2.0;
+            double d = mid - frontDeg;
+            double glow = Math.exp(-(d * d) / (2.0 * RANDOM_SWEEP_SIGMA_DEG * RANDOM_SWEEP_SIGMA_DEG)) * sweepEnv;
+            float bright = 1.0f + 0.30f * (float) glow;
+            int r = Math.min(255, (int) (((baseColor >> 16) & 0xFF) * bright));
+            int g = Math.min(255, (int) (((baseColor >> 8) & 0xFF) * bright));
+            int b = Math.min(255, (int) ((baseColor & 0xFF) * bright));
+            int a = 0x86 + (int) ((0xE6 - 0x86) * glow);
+            int fillColor = (a << 24) | (r << 16) | (g << 8) | b;
 
             fillBandStripRect(context, cx, cy, halfW, yLow,  yHigh,  fillColor);
             fillBandStripRect(context, cx, cy, halfW, -yHigh, -yLow, fillColor);
