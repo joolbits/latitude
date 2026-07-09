@@ -41,6 +41,56 @@ public final class CompassHudPreset {
 
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 
+    // One-level undo/redo for the last Load/Import (2026-07-09, Peetsa's request: recover from an accidental
+    // load, and re-apply it if the undo itself was the accident). In-memory only (a mistaken load is a
+    // this-session accident, not something worth persisting to disk like the numbered slots) -- plain static
+    // fields, same pattern as every other singleton here. Classic single-step toggle: a fresh Load/Import
+    // arms Undo (and clears any Redo branch); Undo swaps the live state with the undo point and arms Redo;
+    // Redo swaps back and re-arms Undo.
+    private static CompassHudPreset undoSnapshot;
+    private static CompassHudPreset redoSnapshot;
+    // Set while undo/redo drive applyToLive() themselves, so the auto-capture at its top doesn't clobber the
+    // snapshots those operations are carefully managing.
+    private static boolean suppressHistoryCapture = false;
+
+    public static boolean hasUndo() {
+        return undoSnapshot != null;
+    }
+
+    public static boolean hasRedo() {
+        return redoSnapshot != null;
+    }
+
+    /** Restores the live HUD to whatever it was immediately before the last Load/Import, and arms Redo so the
+     *  step can be re-applied. One level only -- matches what "undo my last preset load" actually means here. */
+    public static void undoLastLoad() {
+        if (undoSnapshot == null) return;
+        CompassHudPreset target = undoSnapshot;
+        undoSnapshot = null;
+        CompassHudPreset current = captureCurrent();   // what we're leaving becomes the redo target
+        applyWithoutHistory(target);
+        redoSnapshot = current;
+    }
+
+    /** Re-applies the Load/Import that Undo just reverted, and re-arms Undo. */
+    public static void redoLastLoad() {
+        if (redoSnapshot == null) return;
+        CompassHudPreset target = redoSnapshot;
+        redoSnapshot = null;
+        CompassHudPreset current = captureCurrent();
+        applyWithoutHistory(target);
+        undoSnapshot = current;
+    }
+
+    private static void applyWithoutHistory(CompassHudPreset p) {
+        suppressHistoryCapture = true;
+        try {
+            p.applyToLive();
+        } finally {
+            suppressHistoryCapture = false;
+        }
+    }
+
     /** Snapshots the CURRENTLY LIVE compass config + title fields. */
     public static CompassHudPreset captureCurrent() {
         CompassHudPreset p = new CompassHudPreset();
@@ -71,6 +121,15 @@ public final class CompassHudPreset {
      * every other config-cascading action in that screen.
      */
     public void applyToLive() {
+        if (!suppressHistoryCapture) {
+            // A fresh Load/Import: snapshot whatever is LIVE right now (before it's overwritten below) as the
+            // undo point, and drop any pending Redo branch. This is the one choke point every Load-a-slot and
+            // Import-from-clipboard call already passes through, so undo/redo can't be forgotten at some
+            // future call site the way a per-button capture could be (same single-source-of-truth reasoning
+            // as copyAllInstanceFields below).
+            undoSnapshot = captureCurrent();
+            redoSnapshot = null;
+        }
         if (compass != null) {
             compass.sanitize();
             copyAllInstanceFields(compass, CompassHudConfig.get());

@@ -105,6 +105,10 @@ public class LatitudeHudStudioScreen extends Screen {
     private AbstractWidget wTitleLetterSpacing;
 
     private AbstractWidget wResetHud;
+    // Presets-tab undo/redo: empty-labelled buttons; the arrow glyph is drawn scaled on top (the vanilla
+    // button message renders the unicode arrow tiny — Peetsa: "comically small").
+    private AbstractWidget wUndoLoad;
+    private AbstractWidget wRedoLoad;
 
     // RGB picker groups (Custom analog theme colors + text color + title color). Constructed only when relevant
     // to the active tab/style/theme, mirroring how digital-vs-analog widgets are already conditionally
@@ -200,6 +204,8 @@ public class LatitudeHudStudioScreen extends Screen {
         this.wTitleColorPreset = null;
         this.wTitleCase = null;
         this.wTitleLetterSpacing = null;
+        this.wUndoLoad = null;
+        this.wRedoLoad = null;
         this.rgbTextColor = null;
         this.rgbCustomFace = null;
         this.rgbCustomRing = null;
@@ -734,6 +740,33 @@ public class LatitudeHudStudioScreen extends Screen {
             trackSidebarWidget(wImport, y);
             y += rowH + rowGap;
 
+            // Undo / redo as two compact arrow-icon buttons side by side (Peetsa: drop the verbose label).
+            // Labels are empty here; the arrow glyph is drawn large in drawPresetHistoryIcons() because the
+            // vanilla button message renders the unicode arrow far too small.
+            int histGap = 3;
+            int undoW = (widgetW - histGap) / 2;
+            int redoW = widgetW - undoW - histGap;
+            this.wUndoLoad = this.addRenderableWidget(Button.builder(Component.empty(), b -> {
+                        CompassHudPreset.undoLastLoad();
+                        this.init();
+                    })
+                    .bounds(panelX, y, undoW, rowH)
+                    .build());
+            this.wUndoLoad.active = CompassHudPreset.hasUndo();
+            tooltip(this.wUndoLoad, "Undo: restore your HUD look to whatever it was right before the last Load or Import -- for when you tap the wrong slot. Goes back one step.");
+            trackSidebarWidget(this.wUndoLoad, y);
+
+            this.wRedoLoad = this.addRenderableWidget(Button.builder(Component.empty(), b -> {
+                        CompassHudPreset.redoLastLoad();
+                        this.init();
+                    })
+                    .bounds(panelX + undoW + histGap, y, redoW, rowH)
+                    .build());
+            this.wRedoLoad.active = CompassHudPreset.hasRedo();
+            tooltip(this.wRedoLoad, "Redo: re-apply the Load or Import you just undid.");
+            trackSidebarWidget(this.wRedoLoad, y);
+            y += rowH + rowGap;
+
             int slotGap = 3;
             int clearW = 20;
             int saveW = 44;
@@ -916,10 +949,36 @@ public class LatitudeHudStudioScreen extends Screen {
         drawSidebarScrollbar(ctx);
         super.extractRenderState(ctx, mouseX, mouseY, delta);
 
+        // Drawn AFTER the widgets so the big glyphs sit on top of the (empty-labelled) undo/redo buttons.
+        if (sidebarVisible && activeTab == TAB_PRESETS) {
+            drawButtonGlyph(ctx, wUndoLoad, "↶");
+            drawButtonGlyph(ctx, wRedoLoad, "↷");
+        }
+
         if (sidebarVisible) {
             ctx.text(this.font, "Press L to hide settings", 8, 8, 0xAAFFFFFF);
         } else {
             ctx.text(this.font, "Press L to show settings", 8, 8, 0xFFFFFFFF);
+        }
+    }
+
+    /** Draws a glyph scaled up and centered on a button — used for the undo/redo arrows, whose default
+     *  (unicode-fallback) rendering is far too small at button size. Mirrors the tab-strip's scaled label
+     *  draw. Only draws visible buttons (applySidebarScroll already hid disabled/scrolled-out ones). */
+    private void drawButtonGlyph(GuiGraphicsExtractor ctx, AbstractWidget w, String glyph) {
+        if (w == null || !w.visible) return;
+        float scale = 1.9f;
+        int cx = w.getX() + w.getWidth() / 2;
+        int cy = w.getY() + w.getHeight() / 2;
+        int glyphW = this.font.width(glyph);
+        var m = ctx.pose();
+        m.pushMatrix();
+        try {
+            m.translate(cx, cy);
+            m.scale(scale, scale);
+            ctx.text(this.font, glyph, -glyphW / 2, -this.font.lineHeight / 2, 0xFFFFFFFF);
+        } finally {
+            m.popMatrix();
         }
     }
 
