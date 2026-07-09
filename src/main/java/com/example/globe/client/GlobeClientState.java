@@ -347,23 +347,16 @@ public final class GlobeClientState {
     }
 
     private static float polarWhiteoutIntensity(ClientLevel world, Player player) {
+        // B-3b: fog/whiteout intensity ramps CONTINUOUSLY over the ambient window [85,90] -- the same
+        // 85->90 progress the ambient snow budget uses, so fog density thickens with the snowfall instead
+        // of stepping through the stage ladder. 1.0 at 90 deg preserves the deep-end whiteout magnitude
+        // the old DANGER/LETHAL stages produced at the pole. Consumers: computePoleWhiteoutFactor drives
+        // the VISIBLE polar whiteout (PolarWhiteoutOverlayHud's HUD screen fill); computePoleFogEnd is
+        // currently UNCONSUMED (retuned for future wiring only -- volumetric fog-renderer hookup is a
+        // B-4 decision).
         var border = world.getWorldBorder();
-        double progressZ = com.example.globe.util.LatitudeMath.hazardProgressZ(border, player.getZ());
-        PolarStage stage = polarStageForProgress(border, player.getZ(), progressZ);
-
-        if (stage == PolarStage.NONE) {
-            return 0.0f;
-        }
-        if (stage == PolarStage.WARN_1) {
-            return 0.2f;
-        }
-        if (stage == PolarStage.WARN_2) {
-            return 0.5f;
-        }
-        if (stage == PolarStage.DANGER) {
-            return 1.0f;
-        }
-        return 1.0f;
+        double absLatDeg = com.example.globe.util.LatitudeMath.absLatDegExact(border, player.getZ());
+        return com.example.globe.core.PolarHazardWindow.fogIntensity(absLatDeg);
     }
 
     private GlobeClientState() {

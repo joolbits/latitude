@@ -224,61 +224,61 @@ public class GlobeModClient implements ClientModInitializer {
             return;
         }
 
+        // B-3b anti-backlog HARD REQUIREMENT: while the game is paused the client tick keeps firing but the
+        // particle engine does not step existing particles -- spawning here would pile them at the spawn
+        // point to all animate in a burst on unpause. Paused => spawn NOTHING; resume is clean. Guards ALL
+        // particle spawning below (ambient snow AND the EW storm), so no path can accrue a paused backlog.
+        if (client.isPaused()) {
+            return;
+        }
+
+        // Throttle: spawn on every 4th tick (shared by ambient snow + EW storm). Fixed per-tick BUDGET on
+        // each spawn tick -- never a "how many do I owe since last spawn" accumulator.
+        boolean spawnTick = (client.level.getGameTime() & 3) == 0;
+
+        // B-3b: AMBIENT polar snow + fog. Always-on for globe worlds in the polar approach band (85 deg+),
+        // NOT gated by enableWarningParticles -- atmosphere, like the EW screen haze (which is also not
+        // config-gated). Density is a FIXED per-tick budget from the 85->90 progress ramp (very heavy near
+        // the pole). The matching FOG is rendered by PolarWhiteoutOverlayHud (a HUD screen fill reading
+        // computePoleWhiteoutFactor) on the SAME 85->90 ramp; volumetric fog-renderer wiring is a B-4 decision.
+        if (spawnTick) {
+            double absLatDeg = com.example.globe.util.LatitudeMath.absLatDegExact(
+                    client.level.getWorldBorder(), client.player.getZ());
+            int snowCount = com.example.globe.core.PolarHazardWindow.snowCount(absLatDeg);
+            if (snowCount > 0) {
+                spawnAmbientPolarSnow(client, snowCount);
+            }
+        }
+
+        // WARNING-intensity particles (the EW border storm) stay behind enableWarningParticles -- its
+        // meaning is unchanged (it governs only the warning particles it already governed).
         if (!LatitudeConfig.enableWarningParticles) {
             return;
         }
 
-        GlobeClientState.PolarStage polarStage = GlobeClientState.computePolarStage(client.level, client.player);
         GlobeClientState.EwStormStage ewStage = GlobeClientState.computeEwStormStage(client.level, client.player);
-
-        boolean polarActive = polarStage != GlobeClientState.PolarStage.NONE;
-        boolean ewActive = ewStage != GlobeClientState.EwStormStage.NONE;
-
-        if (!polarActive && !ewActive) {
-            return;
-        }
-
-        if ((client.level.getGameTime() & 3) != 0) {
-            return;
-        }
-
-        if (ewActive) {
+        if (ewStage != GlobeClientState.EwStormStage.NONE && spawnTick) {
             ewStormClientTick(client, ewStage);
         }
+    }
 
-        if (polarActive) {
-            float intensity = switch (polarStage) {
-                case WARN_1 -> 0.12f;
-                case WARN_2 -> 0.22f;
-                case DANGER, LETHAL -> Math.max(0.4f, GlobeClientState.computePoleWhiteoutFactor(client.player.getZ()));
-                default -> 0.0f;
-            };
+    private static void spawnAmbientPolarSnow(Minecraft client, int count) {
+        RandomSource random = client.player.getRandom();
+        double px = client.player.getX();
+        double py = client.player.getY();
+        double pz = client.player.getZ();
 
-            intensity = Math.max(0.0f, Math.min(1.0f, intensity));
-            if (intensity <= 0.001f) {
-                return;
-            }
+        for (int i = 0; i < count; i++) {
+            double ox = (random.nextDouble() - 0.5) * 10.0;
+            double oy = random.nextDouble() * 4.0;
+            double oz = (random.nextDouble() - 0.5) * 10.0;
 
-            int count = 2 + (int) Math.round(intensity * 26.0);
-            if (count > 6) count = 6;
-            RandomSource random = client.player.getRandom();
+            double vx = (random.nextDouble() - 0.5) * 0.06;
+            double vy = -0.02 - random.nextDouble() * 0.03;
+            double vz = (random.nextDouble() - 0.5) * 0.06;
 
-            double px = client.player.getX();
-            double py = client.player.getY();
-            double pz = client.player.getZ();
-
-            for (int i = 0; i < count; i++) {
-                double ox = (random.nextDouble() - 0.5) * 10.0;
-                double oy = random.nextDouble() * 4.0;
-                double oz = (random.nextDouble() - 0.5) * 10.0;
-
-                double vx = (random.nextDouble() - 0.5) * 0.06;
-                double vy = -0.02 - random.nextDouble() * 0.03;
-                double vz = (random.nextDouble() - 0.5) * 0.06;
-
-                double vHoriz = (vx + vz) * 0.5;
-                client.particleEngine.createParticle(ParticleTypes.SNOWFLAKE, px + ox, py + 1.5 + oy, pz + oz, vHoriz, vy, vz);
-            }
+            double vHoriz = (vx + vz) * 0.5;
+            client.particleEngine.createParticle(ParticleTypes.SNOWFLAKE, px + ox, py + 1.5 + oy, pz + oz, vHoriz, vy, vz);
         }
     }
 

@@ -83,16 +83,6 @@ public class GlobeMod implements ModInitializer {
 
     public static final int POLE_START = 12000; // Legacy constant, use activePoleBandStartAbsZ for dynamic logic
 
-    private enum PolarStage {
-        NONE,
-        UNEASE,
-        IMPAIR,
-        HOSTILE,
-        WHITEOUT,
-        LETHAL,
-        HOPELESS
-    }
-
     private static PolarCapScrubber POLAR_SCRUBBER;
 
     private static final boolean ENABLE_POLAR_SCRUBBER = false;
@@ -394,45 +384,34 @@ public class GlobeMod implements ModInitializer {
                 continue;
             }
 
-            double progressZ = com.example.globe.util.LatitudeMath.hazardProgressZ(border, player.getZ());
-            int stageIndex = com.example.globe.util.LatitudeMath.hazardStageIndex(border, player.getZ(), progressZ);
-
-            // Check if player is in the active polar band for effects
-            if (Math.abs(player.getZ()) < activePoleBandStartAbsZ) {
+            // B-3a: continuous hazard window [87,90]. The ONLY hazardous band -- everything below 87 deg
+            // stays fully explorable (the old stage ladder started ~84.6 deg and stepped in four jumps).
+            // Slowness/weakness amplifiers and the freeze-tick rate now ramp SMOOTHLY with progress->90.
+            double latDeg = com.example.globe.util.LatitudeMath.absLatDegExact(border, player.getZ());
+            if (latDeg < com.example.globe.core.PolarHazardWindow.HAZARD_ONSET_DEG) {
                 continue;
             }
-
-            PolarStage stage = switch (stageIndex) {
-                case 1 -> PolarStage.IMPAIR;
-                case 2 -> PolarStage.HOSTILE;
-                case 3 -> PolarStage.WHITEOUT;
-                case 4 -> PolarStage.LETHAL;
-                default -> PolarStage.NONE;
-            };
+            double progress = com.example.globe.core.PolarHazardWindow.hazardProgress(latDeg);
 
             int duration = 40;
             boolean ambient = true;
             boolean showParticles = false;
             boolean showIcon = false;
 
-            if (stage == PolarStage.IMPAIR) {
-                player.addEffect(new MobEffectInstance(MobEffects.SLOWNESS, duration, 0, ambient, showParticles, showIcon));
-                player.addEffect(new MobEffectInstance(MobEffects.WEAKNESS, duration, 0, ambient, showParticles, showIcon));
-            } else if (stage == PolarStage.HOSTILE || stage == PolarStage.WHITEOUT) {
-                player.addEffect(new MobEffectInstance(MobEffects.SLOWNESS, duration, 1, ambient, showParticles, showIcon));
-                player.addEffect(new MobEffectInstance(MobEffects.WEAKNESS, duration, 0, ambient, showParticles, showIcon));
+            int slowAmp = com.example.globe.core.PolarHazardWindow.slownessAmplifier(progress);
+            int weakAmp = com.example.globe.core.PolarHazardWindow.weaknessAmplifier(progress);
+            player.addEffect(new MobEffectInstance(MobEffects.SLOWNESS, duration, slowAmp, ambient, showParticles, showIcon));
+            player.addEffect(new MobEffectInstance(MobEffects.WEAKNESS, duration, weakAmp, ambient, showParticles, showIcon));
+            if (com.example.globe.core.PolarHazardWindow.appliesMiningFatigue(progress)) {
                 player.addEffect(new MobEffectInstance(MobEffects.MINING_FATIGUE, duration, 0, ambient, showParticles, showIcon));
-            } else if (stage == PolarStage.LETHAL || stage == PolarStage.HOPELESS) {
-                player.addEffect(new MobEffectInstance(MobEffects.SLOWNESS, duration, 2, ambient, showParticles, showIcon));
-                player.addEffect(new MobEffectInstance(MobEffects.WEAKNESS, duration, 1, ambient, showParticles, showIcon));
+            }
+            if (com.example.globe.core.PolarHazardWindow.appliesBlindness(progress)) {
                 player.addEffect(new MobEffectInstance(MobEffects.BLINDNESS, duration, 0, ambient, showParticles, showIcon));
+            }
 
-                int max = 140;
-                int target = (int) Math.floor(max * 0.85);
-                if (target < 1) {
-                    target = 1;
-                }
-                player.setTicksFrozen(Math.max(player.getTicksFrozen(), target));
+            int freeze = com.example.globe.core.PolarHazardWindow.freezeTicks(progress);
+            if (freeze > 0) {
+                player.setTicksFrozen(Math.max(player.getTicksFrozen(), freeze));
             }
         }
     }
