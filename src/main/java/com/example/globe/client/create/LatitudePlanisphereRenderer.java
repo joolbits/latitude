@@ -32,6 +32,17 @@ public final class LatitudePlanisphereRenderer {
     private static final int GOLD = 0xFFD4A74A;
     private static final int GRID_COLOR = 0x60FFFFFF; // semi-transparent white for latitude lines
 
+    // ── "Random" spawn-zone animated sweep (Peetsa) ── one glow pulse travels the equator→pole latitude
+    // range each period; SIGMA sets how many bands are lit at once (wider = softer, more overlap); the
+    // front runs to POLE_FADE_DEG (past 90°) so the polar band fades out before the loop wraps back to the
+    // equator. Purely cosmetic on the create screen; tune freely.
+    private static final long RANDOM_SWEEP_PERIOD_MS = 3200L;
+    private static final double RANDOM_SWEEP_SIGMA_DEG = 16.0;
+    private static final double POLE_FADE_DEG = 108.0;
+    // Fraction of each loop spent easing the pulse in (at the equator restart) and out (past the pole), so
+    // the wrap breathes instead of popping. 0 = hard pop (old behavior); larger = longer, gentler fades.
+    private static final double SWEEP_FADE_FRAC = 0.22;
+
     // ── Rectangle equivalents of the circle primitives above, for the Mercator (2:1) atlas preview: same
     // shapes, just without the chord-mask clip — a constant halfW instead of a per-scanline sqrt(frac)*radius.
     // Guarded the same way the circle primitives above are (halfW <= 0 -> no-op): width is now an
@@ -40,6 +51,12 @@ public final class LatitudePlanisphereRenderer {
     private static void fillRect(GuiGraphicsExtractor ctx, int cx, int cy, int halfW, int halfH, int color) {
         if (halfW <= 0) return;
         ctx.fill(cx - halfW, cy - halfH, cx + halfW, cy + halfH, color);
+    }
+
+    /** Classic Hermite smoothstep: 0 at/below edge0, 1 at/above edge1, eased in between. */
+    private static double smoothstep(double edge0, double edge1, double x) {
+        double t = Math.max(0.0, Math.min(1.0, (x - edge0) / (edge1 - edge0)));
+        return t * t * (3.0 - 2.0 * t);
     }
 
     private static void fillBandStripRect(GuiGraphicsExtractor ctx, int cx, int cy, int halfW, int yStart, int yEnd, int color) {
@@ -97,13 +114,43 @@ public final class LatitudePlanisphereRenderer {
 
         // ── Latitude bands as a TRANSLUCENT climate wash over ocean + land ──
         LatitudeBands.Band[] bands = LatitudeBands.Band.values();
+        // "Random" spawn zone (selectedBand == null) gets a playful animated flourish instead of a static
+        // wash: a glow pulse that starts at the equator and travels OUTWARD to both poles at once (Peetsa's
+        // request). Because every band is drawn mirrored north+south, one advancing pulse reads as a double,
+        // opposed outward scroll. frontDeg travels a little past the pole (to POLE_FADE_DEG) so the polar band
+        // fully fades before the loop restarts back at the equator, keeping the wrap from popping. Wall-clock
+        // driven (same System.currentTimeMillis() idiom as the Aurora compass theme); the create screen
+        // redraws every frame, so it animates smoothly.
+        boolean randomSweep = (selectedBand == null);
+        double frontDeg = 0.0;
+        double sweepEnv = 1.0;
+        if (randomSweep) {
+            double phase = (System.currentTimeMillis() % RANDOM_SWEEP_PERIOD_MS) / (double) RANDOM_SWEEP_PERIOD_MS;
+            frontDeg = phase * POLE_FADE_DEG;
+            // Ease the whole pulse IN as it (re)starts at the equator and OUT as it clears the pole, so the
+            // loop breathes at the seam instead of popping a fully-lit equator band the instant it wraps
+            // (Peetsa: visual harmony). Peak (env == 1) holds across the middle of the sweep.
+            sweepEnv = smoothstep(0.0, SWEEP_FADE_FRAC, phase) * smoothstep(0.0, SWEEP_FADE_FRAC, 1.0 - phase);
+        }
         for (int i = 0; i < bands.length; i++) {
             LatitudeBands.Band band = bands[i];
-            boolean selected = (band == selectedBand);
             int baseColor = BAND_COLORS[i];
 
             int fillColor;
-            if (selected) {
+            if (randomSweep) {
+                // Gaussian glow keyed on how close this band's center latitude is to the advancing pulse:
+                // near the front the band brightens and turns nearly opaque (like a selected band), away
+                // from it it settles to the same muted wash every other band uses.
+                double mid = (band.lowDeg() + band.highDeg()) / 2.0;
+                double d = mid - frontDeg;
+                double glow = Math.exp(-(d * d) / (2.0 * RANDOM_SWEEP_SIGMA_DEG * RANDOM_SWEEP_SIGMA_DEG)) * sweepEnv;
+                float bright = 1.0f + 0.30f * (float) glow;
+                int r = Math.min(255, (int) (((baseColor >> 16) & 0xFF) * bright));
+                int g = Math.min(255, (int) (((baseColor >> 8) & 0xFF) * bright));
+                int b = Math.min(255, (int) ((baseColor & 0xFF) * bright));
+                int a = 0x86 + (int) ((0xE6 - 0x86) * glow);
+                fillColor = (a << 24) | (r << 16) | (g << 8) | b;
+            } else if (band == selectedBand) {
                 int r = Math.min(255, (int) (((baseColor >> 16) & 0xFF) * 1.30f));
                 int g = Math.min(255, (int) (((baseColor >> 8) & 0xFF) * 1.30f));
                 int b = Math.min(255, (int) ((baseColor & 0xFF) * 1.30f));
@@ -127,7 +174,7 @@ public final class LatitudePlanisphereRenderer {
         }
         drawLatitudeLineRect(context, cx, cy, halfW, 0, GRID_COLOR);
 
-        // ── Gold outline on the selected band's edges (spawn-zone highlight; none for Random) ──
+        // ── Gold outline on the selected band's edges (spawn-zone highlight) ──
         if (selectedBand != null) {
             int selLow  = (int) (halfH * selectedBand.lowDeg()  / 90.0);
             int selHigh = (int) (halfH * selectedBand.highDeg() / 90.0);
@@ -135,6 +182,17 @@ public final class LatitudePlanisphereRenderer {
             drawLatitudeLineRect(context, cx, cy, halfW,  selHigh, GOLD);
             drawLatitudeLineRect(context, cx, cy, halfW, -selLow,  GOLD);
             drawLatitudeLineRect(context, cx, cy, halfW, -selHigh, GOLD);
+        } else if (frontDeg <= 90.0) {
+            // Random: a gold crest line rides the pulse front outward (mirrored N+S), echoing the selected-
+            // zone gold edge. Only while the front is on-map (<=90°); it vanishes into the frame as the
+            // pulse fades past the pole, then reappears at the equator on the next loop. Alpha eases in from
+            // the equator and out toward the pole so it doesn't blink on/off at the loop seam.
+            float edge = (float) Math.sin(Math.PI * (frontDeg / 90.0)); // 0 at equator/pole, 1 mid-sweep
+            int ga = (int) (0xFF * Math.max(0.0f, edge));
+            int goldFade = (ga << 24) | (GOLD & 0x00FFFFFF);
+            int yFront = (int) (halfH * frontDeg / 90.0);
+            drawLatitudeLineRect(context, cx, cy, halfW,  yFront, goldFade);
+            drawLatitudeLineRect(context, cx, cy, halfW, -yFront, goldFade);
         }
     }
 
