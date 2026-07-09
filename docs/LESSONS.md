@@ -1,6 +1,6 @@
 # Latitude Lessons
 
-`scope: durable project lessons` · `status: active` · `updated: 2026-07-06`
+`scope: durable project lessons` · `status: active` · `updated: 2026-07-08`
 
 This is the short "do not relearn this" file for Latitude. It is not the session log. The dated session log stays in `docs/binder/`, and the live resume pointer stays in `docs/HANDOFF.md`.
 
@@ -599,3 +599,130 @@ Evidence:
 - Pivot `docs/binder/fable5-overhaul-audit-report-20260706.md` (§1 P0-2, §8 repair map).
 - Pivot `docs/binder/phase4-terrain-wrapper-20260705.md` (2026-07-06 correction block) and registry row
   `20260706-fable5-slice-a-truth-restore` (the annotation of rows :123/:124).
+
+## L21 - Changing One Layer Of A Multi-Map System Makes The Other Layers' Pre-Existing Mismatches Newly Visible; That Reads As A Regression But Isn't
+
+Trigger: modifying ONE map/layer of a system whose final output is composed from several independent
+layers (here: terrain height, biome LABELS + surface + structures, and GeoAuthority land/ocean INTENT are
+three separate maps), when the layers were already quietly disagreeing before your change.
+
+Lesson: the Phase-4 ocean carve (a terrain-layer change) made the sea floor follow GeoAuthority's
+geography. It did not touch the biome layer at all -- but the moment the terrain moved, every place where
+the *legacy biome map* already disagreed with geography became visibly wrong: Forest biomes labelling
+open water, shipwrecks on forested coast, a mountain-grove Meadow at the waterline, "Deep Ocean" over
+knee-deep water (TEST 28/30). Peetsa reasonably read these as new bugs the carve introduced. They are
+not -- they are the pre-existing three-map decoupling (the biome consumer is not wired, so labels/surface/
+structures run on the un-carved map) that the terrain change simply *exposed*. Measured proof: on the
+81-column grid the disagreement classes existed at r=0 too; r=1 only made them visible in-world.
+
+Required future behavior:
+- Before shipping a change to one layer of a composed system, enumerate the OTHER layers it will newly
+  expose and say so out loud in the handoff, so a surfaced latent mismatch isn't misfiled as a regression.
+- Distinguish "my change caused this" from "my change revealed this" with a same-seed before/after on the
+  UNCHANGED layer (here: the biome disagreement classes were identical at r=0 and r=1).
+- The real fix for a decoupling is to make the layers share one source (the consumer law-compliance slice),
+  not to patch the visible symptom in the layer you happened to touch.
+
+Evidence:
+- Pivot `docs/binder/test28-deep-ocean-decoupling-20260707.md` (the 81-grid classification),
+  `fable5-slice-c3-grip-20260707.md` (the TEST 30 live-confirmation block: three biome complaints, one
+  decoupling root cause), registry rows `20260707-test28-geo-decoupling`, `20260708-c3-live-green`.
+
+## L22 - For A Boundary-Triggered Transform, Grade The ONSET Across The Boundary, Not Just The Magnitude; And In A Clamp Regime Grade The Clamp TARGET, Never Blend The Clamped OUTPUT
+
+Trigger: any transform that (a) switches on when an input crosses a threshold, and (b) has a magnitude
+that you already vary smoothly -- especially a min()/max() clamp whose whole safety argument rests on
+monotonicity.
+
+Lesson, part 1 (the wall): the C-2 ocean carve graded its DEPTH smoothly with distance from shore, but
+its ONSET was instant -- the instant a column crossed to ocean-intent it clamped everything above the
+(still shallow) target to air. Where the coastline crossed tall land, that instant onset planed the hill
+into a sheer vertical wall (TEST 29 "cursed wall"). Grading how-much is not enough; you must also grade
+whether-it-applies-at-all across the boundary, or you get a cliff exactly where the input is large at the
+threshold. Fix: the carve ceiling now descends from above the terrain envelope down to the target across a
+coastal ramp (`gripWidth`).
+
+Lesson, part 2 (the dead end): the FIRST attempt at that ramp blended the clamped OUTPUT densities
+(`base + grip*(carved - base)`). The gap-delta tripwire immediately caught it re-creating the exact
+hollowing class the clamp existed to prevent (marginal underground pockets sandwiched into voids at
+partial grip). In a min()/max() clamp regime, grade the clamp TARGET (a height/threshold that keeps the
+pure min() intact), never interpolate the clamped result -- blending breaks the monotonicity that made the
+clamp safe.
+
+Required future behavior:
+- When a carve/clamp turns on at a boundary, design the onset ramp from the start (a linear carve-onset is
+  a wall generator, same failure family as the coastal wall).
+- Never blend a clamped output to soften it; move the softening into the clamp's target so `min()`/`max()`
+  semantics are preserved, and keep the gap-delta/no-new-voids tripwire on every such change.
+
+Evidence:
+- Pivot `docs/binder/fable5-slice-c3-grip-20260707.md` (shipped design + the DEAD END block, gates 5/5),
+  `test29-r1-look-and-ui-round2-20260707.md` (the wall diagnosis), registry row `20260707-fable5-slice-c3-grip`.
+
+## L23 - When You Split A Previously-Unified Quantity Into Two, Re-Audit Every Consumer's Contract; The Call Sites Where The Two Are Still Equal Will Hide The Bug
+
+Trigger: introducing a distinction between two quantities that used to be one value (here: an analog
+compass look's DRAWN CONTENT box vs its LAYOUT/dial box -- equal for every look except TAPE, whose strip
+is shorter than its diameter box).
+
+Lesson: round 2 correctly made the Studio hitbox/bounds content-true (so Tape's grabbable region matched
+what's drawn). But a render call site kept feeding that now-content-adjusted `y` into a function whose
+contract still expected the BOX top-left, double-applying the adjustment and pushing the docked Tape strip
+off-screen -- in the Studio preview only, because the live in-game path used a different position source.
+Every other compass look has content == box, so the adjustment was a no-op there and the bug hid
+everywhere except the one look where the two quantities differ. It read as an isolated "Tape is weird"
+glitch when it was actually a systemic coordinate-contract mismatch.
+
+Required future behavior:
+- When one value becomes two (content vs box, logical vs physical, pre vs post), grep every consumer and
+  classify which space each expects; do not assume the callers that "still work" are correct -- they may
+  just be the equal case masking the defect.
+- Reproduce such bugs in the case where the two quantities are MOST different (Tape), not the default.
+
+Evidence:
+- Pivot `docs/binder/ui-pass-round3-fixes-20260708.md` (finding 2) + `ui-pass-round1-fixes-20260707.md`
+  (round-1/2 content-vs-box dock work), registry rows `20260708-ui-pass-round3-fixes`, `20260707-ui-pass-round1-fixes`.
+
+## L24 - Vanilla's Own Estimators Can Silently Misreport Under A Custom Density Wrapper; Audit Modified Terrain Against The Ground-Truth Field, Not A Derived Estimate
+
+Trigger: measuring or gating modified worldgen using a vanilla-provided *estimate* (getBaseHeight, the
+`*_WG` worldgen heightmaps, any cell-resolution column sampler) rather than the field your wrapper actually
+changed.
+
+Lesson: auditing whether the carve made oceans shallower, `getBaseHeight(OCEAN_FLOOR_WG)` reported ~10
+deeply-carved columns as floors at Y94-118 -- while the finalDensity ladder (the field that actually places
+blocks) proved them carved to air/water below Y40. Vanilla's cell-resolution height estimator misfires
+under the carve's sharp `CEIL_FLOOR = -0.5` clamp. Taken at face value the estimate would have become a
+false "some oceans got SHALLOWER" regression report; the ground-truth density ladder showed the opposite
+(the carve only ever deepens). The generated world is correct -- only the derived estimate lied.
+
+Required future behavior:
+- When a wrapper modifies a density/noise field, treat vanilla's derived estimators over that field as
+  suspect; cross-check any surprising measurement against the ground-truth field (the density value at Y,
+  or the actual generated column) before reporting a regression.
+- Carries a live-consequence flag: if game systems (structure placement, spawn) consume the same `*_WG`
+  estimate, the misestimate can misplace them -- a live hypothesis for "shipwrecks in a forest," to verify,
+  not assume.
+
+Evidence:
+- Pivot `docs/binder/ocean-depth-anchor-20260708.md` (secondary findings A and B), registry row
+  `20260708-ocean-depth-anchor`.
+
+## L25 - A Framework's "Focused"/"Active" Flag May Be Sticky; To Gate On "Currently Interacting," Track The Interaction Lifecycle Yourself
+
+Trigger: gating any behavior on a UI framework's built-in state flag (`isFocused()`, `isHovered()`,
+selection state) as a proxy for "the user is doing this right now."
+
+Lesson: the Studio transparency-preview checkerboard was gated on the slider's `isFocused()`. Vanilla
+widget focus is STICKY -- `setFocused(true)` fires on click and nothing clears it until a *different*
+widget takes focus. So one touch of the slider latched the aid on for the rest of the session; it only
+ever "cleared" by switching tabs (which rebuilds every widget). `isFocused()` answers "was this last
+focused," not "is this being interacted with now." Fix: track the actual click->release lifecycle
+explicitly (an `isDragging()` flag set in `onClick`/`onRelease`), which cannot get stuck.
+
+Required future behavior:
+- Do not use a sticky framework state flag as a live-interaction signal. If you need "currently dragging/
+  editing," own the lifecycle (set on press, clear on release) rather than reading focus/selection.
+
+Evidence:
+- Pivot `docs/binder/ui-pass-round3-fixes-20260708.md` (finding 3), registry row `20260708-ui-pass-round3-fixes`.
