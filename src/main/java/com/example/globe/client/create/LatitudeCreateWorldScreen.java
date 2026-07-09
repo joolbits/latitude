@@ -1573,6 +1573,15 @@ public class LatitudeCreateWorldScreen extends Screen {
         int maxRadiusByWidth = Math.max(18, (int) ((areaRight - areaLeft - maxLabelWidth - labelPad - rightPadding) / widthDivisor));
         int maxRadiusByHeight = Math.max(18, (areaBottom - areaTop - captionHeight - captionGap) / 2);
         int radius = Math.round(Math.min(maxRadiusByWidth, maxRadiusByHeight) * previewDiscFill(selectedSize));
+        // Classic (1:1) only, Mercator untouched (Peetsa 2026-07-08): a square's widthDivisor above is half
+        // Mercator's (2.0 vs 4.0), so for the same panel Classic's width budget is roughly DOUBLE Mercator's --
+        // in practice that makes Classic almost always height-bound (maxRadiusByHeight wins the min() above),
+        // so previewDiscFill's per-size grading barely mattered and even Itty Bitty rendered near the height
+        // ceiling (too large) with little headroom against real composition width, clipping at Tiny. This scales
+        // the CLASSIC radius down after the shared budget/fill math, so Mercator's sizing is byte-identical.
+        if (shape != LatitudeBiomes.GlobeShape.MERCATOR) {
+            radius = Math.round(radius * CLASSIC_ATLAS_SCALE);
+        }
         radius = Math.max(18, radius);
 
         PreviewLayout layout = null;
@@ -1805,6 +1814,15 @@ public class LatitudeCreateWorldScreen extends Screen {
             case MASSIVE -> 0.96f;
         };
     }
+
+    // Classic (1:1 square) atlas radius multiplier, applied AFTER the shared width/height budget + disc-fill
+    // math above -- Mercator (2:1) never reads this constant. See the comment at the radius computation in
+    // renderPlanispherePreview for why Classic needed its own shrink (2026-07-08). The multiplier scales
+    // EVERY size down by the same fraction, so it shrinks the absolute pixel gap between Itty Bitty and
+    // Ginormous along with the overall size -- too aggressive a value (0.62 first try) made the whole
+    // per-size range read as one bunched-together blob; 0.62 was too small, 1.0 was the original
+    // oversized/clipping value this constant exists to fix. 0.82 is the current happy medium.
+    private static final float CLASSIC_ATLAS_SCALE = 0.82f;
 
     private float previewDiscFill(GlobeWorldSize size) {
         // Fraction of the available area the atlas disc fills. Still graded by world size (bigger world = bigger

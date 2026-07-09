@@ -25,11 +25,12 @@ public class LatitudeHudStudioScreen extends Screen {
     private static final int PANEL_BORDER = 0xFF5C4A3A;
     private static final int PANEL_BG = 0xFF3A302A;
 
-    private static final String[] TAB_NAMES = {"Compass", "Labels", "Title", "General"};
+    private static final String[] TAB_NAMES = {"Compass", "Labels", "Title", "Presets", "General"};
     private static final int TAB_COMPASS = 0;
     private static final int TAB_LABELS = 1;
     private static final int TAB_TITLE = 2;
-    private static final int TAB_GENERAL = 3;
+    private static final int TAB_PRESETS = 3;
+    private static final int TAB_GENERAL = 4;
     private static final int TAB_H = 20;
     private static final int TAB_GAP = 4;
     // Extra headroom on top of the wider sidebar so even "Placement" sits comfortably clear of its borders.
@@ -69,6 +70,7 @@ public class LatitudeHudStudioScreen extends Screen {
     private AbstractWidget wCompassAnalogSize;
     private AbstractWidget wCompassAnalogInnerAlpha;
     private AbstractWidget wCompassAnalogTheme;
+    private AbstractWidget wCompassRainbowSpeed;
     private AbstractWidget wCompassTransparency;
     private AbstractWidget wCompassBackground;
     private AbstractWidget wCompassBgColor;
@@ -83,10 +85,13 @@ public class LatitudeHudStudioScreen extends Screen {
     private AbstractWidget wCompassAttachHotbar;
     private AbstractWidget wZoneDisplay;
     private AbstractWidget wZoneFollow;
+    private AbstractWidget wZoneTextScale;
     private AbstractWidget wBiomeDisplay;
     private AbstractWidget wBiomeFollow;
+    private AbstractWidget wBiomeTextScale;
     private AbstractWidget wZoneBiomeOrder;
     private AbstractWidget wCoordsFollow;
+    private AbstractWidget wCoordsTextScale;
     private AbstractWidget wHudSnap;
     private AbstractWidget wHudSnapPixels;
     private AbstractWidget wTitleDraggable;
@@ -156,12 +161,14 @@ public class LatitudeHudStudioScreen extends Screen {
         var cfg = CompassHudConfig.get();
         boolean analog = cfg.style == CompassHudConfig.CompassStyle.ANALOG;
         boolean customTheme = cfg.analogTheme == CompassHudConfig.AnalogCompassTheme.CUSTOM;
+        boolean rainbowTheme = cfg.analogTheme == CompassHudConfig.AnalogCompassTheme.RAINBOW;
 
         this.wCompassStyle = null;
         this.wCompassScale = null;
         this.wCompassAnalogSize = null;
         this.wCompassAnalogInnerAlpha = null;
         this.wCompassAnalogTheme = null;
+        this.wCompassRainbowSpeed = null;
         this.wCompassTransparency = null;
         this.wCompassBackground = null;
         this.wCompassBgColor = null;
@@ -176,10 +183,13 @@ public class LatitudeHudStudioScreen extends Screen {
         this.wCompassAttachHotbar = null;
         this.wZoneDisplay = null;
         this.wZoneFollow = null;
+        this.wZoneTextScale = null;
         this.wBiomeDisplay = null;
         this.wBiomeFollow = null;
+        this.wBiomeTextScale = null;
         this.wZoneBiomeOrder = null;
         this.wCoordsFollow = null;
+        this.wCoordsTextScale = null;
         this.wHudSnap = null;
         this.wHudSnapPixels = null;
         this.wTitleDraggable = null;
@@ -288,6 +298,13 @@ public class LatitudeHudStudioScreen extends Screen {
                 tooltip(this.wCompassAnalogTheme, "Pick a preset color scheme for the analog compass, or choose Custom to dial in exact colors below.");
                 trackSidebarWidget(this.wCompassAnalogTheme, y);
                 y += rowH + rowGap;
+
+                if (rainbowTheme) {
+                    this.wCompassRainbowSpeed = this.addRenderableWidget(new FloatSlider(panelX, y, widgetW, rowH, Component.literal("Color Cycle Speed"), 10.0f, 40.0f, cfg.rainbowCycleSeconds, v -> cfg.rainbowCycleSeconds = v));
+                    tooltip(this.wCompassRainbowSpeed, "How fast Aurora's colors shift, in seconds per full color loop. Left = a bit faster, right = slower and calmer. The whole range is kept gentle on purpose -- a fast-cycling dial can read as strobing -- and narrow enough that every point on the slider makes a noticeable difference.");
+                    trackSidebarWidget(this.wCompassRainbowSpeed, y);
+                    y += rowH + rowGap;
+                }
 
                 if (customTheme) {
                     y = placeRgbPicker(panelX, y, widgetW, rowH, rowGap, "Face", cfg.customFaceRgb,
@@ -405,6 +422,7 @@ public class LatitudeHudStudioScreen extends Screen {
                         cfg.analogSize = fresh.analogSize;
                         cfg.analogInnerAlpha = fresh.analogInnerAlpha;
                         cfg.analogTheme = fresh.analogTheme;
+                        cfg.rainbowCycleSeconds = fresh.rainbowCycleSeconds;
                         cfg.analogLook = fresh.analogLook;
                         cfg.scale = fresh.scale;
                         cfg.showBackground = fresh.showBackground;
@@ -454,6 +472,11 @@ public class LatitudeHudStudioScreen extends Screen {
             trackSidebarWidget(this.wZoneFollow, y);
             y += rowH + rowGap;
 
+            this.wZoneTextScale = this.addRenderableWidget(new FloatSlider(panelX, y, widgetW, rowH, Component.literal("Zone Text Size"), 0.5f, 3.0f, cfg.zoneTextScale, v -> cfg.zoneTextScale = v));
+            tooltip(this.wZoneTextScale, "How big the zone label's text is.");
+            trackSidebarWidget(this.wZoneTextScale, y);
+            y += rowH + rowGap;
+
             this.wBiomeDisplay = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "ON" : "OFF"), () -> cfg.displayBiomeInHud)
                     .withValues(true, false)
                     .create(panelX, y, widgetW, rowH, Component.literal("Display Biome in HUD"), (btn, value) -> {
@@ -476,6 +499,11 @@ public class LatitudeHudStudioScreen extends Screen {
             trackSidebarWidget(this.wBiomeFollow, y);
             y += rowH + rowGap;
 
+            this.wBiomeTextScale = this.addRenderableWidget(new FloatSlider(panelX, y, widgetW, rowH, Component.literal("Biome Text Size"), 0.5f, 3.0f, cfg.biomeTextScale, v -> cfg.biomeTextScale = v));
+            tooltip(this.wBiomeTextScale, "How big the biome label's text is.");
+            trackSidebarWidget(this.wBiomeTextScale, y);
+            y += rowH + rowGap;
+
             this.wZoneBiomeOrder = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "Biome, Zone" : "Zone, Biome"), () -> cfg.biomeBeforeZone)
                     .withValues(false, true)
                     .create(panelX, y, widgetW, rowH, Component.literal("Zone/Biome Order"), (btn, value) -> {
@@ -495,6 +523,11 @@ public class LatitudeHudStudioScreen extends Screen {
                     }));
             tooltip(this.wCoordsFollow, "Let the latitude/longitude readout ride with the compass or detach it for dragging.");
             trackSidebarWidget(this.wCoordsFollow, y);
+            y += rowH + rowGap;
+
+            this.wCoordsTextScale = this.addRenderableWidget(new FloatSlider(panelX, y, widgetW, rowH, Component.literal("Coords Text Size"), 0.5f, 3.0f, cfg.coordsTextScale, v -> cfg.coordsTextScale = v));
+            tooltip(this.wCoordsTextScale, "How big the latitude/longitude text is.");
+            trackSidebarWidget(this.wCoordsTextScale, y);
             y += rowH + rowGap;
 
             var growLabels = new java.util.LinkedHashMap<com.example.globe.core.ui.HudLayoutMath.GrowH, String>();
@@ -561,6 +594,7 @@ public class LatitudeHudStudioScreen extends Screen {
                         cfg.zoneOffYFrac = fresh.zoneOffYFrac;
                         cfg.zoneGrowH = fresh.zoneGrowH;
                         cfg.zoneGrowV = fresh.zoneGrowV;
+                        cfg.zoneTextScale = fresh.zoneTextScale;
                         cfg.displayBiomeInHud = fresh.displayBiomeInHud;
                         cfg.biomeFollowsCompass = fresh.biomeFollowsCompass;
                         cfg.biomeHAnchor = fresh.biomeHAnchor;
@@ -569,6 +603,7 @@ public class LatitudeHudStudioScreen extends Screen {
                         cfg.biomeOffYFrac = fresh.biomeOffYFrac;
                         cfg.biomeGrowH = fresh.biomeGrowH;
                         cfg.biomeGrowV = fresh.biomeGrowV;
+                        cfg.biomeTextScale = fresh.biomeTextScale;
                         cfg.biomeBeforeZone = fresh.biomeBeforeZone;
                         cfg.coordsFollowsCompass = fresh.coordsFollowsCompass;
                         cfg.coordsHAnchor = fresh.coordsHAnchor;
@@ -577,6 +612,7 @@ public class LatitudeHudStudioScreen extends Screen {
                         cfg.coordsOffYFrac = fresh.coordsOffYFrac;
                         cfg.coordsGrowH = fresh.coordsGrowH;
                         cfg.coordsGrowV = fresh.coordsGrowV;
+                        cfg.coordsTextScale = fresh.coordsTextScale;
                         cfg.reservedTextWidth = fresh.reservedTextWidth;
                         CompassHudConfig.saveCurrent();
                         this.init();
@@ -675,6 +711,66 @@ public class LatitudeHudStudioScreen extends Screen {
             tooltip(wResetTitle, "Restore the zone-enter title settings to their defaults.");
             trackSidebarWidget(wResetTitle, y);
             y += rowH + rowGap;
+        } else if (activeTab == TAB_PRESETS) {
+            var wExport = this.addRenderableWidget(Button.builder(Component.literal("Export to Clipboard"), b -> {
+                        Minecraft.getInstance().keyboardHandler.setClipboard(CompassHudPreset.captureCurrent().toJson());
+                    })
+                    .bounds(panelX, y, widgetW, rowH)
+                    .build());
+            tooltip(wExport, "Copies your current HUD look (compass + labels + title) to the clipboard so you can paste it somewhere to share or back up.");
+            trackSidebarWidget(wExport, y);
+            y += rowH + rowGap;
+
+            var wImport = this.addRenderableWidget(Button.builder(Component.literal("Import from Clipboard"), b -> {
+                        CompassHudPreset p = CompassHudPreset.fromJson(Minecraft.getInstance().keyboardHandler.getClipboard());
+                        if (p != null) {
+                            p.applyToLive();
+                            this.init();
+                        }
+                    })
+                    .bounds(panelX, y, widgetW, rowH)
+                    .build());
+            tooltip(wImport, "Reads a HUD look from the clipboard (something exported here, or shared by someone else) and applies it. Does nothing if the clipboard doesn't contain a valid HUD look.");
+            trackSidebarWidget(wImport, y);
+            y += rowH + rowGap;
+
+            int slotGap = 3;
+            int clearW = 20;
+            int saveW = 44;
+            int loadW = widgetW - clearW - saveW - slotGap * 2;
+            for (int slot = 0; slot < CompassHudPresetSlots.SLOT_COUNT; slot++) {
+                final int s = slot;
+                String label = (s + 1) + ": " + CompassHudPresetSlots.summarize(s);
+                var wLoad = this.addRenderableWidget(Button.builder(Component.literal(label), b -> {
+                            if (CompassHudPresetSlots.loadFrom(s)) this.init();
+                        })
+                        .bounds(panelX, y, loadW, rowH)
+                        .build());
+                wLoad.active = CompassHudPresetSlots.isOccupied(s);
+                tooltip(wLoad, "Loads the HUD look saved in slot " + (s + 1) + ".");
+                trackSidebarWidget(wLoad, y);
+
+                var wSave = this.addRenderableWidget(Button.builder(Component.literal("Save"), b -> {
+                            CompassHudPresetSlots.saveCurrentInto(s);
+                            this.init();
+                        })
+                        .bounds(panelX + loadW + slotGap, y, saveW, rowH)
+                        .build());
+                tooltip(wSave, "Saves your current HUD look into slot " + (s + 1) + ", overwriting whatever was there.");
+                trackSidebarWidget(wSave, y);
+
+                var wClear = this.addRenderableWidget(Button.builder(Component.literal("x"), b -> {
+                            CompassHudPresetSlots.clear(s);
+                            this.init();
+                        })
+                        .bounds(panelX + loadW + slotGap + saveW + slotGap, y, clearW, rowH)
+                        .build());
+                wClear.active = CompassHudPresetSlots.isOccupied(s);
+                tooltip(wClear, "Empties slot " + (s + 1) + ".");
+                trackSidebarWidget(wClear, y);
+
+                y += rowH + rowGap;
+            }
         } else {
             var wShowMode = this.addRenderableWidget(CycleButton.<CompassHudConfig.ShowMode>builder(v -> Component.literal(switch (v) {
                         case ALWAYS -> "Always";
@@ -1260,8 +1356,10 @@ public class LatitudeHudStudioScreen extends Screen {
 
         setVisible(wZoneDisplay, sidebarVisible);
         setVisible(wZoneFollow, sidebarVisible && cfg.displayZoneInHud);
+        setVisible(wZoneTextScale, sidebarVisible && cfg.displayZoneInHud);
         setVisible(wBiomeDisplay, sidebarVisible);
         setVisible(wBiomeFollow, sidebarVisible && cfg.displayBiomeInHud);
+        setVisible(wBiomeTextScale, sidebarVisible && cfg.displayBiomeInHud);
         // Order only matters when zone AND biome are both attached to the SAME compass line.
         boolean bothAttached = cfg.displayZoneInHud && cfg.zoneFollowsCompass
                 && cfg.displayBiomeInHud && cfg.biomeFollowsCompass;
@@ -1359,6 +1457,7 @@ public class LatitudeHudStudioScreen extends Screen {
         cfg.analogSize = fresh.analogSize;
         cfg.analogInnerAlpha = fresh.analogInnerAlpha;
         cfg.analogTheme = fresh.analogTheme;
+        cfg.rainbowCycleSeconds = fresh.rainbowCycleSeconds;
         cfg.padding = fresh.padding;
         cfg.showBackground = fresh.showBackground;
         cfg.backgroundRgb = fresh.backgroundRgb;
@@ -1384,6 +1483,7 @@ public class LatitudeHudStudioScreen extends Screen {
         cfg.zoneGrowH = fresh.zoneGrowH;
         cfg.zoneGrowV = fresh.zoneGrowV;
         cfg.zoneOffsetY = fresh.zoneOffsetY;
+        cfg.zoneTextScale = fresh.zoneTextScale;
         cfg.displayBiomeInHud = fresh.displayBiomeInHud;
         cfg.biomeFollowsCompass = fresh.biomeFollowsCompass;
         cfg.biomeHAnchor = fresh.biomeHAnchor;
@@ -1394,6 +1494,7 @@ public class LatitudeHudStudioScreen extends Screen {
         cfg.biomeGrowH = fresh.biomeGrowH;
         cfg.biomeGrowV = fresh.biomeGrowV;
         cfg.biomeOffsetY = fresh.biomeOffsetY;
+        cfg.biomeTextScale = fresh.biomeTextScale;
         cfg.biomeBeforeZone = fresh.biomeBeforeZone;
         cfg.coordsFollowsCompass = fresh.coordsFollowsCompass;
         cfg.coordsHAnchor = fresh.coordsHAnchor;
@@ -1404,6 +1505,7 @@ public class LatitudeHudStudioScreen extends Screen {
         cfg.coordsGrowH = fresh.coordsGrowH;
         cfg.coordsGrowV = fresh.coordsGrowV;
         cfg.coordsOffsetY = fresh.coordsOffsetY;
+        cfg.coordsTextScale = fresh.coordsTextScale;
         cfg.customFaceRgb = fresh.customFaceRgb;
         cfg.customRingArgb = fresh.customRingArgb;
         cfg.customMutedArgb = fresh.customMutedArgb;
@@ -1535,6 +1637,7 @@ public class LatitudeHudStudioScreen extends Screen {
             case SUNSET -> "Sunset";
             case MONOCHROME -> "Monochrome";
             case CLASSIC_GOLD -> "Classic Gold";
+            case RAINBOW -> "Aurora";
             case CUSTOM -> "Custom";
         };
     }

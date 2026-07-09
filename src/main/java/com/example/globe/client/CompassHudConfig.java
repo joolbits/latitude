@@ -18,7 +18,7 @@ public final class CompassHudConfig {
     // and the cycle button uses declaration order.
     public enum AnalogCompassTheme {
         CLASSIC_GOLD, PALE_GOLD, RED_IVORY, CYAN_STEEL, MINT_BRASS,
-        OBSIDIAN_RED, ARCTIC_BLUE, EMERALD, ROYAL_PURPLE, SUNSET, MONOCHROME, CUSTOM
+        OBSIDIAN_RED, ARCTIC_BLUE, EMERALD, ROYAL_PURPLE, SUNSET, MONOCHROME, RAINBOW, CUSTOM
     }
     public enum HAnchor { LEFT, CENTER, RIGHT }
     public enum VAnchor { TOP, CENTER, BOTTOM }
@@ -80,6 +80,13 @@ public final class CompassHudConfig {
     // Analog styling. Lower = more transparent inner disc.
     public float analogInnerAlpha = 0.50f; // 0..1
 
+    // Only used when analogTheme == RAINBOW ("Aurora" in the UI). Seconds for one full color-wheel loop --
+    // deliberately defaults slow and the slider's own range skews slow (2026-07-08, Peetsa's request: a
+    // fast-cycling dial reads as strobing and can give people a headache). Range narrowed same day
+    // (10-40, was 12-90): past ~40s the difference is imperceptible, so the wider range just wasted most
+    // of the slider's length on settings that all looked the same.
+    public float rainbowCycleSeconds = 24.0f;
+
     // Custom analog theme colors (only used when analogTheme == CUSTOM). Defaults mirror CLASSIC_GOLD so a
     // fresh Custom theme doesn't look black/broken before the player touches a slider. face is bare 0xRRGGBB
     // (alpha comes from analogInnerAlpha above, same as every other theme); ring/muted/needle are full ARGB
@@ -100,6 +107,10 @@ public final class CompassHudConfig {
     public double zoneOffYFrac = 0.0;
     public com.example.globe.core.ui.HudLayoutMath.GrowH zoneGrowH = com.example.globe.core.ui.HudLayoutMath.GrowH.CENTER;
     public com.example.globe.core.ui.HudLayoutMath.GrowV zoneGrowV = com.example.globe.core.ui.HudLayoutMath.GrowV.TOP;
+    // Independent text size (2026-07-08, Peetsa's request) -- parity with the Title tab's own Title Size
+    // slider. 1.0 = unchanged from every prior version, so old configs render identically after this field
+    // is added.
+    public float zoneTextScale = 1.0f;
 
     // Biome label -- same follow/detach/anchor/offset shape as the zone label above, so it can independently
     // ride with the compass or be dragged to its own spot in the HUD Studio.
@@ -116,6 +127,7 @@ public final class CompassHudConfig {
     // When zone and biome are BOTH attached to the compass line, which comes first. false = "Zone, Biome"
     // (band before biome); true = "Biome, Zone".
     public boolean biomeBeforeZone = false;
+    public float biomeTextScale = 1.0f;
 
     // Coordinates (lat/lon) detachability. Previously always fused to the compass; now can ride with it
     // (default, unchanged behavior) or detach to its own anchor+offset like zone/biome. The actual lat/lon
@@ -130,6 +142,7 @@ public final class CompassHudConfig {
     public double coordsOffYFrac = 0.0;
     public com.example.globe.core.ui.HudLayoutMath.GrowH coordsGrowH = com.example.globe.core.ui.HudLayoutMath.GrowH.CENTER;
     public com.example.globe.core.ui.HudLayoutMath.GrowV coordsGrowV = com.example.globe.core.ui.HudLayoutMath.GrowV.TOP;
+    public float coordsTextScale = 1.0f;
 
     // Styling
     public boolean showBackground = true;
@@ -236,7 +249,9 @@ public final class CompassHudConfig {
         return Math.max(-1.0, Math.min(1.0, v));
     }
 
-    private void sanitize() {
+    /** Package-private (not private) so CompassHudPreset can sanitize a snapshot deserialized from a
+     *  preset slot or an imported clipboard blob -- the same defensive pass every on-disk load gets. */
+    void sanitize() {
         if (showMode == null) showMode = ShowMode.COMPASS_PRESENT;
         if (style == null) style = CompassStyle.DIGITAL;
         if (analogTheme == null) analogTheme = AnalogCompassTheme.CLASSIC_GOLD;
@@ -296,5 +311,9 @@ public final class CompassHudConfig {
         if (backgroundAlpha > 255) backgroundAlpha = 255;
         if (textAlpha < 0) textAlpha = 0;
         if (textAlpha > 255) textAlpha = 255;
+        if (rainbowCycleSeconds < 10.0f || rainbowCycleSeconds > 40.0f || Float.isNaN(rainbowCycleSeconds)) rainbowCycleSeconds = 24.0f;
+        if (zoneTextScale < 0.5f || zoneTextScale > 3.0f || Float.isNaN(zoneTextScale)) zoneTextScale = 1.0f;
+        if (biomeTextScale < 0.5f || biomeTextScale > 3.0f || Float.isNaN(biomeTextScale)) biomeTextScale = 1.0f;
+        if (coordsTextScale < 0.5f || coordsTextScale > 3.0f || Float.isNaN(coordsTextScale)) coordsTextScale = 1.0f;
     }
 }
