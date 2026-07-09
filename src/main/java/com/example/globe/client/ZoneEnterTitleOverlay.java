@@ -76,17 +76,30 @@ public final class ZoneEnterTitleOverlay {
         }
 
         int a = (int) (alpha * 255.0f);
-        Font tr = client.font;
         int cx = (screenW / 2) + LatitudeConfig.zoneEnterTitleOffsetX;
         int cy = (screenH / 2) + LatitudeConfig.zoneEnterTitleOffsetY;
-        String text = applyCase(title.getString(), LatitudeConfig.zoneEnterTitleCase);
+        drawTitleLineAt(ctx, cx, cy, title.getString(), scale, a);
+    }
 
+    /**
+     * Draws one title line, centered at ({@code cx},{@code cy}) in screen space, using the SAME case /
+     * color / letter-spacing / shadow styling as the zone-enter title. Shared by the zone-enter title,
+     * the HUD Studio preview, and the B-3c hemisphere-title channel so all title text is one visual
+     * system (a hemisphere title reads exactly like a zone title, just in its own channel/position).
+     */
+    public static void drawTitleLineAt(GuiGraphicsExtractor ctx, int cx, int cy, String rawText, double scale, int alphaByte) {
+        Minecraft client = Minecraft.getInstance();
+        if (client == null || client.font == null) {
+            return;
+        }
+        Font tr = client.font;
+        String styled = applyCase(rawText, LatitudeConfig.zoneEnterTitleCase);
         var m = ctx.pose();
         m.pushMatrix();
         try {
             m.translate(cx, cy);
-            m.scale(scale, scale);
-            drawStyledTitle(ctx, tr, text, a);
+            m.scale((float) scale, (float) scale);
+            drawStyledTitle(ctx, tr, styled, alphaByte);
         } finally {
             m.popMatrix();
         }
@@ -95,25 +108,7 @@ public final class ZoneEnterTitleOverlay {
     public static void renderStaticAt(GuiGraphicsExtractor ctx, int screenW, int screenH, String text, double scale, int offsetX, int offsetY) {
         int cx = (screenW / 2) + offsetX;
         int cy = (screenH / 2) + offsetY;
-
-        Minecraft client = Minecraft.getInstance();
-        if (client == null || client.font == null) {
-            return;
-        }
-
-        Font tr = client.font;
-        String styled = applyCase(text, LatitudeConfig.zoneEnterTitleCase);
-
-        var m = ctx.pose();
-        m.pushMatrix();
-        try {
-            m.translate(cx, cy);
-            float s = (float) scale;
-            m.scale(s, s);
-            drawStyledTitle(ctx, tr, styled, 0xFF);
-        } finally {
-            m.popMatrix();
-        }
+        drawTitleLineAt(ctx, cx, cy, text, scale, 0xFF);
     }
 
     // Shared by both render() (real gameplay) and renderStaticAt() (the HUD Studio live preview) so the two

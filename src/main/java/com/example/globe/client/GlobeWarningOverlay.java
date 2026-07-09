@@ -1,6 +1,7 @@
 package com.example.globe.client;
 
 import com.example.globe.GlobeMod;
+import com.example.globe.core.HemisphereCrossing;
 import com.example.globe.util.LatitudeBands;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.DeltaTracker;
@@ -16,7 +17,7 @@ public final class GlobeWarningOverlay {
     private static String lastZoneKey;
 
     private static final String POLE_WARN_1_TEXT =
-            "The air is turning bitterly cold. You should consider turning back.";
+            "The air is turning bitterly cold. Consider turning back.";
     private static final String POLE_WARN_2_TEXT =
             "The cold seeps into your body. Movement is becoming difficult.";
     private static final String POLE_DANGER_TEXT =
@@ -37,16 +38,20 @@ public final class GlobeWarningOverlay {
             "Blinding sandstorm to the %s. Turn back.";
 
     private static final boolean DEBUG_ENTRY_TITLES = Boolean.getBoolean("latitude.debugEntryTitles");
-    private static final int EQUATOR_STABLE_DIST = 64;
-    private static final int HEMISPHERE_TITLE_MAX_STEP_BLOCKS = 256;
-    private static final long HEMISPHERE_TITLE_COOLDOWN_MS = 15_000L;
 
     private static long lastZoneUpdateWorldTime = Long.MIN_VALUE;
     private static int lastZoneUpdateX = Integer.MIN_VALUE;
     private static int lastZoneUpdateZ = Integer.MIN_VALUE;
-    private static char lastStableHemisphere = '\0';
+    // Per-axis hemisphere-crossing tracking (debounce state persisted between ticks; the pure decision
+    // lives in core.HemisphereCrossing). Z axis = N/S at the equator; X axis = E/W at the prime meridian.
+    // side: -1 negative-of-center / +1 positive-of-center / 0 unseeded; observed: last confident coord
+    // (NaN = unseeded); fireMs: wall time of the last fire on that axis (per-axis cooldown).
+    private static int lastStableSideZ = 0;
     private static double lastObservedZ = Double.NaN;
-    private static long lastHemisphereTitleAtMs = Long.MIN_VALUE;
+    private static long lastHemiFireZMs = Long.MIN_VALUE;
+    private static int lastStableSideX = 0;
+    private static double lastObservedX = Double.NaN;
+    private static long lastHemiFireXMs = Long.MIN_VALUE;
     private static long lastWarningDebugWorldTime = Long.MIN_VALUE;
     private static String lastWarningDebugText;
 
@@ -186,12 +191,12 @@ public final class GlobeWarningOverlay {
                         String titleText = buildZoneEnterTitle(client, canonicalZoneKey);
                         int durationTicks = (int) Math.round(clamp(LatitudeConfig.zoneEnterTitleSeconds, 2.0, 10.0) * 20.0);
                         double scale = clamp(LatitudeConfig.zoneEnterTitleScale, 1.0, 3.0);
-                        logEntryTitle("zone_trigger", titleText, client, client.player.getZ(), '\0', 0.0);
+                        logEntryTitle("zone_trigger", titleText, client, client.player.getX(), client.player.getZ());
                         ZoneEnterTitleOverlay.trigger(titleText, durationTicks, scale);
                     }
                 }
 
-                maybeTriggerHemisphereTitle(client, client.player.getZ());
+                maybeTriggerHemisphereTitles(client, client.player.getX(), client.player.getZ());
             }
 
             Component bestText = null;
@@ -264,8 +269,12 @@ public final class GlobeWarningOverlay {
         lastZoneUpdateWorldTime = Long.MIN_VALUE;
         lastZoneUpdateX = Integer.MIN_VALUE;
         lastZoneUpdateZ = Integer.MIN_VALUE;
-        lastStableHemisphere = '\0';
+        lastStableSideZ = 0;
         lastObservedZ = Double.NaN;
+        lastHemiFireZMs = Long.MIN_VALUE;
+        lastStableSideX = 0;
+        lastObservedX = Double.NaN;
+        lastHemiFireXMs = Long.MIN_VALUE;
         lastWarningDebugWorldTime = Long.MIN_VALUE;
         lastWarningDebugText = null;
         if (DEBUG_ENTRY_TITLES) {
@@ -273,127 +282,88 @@ public final class GlobeWarningOverlay {
         }
     }
 
-    private static void maybeTriggerHemisphereTitle(Minecraft client, double playerZ) {
+    // Fires the shared HEMISPHERE-TITLE channel on the two hemisphere crossings: N/S at the equator
+    // (Z vs centerZ) and E/W at the prime meridian (X vs centerX). Both axes run the SAME pure debounce
+    // (core.HemisphereCrossing: dead zone on the line, real-crossing requirement, teleport guard,
+    // per-axis cooldown). Each fire sets its axis's line in the ONE HemisphereTitleOverlay slot, so a
+    // diagonal 0deg,0deg crossing renders a single stacked N/S-over-E/W title -- never two competing
+    // single-line titles. Gated on the same zoneEnterTitle* config as the zone title (the only
+    // hemisphere-title gate that exists today), but its OWN channel/position, so it cannot slot-stomp
+    // or overlap the zone-enter title.
+    private static void maybeTriggerHemisphereTitles(Minecraft client, double playerX, double playerZ) {
         var border = client.level != null ? client.level.getWorldBorder() : null;
+        long nowMs = System.currentTimeMillis();
         double centerZ = border != null ? border.getCenterZ() : 0.0;
-        char stableHemisphere = stableHemisphere(border, playerZ);
-        boolean titleActive = ZoneEnterTitleOverlay.isActive();
-        boolean updateSample = Math.abs(playerZ - centerZ) >= EQUATOR_STABLE_DIST || Double.isNaN(lastObservedZ);
+        double centerX = border != null ? border.getCenterX() : 0.0;
 
-        if (!LatitudeConfig.zoneEnterTitleEnabled) {
-            if (stableHemisphere != '\0') {
-                lastStableHemisphere = stableHemisphere;
-            }
-            if (updateSample) {
-                lastObservedZ = playerZ;
-            }
-            logEntryTitle("hemisphere_disabled", "", client, playerZ, stableHemisphere, 0.0);
-            return;
+        HemisphereCrossing.Result rz =
+                evalHemisphereAxis(playerZ, centerZ, lastObservedZ, lastStableSideZ, lastHemiFireZMs, nowMs);
+        HemisphereCrossing.Result rx =
+                evalHemisphereAxis(playerX, centerX, lastObservedX, lastStableSideX, lastHemiFireXMs, nowMs);
+
+        boolean enabled = LatitudeConfig.zoneEnterTitleEnabled;
+
+        // N/S line: side -1 = North (z<center), +1 = South. Natural case; applyCase() at render controls
+        // final casing (same convention as buildZoneEnterTitle()).
+        if (enabled && rz.fire()) {
+            String line = rz.newStableSide() < 0 ? "Northern Hemisphere" : "Southern Hemisphere";
+            fireHemisphereLine(false, line);
+            lastHemiFireZMs = nowMs;
+            logEntryTitle("hemisphere_trigger_ns", line, client, playerX, playerZ);
+        }
+        // E/W line: side -1 = West (x<center), +1 = East -- matches LatitudeMath.hemisphereEW.
+        if (enabled && rx.fire()) {
+            String line = rx.newStableSide() < 0 ? "Western Hemisphere" : "Eastern Hemisphere";
+            fireHemisphereLine(true, line);
+            lastHemiFireXMs = nowMs;
+            logEntryTitle("hemisphere_trigger_ew", line, client, playerX, playerZ);
         }
 
-        if (titleActive) {
-            if (stableHemisphere != '\0') {
-                lastStableHemisphere = stableHemisphere;
-            }
-            if (updateSample) {
-                lastObservedZ = playerZ;
-            }
-            logEntryTitle("hemisphere_suppressed_title_active", "", client, playerZ, stableHemisphere, 0.0);
-            return;
-        }
+        // Advance tracking state every tick (even when disabled) so re-enabling can never replay a
+        // crossing that already happened -- the sample simply moves past center unremarked.
+        lastStableSideZ = rz.newStableSide();
+        lastObservedZ = rz.newObserved();
+        lastStableSideX = rx.newStableSide();
+        lastObservedX = rx.newObserved();
 
-        if (Double.isNaN(lastObservedZ) && updateSample) {
-            lastObservedZ = playerZ;
-            logEntryTitle("hemisphere_seed_observed_z", "", client, playerZ, stableHemisphere, 0.0);
-        }
-
-        if (stableHemisphere == '\0') {
-            if (updateSample) {
-                lastObservedZ = playerZ;
-            }
-            logEntryTitle("hemisphere_suppressed_equator", "", client, playerZ, stableHemisphere, 0.0);
-            return;
-        }
-
-        if (lastStableHemisphere == '\0') {
-            lastStableHemisphere = stableHemisphere;
-            if (updateSample) {
-                lastObservedZ = playerZ;
-            }
-            logEntryTitle("hemisphere_seed_stable", "", client, playerZ, stableHemisphere, 0.0);
-            return;
-        }
-
-        double stepBlocks = Math.abs(playerZ - lastObservedZ);
-        if (stepBlocks > HEMISPHERE_TITLE_MAX_STEP_BLOCKS) {
-            lastStableHemisphere = stableHemisphere;
-            if (updateSample) {
-                lastObservedZ = playerZ;
-            }
-            logEntryTitle("hemisphere_suppressed_large_step", "", client, playerZ, stableHemisphere, stepBlocks);
-            return;
-        }
-
-        boolean crossedNorth = lastObservedZ > centerZ && playerZ < centerZ;
-        boolean crossedSouth = lastObservedZ < centerZ && playerZ > centerZ;
-        boolean changedHemisphere = stableHemisphere != lastStableHemisphere && (crossedNorth || crossedSouth);
-
-        if (changedHemisphere && canFireHemisphereTitle()) {
-            // Natural case, same reasoning as buildZoneEnterTitle() above -- applyCase() controls final casing.
-            String hemisphereTitle = crossedNorth ? "Northern Hemisphere" : "Southern Hemisphere";
-            int durationTicks = (int) Math.round(clamp(LatitudeConfig.zoneEnterTitleSeconds, 2.0, 10.0) * 20.0);
-            double scale = clamp(LatitudeConfig.zoneEnterTitleScale, 1.0, 3.0);
-            logEntryTitle("hemisphere_trigger", hemisphereTitle, client, playerZ, stableHemisphere, stepBlocks);
-            ZoneEnterTitleOverlay.trigger(hemisphereTitle, durationTicks, scale);
-            lastHemisphereTitleAtMs = System.currentTimeMillis();
-        } else {
-            logEntryTitle("hemisphere_no_trigger", "", client, playerZ, stableHemisphere, stepBlocks);
-        }
-
-        lastStableHemisphere = stableHemisphere;
-        if (updateSample) {
-            lastObservedZ = playerZ;
+        if (!enabled) {
+            logEntryTitle("hemisphere_disabled", "", client, playerX, playerZ);
         }
     }
 
-    private static boolean canFireHemisphereTitle() {
-        if (lastHemisphereTitleAtMs == Long.MIN_VALUE) {
-            return true;
-        }
-        long now = System.currentTimeMillis();
-        return (now - lastHemisphereTitleAtMs) >= HEMISPHERE_TITLE_COOLDOWN_MS;
+    private static HemisphereCrossing.Result evalHemisphereAxis(double coord, double center,
+                                                                double observed, int side, long fireMs, long nowMs) {
+        return HemisphereCrossing.evaluate(coord, center, observed, side, nowMs, fireMs,
+                HemisphereCrossing.DEAD_ZONE_BLOCKS, HemisphereCrossing.MAX_STEP_BLOCKS, HemisphereCrossing.COOLDOWN_MS);
     }
 
-    private static char stableHemisphere(net.minecraft.world.level.border.WorldBorder border, double z) {
-        double centerZ = border != null ? border.getCenterZ() : 0.0;
-        if (Math.abs(z - centerZ) < EQUATOR_STABLE_DIST) {
-            return '\0';
-        }
-        return com.example.globe.util.LatitudeMath.hemisphere(border, z);
+    private static void fireHemisphereLine(boolean eastWestAxis, String line) {
+        int durationTicks = (int) Math.round(clamp(LatitudeConfig.zoneEnterTitleSeconds, 2.0, 10.0) * 20.0);
+        double scale = clamp(LatitudeConfig.zoneEnterTitleScale, 1.0, 3.0);
+        HemisphereTitleOverlay.trigger(eastWestAxis, line, durationTicks, scale);
     }
 
-    private static void logEntryTitle(String action, String title, Minecraft client, double playerZ, char stableHemisphere, double stepBlocks) {
+    private static void logEntryTitle(String action, String title, Minecraft client, double playerX, double playerZ) {
         if (!DEBUG_ENTRY_TITLES || client == null || client.level == null || client.player == null) {
             return;
         }
         var border = client.level.getWorldBorder();
-        String canonicalZoneKey = canonicalTitleZoneKey(border, playerZ);
-        char canonicalHemisphere = com.example.globe.util.LatitudeMath.hemisphere(border, playerZ);
         double latDeg = com.example.globe.util.LatitudeMath.degreesFromZ(border, playerZ);
-        GlobeMod.LOGGER.info("[LAT][ENTRY_TITLE] action={} title=\"{}\" x={} z={} centerZ={} worldTime={} zone={} latDeg={} canonicalHemisphere={} stableHemisphere={} lastStableHemisphere={} lastObservedZ={} stepBlocks={}",
+        int lonDeg = com.example.globe.util.LatitudeMath.longitudeDegrees(border, playerX);
+        GlobeMod.LOGGER.info("[LAT][ENTRY_TITLE] action={} title=\"{}\" x={} z={} centerX={} centerZ={} worldTime={} latDeg={} lonDeg={} sideZ={} sideX={} observedZ={} observedX={}",
                 action,
                 title,
-                client.player.getX(),
+                playerX,
                 playerZ,
+                border.getCenterX(),
                 border.getCenterZ(),
                 client.level.getGameTime(),
-                canonicalZoneKey,
                 latDeg,
-                canonicalHemisphere,
-                stableHemisphere == '\0' ? "none" : Character.toString(stableHemisphere),
-                lastStableHemisphere == '\0' ? "none" : Character.toString(lastStableHemisphere),
+                lonDeg,
+                lastStableSideZ,
+                lastStableSideX,
                 Double.isNaN(lastObservedZ) ? "nan" : Double.toString(lastObservedZ),
-                stepBlocks);
+                Double.isNaN(lastObservedX) ? "nan" : Double.toString(lastObservedX));
     }
 
     private static void maybeLogWarningRender(Minecraft client, GlobeClientState.WarningState state, Component bestText) {
