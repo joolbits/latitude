@@ -1534,7 +1534,13 @@ public class LatitudeCreateWorldScreen extends Screen {
 
         int nameCol = enabled ? WARM_WHITE : DISABLED_COLOR;
         int subCol = enabled ? MUTED : DISABLED_COLOR;
-        drawCenteredBoundedText(context, shortName, new UiRect(x, y, availW, uiFontHeight()), nameCol, true, true);
+        // Ginormous gets a little theatrical emphasis (Peetsa's ask): italic + an exclamation mark, since
+        // it's the "a world that could take a lifetime to cross" biggest size.
+        if (selectedSize == GlobeWorldSize.MASSIVE) {
+            drawCenteredBoundedItalicText(context, shortName + "!", new UiRect(x, y, availW, uiFontHeight()), nameCol, true, true);
+        } else {
+            drawCenteredBoundedText(context, shortName, new UiRect(x, y, availW, uiFontHeight()), nameCol, true, true);
+        }
         drawCenteredBoundedText(context, diameter, new UiRect(x, y + scaledUi(11), availW, uiFontHeight()), subCol, false, true);
         drawWrappedTextBlock(context, desc, new UiRect(x, y + scaledUi(22), availW, Math.max(uiFontHeight(), computeSizeLabelBottom(y, availW) - (y + scaledUi(22)))), subCol, false, 3, true, true);
     }
@@ -1729,28 +1735,47 @@ public class LatitudeCreateWorldScreen extends Screen {
 
     private int[] computePreviewLabelYs(int globeCenterY, int radius, int labelHeight) {
         int n = PREVIEW_LABEL_DEGREES.length;
-        int[] labelYs = new int[n];
+        int[] trueYs = new int[n];
         for (int i = 0; i < n; i++) {
             int yOff = (int) Math.round(radius * PREVIEW_LABEL_DEGREES[i] / 90.0);
-            labelYs[i] = globeCenterY + yOff - labelHeight / 2;
+            trueYs[i] = globeCenterY + yOff - labelHeight / 2;
         }
 
-        // De-collide downward so labels never overlap...
-        int minGap = isTinyPreview(selectedSize) ? Math.max(labelHeight + 1, 9) : Math.max(labelHeight, 8);
+        // De-collide downward so labels never overlap, cascading forward from the 0° anchor...
+        int comfortGap = isTinyPreview(selectedSize) ? Math.max(labelHeight + 1, 9) : Math.max(labelHeight, 8);
+        int[] labelYs = new int[n];
+        labelYs[0] = trueYs[0];
         for (int i = 1; i < n; i++) {
-            if (labelYs[i] < labelYs[i - 1] + minGap) {
-                labelYs[i] = labelYs[i - 1] + minGap;
-            }
+            labelYs[i] = Math.max(trueYs[i], labelYs[i - 1] + comfortGap);
         }
-        // ...then, if the cascade pushed the bottom label past the atlas bottom edge, slide the whole column
-        // up by the overflow so the labels stay tidily WITHIN the atlas height instead of spilling below it
-        // (TEST 4 A3: "latitudes are super crammed"). The column stays aligned to its lines where there's room.
+
+        // ...then, if the cascade pushed the bottom label past the atlas bottom edge (TEST 4 A3: "latitudes
+        // are super crammed"), compress the CASCADE'S GAPS back toward the bare no-overlap floor instead of
+        // sliding the whole column up. A uniform column-shift used to drag the 0° label away from its true
+        // position (its own gridline) at small radii -- exactly small-world "0° almost at the pole" (TEST 32):
+        // 0° starts at its true, correct spot and a big enough overflow shifted EVERY label, including it,
+        // by the same amount. Compression instead only tightens the gaps that have slack above the hard
+        // floor, and 0° -- gap-free by definition -- never moves.
         int atlasBottom = globeCenterY + radius;
         int overflow = (labelYs[n - 1] + labelHeight) - atlasBottom;
         if (overflow > 0) {
-            for (int i = 0; i < n; i++) {
-                labelYs[i] -= overflow;
+            int hardFloorGap = labelHeight;
+            int[] gaps = new int[n];
+            int totalSlack = 0;
+            for (int i = 1; i < n; i++) {
+                gaps[i] = labelYs[i] - labelYs[i - 1];
+                totalSlack += Math.max(0, gaps[i] - hardFloorGap);
             }
+            if (totalSlack > 0) {
+                double shrink = Math.max(0.0, 1.0 - (double) overflow / totalSlack);
+                for (int i = 1; i < n; i++) {
+                    int slackPortion = Math.max(0, gaps[i] - hardFloorGap);
+                    int newGap = hardFloorGap + (int) Math.round(slackPortion * shrink);
+                    labelYs[i] = labelYs[i - 1] + newGap;
+                }
+            }
+            // else: no slack left to give back (six labels genuinely don't fit even flush-packed at this
+            // radius) -- accept the residual overflow rather than moving the 0° anchor off its gridline.
         }
         return labelYs;
     }
@@ -2000,6 +2025,21 @@ public class LatitudeCreateWorldScreen extends Screen {
         int drawX = rect.x + Math.max(0, (rect.w - uiTextWidth(fitted)) / 2);
         int drawY = clampToRect(rect.y, uiFontHeight(), rect.y, rect.bottom());
         drawUiText(context, fitted, drawX, drawY, color, shadow);
+        return true;
+    }
+
+    /** Same as {@link #drawCenteredBoundedText} but italicized (the "Ginormous!" size-name treatment). */
+    private boolean drawCenteredBoundedItalicText(GuiGraphicsExtractor context, String text, UiRect rect, int color, boolean shadow, boolean ellipsize) {
+        if (!fitsHeight(rect.h)) {
+            return false;
+        }
+        String fitted = ellipsize ? ellipsizeToWidth(text, rect.w) : text;
+        if (fitted.isEmpty() || (!ellipsize && !fitsWidth(fitted, rect.w))) {
+            return false;
+        }
+        int drawX = rect.x + Math.max(0, (rect.w - uiTextWidth(fitted)) / 2);
+        int drawY = clampToRect(rect.y, uiFontHeight(), rect.y, rect.bottom());
+        context.text(this.font, Component.literal(fitted).withStyle(ChatFormatting.ITALIC), drawX, drawY, color, shadow);
         return true;
     }
 
