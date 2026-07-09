@@ -739,13 +739,18 @@ public class LatitudeHudStudioScreen extends Screen {
     private int lastMouseX = -1;
     private int lastMouseY = -1;
 
-    /** True while the player is plausibly adjusting Inner Transparency (slider hovered or focused).
+    /** True while the player is plausibly adjusting Inner Transparency (slider hovered, or mid-drag).
      *  The checkerboard transparency aid draws only then — always-on it read as visual noise and made
-     *  the compass graphic look bigger than it is (TEST 29). */
+     *  the compass graphic look bigger than it is (TEST 29). Deliberately does NOT check isFocused():
+     *  vanilla keyboard focus is sticky (it persists after mouseUp until some other widget is clicked),
+     *  which locked the checkerboard on permanently after the very first touch of the slider (TEST 30).
+     *  FloatSlider.isDragging() tracks the actual click-drag-release lifecycle instead. */
     public boolean transparencyAdjustActive() {
-        return wCompassAnalogInnerAlpha != null && wCompassAnalogInnerAlpha.visible
-                && (wCompassAnalogInnerAlpha.isFocused()
-                    || wCompassAnalogInnerAlpha.isMouseOver(lastMouseX, lastMouseY));
+        if (wCompassAnalogInnerAlpha == null || !wCompassAnalogInnerAlpha.visible) {
+            return false;
+        }
+        boolean dragging = wCompassAnalogInnerAlpha instanceof FloatSlider fs && fs.isDragging();
+        return dragging || wCompassAnalogInnerAlpha.isMouseOver(lastMouseX, lastMouseY);
     }
 
     @Override
@@ -1647,6 +1652,10 @@ public class LatitudeHudStudioScreen extends Screen {
         private final float min;
         private final float max;
         private final FloatConsumer onChange;
+        // Explicit click-drag-release tracking (TEST 30): vanilla's own private `dragging` field has no
+        // public getter, and its `isFocused()` is sticky past mouseUp -- unusable as a "currently being
+        // adjusted" signal. This mirrors the click/release pair exactly.
+        private boolean dragging;
 
         private FloatSlider(int x, int y, int width, int height, Component label, float min, float max, float initial, FloatConsumer onChange) {
             super(x, y, width, height, Component.empty(), toNorm(initial, min, max));
@@ -1655,6 +1664,22 @@ public class LatitudeHudStudioScreen extends Screen {
             this.max = max;
             this.onChange = onChange;
             updateMessage();
+        }
+
+        boolean isDragging() {
+            return dragging;
+        }
+
+        @Override
+        public void onClick(net.minecraft.client.input.MouseButtonEvent click, boolean doubled) {
+            dragging = true;
+            super.onClick(click, doubled);
+        }
+
+        @Override
+        public void onRelease(net.minecraft.client.input.MouseButtonEvent click) {
+            dragging = false;
+            super.onRelease(click);
         }
 
         @Override

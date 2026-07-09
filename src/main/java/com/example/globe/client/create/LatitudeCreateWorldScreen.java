@@ -677,8 +677,21 @@ public class LatitudeCreateWorldScreen extends Screen {
         return wrapLineCount(text, width) * uiFontHeight();
     }
 
+    /**
+     * Reserved to the WORST-CASE wrapped line count across every size's description, not just the
+     * selected one (TEST 30: "the atlas bounces around... when I change the size" — cycling sizes
+     * changes which description wraps to how many lines, which fed straight into baseInputBottom and
+     * therefore leftPreviewTopY, moving the ATLAS heading and map every time the description's line
+     * count changed). Reserving the max means the block below (the atlas section) never moves when
+     * size changes; a short description just leaves blank space under it, same pattern as the compass
+     * HUD's reservedTextWidth.
+     */
     private int computeSizeLabelBottom(int y, int availW) {
-        return y + scaledUi(22) + wrapLineCount(SIZE_DESCRIPTIONS[selectedSize.ordinal()], Math.max(40, availW)) * uiFontHeight();
+        int maxLines = 1;
+        for (String desc : SIZE_DESCRIPTIONS) {
+            maxLines = Math.max(maxLines, wrapLineCount(desc, Math.max(40, availW)));
+        }
+        return y + scaledUi(22) + maxLines * uiFontHeight();
     }
 
     private int getSmallWorldWarningHeight(int width) {

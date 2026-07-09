@@ -71,8 +71,25 @@ public final class CompassHud {
             if (studioPreview && shouldRenderPreviewHotbar(cfg)) {
                 drawPreviewHotbar(ctx, screenW, screenH);
             }
-            HudBounds previewBounds = computePreviewBounds(client, cfg);
-            renderPreview(ctx, client, cfg, previewBounds.x(), previewBounds.y());
+            // renderPreview/renderAnalogAt expect the DIAL BOX top-left -- the same contract the live
+            // in-game path uses via computeAnalogDialPos. The old Studio call site instead fed in
+            // computeAnalogBounds()'s hitbox y, which is already content-adjusted for looks where
+            // content != box (TAPE). Piping that adjusted value back through renderAnalogAt's own
+            // (box -> content) math double-applied the offset and pushed the docked Tape strip toward
+            // the bottom of the screen, Studio-preview only (TEST 30: "attach to hotbar... appears to
+            // be off the screen [in the Studio], but in game it sits correctly" -- the live path never
+            // went through that bounds call at all). Every other look has content == box, so the bug was
+            // invisible everywhere except Tape.
+            HudPoint renderPos;
+            if (cfg.style == CompassHudConfig.CompassStyle.ANALOG) {
+                String latText = cfg.coordsFollowsCompass ? analogSampleLatLon(cfg) : null;
+                String zoneText = attachedZoneBiomeSample(cfg);
+                renderPos = computeAnalogDialPos(screenW, screenH, client, cfg, latText, zoneText);
+            } else {
+                HudBounds b = computeDigitalBounds(screenW, screenH, client, cfg, sampleLines(cfg), true);
+                renderPos = new HudPoint(b.x, b.y);
+            }
+            renderPreview(ctx, client, cfg, renderPos.x(), renderPos.y());
             return;
         }
 
@@ -177,15 +194,6 @@ public final class CompassHud {
             return computeAnalogBounds(screenW, screenH, client, cfg, cfg.coordsFollowsCompass ? analogSampleLatLon(cfg) : null, attachedZoneBiomeSample(cfg));
         }
         return computeBounds(screenW, screenH, client, cfg, lines);
-    }
-
-    private static HudBounds computePreviewBounds(Minecraft client, CompassHudConfig cfg) {
-        int screenW = client.getWindow().getGuiScaledWidth();
-        int screenH = client.getWindow().getGuiScaledHeight();
-        if (cfg.style == CompassHudConfig.CompassStyle.ANALOG) {
-            return computeAnalogBounds(screenW, screenH, client, cfg, cfg.coordsFollowsCompass ? analogSampleLatLon(cfg) : null, attachedZoneBiomeSample(cfg));
-        }
-        return computeDigitalBounds(screenW, screenH, client, cfg, sampleLines(cfg), true);
     }
 
     private static HudBounds computeBounds(int screenW, int screenH, Minecraft client, CompassHudConfig cfg, String[] lines) {
