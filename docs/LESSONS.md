@@ -764,3 +764,92 @@ Required future behavior:
 
 Evidence:
 - Pivot `docs/binder/ui-pass-round6-fixes-20260708.md`, registry row `20260708-ui-pass-round6-fixes`.
+
+## L27 - Reflection "Copy Every Field" Immunizes ONE Path From Field-List Drift; Its Hand-Maintained Sibling Lists (Reset/Capture/Apply Mirrors) Still Rot Silently -- Grep Every Copy Site When You Add A Persisted Field
+
+Trigger: adding a new persisted field (config option, saved state) to a type that is copied, reset,
+captured, applied, or serialized in more than one place -- especially when ONE of those places uses
+reflection ("copy every field automatically") and you feel reassured by it.
+
+Lesson: the HUD's preset feature copies config via reflection (`copyAllInstanceFields`), specifically so a
+newly-added field can never be silently missed -- and it worked: presets picked up all four new fields
+(`rainbowCycleSeconds`, `zoneTextScale`, `biomeTextScale`, `coordsTextScale`) for free. But the same
+codebase ALSO has hand-written field-by-field mirrors of that same field set: the full "Reset HUD"
+(`applyDefaults`) and the narrower Reset Compass / Reset Labels handlers. `applyDefaults` is even commented
+as copying every field -- and it silently skipped all four new ones. The narrower resets happened to be
+updated; the big one was not. The reflection path being drift-proof actively HID the rot: it made "presets
+handle the new field" true, which reads as "the new field is wired everywhere," when in fact every
+hand-maintained sibling was a separate liability that had to be checked individually. The reflection
+immunity is local to that one path; it confers nothing on the hand-written lists next to it.
+
+Required future behavior:
+- When you add a persisted/copyable field, grep the whole file (and type) for every copy / reset /
+  sanitize / capture / apply / serialize site -- do NOT stop at the one reflection-based path and assume
+  the rest inherit its safety. A reflection copier and a hand-written copier are independent code; only the
+  former is drift-proof.
+- Treat a comment like "copies every field" on a hand-maintained list as a claim to VERIFY against the
+  current field set, not a guarantee -- that exact comment was on the method that had rotted.
+- This is the L20 theme ("a change isn't done until every durable record that carried the old shape is
+  amended") applied to code mirrors rather than docs: the field set is the shape; every mirror of it is a
+  durable record that must be amended in the same pass.
+
+Evidence:
+- Pivot `docs/binder/ui-pass-round9-sanity-sweep-20260709.md` (fix 1), registry row
+  `20260709-ui-pass-round9-sanity-sweep`.
+
+## L28 - When Applying Untrusted/External Input, Sanitize The LIVE State, Not Just The Copy You Persist; A Save-Path Clamp Protects The Disk But Leaves The Screen Broken Until Reload
+
+Trigger: accepting externally-sourced or hand-editable data (an imported preset, a pasted config blob, a
+loaded save file) and pushing it into the running application's live state, where the only clamp/validate
+step you have runs on the SAVE path.
+
+Lesson: importing a HUD preset clamped the compass half of the config, but wrote the title's numeric fields
+straight into the LIVE config with no clamp. The only sanitize for those fields lived in `saveCurrent()`,
+which sanitizes the ON-DISK copy -- so an imported preset with `title.scale = 50` (a hand-edited or
+maliciously-shared blob) rendered a broken title live for the whole session and only self-corrected after a
+restart re-loaded the (by-then-sanitized) file. The mental slip is treating "sanitize on save" as "the
+data is now safe," when save-time sanitize protects the NEXT launch, not the current screen. Untrusted
+input reaches the user's eyes through the live state, which was never clamped. Fix: a dedicated
+`sanitizeLive()` (implemented as `applyFrom(captureTo())` so it reuses the one existing sanitize routine as
+the single source of truth -- no second clamp list to drift), called on the live state right after applying
+external input and before persisting.
+
+Required future behavior:
+- Clamp/validate untrusted input on the LIVE state at the moment you apply it, not only on the path that
+  writes it to disk. "It'll be sanitized when saved" does not protect the current session.
+- Implement the live-sanitize by reusing the existing persisted-sanitize routine (round-trip through your
+  capture/apply pair), not by writing a second clamp list -- two clamp lists is the same drift hazard as
+  L27.
+
+Evidence:
+- Pivot `docs/binder/ui-pass-round9-sanity-sweep-20260709.md` (fix 2), registry row
+  `20260709-ui-pass-round9-sanity-sweep`.
+
+## L29 - A Flat Multiplier Across A Family Of Sizes Shrinks The GAP Between Them Along With The Overall Size; When Tuning "Make It Smaller," Watch Relative Distinctness, Not Just Absolute Size
+
+Trigger: tuning a single scalar (a scale multiplier, zoom, spacing factor) that is applied UNIFORMLY across
+a graded set of values whose whole point is to look different from each other -- world-size previews, tier
+sizes, a range of weights/gaps.
+
+Lesson: the Classic atlas preview was oversized, so it got a flat `CLASSIC_ATLAS_SCALE` multiplier applied
+to every world size. The first value (0.62) fixed the "too big" complaint but produced a NEW one:
+Ginormous now read about like Small/Regular, and Itty Bitty wasn't much smaller either. Cause: a uniform
+multiplier scales the ABSOLUTE pixel gap between sizes by the same fraction it scales the sizes -- shrink
+everything to 62% and the visible spread between smallest and largest also collapses to 62%, so a
+size-grading that was meant to communicate "bigger world = bigger disc" reads as one bunched blob. The
+"make it smaller" instinct optimizes the wrong axis: absolute size was the complaint, but relative
+distinctness was the casualty. Landed at 0.82 as the happy medium (small enough to stop clipping, large
+enough to keep the sizes visibly distinct).
+
+Required future behavior:
+- When a single uniform factor governs a family of intentionally-distinct values, evaluate the change on
+  the SPREAD between them (are the extremes still clearly different?), not only on the absolute magnitude
+  you were asked to change. A fix that satisfies "smaller" can silently destroy "distinguishable."
+- If both absolute size and relative distinctness matter and a single flat multiplier can't serve both,
+  that's the signal to reach for a non-uniform mapping (e.g. compress the top, preserve the bottom) rather
+  than hunting for one scalar that does neither well.
+
+Evidence:
+- Pivot `docs/binder/ui-pass-round8-fixes-20260708.md` (finding 2) and
+  `docs/binder/ui-pass-round9-sanity-sweep-20260709.md`, registry rows `20260708-ui-pass-round8-fixes` and
+  `20260709-ui-pass-round9-sanity-sweep`.
