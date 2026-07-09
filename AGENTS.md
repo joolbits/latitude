@@ -32,6 +32,32 @@ subjective/visual judgment, or terrain that didn't generate near the sampled spa
 in-game" list at the end of a report. Do not claim something is "verified" when only the logic that would
 produce verification was proven, not its real-world precondition.
 
+## Tiered multi-agent workflow (Peetsa's preferred delegation shape, 2026-07-09)
+
+For any substantive multi-pass slice (worldgen fixes, feature batches, audits), run this crew shape —
+pick model strength per role, don't run everything on one tier:
+
+- **Architect / director** (strongest available reasoning model, the MAIN loop): plans, decomposes,
+  writes the handoff packages, does the final eval per pass. **Never writes code** — keeps its context
+  clean for judgment. Also personally runs anything long-running or lock-contended (headless atlas /
+  world-gen runs: sequenced, never delegated to subagents, never concurrent — see CLAUDE.md).
+- **Developer** (Opus-tier): the heavy lifting — real implementation plus the build/fix/retry loop.
+  One bounded pass per handoff package.
+- **Test-writer** (Sonnet-tier): boilerplate tests, mocks, fixtures, smoke checks, matching the
+  project's existing pure-JVM test idioms.
+- **Sweeper** (Opus-tier, adversarial): checks EACH pass for bugs and compliance (law/flag-gating/
+  byte-identity) before it's accepted — prompted to refute, not confirm.
+- **Reviewer** (strongest-tier, read-only): reads the diff + worker reports and checks the
+  DOCUMENTATION against what the pass actually did; returns a structured verdict. Catches doc drift
+  the same pass it happens (indexing discipline is absolute law).
+- **Codex CLI** (optional second-opinion reviewer from a different model family): use if installed;
+  as of 2026-07-09 it is NOT installed on this machine — the sweeper/reviewer split substitutes.
+
+Cadence: document as you go; **commit each successful pass locally; push only after the slice-level
+map/headless proof gate is green** (map-based proof is project law). Every delegated prompt must carry
+the CLAUDE.md riders: do not spawn subagents; run long commands in the foreground with a generous
+timeout; never start headless world-gen from a subagent.
+
 ## Scope guardrail
 
 - Update only this file for Codex-instruction behavior unless the user explicitly requests broader doc changes.
