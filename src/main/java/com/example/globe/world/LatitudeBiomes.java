@@ -10012,6 +10012,29 @@ public final class LatitudeBiomes {
         return Math.max(0, Math.min(size - 1, idx));
     }
 
+    /**
+     * P1-A veto (audit doc fable5-biome-geography-audit-20260707.md). The climate-compat reroll runs
+     * LAST -- after {@link #applyFinalSavannaClimateClamp}'s tropical-dry laws
+     * ({@link #demoteEquatorialBadlands}/{@link #demoteEquatorialDesert}) have already scrubbed arid
+     * biomes from the wet tropics (below the 23.5deg ramp). Its runs-last position is itself a prior
+     * audit fix (sweeper 2026-07-05 #16) and must NOT move. But a HOT_DESERT/COOL_DESERT-classified
+     * column reaching this reroll would otherwise repaint an already-lawful jungle pick to
+     * desert/badlands at ANY latitude -- including the 10-20deg tropics the law just scrubbed --
+     * silently undoing the law. So before ACCEPTING a desert/badlands repaint candidate, consult the
+     * SAME predicates the base path uses; if either would demote this biome at this column, the reroll
+     * skips the repaint (the caller keeps the existing lawful pick -- keep-the-pick, never
+     * repaint-then-demote to a third biome). Reusing the predicates (rather than re-deriving the 23.5deg
+     * ramp + keep-noise) guarantees the reroll's veto and the base law can never drift apart, and
+     * preserves the correct arid the ramp still allows at >=25.5deg.
+     */
+    private static boolean rerollCandidateViolatesEquatorialAridLaw(Holder<Biome> candidate, int blockX, int blockZ) {
+        if (candidate == null || !(isDesertFamily(candidate) || isBadlandsFamily(candidate))) {
+            return false;
+        }
+        return shouldDemoteEquatorialBadlands(candidate, blockX, blockZ)
+                || shouldDemoteEquatorialDesert(candidate, blockX, blockZ);
+    }
+
     private static Holder<Biome> applyClimateCompatReroll(Registry<Biome> biomes, Holder<Biome> pick,
                                                             ClimateSummary climate, int blockX, int blockZ) {
         ClimateClass climateClass;
@@ -10028,7 +10051,13 @@ public final class LatitudeBiomes {
         for (int i = 0; i < family.size(); i++) {
             String candidateId = "minecraft:" + family.get((idx + i) % family.size());
             try {
-                return biome(biomes, candidateId);
+                Holder<Biome> candidate = biome(biomes, candidateId);
+                // P1-A: don't let the reroll repaint into an arid biome the equatorial dry LAW forbids
+                // at this column (fable5-biome-geography-audit-20260707.md). Keep the lawful pick.
+                if (rerollCandidateViolatesEquatorialAridLaw(candidate, blockX, blockZ)) {
+                    return pick;
+                }
+                return candidate;
             } catch (Throwable ignored) {
                 // try the next family member
             }
@@ -10052,6 +10081,11 @@ public final class LatitudeBiomes {
         for (int i = 0; i < family.size(); i++) {
             Holder<Biome> candidate = entryById(biomes, "minecraft:" + family.get((idx + i) % family.size()));
             if (candidate != null) {
+                // P1-A: don't let the reroll repaint into an arid biome the equatorial dry LAW forbids
+                // at this column (fable5-biome-geography-audit-20260707.md). Keep the lawful pick.
+                if (rerollCandidateViolatesEquatorialAridLaw(candidate, blockX, blockZ)) {
+                    return pick;
+                }
                 return candidate;
             }
         }
