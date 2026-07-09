@@ -726,3 +726,41 @@ Required future behavior:
 
 Evidence:
 - Pivot `docs/binder/ui-pass-round3-fixes-20260708.md` (finding 3), registry row `20260708-ui-pass-round3-fixes`.
+
+## L26 - A Framework Widget Can Have Its Own Internal Auto-Refresh Hook That Silently Overwrites State You Set Externally; Verify There's No Competing Mechanism Before Bolting On Cross-Cutting Behavior
+
+Trigger: attaching cross-cutting UI behavior (tooltips, styling, state) to a framework widget via a
+generic base-class API (`AbstractWidget.setTooltip(...)`) instead of that widget SUBCLASS's own
+dedicated mechanism for the same thing, especially when the subclass reacts to user interaction
+(clicks, drags, value changes).
+
+Lesson: every dropdown-style control in the HUD Studio (~30 instances) is a vanilla `CycleButton`,
+and every one of them had its tooltip attached via a shared external helper calling the generic
+`AbstractWidget.setTooltip(...)`. `CycleButton` turned out to have its OWN private `tooltipSupplier`
+field and a private `updateTooltip()` method that vanilla calls AUTOMATICALLY on every value change
+(every click) -- with no null-check, unconditionally overwriting whatever tooltip was set. Since this
+codebase never populated that field (the builder's own `.withTooltip(...)` was never called), the
+field held a no-op default (returns null), so the FIRST click on any of these ~30 controls silently
+wiped its tooltip to null, permanently, for the widget instance's lifetime -- "click a button, hover
+over it later, tooltip never comes back." The bug was invisible in the constructor/attachment code
+(which looked completely correct) and only surfaced on the SECOND interaction (hover, after a click),
+which is exactly the kind of gap a mechanical proof or a first-hover check would never catch --
+confirmed root cause only by decompiling the actual widget class's bytecode, not by reading this
+codebase's own source.
+
+Required future behavior:
+- Before attaching cross-cutting state to a widget via a generic base-class setter, check whether the
+  CONCRETE widget class has its own dedicated mechanism for that same concern, and whether that
+  mechanism fires automatically on interaction. If it does, use IT (the framework's intended path),
+  not the generic setter -- or explicitly patch/neutralize the competing mechanism, as done here.
+  Assuming "the constructor set it, so it's set" is not enough when the widget can independently
+  refresh that same piece of state later.
+- When a symptom only appears after a SECOND interaction with the same widget (not the first), suspect
+  an internal auto-refresh/reset hook overwriting state your own code set once at construction --
+  greenfield state is rarely the point of failure; the change-in-response-to-interaction path is.
+- Decompiling the actual framework class (not guessing from behavior or reading only this project's
+  code) settled this in minutes once tried; prefer it early over prolonged behavioral speculation when
+  a vendored/vanilla class's exact internals are in question and available to inspect.
+
+Evidence:
+- Pivot `docs/binder/ui-pass-round6-fixes-20260708.md`, registry row `20260708-ui-pass-round6-fixes`.
