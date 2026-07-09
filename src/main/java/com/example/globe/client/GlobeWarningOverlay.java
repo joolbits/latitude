@@ -16,14 +16,18 @@ public final class GlobeWarningOverlay {
     private static long debugStartWorldTime = -1L;
     private static String lastZoneKey;
 
+    // Polar warning ladder (B-3-P3), anchored to LatitudeMath.POLAR_STAGE_*_PROGRESS:
+    // WARN_1 @85 deg (snow onset), WARN_2 @87 deg (slowness onset), DANGER @89 deg (leads freeze death
+    // at 90), LETHAL @89.7 deg (freeze near-max). Each line fires at or just before the mechanic it warns
+    // about; LETHAL is present-continuous/honest -- death is at 90, so the cold is "freezing you", not final.
     private static final String POLE_WARN_1_TEXT =
-            "The air is turning bitterly cold. Consider turning back.";
+            "Snow begins to fall. The cold is setting in -- consider turning back.";
     private static final String POLE_WARN_2_TEXT =
-            "The cold seeps into your body. Movement is becoming difficult.";
+            "The cold seeps in. Your movements are slowing.";
     private static final String POLE_DANGER_TEXT =
-            "DANGER! You are entering a lethal cold zone. Turn back immediately.";
+            "DANGER! Lethal cold ahead. Turn back now.";
     private static final String POLE_LETHAL_TEXT =
-            "The cold overwhelms you.";
+            "The cold is freezing you.";
 
     // Approach tier (LEVEL_1) — generic, mentions both storm + reduced visibility. Escalates to a
     // climate-specific tier-2 line below. Simplified from "...Head <direction> to turn back/immediately." to a

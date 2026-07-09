@@ -75,7 +75,7 @@ public class GlobeMod implements ModInitializer {
     private static final int EW_WARNING_DISTANCE_BLOCKS = 500;
     private static final int EW_SPAWN_PADDING_BLOCKS = 64;
     // The E/W sandstorm band onset is FRACTIONAL: particles/warning start at progress
-    // POLAR_STAGE_1_PROGRESS (0.94) of the X radius, i.e. within ~6% of the border. A fixed block margin
+    // POLAR_STAGE_1_PROGRESS (0.9444) of the X radius, i.e. within ~5.6% of the border. A fixed block margin
     // (500+64) therefore never clears it — on a Tiny world (xRadius 10000) it left spawn AT the onset, and on
     // a large world it left spawn deep inside the sandstorm. Spawn must land below this fraction of xRadius.
     private static final double EW_SPAWN_SAFE_MARGIN_FRAC = 0.08;
@@ -687,7 +687,7 @@ public class GlobeMod implements ModInitializer {
         }
 
         int absX = Math.abs(spawnPos.getX());
-        // Keep spawn a safe FRACTION inside the sandstorm onset (0.94 of xRadius), not just a fixed block
+        // Keep spawn a safe FRACTION inside the sandstorm onset (0.9444 of xRadius), not just a fixed block
         // margin — the onset scales with world width, so a fixed margin fails on every size. Take the more
         // restrictive of the fractional-safe cap and the legacy fixed cap.
         double safeFrac = Math.max(0.0, com.example.globe.util.LatitudeMath.POLAR_STAGE_1_PROGRESS - EW_SPAWN_SAFE_MARGIN_FRAC);
