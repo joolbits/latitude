@@ -273,7 +273,7 @@ public class LatitudeHudStudioScreen extends Screen {
                 trackSidebarWidget(this.wCompassAnalogSize, y);
                 y += rowH + rowGap;
                 this.wCompassAnalogInnerAlpha = this.addRenderableWidget(new FloatSlider(panelX, y, widgetW, rowH, Component.literal("Inner Transparency"), 0.0f, 1.0f, cfg.analogInnerAlpha, v -> cfg.analogInnerAlpha = v));
-                tooltip(this.wCompassAnalogInnerAlpha, "How see-through the compass's inner face is. Left = more see-through, right = more solid.");
+                tooltip(this.wCompassAnalogInnerAlpha, "The compass's inner face opacity. Left (lower) = more see-through, right (higher) = more solid.");
                 trackSidebarWidget(this.wCompassAnalogInnerAlpha, y);
                 y += rowH + rowGap;
                 this.wCompassAnalogTheme = this.addRenderableWidget(CycleButton.<CompassHudConfig.AnalogCompassTheme>builder(v -> Component.literal(themeLabel(v)), () -> cfg.analogTheme)
@@ -306,7 +306,7 @@ public class LatitudeHudStudioScreen extends Screen {
                 y += rowH + rowGap;
 
                 this.wCompassTransparency = this.addRenderableWidget(new IntSlider(panelX, y, widgetW, rowH, Component.literal("Transparency"), 0, 255, cfg.backgroundAlpha, v -> cfg.backgroundAlpha = v));
-                tooltip(this.wCompassTransparency, "How see-through the digital compass's background bar is.");
+                tooltip(this.wCompassTransparency, "Adjusts the opacity of the digital compass's background bar.");
                 trackSidebarWidget(this.wCompassTransparency, y);
                 y += rowH + rowGap;
 
@@ -336,7 +336,7 @@ public class LatitudeHudStudioScreen extends Screen {
                     v -> cfg.textRgb = v, g -> this.rgbTextColor = g, s -> this.swatchTextColor = s);
 
             this.wCompassTextAlpha = this.addRenderableWidget(new IntSlider(panelX, y, widgetW, rowH, Component.literal("Text Opacity"), 0, 255, cfg.textAlpha, v -> cfg.textAlpha = v));
-            tooltip(this.wCompassTextAlpha, "How see-through the compass, zone, biome, and coordinate text are.");
+            tooltip(this.wCompassTextAlpha, "Adjusts the opacity of the compass, zone, biome, and coordinate text.");
             trackSidebarWidget(this.wCompassTextAlpha, y);
             y += rowH + rowGap;
 
@@ -1562,8 +1562,40 @@ public class LatitudeHudStudioScreen extends Screen {
     }
 
     private static void tooltip(AbstractWidget w, String text) {
-        if (w != null) {
-            w.setTooltip(Tooltip.create(Component.literal(text)));
+        if (w == null) return;
+        Tooltip t = Tooltip.create(Component.literal(text));
+        w.setTooltip(t);
+        if (w instanceof CycleButton<?> cycle) {
+            patchCycleButtonTooltip(cycle, t);
+        }
+    }
+
+    /**
+     * CycleButton has its OWN internal tooltip-refresh hook: a private {@code tooltipSupplier} field,
+     * consulted by a private {@code updateTooltip()} that vanilla calls automatically on every value
+     * change (i.e. every click/cycle) -- unconditionally, no null-check: {@code setTooltip(tooltipSupplier
+     * .apply(value))}. This codebase attaches every tooltip externally via {@link #tooltip} instead of the
+     * builder's {@code withTooltip(...)}, so that field is left at its no-op default (returns null) --
+     * meaning the FIRST click on ANY CycleButton silently overwrites our tooltip with null, permanently
+     * (TEST 34: "after you click on a button and go back and hover over it, the tooltip is gone and will
+     * not come back" -- exactly this, on every dropdown-style control in the Studio, confirmed against the
+     * decompiled 26.2 CycleButton class). Patches the field via reflection (CycleButton exposes no public
+     * setter post-construction; the builder-time {@code withTooltip} would mean touching every one of the
+     * ~30 call sites in this screen instead of this one shared helper) to a constant supplier returning
+     * THIS tooltip, so the button's own auto-refresh re-applies it instead of wiping it. Every tooltip
+     * here is static descriptive text (doesn't vary by the button's current value), so "always return the
+     * same Tooltip" is exactly the desired behavior, not an approximation. Falls back to the (buggy-after-
+     * one-click) external-only behavior if the field is ever renamed/retyped by a future mapping update,
+     * rather than crashing.
+     */
+    private static void patchCycleButtonTooltip(CycleButton<?> cycle, Tooltip t) {
+        try {
+            java.lang.reflect.Field f = CycleButton.class.getDeclaredField("tooltipSupplier");
+            f.setAccessible(true);
+            f.set(cycle, (net.minecraft.client.OptionInstance.TooltipSupplier<Object>) v -> t);
+        } catch (ReflectiveOperationException ignored) {
+            // Field renamed/retyped upstream -- degrade to the pre-existing (still functional on first
+            // hover, just not after a click) behavior rather than throw.
         }
     }
 
