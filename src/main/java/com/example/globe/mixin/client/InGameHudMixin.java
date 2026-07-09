@@ -43,7 +43,11 @@ public class InGameHudMixin {
         GlobeWarningOverlay.render(context, tickCounter);
         CompassHud.render(context, tickCounter);
         if (client != null && client.getWindow() != null) {
-            ZoneEnterTitleOverlay.render(context, client.getWindow().getGuiScaledWidth(), client.getWindow().getGuiScaledHeight());
+            int gw = client.getWindow().getGuiScaledWidth();
+            int gh = client.getWindow().getGuiScaledHeight();
+            ZoneEnterTitleOverlay.render(context, gw, gh);
+            // B-3c: hemisphere titles ride their OWN channel/position (above center), never the zone slot.
+            com.example.globe.client.HemisphereTitleOverlay.render(context, gw, gh);
         }
     }
 }

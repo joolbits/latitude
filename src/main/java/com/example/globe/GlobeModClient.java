@@ -92,6 +92,7 @@ public class GlobeModClient implements ClientModInitializer {
             // presence) and any in-flight zone title must not leak across worlds.
             com.example.globe.client.CompassHud.onWorldSwitch();
             com.example.globe.client.ZoneEnterTitleOverlay.reset();
+            com.example.globe.client.HemisphereTitleOverlay.reset();
         });
 
         ClientPlayNetworking.registerGlobalReceiver(GlobeNet.GlobeStatePayload.ID, (payload, context) -> {
