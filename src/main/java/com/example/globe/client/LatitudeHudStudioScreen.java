@@ -641,7 +641,7 @@ public class LatitudeHudStudioScreen extends Screen {
                         LatitudeConfig.zoneEnterTitleCase = value;
                         LatitudeConfig.saveCurrent();
                     }));
-            tooltip(this.wTitleCase, "Changes how the title's letters are written: UPPERCASE, lowercase, or mOcKiNg.");
+            tooltip(this.wTitleCase, "Changes how the title's letters are written: Normal, UPPERCASE, lowercase, or mOcKiNg.");
             trackSidebarWidget(this.wTitleCase, y);
             y += rowH + rowGap;
 
@@ -1082,7 +1082,7 @@ public class LatitudeHudStudioScreen extends Screen {
         LatitudeConfig.showZoneBaseDegreesOnTitle = true;
         LatitudeConfig.zoneEnterTitleColorPreset = LatitudeConfigData.TitleColorPreset.WHITE;
         LatitudeConfig.zoneEnterTitleRgb = 0xFFFFFF;
-        LatitudeConfig.zoneEnterTitleCase = LatitudeConfigData.TitleCaseMode.UPPERCASE;
+        LatitudeConfig.zoneEnterTitleCase = LatitudeConfigData.TitleCaseMode.NORMAL;
         LatitudeConfig.zoneEnterTitleLetterSpacing = 0;
         LatitudeConfig.zoneEnterTitleDraggable = true;
         // Matches LatitudeConfig's own field-initializer defaults (hudSnapEnabled=true, hudSnapPixels=8) --
@@ -1466,7 +1466,12 @@ public class LatitudeHudStudioScreen extends Screen {
 
     /** The exact string the title preview renders (shared by the render path and the drag hit-test) --
      *  the single place "Show Degrees" is honored (TEST 32: previously duplicated inline at the render
-     *  call site, which never checked the flag, so toggling it visibly did nothing in the Studio). */
+     *  call site, which never checked the flag, so toggling it visibly did nothing in the Studio).
+     *  Natural case ("Tropics", not "TROPICS") in BOTH branches, including the no-world fallback -- an
+     *  ALL-CAPS fallback made "Normal" indistinguishable from "UPPERCASE" in exactly the no-world Studio
+     *  preview Peetsa opens from the create-world screen (TEST 33: reported as "remove Normal, it's a
+     *  duplicate of Uppercase" before he clarified he wants Normal/"Tropical" kept -- the real bug was
+     *  this fallback's casing, not the option itself). */
     private static String studioPreviewTitle(Minecraft mc) {
         var level = mc.level;
         var player = mc.player;
@@ -1480,7 +1485,7 @@ public class LatitudeHudStudioScreen extends Screen {
             String degText = com.example.globe.util.LatitudeMath.formatLatitudeDeg(border, player.getZ());
             return zoneWord + " " + degText;
         }
-        return showDegrees ? "TROPICS 12\u00b0S" : "TROPICS";
+        return showDegrees ? "Tropics 12\u00b0S" : "Tropics";
     }
 
     /** Natural-case zone title word, matching GlobeWarningOverlay's real title text (so the preview reads like
@@ -1549,6 +1554,7 @@ public class LatitudeHudStudioScreen extends Screen {
     // Each label is styled in its own case, so the button doubles as a live preview of the effect.
     private static String titleCaseLabel(LatitudeConfigData.TitleCaseMode mode) {
         return switch (mode) {
+            case NORMAL -> "Normal";
             case UPPERCASE -> "UPPERCASE";
             case LOWERCASE -> "lowercase";
             case MOCKING -> "mOcKiNg";
