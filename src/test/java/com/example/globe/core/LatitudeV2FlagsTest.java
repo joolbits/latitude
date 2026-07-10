@@ -30,4 +30,11 @@ class LatitudeV2FlagsTest {
                 "The known-land-fraction-collapse ocean-authority swap must stay off by default, "
                         + "independent of the consumer flag, until Phase 4 or a redesign fixes it");
     }
+
+    @Test
+    void carveAwareLabelsDefaultsToDisabled() {
+        assertFalse(LatitudeV2Flags.TERRAIN_V2_CARVE_AWARE_LABELS,
+                "Phase 5 carve-aware ocean labels must ship default-off (byte-identical flag-off) "
+                        + "until the atlas proof gate passes");
+    }
 }

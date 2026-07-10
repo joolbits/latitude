@@ -215,6 +215,29 @@ public final class GeoTerrainBiasFunction implements DensityFunction.SimpleFunct
         return CEIL_ONSET_Y + grip * (target - CEIL_ONSET_Y);
     }
 
+    /**
+     * Phase 5 carve-aware ocean labels: PUBLIC pure accessor for the carve target of a column.
+     * Returns {@link #carveCeilYOrInfinity}'s value — the carve's own analytic bathymetry target Y
+     * (already grip-graded per Slice C-3) — or {@code +Infinity} whenever no carve applies to the
+     * column: S==0 or r==0, provider still the NoOp placeholder (no active bias, mirroring
+     * {@code LatitudeBiomes.terrainBiasActivelyBiasing()}'s realness check), null summary, or
+     * land-intent (d >= 0). Because +Infinity is never {@code < seaLevel - 2}, every consumer of the
+     * {@code latitude.terrainV2.carveAwareLabels} flag is structurally inert whenever terrain biasing
+     * isn't actually carving. Static (no wrapper instance needed — the underlying helper reads flags
+     * and the provider registry directly), needs NO generator/noiseConfig/heightmap, so it is usable
+     * from the input-less "SOURCE" pick() path that vanilla structure eligibility reads. The defensive
+     * catch mirrors compute()'s discipline: a bias-math failure degrades to "no carve" rather than
+     * taking down biome selection.
+     */
+    public static double carveTargetYOrMax(int blockX, int blockZ) {
+        try {
+            return carveCeilYOrInfinity(blockX, blockZ);
+        } catch (Throwable t) {
+            logBiasFailureOnce(t);
+            return Double.POSITIVE_INFINITY;
+        }
+    }
+
     /** Package hook so the prelim companion wrapper shares this class's one-shot failure log. */
     static void logBiasFailureOnce(Throwable t) {
         if (!BIAS_FAILURE_LOGGED.get() && BIAS_FAILURE_LOGGED.compareAndSet(false, true)) {

@@ -106,6 +106,8 @@ loom {
             // Phase 5 Slice B-2: Fix 2 floor-sighted live veto sub-flag + Fix 1 edge-ocean gate. Both
             // default false (byte-identical flag-off); forwarded so a headless flag-on atlas is honest.
             vmArg "-Dlatitude.terrainV2.floorSightedVeto=${System.getProperty('latitude.terrainV2.floorSightedVeto', 'false')}"
+            // Phase 5 carve-aware ocean labels (default false, byte-identical off).
+            vmArg "-Dlatitude.terrainV2.carveAwareLabels=${System.getProperty('latitude.terrainV2.carveAwareLabels', 'false')}"
             vmArg "-Dlatitude.boundaryV2.enabled=${System.getProperty('latitude.boundaryV2.enabled', 'false')}"
             vmArg "-Dlatitude.geoV2.enabled=${System.getProperty('latitude.geoV2.enabled', 'false')}"
             // Slice C follow-up (the L17 forwarding class, caught a SECOND time 2026-07-07): climateV2 and

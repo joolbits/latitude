@@ -42,9 +42,11 @@ import com.example.globe.core.climate.ClimateAuthority;
 import com.example.globe.core.climate.ClimateAuthorityParams;
 import com.example.globe.core.climate.ClimateClass;
 import com.example.globe.core.climate.ClimateSummary;
+import com.example.globe.core.geo.CarveAwareLabels;
 import com.example.globe.core.geo.EdgeOceanRamp;
 import com.example.globe.core.geo.GeoAuthority;
 import com.example.globe.core.geo.GeoSummary;
+import com.example.globe.terrain.GeoTerrainBiasFunction;
 import com.example.globe.util.LatitudeBands;
 import com.example.globe.util.LatitudeMath;
 import com.example.globe.util.ValueNoise2D;
@@ -3172,8 +3174,31 @@ public final class LatitudeBiomes {
                 oceanAuthority = true;
             }
         }
+        // Phase 5 carve-aware ocean labels (ocean-label investigation 2026-07-09): relabel from the
+        // carve's OWN pure analytic target instead of a terrain estimator. carveTargetYOrMax needs no
+        // generator/noiseConfig/heightView, so unlike BOTH vetoes above (and floorSightedVeto) this
+        // runs in EVERY pick() context INCLUDING the input-less "SOURCE" path that vanilla structure
+        // eligibility reads -- flooded columns lose their savanna/plains label there, so villages stop
+        // being eligible over carved sea. Gates: the flag + terrainBiasActivelyBiasing() (flag-off and
+        // armed-S=0 byte-identical); the oracle itself returns +Infinity on land-intent / r==0 / NoOp
+        // provider / any failure, so no further guards are needed (Art VI: carveTarget derives from
+        // GeoAuthority's coherent land01 field -- no new grids or hashes). carveAwareOcean deliberately
+        // IGNORES the !IS_RIVER exclusion the mirror veto keeps: a river column fully sunk below the
+        // carve target IS open ocean (the investigation measured 67% of river cells fully surrounded by
+        // ocean, byte-identically never relabeled), so the river branch below is bypassed for it and the
+        // latitude-correct ocean family takes over. Sits AFTER both estimator vetoes on purpose: the
+        // raised-land veto's demotion cannot clobber a carve-target relabel, and the (independent,
+        // untouched) floorSightedVeto branch keeps its own flag and behavior.
+        boolean carveAwareOcean = false;
+        if (LatitudeV2Flags.TERRAIN_V2_CARVE_AWARE_LABELS && terrainBiasActivelyBiasing()) {
+            carveAwareOcean = CarveAwareLabels.carvedToOcean(
+                    GeoTerrainBiasFunction.carveTargetYOrMax(blockX, blockZ), seaLevel);
+            if (carveAwareOcean) {
+                oceanAuthority = true;
+            }
+        }
 
-        if (base.is(BiomeTags.IS_RIVER)) {
+        if (base.is(BiomeTags.IS_RIVER) && !carveAwareOcean) {
             if (shouldFreezeRiver(blockX, blockZ)) {
                 try {
                     Holder<Biome> out = biome(biomeRegistry, "minecraft:frozen_river");
@@ -3929,8 +3954,31 @@ public final class LatitudeBiomes {
                 oceanAuthority = true;
             }
         }
+        // Phase 5 carve-aware ocean labels (ocean-label investigation 2026-07-09): relabel from the
+        // carve's OWN pure analytic target instead of a terrain estimator. carveTargetYOrMax needs no
+        // generator/noiseConfig/heightView, so unlike BOTH vetoes above (and floorSightedVeto) this
+        // runs in EVERY pick() context INCLUDING the input-less "SOURCE" path that vanilla structure
+        // eligibility reads -- flooded columns lose their savanna/plains label there, so villages stop
+        // being eligible over carved sea. Gates: the flag + terrainBiasActivelyBiasing() (flag-off and
+        // armed-S=0 byte-identical); the oracle itself returns +Infinity on land-intent / r==0 / NoOp
+        // provider / any failure, so no further guards are needed (Art VI: carveTarget derives from
+        // GeoAuthority's coherent land01 field -- no new grids or hashes). carveAwareOcean deliberately
+        // IGNORES the !IS_RIVER exclusion the mirror veto keeps: a river column fully sunk below the
+        // carve target IS open ocean (the investigation measured 67% of river cells fully surrounded by
+        // ocean, byte-identically never relabeled), so the river branch below is bypassed for it and the
+        // latitude-correct ocean family takes over. Sits AFTER both estimator vetoes on purpose: the
+        // raised-land veto's demotion cannot clobber a carve-target relabel, and the (independent,
+        // untouched) floorSightedVeto branch keeps its own flag and behavior.
+        boolean carveAwareOcean = false;
+        if (LatitudeV2Flags.TERRAIN_V2_CARVE_AWARE_LABELS && terrainBiasActivelyBiasing()) {
+            carveAwareOcean = CarveAwareLabels.carvedToOcean(
+                    GeoTerrainBiasFunction.carveTargetYOrMax(blockX, blockZ), seaLevel);
+            if (carveAwareOcean) {
+                oceanAuthority = true;
+            }
+        }
 
-        if (base.is(BiomeTags.IS_RIVER)) {
+        if (base.is(BiomeTags.IS_RIVER) && !carveAwareOcean) {
             if (shouldFreezeRiver(blockX, blockZ)) {
                 Holder<Biome> frozen = entryById(biomePool, "minecraft:frozen_river");
                 Holder<Biome> out = frozen != null ? frozen : base;
