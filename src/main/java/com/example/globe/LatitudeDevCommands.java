@@ -84,6 +84,19 @@ public final class LatitudeDevCommands {
                                 .executes(ctx -> tpEdge(ctx, 0.99))
                                 .then(Commands.argument("frac", com.mojang.brigadier.arguments.DoubleArgumentType.doubleArg(0.0, 1.0))
                                         .executes(ctx -> tpEdge(ctx, com.mojang.brigadier.arguments.DoubleArgumentType.getDouble(ctx, "frac"))))))
+                .then(Commands.literal("tphemi")
+                        .then(Commands.argument("mode", StringArgumentType.word())
+                                .suggests((c, b) -> SharedSuggestionProvider.suggest(java.util.List.of("ns", "ew", "zero"), b))
+                                .executes(ctx -> tpHemi(ctx, null))
+                                .then(Commands.argument("side", StringArgumentType.word())
+                                        .suggests((c, b) -> SharedSuggestionProvider.suggest(java.util.List.of("n", "s", "e", "w"), b))
+                                        .executes(ctx -> tpHemi(ctx, StringArgumentType.getString(ctx, "side"))))))
+                .then(Commands.literal("tppole")
+                        .then(Commands.argument("hemi", StringArgumentType.word())
+                                .suggests((c, b) -> SharedSuggestionProvider.suggest(java.util.List.of("n", "s"), b))
+                                .executes(ctx -> tpPole(ctx, 84.0))
+                                .then(Commands.argument("deg", com.mojang.brigadier.arguments.DoubleArgumentType.doubleArg(0.0, 90.0))
+                                        .executes(ctx -> tpPole(ctx, com.mojang.brigadier.arguments.DoubleArgumentType.getDouble(ctx, "deg"))))))
                 .then(Commands.literal("probe").executes(LatitudeDevCommands::probe)));
     }
 
@@ -98,7 +111,8 @@ public final class LatitudeDevCommands {
 
     private static int help(CommandContext<CommandSourceStack> ctx) {
         ctx.getSource().sendSuccess(() -> Component.literal(
-                "[latdev] here | probe | tpband <band> [center|low|high] | tpedge <west|east> [frac]"), false);
+                "[latdev] here | probe | tpband <band> [center|low|high] | tpedge <west|east> [frac]"
+                        + " | tphemi <ns|ew|zero> [n|s|e|w] | tppole <n|s> [deg]"), false);
         return 1;
     }
 
@@ -188,6 +202,102 @@ public final class LatitudeDevCommands {
             return 1;
         } catch (Exception e) {
             src.sendFailure(Component.literal("[latdev] tpedge failed: " + e.getMessage()));
+            return 0;
+        }
+    }
+
+    /** Teleports to the equator (ns), the prime meridian (ew), or exactly (0,0) (zero), so a tester can walk
+     * across the line and trigger the hemisphere title. {@code side} lands ~40 blocks on one side of the line
+     * instead of exactly on it (default: south of the equator / west of the meridian) so walking the other way
+     * crosses it; {@code zero} ignores {@code side} and lands on the exact corner. */
+    private static int tpHemi(CommandContext<CommandSourceStack> ctx, String side) {
+        CommandSourceStack src = ctx.getSource();
+        try {
+            ServerPlayer player = src.getPlayerOrException();
+            ServerLevel world = src.getLevel();
+            String mode = StringArgumentType.getString(ctx, "mode").toLowerCase(Locale.ROOT);
+            String s = side == null ? "" : side.toLowerCase(Locale.ROOT);
+            final int offset = 40;
+            int targetX;
+            int targetZ;
+            switch (mode) {
+                case "ns" -> {
+                    targetX = Mth.floor(player.getX());
+                    targetZ = s.startsWith("n") ? -offset : offset; // default: south of z=0
+                }
+                case "ew" -> {
+                    targetZ = Mth.floor(player.getZ());
+                    targetX = s.startsWith("e") ? offset : -offset; // default: west of x=0
+                }
+                case "zero" -> {
+                    targetX = 0;
+                    targetZ = 0;
+                }
+                default -> {
+                    src.sendFailure(Component.literal("[latdev] tphemi mode must be one of: ns|ew|zero"));
+                    return 0;
+                }
+            }
+
+            world.getChunkSource().getChunk(Math.floorDiv(targetX, 16), Math.floorDiv(targetZ, 16), ChunkStatus.FULL, true);
+            int topY = world.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, targetX, targetZ);
+            int targetY = Mth.clamp(topY + 1, world.getMinY() + 1, world.getMinY() + world.getHeight() - 1);
+            player.teleportTo(world, targetX + 0.5, targetY, targetZ + 0.5,
+                    EnumSet.noneOf(Relative.class), player.getYRot(), player.getXRot(), true);
+
+            int zRadius = latitudeRadius(world);
+            int xr0 = LatitudeBiomes.getActiveXRadiusBlocks();
+            int xRadius = xr0 > 0 ? xr0 : zRadius;
+            double lonDeg = xRadius > 0 ? Mth.clamp((double) targetX / xRadius * 180.0, -180.0, 180.0) : 0.0;
+            double latDeg = zRadius > 0 ? Mth.clamp((double) targetZ / zRadius * 90.0, -90.0, 90.0) : 0.0;
+            String biome = biomeId(world, new BlockPos(targetX, targetY, targetZ));
+            String modeF = mode;
+            src.sendSuccess(() -> Component.literal(String.format(Locale.ROOT,
+                    "[latdev] -> hemi %s  lat=%.1f° lon=%.1f°  x=%d y=%d z=%d  biome=%s",
+                    modeF, latDeg, lonDeg, targetX, targetY, targetZ, biome)), true);
+            return 1;
+        } catch (Exception e) {
+            src.sendFailure(Component.literal("[latdev] tphemi failed: " + e.getMessage()));
+            return 0;
+        }
+    }
+
+    /** Teleports toward a pole at the given latitude (default 84°, just before the 85° snow onset) so a tester
+     * can walk poleward into the 85->90° polar hazard/whiteout ramp; keeps the player's current X. */
+    private static int tpPole(CommandContext<CommandSourceStack> ctx, double deg) {
+        CommandSourceStack src = ctx.getSource();
+        try {
+            ServerPlayer player = src.getPlayerOrException();
+            ServerLevel world = src.getLevel();
+            String hemi = StringArgumentType.getString(ctx, "hemi").toLowerCase(Locale.ROOT);
+            int sign;
+            if (hemi.startsWith("n")) {
+                sign = -1; // North = -Z
+            } else if (hemi.startsWith("s")) {
+                sign = 1;
+            } else {
+                src.sendFailure(Component.literal("[latdev] tppole hemi must be one of: n|s"));
+                return 0;
+            }
+            double clampedDeg = Mth.clamp(deg, 0.0, 90.0);
+            int zRadius = latitudeRadius(world);
+            int targetZ = sign * (int) Math.round(clampedDeg / 90.0 * zRadius);
+            int targetX = Mth.floor(player.getX());
+
+            world.getChunkSource().getChunk(Math.floorDiv(targetX, 16), Math.floorDiv(targetZ, 16), ChunkStatus.FULL, true);
+            int topY = world.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, targetX, targetZ);
+            int targetY = Mth.clamp(topY + 1, world.getMinY() + 1, world.getMinY() + world.getHeight() - 1);
+            player.teleportTo(world, targetX + 0.5, targetY, targetZ + 0.5,
+                    EnumSet.noneOf(Relative.class), player.getYRot(), player.getXRot(), true);
+
+            String biome = biomeId(world, new BlockPos(targetX, targetY, targetZ));
+            String hemiLabel = sign < 0 ? "N" : "S";
+            src.sendSuccess(() -> Component.literal(String.format(Locale.ROOT,
+                    "[latdev] -> %.1f°%s pole  x=%d y=%d z=%d  biome=%s  (walk poleward into the 85->90° ramp)",
+                    clampedDeg, hemiLabel, targetX, targetY, targetZ, biome)), true);
+            return 1;
+        } catch (Exception e) {
+            src.sendFailure(Component.literal("[latdev] tppole failed: " + e.getMessage()));
             return 0;
         }
     }
