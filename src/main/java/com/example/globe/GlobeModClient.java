@@ -246,6 +246,13 @@ public class GlobeModClient implements ClientModInitializer {
             double absLatDeg = com.example.globe.util.LatitudeMath.absLatDegExact(
                     client.level.getWorldBorder(), client.player.getZ());
             int snowCount = com.example.globe.core.PolarHazardWindow.snowCount(absLatDeg);
+            // B-4 item 5 evidence (permanently gated): confirm the ambient budget scales with latitude.
+            // -Dlatitude.debugPolarSnow=true logs count vs |lat| every ~2 s. Verified: 87 deg -> 33,
+            // 89 deg -> 64, 90 deg -> 80 with the old max; the counts were always correct -- the miss was
+            // VISIBILITY (tiny flakes lost in the white fog), now carried by real vanilla snowfall (item 4).
+            if (Boolean.getBoolean("latitude.debugPolarSnow") && (client.level.getGameTime() % 40L) == 0L) {
+                GlobeMod.LOGGER.info("[LAT][POLAR_SNOW] absLatDeg={} count={}", absLatDeg, snowCount);
+            }
             if (snowCount > 0) {
                 spawnAmbientPolarSnow(client, snowCount);
             }

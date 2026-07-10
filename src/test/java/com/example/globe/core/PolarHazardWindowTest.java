@@ -126,7 +126,9 @@ class PolarHazardWindowTest {
     void snowCountAtLethalDegEqualsSnowMaxCount() {
         assertEquals(PolarHazardWindow.SNOW_MAX_COUNT,
                 PolarHazardWindow.snowCount(PolarHazardWindow.AMBIENT_FULL_DEG));
-        assertEquals(80, PolarHazardWindow.SNOW_MAX_COUNT); // B-4 raised 30->80 so the storm-snow ramp reads
+        // B-4 round 2 returned 80->30: real vanilla snowfall (ClientLevelStormSkyMixin) now carries the
+        // pole's storm density, so this ambient particle layer is back to subtle near-field texture.
+        assertEquals(30, PolarHazardWindow.SNOW_MAX_COUNT);
     }
 
     @Test

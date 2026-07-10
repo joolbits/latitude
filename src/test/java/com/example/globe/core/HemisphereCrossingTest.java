@@ -305,57 +305,96 @@ class HemisphereCrossingTest {
         assertEquals(thirdZ.newStableSide(), thirdX.newStableSide());
     }
 
-    // ---- (9) B-4 banded anti-spam: FULL once, SMALL on re-cross within band, FULL re-arms on leave ---
+    // ---- (9) B-4 round-2 PER-HEMISPHERE FULL titles: each side gets FULL once per visit-episode ---------
 
     private static final double BAND = 1_000.0; // >> the +/-100 crossing coords, so re-crosses stay "within band"
 
     @Test
-    void evaluateBandedFiresFullOnceOnTheFirstArmedCrossing() {
-        // WHY: Peetsa's design -- the big title fires ONCE per approach. An armed axis (fullArmed=true)
-        // crossing the line for the first time must return FULL and CONSUME the arm (nextFullArmed=false)
-        // so the very next re-crossing can't repeat the big title.
+    void evaluateBandedFiresFullOnTheFirstCrossingIntoAnUnannouncedSide() {
+        // WHY: crossing into a side that has not yet been FULL-announced this episode returns FULL and marks
+        // ONLY that side announced. Here we cross to the POSITIVE side (S/E) with both sides un-announced.
         HemisphereCrossing.BandedResult r = HemisphereCrossing.evaluateBanded(
-                /* coord */ 100.0, CENTER, /* lastObserved */ -100.0, /* lastStableSide */ -1,
-                /* fullArmed */ true, /* nowMs */ 1_000L, /* lastFireMs */ Long.MIN_VALUE,
-                DEAD_ZONE, BAND, MAX_STEP, COOLDOWN);
+                /* coord */ 100.0, CENTER, /* lastObserved */ -100.0, /* lastRawObserved */ -100.0,
+                /* lastStableSide */ -1, /* negAnnounced */ false, /* posAnnounced */ false,
+                /* nowMs */ 1_000L, /* lastFireMs */ Long.MIN_VALUE, DEAD_ZONE, BAND, MAX_STEP, COOLDOWN);
 
         assertEquals(HemisphereCrossing.Fire.FULL, r.fire());
         assertEquals(1, r.newStableSide());
-        assertFalse(r.nextFullArmed(), "the full title must be consumed for this approach");
+        assertTrue(r.nextPosSideAnnounced(), "the side we crossed into is now announced");
+        assertFalse(r.nextNegSideAnnounced(), "the other side stays un-announced -- it gets its own FULL");
     }
 
     @Test
-    void evaluateBandedShowsSmallOnAReCrossWhileStillWithinTheBand() {
-        // WHY: while the player stays within 3 deg of the line, re-crossings must show only the small
-        // action-bar message, never the big title again. After the first FULL consumes the arm, a genuine
-        // re-crossing (back to the negative side) that stays inside the band returns SMALL and leaves the
-        // arm still spent (nextFullArmed=false) -- the big title stays suppressed until the band is left.
-        HemisphereCrossing.BandedResult first = HemisphereCrossing.evaluateBanded(
-                100.0, CENTER, -100.0, -1, true, 1_000L, Long.MIN_VALUE, DEAD_ZONE, BAND, MAX_STEP, COOLDOWN);
-        assertEquals(HemisphereCrossing.Fire.FULL, first.fire());
+    void evaluateBandedGivesEachHemisphereItsOwnFullThenSmallOnRepeatThenReArmsOnLeave() {
+        // WHY: Peetsa's round-2 sequence -- cross -> FULL(neg/N side), re-cross -> FULL(pos/S side, its FIRST
+        // visit!), third cross -> SMALL (neg already announced), leave band -> both re-arm. This is the exact
+        // bug fix: round 1's single flag gave the second hemisphere only a SMALL; now each side gets a FULL.
+        // BAND >> 100 so every re-cross stays within the band (no accidental leave-band re-arm mid-sequence).
 
-        long afterCooldownMs = 1_000L + COOLDOWN; // past the per-axis cooldown so the re-cross can fire
-        HemisphereCrossing.BandedResult second = HemisphereCrossing.evaluateBanded(
-                -100.0, CENTER, first.newObserved(), first.newStableSide(), first.nextFullArmed(),
-                afterCooldownMs, 1_000L, DEAD_ZONE, BAND, MAX_STEP, COOLDOWN);
+        // Cross to the NEGATIVE side (North): its first visit -> FULL.
+        HemisphereCrossing.BandedResult a = HemisphereCrossing.evaluateBanded(
+                -100.0, CENTER, 100.0, 100.0, +1, false, false,
+                1_000L, Long.MIN_VALUE, DEAD_ZONE, BAND, MAX_STEP, COOLDOWN);
+        assertEquals(HemisphereCrossing.Fire.FULL, a.fire());
+        assertEquals(-1, a.newStableSide());
+        assertTrue(a.nextNegSideAnnounced());
+        assertFalse(a.nextPosSideAnnounced());
 
-        assertEquals(HemisphereCrossing.Fire.SMALL, second.fire(), "re-cross within band => small message");
-        assertEquals(-1, second.newStableSide());
-        assertFalse(second.nextFullArmed(), "still within band => full stays suppressed");
-    }
-
-    @Test
-    void evaluateBandedReArmsFullOnceThePlayerLeavesTheBand() {
-        // WHY: the big title re-arms only after the player leaves the 3 deg band. A sample whose distance
-        // from center is >= band re-arms FULL (nextFullArmed=true) even with the arm previously spent, so
-        // the NEXT approach announces with the big title again. Isolated on a non-crossing sample (same
-        // side, no fire) to prove the re-arm is driven purely by leaving the band, not by a crossing.
-        HemisphereCrossing.BandedResult r = HemisphereCrossing.evaluateBanded(
-                /* coord */ BAND + 200.0, CENTER, /* lastObserved */ BAND + 100.0, /* lastStableSide */ 1,
-                /* fullArmed */ false, /* nowMs */ 2_000L, /* lastFireMs */ 1_000L,
+        // Re-cross to the POSITIVE side (South): FIRST visit to this side this episode -> FULL (the fix!).
+        long t2 = 1_000L + COOLDOWN;
+        HemisphereCrossing.BandedResult b = HemisphereCrossing.evaluateBanded(
+                100.0, CENTER, a.newObserved(), a.newRawObserved(), a.newStableSide(),
+                a.nextNegSideAnnounced(), a.nextPosSideAnnounced(), t2, 1_000L,
                 DEAD_ZONE, BAND, MAX_STEP, COOLDOWN);
+        assertEquals(HemisphereCrossing.Fire.FULL, b.fire(), "the second hemisphere's first visit is FULL, not SMALL");
+        assertEquals(1, b.newStableSide());
+        assertTrue(b.nextNegSideAnnounced());
+        assertTrue(b.nextPosSideAnnounced());
 
-        assertEquals(HemisphereCrossing.Fire.NONE, r.fire(), "no crossing on this sample");
-        assertTrue(r.nextFullArmed(), "leaving the band re-arms the full title for the next approach");
+        // Third cross, back to the NEGATIVE side (already announced this episode) -> SMALL.
+        long t3 = t2 + COOLDOWN;
+        HemisphereCrossing.BandedResult c = HemisphereCrossing.evaluateBanded(
+                -100.0, CENTER, b.newObserved(), b.newRawObserved(), b.newStableSide(),
+                b.nextNegSideAnnounced(), b.nextPosSideAnnounced(), t3, t2,
+                DEAD_ZONE, BAND, MAX_STEP, COOLDOWN);
+        assertEquals(HemisphereCrossing.Fire.SMALL, c.fire(), "re-entering an already-announced side => small");
+        assertEquals(-1, c.newStableSide());
+
+        // Leave the band (>= BAND from center): both sides re-arm for the next visit-episode.
+        HemisphereCrossing.BandedResult d = HemisphereCrossing.evaluateBanded(
+                BAND + 200.0, CENTER, BAND + 100.0, BAND + 100.0, +1,
+                c.nextNegSideAnnounced(), c.nextPosSideAnnounced(), t3 + COOLDOWN, t3,
+                DEAD_ZONE, BAND, MAX_STEP, COOLDOWN);
+        assertEquals(HemisphereCrossing.Fire.NONE, d.fire(), "no crossing on this leave-the-band sample");
+        assertFalse(d.nextNegSideAnnounced(), "leaving the band re-arms both sides");
+        assertFalse(d.nextPosSideAnnounced());
+    }
+
+    // ---- (10) B-4 item 2 regression: the teleport guard must use the RAW per-tick step, not the held ----
+    //          confident observed, so a genuinely WALKED crossing across a wide dead band still fires. ----
+
+    @Test
+    void evaluateBandedWalkedCrossingWithFarHeldObservedStillFiresViaRawGuard() {
+        // WHY: root cause of "E/W hemisphere title never fired". On the WIDE 2:1 world the caller HOLDS the
+        // confident observed at the last out-of-dead-zone position while the player walks through the dead
+        // band. A player confident at +333 (3degE) who walks back across the meridian resolves on the far
+        // side while lastObserved is still +333 -- a >MAX_STEP "step" that mis-trips the teleport guard. The
+        // fix threads a RAW per-tick reference (here -60, the previous tick just before resolving at -70), so
+        // the guard sees the true one-tick step (10 blocks) and the walked crossing FIRES.
+        HemisphereCrossing.BandedResult r = HemisphereCrossing.evaluateBanded(
+                /* coord */ -70.0, CENTER, /* lastObserved (held) */ 333.0, /* lastRawObserved */ -60.0,
+                /* lastStableSide */ +1, /* negAnnounced */ false, /* posAnnounced */ false,
+                /* nowMs */ 1_000L, /* lastFireMs */ Long.MIN_VALUE, DEAD_ZONE, BAND, MAX_STEP, COOLDOWN);
+
+        assertEquals(HemisphereCrossing.Fire.FULL, r.fire(),
+                "a walked crossing must fire even though the held observed is > MAX_STEP away");
+        assertEquals(-1, r.newStableSide());
+        assertEquals(-70.0, r.newRawObserved(), "raw reference advances to the current coord for next tick");
+
+        // CONTRAST: the legacy single-reference evaluate (raw == held) DOES mis-trip the guard on these same
+        // numbers -- documenting exactly the bug the raw reference fixes.
+        HemisphereCrossing.Result legacy = HemisphereCrossing.evaluate(
+                -70.0, CENTER, 333.0, +1, 1_000L, Long.MIN_VALUE, DEAD_ZONE, MAX_STEP, COOLDOWN);
+        assertFalse(legacy.fire(), "single-reference guard mis-reads the held +333 -> -70 as a teleport");
     }
 }

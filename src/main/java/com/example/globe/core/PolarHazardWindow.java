@@ -76,9 +76,11 @@ public final class PolarHazardWindow {
     public static final double AMBIENT_FULL_DEG = 90.0;
     /** Gentle-flurry per-tick snow budget at the 85 deg onset. */
     public static final int SNOW_MIN_COUNT = 2;
-    /** VERY-heavy per-tick snow budget at 90 deg. FIXED budget -- never a catch-up accumulator.
-     *  B-4 raised 30->80 so the storm-snow ramp actually READS near the pole (Peetsa saw no increase). */
-    public static final int SNOW_MAX_COUNT = 80;
+    /** Per-tick snow budget at 90 deg. FIXED budget -- never a catch-up accumulator. B-4 round 2 returned
+     *  this 80->30: the pole's storm DENSITY is now carried by real VANILLA snowfall (ClientLevelStormSkyMixin
+     *  lifts the client rain level over 85->90 deg), so this ambient particle layer is back to being subtle
+     *  near-field texture rather than trying (and failing, per Peetsa) to read as the whole blizzard itself. */
+    public static final int SNOW_MAX_COUNT = 30;
 
     /** Continuous ambient progress in {@code [0,1]}: 0 at/below 85 deg, 1 at/above 90 deg. */
     public static double ambientProgress(double absLatDeg) {
