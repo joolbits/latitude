@@ -61,6 +61,11 @@ public final class GlobeWarningOverlay {
     // the small action-bar message; leaving the band re-arms FULL. Persisted between ticks per axis.
     private static boolean hemiFullArmedZ = true;
     private static boolean hemiFullArmedX = true;
+    // B-4 zone-title anti-spam: whether the FULL (big) climate-band title is armed. Starts true (the first
+    // zone entry fires the big title once); a zone flip while still within one band-width (3 deg latitude)
+    // of the boundary just crossed shows only the small action-bar message; the big title re-arms once the
+    // player settles deep inside a zone. Latitude(Z)-axis only, so a single flag (pure logic in core.ZoneTitleBanding).
+    private static boolean zoneFullArmed = true;
     private static long lastWarningDebugWorldTime = Long.MIN_VALUE;
     private static String lastWarningDebugText;
 
@@ -194,16 +199,42 @@ public final class GlobeWarningOverlay {
 
                 var border = client.level.getWorldBorder();
                 String canonicalZoneKey = canonicalTitleZoneKey(border, client.player.getZ());
-                if (lastZoneKey == null || !lastZoneKey.equals(canonicalZoneKey)) {
+                boolean zoneChanged = lastZoneKey == null || !lastZoneKey.equals(canonicalZoneKey);
+
+                // B-4 zone-title anti-spam: mirror the hemisphere band hysteresis. The band is one band-width
+                // (3 deg of latitude) in blocks == latitudeRadius/30, floored at DEAD_ZONE+32 exactly like the
+                // hemisphere bands (so it can never fall below the on-the-line dead zone on tiny worlds). The
+                // linger radius is measured as latitude distance to the nearest climate-band boundary,
+                // converted to blocks (90 deg over the latitude radius).
+                double latRadius = com.example.globe.util.LatitudeMath.latitudeRadius(border);
+                double zoneBand = Math.max(latRadius / 30.0, HemisphereCrossing.DEAD_ZONE_BLOCKS + 32.0);
+                double absLatDeg = com.example.globe.util.LatitudeMath.absLatDegExact(border, client.player.getZ());
+                double distDegToBoundary = com.example.globe.core.ZoneTitleBanding.nearestBoundaryDistanceDeg(absLatDeg);
+                double distBlocksToBoundary = latRadius > 0.0
+                        ? (distDegToBoundary / 90.0) * latRadius : Double.MAX_VALUE;
+                com.example.globe.core.ZoneTitleBanding.Result zoneEval =
+                        com.example.globe.core.ZoneTitleBanding.evaluate(
+                                zoneChanged, zoneFullArmed, distBlocksToBoundary, zoneBand);
+
+                if (zoneChanged) {
                     lastZoneKey = canonicalZoneKey;
                     if (LatitudeConfig.zoneEnterTitleEnabled) {
                         String titleText = buildZoneEnterTitle(client, canonicalZoneKey);
-                        int durationTicks = (int) Math.round(clamp(LatitudeConfig.zoneEnterTitleSeconds, 2.0, 10.0) * 20.0);
-                        double scale = clamp(LatitudeConfig.zoneEnterTitleScale, 1.0, 3.0);
-                        logEntryTitle("zone_trigger", titleText, client, client.player.getX(), client.player.getZ());
-                        ZoneEnterTitleOverlay.trigger(titleText, durationTicks, scale);
+                        if (zoneEval.fire() == com.example.globe.core.ZoneTitleBanding.Fire.FULL) {
+                            int durationTicks = (int) Math.round(clamp(LatitudeConfig.zoneEnterTitleSeconds, 2.0, 10.0) * 20.0);
+                            double scale = clamp(LatitudeConfig.zoneEnterTitleScale, 1.0, 3.0);
+                            logEntryTitle("zone_trigger", titleText, client, client.player.getX(), client.player.getZ());
+                            ZoneEnterTitleOverlay.trigger(titleText, durationTicks, scale);
+                        } else {
+                            // Lingering near the boundary just crossed: unobtrusive action-bar message, no big title.
+                            showActionBarMessage(client, titleText);
+                            logEntryTitle("zone_actionbar", titleText, client, client.player.getX(), client.player.getZ());
+                        }
                     }
                 }
+                // Advance the armed state every throttled sample (even when unchanged / disabled) so the
+                // re-arm happens as the player walks deep into a zone, and a re-enable can't replay a title.
+                zoneFullArmed = zoneEval.nextFullArmed();
 
                 maybeTriggerHemisphereTitles(client, client.player.getX(), client.player.getZ());
             }
@@ -286,6 +317,7 @@ public final class GlobeWarningOverlay {
         lastHemiFireXMs = Long.MIN_VALUE;
         hemiFullArmedZ = true;
         hemiFullArmedX = true;
+        zoneFullArmed = true;
         lastWarningDebugWorldTime = Long.MIN_VALUE;
         lastWarningDebugText = null;
         if (DEBUG_ENTRY_TITLES) {
@@ -333,7 +365,7 @@ public final class GlobeWarningOverlay {
                 fireHemisphereLine(false, line);
                 logEntryTitle("hemisphere_trigger_ns", line, client, playerX, playerZ);
             } else {
-                showHemisphereActionBar(client, line);
+                showActionBarMessage(client, line);
                 logEntryTitle("hemisphere_actionbar_ns", line, client, playerX, playerZ);
             }
             lastHemiFireZMs = nowMs;
@@ -345,7 +377,7 @@ public final class GlobeWarningOverlay {
                 fireHemisphereLine(true, line);
                 logEntryTitle("hemisphere_trigger_ew", line, client, playerX, playerZ);
             } else {
-                showHemisphereActionBar(client, line);
+                showActionBarMessage(client, line);
                 logEntryTitle("hemisphere_actionbar_ew", line, client, playerX, playerZ);
             }
             lastHemiFireXMs = nowMs;
@@ -379,10 +411,12 @@ public final class GlobeWarningOverlay {
         HemisphereTitleOverlay.trigger(eastWestAxis, line, durationTicks, scale);
     }
 
-    // B-4 anti-spam: a re-crossing while still within 3 deg of the line shows only this small, unobtrusive
-    // vanilla action-bar (overlay) message instead of re-firing the big center-screen title. Hud.setOverlayMessage
-    // is the 26.2 home of the action-bar text (Gui.hud, same object the overlays already read via mc.gui.hud).
-    private static void showHemisphereActionBar(Minecraft client, String line) {
+    // B-4 anti-spam: a re-announcement while still lingering near the boundary just crossed (a hemisphere
+    // line OR a climate-band edge) shows only this small, unobtrusive vanilla action-bar (overlay) message
+    // instead of re-firing the big center-screen title. Hud.setOverlayMessage is the 26.2 home of the
+    // action-bar text (Gui.hud, same object the overlays already read via mc.gui.hud). Shared by the
+    // hemisphere-title and zone-title anti-spam paths.
+    private static void showActionBarMessage(Minecraft client, String line) {
         if (client != null && client.gui != null && client.gui.hud != null) {
             client.gui.hud.setOverlayMessage(Component.literal(line), false);
         }
