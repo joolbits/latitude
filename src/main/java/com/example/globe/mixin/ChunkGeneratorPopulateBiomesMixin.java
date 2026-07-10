@@ -1,6 +1,8 @@
 package com.example.globe.mixin;
 
 import com.example.globe.GlobeMod;
+import com.example.globe.core.LatitudeV2Flags;
+import com.example.globe.terrain.GeoTerrainBiasFunction;
 import com.example.globe.util.LatitudeBands;
 import com.example.globe.world.LatitudeBiomeSource;
 import com.example.globe.world.LatitudeBiomes;
@@ -441,6 +443,19 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
             surfaceY = HARD_DECK_SURFACE_Y;
         } else {
             surfaceY = generator.getBaseHeight(blockX, blockZ, Heightmap.Types.WORLD_SURFACE_WG, heightView, noiseConfig);
+        }
+        // Phase 5 carve-aware ocean labels, Touch 2 (dripstone in trenches): WORLD_SURFACE_WG reads the
+        // waterline (Y63) over a carved sea, so a trench-floor cave biome (~Y45) is judged "deep" and
+        // never clamped -- the carve strips the covering rock and EXPOSES it. Judge "near surface"
+        // against min(estimate, carveTarget) instead: the carve target IS the trench floor, so cave
+        // exposures at/above it get clamped to the latitude-correct ocean biome like any other
+        // near-surface cave exposure. Flag-off (or no active bias) is byte-identical: the oracle
+        // returns +Infinity whenever no carve applies, which can never lower surfaceY.
+        if (LatitudeV2Flags.TERRAIN_V2_CARVE_AWARE_LABELS && LatitudeBiomes.terrainBiasActivelyBiasing()) {
+            double carveTargetY = GeoTerrainBiasFunction.carveTargetYOrMax(blockX, blockZ);
+            if (carveTargetY < surfaceY) {
+                surfaceY = (int) Math.floor(carveTargetY);
+            }
         }
         surfaceYCache.put(key, surfaceY);
         return surfaceY;

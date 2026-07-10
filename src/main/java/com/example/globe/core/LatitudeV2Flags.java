@@ -103,6 +103,30 @@ public final class LatitudeV2Flags {
             Boolean.parseBoolean(System.getProperty("latitude.terrainV2.floorSightedVeto", "false"));
 
     /**
+     * Phase 5 carve-aware ocean labels (ocean-label investigation 2026-07-09). Default false.
+     * <p>Replaces estimator-based "is this column carved to sea?" reads with the carve's OWN pure
+     * analytic target ({@code GeoTerrainBiasFunction.carveTargetYOrMax(x,z)}): a column is labeled
+     * ocean iff {@code carveTargetY < seaLevel - 2}. Because the oracle needs no generator, no
+     * noiseConfig and no heightmap, it works in EVERY {@code pick()} context — including the
+     * input-less "SOURCE" path that vanilla structure eligibility reads, which both existing
+     * sunk-land vetoes (and {@link #TERRAIN_V2_FLOOR_SIGHTED_VETO}) structurally cannot reach.
+     * Gates three consumers behind this ONE flag: (1) the carve-aware ocean relabel in both
+     * {@code pick()} twins (villages stop being eligible over carved sea; sunk rivers convert to the
+     * latitude-correct ocean family); (2) the surface-cave clamp judges "near surface" against
+     * {@code min(WORLD_SURFACE_WG, carveTarget)} so trench-floor dripstone gets clamped like any
+     * near-surface cave exposure; (3) belt+suspenders — {@code StructureBiomeMatchGuardMixin} also
+     * cancels clearly-land-only structure starts over carved sea.
+     * <p>Independent of {@link #TERRAIN_V2_FLOOR_SIGHTED_VETO} (which stays untouched; in practice
+     * this flag supersedes it — the OCEAN_FLOOR_WG estimator over-floods, see the phase 5 plan's
+     * OPEN FINDING). Flag-off is byte-identical: every consumer additionally requires
+     * {@code terrainBiasActivelyBiasing()}, and the oracle returns {@code +Infinity} whenever no
+     * carve applies (S==0, r==0, NoOp provider, land-intent) so it can never relabel unbias-able
+     * terrain.
+     */
+    public static final boolean TERRAIN_V2_CARVE_AWARE_LABELS =
+            Boolean.parseBoolean(System.getProperty("latitude.terrainV2.carveAwareLabels", "false"));
+
+    /**
      * Phase 5 Slice B-2 (Fix 1) gate: latitude-aware EDGE OCEAN intent at the projection X-edge.
      * Default false. When on (and geoV2 is live and the terrain bias is actively biasing), {@code pick()}
      * consumes the X-only edge term ({@code GeoSummary.projectionEdgeXOnly01()}) and, frayed on a

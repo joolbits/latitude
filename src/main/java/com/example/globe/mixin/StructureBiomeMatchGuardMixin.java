@@ -73,6 +73,23 @@ public abstract class StructureBiomeMatchGuardMixin {
                     return;
                 }
             }
+            // Phase 5 carve-aware ocean labels, belt+suspenders: even with the pick()-side relabel making
+            // flooded columns ineligible, structure starts already CHOSEN from a stale/raw label can still
+            // place. Cancel clearly-land-only structures (village/outpost/pyramid/temple/mansion/igloo/
+            // swamp hut -- conservative inclusion list, ocean-native structures untouched) whose start
+            // chunk center the carve floods (carveTarget < seaLevel - 2). Cancel-only, same fail-open
+            // doctrine as the climate checks above; flag-off (or no active bias) is byte-identical because
+            // the oracle returns +Infinity whenever no carve applies.
+            if (com.example.globe.core.LatitudeV2Flags.TERRAIN_V2_CARVE_AWARE_LABELS
+                    && LatitudeBiomes.terrainBiasActivelyBiasing()
+                    && com.example.globe.core.geo.CarveAwareLabels.structureClearlyLandOnly(path)
+                    && com.example.globe.core.geo.CarveAwareLabels.carvedToOcean(
+                            com.example.globe.terrain.GeoTerrainBiasFunction.carveTargetYOrMax(
+                                    cp.getMiddleBlockX(), cp.getMiddleBlockZ()),
+                            chunkGenerator.getSeaLevel())) {
+                ci.cancel();
+                return;
+            }
             BlockPos center = new BlockPos(cp.getMiddleBlockX(), chunkBox.minY(), cp.getMiddleBlockZ());
             if (LatitudeBiomes.structureClimateMismatch(path, world.getBiome(center))) {
                 ci.cancel();
