@@ -52,20 +52,38 @@ public final class GlobeWarningOverlay {
     // (NaN = unseeded); fireMs: wall time of the last fire on that axis (per-axis cooldown).
     private static int lastStableSideZ = 0;
     private static double lastObservedZ = Double.NaN;
+    // B-4 item 2: raw per-tick coordinate (advanced every sample incl. inside the dead zone) feeding the
+    // teleport guard, kept distinct from the held confident observed so a walked meridian/equator crossing
+    // across the dead band is never mistaken for a jump. NaN = unseeded.
+    private static double lastRawZ = Double.NaN;
     private static long lastHemiFireZMs = Long.MIN_VALUE;
     private static int lastStableSideX = 0;
     private static double lastObservedX = Double.NaN;
+    private static double lastRawX = Double.NaN;
     private static long lastHemiFireXMs = Long.MIN_VALUE;
-    // B-4 anti-spam: whether the FULL (big) hemisphere title is armed on each axis. Starts true (a fresh
-    // approach fires the big title once); a re-crossing while still within 3 deg of the line shows only
-    // the small action-bar message; leaving the band re-arms FULL. Persisted between ticks per axis.
-    private static boolean hemiFullArmedZ = true;
-    private static boolean hemiFullArmedX = true;
+    // B-4 round-2 anti-spam: per-hemisphere FULL titles. Each SIDE of the line gets the big title ONCE per
+    // visit-episode; these flags track which sides have already been FULL-announced since the player last
+    // LEFT the band (neg = North/West, pos = South/East). Both start un-announced so the first crossing to
+    // EITHER side is FULL; leaving the band re-arms both. Persisted between ticks per axis.
+    private static boolean hemiNegAnnouncedZ = false;
+    private static boolean hemiPosAnnouncedZ = false;
+    private static boolean hemiNegAnnouncedX = false;
+    private static boolean hemiPosAnnouncedX = false;
     // B-4 zone-title anti-spam: whether the FULL (big) climate-band title is armed. Starts true (the first
     // zone entry fires the big title once); a zone flip while still within one band-width (3 deg latitude)
     // of the boundary just crossed shows only the small action-bar message; the big title re-arms once the
     // player settles deep inside a zone. Latitude(Z)-axis only, so a single flag (pure logic in core.ZoneTitleBanding).
     private static boolean zoneFullArmed = true;
+    // B-4 item 3: EPISODIC polar warning ladder. Each of the 4 tiers fires ONCE when crossed, shows ~10 s,
+    // then fades out over ~1 s, and does NOT re-show while the player stays poleward -- the whole ladder
+    // re-arms only on a full retreat below 84 deg (pure decision in core.PolarWarningEpisode). Highest tier
+    // fired since the last retreat + the active on-screen message and its world-tick display window.
+    private static final long POLE_WARN_HOLD_TICKS = 200L;   // ~10 s at 20 tps
+    private static final long POLE_WARN_FADE_TICKS = 20L;    // ~1 s alpha ramp (in and out)
+    private static int poleWarnHighestTier = 0;
+    private static Component poleWarnText;                    // null = nothing showing
+    private static long poleWarnStartTick = Long.MIN_VALUE;
+    private static long poleWarnEndTick = Long.MIN_VALUE;
     private static long lastWarningDebugWorldTime = Long.MIN_VALUE;
     private static String lastWarningDebugText;
 
@@ -134,6 +152,71 @@ public final class GlobeWarningOverlay {
             case LETHAL -> Component.literal(POLE_LETHAL_TEXT).withStyle(ChatFormatting.RED, ChatFormatting.BOLD);
             default -> null;
         };
+    }
+
+    private static Component poleTextForTier(int tier) {
+        GlobeClientState.PolarStage stage = switch (tier) {
+            case 1 -> GlobeClientState.PolarStage.WARN_1;
+            case 2 -> GlobeClientState.PolarStage.WARN_2;
+            case 3 -> GlobeClientState.PolarStage.DANGER;
+            case 4 -> GlobeClientState.PolarStage.LETHAL;
+            default -> null;
+        };
+        return poleTextForStage(stage);
+    }
+
+    // B-4 item 3: run the pure episode ladder each throttled sample. A tier crossing arms a fresh ~10 s
+    // display window; the ladder re-arms only on a full retreat below 84 deg (handled inside evaluate).
+    private static void maybeTriggerPoleWarning(Minecraft client) {
+        if (client.level == null || client.player == null) {
+            return;
+        }
+        var border = client.level.getWorldBorder();
+        double absLatDeg = com.example.globe.util.LatitudeMath.absLatDegExact(border, client.player.getZ());
+        com.example.globe.core.PolarWarningEpisode.Step step =
+                com.example.globe.core.PolarWarningEpisode.evaluate(absLatDeg, poleWarnHighestTier);
+        poleWarnHighestTier = step.nextHighestFired();
+        if (step.fireTier() > 0) {
+            Component txt = poleTextForTier(step.fireTier());
+            if (txt != null) {
+                poleWarnText = txt;
+                long now = client.level.getGameTime();
+                poleWarnStartTick = now;
+                poleWarnEndTick = now + POLE_WARN_HOLD_TICKS;
+                logEntryTitle("pole_warn_tier" + step.fireTier(), txt.getString(),
+                        client, client.player.getX(), client.player.getZ());
+            }
+        }
+    }
+
+    // Draws the active polar warning episode with a fade-in/hold/fade-out envelope. Returns true if it drew
+    // (and therefore owns the warning line this frame), false if no episode is currently showing.
+    private static boolean renderPoleWarningEpisode(GuiGraphicsExtractor ctx, Minecraft client, int warnY) {
+        if (poleWarnText == null || client.level == null) {
+            return false;
+        }
+        long now = client.level.getGameTime();
+        // World-time reset / rejoin: a stale window can't outlive the world clock.
+        if (now < poleWarnStartTick || now >= poleWarnEndTick) {
+            return false;
+        }
+        long age = now - poleWarnStartTick;
+        long remaining = poleWarnEndTick - now;
+        float alpha = 1.0f;
+        if (age < POLE_WARN_FADE_TICKS) {
+            alpha = (float) age / (float) POLE_WARN_FADE_TICKS;
+        } else if (remaining < POLE_WARN_FADE_TICKS) {
+            alpha = (float) remaining / (float) POLE_WARN_FADE_TICKS;
+        }
+        if (alpha <= 0.001f) {
+            return false;
+        }
+        TextColor styleColor = poleWarnText.getStyle().getColor();
+        int rgb = styleColor != null ? styleColor.getValue() : 0xFFFFFF;
+        int a = (int) Mth.clamp(alpha * 255.0f, 0.0f, 255.0f);
+        int color = (a << 24) | (rgb & 0x00FFFFFF);
+        drawCenteredWarning(ctx, client.font, poleWarnText, warnY, color);
+        return true;
     }
 
     private static Component ewTextForStage(GlobeClientState.EwStormStage stage, boolean cold) {
@@ -237,42 +320,37 @@ public final class GlobeWarningOverlay {
                 zoneFullArmed = zoneEval.nextFullArmed();
 
                 maybeTriggerHemisphereTitles(client, client.player.getX(), client.player.getZ());
+                maybeTriggerPoleWarning(client);
             }
 
-            Component bestText = null;
-            var state = GlobeClientState.computeWarningState(client.level, client.player);
-            if (state.type() == GlobeClientState.WarningType.NONE) {
-                return;
-            }
-
-            // Stable precedence (corners):
-            // 1) polar lethal
-            // 2) ew level 2
-            // 3) polar stage (warn/danger)
-            // 4) ew level 1
-            if (state.type() == GlobeClientState.WarningType.POLAR) {
-                GlobeClientState.PolarStage stage = (GlobeClientState.PolarStage) state.stage();
-                bestText = poleTextForStage(stage);
-            } else if (state.type() == GlobeClientState.WarningType.STORM) {
-                GlobeClientState.EwStormStage stage = (GlobeClientState.EwStormStage) state.stage();
-                String dir = ewDangerDirection(client.level.getWorldBorder(), client.player.getX());
-                boolean cold = ewIsColdBand(client.level.getWorldBorder(), client.player.getZ());
-                Component base = ewTextForStage(stage, cold);
-                if (base != null) {
-                    bestText = Component.literal(String.format(base.getString(), dir.toLowerCase())).setStyle(base.getStyle());
-                }
-            }
-
-            if (bestText == null) {
-                return;
-            }
-
-            // Draw final warning (no scaling for now to avoid compilation issues)
             int warnY = client.getWindow().getGuiScaledHeight() - 68;
             if (warnY < 18) {
                 warnY = 18;
             }
-            maybeLogWarningRender(client, state, bestText);
+
+            // B-4 item 3: the episodic polar warning owns the warning line while its ~10 s window is active
+            // (rendered every frame for a smooth fade). When it's not showing, fall through to the
+            // persistent E/W storm warning (left untouched this pass).
+            if (renderPoleWarningEpisode(ctx, client, warnY)) {
+                return;
+            }
+
+            GlobeClientState.EwStormStage stormStage =
+                    GlobeClientState.computeEwStormStage(client.level, client.player);
+            if (stormStage == GlobeClientState.EwStormStage.NONE) {
+                return;
+            }
+            String dir = ewDangerDirection(client.level.getWorldBorder(), client.player.getX());
+            boolean cold = ewIsColdBand(client.level.getWorldBorder(), client.player.getZ());
+            Component base = ewTextForStage(stormStage, cold);
+            if (base == null) {
+                return;
+            }
+            Component bestText = Component.literal(String.format(base.getString(), dir.toLowerCase()))
+                    .setStyle(base.getStyle());
+            maybeLogWarningRender(client,
+                    new GlobeClientState.WarningState(GlobeClientState.WarningType.STORM, stormStage, 0),
+                    bestText);
             int color = warningColorWithPulse(bestText, client, tickCounter);
             drawCenteredWarning(ctx, client.font, bestText, warnY, color);
         } catch (Throwable t) {
@@ -311,13 +389,21 @@ public final class GlobeWarningOverlay {
         lastZoneUpdateZ = Integer.MIN_VALUE;
         lastStableSideZ = 0;
         lastObservedZ = Double.NaN;
+        lastRawZ = Double.NaN;
         lastHemiFireZMs = Long.MIN_VALUE;
         lastStableSideX = 0;
         lastObservedX = Double.NaN;
+        lastRawX = Double.NaN;
         lastHemiFireXMs = Long.MIN_VALUE;
-        hemiFullArmedZ = true;
-        hemiFullArmedX = true;
+        hemiNegAnnouncedZ = false;
+        hemiPosAnnouncedZ = false;
+        hemiNegAnnouncedX = false;
+        hemiPosAnnouncedX = false;
         zoneFullArmed = true;
+        poleWarnHighestTier = 0;
+        poleWarnText = null;
+        poleWarnStartTick = Long.MIN_VALUE;
+        poleWarnEndTick = Long.MIN_VALUE;
         lastWarningDebugWorldTime = Long.MIN_VALUE;
         lastWarningDebugText = null;
         if (DEBUG_ENTRY_TITLES) {
@@ -351,9 +437,11 @@ public final class GlobeWarningOverlay {
         double bandX = Math.max(com.example.globe.util.LatitudeMath.worldRadiusBlocks(border) / 60.0, minBand);
 
         HemisphereCrossing.BandedResult rz = evalHemisphereAxis(
-                playerZ, centerZ, lastObservedZ, lastStableSideZ, hemiFullArmedZ, bandZ, lastHemiFireZMs, nowMs);
+                playerZ, centerZ, lastObservedZ, lastRawZ, lastStableSideZ,
+                hemiNegAnnouncedZ, hemiPosAnnouncedZ, bandZ, lastHemiFireZMs, nowMs);
         HemisphereCrossing.BandedResult rx = evalHemisphereAxis(
-                playerX, centerX, lastObservedX, lastStableSideX, hemiFullArmedX, bandX, lastHemiFireXMs, nowMs);
+                playerX, centerX, lastObservedX, lastRawX, lastStableSideX,
+                hemiNegAnnouncedX, hemiPosAnnouncedX, bandX, lastHemiFireXMs, nowMs);
 
         boolean enabled = LatitudeConfig.zoneEnterTitleEnabled;
 
@@ -387,10 +475,14 @@ public final class GlobeWarningOverlay {
         // crossing that already happened -- the sample simply moves past center unremarked.
         lastStableSideZ = rz.newStableSide();
         lastObservedZ = rz.newObserved();
+        lastRawZ = rz.newRawObserved();
         lastStableSideX = rx.newStableSide();
         lastObservedX = rx.newObserved();
-        hemiFullArmedZ = rz.nextFullArmed();
-        hemiFullArmedX = rx.nextFullArmed();
+        lastRawX = rx.newRawObserved();
+        hemiNegAnnouncedZ = rz.nextNegSideAnnounced();
+        hemiPosAnnouncedZ = rz.nextPosSideAnnounced();
+        hemiNegAnnouncedX = rx.nextNegSideAnnounced();
+        hemiPosAnnouncedX = rx.nextPosSideAnnounced();
 
         if (!enabled) {
             logEntryTitle("hemisphere_disabled", "", client, playerX, playerZ);
@@ -398,9 +490,11 @@ public final class GlobeWarningOverlay {
     }
 
     private static HemisphereCrossing.BandedResult evalHemisphereAxis(double coord, double center,
-                                                                      double observed, int side, boolean fullArmed,
+                                                                      double observed, double raw, int side,
+                                                                      boolean negAnnounced, boolean posAnnounced,
                                                                       double band, long fireMs, long nowMs) {
-        return HemisphereCrossing.evaluateBanded(coord, center, observed, side, fullArmed, nowMs, fireMs,
+        return HemisphereCrossing.evaluateBanded(coord, center, observed, raw, side,
+                negAnnounced, posAnnounced, nowMs, fireMs,
                 HemisphereCrossing.DEAD_ZONE_BLOCKS, band, HemisphereCrossing.MAX_STEP_BLOCKS,
                 HemisphereCrossing.COOLDOWN_MS);
     }

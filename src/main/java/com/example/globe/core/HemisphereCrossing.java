@@ -68,6 +68,30 @@ public final class HemisphereCrossing {
                                   double lastObserved, int lastStableSide,
                                   long nowMs, long lastFireMs,
                                   double deadZone, double maxStep, long cooldownMs) {
+        // Back-compat 9-arg entry: the teleport guard measures against {@code lastObserved} (the same
+        // reference used for crossing detection), preserving the original single-reference behavior for
+        // every existing caller/test. The banded path uses {@link #evaluateCore} with a SEPARATE raw
+        // per-tick reference (see B-4 item 2 fix below).
+        return evaluateCore(coord, center, lastObserved, lastObserved, lastStableSide, nowMs, lastFireMs,
+                deadZone, maxStep, cooldownMs);
+    }
+
+    /**
+     * Core transition with a SEPARATE teleport-guard reference. B-4 item 2 root cause: on a genuine walked
+     * crossing the caller HOLDS {@code lastObserved} at the last confident (out-of-dead-zone) position while
+     * the player traverses the dead band (so the crossing is measured from real hemisphere ground). Using
+     * that same held value for the teleport guard inflates the step: on the WIDE 2:1 world a player who
+     * establishes a confident sample a few degrees East (e.g. x=+333 at 3degE, latitudeRadius/60-scale
+     * bands) and then walks back across the meridian resolves on the far side while {@code lastObserved} is
+     * still +333 -- a >256-block "step" that the guard mis-reads as a teleport and SUPPRESSES the crossing.
+     * The fix threads a distinct {@code lastRawObserved} (the PREVIOUS TICK's actual coordinate, advanced
+     * every sample incl. inside the dead zone) for the guard, so it catches only true one-tick jumps
+     * (/tp, dimension change) while a smoothly-walked crossing -- small per-tick raw step -- always fires.
+     */
+    static Result evaluateCore(double coord, double center,
+                               double lastObserved, double lastRawObserved, int lastStableSide,
+                               long nowMs, long lastFireMs,
+                               double deadZone, double maxStep, long cooldownMs) {
         int side = sideOf(coord, center, deadZone);
         // Only advance the observed sample once we are clearly out of the dead band (or seeding from
         // NaN); inside the band we keep the last confident position so a later crossing is measured
@@ -88,8 +112,11 @@ public final class HemisphereCrossing {
         if (lastStableSide == 0) {
             return new Result(false, side, newObserved);
         }
-        // Teleport guard: a large jump re-seeds the side without firing.
-        double step = Math.abs(coord - lastObserved);
+        // Teleport guard: a large ONE-TICK jump (measured against the raw previous coord, not the held
+        // confident observed) re-seeds the side without firing. When the raw reference is unseeded (NaN)
+        // fall back to the confident observed so seeding never spuriously trips the guard.
+        double rawRef = Double.isNaN(lastRawObserved) ? lastObserved : lastRawObserved;
+        double step = Math.abs(coord - rawRef);
         if (step > maxStep) {
             return new Result(false, side, newObserved);
         }
@@ -111,43 +138,64 @@ public final class HemisphereCrossing {
     }
 
     /**
-     * B-4 hemisphere-title ANTI-SPAM (Peetsa's design): the big title fires ONCE per approach; while the
-     * player stays within {@code band} blocks of the line, subsequent re-crossings show only the small
-     * action-bar message; the big title re-arms once the player leaves the band. Layers a two-state
-     * hysteresis ({@code fullArmed}) on top of the unchanged {@link #evaluate} crossing/debounce core --
-     * the dead zone, genuine-crossing requirement, teleport guard and per-axis cooldown all still gate
-     * whether ANY message fires; this only decides FULL vs SMALL and manages the re-arm.
+     * B-4 hemisphere-title ANTI-SPAM, revised for PER-HEMISPHERE full titles (Peetsa's round-2 design):
+     * EACH SIDE of the line gets the big center-screen title ONCE per visit-episode. We track which sides
+     * have already been FULL-announced since the player last LEFT the band ({@code negSideAnnounced} /
+     * {@code posSideAnnounced}); crossing INTO a not-yet-announced side while inside {@code band} shows the
+     * FULL title (and marks that side announced), crossing back into an already-announced side shows only
+     * the small action-bar message, and leaving the band (>= {@code band} from center, either hemisphere)
+     * resets BOTH flags so the next visit re-announces both sides. So the canonical sequence
+     * cross->FULL(neg side), re-cross->FULL(pos side, its first visit!), third cross->SMALL, leave band->
+     * both re-arm. Fixes the round-1 single-flag behavior where the second hemisphere never got its FULL.
+     *
+     * <p>Layered on the unchanged {@link #evaluateCore} crossing/debounce core: the dead zone,
+     * genuine-crossing requirement, per-tick teleport guard and per-axis cooldown all still gate whether
+     * ANY message fires; this only decides FULL vs SMALL per side and manages the per-side re-arm.
      *
      * <p>The {@code band} is a per-axis distance the caller derives from the world radius, NOT a magic
      * block count: Z (N/S) = {@code latitudeRadius/30} (== 3 deg of latitude over the 90-deg Z radius),
      * X (E/W) = {@code xRadius/60} (== 3 deg of longitude over the 180-deg X radius).
      *
-     * @param fullArmed whether the FULL title is currently armed (true on a fresh approach); the caller
-     *                  persists {@link BandedResult#nextFullArmed()} back for the next tick
-     * @param band      hysteresis half-width in blocks around {@code center} (see above)
+     * @param lastRawObserved  the previous tick's RAW coordinate (advanced every sample incl. dead zone);
+     *                         feeds the teleport guard so a walked crossing across the wide dead band is not
+     *                         mistaken for a jump (B-4 item 2). Seed with {@link Double#NaN}.
+     * @param negSideAnnounced whether the negative side (N / W) already got its FULL this visit-episode
+     * @param posSideAnnounced whether the positive side (S / E) already got its FULL this visit-episode
+     * @param band             hysteresis half-width in blocks around {@code center} (see above)
      */
     public static BandedResult evaluateBanded(double coord, double center,
-                                              double lastObserved, int lastStableSide, boolean fullArmed,
+                                              double lastObserved, double lastRawObserved, int lastStableSide,
+                                              boolean negSideAnnounced, boolean posSideAnnounced,
                                               long nowMs, long lastFireMs,
                                               double deadZone, double band, double maxStep, long cooldownMs) {
-        Result base = evaluate(coord, center, lastObserved, lastStableSide, nowMs, lastFireMs,
-                deadZone, maxStep, cooldownMs);
+        Result base = evaluateCore(coord, center, lastObserved, lastRawObserved, lastStableSide,
+                nowMs, lastFireMs, deadZone, maxStep, cooldownMs);
         Fire kind = Fire.NONE;
-        boolean nextArmed = fullArmed;
+        boolean nextNeg = negSideAnnounced;
+        boolean nextPos = posSideAnnounced;
         if (base.fire()) {
-            if (fullArmed) {
+            int side = base.newStableSide(); // the side we just crossed INTO
+            boolean announced = side < 0 ? negSideAnnounced : posSideAnnounced;
+            if (!announced) {
                 kind = Fire.FULL;
-                nextArmed = false; // full consumed for this approach; re-arms only after leaving the band
+                if (side < 0) {
+                    nextNeg = true;
+                } else {
+                    nextPos = true;
+                }
             } else {
-                kind = Fire.SMALL;
+                kind = Fire.SMALL; // this side already got its FULL this episode
             }
         }
-        // Leaving the band (either hemisphere) re-arms the FULL title for the next approach. Evaluated on
-        // the raw current distance so a player who wanders >=3 deg off the line gets a full title again.
+        // Leaving the band (either hemisphere) re-arms BOTH sides for the next visit-episode. Evaluated on
+        // the raw current distance so a player who wanders >= 3 deg off the line re-announces both sides.
         if (Math.abs(coord - center) >= band) {
-            nextArmed = true;
+            nextNeg = false;
+            nextPos = false;
         }
-        return new BandedResult(kind, base.newStableSide(), base.newObserved(), nextArmed);
+        // Raw reference always advances to the current position (every tick, even inside the dead zone or
+        // on a teleport) so the guard next tick measures the true one-tick step.
+        return new BandedResult(kind, base.newStableSide(), base.newObserved(), coord, nextNeg, nextPos);
     }
 
     /**
@@ -175,8 +223,12 @@ public final class HemisphereCrossing {
     public record Result(boolean fire, int newStableSide, double newObserved) {
     }
 
-    /** Outcome of {@link #evaluateBanded}: which title kind to show plus the next tracking state
-     *  (including the re-armed {@code nextFullArmed} flag) to persist for this axis. */
-    public record BandedResult(Fire fire, int newStableSide, double newObserved, boolean nextFullArmed) {
+    /**
+     * Outcome of {@link #evaluateBanded}: which title kind to show plus the next tracking state to persist
+     * for this axis -- the confident observed ({@code newObserved}), the raw per-tick guard reference
+     * ({@code newRawObserved}), and the two per-side FULL-announced flags for the next tick.
+     */
+    public record BandedResult(Fire fire, int newStableSide, double newObserved, double newRawObserved,
+                               boolean nextNegSideAnnounced, boolean nextPosSideAnnounced) {
     }
 }

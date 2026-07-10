@@ -34,6 +34,7 @@
     "client.SystemDetailsHardwareProbeMixin",
     "client.MinecraftClientStartIntegratedMixin",
     "client.InGameHudMixin",
+    "client.ClientLevelStormSkyMixin",
     "client.LatitudeLoadingClientTickMixin",
     "client.LevelLoadingScreenLatitudeOverlayMixin",
     "client.FogRendererEwMixin",
