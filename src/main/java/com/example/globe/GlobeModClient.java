@@ -263,23 +263,33 @@ public class GlobeModClient implements ClientModInitializer {
         }
     }
 
+    // B-4 storm-snow: widened envelope (10->16) + a steady horizontal wind drift so the flakes streak
+    // sideways and READ as a blizzard, not gentle flurries (Peetsa saw no increase near the pole). The
+    // per-tick BUDGET (count) and the caller's isPaused/spawn-tick anti-backlog guards are UNCHANGED --
+    // this only changes how each spawned flake looks/moves, never how many spawn or when.
+    private static final double SNOW_ENVELOPE = 16.0;
+
     private static void spawnAmbientPolarSnow(Minecraft client, int count) {
         RandomSource random = client.player.getRandom();
         double px = client.player.getX();
         double py = client.player.getY();
         double pz = client.player.getZ();
 
+        // Steady wind direction for this spawn burst (sign flips by which side of center the player is on,
+        // like the EW storm) so the snowfall has a coherent slant instead of drifting symmetrically.
+        double windX = client.player.getX() >= 0.0 ? -0.09 : 0.09;
+
         for (int i = 0; i < count; i++) {
-            double ox = (random.nextDouble() - 0.5) * 10.0;
-            double oy = random.nextDouble() * 4.0;
-            double oz = (random.nextDouble() - 0.5) * 10.0;
+            double ox = (random.nextDouble() - 0.5) * SNOW_ENVELOPE;
+            double oy = random.nextDouble() * 6.0;
+            double oz = (random.nextDouble() - 0.5) * SNOW_ENVELOPE;
 
-            double vx = (random.nextDouble() - 0.5) * 0.06;
-            double vy = -0.02 - random.nextDouble() * 0.03;
-            double vz = (random.nextDouble() - 0.5) * 0.06;
+            // Wind-blown drift: steady horizontal wind + per-flake jitter -> visible sideways streaking.
+            double vx = windX + (random.nextDouble() - 0.5) * 0.06;
+            double vy = -0.04 - random.nextDouble() * 0.05;
+            double vz = (random.nextDouble() - 0.5) * 0.10;
 
-            double vHoriz = (vx + vz) * 0.5;
-            client.particleEngine.createParticle(ParticleTypes.SNOWFLAKE, px + ox, py + 1.5 + oy, pz + oz, vHoriz, vy, vz);
+            client.particleEngine.createParticle(ParticleTypes.SNOWFLAKE, px + ox, py + 2.0 + oy, pz + oz, vx, vy, vz);
         }
     }
 

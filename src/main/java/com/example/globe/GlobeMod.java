@@ -405,25 +405,15 @@ public class GlobeMod implements ModInitializer {
             if (com.example.globe.core.PolarHazardWindow.appliesMiningFatigue(progress)) {
                 player.addEffect(new MobEffectInstance(MobEffects.MINING_FATIGUE, duration, 0, ambient, showParticles, showIcon));
             }
-            if (com.example.globe.core.PolarHazardWindow.appliesBlindness(progress)) {
-                player.addEffect(new MobEffectInstance(MobEffects.BLINDNESS, duration, 0, ambient, showParticles, showIcon));
-            }
+            // B-4: Blindness REMOVED from the polar hazard. The old hard blindness snap ("WHAM full
+            // blindness with no warning") is replaced by the smooth ramping whiteout overlay
+            // (PolarWhiteoutOverlayHud), which carries vision loss continuously. Freeze/slowness/weakness
+            // stay as-is.
 
             int freeze = com.example.globe.core.PolarHazardWindow.freezeTicks(progress);
             if (freeze > 0) {
                 player.setTicksFrozen(Math.max(player.getTicksFrozen(), freeze));
             }
-        }
-    }
-
-    private static void applyContinuousBlindness(ServerPlayer player, boolean inFinalWhiteout) {
-        if (!inFinalWhiteout) {
-            return;
-        }
-
-        MobEffectInstance cur = player.getEffect(MobEffects.BLINDNESS);
-        if (cur == null || cur.getDuration() < 80) {
-            player.addEffect(new MobEffectInstance(MobEffects.BLINDNESS, 200, 0, true, false, false));
         }
     }
 

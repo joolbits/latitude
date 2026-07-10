@@ -14,8 +14,9 @@ package com.example.globe.core;
  *       full-lethal at 90 deg, with CONTINUOUS scaling of the slowness amplifier and the freeze-tick
  *       rate across {@code progress = clamp01((|lat|-87)/3)}. Replaces the old stage-STEPPED ladder
  *       (IMPAIR/HOSTILE/WHITEOUT/LETHAL keyed off {@code POLAR_STAGE_*_PROGRESS} on {@code |z|/zR});
- *       the effect TYPES (slowness/weakness/mining-fatigue/blindness/freeze) are unchanged -- only
- *       their magnitude is now a smooth function of progress rather than a stage index.</li>
+ *       the effect TYPES (slowness/weakness/mining-fatigue/freeze) are unchanged -- only their
+ *       magnitude is now a smooth function of progress rather than a stage index. (B-4 removed the
+ *       Blindness effect: the smooth whiteout overlay now carries vision loss without a hard snap.)</li>
  *   <li><b>B-3b AMBIENT window {@code [85,90]}</b> -- atmosphere BEFORE danger. Snow begins at 85 deg
  *       (2 deg ahead of the hazard onset) and the fixed per-tick particle budget + screen-fog
  *       intensity ramp smoothly to VERY heavy at 90 deg over {@code clamp01((|lat|-85)/5)}.</li>
@@ -41,8 +42,6 @@ public final class PolarHazardWindow {
     public static final int FREEZE_MAX_TICKS = 140;
     /** Progress at/above which Mining Fatigue layers in (~88 deg). */
     public static final double MINING_FATIGUE_PROGRESS = 1.0 / 3.0;
-    /** Progress at/above which Blindness (the deep-end whiteout companion) layers in (~89 deg). */
-    public static final double BLINDNESS_PROGRESS = 2.0 / 3.0;
 
     /** Continuous hazard progress in {@code [0,1]}: 0 at/below 87 deg, 1 at/above 90 deg. */
     public static double hazardProgress(double absLatDeg) {
@@ -64,11 +63,6 @@ public final class PolarHazardWindow {
         return clamp01(progress) >= MINING_FATIGUE_PROGRESS;
     }
 
-    /** True at the deep end where Blindness accompanies the whiteout. */
-    public static boolean appliesBlindness(double progress) {
-        return clamp01(progress) >= BLINDNESS_PROGRESS;
-    }
-
     /** Freeze ticks to force for a hazard progress: 0 at onset, {@link #FREEZE_MAX_TICKS} at 90 deg. */
     public static int freezeTicks(double progress) {
         return (int) Math.round(clamp01(progress) * FREEZE_MAX_TICKS);
@@ -82,8 +76,9 @@ public final class PolarHazardWindow {
     public static final double AMBIENT_FULL_DEG = 90.0;
     /** Gentle-flurry per-tick snow budget at the 85 deg onset. */
     public static final int SNOW_MIN_COUNT = 2;
-    /** VERY-heavy per-tick snow budget at 90 deg. FIXED budget -- never a catch-up accumulator. */
-    public static final int SNOW_MAX_COUNT = 30;
+    /** VERY-heavy per-tick snow budget at 90 deg. FIXED budget -- never a catch-up accumulator.
+     *  B-4 raised 30->80 so the storm-snow ramp actually READS near the pole (Peetsa saw no increase). */
+    public static final int SNOW_MAX_COUNT = 80;
 
     /** Continuous ambient progress in {@code [0,1]}: 0 at/below 85 deg, 1 at/above 90 deg. */
     public static double ambientProgress(double absLatDeg) {

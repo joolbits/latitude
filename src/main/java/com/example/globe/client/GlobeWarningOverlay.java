@@ -56,6 +56,11 @@ public final class GlobeWarningOverlay {
     private static int lastStableSideX = 0;
     private static double lastObservedX = Double.NaN;
     private static long lastHemiFireXMs = Long.MIN_VALUE;
+    // B-4 anti-spam: whether the FULL (big) hemisphere title is armed on each axis. Starts true (a fresh
+    // approach fires the big title once); a re-crossing while still within 3 deg of the line shows only
+    // the small action-bar message; leaving the band re-arms FULL. Persisted between ticks per axis.
+    private static boolean hemiFullArmedZ = true;
+    private static boolean hemiFullArmedX = true;
     private static long lastWarningDebugWorldTime = Long.MIN_VALUE;
     private static String lastWarningDebugText;
 
@@ -279,6 +284,8 @@ public final class GlobeWarningOverlay {
         lastStableSideX = 0;
         lastObservedX = Double.NaN;
         lastHemiFireXMs = Long.MIN_VALUE;
+        hemiFullArmedZ = true;
+        hemiFullArmedX = true;
         lastWarningDebugWorldTime = Long.MIN_VALUE;
         lastWarningDebugText = null;
         if (DEBUG_ENTRY_TITLES) {
@@ -300,27 +307,48 @@ public final class GlobeWarningOverlay {
         double centerZ = border != null ? border.getCenterZ() : 0.0;
         double centerX = border != null ? border.getCenterX() : 0.0;
 
-        HemisphereCrossing.Result rz =
-                evalHemisphereAxis(playerZ, centerZ, lastObservedZ, lastStableSideZ, lastHemiFireZMs, nowMs);
-        HemisphereCrossing.Result rx =
-                evalHemisphereAxis(playerX, centerX, lastObservedX, lastStableSideX, lastHemiFireXMs, nowMs);
+        // 3-deg hysteresis band per axis, derived from the world radius (never a magic block count):
+        // Z (N/S) spans 90 deg over the latitude radius, so 3 deg == latitudeRadius/30; X (E/W) spans
+        // 180 deg over the X radius, so 3 deg == xRadius/60. (LatitudeMath.worldRadiusBlocks == halfSize.)
+        // WHY floor (sweeper find): on xsmall Classic (radius 3750) bandX = 3750/60 = 62.5 < DEAD_ZONE 64,
+        // so every resolved crossing already sits "outside the band" and instantly re-arms FULL -- the
+        // SMALL path becomes unreachable on that axis. Floor both bands above the dead zone (+32 margin)
+        // so the hysteresis gap always exists regardless of world size.
+        double minBand = HemisphereCrossing.DEAD_ZONE_BLOCKS + 32.0;
+        double bandZ = Math.max(com.example.globe.util.LatitudeMath.latitudeRadius(border) / 30.0, minBand);
+        double bandX = Math.max(com.example.globe.util.LatitudeMath.worldRadiusBlocks(border) / 60.0, minBand);
+
+        HemisphereCrossing.BandedResult rz = evalHemisphereAxis(
+                playerZ, centerZ, lastObservedZ, lastStableSideZ, hemiFullArmedZ, bandZ, lastHemiFireZMs, nowMs);
+        HemisphereCrossing.BandedResult rx = evalHemisphereAxis(
+                playerX, centerX, lastObservedX, lastStableSideX, hemiFullArmedX, bandX, lastHemiFireXMs, nowMs);
 
         boolean enabled = LatitudeConfig.zoneEnterTitleEnabled;
 
         // N/S line: side -1 = North (z<center), +1 = South. Natural case; applyCase() at render controls
         // final casing (same convention as buildZoneEnterTitle()).
-        if (enabled && rz.fire()) {
+        if (enabled && rz.fire() != HemisphereCrossing.Fire.NONE) {
             String line = rz.newStableSide() < 0 ? "Northern Hemisphere" : "Southern Hemisphere";
-            fireHemisphereLine(false, line);
+            if (rz.fire() == HemisphereCrossing.Fire.FULL) {
+                fireHemisphereLine(false, line);
+                logEntryTitle("hemisphere_trigger_ns", line, client, playerX, playerZ);
+            } else {
+                showHemisphereActionBar(client, line);
+                logEntryTitle("hemisphere_actionbar_ns", line, client, playerX, playerZ);
+            }
             lastHemiFireZMs = nowMs;
-            logEntryTitle("hemisphere_trigger_ns", line, client, playerX, playerZ);
         }
         // E/W line: side -1 = West (x<center), +1 = East -- matches LatitudeMath.hemisphereEW.
-        if (enabled && rx.fire()) {
+        if (enabled && rx.fire() != HemisphereCrossing.Fire.NONE) {
             String line = rx.newStableSide() < 0 ? "Western Hemisphere" : "Eastern Hemisphere";
-            fireHemisphereLine(true, line);
+            if (rx.fire() == HemisphereCrossing.Fire.FULL) {
+                fireHemisphereLine(true, line);
+                logEntryTitle("hemisphere_trigger_ew", line, client, playerX, playerZ);
+            } else {
+                showHemisphereActionBar(client, line);
+                logEntryTitle("hemisphere_actionbar_ew", line, client, playerX, playerZ);
+            }
             lastHemiFireXMs = nowMs;
-            logEntryTitle("hemisphere_trigger_ew", line, client, playerX, playerZ);
         }
 
         // Advance tracking state every tick (even when disabled) so re-enabling can never replay a
@@ -329,22 +357,35 @@ public final class GlobeWarningOverlay {
         lastObservedZ = rz.newObserved();
         lastStableSideX = rx.newStableSide();
         lastObservedX = rx.newObserved();
+        hemiFullArmedZ = rz.nextFullArmed();
+        hemiFullArmedX = rx.nextFullArmed();
 
         if (!enabled) {
             logEntryTitle("hemisphere_disabled", "", client, playerX, playerZ);
         }
     }
 
-    private static HemisphereCrossing.Result evalHemisphereAxis(double coord, double center,
-                                                                double observed, int side, long fireMs, long nowMs) {
-        return HemisphereCrossing.evaluate(coord, center, observed, side, nowMs, fireMs,
-                HemisphereCrossing.DEAD_ZONE_BLOCKS, HemisphereCrossing.MAX_STEP_BLOCKS, HemisphereCrossing.COOLDOWN_MS);
+    private static HemisphereCrossing.BandedResult evalHemisphereAxis(double coord, double center,
+                                                                      double observed, int side, boolean fullArmed,
+                                                                      double band, long fireMs, long nowMs) {
+        return HemisphereCrossing.evaluateBanded(coord, center, observed, side, fullArmed, nowMs, fireMs,
+                HemisphereCrossing.DEAD_ZONE_BLOCKS, band, HemisphereCrossing.MAX_STEP_BLOCKS,
+                HemisphereCrossing.COOLDOWN_MS);
     }
 
     private static void fireHemisphereLine(boolean eastWestAxis, String line) {
         int durationTicks = (int) Math.round(clamp(LatitudeConfig.zoneEnterTitleSeconds, 2.0, 10.0) * 20.0);
         double scale = clamp(LatitudeConfig.zoneEnterTitleScale, 1.0, 3.0);
         HemisphereTitleOverlay.trigger(eastWestAxis, line, durationTicks, scale);
+    }
+
+    // B-4 anti-spam: a re-crossing while still within 3 deg of the line shows only this small, unobtrusive
+    // vanilla action-bar (overlay) message instead of re-firing the big center-screen title. Hud.setOverlayMessage
+    // is the 26.2 home of the action-bar text (Gui.hud, same object the overlays already read via mc.gui.hud).
+    private static void showHemisphereActionBar(Minecraft client, String line) {
+        if (client != null && client.gui != null && client.gui.hud != null) {
+            client.gui.hud.setOverlayMessage(Component.literal(line), false);
+        }
     }
 
     private static void logEntryTitle(String action, String title, Minecraft client, double playerX, double playerZ) {
