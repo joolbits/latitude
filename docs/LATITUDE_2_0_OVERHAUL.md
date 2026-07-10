@@ -556,6 +556,55 @@ Documentation:
 
 - Boundary proof note.
 
+### Phase 5B: Moisture-Driven Biome Selection ("Longitude Matters")
+
+Added 2026-07-10 (Peetsa-authorized, follow-on to the Wide-2:1 "is it too wide?" design discussion).
+Sequenced AFTER Phase 5 completes (incl. the B-5 Hemisphere Passage and the consumer-flip live decision)
+and BEFORE Phase 6.
+
+Document review:
+
+- ClimateAuthority design (docs/design/climateauthority-design-20260703.md) — the Fetch & Lift fields.
+- Biome-geography audit (docs/binder/fable5-biome-geography-audit-20260707.md) — what the fields already
+  do (wet windward coasts, interior drying, rain shadows) and the consumer's current coarseness (~2%
+  class-mismatch repaints only).
+- Consumer law-compliance plan (prerequisite, COMPLETE 2026-07-09).
+- Vanilla-first constraint; Art X (monoculture); the tropical dry law.
+
+Objective:
+
+- Make LONGITUDE as meaningful as latitude on the visible map: biome selection driven by the climate
+  brain's CONTINUOUS moisture/temperature fields, not latitude stripes plus a coarse mismatch reroll.
+  Wet windward coasts, dry interiors, rain shadows, and per-seed emergent "hemisphere personalities"
+  (a seed's Sahara lands wherever its continents and winds put it). This is the payoff that justifies
+  the Wide 2:1 world shape; it is EMERGENT BY LAW, never scripted per-hemisphere.
+
+Action plan:
+
+- Measurement first: longitude-binned atlas metrics (east-vs-west coast composition, interior-dryness
+  gradients) on the current consumer-on config as the baseline.
+- Design slice with the Phase-2/3 discipline (adversarial design review; this is algorithm-shaping):
+  integrate continuous precip01/temp01 into the band/province selection machinery — packs still enrich,
+  vanilla-first still resolves, the demote laws stay supreme.
+- Staged flags per house pattern; flag-off byte-identical at every pass; map gates before any push.
+- Known items that become load-bearing here: windwardLift placement quirk (P2-A), polar precip (P2-B),
+  custom-pack representation weighting.
+
+Potential problems:
+
+- Monoculture along wet/dry seams (Art X).
+- Fighting the tropical dry law or the province coherence work (laws win; consumer proposes, laws dispose).
+- pick() performance (continuous fields per column).
+- Pretty atlas, wrong exact-ID truth.
+
+Commits/tags/pushes:
+
+- Per-pass commits; push only after the slice map gate; live look before any default flip.
+
+Documentation:
+
+- Binder plan + run log per slice; LESSONS on durable rules.
+
 ### Phase 6: Release Candidate Hardening
 
 Document review:
