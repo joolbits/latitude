@@ -102,6 +102,55 @@ public final class HemisphereCrossing {
     }
 
     /**
+     * B-4 anti-spam kind: which title (if any) a banded crossing should show. {@link #FULL} = the big
+     * center-screen title (first approach / after leaving the band); {@link #SMALL} = the unobtrusive
+     * action-bar message (a re-crossing while still within the band); {@link #NONE} = no crossing fired.
+     */
+    public enum Fire {
+        NONE, FULL, SMALL
+    }
+
+    /**
+     * B-4 hemisphere-title ANTI-SPAM (Peetsa's design): the big title fires ONCE per approach; while the
+     * player stays within {@code band} blocks of the line, subsequent re-crossings show only the small
+     * action-bar message; the big title re-arms once the player leaves the band. Layers a two-state
+     * hysteresis ({@code fullArmed}) on top of the unchanged {@link #evaluate} crossing/debounce core --
+     * the dead zone, genuine-crossing requirement, teleport guard and per-axis cooldown all still gate
+     * whether ANY message fires; this only decides FULL vs SMALL and manages the re-arm.
+     *
+     * <p>The {@code band} is a per-axis distance the caller derives from the world radius, NOT a magic
+     * block count: Z (N/S) = {@code latitudeRadius/30} (== 3 deg of latitude over the 90-deg Z radius),
+     * X (E/W) = {@code xRadius/60} (== 3 deg of longitude over the 180-deg X radius).
+     *
+     * @param fullArmed whether the FULL title is currently armed (true on a fresh approach); the caller
+     *                  persists {@link BandedResult#nextFullArmed()} back for the next tick
+     * @param band      hysteresis half-width in blocks around {@code center} (see above)
+     */
+    public static BandedResult evaluateBanded(double coord, double center,
+                                              double lastObserved, int lastStableSide, boolean fullArmed,
+                                              long nowMs, long lastFireMs,
+                                              double deadZone, double band, double maxStep, long cooldownMs) {
+        Result base = evaluate(coord, center, lastObserved, lastStableSide, nowMs, lastFireMs,
+                deadZone, maxStep, cooldownMs);
+        Fire kind = Fire.NONE;
+        boolean nextArmed = fullArmed;
+        if (base.fire()) {
+            if (fullArmed) {
+                kind = Fire.FULL;
+                nextArmed = false; // full consumed for this approach; re-arms only after leaving the band
+            } else {
+                kind = Fire.SMALL;
+            }
+        }
+        // Leaving the band (either hemisphere) re-arms the FULL title for the next approach. Evaluated on
+        // the raw current distance so a player who wanders >=3 deg off the line gets a full title again.
+        if (Math.abs(coord - center) >= band) {
+            nextArmed = true;
+        }
+        return new BandedResult(kind, base.newStableSide(), base.newObserved(), nextArmed);
+    }
+
+    /**
      * The 0deg,0deg stack rule: order the two per-axis title lines into a single title's line list,
      * N/S first then E/W, dropping nulls. Zero lines -> empty (nothing to render); one -> a single-line
      * title; both (crossings within the same display window) -> ONE stacked two-line title. Never
@@ -124,5 +173,10 @@ public final class HemisphereCrossing {
 
     /** Outcome of {@link #evaluate}: whether to fire a title plus the next tracking state to store. */
     public record Result(boolean fire, int newStableSide, double newObserved) {
+    }
+
+    /** Outcome of {@link #evaluateBanded}: which title kind to show plus the next tracking state
+     *  (including the re-armed {@code nextFullArmed} flag) to persist for this axis. */
+    public record BandedResult(Fire fire, int newStableSide, double newObserved, boolean nextFullArmed) {
     }
 }

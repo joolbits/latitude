@@ -19,10 +19,16 @@ public final class PolarWhiteoutOverlayHud {
     private PolarWhiteoutOverlayHud() {
     }
 
+    // B-4 stormy cast: the fill lerps from a cold grey-blue STORM tint at low/mid intensity toward the
+    // near-white WHITEOUT endpoint at the pole. Because the fill covers the whole screen this also dims
+    // the sunny/blue sky Peetsa complained about -- the approach reads as a gathering storm, not clear skies.
+    private static final int STORM_R = 92;
+    private static final int STORM_G = 108;
+    private static final int STORM_B = 132;
     // Near-white cool tint -- the same endpoint color the EW cold-band whiteout lerps toward.
-    private static final int FOG_R = 238;
-    private static final int FOG_G = 242;
-    private static final int FOG_B = 248;
+    private static final int WHITE_R = 238;
+    private static final int WHITE_G = 242;
+    private static final int WHITE_B = 248;
     // Heavy but not opaque at 90 deg: the pole reads as a whiteout while the warning text stays legible.
     private static final float MAX_ALPHA = 0.90f;
 
@@ -48,15 +54,27 @@ public final class PolarWhiteoutOverlayHud {
             return;
         }
 
-        // Quadratic ease-in: barely-there at the 85 deg onset, thickening fast across the 87-90 hazard
-        // window toward the MAX_ALPHA whiteout at 90 deg.
-        float a = intensity * intensity;
-        int alpha = (int) (Math.min(MAX_ALPHA, a * MAX_ALPHA) * 255.0f);
+        // B-4 fog curve: the old quadratic (intensity^2) was ~invisible until ~88 deg then slammed shut
+        // ("fog ramps then WHAM"). A sub-linear ease (intensity^0.65) lifts the low-mid range so the haze
+        // is genuinely visible from ~85.5 deg (intensity 0.1 -> ~0.22 of MAX_ALPHA, was ~0.01) and its
+        // slope DECREASES toward the pole -- smooth build, no sudden wall. Starts at 0 at 85 deg (no seam).
+        float eased = (float) Math.pow(intensity, 0.65);
+        int alpha = (int) (Math.min(MAX_ALPHA, eased * MAX_ALPHA) * 255.0f);
         if (alpha <= 0) {
             return;
         }
 
-        int argb = (alpha << 24) | (FOG_R << 16) | (FOG_G << 8) | FOG_B;
+        // Colour follows the raw 85->90 ramp: grey-blue storm low, white-out high.
+        float t = Math.min(1.0f, Math.max(0.0f, intensity));
+        int r = lerp(STORM_R, WHITE_R, t);
+        int g = lerp(STORM_G, WHITE_G, t);
+        int b = lerp(STORM_B, WHITE_B, t);
+
+        int argb = (alpha << 24) | (r << 16) | (g << 8) | b;
         ctx.fill(0, 0, ctx.guiWidth(), ctx.guiHeight(), argb);
+    }
+
+    private static int lerp(int from, int to, float t) {
+        return from + Math.round((to - from) * t);
     }
 }

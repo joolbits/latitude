@@ -126,7 +126,7 @@ class PolarHazardWindowTest {
     void snowCountAtLethalDegEqualsSnowMaxCount() {
         assertEquals(PolarHazardWindow.SNOW_MAX_COUNT,
                 PolarHazardWindow.snowCount(PolarHazardWindow.AMBIENT_FULL_DEG));
-        assertEquals(30, PolarHazardWindow.SNOW_MAX_COUNT);
+        assertEquals(80, PolarHazardWindow.SNOW_MAX_COUNT); // B-4 raised 30->80 so the storm-snow ramp reads
     }
 
     @Test
@@ -190,17 +190,8 @@ class PolarHazardWindowTest {
         assertTrue(PolarHazardWindow.appliesMiningFatigue(PolarHazardWindow.hazardProgress(atOrAbove88)));
     }
 
-    @Test
-    void blindnessAppliesAtAndAboveDocumentedProgressThreshold() {
-        // WHY: BLINDNESS_PROGRESS == 2/3, documented as "~89 deg" (87 + 3*(2/3) == 89).
-        assertFalse(PolarHazardWindow.appliesBlindness(PolarHazardWindow.BLINDNESS_PROGRESS - 0.01));
-        assertTrue(PolarHazardWindow.appliesBlindness(PolarHazardWindow.BLINDNESS_PROGRESS));
-
-        double justBelow89 = 87.0 + 3.0 * (PolarHazardWindow.BLINDNESS_PROGRESS - 0.001);
-        double atOrAbove89 = 87.0 + 3.0 * PolarHazardWindow.BLINDNESS_PROGRESS;
-        assertFalse(PolarHazardWindow.appliesBlindness(PolarHazardWindow.hazardProgress(justBelow89)));
-        assertTrue(PolarHazardWindow.appliesBlindness(PolarHazardWindow.hazardProgress(atOrAbove89)));
-    }
+    // B-4 removed the Blindness effect from the polar hazard (the smooth whiteout overlay now carries
+    // vision loss), so appliesBlindness/BLINDNESS_PROGRESS no longer exist and are no longer tested.
 
     // ---- (5) Above-90 clamping: behaves as exactly 90 (progress capped at 1) ------------------
 
@@ -225,6 +216,5 @@ class PolarHazardWindowTest {
         assertEquals(PolarHazardWindow.SLOWNESS_MAX_AMP, PolarHazardWindow.slownessAmplifier(progressAt95));
         assertEquals(PolarHazardWindow.WEAKNESS_MAX_AMP, PolarHazardWindow.weaknessAmplifier(progressAt95));
         assertTrue(PolarHazardWindow.appliesMiningFatigue(progressAt95));
-        assertTrue(PolarHazardWindow.appliesBlindness(progressAt95));
     }
 }

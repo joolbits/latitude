@@ -304,4 +304,58 @@ class HemisphereCrossingTest {
         assertEquals(thirdZ.fire(), thirdX.fire());
         assertEquals(thirdZ.newStableSide(), thirdX.newStableSide());
     }
+
+    // ---- (9) B-4 banded anti-spam: FULL once, SMALL on re-cross within band, FULL re-arms on leave ---
+
+    private static final double BAND = 1_000.0; // >> the +/-100 crossing coords, so re-crosses stay "within band"
+
+    @Test
+    void evaluateBandedFiresFullOnceOnTheFirstArmedCrossing() {
+        // WHY: Peetsa's design -- the big title fires ONCE per approach. An armed axis (fullArmed=true)
+        // crossing the line for the first time must return FULL and CONSUME the arm (nextFullArmed=false)
+        // so the very next re-crossing can't repeat the big title.
+        HemisphereCrossing.BandedResult r = HemisphereCrossing.evaluateBanded(
+                /* coord */ 100.0, CENTER, /* lastObserved */ -100.0, /* lastStableSide */ -1,
+                /* fullArmed */ true, /* nowMs */ 1_000L, /* lastFireMs */ Long.MIN_VALUE,
+                DEAD_ZONE, BAND, MAX_STEP, COOLDOWN);
+
+        assertEquals(HemisphereCrossing.Fire.FULL, r.fire());
+        assertEquals(1, r.newStableSide());
+        assertFalse(r.nextFullArmed(), "the full title must be consumed for this approach");
+    }
+
+    @Test
+    void evaluateBandedShowsSmallOnAReCrossWhileStillWithinTheBand() {
+        // WHY: while the player stays within 3 deg of the line, re-crossings must show only the small
+        // action-bar message, never the big title again. After the first FULL consumes the arm, a genuine
+        // re-crossing (back to the negative side) that stays inside the band returns SMALL and leaves the
+        // arm still spent (nextFullArmed=false) -- the big title stays suppressed until the band is left.
+        HemisphereCrossing.BandedResult first = HemisphereCrossing.evaluateBanded(
+                100.0, CENTER, -100.0, -1, true, 1_000L, Long.MIN_VALUE, DEAD_ZONE, BAND, MAX_STEP, COOLDOWN);
+        assertEquals(HemisphereCrossing.Fire.FULL, first.fire());
+
+        long afterCooldownMs = 1_000L + COOLDOWN; // past the per-axis cooldown so the re-cross can fire
+        HemisphereCrossing.BandedResult second = HemisphereCrossing.evaluateBanded(
+                -100.0, CENTER, first.newObserved(), first.newStableSide(), first.nextFullArmed(),
+                afterCooldownMs, 1_000L, DEAD_ZONE, BAND, MAX_STEP, COOLDOWN);
+
+        assertEquals(HemisphereCrossing.Fire.SMALL, second.fire(), "re-cross within band => small message");
+        assertEquals(-1, second.newStableSide());
+        assertFalse(second.nextFullArmed(), "still within band => full stays suppressed");
+    }
+
+    @Test
+    void evaluateBandedReArmsFullOnceThePlayerLeavesTheBand() {
+        // WHY: the big title re-arms only after the player leaves the 3 deg band. A sample whose distance
+        // from center is >= band re-arms FULL (nextFullArmed=true) even with the arm previously spent, so
+        // the NEXT approach announces with the big title again. Isolated on a non-crossing sample (same
+        // side, no fire) to prove the re-arm is driven purely by leaving the band, not by a crossing.
+        HemisphereCrossing.BandedResult r = HemisphereCrossing.evaluateBanded(
+                /* coord */ BAND + 200.0, CENTER, /* lastObserved */ BAND + 100.0, /* lastStableSide */ 1,
+                /* fullArmed */ false, /* nowMs */ 2_000L, /* lastFireMs */ 1_000L,
+                DEAD_ZONE, BAND, MAX_STEP, COOLDOWN);
+
+        assertEquals(HemisphereCrossing.Fire.NONE, r.fire(), "no crossing on this sample");
+        assertTrue(r.nextFullArmed(), "leaving the band re-arms the full title for the next approach");
+    }
 }
