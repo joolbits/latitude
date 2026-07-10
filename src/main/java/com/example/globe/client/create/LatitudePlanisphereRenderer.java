@@ -110,6 +110,79 @@ public final class LatitudePlanisphereRenderer {
         }
     }
 
+    // ── Shared zone-bar glow (Peetsa) ── the create screen's Spawn Zone tab draws a thin horizontal 5-segment
+    // color bar (tropical→polar). Peetsa asked for the same Gaussian glow treatment the Atlas already carries,
+    // so the crest math above is exposed here as two absolute-rect helpers the screen calls with ITS OWN
+    // BAND_COLORS (the screen's bar palette differs from this renderer's atlas palette; keep them independent).
+    // Both are wall-clock driven (same System.currentTimeMillis() idiom) and self-contained so the caller only
+    // passes geometry + color — no per-frame phase bookkeeping at the call site.
+
+    /**
+     * SELECTED zone: fill one bar segment [{@code left},{@code top})..[{@code right},{@code bottom}) with a glow
+     * crest sweeping left→right ACROSS that segment only, mirroring the Atlas selected-band shimmer
+     * ({@link #fillSelectedGlowStrip}) turned into an absolute-rect draw. Floored at SELECTED_BASE_GLOW so the
+     * segment always reads selected; the crest drives it to the full opaque pop as it passes. Same seam-fade
+     * envelope (SWEEP_FADE_FRAC) so the loop restart breathes instead of popping. No-op on a degenerate rect.
+     */
+    public static void fillSelectedGlowSegment(GuiGraphicsExtractor ctx, int left, int top, int right, int bottom, int baseColor) {
+        if (right <= left || bottom <= top) return;
+        int width = right - left;
+        double sp = (System.currentTimeMillis() % SELECTED_SWEEP_PERIOD_MS) / (double) SELECTED_SWEEP_PERIOD_MS;
+        double env = smoothstep(0.0, SWEEP_FADE_FRAC, sp) * smoothstep(0.0, SWEEP_FADE_FRAC, 1.0 - sp);
+        int br = (baseColor >> 16) & 0xFF, bg = (baseColor >> 8) & 0xFF, bb = baseColor & 0xFF;
+        int step = 2;
+        for (int px = left; px < right; px += step) {
+            double u = (px + step * 0.5 - left) / (double) width;   // column-center fraction 0..1 across the segment
+            double d = u - sp;
+            double crest = Math.exp(-(d * d) / (2.0 * SELECTED_SWEEP_SIGMA * SELECTED_SWEEP_SIGMA)) * env;
+            double glow = SELECTED_BASE_GLOW + (1.0 - SELECTED_BASE_GLOW) * crest;
+            float bright = 1.0f + SELECTED_BRIGHT_GAIN * (float) glow;
+            int r = Math.min(255, (int) (br * bright));
+            int g = Math.min(255, (int) (bg * bright));
+            int b = Math.min(255, (int) (bb * bright));
+            int a = 0x86 + (int) ((0xFF - 0x86) * glow);
+            int col = (a << 24) | (r << 16) | (g << 8) | b;
+            int x1 = Math.min(px + step, right);
+            ctx.fill(px, top, x1, bottom, col);
+        }
+    }
+
+    /**
+     * RANDOM zone: overlay ONE glow crest that travels the WHOLE bar [{@code barLeft},{@code barRight}) left→right
+     * once per period, taking on each segment's OWN color as it passes through — the Atlas Random sweep's
+     * per-band color pickup, here horizontal. Each column brightens/alpha-boosts whichever segment's color it
+     * currently sits over (a hard hue switch at each boundary, but a CONTINUOUS crest so the glow bleeds smoothly
+     * across boundaries); away from the crest, alpha falls to 0 and the caller's dim base shows through untouched.
+     * The seam-fade envelope eases the crest in at the left restart and out past the right, so the loop never pops.
+     * {@code segColors} indexes the segments left→right; the bar is assumed evenly divided into segColors.length.
+     */
+    public static void fillRandomGlowBar(GuiGraphicsExtractor ctx, int barLeft, int barRight, int top, int bottom, int[] segColors) {
+        if (barRight <= barLeft || bottom <= top || segColors == null || segColors.length == 0) return;
+        int width = barRight - barLeft;
+        int segCount = segColors.length;
+        double phase = (System.currentTimeMillis() % SELECTED_SWEEP_PERIOD_MS) / (double) SELECTED_SWEEP_PERIOD_MS;
+        double env = smoothstep(0.0, SWEEP_FADE_FRAC, phase) * smoothstep(0.0, SWEEP_FADE_FRAC, 1.0 - phase);
+        int step = 2;
+        for (int px = barLeft; px < barRight; px += step) {
+            double u = (px + step * 0.5 - barLeft) / (double) width;   // column-center fraction 0..1 across the full bar
+            double d = u - phase;
+            double crest = Math.exp(-(d * d) / (2.0 * SELECTED_SWEEP_SIGMA * SELECTED_SWEEP_SIGMA)) * env;
+            if (crest <= 0.004) continue;   // negligible: leave the caller's dim base showing, no wasted fill
+            int seg = (int) (u * segCount);
+            if (seg < 0) seg = 0;
+            if (seg >= segCount) seg = segCount - 1;
+            int baseColor = segColors[seg];
+            float bright = 1.0f + SELECTED_BRIGHT_GAIN * (float) crest;
+            int r = Math.min(255, (int) (((baseColor >> 16) & 0xFF) * bright));
+            int g = Math.min(255, (int) (((baseColor >> 8) & 0xFF) * bright));
+            int b = Math.min(255, (int) ((baseColor & 0xFF) * bright));
+            int a = Math.min(255, (int) (0xFF * crest));   // alpha grows with the crest → boosts over the dim base
+            int col = (a << 24) | (r << 16) | (g << 8) | b;
+            int x1 = Math.min(px + step, barRight);
+            ctx.fill(px, top, x1, bottom, col);
+        }
+    }
+
     /**
      * Render a compact latitude preview within a {@code width × height} pixel area — a circle for a Legacy 1:1
      * (CLASSIC) world, a rectangle for a Mercator 2:1 world (width == 2 × height). 5-band fill with a

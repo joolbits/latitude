@@ -1428,12 +1428,23 @@ public class LatitudeCreateWorldScreen extends Screen {
             boolean sel = !randomZone && allBands[i] == selectedZone;
             int bandColor = BAND_COLORS[i];
             if (sel) {
+                // Selected zone: keep the gold edge, but fill the interior with the Atlas selected-band glow
+                // crest sweeping left→right within this segment only (Peetsa: give the zone bar the same
+                // Gaussian shimmer the Atlas selected band already has). Other segments stay static below.
                 context.fill(segX, rightBarY, segXEnd, rightBarY + rightBarH, GOLD);
-                context.fill(segX + 1, rightBarY + 1, segXEnd - 1, rightBarY + rightBarH - 1, bandColor);
+                LatitudePlanisphereRenderer.fillSelectedGlowSegment(context, segX + 1, rightBarY + 1, segXEnd - 1, rightBarY + rightBarH - 1, bandColor);
             } else {
                 int dimColor = (bandColor & 0x00FFFFFF) | (0x66 << 24);
                 context.fill(segX, rightBarY, segXEnd, rightBarY + rightBarH, dimColor);
             }
+        }
+        // Random spawn zone: one crest travels the full bar left→right, taking on each segment's own color as it
+        // passes (Peetsa; mirrors the Atlas Random sweep's per-band color pickup, here horizontal). Overlaid on
+        // the dim segments drawn above, so segments the crest isn't over keep their exact static look.
+        if (randomZone) {
+            int barLeft = rightX + barInset;
+            int barRight = rightX + barInset + barTotalW;
+            LatitudePlanisphereRenderer.fillRandomGlowBar(context, barLeft, barRight, rightBarY, rightBarY + rightBarH, BAND_COLORS);
         }
 
         int descPanelX = rightX + 2;
