@@ -125,6 +125,10 @@ public class GlobeModClient implements ClientModInitializer {
 
         GlobeWarningOverlay.init();
         CompassHud.init();
+        // Client-side `/latdev title` test command (previews the zone-enter title on demand). Registers only
+        // outside dev and only for pre-release / -Dlatitude.devCommands builds; falls through to the server
+        // /latdev tree for every other subcommand. See LatitudeClientDevCommands for the full rationale.
+        com.example.globe.client.LatitudeClientDevCommands.registerIfEnabled();
         ClientTickEvents.END_CLIENT_TICK.register(GlobeModClient::polarCapClientTick);
         ClientKeybinds.init();
         if (FabricLoader.getInstance().isDevelopmentEnvironment()) {
