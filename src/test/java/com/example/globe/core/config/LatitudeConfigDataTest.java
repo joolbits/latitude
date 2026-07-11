@@ -29,12 +29,15 @@ class LatitudeConfigDataTest {
         assertEquals(6.0, d.zoneEnterTitleSeconds);
         assertEquals(1.8, d.zoneEnterTitleScale);
         // FRESH default refreshed 2026-07-11 (title-styling overhaul, refined same day): warm OFF_WHITE fill,
-        // no outline, hard drop shadow off, glow off, ALL CAPS.
+        // no outline (1px thickness when enabled), hard drop shadow off, GENTLE glow ON (intensity 0.75),
+        // ALL CAPS.
         assertEquals(TitleColorPreset.OFF_WHITE, d.zoneEnterTitleColorPreset);
         assertFalse(d.zoneEnterTitleOutline);
         assertEquals(0x000000, d.zoneEnterTitleOutlineRgb);
+        assertEquals(1, d.zoneEnterTitleOutlineThickness);
         assertFalse(d.zoneEnterTitleDropShadow);
-        assertFalse(d.zoneEnterTitleGlow);
+        assertTrue(d.zoneEnterTitleGlow, "fresh default flipped to a gentle glow (2026-07-11)");
+        assertEquals(0.75, d.zoneEnterTitleGlowIntensity);
         assertEquals(TitleCaseMode.UPPERCASE, d.zoneEnterTitleCase);
         assertEquals(-40, d.zoneEnterTitleOffsetY);
         assertTrue(d.hudSnapEnabled);
@@ -110,8 +113,12 @@ class LatitudeConfigDataTest {
         // new title-style keys picks up the new default look. This is the disclosed pre-release migration.
         assertEquals(TitleColorPreset.OFF_WHITE, d.zoneEnterTitleColorPreset);
         assertFalse(d.zoneEnterTitleOutline);
+        assertEquals(1, d.zoneEnterTitleOutlineThickness, "absent thickness key adopts the 1px default");
         assertFalse(d.zoneEnterTitleDropShadow);
-        assertFalse(d.zoneEnterTitleGlow);
+        // NOTE the key-presence asymmetry: the glow BOOLEAN existed before this pass, so a real saved file
+        // carries its own value; but a file that genuinely lacks the key (as here) adopts the new true default.
+        assertTrue(d.zoneEnterTitleGlow, "absent glow key adopts the new gentle-glow default");
+        assertEquals(0.75, d.zoneEnterTitleGlowIntensity, "absent intensity key adopts the gentle 0.75 default");
         assertTrue(d.zoneEnterTitleEnabled);
     }
 
@@ -155,6 +162,8 @@ class LatitudeConfigDataTest {
                   "zoneEnterTitleSeconds": 999.0,
                   "zoneEnterTitleScale": 0.01,
                   "zoneEnterTitleLetterSpacing": -100,
+                  "zoneEnterTitleOutlineThickness": 99,
+                  "zoneEnterTitleGlowIntensity": 50.0,
                   "hudSnapPixels": 100000,
                   "zoneEnterTitleColorPreset": "NOT_A_REAL_PRESET",
                   "zoneEnterTitleCase": null,
@@ -165,6 +174,8 @@ class LatitudeConfigDataTest {
         assertEquals(10.0, d.zoneEnterTitleSeconds);
         assertEquals(1.0, d.zoneEnterTitleScale);
         assertEquals(-4, d.zoneEnterTitleLetterSpacing);
+        assertEquals(4, d.zoneEnterTitleOutlineThickness, "outline thickness clamps to MAX (4)");
+        assertEquals(2.0, d.zoneEnterTitleGlowIntensity, "glow intensity clamps to 2.0");
         assertEquals(64, d.hudSnapPixels);
         assertEquals(TitleColorPreset.WHITE, d.zoneEnterTitleColorPreset, "unknown enum constant -> default");
         assertEquals(TitleCaseMode.NORMAL, d.zoneEnterTitleCase);

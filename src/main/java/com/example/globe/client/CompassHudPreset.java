@@ -34,11 +34,15 @@ public final class CompassHudPreset {
         public LatitudeConfigData.TitleCaseMode caseMode = LatitudeConfigData.TitleCaseMode.NORMAL;
         public int letterSpacing = 0;
         // Outline / shadow / glow (NEW 2026-07-11, title-styling overhaul). Defaults mirror the fresh-config
-        // look so a preset saved without these keys imports as outline-on / drop-shadow-off / glow-off.
+        // look so a preset saved without these keys imports as the out-of-box style. glow flipped false->true
+        // + gentle glowIntensity 0.75 (2026-07-11: "a gentle glow should be default"); outlineThickness 1 =
+        // the classic crisp 1px ring.
         public boolean outline = true;
         public int outlineRgb = 0x000000;
+        public int outlineThickness = 1;
         public boolean dropShadow = false;
-        public boolean glow = false;
+        public boolean glow = true;
+        public double glowIntensity = 0.75;
         // One-shot color-aware glimmer sweep (NEW 2026-07-11). Default ON so a preset saved without this key
         // imports with the glimmer on, matching the fresh-config look.
         public boolean glimmer = true;
@@ -123,8 +127,10 @@ public final class CompassHudPreset {
         p.title.letterSpacing = LatitudeConfig.zoneEnterTitleLetterSpacing;
         p.title.outline = LatitudeConfig.zoneEnterTitleOutline;
         p.title.outlineRgb = LatitudeConfig.zoneEnterTitleOutlineRgb;
+        p.title.outlineThickness = LatitudeConfig.zoneEnterTitleOutlineThickness;
         p.title.dropShadow = LatitudeConfig.zoneEnterTitleDropShadow;
         p.title.glow = LatitudeConfig.zoneEnterTitleGlow;
+        p.title.glowIntensity = LatitudeConfig.zoneEnterTitleGlowIntensity;
         p.title.glimmer = LatitudeConfig.zoneEnterTitleGlimmer;
         p.title.showBaseDegrees = LatitudeConfig.showZoneBaseDegreesOnTitle;
         p.title.offsetX = LatitudeConfig.zoneEnterTitleOffsetX;
@@ -167,8 +173,10 @@ public final class CompassHudPreset {
             LatitudeConfig.zoneEnterTitleLetterSpacing = title.letterSpacing;
             LatitudeConfig.zoneEnterTitleOutline = title.outline;
             LatitudeConfig.zoneEnterTitleOutlineRgb = title.outlineRgb;
+            LatitudeConfig.zoneEnterTitleOutlineThickness = title.outlineThickness;
             LatitudeConfig.zoneEnterTitleDropShadow = title.dropShadow;
             LatitudeConfig.zoneEnterTitleGlow = title.glow;
+            LatitudeConfig.zoneEnterTitleGlowIntensity = title.glowIntensity;
             LatitudeConfig.zoneEnterTitleGlimmer = title.glimmer;
             LatitudeConfig.showZoneBaseDegreesOnTitle = title.showBaseDegrees;
             LatitudeConfig.zoneEnterTitleOffsetX = title.offsetX;
