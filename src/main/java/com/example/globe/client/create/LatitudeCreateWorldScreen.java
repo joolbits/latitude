@@ -385,24 +385,20 @@ public class LatitudeCreateWorldScreen extends Screen {
         }
     }
 
-    private boolean isCompact() {
-        return this.width < 480;
-    }
-
     @Override
     protected void init() {
         LOGGER.info("[LAT][CWPATH] LatitudeCreateWorldScreen.init screen={} holder={}",
                 this.getClass().getName(), this.holder);
         zoneRows.clear();
-        int headerGap = scaledUi(10);
-        int headerToPanel = scaledUi(42);
-        int bottomMargin = scaledUi(40);
-        int btnBottomOffset = scaledUi(30);
-        int fieldGap1 = scaledUi(38);
-        int fieldGap2 = scaledUi(40);
-        int labelFieldGap = scaledUi(22);
-        int fieldH = Math.max(16, scaledUi(16));
-        int btnH = Math.max(18, scaledUi(20));
+        int headerGap = 10;
+        int headerToPanel = 42;
+        int bottomMargin = 40;
+        int btnBottomOffset = 30;
+        int fieldGap1 = 38;
+        int fieldGap2 = 40;
+        int labelFieldGap = 22;
+        int fieldH = Math.max(16, 16);
+        int btnH = Math.max(18, 20);
         int stepperBtnW = 20;
 
         headerY = headerGap;
@@ -410,7 +406,7 @@ public class LatitudeCreateWorldScreen extends Screen {
         panelTop = headerY + headerToPanel;
         panelBottom = this.height - bottomMargin;
         int cx = this.width / 2;
-        paneGap = scaledUi(8);
+        paneGap = 8;
         paneStripViewportLeft = 12;
         paneStripViewportRight = Math.max(paneStripViewportLeft + 1, this.width - 12);
         paneStripViewportWidth = Math.max(1, paneStripViewportRight - paneStripViewportLeft);
@@ -418,8 +414,10 @@ public class LatitudeCreateWorldScreen extends Screen {
         paneStripScrollbarX = paneStripViewportLeft;
         paneStripScrollbarW = paneStripViewportWidth;
         paneStripScrollbarY = panelBottom + 2;
-        paneStripScrollbarH = Math.max(4, Math.min(Math.max(4, scaledUi(6)), Math.max(4, bottomY - paneStripScrollbarY - 2)));
+        paneStripScrollbarH = Math.max(4, Math.min(Math.max(4, 6), Math.max(4, bottomY - paneStripScrollbarY - 2)));
         // Use the comfortable threshold, not the bare fit-width, so cramped mid-GUI-scale cases go tabbed.
+        // This is the screen's real scale/DPI adaptation: everything below keys off the already-gui-scaled
+        // this.width/height, so spacing is plain gui-pixel literals (no separate per-pixel scaling layer).
         int minThreeColWidth = Math.max(COMFORTABLE_THREE_COL_W, MIN_LEFT_W + MIN_RIGHT_W + MIN_RAIL_W + paneGap * 2);
         tabbedMode = paneStripViewportWidth < minThreeColWidth;
         threeCol = !tabbedMode;
@@ -523,11 +521,11 @@ public class LatitudeCreateWorldScreen extends Screen {
         this.addRenderableWidget(sizeNextBtn);
         updateLeftWidgets(inputX, inputW, fieldH, btnH, stepperBtnW);
 
-        inputBottomY = Math.max(sizeFieldY + btnH, computeSizeLabelBottom(sizeFieldY - 1, inputW - 48)) + scaledUi(12);
+        inputBottomY = Math.max(sizeFieldY + btnH, computeSizeLabelBottom(sizeFieldY - 1, inputW - 48)) + 12;
         updateLeftLayout();
 
         zoneRowHeight = computeZoneRowHeight(rightW - 4);
-        zoneRowStep = zoneRowHeight + scaledUi(6);
+        zoneRowStep = zoneRowHeight + 6;
         for (LatitudeBands.Band band : LatitudeBands.Band.values()) {
             ZoneRowWidget row = new ZoneRowWidget(rightX + 2, panelTop, rightW - 4, zoneRowHeight, band);
             zoneRows.add(row);
@@ -599,7 +597,7 @@ public class LatitudeCreateWorldScreen extends Screen {
         }
 
         // ── 17. Create World ──
-        int btnSpacing = scaledUi(8);
+        int btnSpacing = 8;
         int beginW = Math.max(120, this.font.width("Create World") + 20);
         int cancelW = Math.max(70, this.font.width("Cancel") + 20);
         int totalBtnW = beginW + btnSpacing + cancelW;
@@ -668,14 +666,6 @@ public class LatitudeCreateWorldScreen extends Screen {
         return worldTypeIdx == 0;
     }
 
-    private int scaledUi(int px) {
-        return px;
-    }
-
-    private int compactUi(int px) {
-        return scaledUi(px);
-    }
-
     private int uiFontHeight() {
         return this.font.lineHeight;
     }
@@ -710,7 +700,7 @@ public class LatitudeCreateWorldScreen extends Screen {
         for (String desc : SIZE_DESCRIPTIONS) {
             maxLines = Math.max(maxLines, wrapLineCount(desc, Math.max(40, availW)));
         }
-        return y + scaledUi(22) + maxLines * uiFontHeight();
+        return y + 22 + maxLines * uiFontHeight();
     }
 
     private int getSmallWorldWarningHeight(int width) {
@@ -718,7 +708,7 @@ public class LatitudeCreateWorldScreen extends Screen {
     }
 
     private int computeZoneListTop() {
-        return panelTop + scaledUi(22) + wrappedTextHeight("Choose the climate where your journey begins", Math.max(80, rightW - scaledUi(20) - SCROLLBAR_GUTTER)) + scaledUi(10);
+        return panelTop + 22 + wrappedTextHeight("Choose the climate where your journey begins", Math.max(80, rightW - 20 - SCROLLBAR_GUTTER)) + 10;
     }
 
     private int computeZoneRowHeight(int rowWidth) {
@@ -733,7 +723,7 @@ public class LatitudeCreateWorldScreen extends Screen {
             maxHelperLines = Math.max(maxHelperLines, wrapLineCount(helper, helperWidth));
         }
         maxHelperLines = Math.max(maxHelperLines, wrapLineCount(RANDOM_ZONE_HELPER, helperWidth));
-        return scaledUi(4) + uiFontHeight() + scaledUi(2) + maxHelperLines * uiFontHeight() + scaledUi(4);
+        return 4 + uiFontHeight() + 2 + maxHelperLines * uiFontHeight() + 4;
     }
 
     private int getPaneStripMaxScroll() {
@@ -825,28 +815,28 @@ public class LatitudeCreateWorldScreen extends Screen {
     private void updateLeftLayout() {
         int inputX = leftX + 4;
         int inputW = leftW - 8 - SCROLLBAR_GUTTER;
-        int fieldH = worldNameField != null ? worldNameField.getHeight() : Math.max(16, scaledUi(16));
-        int btnH = sizePrevBtn != null ? sizePrevBtn.getHeight() : Math.max(18, scaledUi(20));
+        int fieldH = worldNameField != null ? worldNameField.getHeight() : Math.max(16, 16);
+        int btnH = sizePrevBtn != null ? sizePrevBtn.getHeight() : Math.max(18, 20);
         int stepperBtnW = sizePrevBtn != null ? sizePrevBtn.getWidth() : 20;
-        int contentTop = panelTop + scaledUi(8);
-        int labelFieldGap = scaledUi(22);
-        int fieldGap1 = scaledUi(38);
-        int fieldGap2 = scaledUi(40);
-        int discGap = scaledUi(6);
-        int previewHeight = Math.max(scaledUi(150), Math.min(leftW - scaledUi(20) - SCROLLBAR_GUTTER, Math.max(scaledUi(170), panelBottom - panelTop - scaledUi(80))));
+        int contentTop = panelTop + 8;
+        int labelFieldGap = 22;
+        int fieldGap1 = 38;
+        int fieldGap2 = 40;
+        int discGap = 6;
+        int previewHeight = Math.max(150, Math.min(leftW - 20 - SCROLLBAR_GUTTER, Math.max(170, panelBottom - panelTop - 80)));
         int baseWorldY = contentTop + labelFieldGap;
         int baseSeedY = baseWorldY + fieldGap1;
         int baseWorldShapeY = baseSeedY + fieldGap2;
         int warningHeight = shouldShowSmallWorldWarning() ? getSmallWorldWarningHeight(inputW) : 0;
-        int warningGap = warningHeight > 0 ? scaledUi(4) : 0;
+        int warningGap = warningHeight > 0 ? 4 : 0;
         int baseSizeY = baseWorldShapeY + fieldGap2 + warningHeight + warningGap;
-        int baseInputBottom = Math.max(baseSizeY + btnH, computeSizeLabelBottom(baseSizeY - 1, inputW - stepperBtnW * 2 - scaledUi(8))) + scaledUi(12);
+        int baseInputBottom = Math.max(baseSizeY + btnH, computeSizeLabelBottom(baseSizeY - 1, inputW - stepperBtnW * 2 - 8)) + 12;
         int basePreviewTop = baseInputBottom + discGap + uiFontHeight();
         int basePreviewBottom = basePreviewTop + previewHeight;
         leftViewportTop = panelTop + 4;
         leftViewportBottom = panelBottom - 4;
         int viewportHeight = Math.max(0, leftViewportBottom - leftViewportTop);
-        leftContentHeight = basePreviewBottom - contentTop + scaledUi(8);
+        leftContentHeight = basePreviewBottom - contentTop + 8;
         int maxScroll = Math.max(0, leftContentHeight - viewportHeight);
         if (leftScroll < 0) leftScroll = 0;
         if (leftScroll > maxScroll) leftScroll = maxScroll;
@@ -903,26 +893,26 @@ public class LatitudeCreateWorldScreen extends Screen {
     }
 
     private void updateRightLayout() {
-        int contentTop = panelTop + scaledUi(8);
+        int contentTop = panelTop + 8;
         // threeCol draws an inline heading that needs this reserved strip; tabbed mode skips the redundant
         // "Spawn Zone" title (the tab strip labels it), so zero the strip there and let content start at the top.
-        int titleBlockHeight = threeCol ? (uiFontHeight() + scaledUi(4)) : 0;
-        int subtitleWidth = Math.max(80, rightW - scaledUi(28) - SCROLLBAR_GUTTER);
+        int titleBlockHeight = threeCol ? (uiFontHeight() + 4) : 0;
+        int subtitleWidth = Math.max(80, rightW - 28 - SCROLLBAR_GUTTER);
         int subtitleHeight = wrappedTextHeight("Choose the climate where your journey begins", subtitleWidth);
         int descTextWidth = Math.max(60, rightW - 16 - SCROLLBAR_GUTTER);
         String spawnLine = spawnZoneDescription();
-        int descHeight = scaledUi(6) + uiFontHeight() + scaledUi(5) + wrappedTextHeight(spawnLine, descTextWidth) + scaledUi(4) + uiFontHeight() + scaledUi(6);
+        int descHeight = 6 + uiFontHeight() + 5 + wrappedTextHeight(spawnLine, descTextWidth) + 4 + uiFontHeight() + 6;
         int baseSubtitleY = contentTop + titleBlockHeight;
-        int baseDividerY = baseSubtitleY + subtitleHeight + scaledUi(2);
-        int baseZoneListTop = baseDividerY + scaledUi(8);
-        int baseZoneListBottom = baseZoneListTop + zoneRows.size() * zoneRowStep - scaledUi(6);
-        int baseBarY = baseZoneListBottom + scaledUi(8);
-        int baseBarH = Math.max(4, scaledUi(6));
-        int baseDescY = baseBarY + baseBarH + scaledUi(12);
+        int baseDividerY = baseSubtitleY + subtitleHeight + 2;
+        int baseZoneListTop = baseDividerY + 8;
+        int baseZoneListBottom = baseZoneListTop + zoneRows.size() * zoneRowStep - 6;
+        int baseBarY = baseZoneListBottom + 8;
+        int baseBarH = Math.max(4, 6);
+        int baseDescY = baseBarY + baseBarH + 12;
         rightViewportTop = panelTop + 4;
         rightViewportBottom = panelBottom - 4;
         int viewportHeight = Math.max(0, rightViewportBottom - rightViewportTop);
-        rightContentHeight = baseDescY + descHeight - contentTop + scaledUi(8);
+        rightContentHeight = baseDescY + descHeight - contentTop + 8;
         int maxScroll = Math.max(0, rightContentHeight - viewportHeight);
         if (rightScroll < 0) rightScroll = 0;
         if (rightScroll > maxScroll) rightScroll = maxScroll;
@@ -981,22 +971,22 @@ public class LatitudeCreateWorldScreen extends Screen {
         int settBtnW = railW - 8;
         int settBtnX = railX + 4;
         int btnH = worldTypePrevBtn.getHeight();
-        int labelGap = scaledUi(10);
-        int rowGap = scaledUi(10);
+        int labelGap = 10;
+        int rowGap = 10;
         // threeCol reserves a top strip for the "World Settings" inline heading. Tabbed mode has the tab strip
         // instead, so drop that reserved strip — otherwise content scrolls up into a blank ~36px "invisible
         // header bar" (the old WORLD/SETTINGS header was drawn inside the scissor above its own top edge, so it
         // was clipped away and just left dead space). Matches the panel-2 Spawn Zone tabbed-mode fix.
-        settingsViewportTop = threeCol ? (panelTop + scaledUi(36)) : (panelTop + scaledUi(8));
-        settingsViewportBottom = panelBottom - scaledUi(8);
+        settingsViewportTop = threeCol ? (panelTop + 36) : (panelTop + 8);
+        settingsViewportBottom = panelBottom - 8;
         int viewportHeight = Math.max(0, settingsViewportBottom - settingsViewportTop);
-        int contentTop = settingsViewportTop + scaledUi(4);
+        int contentTop = settingsViewportTop + 4;
         int blockHeight = labelGap + btnH;
         // Leave a little trailing room so the HUD Studio row can scroll fully into view
         // on short windows instead of sitting flush against the viewport edge.
         // 8 rows: World Type, Game Mode, Commands, Starting Compass, Generate Structures,
         // Bonus Chest, Game Rules, HUD Studio. (World Shape moved to the World panel per live feedback.)
-        settingsContentHeight = blockHeight * 8 + rowGap * 7 + scaledUi(12);
+        settingsContentHeight = blockHeight * 8 + rowGap * 7 + 12;
         int maxScroll = Math.max(0, settingsContentHeight - viewportHeight);
         if (settingsScroll < 0) settingsScroll = 0;
         if (settingsScroll > maxScroll) settingsScroll = maxScroll;
@@ -1219,14 +1209,14 @@ public class LatitudeCreateWorldScreen extends Screen {
                 && mouseX < paneStripViewportRight
                 && mouseY >= panelTop
                 && mouseY < panelBottom) {
-            applyPaneStripScroll(paneStripScroll - (int) Math.signum(horizontalAmount) * scaledUi(28));
+            applyPaneStripScroll(paneStripScroll - (int) Math.signum(horizontalAmount) * 28);
             return true;
         }
         if ((!tabbedMode || activeTab == 0) && mouseX >= Math.max(leftX, paneStripViewportLeft) && mouseX < Math.min(leftX + leftW, paneStripViewportRight) && mouseY >= panelTop && mouseY < panelBottom) {
             int viewportHeight = Math.max(0, leftViewportBottom - leftViewportTop);
             int maxScroll = Math.max(0, leftContentHeight - viewportHeight);
             if (maxScroll > 0 && verticalAmount != 0.0D) {
-                leftScroll -= (int) Math.signum(verticalAmount) * scaledUi(18);
+                leftScroll -= (int) Math.signum(verticalAmount) * 18;
                 if (leftScroll < 0) leftScroll = 0;
                 if (leftScroll > maxScroll) leftScroll = maxScroll;
                 updateLeftLayout();
@@ -1237,7 +1227,7 @@ public class LatitudeCreateWorldScreen extends Screen {
             int viewportHeight = Math.max(0, rightViewportBottom - rightViewportTop);
             int maxScroll = Math.max(0, rightContentHeight - viewportHeight);
             if (maxScroll > 0 && verticalAmount != 0.0D) {
-                rightScroll -= (int) Math.signum(verticalAmount) * scaledUi(18);
+                rightScroll -= (int) Math.signum(verticalAmount) * 18;
                 if (rightScroll < 0) rightScroll = 0;
                 if (rightScroll > maxScroll) rightScroll = maxScroll;
                 updateRightLayout();
@@ -1248,7 +1238,7 @@ public class LatitudeCreateWorldScreen extends Screen {
             int viewportHeight = Math.max(0, settingsViewportBottom - settingsViewportTop);
             int maxScroll = Math.max(0, settingsContentHeight - viewportHeight);
             if (maxScroll > 0 && verticalAmount != 0.0D) {
-                settingsScroll -= (int) Math.signum(verticalAmount) * scaledUi(18);
+                settingsScroll -= (int) Math.signum(verticalAmount) * 18;
                 if (settingsScroll < 0) settingsScroll = 0;
                 if (settingsScroll > maxScroll) settingsScroll = maxScroll;
                 updateSettingsLayout();
@@ -1261,7 +1251,7 @@ public class LatitudeCreateWorldScreen extends Screen {
                 && mouseY >= paneStripScrollbarY - 2
                 && mouseY < paneStripScrollbarY + paneStripScrollbarH + 2
                 && verticalAmount != 0.0D) {
-            applyPaneStripScroll(paneStripScroll - (int) Math.signum(verticalAmount) * scaledUi(28));
+            applyPaneStripScroll(paneStripScroll - (int) Math.signum(verticalAmount) * 28);
             return true;
         }
         return super.mouseScrolled(mouseX, mouseY, horizontalAmount, verticalAmount);
@@ -1346,12 +1336,12 @@ public class LatitudeCreateWorldScreen extends Screen {
         int headerLineY = headerRect.y;
         int wordmarkH = drawLatitudeWordmark(context, new UiRect(headerRect.x, headerLineY, headerRect.w, headerRect.h));
         if (wordmarkH > 0) {
-            headerLineY += wordmarkH + scaledUi(6);
+            headerLineY += wordmarkH + 6;
         } else if (drawCenteredBoundedText(context, "LATITUDE", new UiRect(headerRect.x, headerLineY, headerRect.w, uiFontHeight()), GOLD, true, false)) {
-            headerLineY += uiFontHeight() + scaledUi(6);
+            headerLineY += uiFontHeight() + 6;
         }
         if (drawCenteredBoundedText(context, "New World", new UiRect(headerRect.x, headerLineY, headerRect.w, uiFontHeight()), WARM_WHITE, true, false)) {
-            headerLineY += uiFontHeight() + scaledUi(4);
+            headerLineY += uiFontHeight() + 4;
         }
         drawWrappedTextBlock(context, "Prepare your journey across the globe", new UiRect(headerRect.x, headerLineY, headerRect.w, Math.max(0, headerRect.bottom() - headerLineY)), MUTED, false, 2, true, true);
 
@@ -1371,25 +1361,25 @@ public class LatitudeCreateWorldScreen extends Screen {
         int inputX = leftX + 4;
         int stepperBtnW = sizePrevBtn != null ? sizePrevBtn.getWidth() : 20;
         int labelColor = GOLD;
-        int labelOff = scaledUi(10);
+        int labelOff = 10;
         int leftTextWidth = Math.max(24, leftW - 8 - SCROLLBAR_GUTTER);
         if (shouldShowSmallWorldWarning()) {
             int warningHeight = getSmallWorldWarningHeight(leftTextWidth);
-            int warningY = sizeFieldY - labelOff - warningHeight - scaledUi(2);
+            int warningY = sizeFieldY - labelOff - warningHeight - 2;
             drawWrappedStyledTextBlock(context, SMALL_WORLD_WARNING, new UiRect(inputX, warningY, leftTextWidth, warningHeight), 0xFFF0A030, false, 2, true, true);
         }
         drawBoundedText(context, "World Name", new UiRect(inputX, worldFieldY - labelOff, leftTextWidth, uiFontHeight()), labelColor, false, false);
         drawBoundedText(context, "Seed", new UiRect(inputX, seedFieldY - labelOff, leftTextWidth, uiFontHeight()), labelColor, false, false);
         boolean shapeEnabled = isLatitudeWorld();
         drawBoundedText(context, "World Shape", new UiRect(inputX, worldShapeFieldY - labelOff, leftTextWidth, uiFontHeight()), shapeEnabled ? labelColor : DISABLED_COLOR, false, false);
-        renderWorldShapeLabel(context, inputX + stepperBtnW + scaledUi(4), worldShapeFieldY, leftTextWidth - stepperBtnW * 2 - scaledUi(8), shapeEnabled);
+        renderWorldShapeLabel(context, inputX + stepperBtnW + 4, worldShapeFieldY, leftTextWidth - stepperBtnW * 2 - 8, shapeEnabled);
         boolean sizeEnabled = isLatitudeWorld();
         drawBoundedText(context, "World Size", new UiRect(inputX, sizeFieldY - labelOff, leftTextWidth, uiFontHeight()), sizeEnabled ? labelColor : DISABLED_COLOR, false, false);
-        renderSizeLabel(context, inputX + stepperBtnW + scaledUi(4), sizeFieldY - 1, leftTextWidth - stepperBtnW * 2 - scaledUi(8), sizeEnabled);
+        renderSizeLabel(context, inputX + stepperBtnW + 4, sizeFieldY - 1, leftTextWidth - stepperBtnW * 2 - 8, sizeEnabled);
         int separatorY = inputBottomY - 2;
         context.fill(leftX + 4, separatorY, leftX + leftW - 4 - SCROLLBAR_GUTTER, separatorY + 1, PANEL_BORDER);
         boolean latWorld = isLatitudeWorld();
-        int planisphereLabelY = leftPreviewTopY - uiFontHeight() - scaledUi(6);
+        int planisphereLabelY = leftPreviewTopY - uiFontHeight() - 6;
         drawCenteredBoundedText(context, "ATLAS", new UiRect(leftX + 4, planisphereLabelY, leftTextWidth, uiFontHeight()), latWorld ? GOLD : DISABLED_COLOR, false, true);
         if (leftPreviewBottomY - leftPreviewTopY >= 30) {
             if (latWorld) {
@@ -1405,7 +1395,7 @@ public class LatitudeCreateWorldScreen extends Screen {
 
         if (!tabbedMode || activeTab == 1) {
         drawViewportClippedPanel(context, rightX, panelTop, rightW, panelBottom - panelTop);
-        int paneTitleY = panelTop + scaledUi(8);
+        int paneTitleY = panelTop + 8;
         int rightClipLeft = Math.max(rightX + 1, paneStripViewportLeft);
         int rightClipRight = Math.min(rightX + rightW - 1, paneStripViewportRight);
         if (rightClipRight > rightClipLeft) {
@@ -1418,7 +1408,7 @@ public class LatitudeCreateWorldScreen extends Screen {
         // Tabbed mode: the tab strip already labels this pane "Spawn Zone", so the in-panel title is redundant
         // and just eats vertical space — skip it (updateRightLayout zeroes its reserved height in tabbed mode so
         // the content moves up). Keep the instructional subtitle.
-        drawWrappedTextBlock(context, "Choose the climate where your journey begins", new UiRect(rightX + 4, rightSubtitleY, rightTextWidth, Math.max(uiFontHeight(), rightDividerY - rightSubtitleY - scaledUi(2))), latWorld ? MUTED : DISABLED_COLOR, false, 2, true, true);
+        drawWrappedTextBlock(context, "Choose the climate where your journey begins", new UiRect(rightX + 4, rightSubtitleY, rightTextWidth, Math.max(uiFontHeight(), rightDividerY - rightSubtitleY - 2)), latWorld ? MUTED : DISABLED_COLOR, false, 2, true, true);
         }
         if (latWorld) {
         // Reduce Motion holds the Atlas-style Gaussian crest / Random sweep at a static highlight (solid fill,
@@ -1469,18 +1459,18 @@ public class LatitudeCreateWorldScreen extends Screen {
         int descPanelW = rightW - 4 - SCROLLBAR_GUTTER;
         int textMaxW = descPanelW - 12;
         String spawnLine = spawnZoneDescription();
-        if (rightDescPanelH > scaledUi(24)) {
+        if (rightDescPanelH > 24) {
             context.fill(descPanelX, rightDescPanelY, descPanelX + descPanelW, rightDescPanelY + rightDescPanelH, PANEL_BG);
             int sideColor = randomZone ? 0xFF8C8078 : BAND_COLORS[selectedZone.ordinal()];
             context.fill(descPanelX, rightDescPanelY, descPanelX + 2, rightDescPanelY + rightDescPanelH, sideColor);
 
             int textX = descPanelX + 6;
-            int ty = rightDescPanelY + scaledUi(3);
+            int ty = rightDescPanelY + 3;
             String zoneHeader = (randomZone ? "Random" : selectedZone.displayName()) + " zone selected";
             drawBoundedText(context, zoneHeader, new UiRect(textX, ty, textMaxW, uiFontHeight()), GOLD, true, true);
-            ty += uiFontHeight() + scaledUi(5);
-            ty += drawWrappedTextBlock(context, spawnLine, new UiRect(textX, ty, textMaxW, Math.max(0, rightDescPanelY + rightDescPanelH - ty - uiFontHeight() - scaledUi(4))), WARM_WHITE, false, 3, false, true);
-            ty += scaledUi(4);
+            ty += uiFontHeight() + 5;
+            ty += drawWrappedTextBlock(context, spawnLine, new UiRect(textX, ty, textMaxW, Math.max(0, rightDescPanelY + rightDescPanelH - ty - uiFontHeight() - 4)), WARM_WHITE, false, 3, false, true);
+            ty += 4;
             if (ty + uiFontHeight() <= rightDescPanelY + rightDescPanelH) {
                 String climate = randomZone ? "A surprise" : ZONE_CLIMATE[selectedZone.ordinal()];
                 drawBoundedText(context, "Climate: " + climate, new UiRect(textX, ty, textMaxW, uiFontHeight()), MUTED, false, true);
@@ -1541,7 +1531,7 @@ public class LatitudeCreateWorldScreen extends Screen {
     private void renderWorldShapeLabel(GuiGraphicsExtractor context, int x, int rowY, int availW, boolean enabled) {
         String value = WORLD_SHAPE_NAMES[worldShapeIdx];
         int color = enabled ? WORLD_SHAPE_COLORS[worldShapeIdx] : DISABLED_COLOR;
-        int btnH = worldShapePrevBtn != null ? worldShapePrevBtn.getHeight() : Math.max(18, scaledUi(20));
+        int btnH = worldShapePrevBtn != null ? worldShapePrevBtn.getHeight() : Math.max(18, 20);
         int drawY = rowY + Math.max(0, (btnH - uiFontHeight()) / 2);
         drawCenteredBoundedText(context, value, new UiRect(x, drawY, availW, uiFontHeight()), color, true, true);
     }
@@ -1561,8 +1551,8 @@ public class LatitudeCreateWorldScreen extends Screen {
         } else {
             drawCenteredBoundedText(context, shortName, new UiRect(x, y, availW, uiFontHeight()), nameCol, true, true);
         }
-        drawCenteredBoundedText(context, diameter, new UiRect(x, y + scaledUi(11), availW, uiFontHeight()), subCol, false, true);
-        drawWrappedTextBlock(context, desc, new UiRect(x, y + scaledUi(22), availW, Math.max(uiFontHeight(), computeSizeLabelBottom(y, availW) - (y + scaledUi(22)))), subCol, false, 3, true, true);
+        drawCenteredBoundedText(context, diameter, new UiRect(x, y + 11, availW, uiFontHeight()), subCol, false, true);
+        drawWrappedTextBlock(context, desc, new UiRect(x, y + 22, availW, Math.max(uiFontHeight(), computeSizeLabelBottom(y, availW) - (y + 22))), subCol, false, 3, true, true);
     }
 
     private boolean shouldShowSmallWorldWarning() {
@@ -1587,8 +1577,8 @@ public class LatitudeCreateWorldScreen extends Screen {
         // A Mercator globe is MERCATOR_ASPECT times as wide as it is tall for the same radius, so the
         // width-derived radius budget must shrink by that same factor (a Legacy square keeps the old /2).
         double widthDivisor = shape == LatitudeBiomes.GlobeShape.MERCATOR ? 2.0 * LatitudeBiomes.MERCATOR_ASPECT : 2.0;
-        int labelPad = isTinyPreview(selectedSize) ? scaledUi(10) : scaledUi(8);
-        int rightPadding = scaledUi(8);
+        int labelPad = isTinyPreview(selectedSize) ? 10 : 8;
+        int rightPadding = 8;
         int captionGap = Math.max(6, captionHeight / 2);
         int maxRadiusByWidth = Math.max(18, (int) ((areaRight - areaLeft - maxLabelWidth - labelPad - rightPadding) / widthDivisor));
         int maxRadiusByHeight = Math.max(18, (areaBottom - areaTop - captionHeight - captionGap) / 2);
@@ -1670,7 +1660,7 @@ public class LatitudeCreateWorldScreen extends Screen {
         int areaH = Math.max(0, areaBottom - areaTop);
         if (areaW <= 6 || areaH <= 6) return;
 
-        int pad = scaledUi(6);
+        int pad = 6;
         int boxLeft = areaLeft + pad;
         int boxTop = areaTop + pad;
         int boxRight = areaRight - pad;
@@ -1688,7 +1678,7 @@ public class LatitudeCreateWorldScreen extends Screen {
 
         // Simple inner accent lines
         int midY = boxTop + (boxBottom - boxTop) / 2;
-        int accentInset = scaledUi(4);
+        int accentInset = 4;
         context.fill(boxLeft + accentInset, midY, boxRight - accentInset, midY + 1, 0x40FFFFFF & PANEL_BORDER);
 
         String label = "Preview available only for Latitude";
@@ -1868,7 +1858,7 @@ public class LatitudeCreateWorldScreen extends Screen {
     }
 
     private void drawSettingsRowLabel(GuiGraphicsExtractor context, String label, int x, int rowY, int color) {
-        int labelY = rowY - scaledUi(10);
+        int labelY = rowY - 10;
         if (labelY + uiFontHeight() <= settingsViewportTop || labelY >= settingsViewportBottom) {
             return;
         }
@@ -1880,8 +1870,8 @@ public class LatitudeCreateWorldScreen extends Screen {
             return;
         }
         int stepperW = worldTypePrevBtn != null ? worldTypePrevBtn.getWidth() : 20;
-        int safeLeft = railX + 4 + stepperW + scaledUi(6);
-        int safeRight = railX + railW - 4 - stepperW - scaledUi(6) - SCROLLBAR_GUTTER;
+        int safeLeft = railX + 4 + stepperW + 6;
+        int safeRight = railX + railW - 4 - stepperW - 6 - SCROLLBAR_GUTTER;
         int safeWidth = Math.max(20, safeRight - safeLeft);
         String fitted = ellipsizeToWidth(text, safeWidth);
         int textW = uiTextWidth(fitted);
@@ -1903,7 +1893,7 @@ public class LatitudeCreateWorldScreen extends Screen {
     private int drawLatitudeWordmark(GuiGraphicsExtractor context, UiRect rect) {
         final String text = "LATITUDE";
         final float scale = 1.5f;
-        int spacing = Math.max(1, scaledUi(2));
+        int spacing = Math.max(1, 2);
         int rawW = 0;
         for (int i = 0; i < text.length(); i++) {
             rawW += this.font.width(String.valueOf(text.charAt(i)));
@@ -1994,9 +1984,9 @@ public class LatitudeCreateWorldScreen extends Screen {
         }
         // Flanking rules with a small diamond at each inner end, vertically centered on the wordmark.
         int midY = rect.y + drawH / 2;
-        int gap = scaledUi(8);
+        int gap = 8;
         int lineLen = (rect.w - drawW) / 2 - gap * 2;
-        if (lineLen >= scaledUi(10)) {
+        if (lineLen >= 10) {
             int lw = 0x66000000 | (GOLD & 0xFFFFFF);
             context.fill(startX - gap - lineLen, midY, startX - gap, midY + 1, lw);
             context.fill(startX + drawW + gap, midY, startX + drawW + gap + lineLen, midY + 1, lw);
@@ -2335,12 +2325,12 @@ public class LatitudeCreateWorldScreen extends Screen {
     }
 
     private void drawInlineHeading(GuiGraphicsExtractor context, int paneX, int paneW, String label, int labelColor) {
-        int headingY = panelTop + compactUi(6);
-        int availableW = paneW - scaledUi(12);
+        int headingY = panelTop + 6;
+        int availableW = paneW - 12;
         if (availableW <= 0) return;
         int textW = uiTextWidth(label);
-        int lineGap = compactUi(6);
-        int lineLen = Math.max(compactUi(10), (availableW - textW - lineGap * 2) / 2);
+        int lineGap = 6;
+        int lineLen = Math.max(10, (availableW - textW - lineGap * 2) / 2);
         int centerX = paneX + paneW / 2;
         int lineY = headingY + uiFontHeight() / 2;
         int lineLeftStart = centerX - (textW / 2) - lineGap - lineLen;
@@ -2350,7 +2340,7 @@ public class LatitudeCreateWorldScreen extends Screen {
         context.fill(lineRightStart, lineY, lineRightStart + lineLen, lineY + 1, PANEL_BORDER);
 
         drawCenteredBoundedText(context, label,
-                new UiRect(paneX + compactUi(4), headingY, paneW - compactUi(8), uiFontHeight()),
+                new UiRect(paneX + 4, headingY, paneW - 8, uiFontHeight()),
                 labelColor, true, true);
     }
 
@@ -2369,7 +2359,7 @@ public class LatitudeCreateWorldScreen extends Screen {
             return;
         }
         context.fill(trackLeft, viewportTop, trackRight, viewportBottom, PANEL_BORDER);
-        int thumbH = Math.max(compactUi(18), viewportHeight * viewportHeight / Math.max(1, contentHeight));
+        int thumbH = Math.max(18, viewportHeight * viewportHeight / Math.max(1, contentHeight));
         int thumbY = viewportTop + (viewportHeight - thumbH) * scrollAmount / maxScroll;
         int thumbLeft = Math.max(trackX - 1, paneStripViewportLeft);
         int thumbRight = Math.min(trackX + 2, paneStripViewportRight);
@@ -2590,12 +2580,12 @@ public class LatitudeCreateWorldScreen extends Screen {
             int textX = x + 6;
 
             if (this.band == null && selected) {
-                drawRainbowItalicUiText(context, "Random", textX, y + compactUi(2), true);
+                drawRainbowItalicUiText(context, "Random", textX, y + 2, true);
             } else if (selected) {
                 // Selected concrete band: its name letters gently bounce so the pick reads as "alive".
-                drawBouncingUiText(context, this.band.displayName(), textX, y + compactUi(2), textColor, true);
+                drawBouncingUiText(context, this.band.displayName(), textX, y + 2, textColor, true);
             } else {
-                drawUiText(context, this.band == null ? "Random" : this.band.displayName(), textX, y + compactUi(2), textColor, selected);
+                drawUiText(context, this.band == null ? "Random" : this.band.displayName(), textX, y + 2, textColor, selected);
             }
 
             String range = this.band == null
@@ -2603,14 +2593,14 @@ public class LatitudeCreateWorldScreen extends Screen {
                     : formatDegree(this.band.lowDeg()) + "\u2013" + formatDegree(this.band.highDeg());
             int rangeW = uiTextWidth(range);
             int rangeX = x + w - rangeW - 4;
-            drawUiText(context, range, rangeX, y + compactUi(2), selected ? WARM_WHITE : MUTED, false);
+            drawUiText(context, range, rangeX, y + 2, selected ? WARM_WHITE : MUTED, false);
 
             String helper = this.band == null ? RANDOM_ZONE_HELPER : ZONE_HELPER[this.band.ordinal()];
             int helperColor = selected ? liftBrightness(MUTED, ZONE_SELECTED_SUBTITLE_LIFT) : MUTED;
             int helperWidth = Math.max(40, rangeX - textX - 6);
-            int helperY = y + compactUi(2) + uiFontHeight() + compactUi(2);
+            int helperY = y + 2 + uiFontHeight() + 2;
             for (net.minecraft.network.chat.FormattedText wrappedLine : wrapUiLines(helper, helperWidth)) {
-                if (helperY + uiFontHeight() > y + h - compactUi(2)) break;
+                if (helperY + uiFontHeight() > y + h - 2) break;
                 drawUiText(context, wrappedLine.getString(), textX, helperY, helperColor, false);
                 helperY += uiFontHeight();
             }
