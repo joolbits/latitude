@@ -375,11 +375,26 @@ public final class GlobeWarningOverlay {
         return (alpha << 24) | (rgb & 0x00FFFFFF);
     }
 
+    // M2 (GUI-scale parity audit) -- wrap + center a warning line. A long pole/storm warning at a narrow
+    // effective GUI resolution (down to the 320-px floor) used to run off the right edge; wrap it to the
+    // screen width and stack the lines UPWARD from `y` so the bottom line keeps the original anchor and the
+    // block grows into the free space above. A short warning wraps to a single line, so the common case is
+    // byte-identical to the old single-line draw. Style (bold/color) is preserved by rebuilding each line
+    // with the source component's style -- which also makes the wrap measurer bold-accurate.
     private static void drawCenteredWarning(GuiGraphicsExtractor ctx, Font tr, Component text, int y, int argbColor) {
         int screenW = Minecraft.getInstance().getWindow().getGuiScaledWidth();
-        int w = tr.width(text);
-        int x = Math.max(4, (screenW - w) / 2);
-        ctx.text(tr, text, x, y, argbColor);
+        int maxW = Math.max(1, screenW - 8);
+        java.util.List<String> lines = com.example.globe.core.ui.OverlayLayout.wrap(
+                text.getString(), maxW, s -> tr.width(Component.literal(s).setStyle(text.getStyle())));
+        int lineH = tr.lineHeight + 1;
+        int n = lines.size();
+        for (int i = 0; i < n; i++) {
+            Component lineC = Component.literal(lines.get(i)).setStyle(text.getStyle());
+            int w = tr.width(lineC);
+            int x = Math.max(4, (screenW - w) / 2);
+            int lineY = Math.max(2, y - (n - 1 - i) * lineH);
+            ctx.text(tr, lineC, x, lineY, argbColor);
+        }
     }
 
     private static String ewDangerDirection(net.minecraft.world.level.border.WorldBorder border, double playerX) {
