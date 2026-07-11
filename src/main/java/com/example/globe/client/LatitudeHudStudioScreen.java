@@ -1405,6 +1405,17 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
         if (dragElement == DragElement.TITLE) {
             double newCx = mx - titleGrabDx;
             double newCy = my - titleGrabDy;
+            // Grid Snap parity (title-drag fix): the compass/labels snap LIVE during their drag (inside
+            // CompassHud.applyCompassDrag -> maybeSnap), quantizing the widget's absolute SCREEN pixel
+            // reference point to the grid every frame. The title previously moved freely here and only
+            // snapped its screen-CENTER-relative offset once on release -- a different coordinate space and
+            // no live feedback, so it read as "ignores snap." Snap the title's ABSOLUTE center point to the
+            // same grid the others use (its center is the anchor the render clamp centers on), then store the
+            // offset. Snap off -> free move, unchanged.
+            if (LatitudeConfig.hudSnapEnabled) {
+                newCx = snap((int) Math.round(newCx), LatitudeConfig.hudSnapPixels);
+                newCy = snap((int) Math.round(newCy), LatitudeConfig.hudSnapPixels);
+            }
             titleOffsetXf = newCx - (this.width / 2.0);
             titleOffsetYf = newCy - (this.height / 2.0);
             return true;
@@ -1514,14 +1525,13 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
     public boolean mouseReleased(MouseButtonEvent click) {
         if (click.button() == 0) {
             if (dragElement == DragElement.TITLE) {
-                int x = (int) Math.round(titleOffsetXf);
-                int y = (int) Math.round(titleOffsetYf);
-                if (LatitudeConfig.hudSnapEnabled) {
-                    x = snap(x, LatitudeConfig.hudSnapPixels);
-                    y = snap(y, LatitudeConfig.hudSnapPixels);
-                }
-                LatitudeConfig.zoneEnterTitleOffsetX = x;
-                LatitudeConfig.zoneEnterTitleOffsetY = y;
+                // Snap is applied LIVE during the drag (mouseDragged), on the title's absolute center in
+                // screen pixels -- exactly like the compass/labels. So release just persists the already-
+                // snapped float, mirroring the compass release (which also only saves). Re-snapping the
+                // screen-center-relative offset here would quantize in a different space and fight the live
+                // snap whenever width/2 or height/2 isn't a grid multiple.
+                LatitudeConfig.zoneEnterTitleOffsetX = (int) Math.round(titleOffsetXf);
+                LatitudeConfig.zoneEnterTitleOffsetY = (int) Math.round(titleOffsetYf);
                 LatitudeConfig.saveCurrent();
             }
             if (dragElement == DragElement.COMPASS) {
