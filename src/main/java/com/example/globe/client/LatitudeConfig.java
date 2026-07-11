@@ -37,6 +37,7 @@ public final class LatitudeConfig {
     public static int zoneEnterTitleOutlineRgb;
     public static boolean zoneEnterTitleDropShadow;
     public static boolean zoneEnterTitleGlow;
+    public static boolean zoneEnterTitleGlimmer;
 
     public static int zoneEnterTitleOffsetX;
     public static int zoneEnterTitleOffsetY;
@@ -136,6 +137,7 @@ public final class LatitudeConfig {
         zoneEnterTitleOutlineRgb = d.zoneEnterTitleOutlineRgb;
         zoneEnterTitleDropShadow = d.zoneEnterTitleDropShadow;
         zoneEnterTitleGlow = d.zoneEnterTitleGlow;
+        zoneEnterTitleGlimmer = d.zoneEnterTitleGlimmer;
 
         zoneEnterTitleOffsetX = d.zoneEnterTitleOffsetX;
         zoneEnterTitleOffsetY = d.zoneEnterTitleOffsetY;
@@ -187,6 +189,7 @@ public final class LatitudeConfig {
         d.zoneEnterTitleOutlineRgb = zoneEnterTitleOutlineRgb;
         d.zoneEnterTitleDropShadow = zoneEnterTitleDropShadow;
         d.zoneEnterTitleGlow = zoneEnterTitleGlow;
+        d.zoneEnterTitleGlimmer = zoneEnterTitleGlimmer;
 
         d.zoneEnterTitleOffsetX = zoneEnterTitleOffsetX;
         d.zoneEnterTitleOffsetY = zoneEnterTitleOffsetY;
