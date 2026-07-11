@@ -70,6 +70,12 @@ public final class LatitudeConfigData {
     @SerializedName(value = "zoneEnterTitleDraggable", alternate = {"zoneEnterTitleDraggableValue"})
     public boolean zoneEnterTitleDraggable = true;
 
+    /** Accessibility: when true, the HUD Studio skips its gentle roll-out/roll-in row transitions (and any
+     *  other motion-flourish a consumer chooses to gate on it) and snaps instantly instead. Default OFF so
+     *  the animated behavior is the out-of-box experience; motion-sensitive players opt in. */
+    @SerializedName(value = "reduceMotion", alternate = {"reduceMotionValue"})
+    public boolean reduceMotion = false;
+
     @SerializedName(value = "hudSnapEnabled", alternate = {"hudSnapEnabledValue"})
     public boolean hudSnapEnabled = true;
 
