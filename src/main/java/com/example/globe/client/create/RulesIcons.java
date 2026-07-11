@@ -29,8 +29,13 @@ final class RulesIcons {
     private static final int DIM       = 0xFF6E625A; // OFF icon body
     private static final int DIM_DK    = 0xFF4A423C; // OFF icon shade / outline
     private static final int WARM       = 0xFFE8D8B8; // structures / scroll parchment (lit)
-    private static final int WOOD       = 0xFF9A6636; // chest wood (lit)
-    private static final int WOOD_DK    = 0xFF5E3C20;
+    private static final int WOOD       = 0xFF9A6636; // chest wood, body (lit)
+    private static final int WOOD_DK    = 0xFF5E3C20; // chest wood, outline / trim (lit)
+    private static final int WOOD_LID   = 0xFFC08A4E; // chest wood, lid -- slightly lighter than body (lit)
+    private static final int WOOD_LOWER = 0xFF7A4F29; // chest wood, lower body -- slightly darker (lit)
+    private static final int DIM_LID    = 0xFF8B7F76; // chest lid (OFF) -- slightly lighter than DIM
+    private static final int DIM_LOWER  = 0xFF585049; // chest lower body (OFF) -- slightly darker than DIM
+    private static final int LATCH_DK   = 0xFF1A1410; // chest keyhole slit -- near-black metal, both states
     private static final int NEEDLE_N   = 0xFFE0533B; // compass north point (red)
     private static final int NEEDLE_S   = 0xFFF0E7D6; // compass south point (ivory)
     private static final int SCREEN_DK  = 0xFF201B15; // HUD monitor face
@@ -135,53 +140,83 @@ final class RulesIcons {
             int w = (roofHalf * i) / roofH;
             ctx.fill(cx - w, roofApexY + i, cx + w + 1, roofApexY + i + 1, i == roofH ? shade : wall);
         }
-        // Body walls (outline)
-        strokeRect(ctx, leftX + 1, eaveY, rightX - 1, baseY, wall);
+        // Body walls (outline). NOTE: strokeRect's x1 is exclusive (its right edge lands at
+        // x1-1), so a naive "rightX - 1" here made the right wall edge fall 1px short of the
+        // left wall's inset -- the walls were centered ~0.5px right of cx while the roof (which
+        // already used the exclusive-bound convention correctly) was centered exactly on cx.
+        // Passing rightX (not rightX - 1) gives the right edge the same 1px inset from rightX
+        // that leftX + 1 gives the left edge from leftX, so the body is symmetric about cx.
+        strokeRect(ctx, leftX + 1, eaveY, rightX, baseY, wall);
         // Door
         int dW = Math.max(1, Math.round(0.10f * s));
         ctx.fill(cx - dW, px(oy, 0.60f, s), cx + dW + 1, baseY - 1, shade);
     }
 
     /**
-     * Bonus Chest: closed + dim when OFF, open-lid + gold + rising glitter when ON.
-     * The open lid is a raised trapezoid tilted back above the box; 3 sparkles twinkle and rise on a
-     * slow wall-clock cycle. {@code glitter} gates the sparkles (pass false for Reduce Motion later).
+     * Bonus Chest: closed lidded chest + dim when OFF, open chest + gold + rising glitter when ON.
+     * Both states read as an actual MC chest: a lid band across the top third, a body below it that's
+     * slightly darker near the base, and a centered dark keyhole/latch plate where the lid meets the
+     * body -- the signature MC chest detail. The open lid is a raised trapezoid tilted back above the
+     * box; 3 sparkles twinkle and rise on a slow wall-clock cycle. {@code glitter} gates the sparkles
+     * (pass false for Reduce Motion later).
      */
     static void chest(GuiGraphicsExtractor ctx, int ox, int oy, int s, boolean lit, long timeMs, boolean glitter) {
-        int body = pick(lit, WOOD, DIM);
-        int band = pick(lit, GOLD, DIM_DK);
-        int dark = pick(lit, WOOD_DK, DIM_DK);
+        int lidC    = pick(lit, WOOD_LID, DIM_LID);     // lid -- slightly lighter
+        int bodyC   = pick(lit, WOOD, DIM);             // upper body
+        int lowerC  = pick(lit, WOOD_LOWER, DIM_LOWER); // lower body -- slightly darker
+        int outline = pick(lit, WOOD_DK, DIM_DK);
+        int trim    = pick(lit, GOLD_DK, DIM_DK);       // metal band at the lid/body seam
         int leftX = px(ox, 0.14f, s);
         int rightX = px(ox, 0.86f, s);
-        int boxTop = lit ? px(oy, 0.44f, s) : px(oy, 0.40f, s);
-        int boxBot = px(oy, 0.86f, s);
         int cx = px(ox, 0.5f, s);
+        // Shared seam line: lid occupies the top third, body (upper + darker lower band) below it.
+        int seamY  = px(oy, 0.42f, s);
+        int lowerY = px(oy, 0.68f, s);
+        int baseY  = px(oy, 0.86f, s);
 
-        // Box body
-        ctx.fill(leftX, boxTop, rightX, boxBot, body);
-        strokeRect(ctx, leftX, boxTop, rightX, boxBot, dark);
+        // Keyhole/latch plate centered on the seam -- drawn identically for both states.
+        int plateW = Math.max(2, Math.round(0.16f * s));
+        int plateHalf = plateW / 2;
+        int plateTop = seamY - Math.max(1, Math.round(0.05f * s));
+        int plateBot = seamY + Math.max(2, Math.round(0.08f * s));
 
         if (!lit) {
-            // Closed lid: a band across the top with a hinge line + a center latch.
-            int lidTop = px(oy, 0.28f, s);
-            ctx.fill(leftX, lidTop, rightX, boxTop, DIM);
-            strokeRect(ctx, leftX, lidTop, rightX, boxTop, DIM_DK);
-            ctx.fill(cx - 1, boxTop - 1, cx + 2, boxTop + 2, band); // latch
+            // Closed lidded chest.
+            int lidTop = px(oy, 0.20f, s);
+            ctx.fill(leftX, lidTop, rightX, seamY, lidC);
+            ctx.fill(leftX, seamY, rightX, lowerY, bodyC);
+            ctx.fill(leftX, lowerY, rightX, baseY, lowerC);
+            strokeRect(ctx, leftX, lidTop, rightX, baseY, outline);
+            ctx.fill(leftX + 1, seamY, rightX - 1, seamY + 1, trim); // hinge/seam line
+
+            ctx.fill(cx - plateHalf, plateTop, cx - plateHalf + plateW, plateBot, outline);
+            ctx.fill(cx - 1, plateTop + 1, cx + 1, plateBot - 1, LATCH_DK); // keyhole slit
         } else {
+            // Open chest: body stays put, lid tilts back, dark interior shows, keyhole plate stays
+            // on the front lip.
+            ctx.fill(leftX, seamY, rightX, lowerY, bodyC);
+            ctx.fill(leftX, lowerY, rightX, baseY, lowerC);
+            strokeRect(ctx, leftX, seamY, rightX, baseY, outline);
+
             // Open interior (dark opening at the top of the box)
-            ctx.fill(leftX + 2, boxTop, rightX - 2, boxTop + Math.max(1, Math.round(0.08f * s)), 0xFF201008);
+            ctx.fill(leftX + 2, seamY, rightX - 2, seamY + Math.max(1, Math.round(0.08f * s)), 0xFF201008);
+
+            // Latch plate remnant on the front lip
+            ctx.fill(cx - plateHalf, seamY, cx - plateHalf + plateW, plateTop + Math.max(2, Math.round(0.05f * s)), outline);
+            ctx.fill(cx - 1, seamY, cx + 1, seamY + Math.max(1, Math.round(0.04f * s)), LATCH_DK);
+
             // Raised, tilted-back lid: a trapezoid narrower at the top rear.
-            int lidFrontY = boxTop - 1;
+            int lidFrontY = seamY - 1;
             int lidBackY = px(oy, 0.14f, s);
             int lidH = Math.max(1, lidFrontY - lidBackY);
             for (int i = 0; i <= lidH; i++) {
                 float t = i / (float) lidH;                 // 0 at front(bottom) -> 1 at back(top)
                 int inset = Math.round(t * 0.10f * s);       // narrows toward the back
                 int y = lidFrontY - i;
-                ctx.fill(leftX + inset, y, rightX - inset, y + 1, i == lidH ? band : body);
+                ctx.fill(leftX + inset, y, rightX - inset, y + 1, i == lidH ? trim : lidC);
             }
-            strokeRect(ctx, leftX + Math.round(0.10f * s), lidBackY, rightX - Math.round(0.10f * s), lidFrontY + 1, band);
-            // Latch highlight on the front rim
+            strokeRect(ctx, leftX + Math.round(0.10f * s), lidBackY, rightX - Math.round(0.10f * s), lidFrontY + 1, trim);
+            // Gold rim highlight on the lid's front edge
             ctx.fill(cx - 1, lidFrontY, cx + 2, lidFrontY + 2, GOLD);
 
             // Glitter: 3 sparkles rising out of the chest, twinkling on a slow cycle.
@@ -191,7 +226,7 @@ final class RulesIcons {
                 for (int k = 0; k < 3; k++) {
                     double cyc = ((timeMs / 1000.0) * 0.55 + phase[k]) % 1.0; // ~1.8s loop
                     int rise = (int) Math.round(cyc * (0.34f * s));            // travels upward
-                    int y = boxTop - 1 - rise;
+                    int y = seamY - 1 - rise;
                     // fade in then out across the cycle
                     float a = (float) Math.sin(cyc * Math.PI);
                     int alpha = Math.round(a * a * 235f);
