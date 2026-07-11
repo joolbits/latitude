@@ -139,6 +139,12 @@ public class LatitudeCreateWorldScreen extends Screen {
     private static final double ZONE_BOUNCE_LETTER_PHASE = 0.6; // radians of phase lag per letter -> a soft travelling wave
     private static final double ZONE_TAB_SHIMMER_PERIOD_SEC = 2.4; // slower than the Atlas crest's 2.6s sweep
     private static final double ZONE_TAB_SHIMMER_AMPLITUDE = 0.20; // +/-20% brightness
+    // Accessibility (Peetsa 2026-07-11): the selected zone row's name/subtitle were barely brighter than an
+    // unselected row's. These lift multipliers (fed through the existing liftBrightness helper, same idiom as
+    // the wordmark's gold breath) push the selected name to a distinctly brighter gold and the selected
+    // subtitle to a distinctly brighter warm grey, while leaving unselected rows (GOLD/MUTED) untouched.
+    private static final float ZONE_SELECTED_NAME_LIFT = 1.35f;     // selected name: brighter gold
+    private static final float ZONE_SELECTED_SUBTITLE_LIFT = 1.75f; // selected subtitle: brighter grey
     // LATITUDE wordmark delight (UI round 13): a slow warm bloom pulse behind the letters + a slight
     // brightness lift on the gold, plus a few tiny twinkling sparkle motes drifting over the word. All
     // wall-clock driven and deliberately gentle (see RulesIcons.glow / chest glitter for the precedent),
@@ -2580,7 +2586,7 @@ public class LatitudeCreateWorldScreen extends Screen {
                 context.fill(x + w - 1, y, x + w, y + h, GOLD);
             }
 
-            int textColor = selected ? GOLD : MUTED;
+            int textColor = selected ? liftBrightness(GOLD, ZONE_SELECTED_NAME_LIFT) : MUTED;
             int textX = x + 6;
 
             if (this.band == null && selected) {
@@ -2600,11 +2606,12 @@ public class LatitudeCreateWorldScreen extends Screen {
             drawUiText(context, range, rangeX, y + compactUi(2), selected ? WARM_WHITE : MUTED, false);
 
             String helper = this.band == null ? RANDOM_ZONE_HELPER : ZONE_HELPER[this.band.ordinal()];
+            int helperColor = selected ? liftBrightness(MUTED, ZONE_SELECTED_SUBTITLE_LIFT) : MUTED;
             int helperWidth = Math.max(40, rangeX - textX - 6);
             int helperY = y + compactUi(2) + uiFontHeight() + compactUi(2);
             for (net.minecraft.network.chat.FormattedText wrappedLine : wrapUiLines(helper, helperWidth)) {
                 if (helperY + uiFontHeight() > y + h - compactUi(2)) break;
-                drawUiText(context, wrappedLine.getString(), textX, helperY, MUTED, false);
+                drawUiText(context, wrappedLine.getString(), textX, helperY, helperColor, false);
                 helperY += uiFontHeight();
             }
 
