@@ -1,5 +1,6 @@
 package com.example.globe.core.config;
 
+import com.example.globe.core.config.LatitudeConfigData.AccessibilityMode;
 import com.example.globe.core.config.LatitudeConfigData.TitleCaseMode;
 import com.example.globe.core.config.LatitudeConfigData.TitleColorPreset;
 import com.google.gson.Gson;
@@ -149,5 +150,28 @@ class LatitudeConfigDataTest {
         assertEquals(TitleColorPreset.WHITE, d.zoneEnterTitleColorPreset, "unknown enum constant -> default");
         assertEquals(TitleCaseMode.NORMAL, d.zoneEnterTitleCase);
         assertEquals(LatitudeConfigData.CURRENT_CONFIG_VERSION, d.configVersion, "future version clamped");
+    }
+
+    /** The appended Accessibility setting: defaults to Standard, round-trips by name under the clean key, keeps
+     *  its default when the key is absent, and falls back to Standard for a null/unknown enum constant. */
+    @Test
+    void accessibilityModeDefaultsRoundTripsAndSanitizes() {
+        assertEquals(AccessibilityMode.STANDARD, LatitudeConfigData.fresh().accessibilityMode);
+
+        LatitudeConfigData out = LatitudeConfigData.fresh();
+        out.accessibilityMode = AccessibilityMode.HIGH_CONTRAST;
+        String json = GSON.toJson(out);
+        assertTrue(json.contains("HIGH_CONTRAST"), "persists by NAME (append-safe), not ordinal");
+        LatitudeConfigData in = GSON.fromJson(json, LatitudeConfigData.class);
+        in.sanitize();
+        assertEquals(AccessibilityMode.HIGH_CONTRAST, in.accessibilityMode);
+
+        LatitudeConfigData absent = GSON.fromJson("{\"hudSnapPixels\": 8}", LatitudeConfigData.class);
+        absent.sanitize();
+        assertEquals(AccessibilityMode.STANDARD, absent.accessibilityMode, "absent key keeps the default");
+
+        LatitudeConfigData bad = GSON.fromJson("{\"accessibilityMode\": \"NOPE\"}", LatitudeConfigData.class);
+        bad.sanitize();
+        assertEquals(AccessibilityMode.STANDARD, bad.accessibilityMode, "unknown enum constant -> default");
     }
 }

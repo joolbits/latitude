@@ -49,6 +49,8 @@ public final class LatitudeConfig {
     public static boolean screenshotClipboardWindowsPowerShell;
     public static boolean captureWriteCsv;
 
+    public static LatitudeConfigData.AccessibilityMode accessibilityMode;
+
     static {
         applyFrom(LatitudeConfigData.fresh()); // sane values even before load() runs
     }
@@ -140,6 +142,8 @@ public final class LatitudeConfig {
         screenshotAlsoSaveToDisk = d.screenshotAlsoSaveToDisk;
         screenshotClipboardWindowsPowerShell = d.screenshotClipboardWindowsPowerShell;
         captureWriteCsv = d.captureWriteCsv;
+
+        accessibilityMode = d.accessibilityMode;
     }
 
     /** Detached snapshot of the live static fields, for snapshot/restore (HUD Studio Cancel). Returns a
@@ -184,6 +188,8 @@ public final class LatitudeConfig {
         d.screenshotAlsoSaveToDisk = screenshotAlsoSaveToDisk;
         d.screenshotClipboardWindowsPowerShell = screenshotClipboardWindowsPowerShell;
         d.captureWriteCsv = captureWriteCsv;
+
+        d.accessibilityMode = accessibilityMode;
         d.sanitize();
         return d;
     }
