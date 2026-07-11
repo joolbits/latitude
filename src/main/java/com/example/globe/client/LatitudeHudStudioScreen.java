@@ -1195,6 +1195,41 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
             previewGlimmer = com.example.globe.core.ui.TitleStyle.glimmerProgress(ageTicks);
         }
 
+        // Neutral backing plate behind the live preview title so the outline / drop shadow / glow / fill stay
+        // evaluable no matter what world lighting sits behind the open Studio (reported: "hard to see the
+        // shadow/outline against a dark cave"). STUDIO-ONLY -- drawn here, immediately before the shared
+        // static-title render, so the real gameplay ZoneEnterTitleOverlay.render() path is completely untouched.
+        // Sized to the title's actual on-screen box and centered on the SAME (x,y) renderStaticAt() draws at
+        // (screenW/2 + offset), so it tracks Title Size and the drag offset 1:1. renderStaticAt() does NOT apply
+        // OverlayLayout.fitScale (it uses the raw scale -- unlike the gameplay render() path), so neither do we:
+        // the plate matches the un-fitted preview exactly. Deliberately a plain neutral gray, NOT routed through
+        // the gold a11y helpers -- a tinted backdrop would bias how the title's own colors read, and this plate's
+        // whole job is to be a truthful reference for BOTH a light-fill/dark-outline and a dark-fill/light-outline
+        // combo. It's static (no animation), so there's nothing for Reduce Motion to gate.
+        {
+            double previewScale = LatitudeConfig.zoneEnterTitleScale;
+            // 8px covers the fixed 4.5px max glow ring + 1px outline (both are fixed SCREEN px regardless of
+            // Title Size -- the invScale in drawStyledTitle cancels the pose scale) plus a little breathing room.
+            final int pad = 8;
+            int rawTextW = ZoneEnterTitleOverlay.styledWidth(mc.font, sampleTitle);
+            int plateHalfW = (int) Math.ceil(rawTextW * previewScale / 2.0) + pad;
+            int plateHalfH = (int) Math.ceil(mc.font.lineHeight * previewScale / 2.0) + pad;
+            int pcx = (this.width / 2) + titleOffsetX;
+            int pcy = (this.height / 2) + titleOffsetY;
+            int plx0 = pcx - plateHalfW, ply0 = pcy - plateHalfH;
+            int plx1 = pcx + plateHalfW, ply1 = pcy + plateHalfH;
+            // Mid-dark neutral gray at ~75% opacity: opaque enough that the world behind stops mattering (so the
+            // preview reads the same over a bright plain or a black cave), mid-dark (0x38 = 56) so a light fill or
+            // outline pops AND a dark fill+outline still shows ~56 levels of contrast against it instead of
+            // vanishing into true black. Faint light rim (mirrors the snap-glyph plate idiom) to delineate the box.
+            ctx.fill(plx0, ply0, plx1, ply1, 0xC0383838);
+            int rim = 0x33FFFFFF;
+            ctx.fill(plx0, ply0, plx1, ply0 + 1, rim);
+            ctx.fill(plx0, ply1 - 1, plx1, ply1, rim);
+            ctx.fill(plx0, ply0, plx0 + 1, ply1, rim);
+            ctx.fill(plx1 - 1, ply0, plx1, ply1, rim);
+        }
+
         ZoneEnterTitleOverlay.renderStaticAt(
                 ctx,
                 this.width,
