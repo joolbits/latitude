@@ -1,6 +1,7 @@
 package com.example.globe.client;
 
 import com.example.globe.core.config.LatitudeConfigData;
+import com.example.globe.core.ui.OverlayLayout;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
@@ -13,6 +14,12 @@ public final class ZoneEnterTitleOverlay {
     private static float scale = 1.8f;
 
     private static final int FADE_TICKS = 10;
+
+    /** GUI-scale parity (audit H1/M1): per-side breathing room kept clear when fitting/clamping the title
+     *  into the screen, and the fit-to-width floor below which the title is never shrunk (below this it's
+     *  illegible; the clamp keeps it centered instead of shrinking further). */
+    private static final int SIDE_MARGIN = 6;
+    private static final double MIN_TITLE_SCALE = 0.5;
 
     private ZoneEnterTitleOverlay() {
     }
@@ -76,9 +83,27 @@ public final class ZoneEnterTitleOverlay {
         }
 
         int a = (int) (alpha * 255.0f);
-        int cx = (screenW / 2) + LatitudeConfig.zoneEnterTitleOffsetX;
-        int cy = (screenH / 2) + LatitudeConfig.zoneEnterTitleOffsetY;
-        drawTitleLineAt(ctx, cx, cy, title.getString(), scale, a);
+        Font font = client.font;
+        String raw = title.getString();
+        int contentW = styledWidth(font, raw);
+
+        // M1 -- fit-to-width: a long biome title at a large scale on a small GUI-scale canvas would spill off
+        // both edges. Shrink the effective scale just enough to fit (never below MIN_TITLE_SCALE); the H1
+        // clamp below keeps it centered if even the floor is too wide.
+        double drawScale = OverlayLayout.fitScale(scale, contentW, screenW - 2 * SIDE_MARGIN, MIN_TITLE_SCALE);
+        int halfW = (int) Math.ceil(contentW * drawScale / 2.0);
+        int halfH = (int) Math.ceil(font.lineHeight * drawScale / 2.0);
+
+        // H1 -- re-clamp every frame: zoneEnterTitleOffsetX/Y is an ABSOLUTE pixel offset set by HUD Studio at
+        // the EDIT resolution and never re-derived. Drag it near an edge on a large canvas, then switch to a
+        // smaller GUI scale, and the raw center lands off-screen with no way back (unlike the fraction-based
+        // compass, which survives the same sequence). Clamping the computed center to the styled title box
+        // every frame keeps the title at least fully on-screen and draggable back. (A full fraction migration
+        // would have to change how HUD Studio stores the drag -- out of this lane's scope -- so the render
+        // clamp is the self-contained fix.)
+        int cx = OverlayLayout.clampCenter((screenW / 2) + LatitudeConfig.zoneEnterTitleOffsetX, halfW, screenW);
+        int cy = OverlayLayout.clampCenter((screenH / 2) + LatitudeConfig.zoneEnterTitleOffsetY, halfH, screenH);
+        drawTitleLineAt(ctx, cx, cy, raw, drawScale, a);
     }
 
     /**

@@ -1,6 +1,7 @@
 package com.example.globe.client;
 
 import com.example.globe.core.HemisphereCrossing;
+import com.example.globe.core.ui.OverlayLayout;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
@@ -25,6 +26,10 @@ public final class HemisphereTitleOverlay {
      *  center, clear of the zone-enter title (which anchors at center + its own offset). */
     private static final int ANCHOR_OFFSET_Y = -40;
     private static final int FADE_TICKS = 10;
+
+    /** GUI-scale parity (audit M1/M4): fit-to-width margin + floor, mirroring {@link ZoneEnterTitleOverlay}. */
+    private static final int SIDE_MARGIN = 6;
+    private static final double MIN_TITLE_SCALE = 0.5;
 
     private static String northSouthLine;
     private static String eastWestLine;
@@ -119,11 +124,22 @@ public final class HemisphereTitleOverlay {
         Font font = client.font;
         int cx = screenW / 2;
         int anchorY = (screenH / 2) + ANCHOR_OFFSET_Y;
+
+        // M1/M4 -- fit-to-width: a long hemisphere line (e.g. "Northern Hemisphere") at a large scale on a
+        // small GUI-scale canvas would overflow both edges. Fit against the WIDEST line so both lines share
+        // ONE scale and the stacked block stays visually uniform. The block is center-anchored (cx = screenW/2)
+        // so it needs no horizontal clamp -- fitting the width keeps it on-screen.
+        int widest = 0;
+        for (String line : lines) {
+            widest = Math.max(widest, ZoneEnterTitleOverlay.styledWidth(font, line));
+        }
+        double drawScale = OverlayLayout.fitScale(scale, widest, screenW - 2 * SIDE_MARGIN, MIN_TITLE_SCALE);
+
         // One line-height (scaled) between stacked lines; block is vertically centered on the anchor.
-        int lineGap = Math.round(font.lineHeight * scale);
+        int lineGap = Math.round(font.lineHeight * (float) drawScale);
         int firstY = anchorY - (lineGap * (lines.length - 1)) / 2;
         for (int i = 0; i < lines.length; i++) {
-            ZoneEnterTitleOverlay.drawTitleLineAt(ctx, cx, firstY + i * lineGap, lines[i], scale, alphaByte);
+            ZoneEnterTitleOverlay.drawTitleLineAt(ctx, cx, firstY + i * lineGap, lines[i], drawScale, alphaByte);
         }
     }
 }
