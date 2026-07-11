@@ -1,5 +1,7 @@
 package com.example.globe.client;
 
+import com.example.globe.core.config.LatitudeConfigData.AccessibilityMode;
+import com.example.globe.core.ui.AccessibilityPalette;
 import java.util.List;
 import java.util.function.IntConsumer;
 import net.minecraft.client.Minecraft;
@@ -34,6 +36,32 @@ public final class SwatchDropdown extends AbstractWidget {
     private static final int PANEL_BORDER = 0xFF5C4A3A;
     private static final int PANEL_BG = 0xFF3A302A;
     private static final int PANEL_BG_DARK = 0xFF2A2420;
+
+    // Accessibility (Peetsa 2026-07-11): the collapsed row and the open list obey the SAME shared palette as the
+    // rest of the Studio/HUD (core.ui.AccessibilityPalette) -- ONE rulebook, read live each frame. HIGH_CONTRAST
+    // lifts dim entry/label text to a legible floor, floors backgrounds near-solid, brightens borders, and adds
+    // a stronger selection cue; STANDARD/COLORBLIND are the identity (this control has no red/green signal).
+    private static AccessibilityMode a11yMode() {
+        AccessibilityMode m = LatitudeConfig.accessibilityMode;
+        return m == null ? AccessibilityMode.STANDARD : m;
+    }
+
+    private static boolean highContrast() {
+        return a11yMode() == AccessibilityMode.HIGH_CONTRAST;
+    }
+
+    private static int a11yText(int argb) {
+        return AccessibilityPalette.adjustPanelText(a11yMode(), argb);
+    }
+
+    private static int a11yMuted(int argb) {
+        return AccessibilityPalette.adjustMuted(a11yMode(), argb);
+    }
+
+    private static int a11yBg(int argb) {
+        int a = AccessibilityPalette.backgroundAlpha(a11yMode(), (argb >>> 24) & 0xFF);
+        return (a << 24) | (argb & 0xFFFFFF);
+    }
 
     private static final int LIST_ROW_H = 13; // 9px font + breathing room
     private static final int TOP_MARGIN = 24;  // keep the list clear of the screen's top hint lane
@@ -164,8 +192,8 @@ public final class SwatchDropdown extends AbstractWidget {
         int h = getHeight();
         boolean hot = open || isHoveredOrFocused();
 
-        ctx.fill(x, y, x + w, y + h, hot ? PANEL_BG : PANEL_BG_DARK);
-        int border = hot ? GOLD : PANEL_BORDER;
+        ctx.fill(x, y, x + w, y + h, a11yBg(hot ? PANEL_BG : PANEL_BG_DARK));
+        int border = a11yMuted(hot ? GOLD : PANEL_BORDER);
         ctx.fill(x, y, x + w, y + 1, border);
         ctx.fill(x, y + h - 1, x + w, y + h, border);
         ctx.fill(x, y, x + 1, y + h, border);
@@ -174,7 +202,7 @@ public final class SwatchDropdown extends AbstractWidget {
         Entry sel = entries.isEmpty() ? null : entries.get(selectedIndex);
         int caretCx = x + w - 8;
         int caretCy = y + h / 2;
-        drawCaret(ctx, caretCx, caretCy, open, hot ? GOLD : MUTED);
+        drawCaret(ctx, caretCx, caretCy, open, hot ? a11yMuted(GOLD) : a11yMuted(MUTED));
 
         int rightPad = 16;
         if (sel != null && sel.hasSwatch) {
@@ -187,7 +215,7 @@ public final class SwatchDropdown extends AbstractWidget {
         String text = getMessage().getString();
         int textRight = x + w - rightPad;
         ctx.enableScissor(x + 2, y, textRight, y + h);
-        ctx.text(font, text, x + 6, y + (h - font.lineHeight) / 2, hot ? WARM_WHITE : MUTED);
+        ctx.text(font, text, x + 6, y + (h - font.lineHeight) / 2, hot ? a11yText(WARM_WHITE) : a11yMuted(MUTED));
         ctx.disableScissor();
     }
 
@@ -198,10 +226,11 @@ public final class SwatchDropdown extends AbstractWidget {
         } else {
             ctx.fill(x, y, x + w, y + h, e.swatchRgb);
         }
-        ctx.fill(x, y, x + w, y + 1, PANEL_BORDER);
-        ctx.fill(x, y + h - 1, x + w, y + h, PANEL_BORDER);
-        ctx.fill(x, y, x + 1, y + h, PANEL_BORDER);
-        ctx.fill(x + w - 1, y, x + w, y + h, PANEL_BORDER);
+        int chipBorder = a11yMuted(PANEL_BORDER);
+        ctx.fill(x, y, x + w, y + 1, chipBorder);
+        ctx.fill(x, y + h - 1, x + w, y + h, chipBorder);
+        ctx.fill(x, y, x + 1, y + h, chipBorder);
+        ctx.fill(x + w - 1, y, x + w, y + h, chipBorder);
     }
 
     private static void drawCaret(GuiGraphicsExtractor ctx, int cx, int cy, boolean up, int color) {
@@ -275,8 +304,10 @@ public final class SwatchDropdown extends AbstractWidget {
         int top = g.top;
         int bottom = top + panelH;
 
-        ctx.fill(left, top, right, bottom, PANEL_BORDER);
-        ctx.fill(left + 1, top + 1, right - 1, bottom - 1, PANEL_BG);
+        // Fully opaque panel (never see-through over the world) with a brightened frame under High Contrast.
+        boolean hc = highContrast();
+        ctx.fill(left, top, right, bottom, a11yMuted(PANEL_BORDER));
+        ctx.fill(left + 1, top + 1, right - 1, bottom - 1, a11yBg(PANEL_BG));
 
         ctx.enableScissor(left + 1, top + 1, right - 1, bottom - 1);
         for (int row = 0; row < g.visibleRows; row++) {
@@ -291,15 +322,28 @@ public final class SwatchDropdown extends AbstractWidget {
             } else if (keyed) {
                 ctx.fill(left + 1, ry, right - 1, ry + LIST_ROW_H, 0x33D4A74A);
             }
+            // High Contrast: frame the active row with a bright gold outline (shape cue that doesn't fight the
+            // light entry text), so the current keyboard/hover target is unmistakable without an opaque fill.
+            if (hc && (hovered || keyed)) {
+                int oc = a11yMuted(GOLD);
+                ctx.fill(left + 1, ry, right - 1, ry + 1, oc);
+                ctx.fill(left + 1, ry + LIST_ROW_H - 1, right - 1, ry + LIST_ROW_H, oc);
+                ctx.fill(left + 1, ry, left + 2, ry + LIST_ROW_H, oc);
+                ctx.fill(right - 2, ry, right - 1, ry + LIST_ROW_H, oc);
+            }
             if (i == selectedIndex) {
-                ctx.fill(left + 1, ry, left + 3, ry + LIST_ROW_H, GOLD);
+                // The selected-row bar: a wider, brighter gold stripe under High Contrast.
+                int barW = hc ? 4 : 2;
+                ctx.fill(left + 1, ry, left + 1 + barW, ry + LIST_ROW_H, a11yMuted(GOLD));
             }
             int textX = left + 6;
             if (e.hasSwatch) {
                 drawSwatch(ctx, left + 5, ry + (LIST_ROW_H - 9) / 2, 9, 9, e);
                 textX = left + 17;
             }
-            int color = i == selectedIndex ? GOLD : (hovered || keyed ? WARM_WHITE : MUTED);
+            int color = i == selectedIndex
+                    ? a11yText(GOLD)
+                    : (hovered || keyed ? a11yText(WARM_WHITE) : a11yMuted(MUTED));
             ctx.text(font, e.label, textX, ry + (LIST_ROW_H - font.lineHeight) / 2 + 1, color);
         }
         ctx.disableScissor();
@@ -310,8 +354,8 @@ public final class SwatchDropdown extends AbstractWidget {
             int trackH = panelH - 2;
             int thumbH = Math.max(6, trackH * g.visibleRows / entries.size());
             int thumbY = top + 1 + (trackH - thumbH) * panelScroll / g.maxScroll;
-            ctx.fill(trackX, top + 1, trackX + 2, bottom - 1, 0x55FFFFFF);
-            ctx.fill(trackX, thumbY, trackX + 2, thumbY + thumbH, GOLD);
+            ctx.fill(trackX, top + 1, trackX + 2, bottom - 1, a11yBg(0x55FFFFFF));
+            ctx.fill(trackX, thumbY, trackX + 2, thumbY + thumbH, a11yMuted(GOLD));
         }
     }
 
