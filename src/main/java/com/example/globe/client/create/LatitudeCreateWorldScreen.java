@@ -1353,11 +1353,15 @@ public class LatitudeCreateWorldScreen extends Screen {
         drawViewportClippedPanel(context, leftX, panelTop, leftW, panelBottom - panelTop);
         int leftClipLeft = Math.max(leftX + 1, paneStripViewportLeft);
         int leftClipRight = Math.min(leftX + leftW - 1, paneStripViewportRight);
-        if (leftClipRight > leftClipLeft) {
-            context.enableScissor(leftClipLeft, leftViewportTop, leftClipRight, leftViewportBottom);
+        // Draw the section heading BEFORE (outside) the scroll scissor, and start the scroll clip BELOW the
+        // reserved heading band, so scrolled fields / atlas preview / small-world warning can never bleed over
+        // the "World" title. Mirrors the Spawn Zone panel fix.
         if (threeCol) {
             drawInlineHeading(context, leftX, leftW, TAB_LABELS[0], GOLD);
         }
+        int leftClipTop = threeCol ? headerBandBottom() : leftViewportTop;
+        if (leftClipRight > leftClipLeft) {
+            context.enableScissor(leftClipLeft, leftClipTop, leftClipRight, leftViewportBottom);
         int inputX = leftX + 4;
         int stepperBtnW = sizePrevBtn != null ? sizePrevBtn.getWidth() : 20;
         int labelColor = GOLD;
@@ -1396,15 +1400,19 @@ public class LatitudeCreateWorldScreen extends Screen {
         if (!tabbedMode || activeTab == 1) {
         drawViewportClippedPanel(context, rightX, panelTop, rightW, panelBottom - panelTop);
         int paneTitleY = panelTop + 8;
-        int rightClipLeft = Math.max(rightX + 1, paneStripViewportLeft);
-        int rightClipRight = Math.min(rightX + rightW - 1, paneStripViewportRight);
-        if (rightClipRight > rightClipLeft) {
-        context.enableScissor(rightClipLeft, rightViewportTop, rightClipRight, rightViewportBottom);
         boolean latWorld = isLatitudeWorld();
         int rightTextWidth = Math.max(40, rightW - 8 - SCROLLBAR_GUTTER);
+        // Draw the section heading BEFORE (outside) the scroll scissor, and start the scroll clip BELOW the
+        // reserved heading band, so scrolling zone rows / description can never bleed over the "Spawn Zone" title.
         if (threeCol) {
             drawInlineHeading(context, rightX, rightW, TAB_LABELS[1], latWorld ? GOLD : DISABLED_COLOR);
-        } else {
+        }
+        int rightClipLeft = Math.max(rightX + 1, paneStripViewportLeft);
+        int rightClipRight = Math.min(rightX + rightW - 1, paneStripViewportRight);
+        int rightClipTop = threeCol ? headerBandBottom() : rightViewportTop;
+        if (rightClipRight > rightClipLeft) {
+        context.enableScissor(rightClipLeft, rightClipTop, rightClipRight, rightViewportBottom);
+        if (!threeCol) {
         // Tabbed mode: the tab strip already labels this pane "Spawn Zone", so the in-panel title is redundant
         // and just eats vertical space — skip it (updateRightLayout zeroes its reserved height in tabbed mode so
         // the content moves up). Keep the instructional subtitle.
@@ -2344,6 +2352,14 @@ public class LatitudeCreateWorldScreen extends Screen {
                 labelColor, true, true);
     }
 
+    /** Bottom Y of the reserved, non-scrolling heading strip drawn by {@link #drawInlineHeading} (three-column
+     *  mode). Scroll scissors start here so list/description content clips BELOW the section title + divider and
+     *  can never bleed over it. Mirrors the Rules panel, which already reserves its own header band. */
+    private int headerBandBottom() {
+        // headingY = panelTop + 6; the title text is one line tall, so a few px of clearance below it.
+        return panelTop + 6 + uiFontHeight() + 3;
+    }
+
     private void drawPaneScrollbar(GuiGraphicsExtractor context, int paneX, int paneW, int viewportTop, int viewportBottom,
                                    int contentHeight, int scrollAmount) {
         int viewportHeight = Math.max(0, viewportBottom - viewportTop);
@@ -2554,9 +2570,13 @@ public class LatitudeCreateWorldScreen extends Screen {
             // super.extractRenderState() with no outer scissor active, so this enable/disable pair is balanced.
             int clipLeft = Math.max(rightX + 1, paneStripViewportLeft);
             int clipRight = Math.min(rightX + rightW - 1, paneStripViewportRight);
-            boolean clipped = clipRight > clipLeft && rightViewportBottom > rightViewportTop;
+            // In three-column mode start the clip below the reserved heading band so a row scrolling up renders
+            // as a partial "half row" beneath the "Spawn Zone" title instead of over it (matches the main-panel
+            // scissor). Tabbed mode has no in-panel heading, so clip from the viewport top as before.
+            int rowClipTop = threeCol ? headerBandBottom() : rightViewportTop;
+            boolean clipped = clipRight > clipLeft && rightViewportBottom > rowClipTop;
             if (clipped) {
-                context.enableScissor(clipLeft, rightViewportTop, clipRight, rightViewportBottom);
+                context.enableScissor(clipLeft, rowClipTop, clipRight, rightViewportBottom);
             }
 
             if (selected) {
@@ -2791,9 +2811,32 @@ public class LatitudeCreateWorldScreen extends Screen {
                 context.disableScissor();
             }
 
-            // Tooltip (deferred -> renders on top, outside the scissor). Only when this row's viewport shows it.
+            // Tooltip: anchored to the SIDE of the row (not the cursor) so it never covers the hovered row or the
+            // adjacent rail content. The rail sits on the right of the screen, so prefer opening LEFT into the
+            // empty middle; fall back to the right, then clamp on-screen. Deferred -> drawn on top, after every
+            // scissor is disabled. Only when this row's viewport actually shows it.
             if (hovered && y + h > settingsViewportTop && y < settingsViewportBottom) {
-                context.setTooltipForNextFrame(font, this.tooltip, mouseX, mouseY);
+                int wrapW = Math.max(120, Math.min(220, LatitudeCreateWorldScreen.this.width - 24));
+                java.util.List<net.minecraft.util.FormattedCharSequence> lines = font.split(this.tooltip, wrapW);
+                final int anchorX = x;
+                final int anchorW = w;
+                final int anchorY = y;
+                net.minecraft.client.gui.screens.inventory.tooltip.ClientTooltipPositioner sidePositioner =
+                        (sw, sh, mx, my, tw, th) -> {
+                            int gap = 6;
+                            int px;
+                            if (anchorX - gap - tw >= 0) {
+                                px = anchorX - gap - tw;                 // room on the left: open into the middle
+                            } else if (anchorX + anchorW + gap + tw <= sw) {
+                                px = anchorX + anchorW + gap;            // else open to the right of the row
+                            } else {
+                                px = sw - tw;                            // no room either side: clamp to right edge
+                            }
+                            px = Math.max(0, Math.min(px, sw - tw));
+                            int py = Math.max(0, Math.min(anchorY, sh - th));   // vertically aligned with the row
+                            return new org.joml.Vector2i(px, py);
+                        };
+                context.setTooltipForNextFrame(font, lines, sidePositioner, mouseX, mouseY, true);
             }
             this.handleCursor(context);
         }
