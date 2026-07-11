@@ -1,6 +1,8 @@
 package com.example.globe.client;
 
 import com.example.globe.core.config.LatitudeConfigData;
+import com.example.globe.core.config.LatitudeConfigData.AccessibilityMode;
+import com.example.globe.core.ui.AccessibilityPalette;
 import com.example.globe.core.ui.GroupRowLayout;
 import com.example.globe.core.ui.HudStudioLayout;
 import com.example.globe.core.ui.UiEase;
@@ -119,6 +121,9 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
     private AbstractWidget wTitleDuration;
     private AbstractWidget wTitleShowBaseDegrees;
     private AbstractWidget wTitleColorPreset;
+    private AbstractWidget wTitleOutline;
+    private AbstractWidget wTitleDropShadow;
+    private AbstractWidget wTitleGlow;
     private AbstractWidget wTitleCase;
     private AbstractWidget wTitleLetterSpacing;
 
@@ -137,12 +142,14 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
     private RgbPickerGroup rgbCustomMuted;
     private RgbPickerGroup rgbCustomNeedle;
     private RgbPickerGroup rgbTitleColor;
+    private RgbPickerGroup rgbTitleOutline;
     private SwatchSlot swatchTextColor;
     private SwatchSlot swatchCustomFace;
     private SwatchSlot swatchCustomRing;
     private SwatchSlot swatchCustomMuted;
     private SwatchSlot swatchCustomNeedle;
     private SwatchSlot swatchTitleColor;
+    private SwatchSlot swatchTitleOutline;
     private final List<SwatchSlot> sidebarSwatches = new ArrayList<>();
 
     private int sidebarScrollY = 0;
@@ -275,6 +282,9 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
         this.wTitleDuration = null;
         this.wTitleShowBaseDegrees = null;
         this.wTitleColorPreset = null;
+        this.wTitleOutline = null;
+        this.wTitleDropShadow = null;
+        this.wTitleGlow = null;
         this.wTitleCase = null;
         this.wTitleLetterSpacing = null;
         this.wUndoLoad = null;
@@ -285,12 +295,14 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
         this.rgbCustomMuted = null;
         this.rgbCustomNeedle = null;
         this.rgbTitleColor = null;
+        this.rgbTitleOutline = null;
         this.swatchTextColor = null;
         this.swatchCustomFace = null;
         this.swatchCustomRing = null;
         this.swatchCustomMuted = null;
         this.swatchCustomNeedle = null;
         this.swatchTitleColor = null;
+        this.swatchTitleOutline = null;
 
         this.titleOffsetXf = LatitudeConfig.zoneEnterTitleOffsetX;
         this.titleOffsetYf = LatitudeConfig.zoneEnterTitleOffsetY;
@@ -784,6 +796,44 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
                         v -> LatitudeConfig.zoneEnterTitleRgb = v, g -> this.rgbTitleColor = g, s -> this.swatchTitleColor = s);
             }
 
+            this.wTitleOutline = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "ON" : "OFF"), () -> LatitudeConfig.zoneEnterTitleOutline)
+                    .withValues(true, false)
+                    .create(panelX, y, widgetW, rowH, Component.literal("Outline"), (btn, value) -> {
+                        LatitudeConfig.zoneEnterTitleOutline = value;
+                        LatitudeConfig.saveCurrent();
+                        // The Outline Color rows below appear only when Outline is ON, so (re)build the sidebar
+                        // to add/remove them -- same construct/teardown the Title Color "Custom" picker uses.
+                        this.init();
+                    }));
+            tooltip(this.wTitleOutline, "Draws a crisp outline around the title's letters so they stand out against any background. The outline color is set below.");
+            trackSidebarWidget(this.wTitleOutline, y);
+            y += rowH + rowGap;
+
+            if (LatitudeConfig.zoneEnterTitleOutline) {
+                y = placeRgbPicker(panelX, y, widgetW, rowH, rowGap, "Outline", LatitudeConfig.zoneEnterTitleOutlineRgb,
+                        v -> LatitudeConfig.zoneEnterTitleOutlineRgb = v, g -> this.rgbTitleOutline = g, s -> this.swatchTitleOutline = s);
+            }
+
+            this.wTitleDropShadow = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "ON" : "OFF"), () -> LatitudeConfig.zoneEnterTitleDropShadow)
+                    .withValues(true, false)
+                    .create(panelX, y, widgetW, rowH, Component.literal("Drop Shadow"), (btn, value) -> {
+                        LatitudeConfig.zoneEnterTitleDropShadow = value;
+                        LatitudeConfig.saveCurrent();
+                    }));
+            tooltip(this.wTitleDropShadow, "The classic hard shadow behind the title (a single dark copy offset down-right). Usually looks best OFF when the Outline is ON.");
+            trackSidebarWidget(this.wTitleDropShadow, y);
+            y += rowH + rowGap;
+
+            this.wTitleGlow = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "ON" : "OFF"), () -> LatitudeConfig.zoneEnterTitleGlow)
+                    .withValues(true, false)
+                    .create(panelX, y, widgetW, rowH, Component.literal("Shadow Glow"), (btn, value) -> {
+                        LatitudeConfig.zoneEnterTitleGlow = value;
+                        LatitudeConfig.saveCurrent();
+                    }));
+            tooltip(this.wTitleGlow, "A soft, dark halo that spreads gently out behind the title -- a gentler, blurrier glow than the hard drop shadow.");
+            trackSidebarWidget(this.wTitleGlow, y);
+            y += rowH + rowGap;
+
             LatitudeConfigData.TitleCaseMode[] titleCaseValues = LatitudeConfigData.TitleCaseMode.values();
             List<SwatchDropdown.Entry> titleCaseEntries = new ArrayList<>();
             for (LatitudeConfigData.TitleCaseMode v : titleCaseValues) titleCaseEntries.add(SwatchDropdown.Entry.text(titleCaseLabel(v)));
@@ -816,6 +866,11 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
                         LatitudeConfig.zoneEnterTitleOffsetY = 0;
                         LatitudeConfig.zoneEnterTitleScale = 1.6;
                         LatitudeConfig.zoneEnterTitleSeconds = 4.0;
+                        // Restore the new default title styling (black outline on, hard shadow off, glow off).
+                        LatitudeConfig.zoneEnterTitleOutline = true;
+                        LatitudeConfig.zoneEnterTitleOutlineRgb = 0x000000;
+                        LatitudeConfig.zoneEnterTitleDropShadow = false;
+                        LatitudeConfig.zoneEnterTitleGlow = false;
                         LatitudeConfig.saveCurrent();
                         this.titleOffsetXf = 0;
                         this.titleOffsetYf = 0;
@@ -1073,14 +1128,14 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
 
             // Themed card: border shell + fill + thin gold accent lines, matching the look already
             // established on the Settings and World Creation screens. High Contrast brightens the accent
-            // lines, heading, and edge so the panel reads unmistakably (the cheap Studio-side response to the
-            // Accessibility setting; the full in-HUD treatment is the CompassHud follow-up).
+            // lines, heading, and edge so the panel reads unmistakably -- all via the shared palette so the
+            // Studio obeys the same accessibility rulebook as the compass HUD and the create screen.
             boolean hc = highContrast();
-            int accentLine = hc ? GOLD : (GOLD & 0x66FFFFFF);
-            int headingColor = hc ? 0xFFFFF3DC : GOLD;
-            int dividerColor = hc ? GOLD : PANEL_BORDER;
-            ctx.fill(px, py, px + pw, py + ph, PANEL_BORDER);
-            ctx.fill(px + 1, py + 1, px + pw - 1, py + ph - 1, PANEL_BG);
+            int accentLine = a11yBg(GOLD & 0x66FFFFFF);      // translucent gold -> floored near-solid under HC
+            int headingColor = a11yText(GOLD);               // gold -> bright cream-gold under HC
+            int dividerColor = a11yMuted(PANEL_BORDER);      // dim frame -> lifted under HC
+            ctx.fill(px, py, px + pw, py + ph, a11yMuted(PANEL_BORDER));
+            ctx.fill(px + 1, py + 1, px + pw - 1, py + ph - 1, a11yBg(PANEL_BG));
             ctx.fill(px + 2, py + 2, px + pw - 2, py + 3, accentLine);
             ctx.fill(px + 2, py + ph - 3, px + pw - 2, py + ph - 2, accentLine);
             if (hc) {
@@ -1147,9 +1202,9 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
         drawSpeedSliderFlair(ctx);
 
         if (sidebarVisible) {
-            ctx.text(this.font, "Press L to hide settings", 8, 8, highContrast() ? 0xFFFFFFFF : 0xAAFFFFFF);
+            ctx.text(this.font, "Press L to hide settings", 8, 8, a11yText(0xAAFFFFFF));
         } else {
-            ctx.text(this.font, "Press L to show settings", 8, 8, 0xFFFFFFFF);
+            ctx.text(this.font, "Press L to show settings", 8, 8, a11yText(0xFFFFFFFF));
         }
 
         // Painted last of all so an open picker's list sits above every widget and the compass preview.
@@ -1177,7 +1232,8 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
     private void drawSnapGlyph(GuiGraphicsExtractor ctx) {
         if (wSnapToggle == null || !wSnapToggle.visible) return;
         boolean on = LatitudeConfig.hudSnapEnabled;
-        int line = on ? GOLD : 0xFF6E655C;
+        // Strokes lift to a legible floor under High Contrast (STANDARD identity keeps the exact gold/dim look).
+        int line = a11yMuted(on ? GOLD : 0xFF6E655C);
         int x = wSnapToggle.getX();
         int y = wSnapToggle.getY();
         int w = wSnapToggle.getWidth();
@@ -1186,6 +1242,18 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
         int span = 12;                    // 12 / 3 = 4px cells, exactly even
         int gx = x + (w - span) / 2;      // centered in the button
         int gy = y + (h - span) / 2;
+        // High Contrast: a dark backing plate + bright hairline behind the glyph so it never washes out against
+        // the canvas/world preview it floats over (same treatment the rule icons get on the create screen).
+        int plate = a11yBackingAlpha();
+        if (plate > 0) {
+            int px0 = gx - 2, py0 = gy - 2, px1 = gx + span + 3, py1 = gy + span + 3;
+            ctx.fill(px0, py0, px1, py1, plate << 24);
+            int rim = 0x66FFFFFF;
+            ctx.fill(px0, py0, px1, py0 + 1, rim);
+            ctx.fill(px0, py1 - 1, px1, py1, rim);
+            ctx.fill(px0, py0, px0 + 1, py1, rim);
+            ctx.fill(px1 - 1, py0, px1, py1, rim);
+        }
         // Four evenly-spaced gridlines each way (offsets 0, 4, 8, 12 -- integer, no rounding drift).
         for (int i = 0; i <= cells; i++) {
             int off = i * span / cells;
@@ -1279,12 +1347,22 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
         int cx = w.getX() + w.getWidth() / 2;
         int cy = w.getY() + w.getHeight() / 2;
         int glyphW = this.font.width(glyph);
+        // High Contrast: a dark backing plate behind the arrow so it reads on any button state, and -- since a
+        // disabled undo/redo button stays visible with only a greyed vanilla background -- a legibly-lifted
+        // muted tone for the disabled glyph instead of full white, so "nothing to undo" no longer reads as
+        // clickable. STANDARD keeps the exact 0xFFFFFFFF glyph for both states (byte-identical).
+        int plate = a11yBackingAlpha();
+        if (plate > 0) {
+            int r = (int) Math.ceil(this.font.lineHeight * scale / 2f) + 1;
+            ctx.fill(cx - r, cy - r, cx + r, cy + r, plate << 24);
+        }
+        int color = highContrast() ? (w.active ? 0xFFFFFFFF : a11yMuted(0xFF8C8078)) : 0xFFFFFFFF;
         var m = ctx.pose();
         m.pushMatrix();
         try {
             m.translate(cx, cy);
             m.scale(scale, scale);
-            ctx.text(this.font, glyph, -glyphW / 2, -this.font.lineHeight / 2, 0xFFFFFFFF);
+            ctx.text(this.font, glyph, -glyphW / 2, -this.font.lineHeight / 2, color);
         } finally {
             m.popMatrix();
         }
@@ -1598,8 +1676,14 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
         LatitudeConfig.zoneEnterTitleEnabled = true;
         LatitudeConfig.zoneEnterTitleSeconds = 6.0;
         LatitudeConfig.showZoneBaseDegreesOnTitle = true;
-        LatitudeConfig.zoneEnterTitleColorPreset = LatitudeConfigData.TitleColorPreset.WHITE;
+        // Fresh out-of-box title look (title-styling overhaul 2026-07-11): warm off-white fill inside a black
+        // outline, hard drop shadow off, glow off -- matches LatitudeConfigData's field initializers.
+        LatitudeConfig.zoneEnterTitleColorPreset = LatitudeConfigData.TitleColorPreset.OFF_WHITE;
         LatitudeConfig.zoneEnterTitleRgb = 0xFFFFFF;
+        LatitudeConfig.zoneEnterTitleOutline = true;
+        LatitudeConfig.zoneEnterTitleOutlineRgb = 0x000000;
+        LatitudeConfig.zoneEnterTitleDropShadow = false;
+        LatitudeConfig.zoneEnterTitleGlow = false;
         LatitudeConfig.zoneEnterTitleCase = LatitudeConfigData.TitleCaseMode.NORMAL;
         LatitudeConfig.zoneEnterTitleLetterSpacing = 0;
         LatitudeConfig.zoneEnterTitleDraggable = true;
@@ -1758,8 +1842,8 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
         if (trackH < 10) return;
         int thumbH = Math.max(8, trackH * viewportH / sidebarContentHeight);
         int thumbY = trackTop + (trackH - thumbH) * sidebarScrollY / maxScroll;
-        ctx.fill(trackX, trackTop, trackX + 3, trackBottom, 0x55FFFFFF);
-        ctx.fill(trackX, thumbY, trackX + 3, thumbY + thumbH, 0xFFD4A74A);
+        ctx.fill(trackX, trackTop, trackX + 3, trackBottom, a11yBg(0x55FFFFFF));
+        ctx.fill(trackX, thumbY, trackX + 3, thumbY + thumbH, a11yMuted(0xFFD4A74A));
     }
 
     private void drawSidebarSwatches(GuiGraphicsExtractor ctx) {
@@ -1770,8 +1854,8 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
             if (drawY < sidebarViewportTop || drawY + s.height > sidebarViewportBottom) continue;
             int argb = 0xFF000000 | (s.color.getAsInt() & 0xFFFFFF);
             ctx.fill(panelX, drawY, panelX + sidebarWidgetW, drawY + s.height, argb);
-            ctx.fill(panelX, drawY, panelX + sidebarWidgetW, drawY + 1, PANEL_BORDER);
-            ctx.fill(panelX, drawY + s.height - 1, panelX + sidebarWidgetW, drawY + s.height, PANEL_BORDER);
+            ctx.fill(panelX, drawY, panelX + sidebarWidgetW, drawY + 1, a11yMuted(PANEL_BORDER));
+            ctx.fill(panelX, drawY + s.height - 1, panelX + sidebarWidgetW, drawY + s.height, a11yMuted(PANEL_BORDER));
         }
     }
 
@@ -1803,18 +1887,20 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
         for (int i = 0; i < tabCount; i++) {
             boolean active = i == activeTab;
             boolean hovered = !active && mouseX >= x && mouseX < x + tabW && mouseY >= tabStripY && mouseY < tabStripY + TAB_H;
-            int bg = active ? PANEL_BG : (hovered ? 0xFF3A302A : 0xFF2A2420);
-            int border = active ? GOLD : PANEL_BORDER;
+            int bg = a11yBg(active ? PANEL_BG : (hovered ? 0xFF3A302A : 0xFF2A2420));
+            int border = active ? a11yMuted(GOLD) : a11yMuted(PANEL_BORDER);
             ctx.fill(x, tabStripY, x + tabW, tabStripY + TAB_H, bg);
             ctx.fill(x, tabStripY, x + tabW, tabStripY + 1, border);
             ctx.fill(x, tabStripY, x + 1, tabStripY + TAB_H, border);
             ctx.fill(x + tabW - 1, tabStripY, x + tabW, tabStripY + TAB_H, border);
             if (active) {
-                ctx.fill(x + 1, tabStripY + TAB_H - 1, x + tabW - 1, tabStripY + TAB_H, PANEL_BG);
+                ctx.fill(x + 1, tabStripY + TAB_H - 1, x + tabW - 1, tabStripY + TAB_H, a11yBg(PANEL_BG));
             } else {
-                ctx.fill(x, tabStripY + TAB_H - 1, x + tabW, tabStripY + TAB_H, PANEL_BORDER);
+                ctx.fill(x, tabStripY + TAB_H - 1, x + tabW, tabStripY + TAB_H, a11yMuted(PANEL_BORDER));
             }
-            int labelColor = active ? GOLD : (hovered ? WARM_WHITE : MUTED);
+            // Active/hover labels lift to the opaque text floor; inactive tab labels lift off dim grey so the
+            // whole strip reads under High Contrast (STANDARD identity).
+            int labelColor = active ? a11yText(GOLD) : (hovered ? a11yText(WARM_WHITE) : a11yMuted(MUTED));
             String label = TAB_NAMES[i];
             int labelW = this.font.width(label);
             int cx = x + tabW / 2;
@@ -2188,6 +2274,7 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
             case CUSTOM -> "Custom";
             case RAINBOW -> "Rainbow";
             case AURORA -> "Aurora";
+            case OFF_WHITE -> "Off-White";
         };
     }
 
@@ -2273,6 +2360,7 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
             // chip matching the compass "Aurora" scheme's ring, so the two read as distinct at a glance.
             case RAINBOW -> 0xFF8A3D;
             case AURORA -> 0x8FD0FF;
+            case OFF_WHITE -> LatitudeConfigData.OFF_WHITE_RGB;
         };
     }
 
@@ -2324,11 +2412,57 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
         }
     }
 
-    /** True when the Accessibility setting is High Contrast. Read every frame by the Studio's own cheap
-     *  rendering response (brighter card heading/accent/edge + hint text); the in-HUD treatment is the
-     *  CompassHud follow-up (see {@link LatitudeConfigData.AccessibilityMode}). */
+    // ------------------------------------------------------------------------------------------------
+    // Accessibility (Peetsa 2026-07-11). The player's Accessibility dropdown (LatitudeConfig.accessibilityMode,
+    // read live each frame in the General tab) drives the Studio's OWN look through the same pure, unit-tested
+    // core.ui.AccessibilityPalette used by the compass HUD and the world-creation screen -- ONE rulebook, no
+    // Studio-local contrast math. Flipping to High Contrast makes the very editor Peetsa is looking at change:
+    // every hand-drawn text/label/border/glyph below routes through these helpers.
+    //   HIGH_CONTRAST -> panel/tab/dropdown text forced opaque and dim greys lifted to a legible floor, card &
+    //                    dropdown backgrounds floored near-solid, borders/dividers/scrollbars brightened, the
+    //                    open picker list made fully opaque with brighter entries + a stronger selection bar,
+    //                    and the canvas snap / undo / redo glyphs given brighter strokes on a dark backing plate.
+    //   COLORBLIND    -> the Studio's palette is gold/cream/brown with NO red-vs-green signals (audited), so
+    //                    adjustSignalColor finds nothing to remap and the look is correctly unchanged; state
+    //                    that could ride on color alone (snap on/off, occupied/empty slot, undo/redo enabled)
+    //                    already carries a redundant shape/text/enabled cue -- see the audit note in the report.
+    //   STANDARD      -> every helper is the identity; byte-identical to today's look.
+    // ------------------------------------------------------------------------------------------------
+
+    private static AccessibilityMode a11yMode() {
+        AccessibilityMode m = LatitudeConfig.accessibilityMode;
+        return m == null ? AccessibilityMode.STANDARD : m;
+    }
+
+    /** True when the Accessibility setting is High Contrast -- gates the extra structural chrome (full gold card
+     *  outline, dark glyph backing plates) whose SHAPE, not just color, only appears in that mode. All actual
+     *  color/alpha choices go through the palette helpers below, not through this boolean. */
     private static boolean highContrast() {
-        return LatitudeConfig.accessibilityMode == LatitudeConfigData.AccessibilityMode.HIGH_CONTRAST;
+        return a11yMode() == AccessibilityMode.HIGH_CONTRAST;
+    }
+
+    /** Panel/HUD body & heading text: HIGH_CONTRAST forces full opacity and lifts dim greys to a legible
+     *  luminance; STANDARD/COLORBLIND identity. Idempotent. */
+    private static int a11yText(int argb) {
+        return AccessibilityPalette.adjustPanelText(a11yMode(), argb);
+    }
+
+    /** Muted chrome (borders, dividers, tab hairlines, inactive labels, scrollbars): a gentler luminance floor
+     *  under HIGH_CONTRAST so framing reads clearly; identity otherwise. Idempotent. */
+    private static int a11yMuted(int argb) {
+        return AccessibilityPalette.adjustMuted(a11yMode(), argb);
+    }
+
+    /** Floor a fill's ALPHA to near-solid under HIGH_CONTRAST (no barely-there cards), keeping its RGB;
+     *  identity otherwise. */
+    private static int a11yBg(int argb) {
+        int a = AccessibilityPalette.backgroundAlpha(a11yMode(), (argb >>> 24) & 0xFF);
+        return (a << 24) | (argb & 0xFFFFFF);
+    }
+
+    /** Alpha (0..255) for a dark backing plate behind a glyph, or 0 for "draw none" (non-HIGH_CONTRAST). */
+    private static int a11yBackingAlpha() {
+        return AccessibilityPalette.outlineStrength(a11yMode());
     }
 
     private static String accessibilityLabel(LatitudeConfigData.AccessibilityMode m) {
