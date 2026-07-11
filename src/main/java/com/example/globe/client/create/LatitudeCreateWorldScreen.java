@@ -139,6 +139,16 @@ public class LatitudeCreateWorldScreen extends Screen {
     private static final double ZONE_BOUNCE_LETTER_PHASE = 0.6; // radians of phase lag per letter -> a soft travelling wave
     private static final double ZONE_TAB_SHIMMER_PERIOD_SEC = 2.4; // slower than the Atlas crest's 2.6s sweep
     private static final double ZONE_TAB_SHIMMER_AMPLITUDE = 0.20; // +/-20% brightness
+    // LATITUDE wordmark delight (UI round 13): a slow warm bloom pulse behind the letters + a slight
+    // brightness lift on the gold, plus a few tiny twinkling sparkle motes drifting over the word. All
+    // wall-clock driven and deliberately gentle (see RulesIcons.glow / chest glitter for the precedent),
+    // and all frozen to a steady state when Reduce Motion is on.
+    private static final double TITLE_GLOW_PERIOD_SEC = 3.4;   // one full bloom breath (slow, not a strobe)
+    private static final float  TITLE_GLOW_MIN = 0.35f;        // bloom intensity floor
+    private static final float  TITLE_GLOW_MAX = 0.85f;        // bloom intensity ceiling
+    private static final float  TITLE_GOLD_LIFT = 0.10f;       // +/-10% brightness breath on the gold letters
+    private static final int    TITLE_SPARKLE_COUNT = 4;       // concurrent twinkling motes (3-5 brief)
+    private static final double TITLE_SPARKLE_PERIOD_SEC = 2.6; // one spawn->twinkle->fade->respawn cycle per mote
     private static final boolean DEBUG_UI_SWITCH_LAG = Boolean.getBoolean("latitude.debug.uiSwitchLag");
 
     private final Runnable onClose;
@@ -1405,6 +1415,9 @@ public class LatitudeCreateWorldScreen extends Screen {
         drawWrappedTextBlock(context, "Choose the climate where your journey begins", new UiRect(rightX + 4, rightSubtitleY, rightTextWidth, Math.max(uiFontHeight(), rightDividerY - rightSubtitleY - scaledUi(2))), latWorld ? MUTED : DISABLED_COLOR, false, 2, true, true);
         }
         if (latWorld) {
+        // Reduce Motion holds the Atlas-style Gaussian crest / Random sweep at a static highlight (solid fill,
+        // no travelling glow) instead of animating.
+        boolean reduceMotion = com.example.globe.client.LatitudeConfig.reduceMotion;
         int barInset = 4;
         int barTotalW = rightW - barInset * 2 - SCROLLBAR_GUTTER;
         LatitudeBands.Band[] allBands = LatitudeBands.Band.values();
@@ -1418,7 +1431,11 @@ public class LatitudeCreateWorldScreen extends Screen {
                 // crest sweeping left→right within this segment only (Peetsa: give the zone bar the same
                 // Gaussian shimmer the Atlas selected band already has). Other segments stay static below.
                 context.fill(segX, rightBarY, segXEnd, rightBarY + rightBarH, GOLD);
-                LatitudePlanisphereRenderer.fillSelectedGlowSegment(context, segX + 1, rightBarY + 1, segXEnd - 1, rightBarY + rightBarH - 1, bandColor);
+                if (reduceMotion) {
+                    context.fill(segX + 1, rightBarY + 1, segXEnd - 1, rightBarY + rightBarH - 1, bandColor);
+                } else {
+                    LatitudePlanisphereRenderer.fillSelectedGlowSegment(context, segX + 1, rightBarY + 1, segXEnd - 1, rightBarY + rightBarH - 1, bandColor);
+                }
             } else {
                 int dimColor = (bandColor & 0x00FFFFFF) | (0x66 << 24);
                 context.fill(segX, rightBarY, segXEnd, rightBarY + rightBarH, dimColor);
@@ -1430,7 +1447,16 @@ public class LatitudeCreateWorldScreen extends Screen {
         if (randomZone) {
             int barLeft = rightX + barInset;
             int barRight = rightX + barInset + barTotalW;
-            LatitudePlanisphereRenderer.fillRandomGlowBar(context, barLeft, barRight, rightBarY, rightBarY + rightBarH, BAND_COLORS);
+            if (reduceMotion) {
+                // Static highlight: every segment shows its full, solid band color (no travelling crest).
+                for (int i = 0; i < allBands.length; i++) {
+                    int segX = rightX + barInset + (barTotalW * i / allBands.length);
+                    int segXEnd = rightX + barInset + (barTotalW * (i + 1) / allBands.length);
+                    context.fill(segX, rightBarY, segXEnd, rightBarY + rightBarH, BAND_COLORS[i]);
+                }
+            } else {
+                LatitudePlanisphereRenderer.fillRandomGlowBar(context, barLeft, barRight, rightBarY, rightBarY + rightBarH, BAND_COLORS);
+            }
         }
 
         int descPanelX = rightX + 2;
@@ -1883,6 +1909,29 @@ public class LatitudeCreateWorldScreen extends Screen {
             return 0;
         }
         int startX = rect.x + (rect.w - drawW) / 2;
+
+        // Reduce Motion freezes the bloom breath, the gold lift and the sparkles to a steady mid state.
+        final boolean reduceMotion = com.example.globe.client.LatitudeConfig.reduceMotion;
+        final double nowSec = System.currentTimeMillis() / 1000.0;
+        final int glowMidX = startX + drawW / 2;
+        final int glowMidY = rect.y + drawH / 2;
+
+        // (1) Soft warm bloom pulsing on/behind the letters -- a row of translucent gold discs (RulesIcons.glow)
+        // spanning the wordmark, breathing between TITLE_GLOW_MIN..MAX on a slow sine. Drawn BEFORE the glyphs.
+        float glowT = reduceMotion
+                ? 0.5f
+                : (float) (0.5 + 0.5 * Math.sin(nowSec * 2.0 * Math.PI / TITLE_GLOW_PERIOD_SEC));
+        float glowIntensity = TITLE_GLOW_MIN + (TITLE_GLOW_MAX - TITLE_GLOW_MIN) * glowT;
+        int glowR = Math.max(2, drawH * 3 / 4);
+        int glowStep = Math.max(1, glowR);
+        for (int gx = startX; gx <= startX + drawW; gx += glowStep) {
+            RulesIcons.glow(context, gx, glowMidY, glowR, glowIntensity);
+        }
+
+        // Slight brightness lift on the gold, breathing in lockstep with the bloom (steady mid when reduced).
+        float lift = reduceMotion ? 1.0f : (float) (1.0 + TITLE_GOLD_LIFT * Math.sin(nowSec * 2.0 * Math.PI / TITLE_GLOW_PERIOD_SEC));
+        int goldLit = liftBrightness(GOLD, lift);
+
         var m = context.pose();
         m.pushMatrix();
         try {
@@ -1892,11 +1941,50 @@ public class LatitudeCreateWorldScreen extends Screen {
             for (int i = 0; i < text.length(); i++) {
                 String s = String.valueOf(text.charAt(i));
                 context.text(this.font, s, cx + 1, 1, 0xFF3A2410, false); // letterpress under-layer
-                context.text(this.font, s, cx, 0, GOLD, false);
+                context.text(this.font, s, cx, 0, goldLit, false);
                 cx += this.font.width(s) + spacing;
             }
         } finally {
             m.popMatrix();
+        }
+
+        // (2) Sparkle motes: a few tiny gold/white twinkles at hash-scattered points over the wordmark, each
+        // fading in then out over TITLE_SPARKLE_PERIOD_SEC and respawning elsewhere on the next cycle. Positions
+        // come from hashing (mote index + cycle bucket) -- deterministic, no per-frame java.util.Random. Drawn on
+        // top of the glyphs. Suppressed entirely under Reduce Motion.
+        if (!reduceMotion) {
+            int boxX0 = startX;
+            int boxW = Math.max(1, drawW);
+            int boxY0 = rect.y;
+            int boxH = Math.max(1, drawH);
+            for (int k = 0; k < TITLE_SPARKLE_COUNT; k++) {
+                double staggered = nowSec / TITLE_SPARKLE_PERIOD_SEC + (double) k / TITLE_SPARKLE_COUNT;
+                long bucket = (long) Math.floor(staggered);
+                double frac = staggered - bucket; // 0..1 within this mote's current cycle
+                float a = (float) Math.sin(frac * Math.PI);
+                int alpha = Math.round(a * a * 235f); // fade in -> twinkle -> fade out
+                if (alpha <= 8) continue;
+                int hx = hash32((int) (k * 73856093 ^ bucket * 19349663));
+                int hy = hash32((int) (k * 83492791 ^ bucket * 2971215073L));
+                int sxp = boxX0 + Math.floorMod(hx, boxW);
+                int syp = boxY0 + Math.floorMod(hy, boxH);
+                // Alternate gold / warm-white cores by hash bit; size 1-2px.
+                int core = ((hx & 1) == 0) ? (0xFFF2C24E) : 0xFFFFF4DC;
+                int spark = (Math.min(255, alpha) << 24) | (core & 0xFFFFFF);
+                boolean big = (frac > 0.35 && frac < 0.65); // briefly 2px at peak twinkle
+                context.fill(sxp, syp, sxp + 1, syp + 1, spark);          // center
+                context.fill(sxp - 1, syp, sxp, syp + 1, spark);          // + arms
+                context.fill(sxp + 1, syp, sxp + 2, syp + 1, spark);
+                context.fill(sxp, syp - 1, sxp + 1, syp, spark);
+                context.fill(sxp, syp + 1, sxp + 1, syp + 2, spark);
+                if (big) {
+                    int dim = (Math.min(255, alpha) / 2 << 24) | (core & 0xFFFFFF);
+                    context.fill(sxp - 2, syp, sxp - 1, syp + 1, dim);
+                    context.fill(sxp + 2, syp, sxp + 3, syp + 1, dim);
+                    context.fill(sxp, syp - 2, sxp + 1, syp - 1, dim);
+                    context.fill(sxp, syp + 2, sxp + 1, syp + 3, dim);
+                }
+            }
         }
         // Flanking rules with a small diamond at each inner end, vertically centered on the wordmark.
         int midY = rect.y + drawH / 2;
@@ -1913,20 +2001,31 @@ public class LatitudeCreateWorldScreen extends Screen {
     }
 
     /** Smooth flowing rainbow gradient, italicized — the selected "Random" spawn-zone row's name treatment
-     *  (TEST 29). Shares the one gradient helper with the compass/HUD-Studio rainbows so they match. */
-    private void drawRainbowItalicUiText(GuiGraphicsExtractor context, String text, int x, int y) {
+     *  (TEST 29). Shares the one gradient helper with the compass/HUD-Studio rainbows so they match.
+     *  {@code bounce} applies the same per-letter sine wave the other selected zone rows use (ZONE_BOUNCE_*
+     *  constants), so the Random row's letters bob in lockstep with everyone else's while keeping its
+     *  flowing gradient coloring and italics. */
+    private void drawRainbowItalicUiText(GuiGraphicsExtractor context, String text, int x, int y, boolean bounce) {
         int cx = x;
         int visibleIdx = 0;
         int visibleCount = 0;
         for (int i = 0; i < text.length(); i++) {
             if (text.charAt(i) != ' ') visibleCount++;
         }
+        double now = System.currentTimeMillis() / 1000.0;
+        double omega = 2.0 * Math.PI / ZONE_BOUNCE_PERIOD_SEC;
+        boolean reduceMotion = com.example.globe.client.LatitudeConfig.reduceMotion;
         for (int i = 0; i < text.length(); i++) {
             char c = text.charAt(i);
             Component ch = Component.literal(String.valueOf(c)).withStyle(net.minecraft.ChatFormatting.ITALIC);
             int color = 0xFF000000 | com.example.globe.client.RainbowText.flowingColor(
                     visibleIdx, visibleCount, com.example.globe.core.ui.FlowingGradient.DEFAULT_CYCLE_SECONDS);
-            context.text(this.font, ch, cx, y, color, true);
+            int dy = 0;
+            if (bounce && !reduceMotion && c != ' ') {
+                double phase = now * omega - visibleIdx * ZONE_BOUNCE_LETTER_PHASE;
+                dy = (int) Math.round(Math.sin(phase) * ZONE_BOUNCE_AMPLITUDE_PX);
+            }
+            context.text(this.font, ch, cx, y + dy, color, true);
             if (c != ' ') visibleIdx++;
             cx += this.font.width(ch);
         }
@@ -1938,6 +2037,7 @@ public class LatitudeCreateWorldScreen extends Screen {
     private void drawBouncingUiText(GuiGraphicsExtractor context, String text, int x, int y, int color, boolean shadow) {
         double now = System.currentTimeMillis() / 1000.0;
         double omega = 2.0 * Math.PI / ZONE_BOUNCE_PERIOD_SEC;
+        boolean reduceMotion = com.example.globe.client.LatitudeConfig.reduceMotion;
         int cx = x;
         int letterIdx = 0;
         for (int i = 0; i < text.length(); i++) {
@@ -1945,7 +2045,7 @@ public class LatitudeCreateWorldScreen extends Screen {
             String s = String.valueOf(c);
             if (c != ' ') {
                 double phase = now * omega - letterIdx * ZONE_BOUNCE_LETTER_PHASE;
-                int dy = (int) Math.round(Math.sin(phase) * ZONE_BOUNCE_AMPLITUDE_PX);
+                int dy = reduceMotion ? 0 : (int) Math.round(Math.sin(phase) * ZONE_BOUNCE_AMPLITUDE_PX);
                 context.text(this.font, s, cx, y + dy, color, shadow);
                 letterIdx++;
             }
@@ -1953,10 +2053,33 @@ public class LatitudeCreateWorldScreen extends Screen {
         }
     }
 
+    /** Multiplies an ARGB color's RGB channels by {@code mult} (clamped to 255), preserving alpha. Used for the
+     *  wordmark's gentle gold "breath" lift. */
+    private static int liftBrightness(int argb, float mult) {
+        int a = (argb >>> 24) & 0xFF;
+        int r = Math.min(255, Math.round(((argb >> 16) & 0xFF) * mult));
+        int g = Math.min(255, Math.round(((argb >> 8) & 0xFF) * mult));
+        int b = Math.min(255, Math.round((argb & 0xFF) * mult));
+        return (a << 24) | (r << 16) | (g << 8) | b;
+    }
+
+    /** Small fast integer hash (Murmur-ish finalizer) for deterministic sparkle placement -- no per-frame RNG. */
+    private static int hash32(int x) {
+        x ^= x >>> 16;
+        x *= 0x7feb352d;
+        x ^= x >>> 15;
+        x *= 0x846ca68b;
+        x ^= x >>> 16;
+        return x;
+    }
+
     /** Gentle brightness shimmer for the selected zone's left accent tab: a slow sine on the base color,
-     *  +/-ZONE_TAB_SHIMMER_AMPLITUDE. Explicitly milder than the atlas band's Gaussian crest. Preserves alpha. */
+     *  +/-ZONE_TAB_SHIMMER_AMPLITUDE. Explicitly milder than the atlas band's Gaussian crest. Preserves alpha.
+     *  Reduce Motion holds it at a steady mid brightness (mult 1.0). */
     private static int shimmerAccentColor(int argb) {
-        double s = Math.sin(System.currentTimeMillis() / 1000.0 * (2.0 * Math.PI / ZONE_TAB_SHIMMER_PERIOD_SEC));
+        double s = com.example.globe.client.LatitudeConfig.reduceMotion
+                ? 0.0
+                : Math.sin(System.currentTimeMillis() / 1000.0 * (2.0 * Math.PI / ZONE_TAB_SHIMMER_PERIOD_SEC));
         float mult = (float) (1.0 + ZONE_TAB_SHIMMER_AMPLITUDE * s);
         int a = (argb >>> 24) & 0xFF;
         int r = Math.min(255, Math.round(((argb >> 16) & 0xFF) * mult));
@@ -2461,7 +2584,7 @@ public class LatitudeCreateWorldScreen extends Screen {
             int textX = x + 6;
 
             if (this.band == null && selected) {
-                drawRainbowItalicUiText(context, "Random", textX, y + compactUi(2));
+                drawRainbowItalicUiText(context, "Random", textX, y + compactUi(2), true);
             } else if (selected) {
                 // Selected concrete band: its name letters gently bounce so the pick reads as "alive".
                 drawBouncingUiText(context, this.band.displayName(), textX, y + compactUi(2), textColor, true);
