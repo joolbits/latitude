@@ -393,6 +393,17 @@ public class LatitudeCreateWorldScreen extends Screen {
         LOGGER.info("[LAT][CWPATH] LatitudeCreateWorldScreen.init screen={} holder={}",
                 this.getClass().getName(), this.holder);
         zoneRows.clear();
+        // The Rules-panel widgets are tracked in this custom list AND drawn manually by
+        // renderSettingsScrollWidgets(). The harness's clearWidgets() (run before every init) empties
+        // children/renderables/narratables but NOT this list, so re-init (window resize, or returning from
+        // the HUD Studio / Game Rules sub-screens) would otherwise APPEND a second set of rows on top of the
+        // stale ones. The stale widgets drop out of children (so updateSettingsLayout no longer repositions
+        // them) but linger here, frozen at their last positions -- renderSettingsScrollWidgets then paints them
+        // as a second, non-scrolling "ghost" layer interleaved with the live rows (the reported scroll-ghost
+        // bug, Rules-only because only this panel uses a manually-drawn, un-harness-managed widget list). Clear
+        // it here, exactly like zoneRows above, so each init rebuilds one coherent layer. See addWidget vs
+        // addRenderableWidget note at the field declaration.
+        settingsScrollWidgets.clear();
         int headerGap = 10;
         int headerToPanel = 42;
         int bottomMargin = 40;
