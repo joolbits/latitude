@@ -22,6 +22,7 @@
     "SurfaceDripstoneLawnmowerMixin",
     "ExtremePolarVillageGuardMixin",
     "ExtremePolarVegetationGuardMixin",
+    "PolarVegetationFadeGuardMixin",
     "StructureBiomeMatchGuardMixin",
     "terrain.RandomStateAccessor",
     "terrain.RandomStateRouterTerrainMixin"

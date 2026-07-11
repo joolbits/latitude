@@ -109,6 +109,9 @@ loom {
             // Phase 5 carve-aware ocean labels (default false, byte-identical off).
             vmArg "-Dlatitude.terrainV2.carveAwareLabels=${System.getProperty('latitude.terrainV2.carveAwareLabels', 'false')}"
             vmArg "-Dlatitude.boundaryV2.enabled=${System.getProperty('latitude.boundaryV2.enabled', 'false')}"
+            // Polar small-vegetation fade (default false, byte-identical off); forwarded so a headless
+            // flag-on atlas actually thins polar grass/flowers/sugarcane instead of silently no-opping.
+            vmArg "-Dlatitude.polarVegetationFade.enabled=${System.getProperty('latitude.polarVegetationFade.enabled', 'false')}"
             vmArg "-Dlatitude.geoV2.enabled=${System.getProperty('latitude.geoV2.enabled', 'false')}"
             // Slice C follow-up (the L17 forwarding class, caught a SECOND time 2026-07-07): climateV2 and
             // biomeConsumerV2 were never forwarded, so a headless "consumer-on" atlas silently ran with the

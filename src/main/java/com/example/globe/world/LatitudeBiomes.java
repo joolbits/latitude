@@ -38,6 +38,7 @@ import com.example.globe.adapter.geo.GeoAuthorityProvider;
 import com.example.globe.adapter.geo.GeoSummaryProvider;
 import com.example.globe.adapter.geo.NoOpGeoSummaryProvider;
 import com.example.globe.core.LatitudeV2Flags;
+import com.example.globe.core.PolarVegetationFade;
 import com.example.globe.core.climate.ClimateAuthority;
 import com.example.globe.core.climate.ClimateAuthorityParams;
 import com.example.globe.core.climate.ClimateClass;
@@ -743,6 +744,39 @@ public final class LatitudeBiomes {
 
     public static int getActiveRadiusBlocks() {
         return ACTIVE_RADIUS_BLOCKS;
+    }
+
+    // --- Polar small-vegetation fade (Peetsa 2026-07-10; latitude.polarVegetationFade.enabled) ---
+    // Coherent province-scale noise so the thinning frays in blobs (Art VI -- no hard ring), keyed on
+    // a dedicated salt so it doesn't correlate with any other keep-noise field.
+    private static final long POLAR_VEG_FADE_SALT = 0x706F6C766567L; // "polveg"
+    private static final int POLAR_VEG_FADE_SCALE_BLOCKS = 48;
+
+    /**
+     * Should a small-vegetation feature placement at (blockX, blockZ) be stripped by the polar fade?
+     * World-side wiring for {@link com.example.globe.mixin.PolarVegetationFadeGuardMixin}: derives
+     * {@code |lat|} from Z (world-size-safe degree threshold, both hemispheres, both world shapes since
+     * latitude is always {@code |Z|/zRadius}), asks the pure {@link PolarVegetationFade} for the keep
+     * chance, and -- only in the fading band -- frays the decision on a coherent {@link ValueNoise2D}
+     * field. Returns {@code false} (keep, byte-identical) whenever the world is not an armed globe world
+     * or the column is below the fade onset; {@code true} (strip) at/above the pole cap.
+     */
+    public static boolean polarVegetationFadeStrips(int blockX, int blockZ) {
+        int radius = getActiveRadiusBlocks();
+        if (radius <= 0) {
+            return false;
+        }
+        double absLatDeg = Math.abs((double) blockZ) * 90.0 / radius; // radius >= 1 here (guarded above)
+        double keep = PolarVegetationFade.keepChance01(absLatDeg);
+        if (keep >= 1.0) {
+            return false; // below onset: bitwise-untouched
+        }
+        if (keep <= 0.0) {
+            return true;  // pole cap: fully stripped
+        }
+        double noise = ValueNoise2D.sampleBlocks(WORLD_SEED ^ POLAR_VEG_FADE_SALT,
+                blockX, blockZ, POLAR_VEG_FADE_SCALE_BLOCKS);
+        return PolarVegetationFade.stripByNoise(keep, noise);
     }
 
     // --- Mercator world shape (Phase 1: wider world, more biomes per band) ---
