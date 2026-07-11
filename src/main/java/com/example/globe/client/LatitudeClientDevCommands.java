@@ -1,13 +1,16 @@
 package com.example.globe.client;
 
 import com.mojang.brigadier.CommandDispatcher;
+import com.mojang.brigadier.arguments.StringArgumentType;
 import java.util.Locale;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommands;
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.protocol.game.ServerboundChatCommandPacket;
 
 /**
  * Client-side {@code /latdev title} test command: fires the real big zone-enter title overlay for the zone
@@ -20,10 +23,24 @@ import net.minecraft.network.chat.Component;
  * reached from the server dispatcher (that command class is loaded on dedicated servers too, where client
  * classes aren't reachable). So {@code title} is registered here via Fabric's
  * {@link ClientCommandRegistrationCallback} ({@link ClientCommands} / {@link FabricClientCommandSource},
- * package {@code net.fabricmc.fabric.api.client.command.v2}). Fabric checks client commands FIRST and only
- * intercepts what they explicitly register, so registering ONLY a {@code title} child under a client-side
- * {@code latdev} root does not collide with or shadow the server's existing {@code /latdev} subcommands --
- * anything unmatched (e.g. {@code /latdev here}) falls through to the server dispatcher completely unaffected.
+ * package {@code net.fabricmc.fabric.api.client.command.v2}).
+ *
+ * <p><b>Client root SHADOWS the server tree -- so we must forward.</b> Fabric checks client commands FIRST:
+ * {@code ClientPacketListenerMixin} injects at the HEAD of {@code ClientPacketListener.sendCommand(String)}
+ * and hands every typed command to {@code ClientCommandInternals.executeCommand}, which runs the client
+ * dispatcher. That method only lets a command "fall through" to the server when the client parse throws
+ * {@code dispatcherUnknownCommand} (root literal totally unknown to the client) or
+ * {@code dispatcherParseException} (see {@code isIgnoredException}); ANY OTHER parse failure is caught,
+ * {@code source.sendError(...)}'d, and the command is treated as consumed -- it is NEVER forwarded. So once a
+ * client-side {@code latdev} root exists, typing {@code /latdev here} matches the root literal but fails on
+ * the missing {@code here} child, throwing a {@code literalIncorrect}-type exception that is NOT ignored:
+ * the whole server {@code /latdev} tree is shadowed and the player sees "Incorrect argument for command".
+ * To keep BOTH the client-only {@code title} preview AND every server subcommand, this root therefore adds an
+ * explicit passthrough: a bare-{@code latdev} {@code .executes(...)} and a greedy {@code subcommand} argument
+ * child whose {@code .executes(...)} forwards the command verbatim to the server (Brigadier tries the
+ * {@code title} LITERAL before the greedy argument, so {@code title} still runs client-side while everything
+ * else is forwarded). See {@link #forwardToServer} for why forwarding sends the packet directly instead of
+ * re-calling {@code sendCommand} (which would re-enter the same mixin and recurse).
  *
  * <p>Registration is only ever wired from {@code GlobeModClient} (a {@code ClientModInitializer}), so this is
  * unreachable on a dedicated server. The gating policy mirrors
@@ -64,8 +81,47 @@ public final class LatitudeClientDevCommands {
 
     private static void register(CommandDispatcher<FabricClientCommandSource> dispatcher) {
         dispatcher.register(ClientCommands.literal("latdev")
+                // The one genuinely client-only subcommand. Brigadier evaluates LITERAL children before the
+                // greedy argument below, so "/latdev title" always resolves here (never the passthrough).
                 .then(ClientCommands.literal("title")
-                        .executes(LatitudeClientDevCommands::fireTitle)));
+                        .executes(LatitudeClientDevCommands::fireTitle))
+                // Bare "/latdev" -> forward verbatim so the server can print its own root usage/help.
+                .executes(ctx -> forwardToServer(ctx.getSource(), "latdev"))
+                // Everything that isn't "title" (e.g. "/latdev here", "/latdev tpband temperate low") lands
+                // on this greedy passthrough and is forwarded to the server dispatcher verbatim, restoring
+                // every pre-existing server subcommand. Empty suggestions keep this node from injecting a
+                // noisy "<subcommand>" placeholder into tab-completion -- the server's own children (here,
+                // tpband, ...) still appear because Fabric merges client command children into the known
+                // server command tree under the same-name root.
+                .then(ClientCommands.argument("subcommand", StringArgumentType.greedyString())
+                        .suggests((c, b) -> b.buildFuture())
+                        .executes(ctx -> forwardToServer(ctx.getSource(),
+                                "latdev " + StringArgumentType.getString(ctx, "subcommand")))));
+    }
+
+    /**
+     * Forwards {@code command} (no leading slash) to the SERVER dispatcher by sending a serverbound command
+     * packet directly, exactly as vanilla {@code ClientPacketListener.sendCommand(String)} does for commands
+     * with no signable arguments (its {@code SignableCommand.arguments().isEmpty()} branch sends a plain
+     * {@link ServerboundChatCommandPacket}).
+     *
+     * <p><b>Why not just call {@code connection.sendCommand(command)}:</b> fabric-command-api-v2's
+     * {@code ClientPacketListenerMixin} injects at the HEAD of {@code sendCommand(String)} and re-routes the
+     * string through the client dispatcher. Calling {@code sendCommand} from inside this very passthrough
+     * would re-enter that mixin, re-match this greedy child, and recurse forever -- and because the mixin
+     * cancels the inner {@code sendCommand}, the command would never actually reach the server anyway.
+     * {@code ClientCommonPacketListenerImpl.send(Packet)} is NOT intercepted, so sending the packet directly
+     * is a single, safe, non-recursive hop. (Dev commands carry no signed/message arguments, so the unsigned
+     * packet is exactly what vanilla would have sent.)
+     */
+    private static int forwardToServer(FabricClientCommandSource src, String command) {
+        LocalPlayer player = src.getPlayer();
+        if (player == null || player.connection == null) {
+            src.sendError(Component.literal("[latdev] not connected to a server; cannot run: " + command));
+            return 0;
+        }
+        player.connection.send(new ServerboundChatCommandPacket(command));
+        return 1;
     }
 
     private static int fireTitle(com.mojang.brigadier.context.CommandContext<FabricClientCommandSource> ctx) {
