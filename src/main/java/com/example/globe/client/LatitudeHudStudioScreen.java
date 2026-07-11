@@ -884,8 +884,8 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
                         LatitudeConfig.zoneEnterTitleOffsetY = 0;
                         LatitudeConfig.zoneEnterTitleScale = 1.6;
                         LatitudeConfig.zoneEnterTitleSeconds = 4.0;
-                        // Restore the new default title styling (black outline on, hard shadow off, glow off).
-                        LatitudeConfig.zoneEnterTitleOutline = true;
+                        // Restore the default title styling (outline off, hard shadow off, glow off).
+                        LatitudeConfig.zoneEnterTitleOutline = false;
                         LatitudeConfig.zoneEnterTitleOutlineRgb = 0x000000;
                         LatitudeConfig.zoneEnterTitleDropShadow = false;
                         LatitudeConfig.zoneEnterTitleGlow = false;
@@ -1705,16 +1705,17 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
         LatitudeConfig.zoneEnterTitleEnabled = true;
         LatitudeConfig.zoneEnterTitleSeconds = 6.0;
         LatitudeConfig.showZoneBaseDegreesOnTitle = true;
-        // Fresh out-of-box title look (title-styling overhaul 2026-07-11): warm off-white fill inside a black
-        // outline, hard drop shadow off, glow off -- matches LatitudeConfigData's field initializers.
+        // Fresh out-of-box title look (title-styling overhaul 2026-07-11, refined same day): warm off-white
+        // fill, no outline, hard drop shadow off, glow off, ALL CAPS -- matches LatitudeConfigData's field
+        // initializers.
         LatitudeConfig.zoneEnterTitleColorPreset = LatitudeConfigData.TitleColorPreset.OFF_WHITE;
         LatitudeConfig.zoneEnterTitleRgb = 0xFFFFFF;
-        LatitudeConfig.zoneEnterTitleOutline = true;
+        LatitudeConfig.zoneEnterTitleOutline = false;
         LatitudeConfig.zoneEnterTitleOutlineRgb = 0x000000;
         LatitudeConfig.zoneEnterTitleDropShadow = false;
         LatitudeConfig.zoneEnterTitleGlow = false;
         LatitudeConfig.zoneEnterTitleGlimmer = true;
-        LatitudeConfig.zoneEnterTitleCase = LatitudeConfigData.TitleCaseMode.NORMAL;
+        LatitudeConfig.zoneEnterTitleCase = LatitudeConfigData.TitleCaseMode.UPPERCASE;
         LatitudeConfig.zoneEnterTitleLetterSpacing = 0;
         LatitudeConfig.zoneEnterTitleDraggable = true;
         // Matches LatitudeConfig's own field-initializer defaults (hudSnapEnabled=true, hudSnapPixels=8) --

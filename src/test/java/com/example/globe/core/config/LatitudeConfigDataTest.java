@@ -28,14 +28,14 @@ class LatitudeConfigDataTest {
         assertTrue(d.zoneEnterTitleEnabled);
         assertEquals(6.0, d.zoneEnterTitleSeconds);
         assertEquals(1.8, d.zoneEnterTitleScale);
-        // FRESH default refreshed 2026-07-11 (title-styling overhaul): warm OFF_WHITE fill in a black outline,
-        // hard drop shadow off, glow off.
+        // FRESH default refreshed 2026-07-11 (title-styling overhaul, refined same day): warm OFF_WHITE fill,
+        // no outline, hard drop shadow off, glow off, ALL CAPS.
         assertEquals(TitleColorPreset.OFF_WHITE, d.zoneEnterTitleColorPreset);
-        assertTrue(d.zoneEnterTitleOutline);
+        assertFalse(d.zoneEnterTitleOutline);
         assertEquals(0x000000, d.zoneEnterTitleOutlineRgb);
         assertFalse(d.zoneEnterTitleDropShadow);
         assertFalse(d.zoneEnterTitleGlow);
-        assertEquals(TitleCaseMode.NORMAL, d.zoneEnterTitleCase);
+        assertEquals(TitleCaseMode.UPPERCASE, d.zoneEnterTitleCase);
         assertEquals(-40, d.zoneEnterTitleOffsetY);
         assertTrue(d.hudSnapEnabled);
         assertEquals(8, d.hudSnapPixels);
@@ -109,7 +109,7 @@ class LatitudeConfigDataTest {
         // Absent keys adopt the Java initializer (Gson) -- so an existing pre-release file with none of the
         // new title-style keys picks up the new default look. This is the disclosed pre-release migration.
         assertEquals(TitleColorPreset.OFF_WHITE, d.zoneEnterTitleColorPreset);
-        assertTrue(d.zoneEnterTitleOutline);
+        assertFalse(d.zoneEnterTitleOutline);
         assertFalse(d.zoneEnterTitleDropShadow);
         assertFalse(d.zoneEnterTitleGlow);
         assertTrue(d.zoneEnterTitleEnabled);
