@@ -240,7 +240,7 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
         // ── World summary (set at beginExpedition; truthful — straight from the chosen options) ──
         String summary = LatitudeClientState.loadingSummary;
         if (summary != null) {
-            globe$drawCentered(context, summary, cx, titleY + 12, WARM_WHITE, false);
+            globe$drawSummaryWave(context, summary, cx, titleY + 12, WARM_WHITE, elapsed);
         }
 
         // ── Loading hint ──
@@ -313,6 +313,45 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
     private void globe$drawCentered(GuiGraphicsExtractor context, String text, int cx, int y, int color, boolean shadow) {
         int w = this.font.width(text);
         context.text(this.font, text, cx - w / 2, y, color, shadow);
+    }
+
+    /**
+     * Draws the world-summary line ("Itty Bitty · Square 1:1 · 7,500 × 7,500 · subpolar start") with a gentle,
+     * looping "reading light" wave that illuminates one · -separated segment at a time (Peetsa 2026-07-11).
+     * The separators are drawn in the plain base color — only the words illuminate. Layout is byte-for-byte the
+     * original centered line: the full string is measured once for centering and each token (segment or
+     * separator) is drawn at its running x offset, so the total width and centering are unchanged. The wave
+     * math lives in {@link com.example.globe.core.ui.LoadingWave}; under Reduce Motion we freeze to the plain
+     * static line (this caller owns the motion policy, per the helper's contract).
+     */
+    @Unique
+    private void globe$drawSummaryWave(GuiGraphicsExtractor context, String summary, int cx, int y, int baseColor, long elapsed) {
+        if (com.example.globe.client.LatitudeConfig.reduceMotion) {
+            globe$drawCentered(context, summary, cx, y, baseColor, false);
+            return;
+        }
+        String[] segments = com.example.globe.core.ui.LoadingWave.segments(summary);
+        if (segments.length <= 1) {
+            // No · separators (or empty) — nothing to wave across; draw plain so layout is untouched.
+            globe$drawCentered(context, summary, cx, y, baseColor, false);
+            return;
+        }
+        int baseRgb = baseColor & 0xFFFFFF;
+        int alpha = baseColor & 0xFF000000;
+        int fullW = this.font.width(summary);
+        int x = cx - fullW / 2;
+        for (int i = 0; i < segments.length; i++) {
+            if (i > 0) {
+                // Separator: always the plain base color (only words illuminate).
+                context.text(this.font, com.example.globe.core.ui.LoadingWave.SEPARATOR, x, y, baseColor, false);
+                x += this.font.width(com.example.globe.core.ui.LoadingWave.SEPARATOR);
+            }
+            String seg = segments[i];
+            float boost = com.example.globe.core.ui.LoadingWave.boost(i, segments.length, elapsed);
+            int rgb = com.example.globe.core.ui.TitleStyle.brighten(baseRgb, boost);
+            context.text(this.font, seg, x, y, alpha | rgb, false);
+            x += this.font.width(seg);
+        }
     }
 
     @Unique
