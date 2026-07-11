@@ -29,7 +29,11 @@ public final class LatitudeConfigData {
     @SerializedName(value = "showWarningMessages", alternate = {"showWarningMessagesValue"})
     public boolean showWarningMessages = true;
 
-    public enum TitleColorPreset { WHITE, GOLD, RED, CYAN, GREEN, CUSTOM, RAINBOW }
+    // RAINBOW = a STATIC left-to-right ROYGBIV gradient across the title letters (no time drift). AURORA =
+    // the SAME flowing/drifting gradient the analog compass's "Aurora" scheme uses. AURORA is APPENDED last
+    // on purpose: TitleColorPreset is persisted by NAME (GSON) and read by ordinal in the HUD Studio picker,
+    // so appending never shifts an existing saved value (RAINBOW stays index 6 / name "RAINBOW").
+    public enum TitleColorPreset { WHITE, GOLD, RED, CYAN, GREEN, CUSTOM, RAINBOW, AURORA }
 
     // NORMAL briefly removed 2026-07-08, then RESTORED same day: Peetsa's "normal and uppercase are the
     // same thing" report was correctly diagnosed but wrongly treated as a request to delete the option --

@@ -133,18 +133,25 @@ public final class ZoneEnterTitleOverlay {
     private static void drawStyledTitle(GuiGraphicsExtractor ctx, Font font, String text, int alphaByte) {
         int spacing = LatitudeConfig.zoneEnterTitleLetterSpacing;
         int alphaMask = (alphaByte & 0xFF) << 24;
-        if (LatitudeConfig.zoneEnterTitleColorPreset == LatitudeConfigData.TitleColorPreset.RAINBOW) {
+        LatitudeConfigData.TitleColorPreset preset = LatitudeConfig.zoneEnterTitleColorPreset;
+        if (preset == LatitudeConfigData.TitleColorPreset.RAINBOW
+                || preset == LatitudeConfigData.TitleColorPreset.AURORA) {
             int visibleCount = 0;
             for (int i = 0; i < text.length(); i++) {
                 if (text.charAt(i) != ' ') visibleCount++;
             }
             final int visible = visibleCount;
+            // RAINBOW = static ROYGBIV sweep across the letters (no drift); AURORA = the flowing/drifting
+            // gradient (same effect the compass's "Aurora" scheme uses).
+            final boolean flowing = preset == LatitudeConfigData.TitleColorPreset.AURORA;
             drawSpacedText(ctx, font, text, 0, 0, true, spacing,
-                    idx -> alphaMask | RainbowText.flowingColor(idx, visible,
-                            com.example.globe.core.ui.FlowingGradient.DEFAULT_CYCLE_SECONDS));
+                    idx -> alphaMask | (flowing
+                            ? RainbowText.flowingColor(idx, visible,
+                                    com.example.globe.core.ui.FlowingGradient.DEFAULT_CYCLE_SECONDS)
+                            : com.example.globe.core.ui.FlowingGradient.staticColorFor(idx, visible)));
             return;
         }
-        int argb = alphaMask | (titleColorRgb(LatitudeConfig.zoneEnterTitleColorPreset) & 0xFFFFFF);
+        int argb = alphaMask | (titleColorRgb(preset) & 0xFFFFFF);
         drawSpacedText(ctx, font, text, 0, 0, true, spacing, idx -> argb);
     }
 
@@ -187,7 +194,7 @@ public final class ZoneEnterTitleOverlay {
             case CYAN -> 0x55FFFF;
             case GREEN -> 0x55FF55;
             case CUSTOM -> LatitudeConfig.zoneEnterTitleRgb;
-            case WHITE, RAINBOW -> 0xFFFFFF; // RAINBOW never reaches here -- handled above.
+            case WHITE, RAINBOW, AURORA -> 0xFFFFFF; // RAINBOW/AURORA never reach here -- handled above.
         };
     }
 
