@@ -121,9 +121,11 @@ public class LatitudeCreateWorldScreen extends Screen {
     private static final int[] WORLD_TYPE_COLORS = { GOLD, WARM_WHITE, MUTED };
 
     // ── World shape constants (2.0 "Longitude" release) ──
-    // Index 0 = Mercator (the current forced default for every new world; MUST stay index 0 so
+    // Index 0 = Mercator/Wide (the current forced default for every new world; MUST stay index 0 so
     // worldShapeIdx=0 preserves today's behavior for anyone who never touches this toggle).
-    private static final String[] WORLD_SHAPE_NAMES = { "Mercator 2:1", "Legacy 1:1" };
+    // Display names renamed per Peetsa 2026-07-10: "Mercator 2:1"/"Legacy 1:1" -> "Wide 2:1"/"Square 1:1"
+    // (user-facing only; the underlying LatitudeBiomes.GlobeShape enum stays MERCATOR/CLASSIC).
+    private static final String[] WORLD_SHAPE_NAMES = { "Wide 2:1", "Square 1:1" };
     private static final int[] WORLD_SHAPE_COLORS = { GOLD, MUTED };
     private static final int DISABLED_COLOR = 0xFF605850;
 
@@ -157,7 +159,7 @@ public class LatitudeCreateWorldScreen extends Screen {
     private boolean bonusChest = false;
     private boolean generateStructures = true;
     private int worldTypeIdx = 0;  // 0=Latitude, 1=Vanilla, 2=Vanilla Superflat
-    private int worldShapeIdx = 0;  // 0=Mercator 2:1 (default), 1=Legacy 1:1
+    private int worldShapeIdx = 0;  // 0=Wide 2:1 (default, Mercator internally), 1=Square 1:1 (Classic internally)
     private GameRules gameRules;
 
     private String worldNameInput = "New World";
@@ -1538,7 +1540,7 @@ public class LatitudeCreateWorldScreen extends Screen {
 
     // Single-line stepper value, vertically centered against the World Shape row's button height -- unlike
     // renderSizeLabel below (a multi-line block: name/dims/description), World Shape only ever shows one short
-    // value ("Mercator 2:1" / "Legacy 1:1"), so it's centered like the Rules-panel stepper rows instead of
+    // value ("Wide 2:1" / "Square 1:1"), so it's centered like the Rules-panel stepper rows instead of
     // top-anchored like the size block.
     private void renderWorldShapeLabel(GuiGraphicsExtractor context, int x, int rowY, int availW, boolean enabled) {
         String value = WORLD_SHAPE_NAMES[worldShapeIdx];
@@ -2368,6 +2370,13 @@ public class LatitudeCreateWorldScreen extends Screen {
      *  off this instead of duplicating the index-to-enum mapping. */
     private LatitudeBiomes.GlobeShape currentWorldShape() {
         return worldShapeIdx == 0 ? LatitudeBiomes.GlobeShape.MERCATOR : LatitudeBiomes.GlobeShape.CLASSIC;
+    }
+
+    /** Package-visible accessor so LatitudeWorldLauncher's loading-summary formatting can source the shape's
+     *  display name ("Wide 2:1" / "Square 1:1") from this single WORLD_SHAPE_NAMES array instead of duplicating
+     *  the literal — mirrors currentWorldShape() being the one place the index-to-enum mapping lives. */
+    static String worldShapeDisplayName(LatitudeBiomes.GlobeShape shape) {
+        return WORLD_SHAPE_NAMES[shape == LatitudeBiomes.GlobeShape.MERCATOR ? 0 : 1];
     }
 
     /** World extent label, honest about whichever shape is currently selected: Mercator's E-W spans 4x the
