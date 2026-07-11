@@ -1,8 +1,11 @@
 package com.example.globe.client.create;
 
 import com.example.globe.client.GlobeWorldSize;
+import com.example.globe.client.LatitudeConfig;
 import com.example.globe.client.LatitudeHudStudioScreen;
 import com.example.globe.client.RainbowText;
+import com.example.globe.core.config.LatitudeConfigData.AccessibilityMode;
+import com.example.globe.core.ui.AccessibilityPalette;
 import com.example.globe.util.LatitudeBands;
 import com.example.globe.world.LatitudeBiomes;
 import net.minecraft.ChatFormatting;
@@ -1888,8 +1891,32 @@ public class LatitudeCreateWorldScreen extends Screen {
         drawBoundedText(context, fitted, new UiRect(safeLeft + Math.max(0, (safeWidth - textW) / 2), drawY, safeWidth, uiFontHeight()), color, true, true);
     }
 
+    // ── Accessibility (Peetsa 2026-07-11) ──
+    // The Accessibility dropdown (LatitudeConfig.accessibilityMode, read live each frame) biases the whole
+    // create screen toward legibility. All the color/alpha math is the pure, unit-tested
+    // core.ui.AccessibilityPalette; these are the thin applications. HIGH_CONTRAST brightens the muted
+    // subtitles/labels/degree numbers, forces text opaque, and strengthens the panel borders + gives each
+    // rule icon a dark backing plate. COLORBLIND leaves the words alone (they carry their own meaning) but
+    // remaps the compass icon's red north needle (in RulesIcons) to a CVD-safe color.
+
+    private static AccessibilityMode a11yMode() {
+        AccessibilityMode m = LatitudeConfig.accessibilityMode;
+        return m == null ? AccessibilityMode.STANDARD : m;
+    }
+
+    /** All panel/HUD body text is routed through here at the leaf draw helpers: HIGH_CONTRAST lifts dim
+     *  greys to a legible luminance and forces full opacity; other modes are the identity. Idempotent. */
+    private static int a11yText(int argb) {
+        return AccessibilityPalette.adjustPanelText(a11yMode(), argb);
+    }
+
+    /** Panel borders / dividers: brightened under HIGH_CONTRAST so section framing reads clearly. */
+    private static int a11yBorder(int argb) {
+        return AccessibilityPalette.adjustMuted(a11yMode(), argb);
+    }
+
     private void drawUiText(GuiGraphicsExtractor context, String text, int x, int y, int color, boolean shadow) {
-        context.text(this.font, text, x, y, color, shadow);
+        context.text(this.font, text, x, y, a11yText(color), shadow);
     }
 
     /**
@@ -2029,7 +2056,7 @@ public class LatitudeCreateWorldScreen extends Screen {
                 double phase = now * omega - visibleIdx * ZONE_BOUNCE_LETTER_PHASE;
                 dy = (int) Math.round(Math.sin(phase) * ZONE_BOUNCE_AMPLITUDE_PX);
             }
-            context.text(this.font, ch, cx, y + dy, color, true);
+            context.text(this.font, ch, cx, y + dy, a11yText(color), true);
             if (c != ' ') visibleIdx++;
             cx += this.font.width(ch);
         }
@@ -2050,7 +2077,7 @@ public class LatitudeCreateWorldScreen extends Screen {
             if (c != ' ') {
                 double phase = now * omega - letterIdx * ZONE_BOUNCE_LETTER_PHASE;
                 int dy = reduceMotion ? 0 : (int) Math.round(Math.sin(phase) * ZONE_BOUNCE_AMPLITUDE_PX);
-                context.text(this.font, s, cx, y + dy, color, shadow);
+                context.text(this.font, s, cx, y + dy, a11yText(color), shadow);
                 letterIdx++;
             }
             cx += this.font.width(s);
@@ -2148,7 +2175,7 @@ public class LatitudeCreateWorldScreen extends Screen {
         }
         int drawX = clampToRect(rect.x, uiTextWidth(fitted), rect.x, rect.right());
         int drawY = clampToRect(rect.y, uiFontHeight(), rect.y, rect.bottom());
-        context.text(this.font, Component.literal(fitted).setStyle(text.getStyle().withItalic(true)), drawX, drawY, color, shadow);
+        context.text(this.font, Component.literal(fitted).setStyle(text.getStyle().withItalic(true)), drawX, drawY, a11yText(color), shadow);
         return true;
     }
 
@@ -2176,7 +2203,7 @@ public class LatitudeCreateWorldScreen extends Screen {
                 String fitted = ellipsizeToWidth(lineText.getString(), rect.w);
                 if (!fitted.isEmpty()) {
                     int drawX = rect.x + Math.max(0, (rect.w - uiTextWidth(fitted)) / 2);
-                    context.text(this.font, Component.literal(fitted).setStyle(lineText.getStyle().withItalic(true)), drawX, y, color, shadow);
+                    context.text(this.font, Component.literal(fitted).setStyle(lineText.getStyle().withItalic(true)), drawX, y, a11yText(color), shadow);
                 }
             } else {
                 drawBoundedStyledText(context, lineText, new UiRect(rect.x, y, rect.w, uiFontHeight()), color, shadow, true);
@@ -2211,7 +2238,7 @@ public class LatitudeCreateWorldScreen extends Screen {
         }
         int drawX = rect.x + Math.max(0, (rect.w - uiTextWidth(fitted)) / 2);
         int drawY = clampToRect(rect.y, uiFontHeight(), rect.y, rect.bottom());
-        context.text(this.font, Component.literal(fitted).withStyle(ChatFormatting.ITALIC), drawX, drawY, color, shadow);
+        context.text(this.font, Component.literal(fitted).withStyle(ChatFormatting.ITALIC), drawX, drawY, a11yText(color), shadow);
         return true;
     }
 
@@ -2272,7 +2299,7 @@ public class LatitudeCreateWorldScreen extends Screen {
         matrices.pushMatrix();
         matrices.translate((float) x, (float) y);
         matrices.scale(scale, scale);
-        context.text(this.font, text, 0, 0, color, shadow);
+        context.text(this.font, text, 0, 0, a11yText(color), shadow);
         matrices.popMatrix();
     }
 
@@ -2293,11 +2320,12 @@ public class LatitudeCreateWorldScreen extends Screen {
     private static final int GRID_STEP = 16;  // large-ish squares
 
     private void drawPanel(GuiGraphicsExtractor context, int x, int y, int w, int h) {
-        // Border
-        context.fill(x, y, x + w, y + 1, PANEL_BORDER);
-        context.fill(x, y + h - 1, x + w, y + h, PANEL_BORDER);
-        context.fill(x, y, x + 1, y + h, PANEL_BORDER);
-        context.fill(x + w - 1, y, x + w, y + h, PANEL_BORDER);
+        // Border (brightened under HIGH_CONTRAST so section framing reads clearly)
+        int border = a11yBorder(PANEL_BORDER);
+        context.fill(x, y, x + w, y + 1, border);
+        context.fill(x, y + h - 1, x + w, y + h, border);
+        context.fill(x, y, x + 1, y + h, border);
+        context.fill(x + w - 1, y, x + w, y + h, border);
         // Fill
         context.fill(x + 1, y + 1, x + w - 1, y + h - 1, PANEL_BG);
         // Subtle grid decoration
@@ -2318,7 +2346,7 @@ public class LatitudeCreateWorldScreen extends Screen {
 
     private void drawCenteredString(GuiGraphicsExtractor context, String text, int cx, int y, int color, boolean shadow) {
         int textW = this.font.width(text);
-        context.text(this.font, text, cx - textW / 2, y, color, shadow);
+        context.text(this.font, text, cx - textW / 2, y, a11yText(color), shadow);
     }
 
     private void drawViewportClippedPanel(GuiGraphicsExtractor context, int x, int y, int w, int h) {
@@ -2769,8 +2797,21 @@ public class LatitudeCreateWorldScreen extends Screen {
             // Reduce Motion (Pass C config) freezes the bloom pulse, the toggle flash, and the chest glitter
             // to a steady state; the illuminated look survives, just without animation.
             boolean reduceMotion = com.example.globe.client.LatitudeConfig.reduceMotion;
+            // HIGH_CONTRAST: a dark backing plate + bright hairline behind the icon box so glyphs never wash
+            // out against the panel, and a brighter illuminated (lit) state.
+            int plateAlpha = AccessibilityPalette.outlineStrength(a11yMode());
+            if (plateAlpha > 0) {
+                int px0 = iconX - 1, py0 = iconY - 1, px1 = iconX + ICON_SIZE + 1, py1 = iconY + ICON_SIZE + 1;
+                context.fill(px0, py0, px1, py1, (plateAlpha << 24));
+                int rim = 0x66FFFFFF;
+                context.fill(px0, py0, px1, py0 + 1, rim);
+                context.fill(px0, py1 - 1, px1, py1, rim);
+                context.fill(px0, py0, px0 + 1, py1, rim);
+                context.fill(px1 - 1, py0, px1, py1, rim);
+            }
             if (lit) {
-                float pulse = reduceMotion ? 0.85f : 0.72f + 0.28f * (float) Math.sin(now / 620.0);
+                float base = plateAlpha > 0 ? 0.95f : 0.72f;
+                float pulse = reduceMotion ? (plateAlpha > 0 ? 0.95f : 0.85f) : base + 0.28f * (float) Math.sin(now / 620.0);
                 float flash = (!reduceMotion && now < this.flashUntilMs) ? 1.0f : 0.0f;
                 RulesIcons.glow(context, iconCx, iconCy, ICON_SIZE * 3 / 4, Math.min(1.0f, pulse + flash * 0.6f));
             }

@@ -12,6 +12,8 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.component.BundleContents;
 import com.example.globe.util.BiomeSamplerTools;
+import com.example.globe.core.config.LatitudeConfigData.AccessibilityMode;
+import com.example.globe.core.ui.AccessibilityPalette;
 
 public final class CompassHud {
     private static final int ANALOG_FACE_RGB = 0x1A1410;
@@ -314,7 +316,7 @@ public final class CompassHud {
         // Parity with the analog family: the digital card borrows the SAME scheme colors the dials use
         // (analogColors covers every theme, including Aurora's per-frame flow), so a slim ring-colored
         // underline plus a needle-colored heading read as "the same family" as the Disc/Ring/Rose looks.
-        CompassDialRenderer.DialColors accent = analogColors(cfg);
+        CompassDialRenderer.DialColors accent = accColors(cfg);
 
         var m = ctx.pose();
         m.pushMatrix();
@@ -322,13 +324,15 @@ public final class CompassHud {
             m.translate(x, y);
             m.scale(s, s);
 
-            if (cfg.showBackground || isPreview) {
+            // HIGH_CONTRAST paints a solid card even if the player turned the background off, so the readout
+            // always has a legible plate under it.
+            if (cfg.showBackground || isPreview || accForceBacking()) {
                 int bg;
                 if (cfg.showBackground) {
-                    bg = cfg.backgroundArgb();
+                    bg = accBackgroundArgb(cfg.backgroundArgb());
                 } else {
                     int a = 160;
-                    bg = (a << 24) | (cfg.backgroundRgb & 0xFFFFFF);
+                    bg = accBackgroundArgb((a << 24) | (cfg.backgroundRgb & 0xFFFFFF));
                 }
                 // Softer chip: rounded corners instead of a hard rectangle. Radius shrinks on tiny cards so
                 // it never eats the whole edge.
@@ -338,7 +342,7 @@ public final class CompassHud {
                 // Themed chrome, alpha-scaled off the card's own text alpha so a faded card fades its chrome
                 // too: a hairline muted frame (echoes the dial's muted ticks) capped by a ring-colored
                 // underline (echoes the dial's rim). Inset by the corner radius so it hugs the rounding.
-                int chromeAlpha = (cfg.textArgb() >>> 24) & 0xFF;
+                int chromeAlpha = (accTextArgb(cfg) >>> 24) & 0xFF;
                 int inset = radius;
                 int frame = withAlpha(accent.muted(), Math.round(chromeAlpha * 0.45f));
                 ctx.fill(inset, 0, boxW - inset, 1, frame);                 // top
@@ -355,7 +359,7 @@ public final class CompassHud {
                 }
             }
 
-            int color = cfg.textArgb();
+            int color = accTextArgb(cfg);
             int tx = pad;
             int ty = pad;
 
@@ -425,7 +429,16 @@ public final class CompassHud {
             drawTransparencyCheckerboard(ctx, cx - radius, contentTop, diameter, contentH);
         }
 
-        CompassDialRenderer.draw(ctx, client.font, cfg, cx, cy, radius, angle, yaw, analogColors(cfg));
+        // HIGH_CONTRAST: a dark solid backing disc + a bright rim behind the dial so the needle and cardinal
+        // ticks read over any terrain (the enum's "strong dark outline ring" — painted from here rather than
+        // in the shared renderer). Sits just outside the dial rim; the dial then draws on top.
+        int backingAlpha = AccessibilityPalette.outlineStrength(accMode());
+        if (backingAlpha > 0) {
+            fillDisc(ctx, cx, cy, radius + 3, 0x99FFFFFF);          // bright rim
+            fillDisc(ctx, cx, cy, radius + 2, (backingAlpha << 24)); // dark solid backing on top of the rim
+        }
+
+        CompassDialRenderer.draw(ctx, client.font, cfg, cx, cy, radius, angle, yaw, accColors(cfg));
 
         int screenWForText = Minecraft.getInstance().getWindow().getGuiScaledWidth();
         int totalTextW = analogAttachedTextWidth(client, cfg, latText, zoneText);
@@ -473,7 +486,7 @@ public final class CompassHud {
             textX = x + diameter + ANALOG_LAT_GAP;
             textY = cy - lineH / 2;
         }
-        int color = cfg.textArgb();
+        int color = accTextArgb(cfg);
         if (latText != null && !latText.isEmpty()) {
             drawTextScaled(ctx, client, cfg, latText, textX, textY, color, cfg.coordsTextScale);
             textX += Math.round(client.font.width(latText) * cfg.coordsTextScale) + (cfg.compactHud ? 1 : 6);
@@ -1399,7 +1412,7 @@ public final class CompassHud {
             ctx.fill(zb.x, zb.y, zb.x + 1, zb.y + zb.h, border);
             ctx.fill(zb.x + zb.w - 1, zb.y, zb.x + zb.w, zb.y + zb.h, border);
         }
-        int color = cfg.textArgb();
+        int color = accTextArgb(cfg);
         drawTextScaled(ctx, client, cfg, zone, zb.x, zb.y, color, cfg.zoneTextScale);
     }
 
@@ -1434,7 +1447,7 @@ public final class CompassHud {
             ctx.fill(bb.x, bb.y, bb.x + 1, bb.y + bb.h, border);
             ctx.fill(bb.x + bb.w - 1, bb.y, bb.x + bb.w, bb.y + bb.h, border);
         }
-        int color = cfg.textArgb();
+        int color = accTextArgb(cfg);
         drawTextScaled(ctx, client, cfg, biome, bb.x, bb.y, color, cfg.biomeTextScale);
     }
 
@@ -1469,7 +1482,7 @@ public final class CompassHud {
             ctx.fill(cb.x, cb.y, cb.x + 1, cb.y + cb.h, border);
             ctx.fill(cb.x + cb.w - 1, cb.y, cb.x + cb.w, cb.y + cb.h, border);
         }
-        int color = cfg.textArgb();
+        int color = accTextArgb(cfg);
         drawTextScaled(ctx, client, cfg, coords, cb.x, cb.y, color, cfg.coordsTextScale);
     }
 
@@ -1511,6 +1524,60 @@ public final class CompassHud {
             case CUSTOM -> new CompassDialRenderer.DialColors(cfg.customFaceRgb, cfg.customRingArgb, cfg.customMutedArgb, cfg.customNeedleArgb);
             default -> new CompassDialRenderer.DialColors(ANALOG_FACE_RGB, ANALOG_RING, ANALOG_MUTED, ANALOG_N_COLOR);
         };
+    }
+
+    // ------------------------------------------------------------------------------------------------
+    // Accessibility (Peetsa 2026-07-11). The player's Accessibility dropdown (LatitudeConfig.accessibilityMode,
+    // read live each frame) biases the compass toward legibility. All the actual color/alpha math is the pure,
+    // unit-tested core.ui.AccessibilityPalette; these are the thin per-surface applications.
+    //   HIGH_CONTRAST  -> text forced opaque, card/chip background floored near-solid, muted tones lifted, a
+    //                     dark backing plate painted behind the dial, and the whole dial pushed bright (Aurora
+    //                     still flows, just clamped so it never dips low-contrast).
+    //   COLORBLIND     -> the (red) north needle and any red/green-reliant scheme colors remapped to a
+    //                     blue/gold/white-safe palette; cyan/emerald/gold themes pass through untouched.
+    // ------------------------------------------------------------------------------------------------
+
+    private static AccessibilityMode accMode() {
+        AccessibilityMode m = LatitudeConfig.accessibilityMode;
+        return m == null ? AccessibilityMode.STANDARD : m;
+    }
+
+    /** Text ARGB with the mode's opacity floor + dim-lift applied (HIGH_CONTRAST); identity otherwise. */
+    private static int accTextArgb(CompassHudConfig cfg) {
+        return AccessibilityPalette.adjustPanelText(accMode(), cfg.textArgb());
+    }
+
+    /** Card/panel background ARGB with the mode's opaque floor applied (HIGH_CONTRAST); identity otherwise. */
+    private static int accBackgroundArgb(int argb) {
+        int a = AccessibilityPalette.backgroundAlpha(accMode(), (argb >>> 24) & 0xFF);
+        return (a << 24) | (argb & 0xFFFFFF);
+    }
+
+    /** True when the digital card / dial should carry a solid backing even if the player disabled it. */
+    private static boolean accForceBacking() {
+        return accMode() == AccessibilityMode.HIGH_CONTRAST;
+    }
+
+    /** The dial/accent colors for the CURRENT frame, biased for accessibility: needle remapped for
+     *  colorblindness, ring/muted lifted and the (decorative, still-flowing) Aurora clamped so text stays
+     *  legible under HIGH_CONTRAST. Wraps {@link #analogColors}; identity under STANDARD. */
+    private static CompassDialRenderer.DialColors accColors(CompassHudConfig cfg) {
+        CompassDialRenderer.DialColors base = analogColors(cfg);
+        AccessibilityMode mode = accMode();
+        if (mode == AccessibilityMode.STANDARD) return base;
+        int needle = AccessibilityPalette.adjustSignalColor(mode, base.needle(), AccessibilityPalette.SignalRole.NEEDLE_NORTH);
+        int ring = AccessibilityPalette.clampDecorativeBrightness(mode, base.ring(), 170);
+        int muted = AccessibilityPalette.adjustMuted(mode, base.muted());
+        // face is a 0xRRGGBB fill (alpha applied downstream by the renderer); leave it as the dark backdrop.
+        return new CompassDialRenderer.DialColors(base.face(), ring, muted, needle);
+    }
+
+    /** Flat filled disc used for the HIGH_CONTRAST dark backing behind the analog dial. */
+    private static void fillDisc(GuiGraphicsExtractor ctx, int cx, int cy, int r, int argb) {
+        for (int dy = -r; dy <= r; dy++) {
+            int span = (int) Math.round(Math.sqrt((double) r * r - (double) dy * dy));
+            ctx.fill(cx - span, cy + dy, cx + span + 1, cy + dy + 1, argb);
+        }
     }
 
     /** Slowly cycles the whole dial through the color wheel ("Aurora" in the UI) using wall-clock time --

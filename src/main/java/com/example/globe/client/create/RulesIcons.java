@@ -1,6 +1,9 @@
 package com.example.globe.client.create;
 
 import net.minecraft.client.gui.GuiGraphicsExtractor;
+import com.example.globe.client.LatitudeConfig;
+import com.example.globe.core.config.LatitudeConfigData.AccessibilityMode;
+import com.example.globe.core.ui.AccessibilityPalette;
 
 /**
  * Code-drawn iconography for the create-screen Rules sidebar (UI round 13 pass B).
@@ -110,7 +113,13 @@ final class RulesIcons {
         strokeRing(ctx, cx, cy, r, 2, ring);
         // North point (up) -- a triangle from hub to the top, filled by narrowing scanlines.
         int half = Math.max(2, Math.round(0.20f * s));
-        int nColor = pick(lit, NEEDLE_N, DIM);
+        // COLORBLIND_FRIENDLY remaps the traditionally-red north point to a CVD-safe color (the icon's
+        // upward shape already carries "north", but color redundancy shouldn't lean on red). The ivory
+        // south and every other theme color are left alone.
+        AccessibilityMode mode = LatitudeConfig.accessibilityMode == null
+                ? AccessibilityMode.STANDARD : LatitudeConfig.accessibilityMode;
+        int litNorth = AccessibilityPalette.adjustSignalColor(mode, NEEDLE_N, AccessibilityPalette.SignalRole.NEEDLE_NORTH);
+        int nColor = pick(lit, litNorth, DIM);
         int sColor = pick(lit, NEEDLE_S, DIM_DK);
         for (int i = 0; i < r; i++) {
             int w = Math.max(0, half - (half * i) / r);
