@@ -46,9 +46,10 @@ public abstract class ClientLevelStormSkyMixin {
         }
         double absLatDeg = com.example.globe.util.LatitudeMath.absLatDegExact(
                 self.getWorldBorder(), mc.player.getZ());
-        // Same 85->90 deg ramp the ambient snow + whiteout fill use, so sky, fog and precipitation thicken
-        // together: 0 at 85 deg, 1.0 (full overcast whiteout) at the pole.
-        float target = (float) com.example.globe.core.PolarHazardWindow.ambientProgress(absLatDeg);
+        // B-4 round 3 item 3: STEEPENED. The old lift used the linear 85->90 ambientProgress, so at 86 deg
+        // it was only ~0.2 and the sun still shone (Peetsa's complaint). stormLevel reaches full overcast by
+        // ~87.5 deg (0.4 already at 86 deg): the sky reads clearly stormy well before the pole, sun gone by 87.5.
+        float target = com.example.globe.core.PolarHazardWindow.stormLevel(absLatDeg);
         if (target <= 0.0f) {
             return;
         }

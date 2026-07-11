@@ -219,4 +219,76 @@ class PolarHazardWindowTest {
         assertEquals(PolarHazardWindow.WEAKNESS_MAX_AMP, PolarHazardWindow.weaknessAmplifier(progressAt95));
         assertTrue(PolarHazardWindow.appliesMiningFatigue(progressAt95));
     }
+
+    // ---- B-4 round 3 item 1: steadyFreezeTicks (per-tick freeze maintenance target) ------------
+
+    @Test
+    void steadyFreezeTicksIsZeroAtAndBelowOnset() {
+        // WHY: below the hazard onset there is no frost at all -- the maintenance target must be a hard 0,
+        // never a stray +margin that would frost a fully-explorable latitude.
+        assertEquals(0, PolarHazardWindow.steadyFreezeTicks(PolarHazardWindow.hazardProgress(87.0)));
+        assertEquals(0, PolarHazardWindow.steadyFreezeTicks(PolarHazardWindow.hazardProgress(80.0)));
+    }
+
+    @Test
+    void steadyFreezeTicksAddsDecayMarginOverRawFreeze() {
+        // WHY: the per-tick target must sit above the raw freezeTicks by exactly the decay margin, so a
+        // single tick of vanilla ~2/tick decay can never drop the counter below the intended level.
+        double p = PolarHazardWindow.hazardProgress(88.5); // mid-band, raw freeze > 0
+        int raw = PolarHazardWindow.freezeTicks(p);
+        assertTrue(raw > 0);
+        assertEquals(raw + PolarHazardWindow.FREEZE_DECAY_MARGIN, PolarHazardWindow.steadyFreezeTicks(p));
+    }
+
+    @Test
+    void steadyFreezeTicksAtPoleExceedsFullyFrozenThreshold() {
+        // WHY: at the pole the steady target must clear FREEZE_MAX_TICKS (140), the vanilla fully-frozen
+        // threshold, and hold there -- that is what makes real freeze damage actually tick (the whole bug).
+        int atPole = PolarHazardWindow.steadyFreezeTicks(PolarHazardWindow.hazardProgress(90.0));
+        assertTrue(atPole >= PolarHazardWindow.FREEZE_MAX_TICKS,
+                "steady target at the pole (" + atPole + ") must be >= " + PolarHazardWindow.FREEZE_MAX_TICKS);
+        assertEquals(PolarHazardWindow.FREEZE_MAX_TICKS + PolarHazardWindow.FREEZE_DECAY_MARGIN, atPole);
+    }
+
+    // ---- B-4 round 3 item 3: stormLevel (steepened storm-sky lift) ----------------------------
+
+    @Test
+    void stormLevelIsZeroAtAndBelowOnset() {
+        assertEquals(0.0f, PolarHazardWindow.stormLevel(85.0));
+        assertEquals(0.0f, PolarHazardWindow.stormLevel(80.0));
+    }
+
+    @Test
+    void stormLevelIsSteeperThanAmbientAt86() {
+        // WHY: Peetsa saw the sun at 86 deg because the old lift was the linear 85->90 ambientProgress
+        // (~0.2 at 86). stormLevel must read clearly overcast (0.4) at 86 -- strictly above ambient.
+        assertEquals(0.4f, PolarHazardWindow.stormLevel(86.0), 1e-4);
+        assertTrue(PolarHazardWindow.stormLevel(86.0) > (float) PolarHazardWindow.ambientProgress(86.0));
+    }
+
+    @Test
+    void stormLevelReachesFullByFullDegAndClamps() {
+        // WHY: full overcast (sun gone) must be reached by ~87.5 deg and stay clamped past it, not keep
+        // climbing toward 90 like the ambient ramp did.
+        assertEquals(1.0f, PolarHazardWindow.stormLevel(PolarHazardWindow.STORM_FULL_DEG), 1e-6);
+        assertEquals(1.0f, PolarHazardWindow.stormLevel(90.0), 1e-6);
+    }
+
+    // ---- B-4 round 3 item 2: blizzardDrive (fall speed / wind / second-pass gate) --------------
+
+    @Test
+    void blizzardDriveIsZeroThroughTheGentleApproachBand() {
+        // WHY: 85-87 deg is the gentle-approach flurry -- the blizzard drive (and thus the dense second
+        // particle pass) must be exactly 0 there, only ramping inside the [87,90] hazard band.
+        assertEquals(0.0f, PolarHazardWindow.blizzardDrive(85.0));
+        assertEquals(0.0f, PolarHazardWindow.blizzardDrive(86.5));
+        assertEquals(0.0f, PolarHazardWindow.blizzardDrive(PolarHazardWindow.HAZARD_ONSET_DEG));
+    }
+
+    @Test
+    void blizzardDriveRampsToFullAtPole() {
+        assertEquals(0.5f, PolarHazardWindow.blizzardDrive(88.5), 1e-4);
+        assertEquals(1.0f, PolarHazardWindow.blizzardDrive(90.0), 1e-6);
+        assertEquals(1.0f, PolarHazardWindow.blizzardDrive(95.0), 1e-6);
+    }
 }

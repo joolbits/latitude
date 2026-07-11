@@ -88,10 +88,16 @@ public final class LatitudeWorldLauncher {
                         seed, guarded);
                 seed = guarded;
             }
-            int d = size.borderRadiusBlocks * 2;
+            // Shape-aware dims (B-4 round 3 item 4): a Wide (Mercator 2:1) world's E-W border is 2*xRadius =
+            // 4*zRadius, so it is 40,000 wide on a Regular world -- the old label used 2*zRadius for BOTH axes
+            // and mislabeled a 40,000 x 20,000 world as "20,000 x 20,000". Matches the create screen's
+            // worldDimsLabel() (Mercator = z*4 x z*2, Legacy/Classic = z*2 x z*2).
+            int height = size.borderRadiusBlocks * 2;
+            int width = worldShape == LatitudeBiomes.GlobeShape.MERCATOR
+                    ? size.borderRadiusBlocks * 4 : height;
             LatitudeClientState.loadingSummary = String.format(java.util.Locale.ROOT,
                     "%s \u00b7 %,d \u00d7 %,d \u00b7 %s start",
-                    sizeDisplayName(size), d, d, spawnZone.id().charAt(0) + spawnZone.id().substring(1).toLowerCase(java.util.Locale.ROOT));
+                    sizeDisplayName(size), width, height, spawnZone.id().charAt(0) + spawnZone.id().substring(1).toLowerCase(java.util.Locale.ROOT));
         }
         // presetId + radius spelled out because the preset names DON'T track the UI names (the audited
         // trap: UI "Small" = globe_regular/7500, UI "Regular" = globe_large/10000).

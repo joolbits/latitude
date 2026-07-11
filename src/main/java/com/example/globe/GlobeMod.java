@@ -373,9 +373,10 @@ public class GlobeMod implements ModInitializer {
         }
 
         long worldTime = overworld.getGameTime();
-        if ((worldTime % 10L) != 0L) {
-            return;
-        }
+        // B-4 round 3 item 1: the MobEffects (slowness/weakness/mining fatigue) stay on the cheap 10-tick
+        // cadence (each is a 40-tick effect, so re-applying every 10 ticks is ample), but the FREEZE ticks
+        // must be maintained EVERY server tick -- see below.
+        boolean effectsTick = (worldTime % 10L) == 0L;
 
         WorldBorder border = overworld.getWorldBorder();
 
@@ -393,6 +394,21 @@ public class GlobeMod implements ModInitializer {
             }
             double progress = com.example.globe.core.PolarHazardWindow.hazardProgress(latDeg);
 
+            // B-4 round 3 item 1 -- FREEZE PULSING FIX (per-tick, NOT throttled). Vanilla decays ticksFrozen
+            // by ~2/tick when the player isn't in powder snow, so the old every-10-ticks set produced a
+            // sawtooth that never sustained the fully-frozen state: hearts flashed blue/red and freeze damage
+            // (ticked by vanilla only while fully frozen) never landed. Maintaining the counter every tick to
+            // a target with a small decay margin holds the frozen state STEADY -- a continuous blue-heart
+            // freeze overlay, and near the pole (target -> FREEZE_MAX_TICKS) real freeze damage now ticks.
+            int freezeTarget = com.example.globe.core.PolarHazardWindow.steadyFreezeTicks(progress);
+            if (freezeTarget > 0 && !(player.isCreative() || player.isSpectator())) {
+                player.setTicksFrozen(Math.max(player.getTicksFrozen(), freezeTarget));
+            }
+
+            if (!effectsTick) {
+                continue;
+            }
+
             int duration = 40;
             boolean ambient = true;
             boolean showParticles = false;
@@ -409,11 +425,6 @@ public class GlobeMod implements ModInitializer {
             // blindness with no warning") is replaced by the smooth ramping whiteout overlay
             // (PolarWhiteoutOverlayHud), which carries vision loss continuously. Freeze/slowness/weakness
             // stay as-is.
-
-            int freeze = com.example.globe.core.PolarHazardWindow.freezeTicks(progress);
-            if (freeze > 0) {
-                player.setTicksFrozen(Math.max(player.getTicksFrozen(), freeze));
-            }
         }
     }
 

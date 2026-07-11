@@ -68,6 +68,28 @@ public final class PolarHazardWindow {
         return (int) Math.round(clamp01(progress) * FREEZE_MAX_TICKS);
     }
 
+    /**
+     * B-4 round 3 item 1 -- FREEZE PULSING FIX. The frozen-ticks counter must be MAINTAINED every server
+     * tick, not on a throttled cadence: vanilla decays {@code ticksFrozen} by ~2/tick whenever the entity
+     * is not standing in powder snow, so setting it only every 10 ticks produced a sawtooth (set -> decay
+     * -> re-set) that never sustained the {@code >= FREEZE_MAX_TICKS} "fully frozen" state -- hearts flashed
+     * blue/red and real freeze damage (which vanilla ticks only while fully frozen, every 40 ticks) never
+     * landed. This returns the per-tick TARGET: {@link #freezeTicks(double)} plus a small decay margin so a
+     * single tick of vanilla decay can never drop the counter below the intended level between our per-tick
+     * re-sets. At the deep end (target -> FREEZE_MAX_TICKS) the margin pushes it past the fully-frozen
+     * threshold and holds it there STEADILY, so hearts stay blue and freeze damage actually ticks.
+     */
+    public static final int FREEZE_DECAY_MARGIN = 3;
+
+    /** Steady per-tick frozen-ticks target for a hazard progress: 0 at onset, ramps with a decay margin. */
+    public static int steadyFreezeTicks(double progress) {
+        int f = freezeTicks(progress);
+        if (f <= 0) {
+            return 0;
+        }
+        return f + FREEZE_DECAY_MARGIN;
+    }
+
     // ---- B-3b: ambient snow + fog window [85,90] (client particles + screen fog) ----
 
     /** Latitude (deg) at which ambient snow/fog begins -- 2 deg ahead of the hazard onset. */
@@ -108,6 +130,40 @@ public final class PolarHazardWindow {
      */
     public static float fogIntensity(double absLatDeg) {
         return (float) ambientProgress(absLatDeg);
+    }
+
+    // ---- B-4 round 3 item 3: STORM-SKY level (steepened so the sun is gone well before the pole) ----
+
+    /** Latitude (deg) at which the storm sky begins to lift (same 85 deg onset as ambient snow, so the
+     *  overcast, the snowfall and the screen fog all start together with no seam). */
+    public static final double STORM_ONSET_DEG = 85.0;
+    /** Latitude (deg) at which the storm sky is FULLY overcast (rain level 1.0, sun fully faded). Reached
+     *  by ~87.5 deg -- deliberately much steeper than the 85->90 ambient ramp: Peetsa saw the sun still
+     *  shining at 86 deg because the sky lift was linear over 85->90 (only ~0.2 at 86). At 86 deg this is
+     *  now 0.4 (clearly overcast); by 87.5 deg it is full storm and the sun is gone. */
+    public static final double STORM_FULL_DEG = 87.5;
+
+    /**
+     * Client storm-sky level in {@code [0,1]} used to lift the client rain level (greys the sky, fades the
+     * sun/moon, and thickens vanilla snowfall). STEEPER than {@link #ambientProgress(double)}: 0 at/below
+     * 85 deg, 1.0 (full overcast) at/above {@link #STORM_FULL_DEG}.
+     */
+    public static float stormLevel(double absLatDeg) {
+        return (float) clamp01((absLatDeg - STORM_ONSET_DEG) / (STORM_FULL_DEG - STORM_ONSET_DEG));
+    }
+
+    // ---- B-4 round 3 item 2: BLIZZARD drive (fall speed + sideways wind + dense second pass) ----
+
+    /**
+     * Blizzard drive in {@code [0,1]} over the HAZARD window {@code [87,90]} -- identical ramp to
+     * {@link #hazardProgress(double)}, exposed under an intent-revealing name. The ambient snow at 85-87 deg
+     * stays a gentle approach flurry; only inside the hazard band does this scale the flakes' fall speed and
+     * sideways wind up to a driven gale and gate the dense low second particle pass, so the pole reads as a
+     * real BLIZZARD (Peetsa saw only ordinary snowfall before). It changes how flakes LOOK/MOVE and adds a
+     * fixed per-tick second budget; it never turns the budget into a catch-up accumulator (B-3b law).
+     */
+    public static float blizzardDrive(double absLatDeg) {
+        return (float) hazardProgress(absLatDeg);
     }
 
     // ---- shared ----

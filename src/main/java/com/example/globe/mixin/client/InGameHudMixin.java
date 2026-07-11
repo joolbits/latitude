@@ -40,6 +40,22 @@ public class InGameHudMixin {
                 && !(client.gui.screen() instanceof LatitudeHudStudioScreen)) {
             return;
         }
+
+        // B-4 round 3 item 6: F1 (HUD hidden) must hide the compass / zone-biome-coords labels / zone &
+        // hemisphere titles / whispers, but the world-atmosphere overlays (fog / whiteout / EW haze) must
+        // STAY. Vanilla skips extractHotbarAndDecorations when the HUD is hidden, so the atmosphere that
+        // normally rides that method (globe$renderEwHazeBeforeHotbar) is NOT drawn under F1 -- render it
+        // here instead (this TAIL still runs when the HUD is hidden), then stop before any HUD chrome.
+        boolean hudHidden = client != null && client.gui != null && client.gui.hud != null
+                && client.gui.hud.isHidden();
+        if (hudHidden) {
+            EwSandstormOverlayHud.render(context, tickCounter);
+            com.example.globe.client.PolarWhiteoutOverlayHud.render(context, tickCounter);
+            // Keep the zone/hemisphere/pole tracking alive under F1; its own draw self-suppresses.
+            GlobeWarningOverlay.render(context, tickCounter);
+            return;
+        }
+
         GlobeWarningOverlay.render(context, tickCounter);
         CompassHud.render(context, tickCounter);
         if (client != null && client.getWindow() != null) {
@@ -48,6 +64,8 @@ public class InGameHudMixin {
             ZoneEnterTitleOverlay.render(context, gw, gh);
             // B-3c: hemisphere titles ride their OWN channel/position (above center), never the zone slot.
             com.example.globe.client.HemisphereTitleOverlay.render(context, gw, gh);
+            // B-4 round 3 item 5: linger whispers (translucent italic) share the HUD layer, hidden by F1.
+            com.example.globe.client.LatitudeWhisperOverlay.render(context, gw, gh);
         }
     }
 }

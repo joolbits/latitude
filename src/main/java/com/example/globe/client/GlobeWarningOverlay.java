@@ -323,6 +323,13 @@ public final class GlobeWarningOverlay {
                 maybeTriggerPoleWarning(client);
             }
 
+            // B-4 round 3 item 6: F1 (hud hidden) suppresses the VISIBLE warning line, but the zone /
+            // hemisphere / pole tracking above still runs every frame -- so a boundary crossed while the HUD
+            // is hidden isn't silently swallowed, and re-showing the HUD can't replay a stale crossing.
+            if (client.gui != null && client.gui.hud != null && client.gui.hud.isHidden()) {
+                return;
+            }
+
             int warnY = client.getWindow().getGuiScaledHeight() - 68;
             if (warnY < 18) {
                 warnY = 18;
@@ -506,14 +513,12 @@ public final class GlobeWarningOverlay {
     }
 
     // B-4 anti-spam: a re-announcement while still lingering near the boundary just crossed (a hemisphere
-    // line OR a climate-band edge) shows only this small, unobtrusive vanilla action-bar (overlay) message
-    // instead of re-firing the big center-screen title. Hud.setOverlayMessage is the 26.2 home of the
-    // action-bar text (Gui.hud, same object the overlays already read via mc.gui.hud). Shared by the
-    // hemisphere-title and zone-title anti-spam paths.
+    // line OR a climate-band edge) shows only a small, unobtrusive WHISPER instead of re-firing the big
+    // center-screen title. B-4 round 3 item 5 swapped the renderer from vanilla's stark full-opacity
+    // action-bar (Hud.setOverlayMessage) to LatitudeWhisperOverlay -- a translucent, italic, fade-in/hold/
+    // fade-out line. The trigger sites (the linger branches above) are unchanged; only the renderer moved.
     private static void showActionBarMessage(Minecraft client, String line) {
-        if (client != null && client.gui != null && client.gui.hud != null) {
-            client.gui.hud.setOverlayMessage(Component.literal(line), false);
-        }
+        LatitudeWhisperOverlay.trigger(line);
     }
 
     private static void logEntryTitle(String action, String title, Minecraft client, double playerX, double playerZ) {

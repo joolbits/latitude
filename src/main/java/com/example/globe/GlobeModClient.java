@@ -93,6 +93,7 @@ public class GlobeModClient implements ClientModInitializer {
             com.example.globe.client.CompassHud.onWorldSwitch();
             com.example.globe.client.ZoneEnterTitleOverlay.reset();
             com.example.globe.client.HemisphereTitleOverlay.reset();
+            com.example.globe.client.LatitudeWhisperOverlay.reset();
         });
 
         ClientPlayNetworking.registerGlobalReceiver(GlobeNet.GlobeStatePayload.ID, (payload, context) -> {
@@ -254,7 +255,7 @@ public class GlobeModClient implements ClientModInitializer {
                 GlobeMod.LOGGER.info("[LAT][POLAR_SNOW] absLatDeg={} count={}", absLatDeg, snowCount);
             }
             if (snowCount > 0) {
-                spawnAmbientPolarSnow(client, snowCount);
+                spawnAmbientPolarSnow(client, snowCount, absLatDeg);
             }
         }
 
@@ -276,27 +277,58 @@ public class GlobeModClient implements ClientModInitializer {
     // this only changes how each spawned flake looks/moves, never how many spawn or when.
     private static final double SNOW_ENVELOPE = 16.0;
 
-    private static void spawnAmbientPolarSnow(Minecraft client, int count) {
+    // B-4 round 3 item 2 -- BLIZZARD. Beyond the base gentle-flurry velocities, a blizzard drive (0 at the
+    // 87 deg hazard onset, 1 at the pole) ramps the sideways wind and the fall speed toward a driven gale and
+    // gates a dense low SECOND pass. All still a FIXED per-tick function of latitude -- the anti-backlog law
+    // (fixed budget, isPaused=>nothing) is untouched; only the look/motion and a fixed extra count change.
+    private static final double SNOW_WIND_BASE = 0.09;     // gentle-flurry sideways wind at/below 87 deg
+    private static final double SNOW_WIND_GALE = 0.34;     // added sideways wind at the pole (driven blizzard)
+    private static final double SNOW_FALL_BASE = 0.04;     // gentle-flurry base fall speed
+    private static final double SNOW_FALL_GALE = 0.11;     // added fall speed at the pole (fast, driven flakes)
+
+    private static void spawnAmbientPolarSnow(Minecraft client, int count, double absLatDeg) {
         RandomSource random = client.player.getRandom();
         double px = client.player.getX();
         double py = client.player.getY();
         double pz = client.player.getZ();
 
+        // 0 at/below 87 deg (gentle approach flurries), 1 at the pole (driven blizzard).
+        double blizz = com.example.globe.core.PolarHazardWindow.blizzardDrive(absLatDeg);
+
         // Steady wind direction for this spawn burst (sign flips by which side of center the player is on,
-        // like the EW storm) so the snowfall has a coherent slant instead of drifting symmetrically.
-        double windX = client.player.getX() >= 0.0 ? -0.09 : 0.09;
+        // like the EW storm) so the snowfall has a coherent slant instead of drifting symmetrically. The
+        // wind MAGNITUDE ramps with the blizzard drive: a gentle slant near 87 deg, a hard sideways drive
+        // at the pole.
+        double windMag = SNOW_WIND_BASE + SNOW_WIND_GALE * blizz;
+        double windX = (client.player.getX() >= 0.0 ? -1.0 : 1.0) * windMag;
+        double fall = SNOW_FALL_BASE + SNOW_FALL_GALE * blizz;
 
         for (int i = 0; i < count; i++) {
             double ox = (random.nextDouble() - 0.5) * SNOW_ENVELOPE;
             double oy = random.nextDouble() * 6.0;
             double oz = (random.nextDouble() - 0.5) * SNOW_ENVELOPE;
 
-            // Wind-blown drift: steady horizontal wind + per-flake jitter -> visible sideways streaking.
+            // Wind-blown drift: steady horizontal wind (ramped) + per-flake jitter -> visible sideways streaking.
             double vx = windX + (random.nextDouble() - 0.5) * 0.06;
-            double vy = -0.04 - random.nextDouble() * 0.05;
+            double vy = -fall - random.nextDouble() * 0.05;
             double vz = (random.nextDouble() - 0.5) * 0.10;
 
             client.particleEngine.createParticle(ParticleTypes.SNOWFLAKE, px + ox, py + 2.0 + oy, pz + oz, vx, vy, vz);
+        }
+
+        // Dense SECOND pass inside the hazard band: a fixed extra budget (blizz * count, deterministic per
+        // tick -- NOT an accumulator) of low, hard-driven flakes streaking near eye level, so the pole reads
+        // as a whiteout gale rather than heavier vertical snowfall. Zero below 87 deg (blizz == 0).
+        int extra = (int) Math.round(blizz * count);
+        for (int i = 0; i < extra; i++) {
+            double ox = (random.nextDouble() - 0.5) * SNOW_ENVELOPE;
+            double oy = random.nextDouble() * 3.0;                 // low, near eye level
+            double oz = (random.nextDouble() - 0.5) * SNOW_ENVELOPE;
+            // Harder sideways drive, flatter trajectory -> reads as wind-whipped ground blizzard.
+            double vx = windX * 1.6 + (random.nextDouble() - 0.5) * 0.08;
+            double vy = -fall * 0.5 - random.nextDouble() * 0.03;
+            double vz = (random.nextDouble() - 0.5) * 0.12;
+            client.particleEngine.createParticle(ParticleTypes.SNOWFLAKE, px + ox, py + 1.0 + oy, pz + oz, vx, vy, vz);
         }
     }
 
