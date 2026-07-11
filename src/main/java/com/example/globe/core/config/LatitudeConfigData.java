@@ -82,10 +82,10 @@ public final class LatitudeConfigData {
     public double zoneEnterTitleScale = 1.8;
 
     // FRESH-CONFIG DEFAULT REFRESH (2026-07-11, title-styling overhaul): the new out-of-box title look is a
-    // warm OFF_WHITE inner color inside a black OUTLINE (see the outline fields below). This initializer is
-    // the default for FRESH configs only -- zoneEnterTitleColorPreset has existed in every prior 2.0 config,
-    // so a saved file already carries its own value (typically WHITE) and Gson keeps it; only brand-new
-    // configs and "Reset Title" adopt OFF_WHITE.
+    // warm OFF_WHITE inner color (see the outline fields below). This initializer is the default for FRESH
+    // configs only -- zoneEnterTitleColorPreset has existed in every prior 2.0 config, so a saved file
+    // already carries its own value (typically WHITE) and Gson keeps it; only brand-new configs and "Reset
+    // Title" adopt OFF_WHITE.
     @SerializedName(value = "zoneEnterTitleColorPreset", alternate = {"zoneEnterTitleColorPresetValue"})
     public TitleColorPreset zoneEnterTitleColorPreset = TitleColorPreset.OFF_WHITE;
 
@@ -95,24 +95,24 @@ public final class LatitudeConfigData {
     // ---- Title outline / shadow / glow (NEW 2026-07-11, title-styling overhaul; append-only) ----
     // MIGRATION NOTE (same policy as the compass fresh-default refresh in CompassHudConfig): these three
     // fields are NEW, so a config saved before this pass has no such keys and Gson leaves them at the Java
-    // initializers below -- i.e. an existing 2.0 pre-release config ADOPTS the new outline-on / drop-shadow-off
-    // look, it does NOT reproduce its exact prior render (which had MC's hard shadow and no outline). Splitting
-    // "fresh gets the new look, existing keeps the old look" is impossible with Gson's absent-key handling
-    // (the initializer serves both), so per the compass precedent we take the new default for everyone and
-    // disclose it here. Accepted PRE-RELEASE because no public build has ever written this file; once one has,
-    // changing a default needs a real stamped migration, not a silent reinterpretation.
+    // initializers below. Splitting "fresh gets the new look, existing keeps the old look" is impossible
+    // with Gson's absent-key handling (the initializer serves both), so per the compass precedent we take
+    // the new default for everyone and disclose it here. Accepted PRE-RELEASE because no public build has
+    // ever written this file; once one has, changing a default needs a real stamped migration, not a silent
+    // reinterpretation.
 
-    /** Draw the title text with a crisp 1px outline (default black) behind the fill. New default = ON. */
+    /** Draw the title text with a crisp 1px outline (default black) behind the fill. Default = OFF (2026-07-11:
+     *  Peetsa tried the outline and preferred the plain fill; the feature/toggle/RGB picker stay available). */
     @SerializedName(value = "zoneEnterTitleOutline", alternate = {"zoneEnterTitleOutlineValue"})
-    public boolean zoneEnterTitleOutline = true;
+    public boolean zoneEnterTitleOutline = false;
 
     /** Outline color (0xRRGGBB). Default black; configurable via the Studio's RGB picker (like the custom
      *  fill color). */
     @SerializedName(value = "zoneEnterTitleOutlineRgb", alternate = {"zoneEnterTitleOutlineRgbValue"})
     public int zoneEnterTitleOutlineRgb = 0x000000;
 
-    /** The standard Minecraft hard drop shadow (one dark offset copy). New default = OFF, because it pairs
-     *  poorly with the outline; was implicitly always-ON before this pass. */
+    /** The standard Minecraft hard drop shadow (one dark offset copy). Default = OFF (was implicitly
+     *  always-ON before the title-styling overhaul; the glimmer/plain-fill look reads cleaner without it). */
     @SerializedName(value = "zoneEnterTitleDropShadow", alternate = {"zoneEnterTitleDropShadowValue"})
     public boolean zoneEnterTitleDropShadow = false;
 
@@ -127,8 +127,10 @@ public final class LatitudeConfigData {
     @SerializedName(value = "zoneEnterTitleGlimmer", alternate = {"zoneEnterTitleGlimmerValue"})
     public boolean zoneEnterTitleGlimmer = true;
 
+    // Fresh-config default changed NORMAL -> UPPERCASE (2026-07-11, Peetsa). Existing saved configs keep
+    // their own case untouched (the key has always existed, so it's always present on disk).
     @SerializedName(value = "zoneEnterTitleCase", alternate = {"zoneEnterTitleCaseValue"})
-    public TitleCaseMode zoneEnterTitleCase = TitleCaseMode.NORMAL;
+    public TitleCaseMode zoneEnterTitleCase = TitleCaseMode.UPPERCASE;
 
     /** Extra pixels between characters; negative = tighter. */
     @SerializedName(value = "zoneEnterTitleLetterSpacing", alternate = {"zoneEnterTitleLetterSpacingValue"})
