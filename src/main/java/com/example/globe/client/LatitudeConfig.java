@@ -37,6 +37,8 @@ public final class LatitudeConfig {
     public static int zoneEnterTitleOffsetY;
     public static boolean zoneEnterTitleDraggable;
 
+    public static boolean reduceMotion;
+
     public static boolean hudSnapEnabled;
     public static int hudSnapPixels;
 
@@ -127,6 +129,8 @@ public final class LatitudeConfig {
         zoneEnterTitleOffsetY = d.zoneEnterTitleOffsetY;
         zoneEnterTitleDraggable = d.zoneEnterTitleDraggable;
 
+        reduceMotion = d.reduceMotion;
+
         hudSnapEnabled = d.hudSnapEnabled;
         hudSnapPixels = d.hudSnapPixels;
 
@@ -168,6 +172,8 @@ public final class LatitudeConfig {
         d.zoneEnterTitleOffsetX = zoneEnterTitleOffsetX;
         d.zoneEnterTitleOffsetY = zoneEnterTitleOffsetY;
         d.zoneEnterTitleDraggable = zoneEnterTitleDraggable;
+
+        d.reduceMotion = reduceMotion;
 
         d.hudSnapEnabled = hudSnapEnabled;
         d.hudSnapPixels = hudSnapPixels;

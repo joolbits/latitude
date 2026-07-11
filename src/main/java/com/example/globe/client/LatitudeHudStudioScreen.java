@@ -1,8 +1,10 @@
 package com.example.globe.client;
 
 import com.example.globe.core.config.LatitudeConfigData;
+import com.example.globe.core.ui.UiEase;
 import com.mojang.blaze3d.platform.InputConstants;
 import java.util.ArrayList;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.function.Consumer;
 import java.util.function.IntSupplier;
@@ -14,11 +16,12 @@ import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.CycleButton;
 import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
 import net.minecraft.util.Mth;
 
-public class LatitudeHudStudioScreen extends Screen {
+public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Host {
     private static final int GOLD = 0xFFD4A74A;
     private static final int WARM_WHITE = 0xFFEDE0D0;
     private static final int MUTED = 0xFF8C8078;
@@ -145,6 +148,23 @@ public class LatitudeHudStudioScreen extends Screen {
     private int sidebarWidgetW;
     private int sidebarBgY;
 
+    // ---- Row roll-out/roll-in transition (audit H1) ----
+    // rowAnim[i] in [0,1] = how "present" tracked row i is (1 = full height, 0 = collapsed). Newly-shown rows
+    // ease 0->1, hidden rows ease 1->0, and the rows below slide smoothly instead of snapping. rowLogicalShown
+    // records each row's config-driven target (independent of the L hide-all and of the animation). Nulled on
+    // init() so a rebuild/tab-switch re-seeds to targets (no spurious animation on a deliberate context change).
+    private float[] rowAnim;
+    private float[] sidebarDispY;
+    private final IdentityHashMap<AbstractWidget, Boolean> rowLogicalShown = new IdentityHashMap<>();
+
+    // The single open swatch/dropdown picker (audit C1). Its collapsed button is a tracked sidebar widget; its
+    // open list is painted and fed input by THIS screen (see the SwatchDropdown.Host methods) so it sits on top.
+    private SwatchDropdown openDropdown;
+
+    // Always-visible Snap-to-Grid toggle on the edit canvas (audit C2). Empty-labelled Button; a grid glyph is
+    // drawn scaled on top (undo/redo precedent), bright when snapping is on, dim when free-move.
+    private AbstractWidget wSnapToggle;
+
     public LatitudeHudStudioScreen(Screen parent) {
         super(Component.literal("HUD Studio"));
         this.parent = parent;
@@ -170,6 +190,12 @@ public class LatitudeHudStudioScreen extends Screen {
         CompassDialRenderer.invalidateTextures(); // pack may have been toggled since last check
 
         this.clearWidgets();
+        // Widgets are about to be re-created, so any open picker's collapsed button is now a dangling object,
+        // and the row-animation arrays are stale (a new tab may even have the same row count). Drop them so the
+        // transition layer re-seeds against the fresh row set and no picker lingers pointing at a dead widget.
+        this.openDropdown = null;
+        this.rowAnim = null;
+        this.sidebarDispY = null;
 
         int hintLaneH = 20;         // 8px padding + ~9px font + 3px bottom margin
         int panelX = 8;
@@ -286,15 +312,17 @@ public class LatitudeHudStudioScreen extends Screen {
             }
 
             if (analog) {
-                var wLook = this.addRenderableWidget(CycleButton.<CompassHudConfig.CompassLook>builder(v -> Component.literal(lookLabel(v)), () -> cfg.analogLook)
-                        .withValues(CompassHudConfig.CompassLook.values())
-                        .create(panelX, y, widgetW, rowH, Component.literal("Compass Look"), (btn, value) -> {
-                            cfg.analogLook = value;
+                CompassHudConfig.CompassLook[] lookValues = CompassHudConfig.CompassLook.values();
+                List<SwatchDropdown.Entry> lookEntries = new ArrayList<>();
+                for (CompassHudConfig.CompassLook v : lookValues) lookEntries.add(SwatchDropdown.Entry.text(lookLabel(v)));
+                var wLook = this.addRenderableWidget(new SwatchDropdown(panelX, y, widgetW, rowH, this.font, "Compass Look",
+                        lookEntries, cfg.analogLook.ordinal(), idx -> {
+                            cfg.analogLook = lookValues[idx];
                             CompassHudConfig.saveCurrent();
-                            // Re-init like the style/theme buttons: the Direction Format row exists
+                            // Re-init like the style/theme pickers: the Direction Format row exists
                             // only for TAPE, so the panel's row set changes with the look.
                             this.init();
-                        }));
+                        }, this));
                 tooltip(wLook, "The dial's shape: classic disc, open ring, compass rose, a linear heading tape, or a minimal needle. Resource packs can reskin any look (globe:textures/gui/compass/<look>.png).");
                 trackSidebarWidget(wLook, y);
                 y += rowH + rowGap;
@@ -316,16 +344,20 @@ public class LatitudeHudStudioScreen extends Screen {
                 tooltip(this.wCompassAnalogInnerAlpha, "The compass's inner face opacity. Left (lower) = more see-through, right (higher) = more solid.");
                 trackSidebarWidget(this.wCompassAnalogInnerAlpha, y);
                 y += rowH + rowGap;
-                this.wCompassAnalogTheme = this.addRenderableWidget(CycleButton.<CompassHudConfig.AnalogCompassTheme>builder(v -> Component.literal(themeLabel(v)), () -> cfg.analogTheme)
-                        .withValues(CompassHudConfig.AnalogCompassTheme.values())
-                        .create(panelX, y, widgetW, rowH, Component.literal("Color Scheme"), (btn, value) -> {
-                            cfg.analogTheme = value;
+                CompassHudConfig.AnalogCompassTheme[] themeValues = CompassHudConfig.AnalogCompassTheme.values();
+                List<SwatchDropdown.Entry> themeEntries = new ArrayList<>();
+                for (CompassHudConfig.AnalogCompassTheme v : themeValues) {
+                    themeEntries.add(SwatchDropdown.Entry.split(themeLabel(v), themeFacePreview(v, cfg), themeRingPreview(v, cfg)));
+                }
+                this.wCompassAnalogTheme = this.addRenderableWidget(new SwatchDropdown(panelX, y, widgetW, rowH, this.font, "Color Scheme",
+                        themeEntries, cfg.analogTheme.ordinal(), idx -> {
+                            cfg.analogTheme = themeValues[idx];
                             CompassHudConfig.saveCurrent();
                             // Custom needs its own RGB sliders constructed/torn down, so (like a style change)
                             // this requires a full re-init rather than just a visibility toggle.
                             this.init();
-                        }));
-                tooltip(this.wCompassAnalogTheme, "Pick a preset color scheme for the analog compass, or choose Custom to dial in exact colors below.");
+                        }, this));
+                tooltip(this.wCompassAnalogTheme, "Pick a preset color scheme for the analog compass, or choose Custom to dial in exact colors below. Each swatch previews that scheme's face and ring colors.");
                 trackSidebarWidget(this.wCompassAnalogTheme, y);
                 y += rowH + rowGap;
 
@@ -364,17 +396,27 @@ public class LatitudeHudStudioScreen extends Screen {
                 trackSidebarWidget(this.wCompassBackground, y);
                 y += rowH + rowGap;
 
-                this.wCompassBgColor = this.addRenderableWidget(CycleButton.<String>builder(Component::literal, () -> bgColorName(cfg.backgroundRgb))
-                        .withValues("BLACK", "WHITE", "DARK_GRAY", "BLUE")
-                        .create(panelX, y, widgetW, rowH, Component.literal("Background Color"), (btn, value) -> cfg.backgroundRgb = bgColorRgb(value)));
+                String[] bgNames = {"BLACK", "WHITE", "DARK_GRAY", "BLUE"};
+                List<SwatchDropdown.Entry> bgEntries = new ArrayList<>();
+                for (String name : bgNames) bgEntries.add(SwatchDropdown.Entry.swatch(bgColorTitle(name), bgColorRgb(name)));
+                this.wCompassBgColor = this.addRenderableWidget(new SwatchDropdown(panelX, y, widgetW, rowH, this.font, "Background Color",
+                        bgEntries, indexOf(bgNames, bgColorName(cfg.backgroundRgb)), idx -> {
+                            cfg.backgroundRgb = bgColorRgb(bgNames[idx]);
+                            CompassHudConfig.saveCurrent();
+                        }, this));
                 tooltip(this.wCompassBgColor, "Selects the background color for the digital compass.");
                 trackSidebarWidget(this.wCompassBgColor, y);
                 y += rowH + rowGap;
             }
 
-            this.wCompassTextColor = this.addRenderableWidget(CycleButton.<String>builder(Component::literal, () -> textColorName(cfg.textRgb))
-                    .withValues("WHITE", "BLACK", "YELLOW", "RED", "CYAN")
-                    .create(panelX, y, widgetW, rowH, Component.literal("Text Color"), (btn, value) -> cfg.textRgb = textColorRgb(value)));
+            String[] textNames = {"WHITE", "BLACK", "YELLOW", "RED", "CYAN"};
+            List<SwatchDropdown.Entry> textEntries = new ArrayList<>();
+            for (String name : textNames) textEntries.add(SwatchDropdown.Entry.swatch(textColorTitle(name), textColorRgb(name)));
+            this.wCompassTextColor = this.addRenderableWidget(new SwatchDropdown(panelX, y, widgetW, rowH, this.font, "Text Color",
+                    textEntries, indexOf(textNames, textColorName(cfg.textRgb)), idx -> {
+                        cfg.textRgb = textColorRgb(textNames[idx]);
+                        CompassHudConfig.saveCurrent();
+                    }, this));
             tooltip(this.wCompassTextColor, "Selects the text color used for the compass and labels.");
             trackSidebarWidget(this.wCompassTextColor, y);
             y += rowH + rowGap;
@@ -598,14 +640,17 @@ public class LatitudeHudStudioScreen extends Screen {
             // Drag/snap controls live with the other placement controls (moved from General per TEST 29
             // feedback) — they govern how every draggable element moves, and Labels is where dragging
             // gets configured.
+            // Renamed "Dragging" -> "Grid Snap" (audit C2). Shares LatitudeConfig.hudSnapEnabled with the
+            // always-visible canvas grid icon (wSnapToggle); toggling either keeps both in sync.
             this.wHudSnap = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "Snap to Grid" : "Free Move"), () -> LatitudeConfig.hudSnapEnabled)
                     .withValues(true, false)
-                    .create(panelX, y, widgetW, rowH, Component.literal("Dragging"), (btn, value) -> {
+                    .create(panelX, y, widgetW, rowH, Component.literal("Grid Snap"), (btn, value) -> {
                         LatitudeConfig.hudSnapEnabled = value;
                         LatitudeConfig.saveCurrent();
                         updateSidebarVisibility();
+                        refreshSnapToggleTooltip();
                     }));
-            tooltip(this.wHudSnap, "Snap dragged HUD elements to a grid, or move them freely to any pixel.");
+            tooltip(this.wHudSnap, "Snap dragged HUD elements to a grid, or move them freely to any pixel. Same as the grid button on the canvas.");
             trackSidebarWidget(this.wHudSnap, y);
             y += rowH + rowGap;
 
@@ -683,15 +728,19 @@ public class LatitudeHudStudioScreen extends Screen {
             trackSidebarWidget(this.wTitleShowBaseDegrees, y);
             y += rowH + rowGap;
 
-            this.wTitleColorPreset = this.addRenderableWidget(CycleButton.<LatitudeConfigData.TitleColorPreset>builder(v -> Component.literal(titleColorLabel(v)), () -> LatitudeConfig.zoneEnterTitleColorPreset)
-                    .withValues(LatitudeConfigData.TitleColorPreset.values())
-                    .create(panelX, y, widgetW, rowH, Component.literal("Title Color"), (btn, value) -> {
-                        LatitudeConfig.zoneEnterTitleColorPreset = value;
+            LatitudeConfigData.TitleColorPreset[] titleColorValues = LatitudeConfigData.TitleColorPreset.values();
+            List<SwatchDropdown.Entry> titleColorEntries = new ArrayList<>();
+            for (LatitudeConfigData.TitleColorPreset v : titleColorValues) {
+                titleColorEntries.add(SwatchDropdown.Entry.swatch(titleColorLabel(v), titleColorPreview(v)));
+            }
+            this.wTitleColorPreset = this.addRenderableWidget(new SwatchDropdown(panelX, y, widgetW, rowH, this.font, "Title Color",
+                    titleColorEntries, LatitudeConfig.zoneEnterTitleColorPreset.ordinal(), idx -> {
+                        LatitudeConfig.zoneEnterTitleColorPreset = titleColorValues[idx];
                         LatitudeConfig.saveCurrent();
                         // Custom needs its own RGB sliders constructed/torn down -- same reason the compass
-                        // Color Scheme cycle button forces a full re-init when picking Custom.
+                        // Color Scheme picker forces a full re-init when picking Custom.
                         this.init();
-                    }));
+                    }, this));
             tooltip(this.wTitleColorPreset, "Pick a color for the zone-enter title, choose Custom to dial in exact colors, or Rainbow for a letter-by-letter cycle.");
             trackSidebarWidget(this.wTitleColorPreset, y);
             y += rowH + rowGap;
@@ -701,12 +750,14 @@ public class LatitudeHudStudioScreen extends Screen {
                         v -> LatitudeConfig.zoneEnterTitleRgb = v, g -> this.rgbTitleColor = g, s -> this.swatchTitleColor = s);
             }
 
-            this.wTitleCase = this.addRenderableWidget(CycleButton.<LatitudeConfigData.TitleCaseMode>builder(v -> Component.literal(titleCaseLabel(v)), () -> LatitudeConfig.zoneEnterTitleCase)
-                    .withValues(LatitudeConfigData.TitleCaseMode.values())
-                    .create(panelX, y, widgetW, rowH, Component.literal("Title Case"), (btn, value) -> {
-                        LatitudeConfig.zoneEnterTitleCase = value;
+            LatitudeConfigData.TitleCaseMode[] titleCaseValues = LatitudeConfigData.TitleCaseMode.values();
+            List<SwatchDropdown.Entry> titleCaseEntries = new ArrayList<>();
+            for (LatitudeConfigData.TitleCaseMode v : titleCaseValues) titleCaseEntries.add(SwatchDropdown.Entry.text(titleCaseLabel(v)));
+            this.wTitleCase = this.addRenderableWidget(new SwatchDropdown(panelX, y, widgetW, rowH, this.font, "Title Case",
+                    titleCaseEntries, LatitudeConfig.zoneEnterTitleCase.ordinal(), idx -> {
+                        LatitudeConfig.zoneEnterTitleCase = titleCaseValues[idx];
                         LatitudeConfig.saveCurrent();
-                    }));
+                    }, this));
             tooltip(this.wTitleCase, "Changes how the title's letters are written: Normal, UPPERCASE, lowercase, or mOcKiNg.");
             trackSidebarWidget(this.wTitleCase, y);
             y += rowH + rowGap;
@@ -863,9 +914,34 @@ public class LatitudeHudStudioScreen extends Screen {
             tooltip(wPreviewText, "What sample text this screen uses to show you where things sit. \"Longest real text\" (default) uses the biggest it could realistically get, so where you place things here matches what you'll see in-game.");
             trackSidebarWidget(wPreviewText, y);
             y += rowH + rowGap;
+
+            var wReduceMotion = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "ON" : "OFF"), () -> LatitudeConfig.reduceMotion)
+                    .withValues(true, false)
+                    .create(panelX, y, widgetW, rowH, Component.literal("Reduce Motion"), (btn, value) -> {
+                        LatitudeConfig.reduceMotion = value;
+                        LatitudeConfig.saveCurrent();
+                    }));
+            tooltip(wReduceMotion, "For motion-sensitive players: turns off the gentle slide when controls appear or disappear in this editor, so rows switch instantly instead. Also flags the rest of the mod's little animations (like the moving zone-title and map shimmers) to hold still where supported.");
+            trackSidebarWidget(wReduceMotion, y);
+            y += rowH + rowGap;
         }
 
         this.sidebarContentHeight = Math.max(0, y - rowGap - panelY);
+
+        // Always-visible Snap-to-Grid toggle on the edit canvas (audit C2 / Peetsa item 6). Lives at top-right,
+        // clear of the sidebar and the usual preview area, so grid snapping is one click away no matter which
+        // tab is open. Empty label; the grid glyph is drawn scaled on top in extractRenderState. It flips the
+        // same LatitudeConfig.hudSnapEnabled the Labels "Grid Snap" row uses, then re-inits so the two stay in
+        // sync (and the Grid Size row reveals/hides to match).
+        int snapSize = 20;
+        this.wSnapToggle = this.addRenderableWidget(Button.builder(Component.empty(), b -> {
+                    LatitudeConfig.hudSnapEnabled = !LatitudeConfig.hudSnapEnabled;
+                    LatitudeConfig.saveCurrent();
+                    this.init();
+                })
+                .bounds(this.width - snapSize - 8, 6, snapSize, snapSize)
+                .build());
+        refreshSnapToggleTooltip();
 
         int resetY = this.height - 52;
         this.wResetHud = this.addRenderableWidget(Button.builder(Component.literal("Reset HUD"), b -> {
@@ -974,7 +1050,7 @@ public class LatitudeHudStudioScreen extends Screen {
 
         CompassHud.renderAdjustPreview(ctx, this.width, this.height);
 
-        applySidebarScroll();
+        applySidebarScroll(delta);
         drawSidebarSwatches(ctx);
         drawSidebarScrollbar(ctx);
         super.extractRenderState(ctx, mouseX, mouseY, delta);
@@ -985,11 +1061,59 @@ public class LatitudeHudStudioScreen extends Screen {
             drawButtonGlyph(ctx, wRedoLoad, "↷");
         }
 
+        // Grid glyph over the always-visible canvas snap toggle; bright when snapping, dim when free-move.
+        drawSnapGlyph(ctx);
+
         if (sidebarVisible) {
             ctx.text(this.font, "Press L to hide settings", 8, 8, 0xAAFFFFFF);
         } else {
             ctx.text(this.font, "Press L to show settings", 8, 8, 0xFFFFFFFF);
         }
+
+        // Painted last of all so an open picker's list sits above every widget and the compass preview.
+        if (sidebarVisible && openDropdown != null && openDropdown.isOpen()) {
+            openDropdown.renderOpenList(ctx, mouseX, mouseY);
+        }
+    }
+
+    /** Re-applies the canvas snap toggle's tooltip text to match the CURRENT LatitudeConfig.hudSnapEnabled.
+     *  Unlike {@link #drawSnapGlyph} (which reads the live flag every frame), a Button's tooltip is static
+     *  text set once -- so this must be called explicitly anywhere the flag can change: here at init() and
+     *  from the Labels-tab "Grid Snap" row's handler, which used to leave this toggle's tooltip stale (still
+     *  saying the old state) until the next full init(). */
+    private void refreshSnapToggleTooltip() {
+        tooltip(this.wSnapToggle, "Snap to Grid: " + (LatitudeConfig.hudSnapEnabled ? "On" : "Off")
+                + ". Click to toggle whether dragged HUD elements jump to a grid or move freely.");
+    }
+
+    /** Grid glyph drawn on the empty-labelled canvas snap toggle: a 3x3 grid of cells. Bright gold when Snap to
+     *  Grid is on, dim muted when free-move, so the state reads at a glance (plus the tooltip). */
+    private void drawSnapGlyph(GuiGraphicsExtractor ctx) {
+        if (wSnapToggle == null || !wSnapToggle.visible) return;
+        boolean on = LatitudeConfig.hudSnapEnabled;
+        int color = on ? GOLD : 0xFF6E655C;
+        int x = wSnapToggle.getX();
+        int y = wSnapToggle.getY();
+        int w = wSnapToggle.getWidth();
+        int h = wSnapToggle.getHeight();
+        int gx = x + 4;
+        int gy = y + 4;
+        int gw = w - 8;
+        int gh = h - 8;
+        // Outer frame.
+        ctx.fill(gx, gy, gx + gw, gy + 1, color);
+        ctx.fill(gx, gy + gh - 1, gx + gw, gy + gh, color);
+        ctx.fill(gx, gy, gx + 1, gy + gh, color);
+        ctx.fill(gx + gw - 1, gy, gx + gw, gy + gh, color);
+        // Two interior lines each way => a 3x3 grid.
+        int v1 = gx + gw / 3;
+        int v2 = gx + 2 * gw / 3;
+        int h1 = gy + gh / 3;
+        int h2 = gy + 2 * gh / 3;
+        ctx.fill(v1, gy, v1 + 1, gy + gh, color);
+        ctx.fill(v2, gy, v2 + 1, gy + gh, color);
+        ctx.fill(gx, h1, gx + gw, h1 + 1, color);
+        ctx.fill(gx, h2, gx + gw, h2 + 1, color);
     }
 
     /** Draws a glyph scaled up and centered on a button — used for the undo/redo arrows, whose default
@@ -1028,6 +1152,9 @@ public class LatitudeHudStudioScreen extends Screen {
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
+        if (openDropdown != null && openDropdown.isOpen()) {
+            return openDropdown.handleScroll(verticalAmount);
+        }
         if (sidebarVisible && mouseX < sidebarWidth + 10) {
             int viewportH = sidebarViewportBottom - sidebarViewportTop;
             int maxScroll = Math.max(0, sidebarContentHeight - viewportH);
@@ -1040,6 +1167,12 @@ public class LatitudeHudStudioScreen extends Screen {
 
     @Override
     public boolean mouseClicked(MouseButtonEvent click, boolean doubleClick) {
+        // An open picker is modal: any left click either selects an entry or dismisses it, and nothing else on
+        // the screen sees the click. This runs BEFORE super so a click on another widget can't slip through.
+        if (click.button() == 0 && openDropdown != null && openDropdown.isOpen()) {
+            return openDropdown.handleClick(click.x(), click.y());
+        }
+
         if (super.mouseClicked(click, doubleClick)) {
             return true;
         }
@@ -1254,6 +1387,42 @@ public class LatitudeHudStudioScreen extends Screen {
         return super.mouseReleased(click);
     }
 
+    @Override
+    public boolean keyPressed(KeyEvent input) {
+        // Arrow keys / Enter / Esc drive an open picker (accessibility) instead of the screen underneath.
+        if (openDropdown != null && openDropdown.isOpen() && openDropdown.handleKey(input)) {
+            return true;
+        }
+        return super.keyPressed(input);
+    }
+
+    // ---- SwatchDropdown.Host: this screen owns the single open picker, paints its list, and routes input. ----
+
+    @Override
+    public void dropdownOpened(SwatchDropdown d) {
+        if (openDropdown != null && openDropdown != d) {
+            openDropdown.close();
+        }
+        openDropdown = d;
+    }
+
+    @Override
+    public void dropdownClosed(SwatchDropdown d) {
+        if (openDropdown == d) {
+            openDropdown = null;
+        }
+    }
+
+    @Override
+    public int hostScreenWidth() {
+        return this.width;
+    }
+
+    @Override
+    public int hostScreenHeight() {
+        return this.height;
+    }
+
     private static void resetHudDefaults() {
         var cfg = CompassHudConfig.get();
         applyDefaults(cfg);
@@ -1283,18 +1452,80 @@ public class LatitudeHudStudioScreen extends Screen {
         sidebarScrollBaseYs.add(baseY);
     }
 
-    private void applySidebarScroll() {
+    /** Once a row's reveal reaches this, its slot is (near) full height, so the control can show without ever
+     *  overlapping the row below while the slot is still opening/closing. Below it the space just eases. */
+    private static final float ROW_SHOW_THRESHOLD = 0.85f;
+
+    private void applySidebarScroll(float delta) {
+        advanceRowAnimations(delta);
         if (!sidebarVisible) return;
+
+        int n = sidebarScrollWidgets.size();
+        if (sidebarDispY == null || sidebarDispY.length != n) sidebarDispY = new float[n];
+
+        // First pass: cumulative pre-scroll Y for each row, each slot collapsed by its reveal (rowAnim). When
+        // every reveal is 1.0 this reproduces the old fixed baseY layout exactly (Σ slot heights == baseY[i]);
+        // as a row rolls out/in, its slot grows/shrinks and everything below eases along with it.
+        float cursor = sidebarViewportTop;
+        for (int i = 0; i < n; i++) {
+            sidebarDispY[i] = cursor;
+            cursor += slotHeightAt(i) * rowAnim[i];
+        }
+        this.sidebarContentHeight = Math.max(0, Math.round(cursor - sidebarViewportTop));
+
         int viewportH = sidebarViewportBottom - sidebarViewportTop;
         int maxScroll = Math.max(0, sidebarContentHeight - viewportH);
         sidebarScrollY = Mth.clamp(sidebarScrollY, 0, maxScroll);
-        for (int i = 0; i < sidebarScrollWidgets.size(); i++) {
+
+        for (int i = 0; i < n; i++) {
             AbstractWidget w = sidebarScrollWidgets.get(i);
             if (w == null) continue;
-            int baseY = sidebarScrollBaseYs.get(i);
-            int drawY = baseY - sidebarScrollY;
+            int drawY = Math.round(sidebarDispY[i]) - sidebarScrollY;
             w.setY(drawY);
-            w.visible = w.active && drawY >= sidebarViewportTop && drawY + w.getHeight() <= sidebarViewportBottom;
+            boolean shown = Boolean.TRUE.equals(rowLogicalShown.get(w));
+            boolean present = rowAnim[i] >= ROW_SHOW_THRESHOLD;
+            boolean inView = drawY >= sidebarViewportTop && drawY + w.getHeight() <= sidebarViewportBottom;
+            w.visible = present && inView;
+            w.active = shown && present;
+        }
+
+        // If the picker whose button just scrolled (or animated) out of view is still open, dismiss it.
+        if (openDropdown != null && openDropdown.isOpen() && !openDropdown.visible) {
+            openDropdown.close();
+        }
+    }
+
+    /** Vertical span row i reserves = its natural slot (row height + gap). Derived from consecutive baseYs so
+     *  RGB-picker triples and their swatch spacing (baked into the following row's baseY) are honored. */
+    private int slotHeightAt(int i) {
+        int m = sidebarScrollBaseYs.size();
+        if (i >= 0 && i < m - 1) {
+            int d = sidebarScrollBaseYs.get(i + 1) - sidebarScrollBaseYs.get(i);
+            if (d > 0) return d;
+        }
+        AbstractWidget w = (i >= 0 && i < sidebarScrollWidgets.size()) ? sidebarScrollWidgets.get(i) : null;
+        int h = w != null ? w.getHeight() : 20;
+        return h + 4; // + rowGap
+    }
+
+    /** Ease every tracked row's reveal toward its logical target each frame. Snaps instantly under Reduce
+     *  Motion (audit H1 / M5). Re-seeds (no animation) right after an init() rebuild or tab switch. */
+    private void advanceRowAnimations(float delta) {
+        int n = sidebarScrollWidgets.size();
+        if (rowAnim == null || rowAnim.length != n) {
+            rowAnim = new float[n];
+            for (int i = 0; i < n; i++) {
+                AbstractWidget w = sidebarScrollWidgets.get(i);
+                rowAnim[i] = (w != null && Boolean.TRUE.equals(rowLogicalShown.get(w))) ? 1f : 0f;
+            }
+            return;
+        }
+        if (!sidebarVisible) return;
+        boolean reduce = LatitudeConfig.reduceMotion;
+        for (int i = 0; i < n; i++) {
+            AbstractWidget w = sidebarScrollWidgets.get(i);
+            boolean shown = w != null && Boolean.TRUE.equals(rowLogicalShown.get(w));
+            rowAnim[i] = reduce ? (shown ? 1f : 0f) : UiEase.advanceReveal(rowAnim[i], shown, delta);
         }
     }
 
@@ -1318,13 +1549,27 @@ public class LatitudeHudStudioScreen extends Screen {
         if (!sidebarVisible) return;
         int panelX = 8;
         for (SwatchSlot s : sidebarSwatches) {
-            int drawY = s.baseY - sidebarScrollY;
+            int drawY = s.baseY + swatchDispDelta(s.baseY) - sidebarScrollY;
             if (drawY < sidebarViewportTop || drawY + s.height > sidebarViewportBottom) continue;
             int argb = 0xFF000000 | (s.color.getAsInt() & 0xFFFFFF);
             ctx.fill(panelX, drawY, panelX + sidebarWidgetW, drawY + s.height, argb);
             ctx.fill(panelX, drawY, panelX + sidebarWidgetW, drawY + 1, PANEL_BORDER);
             ctx.fill(panelX, drawY + s.height - 1, panelX + sidebarWidgetW, drawY + s.height, PANEL_BORDER);
         }
+    }
+
+    /** Cumulative displacement a hand-drawn swatch at {@code baseY} inherits from the animated row above it, so
+     *  it rides along when earlier rows collapse. Zero in every context a swatch actually appears (Custom /
+     *  text / title RGB pickers, where nothing above animates), but stays correct if that ever changes. */
+    private int swatchDispDelta(int baseY) {
+        if (sidebarDispY == null) return 0;
+        int k = -1;
+        int m = Math.min(sidebarScrollBaseYs.size(), sidebarDispY.length);
+        for (int i = 0; i < m; i++) {
+            if (sidebarScrollBaseYs.get(i) <= baseY) k = i; else break;
+        }
+        if (k < 0) return 0;
+        return Math.round(sidebarDispY[k]) - sidebarScrollBaseYs.get(k);
     }
 
     private void drawTabStrip(GuiGraphicsExtractor ctx, int mouseX, int mouseY) {
@@ -1409,73 +1654,52 @@ public class LatitudeHudStudioScreen extends Screen {
         return swatchY + swatchH + rowGap;
     }
 
+    /**
+     * Recomputes each tracked row's LOGICAL target visibility (config-driven, independent of the L hide-all and
+     * of the roll animation) into {@link #rowLogicalShown}; the per-frame transition layer
+     * ({@link #advanceRowAnimations}/{@link #applySidebarScroll}) eases each row's reveal toward it and sets the
+     * actual {@code visible}/{@code active}. The L toggle is a hard, instant gate: when the sidebar is hidden
+     * this bypasses the animation and hides everything outright.
+     *
+     * <p>Only a handful of rows are config-conditional (all on the Labels tab): the dependents of Display
+     * Zone / Display Biome, the zone/biome order (needs both attached to the compass), and the Grid Size row
+     * (needs snapping on). Everything else is shown whenever the sidebar is. Local-var widgets (Direction
+     * Format, the color pickers, Reset buttons, General cyclers) are reachable only through the tracker list,
+     * which is why the target is keyed on the tracked-widget set rather than a hand-maintained field list
+     * (relying on the field list alone once left locals visible when hidden — TEST 28).
+     */
     private void updateSidebarVisibility() {
         var cfg = CompassHudConfig.get();
 
-        // Blanket pass first: EVERY tracked sidebar row follows the L toggle. The named calls below
-        // then re-apply their conditional rules. Widgets created as locals (Direction Format, Compass
-        // Look, the General tab's cyclers, Reset Compass) are only reachable through the tracker —
-        // relying on the hand-maintained field list alone left them visible when hidden (TEST 28).
-        for (AbstractWidget w : sidebarScrollWidgets) {
-            setVisible(w, sidebarVisible);
+        if (!sidebarVisible) {
+            // L toggle: hide the whole sidebar instantly (the hide-all is not something to animate).
+            for (AbstractWidget w : sidebarScrollWidgets) {
+                setVisible(w, false);
+            }
+            setVisible(wResetHud, false);
+            return;
         }
 
-        setVisible(wCompassStyle, sidebarVisible);
-        setVisible(wCompassScale, sidebarVisible);
-        setVisible(wCompassAnalogSize, sidebarVisible);
-        setVisible(wCompassAnalogInnerAlpha, sidebarVisible);
-        setVisible(wCompassAnalogTheme, sidebarVisible);
-        setVisible(wCompassTransparency, sidebarVisible);
-        setVisible(wCompassBackground, sidebarVisible);
-        setVisible(wCompassBgColor, sidebarVisible);
-        setVisible(wCompassTextColor, sidebarVisible);
-        setVisible(wCompassTextAlpha, sidebarVisible);
-        setVisible(wCompassTextRainbow, sidebarVisible);
-        setRgbGroupVisible(rgbTextColor, sidebarVisible);
-        setRgbGroupVisible(rgbCustomFace, sidebarVisible);
-        setRgbGroupVisible(rgbCustomRing, sidebarVisible);
-        setRgbGroupVisible(rgbCustomMuted, sidebarVisible);
-        setRgbGroupVisible(rgbCustomNeedle, sidebarVisible);
-        setVisible(wCompassShowLatitude, sidebarVisible);
-        setVisible(wCompassAnalogShowLatitude, sidebarVisible);
-        setVisible(wCompassShowLongitude, sidebarVisible);
-        setVisible(wCompassAnalogShowLongitude, sidebarVisible);
-        setVisible(wCompassCompact, sidebarVisible);
-        setVisible(wCompassAttachHotbar, sidebarVisible);
+        rowLogicalShown.clear();
+        for (AbstractWidget w : sidebarScrollWidgets) {
+            if (w != null) rowLogicalShown.put(w, Boolean.TRUE);
+        }
 
-        setVisible(wZoneDisplay, sidebarVisible);
-        setVisible(wZoneFollow, sidebarVisible && cfg.displayZoneInHud);
-        setVisible(wZoneTextScale, sidebarVisible && cfg.displayZoneInHud);
-        setVisible(wBiomeDisplay, sidebarVisible);
-        setVisible(wBiomeFollow, sidebarVisible && cfg.displayBiomeInHud);
-        setVisible(wBiomeTextScale, sidebarVisible && cfg.displayBiomeInHud);
-        // Order only matters when zone AND biome are both attached to the SAME compass line.
+        setLogicalShown(wZoneFollow, cfg.displayZoneInHud);
+        setLogicalShown(wZoneTextScale, cfg.displayZoneInHud);
+        setLogicalShown(wBiomeFollow, cfg.displayBiomeInHud);
+        setLogicalShown(wBiomeTextScale, cfg.displayBiomeInHud);
         boolean bothAttached = cfg.displayZoneInHud && cfg.zoneFollowsCompass
                 && cfg.displayBiomeInHud && cfg.biomeFollowsCompass;
-        setVisible(wZoneBiomeOrder, sidebarVisible && bothAttached);
-        setVisible(wCoordsFollow, sidebarVisible);
+        setLogicalShown(wZoneBiomeOrder, bothAttached);
+        setLogicalShown(wHudSnapPixels, LatitudeConfig.hudSnapEnabled);
 
-        setVisible(wTitleEnabled, sidebarVisible);
-        setVisible(wTitleScale, sidebarVisible);
-        setVisible(wTitleDuration, sidebarVisible);
-        setVisible(wTitleShowBaseDegrees, sidebarVisible);
-        setVisible(wTitleColorPreset, sidebarVisible);
-        setRgbGroupVisible(rgbTitleColor, sidebarVisible);
-        setVisible(wTitleCase, sidebarVisible);
-        setVisible(wTitleLetterSpacing, sidebarVisible);
-
-        setVisible(wHudSnap, sidebarVisible);
-        setVisible(wHudSnapPixels, sidebarVisible && LatitudeConfig.hudSnapEnabled);
-        setVisible(wTitleDraggable, sidebarVisible);
-
-        setVisible(wResetHud, sidebarVisible);
+        setVisible(wResetHud, true);
     }
 
-    private static void setRgbGroupVisible(RgbPickerGroup group, boolean v) {
-        if (group == null) return;
-        for (AbstractWidget w : group.sliders()) {
-            setVisible(w, v);
-        }
+    private void setLogicalShown(AbstractWidget w, boolean shown) {
+        if (w == null) return;
+        rowLogicalShown.put(w, shown);
     }
 
     private boolean isMouseOverZone(double mx, double my) {
@@ -1740,6 +1964,88 @@ public class LatitudeHudStudioScreen extends Screen {
             case GREEN -> "Green";
             case CUSTOM -> "Custom";
             case RAINBOW -> "Rainbow";
+        };
+    }
+
+    // ---- Swatch-picker preview colors + small utilities (audit C1) ----
+
+    private static int indexOf(String[] arr, String value) {
+        for (int i = 0; i < arr.length; i++) {
+            if (arr[i].equals(value)) return i;
+        }
+        return 0;
+    }
+
+    /** Friendlier Title Case for the digital background-color picker (the config key stays the ALL_CAPS name). */
+    private static String bgColorTitle(String name) {
+        return switch (name) {
+            case "WHITE" -> "White";
+            case "DARK_GRAY" -> "Dark Gray";
+            case "BLUE" -> "Blue";
+            default -> "Black";
+        };
+    }
+
+    private static String textColorTitle(String name) {
+        return switch (name) {
+            case "BLACK" -> "Black";
+            case "YELLOW" -> "Yellow";
+            case "RED" -> "Red";
+            case "CYAN" -> "Cyan";
+            default -> "White";
+        };
+    }
+
+    // Face/ring preview colors mirror CompassHud.analogColors' literals (the design source) so a scheme's chip
+    // shows the colors it will actually paint. Kept local (a duplicated constant, not a live call) so this
+    // Pass-A change stays inside its allowed files; CUSTOM reads the live custom RGB, Aurora shows a mid hue.
+    private static int themeFacePreview(CompassHudConfig.AnalogCompassTheme theme, CompassHudConfig cfg) {
+        return switch (theme) {
+            case PALE_GOLD -> 0x233029;
+            case RED_IVORY -> 0x292221;
+            case CYAN_STEEL -> 0x1A232A;
+            case MINT_BRASS -> 0x1C2823;
+            case OBSIDIAN_RED -> 0x14110F;
+            case ARCTIC_BLUE -> 0x16202B;
+            case EMERALD -> 0x122019;
+            case ROYAL_PURPLE -> 0x1A1426;
+            case SUNSET -> 0x261712;
+            case MONOCHROME -> 0x1B1B1E;
+            case CLASSIC_GOLD -> 0x1A1410;
+            case RAINBOW -> 0x1A1426;
+            case CUSTOM -> cfg.customFaceRgb & 0xFFFFFF;
+        };
+    }
+
+    private static int themeRingPreview(CompassHudConfig.AnalogCompassTheme theme, CompassHudConfig cfg) {
+        return switch (theme) {
+            case PALE_GOLD -> 0xE5C07B;
+            case RED_IVORY -> 0xE3D4C8;
+            case CYAN_STEEL -> 0x5CC8FF;
+            case MINT_BRASS -> 0xD4B87A;
+            case OBSIDIAN_RED -> 0xB0A8A0;
+            case ARCTIC_BLUE -> 0xCFE8FF;
+            case EMERALD -> 0x7BE0A0;
+            case ROYAL_PURPLE -> 0xC9A6F0;
+            case SUNSET -> 0xF2A65A;
+            case MONOCHROME -> 0xD8D8DC;
+            case CLASSIC_GOLD -> 0xD4A74A;
+            case RAINBOW -> 0x8FD0FF;
+            case CUSTOM -> cfg.customRingArgb & 0xFFFFFF;
+        };
+    }
+
+    /** Representative chip color for a title color preset (Custom reads the live custom RGB; Rainbow gets a
+     *  vivid stand-in since it's a per-letter cycle, not one flat color). */
+    private static int titleColorPreview(LatitudeConfigData.TitleColorPreset preset) {
+        return switch (preset) {
+            case WHITE -> 0xFFFFFF;
+            case GOLD -> 0xD4A74A;
+            case RED -> 0xFF5555;
+            case CYAN -> 0x55FFFF;
+            case GREEN -> 0x55FF55;
+            case CUSTOM -> LatitudeConfig.zoneEnterTitleRgb & 0xFFFFFF;
+            case RAINBOW -> 0xFF66AA;
         };
     }
 
