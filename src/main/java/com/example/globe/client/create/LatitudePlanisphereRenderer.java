@@ -235,10 +235,14 @@ public final class LatitudePlanisphereRenderer {
         // fully fades before the loop restarts back at the equator, keeping the wrap from popping. Wall-clock
         // driven (same System.currentTimeMillis() idiom as the Aurora compass theme); the create screen
         // redraws every frame, so it animates smoothly.
+        // Reduce Motion: hold both the Random sweep and the selected-band glow crest at a static equivalent
+        // (no per-frame System.currentTimeMillis()-driven animation) instead of traveling — same accessibility
+        // gate the create screen's zone-bar helpers apply at their call sites (LatitudeCreateWorldScreen).
+        boolean reduceMotion = com.example.globe.client.LatitudeConfig.reduceMotion;
         boolean randomSweep = (selectedBand == null);
         double frontDeg = 0.0;
         double sweepEnv = 1.0;
-        if (randomSweep) {
+        if (randomSweep && !reduceMotion) {
             double phase = (System.currentTimeMillis() % RANDOM_SWEEP_PERIOD_MS) / (double) RANDOM_SWEEP_PERIOD_MS;
             frontDeg = phase * POLE_FADE_DEG;
             // Ease the whole pulse IN as it (re)starts at the equator and OUT as it clears the pole, so the
@@ -250,7 +254,7 @@ public final class LatitudePlanisphereRenderer {
         // the Random idea turned on its side. The band holds a SELECTED_BASE_GLOW floor so it always reads
         // selected; the crest brightens it to the full pop as it passes. Same seam-fade envelope as above.
         double selFront = 0.0, selEnv = 0.0;
-        if (selectedBand != null) {
+        if (selectedBand != null && !reduceMotion) {
             double sp = (System.currentTimeMillis() % SELECTED_SWEEP_PERIOD_MS) / (double) SELECTED_SWEEP_PERIOD_MS;
             selFront = sp;
             selEnv = smoothstep(0.0, SWEEP_FADE_FRAC, sp) * smoothstep(0.0, SWEEP_FADE_FRAC, 1.0 - sp);
@@ -262,8 +266,15 @@ public final class LatitudePlanisphereRenderer {
             int yHigh = (int) (halfH * band.highDeg() / 90.0);
 
             if (band == selectedBand) {
-                fillSelectedGlowStrip(context, cx, cy, halfW, yLow,  yHigh,  baseColor, selFront, selEnv);
-                fillSelectedGlowStrip(context, cx, cy, halfW, -yHigh, -yLow, baseColor, selFront, selEnv);
+                if (reduceMotion) {
+                    // Static equivalent: a steady, fully-opaque solid highlight in the band's own color --
+                    // no travelling crest.
+                    fillBandStripRect(context, cx, cy, halfW, yLow,  yHigh,  baseColor);
+                    fillBandStripRect(context, cx, cy, halfW, -yHigh, -yLow, baseColor);
+                } else {
+                    fillSelectedGlowStrip(context, cx, cy, halfW, yLow,  yHigh,  baseColor, selFront, selEnv);
+                    fillSelectedGlowStrip(context, cx, cy, halfW, -yHigh, -yLow, baseColor, selFront, selEnv);
+                }
                 continue;
             }
 
@@ -271,6 +282,14 @@ public final class LatitudePlanisphereRenderer {
                 // A specific zone IS selected: every OTHER band stays fully transparent so the atlas map
                 // graphic (ocean + continents + the faint latitude graticule) shows through cleanly -- only
                 // the picked band carries color (Peetsa). The selected band was already drawn above.
+                continue;
+            }
+
+            if (reduceMotion) {
+                // Static equivalent of the Random sweep: every band shows its own full, solid color at once
+                // (all-bands-colored look) -- no travelling pulse.
+                fillBandStripRect(context, cx, cy, halfW, yLow,  yHigh,  baseColor);
+                fillBandStripRect(context, cx, cy, halfW, -yHigh, -yLow, baseColor);
                 continue;
             }
 
