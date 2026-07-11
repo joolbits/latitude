@@ -1,10 +1,12 @@
 package com.example.globe.client;
 
+import com.example.globe.core.ui.FlowingGradient;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 
 /**
- * Draws text with each non-space letter in a different color from a fixed rainbow palette. Used to make the
+ * Draws text as a smooth, time-flowing rainbow gradient (one hue per non-space letter, neighbors blending).
+ * Used to make the
  * "HUD Studio" entry (Latitude Settings screen + the world-creation screen's Rules panel) pop visually against
  * the plain gray option buttons around it.
  *
@@ -17,46 +19,45 @@ public final class RainbowText {
     private RainbowText() {
     }
 
-    // ROYGBIV-ish, tuned to stay legible against this mod's dark panel backgrounds (no near-black indigo).
-    private static final int[] PALETTE = {
-            0xFFFF5555, // red
-            0xFFFFAA00, // orange
-            0xFFFFFF55, // yellow
-            0xFF55FF55, // green
-            0xFF55FFFF, // cyan
-            0xFF5599FF, // blue
-            0xFFFF66FF, // magenta/violet
-    };
+    /** Live 0xRRGGBB (no alpha) gradient color for the {@code visibleIdx}-th visible letter of a
+     *  {@code visibleCount}-letter string, drifting through the wheel over {@code cycleSeconds}. The single
+     *  shared entry point every rainbow renderer in the mod calls, so they all match. Callers OR in alpha. */
+    public static int flowingColor(int visibleIdx, int visibleCount, float cycleSeconds) {
+        return FlowingGradient.colorFor(System.currentTimeMillis(), visibleIdx, visibleCount, cycleSeconds);
+    }
 
-    /** Draws {@code text} centered at (centerX, centerY), cycling one palette color per non-space character. */
+    private static int visibleLetterCount(String text) {
+        int n = 0;
+        for (int i = 0; i < text.length(); i++) {
+            if (text.charAt(i) != ' ') n++;
+        }
+        return n;
+    }
+
+    /** Draws {@code text} centered at (centerX, centerY) as a smooth flowing rainbow gradient. */
     public static void drawCentered(GuiGraphicsExtractor ctx, Font font, String text, int centerX, int centerY, boolean shadow) {
         drawCentered(ctx, font, text, centerX, centerY, shadow, 0xFF);
     }
 
     /** Same as {@link #drawCentered(GuiGraphicsExtractor, Font, String, int, int, boolean)}, but with an extra
-     *  alpha byte (0-255) applied to every palette color -- lets callers with a fade-in/out effect (e.g. the
-     *  zone-enter title) use the Rainbow preset without losing their fade. */
+     *  alpha byte (0-255) applied to every gradient color -- lets callers with a fade-in/out effect (e.g. the
+     *  zone-enter title) use the Rainbow treatment without losing their fade. */
     public static void drawCentered(GuiGraphicsExtractor ctx, Font font, String text, int centerX, int centerY, boolean shadow, int alpha) {
         int totalWidth = font.width(text);
         int x = centerX - totalWidth / 2;
         int y = centerY - font.lineHeight / 2;
         int alphaMask = (alpha & 0xFF) << 24;
+        int visibleCount = visibleLetterCount(text);
         int colorIdx = 0;
         for (int i = 0; i < text.length(); i++) {
             char c = text.charAt(i);
             String s = String.valueOf(c);
             if (c != ' ') {
-                int color = alphaMask | (PALETTE[colorIdx % PALETTE.length] & 0xFFFFFF);
+                int color = alphaMask | flowingColor(colorIdx, visibleCount, FlowingGradient.DEFAULT_CYCLE_SECONDS);
                 ctx.text(font, s, x, y, color, shadow);
                 colorIdx++;
             }
             x += font.width(s);
         }
-    }
-
-    /** Bare 0xRRGGBB (no alpha) for palette color at {@code index}, cycling. Lets other renderers (e.g. the
-     *  zone-enter title's letter-spacing draw loop) reuse this exact palette/order without duplicating it. */
-    public static int paletteColor(int index) {
-        return PALETTE[Math.floorMod(index, PALETTE.length)] & 0xFFFFFF;
     }
 }

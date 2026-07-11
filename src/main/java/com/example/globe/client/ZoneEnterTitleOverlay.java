@@ -134,7 +134,14 @@ public final class ZoneEnterTitleOverlay {
         int spacing = LatitudeConfig.zoneEnterTitleLetterSpacing;
         int alphaMask = (alphaByte & 0xFF) << 24;
         if (LatitudeConfig.zoneEnterTitleColorPreset == LatitudeConfigData.TitleColorPreset.RAINBOW) {
-            drawSpacedText(ctx, font, text, 0, 0, true, spacing, idx -> alphaMask | RainbowText.paletteColor(idx));
+            int visibleCount = 0;
+            for (int i = 0; i < text.length(); i++) {
+                if (text.charAt(i) != ' ') visibleCount++;
+            }
+            final int visible = visibleCount;
+            drawSpacedText(ctx, font, text, 0, 0, true, spacing,
+                    idx -> alphaMask | RainbowText.flowingColor(idx, visible,
+                            com.example.globe.core.ui.FlowingGradient.DEFAULT_CYCLE_SECONDS));
             return;
         }
         int argb = alphaMask | (titleColorRgb(LatitudeConfig.zoneEnterTitleColorPreset) & 0xFFFFFF);

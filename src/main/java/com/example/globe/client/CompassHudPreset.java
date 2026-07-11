@@ -61,6 +61,14 @@ public final class CompassHudPreset {
         return redoSnapshot != null;
     }
 
+    /** Discards any pending Undo/Redo point without applying either. For a cancelled Studio session: the
+     *  snapshots are static (they outlive screen close), so leaving them set would let a later reopen's Undo
+     *  resurrect state the player just discarded via Cancel. */
+    public static void clearUndoRedo() {
+        undoSnapshot = null;
+        redoSnapshot = null;
+    }
+
     /** Restores the live HUD to whatever it was immediately before the last Load/Import, and arms Redo so the
      *  step can be re-applied. One level only -- matches what "undo my last preset load" actually means here. */
     public static void undoLastLoad() {

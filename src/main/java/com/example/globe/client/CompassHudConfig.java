@@ -200,6 +200,30 @@ public final class CompassHudConfig {
         INSTANCE = load();
     }
 
+    /** A detached deep copy of {@code src}, for snapshot/restore (HUD Studio Cancel). Every config field is an
+     *  immutable value (primitive, boxed, or enum), so a reflective field-by-field copy is a safe, drift-proof
+     *  snapshot -- it can never fall out of sync with the field list the way a hand-maintained copy block can. */
+    public static CompassHudConfig copyOf(CompassHudConfig src) {
+        CompassHudConfig copy = new CompassHudConfig();
+        copy.copyFrom(src);
+        return copy;
+    }
+
+    /** Overwrites every non-static, non-final instance field of {@code this} from {@code src} (see
+     *  {@link #copyOf}). Used to restore the live singleton from a snapshot without replacing the instance
+     *  (so references held elsewhere stay valid). */
+    public void copyFrom(CompassHudConfig src) {
+        for (java.lang.reflect.Field f : CompassHudConfig.class.getDeclaredFields()) {
+            int mod = f.getModifiers();
+            if (java.lang.reflect.Modifier.isStatic(mod) || java.lang.reflect.Modifier.isFinal(mod)) continue;
+            try {
+                f.set(this, f.get(src));
+            } catch (IllegalAccessException ignored) {
+                // All instance fields here are public; this cannot happen, but stay defensive.
+            }
+        }
+    }
+
     public static void saveCurrent() { save(get()); }
 
     public static void setEnabledAndSave(boolean value) { get().enabled = value; saveCurrent(); }

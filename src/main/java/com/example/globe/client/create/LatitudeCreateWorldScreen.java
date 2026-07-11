@@ -126,6 +126,17 @@ public class LatitudeCreateWorldScreen extends Screen {
     private static final String[] WORLD_SHAPE_NAMES = { "Mercator 2:1", "Legacy 1:1" };
     private static final int[] WORLD_SHAPE_COLORS = { GOLD, MUTED };
     private static final int DISABLED_COLOR = 0xFF605850;
+
+    // Selected spawn-zone "alive" polish (UI round 13): the picked band's name letters bounce on a gentle
+    // per-letter-phased sine wave, and its left accent tab shimmers in brightness. Both are deliberately
+    // subtler than the Atlas band's traveling Gaussian crest (see LatitudePlanisphereRenderer) -- this reads
+    // as "alive", not "jumping". Wall-clock driven, same System.currentTimeMillis() idiom as every other
+    // animation on this screen.
+    private static final double ZONE_BOUNCE_PERIOD_SEC = 1.6;   // one full bob, within the 1.2-2s brief
+    private static final double ZONE_BOUNCE_AMPLITUDE_PX = 1.5; // peak vertical offset (integer-rounded when drawn)
+    private static final double ZONE_BOUNCE_LETTER_PHASE = 0.6; // radians of phase lag per letter -> a soft travelling wave
+    private static final double ZONE_TAB_SHIMMER_PERIOD_SEC = 2.4; // slower than the Atlas crest's 2.6s sweep
+    private static final double ZONE_TAB_SHIMMER_AMPLITUDE = 0.20; // +/-20% brightness
     private static final boolean DEBUG_UI_SWITCH_LAG = Boolean.getBoolean("latitude.debug.uiSwitchLag");
 
     private final Runnable onClose;
@@ -1935,18 +1946,57 @@ public class LatitudeCreateWorldScreen extends Screen {
         return drawH;
     }
 
-    /** Per-letter rainbow, italicized — the selected "Random" spawn-zone row's name treatment (TEST 29). */
+    /** Smooth flowing rainbow gradient, italicized — the selected "Random" spawn-zone row's name treatment
+     *  (TEST 29). Shares the one gradient helper with the compass/HUD-Studio rainbows so they match. */
     private void drawRainbowItalicUiText(GuiGraphicsExtractor context, String text, int x, int y) {
         int cx = x;
         int visibleIdx = 0;
+        int visibleCount = 0;
+        for (int i = 0; i < text.length(); i++) {
+            if (text.charAt(i) != ' ') visibleCount++;
+        }
         for (int i = 0; i < text.length(); i++) {
             char c = text.charAt(i);
             Component ch = Component.literal(String.valueOf(c)).withStyle(net.minecraft.ChatFormatting.ITALIC);
-            int color = 0xFF000000 | com.example.globe.client.RainbowText.paletteColor(visibleIdx);
+            int color = 0xFF000000 | com.example.globe.client.RainbowText.flowingColor(
+                    visibleIdx, visibleCount, com.example.globe.core.ui.FlowingGradient.DEFAULT_CYCLE_SECONDS);
             context.text(this.font, ch, cx, y, color, true);
             if (c != ' ') visibleIdx++;
             cx += this.font.width(ch);
         }
+    }
+
+    /** Draws the selected zone's name with each letter offset vertically by a slow sine wave, phased by
+     *  letter index so a soft crest travels through the word. Per-glyph x-advance uses the font's char
+     *  widths, the same idiom the Random rainbow / atlas crest draws use. Subtle by design (see constants). */
+    private void drawBouncingUiText(GuiGraphicsExtractor context, String text, int x, int y, int color, boolean shadow) {
+        double now = System.currentTimeMillis() / 1000.0;
+        double omega = 2.0 * Math.PI / ZONE_BOUNCE_PERIOD_SEC;
+        int cx = x;
+        int letterIdx = 0;
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            String s = String.valueOf(c);
+            if (c != ' ') {
+                double phase = now * omega - letterIdx * ZONE_BOUNCE_LETTER_PHASE;
+                int dy = (int) Math.round(Math.sin(phase) * ZONE_BOUNCE_AMPLITUDE_PX);
+                context.text(this.font, s, cx, y + dy, color, shadow);
+                letterIdx++;
+            }
+            cx += this.font.width(s);
+        }
+    }
+
+    /** Gentle brightness shimmer for the selected zone's left accent tab: a slow sine on the base color,
+     *  +/-ZONE_TAB_SHIMMER_AMPLITUDE. Explicitly milder than the atlas band's Gaussian crest. Preserves alpha. */
+    private static int shimmerAccentColor(int argb) {
+        double s = Math.sin(System.currentTimeMillis() / 1000.0 * (2.0 * Math.PI / ZONE_TAB_SHIMMER_PERIOD_SEC));
+        float mult = (float) (1.0 + ZONE_TAB_SHIMMER_AMPLITUDE * s);
+        int a = (argb >>> 24) & 0xFF;
+        int r = Math.min(255, Math.round(((argb >> 16) & 0xFF) * mult));
+        int g = Math.min(255, Math.round(((argb >> 8) & 0xFF) * mult));
+        int b = Math.min(255, Math.round((argb & 0xFF) * mult));
+        return (a << 24) | (r << 16) | (g << 8) | b;
     }
 
     private void drawCenteredUiText(GuiGraphicsExtractor context, String text, int cx, int y, int color, boolean shadow) {
@@ -2417,8 +2467,9 @@ public class LatitudeCreateWorldScreen extends Screen {
             if (selected) {
                 // Warm gold background highlight
                 context.fill(x, y, x + w, y + h, 0x40D4A74A);
-                // Native band color left accent border (3px wide); neutral parchment-gray for Random
-                int bandColor = this.band == null ? 0xFF8C8078 : BAND_COLORS[this.band.ordinal()];
+                // Native band color left accent border (3px wide); neutral parchment-gray for Random.
+                // A picked band's tab shimmers gently in brightness (UI round 13); Random keeps its static tab.
+                int bandColor = this.band == null ? 0xFF8C8078 : shimmerAccentColor(BAND_COLORS[this.band.ordinal()]);
                 context.fill(x, y, x + 3, y + h, bandColor);
             }
 
@@ -2435,6 +2486,9 @@ public class LatitudeCreateWorldScreen extends Screen {
 
             if (this.band == null && selected) {
                 drawRainbowItalicUiText(context, "Random", textX, y + compactUi(2));
+            } else if (selected) {
+                // Selected concrete band: its name letters gently bounce so the pick reads as "alive".
+                drawBouncingUiText(context, this.band.displayName(), textX, y + compactUi(2), textColor, true);
             } else {
                 drawUiText(context, this.band == null ? "Random" : this.band.displayName(), textX, y + compactUi(2), textColor, selected);
             }

@@ -138,6 +138,20 @@ public final class LatitudeConfig {
         captureWriteCsv = d.captureWriteCsv;
     }
 
+    /** Detached snapshot of the live static fields, for snapshot/restore (HUD Studio Cancel). Returns a
+     *  fresh, sanitized {@link LatitudeConfigData} the caller can hold and later hand back to
+     *  {@link #restore(LatitudeConfigData)}. */
+    public static LatitudeConfigData snapshot() {
+        get();
+        return captureTo();
+    }
+
+    /** Writes a previously-taken {@link #snapshot()} back onto the live static fields. Does not persist to
+     *  disk -- the caller decides whether to follow with {@link #saveCurrent()}. */
+    public static void restore(LatitudeConfigData snap) {
+        applyFrom(snap);
+    }
+
     private static LatitudeConfigData captureTo() {
         LatitudeConfigData d = LatitudeConfigData.fresh();
         d.enableWarningParticles = enableWarningParticles;
