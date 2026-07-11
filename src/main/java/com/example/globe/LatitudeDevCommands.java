@@ -1,5 +1,12 @@
 package com.example.globe;
 
+import com.example.globe.adapter.geo.GeoAuthorityProvider;
+import com.example.globe.adapter.geo.GeoSummaryProvider;
+import com.example.globe.core.GeoSurveyNarrator;
+import com.example.globe.core.climate.ClimateAuthority;
+import com.example.globe.core.climate.ClimateSummary;
+import com.example.globe.core.geo.GeoAuthority;
+import com.example.globe.core.geo.GeoSummary;
 import com.example.globe.util.LatitudeBands;
 import com.example.globe.util.LatitudeMath;
 import com.example.globe.world.LatitudeBiomes;
@@ -97,7 +104,8 @@ public final class LatitudeDevCommands {
                                 .executes(ctx -> tpPole(ctx, 84.0))
                                 .then(Commands.argument("deg", com.mojang.brigadier.arguments.DoubleArgumentType.doubleArg(0.0, 90.0))
                                         .executes(ctx -> tpPole(ctx, com.mojang.brigadier.arguments.DoubleArgumentType.getDouble(ctx, "deg"))))))
-                .then(Commands.literal("probe").executes(LatitudeDevCommands::probe)));
+                .then(Commands.literal("probe").executes(LatitudeDevCommands::probe))
+                .then(Commands.literal("survey").executes(LatitudeDevCommands::survey)));
     }
 
     private static int latitudeRadius(ServerLevel world) {
@@ -111,7 +119,7 @@ public final class LatitudeDevCommands {
 
     private static int help(CommandContext<CommandSourceStack> ctx) {
         ctx.getSource().sendSuccess(() -> Component.literal(
-                "[latdev] here | probe | tpband <band> [center|low|high] | tpedge <west|east> [frac]"
+                "[latdev] here | probe | survey | tpband <band> [center|low|high] | tpedge <west|east> [frac]"
                         + " | tphemi <ns|ew|zero> [n|s|e|w] | tppole <n|s> [deg]"), false);
         return 1;
     }
@@ -322,6 +330,89 @@ public final class LatitudeDevCommands {
             return 1;
         } catch (Exception e) {
             src.sendFailure(Component.literal("[latdev] probe failed: " + e.getMessage()));
+            return 0;
+        }
+    }
+
+    /**
+     * Prints a short plain-language geography briefing for the player's current column, sampling the
+     * live GeoAuthority (reused from the terrain provider) plus a ClimateAuthority derived from it, and
+     * a small 4-point ring ~200 blocks out for range/coast context. All phrasing lives in the pure
+     * {@link GeoSurveyNarrator}; this method only fetches the numbers and prints the lines.
+     */
+    private static int survey(CommandContext<CommandSourceStack> ctx) {
+        CommandSourceStack src = ctx.getSource();
+        try {
+            ServerPlayer player = src.getPlayerOrException();
+            ServerLevel world = src.getLevel();
+
+            // The geography brain is only "on" when geoV2 armed the real GeoAuthority provider; otherwise
+            // the terrain the player sees is vanilla/Terralith, and explaining GeoAuthority intent would lie.
+            GeoSummaryProvider geoProvider = LatitudeBiomes.geoProviderForTerrain();
+            if (!(geoProvider instanceof GeoAuthorityProvider geoAuthProvider)) {
+                src.sendFailure(Component.literal(
+                        "[latdev] survey unavailable — the geography brain isn't active in this world "
+                                + "(start a fresh 2.0 world with geoV2 enabled to explain the terrain here)."));
+                return 0;
+            }
+            GeoAuthority geo = geoAuthProvider.authority();
+            ClimateAuthority climate = new ClimateAuthority(geo);
+
+            int x = Mth.floor(player.getX());
+            int z = Mth.floor(player.getZ());
+            int zRadius = latitudeRadius(world);
+
+            GeoSummary g = geo.sample(x, z);
+            ClimateSummary c = climate.sample(x, z, g);
+
+            // Small context ring: 4 probes ~200 blocks out (N/E/S/W).
+            final int ring = 200;
+            int[][] offsets = {{0, -ring}, {ring, 0}, {0, ring}, {-ring, 0}};
+            double ringMtnMax = 0.0;
+            int oceanCount = 0;
+            for (int[] o : offsets) {
+                GeoSummary rg = geo.sample(x + o[0], z + o[1]);
+                ringMtnMax = Math.max(ringMtnMax, rg.mountainIntent01());
+                if (rg.isOceanIntent()) {
+                    oceanCount++;
+                }
+            }
+            double ringOceanFraction = oceanCount / (double) offsets.length;
+
+            double absDeg = Mth.clamp(Math.abs((double) z) / Math.max(1, zRadius) * 90.0, 0.0, 90.0);
+            GeoSurveyNarrator.Input in = new GeoSurveyNarrator.Input(
+                    absDeg,
+                    z < 0, // North = -Z
+                    c.band() == null ? null : c.band().name(),
+                    c.climateClass(),
+                    g.land01(),
+                    g.isOceanIntent(),
+                    g.coastDistanceBlocks(),
+                    g.mountainIntent01(),
+                    g.ruggednessIntent01(),
+                    g.islandArc01(),
+                    g.shelf01(),
+                    g.archipelago01(),
+                    c.temperature01(),
+                    c.precipitation01(),
+                    c.continentality01(),
+                    c.prevailingWindX(),
+                    c.prevailingWindZ(),
+                    c.upwindOceanFetchBlocks(),
+                    c.windwardLift01(),
+                    c.rainShadow01(),
+                    c.altitudeCooling01(),
+                    c.currentModifierSigned(),
+                    zRadius,
+                    ringMtnMax,
+                    ringOceanFraction);
+
+            for (String line : GeoSurveyNarrator.narrate(in)) {
+                src.sendSuccess(() -> Component.literal(line), false);
+            }
+            return 1;
+        } catch (Exception e) {
+            src.sendFailure(Component.literal("[latdev] survey failed: " + e.getMessage()));
             return 0;
         }
     }
