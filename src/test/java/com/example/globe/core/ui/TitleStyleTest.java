@@ -67,12 +67,12 @@ class TitleStyleTest {
     }
 
     /** The crest travels: the letter with the peak boost moves strictly left->right as sweep progresses,
-     *  and the boost is always within [0, GLIMMER_AMPLITUDE]. The amplitude is a visible glimmer, not the
-     *  old faint 0.14 wash. */
+     *  and the boost is always within [0, GLIMMER_AMPLITUDE]. The amplitude is now a strong, bright flash
+     *  (~0.80-0.90 lerp toward white), not the old faint multiplicative wash. */
     @Test
     void crestTravelsLeftToRightAndStaysWithinAmplitude() {
-        assertTrue(TitleStyle.GLIMMER_AMPLITUDE >= 0.28f && TitleStyle.GLIMMER_AMPLITUDE <= 0.42f,
-                "amplitude is a visible glimmer (~0.30-0.40)");
+        assertTrue(TitleStyle.GLIMMER_AMPLITUDE >= 0.80f && TitleStyle.GLIMMER_AMPLITUDE <= 0.90f,
+                "amplitude is a strong/bright glimmer (~0.80-0.90 toward white)");
         int count = 10;
         int prevPeak = -1;
         for (float progress = 0f; progress <= 1.0001f; progress += 0.1f) {
@@ -111,38 +111,71 @@ class TitleStyleTest {
         assertTrue(endLast < 0.12f, "right edge exits gently, not at full crest");
     }
 
-    /** brighten() lifts channels by (1+boost), clamps at 255, and is a no-op for boost <= 0. */
+    /** brighten() lerps each channel toward 255 by {@code boost} (channel + (255-channel)*boost), reaches
+     *  pure white only at boost == 1.0, and is a no-op for boost <= 0. */
     @Test
-    void brightenScalesAndClamps() {
+    void brightenLerpsTowardWhite() {
         assertEquals(0x808080, TitleStyle.brighten(0x808080, 0f), "boost 0 is a no-op");
         assertEquals(0x808080, TitleStyle.brighten(0x808080, -0.5f), "negative boost is a no-op");
 
-        int lifted = TitleStyle.brighten(0x646464, 0.5f); // 100 -> 150 per channel
-        assertEquals(0x969696, lifted);
+        // 100 + (255-100)*0.5 = 177.5 -> 178 per channel (halfway from the channel's value to white).
+        int lifted = TitleStyle.brighten(0x646464, 0.5f);
+        assertEquals(0xB2B2B2, lifted);
 
-        int clamped = TitleStyle.brighten(0xF0F0F0, 1.0f); // 240*2 -> clamp 255
-        assertEquals(0xFFFFFF, clamped, "channels clamp at 255, no wraparound");
+        // boost == 1.0 lands every channel exactly on 255 -- pure white -- for ANY starting color.
+        int full = TitleStyle.brighten(0xF0F0F0, 1.0f);
+        assertEquals(0xFFFFFF, full, "boost 1.0 converges to white; by construction no channel overshoots 255");
 
         assertEquals(0, TitleStyle.brighten(0x123456, 0.3f) & 0xFF000000, "no alpha bits introduced");
     }
 
-    /** Color-awareness: the glimmer is a sheen ON each letter's own color, not a white overlay. A saturated
-     *  fill brightens IN its own hue (channel ordering preserved, every channel lifted); a near-white fill
-     *  (OFF_WHITE) lifts to a clean clamped white with no channel wraparound. */
+    /** Color-awareness at the STRONG new peak: even lerping 85% toward white, the glimmer stays a sheen ON
+     *  each letter's own color -- a saturated fill keeps its hue ordering (a sliver of hue survives the flash),
+     *  and a near-white fill lifts toward white without ever overflowing (lerp toward 255 can't wrap). */
     @Test
-    void glimmerBrightenIsColorAwareAndClampsOnBrightFills() {
-        // Saturated warm fill: stays warm (R>G>B preserved) and every channel gets brighter -- not washed white.
+    void glimmerBrightenIsColorAwareAndLiftsBrightFills() {
+        // Saturated warm fill at the full crest: brighter on every channel, and R>G>B still holds -- a strong
+        // near-white flash that has NOT converged to flat white (that only happens at boost == 1.0).
         int warm = 0x804020; // R=128 G=64 B=32
         int litWarm = TitleStyle.brighten(warm, TitleStyle.GLIMMER_AMPLITUDE);
         int r = (litWarm >> 16) & 0xFF, g = (litWarm >> 8) & 0xFF, b = litWarm & 0xFF;
         assertTrue(r > 128 && g > 64 && b > 32, "every channel lifts -- a brighter version of the same color");
-        assertTrue(r > g && g > b, "hue order preserved -- a sheen on the color, not a slide to white");
-        assertTrue(litWarm != 0xFFFFFF, "a saturated mid fill does not clip to pure white");
+        assertTrue(r > g && g > b, "hue order preserved -- a sliver of the original hue survives the flash");
+        assertTrue(litWarm != 0xFFFFFF, "even the strong crest does not blink to a hue-erasing pure white");
 
-        // Near-white fill (OFF_WHITE): the peak crest reads as a clean clamped white, no wraparound.
+        // Near-white fill (OFF_WHITE): lifts toward white and, by construction of the lerp, no channel can
+        // exceed 255 -- so there is no wraparound to guard against (each channel lands in [channel, 255]).
         int offWhite = com.example.globe.core.config.LatitudeConfigData.OFF_WHITE_RGB;
         int litOff = TitleStyle.brighten(offWhite, TitleStyle.GLIMMER_AMPLITUDE);
-        assertEquals(0xFFFFFF, litOff, "off-white crest clamps up to white");
+        int or = (litOff >> 16) & 0xFF, og = (litOff >> 8) & 0xFF, ob = litOff & 0xFF;
+        assertTrue(or >= ((offWhite >> 16) & 0xFF) && or <= 255, "R lifts toward white, never past 255");
+        assertTrue(og >= ((offWhite >> 8) & 0xFF) && og <= 255, "G lifts toward white, never past 255");
+        assertTrue(ob >= (offWhite & 0xFF) && ob <= 255, "B lifts toward white, never past 255");
+        assertTrue(or > 245 && og > 245 && ob > 245, "an already near-white fill ends up all-but-white");
         assertEquals(0, litOff & 0xFF000000, "no alpha bits introduced on a bright fill");
+    }
+
+    /** REGRESSION (the bug this fix targets): a saturated/primary fill must receive a REAL brightness change.
+     *  The OLD multiplicative brighten() -- {@code channel * (1 + boost)} clamped to 255 -- left pure primaries
+     *  visually unchanged: a maxed channel (255) clamped straight back to 255 and a zeroed channel (0) stayed 0,
+     *  so 0xFF0000 was a no-op at ANY boost and 0x000000 could never brighten. Every assertion below FAILS
+     *  against that old formula (red stays 0xFF0000, black stays 0x000000); the lerp-toward-white formula lifts
+     *  the zeroed channels off 0, so a saturated title now visibly glimmers. */
+    @Test
+    void saturatedAndPrimaryFillsActuallyBrighten() {
+        // Pure red: R stays maxed, G and B lift off zero toward white -> a bright pinkish-red flash.
+        int red = 0xFF0000;
+        int litRed = TitleStyle.brighten(red, 0.5f);
+        assertTrue(litRed != red, "pure red MUST brighten (old multiplicative formula left it 0xFF0000)");
+        int r = (litRed >> 16) & 0xFF, g = (litRed >> 8) & 0xFF, b = litRed & 0xFF;
+        assertEquals(255, r, "the already-maxed channel stays at 255");
+        assertTrue(g > 0 && b > 0, "the zeroed channels lift off 0 (old formula left them stuck at 0)");
+        assertTrue(r > g && r > b, "still red-dominant -- a sheen on the color, a sliver of hue survives");
+        assertEquals(0xFF8080, litRed, "255 stays 255; 0 + (255-0)*0.5 = 127.5 -> 128 on G and B");
+
+        // Pure black: 0 * (1+boost) is 0 for the old formula at any boost; the lerp moves it toward grey.
+        int litBlack = TitleStyle.brighten(0x000000, 0.5f);
+        assertTrue(litBlack != 0x000000, "pure black MUST brighten toward grey (old formula left it 0x000000)");
+        assertEquals(0x808080, litBlack, "black lerps to mid-grey at boost 0.5 (0 + 255*0.5 = 127.5 -> 128)");
     }
 }

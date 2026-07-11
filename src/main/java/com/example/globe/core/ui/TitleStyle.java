@@ -9,8 +9,11 @@ package com.example.globe.core.ui;
  * <p>The glimmer is a single, rapid, color-aware sheen that sweeps once left&rarr;right across the title
  * right after it appears (it generalizes the old round-15 fade-in "shimmer" that only rode the RAINBOW/AURORA
  * presets): one crest, tied to the title's age in ticks, that BRIGHTENS whatever color each letter already is
- * ({@link #brighten} scales the letter's own RGB, so a gold letter flashes brighter gold and a rainbow letter
- * a brighter band -- a sheen ON the color, never a white overlay). It fires exactly once and never loops.
+ * ({@link #brighten} lerps the letter's own RGB toward white by the crest's boost, so a gold letter flashes a
+ * brilliant near-white gold and a rainbow letter a brighter band -- a strong sheen ON the color that still
+ * leaves a recognizable sliver of the original hue at the peak, never a full white-out). It fires exactly once
+ * and never loops. Unlike a plain multiply, the lerp lifts EVERY starting color -- including pure primaries and
+ * black, whose maxed/zeroed channels a multiply would leave visually unchanged.
  *
  * <p>All offsets are expressed in SCREEN pixels (the caller divides by the title's draw scale before
  * translating the already-scaled pose matrix, so a "1px" outline stays a crisp 1px at any Title Size rather
@@ -49,9 +52,12 @@ public final class TitleStyle {
      *  the glimmer is done (never loops) and the title renders in its plain colors. */
     public static final int GLIMMER_SPAN_TICKS = 14;
 
-    /** Peak fractional brightness boost of the glimmer crest. A visible glimmer (per the brief, ~0.30-0.40)
-     *  rather than the old faint 0.14 -- still tasteful, and framed by the outline it reads on any fill. */
-    public static final float GLIMMER_AMPLITUDE = 0.34f;
+    /** Peak lerp-toward-white fraction of the glimmer crest, fed to {@link #brighten}. Raised to a strong,
+     *  obvious flash (0.85) per Peetsa's "10x stronger / bright" ask -- at the crest each channel travels 85%
+     *  of the way to 255, a brilliant near-white glint that still leaves a ~15% sliver of the letter's original
+     *  hue (so it never blinks to a hue-erasing pure white). Below 1.0 the fill's identity is always still
+     *  present; only boost==1.0 would converge every color to flat white, which is exactly what we avoid. */
+    public static final float GLIMMER_AMPLITUDE = 0.85f;
 
     /** Gaussian half-width of the crest, in units of the string's normalized [0,1] letter position. A crisp
      *  crest (~0.20) covers roughly a fifth of the word at a time -- a travelling glint, not a broad wash. */
@@ -99,19 +105,25 @@ public final class TitleStyle {
         return GLIMMER_AMPLITUDE * g;
     }
 
-    /** Multiplies an {@code 0xRRGGBB} color's brightness by {@code (1 + boost)}, clamping each channel to 255.
-     *  This is what makes the glimmer COLOR-AWARE: it scales the letter's existing channels, so a saturated
-     *  fill (gold/red/rainbow) glints brighter in its own hue, and a near-white fill (OFF_WHITE) lifts toward
-     *  white -- a clean sheen the outline frames -- with no channel wraparound. Alpha is not part of the input
-     *  and is left to the caller to OR back in. {@code boost <= 0} is a no-op. */
+    /** Lifts an {@code 0xRRGGBB} color toward white by {@code boost}: each channel becomes
+     *  {@code channel + (255 - channel) * boost} (a linear interpolation from the channel's own value toward
+     *  255). This is what makes the glimmer COLOR-AWARE yet always visible: every channel moves a proportional
+     *  step toward white, so a saturated fill (gold/red/rainbow) flashes a brilliant lighter version of its own
+     *  hue while its channel ordering -- and thus a recognizable sliver of the hue -- survives for any
+     *  {@code boost < 1}. Crucially this fixes the old multiply's blind spot: a maxed channel (255) or a zeroed
+     *  channel (a pure primary or black) that {@code channel * (1 + boost)} left visually unchanged now lifts
+     *  like every other channel. By construction the result stays in {@code [channel, 255]} -- it cannot
+     *  overflow or wrap -- so no clamping is needed for {@code boost} in {@code [0,1]}. Alpha is not part of the
+     *  input and is left to the caller to OR back in. {@code boost <= 0} is a no-op. */
     public static int brighten(int rgb, float boost) {
         if (boost <= 0f) {
             return rgb & 0xFFFFFF;
         }
-        float m = 1f + boost;
-        int r = Math.min(255, Math.round(((rgb >> 16) & 0xFF) * m));
-        int g = Math.min(255, Math.round(((rgb >> 8) & 0xFF) * m));
-        int b = Math.min(255, Math.round((rgb & 0xFF) * m));
+        float t = boost > 1f ? 1f : boost; // clamp so a channel can never overshoot 255
+        int r0 = (rgb >> 16) & 0xFF, g0 = (rgb >> 8) & 0xFF, b0 = rgb & 0xFF;
+        int r = Math.round(r0 + (255 - r0) * t);
+        int g = Math.round(g0 + (255 - g0) * t);
+        int b = Math.round(b0 + (255 - b0) * t);
         return (r << 16) | (g << 8) | b;
     }
 }
