@@ -2,6 +2,7 @@ package com.example.globe.client;
 
 import com.example.globe.core.config.LatitudeConfigData;
 import com.example.globe.core.ui.GroupRowLayout;
+import com.example.globe.core.ui.HudStudioLayout;
 import com.example.globe.core.ui.UiEase;
 import com.mojang.blaze3d.platform.InputConstants;
 import java.util.ArrayList;
@@ -53,7 +54,11 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
 
     private boolean sidebarVisible = true;
     // Widened from 180 -- at 180 the 4-tab strip (~43px/tab) was too narrow for "Placement" to fit without
-    // touching its button's borders.
+    // touching its button's borders. Now re-derived every init() from the screen width via
+    // HudStudioLayout.sidebarWidth (GUI-scale parity audit H2): stays 208 above the narrow threshold
+    // (layout pixel-identical) and shrinks only at very narrow effective resolutions (e.g. the 320x240 floor)
+    // so the live-preview canvas and the Done|Cancel row still fit. The 208 initializer is just a seed for the
+    // first frame before init() runs.
     private int sidebarWidth = 208;
 
     private int activeTab = TAB_COMPASS;
@@ -208,6 +213,12 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
         this.sidebarDispY = null;
         this.sidebarSlotH = null;
         this.sidebarClipRow = null;
+
+        // GUI-scale parity audit H2: adapt the sidebar to the screen width. Stays 208 above the narrow
+        // threshold (everything below keys off this, so wider screens are pixel-identical to before) and
+        // shrinks toward MIN_SIDEBAR_W at very narrow effective resolutions so the preview canvas + the
+        // re-anchored Done|Cancel row still fit. Set BEFORE panelW/widgetW/tab geometry, all of which read it.
+        this.sidebarWidth = HudStudioLayout.sidebarWidth(this.width);
 
         int hintLaneH = 20;         // 8px padding + ~9px font + 3px bottom margin
         int panelX = 8;
@@ -988,21 +999,23 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
                 .build());
         tooltip(this.wResetHud, "Restore compass and zone HUD settings to defaults.");
 
-        int bw = 200;
+        // Done|Cancel geometry (GUI-scale parity audit H2). Above the narrow threshold this is the established
+        // screen-centered 200px group (pixel-identical); below it the group is re-anchored to the right of the
+        // sidebar card and shrunk to fit, so it never underlaps the card. The buttons keep these init-time
+        // bounds when L hides the sidebar, so anchoring clear of the card is correct in both states.
         int bh = 20;
-        int btnGap = 4;
-        int halfW = (bw - btnGap) / 2;
-        int groupX = (this.width - bw) / 2;
+        HudStudioLayout.ActionButtons ab = HudStudioLayout.actionButtons(this.width, this.sidebarWidth);
+        int groupX = ab.groupX();
         int doneY = this.height - 28;
         this.addRenderableWidget(Button.builder(Component.literal("Done"), btn -> {
                     CompassHudConfig.saveCurrent();
                     LatitudeConfig.saveCurrent();
                     Minecraft.getInstance().setScreenAndShow(parent);
                 })
-                .bounds(groupX, doneY, halfW, bh)
+                .bounds(groupX, doneY, ab.doneW(), bh)
                 .build());
         Button cancelBtn = this.addRenderableWidget(Button.builder(Component.literal("Cancel"), btn -> cancelAndClose())
-                .bounds(groupX + halfW + btnGap, doneY, bw - halfW - btnGap, bh)
+                .bounds(groupX + ab.doneW() + ab.gap(), doneY, ab.cancelW(), bh)
                 .build());
         tooltip(cancelBtn, "Discard every change made since opening HUD Studio and go back.");
 
@@ -1770,6 +1783,12 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
         int tabCount = TAB_NAMES.length;
         int totalW = sidebarWidth + 4;
         int tabW = (totalW - TAB_GAP * (tabCount - 1)) / tabCount;
+        // GUI-scale parity audit P2: couple the label scale to the (possibly shrunk) tab width. Returns the
+        // established TAB_LABEL_SCALE unchanged whenever the sidebar is at full width, so the wide layout is
+        // untouched; only shrinks the labels once the sidebar itself has narrowed so they still fit their tabs.
+        int maxLabelW = 0;
+        for (String name : TAB_NAMES) maxLabelW = Math.max(maxLabelW, this.font.width(name));
+        float labelScale = HudStudioLayout.tabLabelScale(sidebarWidth, TAB_GAP, tabCount, maxLabelW, TAB_LABEL_SCALE);
         int x = 6;
         for (int i = 0; i < tabCount; i++) {
             boolean active = i == activeTab;
@@ -1794,7 +1813,7 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
             m.pushMatrix();
             try {
                 m.translate(cx, cy);
-                m.scale(TAB_LABEL_SCALE, TAB_LABEL_SCALE);
+                m.scale(labelScale, labelScale);
                 ctx.text(this.font, label, -labelW / 2, -this.font.lineHeight / 2, labelColor);
             } finally {
                 m.popMatrix();
