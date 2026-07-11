@@ -247,15 +247,24 @@ public class GlobeModClient implements ClientModInitializer {
             double absLatDeg = com.example.globe.util.LatitudeMath.absLatDegExact(
                     client.level.getWorldBorder(), client.player.getZ());
             int snowCount = com.example.globe.core.PolarHazardWindow.snowCount(absLatDeg);
+            // Perf-scaling (Peetsa): honor the LIVE vanilla Particles video setting so the pole storm
+            // decreases in lock-step when a player turns particles down for performance. Read ONCE per
+            // spawn-tick (cheap; re-read every tick so a mid-session settings change takes effect
+            // immediately -- never cached long-term). Pure multiplicative scale of the FIXED per-tick
+            // budget; introduces no state/accumulator, so the B-3b anti-backlog law is untouched.
+            com.example.globe.core.ParticleDensity.Tier snowTier = polarSnowDensityTier(client);
             // B-4 item 5 evidence (permanently gated): confirm the ambient budget scales with latitude.
             // -Dlatitude.debugPolarSnow=true logs count vs |lat| every ~2 s. Verified: 87 deg -> 33,
             // 89 deg -> 64, 90 deg -> 80 with the old max; the counts were always correct -- the miss was
             // VISIBILITY (tiny flakes lost in the white fog), now carried by real vanilla snowfall (item 4).
+            // Logs both the raw latitude budget and the tier-scaled budget (the REAL per-tick spawn count).
             if (Boolean.getBoolean("latitude.debugPolarSnow") && (client.level.getGameTime() % 40L) == 0L) {
-                GlobeMod.LOGGER.info("[LAT][POLAR_SNOW] absLatDeg={} count={}", absLatDeg, snowCount);
+                int scaledSnow = com.example.globe.core.ParticleDensity.scale(snowTier, snowCount);
+                GlobeMod.LOGGER.info("[LAT][POLAR_SNOW] absLatDeg={} count={} tier={} scaled={}",
+                        absLatDeg, snowCount, snowTier, scaledSnow);
             }
             if (snowCount > 0) {
-                spawnAmbientPolarSnow(client, snowCount, absLatDeg);
+                spawnAmbientPolarSnow(client, snowCount, absLatDeg, snowTier);
             }
         }
 
@@ -286,7 +295,29 @@ public class GlobeModClient implements ClientModInitializer {
     private static final double SNOW_FALL_BASE = 0.04;     // gentle-flurry base fall speed
     private static final double SNOW_FALL_GALE = 0.11;     // added fall speed at the pole (fast, driven flakes)
 
-    private static void spawnAmbientPolarSnow(Minecraft client, int count, double absLatDeg) {
+    // Perf-scaling glue (untested -- a trivial 1:1 mapping, not math; the scaling math is in the pure,
+    // tested core.ParticleDensity). Reads the LIVE vanilla Particles video setting and maps it onto our
+    // MC-neutral Tier. Vanilla's ParticleStatus has exactly THREE tiers (ALL/DECREASED/MINIMAL) -- there
+    // is no "off" -- so MINIMAL is our lowest floor (a thin, still-snowy blizzard). Read fresh each call
+    // so a mid-session settings change is honored immediately; never cached across ticks.
+    private static com.example.globe.core.ParticleDensity.Tier polarSnowDensityTier(Minecraft client) {
+        net.minecraft.server.level.ParticleStatus status = client.options.particles().get();
+        return switch (status) {
+            case ALL -> com.example.globe.core.ParticleDensity.Tier.FULL;
+            case DECREASED -> com.example.globe.core.ParticleDensity.Tier.DECREASED;
+            case MINIMAL -> com.example.globe.core.ParticleDensity.Tier.MINIMAL;
+        };
+    }
+
+    private static void spawnAmbientPolarSnow(Minecraft client, int count, double absLatDeg,
+                                              com.example.globe.core.ParticleDensity.Tier tier) {
+        // Perf-scaling: reduce the FIXED per-tick budget by the vanilla Particles setting BEFORE any
+        // flake spawns. Applied ONCE here; the dense second pass (extra = blizz * count) derives from
+        // this now-scaled count, so it scales proportionally without a second, independent reduction.
+        // Pure function of (tier, count) -- no state, no accumulator; the anti-backlog law holds. If the
+        // scale collapses count to 0, both loops simply run 0 iterations (no special-casing needed).
+        count = com.example.globe.core.ParticleDensity.scale(tier, count);
+
         RandomSource random = client.player.getRandom();
         double px = client.player.getX();
         double py = client.player.getY();
