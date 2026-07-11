@@ -357,40 +357,6 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
                 tooltip(this.wCompassAnalogInnerAlpha, "The compass's inner face opacity. Left (lower) = more see-through, right (higher) = more solid.");
                 trackSidebarWidget(this.wCompassAnalogInnerAlpha, y);
                 y += rowH + rowGap;
-                CompassHudConfig.AnalogCompassTheme[] themeValues = CompassHudConfig.AnalogCompassTheme.values();
-                List<SwatchDropdown.Entry> themeEntries = new ArrayList<>();
-                for (CompassHudConfig.AnalogCompassTheme v : themeValues) {
-                    themeEntries.add(SwatchDropdown.Entry.split(themeLabel(v), themeFacePreview(v, cfg), themeRingPreview(v, cfg)));
-                }
-                this.wCompassAnalogTheme = this.addRenderableWidget(new SwatchDropdown(panelX, y, widgetW, rowH, this.font, "Color Scheme",
-                        themeEntries, cfg.analogTheme.ordinal(), idx -> {
-                            cfg.analogTheme = themeValues[idx];
-                            CompassHudConfig.saveCurrent();
-                            // Custom needs its own RGB sliders constructed/torn down, so (like a style change)
-                            // this requires a full re-init rather than just a visibility toggle.
-                            this.init();
-                        }, this));
-                tooltip(this.wCompassAnalogTheme, "Pick a preset color scheme for the analog compass, or choose Custom to dial in exact colors below. Each swatch previews that scheme's face and ring colors.");
-                trackSidebarWidget(this.wCompassAnalogTheme, y);
-                y += rowH + rowGap;
-
-                if (rainbowTheme) {
-                    this.wCompassRainbowSpeed = this.addRenderableWidget(new FloatSlider(panelX, y, widgetW, rowH, Component.literal("Color Cycle Speed"), 10.0f, 40.0f, cfg.rainbowCycleSeconds, v -> cfg.rainbowCycleSeconds = v));
-                    tooltip(this.wCompassRainbowSpeed, "How fast Aurora's colors shift, in seconds per full color loop. Left = a bit faster, right = slower and calmer. The whole range is kept gentle on purpose -- a fast-cycling dial can read as strobing -- and narrow enough that every point on the slider makes a noticeable difference.");
-                    trackSidebarWidget(this.wCompassRainbowSpeed, y);
-                    y += rowH + rowGap;
-                }
-
-                if (customTheme) {
-                    y = placeRgbPicker(panelX, y, widgetW, rowH, rowGap, "Face", cfg.customFaceRgb,
-                            v -> cfg.customFaceRgb = v, g -> this.rgbCustomFace = g, s -> this.swatchCustomFace = s);
-                    y = placeRgbPicker(panelX, y, widgetW, rowH, rowGap, "Ring", cfg.customRingArgb & 0xFFFFFF,
-                            v -> cfg.customRingArgb = 0xFF000000 | v, g -> this.rgbCustomRing = g, s -> this.swatchCustomRing = s);
-                    y = placeRgbPicker(panelX, y, widgetW, rowH, rowGap, "Muted", cfg.customMutedArgb & 0xFFFFFF,
-                            v -> cfg.customMutedArgb = 0xFF000000 | v, g -> this.rgbCustomMuted = g, s -> this.swatchCustomMuted = s);
-                    y = placeRgbPicker(panelX, y, widgetW, rowH, rowGap, "Needle", cfg.customNeedleArgb & 0xFFFFFF,
-                            v -> cfg.customNeedleArgb = 0xFF000000 | v, g -> this.rgbCustomNeedle = g, s -> this.swatchCustomNeedle = s);
-                }
             } else {
                 this.wCompassScale = this.addRenderableWidget(new FloatSlider(panelX, y, widgetW, rowH, Component.literal("Scale"), 0.5f, 3.0f, cfg.scale, v -> cfg.scale = v));
                 tooltip(this.wCompassScale, "Changes the size of the digital compass text.");
@@ -420,6 +386,50 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
                 tooltip(this.wCompassBgColor, "Selects the background color for the digital compass.");
                 trackSidebarWidget(this.wCompassBgColor, y);
                 y += rowH + rowGap;
+            }
+
+            // Color Scheme -- and its Aurora Color Cycle Speed / Custom color rows -- are SHARED by both styles
+            // (item 5): the digital card borrows the same scheme colors the dials use (CompassHud.analogColors()
+            // drives its frame, ring-colored underline, and needle-tinted heading, Aurora's per-frame flow
+            // included), so a Digital user gets the same palette control. Only the dial-geometry rows above
+            // (Compass Look, Analog Size, Inner Transparency) stay analog-only. onSelect re-inits because Custom
+            // constructs/tears down its own RGB pickers -- same reason the analog picker always did.
+            CompassHudConfig.AnalogCompassTheme[] themeValues = CompassHudConfig.AnalogCompassTheme.values();
+            List<SwatchDropdown.Entry> themeEntries = new ArrayList<>();
+            for (CompassHudConfig.AnalogCompassTheme v : themeValues) {
+                themeEntries.add(SwatchDropdown.Entry.split(themeLabel(v), themeFacePreview(v, cfg), themeRingPreview(v, cfg)));
+            }
+            this.wCompassAnalogTheme = this.addRenderableWidget(new SwatchDropdown(panelX, y, widgetW, rowH, this.font, "Color Scheme",
+                    themeEntries, cfg.analogTheme.ordinal(), idx -> {
+                        cfg.analogTheme = themeValues[idx];
+                        CompassHudConfig.saveCurrent();
+                        this.init();
+                    }, this));
+            tooltip(this.wCompassAnalogTheme, "Pick a preset color scheme for your compass -- dial or digital card -- or choose Custom to set exact colors below. Each swatch previews that scheme's face and ring colors.");
+            trackSidebarWidget(this.wCompassAnalogTheme, y);
+            y += rowH + rowGap;
+
+            if (rainbowTheme) {
+                // Direction inverted (TEST 57): LEFT = slow/calm, RIGHT = quick -- matching the intuition that
+                // "further right = faster" and the rightward speed ripple + lightning glyph drawn on the track
+                // by drawSpeedSliderFlair(). Persistence is unchanged: SpeedSlider still stores seconds-per-loop
+                // (10 = fastest, 40 = slowest), so an existing saved value lands at the same speed, just a
+                // mirrored knob position; only the label reads as a friendly 0-100%.
+                this.wCompassRainbowSpeed = this.addRenderableWidget(new SpeedSlider(panelX, y, widgetW, rowH, Component.literal("Color Cycle Speed"), 10.0f, 40.0f, cfg.rainbowCycleSeconds, v -> cfg.rainbowCycleSeconds = v));
+                tooltip(this.wCompassRainbowSpeed, "How fast the Aurora colors drift. Slide left for slow and calm, right for quick (the little lightning bolt marks the fast end). The whole range is kept gentle on purpose -- even the fastest setting stays well short of a harsh strobe, so it's easy on the eyes.");
+                trackSidebarWidget(this.wCompassRainbowSpeed, y);
+                y += rowH + rowGap;
+            }
+
+            if (customTheme) {
+                y = placeRgbPicker(panelX, y, widgetW, rowH, rowGap, "Face", cfg.customFaceRgb,
+                        v -> cfg.customFaceRgb = v, g -> this.rgbCustomFace = g, s -> this.swatchCustomFace = s);
+                y = placeRgbPicker(panelX, y, widgetW, rowH, rowGap, "Ring", cfg.customRingArgb & 0xFFFFFF,
+                        v -> cfg.customRingArgb = 0xFF000000 | v, g -> this.rgbCustomRing = g, s -> this.swatchCustomRing = s);
+                y = placeRgbPicker(panelX, y, widgetW, rowH, rowGap, "Muted", cfg.customMutedArgb & 0xFFFFFF,
+                        v -> cfg.customMutedArgb = 0xFF000000 | v, g -> this.rgbCustomMuted = g, s -> this.swatchCustomMuted = s);
+                y = placeRgbPicker(panelX, y, widgetW, rowH, rowGap, "Needle", cfg.customNeedleArgb & 0xFFFFFF,
+                        v -> cfg.customNeedleArgb = 0xFF000000 | v, g -> this.rgbCustomNeedle = g, s -> this.swatchCustomNeedle = s);
             }
 
             String[] textNames = {"WHITE", "BLACK", "YELLOW", "RED", "CYAN"};
@@ -937,6 +947,18 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
             tooltip(wReduceMotion, "For motion-sensitive players: turns off the gentle slide when controls appear or disappear in this editor, so rows switch instantly instead. Also flags the rest of the mod's little animations (like the moving zone-title and map shimmers) to hold still where supported.");
             trackSidebarWidget(wReduceMotion, y);
             y += rowH + rowGap;
+
+            LatitudeConfigData.AccessibilityMode[] a11yValues = LatitudeConfigData.AccessibilityMode.values();
+            List<SwatchDropdown.Entry> a11yEntries = new ArrayList<>();
+            for (LatitudeConfigData.AccessibilityMode v : a11yValues) a11yEntries.add(SwatchDropdown.Entry.text(accessibilityLabel(v)));
+            var wAccessibility = this.addRenderableWidget(new SwatchDropdown(panelX, y, widgetW, rowH, this.font, "Accessibility",
+                    a11yEntries, LatitudeConfig.accessibilityMode.ordinal(), idx -> {
+                        LatitudeConfig.accessibilityMode = a11yValues[idx];
+                        LatitudeConfig.saveCurrent();
+                    }, this));
+            tooltip(wAccessibility, "Extra help reading the HUD. High Contrast makes text and outlines bold and solid, with no see-through panels. Colorblind-Friendly avoids red/green-only cues and leans on blue, gold, and white plus shapes. Standard is the normal look. (This pass brightens this editor; the full in-game HUD treatment arrives in a later update.)");
+            trackSidebarWidget(wAccessibility, y);
+            y += rowH + rowGap;
         }
 
         this.sidebarContentHeight = Math.max(0, y - rowGap - panelY);
@@ -1013,10 +1035,22 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
         this.extractTransparentBackground(ctx);
         ctx.fill(0, 0, this.width, this.height, 0x66000000);
 
+        // While a picker's list is open it is MODAL: nothing beneath it should read as hovered, or that
+        // underlying widget still flags its tooltip for the next frame and it draws ON TOP of the open list
+        // (TEST 57: with "Compass Look" open, the Analog Size slider sitting under the list still registered
+        // "Sets how big the analog compass is." over it). Feeding the widget pass an off-screen cursor makes
+        // every underlying widget compute hovered=false, so none flags a tooltip -- the open list's own rows
+        // are then the only thing the cursor can touch. The open list itself is still drawn/handled with the
+        // REAL mouse position below. (Not a regression risk: a modal shouldn't show hover feedback beneath it,
+        // and clicks under an open list are already intercepted by mouseClicked's modal branch.)
+        boolean pickerOpen = sidebarVisible && openDropdown != null && openDropdown.isOpen();
+        int hoverX = pickerOpen ? Integer.MIN_VALUE : mouseX;
+        int hoverY = pickerOpen ? Integer.MIN_VALUE : mouseY;
+
         int sidebarX = 6;
 
         if (sidebarVisible) {
-            drawTabStrip(ctx, mouseX, mouseY);
+            drawTabStrip(ctx, hoverX, hoverY);
 
             int px = sidebarX;
             int py = this.sidebarBgY;
@@ -1025,11 +1059,24 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
             int ph = Math.max(24, cardBottom - py);
 
             // Themed card: border shell + fill + thin gold accent lines, matching the look already
-            // established on the Settings and World Creation screens.
+            // established on the Settings and World Creation screens. High Contrast brightens the accent
+            // lines, heading, and edge so the panel reads unmistakably (the cheap Studio-side response to the
+            // Accessibility setting; the full in-HUD treatment is the CompassHud follow-up).
+            boolean hc = highContrast();
+            int accentLine = hc ? GOLD : (GOLD & 0x66FFFFFF);
+            int headingColor = hc ? 0xFFFFF3DC : GOLD;
+            int dividerColor = hc ? GOLD : PANEL_BORDER;
             ctx.fill(px, py, px + pw, py + ph, PANEL_BORDER);
             ctx.fill(px + 1, py + 1, px + pw - 1, py + ph - 1, PANEL_BG);
-            ctx.fill(px + 2, py + 2, px + pw - 2, py + 3, GOLD & 0x66FFFFFF);
-            ctx.fill(px + 2, py + ph - 3, px + pw - 2, py + ph - 2, GOLD & 0x66FFFFFF);
+            ctx.fill(px + 2, py + 2, px + pw - 2, py + 3, accentLine);
+            ctx.fill(px + 2, py + ph - 3, px + pw - 2, py + ph - 2, accentLine);
+            if (hc) {
+                // Bright 1px inner outline around the whole card so its edge is unambiguous.
+                ctx.fill(px + 1, py + 1, px + pw - 1, py + 2, GOLD);
+                ctx.fill(px + 1, py + ph - 2, px + pw - 1, py + ph - 1, GOLD);
+                ctx.fill(px + 1, py + 1, px + 2, py + ph - 1, GOLD);
+                ctx.fill(px + pw - 2, py + 1, px + pw - 1, py + ph - 1, GOLD);
+            }
 
             String heading = TAB_NAMES[activeTab];
             int headingW = this.font.width(heading);
@@ -1038,9 +1085,9 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
             int lineGap = 6;
             int lineLen = Math.max(10, (pw - headingW - lineGap * 2) / 2 - 4);
             int lineY = headingY + this.font.lineHeight / 2;
-            ctx.fill(px + 4, lineY, px + 4 + lineLen, lineY + 1, PANEL_BORDER);
-            ctx.fill(px + pw - 4 - lineLen, lineY, px + pw - 4, lineY + 1, PANEL_BORDER);
-            ctx.text(this.font, heading, headingX, headingY, GOLD);
+            ctx.fill(px + 4, lineY, px + 4 + lineLen, lineY + 1, dividerColor);
+            ctx.fill(px + pw - 4 - lineLen, lineY, px + pw - 4, lineY + 1, dividerColor);
+            ctx.text(this.font, heading, headingX, headingY, headingColor);
         }
 
         var mc = Minecraft.getInstance();
@@ -1066,11 +1113,11 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
         applySidebarScroll(delta);
         drawSidebarSwatches(ctx);
         drawSidebarScrollbar(ctx);
-        super.extractRenderState(ctx, mouseX, mouseY, delta);
+        super.extractRenderState(ctx, hoverX, hoverY, delta);
 
         // Rows caught mid roll-out/roll-in are skipped by super (visible=false) and drawn here instead, each
         // sliding out from under the row above and scissor-clipped to its open slot for a continuous reveal.
-        drawAnimatingRows(ctx, mouseX, mouseY, delta);
+        drawAnimatingRows(ctx, hoverX, hoverY, delta);
 
         // Drawn AFTER the widgets so the big glyphs sit on top of the (empty-labelled) undo/redo buttons.
         if (sidebarVisible && activeTab == TAB_PRESETS) {
@@ -1081,8 +1128,13 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
         // Grid glyph over the always-visible canvas snap toggle; bright when snapping, dim when free-move.
         drawSnapGlyph(ctx);
 
+        // Rightward speed ripple + lightning glyph on the Color Cycle Speed slider (only present on the analog
+        // Aurora scheme; the method self-guards when the widget is absent). Drawn on top of the vanilla slider,
+        // same as the snap/undo glyphs above.
+        drawSpeedSliderFlair(ctx);
+
         if (sidebarVisible) {
-            ctx.text(this.font, "Press L to hide settings", 8, 8, 0xAAFFFFFF);
+            ctx.text(this.font, "Press L to hide settings", 8, 8, highContrast() ? 0xFFFFFFFF : 0xAAFFFFFF);
         } else {
             ctx.text(this.font, "Press L to show settings", 8, 8, 0xFFFFFFFF);
         }
@@ -1103,34 +1155,106 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
                 + ". Click to toggle whether dragged HUD elements jump to a grid or move freely.");
     }
 
-    /** Grid glyph drawn on the empty-labelled canvas snap toggle: a 3x3 grid of cells. Bright gold when Snap to
-     *  Grid is on, dim muted when free-move, so the state reads at a glance (plus the tooltip). */
+    /** Grid glyph drawn on the empty-labelled canvas snap toggle: a crisp, evenly-spaced 3x3 grid. Bright gold
+     *  when Snap to Grid is on (plus 4 bright dots marking the interior snap nodes), dim muted lines when
+     *  free-move, so the state reads at a glance (plus the tooltip). Redrawn "more griddy" (TEST 57): the span
+     *  is chosen divisible by 3 and every one of the 4 gridlines each way lands on an exact third, so all nine
+     *  cells are the same size and the far edges sit ON a line -- the old version put the right/bottom frame a
+     *  pixel short of the last interior line, making the end cells read a pixel narrow ("the grid is... off"). */
     private void drawSnapGlyph(GuiGraphicsExtractor ctx) {
         if (wSnapToggle == null || !wSnapToggle.visible) return;
         boolean on = LatitudeConfig.hudSnapEnabled;
-        int color = on ? GOLD : 0xFF6E655C;
+        int line = on ? GOLD : 0xFF6E655C;
         int x = wSnapToggle.getX();
         int y = wSnapToggle.getY();
         int w = wSnapToggle.getWidth();
         int h = wSnapToggle.getHeight();
-        int gx = x + 4;
-        int gy = y + 4;
-        int gw = w - 8;
-        int gh = h - 8;
-        // Outer frame.
-        ctx.fill(gx, gy, gx + gw, gy + 1, color);
-        ctx.fill(gx, gy + gh - 1, gx + gw, gy + gh, color);
-        ctx.fill(gx, gy, gx + 1, gy + gh, color);
-        ctx.fill(gx + gw - 1, gy, gx + gw, gy + gh, color);
-        // Two interior lines each way => a 3x3 grid.
-        int v1 = gx + gw / 3;
-        int v2 = gx + 2 * gw / 3;
-        int h1 = gy + gh / 3;
-        int h2 = gy + 2 * gh / 3;
-        ctx.fill(v1, gy, v1 + 1, gy + gh, color);
-        ctx.fill(v2, gy, v2 + 1, gy + gh, color);
-        ctx.fill(gx, h1, gx + gw, h1 + 1, color);
-        ctx.fill(gx, h2, gx + gw, h2 + 1, color);
+        int cells = 3;
+        int span = 12;                    // 12 / 3 = 4px cells, exactly even
+        int gx = x + (w - span) / 2;      // centered in the button
+        int gy = y + (h - span) / 2;
+        // Four evenly-spaced gridlines each way (offsets 0, 4, 8, 12 -- integer, no rounding drift).
+        for (int i = 0; i <= cells; i++) {
+            int off = i * span / cells;
+            ctx.fill(gx + off, gy, gx + off + 1, gy + span + 1, line);   // vertical
+            ctx.fill(gx, gy + off, gx + span + 1, gy + off + 1, line);   // horizontal
+        }
+        // Snapping ON: mark the 4 interior nodes (the real snap points) with small bright dots, so the icon
+        // reads as "snapping TO a grid," not just "a grid." Plain lines when free-move.
+        if (on) {
+            int dot = 0xFFF6E4B8; // brighter than the gold lines
+            for (int iy = 1; iy < cells; iy++) {
+                for (int ix = 1; ix < cells; ix++) {
+                    int cx = gx + ix * span / cells;
+                    int cy = gy + iy * span / cells;
+                    ctx.fill(cx - 1, cy - 1, cx + 1, cy + 1, dot); // 2x2 dot centered on the node
+                }
+            }
+        }
+    }
+
+    /** Subtle rightward-flowing "speed" flair painted over the Color Cycle Speed slider so its direction reads
+     *  as "further right = faster": a faint gold brightness crest drifting left->right along the track edges on
+     *  a slow wall-clock loop, plus a tiny hand-drawn lightning bolt at the RIGHT (fast) end. Reduce Motion
+     *  freezes the crest to a static mid-track sheen (no drift). Drawn after super, on top of the vanilla
+     *  slider (same layer/precedent as drawSnapGlyph / the undo-redo glyphs); self-guards when the slider is
+     *  absent (only present on the analog Aurora scheme) or scrolled/animated out of view. */
+    private void drawSpeedSliderFlair(GuiGraphicsExtractor ctx) {
+        AbstractWidget w = wCompassRainbowSpeed;
+        if (w == null || !w.visible) return;
+        int x = w.getX();
+        int y = w.getY();
+        int wdt = w.getWidth();
+        int h = w.getHeight();
+        int inset = 3;
+        int trackL = x + inset;
+        int trackR = x + wdt - inset;
+        int trackW = Math.max(1, trackR - trackL);
+
+        // Crest center: static mid-track under Reduce Motion, else drifting left->right on a slow loop.
+        float phase = LatitudeConfig.reduceMotion
+                ? 0.5f
+                : (System.currentTimeMillis() % 2600L) / 2600.0f;
+        int center = trackL + Math.round(phase * trackW);
+        int bandW = 10;
+        // A soft gold crest confined to the top and bottom 2px edges of the track (kept off the centered value
+        // text so legibility is untouched). Alpha falls off from the crest center for a gentle sheen.
+        for (int dx = -bandW; dx <= bandW; dx++) {
+            int px = center + dx;
+            if (px < trackL || px >= trackR) continue;
+            float f = 1f - Math.abs(dx) / (float) bandW;
+            int a = (int) (f * f * 90f);
+            if (a <= 0) continue;
+            int argb = (a << 24) | (GOLD & 0xFFFFFF);
+            ctx.fill(px, y + 1, px + 1, y + 3, argb);          // top edge
+            ctx.fill(px, y + h - 3, px + 1, y + h - 1, argb);  // bottom edge
+        }
+        // Lightning bolt at the fast (right) end, ~6x8, scheme-neutral gold.
+        drawLightningGlyph(ctx, trackR - 6, y + (h - 8) / 2, GOLD);
+    }
+
+    /** Tiny hand-drawn 6x8 lightning bolt (a zigzag from top-right to bottom-left with a mid crossbar), used to
+     *  mark the "fast" end of the Color Cycle Speed slider. Hand-plotted for the same reason the undo/redo and
+     *  snap glyphs are: the unicode fallback renders far too small and fuzzy at this size. */
+    private void drawLightningGlyph(GuiGraphicsExtractor ctx, int lx, int ly, int color) {
+        int[] rows = {
+                0b000011,
+                0b000110,
+                0b001100,
+                0b011110,
+                0b001110,
+                0b001100,
+                0b011000,
+                0b110000,
+        };
+        for (int ry = 0; ry < rows.length; ry++) {
+            int bits = rows[ry];
+            for (int rx = 0; rx < 6; rx++) {
+                if ((bits & (1 << (5 - rx))) != 0) {
+                    ctx.fill(lx + rx, ly + ry, lx + rx + 1, ly + ry + 1, color);
+                }
+            }
+        }
     }
 
     /** Draws a glyph scaled up and centered on a button — used for the undo/redo arrows, whose default
@@ -2171,6 +2295,21 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
         }
     }
 
+    /** True when the Accessibility setting is High Contrast. Read every frame by the Studio's own cheap
+     *  rendering response (brighter card heading/accent/edge + hint text); the in-HUD treatment is the
+     *  CompassHud follow-up (see {@link LatitudeConfigData.AccessibilityMode}). */
+    private static boolean highContrast() {
+        return LatitudeConfig.accessibilityMode == LatitudeConfigData.AccessibilityMode.HIGH_CONTRAST;
+    }
+
+    private static String accessibilityLabel(LatitudeConfigData.AccessibilityMode m) {
+        return switch (m) {
+            case STANDARD -> "Standard";
+            case HIGH_CONTRAST -> "High Contrast";
+            case COLORBLIND_FRIENDLY -> "Colorblind-Friendly";
+        };
+    }
+
     private static String textColorName(int rgb) {
         int c = rgb & 0xFFFFFF;
         if (c == 0x000000) return "BLACK";
@@ -2357,6 +2496,55 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
 
         private static String format(double v) {
             return String.format(java.util.Locale.ROOT, "%.1f", v);
+        }
+    }
+
+    /**
+     * A speed slider whose DIRECTION is inverted from the raw value it persists (TEST 57: seconds-per-loop
+     * read backwards -- Peetsa: "lower should mean slower"). The knob's LEFT end is the slowest setting and
+     * the RIGHT end the fastest, matching the intuition "further right = faster" (and the rightward speed
+     * ripple + lightning glyph drawn on the track). It still stores seconds-per-loop -- {@code minSeconds} =
+     * fastest, {@code maxSeconds} = slowest -- so saved configs are byte-unchanged; only the knob mapping
+     * flips. The label shows a friendly 0-100% "quickness" (higher = faster) instead of the confusing raw
+     * seconds.
+     */
+    private static final class SpeedSlider extends AbstractSliderButton {
+        private final Component label;
+        private final float minSeconds; // fastest -> RIGHT end (value 1)
+        private final float maxSeconds; // slowest -> LEFT end (value 0)
+        private final FloatConsumer onChangeSeconds;
+
+        private SpeedSlider(int x, int y, int width, int height, Component label,
+                            float minSeconds, float maxSeconds, float initialSeconds, FloatConsumer onChangeSeconds) {
+            super(x, y, width, height, Component.empty(), toNorm(initialSeconds, minSeconds, maxSeconds));
+            this.label = label;
+            this.minSeconds = minSeconds;
+            this.maxSeconds = maxSeconds;
+            this.onChangeSeconds = onChangeSeconds;
+            updateMessage();
+        }
+
+        @Override
+        protected void updateMessage() {
+            int quickness = Mth.clamp((int) Math.round(this.value * 100.0), 0, 100);
+            this.setMessage(Component.literal(label.getString() + ": " + quickness + "%"));
+        }
+
+        @Override
+        protected void applyValue() {
+            onChangeSeconds.accept(getSeconds());
+        }
+
+        private float getSeconds() {
+            // value 0 (left) -> maxSeconds (slow); value 1 (right) -> minSeconds (fast).
+            float s = maxSeconds - (maxSeconds - minSeconds) * (float) this.value;
+            return Mth.clamp(s, minSeconds, maxSeconds);
+        }
+
+        // Inverse of getSeconds: seconds -> knob position (0 at slowest, 1 at fastest).
+        private static double toNorm(float seconds, float minSeconds, float maxSeconds) {
+            if (maxSeconds == minSeconds) return 0.0;
+            return Mth.clamp((maxSeconds - seconds) / (maxSeconds - minSeconds), 0.0f, 1.0f);
         }
     }
 

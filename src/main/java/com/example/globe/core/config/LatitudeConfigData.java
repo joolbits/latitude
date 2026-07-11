@@ -43,6 +43,28 @@ public final class LatitudeConfigData {
     // fallback is natural-case now) instead of removing the option. See LESSONS L20 in the main worktree.
     public enum TitleCaseMode { NORMAL, UPPERCASE, LOWERCASE, MOCKING }
 
+    /**
+     * Accessibility presets that HUD surfaces (compass, labels, overlays) consult to bias their rendering
+     * toward legibility. THIS config pass wires the setting itself and the HUD Studio's own response; the
+     * in-world HUD application is a deliberate follow-up in CompassHud. Persisted BY NAME (GSON) and read by
+     * ORDINAL in the Studio picker, so any new mode MUST be appended -- {@code STANDARD} stays index 0 / name
+     * "STANDARD"; never reorder (same discipline as {@link TitleColorPreset}'s AURORA note above).
+     *
+     * <p><b>Intended semantics -- the spec the follow-up HUD pass must honor:</b>
+     * <ul>
+     *   <li>{@code STANDARD} -- today's look; the mode applies no overrides.</li>
+     *   <li>{@code HIGH_CONTRAST} -- maximize legibility. Force HUD text to FULL opacity regardless of the
+     *       user's Text Opacity slider, draw a strong dark outline/backing plate behind text and glyphs, and
+     *       clamp any panel background/translucency to a hard opaque floor so nothing is barely-there. Prefer
+     *       solid backing plates over see-through ones. (Text Opacity below that floor is ignored while on.)</li>
+     *   <li>{@code COLORBLIND_FRIENDLY} -- never carry meaning by COLOR ALONE, and never by a red-vs-green
+     *       pairing specifically. Every color-coded signal must also carry a shape / text / position cue, and
+     *       status colors should come from a blue / gold / white palette (unambiguous across the common
+     *       color-vision deficiencies) rather than a red/green pair.</li>
+     * </ul>
+     */
+    public enum AccessibilityMode { STANDARD, HIGH_CONTRAST, COLORBLIND_FRIENDLY }
+
     @SerializedName(value = "zoneEnterTitleEnabled", alternate = {"zoneEnterTitleEnabledValue"})
     public boolean zoneEnterTitleEnabled = true;
 
@@ -101,6 +123,9 @@ public final class LatitudeConfigData {
     @SerializedName(value = "captureWriteCsv", alternate = {"captureWriteCsvValue"})
     public boolean captureWriteCsv = false;
 
+    @SerializedName(value = "accessibilityMode", alternate = {"accessibilityModeValue"})
+    public AccessibilityMode accessibilityMode = AccessibilityMode.STANDARD;
+
     /** Defaults + current version — the fresh-install state. */
     public static LatitudeConfigData fresh() {
         LatitudeConfigData d = new LatitudeConfigData();
@@ -112,6 +137,7 @@ public final class LatitudeConfigData {
     public void sanitize() {
         if (zoneEnterTitleColorPreset == null) zoneEnterTitleColorPreset = TitleColorPreset.WHITE;
         if (zoneEnterTitleCase == null) zoneEnterTitleCase = TitleCaseMode.NORMAL;
+        if (accessibilityMode == null) accessibilityMode = AccessibilityMode.STANDARD;
 
         zoneEnterTitleSeconds = clamp(zoneEnterTitleSeconds, 2.0, 10.0);
         zoneEnterTitleScale = clamp(zoneEnterTitleScale, 1.0, 3.0);
