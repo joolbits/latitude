@@ -108,8 +108,8 @@ public final class ZoneEnterTitleOverlay {
 
     /** Normalized progress (0..1) through the one-shot glimmer sweep for a title of the given age in ticks,
      *  or -1 when there's no glimmer this frame: the toggle is off, Reduce Motion is on, or the age is outside
-     *  the single-sweep window ({@link com.example.globe.core.ui.TitleStyle#glimmerProgress}). The color-aware
-     *  brighten (which works for ALL presets, not just rainbow/aurora) lives in {@link #drawStyledTitle} so
+     *  the single-sweep window ({@link com.example.globe.core.ui.TitleStyle#glimmerProgress}). The shine-sweep
+     *  transform (which works for ALL presets, not just rainbow/aurora) lives in {@link #drawStyledTitle} so
      *  every caller of the shared draw path stays consistent. */
     static float glimmerProgress(long age) {
         if (!LatitudeConfig.zoneEnterTitleGlimmer || LatitudeConfig.reduceMotion) {
@@ -130,9 +130,10 @@ public final class ZoneEnterTitleOverlay {
 
     /**
      * As {@link #drawTitleLineAt(GuiGraphicsExtractor, int, int, String, double, int)}, plus the
-     * one-shot glimmer progress: {@code glimmerProgress} in [0,1] drives the single color-aware glimmer crest
-     * as the title appears (it brightens each letter's OWN color -- solid, custom, rainbow or aurora); pass
-     * {@code -1} for no glimmer (toggle off, static Studio preview, Reduce Motion). Hemisphere titles pass
+     * one-shot glimmer progress: {@code glimmerProgress} in [0,1] drives the single shine-sweep crest
+     * as the title appears (a bright crest against a briefly dimmed baseline, on each letter's OWN color --
+     * solid, custom, rainbow or aurora); pass {@code -1} for no glimmer (toggle off, static Studio preview,
+     * Reduce Motion). Hemisphere titles pass
      * their own progress here so they glimmer coherently with zone titles.
      */
     public static void drawTitleLineAt(GuiGraphicsExtractor ctx, int cx, int cy, String rawText, double scale,
@@ -226,9 +227,11 @@ public final class ZoneEnterTitleOverlay {
 
         // (3) Main fill. The hard MC drop shadow is now an explicit toggle (was always-on before this pass).
         // ONE unified fill path for every preset: each letter's base color (solid/custom, or the rainbow/aurora
-        // gradient) is brightened by the one-shot glimmer crest via TitleStyle.brighten -- so the glimmer is a
-        // color-aware sheen on whatever the letter already is, not a rainbow-only white flash. At
-        // glimmerProgress < 0 the boost is 0 for every letter, so this collapses to the plain colored fill.
+        // gradient) is passed through the one-shot SHINE-SWEEP via TitleStyle.glimmerShade -- a bright crest
+        // travelling against a briefly, gently dimmed baseline, so the shine reads on ANY fill including the
+        // near-white OFF_WHITE default (you cannot out-brighten white, so the surroundings dim and the crest
+        // pops). At glimmerProgress < 0 the crest is 0 for every letter and glimmerShade is an exact no-op, so
+        // this collapses to the plain colored fill.
         boolean dropShadow = LatitudeConfig.zoneEnterTitleDropShadow;
         LatitudeConfigData.TitleColorPreset preset = LatitudeConfig.zoneEnterTitleColorPreset;
         int visibleCount = 0;
@@ -250,8 +253,8 @@ public final class ZoneEnterTitleOverlay {
                                             com.example.globe.core.ui.FlowingGradient.DEFAULT_CYCLE_SECONDS)
                                     : com.example.globe.core.ui.FlowingGradient.staticColorFor(idx, visible))
                             : solidRgb;
-                    base = com.example.globe.core.ui.TitleStyle.brighten(base,
-                            com.example.globe.core.ui.TitleStyle.glimmerBoost(glimmer, idx, visible));
+                    base = com.example.globe.core.ui.TitleStyle.glimmerShade(base,
+                            com.example.globe.core.ui.TitleStyle.glimmerGaussian(glimmer, idx, visible));
                     return alphaMask | base;
                 });
     }

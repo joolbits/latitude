@@ -7,12 +7,14 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Pure-math gate for the title's outline geometry and the one-shot color-aware GLIMMER wave (title-styling
+ * Pure-math gate for the title's outline geometry and the one-shot GLIMMER shine-sweep (title-styling
  * overhaul 2026-07-11). Guards the properties the renderer relies on: the outline stamps a symmetric
  * 8-neighbour ring (crisp 1px halo, no doubled/missing directions); the glimmer is a SINGLE travelling
  * Gaussian crest that fires once over a bounded tick window right after the title appears and is fully off
- * outside that window (never loops); and the brighten primitive that makes the glimmer color-aware scales a
- * letter's own channels (a sheen ON its color) and clamps cleanly even on a near-white fill.
+ * outside that window (never loops); the shine-sweep transform ({@code glimmerShade}) reads on ANY fill --
+ * including a near-white one -- via a bright crest against a briefly dimmed baseline, and is an EXACT no-op
+ * outside the sweep; and the {@code brighten} primitive (now the loading-wave's tool, unchanged) still lerps
+ * a letter's own channels toward white.
  */
 class TitleStyleTest {
 
@@ -103,12 +105,12 @@ class TitleStyleTest {
         assertEquals(TitleStyle.GLOW_RING_ALPHA_CAP, TitleStyle.glowRingAlpha(0, 999.0), TOL);
     }
 
-    /** Glimmer is off (boost 0) whenever sweep progress is negative -- the "no glimmer" sentinel used for the
+    /** Glimmer is off (crest 0) whenever sweep progress is negative -- the "no glimmer" sentinel used for the
      *  toggle-off/solid case, Reduce Motion (the overlay maps both to progress < 0), and the static preview. */
     @Test
     void negativeProgressMeansNoGlimmer() {
         for (int i = 0; i < 8; i++) {
-            assertEquals(0f, TitleStyle.glimmerBoost(-1f, i, 8), TOL);
+            assertEquals(0f, TitleStyle.glimmerGaussian(-1f, i, 8), TOL);
         }
     }
 
@@ -136,24 +138,20 @@ class TitleStyleTest {
         assertEquals(-1f, TitleStyle.glimmerProgress(start + span + 50L), TOL, "stays off -- never loops");
     }
 
-    /** The crest travels: the letter with the peak boost moves strictly left->right as sweep progresses,
-     *  and the boost is always within [0, GLIMMER_AMPLITUDE]. The amplitude is now a strong, bright flash
-     *  (~0.80-0.90 lerp toward white), not the old faint multiplicative wash. */
+    /** The crest travels: the letter with the peak Gaussian height moves strictly left->right as the sweep
+     *  progresses, and the raw crest height is always a normalized [0,1] (peak 1.0, never above). */
     @Test
-    void crestTravelsLeftToRightAndStaysWithinAmplitude() {
-        assertTrue(TitleStyle.GLIMMER_AMPLITUDE >= 0.80f && TitleStyle.GLIMMER_AMPLITUDE <= 0.90f,
-                "amplitude is a strong/bright glimmer (~0.80-0.90 toward white)");
+    void crestTravelsLeftToRightAndStaysNormalized() {
         int count = 10;
         int prevPeak = -1;
         for (float progress = 0f; progress <= 1.0001f; progress += 0.1f) {
             int peakIdx = 0;
             float peakVal = -1f;
             for (int i = 0; i < count; i++) {
-                float b = TitleStyle.glimmerBoost(progress, i, count);
-                assertTrue(b >= 0f && b <= TitleStyle.GLIMMER_AMPLITUDE + TOL,
-                        "boost stays within [0, amplitude]");
-                if (b > peakVal) {
-                    peakVal = b;
+                float g = TitleStyle.glimmerGaussian(progress, i, count);
+                assertTrue(g >= 0f && g <= 1f + TOL, "crest height stays normalized in [0,1]");
+                if (g > peakVal) {
+                    peakVal = g;
                     peakIdx = i;
                 }
             }
@@ -164,21 +162,27 @@ class TitleStyleTest {
 
     /** Early in the sweep the crest sits at/near the FIRST letter; late in the sweep it sits at/near the LAST
      *  letter -- i.e. exactly one full left->right pass across the word, not a loop. The crest also enters and
-     *  exits near-zero (the margin) so it never snaps on/off mid-word. */
+     *  exits near-zero (the margin) so it never snaps on/off mid-word. Near the crest centre the raw Gaussian
+     *  reaches ~1.0 (peak). */
     @Test
     void sweepSpansFirstToLastLetterAndFadesAtBothEnds() {
         int count = 12;
-        float startFirst = TitleStyle.glimmerBoost(0f, 0, count);
-        float startLast = TitleStyle.glimmerBoost(0f, count - 1, count);
+        float startFirst = TitleStyle.glimmerGaussian(0f, 0, count);
+        float startLast = TitleStyle.glimmerGaussian(0f, count - 1, count);
         assertTrue(startFirst > startLast, "at sweep start the left edge is the brightest");
 
-        float endFirst = TitleStyle.glimmerBoost(1f, 0, count);
-        float endLast = TitleStyle.glimmerBoost(1f, count - 1, count);
+        float endFirst = TitleStyle.glimmerGaussian(1f, 0, count);
+        float endLast = TitleStyle.glimmerGaussian(1f, count - 1, count);
         assertTrue(endLast > endFirst, "at sweep end the right edge is the brightest");
 
         // Wide margin => both edges are near-off at the sweep's start/end (clean fade-in / fade-out).
-        assertTrue(startFirst < 0.12f, "left edge enters gently, not at full crest");
-        assertTrue(endLast < 0.12f, "right edge exits gently, not at full crest");
+        assertTrue(startFirst < 0.15f, "left edge enters gently, not at full crest");
+        assertTrue(endLast < 0.15f, "right edge exits gently, not at full crest");
+
+        // Mid-sweep the crest centre is a full-height peak somewhere in the word.
+        float peakMid = 0f;
+        for (int i = 0; i < count; i++) peakMid = Math.max(peakMid, TitleStyle.glimmerGaussian(0.5f, i, count));
+        assertTrue(peakMid > 0.9f, "the crest centre is a ~1.0 peak mid-sweep");
     }
 
     /** brighten() lerps each channel toward 255 by {@code boost} (channel + (255-channel)*boost), reaches
@@ -199,38 +203,81 @@ class TitleStyleTest {
         assertEquals(0, TitleStyle.brighten(0x123456, 0.3f) & 0xFF000000, "no alpha bits introduced");
     }
 
-    /** Color-awareness at the STRONG new peak: even lerping 85% toward white, the glimmer stays a sheen ON
-     *  each letter's own color -- a saturated fill keeps its hue ordering (a sliver of hue survives the flash),
-     *  and a near-white fill lifts toward white without ever overflowing (lerp toward 255 can't wrap). */
-    @Test
-    void glimmerBrightenIsColorAwareAndLiftsBrightFills() {
-        // Saturated warm fill at the full crest: brighter on every channel, and R>G>B still holds -- a strong
-        // near-white flash that has NOT converged to flat white (that only happens at boost == 1.0).
-        int warm = 0x804020; // R=128 G=64 B=32
-        int litWarm = TitleStyle.brighten(warm, TitleStyle.GLIMMER_AMPLITUDE);
-        int r = (litWarm >> 16) & 0xFF, g = (litWarm >> 8) & 0xFF, b = litWarm & 0xFF;
-        assertTrue(r > 128 && g > 64 && b > 32, "every channel lifts -- a brighter version of the same color");
-        assertTrue(r > g && g > b, "hue order preserved -- a sliver of the original hue survives the flash");
-        assertTrue(litWarm != 0xFFFFFF, "even the strong crest does not blink to a hue-erasing pure white");
-
-        // Near-white fill (OFF_WHITE): lifts toward white and, by construction of the lerp, no channel can
-        // exceed 255 -- so there is no wraparound to guard against (each channel lands in [channel, 255]).
-        int offWhite = com.example.globe.core.config.LatitudeConfigData.OFF_WHITE_RGB;
-        int litOff = TitleStyle.brighten(offWhite, TitleStyle.GLIMMER_AMPLITUDE);
-        int or = (litOff >> 16) & 0xFF, og = (litOff >> 8) & 0xFF, ob = litOff & 0xFF;
-        assertTrue(or >= ((offWhite >> 16) & 0xFF) && or <= 255, "R lifts toward white, never past 255");
-        assertTrue(og >= ((offWhite >> 8) & 0xFF) && og <= 255, "G lifts toward white, never past 255");
-        assertTrue(ob >= (offWhite & 0xFF) && ob <= 255, "B lifts toward white, never past 255");
-        assertTrue(or > 245 && og > 245 && ob > 245, "an already near-white fill ends up all-but-white");
-        assertEquals(0, litOff & 0xFF000000, "no alpha bits introduced on a bright fill");
+    private static int lum(int rgb) {
+        return ((rgb >> 16) & 0xFF) + ((rgb >> 8) & 0xFF) + (rgb & 0xFF);
     }
 
-    /** REGRESSION (the bug this fix targets): a saturated/primary fill must receive a REAL brightness change.
-     *  The OLD multiplicative brighten() -- {@code channel * (1 + boost)} clamped to 255 -- left pure primaries
-     *  visually unchanged: a maxed channel (255) clamped straight back to 255 and a zeroed channel (0) stayed 0,
-     *  so 0xFF0000 was a no-op at ANY boost and 0x000000 could never brighten. Every assertion below FAILS
-     *  against that old formula (red stays 0xFF0000, black stays 0x000000); the lerp-toward-white formula lifts
-     *  the zeroed channels off 0, so a saturated title now visibly glimmers. */
+    /** (c) The critical NO-OP: {@code glimmerShade(any, 0)} returns the base color EXACTLY. This is what makes
+     *  the title render at its plain, undimmed color for the vast majority of its on-screen life (glimmerGaussian
+     *  returns a hard 0 whenever the sweep isn't running). Also holds for a negative crest height. */
+    @Test
+    void glimmerShadeIsExactNoOpAtZeroCrest() {
+        int[] colors = {0xF3ECDD, 0xFF0000, 0x000000, 0x123456, 0xFFFFFF, 0x808080};
+        for (int c : colors) {
+            assertEquals(c, TitleStyle.glimmerShade(c, 0f), "crest 0 must return the base color unchanged");
+            assertEquals(c, TitleStyle.glimmerShade(c, -0.5f), "a negative crest is also a no-op");
+        }
+        assertEquals(0, TitleStyle.glimmerShade(0x123456, 0f) & 0xFF000000, "no alpha bits introduced");
+    }
+
+    /** (a) REGRESSION -- the near-white bug this fix targets. On the OFF_WHITE default (0xF3ECDD) the crest
+     *  ({@code gaussian01=1.0}) must be clearly brighter/whiter than the plain base ({@code gaussian01=0}) by a
+     *  LARGE margin. The old "lerp toward white" glimmer on an already near-white fill was imperceptible (white
+     *  can't get whiter); the shine-sweep's white-pop plus the surrounding dim make the crest read. */
+    @Test
+    void offWhiteCrestIsClearlyBrighterThanBase() {
+        int offWhite = com.example.globe.core.config.LatitudeConfigData.OFF_WHITE_RGB; // 0xF3ECDD = (243,236,221)
+        int base = TitleStyle.glimmerShade(offWhite, 0f);   // no-op == plain base
+        int crest = TitleStyle.glimmerShade(offWhite, 1.0f); // full crest glint
+        assertEquals(offWhite, base, "gaussian01=0 is the plain base");
+        assertTrue(lum(crest) - lum(base) >= 30,
+                "the off-white crest is brighter than base by a large margin (the near-white regression)");
+        assertTrue((crest & 0xFF) > (base & 0xFF) && ((crest >> 8) & 0xFF) > ((base >> 8) & 0xFF),
+                "every channel of the crest is whiter than base -- a crisp near-white glint");
+    }
+
+    /** (b) The shine-sweep CONTRAST mechanism: a near-crest-edge letter (small positive crest height, e.g. a
+     *  neighbour the crest hasn't reached yet) is DIMMED below the plain base -- factor < 1. This is the
+     *  briefly-dimmed baseline the bright crest travels against, and it is what makes the moving shine visible
+     *  even on a fill you cannot out-brighten. (Note gaussian01=0 exactly returns base; the dim exists only for
+     *  gaussian01 > 0, i.e. while the sweep is actually running.) */
+    @Test
+    void smallCrestHeightDimsBelowBase() {
+        int offWhite = com.example.globe.core.config.LatitudeConfigData.OFF_WHITE_RGB;
+        int neighbour = TitleStyle.glimmerShade(offWhite, 0.1f); // a letter far from the crest during a sweep
+        assertTrue(lum(neighbour) < lum(offWhite),
+                "a small crest height dims the letter below its plain base (the sweep's dimmed baseline)");
+        // And that dimmed neighbour is clearly darker than the crest letter -- the travelling shine's contrast.
+        int crest = TitleStyle.glimmerShade(offWhite, 1.0f);
+        assertTrue(lum(crest) - lum(neighbour) >= 100,
+                "the crest letter pops well clear of its dimmed neighbours -- an obvious moving shine");
+    }
+
+    /** (d) A SATURATED fill also flashes bright at the crest: pure red's crest pops toward white (its zeroed
+     *  channels lift well off 0), so a saturated title glimmers too -- against dimmed dark-red neighbours. */
+    @Test
+    void saturatedFillPopsBrightAtCrest() {
+        int red = 0xFF0000;
+        int crest = TitleStyle.glimmerShade(red, 1.0f);
+        int r = (crest >> 16) & 0xFF, g = (crest >> 8) & 0xFF, b = crest & 0xFF;
+        assertEquals(255, r, "the maxed red channel stays at 255 at the crest");
+        assertTrue(g > 120 && b > 120, "the zeroed channels lift well off 0 -- a bright pink-white flash");
+        assertTrue(r >= g && r >= b, "still red-dominant -- a bright glint on the color, not a hue-erasing white");
+        int minChannelBase = 0; // red's min channel (G or B) is 0
+        assertTrue(Math.min(g, b) > minChannelBase, "the crest's min channel is well above base -- visibly brighter");
+
+        // Its dimmed neighbour is a darker red, so the crest clearly stands out.
+        int neighbour = TitleStyle.glimmerShade(red, 0.1f);
+        assertTrue(lum(crest) - lum(neighbour) >= 100, "bright crest vs dark-red neighbour -- a visible shine on red");
+    }
+
+    /** brighten() (now the loading-wave's own tool -- no longer the title glimmer) must lift a saturated/primary
+     *  fill by a REAL amount. An earlier MULTIPLICATIVE brighten -- {@code channel * (1 + boost)} clamped to 255 --
+     *  left pure primaries visually unchanged: a maxed channel (255) clamped straight back to 255 and a zeroed
+     *  channel (0) stayed 0, so 0xFF0000 was a no-op at ANY boost and 0x000000 could never brighten. Every
+     *  assertion below FAILS against that old formula (red stays 0xFF0000, black stays 0x000000); the
+     *  lerp-toward-white formula lifts the zeroed channels off 0, keeping the loading wave's crest visible on
+     *  any base color. */
     @Test
     void saturatedAndPrimaryFillsActuallyBrighten() {
         // Pure red: R stays maxed, G and B lift off zero toward white -> a bright pinkish-red flash.
