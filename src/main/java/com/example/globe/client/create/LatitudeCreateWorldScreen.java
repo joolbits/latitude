@@ -178,19 +178,22 @@ public class LatitudeCreateWorldScreen extends Screen {
     // possible -- manual scissor rendering is the way vanilla itself does scrollable lists.
     private final List<AbstractWidget> settingsScrollWidgets = new ArrayList<>();
 
-    // ── Settings rail toggle buttons (need message updates) ──
-    private Button commandsBtn;
-    private Button compassBtn;
-    private Button bonusChestBtn;
-    private Button structuresBtn;
+    // ── Settings rail rows (UI round 13: iconography-based icon+label+state rows, not plain MC buttons) ──
+    // Commands / Starting Compass / Generate Structures / Bonus Chest are illuminated on/off toggles;
+    // HUD Studio / Game Rules are action rows (open a screen). Each draws its own code-drawn icon, short
+    // label, On/Off word (toggles), tooltip, lit-vs-dim state, and plays the click sound on select.
+    private RulesIconRow commandsBtn;
+    private RulesIconRow compassBtn;
+    private RulesIconRow bonusChestBtn;
+    private RulesIconRow structuresBtn;
     private Button worldTypePrevBtn;
     private Button worldTypeNextBtn;
     private Button worldShapePrevBtn;
     private Button worldShapeNextBtn;
     private Button modePrevBtn;
     private Button modeNextBtn;
-    private Button gameRulesBtn;
-    private Button hudStudioBtn;
+    private RulesIconRow gameRulesBtn;
+    private RulesIconRow hudStudioBtn;
 
     // ── Layout cache (computed in init, used in render) ──
     private int headerY;
@@ -250,14 +253,8 @@ public class LatitudeCreateWorldScreen extends Screen {
     private int settingsViewportBottom;
     private int settingsContentHeight;
     private int menuScaleRowY;
-    private int hudStudioRowY;
     private int worldTypeRowY;
     private int modeRowY;
-    private int commandsRowY;
-    private int compassRowY;
-    private int structuresRowY;
-    private int bonusChestRowY;
-    private int gameRulesRowY;
 
     // ── Tabbed fallback mode (activates when 3-col doesn't fit) ──
     private boolean tabbedMode;
@@ -542,10 +539,30 @@ public class LatitudeCreateWorldScreen extends Screen {
             modeNextBtn = Button.builder(Component.literal("\u25B6"), b -> cycleMode(1))
                     .bounds(settBtnX + settBtnW - 20, panelTop, 20, btnH)
                     .build();
-            commandsBtn = Button.builder(Component.literal(allowCommands ? "ON" : "OFF"), b -> {
-                allowCommands = !allowCommands;
-                b.setMessage(Component.literal(allowCommands ? "ON" : "OFF"));
-            }).bounds(settBtnX, panelTop, settBtnW, btnH).build();
+            // ── Iconography rows (UI round 13 pass B) ──
+            // Each RulesIconRow draws a code-drawn icon + short label + On/Off word + tooltip and plays the
+            // vanilla click on select. Toggles read/write their backing boolean live via getter/toggle;
+            // action rows run an open-a-screen callback. Compass is gated to Latitude worlds (dim + inert on
+            // Vanilla). Labels are short (the plain-language explanation rides the tooltip).
+            commandsBtn = toggleRow(RulesIconRow.Kind.COMMANDS, "Commands",
+                    "Lets you use cheat commands (like /gamemode or /time) in this world.",
+                    () -> allowCommands, () -> allowCommands = !allowCommands, () -> true);
+            compassBtn = toggleRow(RulesIconRow.Kind.COMPASS, "Compass",
+                    "Start your expedition with a compass already in your pack. Latitude worlds only.",
+                    () -> startWithCompass, () -> startWithCompass = !startWithCompass, this::isLatitudeWorld);
+            structuresBtn = toggleRow(RulesIconRow.Kind.STRUCTURES, "Structures",
+                    "Generate villages, temples, mineshafts and other structures across the world.",
+                    () -> generateStructures, () -> generateStructures = !generateStructures, () -> true);
+            bonusChestBtn = toggleRow(RulesIconRow.Kind.BONUS_CHEST, "Bonus Chest",
+                    "Place a small starter chest of supplies near your spawn.",
+                    () -> bonusChest, () -> bonusChest = !bonusChest, () -> true);
+            hudStudioBtn = actionRow(RulesIconRow.Kind.HUD_STUDIO, "HUD Studio",
+                    "Open HUD Studio to customize your compass, labels and on-screen readouts.",
+                    this::openHudStudio, true);
+            gameRulesBtn = actionRow(RulesIconRow.Kind.GAME_RULES, "Game Rules",
+                    "Fine-tune the world's rules (mob spawning, daylight cycle, keep inventory, and more).",
+                    this::openGameRules, false);
+
             // addWidget (not addRenderableWidget): these get input/focus but are NOT auto-rendered by super --
             // renderSettingsScrollWidgets() draws them inside the Rules-panel scissor so they clip when scrolled.
             addSettingsScrollWidget(worldTypePrevBtn);
@@ -553,37 +570,10 @@ public class LatitudeCreateWorldScreen extends Screen {
             addSettingsScrollWidget(modePrevBtn);
             addSettingsScrollWidget(modeNextBtn);
             addSettingsScrollWidget(commandsBtn);
-
-            compassBtn = Button.builder(Component.literal(startWithCompass ? "ON" : "OFF"), b -> {
-                startWithCompass = !startWithCompass;
-                b.setMessage(Component.literal(startWithCompass ? "ON" : "OFF"));
-            }).bounds(settBtnX, panelTop, settBtnW, btnH).build();
             addSettingsScrollWidget(compassBtn);
-
-            structuresBtn = Button.builder(Component.literal(generateStructures ? "ON" : "OFF"), b -> {
-                generateStructures = !generateStructures;
-                b.setMessage(Component.literal(generateStructures ? "ON" : "OFF"));
-            }).bounds(settBtnX, panelTop, settBtnW, btnH).build();
             addSettingsScrollWidget(structuresBtn);
-
-            bonusChestBtn = Button.builder(Component.literal(bonusChest ? "ON" : "OFF"), b -> {
-                bonusChest = !bonusChest;
-                b.setMessage(Component.literal(bonusChest ? "ON" : "OFF"));
-            }).bounds(settBtnX, panelTop, settBtnW, btnH).build();
             addSettingsScrollWidget(bonusChestBtn);
-
-            gameRulesBtn = Button.builder(Component.literal("Game Rules..."), b -> openGameRules())
-                    .bounds(settBtnX, panelTop, settBtnW, btnH)
-                    .build();
             addSettingsScrollWidget(gameRulesBtn);
-
-            // Blank label: vanilla forces a Button's own text white and 26.2 sealed Button's render pipeline
-            // (extractWidgetRenderState final, extractContents package-private), so we can't recolor it directly.
-            // renderSettingsScrollWidgets draws the button first, then a RainbowText.drawCentered call right
-            // after paints the real "HUD Studio" lettering on top, one color per letter.
-            hudStudioBtn = Button.builder(Component.empty(), b -> openHudStudio())
-                    .bounds(settBtnX, panelTop, settBtnW, btnH)
-                    .build();
             addSettingsScrollWidget(hudStudioBtn);
             updateSettingsLayout();
         }
@@ -953,28 +943,15 @@ public class LatitudeCreateWorldScreen extends Screen {
     }
 
     private void updateSettingsButtons() {
-        if (commandsBtn != null) {
-            commandsBtn.setMessage(Component.literal(allowCommands ? "ON" : "OFF"));
-            commandsBtn.active = commandsBtn.visible;
-        }
-        if (compassBtn != null) {
-            compassBtn.setMessage(Component.literal(startWithCompass ? "ON" : "OFF"));
-            compassBtn.active = compassBtn.visible && isLatitudeWorld();
-        }
-        if (structuresBtn != null) {
-            structuresBtn.setMessage(Component.literal(generateStructures ? "ON" : "OFF"));
-            structuresBtn.active = structuresBtn.visible;
-        }
-        if (bonusChestBtn != null) {
-            bonusChestBtn.setMessage(Component.literal(bonusChest ? "ON" : "OFF"));
-            bonusChestBtn.active = bonusChestBtn.visible;
-        }
-        if (gameRulesBtn != null) {
-            gameRulesBtn.active = gameRulesBtn.visible;
-        }
-        if (hudStudioBtn != null) {
-            hudStudioBtn.active = hudStudioBtn.visible;
-        }
+        // Icon rows read their backing boolean live each frame, so no message to update here. Interaction
+        // gating is handled per-row: positionSettingsButton already set active = visible; the Starting
+        // Compass row is additionally inert on non-Latitude worlds (it draws dim and ignores clicks there).
+        if (commandsBtn != null) commandsBtn.active = commandsBtn.visible;
+        if (compassBtn != null) compassBtn.active = compassBtn.visible && isLatitudeWorld();
+        if (structuresBtn != null) structuresBtn.active = structuresBtn.visible;
+        if (bonusChestBtn != null) bonusChestBtn.active = bonusChestBtn.visible;
+        if (gameRulesBtn != null) gameRulesBtn.active = gameRulesBtn.visible;
+        if (hudStudioBtn != null) hudStudioBtn.active = hudStudioBtn.visible;
     }
 
     private void updateSettingsLayout() {
@@ -1017,29 +994,25 @@ public class LatitudeCreateWorldScreen extends Screen {
         modeRowY = y;
         positionSettingsStepper(modePrevBtn, modeNextBtn, settBtnX, settBtnW, y, btnH);
 
+        // Icon rows draw their own inline label, so they position directly off the running y (no stored
+        // *RowY needed the way the two stepper rows still need theirs for the label-above draw).
         y += btnH + rowGap + labelGap;
-        commandsRowY = y;
         positionSettingsButton(commandsBtn, settBtnX, settBtnW, y, btnH);
 
         y += btnH + rowGap + labelGap;
-        compassRowY = y;
         positionSettingsButton(compassBtn, settBtnX, settBtnW, y, btnH);
 
         // HUD Studio right after Starting Compass, per live feedback (this screen only -- the pause-menu
         // Latitude Settings screen keeps HUD Studio first, unchanged from the prior round).
         y += btnH + rowGap + labelGap;
-        hudStudioRowY = y;
         positionSettingsButton(hudStudioBtn, settBtnX, settBtnW, y, btnH);
 
         y += btnH + rowGap + labelGap;
-        structuresRowY = y;
         positionSettingsButton(structuresBtn, settBtnX, settBtnW, y, btnH);
 
         y += btnH + rowGap + labelGap;
-        bonusChestRowY = y;
         positionSettingsButton(bonusChestBtn, settBtnX, settBtnW, y, btnH);
         y += btnH + rowGap + labelGap;
-        gameRulesRowY = y;
         positionSettingsButton(gameRulesBtn, settBtnX, settBtnW, y, btnH);
 
         updateSettingsButtons();
@@ -1103,7 +1076,7 @@ public class LatitudeCreateWorldScreen extends Screen {
         right.active = visible;
     }
 
-    private void positionSettingsButton(Button button, int x, int width, int y, int height) {
+    private void positionSettingsButton(AbstractWidget button, int x, int width, int y, int height) {
         button.setRectangle(width - SCROLLBAR_GUTTER, height, x, y);
         // INTERSECT gate (not fully-contained): a button that's partway past the top/bottom edge stays visible so
         // renderSettingsScrollWidgets can draw it clipped ("half button"). Fully off-viewport rows are hidden so
@@ -1510,22 +1483,13 @@ public class LatitudeCreateWorldScreen extends Screen {
             drawSettingsStepperValue(context, WORLD_TYPE_NAMES[worldTypeIdx], WORLD_TYPE_COLORS[worldTypeIdx], worldTypeRowY);
             drawSettingsRowLabel(context, "Game Mode", settLabelX, modeRowY, MUTED);
             drawSettingsStepperValue(context, MODE_NAMES[selectedModeIdx], MODE_COLORS[selectedModeIdx], modeRowY);
-            drawSettingsRowLabel(context, "Commands", settLabelX, commandsRowY, MUTED);
-            drawSettingsRowLabel(context, "Starting Compass", settLabelX, compassRowY, isLatitudeWorld() ? MUTED : DISABLED_COLOR);
-            drawSettingsRowLabel(context, "Generate Structures", settLabelX, structuresRowY, MUTED);
-            drawSettingsRowLabel(context, "Bonus Chest", settLabelX, bonusChestRowY, MUTED);
-            drawSettingsRowLabel(context, "Game Rules", settLabelX, gameRulesRowY, MUTED);
-            // Draw the Rules buttons INSIDE this same scissor so they clip at the viewport edges (partial "half
-            // buttons") exactly like the labels above, instead of popping. They are addWidget'd (not auto-
+            // World Type + Game Mode keep the classic label-above-stepper layout. The six rows below
+            // (Commands / Compass / Structures / Bonus Chest / HUD Studio / Game Rules) are now iconography
+            // rows that draw their OWN icon + label + On/Off state inline, so no separate row labels here.
+            // Draw them INSIDE this same scissor so they clip at the viewport edges (partial "half rows")
+            // exactly like the stepper labels above, instead of popping. They are addWidget'd (not auto-
             // rendered by super), so this is the only place they get drawn.
             renderSettingsScrollWidgets(context, mouseX, mouseY, delta);
-            // HUD Studio's button has a blank label (see its creation site); paint the real rainbow-lettered
-            // text on top now that the button itself has drawn, still inside the same scissor so it clips too.
-            if (hudStudioBtn != null && hudStudioBtn.visible) {
-                int centerX = hudStudioBtn.getX() + hudStudioBtn.getWidth() / 2;
-                int centerY = hudStudioBtn.getY() + hudStudioBtn.getHeight() / 2;
-                RainbowText.drawCentered(context, this.font, "HUD Studio", centerX, centerY, true);
-            }
             context.disableScissor();
             }
             drawPaneScrollbar(context, railX, railW, settingsViewportTop, settingsViewportBottom, settingsContentHeight, Math.round(settingsScrollDisplay));
@@ -2441,6 +2405,9 @@ public class LatitudeCreateWorldScreen extends Screen {
 
         @Override
         public void onClick(net.minecraft.client.input.MouseButtonEvent click, boolean doubled) {
+            // H5 fix (UI audit 2026-07-10): mouse-select was silent while keyboard-select clicked. Play the
+            // same vanilla UI click here so picking a spawn zone with the mouse gives identical feedback.
+            this.playDownSound(Minecraft.getInstance().getSoundManager());
             select();
         }
 
@@ -2527,6 +2494,211 @@ public class LatitudeCreateWorldScreen extends Screen {
         @Override
         protected void updateWidgetNarration(NarrationElementOutput builder) {
             this.defaultButtonNarrationText(builder);
+        }
+    }
+
+    // ── Rules-sidebar iconography row (UI round 13 pass B) ──
+
+    private RulesIconRow toggleRow(RulesIconRow.Kind kind, String label, String tooltip,
+                                   java.util.function.BooleanSupplier getter, Runnable flip,
+                                   java.util.function.BooleanSupplier enabled) {
+        return new RulesIconRow(kind, true, label, tooltip, getter, flip, enabled, false);
+    }
+
+    private RulesIconRow actionRow(RulesIconRow.Kind kind, String label, String tooltip,
+                                   Runnable open, boolean rainbowLabel) {
+        return new RulesIconRow(kind, false, label, tooltip, null, open, () -> true, rainbowLabel);
+    }
+
+    /**
+     * One row of the Rules sidebar rendered as icon + short label + state, replacing the old plain MC
+     * on/off buttons (Peetsa's iconography ask). Two flavors:
+     * <ul>
+     *   <li><b>Toggle</b> (Commands / Compass / Structures / Bonus Chest): reads and flips a backing
+     *       boolean. ON = illuminated icon (full color + a gentle warm bloom) and the word "On"; OFF =
+     *       a dim, desaturated icon and "Off". State is carried by icon shape/brightness AND text, so it
+     *       survives color-blindness (WCAG 1.4.1).</li>
+     *   <li><b>Action</b> (HUD Studio / Game Rules): runs an open-a-screen callback; no On/Off. HUD
+     *       Studio keeps its flowing-rainbow wordmark; a ">" chevron hints "opens a screen".</li>
+     * </ul>
+     * Draws inside the Rules-panel scissor (clips into partial rows at the scroll edges); shows a
+     * plain-language tooltip on hover; plays the vanilla UI click on select (mouse AND keyboard, so the
+     * feedback matches -- the same consistency the H5 zone-row fix restores).
+     */
+    private final class RulesIconRow extends AbstractWidget {
+        enum Kind { COMMANDS, COMPASS, STRUCTURES, BONUS_CHEST, HUD_STUDIO, GAME_RULES }
+
+        private static final int ICON_SIZE = 16;
+        private static final long FLASH_MS = 240L; // brief brighten right after a toggle (feedback)
+
+        private final Kind kind;
+        private final boolean isToggle;
+        private final java.util.function.BooleanSupplier getter;   // toggle state (null for actions)
+        private final Runnable onActivate;                          // flip a boolean, or open a screen
+        private final java.util.function.BooleanSupplier enabled;   // interactable + lit-eligible
+        private final String label;
+        private final Component tooltip;
+        private final boolean rainbowLabel;
+        private long flashUntilMs = 0L;
+
+        private RulesIconRow(Kind kind, boolean isToggle, String label, String tooltip,
+                             java.util.function.BooleanSupplier getter, Runnable onActivate,
+                             java.util.function.BooleanSupplier enabled, boolean rainbowLabel) {
+            super(0, 0, 10, 10, Component.literal(label));
+            this.kind = kind;
+            this.isToggle = isToggle;
+            this.label = label;
+            this.tooltip = Component.literal(tooltip);
+            this.getter = getter;
+            this.onActivate = onActivate;
+            this.enabled = enabled;
+            this.rainbowLabel = rainbowLabel;
+        }
+
+        private boolean isEnabled() {
+            return this.enabled == null || this.enabled.getAsBoolean();
+        }
+
+        private boolean isOn() {
+            return this.isToggle && this.getter != null && this.getter.getAsBoolean();
+        }
+
+        private void activate() {
+            if (!isEnabled()) return;
+            this.playDownSound(Minecraft.getInstance().getSoundManager());
+            if (this.isToggle) this.flashUntilMs = System.currentTimeMillis() + FLASH_MS;
+            if (this.onActivate != null) this.onActivate.run();
+        }
+
+        @Override
+        public void onClick(net.minecraft.client.input.MouseButtonEvent click, boolean doubled) {
+            activate();
+        }
+
+        @Override
+        public boolean keyPressed(net.minecraft.client.input.KeyEvent input) {
+            if (!this.isActive() || !isEnabled()) return false;
+            if (input.isSelection()) {
+                activate();
+                return true;
+            }
+            return false;
+        }
+
+        @Override
+        protected void extractWidgetRenderState(GuiGraphicsExtractor context, int mouseX, int mouseY, float deltaTicks) {
+            int x = this.getX();
+            int y = this.getY();
+            int w = this.getWidth();
+            int h = this.getHeight();
+
+            // Clip to the Rules-panel viewport so a row scrolling past an edge renders as a partial "half
+            // row" instead of popping. Rows extract with no outer scissor active (super.extractRenderState),
+            // so this enable/disable pair is balanced.
+            int clipLeft = Math.max(railX + 1, paneStripViewportLeft);
+            int clipRight = Math.min(railX + railW - 1, paneStripViewportRight);
+            boolean clipped = clipRight > clipLeft && settingsViewportBottom > settingsViewportTop;
+            if (clipped) {
+                context.enableScissor(clipLeft, settingsViewportTop, clipRight, settingsViewportBottom);
+            }
+
+            boolean enabled = isEnabled();
+            boolean on = isOn();
+            boolean lit = enabled && (this.isToggle ? on : true);
+            long now = System.currentTimeMillis();
+            boolean hovered = enabled && mouseX >= x && mouseX < x + w
+                    && mouseY >= Math.max(y, settingsViewportTop) && mouseY < Math.min(y + h, settingsViewportBottom);
+
+            // Hover / focus backing highlight
+            if (hovered || this.isFocused()) {
+                context.fill(x, y, x + w, y + h, hovered ? 0x22D4A74A : 0x18D4A74A);
+            }
+            if (this.isFocused()) {
+                context.fill(x, y, x + w, y + 1, GOLD);
+                context.fill(x, y + h - 1, x + w, y + h, GOLD);
+                context.fill(x, y, x + 1, y + h, GOLD);
+                context.fill(x + w - 1, y, x + w, y + h, GOLD);
+            }
+
+            // Icon (left, vertically centered). Warm bloom under a lit icon, gently pulsing; a fresh toggle
+            // flashes brighter for a moment. All motion is wall-clock driven and subtle.
+            int iconX = x + 3;
+            int iconY = y + (h - ICON_SIZE) / 2;
+            int iconCx = iconX + ICON_SIZE / 2;
+            int iconCy = iconY + ICON_SIZE / 2;
+            // Reduce Motion (Pass C config) freezes the bloom pulse, the toggle flash, and the chest glitter
+            // to a steady state; the illuminated look survives, just without animation.
+            boolean reduceMotion = com.example.globe.client.LatitudeConfig.reduceMotion;
+            if (lit) {
+                float pulse = reduceMotion ? 0.85f : 0.72f + 0.28f * (float) Math.sin(now / 620.0);
+                float flash = (!reduceMotion && now < this.flashUntilMs) ? 1.0f : 0.0f;
+                RulesIcons.glow(context, iconCx, iconCy, ICON_SIZE * 3 / 4, Math.min(1.0f, pulse + flash * 0.6f));
+            }
+            switch (this.kind) {
+                case COMMANDS -> RulesIcons.commands(context, iconX, iconY, ICON_SIZE, lit);
+                case COMPASS -> RulesIcons.compass(context, iconX, iconY, ICON_SIZE, lit);
+                case STRUCTURES -> RulesIcons.structures(context, iconX, iconY, ICON_SIZE, lit);
+                case BONUS_CHEST -> RulesIcons.chest(context, iconX, iconY, ICON_SIZE, lit, now, !reduceMotion);
+                case HUD_STUDIO -> RulesIcons.hudStudio(context, iconX, iconY, ICON_SIZE);
+                case GAME_RULES -> RulesIcons.scroll(context, iconX, iconY, ICON_SIZE);
+            }
+
+            // Label (short) beside the icon, vertically centered.
+            int labelX = iconX + ICON_SIZE + 6;
+            int textY = y + (h - uiFontHeight()) / 2;
+            int stateW = this.isToggle ? uiTextWidth("Off") + 6 : uiTextWidth(">") + 6;
+            int labelRight = x + w - stateW - 4;
+            int labelMaxW = Math.max(12, labelRight - labelX);
+            if (this.rainbowLabel && enabled) {
+                drawFlowingLabel(context, this.label, labelX, textY);
+            } else {
+                int labelColor = !enabled ? DISABLED_COLOR : (this.isToggle ? (on ? WARM_WHITE : MUTED) : WARM_WHITE);
+                drawUiText(context, ellipsizeToWidth(this.label, labelMaxW), labelX, textY, labelColor, false);
+            }
+
+            // State / affordance on the right.
+            if (this.isToggle) {
+                String state = on ? "On" : "Off";
+                int stateColor = !enabled ? DISABLED_COLOR : (on ? GOLD : MUTED);
+                int sx = x + w - uiTextWidth(state) - 4;
+                drawUiText(context, state, sx, textY, stateColor, false);
+            } else {
+                int cx = x + w - uiTextWidth(">") - 4;
+                drawUiText(context, ">", cx, textY, enabled ? GOLD : DISABLED_COLOR, false);
+            }
+
+            if (clipped) {
+                context.disableScissor();
+            }
+
+            // Tooltip (deferred -> renders on top, outside the scissor). Only when this row's viewport shows it.
+            if (hovered && y + h > settingsViewportTop && y < settingsViewportBottom) {
+                context.setTooltipForNextFrame(font, this.tooltip, mouseX, mouseY);
+            }
+            this.handleCursor(context);
+        }
+
+        @Override
+        protected void updateWidgetNarration(NarrationElementOutput builder) {
+            this.defaultButtonNarrationText(builder);
+        }
+    }
+
+    /** Left-aligned flowing-rainbow wordmark (HUD Studio row), matching the compass/HUD-Studio rainbow. */
+    private void drawFlowingLabel(GuiGraphicsExtractor context, String text, int x, int y) {
+        int cx = x;
+        int visibleIdx = 0;
+        int visibleCount = 0;
+        for (int i = 0; i < text.length(); i++) {
+            if (text.charAt(i) != ' ') visibleCount++;
+        }
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            int color = 0xFF000000 | RainbowText.flowingColor(
+                    visibleIdx, visibleCount, com.example.globe.core.ui.FlowingGradient.DEFAULT_CYCLE_SECONDS);
+            drawUiText(context, String.valueOf(c), cx, y, color, true);
+            if (c != ' ') visibleIdx++;
+            cx += this.font.width(String.valueOf(c));
         }
     }
 }
