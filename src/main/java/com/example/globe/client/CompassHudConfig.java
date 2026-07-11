@@ -164,7 +164,10 @@ public final class CompassHudConfig {
     // intentional chip behind the themed chrome instead of a barely-there wash. Digital-only field (analog
     // uses analogInnerAlpha); existing configs keep their saved value.
     public int backgroundAlpha = 150; // 0..255 (lower = less dark)
-    public int textRgb = 0xFFFFFF;
+    // Fresh-config default changed from pure white (2026-07-11) to the same warm off-white/ivory used by
+    // the zone-title's OFF_WHITE preset (LatitudeConfigData.OFF_WHITE_RGB = 0xF3ECDD), so the compass text
+    // and the titles read as one consistent palette. Existing configs keep their saved textRgb.
+    public int textRgb = 0xF3ECDD;
     public int textAlpha = 255; // 0..255
     // Overrides textRgb (and the Custom RGB sliders) with a per-letter rainbow cycle when true, on the compass
     // digital line and every zone/biome/coords label (attached or detached).
