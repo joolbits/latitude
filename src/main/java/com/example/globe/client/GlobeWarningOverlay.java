@@ -590,6 +590,33 @@ public final class GlobeWarningOverlay {
                 LatitudeConfig.zoneEnterTitleEnabled);
     }
 
+    /**
+     * Dev/test convenience (fired by {@code /latdev title}): shows the real big zone-enter title overlay for
+     * the zone the player is CURRENTLY standing in, on demand, without walking across a zone boundary.
+     *
+     * <p>This DELIBERATELY bypasses the {@link com.example.globe.core.ZoneTitleBanding} anti-spam / hysteresis
+     * that governs real gameplay crossings -- an explicit request to see the title should always show the FULL
+     * big title, never the quiet action-bar fallback. It uses the SAME duration/scale derivation as the real
+     * crossing-trigger site ({@code render()}), so the preview matches what a real crossing would show. It does
+     * NOT touch {@code lastZoneKey} / {@code zoneFullArmed} (the real crossing-detection state machine is left
+     * completely alone), so this command has no side effect on subsequent real crossings.
+     *
+     * @return the rendered title text (for command feedback), or {@code null} if player/level are unavailable.
+     */
+    public static String debugFireZoneTitleNow(Minecraft client) {
+        if (client == null || client.player == null || client.level == null) {
+            return null;
+        }
+        var border = client.level.getWorldBorder();
+        String canonicalZoneKey = canonicalTitleZoneKey(border, client.player.getZ());
+        String titleText = buildZoneEnterTitle(client, canonicalZoneKey);
+        int durationTicks = (int) Math.round(clamp(LatitudeConfig.zoneEnterTitleSeconds, 2.0, 10.0) * 20.0);
+        double scale = clamp(LatitudeConfig.zoneEnterTitleScale, 1.0, 3.0);
+        logEntryTitle("zone_debug_command", titleText, client, client.player.getX(), client.player.getZ());
+        ZoneEnterTitleOverlay.trigger(titleText, durationTicks, scale);
+        return titleText;
+    }
+
     private static String buildZoneEnterTitle(Minecraft client, String canonicalZoneKey) {
         // Natural case -- ZoneEnterTitleOverlay's applyCase() applies the player's chosen title-case option
         // (Normal/UPPERCASE/lowercase/Mocking) at render time, so forcing uppercase here would make "Normal"
