@@ -39,6 +39,9 @@ public final class CompassHudPreset {
         public int outlineRgb = 0x000000;
         public boolean dropShadow = false;
         public boolean glow = false;
+        // One-shot color-aware glimmer sweep (NEW 2026-07-11). Default ON so a preset saved without this key
+        // imports with the glimmer on, matching the fresh-config look.
+        public boolean glimmer = true;
         public boolean showBaseDegrees = true;
         public int offsetX = 0;
         public int offsetY = -40;
@@ -122,6 +125,7 @@ public final class CompassHudPreset {
         p.title.outlineRgb = LatitudeConfig.zoneEnterTitleOutlineRgb;
         p.title.dropShadow = LatitudeConfig.zoneEnterTitleDropShadow;
         p.title.glow = LatitudeConfig.zoneEnterTitleGlow;
+        p.title.glimmer = LatitudeConfig.zoneEnterTitleGlimmer;
         p.title.showBaseDegrees = LatitudeConfig.showZoneBaseDegreesOnTitle;
         p.title.offsetX = LatitudeConfig.zoneEnterTitleOffsetX;
         p.title.offsetY = LatitudeConfig.zoneEnterTitleOffsetY;
@@ -165,6 +169,7 @@ public final class CompassHudPreset {
             LatitudeConfig.zoneEnterTitleOutlineRgb = title.outlineRgb;
             LatitudeConfig.zoneEnterTitleDropShadow = title.dropShadow;
             LatitudeConfig.zoneEnterTitleGlow = title.glow;
+            LatitudeConfig.zoneEnterTitleGlimmer = title.glimmer;
             LatitudeConfig.showZoneBaseDegreesOnTitle = title.showBaseDegrees;
             LatitudeConfig.zoneEnterTitleOffsetX = title.offsetX;
             LatitudeConfig.zoneEnterTitleOffsetY = title.offsetY;

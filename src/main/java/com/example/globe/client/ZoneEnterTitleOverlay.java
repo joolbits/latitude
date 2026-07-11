@@ -103,17 +103,19 @@ public final class ZoneEnterTitleOverlay {
         // clamp is the self-contained fix.)
         int cx = OverlayLayout.clampCenter((screenW / 2) + LatitudeConfig.zoneEnterTitleOffsetX, halfW, screenW);
         int cy = OverlayLayout.clampCenter((screenH / 2) + LatitudeConfig.zoneEnterTitleOffsetY, halfH, screenH);
-        drawTitleLineAt(ctx, cx, cy, raw, drawScale, a, fadeInShimmer(age));
+        drawTitleLineAt(ctx, cx, cy, raw, drawScale, a, glimmerProgress(age));
     }
 
-    /** Fade-in progress (0..1) for the rainbow/aurora shimmer crest, or -1 when there's no shimmer this frame:
-     *  once the fade-in window has passed, or when Reduce Motion is on. The preset gate (RAINBOW/AURORA only)
-     *  lives in {@link #drawStyledTitle} so every caller of the shared draw path stays consistent. */
-    static float fadeInShimmer(long age) {
-        if (LatitudeConfig.reduceMotion || age >= FADE_TICKS) {
+    /** Normalized progress (0..1) through the one-shot glimmer sweep for a title of the given age in ticks,
+     *  or -1 when there's no glimmer this frame: the toggle is off, Reduce Motion is on, or the age is outside
+     *  the single-sweep window ({@link com.example.globe.core.ui.TitleStyle#glimmerProgress}). The color-aware
+     *  brighten (which works for ALL presets, not just rainbow/aurora) lives in {@link #drawStyledTitle} so
+     *  every caller of the shared draw path stays consistent. */
+    static float glimmerProgress(long age) {
+        if (!LatitudeConfig.zoneEnterTitleGlimmer || LatitudeConfig.reduceMotion) {
             return -1f;
         }
-        return (float) age / (float) FADE_TICKS;
+        return com.example.globe.core.ui.TitleStyle.glimmerProgress(age);
     }
 
     /**
@@ -128,12 +130,13 @@ public final class ZoneEnterTitleOverlay {
 
     /**
      * As {@link #drawTitleLineAt(GuiGraphicsExtractor, int, int, String, double, int)}, plus the
-     * fade-in shimmer progress: {@code shimmerProgress} in [0,1] drives the one-shot rainbow shimmer crest
-     * during fade-in; pass {@code -1} for no shimmer (solid presets, static Studio preview, Reduce Motion).
-     * Hemisphere titles pass their own fade-in progress here so they shimmer coherently with zone titles.
+     * one-shot glimmer progress: {@code glimmerProgress} in [0,1] drives the single color-aware glimmer crest
+     * as the title appears (it brightens each letter's OWN color -- solid, custom, rainbow or aurora); pass
+     * {@code -1} for no glimmer (toggle off, static Studio preview, Reduce Motion). Hemisphere titles pass
+     * their own progress here so they glimmer coherently with zone titles.
      */
     public static void drawTitleLineAt(GuiGraphicsExtractor ctx, int cx, int cy, String rawText, double scale,
-                                       int alphaByte, float shimmerProgress) {
+                                       int alphaByte, float glimmerProgress) {
         Minecraft client = Minecraft.getInstance();
         if (client == null || client.font == null) {
             return;
@@ -145,16 +148,24 @@ public final class ZoneEnterTitleOverlay {
         try {
             m.translate(cx, cy);
             m.scale((float) scale, (float) scale);
-            drawStyledTitle(ctx, tr, styled, alphaByte, (float) scale, shimmerProgress);
+            drawStyledTitle(ctx, tr, styled, alphaByte, (float) scale, glimmerProgress);
         } finally {
             m.popMatrix();
         }
     }
 
     public static void renderStaticAt(GuiGraphicsExtractor ctx, int screenW, int screenH, String text, double scale, int offsetX, int offsetY) {
+        renderStaticAt(ctx, screenW, screenH, text, scale, offsetX, offsetY, -1f);
+    }
+
+    /** As {@link #renderStaticAt(GuiGraphicsExtractor, int, int, String, double, int, int)}, but with an
+     *  explicit glimmer progress ([0,1], or -1 for none) so the HUD Studio can REPLAY the one-shot glimmer as
+     *  feedback (on Title-tab open / toggle-ON) even though the preview is otherwise static. */
+    public static void renderStaticAt(GuiGraphicsExtractor ctx, int screenW, int screenH, String text, double scale,
+                                      int offsetX, int offsetY, float glimmerProgress) {
         int cx = (screenW / 2) + offsetX;
         int cy = (screenH / 2) + offsetY;
-        drawTitleLineAt(ctx, cx, cy, text, scale, 0xFF);
+        drawTitleLineAt(ctx, cx, cy, text, scale, 0xFF, glimmerProgress);
     }
 
     // Shared by both render() (real gameplay) and renderStaticAt() (the HUD Studio live preview) so the two
@@ -179,12 +190,12 @@ public final class ZoneEnterTitleOverlay {
     /**
      * The single styled-title draw path (real gameplay, hemisphere channel, and Studio preview all reach
      * here). Draws, back-to-front: (1) the diffuse-shadow glow halo, (2) the crisp outline, (3) the main
-     * fill -- optionally with MC's hard drop shadow and the rainbow fade-in shimmer. {@code scale} is the
+     * fill -- optionally with MC's hard drop shadow and the one-shot color-aware glimmer. {@code scale} is the
      * pose's current scale, used to keep the outline/glow offsets a fixed size in SCREEN pixels rather than
-     * fattening with Title Size. {@code shimmerProgress} is fade-in progress in [0,1] (or -1 for none).
+     * fattening with Title Size. {@code glimmerProgress} is the sweep progress in [0,1] (or -1 for none).
      */
     private static void drawStyledTitle(GuiGraphicsExtractor ctx, Font font, String text, int alphaByte,
-                                        float scale, float shimmerProgress) {
+                                        float scale, float glimmerProgress) {
         int spacing = LatitudeConfig.zoneEnterTitleLetterSpacing;
         int alphaMask = (alphaByte & 0xFF) << 24;
         float invScale = scale > 0f ? 1.0f / scale : 1.0f;
@@ -212,33 +223,35 @@ public final class ZoneEnterTitleOverlay {
         }
 
         // (3) Main fill. The hard MC drop shadow is now an explicit toggle (was always-on before this pass).
+        // ONE unified fill path for every preset: each letter's base color (solid/custom, or the rainbow/aurora
+        // gradient) is brightened by the one-shot glimmer crest via TitleStyle.brighten -- so the glimmer is a
+        // color-aware sheen on whatever the letter already is, not a rainbow-only white flash. At
+        // glimmerProgress < 0 the boost is 0 for every letter, so this collapses to the plain colored fill.
         boolean dropShadow = LatitudeConfig.zoneEnterTitleDropShadow;
         LatitudeConfigData.TitleColorPreset preset = LatitudeConfig.zoneEnterTitleColorPreset;
-        if (preset == LatitudeConfigData.TitleColorPreset.RAINBOW
-                || preset == LatitudeConfigData.TitleColorPreset.AURORA) {
-            int visibleCount = 0;
-            for (int i = 0; i < text.length(); i++) {
-                if (text.charAt(i) != ' ') visibleCount++;
-            }
-            final int visible = visibleCount;
-            // RAINBOW = static ROYGBIV sweep across the letters (no drift); AURORA = the flowing/drifting
-            // gradient (same effect the compass's "Aurora" scheme uses). Shimmer only rides these two presets.
-            final boolean flowing = preset == LatitudeConfigData.TitleColorPreset.AURORA;
-            final float shimmer = shimmerProgress;
-            drawSpacedText(ctx, font, text, 0, 0, dropShadow, spacing,
-                    idx -> {
-                        int base = flowing
-                                ? RainbowText.flowingColor(idx, visible,
-                                        com.example.globe.core.ui.FlowingGradient.DEFAULT_CYCLE_SECONDS)
-                                : com.example.globe.core.ui.FlowingGradient.staticColorFor(idx, visible);
-                        base = com.example.globe.core.ui.TitleStyle.brighten(base,
-                                com.example.globe.core.ui.TitleStyle.shimmerBoost(shimmer, idx, visible));
-                        return alphaMask | base;
-                    });
-            return;
+        int visibleCount = 0;
+        for (int i = 0; i < text.length(); i++) {
+            if (text.charAt(i) != ' ') visibleCount++;
         }
-        int argb = alphaMask | (titleColorRgb(preset) & 0xFFFFFF);
-        drawSpacedText(ctx, font, text, 0, 0, dropShadow, spacing, idx -> argb);
+        final int visible = Math.max(1, visibleCount);
+        final float glimmer = glimmerProgress;
+        // RAINBOW = static ROYGBIV sweep across the letters (no drift); AURORA = the flowing/drifting gradient.
+        final boolean gradient = preset == LatitudeConfigData.TitleColorPreset.RAINBOW
+                || preset == LatitudeConfigData.TitleColorPreset.AURORA;
+        final boolean flowing = preset == LatitudeConfigData.TitleColorPreset.AURORA;
+        final int solidRgb = gradient ? 0 : (titleColorRgb(preset) & 0xFFFFFF);
+        drawSpacedText(ctx, font, text, 0, 0, dropShadow, spacing,
+                idx -> {
+                    int base = gradient
+                            ? (flowing
+                                    ? RainbowText.flowingColor(idx, visible,
+                                            com.example.globe.core.ui.FlowingGradient.DEFAULT_CYCLE_SECONDS)
+                                    : com.example.globe.core.ui.FlowingGradient.staticColorFor(idx, visible))
+                            : solidRgb;
+                    base = com.example.globe.core.ui.TitleStyle.brighten(base,
+                            com.example.globe.core.ui.TitleStyle.glimmerBoost(glimmer, idx, visible));
+                    return alphaMask | base;
+                });
     }
 
     // Draws the full styled string once in a single flat color, offset by (ox, oy) LOCAL units (the pose is

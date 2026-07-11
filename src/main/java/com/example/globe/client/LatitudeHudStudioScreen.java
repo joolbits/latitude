@@ -82,6 +82,10 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
 
     private double titleOffsetXf;
     private double titleOffsetYf;
+    // Wall-clock (ms) the static-preview glimmer replay started, or -1 = none. The preview is otherwise static
+    // (the glimmer is an appearance-triggered effect); we replay it once when the Title tab opens and each time
+    // the Title Glimmer toggle is flipped ON, as feedback. It self-expires after one sweep (~0.8s).
+    private long titleGlimmerReplayStartMs = -1L;
     private double titleGrabDx;
     private double titleGrabDy;
 
@@ -124,6 +128,7 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
     private AbstractWidget wTitleOutline;
     private AbstractWidget wTitleDropShadow;
     private AbstractWidget wTitleGlow;
+    private AbstractWidget wTitleGlimmer;
     private AbstractWidget wTitleCase;
     private AbstractWidget wTitleLetterSpacing;
 
@@ -285,6 +290,7 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
         this.wTitleOutline = null;
         this.wTitleDropShadow = null;
         this.wTitleGlow = null;
+        this.wTitleGlimmer = null;
         this.wTitleCase = null;
         this.wTitleLetterSpacing = null;
         this.wUndoLoad = null;
@@ -834,6 +840,18 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
             trackSidebarWidget(this.wTitleGlow, y);
             y += rowH + rowGap;
 
+            this.wTitleGlimmer = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "ON" : "OFF"), () -> LatitudeConfig.zoneEnterTitleGlimmer)
+                    .withValues(true, false)
+                    .create(panelX, y, widgetW, rowH, Component.literal("Title Glimmer"), (btn, value) -> {
+                        LatitudeConfig.zoneEnterTitleGlimmer = value;
+                        LatitudeConfig.saveCurrent();
+                        // Nice feedback: flipping it ON replays the one-shot sweep once in the static preview.
+                        if (value) this.titleGlimmerReplayStartMs = System.currentTimeMillis();
+                    }));
+            tooltip(this.wTitleGlimmer, "A quick shine sweeps across the title when it appears.");
+            trackSidebarWidget(this.wTitleGlimmer, y);
+            y += rowH + rowGap;
+
             LatitudeConfigData.TitleCaseMode[] titleCaseValues = LatitudeConfigData.TitleCaseMode.values();
             List<SwatchDropdown.Entry> titleCaseEntries = new ArrayList<>();
             for (LatitudeConfigData.TitleCaseMode v : titleCaseValues) titleCaseEntries.add(SwatchDropdown.Entry.text(titleCaseLabel(v)));
@@ -871,6 +889,7 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
                         LatitudeConfig.zoneEnterTitleOutlineRgb = 0x000000;
                         LatitudeConfig.zoneEnterTitleDropShadow = false;
                         LatitudeConfig.zoneEnterTitleGlow = false;
+                        LatitudeConfig.zoneEnterTitleGlimmer = true;
                         LatitudeConfig.saveCurrent();
                         this.titleOffsetXf = 0;
                         this.titleOffsetYf = 0;
@@ -1167,6 +1186,15 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
         int titleOffsetX = (dragElement == DragElement.TITLE) ? (int) Math.round(titleOffsetXf) : LatitudeConfig.zoneEnterTitleOffsetX;
         int titleOffsetY = (dragElement == DragElement.TITLE) ? (int) Math.round(titleOffsetYf) : LatitudeConfig.zoneEnterTitleOffsetY;
 
+        // One-shot glimmer replay: the preview is static, but on Title-tab open / toggle-ON we drive the sweep
+        // once from wall-clock (~20 tps) so the effect is visible here too. glimmerProgress self-expires to -1
+        // after one sweep, and we gate on the same toggle + Reduce Motion as gameplay.
+        float previewGlimmer = -1f;
+        if (this.titleGlimmerReplayStartMs >= 0 && LatitudeConfig.zoneEnterTitleGlimmer && !LatitudeConfig.reduceMotion) {
+            long ageTicks = (System.currentTimeMillis() - this.titleGlimmerReplayStartMs) / 50L;
+            previewGlimmer = com.example.globe.core.ui.TitleStyle.glimmerProgress(ageTicks);
+        }
+
         ZoneEnterTitleOverlay.renderStaticAt(
                 ctx,
                 this.width,
@@ -1174,7 +1202,8 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
                 sampleTitle,
                 LatitudeConfig.zoneEnterTitleScale,
                 titleOffsetX,
-                titleOffsetY);
+                titleOffsetY,
+                previewGlimmer);
 
         CompassHud.renderAdjustPreview(ctx, this.width, this.height);
 
@@ -1684,6 +1713,7 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
         LatitudeConfig.zoneEnterTitleOutlineRgb = 0x000000;
         LatitudeConfig.zoneEnterTitleDropShadow = false;
         LatitudeConfig.zoneEnterTitleGlow = false;
+        LatitudeConfig.zoneEnterTitleGlimmer = true;
         LatitudeConfig.zoneEnterTitleCase = LatitudeConfigData.TitleCaseMode.NORMAL;
         LatitudeConfig.zoneEnterTitleLetterSpacing = 0;
         LatitudeConfig.zoneEnterTitleDraggable = true;
@@ -1939,6 +1969,9 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
         if (tab == activeTab) return;
         activeTab = tab;
         sidebarScrollY = 0;
+        // Entering the Title tab replays the one-shot glimmer once in the static preview, so its effect is
+        // visible on arrival even though the preview is otherwise static (appearance-triggered in-game).
+        if (tab == TAB_TITLE) this.titleGlimmerReplayStartMs = System.currentTimeMillis();
         this.init();
     }
 

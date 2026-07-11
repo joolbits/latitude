@@ -121,6 +121,12 @@ public final class LatitudeConfigData {
     @SerializedName(value = "zoneEnterTitleGlow", alternate = {"zoneEnterTitleGlowValue"})
     public boolean zoneEnterTitleGlow = false;
 
+    /** A quick, single, color-aware glimmer wave that sweeps left->right across the title as it appears
+     *  (brightens each letter's own color in one rapid crest, then done -- never loops). Default = ON; it's an
+     *  ephemeral flourish tied to the title's entrance. Reduce Motion suppresses it (rendered static). */
+    @SerializedName(value = "zoneEnterTitleGlimmer", alternate = {"zoneEnterTitleGlimmerValue"})
+    public boolean zoneEnterTitleGlimmer = true;
+
     @SerializedName(value = "zoneEnterTitleCase", alternate = {"zoneEnterTitleCaseValue"})
     public TitleCaseMode zoneEnterTitleCase = TitleCaseMode.NORMAL;
 

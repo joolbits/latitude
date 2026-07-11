@@ -1,10 +1,16 @@
 package com.example.globe.core.ui;
 
 /**
- * Pure math + constants for the zone-enter / hemisphere title's outline, diffuse-shadow-glow, and
- * rainbow fade-in shimmer (title-styling overhaul 2026-07-11). No rendering dependencies live here so the
- * offset geometry and the shimmer envelope are unit-testable; {@code ZoneEnterTitleOverlay} is the thin glue
+ * Pure math + constants for the zone-enter / hemisphere title's outline, diffuse-shadow-glow, and the
+ * one-shot GLIMMER wave (title-styling overhaul 2026-07-11). No rendering dependencies live here so the
+ * offset geometry and the glimmer envelope are unit-testable; {@code ZoneEnterTitleOverlay} is the thin glue
  * that turns these numbers into {@code ctx.text} passes.
+ *
+ * <p>The glimmer is a single, rapid, color-aware sheen that sweeps once left&rarr;right across the title
+ * right after it appears (it generalizes the old round-15 fade-in "shimmer" that only rode the RAINBOW/AURORA
+ * presets): one crest, tied to the title's age in ticks, that BRIGHTENS whatever color each letter already is
+ * ({@link #brighten} scales the letter's own RGB, so a gold letter flashes brighter gold and a rainbow letter
+ * a brighter band -- a sheen ON the color, never a white overlay). It fires exactly once and never loops.
  *
  * <p>All offsets are expressed in SCREEN pixels (the caller divides by the title's draw scale before
  * translating the already-scaled pose matrix, so a "1px" outline stays a crisp 1px at any Title Size rather
@@ -33,42 +39,71 @@ public final class TitleStyle {
      *  drop shadow. */
     public static final float[] GLOW_RING_ALPHA = {0.16f, 0.10f, 0.05f};
 
-    /** Peak fractional brightness boost of the shimmer crest (very faint per the brief: ~10-15%). */
-    public static final float SHIMMER_AMPLITUDE = 0.14f;
+    /** First tick (title age, 0 = the frame it appeared) at which the glimmer crest starts moving. Slightly
+     *  after fade-in begins (fade-in is {@code ZoneEnterTitleOverlay.FADE_TICKS}=10 ticks) so the title is
+     *  already legible as the crest crosses it. */
+    public static final int GLIMMER_START_TICK = 2;
 
-    /** Gaussian half-width of the crest, in units of the string's normalized [0,1] letter position. ~0.22
-     *  makes the crest cover roughly a third of the word at a time -- a soft travelling highlight, not a
-     *  hard spotlight. */
-    public static final float SHIMMER_SIGMA = 0.22f;
+    /** Number of ticks the single crest takes to sweep the whole word (~0.7s at 20 tps): a rapid, crisp wave,
+     *  noticeably quicker than the old fade-in shimmer. After {@code GLIMMER_START_TICK + GLIMMER_SPAN_TICKS}
+     *  the glimmer is done (never loops) and the title renders in its plain colors. */
+    public static final int GLIMMER_SPAN_TICKS = 14;
 
-    /** Extra travel (fraction of the string) the crest runs beyond each end, so it sweeps fully ON at the
-     *  left edge and fully OFF past the right edge across the fade-in window rather than starting/ending
-     *  mid-word. */
-    static final float SHIMMER_MARGIN = 0.25f;
+    /** Peak fractional brightness boost of the glimmer crest. A visible glimmer (per the brief, ~0.30-0.40)
+     *  rather than the old faint 0.14 -- still tasteful, and framed by the outline it reads on any fill. */
+    public static final float GLIMMER_AMPLITUDE = 0.34f;
+
+    /** Gaussian half-width of the crest, in units of the string's normalized [0,1] letter position. A crisp
+     *  crest (~0.20) covers roughly a fifth of the word at a time -- a travelling glint, not a broad wash. */
+    public static final float GLIMMER_SIGMA = 0.20f;
+
+    /** Extra travel (fraction of the string) the crest runs beyond each end, so it enters fully OFF at the
+     *  left edge and exits fully OFF past the right edge rather than snapping on/off mid-word. Wide enough
+     *  (0.45) that both the first and last letters are near-zero boost at the sweep's start/end. */
+    static final float GLIMMER_MARGIN = 0.45f;
 
     /**
-     * Brightness boost in {@code [0, SHIMMER_AMPLITUDE]} for one letter, given the title's fade-in progress.
-     * A single Gaussian crest travels left&rarr;right as {@code fadeInProgress} runs 0&rarr;1 (the
-     * travelling-Gaussian idiom borrowed from the atlas bands), so each letter briefly brightens as the crest
-     * passes it -- exactly once, tied to fade-in, never looping.
-     *
-     * @param fadeInProgress 0..1 through the fade-in window; any value {@code < 0} means "no shimmer" and
-     *                       returns 0 (used for solid presets, Reduce Motion, and the static Studio preview).
+     * Normalized progress {@code [0,1]} through the one-shot glimmer sweep for a title of the given age in
+     * ticks, or {@code -1} when the glimmer is not running this frame -- BEFORE it starts ({@code age <
+     * GLIMMER_START_TICK}) or AFTER the single sweep has completed ({@code age >= GLIMMER_START_TICK +
+     * GLIMMER_SPAN_TICKS}). Callers still apply their own gates (the config toggle, Reduce Motion) on top of
+     * this; keeping the pure window math here makes the one-shot timing unit-testable.
      */
-    public static float shimmerBoost(float fadeInProgress, int visibleIdx, int visibleCount) {
-        if (fadeInProgress < 0f) {
+    public static float glimmerProgress(long ageTicks) {
+        long rel = ageTicks - GLIMMER_START_TICK;
+        if (rel < 0 || rel >= GLIMMER_SPAN_TICKS) {
+            return -1f;
+        }
+        return (float) rel / (float) GLIMMER_SPAN_TICKS;
+    }
+
+    /**
+     * Brightness boost in {@code [0, GLIMMER_AMPLITUDE]} for one letter, given normalized sweep progress.
+     * A single Gaussian crest travels left&rarr;right as {@code progress} runs 0&rarr;1 (the travelling-Gaussian
+     * idiom borrowed from the atlas bands), so each letter briefly brightens as the crest passes it -- exactly
+     * once, never looping. The returned boost is meant to be fed straight into {@link #brighten} on the
+     * letter's OWN color, which is what makes the glimmer color-aware rather than a white flash.
+     *
+     * @param progress 0..1 through the glimmer window; any value {@code < 0} means "no glimmer" and returns 0
+     *                 (used for solid presets with the toggle off, Reduce Motion, and the static Studio preview).
+     */
+    public static float glimmerBoost(float progress, int visibleIdx, int visibleCount) {
+        if (progress < 0f) {
             return 0f;
         }
         int count = Math.max(1, visibleCount);
         float p = count <= 1 ? 0f : (float) visibleIdx / (float) (count - 1);
-        float crest = -SHIMMER_MARGIN + fadeInProgress * (1f + 2f * SHIMMER_MARGIN);
+        float crest = -GLIMMER_MARGIN + progress * (1f + 2f * GLIMMER_MARGIN);
         float d = p - crest;
-        float g = (float) Math.exp(-(d * d) / (2f * SHIMMER_SIGMA * SHIMMER_SIGMA));
-        return SHIMMER_AMPLITUDE * g;
+        float g = (float) Math.exp(-(d * d) / (2f * GLIMMER_SIGMA * GLIMMER_SIGMA));
+        return GLIMMER_AMPLITUDE * g;
     }
 
     /** Multiplies an {@code 0xRRGGBB} color's brightness by {@code (1 + boost)}, clamping each channel to 255.
-     *  Alpha is not part of the input and is left to the caller to OR back in. {@code boost <= 0} is a no-op. */
+     *  This is what makes the glimmer COLOR-AWARE: it scales the letter's existing channels, so a saturated
+     *  fill (gold/red/rainbow) glints brighter in its own hue, and a near-white fill (OFF_WHITE) lifts toward
+     *  white -- a clean sheen the outline frames -- with no channel wraparound. Alpha is not part of the input
+     *  and is left to the caller to OR back in. {@code boost <= 0} is a no-op. */
     public static int brighten(int rgb, float boost) {
         if (boost <= 0f) {
             return rgb & 0xFFFFFF;
