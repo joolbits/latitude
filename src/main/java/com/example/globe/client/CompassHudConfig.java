@@ -40,11 +40,19 @@ public final class CompassHudConfig {
     public boolean enabled = true;
 
     public ShowMode showMode = ShowMode.COMPASS_PRESENT;
-    // Default to the analog compass for the 2.0 release (Peetsa's chosen default layout: analog @ size 32,
-    // inner alpha 0.50, lat+long readout on). Existing users keep whatever their saved config has.
+    // Default to the analog compass for the 2.0 release. FRESH-CONFIG DEFAULT REFRESH (2026-07-11): the old
+    // default (Classic Gold + Disc + inner alpha 0.50) read as tired, and at that alpha the Disc's dark face
+    // was nearly invisible so Disc and Ring looked identical. New default = a warm Sunset Rose with a solid
+    // face: Rose look (the 8-point compass star), Sunset theme (amber ring / coral needle), inner alpha 0.85
+    // (see analogInnerAlpha). These new initializers apply to fresh configs AND to any saved config that
+    // predates a field's introduction -- Gson leaves a missing JSON key at the Java default, so an older file
+    // silently adopts whatever we set here. Currently that's only analogLook (added 2026-07-07); analogTheme
+    // was already present in every prior config, so its default only affects brand-new configs and "Reset
+    // Compass". Accepted pre-release because no public build ever wrote this config file; once a public build
+    // has, changing a field's default needs a real migration (stamp a version, don't silently reinterpret it).
     public CompassStyle style = CompassStyle.ANALOG;
-    public AnalogCompassTheme analogTheme = AnalogCompassTheme.CLASSIC_GOLD;
-    public CompassLook analogLook = CompassLook.DISC;
+    public AnalogCompassTheme analogTheme = AnalogCompassTheme.SUNSET;
+    public CompassLook analogLook = CompassLook.ROSE;
     public DirectionMode directionMode = DirectionMode.CARDINAL_8;
 
     // Positioning (screen-space). LEGACY (layoutVersion 0): hAnchor/vAnchor anchored a CONTENT-MEASURED
@@ -72,13 +80,18 @@ public final class CompassHudConfig {
 
     // Sizing (digital text)
     public float scale = 1.0f; // 0.5 .. 3.0 recommended
-    public int padding = 3;
+    // Fresh-config default nudged 3 -> 5 (2026-07-11) so the beautified digital card has room to breathe
+    // around its themed chrome (rounded corners + accent underline). Existing configs keep their saved value.
+    public int padding = 5;
 
     // Sizing (analog disc diameter, unscaled)
     public float analogSize = 32.0f; // pixels
 
-    // Analog styling. Lower = more transparent inner disc.
-    public float analogInnerAlpha = 0.50f; // 0..1
+    // Analog styling. Lower = more transparent inner disc. Fresh-config default raised 0.50 -> 0.85
+    // (2026-07-11): at 0.50 the Disc look's dark face was so translucent it read as an open Ring, so the two
+    // looks were indistinguishable at defaults; 0.85 gives Disc a clearly filled face while Ring stays hollow
+    // (Ring never fills the face regardless of this value). Existing configs keep their saved value.
+    public float analogInnerAlpha = 0.85f; // 0..1
 
     // Only used when analogTheme == RAINBOW ("Aurora" in the UI). Seconds for one full color-wheel loop --
     // deliberately defaults slow and the slider's own range skews slow (2026-07-08, Peetsa's request: a
@@ -147,7 +160,10 @@ public final class CompassHudConfig {
     // Styling
     public boolean showBackground = true;
     public int backgroundRgb = 0x000000;
-    public int backgroundAlpha = 64; // 0..255 (lower = less dark)
+    // Fresh-config default raised 64 -> 150 (2026-07-11) so the beautified digital card reads as an
+    // intentional chip behind the themed chrome instead of a barely-there wash. Digital-only field (analog
+    // uses analogInnerAlpha); existing configs keep their saved value.
+    public int backgroundAlpha = 150; // 0..255 (lower = less dark)
     public int textRgb = 0xFFFFFF;
     public int textAlpha = 255; // 0..255
     // Overrides textRgb (and the Custom RGB sliders) with a per-letter rainbow cycle when true, on the compass
@@ -278,8 +294,8 @@ public final class CompassHudConfig {
     void sanitize() {
         if (showMode == null) showMode = ShowMode.COMPASS_PRESENT;
         if (style == null) style = CompassStyle.DIGITAL;
-        if (analogTheme == null) analogTheme = AnalogCompassTheme.CLASSIC_GOLD;
-        if (analogLook == null) analogLook = CompassLook.DISC;
+        if (analogTheme == null) analogTheme = AnalogCompassTheme.SUNSET;
+        if (analogLook == null) analogLook = CompassLook.ROSE;
         if (directionMode == null) directionMode = DirectionMode.CARDINAL_8;
         if (hAnchor == null) hAnchor = HAnchor.CENTER;
         if (vAnchor == null) vAnchor = VAnchor.TOP;

@@ -151,7 +151,7 @@ public final class CompassHud {
 
             String[] lines = new String[]{hudText};
             HudBounds b = computeBounds(screenW, screenH, client, cfg, lines);
-            renderDigitalAt(ctx, client, cfg, lines, b.x, b.y, forceVisible);
+            renderDigitalAt(ctx, client, cfg, lines, directionText, b.x, b.y, forceVisible);
             if (cfg.displayZoneInHud && !cfg.zoneFollowsCompass) {
                 renderDetachedZone(ctx, client, cfg, forceVisible);
             }
@@ -242,7 +242,7 @@ public final class CompassHud {
         if (cfg.style == CompassHudConfig.CompassStyle.ANALOG) {
             renderAnalogAt(ctx, client, cfg, cfg.coordsFollowsCompass ? analogSampleLatLon(cfg) : null, attachedZoneBiomeSample(cfg), x, y, true);
         } else {
-            renderDigitalAt(ctx, client, cfg, sampleLines(cfg), x, y, true);
+            renderDigitalAt(ctx, client, cfg, sampleLines(cfg), sampleDirection(cfg), x, y, true);
         }
         if (cfg.displayZoneInHud && !cfg.zoneFollowsCompass) {
             renderDetachedZone(ctx, client, cfg, true);
@@ -301,7 +301,7 @@ public final class CompassHud {
         ctx.fill(px, py - 3, px + 1, py + 4, gold);
     }
 
-    private static void renderDigitalAt(GuiGraphicsExtractor ctx, Minecraft client, CompassHudConfig cfg, String[] lines, int x, int y, boolean isPreview) {
+    private static void renderDigitalAt(GuiGraphicsExtractor ctx, Minecraft client, CompassHudConfig cfg, String[] lines, String directionToken, int x, int y, boolean isPreview) {
         int pad = cfg.padding;
         int textW = measuredLineWidth(client, cfg, lines);
         int textH = client.font.lineHeight * lines.length;
@@ -310,6 +310,11 @@ public final class CompassHud {
         int boxH = textH + pad * 2;
 
         float s = cfg.scale;
+
+        // Parity with the analog family: the digital card borrows the SAME scheme colors the dials use
+        // (analogColors covers every theme, including Aurora's per-frame flow), so a slim ring-colored
+        // underline plus a needle-colored heading read as "the same family" as the Disc/Ring/Rose looks.
+        CompassDialRenderer.DialColors accent = analogColors(cfg);
 
         var m = ctx.pose();
         m.pushMatrix();
@@ -325,7 +330,22 @@ public final class CompassHud {
                     int a = 160;
                     bg = (a << 24) | (cfg.backgroundRgb & 0xFFFFFF);
                 }
-                ctx.fill(0, 0, boxW, boxH, bg);
+                // Softer chip: rounded corners instead of a hard rectangle. Radius shrinks on tiny cards so
+                // it never eats the whole edge.
+                int radius = Math.max(0, Math.min(3, Math.min(boxW, boxH) / 2 - 1));
+                fillRoundedRect(ctx, 0, 0, boxW, boxH, radius, bg);
+
+                // Themed chrome, alpha-scaled off the card's own text alpha so a faded card fades its chrome
+                // too: a hairline muted frame (echoes the dial's muted ticks) capped by a ring-colored
+                // underline (echoes the dial's rim). Inset by the corner radius so it hugs the rounding.
+                int chromeAlpha = (cfg.textArgb() >>> 24) & 0xFF;
+                int inset = radius;
+                int frame = withAlpha(accent.muted(), Math.round(chromeAlpha * 0.45f));
+                ctx.fill(inset, 0, boxW - inset, 1, frame);                 // top
+                ctx.fill(0, inset, 1, boxH - inset, frame);                 // left
+                ctx.fill(boxW - 1, inset, boxW, boxH - inset, frame);       // right
+                ctx.fill(inset, boxH - 1, boxW - inset, boxH, withAlpha(accent.ring(), chromeAlpha)); // underline
+
                 if (isPreview) {
                     int border = 0x55FFFFFF;
                     ctx.fill(0, 0, boxW, 1, border);
@@ -346,16 +366,43 @@ public final class CompassHud {
                     drawRainbowLeftAligned(ctx, client.font, lines[i], tx, lineY, cfg.shadow, alphaByte, cfg.rainbowCycleSeconds);
                     continue;
                 }
-                Component line = Component.literal(lines[i]);
-                if (cfg.shadow) {
-                    ctx.text(client.font, line, tx, lineY, color);
-                } else {
-                    ctx.text(client.font, line, tx, lineY, color, false);
+                // Heading parity: tint the leading direction token (N / NE / 360° ...) in the scheme's
+                // needle color -- the same color the analog needle uses -- while the rest of the readout keeps
+                // the player's chosen text color for legibility. Only when the direction isn't the entire
+                // line, so a direction-only readout stays fully in the text color.
+                if (i == 0 && directionToken != null && !directionToken.isEmpty()
+                        && lines[i].startsWith(directionToken) && lines[i].length() > directionToken.length()) {
+                    int headingColor = withAlpha(accent.needle(), (color >>> 24) & 0xFF);
+                    drawDigitalText(ctx, client.font, directionToken, tx, lineY, headingColor, cfg.shadow);
+                    int restX = tx + client.font.width(directionToken);
+                    drawDigitalText(ctx, client.font, lines[i].substring(directionToken.length()), restX, lineY, color, cfg.shadow);
+                    continue;
                 }
+                drawDigitalText(ctx, client.font, lines[i], tx, lineY, color, cfg.shadow);
             }
         } finally {
             m.popMatrix();
         }
+    }
+
+    private static void drawDigitalText(GuiGraphicsExtractor ctx, Font font, String text, int x, int y, int color, boolean shadow) {
+        ctx.text(font, text, x, y, color, shadow);
+    }
+
+    /** Filled rectangle with softly rounded corners (radius r) for the digital card -- a small per-row inset
+     *  near the top/bottom edges trims the corners so the chip reads soft rather than as a hard box. */
+    private static void fillRoundedRect(GuiGraphicsExtractor ctx, int x0, int y0, int x1, int y1, int r, int color) {
+        for (int y = y0; y < y1; y++) {
+            int dEdge = Math.min(y - y0, (y1 - 1) - y);
+            int inset = dEdge < r ? (r - dEdge) : 0;
+            ctx.fill(x0 + inset, y, x1 - inset, y + 1, color);
+        }
+    }
+
+    /** Repacks an ARGB color with a new alpha byte (keeps RGB). Used to alpha-scale the digital card's themed
+     *  chrome and heading tint off the card's own text alpha. */
+    private static int withAlpha(int argb, int alpha) {
+        return (Mth.clamp(alpha, 0, 255) << 24) | (argb & 0xFFFFFF);
     }
 
     private static void renderAnalogAt(GuiGraphicsExtractor ctx, Minecraft client, CompassHudConfig cfg, String latText, String zoneText, int x, int y, boolean isPreview) {
