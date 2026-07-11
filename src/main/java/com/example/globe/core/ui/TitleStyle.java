@@ -6,14 +6,21 @@ package com.example.globe.core.ui;
  * offset geometry and the glimmer envelope are unit-testable; {@code ZoneEnterTitleOverlay} is the thin glue
  * that turns these numbers into {@code ctx.text} passes.
  *
- * <p>The glimmer is a single, rapid, color-aware sheen that sweeps once left&rarr;right across the title
- * right after it appears (it generalizes the old round-15 fade-in "shimmer" that only rode the RAINBOW/AURORA
- * presets): one crest, tied to the title's age in ticks, that BRIGHTENS whatever color each letter already is
- * ({@link #brighten} lerps the letter's own RGB toward white by the crest's boost, so a gold letter flashes a
- * brilliant near-white gold and a rainbow letter a brighter band -- a strong sheen ON the color that still
- * leaves a recognizable sliver of the original hue at the peak, never a full white-out). It fires exactly once
- * and never loops. Unlike a plain multiply, the lerp lifts EVERY starting color -- including pure primaries and
- * black, whose maxed/zeroed channels a multiply would leave visually unchanged.
+ * <p>The glimmer is a single, rapid SHINE-SWEEP that travels once left&rarr;right across the title right after
+ * it appears (it generalizes the old round-15 fade-in "shimmer" that only rode the RAINBOW/AURORA presets):
+ * one Gaussian crest, tied to the title's age in ticks, rendered as RELATIVE CONTRAST rather than an absolute
+ * brighten. {@link #glimmerGaussian} gives the raw crest height in [0,1] per letter; {@link #glimmerShade}
+ * turns that into the per-letter color: letters away from the crest are GENTLY DIMMED to {@link #GLIMMER_DIM_FLOOR}
+ * of their brightness, and the crest letter is lifted back to full and then popped toward white by
+ * {@link #GLIMMER_WHITE_POP}. The moving bright crest against a briefly dimmed baseline is what makes the shine
+ * read on ANY fill -- including a near-white title like the OFF_WHITE default (0xF3ECDD), where you cannot make
+ * white brighter than white, so instead the surroundings dim and the crest pops. It fires exactly once and never
+ * loops; outside the sweep window {@code glimmerGaussian} returns 0 and {@code glimmerShade} is an exact no-op,
+ * so the title renders in its plain colors the rest of its on-screen life.
+ *
+ * <p>({@link #brighten} -- a plain lerp toward white -- is NOT the title glimmer anymore; it has no live
+ * caller now (the loading wave moved to its own dim-baseline shade), and is retained only as a small
+ * tested colour primitive.)
  *
  * <p>All offsets are expressed in SCREEN pixels (the caller divides by the title's draw scale before
  * translating the already-scaled pose matrix, so a "1px" outline stays a crisp 1px at any Title Size rather
@@ -117,12 +124,21 @@ public final class TitleStyle {
      *  the glimmer is done (never loops) and the title renders in its plain colors. */
     public static final int GLIMMER_SPAN_TICKS = 14;
 
-    /** Peak lerp-toward-white fraction of the glimmer crest, fed to {@link #brighten}. Raised to a strong,
-     *  obvious flash (0.85) per Peetsa's "10x stronger / bright" ask -- at the crest each channel travels 85%
-     *  of the way to 255, a brilliant near-white glint that still leaves a ~15% sliver of the letter's original
-     *  hue (so it never blinks to a hue-erasing pure white). Below 1.0 the fill's identity is always still
-     *  present; only boost==1.0 would converge every color to flat white, which is exactly what we avoid. */
-    public static final float GLIMMER_AMPLITUDE = 0.85f;
+    /** Baseline dim, as a fraction of a letter's own brightness, for letters far from the shine crest while the
+     *  sweep is running: at the crest ({@code gaussian01==1}) a letter is at full brightness (factor 1.0), far
+     *  from it ({@code gaussian01->0}) it settles to this floor. Chosen GENTLE (0.75) on purpose -- the whole
+     *  point is a bright crest against a SOFTLY darker baseline, so the moving glint reads even on a near-white
+     *  fill; a much darker floor would read as an ugly flicker rather than a shine. And because the dim only
+     *  exists during the one-shot ~0.7s sweep (which rides the title's fade-in), a soft 25% dip is a shine, not
+     *  a flash. See {@link #glimmerShade}. */
+    public static final float GLIMMER_DIM_FLOOR = 0.75f;
+
+    /** Specular white-pop at the crest: after the baseline dim, a letter is lerped toward pure white by
+     *  {@code gaussian01 * GLIMMER_WHITE_POP}, so the exact crest gets a crisp bright glint (near-white on a
+     *  light fill, a bright pink/white flash on a saturated one) that tapers off on either side. This is what
+     *  lets a SATURATED color also flash bright -- you cannot out-brighten white, but you can pop the crest
+     *  toward white against dimmed neighbours. See {@link #glimmerShade}. */
+    public static final float GLIMMER_WHITE_POP = 0.70f;
 
     /** Gaussian half-width of the crest, in units of the string's normalized [0,1] letter position. A crisp
      *  crest (~0.20) covers roughly a fifth of the word at a time -- a travelling glint, not a broad wash. */
@@ -149,16 +165,17 @@ public final class TitleStyle {
     }
 
     /**
-     * Brightness boost in {@code [0, GLIMMER_AMPLITUDE]} for one letter, given normalized sweep progress.
-     * A single Gaussian crest travels left&rarr;right as {@code progress} runs 0&rarr;1 (the travelling-Gaussian
-     * idiom borrowed from the atlas bands), so each letter briefly brightens as the crest passes it -- exactly
-     * once, never looping. The returned boost is meant to be fed straight into {@link #brighten} on the
-     * letter's OWN color, which is what makes the glimmer color-aware rather than a white flash.
+     * Raw normalized crest height in {@code [0, 1]} for one letter, given normalized sweep progress: {@code 1}
+     * at the crest centre, tapering to {@code ~0} far from it. A single Gaussian crest travels left&rarr;right
+     * as {@code progress} runs 0&rarr;1 (the travelling-Gaussian idiom borrowed from the atlas bands) -- one
+     * pass, never looping. This is {@code glimmerBoost}'s old Gaussian WITHOUT any amplitude multiply; feed the
+     * result straight into {@link #glimmerShade} on the letter's OWN color to get the shine-sweep transform.
      *
      * @param progress 0..1 through the glimmer window; any value {@code < 0} means "no glimmer" and returns 0
      *                 (used for solid presets with the toggle off, Reduce Motion, and the static Studio preview).
+     *                 When this returns 0, {@link #glimmerShade} is an exact no-op, so the title is its plain color.
      */
-    public static float glimmerBoost(float progress, int visibleIdx, int visibleCount) {
+    public static float glimmerGaussian(float progress, int visibleIdx, int visibleCount) {
         if (progress < 0f) {
             return 0f;
         }
@@ -166,8 +183,51 @@ public final class TitleStyle {
         float p = count <= 1 ? 0f : (float) visibleIdx / (float) (count - 1);
         float crest = -GLIMMER_MARGIN + progress * (1f + 2f * GLIMMER_MARGIN);
         float d = p - crest;
-        float g = (float) Math.exp(-(d * d) / (2f * GLIMMER_SIGMA * GLIMMER_SIGMA));
-        return GLIMMER_AMPLITUDE * g;
+        return (float) Math.exp(-(d * d) / (2f * GLIMMER_SIGMA * GLIMMER_SIGMA));
+    }
+
+    /**
+     * The shine-sweep color transform for one letter: turns a raw crest height ({@link #glimmerGaussian}'s
+     * {@code [0,1]} output) into the letter's rendered {@code 0xRRGGBB}. Two stages, chosen so the shine reads
+     * on ANY fill -- including a near-white title you cannot make brighter:
+     * <ol>
+     *   <li>Baseline dim by {@code factor = GLIMMER_DIM_FLOOR + (1 - GLIMMER_DIM_FLOOR) * gaussian01} (each
+     *       channel multiplied): letters far from the crest sit at the gentle {@link #GLIMMER_DIM_FLOOR}; the
+     *       crest letter is back at full brightness.</li>
+     *   <li>Specular white-pop: lerp the dimmed color toward pure white by {@code gaussian01 * GLIMMER_WHITE_POP},
+     *       so the crest gets a crisp bright glint that tapers off either side.</li>
+     * </ol>
+     * Net effect: a bright crest travelling against a briefly, softly dimmed baseline -- a visible moving shine
+     * on off-white (dimmed neighbours vs a near-white crest glint) AND on a saturated fill (dark-red neighbours
+     * vs a bright pink-white crest).
+     *
+     * <p>Alpha is not part of {@code rgb}; the caller ORs it back (same contract as {@link #brighten}).
+     * {@code gaussian01 <= 0} is an EXACT no-op returning {@code rgb & 0xFFFFFF} unchanged -- so outside the
+     * sweep window (where {@code glimmerGaussian} returns a hard 0) the title renders at its full, undimmed base
+     * color, never dimmed.
+     */
+    public static int glimmerShade(int rgb, float gaussian01) {
+        if (gaussian01 <= 0f) {
+            return rgb & 0xFFFFFF;
+        }
+        float g = gaussian01 > 1f ? 1f : gaussian01; // clamp; a crest height above 1 is meaningless
+        float factor = GLIMMER_DIM_FLOOR + (1f - GLIMMER_DIM_FLOOR) * g;
+        float pop = g * GLIMMER_WHITE_POP; // lerp-toward-white fraction at this letter
+        int r0 = (rgb >> 16) & 0xFF, g0 = (rgb >> 8) & 0xFF, b0 = rgb & 0xFF;
+        int r = shadeChannel(r0, factor, pop);
+        int gg = shadeChannel(g0, factor, pop);
+        int b = shadeChannel(b0, factor, pop);
+        return (r << 16) | (gg << 8) | b;
+    }
+
+    /** One channel of {@link #glimmerShade}: dim by {@code factor}, then lerp the dimmed value toward 255 by
+     *  {@code pop}. Result is rounded and clamped to {@code [0, 255]} (the lerp toward 255 cannot overshoot, and
+     *  {@code factor <= 1} cannot either, so the clamp is just defensive). */
+    private static int shadeChannel(int c, float factor, float pop) {
+        float dimmed = c * factor;
+        float lit = dimmed + (255f - dimmed) * pop;
+        int v = Math.round(lit);
+        return v < 0 ? 0 : (v > 255 ? 255 : v);
     }
 
     /** Lifts an {@code 0xRRGGBB} color toward white by {@code boost}: each channel becomes
