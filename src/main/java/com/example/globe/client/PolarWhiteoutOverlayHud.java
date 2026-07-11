@@ -37,9 +37,9 @@ public final class PolarWhiteoutOverlayHud {
         if (mc.player == null || mc.level == null) {
             return;
         }
-        if (mc.gui.hud.isHidden()) {
-            return;
-        }
+        // B-4 round 3 item 6: NO isHidden self-guard here. This is WORLD ATMOSPHERE (a storm/whiteout fill),
+        // not a HUD element, so it STAYS visible under F1. The mixin renders it from the F1 path too (vanilla
+        // skips extractHotbarAndDecorations when the HUD is hidden); the visible HUD chrome is what F1 hides.
 
         // Same activation + surface gate as the ambient snow tick (globe world, sky-exposed): the
         // blizzard is a surface phenomenon -- no whiteout deep in a cave under the pole.

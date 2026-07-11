@@ -20,7 +20,8 @@ public final class EwSandstormOverlayHud {
     public static void render(GuiGraphicsExtractor ctx, DeltaTracker tickCounter) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null || mc.level == null) return;
-        if (mc.gui.hud.isHidden()) return;
+        // B-4 round 3 item 6: NO isHidden self-guard -- this haze is WORLD ATMOSPHERE and STAYS visible under
+        // F1 (the mixin drives it from the F1 path too). Only the HUD chrome hides under F1.
 
         double distToBorder = GlobeClientState.distanceToEwBorderBlocks(mc.player.getX());
 
