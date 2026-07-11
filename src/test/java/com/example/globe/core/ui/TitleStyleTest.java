@@ -33,6 +33,76 @@ class TitleStyleTest {
         assertEquals(8, seen.size(), "all 8 distinct neighbours present");
     }
 
+    /** outlineOffsets(1) is the SAME SET as the classic 8 neighbours (order may differ; the renderer stamps
+     *  all of them). Thickness clamps to [1, MAX] outside its range. */
+    @Test
+    void outlineOffsetsThicknessOneMatchesTheEightNeighbours() {
+        java.util.Set<String> classic = new java.util.HashSet<>();
+        for (int[] o : TitleStyle.OUTLINE_OFFSETS_8) classic.add(o[0] + "," + o[1]);
+        java.util.Set<String> t1 = asSet(TitleStyle.outlineOffsets(1));
+        assertEquals(classic, t1, "thickness 1 == the 8-neighbour ring");
+
+        // Clamp: below 1 and above MAX collapse to the nearest valid thickness.
+        assertEquals(t1, asSet(TitleStyle.outlineOffsets(0)), "thickness < 1 clamps to 1");
+        assertEquals(t1, asSet(TitleStyle.outlineOffsets(-5)), "negative thickness clamps to 1");
+        assertEquals(asSet(TitleStyle.outlineOffsets(TitleStyle.MAX_OUTLINE_THICKNESS)),
+                asSet(TitleStyle.outlineOffsets(TitleStyle.MAX_OUTLINE_THICKNESS + 3)), "thickness > MAX clamps to MAX");
+    }
+
+    /** For thickness t the offset set is the full square [-t,t]^2 minus the origin: exactly (2t+1)^2 - 1
+     *  distinct offsets, each with Chebyshev distance <= t, none the origin, no duplicates. The full square
+     *  (not a hull) is what fills the diagonal holes MC's blocky font would otherwise show at t >= 2. */
+    @Test
+    void outlineOffsetsAreTheFullChebyshevSquareMinusOrigin() {
+        for (int t = 1; t <= TitleStyle.MAX_OUTLINE_THICKNESS; t++) {
+            int[][] offs = TitleStyle.outlineOffsets(t);
+            int expected = (2 * t + 1) * (2 * t + 1) - 1;
+            assertEquals(expected, offs.length, "full-square stamp count for thickness " + t);
+            java.util.Set<String> seen = new java.util.HashSet<>();
+            for (int[] o : offs) {
+                assertTrue(Math.max(Math.abs(o[0]), Math.abs(o[1])) <= t, "Chebyshev distance <= t");
+                assertFalse(o[0] == 0 && o[1] == 0, "origin is the fill, never an outline stamp");
+                assertTrue(seen.add(o[0] + "," + o[1]), "no duplicate offset");
+            }
+            assertEquals(expected, seen.size(), "all offsets distinct");
+        }
+    }
+
+    private static java.util.Set<String> asSet(int[][] offs) {
+        java.util.Set<String> s = new java.util.HashSet<>();
+        for (int[] o : offs) s.add(o[0] + "," + o[1]);
+        return s;
+    }
+
+    /** glowRingAlpha scales each ring's base alpha by the intensity and clamps to [0, CAP]: gentle at the
+     *  0.75 default, stronger (but still capped) at max, zero for a negative intensity or an out-of-range ring. */
+    @Test
+    void glowRingAlphaScalesClampsAndGuardsRings() {
+        int rings = TitleStyle.GLOW_RING_ALPHA.length;
+        // Intensity 1.0 is the identity (base alphas unchanged).
+        for (int r = 0; r < rings; r++) {
+            assertEquals(TitleStyle.GLOW_RING_ALPHA[r], TitleStyle.glowRingAlpha(r, 1.0), TOL);
+        }
+        // The gentle 0.75 default softens every ring below its base alpha.
+        for (int r = 0; r < rings; r++) {
+            assertEquals(TitleStyle.GLOW_RING_ALPHA[r] * 0.75f, TitleStyle.glowRingAlpha(r, 0.75), TOL);
+            assertTrue(TitleStyle.glowRingAlpha(r, 0.75) < TitleStyle.GLOW_RING_ALPHA[r], "0.75 is gentler than base");
+        }
+        // Never exceeds the cap even at max intensity, and never goes negative.
+        for (int r = 0; r < rings; r++) {
+            assertTrue(TitleStyle.glowRingAlpha(r, 2.0) <= TitleStyle.GLOW_RING_ALPHA_CAP + TOL, "capped at max");
+            assertTrue(TitleStyle.glowRingAlpha(r, 2.0) >= 0f, "never negative");
+        }
+        // Out-of-range ring indices and non-positive intensity return 0.
+        assertEquals(0f, TitleStyle.glowRingAlpha(-1, 1.0), TOL);
+        assertEquals(0f, TitleStyle.glowRingAlpha(rings, 1.0), TOL);
+        assertEquals(0f, TitleStyle.glowRingAlpha(0, 0.0), TOL);
+        assertEquals(0f, TitleStyle.glowRingAlpha(0, -3.0), TOL, "negative intensity floors at 0");
+
+        // The cap actually clamps when a huge intensity would push a ring over CAP.
+        assertEquals(TitleStyle.GLOW_RING_ALPHA_CAP, TitleStyle.glowRingAlpha(0, 999.0), TOL);
+    }
+
     /** Glimmer is off (boost 0) whenever sweep progress is negative -- the "no glimmer" sentinel used for the
      *  toggle-off/solid case, Reduce Motion (the overlay maps both to progress < 0), and the static preview. */
     @Test

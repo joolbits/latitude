@@ -205,7 +205,8 @@ public final class ZoneEnterTitleOverlay {
             for (int ring = 0; ring < com.example.globe.core.ui.TitleStyle.GLOW_RING_RADII_PX.length; ring++) {
                 float radiusLocal = com.example.globe.core.ui.TitleStyle.GLOW_RING_RADII_PX[ring] * invScale;
                 int ringAlpha = Math.round((alphaByte & 0xFF)
-                        * com.example.globe.core.ui.TitleStyle.GLOW_RING_ALPHA[ring]);
+                        * com.example.globe.core.ui.TitleStyle.glowRingAlpha(ring,
+                                LatitudeConfig.zoneEnterTitleGlowIntensity));
                 if (ringAlpha <= 0) continue;
                 int glowArgb = (ringAlpha << 24); // black halo (RGB = 0)
                 for (int[] off : com.example.globe.core.ui.TitleStyle.OUTLINE_OFFSETS_8) {
@@ -217,7 +218,8 @@ public final class ZoneEnterTitleOverlay {
         // (2) Outline -- crisp 1 screen-px stamp of the text in the outline color behind the fill.
         if (LatitudeConfig.zoneEnterTitleOutline) {
             int outlineArgb = alphaMask | (LatitudeConfig.zoneEnterTitleOutlineRgb & 0xFFFFFF);
-            for (int[] off : com.example.globe.core.ui.TitleStyle.OUTLINE_OFFSETS_8) {
+            for (int[] off : com.example.globe.core.ui.TitleStyle.outlineOffsets(
+                    LatitudeConfig.zoneEnterTitleOutlineThickness)) {
                 drawOffsetPass(ctx, font, text, spacing, off[0] * invScale, off[1] * invScale, outlineArgb);
             }
         }

@@ -126,8 +126,10 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
     private AbstractWidget wTitleShowBaseDegrees;
     private AbstractWidget wTitleColorPreset;
     private AbstractWidget wTitleOutline;
+    private AbstractWidget wTitleOutlineThickness;
     private AbstractWidget wTitleDropShadow;
     private AbstractWidget wTitleGlow;
+    private AbstractWidget wTitleGlowIntensity;
     private AbstractWidget wTitleGlimmer;
     private AbstractWidget wTitleCase;
     private AbstractWidget wTitleLetterSpacing;
@@ -192,6 +194,13 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
     // drawn scaled on top (undo/redo precedent), bright when snapping is on, dim when free-move.
     private AbstractWidget wSnapToggle;
 
+    // Overwrite-confirm modal for the Presets tab: -1 == closed, otherwise the slot index awaiting confirmation
+    // (Peetsa: accidentally clicking a Save on an occupied slot overwrote it irreversibly). While open it is even
+    // more modal than openDropdown -- painted last, and it swallows ALL clicks/keys/scroll before the picker check
+    // and super (see mouseClicked/keyPressed/mouseScrolled/tick). Reset in init() so no dialog survives a rebuild
+    // (ghost-layer lesson: any screen-lifetime state must be cleared when the widget set is torn down).
+    private int pendingOverwriteSlot = -1;
+
     public LatitudeHudStudioScreen(Screen parent) {
         super(Component.literal("HUD Studio"));
         this.parent = parent;
@@ -221,6 +230,7 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
         // and the row-animation arrays are stale (a new tab may even have the same row count). Drop them so the
         // transition layer re-seeds against the fresh row set and no picker lingers pointing at a dead widget.
         this.openDropdown = null;
+        this.pendingOverwriteSlot = -1;   // no overwrite-confirm dialog survives a widget rebuild / tab switch
         this.rowAnim = null;
         this.sidebarDispY = null;
         this.sidebarSlotH = null;
@@ -288,8 +298,10 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
         this.wTitleShowBaseDegrees = null;
         this.wTitleColorPreset = null;
         this.wTitleOutline = null;
+        this.wTitleOutlineThickness = null;
         this.wTitleDropShadow = null;
         this.wTitleGlow = null;
+        this.wTitleGlowIntensity = null;
         this.wTitleGlimmer = null;
         this.wTitleCase = null;
         this.wTitleLetterSpacing = null;
@@ -818,6 +830,13 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
             if (LatitudeConfig.zoneEnterTitleOutline) {
                 y = placeRgbPicker(panelX, y, widgetW, rowH, rowGap, "Outline", LatitudeConfig.zoneEnterTitleOutlineRgb,
                         v -> LatitudeConfig.zoneEnterTitleOutlineRgb = v, g -> this.rgbTitleOutline = g, s -> this.swatchTitleOutline = s);
+
+                this.wTitleOutlineThickness = this.addRenderableWidget(new IntSlider(panelX, y, widgetW, rowH,
+                        Component.literal("Outline Thickness"), 1, com.example.globe.core.ui.TitleStyle.MAX_OUTLINE_THICKNESS,
+                        LatitudeConfig.zoneEnterTitleOutlineThickness, v -> LatitudeConfig.zoneEnterTitleOutlineThickness = v));
+                tooltip(this.wTitleOutlineThickness, "How thick the title's outline is drawn, in pixels (1 = a thin crisp edge, up to 4 for a bold border).");
+                trackSidebarWidget(this.wTitleOutlineThickness, y);
+                y += rowH + rowGap;
             }
 
             this.wTitleDropShadow = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "ON" : "OFF"), () -> LatitudeConfig.zoneEnterTitleDropShadow)
@@ -835,10 +854,22 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
                     .create(panelX, y, widgetW, rowH, Component.literal("Shadow Glow"), (btn, value) -> {
                         LatitudeConfig.zoneEnterTitleGlow = value;
                         LatitudeConfig.saveCurrent();
+                        // The Glow Intensity row below appears only when Shadow Glow is ON, so (re)build the
+                        // sidebar to add/remove it -- same construct/teardown the Outline picker uses.
+                        this.init();
                     }));
             tooltip(this.wTitleGlow, "A soft, dark halo that spreads gently out behind the title -- a gentler, blurrier glow than the hard drop shadow.");
             trackSidebarWidget(this.wTitleGlow, y);
             y += rowH + rowGap;
+
+            if (LatitudeConfig.zoneEnterTitleGlow) {
+                this.wTitleGlowIntensity = this.addRenderableWidget(new StepSlider(panelX, y, widgetW, rowH,
+                        Component.literal("Glow Intensity"), 0.2, 2.0, 0.1, LatitudeConfig.zoneEnterTitleGlowIntensity,
+                        v -> LatitudeConfig.zoneEnterTitleGlowIntensity = v));
+                tooltip(this.wTitleGlowIntensity, "How strong the soft glow behind the title is: lower is a faint whisper, higher is a bolder halo.");
+                trackSidebarWidget(this.wTitleGlowIntensity, y);
+                y += rowH + rowGap;
+            }
 
             this.wTitleGlimmer = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "ON" : "OFF"), () -> LatitudeConfig.zoneEnterTitleGlimmer)
                     .withValues(true, false)
@@ -884,11 +915,13 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
                         LatitudeConfig.zoneEnterTitleOffsetY = 0;
                         LatitudeConfig.zoneEnterTitleScale = 1.6;
                         LatitudeConfig.zoneEnterTitleSeconds = 4.0;
-                        // Restore the default title styling (outline off, hard shadow off, glow off).
+                        // Restore the default title styling (outline off @ 1px, hard shadow off, gentle glow on).
                         LatitudeConfig.zoneEnterTitleOutline = false;
                         LatitudeConfig.zoneEnterTitleOutlineRgb = 0x000000;
+                        LatitudeConfig.zoneEnterTitleOutlineThickness = 1;
                         LatitudeConfig.zoneEnterTitleDropShadow = false;
-                        LatitudeConfig.zoneEnterTitleGlow = false;
+                        LatitudeConfig.zoneEnterTitleGlow = true;
+                        LatitudeConfig.zoneEnterTitleGlowIntensity = 0.75;
                         LatitudeConfig.zoneEnterTitleGlimmer = true;
                         LatitudeConfig.saveCurrent();
                         this.titleOffsetXf = 0;
@@ -967,12 +1000,19 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
                 trackSidebarWidget(wLoad, y);
 
                 var wSave = this.addRenderableWidget(Button.builder(Component.literal("Save"), b -> {
-                            CompassHudPresetSlots.saveCurrentInto(s);
-                            this.init();
+                            // Saving into an OCCUPIED slot pops a confirm dialog first (Peetsa: an accidental click
+                            // used to overwrite irreversibly). An EMPTY slot saves instantly -- no friction where
+                            // there's nothing to lose. Same isOccupied() gate the Load/Clear buttons use.
+                            if (CompassHudPresetSlots.isOccupied(s)) {
+                                this.pendingOverwriteSlot = s;
+                            } else {
+                                CompassHudPresetSlots.saveCurrentInto(s);
+                                this.init();
+                            }
                         })
                         .bounds(panelX + loadW + slotGap, y, saveW, rowH)
                         .build());
-                tooltip(wSave, "Saves your current HUD look into slot " + (s + 1) + ", overwriting whatever was there.");
+                tooltip(wSave, "Saves your current HUD look into slot " + (s + 1) + ". If the slot already has a preset, asks you to confirm before overwriting it.");
                 trackSidebarWidget(wSave, y);
 
                 var wClear = this.addRenderableWidget(Button.builder(Component.literal("×"), b -> {
@@ -1195,18 +1235,23 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
             previewGlimmer = com.example.globe.core.ui.TitleStyle.glimmerProgress(ageTicks);
         }
 
-        // Neutral backing plate behind the live preview title so the outline / drop shadow / glow / fill stay
+        // Editor-only backing plate behind the live preview title so the outline / drop shadow / glow / fill stay
         // evaluable no matter what world lighting sits behind the open Studio (reported: "hard to see the
         // shadow/outline against a dark cave"). STUDIO-ONLY -- drawn here, immediately before the shared
         // static-title render, so the real gameplay ZoneEnterTitleOverlay.render() path is completely untouched.
-        // Sized to the title's actual on-screen box and centered on the SAME (x,y) renderStaticAt() draws at
-        // (screenW/2 + offset), so it tracks Title Size and the drag offset 1:1. renderStaticAt() does NOT apply
+        // GATED to the Title tab only (Peetsa: the plate "can be misleading for someone thinking that's how it will
+        // look in-game" -- so it appears only while you're actually adjusting title characteristics). The title
+        // PREVIEW itself keeps rendering on every tab exactly as before; only this backdrop toggles with the tab.
+        // Painted as a PHOTOSHOP-STYLE TRANSPARENCY CHECKERBOARD (alternating gray squares) -- the universal "this
+        // area is transparent / not part of the image" visual language -- so nobody mistakes it for an in-game
+        // backdrop. Sized to the title's actual on-screen box and centered on the SAME (x,y) renderStaticAt() draws
+        // at (screenW/2 + offset), so it tracks Title Size and the drag offset 1:1. renderStaticAt() does NOT apply
         // OverlayLayout.fitScale (it uses the raw scale -- unlike the gameplay render() path), so neither do we:
-        // the plate matches the un-fitted preview exactly. Deliberately a plain neutral gray, NOT routed through
-        // the gold a11y helpers -- a tinted backdrop would bias how the title's own colors read, and this plate's
-        // whole job is to be a truthful reference for BOTH a light-fill/dark-outline and a dark-fill/light-outline
-        // combo. It's static (no animation), so there's nothing for Reduce Motion to gate.
-        {
+        // the plate matches the un-fitted preview exactly. Deliberately plain neutral grays, NOT routed through the
+        // gold a11y helpers -- a tinted backdrop would bias how the title's own colors read, and this plate's whole
+        // job is to be a truthful reference for BOTH a light-fill/dark-outline and a dark-fill/light-outline combo.
+        // It's static (no animation), so there's nothing for Reduce Motion to gate.
+        if (activeTab == TAB_TITLE) {
             double previewScale = LatitudeConfig.zoneEnterTitleScale;
             // 8px covers the fixed 4.5px max glow ring + 1px outline (both are fixed SCREEN px regardless of
             // Title Size -- the invScale in drawStyledTitle cancels the pose scale) plus a little breathing room.
@@ -1218,11 +1263,21 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
             int pcy = (this.height / 2) + titleOffsetY;
             int plx0 = pcx - plateHalfW, ply0 = pcy - plateHalfH;
             int plx1 = pcx + plateHalfW, ply1 = pcy + plateHalfH;
-            // Mid-dark neutral gray at ~75% opacity: opaque enough that the world behind stops mattering (so the
-            // preview reads the same over a bright plain or a black cave), mid-dark (0x38 = 56) so a light fill or
-            // outline pops AND a dark fill+outline still shows ~56 levels of contrast against it instead of
-            // vanishing into true black. Faint light rim (mirrors the snap-glyph plate idiom) to delineate the box.
-            ctx.fill(plx0, ply0, plx1, ply1, 0xC0383838);
+            // Checkerboard: ~7px squares, two neutral grays (0x50 light / 0x38 dark) at ~75% opacity (0xC0). Opaque
+            // enough that the world behind stops mattering (preview reads the same over a bright plain or a black
+            // cave); the alternating tiles read unambiguously as "transparency", not a real backdrop. Squares are
+            // clamped to the plate rect on the trailing edge so partial tiles don't spill past the box.
+            final int sq = 7;
+            final int checkerLight = 0xC0505050;
+            final int checkerDark = 0xC0383838;
+            for (int ty = ply0, ry = 0; ty < ply1; ty += sq, ry++) {
+                int tyEnd = Math.min(ty + sq, ply1);
+                for (int tx = plx0, rx = 0; tx < plx1; tx += sq, rx++) {
+                    int txEnd = Math.min(tx + sq, plx1);
+                    ctx.fill(tx, ty, txEnd, tyEnd, ((rx + ry) & 1) == 0 ? checkerLight : checkerDark);
+                }
+            }
+            // Faint light rim (mirrors the snap-glyph plate idiom) to delineate the box on top of the checker.
             int rim = 0x33FFFFFF;
             ctx.fill(plx0, ply0, plx1, ply0 + 1, rim);
             ctx.fill(plx0, ply1 - 1, plx1, ply1, rim);
@@ -1275,6 +1330,83 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
         if (sidebarVisible && openDropdown != null && openDropdown.isOpen()) {
             openDropdown.renderOpenList(ctx, mouseX, mouseY);
         }
+
+        // The overwrite-confirm dialog is painted after even the picker so it is the topmost layer (in practice
+        // the two can't coexist -- the Presets tab has no swatch pickers -- but "modal paints last" stays true).
+        drawOverwriteDialog(ctx, mouseX, mouseY);
+    }
+
+    // ---- Overwrite-confirm modal (Presets tab). Manual paint + hit-test, mirroring the openDropdown modality
+    //      (screen-owned single slot, painted last, swallows input while open) rather than adding real widgets --
+    //      so it needs no init() rebuild and can't leave a dangling widget behind. ----
+
+    /** The centered dialog card rect: {x, y, w, h}. Single source of truth shared by paint and hit-test. */
+    private int[] overwriteDialogRect() {
+        int w = 244, h = 96;
+        return new int[]{(this.width - w) / 2, (this.height - h) / 2, w, h};
+    }
+
+    /** Rect of one of the two dialog buttons: {x, y, w, h}. {@code overwrite=true} = left [Overwrite], else the
+     *  right [Keep It]. Derived from {@link #overwriteDialogRect()} so clicks land exactly where they paint. */
+    private int[] overwriteButtonRect(boolean overwrite) {
+        int[] d = overwriteDialogRect();
+        int btnW = 92, btnH = 20, gap = 14;
+        int bx = d[0] + (d[2] - (btnW * 2 + gap)) / 2;
+        int by = d[1] + d[3] - btnH - 12;
+        return new int[]{overwrite ? bx : bx + btnW + gap, by, btnW, btnH};
+    }
+
+    private static boolean pointInRect(double px, double py, int[] r) {
+        return px >= r[0] && px < r[0] + r[2] && py >= r[1] && py < r[1] + r[3];
+    }
+
+    /** Perform the deferred save into the pending slot, then close the dialog (init() also clears the field). */
+    private void confirmOverwrite() {
+        int s = pendingOverwriteSlot;
+        pendingOverwriteSlot = -1;
+        if (s >= 0) {
+            CompassHudPresetSlots.saveCurrentInto(s);
+            this.init();
+        }
+    }
+
+    private void drawOverwriteDialog(GuiGraphicsExtractor ctx, int mouseX, int mouseY) {
+        if (pendingOverwriteSlot < 0) return;
+        int s = pendingOverwriteSlot;
+        int[] d = overwriteDialogRect();
+        int x = d[0], y = d[1], w = d[2], h = d[3];
+        // Extra scrim so the dialog reads as the only live layer while it's up.
+        ctx.fill(0, 0, this.width, this.height, 0x88000000);
+        // Card: border + fill + gold accent rails -- same idiom as the tab card, routed through the a11y helpers.
+        ctx.fill(x - 1, y - 1, x + w + 1, y + h + 1, a11yMuted(PANEL_BORDER));
+        ctx.fill(x, y, x + w, y + h, a11yBg(PANEL_BG));
+        ctx.fill(x + 2, y + 2, x + w - 2, y + 3, GOLD);
+        ctx.fill(x + 2, y + h - 3, x + w - 2, y + h - 2, GOLD);
+
+        String head = "Overwrite preset " + (s + 1) + "?";
+        ctx.text(this.font, head, x + (w - this.font.width(head)) / 2, y + 11, GOLD);
+        // Its current summary, trimmed with an ellipsis to fit the card if the preset name is long.
+        String summary = CompassHudPresetSlots.summarize(s);
+        int maxW = w - 16;
+        if (this.font.width(summary) > maxW) {
+            while (summary.length() > 1 && this.font.width(summary + "…") > maxW) {
+                summary = summary.substring(0, summary.length() - 1);
+            }
+            summary = summary + "…";
+        }
+        ctx.text(this.font, summary, x + (w - this.font.width(summary)) / 2, y + 27, a11yText(0xFFCFC6B8));
+
+        drawDialogButton(ctx, overwriteButtonRect(true), "Overwrite", mouseX, mouseY);
+        drawDialogButton(ctx, overwriteButtonRect(false), "Keep It", mouseX, mouseY);
+    }
+
+    private void drawDialogButton(GuiGraphicsExtractor ctx, int[] r, String label, int mouseX, int mouseY) {
+        int bx = r[0], by = r[1], bw = r[2], bh = r[3];
+        boolean hover = mouseX >= bx && mouseX < bx + bw && mouseY >= by && mouseY < by + bh;
+        ctx.fill(bx - 1, by - 1, bx + bw + 1, by + bh + 1, hover ? GOLD : a11yMuted(PANEL_BORDER));
+        ctx.fill(bx, by, bx + bw, by + bh, hover ? a11yBg(0xFF4A3E34) : a11yBg(0xFF2A221C));
+        ctx.text(this.font, label, bx + (bw - this.font.width(label)) / 2,
+                by + (bh - this.font.lineHeight) / 2 + 1, hover ? GOLD : a11yText(0xFFE8E0D4));
     }
 
     /** Re-applies the canvas snap toggle's tooltip text to match the CURRENT LatitudeConfig.hudSnapEnabled.
@@ -1439,7 +1571,8 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
         if (mc == null || mc.getWindow() == null) return;
 
         boolean lDown = InputConstants.isKeyDown(mc.getWindow(), InputConstants.KEY_L);
-        if (lDown && !wasLDown) {
+        // Suppressed while the overwrite-confirm dialog is up so its modality also covers the poll-based L toggle.
+        if (lDown && !wasLDown && pendingOverwriteSlot < 0) {
             sidebarVisible = !sidebarVisible;
             updateSidebarVisibility();
         }
@@ -1448,6 +1581,9 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
+        if (pendingOverwriteSlot >= 0) {
+            return true;   // swallow scroll while the overwrite-confirm dialog is up (fully modal)
+        }
         if (openDropdown != null && openDropdown.isOpen()) {
             return openDropdown.handleScroll(verticalAmount);
         }
@@ -1463,6 +1599,21 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
 
     @Override
     public boolean mouseClicked(MouseButtonEvent click, boolean doubleClick) {
+        // The overwrite-confirm dialog is the topmost modal: while it's open EVERY click either hits one of its two
+        // buttons or is swallowed here, before the picker check, the widgets, and super. A left click on [Overwrite]
+        // saves + closes; on [Keep It] just closes; anywhere else is consumed (click-through would defeat the point).
+        if (pendingOverwriteSlot >= 0) {
+            if (click.button() == 0) {
+                double mx = click.x(), my = click.y();
+                if (pointInRect(mx, my, overwriteButtonRect(true))) {
+                    confirmOverwrite();
+                } else if (pointInRect(mx, my, overwriteButtonRect(false))) {
+                    pendingOverwriteSlot = -1;   // Keep It
+                }
+            }
+            return true;
+        }
+
         // An open picker is modal: any left click either selects an entry or dismisses it, and nothing else on
         // the screen sees the click. This runs BEFORE super so a click on another widget can't slip through.
         if (click.button() == 0 && openDropdown != null && openDropdown.isOpen()) {
@@ -1695,6 +1846,18 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
 
     @Override
     public boolean keyPressed(KeyEvent input) {
+        // Overwrite-confirm dialog owns the keyboard while open: Esc = Keep It (and does NOT fall through to the
+        // vanilla Esc-closes-the-Screen path), Enter = Overwrite, every other key is swallowed so nothing beneath
+        // reacts. Runs before the picker + super.
+        if (pendingOverwriteSlot >= 0) {
+            int k = input.key();
+            if (k == InputConstants.KEY_ESCAPE) {
+                pendingOverwriteSlot = -1;   // Keep It -- close the dialog, keep the Studio open
+            } else if (k == InputConstants.KEY_RETURN) {
+                confirmOverwrite();
+            }
+            return true;
+        }
         // Arrow keys / Enter / Esc drive an open picker (accessibility) instead of the screen underneath.
         if (openDropdown != null && openDropdown.isOpen() && openDropdown.handleKey(input)) {
             return true;
@@ -1741,14 +1904,16 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
         LatitudeConfig.zoneEnterTitleSeconds = 6.0;
         LatitudeConfig.showZoneBaseDegreesOnTitle = true;
         // Fresh out-of-box title look (title-styling overhaul 2026-07-11, refined same day): warm off-white
-        // fill, no outline, hard drop shadow off, glow off, ALL CAPS -- matches LatitudeConfigData's field
-        // initializers.
+        // fill, no outline (1px when enabled), hard drop shadow off, gentle glow ON (intensity 0.75), ALL
+        // CAPS -- matches LatitudeConfigData's field initializers.
         LatitudeConfig.zoneEnterTitleColorPreset = LatitudeConfigData.TitleColorPreset.OFF_WHITE;
         LatitudeConfig.zoneEnterTitleRgb = 0xFFFFFF;
         LatitudeConfig.zoneEnterTitleOutline = false;
         LatitudeConfig.zoneEnterTitleOutlineRgb = 0x000000;
+        LatitudeConfig.zoneEnterTitleOutlineThickness = 1;
         LatitudeConfig.zoneEnterTitleDropShadow = false;
-        LatitudeConfig.zoneEnterTitleGlow = false;
+        LatitudeConfig.zoneEnterTitleGlow = true;
+        LatitudeConfig.zoneEnterTitleGlowIntensity = 0.75;
         LatitudeConfig.zoneEnterTitleGlimmer = true;
         LatitudeConfig.zoneEnterTitleCase = LatitudeConfigData.TitleCaseMode.UPPERCASE;
         LatitudeConfig.zoneEnterTitleLetterSpacing = 0;

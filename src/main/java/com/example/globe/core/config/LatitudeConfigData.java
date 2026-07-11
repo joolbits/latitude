@@ -111,15 +111,35 @@ public final class LatitudeConfigData {
     @SerializedName(value = "zoneEnterTitleOutlineRgb", alternate = {"zoneEnterTitleOutlineRgbValue"})
     public int zoneEnterTitleOutlineRgb = 0x000000;
 
+    /** Outline thickness in SCREEN pixels (1..{@link com.example.globe.core.ui.TitleStyle#MAX_OUTLINE_THICKNESS}).
+     *  Thickness 1 = the classic crisp 1px ring; higher values stamp a fuller neighbourhood for a bolder edge.
+     *  Sanitize-clamped; only meaningful when {@link #zoneEnterTitleOutline} is on. NEW 2026-07-11. */
+    @SerializedName(value = "zoneEnterTitleOutlineThickness", alternate = {"zoneEnterTitleOutlineThicknessValue"})
+    public int zoneEnterTitleOutlineThickness = 1;
+
     /** The standard Minecraft hard drop shadow (one dark offset copy). Default = OFF (was implicitly
      *  always-ON before the title-styling overhaul; the glimmer/plain-fill look reads cleaner without it). */
     @SerializedName(value = "zoneEnterTitleDropShadow", alternate = {"zoneEnterTitleDropShadowValue"})
     public boolean zoneEnterTitleDropShadow = false;
 
     /** A soft dark halo radiating out behind the text (multi-ring low-alpha offsets), independent of the hard
-     *  drop shadow. Default = OFF (opt-in flourish). */
+     *  drop shadow. FRESH-config default flipped OFF -> ON 2026-07-11 (Peetsa: "a gentle glow should be
+     *  default"), tuned gentle via {@link #zoneEnterTitleGlowIntensity} below.
+     *  <p>KEY-PRESENCE ASYMMETRY (disclosed): unlike the outline/intensity keys, this boolean key was ADDED
+     *  EARLIER TODAY, so any config already saved this session carries an explicit {@code false} that Gson
+     *  keeps -- those users (including Peetsa's own config) stay glow-OFF until they toggle it or Reset. Only
+     *  a brand-new config file (no key on disk) adopts this {@code true} default. That is the correct
+     *  always-present-key behavior, not a bug. */
     @SerializedName(value = "zoneEnterTitleGlow", alternate = {"zoneEnterTitleGlowValue"})
-    public boolean zoneEnterTitleGlow = false;
+    public boolean zoneEnterTitleGlow = true;
+
+    /** Glow halo intensity multiplier on the per-ring alphas (slider range 0.2..2.0). FRESH default 0.75 is
+     *  deliberately GENTLE -- 0.75x the shipped ring alphas -- so the out-of-box glow is a soft whisper-halo,
+     *  not a heavy shadow (Peetsa's "a *gentle* glow should be default"). Sanitize-clamped; the renderer caps
+     *  each ring at {@link com.example.globe.core.ui.TitleStyle#GLOW_RING_ALPHA_CAP} so even 2.0 stays a glow.
+     *  NEW 2026-07-11. */
+    @SerializedName(value = "zoneEnterTitleGlowIntensity", alternate = {"zoneEnterTitleGlowIntensityValue"})
+    public double zoneEnterTitleGlowIntensity = 0.75;
 
     /** A quick, single, color-aware glimmer wave that sweeps left->right across the title as it appears
      *  (brightens each letter's own color in one rapid crest, then done -- never loops). Default = ON; it's an
@@ -193,6 +213,9 @@ public final class LatitudeConfigData {
         zoneEnterTitleSeconds = clamp(zoneEnterTitleSeconds, 2.0, 10.0);
         zoneEnterTitleScale = clamp(zoneEnterTitleScale, 1.0, 3.0);
         zoneEnterTitleLetterSpacing = clampInt(zoneEnterTitleLetterSpacing, -4, 16);
+        zoneEnterTitleOutlineThickness = clampInt(zoneEnterTitleOutlineThickness, 1,
+                com.example.globe.core.ui.TitleStyle.MAX_OUTLINE_THICKNESS);
+        zoneEnterTitleGlowIntensity = clamp(zoneEnterTitleGlowIntensity, 0.2, 2.0);
 
         hudSnapPixels = clampInt(hudSnapPixels, 1, 64);
 

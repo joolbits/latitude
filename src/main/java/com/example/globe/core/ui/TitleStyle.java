@@ -32,6 +32,48 @@ public final class TitleStyle {
         {-1,  1}, {0,  1}, {1,  1},
     };
 
+    /** The widest outline the "Outline Thickness" slider allows (screen pixels). */
+    public static final int MAX_OUTLINE_THICKNESS = 4;
+
+    /**
+     * Precomputed outline offset sets, indexed by {@code thickness-1} (thickness 1..{@link
+     * #MAX_OUTLINE_THICKNESS}). For thickness {@code t} the set is EVERY integer offset in the square
+     * {@code [-t,t] x [-t,t]} except the origin -- i.e. all offsets whose Chebyshev distance is {@code <= t}.
+     * The full square (not just the outer hull) is used on purpose: MC's blocky pixel font leaves visible
+     * diagonal HOLES in a hull-only ring at {@code t >= 2}, so the classic correct "stamp the whole
+     * neighbourhood" fill is what reads as a solid outline. Cost is honest but bounded -- the stamp count is
+     * {@code (2t+1)^2 - 1} (8 at t=1, 24 at t=2, 48 at t=3, 80 at t=4), and each stamp is one full glyph-run
+     * pass, so a t=4 outline draws the word 80 times per frame. That is only paid while a title is on screen
+     * (a few seconds), for a handful of glyph runs, so it is acceptable for this ephemeral overlay; the arrays
+     * are built once here (no per-frame allocation). */
+    private static final int[][][] OUTLINE_OFFSETS_BY_THICKNESS = buildOutlineOffsetsByThickness();
+
+    private static int[][][] buildOutlineOffsetsByThickness() {
+        int[][][] all = new int[MAX_OUTLINE_THICKNESS][][];
+        for (int t = 1; t <= MAX_OUTLINE_THICKNESS; t++) {
+            java.util.List<int[]> offs = new java.util.ArrayList<>();
+            for (int dy = -t; dy <= t; dy++) {
+                for (int dx = -t; dx <= t; dx++) {
+                    if (dx == 0 && dy == 0) continue; // (0,0) is the main fill, not an outline stamp
+                    offs.add(new int[]{dx, dy});
+                }
+            }
+            all[t - 1] = offs.toArray(new int[0][]);
+        }
+        return all;
+    }
+
+    /**
+     * The cached outline offset set for a given thickness in SCREEN pixels; {@code thickness} is clamped to
+     * {@code [1, MAX_OUTLINE_THICKNESS]}. Returns a shared, pre-built array (do not mutate). At thickness 1
+     * this is the same 8-neighbour set as {@link #OUTLINE_OFFSETS_8} (order may differ; the renderer stamps
+     * all of them, so order is irrelevant).
+     */
+    public static int[][] outlineOffsets(int thickness) {
+        int t = thickness < 1 ? 1 : Math.min(thickness, MAX_OUTLINE_THICKNESS);
+        return OUTLINE_OFFSETS_BY_THICKNESS[t - 1];
+    }
+
     /** Diffuse-shadow-glow ring radii in SCREEN pixels: a soft dark halo is built by stamping the text in
      *  low-alpha black at each of the 8 directions, once per ring, radiating outward. Outer rings are fainter
      *  ({@link #GLOW_RING_ALPHA}), which is what makes the halo read as a soft glow rather than a hard edge. */
@@ -41,6 +83,29 @@ public final class TitleStyle {
      *  (nearest ring strongest, outermost faintest). Kept low on purpose so the glow is a whisper, not a
      *  drop shadow. */
     public static final float[] GLOW_RING_ALPHA = {0.16f, 0.10f, 0.05f};
+
+    /** Hard ceiling on any single glow ring's effective alpha (a fraction of the title's own alpha), applied
+     *  AFTER the user's Glow Intensity multiply. Keeps the halo a soft glow even at max intensity -- above
+     *  ~0.5 per ring the "glow" starts reading as a solid black box behind the text rather than a whisper. */
+    public static final float GLOW_RING_ALPHA_CAP = 0.5f;
+
+    /**
+     * The effective per-ring glow alpha (fraction of the title's own alpha) after the user's Glow Intensity
+     * multiply and the {@link #GLOW_RING_ALPHA_CAP} clamp: {@code min(GLOW_RING_ALPHA[ring] * intensity,
+     * CAP)}, never negative. {@code intensity} is the config's {@code zoneEnterTitleGlowIntensity} (slider
+     * range 0.2..2.0); a ring index outside {@link #GLOW_RING_ALPHA} returns 0. Pure + testable so the halo
+     * math stays out of the renderer. At the shipped alphas the cap is never actually reached (0.16 * 2.0 =
+     * 0.32 &lt; 0.5) -- it is a forward guard so a future louder base alpha can't turn the glow into a box.
+     */
+    public static float glowRingAlpha(int ring, double intensity) {
+        if (ring < 0 || ring >= GLOW_RING_ALPHA.length) {
+            return 0f;
+        }
+        double a = GLOW_RING_ALPHA[ring] * intensity;
+        if (a < 0.0) a = 0.0;
+        if (a > GLOW_RING_ALPHA_CAP) a = GLOW_RING_ALPHA_CAP;
+        return (float) a;
+    }
 
     /** First tick (title age, 0 = the frame it appeared) at which the glimmer crest starts moving. Slightly
      *  after fade-in begins (fade-in is {@code ZoneEnterTitleOverlay.FADE_TICKS}=10 ticks) so the title is
