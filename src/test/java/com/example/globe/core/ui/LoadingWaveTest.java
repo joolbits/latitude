@@ -153,4 +153,122 @@ class LoadingWaveTest {
         String summary = "A · BB · CCC";
         assertEquals(summary, String.join(LoadingWave.SEPARATOR, LoadingWave.segments(summary)));
     }
+
+    // ── gaussian01: the normalized [0,1] crest height the shade() illumination path consumes ──
+
+    @Test
+    void gaussian01IsBoundedAndExactlyTracksBoost() {
+        long cycle = LoadingWave.SEGMENT_PERIOD_MS * COUNT;
+        for (long t = 0; t <= cycle; t += 37) {
+            for (int i = 0; i < COUNT; i++) {
+                float g = LoadingWave.gaussian01(i, COUNT, t);
+                assertTrue(g >= 0f && g <= 1f, "gaussian01 must stay in [0,1], was " + g);
+                // boost is exactly AMPLITUDE × gaussian01 — the two never disagree about where the crest is.
+                assertEquals(LoadingWave.AMPLITUDE * g, LoadingWave.boost(i, COUNT, t), 1e-5f,
+                        "boost must equal AMPLITUDE × gaussian01");
+            }
+        }
+    }
+
+    @Test
+    void gaussian01ReachesOneOnTheCrestSegmentAndIsBelowOneElsewhere() {
+        for (int crest = 0; crest < COUNT; crest++) {
+            long t = (long) crest * LoadingWave.SEGMENT_PERIOD_MS;
+            assertEquals(1f, LoadingWave.gaussian01(crest, COUNT, t), 1e-4f,
+                    "the crest segment reaches full normalized height 1.0");
+            for (int i = 0; i < COUNT; i++) {
+                if (i != crest) {
+                    assertTrue(LoadingWave.gaussian01(i, COUNT, t) < 1f - 1e-4f,
+                            "non-crest segment " + i + " must sit below the crest");
+                }
+            }
+        }
+    }
+
+    @Test
+    void gaussian01PeakTravelsForwardWrappingOncePerCycle() {
+        int prev = -1;
+        int transitions = 0;
+        long cycle = LoadingWave.SEGMENT_PERIOD_MS * COUNT;
+        for (long t = 0; t < cycle; t += 25) {
+            int argmax = 0;
+            float max = -1f;
+            for (int i = 0; i < COUNT; i++) {
+                float g = LoadingWave.gaussian01(i, COUNT, t);
+                if (g > max) {
+                    max = g;
+                    argmax = i;
+                }
+            }
+            if (argmax != prev) {
+                if (prev != -1) {
+                    assertEquals((prev + 1) % COUNT, argmax, "the peak must advance to the next segment, wrapping");
+                    transitions++;
+                }
+                prev = argmax;
+            }
+        }
+        assertEquals(COUNT, transitions, "the peak steps through every segment and wraps once per cycle");
+    }
+
+    // ── shade: DIM-BASELINE + BRIGHT-CREST — the illumination that is actually VISIBLE on warm-white ──
+
+    private static final int WARM_WHITE = 0xEDE0D0; // the exact summary-line base color
+
+    private static int red(int c)   { return (c >> 16) & 0xFF; }
+    private static int green(int c) { return (c >> 8) & 0xFF; }
+    private static int blue(int c)  { return c & 0xFF; }
+
+    @Test
+    void shadeAtRestIsRestDimTimesBaseNotIdentity() {
+        int rest = LoadingWave.shade(WARM_WHITE, 0f);
+        // shade(rgb, 0) == REST_DIM × rgb, per-channel — the resting state is INTENTIONALLY dimmed (there is
+        // always a crest somewhere, so un-lit words must read as "waiting their turn", not full base).
+        assertEquals(Math.round(red(WARM_WHITE) * LoadingWave.REST_DIM), red(rest), "R resting = REST_DIM × base");
+        assertEquals(Math.round(green(WARM_WHITE) * LoadingWave.REST_DIM), green(rest), "G resting = REST_DIM × base");
+        assertEquals(Math.round(blue(WARM_WHITE) * LoadingWave.REST_DIM), blue(rest), "B resting = REST_DIM × base");
+        assertTrue(red(rest) < red(WARM_WHITE) && green(rest) < green(WARM_WHITE) && blue(rest) < blue(WARM_WHITE),
+                "resting must be strictly dimmer than base (not the identity)");
+    }
+
+    @Test
+    void shadeAtCrestIsBrighterThanBaseAndClearlyBrighterThanRest() {
+        int rest = LoadingWave.shade(WARM_WHITE, 0f);
+        int crest = LoadingWave.shade(WARM_WHITE, 1f);
+        // The crest lifts back to full base AND pops toward white, so it clears the base on every channel...
+        assertTrue(red(crest) > red(WARM_WHITE) && green(crest) > green(WARM_WHITE) && blue(crest) > blue(WARM_WHITE),
+                "crest must be brighter than the base color");
+        // ...and towers over the resting state by a clear, visible margin. This is EXACTLY the regression the
+        // old brighten-toward-white path failed: warm-white lerped toward white barely moved, so the wave was
+        // invisible. Hand-computed swing on WARM_WHITE is ~66-71 per channel; require a comfortable floor.
+        assertTrue(red(crest) - red(rest) > 40, "R crest−rest margin too small: " + (red(crest) - red(rest)));
+        assertTrue(green(crest) - green(rest) > 40, "G crest−rest margin too small: " + (green(crest) - green(rest)));
+        assertTrue(blue(crest) - blue(rest) > 40, "B crest−rest margin too small: " + (blue(crest) - blue(rest)));
+    }
+
+    @Test
+    void shadeRisesMonotonicallyFromRestToCrest() {
+        int prevR = -1, prevG = -1, prevB = -1;
+        for (int step = 0; step <= 10; step++) {
+            float g = step / 10f;
+            int c = LoadingWave.shade(WARM_WHITE, g);
+            assertTrue(red(c) >= prevR && green(c) >= prevG && blue(c) >= prevB,
+                    "brightness must rise monotonically with crest height, broke at g=" + g);
+            prevR = red(c);
+            prevG = green(c);
+            prevB = blue(c);
+        }
+    }
+
+    @Test
+    void shadeStaysInByteRangeAcrossColorAndCrestExtremes() {
+        for (int base : new int[]{0x000000, 0xFFFFFF, WARM_WHITE, 0xFF5E5B, 0xF2A65A}) {
+            for (int step = -2; step <= 6; step++) {
+                int c = LoadingWave.shade(base, step / 4f); // spans below 0 and above 1 to prove clamping
+                assertTrue(red(c) >= 0 && red(c) <= 255, "R out of range: " + red(c));
+                assertTrue(green(c) >= 0 && green(c) <= 255, "G out of range: " + green(c));
+                assertTrue(blue(c) >= 0 && blue(c) <= 255, "B out of range: " + blue(c));
+            }
+        }
+    }
 }
