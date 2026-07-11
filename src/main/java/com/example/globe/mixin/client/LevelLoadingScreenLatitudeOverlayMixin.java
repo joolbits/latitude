@@ -39,6 +39,16 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
     @Unique private static final int GRID_COLOR = 0x14504840;
     @Unique private static final int GRID_STEP = 16;
 
+    // ── Loading compass = the new DEFAULT compass look: SUNSET scheme + ROSE shape ──
+    // SOURCE OF TRUTH: CompassHud.java:1520 — SUNSET DialColors(face=0x261712, ring=0xFFF2A65A,
+    // muted=0xFFB07E62, needle=0xFFFF5E5B). This bespoke loading compass is hand-drawn (it can't share
+    // CompassDialRenderer, which needs a live CompassHudConfig), so if that Sunset line ever changes,
+    // update these four constants to match — that's the whole drift surface, one place.
+    @Unique private static final int SUNSET_RING = 0xFFF2A65A;   // amber ring + rose star
+    @Unique private static final int SUNSET_FACE = 0xFF261712;   // deep-plum face (0x261712 + full alpha)
+    @Unique private static final int SUNSET_MUTED = 0xFFB07E62;  // muted rose-brown (S/E/W ticks)
+    @Unique private static final int SUNSET_NEEDLE = 0xFFFF5E5B; // coral needle + N accent
+
     // ── Loading phrases ──
     @Unique private static final String[] PHRASES = {
             "Defusing creepers...",
@@ -338,17 +348,24 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
         }
         int baseRgb = baseColor & 0xFFFFFF;
         int alpha = baseColor & 0xFF000000;
+        // Separators rest at the SAME de-illuminated floor as an un-lit word (shade at crest 0 == REST_DIM×base),
+        // so the whole line breathes uniformly at the resting dim and only the crest WORD lifts above it. If the
+        // separators stayed at full base they'd read brighter than the resting words between them — the "·"
+        // punctuation would pop oddly. Dimming them keeps them quiet neutral punctuation that never out-shines a
+        // resting word; they simply never catch a crest.
+        int restRgb = com.example.globe.core.ui.LoadingWave.shade(baseRgb, 0f);
         int fullW = this.font.width(summary);
         int x = cx - fullW / 2;
         for (int i = 0; i < segments.length; i++) {
             if (i > 0) {
-                // Separator: always the plain base color (only words illuminate).
-                context.text(this.font, com.example.globe.core.ui.LoadingWave.SEPARATOR, x, y, baseColor, false);
+                context.text(this.font, com.example.globe.core.ui.LoadingWave.SEPARATOR, x, y, alpha | restRgb, false);
                 x += this.font.width(com.example.globe.core.ui.LoadingWave.SEPARATOR);
             }
             String seg = segments[i];
-            float boost = com.example.globe.core.ui.LoadingWave.boost(i, segments.length, elapsed);
-            int rgb = com.example.globe.core.ui.TitleStyle.brighten(baseRgb, boost);
+            // DIM-BASELINE + BRIGHT-CREST: warm-white words rest dimmed and light up in turn (a lerp-toward-white
+            // "brighten" was invisible on warm-white — the same near-white-headroom trap the title glimmer hit).
+            float g = com.example.globe.core.ui.LoadingWave.gaussian01(i, segments.length, elapsed);
+            int rgb = com.example.globe.core.ui.LoadingWave.shade(baseRgb, g);
             context.text(this.font, seg, x, y, alpha | rgb, false);
             x += this.font.width(seg);
         }
@@ -376,8 +393,11 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
 
     @Unique
     private void globe$drawCompass(GuiGraphicsExtractor context, int cx, int cy, int radius) {
-        // Compass face — dark circle with gold ring, span-batched (one fill per row segment; same
-        // technique as CompassDialRenderer, ~2·diameter fills instead of πr² per-pixel fills)
+        // The new DEFAULT compass look: SUNSET colours + ROSE shape (see the SUNSET_* constants, sourced from
+        // CompassHud.java:1520). Span-batched face + amber ring (one fill per row segment; same technique as
+        // CompassDialRenderer, ~2·diameter fills instead of πr² per-pixel fills), an amber 8-point rose star
+        // over the plum face, and the KEPT wandering-needle animation restyled to coral. This is a hand-drawn
+        // mirror of CompassDialRenderer.drawRose (which needs a live CompassHudConfig we don't have here).
         int rIn = radius - 2;
         for (int dy = -radius; dy <= radius; dy++) {
             int rem = radius * radius - dy * dy;
@@ -387,46 +407,63 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
             int remIn = rIn * rIn - dy * dy;
             int halfIn = remIn < 0 ? -1 : (int) Math.sqrt(remIn);
             if (halfIn < 0) {
-                context.fill(cx - half, py, cx + half + 1, py + 1, GOLD);
+                context.fill(cx - half, py, cx + half + 1, py + 1, SUNSET_RING);
             } else {
-                context.fill(cx - half, py, cx - halfIn, py + 1, GOLD);
-                context.fill(cx + halfIn + 1, py, cx + half + 1, py + 1, GOLD);
-                context.fill(cx - halfIn, py, cx + halfIn + 1, py + 1, 0xFF1A1410);
+                context.fill(cx - half, py, cx - halfIn, py + 1, SUNSET_RING);
+                context.fill(cx + halfIn + 1, py, cx + half + 1, py + 1, SUNSET_RING);
+                context.fill(cx - halfIn, py, cx + halfIn + 1, py + 1, SUNSET_FACE);
             }
         }
 
-        // Cardinal tick marks (N/S/E/W)
-        int tickLen = Math.max(2, radius / 6);
-        // N tick — white
-        context.fill(cx, cy - radius + 2, cx + 1, cy - radius + 2 + tickLen, WARM_WHITE);
-        // S
-        context.fill(cx, cy + radius - 2 - tickLen, cx + 1, cy + radius - 2, MUTED);
-        // E
-        context.fill(cx + radius - 2 - tickLen, cy, cx + radius - 2, cy + 1, MUTED);
-        // W
-        context.fill(cx - radius + 2, cy, cx - radius + 2 + tickLen, cy + 1, MUTED);
+        // ── ROSE star (mirrors CompassDialRenderer.drawRose so the loading compass reads as the default ROSE
+        //    look): 4 long tapering cardinal diamonds + 4 short diagonal spokes, in amber over the plum face. ──
+        int starLen = radius - 4;
+        if (starLen > 0) {
+            int baseHalf = Math.max(1, radius / 8);
+            for (int i = 0; i <= starLen; i++) {
+                int h = Math.max(0, Math.round(baseHalf * (1.0f - i / (float) starLen)));
+                context.fill(cx - h, cy - i, cx + h + 1, cy - i + 1, SUNSET_RING); // N
+                context.fill(cx - h, cy + i, cx + h + 1, cy + i + 1, SUNSET_RING); // S
+                context.fill(cx - i, cy - h, cx - i + 1, cy + h + 1, SUNSET_RING); // W
+                context.fill(cx + i, cy - h, cx + i + 1, cy + h + 1, SUNSET_RING); // E
+            }
+            int diag = (int) Math.round(starLen * 0.55 / Math.sqrt(2));
+            for (int s = -1; s <= 1; s += 2) {
+                for (int t = -1; t <= 1; t += 2) {
+                    globe$drawLine(context, cx, cy, cx + s * diag, cy + t * diag, SUNSET_RING);
+                }
+            }
+        }
 
-        // Red 'N' label at north
+        // Cardinal tick marks (N/S/E/W). N gets the coral accent (matches the needle + N label); S/E/W stay
+        // muted rose-brown, exactly as CompassDialRenderer.drawCardinalTicks colours them.
+        int tickLen = Math.max(2, radius / 6);
+        context.fill(cx, cy - radius + 2, cx + 1, cy - radius + 2 + tickLen, SUNSET_NEEDLE);       // N
+        context.fill(cx, cy + radius - 2 - tickLen, cx + 1, cy + radius - 2, SUNSET_MUTED);        // S
+        context.fill(cx + radius - 2 - tickLen, cy, cx + radius - 2, cy + 1, SUNSET_MUTED);        // E
+        context.fill(cx - radius + 2, cy, cx - radius + 2 + tickLen, cy + 1, SUNSET_MUTED);        // W
+
+        // Coral 'N' label at north
         String nLabel = "N";
         int nW = this.font.width(nLabel);
-        context.text(this.font, nLabel, cx - nW / 2 + 1, cy - radius + 2 + tickLen + 1, 0xFFCC3333, true);
+        context.text(this.font, nLabel, cx - nW / 2 + 1, cy - radius + 2 + tickLen + 1, SUNSET_NEEDLE, true);
 
-        // Wandering needle
+        // Wandering needle (animation KEPT — globe$updateNeedle still drives it; only the colours change)
         double angle = globe$needleAngle;
         int needleLen = radius - 4;
 
-        // Red north half
+        // Coral north half
         int nx = cx + (int) Math.round(Math.sin(angle) * needleLen);
         int ny = cy - (int) Math.round(Math.cos(angle) * needleLen);
-        globe$drawLine(context, cx, cy, nx, ny, 0xFFCC3333);
+        globe$drawLine(context, cx, cy, nx, ny, SUNSET_NEEDLE);
 
-        // White south half (shorter)
+        // Amber south half (shorter)
         int sx = cx - (int) Math.round(Math.sin(angle) * (needleLen * 0.6));
         int sy = cy + (int) Math.round(Math.cos(angle) * (needleLen * 0.6));
-        globe$drawLine(context, cx, cy, sx, sy, WARM_WHITE);
+        globe$drawLine(context, cx, cy, sx, sy, SUNSET_RING);
 
-        // Center dot
-        context.fill(cx - 1, cy - 1, cx + 2, cy + 2, GOLD);
+        // Center dot (amber)
+        context.fill(cx - 1, cy - 1, cx + 2, cy + 2, SUNSET_RING);
     }
 
     @Unique
