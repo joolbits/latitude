@@ -1,6 +1,7 @@
 package com.example.globe.client;
 
 import com.example.globe.core.config.LatitudeConfigData;
+import com.example.globe.core.ui.GroupRowLayout;
 import com.example.globe.core.ui.UiEase;
 import com.mojang.blaze3d.platform.InputConstants;
 import java.util.ArrayList;
@@ -145,6 +146,10 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
     private int sidebarContentHeight;
     private final List<AbstractWidget> sidebarScrollWidgets = new ArrayList<>();
     private final List<Integer> sidebarScrollBaseYs = new ArrayList<>();
+    // Each tracked widget's INTRINSIC enabled state, captured at track time (before the visibility/animation
+    // layer overwrites w.active every frame) so a genuinely-disabled control -- an empty preset slot's Load/x,
+    // or undo/redo with nothing to undo -- stays greyed instead of reading as clickable. Keyed by identity.
+    private final IdentityHashMap<AbstractWidget, Boolean> rowIntrinsicEnabled = new IdentityHashMap<>();
     private int sidebarWidgetW;
     private int sidebarBgY;
 
@@ -155,6 +160,11 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
     // init() so a rebuild/tab-switch re-seeds to targets (no spurious animation on a deliberate context change).
     private float[] rowAnim;
     private float[] sidebarDispY;
+    // Per-widget group slot height (the vertical span the widget's same-line group reserves) and a flag marking
+    // rows that are mid-roll this frame, so drawAnimatingRows() can scissor-clip them. Sized to the tracked
+    // widget count in applySidebarScroll.
+    private float[] sidebarSlotH;
+    private boolean[] sidebarClipRow;
     private final IdentityHashMap<AbstractWidget, Boolean> rowLogicalShown = new IdentityHashMap<>();
 
     // The single open swatch/dropdown picker (audit C1). Its collapsed button is a tracked sidebar widget; its
@@ -196,6 +206,8 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
         this.openDropdown = null;
         this.rowAnim = null;
         this.sidebarDispY = null;
+        this.sidebarSlotH = null;
+        this.sidebarClipRow = null;
 
         int hintLaneH = 20;         // 8px padding + ~9px font + 3px bottom margin
         int panelX = 8;
@@ -274,6 +286,7 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
 
         this.sidebarScrollWidgets.clear();
         this.sidebarScrollBaseYs.clear();
+        this.rowIntrinsicEnabled.clear();
         this.sidebarSwatches.clear();
         this.sidebarViewportTop = panelY;
         this.sidebarViewportBottom = Math.max(panelY + 24, this.height - 60);
@@ -431,7 +444,7 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
 
             this.wCompassTextRainbow = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "ON" : "OFF"), () -> cfg.textRainbow)
                     .withValues(true, false)
-                    .create(panelX, y, widgetW, rowH, Component.literal("Rainbow Text"), (btn, value) -> {
+                    .create(panelX, y, widgetW, rowH, Component.literal("Aurora Text"), (btn, value) -> {
                         cfg.textRainbow = value;
                         CompassHudConfig.saveCurrent();
                     }));
@@ -741,7 +754,7 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
                         // Color Scheme picker forces a full re-init when picking Custom.
                         this.init();
                     }, this));
-            tooltip(this.wTitleColorPreset, "Pick a color for the zone-enter title, choose Custom to dial in exact colors, or Rainbow for a letter-by-letter cycle.");
+            tooltip(this.wTitleColorPreset, "Pick a color for the zone-enter title: a solid color, Custom to dial in exact colors, Rainbow for a still left-to-right rainbow across the letters, or Aurora for the same rainbow gently flowing over time.");
             trackSidebarWidget(this.wTitleColorPreset, y);
             y += rowH + rowGap;
 
@@ -867,7 +880,7 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
                 tooltip(wSave, "Saves your current HUD look into slot " + (s + 1) + ", overwriting whatever was there.");
                 trackSidebarWidget(wSave, y);
 
-                var wClear = this.addRenderableWidget(Button.builder(Component.literal("x"), b -> {
+                var wClear = this.addRenderableWidget(Button.builder(Component.literal("×"), b -> {
                             CompassHudPresetSlots.clear(s);
                             this.init();
                         })
@@ -1054,6 +1067,10 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
         drawSidebarSwatches(ctx);
         drawSidebarScrollbar(ctx);
         super.extractRenderState(ctx, mouseX, mouseY, delta);
+
+        // Rows caught mid roll-out/roll-in are skipped by super (visible=false) and drawn here instead, each
+        // sliding out from under the row above and scissor-clipped to its open slot for a continuous reveal.
+        drawAnimatingRows(ctx, mouseX, mouseY, delta);
 
         // Drawn AFTER the widgets so the big glyphs sit on top of the (empty-labelled) undo/redo buttons.
         if (sidebarVisible && activeTab == TAB_PRESETS) {
@@ -1450,43 +1467,76 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
     private void trackSidebarWidget(AbstractWidget w, int baseY) {
         sidebarScrollWidgets.add(w);
         sidebarScrollBaseYs.add(baseY);
+        // Snapshot the intrinsic enabled state NOW, before the per-frame visibility/animation layer starts
+        // overwriting w.active. Callers that gate a button (undo/redo/preset Load/x) set w.active just before
+        // this call; everything else is enabled by default.
+        if (w != null) rowIntrinsicEnabled.put(w, w.active);
     }
 
-    /** Once a row's reveal reaches this, its slot is (near) full height, so the control can show without ever
-     *  overlapping the row below while the slot is still opening/closing. Below it the space just eases. */
-    private static final float ROW_SHOW_THRESHOLD = 0.85f;
+    /** Reveal within this of 0 or 1 counts as "settled" -- fully collapsed (skip) or fully open (render normally
+     *  through super at rest position). Anything strictly between is mid-roll and gets the clipped slide. */
+    private static final float ROW_REVEAL_EPSILON = 0.02f;
 
     private void applySidebarScroll(float delta) {
         advanceRowAnimations(delta);
         if (!sidebarVisible) return;
 
         int n = sidebarScrollWidgets.size();
-        if (sidebarDispY == null || sidebarDispY.length != n) sidebarDispY = new float[n];
+        if (sidebarClipRow == null || sidebarClipRow.length != n) sidebarClipRow = new boolean[n];
 
-        // First pass: cumulative pre-scroll Y for each row, each slot collapsed by its reveal (rowAnim). When
-        // every reveal is 1.0 this reproduces the old fixed baseY layout exactly (Σ slot heights == baseY[i]);
-        // as a row rolls out/in, its slot grows/shrinks and everything below eases along with it.
-        float cursor = sidebarViewportTop;
-        for (int i = 0; i < n; i++) {
-            sidebarDispY[i] = cursor;
-            cursor += slotHeightAt(i) * rowAnim[i];
+        // Pass 1 (regression fix): widgets that share a base Y are ONE logical row -- a same-line GROUP such as
+        // undo+redo, or a preset slot's Load/Save/x -- and advance the cumulative cursor only ONCE, by the
+        // group's slot height scaled by its reveal. (The pre-885b3da4 rework advanced per widget, so every
+        // side-by-side widget consumed its own full row and the panel exploded into a staircase.) When every
+        // reveal is 1.0, Σ slot heights == baseY[i], so dispY[i] == baseY[i] and the layout is byte-identical
+        // to the old fixed-baseY one at rest; as a row rolls, its slot grows/shrinks and rows below ease along.
+        // The actual walk lives in GroupRowLayout (core/ui/), which is plain-JUnit testable independent of
+        // this MC Screen subclass.
+        int[] baseYArr = new int[n];
+        int[] heightsArr = new int[n];
+        for (int k = 0; k < n; k++) {
+            baseYArr[k] = sidebarScrollBaseYs.get(k);
+            AbstractWidget w = sidebarScrollWidgets.get(k);
+            heightsArr[k] = w != null ? w.getHeight() : 0;
         }
-        this.sidebarContentHeight = Math.max(0, Math.round(cursor - sidebarViewportTop));
+        GroupRowLayout.Result layout = GroupRowLayout.compute(sidebarViewportTop, baseYArr, rowAnim, heightsArr);
+        sidebarDispY = layout.dispY;
+        sidebarSlotH = layout.slotH;
+        this.sidebarContentHeight = Math.max(0, Math.round(layout.contentBottom - sidebarViewportTop));
 
         int viewportH = sidebarViewportBottom - sidebarViewportTop;
         int maxScroll = Math.max(0, sidebarContentHeight - viewportH);
         sidebarScrollY = Mth.clamp(sidebarScrollY, 0, maxScroll);
 
-        for (int i = 0; i < n; i++) {
-            AbstractWidget w = sidebarScrollWidgets.get(i);
+        for (int idx = 0; idx < n; idx++) {
+            AbstractWidget w = sidebarScrollWidgets.get(idx);
+            sidebarClipRow[idx] = false;
             if (w == null) continue;
-            int drawY = Math.round(sidebarDispY[i]) - sidebarScrollY;
-            w.setY(drawY);
+            float reveal = rowAnim[idx];
             boolean shown = Boolean.TRUE.equals(rowLogicalShown.get(w));
-            boolean present = rowAnim[i] >= ROW_SHOW_THRESHOLD;
-            boolean inView = drawY >= sidebarViewportTop && drawY + w.getHeight() <= sidebarViewportBottom;
-            w.visible = present && inView;
-            w.active = shown && present;
+            boolean intrinsic = !Boolean.FALSE.equals(rowIntrinsicEnabled.get(w));
+            int restTop = Math.round(sidebarDispY[idx]) - sidebarScrollY;
+            boolean inView = restTop >= sidebarViewportTop && restTop + w.getHeight() <= sidebarViewportBottom;
+            if (reveal <= ROW_REVEAL_EPSILON) {
+                // Fully collapsed -- nothing to show.
+                w.setY(restTop);
+                w.visible = false;
+                w.active = false;
+            } else if (reveal >= 1f - ROW_REVEAL_EPSILON) {
+                // Settled: render normally through super at its rest position (full slot open, no clip needed).
+                w.setY(restTop);
+                w.visible = inView;
+                w.active = intrinsic && shown && inView;
+            } else {
+                // Mid-roll: hand off to drawAnimatingRows(), which slides the control out from under the row
+                // above and scissor-clips it to the currently-open slot so the reveal reads as a smooth roll
+                // (no 0.85 pop) and never overlaps its neighbours. Hidden from super's batch here; kept
+                // inactive until settled so a half-open control can't be clicked.
+                w.setY(restTop);
+                w.visible = false;
+                w.active = false;
+                sidebarClipRow[idx] = restTop + w.getHeight() > sidebarViewportTop && restTop < sidebarViewportBottom;
+            }
         }
 
         // If the picker whose button just scrolled (or animated) out of view is still open, dismiss it.
@@ -1495,17 +1545,37 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
         }
     }
 
-    /** Vertical span row i reserves = its natural slot (row height + gap). Derived from consecutive baseYs so
-     *  RGB-picker triples and their swatch spacing (baked into the following row's baseY) are honored. */
-    private int slotHeightAt(int i) {
-        int m = sidebarScrollBaseYs.size();
-        if (i >= 0 && i < m - 1) {
-            int d = sidebarScrollBaseYs.get(i + 1) - sidebarScrollBaseYs.get(i);
-            if (d > 0) return d;
+    /** Renders the rows that are mid-roll (0 &lt; reveal &lt; 1): each control slides down out from under the row
+     *  above and is scissor-clipped to its currently-open slot, so the reveal reads as a continuous roll instead
+     *  of the old pop where the widget snapped in at reveal 0.85. Called right after super so these sit in the
+     *  same layer as the settled widgets. Reduce Motion never reaches here -- advanceRowAnimations snaps reveals
+     *  straight to 0/1, so no row is ever mid-animation. */
+    private void drawAnimatingRows(GuiGraphicsExtractor ctx, int mouseX, int mouseY, float delta) {
+        if (!sidebarVisible || sidebarClipRow == null) return;
+        int n = Math.min(sidebarScrollWidgets.size(), sidebarClipRow.length);
+        for (int idx = 0; idx < n; idx++) {
+            if (!sidebarClipRow[idx]) continue;
+            AbstractWidget w = sidebarScrollWidgets.get(idx);
+            if (w == null) continue;
+            float reveal = rowAnim[idx];
+            float slotH = sidebarSlotH[idx];
+            int groupTop = Math.round(sidebarDispY[idx]) - sidebarScrollY;
+            int openH = Math.round(slotH * reveal);
+            int clipTop = Math.max(groupTop, sidebarViewportTop);
+            int clipBottom = Math.min(groupTop + openH, sidebarViewportBottom);
+            if (clipBottom <= clipTop) continue;
+            // Slide the control down out from under the row above: at reveal=1 its top sits at groupTop (rest
+            // position); as reveal shrinks, its top rises by (1-reveal)*slotH so only the emerged sliver shows
+            // inside the clip. Restored to its rest position afterward so hit-testing isn't left offset.
+            int slideTop = groupTop - Math.round(slotH * (1f - reveal));
+            w.setY(slideTop);
+            w.visible = true;
+            ctx.enableScissor(6, clipTop, 6 + sidebarWidth + 4, clipBottom);
+            w.extractRenderState(ctx, mouseX, mouseY, delta);
+            ctx.disableScissor();
+            w.visible = false;
+            w.setY(groupTop);
         }
-        AbstractWidget w = (i >= 0 && i < sidebarScrollWidgets.size()) ? sidebarScrollWidgets.get(i) : null;
-        int h = w != null ? w.getHeight() : 20;
-        return h + 4; // + rowGap
     }
 
     /** Ease every tracked row's reveal toward its logical target each frame. Snaps instantly under Reduce
@@ -1964,6 +2034,7 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
             case GREEN -> "Green";
             case CUSTOM -> "Custom";
             case RAINBOW -> "Rainbow";
+            case AURORA -> "Aurora";
         };
     }
 
@@ -2045,7 +2116,10 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
             case CYAN -> 0x55FFFF;
             case GREEN -> 0x55FF55;
             case CUSTOM -> LatitudeConfig.zoneEnterTitleRgb & 0xFFFFFF;
-            case RAINBOW -> 0xFF66AA;
+            // Rainbow = static ROYGBIV: a warm mid-spectrum chip. Aurora = the flowing gradient: an aurora-blue
+            // chip matching the compass "Aurora" scheme's ring, so the two read as distinct at a glance.
+            case RAINBOW -> 0xFF8A3D;
+            case AURORA -> 0x8FD0FF;
         };
     }
 

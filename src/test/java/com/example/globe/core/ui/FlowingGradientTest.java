@@ -64,4 +64,41 @@ class FlowingGradientTest {
         int cLater = FlowingGradient.colorFor(6_000L, 0, 8, 24.0f); // quarter of the way round the wheel
         assertNotEquals(c0, cLater, "the gradient should drift with time");
     }
+
+    /** staticHueFor takes no time parameter at all, but pin that fact: two calls with identical (idx, count)
+     *  args are identical regardless of when they're called (no hidden clock read), and the span across a
+     *  string is a monotonic 0 (red) -&gt; STATIC_SPAN=0.83 (violet) ramp with pinned endpoints. This is the
+     *  static "Rainbow" title preset's math -- it must never drift, unlike the Aurora/{@link #colorIsPackedAndTimeVarying}
+     *  flowing gradient above. */
+    @Test
+    void staticHueForIsTimeIndependent() {
+        int count = 12;
+        for (int i = 0; i < count; i++) {
+            float a = FlowingGradient.staticHueFor(i, count);
+            float b = FlowingGradient.staticHueFor(i, count); // second call, no time elapses between them
+            assertEquals(a, b, TOL, "staticHueFor must be pure -- identical args, identical result");
+        }
+
+        // Endpoints pinned: first letter is red (0.0), last letter is violet (STATIC_SPAN).
+        assertEquals(0.0f, FlowingGradient.staticHueFor(0, count), TOL);
+        assertEquals(FlowingGradient.STATIC_SPAN, FlowingGradient.staticHueFor(count - 1, count), TOL);
+
+        // Monotonic increase across the whole span -- no reversal anywhere in the ramp.
+        float prev = FlowingGradient.staticHueFor(0, count);
+        for (int i = 1; i < count; i++) {
+            float cur = FlowingGradient.staticHueFor(i, count);
+            assertTrue(cur > prev, "staticHueFor should climb monotonically red->violet");
+            prev = cur;
+        }
+    }
+
+    /** staticColorFor is likewise pure: same (idx, count) in, same packed color out, no matter how many
+     *  times it's called or how much wall-clock time passes between calls. */
+    @Test
+    void staticColorForIsTimeIndependent() {
+        int c0 = FlowingGradient.staticColorFor(3, 9);
+        int c1 = FlowingGradient.staticColorFor(3, 9);
+        assertEquals(c0, c1, "staticColorFor must be pure -- no time component");
+        assertTrue((c0 & 0xFF000000) == 0, "no alpha bits in the packed static gradient color");
+    }
 }

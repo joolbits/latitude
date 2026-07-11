@@ -44,4 +44,23 @@ public final class FlowingGradient {
     public static int colorFor(long nowMs, int visibleIdx, int visibleCount, float cycleSeconds) {
         return java.awt.Color.HSBtoRGB(hueFor(nowMs, visibleIdx, visibleCount, cycleSeconds), SATURATION, BRIGHTNESS) & 0xFFFFFF;
     }
+
+    /** Fraction of the hue wheel a STATIC rainbow spans across the whole string: red (0.0) to violet. A single
+     *  full ROYGBIV sweep, unlike the drifting {@link #colorFor}. */
+    public static final float STATIC_SPAN = 0.83f;
+
+    /** Hue in [0,1] for the {@code visibleIdx}-th of {@code visibleCount} letters in a STATIC ROYGBIV gradient:
+     *  0 (red) on the left, {@link #STATIC_SPAN} (violet) on the right, smoothly blended, no time component. A
+     *  one-letter string is pinned to red. */
+    public static float staticHueFor(int visibleIdx, int visibleCount) {
+        int count = Math.max(1, visibleCount);
+        if (count <= 1) return 0f;
+        float t = (float) visibleIdx / (float) (count - 1);
+        return t * STATIC_SPAN;
+    }
+
+    /** Packed {@code 0xRRGGBB} (no alpha) STATIC ROYGBIV gradient color for that letter — callers OR in alpha. */
+    public static int staticColorFor(int visibleIdx, int visibleCount) {
+        return java.awt.Color.HSBtoRGB(staticHueFor(visibleIdx, visibleCount), SATURATION, BRIGHTNESS) & 0xFFFFFF;
+    }
 }
