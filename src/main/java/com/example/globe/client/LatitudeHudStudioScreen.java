@@ -38,6 +38,15 @@ public class LatitudeHudStudioScreen extends Screen {
 
     private final Screen parent;
 
+    // Cancel snapshot (UI round 13): the ENTIRE editable state as it was when the Studio opened. Every widget
+    // in this screen mutates the live config singletons AND saves to disk immediately (live preview), so a
+    // "Cancel" has to restore these captured values over the live singletons and re-save. Captured once in the
+    // constructor -- init() re-runs on every resize/tab-switch/widget-rebuild, so capturing there would snapshot
+    // already-edited state and defeat the whole point. Done keeps the live edits (they're already persisted);
+    // ESC keeps its existing behavior (also keeps edits) -- only this explicit Cancel discards.
+    private final CompassHudConfig hudSnapshot;
+    private final LatitudeConfigData latitudeSnapshot;
+
     private boolean sidebarVisible = true;
     // Widened from 180 -- at 180 the 4-tab strip (~43px/tab) was too narrow for "Placement" to fit without
     // touching its button's borders.
@@ -139,6 +148,21 @@ public class LatitudeHudStudioScreen extends Screen {
     public LatitudeHudStudioScreen(Screen parent) {
         super(Component.literal("HUD Studio"));
         this.parent = parent;
+        // Snapshot the full editable state up front (see field docs) so Cancel can restore it exactly.
+        this.hudSnapshot = CompassHudConfig.copyOf(CompassHudConfig.get());
+        this.latitudeSnapshot = LatitudeConfig.snapshot();
+    }
+
+    /** Cancel: roll back every live-preview mutation (config values, element positions, title fields, snap
+     *  settings) to the constructor snapshot, persist the rollback over the live-saved edits, and close to the
+     *  parent screen. */
+    private void cancelAndClose() {
+        CompassHudConfig.get().copyFrom(hudSnapshot);
+        CompassHudConfig.saveCurrent();
+        LatitudeConfig.restore(latitudeSnapshot);
+        LatitudeConfig.saveCurrent();
+        CompassHudPreset.clearUndoRedo();
+        Minecraft.getInstance().setScreenAndShow(parent);
     }
 
     @Override
@@ -855,15 +879,21 @@ public class LatitudeHudStudioScreen extends Screen {
 
         int bw = 200;
         int bh = 20;
-        int doneX = (this.width - bw) / 2;
+        int btnGap = 4;
+        int halfW = (bw - btnGap) / 2;
+        int groupX = (this.width - bw) / 2;
         int doneY = this.height - 28;
         this.addRenderableWidget(Button.builder(Component.literal("Done"), btn -> {
                     CompassHudConfig.saveCurrent();
                     LatitudeConfig.saveCurrent();
                     Minecraft.getInstance().setScreenAndShow(parent);
                 })
-                .bounds(doneX, doneY, bw, bh)
+                .bounds(groupX, doneY, halfW, bh)
                 .build());
+        Button cancelBtn = this.addRenderableWidget(Button.builder(Component.literal("Cancel"), btn -> cancelAndClose())
+                .bounds(groupX + halfW + btnGap, doneY, bw - halfW - btnGap, bh)
+                .build());
+        tooltip(cancelBtn, "Discard every change made since opening HUD Studio and go back.");
 
         updateSidebarVisibility();
     }
