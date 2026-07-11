@@ -33,7 +33,14 @@ public final class LatitudeConfigData {
     // the SAME flowing/drifting gradient the analog compass's "Aurora" scheme uses. AURORA is APPENDED last
     // on purpose: TitleColorPreset is persisted by NAME (GSON) and read by ordinal in the HUD Studio picker,
     // so appending never shifts an existing saved value (RAINBOW stays index 6 / name "RAINBOW").
-    public enum TitleColorPreset { WHITE, GOLD, RED, CYAN, GREEN, CUSTOM, RAINBOW, AURORA }
+    // OFF_WHITE (appended 2026-07-11, title-styling overhaul) is the new FRESH-config default inner color: a
+    // warm off-white that pairs with the black outline far better than a stark pure WHITE. Appended LAST for
+    // the same ordinal-stability reason -- WHITE stays index 0, every prior name/index is untouched.
+    public enum TitleColorPreset { WHITE, GOLD, RED, CYAN, GREEN, CUSTOM, RAINBOW, AURORA, OFF_WHITE }
+
+    /** Warm off-white (ivory) used by {@link TitleColorPreset#OFF_WHITE} -- suits the mod's gold/brown palette
+     *  and reads cleanly inside a black outline. */
+    public static final int OFF_WHITE_RGB = 0xF3ECDD;
 
     // NORMAL briefly removed 2026-07-08, then RESTORED same day: Peetsa's "normal and uppercase are the
     // same thing" report was correctly diagnosed but wrongly treated as a request to delete the option --
@@ -74,11 +81,45 @@ public final class LatitudeConfigData {
     @SerializedName(value = "zoneEnterTitleScale", alternate = {"zoneEnterTitleScaleValue"})
     public double zoneEnterTitleScale = 1.8;
 
+    // FRESH-CONFIG DEFAULT REFRESH (2026-07-11, title-styling overhaul): the new out-of-box title look is a
+    // warm OFF_WHITE inner color inside a black OUTLINE (see the outline fields below). This initializer is
+    // the default for FRESH configs only -- zoneEnterTitleColorPreset has existed in every prior 2.0 config,
+    // so a saved file already carries its own value (typically WHITE) and Gson keeps it; only brand-new
+    // configs and "Reset Title" adopt OFF_WHITE.
     @SerializedName(value = "zoneEnterTitleColorPreset", alternate = {"zoneEnterTitleColorPresetValue"})
-    public TitleColorPreset zoneEnterTitleColorPreset = TitleColorPreset.WHITE;
+    public TitleColorPreset zoneEnterTitleColorPreset = TitleColorPreset.OFF_WHITE;
 
     @SerializedName(value = "zoneEnterTitleRgb", alternate = {"zoneEnterTitleRgbValue"})
     public int zoneEnterTitleRgb = 0xFFFFFF;
+
+    // ---- Title outline / shadow / glow (NEW 2026-07-11, title-styling overhaul; append-only) ----
+    // MIGRATION NOTE (same policy as the compass fresh-default refresh in CompassHudConfig): these three
+    // fields are NEW, so a config saved before this pass has no such keys and Gson leaves them at the Java
+    // initializers below -- i.e. an existing 2.0 pre-release config ADOPTS the new outline-on / drop-shadow-off
+    // look, it does NOT reproduce its exact prior render (which had MC's hard shadow and no outline). Splitting
+    // "fresh gets the new look, existing keeps the old look" is impossible with Gson's absent-key handling
+    // (the initializer serves both), so per the compass precedent we take the new default for everyone and
+    // disclose it here. Accepted PRE-RELEASE because no public build has ever written this file; once one has,
+    // changing a default needs a real stamped migration, not a silent reinterpretation.
+
+    /** Draw the title text with a crisp 1px outline (default black) behind the fill. New default = ON. */
+    @SerializedName(value = "zoneEnterTitleOutline", alternate = {"zoneEnterTitleOutlineValue"})
+    public boolean zoneEnterTitleOutline = true;
+
+    /** Outline color (0xRRGGBB). Default black; configurable via the Studio's RGB picker (like the custom
+     *  fill color). */
+    @SerializedName(value = "zoneEnterTitleOutlineRgb", alternate = {"zoneEnterTitleOutlineRgbValue"})
+    public int zoneEnterTitleOutlineRgb = 0x000000;
+
+    /** The standard Minecraft hard drop shadow (one dark offset copy). New default = OFF, because it pairs
+     *  poorly with the outline; was implicitly always-ON before this pass. */
+    @SerializedName(value = "zoneEnterTitleDropShadow", alternate = {"zoneEnterTitleDropShadowValue"})
+    public boolean zoneEnterTitleDropShadow = false;
+
+    /** A soft dark halo radiating out behind the text (multi-ring low-alpha offsets), independent of the hard
+     *  drop shadow. Default = OFF (opt-in flourish). */
+    @SerializedName(value = "zoneEnterTitleGlow", alternate = {"zoneEnterTitleGlowValue"})
+    public boolean zoneEnterTitleGlow = false;
 
     @SerializedName(value = "zoneEnterTitleCase", alternate = {"zoneEnterTitleCaseValue"})
     public TitleCaseMode zoneEnterTitleCase = TitleCaseMode.NORMAL;
@@ -135,6 +176,8 @@ public final class LatitudeConfigData {
 
     /** Null-guard enums (Gson leaves unknown enum constants null) and clamp ranges to the UI's bounds. */
     public void sanitize() {
+        // Null only for an unknown/corrupt enum name (Gson leaves those null); fall to WHITE, the safe
+        // long-standing solid, rather than reinterpreting a bad value as the new OFF_WHITE default.
         if (zoneEnterTitleColorPreset == null) zoneEnterTitleColorPreset = TitleColorPreset.WHITE;
         if (zoneEnterTitleCase == null) zoneEnterTitleCase = TitleCaseMode.NORMAL;
         if (accessibilityMode == null) accessibilityMode = AccessibilityMode.STANDARD;

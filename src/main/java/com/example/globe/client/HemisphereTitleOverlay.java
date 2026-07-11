@@ -138,8 +138,11 @@ public final class HemisphereTitleOverlay {
         // One line-height (scaled) between stacked lines; block is vertically centered on the anchor.
         int lineGap = Math.round(font.lineHeight * (float) drawScale);
         int firstY = anchorY - (lineGap * (lines.length - 1)) / 2;
+        // Share the zone title's rainbow fade-in shimmer so a hemisphere title reads as the same visual
+        // system (styling already comes from the shared draw; this carries the one-shot shimmer too).
+        float shimmer = ZoneEnterTitleOverlay.fadeInShimmer(age);
         for (int i = 0; i < lines.length; i++) {
-            ZoneEnterTitleOverlay.drawTitleLineAt(ctx, cx, firstY + i * lineGap, lines[i], drawScale, alphaByte);
+            ZoneEnterTitleOverlay.drawTitleLineAt(ctx, cx, firstY + i * lineGap, lines[i], drawScale, alphaByte, shimmer);
         }
     }
 }
