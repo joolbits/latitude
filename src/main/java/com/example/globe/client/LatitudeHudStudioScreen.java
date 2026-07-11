@@ -461,7 +461,7 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
                         v -> cfg.customNeedleArgb = 0xFF000000 | v, g -> this.rgbCustomNeedle = g, s -> this.swatchCustomNeedle = s);
             }
 
-            String[] textNames = {"WHITE", "BLACK", "YELLOW", "RED", "CYAN"};
+            String[] textNames = {"OFF_WHITE", "WHITE", "BLACK", "YELLOW", "RED", "CYAN"};
             List<SwatchDropdown.Entry> textEntries = new ArrayList<>();
             for (String name : textNames) textEntries.add(SwatchDropdown.Entry.swatch(textColorTitle(name), textColorRgb(name)));
             this.wCompassTextColor = this.addRenderableWidget(new SwatchDropdown(panelX, y, widgetW, rowH, this.font, "Text Color",
@@ -2332,6 +2332,7 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
 
     private static String textColorTitle(String name) {
         return switch (name) {
+            case "OFF_WHITE" -> "Off-White";
             case "BLACK" -> "Black";
             case "YELLOW" -> "Yellow";
             case "RED" -> "Red";
@@ -2508,6 +2509,7 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
 
     private static String textColorName(int rgb) {
         int c = rgb & 0xFFFFFF;
+        if (c == 0xF3ECDD) return "OFF_WHITE";
         if (c == 0x000000) return "BLACK";
         if (c == 0xFFFF00) return "YELLOW";
         if (c == 0xFF0000) return "RED";
@@ -2517,6 +2519,7 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
 
     private static int textColorRgb(String name) {
         return switch (name) {
+            case "OFF_WHITE" -> 0xF3ECDD;
             case "BLACK" -> 0x000000;
             case "YELLOW" -> 0xFFFF00;
             case "RED" -> 0xFF0000;
