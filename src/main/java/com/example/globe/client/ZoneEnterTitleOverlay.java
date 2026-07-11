@@ -103,7 +103,17 @@ public final class ZoneEnterTitleOverlay {
         // clamp is the self-contained fix.)
         int cx = OverlayLayout.clampCenter((screenW / 2) + LatitudeConfig.zoneEnterTitleOffsetX, halfW, screenW);
         int cy = OverlayLayout.clampCenter((screenH / 2) + LatitudeConfig.zoneEnterTitleOffsetY, halfH, screenH);
-        drawTitleLineAt(ctx, cx, cy, raw, drawScale, a);
+        drawTitleLineAt(ctx, cx, cy, raw, drawScale, a, fadeInShimmer(age));
+    }
+
+    /** Fade-in progress (0..1) for the rainbow/aurora shimmer crest, or -1 when there's no shimmer this frame:
+     *  once the fade-in window has passed, or when Reduce Motion is on. The preset gate (RAINBOW/AURORA only)
+     *  lives in {@link #drawStyledTitle} so every caller of the shared draw path stays consistent. */
+    static float fadeInShimmer(long age) {
+        if (LatitudeConfig.reduceMotion || age >= FADE_TICKS) {
+            return -1f;
+        }
+        return (float) age / (float) FADE_TICKS;
     }
 
     /**
@@ -113,6 +123,17 @@ public final class ZoneEnterTitleOverlay {
      * system (a hemisphere title reads exactly like a zone title, just in its own channel/position).
      */
     public static void drawTitleLineAt(GuiGraphicsExtractor ctx, int cx, int cy, String rawText, double scale, int alphaByte) {
+        drawTitleLineAt(ctx, cx, cy, rawText, scale, alphaByte, -1f);
+    }
+
+    /**
+     * As {@link #drawTitleLineAt(GuiGraphicsExtractor, int, int, String, double, int)}, plus the
+     * fade-in shimmer progress: {@code shimmerProgress} in [0,1] drives the one-shot rainbow shimmer crest
+     * during fade-in; pass {@code -1} for no shimmer (solid presets, static Studio preview, Reduce Motion).
+     * Hemisphere titles pass their own fade-in progress here so they shimmer coherently with zone titles.
+     */
+    public static void drawTitleLineAt(GuiGraphicsExtractor ctx, int cx, int cy, String rawText, double scale,
+                                       int alphaByte, float shimmerProgress) {
         Minecraft client = Minecraft.getInstance();
         if (client == null || client.font == null) {
             return;
@@ -124,7 +145,7 @@ public final class ZoneEnterTitleOverlay {
         try {
             m.translate(cx, cy);
             m.scale((float) scale, (float) scale);
-            drawStyledTitle(ctx, tr, styled, alphaByte);
+            drawStyledTitle(ctx, tr, styled, alphaByte, (float) scale, shimmerProgress);
         } finally {
             m.popMatrix();
         }
@@ -155,9 +176,43 @@ public final class ZoneEnterTitleOverlay {
         return totalWidth;
     }
 
-    private static void drawStyledTitle(GuiGraphicsExtractor ctx, Font font, String text, int alphaByte) {
+    /**
+     * The single styled-title draw path (real gameplay, hemisphere channel, and Studio preview all reach
+     * here). Draws, back-to-front: (1) the diffuse-shadow glow halo, (2) the crisp outline, (3) the main
+     * fill -- optionally with MC's hard drop shadow and the rainbow fade-in shimmer. {@code scale} is the
+     * pose's current scale, used to keep the outline/glow offsets a fixed size in SCREEN pixels rather than
+     * fattening with Title Size. {@code shimmerProgress} is fade-in progress in [0,1] (or -1 for none).
+     */
+    private static void drawStyledTitle(GuiGraphicsExtractor ctx, Font font, String text, int alphaByte,
+                                        float scale, float shimmerProgress) {
         int spacing = LatitudeConfig.zoneEnterTitleLetterSpacing;
         int alphaMask = (alphaByte & 0xFF) << 24;
+        float invScale = scale > 0f ? 1.0f / scale : 1.0f;
+
+        // (1) Diffuse-shadow glow -- soft dark halo, drawn first so everything else sits on top of it.
+        if (LatitudeConfig.zoneEnterTitleGlow) {
+            for (int ring = 0; ring < com.example.globe.core.ui.TitleStyle.GLOW_RING_RADII_PX.length; ring++) {
+                float radiusLocal = com.example.globe.core.ui.TitleStyle.GLOW_RING_RADII_PX[ring] * invScale;
+                int ringAlpha = Math.round((alphaByte & 0xFF)
+                        * com.example.globe.core.ui.TitleStyle.GLOW_RING_ALPHA[ring]);
+                if (ringAlpha <= 0) continue;
+                int glowArgb = (ringAlpha << 24); // black halo (RGB = 0)
+                for (int[] off : com.example.globe.core.ui.TitleStyle.OUTLINE_OFFSETS_8) {
+                    drawOffsetPass(ctx, font, text, spacing, off[0] * radiusLocal, off[1] * radiusLocal, glowArgb);
+                }
+            }
+        }
+
+        // (2) Outline -- crisp 1 screen-px stamp of the text in the outline color behind the fill.
+        if (LatitudeConfig.zoneEnterTitleOutline) {
+            int outlineArgb = alphaMask | (LatitudeConfig.zoneEnterTitleOutlineRgb & 0xFFFFFF);
+            for (int[] off : com.example.globe.core.ui.TitleStyle.OUTLINE_OFFSETS_8) {
+                drawOffsetPass(ctx, font, text, spacing, off[0] * invScale, off[1] * invScale, outlineArgb);
+            }
+        }
+
+        // (3) Main fill. The hard MC drop shadow is now an explicit toggle (was always-on before this pass).
+        boolean dropShadow = LatitudeConfig.zoneEnterTitleDropShadow;
         LatitudeConfigData.TitleColorPreset preset = LatitudeConfig.zoneEnterTitleColorPreset;
         if (preset == LatitudeConfigData.TitleColorPreset.RAINBOW
                 || preset == LatitudeConfigData.TitleColorPreset.AURORA) {
@@ -167,17 +222,38 @@ public final class ZoneEnterTitleOverlay {
             }
             final int visible = visibleCount;
             // RAINBOW = static ROYGBIV sweep across the letters (no drift); AURORA = the flowing/drifting
-            // gradient (same effect the compass's "Aurora" scheme uses).
+            // gradient (same effect the compass's "Aurora" scheme uses). Shimmer only rides these two presets.
             final boolean flowing = preset == LatitudeConfigData.TitleColorPreset.AURORA;
-            drawSpacedText(ctx, font, text, 0, 0, true, spacing,
-                    idx -> alphaMask | (flowing
-                            ? RainbowText.flowingColor(idx, visible,
-                                    com.example.globe.core.ui.FlowingGradient.DEFAULT_CYCLE_SECONDS)
-                            : com.example.globe.core.ui.FlowingGradient.staticColorFor(idx, visible)));
+            final float shimmer = shimmerProgress;
+            drawSpacedText(ctx, font, text, 0, 0, dropShadow, spacing,
+                    idx -> {
+                        int base = flowing
+                                ? RainbowText.flowingColor(idx, visible,
+                                        com.example.globe.core.ui.FlowingGradient.DEFAULT_CYCLE_SECONDS)
+                                : com.example.globe.core.ui.FlowingGradient.staticColorFor(idx, visible);
+                        base = com.example.globe.core.ui.TitleStyle.brighten(base,
+                                com.example.globe.core.ui.TitleStyle.shimmerBoost(shimmer, idx, visible));
+                        return alphaMask | base;
+                    });
             return;
         }
         int argb = alphaMask | (titleColorRgb(preset) & 0xFFFFFF);
-        drawSpacedText(ctx, font, text, 0, 0, true, spacing, idx -> argb);
+        drawSpacedText(ctx, font, text, 0, 0, dropShadow, spacing, idx -> argb);
+    }
+
+    // Draws the full styled string once in a single flat color, offset by (ox, oy) LOCAL units (the pose is
+    // already scaled, so a local offset of 1/scale == 1 screen pixel), with no MC shadow. Used for the
+    // outline and diffuse-glow passes. Pushes/pops the matrix so the offset never leaks into later passes.
+    private static void drawOffsetPass(GuiGraphicsExtractor ctx, Font font, String text, int spacing,
+                                       float ox, float oy, int argb) {
+        var m = ctx.pose();
+        m.pushMatrix();
+        try {
+            m.translate(ox, oy);
+            drawSpacedText(ctx, font, text, 0, 0, false, spacing, idx -> argb);
+        } finally {
+            m.popMatrix();
+        }
     }
 
     // Draws text centered at (centerX, centerY), inserting `spacing` extra pixels between adjacent characters
@@ -219,6 +295,7 @@ public final class ZoneEnterTitleOverlay {
             case CYAN -> 0x55FFFF;
             case GREEN -> 0x55FF55;
             case CUSTOM -> LatitudeConfig.zoneEnterTitleRgb;
+            case OFF_WHITE -> LatitudeConfigData.OFF_WHITE_RGB;
             case WHITE, RAINBOW, AURORA -> 0xFFFFFF; // RAINBOW/AURORA never reach here -- handled above.
         };
     }

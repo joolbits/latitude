@@ -33,6 +33,11 @@ public final class LatitudeConfig {
     public static LatitudeConfigData.TitleCaseMode zoneEnterTitleCase;
     public static int zoneEnterTitleLetterSpacing;
 
+    public static boolean zoneEnterTitleOutline;
+    public static int zoneEnterTitleOutlineRgb;
+    public static boolean zoneEnterTitleDropShadow;
+    public static boolean zoneEnterTitleGlow;
+
     public static int zoneEnterTitleOffsetX;
     public static int zoneEnterTitleOffsetY;
     public static boolean zoneEnterTitleDraggable;
@@ -127,6 +132,11 @@ public final class LatitudeConfig {
         zoneEnterTitleCase = d.zoneEnterTitleCase;
         zoneEnterTitleLetterSpacing = d.zoneEnterTitleLetterSpacing;
 
+        zoneEnterTitleOutline = d.zoneEnterTitleOutline;
+        zoneEnterTitleOutlineRgb = d.zoneEnterTitleOutlineRgb;
+        zoneEnterTitleDropShadow = d.zoneEnterTitleDropShadow;
+        zoneEnterTitleGlow = d.zoneEnterTitleGlow;
+
         zoneEnterTitleOffsetX = d.zoneEnterTitleOffsetX;
         zoneEnterTitleOffsetY = d.zoneEnterTitleOffsetY;
         zoneEnterTitleDraggable = d.zoneEnterTitleDraggable;
@@ -172,6 +182,11 @@ public final class LatitudeConfig {
         d.zoneEnterTitleRgb = zoneEnterTitleRgb;
         d.zoneEnterTitleCase = zoneEnterTitleCase;
         d.zoneEnterTitleLetterSpacing = zoneEnterTitleLetterSpacing;
+
+        d.zoneEnterTitleOutline = zoneEnterTitleOutline;
+        d.zoneEnterTitleOutlineRgb = zoneEnterTitleOutlineRgb;
+        d.zoneEnterTitleDropShadow = zoneEnterTitleDropShadow;
+        d.zoneEnterTitleGlow = zoneEnterTitleGlow;
 
         d.zoneEnterTitleOffsetX = zoneEnterTitleOffsetX;
         d.zoneEnterTitleOffsetY = zoneEnterTitleOffsetY;

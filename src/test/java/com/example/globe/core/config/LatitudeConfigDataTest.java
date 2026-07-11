@@ -28,7 +28,13 @@ class LatitudeConfigDataTest {
         assertTrue(d.zoneEnterTitleEnabled);
         assertEquals(6.0, d.zoneEnterTitleSeconds);
         assertEquals(1.8, d.zoneEnterTitleScale);
-        assertEquals(TitleColorPreset.WHITE, d.zoneEnterTitleColorPreset);
+        // FRESH default refreshed 2026-07-11 (title-styling overhaul): warm OFF_WHITE fill in a black outline,
+        // hard drop shadow off, glow off.
+        assertEquals(TitleColorPreset.OFF_WHITE, d.zoneEnterTitleColorPreset);
+        assertTrue(d.zoneEnterTitleOutline);
+        assertEquals(0x000000, d.zoneEnterTitleOutlineRgb);
+        assertFalse(d.zoneEnterTitleDropShadow);
+        assertFalse(d.zoneEnterTitleGlow);
         assertEquals(TitleCaseMode.NORMAL, d.zoneEnterTitleCase);
         assertEquals(-40, d.zoneEnterTitleOffsetY);
         assertTrue(d.hudSnapEnabled);
@@ -100,7 +106,12 @@ class LatitudeConfigDataTest {
         d.sanitize();
         assertEquals(4, d.hudSnapPixels);
         assertEquals(6.0, d.zoneEnterTitleSeconds, "absent key must keep the default");
-        assertEquals(TitleColorPreset.WHITE, d.zoneEnterTitleColorPreset);
+        // Absent keys adopt the Java initializer (Gson) -- so an existing pre-release file with none of the
+        // new title-style keys picks up the new default look. This is the disclosed pre-release migration.
+        assertEquals(TitleColorPreset.OFF_WHITE, d.zoneEnterTitleColorPreset);
+        assertTrue(d.zoneEnterTitleOutline);
+        assertFalse(d.zoneEnterTitleDropShadow);
+        assertFalse(d.zoneEnterTitleGlow);
         assertTrue(d.zoneEnterTitleEnabled);
     }
 
@@ -111,6 +122,10 @@ class LatitudeConfigDataTest {
         out.zoneEnterTitleColorPreset = TitleColorPreset.RAINBOW;
         out.zoneEnterTitleCase = TitleCaseMode.MOCKING;
         out.zoneEnterTitleOffsetX = -12;
+        out.zoneEnterTitleOutline = false;
+        out.zoneEnterTitleOutlineRgb = 0x123456;
+        out.zoneEnterTitleDropShadow = true;
+        out.zoneEnterTitleGlow = true;
         out.hudSnapPixels = 32;
         out.captureWriteCsv = true;
 
@@ -125,6 +140,10 @@ class LatitudeConfigDataTest {
         assertEquals(TitleColorPreset.RAINBOW, in.zoneEnterTitleColorPreset);
         assertEquals(TitleCaseMode.MOCKING, in.zoneEnterTitleCase);
         assertEquals(-12, in.zoneEnterTitleOffsetX);
+        assertFalse(in.zoneEnterTitleOutline);
+        assertEquals(0x123456, in.zoneEnterTitleOutlineRgb);
+        assertTrue(in.zoneEnterTitleDropShadow);
+        assertTrue(in.zoneEnterTitleGlow);
         assertEquals(32, in.hudSnapPixels);
         assertTrue(in.captureWriteCsv);
     }

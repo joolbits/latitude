@@ -29,10 +29,16 @@ public final class CompassHudPreset {
         public boolean enabled = true;
         public double seconds = 6.0;
         public double scale = 1.8;
-        public LatitudeConfigData.TitleColorPreset colorPreset = LatitudeConfigData.TitleColorPreset.WHITE;
+        public LatitudeConfigData.TitleColorPreset colorPreset = LatitudeConfigData.TitleColorPreset.OFF_WHITE;
         public int customRgb = 0xFFFFFF;
         public LatitudeConfigData.TitleCaseMode caseMode = LatitudeConfigData.TitleCaseMode.NORMAL;
         public int letterSpacing = 0;
+        // Outline / shadow / glow (NEW 2026-07-11, title-styling overhaul). Defaults mirror the fresh-config
+        // look so a preset saved without these keys imports as outline-on / drop-shadow-off / glow-off.
+        public boolean outline = true;
+        public int outlineRgb = 0x000000;
+        public boolean dropShadow = false;
+        public boolean glow = false;
         public boolean showBaseDegrees = true;
         public int offsetX = 0;
         public int offsetY = -40;
@@ -112,6 +118,10 @@ public final class CompassHudPreset {
         p.title.customRgb = LatitudeConfig.zoneEnterTitleRgb;
         p.title.caseMode = LatitudeConfig.zoneEnterTitleCase;
         p.title.letterSpacing = LatitudeConfig.zoneEnterTitleLetterSpacing;
+        p.title.outline = LatitudeConfig.zoneEnterTitleOutline;
+        p.title.outlineRgb = LatitudeConfig.zoneEnterTitleOutlineRgb;
+        p.title.dropShadow = LatitudeConfig.zoneEnterTitleDropShadow;
+        p.title.glow = LatitudeConfig.zoneEnterTitleGlow;
         p.title.showBaseDegrees = LatitudeConfig.showZoneBaseDegreesOnTitle;
         p.title.offsetX = LatitudeConfig.zoneEnterTitleOffsetX;
         p.title.offsetY = LatitudeConfig.zoneEnterTitleOffsetY;
@@ -151,6 +161,10 @@ public final class CompassHudPreset {
             LatitudeConfig.zoneEnterTitleRgb = title.customRgb;
             LatitudeConfig.zoneEnterTitleCase = title.caseMode != null ? title.caseMode : LatitudeConfigData.TitleCaseMode.NORMAL;
             LatitudeConfig.zoneEnterTitleLetterSpacing = title.letterSpacing;
+            LatitudeConfig.zoneEnterTitleOutline = title.outline;
+            LatitudeConfig.zoneEnterTitleOutlineRgb = title.outlineRgb;
+            LatitudeConfig.zoneEnterTitleDropShadow = title.dropShadow;
+            LatitudeConfig.zoneEnterTitleGlow = title.glow;
             LatitudeConfig.showZoneBaseDegreesOnTitle = title.showBaseDegrees;
             LatitudeConfig.zoneEnterTitleOffsetX = title.offsetX;
             LatitudeConfig.zoneEnterTitleOffsetY = title.offsetY;
