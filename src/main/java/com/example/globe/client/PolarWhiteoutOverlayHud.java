@@ -41,8 +41,14 @@ public final class PolarWhiteoutOverlayHud {
         // not a HUD element, so it STAYS visible under F1. The mixin renders it from the F1 path too (vanilla
         // skips extractHotbarAndDecorations when the HUD is hidden); the visible HUD chrome is what F1 hides.
 
-        // Same activation + surface gate as the ambient snow tick (globe world, sky-exposed): the
-        // blizzard is a surface phenomenon -- no whiteout deep in a cave under the pole.
+        // Interior-storm split (Peetsa's "storm vanishes indoors" bug): this whiteout DELIBERATELY stays gated
+        // on sky exposure while the world-space storm sky + snowfall (ClientLevelStormSkyMixin) was UNGATED.
+        // Reason: this is a SCREEN-SPACE HUD fill with no depth -- walls cannot occlude it, so painting it while
+        // sheltered would haze the interior itself (and a fully sealed room) rather than only the view out a
+        // window. It represents being ENGULFED in the whiteout, which happens out in the open: step outside and
+        // it returns; look out from inside and the storm still reads via the wall-occluded world-space sky +
+        // snowfall. (A true volumetric, wall-aware polar fog -- which could render only past the opening -- is
+        // the deferred B-4 fog-renderer item.)
         var eval = GlobeClientState.evaluate(mc);
         if (!eval.active() || !eval.surfaceOk()) {
             return;

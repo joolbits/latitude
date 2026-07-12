@@ -41,9 +41,16 @@ public abstract class ClientLevelStormSkyMixin {
             return;
         }
         GlobeClientState.Eval eval = GlobeClientState.evaluate(mc);
-        if (!eval.active() || !eval.surfaceOk()) {
-            return; // no whiteout deep underground / off a globe world
+        if (!eval.active()) {
+            return; // off a globe world -- no storm sky
         }
+        // Interior-storm fix (Peetsa: "in interiors when looking out, the storm has vanished"). NOT gated on
+        // eval.surfaceOk(): the storm SKY (greyed overcast + faded sun) and the vanilla snowfall this rain-level
+        // lift drives are WORLD-SPACE -- vanilla renders precipitation per exterior column down to the terrain
+        // heightmap, so a roof/wall already occludes it (a sheltered player sees the blizzard THROUGH an open
+        // door/window but no snow falls through their own roof). The old surfaceOk gate made the whole storm
+        // VANISH the instant the player stepped under any roof, even with the gale raging one block past the
+        // doorway. Latitude + globe-active alone decide whether it is storming here.
         double absLatDeg = com.example.globe.util.LatitudeMath.absLatDegExact(
                 self.getWorldBorder(), mc.player.getZ());
         // B-4 round 3 item 3: STEEPENED. The old lift used the linear 85->90 ambientProgress, so at 86 deg
