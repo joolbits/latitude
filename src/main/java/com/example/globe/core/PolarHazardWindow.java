@@ -15,11 +15,14 @@ package com.example.globe.core;
  *       damage because the old curve only crossed vanilla's fully-frozen threshold in the last fractional
  *       degree), full-lethal at 90 deg, over {@code progress = clamp01((|lat|-87.5)/2.5)}. Slowness /
  *       weakness / mining-fatigue amplifiers scale continuously with progress. FREEZE is split into a
- *       VISUAL frost ramp ({@link #frostVisualTicks}, capped one tick below vanilla's 140 fully-frozen
- *       threshold so vanilla's OWN fixed 1 HP/40-tick auto-damage never fires) and a SEPARATELY-scaled
- *       damage curve ({@link #freezeDamageIntervalTicks} + {@link #freezeDamageAmount}) the mod applies
- *       itself -- so the cold builds visibly from 87.5, bites from ~88, and gets worse and worse to a
- *       lethal pole, instead of the old near-binary flip at the doorstep. (B-4 removed the Blindness
+ *       VISUAL frost ramp ({@link #frostVisualTicks}, which CROSSES vanilla's 140 fully-frozen threshold at
+ *       the ~88 deg damage onset so the blue frozen hearts + all vanilla freeze visuals fire off our set
+ *       value -- TEST 77) and a SEPARATELY-scaled damage curve ({@link #freezeDamageIntervalTicks} +
+ *       {@link #freezeDamageAmount}) the mod applies itself. Vanilla's OWN fixed 1 HP/40-tick auto-damage,
+ *       which also keys off the 140 threshold, is cancelled at its {@code aiStep} source for in-band players
+ *       ({@code LivingEntityFreezeDamageMixin}) so our curve stays the SOLE freeze-damage source -- the cold
+ *       builds visibly from 87.5, bites from ~88, and gets worse and worse to a lethal pole, instead of the
+ *       old near-binary flip at the doorstep. (B-4 removed the Blindness
  *       effect: the smooth whiteout overlay now carries vision loss without a hard snap.)</li>
  *   <li><b>B-3b AMBIENT window {@code [85,90]}</b> -- atmosphere BEFORE danger. Snow begins at 85 deg
  *       (2 deg ahead of the hazard onset) and the fixed per-tick particle budget + screen-fog
@@ -72,37 +75,72 @@ public final class PolarHazardWindow {
         return clamp01(progress) >= MINING_FATIGUE_PROGRESS;
     }
 
-    // ---- Freeze: a VISUAL frost ramp + a SEPARATELY-scaled damage curve (TEST 76 redesign) ----
+    // ---- Freeze: a VISUAL frost ramp + a SEPARATELY-scaled damage curve (TEST 77 redesign) ----
     //
     // Why two pieces instead of vanilla's one: vanilla only deals freeze damage while an entity is FULLY
     // frozen (ticksFrozen >= getTicksRequiredToFreeze() == 140), and then a FIXED 1.0 HP every 40 ticks
-    // (both verified in LivingEntity/Entity for 26.2). Driving that single knob (ticksFrozen) made damage a
-    // near-binary flip: the old curve pushed ticksFrozen past 140 only in the last ~0.03 deg, so Peetsa
-    // stood at 89 deg and took nothing. Instead we (a) ramp a FROST VISUAL that tops out at 139 -- one tick
-    // BELOW the fully-frozen threshold, so vanilla's fixed auto-damage never fires and can't fight our
-    // curve -- and (b) apply our OWN freeze damage on a latitude-scaled cadence + amount, so the cold
-    // visibly builds from 87.5, bites from ~88, and worsens to a lethal pole. Same damage TYPE (freeze) and
-    // death screen as vanilla, so to the player it just reads as freezing to death -- only the timing is ours.
+    // (both verified in LivingEntity.aiStep / Entity for 26.2). Driving that single knob (ticksFrozen) made
+    // damage a near-binary flip: the pre-TEST-76 curve pushed ticksFrozen past 140 only in the last ~0.03 deg,
+    // so Peetsa stood at 89 deg and took nothing. So we apply our OWN latitude-scaled freeze damage
+    // ({@link #freezeDamageIntervalTicks} + {@link #freezeDamageAmount}), a cadence + amount that build from
+    // ~88 deg and worsen to a lethal pole. Same damage TYPE (freeze) and death screen as vanilla, only the
+    // timing is ours.
+    //
+    // TEST 76 kept the frost VISUAL capped at 139 -- one tick BELOW the fully-frozen threshold -- specifically
+    // so vanilla's own fixed auto-damage never fired and couldn't double-dip with our curve. But that also
+    // permanently disabled a piece of vanilla feedback Peetsa WANTS: the HUD hearts only tint blue when
+    // {@code isFullyFrozen()} is true ({@code Hud$HeartType.forPlayer} returns FROZEN iff ticksFrozen >= 140).
+    // Capping at 139 meant the hearts never went blue even while our curve was taking HP -- TEST 77 report:
+    // "the hearts aren't turning blue while I'm taking damage." TEST 77 fix: let ticksFrozen CROSS 140 (so
+    // the blue hearts + every vanilla freeze-visual state fire correctly, driven off our set value) and instead
+    // suppress vanilla's own automatic freeze-DAMAGE call at its source -- {@code LivingEntityFreezeDamageMixin}
+    // cancels the {@code hurtServer(..., damageSources().freeze(), 1.0F)} invocation in {@code aiStep} ONLY for
+    // players in this mod's polar hazard band (see {@code GlobeMod.isInPolarFreezeDamageBand}), so our
+    // latitude-scaled curve remains the SOLE freeze-damage source while real powder snow / non-globe play stays
+    // 100% vanilla. ticksFrozen and every OTHER vanilla check (isFullyFrozen / getPercentFrozen / heart render)
+    // are left untouched and driven off our set value.
 
     /** Vanilla's fully-frozen threshold ({@code Entity.getTicksRequiredToFreeze()} in 26.2): at/above this
-     *  the game shows fully-blue frozen hearts AND deals its own fixed 1 HP/40-tick freeze damage. We stay
-     *  BELOW it (see {@link #FROST_VISUAL_MAX_TICKS}) so our scaled curve is the ONLY freeze damage. */
+     *  {@code isFullyFrozen()} is true, so the HUD hearts tint blue and the frost overlay reads as fully
+     *  frozen. We now DELIBERATELY reach it (see {@link #frostVisualTicks}); vanilla's own auto-damage that
+     *  also keys off this threshold is cancelled for in-band players by {@code LivingEntityFreezeDamageMixin}
+     *  so {@link #freezeDamageAmount} stays the ONLY freeze-damage source. */
     public static final int FROZEN_THRESHOLD_TICKS = 140;
-    /** Frost-visual ceiling: one tick below {@link #FROZEN_THRESHOLD_TICKS}. At 139/140 the frost overlay
-     *  and heart tint read as fully frozen, but the player is never {@code isFullyFrozen()}, so vanilla's
-     *  fixed auto-damage never triggers and {@link #freezeDamageAmount} owns the whole curve. */
-    public static final int FROST_VISUAL_MAX_TICKS = FROZEN_THRESHOLD_TICKS - 1; // 139
-    /** Hazard progress at which the frost visual reaches its {@link #FROST_VISUAL_MAX_TICKS} ceiling and
-     *  holds (~88.75 deg): frost builds visibly across 87.5 -> 88.75, then stays maxed to the pole. */
-    public static final double FROST_VISUAL_FULL_PROGRESS = 0.5;
+    /** Extra ticksFrozen held ABOVE {@link #FROZEN_THRESHOLD_TICKS} once past the crossing, easing 0 -> this
+     *  across the damage sub-window (88 -> 90 deg). Pure decay-headroom: {@code getPercentFrozen()} already
+     *  caps at 1.0 at 140, so it changes nothing visually, but it keeps {@code isFullyFrozen()} solidly true
+     *  (hearts stay blue, no flicker) even if a mid-tick value ever leaked -- vanilla's {@code aiStep} decays
+     *  ticksFrozen by 2/tick when out of powder snow, and our per-tick set at END_SERVER_TICK is the last
+     *  writer (the entity-tracker broadcast in ServerChunkCache.tick runs BEFORE aiStep's decay, so the client
+     *  sees our value), but the margin makes the blue-heart cue bulletproof in the heaviest-damage band. */
+    public static final int FROST_POLE_HEADROOM_TICKS = 8;
+    /** ticksFrozen held at the pole: {@link #FROZEN_THRESHOLD_TICKS} + {@link #FROST_POLE_HEADROOM_TICKS} (148). */
+    public static final int FROST_VISUAL_POLE_TICKS = FROZEN_THRESHOLD_TICKS + FROST_POLE_HEADROOM_TICKS;
 
-    /** Per-tick frost-visual target (ticksFrozen) for a hazard progress: 0 at onset, ramping to
-     *  {@link #FROST_VISUAL_MAX_TICKS} by {@link #FROST_VISUAL_FULL_PROGRESS} and holding. Always &lt; 140,
-     *  so it can never trip vanilla's fully-frozen auto-damage. The caller sets this every server tick
-     *  (vanilla decays ticksFrozen ~2/tick out of powder snow, so a throttled set would sawtooth). */
+    /**
+     * Per-tick frost-visual target (ticksFrozen) for a hazard progress. Two segments, joined continuously at
+     * the DAMAGE onset ({@link #DAMAGE_ONSET_PROGRESS}, ~88 deg):
+     * <ul>
+     *   <li><b>[0, DAMAGE_ONSET_PROGRESS]</b> (87.5 -> 88 deg): builds 0 -> exactly {@link #FROZEN_THRESHOLD_TICKS}
+     *       (140). So the frost overlay thickens visibly across the grace band and the hearts flip BLUE at the
+     *       instant freeze DAMAGE begins -- the "you are now truly freezing" cue lands exactly when HP starts
+     *       to fall (Peetsa's TEST 77 ask), not only at the pole.</li>
+     *   <li><b>(DAMAGE_ONSET_PROGRESS, 1]</b> (88 -> 90 deg): holds at/above 140, easing up to
+     *       {@link #FROST_VISUAL_POLE_TICKS} (148) for decay-headroom (see {@link #FROST_POLE_HEADROOM_TICKS}).</li>
+     * </ul>
+     * Monotonic non-decreasing. The caller sets this EVERY server tick (vanilla decays ticksFrozen ~2/tick out
+     * of powder snow, so a throttled set would sawtooth). Because ticksFrozen now crosses 140, vanilla's own
+     * auto freeze-damage is suppressed at its source by {@code LivingEntityFreezeDamageMixin} (in-band only);
+     * {@link #freezeDamageAmount} owns the whole damage curve, so there is no double damage past 140.
+     */
     public static int frostVisualTicks(double progress) {
-        double p = clamp01(progress) / FROST_VISUAL_FULL_PROGRESS;
-        return (int) Math.round(clamp01(p) * FROST_VISUAL_MAX_TICKS);
+        double p = clamp01(progress);
+        if (p <= DAMAGE_ONSET_PROGRESS) {
+            double r = DAMAGE_ONSET_PROGRESS <= 0.0 ? 1.0 : p / DAMAGE_ONSET_PROGRESS;
+            return (int) Math.round(clamp01(r) * FROZEN_THRESHOLD_TICKS);
+        }
+        double r = (p - DAMAGE_ONSET_PROGRESS) / (1.0 - DAMAGE_ONSET_PROGRESS);
+        return FROZEN_THRESHOLD_TICKS + (int) Math.round(clamp01(r) * FROST_POLE_HEADROOM_TICKS);
     }
 
     /** Hazard progress at which freeze DAMAGE begins (~88.0 deg -- 87.5 + 2.5*0.2). The 0.5 deg between
@@ -191,6 +229,70 @@ public final class PolarHazardWindow {
         return (float) ambientProgress(absLatDeg);
     }
 
+    // ---- TEST 77 round 2 item 1: DEPTH-BASED polar fog (genuine vanilla render-distance fog) ----
+    //
+    // The flat PolarWhiteoutOverlayHud screen fill has NO depth information, so it can only be painted when
+    // the player is sky-exposed (painting it while sheltered would haze the player's OWN interior walls, not
+    // just the view out a doorway). Peetsa wants the exterior to stay heavily fogged "respective to the level
+    // outside" even while he is standing inside looking out. The correct fix is Minecraft's OWN render-distance
+    // fog (FogData.renderDistanceStart/End), which the fog shader (assets/.../include/fog.glsl) applies as a
+    // linear fog of the CYLINDRICAL per-fragment distance max(|xz|,|y|): geometry nearer than START takes zero
+    // fog (your shelter walls a couple of blocks away stay clear) while distant terrain past END fades to fog
+    // colour. Depth-correct and wall-aware for free -- and, unlike the HUD overlay, correct whether the player
+    // is exposed OR sheltered-looking-out, so it needs no sky-exposure gate. The intensity ENVELOPE reuses the
+    // SAME ambient window [85,90] as the snow and the overlay ({@link #ambientProgress}); no new latitude curve.
+    //
+    // These are the pure, testable curves; the client mixin (FogRendererPolarSetupMixin) does the GL-side
+    // FogData mutation + fog-colour tint. Only ever TIGHTENS vanilla's fog (NEAR anchors are far closer than
+    // any real view distance) and is SEAM-FREE: at/below 85 deg every function returns the caller's own vanilla
+    // value unchanged.
+
+    /** Cylindrical render-distance fog END (blocks) at the pole: a heavy whiteout leaving ~1.5 chunks of sight. */
+    public static final float POLAR_FOG_END_NEAR = 24.0f;
+    /** Cylindrical render-distance fog START (blocks) at the pole: fog begins this close, so past a few blocks
+     *  reads as white -- but a wall 2-3 blocks away is still under START, hence unfogged. */
+    public static final float POLAR_FOG_START_NEAR = 5.0f;
+    /** END-curve exponent over {@link #ambientProgress}. {@code <1} front-loads the ramp so genuinely heavy fog
+     *  is reached a little before the pole (Peetsa's 88 deg shelter should already read heavy, not thin). */
+    public static final double POLAR_FOG_END_CURVE = 0.85;
+    /** START-curve exponent. Smaller than {@link #POLAR_FOG_END_CURVE} so START pulls in FASTER than END and the
+     *  fog BAND widens quickly -- a gradual heavy haze building over distance, not a hard wall at one range. */
+    public static final double POLAR_FOG_START_CURVE = 0.45;
+
+    /** Eased END fraction in {@code [0,1]} over the ambient window: 0 at/below 85 deg (no change, seam-free),
+     *  1 at the pole. */
+    public static float polarFogEndFraction(double absLatDeg) {
+        double p = ambientProgress(absLatDeg);
+        return p <= 0.0 ? 0.0f : (float) Math.pow(p, POLAR_FOG_END_CURVE);
+    }
+
+    /** Eased START fraction in {@code [0,1]} over the ambient window (faster curve than END). */
+    public static float polarFogStartFraction(double absLatDeg) {
+        double p = ambientProgress(absLatDeg);
+        return p <= 0.0 ? 0.0f : (float) Math.pow(p, POLAR_FOG_START_CURVE);
+    }
+
+    /** Tightened cylindrical fog END: eases the caller's CURRENT vanilla end toward {@link #POLAR_FOG_END_NEAR}
+     *  as the pole approaches. Returns {@code vanillaEnd} unchanged at/below 85 deg (seam-free) and never loosens
+     *  (NEAR is far closer than any real view distance). Easing from the caller's own end keeps the onset seam
+     *  free at every video render distance. */
+    public static float polarFogEnd(float vanillaEnd, double absLatDeg) {
+        float f = polarFogEndFraction(absLatDeg);
+        if (f <= 0.0f) {
+            return vanillaEnd;
+        }
+        return vanillaEnd + (POLAR_FOG_END_NEAR - vanillaEnd) * f;
+    }
+
+    /** Tightened cylindrical fog START: eases the caller's vanilla start toward {@link #POLAR_FOG_START_NEAR} on
+     *  the faster START curve, then clamps just below the (already tightened) end so START &lt; END always holds.
+     *  Seam-free at/below 85 deg. */
+    public static float polarFogStart(float vanillaStart, float tightenedEnd, double absLatDeg) {
+        float f = polarFogStartFraction(absLatDeg);
+        float start = f <= 0.0f ? vanillaStart : vanillaStart + (POLAR_FOG_START_NEAR - vanillaStart) * f;
+        return Math.min(start, tightenedEnd - 1.0f);
+    }
+
     // ---- B-4 round 3 item 3: STORM-SKY level (steepened so the sun is gone well before the pole) ----
 
     /** Latitude (deg) at which the storm sky begins to lift (same 85 deg onset as ambient snow, so the
@@ -233,6 +335,49 @@ public final class PolarHazardWindow {
      */
     public static float blizzardDrive(double absLatDeg) {
         return (float) clamp01((absLatDeg - BLIZZARD_ONSET_DEG) / (BLIZZARD_FULL_DEG - BLIZZARD_ONSET_DEG));
+    }
+
+    // ---- TEST 77 round 2 item 2: BLIZZARD particle drive MAGNITUDES (blocks/tick) ----
+    //
+    // Peetsa (TEST 77): the polar snow is "slow and falls down, not sideways like a blizzard." Root cause is
+    // vanilla SnowflakeParticle physics, NOT a plumbing bug -- the wind vector we pass DOES reach the flake,
+    // but SnowflakeParticle.tick() multiplies horizontal velocity by 0.95 EVERY tick (decays ~5%/tick, halving
+    // in ~13 ticks) and pins the vertical velocity to a gravity terminal of ~0.081/tick (gravity 0.225 vs its
+    // own 0.90 vertical damping) regardless of the fall speed we hand it. So the old ceilings (wind 0.09+0.34,
+    // fall 0.04+0.11) died to a straight-down gentle drift within a second of each flake's life. Two
+    // consequences drive these numbers: (a) the SIDEWAYS wind must be spawned LARGE so that even after the
+    // per-tick decay it stays above the ~0.081 fall terminal for most of a flake's ~30-tick visible life -- i.e.
+    // it keeps reading as wind-driven, not just a brief initial kick; (b) the sustained FALL speed cannot be
+    // raised from here (it always converges to vanilla's terminal), so BLIZZARD_FALL_* is only a livelier entry
+    // impulse -- the "blizzard" read is carried by the horizontal drive, which turns the gentle vertical drift
+    // into a fast diagonal/near-horizontal gale. Gentle at the 85-87 approach (drive 0) so the approach still
+    // feels like an approach; a hard gale by the pole.
+    //
+    // Pure functions of latitude so the wind/fall magnitude-vs-latitude curve is unit-testable; the client
+    // spawner (GlobeModClient.spawnAmbientPolarSnow) reads these and does the per-flake velocity assignment.
+
+    /** Gentle-flurry sideways wind (blocks/tick) through the 85-87 approach band (blizzard drive == 0). */
+    public static final double BLIZZARD_WIND_BASE = 0.10;
+    /** Sideways wind (blocks/tick) ADDED at the pole on top of the base -- the driven-gale ceiling. Large on
+     *  purpose: SnowflakeParticle's 0.95/tick horizontal decay eats most of it over a flake's life, so the
+     *  spawn value must overshoot to still read as sideways-driven after ~20-30 ticks. */
+    public static final double BLIZZARD_WIND_GALE = 1.00;
+    /** Gentle-flurry entry fall speed (blocks/tick) in the approach band. */
+    public static final double BLIZZARD_FALL_BASE = 0.05;
+    /** Entry fall speed ADDED at the pole. NOTE: sustained fall converges to vanilla's ~0.081/tick terminal
+     *  regardless of this -- it only makes the flake's first ~1 s fall more energetically before settling. */
+    public static final double BLIZZARD_FALL_GALE = 0.25;
+
+    /** Unsigned sideways wind speed (blocks/tick) for spawned polar snow at a latitude: base through the
+     *  approach, ramping to base+gale at the pole on the {@link #blizzardDrive} window. */
+    public static double blizzardWindMagnitude(double absLatDeg) {
+        return BLIZZARD_WIND_BASE + BLIZZARD_WIND_GALE * blizzardDrive(absLatDeg);
+    }
+
+    /** Downward entry speed (blocks/tick) for spawned polar snow at a latitude (see {@link #BLIZZARD_FALL_GALE}
+     *  -- sustained fall is vanilla's terminal, this is only the spawn impulse). */
+    public static double blizzardFallSpeed(double absLatDeg) {
+        return BLIZZARD_FALL_BASE + BLIZZARD_FALL_GALE * blizzardDrive(absLatDeg);
     }
 
     // ---- shared ----

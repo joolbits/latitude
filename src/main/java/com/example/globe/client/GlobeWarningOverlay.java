@@ -20,24 +20,36 @@ public final class GlobeWarningOverlay {
     // Polar warning ladder (B-3-P3), anchored to LatitudeMath.POLAR_STAGE_*_PROGRESS:
     // WARN_1 @85 deg (snow onset), WARN_2 @87 deg (blizzard building), DANGER @89 deg, LETHAL @89.7 deg.
     // The ladder DEGREE constants (POLAR_STAGE_*) STAY PUT -- they are SHARED with the EW storm axis (B-3-P3
-    // KEEP-SHARED coupling) -- so they do NOT move when the player-affecting hazard onset moves. TEST 76
-    // moved that onset 88.5 -> 87.5 (see PolarHazardWindow): slowness now begins just 0.5 deg poleward of
-    // WARN_2 (87 -> 87.5), so WARN_2 was reworded to foreshadow it HONESTLY in the FUTURE tense ("the cold
-    // WILL slow you"). At the instant WARN_2 fires (87 deg) slowness is not yet active, so a present-tense
-    // claim would break the rule that a warning must never claim a mechanic that isn't true when shown; a
-    // future/imminent claim is fine (slowness is one boundary-step away). Copy (Peetsa's blizzard register):
-    // T1/T2 carry the expedition-approach flavor; DANGER is Peetsa's line verbatim; LETHAL is the plainer,
-    // grimmer "Hypothermia sets in.". NB: the polar warnings are drawn NON-bold (DANGER/LETHAL are RED, not
-    // RED+BOLD) -- MC's fake-bold double-stroke fought the dark keyline (see drawCenteredWarning); the crisp
-    // outline + RED + LETHAL's 1.15x scale + the ember vignette carry the escalation instead of bold.
+    // KEEP-SHARED coupling) -- so they do NOT move when the player-affecting hazard onset moves.
+    //
+    // The four rungs tell ONE worsening hypothermia story (TEST 77 -- Peetsa asked WARN_2 to lead on
+    // hypothermia instead of "the cold will slow you"):
+    //   WARN_1  (85 deg): snow begins.
+    //   WARN_2  (87 deg): "hypothermia is setting in" -- onset.
+    //   DANGER  (89 deg): Peetsa's line, verbatim, DO NOT TOUCH.
+    //   LETHAL  (89.7 deg): "severe hypothermia -- you are freezing to death" -- the same arc, now critical.
+    // The escalation reads because LETHAL was pushed FURTHER along the arc than WARN_2: if both said
+    // "hypothermia sets in" (WARN_2's old wording was "the cold will slow you"; LETHAL's was "Hypothermia sets
+    // in.") the 0.7 deg gap would read as a confusing non-escalation. Onset -> critical fixes that.
+    //
+    // HONESTY: WARN_2 fires at 87 deg; the first cold MECHANIC (frost + slowness) begins at 87.5 deg, freeze
+    // DAMAGE at ~88 (see PolarHazardWindow). "Hypothermia is setting in" is present-continuous = a process just
+    // BEGINNING, an imminent-onset claim 0.5 deg early -- the same defensible foreshadowing the old future-tense
+    // "the cold WILL slow you" made, kept honest because it says the cold is starting, not that it has taken
+    // hold. LETHAL fires at 89.7 deg where freeze damage is already ~3 HP/s and climbing to 6 at the pole,
+    // so "freezing to death" is literal.
+    //
+    // NB: the polar warnings are drawn NON-bold (DANGER/LETHAL are RED, not RED+BOLD) -- MC's fake-bold
+    // double-stroke fought the dark keyline (see drawCenteredWarning); the crisp outline + RED + LETHAL's
+    // 1.15x scale + the ember vignette carry the escalation instead of bold.
     private static final String POLE_WARN_1_TEXT =
             "Snow begins to fall. Blizzard conditions ahead -- consider turning back.";
     private static final String POLE_WARN_2_TEXT =
-            "Blizzard conditions worsening -- the cold will slow you. Turn back while you can.";
+            "The blizzard deepens -- hypothermia is setting in. Turn back while you can.";
     private static final String POLE_DANGER_TEXT =
             "DANGER: Lethal blizzard conditions ahead. Turn back.";
     private static final String POLE_LETHAL_TEXT =
-            "Hypothermia sets in.";
+            "Severe hypothermia -- you are freezing to death.";
 
     // CD finding F1 / R1 -- dark KEYLINE behind the polar warning lines. Minecraft RED (0xFF5555) on the
     // near-white whiteout fill is ~2.7:1 contrast; a 1px near-black outline (the zone-title outline idiom,

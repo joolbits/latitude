@@ -7,13 +7,19 @@ import net.minecraft.client.gui.GuiGraphicsExtractor;
 /**
  * Phase 5 B-3b: the VISIBLE polar whiteout -- a full-screen fill whose alpha ramps CONTINUOUSLY over
  * the ambient window [85,90] deg ({@code PolarHazardWindow.fogIntensity}, read through the existing
- * {@code GlobeClientState.computePoleWhiteoutFactor} screen-fog path), so fog density thickens with
- * the ambient snowfall on the SAME progress ramp. Before B-3 no polar screen haze rendered at all:
- * the stage-based severity plumbing (Eval.polarWhiteoutSeverity, GlobeRegions.polarWhiteoutSeverity)
- * was computed but consumed by nothing -- this class is the ramp's rendering consumer. Mirrors the
+ * {@code GlobeClientState.computePoleWhiteoutFactor} screen-fog path). Mirrors the
  * {@link EwSandstormOverlayHud} precedent: a HUD-layer fill, always-on for globe worlds (atmosphere,
- * not config-gated), rendered from {@code InGameHudMixin} before the hotbar. True volumetric
- * fog-renderer wiring (FogRenderer/computePoleFogEnd) stays OUT -- that is a B-4 decision.
+ * not config-gated), rendered from {@code InGameHudMixin} before the hotbar.
+ *
+ * <p><b>TEST 77 round 2 -- demoted to an "engulfed" top-coat.</b> The genuine, wall-aware "heavy exterior fog
+ * seen through a doorway" is now carried by real depth fog ({@code FogRendererPolarSetupMixin} tightens
+ * Minecraft's own render-distance fog), which is correct exposed OR sheltered-looking-out. This flat screen
+ * fill can't tell a near wall from far terrain, so it KEEPS its sky-exposure gate (see below) and is reduced
+ * to a light veil: its only remaining job is the sensation of being ENGULFED -- snow blowing into your face --
+ * when you actually stand out in the open deep whiteout. So {@link #MAX_ALPHA} dropped 0.90 -> 0.35 and its
+ * curve steepened (was intensity^0.65, now intensity^1.7) so mid-latitudes are carried purely by the depth fog
+ * (no flat wash) and this only lifts near the pole. The two compose without double-hazing: depth fog does the
+ * distance-correct heavy haze everywhere; this adds a soft close-in white ONLY when exposed and deep in.
  */
 public final class PolarWhiteoutOverlayHud {
     private PolarWhiteoutOverlayHud() {
@@ -29,8 +35,10 @@ public final class PolarWhiteoutOverlayHud {
     private static final int WHITE_R = 238;
     private static final int WHITE_G = 242;
     private static final int WHITE_B = 248;
-    // Heavy but not opaque at 90 deg: the pole reads as a whiteout while the warning text stays legible.
-    private static final float MAX_ALPHA = 0.90f;
+    // TEST 77 round 2: a LIGHT engulfment top-coat over the depth fog (was 0.90, the sole heavy haze). The
+    // real heavy fog is now the depth-based FogRendererPolarSetupMixin; this only adds a soft close-in white
+    // when standing exposed deep in the whiteout, so it must not stack toward opacity.
+    private static final float MAX_ALPHA = 0.35f;
 
     public static void render(GuiGraphicsExtractor ctx, DeltaTracker tickCounter) {
         Minecraft mc = Minecraft.getInstance();
@@ -47,8 +55,8 @@ public final class PolarWhiteoutOverlayHud {
         // sheltered would haze the interior itself (and a fully sealed room) rather than only the view out a
         // window. It represents being ENGULFED in the whiteout, which happens out in the open: step outside and
         // it returns; look out from inside and the storm still reads via the wall-occluded world-space sky +
-        // snowfall. (A true volumetric, wall-aware polar fog -- which could render only past the opening -- is
-        // the deferred B-4 fog-renderer item.)
+        // snowfall AND the depth-based render-distance fog (FogRendererPolarSetupMixin), which -- being genuine
+        // distance fog -- correctly hazes only the far exterior past the opening while your near walls stay clear.
         var eval = GlobeClientState.evaluate(mc);
         if (!eval.active() || !eval.surfaceOk()) {
             return;
@@ -60,11 +68,11 @@ public final class PolarWhiteoutOverlayHud {
             return;
         }
 
-        // B-4 fog curve: the old quadratic (intensity^2) was ~invisible until ~88 deg then slammed shut
-        // ("fog ramps then WHAM"). A sub-linear ease (intensity^0.65) lifts the low-mid range so the haze
-        // is genuinely visible from ~85.5 deg (intensity 0.1 -> ~0.22 of MAX_ALPHA, was ~0.01) and its
-        // slope DECREASES toward the pole -- smooth build, no sudden wall. Starts at 0 at 85 deg (no seam).
-        float eased = (float) Math.pow(intensity, 0.65);
+        // TEST 77 round 2 curve: STEEPENED to intensity^1.7 (was the sub-linear 0.65). Now that the depth fog
+        // carries the low/mid-latitude haze correctly, this veil should stay quiet through 85-88 deg (no flat
+        // wash competing with the depth fog) and only lift near the pole as the "engulfed" close-in white.
+        // Starts at 0 at 85 deg (no seam); slope INCREASES toward the pole.
+        float eased = (float) Math.pow(intensity, 1.7);
         int alpha = (int) (Math.min(MAX_ALPHA, eased * MAX_ALPHA) * 255.0f);
         if (alpha <= 0) {
             return;
