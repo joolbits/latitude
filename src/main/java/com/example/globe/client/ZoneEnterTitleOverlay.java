@@ -30,6 +30,14 @@ public final class ZoneEnterTitleOverlay {
     private static final int SIDE_MARGIN = 6;
     private static final double MIN_TITLE_SCALE = 0.5;
 
+    /** Two-line lockup (creative-director rec D, approved 2026-07-11): when the zone title carries a degrees
+     *  suffix (e.g. "Subpolar 66°N") it renders as TWO lines -- the zone NAME at the full Title Size on
+     *  line 1, and the degrees token beneath it at {@link #LOCKUP_SUB_SCALE} of that scale on line 2, separated
+     *  by {@link #LOCKUP_GAP_PX} gui-px (at scale 1, and scaling with Title Size). Titles with no degrees token
+     *  (a single word, a degrees-off title, or a hemisphere title) render as a single line via the same path. */
+    private static final double LOCKUP_SUB_SCALE = 0.55;
+    private static final int LOCKUP_GAP_PX = 4;
+
     private ZoneEnterTitleOverlay() {
     }
 
@@ -92,14 +100,23 @@ public final class ZoneEnterTitleOverlay {
         int a = (int) (alpha * 255.0f);
         Font font = client.font;
         String raw = title.getString();
-        int contentW = styledWidth(font, raw);
+        com.example.globe.core.ui.TitleStyle.GlimmerFrame frame = glimmerFrame(elapsed);
+
+        // The (possibly two-line) title box, in unscaled gui-px, so the fit/clamp below see the TRUE lockup
+        // extent (a degrees title is taller than a single line, and its widest line may be the name OR the sub).
+        TitleBox box = measure(font, raw);
 
         // M1 -- fit-to-width: a long biome title at a large scale on a small GUI-scale canvas would spill off
         // both edges. Shrink the effective scale just enough to fit (never below MIN_TITLE_SCALE); the H1
-        // clamp below keeps it centered if even the floor is too wide.
-        double drawScale = OverlayLayout.fitScale(scale, contentW, screenW - 2 * SIDE_MARGIN, MIN_TITLE_SCALE);
-        int halfW = (int) Math.ceil(contentW * drawScale / 2.0);
-        int halfH = (int) Math.ceil(font.lineHeight * drawScale / 2.0);
+        // clamp below keeps it centered if even the floor is too wide. The BLOOM's 2% scale swell is folded
+        // into the DESIRED scale BEFORE fitScale, so at the swell peak fitScale still shrinks the title back
+        // inside the screen (no edge clipping), and halfW/halfH are measured from the swelled drawScale so the
+        // clamp box breathes with it -- WYSIWYG at every frame of the swell.
+        double desired = scale * (1.0 + frame.swell());
+        double drawScale = OverlayLayout.fitScale(desired, (int) Math.ceil(box.contentW()),
+                screenW - 2 * SIDE_MARGIN, MIN_TITLE_SCALE);
+        int halfW = (int) Math.ceil(box.contentW() * drawScale / 2.0);
+        int halfH = (int) Math.ceil(box.contentH() * drawScale / 2.0);
 
         // H1 -- re-clamp every frame: zoneEnterTitleOffsetX/Y is an ABSOLUTE pixel offset set by HUD Studio at
         // the EDIT resolution and never re-derived. Drag it near an edge on a large canvas, then switch to a
@@ -110,21 +127,21 @@ public final class ZoneEnterTitleOverlay {
         // clamp is the self-contained fix.)
         int cx = OverlayLayout.clampCenter((screenW / 2) + LatitudeConfig.zoneEnterTitleOffsetX, halfW, screenW);
         int cy = OverlayLayout.clampCenter((screenH / 2) + LatitudeConfig.zoneEnterTitleOffsetY, halfH, screenH);
-        drawTitleLineAt(ctx, cx, cy, raw, drawScale, a, glimmerProgress(elapsed));
+        drawLockup(ctx, cx, cy, box, drawScale, a, frame);
     }
 
-    /** Continuous normalized progress (0..1) through the one-shot glimmer sweep for a title that appeared
-     *  {@code elapsedMs} ago (wall-clock), or -1 when there's no glimmer this frame: the toggle is off, Reduce
-     *  Motion is on, or the elapsed time is outside the single-sweep window
-     *  ({@link com.example.globe.core.ui.TitleStyle#glimmerProgressMs}). Wall-clock (not the game-tick age) so
-     *  the crest advances smoothly per frame and never rubber-bands when the server tick stalls during a
-     *  teleport. The shine-sweep transform (which works for ALL presets, not just rainbow/aurora) lives in
-     *  {@link #drawStyledTitle} so every caller of the shared draw path stays consistent. */
-    static float glimmerProgress(long elapsedMs) {
+    /** The gated glimmer ENVELOPE frame for a title that appeared {@code elapsedMs} ago (wall-clock), or
+     *  {@link com.example.globe.core.ui.TitleStyle.GlimmerFrame#INERT} when there's no glimmer this frame: the
+     *  toggle is off or Reduce Motion is on. Wall-clock (not the game-tick age) so the crest/bloom advance
+     *  smoothly per frame and never rubber-band when the server tick stalls during a teleport. The four-phase
+     *  choreography (appear -> hero crest -> bloom -> melt) lives in
+     *  {@link com.example.globe.core.ui.TitleStyle#glimmerFrame}; {@link #drawStyledTitle} turns one frame into
+     *  the per-letter shade + whole-title bloom, so every caller of the shared draw path stays consistent. */
+    static com.example.globe.core.ui.TitleStyle.GlimmerFrame glimmerFrame(long elapsedMs) {
         if (!LatitudeConfig.zoneEnterTitleGlimmer || LatitudeConfig.reduceMotion) {
-            return -1f;
+            return com.example.globe.core.ui.TitleStyle.GlimmerFrame.INERT;
         }
-        return com.example.globe.core.ui.TitleStyle.glimmerProgressMs(elapsedMs);
+        return com.example.globe.core.ui.TitleStyle.glimmerFrame(elapsedMs);
     }
 
     /**
@@ -134,19 +151,31 @@ public final class ZoneEnterTitleOverlay {
      * system (a hemisphere title reads exactly like a zone title, just in its own channel/position).
      */
     public static void drawTitleLineAt(GuiGraphicsExtractor ctx, int cx, int cy, String rawText, double scale, int alphaByte) {
-        drawTitleLineAt(ctx, cx, cy, rawText, scale, alphaByte, -1f);
+        drawTitleLineAt(ctx, cx, cy, rawText, scale, alphaByte,
+                com.example.globe.core.ui.TitleStyle.GlimmerFrame.INERT, true);
     }
 
     /**
-     * As {@link #drawTitleLineAt(GuiGraphicsExtractor, int, int, String, double, int)}, plus the
-     * one-shot glimmer progress: {@code glimmerProgress} in [0,1] drives the single shine-sweep crest
-     * as the title appears (a bright crest against a briefly dimmed baseline, on each letter's OWN color --
-     * solid, custom, rainbow or aurora); pass {@code -1} for no glimmer (toggle off, static Studio preview,
-     * Reduce Motion). Hemisphere titles pass
-     * their own progress here so they glimmer coherently with zone titles.
+     * As {@link #drawTitleLineAt(GuiGraphicsExtractor, int, int, String, double, int)}, plus a glimmer
+     * {@code frame}, drawn as a HERO line (its letters carry the crest sweep). Hemisphere titles use this so
+     * each hemisphere line glimmers coherently with zone titles.
      */
     public static void drawTitleLineAt(GuiGraphicsExtractor ctx, int cx, int cy, String rawText, double scale,
-                                       int alphaByte, float glimmerProgress) {
+                                       int alphaByte, com.example.globe.core.ui.TitleStyle.GlimmerFrame frame) {
+        drawTitleLineAt(ctx, cx, cy, rawText, scale, alphaByte, frame, true);
+    }
+
+    /**
+     * As above, with an explicit {@code heroLine} flag. A HERO line's letters carry the one-shot crest sweep
+     * (a bright crest against a briefly dimmed baseline, on each letter's OWN color -- solid, custom, rainbow or
+     * aurora) plus the whole-title bloom lift; a NON-hero line (the degrees line of the two-line lockup) gets no
+     * crest of its own but still shares the frame's baseline dim and bloom, so the lockup breathes together.
+     * Pass {@link com.example.globe.core.ui.TitleStyle.GlimmerFrame#INERT} for no glimmer (toggle off, static
+     * Studio preview at rest, Reduce Motion).
+     */
+    public static void drawTitleLineAt(GuiGraphicsExtractor ctx, int cx, int cy, String rawText, double scale,
+                                       int alphaByte, com.example.globe.core.ui.TitleStyle.GlimmerFrame frame,
+                                       boolean heroLine) {
         Minecraft client = Minecraft.getInstance();
         if (client == null || client.font == null) {
             return;
@@ -158,24 +187,61 @@ public final class ZoneEnterTitleOverlay {
         try {
             m.translate(cx, cy);
             m.scale((float) scale, (float) scale);
-            drawStyledTitle(ctx, tr, styled, alphaByte, (float) scale, glimmerProgress);
+            drawStyledTitle(ctx, tr, styled, alphaByte, (float) scale, frame, heroLine);
         } finally {
             m.popMatrix();
         }
     }
 
+    /** Draws the (possibly two-line) title lockup centered at ({@code cx},{@code cy}). Single-line titles draw
+     *  as one HERO line. Two-line lockups draw the NAME as the hero line (the crest sweeps its letters) at
+     *  {@code drawScale}, and the degrees token beneath it at {@code drawScale * LOCKUP_SUB_SCALE} as a NON-hero
+     *  line -- no crest of its own, but it shares the frame's baseline dim + bloom + (via the pose scale) swell
+     *  so the whole lockup breathes together. {@code drawScale} is the already-fitted, already-swelled scale. */
+    private static void drawLockup(GuiGraphicsExtractor ctx, int cx, int cy, TitleBox box, double drawScale,
+                                   int alphaByte, com.example.globe.core.ui.TitleStyle.GlimmerFrame frame) {
+        if (!box.twoLine()) {
+            drawTitleLineAt(ctx, cx, cy, box.line1(), drawScale, alphaByte, frame, true);
+            return;
+        }
+        Minecraft client = Minecraft.getInstance();
+        if (client == null || client.font == null) {
+            return;
+        }
+        int lineHeight = client.font.lineHeight;
+        double line1H = lineHeight * drawScale;
+        double line2Scale = drawScale * LOCKUP_SUB_SCALE;
+        double line2H = lineHeight * line2Scale;
+        double gap = LOCKUP_GAP_PX * drawScale;
+        double totalH = line1H + gap + line2H;
+        double top = cy - totalH / 2.0;
+        int line1Cy = (int) Math.round(top + line1H / 2.0);
+        int line2Cy = (int) Math.round(top + line1H + gap + line2H / 2.0);
+        drawTitleLineAt(ctx, cx, line1Cy, box.line1(), drawScale, alphaByte, frame, true);
+        drawTitleLineAt(ctx, cx, line2Cy, box.line2(), line2Scale, alphaByte, frame, false);
+    }
+
     public static void renderStaticAt(GuiGraphicsExtractor ctx, int screenW, int screenH, String text, double scale, int offsetX, int offsetY) {
-        renderStaticAt(ctx, screenW, screenH, text, scale, offsetX, offsetY, -1f);
+        renderStaticAt(ctx, screenW, screenH, text, scale, offsetX, offsetY,
+                com.example.globe.core.ui.TitleStyle.GlimmerFrame.INERT);
     }
 
     /** As {@link #renderStaticAt(GuiGraphicsExtractor, int, int, String, double, int, int)}, but with an
-     *  explicit glimmer progress ([0,1], or -1 for none) so the HUD Studio can REPLAY the one-shot glimmer as
-     *  feedback (on Title-tab open / toggle-ON) even though the preview is otherwise static. */
+     *  explicit glimmer {@code frame} so the HUD Studio can REPLAY the one-shot glimmer choreography as feedback
+     *  (on Title-tab open / toggle-ON) even though the preview is otherwise static. Lockup-aware: a degrees
+     *  sample renders as the two-line lockup, exactly like gameplay. Uses the RAW scale (no fitScale, matching
+     *  the Studio backing plate); the BLOOM swell is still applied so the replayed swell breathes here too. */
     public static void renderStaticAt(GuiGraphicsExtractor ctx, int screenW, int screenH, String text, double scale,
-                                      int offsetX, int offsetY, float glimmerProgress) {
+                                      int offsetX, int offsetY, com.example.globe.core.ui.TitleStyle.GlimmerFrame frame) {
+        Minecraft client = Minecraft.getInstance();
+        if (client == null || client.font == null) {
+            return;
+        }
         int cx = (screenW / 2) + offsetX;
         int cy = (screenH / 2) + offsetY;
-        drawTitleLineAt(ctx, cx, cy, text, scale, 0xFF, glimmerProgress);
+        double drawScale = scale * (1.0 + frame.swell());
+        TitleBox box = measure(client.font, text);
+        drawLockup(ctx, cx, cy, box, drawScale, 0xFF, frame);
     }
 
     // Shared by both render() (real gameplay) and renderStaticAt() (the HUD Studio live preview) so the two
@@ -197,15 +263,44 @@ public final class ZoneEnterTitleOverlay {
         return totalWidth;
     }
 
+    /** The measured (possibly two-line) title box: unscaled content width/height in gui-px plus the split lines.
+     *  {@code twoLine} is true only for a degrees-lockup title; otherwise {@code line2} is null and it's one
+     *  line. Callers multiply the width/height by their draw scale for the on-screen box (fit, clamp, hit-test,
+     *  Studio backing plate) so those all track the true two-line extent. */
+    public record TitleBox(double contentW, double contentH, boolean twoLine, String line1, String line2) {
+    }
+
+    /** Measures the styled title into a {@link TitleBox}, honoring the two-line degrees lockup
+     *  ({@link com.example.globe.core.ui.TitleStyle#splitLockup} on the RAW title). Single-line: width = styled
+     *  width, height = one line. Two-line: width = the WIDER of the name (full scale) and the degrees line
+     *  (pre-multiplied by {@link #LOCKUP_SUB_SCALE}), height = name line + {@link #LOCKUP_GAP_PX} gap + degrees
+     *  line, all in unscaled gui-px so a single {@code * drawScale} gives the on-screen box. */
+    public static TitleBox measure(Font font, String rawText) {
+        String[] parts = com.example.globe.core.ui.TitleStyle.splitLockup(rawText);
+        if (parts[1] == null) {
+            return new TitleBox(styledWidth(font, parts[0]), font.lineHeight, false, parts[0], null);
+        }
+        int nameW = styledWidth(font, parts[0]);
+        int degW = styledWidth(font, parts[1]);
+        double contentW = Math.max(nameW, degW * LOCKUP_SUB_SCALE);
+        double contentH = font.lineHeight * (1.0 + LOCKUP_SUB_SCALE) + LOCKUP_GAP_PX;
+        return new TitleBox(contentW, contentH, true, parts[0], parts[1]);
+    }
+
     /**
      * The single styled-title draw path (real gameplay, hemisphere channel, and Studio preview all reach
      * here). Draws, back-to-front: (1) the diffuse-shadow glow halo, (1b) the faded soft directional drop
-     * shadow, (2) the crisp outline, (3) the main fill with the one-shot color-aware glimmer. {@code scale} is the
-     * pose's current scale, used to keep the outline/glow offsets a fixed size in SCREEN pixels rather than
-     * fattening with Title Size. {@code glimmerProgress} is the sweep progress in [0,1] (or -1 for none).
+     * shadow, (2) the crisp outline, (3) the main fill with the one-shot color-aware glimmer choreography.
+     * {@code scale} is the pose's current scale, used to keep the outline/glow offsets a fixed size in SCREEN
+     * pixels rather than fattening with Title Size. {@code frame} is the glimmer envelope frame this line renders
+     * at (crest + dim + pop for a HERO line, plus the whole-title bloom lift for every line);
+     * {@code heroLine} = whether this line's letters carry the travelling crest (line 1 / single-line titles) or
+     * only share the baseline dim + bloom (the degrees line of a lockup). {@link
+     * com.example.globe.core.ui.TitleStyle.GlimmerFrame#INERT} renders the plain title.
      */
     private static void drawStyledTitle(GuiGraphicsExtractor ctx, Font font, String text, int alphaByte,
-                                        float scale, float glimmerProgress) {
+                                        float scale, com.example.globe.core.ui.TitleStyle.GlimmerFrame frame,
+                                        boolean heroLine) {
         int spacing = LatitudeConfig.zoneEnterTitleLetterSpacing;
         int alphaMask = (alphaByte & 0xFF) << 24;
         float invScale = scale > 0f ? 1.0f / scale : 1.0f;
@@ -253,24 +348,21 @@ public final class ZoneEnterTitleOverlay {
         // above, NOT MC's hard vanilla shadow -- so the shadow arg to the fill pass is always false (drawing it
         // here too would double-shadow: the crisp black vanilla offset stacked on the soft faded cast).
         // ONE unified fill path for every preset: each letter's base color (solid/custom, or the rainbow/aurora
-        // gradient) is passed through the one-shot SHINE-SWEEP via TitleStyle.glimmerShade -- a bright crest
-        // travelling against a briefly, gently dimmed baseline, so the shine reads on ANY fill including the
-        // near-white OFF_WHITE default (you cannot out-brighten white, so the surroundings dim and the crest
-        // pops). At glimmerProgress < 0 the crest is 0 for every letter and glimmerShade is an exact no-op, so
-        // this collapses to the plain colored fill.
+        // gradient) runs through the glimmer choreography. A HERO line's letters get the travelling SHINE-SWEEP
+        // via TitleStyle.glimmerShade (a bright crest against a briefly, gently dimmed baseline, reading on ANY
+        // fill including the near-white OFF_WHITE default); a NON-hero line (the degrees line of a lockup) gets
+        // only the uniform baseline dim via dimToFloor so it sits at the same dimmed level the crest travels
+        // against. AFTER the per-letter shade, the whole title is lifted uniformly toward white by the frame's
+        // BLOOM amount (brighten) -- both lines share it, so the lockup blooms together. On an INERT frame the
+        // crest is 0, the dim floor is 1.0, and bloom is 0, so this collapses to the plain colored fill.
         LatitudeConfigData.TitleColorPreset preset = LatitudeConfig.zoneEnterTitleColorPreset;
         int visibleCount = 0;
         for (int i = 0; i < text.length(); i++) {
             if (text.charAt(i) != ' ') visibleCount++;
         }
         final int visible = Math.max(1, visibleCount);
-        final float glimmer = glimmerProgress;
-        // Dim envelope: a raised arch that is 0 at BOTH ends of the sweep and ~1 mid-sweep, so the dimmed
-        // baseline the crest travels against eases IN as the crest enters and OUT as it exits. This removes the
-        // two visible discontinuities of a fixed dim: the hard GLIMMER_DIM_FLOOR -> 1.0 "brighten pop" the
-        // instant the sweep ends, and the full dim fighting the title's still-ramping fade-in at the start.
-        // sin(pi * progress) is the natural arch; outside the sweep (glimmer < 0) there is no dim at all.
-        final float dimScale = glimmer < 0f ? 0f : (float) Math.sin(Math.PI * glimmer);
+        final com.example.globe.core.ui.TitleStyle.GlimmerFrame f = frame;
+        final boolean hero = heroLine;
         // RAINBOW = static ROYGBIV sweep across the letters (no drift); AURORA = the flowing/drifting gradient.
         final boolean gradient = preset == LatitudeConfigData.TitleColorPreset.RAINBOW
                 || preset == LatitudeConfigData.TitleColorPreset.AURORA;
@@ -284,9 +376,13 @@ public final class ZoneEnterTitleOverlay {
                                             com.example.globe.core.ui.FlowingGradient.DEFAULT_CYCLE_SECONDS)
                                     : com.example.globe.core.ui.FlowingGradient.staticColorFor(idx, visible))
                             : solidRgb;
-                    base = com.example.globe.core.ui.TitleStyle.glimmerShade(base,
-                            com.example.globe.core.ui.TitleStyle.glimmerGaussian(glimmer, idx, visible), dimScale);
-                    return alphaMask | base;
+                    int shaded = hero
+                            ? com.example.globe.core.ui.TitleStyle.glimmerShade(base,
+                                    com.example.globe.core.ui.TitleStyle.glimmerGaussian(f.crestProgress(), idx, visible),
+                                    f.dimScale(), f.pop())
+                            : com.example.globe.core.ui.TitleStyle.dimToFloor(base, f.dimScale());
+                    shaded = com.example.globe.core.ui.TitleStyle.brighten(shaded, f.bloom());
+                    return alphaMask | (shaded & 0xFFFFFF);
                 });
     }
 
