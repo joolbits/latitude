@@ -122,4 +122,48 @@ class PolarWarningVignetteTest {
         assertEquals(Math.max(lHold, PolarWarningVignette.LETHAL_LINGER),
                 PolarWarningVignette.edgeAlpha(l, 3000L, true, true), EPS);
     }
+
+    // --- CD F3: LETHAL-only warm-tint pulse -------------------------------------------------------------
+
+    @Test
+    void warmthOnlyForLethal() {
+        // DANGER and every non-lethal tier stay fully cold (0 warmth) at every phase, animated or reduceMotion.
+        for (int tier : new int[] {Integer.MIN_VALUE, 0, 1, 2, PolarWarningVignette.TIER_DANGER, 5}) {
+            for (long t : new long[] {-50L, 0L, PolarWarningVignette.RISE_MS, 1500L,
+                    PolarWarningVignette.HOLD_END_MS, PolarWarningVignette.PULSE_END_MS}) {
+                assertEquals(0f, PolarWarningVignette.lethalWarmth(tier, t, false), EPS,
+                        "only LETHAL warms the vignette; tier=" + tier);
+                assertEquals(0f, PolarWarningVignette.lethalWarmth(tier, t, true), EPS);
+            }
+        }
+    }
+
+    @Test
+    void lethalWarmthPulseRisesThenDecays() {
+        int l = PolarWarningVignette.TIER_LETHAL;
+        // Before arm: cold.
+        assertEquals(0f, PolarWarningVignette.lethalWarmth(l, -10L, false), EPS);
+        // Rises 0 -> 1 across RISE_MS (the crest).
+        assertEquals(0f, PolarWarningVignette.lethalWarmth(l, 0L, false), EPS);
+        assertEquals(0.5f, PolarWarningVignette.lethalWarmth(l, PolarWarningVignette.RISE_MS / 2L, false), EPS);
+        assertEquals(1f, PolarWarningVignette.lethalWarmth(l, PolarWarningVignette.RISE_MS, false), EPS);
+        // Decays back to 0 by LETHAL_WARM_DECAY_END_MS -- a brief accent, then the cold storm returns.
+        long midDecay = PolarWarningVignette.RISE_MS
+                + (PolarWarningVignette.LETHAL_WARM_DECAY_END_MS - PolarWarningVignette.RISE_MS) / 2L;
+        assertEquals(0.5f, PolarWarningVignette.lethalWarmth(l, midDecay, false), 0.02f);
+        assertEquals(0f, PolarWarningVignette.lethalWarmth(l, PolarWarningVignette.LETHAL_WARM_DECAY_END_MS, false), EPS);
+        assertEquals(0f, PolarWarningVignette.lethalWarmth(l, PolarWarningVignette.HOLD_END_MS, false), EPS);
+    }
+
+    @Test
+    void lethalWarmthReduceMotionIsFlatThenGone() {
+        int l = PolarWarningVignette.TIER_LETHAL;
+        // Flat static warmth for the on-screen window (no pulse), then gone after the hold.
+        assertEquals(PolarWarningVignette.LETHAL_WARM_STATIC,
+                PolarWarningVignette.lethalWarmth(l, 0L, true), EPS);
+        assertEquals(PolarWarningVignette.LETHAL_WARM_STATIC,
+                PolarWarningVignette.lethalWarmth(l, 3000L, true), EPS);
+        assertEquals(0f, PolarWarningVignette.lethalWarmth(l, -1L, true), EPS);
+        assertEquals(0f, PolarWarningVignette.lethalWarmth(l, PolarWarningVignette.HOLD_END_MS, true), EPS);
+    }
 }

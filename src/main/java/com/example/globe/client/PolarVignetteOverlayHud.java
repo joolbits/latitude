@@ -31,6 +31,14 @@ public final class PolarVignetteOverlayHud {
     private static final int TINT_G = 10;
     private static final int TINT_B = 16;
 
+    // CD F3: LETHAL-only warm accent -- the cold tint briefly blends toward a deep ember at the LETHAL onset
+    // so the final rung is a distinct beat from DANGER (which stays fully cold). A DEEP ember, not bright red,
+    // and blended by at most WARM_BLEND_MAX so it reads as a warm shift in the darkness, not a red screen.
+    private static final int EMBER_R = 70;
+    private static final int EMBER_G = 12;
+    private static final int EMBER_B = 8;
+    private static final float WARM_BLEND_MAX = 0.6f;
+
     // The clear center: each side's darkening occupies this fraction of the screen, leaving the middle
     // ~60% fully transparent (0.20 margin per side on both axes).
     private static final float EDGE_MARGIN_FRAC = 0.20f;
@@ -75,7 +83,14 @@ public final class PolarVignetteOverlayHud {
             return;
         }
 
-        drawVignette(ctx, ctx.guiWidth(), ctx.guiHeight(), edge);
+        // CD F3: LETHAL briefly warms the tint toward a deep ember at its onset (DANGER stays fully cold).
+        float warmth = PolarWarningVignette.lethalWarmth(tier, elapsedMs, LatitudeConfig.reduceMotion);
+        float blend = warmth * WARM_BLEND_MAX;
+        int tintR = Math.round(TINT_R + (EMBER_R - TINT_R) * blend);
+        int tintG = Math.round(TINT_G + (EMBER_G - TINT_G) * blend);
+        int tintB = Math.round(TINT_B + (EMBER_B - TINT_B) * blend);
+
+        drawVignette(ctx, ctx.guiWidth(), ctx.guiHeight(), edge, tintR, tintG, tintB);
     }
 
     /**
@@ -85,7 +100,8 @@ public final class PolarVignetteOverlayHud {
      * touch darker -- exactly the vignette falloff. Cost is {@code 4 * BANDS} solid fills (~64), all skipped
      * when their rounded alpha is 0.
      */
-    private static void drawVignette(GuiGraphicsExtractor ctx, int w, int h, float edgeAlpha) {
+    private static void drawVignette(GuiGraphicsExtractor ctx, int w, int h, float edgeAlpha,
+                                     int tintR, int tintG, int tintB) {
         int marginX = Math.max(1, Math.round(w * EDGE_MARGIN_FRAC));
         int marginY = Math.max(1, Math.round(h * EDGE_MARGIN_FRAC));
         int bandW = Math.max(1, marginX / BANDS);
@@ -99,7 +115,7 @@ public final class PolarVignetteOverlayHud {
             if (alpha <= 0) {
                 continue;
             }
-            int argb = (alpha << 24) | (TINT_R << 16) | (TINT_G << 8) | TINT_B;
+            int argb = (alpha << 24) | (tintR << 16) | (tintG << 8) | tintB;
 
             int topY = i * bandH;
             int botY = h - (i + 1) * bandH;

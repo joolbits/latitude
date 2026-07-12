@@ -55,6 +55,46 @@ public final class PolarWarningVignette {
     /** LETHAL residual whisper that lingers while the player stays in the lethal zone. */
     public static final float LETHAL_LINGER = 0.08f;
 
+    // --- CD F3: LETHAL-only WARM tint pulse -----------------------------------------------------------
+    // DANGER and LETHAL fire 0.7 deg apart and both read as the same cold near-black vignette. To make the
+    // final rung a DISTINCT, worse beat, LETHAL (and only LETHAL) briefly warms the vignette toward a deep
+    // ember at its onset -- a small warm shift on the crest, decaying back to the cold storm palette well
+    // before the hold ends. DANGER stays fully cold. This is a scalar the DRAW blends the tint by; the
+    // envelope alpha (edgeAlpha) is unchanged.
+
+    /** End of LETHAL's warm-tint pulse (ms since arm): the ember warmth decays from the crest back to 0 here,
+     *  so the warmth is a brief accent at the LETHAL onset, not a persistent red vignette. */
+    public static final long LETHAL_WARM_DECAY_END_MS = 2500L;
+    /** Reduce Motion: a flat, faint static warmth for the window's life instead of the animated pulse. */
+    public static final float LETHAL_WARM_STATIC = 0.5f;
+
+    /**
+     * LETHAL-only warm-tint amount in {@code [0,1]} (0 for every other tier) the vignette DRAW uses to blend
+     * its cold tint toward a deep ember at the LETHAL onset. Rises with the crest (0 -> 1 over {@link #RISE_MS}),
+     * then decays back to 0 by {@link #LETHAL_WARM_DECAY_END_MS}. Reduce Motion substitutes a flat
+     * {@link #LETHAL_WARM_STATIC} for the on-screen window (no pulse). A provable no-op for DANGER / any other
+     * tier (returns 0), so DANGER's vignette stays fully cold.
+     */
+    public static float lethalWarmth(int tier, long elapsedMs, boolean reduceMotion) {
+        if (tier != TIER_LETHAL) {
+            return 0f;
+        }
+        if (reduceMotion) {
+            return (elapsedMs < 0L || elapsedMs >= HOLD_END_MS) ? 0f : LETHAL_WARM_STATIC;
+        }
+        if (elapsedMs < 0L) {
+            return 0f;
+        }
+        if (elapsedMs < RISE_MS) {
+            return (float) elapsedMs / (float) RISE_MS;
+        }
+        if (elapsedMs < LETHAL_WARM_DECAY_END_MS) {
+            float p = (float) (elapsedMs - RISE_MS) / (float) (LETHAL_WARM_DECAY_END_MS - RISE_MS);
+            return 1f - p;
+        }
+        return 0f;
+    }
+
     /** The crest peak edge alpha for a tier (0 for any tier that earns no vignette). */
     public static float peakForTier(int tier) {
         if (tier == TIER_LETHAL) {

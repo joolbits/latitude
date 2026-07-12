@@ -21,14 +21,27 @@ public final class GlobeWarningOverlay {
     // WARN_1 @85 deg (snow onset), WARN_2 @87 deg (slowness onset), DANGER @89 deg (leads freeze death
     // at 90), LETHAL @89.7 deg (freeze near-max). Each line fires at or just before the mechanic it warns
     // about; LETHAL is present-continuous/honest -- death is at 90, so the cold is "freezing you", not final.
+    // Polar-experience v2 copy (Peetsa's blizzard register, 2026-07-11). T1/T2 carry a touch of the
+    // expedition-approach flavor and name the mechanic they warn about (snow onset; the cold slowing you);
+    // DANGER is Peetsa's line near-verbatim ("danger: lethal blizzard conditions ahead. turn back."); LETHAL
+    // escalates past DANGER, honest about the active freezing.
     private static final String POLE_WARN_1_TEXT =
-            "Snow begins to fall. The cold is setting in -- consider turning back.";
+            "Snow begins to fall. Blizzard conditions ahead -- consider turning back.";
     private static final String POLE_WARN_2_TEXT =
-            "The cold seeps in. Your movements are slowing.";
+            "Blizzard conditions worsening. The cold is slowing you.";
     private static final String POLE_DANGER_TEXT =
-            "DANGER! Lethal cold ahead. Turn back now.";
+            "DANGER: Lethal blizzard conditions ahead. Turn back.";
     private static final String POLE_LETHAL_TEXT =
-            "The cold is freezing you.";
+            "LETHAL: You are freezing. Turn back NOW.";
+
+    // CD finding F1 / R1 -- dark KEYLINE behind the RED DANGER/LETHAL lines only. Minecraft RED (0xFF5555) on
+    // the near-white whiteout fill is ~2.7:1 contrast; a 1px near-black outline (the zone-title outline idiom,
+    // TitleStyle.OUTLINE_OFFSETS_8) makes the red pop on the brightest screen the game ever draws. WARN_1/2
+    // (plain white, over lighter ambience) do not get it. Near-black with a faint cold cast, matching the storm.
+    private static final int POLE_KEYLINE_RGB = 0x080609;
+    // CD finding F3 -- LETHAL renders slightly larger than DANGER so the final rung reads as a distinct, worse
+    // beat rather than a 0.7 deg double-tap of the same red flash (pairs with LETHAL's deeper vignette).
+    private static final float LETHAL_TEXT_SCALE = 1.15f;
 
     // Approach tier (LEVEL_1) — generic, mentions both storm + reduced visibility. Escalates to a
     // climate-specific tier-2 line below. Simplified from "...Head <direction> to turn back/immediately." to a
@@ -241,7 +254,11 @@ public final class GlobeWarningOverlay {
         int rgb = styleColor != null ? styleColor.getValue() : 0xFFFFFF;
         int a = (int) Mth.clamp(alpha * 255.0f, 0.0f, 255.0f);
         int color = (a << 24) | (rgb & 0x00FFFFFF);
-        drawCenteredWarning(ctx, client.font, poleWarnText, warnY, color);
+        // CD F1/F3: the two RED+BOLD lines (DANGER/LETHAL) get a dark keyline so the red reads on the whiteout;
+        // LETHAL additionally renders slightly larger than DANGER so the final rung is a visibly distinct beat.
+        boolean keyline = poleWarnText.getStyle().isBold();
+        float scale = poleWarnHighestTier == 4 ? LETHAL_TEXT_SCALE : 1.0f;
+        drawCenteredWarning(ctx, client.font, poleWarnText, warnY, color, keyline, scale);
         return true;
     }
 
@@ -385,7 +402,7 @@ public final class GlobeWarningOverlay {
                     new GlobeClientState.WarningState(GlobeClientState.WarningType.STORM, stormStage, 0),
                     bestText);
             int color = warningColorWithPulse(bestText, client, tickCounter);
-            drawCenteredWarning(ctx, client.font, bestText, warnY, color);
+            drawCenteredWarning(ctx, client.font, bestText, warnY, color, false, 1.0f);
         } catch (Throwable t) {
             GlobeMod.LOGGER.error("GlobeWarningOverlay.render crashed", t);
         }
@@ -407,19 +424,46 @@ public final class GlobeWarningOverlay {
     // block grows into the free space above. A short warning wraps to a single line, so the common case is
     // byte-identical to the old single-line draw. Style (bold/color) is preserved by rebuilding each line
     // with the source component's style -- which also makes the wrap measurer bold-accurate.
-    private static void drawCenteredWarning(GuiGraphicsExtractor ctx, Font tr, Component text, int y, int argbColor) {
+    private static void drawCenteredWarning(GuiGraphicsExtractor ctx, Font tr, Component text, int y,
+                                            int argbColor, boolean keyline, float scale) {
         int screenW = Minecraft.getInstance().getWindow().getGuiScaledWidth();
-        int maxW = Math.max(1, screenW - 8);
+        // Wrap against the scaled width so a >1.0 LETHAL line still fits (the whole block is drawn under a
+        // matrix scale about the anchor, so the effective usable width shrinks by `scale`).
+        int maxW = Math.max(1, (int) ((screenW - 8) / Math.max(0.01f, scale)));
         java.util.List<String> lines = com.example.globe.core.ui.OverlayLayout.wrap(
                 text.getString(), maxW, s -> tr.width(Component.literal(s).setStyle(text.getStyle())));
         int lineH = tr.lineHeight + 1;
         int n = lines.size();
+
+        boolean scaled = Math.abs(scale - 1.0f) > 1e-3f;
+        var m = ctx.pose();
+        if (scaled) {
+            // Scale the whole warning block about its horizontal center and its bottom anchor `y`, so a larger
+            // LETHAL line grows in place (stays centered, keeps its bottom edge) rather than drifting.
+            float cx = screenW / 2.0f;
+            m.pushMatrix();
+            m.translate(cx, (float) y);
+            m.scale(scale, scale);
+            m.translate(-cx, (float) -y);
+        }
+        int keyArgb = ((argbColor >>> 24) << 24) | (POLE_KEYLINE_RGB & 0x00FFFFFF);
         for (int i = 0; i < n; i++) {
             Component lineC = Component.literal(lines.get(i)).setStyle(text.getStyle());
             int w = tr.width(lineC);
             int x = Math.max(4, (screenW - w) / 2);
             int lineY = Math.max(2, y - (n - 1 - i) * lineH);
+            // CD F1/R1: stamp a crisp 1px dark keyline behind the fill (the zone-title outline idiom) so the
+            // red DANGER/LETHAL text reads on the near-white whiteout. No shadow on the stamps (they ARE the
+            // dark backing); fades with the text via the shared alpha.
+            if (keyline) {
+                for (int[] off : com.example.globe.core.ui.TitleStyle.OUTLINE_OFFSETS_8) {
+                    ctx.text(tr, lineC, x + off[0], lineY + off[1], keyArgb, false);
+                }
+            }
             ctx.text(tr, lineC, x, lineY, argbColor);
+        }
+        if (scaled) {
+            m.popMatrix();
         }
     }
 
