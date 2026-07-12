@@ -539,8 +539,8 @@ public final class CompassHud {
     }
 
     // Sample latitude used for previews/placeholders is 1S (see sampleLines/analogSampleLatLon), which is in
-    // the Tropics -- keep the sample zone word consistent with that latitude so the placeholder never shows
-    // an impossible pairing like "1S / Temperate". Longitude's sample value doesn't affect the zone word.
+    // the Tropical band -- keep the sample zone word consistent with that latitude so the placeholder never
+    // shows an impossible pairing like "1S / Temperate". Longitude's sample value doesn't affect the zone word.
     /**
      * U-B truthful preview: what text the Studio preview measures and draws. SAMPLE is the legacy short
      * placeholder (the audited source of "the Studio lied about placement"); LONGEST is the honest
@@ -558,13 +558,13 @@ public final class CompassHud {
         if (!cfg.displayZoneInHud) return null;
         Minecraft mc = Minecraft.getInstance();
         return switch (previewTextSource) {
-            case SAMPLE -> "Tropics";
-            case LONGEST -> "Subtropics";
+            case SAMPLE -> "Tropical";
+            case LONGEST -> "Subtropical";
             case LIVE -> {
                 if (mc != null && mc.player != null && mc.level != null) {
                     yield displayZoneName(com.example.globe.util.LatitudeMath.zoneKey(mc.level.getWorldBorder(), mc.player.getZ()));
                 }
-                yield "Subtropics";
+                yield "Subtropical";
             }
         };
     }
@@ -821,7 +821,7 @@ public final class CompassHud {
 
     /** The zone+biome segment at its widest plausible size (longest zone word + longest biome name). */
     private static String reservedZoneBiomeSample(Minecraft client, CompassHudConfig cfg) {
-        String zone = (cfg.displayZoneInHud && cfg.zoneFollowsCompass) ? "Subtropics" : null;
+        String zone = (cfg.displayZoneInHud && cfg.zoneFollowsCompass) ? "Subtropical" : null;
         String biome = (cfg.displayBiomeInHud && cfg.biomeFollowsCompass) ? longestBiomeName(client) : null;
         return joinOrdered(zone, biome, cfg.biomeBeforeZone, cfg.compactHud);
     }
@@ -982,7 +982,7 @@ public final class CompassHud {
                 com.example.globe.core.ui.HudLayoutMath.alignPointY(legacyY, refH, cfg.growV), gridRow(cfg.vAnchor), screenH);
 
         // Detached labels (legacy sample text, same conversion).
-        int zw = font.width("Tropics");
+        int zw = font.width("Tropical");
         int zh = font.lineHeight;
         int zx = clamp(anchoredZoneX(cfg, screenW, zw) + cfg.zoneOffsetX, 0, Math.max(0, screenW - zw));
         int zy = clamp(anchoredZoneY(cfg, screenH, zh) + cfg.zoneOffsetY, 0, Math.max(0, screenH - zh));
@@ -1261,15 +1261,11 @@ public final class CompassHud {
     }
 
     private static String displayZoneName(String zoneKey) {
-        if (zoneKey == null) return "Temperate";
-        return switch (zoneKey) {
-            case "EQUATOR", "TROPICAL" -> "Tropics";
-            case "SUBTROPICAL" -> "Subtropics";
-            case "TEMPERATE" -> "Temperate";
-            case "SUBPOLAR" -> "Subpolar";
-            case "POLAR" -> "Polar";
-            default -> zoneKey;
-        };
+        // Canonical source: LatitudeBands.displayNameForZoneKey -- unifies this HUD onto the SAME word set
+        // as the zone-enter title (GlobeWarningOverlay.zoneDisplayName), which used to disagree here
+        // ("Tropics"/"Subtropics" vs the title's "Tropical"/"Subtropical"; Temperate/Subpolar/Polar already
+        // matched). The title's vocabulary won.
+        return com.example.globe.util.LatitudeBands.displayNameForZoneKey(zoneKey);
     }
 
     // Biome label -- mirrors zoneLabel/sampleZone/displayZoneName above (same shape: respectFollow governs
@@ -1424,7 +1420,7 @@ public final class CompassHud {
         int screenH = client.getWindow().getGuiScaledHeight();
         int w = client.font.width(zone);
         int h = client.font.lineHeight;
-        if (cfg.reservedTextWidth) w = Math.max(w, client.font.width("Subtropics"));
+        if (cfg.reservedTextWidth) w = Math.max(w, client.font.width("Subtropical"));
         w = Math.round(w * cfg.zoneTextScale);
         h = Math.round(h * cfg.zoneTextScale);
         int x = pinPlaceX(cfg.zoneHAnchor, cfg.zoneOffXFrac, cfg.zoneGrowH, w, screenW);

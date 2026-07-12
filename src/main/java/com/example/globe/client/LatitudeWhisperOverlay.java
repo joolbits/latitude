@@ -27,8 +27,16 @@ public final class LatitudeWhisperOverlay {
     private static final long DEFAULT_DURATION_MS = DEFAULT_DURATION_TICKS * 50L;
     /** Never full opacity -- a whisper, not a shout. Peak alpha cap (~70%). */
     private static final float MAX_ALPHA = 0.70f;
-    /** Vertical offset below screen center; unobtrusive, clear of the center-screen titles above it. */
-    private static final int ANCHOR_OFFSET_Y = 34;
+    /**
+     * Vertical offset below screen center; unobtrusive, clear of the center-screen titles above it.
+     * Creative-director verdict 2026-07-11 (delegated by Peetsa — "a little too high, lower it"):
+     * 34 -> 42, an 8px drop into the lower-third read. HARD FLOOR: do NOT go below 42. The hazard-warning
+     * band draws at screenH-68 and the whisper is triggered from that same warning file, so a boundary
+     * murmur and a hazard warning can share the screen at a pole; +42 keeps a safe gap above the warning
+     * band even on a small (~240px) window, while a larger offset would let the two overlays stack.
+     * See docs/binder/loading-text-and-whisper-review-20260711.md Part 2.
+     */
+    private static final int ANCHOR_OFFSET_Y = 42;
 
     private static String text;
     // WALL-CLOCK lifecycle (System.currentTimeMillis at trigger + duration in ms), matching
