@@ -17,6 +17,7 @@
     "ProtoChunkSnowBlockGuardMixin",
     "FreezeTopLayerFeatureGuardMixin",
     "ChunkRegionWarmSnowTrapMixin",
+    "BiomePolarWaterFreezeMixin",
     "TreeLineVegetationGuardMixin",
     "AlpineSurfaceMixin",
     "SurfaceDripstoneLawnmowerMixin",

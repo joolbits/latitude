@@ -156,6 +156,27 @@ public final class LatitudeV2Flags {
             Boolean.parseBoolean(System.getProperty("latitude.polarVegetationFade.enabled", "true"));
 
     /**
+     * Polar water-freeze correctness fix (Peetsa 2026-07-12). Default TRUE: he stood at 89 deg S in a full
+     * blizzard with a pool of LIQUID water in his doorway and asked for all water frozen by ~85 deg. Vanilla
+     * decides water-&gt;ice per column via {@code Biome.shouldFreeze}, whose first gate rejects any biome that is
+     * "warm enough to rain"; latitude-blind {@code river}/{@code ocean} columns (base temperature 0.5) placed
+     * deep in the polar cap therefore never freeze. When on (and the world is an armed globe world --
+     * {@code LatitudeBiomes.getActiveRadiusBlocks() > 0}) the {@code BiomePolarWaterFreezeMixin} neutralises ONLY
+     * that temperature veto for columns at/above {@link com.example.globe.core.PolarWaterFreezeRule#FREEZE_ALL_DEG}
+     * (85 deg), so vanilla's own genuine-water/light/edge logic freezes the exposed water on its own edge-inward
+     * cadence -- ongoing (tick) AND at worldgen. Default-on rather than gated behind a launch flag because it is a
+     * correctness fix Peetsa explicitly requested (mirroring {@code POLAR_VEGETATION_FADE_ENABLED}), but it IS a
+     * flag because -- unlike the client-only {@link com.example.globe.core.PolarPrecipitationRule} -- this MODIFIES
+     * THE WORLD (places ice, including over player-placed water), so it needs a clean kill switch. Explicitly
+     * setting it off is byte-identical: the redirect returns vanilla's unmodified {@code warmEnoughToRain} result.
+     * <p><b>Gameplay trade-off:</b> because it hooks the same decision vanilla uses for ALL exposed water, it also
+     * freezes player-placed water sources at the pole, so water-dependent builds there (farms needing water,
+     * open cauldrons/pools) require a heat source or a sheltered/lit spot -- exactly like a real polar base.
+     */
+    public static final boolean POLAR_WATER_FREEZE_ENABLED =
+            Boolean.parseBoolean(System.getProperty("latitude.polarWaterFreeze.enabled", "true"));
+
+    /**
      * Defensive double parse for the Phase 4 knobs: a {@code null} (property unset) or malformed value
      * degrades to {@code fallback} instead of throwing {@link NumberFormatException} at class-init.
      */
