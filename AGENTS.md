@@ -65,6 +65,12 @@ PROFILE, not prestige (repetitive/well-specified → cheaper tier; novel/logic-h
   a signature moment?"), typically before a big UI round or after Peetsa reacts lukewarmly to a look.
   Findings that conflict with Peetsa's explicit taste decisions are reported with data but flagged as
   HIS call — the review never overrides the owner.
+- **Creative Understudy** (Sonnet-tier, read-only, no deliverable doc — defined at
+  `.claude/agents/creative-understudy.md`; locked in 2026-07-11 at Peetsa's request): the fresh-eyes
+  junior. Skims ALL player-facing surfaces at once (where the Creative Director deep-dives one) and
+  pitches a raw ranked one-liner list — paper cuts, quick delights, max 3 marked SWINGs — to the
+  DIRECTOR, who approves/dismisses each; only survivors reach Peetsa or a dev crew. Cheap by design:
+  run every few UI rounds or before a milestone jar, not per-pass.
 - **Codex CLI** (optional second-opinion reviewer from a different model family — catches different
   blind spots): use if installed; as of 2026-07-09 it is NOT installed on this machine — the
   sweeper/reviewer split substitutes. If installed later: https://github.com/openai/codex .
