@@ -139,17 +139,21 @@ public final class LatitudeV2Flags {
             Boolean.parseBoolean(System.getProperty("latitude.boundaryV2.enabled", "false"));
 
     /**
-     * Polar small-vegetation fade (Peetsa 2026-07-10). Default false. When on (and the world is an
+     * Polar small-vegetation fade (Peetsa 2026-07-10). Default TRUE since 2026-07-12: the TEST 75 live
+     * look found flowers/grass/sugarcane/firefly bushes thriving at 88+ deg because this shipped off --
+     * vanilla 26.2 decorates snowy_plains/frozen_river themselves (flower_default, patch_sugar_cane,
+     * patch_firefly_bush_near_water), so the polar cap is never bare without the fade. When on (and the world is an
      * armed globe world -- {@code ACTIVE_RADIUS_BLOCKS > 0}), grass/fern/flower/bush ({@code SimpleBlock})
      * and sugarcane ({@code BlockColumn}) surface-vegetation placements are stripped with a latitude-driven
      * keep-chance: full below {@link com.example.globe.core.PolarVegetationFade#ONSET_DEG} deg, smoothstep-
      * fading to zero by {@link com.example.globe.core.PolarVegetationFade#FULL_DEG} deg, frayed on a coherent
      * province-noise field so it thins naturally rather than at a hard ring. Trees are NOT touched (the
-     * existing tree-line/extreme-polar guards own those). Flag-off is byte-identical: the guard mixin's very
-     * first check returns immediately, and even flag-on every column below the onset keeps chance 1.0.
+     * existing tree-line/extreme-polar guards own those). Explicitly setting the flag off is byte-identical:
+     * the guard mixin's very first check returns immediately, and even flag-on every column below the onset
+     * keeps chance 1.0. Placement-time only -- existing chunks are never rewritten (legacy-worldgen pin holds).
      */
     public static final boolean POLAR_VEGETATION_FADE_ENABLED =
-            Boolean.parseBoolean(System.getProperty("latitude.polarVegetationFade.enabled", "false"));
+            Boolean.parseBoolean(System.getProperty("latitude.polarVegetationFade.enabled", "true"));
 
     /**
      * Defensive double parse for the Phase 4 knobs: a {@code null} (property unset) or malformed value
