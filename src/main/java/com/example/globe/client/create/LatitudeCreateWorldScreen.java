@@ -137,8 +137,8 @@ public class LatitudeCreateWorldScreen extends Screen {
     // subtler than the Atlas band's traveling Gaussian crest (see LatitudePlanisphereRenderer) -- this reads
     // as "alive", not "jumping". Wall-clock driven, same System.currentTimeMillis() idiom as every other
     // animation on this screen.
-    private static final double ZONE_BOUNCE_PERIOD_SEC = 1.6;   // one full bob, within the 1.2-2s brief
-    private static final double ZONE_BOUNCE_AMPLITUDE_PX = 1.5; // peak vertical offset (integer-rounded when drawn)
+    private static final double ZONE_BOUNCE_PERIOD_SEC = 0.95;  // one full bob; quicker so the wave reads as a lively ripple, not a slow heave
+    private static final double ZONE_BOUNCE_AMPLITUDE_PX = 1.8; // peak vertical offset (drawn at sub-pixel precision via pose translate)
     private static final double ZONE_BOUNCE_LETTER_PHASE = 0.6; // radians of phase lag per letter -> a soft travelling wave
     private static final double ZONE_TAB_SHIMMER_PERIOD_SEC = 2.4; // slower than the Atlas crest's 2.6s sweep
     private static final double ZONE_TAB_SHIMMER_AMPLITUDE = 0.20; // +/-20% brightness
@@ -2057,17 +2057,29 @@ public class LatitudeCreateWorldScreen extends Screen {
         double now = System.currentTimeMillis() / 1000.0;
         double omega = 2.0 * Math.PI / ZONE_BOUNCE_PERIOD_SEC;
         boolean reduceMotion = com.example.globe.client.LatitudeConfig.reduceMotion;
+        var m = context.pose();
         for (int i = 0; i < text.length(); i++) {
             char c = text.charAt(i);
             Component ch = Component.literal(String.valueOf(c)).withStyle(net.minecraft.ChatFormatting.ITALIC);
             int color = 0xFF000000 | com.example.globe.client.RainbowText.flowingColor(
                     visibleIdx, visibleCount, com.example.globe.core.ui.FlowingGradient.DEFAULT_CYCLE_SECONDS);
-            int dy = 0;
+            // Sub-pixel vertical offset: translate the pose per glyph instead of rounding dy to whole pixels,
+            // so the bob glides continuously (integer rounding made 1.5px amplitude step between ~3 discrete
+            // rows, which read as choppy/laggy). Only the selected Random row bounces, so the per-letter
+            // push/pop cost is trivial.
+            float dy = 0f;
             if (bounce && !reduceMotion && c != ' ') {
                 double phase = now * omega - visibleIdx * ZONE_BOUNCE_LETTER_PHASE;
-                dy = (int) Math.round(Math.sin(phase) * ZONE_BOUNCE_AMPLITUDE_PX);
+                dy = (float) (Math.sin(phase) * ZONE_BOUNCE_AMPLITUDE_PX);
             }
-            context.text(this.font, ch, cx, y + dy, a11yText(color), true);
+            if (dy != 0f) {
+                m.pushMatrix();
+                m.translate(0f, dy);
+                context.text(this.font, ch, cx, y, a11yText(color), true);
+                m.popMatrix();
+            } else {
+                context.text(this.font, ch, cx, y, a11yText(color), true);
+            }
             if (c != ' ') visibleIdx++;
             cx += this.font.width(ch);
         }
@@ -2082,13 +2094,23 @@ public class LatitudeCreateWorldScreen extends Screen {
         boolean reduceMotion = com.example.globe.client.LatitudeConfig.reduceMotion;
         int cx = x;
         int letterIdx = 0;
+        var m = context.pose();
         for (int i = 0; i < text.length(); i++) {
             char c = text.charAt(i);
             String s = String.valueOf(c);
             if (c != ' ') {
-                double phase = now * omega - letterIdx * ZONE_BOUNCE_LETTER_PHASE;
-                int dy = reduceMotion ? 0 : (int) Math.round(Math.sin(phase) * ZONE_BOUNCE_AMPLITUDE_PX);
-                context.text(this.font, s, cx, y + dy, a11yText(color), shadow);
+                // Sub-pixel vertical offset via pose translate rather than rounding dy to whole pixels: at 1.8px
+                // amplitude integer rounding stepped between only ~3 discrete rows and lingered on each (looked
+                // laggy). Only one selected row bounces at a time, so the per-glyph push/pop is trivially cheap.
+                float dy = reduceMotion ? 0f : (float) (Math.sin(now * omega - letterIdx * ZONE_BOUNCE_LETTER_PHASE) * ZONE_BOUNCE_AMPLITUDE_PX);
+                if (dy != 0f) {
+                    m.pushMatrix();
+                    m.translate(0f, dy);
+                    context.text(this.font, s, cx, y, a11yText(color), shadow);
+                    m.popMatrix();
+                } else {
+                    context.text(this.font, s, cx, y, a11yText(color), shadow);
+                }
                 letterIdx++;
             }
             cx += this.font.width(s);
