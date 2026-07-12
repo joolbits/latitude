@@ -36,6 +36,11 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
     @Unique private static final int GOLD = 0xFFE8B64A; // Chartroom latitude gold (Pillar 6 token)
     @Unique private static final int WARM_WHITE = 0xFFEDE0D0;
     @Unique private static final int MUTED = 0xFF8C8078;
+    // Faint mechanics-note tint for the F9 hint (Peetsa TEST 79: "make the F9 line a little bit fainter to
+    // reduce clashing" with the progress bar + stage line jammed under it). Same muted rose-brown RGB as
+    // MUTED but dropped to ~60% alpha (0xFF -> 0x99) so it reads as a quiet aside, a step below the stage
+    // line (which stays full-alpha MUTED). Still legible over the dark PANE_BG at 60%.
+    @Unique private static final int F9_HINT = 0x998C8078;
     // Faint map graticule — a whisper of gold/parchment (review §4 R5 / F5): nudged from 8% neutral grey
     // (0x14504840) to ~12% warm gold-tinted (0x1E5A4A38) so the grid reads as chart paper, not grey static.
     @Unique private static final int GRID_COLOR = 0x1E5A4A38;
@@ -314,8 +319,12 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
         int barY = paneY + paneH - 20;
 
         // ── F9 hint: relocated out of the identity lockup into the bottom mechanics zone (review §4 R4),
-        //    sitting just above the progress bar with the other utility text. Muted, no shadow, as before.
-        globe$drawCentered(context, "Press F9 in-game for HUD options", cx, barY - 10, MUTED, false);
+        //    sitting above the progress bar with the other utility text. Now FAINTER (F9_HINT ~60% alpha)
+        //    and lifted 4px farther off the bar (barY-14 vs -10) to de-jam the F9 / bar / stage stack
+        //    (Peetsa TEST 79). At the normal pane (paneH=200 for any guiHeight>=240) this sits at ~166,
+        //    with the phrase ending ~148 above and the bar at 180 below — comfortably clear; the cluster
+        //    only re-tightens on sub-240 forced windows where the pre-existing layout was already tight.
+        globe$drawCentered(context, "Press F9 in-game for HUD options", cx, barY - 14, F9_HINT, false);
         float rawProgress = Mth.clamp(this.smoothedProgress, 0f, 1f);
         LatitudeClientState.latitudeLoadingProgress = rawProgress;
         float progress = rawProgress;
@@ -329,7 +338,9 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
         // LatitudeLoadingClientTickMixin below — never a made-up phase) ──
         String stage = LatitudeClientState.loadingStageLabel;
         if (stage != null) {
-            globe$drawCentered(context, stage, cx, barY + 7, MUTED, false);
+            // Nudged 1px lower (barY+7 -> +8) so the bar has a touch more air on both sides now that the
+            // faint F9 hint sits farther above it; still leaves ~4px bottom margin inside the pane at paneH=200.
+            globe$drawCentered(context, stage, cx, barY + 8, MUTED, false);
         }
     }
 
