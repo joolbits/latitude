@@ -301,7 +301,23 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
         if (summary != null) {
             globe$drawSummaryWave(context, summary, cx, summaryY, WARM_WHITE, elapsed);
         }
-        // (The F9 hint that used to sit here has moved to the bottom mechanics zone — review §4 R4.)
+
+        // ── F9 hint: moved back up under the title/summary (Peetsa TEST 81: "move the F9 line to under
+        //    Latitude so it's less cluttered" — it had been living in the bottom mechanics zone crowding
+        //    the bar/stage stack; that zone is calmer without it). Still faint (F9_HINT ~60% alpha) and
+        //    small (0.75x, TEST 80) — a true footnote sitting in the open space below the identity block,
+        //    whether or not a summary line is present.
+        {
+            float f9Scale = 0.75f;
+            int f9Y = summaryY + 12;
+            var f9m = context.pose();
+            f9m.pushMatrix();
+            f9m.translate(cx, (float) f9Y);
+            f9m.scale(f9Scale, f9Scale);
+            f9m.translate(-cx, (float) -f9Y);
+            globe$drawCentered(context, "Press F9 in-game for HUD options", cx, f9Y, F9_HINT, false);
+            f9m.popMatrix();
+        }
 
         // ── Compass with wandering needle ──
         int compassCY = paneY + paneH / 2 - 4;
@@ -318,24 +334,6 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
         int barX = cx - barW / 2;
         int barY = paneY + paneH - 20;
 
-        // ── F9 hint: relocated out of the identity lockup into the bottom mechanics zone (review §4 R4),
-        //    sitting above the progress bar with the other utility text. FAINTER (F9_HINT ~60% alpha,
-        //    Peetsa TEST 79) and SMALLER (0.75x, Peetsa TEST 80: "make the F9 settings line *smaller*
-        //    font to declutter") — a true footnote. Scaled about its own center-top anchor so it stays
-        //    centered; at 0.75x the text is ~6px tall ending ~7px above the bar, with the phrase area
-        //    gaining ~2px of air versus the full-size line. Collision-free at the normal pane
-        //    (paneH=200 for any guiHeight>=240), same margins as the TEST 79 walk otherwise.
-        {
-            float f9Scale = 0.75f;
-            int f9Y = barY - 13;
-            var f9m = context.pose();
-            f9m.pushMatrix();
-            f9m.translate(cx, (float) f9Y);
-            f9m.scale(f9Scale, f9Scale);
-            f9m.translate(-cx, (float) -f9Y);
-            globe$drawCentered(context, "Press F9 in-game for HUD options", cx, f9Y, F9_HINT, false);
-            f9m.popMatrix();
-        }
         float rawProgress = Mth.clamp(this.smoothedProgress, 0f, 1f);
         LatitudeClientState.latitudeLoadingProgress = rawProgress;
         float progress = rawProgress;
@@ -349,8 +347,7 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
         // LatitudeLoadingClientTickMixin below — never a made-up phase) ──
         String stage = LatitudeClientState.loadingStageLabel;
         if (stage != null) {
-            // Nudged 1px lower (barY+7 -> +8) so the bar has a touch more air on both sides now that the
-            // faint F9 hint sits farther above it; still leaves ~4px bottom margin inside the pane at paneH=200.
+            // barY+8: a touch of air below the bar; leaves ~4px bottom margin inside the pane at paneH=200.
             globe$drawCentered(context, stage, cx, barY + 8, MUTED, false);
         }
     }
