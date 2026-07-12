@@ -319,12 +319,23 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
         int barY = paneY + paneH - 20;
 
         // ── F9 hint: relocated out of the identity lockup into the bottom mechanics zone (review §4 R4),
-        //    sitting above the progress bar with the other utility text. Now FAINTER (F9_HINT ~60% alpha)
-        //    and lifted 4px farther off the bar (barY-14 vs -10) to de-jam the F9 / bar / stage stack
-        //    (Peetsa TEST 79). At the normal pane (paneH=200 for any guiHeight>=240) this sits at ~166,
-        //    with the phrase ending ~148 above and the bar at 180 below — comfortably clear; the cluster
-        //    only re-tightens on sub-240 forced windows where the pre-existing layout was already tight.
-        globe$drawCentered(context, "Press F9 in-game for HUD options", cx, barY - 14, F9_HINT, false);
+        //    sitting above the progress bar with the other utility text. FAINTER (F9_HINT ~60% alpha,
+        //    Peetsa TEST 79) and SMALLER (0.75x, Peetsa TEST 80: "make the F9 settings line *smaller*
+        //    font to declutter") — a true footnote. Scaled about its own center-top anchor so it stays
+        //    centered; at 0.75x the text is ~6px tall ending ~7px above the bar, with the phrase area
+        //    gaining ~2px of air versus the full-size line. Collision-free at the normal pane
+        //    (paneH=200 for any guiHeight>=240), same margins as the TEST 79 walk otherwise.
+        {
+            float f9Scale = 0.75f;
+            int f9Y = barY - 13;
+            var f9m = context.pose();
+            f9m.pushMatrix();
+            f9m.translate(cx, (float) f9Y);
+            f9m.scale(f9Scale, f9Scale);
+            f9m.translate(-cx, (float) -f9Y);
+            globe$drawCentered(context, "Press F9 in-game for HUD options", cx, f9Y, F9_HINT, false);
+            f9m.popMatrix();
+        }
         float rawProgress = Mth.clamp(this.smoothedProgress, 0f, 1f);
         LatitudeClientState.latitudeLoadingProgress = rawProgress;
         float progress = rawProgress;
