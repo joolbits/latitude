@@ -19,6 +19,11 @@ package com.example.globe.core;
  * #MIN_ALIVE_VOLUME} (inaudible, but non-zero so the sound engine does not cull the channel), then either
  * climbs back up or, below {@code STOP_DEG}, stops cleanly.
  *
+ * <p><b>Shelter.</b> The loop does NOT stop when the player steps under a roof / into a shelter; instead it
+ * is MUFFLED to {@link #SHELTERED_VOLUME_SCALE} of its open-air volume (real wind is audible through walls)
+ * and returns to full the instant they are sky-exposed again -- see {@link #liveVolume(double, boolean)}.
+ * Only true deactivation (off-globe / below the latitude floor / another dimension) silences it.
+ *
  * <p>Symmetric about the equator because the caller feeds {@code |lat|}; no time/wall-clock input, so
  * there is nothing to "catch up" -- volume is a pure function of the player's current latitude each tick.
  */
@@ -43,6 +48,14 @@ public final class PolarWindSound {
     /** Inaudible floor kept on the LIVE loop while it is alive in the hysteresis band, so the engine never
      *  culls the volume-0 channel and re-triggers the loop (which would defeat the hysteresis). */
     public static final float MIN_ALIVE_VOLUME = 0.0015f;
+    /**
+     * Indoor attenuation for the wind bed. When the player is SHELTERED (no direct sky exposure -- under a
+     * roof, in a doorway, inside a structure) the wind is not silenced but MUFFLED to this fraction of its
+     * sky-exposed volume: real wind is still clearly audible through walls, just dampened. 0.35 (about a
+     * third) keeps the storm present and legible from inside a shelter while reading as distinctly quieter
+     * than standing out in the open gale, and it snaps back to full the moment the player is sky-exposed.
+     */
+    public static final float SHELTERED_VOLUME_SCALE = 0.35f;
 
     /** Linear 85->90 progress in {@code [0,1]}: 0 at/below {@link #START_DEG}, 1 at/above {@link #FULL_DEG}. */
     public static double progress(double absLatDeg) {
@@ -63,13 +76,28 @@ public final class PolarWindSound {
     }
 
     /**
-     * The volume to set on the LIVE looping instance each tick: the eased {@link #volume(double)}, but floored
-     * to {@link #MIN_ALIVE_VOLUME} while the loop is still alive (i.e. {@code |lat| >= STOP_DEG}) so a near-0
-     * volume in the hysteresis band does not get the channel culled. Below {@link #STOP_DEG} the loop is meant
-     * to stop entirely (see {@link #shouldStop}), so this returns the true (possibly 0) volume there.
+     * The volume to set on the LIVE looping instance each tick when the player is SKY-EXPOSED: the eased
+     * {@link #volume(double)}, floored to {@link #MIN_ALIVE_VOLUME} while the loop is alive so a near-0 volume
+     * in the hysteresis band does not get the channel culled. Convenience alias for {@code liveVolume(lat, true)}.
      */
     public static float liveVolume(double absLatDeg) {
+        return liveVolume(absLatDeg, true);
+    }
+
+    /**
+     * The volume to set on the LIVE looping instance each tick, given the player's latitude AND whether they
+     * currently have sky exposure. Sky-exposed ({@code surfaceExposed == true}): the full eased
+     * {@link #volume(double)}. Sheltered ({@code false}): that volume scaled by {@link #SHELTERED_VOLUME_SCALE}
+     * -- muffled, never silenced -- so the storm is still heard through the walls. In BOTH cases the result is
+     * floored to {@link #MIN_ALIVE_VOLUME} while the loop is alive ({@code |lat| >= STOP_DEG}) so a near-0
+     * volume never gets the channel culled; below {@link #STOP_DEG} the loop is meant to stop (see
+     * {@link #shouldStop}), so the true (possibly 0) volume is returned there.
+     */
+    public static float liveVolume(double absLatDeg, boolean surfaceExposed) {
         float v = volume(absLatDeg);
+        if (!surfaceExposed) {
+            v *= SHELTERED_VOLUME_SCALE;
+        }
         if (absLatDeg >= STOP_DEG && v < MIN_ALIVE_VOLUME) {
             return MIN_ALIVE_VOLUME;
         }

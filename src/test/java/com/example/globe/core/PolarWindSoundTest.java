@@ -73,4 +73,47 @@ class PolarWindSoundTest {
         // Well into the storm the real envelope is above the floor.
         assertTrue(PolarWindSound.liveVolume(89.0) > PolarWindSound.MIN_ALIVE_VOLUME);
     }
+
+    @Test
+    void oneArgLiveVolumeIsTheSkyExposedOverload() {
+        // The convenience one-arg form must equal the sky-exposed two-arg form at every latitude.
+        for (double lat = 84.0; lat <= 90.0; lat += 0.25) {
+            assertEquals(PolarWindSound.liveVolume(lat, true), PolarWindSound.liveVolume(lat),
+                    EPS, "one-arg liveVolume must equal liveVolume(lat, true) at lat=" + lat);
+        }
+    }
+
+    @Test
+    void shelteredMufflesButDoesNotSilence() {
+        // Peetsa's ask: keep the wind howling from inside a shelter, just muffled. Deep in the storm the
+        // sheltered volume is exactly SHELTERED_VOLUME_SCALE of the open-air volume -- quieter, never zero.
+        for (double lat : new double[]{86.0, 87.5, 89.0, 90.0}) {
+            float exposed = PolarWindSound.liveVolume(lat, true);
+            float sheltered = PolarWindSound.liveVolume(lat, false);
+            assertTrue(exposed > 0f, "sanity: exposed must be audible at lat=" + lat);
+            assertTrue(sheltered > 0f, "sheltered wind must NOT be silenced at lat=" + lat);
+            assertTrue(sheltered < exposed, "sheltered wind must be quieter than open-air at lat=" + lat);
+            assertEquals(exposed * PolarWindSound.SHELTERED_VOLUME_SCALE, sheltered, EPS,
+                    "sheltered must be SHELTERED_VOLUME_SCALE of exposed at lat=" + lat);
+        }
+    }
+
+    @Test
+    void shelteredMuffleFactorIsInTheStatedRange() {
+        // The muffle is a real attenuation (a fraction of full), in the ~0.3-0.4 band the design specifies.
+        assertTrue(PolarWindSound.SHELTERED_VOLUME_SCALE > 0.0f
+                && PolarWindSound.SHELTERED_VOLUME_SCALE < 1.0f, "muffle must attenuate, not amplify/silence");
+        assertTrue(PolarWindSound.SHELTERED_VOLUME_SCALE >= 0.3f
+                && PolarWindSound.SHELTERED_VOLUME_SCALE <= 0.4f, "muffle should sit in the ~0.3-0.4 band");
+    }
+
+    @Test
+    void shelteredStillFlooredAliveInHysteresisBand() {
+        // Even sheltered, a live loop in the dead band keeps the MIN_ALIVE floor so the channel is not culled
+        // (0.35 * 0 is still 0, which would otherwise let the engine reclaim the channel and defeat hysteresis).
+        assertEquals(PolarWindSound.MIN_ALIVE_VOLUME, PolarWindSound.liveVolume(84.7, false), EPS);
+        assertEquals(PolarWindSound.MIN_ALIVE_VOLUME, PolarWindSound.liveVolume(85.0, false), EPS);
+        // Below STOP the loop is meant to stop, so no floor even when sheltered.
+        assertEquals(0f, PolarWindSound.liveVolume(84.0, false), EPS);
+    }
 }

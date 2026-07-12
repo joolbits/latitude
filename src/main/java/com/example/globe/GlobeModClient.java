@@ -217,6 +217,20 @@ public class GlobeModClient implements ClientModInitializer {
             return;
         }
 
+        // Polar WIND SOUND BED (CD F2/R2): a looping vanilla wind-rush that rises from a breath at 85 deg to
+        // a howl near the pole, tracking the same 85->90 ramp as the snow/fog. Self-manages its lifecycle
+        // (starts here, updates volume + stops itself in its own tick); the manager only (re)arms it. Armed
+        // BEFORE the surface/pause gates below: the wind is audible from inside a shelter, so unlike the
+        // player-anchored particle spawns it must NOT be silenced when sheltered -- it muffles its own volume
+        // instead (see PolarWindSoundInstance). It is a single looping instance, not a per-tick spawn, so the
+        // paused-backlog concern the isPaused guard addresses does not apply to it.
+        PolarWindSoundInstance.clientTick(client);
+
+        // Everything below is LOCAL, player-anchored particle spawning (the ambient polar snow + the EW border
+        // storm). It STAYS gated on shelter: those particles spawn at/around the player and must not fall
+        // through a roof onto their head. The world-scale storm the player sees THROUGH a window/doorway -- the
+        // greyed overcast sky + real vanilla snowfall on the exterior columns -- is driven by
+        // ClientLevelStormSkyMixin (world-space, vanilla-occluded by walls), NOT by this per-tick spawner.
         if (!eval.surfaceOk()) {
             return;
         }
@@ -228,11 +242,6 @@ public class GlobeModClient implements ClientModInitializer {
         if (client.isPaused()) {
             return;
         }
-
-        // Polar WIND SOUND BED (CD F2/R2): a looping vanilla wind-rush that rises from a breath at 85 deg to
-        // a howl near the pole, tracking the same 85->90 ramp as the snow/fog. Self-manages its lifecycle
-        // (starts here, updates volume + stops itself in its own tick); the manager only (re)arms it.
-        PolarWindSoundInstance.clientTick(client);
 
         // Throttle: spawn on every 4th tick (shared by ambient snow + EW storm). Fixed per-tick BUDGET on
         // each spawn tick -- never a "how many do I owe since last spawn" accumulator.

@@ -18,12 +18,14 @@ import net.minecraft.sounds.SoundSource;
  * for a lower, more menacing wind than the elytra rush.
  *
  * <p><b>Lifecycle.</b> A single instance at a time. {@link #clientTick(Minecraft)} (called from the client
- * end-tick) starts one when the player crosses 85 deg on a surface-exposed globe world, and the instance's
- * own {@link #tick()} updates its volume every tick from the live latitude and STOPS cleanly on retreat below
- * 84.5 deg (a 0.5 deg hysteresis dead band so the loop never stutters at the boundary), on leaving the globe
- * world / going underground, or on the player being removed. {@link #reset()} force-stops it on disconnect /
- * world change. It is relative + non-attenuated (a listener-locked ambient bed), so its loudness is governed
- * purely by the latitude envelope, not by 3D distance.
+ * end-tick) starts one when the player crosses 85 deg on a globe world -- whether sky-exposed OR sheltered --
+ * and the instance's own {@link #tick()} updates its volume every tick from the live latitude and STOPS
+ * cleanly on retreat below 84.5 deg (a 0.5 deg hysteresis dead band so the loop never stutters at the
+ * boundary), on leaving the globe world / dimension, or on the player being removed. Stepping under a roof
+ * does NOT stop it -- shelter only MUFFLES the volume (real wind carries through walls), snapping back to full
+ * on re-exposure. {@link #reset()} force-stops it on disconnect / world change. It is relative +
+ * non-attenuated (a listener-locked ambient bed), so its loudness is governed purely by the latitude envelope
+ * (and the shelter muffle), not by 3D distance.
  *
  * <p>No Reduce Motion interaction (it is audio, not motion); the vanilla per-category volume sliders are the
  * only mute, applied automatically by the {@link SoundSource#WEATHER} category.
@@ -68,9 +70,13 @@ public final class PolarWindSoundInstance extends AbstractTickableSoundInstance 
             return;
         }
         var eval = GlobeClientState.evaluate(mc);
-        if (!eval.active() || !eval.surfaceOk()) {
+        if (!eval.active()) {
             return;
         }
+        // NOT gated on eval.surfaceOk(): the wind bed arms whether the player is sky-exposed or sheltered --
+        // real wind is audible from inside a shelter. The instance muffles itself while sheltered in its own
+        // tick (see below) and stops only on true deactivation, so a player who logs in indoors at the pole
+        // still hears the (muffled) gale.
         double absLatDeg = LatitudeMath.absLatDegExact(mc.level.getWorldBorder(), mc.player.getZ());
         if (!PolarWindSound.shouldStart(absLatDeg)) {
             return;
@@ -109,10 +115,11 @@ public final class PolarWindSoundInstance extends AbstractTickableSoundInstance 
             stop();
             return;
         }
-        // Same activation + surface gate as the ambient snow / whiteout: leaving the surface (a cave, deep
-        // water) silences the storm; the manager re-arms it on resurfacing while still poleward.
+        // Only TRUE deactivation stops the loop: leaving the globe world / another dimension (active) or
+        // retreating below the latitude floor (shouldStop). Being SHELTERED does NOT stop it -- unlike the
+        // ambient snow / whiteout, the wind is audible through walls, so shelter only MUFFLES the volume.
         var eval = GlobeClientState.evaluate(mc);
-        if (!eval.active() || !eval.surfaceOk()) {
+        if (!eval.active()) {
             stop();
             return;
         }
@@ -121,6 +128,8 @@ public final class PolarWindSoundInstance extends AbstractTickableSoundInstance 
             stop();
             return;
         }
-        this.volume = PolarWindSound.liveVolume(absLatDeg);
+        // Full volume when sky-exposed, muffled to SHELTERED_VOLUME_SCALE when under a roof / indoors, tracked
+        // live each tick so it fades between the two as the player moves through a doorway.
+        this.volume = PolarWindSound.liveVolume(absLatDeg, eval.surfaceOk());
     }
 }
