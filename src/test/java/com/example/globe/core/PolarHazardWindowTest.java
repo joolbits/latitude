@@ -7,43 +7,41 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Pure-JVM tests for {@link PolarHazardWindow} (Phase 5 Slice B-3, P1: B-3a continuous hazard
- * window + B-3b ambient snow/fog ramp).
+ * Pure-JVM tests for {@link PolarHazardWindow} (Phase 5 Slice B-3 + the TEST 76 freeze redesign).
  *
- * <p>See {@code docs/binder/phase5-boundary-experience-plan-20260709.md}, "Peetsa's B-3/B-5
- * design intents": B-3a replaces the old stage-STEPPED hazard ladder with CONTINUOUS scaling
- * across {@code [88.5,90]} deg (onset moved in from 87 per Peetsa's TEST 75 note) so the pole stays
- * fully explorable below onset and only the last ~1.5 deg are player-affecting; B-3b starts ambient
- * snow/fog 2 deg earlier at 85 deg ("atmosphere BEFORE
- * danger") and ramps a FIXED per-tick particle budget (never a wall-clock/backlog accumulator —
- * the anti-backlog guardrail) up to a VERY-heavy ceiling at 90 deg. Every function under test is
- * a pure function of latitude with no time input, matching that anti-backlog design: there is no
- * accumulator to "catch up" because nothing here is stateful.
+ * <p>The player-affecting HAZARD window is {@code [87.5,90]} deg (onset moved 88.5 -> 87.5 per Peetsa's
+ * TEST 76 note: at 89 deg he took ZERO freeze damage because the old curve only crossed vanilla's
+ * fully-frozen threshold in the last fractional degree). Slowness ramps in at 87.5. FREEZE is split into
+ * (a) a VISUAL frost ramp capped at 139 -- one tick below vanilla's 140 fully-frozen threshold, so
+ * vanilla's own fixed 1 HP/40-tick auto-damage never fires -- and (b) a SEPARATELY-scaled damage curve
+ * (interval shrinks + amount grows toward the pole) the mod applies itself, so damage begins ~88 deg and
+ * worsens to a lethal pole instead of flipping on at the doorstep. The AMBIENT window {@code [85,90]}
+ * (snow/fog) and the blizzard VISUAL window {@code [87,90]} are unchanged -- only the player-affecting
+ * mechanics moved. Every function under test is a pure function of latitude/progress with no time input.
  */
 class PolarHazardWindowTest {
 
-    // ---- (1) Containment: hazardProgress == exactly 0.0 at/below HAZARD_ONSET_DEG (87) --------
+    // ---- (1) Containment: hazardProgress == exactly 0.0 at/below HAZARD_ONSET_DEG (87.5) -------
 
     @Test
     void hazardProgressIsExactlyZeroJustBelowOnset() {
-        // WHY: 88.499 deg is inside the "fully explorable" region per the B-3a design intent (TEST 75 moved
-        // onset 87 -> 88.5) — only [88.5,90] is player-affecting, so anything below onset must be bitwise
-        // zero, not merely small. 86.999 (still below onset) is likewise a hard zero.
-        assertEquals(0.0, PolarHazardWindow.hazardProgress(88.499));
-        assertEquals(0.0, PolarHazardWindow.hazardProgress(86.999));
+        // WHY: 87.499 deg is inside the "fully explorable" region (TEST 76 moved onset 88.5 -> 87.5) -- only
+        // [87.5,90] is player-affecting, so anything below onset must be bitwise zero, not merely small.
+        assertEquals(0.0, PolarHazardWindow.hazardProgress(87.499));
+        assertEquals(0.0, PolarHazardWindow.hazardProgress(85.0));
     }
 
     @Test
     void hazardProgressIsExactlyZeroAtOnsetThreshold() {
-        // WHY: HAZARD_ONSET_DEG (88.5) is the documented onset boundary itself, not yet past it.
-        assertEquals(88.5, PolarHazardWindow.HAZARD_ONSET_DEG);
+        // WHY: HAZARD_ONSET_DEG (87.5) is the documented onset boundary itself, not yet past it.
+        assertEquals(87.5, PolarHazardWindow.HAZARD_ONSET_DEG);
         assertEquals(0.0, PolarHazardWindow.hazardProgress(PolarHazardWindow.HAZARD_ONSET_DEG));
     }
 
     @Test
     void hazardProgressIsPositiveJustAboveNewOnset() {
-        // WHY: TEST 75 timing reshape — the hazard must engage immediately past 88.5, not stay dormant to 87.
-        assertTrue(PolarHazardWindow.hazardProgress(88.501) > 0.0);
+        // WHY: TEST 76 timing reshape -- the hazard must engage immediately past 87.5.
+        assertTrue(PolarHazardWindow.hazardProgress(87.501) > 0.0);
     }
 
     @Test
@@ -66,10 +64,8 @@ class PolarHazardWindowTest {
 
     @Test
     void ambientProgressAndSnowCountAreZeroBelowAmbientOnset() {
-        // WHY: B-3b's ambient window opens at 85 deg (AMBIENT_ONSET_DEG); below it there is no
-        // snow and no ambient progress at all -- the ambient window is strictly narrower than the
-        // "fully explorable" claim only in the sense that it starts atmosphere before danger, but
-        // below 85 deg neither exists yet.
+        // WHY: B-3b's ambient window opens at 85 deg (AMBIENT_ONSET_DEG); below it there is no snow and no
+        // ambient progress at all. (Ambient is UNCHANGED by the TEST 76 hazard-onset move.)
         assertEquals(0.0, PolarHazardWindow.ambientProgress(84.999));
         assertEquals(0, PolarHazardWindow.snowCount(84.999));
         assertEquals(0.0, PolarHazardWindow.ambientProgress(0.0));
@@ -125,14 +121,6 @@ class PolarHazardWindowTest {
     }
 
     @Test
-    void freezeTicksAtFullProgressMatchesVanillaFreezeDeathThreshold() {
-        // WHY: FREEZE_MAX_TICKS's javadoc cites vanilla powder-snow freeze damage beginning at 140
-        // ticks frozen -- the B-3a full-lethal endpoint must reproduce that exact vanilla value.
-        assertEquals(140, PolarHazardWindow.FREEZE_MAX_TICKS);
-        assertEquals(140, PolarHazardWindow.freezeTicks(1.0));
-    }
-
-    @Test
     void snowCountAtLethalDegEqualsSnowMaxCount() {
         assertEquals(PolarHazardWindow.SNOW_MAX_COUNT,
                 PolarHazardWindow.snowCount(PolarHazardWindow.AMBIENT_FULL_DEG));
@@ -156,7 +144,7 @@ class PolarHazardWindowTest {
         assertEquals(1.0f, PolarHazardWindow.fogIntensity(PolarHazardWindow.AMBIENT_FULL_DEG));
     }
 
-    // ---- (4) Amplifier tiers --------------------------------------------------------------------
+    // ---- (4) Amplifier tiers (progress-based, independent of the onset move) --------------------
 
     @Test
     void slownessAmplifierSpansZeroToMaxNonDecreasingAndNeverExceedsMax() {
@@ -171,7 +159,7 @@ class PolarHazardWindowTest {
             previous = current;
         }
         assertEquals(PolarHazardWindow.SLOWNESS_MAX_AMP, PolarHazardWindow.slownessAmplifier(1.0));
-        assertEquals(2, PolarHazardWindow.SLOWNESS_MAX_AMP); // == old LETHAL Slowness III
+        assertEquals(2, PolarHazardWindow.SLOWNESS_MAX_AMP); // Slowness III at the pole
     }
 
     @Test
@@ -187,26 +175,142 @@ class PolarHazardWindowTest {
             previous = current;
         }
         assertEquals(PolarHazardWindow.WEAKNESS_MAX_AMP, PolarHazardWindow.weaknessAmplifier(1.0));
-        assertEquals(1, PolarHazardWindow.WEAKNESS_MAX_AMP); // == old LETHAL Weakness II
+        assertEquals(1, PolarHazardWindow.WEAKNESS_MAX_AMP); // Weakness II at the pole
+    }
+
+    @Test
+    void slownessRespreadAcrossTheNewHazardBand() {
+        // WHY (TEST 76): slowness ramps in AT 87.5 and re-spreads across [87.5,90] (three equal thirds of
+        // 2.5 deg): Slowness I from 87.5, II from ~88.33, III from ~89.17 -- nothing slows below 87.5.
+        assertEquals(0, PolarHazardWindow.slownessAmplifier(PolarHazardWindow.hazardProgress(87.5))); // I (amp 0)
+        assertEquals(0, PolarHazardWindow.slownessAmplifier(PolarHazardWindow.hazardProgress(88.0))); // still I
+        assertEquals(1, PolarHazardWindow.slownessAmplifier(PolarHazardWindow.hazardProgress(88.5))); // II
+        assertEquals(2, PolarHazardWindow.slownessAmplifier(PolarHazardWindow.hazardProgress(89.5))); // III
+        assertEquals(2, PolarHazardWindow.slownessAmplifier(PolarHazardWindow.hazardProgress(90.0)));
     }
 
     @Test
     void miningFatigueAppliesAtAndAboveDocumentedProgressThreshold() {
-        // WHY: MINING_FATIGUE_PROGRESS == 1/3, documented as "~89 deg" (88.5 + 1.5*(1/3) == 89) after the
-        // TEST 75 onset move; the window is now [88.5,90] (1.5 deg wide), not [87,90].
+        // WHY: MINING_FATIGUE_PROGRESS == 1/3, documented as "~88.33 deg" (87.5 + 2.5*(1/3)) after the
+        // TEST 76 onset move; the window is now [87.5,90] (2.5 deg wide).
         assertFalse(PolarHazardWindow.appliesMiningFatigue(PolarHazardWindow.MINING_FATIGUE_PROGRESS - 0.01));
         assertTrue(PolarHazardWindow.appliesMiningFatigue(PolarHazardWindow.MINING_FATIGUE_PROGRESS));
-
-        double justBelow89 = 88.5 + 1.5 * (PolarHazardWindow.MINING_FATIGUE_PROGRESS - 0.001);
-        double atOrAbove89 = 88.5 + 1.5 * PolarHazardWindow.MINING_FATIGUE_PROGRESS;
-        assertFalse(PolarHazardWindow.appliesMiningFatigue(PolarHazardWindow.hazardProgress(justBelow89)));
-        assertTrue(PolarHazardWindow.appliesMiningFatigue(PolarHazardWindow.hazardProgress(atOrAbove89)));
+        assertEquals(88.33, 87.5 + 2.5 * PolarHazardWindow.MINING_FATIGUE_PROGRESS, 0.01);
     }
 
-    // B-4 removed the Blindness effect from the polar hazard (the smooth whiteout overlay now carries
-    // vision loss), so appliesBlindness/BLINDNESS_PROGRESS no longer exist and are no longer tested.
+    // ---- (5) Frost VISUAL ramp (capped below vanilla's fully-frozen threshold) ------------------
 
-    // ---- (5) Above-90 clamping: behaves as exactly 90 (progress capped at 1) ------------------
+    @Test
+    void frostVisualStaysBelowVanillaFullyFrozenThreshold() {
+        // WHY (the whole redesign): the frost visual must top out ONE tick below vanilla's 140 fully-frozen
+        // threshold so vanilla's own fixed 1 HP/40-tick auto-damage NEVER fires -- our scaled curve owns the
+        // damage. If frost ever reached 140 we'd double-dip with vanilla's fixed cadence.
+        assertEquals(140, PolarHazardWindow.FROZEN_THRESHOLD_TICKS);
+        assertEquals(139, PolarHazardWindow.FROST_VISUAL_MAX_TICKS);
+        for (int i = 0; i <= 1000; i++) {
+            int f = PolarHazardWindow.frostVisualTicks(i / 1000.0);
+            assertTrue(f >= 0 && f <= PolarHazardWindow.FROST_VISUAL_MAX_TICKS,
+                    "frostVisualTicks out of range at p=" + i / 1000.0 + ": " + f);
+            assertTrue(f < PolarHazardWindow.FROZEN_THRESHOLD_TICKS,
+                    "frost must stay below the fully-frozen threshold at p=" + i / 1000.0);
+        }
+        assertEquals(PolarHazardWindow.FROST_VISUAL_MAX_TICKS, PolarHazardWindow.frostVisualTicks(1.0));
+    }
+
+    @Test
+    void frostVisualRampsToCeilingByFullProgressAndHoldsMonotonic() {
+        // WHY: frost builds visibly from the 87.5 onset and reaches its ceiling by FROST_VISUAL_FULL_PROGRESS
+        // (~88.75 deg), then holds to the pole -- a smooth approach to a full whiteout, no dip.
+        assertEquals(0, PolarHazardWindow.frostVisualTicks(0.0));
+        assertEquals(0, PolarHazardWindow.frostVisualTicks(PolarHazardWindow.hazardProgress(87.5)));
+        // ~40% frosted at 88 deg, where damage begins (progress 0.2 -> 0.4 of the frost ramp -> round(0.4*139)).
+        assertEquals(56, PolarHazardWindow.frostVisualTicks(PolarHazardWindow.hazardProgress(88.0)));
+        assertEquals(PolarHazardWindow.FROST_VISUAL_MAX_TICKS,
+                PolarHazardWindow.frostVisualTicks(PolarHazardWindow.FROST_VISUAL_FULL_PROGRESS));
+        assertEquals(PolarHazardWindow.FROST_VISUAL_MAX_TICKS,
+                PolarHazardWindow.frostVisualTicks(PolarHazardWindow.hazardProgress(88.75)));
+        assertEquals(PolarHazardWindow.FROST_VISUAL_MAX_TICKS,
+                PolarHazardWindow.frostVisualTicks(PolarHazardWindow.hazardProgress(90.0)));
+        int prev = PolarHazardWindow.frostVisualTicks(0.0);
+        for (int i = 0; i <= 1000; i++) {
+            int cur = PolarHazardWindow.frostVisualTicks(i / 1000.0);
+            assertTrue(cur >= prev, "frostVisualTicks decreased at p=" + i / 1000.0);
+            prev = cur;
+        }
+    }
+
+    // ---- (6) Freeze DAMAGE curve: begins ~88 deg and intensifies to a lethal pole ---------------
+
+    @Test
+    void freezeDamageBeginsAtDamageOnsetNotHazardOnset() {
+        // WHY: a 0.5 deg grace band (87.5 onset .. ~88 damage) lets the cold set in + slow you before it
+        // starts taking hearts -- frost + slowness first, HP loss only from ~88.
+        assertEquals(0.2, PolarHazardWindow.DAMAGE_ONSET_PROGRESS);
+        assertFalse(PolarHazardWindow.appliesFreezeDamage(PolarHazardWindow.DAMAGE_ONSET_PROGRESS - 1e-6));
+        assertTrue(PolarHazardWindow.appliesFreezeDamage(PolarHazardWindow.DAMAGE_ONSET_PROGRESS));
+        assertFalse(PolarHazardWindow.appliesFreezeDamage(PolarHazardWindow.hazardProgress(87.5)));
+        assertFalse(PolarHazardWindow.appliesFreezeDamage(PolarHazardWindow.hazardProgress(87.9)));
+        assertTrue(PolarHazardWindow.appliesFreezeDamage(PolarHazardWindow.hazardProgress(88.1)));
+    }
+
+    @Test
+    void freezeDamageLandsWellBeforeThePoleNotAtTheDoorstep() {
+        // WHY (TEST 76 REGRESSION -- the core fix): at 89 deg Peetsa took ZERO freeze damage under the old
+        // curve. Damage must be active by ~88 and clearly ticking by 89, and get WORSE toward the pole
+        // (shorter interval AND bigger amount each step in), not deferred to the last fractional degree.
+        assertTrue(PolarHazardWindow.appliesFreezeDamage(PolarHazardWindow.hazardProgress(88.0)));
+        assertTrue(PolarHazardWindow.appliesFreezeDamage(PolarHazardWindow.hazardProgress(88.5)));
+        assertTrue(PolarHazardWindow.appliesFreezeDamage(PolarHazardWindow.hazardProgress(89.0)));
+
+        int i88 = PolarHazardWindow.freezeDamageIntervalTicks(PolarHazardWindow.hazardProgress(88.0));
+        int i89 = PolarHazardWindow.freezeDamageIntervalTicks(PolarHazardWindow.hazardProgress(89.0));
+        int i90 = PolarHazardWindow.freezeDamageIntervalTicks(PolarHazardWindow.hazardProgress(90.0));
+        assertTrue(i89 < i88, "interval must shrink 88->89 (" + i88 + " -> " + i89 + ")");
+        assertTrue(i90 < i89, "interval must shrink 89->90 (" + i89 + " -> " + i90 + ")");
+        // At 89 deg the cadence is a real, felt rate (<= ~2 s), not a once-at-the-pole tick.
+        assertTrue(i89 <= 40, "89 deg interval should be a felt cadence, was " + i89);
+
+        float a88 = PolarHazardWindow.freezeDamageAmount(PolarHazardWindow.hazardProgress(88.0));
+        float a89 = PolarHazardWindow.freezeDamageAmount(PolarHazardWindow.hazardProgress(89.0));
+        float a90 = PolarHazardWindow.freezeDamageAmount(PolarHazardWindow.hazardProgress(90.0));
+        assertTrue(a89 > a88, "amount must grow 88->89 (" + a88 + " -> " + a89 + ")");
+        assertTrue(a90 > a89, "amount must grow 89->90 (" + a89 + " -> " + a90 + ")");
+    }
+
+    @Test
+    void freezeDamageIntervalShrinksFromFarToNearAndNeverBelowOne() {
+        assertEquals(60, PolarHazardWindow.FREEZE_DAMAGE_INTERVAL_FAR);
+        assertEquals(10, PolarHazardWindow.FREEZE_DAMAGE_INTERVAL_NEAR);
+        assertEquals(PolarHazardWindow.FREEZE_DAMAGE_INTERVAL_FAR,
+                PolarHazardWindow.freezeDamageIntervalTicks(PolarHazardWindow.DAMAGE_ONSET_PROGRESS));
+        assertEquals(PolarHazardWindow.FREEZE_DAMAGE_INTERVAL_NEAR,
+                PolarHazardWindow.freezeDamageIntervalTicks(1.0));
+        int prev = PolarHazardWindow.freezeDamageIntervalTicks(0.0);
+        for (int i = 0; i <= 1000; i++) {
+            int cur = PolarHazardWindow.freezeDamageIntervalTicks(i / 1000.0);
+            assertTrue(cur <= prev, "interval must be non-increasing at p=" + i / 1000.0);
+            assertTrue(cur >= 1, "interval must be >= 1 at p=" + i / 1000.0);
+            prev = cur;
+        }
+    }
+
+    @Test
+    void freezeDamageAmountGrowsFromMinToMax() {
+        assertEquals(1.0f, PolarHazardWindow.FREEZE_DAMAGE_MIN_HP);
+        assertEquals(3.0f, PolarHazardWindow.FREEZE_DAMAGE_MAX_HP);
+        assertEquals(PolarHazardWindow.FREEZE_DAMAGE_MIN_HP,
+                PolarHazardWindow.freezeDamageAmount(PolarHazardWindow.DAMAGE_ONSET_PROGRESS), 1e-4);
+        assertEquals(PolarHazardWindow.FREEZE_DAMAGE_MAX_HP,
+                PolarHazardWindow.freezeDamageAmount(1.0), 1e-4);
+        float prev = PolarHazardWindow.freezeDamageAmount(0.0);
+        for (int i = 0; i <= 1000; i++) {
+            float cur = PolarHazardWindow.freezeDamageAmount(i / 1000.0);
+            assertTrue(cur >= prev - 1e-6, "amount must be non-decreasing at p=" + i / 1000.0);
+            prev = cur;
+        }
+    }
+
+    // ---- (7) Above-90 clamping: behaves as exactly 90 (progress capped at 1) --------------------
 
     @Test
     void hazardProgressAboveLethalDegClampsToOne() {
@@ -223,71 +327,20 @@ class PolarHazardWindowTest {
     }
 
     @Test
-    void freezeTicksAndAmplifiersAboveLethalDegClampToLethalValues() {
-        double progressAt95 = PolarHazardWindow.hazardProgress(95.0);
-        assertEquals(PolarHazardWindow.FREEZE_MAX_TICKS, PolarHazardWindow.freezeTicks(progressAt95));
-        assertEquals(PolarHazardWindow.SLOWNESS_MAX_AMP, PolarHazardWindow.slownessAmplifier(progressAt95));
-        assertEquals(PolarHazardWindow.WEAKNESS_MAX_AMP, PolarHazardWindow.weaknessAmplifier(progressAt95));
-        assertTrue(PolarHazardWindow.appliesMiningFatigue(progressAt95));
+    void freezeAndAmplifiersAboveLethalDegClampToLethalValues() {
+        double p95 = PolarHazardWindow.hazardProgress(95.0);
+        assertEquals(1.0, p95);
+        assertEquals(PolarHazardWindow.FROST_VISUAL_MAX_TICKS, PolarHazardWindow.frostVisualTicks(p95));
+        assertEquals(PolarHazardWindow.FREEZE_DAMAGE_INTERVAL_NEAR,
+                PolarHazardWindow.freezeDamageIntervalTicks(p95));
+        assertEquals(PolarHazardWindow.FREEZE_DAMAGE_MAX_HP, PolarHazardWindow.freezeDamageAmount(p95), 1e-4);
+        assertEquals(PolarHazardWindow.SLOWNESS_MAX_AMP, PolarHazardWindow.slownessAmplifier(p95));
+        assertEquals(PolarHazardWindow.WEAKNESS_MAX_AMP, PolarHazardWindow.weaknessAmplifier(p95));
+        assertTrue(PolarHazardWindow.appliesMiningFatigue(p95));
+        assertTrue(PolarHazardWindow.appliesFreezeDamage(p95));
     }
 
-    // ---- B-4 round 3 item 1: steadyFreezeTicks (per-tick freeze maintenance target) ------------
-
-    @Test
-    void steadyFreezeTicksIsZeroAtAndBelowOnset() {
-        // WHY: below the hazard onset (now 88.5) there is no frost at all -- the maintenance target must be a
-        // hard 0, never a stray +margin that would frost a fully-explorable latitude.
-        assertEquals(0, PolarHazardWindow.steadyFreezeTicks(PolarHazardWindow.hazardProgress(88.5)));
-        assertEquals(0, PolarHazardWindow.steadyFreezeTicks(PolarHazardWindow.hazardProgress(87.0)));
-        assertEquals(0, PolarHazardWindow.steadyFreezeTicks(PolarHazardWindow.hazardProgress(80.0)));
-    }
-
-    @Test
-    void steadyFreezeTicksAddsDecayMarginOverRawFreeze() {
-        // WHY: the per-tick target must sit above the raw freezeTicks by exactly the decay margin, so a
-        // single tick of vanilla ~2/tick decay can never drop the counter below the intended level.
-        double p = PolarHazardWindow.hazardProgress(89.25); // mid-band of [88.5,90], raw freeze > 0
-        int raw = PolarHazardWindow.freezeTicks(p);
-        assertTrue(raw > 0);
-        assertEquals(raw + PolarHazardWindow.FREEZE_DECAY_MARGIN, PolarHazardWindow.steadyFreezeTicks(p));
-    }
-
-    @Test
-    void steadyFreezeTicksAtPoleExceedsFullyFrozenThreshold() {
-        // WHY: at the pole the steady target must clear FREEZE_MAX_TICKS (140), the vanilla fully-frozen
-        // threshold, and hold there -- that is what makes real freeze damage actually tick (the whole bug).
-        int atPole = PolarHazardWindow.steadyFreezeTicks(PolarHazardWindow.hazardProgress(90.0));
-        assertTrue(atPole >= PolarHazardWindow.FREEZE_MAX_TICKS,
-                "steady target at the pole (" + atPole + ") must be >= " + PolarHazardWindow.FREEZE_MAX_TICKS);
-        assertEquals(PolarHazardWindow.FREEZE_MAX_TICKS + PolarHazardWindow.FREEZE_DECAY_MARGIN, atPole);
-    }
-
-    @Test
-    void realFreezeDamageFirstLandsNearThePole() {
-        // WHY (TEST 75 timing intent): "start affecting the player at ~88.5, severe at 90." The steady freeze
-        // target crosses vanilla's fully-frozen/damage threshold (140) only in the last fraction of a degree,
-        // so real freeze DAMAGE lands as the player reaches the pole itself -- not out at 89. Below ~89.8 the
-        // target is still under 140 (blue hearts, no damage yet); at 90 it is clamped above 140 (damage ticks).
-        assertTrue(PolarHazardWindow.steadyFreezeTicks(PolarHazardWindow.hazardProgress(89.0))
-                < PolarHazardWindow.FREEZE_MAX_TICKS);
-        assertTrue(PolarHazardWindow.steadyFreezeTicks(PolarHazardWindow.hazardProgress(89.8))
-                < PolarHazardWindow.FREEZE_MAX_TICKS);
-        assertTrue(PolarHazardWindow.steadyFreezeTicks(PolarHazardWindow.hazardProgress(90.0))
-                >= PolarHazardWindow.FREEZE_MAX_TICKS);
-    }
-
-    @Test
-    void slownessRespreadAcrossTheNewHazardBand() {
-        // WHY (TEST 75): the slowness tiers re-spread across [88.5,90] (three equal thirds of 1.5 deg):
-        // Slowness I from 88.5, II from ~89.0, III from ~89.5 -- so nothing slows the player below 88.5.
-        assertEquals(0, PolarHazardWindow.slownessAmplifier(PolarHazardWindow.hazardProgress(88.0)));
-        assertEquals(0, PolarHazardWindow.slownessAmplifier(PolarHazardWindow.hazardProgress(88.6)));
-        assertEquals(1, PolarHazardWindow.slownessAmplifier(PolarHazardWindow.hazardProgress(89.1)));
-        assertEquals(2, PolarHazardWindow.slownessAmplifier(PolarHazardWindow.hazardProgress(89.6)));
-        assertEquals(2, PolarHazardWindow.slownessAmplifier(PolarHazardWindow.hazardProgress(90.0)));
-    }
-
-    // ---- B-4 round 3 item 3: stormLevel (steepened storm-sky lift) ----------------------------
+    // ---- B-4 round 3 item 3: stormLevel (steepened storm-sky lift) -- UNCHANGED by TEST 76 -----
 
     @Test
     void stormLevelIsZeroAtAndBelowOnset() {
@@ -311,13 +364,13 @@ class PolarHazardWindowTest {
         assertEquals(1.0f, PolarHazardWindow.stormLevel(90.0), 1e-6);
     }
 
-    // ---- B-4 round 3 item 2: blizzardDrive (fall speed / wind / second-pass gate) --------------
+    // ---- B-4 round 3 item 2: blizzardDrive (fall speed / wind / second-pass gate) -- UNCHANGED --
 
     @Test
     void blizzardDriveIsZeroThroughTheGentleApproachBand() {
         // WHY: 85-87 deg is the gentle-approach flurry -- the blizzard drive (and thus the dense second
-        // particle pass) must be exactly 0 there, only ramping inside the [87,90] VISUAL band. TEST 75
-        // DECOUPLED this from HAZARD_ONSET_DEG (which moved to 88.5) -- the blizzard LOOK stays on 87.
+        // particle pass) must be exactly 0 there, only ramping inside the [87,90] VISUAL band. This is
+        // DECOUPLED from HAZARD_ONSET_DEG -- the blizzard LOOK stays on 87 regardless of the hazard onset.
         assertEquals(87.0, PolarHazardWindow.BLIZZARD_ONSET_DEG);
         assertEquals(0.0f, PolarHazardWindow.blizzardDrive(85.0));
         assertEquals(0.0f, PolarHazardWindow.blizzardDrive(86.5));
@@ -325,10 +378,10 @@ class PolarHazardWindowTest {
     }
 
     @Test
-    void blizzardDriveIsDecoupledFromTheMovedHazardOnset() {
-        // WHY (TEST 75): moving the player-hazard onset 87 -> 88.5 must NOT change the blizzard VISUALS
-        // (Peetsa: keep the ambient band as-is). The visual drive still ramps from 87, so at the moved
-        // hazard onset (88.5) it is already half-driven, not just starting.
+    void blizzardDriveIsDecoupledFromTheHazardOnset() {
+        // WHY (TEST 75/76): the blizzard VISUALS must NOT move when the player-hazard onset moves (Peetsa:
+        // keep the ambient/blizzard band as-is). The visual drive still ramps from 87 -- fixed at 0.5 at
+        // 88.5 -- and is already partway driven at the 87.5 hazard onset, proving the two are independent.
         assertEquals(0.5f, PolarHazardWindow.blizzardDrive(88.5), 1e-4);
         assertTrue(PolarHazardWindow.blizzardDrive(PolarHazardWindow.HAZARD_ONSET_DEG) > 0.0f);
     }

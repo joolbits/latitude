@@ -385,26 +385,37 @@ public class GlobeMod implements ModInitializer {
                 continue;
             }
 
-            // B-3a: continuous hazard window [88.5,90]. The ONLY player-affecting hazardous band --
-            // everything below 88.5 deg stays fully explorable (onset moved in from 87 per TEST 75: the cold
-            // was setting in too early/far out; it now starts at 88.5 and reaches severe at the pole).
-            // Slowness/weakness amplifiers and the freeze-tick rate ramp SMOOTHLY with progress->90, so real
-            // freeze damage first lands ~89.97 deg (steady freeze target crosses vanilla's 140 threshold).
+            // B-3a: continuous player-affecting hazard window [87.5,90]. The ONLY player-affecting hazardous
+            // band -- everything below 87.5 deg stays fully explorable. Onset moved 88.5 -> 87.5 (TEST 76:
+            // Peetsa took ZERO freeze damage at 89 because the old curve only crossed vanilla's fully-frozen
+            // threshold in the last fractional degree). Slowness ramps in at 87.5; the frost visual builds
+            // from here; freeze DAMAGE begins ~88 and intensifies (shorter interval + bigger amount) to a
+            // lethal pole -- worse and worse, not a doorstep flip.
             double latDeg = com.example.globe.util.LatitudeMath.absLatDegExact(border, player.getZ());
             if (latDeg < com.example.globe.core.PolarHazardWindow.HAZARD_ONSET_DEG) {
                 continue;
             }
             double progress = com.example.globe.core.PolarHazardWindow.hazardProgress(latDeg);
+            boolean unaffected = player.isCreative() || player.isSpectator();
 
-            // B-4 round 3 item 1 -- FREEZE PULSING FIX (per-tick, NOT throttled). Vanilla decays ticksFrozen
-            // by ~2/tick when the player isn't in powder snow, so the old every-10-ticks set produced a
-            // sawtooth that never sustained the fully-frozen state: hearts flashed blue/red and freeze damage
-            // (ticked by vanilla only while fully frozen) never landed. Maintaining the counter every tick to
-            // a target with a small decay margin holds the frozen state STEADY -- a continuous blue-heart
-            // freeze overlay, and near the pole (target -> FREEZE_MAX_TICKS) real freeze damage now ticks.
-            int freezeTarget = com.example.globe.core.PolarHazardWindow.steadyFreezeTicks(progress);
-            if (freezeTarget > 0 && !(player.isCreative() || player.isSpectator())) {
-                player.setTicksFrozen(Math.max(player.getTicksFrozen(), freezeTarget));
+            // FROST VISUAL every tick (blue-heart frost building 87.5 -> full by ~88.75). frostVisualTicks
+            // maxes at 139 -- one tick BELOW vanilla's 140 fully-frozen threshold -- so vanilla's own fixed
+            // 1 HP/40-tick freeze auto-damage never fires and the scaled damage below owns the whole curve.
+            // Set every tick because vanilla decays ticksFrozen ~2/tick when the player isn't in powder snow.
+            if (!unaffected) {
+                player.setTicksFrozen(com.example.globe.core.PolarHazardWindow.frostVisualTicks(progress));
+            }
+
+            // Scaled freeze DAMAGE: begins ~88 deg and gets worse toward the pole. The interval shrinks
+            // (60 -> 10 ticks) and the amount grows (1 -> 3 HP) with latitude, applied on the server's own
+            // cadence (worldTime % interval) -- stateless, no per-player accumulator. Same freeze damage
+            // type/death as vanilla; only the timing is ours.
+            if (!unaffected && com.example.globe.core.PolarHazardWindow.appliesFreezeDamage(progress)) {
+                int interval = com.example.globe.core.PolarHazardWindow.freezeDamageIntervalTicks(progress);
+                if (worldTime % (long) interval == 0L) {
+                    float amount = com.example.globe.core.PolarHazardWindow.freezeDamageAmount(progress);
+                    player.hurtServer(overworld, overworld.damageSources().freeze(), amount);
+                }
             }
 
             if (!effectsTick) {

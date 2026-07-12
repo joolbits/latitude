@@ -18,20 +18,22 @@ public final class GlobeWarningOverlay {
     private static String lastZoneKey;
 
     // Polar warning ladder (B-3-P3), anchored to LatitudeMath.POLAR_STAGE_*_PROGRESS:
-    // WARN_1 @85 deg (snow onset), WARN_2 @87 deg (blizzard building), DANGER @89 deg (leads freeze death
-    // at 90), LETHAL @89.7 deg (hypothermia/freeze near-max). The ladder DEGREE constants (POLAR_STAGE_*)
-    // stay put -- they are SHARED with the EW storm axis (B-3-P3 KEEP-SHARED coupling) -- so when TEST 75
-    // moved the PLAYER-AFFECTING hazard onset out to 88.5 deg (see PolarHazardWindow), WARN_2 was REWORDED
-    // (not re-thresholded) to drop the now-untrue "slowing you" claim: at 87 deg slowness has NOT started
-    // yet (it begins at 88.5), so honesty (warning text must never claim a mechanic that isn't active)
-    // demanded dropping it. Copy (Peetsa's blizzard register, 2026-07-11 / TEST 75): T1/T2 carry the
-    // expedition-approach flavor without over-claiming; DANGER is Peetsa's line verbatim; LETHAL drops the
-    // "LETHAL:" qualifier for the plainer, grimmer "Hypothermia sets in." (still RED+BOLD, and still visually
-    // escalated past DANGER via the 1.15x scale + ember vignette).
+    // WARN_1 @85 deg (snow onset), WARN_2 @87 deg (blizzard building), DANGER @89 deg, LETHAL @89.7 deg.
+    // The ladder DEGREE constants (POLAR_STAGE_*) STAY PUT -- they are SHARED with the EW storm axis (B-3-P3
+    // KEEP-SHARED coupling) -- so they do NOT move when the player-affecting hazard onset moves. TEST 76
+    // moved that onset 88.5 -> 87.5 (see PolarHazardWindow): slowness now begins just 0.5 deg poleward of
+    // WARN_2 (87 -> 87.5), so WARN_2 was reworded to foreshadow it HONESTLY in the FUTURE tense ("the cold
+    // WILL slow you"). At the instant WARN_2 fires (87 deg) slowness is not yet active, so a present-tense
+    // claim would break the rule that a warning must never claim a mechanic that isn't true when shown; a
+    // future/imminent claim is fine (slowness is one boundary-step away). Copy (Peetsa's blizzard register):
+    // T1/T2 carry the expedition-approach flavor; DANGER is Peetsa's line verbatim; LETHAL is the plainer,
+    // grimmer "Hypothermia sets in.". NB: the polar warnings are drawn NON-bold (DANGER/LETHAL are RED, not
+    // RED+BOLD) -- MC's fake-bold double-stroke fought the dark keyline (see drawCenteredWarning); the crisp
+    // outline + RED + LETHAL's 1.15x scale + the ember vignette carry the escalation instead of bold.
     private static final String POLE_WARN_1_TEXT =
             "Snow begins to fall. Blizzard conditions ahead -- consider turning back.";
     private static final String POLE_WARN_2_TEXT =
-            "Blizzard conditions worsening. Turn back while you can.";
+            "Blizzard conditions worsening -- the cold will slow you. Turn back while you can.";
     private static final String POLE_DANGER_TEXT =
             "DANGER: Lethal blizzard conditions ahead. Turn back.";
     private static final String POLE_LETHAL_TEXT =
@@ -39,13 +41,12 @@ public final class GlobeWarningOverlay {
 
     // CD finding F1 / R1 -- dark KEYLINE behind the polar warning lines. Minecraft RED (0xFF5555) on the
     // near-white whiteout fill is ~2.7:1 contrast; a 1px near-black outline (the zone-title outline idiom,
-    // TitleStyle.OUTLINE_OFFSETS_8) makes the text pop on the brightest screen the game ever draws. TEST 75:
-    // extended from the RED DANGER/LETHAL lines to ALL FOUR polar tiers -- the plain-white WARN_1/WARN_2
-    // approach lines were "barely legible over snow", and pure white on a whiteout is the worst case of all,
-    // so they need the near-black keyline even MORE than the red lines do. Near-black with a faint cold cast,
-    // matching the storm. The keyline is the text's ONLY dark backing: the fill is drawn WITHOUT its vanilla
-    // drop shadow whenever the keyline is present (see drawCenteredWarning), because shadow + 8-way keyline
-    // stamped one crisp pixel apart is what produced the "double layered ... blurred smeary" render (TEST 75).
+    // TitleStyle.OUTLINE_OFFSETS_8) makes the text pop on the brightest screen the game ever draws. All four
+    // tiers get it (pure white on a whiteout needs it as much as the red lines do). Near-black with a faint
+    // cold cast, matching the storm. CRITICAL (TEST 76): the keyline is stamped from a PLAIN, styleless copy
+    // of the line, never the styled fill -- MC's font renderer keeps a component's OWN style color over the
+    // passed keyline color (so a RED line would stamp a RED, not dark, keyline -> a red-on-red halo, the real
+    // "smear") and fake-bold-DOUBLES every stamp. See drawCenteredWarning for the full mechanism + proof.
     private static final int POLE_KEYLINE_RGB = 0x080609;
     // CD finding F3 -- LETHAL renders slightly larger than DANGER so the final rung reads as a distinct, worse
     // beat rather than a 0.7 deg double-tap of the same red flash (pairs with LETHAL's deeper vignette).
@@ -172,8 +173,12 @@ public final class GlobeWarningOverlay {
         return switch (stage) {
             case WARN_1 -> Component.literal(POLE_WARN_1_TEXT);
             case WARN_2 -> Component.literal(POLE_WARN_2_TEXT);
-            case DANGER -> Component.literal(POLE_DANGER_TEXT).withStyle(ChatFormatting.RED, ChatFormatting.BOLD);
-            case LETHAL -> Component.literal(POLE_LETHAL_TEXT).withStyle(ChatFormatting.RED, ChatFormatting.BOLD);
+            // RED, NOT RED+BOLD: MC fakes bold by drawing every glyph twice (BakedSheetGlyph.renderChar,
+            // +getBoldOffset()==1px), which doubled every dark keyline stamp into a smeared halo AND widened
+            // the glyph advances so a non-bold keyline would drift out of registration. Non-bold keeps the
+            // fill and its crisp dark outline perfectly aligned; the outline + red + scale carry the weight.
+            case DANGER -> Component.literal(POLE_DANGER_TEXT).withStyle(ChatFormatting.RED);
+            case LETHAL -> Component.literal(POLE_LETHAL_TEXT).withStyle(ChatFormatting.RED);
             default -> null;
         };
     }
@@ -461,20 +466,30 @@ public final class GlobeWarningOverlay {
             int w = tr.width(lineC);
             int x = Math.max(4, (screenW - w) / 2);
             int lineY = Math.max(2, y - (n - 1 - i) * lineH);
-            // CD F1/R1: stamp a crisp 1px dark keyline behind the fill (the zone-title outline idiom) so the
-            // text reads on the near-white whiteout. No shadow on the stamps (they ARE the dark backing);
-            // fades with the text via the shared alpha.
+            // TEST 76 SMEAR FIX (the real root cause). The keyline MUST be a PLAIN, STYLELESS silhouette --
+            // NOT the styled fill component -- for two reasons proven against the 26.2 font renderer:
+            //  1) COLOR: Font.getTextColor honors the passed color arg ONLY when the component has no style
+            //     color; a component WITH one (the RED DANGER/LETHAL lines) uses its OWN color and keeps just
+            //     the arg's ALPHA. So stamping the styled lineC with keyArgb drew a RED keyline around a RED
+            //     fill -- a red-on-red halo with no dark backing at all (the "smear" Peetsa saw, worse once
+            //     the fill's own drop shadow was removed). A styleless literal has no color, so the near-black
+            //     keyArgb is finally honored and the outline is actually dark.
+            //  2) BOLD: MC fakes bold by drawing every glyph TWICE, offset +1px (BakedSheetGlyph.renderChar).
+            //     A bold keyline stamp is silently doubled, so the 8-way outline became 16 offset strokes --
+            //     a lopsided, blurred halo that got worse the more we stamped. A styleless literal is non-bold.
+            // Since the polar warnings are now non-bold at the FILL too, the plain keyline's glyph advances
+            // match the fill exactly, so the outline stays registered on long/wrapped lines (a non-bold
+            // keyline under a BOLD fill would drift ~1px/char). No shadow on the stamps -- they ARE the dark
+            // backing; they fade with the text via the shared alpha.
             if (keyline) {
+                Component keyC = Component.literal(lines.get(i));
                 for (int[] off : com.example.globe.core.ui.TitleStyle.OUTLINE_OFFSETS_8) {
-                    ctx.text(tr, lineC, x + off[0], lineY + off[1], keyArgb, false);
+                    ctx.text(tr, keyC, x + off[0], lineY + off[1], keyArgb, false);
                 }
             }
-            // TEST 75 SMEAR FIX: draw the fill WITHOUT the vanilla drop shadow when a keyline is present. The
-            // 5-arg ctx.text(...) defaults dropShadow=true, so a keylined line was drawing its own hard shadow
-            // (a shifted, darkened copy of the fill, offset +1,+1) ON TOP of the 8-way near-black keyline --
-            // one of the 9 near-overlapping dark stamps was a different color and 1px off, which is exactly the
-            // "double layered ... blurred smeary" look Peetsa reported. The keyline is the only backing needed;
-            // the non-keyline path (EW storm warnings) keeps its shadow so it is byte-identical to before.
+            // The keyline is the only dark backing, so draw the fill WITHOUT the vanilla drop shadow when a
+            // keyline is present (a shadow would add a 9th offset dark stamp). The non-keyline path (EW storm
+            // warnings) keeps its shadow, so it stays byte-identical to before.
             ctx.text(tr, lineC, x, lineY, argbColor, !keyline);
         }
         if (scaled) {
