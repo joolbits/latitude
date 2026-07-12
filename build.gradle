@@ -109,6 +109,9 @@ loom {
             // Phase 5 carve-aware ocean labels (default false, byte-identical off).
             vmArg "-Dlatitude.terrainV2.carveAwareLabels=${System.getProperty('latitude.terrainV2.carveAwareLabels', 'false')}"
             vmArg "-Dlatitude.boundaryV2.enabled=${System.getProperty('latitude.boundaryV2.enabled', 'false')}"
+            // Phase 5 B-5 Hemisphere Passage (default false, byte-identical/inert off). Forwarded in the
+            // SAME PASS the flag is born so a gradle dev client can opt in for P3 live flight.
+            vmArg "-Dlatitude.passageV2.enabled=${System.getProperty('latitude.passageV2.enabled', 'false')}"
             // Polar small-vegetation fade (default TRUE since 2026-07-12, matching LatitudeV2Flags after
             // the TEST 75 live look; byte-identical when explicitly set off). Forwarded so dev runs agree
             // with shipped jars.
