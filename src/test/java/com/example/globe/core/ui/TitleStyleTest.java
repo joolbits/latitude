@@ -35,6 +35,31 @@ class TitleStyleTest {
         assertEquals(8, seen.size(), "all 8 distinct neighbours present");
     }
 
+    /** The faded drop shadow (2026-07-11, Peetsa "change the default glow to a faded drop shadow") is a
+     *  DIRECTIONAL cast: every stamp offset is strictly down-right (positive dx AND dy), so the title reads as
+     *  lit from the upper-left -- unlike the omnidirectional glow ring which stamps all 8 directions including
+     *  negatives. There is one alpha per offset, all in (0,1), and they TAPER (each farther stamp is fainter)
+     *  so the shadow is soft and faded rather than a hard black edge. */
+    @Test
+    void dropShadowOffsetsAreDirectionalDownRightWithTaperingBoundedAlpha() {
+        int[][] offs = TitleStyle.DROP_SHADOW_OFFSETS_PX;
+        float[] alpha = TitleStyle.DROP_SHADOW_ALPHA;
+        assertTrue(offs.length >= 1, "at least one drop-shadow stamp");
+        assertEquals(offs.length, alpha.length, "one alpha per offset (1:1 with the offsets)");
+        for (int[] o : offs) {
+            assertTrue(o[0] > 0 && o[1] > 0, "each stamp is strictly down-right (positive dx and dy)");
+        }
+        for (int i = 0; i < alpha.length; i++) {
+            assertTrue(alpha[i] > 0f && alpha[i] < 1f, "alpha in (0,1): a low-opacity soft cast, not opaque");
+            if (i > 0) {
+                assertTrue(alpha[i] < alpha[i - 1], "alpha tapers (farther stamp fainter) -> faded, not hard");
+                // farther offset too (Chebyshev distance grows), reinforcing the soft directional falloff
+                assertTrue(Math.max(offs[i][0], offs[i][1]) > Math.max(offs[i - 1][0], offs[i - 1][1]),
+                        "each successive stamp is farther out");
+            }
+        }
+    }
+
     /** outlineOffsets(1) is the SAME SET as the classic 8 neighbours (order may differ; the renderer stamps
      *  all of them). Thickness clamps to [1, MAX] outside its range. */
     @Test

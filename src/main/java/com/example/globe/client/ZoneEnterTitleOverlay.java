@@ -190,8 +190,8 @@ public final class ZoneEnterTitleOverlay {
 
     /**
      * The single styled-title draw path (real gameplay, hemisphere channel, and Studio preview all reach
-     * here). Draws, back-to-front: (1) the diffuse-shadow glow halo, (2) the crisp outline, (3) the main
-     * fill -- optionally with MC's hard drop shadow and the one-shot color-aware glimmer. {@code scale} is the
+     * here). Draws, back-to-front: (1) the diffuse-shadow glow halo, (1b) the faded soft directional drop
+     * shadow, (2) the crisp outline, (3) the main fill with the one-shot color-aware glimmer. {@code scale} is the
      * pose's current scale, used to keep the outline/glow offsets a fixed size in SCREEN pixels rather than
      * fattening with Title Size. {@code glimmerProgress} is the sweep progress in [0,1] (or -1 for none).
      */
@@ -216,6 +216,21 @@ public final class ZoneEnterTitleOverlay {
             }
         }
 
+        // (1b) Faded drop shadow -- a soft DIRECTIONAL dark cast to the lower-right (title lit from the
+        // upper-left), drawn behind the outline and fill. Distinct from BOTH the omnidirectional glow halo
+        // above (which radiates in all 8 directions) AND MC's stark hard single-pixel vanilla shadow: two
+        // low-alpha black stamps at tapering alpha (0.35 / 0.18 of the title alpha) make it soft + faded.
+        if (LatitudeConfig.zoneEnterTitleDropShadow) {
+            for (int s = 0; s < com.example.globe.core.ui.TitleStyle.DROP_SHADOW_OFFSETS_PX.length; s++) {
+                int[] off = com.example.globe.core.ui.TitleStyle.DROP_SHADOW_OFFSETS_PX[s];
+                int shadowAlpha = Math.round((alphaByte & 0xFF)
+                        * com.example.globe.core.ui.TitleStyle.DROP_SHADOW_ALPHA[s]);
+                if (shadowAlpha <= 0) continue;
+                int shadowArgb = (shadowAlpha << 24); // black cast (RGB = 0)
+                drawOffsetPass(ctx, font, text, spacing, off[0] * invScale, off[1] * invScale, shadowArgb);
+            }
+        }
+
         // (2) Outline -- crisp 1 screen-px stamp of the text in the outline color behind the fill.
         if (LatitudeConfig.zoneEnterTitleOutline) {
             int outlineArgb = alphaMask | (LatitudeConfig.zoneEnterTitleOutlineRgb & 0xFFFFFF);
@@ -225,14 +240,15 @@ public final class ZoneEnterTitleOverlay {
             }
         }
 
-        // (3) Main fill. The hard MC drop shadow is now an explicit toggle (was always-on before this pass).
+        // (3) Main fill. The Drop Shadow toggle now drives the FADED soft directional shadow drawn in pass (1b)
+        // above, NOT MC's hard vanilla shadow -- so the shadow arg to the fill pass is always false (drawing it
+        // here too would double-shadow: the crisp black vanilla offset stacked on the soft faded cast).
         // ONE unified fill path for every preset: each letter's base color (solid/custom, or the rainbow/aurora
         // gradient) is passed through the one-shot SHINE-SWEEP via TitleStyle.glimmerShade -- a bright crest
         // travelling against a briefly, gently dimmed baseline, so the shine reads on ANY fill including the
         // near-white OFF_WHITE default (you cannot out-brighten white, so the surroundings dim and the crest
         // pops). At glimmerProgress < 0 the crest is 0 for every letter and glimmerShade is an exact no-op, so
         // this collapses to the plain colored fill.
-        boolean dropShadow = LatitudeConfig.zoneEnterTitleDropShadow;
         LatitudeConfigData.TitleColorPreset preset = LatitudeConfig.zoneEnterTitleColorPreset;
         int visibleCount = 0;
         for (int i = 0; i < text.length(); i++) {
@@ -245,7 +261,7 @@ public final class ZoneEnterTitleOverlay {
                 || preset == LatitudeConfigData.TitleColorPreset.AURORA;
         final boolean flowing = preset == LatitudeConfigData.TitleColorPreset.AURORA;
         final int solidRgb = gradient ? 0 : (titleColorRgb(preset) & 0xFFFFFF);
-        drawSpacedText(ctx, font, text, 0, 0, dropShadow, spacing,
+        drawSpacedText(ctx, font, text, 0, 0, false, spacing,
                 idx -> {
                     int base = gradient
                             ? (flowing
