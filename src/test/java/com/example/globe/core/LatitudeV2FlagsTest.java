@@ -3,6 +3,7 @@ package com.example.globe.core;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class LatitudeV2FlagsTest {
 
@@ -39,9 +40,13 @@ class LatitudeV2FlagsTest {
     }
 
     @Test
-    void passageV2DefaultsToDisabled() {
-        assertFalse(LatitudeV2Flags.PASSAGE_V2_ENABLED,
-                "Phase 5 B-5 Hemisphere Passage must ship default-off (inert edge behavior) until P3 live "
-                        + "and a Peetsa default-on decision");
+    void passageV2DefaultsToEnabled_P3_STAGING_ONLY() {
+        // P3 LIVE-TEST STAGING (branch-local, paired with the LatitudeV2Flags default flip): ON so Peetsa
+        // can fly the passage straight from the Modrinth profile. REVISIT BEFORE MERGE — the shipped
+        // default (and this test's direction) is Peetsa's call after P3; the pre-staging contract was
+        // default-OFF ships-inert.
+        assertTrue(LatitudeV2Flags.PASSAGE_V2_ENABLED,
+                "P3 staging expects passageV2 default-on in this branch; if this fails the staging flip "
+                        + "was reverted — restore the default-off assertion with it");
     }
 }
