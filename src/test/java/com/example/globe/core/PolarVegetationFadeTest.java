@@ -40,8 +40,7 @@ class PolarVegetationFadeTest {
     @Test
     void keepIsExactlyZeroAtAndAboveFull() {
         assertEquals(0.0, PolarVegetationFade.keepChance01(PolarVegetationFade.FULL_DEG), EPS);
-        assertEquals(0.0, PolarVegetationFade.keepChance01(86.0), EPS);
-        assertEquals(0.0, PolarVegetationFade.keepChance01(88.0), EPS);
+        assertEquals(0.0, PolarVegetationFade.keepChance01(PolarVegetationFade.FULL_DEG + 2.0), EPS);
         assertEquals(0.0, PolarVegetationFade.keepChance01(90.0), EPS);
         assertEquals(0.0, PolarVegetationFade.keepChance01(120.0), EPS); // clamp beyond pole
     }

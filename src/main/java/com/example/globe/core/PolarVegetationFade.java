@@ -28,15 +28,34 @@ public final class PolarVegetationFade {
      * Absolute latitude (deg) at/below which vegetation is fully kept. Below this the keep-chance is
      * exactly 1.0, so those columns are bitwise-untouched. Chosen just inside the subpolar band so
      * mid-latitude meadows are never affected; the visible thinning only begins in the deep polar band.
+     * Live-tunable via {@code -Dlatitude.polarVegetationFade.onsetDeg} (defaults 78) so a polar look
+     * session can tighten the ramp without a rebuild; malformed values degrade to the default.
      */
-    public static final double ONSET_DEG = 78.0;
+    public static final double ONSET_DEG =
+            parseDegOrDefault(System.getProperty("latitude.polarVegetationFade.onsetDeg"), 78.0);
 
     /**
      * Absolute latitude (deg) at/above which vegetation is fully gone (keep-chance exactly 0.0) --
      * the bare snow/ice cap Peetsa asked for. The 78->86 span puts the ~half-stripped point near 82deg,
-     * so grass/flowers are clearly sparse by the low-80s and absent by the mid-80s.
+     * so grass/flowers are clearly sparse by the low-80s and absent by the mid-80s. Live-tunable via
+     * {@code -Dlatitude.polarVegetationFade.fullDeg} (defaults 86); clamped above {@link #ONSET_DEG}
+     * so the smoothstep denominator can never be zero or negative.
      */
-    public static final double FULL_DEG = 86.0;
+    public static final double FULL_DEG = Math.max(
+            parseDegOrDefault(System.getProperty("latitude.polarVegetationFade.fullDeg"), 86.0),
+            ONSET_DEG + 0.5);
+
+    private static double parseDegOrDefault(String raw, double fallback) {
+        if (raw == null) {
+            return fallback;
+        }
+        try {
+            double v = Double.parseDouble(raw);
+            return Double.isFinite(v) ? v : fallback;
+        } catch (NumberFormatException e) {
+            return fallback;
+        }
+    }
 
     /**
      * Vertical margin (blocks) below the column's world-surface heightmap within which a placement
