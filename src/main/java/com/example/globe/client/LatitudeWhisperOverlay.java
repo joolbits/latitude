@@ -38,6 +38,15 @@ public final class LatitudeWhisperOverlay {
      */
     private static final int ANCHOR_OFFSET_Y = 42;
 
+    // Whisper keyline (Peetsa TEST 83 "blurry!! outline it in black"): the warnings' near-black
+    // (GlobeWarningOverlay.POLE_KEYLINE_RGB sibling) + the standard 1px 8-offset ring.
+    private static final int WHISPER_KEYLINE_RGB = 0x080609;
+    private static final int[][] KEYLINE_OFFSETS = {
+            {-1, -1}, {0, -1}, {1, -1},
+            {-1,  0},          {1,  0},
+            {-1,  1}, {0,  1}, {1,  1},
+    };
+
     private static String text;
     // WALL-CLOCK lifecycle (System.currentTimeMillis at trigger + duration in ms), matching
     // ZoneEnterTitleOverlay / HemisphereTitleOverlay. The fade alpha is driven from wall time, NOT
@@ -112,6 +121,15 @@ public final class LatitudeWhisperOverlay {
         int w = font.width(line);
         int x = Math.max(2, (screenW - w) / 2);
         int y = (screenH / 2) + ANCHOR_OFFSET_Y;
-        ctx.text(font, line, x, y, color);
+        // Peetsa (TEST 83): "the whisper message is blurry!! outline it in black." Same disease the
+        // warnings had — the 5-arg text() defaults dropShadow=TRUE, so the faded italic line dragged a
+        // misregistered shadow smear. Same cure: 1px 8-offset near-black keyline (italic is safe to keep
+        // on the stamps — unlike bold it neither double-draws nor widens advances; the literal carries no
+        // style COLOR, so the dark keyline color is honored), then the fill with shadow OFF.
+        int keyArgb = (alphaByte << 24) | (WHISPER_KEYLINE_RGB & 0x00FFFFFF);
+        for (int[] off : KEYLINE_OFFSETS) {
+            ctx.text(font, line, x + off[0], y + off[1], keyArgb, false);
+        }
+        ctx.text(font, line, x, y, color, false);
     }
 }
