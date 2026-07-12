@@ -113,6 +113,11 @@ loom {
             // the TEST 75 live look; byte-identical when explicitly set off). Forwarded so dev runs agree
             // with shipped jars.
             vmArg "-Dlatitude.polarVegetationFade.enabled=${System.getProperty('latitude.polarVegetationFade.enabled', 'true')}"
+            // The fade's ramp KNOBS (docs pass 2026-07-12 caught the THIRD instance of the L17
+            // forwarding gap: the javadoc advertises these as live-tunable, but only the enable flag
+            // was forwarded -- the degree dials silently never reached a gradle dev client).
+            vmArg "-Dlatitude.polarVegetationFade.onsetDeg=${System.getProperty('latitude.polarVegetationFade.onsetDeg', '78.0')}"
+            vmArg "-Dlatitude.polarVegetationFade.fullDeg=${System.getProperty('latitude.polarVegetationFade.fullDeg', '86.0')}"
             // Polar water freeze (default TRUE, matching LatitudeV2Flags; byte-identical when explicitly
             // set off). Forwarded on sight this round -- the L17 forwarding class has bitten this repo
             // twice before (climateV2/biomeConsumerV2 2026-07-07); don't let a third flag go unforwarded.

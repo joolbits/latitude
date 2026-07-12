@@ -525,6 +525,18 @@ Documentation:
 
 ### Phase 5: Boundary Experience
 
+**STATUS 2026-07-12: the POLAR (N/S) half of this phase is COMPLETE and live-approved** through a
+~30-round live-feedback marathon (TEST 53→82, all on `port/canonical-26.2-pivot`, pushed 2026-07-12).
+What shipped: the full polar approach experience — ambient snow/fog/storm-sky from 85°, wind sound bed,
+blizzard visual drive, graded 13-point shelter/exposure system, depth fog, four-tier warning ladder in
+Peetsa's own voice, gradual freeze-damage curve with blue-heart feedback (87.5° onset → lethal pole),
+forced snow + forced water-freeze + vegetation fade (the bare cap), and the loading-screen/wordmark
+overhaul that rode along. Single source of truth: `docs/binder/polar-experience-reference-20260712.md`
+(system reference: every constant, flag, mixin, dial, dead end). Run-by-run history:
+`docs/binder/phase5-boundary-experience-plan-20260709.md`. REMAINING in Phase 5: B-5 Hemisphere Passage
+(separate worktree), the consumer default-flip live decision, storm wall revive/retire, pole hard-stop
+decision (E/W edge items below unchanged).
+
 Document review:
 
 - Projection-edge plan.
