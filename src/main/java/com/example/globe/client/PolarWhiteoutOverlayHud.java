@@ -49,16 +49,20 @@ public final class PolarWhiteoutOverlayHud {
         // not a HUD element, so it STAYS visible under F1. The mixin renders it from the F1 path too (vanilla
         // skips extractHotbarAndDecorations when the HUD is hidden); the visible HUD chrome is what F1 hides.
 
-        // Interior-storm split (Peetsa's "storm vanishes indoors" bug): this whiteout DELIBERATELY stays gated
-        // on sky exposure while the world-space storm sky + snowfall (ClientLevelStormSkyMixin) was UNGATED.
-        // Reason: this is a SCREEN-SPACE HUD fill with no depth -- walls cannot occlude it, so painting it while
-        // sheltered would haze the interior itself (and a fully sealed room) rather than only the view out a
-        // window. It represents being ENGULFED in the whiteout, which happens out in the open: step outside and
-        // it returns; look out from inside and the storm still reads via the wall-occluded world-space sky +
-        // snowfall AND the depth-based render-distance fog (FogRendererPolarSetupMixin), which -- being genuine
-        // distance fog -- correctly hazes only the far exterior past the opening while your near walls stay clear.
+        // Interior-storm split (Peetsa's "storm vanishes indoors" bug): this whiteout is a SCREEN-SPACE HUD
+        // fill with no depth -- walls cannot occlude it, so painting it at full while a player is sealed in a
+        // room would haze the interior itself rather than only the view out a window. It represents being
+        // ENGULFED in the whiteout, which happens out in the open. TEST 78: instead of a HARD sky-exposure
+        // gate (which dropped the whiteout entirely under Peetsa's open arch), its alpha now SCALES by the
+        // graded enclosure estimate exposure01 -- ~full under the open arch, ~0 in a sealed room, partial at a
+        // doorway. The wall-aware far haze is still carried separately by the depth-based render-distance fog
+        // (FogRendererPolarSetupMixin), which correctly hazes only the far exterior past an opening.
         var eval = GlobeClientState.evaluate(mc);
-        if (!eval.active() || !eval.surfaceOk()) {
+        if (!eval.active()) {
+            return;
+        }
+        float exposure = eval.exposure01();
+        if (exposure <= 0.001f) {
             return;
         }
 
@@ -71,8 +75,10 @@ public final class PolarWhiteoutOverlayHud {
         // TEST 77 round 2 curve: STEEPENED to intensity^1.7 (was the sub-linear 0.65). Now that the depth fog
         // carries the low/mid-latitude haze correctly, this veil should stay quiet through 85-88 deg (no flat
         // wash competing with the depth fog) and only lift near the pole as the "engulfed" close-in white.
-        // Starts at 0 at 85 deg (no seam); slope INCREASES toward the pole.
-        float eased = (float) Math.pow(intensity, 1.7);
+        // Starts at 0 at 85 deg (no seam); slope INCREASES toward the pole. TEST 78: multiplied by the
+        // exposure scale so the engulfment fades with enclosure instead of snapping off a single overhead block.
+        float eased = (float) Math.pow(intensity, 1.7)
+                * com.example.globe.core.PolarExposure.whiteoutScale(exposure);
         int alpha = (int) (Math.min(MAX_ALPHA, eased * MAX_ALPHA) * 255.0f);
         if (alpha <= 0) {
             return;

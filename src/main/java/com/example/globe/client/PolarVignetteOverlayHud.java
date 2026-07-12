@@ -61,7 +61,9 @@ public final class PolarVignetteOverlayHud {
             return; // provable no-op: no serious episode armed.
         }
 
-        // Same activation + surface gate as the warning text / whiteout: a globe world, sky-exposed.
+        // Same activation + surface gate as the warning TEXT (binary surfaceOk, deliberately): the vignette
+        // is punctuation for the warning episode, so it follows the text's gate -- NOT the exposure01-graded
+        // presentation systems (whiteout/particles/wind), which fade with partial shelter instead.
         var eval = GlobeClientState.evaluate(mc);
         if (!eval.active() || !eval.surfaceOk()) {
             return;

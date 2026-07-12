@@ -108,6 +108,56 @@ class PolarWindSoundTest {
     }
 
     @Test
+    void windMuffleFactorBlendsFromFloorToFull() {
+        // TEST 78: the continuous muffle blends the 0.35 sealed-room floor up to full open-air at exposure 1.
+        assertEquals(PolarWindSound.SHELTERED_VOLUME_SCALE, PolarWindSound.windMuffleFactor(0.0f), EPS,
+                "exposure 0 must be the sheltered floor (unchanged sealed-room behaviour)");
+        assertEquals(1.0f, PolarWindSound.windMuffleFactor(1.0f), EPS, "exposure 1 must be full volume");
+        // Halfway sits between floor and full.
+        float mid = PolarWindSound.windMuffleFactor(0.5f);
+        assertTrue(mid > PolarWindSound.SHELTERED_VOLUME_SCALE && mid < 1.0f, "half exposure blends, was " + mid);
+        assertEquals(0.5f * (1.0f + PolarWindSound.SHELTERED_VOLUME_SCALE), mid, EPS);
+        // Under Peetsa's arch (~0.9) the wind is nearly full, NOT muffled to a third.
+        assertTrue(PolarWindSound.windMuffleFactor(0.9f) > 0.9f, "arch must read near full");
+        // Clamped outside [0,1].
+        assertEquals(PolarWindSound.SHELTERED_VOLUME_SCALE, PolarWindSound.windMuffleFactor(-1f), EPS);
+        assertEquals(1.0f, PolarWindSound.windMuffleFactor(2f), EPS);
+    }
+
+    @Test
+    void windMuffleFactorIsMonotonicInExposure() {
+        float prev = -1f;
+        for (float e = 0f; e <= 1.0f; e += 0.05f) {
+            float f = PolarWindSound.windMuffleFactor(e);
+            assertTrue(f >= prev - EPS, "muffle must rise with exposure at e=" + e);
+            prev = f;
+        }
+    }
+
+    @Test
+    void floatLiveVolumeEndpointsMatchTheBooleanOverload() {
+        // The boolean overload must be exactly the exposure 1.0 (exposed) / 0.0 (sheltered) endpoints, so the
+        // old 1.0/0.35 behaviour is preserved and existing gates that pass a boolean are unaffected.
+        for (double lat = 84.0; lat <= 90.0; lat += 0.25) {
+            assertEquals(PolarWindSound.liveVolume(lat, true), PolarWindSound.liveVolume(lat, 1.0f), EPS,
+                    "exposed endpoint at lat=" + lat);
+            assertEquals(PolarWindSound.liveVolume(lat, false), PolarWindSound.liveVolume(lat, 0.0f), EPS,
+                    "sheltered endpoint at lat=" + lat);
+        }
+    }
+
+    @Test
+    void floatLiveVolumeIsMonotonicInExposureDeepInStorm() {
+        // Deep in the storm (89 deg, above the alive floor) more exposure means more volume, never less.
+        float prev = -1f;
+        for (float e = 0f; e <= 1.0f; e += 0.1f) {
+            float v = PolarWindSound.liveVolume(89.0, e);
+            assertTrue(v >= prev - EPS, "live volume must rise with exposure at e=" + e);
+            prev = v;
+        }
+    }
+
+    @Test
     void shelteredStillFlooredAliveInHysteresisBand() {
         // Even sheltered, a live loop in the dead band keeps the MIN_ALIVE floor so the channel is not culled
         // (0.35 * 0 is still 0, which would otherwise let the engine reclaim the channel and defeat hysteresis).

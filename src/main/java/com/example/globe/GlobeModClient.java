@@ -226,15 +226,6 @@ public class GlobeModClient implements ClientModInitializer {
         // paused-backlog concern the isPaused guard addresses does not apply to it.
         PolarWindSoundInstance.clientTick(client);
 
-        // Everything below is LOCAL, player-anchored particle spawning (the ambient polar snow + the EW border
-        // storm). It STAYS gated on shelter: those particles spawn at/around the player and must not fall
-        // through a roof onto their head. The world-scale storm the player sees THROUGH a window/doorway -- the
-        // greyed overcast sky + real vanilla snowfall on the exterior columns -- is driven by
-        // ClientLevelStormSkyMixin (world-space, vanilla-occluded by walls), NOT by this per-tick spawner.
-        if (!eval.surfaceOk()) {
-            return;
-        }
-
         // B-3b anti-backlog HARD REQUIREMENT: while the game is paused the client tick keeps firing but the
         // particle engine does not step existing particles -- spawning here would pile them at the spawn
         // point to all animate in a burst on unpause. Paused => spawn NOTHING; resume is clean. Guards ALL
@@ -242,6 +233,15 @@ public class GlobeModClient implements ClientModInitializer {
         if (client.isPaused()) {
             return;
         }
+
+        // Everything below is LOCAL, player-anchored particle spawning (the ambient polar snow + the EW border
+        // storm). TEST 78: instead of the old BINARY surfaceOk gate (which killed all local particles the
+        // instant a single block was over the player's head -- e.g. standing under Peetsa's open arch), the
+        // per-tick budgets SCALE by the graded enclosure estimate exposure01: full storm out in the open,
+        // proportional at a doorway, exactly zero in a sealed room (so nothing falls through a real roof).
+        // The world-scale storm seen THROUGH a window -- greyed overcast + real vanilla snowfall on exterior
+        // columns -- is driven by ClientLevelStormSkyMixin (world-space, vanilla-occluded by walls), not here.
+        float exposure = eval.exposure01();
 
         // Throttle: spawn on every 4th tick (shared by ambient snow + EW storm). Fixed per-tick BUDGET on
         // each spawn tick -- never a "how many do I owe since last spawn" accumulator.
@@ -273,7 +273,7 @@ public class GlobeModClient implements ClientModInitializer {
                         absLatDeg, snowCount, snowTier, scaledSnow);
             }
             if (snowCount > 0) {
-                spawnAmbientPolarSnow(client, snowCount, absLatDeg, snowTier);
+                spawnAmbientPolarSnow(client, snowCount, absLatDeg, snowTier, exposure);
             }
         }
 
@@ -285,7 +285,7 @@ public class GlobeModClient implements ClientModInitializer {
 
         GlobeClientState.EwStormStage ewStage = GlobeClientState.computeEwStormStage(client.level, client.player);
         if (ewStage != GlobeClientState.EwStormStage.NONE && spawnTick) {
-            ewStormClientTick(client, ewStage);
+            ewStormClientTick(client, ewStage, exposure);
         }
     }
 
@@ -294,6 +294,14 @@ public class GlobeModClient implements ClientModInitializer {
     // per-tick BUDGET (count) and the caller's isPaused/spawn-tick anti-backlog guards are UNCHANGED --
     // this only changes how each spawned flake looks/moves, never how many spawn or when.
     private static final double SNOW_ENVELOPE = 16.0;
+
+    // TEST 78 storm VOLUME: the main pass used to spawn in a thin ~6-block band ABOVE the head (py+2..py+8),
+    // which read as a single diagonal SHEET (Peetsa: "only one thin layer that blows diagonally"). Now the main
+    // pass fills a real vertical VOLUME from py-2 to py+14 (16 blocks tall) around the camera, weighted denser
+    // near eye level by a triangular pick, so the snow visibly fills the AIR in every direction instead of
+    // hanging as a curtain overhead. The dense low SECOND pass fills the near-ground band (py-1..py+6).
+    private static final double SNOW_VOLUME_LOW = -2.0;   // bottom of the main-pass volume, relative to feet
+    private static final double SNOW_VOLUME_HIGH = 14.0;  // top of the main-pass volume, relative to feet
 
     // B-4 round 3 item 2 -- BLIZZARD. Beyond the base gentle-flurry velocities, a blizzard drive (0 at the
     // 87 deg hazard onset, 1 at the pole) ramps the sideways wind and the fall speed toward a driven gale and
@@ -322,13 +330,16 @@ public class GlobeModClient implements ClientModInitializer {
     }
 
     private static void spawnAmbientPolarSnow(Minecraft client, int count, double absLatDeg,
-                                              com.example.globe.core.ParticleDensity.Tier tier) {
+                                              com.example.globe.core.ParticleDensity.Tier tier, float exposure) {
         // Perf-scaling: reduce the FIXED per-tick budget by the vanilla Particles setting BEFORE any
         // flake spawns. Applied ONCE here; the dense second pass (extra = blizz * count) derives from
         // this now-scaled count, so it scales proportionally without a second, independent reduction.
         // Pure function of (tier, count) -- no state, no accumulator; the anti-backlog law holds. If the
         // scale collapses count to 0, both loops simply run 0 iterations (no special-casing needed).
         count = com.example.globe.core.ParticleDensity.scale(tier, count);
+        // TEST 78: then scale by the graded enclosure estimate -- full out in the open, 0 in a sealed room,
+        // proportional at a doorway. Also a pure function (no accumulator); composes with the tier scale.
+        count = com.example.globe.core.PolarExposure.particleBudget(count, exposure);
 
         RandomSource random = client.player.getRandom();
         double px = client.player.getX();
@@ -348,7 +359,12 @@ public class GlobeModClient implements ClientModInitializer {
 
         for (int i = 0; i < count; i++) {
             double ox = (random.nextDouble() - 0.5) * SNOW_ENVELOPE;
-            double oy = random.nextDouble() * 6.0;
+            // TEST 78: fill a real vertical VOLUME (py-2..py+14) instead of a thin overhead band. Triangular
+            // pick ((r1+r2)/2, peak 0.5) weights density toward the middle of the column (~py+6, eye-to-above)
+            // so the budget lands where it reads without wasting flakes at the extremes -- the snow fills the
+            // air in every direction rather than hanging as a single diagonal sheet.
+            double tv = (random.nextDouble() + random.nextDouble()) * 0.5;
+            double oy = SNOW_VOLUME_LOW + tv * (SNOW_VOLUME_HIGH - SNOW_VOLUME_LOW);
             double oz = (random.nextDouble() - 0.5) * SNOW_ENVELOPE;
 
             // Wind-blown drift: steady horizontal wind (ramped) + per-flake jitter -> visible sideways streaking.
@@ -356,31 +372,37 @@ public class GlobeModClient implements ClientModInitializer {
             double vy = -fall - random.nextDouble() * 0.05;
             double vz = (random.nextDouble() - 0.5) * 0.10;
 
-            client.particleEngine.createParticle(ParticleTypes.SNOWFLAKE, px + ox, py + 2.0 + oy, pz + oz, vx, vy, vz);
+            client.particleEngine.createParticle(ParticleTypes.SNOWFLAKE, px + ox, py + oy, pz + oz, vx, vy, vz);
         }
 
         // Dense SECOND pass inside the hazard band: a fixed extra budget (blizz * count, deterministic per
-        // tick -- NOT an accumulator) of low, hard-driven flakes streaking near eye level, so the pole reads
-        // as a whiteout gale rather than heavier vertical snowfall. Zero below 87 deg (blizz == 0).
+        // tick -- NOT an accumulator) of low, hard-driven flakes streaking through the near-ground band
+        // (py-1..py+6), so the pole reads as a whiteout gale at eye/ground level rather than heavier vertical
+        // snowfall. Zero below 87 deg (blizz == 0). Rebalanced from a thin py+1..py+4 band (which fed the old
+        // single-sheet look) into a taller near-eye slab that composites with the main-pass volume.
         int extra = (int) Math.round(blizz * count);
         for (int i = 0; i < extra; i++) {
             double ox = (random.nextDouble() - 0.5) * SNOW_ENVELOPE;
-            double oy = random.nextDouble() * 3.0;                 // low, near eye level
+            double oy = -1.0 + random.nextDouble() * 7.0;          // near-ground/eye slab: py-1..py+6
             double oz = (random.nextDouble() - 0.5) * SNOW_ENVELOPE;
             // Harder sideways drive, flatter trajectory -> reads as wind-whipped ground blizzard.
             double vx = windX * SNOW_SECOND_PASS_WIND_MULT + (random.nextDouble() - 0.5) * 0.08;
             double vy = -fall * 0.5 - random.nextDouble() * 0.03;
             double vz = (random.nextDouble() - 0.5) * 0.12;
-            client.particleEngine.createParticle(ParticleTypes.SNOWFLAKE, px + ox, py + 1.0 + oy, pz + oz, vx, vy, vz);
+            client.particleEngine.createParticle(ParticleTypes.SNOWFLAKE, px + ox, py + oy, pz + oz, vx, vy, vz);
         }
     }
 
-    private static void ewStormClientTick(Minecraft client, GlobeClientState.EwStormStage stage) {
+    private static void ewStormClientTick(Minecraft client, GlobeClientState.EwStormStage stage, float exposure) {
         int base = switch (stage) {
             case LEVEL_1 -> 6;
             case LEVEL_2 -> 20;
             default -> 0;
         };
+        // TEST 78: scale the player-anchored EW storm budget by the graded enclosure estimate too (these
+        // particles were previously behind the same binary surfaceOk gate). Full in the open, 0 in a sealed
+        // room near the E/W border, proportional at a doorway.
+        base = com.example.globe.core.PolarExposure.particleBudget(base, exposure);
         if (base <= 0) {
             return;
         }

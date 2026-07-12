@@ -57,6 +57,19 @@ public final class PolarWindSound {
      */
     public static final float SHELTERED_VOLUME_SCALE = 0.35f;
 
+    /**
+     * TEST 78: CONTINUOUS wind-muffle factor for a graded enclosure estimate {@code exposure01} in
+     * {@code [0,1]} (see {@link PolarExposure}). Blends between full open-air volume and the sheltered floor:
+     * {@code SHELTERED_VOLUME_SCALE + (1 - SHELTERED_VOLUME_SCALE) * exposure01}. So exposure 1.0 -> 1.0 (full
+     * howl, matches the old sky-exposed case), exposure 0.0 -> {@link #SHELTERED_VOLUME_SCALE} (0.35, the
+     * existing sealed-room floor, unchanged), and a partial exposure (an open doorway, or under Peetsa's arch
+     * ~0.9) blends between -- no longer a hard 1.0/0.35 step off a single overhead block.
+     */
+    public static float windMuffleFactor(float exposure01) {
+        float e = exposure01 < 0f ? 0f : (exposure01 > 1f ? 1f : exposure01);
+        return SHELTERED_VOLUME_SCALE + (1.0f - SHELTERED_VOLUME_SCALE) * e;
+    }
+
     /** Linear 85->90 progress in {@code [0,1]}: 0 at/below {@link #START_DEG}, 1 at/above {@link #FULL_DEG}. */
     public static double progress(double absLatDeg) {
         double p = (absLatDeg - START_DEG) / (FULL_DEG - START_DEG);
@@ -94,10 +107,19 @@ public final class PolarWindSound {
      * {@link #shouldStop}), so the true (possibly 0) volume is returned there.
      */
     public static float liveVolume(double absLatDeg, boolean surfaceExposed) {
-        float v = volume(absLatDeg);
-        if (!surfaceExposed) {
-            v *= SHELTERED_VOLUME_SCALE;
-        }
+        return liveVolume(absLatDeg, surfaceExposed ? 1.0f : 0.0f);
+    }
+
+    /**
+     * TEST 78 continuous overload: the live loop volume for a graded enclosure estimate {@code exposure01}
+     * (see {@link PolarExposure}). Eased {@link #volume(double)} scaled by {@link #windMuffleFactor(float)},
+     * then floored to {@link #MIN_ALIVE_VOLUME} while the loop is alive ({@code |lat| >= STOP_DEG}) so a near-0
+     * volume never gets the channel culled; below {@link #STOP_DEG} the loop is meant to stop and the true
+     * (possibly 0) volume is returned. The boolean overload is exactly this with {@code exposure01 == 1.0}
+     * (exposed) or {@code 0.0} (sheltered), so the old 1.0/0.35 endpoints are preserved.
+     */
+    public static float liveVolume(double absLatDeg, float exposure01) {
+        float v = volume(absLatDeg) * windMuffleFactor(exposure01);
         if (absLatDeg >= STOP_DEG && v < MIN_ALIVE_VOLUME) {
             return MIN_ALIVE_VOLUME;
         }
