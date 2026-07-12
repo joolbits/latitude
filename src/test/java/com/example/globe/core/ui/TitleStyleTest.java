@@ -320,4 +320,105 @@ class TitleStyleTest {
         assertTrue(litBlack != 0x000000, "pure black MUST brighten toward grey (old formula left it 0x000000)");
         assertEquals(0x808080, litBlack, "black lerps to mid-grey at boost 0.5 (0 + 255*0.5 = 127.5 -> 128)");
     }
+
+    /** WALL-CLOCK glimmer window (TEST 68 fix): {@code glimmerProgressMs} is the continuous, per-frame-smooth
+     *  analogue of the integer-tick {@code glimmerProgress}. It opens/closes at the SAME real time as the tick
+     *  window (start/span scaled by {@link TitleStyle#MS_PER_TICK}), ramps monotonically 0..1 inside, is off
+     *  (-1) before it opens, and stays off forever once the single sweep completes (never loops). */
+    @Test
+    void glimmerProgressMsIsContinuousMonotonicOneShotAndMatchesTickWindow() {
+        long startMs = TitleStyle.GLIMMER_START_TICK * TitleStyle.MS_PER_TICK;
+        long spanMs = TitleStyle.GLIMMER_SPAN_TICKS * TitleStyle.MS_PER_TICK;
+
+        assertEquals(-1f, TitleStyle.glimmerProgressMs(0L), TOL, "no glimmer the instant the title appears");
+        assertEquals(-1f, TitleStyle.glimmerProgressMs(startMs - 1L), TOL, "no glimmer before the start ms");
+        assertEquals(0f, TitleStyle.glimmerProgressMs(startMs), TOL, "sweep begins at progress 0 at the start ms");
+        assertEquals(-1f, TitleStyle.glimmerProgressMs(startMs + spanMs), TOL, "one-shot: off once the sweep ends");
+        assertEquals(-1f, TitleStyle.glimmerProgressMs(startMs + spanMs + 5000L), TOL, "stays off -- never loops");
+
+        float prev = -1f;
+        for (long ms = startMs; ms < startMs + spanMs; ms++) {
+            float p = TitleStyle.glimmerProgressMs(ms);
+            assertTrue(p >= 0f && p < 1.0001f, "progress stays in [0,1) inside the window");
+            assertTrue(p > prev, "progress advances monotonically every ms");
+            prev = p;
+        }
+    }
+
+    /** ANTI-RUBBER-BAND: sampled at ~60 FPS (16 ms/frame) the wall-clock progress advances EVERY frame and
+     *  visits far more distinct values than the {@link TitleStyle#GLIMMER_SPAN_TICKS}-step integer-tick version
+     *  ever could -- the tick version changes only ~20x/s, so many frames share a value and the crest visibly
+     *  steps (the reported "rubber-band"). This is the property the ms driver restores. */
+    @Test
+    void glimmerProgressMsAdvancesEveryFrameUnlikeTheTickVersion() {
+        long startMs = TitleStyle.GLIMMER_START_TICK * TitleStyle.MS_PER_TICK;
+        long spanMs = TitleStyle.GLIMMER_SPAN_TICKS * TitleStyle.MS_PER_TICK;
+        java.util.Set<Float> distinct = new java.util.HashSet<>();
+        float prev = -1f;
+        for (long ms = startMs; ms < startMs + spanMs; ms += 16L) {
+            float p = TitleStyle.glimmerProgressMs(ms);
+            assertTrue(p > prev, "each 16 ms frame advances the crest (no frozen/stepped frames)");
+            distinct.add(p);
+            prev = p;
+        }
+        assertTrue(distinct.size() > TitleStyle.GLIMMER_SPAN_TICKS,
+                "wall-clock progress has far finer resolution than the " + TitleStyle.GLIMMER_SPAN_TICKS
+                        + "-step tick version");
+    }
+
+    /** DIM/FADE composition (TEST 68 pop fix): the new {@code dimScale} arg scales how deep the off-crest
+     *  baseline dim goes. dimScale=1 reproduces the original fixed dim EXACTLY (backward compatible); dimScale=0
+     *  removes the dim entirely so the sweep's start/end are continuous with the plain title (no brighten
+     *  "pop"); the crest glint is independent of dimScale; and the dim is monotonic in dimScale. */
+    @Test
+    void glimmerShadeDimScaleEasesTheBaselineDim() {
+        int offWhite = com.example.globe.core.config.LatitudeConfigData.OFF_WHITE_RGB;
+
+        // dimScale == 1 is byte-identical to the original fixed-dim two-arg overload, for many colors/crests.
+        float[] gs = {0.1f, 0.3f, 0.6f, 1.0f};
+        int[] colors = {offWhite, 0xFF0000, 0x123456, 0x808080, 0x000000};
+        for (int c : colors) {
+            for (float g : gs) {
+                assertEquals(TitleStyle.glimmerShade(c, g), TitleStyle.glimmerShade(c, g, 1f),
+                        "dimScale=1 must equal the fixed-dim two-arg glimmerShade");
+            }
+        }
+
+        // dimScale == 0 => no baseline dim: an off-crest neighbour (small g) is NOT dimmed below its base
+        // (only the crest white-pop remains), which is what makes the sweep ends continuous with the plain
+        // title and removes the pop. At full dim the same neighbour DOES sit below base.
+        int neighbourFullDim = TitleStyle.glimmerShade(offWhite, 0.1f, 1f);
+        int neighbourNoDim = TitleStyle.glimmerShade(offWhite, 0.1f, 0f);
+        assertTrue(lum(neighbourFullDim) < lum(offWhite), "at full dim a near-crest neighbour sits below base");
+        assertTrue(lum(neighbourNoDim) >= lum(offWhite), "at dimScale 0 it is never dimmed below base");
+
+        // Monotonic: a deeper dimScale never brightens the off-crest baseline (fixed small crest height).
+        int prev = Integer.MAX_VALUE;
+        for (float ds = 0f; ds <= 1.0001f; ds += 0.25f) {
+            int shaded = TitleStyle.glimmerShade(offWhite, 0.1f, ds);
+            assertTrue(lum(shaded) <= prev, "more dim must not brighten the off-crest baseline");
+            prev = lum(shaded);
+        }
+
+        // The crest letter (g=1) has factor 1.0 for ANY dimScale, so its glint is identical however the dim
+        // is eased -- the moving shine reads the same at the sweep's dim-free ends as mid-sweep.
+        assertEquals(TitleStyle.glimmerShade(offWhite, 1.0f, 0f), TitleStyle.glimmerShade(offWhite, 1.0f, 1f),
+                "the crest letter is independent of dimScale");
+
+        // dimScale is clamped to [0,1]; channels stay in range for out-of-range inputs too.
+        for (float ds = -0.5f; ds <= 1.5f; ds += 0.5f) {
+            int s = TitleStyle.glimmerShade(0x8090A0, 0.4f, ds);
+            for (int shift : new int[]{16, 8, 0}) {
+                int ch = (s >> shift) & 0xFF;
+                assertTrue(ch >= 0 && ch <= 255, "channel in [0,255] for dimScale=" + ds);
+            }
+        }
+        assertEquals(TitleStyle.glimmerShade(0x8090A0, 0.4f, 0f), TitleStyle.glimmerShade(0x8090A0, 0.4f, -3f),
+                "dimScale below 0 clamps to 0");
+        assertEquals(TitleStyle.glimmerShade(0x8090A0, 0.4f, 1f), TitleStyle.glimmerShade(0x8090A0, 0.4f, 9f),
+                "dimScale above 1 clamps to 1");
+
+        // The zero-crest no-op still holds regardless of dimScale.
+        assertEquals(0x123456, TitleStyle.glimmerShade(0x123456, 0f, 0.5f), "crest 0 is a no-op for any dimScale");
+    }
 }

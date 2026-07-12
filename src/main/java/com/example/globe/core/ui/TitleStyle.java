@@ -181,6 +181,32 @@ public final class TitleStyle {
         return (float) rel / (float) GLIMMER_SPAN_TICKS;
     }
 
+    /** Milliseconds per game tick (20 tps) -- the bridge that keeps the wall-clock glimmer window identical in
+     *  duration to the tick-based one, so switching the driver from ticks to ms changes only the RESOLUTION. */
+    public static final long MS_PER_TICK = 50L;
+
+    /**
+     * Wall-clock analogue of {@link #glimmerProgress(long)}: a CONTINUOUS normalized progress {@code [0,1)}
+     * through the one-shot sweep for a title that appeared {@code elapsedMs} ago, or {@code -1} outside the
+     * window (before {@link #GLIMMER_START_TICK} or once the single sweep has completed -- it never loops).
+     *
+     * <p>The live overlays drive the glimmer from this (wall-clock ms captured at trigger time) rather than the
+     * integer game-tick age, because game ticks STALL and quantize during teleport chunk-gen: a tick-driven
+     * crest advances in only {@link #GLIMMER_SPAN_TICKS} discrete steps (visibly steppy = "rubber-band") and
+     * freezes/jumps whenever the server tick hitches, while wall-clock advances smoothly every frame. The
+     * window spans the exact same real duration as the tick version ({@code GLIMMER_START_TICK * MS_PER_TICK}
+     * for {@code GLIMMER_SPAN_TICKS * MS_PER_TICK} ms), so only the smoothness differs, not the timing.
+     */
+    public static float glimmerProgressMs(long elapsedMs) {
+        long startMs = GLIMMER_START_TICK * MS_PER_TICK;
+        long spanMs = GLIMMER_SPAN_TICKS * MS_PER_TICK;
+        long rel = elapsedMs - startMs;
+        if (rel < 0L || rel >= spanMs) {
+            return -1f;
+        }
+        return (float) rel / (float) spanMs;
+    }
+
     /**
      * Raw normalized crest height in {@code [0, 1]} for one letter, given normalized sweep progress: {@code 1}
      * at the crest centre, tapering to {@code ~0} far from it. A single Gaussian crest travels left&rarr;right
@@ -224,12 +250,38 @@ public final class TitleStyle {
      * color, never dimmed.
      */
     public static int glimmerShade(int rgb, float gaussian01) {
+        return glimmerShade(rgb, gaussian01, 1f);
+    }
+
+    /**
+     * As {@link #glimmerShade(int, float)}, but with an explicit {@code dimScale} in {@code [0,1]} that scales
+     * how deep the off-crest baseline dim goes -- so the caller can ease the dim IN at the start of the sweep
+     * and OUT at the end instead of snapping it on/off.
+     *
+     * <p>Why this exists: the baseline dim ({@link #GLIMMER_DIM_FLOOR}) is what a bright crest travels against,
+     * but a FIXED dim has two visible discontinuities. At the sweep's END, {@link #glimmerGaussian} snaps to 0
+     * and the bulk of the word jumps {@code GLIMMER_DIM_FLOOR -> 1.0} in a single frame -- a "brighten pop"
+     * (part of the reported appears/half-vanishes/returns). At the START the full dim fights the title's
+     * still-ramping fade-in. Feeding {@code dimScale} a raised arch (0 at both sweep ends, ~1 mid-sweep) removes
+     * both: the dim is absent exactly where the crest is entering/exiting (near the word edges, where there is
+     * nothing to contrast anyway), and full only mid-word where the crest actually needs it. {@code dimScale}
+     * does NOT touch the crest white-pop, so the moving glint still reads from the first frame.
+     *
+     * <p>{@code dimScale} is clamped to {@code [0,1]}; at {@code dimScale == 1} this is identical to the
+     * two-arg {@link #glimmerShade(int, float)} (the original fixed-dim behaviour), and at {@code dimScale == 0}
+     * the baseline is undimmed (factor 1.0) so only the crest's white-pop shows. {@code gaussian01 <= 0} is
+     * still an EXACT no-op returning {@code rgb & 0xFFFFFF} unchanged, regardless of {@code dimScale}.
+     */
+    public static int glimmerShade(int rgb, float gaussian01, float dimScale) {
         if (gaussian01 <= 0f) {
             return rgb & 0xFFFFFF;
         }
         float g = gaussian01 > 1f ? 1f : gaussian01; // clamp; a crest height above 1 is meaningless
-        float factor = GLIMMER_DIM_FLOOR + (1f - GLIMMER_DIM_FLOOR) * g;
-        float pop = g * GLIMMER_WHITE_POP; // lerp-toward-white fraction at this letter
+        float ds = dimScale < 0f ? 0f : (dimScale > 1f ? 1f : dimScale);
+        // Effective dim floor eases from 1.0 (no dim, ds=0) down to GLIMMER_DIM_FLOOR (full dim, ds=1).
+        float floor = 1f - (1f - GLIMMER_DIM_FLOOR) * ds;
+        float factor = floor + (1f - floor) * g;
+        float pop = g * GLIMMER_WHITE_POP; // lerp-toward-white fraction at this letter (independent of the dim)
         int r0 = (rgb >> 16) & 0xFF, g0 = (rgb >> 8) & 0xFF, b0 = rgb & 0xFF;
         int r = shadeChannel(r0, factor, pop);
         int gg = shadeChannel(g0, factor, pop);

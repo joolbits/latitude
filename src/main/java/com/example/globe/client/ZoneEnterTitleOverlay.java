@@ -9,11 +9,20 @@ import net.minecraft.network.chat.Component;
 
 public final class ZoneEnterTitleOverlay {
     private static Component title;
-    private static long startWorldTime = Long.MIN_VALUE;
-    private static long endWorldTime = Long.MIN_VALUE;
+    // WALL-CLOCK lifecycle (System.currentTimeMillis at trigger + duration in ms). The rendered fade alpha and
+    // the glimmer sweep are driven from wall time, NOT client.level.getGameTime(): the game-tick clock stalls
+    // and can even snap BACKWARDS during teleport chunk-gen (the integrated ClientLevel free-runs its tick
+    // count while the server thread is blocked, then gets corrected to the server's lower authoritative value
+    // on the next time sync), which made the title freeze at alpha 0 ("delay"), pop in, then vanish/return.
+    // Wall-clock is strictly monotonic and advances every frame, so the fade + shine stay smooth through a
+    // teleport hitch. Cross-world resurrection is handled by reset() on disconnect (wired in GlobeModClient).
+    private static long startMs = Long.MIN_VALUE;
+    private static long durationMs = 0L;
     private static float scale = 1.8f;
 
     private static final int FADE_TICKS = 10;
+    /** Fade-in / fade-out ramp length in wall-clock ms (the tick count kept for parity with the old timing). */
+    private static final long FADE_MS = FADE_TICKS * 50L;
 
     /** GUI-scale parity (audit H1/M1): per-side breathing room kept clear when fitting/clamping the title
      *  into the screen, and the fit-to-width floor below which the title is never shrunk (below this it's
@@ -24,12 +33,13 @@ public final class ZoneEnterTitleOverlay {
     private ZoneEnterTitleOverlay() {
     }
 
-    /** Clears any in-flight title on disconnect. World-time keys are per-world; without this, a title
-     *  started in one world could resurrect mid-fade in the next (whose game time may be behind). */
+    /** Clears any in-flight title on disconnect. Without this, a title started in one world could keep
+     *  rendering after a world switch; on wall-clock timing this is the ONLY resurrection guard needed
+     *  (ms never runs backwards, so there is no stale-tick-window race to defend against). */
     public static void reset() {
         title = null;
-        startWorldTime = Long.MIN_VALUE;
-        endWorldTime = Long.MIN_VALUE;
+        startMs = Long.MIN_VALUE;
+        durationMs = 0L;
     }
 
     public static void trigger(String titleText, int durationTicks, double scale) {
@@ -43,39 +53,36 @@ public final class ZoneEnterTitleOverlay {
 
         ZoneEnterTitleOverlay.title = Component.literal(titleText);
         ZoneEnterTitleOverlay.scale = s;
-        ZoneEnterTitleOverlay.startWorldTime = client.level.getGameTime();
-        ZoneEnterTitleOverlay.endWorldTime = ZoneEnterTitleOverlay.startWorldTime + dt;
+        ZoneEnterTitleOverlay.startMs = System.currentTimeMillis();
+        ZoneEnterTitleOverlay.durationMs = dt * 50L;
     }
 
     public static boolean isActive() {
-        Minecraft client = Minecraft.getInstance();
-        if (client == null || client.level == null || title == null) {
+        if (title == null || startMs == Long.MIN_VALUE) {
             return false;
         }
-
-        long now = client.level.getGameTime();
-        return now >= startWorldTime && now < endWorldTime;
+        long elapsed = System.currentTimeMillis() - startMs;
+        return elapsed >= 0L && elapsed < durationMs;
     }
 
     public static void render(GuiGraphicsExtractor ctx, int screenW, int screenH) {
         Minecraft client = Minecraft.getInstance();
-        if (client == null || client.level == null || title == null) {
+        if (client == null || client.level == null || title == null || startMs == Long.MIN_VALUE) {
             return;
         }
 
-        long now = client.level.getGameTime();
-        if (now < startWorldTime || now >= endWorldTime) {
+        long elapsed = System.currentTimeMillis() - startMs;
+        if (elapsed < 0L || elapsed >= durationMs) {
             return;
         }
 
         float alpha = 1.0f;
-        long age = now - startWorldTime;
-        long remaining = endWorldTime - now;
+        long remaining = durationMs - elapsed;
 
-        if (age < FADE_TICKS) {
-            alpha = (float) age / (float) FADE_TICKS;
-        } else if (remaining < FADE_TICKS) {
-            alpha = (float) remaining / (float) FADE_TICKS;
+        if (elapsed < FADE_MS) {
+            alpha = (float) elapsed / (float) FADE_MS;
+        } else if (remaining < FADE_MS) {
+            alpha = (float) remaining / (float) FADE_MS;
         }
 
         if (alpha <= 0.001f) {
@@ -103,19 +110,21 @@ public final class ZoneEnterTitleOverlay {
         // clamp is the self-contained fix.)
         int cx = OverlayLayout.clampCenter((screenW / 2) + LatitudeConfig.zoneEnterTitleOffsetX, halfW, screenW);
         int cy = OverlayLayout.clampCenter((screenH / 2) + LatitudeConfig.zoneEnterTitleOffsetY, halfH, screenH);
-        drawTitleLineAt(ctx, cx, cy, raw, drawScale, a, glimmerProgress(age));
+        drawTitleLineAt(ctx, cx, cy, raw, drawScale, a, glimmerProgress(elapsed));
     }
 
-    /** Normalized progress (0..1) through the one-shot glimmer sweep for a title of the given age in ticks,
-     *  or -1 when there's no glimmer this frame: the toggle is off, Reduce Motion is on, or the age is outside
-     *  the single-sweep window ({@link com.example.globe.core.ui.TitleStyle#glimmerProgress}). The shine-sweep
-     *  transform (which works for ALL presets, not just rainbow/aurora) lives in {@link #drawStyledTitle} so
-     *  every caller of the shared draw path stays consistent. */
-    static float glimmerProgress(long age) {
+    /** Continuous normalized progress (0..1) through the one-shot glimmer sweep for a title that appeared
+     *  {@code elapsedMs} ago (wall-clock), or -1 when there's no glimmer this frame: the toggle is off, Reduce
+     *  Motion is on, or the elapsed time is outside the single-sweep window
+     *  ({@link com.example.globe.core.ui.TitleStyle#glimmerProgressMs}). Wall-clock (not the game-tick age) so
+     *  the crest advances smoothly per frame and never rubber-bands when the server tick stalls during a
+     *  teleport. The shine-sweep transform (which works for ALL presets, not just rainbow/aurora) lives in
+     *  {@link #drawStyledTitle} so every caller of the shared draw path stays consistent. */
+    static float glimmerProgress(long elapsedMs) {
         if (!LatitudeConfig.zoneEnterTitleGlimmer || LatitudeConfig.reduceMotion) {
             return -1f;
         }
-        return com.example.globe.core.ui.TitleStyle.glimmerProgress(age);
+        return com.example.globe.core.ui.TitleStyle.glimmerProgressMs(elapsedMs);
     }
 
     /**
@@ -256,6 +265,12 @@ public final class ZoneEnterTitleOverlay {
         }
         final int visible = Math.max(1, visibleCount);
         final float glimmer = glimmerProgress;
+        // Dim envelope: a raised arch that is 0 at BOTH ends of the sweep and ~1 mid-sweep, so the dimmed
+        // baseline the crest travels against eases IN as the crest enters and OUT as it exits. This removes the
+        // two visible discontinuities of a fixed dim: the hard GLIMMER_DIM_FLOOR -> 1.0 "brighten pop" the
+        // instant the sweep ends, and the full dim fighting the title's still-ramping fade-in at the start.
+        // sin(pi * progress) is the natural arch; outside the sweep (glimmer < 0) there is no dim at all.
+        final float dimScale = glimmer < 0f ? 0f : (float) Math.sin(Math.PI * glimmer);
         // RAINBOW = static ROYGBIV sweep across the letters (no drift); AURORA = the flowing/drifting gradient.
         final boolean gradient = preset == LatitudeConfigData.TitleColorPreset.RAINBOW
                 || preset == LatitudeConfigData.TitleColorPreset.AURORA;
@@ -270,7 +285,7 @@ public final class ZoneEnterTitleOverlay {
                                     : com.example.globe.core.ui.FlowingGradient.staticColorFor(idx, visible))
                             : solidRgb;
                     base = com.example.globe.core.ui.TitleStyle.glimmerShade(base,
-                            com.example.globe.core.ui.TitleStyle.glimmerGaussian(glimmer, idx, visible));
+                            com.example.globe.core.ui.TitleStyle.glimmerGaussian(glimmer, idx, visible), dimScale);
                     return alphaMask | base;
                 });
     }
