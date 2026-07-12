@@ -15,30 +15,39 @@ package com.example.globe.core;
  * drive the whole prompt off it with only a C2S answer sent to the server (the server re-validates -- see
  * {@link #serverAcceptsCross}).
  *
- * <p><b>Asymmetric hysteresis (why it can't oscillate).</b> Two thresholds, deliberately far apart:
+ * <p><b>Asymmetric hysteresis (why it can't oscillate, and why re-arm is a MODEST walk-back).</b> The
+ * anti-machine-gun guarantee needs only ONE thing: a re-arm distance far enough past the prompt line that a
+ * player cannot cross it by positional jitter. It does NOT need to be tied to the (much wider) visual fog
+ * band -- an earlier design set re-arm at 564 (the whole fog band + margin), which meant a player who
+ * declined the prompt had to trek 464 blocks inland before it would ever offer again; "I left the area and
+ * came back" never re-armed, which read as a hard one-shot-forever bug (TEST 83). The thresholds:
  * <ul>
  *   <li>{@link #PROMPT_AT} (100 blocks, == {@code GlobeClientState.ewWarningStage} stage-2 distance):
  *       when ARMED and {@code distToEdge <= PROMPT_AT}, open the prompt ONCE and DISARM.</li>
+ *   <li>Re-arm at {@code distToEdge > }{@link #REARM_AT} (== {@code PROMPT_AT + }{@link #REARM_MARGIN} ==
+ *       250 blocks): the player need only walk a modest {@link #REARM_MARGIN} (150) blocks back from the
+ *       prompt line before the prompt can arm again -- their intuitive "I left the edge and returned".</li>
  *   <li>{@link #FOG_START} (500 blocks, == {@code GlobeClientState.ewIntensity01} haze ramp start): the
- *       approach fog begins here; the arm does NOT re-arm here.</li>
- *   <li>Re-arm ONLY at {@code distToEdge > FOG_START + }{@link #REARM_MARGIN} (== 564 blocks): the player
- *       must leave the ENTIRE fog band plus a {@code DEAD_ZONE}-wide margin before the prompt can arm again.</li>
+ *       approach fog begins here. This is PURELY visual (a haze onset); it is NOT an arming threshold and
+ *       re-arm deliberately sits INSIDE it -- the light outer fog is still visible when the prompt re-arms.</li>
  * </ul>
- * Between {@code PROMPT_AT} (100) and {@code FOG_START + REARM_MARGIN} (564) the arm state is STICKY: a
- * disarmed player who wanders out to 300 and back never re-prompts, and an armed player who has not yet
- * reached 100 stays armed without flapping. So sliding N/S along the edge (dist roughly constant, small),
- * or hovering right at {@code PROMPT_AT}, can never machine-gun the prompt.
+ * Between {@code PROMPT_AT} (100) and {@code REARM_AT} (250) the arm state is STICKY: a disarmed player who
+ * wobbles a few blocks across the prompt line never re-prompts, and an armed player who has not yet reached
+ * 100 stays armed without flapping. The 150-block dead band is ~30x any per-tick position jitter, so sliding
+ * N/S along the edge (dist roughly constant, small), or hovering right at {@code PROMPT_AT}, can never
+ * machine-gun the prompt; only a deliberate 150-block walk-out-and-back re-offers it.
  *
  * <p><b>Spawned-in-band => DISARMED contract.</b> A hemisphere crossing lands the player at the IDENTICAL
  * border distance on the FAR side (mirror-X keeps {@code |x - centerX|}), i.e. still {@code <= PROMPT_AT}.
  * If arrival seeded {@code armed=true} the player would be re-prompted on the very next tick forever. So the
  * S2C arrival seeds {@code armed=false}, and {@link #evaluate} respects it: a disarmed player in-band stays
- * disarmed until a full exit past {@code FOG_START + REARM_MARGIN}. This is exactly the same math as the
+ * disarmed until they walk back out past {@link #REARM_AT}. This is exactly the same math as the
  * anti-oscillation rule -- the "arrival" is just an externally-seeded disarmed-in-band state.
  *
  * <p>All thresholds are absolute blocks (not fractions): the fog band must fit sanely inside the SMALLEST
- * world. On Itty-Bitty Classic (xRadius 3750) {@code FOG_START + REARM_MARGIN} = 564 is ~15% of the radius,
- * leaving the inner ~85% prompt-free; {@link HemispherePassageTest} pins that it fits.
+ * world. On Itty-Bitty Classic (xRadius 3750) {@link #FOG_START} = 500 is ~13% of the radius and
+ * {@link #REARM_AT} = 250 is well inside that, leaving the vast interior prompt-free; {@link HemispherePassageTest}
+ * pins that it fits.
  */
 public final class HemispherePassage {
 
@@ -47,15 +56,19 @@ public final class HemispherePassage {
     public static final double PROMPT_AT = 100.0;
 
     /** Distance-to-edge (blocks) where the approach fog begins. Matches {@code ewIntensity01}'s 500-block
-     *  haze ramp so the new passage fog and the existing EW haze share an onset. Not an arming threshold. */
+     *  haze ramp so the new passage fog and the existing EW haze share an onset. PURELY visual -- NOT an
+     *  arming threshold, and deliberately WIDER than {@link #REARM_AT} (the arm re-arms inside the light fog). */
     public static final double FOG_START = 500.0;
 
-    /** Re-arm margin beyond {@link #FOG_START}, in blocks. {@code >= DEAD_ZONE} (64) per the sweeper's band
-     *  discipline: the player must clear the whole fog band AND this margin before the prompt re-arms. */
-    public static final double REARM_MARGIN = HemisphereCrossing.DEAD_ZONE_BLOCKS; // 64
+    /** Re-arm margin beyond {@link #PROMPT_AT}, in blocks: how far back from the prompt line a declined player
+     *  must walk before the prompt re-arms. Sized only to beat positional jitter (>> {@code DEAD_ZONE} = 64,
+     *  ~30x per-tick jitter), NOT to the visual fog band -- a modest, intuitive "I left the edge and came back"
+     *  rather than the old 464-block trek that read as one-shot-forever (TEST 83). */
+    public static final double REARM_MARGIN = 150.0;
 
-    /** Distance-to-edge above which a disarmed player re-arms. Asymmetric vs {@link #PROMPT_AT} (100 vs 564). */
-    public static final double REARM_AT = FOG_START + REARM_MARGIN; // 564
+    /** Distance-to-edge above which a disarmed player re-arms. Asymmetric vs {@link #PROMPT_AT} (100 vs 250):
+     *  the 150-block sticky dead band kills oscillation without stranding the player disarmed. */
+    public static final double REARM_AT = PROMPT_AT + REARM_MARGIN; // 250
 
     /** Server anti-exploit slack (blocks) added to {@link #PROMPT_AT} when re-validating a C2S cross: the
      *  player may drift a little between the client opening the prompt and the answer reaching the server, but
