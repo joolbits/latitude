@@ -33,6 +33,12 @@ public final class HemispherePassageClientState {
         return arrivalX;
     }
 
+    /** Non-consuming read of the pending-arrival flag (for -Dlatitude.debugPassage logging only; does NOT
+     *  clear it, so it never perturbs the one-shot {@link #consumePendingArrival()} the state machine drives). */
+    public static boolean peekPendingArrival() {
+        return pendingArrival;
+    }
+
     /** P2 consumes the one-shot arrival: returns true exactly once per arrival, then clears the flag. */
     public static boolean consumePendingArrival() {
         if (!pendingArrival) {

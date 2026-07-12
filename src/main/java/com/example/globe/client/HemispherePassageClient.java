@@ -69,6 +69,7 @@ public final class HemispherePassageClient {
         curtain = Curtain.NONE;
         curtainRaisedMs = 0L;
         curtainFadeOutMs = 0L;
+        PassageDebug.reset();
     }
 
     /** Raise the crossing curtain. Called from {@link HemispherePassagePromptScreen} on "Pass through", right
@@ -77,14 +78,18 @@ public final class HemispherePassageClient {
         // Sweep LOW-1: drain any STALE arrival before this crossing starts. If a previous crossing's S2C landed
         // AFTER its 5s curtain timeout (laggy multiplayer link), pendingArrival would still be set and THIS
         // crossing would consume it ~1 tick after raising -- a premature ceremony/fade over the wrong teleport.
-        HemispherePassageClientState.consumePendingArrival();
+        if (HemispherePassageClientState.consumePendingArrival()) {
+            PassageDebug.onStaleArrivalDrained();
+        }
         curtain = Curtain.RAISING_HOLD;
         curtainRaisedMs = System.currentTimeMillis();
         curtainFadeOutMs = 0L;
+        PassageDebug.onCurtainRaised();
     }
 
     /** Send the player's answer to the prompt (C2S). The server re-validates edge distance and ignores a spoof. */
     static void sendAnswer(boolean cross) {
+        PassageDebug.onAnswer(cross);
         ClientPlayNetworking.send(new GlobeNet.PassageAnswerPayload(cross));
     }
 
@@ -108,6 +113,7 @@ public final class HemispherePassageClient {
         }
         // While the curtain is up, a crossing is mid-flight -- do not evaluate the arm or open a prompt.
         if (curtain != Curtain.NONE) {
+            PassageDebug.snapshotCurtainUp(mc, armed, curtain.name());
             return;
         }
 
@@ -121,14 +127,23 @@ public final class HemispherePassageClient {
         // (or, at the edge, swallow the prompt), stranding the player at "hit the world edge, no prompt". Now a
         // blocked-open armed player simply STAYS armed and is prompted the instant they surface with a clear
         // screen; a disarmed player still re-arms off distance regardless of what tile they cross it on.
-        boolean canOpenPrompt = !GlobeClientState.isDeepUnderground(mc) && mc.gui.screen() == null;
+        //
+        // The two gate components are pulled into locals purely so the debug snapshot can log them verbatim
+        // (behavior-identical: mc.gui.screen() is a side-effect-free getter, so evaluating it unconditionally
+        // rather than short-circuited changes nothing about canOpenPrompt or the decision).
+        boolean deepUnder = GlobeClientState.isDeepUnderground(mc);
+        net.minecraft.client.gui.screens.Screen openScreen = mc.gui.screen();
+        boolean canOpenPrompt = !deepUnder && openScreen == null;
+        boolean prevArmed = armed;
         HemispherePassage.Decision d = HemispherePassage.evaluateGated(armed, distToEdge, canOpenPrompt);
         armed = d.nextArmed(); // persist unconditionally -- open/disarm, sticky-hold, and re-arm are all folded in
+        PassageDebug.snapshot(mc, distToEdge, prevArmed, armed, d, deepUnder, openScreen, curtain.name());
 
         if (d.openPrompt()) {
             // Which hemisphere lies BEYOND the fog: the crossing mirrors X (targetX = -x), so from the western
             // half (x < 0) you arrive in the East, and vice-versa.
             boolean beyondEast = mc.player.getX() < mc.level.getWorldBorder().getCenterX();
+            PassageDebug.onPromptOpen(distToEdge, beyondEast);
             mc.setScreenAndShow(new HemispherePassagePromptScreen(beyondEast));
         }
     }
@@ -146,7 +161,12 @@ public final class HemispherePassageClient {
                 // the curtain so they are never stuck behind it.
                 GlobeMod.LOGGER.warn("[Latitude][Passage] Crossing curtain timed out ({}ms) with no arrival; recovering",
                         CURTAIN_TIMEOUT_MS);
+                boolean prevArmed = armed;
                 armed = false;
+                PassageDebug.armTransition(prevArmed, false,
+                        mc.player != null ? GlobeClientState.distanceToEwBorderBlocks(mc.player.getX()) : Double.NaN,
+                        "curtain-timeout");
+                PassageDebug.onCurtainFadeOut("timeout");
                 // Sweep LOW-1 (other half): clear any arrival that lands BETWEEN this timeout decision and the
                 // next crossing, so a late S2C can never linger into (and prematurely end) a future curtain.
                 HemispherePassageClientState.reset();
@@ -163,8 +183,14 @@ public final class HemispherePassageClient {
     private static void onArrival(Minecraft mc, long now) {
         // A9: the far side sits at the IDENTICAL border distance, so seed the arm DISARMED-in-band or the prompt
         // would re-open on the very next tick forever. The pure class already supports external disarmed seeding.
+        boolean prevArmed = armed;
         armed = false;
         boolean east = HemispherePassageClientState.arrivedEast();
+        PassageDebug.onArrivalConsumed(HemispherePassageClientState.lastArrivalX(), east);
+        PassageDebug.armTransition(prevArmed, false,
+                mc.player != null ? GlobeClientState.distanceToEwBorderBlocks(mc.player.getX()) : Double.NaN,
+                "arrival");
+        PassageDebug.onCurtainFadeOut("arrival");
         fireArrivalTitle(east);
         playCrossingWhoosh(mc);
         beginFadeOut(now);
