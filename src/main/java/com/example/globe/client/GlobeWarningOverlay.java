@@ -138,6 +138,15 @@ public final class GlobeWarningOverlay {
     // mild tiers earn nothing); cleared on a full retreat re-arm so the feature is a provable no-op when idle.
     private static int poleVignetteTier = 0;
     private static long poleVignetteStartMs = Long.MIN_VALUE;
+    // B-5 P3 (task 3): the mild LEVEL_1 E/W storm banner is EPISODIC -- Peetsa (TEST 84) asked the mild
+    // "heavy storms... rough but passable" line to "fade instead of continue to be visible." It fades in,
+    // holds, fades OUT, then stays gone while the player lingers in the LEVEL_1 band; a fresh episode arms
+    // only when the player LEAVES the band (to NONE or up to LEVEL_2) and re-enters -- same re-arm-on-
+    // re-entry spirit as the polar ladder. Wall-clock timed (System.currentTimeMillis at arm), per the
+    // title/warning-family law -- never off game ticks. The pure envelope math lives in core.EwBannerEnvelope.
+    // LEVEL_2 (the urgent tier right before the crossing) is NOT episodic -- it stays persistent.
+    private static GlobeClientState.EwStormStage ewLastBannerStage = GlobeClientState.EwStormStage.NONE;
+    private static long ewLevel1ArmMs = Long.MIN_VALUE;
     private static long lastWarningDebugWorldTime = Long.MIN_VALUE;
     private static String lastWarningDebugText;
 
@@ -324,10 +333,14 @@ public final class GlobeWarningOverlay {
         boolean passable = com.example.globe.core.LatitudeV2Flags.PASSAGE_V2_ENABLED;
         return switch (stage) {
             case LEVEL_1 -> Component.literal(passable ? EW_STORM_WARN_PASSAGE_TEMPLATE : EW_STORM_WARN_TEMPLATE);
+            // YELLOW, NOT YELLOW+BOLD (task 1, the polar keyline lesson): the E/W banner now draws with the
+            // same dark 1px keyline the polar warnings got, and MC fakes bold by drawing every glyph twice
+            // (+1px), which drifts the fill out of registration with the non-bold keyline stamp and reads as
+            // the exact smear the outline is meant to kill. The keyline + YELLOW carry the emphasis instead.
             case LEVEL_2 -> Component.literal(passable
                             ? (cold ? EW_WHITEOUT_DANGER_PASSAGE_TEMPLATE : EW_SANDSTORM_DANGER_PASSAGE_TEMPLATE)
                             : (cold ? EW_WHITEOUT_DANGER_TEMPLATE : EW_SANDSTORM_DANGER_TEMPLATE))
-                    .withStyle(ChatFormatting.YELLOW, ChatFormatting.BOLD);
+                    .withStyle(ChatFormatting.YELLOW);
             default -> null;
         };
     }
@@ -471,11 +484,44 @@ public final class GlobeWarningOverlay {
                 return;
             }
 
-            GlobeClientState.EwStormStage stormStage =
+            // ONSET stays progress-based (synced with the storm particles, unchanged): decides only whether
+            // we are in an E/W storm at all.
+            GlobeClientState.EwStormStage onsetStage =
                     GlobeClientState.computeEwStormStage(client.level, client.player);
-            if (stormStage == GlobeClientState.EwStormStage.NONE) {
+            if (onsetStage == GlobeClientState.EwStormStage.NONE) {
+                // Left the storm band entirely -> disarm, so the next entry arms a fresh LEVEL_1 episode.
+                ewLastBannerStage = GlobeClientState.EwStormStage.NONE;
                 return;
             }
+            // B-5 P3 (task 3): distance-gate the LEVEL_1 <-> LEVEL_2 split so the top-severity callout keeps
+            // a consistent lead before the fixed 100-block crossing prompt on EVERY world size. The old
+            // progress-based upgrade fired ~25 blocks before the prompt on the smallest world yet ~500+
+            // blocks out (before the approach fog even began) on the largest. Measured with the SAME
+            // distance-to-edge the passage prompt itself arms on, so the ~75-block lead is exact.
+            double ewDistToEdge = GlobeClientState.distanceToEwBorderBlocks(client.player.getX());
+            GlobeClientState.EwStormStage stormStage =
+                    com.example.globe.core.EwBannerEnvelope.isDanger(ewDistToEdge)
+                            ? GlobeClientState.EwStormStage.LEVEL_2
+                            : GlobeClientState.EwStormStage.LEVEL_1;
+
+            // LEVEL_1 fade envelope (wall-clock): (re-)arm on entry into LEVEL_1 from any other stage; hold
+            // then fade out and stay gone while lingering. LEVEL_2 is persistent (no fade), so it is exempt.
+            long ewNowMs = System.currentTimeMillis();
+            if (stormStage == GlobeClientState.EwStormStage.LEVEL_1
+                    && ewLastBannerStage != GlobeClientState.EwStormStage.LEVEL_1) {
+                ewLevel1ArmMs = ewNowMs;
+            }
+            ewLastBannerStage = stormStage;
+
+            float episodeAlpha = 1.0f;
+            if (stormStage == GlobeClientState.EwStormStage.LEVEL_1) {
+                long age = ewNowMs - ewLevel1ArmMs;
+                if (com.example.globe.core.EwBannerEnvelope.level1Expired(age)) {
+                    return; // held then faded out; stay gone until the player leaves + re-enters the band.
+                }
+                episodeAlpha = com.example.globe.core.EwBannerEnvelope.level1Alpha(age);
+            }
+
             String dir = ewDangerDirection(client.level.getWorldBorder(), client.player.getX());
             boolean cold = ewIsColdBand(client.level.getWorldBorder(), client.player.getZ());
             Component base = ewTextForStage(stormStage, cold);
@@ -487,30 +533,23 @@ public final class GlobeWarningOverlay {
             maybeLogWarningRender(client,
                     new GlobeClientState.WarningState(GlobeClientState.WarningType.STORM, stormStage, 0),
                     bestText);
-            // Scale the pulse alpha by the exposure gate so the E/W banner fades under partial shelter too.
-            int color = scaleArgbAlpha(warningColorWithPulse(bestText, client, tickCounter), warnExposureAlpha);
-            drawCenteredWarning(ctx, client.font, bestText, warnY, color, false, 1.0f);
+            // Task 1: the E/W banner now gets the SAME dark 1px keyline the polar warnings got (keyline=true)
+            // so it reads on the whiteout/sandstorm instead of the old shadow-only smear. Task 2: the steady
+            // full-opacity fill drops the old per-TICK sine "pulse" (the removed warningColorWithPulse) that
+            // Peetsa read as a strobe -- the only alpha modulation now is the exposure gate and the LEVEL_1
+            // fade, both wall-clock/spatial, never per-tick.
+            float bannerAlpha = warnExposureAlpha * episodeAlpha;
+            if (bannerAlpha <= 0.001f) {
+                return;
+            }
+            TextColor styleColor = bestText.getStyle().getColor();
+            int rgb = styleColor != null ? styleColor.getValue() : 0xFFFFFF;
+            int a = (int) Mth.clamp(bannerAlpha * 255.0f, 0.0f, 255.0f);
+            int color = (a << 24) | (rgb & 0x00FFFFFF);
+            drawCenteredWarning(ctx, client.font, bestText, warnY, color, true, 1.0f);
         } catch (Throwable t) {
             GlobeMod.LOGGER.error("GlobeWarningOverlay.render crashed", t);
         }
-    }
-
-    /** Multiply the ALPHA channel of an ARGB colour by {@code scale} in {@code [0,1]}, leaving RGB intact.
-     *  Used to fold the B-5 item-3 exposure gate into an already-composed warning colour. */
-    private static int scaleArgbAlpha(int argb, float scale) {
-        int a = (argb >>> 24) & 0xFF;
-        int scaled = (int) Mth.clamp(a * scale, 0.0f, 255.0f);
-        return (scaled << 24) | (argb & 0x00FFFFFF);
-    }
-
-    private static int warningColorWithPulse(Component text, Minecraft client, DeltaTracker tickCounter) {
-        TextColor styleColor = text.getStyle().getColor();
-        int rgb = styleColor != null ? styleColor.getValue() : 0xFFFFFF;
-        long worldTime = client.level != null ? client.level.getGameTime() : 0L;
-        double phase = worldTime * 0.04; // gentle ~7.8s period
-        float pulse = 0.55f + 0.45f * (float) ((Math.sin(phase) + 1.0) * 0.5);
-        int alpha = (int) Mth.clamp(pulse * 255.0f, 0.0f, 255.0f);
-        return (alpha << 24) | (rgb & 0x00FFFFFF);
     }
 
     // M2 (GUI-scale parity audit) -- wrap + center a warning line. A long pole/storm warning at a narrow
@@ -609,6 +648,8 @@ public final class GlobeWarningOverlay {
         poleWarnEndTick = Long.MIN_VALUE;
         poleVignetteTier = 0;
         poleVignetteStartMs = Long.MIN_VALUE;
+        ewLastBannerStage = GlobeClientState.EwStormStage.NONE;
+        ewLevel1ArmMs = Long.MIN_VALUE;
         lastWarningDebugWorldTime = Long.MIN_VALUE;
         lastWarningDebugText = null;
         if (DEBUG_ENTRY_TITLES) {
