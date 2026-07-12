@@ -10,15 +10,17 @@ package com.example.globe.core;
  *
  * <p>Two independent windows, both symmetric about the equator because the caller feeds {@code |lat|}:
  * <ul>
- *   <li><b>B-3a HAZARD window {@code [88.5,90]}</b> -- the ONLY player-affecting hazardous band.
- *       Onset at 88.5 deg (moved in from 87 deg per Peetsa's TEST 75 note "the cold sets in too late...
- *       start affecting the player at ~88.5 and becomes severe at 90"), full-lethal at 90 deg, with
- *       CONTINUOUS scaling of the slowness amplifier and the freeze-tick rate across
- *       {@code progress = clamp01((|lat|-88.5)/1.5)}. Replaces the old stage-STEPPED ladder
- *       (IMPAIR/HOSTILE/WHITEOUT/LETHAL keyed off {@code POLAR_STAGE_*_PROGRESS} on {@code |z|/zR});
- *       the effect TYPES (slowness/weakness/mining-fatigue/freeze) are unchanged -- only their
- *       magnitude is now a smooth function of progress rather than a stage index. (B-4 removed the
- *       Blindness effect: the smooth whiteout overlay now carries vision loss without a hard snap.)</li>
+ *   <li><b>B-3a HAZARD window {@code [87.5,90]}</b> -- the ONLY player-affecting hazardous band.
+ *       Onset at 87.5 deg (moved in from 88.5 per Peetsa's TEST 76 note: at 89 deg he took ZERO freeze
+ *       damage because the old curve only crossed vanilla's fully-frozen threshold in the last fractional
+ *       degree), full-lethal at 90 deg, over {@code progress = clamp01((|lat|-87.5)/2.5)}. Slowness /
+ *       weakness / mining-fatigue amplifiers scale continuously with progress. FREEZE is split into a
+ *       VISUAL frost ramp ({@link #frostVisualTicks}, capped one tick below vanilla's 140 fully-frozen
+ *       threshold so vanilla's OWN fixed 1 HP/40-tick auto-damage never fires) and a SEPARATELY-scaled
+ *       damage curve ({@link #freezeDamageIntervalTicks} + {@link #freezeDamageAmount}) the mod applies
+ *       itself -- so the cold builds visibly from 87.5, bites from ~88, and gets worse and worse to a
+ *       lethal pole, instead of the old near-binary flip at the doorstep. (B-4 removed the Blindness
+ *       effect: the smooth whiteout overlay now carries vision loss without a hard snap.)</li>
  *   <li><b>B-3b AMBIENT window {@code [85,90]}</b> -- atmosphere BEFORE danger. Snow begins at 85 deg
  *       (2 deg ahead of the hazard onset) and the fixed per-tick particle budget + screen-fog
  *       intensity ramp smoothly to VERY heavy at 90 deg over {@code clamp01((|lat|-85)/5)}.</li>
@@ -29,31 +31,33 @@ public final class PolarHazardWindow {
     private PolarHazardWindow() {
     }
 
-    // ---- B-3a: continuous hazard window [88.5,90] (server MobEffects) ----
+    // ---- B-3a: continuous player-affecting hazard window [87.5,90] (server-side) ----
 
     /** Latitude (deg) at which the player-affecting hazard window opens; below this the pole is fully
-     *  explorable. Moved 87 -> 88.5 (TEST 75: the cold set in too late/far out; effects now start at 88.5
-     *  and reach severe at 90). The AMBIENT band (snow/fog/storm sky) and the blizzard VISUAL drive are
-     *  deliberately NOT gated on this -- only the slowness/weakness/mining-fatigue/freeze mechanics are. */
-    public static final double HAZARD_ONSET_DEG = 88.5;
+     *  explorable. Moved 88.5 -> 87.5 (TEST 76: at 89 deg Peetsa took ZERO freeze damage -- the old onset
+     *  + curve made damage a near-binary flip in the last fractional degree). Slowness now ramps in at
+     *  87.5; frost builds visibly from here and freeze DAMAGE begins ~88 deg and intensifies to a lethal
+     *  pole (see {@link #freezeDamageIntervalTicks} / {@link #freezeDamageAmount}). The AMBIENT band
+     *  (snow/fog/storm sky at 85) and the blizzard VISUAL drive (87) are deliberately NOT gated on this --
+     *  only the slowness/weakness/mining-fatigue/freeze mechanics are. */
+    public static final double HAZARD_ONSET_DEG = 87.5;
     /** Latitude (deg) at which the hazard window is full-lethal (the geographic pole). */
     public static final double HAZARD_LETHAL_DEG = 90.0;
 
-    /** Slowness amplifier at full lethal (== old LETHAL: amplifier 2 = Slowness III). */
+    /** Slowness amplifier at full lethal (amplifier 2 = Slowness III). Slowness I is present from onset. */
     public static final int SLOWNESS_MAX_AMP = 2;
-    /** Weakness amplifier at full lethal (== old LETHAL: amplifier 1 = Weakness II). */
+    /** Weakness amplifier at full lethal (amplifier 1 = Weakness II). */
     public static final int WEAKNESS_MAX_AMP = 1;
-    /** Freeze ticks at full lethal. Vanilla powder-snow freeze damage begins at 140 ticks frozen. */
-    public static final int FREEZE_MAX_TICKS = 140;
-    /** Progress at/above which Mining Fatigue layers in (~89 deg -- 88.5 + 1.5*(1/3)). */
+    /** Progress at/above which Mining Fatigue layers in (~88.33 deg -- 87.5 + 2.5*(1/3)). */
     public static final double MINING_FATIGUE_PROGRESS = 1.0 / 3.0;
 
-    /** Continuous hazard progress in {@code [0,1]}: 0 at/below 88.5 deg, 1 at/above 90 deg. */
+    /** Continuous hazard progress in {@code [0,1]}: 0 at/below 87.5 deg, 1 at/above 90 deg. */
     public static double hazardProgress(double absLatDeg) {
         return clamp01((absLatDeg - HAZARD_ONSET_DEG) / (HAZARD_LETHAL_DEG - HAZARD_ONSET_DEG));
     }
 
-    /** Slowness MobEffect amplifier for a hazard progress: integer in {@code [0, SLOWNESS_MAX_AMP]}. */
+    /** Slowness MobEffect amplifier for a hazard progress: integer in {@code [0, SLOWNESS_MAX_AMP]}.
+     *  Slowness I from progress 0 (87.5 deg), II from ~1/3 (~88.33 deg), III from ~2/3 (~89.17 deg). */
     public static int slownessAmplifier(double progress) {
         return rampAmplifier(progress, SLOWNESS_MAX_AMP);
     }
@@ -68,31 +72,81 @@ public final class PolarHazardWindow {
         return clamp01(progress) >= MINING_FATIGUE_PROGRESS;
     }
 
-    /** Freeze ticks to force for a hazard progress: 0 at onset, {@link #FREEZE_MAX_TICKS} at 90 deg. */
-    public static int freezeTicks(double progress) {
-        return (int) Math.round(clamp01(progress) * FREEZE_MAX_TICKS);
+    // ---- Freeze: a VISUAL frost ramp + a SEPARATELY-scaled damage curve (TEST 76 redesign) ----
+    //
+    // Why two pieces instead of vanilla's one: vanilla only deals freeze damage while an entity is FULLY
+    // frozen (ticksFrozen >= getTicksRequiredToFreeze() == 140), and then a FIXED 1.0 HP every 40 ticks
+    // (both verified in LivingEntity/Entity for 26.2). Driving that single knob (ticksFrozen) made damage a
+    // near-binary flip: the old curve pushed ticksFrozen past 140 only in the last ~0.03 deg, so Peetsa
+    // stood at 89 deg and took nothing. Instead we (a) ramp a FROST VISUAL that tops out at 139 -- one tick
+    // BELOW the fully-frozen threshold, so vanilla's fixed auto-damage never fires and can't fight our
+    // curve -- and (b) apply our OWN freeze damage on a latitude-scaled cadence + amount, so the cold
+    // visibly builds from 87.5, bites from ~88, and worsens to a lethal pole. Same damage TYPE (freeze) and
+    // death screen as vanilla, so to the player it just reads as freezing to death -- only the timing is ours.
+
+    /** Vanilla's fully-frozen threshold ({@code Entity.getTicksRequiredToFreeze()} in 26.2): at/above this
+     *  the game shows fully-blue frozen hearts AND deals its own fixed 1 HP/40-tick freeze damage. We stay
+     *  BELOW it (see {@link #FROST_VISUAL_MAX_TICKS}) so our scaled curve is the ONLY freeze damage. */
+    public static final int FROZEN_THRESHOLD_TICKS = 140;
+    /** Frost-visual ceiling: one tick below {@link #FROZEN_THRESHOLD_TICKS}. At 139/140 the frost overlay
+     *  and heart tint read as fully frozen, but the player is never {@code isFullyFrozen()}, so vanilla's
+     *  fixed auto-damage never triggers and {@link #freezeDamageAmount} owns the whole curve. */
+    public static final int FROST_VISUAL_MAX_TICKS = FROZEN_THRESHOLD_TICKS - 1; // 139
+    /** Hazard progress at which the frost visual reaches its {@link #FROST_VISUAL_MAX_TICKS} ceiling and
+     *  holds (~88.75 deg): frost builds visibly across 87.5 -> 88.75, then stays maxed to the pole. */
+    public static final double FROST_VISUAL_FULL_PROGRESS = 0.5;
+
+    /** Per-tick frost-visual target (ticksFrozen) for a hazard progress: 0 at onset, ramping to
+     *  {@link #FROST_VISUAL_MAX_TICKS} by {@link #FROST_VISUAL_FULL_PROGRESS} and holding. Always &lt; 140,
+     *  so it can never trip vanilla's fully-frozen auto-damage. The caller sets this every server tick
+     *  (vanilla decays ticksFrozen ~2/tick out of powder snow, so a throttled set would sawtooth). */
+    public static int frostVisualTicks(double progress) {
+        double p = clamp01(progress) / FROST_VISUAL_FULL_PROGRESS;
+        return (int) Math.round(clamp01(p) * FROST_VISUAL_MAX_TICKS);
     }
 
-    /**
-     * B-4 round 3 item 1 -- FREEZE PULSING FIX. The frozen-ticks counter must be MAINTAINED every server
-     * tick, not on a throttled cadence: vanilla decays {@code ticksFrozen} by ~2/tick whenever the entity
-     * is not standing in powder snow, so setting it only every 10 ticks produced a sawtooth (set -> decay
-     * -> re-set) that never sustained the {@code >= FREEZE_MAX_TICKS} "fully frozen" state -- hearts flashed
-     * blue/red and real freeze damage (which vanilla ticks only while fully frozen, every 40 ticks) never
-     * landed. This returns the per-tick TARGET: {@link #freezeTicks(double)} plus a small decay margin so a
-     * single tick of vanilla decay can never drop the counter below the intended level between our per-tick
-     * re-sets. At the deep end (target -> FREEZE_MAX_TICKS) the margin pushes it past the fully-frozen
-     * threshold and holds it there STEADILY, so hearts stay blue and freeze damage actually ticks.
-     */
-    public static final int FREEZE_DECAY_MARGIN = 3;
+    /** Hazard progress at which freeze DAMAGE begins (~88.0 deg -- 87.5 + 2.5*0.2). The 0.5 deg between
+     *  the hazard onset (87.5, frost + slowness) and here is a grace band: the cold sets in and slows you
+     *  before it starts taking hearts. */
+    public static final double DAMAGE_ONSET_PROGRESS = 0.2;
+    /** Ticks between freeze-damage hits at the damage onset (~88 deg): 60 ticks == 3 s, a slow chip. */
+    public static final int FREEZE_DAMAGE_INTERVAL_FAR = 60;
+    /** Ticks between freeze-damage hits at the pole: 10 ticks == 0.5 s, a rapid lethal cadence. */
+    public static final int FREEZE_DAMAGE_INTERVAL_NEAR = 10;
+    /** HP per freeze-damage hit at the damage onset (~88 deg): 1.0 == half a heart. */
+    public static final float FREEZE_DAMAGE_MIN_HP = 1.0f;
+    /** HP per freeze-damage hit at the pole: 3.0 == one and a half hearts. With the shortest interval this
+     *  is ~6 HP/s at 90 deg -- lethal within a few seconds. */
+    public static final float FREEZE_DAMAGE_MAX_HP = 3.0f;
 
-    /** Steady per-tick frozen-ticks target for a hazard progress: 0 at onset, ramps with a decay margin. */
-    public static int steadyFreezeTicks(double progress) {
-        int f = freezeTicks(progress);
-        if (f <= 0) {
-            return 0;
-        }
-        return f + FREEZE_DECAY_MARGIN;
+    /** True once the hazard is deep enough for freeze DAMAGE to tick ({@code progress >=
+     *  DAMAGE_ONSET_PROGRESS}, i.e. from ~88 deg). Below this the player frosts + slows but loses no HP. */
+    public static boolean appliesFreezeDamage(double progress) {
+        return clamp01(progress) >= DAMAGE_ONSET_PROGRESS;
+    }
+
+    /** Progress through the DAMAGE sub-window {@code [DAMAGE_ONSET_PROGRESS, 1]} remapped to {@code [0,1]}:
+     *  0 at the damage onset (~88 deg), 1 at the pole. Drives both the interval and the amount below. */
+    private static double damageProgress(double progress) {
+        return clamp01((clamp01(progress) - DAMAGE_ONSET_PROGRESS) / (1.0 - DAMAGE_ONSET_PROGRESS));
+    }
+
+    /** Server-ticks between freeze-damage hits for a hazard progress: {@link #FREEZE_DAMAGE_INTERVAL_FAR}
+     *  at the damage onset shrinking linearly to {@link #FREEZE_DAMAGE_INTERVAL_NEAR} at the pole (shorter
+     *  == more frequent == worse). Never below 1. Below the damage onset this returns the FAR value, but
+     *  callers gate on {@link #appliesFreezeDamage} first so no damage lands there. */
+    public static int freezeDamageIntervalTicks(double progress) {
+        double d = damageProgress(progress);
+        double interval = FREEZE_DAMAGE_INTERVAL_FAR
+                + (FREEZE_DAMAGE_INTERVAL_NEAR - FREEZE_DAMAGE_INTERVAL_FAR) * d;
+        return Math.max(1, (int) Math.round(interval));
+    }
+
+    /** HP dealt per freeze-damage hit for a hazard progress: {@link #FREEZE_DAMAGE_MIN_HP} at the damage
+     *  onset growing linearly to {@link #FREEZE_DAMAGE_MAX_HP} at the pole (bigger == worse). */
+    public static float freezeDamageAmount(double progress) {
+        double d = damageProgress(progress);
+        return (float) (FREEZE_DAMAGE_MIN_HP + (FREEZE_DAMAGE_MAX_HP - FREEZE_DAMAGE_MIN_HP) * d);
     }
 
     // ---- B-3b: ambient snow + fog window [85,90] (client particles + screen fog) ----
@@ -160,16 +214,18 @@ public final class PolarHazardWindow {
     // ---- B-4 round 3 item 2: BLIZZARD drive (fall speed + sideways wind + dense second pass) ----
 
     /** Latitude (deg) at which the blizzard VISUAL drive begins to ramp. Held at 87 (NOT the moved
-     *  {@link #HAZARD_ONSET_DEG}): the driven-gale look + dense second particle pass are ATMOSPHERE, which
-     *  Peetsa asked to keep exactly as-is when the player-affecting hazard onset moved out to 88.5. */
+     *  {@link #HAZARD_ONSET_DEG}, now 87.5 after the TEST 76 retune -- was 88.5 for one round in between):
+     *  the driven-gale look + dense second particle pass are ATMOSPHERE, which Peetsa asked to keep exactly
+     *  as-is regardless of where the player-affecting hazard onset lands. */
     public static final double BLIZZARD_ONSET_DEG = 87.0;
     /** Latitude (deg) at which the blizzard visual drive is fully driven (the geographic pole). */
     public static final double BLIZZARD_FULL_DEG = 90.0;
 
     /**
      * Blizzard drive in {@code [0,1]} over the VISUAL window {@code [87,90]}. Formerly reused
-     * {@link #hazardProgress(double)}, but DECOUPLED from it when the player-hazard onset moved 87 -> 88.5:
-     * the ambient snow at 85-87 deg stays a gentle approach flurry, and from 87 deg this scales the flakes'
+     * {@link #hazardProgress(double)}, but DECOUPLED from it once the player-hazard onset started moving
+     * (87 -> 88.5 -> 87.5, TEST 75/76): the ambient snow at 85-87 deg stays a gentle approach flurry, and
+     * from 87 deg this scales the flakes'
      * fall speed and sideways wind up to a driven gale and gates the dense low second particle pass so the
      * pole reads as a real BLIZZARD. Keeping this on the original {@code [87,90]} ramp preserves the blizzard
      * LOOK exactly (Peetsa: keep the ambient band as-is) while only the mechanics moved inward. Changes how

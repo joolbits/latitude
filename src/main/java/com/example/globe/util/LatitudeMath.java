@@ -34,14 +34,15 @@ public final class LatitudeMath {
     public static final int POLAR_START_DEG = (int) Math.floor(POLAR_START_FRAC * 90.0);
 
     // Polar WARNING-ladder thresholds (progress = |z|/latitudeRadius = deg/90). Re-anchored (B-3-P3)
-    // to P1's PolarHazardWindow milestones so each warning fires at or just before the mechanic it warns
-    // about: snow onset 85, blizzard visuals build from 87, hazard/slowness onset 88.5 (moved poleward
-    // 2026-07-12; the ladder stays put -- shared with the EW storm axis -- so stage 2 is now a pure
-    // "worsening" warning ~1.5 deg ahead of the first mechanic), blindness ~89, freeze near-max ~89.7.
+    // to the polar-experience milestones so each warning fires at or just before the mechanic it warns
+    // about: snow onset 85, blizzard visuals build from 87, player-affecting hazard onset 87.5 (slowness),
+    // freeze DAMAGE from ~88 intensifying to a lethal pole. The ladder DEGREE constants STAY PUT -- they are
+    // SHARED with the EW storm axis (B-3-P3 KEEP-SHARED coupling), so moving the hazard onset (88.5 -> 87.5
+    // on 2026-07-12, TEST 76) does NOT move them; only the warning COPY was retuned (see GlobeWarningOverlay).
     public static final double POLAR_STAGE_1_PROGRESS = 0.9444;      // 85.0 deg -- snow onset (ambient window opens)
-    public static final double POLAR_STAGE_2_PROGRESS = 0.9667;      // 87.0 deg -- blizzard-worsening warning (mechanics start 88.5)
-    public static final double POLAR_STAGE_3_PROGRESS = 0.9889;      // 89.0 deg -- ~blindness; ~1 deg lead before freeze damage
-    public static final double POLAR_STAGE_LETHAL_PROGRESS = 0.9967; // 89.7 deg -- freeze near-max (death at 90.0)
+    public static final double POLAR_STAGE_2_PROGRESS = 0.9667;      // 87.0 deg -- blizzard worsening; slowness begins just ahead at 87.5
+    public static final double POLAR_STAGE_3_PROGRESS = 0.9889;      // 89.0 deg -- deep hazard (Slowness III + freeze damage building)
+    public static final double POLAR_STAGE_LETHAL_PROGRESS = 0.9967; // 89.7 deg -- near-lethal freeze (death at 90.0)
 
     /** WorldBorder#getSize() is DIAMETER. Half-size is radius in blocks. This is the X (border) radius. */
     public static double halfSize(WorldBorder border) {
