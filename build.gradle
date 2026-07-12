@@ -113,6 +113,10 @@ loom {
             // the TEST 75 live look; byte-identical when explicitly set off). Forwarded so dev runs agree
             // with shipped jars.
             vmArg "-Dlatitude.polarVegetationFade.enabled=${System.getProperty('latitude.polarVegetationFade.enabled', 'true')}"
+            // Polar water freeze (default TRUE, matching LatitudeV2Flags; byte-identical when explicitly
+            // set off). Forwarded on sight this round -- the L17 forwarding class has bitten this repo
+            // twice before (climateV2/biomeConsumerV2 2026-07-07); don't let a third flag go unforwarded.
+            vmArg "-Dlatitude.polarWaterFreeze.enabled=${System.getProperty('latitude.polarWaterFreeze.enabled', 'true')}"
             vmArg "-Dlatitude.geoV2.enabled=${System.getProperty('latitude.geoV2.enabled', 'false')}"
             // Slice C follow-up (the L17 forwarding class, caught a SECOND time 2026-07-07): climateV2 and
             // biomeConsumerV2 were never forwarded, so a headless "consumer-on" atlas silently ran with the
