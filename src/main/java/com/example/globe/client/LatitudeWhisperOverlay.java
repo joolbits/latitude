@@ -13,7 +13,7 @@ import net.minecraft.network.chat.Component;
  * fade-IN + hold + fade-OUT, so a re-announcement reads as an unobtrusive murmur rather than a shout.
  *
  * <p>Rendered on the HUD layer via {@code InGameHudMixin} (so it hides under F1 with the rest of the HUD),
- * on its own world-time window -- the same fade idiom as {@link ZoneEnterTitleOverlay} /
+ * on its own WALL-CLOCK window -- the same fade idiom as {@link ZoneEnterTitleOverlay} /
  * {@link HemisphereTitleOverlay}. The trigger sites (the linger branches in {@code GlobeWarningOverlay}) are
  * unchanged; only the renderer swapped.
  */
@@ -21,23 +21,37 @@ public final class LatitudeWhisperOverlay {
 
     private static final int FADE_TICKS = 8;
     private static final int DEFAULT_DURATION_TICKS = 50; // ~2.5 s, fade-in + hold + fade-out
+    /** Fade ramp length in wall-clock ms (the tick count kept for parity with the old timing). */
+    private static final long FADE_MS = FADE_TICKS * 50L;
+    /** Whisper lifetime in wall-clock ms (fade-in + hold + fade-out). */
+    private static final long DEFAULT_DURATION_MS = DEFAULT_DURATION_TICKS * 50L;
     /** Never full opacity -- a whisper, not a shout. Peak alpha cap (~70%). */
     private static final float MAX_ALPHA = 0.70f;
     /** Vertical offset below screen center; unobtrusive, clear of the center-screen titles above it. */
     private static final int ANCHOR_OFFSET_Y = 34;
 
     private static String text;
-    private static long startWorldTime = Long.MIN_VALUE;
-    private static long endWorldTime = Long.MIN_VALUE;
+    // WALL-CLOCK lifecycle (System.currentTimeMillis at trigger + duration in ms), matching
+    // ZoneEnterTitleOverlay / HemisphereTitleOverlay. The fade alpha is driven from wall time, NOT
+    // client.level.getGameTime(): the game-tick clock stalls and can even snap BACKWARDS during teleport
+    // chunk-gen (the integrated ClientLevel free-runs its tick count while the server thread is blocked, then
+    // gets corrected to the server's lower authoritative value on the next time sync), which made whispers
+    // freeze, pop, and flicker through boundary re-crossings. Wall-clock is strictly monotonic and advances
+    // every frame, so the fade stays smooth through a hitch. Cross-world resurrection is handled by reset() on
+    // disconnect (wired in GlobeModClient).
+    private static long startMs = Long.MIN_VALUE;
+    private static long durationMs = 0L;
 
     private LatitudeWhisperOverlay() {
     }
 
-    /** Clears any in-flight whisper (disconnect / world change) -- world-time keys are per-world. */
+    /** Clears any in-flight whisper (disconnect / world change). On wall-clock timing this is the only
+     *  resurrection guard needed (ms never runs backwards, so there is no stale-tick-window race to defend
+     *  against). */
     public static void reset() {
         text = null;
-        startWorldTime = Long.MIN_VALUE;
-        endWorldTime = Long.MIN_VALUE;
+        startMs = Long.MIN_VALUE;
+        durationMs = 0L;
     }
 
     /** Show a whisper line, (re)starting the shared fade window. */
@@ -47,37 +61,36 @@ public final class LatitudeWhisperOverlay {
             return;
         }
         text = line;
-        startWorldTime = client.level.getGameTime();
-        endWorldTime = startWorldTime + DEFAULT_DURATION_TICKS;
+        startMs = System.currentTimeMillis();
+        durationMs = DEFAULT_DURATION_MS;
     }
 
     public static boolean isActive() {
-        Minecraft client = Minecraft.getInstance();
-        if (client == null || client.level == null || text == null) {
+        if (text == null || startMs == Long.MIN_VALUE) {
             return false;
         }
-        long now = client.level.getGameTime();
-        return now >= startWorldTime && now < endWorldTime;
+        long elapsed = System.currentTimeMillis() - startMs;
+        return elapsed >= 0L && elapsed < durationMs;
     }
 
     public static void render(GuiGraphicsExtractor ctx, int screenW, int screenH) {
         Minecraft client = Minecraft.getInstance();
-        if (client == null || client.level == null || client.font == null || text == null) {
+        if (client == null || client.level == null || client.font == null || text == null
+                || startMs == Long.MIN_VALUE) {
             return;
         }
-        long now = client.level.getGameTime();
-        if (now < startWorldTime || now >= endWorldTime) {
+        long elapsed = System.currentTimeMillis() - startMs;
+        if (elapsed < 0L || elapsed >= durationMs) {
             return;
         }
 
         // Symmetric fade-in / hold / fade-out.
         float alpha = 1.0f;
-        long age = now - startWorldTime;
-        long remaining = endWorldTime - now;
-        if (age < FADE_TICKS) {
-            alpha = (float) age / (float) FADE_TICKS;
-        } else if (remaining < FADE_TICKS) {
-            alpha = (float) remaining / (float) FADE_TICKS;
+        long remaining = durationMs - elapsed;
+        if (elapsed < FADE_MS) {
+            alpha = (float) elapsed / (float) FADE_MS;
+        } else if (remaining < FADE_MS) {
+            alpha = (float) remaining / (float) FADE_MS;
         }
         alpha *= MAX_ALPHA;
         if (alpha <= 0.004f) {

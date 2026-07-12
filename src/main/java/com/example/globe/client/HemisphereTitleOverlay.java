@@ -26,6 +26,8 @@ public final class HemisphereTitleOverlay {
      *  center, clear of the zone-enter title (which anchors at center + its own offset). */
     private static final int ANCHOR_OFFSET_Y = -40;
     private static final int FADE_TICKS = 10;
+    /** Fade ramp length in wall-clock ms (see {@link ZoneEnterTitleOverlay}; ticks kept for timing parity). */
+    private static final long FADE_MS = FADE_TICKS * 50L;
 
     /** GUI-scale parity (audit M1/M4): fit-to-width margin + floor, mirroring {@link ZoneEnterTitleOverlay}. */
     private static final int SIDE_MARGIN = 6;
@@ -33,20 +35,23 @@ public final class HemisphereTitleOverlay {
 
     private static String northSouthLine;
     private static String eastWestLine;
-    private static long startWorldTime = Long.MIN_VALUE;
-    private static long endWorldTime = Long.MIN_VALUE;
+    // WALL-CLOCK window (System.currentTimeMillis), matching ZoneEnterTitleOverlay: the fade alpha and the
+    // shared glimmer sweep are driven off wall time so they stay smooth through the tick stalls a hemisphere
+    // crossing (often reached by teleport) triggers. See ZoneEnterTitleOverlay's field note for the full why.
+    private static long startMs = Long.MIN_VALUE;
+    private static long endMs = Long.MIN_VALUE;
     private static float scale = 1.8f;
 
     private HemisphereTitleOverlay() {
     }
 
     /** Clears any in-flight hemisphere title (disconnect / world change), mirroring
-     *  {@link ZoneEnterTitleOverlay#reset()} -- world-time keys are per-world. */
+     *  {@link ZoneEnterTitleOverlay#reset()} -- the only resurrection guard needed on wall-clock timing. */
     public static void reset() {
         northSouthLine = null;
         eastWestLine = null;
-        startWorldTime = Long.MIN_VALUE;
-        endWorldTime = Long.MIN_VALUE;
+        startMs = Long.MIN_VALUE;
+        endMs = Long.MIN_VALUE;
     }
 
     /**
@@ -61,15 +66,15 @@ public final class HemisphereTitleOverlay {
         if (client == null || client.level == null) {
             return;
         }
-        long now = client.level.getGameTime();
+        long now = System.currentTimeMillis();
         // If the window has lapsed, this is a fresh title: clear any stale sibling line and fade in anew.
-        if (now >= endWorldTime) {
+        if (now >= endMs) {
             northSouthLine = null;
             eastWestLine = null;
-            startWorldTime = now;
+            startMs = now;
         }
         int dt = Math.max(1, durationTicks);
-        endWorldTime = now + dt;
+        endMs = now + dt * 50L;
         scale = (float) titleScale;
         if (eastWestAxis) {
             eastWestLine = titleText;
@@ -86,8 +91,8 @@ public final class HemisphereTitleOverlay {
         if (northSouthLine == null && eastWestLine == null) {
             return false;
         }
-        long now = client.level.getGameTime();
-        return now >= startWorldTime && now < endWorldTime;
+        long now = System.currentTimeMillis();
+        return now >= startMs && now < endMs;
     }
 
     public static void render(GuiGraphicsExtractor ctx, int screenW, int screenH) {
@@ -98,18 +103,18 @@ public final class HemisphereTitleOverlay {
         if (northSouthLine == null && eastWestLine == null) {
             return;
         }
-        long now = client.level.getGameTime();
-        if (now < startWorldTime || now >= endWorldTime) {
+        long now = System.currentTimeMillis();
+        if (now < startMs || now >= endMs) {
             return;
         }
 
         float alpha = 1.0f;
-        long age = now - startWorldTime;
-        long remaining = endWorldTime - now;
-        if (age < FADE_TICKS) {
-            alpha = (float) age / (float) FADE_TICKS;
-        } else if (remaining < FADE_TICKS) {
-            alpha = (float) remaining / (float) FADE_TICKS;
+        long age = now - startMs;
+        long remaining = endMs - now;
+        if (age < FADE_MS) {
+            alpha = (float) age / (float) FADE_MS;
+        } else if (remaining < FADE_MS) {
+            alpha = (float) remaining / (float) FADE_MS;
         }
         if (alpha <= 0.001f) {
             return;
