@@ -104,6 +104,44 @@ public final class HemispherePassage {
     }
 
     /**
+     * FULL per-tick resolution including the caller's open-gate, so the client just persists {@code nextArmed}
+     * unconditionally and opens the screen iff {@code openPrompt}. This folds the whole arm/prompt control flow
+     * ({@link #evaluate} + the two "can I actually open right now?" conditions) into ONE pure, unit-testable
+     * function, closing the integration gap that let a live one-shot-forever bug hide behind green {@link #evaluate}
+     * tests (the gate used to live only in the Minecraft-coupled caller and was never exercised end-to-end).
+     *
+     * <p><b>Why re-arm must NOT be gated on terrain.</b> Re-arm is a pure function of <i>distance</i> -- has the
+     * player left the {@link #REARM_AT} sticky band? -- and nothing else. The earlier caller froze the ENTIRE
+     * machine (skipped {@code evaluate} AND its commit) whenever the player read as deep-underground, which
+     * coupled the distance-based re-arm to a per-tick, terrain-dependent classification. A disarmed player who
+     * crossed {@code REARM_AT} while momentarily miscategorised underground (a sub-sea-level canopy pocket, a
+     * ravine, a coastal downslope, a cave shortcut) never re-armed on that tick, and an armed player who reached
+     * {@link #PROMPT_AT} on such a tile got no prompt and walked into the border wall. Here the arm ALWAYS tracks
+     * distance; only the OPEN is gated.
+     *
+     * @param armed         previous arm state.
+     * @param distToEdge    blocks to the nearest E/W edge ({@code >= 0}; NaN treated as "far").
+     * @param canOpenPrompt whether the prompt may ACTUALLY open this tick -- true only when the player is on the
+     *                      surface (not deep underground: you cannot cross below ground, there is just the border
+     *                      wall) AND no other screen is up (never stomp a container). When false, an armed in-band
+     *                      player STAYS armed (the one-shot is held, not burned, and fires the instant the block
+     *                      clears) while the re-arm still runs off distance exactly as usual.
+     * @return {@code openPrompt} = open the screen now; {@code nextArmed} = the arm state to persist
+     *         UNCONDITIONALLY (the caller no longer branches its commit).
+     */
+    public static Decision evaluateGated(boolean armed, double distToEdge, boolean canOpenPrompt) {
+        Decision base = evaluate(armed, distToEdge);
+        if (base.openPrompt() && !canOpenPrompt) {
+            // Blocked (underground, or a screen is up): do NOT open and do NOT disarm -- hold the armed one-shot
+            // so it fires the instant the block clears. Re-arm cannot apply on this branch (openPrompt implies
+            // distToEdge <= PROMPT_AT, which is nowhere near REARM_AT), so keeping the INPUT armed (true) is exact.
+            return new Decision(false, armed);
+        }
+        // A real open (disarm committed) or any non-open tick (sticky/re-arm committed): persist base as-is.
+        return base;
+    }
+
+    /**
      * Server-side anti-exploit gate for a C2S {@code cross=true}: is the sender actually near enough to the
      * edge that a legitimate client prompt could have opened? The server NEVER trusts the client's own
      * arm/prompt state -- it re-derives distance from the player's authoritative position and accepts only

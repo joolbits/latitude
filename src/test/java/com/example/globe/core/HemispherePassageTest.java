@@ -198,6 +198,102 @@ class HemispherePassageTest {
                 "an arrival-seeded player must be able to prompt after a modest walk-out and return");
     }
 
+    // ---- TEST-84 live regression: the underground GATE must never freeze the re-arm (caller-integration) ----
+    //
+    // These exercise HemispherePassage.evaluateGated -- the FULL client tick INCLUDING the open-gate, which the
+    // Minecraft-coupled caller used to inline and which the pure evaluate() tests above never touched. The live
+    // TEST-84 bug ("re-arm fix verified in the jar, still one-shot forever") lived exactly in that untested seam:
+    // the caller froze the WHOLE machine (re-arm included) whenever the player read as deep-underground, so a
+    // disarmed player who crossed REARM_AT on a below-sea-level / canopy-covered tile (routine on snowy-taiga
+    // rolling terrain) silently skipped the re-arm, and an armed player who reached the edge on such a tile got
+    // no prompt. evaluateGated gates ONLY the open; the arm always tracks distance.
+
+    /**
+     * Model the REAL client tick: persist {@code nextArmed} unconditionally and open iff {@code openPrompt}, with
+     * a per-tick {@code canOpen} (surface AND clear screen). {@code dists} and {@code canOpen} run in lockstep.
+     */
+    private static int countPromptsGatedWalk(boolean startArmed, double[] dists, boolean[] canOpen) {
+        assertEquals(dists.length, canOpen.length, "test walk arrays must be the same length");
+        boolean armed = startArmed;
+        int prompts = 0;
+        for (int i = 0; i < dists.length; i++) {
+            HemispherePassage.Decision d = HemispherePassage.evaluateGated(armed, dists[i], canOpen[i]);
+            if (d.openPrompt()) {
+                prompts++;
+            }
+            armed = d.nextArmed();
+        }
+        return prompts;
+    }
+
+    @Test
+    void rearmIsTerrainIndependent_disarmedPastRearmRearmsEvenUnderground() {
+        // THE fix, in one line: a disarmed player at dist=300 (> REARM_AT) re-arms whether or not the prompt
+        // could open this tick. The old caller's underground FREEZE returned before evaluate, so canOpen=false
+        // (underground) left armed=false here forever -- the one-shot-forever bug. evaluateGated re-arms on both.
+        assertTrue(HemispherePassage.evaluateGated(false, 300.0, true).nextArmed(),
+                "re-arm past REARM_AT on the surface");
+        assertTrue(HemispherePassage.evaluateGated(false, 300.0, false).nextArmed(),
+                "re-arm past REARM_AT UNDERGROUND too -- re-arm is distance-only, never gated on terrain");
+    }
+
+    @Test
+    void undergroundWalkOutStillRearms_theTest84LiveBug() {
+        // Exact live repro: prompt #1 fires and disarms, the player turns back, then the tick that crosses
+        // REARM_AT happens on a below-surface canopy tile (canOpen=false), and every inland tile is under cover.
+        // Under the old freeze that re-arm tick was skipped and the player was stranded disarmed -> 1 prompt.
+        // With the gate on the OPEN only, the arm tracks distance through the cover -> the return re-prompts (#2).
+        double[] dists   = { 80.0, 120.0, 200.0, 260.0, 300.0, 200.0, 120.0, 70.0 };
+        boolean[] canOpen = { true,  true,  false, false, false, false, true,  true };
+        //  prompt#1^ (surface)              ^--- walk-out crosses REARM_AT entirely under cover ---^   ^return
+        assertEquals(2, countPromptsGatedWalk(true, dists, canOpen),
+                "a walk-out that crosses REARM_AT while underground must STILL re-arm and re-prompt on return");
+    }
+
+    @Test
+    void undergroundAtEdgeHoldsTheOneShotThenOpensOnSurfacing() {
+        // An armed player reaches the edge (dist<=100) but on below-surface/roofed tiles for several ticks: the
+        // prompt must NOT open there (you cannot cross underground) and must NOT be burned -- it opens exactly
+        // once, the instant they surface, still at the edge. (Item 2's "prompted the instant you surface".)
+        double[] dists   = { 90.0, 80.0, 75.0, 70.0, 70.0 };
+        boolean[] canOpen = { false, false, false, true, true };
+        assertEquals(1, countPromptsGatedWalk(true, dists, canOpen),
+                "underground at the edge holds the one-shot and fires exactly once on surfacing");
+    }
+
+    @Test
+    void screenBlockedOpenHoldsArmThenOpensOnce_gatedParityWithA10() {
+        // evaluateGated subsumes the A10 container-guard too (canOpen also means "no screen up"): a container up
+        // at the edge holds armed=true across ticks, then opens exactly once when it closes -- never swallowed.
+        double[] dists   = { 80.0, 80.0, 80.0, 80.0 };
+        boolean[] canOpen = { false, false, true, true }; // container up, up, closes, ...
+        assertEquals(1, countPromptsGatedWalk(true, dists, canOpen),
+                "a screen-blocked prompt is held (not consumed) and fires once when the screen clears");
+    }
+
+    @Test
+    void mixedTerrainRepeatedDeclineCyclesPromptExactlyOncePerApproach() {
+        // Torture walk: two full approach/decline cycles through a mix of open sky, sub-sea-level canopy pockets
+        // (canOpen=false while walking), and a container opened mid-inland. Each genuine surface approach to the
+        // edge must prompt exactly once; nothing double-fires, nothing is swallowed, nothing strands.
+        double[] dists = {
+                300.0, 200.0, 90.0,          // approach #1 -> prompt (disarm)
+                90.0,  150.0, 220.0,         // turn back, walk out (crosses REARM_AT at 220... still <250, no)
+                260.0, 320.0,                // ...now past REARM_AT -> re-arm (some of it under cover)
+                200.0, 120.0, 80.0,          // approach #2 -> prompt (disarm)
+                260.0, 100.0, 60.0,          // out past REARM_AT and back -> would be #3 if not for the block...
+        };
+        boolean[] canOpen = {
+                true,  true,  true,          // #1 opens on the surface
+                true,  true,  false,         // walk-out partly under cover
+                false, true,                 // re-arm tick 260 under cover, 320 open -- either way re-arms
+                true,  true,  true,          // #2 opens
+                true,  false, false,         // last approach lands on roofed tiles -> held, NOT opened here
+        };
+        assertEquals(2, countPromptsGatedWalk(true, dists, canOpen),
+                "exactly one prompt per genuine surface approach; the final roofed approach is held, not burned");
+    }
+
     // ---- spawned / arrived-in-band => disarmed ---------------------------------------------
 
     @Test

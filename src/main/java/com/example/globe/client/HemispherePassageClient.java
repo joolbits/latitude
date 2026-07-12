@@ -110,33 +110,26 @@ public final class HemispherePassageClient {
         if (curtain != Curtain.NONE) {
             return;
         }
-        // Item 2 (surface-only): underground the passage does not exist -- there is just the vanilla border
-        // wall. FREEZE the arm machine (return without touching `armed` or evaluating), rather than treating a
-        // cave dip as a walk-out: a player who briefly ducks into a cave near the edge keeps their armed state
-        // and is prompted the instant they surface, and a disarmed player is never re-armed by the cave. The
-        // prompt therefore never opens below ground.
-        if (GlobeClientState.isDeepUnderground(mc)) {
-            return;
-        }
 
         double distToEdge = GlobeClientState.distanceToEwBorderBlocks(mc.player.getX());
-        HemispherePassage.Decision d = HemispherePassage.evaluate(armed, distToEdge);
+
+        // The prompt may only OPEN on the surface (item 2, surface-only: underground there is just the vanilla
+        // border wall, no crossing) AND when no other screen is up (A10: never stomp a container). This gates
+        // ONLY the open -- NOT the arm. Re-arm is a pure function of distance (has the player left the sticky
+        // band?), so it MUST keep running through any terrain: the old code froze the whole machine underground,
+        // which let a sub-sea-level canopy pocket / ravine / cave dip on the walk-out silently skip the re-arm
+        // (or, at the edge, swallow the prompt), stranding the player at "hit the world edge, no prompt". Now a
+        // blocked-open armed player simply STAYS armed and is prompted the instant they surface with a clear
+        // screen; a disarmed player still re-arms off distance regardless of what tile they cross it on.
+        boolean canOpenPrompt = !GlobeClientState.isDeepUnderground(mc) && mc.gui.screen() == null;
+        HemispherePassage.Decision d = HemispherePassage.evaluateGated(armed, distToEdge, canOpenPrompt);
+        armed = d.nextArmed(); // persist unconditionally -- open/disarm, sticky-hold, and re-arm are all folded in
 
         if (d.openPrompt()) {
-            // Sweep A10 (third option): commit the disarm transition ONLY when the prompt ACTUALLY opens. If a
-            // container (or any other screen) is up at the arm tick, stay ARMED and retry next tick -- the prompt
-            // opens the moment the container closes instead of being silently consumed. No machine-gun risk: a
-            // turn-back can only follow a prompt that OPENED, and opening is exactly what disarms.
-            if (mc.gui.screen() == null) {
-                armed = d.nextArmed(); // disarm-on-open, committed with the open itself
-                // Which hemisphere lies BEYOND the fog: the crossing mirrors X (targetX = -x), so from the western
-                // half (x < 0) you arrive in the East, and vice-versa.
-                boolean beyondEast = mc.player.getX() < mc.level.getWorldBorder().getCenterX();
-                mc.setScreenAndShow(new HemispherePassagePromptScreen(beyondEast));
-            }
-            // else: blocked by an open screen -- keep `armed` as-is (true) and re-evaluate next tick.
-        } else {
-            armed = d.nextArmed(); // all other transitions (re-arm on walk-out etc.) commit as before
+            // Which hemisphere lies BEYOND the fog: the crossing mirrors X (targetX = -x), so from the western
+            // half (x < 0) you arrive in the East, and vice-versa.
+            boolean beyondEast = mc.player.getX() < mc.level.getWorldBorder().getCenterX();
+            mc.setScreenAndShow(new HemispherePassagePromptScreen(beyondEast));
         }
     }
 
