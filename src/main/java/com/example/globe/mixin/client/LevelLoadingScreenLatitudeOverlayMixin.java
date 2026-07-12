@@ -43,11 +43,16 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
     // SOURCE OF TRUTH: CompassHud.java:1520 — SUNSET DialColors(face=0x261712, ring=0xFFF2A65A,
     // muted=0xFFB07E62, needle=0xFFFF5E5B). This bespoke loading compass is hand-drawn (it can't share
     // CompassDialRenderer, which needs a live CompassHudConfig), so if that Sunset line ever changes,
-    // update these four constants to match — that's the whole drift surface, one place.
-    @Unique private static final int SUNSET_RING = 0xFFF2A65A;   // amber ring + rose star
-    @Unique private static final int SUNSET_FACE = 0xFF261712;   // deep-plum face (0x261712 + full alpha)
-    @Unique private static final int SUNSET_MUTED = 0xFFB07E62;  // muted rose-brown (S/E/W ticks)
-    @Unique private static final int SUNSET_NEEDLE = 0xFFFF5E5B; // coral needle + N accent
+    // update the four SUNSET_* constants below to match — that's the whole drift surface, one place.
+    // (SUNSET_NEEDLE_TAIL is loading-screen-only, not part of the shared Sunset dial line.)
+    @Unique private static final int SUNSET_RING = 0xFFF2A65A;   // amber ring (frames the compass)
+    @Unique private static final int SUNSET_FACE = 0xFF261712;   // deep-plum face (0x261712 + full alpha) + needle-pivot dot
+    @Unique private static final int SUNSET_MUTED = 0xFFB07E62;  // muted rose-brown (S/E/W ticks + the 8-point rose star, toned down so it backs the needle instead of rivalling it)
+    @Unique private static final int SUNSET_NEEDLE = 0xFFFF5E5B; // coral needle NORTH half + N accent (the brightest, most saturated element)
+    // The needle's SOUTH (tail) half is a warm off-white — it exists SOLELY to separate the wandering needle
+    // from the amber-family rose behind it. Amber-on-amber (the old SUNSET_RING tail) vanished into the rose
+    // star, so you couldn't tell which way the needle pointed; a pale tail reads instantly against amber.
+    @Unique private static final int SUNSET_NEEDLE_TAIL = 0xFFF0EAE0; // warm off-white needle tail
 
     // ── Loading phrases ──
     @Unique private static final String[] PHRASES = {
@@ -416,21 +421,24 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
         }
 
         // ── ROSE star (mirrors CompassDialRenderer.drawRose so the loading compass reads as the default ROSE
-        //    look): 4 long tapering cardinal diamonds + 4 short diagonal spokes, in amber over the plum face. ──
+        //    look): 4 long tapering cardinal diamonds + 4 short diagonal spokes. Drawn in the MUTED rose-brown
+        //    (not amber) so it reads as a quiet backdrop the bright coral/off-white needle sits ON TOP of —
+        //    an amber star was the same amber family as the needle's old tail and center dot, so the needle
+        //    dissolved into it. The amber is reserved for the ring, which frames the compass. ──
         int starLen = radius - 4;
         if (starLen > 0) {
             int baseHalf = Math.max(1, radius / 8);
             for (int i = 0; i <= starLen; i++) {
                 int h = Math.max(0, Math.round(baseHalf * (1.0f - i / (float) starLen)));
-                context.fill(cx - h, cy - i, cx + h + 1, cy - i + 1, SUNSET_RING); // N
-                context.fill(cx - h, cy + i, cx + h + 1, cy + i + 1, SUNSET_RING); // S
-                context.fill(cx - i, cy - h, cx - i + 1, cy + h + 1, SUNSET_RING); // W
-                context.fill(cx + i, cy - h, cx + i + 1, cy + h + 1, SUNSET_RING); // E
+                context.fill(cx - h, cy - i, cx + h + 1, cy - i + 1, SUNSET_MUTED); // N
+                context.fill(cx - h, cy + i, cx + h + 1, cy + i + 1, SUNSET_MUTED); // S
+                context.fill(cx - i, cy - h, cx - i + 1, cy + h + 1, SUNSET_MUTED); // W
+                context.fill(cx + i, cy - h, cx + i + 1, cy + h + 1, SUNSET_MUTED); // E
             }
             int diag = (int) Math.round(starLen * 0.55 / Math.sqrt(2));
             for (int s = -1; s <= 1; s += 2) {
                 for (int t = -1; t <= 1; t += 2) {
-                    globe$drawLine(context, cx, cy, cx + s * diag, cy + t * diag, SUNSET_RING);
+                    globe$drawLine(context, cx, cy, cx + s * diag, cy + t * diag, SUNSET_MUTED);
                 }
             }
         }
@@ -452,18 +460,20 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
         double angle = globe$needleAngle;
         int needleLen = radius - 4;
 
-        // Coral north half
+        // Coral north half — the brightest, most saturated element; it's what the eye locks onto
         int nx = cx + (int) Math.round(Math.sin(angle) * needleLen);
         int ny = cy - (int) Math.round(Math.cos(angle) * needleLen);
         globe$drawLine(context, cx, cy, nx, ny, SUNSET_NEEDLE);
 
-        // Amber south half (shorter)
+        // Off-white south half (shorter) — pale tail reads clearly against the amber-family rose (was amber,
+        // which vanished into the rose star; this is the change that stops the needle competing with the rose)
         int sx = cx - (int) Math.round(Math.sin(angle) * (needleLen * 0.6));
         int sy = cy + (int) Math.round(Math.cos(angle) * (needleLen * 0.6));
-        globe$drawLine(context, cx, cy, sx, sy, SUNSET_RING);
+        globe$drawLine(context, cx, cy, sx, sy, SUNSET_NEEDLE_TAIL);
 
-        // Center dot (amber)
-        context.fill(cx - 1, cy - 1, cx + 2, cy + 2, SUNSET_RING);
+        // Center pivot dot — deep plum, so the needle's hub separates from the (now muted) rose center
+        // instead of merging with an amber blob at the middle
+        context.fill(cx - 1, cy - 1, cx + 2, cy + 2, SUNSET_FACE);
     }
 
     @Unique
