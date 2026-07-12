@@ -42,7 +42,10 @@ final class PassageDebug {
     /** Fresh read of the toggle each call (per the debugPolarSnow pattern) so it can be flipped without caring
      *  about static-init order; when false, all public entry points below no-op immediately. */
     static boolean enabled() {
-        return Boolean.getBoolean("latitude.debugPassage");
+        // P3 REPRO STAGING (branch-local): forced ON so the Modrinth-launched TEST jar records the
+        // re-arm repro without JVM args (the profile carries none). REVISIT BEFORE MERGE -- restore
+        // the property read (and keep the property as the shipped default-off switch).
+        return true || Boolean.getBoolean("latitude.debugPassage");
     }
 
     /** World-switch hygiene: clear the transition ring + throttle so a new world's log starts clean. */
