@@ -87,6 +87,25 @@ public class GlobeMod implements ModInitializer {
 
     private static final boolean ENABLE_POLAR_SCRUBBER = false;
 
+    // B-5 Hemisphere Passage: players who answered the prompt "turn back" and are owed a ONE-SHOT inland
+    // nudge, applied (and cleared) on the next server tick in {@link #borderUxTick}. Thread-confined to the
+    // server thread: the C2S receiver schedules onto it via {@code context.server().execute(...)}, and
+    // END_SERVER_TICK runs on it too, so a plain HashSet needs no synchronization.
+    private static final java.util.Set<java.util.UUID> PENDING_PASSAGE_TURN_BACK = new java.util.HashSet<>();
+    // B-5 turn-back nudge strength (blocks/tick added toward center-X). Gentle single impulse, then the player
+    // is free -- a per-tick push would fight input (the vetoed "hard yank"). Live-tunable feel is P3's call.
+    private static final double PASSAGE_TURN_BACK_IMPULSE = 0.45;
+    // P1 sweep HIGH-2: server-side per-player cross cooldown (idempotency guard). Two cross=true payloads
+    // arriving in the same tick would otherwise BOTH pass validation -- the mirror preserves border distance,
+    // so after the first teleport the second re-validates true and bounces the player straight back (double
+    // ring-load, double S2C). The server cannot see client arm state, so this guard must live here: last
+    // SUCCESSFUL cross game-time per UUID; a cross within the window is rejected+logged. 60 ticks (3s):
+    // comfortably longer than any duplicate-send/lag burst, and irrelevant to a legitimate re-cross (the
+    // client re-arm needs a 564-block walk-out, minutes not seconds). Thread-confined to the server thread
+    // like PENDING_PASSAGE_TURN_BACK; entries cleared on disconnect.
+    private static final java.util.Map<java.util.UUID, Long> PASSAGE_LAST_CROSS_TICK = new java.util.HashMap<>();
+    private static final long PASSAGE_CROSS_COOLDOWN_TICKS = 60L;
+
 
     private static final Identifier GLOBE_SETTINGS_ID = Identifier.fromNamespaceAndPath(MOD_ID, "overworld");
     private static final Identifier GLOBE_SETTINGS_XSMALL_ID = Identifier.fromNamespaceAndPath(MOD_ID, "overworld_xsmall");
@@ -194,6 +213,17 @@ public class GlobeMod implements ModInitializer {
 
         ServerPlayNetworking.registerGlobalReceiver(GlobeNet.SetSpawnPickerPayload.ID, (payload, context) -> {
             context.server().execute(() -> applySpawnChoice(context.player(), payload.zoneId()));
+        });
+
+        // B-5 Hemisphere Passage answer. Runs on the server thread; NEVER trusts the client.
+        ServerPlayNetworking.registerGlobalReceiver(GlobeNet.PassageAnswerPayload.ID, (payload, context) -> {
+            context.server().execute(() -> handlePassageAnswer(context.player(), payload.cross()));
+        });
+
+        // B-5: drop any pending turn-back nudge + cross-cooldown entry for a player who leaves.
+        ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
+            PENDING_PASSAGE_TURN_BACK.remove(handler.player.getUUID());
+            PASSAGE_LAST_CROSS_TICK.remove(handler.player.getUUID());
         });
 
         ServerTickEvents.END_SERVER_TICK.register(GlobeMod::borderUxTick);
@@ -385,6 +415,13 @@ public class GlobeMod implements ModInitializer {
                 continue;
             }
 
+            // B-5: a pending "turn back" gets its ONE-SHOT inland nudge here (not in the polar-hazard section
+            // below -- this is an E/W-edge concern, unrelated to latitude, so it must run BEFORE the
+            // HAZARD_ONSET_DEG continue). Skips creative/spectator inside the helper.
+            if (com.example.globe.core.LatitudeV2Flags.PASSAGE_V2_ENABLED && !PENDING_PASSAGE_TURN_BACK.isEmpty()) {
+                applyPendingPassageTurnBack(player, border);
+            }
+
             // B-3a: continuous player-affecting hazard window [87.5,90]. The ONLY player-affecting hazardous
             // band -- everything below 87.5 deg stays fully explorable. Onset moved 88.5 -> 87.5 (TEST 76:
             // Peetsa took ZERO freeze damage at 89 because the old curve only crossed vanilla's fully-frozen
@@ -444,6 +481,84 @@ public class GlobeMod implements ModInitializer {
             // (PolarWhiteoutOverlayHud), which carries vision loss continuously. Freeze/slowness/weakness
             // stay as-is.
         }
+    }
+
+    /**
+     * B-5 Hemisphere Passage: handle a player's answer to the crossing prompt, on the server thread. NEVER
+     * trusts the client -- re-derives the authoritative edge distance and rejects anything not in the prompt
+     * band. Guards (in order): feature flag on; player alive + not removed (died/disconnected between answer
+     * and processing); in the globe overworld; within the prompt band; per-player cross cooldown
+     * ({@link #PASSAGE_CROSS_COOLDOWN_TICKS}, HIGH-2 idempotency). Creative/spectator MAY cross (crossing
+     * is allowed for everyone), but are EXEMPT from the turn-back push.
+     */
+    private static void handlePassageAnswer(ServerPlayer player, boolean cross) {
+        if (!com.example.globe.core.LatitudeV2Flags.PASSAGE_V2_ENABLED) {
+            return; // feature off: every answer ignored, live edge behavior untouched.
+        }
+        if (player == null || player.isRemoved() || !player.isAlive()) {
+            return; // no-op cleanly if the player died/left between answering and this tick.
+        }
+        if (!(player.level() instanceof ServerLevel world)
+                || world != world.getServer().overworld()
+                || !isGlobeOverworld(world)) {
+            return; // must be standing in the globe overworld.
+        }
+        double distToEdge = distanceToEwEdgeBlocks(world.getWorldBorder(), player.getX());
+        if (!com.example.globe.core.HemispherePassage.serverAcceptsCross(distToEdge)) {
+            LOGGER.warn("[Latitude][Passage] Rejected answer from {} cross={} distToEdge={} (not in prompt band; possible spoof)",
+                    player.getName().getString(), cross, distToEdge);
+            return;
+        }
+        if (cross) {
+            // HIGH-2 idempotency guard: reject a repeat cross inside the cooldown window. Without this, two
+            // cross=true payloads in one tick both validate (the mirror preserves border distance) and the
+            // player teleports there-and-back with a double ring-load + double S2C.
+            long now = world.getGameTime();
+            Long lastCross = PASSAGE_LAST_CROSS_TICK.get(player.getUUID());
+            if (lastCross != null && (now - lastCross) < PASSAGE_CROSS_COOLDOWN_TICKS) {
+                LOGGER.warn("[Latitude][Passage] Rejected repeat cross from {} within cooldown ({} of {} ticks)",
+                        player.getName().getString(), now - lastCross, PASSAGE_CROSS_COOLDOWN_TICKS);
+                return;
+            }
+            BlockPos arrival = HemispherePassageService.crossHemisphere(player);
+            if (arrival != null) {
+                PASSAGE_LAST_CROSS_TICK.put(player.getUUID(), now);
+                // Per-player S2C ONLY (never broadcast). P2 consumes it for the arrival ceremony and to seed
+                // the client arm state disarmed-in-band (mirror lands at the identical border distance).
+                ServerPlayNetworking.send(player, new GlobeNet.PassageArrivalPayload(arrival.getX()));
+            }
+        } else {
+            if (player.isCreative() || player.isSpectator()) {
+                return; // exempt from push-back.
+            }
+            PENDING_PASSAGE_TURN_BACK.add(player.getUUID()); // one-shot nudge, applied next tick in borderUxTick.
+        }
+    }
+
+    /**
+     * Apply (and consume) a pending B-5 turn-back nudge for {@code player}: a SINGLE gentle velocity impulse
+     * toward center-X, then the player is free. A per-tick push would fight input (the vetoed hard yank), so
+     * this fires exactly once. Skips creative/spectator (belt + suspenders; also filtered at enqueue time).
+     */
+    private static void applyPendingPassageTurnBack(ServerPlayer player, WorldBorder border) {
+        if (!PENDING_PASSAGE_TURN_BACK.remove(player.getUUID())) {
+            return;
+        }
+        if (player.isCreative() || player.isSpectator()) {
+            return;
+        }
+        double centerX = border.getCenterX();
+        double dir = player.getX() >= centerX ? -1.0 : 1.0; // steer back toward the world center.
+        net.minecraft.world.phys.Vec3 v = player.getDeltaMovement();
+        player.setDeltaMovement(v.x + dir * PASSAGE_TURN_BACK_IMPULSE, v.y, v.z);
+        player.hurtMarked = true; // force the velocity to broadcast to the client (vanilla knockback idiom).
+    }
+
+    /** Server-side blocks to the nearest E/W world-border edge ({@code >= 0}). Mirrors the client's own
+     *  {@code GlobeClientState.distanceToEwBorderBlocks} so the anti-exploit re-validation matches the UI. */
+    private static double distanceToEwEdgeBlocks(WorldBorder border, double x) {
+        double half = border.getSize() * 0.5;
+        return Math.max(0.0, half - Math.abs(x - border.getCenterX()));
     }
 
     /**
@@ -825,7 +940,11 @@ public class GlobeMod implements ModInitializer {
      * Generates exactly ONE chunk to get a safe spawn Y via heightmap.
      * Returns a valid spawn BlockPos, or null if the terrain fails validation.
      */
-    private static BlockPos placeSafeY(ServerLevel world, int x, int z) {
+    // Package-private (was private): the B-5 hemisphere-passage teleport core
+    // ({@link HemispherePassageService}) reuses this verbatim -- it is the single primitive that force-loads
+    // the 3x3 FULL chunk ring (via {@link #loadSpawnTargetChunkRing}) AND returns null on fluid/non-air, i.e.
+    // exactly the "never teleport into water/void" target-safety check the passage needs. No duplication.
+    static BlockPos placeSafeY(ServerLevel world, int x, int z) {
         int loadedChunks = loadSpawnTargetChunkRing(world, x, z);
 
         BlockPos ground = world.getHeightmapPos(

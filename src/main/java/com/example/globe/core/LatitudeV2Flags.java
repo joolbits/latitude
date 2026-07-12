@@ -139,6 +139,20 @@ public final class LatitudeV2Flags {
             Boolean.parseBoolean(System.getProperty("latitude.boundaryV2.enabled", "false"));
 
     /**
+     * Phase 5 Slice B-5 (Hemisphere Passage). Default false. Gates the whole opt-in E/W-edge crossing
+     * experience -- the approach fog, the two-button "pass through?" prompt, the mirror-X teleport, the
+     * arrival title, and the turn-back push. When off, the current live edge behavior (EW sandstorm haze
+     * + warnings) is completely untouched: the server passage receiver rejects every C2S answer, the
+     * turn-back nudge never fires, and no S2C arrival is ever sent. NOT tied to {@link #BOUNDARY_V2_ENABLED}
+     * -- the passage works whatever the edge terrain looks like (the B-2 ocean shore is a visual nicety,
+     * not a requirement). A later default-on decision is Peetsa's (design
+     * {@code docs/binder/phase5-b5-hemisphere-passage-design-20260710.md}). This flag is born WITH its
+     * build.gradle forwarding line beside {@code boundaryV2} in the same pass (L17 discipline).
+     */
+    public static final boolean PASSAGE_V2_ENABLED =
+            Boolean.parseBoolean(System.getProperty("latitude.passageV2.enabled", "false"));
+
+    /**
      * Polar small-vegetation fade (Peetsa 2026-07-10). Default TRUE since 2026-07-12: the TEST 75 live
      * look found flowers/grass/sugarcane/firefly bushes thriving at 88+ deg because this shipped off --
      * vanilla 26.2 decorates snowy_plains/frozen_river themselves (flower_default, patch_sugar_cane,

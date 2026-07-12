@@ -91,6 +91,7 @@ public class GlobeModClient implements ClientModInitializer {
             com.example.globe.client.CompassHud.onWorldSwitch();
             com.example.globe.client.ZoneEnterTitleOverlay.reset();
             com.example.globe.client.HemisphereTitleOverlay.reset();
+            com.example.globe.client.HemispherePassageClientState.reset();
             com.example.globe.client.LatitudeWhisperOverlay.reset();
             com.example.globe.client.PolarWindSoundInstance.reset();
         });
@@ -107,6 +108,17 @@ public class GlobeModClient implements ClientModInitializer {
                 // Mercator: latitude (Z) radius differs from the X-sized border half; drive HUD/zone/pole off it.
                 com.example.globe.util.LatitudeMath.setLatitudeZRadius(payload.isGlobe() ? payload.latitudeZRadius() : 0);
                 GlobeMod.LOGGER.info("S2C globe state: isGlobe={} latitudeZRadius={}", payload.isGlobe(), payload.latitudeZRadius());
+            });
+        });
+
+        // B-5 Hemisphere Passage arrival (S2C, per-crossing-player only). P1 STUB: log + record the arrival for
+        // P2 to consume (arrival title + disarmed-in-band seed). No presentation here by design.
+        ClientPlayNetworking.registerGlobalReceiver(GlobeNet.PassageArrivalPayload.ID, (payload, context) -> {
+            context.client().execute(() -> {
+                com.example.globe.client.HemispherePassageClientState.onArrival(payload.arrivalX());
+                GlobeMod.LOGGER.info("S2C passage arrival: arrivalX={} (east={})",
+                        payload.arrivalX(),
+                        com.example.globe.client.HemispherePassageClientState.arrivedEast());
             });
         });
 

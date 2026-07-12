@@ -37,4 +37,11 @@ class LatitudeV2FlagsTest {
                 "Phase 5 carve-aware ocean labels must ship default-off (byte-identical flag-off) "
                         + "until the atlas proof gate passes");
     }
+
+    @Test
+    void passageV2DefaultsToDisabled() {
+        assertFalse(LatitudeV2Flags.PASSAGE_V2_ENABLED,
+                "Phase 5 B-5 Hemisphere Passage must ship default-off (inert edge behavior) until P3 live "
+                        + "and a Peetsa default-on decision");
+    }
 }
