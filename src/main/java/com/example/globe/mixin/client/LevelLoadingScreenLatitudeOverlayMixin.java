@@ -55,64 +55,83 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
     @Unique private static final int SUNSET_NEEDLE_TAIL = 0xFFF0EAE0; // warm off-white needle tail
 
     // ── Loading phrases ──
+    // Ordered in TWO blocks: the FRONT block (indices 0..featuredStart-1) is texture/levity —
+    // vegetation, geology filler, whimsical peak lines, and the guest-biome-hosting jokes — which the
+    // seed/next-phrase logic below shows LESS often. The FEATURED tail (the last FEATURED_PHRASE_COUNT
+    // entries) is the mod's signature voice: latitude/cartography/compass/climate + the GeoAuthority &
+    // ClimateAuthority geology lines (rain shadows, windward/leeward, island arcs, faults, massifs,
+    // continentality). The card always OPENS on a featured line and each swap is ~70% biased back into
+    // the tail, so the featured block carries the brand. See the creative-director copy pass
+    // docs/binder/loading-text-and-whisper-review-20260711.md (2026-07-11) for the per-phrase verdicts.
+    // ANY new signature/feature line must go in the TAIL (and be counted into FEATURED_PHRASE_COUNT) or
+    // it will almost never appear.
     @Unique private static final String[] PHRASES = {
-            "Defusing creepers...",
+            // ── FRONT block: texture / levity (shown less; NOT featured) ──
+            "Packing snow boots...",
+            "Planting bamboo groves...",
+            "Planting spruce forests...",
+            "Sprinkling wildflowers...",
+            "Hiding ancient ruins...",
+            "Dusting off badlands...",
+            "Filling oceans carefully...",
+            "Stacking tectonic plates...",
+            "Folding mountain ranges...",
+            "Nudging continents apart...",
+            "Carving river valleys...",
+            "Laying down riverbeds...",
+            "Trimming the treeline...",
+            "Talking trees down from the peaks...",
+            "Frosting the highest peaks...",
+            "Minding the alpine line...",
+            "Welcoming the guest biomes...",
+            "Evicting a few biome squatters...",
+            "Filling out the biome bands...",
+            "Untangling the guest biomes...",
+            // ── FEATURED tail: signature latitude / cartography / compass / climate ──
             "Charting the frontier...",
             "Following the compass...",
-            "Packing snow boots...",
             "Crossing climate bands...",
             "Calibrating the equator...",
             "Warming the tropics...",
             "Freezing the poles...",
-            "Planting bamboo groves...",
             "Surveying the horizon...",
-            "Stacking tectonic plates...",
-            "Cloning sheep...",
-            "Folding mountain ranges...",
-            "Teaching villagers cartography...",
-            "Nudging continents apart...",
-            "Watering bamboo groves...",
-            "Polishing compass glass...",
-            "Freezing polar seas...",
-            "Planting spruce forests...",
             "Stretching the horizon...",
-            "Carving river valleys...",
+            "Teaching villagers cartography...",
+            "Polishing compass glass...",
             "Mapping trade winds...",
-            "Herding cows inland...",
-            "Waking up foxes...",
-            "Hiding ancient ruins...",
-            "Dusting off badlands...",
             "Tuning the jet stream...",
-            "Training parrots...",
-            "Filling oceans carefully...",
-            "Sprinkling wildflowers...",
-            "Convincing bees to pollinate...",
-            "Laying down riverbeds...",
             "Rotating the planet...",
             "Aligning magnetic north...",
-            "Plentifying biomes...",
             "Sorting biomes by latitude...",
-            "Trimming the treeline...",
-            "Talking trees down from the peaks...",
-            "Giving the mountaintops a trim...",
-            "Capping peaks with snow...",
-            "Frosting the summits...",
-            "Dusting the peaks with powder...",
-            "Welcoming guest biomes...",
-            "Untangling Terralith's roots...",
-            "Evicting a few biome squatters...",
-            "Finding homes for visiting biomes...",
-            "Making room for everyone's biomes...",
-            "Minding the alpine line...",
             "Unrolling more map...",
             "Giving the compass more to point at...",
             "Making room for two more oceans...",
-            "Packing extra biomes for the road..."
+            // navigate-by-latitude romance (new, on-brand)
+            "Ruling in the parallels...",
+            "Taking a sun-sighting...",
+            "Boxing the compass...",
+            "Setting the prime meridian...",
+            "Marking the tropic lines...",
+            "Inking the coastlines...",
+            "Unfurling the parchment...",
+            "Plotting your heading...",
+            // GeoAuthority / ClimateAuthority geology (new — the mod's real simulation)
+            "Casting rain shadows...",
+            "Soaking the windward coasts...",
+            "Drying the leeward slopes...",
+            "Bending island arcs...",
+            "Settling the ancient faults...",
+            "Wearing down the old massifs...",
+            "Pulling moisture off the sea...",
+            "Deepening the continental interiors..."
     };
 
     // The Latitude-feature splashes are the last FEATURED_PHRASE_COUNT entries of PHRASES. Bias the
-    // starting point into that block most of the time so the newer 1.4 phrases usually lead.
-    @Unique private static final int FEATURED_PHRASE_COUNT = 19;
+    // starting point into that block most of the time so the signature latitude/cartography/geology
+    // phrases usually lead. Count = the whole featured tail above (signature 18 + 8 navigation + 8
+    // geology). If you add/remove a tail line, update this so featuredStart still lands exactly on the
+    // "Charting the frontier..." row (the first signature line).
+    @Unique private static final int FEATURED_PHRASE_COUNT = 34;
 
     @Unique
     private static int globe$pickSeedIndex() {
@@ -161,8 +180,12 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
             return false;
         }
         String s = PHRASES[idx].toLowerCase(java.util.Locale.ROOT);
-        return s.contains("peak") || s.contains("summit") || s.contains("alpine")
-                || s.contains("treeline") || s.contains("mountain") || s.contains("powder");
+        // Keywords cover every surviving peak/mountain line after the 2026-07-11 copy pass:
+        // "Trimming the treeline", "Talking trees down from the peaks", "Frosting the highest peaks",
+        // "Minding the alpine line", "Folding mountain ranges". (The old "summit"/"powder" lines were
+        // cut, so those keywords were dropped.)
+        return s.contains("peak") || s.contains("alpine")
+                || s.contains("treeline") || s.contains("mountain");
     }
 
     @Unique private static final long PHRASE_CYCLE_MS = 4800;
@@ -643,11 +666,13 @@ class LatitudeLoadingClientTickMixin {
 
     @Unique
     private void globe$notifyFailSafe(long sinceExpeditionMs) {
+        // Plain-language chat line (Peetsa: non-programmer-facing text, keep jargon in the binder/logs).
+        // The technical detail (exact elapsed ms, "10-minute fail-safe") stays in the GLOBE_LOGGER.info
+        // line right before this is called -- the player only needs to know the screen closed and why.
         try {
             if (this.player != null) {
                 this.player.sendSystemMessage(Component.literal(
-                        "Latitude: loading overlay cleared by its 10-minute fail-safe ("
-                                + (sinceExpeditionMs / 1000) + "s). The world may still be generating in the background."));
+                        "Latitude: the loading screen took too long and was closed. Your world may still be finishing up in the background."));
             }
         } catch (Throwable t) {
             GLOBE_LOGGER.warn("[Latitude lifecycle] fail-safe chat notice failed", t);

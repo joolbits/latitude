@@ -17,6 +17,11 @@ public final class EwSandstormOverlayHud {
     private static final int DUST_G = 186;
     private static final int DUST_B = 132;
 
+    // Debug-only tick log, off by default (was unconditional -- fired every 40 ticks for every player
+    // near the EW border, spamming normal players' logs). Matches the house pattern used by
+    // GlobeModClient's -Dlatitude.debugPolarSnow.
+    private static final boolean DEBUG_EW_HAZE = Boolean.getBoolean("latitude.debugEwHaze");
+
     public static void render(GuiGraphicsExtractor ctx, DeltaTracker tickCounter) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null || mc.level == null) return;
@@ -34,7 +39,7 @@ public final class EwSandstormOverlayHud {
 
         a = a * a; // ramps up faster as you approach the border
 
-        if ((net.minecraft.client.Minecraft.getInstance().level.getGameTime() % 40L) == 0L) {
+        if (DEBUG_EW_HAZE && (net.minecraft.client.Minecraft.getInstance().level.getGameTime() % 40L) == 0L) {
             com.example.globe.GlobeMod.LOGGER.info("[Latitude] EW haze tick: x={} a={}", mc.player.getX(), a);
         }
 

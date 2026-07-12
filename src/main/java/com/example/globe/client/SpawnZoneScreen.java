@@ -31,20 +31,25 @@ public class SpawnZoneScreen extends Screen {
         addZoneButton(cx, y, rainbowRandomText(), "RANDOM",
                 "Throw the compass and see where it lands.");
         y += 22;
+        // Degree ranges use the en-dash convention "low°–high°" to match the create screen
+        // (LatitudeCreateWorldScreen.formatDegree drops the decimal on whole degrees: 35.0 -> "35°").
+        // These endpoints mirror LatitudeBands.Band (0/23.5/35/50/66.5/90) but are still HARDCODED
+        // literals here — formatDegree is package-private in client.create and unreachable from this
+        // package, so a shared-source refactor is deferred to the future zone-copy consolidation pass.
         addZoneButton(cx, y, zoneLabel("Tropical", ChatFormatting.GREEN), "TROPICAL",
-                "Jungles, bamboo, warm seas. Equator to 23.5°.");
+                "Jungles, bamboo, warm seas. 0°–23.5°.");
         y += 22;
         addZoneButton(cx, y, zoneLabel("Subtropical", ChatFormatting.YELLOW), "SUBTROPICAL",
-                "Savannas, deserts, badlands. 23.5° to 35°.");
+                "Savannas, deserts, badlands. 23.5°–35°.");
         y += 22;
         addZoneButton(cx, y, zoneLabel("Temperate", ChatFormatting.DARK_AQUA), "TEMPERATE",
-                "Forests, plains, birch and oak. 35° to 50°.");
+                "Forests, plains, birch and oak. 35°–50°.");
         y += 22;
         addZoneButton(cx, y, zoneLabel("Subpolar", ChatFormatting.AQUA), "SUBPOLAR",
-                "Taiga, spruce, first snows. 50° to 66.5°.");
+                "Taiga, spruce, first snows. 50°–66.5°.");
         y += 22;
         addZoneButton(cx, y, zoneLabel("Polar", ChatFormatting.WHITE), "POLAR",
-                "Ice, snowfields, frozen seas. 66.5° poleward.");
+                "Ice, snowfields, frozen seas. 66.5°–90°.");
         y += 30;
 
         this.addRenderableWidget(Button.builder(Component.literal("Cancel"), b -> onClose())

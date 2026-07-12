@@ -102,14 +102,9 @@ public final class GlobeWarningOverlay {
     }
 
     private static String zoneDisplayName(String canonicalKey) {
-        return switch (canonicalKey) {
-            case "TROPICAL" -> "Tropical";
-            case "SUBTROPICAL" -> "Subtropical";
-            case "TEMPERATE" -> "Temperate";
-            case "SUBPOLAR" -> "Subpolar";
-            case "POLAR" -> "Polar";
-            default -> canonicalKey;
-        };
+        // Canonical source: LatitudeBands.displayNameForZoneKey (this IS the vocabulary the other surfaces
+        // (CompassHud) were unified onto -- title's word set won: Tropical/Subtropical/Temperate/Subpolar/Polar.
+        return LatitudeBands.displayNameForZoneKey(canonicalKey);
     }
 
     private static String biomeName(Minecraft client) {
