@@ -264,7 +264,8 @@ public class GlobeModClient implements ClientModInitializer {
             com.example.globe.core.ParticleDensity.Tier snowTier = polarSnowDensityTier(client);
             // B-4 item 5 evidence (permanently gated): confirm the ambient budget scales with latitude.
             // -Dlatitude.debugPolarSnow=true logs count vs |lat| every ~2 s. Verified: 87 deg -> 33,
-            // 89 deg -> 64, 90 deg -> 80 with the old max; the counts were always correct -- the miss was
+            // 89 deg -> 64, 90 deg -> 80 with the old max (SNOW_MAX is 60 since TEST 78's volume fill;
+            // at ALL tier expect 90 deg -> 60 base + the second pass); the counts were always correct -- the miss was
             // VISIBILITY (tiny flakes lost in the white fog), now carried by real vanilla snowfall (item 4).
             // Logs both the raw latitude budget and the tier-scaled budget (the REAL per-tick spawn count).
             if (Boolean.getBoolean("latitude.debugPolarSnow") && (client.level.getGameTime() % 40L) == 0L) {
