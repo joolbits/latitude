@@ -220,9 +220,23 @@ public final class GlobeWarningOverlay {
 
     // B-4 item 3: run the pure episode ladder each throttled sample. A tier crossing arms a fresh ~10 s
     // display window; the ladder re-arms only on a full retreat below 84 deg (handled inside evaluate).
-    private static void maybeTriggerPoleWarning(Minecraft client) {
+    //
+    // B-5 sweep HIGH -- the ARMING gate. Rendering is separately faded by PolarExposure.warningAlpha, so if
+    // this method ran UNGATED a player crossing a tier threshold at exposure 0 (deep cave / sealed bunker)
+    // would burn the one-shot invisibly: poleWarnHighestTier advances, the ~10 s window expires unseen, and
+    // the tier never re-fires until a full retreat below 84 deg. So while GENUINELY sealed the whole ladder
+    // FREEZES (no tier advance, no text, no vignette -- consistent with item 2's "underground, the polar/edge
+    // experience does not exist"), and the warning fires properly the moment the player surfaces. Under a
+    // tree/arch (exposure ~0.9) it arms and shows as before. The gate condition reuses the SAME shared
+    // function the render path fades on -- warningAlpha(e) > 0 iff e > 0, pinned by
+    // PolarExposureTest.warningAlphaHiddenOnlyNearZero + poleWarningArmGate* -- so the arm gate and the
+    // render gate can never disagree about "sealed".
+    private static void maybeTriggerPoleWarning(Minecraft client, float exposure01) {
         if (client.level == null || client.player == null) {
             return;
+        }
+        if (com.example.globe.core.PolarExposure.warningAlpha(exposure01) <= 0.0f) {
+            return; // sealed in / deep underground: freeze the ladder rather than burn a one-shot unseen.
         }
         var border = client.level.getWorldBorder();
         double absLatDeg = com.example.globe.util.LatitudeMath.absLatDegExact(border, client.player.getZ());
@@ -267,7 +281,8 @@ public final class GlobeWarningOverlay {
 
     // Draws the active polar warning episode with a fade-in/hold/fade-out envelope. Returns true if it drew
     // (and therefore owns the warning line this frame), false if no episode is currently showing.
-    private static boolean renderPoleWarningEpisode(GuiGraphicsExtractor ctx, Minecraft client, int warnY) {
+    private static boolean renderPoleWarningEpisode(GuiGraphicsExtractor ctx, Minecraft client, int warnY,
+                                                    float exposureAlpha) {
         if (poleWarnText == null || client.level == null) {
             return false;
         }
@@ -284,6 +299,9 @@ public final class GlobeWarningOverlay {
         } else if (remaining < POLE_WARN_FADE_TICKS) {
             alpha = (float) remaining / (float) POLE_WARN_FADE_TICKS;
         }
+        // B-5 item 3: fold in the exposure gate so the polar warning fades under shelter instead of
+        // binary-vanishing under a single leaf (the fade envelope above is unchanged).
+        alpha *= exposureAlpha;
         if (alpha <= 0.001f) {
             return false;
         }
@@ -349,9 +367,15 @@ public final class GlobeWarningOverlay {
                 return;
             }
 
-            if (!eval.surfaceOk()) {
-                return;
-            }
+            // B-5 item 3 (TEST 83 "the message pops out of view whenever you are under anything, like a
+            // tree"): the warning-TEXT family no longer BINARY-hides on the old surfaceOk bit. Its on-screen
+            // alpha now scales with the graded enclosure estimate exposure01 -- full under a tree/arch, fading
+            // with real shelter, gone only when genuinely sealed in / deep underground (exposure ~0, which the
+            // sampler already returns below sea-2 -- the same "cave = no storm banners" rule item 2 uses).
+            // The zone/hemisphere TITLES are a SEPARATE family and keep their existing surface-only trigger
+            // gate below (surfaceOk); only the warning banners + their vignette are regraded here.
+            float warnExposureAlpha = com.example.globe.core.PolarExposure.warningAlpha(eval.exposure01());
+            boolean surfaceOk = eval.surfaceOk();
 
             int px = client.player.getBlockX();
             int pz = client.player.getBlockZ();
@@ -365,47 +389,60 @@ public final class GlobeWarningOverlay {
                 lastZoneUpdateX = px;
                 lastZoneUpdateZ = pz;
 
-                var border = client.level.getWorldBorder();
-                String canonicalZoneKey = canonicalTitleZoneKey(border, client.player.getZ());
-                boolean zoneChanged = lastZoneKey == null || !lastZoneKey.equals(canonicalZoneKey);
+                // Zone-enter + hemisphere TITLES keep their existing SURFACE-ONLY trigger gate (unchanged
+                // behavior). They are a separate family from the warning banners this pass regrades, and they
+                // fire one-shot timed overlays that keep rendering once shown, so a leaf overhead never hides
+                // an already-displayed title -- only NEW triggers were ever suppressed indoors, and that is
+                // left exactly as before.
+                if (surfaceOk) {
+                    var border = client.level.getWorldBorder();
+                    String canonicalZoneKey = canonicalTitleZoneKey(border, client.player.getZ());
+                    boolean zoneChanged = lastZoneKey == null || !lastZoneKey.equals(canonicalZoneKey);
 
-                // B-4 zone-title anti-spam: mirror the hemisphere band hysteresis. The band is one band-width
-                // (3 deg of latitude) in blocks == latitudeRadius/30, floored at DEAD_ZONE+32 exactly like the
-                // hemisphere bands (so it can never fall below the on-the-line dead zone on tiny worlds). The
-                // linger radius is measured as latitude distance to the nearest climate-band boundary,
-                // converted to blocks (90 deg over the latitude radius).
-                double latRadius = com.example.globe.util.LatitudeMath.latitudeRadius(border);
-                double zoneBand = Math.max(latRadius / 30.0, HemisphereCrossing.DEAD_ZONE_BLOCKS + 32.0);
-                double absLatDeg = com.example.globe.util.LatitudeMath.absLatDegExact(border, client.player.getZ());
-                double distDegToBoundary = com.example.globe.core.ZoneTitleBanding.nearestBoundaryDistanceDeg(absLatDeg);
-                double distBlocksToBoundary = latRadius > 0.0
-                        ? (distDegToBoundary / 90.0) * latRadius : Double.MAX_VALUE;
-                com.example.globe.core.ZoneTitleBanding.Result zoneEval =
-                        com.example.globe.core.ZoneTitleBanding.evaluate(
-                                zoneChanged, zoneFullArmed, distBlocksToBoundary, zoneBand);
+                    // B-4 zone-title anti-spam: mirror the hemisphere band hysteresis. The band is one band-width
+                    // (3 deg of latitude) in blocks == latitudeRadius/30, floored at DEAD_ZONE+32 exactly like the
+                    // hemisphere bands (so it can never fall below the on-the-line dead zone on tiny worlds). The
+                    // linger radius is measured as latitude distance to the nearest climate-band boundary,
+                    // converted to blocks (90 deg over the latitude radius).
+                    double latRadius = com.example.globe.util.LatitudeMath.latitudeRadius(border);
+                    double zoneBand = Math.max(latRadius / 30.0, HemisphereCrossing.DEAD_ZONE_BLOCKS + 32.0);
+                    double absLatDeg = com.example.globe.util.LatitudeMath.absLatDegExact(border, client.player.getZ());
+                    double distDegToBoundary = com.example.globe.core.ZoneTitleBanding.nearestBoundaryDistanceDeg(absLatDeg);
+                    double distBlocksToBoundary = latRadius > 0.0
+                            ? (distDegToBoundary / 90.0) * latRadius : Double.MAX_VALUE;
+                    com.example.globe.core.ZoneTitleBanding.Result zoneEval =
+                            com.example.globe.core.ZoneTitleBanding.evaluate(
+                                    zoneChanged, zoneFullArmed, distBlocksToBoundary, zoneBand);
 
-                if (zoneChanged) {
-                    lastZoneKey = canonicalZoneKey;
-                    if (LatitudeConfig.zoneEnterTitleEnabled) {
-                        String titleText = buildZoneEnterTitle(client, canonicalZoneKey);
-                        if (zoneEval.fire() == com.example.globe.core.ZoneTitleBanding.Fire.FULL) {
-                            int durationTicks = (int) Math.round(clamp(LatitudeConfig.zoneEnterTitleSeconds, 2.0, 10.0) * 20.0);
-                            double scale = clamp(LatitudeConfig.zoneEnterTitleScale, 1.0, 3.0);
-                            logEntryTitle("zone_trigger", titleText, client, client.player.getX(), client.player.getZ());
-                            ZoneEnterTitleOverlay.trigger(titleText, durationTicks, scale);
-                        } else {
-                            // Lingering near the boundary just crossed: unobtrusive action-bar message, no big title.
-                            showActionBarMessage(client, titleText);
-                            logEntryTitle("zone_actionbar", titleText, client, client.player.getX(), client.player.getZ());
+                    if (zoneChanged) {
+                        lastZoneKey = canonicalZoneKey;
+                        if (LatitudeConfig.zoneEnterTitleEnabled) {
+                            String titleText = buildZoneEnterTitle(client, canonicalZoneKey);
+                            if (zoneEval.fire() == com.example.globe.core.ZoneTitleBanding.Fire.FULL) {
+                                int durationTicks = (int) Math.round(clamp(LatitudeConfig.zoneEnterTitleSeconds, 2.0, 10.0) * 20.0);
+                                double scale = clamp(LatitudeConfig.zoneEnterTitleScale, 1.0, 3.0);
+                                logEntryTitle("zone_trigger", titleText, client, client.player.getX(), client.player.getZ());
+                                ZoneEnterTitleOverlay.trigger(titleText, durationTicks, scale);
+                            } else {
+                                // Lingering near the boundary just crossed: unobtrusive action-bar message, no big title.
+                                showActionBarMessage(client, titleText);
+                                logEntryTitle("zone_actionbar", titleText, client, client.player.getX(), client.player.getZ());
+                            }
                         }
                     }
-                }
-                // Advance the armed state every throttled sample (even when unchanged / disabled) so the
-                // re-arm happens as the player walks deep into a zone, and a re-enable can't replay a title.
-                zoneFullArmed = zoneEval.nextFullArmed();
+                    // Advance the armed state every throttled sample (even when unchanged / disabled) so the
+                    // re-arm happens as the player walks deep into a zone, and a re-enable can't replay a title.
+                    zoneFullArmed = zoneEval.nextFullArmed();
 
-                maybeTriggerHemisphereTitles(client, client.player.getX(), client.player.getZ());
-                maybeTriggerPoleWarning(client);
+                    maybeTriggerHemisphereTitles(client, client.player.getX(), client.player.getZ());
+                }
+
+                // The polar warning LADDER is part of the warning-TEXT family: arm it under partial cover (a
+                // tree/arch/doorway -- exposure > 0) so a tier crossed under a leaf still shows, but NOT while
+                // genuinely sealed (exposure 0): arming there would burn the one-shot invisibly, since render
+                // is gated to the same exposure (sweep HIGH -- the freeze lives inside maybeTriggerPoleWarning).
+                // Its episode/hysteresis logic and its degree thresholds are untouched (KEEP-SHARED law).
+                maybeTriggerPoleWarning(client, eval.exposure01());
             }
 
             // B-4 round 3 item 6: F1 (hud hidden) suppresses the VISIBLE warning line, but the zone /
@@ -420,10 +457,17 @@ public final class GlobeWarningOverlay {
                 warnY = 18;
             }
 
+            // B-5 item 3: the warning banners are hidden ONLY when genuinely sealed in / deep underground
+            // (exposure ~0 -> alpha 0); otherwise they draw at warnExposureAlpha (full under a tree, faded at
+            // a doorway). The zone/hemisphere tracking above already ran, so a crossing is never swallowed.
+            if (warnExposureAlpha <= 0.001f) {
+                return;
+            }
+
             // B-4 item 3: the episodic polar warning owns the warning line while its ~10 s window is active
             // (rendered every frame for a smooth fade). When it's not showing, fall through to the
             // persistent E/W storm warning (left untouched this pass).
-            if (renderPoleWarningEpisode(ctx, client, warnY)) {
+            if (renderPoleWarningEpisode(ctx, client, warnY, warnExposureAlpha)) {
                 return;
             }
 
@@ -443,11 +487,20 @@ public final class GlobeWarningOverlay {
             maybeLogWarningRender(client,
                     new GlobeClientState.WarningState(GlobeClientState.WarningType.STORM, stormStage, 0),
                     bestText);
-            int color = warningColorWithPulse(bestText, client, tickCounter);
+            // Scale the pulse alpha by the exposure gate so the E/W banner fades under partial shelter too.
+            int color = scaleArgbAlpha(warningColorWithPulse(bestText, client, tickCounter), warnExposureAlpha);
             drawCenteredWarning(ctx, client.font, bestText, warnY, color, false, 1.0f);
         } catch (Throwable t) {
             GlobeMod.LOGGER.error("GlobeWarningOverlay.render crashed", t);
         }
+    }
+
+    /** Multiply the ALPHA channel of an ARGB colour by {@code scale} in {@code [0,1]}, leaving RGB intact.
+     *  Used to fold the B-5 item-3 exposure gate into an already-composed warning colour. */
+    private static int scaleArgbAlpha(int argb, float scale) {
+        int a = (argb >>> 24) & 0xFF;
+        int scaled = (int) Mth.clamp(a * scale, 0.0f, 255.0f);
+        return (scaled << 24) | (argb & 0x00FFFFFF);
     }
 
     private static int warningColorWithPulse(Component text, Minecraft client, DeltaTracker tickCounter) {

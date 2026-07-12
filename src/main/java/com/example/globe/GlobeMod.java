@@ -509,6 +509,15 @@ public class GlobeMod implements ModInitializer {
                     player.getName().getString(), cross, distToEdge);
             return;
         }
+        // Item 2 (surface-only), belt-and-suspenders: the client freezes the prompt underground, but a STALE
+        // client prompt (armed at the surface, then answered after descending) could still send an answer from
+        // below ground. Re-derive "deep underground" server-side (same seaLevel-2 + no-sky test) and reject it,
+        // so a cross can never fire from a cave -- underground there is only the vanilla border wall.
+        if (isDeepUnderground(world, player)) {
+            LOGGER.warn("[Latitude][Passage] Rejected answer from {} cross={} (underground; passage is surface-only)",
+                    player.getName().getString(), cross);
+            return;
+        }
         if (cross) {
             // HIGH-2 idempotency guard: reject a repeat cross inside the cooldown window. Without this, two
             // cross=true payloads in one tick both validate (the mirror preserves border distance) and the
@@ -559,6 +568,20 @@ public class GlobeMod implements ModInitializer {
     private static double distanceToEwEdgeBlocks(WorldBorder border, double x) {
         double half = border.getSize() * 0.5;
         return Math.max(0.0, half - Math.abs(x - border.getCenterX()));
+    }
+
+    /**
+     * B-5 item 2 (surface-only passage): server-derived "deep underground" -- genuinely below the surface AND
+     * with no sky overhead. Mirrors {@code GlobeClientState.isDeepUnderground} exactly (the same
+     * {@code PolarExposure.isBelowSurface} depth cut the client + enclosure sampler use, AND-ed with a real
+     * {@code canSeeSky} check), so the server never trusts a stale client prompt sent from a cave.
+     */
+    private static boolean isDeepUnderground(ServerLevel world, ServerPlayer player) {
+        BlockPos pos = player.blockPosition();
+        if (!com.example.globe.core.PolarExposure.isBelowSurface(pos.getY(), world.getSeaLevel())) {
+            return false;
+        }
+        return !world.canSeeSky(pos.above());
     }
 
     /**

@@ -61,11 +61,15 @@ public final class PolarVignetteOverlayHud {
             return; // provable no-op: no serious episode armed.
         }
 
-        // Same activation + surface gate as the warning TEXT (binary surfaceOk, deliberately): the vignette
-        // is punctuation for the warning episode, so it follows the text's gate -- NOT the exposure01-graded
-        // presentation systems (whiteout/particles/wind), which fade with partial shelter instead.
+        // B-5 item 3: the vignette FOLLOWS its warning text -- same shared exposure gate
+        // (PolarExposure.warningAlpha), so it fades under a tree/arch and hides only when genuinely sealed in /
+        // deep underground, exactly like the banner it punctuates (no forked logic).
         var eval = GlobeClientState.evaluate(mc);
-        if (!eval.active() || !eval.surfaceOk()) {
+        if (!eval.active()) {
+            return;
+        }
+        float exposureAlpha = com.example.globe.core.PolarExposure.warningAlpha(eval.exposure01());
+        if (exposureAlpha <= 0.001f) {
             return;
         }
 
@@ -81,6 +85,8 @@ public final class PolarVignetteOverlayHud {
         }
 
         float edge = PolarWarningVignette.edgeAlpha(tier, elapsedMs, lethalPersists, LatitudeConfig.reduceMotion);
+        // B-5 item 3: fade the vignette with the shared exposure gate (full under a tree, gone in a cave).
+        edge *= exposureAlpha;
         if (edge <= 0.001f) {
             return;
         }
