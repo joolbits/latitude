@@ -1534,14 +1534,9 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
                 0b011000,
                 0b110000,
         };
-        for (int ry = 0; ry < rows.length; ry++) {
-            int bits = rows[ry];
-            for (int rx = 0; rx < 6; rx++) {
-                if ((bits & (1 << (5 - rx))) != 0) {
-                    ctx.fill(lx + rx, ly + ry, lx + rx + 1, ly + ry + 1, color);
-                }
-            }
-        }
+        // Plotting mechanic shared via GlyphDraw (see its class doc); the bit pattern above is this
+        // glyph's own artwork and stays here.
+        GlyphDraw.drawBitmap(ctx, rows, 6, lx, ly, color);
     }
 
     /** Draws a glyph scaled up and centered on a button — used for the undo/redo arrows, whose default
@@ -1552,26 +1547,20 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
         float scale = 1.9f;
         int cx = w.getX() + w.getWidth() / 2;
         int cy = w.getY() + w.getHeight() / 2;
-        int glyphW = this.font.width(glyph);
         // High Contrast: a dark backing plate behind the arrow so it reads on any button state, and -- since a
         // disabled undo/redo button stays visible with only a greyed vanilla background -- a legibly-lifted
         // muted tone for the disabled glyph instead of full white, so "nothing to undo" no longer reads as
         // clickable. STANDARD keeps the exact 0xFFFFFFFF glyph for both states (byte-identical).
         int plate = a11yBackingAlpha();
         if (plate > 0) {
-            int r = (int) Math.ceil(this.font.lineHeight * scale / 2f) + 1;
+            int r = GlyphDraw.scaledTextPlateRadius(this.font, scale);
             ctx.fill(cx - r, cy - r, cx + r, cy + r, plate << 24);
         }
         int color = highContrast() ? (w.active ? 0xFFFFFFFF : a11yMuted(0xFF8C8078)) : 0xFFFFFFFF;
-        var m = ctx.pose();
-        m.pushMatrix();
-        try {
-            m.translate(cx, cy);
-            m.scale(scale, scale);
-            ctx.text(this.font, glyph, -glyphW / 2, -this.font.lineHeight / 2, color);
-        } finally {
-            m.popMatrix();
-        }
+        // Scale/center/draw mechanic shared via GlyphDraw (see its class doc, cataloguing the 3 prior
+        // reinventions of this "unicode fallback renders too small" workaround); which glyph and what
+        // color to use stays this call site's decision.
+        GlyphDraw.drawScaledCenteredText(ctx, this.font, glyph, cx, cy, scale, color);
     }
 
     @Override
