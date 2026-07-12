@@ -9,32 +9,38 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * Pure-JVM tests for {@link HemispherePassage} -- the E/W-edge crossing-prompt arm/re-arm state logic.
  *
- * <p>Pins the asymmetric hysteresis (disarm on prompt at 100, re-arm only past 564), the no-oscillation
- * guarantee at {@code PROMPT_AT}, the spawned/arrived-in-band => disarmed contract, the server anti-exploit
- * gate, the mirror-X geometry (identical Classic/Mercator), NaN safety, and that the band fits sanely inside
- * the smallest (Itty-Bitty Classic, xRadius 3750) world.
+ * <p>Pins the asymmetric hysteresis (disarm on prompt at 100, re-arm past a MODEST 250), the no-oscillation
+ * guarantee at {@code PROMPT_AT}, the TEST-83 "declined prompt re-offers after a modest walk-back" fix, the
+ * spawned/arrived-in-band => disarmed contract, the server anti-exploit gate, the mirror-X geometry (identical
+ * Classic/Mercator), NaN safety, and that the band fits sanely inside the smallest (Itty-Bitty Classic,
+ * xRadius 3750) world.
  */
 class HemispherePassageTest {
 
     // ---- threshold sanity / band discipline ------------------------------------------------
 
     @Test
-    void promptIsInsideFogWhichIsInsideRearm() {
-        // PROMPT_AT < FOG_START < REARM_AT -- the whole point of the asymmetric hysteresis.
-        assertTrue(HemispherePassage.PROMPT_AT < HemispherePassage.FOG_START);
-        assertTrue(HemispherePassage.FOG_START < HemispherePassage.REARM_AT);
+    void promptIsInsideRearmWhichIsInsideFog() {
+        // PROMPT_AT < REARM_AT < FOG_START -- re-arm is a MODEST walk-back that sits INSIDE the (purely visual)
+        // fog band, NOT past it. The old design put REARM_AT past FOG_START (564), which stranded declined
+        // players disarmed for 464 blocks (TEST 83).
+        assertTrue(HemispherePassage.PROMPT_AT < HemispherePassage.REARM_AT);
+        assertTrue(HemispherePassage.REARM_AT < HemispherePassage.FOG_START);
     }
 
     @Test
-    void rearmMarginMeetsDeadZoneDiscipline() {
-        // margin >= DEAD_ZONE (64); the sweeper's band floor is DEAD_ZONE+32 (96) and PROMPT_AT (100) clears it.
+    void rearmMarginBeatsJitterWithoutStranding() {
+        // The re-arm dead band must be far wider than any per-tick position jitter (>> DEAD_ZONE = 64) so it
+        // cannot machine-gun, yet modest enough to feel like "I left the edge and came back".
         assertTrue(HemispherePassage.REARM_MARGIN >= HemisphereCrossing.DEAD_ZONE_BLOCKS);
         assertTrue(HemispherePassage.PROMPT_AT >= HemisphereCrossing.DEAD_ZONE_BLOCKS + 32.0);
+        // The whole walk-out-and-back re-arm loop is a modest fraction of the fog band, not the entire band.
+        assertTrue(HemispherePassage.REARM_AT < HemispherePassage.FOG_START);
     }
 
     @Test
     void bandFitsInsideSmallestClassicWorld() {
-        // Itty-Bitty Classic xRadius = 3750. The whole arm/prompt geometry (out to REARM_AT = 564) must sit
+        // Itty-Bitty Classic xRadius = 3750. The whole arm/prompt geometry (out to REARM_AT = 250) must sit
         // well inside it, leaving the vast interior prompt-free, and FOG_START <= ~15% of the radius.
         final double ittyBittyXRadius = 3750.0;
         assertTrue(HemispherePassage.REARM_AT < ittyBittyXRadius);
@@ -59,8 +65,8 @@ class HemispherePassageTest {
 
     @Test
     void disarmedPlayerDoesNotRearmInsideTheStickyBand() {
-        // Between PROMPT_AT (100) and REARM_AT (564): a disarmed player never re-arms and never re-prompts.
-        for (double dist : new double[] {101.0, 200.0, 400.0, 500.0, 563.0}) {
+        // Between PROMPT_AT (100) and REARM_AT (250): a disarmed player never re-arms and never re-prompts.
+        for (double dist : new double[] {101.0, 150.0, 200.0, 249.0}) {
             HemispherePassage.Decision d = HemispherePassage.evaluate(false, dist);
             assertFalse(d.openPrompt(), "no prompt while disarmed at dist=" + dist);
             assertFalse(d.nextArmed(), "must stay disarmed at dist=" + dist);
@@ -123,6 +129,73 @@ class HemispherePassageTest {
         // Blocker clears -> caller opens and commits the disarm; next tick must not re-prompt.
         assertFalse(blockedTick2.nextArmed());
         assertFalse(HemispherePassage.evaluate(blockedTick2.nextArmed(), 80.0).openPrompt());
+    }
+
+    // ---- TEST-83 live regression: a declined/dismissed prompt re-offers after a modest walk-back ----
+
+    /**
+     * Drive the pure arm through a scripted distance walk exactly as the CLIENT does when no screen blocks the
+     * open ({@code armed = d.nextArmed()} every tick), counting prompts. Turn-back and ESC-dismiss are identical
+     * at this layer: both simply close the screen without crossing, leaving {@code armed} at whatever the open
+     * committed (false) -- so this one helper models both dismissal paths.
+     */
+    private static int countPromptsAlongWalk(boolean startArmed, double[] distSequence) {
+        boolean armed = startArmed;
+        int prompts = 0;
+        for (double dist : distSequence) {
+            HemispherePassage.Decision d = HemispherePassage.evaluate(armed, dist);
+            if (d.openPrompt()) {
+                prompts++;
+            }
+            armed = d.nextArmed();
+        }
+        return prompts;
+    }
+
+    @Test
+    void declinedPromptReoffersAfterModestWalkBackAndReturn() {
+        // TEST 83: arm -> reach edge (prompt #1, disarm) -> turn back -> walk out JUST past REARM_AT (260, a
+        // modest ~160 blocks, NOT the old 464) -> walk back in -> MUST prompt again (#2).
+        double[] walk = {
+                80.0,        // approach: prompt #1 fires, disarm
+                90.0, 120.0, // dithering right at the edge after turning back -- must NOT re-prompt
+                180.0, 240.0, 260.0, // walk out past REARM_AT (250) -> re-arm
+                180.0, 90.0, 70.0,   // return to the edge -> prompt #2
+        };
+        assertEquals(2, countPromptsAlongWalk(true, walk),
+                "a declined prompt must re-offer after a modest walk-out past REARM_AT and back");
+    }
+
+    @Test
+    void escDismissReoffersIdenticallyToTurnBack() {
+        // ESC-dismiss is indistinguishable from "Turn back" at the pure layer (no crossing, armed stays false).
+        // Same script, same guarantee: exactly one re-offer after clearing REARM_AT once.
+        double[] walk = {75.0, /*ESC*/ 110.0, 300.0 /*out past REARM_AT*/, 100.0, 60.0 /*back*/};
+        assertEquals(2, countPromptsAlongWalk(true, walk),
+                "ESC-dismiss must re-offer the same as turn-back after a walk-out and return");
+    }
+
+    @Test
+    void modestWalkBackShortOfOldFogBandNowRearms() {
+        // Direct pin of the fix: at dist=300 a disarmed player RE-ARMS. Under the old design (REARM_AT=564)
+        // this same 300 was still inside the sticky band and would have stayed disarmed forever.
+        assertTrue(HemispherePassage.evaluate(false, 300.0).nextArmed(),
+                "300 blocks out (past REARM_AT=250) must re-arm -- the old 564 stranded the player here");
+        assertTrue(300.0 < HemispherePassage.FOG_START,
+                "and 300 is still inside the visual fog band, matching 'I left the heavy fog and came back'");
+    }
+
+    @Test
+    void arrivalSeededPlayerReoffersAfterModestWalkBack() {
+        // The far-side arrival seeds armed=false in-band. It must re-offer after the SAME modest walk-back, not
+        // require the old 464-block trek.
+        double[] walk = {
+                90.0, 130.0,        // arrived in-band, dithering -- no prompt
+                220.0, 260.0,       // modest walk-out past REARM_AT -> re-arm
+                150.0, 80.0,        // return -> first legitimate prompt on the far side
+        };
+        assertEquals(1, countPromptsAlongWalk(false, walk),
+                "an arrival-seeded player must be able to prompt after a modest walk-out and return");
     }
 
     // ---- spawned / arrived-in-band => disarmed ---------------------------------------------
