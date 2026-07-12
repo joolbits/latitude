@@ -137,9 +137,12 @@ public class LatitudeCreateWorldScreen extends Screen {
     // subtler than the Atlas band's traveling Gaussian crest (see LatitudePlanisphereRenderer) -- this reads
     // as "alive", not "jumping". Wall-clock driven, same System.currentTimeMillis() idiom as every other
     // animation on this screen.
-    private static final double ZONE_BOUNCE_PERIOD_SEC = 0.95;  // one full bob; quicker so the wave reads as a lively ripple, not a slow heave
-    private static final double ZONE_BOUNCE_AMPLITUDE_PX = 1.8; // peak vertical offset (drawn at sub-pixel precision via pose translate)
-    private static final double ZONE_BOUNCE_LETTER_PHASE = 0.6; // radians of phase lag per letter -> a soft travelling wave
+    // Motion-sickness tone-down (Peetsa, 2026-07-11 -- "a teensy smidge" calmer so the wave can't nauseate anyone):
+    // amplitude 1.8 -> 1.4 (smaller bob) and period 0.95 -> 1.1s (slower = less oscillation energy). Still alive, just
+    // gentler; letter phase is unchanged so the wave still TRAVELS across the word rather than pulsing in place.
+    private static final double ZONE_BOUNCE_PERIOD_SEC = 1.1;   // one full bob; slowed a touch to bleed off oscillation energy (motion-sickness tone-down) -- still a lively ripple, not a slow heave
+    private static final double ZONE_BOUNCE_AMPLITUDE_PX = 1.4; // peak vertical offset (drawn at sub-pixel precision via pose translate); trimmed 1.8->1.4 so the bob is gentler on motion-sensitive players
+    private static final double ZONE_BOUNCE_LETTER_PHASE = 0.6; // radians of phase lag per letter -> a soft travelling wave (unchanged: the wave must still travel)
     private static final double ZONE_TAB_SHIMMER_PERIOD_SEC = 2.4; // slower than the Atlas crest's 2.6s sweep
     private static final double ZONE_TAB_SHIMMER_AMPLITUDE = 0.20; // +/-20% brightness
     // Accessibility (Peetsa 2026-07-11): the selected zone row's name/subtitle were barely brighter than an
@@ -1088,7 +1091,7 @@ public class LatitudeCreateWorldScreen extends Screen {
         boolean visible = (!tabbedMode || activeTab == 2)
                 && left.getX() < paneStripViewportRight
                 && right.getX() + right.getWidth() > paneStripViewportLeft
-                && y + height > settingsViewportTop
+                && y + height > settingsClipTop()
                 && y < settingsViewportBottom;
         left.visible = visible;
         right.visible = visible;
@@ -1104,7 +1107,7 @@ public class LatitudeCreateWorldScreen extends Screen {
         boolean visible = (!tabbedMode || activeTab == 2)
                 && button.getX() < paneStripViewportRight
                 && button.getX() + button.getWidth() > paneStripViewportLeft
-                && y + height > settingsViewportTop
+                && y + height > settingsClipTop()
                 && y < settingsViewportBottom;
         button.visible = visible;
         button.active = visible;
@@ -1516,7 +1519,15 @@ public class LatitudeCreateWorldScreen extends Screen {
             int settLabelX = railX + 4;
             int railClipLeft = Math.max(railX + 1, paneStripViewportLeft);
             int railClipRight = Math.min(railX + railW - 1, paneStripViewportRight);
-            if (railClipRight > railClipLeft) {
+            // Draw the section heading BEFORE (outside) the scroll scissor AND outside the horizontal
+            // clip-width guard below, so the "Rules" title + divider draw EVERY FRAME, unconditionally,
+            // independent of scroll position and of any scissor -- exactly like the World / Spawn Zone panels
+            // above, which each draw drawInlineHeading before their own `if (clipRight > clipLeft)` guard.
+            // Previously the rail's heading sat INSIDE that guard (nested one level deeper than the two siblings),
+            // the lone structural deviation of the three panels; hoisting it out makes the rail heading's draw
+            // path byte-for-byte parallel to the unaffected sibling headings. The World Type tooltip added below
+            // (maybeDrawWorldTypeTooltip) is a deferred, hover-gated overlay drawn on a later stratum and never
+            // touches this heading's draw or scissor state.
             if (threeCol) {
                 drawInlineHeading(context, railX, railW, TAB_LABELS[2], GOLD);
             }
@@ -1527,7 +1538,8 @@ public class LatitudeCreateWorldScreen extends Screen {
             // fixed to clip at headerBandBottom() -- the rail was the one column that kept the stale +36 constant
             // for its clip, which is why the two prior "heading clip" passes didn't kill this. Layout / scroll /
             // hit-testing still use settingsViewportTop; only the visual clip moves up to hug the title.
-            int railClipTop = threeCol ? headerBandBottom() : settingsViewportTop;
+            int railClipTop = settingsClipTop();
+            if (railClipRight > railClipLeft) {
             context.enableScissor(railClipLeft, railClipTop, railClipRight, settingsViewportBottom);
             // (Tabbed mode: no in-panel "WORLD SETTINGS" header — the tab strip already labels this pane, and
             // drawing it here just clipped against the scissor and left the dead "invisible header bar".)
@@ -1890,14 +1902,14 @@ public class LatitudeCreateWorldScreen extends Screen {
 
     private void drawSettingsRowLabel(GuiGraphicsExtractor context, String label, int x, int rowY, int color) {
         int labelY = rowY - 10;
-        if (labelY + uiFontHeight() <= settingsViewportTop || labelY >= settingsViewportBottom) {
+        if (labelY + uiFontHeight() <= settingsClipTop() || labelY >= settingsViewportBottom) {
             return;
         }
         drawBoundedText(context, label, new UiRect(x, labelY, Math.max(20, railW - 8 - SCROLLBAR_GUTTER), uiFontHeight()), color, false, true);
     }
 
     private void drawSettingsStepperValue(GuiGraphicsExtractor context, String text, int color, int rowY) {
-        if (rowY + uiFontHeight() <= settingsViewportTop || rowY >= settingsViewportBottom) {
+        if (rowY + uiFontHeight() <= settingsClipTop() || rowY >= settingsViewportBottom) {
             return;
         }
         int stepperW = worldTypePrevBtn != null ? worldTypePrevBtn.getWidth() : 20;
@@ -1924,7 +1936,9 @@ public class LatitudeCreateWorldScreen extends Screen {
         final int rowTop = worldTypeRowY - 10;                 // includes the label drawn one labelGap above
         final int rowBottom = worldTypeRowY + btnH;            // through the bottom of the arrow buttons
         boolean hovered = mouseX >= rowX && mouseX <= rowX + rowW && mouseY >= rowTop && mouseY <= rowBottom;
-        if (!hovered || rowBottom <= settingsViewportTop || rowTop >= settingsViewportBottom) {
+        // Hover gate on the SAME line the row is clipped to (settingsClipTop), so the tooltip is available for
+        // exactly the visible portion of the row -- never for a slice that's scrolled up under the heading.
+        if (!hovered || rowBottom <= settingsClipTop() || rowTop >= settingsViewportBottom) {
             return;
         }
         Component tip = Component.literal(
@@ -1935,7 +1949,7 @@ public class LatitudeCreateWorldScreen extends Screen {
         java.util.List<net.minecraft.util.FormattedCharSequence> lines = this.font.split(tip, wrapW);
         final int anchorX = rowX;
         final int anchorW = rowW;
-        final int anchorY = Math.max(settingsViewportTop, rowTop);
+        final int anchorY = Math.max(settingsClipTop(), rowTop);
         net.minecraft.client.gui.screens.inventory.tooltip.ClientTooltipPositioner sidePositioner =
                 (sw, sh, mx, my, tw, th) -> {
                     int gap = 6;
@@ -2473,6 +2487,18 @@ public class LatitudeCreateWorldScreen extends Screen {
         return panelTop + 6 + uiFontHeight() + 3;
     }
 
+    /** THE single top-of-scroll boundary for the Rules rail. Everything in the rail's scroll path -- the outer
+     *  visual scissor, the per-row scissor, every per-widget visibility gate, every drawn-label cull, and every
+     *  hover/click hit-test -- MUST reference THIS one line so a row's label, its widgets, its plate and its hover
+     *  all clip/disable at the SAME boundary, continuously, as it slides under the "Rules" heading. In three-column
+     *  mode that boundary hugs the heading band (panelTop+18); the earlier code culled/gated at settingsViewportTop
+     *  (panelTop+36) while the scissor already clipped at +18, so text clipped smoothly but the steppers/icon-rows
+     *  POPPED in/out 18px later -- the "gobbling / popping" scroll. In tabbed mode the tab strip labels the pane, so
+     *  there is no heading band and the boundary is simply settingsViewportTop (== panelTop+8, no gap, no pop). */
+    private int settingsClipTop() {
+        return threeCol ? headerBandBottom() : settingsViewportTop;
+    }
+
     private void drawPaneScrollbar(GuiGraphicsExtractor context, int paneX, int paneW, int viewportTop, int viewportBottom,
                                    int contentHeight, int scrollAmount) {
         int viewportHeight = Math.max(0, viewportBottom - viewportTop);
@@ -2854,7 +2880,8 @@ public class LatitudeCreateWorldScreen extends Screen {
             // from settingsViewportTop, so a row scrolling up isn't swallowed by the ~18px invisible shelf under
             // the "Rules" title. Both the outer pass and this per-row pass must agree, since nested scissors
             // intersect -- if only one used the tighter top the row would still clip at the stale +36 line.
-            int rowClipTop = threeCol ? headerBandBottom() : settingsViewportTop;
+            // settingsClipTop() is that shared line; the hover hit-test + tooltip gate below reuse it too.
+            int rowClipTop = settingsClipTop();
             boolean clipped = clipRight > clipLeft && settingsViewportBottom > rowClipTop;
             if (clipped) {
                 context.enableScissor(clipLeft, rowClipTop, clipRight, settingsViewportBottom);
@@ -2864,8 +2891,10 @@ public class LatitudeCreateWorldScreen extends Screen {
             boolean on = isOn();
             boolean lit = enabled && (this.isToggle ? on : true);
             long now = System.currentTimeMillis();
+            // Hover hit-test clamped to the row's VISIBLE span: top at rowClipTop (the same clip line the row is
+            // drawn to), so the half-clipped part under the heading is never hoverable-but-invisible.
             boolean hovered = enabled && mouseX >= x && mouseX < x + w
-                    && mouseY >= Math.max(y, settingsViewportTop) && mouseY < Math.min(y + h, settingsViewportBottom);
+                    && mouseY >= Math.max(y, rowClipTop) && mouseY < Math.min(y + h, settingsViewportBottom);
 
             // Hover / focus backing highlight
             if (hovered || this.isFocused()) {
@@ -2946,7 +2975,7 @@ public class LatitudeCreateWorldScreen extends Screen {
             // adjacent rail content. The rail sits on the right of the screen, so prefer opening LEFT into the
             // empty middle; fall back to the right, then clamp on-screen. Deferred -> drawn on top, after every
             // scissor is disabled. Only when this row's viewport actually shows it.
-            if (hovered && y + h > settingsViewportTop && y < settingsViewportBottom) {
+            if (hovered && y + h > rowClipTop && y < settingsViewportBottom) {
                 int wrapW = Math.max(120, Math.min(220, LatitudeCreateWorldScreen.this.width - 24));
                 java.util.List<net.minecraft.util.FormattedCharSequence> lines = font.split(this.tooltip, wrapW);
                 final int anchorX = x;
