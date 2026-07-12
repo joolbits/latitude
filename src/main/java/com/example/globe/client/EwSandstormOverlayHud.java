@@ -30,6 +30,19 @@ public final class EwSandstormOverlayHud {
 
         double distToBorder = GlobeClientState.distanceToEwBorderBlocks(mc.player.getX());
 
+        // B-5-P2 composition (A5): when the Hemisphere Passage is ON, the wall-aware DEPTH fog
+        // (FogRendererPassageSetupMixin) owns the edge haze inside the fog band -- it starts at the SAME 500-block
+        // FADE_START and is depth-correct (crisp shelter walls, heavy exterior). This flat, depth-blind screen
+        // fill would double-haze on top of it (and haze interior walls the depth fog correctly leaves clear), so
+        // suppress it entirely inside the band. Flag OFF: byte-identical -- the guard is skipped and the flat
+        // haze renders exactly as today. (Only suppressed where the depth fog is active, i.e. dist < FADE_START;
+        // outside the band both do nothing.)
+        if (com.example.globe.core.LatitudeV2Flags.PASSAGE_V2_ENABLED
+                && GlobeClientState.isGlobeWorld()
+                && distToBorder < FADE_START) {
+            return;
+        }
+
         // Far from border => no overlay
         if (distToBorder >= FADE_START) return;
 

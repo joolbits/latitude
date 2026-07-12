@@ -109,6 +109,22 @@ class HemispherePassageTest {
         assertEquals(1, prompts, "sliding along the edge prompts once, never again without leaving the band");
     }
 
+    @Test
+    void blockedOpenRetriesWhileCallerHoldsArmCommit() {
+        // P2 sweep A10 (third option): when the client can't actually open the prompt (a container is up), the
+        // caller does NOT commit the disarm and re-evaluates next tick with armed still true. Pin that evaluate
+        // is pure/stateless about this: the same armed=true input keeps yielding openPrompt until the caller
+        // commits, so a blocked prompt fires the moment the blocker clears instead of being silently consumed.
+        HemispherePassage.Decision blockedTick1 = HemispherePassage.evaluate(true, 80.0);
+        assertTrue(blockedTick1.openPrompt());
+        // Caller could not open -> keeps armed=true instead of committing blockedTick1.nextArmed().
+        HemispherePassage.Decision blockedTick2 = HemispherePassage.evaluate(true, 80.0);
+        assertTrue(blockedTick2.openPrompt(), "still armed => still asks to open on the retry tick");
+        // Blocker clears -> caller opens and commits the disarm; next tick must not re-prompt.
+        assertFalse(blockedTick2.nextArmed());
+        assertFalse(HemispherePassage.evaluate(blockedTick2.nextArmed(), 80.0).openPrompt());
+    }
+
     // ---- spawned / arrived-in-band => disarmed ---------------------------------------------
 
     @Test
@@ -197,5 +213,78 @@ class HemispherePassageTest {
         HemispherePassage.Decision d = HemispherePassage.evaluate(false, Double.NaN);
         assertFalse(d.openPrompt());
         assertTrue(d.nextArmed(), "a bad distance read must not trap the player disarmed");
+    }
+
+    // ---- B-5-P2 approach fog (A2): the pure distance->fog curves ---------------------------
+
+    @Test
+    void approachProgressEndpointsAndClamp() {
+        // 0 at/beyond FOG_START (500); 1 at/inside PROMPT_AT (100); clamped both sides.
+        assertEquals(0.0, HemispherePassage.approachProgress(HemispherePassage.FOG_START), 1e-9);
+        assertEquals(0.0, HemispherePassage.approachProgress(600.0), 1e-9);
+        assertEquals(1.0, HemispherePassage.approachProgress(HemispherePassage.PROMPT_AT), 1e-9);
+        assertEquals(1.0, HemispherePassage.approachProgress(0.0), 1e-9);
+    }
+
+    @Test
+    void approachProgressIsMonotonicIntoTheEdge() {
+        double prev = -1.0;
+        // Walking IN (500 -> 100), progress must strictly increase.
+        for (double dist = 500.0; dist >= 100.0; dist -= 20.0) {
+            double p = HemispherePassage.approachProgress(dist);
+            assertTrue(p >= prev, "approach progress must not decrease as the edge nears (dist=" + dist + ")");
+            prev = p;
+        }
+    }
+
+    @Test
+    void approachFogIsSeamFreeAtAndBeyondFogStart() {
+        // At/beyond FOG_START the caller's own vanilla fog is returned unchanged -- no onset ring.
+        float vEnd = 240.0f;
+        float vStart = 40.0f;
+        assertEquals(vEnd, HemispherePassage.approachFogEnd(vEnd, HemispherePassage.FOG_START), 1e-4f);
+        assertEquals(vEnd, HemispherePassage.approachFogEnd(vEnd, 700.0), 1e-4f);
+        assertEquals(vStart,
+                HemispherePassage.approachFogStart(vStart, vEnd, HemispherePassage.FOG_START), 1e-4f);
+        assertEquals(0.0f, HemispherePassage.approachFogEndFraction(HemispherePassage.FOG_START), 1e-6f);
+    }
+
+    @Test
+    void approachFogOnlyEverTightens() {
+        float vEnd = 240.0f;
+        for (double dist = 500.0; dist >= 0.0; dist -= 25.0) {
+            float end = HemispherePassage.approachFogEnd(vEnd, dist);
+            assertTrue(end <= vEnd + 1e-4f, "fog end must never loosen past vanilla (dist=" + dist + ")");
+            float start = HemispherePassage.approachFogStart(40.0f, end, dist);
+            assertTrue(start < end, "START must always stay below END (dist=" + dist + ")");
+        }
+    }
+
+    @Test
+    void approachFogReachesNearOpaqueWallAtTheEdge() {
+        // At the edge the render-distance end collapses to ~APPROACH_FOG_END_NEAR (a near-opaque wall) regardless
+        // of how far the player's vanilla view distance was.
+        float end = HemispherePassage.approachFogEnd(512.0f, 0.0);
+        assertEquals(HemispherePassage.APPROACH_FOG_END_NEAR, end, 1e-3f);
+        float start = HemispherePassage.approachFogStart(40.0f, end, 0.0);
+        assertEquals(HemispherePassage.APPROACH_FOG_START_NEAR, start,
+                Math.abs(HemispherePassage.APPROACH_FOG_START_NEAR - end)); // near NEAR, still below end
+        assertTrue(start < end);
+    }
+
+    @Test
+    void approachFogIsEaseInNotLinear() {
+        // "Weather rolling in": at the mid-point of the band the eased END fraction is BELOW the linear fraction
+        // (thin far out, thickening steeply toward the edge). Progress 0.5 -> 0.5^1.6 < 0.5.
+        double dist = (HemispherePassage.FOG_START + HemispherePassage.PROMPT_AT) / 2.0; // progress ~0.5
+        double linear = HemispherePassage.approachProgress(dist);
+        float eased = HemispherePassage.approachFogEndFraction(dist);
+        assertTrue(eased < linear, "ease-in: the fog builds slower than linear through the mid-band");
+    }
+
+    @Test
+    void approachFogNanDistanceIsNoFog() {
+        assertEquals(0.0, HemispherePassage.approachProgress(Double.NaN), 1e-9);
+        assertEquals(240.0f, HemispherePassage.approachFogEnd(240.0f, Double.NaN), 1e-4f);
     }
 }

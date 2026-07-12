@@ -92,6 +92,7 @@ public class GlobeModClient implements ClientModInitializer {
             com.example.globe.client.ZoneEnterTitleOverlay.reset();
             com.example.globe.client.HemisphereTitleOverlay.reset();
             com.example.globe.client.HemispherePassageClientState.reset();
+            com.example.globe.client.HemispherePassageClient.reset();
             com.example.globe.client.LatitudeWhisperOverlay.reset();
             com.example.globe.client.PolarWindSoundInstance.reset();
         });
@@ -139,6 +140,8 @@ public class GlobeModClient implements ClientModInitializer {
         // /latdev tree for every other subcommand. See LatitudeClientDevCommands for the full rationale.
         com.example.globe.client.LatitudeClientDevCommands.registerIfEnabled();
         ClientTickEvents.END_CLIENT_TICK.register(GlobeModClient::polarCapClientTick);
+        // B-5-P2 Hemisphere Passage: the approach/prompt + crossing-curtain state machine (flag-gated internally).
+        ClientTickEvents.END_CLIENT_TICK.register(com.example.globe.client.HemispherePassageClient::clientTick);
         ClientKeybinds.init();
         if (FabricLoader.getInstance().isDevelopmentEnvironment()) {
             DevCaptureKeybind.init();

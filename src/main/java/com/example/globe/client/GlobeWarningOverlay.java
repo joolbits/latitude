@@ -76,6 +76,18 @@ public final class GlobeWarningOverlay {
     private static final String EW_SANDSTORM_DANGER_TEMPLATE =
             "Blinding sandstorm to the %s. Turn back.";
 
+    // B-5-P2 EW warning HONESTY (A4): with the Hemisphere Passage ON the E/W edge is PASSABLE, so "Turn back."
+    // at every tier is a lie -- the stage-2 line fires in the same band as the "pass through?" prompt. When
+    // PASSAGE_V2_ENABLED these advisory-but-passable rewords replace the strings above (register borrowed from
+    // the polar ladder, kept SHORT). Thresholds are UNTOUCHED (KEEP-SHARED law) -- only the wording changes.
+    // Flag OFF: the originals above are used, byte-identical.
+    private static final String EW_STORM_WARN_PASSAGE_TEMPLATE =
+            "Heavy storms to the %s -- the crossing beyond is rough but passable.";
+    private static final String EW_WHITEOUT_DANGER_PASSAGE_TEMPLATE =
+            "Whiteout at the world's edge -- hold steady if you mean to cross.";
+    private static final String EW_SANDSTORM_DANGER_PASSAGE_TEMPLATE =
+            "Blinding sandstorm at the world's edge -- hold steady if you mean to cross.";
+
     private static final boolean DEBUG_ENTRY_TITLES = Boolean.getBoolean("latitude.debugEntryTitles");
 
     private static long lastZoneUpdateWorldTime = Long.MIN_VALUE;
@@ -290,9 +302,13 @@ public final class GlobeWarningOverlay {
 
     private static Component ewTextForStage(GlobeClientState.EwStormStage stage, boolean cold) {
         if (stage == null) return null;
+        // A4: passage-on uses the advisory-but-passable wording; passage-off keeps the original "Turn back." set.
+        boolean passable = com.example.globe.core.LatitudeV2Flags.PASSAGE_V2_ENABLED;
         return switch (stage) {
-            case LEVEL_1 -> Component.literal(EW_STORM_WARN_TEMPLATE);
-            case LEVEL_2 -> Component.literal(cold ? EW_WHITEOUT_DANGER_TEMPLATE : EW_SANDSTORM_DANGER_TEMPLATE)
+            case LEVEL_1 -> Component.literal(passable ? EW_STORM_WARN_PASSAGE_TEMPLATE : EW_STORM_WARN_TEMPLATE);
+            case LEVEL_2 -> Component.literal(passable
+                            ? (cold ? EW_WHITEOUT_DANGER_PASSAGE_TEMPLATE : EW_SANDSTORM_DANGER_PASSAGE_TEMPLATE)
+                            : (cold ? EW_WHITEOUT_DANGER_TEMPLATE : EW_SANDSTORM_DANGER_TEMPLATE))
                     .withStyle(ChatFormatting.YELLOW, ChatFormatting.BOLD);
             default -> null;
         };
