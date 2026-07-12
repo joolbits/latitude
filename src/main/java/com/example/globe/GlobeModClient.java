@@ -9,6 +9,7 @@ import com.example.globe.client.CompassHud;
 import com.example.globe.client.CompassHudConfig;
 import com.example.globe.client.ClientKeybinds;
 import com.example.globe.client.GlobeWarningOverlay;
+import com.example.globe.client.PolarWindSoundInstance;
 import com.example.globe.client.LatitudeClientState;
 import com.example.globe.client.LatitudeHudStudioScreen;
 import com.example.globe.client.EwStormWallRenderer;
@@ -91,6 +92,7 @@ public class GlobeModClient implements ClientModInitializer {
             com.example.globe.client.ZoneEnterTitleOverlay.reset();
             com.example.globe.client.HemisphereTitleOverlay.reset();
             com.example.globe.client.LatitudeWhisperOverlay.reset();
+            com.example.globe.client.PolarWindSoundInstance.reset();
         });
 
         ClientPlayNetworking.registerGlobalReceiver(GlobeNet.GlobeStatePayload.ID, (payload, context) -> {
@@ -226,6 +228,11 @@ public class GlobeModClient implements ClientModInitializer {
         if (client.isPaused()) {
             return;
         }
+
+        // Polar WIND SOUND BED (CD F2/R2): a looping vanilla wind-rush that rises from a breath at 85 deg to
+        // a howl near the pole, tracking the same 85->90 ramp as the snow/fog. Self-manages its lifecycle
+        // (starts here, updates volume + stops itself in its own tick); the manager only (re)arms it.
+        PolarWindSoundInstance.clientTick(client);
 
         // Throttle: spawn on every 4th tick (shared by ambient snow + EW storm). Fixed per-tick BUDGET on
         // each spawn tick -- never a "how many do I owe since last spawn" accumulator.
