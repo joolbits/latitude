@@ -53,6 +53,8 @@ public class InGameHudMixin {
             com.example.globe.client.PolarWhiteoutOverlayHud.render(context, tickCounter);
             // Keep the zone/hemisphere/pole tracking alive under F1; its own draw self-suppresses.
             GlobeWarningOverlay.render(context, tickCounter);
+            // B-5-P2: the crossing curtain masks the teleport -- opaque, ON TOP of everything, even under F1.
+            com.example.globe.client.HemispherePassageClient.renderCurtain(context);
             return;
         }
 
@@ -71,5 +73,10 @@ public class InGameHudMixin {
             // B-4 round 3 item 5: linger whispers (translucent italic) share the HUD layer, hidden by F1.
             com.example.globe.client.LatitudeWhisperOverlay.render(context, gw, gh);
         }
+        // B-5-P2: the crossing curtain rides ABOVE all HUD chrome so it fully masks the teleport + chunk load.
+        // Known accepted quirk (P2 sweep LOW-2, cosmetic): if the player opens a Screen mid-crossing (e.g. E for
+        // inventory), this method's top screen-guard returns early, so that screen shows over the curtain for a
+        // moment; the curtain resumes when it closes. Accepted -- do not fix.
+        com.example.globe.client.HemispherePassageClient.renderCurtain(context);
     }
 }

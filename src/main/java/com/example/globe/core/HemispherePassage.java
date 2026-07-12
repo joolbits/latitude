@@ -115,6 +115,79 @@ public final class HemispherePassage {
         return 2.0 * centerX - x;
     }
 
+    // ---- B-5-P2 approach fog (A2): pure distance->fog curves for the REAL DEPTH FOG mixin ----
+    //
+    // The approach to the E/W edge is NOT a flat screen tint (Peetsa vetoed that): it drives Minecraft's OWN
+    // render-distance fog exactly like {@code FogRendererPolarSetupMixin} does for the pole, so it is depth-
+    // correct and wall-aware (a shelter wall two blocks away stays crisp; the exterior seen out a doorway reads
+    // heavy). These are the pure, testable curves; the client mixin (FogRendererPassageSetupMixin) does the GL-
+    // side FogData mutation + haze-palette tint. The intensity axis is the SAME distance-to-edge the prompt arms
+    // on, so the fog and the prompt share one onset ({@link #FOG_START}) and one climax ({@link #PROMPT_AT}).
+    //
+    // Curve choice -- "a weather front rolling in": ease-IN (exponent > 1) over the band. At {@link #FOG_START}
+    // (500 blocks) the fog is barely-there and distant (a haze on the horizon); it thickens STEEPLY into a near-
+    // opaque wall as the player closes on the prompt band, so the edge reads as a storm gathering ahead rather
+    // than a fog that snaps on. Below {@link #PROMPT_AT} the fraction clamps to 1 (full), so the wall holds
+    // through the prompt band right to the edge. Seam-free at/beyond {@link #FOG_START}: every function returns
+    // the caller's own vanilla value unchanged, so there is no visible onset ring.
+
+    /** Cylindrical render-distance fog END (blocks) AT the edge: a near-opaque wall leaving ~1 chunk of sight.
+     *  A touch more open than the pole's 16 ({@code PolarHazardWindow.POLAR_FOG_END_NEAR}) -- the edge is a
+     *  passable weather advisory, not the lethal polar cap, so you can still see the wall you are walking into. */
+    public static final float APPROACH_FOG_END_NEAR = 20.0f;
+    /** Cylindrical render-distance fog START (blocks) at the edge: fog begins this close, so a wall 2-3 blocks
+     *  away is still under START (unfogged) while everything past it fades to haze. */
+    public static final float APPROACH_FOG_START_NEAR = 6.0f;
+    /** END-curve exponent over the approach progress. {@code > 1} = ease-in (gathering front): thin far out,
+     *  thickening steeply toward the edge. */
+    public static final double APPROACH_FOG_END_CURVE = 1.6;
+    /** START-curve exponent. SMALLER than {@link #APPROACH_FOG_END_CURVE} so START pulls in a little faster than
+     *  END and the fog BAND widens as you approach (a deepening haze over distance, not a hard single-range wall). */
+    public static final double APPROACH_FOG_START_CURVE = 1.1;
+
+    /** Continuous approach progress in {@code [0,1]}: 0 at/beyond {@link #FOG_START} (500), 1 at/inside
+     *  {@link #PROMPT_AT} (100). NaN is treated as "far" (0) so a bad read never fogs the screen. */
+    public static double approachProgress(double distToEdge) {
+        if (Double.isNaN(distToEdge)) {
+            return 0.0;
+        }
+        double t = (FOG_START - distToEdge) / (FOG_START - PROMPT_AT);
+        return t <= 0.0 ? 0.0 : (t >= 1.0 ? 1.0 : t);
+    }
+
+    /** Eased END fraction in {@code [0,1]}: 0 at/beyond {@link #FOG_START} (seam-free), 1 at the edge. */
+    public static float approachFogEndFraction(double distToEdge) {
+        double p = approachProgress(distToEdge);
+        return p <= 0.0 ? 0.0f : (float) Math.pow(p, APPROACH_FOG_END_CURVE);
+    }
+
+    /** Eased START fraction in {@code [0,1]} (faster curve than END so the fog band deepens on approach). */
+    public static float approachFogStartFraction(double distToEdge) {
+        double p = approachProgress(distToEdge);
+        return p <= 0.0 ? 0.0f : (float) Math.pow(p, APPROACH_FOG_START_CURVE);
+    }
+
+    /** Tightened cylindrical fog END: eases the caller's CURRENT vanilla end toward {@link #APPROACH_FOG_END_NEAR}
+     *  as the edge nears. Returns {@code vanillaEnd} unchanged at/beyond {@link #FOG_START} (seam-free) and never
+     *  loosens (NEAR is far closer than any real view distance). Easing from the caller's own end keeps the onset
+     *  seam-free at every video render distance. */
+    public static float approachFogEnd(float vanillaEnd, double distToEdge) {
+        float f = approachFogEndFraction(distToEdge);
+        if (f <= 0.0f) {
+            return vanillaEnd;
+        }
+        return vanillaEnd + (APPROACH_FOG_END_NEAR - vanillaEnd) * f;
+    }
+
+    /** Tightened cylindrical fog START: eases the caller's vanilla start toward {@link #APPROACH_FOG_START_NEAR}
+     *  on the faster START curve, then clamps just below the (already tightened) end so {@code START < END} always
+     *  holds. Seam-free at/beyond {@link #FOG_START}. */
+    public static float approachFogStart(float vanillaStart, float tightenedEnd, double distToEdge) {
+        float f = approachFogStartFraction(distToEdge);
+        float start = f <= 0.0f ? vanillaStart : vanillaStart + (APPROACH_FOG_START_NEAR - vanillaStart) * f;
+        return Math.min(start, tightenedEnd - 1.0f);
+    }
+
     /** Outcome of {@link #evaluate}: open the prompt this tick, and the next arm state to persist. */
     public record Decision(boolean openPrompt, boolean nextArmed) {
     }
