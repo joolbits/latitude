@@ -36,7 +36,9 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
     @Unique private static final int GOLD = 0xFFE8B64A; // Chartroom latitude gold (Pillar 6 token)
     @Unique private static final int WARM_WHITE = 0xFFEDE0D0;
     @Unique private static final int MUTED = 0xFF8C8078;
-    @Unique private static final int GRID_COLOR = 0x14504840;
+    // Faint map graticule — a whisper of gold/parchment (review §4 R5 / F5): nudged from 8% neutral grey
+    // (0x14504840) to ~12% warm gold-tinted (0x1E5A4A38) so the grid reads as chart paper, not grey static.
+    @Unique private static final int GRID_COLOR = 0x1E5A4A38;
     @Unique private static final int GRID_STEP = 16;
 
     // ── Loading compass = the new DEFAULT compass look: SUNSET scheme + ROSE shape ──
@@ -270,19 +272,31 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
         // ── Grid decoration ──
         globe$drawGrid(context, paneX, paneY, paneW, paneH);
 
-        // ── Title ──
+        // ── Title: shared LATITUDE wordmark (creative-director loading-look review 2026-07-11 §4 R1) ──
+        // The mod's most-seen surface now leads with the SAME glowing, letterpressed, rule-flanked nameplate
+        // the create screen uses (LatitudeWordmark) instead of plain gold text — quieter here (scale 1.4,
+        // sparkles cut 4->2) since this card already animates the compass needle, phrase fade and word-wave.
+        // Falls back to the plain gold line if the pane is too tight. Unified wordmark gold lives in the helper.
         int cx = sw / 2;
-        int titleY = paneY + 12;
-        globe$drawCentered(context, "LATITUDE", cx, titleY, GOLD, true);
-
-        // ── World summary (set at beginExpedition; truthful — straight from the chosen options) ──
-        String summary = LatitudeClientState.loadingSummary;
-        if (summary != null) {
-            globe$drawSummaryWave(context, summary, cx, titleY + 12, WARM_WHITE, elapsed);
+        int titleTop = paneY + 10;
+        int wordmarkH = com.example.globe.client.create.LatitudeWordmark.draw(
+                context, this.font, paneX, titleTop, paneW, 20,
+                1.4f, 2, com.example.globe.client.LatitudeConfig.reduceMotion);
+        int summaryY;
+        if (wordmarkH > 0) {
+            summaryY = titleTop + wordmarkH + 6;
+        } else {
+            globe$drawCentered(context, "LATITUDE", cx, paneY + 12, GOLD, true);
+            summaryY = paneY + 12 + 12;
         }
 
-        // ── Loading hint ──
-        globe$drawCentered(context, "Press F9 in-game for HUD options", cx, titleY + (summary != null ? 24 : 12), MUTED, false);
+        // ── World summary (set at beginExpedition; truthful — straight from the chosen options) ──
+        // Passport gilding (review §4 R2): shape + zone tokens read gold, size + numerals stay warm-white.
+        String summary = LatitudeClientState.loadingSummary;
+        if (summary != null) {
+            globe$drawSummaryWave(context, summary, cx, summaryY, WARM_WHITE, elapsed);
+        }
+        // (The F9 hint that used to sit here has moved to the bottom mechanics zone — review §4 R4.)
 
         // ── Compass with wandering needle ──
         int compassCY = paneY + paneH / 2 - 4;
@@ -298,6 +312,10 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
         int barW = Math.min(160, paneW - 40);
         int barX = cx - barW / 2;
         int barY = paneY + paneH - 20;
+
+        // ── F9 hint: relocated out of the identity lockup into the bottom mechanics zone (review §4 R4),
+        //    sitting just above the progress bar with the other utility text. Muted, no shadow, as before.
+        globe$drawCentered(context, "Press F9 in-game for HUD options", cx, barY - 10, MUTED, false);
         float rawProgress = Mth.clamp(this.smoothedProgress, 0f, 1f);
         LatitudeClientState.latitudeLoadingProgress = rawProgress;
         float progress = rawProgress;
@@ -354,46 +372,60 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
     }
 
     /**
-     * Draws the world-summary line ("Itty Bitty · Square 1:1 · 7,500 × 7,500 · subpolar start") with a gentle,
-     * looping "reading light" wave that illuminates one · -separated segment at a time (Peetsa 2026-07-11).
-     * The separators are drawn in the plain base color — only the words illuminate. Layout is byte-for-byte the
-     * original centered line: the full string is measured once for centering and each token (segment or
-     * separator) is drawn at its running x offset, so the total width and centering are unchanged. The wave
-     * math lives in {@link com.example.globe.core.ui.LoadingWave}; under Reduce Motion we freeze to the plain
-     * static line (this caller owns the motion policy, per the helper's contract).
+     * Draws the world-summary "passport" line ("Itty Bitty · Square 1:1 · 7,500 × 7,500 · subpolar start") with
+     * two treatments layered together:
+     *
+     * <ul>
+     *   <li><b>Gilding</b> (review §4 R2 / F3): the QUALITATIVE tokens read gold, the MEASUREMENTS read
+     *       warm-white — colour-coding "what kind of world" vs "how big". The summary shape is
+     *       "&lt;size&gt; · &lt;shape&gt; · &lt;W × H&gt; · &lt;zone&gt; start", so segment 1 (shape) and the
+     *       LAST segment (zone) are the world's character → gold ({@link #GOLD}); segment 0 (size) and the
+     *       middle numerals stay warm-white ({@link #WARM_WHITE}). Separators stay neutral, drawn at the
+     *       warm-white resting dim so they never out-shine a resting word.</li>
+     *   <li><b>Reading-light wave</b> (Peetsa 2026-07-11): a gentle looping crest illuminates one segment at a
+     *       time, now operating on EACH segment's own base colour (gold segments wave in gold-space, white in
+     *       white-space) via {@link com.example.globe.core.ui.LoadingWave#shade}.</li>
+     * </ul>
+     *
+     * <p>Layout is byte-for-byte the original centered line (full string measured once for centering, each token
+     * drawn at its running x). Under Reduce Motion the wave freezes but the STATIC gold/white split is still
+     * drawn (each segment at its plain base colour), per the helper's motion-policy-agnostic contract.
      */
     @Unique
     private void globe$drawSummaryWave(GuiGraphicsExtractor context, String summary, int cx, int y, int baseColor, long elapsed) {
-        if (com.example.globe.client.LatitudeConfig.reduceMotion) {
-            globe$drawCentered(context, summary, cx, y, baseColor, false);
-            return;
-        }
+        boolean reduceMotion = com.example.globe.client.LatitudeConfig.reduceMotion;
         String[] segments = com.example.globe.core.ui.LoadingWave.segments(summary);
         if (segments.length <= 1) {
-            // No · separators (or empty) — nothing to wave across; draw plain so layout is untouched.
+            // No · separators (or empty) — no tokens to gild/wave across; draw plain so layout is untouched.
             globe$drawCentered(context, summary, cx, y, baseColor, false);
             return;
         }
-        int baseRgb = baseColor & 0xFFFFFF;
-        int alpha = baseColor & 0xFF000000;
-        // Separators rest at the SAME de-illuminated floor as an un-lit word (shade at crest 0 == REST_DIM×base),
-        // so the whole line breathes uniformly at the resting dim and only the crest WORD lifts above it. If the
-        // separators stayed at full base they'd read brighter than the resting words between them — the "·"
-        // punctuation would pop oddly. Dimming them keeps them quiet neutral punctuation that never out-shines a
-        // resting word; they simply never catch a crest.
-        int restRgb = com.example.globe.core.ui.LoadingWave.shade(baseRgb, 0f);
+        int lastIdx = segments.length - 1;
+        int sepAlpha = WARM_WHITE & 0xFF000000;
+        int sepRestRgb = com.example.globe.core.ui.LoadingWave.shade(WARM_WHITE & 0xFFFFFF, 0f);
         int fullW = this.font.width(summary);
         int x = cx - fullW / 2;
         for (int i = 0; i < segments.length; i++) {
             if (i > 0) {
-                context.text(this.font, com.example.globe.core.ui.LoadingWave.SEPARATOR, x, y, alpha | restRgb, false);
+                context.text(this.font, com.example.globe.core.ui.LoadingWave.SEPARATOR, x, y, sepAlpha | sepRestRgb, false);
                 x += this.font.width(com.example.globe.core.ui.LoadingWave.SEPARATOR);
             }
             String seg = segments[i];
-            // DIM-BASELINE + BRIGHT-CREST: warm-white words rest dimmed and light up in turn (a lerp-toward-white
-            // "brighten" was invisible on warm-white — the same near-white-headroom trap the title glimmer hit).
-            float g = com.example.globe.core.ui.LoadingWave.gaussian01(i, segments.length, elapsed);
-            int rgb = com.example.globe.core.ui.LoadingWave.shade(baseRgb, g);
+            // Gild the world's CHARACTER (shape = segment 1, zone = last segment); leave its MEASUREMENTS
+            // (size = segment 0, numerals = the middle) warm-white.
+            boolean gild = (i == 1 || i == lastIdx);
+            int segBase = gild ? GOLD : WARM_WHITE;
+            int alpha = segBase & 0xFF000000;
+            int baseRgb = segBase & 0xFFFFFF;
+            int rgb;
+            if (reduceMotion) {
+                rgb = baseRgb; // static gold/white split, no wave
+            } else {
+                // DIM-BASELINE + BRIGHT-CREST on this segment's OWN base colour (a lerp-toward-white "brighten"
+                // was invisible on warm-white — the near-white-headroom trap the title glimmer hit).
+                float g = com.example.globe.core.ui.LoadingWave.gaussian01(i, segments.length, elapsed);
+                rgb = com.example.globe.core.ui.LoadingWave.shade(baseRgb, g);
+            }
             context.text(this.font, seg, x, y, alpha | rgb, false);
             x += this.font.width(seg);
         }
