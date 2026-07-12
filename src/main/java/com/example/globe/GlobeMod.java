@@ -398,10 +398,15 @@ public class GlobeMod implements ModInitializer {
             double progress = com.example.globe.core.PolarHazardWindow.hazardProgress(latDeg);
             boolean unaffected = player.isCreative() || player.isSpectator();
 
-            // FROST VISUAL every tick (blue-heart frost building 87.5 -> full by ~88.75). frostVisualTicks
-            // maxes at 139 -- one tick BELOW vanilla's 140 fully-frozen threshold -- so vanilla's own fixed
-            // 1 HP/40-tick freeze auto-damage never fires and the scaled damage below owns the whole curve.
-            // Set every tick because vanilla decays ticksFrozen ~2/tick when the player isn't in powder snow.
+            // FROST VISUAL every tick. frostVisualTicks builds 0 -> 140 across 87.5 -> ~88 and holds at/above
+            // 140 to the pole, so it CROSSES vanilla's fully-frozen threshold at the ~88 deg damage onset --
+            // the HUD hearts tint blue exactly when freeze damage starts (TEST 77), driven off this set value.
+            // Vanilla's OWN fixed 1 HP/40-tick freeze auto-damage, which also keys off 140, is cancelled at its
+            // aiStep source for in-band players by LivingEntityFreezeDamageMixin, so the scaled damage below
+            // stays the SOLE freeze-damage source (no double dip). Set EVERY tick because vanilla decays
+            // ticksFrozen ~2/tick when the player isn't in powder snow; this END_SERVER_TICK write is the last
+            // writer each tick (the entity-tracker broadcast reads it before aiStep's decay), so the client
+            // reliably sees our value and the blue hearts don't flicker.
             if (!unaffected) {
                 player.setTicksFrozen(com.example.globe.core.PolarHazardWindow.frostVisualTicks(progress));
             }
@@ -463,6 +468,31 @@ public class GlobeMod implements ModInitializer {
         if (!(gen instanceof NoiseBasedChunkGenerator noise)) return false;
 
         return isGlobeNoiseGenerator(noise);
+    }
+
+    /**
+     * True iff {@code entity} is a survival/adventure {@link ServerPlayer} standing in a globe overworld at
+     * or beyond the polar HAZARD onset -- i.e. exactly the band where {@link #borderUxTick} drives our own
+     * latitude-scaled freeze damage (and holds {@code ticksFrozen} at/above vanilla's fully-frozen threshold
+     * so the blue hearts show, TEST 77). This is the SOLE gate {@code LivingEntityFreezeDamageMixin} uses to
+     * suppress vanilla's own fixed 1 HP/40-tick auto-freeze damage, keeping our curve the ONLY freeze-damage
+     * source in-band while real powder snow / non-globe / non-band / creative / spectator play stays 100%
+     * vanilla. Mirrors {@link #borderUxTick}'s own in-band test (isGlobeOverworld + absLatDegExact &gt;=
+     * {@link com.example.globe.core.PolarHazardWindow#HAZARD_ONSET_DEG} + not creative/spectator) so the two
+     * can never drift apart.
+     */
+    public static boolean isInPolarFreezeDamageBand(net.minecraft.world.entity.LivingEntity entity) {
+        if (!(entity instanceof ServerPlayer player)) {
+            return false;
+        }
+        if (player.isCreative() || player.isSpectator()) {
+            return false;
+        }
+        if (!(player.level() instanceof ServerLevel level) || !isGlobeOverworld(level)) {
+            return false;
+        }
+        double latDeg = com.example.globe.util.LatitudeMath.absLatDegExact(level.getWorldBorder(), player.getZ());
+        return latDeg >= com.example.globe.core.PolarHazardWindow.HAZARD_ONSET_DEG;
     }
 
     /**

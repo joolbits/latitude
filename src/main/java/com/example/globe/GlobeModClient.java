@@ -299,10 +299,13 @@ public class GlobeModClient implements ClientModInitializer {
     // 87 deg hazard onset, 1 at the pole) ramps the sideways wind and the fall speed toward a driven gale and
     // gates a dense low SECOND pass. All still a FIXED per-tick function of latitude -- the anti-backlog law
     // (fixed budget, isPaused=>nothing) is untouched; only the look/motion and a fixed extra count change.
-    private static final double SNOW_WIND_BASE = 0.09;     // gentle-flurry sideways wind at/below 87 deg
-    private static final double SNOW_WIND_GALE = 0.34;     // added sideways wind at the pole (driven blizzard)
-    private static final double SNOW_FALL_BASE = 0.04;     // gentle-flurry base fall speed
-    private static final double SNOW_FALL_GALE = 0.11;     // added fall speed at the pole (fast, driven flakes)
+    //
+    // TEST 77 round 2: the wind/fall MAGNITUDE curves moved into the pure, tested core.PolarHazardWindow
+    // (blizzardWindMagnitude / blizzardFallSpeed) and were cranked hard -- SnowflakeParticle damps horizontal
+    // velocity ~5%/tick and pins vertical to a ~0.081/tick terminal, so the old ceilings decayed to a gentle
+    // straight-down drift within a second (Peetsa: "slow, falls down, not sideways"). The second (low, hard-
+    // driven) pass multiplies that already-larger wind so the pole reads as a wind-whipped ground blizzard.
+    private static final double SNOW_SECOND_PASS_WIND_MULT = 1.9;  // low pass streaks even harder sideways
 
     // Perf-scaling glue (untested -- a trivial 1:1 mapping, not math; the scaling math is in the pure,
     // tested core.ParticleDensity). Reads the LIVE vanilla Particles video setting and maps it onto our
@@ -337,11 +340,11 @@ public class GlobeModClient implements ClientModInitializer {
 
         // Steady wind direction for this spawn burst (sign flips by which side of center the player is on,
         // like the EW storm) so the snowfall has a coherent slant instead of drifting symmetrically. The
-        // wind MAGNITUDE ramps with the blizzard drive: a gentle slant near 87 deg, a hard sideways drive
-        // at the pole.
-        double windMag = SNOW_WIND_BASE + SNOW_WIND_GALE * blizz;
+        // wind MAGNITUDE ramps with the blizzard drive (pure, tested curves in PolarHazardWindow): a gentle
+        // slant through the 85-87 approach, a hard sideways drive at the pole.
+        double windMag = com.example.globe.core.PolarHazardWindow.blizzardWindMagnitude(absLatDeg);
         double windX = (client.player.getX() >= 0.0 ? -1.0 : 1.0) * windMag;
-        double fall = SNOW_FALL_BASE + SNOW_FALL_GALE * blizz;
+        double fall = com.example.globe.core.PolarHazardWindow.blizzardFallSpeed(absLatDeg);
 
         for (int i = 0; i < count; i++) {
             double ox = (random.nextDouble() - 0.5) * SNOW_ENVELOPE;
@@ -365,7 +368,7 @@ public class GlobeModClient implements ClientModInitializer {
             double oy = random.nextDouble() * 3.0;                 // low, near eye level
             double oz = (random.nextDouble() - 0.5) * SNOW_ENVELOPE;
             // Harder sideways drive, flatter trajectory -> reads as wind-whipped ground blizzard.
-            double vx = windX * 1.6 + (random.nextDouble() - 0.5) * 0.08;
+            double vx = windX * SNOW_SECOND_PASS_WIND_MULT + (random.nextDouble() - 0.5) * 0.08;
             double vy = -fall * 0.5 - random.nextDouble() * 0.03;
             double vz = (random.nextDouble() - 0.5) * 0.12;
             client.particleEngine.createParticle(ParticleTypes.SNOWFLAKE, px + ox, py + 1.0 + oy, pz + oz, vx, vy, vz);
