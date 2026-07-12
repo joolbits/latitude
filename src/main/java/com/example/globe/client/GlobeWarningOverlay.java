@@ -2,6 +2,7 @@ package com.example.globe.client;
 
 import com.example.globe.GlobeMod;
 import com.example.globe.core.HemisphereCrossing;
+import com.example.globe.core.ui.PolarWarningVignette;
 import com.example.globe.util.LatitudeBands;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.DeltaTracker;
@@ -84,6 +85,13 @@ public final class GlobeWarningOverlay {
     private static Component poleWarnText;                    // null = nothing showing
     private static long poleWarnStartTick = Long.MIN_VALUE;
     private static long poleWarnEndTick = Long.MIN_VALUE;
+    // Understudy SWING: the DANGER/LETHAL warning text and the atmosphere pulse as ONE moment. When a serious
+    // tier (3=DANGER / 4=LETHAL) fires, arm a subtle edge-darkening VIGNETTE synced to the text's appearance.
+    // WALL-CLOCK armed (System.currentTimeMillis) -- the tick-clock lesson is law, so PolarVignetteOverlayHud
+    // animates on wall time and never rubber-bands on a teleport tick stall. 0 = no vignette armed (the two
+    // mild tiers earn nothing); cleared on a full retreat re-arm so the feature is a provable no-op when idle.
+    private static int poleVignetteTier = 0;
+    private static long poleVignetteStartMs = Long.MIN_VALUE;
     private static long lastWarningDebugWorldTime = Long.MIN_VALUE;
     private static String lastWarningDebugText;
 
@@ -171,6 +179,12 @@ public final class GlobeWarningOverlay {
         com.example.globe.core.PolarWarningEpisode.Step step =
                 com.example.globe.core.PolarWarningEpisode.evaluate(absLatDeg, poleWarnHighestTier);
         poleWarnHighestTier = step.nextHighestFired();
+        // A full retreat below 84 deg re-arms the whole ladder (nextHighestFired == 0) -- clear any armed
+        // vignette so the swing is a provable no-op once the player has left the hazard region.
+        if (poleWarnHighestTier == 0) {
+            poleVignetteTier = 0;
+            poleVignetteStartMs = Long.MIN_VALUE;
+        }
         if (step.fireTier() > 0) {
             Component txt = poleTextForTier(step.fireTier());
             if (txt != null) {
@@ -178,10 +192,27 @@ public final class GlobeWarningOverlay {
                 long now = client.level.getGameTime();
                 poleWarnStartTick = now;
                 poleWarnEndTick = now + POLE_WARN_HOLD_TICKS;
+                // Only the two serious tiers earn atmosphere: arm the vignette pulse in the SAME instant the
+                // DANGER/LETHAL text appears (a deeper tier crossing re-arms it, punctuating the new line).
+                if (step.fireTier() == PolarWarningVignette.TIER_DANGER
+                        || step.fireTier() == PolarWarningVignette.TIER_LETHAL) {
+                    poleVignetteTier = step.fireTier();
+                    poleVignetteStartMs = System.currentTimeMillis();
+                }
                 logEntryTitle("pole_warn_tier" + step.fireTier(), txt.getString(),
                         client, client.player.getX(), client.player.getZ());
             }
         }
+    }
+
+    /** The armed vignette tier (3=DANGER / 4=LETHAL, or 0 = none). Read by {@link PolarVignetteOverlayHud}. */
+    static int poleVignetteTier() {
+        return poleVignetteTier;
+    }
+
+    /** Wall-clock ms at which the current vignette pulse armed, or {@code Long.MIN_VALUE} if none. */
+    static long poleVignetteStartMs() {
+        return poleVignetteStartMs;
     }
 
     // Draws the active polar warning episode with a fade-in/hold/fade-out envelope. Returns true if it drew
@@ -421,6 +452,8 @@ public final class GlobeWarningOverlay {
         poleWarnText = null;
         poleWarnStartTick = Long.MIN_VALUE;
         poleWarnEndTick = Long.MIN_VALUE;
+        poleVignetteTier = 0;
+        poleVignetteStartMs = Long.MIN_VALUE;
         lastWarningDebugWorldTime = Long.MIN_VALUE;
         lastWarningDebugText = null;
         if (DEBUG_ENTRY_TITLES) {

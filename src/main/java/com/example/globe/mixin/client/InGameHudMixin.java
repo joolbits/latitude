@@ -56,6 +56,10 @@ public class InGameHudMixin {
             return;
         }
 
+        // Understudy SWING: the DANGER/LETHAL polar-warning VIGNETTE. Punctuation for the warning TEXT, so it
+        // rides the visible HUD layer (hidden under F1 with the text it accompanies) and draws UNDER the text
+        // but OVER the whiteout fill (whiteout ran earlier in extractHotbarAndDecorations; text is next line).
+        com.example.globe.client.PolarVignetteOverlayHud.render(context, tickCounter);
         GlobeWarningOverlay.render(context, tickCounter);
         CompassHud.render(context, tickCounter);
         if (client != null && client.getWindow() != null) {
