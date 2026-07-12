@@ -127,9 +127,9 @@ class PolarHazardWindowTest {
     void snowCountAtLethalDegEqualsSnowMaxCount() {
         assertEquals(PolarHazardWindow.SNOW_MAX_COUNT,
                 PolarHazardWindow.snowCount(PolarHazardWindow.AMBIENT_FULL_DEG));
-        // B-4 round 2 returned 80->30: real vanilla snowfall (ClientLevelStormSkyMixin) now carries the
-        // pole's storm density, so this ambient particle layer is back to subtle near-field texture.
-        assertEquals(30, PolarHazardWindow.SNOW_MAX_COUNT);
+        // History: 80 -> 30 (B-4 r2) -> 60 (TEST 78, to fill the new ~16-block-tall spawn volume that
+        // replaced the thin overhead band; see GlobeModClient.spawnAmbientPolarSnow).
+        assertEquals(60, PolarHazardWindow.SNOW_MAX_COUNT);
     }
 
     @Test
@@ -486,7 +486,7 @@ class PolarHazardWindowTest {
     @Test
     void polarFogEndOnlyTightensAndReachesNearAtThePole() {
         // WHY: the fog must pull IN (never loosen) and bottom out at the documented pole whiteout distance.
-        assertEquals(24.0f, PolarHazardWindow.POLAR_FOG_END_NEAR);
+        assertEquals(16.0f, PolarHazardWindow.POLAR_FOG_END_NEAR);
         assertEquals(PolarHazardWindow.POLAR_FOG_END_NEAR, PolarHazardWindow.polarFogEnd(V_END, 90.0), 1e-3);
         assertEquals(PolarHazardWindow.POLAR_FOG_END_NEAR, PolarHazardWindow.polarFogEnd(V_END, 95.0), 1e-3);
         // Everywhere in the window the tightened end is <= vanilla and >= the pole floor.
@@ -523,7 +523,7 @@ class PolarHazardWindowTest {
 
     @Test
     void polarFogStartPullsInFasterThanEndSoTheBandWidens() {
-        // WHY: START uses a faster curve (0.45 < 0.85) so the fog BAND widens into a gradual heavy haze rather
+        // WHY: START uses a faster curve (0.45 < 0.80) so the fog BAND widens into a gradual heavy haze rather
         // than a hard wall at one range -- so for every interior latitude the START fraction leads the END.
         assertTrue(PolarHazardWindow.POLAR_FOG_START_CURVE < PolarHazardWindow.POLAR_FOG_END_CURVE);
         for (int i = 1; i < 1000; i++) {
@@ -542,6 +542,23 @@ class PolarHazardWindowTest {
         float end88 = PolarHazardWindow.polarFogEnd(V_END, 88.0);
         assertTrue(end86 > 140.0f, "86 deg should still be a light far haze, was " + end86);
         assertTrue(end88 < 120.0f, "88 deg should read clearly heavy, was " + end88);
+    }
+
+    @Test
+    void test78FogRetuneEndDistances() {
+        // TEST 78 narrows the "inside is much lighter" gap by making the shared depth fog carry MORE of the
+        // total (NEAR 24->16, END_CURVE 0.85->0.80). Documents the sight distances (blocks) at a 12-chunk
+        // sample (V_END=192) so a playtest can check them. Before -> after: 86: 149->~143, 88: 83->~75,
+        // 90: 24->16 (the pole tightens ~33%, exactly where the exposed/sheltered parity mattered most).
+        float end86 = PolarHazardWindow.polarFogEnd(V_END, 86.0);
+        float end88 = PolarHazardWindow.polarFogEnd(V_END, 88.0);
+        float end90 = PolarHazardWindow.polarFogEnd(V_END, 90.0);
+        assertEquals(143.4f, end86, 1.5f, "86 deg end distance");
+        assertEquals(75.1f, end88, 1.5f, "88 deg end distance");
+        assertEquals(16.0f, end90, 1e-3f, "90 deg end distance == pole floor");
+        // Heavier than the pre-TEST-78 tuning at 88 and 90 (the parity band).
+        assertTrue(end88 < 83.2f, "88 must be heavier than the old 83, was " + end88);
+        assertTrue(end90 < 24.0f, "90 must be heavier than the old 24, was " + end90);
     }
 
     // ---- TEST 77 r2 item 2: blizzard particle drive MAGNITUDES (wind / fall speed vs latitude) -----

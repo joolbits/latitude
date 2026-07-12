@@ -195,11 +195,14 @@ public final class PolarHazardWindow {
     public static final double AMBIENT_FULL_DEG = 90.0;
     /** Gentle-flurry per-tick snow budget at the 85 deg onset. */
     public static final int SNOW_MIN_COUNT = 2;
-    /** Per-tick snow budget at 90 deg. FIXED budget -- never a catch-up accumulator. B-4 round 2 returned
-     *  this 80->30: the pole's storm DENSITY is now carried by real VANILLA snowfall (ClientLevelStormSkyMixin
-     *  lifts the client rain level over 85->90 deg), so this ambient particle layer is back to being subtle
-     *  near-field texture rather than trying (and failing, per Peetsa) to read as the whole blizzard itself. */
-    public static final int SNOW_MAX_COUNT = 30;
+    /** Per-tick snow budget at 90 deg. FIXED budget -- never a catch-up accumulator. History: 80 -> 30 (B-4
+     *  round 2, when the flakes spawned in a thin ~6-block band above the head and mostly read as a single
+     *  diagonal sheet, so extra count just thickened that one layer) -> 60 (TEST 78). TEST 78 spreads the
+     *  spawn through a real ~16-block-tall VOLUME around the camera (see {@code GlobeModClient
+     *  .spawnAmbientPolarSnow}); at the old 30 that volume read sparse, so the ceiling was raised to fill the
+     *  air in every direction. Still just near-field texture composited over the real vanilla snowfall
+     *  (ClientLevelStormSkyMixin) -- not the whole blizzard by itself. */
+    public static final int SNOW_MAX_COUNT = 60;
 
     /** Continuous ambient progress in {@code [0,1]}: 0 at/below 85 deg, 1 at/above 90 deg. */
     public static double ambientProgress(double absLatDeg) {
@@ -247,14 +250,20 @@ public final class PolarHazardWindow {
     // any real view distance) and is SEAM-FREE: at/below 85 deg every function returns the caller's own vanilla
     // value unchanged.
 
-    /** Cylindrical render-distance fog END (blocks) at the pole: a heavy whiteout leaving ~1.5 chunks of sight. */
-    public static final float POLAR_FOG_END_NEAR = 24.0f;
+    /** Cylindrical render-distance fog END (blocks) at the pole: a heavy whiteout leaving ~1 chunk of sight.
+     *  TEST 78 tightened 24 -> 16: this depth fog is the ONLY heavy-haze layer that reads the same standing
+     *  exposed OR sheltered-looking-out (the whiteout top-coat is exposure-gated), so Peetsa's "inside is much
+     *  lighter than outside" is narrowed by making the shared depth fog carry MORE of the total -- heaviest at
+     *  the pole where the parity gap mattered most. */
+    public static final float POLAR_FOG_END_NEAR = 16.0f;
     /** Cylindrical render-distance fog START (blocks) at the pole: fog begins this close, so past a few blocks
      *  reads as white -- but a wall 2-3 blocks away is still under START, hence unfogged. */
     public static final float POLAR_FOG_START_NEAR = 5.0f;
     /** END-curve exponent over {@link #ambientProgress}. {@code <1} front-loads the ramp so genuinely heavy fog
-     *  is reached a little before the pole (Peetsa's 88 deg shelter should already read heavy, not thin). */
-    public static final double POLAR_FOG_END_CURVE = 0.85;
+     *  is reached a little before the pole (Peetsa's 88 deg shelter should already read heavy, not thin). TEST
+     *  78 nudged 0.85 -> 0.80 so the tightening front-loads a touch more toward 88-90 without disturbing the
+     *  light 85-86 approach. */
+    public static final double POLAR_FOG_END_CURVE = 0.80;
     /** START-curve exponent. Smaller than {@link #POLAR_FOG_END_CURVE} so START pulls in FASTER than END and the
      *  fog BAND widens quickly -- a gradual heavy haze building over distance, not a hard wall at one range. */
     public static final double POLAR_FOG_START_CURVE = 0.45;

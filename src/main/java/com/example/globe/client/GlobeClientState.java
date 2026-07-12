@@ -377,9 +377,27 @@ public final class GlobeClientState {
     public record Eval(boolean active, boolean surfaceOk, int absX, int absZ,
                       float polarFogSeverity, float polarWhiteoutSeverity,
                       float stormFogSeverity, float stormSevereSeverity, float stormOpaqueSeverity,
-                      boolean poleCritical, boolean stormCritical) {
-        public static final Eval INACTIVE = new Eval(false, false, 0, 0, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, false, false);
+                      boolean poleCritical, boolean stormCritical, float exposure01) {
+        public static final Eval INACTIVE = new Eval(false, false, 0, 0, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, false, false, 0.0f);
     }
+
+    // --- TEST 78: continuous enclosure estimate (exposure01) cache ---
+    // exposure01 replaces the binary surfaceOk bit for PRESENTATION systems (wind muffle, whiteout alpha,
+    // ambient particle budget). canSeeSky is a cheap heightmap lookup, but 13 of them every tick is wasteful,
+    // so this recomputes only when the player's block position changes OR every EXPOSURE_RECOMPUTE_TICKS ticks.
+    private static long cachedExposureTick = Long.MIN_VALUE;
+    private static long cachedExposurePos = Long.MIN_VALUE;
+    private static float cachedExposure01;
+    private static final int EXPOSURE_RECOMPUTE_TICKS = 5;
+    // 13 sky samples around the player's head: the center column + a ring at radius 3 (8 points) + the 4
+    // cardinals at radius 5. Under a small overhead (Peetsa's flat lintel) the center is blocked but the ring
+    // sees sky -> exposure ~0.9; in a sealed room all 13 are blocked -> 0; at a doorway some see sky -> partial.
+    private static final int[][] EXPOSURE_OFFSETS = {
+        {0, 0},
+        {3, 0}, {-3, 0}, {0, 3}, {0, -3},
+        {3, 3}, {3, -3}, {-3, 3}, {-3, -3},
+        {5, 0}, {-5, 0}, {0, 5}, {0, -5}
+    };
 
     public static Eval evaluate(Minecraft client) {
         if (client.player == null || client.level == null) {
@@ -400,6 +418,7 @@ public final class GlobeClientState {
         int absZ = (int) Math.floor(Math.abs(client.player.getZ()));
 
         boolean surfaceOk = isSurfaceOk(client, pos);
+        float exposure01 = computeExposure01(client, pos);
 
         boolean active = globeWorld;
         if (!active) {
@@ -418,7 +437,7 @@ public final class GlobeClientState {
         }
 
         if (!active) {
-            cachedEval = new Eval(false, surfaceOk, absX, absZ, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, false, false);
+            cachedEval = new Eval(false, surfaceOk, absX, absZ, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, false, false, exposure01);
             return cachedEval;
         }
 
@@ -446,7 +465,7 @@ public final class GlobeClientState {
         boolean stormCritical = com.example.globe.util.LatitudeMath.hazardStageIndexEW(progressX) >= 4;
 
         if (DEBUG_DISABLE_WARNINGS) {
-            cachedEval = new Eval(true, surfaceOk, absX, absZ, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, false, false);
+            cachedEval = new Eval(true, surfaceOk, absX, absZ, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, false, false, exposure01);
             return cachedEval;
         }
 
@@ -457,7 +476,7 @@ public final class GlobeClientState {
         float stormSevere = stormSeverity;
         float stormOpaque = stormSeverity;
 
-        cachedEval = new Eval(true, surfaceOk, absX, absZ, polarFog, polarWhiteout, stormFog, stormSevere, stormOpaque, poleCritical, stormCritical);
+        cachedEval = new Eval(true, surfaceOk, absX, absZ, polarFog, polarWhiteout, stormFog, stormSevere, stormOpaque, poleCritical, stormCritical, exposure01);
         return cachedEval;
     }
 
@@ -475,6 +494,54 @@ public final class GlobeClientState {
         // Reliable surface check: must be exposed to the sky.
         // Using sky visibility avoids false-negatives from nearby blocks and is stable across time-of-day.
         return world.canSeeSky(pos.above());
+    }
+
+    /**
+     * TEST 78: graded enclosure estimate in {@code [0,1]} for the PRESENTATION systems (wind muffle, whiteout
+     * alpha, ambient particle budget) -- NOT the server hazard mechanics, which are untouched. Replaces the
+     * binary {@code surfaceOk} single-column check so Peetsa's open freestanding arch (a flat lintel over open
+     * terrain) reads as ~outdoors instead of fully "inside". Cached: recomputed only when the player's block
+     * position changes or every {@link #EXPOSURE_RECOMPUTE_TICKS} ticks (13 cheap heightmap lookups, but not
+     * every frame).
+     */
+    private static float computeExposure01(Minecraft client, BlockPos pos) {
+        var world = client.level;
+        if (world == null) {
+            return 0.0f;
+        }
+        long now = world.getGameTime();
+        long packed = pos.asLong();
+        if (cachedExposureTick != Long.MIN_VALUE
+                && packed == cachedExposurePos
+                && (now - cachedExposureTick) < EXPOSURE_RECOMPUTE_TICKS) {
+            return cachedExposure01;
+        }
+        cachedExposureTick = now;
+        cachedExposurePos = packed;
+        cachedExposure01 = sampleExposure01(client, pos);
+        return cachedExposure01;
+    }
+
+    private static float sampleExposure01(Minecraft client, BlockPos pos) {
+        var world = client.level;
+        if (world == null) {
+            return 0.0f;
+        }
+        // Deep underground: no surface storm presentation (mirrors isSurfaceOk's sea-level guard). All samples
+        // would fail anyway, but this short-circuits the 13 lookups and keeps a lit near-surface cave shaft
+        // from leaking a partial exposure.
+        int sea = world.getSeaLevel();
+        if (pos.getY() < sea - 2) {
+            return 0.0f;
+        }
+        BlockPos head = pos.above();
+        int seen = 0;
+        for (int[] o : EXPOSURE_OFFSETS) {
+            if (world.canSeeSky(head.offset(o[0], 0, o[1]))) {
+                seen++;
+            }
+        }
+        return com.example.globe.core.PolarExposure.fraction(seen, EXPOSURE_OFFSETS.length);
     }
 
     public static float computePoleFogEnd(double z) {
