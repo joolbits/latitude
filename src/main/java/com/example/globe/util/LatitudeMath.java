@@ -35,9 +35,11 @@ public final class LatitudeMath {
 
     // Polar WARNING-ladder thresholds (progress = |z|/latitudeRadius = deg/90). Re-anchored (B-3-P3)
     // to P1's PolarHazardWindow milestones so each warning fires at or just before the mechanic it warns
-    // about: snow onset 85, hazard/slowness onset 87, blindness ~89, freeze near-max ~89.7 (death at 90).
+    // about: snow onset 85, blizzard visuals build from 87, hazard/slowness onset 88.5 (moved poleward
+    // 2026-07-12; the ladder stays put -- shared with the EW storm axis -- so stage 2 is now a pure
+    // "worsening" warning ~1.5 deg ahead of the first mechanic), blindness ~89, freeze near-max ~89.7.
     public static final double POLAR_STAGE_1_PROGRESS = 0.9444;      // 85.0 deg -- snow onset (ambient window opens)
-    public static final double POLAR_STAGE_2_PROGRESS = 0.9667;      // 87.0 deg -- hazard onset (slowness begins)
+    public static final double POLAR_STAGE_2_PROGRESS = 0.9667;      // 87.0 deg -- blizzard-worsening warning (mechanics start 88.5)
     public static final double POLAR_STAGE_3_PROGRESS = 0.9889;      // 89.0 deg -- ~blindness; ~1 deg lead before freeze damage
     public static final double POLAR_STAGE_LETHAL_PROGRESS = 0.9967; // 89.7 deg -- freeze near-max (death at 90.0)
 

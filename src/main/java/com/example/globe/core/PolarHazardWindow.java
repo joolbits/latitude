@@ -10,9 +10,11 @@ package com.example.globe.core;
  *
  * <p>Two independent windows, both symmetric about the equator because the caller feeds {@code |lat|}:
  * <ul>
- *   <li><b>B-3a HAZARD window {@code [87,90]}</b> -- the ONLY hazardous band. Onset at 87 deg,
- *       full-lethal at 90 deg, with CONTINUOUS scaling of the slowness amplifier and the freeze-tick
- *       rate across {@code progress = clamp01((|lat|-87)/3)}. Replaces the old stage-STEPPED ladder
+ *   <li><b>B-3a HAZARD window {@code [88.5,90]}</b> -- the ONLY player-affecting hazardous band.
+ *       Onset at 88.5 deg (moved in from 87 deg per Peetsa's TEST 75 note "the cold sets in too late...
+ *       start affecting the player at ~88.5 and becomes severe at 90"), full-lethal at 90 deg, with
+ *       CONTINUOUS scaling of the slowness amplifier and the freeze-tick rate across
+ *       {@code progress = clamp01((|lat|-88.5)/1.5)}. Replaces the old stage-STEPPED ladder
  *       (IMPAIR/HOSTILE/WHITEOUT/LETHAL keyed off {@code POLAR_STAGE_*_PROGRESS} on {@code |z|/zR});
  *       the effect TYPES (slowness/weakness/mining-fatigue/freeze) are unchanged -- only their
  *       magnitude is now a smooth function of progress rather than a stage index. (B-4 removed the
@@ -27,10 +29,13 @@ public final class PolarHazardWindow {
     private PolarHazardWindow() {
     }
 
-    // ---- B-3a: continuous hazard window [87,90] (server MobEffects) ----
+    // ---- B-3a: continuous hazard window [88.5,90] (server MobEffects) ----
 
-    /** Latitude (deg) at which the hazard window opens; below this the pole is fully explorable. */
-    public static final double HAZARD_ONSET_DEG = 87.0;
+    /** Latitude (deg) at which the player-affecting hazard window opens; below this the pole is fully
+     *  explorable. Moved 87 -> 88.5 (TEST 75: the cold set in too late/far out; effects now start at 88.5
+     *  and reach severe at 90). The AMBIENT band (snow/fog/storm sky) and the blizzard VISUAL drive are
+     *  deliberately NOT gated on this -- only the slowness/weakness/mining-fatigue/freeze mechanics are. */
+    public static final double HAZARD_ONSET_DEG = 88.5;
     /** Latitude (deg) at which the hazard window is full-lethal (the geographic pole). */
     public static final double HAZARD_LETHAL_DEG = 90.0;
 
@@ -40,10 +45,10 @@ public final class PolarHazardWindow {
     public static final int WEAKNESS_MAX_AMP = 1;
     /** Freeze ticks at full lethal. Vanilla powder-snow freeze damage begins at 140 ticks frozen. */
     public static final int FREEZE_MAX_TICKS = 140;
-    /** Progress at/above which Mining Fatigue layers in (~88 deg). */
+    /** Progress at/above which Mining Fatigue layers in (~89 deg -- 88.5 + 1.5*(1/3)). */
     public static final double MINING_FATIGUE_PROGRESS = 1.0 / 3.0;
 
-    /** Continuous hazard progress in {@code [0,1]}: 0 at/below 87 deg, 1 at/above 90 deg. */
+    /** Continuous hazard progress in {@code [0,1]}: 0 at/below 88.5 deg, 1 at/above 90 deg. */
     public static double hazardProgress(double absLatDeg) {
         return clamp01((absLatDeg - HAZARD_ONSET_DEG) / (HAZARD_LETHAL_DEG - HAZARD_ONSET_DEG));
     }
@@ -154,16 +159,24 @@ public final class PolarHazardWindow {
 
     // ---- B-4 round 3 item 2: BLIZZARD drive (fall speed + sideways wind + dense second pass) ----
 
+    /** Latitude (deg) at which the blizzard VISUAL drive begins to ramp. Held at 87 (NOT the moved
+     *  {@link #HAZARD_ONSET_DEG}): the driven-gale look + dense second particle pass are ATMOSPHERE, which
+     *  Peetsa asked to keep exactly as-is when the player-affecting hazard onset moved out to 88.5. */
+    public static final double BLIZZARD_ONSET_DEG = 87.0;
+    /** Latitude (deg) at which the blizzard visual drive is fully driven (the geographic pole). */
+    public static final double BLIZZARD_FULL_DEG = 90.0;
+
     /**
-     * Blizzard drive in {@code [0,1]} over the HAZARD window {@code [87,90]} -- identical ramp to
-     * {@link #hazardProgress(double)}, exposed under an intent-revealing name. The ambient snow at 85-87 deg
-     * stays a gentle approach flurry; only inside the hazard band does this scale the flakes' fall speed and
-     * sideways wind up to a driven gale and gate the dense low second particle pass, so the pole reads as a
-     * real BLIZZARD (Peetsa saw only ordinary snowfall before). It changes how flakes LOOK/MOVE and adds a
-     * fixed per-tick second budget; it never turns the budget into a catch-up accumulator (B-3b law).
+     * Blizzard drive in {@code [0,1]} over the VISUAL window {@code [87,90]}. Formerly reused
+     * {@link #hazardProgress(double)}, but DECOUPLED from it when the player-hazard onset moved 87 -> 88.5:
+     * the ambient snow at 85-87 deg stays a gentle approach flurry, and from 87 deg this scales the flakes'
+     * fall speed and sideways wind up to a driven gale and gates the dense low second particle pass so the
+     * pole reads as a real BLIZZARD. Keeping this on the original {@code [87,90]} ramp preserves the blizzard
+     * LOOK exactly (Peetsa: keep the ambient band as-is) while only the mechanics moved inward. Changes how
+     * flakes LOOK/MOVE and adds a fixed per-tick second budget; never a catch-up accumulator (B-3b law).
      */
     public static float blizzardDrive(double absLatDeg) {
-        return (float) hazardProgress(absLatDeg);
+        return (float) clamp01((absLatDeg - BLIZZARD_ONSET_DEG) / (BLIZZARD_FULL_DEG - BLIZZARD_ONSET_DEG));
     }
 
     // ---- shared ----
