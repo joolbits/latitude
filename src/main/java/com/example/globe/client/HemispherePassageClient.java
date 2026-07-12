@@ -110,6 +110,14 @@ public final class HemispherePassageClient {
         if (curtain != Curtain.NONE) {
             return;
         }
+        // Item 2 (surface-only): underground the passage does not exist -- there is just the vanilla border
+        // wall. FREEZE the arm machine (return without touching `armed` or evaluating), rather than treating a
+        // cave dip as a walk-out: a player who briefly ducks into a cave near the edge keeps their armed state
+        // and is prompted the instant they surface, and a disarmed player is never re-armed by the cave. The
+        // prompt therefore never opens below ground.
+        if (GlobeClientState.isDeepUnderground(mc)) {
+            return;
+        }
 
         double distToEdge = GlobeClientState.distanceToEwBorderBlocks(mc.player.getX());
         HemispherePassage.Decision d = HemispherePassage.evaluate(armed, distToEdge);

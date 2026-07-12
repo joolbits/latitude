@@ -66,6 +66,48 @@ public final class PolarExposure {
         return scaled < 0L ? 0 : (int) scaled;
     }
 
+    /**
+     * B-5 item 3 (TEST 83 "the warning pops out of view whenever you are under anything, like a tree").
+     * Exposure below which a column is treated as "genuinely below the surface" by the storm PRESENTATION
+     * systems -- the SAME {@code seaLevel - 2} margin the enclosure sampler ({@code GlobeClientState
+     * .sampleExposure01}) already short-circuits on. Centralised here so the client freeze/gate and the server
+     * cross-reject (item 2) share ONE definition of "underground" instead of re-inventing it.
+     */
+    public static final int SURFACE_DEPTH_MARGIN = 2;
+
+    /**
+     * True iff block-Y {@code y} is genuinely below the surface layer: {@code y < seaLevel - }{@link
+     * #SURFACE_DEPTH_MARGIN}. Pure half of the "deep underground" test (item 2); callers AND this with an
+     * actual sky check ({@code !canSeeSky}) so open low-lying terrain a couple blocks under sea level is not
+     * mistaken for a cave. Matches {@code isSurfaceOk}/{@code sampleExposure01}'s existing depth cut exactly.
+     */
+    public static boolean isBelowSurface(int y, int seaLevel) {
+        return y < seaLevel - SURFACE_DEPTH_MARGIN;
+    }
+
+    /**
+     * B-5 item 3: visibility scale in {@code [0,1]} for the WARNING-TEXT family (the polar + E/W storm banners)
+     * and its punctuation VIGNETTE, as a function of the graded enclosure estimate {@code exposure01}. Replaces
+     * the old BINARY {@code surfaceOk} gate that let ONE block/leaf overhead fully hide the banners.
+     *
+     * <p>Full ({@code 1.0}) at {@code exposure01 >= }{@link #WARNING_FULL_EXPOSURE} (0.5) -- comfortably met
+     * under a tree or Peetsa's open arch, where the center sample is blocked but the ring still sees sky
+     * ({@code exposure ~0.9}). LINEAR fade below 0.5, reaching 0 as {@code exposure01 -> 0}, so the banners are
+     * hidden ONLY when genuinely sealed in / deep underground (where the sampler returns {@code exposure01 == 0}
+     * via {@link #isBelowSurface}'s short-circuit -- the same "no storm banners in a cave" rule item 2's
+     * surface-only passage uses). A doorway (~0.3) reads at ~60% -- present but dimmed, matching the wind/
+     * whiteout/particle systems that already fade with partial shelter.
+     */
+    public static final float WARNING_FULL_EXPOSURE = 0.5f;
+
+    public static float warningAlpha(float exposure01) {
+        float e = clamp01(exposure01);
+        if (e >= WARNING_FULL_EXPOSURE) {
+            return 1.0f;
+        }
+        return e / WARNING_FULL_EXPOSURE;
+    }
+
     /** Clamp a float to {@code [0,1]} (NaN -> 0). */
     public static float clamp01(float v) {
         if (Float.isNaN(v) || v < 0.0f) {

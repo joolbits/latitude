@@ -153,6 +153,34 @@ public final class LatitudeV2Flags {
             Boolean.parseBoolean(System.getProperty("latitude.passageV2.enabled", "true")); // P3 LIVE-TEST STAGING (branch-local): default ON so Peetsa can fly the passage from the Modrinth profile (no custom -D args there). REVISIT BEFORE MERGE -- the shipped default is Peetsa's call after P3.
 
     /**
+     * Phase 5 Slice B-5 (Hemisphere Passage polish, item 1): keep GENERATED STRUCTURES out of an absolute band
+     * inward from the E/W (X) world-border edge (Peetsa saw a structure at the border, TEST 83). Default TRUE.
+     *
+     * <p><b>Its OWN flag, NOT tied to {@link #PASSAGE_V2_ENABLED}.</b> This changes WORLDGEN (which chunks get
+     * a structure placed), and worldgen must never silently change under a UI/experience flag -- so the veto
+     * gets a dedicated switch a config/launch can pin, independent of whether the crossing experience is on.
+     *
+     * <p><b>Default-on is defensible</b> because (a) it only affects NEWLY generated chunks -- blocks already
+     * on disk are never rewritten (placement-time only, legacy-worldgen pin holds); (b) the planned B-6
+     * mirror-band wrap needs a clean, structure-free edge anyway; and (c) it is conservative -- SURFACE
+     * structures only, in the outer {@link com.example.globe.core.EdgeStructureVeto#EDGE_BAND_BLOCKS}
+     * (500) blocks per side, leaving underground mineshafts/strongholds (End access) untouched. Explicitly
+     * setting it off is byte-identical: the mixin's first check returns immediately. Born WITH its build.gradle
+     * forwarding line (L17 discipline), beside {@code passageV2}.
+     *
+     * <p><b>Accepted upgrade edge case (torn structure at the generation frontier).</b> A multi-chunk surface
+     * structure inside the edge band whose ANCHOR chunk generated PRE-upgrade (so its early chunks placed)
+     * but whose remaining overlap chunks generate POST-upgrade will have those NEW portions vetoed -- a
+     * possible one-time partially-built structure right at the pre/post generation frontier near the edge.
+     * Narrow (only band-straddling, frontier-straddling, multi-chunk structures in existing worlds), purely
+     * cosmetic, and ACCEPTED (sweep LOW, 2026-07-12): exempting already-anchored starts would need
+     * chunk-generation-state queries -- complexity not worth it for a band whose structures we are removing
+     * anyway. Fresh worlds can never hit it.
+     */
+    public static final boolean EDGE_STRUCTURE_VETO_ENABLED =
+            Boolean.parseBoolean(System.getProperty("latitude.edgeStructureVeto.enabled", "true"));
+
+    /**
      * Polar small-vegetation fade (Peetsa 2026-07-10). Default TRUE since 2026-07-12: the TEST 75 live
      * look found flowers/grass/sugarcane/firefly bushes thriving at 88+ deg because this shipped off --
      * vanilla 26.2 decorates snowy_plains/frozen_river themselves (flower_default, patch_sugar_cane,

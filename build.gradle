@@ -112,6 +112,9 @@ loom {
             // Phase 5 B-5 Hemisphere Passage (default false, byte-identical/inert off). Forwarded in the
             // SAME PASS the flag is born so a gradle dev client can opt in for P3 live flight.
             vmArg "-Dlatitude.passageV2.enabled=${System.getProperty('latitude.passageV2.enabled', 'true')}" // P3 staging: matches the branch-local default flip
+            // Phase 5 B-5 edge structure veto (default TRUE, matching LatitudeV2Flags; byte-identical when
+            // explicitly set off). Born WITH its forwarding line in the SAME PASS as the flag (L17 discipline).
+            vmArg "-Dlatitude.edgeStructureVeto.enabled=${System.getProperty('latitude.edgeStructureVeto.enabled', 'true')}"
             // Polar small-vegetation fade (default TRUE since 2026-07-12, matching LatitudeV2Flags after
             // the TEST 75 live look; byte-identical when explicitly set off). Forwarded so dev runs agree
             // with shipped jars.

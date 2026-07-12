@@ -480,6 +480,28 @@ public final class GlobeClientState {
         return cachedEval;
     }
 
+    /**
+     * B-5 item 2 (surface-only passage) + item 3 (no storm banners in a cave): is the player GENUINELY
+     * underground -- below the surface layer AND with no sky overhead? Reuses the EXACT two ingredients the
+     * enclosure sampler already keys on: {@link com.example.globe.core.PolarExposure#isBelowSurface} (the same
+     * {@code seaLevel - 2} depth cut {@code sampleExposure01}/{@code isSurfaceOk} use) AND a sky check
+     * ({@code canSeeSky(pos.above())}, the sampler's center sample). AND-ed so open low-lying terrain a couple
+     * blocks under sea level (a shore, a shallow dip) is NOT mistaken for a cave -- only a genuinely roofed,
+     * below-surface column counts. Under a tree/arch at the edge the player is at the surface (Y not below
+     * sea-2) so this is false -- still the full experience, exactly as Peetsa asked.
+     */
+    public static boolean isDeepUnderground(Minecraft client) {
+        if (client == null || client.player == null || client.level == null) {
+            return false;
+        }
+        var world = client.level;
+        BlockPos pos = client.player.blockPosition();
+        if (!com.example.globe.core.PolarExposure.isBelowSurface(pos.getY(), world.getSeaLevel())) {
+            return false;
+        }
+        return !world.canSeeSky(pos.above());
+    }
+
     private static boolean isSurfaceOk(Minecraft client, BlockPos pos) {
         var world = client.level;
         if (world == null) {

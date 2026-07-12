@@ -82,6 +82,14 @@ public class FogRendererPassageSetupMixin {
         if (mc.player == null || mc.level != level) {
             return;
         }
+        // Item 2 (surface-only): underground the approach does not exist -- return vanilla fog so a cave near
+        // the edge shows only the plain border wall, no gathering haze. Same "genuinely below the surface with
+        // no sky" test the prompt machine and the server cross-reject use. P3-EYEBALL: the transition is a hard
+        // on/off at the surface line, so surfacing right at the edge could pop from vanilla fog into the
+        // approach haze in one frame; no fade is built (a depth-fog crossfade here is non-trivial).
+        if (GlobeClientState.isDeepUnderground(mc)) {
+            return;
+        }
 
         double distToEdge = GlobeClientState.distanceToEwBorderBlocks(mc.player.getX());
         float endFraction = HemispherePassage.approachFogEndFraction(distToEdge);
