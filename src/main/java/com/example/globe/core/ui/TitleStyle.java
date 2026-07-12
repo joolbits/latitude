@@ -6,17 +6,19 @@ package com.example.globe.core.ui;
  * offset geometry and the glimmer envelope are unit-testable; {@code ZoneEnterTitleOverlay} is the thin glue
  * that turns these numbers into {@code ctx.text} passes.
  *
- * <p>The glimmer is a single, rapid SHINE-SWEEP that travels once left&rarr;right across the title right after
- * it appears (it generalizes the old round-15 fade-in "shimmer" that only rode the RAINBOW/AURORA presets):
- * one Gaussian crest, tied to the title's age in ticks, rendered as RELATIVE CONTRAST rather than an absolute
- * brighten. {@link #glimmerGaussian} gives the raw crest height in [0,1] per letter; {@link #glimmerShade}
- * turns that into the per-letter color: letters away from the crest are GENTLY DIMMED to {@link #GLIMMER_DIM_FLOOR}
- * of their brightness, and the crest letter is lifted back to full and then popped toward white by
- * {@link #GLIMMER_WHITE_POP}. The moving bright crest against a briefly dimmed baseline is what makes the shine
- * read on ANY fill -- including a near-white title like the OFF_WHITE default (0xF3ECDD), where you cannot make
- * white brighter than white, so instead the surroundings dim and the crest pops. It fires exactly once and never
- * loops; outside the sweep window {@code glimmerGaussian} returns 0 and {@code glimmerShade} is an exact no-op,
- * so the title renders in its plain colors the rest of its on-screen life.
+ * <p>The glimmer is a one-shot, four-phase ENVELOPE keyed on the title's wall-clock age in ms ("C v2"
+ * choreography, approved 2026-07-11 1:1): a brief APPEAR (fade-in only), a HERO crest sweep left&rarr;right,
+ * a whole-title BLOOM toward white with a small scale swell, then a slow MELT back to plain. {@link
+ * #glimmerFrame} returns one {@link GlimmerFrame} per frame carrying the phase inputs; outside the window it
+ * returns {@link GlimmerFrame#INERT} so the title renders plain. Within the HERO sweep the crest is one
+ * travelling Gaussian rendered as RELATIVE CONTRAST rather than an absolute brighten: {@link #glimmerGaussian}
+ * gives the raw crest height in [0,1] per letter; {@link #glimmerShade} turns that into the per-letter color --
+ * letters away from the crest are GENTLY DIMMED to {@link #GLIMMER_DIM_FLOOR} of their brightness, the crest
+ * letter is lifted back to full and popped toward white. The moving bright crest against a briefly dimmed
+ * baseline is what makes the shine read on ANY fill -- including a near-white title like the OFF_WHITE default
+ * (0xF3ECDD), where you cannot make white brighter than white, so instead the surroundings dim and the crest
+ * pops. It fires exactly once and never loops; outside the sweep {@code glimmerGaussian} returns 0 and
+ * {@code glimmerShade} is an exact no-op, so the title renders in its plain colors the rest of its life.
  *
  * <p>({@link #brighten} -- a plain lerp toward white -- is NOT the title glimmer anymore; it has no live
  * caller now (the loading wave moved to its own dim-baseline shade), and is retained only as a small
@@ -131,15 +133,93 @@ public final class TitleStyle {
      *  soft, faded directional cast rather than the stark hard vanilla drop shadow. */
     public static final float[] DROP_SHADOW_ALPHA = {0.35f, 0.18f};
 
-    /** First tick (title age, 0 = the frame it appeared) at which the glimmer crest starts moving. Slightly
-     *  after fade-in begins (fade-in is {@code ZoneEnterTitleOverlay.FADE_TICKS}=10 ticks) so the title is
-     *  already legible as the crest crosses it. */
-    public static final int GLIMMER_START_TICK = 2;
+    // ---------------------------------------------------------------------------------------------------
+    // Phase-envelope glimmer choreography ("C v2", approved 2026-07-11 -- timings 1:1, DO NOT retune).
+    //
+    // A four-phase one-shot envelope keyed on the title's wall-clock age in ms:
+    //   APPEAR  [0 .. GLIMMER_APPEAR_MS)                    -- the fade-in runs; no glimmer activity (inert).
+    //   HERO    [GLIMMER_APPEAR_MS .. GLIMMER_HERO_END_MS)  -- one L->R Gaussian crest (crestProgress 0->1),
+    //           pop GLIMMER_HERO_POP, against a raised-arch baseline dim (dimScale = sin(pi*p), floor
+    //           GLIMMER_DIM_FLOOR).
+    //   BLOOM   [GLIMMER_HERO_END_MS .. GLIMMER_BLOOM_END_MS)  -- whole title lerps uniformly toward white to
+    //           GLIMMER_BLOOM_PEAK (easeOutQuad) plus a GLIMMER_SWELL_PEAK scale swell.
+    //   MELT    [GLIMMER_BLOOM_END_MS .. GLIMMER_MELT_END_MS)  -- bloom + swell decay 0.65/0.02 -> 0 (easeOutCubic
+    //           decay), a slow graceful dissolve.
+    //   REST    [GLIMMER_MELT_END_MS .. )                   -- plain title (inert), normal hold + fade-out.
+    // Supersedes the old tick-window sweep (the former GLIMMER_START_TICK/GLIMMER_SPAN_TICKS + glimmerProgress).
+    // ---------------------------------------------------------------------------------------------------
 
-    /** Number of ticks the single crest takes to sweep the whole word (~0.7s at 20 tps): a rapid, crisp wave,
-     *  noticeably quicker than the old fade-in shimmer. After {@code GLIMMER_START_TICK + GLIMMER_SPAN_TICKS}
-     *  the glimmer is done (never loops) and the title renders in its plain colors. */
-    public static final int GLIMMER_SPAN_TICKS = 14;
+    /** End of APPEAR / start of the HERO sweep (ms since the title appeared). Before this the title only fades
+     *  in; no glimmer activity. */
+    public static final long GLIMMER_APPEAR_MS = 350L;
+    /** End of the HERO crest sweep / start of BLOOM (ms). The single L->R crest travels the whole
+     *  [APPEAR, HERO_END) window. */
+    public static final long GLIMMER_HERO_END_MS = 1250L;
+    /** End of BLOOM / start of MELT (ms). Bloom and swell reach their peak exactly here. */
+    public static final long GLIMMER_BLOOM_END_MS = 1500L;
+    /** End of MELT / start of REST (ms). After this the frame is inert and the title is plain again. */
+    public static final long GLIMMER_MELT_END_MS = 2350L;
+
+    /** White-pop at the HERO crest (approved 0.85 -- stronger than the plain {@link #GLIMMER_WHITE_POP} 0.70
+     *  baked into the 2/3-arg {@link #glimmerShade}); carried on the frame and fed to the 4-arg glimmerShade. */
+    public static final float GLIMMER_HERO_POP = 0.85f;
+    /** Peak of BLOOM's uniform whole-title lerp toward white, reached at {@link #GLIMMER_BLOOM_END_MS}. */
+    public static final float GLIMMER_BLOOM_PEAK = 0.65f;
+    /** Peak of BLOOM's scale swell (a 2% title-scale swell), reached at {@link #GLIMMER_BLOOM_END_MS}. */
+    public static final float GLIMMER_SWELL_PEAK = 0.02f;
+
+    /**
+     * One frame of the glimmer choreography: the per-letter HERO crest inputs ({@code crestProgress},
+     * {@code dimScale}, {@code pop}) plus the whole-title {@code bloom} (uniform lerp-toward-white amount) and
+     * {@code swell} (extra scale fraction). Outside the active windows every field is inert ({@link #INERT}):
+     * {@code crestProgress == -1} (no crest -- {@link #glimmerGaussian} returns 0 and {@link #glimmerShade} is an
+     * exact no-op) and {@code dimScale/pop/bloom/swell == 0} (no dim, no bloom lift, no swell), so the title
+     * renders in its plain colors at its plain scale.
+     */
+    public record GlimmerFrame(float crestProgress, float dimScale, float pop, float bloom, float swell) {
+        /** The inert frame -- outside every window and when the effect is gated off (toggle / Reduce Motion). */
+        public static final GlimmerFrame INERT = new GlimmerFrame(-1f, 0f, 0f, 0f, 0f);
+    }
+
+    /**
+     * The glimmer envelope for a title that appeared {@code elapsedMs} ago (wall-clock). Returns
+     * {@link GlimmerFrame#INERT} during the pre-sweep APPEAR phase and after MELT ends; a HERO frame
+     * (crest + dim + pop) during the sweep; and a BLOOM/MELT frame (bloom + swell, no crest) after. Pure +
+     * testable; callers apply their own gates (config toggle, Reduce Motion) on top and substitute
+     * {@link GlimmerFrame#INERT} when gated off.
+     */
+    public static GlimmerFrame glimmerFrame(long elapsedMs) {
+        if (elapsedMs < GLIMMER_APPEAR_MS || elapsedMs >= GLIMMER_MELT_END_MS) {
+            return GlimmerFrame.INERT;
+        }
+        if (elapsedMs < GLIMMER_HERO_END_MS) {
+            float p = (float) (elapsedMs - GLIMMER_APPEAR_MS) / (float) (GLIMMER_HERO_END_MS - GLIMMER_APPEAR_MS);
+            float dim = (float) Math.sin(Math.PI * p); // raised arch: 0 at both sweep ends, ~1 mid-sweep
+            return new GlimmerFrame(p, dim, GLIMMER_HERO_POP, 0f, 0f);
+        }
+        if (elapsedMs < GLIMMER_BLOOM_END_MS) {
+            float local = (float) (elapsedMs - GLIMMER_HERO_END_MS)
+                    / (float) (GLIMMER_BLOOM_END_MS - GLIMMER_HERO_END_MS);
+            float ease = easeOutQuad(local);
+            return new GlimmerFrame(-1f, 0f, 0f, GLIMMER_BLOOM_PEAK * ease, GLIMMER_SWELL_PEAK * ease);
+        }
+        float local = (float) (elapsedMs - GLIMMER_BLOOM_END_MS)
+                / (float) (GLIMMER_MELT_END_MS - GLIMMER_BLOOM_END_MS);
+        float dec = 1f - easeOutCubic(local); // = (1-local)^3: 1 at melt start, 0 at melt end
+        return new GlimmerFrame(-1f, 0f, 0f, GLIMMER_BLOOM_PEAK * dec, GLIMMER_SWELL_PEAK * dec);
+    }
+
+    /** Quadratic ease-out {@code 1-(1-t)^2}, {@code t} clamped to [0,1]: rises fast then settles (the BLOOM lift). */
+    static float easeOutQuad(float t) {
+        float u = 1f - (t < 0f ? 0f : (t > 1f ? 1f : t));
+        return 1f - u * u;
+    }
+
+    /** Cubic ease-out {@code 1-(1-t)^3}, {@code t} clamped to [0,1]. The MELT decays as {@code 1-easeOutCubic}. */
+    static float easeOutCubic(float t) {
+        float u = 1f - (t < 0f ? 0f : (t > 1f ? 1f : t));
+        return 1f - u * u * u;
+    }
 
     /** Baseline dim, as a fraction of a letter's own brightness, for letters far from the shine crest while the
      *  sweep is running: at the crest ({@code gaussian01==1}) a letter is at full brightness (factor 1.0), far
@@ -165,47 +245,6 @@ public final class TitleStyle {
      *  left edge and exits fully OFF past the right edge rather than snapping on/off mid-word. Wide enough
      *  (0.45) that both the first and last letters are near-zero boost at the sweep's start/end. */
     static final float GLIMMER_MARGIN = 0.45f;
-
-    /**
-     * Normalized progress {@code [0,1]} through the one-shot glimmer sweep for a title of the given age in
-     * ticks, or {@code -1} when the glimmer is not running this frame -- BEFORE it starts ({@code age <
-     * GLIMMER_START_TICK}) or AFTER the single sweep has completed ({@code age >= GLIMMER_START_TICK +
-     * GLIMMER_SPAN_TICKS}). Callers still apply their own gates (the config toggle, Reduce Motion) on top of
-     * this; keeping the pure window math here makes the one-shot timing unit-testable.
-     */
-    public static float glimmerProgress(long ageTicks) {
-        long rel = ageTicks - GLIMMER_START_TICK;
-        if (rel < 0 || rel >= GLIMMER_SPAN_TICKS) {
-            return -1f;
-        }
-        return (float) rel / (float) GLIMMER_SPAN_TICKS;
-    }
-
-    /** Milliseconds per game tick (20 tps) -- the bridge that keeps the wall-clock glimmer window identical in
-     *  duration to the tick-based one, so switching the driver from ticks to ms changes only the RESOLUTION. */
-    public static final long MS_PER_TICK = 50L;
-
-    /**
-     * Wall-clock analogue of {@link #glimmerProgress(long)}: a CONTINUOUS normalized progress {@code [0,1)}
-     * through the one-shot sweep for a title that appeared {@code elapsedMs} ago, or {@code -1} outside the
-     * window (before {@link #GLIMMER_START_TICK} or once the single sweep has completed -- it never loops).
-     *
-     * <p>The live overlays drive the glimmer from this (wall-clock ms captured at trigger time) rather than the
-     * integer game-tick age, because game ticks STALL and quantize during teleport chunk-gen: a tick-driven
-     * crest advances in only {@link #GLIMMER_SPAN_TICKS} discrete steps (visibly steppy = "rubber-band") and
-     * freezes/jumps whenever the server tick hitches, while wall-clock advances smoothly every frame. The
-     * window spans the exact same real duration as the tick version ({@code GLIMMER_START_TICK * MS_PER_TICK}
-     * for {@code GLIMMER_SPAN_TICKS * MS_PER_TICK} ms), so only the smoothness differs, not the timing.
-     */
-    public static float glimmerProgressMs(long elapsedMs) {
-        long startMs = GLIMMER_START_TICK * MS_PER_TICK;
-        long spanMs = GLIMMER_SPAN_TICKS * MS_PER_TICK;
-        long rel = elapsedMs - startMs;
-        if (rel < 0L || rel >= spanMs) {
-            return -1f;
-        }
-        return (float) rel / (float) spanMs;
-    }
 
     /**
      * Raw normalized crest height in {@code [0, 1]} for one letter, given normalized sweep progress: {@code 1}
@@ -250,7 +289,7 @@ public final class TitleStyle {
      * color, never dimmed.
      */
     public static int glimmerShade(int rgb, float gaussian01) {
-        return glimmerShade(rgb, gaussian01, 1f);
+        return glimmerShade(rgb, gaussian01, 1f, GLIMMER_WHITE_POP);
     }
 
     /**
@@ -273,20 +312,51 @@ public final class TitleStyle {
      * still an EXACT no-op returning {@code rgb & 0xFFFFFF} unchanged, regardless of {@code dimScale}.
      */
     public static int glimmerShade(int rgb, float gaussian01, float dimScale) {
+        return glimmerShade(rgb, gaussian01, dimScale, GLIMMER_WHITE_POP);
+    }
+
+    /**
+     * As {@link #glimmerShade(int, float, float)}, but with an explicit {@code whitePop} in {@code [0,1]} that
+     * sets how far the crest letter is lerped toward white ({@code gaussian01 * whitePop}), instead of the fixed
+     * {@link #GLIMMER_WHITE_POP}. The phase envelope's HERO frame passes {@link #GLIMMER_HERO_POP} (0.85) here so
+     * the appearing crest pops harder than the plain 0.70 baked into the 2/3-arg overloads (which the loading
+     * wave and the legacy callers keep using). Everything else is identical: {@code gaussian01 <= 0} is still an
+     * EXACT no-op, {@code dimScale} still eases the baseline dim, and the result stays in {@code [0,255]}/channel.
+     */
+    public static int glimmerShade(int rgb, float gaussian01, float dimScale, float whitePop) {
         if (gaussian01 <= 0f) {
             return rgb & 0xFFFFFF;
         }
         float g = gaussian01 > 1f ? 1f : gaussian01; // clamp; a crest height above 1 is meaningless
         float ds = dimScale < 0f ? 0f : (dimScale > 1f ? 1f : dimScale);
+        float wp = whitePop < 0f ? 0f : (whitePop > 1f ? 1f : whitePop);
         // Effective dim floor eases from 1.0 (no dim, ds=0) down to GLIMMER_DIM_FLOOR (full dim, ds=1).
         float floor = 1f - (1f - GLIMMER_DIM_FLOOR) * ds;
         float factor = floor + (1f - floor) * g;
-        float pop = g * GLIMMER_WHITE_POP; // lerp-toward-white fraction at this letter (independent of the dim)
+        float pop = g * wp; // lerp-toward-white fraction at this letter (independent of the dim)
         int r0 = (rgb >> 16) & 0xFF, g0 = (rgb >> 8) & 0xFF, b0 = rgb & 0xFF;
         int r = shadeChannel(r0, factor, pop);
         int gg = shadeChannel(g0, factor, pop);
         int b = shadeChannel(b0, factor, pop);
         return (r << 16) | (gg << 8) | b;
+    }
+
+    /**
+     * Applies ONLY the shine-sweep's baseline dim (no crest, no white-pop) to a color: each channel multiplied
+     * by {@code floor = 1 - (1 - GLIMMER_DIM_FLOOR) * dimScale}. This is how a NON-hero line -- the degrees line
+     * of the two-line lockup, which never gets its own crest -- still sits at the same dimmed baseline the hero
+     * line's crest travels against, so the whole lockup breathes together. {@code dimScale} is clamped to
+     * {@code [0,1]}; at {@code dimScale == 0} this is an EXACT no-op (floor 1.0) returning {@code rgb & 0xFFFFFF}.
+     * Alpha is not part of {@code rgb}; the caller ORs it back.
+     */
+    public static int dimToFloor(int rgb, float dimScale) {
+        float ds = dimScale < 0f ? 0f : (dimScale > 1f ? 1f : dimScale);
+        float floor = 1f - (1f - GLIMMER_DIM_FLOOR) * ds;
+        int r0 = (rgb >> 16) & 0xFF, g0 = (rgb >> 8) & 0xFF, b0 = rgb & 0xFF;
+        int r = shadeChannel(r0, floor, 0f);
+        int g = shadeChannel(g0, floor, 0f);
+        int b = shadeChannel(b0, floor, 0f);
+        return (r << 16) | (g << 8) | b;
     }
 
     /** One channel of {@link #glimmerShade}: dim by {@code factor}, then lerp the dimmed value toward 255 by
@@ -319,5 +389,38 @@ public final class TitleStyle {
         int g = Math.round(g0 + (255 - g0) * t);
         int b = Math.round(b0 + (255 - b0) * t);
         return (r << 16) | (g << 8) | b;
+    }
+
+    /** Degrees suffix token: an integer degree count, the degree sign, and an OPTIONAL hemisphere letter
+     *  (N/S for latitude, E/W for longitude). Matches "66°N", "12°S", "180°E", "90°W", and
+     *  the equator/prime-meridian "0°" (no letter). Deliberately conservative: only a last token of this
+     *  exact shape is treated as a degrees suffix, so a hemisphere title like "Northern Hemisphere" (last word
+     *  "Hemisphere") is never mistaken for a lockup. */
+    private static final java.util.regex.Pattern DEGREES_TOKEN =
+            java.util.regex.Pattern.compile("\\d+\\u00b0[NSEW]?");
+
+    /**
+     * Splits a zone-enter title into its two-line lockup parts: {@code [name, degrees]} when the title ends in a
+     * degrees token (e.g. {@code "Subpolar 66°N"} &rarr; {@code {"Subpolar", "66°N"}}), or
+     * {@code [title, null]} when it does not -- a single-token title, a degrees-off title, or a hemisphere title
+     * like {@code "Northern Hemisphere"}. The split is at the LAST space, so multi-word zone names
+     * ({@code "The Frozen Wastes 89°"}) keep the whole name on line 1. ONLY a last token matching
+     * {@link #DEGREES_TOKEN} triggers a split; anything else (including titles with spaces but no degrees token)
+     * stays a single line. Split the RAW (natural-case) title -- before any title-case transform -- so the
+     * degrees letters keep their N/S/E/W casing for the match.
+     */
+    public static String[] splitLockup(String title) {
+        if (title == null) {
+            return new String[]{"", null};
+        }
+        int lastSpace = title.lastIndexOf(' ');
+        if (lastSpace < 0 || lastSpace == title.length() - 1) {
+            return new String[]{title, null};
+        }
+        String tail = title.substring(lastSpace + 1);
+        if (DEGREES_TOKEN.matcher(tail).matches()) {
+            return new String[]{title.substring(0, lastSpace), tail};
+        }
+        return new String[]{title, null};
     }
 }

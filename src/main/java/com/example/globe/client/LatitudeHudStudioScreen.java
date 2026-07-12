@@ -1229,13 +1229,15 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
         int titleOffsetX = (dragElement == DragElement.TITLE) ? (int) Math.round(titleOffsetXf) : LatitudeConfig.zoneEnterTitleOffsetX;
         int titleOffsetY = (dragElement == DragElement.TITLE) ? (int) Math.round(titleOffsetYf) : LatitudeConfig.zoneEnterTitleOffsetY;
 
-        // One-shot glimmer replay: the preview is static, but on Title-tab open / toggle-ON we drive the sweep
-        // once from wall-clock (~20 tps) so the effect is visible here too. glimmerProgress self-expires to -1
-        // after one sweep, and we gate on the same toggle + Reduce Motion as gameplay.
-        float previewGlimmer = -1f;
+        // One-shot glimmer replay: the preview is static, but on Title-tab open / toggle-ON we drive the whole
+        // choreography once from wall-clock ms so the appear -> hero -> bloom -> melt effect is visible here too.
+        // glimmerFrame self-expires to INERT after the melt, and we gate on the same toggle + Reduce Motion as
+        // gameplay.
+        com.example.globe.core.ui.TitleStyle.GlimmerFrame previewGlimmer =
+                com.example.globe.core.ui.TitleStyle.GlimmerFrame.INERT;
         if (this.titleGlimmerReplayStartMs >= 0 && LatitudeConfig.zoneEnterTitleGlimmer && !LatitudeConfig.reduceMotion) {
-            long ageTicks = (System.currentTimeMillis() - this.titleGlimmerReplayStartMs) / 50L;
-            previewGlimmer = com.example.globe.core.ui.TitleStyle.glimmerProgress(ageTicks);
+            long elapsedMs = System.currentTimeMillis() - this.titleGlimmerReplayStartMs;
+            previewGlimmer = com.example.globe.core.ui.TitleStyle.glimmerFrame(elapsedMs);
         }
 
         // Editor-only backing plate behind the live preview title so the outline / drop shadow / glow / fill stay
@@ -1259,9 +1261,11 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
             // 8px covers the fixed 4.5px max glow ring + 1px outline (both are fixed SCREEN px regardless of
             // Title Size -- the invScale in drawStyledTitle cancels the pose scale) plus a little breathing room.
             final int pad = 8;
-            int rawTextW = ZoneEnterTitleOverlay.styledWidth(mc.font, sampleTitle);
-            int plateHalfW = (int) Math.ceil(rawTextW * previewScale / 2.0) + pad;
-            int plateHalfH = (int) Math.ceil(mc.font.lineHeight * previewScale / 2.0) + pad;
+            // Sized to the (possibly two-line) lockup box so a degrees sample's taller/degrees-line preview stays
+            // inside the plate exactly like the drag hit-test and the gameplay clamp (all share measure()).
+            ZoneEnterTitleOverlay.TitleBox plateBox = ZoneEnterTitleOverlay.measure(mc.font, sampleTitle);
+            int plateHalfW = (int) Math.ceil(plateBox.contentW() * previewScale / 2.0) + pad;
+            int plateHalfH = (int) Math.ceil(plateBox.contentH() * previewScale / 2.0) + pad;
             int pcx = (this.width / 2) + titleOffsetX;
             int pcy = (this.height / 2) + titleOffsetY;
             int plx0 = pcx - plateHalfW, ply0 = pcy - plateHalfH;
@@ -2405,18 +2409,18 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
         }
 
         // U-B: measure the SAME string the preview draws, with case + letter-spacing applied, so the grab
-        // box always matches the letters on screen (was a hardcoded "TROPICAL 0\u00b0" measurement).
+        // box always matches the letters on screen (was a hardcoded "TROPICAL 0\u00b0" measurement). Uses the
+        // (possibly two-line) lockup box so a degrees title's taller/wider box is fully grabbable.
         String s = studioPreviewTitle(mc);
-        int w = ZoneEnterTitleOverlay.styledWidth(mc.font, s);
-        int h = mc.font.lineHeight;
+        ZoneEnterTitleOverlay.TitleBox box = ZoneEnterTitleOverlay.measure(mc.font, s);
 
         double scale = Mth.clamp(LatitudeConfig.zoneEnterTitleScale, 1.0, 3.0);
 
         int cx = (this.width / 2) + LatitudeConfig.zoneEnterTitleOffsetX;
         int cy = (this.height / 2) + LatitudeConfig.zoneEnterTitleOffsetY;
 
-        double halfW = (w * scale) / 2.0;
-        double halfH = (h * scale) / 2.0;
+        double halfW = (box.contentW() * scale) / 2.0;
+        double halfH = (box.contentH() * scale) / 2.0;
         double pad = 6.0;
 
         return mx >= (cx - halfW - pad)

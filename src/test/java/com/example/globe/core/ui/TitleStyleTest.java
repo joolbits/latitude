@@ -2,6 +2,7 @@ package com.example.globe.core.ui;
 
 import org.junit.jupiter.api.Test;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -137,30 +138,6 @@ class TitleStyleTest {
         for (int i = 0; i < 8; i++) {
             assertEquals(0f, TitleStyle.glimmerGaussian(-1f, i, 8), TOL);
         }
-    }
-
-    /** The glimmer is a bounded ONE-SHOT window keyed on the title's age in ticks: nothing before it starts,
-     *  a normalized [0,1] ramp while it runs, and nothing again once the single sweep has completed (it never
-     *  re-arms / loops). Progress is monotonic increasing across the active window. */
-    @Test
-    void glimmerWindowIsBoundedOneShot() {
-        int start = TitleStyle.GLIMMER_START_TICK;
-        int span = TitleStyle.GLIMMER_SPAN_TICKS;
-        assertTrue(start >= 0 && span > 0, "sane window constants");
-
-        assertEquals(-1f, TitleStyle.glimmerProgress(0), TOL, "no glimmer the instant the title appears");
-        assertEquals(-1f, TitleStyle.glimmerProgress(start - 1L), TOL, "no glimmer before the start tick");
-        assertEquals(0f, TitleStyle.glimmerProgress(start), TOL, "sweep begins at progress 0 on the start tick");
-
-        float prev = -1f;
-        for (long age = start; age < start + span; age++) {
-            float p = TitleStyle.glimmerProgress(age);
-            assertTrue(p >= 0f && p < 1.0001f, "progress stays in [0,1) inside the window");
-            assertTrue(p > prev, "progress advances monotonically across the window");
-            prev = p;
-        }
-        assertEquals(-1f, TitleStyle.glimmerProgress(start + span), TOL, "one-shot: off once the sweep ends");
-        assertEquals(-1f, TitleStyle.glimmerProgress(start + span + 50L), TOL, "stays off -- never loops");
     }
 
     /** The crest travels: the letter with the peak Gaussian height moves strictly left->right as the sweep
@@ -321,51 +298,6 @@ class TitleStyleTest {
         assertEquals(0x808080, litBlack, "black lerps to mid-grey at boost 0.5 (0 + 255*0.5 = 127.5 -> 128)");
     }
 
-    /** WALL-CLOCK glimmer window (TEST 68 fix): {@code glimmerProgressMs} is the continuous, per-frame-smooth
-     *  analogue of the integer-tick {@code glimmerProgress}. It opens/closes at the SAME real time as the tick
-     *  window (start/span scaled by {@link TitleStyle#MS_PER_TICK}), ramps monotonically 0..1 inside, is off
-     *  (-1) before it opens, and stays off forever once the single sweep completes (never loops). */
-    @Test
-    void glimmerProgressMsIsContinuousMonotonicOneShotAndMatchesTickWindow() {
-        long startMs = TitleStyle.GLIMMER_START_TICK * TitleStyle.MS_PER_TICK;
-        long spanMs = TitleStyle.GLIMMER_SPAN_TICKS * TitleStyle.MS_PER_TICK;
-
-        assertEquals(-1f, TitleStyle.glimmerProgressMs(0L), TOL, "no glimmer the instant the title appears");
-        assertEquals(-1f, TitleStyle.glimmerProgressMs(startMs - 1L), TOL, "no glimmer before the start ms");
-        assertEquals(0f, TitleStyle.glimmerProgressMs(startMs), TOL, "sweep begins at progress 0 at the start ms");
-        assertEquals(-1f, TitleStyle.glimmerProgressMs(startMs + spanMs), TOL, "one-shot: off once the sweep ends");
-        assertEquals(-1f, TitleStyle.glimmerProgressMs(startMs + spanMs + 5000L), TOL, "stays off -- never loops");
-
-        float prev = -1f;
-        for (long ms = startMs; ms < startMs + spanMs; ms++) {
-            float p = TitleStyle.glimmerProgressMs(ms);
-            assertTrue(p >= 0f && p < 1.0001f, "progress stays in [0,1) inside the window");
-            assertTrue(p > prev, "progress advances monotonically every ms");
-            prev = p;
-        }
-    }
-
-    /** ANTI-RUBBER-BAND: sampled at ~60 FPS (16 ms/frame) the wall-clock progress advances EVERY frame and
-     *  visits far more distinct values than the {@link TitleStyle#GLIMMER_SPAN_TICKS}-step integer-tick version
-     *  ever could -- the tick version changes only ~20x/s, so many frames share a value and the crest visibly
-     *  steps (the reported "rubber-band"). This is the property the ms driver restores. */
-    @Test
-    void glimmerProgressMsAdvancesEveryFrameUnlikeTheTickVersion() {
-        long startMs = TitleStyle.GLIMMER_START_TICK * TitleStyle.MS_PER_TICK;
-        long spanMs = TitleStyle.GLIMMER_SPAN_TICKS * TitleStyle.MS_PER_TICK;
-        java.util.Set<Float> distinct = new java.util.HashSet<>();
-        float prev = -1f;
-        for (long ms = startMs; ms < startMs + spanMs; ms += 16L) {
-            float p = TitleStyle.glimmerProgressMs(ms);
-            assertTrue(p > prev, "each 16 ms frame advances the crest (no frozen/stepped frames)");
-            distinct.add(p);
-            prev = p;
-        }
-        assertTrue(distinct.size() > TitleStyle.GLIMMER_SPAN_TICKS,
-                "wall-clock progress has far finer resolution than the " + TitleStyle.GLIMMER_SPAN_TICKS
-                        + "-step tick version");
-    }
-
     /** DIM/FADE composition (TEST 68 pop fix): the new {@code dimScale} arg scales how deep the off-crest
      *  baseline dim goes. dimScale=1 reproduces the original fixed dim EXACTLY (backward compatible); dimScale=0
      *  removes the dim entirely so the sweep's start/end are continuous with the plain title (no brighten
@@ -420,5 +352,176 @@ class TitleStyleTest {
 
         // The zero-crest no-op still holds regardless of dimScale.
         assertEquals(0x123456, TitleStyle.glimmerShade(0x123456, 0f, 0.5f), "crest 0 is a no-op for any dimScale");
+    }
+
+    // ----------------------------------------------------------------------------------------------------
+    // Phase-envelope glimmer choreography ("C v2", approved 2026-07-11 1:1). The four-phase envelope keyed on
+    // wall-clock ms: APPEAR [0,350) -> HERO [350,1250) -> BLOOM [1250,1500) -> MELT [1500,2350) -> REST.
+    // ----------------------------------------------------------------------------------------------------
+
+    /** The exact phase boundaries (349/350, 1249/1250, 1499/1500, 2349/2350ms): APPEAR is inert, HERO opens the
+     *  crest at progress 0 with the hero pop, BLOOM has no crest and starts bloom/swell at 0, MELT starts at the
+     *  bloom/swell PEAK, and REST (>=2350) is inert again. */
+    @Test
+    void glimmerFramePhaseBoundariesAreExact() {
+        // APPEAR: 349ms is still inert (fade-in only, no glimmer activity).
+        TitleStyle.GlimmerFrame appear = TitleStyle.glimmerFrame(349);
+        assertEquals(-1f, appear.crestProgress(), TOL, "349ms APPEAR: no crest");
+        assertEquals(0f, appear.dimScale(), TOL);
+        assertEquals(0f, appear.bloom(), TOL);
+        assertEquals(0f, appear.swell(), TOL);
+
+        // HERO opens at 350ms: crest at 0, hero pop, arch dim 0 at the very start, no bloom/swell yet.
+        TitleStyle.GlimmerFrame heroStart = TitleStyle.glimmerFrame(350);
+        assertEquals(0f, heroStart.crestProgress(), TOL, "350ms HERO starts crest at 0");
+        assertEquals(TitleStyle.GLIMMER_HERO_POP, heroStart.pop(), TOL, "hero pop is 0.85");
+        assertEquals(0f, heroStart.dimScale(), TOL, "arch dim is 0 at hero start");
+        assertEquals(0f, heroStart.bloom(), TOL);
+        assertEquals(0f, heroStart.swell(), TOL);
+
+        // 1249ms is the last HERO frame: crest near (but below) 1, still hero pop, still no bloom.
+        TitleStyle.GlimmerFrame heroEnd = TitleStyle.glimmerFrame(1249);
+        assertTrue(heroEnd.crestProgress() > 0.99f && heroEnd.crestProgress() < 1f, "1249ms crest near end");
+        assertEquals(TitleStyle.GLIMMER_HERO_POP, heroEnd.pop(), TOL);
+        assertEquals(0f, heroEnd.bloom(), TOL, "no bloom during hero");
+
+        // BLOOM opens at 1250ms: crest gone, bloom + swell start at 0.
+        TitleStyle.GlimmerFrame bloomStart = TitleStyle.glimmerFrame(1250);
+        assertEquals(-1f, bloomStart.crestProgress(), TOL, "1250ms BLOOM has no crest");
+        assertEquals(0f, bloomStart.bloom(), TOL, "bloom eases in from 0");
+        assertEquals(0f, bloomStart.swell(), TOL, "swell eases in from 0");
+
+        // 1499ms is the last BLOOM frame: bloom nearly at peak, still no crest.
+        TitleStyle.GlimmerFrame bloomEnd = TitleStyle.glimmerFrame(1499);
+        assertTrue(bloomEnd.bloom() > 0.6f && bloomEnd.bloom() <= TitleStyle.GLIMMER_BLOOM_PEAK, "1499ms near peak");
+        assertEquals(-1f, bloomEnd.crestProgress(), TOL);
+
+        // MELT opens at 1500ms exactly at the bloom/swell PEAK (the seam is the peak), no crest.
+        TitleStyle.GlimmerFrame meltStart = TitleStyle.glimmerFrame(1500);
+        assertEquals(TitleStyle.GLIMMER_BLOOM_PEAK, meltStart.bloom(), TOL, "bloom PEAK 0.65 exactly at 1500");
+        assertEquals(TitleStyle.GLIMMER_SWELL_PEAK, meltStart.swell(), TOL, "swell PEAK 0.02 exactly at 1500");
+        assertEquals(-1f, meltStart.crestProgress(), TOL, "no crest during melt");
+
+        // 2349ms is the last MELT frame: nearly fully dissolved.
+        TitleStyle.GlimmerFrame meltEnd = TitleStyle.glimmerFrame(2349);
+        assertTrue(meltEnd.bloom() >= 0f && meltEnd.bloom() < 0.05f, "2349ms melt nearly done");
+
+        // REST at 2350ms: inert again (never loops).
+        assertEquals(TitleStyle.GlimmerFrame.INERT, TitleStyle.glimmerFrame(2350), "2350ms REST is exactly INERT");
+    }
+
+    /** BLOOM rises to a 0.65 peak at 1500ms then MELT decays it monotonically to 0; the swell tracks it and
+     *  NEVER exceeds its 0.02 peak anywhere on the timeline. */
+    @Test
+    void glimmerFrameBloomPeaksThenMeltsMonotonicallyAndSwellIsBounded() {
+        assertEquals(TitleStyle.GLIMMER_BLOOM_PEAK, TitleStyle.glimmerFrame(1500).bloom(), TOL, "peak 0.65 at 1500");
+        assertEquals(TitleStyle.GLIMMER_SWELL_PEAK, TitleStyle.glimmerFrame(1500).swell(), TOL, "swell peak at 1500");
+
+        // MELT (1500..2350): bloom is monotonically non-increasing down to ~0.
+        float prev = TitleStyle.glimmerFrame(1500).bloom();
+        for (long ms = 1500; ms < TitleStyle.GLIMMER_MELT_END_MS; ms += 10) {
+            float b = TitleStyle.glimmerFrame(ms).bloom();
+            assertTrue(b <= prev + TOL, "melt bloom non-increasing at ms=" + ms);
+            assertTrue(b >= 0f, "bloom never negative");
+            prev = b;
+        }
+        assertTrue(TitleStyle.glimmerFrame(2349).bloom() < 0.02f, "bloom nearly fully melted by 2349ms");
+        assertEquals(0f, TitleStyle.glimmerFrame(2350).bloom(), TOL, "bloom is 0 at REST");
+
+        // Swell is bounded by its 0.02 peak (and never negative) for the whole timeline, including past REST.
+        for (long ms = 0; ms <= 2600; ms += 5) {
+            float s = TitleStyle.glimmerFrame(ms).swell();
+            assertTrue(s <= TitleStyle.GLIMMER_SWELL_PEAK + TOL, "swell <= 0.02 peak at ms=" + ms);
+            assertTrue(s >= 0f, "swell never negative at ms=" + ms);
+        }
+    }
+
+    /** The HERO crest advances monotonically 0->~1 across the whole [APPEAR, HERO_END) window (one L->R pass),
+     *  and the baseline dim is a raised arch: 0 at both hero ends, ~1 mid-hero. Outside the [APPEAR, MELT_END)
+     *  window every frame is inert. */
+    @Test
+    void glimmerFrameHeroCrestMonotonicWithArchDimAndInertOutside() {
+        for (long ms : new long[]{-100, 0, 200, 349, 2350, 2400, 100000}) {
+            TitleStyle.GlimmerFrame f = TitleStyle.glimmerFrame(ms);
+            assertEquals(-1f, f.crestProgress(), TOL, "inert crest outside hero at ms=" + ms);
+            assertEquals(0f, f.dimScale(), TOL, "inert dim at ms=" + ms);
+            assertEquals(0f, f.bloom(), TOL, "inert bloom at ms=" + ms);
+            assertEquals(0f, f.swell(), TOL, "inert swell at ms=" + ms);
+        }
+
+        float prev = -1f;
+        for (long ms = TitleStyle.GLIMMER_APPEAR_MS; ms < TitleStyle.GLIMMER_HERO_END_MS; ms += 5) {
+            float c = TitleStyle.glimmerFrame(ms).crestProgress();
+            assertTrue(c >= 0f && c < 1f, "crestProgress in [0,1) inside hero at ms=" + ms);
+            assertTrue(c > prev, "crestProgress advances monotonically at ms=" + ms);
+            prev = c;
+        }
+
+        assertEquals(0f, TitleStyle.glimmerFrame(TitleStyle.GLIMMER_APPEAR_MS).dimScale(), TOL, "arch dim 0 at start");
+        assertTrue(TitleStyle.glimmerFrame(800).dimScale() > 0.9f, "arch dim peaks ~1 mid-hero");
+        assertTrue(TitleStyle.glimmerFrame(1249).dimScale() < 0.2f, "arch dim returns toward 0 near hero end");
+    }
+
+    /** The 4-arg {@code glimmerShade} honors an explicit white-pop: passing {@link TitleStyle#GLIMMER_WHITE_POP}
+     *  reproduces the 3-arg overload exactly, a bigger pop (the hero 0.85) lifts the crest whiter, and the
+     *  zero-crest no-op still holds for any pop. */
+    @Test
+    void glimmerShadeFourArgHonorsExplicitWhitePop() {
+        int base = 0x808080;
+        for (float g : new float[]{0.2f, 0.5f, 1f}) {
+            assertEquals(TitleStyle.glimmerShade(base, g, 1f),
+                    TitleStyle.glimmerShade(base, g, 1f, TitleStyle.GLIMMER_WHITE_POP),
+                    "4-arg with the default pop must equal the 3-arg");
+        }
+        int softPop = TitleStyle.glimmerShade(0xFF0000, 1f, 1f, TitleStyle.GLIMMER_WHITE_POP); // 0.70
+        int heroPop = TitleStyle.glimmerShade(0xFF0000, 1f, 1f, TitleStyle.GLIMMER_HERO_POP); // 0.85
+        assertTrue(lum(heroPop) > lum(softPop), "the stronger hero pop lifts the crest whiter");
+        assertEquals(0x123456, TitleStyle.glimmerShade(0x123456, 0f, 1f, 0.85f), "crest 0 no-op for any pop");
+    }
+
+    /** {@code dimToFloor} (the non-hero line's baseline dim) multiplies every channel by the eased floor: a
+     *  no-op at dimScale 0, exactly {@code GLIMMER_DIM_FLOOR} of the channel at full dim, and monotonic in
+     *  between -- so a lockup's degrees line sits at the same dimmed baseline the hero crest travels against. */
+    @Test
+    void dimToFloorAppliesTheBaselineDimUniformly() {
+        int c = 0xC0C0C0;
+        assertEquals(c, TitleStyle.dimToFloor(c, 0f), "dimScale 0 is a no-op (floor 1.0)");
+
+        // 100 (0x64) * GLIMMER_DIM_FLOOR (0.75) = 75 exactly, on each channel, at full dim.
+        int expected = Math.round(100 * TitleStyle.GLIMMER_DIM_FLOOR);
+        assertEquals((expected << 16) | (expected << 8) | expected, TitleStyle.dimToFloor(0x646464, 1f),
+                "full dim multiplies each channel by the dim floor");
+
+        int prev = Integer.MAX_VALUE;
+        for (float ds = 0f; ds <= 1.0001f; ds += 0.25f) {
+            int v = lum(TitleStyle.dimToFloor(0xF3ECDD, ds));
+            assertTrue(v <= prev, "a deeper dim never brightens the baseline");
+            prev = v;
+        }
+        assertEquals(0, TitleStyle.dimToFloor(0x123456, 0.5f) & 0xFF000000, "no alpha bits introduced");
+    }
+
+    /** {@code splitLockup} splits a zone title into [name, degrees] ONLY when the last space-separated token is a
+     *  degrees token ({@code \d+°[NSEW]?}) -- multi-word names stay whole on line 1 -- and never splits a
+     *  hemisphere title or any title whose last token isn't degrees. */
+    @Test
+    void splitLockupSplitsOnlyOnATrailingDegreesToken() {
+        assertArrayEquals(new String[]{"Subpolar", "66°N"}, TitleStyle.splitLockup("Subpolar 66°N"));
+        assertArrayEquals(new String[]{"Tropics", "12°S"}, TitleStyle.splitLockup("Tropics 12°S"));
+        assertArrayEquals(new String[]{"The Frozen Wastes", "89°"},
+                TitleStyle.splitLockup("The Frozen Wastes 89°"), "multi-word name stays on line 1");
+        assertArrayEquals(new String[]{"Prime", "180°E"}, TitleStyle.splitLockup("Prime 180°E"));
+        assertArrayEquals(new String[]{"Meridian", "0°"}, TitleStyle.splitLockup("Meridian 0°"),
+                "the equator/prime-meridian bare 0° token still splits");
+
+        // No split: hemisphere titles, single tokens, and multi-word titles without a degrees token.
+        assertArrayEquals(new String[]{"Northern Hemisphere", null}, TitleStyle.splitLockup("Northern Hemisphere"));
+        assertArrayEquals(new String[]{"Southern Hemisphere", null}, TitleStyle.splitLockup("Southern Hemisphere"));
+        assertArrayEquals(new String[]{"Tropics", null}, TitleStyle.splitLockup("Tropics"), "no space -> one line");
+        assertArrayEquals(new String[]{"The Frozen Wastes", null}, TitleStyle.splitLockup("The Frozen Wastes"),
+                "spaces but no degrees token -> one line");
+        assertArrayEquals(new String[]{"Tropics ", null}, TitleStyle.splitLockup("Tropics "),
+                "a trailing space is not a degrees token");
+        assertArrayEquals(new String[]{"", null}, TitleStyle.splitLockup(null), "null is safe");
     }
 }
