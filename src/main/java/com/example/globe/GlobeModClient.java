@@ -11,7 +11,6 @@ import com.example.globe.client.ClientKeybinds;
 import com.example.globe.client.GlobeWarningOverlay;
 import com.example.globe.client.LatitudeClientState;
 import com.example.globe.client.LatitudeHudStudioScreen;
-import com.example.globe.client.SpawnZoneScreen;
 import com.example.globe.client.EwStormWallRenderer;
 import com.example.globe.dev.DevCaptureKeybind;
 import com.example.globe.dev.client.SeamAuditClientBridge;
@@ -35,7 +34,6 @@ import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 
 public class GlobeModClient implements ClientModInitializer {
-    private static boolean pendingSpawnPickerOpen;
 
     /**
      * Slice B (audit P1-2 / Lane 8): the Sodium E-W section-culling compat mixin
@@ -87,7 +85,6 @@ public class GlobeModClient implements ClientModInitializer {
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
             GlobeClientState.setGlobeWorld(false);
             com.example.globe.util.LatitudeMath.setLatitudeZRadius(0);
-            pendingSpawnPickerOpen = false;
             // U-D world-switch hygiene: per-world caches (HUD strings, compass presence, dial-texture
             // presence) and any in-flight zone title must not leak across worlds.
             com.example.globe.client.CompassHud.onWorldSwitch();
@@ -117,10 +114,8 @@ public class GlobeModClient implements ClientModInitializer {
                 return;
             }
 
-            context.client().execute(() -> {
-                pendingSpawnPickerOpen = false;
-                GlobeMod.LOGGER.info("Ignoring legacy open spawn picker payload");
-            });
+            context.client().execute(() ->
+                    GlobeMod.LOGGER.info("Ignoring legacy open spawn picker payload"));
         });
 
         GlobeWarningOverlay.init();
@@ -198,12 +193,6 @@ public class GlobeModClient implements ClientModInitializer {
     }
 
     private static void polarCapClientTick(Minecraft client) {
-        if (pendingSpawnPickerOpen && client.player != null && client.level != null && client.gui.screen() == null) {
-            pendingSpawnPickerOpen = false;
-            client.setScreenAndShow(new SpawnZoneScreen());
-            GlobeMod.LOGGER.info("Opened SpawnZoneScreen");
-        }
-
         if (client.player == null || client.level == null) {
             return;
         }

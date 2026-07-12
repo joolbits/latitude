@@ -1533,6 +1533,7 @@ public class LatitudeCreateWorldScreen extends Screen {
             // drawing it here just clipped against the scissor and left the dead "invisible header bar".)
             drawSettingsRowLabel(context, "World Type", settLabelX, worldTypeRowY, MUTED);
             drawSettingsStepperValue(context, WORLD_TYPE_NAMES[worldTypeIdx], WORLD_TYPE_COLORS[worldTypeIdx], worldTypeRowY);
+            maybeDrawWorldTypeTooltip(context, mouseX, mouseY);
             drawSettingsRowLabel(context, "Game Mode", settLabelX, modeRowY, MUTED);
             drawSettingsStepperValue(context, MODE_NAMES[selectedModeIdx], MODE_COLORS[selectedModeIdx], modeRowY);
             // World Type + Game Mode keep the classic label-above-stepper layout. The six rows below
@@ -1908,6 +1909,49 @@ public class LatitudeCreateWorldScreen extends Screen {
         int btnH = worldTypePrevBtn != null ? worldTypePrevBtn.getHeight() : 20;
         int drawY = rowY + Math.max(0, (btnH - uiFontHeight()) / 2);
         drawBoundedText(context, fitted, new UiRect(safeLeft + Math.max(0, (safeWidth - textW) / 2), drawY, safeWidth, uiFontHeight()), color, true, true);
+    }
+
+    // Plain-language hover explainer for the Rules-rail "World Type" stepper. The stepper has no single
+    // hoverable widget (only the two 20px arrow buttons are widgets; the label + value in between are drawn
+    // text), so we hit-test the whole row rect ourselves and reuse the same SIDE-anchored tooltip idiom as
+    // the RulesIconRow rows below it: open LEFT into the empty middle of the screen, fall back to the right,
+    // then clamp on-screen -- never covering the hovered row or the rail. Deferred (setTooltipForNextFrame),
+    // so it draws on top after scissors are disabled. Only fires while the row is inside the rail viewport.
+    private void maybeDrawWorldTypeTooltip(GuiGraphicsExtractor context, int mouseX, int mouseY) {
+        int btnH = worldTypePrevBtn != null ? worldTypePrevBtn.getHeight() : 20;
+        final int rowX = railX + 4;
+        final int rowW = Math.max(20, railW - 8 - SCROLLBAR_GUTTER);
+        final int rowTop = worldTypeRowY - 10;                 // includes the label drawn one labelGap above
+        final int rowBottom = worldTypeRowY + btnH;            // through the bottom of the arrow buttons
+        boolean hovered = mouseX >= rowX && mouseX <= rowX + rowW && mouseY >= rowTop && mouseY <= rowBottom;
+        if (!hovered || rowBottom <= settingsViewportTop || rowTop >= settingsViewportBottom) {
+            return;
+        }
+        Component tip = Component.literal(
+                "Latitude builds this mod's world — climate zones that change with latitude, the compass, "
+                        + "and the expedition HUD. Vanilla and Vanilla Superflat make standard Minecraft "
+                        + "worlds with Latitude's features switched off.");
+        int wrapW = Math.max(120, Math.min(220, this.width - 24));
+        java.util.List<net.minecraft.util.FormattedCharSequence> lines = this.font.split(tip, wrapW);
+        final int anchorX = rowX;
+        final int anchorW = rowW;
+        final int anchorY = Math.max(settingsViewportTop, rowTop);
+        net.minecraft.client.gui.screens.inventory.tooltip.ClientTooltipPositioner sidePositioner =
+                (sw, sh, mx, my, tw, th) -> {
+                    int gap = 6;
+                    int px;
+                    if (anchorX - gap - tw >= 0) {
+                        px = anchorX - gap - tw;                 // room on the left: open into the middle
+                    } else if (anchorX + anchorW + gap + tw <= sw) {
+                        px = anchorX + anchorW + gap;            // else open to the right of the row
+                    } else {
+                        px = sw - tw;                            // no room either side: clamp to right edge
+                    }
+                    px = Math.max(0, Math.min(px, sw - tw));
+                    int py = Math.max(0, Math.min(anchorY, sh - th));
+                    return new org.joml.Vector2i(px, py);
+                };
+        context.setTooltipForNextFrame(this.font, lines, sidePositioner, mouseX, mouseY, true);
     }
 
     // ── Accessibility (Peetsa 2026-07-11) ──
