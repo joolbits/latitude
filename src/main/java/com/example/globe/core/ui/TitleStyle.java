@@ -114,6 +114,23 @@ public final class TitleStyle {
         return (float) a;
     }
 
+    /** Faded drop-shadow stamp offsets in SCREEN pixels (down &amp; down-right): a soft DIRECTIONAL shadow, built
+     *  by stamping the text in low-alpha black at each offset behind the fill. Two things make this a distinct
+     *  look. Unlike the omnidirectional {@link #GLOW_RING_RADII_PX} halo (8 directions radiating out from the
+     *  glyph, centered), these offsets go to the lower-right ONLY, so the title reads as lit from the
+     *  upper-left -- a real cast shadow, not a glow. And unlike MC's stark hard single-pixel vanilla shadow,
+     *  the two tapering-alpha stamps ({@link #DROP_SHADOW_ALPHA}) make it soft and faded rather than a crisp
+     *  black edge. Expressed in screen px (the caller divides by draw scale) so it stays a fixed offset at any
+     *  Title Size. */
+    public static final int[][] DROP_SHADOW_OFFSETS_PX = {
+        {1, 1}, {2, 2},
+    };
+
+    /** Per-stamp alpha as a fraction of the title's own alpha, matched 1:1 to {@link #DROP_SHADOW_OFFSETS_PX}
+     *  (nearest stamp strongest, farther one fainter). Kept low + tapering on purpose so the shadow reads as a
+     *  soft, faded directional cast rather than the stark hard vanilla drop shadow. */
+    public static final float[] DROP_SHADOW_ALPHA = {0.35f, 0.18f};
+
     /** First tick (title age, 0 = the frame it appeared) at which the glimmer crest starts moving. Slightly
      *  after fade-in begins (fade-in is {@code ZoneEnterTitleOverlay.FADE_TICKS}=10 ticks) so the title is
      *  already legible as the crest crosses it. */

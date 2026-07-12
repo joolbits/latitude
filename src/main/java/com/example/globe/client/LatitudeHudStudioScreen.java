@@ -913,16 +913,19 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
             var wResetTitle = this.addRenderableWidget(Button.builder(Component.literal("Reset Title"), b -> {
                         LatitudeConfig.zoneEnterTitleOffsetX = 0;
                         LatitudeConfig.zoneEnterTitleOffsetY = 0;
-                        LatitudeConfig.zoneEnterTitleScale = 1.6;
-                        LatitudeConfig.zoneEnterTitleSeconds = 4.0;
-                        // Restore the default title styling (outline off @ 1px, hard shadow off, gentle glow on).
+                        // Match the true fresh defaults (LatitudeConfigData / resetHudDefaults) — Reset Title
+                        // previously used 1.6/4.0, which didn't actually reset to the defaults (1.8/6.0).
+                        LatitudeConfig.zoneEnterTitleScale = 1.8;
+                        LatitudeConfig.zoneEnterTitleSeconds = 6.0;
+                        // Restore the default title styling (outline off @ 1px, faded drop shadow on, glow off).
                         LatitudeConfig.zoneEnterTitleOutline = false;
                         LatitudeConfig.zoneEnterTitleOutlineRgb = 0x000000;
                         LatitudeConfig.zoneEnterTitleOutlineThickness = 1;
-                        LatitudeConfig.zoneEnterTitleDropShadow = false;
-                        LatitudeConfig.zoneEnterTitleGlow = true;
+                        LatitudeConfig.zoneEnterTitleDropShadow = true;
+                        LatitudeConfig.zoneEnterTitleGlow = false;
                         LatitudeConfig.zoneEnterTitleGlowIntensity = 0.75;
                         LatitudeConfig.zoneEnterTitleGlimmer = true;
+                        LatitudeConfig.zoneEnterTitleLetterSpacing = 1; // matches the fresh default (+1)
                         LatitudeConfig.saveCurrent();
                         this.titleOffsetXf = 0;
                         this.titleOffsetYf = 0;
@@ -1904,19 +1907,19 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
         LatitudeConfig.zoneEnterTitleSeconds = 6.0;
         LatitudeConfig.showZoneBaseDegreesOnTitle = true;
         // Fresh out-of-box title look (title-styling overhaul 2026-07-11, refined same day): warm off-white
-        // fill, no outline (1px when enabled), hard drop shadow off, gentle glow ON (intensity 0.75), ALL
-        // CAPS -- matches LatitudeConfigData's field initializers.
+        // fill, no outline (1px when enabled), FADED drop shadow ON, glow OFF (intensity 0.75 when enabled),
+        // ALL CAPS, letter spacing 1 -- matches LatitudeConfigData's field initializers.
         LatitudeConfig.zoneEnterTitleColorPreset = LatitudeConfigData.TitleColorPreset.OFF_WHITE;
         LatitudeConfig.zoneEnterTitleRgb = 0xFFFFFF;
         LatitudeConfig.zoneEnterTitleOutline = false;
         LatitudeConfig.zoneEnterTitleOutlineRgb = 0x000000;
         LatitudeConfig.zoneEnterTitleOutlineThickness = 1;
-        LatitudeConfig.zoneEnterTitleDropShadow = false;
-        LatitudeConfig.zoneEnterTitleGlow = true;
+        LatitudeConfig.zoneEnterTitleDropShadow = true;
+        LatitudeConfig.zoneEnterTitleGlow = false;
         LatitudeConfig.zoneEnterTitleGlowIntensity = 0.75;
         LatitudeConfig.zoneEnterTitleGlimmer = true;
         LatitudeConfig.zoneEnterTitleCase = LatitudeConfigData.TitleCaseMode.UPPERCASE;
-        LatitudeConfig.zoneEnterTitleLetterSpacing = 0;
+        LatitudeConfig.zoneEnterTitleLetterSpacing = 1;
         LatitudeConfig.zoneEnterTitleDraggable = true;
         // Matches LatitudeConfig's own field-initializer defaults (hudSnapEnabled=true, hudSnapPixels=8) --
         // there's no fresh()-style factory on LatitudeConfig (unlike CompassHudConfig), so this follows the same

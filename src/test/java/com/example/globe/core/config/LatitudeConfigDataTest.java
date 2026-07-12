@@ -29,15 +29,17 @@ class LatitudeConfigDataTest {
         assertEquals(6.0, d.zoneEnterTitleSeconds);
         assertEquals(1.8, d.zoneEnterTitleScale);
         // FRESH default refreshed 2026-07-11 (title-styling overhaul, refined same day): warm OFF_WHITE fill,
-        // no outline (1px thickness when enabled), hard drop shadow off, GENTLE glow ON (intensity 0.75),
-        // ALL CAPS.
+        // no outline (1px thickness when enabled), FADED drop shadow ON, glow OFF (intensity 0.75 when on),
+        // ALL CAPS, letter spacing 1. Depth cue is now the faded drop shadow, not the glow halo (Peetsa:
+        // "change the default glow to a faded drop shadow").
         assertEquals(TitleColorPreset.OFF_WHITE, d.zoneEnterTitleColorPreset);
         assertFalse(d.zoneEnterTitleOutline);
         assertEquals(0x000000, d.zoneEnterTitleOutlineRgb);
         assertEquals(1, d.zoneEnterTitleOutlineThickness);
-        assertFalse(d.zoneEnterTitleDropShadow);
-        assertTrue(d.zoneEnterTitleGlow, "fresh default flipped to a gentle glow (2026-07-11)");
+        assertTrue(d.zoneEnterTitleDropShadow, "fresh default is the faded drop shadow (2026-07-11)");
+        assertFalse(d.zoneEnterTitleGlow, "glow moved off-by-default; drop shadow is the depth cue now");
         assertEquals(0.75, d.zoneEnterTitleGlowIntensity);
+        assertEquals(1, d.zoneEnterTitleLetterSpacing, "fresh letter spacing +1 (2026-07-11)");
         assertEquals(TitleCaseMode.UPPERCASE, d.zoneEnterTitleCase);
         assertEquals(-40, d.zoneEnterTitleOffsetY);
         assertTrue(d.hudSnapEnabled);
@@ -114,10 +116,12 @@ class LatitudeConfigDataTest {
         assertEquals(TitleColorPreset.OFF_WHITE, d.zoneEnterTitleColorPreset);
         assertFalse(d.zoneEnterTitleOutline);
         assertEquals(1, d.zoneEnterTitleOutlineThickness, "absent thickness key adopts the 1px default");
-        assertFalse(d.zoneEnterTitleDropShadow);
-        // NOTE the key-presence asymmetry: the glow BOOLEAN existed before this pass, so a real saved file
-        // carries its own value; but a file that genuinely lacks the key (as here) adopts the new true default.
-        assertTrue(d.zoneEnterTitleGlow, "absent glow key adopts the new gentle-glow default");
+        assertEquals(1, d.zoneEnterTitleLetterSpacing, "absent letter-spacing key adopts the new +1 default");
+        // NOTE the key-presence asymmetry: the dropShadow/glow BOOLEANs existed before this pass, so a real
+        // saved file carries its own value; but a file that genuinely lacks the keys (as here) adopts the new
+        // faded-drop-shadow-on / glow-off defaults.
+        assertTrue(d.zoneEnterTitleDropShadow, "absent drop-shadow key adopts the new faded-drop-shadow default");
+        assertFalse(d.zoneEnterTitleGlow, "absent glow key adopts the new glow-off default");
         assertEquals(0.75, d.zoneEnterTitleGlowIntensity, "absent intensity key adopts the gentle 0.75 default");
         assertTrue(d.zoneEnterTitleEnabled);
     }

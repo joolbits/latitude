@@ -117,21 +117,28 @@ public final class LatitudeConfigData {
     @SerializedName(value = "zoneEnterTitleOutlineThickness", alternate = {"zoneEnterTitleOutlineThicknessValue"})
     public int zoneEnterTitleOutlineThickness = 1;
 
-    /** The standard Minecraft hard drop shadow (one dark offset copy). Default = OFF (was implicitly
-     *  always-ON before the title-styling overhaul; the glimmer/plain-fill look reads cleaner without it). */
+    /** The title's depth treatment: a FADED soft DIRECTIONAL drop shadow (two tapering low-alpha black stamps
+     *  offset down-right -- see {@link com.example.globe.core.ui.TitleStyle#DROP_SHADOW_OFFSETS_PX}), NOT the
+     *  stark hard vanilla single-pixel shadow. FRESH-config default flipped OFF -> ON 2026-07-11 (Peetsa:
+     *  "change the default glow to a faded drop shadow") -- the out-of-box depth cue is now this soft shadow
+     *  instead of the omnidirectional glow halo below.
+     *  <p>KEY-PRESENCE ASYMMETRY (disclosed): this boolean key was ADDED EARLIER TODAY, so any config already
+     *  saved this session carries an explicit {@code false} that Gson keeps -- those users (including Peetsa's
+     *  own config) stay drop-shadow-OFF until they toggle it or Reset. Only a brand-new config file (no key on
+     *  disk) adopts this {@code true} default. That is the correct always-present-key behavior, not a bug. */
     @SerializedName(value = "zoneEnterTitleDropShadow", alternate = {"zoneEnterTitleDropShadowValue"})
-    public boolean zoneEnterTitleDropShadow = false;
+    public boolean zoneEnterTitleDropShadow = true;
 
-    /** A soft dark halo radiating out behind the text (multi-ring low-alpha offsets), independent of the hard
-     *  drop shadow. FRESH-config default flipped OFF -> ON 2026-07-11 (Peetsa: "a gentle glow should be
-     *  default"), tuned gentle via {@link #zoneEnterTitleGlowIntensity} below.
-     *  <p>KEY-PRESENCE ASYMMETRY (disclosed): unlike the outline/intensity keys, this boolean key was ADDED
-     *  EARLIER TODAY, so any config already saved this session carries an explicit {@code false} that Gson
-     *  keeps -- those users (including Peetsa's own config) stay glow-OFF until they toggle it or Reset. Only
-     *  a brand-new config file (no key on disk) adopts this {@code true} default. That is the correct
-     *  always-present-key behavior, not a bug. */
+    /** A soft dark halo radiating out behind the text (multi-ring low-alpha offsets), independent of the drop
+     *  shadow. FRESH-config default flipped ON -> OFF 2026-07-11 (Peetsa: "change the default glow to a faded
+     *  drop shadow" -- the depth cue moved to {@link #zoneEnterTitleDropShadow}); the glow stays fully
+     *  available via this toggle + {@link #zoneEnterTitleGlowIntensity}.
+     *  <p>KEY-PRESENCE ASYMMETRY (disclosed): this boolean key was ADDED EARLIER TODAY, so any config already
+     *  saved this session carries an explicit value that Gson keeps -- those users (including Peetsa's own
+     *  config) keep whatever glow state they saved until they toggle it or Reset. Only a brand-new config file
+     *  (no key on disk) adopts this {@code false} default. That is the correct always-present-key behavior. */
     @SerializedName(value = "zoneEnterTitleGlow", alternate = {"zoneEnterTitleGlowValue"})
-    public boolean zoneEnterTitleGlow = true;
+    public boolean zoneEnterTitleGlow = false;
 
     /** Glow halo intensity multiplier on the per-ring alphas (slider range 0.2..2.0). FRESH default 0.75 is
      *  deliberately GENTLE -- 0.75x the shipped ring alphas -- so the out-of-box glow is a soft whisper-halo,
@@ -152,9 +159,11 @@ public final class LatitudeConfigData {
     @SerializedName(value = "zoneEnterTitleCase", alternate = {"zoneEnterTitleCaseValue"})
     public TitleCaseMode zoneEnterTitleCase = TitleCaseMode.UPPERCASE;
 
-    /** Extra pixels between characters; negative = tighter. */
+    /** Extra pixels between characters; negative = tighter. FRESH default 0 -> 1 (2026-07-11, Peetsa:
+     *  "default letter spacing +1") for a touch more breathing room out of the box; existing saved configs
+     *  keep their own value (key has always existed). Sanitize-clamped to -4..16. */
     @SerializedName(value = "zoneEnterTitleLetterSpacing", alternate = {"zoneEnterTitleLetterSpacingValue"})
-    public int zoneEnterTitleLetterSpacing = 0;
+    public int zoneEnterTitleLetterSpacing = 1;
 
     @SerializedName(value = "zoneEnterTitleOffsetX", alternate = {"zoneEnterTitleOffsetXValue"})
     public int zoneEnterTitleOffsetX = 0;
