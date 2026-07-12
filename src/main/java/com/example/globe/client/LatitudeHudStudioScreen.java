@@ -158,6 +158,10 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
     private SwatchSlot swatchTitleColor;
     private SwatchSlot swatchTitleOutline;
     private final List<SwatchSlot> sidebarSwatches = new ArrayList<>();
+    // Non-widget section headers ("— Accessibility —" etc.) drawn as an overlay pass, scrolled/clipped the same
+    // way SwatchSlots are, so a group of related rows can carry a divider-flanked title without a fake widget
+    // muddying the row-animation tracker.
+    private final List<HeaderSlot> sidebarHeaders = new ArrayList<>();
 
     private int sidebarScrollY = 0;
     private int sidebarViewportTop;
@@ -329,6 +333,7 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
         this.sidebarScrollBaseYs.clear();
         this.rowIntrinsicEnabled.clear();
         this.sidebarSwatches.clear();
+        this.sidebarHeaders.clear();
         this.sidebarViewportTop = panelY;
         this.sidebarViewportBottom = Math.max(panelY + 24, this.height - 60);
 
@@ -1069,15 +1074,14 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
             trackSidebarWidget(wPreviewText, y);
             y += rowH + rowGap;
 
-            var wReduceMotion = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "ON" : "OFF"), () -> LatitudeConfig.reduceMotion)
-                    .withValues(true, false)
-                    .create(panelX, y, widgetW, rowH, Component.literal("Reduce Motion"), (btn, value) -> {
-                        LatitudeConfig.reduceMotion = value;
-                        LatitudeConfig.saveCurrent();
-                    }));
-            tooltip(wReduceMotion, "For motion-sensitive players: turns off the gentle slide when controls appear or disappear in this editor, so rows switch instantly instead. Also flags the rest of the mod's little animations (like the moving zone-title and map shimmers) to hold still where supported.");
-            trackSidebarWidget(wReduceMotion, y);
-            y += rowH + rowGap;
+            // Accessibility group (Peetsa 2026-07-11): a divider-flanked "— Accessibility —" header, then the
+            // color-mode dropdown, then the Reduce Motion toggle DIRECTLY BENEATH it, so the pair reads as one
+            // group. Reduce Motion stays its own orthogonal row (a player can want High Contrast AND reduced
+            // animation) -- it's grouped WITH accessibility here, not folded into the mode enum, and no longer
+            // floats as an unrelated outside button.
+            int a11yHeaderH = 12;
+            this.sidebarHeaders.add(new HeaderSlot(y, a11yHeaderH, "Accessibility"));
+            y += a11yHeaderH + rowGap;
 
             LatitudeConfigData.AccessibilityMode[] a11yValues = LatitudeConfigData.AccessibilityMode.values();
             List<SwatchDropdown.Entry> a11yEntries = new ArrayList<>();
@@ -1087,8 +1091,18 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
                         LatitudeConfig.accessibilityMode = a11yValues[idx];
                         LatitudeConfig.saveCurrent();
                     }, this));
-            tooltip(wAccessibility, "Extra help reading the HUD. High Contrast makes text and outlines bold and solid, with no see-through panels. Colorblind-Friendly avoids red/green-only cues and leans on blue, gold, and white plus shapes. Standard is the normal look. (This pass brightens this editor; the full in-game HUD treatment arrives in a later update.)");
+            tooltip(wAccessibility, "Extra help reading the HUD -- this row sets colors and contrast. High Contrast makes text and outlines bold and solid, with no see-through panels. Colorblind-Friendly avoids red/green-only cues and leans on blue, gold, and white plus shapes. Standard is the normal look. (This pass brightens this editor; the full in-game HUD treatment arrives in a later update.)");
             trackSidebarWidget(wAccessibility, y);
+            y += rowH + rowGap;
+
+            var wReduceMotion = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "ON" : "OFF"), () -> LatitudeConfig.reduceMotion)
+                    .withValues(true, false)
+                    .create(panelX, y, widgetW, rowH, Component.literal("Reduce Motion"), (btn, value) -> {
+                        LatitudeConfig.reduceMotion = value;
+                        LatitudeConfig.saveCurrent();
+                    }));
+            tooltip(wReduceMotion, "The animation half of accessibility: for motion-sensitive players, turns off the gentle slide when controls appear or disappear in this editor, so rows switch instantly instead. Also flags the rest of the mod's little animations (like the moving zone-title and map shimmers) to hold still where supported.");
+            trackSidebarWidget(wReduceMotion, y);
             y += rowH + rowGap;
         }
 
@@ -1309,6 +1323,7 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
 
         applySidebarScroll(delta);
         drawSidebarSwatches(ctx);
+        drawSidebarHeaders(ctx);
         drawSidebarScrollbar(ctx);
         super.extractRenderState(ctx, hoverX, hoverY, delta);
 
@@ -2086,6 +2101,31 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
             ctx.fill(panelX, drawY, panelX + sidebarWidgetW, drawY + s.height, argb);
             ctx.fill(panelX, drawY, panelX + sidebarWidgetW, drawY + 1, a11yMuted(PANEL_BORDER));
             ctx.fill(panelX, drawY + s.height - 1, panelX + sidebarWidgetW, drawY + s.height, a11yMuted(PANEL_BORDER));
+        }
+    }
+
+    /** Draws the inline section headers (e.g. "— Accessibility —") using the same divider-flanked, centered idiom
+     *  as the card's tab heading, scrolled/clipped in lockstep with the tracked rows via {@link #swatchDispDelta}.
+     *  Colors route through the accessibility palette so High Contrast lifts the header exactly like everything
+     *  else in the Studio. */
+    private void drawSidebarHeaders(GuiGraphicsExtractor ctx) {
+        if (!sidebarVisible) return;
+        int panelX = 8;
+        int pw = sidebarWidgetW;
+        int headingColor = a11yText(GOLD);
+        int dividerColor = a11yMuted(PANEL_BORDER);
+        for (HeaderSlot h : sidebarHeaders) {
+            int drawY = h.baseY + swatchDispDelta(h.baseY) - sidebarScrollY;
+            if (drawY < sidebarViewportTop || drawY + h.height > sidebarViewportBottom) continue;
+            int textW = this.font.width(h.text);
+            int textX = panelX + (pw - textW) / 2;
+            int textY = drawY + (h.height - this.font.lineHeight) / 2;
+            int lineGap = 6;
+            int lineLen = Math.max(6, (pw - textW - lineGap * 2) / 2 - 4);
+            int lineY = textY + this.font.lineHeight / 2;
+            ctx.fill(panelX + 4, lineY, panelX + 4 + lineLen, lineY + 1, dividerColor);
+            ctx.fill(panelX + pw - 4 - lineLen, lineY, panelX + pw - 4, lineY + 1, dividerColor);
+            ctx.text(this.font, h.text, textX, textY, headingColor);
         }
     }
 
@@ -2984,6 +3024,21 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
             this.baseY = baseY;
             this.height = height;
             this.color = color;
+        }
+    }
+
+    // A non-widget section header ("— Accessibility —") drawn via drawSidebarHeaders each frame, scrolled/clipped
+    // the same way SwatchSlots are. baseY follows the same convention trackSidebarWidget() uses for widgets, so a
+    // header can sit inline between tracked rows without joining the row-animation tracker.
+    private static final class HeaderSlot {
+        private final int baseY;
+        private final int height;
+        private final String text;
+
+        private HeaderSlot(int baseY, int height, String text) {
+            this.baseY = baseY;
+            this.height = height;
+            this.text = text;
         }
     }
 }
