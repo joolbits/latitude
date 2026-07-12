@@ -677,7 +677,7 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
                         cfg.zoneGrowH = value;
                         CompassHudConfig.saveCurrent();
                     }));
-            tooltip(wZoneGrow, "If the zone name changes length (like \"Tropics\" vs \"Subtropics\"), pick which side the label grows from -- left, right, or evenly on both sides. Where you've placed the label on screen never moves, only which direction the text stretches from it.");
+            tooltip(wZoneGrow, "If the zone name changes length (like \"Tropical\" vs \"Subtropical\"), pick which side the label grows from -- left, right, or evenly on both sides. Where you've placed the label on screen never moves, only which direction the text stretches from it.");
             trackSidebarWidget(wZoneGrow, y);
             y += rowH + rowGap;
 
@@ -788,7 +788,7 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
                         LatitudeConfig.showZoneBaseDegreesOnTitle = value;
                         LatitudeConfig.saveCurrent();
                     }));
-            tooltip(this.wTitleShowBaseDegrees, "Adds your latitude in degrees to the title text (e.g. \"Tropics 12°S\" instead of just \"Tropics\").");
+            tooltip(this.wTitleShowBaseDegrees, "Adds your latitude in degrees to the title text (e.g. \"Tropical 12°S\" instead of just \"Tropical\").");
             trackSidebarWidget(this.wTitleShowBaseDegrees, y);
             y += rowH + rowGap;
 
@@ -912,7 +912,7 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
 
             var wResetTitle = this.addRenderableWidget(Button.builder(Component.literal("Reset Title"), b -> {
                         LatitudeConfig.zoneEnterTitleOffsetX = 0;
-                        LatitudeConfig.zoneEnterTitleOffsetY = 0;
+                        LatitudeConfig.zoneEnterTitleOffsetY = -40;
                         // Match the true fresh defaults (LatitudeConfigData / resetHudDefaults) — Reset Title
                         // previously used 1.6/4.0, which didn't actually reset to the defaults (1.8/6.0).
                         LatitudeConfig.zoneEnterTitleScale = 1.8;
@@ -926,9 +926,12 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
                         LatitudeConfig.zoneEnterTitleGlowIntensity = 0.75;
                         LatitudeConfig.zoneEnterTitleGlimmer = true;
                         LatitudeConfig.zoneEnterTitleLetterSpacing = 1; // matches the fresh default (+1)
+                        LatitudeConfig.zoneEnterTitleColorPreset = LatitudeConfigData.TitleColorPreset.OFF_WHITE;
+                        LatitudeConfig.zoneEnterTitleCase = LatitudeConfigData.TitleCaseMode.UPPERCASE;
+                        LatitudeConfig.zoneEnterTitleRgb = 0xFFFFFF;
                         LatitudeConfig.saveCurrent();
                         this.titleOffsetXf = 0;
-                        this.titleOffsetYf = 0;
+                        this.titleOffsetYf = -40;
                         this.init();
                     })
                     .bounds(panelX, y, widgetW, rowH)
@@ -2432,7 +2435,7 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
     /** The exact string the title preview renders (shared by the render path and the drag hit-test) --
      *  the single place "Show Degrees" is honored (TEST 32: previously duplicated inline at the render
      *  call site, which never checked the flag, so toggling it visibly did nothing in the Studio).
-     *  Natural case ("Tropics", not "TROPICS") in BOTH branches, including the no-world fallback -- an
+     *  Natural case ("Tropical", not "TROPICAL") in BOTH branches, including the no-world fallback -- an
      *  ALL-CAPS fallback made "Normal" indistinguishable from "UPPERCASE" in exactly the no-world Studio
      *  preview Peetsa opens from the create-world screen (TEST 33: reported as "remove Normal, it's a
      *  duplicate of Uppercase" before he clarified he wants Normal/"Tropical" kept -- the real bug was
@@ -2443,29 +2446,20 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
         boolean showDegrees = LatitudeConfig.showZoneBaseDegreesOnTitle;
         if (level != null && player != null) {
             var border = level.getWorldBorder();
-            String zoneWord = zoneTitleWord(com.example.globe.util.LatitudeMath.zoneKey(border, player.getZ()));
+            // Use the SINGLE canonical zone word (LatitudeBands.displayNameForZoneKey) so the Studio preview
+            // matches the real zone-enter title / compass HUD. This replaces a local "Tropics"/"Subtropics"
+            // switch that still emitted the OLD, diverged vocabulary. Natural case is preserved because
+            // displayName() is natural-case and ZoneEnterTitleOverlay's applyCase() controls final casing,
+            // so the "Normal" title-case option still looks different from "UPPERCASE".
+            String zoneWord = com.example.globe.util.LatitudeBands.displayNameForZoneKey(
+                    com.example.globe.util.LatitudeMath.zoneKey(border, player.getZ()));
             if (!showDegrees) {
                 return zoneWord;
             }
             String degText = com.example.globe.util.LatitudeMath.formatLatitudeDeg(border, player.getZ());
             return zoneWord + " " + degText;
         }
-        return showDegrees ? "Tropics 12\u00b0S" : "Tropics";
-    }
-
-    /** Natural-case zone title word, matching GlobeWarningOverlay's real title text (so the preview reads like
-     *  the real title). Left in natural case rather than forced uppercase so the "Normal" title-case option
-     *  actually looks different from "UPPERCASE" -- ZoneEnterTitleOverlay's applyCase() is what controls the
-     *  final displayed casing. */
-    private static String zoneTitleWord(String zoneKey) {
-        return switch (zoneKey) {
-            case "EQUATOR", "TROPICAL" -> "Tropics";
-            case "SUBTROPICAL" -> "Subtropics";
-            case "TEMPERATE" -> "Temperate";
-            case "SUBPOLAR" -> "Subpolar";
-            case "POLAR" -> "Polar";
-            default -> zoneKey == null ? "Tropics" : zoneKey;
-        };
+        return showDegrees ? "Tropical 12\u00b0S" : "Tropical";
     }
 
     private static int snap(int v, int step) {

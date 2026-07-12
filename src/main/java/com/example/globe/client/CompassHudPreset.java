@@ -31,14 +31,14 @@ public final class CompassHudPreset {
         public double scale = 1.8;
         public LatitudeConfigData.TitleColorPreset colorPreset = LatitudeConfigData.TitleColorPreset.OFF_WHITE;
         public int customRgb = 0xFFFFFF;
-        public LatitudeConfigData.TitleCaseMode caseMode = LatitudeConfigData.TitleCaseMode.NORMAL;
+        public LatitudeConfigData.TitleCaseMode caseMode = LatitudeConfigData.TitleCaseMode.UPPERCASE;
         public int letterSpacing = 1;
         // Outline / shadow / glow (NEW 2026-07-11, title-styling overhaul). Defaults mirror the fresh-config
         // look so a preset saved without these keys imports as the out-of-box style. Depth cue flipped to the
         // FADED drop shadow (dropShadow false->true, glow true->false) 2026-07-11: "change the default glow to
         // a faded drop shadow"; glowIntensity 0.75 stays for when glow is toggled on; outlineThickness 1 = the
         // classic crisp 1px ring.
-        public boolean outline = true;
+        public boolean outline = false;
         public int outlineRgb = 0x000000;
         public int outlineThickness = 1;
         public boolean dropShadow = true;
