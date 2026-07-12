@@ -85,7 +85,7 @@ public class LatitudeCreateWorldScreen extends Screen {
     // ── Zone helper copy (indexed by Band.ordinal()) ──
     private static final String[] ZONE_HELPER = {
             "Dense jungles, warm rivers, and bamboo groves",
-            "Warm frontier climates with savannas, dry uplands, and occasional wetter edges",
+            "Savannas, dry uplands, and warm frontier climates",
             "Forests, meadows, and open plains",
             "Taiga, cold forests, and the edge of winter",
             "Ice sheets and frozen peaks"
@@ -900,7 +900,7 @@ public class LatitudeCreateWorldScreen extends Screen {
      *  panel can never be sized for a different string than it draws (random-aware). */
     private String spawnZoneDescription() {
         if (randomZone) {
-            return "Your starting latitude is drawn at random when the world is created — anywhere from the Tropics to the Poles.";
+            return "Sealed orders — your starting climate stays secret, drawn anywhere from the Tropics to the Poles when the expedition begins.";
         }
         return "You will spawn between " + formatDegree(selectedZone.lowDeg()) + "–" + formatDegree(selectedZone.highDeg())
                 + " latitude. " + ZONE_HELPER[selectedZone.ordinal()] + ".";
@@ -1520,7 +1520,15 @@ public class LatitudeCreateWorldScreen extends Screen {
             if (threeCol) {
                 drawInlineHeading(context, railX, railW, TAB_LABELS[2], GOLD);
             }
-            context.enableScissor(railClipLeft, settingsViewportTop, railClipRight, settingsViewportBottom);
+            // Clip content from just BELOW the heading band (headerBandBottom, ~panelTop+18) rather than from
+            // settingsViewportTop (panelTop+36). settingsViewportTop reserves ~18px MORE than the one-line title
+            // actually needs; clipping there left an invisible ~18px shelf under the "Rules" heading that
+            // silently occluded any content scrolling up through it. The left/Spawn-Zone panels were already
+            // fixed to clip at headerBandBottom() -- the rail was the one column that kept the stale +36 constant
+            // for its clip, which is why the two prior "heading clip" passes didn't kill this. Layout / scroll /
+            // hit-testing still use settingsViewportTop; only the visual clip moves up to hug the title.
+            int railClipTop = threeCol ? headerBandBottom() : settingsViewportTop;
+            context.enableScissor(railClipLeft, railClipTop, railClipRight, settingsViewportBottom);
             // (Tabbed mode: no in-panel "WORLD SETTINGS" header — the tab strip already labels this pane, and
             // drawing it here just clipped against the scissor and left the dead "invisible header bar".)
             drawSettingsRowLabel(context, "World Type", settLabelX, worldTypeRowY, MUTED);
@@ -2798,9 +2806,14 @@ public class LatitudeCreateWorldScreen extends Screen {
             // so this enable/disable pair is balanced.
             int clipLeft = Math.max(railX + 1, paneStripViewportLeft);
             int clipRight = Math.min(railX + railW - 1, paneStripViewportRight);
-            boolean clipped = clipRight > clipLeft && settingsViewportBottom > settingsViewportTop;
+            // Match the rail's outer scissor (extractRenderState): clip from just below the heading band, not
+            // from settingsViewportTop, so a row scrolling up isn't swallowed by the ~18px invisible shelf under
+            // the "Rules" title. Both the outer pass and this per-row pass must agree, since nested scissors
+            // intersect -- if only one used the tighter top the row would still clip at the stale +36 line.
+            int rowClipTop = threeCol ? headerBandBottom() : settingsViewportTop;
+            boolean clipped = clipRight > clipLeft && settingsViewportBottom > rowClipTop;
             if (clipped) {
-                context.enableScissor(clipLeft, settingsViewportTop, clipRight, settingsViewportBottom);
+                context.enableScissor(clipLeft, rowClipTop, clipRight, settingsViewportBottom);
             }
 
             boolean enabled = isEnabled();
