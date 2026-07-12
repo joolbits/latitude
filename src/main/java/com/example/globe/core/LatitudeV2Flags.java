@@ -150,7 +150,7 @@ public final class LatitudeV2Flags {
      * build.gradle forwarding line beside {@code boundaryV2} in the same pass (L17 discipline).
      */
     public static final boolean PASSAGE_V2_ENABLED =
-            Boolean.parseBoolean(System.getProperty("latitude.passageV2.enabled", "false"));
+            Boolean.parseBoolean(System.getProperty("latitude.passageV2.enabled", "true")); // P3 LIVE-TEST STAGING (branch-local): default ON so Peetsa can fly the passage from the Modrinth profile (no custom -D args there). REVISIT BEFORE MERGE -- the shipped default is Peetsa's call after P3.
 
     /**
      * Polar small-vegetation fade (Peetsa 2026-07-10). Default TRUE since 2026-07-12: the TEST 75 live
