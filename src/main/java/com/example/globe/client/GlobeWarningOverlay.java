@@ -138,15 +138,14 @@ public final class GlobeWarningOverlay {
     // mild tiers earn nothing); cleared on a full retreat re-arm so the feature is a provable no-op when idle.
     private static int poleVignetteTier = 0;
     private static long poleVignetteStartMs = Long.MIN_VALUE;
-    // B-5 P3 (task 3): the mild LEVEL_1 E/W storm banner is EPISODIC -- Peetsa (TEST 84) asked the mild
-    // "heavy storms... rough but passable" line to "fade instead of continue to be visible." It fades in,
-    // holds, fades OUT, then stays gone while the player lingers in the LEVEL_1 band; a fresh episode arms
-    // only when the player LEAVES the band (to NONE or up to LEVEL_2) and re-enters -- same re-arm-on-
-    // re-entry spirit as the polar ladder. Wall-clock timed (System.currentTimeMillis at arm), per the
-    // title/warning-family law -- never off game ticks. The pure envelope math lives in core.EwBannerEnvelope.
-    // LEVEL_2 (the urgent tier right before the crossing) is NOT episodic -- it stays persistent.
-    private static GlobeClientState.EwStormStage ewLastBannerStage = GlobeClientState.EwStormStage.NONE;
-    private static long ewLevel1ArmMs = Long.MIN_VALUE;
+    // B-5 P3 round 2 (TEST 85): the E/W storm banner is a direction-aware, both-tiers-fade state machine now.
+    // Peetsa's feedback retired the old shape (LEVEL_2 persisted "annoyingly"; a walk-OUT re-showed the mild
+    // tier; on his thin world the severe tier "stole" the mild tier's turn; on large worlds the mild tier
+    // started absurdly far out). All of that logic is pure in core.EwBannerEnvelope; the overlay only holds
+    // this ONE persisted state record and drives it off distance-to-edge each frame. Wall-clock timed
+    // (System.currentTimeMillis at the call site) per the title/warning-family law -- never off game ticks.
+    private static com.example.globe.core.EwBannerEnvelope.State ewBannerState =
+            com.example.globe.core.EwBannerEnvelope.State.INITIAL;
     private static long lastWarningDebugWorldTime = Long.MIN_VALUE;
     private static String lastWarningDebugText;
 
@@ -478,49 +477,44 @@ public final class GlobeWarningOverlay {
             }
 
             // B-4 item 3: the episodic polar warning owns the warning line while its ~10 s window is active
-            // (rendered every frame for a smooth fade). When it's not showing, fall through to the
-            // persistent E/W storm warning (left untouched this pass).
+            // (rendered every frame for a smooth fade). When it's not showing, fall through to the E/W storm
+            // banner (itself now episodic + direction-aware, see below).
             if (renderPoleWarningEpisode(ctx, client, warnY, warnExposureAlpha)) {
                 return;
             }
 
-            // ONSET stays progress-based (synced with the storm particles, unchanged): decides only whether
-            // we are in an E/W storm at all.
+            // ONSET stays progress-based (synced with the storm particles, unchanged): are we in an E/W storm
+            // at all? NONE -> reset the banner machine to INITIAL so a fresh approach re-fires from scratch
+            // (LEVEL_1 on a wide world, straight to LEVEL_2 on a thin one).
             GlobeClientState.EwStormStage onsetStage =
                     GlobeClientState.computeEwStormStage(client.level, client.player);
             if (onsetStage == GlobeClientState.EwStormStage.NONE) {
-                // Left the storm band entirely -> disarm, so the next entry arms a fresh LEVEL_1 episode.
-                ewLastBannerStage = GlobeClientState.EwStormStage.NONE;
+                ewBannerState = com.example.globe.core.EwBannerEnvelope.State.INITIAL;
                 return;
             }
-            // B-5 P3 (task 3): distance-gate the LEVEL_1 <-> LEVEL_2 split so the top-severity callout keeps
-            // a consistent lead before the fixed 100-block crossing prompt on EVERY world size. The old
-            // progress-based upgrade fired ~25 blocks before the prompt on the smallest world yet ~500+
-            // blocks out (before the approach fog even began) on the largest. Measured with the SAME
-            // distance-to-edge the passage prompt itself arms on, so the ~75-block lead is exact.
+            // TEST 85 rewrite: the pure banner state machine (core.EwBannerEnvelope) owns tier selection, the
+            // direction-aware trigger (a tier fires only when APPROACHED from the milder side; a walk-out
+            // re-shows nothing), the thin-window LEVEL_1 skip (his world: onset 208 - gate 175 = 33 blocks too
+            // thin to read), the fixed early-start cap (no banner past 250 blocks -- kills the absurdly-early
+            // start on large worlds), and the wall-clock fade for BOTH tiers (LEVEL_2 no longer persists). It
+            // reads the SAME distance-to-edge the crossing prompt arms on, plus THIS world's LEVEL_1 onset
+            // distance: the progress-based KEEP-SHARED POLAR_STAGE_1_PROGRESS threshold expressed as a distance
+            // (= halfSize * (1 - onsetProgress)) -- computed here, never moved.
             double ewDistToEdge = GlobeClientState.distanceToEwBorderBlocks(client.player.getX());
+            double ewHalf = com.example.globe.util.LatitudeMath.halfSize(client.level.getWorldBorder());
+            double ewOnsetDist = ewHalf * (1.0 - com.example.globe.util.LatitudeMath.POLAR_STAGE_1_PROGRESS);
+            long ewNowMs = System.currentTimeMillis();
+            com.example.globe.core.EwBannerEnvelope.Decision ewDecision =
+                    com.example.globe.core.EwBannerEnvelope.evaluate(ewBannerState, ewDistToEdge, ewOnsetDist, ewNowMs);
+            ewBannerState = ewDecision.next();
+            if (ewDecision.shownTier() == com.example.globe.core.EwBannerEnvelope.TIER_NONE) {
+                return; // capped out, thin-skipped, retreating, or faded-out-and-lingering: draw nothing.
+            }
             GlobeClientState.EwStormStage stormStage =
-                    com.example.globe.core.EwBannerEnvelope.isDanger(ewDistToEdge)
+                    ewDecision.shownTier() == com.example.globe.core.EwBannerEnvelope.TIER_LEVEL_2
                             ? GlobeClientState.EwStormStage.LEVEL_2
                             : GlobeClientState.EwStormStage.LEVEL_1;
-
-            // LEVEL_1 fade envelope (wall-clock): (re-)arm on entry into LEVEL_1 from any other stage; hold
-            // then fade out and stay gone while lingering. LEVEL_2 is persistent (no fade), so it is exempt.
-            long ewNowMs = System.currentTimeMillis();
-            if (stormStage == GlobeClientState.EwStormStage.LEVEL_1
-                    && ewLastBannerStage != GlobeClientState.EwStormStage.LEVEL_1) {
-                ewLevel1ArmMs = ewNowMs;
-            }
-            ewLastBannerStage = stormStage;
-
-            float episodeAlpha = 1.0f;
-            if (stormStage == GlobeClientState.EwStormStage.LEVEL_1) {
-                long age = ewNowMs - ewLevel1ArmMs;
-                if (com.example.globe.core.EwBannerEnvelope.level1Expired(age)) {
-                    return; // held then faded out; stay gone until the player leaves + re-enters the band.
-                }
-                episodeAlpha = com.example.globe.core.EwBannerEnvelope.level1Alpha(age);
-            }
+            float episodeAlpha = ewDecision.alpha();
 
             String dir = ewDangerDirection(client.level.getWorldBorder(), client.player.getX());
             boolean cold = ewIsColdBand(client.level.getWorldBorder(), client.player.getZ());
@@ -536,8 +530,8 @@ public final class GlobeWarningOverlay {
             // Task 1: the E/W banner now gets the SAME dark 1px keyline the polar warnings got (keyline=true)
             // so it reads on the whiteout/sandstorm instead of the old shadow-only smear. Task 2: the steady
             // full-opacity fill drops the old per-TICK sine "pulse" (the removed warningColorWithPulse) that
-            // Peetsa read as a strobe -- the only alpha modulation now is the exposure gate and the LEVEL_1
-            // fade, both wall-clock/spatial, never per-tick.
+            // Peetsa read as a strobe -- the only alpha modulation now is the exposure gate and the banner
+            // episode fade (LEVEL_1 AND LEVEL_2), both wall-clock/spatial, never per-tick.
             float bannerAlpha = warnExposureAlpha * episodeAlpha;
             if (bannerAlpha <= 0.001f) {
                 return;
@@ -648,8 +642,7 @@ public final class GlobeWarningOverlay {
         poleWarnEndTick = Long.MIN_VALUE;
         poleVignetteTier = 0;
         poleVignetteStartMs = Long.MIN_VALUE;
-        ewLastBannerStage = GlobeClientState.EwStormStage.NONE;
-        ewLevel1ArmMs = Long.MIN_VALUE;
+        ewBannerState = com.example.globe.core.EwBannerEnvelope.State.INITIAL;
         lastWarningDebugWorldTime = Long.MIN_VALUE;
         lastWarningDebugText = null;
         if (DEBUG_ENTRY_TITLES) {
