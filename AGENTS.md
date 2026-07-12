@@ -55,6 +55,16 @@ PROFILE, not prestige (repetitive/well-specified → cheaper tier; novel/logic-h
   DOCUMENTATION against what the pass actually did; returns a structured verdict
   (approve / changes-required, routed back to the right worker). Catches doc drift the same pass it
   happens (indexing discipline is absolute law).
+- **Creative Director** (Opus-tier, read-only on src/ — defined at `.claude/agents/creative-director.md`;
+  added 2026-07-11 after the title art-direction review, which Peetsa "absolutely LOVED"): an
+  art-direction / UX-delight review of ONE player-facing surface per engagement (screens, HUD, titles,
+  loading, atlas, icons). Deliverable = a ranked, plain-language findings doc in the binder (readability
+  first, tested against real worst-case backdrops; claims grounded in the actual draw code with numbers)
+  + effort-sized recommendations + a "v2 recipe" + the single highest-impact change. NOT a per-pass
+  role — dispatch when a surface LOOKS done and the question is beauty/readability/coherence ("is this
+  a signature moment?"), typically before a big UI round or after Peetsa reacts lukewarmly to a look.
+  Findings that conflict with Peetsa's explicit taste decisions are reported with data but flagged as
+  HIS call — the review never overrides the owner.
 - **Codex CLI** (optional second-opinion reviewer from a different model family — catches different
   blind spots): use if installed; as of 2026-07-09 it is NOT installed on this machine — the
   sweeper/reviewer split substitutes. If installed later: https://github.com/openai/codex .
