@@ -36,6 +36,7 @@
     "client.MinecraftClientStartIntegratedMixin",
     "client.InGameHudMixin",
     "client.ClientLevelStormSkyMixin",
+    "client.ClientLevelPolarSnowMixin",
     "client.LatitudeLoadingClientTickMixin",
     "client.LevelLoadingScreenLatitudeOverlayMixin",
     "client.FogRendererEwMixin",
