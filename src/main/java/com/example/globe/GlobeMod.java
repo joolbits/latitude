@@ -385,9 +385,11 @@ public class GlobeMod implements ModInitializer {
                 continue;
             }
 
-            // B-3a: continuous hazard window [87,90]. The ONLY hazardous band -- everything below 87 deg
-            // stays fully explorable (the old stage ladder started ~84.6 deg and stepped in four jumps).
-            // Slowness/weakness amplifiers and the freeze-tick rate now ramp SMOOTHLY with progress->90.
+            // B-3a: continuous hazard window [88.5,90]. The ONLY player-affecting hazardous band --
+            // everything below 88.5 deg stays fully explorable (onset moved in from 87 per TEST 75: the cold
+            // was setting in too early/far out; it now starts at 88.5 and reaches severe at the pole).
+            // Slowness/weakness amplifiers and the freeze-tick rate ramp SMOOTHLY with progress->90, so real
+            // freeze damage first lands ~89.97 deg (steady freeze target crosses vanilla's 140 threshold).
             double latDeg = com.example.globe.util.LatitudeMath.absLatDegExact(border, player.getZ());
             if (latDeg < com.example.globe.core.PolarHazardWindow.HAZARD_ONSET_DEG) {
                 continue;
