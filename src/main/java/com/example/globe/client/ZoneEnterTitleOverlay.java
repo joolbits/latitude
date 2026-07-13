@@ -141,7 +141,8 @@ public final class ZoneEnterTitleOverlay {
         if (!LatitudeConfig.zoneEnterTitleGlimmer || LatitudeConfig.reduceMotion) {
             return com.example.globe.core.ui.TitleStyle.GlimmerFrame.INERT;
         }
-        return com.example.globe.core.ui.TitleStyle.glimmerFrame(elapsedMs);
+        return com.example.globe.core.ui.TitleStyle.glimmerFrame(elapsedMs,
+                LatitudeConfig.zoneEnterTitleGlimmerIntensity);
     }
 
     /**

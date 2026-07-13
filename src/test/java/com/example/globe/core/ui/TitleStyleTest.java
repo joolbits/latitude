@@ -347,21 +347,27 @@ class TitleStyleTest {
         }
         assertEquals(TitleStyle.glimmerShade(0x8090A0, 0.4f, 0f), TitleStyle.glimmerShade(0x8090A0, 0.4f, -3f),
                 "dimScale below 0 clamps to 0");
-        assertEquals(TitleStyle.glimmerShade(0x8090A0, 0.4f, 1f), TitleStyle.glimmerShade(0x8090A0, 0.4f, 9f),
-                "dimScale above 1 clamps to 1");
+        // v3: dimScale is no longer capped at 1 (Glimmer Strength deepens the dim past the v2 floor); it now
+        // clamps at GLIMMER_DIM_SCALE_MAX, so a huge dimScale equals the max, not 1.
+        assertEquals(TitleStyle.glimmerShade(0x8090A0, 0.4f, TitleStyle.GLIMMER_DIM_SCALE_MAX),
+                TitleStyle.glimmerShade(0x8090A0, 0.4f, 99f),
+                "dimScale above the max clamps to GLIMMER_DIM_SCALE_MAX");
 
         // The zero-crest no-op still holds regardless of dimScale.
         assertEquals(0x123456, TitleStyle.glimmerShade(0x123456, 0f, 0.5f), "crest 0 is a no-op for any dimScale");
     }
 
     // ----------------------------------------------------------------------------------------------------
-    // Phase-envelope glimmer choreography ("C v2", approved 2026-07-11 1:1). The four-phase envelope keyed on
-    // wall-clock ms: APPEAR [0,350) -> HERO [350,1250) -> BLOOM [1250,1500) -> MELT [1500,2350) -> REST.
+    // Phase-envelope glimmer choreography ("C v3", 2026-07-12: stronger + configurable + a FAREWELL sweep).
+    // Five-phase envelope keyed on wall-clock ms, DEFAULT strength (single-arg glimmerFrame == intensity 1.0,
+    // byte-identical to the old v2 HERO/BLOOM/MELT):
+    //   APPEAR [0,350) -> HERO [350,1250) -> BLOOM [1250,1500) -> FAREWELL [1500,2000) -> MELT [2000,2850) -> REST.
     // ----------------------------------------------------------------------------------------------------
 
-    /** The exact phase boundaries (349/350, 1249/1250, 1499/1500, 2349/2350ms): APPEAR is inert, HERO opens the
-     *  crest at progress 0 with the hero pop, BLOOM has no crest and starts bloom/swell at 0, MELT starts at the
-     *  bloom/swell PEAK, and REST (>=2350) is inert again. */
+    /** The exact phase boundaries: APPEAR is inert, HERO opens the crest at 0 with the hero pop, BLOOM has no
+     *  crest and starts bloom/swell at 0, the FAREWELL opens a SECOND crest at 0 with bloom/swell HELD at peak,
+     *  MELT starts (no crest) at the bloom/swell PEAK, and REST (>=2850) is inert again. At default strength
+     *  (single-arg) these are byte-identical to the v2 numbers for HERO/BLOOM/MELT. */
     @Test
     void glimmerFramePhaseBoundariesAreExact() {
         // APPEAR: 349ms is still inert (fade-in only, no glimmer activity).
@@ -374,7 +380,7 @@ class TitleStyleTest {
         // HERO opens at 350ms: crest at 0, hero pop, arch dim 0 at the very start, no bloom/swell yet.
         TitleStyle.GlimmerFrame heroStart = TitleStyle.glimmerFrame(350);
         assertEquals(0f, heroStart.crestProgress(), TOL, "350ms HERO starts crest at 0");
-        assertEquals(TitleStyle.GLIMMER_HERO_POP, heroStart.pop(), TOL, "hero pop is 0.85");
+        assertEquals(TitleStyle.GLIMMER_HERO_POP, heroStart.pop(), TOL, "hero pop is 0.85 at strength 1.0");
         assertEquals(0f, heroStart.dimScale(), TOL, "arch dim is 0 at hero start");
         assertEquals(0f, heroStart.bloom(), TOL);
         assertEquals(0f, heroStart.swell(), TOL);
@@ -396,40 +402,58 @@ class TitleStyleTest {
         assertTrue(bloomEnd.bloom() > 0.6f && bloomEnd.bloom() <= TitleStyle.GLIMMER_BLOOM_PEAK, "1499ms near peak");
         assertEquals(-1f, bloomEnd.crestProgress(), TOL);
 
-        // MELT opens at 1500ms exactly at the bloom/swell PEAK (the seam is the peak), no crest.
-        TitleStyle.GlimmerFrame meltStart = TitleStyle.glimmerFrame(1500);
-        assertEquals(TitleStyle.GLIMMER_BLOOM_PEAK, meltStart.bloom(), TOL, "bloom PEAK 0.65 exactly at 1500");
-        assertEquals(TitleStyle.GLIMMER_SWELL_PEAK, meltStart.swell(), TOL, "swell PEAK 0.02 exactly at 1500");
+        // FAREWELL opens at 1500ms: a SECOND crest starts at 0 with the hero pop; bloom + swell are HELD at peak
+        // (the title stays present while the parting glint travels); arch dim is 0 at the farewell start.
+        TitleStyle.GlimmerFrame farewellStart = TitleStyle.glimmerFrame(1500);
+        assertEquals(0f, farewellStart.crestProgress(), TOL, "1500ms FAREWELL starts a second crest at 0");
+        assertEquals(TitleStyle.GLIMMER_HERO_POP, farewellStart.pop(), TOL, "farewell shares the hero pop");
+        assertEquals(0f, farewellStart.dimScale(), TOL, "arch dim 0 at farewell start");
+        assertEquals(TitleStyle.GLIMMER_BLOOM_PEAK, farewellStart.bloom(), TOL, "bloom HELD at PEAK during farewell");
+        assertEquals(TitleStyle.GLIMMER_SWELL_PEAK, farewellStart.swell(), TOL, "swell HELD at PEAK during farewell");
+
+        // 1999ms is the last FAREWELL frame: the second crest is near its end, bloom still held at peak.
+        TitleStyle.GlimmerFrame farewellEnd = TitleStyle.glimmerFrame(1999);
+        assertTrue(farewellEnd.crestProgress() > 0.99f && farewellEnd.crestProgress() < 1f, "1999ms farewell crest near end");
+        assertEquals(TitleStyle.GLIMMER_BLOOM_PEAK, farewellEnd.bloom(), TOL, "bloom still peak at farewell end");
+
+        // MELT opens at 2000ms exactly at the bloom/swell PEAK (the seam is the peak), no crest.
+        TitleStyle.GlimmerFrame meltStart = TitleStyle.glimmerFrame(2000);
+        assertEquals(TitleStyle.GLIMMER_BLOOM_PEAK, meltStart.bloom(), TOL, "bloom PEAK 0.65 exactly at 2000");
+        assertEquals(TitleStyle.GLIMMER_SWELL_PEAK, meltStart.swell(), TOL, "swell PEAK 0.02 exactly at 2000");
         assertEquals(-1f, meltStart.crestProgress(), TOL, "no crest during melt");
 
-        // 2349ms is the last MELT frame: nearly fully dissolved.
-        TitleStyle.GlimmerFrame meltEnd = TitleStyle.glimmerFrame(2349);
-        assertTrue(meltEnd.bloom() >= 0f && meltEnd.bloom() < 0.05f, "2349ms melt nearly done");
+        // 2849ms is the last MELT frame: nearly fully dissolved.
+        TitleStyle.GlimmerFrame meltEnd = TitleStyle.glimmerFrame(2849);
+        assertTrue(meltEnd.bloom() >= 0f && meltEnd.bloom() < 0.05f, "2849ms melt nearly done");
 
-        // REST at 2350ms: inert again (never loops).
-        assertEquals(TitleStyle.GlimmerFrame.INERT, TitleStyle.glimmerFrame(2350), "2350ms REST is exactly INERT");
+        // REST at 2850ms: inert again (never loops).
+        assertEquals(TitleStyle.GlimmerFrame.INERT, TitleStyle.glimmerFrame(2850), "2850ms REST is exactly INERT");
     }
 
-    /** BLOOM rises to a 0.65 peak at 1500ms then MELT decays it monotonically to 0; the swell tracks it and
-     *  NEVER exceeds its 0.02 peak anywhere on the timeline. */
+    /** BLOOM rises to a 0.65 peak at 1500ms, HOLDS at peak through the FAREWELL (1500..2000), then MELT
+     *  (2000..2850) decays it monotonically to 0; the swell tracks it and NEVER exceeds its 0.02 peak anywhere. */
     @Test
     void glimmerFrameBloomPeaksThenMeltsMonotonicallyAndSwellIsBounded() {
         assertEquals(TitleStyle.GLIMMER_BLOOM_PEAK, TitleStyle.glimmerFrame(1500).bloom(), TOL, "peak 0.65 at 1500");
         assertEquals(TitleStyle.GLIMMER_SWELL_PEAK, TitleStyle.glimmerFrame(1500).swell(), TOL, "swell peak at 1500");
+        // Held at peak across the whole farewell window.
+        for (long ms = TitleStyle.GLIMMER_BLOOM_END_MS; ms < TitleStyle.GLIMMER_FAREWELL_END_MS; ms += 10) {
+            assertEquals(TitleStyle.GLIMMER_BLOOM_PEAK, TitleStyle.glimmerFrame(ms).bloom(), TOL, "bloom held at peak during farewell at ms=" + ms);
+        }
 
-        // MELT (1500..2350): bloom is monotonically non-increasing down to ~0.
+        // From peak through the FAREWELL hold and the MELT decay: bloom is monotonically non-increasing to ~0.
         float prev = TitleStyle.glimmerFrame(1500).bloom();
         for (long ms = 1500; ms < TitleStyle.GLIMMER_MELT_END_MS; ms += 10) {
             float b = TitleStyle.glimmerFrame(ms).bloom();
-            assertTrue(b <= prev + TOL, "melt bloom non-increasing at ms=" + ms);
+            assertTrue(b <= prev + TOL, "bloom non-increasing (hold then melt) at ms=" + ms);
             assertTrue(b >= 0f, "bloom never negative");
             prev = b;
         }
-        assertTrue(TitleStyle.glimmerFrame(2349).bloom() < 0.02f, "bloom nearly fully melted by 2349ms");
-        assertEquals(0f, TitleStyle.glimmerFrame(2350).bloom(), TOL, "bloom is 0 at REST");
+        assertTrue(TitleStyle.glimmerFrame(2849).bloom() < 0.02f, "bloom nearly fully melted by 2849ms");
+        assertEquals(0f, TitleStyle.glimmerFrame(2850).bloom(), TOL, "bloom is 0 at REST");
 
         // Swell is bounded by its 0.02 peak (and never negative) for the whole timeline, including past REST.
-        for (long ms = 0; ms <= 2600; ms += 5) {
+        for (long ms = 0; ms <= 3100; ms += 5) {
             float s = TitleStyle.glimmerFrame(ms).swell();
             assertTrue(s <= TitleStyle.GLIMMER_SWELL_PEAK + TOL, "swell <= 0.02 peak at ms=" + ms);
             assertTrue(s >= 0f, "swell never negative at ms=" + ms);
@@ -441,9 +465,9 @@ class TitleStyleTest {
      *  window every frame is inert. */
     @Test
     void glimmerFrameHeroCrestMonotonicWithArchDimAndInertOutside() {
-        for (long ms : new long[]{-100, 0, 200, 349, 2350, 2400, 100000}) {
+        for (long ms : new long[]{-100, 0, 200, 349, 2850, 2900, 100000}) {
             TitleStyle.GlimmerFrame f = TitleStyle.glimmerFrame(ms);
-            assertEquals(-1f, f.crestProgress(), TOL, "inert crest outside hero at ms=" + ms);
+            assertEquals(-1f, f.crestProgress(), TOL, "inert crest outside the window at ms=" + ms);
             assertEquals(0f, f.dimScale(), TOL, "inert dim at ms=" + ms);
             assertEquals(0f, f.bloom(), TOL, "inert bloom at ms=" + ms);
             assertEquals(0f, f.swell(), TOL, "inert swell at ms=" + ms);
@@ -460,6 +484,93 @@ class TitleStyleTest {
         assertEquals(0f, TitleStyle.glimmerFrame(TitleStyle.GLIMMER_APPEAR_MS).dimScale(), TOL, "arch dim 0 at start");
         assertTrue(TitleStyle.glimmerFrame(800).dimScale() > 0.9f, "arch dim peaks ~1 mid-hero");
         assertTrue(TitleStyle.glimmerFrame(1249).dimScale() < 0.2f, "arch dim returns toward 0 near hero end");
+    }
+
+    /** The FAREWELL is a fast SECOND crest sweep (visibly quicker than the hero) that rides over the peak-held
+     *  bloom: its crest advances 0->~1 monotonically across [BLOOM_END, FAREWELL_END), it carries the hero pop
+     *  and a raised-arch dim, and its window (~500ms) is shorter than the hero's (~900ms). */
+    @Test
+    void glimmerFrameFarewellIsAFastSecondCrestOverHeldBloom() {
+        long farewellSpan = TitleStyle.GLIMMER_FAREWELL_END_MS - TitleStyle.GLIMMER_BLOOM_END_MS;
+        long heroSpan = TitleStyle.GLIMMER_HERO_END_MS - TitleStyle.GLIMMER_APPEAR_MS;
+        assertTrue(farewellSpan < heroSpan, "farewell (" + farewellSpan + "ms) is quicker than the hero (" + heroSpan + "ms)");
+        assertEquals(500L, farewellSpan, "farewell is ~500ms");
+        // Total glimmer lifetime grew by exactly the farewell span (the melt is unchanged in duration).
+        assertEquals(2850L, TitleStyle.GLIMMER_MELT_END_MS, "total lifetime is 2850ms (v2 2350 + 500 farewell)");
+
+        float prev = -1f;
+        for (long ms = TitleStyle.GLIMMER_BLOOM_END_MS; ms < TitleStyle.GLIMMER_FAREWELL_END_MS; ms += 5) {
+            TitleStyle.GlimmerFrame f = TitleStyle.glimmerFrame(ms);
+            assertTrue(f.crestProgress() >= 0f && f.crestProgress() < 1f, "farewell crest in [0,1) at ms=" + ms);
+            assertTrue(f.crestProgress() > prev, "farewell crest advances monotonically at ms=" + ms);
+            assertEquals(TitleStyle.GLIMMER_HERO_POP, f.pop(), TOL, "farewell carries the hero pop at ms=" + ms);
+            assertEquals(TitleStyle.GLIMMER_BLOOM_PEAK, f.bloom(), TOL, "bloom held at peak through farewell at ms=" + ms);
+            prev = f.crestProgress();
+        }
+        // The farewell's arch dim peaks mid-window and returns to ~0 at its edges (same shape as the hero).
+        long mid = (TitleStyle.GLIMMER_BLOOM_END_MS + TitleStyle.GLIMMER_FAREWELL_END_MS) / 2;
+        assertTrue(TitleStyle.glimmerFrame(mid).dimScale() > 0.9f, "farewell arch dim peaks ~1 mid-window");
+        assertTrue(TitleStyle.glimmerFrame(1999).dimScale() < 0.2f, "farewell arch dim returns toward 0 near its end");
+    }
+
+    /** Glimmer Strength scales the RELATIVE-CONTRAST mechanism: the crest pop rises with intensity (min(1, 0.85*I),
+     *  so it saturates at pure white) AND the baseline dim deepens with intensity (frame dimScale = arch * I).
+     *  At intensity 1.0 the frame is byte-identical to the default single-arg frame across the whole timeline. */
+    @Test
+    void glimmerStrengthScalesPopAndDimTogetherAndOneIsIdentity() {
+        // Identity: intensity 1.0 == the single-arg (default) frame, at every phase.
+        for (long ms : new long[]{0, 349, 350, 800, 1249, 1250, 1499, 1500, 1750, 1999, 2000, 2400, 2849, 2850, 5000}) {
+            assertEquals(TitleStyle.glimmerFrame(ms), TitleStyle.glimmerFrame(ms, 1.0),
+                    "intensity 1.0 must equal the default frame at ms=" + ms);
+        }
+
+        // Crest POP scales min(1, 0.85 * intensity): 0.5 -> 0.425, 1.0 -> 0.85, 1.3 -> saturates at 1.0, 2.0 -> 1.0.
+        long heroMid = 700; // inside HERO
+        assertEquals(0.425f, TitleStyle.glimmerFrame(heroMid, 0.5).pop(), TOL, "pop at strength 0.5");
+        assertEquals(0.85f, TitleStyle.glimmerFrame(heroMid, 1.0).pop(), TOL, "pop at strength 1.0 (v2)");
+        assertEquals(1.0f, TitleStyle.glimmerFrame(heroMid, 1.3).pop(), TOL, "pop saturates at white by 1.3");
+        assertEquals(1.0f, TitleStyle.glimmerFrame(heroMid, 2.0).pop(), TOL, "pop stays at white at 2.0");
+
+        // Baseline DIM deepens with intensity: at the hero arch peak (~ms 800, arch~1) the frame dimScale == I,
+        // so downstream glimmerShade's off-crest floor = 1 - 0.25*I drops from 0.875 (0.5) to 0.50 (2.0).
+        float archPeak = (float) Math.sin(Math.PI * 0.5); // p==0.5 at ms 800
+        assertEquals(archPeak * 0.5f, TitleStyle.glimmerFrame(800, 0.5).dimScale(), 1e-3, "dimScale = arch*0.5");
+        assertEquals(archPeak * 2.0f, TitleStyle.glimmerFrame(800, 2.0).dimScale(), 1e-3, "dimScale = arch*2.0");
+        // The deeper frame dimScale actually darkens an off-crest neighbour further (relative-contrast, not brighten).
+        int base = 0xF3ECDD; // OFF_WHITE
+        int gentle = TitleStyle.glimmerShade(base, 0.05f, TitleStyle.glimmerFrame(800, 0.5).dimScale());
+        int bold = TitleStyle.glimmerShade(base, 0.05f, TitleStyle.glimmerFrame(800, 2.0).dimScale());
+        assertTrue(lum(bold) < lum(gentle), "a stronger glimmer dims the off-crest baseline deeper");
+
+        // Negative intensity is treated as 0 (no contrast): pop 0 and dim 0, but the bloom/swell envelope stays.
+        assertEquals(0f, TitleStyle.glimmerFrame(800, -3.0).pop(), TOL, "negative strength -> no pop");
+        assertEquals(0f, TitleStyle.glimmerFrame(800, -3.0).dimScale(), TOL, "negative strength -> no dim");
+    }
+
+    /** dimScale beyond 1 (v3 Glimmer Strength) deepens the baseline dim BELOW the v2 floor, is clamped at
+     *  GLIMMER_DIM_SCALE_MAX (floor reaches 0 there), and every channel stays in [0,255]. */
+    @Test
+    void glimmerShadeDeepDimBelowFloorClampsAtMax() {
+        int base = 0x8090A0;
+        // Deeper dimScale never brightens the off-crest baseline, monotonically down past the v2 floor.
+        float prev = lum(TitleStyle.glimmerShade(base, 0.05f, 1.0f));
+        for (float ds = 1.0f; ds <= TitleStyle.GLIMMER_DIM_SCALE_MAX; ds += 0.25f) {
+            int shaded = TitleStyle.glimmerShade(base, 0.05f, ds);
+            for (int ch : new int[]{(shaded >> 16) & 0xFF, (shaded >> 8) & 0xFF, shaded & 0xFF}) {
+                assertTrue(ch >= 0 && ch <= 255, "channel in [0,255] at ds=" + ds);
+            }
+            float l = lum(shaded);
+            assertTrue(l <= prev + 1e-3, "deeper dim never brightens at ds=" + ds);
+            prev = l;
+        }
+        // At the max, an off-crest letter (tiny crest) is essentially black (floor ~0), and dimScale above the max
+        // clamps to the same value.
+        assertEquals(TitleStyle.glimmerShade(base, 0.001f, TitleStyle.GLIMMER_DIM_SCALE_MAX),
+                TitleStyle.glimmerShade(base, 0.001f, TitleStyle.GLIMMER_DIM_SCALE_MAX + 5f),
+                "dimScale above the max clamps");
+        // The crest letter (g=1) is still the crest whatever the dim depth -- its factor is 1.0 regardless of ds.
+        assertEquals(TitleStyle.glimmerShade(base, 1.0f, 0f), TitleStyle.glimmerShade(base, 1.0f, 3.5f),
+                "the crest letter is independent of dim depth");
     }
 
     /** The 4-arg {@code glimmerShade} honors an explicit white-pop: passing {@link TitleStyle#GLIMMER_WHITE_POP}
