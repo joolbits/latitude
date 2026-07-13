@@ -95,7 +95,7 @@ public class FogRendererPassageSetupMixin {
 
         double distToEdge = GlobeClientState.distanceToEwBorderBlocks(mc.player.getX());
         // Per-world fog band, degree-anchored to the intended X radius: onset at rampStartDist (~177.5 deg),
-        // full at the prompt line (climax). Immune to a lerping border; shared with the prompt/banner/particles.
+        // full at the prompt line (climax). Immune to a lerping border; shared with the prompt/banner.
         com.example.globe.core.EdgeGeometry.Resolved geo =
                 GlobeClientState.edgeGeometry(level.getWorldBorder());
         double rampStart = geo.rampStartDist();

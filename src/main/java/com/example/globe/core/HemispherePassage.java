@@ -190,7 +190,7 @@ public final class HemispherePassage {
     // correct and wall-aware. These are the pure, testable curves; the client mixin (FogRendererPassageSetupMixin)
     // does the GL-side FogData mutation + haze-palette tint. The intensity axis is the SAME distance-to-edge the
     // prompt arms on, and the onset/climax are now the PER-WORLD {@code rampStart}/{@code climax} from
-    // EdgeGeometry (rampStart == fog onset == particle onset == banner cap; climax == the prompt line).
+    // EdgeGeometry (rampStart == fog onset (the fog onset) banner cap; climax == the prompt line).
     //
     // Curve choice -- "a weather front rolling in": ease-IN (exponent > 1) over the band. At {@code rampStart}
     // the fog is barely-there and distant (a haze on the horizon); it thickens STEEPLY into a near-opaque wall

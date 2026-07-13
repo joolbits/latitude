@@ -59,7 +59,10 @@ public final class HemispherePassageClient {
     // disarmed player at the wall re-summons the crossing prompt with one right-click (facing the border),
     // without walking out and back. Reset with the arm on world switch.
     private static boolean useWasDown = false;
-    private static long lastRearmGestureMs = Long.MIN_VALUE;
+    // 0L, NOT Long.MIN_VALUE: the rate guard computes (now - last), and now - MIN_VALUE OVERFLOWS to a huge
+    // NEGATIVE value, which reads as "gestured an instant ago" and blocks the gesture FOREVER (sweeper
+    // BLOCKER, proven in real Java). 0L makes the first gesture trivially pass (now - 0 = epoch millis).
+    private static long lastRearmGestureMs = 0L;
     /** Rate limit for the re-prompt gesture (~20 ticks). Belt-and-suspenders beside the rising-edge check. */
     private static final long REARM_GESTURE_MIN_INTERVAL_MS = 1000L;
 
@@ -75,7 +78,7 @@ public final class HemispherePassageClient {
     public static void reset() {
         armed = true;
         useWasDown = false;
-        lastRearmGestureMs = Long.MIN_VALUE;
+        lastRearmGestureMs = 0L; // see field note: MIN_VALUE overflows the rate guard and bricks the gesture
         curtain = Curtain.NONE;
         curtainRaisedMs = 0L;
         curtainFadeOutMs = 0L;
