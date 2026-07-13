@@ -13,23 +13,25 @@ package com.example.globe.core;
  *
  * <p><b>Band width is DEGREE-ANCHORED with a fan-out buffer (TEST 89 owner decision).</b> It USED to be a
  * fixed absolute 500 blocks, decoupled from the ramp -- but on a big world 500 blocks is NARROWER than the
- * visible storm band (which is degree-anchored: fog onset at {@link EdgeGeometry#RAMP_START_DEG} 176.5 deg),
+ * visible storm band (which is degree-anchored: fog onset at {@link EdgeGeometry#RAMP_START_DEG} 177.5 deg),
  * so a structure could stand INSIDE the visible storm (Peetsa saw a village there). It also had no allowance
  * for a multi-chunk village whose houses fan 150-300 blocks toward the band from an anchor just outside it.
  * The band is now the same DEGREE geometry the visible edge uses: it vetoes structures poleward of
- * {@link #VETO_DEG} 173 deg -- the visible band (176.5) PLUS a {@code 176.5 - 173 = 3.5}-deg fan-out buffer
+ * {@link #VETO_DEG} 173 deg -- the visible band (177.5) PLUS a {@code 177.5 - 173 = 4.5}-deg fan-out buffer
  * ("a few degrees" per Peetsa), so every structure that could fan a house into the visible storm is vetoed at
- * its anchor. On a wide world 3.5 deg is 300-390 blocks of buffer, comfortably clearing the ~300-block max
+ * its anchor. (TEST 92 tightened the fog onset 176.5 -&gt; 177.5 while VETO_DEG held at 173, so the buffer grew
+ * from 3.5 to 4.5 deg -- even more conservative; the veto still comfortably covers the now-smaller visible band
+ * plus fan-out.) On a wide world 4.5 deg is ~375-500 blocks of buffer, comfortably clearing the ~300-block max
  * village fan-out; a {@link #MIN_BAND_BLOCKS} 600-block floor keeps the buffer honest on small worlds where a
- * degree is only ~20-80 blocks. Effective widths (per E/W side):
+ * degree is only ~20-80 blocks. Effective widths (per E/W side; rampStartDist values are post-TEST-92):
  * <ul>
  *   <li>Itty-Bitty Classic (xRadius 3750, 1 deg ~= 20.8 blk): {@code distForDeg(173) = 145.8} floored to
- *       <b>600</b>. Visible band there is {@code rampStartDist = 160}, so the buffer is {@code 600 - 160 =
- *       440} blocks &gt; the 300-block max fan-out. ~16% of the radius per side; the vast interior is free.</li>
+ *       <b>600</b>. Visible band there is {@code rampStartDist = 112}, so the buffer is {@code 600 - 112 =
+ *       488} blocks &gt; the 300-block max fan-out. ~16% of the radius per side; the vast interior is free.</li>
  *   <li>Small-Wide (xRadius 15000, 1 deg ~= 83.3 blk): {@code distForDeg(173) = 583.3} floored to <b>600</b>.
- *       Visible band {@code rampStartDist = 291.7}; buffer {@code 600 - 291.7 = 308.3} &gt; 300.</li>
+ *       Visible band {@code rampStartDist = 208.3}; buffer {@code 600 - 208.3 = 391.7} &gt; 300.</li>
  *   <li>Regular-Wide (xRadius 20000, 1 deg ~= 111.1 blk): {@code distForDeg(173) = 777.8} (degree-derived
- *       wins). Visible band {@code rampStartDist = 388.9}; buffer {@code 777.8 - 388.9 = 388.9} &gt; 300.</li>
+ *       wins). Visible band {@code rampStartDist = 277.8}; buffer {@code 777.8 - 277.8 = 500} &gt; 300.</li>
  * </ul>
  * The width is still a pure function of the intended X radius, so the vetoed-anchor set stays trivially
  * deterministic (same seed + flag -&gt; same vetoed anchors).
@@ -50,10 +52,10 @@ package com.example.globe.core;
 public final class EdgeStructureVeto {
 
     /** Poleward-of-this longitude degree the structure-free band begins. The visible storm onset is
-     *  {@link EdgeGeometry#RAMP_START_DEG} 176.5 deg; this sits {@code 176.5 - 173 = 3.5} deg further out (the
-     *  "few degrees" fan-out buffer Peetsa asked for), so a multi-chunk village anchored just outside the
-     *  visible band cannot fan a house into it. Degrees, so it scales with the world instead of the old fixed
-     *  500 blocks that read narrower than the visible band on wide worlds. */
+     *  {@link EdgeGeometry#RAMP_START_DEG} 177.5 deg (TEST 92); this sits {@code 177.5 - 173 = 4.5} deg further
+     *  out (the "few degrees" fan-out buffer Peetsa asked for), so a multi-chunk village anchored just outside
+     *  the visible band cannot fan a house into it. Degrees, so it scales with the world instead of the old
+     *  fixed 500 blocks that read narrower than the visible band on wide worlds. */
     public static final double VETO_DEG = 173.0;
 
     /** Block floor on the band width so the fan-out buffer survives on tiny worlds, where {@code distForDeg(173)}

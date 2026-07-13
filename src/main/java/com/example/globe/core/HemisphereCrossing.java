@@ -13,8 +13,11 @@ package com.example.globe.core;
  * <p><b>Debounce / hysteresis</b> (mirrors the pre-P2 in-overlay N/S logic so behavior is unchanged
  * for the equator axis and identical-by-construction for the new meridian axis):
  * <ul>
- *   <li>{@link #DEAD_ZONE_BLOCKS} band around center where {@code sideOf}=0 (unknown) -- sitting on
- *       the line never resolves to a hemisphere, so it can't flip/re-fire tick to tick.</li>
+ *   <li>A dead-zone band around center where {@code sideOf}=0 (unknown) -- sitting on the line never
+ *       resolves to a hemisphere, so it can't flip/re-fire tick to tick. Its half-width is the degree-first
+ *       {@link #deadZoneBlocks} (TEST 92: ~0.75 deg per axis, jitter-floored/capped), passed IN by the caller
+ *       per axis, so the title fires within ~1 deg of the line on every world size instead of a flat 64 blocks
+ *       (which was ~3 deg of longitude on the smallest world).</li>
  *   <li>An actual center CROSSING is required ({@code lastObserved} and {@code coord} on opposite
  *       sides of {@code center}), not merely a changed side, so drifting out of the dead zone back to
  *       the same hemisphere never fires.</li>
@@ -29,14 +32,49 @@ package com.example.globe.core;
  */
 public final class HemisphereCrossing {
 
-    /** Half-width of the on-the-line dead zone, in blocks (matches the pre-P2 EQUATOR_STABLE_DIST). */
+    /** MAX half-width of the on-the-line dead zone, in blocks (matches the pre-P2 EQUATOR_STABLE_DIST). Still
+     *  the large-world value and the cap for {@link #deadZoneBlocks}, and the shared anti-machine-gun constant
+     *  {@code EdgeGeometry.DEAD_ZONE_MIN_BLOCKS} couples to. TEST 92 made the EFFECTIVE dead zone degree-first
+     *  (see {@link #deadZoneBlocks}); this constant is now the CEILING, not the flat value. */
     public static final double DEAD_ZONE_BLOCKS = 64.0;
-    /** A single sample step larger than this is treated as a teleport: re-seed, do not fire. */
+    /** TEST 92 degree-first dead-zone target: the on-the-line band is this many DEGREES of the relevant axis
+     *  wide (clamped to [{@link #DEAD_ZONE_FLOOR_BLOCKS}, {@link #DEAD_ZONE_BLOCKS}]), so the hemisphere title
+     *  fires within ~1 deg of the line on every world size instead of the old flat 64 blocks (~3 deg of
+     *  longitude on the smallest world). See {@link #deadZoneBlocks}. */
+    public static final double DEAD_ZONE_DEG = 0.75;
+    /** Jitter floor (blocks) for the degree-first dead zone: even on the tiniest world it never shrinks below
+     *  this, so per-tick positional jitter (~2 blocks) can never flip the resolved side and machine-gun the
+     *  title. 16 blocks is ~8x jitter -- ample, and still only ~0.77 deg of longitude on xRadius 3750. */
+    public static final double DEAD_ZONE_FLOOR_BLOCKS = 16.0;
+    /** A single sample step larger than this is treated as a teleport: re-seed, do not fire. SEPARATE from the
+     *  dead zone (TEST 92 did NOT touch this jump guard). */
     public static final double MAX_STEP_BLOCKS = 256.0;
     /** Per-axis re-arm after a title fires, in wall-clock ms. */
     public static final long COOLDOWN_MS = 15_000L;
 
     private HemisphereCrossing() {
+    }
+
+    /**
+     * TEST 92 degree-first on-the-line dead zone: {@code clamp(DEAD_ZONE_DEG * blocksPerDegree, FLOOR, MAX)}.
+     * The old flat {@link #DEAD_ZONE_BLOCKS} (64) was ~3 deg of longitude on the smallest world (xRadius 3750),
+     * so the hemisphere title only resolved a side -- and therefore only fired -- once the player was 3 deg
+     * past the line. Sizing the band as a small fraction of a degree (with the {@link #DEAD_ZONE_FLOOR_BLOCKS}
+     * jitter floor and the {@link #DEAD_ZONE_BLOCKS} cap) fires it within ~1 deg on every world size, on BOTH
+     * axes: the caller passes each axis's own blocks-per-degree -- latitude = latitudeRadius/90 (Z / equator),
+     * longitude = xRadius/180 (X / prime meridian). {@code min(64, 0.75 deg)} then {@code max(16, ...)}:
+     * on large worlds 0.75 deg exceeds 64 blocks so the cap wins (an even tighter title); on tiny worlds the
+     * 16-block floor wins; in between it is exactly 0.75 deg.
+     *
+     * @param blocksPerDegree blocks per one degree of the axis being tracked ({@code radius/deg-span}); a
+     *                        non-positive or NaN value degrades to the jitter floor (never a zero/negative band).
+     */
+    public static double deadZoneBlocks(double blocksPerDegree) {
+        if (Double.isNaN(blocksPerDegree) || blocksPerDegree <= 0.0) {
+            return DEAD_ZONE_FLOOR_BLOCKS;
+        }
+        double byDeg = DEAD_ZONE_DEG * blocksPerDegree;
+        return Math.max(DEAD_ZONE_FLOOR_BLOCKS, Math.min(DEAD_ZONE_BLOCKS, byDeg));
     }
 
     /** Side of {@code coord} relative to {@code center}: {@code -1} negative, {@code +1} positive,

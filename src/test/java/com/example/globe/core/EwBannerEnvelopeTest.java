@@ -9,14 +9,14 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * Pure-JVM tests for {@link EwBannerEnvelope} -- the E/W storm WARNING BANNER's onset gate and fade envelope,
  * now a SINGLE white advisory (TEST 89: Peetsa retired the two-tier severe/yellow system). The one boundary is
- * the PER-WORLD band cap ({@code capDist == rampStartDist} ~176.5 deg) resolved by {@link EdgeGeometry} and
- * passed in. These tests drive it off a representative Wide world (xRadius 15000) and pin the direction-aware
- * approach-only trigger, the wall-clock fade, and the leave+re-enter re-arm.
+ * the PER-WORLD band cap ({@code capDist == rampStartDist} ~177.5 deg; TEST 92 tightened it) resolved by
+ * {@link EdgeGeometry} and passed in. These tests drive it off a representative Wide world (xRadius 15000) and
+ * pin the direction-aware approach-only trigger, the wall-clock fade, and the leave+re-enter re-arm.
  */
 class EwBannerEnvelopeTest {
 
     private static final EdgeGeometry.Resolved WIDE = EdgeGeometry.resolve(15000.0);
-    private static final double CAP = WIDE.rampStartDist();  // ~291.67 (176.5 deg)
+    private static final double CAP = WIDE.rampStartDist();  // ~208.33 (177.5 deg, TEST 92)
 
     // --- geometry tier (single onset boundary) -----------------------------------------------------
 
@@ -51,7 +51,7 @@ class EwBannerEnvelopeTest {
         // The cap IS the resolved fog onset (rampStartDist), and it leads the crossing prompt by degree spacing.
         assertTrue(WIDE.promptDist() < CAP, "the advisory cap leads the crossing prompt");
         double bpd = EdgeGeometry.blocksPerDegree(WIDE.xRadiusIntended());
-        assertEquals(3.5 * bpd, CAP, 1e-6, "cap is the 176.5-deg distance (3.5 deg of blocks)");
+        assertEquals(2.5 * bpd, CAP, 1e-6, "cap is the 177.5-deg distance (2.5 deg of blocks, TEST 92)");
     }
 
     // --- fade envelope ----------------------------------------------------------------------------

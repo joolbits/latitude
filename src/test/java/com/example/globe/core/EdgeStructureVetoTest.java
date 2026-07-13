@@ -27,8 +27,8 @@ class EdgeStructureVetoTest {
 
     @Test
     void bandIsDegreeAnchoredAt173WithA600Floor() {
-        // The anchor is 173 deg (visible fog onset 176.5 deg PLUS a 3.5-deg fan-out buffer), floored at 600.
-        assertTrue(EdgeStructureVeto.VETO_DEG == 173.0, "veto band anchored at 173 deg (176.5 - 3.5 buffer)");
+        // The anchor is 173 deg (visible fog onset 177.5 deg PLUS a 4.5-deg fan-out buffer; TEST 92), floored at 600.
+        assertTrue(EdgeStructureVeto.VETO_DEG == 173.0, "veto band anchored at 173 deg (177.5 - 4.5 buffer, TEST 92)");
         assertTrue(EdgeStructureVeto.MIN_BAND_BLOCKS == 600.0, "600-block floor keeps the buffer honest on tiny worlds");
     }
 

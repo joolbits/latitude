@@ -14,8 +14,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *
  * <p>Pins the asymmetric hysteresis (disarm on the prompt line, re-arm past a MODEST re-arm line), the
  * no-oscillation guarantee at the prompt distance, the TEST-83 "declined prompt re-offers after a modest
- * walk-back" fix, the arrived-out-of-band arm behaviour, the server anti-exploit gate, the mirror-X geometry
- * (identical Classic/Mercator), NaN safety, and the fog curves keyed on the resolved rampStart/climax.
+ * walk-back" fix, the arrival arm behaviour (TEST 92: in-band on tiny worlds / out-of-band on large ones, seed
+ * covers both), the TEST 92 right-click re-prompt gesture predicates (facing cone + band), the server
+ * anti-exploit gate, the mirror-X geometry (identical Classic/Mercator), NaN safety, and the fog curves keyed
+ * on the resolved rampStart/climax.
  */
 class HemispherePassageTest {
 
@@ -23,7 +25,7 @@ class HemispherePassageTest {
     private static final EdgeGeometry.Resolved ITTY = EdgeGeometry.resolve(3750.0);
     private static final double PROMPT = ITTY.promptDist();     // 40 (floored)
     private static final double REARM = ITTY.rearmDist();       // 104 (dead-zone floor)
-    private static final double RAMP = ITTY.rampStartDist();    // 160 (fog-band floor)
+    private static final double RAMP = ITTY.rampStartDist();    // 112 (TEST 92: rearm + ORDER_STEP)
     private static final double CLIMAX = ITTY.fogClimaxDist();  // 40 (== prompt)
 
     private static HemispherePassage.Decision eval(boolean armed, double dist) {
@@ -53,7 +55,7 @@ class HemispherePassageTest {
         // Itty-Bitty Classic xRadius = 3750. The whole arm/prompt geometry (out to the fog onset) must sit well
         // inside it, leaving the vast interior prompt-free.
         assertTrue(RAMP < 3750.0);
-        assertTrue(RAMP <= 0.15 * 3750.0 + 1e-6); // ~160 = ~4.3% of the radius
+        assertTrue(RAMP <= 0.15 * 3750.0 + 1e-6); // ~112 = ~3% of the radius
     }
 
     // ---- arming / re-arming ----------------------------------------------------------------
@@ -159,7 +161,7 @@ class HemispherePassageTest {
 
     @Test
     void escDismissReoffersIdenticallyToTurnBack() {
-        double[] walk = {PROMPT - 25.0, PROMPT + 10.0, RAMP - 20.0 /*out past re-arm*/, PROMPT, PROMPT - 40.0};
+        double[] walk = {PROMPT - 25.0, PROMPT + 10.0, REARM + 5.0 /*out past re-arm*/, PROMPT, PROMPT - 40.0};
         assertEquals(2, countPromptsAlongWalk(true, walk),
                 "ESC-dismiss must re-offer the same as turn-back after a walk-out and return");
     }
@@ -260,21 +262,40 @@ class HemispherePassageTest {
     // ---- arrived-out-of-band => arms naturally ---------------------------------------------
 
     @Test
-    void arrivedOutOfBandSeededDisarmedRearmsNextTickWithoutPrompting() {
-        // The redesign drops the player PAST the fog (dist == arrivalDist > rearm). The disarmed seed is
-        // harmless: the very next tick re-arms it (no prompt), exactly like a walk-out.
+    void arrivedInBandOnFlooredWorld_seedHoldsDisarmedNoSelfReprompt() {
+        // TEST 92: on the tiny Itty-Bitty world the 4-deg arrival lands INSIDE the re-arm band (arrivalDist 83.3
+        // < rearm 104). The disarmed-arrival seed is now LOAD-BEARING: the next tick HOLDS disarmed (sticky
+        // band), so the player never self-prompts -- and, crucially, does not re-arm and then re-prompt if they
+        // walk toward the wall.
         boolean armed = false; // externally seeded by the S2C arrival
         HemispherePassage.Decision d = eval(armed, ITTY.arrivalDist());
-        assertFalse(d.openPrompt(), "arriving past the fog never self-prompts");
+        assertFalse(d.openPrompt(), "arriving in-band never self-prompts");
+        assertFalse(d.nextArmed(), "arriving in-band HOLDS disarmed (sticky band) -- the seed covers it");
+        // And walking further toward the wall from the arrival stays disarmed (no re-prompt) until a walk-out.
+        assertFalse(eval(false, PROMPT - 10.0).openPrompt(), "walking to the wall after arriving does not re-prompt");
+    }
+
+    @Test
+    void arrivedOutOfBandOnLargeWorld_rearmsNaturallyNextTick() {
+        // On a properly-sized world (Regular Wide) the 4-deg arrival lands PAST the re-arm/fog band, so the
+        // disarmed seed simply re-arms next tick like a walk-out -- belt-and-suspenders there.
+        EdgeGeometry.Resolved reg = EdgeGeometry.resolve(20000.0);
+        assertTrue(reg.arrivalDist() > reg.rearmDist(), "large-world arrival lands past the re-arm line");
+        HemispherePassage.Decision d = HemispherePassage.evaluate(false, reg.arrivalDist(),
+                reg.promptDist(), reg.rearmDist());
+        assertFalse(d.openPrompt(), "arriving out-of-band never self-prompts");
         assertTrue(d.nextArmed(), "arriving out-of-band re-arms on the next tick");
     }
 
     @Test
-    void arrivalDistanceIsBeyondTheRearmLine() {
-        // Pin the invariant the arrival seed relies on: arrival lands past the re-arm line, so the arm re-arms
-        // naturally there (no in-band self-reprompt possible).
-        assertTrue(ITTY.arrivalDist() > REARM, "arrival must land past the re-arm line");
-        assertTrue(ITTY.arrivalDist() > RAMP, "and past the fog onset (past the fog, not in the thick of it)");
+    void arrivalBandRelationshipDependsOnWorldSize() {
+        // Pin the TEST 92 reality the arrival seed is designed around: in-band on the tiny floored world,
+        // out-of-band (past fog) on a properly-sized world. Either way the disarmed seed is correct.
+        assertTrue(ITTY.arrivalDist() < REARM, "Itty-Bitty: arrival inside the re-arm band");
+        assertTrue(ITTY.arrivalDist() < RAMP, "Itty-Bitty: arrival inside the fog band");
+        assertTrue(ITTY.arrivalDist() > PROMPT, "but always past the prompt line");
+        EdgeGeometry.Resolved reg = EdgeGeometry.resolve(20000.0);
+        assertTrue(reg.arrivalDist() > reg.rampStartDist(), "Regular Wide: arrival past the fog onset");
     }
 
     @Test
@@ -328,6 +349,73 @@ class HemispherePassageTest {
         double distFromEastEdge = xRadius - Math.abs(x - centerX);
         double mirroredDistFromWestEdge = xRadius - Math.abs(mx - centerX);
         assertEquals(distFromEastEdge, mirroredDistFromWestEdge, 1e-9);
+    }
+
+    // ---- TEST 92 right-click re-prompt gesture: facing cone + band predicates ---------------
+
+    @Test
+    void lookDirXMatchesMinecraftYawConvention() {
+        // yaw 0 = south (+Z), 90 = west (-X), -90 = east (+X), 180 = north (-Z). lookDirX = -sin(yaw).
+        assertEquals(0.0, HemispherePassage.lookDirX(0.0f), 1e-9);    // south: no X component
+        assertEquals(-1.0, HemispherePassage.lookDirX(90.0f), 1e-9);  // west: -X
+        assertEquals(1.0, HemispherePassage.lookDirX(-90.0f), 1e-9);  // east: +X
+        assertEquals(0.0, HemispherePassage.lookDirX(180.0f), 1e-9);  // north: no X component
+    }
+
+    @Test
+    void facingOutwardXTrueWhenLookingAtTheNearerWall() {
+        double minCos = HemispherePassage.REARM_GESTURE_FACING_MIN_COS; // cos 60 deg = 0.5
+        // East half (x > center): outward = +X = due east (yaw -90). Straight out passes; 45 deg off still passes
+        // (cos 45 ~ 0.707 >= 0.5); facing south (90 deg off) fails; facing inward (west) fails.
+        assertTrue(HemispherePassage.facingOutwardX(3000.0, 0.0, -90.0f, minCos), "east half facing east");
+        assertTrue(HemispherePassage.facingOutwardX(3000.0, 0.0, -45.0f, minCos), "east half 45 deg off-east still within 60");
+        assertFalse(HemispherePassage.facingOutwardX(3000.0, 0.0, 0.0f, minCos), "east half facing south (90 deg off) fails");
+        assertFalse(HemispherePassage.facingOutwardX(3000.0, 0.0, 90.0f, minCos), "east half facing inward (west) fails");
+        // West half (x < center): outward = -X = due west (yaw 90).
+        assertTrue(HemispherePassage.facingOutwardX(-3000.0, 0.0, 90.0f, minCos), "west half facing west");
+        assertFalse(HemispherePassage.facingOutwardX(-3000.0, 0.0, -90.0f, minCos), "west half facing inward (east) fails");
+    }
+
+    @Test
+    void facingOutwardXFalseExactlyOnCenter() {
+        assertFalse(HemispherePassage.facingOutwardX(0.0, 0.0, -90.0f, 0.5), "no outward side on the meridian itself");
+    }
+
+    @Test
+    void facingConeIsAboutSixtyDegrees() {
+        double minCos = HemispherePassage.REARM_GESTURE_FACING_MIN_COS; // cos 60 deg = 0.5
+        // East half: due-east is yaw -90. 59 deg off it (yaw -31, lookDirX = sin31 ~ 0.515 > 0.5) is inside the
+        // cone -> passes; 61 deg off (yaw -29, sin29 ~ 0.485 < 0.5) is outside -> fails. (The exact 60-deg edge is
+        // not pinned because sin(30 deg) rounds just under 0.5 in double precision -- a soft gate, not a hard one.)
+        assertTrue(HemispherePassage.facingOutwardX(3000.0, 0.0, -31.0f, minCos), "59 deg off-out is inside the cone");
+        assertFalse(HemispherePassage.facingOutwardX(3000.0, 0.0, -29.0f, minCos), "61 deg off-out is outside the cone");
+    }
+
+    @Test
+    void rearmGestureArmsOnlyWhenDisarmedInBandAndFacingOut() {
+        // Disarmed, in the prompt band, facing out -> arms.
+        assertTrue(HemispherePassage.rearmGestureArms(false, PROMPT - 10.0, true, PROMPT));
+        assertTrue(HemispherePassage.rearmGestureArms(false, PROMPT, true, PROMPT), "exactly at the prompt line is in-band");
+        // Already armed -> no (it would open on its own next tick anyway).
+        assertFalse(HemispherePassage.rearmGestureArms(true, PROMPT - 10.0, true, PROMPT));
+        // Not facing out (e.g. right-clicking a block to the side) -> no hijack.
+        assertFalse(HemispherePassage.rearmGestureArms(false, PROMPT - 10.0, false, PROMPT));
+        // Outside the prompt band -> no.
+        assertFalse(HemispherePassage.rearmGestureArms(false, PROMPT + 1.0, true, PROMPT));
+        // NaN distance -> no.
+        assertFalse(HemispherePassage.rearmGestureArms(false, Double.NaN, true, PROMPT));
+    }
+
+    @Test
+    void rearmGestureThenEvaluateGatedOpensThePrompt() {
+        // The gesture only sets armed=true; the normal evaluateGated then opens the prompt under the usual gate.
+        boolean armed = false; // disarmed at the wall (declined the last prompt)
+        double dist = PROMPT - 10.0;
+        assertTrue(HemispherePassage.rearmGestureArms(armed, dist, true, PROMPT), "gesture approves at the wall facing out");
+        armed = true; // client applies the re-arm
+        HemispherePassage.Decision d = HemispherePassage.evaluateGated(armed, dist, true, PROMPT, REARM);
+        assertTrue(d.openPrompt(), "re-armed at the wall -> prompt re-opens without the walk-out");
+        assertFalse(d.nextArmed(), "and disarms again on open");
     }
 
     // ---- NaN safety ------------------------------------------------------------------------

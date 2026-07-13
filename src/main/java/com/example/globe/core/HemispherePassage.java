@@ -13,7 +13,7 @@ package com.example.globe.core;
  * They are resolved PER WORLD from longitude degrees against the mod's INTENDED X radius by
  * {@link EdgeGeometry#resolve}, and passed IN to every method below. This does two things Peetsa's TEST-86
  * flight recorder demanded: (1) the lines are anchored to the intended radius, so a lerping/vandalized live
- * border can never slide them; (2) the whole experience begins at ~176.5 deg longitude instead of ~170, so a
+ * border can never slide them; (2) the whole experience begins at ~177.5 deg longitude instead of ~170, so a
  * crossing lands you PAST the fog. See {@link EdgeGeometry} for the anchors, floors and ordering invariant.
  *
  * <p><b>The distance axis.</b> {@code distToEdge} is blocks from the player to the nearest E/W world-border
@@ -28,10 +28,14 @@ package com.example.globe.core;
  * is STICKY; only a deliberate walk-out-and-back re-offers the prompt (the TEST 83 fix: a MODEST walk-back,
  * not the old whole-fog-band trek).
  *
- * <p><b>Spawned/arrived-out-of-band contract.</b> The redesign drops the arriving player PAST the fog (at
- * {@code arrivalDist}, which is beyond {@code rearmAt}), so the machine ARMS naturally on the far side. The
- * S2C arrival still seeds {@code armed=false} as harmless belt-and-suspenders: {@link #evaluate} simply
- * re-arms it on the next tick (distToEdge > rearmAt), exactly as a walk-out would -- it never self-reprompts.
+ * <p><b>Spawned/arrived contract (TEST 92: arrival may be in-band on floored worlds).</b> The crossing drops
+ * the arriving player at {@code arrivalDist} (4 deg from the wall). On properly-sized worlds that is PAST the
+ * fog ({@code arrivalDist > rampStart > rearmAt}), so the machine would arm naturally on the far side. But on
+ * the tiny Itty-Bitty world the readability floors push {@code rearmAt}/{@code rampStart} outward beyond 4 deg,
+ * so the arrival lands INSIDE the sticky re-arm band. In BOTH cases the S2C arrival seeds {@code armed=false},
+ * and {@link #evaluate} does the right thing: out-of-band it re-arms next tick (harmless, like a walk-out);
+ * in-band it HOLDS disarmed (the sticky band), so a player who then walks toward the wall is NOT re-prompted --
+ * no self-reprompt loop. On small worlds this seed is therefore load-bearing, not merely belt-and-suspenders.
  */
 public final class HemispherePassage {
 
@@ -130,6 +134,53 @@ public final class HemispherePassage {
      */
     public static double mirrorX(double x, double centerX) {
         return 2.0 * centerX - x;
+    }
+
+    // ---- TEST 92 right-click-at-the-wall re-prompt (Peetsa): re-summon the crossing prompt without the ----
+    // ---- walk-out. A disarmed player standing in the prompt band who presses USE while FACING the border ----
+    // ---- re-arms the passage so the prompt opens next tick. Pure predicates here; the input read (use key, ----
+    // ---- yaw, rate limit, "no screen up") is client glue in HemispherePassageClient. ----
+
+    /** Facing cone half-angle as a cosine: the USE-key gesture only counts when the player's horizontal look
+     *  points within 60 deg of straight-OUT toward the nearer E/W wall ({@code cos 60 deg = 0.5}). Tight enough
+     *  that a normal right-click aimed at a block/item to the side or inward never hijacks into a re-prompt. */
+    public static final double REARM_GESTURE_FACING_MIN_COS = 0.5;
+
+    /** The horizontal look-direction X component for a Minecraft yaw (deg): {@code -sin(yaw)}. +1 = due east
+     *  (+X, yaw -90), -1 = due west (-X, yaw +90), 0 = due north/south. Pure; pitch-independent by design (we
+     *  only care about the horizontal bearing toward the wall). */
+    public static double lookDirX(float yawDeg) {
+        return -Math.sin(Math.toRadians(yawDeg));
+    }
+
+    /**
+     * True when the player's horizontal facing points OUTWARD toward the nearer E/W edge within the given cone.
+     * Outward is +X on the east half ({@code x > centerX}) and -X on the west half; on the exact center there is
+     * no outward side, so this is false. {@code minCos} is the cosine of the cone half-angle
+     * ({@link #REARM_GESTURE_FACING_MIN_COS} = cos 60 deg).
+     */
+    public static boolean facingOutwardX(double playerX, double centerX, float yawDeg, double minCos) {
+        double d = playerX - centerX;
+        if (d == 0.0) {
+            return false;
+        }
+        double outwardSign = d > 0.0 ? 1.0 : -1.0;
+        return outwardSign * lookDirX(yawDeg) >= minCos;
+    }
+
+    /**
+     * The TEST 92 re-prompt gesture predicate: should a USE-key press RE-ARM the passage this tick? True only
+     * when the arm is currently DISARMED, the player is within the prompt band ({@code distToEdge <= promptAt}),
+     * and they are {@code facingOutward} toward the wall. The caller owns the input read, the "no screen / on
+     * the surface" gate, and the rate limit; this is the pure decision. Re-arming lets the normal
+     * {@link #evaluateGated} open the prompt on the same/next tick (subject to that gate).
+     */
+    public static boolean rearmGestureArms(boolean armed, double distToEdge, boolean facingOutward,
+                                           double promptAt) {
+        if (armed || !facingOutward || Double.isNaN(distToEdge)) {
+            return false;
+        }
+        return distToEdge <= promptAt;
     }
 
     // ---- B-5-P2 approach fog (A2): pure distance->fog curves for the REAL DEPTH FOG mixin ----

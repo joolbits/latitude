@@ -234,7 +234,7 @@ public final class GlobeClientState {
         if (client == null || client.level == null) return 0.0f;
         var border = client.level.getWorldBorder();
         // Redesign 2026-07-12: the EW haze intensity (drives the render-distance reduction near the edge) now
-        // ramps over the degree-anchored fog band -- onset at rampStartDist (~176.5 deg), full at the prompt
+        // ramps over the degree-anchored fog band -- onset at rampStartDist (~177.5 deg), full at the prompt
         // line -- instead of the old fixed 500->100 blocks. One geometry for fog, particles, banner and this.
         com.example.globe.core.EdgeGeometry.Resolved g = edgeGeometry(border);
         double d = distanceToEwBorderBlocks(border, x);
