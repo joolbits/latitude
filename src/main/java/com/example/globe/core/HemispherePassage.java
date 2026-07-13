@@ -14,7 +14,7 @@ package com.example.globe.core;
  * {@link EdgeGeometry#resolve}, and passed IN to every method below. This does two things Peetsa's TEST-86
  * flight recorder demanded: (1) the lines are anchored to the intended radius, so a lerping/vandalized live
  * border can never slide them; (2) the whole experience begins at ~177.5 deg longitude instead of ~170, so a
- * crossing lands you PAST the fog. See {@link EdgeGeometry} for the anchors, floors and ordering invariant.
+ * crossing lands you in the thinning fog edge (178 deg since TEST 93). See {@link EdgeGeometry} for the anchors, floors and ordering invariant.
  *
  * <p><b>The distance axis.</b> {@code distToEdge} is blocks from the player to the nearest E/W world-border
  * edge, a non-negative value that shrinks to 0 AT the edge. On both client and server it is now
