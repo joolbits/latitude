@@ -64,29 +64,12 @@ public final class GlobeWarningOverlay {
     // beat rather than a 0.7 deg double-tap of the same red flash (pairs with LETHAL's deeper vignette).
     private static final float LETHAL_TEXT_SCALE = 1.15f;
 
-    // Approach tier (LEVEL_1) — generic, mentions both storm + reduced visibility. Escalates to a
-    // climate-specific tier-2 line below. Simplified from "...Head <direction> to turn back/immediately." to a
-    // plain "Turn back." per live feedback -- smoother read, and the player already knows which way is back
-    // (they just came from there); naming the escape direction was redundant.
-    private static final String EW_STORM_WARN_TEMPLATE =
-            "Storms and low visibility to the %s. Turn back.";
-    // Near-edge tier (LEVEL_2), climate-specific: whiteout in the cold bands, blinding sandstorm elsewhere.
-    private static final String EW_WHITEOUT_DANGER_TEMPLATE =
-            "Whiteout conditions to the %s. Turn back.";
-    private static final String EW_SANDSTORM_DANGER_TEMPLATE =
-            "Blinding sandstorm to the %s. Turn back.";
-
-    // B-5-P2 EW warning HONESTY (A4): with the Hemisphere Passage ON the E/W edge is PASSABLE, so "Turn back."
-    // at every tier is a lie -- the stage-2 line fires in the same band as the "pass through?" prompt. When
-    // PASSAGE_V2_ENABLED these advisory-but-passable rewords replace the strings above (register borrowed from
-    // the polar ladder, kept SHORT). Thresholds are UNTOUCHED (KEEP-SHARED law) -- only the wording changes.
-    // Flag OFF: the originals above are used, byte-identical.
-    private static final String EW_STORM_WARN_PASSAGE_TEMPLATE =
-            "Heavy storms to the %s -- the crossing beyond is rough but passable.";
-    private static final String EW_WHITEOUT_DANGER_PASSAGE_TEMPLATE =
-            "Whiteout at the world's edge -- hold steady if you mean to cross.";
-    private static final String EW_SANDSTORM_DANGER_PASSAGE_TEMPLATE =
-            "Blinding sandstorm at the world's edge -- hold steady if you mean to cross.";
+    // TEST 89: the E/W edge banner is now ONE white advisory (Peetsa retired the two-tier severe/yellow
+    // system). Shown on entering the band, plain white with the warning-family keyline, one wall-clock fade.
+    // Copy is Peetsa's verbatim; the em-dash is U+2014. (The old direction-templated LEVEL_1/LEVEL_2 "Turn
+    // back." / whiteout / sandstorm strings -- and the PASSAGE_V2 rewords -- are gone with the second tier.)
+    private static final String EW_ADVISORY_TEXT =
+            "Approaching the Prime Meridian. Heavy fog ahead—proceed with care.";
 
     private static final boolean DEBUG_ENTRY_TITLES = Boolean.getBoolean("latitude.debugEntryTitles");
 
@@ -138,7 +121,7 @@ public final class GlobeWarningOverlay {
     // mild tiers earn nothing); cleared on a full retreat re-arm so the feature is a provable no-op when idle.
     private static int poleVignetteTier = 0;
     private static long poleVignetteStartMs = Long.MIN_VALUE;
-    // B-5 P3 round 2 (TEST 85): the E/W storm banner is a direction-aware, both-tiers-fade state machine now.
+    // The E/W banner is a direction-aware, single-tier fading advisory (TEST 89 retired the severe tier).
     // Peetsa's feedback retired the old shape (LEVEL_2 persisted "annoyingly"; a walk-OUT re-showed the mild
     // tier; on his thin world the severe tier "stole" the mild tier's turn; on large worlds the mild tier
     // started absurdly far out). All of that logic is pure in core.EwBannerEnvelope; the overlay only holds
@@ -326,30 +309,6 @@ public final class GlobeWarningOverlay {
         return true;
     }
 
-    private static Component ewTextForStage(GlobeClientState.EwStormStage stage, boolean cold) {
-        if (stage == null) return null;
-        // A4: passage-on uses the advisory-but-passable wording; passage-off keeps the original "Turn back." set.
-        boolean passable = com.example.globe.core.LatitudeV2Flags.PASSAGE_V2_ENABLED;
-        return switch (stage) {
-            case LEVEL_1 -> Component.literal(passable ? EW_STORM_WARN_PASSAGE_TEMPLATE : EW_STORM_WARN_TEMPLATE);
-            // YELLOW, NOT YELLOW+BOLD (task 1, the polar keyline lesson): the E/W banner now draws with the
-            // same dark 1px keyline the polar warnings got, and MC fakes bold by drawing every glyph twice
-            // (+1px), which drifts the fill out of registration with the non-bold keyline stamp and reads as
-            // the exact smear the outline is meant to kill. The keyline + YELLOW carry the emphasis instead.
-            case LEVEL_2 -> Component.literal(passable
-                            ? (cold ? EW_WHITEOUT_DANGER_PASSAGE_TEMPLATE : EW_SANDSTORM_DANGER_PASSAGE_TEMPLATE)
-                            : (cold ? EW_WHITEOUT_DANGER_TEMPLATE : EW_SANDSTORM_DANGER_TEMPLATE))
-                    .withStyle(ChatFormatting.YELLOW);
-            default -> null;
-        };
-    }
-
-    private static boolean ewIsColdBand(net.minecraft.world.level.border.WorldBorder border, double playerZ) {
-        double absDeg = Math.abs(com.example.globe.util.LatitudeMath.degreesFromZ(border, playerZ));
-        LatitudeBands.Band band = LatitudeBands.fromAbsoluteLatitudeDeg(absDeg);
-        return band == LatitudeBands.Band.SUBPOLAR || band == LatitudeBands.Band.POLAR;
-    }
-
     public static void render(GuiGraphicsExtractor ctx, DeltaTracker tickCounter) {
         Minecraft client = Minecraft.getInstance();
 
@@ -483,66 +442,40 @@ public final class GlobeWarningOverlay {
                 return;
             }
 
-            // ONSET stays progress-based (synced with the storm particles, unchanged): are we in an E/W storm
-            // at all? NONE -> reset the banner machine to INITIAL so a fresh approach re-fires from scratch
-            // (LEVEL_1 on a wide world, straight to LEVEL_2 on a thin one).
-            GlobeClientState.EwStormStage onsetStage =
-                    GlobeClientState.computeEwStormStage(client.level, client.player);
-            if (onsetStage == GlobeClientState.EwStormStage.NONE) {
-                ewBannerState = com.example.globe.core.EwBannerEnvelope.State.INITIAL;
-                return;
-            }
-            // TEST 85 rewrite (+ 2026-07-12 degree redesign): the pure banner state machine (core.EwBannerEnvelope)
-            // owns tier selection, the direction-aware trigger (a tier fires only when APPROACHED from the milder
-            // side; a walk-out re-shows nothing), the thin-window LEVEL_1 skip (now purely defensive -- the degree
-            // geometry keeps the mild band ~112+ blocks wide even on Itty-Bitty), and the wall-clock fade for BOTH
-            // tiers. It reads the SAME distance-to-edge the crossing prompt arms on and the SAME resolved geometry:
-            // severeDist (~178 deg) is the LEVEL_2 gate, rampStartDist (~176.5 deg) is both the outer cap and the
-            // LEVEL_1 onset -- fog, particles and banner all begin there, one shared onset.
+            // TEST 89: ONE white advisory (Peetsa retired the two-tier system). The pure banner state machine
+            // (core.EwBannerEnvelope) is single-tier now: it arms ONE episode when the player APPROACHES into
+            // the band (a walk-out re-shows nothing), plays the wall-clock fade, and stays gone while lingering
+            // until a leave+re-enter. It reads the SAME distance-to-edge the crossing prompt arms on and the
+            // SAME resolved geometry: rampStartDist (~176.5 deg) is the band cap -- fog and banner share that
+            // one onset. Anchored to the intended X radius, so a lerping border can't slide it; client + server
+            // agree. Leaving the band drives geometryTier back to NONE, which re-arms the next approach.
             double ewDistToEdge = GlobeClientState.distanceToEwBorderBlocks(client.player.getX());
-            // Redesign 2026-07-12: the banner tier boundaries are degree-anchored to the intended X radius, one
-            // story with the fog/particles: LEVEL_2 inside severeDist (~178 deg), LEVEL_1 in (severe, rampStart]
-            // (~176.5 deg), nothing beyond rampStart. Immune to a lerping border, and the client + server agree.
             com.example.globe.core.EdgeGeometry.Resolved ewGeo =
                     GlobeClientState.edgeGeometry(client.level.getWorldBorder());
             long ewNowMs = System.currentTimeMillis();
             com.example.globe.core.EwBannerEnvelope.Decision ewDecision =
                     com.example.globe.core.EwBannerEnvelope.evaluate(
-                            ewBannerState, ewDistToEdge, ewGeo.severeDist(), ewGeo.rampStartDist(), ewNowMs);
+                            ewBannerState, ewDistToEdge, ewGeo.rampStartDist(), ewNowMs);
             ewBannerState = ewDecision.next();
             if (ewDecision.shownTier() == com.example.globe.core.EwBannerEnvelope.TIER_NONE) {
-                return; // capped out, thin-skipped, retreating, or faded-out-and-lingering: draw nothing.
+                return; // past the cap, retreating, or faded-out-and-lingering: draw nothing.
             }
-            GlobeClientState.EwStormStage stormStage =
-                    ewDecision.shownTier() == com.example.globe.core.EwBannerEnvelope.TIER_LEVEL_2
-                            ? GlobeClientState.EwStormStage.LEVEL_2
-                            : GlobeClientState.EwStormStage.LEVEL_1;
             float episodeAlpha = ewDecision.alpha();
 
-            String dir = ewDangerDirection(client.level.getWorldBorder(), client.player.getX());
-            boolean cold = ewIsColdBand(client.level.getWorldBorder(), client.player.getZ());
-            Component base = ewTextForStage(stormStage, cold);
-            if (base == null) {
-                return;
-            }
-            Component bestText = Component.literal(String.format(base.getString(), dir.toLowerCase()))
-                    .setStyle(base.getStyle());
+            // Plain WHITE advisory (Peetsa's verbatim copy). Same dark 1px keyline the polar warnings use so it
+            // reads on the fog; steady fill (no per-tick pulse) -- the only alpha modulation is the exposure
+            // gate and the wall-clock episode fade.
+            Component bestText = Component.literal(EW_ADVISORY_TEXT);
             maybeLogWarningRender(client,
-                    new GlobeClientState.WarningState(GlobeClientState.WarningType.STORM, stormStage, 0),
+                    new GlobeClientState.WarningState(GlobeClientState.WarningType.STORM,
+                            GlobeClientState.EwStormStage.LEVEL_1, 0),
                     bestText);
-            // Task 1: the E/W banner now gets the SAME dark 1px keyline the polar warnings got (keyline=true)
-            // so it reads on the whiteout/sandstorm instead of the old shadow-only smear. Task 2: the steady
-            // full-opacity fill drops the old per-TICK sine "pulse" (the removed warningColorWithPulse) that
-            // Peetsa read as a strobe -- the only alpha modulation now is the exposure gate and the banner
-            // episode fade (LEVEL_1 AND LEVEL_2), both wall-clock/spatial, never per-tick.
             float bannerAlpha = warnExposureAlpha * episodeAlpha;
             if (bannerAlpha <= 0.001f) {
                 return;
             }
-            TextColor styleColor = bestText.getStyle().getColor();
-            int rgb = styleColor != null ? styleColor.getValue() : 0xFFFFFF;
             int a = (int) Mth.clamp(bannerAlpha * 255.0f, 0.0f, 255.0f);
-            int color = (a << 24) | (rgb & 0x00FFFFFF);
+            int color = (a << 24) | 0x00FFFFFF; // white fill
             drawCenteredWarning(ctx, client.font, bestText, warnY, color, true, 1.0f);
         } catch (Throwable t) {
             GlobeMod.LOGGER.error("GlobeWarningOverlay.render crashed", t);
@@ -612,12 +545,6 @@ public final class GlobeWarningOverlay {
         if (scaled) {
             m.popMatrix();
         }
-    }
-
-    private static String ewDangerDirection(net.minecraft.world.level.border.WorldBorder border, double playerX) {
-        double distWest = Math.abs(playerX - border.getMinX());
-        double distEast = Math.abs(border.getMaxX() - playerX);
-        return distWest <= distEast ? "West" : "East";
     }
 
     private static void resetWorldEntryState(long worldTime) {

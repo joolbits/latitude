@@ -11,7 +11,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * intended-radius E/W edge geometry (redesign 2026-07-12). Pins:
  * <ul>
  *   <li>degree -&gt; block conversion,</li>
- *   <li>the nested ordering invariant ({@code prompt < severe < rearm < rampStart}) in the pure DEGREE case
+ *   <li>the nested ordering invariant ({@code prompt < rearm < rampStart}) in the pure DEGREE case
  *       AND under the small-world floors (Itty / Small-Wide / Regular-Wide matrices),</li>
  *   <li>the exact effective block geometry on each world size,</li>
  *   <li>the fog/particle/banner shared onset (== {@code rampStartDist}),</li>
@@ -43,22 +43,24 @@ class EdgeGeometryTest {
 
     @Test
     void ittyBittyClassicEffectiveGeometry_floorsBind() {
-        // xRadius 3750: 1 deg = 20.833 blocks, so all three floors engage.
+        // xRadius 3750: 1 deg = 20.833 blocks, so the floors engage. TEST 89: no severe tier; rearm at 178 deg
+        // (distForDeg = 41.7) is still floored to prompt + DEAD_ZONE (104), so it is UNCHANGED from before.
         assertEquals(40.0, ITTY.promptDist(), EPS, "prompt floored to 40 (1 deg = 20.8 < 40)");
-        assertEquals(48.0, ITTY.severeDist(), EPS, "severe = prompt + ORDER_MIN_STEP (2 deg = 41.7 < 48)");
-        assertEquals(104.0, ITTY.rearmDist(), EPS, "rearm = prompt + DEAD_ZONE (40 + 64)");
+        assertEquals(104.0, ITTY.rearmDist(), EPS, "rearm = prompt + DEAD_ZONE (40 + 64), 178 deg floored");
         assertEquals(160.0, ITTY.rampStartDist(), EPS, "rampStart = climax + FOG_BAND_MIN (40 + 120)");
         assertEquals(40.0, ITTY.fogClimaxDist(), EPS, "climax == prompt line");
         assertEquals(184.0, ITTY.arrivalDist(), EPS, "arrival = rampStart + 24-block floor (1 deg = 20.8 < 24)");
+        // Floored ordering on the smallest world: prompt < rearm < rampStart < arrival.
+        assertTrue(ITTY.promptDist() < ITTY.rearmDist(), "prompt(40) < rearm(104)");
+        assertTrue(ITTY.rearmDist() < ITTY.rampStartDist(), "rearm(104) < rampStart(160)");
     }
 
     @Test
     void smallWideEffectiveGeometry_pureDegreesHold() {
-        // xRadius 15000: 1 deg = 83.333 blocks; the pure degree values hold un-floored.
+        // xRadius 15000: 1 deg = 83.333 blocks; the pure degree values hold un-floored. TEST 89: rearm at 178.
         double bpd = 15000.0 / 180.0;
         assertEquals(1.0 * bpd, SMALL.promptDist(), EPS);   // 179 deg
-        assertEquals(2.0 * bpd, SMALL.severeDist(), EPS);   // 178 deg
-        assertEquals(3.0 * bpd, SMALL.rearmDist(), EPS);    // 177 deg
+        assertEquals(2.0 * bpd, SMALL.rearmDist(), EPS);    // 178 deg (was 177)
         assertEquals(3.5 * bpd, SMALL.rampStartDist(), EPS);// 176.5 deg
         assertEquals(4.5 * bpd, SMALL.arrivalDist(), EPS);  // 175.5 deg
     }
@@ -67,8 +69,7 @@ class EdgeGeometryTest {
     void regularWideEffectiveGeometry_pureDegreesHold() {
         double bpd = 20000.0 / 180.0;
         assertEquals(1.0 * bpd, REG.promptDist(), EPS);
-        assertEquals(2.0 * bpd, REG.severeDist(), EPS);
-        assertEquals(3.0 * bpd, REG.rearmDist(), EPS);
+        assertEquals(2.0 * bpd, REG.rearmDist(), EPS);      // 178 deg
         assertEquals(3.5 * bpd, REG.rampStartDist(), EPS);
         assertEquals(4.5 * bpd, REG.arrivalDist(), EPS);
     }
@@ -79,8 +80,7 @@ class EdgeGeometryTest {
     void orderingInvariantHoldsOnEveryWorldSize() {
         for (double xr : new double[] {3750.0, 5000.0, 7500.0, 10000.0, 15000.0, 20000.0, 40000.0}) {
             EdgeGeometry.Resolved g = EdgeGeometry.resolve(xr);
-            assertTrue(g.promptDist() < g.severeDist(), "prompt < severe @ " + xr);
-            assertTrue(g.severeDist() < g.rearmDist(), "severe < rearm @ " + xr);
+            assertTrue(g.promptDist() < g.rearmDist(), "prompt < rearm @ " + xr);
             assertTrue(g.rearmDist() < g.rampStartDist(), "rearm < rampStart @ " + xr);
             assertTrue(g.rampStartDist() < g.arrivalDist(), "rampStart < arrival (past the fog) @ " + xr);
         }
@@ -109,9 +109,9 @@ class EdgeGeometryTest {
 
     @Test
     void rampStartIsTheOneSharedOnset() {
-        // The fog onset, the EW particle onset, and the banner visibility cap are ALL rampStartDist -- one
-        // story ("nothing edge-related visible equatorward of ~176.5 deg"). Pin it is the 176.5-deg distance
-        // on a world where the floor doesn't bind.
+        // The fog onset and the banner visibility cap are BOTH rampStartDist -- one story ("nothing
+        // edge-related visible equatorward of ~176.5 deg"; TEST 89 removed the EW particles, so it's fog +
+        // banner now). Pin it is the 176.5-deg distance on a world where the floor doesn't bind.
         double bpd = 20000.0 / 180.0;
         assertEquals((180.0 - EdgeGeometry.RAMP_START_DEG) * bpd, REG.rampStartDist(), EPS);
         // And the fog climax is the prompt line, so fog reaches full opacity exactly when the prompt fires.

@@ -167,8 +167,9 @@ public final class LatitudeV2Flags {
      * <p><b>Default-on is defensible</b> because (a) it only affects NEWLY generated chunks -- blocks already
      * on disk are never rewritten (placement-time only, legacy-worldgen pin holds); (b) the planned B-6
      * mirror-band wrap needs a clean, structure-free edge anyway; and (c) it is conservative -- SURFACE
-     * structures only, in the outer {@link com.example.globe.core.EdgeStructureVeto#EDGE_BAND_BLOCKS}
-     * (500) blocks per side, leaving underground mineshafts/strongholds (End access) untouched. Explicitly
+     * structures only, in the outer {@link com.example.globe.core.EdgeStructureVeto#bandBlocks(double)} band per side
+     * (TEST 89: degree-anchored at 173 deg, floored at 600 blocks -- covers the visible storm band plus a
+     * village's fan-out), leaving underground mineshafts/strongholds (End access) untouched. Explicitly
      * setting it off is byte-identical: the mixin's first check returns immediately. Born WITH its build.gradle
      * forwarding line (L17 discipline), beside {@code passageV2}.
      *

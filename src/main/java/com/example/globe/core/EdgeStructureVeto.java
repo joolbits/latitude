@@ -11,13 +11,28 @@ package com.example.globe.core;
  * nearest E/W (X) world-border edge, the same shape the passage prompt arms on. {@code xRadius} is the square
  * world-border half (the Mercator latitude override only affects Z, never this X radius).
  *
- * <p><b>Band width is a FIXED absolute 500 blocks -- deliberately NOT the visual fog ramp.</b> This is a
- * WORLDGEN placement-determinism concern (which anchors get a structure), invisible to the eye, so it is kept
- * at a stable, generous absolute width and does NOT track the degree-anchored approach fog / prompt geometry
- * ({@link EdgeGeometry}). Keeping it wider than every feature line guarantees a clean, structure-free frontier
- * around the whole edge experience (and the planned B-6 mirror-band seam) regardless of world size, while a
- * pure absolute value keeps the vetoed-anchor set trivially deterministic. On Itty-Bitty Classic (xRadius
- * 3750) 500 is ~13% of the radius per side, leaving the vast interior untouched.
+ * <p><b>Band width is DEGREE-ANCHORED with a fan-out buffer (TEST 89 owner decision).</b> It USED to be a
+ * fixed absolute 500 blocks, decoupled from the ramp -- but on a big world 500 blocks is NARROWER than the
+ * visible storm band (which is degree-anchored: fog onset at {@link EdgeGeometry#RAMP_START_DEG} 176.5 deg),
+ * so a structure could stand INSIDE the visible storm (Peetsa saw a village there). It also had no allowance
+ * for a multi-chunk village whose houses fan 150-300 blocks toward the band from an anchor just outside it.
+ * The band is now the same DEGREE geometry the visible edge uses: it vetoes structures poleward of
+ * {@link #VETO_DEG} 173 deg -- the visible band (176.5) PLUS a {@code 176.5 - 173 = 3.5}-deg fan-out buffer
+ * ("a few degrees" per Peetsa), so every structure that could fan a house into the visible storm is vetoed at
+ * its anchor. On a wide world 3.5 deg is 300-390 blocks of buffer, comfortably clearing the ~300-block max
+ * village fan-out; a {@link #MIN_BAND_BLOCKS} 600-block floor keeps the buffer honest on small worlds where a
+ * degree is only ~20-80 blocks. Effective widths (per E/W side):
+ * <ul>
+ *   <li>Itty-Bitty Classic (xRadius 3750, 1 deg ~= 20.8 blk): {@code distForDeg(173) = 145.8} floored to
+ *       <b>600</b>. Visible band there is {@code rampStartDist = 160}, so the buffer is {@code 600 - 160 =
+ *       440} blocks &gt; the 300-block max fan-out. ~16% of the radius per side; the vast interior is free.</li>
+ *   <li>Small-Wide (xRadius 15000, 1 deg ~= 83.3 blk): {@code distForDeg(173) = 583.3} floored to <b>600</b>.
+ *       Visible band {@code rampStartDist = 291.7}; buffer {@code 600 - 291.7 = 308.3} &gt; 300.</li>
+ *   <li>Regular-Wide (xRadius 20000, 1 deg ~= 111.1 blk): {@code distForDeg(173) = 777.8} (degree-derived
+ *       wins). Visible band {@code rampStartDist = 388.9}; buffer {@code 777.8 - 388.9 = 388.9} &gt; 300.</li>
+ * </ul>
+ * The width is still a pure function of the intended X radius, so the vetoed-anchor set stays trivially
+ * deterministic (same seed + flag -&gt; same vetoed anchors).
  *
  * <p>The mixin ({@code EdgeStructureVetoMixin}) applies this at the {@code StructureStart.placeInChunk} HEAD
  * (before any block is written -- no half-built structures), keyed on the structure's ANCHOR chunk so every
@@ -25,15 +40,39 @@ package com.example.globe.core;
  * mineshafts are invisible and strongholds carry End access -- both are left alone). Deterministic: the same
  * seed + flag yields the same set of vetoed anchors, because the decision is a pure function of the anchor's
  * X and the border geometry.
+ *
+ * <p><b>Placement-determinism note (unchanged by this widening).</b> The decision is still anchor-keyed and
+ * still a pure function of intended X radius, so existing chunks are untouched and only the placement frontier
+ * shifts. Widening the band moves that frontier inward: an already-generated structure that now falls inside
+ * the new band is NOT retro-removed (chunks are immutable once written); the veto only governs anchors decided
+ * after the upgrade -- the same upgrade-frontier tear the old absolute band already carried.
  */
 public final class EdgeStructureVeto {
 
-    /** Width (blocks) of the structure-free band inward from EACH E/W (X) world-border edge. A FIXED absolute
-     *  value (placement-determinism concern) -- deliberately NOT tied to the degree-anchored visual fog ramp;
-     *  it stays wider than every feature line so the whole edge experience sits on a clean, empty frontier. */
-    public static final double EDGE_BAND_BLOCKS = 500.0;
+    /** Poleward-of-this longitude degree the structure-free band begins. The visible storm onset is
+     *  {@link EdgeGeometry#RAMP_START_DEG} 176.5 deg; this sits {@code 176.5 - 173 = 3.5} deg further out (the
+     *  "few degrees" fan-out buffer Peetsa asked for), so a multi-chunk village anchored just outside the
+     *  visible band cannot fan a house into it. Degrees, so it scales with the world instead of the old fixed
+     *  500 blocks that read narrower than the visible band on wide worlds. */
+    public static final double VETO_DEG = 173.0;
+
+    /** Block floor on the band width so the fan-out buffer survives on tiny worlds, where {@code distForDeg(173)}
+     *  is only ~146 blocks (Itty) -- below the {@code rampStartDist} 160 + 300-block max village fan-out the
+     *  buffer must clear. 600 keeps the buffer &gt; the max fan-out on every supported size while still leaving
+     *  the vast interior structure-allowed (~16% of the radius per side on the smallest world). */
+    public static final double MIN_BAND_BLOCKS = 600.0;
 
     private EdgeStructureVeto() {
+    }
+
+    /**
+     * The structure-free band width (blocks) inward from EACH E/W edge for a world of the given intended X
+     * radius: {@code max(distForDeg(VETO_DEG, xRadius), MIN_BAND_BLOCKS)} -- the 173-deg fan-out anchor, floored
+     * so tiny worlds still clear the max village fan-out. Degenerate radius ({@code <= 0}) yields the floor,
+     * but the mixin's {@link #inEdgeBand} still fails open on a bad radius, so nothing is vetoed there.
+     */
+    public static double bandBlocks(double xRadiusIntended) {
+        return Math.max(EdgeGeometry.distForDeg(VETO_DEG, xRadiusIntended), MIN_BAND_BLOCKS);
     }
 
     /**

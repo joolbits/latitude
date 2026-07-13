@@ -25,14 +25,11 @@ import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderEvents;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.color.block.BlockTintSources;
-import net.minecraft.core.particles.BlockParticleOption;
-import net.minecraft.core.particles.ParticleOptions;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.Identifier;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.level.block.Block;
-import net.minecraft.world.level.block.Blocks;
 
 public class GlobeModClient implements ClientModInitializer {
 
@@ -298,57 +295,14 @@ public class GlobeModClient implements ClientModInitializer {
             }
         }
 
-        // WARNING-intensity particles (the EW border storm) stay behind enableWarningParticles -- its
-        // meaning is unchanged (it governs only the warning particles it already governed).
-        if (!LatitudeConfig.enableWarningParticles) {
-            return;
-        }
-
-        GlobeClientState.EwStormStage ewStage = GlobeClientState.computeEwStormStage(client.level, client.player);
-        if (ewStage != GlobeClientState.EwStormStage.NONE && spawnTick) {
-            ewStormClientTick(client, ewStage, exposure);
-        }
+        // TEST 89: the EW border DUST/sand storm particles are REMOVED entirely (Peetsa: "remove the dust
+        // particles altogether"). The edge's presentation is now the depth fog + the single white advisory
+        // banner -- no player-anchored EW particle spawn at all. The ambient POLAR snow above is untouched.
+        // (enableWarningParticles used to gate ONLY these EW particles -- it never gated the polar snow -- so
+        // with them gone the toggle no longer governs any particle path; the config field is left in place to
+        // preserve save/HUD compatibility. See report.)
     }
 
-    // B-4 storm-snow: widened envelope (10->16) + a steady horizontal wind drift so the flakes streak
-    // sideways and READ as a blizzard, not gentle flurries (Peetsa saw no increase near the pole). The
-    // per-tick BUDGET (count) and the caller's isPaused/spawn-tick anti-backlog guards are UNCHANGED --
-    // this only changes how each spawned flake looks/moves, never how many spawn or when.
-    private static final double SNOW_ENVELOPE = 16.0;
-
-    // TEST 78 storm VOLUME: the main pass used to spawn in a thin ~6-block band ABOVE the head (py+2..py+8),
-    // which read as a single diagonal SHEET (Peetsa: "only one thin layer that blows diagonally"). Now the main
-    // pass fills a real vertical VOLUME from py-2 to py+14 (16 blocks tall) around the camera, weighted denser
-    // near eye level by a triangular pick, so the snow visibly fills the AIR in every direction instead of
-    // hanging as a curtain overhead. The dense low SECOND pass fills the near-ground band (py-1..py+6).
-    private static final double SNOW_VOLUME_LOW = -2.0;   // bottom of the main-pass volume, relative to feet
-    private static final double SNOW_VOLUME_HIGH = 14.0;  // top of the main-pass volume, relative to feet
-
-    // B-4 round 3 item 2 -- BLIZZARD. Beyond the base gentle-flurry velocities, a blizzard drive (0 at the
-    // 87 deg hazard onset, 1 at the pole) ramps the sideways wind and the fall speed toward a driven gale and
-    // gates a dense low SECOND pass. All still a FIXED per-tick function of latitude -- the anti-backlog law
-    // (fixed budget, isPaused=>nothing) is untouched; only the look/motion and a fixed extra count change.
-    //
-    // TEST 77 round 2: the wind/fall MAGNITUDE curves moved into the pure, tested core.PolarHazardWindow
-    // (blizzardWindMagnitude / blizzardFallSpeed) and were cranked hard -- SnowflakeParticle damps horizontal
-    // velocity ~5%/tick and pins vertical to a ~0.081/tick terminal, so the old ceilings decayed to a gentle
-    // straight-down drift within a second (Peetsa: "slow, falls down, not sideways"). The second (low, hard-
-    // driven) pass multiplies that already-larger wind so the pole reads as a wind-whipped ground blizzard.
-    private static final double SNOW_SECOND_PASS_WIND_MULT = 1.9;  // low pass streaks even harder sideways
-
-    // Perf-scaling glue (untested -- a trivial 1:1 mapping, not math; the scaling math is in the pure,
-    // tested core.ParticleDensity). Reads the LIVE vanilla Particles video setting and maps it onto our
-    // MC-neutral Tier. Vanilla's ParticleStatus has exactly THREE tiers (ALL/DECREASED/MINIMAL) -- there
-    // is no "off" -- so MINIMAL is our lowest floor (a thin, still-snowy blizzard). Read fresh each call
-    // so a mid-session settings change is honored immediately; never cached across ticks.
-    private static com.example.globe.core.ParticleDensity.Tier polarSnowDensityTier(Minecraft client) {
-        net.minecraft.server.level.ParticleStatus status = client.options.particles().get();
-        return switch (status) {
-            case ALL -> com.example.globe.core.ParticleDensity.Tier.FULL;
-            case DECREASED -> com.example.globe.core.ParticleDensity.Tier.DECREASED;
-            case MINIMAL -> com.example.globe.core.ParticleDensity.Tier.MINIMAL;
-        };
-    }
 
     private static void spawnAmbientPolarSnow(Minecraft client, int count, double absLatDeg,
                                               com.example.globe.core.ParticleDensity.Tier tier, float exposure) {
@@ -414,65 +368,44 @@ public class GlobeModClient implements ClientModInitializer {
         }
     }
 
-    private static void ewStormClientTick(Minecraft client, GlobeClientState.EwStormStage stage, float exposure) {
-        int base = switch (stage) {
-            case LEVEL_1 -> 6;
-            case LEVEL_2 -> 20;
-            default -> 0;
+    // B-4 storm-snow: widened envelope (10->16) + a steady horizontal wind drift so the flakes streak
+    // sideways and READ as a blizzard, not gentle flurries (Peetsa saw no increase near the pole). The
+    // per-tick BUDGET (count) and the caller's isPaused/spawn-tick anti-backlog guards are UNCHANGED --
+    // this only changes how each spawned flake looks/moves, never how many spawn or when.
+    private static final double SNOW_ENVELOPE = 16.0;
+
+    // TEST 78 storm VOLUME: the main pass used to spawn in a thin ~6-block band ABOVE the head (py+2..py+8),
+    // which read as a single diagonal SHEET (Peetsa: "only one thin layer that blows diagonally"). Now the main
+    // pass fills a real vertical VOLUME from py-2 to py+14 (16 blocks tall) around the camera, weighted denser
+    // near eye level by a triangular pick, so the snow visibly fills the AIR in every direction instead of
+    // hanging as a curtain overhead. The dense low SECOND pass fills the near-ground band (py-1..py+6).
+    private static final double SNOW_VOLUME_LOW = -2.0;   // bottom of the main-pass volume, relative to feet
+    private static final double SNOW_VOLUME_HIGH = 14.0;  // top of the main-pass volume, relative to feet
+
+    // B-4 round 3 item 2 -- BLIZZARD. Beyond the base gentle-flurry velocities, a blizzard drive (0 at the
+    // 87 deg hazard onset, 1 at the pole) ramps the sideways wind and the fall speed toward a driven gale and
+    // gates a dense low SECOND pass. All still a FIXED per-tick function of latitude -- the anti-backlog law
+    // (fixed budget, isPaused=>nothing) is untouched; only the look/motion and a fixed extra count change.
+    //
+    // TEST 77 round 2: the wind/fall MAGNITUDE curves moved into the pure, tested core.PolarHazardWindow
+    // (blizzardWindMagnitude / blizzardFallSpeed) and were cranked hard -- SnowflakeParticle damps horizontal
+    // velocity ~5%/tick and pins vertical to a ~0.081/tick terminal, so the old ceilings decayed to a gentle
+    // straight-down drift within a second (Peetsa: "slow, falls down, not sideways"). The second (low, hard-
+    // driven) pass multiplies that already-larger wind so the pole reads as a wind-whipped ground blizzard.
+    private static final double SNOW_SECOND_PASS_WIND_MULT = 1.9;  // low pass streaks even harder sideways
+
+    // Perf-scaling glue (untested -- a trivial 1:1 mapping, not math; the scaling math is in the pure,
+    // tested core.ParticleDensity). Reads the LIVE vanilla Particles video setting and maps it onto our
+    // MC-neutral Tier. Vanilla's ParticleStatus has exactly THREE tiers (ALL/DECREASED/MINIMAL) -- there
+    // is no "off" -- so MINIMAL is our lowest floor (a thin, still-snowy blizzard). Read fresh each call
+    // so a mid-session settings change is honored immediately; never cached across ticks.
+    private static com.example.globe.core.ParticleDensity.Tier polarSnowDensityTier(Minecraft client) {
+        net.minecraft.server.level.ParticleStatus status = client.options.particles().get();
+        return switch (status) {
+            case ALL -> com.example.globe.core.ParticleDensity.Tier.FULL;
+            case DECREASED -> com.example.globe.core.ParticleDensity.Tier.DECREASED;
+            case MINIMAL -> com.example.globe.core.ParticleDensity.Tier.MINIMAL;
         };
-        // TEST 78: scale the player-anchored EW storm budget by the graded enclosure estimate too (these
-        // particles were previously behind the same binary surfaceOk gate). Full in the open, 0 in a sealed
-        // room near the E/W border, proportional at a doorway.
-        base = com.example.globe.core.PolarExposure.particleBudget(base, exposure);
-        if (base <= 0) {
-            return;
-        }
-
-        RandomSource random = client.player.getRandom();
-        double px = client.player.getX();
-        double py = client.player.getY();
-        double pz = client.player.getZ();
-
-        double vx = client.player.getX() >= 0.0 ? -0.10 : 0.10;
-
-        int mainCount = base;
-        int hazeCount = Math.max(1, base / 3);
-
-        // Climate-aware E/W storm (TEST 1 E1): in the cold bands (subpolar/polar) the border storm is a SNOW
-        // blizzard — snowflakes + pale haze building toward whiteout — instead of a desert sandstorm.
-        var border = client.level.getWorldBorder();
-        double absDeg = Math.abs(com.example.globe.util.LatitudeMath.degreesFromZ(border, pz));
-        com.example.globe.util.LatitudeBands.Band band =
-                com.example.globe.util.LatitudeBands.fromAbsoluteLatitudeDeg(absDeg);
-        boolean cold = band == com.example.globe.util.LatitudeBands.Band.SUBPOLAR
-                || band == com.example.globe.util.LatitudeBands.Band.POLAR;
-
-        if (cold) {
-            spawnCloudRing(client, ParticleTypes.SNOWFLAKE, mainCount, random, px, py, pz, vx);
-        } else {
-            BlockParticleOption sand = new BlockParticleOption(ParticleTypes.FALLING_DUST, Blocks.SAND.defaultBlockState());
-            spawnCloudRing(client, sand, mainCount, random, px, py, pz, vx);
-        }
-        spawnCloudRing(client, ParticleTypes.CLOUD, hazeCount, random, px, py, pz, vx * 0.6);
     }
 
-    private static void spawnCloudRing(Minecraft client, ParticleOptions particle, int count, RandomSource random,
-                                       double px, double py, double pz, double vx) {
-        for (int i = 0; i < count; i++) {
-            double ox = (random.nextDouble() - 0.5) * 16.0;
-            double oy = 1.0 + random.nextDouble() * 6.0;
-            double oz = (random.nextDouble() - 0.5) * 16.0;
-            client.particleEngine.createParticle(particle, px + ox, py + oy, pz + oz, vx, 0.01, 0.0);
-        }
-    }
-
-    private static boolean isWarningParticleActive(Minecraft client) {
-        if (client.player == null || client.level == null) {
-            return false;
-        }
-
-        GlobeClientState.PolarStage polarStage = GlobeClientState.computePolarStage(client.level, client.player);
-        GlobeClientState.EwStormStage ewStage = GlobeClientState.computeEwStormStage(client.level, client.player);
-        return polarStage != GlobeClientState.PolarStage.NONE || ewStage != GlobeClientState.EwStormStage.NONE;
-    }
 }

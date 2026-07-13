@@ -164,35 +164,6 @@ public final class GlobeClientState {
         };
     }
 
-    private static int ewRank(EwStormStage stage) {
-        return switch (stage) {
-            case NONE -> 0;
-            case LEVEL_1 -> 1;
-            case LEVEL_2 -> 2;
-        };
-    }
-
-        public static PolarStage computePolarStage(ClientLevel world, Player player) {
-        var border = world.getWorldBorder();
-        double progressZ = com.example.globe.util.LatitudeMath.hazardProgressZ(border, player.getZ());
-        return polarStageForProgress(border, player.getZ(), progressZ);
-    }
-
-    public static EwStormStage computeEwStormStage(ClientLevel world, Player player) {
-        // Redesign 2026-07-12: the EW storm particles + haze now begin at the degree-anchored fog onset
-        // (RAMP_START_DEG ~176.5), NOT the old shared polar progress threshold (~170 deg, which put the player
-        // "right in the thick of it" -- Peetsa). Tiers share the banner's boundaries: LEVEL_2 inside severeDist
-        // (~178 deg), LEVEL_1 in (severeDist, rampStartDist], NONE beyond. Anchored to the intended X radius so
-        // a lerping border can't slide the onset. The polar (N/S) axis is untouched (it still uses POLAR_STAGE_*).
-        var border = world.getWorldBorder();
-        com.example.globe.core.EdgeGeometry.Resolved g = edgeGeometry(border);
-        double dist = distanceToEwBorderBlocks(border, player.getX());
-        if (dist > g.rampStartDist()) {
-            return EwStormStage.NONE;
-        }
-        return dist <= g.severeDist() ? EwStormStage.LEVEL_2 : EwStormStage.LEVEL_1;
-    }
-
     private static double distanceToEwBorderBlocks(WorldBorder border, double camX) {
         // Anchored to the mod's INTENDED X radius (synced from the server), NOT the live border half -- so a
         // lerping / vandalized border can never slide the fog/prompt/re-arm/banner lines that read this (TEST
