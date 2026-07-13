@@ -186,6 +186,44 @@ public final class LatitudeV2Flags {
             Boolean.parseBoolean(System.getProperty("latitude.edgeStructureVeto.enabled", "true"));
 
     /**
+     * Phase 5 Slice B-6 (Teleport-Evator). Default FALSE. Gates the invisible E/W-edge crossing: the
+     * outermost longitude band at each edge is generated as a mirror of the opposite edge so a one-shot
+     * teleport across the seam lands in identical terrain (no prompt, no curtain, no title -- the world
+     * simply continues on the other hemisphere).
+     *
+     * <p><b>THE MECHANISM IS DELIBERATELY UNDECIDED (2026-07-12).</b> The P1 spikes proved mechanism (a)
+     * (finalDensity-seam context-remap) REFUTED on the batched fill path, and mechanism (b) (leaf-level
+     * reflection) VIABLE-WITH-CAVEATS (fog-masked near-mirror, ~2-block wobble) vs (c) copy-and-flip
+     * (bit-exact, heavier). Peetsa picks (b) vs (c) in the morning. This flag and its P1-PREP foundations
+     * (MirrorGeometry band math, per-world capture, symmetric decoration+carver strips) are needed by BOTH
+     * mechanisms and are all this flag currently drives; the mechanism-specific terrain wrapper lands later.
+     *
+     * <p><b>Interplay matrix (design amendment 9):</b>
+     * <ul>
+     *   <li>evator captured-ON <b>supersedes the B-5 prompt inside the band</b> -- the silent crossing owns
+     *       the band; the {@code passageV2} prompt/curtain are suppressed there (the fog/storm ambience
+     *       stays, now masking the inner-frontier terrain seam).</li>
+     *   <li><b>evatorV2 &times; boundaryV2 are ANTAGONISTIC.</b> The {@code boundaryV2} ocean moat at the
+     *       edge makes {@code GlobeMod.placeSafeY} refuse the mirrored arrival (it would drop the player
+     *       into the moat). FOR NOW the per-world capture <b>REFUSES to arm</b> the evator when
+     *       {@code boundaryV2} is active at world birth (logged), so the two are mutually exclusive until a
+     *       dedicated mirrored-ocean arrival design exists.</li>
+     * </ul>
+     *
+     * <p><b>Per-world birth-time capture (design amendment 7, REQUIRED).</b> This is a WORLDGEN change, so
+     * it is captured at world CREATION (the {@code globeRadius}/{@code globeShape} pattern in
+     * {@link com.example.globe.world.LatitudeWorldState}) and read from that persisted value server-side
+     * thereafter -- NOT re-read from this global default. A world born without the evator reads {@code false}
+     * FOREVER even if the project default later flips, because a late flip onto unmirrored on-disk chunks
+     * would tear the generation frontier and defeat the feature. The captured value (resolved through
+     * {@link EvatorCapture}, which folds in the boundaryV2 refusal) is what all evator behavior keys off.
+     * Byte-identity-when-off is a hard gate proven via the house atlas. Born WITH its {@code build.gradle}
+     * forwarding line in the SAME pass (L17 discipline -- this repo's forwarding gap has bitten three times).
+     */
+    public static final boolean EVATOR_V2_ENABLED =
+            Boolean.parseBoolean(System.getProperty("latitude.evatorV2.enabled", "false"));
+
+    /**
      * Polar small-vegetation fade (Peetsa 2026-07-10). Default TRUE since 2026-07-12: the TEST 75 live
      * look found flowers/grass/sugarcane/firefly bushes thriving at 88+ deg because this shipped off --
      * vanilla 26.2 decorates snowy_plains/frozen_river themselves (flower_default, patch_sugar_cane,

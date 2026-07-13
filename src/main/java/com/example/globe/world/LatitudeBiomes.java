@@ -399,6 +399,11 @@ public final class LatitudeBiomes {
     private static volatile WorldgenPolicyVersion ACTIVE_WORLDGEN_POLICY = WorldgenPolicyVersion.MODERN_1_3;
     public static volatile int ACTIVE_RADIUS_BLOCKS = 0;
     private static volatile GlobeShape ACTIVE_GLOBE_SHAPE = GlobeShape.CLASSIC;
+    // Phase 5 B-6: the per-world evator capture, pushed here from LatitudeWorldState at world load so the
+    // worldgen strips (decoration/carver veto mixins) can read it cheaply per-chunk -- the same live-cache
+    // pattern as ACTIVE_RADIUS_BLOCKS / ACTIVE_GLOBE_SHAPE. Default false; a non-evator world stays byte-
+    // identical even with the global flag on because the strips gate on THIS, not LatitudeV2Flags.EVATOR_V2.
+    private static volatile boolean EVATOR_ACTIVE = false;
     private static OceanDistanceField OCEAN_DISTANCE_FIELD = null;
     private static final AtomicInteger DEBUG_COUNT = new AtomicInteger();
     private static final AtomicInteger BLEND_DEBUG_COUNT = new AtomicInteger();
@@ -697,6 +702,7 @@ public final class LatitudeBiomes {
     public static void resetWorldgenStateForServerStop() {
         WORLD_SEED = 0L;
         ACTIVE_RADIUS_BLOCKS = 0;
+        EVATOR_ACTIVE = false;
         GEO_V2_PROVIDER = NoOpGeoSummaryProvider.INSTANCE;
         CLIMATE_V2_PROVIDER = NoOpClimateSummaryProvider.INSTANCE;
         LOGGER.info("[Latitude] V2 worldgen statics reset on server stop (providers -> NoOp, seed/radius cleared).");
@@ -744,6 +750,20 @@ public final class LatitudeBiomes {
 
     public static int getActiveRadiusBlocks() {
         return ACTIVE_RADIUS_BLOCKS;
+    }
+
+    // --- Phase 5 B-6 evator per-world live cache (set from LatitudeWorldState at world load) ---
+
+    /** Push the per-world captured evator decision. Called from {@link LatitudeWorldState} at world load;
+     *  the worldgen strips read {@link #isEvatorActive()} per-chunk. */
+    public static void setEvatorActive(boolean active) {
+        EVATOR_ACTIVE = active;
+    }
+
+    /** True iff THIS loaded world captured the evator on (per-world, not the raw global flag). The mirror-band
+     *  decoration/carver strips gate on this so a non-evator world is byte-identical even with the flag on. */
+    public static boolean isEvatorActive() {
+        return EVATOR_ACTIVE;
     }
 
     // --- Polar small-vegetation fade (Peetsa 2026-07-10; latitude.polarVegetationFade.enabled) ---

@@ -40,6 +40,13 @@ class LatitudeV2FlagsTest {
     }
 
     @Test
+    void evatorV2DefaultsToDisabled() {
+        assertFalse(LatitudeV2Flags.EVATOR_V2_ENABLED,
+                "Phase 5 B-6 Teleport-Evator must ship default-off (byte-identical flag-off worldgen) -- "
+                        + "the mechanism is still undecided and per-world capture must never arm by surprise");
+    }
+
+    @Test
     void passageV2DefaultsToEnabled() {
         // Peetsa's post-P3 decision (2026-07-12): the Hemisphere Passage ships ON. It is consensual by
         // design (prompt-gated crossing) and was live-approved; the flag remains the kill switch.

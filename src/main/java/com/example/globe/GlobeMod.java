@@ -325,6 +325,24 @@ public class GlobeMod implements ModInitializer {
             worldState.setGlobeShape(pendingShape);
             LOGGER.info("[Latitude] New Globe world: shape={} (from create-world selection)", pendingShape);
         }
+        // Phase 5 B-6: capture the evator decision at BIRTH (same brand-new-world signal as the shape stamp:
+        // a non-null pendingShape with a genuinely-unset prior capture). A world born pre-evator (or with the
+        // flag off) reads false forever, immune to a later default flip (design amendment 7). The capture
+        // REFUSES to arm when boundaryV2 is active on the world -- the two are antagonistic until a mirrored-
+        // ocean arrival exists (design amendment 9) -- and logs why so it is never a silent no-op.
+        if (pendingShape != null && !worldState.hasEvatorCapture()) {
+            boolean evatorFlag = com.example.globe.core.LatitudeV2Flags.EVATOR_V2_ENABLED;
+            boolean boundaryV2 = com.example.globe.core.LatitudeV2Flags.BOUNDARY_V2_ENABLED;
+            boolean captured = com.example.globe.core.EvatorCapture.captureAtBirth(evatorFlag, boundaryV2);
+            worldState.setEvatorEnabled(captured);
+            if (com.example.globe.core.EvatorCapture.refusedByBoundary(evatorFlag, boundaryV2)) {
+                LOGGER.info("[Latitude] New Globe world: evator REFUSED to arm -- boundaryV2 is active "
+                        + "(antagonistic: the edge ocean moat would make the mirrored arrival's placeSafeY "
+                        + "refuse the landing). Evator captured OFF for this world.");
+            } else {
+                LOGGER.info("[Latitude] New Globe world: evator captured={} (from latitude.evatorV2.enabled)", captured);
+            }
+        }
         // Ensure the live cache reflects the persisted shape before the border is sized (covers existing worlds).
         LatitudeBiomes.setGlobeShape(LatitudeBiomes.shapeFromString(worldState.getGlobeShape()));
 

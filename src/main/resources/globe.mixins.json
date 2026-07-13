@@ -27,6 +27,8 @@
     "LivingEntityFreezeDamageMixin",
     "StructureBiomeMatchGuardMixin",
     "EdgeStructureVetoMixin",
+    "EdgeDecorationVetoMixin",
+    "EdgeCarverVetoMixin",
     "terrain.RandomStateAccessor",
     "terrain.RandomStateRouterTerrainMixin"
   ],

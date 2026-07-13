@@ -114,6 +114,11 @@ loom {
             // Phase 5 carve-aware ocean labels (default false, byte-identical off).
             vmArg "-Dlatitude.terrainV2.carveAwareLabels=${System.getProperty('latitude.terrainV2.carveAwareLabels', 'false')}"
             vmArg "-Dlatitude.boundaryV2.enabled=${System.getProperty('latitude.boundaryV2.enabled', 'false')}"
+            // Phase 5 B-6 Teleport-Evator (default FALSE, byte-identical off). Born WITH its forwarding line
+            // in the SAME PASS as the flag (L17 discipline). The mechanism (leaf-reflect vs copy-flip) is
+            // still Peetsa's morning call; this only drives the P1-PREP foundations (band math + capture +
+            // symmetric strips), all default-off.
+            vmArg "-Dlatitude.evatorV2.enabled=${System.getProperty('latitude.evatorV2.enabled', 'false')}"
             // Phase 5 B-5 Hemisphere Passage — DEFAULT ON since 2026-07-12 (Peetsa's post-P3 decision,
             // matching LatitudeV2Flags; the flag is the kill switch, crossing is prompt-consensual).
             vmArg "-Dlatitude.passageV2.enabled=${System.getProperty('latitude.passageV2.enabled', 'true')}"
