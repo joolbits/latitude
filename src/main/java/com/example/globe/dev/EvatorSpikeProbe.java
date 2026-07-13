@@ -83,7 +83,8 @@ public final class EvatorSpikeProbe {
         int eastSurfaceY;
         int westSurfaceY;
         boolean surfaceMatch;
-        boolean stackMatch;
+        boolean stackMatch;      // full block-id stack (grass/stone/water/...) — includes unmirrored aquifer
+        boolean terrainMatch;    // solid-vs-air silhouette only — the TERRAIN-shape verdict
         String eastTop;
         String westTop;
     }
@@ -97,6 +98,7 @@ public final class EvatorSpikeProbe {
                 return;
             }
             boolean armed = EvatorSpike.armed();
+            String mode = EvatorSpike.mode();
             long seed = world.getSeed();
             ChunkGenerator genRaw = world.getChunkSource().getGenerator();
             if (!(genRaw instanceof NoiseBasedChunkGenerator generator)) {
@@ -131,6 +133,13 @@ public final class EvatorSpikeProbe {
                     generator.generatorSettings().value(),
                     world.registryAccess().lookupOrThrow(Registries.NOISE), seed);
             DensityFunction plainFinal = rsPlain.router().finalDensity();
+
+            GlobeMod.LOGGER.info("[evatorSpike] mode={}", mode);
+            // Leaf inventory of the REAL router graphs — audits reflect-whitelist coverage against what the
+            // 26.2 vanilla+Terralith overworld router actually compiles to (mechanism-b coverage risk).
+            GlobeMod.LOGGER.info("\n{}", EvatorSpike.dumpLeafInventory(plainFinal, "finalDensity(#12)"));
+            GlobeMod.LOGGER.info("\n{}", EvatorSpike.dumpLeafInventory(
+                    rsPlain.router().preliminarySurfaceLevel(), "preliminarySurfaceLevel(#11)"));
 
             RandomState rsSpike = RandomState.create(
                     generator.generatorSettings().value(),
@@ -181,6 +190,74 @@ public final class EvatorSpikeProbe {
             GlobeMod.LOGGER.info("[evatorSpike] INTERP-CONTROL (west canonical: raw-vs-interpolated surfaceY): "
                     + "nonzeroDeltas={}/{} maxDelta={} ex={}", interpDeltas, pairs.size(), interpMax, interpEx);
 
+            // ---- EAST interp-error control: proves the reflected EAST band is INTERPOLATED (not raw). -----
+            // Mechanism (a) forced east to raw -> east direct(raw)==east getBaseColumn (delta 0), the tell.
+            // Mechanism (b) should show east raw-vs-interp deltas of the SAME shape as west's above.
+            int eInterpDeltas = 0;
+            int eInterpMax = 0;
+            StringBuilder eInterpEx = new StringBuilder();
+            for (Pair p : pairs) {
+                int rawReflected = directSurfaceY(mirrorFinal, p.eastX(), p.z(), minY, maxY); // reflects +x -> raw(-x)
+                int interp = surfaceY(readGenBaseColumn(generator, world, rsSpike, p.eastX(), p.z(), minY, maxY), minY);
+                int delta = Math.abs(rawReflected - interp);
+                if (delta != 0) {
+                    eInterpDeltas++;
+                    eInterpMax = Math.max(eInterpMax, delta);
+                    if (eInterpEx.length() < 300) {
+                        eInterpEx.append(String.format("(ex=%d,z=%d raw=%d interp=%d d=%d) ",
+                                p.eastX(), p.z(), rawReflected, interp, delta));
+                    }
+                }
+            }
+            GlobeMod.LOGGER.info("[evatorSpike] INTERP-CONTROL (east reflected: raw-vs-interpolated surfaceY): "
+                    + "nonzeroDeltas={}/{} maxDelta={} ex={}  (nonzero => interpolation genuinely ran on east)",
+                    eInterpDeltas, pairs.size(), eInterpMax, eInterpEx);
+
+            // ---- REBUILD-PERTURBATION control: does the mapAll graph rebuild itself perturb CANONICAL -----
+            // (west, pass-through) output? west via rsPlain vs west via rsSpike (rebuilt). Nonzero => the
+            // rebuilt graph is not byte-identical to plain even where nothing reflects (an aliasing/dedup
+            // artifact of mapAll), which is a confound distinct from the reflection.
+            int rebuildDeltas = 0;
+            int rebuildMax = 0;
+            StringBuilder rebuildEx = new StringBuilder();
+            for (Pair p : pairs) {
+                int plainW = surfaceY(readGenBaseColumn(generator, world, rsPlain, p.westX(), p.z(), minY, maxY), minY);
+                int spikeW = surfaceY(readGenBaseColumn(generator, world, rsSpike, p.westX(), p.z(), minY, maxY), minY);
+                int delta = Math.abs(plainW - spikeW);
+                if (delta != 0) {
+                    rebuildDeltas++;
+                    rebuildMax = Math.max(rebuildMax, delta);
+                    if (rebuildEx.length() < 300) {
+                        rebuildEx.append(String.format("(wx=%d,z=%d plain=%d rebuilt=%d d=%d) ",
+                                p.westX(), p.z(), plainW, spikeW, delta));
+                    }
+                }
+            }
+            GlobeMod.LOGGER.info("[evatorSpike] REBUILD-PERTURBATION (west canonical: plain-router vs rebuilt-router "
+                    + "surfaceY): nonzeroDeltas={}/{} maxDelta={} ex={}  (nonzero => mapAll rebuild alone perturbs "
+                    + "canonical output — a confound, not the reflection)", rebuildDeltas, pairs.size(), rebuildMax, rebuildEx);
+
+            // ================= FRONTIER seam scan (the inner mirror-band frontier discontinuity) ===========
+            // In the REAL feature the mirror band is [R-W, R]; its INNER frontier (x = R-W) butts the
+            // canonical interior. That join is C0-discontinuous: band value = plain(-x), interior = plain(+x).
+            // Measure the surfaceY jump |plain(-xf) - plain(+xf)| across many z at xf = R-W (W = 5deg) — the
+            // step the fog must hide, and the input to the fog-width decision.
+            int wBand = Math.max(64, Math.round(5.0f * (xRadius / 180.0f))); // 5deg band, floored
+            int xf = xRadius - wBand;
+            int fCount = 0, fSum = 0, fMax = 0, fZeroish = 0;
+            StringBuilder fEx = new StringBuilder();
+            for (int z = -2000; z <= 2000; z += 250) {
+                int band = directSurfaceY(plainFinal, -xf, z, minY, maxY);     // reflected (band) side
+                int interior = directSurfaceY(plainFinal, xf, z, minY, maxY);  // canonical interior side
+                int jump = Math.abs(band - interior);
+                fCount++; fSum += jump; fMax = Math.max(fMax, jump);
+                if (jump <= 2) fZeroish++;
+                if (fEx.length() < 240) fEx.append(String.format("(z=%d j=%d) ", z, jump));
+            }
+            double fAvg = fCount == 0 ? 0 : (double) fSum / fCount;
+            GlobeMod.LOGGER.info("[evatorSpike] FRONTIER-SEAM at xf=R-W={} (W={}): surfaceY jump avg={} max={} "
+                    + "(<=2 blk on {}/{} columns) ex={}", xf, wBand, String.format("%.1f", fAvg), fMax, fZeroish, fCount, fEx);
+
             // ================= C: LIVE getChunk(NOISE) fill path, MIRROR ============================
             List<Cmp> c = new ArrayList<>();
             String cError = null;
@@ -212,15 +289,19 @@ public final class EvatorSpikeProbe {
             int a1Stack = countStackMatch(a1);
             int bStack = countStackMatch(b);
             int cStack = countStackMatch(c);
-            GlobeMod.LOGGER.info("[evatorSpike] ===== VERDICT DATA =====");
+            int bTerrain = countTerrainMatch(b);
+            int cTerrain = countTerrainMatch(c);
+            GlobeMod.LOGGER.info("[evatorSpike] ===== VERDICT DATA (mode={}) =====", mode);
             GlobeMod.LOGGER.info("[evatorSpike] A0 direct/plain  surfaceMatch={}/{}", countSurfaceMatch(a0), a0.size());
             GlobeMod.LOGGER.info("[evatorSpike] A1 direct/spike  surfaceMatch={}/{}  stackMatch={}/{}", a1Match, a1.size(), a1Stack, a1.size());
-            GlobeMod.LOGGER.info("[evatorSpike] B  fill/spike    surfaceMatch={}/{}  stackMatch={}/{}", bMatch, b.size(), bStack, b.size());
-            GlobeMod.LOGGER.info("[evatorSpike] C  live/spike    surfaceMatch={}/{}  stackMatch={}/{}  err={}",
-                    cMatch, c.size(), cStack, c.size(), cError);
+            GlobeMod.LOGGER.info("[evatorSpike] B  fill/spike    surfaceMatch={}/{}  stackMatch(id)={}/{}  terrainMatch(solid/air)={}/{}",
+                    bMatch, b.size(), bStack, b.size(), bTerrain, b.size());
+            GlobeMod.LOGGER.info("[evatorSpike] C  live/spike    surfaceMatch={}/{}  stackMatch(id)={}/{}  terrainMatch(solid/air)={}/{}  err={}",
+                    cMatch, c.size(), cStack, c.size(), cTerrain, c.size(), cError);
 
             json.append("{\n");
             json.append("  \"armed\": ").append(armed).append(",\n");
+            json.append("  \"mode\": \"").append(mode).append("\",\n");
             json.append("  \"seed\": ").append(seed).append(",\n");
             json.append("  \"xRadius\": ").append(xRadius).append(",\n");
             json.append("  \"a0_direct_plain\": ").append(sectionJson(a0)).append(",\n");
@@ -228,8 +309,15 @@ public final class EvatorSpikeProbe {
             json.append("  \"b_fill_getBaseColumn_spike\": ").append(sectionJson(b)).append(",\n");
             json.append("  \"c_live_getChunk_spike\": ").append(sectionJson(c)).append(",\n");
             json.append("  \"c_error\": ").append(cError == null ? "null" : ("\"" + cError.replace("\"", "'") + "\"")).append(",\n");
-            json.append("  \"interp_control_nonzero\": ").append(interpDeltas).append(",\n");
-            json.append("  \"interp_control_max\": ").append(interpMax).append("\n");
+            json.append("  \"interp_control_west_nonzero\": ").append(interpDeltas).append(",\n");
+            json.append("  \"interp_control_west_max\": ").append(interpMax).append(",\n");
+            json.append("  \"interp_control_east_nonzero\": ").append(eInterpDeltas).append(",\n");
+            json.append("  \"interp_control_east_max\": ").append(eInterpMax).append(",\n");
+            json.append("  \"frontier_xf\": ").append(xf).append(",\n");
+            json.append("  \"frontier_bandW\": ").append(wBand).append(",\n");
+            json.append("  \"frontier_jump_avg\": ").append(String.format("%.2f", fAvg)).append(",\n");
+            json.append("  \"frontier_jump_max\": ").append(fMax).append(",\n");
+            json.append("  \"frontier_cols\": ").append(fCount).append("\n");
             json.append("}\n");
 
             Path out = resolveOut(server);
@@ -255,6 +343,7 @@ public final class EvatorSpikeProbe {
         c.eastTop = directSignSig(fd, p.eastX(), p.z(), minY, maxY);
         c.westTop = directSignSig(fd, p.westX(), p.z(), minY, maxY);
         c.stackMatch = c.eastTop.equals(c.westTop);
+        c.terrainMatch = c.stackMatch; // direct density path has no block palette/aquifer; sign-sig IS terrain
         return c;
     }
 
@@ -265,9 +354,10 @@ public final class EvatorSpikeProbe {
         c.eastSurfaceY = eastCol[0];
         c.westSurfaceY = westCol[0];
         c.surfaceMatch = c.eastSurfaceY == c.westSurfaceY;
-        c.stackMatch = eastCol[1] == westCol[1];
-        c.eastTop = "y" + eastCol[0] + "/h" + eastCol[1];
-        c.westTop = "y" + westCol[0] + "/h" + westCol[1];
+        c.stackMatch = eastCol[1] == westCol[1];       // full block-id stack
+        c.terrainMatch = eastCol[2] == westCol[2];     // solid/air silhouette only
+        c.eastTop = "y" + eastCol[0] + "/id" + eastCol[1] + "/t" + eastCol[2];
+        c.westTop = "y" + westCol[0] + "/id" + westCol[1] + "/t" + westCol[2];
         return c;
     }
 
@@ -320,16 +410,26 @@ public final class EvatorSpikeProbe {
                 break;
             }
         }
-        int hash = 1;
+        int idHash = 1;
+        int terrainHash = 1; // solid-vs-air silhouette; fluid & air both read as 0, any solid block as 1
         if (surface >= minY) {
+            // Block-id stack: top-N from the surface (mirrors the original metric; sensitive to aquifer fluid).
             for (int y = surface; y > surface - TOP_N && y >= minY; y--) {
                 BlockState s = col.at(y);
                 String id = (s == null) ? "null" : s.getBlock().builtInRegistryHolder()
                         .unwrapKey().map(Object::toString).orElseGet(s::toString);
-                hash = 31 * hash + id.hashCode();
+                idHash = 31 * idHash + id.hashCode();
+            }
+            // Terrain silhouette: a wider window straddling the surface, solid(1)/non-solid(0) only, so
+            // grass-vs-stone-vs-water palette differences and unmirrored aquifer fluid don't muddy the
+            // TERRAIN-shape verdict. Window = [surface+8 .. surface-24].
+            for (int y = Math.min(maxY, surface + 8); y >= Math.max(minY, surface - 24); y--) {
+                BlockState s = col.at(y);
+                int solid = (s != null && !s.isAir() && s.getFluidState().isEmpty()) ? 1 : 0;
+                terrainHash = 31 * terrainHash + solid;
             }
         }
-        return new int[]{surface, hash};
+        return new int[]{surface, idHash, terrainHash};
     }
 
     private static int surfaceY(int[] sig, int minY) {
@@ -341,13 +441,14 @@ public final class EvatorSpikeProbe {
     private static void logSection(String title, List<Cmp> rows) {
         int sm = countSurfaceMatch(rows);
         int stm = countStackMatch(rows);
-        GlobeMod.LOGGER.info("[evatorSpike] --- {} : surfaceMatch={}/{} stackMatch={}/{}",
-                title, sm, rows.size(), stm, rows.size());
+        int tm = countTerrainMatch(rows);
+        GlobeMod.LOGGER.info("[evatorSpike] --- {} : surfaceMatch={}/{} stackMatch(id)={}/{} terrainMatch(solid/air)={}/{}",
+                title, sm, rows.size(), stm, rows.size(), tm, rows.size());
         int shown = 0;
         for (Cmp c : rows) {
-            if ((!c.surfaceMatch || !c.stackMatch) && shown < 6) {
-                GlobeMod.LOGGER.info("[evatorSpike]      MISS d={} z={} eastX={} westX={} eSurf={} wSurf={} east={} west={}",
-                        c.d, c.z, c.eastX, c.westX, c.eastSurfaceY, c.westSurfaceY, c.eastTop, c.westTop);
+            if ((!c.surfaceMatch || !c.terrainMatch) && shown < 6) {
+                GlobeMod.LOGGER.info("[evatorSpike]      MISS d={} z={} eastX={} westX={} eSurf={} wSurf={} terrainMatch={} east={} west={}",
+                        c.d, c.z, c.eastX, c.westX, c.eastSurfaceY, c.westSurfaceY, c.terrainMatch, c.eastTop, c.westTop);
                 shown++;
             }
         }
@@ -365,6 +466,12 @@ public final class EvatorSpikeProbe {
         return n;
     }
 
+    private static int countTerrainMatch(List<Cmp> rows) {
+        int n = 0;
+        for (Cmp c : rows) if (c.terrainMatch) n++;
+        return n;
+    }
+
     private static String sectionJson(List<Cmp> rows) {
         StringBuilder sb = new StringBuilder("[");
         for (int i = 0; i < rows.size(); i++) {
@@ -373,7 +480,8 @@ public final class EvatorSpikeProbe {
                     .append(",\"eastX\":").append(c.eastX).append(",\"westX\":").append(c.westX)
                     .append(",\"eSurf\":").append(c.eastSurfaceY).append(",\"wSurf\":").append(c.westSurfaceY)
                     .append(",\"surfaceMatch\":").append(c.surfaceMatch)
-                    .append(",\"stackMatch\":").append(c.stackMatch).append("}");
+                    .append(",\"stackMatch\":").append(c.stackMatch)
+                    .append(",\"terrainMatch\":").append(c.terrainMatch).append("}");
             if (i < rows.size() - 1) sb.append(",");
         }
         return sb.append("]").toString();
