@@ -67,6 +67,39 @@ public final class LatitudeMath {
         return latitudeZRadiusOverride;
     }
 
+    // --- Intended X (longitude) radius override (Phase 5 B-5 edge-geometry redesign) ---
+    // The mod's OWN intended E/W radius: zRadius in Classic, zRadius * MERCATOR_ASPECT in Wide/Mercator (the
+    // exact value GlobeMod.setGlobeBorder sizes the square border to). The SERVER sets it in setGlobeBorder;
+    // the CLIENT sets it from the GlobeStatePayload handshake. ALL E/W-edge FEATURE geometry (fog onset,
+    // crossing prompt, arm re-arm, warning banner, EW particles, mirror-teleport arrival) reads THIS instead
+    // of the live border half-size, so a mid-lerp or /worldborder-vandalized border can never slide those
+    // lines (TEST 86 finding). 0 = fall back to the live border half (byte-identical Classic default / before
+    // the handshake arrives). The vanilla border stays the physical wall; only our feature lines move here.
+    private static volatile int intendedXRadiusOverride = 0;
+
+    public static void setIntendedXRadius(int xRadius) {
+        intendedXRadiusOverride = Math.max(0, xRadius);
+    }
+
+    public static int getIntendedXRadiusOverride() {
+        return intendedXRadiusOverride;
+    }
+
+    /** The intended X (longitude) radius: the override if set (server/client synced), else the live border
+     *  half-size. On a stable world these are identical (the border is snapped to the intended size), so this
+     *  only diverges while a stale/vandalized lerp is in flight -- exactly the case it protects against. */
+    public static double intendedXRadius(WorldBorder border) {
+        int o = intendedXRadiusOverride;
+        return o > 0 ? o : halfSize(border);
+    }
+
+    /** Distance (blocks, {@code >= 0}) to the nearest E/W edge, measured against the INTENDED X radius (immune
+     *  to a lerping/vandalized live border). The one quantity every edge feature -- client and server -- reads. */
+    public static double distanceToEwEdgeIntended(WorldBorder border, double x) {
+        double centerX = border != null ? border.getCenterX() : 0.0;
+        return Math.max(0.0, intendedXRadius(border) - Math.abs(x - centerX));
+    }
+
     /** The latitude (Z) radius: the override if set (Mercator), else the border half-size (Classic). */
     public static double latitudeRadius(WorldBorder border) {
         int o = latitudeZRadiusOverride;

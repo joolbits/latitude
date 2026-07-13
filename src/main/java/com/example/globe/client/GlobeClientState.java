@@ -172,80 +172,40 @@ public final class GlobeClientState {
         };
     }
 
-    public static WarningState computeWarningState(ClientLevel world, Player player) {
-        if (DEBUG_DISABLE_WARNINGS) {
-            return WarningState.NONE;
-        }
-
-        var border = world.getWorldBorder();
-
-        double progressZ = com.example.globe.util.LatitudeMath.hazardProgressZ(border, player.getZ());
-        PolarStage polar = polarStageForProgress(border, player.getZ(), progressZ);
-
-        // Derive the E/W warning stage from the SAME progress fraction the particle tick uses
-        // (computeEwStormStage -> hazardProgress -> ewStageForProgress). The old hardcoded 500/100-block test
-        // fired ~400 blocks LATER than the particles (which start at progress 0.94 = ~6% of xRadius, i.e. 600+
-        // blocks out), so the player saw sandstorm with no message. Now message + particles share one
-        // threshold and one per-tick input, so they appear together.
-        double progressX = com.example.globe.util.LatitudeMath.hazardProgress(border, player.getX());
-        EwStormStage ewTextStage = ewStageForProgress(progressX);
-
-        if (Boolean.getBoolean("latitude.debugEwWarn")) {
-            long now = System.currentTimeMillis();
-            if (now - globe$ewLastLogMs >= 10_000L) {
-                globe$ewLastLogMs = now;
-                GlobeMod.LOGGER.info("[Latitude EW] progressX={} stage={} x={}", progressX, ewTextStage, player.getX());
-            }
-        }
-
-        boolean ewTextWarn = ewTextStage != EwStormStage.NONE;
-        boolean ewTextDanger = ewTextStage == EwStormStage.LEVEL_2;
-
-        int pr = polarRank(polar);
-        int er = ewRank(ewTextStage);
-
-        if (pr <= 0 && er <= 0) {
-            return WarningState.NONE;
-        }
-
-        // Corner precedence (stable):
-        // 1) polar lethal
-        // 2) ew level 2
-        // 3) polar warn/danger
-        // 4) ew level 1
-        if (polar == PolarStage.LETHAL) {
-            return new WarningState(WarningType.POLAR, polar, pr);
-        }
-        if (ewTextDanger) {
-            return new WarningState(WarningType.STORM, ewTextStage, er);
-        }
-        if (polar != PolarStage.NONE) {
-            return new WarningState(WarningType.POLAR, polar, pr);
-        }
-
-        if (ewTextWarn) {
-            return new WarningState(WarningType.STORM, ewTextStage, er);
-        }
-
-        return new WarningState(WarningType.STORM, ewTextStage, er);
-    }
-
-    public static PolarStage computePolarStage(ClientLevel world, Player player) {
+        public static PolarStage computePolarStage(ClientLevel world, Player player) {
         var border = world.getWorldBorder();
         double progressZ = com.example.globe.util.LatitudeMath.hazardProgressZ(border, player.getZ());
         return polarStageForProgress(border, player.getZ(), progressZ);
     }
 
     public static EwStormStage computeEwStormStage(ClientLevel world, Player player) {
+        // Redesign 2026-07-12: the EW storm particles + haze now begin at the degree-anchored fog onset
+        // (RAMP_START_DEG ~176.5), NOT the old shared polar progress threshold (~170 deg, which put the player
+        // "right in the thick of it" -- Peetsa). Tiers share the banner's boundaries: LEVEL_2 inside severeDist
+        // (~178 deg), LEVEL_1 in (severeDist, rampStartDist], NONE beyond. Anchored to the intended X radius so
+        // a lerping border can't slide the onset. The polar (N/S) axis is untouched (it still uses POLAR_STAGE_*).
         var border = world.getWorldBorder();
-        double progressX = com.example.globe.util.LatitudeMath.hazardProgress(border, player.getX());
-        return ewStageForProgress(progressX);
+        com.example.globe.core.EdgeGeometry.Resolved g = edgeGeometry(border);
+        double dist = distanceToEwBorderBlocks(border, player.getX());
+        if (dist > g.rampStartDist()) {
+            return EwStormStage.NONE;
+        }
+        return dist <= g.severeDist() ? EwStormStage.LEVEL_2 : EwStormStage.LEVEL_1;
     }
 
     private static double distanceToEwBorderBlocks(WorldBorder border, double camX) {
-        double center = border.getCenterX();
-        double radius = border.getSize() * 0.5;
-        return Math.max(0.0, radius - Math.abs(camX - center));
+        // Anchored to the mod's INTENDED X radius (synced from the server), NOT the live border half -- so a
+        // lerping / vandalized border can never slide the fog/prompt/re-arm/banner lines that read this (TEST
+        // 86 finding). Falls back to the live half only before the handshake arrives (byte-identical Classic).
+        return com.example.globe.util.LatitudeMath.distanceToEwEdgeIntended(border, camX);
+    }
+
+    /** The resolved per-world E/W-edge block geometry for the CURRENT client world (fog onset, prompt, re-arm,
+     *  banner tiers, particle onset) -- all degree-anchored to the intended X radius. The one place the client
+     *  turns "which world am I in" into the block distances every edge feature reads. */
+    public static com.example.globe.core.EdgeGeometry.Resolved edgeGeometry(WorldBorder border) {
+        return com.example.globe.core.EdgeGeometry.resolve(
+                com.example.globe.util.LatitudeMath.intendedXRadius(border));
     }
 
     public static double ewWestX() {
@@ -299,14 +259,22 @@ public final class GlobeClientState {
     }
 
     public static float ewIntensity01(double x) {
-        double d = distanceToEwBorderBlocks(x);
-        if (d > 500.0) return 0.0f;
+        var client = Minecraft.getInstance();
+        if (client == null || client.level == null) return 0.0f;
+        var border = client.level.getWorldBorder();
+        // Redesign 2026-07-12: the EW haze intensity (drives the render-distance reduction near the edge) now
+        // ramps over the degree-anchored fog band -- onset at rampStartDist (~176.5 deg), full at the prompt
+        // line -- instead of the old fixed 500->100 blocks. One geometry for fog, particles, banner and this.
+        com.example.globe.core.EdgeGeometry.Resolved g = edgeGeometry(border);
+        double d = distanceToEwBorderBlocks(border, x);
+        double span = g.rampStartDist() - g.fogClimaxDist();
+        if (!(span > 0.0) || d > g.rampStartDist()) return 0.0f;
 
-        float t = (float) ((500.0 - d) / 500.0); // 0..1
+        float t = (float) ((g.rampStartDist() - d) / span); // 0..1
         if (t < 0f) t = 0f;
         if (t > 1f) t = 1f;
 
-        // steeper right after level-1 threshold
+        // steeper right after the onset
         return (float) Math.pow(t, 0.55);
     }
 
@@ -319,22 +287,7 @@ public final class GlobeClientState {
         return Math.max(minChunks, Math.min(originalChunks, target));
     }
 
-    public static double getDistanceToNearestEWBorder() {
-        var mc = net.minecraft.client.Minecraft.getInstance();
-        if (mc == null || mc.gameRenderer == null) return Double.NaN;
-
-        var cam = mc.gameRenderer.mainCamera();
-        if (cam == null) return Double.NaN;
-
-        double x = cam.position().x;
-
-        double eastX = 3750.0;
-        double westX = -3750.0;
-
-        return Math.min(Math.abs(eastX - x), Math.abs(x - westX));
-    }
-
-    public static float computeEwFogEnd(double camX) {
+        public static float computeEwFogEnd(double camX) {
         if (DEBUG_DISABLE_WARNINGS) {
             return -1.0f;
         }

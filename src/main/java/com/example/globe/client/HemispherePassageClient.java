@@ -118,6 +118,10 @@ public final class HemispherePassageClient {
         }
 
         double distToEdge = GlobeClientState.distanceToEwBorderBlocks(mc.player.getX());
+        // Per-world prompt / re-arm distances, degree-anchored to the intended X radius (immune to a lerping
+        // border). The SAME resolve() the server uses to re-validate a cross, so the two can never disagree.
+        com.example.globe.core.EdgeGeometry.Resolved geo =
+                GlobeClientState.edgeGeometry(mc.level.getWorldBorder());
 
         // The prompt may only OPEN on the surface (item 2, surface-only: underground there is just the vanilla
         // border wall, no crossing) AND when no other screen is up (A10: never stomp a container). This gates
@@ -135,7 +139,8 @@ public final class HemispherePassageClient {
         net.minecraft.client.gui.screens.Screen openScreen = mc.gui.screen();
         boolean canOpenPrompt = !deepUnder && openScreen == null;
         boolean prevArmed = armed;
-        HemispherePassage.Decision d = HemispherePassage.evaluateGated(armed, distToEdge, canOpenPrompt);
+        HemispherePassage.Decision d = HemispherePassage.evaluateGated(armed, distToEdge, canOpenPrompt,
+                geo.promptDist(), geo.rearmDist());
         armed = d.nextArmed(); // persist unconditionally -- open/disarm, sticky-hold, and re-arm are all folded in
         PassageDebug.snapshot(mc, distToEdge, prevArmed, armed, d, deepUnder, openScreen, curtain.name());
 
@@ -181,8 +186,11 @@ public final class HemispherePassageClient {
     }
 
     private static void onArrival(Minecraft mc, long now) {
-        // A9: the far side sits at the IDENTICAL border distance, so seed the arm DISARMED-in-band or the prompt
-        // would re-open on the very next tick forever. The pure class already supports external disarmed seeding.
+        // Redesign 2026-07-12: the crossing now drops the player PAST the fog (arrivalDist > rearmDist), so the
+        // arm re-arms naturally on the far side. Seeding armed=false here is harmless belt-and-suspenders -- the
+        // next tick's evaluate() re-arms it off distance exactly like a walk-out, never self-reprompting. (Under
+        // the OLD in-band arrival this seed was load-bearing; it is retained so a future arrival tweak that lands
+        // closer in can never regress to a self-reprompt loop.)
         boolean prevArmed = armed;
         armed = false;
         boolean east = HemispherePassageClientState.arrivedEast();

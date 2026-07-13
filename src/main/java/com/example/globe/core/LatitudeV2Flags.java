@@ -141,8 +141,12 @@ public final class LatitudeV2Flags {
     /**
      * Phase 5 Slice B-5 (Hemisphere Passage). Default false. Gates the whole opt-in E/W-edge crossing
      * experience -- the approach fog, the two-button "pass through?" prompt, the mirror-X teleport, the
-     * arrival title, and the turn-back push. When off, the current live edge behavior (EW sandstorm haze
-     * + warnings) is completely untouched: the server passage receiver rejects every C2S answer, the
+     * arrival title, and the turn-back push. NOTE (2026-07-12, degree-geometry slice): the EW edge
+     * PRESENTATION (storm onset / haze ramp / banner tiers at ~176.5-179 deg, anchored to the intended
+     * X radius) is a GLOBAL redesign per Peetsa's explicit directive ("make the world border features
+     * begin at 176 or 177... fog, particles, warnings") and is deliberately NOT gated here -- flag-off
+     * disables only the CROSSING (prompt/teleport/curtain/arrival/nudge): the server passage receiver
+     * rejects every C2S answer, the
      * turn-back nudge never fires, and no S2C arrival is ever sent. NOT tied to {@link #BOUNDARY_V2_ENABLED}
      * -- the passage works whatever the edge terrain looks like (the B-2 ocean shore is a visual nicety,
      * not a requirement). A later default-on decision is Peetsa's (design

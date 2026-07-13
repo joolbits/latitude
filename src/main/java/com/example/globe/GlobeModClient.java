@@ -86,6 +86,7 @@ public class GlobeModClient implements ClientModInitializer {
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
             GlobeClientState.setGlobeWorld(false);
             com.example.globe.util.LatitudeMath.setLatitudeZRadius(0);
+            com.example.globe.util.LatitudeMath.setIntendedXRadius(0);
             // U-D world-switch hygiene: per-world caches (HUD strings, compass presence, dial-texture
             // presence) and any in-flight zone title must not leak across worlds.
             com.example.globe.client.CompassHud.onWorldSwitch();
@@ -108,7 +109,11 @@ public class GlobeModClient implements ClientModInitializer {
                 GlobeClientState.setGlobeWorld(payload.isGlobe());
                 // Mercator: latitude (Z) radius differs from the X-sized border half; drive HUD/zone/pole off it.
                 com.example.globe.util.LatitudeMath.setLatitudeZRadius(payload.isGlobe() ? payload.latitudeZRadius() : 0);
-                GlobeMod.LOGGER.info("S2C globe state: isGlobe={} latitudeZRadius={}", payload.isGlobe(), payload.latitudeZRadius());
+                // Intended X (longitude) radius: anchors ALL E/W-edge feature geometry (fog/prompt/re-arm/
+                // banner/particles/arrival) so a lerping/vandalized live border can't slide those lines.
+                com.example.globe.util.LatitudeMath.setIntendedXRadius(payload.isGlobe() ? payload.intendedXRadius() : 0);
+                GlobeMod.LOGGER.info("S2C globe state: isGlobe={} latitudeZRadius={} intendedXRadius={}",
+                        payload.isGlobe(), payload.latitudeZRadius(), payload.intendedXRadius());
             });
         });
 

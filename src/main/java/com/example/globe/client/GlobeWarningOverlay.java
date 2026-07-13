@@ -492,20 +492,23 @@ public final class GlobeWarningOverlay {
                 ewBannerState = com.example.globe.core.EwBannerEnvelope.State.INITIAL;
                 return;
             }
-            // TEST 85 rewrite: the pure banner state machine (core.EwBannerEnvelope) owns tier selection, the
-            // direction-aware trigger (a tier fires only when APPROACHED from the milder side; a walk-out
-            // re-shows nothing), the thin-window LEVEL_1 skip (his world: onset 208 - gate 175 = 33 blocks too
-            // thin to read), the fixed early-start cap (no banner past 250 blocks -- kills the absurdly-early
-            // start on large worlds), and the wall-clock fade for BOTH tiers (LEVEL_2 no longer persists). It
-            // reads the SAME distance-to-edge the crossing prompt arms on, plus THIS world's LEVEL_1 onset
-            // distance: the progress-based KEEP-SHARED POLAR_STAGE_1_PROGRESS threshold expressed as a distance
-            // (= halfSize * (1 - onsetProgress)) -- computed here, never moved.
+            // TEST 85 rewrite (+ 2026-07-12 degree redesign): the pure banner state machine (core.EwBannerEnvelope)
+            // owns tier selection, the direction-aware trigger (a tier fires only when APPROACHED from the milder
+            // side; a walk-out re-shows nothing), the thin-window LEVEL_1 skip (now purely defensive -- the degree
+            // geometry keeps the mild band ~112+ blocks wide even on Itty-Bitty), and the wall-clock fade for BOTH
+            // tiers. It reads the SAME distance-to-edge the crossing prompt arms on and the SAME resolved geometry:
+            // severeDist (~178 deg) is the LEVEL_2 gate, rampStartDist (~176.5 deg) is both the outer cap and the
+            // LEVEL_1 onset -- fog, particles and banner all begin there, one shared onset.
             double ewDistToEdge = GlobeClientState.distanceToEwBorderBlocks(client.player.getX());
-            double ewHalf = com.example.globe.util.LatitudeMath.halfSize(client.level.getWorldBorder());
-            double ewOnsetDist = ewHalf * (1.0 - com.example.globe.util.LatitudeMath.POLAR_STAGE_1_PROGRESS);
+            // Redesign 2026-07-12: the banner tier boundaries are degree-anchored to the intended X radius, one
+            // story with the fog/particles: LEVEL_2 inside severeDist (~178 deg), LEVEL_1 in (severe, rampStart]
+            // (~176.5 deg), nothing beyond rampStart. Immune to a lerping border, and the client + server agree.
+            com.example.globe.core.EdgeGeometry.Resolved ewGeo =
+                    GlobeClientState.edgeGeometry(client.level.getWorldBorder());
             long ewNowMs = System.currentTimeMillis();
             com.example.globe.core.EwBannerEnvelope.Decision ewDecision =
-                    com.example.globe.core.EwBannerEnvelope.evaluate(ewBannerState, ewDistToEdge, ewOnsetDist, ewNowMs);
+                    com.example.globe.core.EwBannerEnvelope.evaluate(
+                            ewBannerState, ewDistToEdge, ewGeo.severeDist(), ewGeo.rampStartDist(), ewNowMs);
             ewBannerState = ewDecision.next();
             if (ewDecision.shownTier() == com.example.globe.core.EwBannerEnvelope.TIER_NONE) {
                 return; // capped out, thin-skipped, retreating, or faded-out-and-lingering: draw nothing.

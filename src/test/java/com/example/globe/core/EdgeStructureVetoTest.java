@@ -7,8 +7,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Pure-JVM tests for {@link EdgeStructureVeto} -- the E/W-edge structure-free band math (B-5 item 1). Pins the
- * band boundary, both edges, the fog-band-width coupling, the interior being untouched on the smallest world,
- * and the fail-open on degenerate geometry.
+ * band boundary, both edges, the fixed absolute 500-block width, the interior being untouched on the smallest
+ * world, and the fail-open on degenerate geometry.
  */
 class EdgeStructureVetoTest {
 
@@ -18,10 +18,12 @@ class EdgeStructureVetoTest {
     private static final double BAND = EdgeStructureVeto.EDGE_BAND_BLOCKS; // 500
 
     @Test
-    void bandWidthMatchesTheFogBand() {
-        // One constant story: the empty strip IS the visible approach-fog belt.
-        assertTrue(EdgeStructureVeto.EDGE_BAND_BLOCKS == HemispherePassage.FOG_START,
-                "edge veto band must equal the approach-fog onset (500)");
+    void bandWidthIsAFixedAbsolute500() {
+        // Placement-determinism concern: a FIXED absolute width, deliberately NOT tied to the degree-anchored
+        // visual fog ramp (which is now per-world) -- it just stays wider than every feature line so the whole
+        // edge experience sits on a clean, empty frontier regardless of world size.
+        assertTrue(EdgeStructureVeto.EDGE_BAND_BLOCKS == 500.0,
+                "edge veto band is a fixed absolute 500 blocks");
     }
 
     @Test

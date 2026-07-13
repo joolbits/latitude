@@ -7,67 +7,76 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Pure-JVM tests for {@link HemispherePassage} -- the E/W-edge crossing-prompt arm/re-arm state logic.
+ * Pure-JVM tests for {@link HemispherePassage} -- the E/W-edge crossing-prompt arm/re-arm state logic and the
+ * approach-fog curves, now DEGREE-ANCHORED (redesign 2026-07-12): the prompt/re-arm/fog distances are resolved
+ * PER WORLD by {@link EdgeGeometry} from the intended X radius and passed IN, so these tests drive them off a
+ * representative world (Itty-Bitty Classic, xRadius 3750) and off the raw {@link EdgeGeometry.Resolved} numbers.
  *
- * <p>Pins the asymmetric hysteresis (disarm on prompt at 100, re-arm past a MODEST 250), the no-oscillation
- * guarantee at {@code PROMPT_AT}, the TEST-83 "declined prompt re-offers after a modest walk-back" fix, the
- * spawned/arrived-in-band => disarmed contract, the server anti-exploit gate, the mirror-X geometry (identical
- * Classic/Mercator), NaN safety, and that the band fits sanely inside the smallest (Itty-Bitty Classic,
- * xRadius 3750) world.
+ * <p>Pins the asymmetric hysteresis (disarm on the prompt line, re-arm past a MODEST re-arm line), the
+ * no-oscillation guarantee at the prompt distance, the TEST-83 "declined prompt re-offers after a modest
+ * walk-back" fix, the arrived-out-of-band arm behaviour, the server anti-exploit gate, the mirror-X geometry
+ * (identical Classic/Mercator), NaN safety, and the fog curves keyed on the resolved rampStart/climax.
  */
 class HemispherePassageTest {
+
+    // Representative resolved geometry: Itty-Bitty Classic (the smallest world, where the floors bind).
+    private static final EdgeGeometry.Resolved ITTY = EdgeGeometry.resolve(3750.0);
+    private static final double PROMPT = ITTY.promptDist();     // 40 (floored)
+    private static final double REARM = ITTY.rearmDist();       // 104 (dead-zone floor)
+    private static final double RAMP = ITTY.rampStartDist();    // 160 (fog-band floor)
+    private static final double CLIMAX = ITTY.fogClimaxDist();  // 40 (== prompt)
+
+    private static HemispherePassage.Decision eval(boolean armed, double dist) {
+        return HemispherePassage.evaluate(armed, dist, PROMPT, REARM);
+    }
 
     // ---- threshold sanity / band discipline ------------------------------------------------
 
     @Test
-    void promptIsInsideRearmWhichIsInsideFog() {
-        // PROMPT_AT < REARM_AT < FOG_START -- re-arm is a MODEST walk-back that sits INSIDE the (purely visual)
-        // fog band, NOT past it. The old design put REARM_AT past FOG_START (564), which stranded declined
-        // players disarmed for 464 blocks (TEST 83).
-        assertTrue(HemispherePassage.PROMPT_AT < HemispherePassage.REARM_AT);
-        assertTrue(HemispherePassage.REARM_AT < HemispherePassage.FOG_START);
+    void promptIsInsideRearmWhichIsInsideRampStart() {
+        // prompt < rearm < rampStart -- re-arm is a MODEST walk-back that sits INSIDE the (purely visual) fog
+        // band, NOT past it (the TEST-83 fix). In distance-from-edge terms, closer to the wall = smaller.
+        assertTrue(PROMPT < REARM);
+        assertTrue(REARM < RAMP);
     }
 
     @Test
     void rearmMarginBeatsJitterWithoutStranding() {
-        // The re-arm dead band must be far wider than any per-tick position jitter (>> DEAD_ZONE = 64) so it
-        // cannot machine-gun, yet modest enough to feel like "I left the edge and came back".
-        assertTrue(HemispherePassage.REARM_MARGIN >= HemisphereCrossing.DEAD_ZONE_BLOCKS);
-        assertTrue(HemispherePassage.PROMPT_AT >= HemisphereCrossing.DEAD_ZONE_BLOCKS + 32.0);
-        // The whole walk-out-and-back re-arm loop is a modest fraction of the fog band, not the entire band.
-        assertTrue(HemispherePassage.REARM_AT < HemispherePassage.FOG_START);
+        // The re-arm dead band must be at least the DEAD_ZONE (64), far wider than any per-tick jitter, so it
+        // cannot machine-gun, yet it stays inside the visual fog band (a modest "I left and came back").
+        assertTrue(REARM - PROMPT >= HemisphereCrossing.DEAD_ZONE_BLOCKS);
+        assertTrue(REARM < RAMP);
     }
 
     @Test
     void bandFitsInsideSmallestClassicWorld() {
-        // Itty-Bitty Classic xRadius = 3750. The whole arm/prompt geometry (out to REARM_AT = 250) must sit
-        // well inside it, leaving the vast interior prompt-free, and FOG_START <= ~15% of the radius.
-        final double ittyBittyXRadius = 3750.0;
-        assertTrue(HemispherePassage.REARM_AT < ittyBittyXRadius);
-        assertTrue(HemispherePassage.FOG_START <= 0.15 * ittyBittyXRadius);
+        // Itty-Bitty Classic xRadius = 3750. The whole arm/prompt geometry (out to the fog onset) must sit well
+        // inside it, leaving the vast interior prompt-free.
+        assertTrue(RAMP < 3750.0);
+        assertTrue(RAMP <= 0.15 * 3750.0 + 1e-6); // ~160 = ~4.3% of the radius
     }
 
     // ---- arming / re-arming ----------------------------------------------------------------
 
     @Test
     void armedPlayerReachingEdgePromptsThenDisarms() {
-        HemispherePassage.Decision d = HemispherePassage.evaluate(true, 80.0);
-        assertTrue(d.openPrompt(), "armed + inside PROMPT_AT should open the prompt");
+        HemispherePassage.Decision d = eval(true, PROMPT - 20.0);
+        assertTrue(d.openPrompt(), "armed + inside the prompt line should open the prompt");
         assertFalse(d.nextArmed(), "opening the prompt disarms");
     }
 
     @Test
     void armedPlayerStillOutsidePromptDoesNotPromptButStaysArmed() {
-        HemispherePassage.Decision d = HemispherePassage.evaluate(true, 300.0); // in fog, not yet at prompt
+        HemispherePassage.Decision d = eval(true, (REARM + RAMP) / 2.0); // in fog, not yet at prompt
         assertFalse(d.openPrompt());
-        assertTrue(d.nextArmed(), "still armed until they actually reach PROMPT_AT");
+        assertTrue(d.nextArmed(), "still armed until they actually reach the prompt line");
     }
 
     @Test
     void disarmedPlayerDoesNotRearmInsideTheStickyBand() {
-        // Between PROMPT_AT (100) and REARM_AT (250): a disarmed player never re-arms and never re-prompts.
-        for (double dist : new double[] {101.0, 150.0, 200.0, 249.0}) {
-            HemispherePassage.Decision d = HemispherePassage.evaluate(false, dist);
+        // Between the prompt line and the re-arm line: a disarmed player never re-arms and never re-prompts.
+        for (double dist : new double[] {PROMPT + 1.0, (PROMPT + REARM) / 2.0, REARM - 1.0}) {
+            HemispherePassage.Decision d = eval(false, dist);
             assertFalse(d.openPrompt(), "no prompt while disarmed at dist=" + dist);
             assertFalse(d.nextArmed(), "must stay disarmed at dist=" + dist);
         }
@@ -75,38 +84,33 @@ class HemispherePassageTest {
 
     @Test
     void disarmedPlayerRearmsOnlyPastRearmThreshold() {
-        assertFalse(HemispherePassage.evaluate(false, HemispherePassage.REARM_AT).nextArmed(),
-                "exactly at REARM_AT is not yet past it");
-        assertTrue(HemispherePassage.evaluate(false, HemispherePassage.REARM_AT + 1.0).nextArmed(),
-                "past REARM_AT the arm re-arms");
+        assertFalse(eval(false, REARM).nextArmed(), "exactly at the re-arm line is not yet past it");
+        assertTrue(eval(false, REARM + 1.0).nextArmed(), "past the re-arm line the arm re-arms");
     }
 
-    // ---- no oscillation at PROMPT_AT --------------------------------------------------------
+    // ---- no oscillation at the prompt line -------------------------------------------------
 
     @Test
     void noOscillationHoveringAtPromptDistance() {
-        // Player hovers right at the prompt distance for many ticks. The prompt must fire exactly ONCE, then
-        // the state stays disarmed (no flapping) as long as they never clear REARM_AT.
         boolean armed = true;
         int prompts = 0;
         for (int tick = 0; tick < 100; tick++) {
-            double dist = 100.0 + (tick % 2 == 0 ? -1.0 : +1.0); // wobble 99 <-> 101 across PROMPT_AT
-            HemispherePassage.Decision d = HemispherePassage.evaluate(armed, dist);
+            double dist = PROMPT + (tick % 2 == 0 ? -1.0 : +1.0); // wobble across the prompt line
+            HemispherePassage.Decision d = eval(armed, dist);
             if (d.openPrompt()) {
                 prompts++;
             }
             armed = d.nextArmed();
         }
-        assertEquals(1, prompts, "hovering across PROMPT_AT must prompt exactly once");
+        assertEquals(1, prompts, "hovering across the prompt line must prompt exactly once");
     }
 
     @Test
     void slidingAlongEdgeAtConstantSmallDistanceNeverRepromptsAfterFirst() {
-        // Simulate sliding N/S along the edge: dist stays ~50 for a long time.
         boolean armed = true;
         int prompts = 0;
         for (int tick = 0; tick < 200; tick++) {
-            HemispherePassage.Decision d = HemispherePassage.evaluate(armed, 50.0);
+            HemispherePassage.Decision d = eval(armed, PROMPT / 2.0);
             if (d.openPrompt()) {
                 prompts++;
             }
@@ -117,33 +121,21 @@ class HemispherePassageTest {
 
     @Test
     void blockedOpenRetriesWhileCallerHoldsArmCommit() {
-        // P2 sweep A10 (third option): when the client can't actually open the prompt (a container is up), the
-        // caller does NOT commit the disarm and re-evaluates next tick with armed still true. Pin that evaluate
-        // is pure/stateless about this: the same armed=true input keeps yielding openPrompt until the caller
-        // commits, so a blocked prompt fires the moment the blocker clears instead of being silently consumed.
-        HemispherePassage.Decision blockedTick1 = HemispherePassage.evaluate(true, 80.0);
+        HemispherePassage.Decision blockedTick1 = eval(true, PROMPT - 20.0);
         assertTrue(blockedTick1.openPrompt());
-        // Caller could not open -> keeps armed=true instead of committing blockedTick1.nextArmed().
-        HemispherePassage.Decision blockedTick2 = HemispherePassage.evaluate(true, 80.0);
+        HemispherePassage.Decision blockedTick2 = eval(true, PROMPT - 20.0);
         assertTrue(blockedTick2.openPrompt(), "still armed => still asks to open on the retry tick");
-        // Blocker clears -> caller opens and commits the disarm; next tick must not re-prompt.
         assertFalse(blockedTick2.nextArmed());
-        assertFalse(HemispherePassage.evaluate(blockedTick2.nextArmed(), 80.0).openPrompt());
+        assertFalse(eval(blockedTick2.nextArmed(), PROMPT - 20.0).openPrompt());
     }
 
     // ---- TEST-83 live regression: a declined/dismissed prompt re-offers after a modest walk-back ----
 
-    /**
-     * Drive the pure arm through a scripted distance walk exactly as the CLIENT does when no screen blocks the
-     * open ({@code armed = d.nextArmed()} every tick), counting prompts. Turn-back and ESC-dismiss are identical
-     * at this layer: both simply close the screen without crossing, leaving {@code armed} at whatever the open
-     * committed (false) -- so this one helper models both dismissal paths.
-     */
-    private static int countPromptsAlongWalk(boolean startArmed, double[] distSequence) {
+    private int countPromptsAlongWalk(boolean startArmed, double[] distSequence) {
         boolean armed = startArmed;
         int prompts = 0;
         for (double dist : distSequence) {
-            HemispherePassage.Decision d = HemispherePassage.evaluate(armed, dist);
+            HemispherePassage.Decision d = eval(armed, dist);
             if (d.openPrompt()) {
                 prompts++;
             }
@@ -154,70 +146,54 @@ class HemispherePassageTest {
 
     @Test
     void declinedPromptReoffersAfterModestWalkBackAndReturn() {
-        // TEST 83: arm -> reach edge (prompt #1, disarm) -> turn back -> walk out JUST past REARM_AT (260, a
-        // modest ~160 blocks, NOT the old 464) -> walk back in -> MUST prompt again (#2).
+        // arm -> reach edge (prompt #1, disarm) -> turn back -> walk out just past the re-arm line -> return.
         double[] walk = {
-                80.0,        // approach: prompt #1 fires, disarm
-                90.0, 120.0, // dithering right at the edge after turning back -- must NOT re-prompt
-                180.0, 240.0, 260.0, // walk out past REARM_AT (250) -> re-arm
-                180.0, 90.0, 70.0,   // return to the edge -> prompt #2
+                PROMPT - 20.0,                 // approach: prompt #1 fires, disarm
+                PROMPT - 10.0, PROMPT + 20.0,  // dithering at the edge -- must NOT re-prompt
+                REARM - 20.0, REARM + 5.0,     // walk out past the re-arm line -> re-arm
+                REARM - 40.0, PROMPT - 10.0,   // return to the edge -> prompt #2
         };
         assertEquals(2, countPromptsAlongWalk(true, walk),
-                "a declined prompt must re-offer after a modest walk-out past REARM_AT and back");
+                "a declined prompt must re-offer after a modest walk-out past the re-arm line and back");
     }
 
     @Test
     void escDismissReoffersIdenticallyToTurnBack() {
-        // ESC-dismiss is indistinguishable from "Turn back" at the pure layer (no crossing, armed stays false).
-        // Same script, same guarantee: exactly one re-offer after clearing REARM_AT once.
-        double[] walk = {75.0, /*ESC*/ 110.0, 300.0 /*out past REARM_AT*/, 100.0, 60.0 /*back*/};
+        double[] walk = {PROMPT - 25.0, PROMPT + 10.0, RAMP - 20.0 /*out past re-arm*/, PROMPT, PROMPT - 40.0};
         assertEquals(2, countPromptsAlongWalk(true, walk),
                 "ESC-dismiss must re-offer the same as turn-back after a walk-out and return");
     }
 
     @Test
-    void modestWalkBackShortOfOldFogBandNowRearms() {
-        // Direct pin of the fix: at dist=300 a disarmed player RE-ARMS. Under the old design (REARM_AT=564)
-        // this same 300 was still inside the sticky band and would have stayed disarmed forever.
-        assertTrue(HemispherePassage.evaluate(false, 300.0).nextArmed(),
-                "300 blocks out (past REARM_AT=250) must re-arm -- the old 564 stranded the player here");
-        assertTrue(300.0 < HemispherePassage.FOG_START,
-                "and 300 is still inside the visual fog band, matching 'I left the heavy fog and came back'");
+    void modestWalkBackShortOfFogOnsetNowRearms() {
+        // At a distance past the re-arm line but still inside the visual fog band, a disarmed player RE-ARMS.
+        double midFog = (REARM + RAMP) / 2.0;
+        assertTrue(eval(false, midFog).nextArmed(),
+                "past the re-arm line must re-arm");
+        assertTrue(midFog < RAMP,
+                "and it is still inside the visual fog band, matching 'I left the heavy fog and came back'");
     }
 
     @Test
     void arrivalSeededPlayerReoffersAfterModestWalkBack() {
-        // The far-side arrival seeds armed=false in-band. It must re-offer after the SAME modest walk-back, not
-        // require the old 464-block trek.
+        // A disarmed-seeded player (belt-and-suspenders arrival seed) re-offers after the modest walk-back.
         double[] walk = {
-                90.0, 130.0,        // arrived in-band, dithering -- no prompt
-                220.0, 260.0,       // modest walk-out past REARM_AT -> re-arm
-                150.0, 80.0,        // return -> first legitimate prompt on the far side
+                PROMPT + 5.0, PROMPT + 40.0,   // in-band, dithering -- no prompt
+                REARM - 10.0, REARM + 5.0,     // modest walk-out past the re-arm line -> re-arm
+                REARM - 50.0, PROMPT - 20.0,   // return -> first legitimate prompt on the far side
         };
         assertEquals(1, countPromptsAlongWalk(false, walk),
                 "an arrival-seeded player must be able to prompt after a modest walk-out and return");
     }
 
     // ---- TEST-84 live regression: the underground GATE must never freeze the re-arm (caller-integration) ----
-    //
-    // These exercise HemispherePassage.evaluateGated -- the FULL client tick INCLUDING the open-gate, which the
-    // Minecraft-coupled caller used to inline and which the pure evaluate() tests above never touched. The live
-    // TEST-84 bug ("re-arm fix verified in the jar, still one-shot forever") lived exactly in that untested seam:
-    // the caller froze the WHOLE machine (re-arm included) whenever the player read as deep-underground, so a
-    // disarmed player who crossed REARM_AT on a below-sea-level / canopy-covered tile (routine on snowy-taiga
-    // rolling terrain) silently skipped the re-arm, and an armed player who reached the edge on such a tile got
-    // no prompt. evaluateGated gates ONLY the open; the arm always tracks distance.
 
-    /**
-     * Model the REAL client tick: persist {@code nextArmed} unconditionally and open iff {@code openPrompt}, with
-     * a per-tick {@code canOpen} (surface AND clear screen). {@code dists} and {@code canOpen} run in lockstep.
-     */
-    private static int countPromptsGatedWalk(boolean startArmed, double[] dists, boolean[] canOpen) {
+    private int countPromptsGatedWalk(boolean startArmed, double[] dists, boolean[] canOpen) {
         assertEquals(dists.length, canOpen.length, "test walk arrays must be the same length");
         boolean armed = startArmed;
         int prompts = 0;
         for (int i = 0; i < dists.length; i++) {
-            HemispherePassage.Decision d = HemispherePassage.evaluateGated(armed, dists[i], canOpen[i]);
+            HemispherePassage.Decision d = HemispherePassage.evaluateGated(armed, dists[i], canOpen[i], PROMPT, REARM);
             if (d.openPrompt()) {
                 prompts++;
             }
@@ -228,34 +204,25 @@ class HemispherePassageTest {
 
     @Test
     void rearmIsTerrainIndependent_disarmedPastRearmRearmsEvenUnderground() {
-        // THE fix, in one line: a disarmed player at dist=300 (> REARM_AT) re-arms whether or not the prompt
-        // could open this tick. The old caller's underground FREEZE returned before evaluate, so canOpen=false
-        // (underground) left armed=false here forever -- the one-shot-forever bug. evaluateGated re-arms on both.
-        assertTrue(HemispherePassage.evaluateGated(false, 300.0, true).nextArmed(),
-                "re-arm past REARM_AT on the surface");
-        assertTrue(HemispherePassage.evaluateGated(false, 300.0, false).nextArmed(),
-                "re-arm past REARM_AT UNDERGROUND too -- re-arm is distance-only, never gated on terrain");
+        double past = (REARM + RAMP) / 2.0;
+        assertTrue(HemispherePassage.evaluateGated(false, past, true, PROMPT, REARM).nextArmed(),
+                "re-arm past the re-arm line on the surface");
+        assertTrue(HemispherePassage.evaluateGated(false, past, false, PROMPT, REARM).nextArmed(),
+                "re-arm past the re-arm line UNDERGROUND too -- re-arm is distance-only, never gated on terrain");
     }
 
     @Test
     void undergroundWalkOutStillRearms_theTest84LiveBug() {
-        // Exact live repro: prompt #1 fires and disarms, the player turns back, then the tick that crosses
-        // REARM_AT happens on a below-surface canopy tile (canOpen=false), and every inland tile is under cover.
-        // Under the old freeze that re-arm tick was skipped and the player was stranded disarmed -> 1 prompt.
-        // With the gate on the OPEN only, the arm tracks distance through the cover -> the return re-prompts (#2).
-        double[] dists   = { 80.0, 120.0, 200.0, 260.0, 300.0, 200.0, 120.0, 70.0 };
-        boolean[] canOpen = { true,  true,  false, false, false, false, true,  true };
-        //  prompt#1^ (surface)              ^--- walk-out crosses REARM_AT entirely under cover ---^   ^return
+        double past = (REARM + RAMP) / 2.0;
+        double[] dists   = { PROMPT - 20.0, PROMPT + 20.0, REARM - 5.0, REARM + 5.0, past, REARM - 5.0, PROMPT + 20.0, PROMPT - 30.0 };
+        boolean[] canOpen = { true,          true,          false,       false,       false, false,       true,          true };
         assertEquals(2, countPromptsGatedWalk(true, dists, canOpen),
-                "a walk-out that crosses REARM_AT while underground must STILL re-arm and re-prompt on return");
+                "a walk-out that crosses the re-arm line while underground must STILL re-arm and re-prompt on return");
     }
 
     @Test
     void undergroundAtEdgeHoldsTheOneShotThenOpensOnSurfacing() {
-        // An armed player reaches the edge (dist<=100) but on below-surface/roofed tiles for several ticks: the
-        // prompt must NOT open there (you cannot cross underground) and must NOT be burned -- it opens exactly
-        // once, the instant they surface, still at the edge. (Item 2's "prompted the instant you surface".)
-        double[] dists   = { 90.0, 80.0, 75.0, 70.0, 70.0 };
+        double[] dists   = { PROMPT - 10.0, PROMPT - 20.0, PROMPT - 25.0, PROMPT - 30.0, PROMPT - 30.0 };
         boolean[] canOpen = { false, false, false, true, true };
         assertEquals(1, countPromptsGatedWalk(true, dists, canOpen),
                 "underground at the edge holds the one-shot and fires exactly once on surfacing");
@@ -263,64 +230,59 @@ class HemispherePassageTest {
 
     @Test
     void screenBlockedOpenHoldsArmThenOpensOnce_gatedParityWithA10() {
-        // evaluateGated subsumes the A10 container-guard too (canOpen also means "no screen up"): a container up
-        // at the edge holds armed=true across ticks, then opens exactly once when it closes -- never swallowed.
-        double[] dists   = { 80.0, 80.0, 80.0, 80.0 };
-        boolean[] canOpen = { false, false, true, true }; // container up, up, closes, ...
+        double[] dists   = { PROMPT - 20.0, PROMPT - 20.0, PROMPT - 20.0, PROMPT - 20.0 };
+        boolean[] canOpen = { false, false, true, true };
         assertEquals(1, countPromptsGatedWalk(true, dists, canOpen),
                 "a screen-blocked prompt is held (not consumed) and fires once when the screen clears");
     }
 
     @Test
     void mixedTerrainRepeatedDeclineCyclesPromptExactlyOncePerApproach() {
-        // Torture walk: two full approach/decline cycles through a mix of open sky, sub-sea-level canopy pockets
-        // (canOpen=false while walking), and a container opened mid-inland. Each genuine surface approach to the
-        // edge must prompt exactly once; nothing double-fires, nothing is swallowed, nothing strands.
+        double past = (REARM + RAMP) / 2.0;
         double[] dists = {
-                300.0, 200.0, 90.0,          // approach #1 -> prompt (disarm)
-                90.0,  150.0, 220.0,         // turn back, walk out (crosses REARM_AT at 220... still <250, no)
-                260.0, 320.0,                // ...now past REARM_AT -> re-arm (some of it under cover)
-                200.0, 120.0, 80.0,          // approach #2 -> prompt (disarm)
-                260.0, 100.0, 60.0,          // out past REARM_AT and back -> would be #3 if not for the block...
+                past + 40.0, REARM, PROMPT - 10.0,       // approach #1 -> prompt (disarm)
+                PROMPT - 10.0, PROMPT + 50.0, REARM - 5.0, // turn back, walk out (still < re-arm, no re-arm)
+                REARM + 5.0, past + 60.0,                 // ...now past the re-arm line -> re-arm
+                REARM, PROMPT + 20.0, PROMPT - 20.0,      // approach #2 -> prompt (disarm)
+                REARM + 5.0, PROMPT, PROMPT - 40.0,       // out past re-arm and back -> would be #3 if not blocked...
         };
         boolean[] canOpen = {
-                true,  true,  true,          // #1 opens on the surface
-                true,  true,  false,         // walk-out partly under cover
-                false, true,                 // re-arm tick 260 under cover, 320 open -- either way re-arms
-                true,  true,  true,          // #2 opens
-                true,  false, false,         // last approach lands on roofed tiles -> held, NOT opened here
+                true,  true,  true,
+                true,  true,  false,
+                false, true,
+                true,  true,  true,
+                true,  false, false,
         };
         assertEquals(2, countPromptsGatedWalk(true, dists, canOpen),
                 "exactly one prompt per genuine surface approach; the final roofed approach is held, not burned");
     }
 
-    // ---- spawned / arrived-in-band => disarmed ---------------------------------------------
+    // ---- arrived-out-of-band => arms naturally ---------------------------------------------
 
     @Test
-    void arrivedInBandSeededDisarmedDoesNotReprompt() {
-        // Mirror-X lands the player at the same small border distance on the far side. Arrival seeds
-        // armed=false; the player must NOT be re-prompted while still inside the band.
+    void arrivedOutOfBandSeededDisarmedRearmsNextTickWithoutPrompting() {
+        // The redesign drops the player PAST the fog (dist == arrivalDist > rearm). The disarmed seed is
+        // harmless: the very next tick re-arms it (no prompt), exactly like a walk-out.
         boolean armed = false; // externally seeded by the S2C arrival
-        double arrivalDist = 90.0; // identical border distance to where they crossed from
-        int prompts = 0;
-        for (int tick = 0; tick < 50; tick++) {
-            HemispherePassage.Decision d = HemispherePassage.evaluate(armed, arrivalDist);
-            if (d.openPrompt()) {
-                prompts++;
-            }
-            armed = d.nextArmed();
-        }
-        assertEquals(0, prompts, "an arrived-in-band disarmed player must not self-reprompt");
+        HemispherePassage.Decision d = eval(armed, ITTY.arrivalDist());
+        assertFalse(d.openPrompt(), "arriving past the fog never self-prompts");
+        assertTrue(d.nextArmed(), "arriving out-of-band re-arms on the next tick");
+    }
+
+    @Test
+    void arrivalDistanceIsBeyondTheRearmLine() {
+        // Pin the invariant the arrival seed relies on: arrival lands past the re-arm line, so the arm re-arms
+        // naturally there (no in-band self-reprompt possible).
+        assertTrue(ITTY.arrivalDist() > REARM, "arrival must land past the re-arm line");
+        assertTrue(ITTY.arrivalDist() > RAMP, "and past the fog onset (past the fog, not in the thick of it)");
     }
 
     @Test
     void arrivedPlayerRearmsAfterFullExitThenCanPromptAgain() {
-        boolean armed = false; // arrived disarmed in-band
-        // Walk fully inland past REARM_AT -> re-arm.
-        armed = HemispherePassage.evaluate(armed, 1000.0).nextArmed();
+        boolean armed = false; // arrived disarmed
+        armed = eval(armed, 3000.0).nextArmed();
         assertTrue(armed);
-        // Return to the edge -> a fresh, legitimate prompt.
-        HemispherePassage.Decision back = HemispherePassage.evaluate(armed, 60.0);
+        HemispherePassage.Decision back = eval(armed, PROMPT - 40.0);
         assertTrue(back.openPrompt());
         assertFalse(back.nextArmed());
     }
@@ -329,42 +291,35 @@ class HemispherePassageTest {
 
     @Test
     void serverAcceptsCrossOnlyNearEdge() {
-        assertTrue(HemispherePassage.serverAcceptsCross(0.0));
-        assertTrue(HemispherePassage.serverAcceptsCross(HemispherePassage.PROMPT_AT));
-        assertTrue(HemispherePassage.serverAcceptsCross(
-                HemispherePassage.PROMPT_AT + HemispherePassage.SERVER_CROSS_SLACK));
+        assertTrue(HemispherePassage.serverAcceptsCross(0.0, PROMPT));
+        assertTrue(HemispherePassage.serverAcceptsCross(PROMPT, PROMPT));
+        assertTrue(HemispherePassage.serverAcceptsCross(PROMPT + HemispherePassage.SERVER_CROSS_SLACK, PROMPT));
     }
 
     @Test
     void serverRejectsSpoofedCrossFromInland() {
-        assertFalse(HemispherePassage.serverAcceptsCross(
-                HemispherePassage.PROMPT_AT + HemispherePassage.SERVER_CROSS_SLACK + 1.0));
-        assertFalse(HemispherePassage.serverAcceptsCross(400.0), "deep in the fog band but past the prompt+slack");
-        assertFalse(HemispherePassage.serverAcceptsCross(3000.0), "inland spoof rejected");
+        assertFalse(HemispherePassage.serverAcceptsCross(PROMPT + HemispherePassage.SERVER_CROSS_SLACK + 1.0, PROMPT));
+        assertFalse(HemispherePassage.serverAcceptsCross(RAMP, PROMPT), "deep in the fog band but past the prompt+slack");
+        assertFalse(HemispherePassage.serverAcceptsCross(3000.0, PROMPT), "inland spoof rejected");
     }
 
     @Test
     void serverRejectsNanOrNegativeDistance() {
-        assertFalse(HemispherePassage.serverAcceptsCross(Double.NaN));
-        assertFalse(HemispherePassage.serverAcceptsCross(-1.0));
+        assertFalse(HemispherePassage.serverAcceptsCross(Double.NaN, PROMPT));
+        assertFalse(HemispherePassage.serverAcceptsCross(-1.0, PROMPT));
     }
 
     // ---- mirror-X geometry (identical Classic / Mercator) ----------------------------------
 
     @Test
     void mirrorXReflectsAboutCenterKeepingLatitudeConcept() {
-        // Classic: xRadius 3750, player at +3000 -> -3000.
         assertEquals(-3000.0, HemispherePassage.mirrorX(3000.0, 0.0), 1e-9);
-        // Mercator: wider xRadius 7500, player at +7000 -> -7000. SAME formula, only the range differs.
         assertEquals(-7000.0, HemispherePassage.mirrorX(7000.0, 0.0), 1e-9);
-        // West-side player mirrors to the east.
         assertEquals(2500.0, HemispherePassage.mirrorX(-2500.0, 0.0), 1e-9);
     }
 
     @Test
     void mirrorXIsAnInvolutionAndPreservesBorderDistance() {
-        // Mirroring twice returns the original; and the mirrored point is the same distance from either edge,
-        // which is exactly why arrival lands in-band (the spawned-in-band contract above).
         double x = 6800.0;
         double centerX = 0.0;
         double mx = HemispherePassage.mirrorX(x, centerX);
@@ -379,81 +334,81 @@ class HemispherePassageTest {
 
     @Test
     void nanDistanceTreatedAsFarAndRearms() {
-        HemispherePassage.Decision d = HemispherePassage.evaluate(false, Double.NaN);
+        HemispherePassage.Decision d = eval(false, Double.NaN);
         assertFalse(d.openPrompt());
         assertTrue(d.nextArmed(), "a bad distance read must not trap the player disarmed");
     }
 
     // ---- B-5-P2 approach fog (A2): the pure distance->fog curves ---------------------------
+    // The fog band runs from RAMP (onset) down to CLIMAX (full). Same numbers the prompt/particles use.
 
     @Test
     void approachProgressEndpointsAndClamp() {
-        // 0 at/beyond FOG_START (500); 1 at/inside PROMPT_AT (100); clamped both sides.
-        assertEquals(0.0, HemispherePassage.approachProgress(HemispherePassage.FOG_START), 1e-9);
-        assertEquals(0.0, HemispherePassage.approachProgress(600.0), 1e-9);
-        assertEquals(1.0, HemispherePassage.approachProgress(HemispherePassage.PROMPT_AT), 1e-9);
-        assertEquals(1.0, HemispherePassage.approachProgress(0.0), 1e-9);
+        assertEquals(0.0, HemispherePassage.approachProgress(RAMP, RAMP, CLIMAX), 1e-9);
+        assertEquals(0.0, HemispherePassage.approachProgress(RAMP + 100.0, RAMP, CLIMAX), 1e-9);
+        assertEquals(1.0, HemispherePassage.approachProgress(CLIMAX, RAMP, CLIMAX), 1e-9);
+        assertEquals(1.0, HemispherePassage.approachProgress(0.0, RAMP, CLIMAX), 1e-9);
     }
 
     @Test
     void approachProgressIsMonotonicIntoTheEdge() {
         double prev = -1.0;
-        // Walking IN (500 -> 100), progress must strictly increase.
-        for (double dist = 500.0; dist >= 100.0; dist -= 20.0) {
-            double p = HemispherePassage.approachProgress(dist);
+        for (double dist = RAMP; dist >= CLIMAX; dist -= 5.0) {
+            double p = HemispherePassage.approachProgress(dist, RAMP, CLIMAX);
             assertTrue(p >= prev, "approach progress must not decrease as the edge nears (dist=" + dist + ")");
             prev = p;
         }
     }
 
     @Test
-    void approachFogIsSeamFreeAtAndBeyondFogStart() {
-        // At/beyond FOG_START the caller's own vanilla fog is returned unchanged -- no onset ring.
+    void approachFogIsSeamFreeAtAndBeyondFogOnset() {
         float vEnd = 240.0f;
         float vStart = 40.0f;
-        assertEquals(vEnd, HemispherePassage.approachFogEnd(vEnd, HemispherePassage.FOG_START), 1e-4f);
-        assertEquals(vEnd, HemispherePassage.approachFogEnd(vEnd, 700.0), 1e-4f);
-        assertEquals(vStart,
-                HemispherePassage.approachFogStart(vStart, vEnd, HemispherePassage.FOG_START), 1e-4f);
-        assertEquals(0.0f, HemispherePassage.approachFogEndFraction(HemispherePassage.FOG_START), 1e-6f);
+        assertEquals(vEnd, HemispherePassage.approachFogEnd(vEnd, RAMP, RAMP, CLIMAX), 1e-4f);
+        assertEquals(vEnd, HemispherePassage.approachFogEnd(vEnd, RAMP + 200.0, RAMP, CLIMAX), 1e-4f);
+        assertEquals(vStart, HemispherePassage.approachFogStart(vStart, vEnd, RAMP, RAMP, CLIMAX), 1e-4f);
+        assertEquals(0.0f, HemispherePassage.approachFogEndFraction(RAMP, RAMP, CLIMAX), 1e-6f);
     }
 
     @Test
     void approachFogOnlyEverTightens() {
         float vEnd = 240.0f;
-        for (double dist = 500.0; dist >= 0.0; dist -= 25.0) {
-            float end = HemispherePassage.approachFogEnd(vEnd, dist);
+        for (double dist = RAMP; dist >= 0.0; dist -= 8.0) {
+            float end = HemispherePassage.approachFogEnd(vEnd, dist, RAMP, CLIMAX);
             assertTrue(end <= vEnd + 1e-4f, "fog end must never loosen past vanilla (dist=" + dist + ")");
-            float start = HemispherePassage.approachFogStart(40.0f, end, dist);
+            float start = HemispherePassage.approachFogStart(40.0f, end, dist, RAMP, CLIMAX);
             assertTrue(start < end, "START must always stay below END (dist=" + dist + ")");
         }
     }
 
     @Test
     void approachFogReachesNearOpaqueWallAtTheEdge() {
-        // At the edge the render-distance end collapses to ~APPROACH_FOG_END_NEAR (a near-opaque wall) regardless
-        // of how far the player's vanilla view distance was.
-        float end = HemispherePassage.approachFogEnd(512.0f, 0.0);
+        float end = HemispherePassage.approachFogEnd(512.0f, 0.0, RAMP, CLIMAX);
         assertEquals(HemispherePassage.APPROACH_FOG_END_NEAR, end, 1e-3f);
-        float start = HemispherePassage.approachFogStart(40.0f, end, 0.0);
+        float start = HemispherePassage.approachFogStart(40.0f, end, 0.0, RAMP, CLIMAX);
         assertEquals(HemispherePassage.APPROACH_FOG_START_NEAR, start,
-                Math.abs(HemispherePassage.APPROACH_FOG_START_NEAR - end)); // near NEAR, still below end
+                Math.abs(HemispherePassage.APPROACH_FOG_START_NEAR - end));
         assertTrue(start < end);
     }
 
     @Test
     void approachFogIsEaseInNotLinear() {
-        // "Weather rolling in": at the mid-point of the band the eased END fraction is BELOW the linear fraction
-        // (thin far out, thickening steeply toward the edge). Progress 0.5 -> 0.5^1.6 < 0.5.
-        double dist = (HemispherePassage.FOG_START + HemispherePassage.PROMPT_AT) / 2.0; // progress ~0.5
-        double linear = HemispherePassage.approachProgress(dist);
-        float eased = HemispherePassage.approachFogEndFraction(dist);
+        double dist = (RAMP + CLIMAX) / 2.0; // progress ~0.5
+        double linear = HemispherePassage.approachProgress(dist, RAMP, CLIMAX);
+        float eased = HemispherePassage.approachFogEndFraction(dist, RAMP, CLIMAX);
         assertTrue(eased < linear, "ease-in: the fog builds slower than linear through the mid-band");
     }
 
     @Test
     void approachFogNanDistanceIsNoFog() {
-        assertEquals(0.0, HemispherePassage.approachProgress(Double.NaN), 1e-9);
-        assertEquals(240.0f, HemispherePassage.approachFogEnd(240.0f, Double.NaN), 1e-4f);
+        assertEquals(0.0, HemispherePassage.approachProgress(Double.NaN, RAMP, CLIMAX), 1e-9);
+        assertEquals(240.0f, HemispherePassage.approachFogEnd(240.0f, Double.NaN, RAMP, CLIMAX), 1e-4f);
+    }
+
+    @Test
+    void approachFogDegenerateBandIsNoFog() {
+        // A pathological rampStart <= climax yields no band (0 progress), never a divide-by-zero.
+        assertEquals(0.0, HemispherePassage.approachProgress(50.0, 40.0, 40.0), 1e-9);
+        assertEquals(0.0, HemispherePassage.approachProgress(50.0, 30.0, 40.0), 1e-9);
     }
 }

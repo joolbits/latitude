@@ -7,17 +7,17 @@ package com.example.globe.core;
  * Minecraft imports (Core Logic layer, unit-testable in a plain JVM): is a given block-X column within the
  * veto band inward from the nearest E/W (X) world-border edge?
  *
- * <p><b>The distance axis (shared with the whole edge story).</b> {@code distToEdge = xRadius - |x - centerX|}
- * -- the exact quantity the passage prompt arms on ({@code GlobeClientState.distanceToEwBorderBlocks}) and the
- * server re-validates a cross on ({@code GlobeMod.distanceToEwEdgeBlocks}). {@code xRadius} is
- * {@code halfSize(border)} (the square world-border half; the Mercator latitude override only affects Z, never
- * this X radius), so one convention drives the fog, the prompt, and now the veto.
+ * <p><b>The distance axis.</b> {@code distToEdge = xRadius - |x - centerX|} -- distance from a column to the
+ * nearest E/W (X) world-border edge, the same shape the passage prompt arms on. {@code xRadius} is the square
+ * world-border half (the Mercator latitude override only affects Z, never this X radius).
  *
- * <p><b>Band width == the fog band.</b> {@link #EDGE_BAND_BLOCKS} is 500, matching {@link
- * HemispherePassage#FOG_START}: the structure-free strip is exactly the visible approach-fog belt, so the two
- * read as one thing -- the wild, empty, storm-hazed frontier before the crossing. Absolute blocks (not a
- * fraction) so it fits sanely inside the smallest world: on Itty-Bitty Classic (xRadius 3750) 500 is ~13% of
- * the radius per side, leaving the vast interior untouched.
+ * <p><b>Band width is a FIXED absolute 500 blocks -- deliberately NOT the visual fog ramp.</b> This is a
+ * WORLDGEN placement-determinism concern (which anchors get a structure), invisible to the eye, so it is kept
+ * at a stable, generous absolute width and does NOT track the degree-anchored approach fog / prompt geometry
+ * ({@link EdgeGeometry}). Keeping it wider than every feature line guarantees a clean, structure-free frontier
+ * around the whole edge experience (and the planned B-6 mirror-band seam) regardless of world size, while a
+ * pure absolute value keeps the vetoed-anchor set trivially deterministic. On Itty-Bitty Classic (xRadius
+ * 3750) 500 is ~13% of the radius per side, leaving the vast interior untouched.
  *
  * <p>The mixin ({@code EdgeStructureVetoMixin}) applies this at the {@code StructureStart.placeInChunk} HEAD
  * (before any block is written -- no half-built structures), keyed on the structure's ANCHOR chunk so every
@@ -28,9 +28,10 @@ package com.example.globe.core;
  */
 public final class EdgeStructureVeto {
 
-    /** Width (blocks) of the structure-free band inward from EACH E/W (X) world-border edge. Matches
-     *  {@link HemispherePassage#FOG_START} (500) so the empty strip and the visible approach fog are one belt. */
-    public static final double EDGE_BAND_BLOCKS = HemispherePassage.FOG_START; // 500
+    /** Width (blocks) of the structure-free band inward from EACH E/W (X) world-border edge. A FIXED absolute
+     *  value (placement-determinism concern) -- deliberately NOT tied to the degree-anchored visual fog ramp;
+     *  it stays wider than every feature line so the whole edge experience sits on a clean, empty frontier. */
+    public static final double EDGE_BAND_BLOCKS = 500.0;
 
     private EdgeStructureVeto() {
     }
