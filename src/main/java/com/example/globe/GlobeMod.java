@@ -363,6 +363,16 @@ public class GlobeMod implements ModInitializer {
                 LOGGER.info("[Latitude] New Globe world: evator captured={} (from latitude.evatorV2.enabled)", captured);
             }
         }
+        // TEST 92 diagnosability (the TEST-77 forensics cost an NBT-birthdate dig to learn this): when the
+        // evator flag is on but THIS world never captured it (born pre-B-6, or captured off), say so plainly
+        // once per load -- the B-5 passage is what will run, by design, and the log should make that a
+        // 2-second read instead of a mystery.
+        if (pendingShape == null
+                && com.example.globe.core.LatitudeV2Flags.EVATOR_V2_ENABLED
+                && !worldState.hasEvatorCapture()) {
+            LOGGER.info("[Latitude evator] inactive on this world: born before B-6 (no birth capture); "
+                    + "the B-5 passage runs instead.");
+        }
         // Ensure the live cache reflects the persisted shape before the border is sized (covers existing worlds).
         LatitudeBiomes.setGlobeShape(LatitudeBiomes.shapeFromString(worldState.getGlobeShape()));
 
