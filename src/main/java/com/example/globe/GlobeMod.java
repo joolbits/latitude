@@ -74,7 +74,7 @@ public class GlobeMod implements ModInitializer {
     public static final int EFFECT_REFRESH_TICKS = 20;
     private static final int EW_WARNING_DISTANCE_BLOCKS = 500;
     private static final int EW_SPAWN_PADDING_BLOCKS = 64;
-    // The E/W sandstorm band onset is FRACTIONAL: particles/warning start at progress
+    // The E/W storm band onset is FRACTIONAL: the storm haze/warning band starts at progress
     // POLAR_STAGE_1_PROGRESS (0.9444) of the X radius, i.e. within ~5.6% of the border. A fixed block margin
     // (500+64) therefore never clears it — on a Tiny world (xRadius 10000) it left spawn AT the onset, and on
     // a large world it left spawn deep inside the sandstorm. Spawn must land below this fraction of xRadius.

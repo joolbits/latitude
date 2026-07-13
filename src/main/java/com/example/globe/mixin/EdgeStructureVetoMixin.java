@@ -76,8 +76,10 @@ public abstract class EdgeStructureVetoMixin {
                 return;
             }
             ChunkPos anchor = this.getChunkPos();
+            // TEST 89: the band is degree-anchored now (173-deg fan-out anchor, floored), NOT a fixed 500 --
+            // so on wide worlds it covers the full visible storm band (176.5 deg) plus a village's fan-out.
             if (EdgeStructureVeto.inEdgeBand(anchor.getMiddleBlockX(), border.getCenterX(), xRadius,
-                    EdgeStructureVeto.EDGE_BAND_BLOCKS)) {
+                    EdgeStructureVeto.bandBlocks(xRadius))) {
                 ci.cancel();
             }
         } catch (Throwable ignored) {

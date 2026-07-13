@@ -5,8 +5,9 @@ package com.example.globe.core;
  * feature geometry. Pure math, zero Minecraft imports (Core Logic layer, unit-testable in a plain JVM).
  *
  * <h2>Why this class exists (the TEST 86 flight-recorder finding)</h2>
- * Every edge feature -- the approach fog, the crossing prompt, the arm re-arm line, the two-tier warning
- * banner, the EW storm particles, the mirror-teleport arrival -- USED to derive its trigger distances from
+ * Every edge feature -- the approach fog, the crossing prompt, the arm re-arm line, the single white
+ * advisory banner (TEST 89 retired the two-tier system and the EW dust particles), the mirror-teleport
+ * arrival -- USED to derive its trigger distances from
  * the LIVE {@code WorldBorder} size ({@code getSize()*0.5}). In Peetsa's TEST-86 world the vanilla border was
  * mid-LERP at join (a stale {@code BorderLerp*} persisted in level.dat, growing halfSize over ~4 minutes), so
  * every one of those lines physically SLID ~100 blocks during his session -- a very plausible contributor to
@@ -21,21 +22,26 @@ package com.example.globe.core;
  * "176 or 177" degrees so that after a crossing you land PAST the fog, not "in the thick of it." The anchors
  * (edge = 180):
  * <ul>
- *   <li>{@link #RAMP_START_DEG} 176.5 -- fog begins, EW storm particles begin, warning-banner visibility cap.
+ *   <li>{@link #RAMP_START_DEG} 176.5 -- fog begins, warning-banner (single white advisory) visibility cap.
  *       NOTHING edge-related is visible equatorward of here.</li>
- *   <li>{@link #REARM_DEG} 177.0 -- the passage arm re-arms once the player walks back out past this line
- *       (sits between the ramp start and the severe banner).</li>
- *   <li>{@link #SEVERE_DEG} 178.0 -- the warning banner escalates to its severe (whiteout/sandstorm) tier.</li>
+ *   <li>{@link #REARM_DEG} 178.0 -- the passage arm re-arms once the player walks back out past this line
+ *       (TEST 89: raised 177 -> 178 so a player who drifts only a couple of degrees off the wall gets the
+ *       crossing prompt again -- 3 deg out was too far to re-prompt; now it sits just 1 deg beyond the
+ *       179-deg prompt line, still comfortably past the DEAD_ZONE hysteresis floor).</li>
  *   <li>{@link #PROMPT_DEG} 179.0 -- the crossing prompt opens (closest to the edge).</li>
  *   <li>{@link #ARRIVAL_INLAND_DEG} -- how far equatorward of the ramp start the crossing DROPS the player on
  *       the far side (one degree past the fog onset -- "past the fog, not in the thick of it").</li>
  * </ul>
  *
+ * <p>(TEST 89: the old {@code SEVERE_DEG} 178 anchor is GONE -- the warning banner's two-tier system was
+ * retired for a single white advisory, so there is no longer a severe-tier boundary to anchor. 178 deg is now
+ * simply where the passage arm re-arms.)
+ *
  * <h2>The nested ordering invariant</h2>
- * In DEGREES the anchors nest {@code prompt(179) > severe(178) > rearm(177) > rampStart(176.5)} -- prompt
- * closest to the edge. Translated to DISTANCE-FROM-EDGE (which shrinks toward the edge) that inverts to
- * {@code promptDist < severeDist < rearmDist < rampStartDist}. {@link #resolve} preserves that strict
- * ordering on EVERY world size.
+ * In DEGREES the anchors nest {@code prompt(179) > rearm(178) > rampStart(176.5)} -- prompt closest to the
+ * edge. Translated to DISTANCE-FROM-EDGE (which shrinks toward the edge) that inverts to
+ * {@code promptDist < rearmDist < rampStartDist}. {@link #resolve} preserves that strict ordering on EVERY
+ * world size.
  *
  * <h2>Block floors for small worlds</h2>
  * On the smallest world (Itty-Bitty Classic, xRadius 3750) one degree is only ~20.8 blocks, so the pure
@@ -55,8 +61,9 @@ package com.example.globe.core;
  * <h2>NOT in scope of this class</h2>
  * The polar N/S geometry, the polar warning-ladder degree constants (KEEP-SHARED with the EW axis via
  * {@code LatitudeMath.POLAR_STAGE_*}), and the polar fog are the OTHER axis -- untouched. The
- * {@code EdgeStructureVeto} band is a separate placement-determinism concern kept at an absolute 500 blocks
- * (invisible to the eye), deliberately NOT following this visual ramp.
+ * {@code EdgeStructureVeto} band is a separate placement-determinism concern; it is ALSO degree-anchored now
+ * (TEST 89: its own 173-deg anchor, poleward of this visual ramp plus a fan-out buffer), but it derives its
+ * own width and does not read this record.
  */
 public final class EdgeGeometry {
 
@@ -65,13 +72,11 @@ public final class EdgeGeometry {
 
     // ---- degree anchors (longitude degrees from world center; the antimeridian edge is 180) ----
 
-    /** Fog / EW particles / banner-visibility onset. Peetsa: "176 or 177" -- nothing edge-related shows
-     *  equatorward of here. */
+    /** Fog / banner-visibility onset. Peetsa: "176 or 177" -- nothing edge-related shows equatorward of here. */
     public static final double RAMP_START_DEG = 176.5;
-    /** The passage arm re-arms once the player is farther out than this (between ramp start and severe). */
-    public static final double REARM_DEG = 177.0;
-    /** The warning banner escalates to its severe (whiteout/sandstorm) tier at/inside this. */
-    public static final double SEVERE_DEG = 178.0;
+    /** The passage arm re-arms once the player is farther out than this. TEST 89: raised 177 -> 178 (just 1 deg
+     *  beyond the 179-deg prompt line) so a small drift off the wall re-prompts the crossing. */
+    public static final double REARM_DEG = 178.0;
     /** The crossing prompt opens at/inside this -- closest to the edge. */
     public static final double PROMPT_DEG = 179.0;
     /** How far equatorward of the (resolved) ramp start the crossing drops the arriving player: one degree
@@ -88,7 +93,7 @@ public final class EdgeGeometry {
     /** The fog ramp (onset -> full-fog climax) is at least this wide so the front reads as gathering. */
     public static final double FOG_BAND_MIN_BLOCKS = 120.0;
     /** Strict-ordering epsilon: when a floor pushes a nearer line out, the next line out is kept at least this
-     *  much farther so {@code prompt < severe < rearm < rampStart} never inverts or ties. */
+     *  much farther so {@code prompt < rearm < rampStart} never inverts or ties. */
     public static final double ORDER_MIN_STEP_BLOCKS = 8.0;
     /** Minimum inland margin (blocks) the arrival keeps past the ramp start on tiny worlds, where one degree
      *  is only ~20 blocks -- so the player still lands clearly outside the fog. */
@@ -118,11 +123,10 @@ public final class EdgeGeometry {
     /**
      * The resolved, per-world block geometry: every distance is measured FROM the E/W edge (shrinks toward
      * the wall) and derived purely from the intended X radius, with the small-world floors applied and the
-     * strict ordering {@code promptDist < severeDist < rearmDist < rampStartDist} guaranteed.
+     * strict ordering {@code promptDist < rearmDist < rampStartDist} guaranteed.
      */
     public record Resolved(double xRadiusIntended,
                            double promptDist,
-                           double severeDist,
                            double rearmDist,
                            double rampStartDist,
                            double fogClimaxDist,
@@ -145,10 +149,9 @@ public final class EdgeGeometry {
 
         // Nearest-to-edge first, flooring and then re-tightening the ordering outward so no floor can invert it.
         double prompt = Math.max(distForDeg(PROMPT_DEG, xRadiusIntended), PROMPT_MIN_DIST_BLOCKS);
-        double severe = Math.max(distForDeg(SEVERE_DEG, xRadiusIntended), prompt + ORDER_MIN_STEP_BLOCKS);
-        double rearm = Math.max(
-                Math.max(distForDeg(REARM_DEG, xRadiusIntended), prompt + DEAD_ZONE_MIN_BLOCKS),
-                severe + ORDER_MIN_STEP_BLOCKS);
+        // Re-arm sits at 178 deg but never closer than DEAD_ZONE_MIN (64) past the prompt line -- the
+        // anti-machine-gun hysteresis floor still wins on tiny worlds (Itty: distForDeg(178)=41.7 < 104).
+        double rearm = Math.max(distForDeg(REARM_DEG, xRadiusIntended), prompt + DEAD_ZONE_MIN_BLOCKS);
         double climax = prompt; // fog reaches full opacity at the prompt line and holds to the wall
         double rampStart = Math.max(
                 Math.max(distForDeg(RAMP_START_DEG, xRadiusIntended), climax + FOG_BAND_MIN_BLOCKS),
@@ -159,6 +162,6 @@ public final class EdgeGeometry {
         // the fog. On Small/Regular Wide this equals exactly 175.5 deg (the degree floor doesn't bind).
         double arrival = rampStart + Math.max(ARRIVAL_INLAND_DEG * bpd, ARRIVAL_MARGIN_MIN_BLOCKS);
 
-        return new Resolved(xRadiusIntended, prompt, severe, rearm, rampStart, climax, arrival);
+        return new Resolved(xRadiusIntended, prompt, rearm, rampStart, climax, arrival);
     }
 }
