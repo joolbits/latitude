@@ -169,6 +169,82 @@ public final class HemispherePassageService {
     }
 
     /**
+     * B-6 P2 -- the SILENT, momentum-preserving crossing for an ALREADY-VALIDATED evator trigger. Callers own
+     * the guards ({@code EvatorMirror.active()}, alive/online, surface, cooldown, the {@link
+     * com.example.globe.core.EvatorCrossing} one-shot); this trusts them and does only the mechanical move.
+     * Returns the arrival position, or {@code null} if the mirror column is unsafe (player NOT moved).
+     *
+     * <p><b>How it differs from {@link #crossHemisphere} (B-5's ceremony move), per the design amendments:</b>
+     * <ol>
+     *   <li><b>Arrival AT the mirrored position</b> -- {@code targetX = mirrorX(x)}, {@code z} unchanged --
+     *       NOT pulled inland to {@code EdgeGeometry.arrivalDist}. The mirror band (B-6 P1) makes the terrain
+     *       there the proven near-mirror of where the player stands, so landing anywhere else would break the
+     *       invisible seam. Exact doubles are preserved (no snap to block center): sub-block position carries
+     *       through the seam.</li>
+     *   <li><b>NO search, NO nudge (amendment 6).</b> If {@link GlobeMod#placeSafeY} refuses the mirror column
+     *       (e.g. the player is swimming, so the mirror is water too), the crossing NO-OPS and the caller logs
+     *       it -- the player stays at the wall (the border there is a damage boundary that halts progress, not
+     *       solid collision; the machine's HELD one-shot, not the wall, is what guarantees the trigger). An
+     *       inland fallback would silently violate "land in identical terrain"; correctness over availability.</li>
+     *   <li><b>Momentum PRESERVED via the packet, not post-hoc (amendment 5).</b> {@code Relative.DELTA_X/Y/Z}
+     *       ride inside the {@code teleportTo} relative-set, so the position packet itself carries
+     *       "keep your velocity" ({@code PositionMoveRotation.apply}: with a DELTA flag the final velocity is
+     *       {@code current + target(=0) = current}). A post-hoc {@code setDeltaMovement} LOSES to the position
+     *       packet. Rotation is likewise preserved exactly by passing {@code X_ROT/Y_ROT} as relative with 0/0
+     *       -- the player keeps facing precisely as they were, mid-stride.</li>
+     *   <li><b>{@code fallDistance} NOT reset</b> -- they are mid-stride, not spawning; an elytra dive carries
+     *       its physics through the seam.</li>
+     *   <li><b>Dismount stays</b> ({@code stopRiding}) -- mount-carry remains out of scope, same as B-5; a
+     *       mounted crossing is logged so the dismount is never a silent surprise.</li>
+     * </ol>
+     *
+     * <p>The mirrored Y should be near-identical by the mirror (P1's proven twin wobble: typically +-2, max 9
+     * blocks on steep gradients). The arrival Y is the player's own Y when the mirror column is probed FREE
+     * there (the seamless norm), else {@code placeSafeY}'s validated surface -- see the probe in the body and
+     * {@code EvatorCrossing.chooseArrivalY}.
+     */
+    static BlockPos crossHemisphereMomentum(ServerPlayer player) {
+        ServerLevel world = (ServerLevel) player.level();
+        WorldBorder border = world.getWorldBorder();
+        double centerX = border.getCenterX();
+        double targetX = HemispherePassage.mirrorX(player.getX(), centerX);
+        double targetZ = player.getZ(); // z unchanged -- the reflection is X-only.
+
+        // ONE probe, at the exact mirror column: 3x3 FULL ring + fluid/air safety. Null = no-op (caller logs).
+        BlockPos safe = GlobeMod.placeSafeY(world, Mth.floor(targetX), Mth.floor(targetZ));
+        if (safe == null) {
+            return null;
+        }
+        // Arrival Y (P2 sweep refinement): the player keeps their EXACT Y iff it is actually FREE at the
+        // mirror column -- feet AND head probed as loaded air (two block reads on the ring placeSafeY just
+        // force-loaded; unloaded reads as not-free). Free covers both the airborne flyer (keeps altitude, no
+        // ground-slam) and the common grounded case (the mirror makes matching heights the norm). Not free --
+        // a solid non-leaf overhang mirrored overhead, or a flyer level with a mirrored floating island --
+        // falls back to the VALIDATED safe surface: a visible but SAFE pop, only in those rare cases (the old
+        // unprobed max(safeY, playerY) would have put an under-arch walker on the arch roof, or a flyer
+        // inside unvalidated blocks). Pure decision: EvatorCrossing.chooseArrivalY.
+        BlockPos feetAtMirror = BlockPos.containing(targetX, player.getY(), targetZ);
+        boolean playerYFree = world.isLoaded(feetAtMirror)
+                && world.getBlockState(feetAtMirror).isAir()
+                && world.getBlockState(feetAtMirror.above()).isAir();
+        double targetY = com.example.globe.core.EvatorCrossing.chooseArrivalY(playerYFree, safe.getY(), player.getY());
+
+        boolean wasRiding = player.isPassenger();
+        // Dismount first: no mount-carry across the seam, no ghost vehicle at the origin (B-5 scope decision).
+        player.stopRiding();
+        if (wasRiding) {
+            GlobeMod.LOGGER.info("[Latitude][Evator] {} crossed while mounted; dismounted (mount-carry out of scope)",
+                    player.getName().getString());
+        }
+        // Momentum + facing preserved THROUGH the teleport packet (amendment 5): DELTA_X/Y/Z keep velocity,
+        // relative X_ROT/Y_ROT with 0/0 keep the exact yaw/pitch. fallDistance deliberately NOT reset.
+        player.teleportTo(world, targetX, targetY, targetZ,
+                EnumSet.of(Relative.DELTA_X, Relative.DELTA_Y, Relative.DELTA_Z, Relative.X_ROT, Relative.Y_ROT),
+                0.0F, 0.0F, true);
+        return BlockPos.containing(targetX, targetY, targetZ);
+    }
+
+    /**
      * The latitude-safe |Z| ceiling for arrival: stay equatorward of the pole warning band so a crossing can
      * never dump the player into the lethal polar cap. Mirrors {@code resolveSpawnChoice}'s {@code maxAbsZ}
      * discipline (warnStart - 500).

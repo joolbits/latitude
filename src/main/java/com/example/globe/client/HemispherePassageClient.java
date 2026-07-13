@@ -135,6 +135,19 @@ public final class HemispherePassageClient {
             phase = HemispherePassage.Phase.ARMED; // re-arm for the next globe world
             return;
         }
+        // B-6 P2 suppression gate (the flag-matrix row "evator supersedes the ceremony"): in an evator world
+        // the SILENT crossing owns the band -- this machine never arms and never opens the prompt. ONE clean
+        // gate at the tick top, driven by the server-authoritative handshake bit (never inferred from
+        // position); on a refused-mirror world the bit is false and the full B-5 prompt stands (the degrade
+        // contract). Deliberately suppresses ONLY the prompt/curtain path: the approach fog, the storm
+        // ambience and the EW advisory banner all stay -- the fog is load-bearing (it masks the mirror band's
+        // inner-frontier seam) and the advisory's fog-and-care wording stays honest (there IS fog; the
+        // crossing just happens silently). driveCurtain above keeps running so even a pathological in-flight
+        // curtain can never strand behind this gate; armed parks true for a next, non-evator world.
+        if (GlobeClientState.isEvatorWorld()) {
+            armed = true;
+            return;
+        }
         // While the curtain is up, a crossing is mid-flight -- do not evaluate the arm or open a prompt.
         if (curtain != Curtain.NONE) {
             PassageDebug.snapshotCurtainUp(mc, phase, curtain.name());

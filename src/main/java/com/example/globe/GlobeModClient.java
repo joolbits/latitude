@@ -82,6 +82,7 @@ public class GlobeModClient implements ClientModInitializer {
 
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
             GlobeClientState.setGlobeWorld(false);
+            GlobeClientState.setEvatorWorld(false); // B-6: never leak an evator gate across worlds.
             com.example.globe.util.LatitudeMath.setLatitudeZRadius(0);
             com.example.globe.util.LatitudeMath.setIntendedXRadius(0);
             // U-D world-switch hygiene: per-world caches (HUD strings, compass presence, dial-texture
@@ -104,14 +105,16 @@ public class GlobeModClient implements ClientModInitializer {
             }
             context.client().execute(() -> {
                 GlobeClientState.setGlobeWorld(payload.isGlobe());
+                // B-6: the authoritative evator bit -- the client B-5 prompt machine stands down when true.
+                GlobeClientState.setEvatorWorld(payload.isGlobe() && payload.evatorActive());
                 // Mercator: latitude (Z) radius differs from the X-sized border half; drive HUD/zone/pole off it.
                 com.example.globe.util.LatitudeMath.setLatitudeZRadius(payload.isGlobe() ? payload.latitudeZRadius() : 0);
                 // Intended X (longitude) radius: anchors ALL E/W-edge feature geometry (fog/prompt/re-arm/
                 // banner/arrival) so a lerping/vandalized live border can't slide those lines. (TEST 89 removed
                 // the EW dust particles, so they are no longer among the consumers.)
                 com.example.globe.util.LatitudeMath.setIntendedXRadius(payload.isGlobe() ? payload.intendedXRadius() : 0);
-                GlobeMod.LOGGER.info("S2C globe state: isGlobe={} latitudeZRadius={} intendedXRadius={}",
-                        payload.isGlobe(), payload.latitudeZRadius(), payload.intendedXRadius());
+                GlobeMod.LOGGER.info("S2C globe state: isGlobe={} latitudeZRadius={} intendedXRadius={} evatorActive={}",
+                        payload.isGlobe(), payload.latitudeZRadius(), payload.intendedXRadius(), payload.evatorActive());
             });
         });
 

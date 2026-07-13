@@ -33,7 +33,8 @@ public final class GlobeNet {
         PayloadTypeRegistry.clientboundPlay().register(PassageArrivalPayload.ID, PassageArrivalPayload.CODEC);
     }
 
-    public record GlobeStatePayload(boolean isGlobe, int latitudeZRadius, int intendedXRadius) implements CustomPacketPayload {
+    public record GlobeStatePayload(boolean isGlobe, int latitudeZRadius, int intendedXRadius,
+                                    boolean evatorActive) implements CustomPacketPayload {
         public static final Type<GlobeStatePayload> ID = new Type<>(Identifier.fromNamespaceAndPath("globe", "s2c_globe_state"));
         // latitudeZRadius is the Z (latitude) radius in blocks. For Mercator worlds this differs from the
         // (X-sized) WorldBorder half, so the client needs it to render correct latitude/zone/pole HUD.
@@ -41,6 +42,11 @@ public final class GlobeNet {
         // anchors ALL E/W-edge feature geometry (fog/prompt/re-arm/banner) on it instead of the live
         // border half, so a lerping/vandalized border can't slide those lines (TEST 86 finding). Both 0 mean
         // "use the border half" (Classic byte-identical / not-a-globe).
+        // evatorActive (B-6 P2, appended LAST -- the same field-order discipline as the intendedXRadius
+        // addition): the server's EFFECTIVE EvatorMirror.active() for this world (flag && per-world capture &&
+        // terrain mirror actually installed -- the P2 contract), sent authoritatively so the client's B-5
+        // prompt path can stand down inside the band WITHOUT inferring anything from position. Pre-handshake /
+        // non-globe / refused-mirror fallback is false = the B-5 experience exactly as shipped.
         public static final StreamCodec<RegistryFriendlyByteBuf, GlobeStatePayload> CODEC = StreamCodec.composite(
                 ByteBufCodecs.BOOL,
                 GlobeStatePayload::isGlobe,
@@ -48,6 +54,8 @@ public final class GlobeNet {
                 GlobeStatePayload::latitudeZRadius,
                 ByteBufCodecs.VAR_INT,
                 GlobeStatePayload::intendedXRadius,
+                ByteBufCodecs.BOOL,
+                GlobeStatePayload::evatorActive,
                 GlobeStatePayload::new
         );
 

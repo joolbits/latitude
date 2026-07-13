@@ -298,6 +298,23 @@ public final class GlobeClientState {
         }
     }
 
+    // B-6 Teleport-Evator (P2): the AUTHORITATIVE per-world evator bit, synced from the server's
+    // EvatorMirror.active() (flag && per-world capture && terrain mirror actually installed) on the
+    // GlobeStatePayload handshake -- never inferred from position or a local flag. When true, the B-5
+    // prompt/curtain client path stands down inside the band (the silent crossing owns it); the approach
+    // fog, storm ambience and EW advisory banner all STAY (the fog is load-bearing -- it masks the mirror
+    // band's inner-frontier seam). Pre-handshake default false = the full B-5 experience.
+    private static boolean evatorWorld;
+
+    /** True iff the CURRENT world runs the silent teleport-evator crossing (server-authoritative). */
+    public static boolean isEvatorWorld() {
+        return evatorWorld;
+    }
+
+    public static void setEvatorWorld(boolean value) {
+        evatorWorld = value;
+    }
+
     public record Eval(boolean active, boolean surfaceOk, int absX, int absZ,
                       float polarFogSeverity, float polarWhiteoutSeverity,
                       float stormFogSeverity, float stormSevereSeverity, float stormOpaqueSeverity,

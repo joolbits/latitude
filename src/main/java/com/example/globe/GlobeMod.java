@@ -106,6 +106,18 @@ public class GlobeMod implements ModInitializer {
     private static final java.util.Map<java.util.UUID, Long> PASSAGE_LAST_CROSS_TICK = new java.util.HashMap<>();
     private static final long PASSAGE_CROSS_COOLDOWN_TICKS = 60L;
 
+    // B-6 Teleport-Evator (P2): per-player SILENT-crossing arm state -- the pure machine is
+    // {@link com.example.globe.core.EvatorCrossing}; this map just persists its State between ticks. Absent
+    // entry = DISARMED (the fresh-tracking contract: everyone outside the pre-warm line re-arms on their first
+    // evaluated tick; a player who joins already in-band must walk out first, never insta-teleports at login).
+    // Thread-confined to the server thread (written only from borderUxTick + DISCONNECT); cleared on disconnect.
+    private static final java.util.Map<java.util.UUID, com.example.globe.core.EvatorCrossing.State> EVATOR_STATE =
+            new java.util.HashMap<>();
+    // B-6: per-player crossing-ATTEMPT cooldown (the B-5 PASSAGE_CROSS_COOLDOWN pattern, same 60 ticks).
+    // Stamped on every trigger fire, success or refusal, so (a) an anti-bounce window always follows a cross
+    // and (b) a refused landing (unsafe mirror column) logs at most once per cooldown rather than per tick.
+    private static final java.util.Map<java.util.UUID, Long> EVATOR_LAST_CROSS_TICK = new java.util.HashMap<>();
+
 
     private static final Identifier GLOBE_SETTINGS_ID = Identifier.fromNamespaceAndPath(MOD_ID, "overworld");
     private static final Identifier GLOBE_SETTINGS_XSMALL_ID = Identifier.fromNamespaceAndPath(MOD_ID, "overworld_xsmall");
@@ -173,9 +185,14 @@ public class GlobeMod implements ModInitializer {
             boolean isGlobe = isGlobeOverworld(overworld);
             int latitudeZRadius = isGlobe ? LatitudeBiomes.getActiveRadiusBlocks() : 0;
             int intendedXRadius = isGlobe ? LatitudeBiomes.getActiveXRadiusBlocks() : 0;
-            LOGGER.info("JOIN: player={}, isGlobeOverworld={}, latitudeZRadius={}, intendedXRadius={}",
-                    handler.player.getName().getString(), isGlobe, latitudeZRadius, intendedXRadius);
-            ServerPlayNetworking.send(handler.player, new GlobeNet.GlobeStatePayload(isGlobe, latitudeZRadius, intendedXRadius));
+            // B-6 P2: the EFFECTIVE evator signal (flag && per-world capture && terrain mirror actually
+            // installed -- the P2 contract, one call). Stable by JOIN time: the capture is pushed and the
+            // router install has run (or refused) during world load, before any player connects. False here =
+            // the client keeps the full B-5 prompt experience (the degrade path for a refused mirror).
+            boolean evatorActive = isGlobe && com.example.globe.terrain.EvatorMirror.active();
+            LOGGER.info("JOIN: player={}, isGlobeOverworld={}, latitudeZRadius={}, intendedXRadius={}, evatorActive={}",
+                    handler.player.getName().getString(), isGlobe, latitudeZRadius, intendedXRadius, evatorActive);
+            ServerPlayNetworking.send(handler.player, new GlobeNet.GlobeStatePayload(isGlobe, latitudeZRadius, intendedXRadius, evatorActive));
 
             LatitudeWorldState worldState = LatitudeWorldState.get(overworld);
             boolean isBrandNewWorld = overworld.getGameTime() < 100L;
@@ -222,9 +239,12 @@ public class GlobeMod implements ModInitializer {
         });
 
         // B-5: drop any pending turn-back nudge + cross-cooldown entry for a player who leaves.
+        // B-6: drop the evator arm state + attempt cooldown too (a rejoin starts DISARMED by contract).
         ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
             PENDING_PASSAGE_TURN_BACK.remove(handler.player.getUUID());
             PASSAGE_LAST_CROSS_TICK.remove(handler.player.getUUID());
+            EVATOR_STATE.remove(handler.player.getUUID());
+            EVATOR_LAST_CROSS_TICK.remove(handler.player.getUUID());
         });
 
         ServerTickEvents.END_SERVER_TICK.register(GlobeMod::borderUxTick);
@@ -482,6 +502,10 @@ public class GlobeMod implements ModInitializer {
                 applyPendingPassageTurnBack(player, border);
             }
 
+            // B-6 P2: the SILENT crossing (also an E/W-edge concern -- before the latitude continue). Entirely
+            // inert unless EvatorMirror.active() (checked inside): flag + per-world capture + mirror installed.
+            evatorCrossingTick(overworld, border, player, worldTime);
+
             // B-3a: continuous player-affecting hazard window [87.5,90]. The ONLY player-affecting hazardous
             // band -- everything below 87.5 deg stays fully explorable. Onset moved 88.5 -> 87.5 (TEST 76:
             // Peetsa took ZERO freeze damage at 89 because the old curve only crossed vanilla's fully-frozen
@@ -544,6 +568,92 @@ public class GlobeMod implements ModInitializer {
     }
 
     /**
+     * B-6 P2 -- the SILENT crossing driver, one player per call, inside the {@link #borderUxTick} per-player
+     * loop (the established E/W-edge host). No prompt, no curtain, no title: the pure
+     * {@link com.example.globe.core.EvatorCrossing} machine decides, this method performs.
+     *
+     * <p><b>Gate (the P2 contract).</b> The single {@code EvatorMirror.active()} call covers the global flag,
+     * the per-world birth capture AND "the terrain mirror is actually installed" -- on a refused/degraded world
+     * this returns immediately and the B-5 prompt path (which {@link #handlePassageAnswer} only accepts when
+     * the evator is NOT active) owns the band.
+     *
+     * <p><b>Per tick:</b> resolve the degree-anchored lines ({@link com.example.globe.core.MirrorGeometry},
+     * intended-radius anchored -- immune to a lerping border), evaluate the machine, then:
+     * <ul>
+     *   <li>{@code firePreWarm} (once per approach, at the 177-deg line): force-load the 3x3 FULL ring at the
+     *       MIRRORED target so the silent teleport's destination is hot. Just the mirror column's ring -- no
+     *       budgeted search (the mirror band guarantees the terrain; there is nothing to search for).</li>
+     *   <li>{@code fireCross} (once per approach, at the 179.5-deg line): stamp the attempt cooldown, then
+     *       {@link HemispherePassageService#crossHemisphereMomentum} -- arrival AT the mirrored position with
+     *       momentum + facing preserved. On a refused landing (unsafe mirror column, e.g. the player is
+     *       swimming): NO search, NO nudge -- log once per cooldown and leave them at the vanilla wall
+     *       (amendment 6/10: correctness over availability; the border is a damage boundary that halts
+     *       progress -- the HELD one-shot, not the wall, is what guarantees the trigger fires).</li>
+     * </ul>
+     *
+     * <p><b>Eligibility ({@code canCross}, which HOLDS the one-shot rather than burning it):</b> alive, not
+     * spectator (spectators noclip the border on purpose; yanking their freecam would fight the mode --
+     * creative players DO cross, same as B-5), on the surface (the passage is surface-only: underground there
+     * is just the border wall), attempt cooldown clear. Re-arm is never gated -- pure distance.
+     *
+     * <p><b>No S2C ceremony payload.</b> The mirror preserves border distance, so every distance-driven client
+     * effect (fog, banner, particles) is CONTINUOUS through the jump, and the client's B-5 prompt machine is
+     * fully stood down in evator worlds (the {@code evatorActive} handshake bit) -- there is no client evator
+     * state to seed, hence nothing to send. The arrived player is seeded DISARMED server-side; their inward
+     * momentum walks them out past the pre-warm line, which re-arms naturally.
+     */
+    private static void evatorCrossingTick(ServerLevel world, WorldBorder border, ServerPlayer player, long worldTime) {
+        if (!com.example.globe.terrain.EvatorMirror.active()) {
+            return; // P2 contract: no live mirror (flag off / not captured / install refused) -> B-5 owns the band.
+        }
+        java.util.UUID id = player.getUUID();
+        double distToEdge = distanceToEwEdgeBlocks(border, player.getX());
+        double xRadiusIntended = com.example.globe.util.LatitudeMath.intendedXRadius(border);
+        com.example.globe.core.MirrorGeometry.Resolved geo =
+                com.example.globe.core.MirrorGeometry.resolve(xRadiusIntended);
+
+        Long lastAttempt = EVATOR_LAST_CROSS_TICK.get(id);
+        boolean cooldownClear = lastAttempt == null || (worldTime - lastAttempt) >= PASSAGE_CROSS_COOLDOWN_TICKS;
+        boolean canCross = cooldownClear
+                && player.isAlive() && !player.isRemoved()
+                && !player.isSpectator()
+                && !isDeepUnderground(world, player);
+
+        com.example.globe.core.EvatorCrossing.State state =
+                EVATOR_STATE.getOrDefault(id, com.example.globe.core.EvatorCrossing.State.DISARMED);
+        com.example.globe.core.EvatorCrossing.Outcome out = com.example.globe.core.EvatorCrossing.evaluate(
+                state, distToEdge, canCross, geo.triggerDist(), geo.preWarmDist());
+
+        if (out.firePreWarm()) {
+            // One-shot per approach episode: heat the mirrored 3x3 ring so the teleport's far side is loaded.
+            int mirrorX = Mth.floor(com.example.globe.core.HemispherePassage.mirrorX(player.getX(), border.getCenterX()));
+            int mirrorZ = Mth.floor(player.getZ());
+            int ringCells = loadSpawnTargetChunkRing(world, mirrorX, mirrorZ);
+            LOGGER.info("[Latitude][Evator] Pre-warmed mirror ring for {} at x={} z={} ({} ring cells)",
+                    player.getName().getString(), mirrorX, mirrorZ, ringCells);
+        }
+
+        if (out.fireCross()) {
+            // Stamp the ATTEMPT (success or refusal): anti-bounce window + log-once-per-cooldown on refusal.
+            EVATOR_LAST_CROSS_TICK.put(id, worldTime);
+            BlockPos arrival = HemispherePassageService.crossHemisphereMomentum(player);
+            if (arrival != null) {
+                // Arrive DISARMED-in-band: the mirror preserves border distance, so without this seed the far
+                // side would re-fire. The player lands moving INWARD; walking out past the pre-warm line
+                // re-arms both one-shots naturally.
+                EVATOR_STATE.put(id, com.example.globe.core.EvatorCrossing.State.DISARMED);
+                LOGGER.info("[Latitude][Evator] Silent crossing: {} -> mirror x={} y={} z={} (momentum preserved)",
+                        player.getName().getString(), arrival.getX(), arrival.getY(), arrival.getZ());
+                return;
+            }
+            LOGGER.warn("[Latitude][Evator] No safe mirror column for {} at x={} z={}; staying at the wall "
+                            + "(no search, no nudge by design -- the border halts progress; walk out to re-arm)",
+                    player.getName().getString(), player.getX(), player.getZ());
+        }
+        EVATOR_STATE.put(id, out.next());
+    }
+
+    /**
      * B-5 Hemisphere Passage: handle a player's answer to the crossing prompt, on the server thread. NEVER
      * trusts the client -- re-derives the authoritative edge distance and rejects anything not in the prompt
      * band. Guards (in order): feature flag on; player alive + not removed (died/disconnected between answer
@@ -554,6 +664,15 @@ public class GlobeMod implements ModInitializer {
     private static void handlePassageAnswer(ServerPlayer player, boolean cross) {
         if (!com.example.globe.core.LatitudeV2Flags.PASSAGE_V2_ENABLED) {
             return; // feature off: every answer ignored, live edge behavior untouched.
+        }
+        // B-6 P2 belt-and-suspenders (flag-matrix row "evator supersedes the ceremony"): in a live-evator world
+        // the silent crossing owns the band and the client never opens the prompt (the evatorActive handshake
+        // bit) -- so any B-5 answer arriving here is stale or spoofed. Reject it. On a refused-mirror world
+        // EvatorMirror.active() is false and the full B-5 path stands (the degrade contract).
+        if (com.example.globe.terrain.EvatorMirror.active()) {
+            LOGGER.warn("[Latitude][Passage] Rejected answer from {} cross={} (evator active: the silent crossing owns the band)",
+                    player != null ? player.getName().getString() : "?", cross);
+            return;
         }
         if (player == null || player.isRemoved() || !player.isAlive()) {
             return; // no-op cleanly if the player died/left between answering and this tick.
