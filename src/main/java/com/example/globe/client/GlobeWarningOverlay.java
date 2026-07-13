@@ -66,10 +66,10 @@ public final class GlobeWarningOverlay {
 
     // TEST 89: the E/W edge banner is now ONE white advisory (Peetsa retired the two-tier severe/yellow
     // system). Shown on entering the band, plain white with the warning-family keyline, one wall-clock fade.
-    // Copy is Peetsa's verbatim; the em-dash is U+2014. (The old direction-templated LEVEL_1/LEVEL_2 "Turn
+    // Copy per Peetsa (2026-07-13: "Antimeridian" confirmed for the 180-deg line -- the Prime Meridian is 0 deg, which has its own crossing title); em-dash U+2014. (The old direction-templated LEVEL_1/LEVEL_2 "Turn
     // back." / whiteout / sandstorm strings -- and the PASSAGE_V2 rewords -- are gone with the second tier.)
     private static final String EW_ADVISORY_TEXT =
-            "Approaching the Prime Meridian. Heavy fog ahead—proceed with care.";
+            "Approaching the Antimeridian. Heavy fog ahead—proceed with care.";
 
     private static final boolean DEBUG_ENTRY_TITLES = Boolean.getBoolean("latitude.debugEntryTitles");
 
