@@ -271,5 +271,7 @@ public final class TerrainRouterWrapping {
         // "authorities inert for this world" warn re-arm per world too, so a second world's story is told.
         GeoTerrainBiasFunction.resetLogLatchesForNewWorld();
         LatitudeBiomes.resetV2InertWarnLatchForNewWorld();
+        // B-6: re-arm the evator terrain-mirror install/refusal/failure one-shots for the next world too.
+        EvatorTerrainReflection.resetLogLatchesForNewWorld();
     }
 }

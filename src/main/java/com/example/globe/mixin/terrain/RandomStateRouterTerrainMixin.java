@@ -1,6 +1,7 @@
 package com.example.globe.mixin.terrain;
 
 import com.example.globe.core.LatitudeV2Flags;
+import com.example.globe.terrain.EvatorTerrainReflection;
 import com.example.globe.terrain.GeoTerrainBiasFunction;
 import com.example.globe.terrain.TerrainRouterWrapping;
 import net.minecraft.server.level.ChunkMap;
@@ -84,5 +85,31 @@ public abstract class RandomStateRouterTerrainMixin {
             return;
         }
         TerrainRouterWrapping.installIfArmed(rs, noiseGen);
+    }
+
+    /**
+     * Phase 5 B-6 (Teleport-Evator) P1: install the leaf-level terrain MIRROR on the same freshly-constructed
+     * {@code RandomState}. Independent of the Phase-4 terrain bias above (different flag, different feature), so
+     * it lives in its own TAIL inject. Runs after the Phase-4 wrap when both are on (declaration order); for the
+     * combo the geo-bias root reads true X while leaves read reflected X inside the band -- an accepted P1
+     * limitation, {@code terrainV2} is default-off and the evator is flown terrainV2-off. Gated on the global
+     * flag + the generator-settings-key globe check; the per-world capture is re-checked per sample inside the
+     * reflector, so flag-off / captured-off worlds stay byte-identical. See {@link EvatorTerrainReflection}.
+     */
+    @Inject(method = "<init>", at = @At("TAIL"))
+    private void globe$installEvatorTerrainMirror(CallbackInfo ci) {
+        if (!LatitudeV2Flags.EVATOR_V2_ENABLED) {
+            return;
+        }
+        RandomState rs = this.randomState;
+        WorldGenContext ctx = this.worldGenContext;
+        if (rs == null || ctx == null) {
+            return;
+        }
+        if (!(ctx.generator() instanceof NoiseBasedChunkGenerator noiseGen)
+                || !com.example.globe.GlobeMod.isGlobeNoiseGenerator(noiseGen)) {
+            return;
+        }
+        EvatorTerrainReflection.install(rs);
     }
 }

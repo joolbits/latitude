@@ -703,6 +703,10 @@ public final class LatitudeBiomes {
         WORLD_SEED = 0L;
         ACTIVE_RADIUS_BLOCKS = 0;
         EVATOR_ACTIVE = false;
+        // B-6 P1 sweep HIGH fix: the terrain-mirror install-success signal resets with the other per-world
+        // statics, so a next world in this JVM never inherits a stale "installed" (which would let the biome
+        // remap engage before/without that world's own install).
+        com.example.globe.terrain.EvatorTerrainReflection.resetInstalledForServerStop();
         GEO_V2_PROVIDER = NoOpGeoSummaryProvider.INSTANCE;
         CLIMATE_V2_PROVIDER = NoOpClimateSummaryProvider.INSTANCE;
         LOGGER.info("[Latitude] V2 worldgen statics reset on server stop (providers -> NoOp, seed/radius cleared).");

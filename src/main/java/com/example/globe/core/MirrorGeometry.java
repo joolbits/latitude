@@ -152,4 +152,14 @@ public final class MirrorGeometry {
         double distToEdge = xRadiusIntended - Math.abs(x - centerX);
         return distToEdge <= bandWidthBlocks(xRadiusIntended);
     }
+
+    /**
+     * True iff the column at world-X {@code x} lies in the EAST ({@code +x}) mirror band -- {@link #inBand} AND
+     * on the {@code +x} side of {@code centerX}. Only the east band reflects (the WEST band is canonical, design
+     * "copy direction"), so this is the predicate the production reflectors gate on. Equivalent to
+     * {@code x >= frontierX(xRadius)} on the east side (the fast form the density-path predicate uses).
+     */
+    public static boolean inEastBand(double x, double centerX, double xRadiusIntended) {
+        return x > centerX && inBand(x, centerX, xRadiusIntended);
+    }
 }

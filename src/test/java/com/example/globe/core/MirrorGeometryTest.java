@@ -152,6 +152,35 @@ class MirrorGeometryTest {
         assertTrue(w > 0);
     }
 
+    // ---- EAST-only band (the reflect predicate: west is canonical, only +x reflects) -------
+
+    @Test
+    void inEastBandReflectsOnlyTheEastSide() {
+        double xr = 7500.0, cx = 0.0;
+        double w = MirrorGeometry.bandWidthBlocks(xr);
+        double justInside = xr - (w - 1.0); // distToEdge = w-1, in band
+        // East band column: in the east band.
+        assertTrue(MirrorGeometry.inEastBand(justInside, cx, xr), "east band reflects");
+        // The symmetric WEST band column is in-band but NOT east-band (it is canonical).
+        assertTrue(MirrorGeometry.inBand(-justInside, cx, xr), "west is in the (symmetric) band");
+        assertFalse(MirrorGeometry.inEastBand(-justInside, cx, xr), "west band does NOT reflect (canonical)");
+        // Interior and center never reflect.
+        assertFalse(MirrorGeometry.inEastBand(0.0, cx, xr));
+        assertFalse(MirrorGeometry.inEastBand(3000.0, cx, xr), "east interior does not reflect");
+        // At/beyond the east wall reflects; beyond the west wall does not.
+        assertTrue(MirrorGeometry.inEastBand(xr + 50.0, cx, xr));
+        assertFalse(MirrorGeometry.inEastBand(-(xr + 50.0), cx, xr));
+    }
+
+    @Test
+    void inEastBandThresholdMatchesFrontierX() {
+        // The fast form the density-path predicate uses: on the east side, inEastBand <=> x >= frontierX.
+        double xr = 20000.0, cx = 0.0;
+        double frontier = MirrorGeometry.frontierX(xr);
+        assertTrue(MirrorGeometry.inEastBand(frontier + 1.0, cx, xr), "just inside the frontier reflects");
+        assertFalse(MirrorGeometry.inEastBand(frontier - 1.0, cx, xr), "just equatorward of the frontier does not");
+    }
+
     // ---- degenerate / NaN safety -----------------------------------------------------------
 
     @Test

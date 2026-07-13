@@ -102,6 +102,12 @@ public final class BiomePreviewHeadlessRunner {
             return;
         }
 
+        // B-6 P1: production mirror-identity proof harness (evator captured ON; asserts biome/terrain/surface-Y).
+        if (EvatorProofHarness.isTriggered()) {
+            server.execute(() -> EvatorProofHarness.runAndStop(server));
+            return;
+        }
+
         // SPIKE (B-6 P1 step 0): throwaway terrain-mirror mechanism probe. See EvatorSpikeProbe.
         if (EvatorSpikeProbe.isTriggered()) {
             server.execute(() -> EvatorSpikeProbe.runAndStop(server));

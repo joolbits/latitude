@@ -97,6 +97,10 @@ loom {
             vmArg "-Dlatdev.terrainProof.replayProbe=${System.getProperty('latdev.terrainProof.replayProbe', 'false')}"
             vmArg "-Dlatdev.terrainProof.probes=${System.getProperty('latdev.terrainProof.probes', '')}"
             vmArg "-Dlatdev.terrainProof.coherence=${System.getProperty('latdev.terrainProof.coherence', 'false')}"
+            // B-6 P1 production mirror-identity proof harness (EvatorProofHarness): arms the evator, asserts
+            // biome/terrain-silhouette/surface-Y mirror identity across the band on the live fill path.
+            vmArg "-Dlatitude.evatorProof=${System.getProperty('latitude.evatorProof', 'false')}"
+            vmArg "-Dlatitude.evatorProof.out=${System.getProperty('latitude.evatorProof.out', '')}"
             // SPIKE (B-6 P1 step 0): throwaway terrain-mirror mechanism probe (EvatorSpikeProbe). Delete
             // these three lines when the spike is removed.
             vmArg "-Dlatitude.evatorSpike=${System.getProperty('latitude.evatorSpike', 'false')}"

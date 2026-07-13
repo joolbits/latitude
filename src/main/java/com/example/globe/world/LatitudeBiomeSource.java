@@ -1,6 +1,7 @@
 package com.example.globe.world;
 
 import com.example.globe.mixin.BiomeSourceAccessor;
+import com.example.globe.terrain.EvatorMirror;
 import com.mojang.serialization.DataResult;
 import com.mojang.serialization.DynamicOps;
 import com.mojang.serialization.MapCodec;
@@ -103,9 +104,17 @@ public final class LatitudeBiomeSource extends BiomeSource {
 
     @Override
     public Holder<Biome> getNoiseBiome(int x, int y, int z, Climate.Sampler sampler) {
-        Holder<Biome> current = original.getNoiseBiome(x, y, z, sampler);
-        Holder<Biome> base = original.getNoiseBiome(x, LatitudeBiomes.SURFACE_CLASSIFY_Y >> 2, z, sampler);
-        int blockX = x << 2;
+        // Phase 5 B-6 (Teleport-Evator) P1 -- the biome half of the mirror. When this quart column is in the
+        // EAST mirror band of a live-evator world, remap X to its canonical WEST reflection ONCE, here, at the
+        // top of the sole biome chokepoint. Everything downstream (the vanilla climate sampler read below AND
+        // every X-keyed noise inside pick -- province/variant/humidity/ValueNoise2D) then produces the west
+        // band's biome automatically, giving column-identity with the reflected terrain. Z is untouched
+        // (reflection is about X only). Gated + band-limited by EvatorMirror; a non-evator world reflects
+        // nothing (sx == x) and is byte-identical. See EvatorMirror / EvatorReflectLeafFunction.
+        int sx = EvatorMirror.reflectEastQuart(x) ? EvatorMirror.reflectQuartX(x) : x;
+        Holder<Biome> current = original.getNoiseBiome(sx, y, z, sampler);
+        Holder<Biome> base = original.getNoiseBiome(sx, LatitudeBiomes.SURFACE_CLASSIFY_Y >> 2, z, sampler);
+        int blockX = sx << 2;
         int blockZ = z << 2;
         int blockY = y << 2;
         if (shouldPreserveCave(current, base, blockY)) {
