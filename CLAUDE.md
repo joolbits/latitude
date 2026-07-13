@@ -103,3 +103,24 @@ this file's history for the exact command before estimating; don't guess by cate
 actual OS-level state (is the process alive? CPU%? file timestamps changing?) before assuming
 either "it's fine, still waiting" or spending more turns coaching the subagent through it. This
 would have caught the concurrent-process contention above in seconds instead of over an hour.
+
+## Feature-branch TEST jars must be verified SUPERSETS of pivot HEAD before staging
+
+Observed 2026-07-13 (TEST 91): a jar staged from a feature branch that was cut BEFORE the latest pivot
+commits silently lacked everything the owner had just approved on the pivot line (glimmer v3, the
+TEST 89 edge round) — the owner flew it and correctly reported "none of the fixes are present." Rule:
+before staging any jar from a branch other than the pivot, run `git merge-base <branch> <pivot>` and
+verify it equals pivot HEAD (rebase first if not), then verify the built jar's CONTENT for one marker
+per recent round (e.g. `unzip -p ... | strings | grep <new-string>`). A feature-branch jar must contain
+everything the last pivot jar had, checked — never assumed.
+
+## Live-instrument before re-claiming a live-reported bug is fixed (and self-fly the repro)
+
+The B-5 re-arm bug was "fixed" twice (unit-tested, swept ACCEPT both times) and failed live both times.
+The real cause was ENVIRONMENTAL — a stale level.dat WorldBorder lerp sliding every block-anchored line
+under the player — invisible to code reading and to pure unit tests, found only by adding a flight
+recorder (-Dlatitude.debugPassage) and having the orchestrator fly the repro personally via the
+Modrinth control lane. Rule: after ONE failed fix of a live-reported bug, stop shipping code-derived
+fixes; instrument the running game, reproduce it yourself, and only claim fixed after watching the
+recorder show the failure die. Related: worlds carry persistent state (borders, lerps, captured flags)
+— when behavior differs between the owner's world and theory, read the world's NBT before the code.
