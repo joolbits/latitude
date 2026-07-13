@@ -29,9 +29,11 @@ package com.example.globe.core;
  *       crossing prompt again -- 3 deg out was too far to re-prompt; now it sits just 1 deg beyond the
  *       179-deg prompt line, still comfortably past the DEAD_ZONE hysteresis floor).</li>
  *   <li>{@link #PROMPT_DEG} 179.0 -- the crossing prompt opens (closest to the edge).</li>
- *   <li>{@link #ARRIVAL_DEG} 176.0 -- the longitude the crossing DROPS the player at on the far side, 4 deg
- *       from the wall (TEST 92: pulled in from the old 175.5 deg + a rampStart-relative floor that ballooned
- *       to ~9 deg on tiny worlds). See the arrival note under the ordering invariant.</li>
+ *   <li>{@link #ARRIVAL_DEG} 178.0 -- the longitude the crossing DROPS the player at on the far side, 2 deg
+ *       from the wall (TEST 93: pulled in 176 -> 178 so arrival lands 0.5 deg INSIDE the 177.5-deg fog onset --
+ *       you emerge "right at the edge of the fog, even slightly inside", looking inward through the thinning
+ *       curtain). Coincides with {@link #REARM_DEG} 178 exactly. See the arrival note under the ordering
+ *       invariant.</li>
  * </ul>
  *
  * <p>(TEST 89: the old {@code SEVERE_DEG} 178 anchor is GONE -- the warning banner's two-tier system was
@@ -42,12 +44,15 @@ package com.example.globe.core;
  * In DEGREES the fog/re-arm/prompt anchors nest {@code prompt(179) > rearm(178) > rampStart(177.5)} -- prompt
  * closest to the edge. Translated to DISTANCE-FROM-EDGE (which shrinks toward the edge) that inverts to
  * {@code promptDist < rearmDist < rampStartDist}. {@link #resolve} preserves that strict ordering on EVERY
- * world size. ARRIVAL is NOT part of this nest: on properly-sized worlds it lands PAST the fog
- * ({@code arrivalDist > rampStartDist}, 4 deg > 2.5 deg), but on the tiny Itty-Bitty world the readability
- * floors push rampStart/rearm outward beyond 4 deg, so the 4-deg arrival lands INSIDE the re-arm band. That is
- * harmless and by design: the S2C arrival seeds the passage arm DISARMED and the sticky band holds it there,
- * so there is no self-reprompt regardless of where arrival lands (see {@link HemispherePassage}'s arrival
- * contract). Arrival never lands closer than {@link #ARRIVAL_MIN_PAST_PROMPT_BLOCKS} past the prompt line.
+ * world size. ARRIVAL is NOT part of this nest: TEST 93 moved it to 178 deg (2 deg from the wall), so it now
+ * lands INSIDE the fog ({@code arrivalDist < rampStartDist}, 2 deg < 2.5 deg) on EVERY world -- you emerge into
+ * the thinning fog edge, not past it. Arrival coincides with the {@code rearm} line (178 deg) on un-floored
+ * worlds and is pulled strictly inside it by the {@link #ARRIVAL_MIN_PAST_PROMPT_BLOCKS} floor on tiny worlds,
+ * so {@code arrivalDist <= rearmDist} universally -- arrival is never strictly beyond the re-arm line. That is
+ * harmless and by design: the S2C arrival ALWAYS seeds the passage arm DISARMED, and because {@link
+ * HemispherePassage#evaluate} re-arms only on a STRICT {@code distToEdge > rearmAt}, an arrival at-or-inside the
+ * line HOLDS disarmed with no self-reprompt on every world (see {@link HemispherePassage}'s arrival contract).
+ * Arrival never lands closer than {@link #ARRIVAL_MIN_PAST_PROMPT_BLOCKS} past the prompt line.
  *
  * <h2>Block floors for small worlds</h2>
  * On the smallest world (Itty-Bitty Classic, xRadius 3750) one degree is only ~20.8 blocks, so the pure
@@ -71,10 +76,11 @@ package com.example.globe.core;
  * fog-degree intent; the {@link #FOG_BAND_MIN_BLOCKS}/{@link #ORDER_MIN_STEP_BLOCKS} floors then push rampStart
  * to {@code rearm + 8 = 112} blocks so fog onset is ALWAYS strictly outside re-arm (fog is visible before the
  * re-arm line, never after). We deliberately KEEP the 64-block re-arm floor rather than shrink it: it is the
- * anti-machine-gun hysteresis (~30x per-tick jitter) shared with {@code HemisphereCrossing.DEAD_ZONE_BLOCKS},
- * and -- critically -- keeping it at 64 keeps the 4-deg arrival INSIDE the re-arm band on tiny worlds, where
- * the disarmed-arrival seed prevents an immediate re-prompt loop; an out-of-band arrival (from a shrunk floor)
- * would re-arm on landing and re-prompt the instant the player stepped back toward the wall.
+ * anti-machine-gun hysteresis (~30x per-tick jitter) shared with {@code HemisphereCrossing.DEAD_ZONE_BLOCKS}.
+ * TEST 93 moved arrival to 2 deg; on Itty-Bitty its own {@code prompt + 16 = 56} floor lands it strictly inside
+ * the {@code 104}-block re-arm band, and the disarmed-arrival seed holds it there; on larger worlds arrival
+ * sits exactly on the 178-deg re-arm line and the same seed (plus evaluate()'s strict {@code >} re-arm test)
+ * holds it disarmed. Either way the disarmed-arrival seed prevents an immediate re-prompt loop.
  *
  * <h2>NOT in scope of this class</h2>
  * The polar N/S geometry, the polar warning-ladder degree constants (KEEP-SHARED with the EW axis via
@@ -97,10 +103,15 @@ public final class EdgeGeometry {
     public static final double REARM_DEG = 178.0;
     /** The crossing prompt opens at/inside this -- closest to the edge. */
     public static final double PROMPT_DEG = 179.0;
-    /** The longitude the crossing drops the arriving player at on the far side: 4 deg from the wall (Peetsa
-     *  TEST 92: "not nine"). On properly-sized worlds this is past the fog; on tiny worlds it lands in the
-     *  re-arm band (harmless -- the arrival seeds the arm DISARMED). See the class-javadoc arrival note. */
-    public static final double ARRIVAL_DEG = 176.0;
+    /** The longitude the crossing drops the arriving player at on the far side: 2 deg from the wall (TEST 93:
+     *  pulled in 176 -> 178 so you emerge "right at the edge of the fog, even slightly inside" -- 0.5 deg
+     *  INSIDE the {@link #RAMP_START_DEG} 177.5 fog onset, looking inward through the thinning curtain). This
+     *  coincides with {@link #REARM_DEG} 178 exactly: on real worlds arrival lands ON the re-arm line, on tiny
+     *  worlds the {@link #ARRIVAL_MIN_PAST_PROMPT_BLOCKS} floor pulls it strictly inside -- so arrival is at-or-
+     *  inside the re-arm band on EVERY world and the arrival ALWAYS seeds the arm DISARMED (the seeded-DISARMED
+     *  contract, formerly load-bearing only on tiny worlds, is now universal). See the class-javadoc arrival
+     *  note and {@link HemispherePassage}'s arrival contract. */
+    public static final double ARRIVAL_DEG = 178.0;
 
     // ---- block floors (small-world readability + hysteresis discipline) ----
 
@@ -116,8 +127,11 @@ public final class EdgeGeometry {
      *  much farther so {@code prompt < rearm < rampStart} never inverts or ties. */
     public static final double ORDER_MIN_STEP_BLOCKS = 8.0;
     /** Defensive floor: the arrival never lands closer to the wall than this many blocks past the prompt line.
-     *  Does NOT bind on any real world (xRadius >= 3750, where 4 deg is already ~83 blocks >> prompt + 16);
-     *  it only guards degenerate tiny radii from dropping the player essentially at the prompt line. */
+     *  TEST 93 (ARRIVAL_DEG 176 -> 178, i.e. 2 deg instead of 4): this now binds on the tiny Itty-Bitty world
+     *  (2 deg = 41.7 blocks < prompt(40) + 16 = 56), pulling arrival strictly inside the re-arm band there; on
+     *  Small/Regular Wide 2 deg (167/222 blocks) still dwarfs prompt + 16, so the floor is inert and arrival
+     *  sits exactly on the 178-deg re-arm line. It also guards degenerate tiny radii from dropping the player
+     *  essentially at the prompt line. */
     public static final double ARRIVAL_MIN_PAST_PROMPT_BLOCKS = 16.0;
 
     /** Blocks per longitude degree for a given intended X radius: {@code xRadius / 180}. */
@@ -176,13 +190,15 @@ public final class EdgeGeometry {
                 Math.max(distForDeg(RAMP_START_DEG, xRadiusIntended), climax + FOG_BAND_MIN_BLOCKS),
                 rearm + ORDER_MIN_STEP_BLOCKS);
 
-        // Arrival: the crossing drops the player at ARRIVAL_DEG (176 deg, 4 deg from the wall -- Peetsa "not
-        // nine"), resolved from the intended radius like every other line, with only a defensive floor a few
-        // blocks past the prompt line for degenerate tiny radii. On Small/Regular Wide this is exactly 176 deg
-        // and lands PAST the fog (arrival > rampStart); on Itty-Bitty the readability floors push rampStart/
-        // rearm past 4 deg, so the arrival lands INSIDE the re-arm band -- harmless, because the S2C arrival
-        // seeds the arm DISARMED and the sticky band holds it (no self-reprompt). NOTE this is deliberately
-        // NOT floored to sit past rampStart/rearm; arrival is its own axis, decoupled from the fog nest.
+        // Arrival: the crossing drops the player at ARRIVAL_DEG (TEST 93: 178 deg, 2 deg from the wall -- 0.5 deg
+        // INSIDE the 177.5-deg fog onset), resolved from the intended radius like every other line, with only a
+        // defensive floor a few blocks past the prompt line for degenerate tiny radii. 178 deg coincides with
+        // REARM_DEG, so on Small/Regular Wide arrival lands EXACTLY on the re-arm line (distForDeg(178) dominates
+        // both floors identically -> arrivalDist == rearmDist bit-for-bit); on Itty-Bitty the prompt+16 floor
+        // (56) exceeds distForDeg(178) (41.7), pulling arrival strictly INSIDE the band. Either way arrival is at-
+        // or-inside the re-arm line and INSIDE the fog, and the S2C arrival seeds the arm DISARMED; evaluate()
+        // re-arms only on a STRICT dist > rearm, so an on-the-line/in-band arrival HOLDS disarmed (no self-
+        // reprompt). NOTE this is deliberately NOT floored to sit past rampStart/rearm; arrival is its own axis.
         double arrival = Math.max(distForDeg(ARRIVAL_DEG, xRadiusIntended),
                 prompt + ARRIVAL_MIN_PAST_PROMPT_BLOCKS);
 

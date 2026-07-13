@@ -48,6 +48,8 @@ public final class LatitudeConfig {
 
     public static boolean reduceMotion;
 
+    public static boolean borderRepromptGesture;
+
     public static boolean hudSnapEnabled;
     public static int hudSnapPixels;
 
@@ -150,6 +152,7 @@ public final class LatitudeConfig {
         zoneEnterTitleDraggable = d.zoneEnterTitleDraggable;
 
         reduceMotion = d.reduceMotion;
+        borderRepromptGesture = d.borderRepromptGesture;
 
         hudSnapEnabled = d.hudSnapEnabled;
         hudSnapPixels = d.hudSnapPixels;
@@ -205,6 +208,7 @@ public final class LatitudeConfig {
         d.zoneEnterTitleDraggable = zoneEnterTitleDraggable;
 
         d.reduceMotion = reduceMotion;
+        d.borderRepromptGesture = borderRepromptGesture;
 
         d.hudSnapEnabled = hudSnapEnabled;
         d.hudSnapPixels = hudSnapPixels;

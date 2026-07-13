@@ -79,7 +79,7 @@ public final class HemispherePassageService {
         WorldBorder border = world.getWorldBorder();
         double centerX = border.getCenterX();
         // Mirror to the far hemisphere, then PULL INLAND to the arrival column (Peetsa's teleport ask; TEST 92
-        // pulled it in to ARRIVAL_DEG = 176 deg, 4 deg from the wall -- "not nine"). Only the hemisphere (sign)
+// arrival = EdgeGeometry.ARRIVAL_DEG (178 deg since TEST 93 -- ~2 deg from the wall, just INSIDE the fog onset;
         // is taken from the mirror; the inland depth comes from the resolved geometry (EdgeGeometry.arrivalDist).
         // |arrivalX| is the same in both hemispheres, so the far-side border distance is deterministic. On
         // properly-sized worlds this lands PAST the fog; on the tiny Itty-Bitty world (where the readability

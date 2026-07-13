@@ -189,6 +189,19 @@ public final class LatitudeConfigData {
     @SerializedName(value = "reduceMotion", alternate = {"reduceMotionValue"})
     public boolean reduceMotion = false;
 
+    /** The single source of truth for the Border Re-prompt Gesture default (TEST 93). Referenced by the field
+     *  initializer below, {@code LatitudeHudStudioScreen.resetHudDefaults}, and the config tests -- the
+     *  duplicated-default-sites law: one constant, every site reads it, so the default can never drift. */
+    public static final boolean BORDER_REPROMPT_GESTURE_DEFAULT = true;
+
+    /** Border Re-prompt Gesture (TEST 93, Peetsa): when ON, a disarmed player standing at the antimeridian wall
+     *  facing outward can re-summon the crossing prompt with a single USE (right-click) OR ATTACK (left-click)
+     *  press, without walking out and back. Gates the WHOLE gesture (both buttons). Default ON. A General-tab
+     *  toggle like {@link #reduceMotion} -- global-only, NOT preset-scoped (the General tab settings do not ride
+     *  {@code CompassHudPreset}). Boolean, so no sanitize clamp; the default lives in the constant above. */
+    @SerializedName(value = "borderRepromptGesture", alternate = {"borderRepromptGestureValue"})
+    public boolean borderRepromptGesture = BORDER_REPROMPT_GESTURE_DEFAULT;
+
     @SerializedName(value = "hudSnapEnabled", alternate = {"hudSnapEnabledValue"})
     public boolean hudSnapEnabled = true;
 
