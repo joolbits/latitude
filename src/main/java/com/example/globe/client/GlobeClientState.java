@@ -172,7 +172,7 @@ public final class GlobeClientState {
     }
 
     /** The resolved per-world E/W-edge block geometry for the CURRENT client world (fog onset, prompt, re-arm,
-     *  banner tiers, particle onset) -- all degree-anchored to the intended X radius. The one place the client
+     *  the advisory banner) -- all degree-anchored to the intended X radius. The one place the client
      *  turns "which world am I in" into the block distances every edge feature reads. */
     public static com.example.globe.core.EdgeGeometry.Resolved edgeGeometry(WorldBorder border) {
         return com.example.globe.core.EdgeGeometry.resolve(
@@ -235,7 +235,7 @@ public final class GlobeClientState {
         var border = client.level.getWorldBorder();
         // Redesign 2026-07-12: the EW haze intensity (drives the render-distance reduction near the edge) now
         // ramps over the degree-anchored fog band -- onset at rampStartDist (~177.5 deg), full at the prompt
-        // line -- instead of the old fixed 500->100 blocks. One geometry for fog, particles, banner and this.
+        // line -- instead of the old fixed 500->100 blocks. One geometry for fog, the advisory banner and this.
         com.example.globe.core.EdgeGeometry.Resolved g = edgeGeometry(border);
         double d = distanceToEwBorderBlocks(border, x);
         double span = g.rampStartDist() - g.fogClimaxDist();
