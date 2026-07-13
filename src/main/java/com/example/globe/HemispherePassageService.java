@@ -1,5 +1,6 @@
 package com.example.globe;
 
+import com.example.globe.core.EdgeGeometry;
 import com.example.globe.core.HemispherePassage;
 import com.example.globe.util.LatitudeMath;
 import com.example.globe.world.LatitudeBiomes;
@@ -22,9 +23,11 @@ import java.util.EnumSet;
  *
  * <p><b>What it does (in order), per the design:</b>
  * <ol>
- *   <li>Mirror target: {@code targetX = 2*centerX - x} ({@link HemispherePassage#mirrorX}), keep Z. This is
- *       the X border-half geometry (border centered at 0,0), NEVER the Z latitude radius, and is IDENTICAL
- *       in Classic and Mercator -- only the valid X range differs.</li>
+ *   <li>Mirror to the far hemisphere ({@link HemispherePassage#mirrorX}) to pick the SIDE, then pull the
+ *       arrival INLAND to {@code EdgeGeometry.arrivalDist} -- one degree equatorward of the fog onset, so the
+ *       player lands PAST the fog (Peetsa's teleport ask). Z is kept. This is the X border-half geometry
+ *       (border centered at 0,0), NEVER the Z latitude radius, and is IDENTICAL in Classic and Mercator --
+ *       only the intended X radius (hence {@code |arrivalX|}) differs.</li>
  *   <li>3x3 FULL chunk ring + target safety: {@link GlobeMod#placeSafeY} force-loads the 3x3 ring around the
  *       target ({@code ChunkStatus.FULL}) and returns null on fluid/non-air, so we never arrive in water or
  *       void. On null we search outward along +/-Z at the mirrored X for the nearest safe column (latitude as
@@ -75,7 +78,17 @@ public final class HemispherePassageService {
     static BlockPos resolveArrival(ServerLevel world, double playerX, double playerZ) {
         WorldBorder border = world.getWorldBorder();
         double centerX = border.getCenterX();
-        int targetX = (int) Math.round(HemispherePassage.mirrorX(playerX, centerX));
+        // Mirror to the far hemisphere, then PULL INLAND past the fog (Peetsa's teleport ask, 2026-07-12): the
+        // arrival sits ~one degree equatorward of the fog onset (EdgeGeometry.arrivalDist, ~175.5 deg on
+        // properly-sized worlds), so you land PAST the fog rather than "in the thick of it". Only the hemisphere
+        // (sign) is taken from the mirror; the inland depth comes from the resolved geometry. |arrivalX| is the
+        // same in both hemispheres, so the far-side border distance is deterministic and out-of-band (the arm
+        // re-arms naturally there; the S2C disarmed-in-band seed is now harmless belt-and-suspenders).
+        double mirroredX = HemispherePassage.mirrorX(playerX, centerX);
+        double sign = mirroredX >= centerX ? 1.0 : -1.0;
+        double xRadiusIntended = LatitudeMath.intendedXRadius(border);
+        double arrivalAbsX = EdgeGeometry.resolve(xRadiusIntended).arrivalAbsX();
+        int targetX = (int) Math.round(centerX + sign * arrivalAbsX);
 
         int maxAbsZ = latitudeSafeMaxAbsZ(world);
         int baseZ = Mth.clamp((int) Math.round(playerZ), -maxAbsZ, maxAbsZ);

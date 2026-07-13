@@ -28,9 +28,11 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
  * overlays -- it needs no exposure gate (A3: EXPOSURE-INDEPENDENT; it never touches PolarExposure/surfaceOk).
  *
  * <p><b>Driven by border distance, not latitude.</b> The tightening ramps on the SAME distance-to-the-E/W-edge
- * the crossing prompt arms on ({@link GlobeClientState#distanceToEwBorderBlocks(double)}): no effect at
- * {@code dist >= FOG_START} (500, seam-free -- vanilla fog untouched), thickening on the pure ease-in curves in
- * {@link HemispherePassage} (a weather front rolling in) to near-opaque by {@code dist <= PROMPT_AT} (100).
+ * the crossing prompt arms on ({@link GlobeClientState#distanceToEwBorderBlocks(double)}), anchored to the
+ * mod's INTENDED X radius (immune to a lerping border). The band is degree-anchored per world by
+ * {@link com.example.globe.core.EdgeGeometry}: no effect at/beyond {@code rampStartDist} (~176.5 deg longitude,
+ * seam-free -- vanilla fog untouched), thickening on the pure ease-in curves in {@link HemispherePassage}
+ * (a weather front rolling in) to near-opaque by the prompt line (the {@code fogClimaxDist}, ~179 deg).
  *
  * <p><b>Composition with the polar depth fog (A2 note).</b> A corner at high |lat| near the X edge gets BOTH
  * this and {@link FogRendererPolarSetupMixin} (both @Inject at {@code setupFog} RETURN). Both only ever TIGHTEN
@@ -92,9 +94,15 @@ public class FogRendererPassageSetupMixin {
         }
 
         double distToEdge = GlobeClientState.distanceToEwBorderBlocks(mc.player.getX());
-        float endFraction = HemispherePassage.approachFogEndFraction(distToEdge);
+        // Per-world fog band, degree-anchored to the intended X radius: onset at rampStartDist (~176.5 deg),
+        // full at the prompt line (climax). Immune to a lerping border; shared with the prompt/banner/particles.
+        com.example.globe.core.EdgeGeometry.Resolved geo =
+                GlobeClientState.edgeGeometry(level.getWorldBorder());
+        double rampStart = geo.rampStartDist();
+        double climax = geo.fogClimaxDist();
+        float endFraction = HemispherePassage.approachFogEndFraction(distToEdge, rampStart, climax);
         if (endFraction <= 0.001f) {
-            return; // at/beyond FOG_START -- no approach fog, vanilla untouched (seam-free).
+            return; // at/beyond the fog onset -- no approach fog, vanilla untouched (seam-free).
         }
 
         FogData data = cir.getReturnValue();
@@ -104,8 +112,8 @@ public class FogRendererPassageSetupMixin {
 
         // Pull the cylindrical render-distance fog IN toward the edge values (only ever tighter than vanilla,
         // so this composes with the polar depth fog via Math.min -- the heavier storm wins).
-        float newEnd = HemispherePassage.approachFogEnd(data.renderDistanceEnd, distToEdge);
-        float newStart = HemispherePassage.approachFogStart(data.renderDistanceStart, newEnd, distToEdge);
+        float newEnd = HemispherePassage.approachFogEnd(data.renderDistanceEnd, distToEdge, rampStart, climax);
+        float newStart = HemispherePassage.approachFogStart(data.renderDistanceStart, newEnd, distToEdge, rampStart, climax);
         data.renderDistanceEnd = Math.min(data.renderDistanceEnd, newEnd);
         data.renderDistanceStart = Math.min(data.renderDistanceStart, newStart);
 

@@ -172,9 +172,10 @@ public class GlobeMod implements ModInitializer {
 
             boolean isGlobe = isGlobeOverworld(overworld);
             int latitudeZRadius = isGlobe ? LatitudeBiomes.getActiveRadiusBlocks() : 0;
-            LOGGER.info("JOIN: player={}, isGlobeOverworld={}, latitudeZRadius={}",
-                    handler.player.getName().getString(), isGlobe, latitudeZRadius);
-            ServerPlayNetworking.send(handler.player, new GlobeNet.GlobeStatePayload(isGlobe, latitudeZRadius));
+            int intendedXRadius = isGlobe ? LatitudeBiomes.getActiveXRadiusBlocks() : 0;
+            LOGGER.info("JOIN: player={}, isGlobeOverworld={}, latitudeZRadius={}, intendedXRadius={}",
+                    handler.player.getName().getString(), isGlobe, latitudeZRadius, intendedXRadius);
+            ServerPlayNetworking.send(handler.player, new GlobeNet.GlobeStatePayload(isGlobe, latitudeZRadius, intendedXRadius));
 
             LatitudeWorldState worldState = LatitudeWorldState.get(overworld);
             boolean isBrandNewWorld = overworld.getGameTime() < 100L;
@@ -374,13 +375,24 @@ public class GlobeMod implements ModInitializer {
                 : zRadius;
         double diameter = xRadius * 2.0;
         border.setCenter(0.0, 0.0);
+        // DEFINITIVELY clear any persisted / in-flight lerp (TEST 86 finding). ServerLevel.getWorldBorder()
+        // has already run ensureInitialized (so a level.dat BorderLerp* is installed as a MovingArea by now);
+        // setSize replaces it with a StaticArea and broadcasts a size-change packet, snapping every client off
+        // the lerp. The per-tick borderUxTick guard (enforceGlobeBorderSnapped) re-snaps if anything -- a
+        // startup ordering race, or a mid-session /worldborder lerp -- moves it afterward. Belt + suspenders.
         border.setSize(diameter);
+        if (border.getSize() != diameter) { // paranoia: a listener/extent that didn't take -- force once more.
+            border.setSize(diameter);
+        }
 
         // Latitude authority stays the Z radius (poles at |Z| = zRadius, NOT at the X border edge).
         LatitudeBiomes.setRadius(zRadius);
         LatitudeBiomes.setActiveRadiusBlocks(zRadius);
         // Tell the latitude math the Z radius so HUD/zone/pole calcs divide Z by zRadius (not the X border half).
         com.example.globe.util.LatitudeMath.setLatitudeZRadius(zRadius);
+        // ...and the INTENDED X radius, so the server's E/W-edge feature geometry (passage cross re-validation)
+        // reads the same anchor the client does -- never the live (possibly lerping) border half.
+        com.example.globe.util.LatitudeMath.setIntendedXRadius(xRadius);
         LOGGER.info("[Latitude] Radius Sync: shape={} zRadius={} xRadius={} borderDiameter={} ACTIVE_RADIUS_BLOCKS={}",
                 LatitudeBiomes.getGlobeShape(), zRadius, xRadius, diameter, LatitudeBiomes.getActiveRadiusBlocks());
 
@@ -390,6 +402,30 @@ public class GlobeMod implements ModInitializer {
 
         GlobeMod.LOGGER.info("[Latitude] WorldBorder set: shape={} zRadius={} xRadius={} diameter={} center=0,0 polarStart={}",
                 LatitudeBiomes.getGlobeShape(), zRadius, xRadius, diameter, activePoleBandStartAbsZ);
+    }
+
+    /**
+     * Keep the globe world border snapped to the mod's intended diameter, killing any persisted or mid-session
+     * lerp. Cheap: reads {@code getActiveXRadiusBlocks()} (a static) and only calls {@code setSize} on an
+     * actual mismatch (> 1 block), so a healthy border is a no-op compare each tick. When it fires, {@code
+     * setSize} installs a StaticArea and broadcasts the correction, so any active interpolation stops within a
+     * tick on the server AND on every client. Falls back to the live border half if the intended X radius is
+     * not yet known (never forces a bogus size).
+     */
+    private static void enforceGlobeBorderSnapped(WorldBorder border) {
+        if (border == null) {
+            return;
+        }
+        int xRadius = LatitudeBiomes.getActiveXRadiusBlocks();
+        if (xRadius <= 0) {
+            return; // radius not resolved yet -- do not force a size (leave vanilla behavior).
+        }
+        double diameter = xRadius * 2.0;
+        if (Math.abs(border.getSize() - diameter) > 1.0) {
+            LOGGER.info("[Latitude] Border drift detected (size={} intended={}); re-snapping (killing lerp)",
+                    border.getSize(), diameter);
+            border.setSize(diameter);
+        }
     }
 
     private static void borderUxTick(MinecraftServer server) {
@@ -409,6 +445,12 @@ public class GlobeMod implements ModInitializer {
         boolean effectsTick = (worldTime % 10L) == 0L;
 
         WorldBorder border = overworld.getWorldBorder();
+        // TEST 86 guard: keep the globe border SNAPPED to the intended diameter. Catches (a) a persisted
+        // level.dat lerp that survived the startup snap for any ordering reason, and (b) a mid-session vanilla
+        // /worldborder <size> <time> lerp -- both would otherwise slide the physical wall (and, pre-redesign,
+        // every feature line). Only acts on an ACTUAL mismatch, so the common case is a cheap compare and no
+        // packet; when it does fire, setSize snaps the server border and broadcasts the correction to clients.
+        enforceGlobeBorderSnapped(border);
 
         for (ServerPlayer player : server.getPlayerList().getPlayers()) {
             if (player.level() != overworld) {
@@ -503,10 +545,15 @@ public class GlobeMod implements ModInitializer {
                 || !isGlobeOverworld(world)) {
             return; // must be standing in the globe overworld.
         }
-        double distToEdge = distanceToEwEdgeBlocks(world.getWorldBorder(), player.getX());
-        if (!com.example.globe.core.HemispherePassage.serverAcceptsCross(distToEdge)) {
-            LOGGER.warn("[Latitude][Passage] Rejected answer from {} cross={} distToEdge={} (not in prompt band; possible spoof)",
-                    player.getName().getString(), cross, distToEdge);
+        WorldBorder answerBorder = world.getWorldBorder();
+        double distToEdge = distanceToEwEdgeBlocks(answerBorder, player.getX());
+        // Re-derive the prompt distance from the SAME intended X radius the client armed on (never the live
+        // border half), so client and server agree even mid-lerp. serverAcceptsCross adds its own inland slack.
+        double xRadiusIntended = com.example.globe.util.LatitudeMath.intendedXRadius(answerBorder);
+        double promptAt = com.example.globe.core.EdgeGeometry.resolve(xRadiusIntended).promptDist();
+        if (!com.example.globe.core.HemispherePassage.serverAcceptsCross(distToEdge, promptAt)) {
+            LOGGER.warn("[Latitude][Passage] Rejected answer from {} cross={} distToEdge={} promptAt={} (not in prompt band; possible spoof)",
+                    player.getName().getString(), cross, distToEdge, promptAt);
             return;
         }
         // Item 2 (surface-only), belt-and-suspenders: the client freezes the prompt underground, but a STALE
@@ -563,11 +610,11 @@ public class GlobeMod implements ModInitializer {
         player.hurtMarked = true; // force the velocity to broadcast to the client (vanilla knockback idiom).
     }
 
-    /** Server-side blocks to the nearest E/W world-border edge ({@code >= 0}). Mirrors the client's own
-     *  {@code GlobeClientState.distanceToEwBorderBlocks} so the anti-exploit re-validation matches the UI. */
+    /** Server-side blocks to the nearest E/W world-border edge ({@code >= 0}), anchored to the mod's INTENDED
+     *  X radius (not the live/lerping border half) so the anti-exploit re-validation matches the client UI,
+     *  which now anchors on the same intended radius. */
     private static double distanceToEwEdgeBlocks(WorldBorder border, double x) {
-        double half = border.getSize() * 0.5;
-        return Math.max(0.0, half - Math.abs(x - border.getCenterX()));
+        return com.example.globe.util.LatitudeMath.distanceToEwEdgeIntended(border, x);
     }
 
     /**

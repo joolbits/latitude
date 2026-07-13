@@ -68,7 +68,9 @@ public abstract class EdgeStructureVetoMixin {
                 return;
             }
             var border = world.getWorldBorder();
-            double xRadius = com.example.globe.util.LatitudeMath.halfSize(border);
+            double xRadius = com.example.globe.util.LatitudeMath.intendedXRadius(border);
+            // (sweeper 2026-07-12: intended radius, not the live border half -- placement determinism
+            // must be immune to a transiently lerping border, same thesis as the feature-line anchoring.)
             // Globe worlds only (small border). A vanilla ~30M border maps everything near center; never trip.
             if (!(xRadius > 0.0 && xRadius < 1_000_000.0)) {
                 return;

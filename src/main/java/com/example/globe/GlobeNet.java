@@ -33,16 +33,21 @@ public final class GlobeNet {
         PayloadTypeRegistry.clientboundPlay().register(PassageArrivalPayload.ID, PassageArrivalPayload.CODEC);
     }
 
-    public record GlobeStatePayload(boolean isGlobe, int latitudeZRadius) implements CustomPacketPayload {
+    public record GlobeStatePayload(boolean isGlobe, int latitudeZRadius, int intendedXRadius) implements CustomPacketPayload {
         public static final Type<GlobeStatePayload> ID = new Type<>(Identifier.fromNamespaceAndPath("globe", "s2c_globe_state"));
         // latitudeZRadius is the Z (latitude) radius in blocks. For Mercator worlds this differs from the
         // (X-sized) WorldBorder half, so the client needs it to render correct latitude/zone/pole HUD.
-        // 0 means "use the border half" (Classic / unknown).
+        // intendedXRadius is the mod's OWN E/W radius (zRadius in Classic, zRadius*ASPECT in Wide): the client
+        // anchors ALL E/W-edge feature geometry (fog/prompt/re-arm/banner/particles) on it instead of the live
+        // border half, so a lerping/vandalized border can't slide those lines (TEST 86 finding). Both 0 mean
+        // "use the border half" (Classic byte-identical / not-a-globe).
         public static final StreamCodec<RegistryFriendlyByteBuf, GlobeStatePayload> CODEC = StreamCodec.composite(
                 ByteBufCodecs.BOOL,
                 GlobeStatePayload::isGlobe,
                 ByteBufCodecs.VAR_INT,
                 GlobeStatePayload::latitudeZRadius,
+                ByteBufCodecs.VAR_INT,
+                GlobeStatePayload::intendedXRadius,
                 GlobeStatePayload::new
         );
 
