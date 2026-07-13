@@ -134,31 +134,56 @@ public final class TitleStyle {
     public static final float[] DROP_SHADOW_ALPHA = {0.35f, 0.18f};
 
     // ---------------------------------------------------------------------------------------------------
-    // Phase-envelope glimmer choreography ("C v2", approved 2026-07-11 -- timings 1:1, DO NOT retune).
+    // Phase-envelope glimmer choreography ("C v3", 2026-07-12: stronger + configurable + a FAREWELL sweep).
+    // Base HERO/BLOOM timings stay the "C v2" 1:1 numbers (approved 2026-07-11); v3 ADDS one fast second crest
+    // sweep right before the melt, and a Glimmer Strength (intensity) scalar that scales the relative-contrast
+    // mechanism (dim depth + crest pop TOGETHER), never a brighten-toward-target.
     //
-    // A four-phase one-shot envelope keyed on the title's wall-clock age in ms:
-    //   APPEAR  [0 .. GLIMMER_APPEAR_MS)                    -- the fade-in runs; no glimmer activity (inert).
-    //   HERO    [GLIMMER_APPEAR_MS .. GLIMMER_HERO_END_MS)  -- one L->R Gaussian crest (crestProgress 0->1),
-    //           pop GLIMMER_HERO_POP, against a raised-arch baseline dim (dimScale = sin(pi*p), floor
-    //           GLIMMER_DIM_FLOOR).
-    //   BLOOM   [GLIMMER_HERO_END_MS .. GLIMMER_BLOOM_END_MS)  -- whole title lerps uniformly toward white to
-    //           GLIMMER_BLOOM_PEAK (easeOutQuad) plus a GLIMMER_SWELL_PEAK scale swell.
-    //   MELT    [GLIMMER_BLOOM_END_MS .. GLIMMER_MELT_END_MS)  -- bloom + swell decay 0.65/0.02 -> 0 (easeOutCubic
-    //           decay), a slow graceful dissolve.
-    //   REST    [GLIMMER_MELT_END_MS .. )                   -- plain title (inert), normal hold + fade-out.
-    // Supersedes the old tick-window sweep (the former GLIMMER_START_TICK/GLIMMER_SPAN_TICKS + glimmerProgress).
+    // A five-phase one-shot envelope keyed on the title's wall-clock age in ms:
+    //   APPEAR   [0 .. GLIMMER_APPEAR_MS)                     -- the fade-in runs; no glimmer activity (inert).
+    //   HERO     [GLIMMER_APPEAR_MS .. GLIMMER_HERO_END_MS)   -- one L->R Gaussian crest (crestProgress 0->1),
+    //            pop = min(1, GLIMMER_HERO_POP * intensity), against a raised-arch baseline dim
+    //            (dimScale = sin(pi*p) * intensity; deeper dim = deeper contrast). ~900ms, the hero shine.
+    //   BLOOM    [GLIMMER_HERO_END_MS .. GLIMMER_BLOOM_END_MS)   -- whole title lerps uniformly toward white to
+    //            GLIMMER_BLOOM_PEAK (easeOutQuad) plus a GLIMMER_SWELL_PEAK scale swell.
+    //   FAREWELL [GLIMMER_BLOOM_END_MS .. GLIMMER_FAREWELL_END_MS) -- a FAST second L->R crest (~500ms, visibly
+    //            quicker than the 900ms hero), same envelope math + same intensity scaling, with bloom + swell
+    //            HELD at their peak so the title stays present while the parting glint travels. "One more quick
+    //            glimmer" (Peetsa, 2026-07-12) before the fade.
+    //   MELT     [GLIMMER_FAREWELL_END_MS .. GLIMMER_MELT_END_MS)   -- bloom + swell decay 0.65/0.02 -> 0
+    //            (easeOutCubic decay), a slow graceful dissolve. Same 850ms duration/shape as v2, just delayed by
+    //            the farewell.
+    //   REST     [GLIMMER_MELT_END_MS .. )                    -- plain title (inert), normal hold + fade-out.
+    // Total glimmer lifetime v2 -> v3: 2350ms -> 2850ms (+500ms, the farewell; the melt itself is unchanged).
+    // At intensity == 1.0 the HERO/BLOOM/MELT frames are byte-identical to the v2 contract (the farewell is the
+    // only always-present addition). Supersedes the old tick-window sweep.
     // ---------------------------------------------------------------------------------------------------
 
     /** End of APPEAR / start of the HERO sweep (ms since the title appeared). Before this the title only fades
      *  in; no glimmer activity. */
     public static final long GLIMMER_APPEAR_MS = 350L;
     /** End of the HERO crest sweep / start of BLOOM (ms). The single L->R crest travels the whole
-     *  [APPEAR, HERO_END) window. */
+     *  [APPEAR, HERO_END) window (~900ms -- the hero shine). */
     public static final long GLIMMER_HERO_END_MS = 1250L;
-    /** End of BLOOM / start of MELT (ms). Bloom and swell reach their peak exactly here. */
+    /** End of BLOOM / start of the FAREWELL sweep (ms). Bloom and swell reach their peak exactly here. */
     public static final long GLIMMER_BLOOM_END_MS = 1500L;
-    /** End of MELT / start of REST (ms). After this the frame is inert and the title is plain again. */
-    public static final long GLIMMER_MELT_END_MS = 2350L;
+    /** End of the FAREWELL quick sweep / start of MELT (ms). NEW (glimmer v3). The farewell is a fast ~500ms
+     *  second crest (vs the hero's ~900ms) that rides over the peak-held bloom; after it, the melt begins as in
+     *  v2. */
+    public static final long GLIMMER_FAREWELL_END_MS = 2000L;
+    /** End of MELT / start of REST (ms). After this the frame is inert and the title is plain again. The MELT
+     *  window ({@link #GLIMMER_FAREWELL_END_MS}..here) keeps its v2 850ms duration; only its START moved later by
+     *  the farewell. */
+    public static final long GLIMMER_MELT_END_MS = 2850L;
+
+    /** Default Glimmer Strength (the "C v3" intensity scalar; HUD Studio slider range
+     *  {@link #GLIMMER_INTENSITY_MIN}..{@link #GLIMMER_INTENSITY_MAX}). 1.3 is deliberately stronger than the
+     *  1.0 that reproduces the old v2 contract (Peetsa 2026-07-12: "a stronger glimmer on the title"). */
+    public static final double GLIMMER_INTENSITY_DEFAULT = 1.3;
+    /** Lower bound of the Glimmer Strength slider: a gentle glimmer (shallow dim, soft crest). */
+    public static final double GLIMMER_INTENSITY_MIN = 0.5;
+    /** Upper bound of the Glimmer Strength slider: a bold glimmer (deep dim, full-white crest). */
+    public static final double GLIMMER_INTENSITY_MAX = 2.0;
 
     /** White-pop at the HERO crest (approved 0.85 -- stronger than the plain {@link #GLIMMER_WHITE_POP} 0.70
      *  baked into the 2/3-arg {@link #glimmerShade}); carried on the frame and fed to the 4-arg glimmerShade. */
@@ -182,20 +207,41 @@ public final class TitleStyle {
     }
 
     /**
-     * The glimmer envelope for a title that appeared {@code elapsedMs} ago (wall-clock). Returns
-     * {@link GlimmerFrame#INERT} during the pre-sweep APPEAR phase and after MELT ends; a HERO frame
-     * (crest + dim + pop) during the sweep; and a BLOOM/MELT frame (bloom + swell, no crest) after. Pure +
-     * testable; callers apply their own gates (config toggle, Reduce Motion) on top and substitute
-     * {@link GlimmerFrame#INERT} when gated off.
+     * The glimmer envelope for a title that appeared {@code elapsedMs} ago (wall-clock), at the DEFAULT strength
+     * (intensity 1.0 -- the v2 contract). Equivalent to {@link #glimmerFrame(long, double) glimmerFrame(elapsedMs,
+     * 1.0)}; retained for the static Studio preview and tests that don't vary strength.
      */
     public static GlimmerFrame glimmerFrame(long elapsedMs) {
+        return glimmerFrame(elapsedMs, 1.0);
+    }
+
+    /**
+     * The glimmer envelope for a title that appeared {@code elapsedMs} ago (wall-clock), scaled by the Glimmer
+     * Strength {@code intensity}. Returns {@link GlimmerFrame#INERT} during the pre-sweep APPEAR phase and after
+     * MELT ends; a HERO frame (crest + dim + pop) during the hero sweep; a BLOOM frame (bloom + swell, no crest);
+     * a FAREWELL frame (a fast second crest + dim + pop, with bloom + swell HELD at peak); and a MELT frame
+     * (bloom + swell decay, no crest). Pure + testable; callers apply their own gates (config toggle, Reduce
+     * Motion) on top and substitute {@link GlimmerFrame#INERT} when gated off.
+     *
+     * <p>{@code intensity} scales the RELATIVE-CONTRAST mechanism, not a brighten-toward-target: it deepens the
+     * off-crest baseline dim (the frame's {@code dimScale} = arch * intensity, so downstream the floor drops
+     * further below {@link #GLIMMER_DIM_FLOOR}) AND lifts the crest pop ({@code pop} = min(1, {@link
+     * #GLIMMER_HERO_POP} * intensity)) TOGETHER. At {@code intensity == 1.0} the HERO/BLOOM/MELT frames are
+     * byte-identical to the v2 contract; the FAREWELL is present at every intensity. {@code intensity} below 0 is
+     * treated as 0 (no glimmer contrast, just the bloom/swell); the caller clamps to the slider's
+     * {@link #GLIMMER_INTENSITY_MIN}..{@link #GLIMMER_INTENSITY_MAX} range.
+     */
+    public static GlimmerFrame glimmerFrame(long elapsedMs, double intensity) {
         if (elapsedMs < GLIMMER_APPEAR_MS || elapsedMs >= GLIMMER_MELT_END_MS) {
             return GlimmerFrame.INERT;
         }
+        float in = (float) (Double.isNaN(intensity) || intensity < 0.0 ? 0.0 : intensity);
+        float pop = GLIMMER_HERO_POP * in;
+        if (pop > 1f) pop = 1f; // the crest cannot go past pure white -- extra strength lives in the deeper dim
         if (elapsedMs < GLIMMER_HERO_END_MS) {
             float p = (float) (elapsedMs - GLIMMER_APPEAR_MS) / (float) (GLIMMER_HERO_END_MS - GLIMMER_APPEAR_MS);
-            float dim = (float) Math.sin(Math.PI * p); // raised arch: 0 at both sweep ends, ~1 mid-sweep
-            return new GlimmerFrame(p, dim, GLIMMER_HERO_POP, 0f, 0f);
+            float dim = (float) Math.sin(Math.PI * p) * in; // raised arch (0 at both sweep ends), scaled by strength
+            return new GlimmerFrame(p, dim, pop, 0f, 0f);
         }
         if (elapsedMs < GLIMMER_BLOOM_END_MS) {
             float local = (float) (elapsedMs - GLIMMER_HERO_END_MS)
@@ -203,8 +249,18 @@ public final class TitleStyle {
             float ease = easeOutQuad(local);
             return new GlimmerFrame(-1f, 0f, 0f, GLIMMER_BLOOM_PEAK * ease, GLIMMER_SWELL_PEAK * ease);
         }
-        float local = (float) (elapsedMs - GLIMMER_BLOOM_END_MS)
-                / (float) (GLIMMER_MELT_END_MS - GLIMMER_BLOOM_END_MS);
+        if (elapsedMs < GLIMMER_FAREWELL_END_MS) {
+            // FAREWELL: a fast second crest sweep over the peak-held bloom, then the melt begins. Same envelope
+            // math as HERO (a travelling Gaussian crest against a raised-arch dim), just over a shorter window,
+            // so it reads as visibly quicker. Bloom + swell stay at their peak so the title is still fully
+            // present while the parting glint travels.
+            float p = (float) (elapsedMs - GLIMMER_BLOOM_END_MS)
+                    / (float) (GLIMMER_FAREWELL_END_MS - GLIMMER_BLOOM_END_MS);
+            float dim = (float) Math.sin(Math.PI * p) * in;
+            return new GlimmerFrame(p, dim, pop, GLIMMER_BLOOM_PEAK, GLIMMER_SWELL_PEAK);
+        }
+        float local = (float) (elapsedMs - GLIMMER_FAREWELL_END_MS)
+                / (float) (GLIMMER_MELT_END_MS - GLIMMER_FAREWELL_END_MS);
         float dec = 1f - easeOutCubic(local); // = (1-local)^3: 1 at melt start, 0 at melt end
         return new GlimmerFrame(-1f, 0f, 0f, GLIMMER_BLOOM_PEAK * dec, GLIMMER_SWELL_PEAK * dec);
     }
@@ -229,6 +285,14 @@ public final class TitleStyle {
      *  exists during the one-shot ~0.7s sweep (which rides the title's fade-in), a soft 25% dip is a shine, not
      *  a flash. See {@link #glimmerShade}. */
     public static final float GLIMMER_DIM_FLOOR = 0.75f;
+
+    /** Upper clamp on {@code dimScale} in {@link #glimmerShade} / {@link #dimToFloor}. v2's dimScale was the
+     *  raised arch alone (always in [0,1]); v3's Glimmer Strength feeds {@code arch * intensity}, which at the
+     *  slider max ({@link #GLIMMER_INTENSITY_MAX} = 2.0) reaches ~2.0 and deepens the baseline dim BELOW
+     *  {@link #GLIMMER_DIM_FLOOR}. This 4.0 cap leaves headroom past the slider while keeping the effective floor
+     *  {@code 1 - (1-GLIMMER_DIM_FLOOR)*dimScale} at or above 0 (it reaches 0 exactly at dimScale 4). At
+     *  {@code dimScale <= 1} the behaviour is byte-identical to v2. */
+    public static final float GLIMMER_DIM_SCALE_MAX = 4.0f;
 
     /** Specular white-pop at the crest: after the baseline dim, a letter is lerped toward pure white by
      *  {@code gaussian01 * GLIMMER_WHITE_POP}, so the exact crest gets a crisp bright glint (near-white on a
@@ -306,10 +370,12 @@ public final class TitleStyle {
      * nothing to contrast anyway), and full only mid-word where the crest actually needs it. {@code dimScale}
      * does NOT touch the crest white-pop, so the moving glint still reads from the first frame.
      *
-     * <p>{@code dimScale} is clamped to {@code [0,1]}; at {@code dimScale == 1} this is identical to the
-     * two-arg {@link #glimmerShade(int, float)} (the original fixed-dim behaviour), and at {@code dimScale == 0}
-     * the baseline is undimmed (factor 1.0) so only the crest's white-pop shows. {@code gaussian01 <= 0} is
-     * still an EXACT no-op returning {@code rgb & 0xFFFFFF} unchanged, regardless of {@code dimScale}.
+     * <p>{@code dimScale} is clamped to {@code [0, }{@link #GLIMMER_DIM_SCALE_MAX}{@code ]}; at
+     * {@code dimScale == 1} this is identical to the two-arg {@link #glimmerShade(int, float)} (the original
+     * fixed-dim behaviour), at {@code dimScale == 0} the baseline is undimmed (factor 1.0) so only the crest's
+     * white-pop shows, and at {@code dimScale > 1} (the v3 Glimmer Strength deepening the contrast) the baseline
+     * dims BELOW {@link #GLIMMER_DIM_FLOOR}, with the effective floor clamped to {@code >= 0}. {@code gaussian01
+     * <= 0} is still an EXACT no-op returning {@code rgb & 0xFFFFFF} unchanged, regardless of {@code dimScale}.
      */
     public static int glimmerShade(int rgb, float gaussian01, float dimScale) {
         return glimmerShade(rgb, gaussian01, dimScale, GLIMMER_WHITE_POP);
@@ -328,10 +394,12 @@ public final class TitleStyle {
             return rgb & 0xFFFFFF;
         }
         float g = gaussian01 > 1f ? 1f : gaussian01; // clamp; a crest height above 1 is meaningless
-        float ds = dimScale < 0f ? 0f : (dimScale > 1f ? 1f : dimScale);
+        float ds = dimScale < 0f ? 0f : (dimScale > GLIMMER_DIM_SCALE_MAX ? GLIMMER_DIM_SCALE_MAX : dimScale);
         float wp = whitePop < 0f ? 0f : (whitePop > 1f ? 1f : whitePop);
-        // Effective dim floor eases from 1.0 (no dim, ds=0) down to GLIMMER_DIM_FLOOR (full dim, ds=1).
+        // Effective dim floor eases from 1.0 (no dim, ds=0) down to GLIMMER_DIM_FLOOR at ds=1 (v2), and BELOW it
+        // for ds>1 (v3 Glimmer Strength deepening the contrast); clamped to >=0 so it never goes negative.
         float floor = 1f - (1f - GLIMMER_DIM_FLOOR) * ds;
+        if (floor < 0f) floor = 0f;
         float factor = floor + (1f - floor) * g;
         float pop = g * wp; // lerp-toward-white fraction at this letter (independent of the dim)
         int r0 = (rgb >> 16) & 0xFF, g0 = (rgb >> 8) & 0xFF, b0 = rgb & 0xFF;
@@ -350,8 +418,9 @@ public final class TitleStyle {
      * Alpha is not part of {@code rgb}; the caller ORs it back.
      */
     public static int dimToFloor(int rgb, float dimScale) {
-        float ds = dimScale < 0f ? 0f : (dimScale > 1f ? 1f : dimScale);
+        float ds = dimScale < 0f ? 0f : (dimScale > GLIMMER_DIM_SCALE_MAX ? GLIMMER_DIM_SCALE_MAX : dimScale);
         float floor = 1f - (1f - GLIMMER_DIM_FLOOR) * ds;
+        if (floor < 0f) floor = 0f;
         int r0 = (rgb >> 16) & 0xFF, g0 = (rgb >> 8) & 0xFF, b0 = rgb & 0xFF;
         int r = shadeChannel(r0, floor, 0f);
         int g = shadeChannel(g0, floor, 0f);

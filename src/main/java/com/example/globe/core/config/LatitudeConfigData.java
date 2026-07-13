@@ -154,6 +154,15 @@ public final class LatitudeConfigData {
     @SerializedName(value = "zoneEnterTitleGlimmer", alternate = {"zoneEnterTitleGlimmerValue"})
     public boolean zoneEnterTitleGlimmer = true;
 
+    /** Glimmer STRENGTH (the "C v3" intensity scalar; slider range 0.5..2.0). Scales the glimmer's
+     *  relative-contrast mechanism -- the off-crest baseline DIM and the crest white-POP together -- NOT a
+     *  brighten-toward-target (1.0 reproduces the old v2 look; the crest can't out-brighten white, so extra
+     *  strength deepens the dim the crest travels against). FRESH default 1.3 is deliberately STRONGER than 1.0
+     *  (Peetsa 2026-07-12: "a stronger glimmer on the title"). Sanitize-clamped; only applies while the Glimmer
+     *  toggle is ON and Reduce Motion is OFF. NEW 2026-07-12. */
+    @SerializedName(value = "zoneEnterTitleGlimmerIntensity", alternate = {"zoneEnterTitleGlimmerIntensityValue"})
+    public double zoneEnterTitleGlimmerIntensity = com.example.globe.core.ui.TitleStyle.GLIMMER_INTENSITY_DEFAULT;
+
     // Fresh-config default changed NORMAL -> UPPERCASE (2026-07-11, Peetsa). Existing saved configs keep
     // their own case untouched (the key has always existed, so it's always present on disk).
     @SerializedName(value = "zoneEnterTitleCase", alternate = {"zoneEnterTitleCaseValue"})
@@ -225,6 +234,9 @@ public final class LatitudeConfigData {
         zoneEnterTitleOutlineThickness = clampInt(zoneEnterTitleOutlineThickness, 1,
                 com.example.globe.core.ui.TitleStyle.MAX_OUTLINE_THICKNESS);
         zoneEnterTitleGlowIntensity = clamp(zoneEnterTitleGlowIntensity, 0.2, 2.0);
+        zoneEnterTitleGlimmerIntensity = clamp(zoneEnterTitleGlimmerIntensity,
+                com.example.globe.core.ui.TitleStyle.GLIMMER_INTENSITY_MIN,
+                com.example.globe.core.ui.TitleStyle.GLIMMER_INTENSITY_MAX);
 
         hudSnapPixels = clampInt(hudSnapPixels, 1, 64);
 

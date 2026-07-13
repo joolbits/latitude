@@ -47,6 +47,10 @@ public final class CompassHudPreset {
         // One-shot color-aware glimmer sweep (NEW 2026-07-11). Default ON so a preset saved without this key
         // imports with the glimmer on, matching the fresh-config look.
         public boolean glimmer = true;
+        // Glimmer STRENGTH (NEW 2026-07-12, "C v3"). Default 1.3 matches the fresh-config default so a preset
+        // saved without this key imports at the stronger out-of-box strength. Sanitize-clamped to 0.5..2.0 on
+        // import (via LatitudeConfig.sanitizeLive -> LatitudeConfigData.sanitize).
+        public double glimmerIntensity = com.example.globe.core.ui.TitleStyle.GLIMMER_INTENSITY_DEFAULT;
         public boolean showBaseDegrees = true;
         public int offsetX = 0;
         public int offsetY = -40;
@@ -133,6 +137,7 @@ public final class CompassHudPreset {
         p.title.glow = LatitudeConfig.zoneEnterTitleGlow;
         p.title.glowIntensity = LatitudeConfig.zoneEnterTitleGlowIntensity;
         p.title.glimmer = LatitudeConfig.zoneEnterTitleGlimmer;
+        p.title.glimmerIntensity = LatitudeConfig.zoneEnterTitleGlimmerIntensity;
         p.title.showBaseDegrees = LatitudeConfig.showZoneBaseDegreesOnTitle;
         p.title.offsetX = LatitudeConfig.zoneEnterTitleOffsetX;
         p.title.offsetY = LatitudeConfig.zoneEnterTitleOffsetY;
@@ -179,6 +184,7 @@ public final class CompassHudPreset {
             LatitudeConfig.zoneEnterTitleGlow = title.glow;
             LatitudeConfig.zoneEnterTitleGlowIntensity = title.glowIntensity;
             LatitudeConfig.zoneEnterTitleGlimmer = title.glimmer;
+            LatitudeConfig.zoneEnterTitleGlimmerIntensity = title.glimmerIntensity;
             LatitudeConfig.showZoneBaseDegreesOnTitle = title.showBaseDegrees;
             LatitudeConfig.zoneEnterTitleOffsetX = title.offsetX;
             LatitudeConfig.zoneEnterTitleOffsetY = title.offsetY;

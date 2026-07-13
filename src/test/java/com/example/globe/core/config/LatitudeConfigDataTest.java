@@ -39,6 +39,8 @@ class LatitudeConfigDataTest {
         assertTrue(d.zoneEnterTitleDropShadow, "fresh default is the faded drop shadow (2026-07-11)");
         assertFalse(d.zoneEnterTitleGlow, "glow moved off-by-default; drop shadow is the depth cue now");
         assertEquals(0.75, d.zoneEnterTitleGlowIntensity);
+        assertTrue(d.zoneEnterTitleGlimmer, "fresh default glimmer ON");
+        assertEquals(1.3, d.zoneEnterTitleGlimmerIntensity, "fresh glimmer strength 1.3 (stronger than 1.0, 2026-07-12)");
         assertEquals(1, d.zoneEnterTitleLetterSpacing, "fresh letter spacing +1 (2026-07-11)");
         assertEquals(TitleCaseMode.UPPERCASE, d.zoneEnterTitleCase);
         assertEquals(-40, d.zoneEnterTitleOffsetY);
@@ -168,6 +170,7 @@ class LatitudeConfigDataTest {
                   "zoneEnterTitleLetterSpacing": -100,
                   "zoneEnterTitleOutlineThickness": 99,
                   "zoneEnterTitleGlowIntensity": 50.0,
+                  "zoneEnterTitleGlimmerIntensity": 50.0,
                   "hudSnapPixels": 100000,
                   "zoneEnterTitleColorPreset": "NOT_A_REAL_PRESET",
                   "zoneEnterTitleCase": null,
@@ -180,10 +183,26 @@ class LatitudeConfigDataTest {
         assertEquals(-4, d.zoneEnterTitleLetterSpacing);
         assertEquals(4, d.zoneEnterTitleOutlineThickness, "outline thickness clamps to MAX (4)");
         assertEquals(2.0, d.zoneEnterTitleGlowIntensity, "glow intensity clamps to 2.0");
+        assertEquals(2.0, d.zoneEnterTitleGlimmerIntensity, "glimmer strength clamps to 2.0 (max)");
         assertEquals(64, d.hudSnapPixels);
         assertEquals(TitleColorPreset.WHITE, d.zoneEnterTitleColorPreset, "unknown enum constant -> default");
         assertEquals(TitleCaseMode.NORMAL, d.zoneEnterTitleCase);
         assertEquals(LatitudeConfigData.CURRENT_CONFIG_VERSION, d.configVersion, "future version clamped");
+    }
+
+    /** Glimmer Strength clamps to its slider range [0.5, 2.0] at BOTH ends, and an absent key adopts the
+     *  stronger-than-1.0 fresh default (1.3, 2026-07-12). */
+    @Test
+    void glimmerStrengthClampsBothEndsAndDefaults() {
+        LatitudeConfigData lo = GSON.fromJson("{\"zoneEnterTitleGlimmerIntensity\": -5.0}", LatitudeConfigData.class);
+        lo.sanitize();
+        assertEquals(0.5, lo.zoneEnterTitleGlimmerIntensity, "glimmer strength clamps up to 0.5 (min)");
+
+        LatitudeConfigData absent = GSON.fromJson("{}", LatitudeConfigData.class);
+        absent.sanitize();
+        assertEquals(1.3, absent.zoneEnterTitleGlimmerIntensity, "absent key adopts the 1.3 fresh default");
+        assertEquals(com.example.globe.core.ui.TitleStyle.GLIMMER_INTENSITY_DEFAULT,
+                absent.zoneEnterTitleGlimmerIntensity, "fresh default tracks the TitleStyle constant");
     }
 
     /** The appended Accessibility setting: defaults to Standard, round-trips by name under the clean key, keeps

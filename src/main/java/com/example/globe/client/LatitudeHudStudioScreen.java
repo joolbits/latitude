@@ -131,6 +131,7 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
     private AbstractWidget wTitleGlow;
     private AbstractWidget wTitleGlowIntensity;
     private AbstractWidget wTitleGlimmer;
+    private AbstractWidget wTitleGlimmerIntensity;
     private AbstractWidget wTitleCase;
     private AbstractWidget wTitleLetterSpacing;
 
@@ -307,6 +308,7 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
         this.wTitleGlow = null;
         this.wTitleGlowIntensity = null;
         this.wTitleGlimmer = null;
+        this.wTitleGlimmerIntensity = null;
         this.wTitleCase = null;
         this.wTitleLetterSpacing = null;
         this.wUndoLoad = null;
@@ -883,10 +885,29 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
                         LatitudeConfig.saveCurrent();
                         // Nice feedback: flipping it ON replays the one-shot sweep once in the static preview.
                         if (value) this.titleGlimmerReplayStartMs = System.currentTimeMillis();
+                        // The Glimmer Strength row below appears only when the glimmer is ON, so (re)build the
+                        // sidebar to add/remove it -- same construct/teardown the Shadow Glow picker uses.
+                        this.init();
                     }));
             tooltip(this.wTitleGlimmer, "A quick shine sweeps across the title when it appears.");
             trackSidebarWidget(this.wTitleGlimmer, y);
             y += rowH + rowGap;
+
+            if (LatitudeConfig.zoneEnterTitleGlimmer) {
+                this.wTitleGlimmerIntensity = this.addRenderableWidget(new StepSlider(panelX, y, widgetW, rowH,
+                        Component.literal("Glimmer Strength"),
+                        com.example.globe.core.ui.TitleStyle.GLIMMER_INTENSITY_MIN,
+                        com.example.globe.core.ui.TitleStyle.GLIMMER_INTENSITY_MAX, 0.1,
+                        LatitudeConfig.zoneEnterTitleGlimmerIntensity,
+                        v -> {
+                            LatitudeConfig.zoneEnterTitleGlimmerIntensity = v;
+                            // Replay the sweep so the new strength is visible immediately in the static preview.
+                            this.titleGlimmerReplayStartMs = System.currentTimeMillis();
+                        }));
+                tooltip(this.wTitleGlimmerIntensity, "How strong the title's shine sweep is: lower is a gentle glint, higher is a bold flash.");
+                trackSidebarWidget(this.wTitleGlimmerIntensity, y);
+                y += rowH + rowGap;
+            }
 
             LatitudeConfigData.TitleCaseMode[] titleCaseValues = LatitudeConfigData.TitleCaseMode.values();
             List<SwatchDropdown.Entry> titleCaseEntries = new ArrayList<>();
@@ -930,6 +951,8 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
                         LatitudeConfig.zoneEnterTitleGlow = false;
                         LatitudeConfig.zoneEnterTitleGlowIntensity = 0.75;
                         LatitudeConfig.zoneEnterTitleGlimmer = true;
+                        LatitudeConfig.zoneEnterTitleGlimmerIntensity =
+                                com.example.globe.core.ui.TitleStyle.GLIMMER_INTENSITY_DEFAULT;
                         LatitudeConfig.zoneEnterTitleLetterSpacing = 1; // matches the fresh default (+1)
                         LatitudeConfig.zoneEnterTitleColorPreset = LatitudeConfigData.TitleColorPreset.OFF_WHITE;
                         LatitudeConfig.zoneEnterTitleCase = LatitudeConfigData.TitleCaseMode.UPPERCASE;
@@ -1254,7 +1277,8 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
                 com.example.globe.core.ui.TitleStyle.GlimmerFrame.INERT;
         if (this.titleGlimmerReplayStartMs >= 0 && LatitudeConfig.zoneEnterTitleGlimmer && !LatitudeConfig.reduceMotion) {
             long elapsedMs = System.currentTimeMillis() - this.titleGlimmerReplayStartMs;
-            previewGlimmer = com.example.globe.core.ui.TitleStyle.glimmerFrame(elapsedMs);
+            previewGlimmer = com.example.globe.core.ui.TitleStyle.glimmerFrame(elapsedMs,
+                    LatitudeConfig.zoneEnterTitleGlimmerIntensity);
         }
 
         // Editor-only backing plate behind the live preview title so the outline / drop shadow / glow / fill stay
@@ -1929,6 +1953,8 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
         LatitudeConfig.zoneEnterTitleGlow = false;
         LatitudeConfig.zoneEnterTitleGlowIntensity = 0.75;
         LatitudeConfig.zoneEnterTitleGlimmer = true;
+        LatitudeConfig.zoneEnterTitleGlimmerIntensity =
+                com.example.globe.core.ui.TitleStyle.GLIMMER_INTENSITY_DEFAULT;
         LatitudeConfig.zoneEnterTitleCase = LatitudeConfigData.TitleCaseMode.UPPERCASE;
         LatitudeConfig.zoneEnterTitleLetterSpacing = 1;
         LatitudeConfig.zoneEnterTitleDraggable = true;
