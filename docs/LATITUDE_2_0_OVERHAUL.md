@@ -533,9 +533,13 @@ Peetsa's own voice, gradual freeze-damage curve with blue-heart feedback (87.5°
 forced snow + forced water-freeze + vegetation fade (the bare cap), and the loading-screen/wordmark
 overhaul that rode along. Single source of truth: `docs/binder/polar-experience-reference-20260712.md`
 (system reference: every constant, flag, mixin, dial, dead end). Run-by-run history:
-`docs/binder/phase5-boundary-experience-plan-20260709.md`. REMAINING in Phase 5: B-5 Hemisphere Passage
-(separate worktree), the consumer default-flip live decision, storm wall revive/retire, pole hard-stop
-decision (E/W edge items below unchanged).
+`docs/binder/phase5-boundary-experience-plan-20260709.md`. **B-5 Hemisphere Passage SHIPPED 2026-07-12** (merged, default ON, live-approved by Peetsa + a full
+orchestrator-flown instrumented crossing): fog-advisory consensual E/W crossing, degree-anchored edge
+geometry (features from ~176.5 deg, arrival past the fog), border-drift immunity + per-tick border
+snap, structure-free edge belt. Single source of truth:
+`docs/binder/phase5-b5-hemisphere-passage-design-20260710.md` (design + all P1-P3 build/verdict logs).
+REMAINING in Phase 5: B-6 teleport-evator (mirror-band invisible crossing, reuses B-5's engine — NEXT),
+the consumer default-flip live decision, storm wall revive/retire, pole hard-stop decision.
 
 Document review:
 
