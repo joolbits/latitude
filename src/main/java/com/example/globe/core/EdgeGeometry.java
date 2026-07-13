@@ -167,8 +167,8 @@ public final class EdgeGeometry {
                            double fogClimaxDist,
                            double arrivalDist) {
 
-        /** {@code |x - centerX|} at which the crossing drops the arriving player (the ARRIVAL_DEG column,
-         *  4 deg from the wall). Clamped non-negative for degenerate tiny radii. */
+        /** {@code |x - centerX|} at which the crossing drops the arriving player (the ARRIVAL_DEG column:
+         *  178 deg = ~2 deg from the wall, inside the fog onset). Clamped non-negative for degenerate tiny radii. */
         public double arrivalAbsX() {
             return Math.max(0.0, xRadiusIntended - arrivalDist);
         }
