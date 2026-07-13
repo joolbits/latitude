@@ -55,10 +55,17 @@ public final class HemispherePassageClient {
     // Client arm state (mirrors the pure core.HemispherePassage arm). Starts armed; reset on non-globe worlds.
     private static boolean armed = true;
 
-    // TEST 92 right-click-at-the-wall re-prompt. Rising-edge detection on the USE key + a rate limit so a
-    // disarmed player at the wall re-summons the crossing prompt with one right-click (facing the border),
-    // without walking out and back. Reset with the arm on world switch.
+    // TEST 92/93 click-at-the-wall re-prompt. Rising-edge detection on the USE key (right-click) AND the ATTACK
+    // key (left-click, TEST 93 -- Peetsa) + a shared rate limit so a disarmed player at the wall re-summons the
+    // crossing prompt with a single click of EITHER button (facing the border), without walking out and back.
+    // Both trackers reset with the arm on world switch. The whole gesture (both buttons) is gated by the
+    // LatitudeConfig.borderRepromptGesture General-tab toggle (default ON).
     private static boolean useWasDown = false;
+    // TEST 93: parallel rising-edge tracker for the ATTACK (left-click) key. Left-click is also mine/attack, so
+    // the gesture is NON-CONSUMING (we only READ isDown, never clear the click) -- vanilla mining/attack still
+    // happens on the same press; the disarmed + in-band + facing-outward gating is what keeps it from hijacking
+    // ordinary clicks. See maybeRearmGesture for the honest mining-at-the-wall note.
+    private static boolean attackWasDown = false;
     // 0L, NOT Long.MIN_VALUE: the rate guard computes (now - last), and now - MIN_VALUE OVERFLOWS to a huge
     // NEGATIVE value, which reads as "gestured an instant ago" and blocks the gesture FOREVER (sweeper
     // BLOCKER, proven in real Java). 0L makes the first gesture trivially pass (now - 0 = epoch millis).
@@ -78,6 +85,7 @@ public final class HemispherePassageClient {
     public static void reset() {
         armed = true;
         useWasDown = false;
+        attackWasDown = false;
         lastRearmGestureMs = 0L; // see field note: MIN_VALUE overflows the rate guard and bricks the gesture
         curtain = Curtain.NONE;
         curtainRaisedMs = 0L;
@@ -152,9 +160,10 @@ public final class HemispherePassageClient {
         net.minecraft.client.gui.screens.Screen openScreen = mc.gui.screen();
         boolean canOpenPrompt = !deepUnder && openScreen == null;
 
-        // TEST 92 right-click-at-the-wall re-prompt (Peetsa): a DISARMED player standing in the prompt band who
-        // presses USE while FACING the border re-arms the passage so the prompt re-opens this tick -- no walk-out
-        // needed. Runs BEFORE evaluateGated so the re-arm takes effect the same tick. (When the B-6 evator branch
+        // TEST 92/93 click-at-the-wall re-prompt (Peetsa): a DISARMED player standing in the prompt band who
+        // presses USE (right-click) OR ATTACK (left-click, TEST 93) while FACING the border re-arms the passage
+        // so the prompt re-opens this tick -- no walk-out needed. Gated by the borderRepromptGesture toggle.
+        // Runs BEFORE evaluateGated so the re-arm takes effect the same tick. (When the B-6 evator branch
         // rebases onto this it adds its "&& not an evator world" exclusion here; on an evator world the whole
         // passage machine is suppressed anyway, so the gesture never reaches this point.)
         maybeRearmGesture(mc, distToEdge, geo, canOpenPrompt, now);
@@ -175,21 +184,40 @@ public final class HemispherePassageClient {
     }
 
     /**
-     * TEST 92 re-prompt gesture glue: read the USE key (rising edge + ~20-tick rate limit) and the player's
-     * facing, and re-arm the passage when {@link HemispherePassage#rearmGestureArms} approves. Only ever SETS
-     * {@code armed=true}; the caller's {@link HemispherePassage#evaluateGated} then opens the prompt under the
-     * usual surface/no-screen gate. The rising-edge tracker advances EVERY call so a held button is not a repeat.
+     * TEST 92/93 re-prompt gesture glue: read the USE key (right-click) AND the ATTACK key (left-click, TEST 93)
+     * -- rising edge on EITHER + a shared ~20-tick rate limit -- and the player's facing, and re-arm the passage
+     * when {@link HemispherePassage#rearmGestureArms} approves. Only ever SETS {@code armed=true}; the caller's
+     * {@link HemispherePassage#evaluateGated} then opens the prompt under the usual surface/no-screen gate. BOTH
+     * rising-edge trackers advance EVERY call so a held button is not a repeat, even on a tick we early-out.
+     *
+     * <p><b>Config gate.</b> The whole gesture (both buttons) is gated by
+     * {@link LatitudeConfig#borderRepromptGesture} (General-tab toggle, default ON). We advance the trackers
+     * BEFORE the gate so flipping the toggle back on never treats a still-held button as a fresh rising edge.
      *
      * <p>Facing test: {@link HemispherePassage#facingOutwardX} requires the horizontal look to point within
-     * ~60 deg of straight-OUT toward the nearer E/W wall, so a normal right-click aimed at a block/item to the
-     * side or inward never hijacks into a re-prompt. Band test: DISARMED and within the prompt distance.
+     * ~60 deg of straight-OUT toward the nearer E/W wall, so a normal click aimed at a block/item to the side or
+     * inward never hijacks into a re-prompt. Band test: DISARMED and within the prompt distance.
+     *
+     * <p><b>Left-click = attack/mine (honest note).</b> The gesture is NON-CONSUMING: it only READS
+     * {@code isDown()} and never clears the click, matching the USE key's non-consuming philosophy, so vanilla
+     * attack/mining still fires on the same press. Consequence: a disarmed player who left-clicks while standing
+     * in the prompt band AND facing within 60 deg of straight-out toward the wall will re-summon the prompt AND
+     * swing/mine as normal. The disarmed + in-band + facing-outward triple gate keeps this from touching ordinary
+     * play (mining a block off to the side or inward never re-prompts; you must be in the last ~1-2 deg at the
+     * wall, disarmed, aimed outward), and the 1000ms shared rate limit + the prompt opening (which flips
+     * {@code canOpenPrompt} false) prevent any repeat. Peetsa explicitly asked for left-click support.
      */
     private static void maybeRearmGesture(Minecraft mc, double distToEdge,
                                           com.example.globe.core.EdgeGeometry.Resolved geo,
                                           boolean canOpenPrompt, long now) {
         boolean useDown = mc.options.keyUse.isDown();
-        boolean risingEdge = useDown && !useWasDown;
-        useWasDown = useDown; // advance every tick, even when we early-out below
+        boolean attackDown = mc.options.keyAttack.isDown();
+        boolean risingEdge = (useDown && !useWasDown) || (attackDown && !attackWasDown);
+        useWasDown = useDown;       // advance BOTH trackers every tick, even when we early-out below
+        attackWasDown = attackDown;
+        if (!LatitudeConfig.borderRepromptGesture) {
+            return; // gesture disabled by the General-tab toggle (both buttons)
+        }
         if (!risingEdge || armed || !canOpenPrompt || mc.player == null || mc.level == null) {
             return;
         }
@@ -239,11 +267,12 @@ public final class HemispherePassageClient {
     }
 
     private static void onArrival(Minecraft mc, long now) {
-        // TEST 92: the crossing drops the player at ARRIVAL_DEG (176 deg, 4 deg from the wall). On properly-sized
-        // worlds that is past the fog, so the arm would re-arm naturally on the far side; on the tiny Itty-Bitty
-        // world it lands INSIDE the re-arm band, so seeding armed=false here is LOAD-BEARING -- the sticky band
-        // holds it disarmed and a player who then walks toward the wall is not re-prompted. Either way the seed is
-        // correct: out-of-band the next evaluate() re-arms it like a walk-out; in-band it stays disarmed.
+        // TEST 93: the crossing drops the player at ARRIVAL_DEG (178 deg, 2 deg from the wall -- inside the
+        // thinning fog edge, looking inward). 178 coincides with the re-arm line, so on properly-sized worlds
+        // arrival lands EXACTLY on it and on the tiny Itty-Bitty world the readability floor pulls it strictly
+        // inside the re-arm band. Seeding armed=false here is LOAD-BEARING on EVERY world now -- the sticky band
+        // holds the player disarmed (evaluate() re-arms only on a strict dist>rearm, so an on-the-line/in-band
+        // arrival stays disarmed) and a player who then walks toward the wall is not re-prompted.
         boolean prevArmed = armed;
         armed = false;
         boolean east = HemispherePassageClientState.arrivedEast();

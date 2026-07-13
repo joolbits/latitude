@@ -28,14 +28,18 @@ package com.example.globe.core;
  * is STICKY; only a deliberate walk-out-and-back re-offers the prompt (the TEST 83 fix: a MODEST walk-back,
  * not the old whole-fog-band trek).
  *
- * <p><b>Spawned/arrived contract (TEST 92: arrival may be in-band on floored worlds).</b> The crossing drops
- * the arriving player at {@code arrivalDist} (4 deg from the wall). On properly-sized worlds that is PAST the
- * fog ({@code arrivalDist > rampStart > rearmAt}), so the machine would arm naturally on the far side. But on
- * the tiny Itty-Bitty world the readability floors push {@code rearmAt}/{@code rampStart} outward beyond 4 deg,
- * so the arrival lands INSIDE the sticky re-arm band. In BOTH cases the S2C arrival seeds {@code armed=false},
- * and {@link #evaluate} does the right thing: out-of-band it re-arms next tick (harmless, like a walk-out);
- * in-band it HOLDS disarmed (the sticky band), so a player who then walks toward the wall is NOT re-prompted --
- * no self-reprompt loop. On small worlds this seed is therefore load-bearing, not merely belt-and-suspenders.
+ * <p><b>Spawned/arrived contract (TEST 93: arrival is at-or-inside the re-arm band on EVERY world).</b> The
+ * crossing drops the arriving player at {@code arrivalDist} (2 deg from the wall -- 0.5 deg inside the fog
+ * onset). Because {@code ARRIVAL_DEG == REARM_DEG == 178}, on properly-sized worlds arrival lands EXACTLY on
+ * the re-arm line ({@code arrivalDist == rearmAt}); on the tiny Itty-Bitty world the {@code prompt + 16}
+ * readability floor pulls it strictly INSIDE the sticky re-arm band ({@code arrivalDist < rearmAt}). The S2C
+ * arrival ALWAYS seeds {@code armed=false}, and {@link #evaluate} re-arms only on a STRICT
+ * {@code distToEdge > rearmAt}: so an arrival landing AT the line (equality, not {@code >}) or inside it HOLDS
+ * disarmed (the sticky band), and a player who then walks toward the wall is NOT re-prompted -- no self-reprompt
+ * loop on any world size. The seeded-DISARMED contract, formerly load-bearing only on the tiny floored world, is
+ * now the universal arrival contract. (Even if a block-rounded landing on a large world nudged the player a hair
+ * past the line and re-armed, the re-prompt would only fire after a deliberate walk all the way back to the
+ * 179-deg prompt line -- correct behaviour, not a loop.)
  */
 public final class HemispherePassage {
 

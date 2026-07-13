@@ -46,6 +46,10 @@ class LatitudeConfigDataTest {
         assertEquals(-40, d.zoneEnterTitleOffsetY);
         assertTrue(d.hudSnapEnabled);
         assertEquals(8, d.hudSnapPixels);
+        // Border Re-prompt Gesture (TEST 93): default ON, sourced from the single shared constant.
+        assertTrue(d.borderRepromptGesture, "fresh default is ON");
+        assertEquals(LatitudeConfigData.BORDER_REPROMPT_GESTURE_DEFAULT, d.borderRepromptGesture,
+                "fresh default tracks the single shared constant (duplicated-default-sites law)");
     }
 
     /** A real pre-U-C file: legacy `...Value` keys, dead fields included, no version key. */
@@ -226,5 +230,28 @@ class LatitudeConfigDataTest {
         LatitudeConfigData bad = GSON.fromJson("{\"accessibilityMode\": \"NOPE\"}", LatitudeConfigData.class);
         bad.sanitize();
         assertEquals(AccessibilityMode.STANDARD, bad.accessibilityMode, "unknown enum constant -> default");
+    }
+
+    /** The Border Re-prompt Gesture toggle (TEST 93): defaults ON via the single shared constant, round-trips
+     *  under the clean key name, and an absent key keeps the default (existing files pick up the gesture ON). */
+    @Test
+    void borderRepromptGestureDefaultsRoundTripsAndKeepsDefaultWhenAbsent() {
+        assertTrue(LatitudeConfigData.BORDER_REPROMPT_GESTURE_DEFAULT, "the shared default constant is ON");
+        assertEquals(LatitudeConfigData.BORDER_REPROMPT_GESTURE_DEFAULT,
+                LatitudeConfigData.fresh().borderRepromptGesture, "fresh reads the constant");
+
+        LatitudeConfigData out = LatitudeConfigData.fresh();
+        out.borderRepromptGesture = false;
+        String json = GSON.toJson(out);
+        assertTrue(json.contains("\"borderRepromptGesture\""), "persists under the clean key name");
+        assertFalse(json.contains("borderRepromptGestureValue"), "not the legacy ...Value name");
+        LatitudeConfigData in = GSON.fromJson(json, LatitudeConfigData.class);
+        in.sanitize();
+        assertFalse(in.borderRepromptGesture, "an explicit OFF round-trips");
+
+        LatitudeConfigData absent = GSON.fromJson("{\"hudSnapPixels\": 8}", LatitudeConfigData.class);
+        absent.sanitize();
+        assertEquals(LatitudeConfigData.BORDER_REPROMPT_GESTURE_DEFAULT, absent.borderRepromptGesture,
+                "absent key keeps the ON default");
     }
 }

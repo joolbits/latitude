@@ -14,8 +14,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *
  * <p>Pins the asymmetric hysteresis (disarm on the prompt line, re-arm past a MODEST re-arm line), the
  * no-oscillation guarantee at the prompt distance, the TEST-83 "declined prompt re-offers after a modest
- * walk-back" fix, the arrival arm behaviour (TEST 92: in-band on tiny worlds / out-of-band on large ones, seed
- * covers both), the TEST 92 right-click re-prompt gesture predicates (facing cone + band), the server
+ * walk-back" fix, the arrival arm behaviour (TEST 93: at-or-inside the re-arm line on EVERY world -- exactly on
+ * it on large worlds, strictly inside on tiny floored worlds -- with the disarmed seed universal), the TEST
+ * 92/93 click re-prompt gesture predicates (facing cone + band), the server
  * anti-exploit gate, the mirror-X geometry (identical Classic/Mercator), NaN safety, and the fog curves keyed
  * on the resolved rampStart/climax.
  */
@@ -263,10 +264,10 @@ class HemispherePassageTest {
 
     @Test
     void arrivedInBandOnFlooredWorld_seedHoldsDisarmedNoSelfReprompt() {
-        // TEST 92: on the tiny Itty-Bitty world the 4-deg arrival lands INSIDE the re-arm band (arrivalDist 83.3
-        // < rearm 104). The disarmed-arrival seed is now LOAD-BEARING: the next tick HOLDS disarmed (sticky
-        // band), so the player never self-prompts -- and, crucially, does not re-arm and then re-prompt if they
-        // walk toward the wall.
+        // TEST 93: on the tiny Itty-Bitty world the 2-deg arrival (floored to 56 by prompt+16) lands strictly
+        // INSIDE the re-arm band (arrivalDist 56 < rearm 104). The disarmed-arrival seed is LOAD-BEARING: the
+        // next tick HOLDS disarmed (sticky band), so the player never self-prompts -- and, crucially, does not
+        // re-arm and then re-prompt if they walk toward the wall.
         boolean armed = false; // externally seeded by the S2C arrival
         HemispherePassage.Decision d = eval(armed, ITTY.arrivalDist());
         assertFalse(d.openPrompt(), "arriving in-band never self-prompts");
@@ -276,26 +277,29 @@ class HemispherePassageTest {
     }
 
     @Test
-    void arrivedOutOfBandOnLargeWorld_rearmsNaturallyNextTick() {
-        // On a properly-sized world (Regular Wide) the 4-deg arrival lands PAST the re-arm/fog band, so the
-        // disarmed seed simply re-arms next tick like a walk-out -- belt-and-suspenders there.
+    void arrivedOnRearmLineOnLargeWorld_holdsDisarmed() {
+        // TEST 93: on a properly-sized world (Regular Wide) the 2-deg arrival lands EXACTLY on the re-arm line
+        // (ARRIVAL_DEG == REARM_DEG == 178). evaluate() re-arms only on a STRICT dist > rearm, so landing AT the
+        // line (equality) HOLDS disarmed -- the disarmed seed is correct here too (universal now, not just tiny
+        // worlds). A re-prompt only follows a deliberate walk all the way back to the 179-deg prompt line.
         EdgeGeometry.Resolved reg = EdgeGeometry.resolve(20000.0);
-        assertTrue(reg.arrivalDist() > reg.rearmDist(), "large-world arrival lands past the re-arm line");
+        assertEquals(reg.rearmDist(), reg.arrivalDist(), 1e-6, "large-world arrival sits exactly on the re-arm line");
         HemispherePassage.Decision d = HemispherePassage.evaluate(false, reg.arrivalDist(),
                 reg.promptDist(), reg.rearmDist());
-        assertFalse(d.openPrompt(), "arriving out-of-band never self-prompts");
-        assertTrue(d.nextArmed(), "arriving out-of-band re-arms on the next tick");
+        assertFalse(d.openPrompt(), "arriving on the line never self-prompts");
+        assertFalse(d.nextArmed(), "arriving exactly on the re-arm line HOLDS disarmed (strict > re-arm test)");
     }
 
     @Test
     void arrivalBandRelationshipDependsOnWorldSize() {
-        // Pin the TEST 92 reality the arrival seed is designed around: in-band on the tiny floored world,
-        // out-of-band (past fog) on a properly-sized world. Either way the disarmed seed is correct.
-        assertTrue(ITTY.arrivalDist() < REARM, "Itty-Bitty: arrival inside the re-arm band");
+        // Pin the TEST 93 reality the arrival seed is designed around: strictly in-band on the tiny floored world,
+        // exactly on the re-arm line on a properly-sized world; inside the fog on BOTH. Either way disarmed seed OK.
+        assertTrue(ITTY.arrivalDist() < REARM, "Itty-Bitty: arrival strictly inside the re-arm band");
         assertTrue(ITTY.arrivalDist() < RAMP, "Itty-Bitty: arrival inside the fog band");
         assertTrue(ITTY.arrivalDist() > PROMPT, "but always past the prompt line");
         EdgeGeometry.Resolved reg = EdgeGeometry.resolve(20000.0);
-        assertTrue(reg.arrivalDist() > reg.rampStartDist(), "Regular Wide: arrival past the fog onset");
+        assertEquals(reg.rearmDist(), reg.arrivalDist(), 1e-6, "Regular Wide: arrival exactly on the re-arm line");
+        assertTrue(reg.arrivalDist() < reg.rampStartDist(), "Regular Wide: arrival inside the fog onset");
     }
 
     @Test

@@ -1086,6 +1086,16 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
             trackSidebarWidget(wWarnings, y);
             y += rowH + rowGap;
 
+            var wReprompt = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "ON" : "OFF"), () -> LatitudeConfig.borderRepromptGesture)
+                    .withValues(true, false)
+                    .create(panelX, y, widgetW, rowH, Component.literal("Border Re-prompt Gesture"), (btn, value) -> {
+                        LatitudeConfig.borderRepromptGesture = value;
+                        LatitudeConfig.saveCurrent();
+                    }));
+            tooltip(wReprompt, "At the far east/west edge of the world, if you dismissed the \"cross to the other hemisphere\" prompt you can bring it back by facing the fog wall and clicking (either mouse button) instead of walking away and back. Turn this off if you'd rather only get the prompt by walking out and returning.");
+            trackSidebarWidget(wReprompt, y);
+            y += rowH + rowGap;
+
             var wPreviewText = this.addRenderableWidget(CycleButton.<CompassHud.PreviewTextSource>builder(v -> Component.literal(switch (v) {
                         case SAMPLE -> "Short sample";
                         case LONGEST -> "Longest real text";
@@ -1963,6 +1973,9 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
         // hardcoded-literal pattern already used for the zoneEnterTitle* resets above.
         LatitudeConfig.hudSnapEnabled = true;
         LatitudeConfig.hudSnapPixels = 8;
+        // Border Re-prompt Gesture (TEST 93): a General-tab toggle -> restored by "Reset HUD". Reads the SINGLE
+        // shared default constant (duplicated-default-sites law) so it can never drift from the field initializer.
+        LatitudeConfig.borderRepromptGesture = LatitudeConfigData.BORDER_REPROMPT_GESTURE_DEFAULT;
         LatitudeConfig.saveCurrent();
     }
 

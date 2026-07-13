@@ -15,8 +15,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *       AND under the small-world floors (Itty / Small-Wide / Regular-Wide matrices),</li>
  *   <li>the exact effective block geometry on each world size,</li>
  *   <li>the fog/banner shared onset (== {@code rampStartDist}),</li>
- *   <li>the arrival target (TEST 92: 176 deg / 4 deg from the wall -- past the fog on large worlds, in the
- *       re-arm band on tiny worlds; symmetric both hemispheres, Classic + Mercator formula), and</li>
+ *   <li>the arrival target (TEST 93: 178 deg / 2 deg from the wall -- INSIDE the fog on every world, at-or-
+ *       inside the re-arm line (exactly on it on large worlds, strictly inside on tiny floored worlds);
+ *       symmetric both hemispheres, Classic + Mercator formula), and</li>
  *   <li>the immunity regression: the geometry is a function of the intended X radius ONLY, so a live border
  *       size != intended (a mid-lerp read) can never move a feature line.</li>
  * </ul>
@@ -35,10 +36,10 @@ class EdgeGeometryTest {
     void blocksPerDegreeAndDistForDeg() {
         assertEquals(3750.0 / 180.0, EdgeGeometry.blocksPerDegree(3750.0), EPS);
         assertEquals(20000.0 / 180.0, EdgeGeometry.blocksPerDegree(20000.0), EPS);
-        // distance-from-edge for a degree: (180 - deg) * bpd. The edge (180) is distance 0; 176 deg (the TEST 92
-        // arrival anchor) is 4 deg in.
+        // distance-from-edge for a degree: (180 - deg) * bpd. The edge (180) is distance 0; 178 deg (the TEST 93
+        // arrival anchor) is 2 deg in.
         assertEquals(0.0, EdgeGeometry.distForDeg(180.0, 20000.0), EPS);
-        assertEquals(4.0 * (20000.0 / 180.0), EdgeGeometry.distForDeg(176.0, 20000.0), EPS);
+        assertEquals(2.0 * (20000.0 / 180.0), EdgeGeometry.distForDeg(178.0, 20000.0), EPS);
     }
 
     // ---- exact effective geometry per world size -------------------------------------------
@@ -47,31 +48,34 @@ class EdgeGeometryTest {
     void ittyBittyClassicEffectiveGeometry_floorsBind() {
         // xRadius 3750: 1 deg = 20.833 blocks, so the floors engage. TEST 92: rampStart tightened (FOG_BAND_MIN
         // 120 -> 60, RAMP_START 176.5 -> 177.5), but on this tiny world the rearm+ORDER_STEP term dominates, so
-        // rampStart = rearm(104) + 8 = 112 (was 160). Arrival pulled in to 176 deg = 4 deg = 83.33 blocks (was
-        // the rampStart+24 floor = 184).
+        // rampStart = rearm(104) + 8 = 112. TEST 93: arrival moved 176 -> 178 deg; on this tiny world 178 deg =
+        // 41.7 blocks is now BELOW the prompt+16 = 56 floor, so the ARRIVAL_MIN_PAST_PROMPT floor binds and pulls
+        // arrival to 56 blocks (was 83.33) -- strictly inside the re-arm band.
         assertEquals(40.0, ITTY.promptDist(), EPS, "prompt floored to 40 (1 deg = 20.8 < 40)");
         assertEquals(104.0, ITTY.rearmDist(), EPS, "rearm = prompt + DEAD_ZONE (40 + 64), 178 deg floored");
         assertEquals(112.0, ITTY.rampStartDist(), EPS, "rampStart = rearm + ORDER_STEP (104 + 8), dominates the 60 fog floor");
         assertEquals(40.0, ITTY.fogClimaxDist(), EPS, "climax == prompt line");
-        assertEquals(4.0 * (3750.0 / 180.0), ITTY.arrivalDist(), EPS, "arrival = 176 deg = 4 deg = 83.33 blocks (floor 56 doesn't bind)");
+        assertEquals(56.0, ITTY.arrivalDist(), EPS, "arrival floored to prompt+16 (40+16); 178 deg = 41.7 < 56");
         // Fog nest ordering holds on the smallest world: prompt < rearm < rampStart.
         assertTrue(ITTY.promptDist() < ITTY.rearmDist(), "prompt(40) < rearm(104)");
         assertTrue(ITTY.rearmDist() < ITTY.rampStartDist(), "rearm(104) < rampStart(112)");
-        // TEST 92: on this floored world the 4-deg arrival lands INSIDE the re-arm band (arrival < rearm), which
-        // the disarmed-arrival seed covers -- see arrivedInBandOnFlooredWorld_seedHoldsDisarmed.
-        assertTrue(ITTY.arrivalDist() < ITTY.rearmDist(), "arrival(83.3) is INSIDE the re-arm band(104) on the tiny world");
+        // TEST 93: on this floored world the 2-deg arrival (floored to 56) lands strictly INSIDE the re-arm band
+        // (arrival < rearm), which the disarmed-arrival seed covers -- see arrivedInBandOnFlooredWorld_seedHolds.
+        assertTrue(ITTY.arrivalDist() < ITTY.rearmDist(), "arrival(56) is INSIDE the re-arm band(104) on the tiny world");
         assertTrue(ITTY.arrivalDist() > ITTY.promptDist(), "but still past the prompt line(40)");
+        assertTrue(ITTY.arrivalDist() < ITTY.rampStartDist(), "and inside the fog band (56 < 112)");
     }
 
     @Test
     void smallWideEffectiveGeometry_pureDegreesHold() {
-        // xRadius 15000: 1 deg = 83.333 blocks; the pure degree values hold un-floored. TEST 92 anchors:
-        // prompt 179, rearm 178, rampStart 177.5 (was 176.5), arrival 176 (was 175.5).
+        // xRadius 15000: 1 deg = 83.333 blocks; the pure degree values hold un-floored. Anchors: prompt 179,
+        // rearm 178, rampStart 177.5, arrival 178 (TEST 93: was 176 -- now coincides with the re-arm line).
         double bpd = 15000.0 / 180.0;
         assertEquals(1.0 * bpd, SMALL.promptDist(), EPS);   // 179 deg
         assertEquals(2.0 * bpd, SMALL.rearmDist(), EPS);    // 178 deg
-        assertEquals(2.5 * bpd, SMALL.rampStartDist(), EPS);// 177.5 deg (TEST 92: was 3.5 = 176.5)
-        assertEquals(4.0 * bpd, SMALL.arrivalDist(), EPS);  // 176 deg (TEST 92: was 4.5 = 175.5)
+        assertEquals(2.5 * bpd, SMALL.rampStartDist(), EPS);// 177.5 deg
+        assertEquals(2.0 * bpd, SMALL.arrivalDist(), EPS);  // 178 deg (TEST 93: == rearm line)
+        assertEquals(SMALL.rearmDist(), SMALL.arrivalDist(), EPS, "arrival lands exactly on the re-arm line");
     }
 
     @Test
@@ -79,8 +83,9 @@ class EdgeGeometryTest {
         double bpd = 20000.0 / 180.0;
         assertEquals(1.0 * bpd, REG.promptDist(), EPS);     // 179 deg
         assertEquals(2.0 * bpd, REG.rearmDist(), EPS);      // 178 deg
-        assertEquals(2.5 * bpd, REG.rampStartDist(), EPS);  // 177.5 deg (TEST 92)
-        assertEquals(4.0 * bpd, REG.arrivalDist(), EPS);    // 176 deg (TEST 92)
+        assertEquals(2.5 * bpd, REG.rampStartDist(), EPS);  // 177.5 deg
+        assertEquals(2.0 * bpd, REG.arrivalDist(), EPS);    // 178 deg (TEST 93: == rearm line)
+        assertEquals(REG.rearmDist(), REG.arrivalDist(), EPS, "arrival lands exactly on the re-arm line");
     }
 
     // ---- ordering invariant + floor disciplines --------------------------------------------
@@ -88,9 +93,9 @@ class EdgeGeometryTest {
     @Test
     void orderingInvariantHoldsOnEveryWorldSize() {
         // The FOG NEST (prompt < rearm < rampStart) is the invariant resolve() guarantees on EVERY world size.
-        // Arrival is NOT part of the nest (TEST 92): it may land inside the re-arm band on floored small worlds
-        // (see arrivalIsPastFogOnLargeWorldsButInBandOnTinyOnes) -- the only universal arrival guarantee is that
-        // it never lands at/inside the prompt line.
+        // Arrival is NOT part of the nest (TEST 93): it lands AT-or-inside the re-arm line and inside the fog on
+        // every world (see arrivalIsInsideFogBandOnEveryWorld) -- the only universal arrival guarantee here is
+        // that it never lands at/inside the prompt line.
         for (double xr : new double[] {3750.0, 5000.0, 7500.0, 10000.0, 15000.0, 20000.0, 40000.0}) {
             EdgeGeometry.Resolved g = EdgeGeometry.resolve(xr);
             assertTrue(g.promptDist() < g.rearmDist(), "prompt < rearm @ " + xr);
@@ -131,27 +136,32 @@ class EdgeGeometryTest {
         assertEquals(REG.promptDist(), REG.fogClimaxDist(), EPS);
     }
 
-    // ---- arrival target (past the fog; symmetric; Classic + Mercator) ----------------------
+    // ---- arrival target (inside the fog edge; symmetric; Classic + Mercator) ---------------
 
     @Test
-    void arrivalIsPastFogOnLargeWorldsButInBandOnTinyOnes() {
-        // TEST 92: arrival is a fixed 4 deg (176 deg) from the wall. On properly-sized worlds that is PAST the
-        // fog onset (rampStart sits at ~2.5 deg); on the tiny Itty-Bitty world the readability floors push
-        // rampStart/rearm out beyond 4 deg, so the arrival lands inside the fog/re-arm band (the disarmed seed
-        // covers no-self-reprompt there -- see the HemispherePassage arrival contract).
-        assertTrue(SMALL.arrivalDist() > SMALL.rampStartDist(), "Small Wide: arrival past the fog");
-        assertTrue(REG.arrivalDist() > REG.rampStartDist(), "Regular Wide: arrival past the fog");
-        assertTrue(ITTY.arrivalDist() < ITTY.rampStartDist(), "Itty-Bitty: arrival lands inside the fog band (floored world)");
+    void arrivalIsInsideFogBandOnEveryWorld() {
+        // TEST 93: arrival moved to 178 deg (2 deg from the wall), 0.5 deg INSIDE the 177.5-deg fog onset -- so
+        // arrival now lands inside the fog on EVERY world size (you emerge into the thinning fog edge, looking
+        // inward), not past it. On large worlds it sits exactly on the re-arm line; on tiny worlds the readability
+        // floor pulls it strictly inside. Either way arrivalDist < rampStartDist.
+        assertTrue(SMALL.arrivalDist() < SMALL.rampStartDist(), "Small Wide: arrival inside the fog");
+        assertTrue(REG.arrivalDist() < REG.rampStartDist(), "Regular Wide: arrival inside the fog");
+        assertTrue(ITTY.arrivalDist() < ITTY.rampStartDist(), "Itty-Bitty: arrival inside the fog band (floored world)");
+        // Universal: arrival is at-or-inside the re-arm line (never strictly beyond) on every world.
+        assertTrue(SMALL.arrivalDist() <= SMALL.rearmDist() + EPS, "Small Wide: arrival at-or-inside the re-arm line");
+        assertTrue(REG.arrivalDist() <= REG.rearmDist() + EPS, "Regular Wide: arrival at-or-inside the re-arm line");
+        assertTrue(ITTY.arrivalDist() < ITTY.rearmDist(), "Itty-Bitty: arrival strictly inside the re-arm band");
     }
 
     @Test
-    void arrivalIsExactly176DegOnEveryWorld() {
-        // TEST 92: 4 deg from the wall = 176 deg longitude, and the defensive prompt+16 floor does NOT bind on
-        // any real world (>= 3750), so arrival is exactly 176 deg everywhere -- including Itty-Bitty (where 4 deg
-        // is already 83.3 blocks > prompt+16 = 56).
-        assertEquals(176.0, longitudeDegOfArrival(SMALL), 1e-6, "Small Wide arrival at 176 deg");
-        assertEquals(176.0, longitudeDegOfArrival(REG), 1e-6, "Regular Wide arrival at 176 deg");
-        assertEquals(176.0, longitudeDegOfArrival(ITTY), 1e-6, "Itty-Bitty arrival at 176 deg (floor doesn't bind)");
+    void arrivalIs178DegOnLargeWorldsAndFlooredOnTiny() {
+        // TEST 93: 2 deg from the wall = 178 deg longitude on the un-floored large worlds. On Itty-Bitty the
+        // ARRIVAL_MIN_PAST_PROMPT floor (prompt+16 = 56 blocks) exceeds 178 deg (41.7 blocks), so arrival is
+        // pulled slightly inland of 178 deg there -- 56 blocks = 2.688 deg in = 177.312 deg longitude.
+        assertEquals(178.0, longitudeDegOfArrival(SMALL), 1e-6, "Small Wide arrival at 178 deg");
+        assertEquals(178.0, longitudeDegOfArrival(REG), 1e-6, "Regular Wide arrival at 178 deg");
+        assertEquals(180.0 - 56.0 / (3750.0 / 180.0), longitudeDegOfArrival(ITTY), 1e-6,
+                "Itty-Bitty arrival floored to 56 blocks = 177.312 deg (prompt+16 floor binds)");
     }
 
     @Test
