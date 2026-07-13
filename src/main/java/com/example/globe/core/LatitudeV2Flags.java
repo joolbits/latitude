@@ -154,7 +154,7 @@ public final class LatitudeV2Flags {
      * build.gradle forwarding line beside {@code boundaryV2} in the same pass (L17 discipline).
      */
     public static final boolean PASSAGE_V2_ENABLED =
-            Boolean.parseBoolean(System.getProperty("latitude.passageV2.enabled", "true")); // P3 LIVE-TEST STAGING (branch-local): default ON so Peetsa can fly the passage from the Modrinth profile (no custom -D args there). REVISIT BEFORE MERGE -- the shipped default is Peetsa's call after P3.
+            Boolean.parseBoolean(System.getProperty("latitude.passageV2.enabled", "true")); // DEFAULT ON since 2026-07-12: Peetsa live-approved the passage at P3 ("everything felt good") and it is consensual by design (prompt-gated); the flag remains the kill switch.
 
     /**
      * Phase 5 Slice B-5 (Hemisphere Passage polish, item 1): keep GENERATED STRUCTURES out of an absolute band
