@@ -538,8 +538,14 @@ orchestrator-flown instrumented crossing): fog-advisory consensual E/W crossing,
 geometry (features from ~176.5 deg, arrival past the fog), border-drift immunity + per-tick border
 snap, structure-free edge belt. Single source of truth:
 `docs/binder/phase5-b5-hemisphere-passage-design-20260710.md` (design + all P1-P3 build/verdict logs).
-REMAINING in Phase 5: B-6 teleport-evator (mirror-band invisible crossing, reuses B-5's engine — NEXT),
-the consumer default-flip live decision, storm wall revive/retire, pole hard-stop decision.
+Post-ship pivot work: title glimmer v3 (7e65d079) and the TEST 89 edge round (35944e38: single white
+advisory replaces the two-tier banner, EW dust removed, degree-based structure ban, re-arm 178°).
+**B-6 Teleport-Evator: IN FLIGHT on branch `phase5-b6-teleport-evator`** — P1 (leaf-reflection mirror,
+proof 21/21 biomes / ≤9-block wobble vs fixed 12 gate / flag-off byte-identical) + P2 (silent momentum-
+preserving crossing) built and swept; TEST 92 staged; awaiting Peetsa's P3 on a FRESH world (per-world
+birth capture — existing worlds can never arm). Design + full logs:
+`docs/binder/phase5-b6-teleport-evator-design-20260712.md` (branch-only file). REMAINING in Phase 5
+after B-6: the consumer default-flip live decision, storm wall revive/retire, pole hard-stop decision.
 
 Document review:
 
