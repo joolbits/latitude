@@ -221,7 +221,7 @@ public final class LatitudeV2Flags {
      * forwarding line in the SAME pass (L17 discipline -- this repo's forwarding gap has bitten three times).
      */
     public static final boolean EVATOR_V2_ENABLED =
-            Boolean.parseBoolean(System.getProperty("latitude.evatorV2.enabled", "false"));
+            Boolean.parseBoolean(System.getProperty("latitude.evatorV2.enabled", "true")); // P3 LIVE-TEST STAGING (branch-local): default ON so a FRESH world created from the Modrinth profile captures the evator at birth. REVISIT BEFORE MERGE -- the shipped default is Peetsa's call after P3.
 
     /**
      * Polar small-vegetation fade (Peetsa 2026-07-10). Default TRUE since 2026-07-12: the TEST 75 live

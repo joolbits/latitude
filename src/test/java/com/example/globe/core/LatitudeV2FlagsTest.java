@@ -40,10 +40,14 @@ class LatitudeV2FlagsTest {
     }
 
     @Test
-    void evatorV2DefaultsToDisabled() {
-        assertFalse(LatitudeV2Flags.EVATOR_V2_ENABLED,
-                "Phase 5 B-6 Teleport-Evator must ship default-off (byte-identical flag-off worldgen) -- "
-                        + "the mechanism is still undecided and per-world capture must never arm by surprise");
+    void evatorV2DefaultsToEnabled_P3_STAGING_ONLY() {
+        // P3 LIVE-TEST STAGING (branch-local, paired with the LatitudeV2Flags default flip): ON so a
+        // FRESH world created from the Modrinth profile captures the evator at birth. REVISIT BEFORE
+        // MERGE — the shipped default is Peetsa's call after P3; the pre-staging contract was
+        // default-OFF byte-identical worldgen (existing worlds stay safe regardless via birth capture).
+        assertTrue(LatitudeV2Flags.EVATOR_V2_ENABLED,
+                "P3 staging expects evatorV2 default-on in this branch; if this fails the staging flip "
+                        + "was reverted — restore the default-off assertion with it");
     }
 
     @Test
