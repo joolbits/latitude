@@ -55,6 +55,14 @@ public final class HemispherePassageClient {
     // Client arm state (mirrors the pure core.HemispherePassage arm). Starts armed; reset on non-globe worlds.
     private static boolean armed = true;
 
+    // TEST 92 right-click-at-the-wall re-prompt. Rising-edge detection on the USE key + a rate limit so a
+    // disarmed player at the wall re-summons the crossing prompt with one right-click (facing the border),
+    // without walking out and back. Reset with the arm on world switch.
+    private static boolean useWasDown = false;
+    private static long lastRearmGestureMs = Long.MIN_VALUE;
+    /** Rate limit for the re-prompt gesture (~20 ticks). Belt-and-suspenders beside the rising-edge check. */
+    private static final long REARM_GESTURE_MIN_INTERVAL_MS = 1000L;
+
     private static Curtain curtain = Curtain.NONE;
     private static long curtainRaisedMs;   // wall time the curtain was raised (fade-in + timeout reference)
     private static long curtainFadeOutMs;  // wall time the fade-out began; 0 while raising/holding
@@ -66,6 +74,8 @@ public final class HemispherePassageClient {
      *  crossing can never leak across worlds. Paired with {@link HemispherePassageClientState#reset()}. */
     public static void reset() {
         armed = true;
+        useWasDown = false;
+        lastRearmGestureMs = Long.MIN_VALUE;
         curtain = Curtain.NONE;
         curtainRaisedMs = 0L;
         curtainFadeOutMs = 0L;
@@ -138,6 +148,14 @@ public final class HemispherePassageClient {
         boolean deepUnder = GlobeClientState.isDeepUnderground(mc);
         net.minecraft.client.gui.screens.Screen openScreen = mc.gui.screen();
         boolean canOpenPrompt = !deepUnder && openScreen == null;
+
+        // TEST 92 right-click-at-the-wall re-prompt (Peetsa): a DISARMED player standing in the prompt band who
+        // presses USE while FACING the border re-arms the passage so the prompt re-opens this tick -- no walk-out
+        // needed. Runs BEFORE evaluateGated so the re-arm takes effect the same tick. (When the B-6 evator branch
+        // rebases onto this it adds its "&& not an evator world" exclusion here; on an evator world the whole
+        // passage machine is suppressed anyway, so the gesture never reaches this point.)
+        maybeRearmGesture(mc, distToEdge, geo, canOpenPrompt, now);
+
         boolean prevArmed = armed;
         HemispherePassage.Decision d = HemispherePassage.evaluateGated(armed, distToEdge, canOpenPrompt,
                 geo.promptDist(), geo.rearmDist());
@@ -150,6 +168,38 @@ public final class HemispherePassageClient {
             boolean beyondEast = mc.player.getX() < mc.level.getWorldBorder().getCenterX();
             PassageDebug.onPromptOpen(distToEdge, beyondEast);
             mc.setScreenAndShow(new HemispherePassagePromptScreen(beyondEast));
+        }
+    }
+
+    /**
+     * TEST 92 re-prompt gesture glue: read the USE key (rising edge + ~20-tick rate limit) and the player's
+     * facing, and re-arm the passage when {@link HemispherePassage#rearmGestureArms} approves. Only ever SETS
+     * {@code armed=true}; the caller's {@link HemispherePassage#evaluateGated} then opens the prompt under the
+     * usual surface/no-screen gate. The rising-edge tracker advances EVERY call so a held button is not a repeat.
+     *
+     * <p>Facing test: {@link HemispherePassage#facingOutwardX} requires the horizontal look to point within
+     * ~60 deg of straight-OUT toward the nearer E/W wall, so a normal right-click aimed at a block/item to the
+     * side or inward never hijacks into a re-prompt. Band test: DISARMED and within the prompt distance.
+     */
+    private static void maybeRearmGesture(Minecraft mc, double distToEdge,
+                                          com.example.globe.core.EdgeGeometry.Resolved geo,
+                                          boolean canOpenPrompt, long now) {
+        boolean useDown = mc.options.keyUse.isDown();
+        boolean risingEdge = useDown && !useWasDown;
+        useWasDown = useDown; // advance every tick, even when we early-out below
+        if (!risingEdge || armed || !canOpenPrompt || mc.player == null || mc.level == null) {
+            return;
+        }
+        if (now - lastRearmGestureMs < REARM_GESTURE_MIN_INTERVAL_MS) {
+            return;
+        }
+        double centerX = mc.level.getWorldBorder().getCenterX();
+        boolean facingOut = HemispherePassage.facingOutwardX(mc.player.getX(), centerX, mc.player.getYRot(),
+                HemispherePassage.REARM_GESTURE_FACING_MIN_COS);
+        if (HemispherePassage.rearmGestureArms(armed, distToEdge, facingOut, geo.promptDist())) {
+            armed = true;
+            lastRearmGestureMs = now;
+            PassageDebug.armTransition(false, true, distToEdge, "rearm-gesture");
         }
     }
 
@@ -186,11 +236,11 @@ public final class HemispherePassageClient {
     }
 
     private static void onArrival(Minecraft mc, long now) {
-        // Redesign 2026-07-12: the crossing now drops the player PAST the fog (arrivalDist > rearmDist), so the
-        // arm re-arms naturally on the far side. Seeding armed=false here is harmless belt-and-suspenders -- the
-        // next tick's evaluate() re-arms it off distance exactly like a walk-out, never self-reprompting. (Under
-        // the OLD in-band arrival this seed was load-bearing; it is retained so a future arrival tweak that lands
-        // closer in can never regress to a self-reprompt loop.)
+        // TEST 92: the crossing drops the player at ARRIVAL_DEG (176 deg, 4 deg from the wall). On properly-sized
+        // worlds that is past the fog, so the arm would re-arm naturally on the far side; on the tiny Itty-Bitty
+        // world it lands INSIDE the re-arm band, so seeding armed=false here is LOAD-BEARING -- the sticky band
+        // holds it disarmed and a player who then walks toward the wall is not re-prompted. Either way the seed is
+        // correct: out-of-band the next evaluate() re-arms it like a walk-out; in-band it stays disarmed.
         boolean prevArmed = armed;
         armed = false;
         boolean east = HemispherePassageClientState.arrivedEast();

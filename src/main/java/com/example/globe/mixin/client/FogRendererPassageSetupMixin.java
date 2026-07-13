@@ -30,7 +30,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
  * <p><b>Driven by border distance, not latitude.</b> The tightening ramps on the SAME distance-to-the-E/W-edge
  * the crossing prompt arms on ({@link GlobeClientState#distanceToEwBorderBlocks(double)}), anchored to the
  * mod's INTENDED X radius (immune to a lerping border). The band is degree-anchored per world by
- * {@link com.example.globe.core.EdgeGeometry}: no effect at/beyond {@code rampStartDist} (~176.5 deg longitude,
+ * {@link com.example.globe.core.EdgeGeometry}: no effect at/beyond {@code rampStartDist} (~177.5 deg longitude,
  * seam-free -- vanilla fog untouched), thickening on the pure ease-in curves in {@link HemispherePassage}
  * (a weather front rolling in) to near-opaque by the prompt line (the {@code fogClimaxDist}, ~179 deg).
  *
@@ -94,7 +94,7 @@ public class FogRendererPassageSetupMixin {
         }
 
         double distToEdge = GlobeClientState.distanceToEwBorderBlocks(mc.player.getX());
-        // Per-world fog band, degree-anchored to the intended X radius: onset at rampStartDist (~176.5 deg),
+        // Per-world fog band, degree-anchored to the intended X radius: onset at rampStartDist (~177.5 deg),
         // full at the prompt line (climax). Immune to a lerping border; shared with the prompt/banner/particles.
         com.example.globe.core.EdgeGeometry.Resolved geo =
                 GlobeClientState.edgeGeometry(level.getWorldBorder());

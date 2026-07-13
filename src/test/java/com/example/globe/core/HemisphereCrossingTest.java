@@ -397,4 +397,57 @@ class HemisphereCrossingTest {
                 -70.0, CENTER, 333.0, +1, 1_000L, Long.MIN_VALUE, DEAD_ZONE, MAX_STEP, COOLDOWN);
         assertFalse(legacy.fire(), "single-reference guard mis-reads the held +333 -> -70 as a teleport");
     }
+
+    // ---- (11) TEST 92 degree-first dead zone: clamp(0.75 deg * bpd, floor 16, cap 64) per axis ----------
+
+    @Test
+    void deadZoneBlocksIsDegreeFirstClampedToFloorAndCap() {
+        // 0.75 deg * blocksPerDegree, clamped to [DEAD_ZONE_FLOOR_BLOCKS (16), DEAD_ZONE_BLOCKS (64)].
+        // xRadius 3750 longitude bpd = 20.833: 0.75*20.833 = 15.625 -> floored up to 16.
+        assertEquals(16.0, HemisphereCrossing.deadZoneBlocks(3750.0 / 180.0), 1e-9);
+        // xRadius 15000 longitude bpd = 83.333: 0.75*83.333 = 62.5 -> in range.
+        assertEquals(62.5, HemisphereCrossing.deadZoneBlocks(15000.0 / 180.0), 1e-9);
+        // xRadius 20000 longitude bpd = 111.111: 0.75*111.111 = 83.33 -> capped to 64.
+        assertEquals(64.0, HemisphereCrossing.deadZoneBlocks(20000.0 / 180.0), 1e-9);
+    }
+
+    @Test
+    void deadZoneBlocksFiresTitleWithinAboutOneDegreeOnEveryRealWorld() {
+        // The title resolves a side (and can fire) once the player is deadZone blocks past the line; expressed in
+        // DEGREES that must be <= ~1 deg on every real world size (the whole point of TEST 92 -- the old flat 64
+        // was ~3 deg of longitude on xRadius 3750). Meridian axis (longitude, bpd = xRadius/180):
+        for (double xRadius : new double[] {3750.0, 5000.0, 7500.0, 15000.0, 20000.0, 40000.0}) {
+            double bpdLon = xRadius / 180.0;
+            double degAtFire = HemisphereCrossing.deadZoneBlocks(bpdLon) / bpdLon;
+            assertTrue(degAtFire <= 1.0 + 1e-9,
+                    "meridian title fires within ~1 deg @ xRadius " + xRadius + " (deg=" + degAtFire + ")");
+        }
+        // Equator axis (latitude, bpd = zRadius/90):
+        for (double zRadius : new double[] {3750.0, 7500.0, 10000.0}) {
+            double bpdLat = zRadius / 90.0;
+            double degAtFire = HemisphereCrossing.deadZoneBlocks(bpdLat) / bpdLat;
+            assertTrue(degAtFire <= 1.0 + 1e-9,
+                    "equator title fires within ~1 deg @ zRadius " + zRadius + " (deg=" + degAtFire + ")");
+        }
+    }
+
+    @Test
+    void deadZoneBlocksNeverBelowJitterFloorNorAboveCap() {
+        assertEquals(HemisphereCrossing.DEAD_ZONE_FLOOR_BLOCKS, HemisphereCrossing.deadZoneBlocks(0.0), 1e-9);
+        assertEquals(HemisphereCrossing.DEAD_ZONE_FLOOR_BLOCKS, HemisphereCrossing.deadZoneBlocks(-5.0), 1e-9);
+        assertEquals(HemisphereCrossing.DEAD_ZONE_FLOOR_BLOCKS, HemisphereCrossing.deadZoneBlocks(Double.NaN), 1e-9);
+        assertEquals(HemisphereCrossing.DEAD_ZONE_BLOCKS, HemisphereCrossing.deadZoneBlocks(100_000.0), 1e-9);
+        assertTrue(HemisphereCrossing.DEAD_ZONE_FLOOR_BLOCKS >= 16.0, "floor kills jitter (>> a per-tick step)");
+        assertTrue(HemisphereCrossing.DEAD_ZONE_FLOOR_BLOCKS < HemisphereCrossing.DEAD_ZONE_BLOCKS, "floor < cap");
+    }
+
+    @Test
+    void deadZoneBlocksResolvesSideAtExactlyTheBandEdge() {
+        // Integration with sideOf: a coord exactly deadZone past center resolves to a side (the band is
+        // half-open), so the fire distance is exactly deadZoneBlocks(bpd) -- on the smallest world, the 16-block floor.
+        double dz = HemisphereCrossing.deadZoneBlocks(3750.0 / 180.0);
+        assertEquals(16.0, dz, 1e-9);
+        assertEquals(1, HemisphereCrossing.sideOf(CENTER + dz, CENTER, dz), "exactly at the edge resolves outward");
+        assertEquals(0, HemisphereCrossing.sideOf(CENTER + dz - 0.001, CENTER, dz), "just inside is still the dead band");
+    }
 }

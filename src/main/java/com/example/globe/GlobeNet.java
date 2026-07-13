@@ -38,7 +38,7 @@ public final class GlobeNet {
         // latitudeZRadius is the Z (latitude) radius in blocks. For Mercator worlds this differs from the
         // (X-sized) WorldBorder half, so the client needs it to render correct latitude/zone/pole HUD.
         // intendedXRadius is the mod's OWN E/W radius (zRadius in Classic, zRadius*ASPECT in Wide): the client
-        // anchors ALL E/W-edge feature geometry (fog/prompt/re-arm/banner/particles) on it instead of the live
+        // anchors ALL E/W-edge feature geometry (fog/prompt/re-arm/banner) on it instead of the live
         // border half, so a lerping/vandalized border can't slide those lines (TEST 86 finding). Both 0 mean
         // "use the border half" (Classic byte-identical / not-a-globe).
         public static final StreamCodec<RegistryFriendlyByteBuf, GlobeStatePayload> CODEC = StreamCodec.composite(

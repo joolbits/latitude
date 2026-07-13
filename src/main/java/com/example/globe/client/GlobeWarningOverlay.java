@@ -446,7 +446,7 @@ public final class GlobeWarningOverlay {
             // (core.EwBannerEnvelope) is single-tier now: it arms ONE episode when the player APPROACHES into
             // the band (a walk-out re-shows nothing), plays the wall-clock fade, and stays gone while lingering
             // until a leave+re-enter. It reads the SAME distance-to-edge the crossing prompt arms on and the
-            // SAME resolved geometry: rampStartDist (~176.5 deg) is the band cap -- fog and banner share that
+            // SAME resolved geometry: rampStartDist (~177.5 deg) is the band cap -- fog and banner share that
             // one onset. Anchored to the intended X radius, so a lerping border can't slide it; client + server
             // agree. Leaving the band drives geometryTier back to NONE, which re-arms the next approach.
             double ewDistToEdge = GlobeClientState.distanceToEwBorderBlocks(client.player.getX());
@@ -605,12 +605,22 @@ public final class GlobeWarningOverlay {
         double bandZ = Math.max(com.example.globe.util.LatitudeMath.latitudeRadius(border) / 30.0, minBand);
         double bandX = Math.max(com.example.globe.util.LatitudeMath.worldRadiusBlocks(border) / 60.0, minBand);
 
+        // TEST 92 degree-first dead zone (the on-the-line hysteresis half-width): each axis sizes it from its
+        // OWN blocks-per-degree so the hemisphere title fires within ~1 deg of the line on every world size,
+        // instead of the old flat 64 blocks (~3 deg of longitude on the smallest world). Z (equator) spans
+        // 90 deg over the latitude radius; X (prime meridian) spans 180 deg over the X radius. The 3-deg episode
+        // BAND above is unchanged and stays comfortably wider than the dead zone (minBand 96 > cap 64).
+        double deadZoneZ = HemisphereCrossing.deadZoneBlocks(
+                com.example.globe.util.LatitudeMath.latitudeRadius(border) / 90.0);
+        double deadZoneX = HemisphereCrossing.deadZoneBlocks(
+                com.example.globe.util.LatitudeMath.worldRadiusBlocks(border) / 180.0);
+
         HemisphereCrossing.BandedResult rz = evalHemisphereAxis(
                 playerZ, centerZ, lastObservedZ, lastRawZ, lastStableSideZ,
-                hemiNegAnnouncedZ, hemiPosAnnouncedZ, bandZ, lastHemiFireZMs, nowMs);
+                hemiNegAnnouncedZ, hemiPosAnnouncedZ, deadZoneZ, bandZ, lastHemiFireZMs, nowMs);
         HemisphereCrossing.BandedResult rx = evalHemisphereAxis(
                 playerX, centerX, lastObservedX, lastRawX, lastStableSideX,
-                hemiNegAnnouncedX, hemiPosAnnouncedX, bandX, lastHemiFireXMs, nowMs);
+                hemiNegAnnouncedX, hemiPosAnnouncedX, deadZoneX, bandX, lastHemiFireXMs, nowMs);
 
         boolean enabled = LatitudeConfig.zoneEnterTitleEnabled;
 
@@ -661,10 +671,11 @@ public final class GlobeWarningOverlay {
     private static HemisphereCrossing.BandedResult evalHemisphereAxis(double coord, double center,
                                                                       double observed, double raw, int side,
                                                                       boolean negAnnounced, boolean posAnnounced,
-                                                                      double band, long fireMs, long nowMs) {
+                                                                      double deadZone, double band,
+                                                                      long fireMs, long nowMs) {
         return HemisphereCrossing.evaluateBanded(coord, center, observed, raw, side,
                 negAnnounced, posAnnounced, nowMs, fireMs,
-                HemisphereCrossing.DEAD_ZONE_BLOCKS, band, HemisphereCrossing.MAX_STEP_BLOCKS,
+                deadZone, band, HemisphereCrossing.MAX_STEP_BLOCKS,
                 HemisphereCrossing.COOLDOWN_MS);
     }
 

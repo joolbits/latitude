@@ -107,7 +107,8 @@ public class GlobeModClient implements ClientModInitializer {
                 // Mercator: latitude (Z) radius differs from the X-sized border half; drive HUD/zone/pole off it.
                 com.example.globe.util.LatitudeMath.setLatitudeZRadius(payload.isGlobe() ? payload.latitudeZRadius() : 0);
                 // Intended X (longitude) radius: anchors ALL E/W-edge feature geometry (fog/prompt/re-arm/
-                // banner/particles/arrival) so a lerping/vandalized live border can't slide those lines.
+                // banner/arrival) so a lerping/vandalized live border can't slide those lines. (TEST 89 removed
+                // the EW dust particles, so they are no longer among the consumers.)
                 com.example.globe.util.LatitudeMath.setIntendedXRadius(payload.isGlobe() ? payload.intendedXRadius() : 0);
                 GlobeMod.LOGGER.info("S2C globe state: isGlobe={} latitudeZRadius={} intendedXRadius={}",
                         payload.isGlobe(), payload.latitudeZRadius(), payload.intendedXRadius());

@@ -16,7 +16,7 @@ package com.example.globe.core;
  *
  * <h2>The one boundary: the band cap (== fog onset)</h2>
  * The advisory's only boundary is the PER-WORLD {@code capDist} resolved from longitude degrees against the
- * mod's intended X radius ({@link EdgeGeometry#resolve}, {@code rampStartDist} ~= 176.5 deg) and passed IN.
+ * mod's intended X radius ({@link EdgeGeometry#resolve}, {@code rampStartDist} ~= 177.5 deg) and passed IN.
  * The fog and the banner share this ONE onset: no banner shows farther out than {@code capDist}, and it is
  * where the advisory arms on approach. Because it scales with the world, the callout leads the crossing prompt
  * by the same DEGREE spacing on every size instead of a fixed block margin that read absurdly early on wide

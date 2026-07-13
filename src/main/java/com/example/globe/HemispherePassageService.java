@@ -78,12 +78,13 @@ public final class HemispherePassageService {
     static BlockPos resolveArrival(ServerLevel world, double playerX, double playerZ) {
         WorldBorder border = world.getWorldBorder();
         double centerX = border.getCenterX();
-        // Mirror to the far hemisphere, then PULL INLAND past the fog (Peetsa's teleport ask, 2026-07-12): the
-        // arrival sits ~one degree equatorward of the fog onset (EdgeGeometry.arrivalDist, ~175.5 deg on
-        // properly-sized worlds), so you land PAST the fog rather than "in the thick of it". Only the hemisphere
-        // (sign) is taken from the mirror; the inland depth comes from the resolved geometry. |arrivalX| is the
-        // same in both hemispheres, so the far-side border distance is deterministic and out-of-band (the arm
-        // re-arms naturally there; the S2C disarmed-in-band seed is now harmless belt-and-suspenders).
+        // Mirror to the far hemisphere, then PULL INLAND to the arrival column (Peetsa's teleport ask; TEST 92
+        // pulled it in to ARRIVAL_DEG = 176 deg, 4 deg from the wall -- "not nine"). Only the hemisphere (sign)
+        // is taken from the mirror; the inland depth comes from the resolved geometry (EdgeGeometry.arrivalDist).
+        // |arrivalX| is the same in both hemispheres, so the far-side border distance is deterministic. On
+        // properly-sized worlds this lands PAST the fog; on the tiny Itty-Bitty world (where the readability
+        // floors push rearm/rampStart past 4 deg) it lands INSIDE the re-arm band -- harmless because the S2C
+        // arrival seeds the arm DISARMED and the sticky band holds it there (no self-reprompt; see HemispherePassage).
         double mirroredX = HemispherePassage.mirrorX(playerX, centerX);
         double sign = mirroredX >= centerX ? 1.0 : -1.0;
         double xRadiusIntended = LatitudeMath.intendedXRadius(border);
