@@ -97,6 +97,11 @@ loom {
             vmArg "-Dlatdev.terrainProof.replayProbe=${System.getProperty('latdev.terrainProof.replayProbe', 'false')}"
             vmArg "-Dlatdev.terrainProof.probes=${System.getProperty('latdev.terrainProof.probes', '')}"
             vmArg "-Dlatdev.terrainProof.coherence=${System.getProperty('latdev.terrainProof.coherence', 'false')}"
+            // SPIKE (B-6 P1 step 0): throwaway terrain-mirror mechanism probe (EvatorSpikeProbe). Delete
+            // these three lines when the spike is removed.
+            vmArg "-Dlatitude.evatorSpike=${System.getProperty('latitude.evatorSpike', 'false')}"
+            vmArg "-Dlatitude.evatorSpike.probe=${System.getProperty('latitude.evatorSpike.probe', 'false')}"
+            vmArg "-Dlatitude.evatorSpike.out=${System.getProperty('latitude.evatorSpike.out', '')}"
             // LatitudeV2Flags -- static final, read once at class-init, so these MUST reach the forked JVM
             // as real -D launch args (see LatitudeV2Flags's own "Testing note" javadoc).
             vmArg "-Dlatitude.terrainV2.enabled=${System.getProperty('latitude.terrainV2.enabled', 'false')}"

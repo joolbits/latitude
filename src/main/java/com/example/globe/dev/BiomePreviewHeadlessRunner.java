@@ -102,6 +102,12 @@ public final class BiomePreviewHeadlessRunner {
             return;
         }
 
+        // SPIKE (B-6 P1 step 0): throwaway terrain-mirror mechanism probe. See EvatorSpikeProbe.
+        if (EvatorSpikeProbe.isTriggered()) {
+            server.execute(() -> EvatorSpikeProbe.runAndStop(server));
+            return;
+        }
+
         if (parseBoolean(System.getProperty(PROBE_PROP_KEY, ""))) {
             server.execute(() -> runFunctionProbeAndStop(server));
             return;
