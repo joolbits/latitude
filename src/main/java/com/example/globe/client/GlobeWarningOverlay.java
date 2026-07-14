@@ -17,7 +17,17 @@ public final class GlobeWarningOverlay {
     private static long debugStartWorldTime = -1L;
     private static String lastZoneKey;
 
-    // Polar warning ladder (B-3-P3), anchored to LatitudeMath.POLAR_STAGE_*_PROGRESS:
+    // Polar warning ladder. B-7 item 4 REWORKED the TEXT ladder from four rungs to FIVE (pure decision in
+    // core.PolarColdCues; owner copy finalized 2026-07-14): the first rung moved 85 -> 82 (APPROACH, new
+    // owner-verbatim line AT the ambient snow onset -- the old WARN_1 snow line is RETIRED), a NEW protection-
+    // suppressed HYPOTHERMIA rung landed at 85 (the S3 frostbite-DAMAGE onset, owner-verbatim "The cold begins
+    // to bite."), and the LETHAL text swaps under a full freeze-immune set. WARN_2 (87) / DANGER (89) / LETHAL
+    // (89.7) copy is owner-verbatim and reused as-is. The paragraph below is the ORIGINAL four-rung rationale
+    // (still governs the WARN_2/DANGER/LETHAL copy; WARN_1's part is historical); the DEGREE mapping is now
+    // PolarColdCues.Rung, not POLAR_STAGE_*. The shared hazard/fog constants (LatitudeMath.POLAR_STAGE_*, used
+    // for fog severity + the vignette) DID NOT move.
+    //
+    // Original four-rung rationale (B-3-P3), anchored to LatitudeMath.POLAR_STAGE_*_PROGRESS:
     // WARN_1 @85 deg (snow onset), WARN_2 @87 deg (blizzard building), DANGER @89 deg, LETHAL @89.7 deg.
     // The ladder DEGREE constants (POLAR_STAGE_*) STAY PUT -- they are SHARED with the EW storm axis (B-3-P3
     // KEEP-SHARED coupling) -- so they do NOT move when the player-affecting hazard onset moves.
@@ -42,14 +52,31 @@ public final class GlobeWarningOverlay {
     // NB: the polar warnings are drawn NON-bold (DANGER/LETHAL are RED, not RED+BOLD) -- MC's fake-bold
     // double-stroke fought the dark keyline (see drawCenteredWarning); the crisp outline + RED + LETHAL's
     // 1.15x scale + the ember vignette carry the escalation instead of bold.
+    // B-7 polish (OWNER VERBATIM 2026-07-14): the APPROACH rung's line. Replaces the retired WARN_1 snow line
+    // ("Snow begins to fall. Blizzard conditions ahead -- consider turning back.") -- the rung now sits AT the
+    // 82-deg ambient snow onset (owner placement: the first words land with the first snowflakes), and the copy
+    // names the country ahead rather than re-announcing snowfall the player can already see.
     private static final String POLE_WARN_1_TEXT =
-            "Snow begins to fall. Blizzard conditions ahead -- consider turning back.";
+            "Entering polar storm country. Proceed with caution.";
     private static final String POLE_WARN_2_TEXT =
             "The blizzard deepens -- hypothermia is setting in. Turn back while you can.";
     private static final String POLE_DANGER_TEXT =
             "DANGER: Lethal blizzard conditions ahead. Turn back.";
     private static final String POLE_LETHAL_TEXT =
             "Severe hypothermia -- you are freezing to death.";
+
+    // B-7 item 4 -- the reworked FIVE-rung ladder (pure decision in core.PolarColdCues; owner copy finalized
+    // 2026-07-14). Rungs: APPROACH 82 (POLE_WARN_1_TEXT above, AT the ambient snow onset), HYPOTHERMIA 85
+    // (NEW, below), BLIZZARD 87 (POLE_WARN_2_TEXT, verbatim), DANGER 89 (verbatim), LETHAL 89.7 (verbatim
+    // unprotected / swapped when a full freeze-immune set negates the damage). Only the crossing UX is
+    // flag-gated; this ladder presents the GLOBAL S3 cold pacing.
+    /** B-7 NEW rung at 85 deg (the frostbite-DAMAGE onset); SUPPRESSED under a full freeze-immune set (honesty
+     *  law: full leather = zero frostbite = no bite = no warning). OWNER VERBATIM 2026-07-14 -- replaces the P2
+     *  draft's "Hypothermia sets in." (which also near-duplicated the verbatim 87-deg line). */
+    private static final String POLE_HYPOTHERMIA_TEXT = "The cold begins to bite.";
+    /** B-7 LETHAL swap (design item 4 / S1): a full freeze-immune set negates the freeze damage, so a protected
+     *  player must NOT be told they are freezing to death -- same LETHAL slot + RED style, honest severity. */
+    private static final String POLE_LETHAL_PROTECTED_TEXT = "The bitter cold envelops you.";
 
     // CD finding F1 / R1 -- dark KEYLINE behind the polar warning lines. Minecraft RED (0xFF5555) on the
     // near-white whiteout fill is ~2.7:1 contrast; a 1px near-black outline (the zone-title outline idiom,
@@ -106,16 +133,21 @@ public final class GlobeWarningOverlay {
     // of the boundary just crossed shows only the small action-bar message; the big title re-arms once the
     // player settles deep inside a zone. Latitude(Z)-axis only, so a single flag (pure logic in core.ZoneTitleBanding).
     private static boolean zoneFullArmed = true;
-    // B-4 item 3: EPISODIC polar warning ladder. Each of the 4 tiers fires ONCE when crossed, shows ~10 s,
-    // then fades out over ~1 s, and does NOT re-show while the player stays poleward -- the whole ladder
-    // re-arms only on a full retreat below 84 deg (pure decision in core.PolarWarningEpisode). Highest tier
-    // fired since the last retreat + the active on-screen message and its world-tick display window.
+    // B-4 item 3 (B-7 item 4 reworked): EPISODIC polar warning ladder. Each rung fires ONCE when crossed, shows
+    // ~10 s, then fades out over ~1 s, and does NOT re-show while the player stays poleward -- the whole ladder
+    // re-arms only on a full retreat below RETREAT_REARM_DEG 81, one deg under the first rung at 82 (pure
+    // decision in core.PolarColdCues, five rungs). Highest tier fired + the active message and its window.
     private static final long POLE_WARN_HOLD_TICKS = 200L;   // ~10 s at 20 tps
     private static final long POLE_WARN_FADE_TICKS = 20L;    // ~1 s alpha ramp (in and out)
     private static int poleWarnHighestTier = 0;
     private static Component poleWarnText;                    // null = nothing showing
     private static long poleWarnStartTick = Long.MIN_VALUE;
     private static long poleWarnEndTick = Long.MIN_VALUE;
+    // B-7: whether the currently-shown pole rung is LETHAL (drives the 1.15x scale, replacing the old
+    // tier==4 test now the ladder has five rungs). Set at fire time in maybeTriggerPoleWarning.
+    private static boolean poleWarnLethal = false;
+    // B-7 removal whisper: the previous sample's full-freeze-immune-set state, for the falling-edge one-shot.
+    private static boolean prevPoleProtectionFull = false;
     // Understudy SWING: the DANGER/LETHAL warning text and the atmosphere pulse as ONE moment. When a serious
     // tier (3=DANGER / 4=LETHAL) fires, arm a subtle edge-darkening VIGNETTE synced to the text's appearance.
     // WALL-CLOCK armed (System.currentTimeMillis) -- the tick-clock lesson is law, so PolarVignetteOverlayHud
@@ -185,30 +217,26 @@ public final class GlobeWarningOverlay {
         return out.length() == 0 ? s : out.toString();
     }
 
-    private static Component poleTextForStage(GlobeClientState.PolarStage stage) {
-        if (stage == null) return null;
-        return switch (stage) {
-            case WARN_1 -> Component.literal(POLE_WARN_1_TEXT);
-            case WARN_2 -> Component.literal(POLE_WARN_2_TEXT);
-            // RED, NOT RED+BOLD: MC fakes bold by drawing every glyph twice (BakedSheetGlyph.renderChar,
-            // +getBoldOffset()==1px), which doubled every dark keyline stamp into a smeared halo AND widened
-            // the glyph advances so a non-bold keyline would drift out of registration. Non-bold keeps the
-            // fill and its crisp dark outline perfectly aligned; the outline + red + scale carry the weight.
+    /**
+     * B-7 item 4: the reworked five-rung ladder text. RED (non-bold -- see the keyline note) for DANGER/LETHAL;
+     * the LETHAL line swaps to the protected copy under a full freeze-immune set (same RED LETHAL style, so the
+     * severity styling is preserved -- only the death claim is dropped for a player the damage can't touch).
+     * RED is NOT RED+BOLD: MC fakes bold by drawing every glyph twice (+1px), which doubled the dark keyline
+     * into a smeared halo and drifted the outline out of registration; non-bold keeps fill + outline aligned.
+     */
+    private static Component poleTextForRung(com.example.globe.core.PolarColdCues.Rung rung, boolean protectionFull) {
+        if (rung == null) {
+            return null;
+        }
+        return switch (rung) {
+            case APPROACH -> Component.literal(POLE_WARN_1_TEXT);
+            case HYPOTHERMIA -> Component.literal(POLE_HYPOTHERMIA_TEXT);
+            case BLIZZARD -> Component.literal(POLE_WARN_2_TEXT);
             case DANGER -> Component.literal(POLE_DANGER_TEXT).withStyle(ChatFormatting.RED);
-            case LETHAL -> Component.literal(POLE_LETHAL_TEXT).withStyle(ChatFormatting.RED);
-            default -> null;
+            case LETHAL -> Component.literal(
+                    com.example.globe.core.PolarColdCues.lethalTextProtected(protectionFull)
+                            ? POLE_LETHAL_PROTECTED_TEXT : POLE_LETHAL_TEXT).withStyle(ChatFormatting.RED);
         };
-    }
-
-    private static Component poleTextForTier(int tier) {
-        GlobeClientState.PolarStage stage = switch (tier) {
-            case 1 -> GlobeClientState.PolarStage.WARN_1;
-            case 2 -> GlobeClientState.PolarStage.WARN_2;
-            case 3 -> GlobeClientState.PolarStage.DANGER;
-            case 4 -> GlobeClientState.PolarStage.LETHAL;
-            default -> null;
-        };
-        return poleTextForStage(stage);
     }
 
     // B-4 item 3: run the pure episode ladder each throttled sample. A tier crossing arms a fresh ~10 s
@@ -228,35 +256,57 @@ public final class GlobeWarningOverlay {
         if (client.level == null || client.player == null) {
             return;
         }
+        var border = client.level.getWorldBorder();
+        double absLatDeg = com.example.globe.util.LatitudeMath.absLatDegExact(border, client.player.getZ());
+        // B-7 S1: ONE evaluator (ColdProtection, via the client twin of the server armor read) drives the
+        // hypothermia-rung suppression, the LETHAL text swap, AND the removal whisper -- so the text can never
+        // lie about a damage the player's set negates.
+        boolean protectionFull = com.example.globe.client.PolarColdClient.protectionFull(client);
+
+        // B-7 removal whisper (design S1 addendum): losing a full set while >= 85 deg speaks ONCE ("Hypothermia
+        // is imminent.") and REPLACES the (suppressed) hypothermia rung -- no back-to-back double message.
+        // Evaluated BEFORE the exposure gate so it fires even under cover; the prev-state is advanced every
+        // sample so the falling edge is inherently one-shot (re-gaining a full set re-arms it).
+        if (com.example.globe.core.PolarColdCues.removalWhisperFires(absLatDeg, protectionFull,
+                prevPoleProtectionFull)) {
+            LatitudeWhisperOverlay.trigger(com.example.globe.core.PolarColdCues.REMOVAL_WHISPER_TEXT);
+            logEntryTitle("pole_removal_whisper", com.example.globe.core.PolarColdCues.REMOVAL_WHISPER_TEXT,
+                    client, client.player.getX(), client.player.getZ());
+        }
+        prevPoleProtectionFull = protectionFull;
+
         if (com.example.globe.core.PolarExposure.warningAlpha(exposure01) <= 0.0f) {
             return; // sealed in / deep underground: freeze the ladder rather than burn a one-shot unseen.
         }
-        var border = client.level.getWorldBorder();
-        double absLatDeg = com.example.globe.util.LatitudeMath.absLatDegExact(border, client.player.getZ());
-        com.example.globe.core.PolarWarningEpisode.Step step =
-                com.example.globe.core.PolarWarningEpisode.evaluate(absLatDeg, poleWarnHighestTier);
+        com.example.globe.core.PolarColdCues.LadderStep step =
+                com.example.globe.core.PolarColdCues.evaluateLadder(absLatDeg, poleWarnHighestTier, protectionFull);
         poleWarnHighestTier = step.nextHighestFired();
-        // A full retreat below 84 deg re-arms the whole ladder (nextHighestFired == 0) -- clear any armed
-        // vignette so the swing is a provable no-op once the player has left the hazard region.
+        // A full retreat below RETREAT_REARM_DEG (81, one deg under the 82-deg first rung) re-arms the whole
+        // ladder -- clear any armed vignette so the swing is a provable no-op once the player has left.
         if (poleWarnHighestTier == 0) {
             poleVignetteTier = 0;
             poleVignetteStartMs = Long.MIN_VALUE;
         }
-        if (step.fireTier() > 0) {
-            Component txt = poleTextForTier(step.fireTier());
+        com.example.globe.core.PolarColdCues.Rung rung = step.fire();
+        if (rung != null) {
+            Component txt = poleTextForRung(rung, protectionFull);
             if (txt != null) {
                 poleWarnText = txt;
+                poleWarnLethal = rung == com.example.globe.core.PolarColdCues.Rung.LETHAL;
                 long now = client.level.getGameTime();
                 poleWarnStartTick = now;
                 poleWarnEndTick = now + POLE_WARN_HOLD_TICKS;
-                // Only the two serious tiers earn atmosphere: arm the vignette pulse in the SAME instant the
-                // DANGER/LETHAL text appears (a deeper tier crossing re-arms it, punctuating the new line).
-                if (step.fireTier() == PolarWarningVignette.TIER_DANGER
-                        || step.fireTier() == PolarWarningVignette.TIER_LETHAL) {
-                    poleVignetteTier = step.fireTier();
+                // Only the two serious rungs earn atmosphere: arm the vignette pulse in the SAME instant the
+                // DANGER/LETHAL text appears, mapped to the vignette's own DANGER/LETHAL tier constants (which
+                // stay 3/4 regardless of this ladder's 1..5 indexing, so PolarVignetteOverlayHud is untouched).
+                if (rung == com.example.globe.core.PolarColdCues.Rung.DANGER) {
+                    poleVignetteTier = PolarWarningVignette.TIER_DANGER;
+                    poleVignetteStartMs = System.currentTimeMillis();
+                } else if (rung == com.example.globe.core.PolarColdCues.Rung.LETHAL) {
+                    poleVignetteTier = PolarWarningVignette.TIER_LETHAL;
                     poleVignetteStartMs = System.currentTimeMillis();
                 }
-                logEntryTitle("pole_warn_tier" + step.fireTier(), txt.getString(),
+                logEntryTitle("pole_warn_" + rung, txt.getString(),
                         client, client.player.getX(), client.player.getZ());
             }
         }
@@ -302,11 +352,11 @@ public final class GlobeWarningOverlay {
         int rgb = styleColor != null ? styleColor.getValue() : 0xFFFFFF;
         int a = (int) Mth.clamp(alpha * 255.0f, 0.0f, 255.0f);
         int color = (a << 24) | (rgb & 0x00FFFFFF);
-        // CD F1/F3 + TEST 75: ALL FOUR polar tiers get the dark keyline so both the red (DANGER/LETHAL) and
-        // the plain-white (WARN_1/WARN_2) lines read on the whiteout; LETHAL additionally renders slightly
-        // larger than DANGER (via poleWarnHighestTier == 4) so the final rung is a visibly distinct beat.
+        // CD F1/F3 + TEST 75: ALL polar rungs get the dark keyline so both the red (DANGER/LETHAL) and the
+        // plain-white (APPROACH/HYPOTHERMIA/BLIZZARD) lines read on the whiteout; LETHAL additionally renders
+        // slightly larger than DANGER (via the poleWarnLethal flag) so the final rung is a distinct beat.
         boolean keyline = true;
-        float scale = poleWarnHighestTier == 4 ? LETHAL_TEXT_SCALE : 1.0f;
+        float scale = poleWarnLethal ? LETHAL_TEXT_SCALE : 1.0f;
         drawCenteredWarning(ctx, client.font, poleWarnText, warnY, color, keyline, scale);
         return true;
     }
@@ -573,6 +623,8 @@ public final class GlobeWarningOverlay {
         poleWarnText = null;
         poleWarnStartTick = Long.MIN_VALUE;
         poleWarnEndTick = Long.MIN_VALUE;
+        poleWarnLethal = false;
+        prevPoleProtectionFull = false;
         poleVignetteTier = 0;
         poleVignetteStartMs = Long.MIN_VALUE;
         ewBannerState = com.example.globe.core.EwBannerEnvelope.State.INITIAL;

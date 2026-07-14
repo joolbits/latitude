@@ -92,6 +92,8 @@ public class GlobeModClient implements ClientModInitializer {
             com.example.globe.client.HemispherePassageClientState.reset();
             com.example.globe.client.HemispherePassageClient.reset();
             com.example.globe.client.LatitudeWhisperOverlay.reset();
+            com.example.globe.client.PolarColdClient.reset();
+            com.example.globe.client.PolarCuesClient.reset();
             com.example.globe.client.PolarWindSoundInstance.reset();
         });
 
@@ -115,21 +117,15 @@ public class GlobeModClient implements ClientModInitializer {
             });
         });
 
-        // B-5/B-7 Hemisphere Passage arrival (S2C, per-crossing-player only). EW routes to the B-5 client seed/
-        // title stub exactly as shipped. POLE is a documented P2 stub: P1 builds no pole client arm, and a P1
-        // client never SENDS a pole answer, so a pole arrival is unreachable in P1 -- logged + ignored here; P2
-        // wires the pole arm seed + "Beyond the North Pole" title off this same payload.
+        // B-5/B-7 Hemisphere Passage arrival (S2C, per-crossing-player only). Records the axis + arrival (X,Z);
+        // HemispherePassageClient consumes it on the next curtain tick to seed the RIGHT arm and fire the right
+        // arrival title (E/W hemisphere, or "Beyond the North/South Pole"). B-7 P2 routes both axes here.
         ClientPlayNetworking.registerGlobalReceiver(GlobeNet.PassageArrivalPayload.ID, (payload, context) -> {
             context.client().execute(() -> {
-                if (payload.axis() == com.example.globe.core.PassageAxis.POLE) {
-                    GlobeMod.LOGGER.info("S2C pole passage arrival: x={} z={} (P1 client stub -- P2 wires the pole arm/title)",
-                            payload.arrivalX(), payload.arrivalZ());
-                    return;
-                }
-                com.example.globe.client.HemispherePassageClientState.onArrival(payload.arrivalX());
-                GlobeMod.LOGGER.info("S2C passage arrival: arrivalX={} (east={})",
-                        payload.arrivalX(),
-                        com.example.globe.client.HemispherePassageClientState.arrivedEast());
+                com.example.globe.client.HemispherePassageClientState.onArrival(
+                        payload.axis(), payload.arrivalX(), payload.arrivalZ());
+                GlobeMod.LOGGER.info("S2C passage arrival: axis={} arrivalX={} arrivalZ={}",
+                        payload.axis(), payload.arrivalX(), payload.arrivalZ());
             });
         });
 
@@ -267,6 +263,14 @@ public class GlobeModClient implements ClientModInitializer {
         // The world-scale storm seen THROUGH a window -- greyed overcast + real vanilla snowfall on exterior
         // columns -- is driven by ClientLevelStormSkyMixin (world-space, vanilla-occluded by walls), not here.
         float exposure = eval.exposure01();
+
+        // B-7 cold cues, after the isPaused guard so the frost inherits the B-3b anti-backlog rule.
+        // S6: the frozen-wounds whisper one-shot -- GLOBAL (design item 8; presents the un-gated heal lock;
+        // the tint itself is server-driven via ticksFrozen, no client work). S2: sparse frost along the pole
+        // wall plane when pressed against the clamp line -- gates ITSELF on POLE_PASSAGE_V2_ENABLED (sweep
+        // INFO 2026-07-14: the frost presents the flag-gated wall, so flag-off it must not exist).
+        com.example.globe.client.PolarCuesClient.frozenWoundsWhisperTick(client);
+        com.example.globe.client.PolarCuesClient.poleClampFrostTick(client, exposure);
 
         // Throttle: spawn on every 4th tick (shared by ambient snow + EW storm). Fixed per-tick BUDGET on
         // each spawn tick -- never a "how many do I owe since last spawn" accumulator.

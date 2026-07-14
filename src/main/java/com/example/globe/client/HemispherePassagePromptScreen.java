@@ -1,5 +1,6 @@
 package com.example.globe.client;
 
+import com.example.globe.core.PassageAxis;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.Screen;
@@ -36,6 +37,8 @@ public final class HemispherePassagePromptScreen extends Screen {
     private static final int BODY_GAP = 16;
 
     private final String bodyLine;
+    /** Which edge this prompt belongs to -- selects the answer axis + (POLE) the faster curtain fade-in. */
+    private final PassageAxis axis;
 
     private int panelX;
     private int panelY;
@@ -52,12 +55,33 @@ public final class HemispherePassagePromptScreen extends Screen {
     private boolean answered;
 
     /**
+     * B-5 E/W-edge variant: the "Heavy fog advisory" antimeridian crossing prompt.
+     *
      * @param beyondEast true if the Eastern Hemisphere lies BEYOND the fog (the crossing mirrors X, so this is
      *                   the opposite hemisphere to the one the player is standing in).
      */
     public HemispherePassagePromptScreen(boolean beyondEast) {
-        super(Component.literal("Heavy fog advisory"));
-        this.bodyLine = "Beyond this fog lies the " + (beyondEast ? "Eastern" : "Western") + " Hemisphere.";
+        this("Heavy fog advisory",
+                "Beyond this fog lies the " + (beyondEast ? "Eastern" : "Western") + " Hemisphere.",
+                PassageAxis.EW);
+    }
+
+    /**
+     * B-7 pole variant: the "Blizzard advisory" over-the-pole crossing prompt (design §7 copy). The crossing
+     * keeps the same pole side, so {@code north} names the pole the player is at.
+     *
+     * @param north true if the crossing is over the NORTH pole ({@code N = -Z}), false for the South pole
+     */
+    public static HemispherePassagePromptScreen forPole(boolean north) {
+        return new HemispherePassagePromptScreen("Blizzard advisory",
+                "Beyond the whiteout lies the far side of the " + (north ? "North" : "South") + " Pole.",
+                PassageAxis.POLE);
+    }
+
+    private HemispherePassagePromptScreen(String title, String bodyLine, PassageAxis axis) {
+        super(Component.literal(title));
+        this.bodyLine = bodyLine;
+        this.axis = axis;
     }
 
     @Override
@@ -100,9 +124,9 @@ public final class HemispherePassagePromptScreen extends Screen {
         answered = true;
         if (this.passButton != null) this.passButton.active = false;
         if (this.turnButton != null) this.turnButton.active = false;
-        HemispherePassageClient.sendAnswer(cross);
+        HemispherePassageClient.sendAnswer(cross, axis);
         if (cross) {
-            HemispherePassageClient.raiseCurtain();
+            HemispherePassageClient.raiseCurtain(axis);
         }
         // Close via onClose -- the `answered` guard above is already set, so onClose's turn-back-on-dismiss path
         // is a no-op and cannot double-send; super.onClose() does the actual screen teardown.
@@ -114,7 +138,7 @@ public final class HemispherePassagePromptScreen extends Screen {
         // ESC / dismiss == turn back (design: dismiss-is-turn-back). Only if no button was clicked.
         if (!answered) {
             answered = true;
-            HemispherePassageClient.sendAnswer(false);
+            HemispherePassageClient.sendAnswer(false, axis);
         }
         super.onClose();
     }

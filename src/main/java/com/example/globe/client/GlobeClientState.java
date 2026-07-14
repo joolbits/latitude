@@ -212,6 +212,27 @@ public final class GlobeClientState {
         return distanceToEwBorderBlocks(client.level.getWorldBorder(), x);
     }
 
+    /** B-7: blocks from the player to the nearest N/S pole, the Z sibling of {@link #distanceToEwBorderBlocks}.
+     *  Anchored to the mod's synced latitude (Z) radius ({@code LatitudeMath.latitudeRadius}, never the
+     *  X-sized live border half), so it is lerp-immune for free (the pole line inherits the TEST-86 protection
+     *  with no new handshake field). Shrinks to 0 AT the pole and clamps to 0 beyond it (Wide worlds), so a
+     *  beyond-the-line survivor at the hard-stop clamp is still eligible for the prompt. */
+    public static double distanceToPoleBlocks(double z) {
+        var client = Minecraft.getInstance();
+        if (client == null || client.level == null) return Double.POSITIVE_INFINITY;
+        var border = client.level.getWorldBorder();
+        double zRadius = com.example.globe.util.LatitudeMath.latitudeRadius(border);
+        return com.example.globe.core.PoleGeometry.distanceToPole(zRadius, border.getCenterZ(), z);
+    }
+
+    /** B-7: the resolved per-world POLE block geometry (prompt / re-arm / arrival / edge-re-prompt distances),
+     *  degree-anchored to the synced latitude (Z) radius -- the pole sibling of {@link #edgeGeometry}. The SAME
+     *  {@code resolve()} the server uses to re-validate a pole cross, so client and server can never disagree. */
+    public static com.example.globe.core.PoleGeometry.Resolved poleGeometry(WorldBorder border) {
+        return com.example.globe.core.PoleGeometry.resolve(
+                com.example.globe.util.LatitudeMath.latitudeRadius(border));
+    }
+
     public static int ewWarningStage(double x) {
         double d = distanceToEwBorderBlocks(x);
         int stage;
