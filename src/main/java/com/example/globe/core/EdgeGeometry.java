@@ -223,9 +223,11 @@ public final class EdgeGeometry {
         double climax = Math.max(distForDeg(CLIMAX_DEG, xRadiusIntended), PROMPT_MIN_DIST_BLOCKS);
         // The prompt (178 deg) -- one degree poleward of the climax. arrival lands exactly on it.
         double prompt = Math.max(distForDeg(PROMPT_DEG, xRadiusIntended), PROMPT_MIN_DIST_BLOCKS);
-        // Sweep hardening: the climax<prompt chain link was the only ORDER_STEP-unprotected adjacency
-        // (a tie is unreachable on shipping radii >= 3750, but defend it anyway).
-        prompt = Math.max(prompt, climax + ORDER_MIN_STEP_BLOCKS);
+        // NOTE (sweep, staged-flow round): the climax<prompt adjacency is the one chain link without an
+        // ORDER_STEP floor -- deliberately. A tie needs xRadius <= 3600, below every shippable size (min
+        // 3750), and adding a floor here MOVES real geometry on small worlds (climax+8 > the 178-deg prompt
+        // at 3750), which a hardening must never do. assertChain still fails loudly if a sub-shippable
+        // radius ever ties.
         // Fog onset (177.5 deg): at least FOG_BAND_MIN past the climax so the front reads, and strictly outside
         // the prompt line by ORDER_STEP.
         double rampStart = Math.max(
