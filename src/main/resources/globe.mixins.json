@@ -25,6 +25,7 @@
     "ExtremePolarVegetationGuardMixin",
     "PolarVegetationFadeGuardMixin",
     "LivingEntityFreezeDamageMixin",
+    "LivingEntityHealLockMixin",
     "StructureBiomeMatchGuardMixin",
     "EdgeStructureVetoMixin",
     "terrain.RandomStateAccessor",

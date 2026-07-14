@@ -157,6 +157,33 @@ public final class LatitudeV2Flags {
             Boolean.parseBoolean(System.getProperty("latitude.passageV2.enabled", "true")); // DEFAULT ON since 2026-07-12: Peetsa live-approved the passage at P3 ("everything felt good") and it is consensual by design (prompt-gated); the flag remains the kill switch.
 
     /**
+     * Phase 5 Slice B-7 (Pole Passage). Default false. Gates the opt-in N/S pole CROSSING surface -- the (P2)
+     * approach prompt at 89.2 deg, the two-button "pass through?" screen, the over-the-pole mirror teleport
+     * ({@code mirrorX} + far meridian + yaw+180), the deep 89.5-deg arrival (S5) with its post-crossing cold
+     * grace, the turn-back push, the {@code axis=POLE} netcode, AND the Wide-world pole hard-stop clamp (S2).
+     * Flag-off is byte-identical FOR THAT SURFACE: no pole prompt/teleport/curtain/title/nudge exists, the
+     * server rejects every {@code axis=POLE} answer, and the Wide pole stays the unmarked endless death plain
+     * it is now (the clamp only exists to be the wall the crossing is the door through).
+     *
+     * <p><b>What this flag does NOT gate (F2 honesty rescope).</b> The B-7 S3/S4/S6 polar-experience rebalances
+     * are GLOBAL and deliberately un-gated (cold-pacing/survival corrections, not crossing features -- the same
+     * global-vs-gated split B-5 drew for the EW edge presentation): the frostbite band [85,88) + its F3 frost
+     * cue, the ambient snow/fog onset move 85 -&gt; 82, the S4 shelter pause, and the S6 frozen-wounds heal lock
+     * are live regardless of this flag. "Flag-off = byte-identical" therefore applies to the
+     * crossing/clamp/netcode/nudge ONLY; the polar cold PACING is a separate, global change this pass ships.
+     *
+     * <p><b>Zero worldgen.</b> Unlike B-6, B-7 is pure presentation + teleport + movement clamp -- no per-world
+     * capture, no atlas gate, no mirror-band strips. It works on EVERY existing world (including Peetsa's live
+     * ones), so there is no world-state to persist here. NOT tied to {@link #PASSAGE_V2_ENABLED} (the EW axis) --
+     * the server passage receiver routes by {@link PassageAxis}, gating EW on {@code PASSAGE_V2_ENABLED} and POLE
+     * on this. A later default-on decision is Peetsa's post-P3 call, same as B-5's history. Born WITH its
+     * build.gradle client-run forwarding line in the SAME pass (L17 discipline). Design
+     * {@code docs/binder/phase5-b7-pole-passage-design-20260713.md} (incl. the binding S1-S6 tail).
+     */
+    public static final boolean POLE_PASSAGE_V2_ENABLED =
+            Boolean.parseBoolean(System.getProperty("latitude.polePassageV2.enabled", "false"));
+
+    /**
      * Phase 5 Slice B-5 (Hemisphere Passage polish, item 1): keep GENERATED STRUCTURES out of an absolute band
      * inward from the E/W (X) world-border edge (Peetsa saw a structure at the border, TEST 83). Default TRUE.
      *

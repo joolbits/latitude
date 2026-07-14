@@ -67,10 +67,10 @@ class PolarHazardWindowTest {
 
     @Test
     void ambientProgressAndSnowCountAreZeroBelowAmbientOnset() {
-        // WHY: B-3b's ambient window opens at 85 deg (AMBIENT_ONSET_DEG); below it there is no snow and no
-        // ambient progress at all. (Ambient is UNCHANGED by the TEST 76 hazard-onset move.)
-        assertEquals(0.0, PolarHazardWindow.ambientProgress(84.999));
-        assertEquals(0, PolarHazardWindow.snowCount(84.999));
+        // WHY: the ambient window opens at AMBIENT_ONSET_DEG (moved 85 -> 82 in B-7 S3); below it there is no
+        // snow and no ambient progress at all. Anchored symbolically so the value move can't silently break it.
+        assertEquals(0.0, PolarHazardWindow.ambientProgress(PolarHazardWindow.AMBIENT_ONSET_DEG - 0.001));
+        assertEquals(0, PolarHazardWindow.snowCount(PolarHazardWindow.AMBIENT_ONSET_DEG - 0.001));
         assertEquals(0.0, PolarHazardWindow.ambientProgress(0.0));
         assertEquals(0, PolarHazardWindow.snowCount(0.0));
     }
@@ -414,11 +414,14 @@ class PolarHazardWindowTest {
     }
 
     @Test
-    void stormLevelIsSteeperThanAmbientAt86() {
-        // WHY: Peetsa saw the sun at 86 deg because the old lift was the linear 85->90 ambientProgress
-        // (~0.2 at 86). stormLevel must read clearly overcast (0.4) at 86 -- strictly above ambient.
+    void stormLevelKeepsItsOwn85OnsetAndAmbientNowLeadsIt() {
+        // WHY: stormLevel keeps its OWN 85 onset (STORM_ONSET_DEG), UNCHANGED by B-7 S3 -- still clearly
+        // overcast (0.4) at 86 and full by 87.5 (the sun is gone well before the pole). The client ambient
+        // snow/fog now begins EARLIER (82, S3), so at 86 the whiteout has out-ramped the storm sky (ambient
+        // leads, the sun-fade follows on its own steeper 85->87.5 curve). Documents the decoupled onsets.
         assertEquals(0.4f, PolarHazardWindow.stormLevel(86.0), 1e-4);
-        assertTrue(PolarHazardWindow.stormLevel(86.0) > (float) PolarHazardWindow.ambientProgress(86.0));
+        assertTrue(PolarHazardWindow.ambientProgress(86.0) > PolarHazardWindow.stormLevel(86.0),
+                "ambient (82 onset) now leads the storm sky (85 onset) at 86 deg");
     }
 
     @Test
@@ -467,20 +470,22 @@ class PolarHazardWindowTest {
 
     @Test
     void polarFogFractionsAreExactlyZeroAtAndBelowAmbientOnset() {
-        // WHY: seam-free -- at/below 85 deg the fog must be vanilla's, bitwise unchanged (no fog pop at onset).
-        assertEquals(0.0f, PolarHazardWindow.polarFogEndFraction(85.0));
-        assertEquals(0.0f, PolarHazardWindow.polarFogEndFraction(84.999));
-        assertEquals(0.0f, PolarHazardWindow.polarFogStartFraction(85.0));
+        // WHY: seam-free -- at/below the ambient onset (now 82, B-7 S3) the fog must be vanilla's, bitwise
+        // unchanged (no fog pop at onset). Anchored symbolically to the onset constant.
+        assertEquals(0.0f, PolarHazardWindow.polarFogEndFraction(PolarHazardWindow.AMBIENT_ONSET_DEG));
+        assertEquals(0.0f, PolarHazardWindow.polarFogEndFraction(PolarHazardWindow.AMBIENT_ONSET_DEG - 0.001));
+        assertEquals(0.0f, PolarHazardWindow.polarFogStartFraction(PolarHazardWindow.AMBIENT_ONSET_DEG));
         assertEquals(0.0f, PolarHazardWindow.polarFogStartFraction(0.0));
     }
 
     @Test
     void polarFogEndAndStartReturnVanillaUnchangedAtAndBelowOnset() {
-        // WHY: the seam-free contract at the value level -- callers get their own vanilla distances back.
-        assertEquals(V_END, PolarHazardWindow.polarFogEnd(V_END, 85.0));
+        // WHY: the seam-free contract at the value level -- callers get their own vanilla distances back at/below
+        // the ambient onset (now 82, B-7 S3). 80 deg is still below the onset.
+        assertEquals(V_END, PolarHazardWindow.polarFogEnd(V_END, PolarHazardWindow.AMBIENT_ONSET_DEG));
         assertEquals(V_END, PolarHazardWindow.polarFogEnd(V_END, 80.0));
         // start clamps below end, but with no tightening end==V_END so start==V_START (< V_END-1).
-        assertEquals(V_START, PolarHazardWindow.polarFogStart(V_START, V_END, 85.0));
+        assertEquals(V_START, PolarHazardWindow.polarFogStart(V_START, V_END, PolarHazardWindow.AMBIENT_ONSET_DEG));
     }
 
     @Test
@@ -535,28 +540,29 @@ class PolarHazardWindowTest {
     }
 
     @Test
-    void polarFogEndIsClearlyHeavyAtEightyEightAndLightAtEightySix() {
-        // WHY: Peetsa's shelter is ~88 deg and must read HEAVY (sight roughly halved from vanilla), while the
-        // 85-86 approach stays light -- documents the numbers a playtest should observe (12-chunk sample).
-        float end86 = PolarHazardWindow.polarFogEnd(V_END, 86.0);
+    void polarFogEndIsClearlyHeavyAtEightyEightAndLightNearTheOnset() {
+        // WHY: Peetsa's shelter is ~88 deg and must read HEAVY (sight roughly halved from vanilla). The fog now
+        // begins at 82 (B-7 S3), so the LIGHT far haze is the early approach just inside the onset (~83); 86 is
+        // now mid-ramp, no longer "light". Documents the numbers a playtest should observe (12-chunk sample).
+        float end83 = PolarHazardWindow.polarFogEnd(V_END, 83.0);
         float end88 = PolarHazardWindow.polarFogEnd(V_END, 88.0);
-        assertTrue(end86 > 140.0f, "86 deg should still be a light far haze, was " + end86);
+        assertTrue(end83 > 140.0f, "83 deg should still be a light far haze, was " + end83);
         assertTrue(end88 < 120.0f, "88 deg should read clearly heavy, was " + end88);
     }
 
     @Test
     void test78FogRetuneEndDistances() {
-        // TEST 78 narrows the "inside is much lighter" gap by making the shared depth fog carry MORE of the
-        // total (NEAR 24->16, END_CURVE 0.85->0.80). Documents the sight distances (blocks) at a 12-chunk
-        // sample (V_END=192) so a playtest can check them. Before -> after: 86: 149->~143, 88: 83->~75,
-        // 90: 24->16 (the pole tightens ~33%, exactly where the exposed/sheltered parity mattered most).
+        // The TEST 78 curve tuning (NEAR 24->16, END_CURVE 0.85->0.80) is UNCHANGED; B-7 S3 moved the ambient
+        // ONSET 85 -> 82, so at any given latitude the fog is now further along its ramp (heavier) than before.
+        // Documents the sight distances (blocks) at a 12-chunk sample (V_END=192) under the new 82 onset: 86 is
+        // now mid-ramp (~91), 88 heavy (~52), 90 the pole floor (16, unchanged).
         float end86 = PolarHazardWindow.polarFogEnd(V_END, 86.0);
         float end88 = PolarHazardWindow.polarFogEnd(V_END, 88.0);
         float end90 = PolarHazardWindow.polarFogEnd(V_END, 90.0);
-        assertEquals(143.4f, end86, 1.5f, "86 deg end distance");
-        assertEquals(75.1f, end88, 1.5f, "88 deg end distance");
-        assertEquals(16.0f, end90, 1e-3f, "90 deg end distance == pole floor");
-        // Heavier than the pre-TEST-78 tuning at 88 and 90 (the parity band).
+        assertEquals(90.9f, end86, 1.5f, "86 deg end distance (now mid-ramp under the 82 onset)");
+        assertEquals(52.2f, end88, 1.5f, "88 deg end distance");
+        assertEquals(16.0f, end90, 1e-3f, "90 deg end distance == pole floor (unchanged)");
+        // Still heavier than the pre-TEST-78 tuning at 88 and 90 (the parity band).
         assertTrue(end88 < 83.2f, "88 must be heavier than the old 83, was " + end88);
         assertTrue(end90 < 24.0f, "90 must be heavier than the old 24, was " + end90);
     }
@@ -600,6 +606,136 @@ class PolarHazardWindowTest {
             assertTrue(f >= prevF - 1e-9, "fall decreased at " + deg);
             prevW = w;
             prevF = f;
+        }
+    }
+
+    // ---- B-7 S3: the FROSTBITE band [85,88) + the ambient-onset move + the 89.2 lethal pin --------
+
+    /** DPS helper: HP per hit / (interval in ticks / 20 ticks-per-second). */
+    private static double dpsFrostbite(double deg) {
+        return PolarHazardWindow.frostbiteDamageAmount(deg)
+                / (PolarHazardWindow.frostbiteIntervalTicks(deg) / 20.0);
+    }
+
+    @Test
+    void frostbiteBandAppliesOnlyOn85to88() {
+        assertFalse(PolarHazardWindow.appliesFrostbiteDamage(84.99), "no frostbite below 85");
+        assertTrue(PolarHazardWindow.appliesFrostbiteDamage(85.0), "frostbite onset at 85");
+        assertTrue(PolarHazardWindow.appliesFrostbiteDamage(87.99), "frostbite through just under 88");
+        assertFalse(PolarHazardWindow.appliesFrostbiteDamage(88.0),
+                "frostbite hands off to the lethal core exactly at 88 -- it does NOT apply at/above 88");
+        assertFalse(PolarHazardWindow.appliesFrostbiteDamage(89.2), "no frostbite in the lethal core");
+    }
+
+    @Test
+    void frostbiteAndLethalCoreAreMutuallyExclusiveAtTheBoundary() {
+        // In [87.5,88): frostbite applies, the lethal core does NOT (grace band, progress < 0.2).
+        assertTrue(PolarHazardWindow.appliesFrostbiteDamage(87.7));
+        assertFalse(PolarHazardWindow.appliesFreezeDamage(PolarHazardWindow.hazardProgress(87.7)));
+        // At exactly 88.0: frostbite stops, the lethal core takes over -- no gap, no overlap.
+        assertFalse(PolarHazardWindow.appliesFrostbiteDamage(88.0));
+        assertTrue(PolarHazardWindow.appliesFreezeDamage(PolarHazardWindow.hazardProgress(88.0)));
+    }
+
+    @Test
+    void frostbiteDpsRampsGentlyFromQuarterToOneHpPerSecond() {
+        // 85 deg: 1.0 HP / 80 ticks = 0.25 HP/s (a distant nibble).
+        assertEquals(80, PolarHazardWindow.frostbiteIntervalTicks(85.0));
+        assertEquals(0.25, dpsFrostbite(85.0), 1e-9);
+        // Just under 88 (the endpoint): 1.0 HP / 20 ticks = 1.0 HP/s (the escalating last warning).
+        assertEquals(20, PolarHazardWindow.frostbiteIntervalTicks(88.0));
+        assertEquals(1.0, dpsFrostbite(88.0), 1e-9);
+        // Midpoint 86.5: interval 50, 0.4 HP/s.
+        assertEquals(50, PolarHazardWindow.frostbiteIntervalTicks(86.5));
+        assertEquals(0.4, dpsFrostbite(86.5), 1e-9);
+        // The interval is monotonically non-increasing (damage never gets gentler poleward within the band).
+        int prev = PolarHazardWindow.frostbiteIntervalTicks(85.0);
+        for (int i = 1; i <= 300; i++) {
+            double deg = 85.0 + i * (3.0 / 300.0);
+            int iv = PolarHazardWindow.frostbiteIntervalTicks(deg);
+            assertTrue(iv <= prev, "frostbite interval grew (damage got gentler) at " + deg);
+            prev = iv;
+        }
+    }
+
+    @Test
+    void ambientOnsetMovedTo82_clientAtmosphereLeadsTheDanger() {
+        // B-7 S3: the pure-client ambient snow/fog onset moved 85 -> 82 so the whiteout leads the danger.
+        assertEquals(82.0, PolarHazardWindow.AMBIENT_ONSET_DEG, 1e-9);
+        // Snow/fog now begin at 82, ahead of the frostbite (85) and lethal (88) bands.
+        assertEquals(0, PolarHazardWindow.snowCount(81.99), "no snow just below the 82 onset");
+        assertTrue(PolarHazardWindow.snowCount(82.5) > 0, "snow present just inside the 82 onset");
+        assertTrue(PolarHazardWindow.AMBIENT_ONSET_DEG < PolarHazardWindow.FROSTBITE_ONSET_DEG);
+    }
+
+    @Test
+    void lethalCoreAt89point2IsUnchanged_promptZoneSurvivalPinned() {
+        // The B-7 prompt sits at 89.2 deg. The design survival table depends on the [88,90] lethal curve being
+        // bit-for-bit unchanged by S3: at 89.2 deg the curve deals 2.2 HP every 30 ticks = 1.4667 HP/s. Pin it.
+        double progress = PolarHazardWindow.hazardProgress(89.2);
+        assertEquals(2.2f, PolarHazardWindow.freezeDamageAmount(progress), 1e-4f,
+                "89.2 deg lethal amount must stay 2.2 HP/hit (S3 must not touch the lethal core)");
+        assertEquals(30, PolarHazardWindow.freezeDamageIntervalTicks(progress),
+                "89.2 deg lethal interval must stay 30 ticks");
+        double dps = PolarHazardWindow.freezeDamageAmount(progress)
+                / (PolarHazardWindow.freezeDamageIntervalTicks(progress) / 20.0);
+        assertEquals(1.4667, dps, 1e-3, "89.2 deg DPS must stay ~1.47 HP/s (design table)");
+        // And the frostbite band must not leak into the prompt zone.
+        assertFalse(PolarHazardWindow.appliesFrostbiteDamage(89.2));
+    }
+
+    // ---- B-7 F3: the frostbite frost-cue floor (no silent damage) ------------------------------
+
+    @Test
+    void frostbiteCueZeroOutsideTheBand() {
+        assertEquals(0, PolarHazardWindow.frostbiteFrostCueTicks(84.99), "no cue below 85");
+        assertEquals(0, PolarHazardWindow.frostbiteFrostCueTicks(0.0));
+        assertEquals(0, PolarHazardWindow.frostbiteFrostCueTicks(88.0),
+                "at/above 88 the lethal frost visual owns the cue (already at/above 140 there)");
+        assertEquals(0, PolarHazardWindow.frostbiteFrostCueTicks(89.5));
+    }
+
+    @Test
+    void frostbiteCueVisibleFloorAndMonotonicRampToTheHandoff() {
+        // A visible creep (min 20) right at the onset -- the damage is never silent...
+        assertEquals(PolarHazardWindow.FROSTBITE_CUE_MIN_TICKS,
+                PolarHazardWindow.frostbiteFrostCueTicks(85.0), "onset cue = the visible minimum");
+        // ...ramping monotonically within the band, never overshooting 140...
+        int prev = PolarHazardWindow.frostbiteFrostCueTicks(85.0);
+        for (int i = 1; i <= 300; i++) {
+            double deg = 85.0 + i * (2.999 / 300.0);
+            int cue = PolarHazardWindow.frostbiteFrostCueTicks(deg);
+            assertTrue(cue >= prev, "cue decreased at " + deg);
+            assertTrue(cue <= PolarHazardWindow.FROZEN_THRESHOLD_TICKS, "cue overshot 140 at " + deg);
+            prev = cue;
+        }
+        // ...to the fully-frozen threshold exactly at the hand-off (continuous with the lethal path's 140 at
+        // 88). Mid-band checkpoint 86.5 = half progress = 70 ticks (~50% vignette).
+        assertEquals(70, PolarHazardWindow.frostbiteFrostCueTicks(86.5));
+        assertEquals(PolarHazardWindow.FROZEN_THRESHOLD_TICKS,
+                PolarHazardWindow.frostbiteFrostCueTicks(87.999999), "cue meets 140 at the hand-off");
+    }
+
+    @Test
+    void frostbiteCueNeverDecreasesWhatTheLethalPathSets() {
+        // The wiring composites max(lethalFrostVisual, cueFloor) in the overlap [87.5,88) and applies the cue
+        // as a RAISE-only floor elsewhere (if (getTicksFrozen() < cue) set(cue) -- so a vanilla powder-snow
+        // value above the cue is also never lowered). Pin the property that makes the composite safe: it is
+        // monotone non-decreasing across the whole approach 84.9 -> 90 (no pop-down at 87.5 or 88) and never
+        // sits below either input.
+        int prevComposite = 0;
+        for (int i = 0; i <= 1020; i++) {
+            double deg = 84.9 + i * (5.1 / 1020.0);
+            int lethal = deg >= PolarHazardWindow.HAZARD_ONSET_DEG
+                    ? PolarHazardWindow.frostVisualTicks(PolarHazardWindow.hazardProgress(deg))
+                    : 0;
+            int cue = PolarHazardWindow.frostbiteFrostCueTicks(deg);
+            int composite = Math.max(lethal, cue);
+            assertTrue(composite >= lethal, "composite dropped below the lethal set at " + deg);
+            assertTrue(composite >= cue, "composite dropped below the cue floor at " + deg);
+            assertTrue(composite >= prevComposite,
+                    "composite frost popped DOWN at " + deg + " (" + prevComposite + " -> " + composite + ")");
+            prevComposite = composite;
         }
     }
 }

@@ -112,6 +112,10 @@ loom {
             // Phase 5 B-5 Hemisphere Passage — DEFAULT ON since 2026-07-12 (Peetsa's post-P3 decision,
             // matching LatitudeV2Flags; the flag is the kill switch, crossing is prompt-consensual).
             vmArg "-Dlatitude.passageV2.enabled=${System.getProperty('latitude.passageV2.enabled', 'true')}"
+            // Phase 5 B-7 Pole Passage (default FALSE, byte-identical off). Born WITH its forwarding line in the
+            // SAME PASS as the flag (L17 discipline) so a dev client agrees with a shipped jar the moment the
+            // flag is flipped for a P2/P3 flight.
+            vmArg "-Dlatitude.polePassageV2.enabled=${System.getProperty('latitude.polePassageV2.enabled', 'false')}"
             // Phase 5 B-5 edge structure veto (default TRUE, matching LatitudeV2Flags; byte-identical when
             // explicitly set off). Born WITH its forwarding line in the SAME PASS as the flag (L17 discipline).
             vmArg "-Dlatitude.edgeStructureVeto.enabled=${System.getProperty('latitude.edgeStructureVeto.enabled', 'true')}"

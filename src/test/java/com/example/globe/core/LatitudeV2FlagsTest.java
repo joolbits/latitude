@@ -46,4 +46,12 @@ class LatitudeV2FlagsTest {
         assertTrue(LatitudeV2Flags.PASSAGE_V2_ENABLED,
                 "The Hemisphere Passage ships default-on per Peetsa's post-P3 decision");
     }
+
+    @Test
+    void polePassageV2DefaultsToDisabled() {
+        // B-7 Pole Passage ships default-OFF (byte-identical flag-off, including NO Wide-world pole hard-stop
+        // clamp) until Peetsa's post-P3 look, same as B-5's history.
+        assertFalse(LatitudeV2Flags.POLE_PASSAGE_V2_ENABLED,
+                "The Pole Passage must ship default-off until the P3 live look");
+    }
 }

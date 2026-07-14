@@ -111,10 +111,12 @@ public final class HemispherePassageClient {
         PassageDebug.onCurtainRaised();
     }
 
-    /** Send the player's answer to the prompt (C2S). The server re-validates edge distance and ignores a spoof. */
+    /** Send the player's answer to the prompt (C2S). The server re-validates edge distance and ignores a spoof.
+     *  This driver is the B-5 E/W arm, so it always sends {@code axis = EW}; P2 adds the pole arm (which will
+     *  send {@code axis = POLE}) as a second instance of this machine. */
     static void sendAnswer(boolean cross) {
         PassageDebug.onAnswer(cross);
-        ClientPlayNetworking.send(new GlobeNet.PassageAnswerPayload(cross));
+        ClientPlayNetworking.send(new GlobeNet.PassageAnswerPayload(cross, com.example.globe.core.PassageAxis.EW));
     }
 
     /** Per-client-tick driver. Registered in {@code GlobeModClient.onInitializeClient}. */

@@ -2,7 +2,9 @@ package com.example.globe.core;
 
 import org.junit.jupiter.api.Test;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -67,10 +69,17 @@ class PolarWaterFreezeRuleTest {
     // ---- threshold alignment ---------------------------------------------------------------
 
     @Test
-    void thresholdMatchesAmbientOnset() {
-        // Freezing turns on at exactly the ambient snow/fog/wind onset (PolarHazardWindow.AMBIENT_ONSET_DEG),
-        // so the blizzard visuals and the frozen ground read as one coherent polar cap.
-        assertTrue(PolarWaterFreezeRule.FREEZE_ALL_DEG == PolarHazardWindow.AMBIENT_ONSET_DEG);
+    void waterFreezeStaysAt85_decoupledFromAmbient() {
+        // B-7 S3 guard: freezing water MODIFIES THE WORLD (places ice), a worldgen-facing seam that must NOT
+        // move. When S3 shifted the pure-client ambient snow/fog onset 85 -> 82, this threshold deliberately
+        // STAYED at 85 on its own literal anchor -- it is NOT derived from AMBIENT_ONSET_DEG.
+        assertEquals(85.0, PolarWaterFreezeRule.FREEZE_ALL_DEG, 1e-9,
+                "the water-freeze line is a worldgen seam and must stay at 85 deg");
+        assertNotEquals(PolarHazardWindow.AMBIENT_ONSET_DEG, PolarWaterFreezeRule.FREEZE_ALL_DEG,
+                "water-freeze (85) is decoupled from the client ambient onset (now 82)");
+        // It DOES coincide with the frostbite DAMAGE onset (also its own 85 anchor), so "the water is frozen"
+        // and "the cold starts to bite" still read as one line.
+        assertEquals(PolarHazardWindow.FROSTBITE_ONSET_DEG, PolarWaterFreezeRule.FREEZE_ALL_DEG, 1e-9);
     }
 
     @Test

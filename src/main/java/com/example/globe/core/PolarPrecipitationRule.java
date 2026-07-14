@@ -21,12 +21,14 @@ package com.example.globe.core;
  * the ground SPLASH particles, and the rain SOUND ({@code WEATHER_RAIN}/{@code WEATHER_RAIN_ABOVE})
  * -- all three query this one method for RAIN vs SNOW.
  *
- * <p><b>Threshold = 75 deg.</b> Chosen to sit comfortably poleward of any latitude where vanilla
- * rain is plausible: subpolar taiga (the rainiest cold band) ends at {@code SUBPOLAR_MAX_DEG} = 67
- * deg, so rain at 70 deg is arguably fine and NOT force-converted. 75 deg is well inside the polar
- * cap yet a full 10 deg BEFORE the {@code PolarHazardWindow.AMBIENT_ONSET_DEG} (85) storm-sky/snow
- * ambience, so this correctness clamp and the ambience window never fight -- the clamp simply
- * guarantees that whatever precipitation does render across the whole cap is snow, not rain.
+ * <p><b>Threshold = 75 deg (its OWN client anchor).</b> Chosen to sit comfortably poleward of any latitude
+ * where vanilla rain is plausible: subpolar taiga (the rainiest cold band) ends at {@code SUBPOLAR_MAX_DEG} =
+ * 67 deg, so rain at 70 deg is arguably fine and NOT force-converted. 75 deg is well inside the polar cap and
+ * still equatorward of the client ambient snow/fog onset (B-7 S3 moved
+ * {@code PolarHazardWindow.AMBIENT_ONSET_DEG} 85 -> 82; this rule keeps its own literal 75 and did NOT move
+ * with it). This rule is PURE CLIENT ATMOSPHERE (it only swaps rain rendering for snow rendering -- it places
+ * no blocks), so it carries no worldgen-seam risk; it is decoupled here purely so the two anchors stay legible
+ * independently. The clamp simply guarantees that whatever precipitation renders across the cap is snow.
  */
 public final class PolarPrecipitationRule {
 
