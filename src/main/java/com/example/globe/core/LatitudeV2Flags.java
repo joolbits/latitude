@@ -181,7 +181,7 @@ public final class LatitudeV2Flags {
      * {@code docs/binder/phase5-b7-pole-passage-design-20260713.md} (incl. the binding S1-S6 tail).
      */
     public static final boolean POLE_PASSAGE_V2_ENABLED =
-            Boolean.parseBoolean(System.getProperty("latitude.polePassageV2.enabled", "false"));
+            Boolean.parseBoolean(System.getProperty("latitude.polePassageV2.enabled", "true")); // P3 LIVE-TEST STAGING (branch-local, B-6 precedent): default ON for the TEST 97 maiden pole flight. REVISIT BEFORE MERGE -- the shipped default is Peetsa's call after P3.
 
     /**
      * Phase 5 Slice B-5 (Hemisphere Passage polish, item 1): keep GENERATED STRUCTURES out of an absolute band
