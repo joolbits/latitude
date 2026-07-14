@@ -262,6 +262,29 @@ public final class HemispherePassage {
         return outwardSign * lookDirX(yawDeg) >= minCos;
     }
 
+    /** The horizontal look-direction Z component for a Minecraft yaw (deg): {@code +cos(yaw)} (MC yaw 0 faces
+     *  +Z / south). +1 = due south (+Z, yaw 0), -1 = due north (-Z, yaw 180), 0 = due east/west. The Z sibling
+     *  of {@link #lookDirX} for the B-7 pole re-prompt gesture; pure, pitch-independent. */
+    public static double lookDirZ(float yawDeg) {
+        return Math.cos(Math.toRadians(yawDeg));
+    }
+
+    /**
+     * True when the player's horizontal facing points POLEWARD (toward the nearer N/S pole) within the given
+     * cone -- the Z sibling of {@link #facingOutwardX} for the B-7 pole re-prompt gesture. Poleward is -Z on the
+     * northern half ({@code z < centerZ}, since {@code N = -Z}) and +Z on the southern half; on the exact
+     * equator ({@code z == centerZ}) there is no poleward side, so this is false. {@code minCos} is the cosine of
+     * the cone half-angle ({@link #REARM_GESTURE_FACING_MIN_COS} = cos 60 deg), shared with the EW gesture.
+     */
+    public static boolean facingPolewardZ(double playerZ, double centerZ, float yawDeg, double minCos) {
+        double d = playerZ - centerZ;
+        if (d == 0.0) {
+            return false;
+        }
+        double polewardSign = d > 0.0 ? 1.0 : -1.0; // toward the nearer pole (outward on Z)
+        return polewardSign * lookDirZ(yawDeg) >= minCos;
+    }
+
     /**
      * The TEST 92 re-prompt gesture predicate: should a USE-key press RE-ARM the passage this tick? True only
      * when the arm is currently DISARMED, the player is within the prompt band ({@code distToEdge <= promptAt}),
