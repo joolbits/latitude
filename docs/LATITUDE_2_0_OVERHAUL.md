@@ -540,7 +540,16 @@ snap, structure-free edge belt. Single source of truth:
 `docs/binder/phase5-b5-hemisphere-passage-design-20260710.md` (design + all P1-P3 build/verdict logs).
 Post-ship pivot work: title glimmer v3 (7e65d079) and the TEST 89 edge round (35944e38: single white
 advisory replaces the two-tier banner, EW dust removed, degree-based structure ban, re-arm 178°).
-**B-6 Teleport-Evator: IN FLIGHT on branch `phase5-b6-teleport-evator`** — P1 (leaf-reflection mirror,
+**B-6 Teleport-Evator: PARKED 2026-07-13 (Peetsa rollback decision after the maiden voyage)** — the
+silent near-mirror crossing worked mechanically, but live it showed a naked barren strip (the mirror
+band starts at 175° while the fog — tightened to 177.5° for B-5's feel across earlier rounds — no
+longer covered it: decorations vanish at a razor line in clear air) and a confusing ocean arrival.
+Owner verdict: "B-5 gameplay was good enough — B-6 scrapped for now." The branch
+(`phase5-b6-teleport-evator`, pushed) preserves the full engine, mirror mechanism, spikes and proof
+harness for any future revisit (a revisit would need the fog re-widened to cover the band, or a
+band look that survives clear air). **B-7 Pole Passage (B-5-style ceremony at the N/S poles,
+land-to-land/water-to-water arrival) is NOW IN DESIGN on branch `phase5-b7-pole-passage`.**
+(superseded status line follows:) **B-6 Teleport-Evator: IN FLIGHT on branch `phase5-b6-teleport-evator`** — P1 (leaf-reflection mirror,
 proof 21/21 biomes / ≤9-block wobble vs fixed 12 gate / flag-off byte-identical) + P2 (silent momentum-
 preserving crossing) built and swept; TEST 92 staged; awaiting Peetsa's P3 on a FRESH world (per-world
 birth capture — existing worlds can never arm). Design + full logs:
