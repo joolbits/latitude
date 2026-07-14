@@ -143,9 +143,11 @@ public final class HemispherePassageClient {
         // ambience and the EW advisory banner all stay -- the fog is load-bearing (it masks the mirror band's
         // inner-frontier seam) and the advisory's fog-and-care wording stays honest (there IS fog; the
         // crossing just happens silently). driveCurtain above keeps running so even a pathological in-flight
-        // curtain can never strand behind this gate; armed parks true for a next, non-evator world.
+        // curtain can never strand behind this gate; the phase parks ARMED for a next, non-evator world.
+        // (Rebase re-weld: this gate predates the four-phase machine and originally wrote the boolean
+        // `armed`, which the staged-flow rework replaced.)
         if (GlobeClientState.isEvatorWorld()) {
-            armed = true;
+            phase = HemispherePassage.Phase.ARMED;
             return;
         }
         // While the curtain is up, a crossing is mid-flight -- do not evaluate the arm or open a prompt.
