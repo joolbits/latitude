@@ -26,7 +26,7 @@ package com.example.globe.core;
  * degree is only ~20-80 blocks. Effective widths (per E/W side; rampStartDist values are post-TEST-92):
  * <ul>
  *   <li>Itty-Bitty Classic (xRadius 3750, 1 deg ~= 20.8 blk): {@code distForDeg(173) = 145.8} floored to
- *       <b>600</b>. Visible band there is {@code rampStartDist = 112}, so the buffer is {@code 600 - 112 =
+ *       <b>600</b>. Visible band there is {@code rampStartDist = 100}, so the buffer is {@code 600 - 112 =
  *       488} blocks &gt; the 300-block max fan-out. ~16% of the radius per side; the vast interior is free.</li>
  *   <li>Small-Wide (xRadius 15000, 1 deg ~= 83.3 blk): {@code distForDeg(173) = 583.3} floored to <b>600</b>.
  *       Visible band {@code rampStartDist = 208.3}; buffer {@code 600 - 208.3 = 391.7} &gt; 300.</li>
@@ -35,6 +35,14 @@ package com.example.globe.core;
  * </ul>
  * The width is still a pure function of the intended X radius, so the vetoed-anchor set stays trivially
  * deterministic (same seed + flag -&gt; same vetoed anchors).
+ *
+ * <p><b>Edge-flow rework note (2026-07-13): the anchor is still the FOG onset, not the advisory.</b> That pass
+ * moved the white advisory BANNER out to 176 deg (the outermost edge element). That is a TEXT overlay, not
+ * terrain -- it never makes a structure look like it is standing in the storm. The thing the veto exists to
+ * keep clear is the terrain-visible storm, which is still the FOG (onset {@link EdgeGeometry#RAMP_START_DEG}
+ * 177.5 deg), so the {@link #VETO_DEG} 173-deg anchor and its 4.5-deg fan-out buffer are UNCHANGED and still
+ * correct. As a bonus, 173 deg is even further out than the 176-deg advisory line, so the veto also clears the
+ * advisory zone with margin.
  *
  * <p>The mixin ({@code EdgeStructureVetoMixin}) applies this at the {@code StructureStart.placeInChunk} HEAD
  * (before any block is written -- no half-built structures), keyed on the structure's ANCHOR chunk so every

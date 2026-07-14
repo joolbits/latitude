@@ -14,13 +14,15 @@ package com.example.globe.core;
  * skip, no per-tier text. The severe-tier degree anchor ({@code SEVERE_DEG}) is gone from {@link EdgeGeometry}
  * with it.
  *
- * <h2>The one boundary: the band cap (== fog onset)</h2>
+ * <h2>The one boundary: the band cap (the advisory anchor, the OUTERMOST edge element)</h2>
  * The advisory's only boundary is the PER-WORLD {@code capDist} resolved from longitude degrees against the
- * mod's intended X radius ({@link EdgeGeometry#resolve}, {@code rampStartDist} ~= 177.5 deg) and passed IN.
- * The fog and the banner share this ONE onset: no banner shows farther out than {@code capDist}, and it is
- * where the advisory arms on approach. Because it scales with the world, the callout leads the crossing prompt
- * by the same DEGREE spacing on every size instead of a fixed block margin that read absurdly early on wide
- * worlds.
+ * mod's intended X radius ({@link EdgeGeometry#resolve}) and passed IN. Edge-flow rework (2026-07-13): the cap
+ * is now {@code advisoryDist} (~176 deg), the OUTERMOST edge element -- so the advisory arms 0.5 deg BEFORE the
+ * fog onset ({@code rampStartDist}, ~177.5 deg) rather than sharing it. Peetsa's confirmed flow wants the
+ * advisory as a genuine heads-up that leads the fog, not a callout that "lands almost simultaneously" with it.
+ * No banner shows farther out than {@code capDist}, and it is where the advisory arms on approach. Because it
+ * scales with the world, the callout leads the crossing prompt by the same DEGREE spacing on every size instead
+ * of a fixed block margin that read absurdly early on wide worlds.
  *
  * <h2>Preserved behaviours (TEST 85 feedback, still honoured)</h2>
  * <ol>
@@ -63,7 +65,8 @@ public final class EwBannerEnvelope {
      * draws a banner).
      *
      * @param distToEdge blocks to the nearest E/W edge ({@code >= 0}).
-     * @param capDist    the resolved band cap / fog onset ({@code EdgeGeometry.Resolved.rampStartDist}).
+     * @param capDist    the resolved band cap -- the advisory anchor ({@code EdgeGeometry.Resolved.advisoryDist},
+     *                   ~176 deg, the outermost edge element).
      */
     public static int geometryTier(double distToEdge, double capDist) {
         if (Double.isNaN(distToEdge) || Double.isNaN(capDist)) {

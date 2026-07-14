@@ -447,17 +447,18 @@ public final class GlobeWarningOverlay {
             // TEST 89: ONE white advisory (Peetsa retired the two-tier system). The pure banner state machine
             // (core.EwBannerEnvelope) is single-tier now: it arms ONE episode when the player APPROACHES into
             // the band (a walk-out re-shows nothing), plays the wall-clock fade, and stays gone while lingering
-            // until a leave+re-enter. It reads the SAME distance-to-edge the crossing prompt arms on and the
-            // SAME resolved geometry: rampStartDist (~177.5 deg) is the band cap -- fog and banner share that
-            // one onset. Anchored to the intended X radius, so a lerping border can't slide it; client + server
-            // agree. Leaving the band drives geometryTier back to NONE, which re-arms the next approach.
+            // until a leave+re-enter. Edge-flow rework: the band cap is now advisoryDist (~176 deg) -- the
+            // OUTERMOST edge element -- so the advisory LEADS the fog onset (rampStartDist, ~177.5 deg) by 0.5 deg
+            // (a genuine heads-up before the fog, not simultaneous with it). Anchored to the intended X radius, so
+            // a lerping border can't slide it; client + server agree. Leaving the band drives geometryTier back to
+            // NONE, which re-arms the next approach.
             double ewDistToEdge = GlobeClientState.distanceToEwBorderBlocks(client.player.getX());
             com.example.globe.core.EdgeGeometry.Resolved ewGeo =
                     GlobeClientState.edgeGeometry(client.level.getWorldBorder());
             long ewNowMs = System.currentTimeMillis();
             com.example.globe.core.EwBannerEnvelope.Decision ewDecision =
                     com.example.globe.core.EwBannerEnvelope.evaluate(
-                            ewBannerState, ewDistToEdge, ewGeo.rampStartDist(), ewNowMs);
+                            ewBannerState, ewDistToEdge, ewGeo.advisoryDist(), ewNowMs);
             ewBannerState = ewDecision.next();
             if (ewDecision.shownTier() == com.example.globe.core.EwBannerEnvelope.TIER_NONE) {
                 return; // past the cap, retreating, or faded-out-and-lingering: draw nothing.

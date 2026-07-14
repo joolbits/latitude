@@ -9,14 +9,15 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * Pure-JVM tests for {@link EwBannerEnvelope} -- the E/W storm WARNING BANNER's onset gate and fade envelope,
  * now a SINGLE white advisory (TEST 89: Peetsa retired the two-tier severe/yellow system). The one boundary is
- * the PER-WORLD band cap ({@code capDist == rampStartDist} ~177.5 deg; TEST 92 tightened it) resolved by
- * {@link EdgeGeometry} and passed in. These tests drive it off a representative Wide world (xRadius 15000) and
- * pin the direction-aware approach-only trigger, the wall-clock fade, and the leave+re-enter re-arm.
+ * the PER-WORLD band cap ({@code capDist == advisoryDist} ~176 deg after the edge-flow rework -- the OUTERMOST
+ * edge element, so the advisory leads the fog onset) resolved by {@link EdgeGeometry} and passed in. These tests
+ * drive it off a representative Wide world (xRadius 15000) and pin the direction-aware approach-only trigger, the
+ * wall-clock fade, and the leave+re-enter re-arm.
  */
 class EwBannerEnvelopeTest {
 
     private static final EdgeGeometry.Resolved WIDE = EdgeGeometry.resolve(15000.0);
-    private static final double CAP = WIDE.rampStartDist();  // ~208.33 (177.5 deg, TEST 92)
+    private static final double CAP = WIDE.advisoryDist();  // ~333.33 (176 deg, edge-flow rework)
 
     // --- geometry tier (single onset boundary) -----------------------------------------------------
 
@@ -47,11 +48,13 @@ class EwBannerEnvelopeTest {
     }
 
     @Test
-    void capComesFromEdgeGeometryAndIsTheFogOnset() {
-        // The cap IS the resolved fog onset (rampStartDist), and it leads the crossing prompt by degree spacing.
+    void capComesFromEdgeGeometryAndIsTheAdvisoryAnchorLeadingTheFog() {
+        // Edge-flow rework: the cap IS the resolved advisory anchor (advisoryDist, 176 deg), the OUTERMOST edge
+        // element -- so it leads BOTH the crossing prompt AND the fog onset by degree spacing.
         assertTrue(WIDE.promptDist() < CAP, "the advisory cap leads the crossing prompt");
+        assertTrue(WIDE.rampStartDist() < CAP, "the advisory cap leads the fog onset (a heads-up before the fog)");
         double bpd = EdgeGeometry.blocksPerDegree(WIDE.xRadiusIntended());
-        assertEquals(2.5 * bpd, CAP, 1e-6, "cap is the 177.5-deg distance (2.5 deg of blocks, TEST 92)");
+        assertEquals(4.0 * bpd, CAP, 1e-6, "cap is the 176-deg advisory distance (4 deg of blocks)");
     }
 
     // --- fade envelope ----------------------------------------------------------------------------

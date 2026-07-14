@@ -13,8 +13,9 @@ package com.example.globe.core;
  * They are resolved PER WORLD from longitude degrees against the mod's INTENDED X radius by
  * {@link EdgeGeometry#resolve}, and passed IN to every method below. This does two things Peetsa's TEST-86
  * flight recorder demanded: (1) the lines are anchored to the intended radius, so a lerping/vandalized live
- * border can never slide them; (2) the whole experience begins at ~177.5 deg longitude instead of ~170, so a
- * crossing lands you in the thinning fog edge (178 deg since TEST 93). See {@link EdgeGeometry} for the anchors, floors and ordering invariant.
+ * border can never slide them; (2) the whole experience begins at the ~176-deg advisory (edge-flow rework)
+ * leading a ~177.5-deg fog onset instead of everything starting near ~170, so a crossing lands you in the
+ * thinning fog edge (178 deg). See {@link EdgeGeometry} for the anchors, floors and ordering chain.
  *
  * <p><b>The distance axis.</b> {@code distToEdge} is blocks from the player to the nearest E/W world-border
  * edge, a non-negative value that shrinks to 0 AT the edge. On both client and server it is now
@@ -28,18 +29,23 @@ package com.example.globe.core;
  * is STICKY; only a deliberate walk-out-and-back re-offers the prompt (the TEST 83 fix: a MODEST walk-back,
  * not the old whole-fog-band trek).
  *
- * <p><b>Spawned/arrived contract (TEST 93: arrival is at-or-inside the re-arm band on EVERY world).</b> The
- * crossing drops the arriving player at {@code arrivalDist} (2 deg from the wall -- 0.5 deg inside the fog
- * onset). Because {@code ARRIVAL_DEG == REARM_DEG == 178}, on properly-sized worlds arrival lands EXACTLY on
- * the re-arm line ({@code arrivalDist == rearmAt}); on the tiny Itty-Bitty world the {@code prompt + 16}
- * readability floor pulls it strictly INSIDE the sticky re-arm band ({@code arrivalDist < rearmAt}). The S2C
- * arrival ALWAYS seeds {@code armed=false}, and {@link #evaluate} re-arms only on a STRICT
- * {@code distToEdge > rearmAt}: so an arrival landing AT the line (equality, not {@code >}) or inside it HOLDS
- * disarmed (the sticky band), and a player who then walks toward the wall is NOT re-prompted -- no self-reprompt
- * loop on any world size. The seeded-DISARMED contract, formerly load-bearing only on the tiny floored world, is
- * now the universal arrival contract. (Even if a block-rounded landing on a large world nudged the player a hair
- * past the line and re-armed, the re-prompt would only fire after a deliberate walk all the way back to the
- * 179-deg prompt line -- correct behaviour, not a loop.)
+ * <p><b>Spawned/arrived contract (edge-flow rework: arrival lands ON the prompt line).</b> The crossing drops
+ * the arriving player at {@code arrivalDist}, which is now EXACTLY {@code promptDist} ({@code ARRIVAL_DEG ==
+ * PROMPT_DEG == 178}), 2 deg from the wall and 0.5 deg inside the fog onset. The S2C arrival ALWAYS seeds the
+ * arm DISARMED, and the prompt only ever opens when ARMED, so a player standing on the prompt line disarmed is
+ * NEVER self-prompted. Re-arm requires a STRICT walk-out {@code distToEdge > rearmAt} (the 177-deg line, 3 deg
+ * out), so an in-band arrival HOLDS disarmed; a player who then walks toward the wall is not re-prompted by the
+ * ordinary machine.
+ *
+ * <p><b>The post-arrival EDGE auto-re-prompt (edge-flow rework, Peetsa's confirmed flow).</b> A just-arrived
+ * player is in a DISTINCT state -- {@link Phase#SEEDED_DISARMED} -- not ordinary disarmed. While they remain in
+ * the sticky band, walking ALL THE WAY to the wall ({@code distToEdge <= edgeRepromptAt}, ~179.6 deg) re-offers
+ * the crossing ONCE, automatically -- no click, no walk-out. Declining consumes the one-shot
+ * ({@link Phase#EDGE_PROMPTED}, which behaves as ordinary disarmed) and it does not re-open until a FRESH
+ * arrival or the normal walk-out/re-arm cycle. Leaving past the re-arm line from ANY disarmed phase returns to
+ * {@link Phase#ARMED} and the ordinary approach prompt fires again at 178. The full machine is
+ * {@link #evaluatePhase}; the ordinary boolean {@link #evaluate}/{@link #evaluateGated} are the ARMED/DISARMED
+ * sub-cycle it is built to be consistent with.
  */
 public final class HemispherePassage {
 
@@ -112,6 +118,90 @@ public final class HemispherePassage {
         }
         // A real open (disarm committed) or any non-open tick (sticky/re-arm committed): persist base as-is.
         return base;
+    }
+
+    // ---- edge-flow rework: the arrival-aware PHASE state machine (post-arrival EDGE auto-re-prompt) ----
+
+    /**
+     * The passage arm's full state -- a superset of the boolean {@code armed}/{@code disarmed} the ordinary
+     * {@link #evaluate} models, extended with the two post-arrival phases the EDGE auto-re-prompt needs.
+     * <ul>
+     *   <li>{@link #ARMED} -- a normal approach opens the prompt at the prompt line (== {@code armed==true}).</li>
+     *   <li>{@link #DISARMED} -- ordinary disarmed after a normal prompt/decline (== {@code armed==false}); no
+     *       prompt anywhere in the band; re-arms only on a walk-out past the re-arm line.</li>
+     *   <li>{@link #SEEDED_DISARMED} -- the post-arrival state: like DISARMED for the ordinary approach, but it
+     *       ALSO carries the one-shot EDGE auto-re-prompt (walking to the wall re-offers the crossing once).</li>
+     *   <li>{@link #EDGE_PROMPTED} -- the EDGE one-shot has been consumed; behaves exactly as ordinary DISARMED
+     *       (kept distinct only so the transition is legible in the debug log).</li>
+     * </ul>
+     */
+    public enum Phase {
+        ARMED, DISARMED, SEEDED_DISARMED, EDGE_PROMPTED
+    }
+
+    /** Outcome of {@link #evaluatePhase}: open the prompt this tick, and the next {@link Phase} to persist. */
+    public record PhaseDecision(boolean openPrompt, Phase nextPhase) {
+    }
+
+    /**
+     * FULL arrival-aware per-tick resolution -- the client persists {@code nextPhase} unconditionally and opens
+     * the screen iff {@code openPrompt}. A strict superset of {@link #evaluateGated}: the {@link Phase#ARMED} and
+     * {@link Phase#DISARMED} phases reproduce {@code evaluateGated(true,..)} / {@code evaluateGated(false,..)}
+     * exactly, and the two post-arrival phases add the EDGE auto-re-prompt.
+     *
+     * <p><b>Re-arm is distance-only and terrain-independent</b> (same contract as {@link #evaluateGated}): a
+     * clean walk-out past {@code rearmAt} returns to {@link Phase#ARMED} from ANY phase, and is the ONLY way to
+     * leave the sticky band. NaN behaves like "well outside" -> re-arm, never prompt.
+     *
+     * <p><b>HOLD-not-burn</b> (same contract): when a prompt WOULD open but {@code canOpenPrompt} is false
+     * (underground / a screen is up), the phase is HELD (the one-shot is not consumed) so it fires the instant
+     * the block clears -- for BOTH the ARMED approach prompt and the SEEDED_DISARMED edge prompt.
+     *
+     * @param phase          previous phase.
+     * @param distToEdge     blocks to the nearest E/W edge ({@code >= 0}; NaN treated as "far").
+     * @param canOpenPrompt  whether the prompt may ACTUALLY open this tick (surface AND no other screen up).
+     * @param promptAt       the resolved ordinary-approach prompt distance ({@code Resolved.promptDist}).
+     * @param rearmAt        the resolved re-arm distance ({@code Resolved.rearmDist}).
+     * @param edgeRepromptAt the resolved EDGE auto-re-prompt distance ({@code Resolved.edgeRepromptDist}), hard
+     *                       by the wall; only consulted in {@link Phase#SEEDED_DISARMED}.
+     */
+    public static PhaseDecision evaluatePhase(Phase phase, double distToEdge, boolean canOpenPrompt,
+                                              double promptAt, double rearmAt, double edgeRepromptAt) {
+        // NaN / bad read: behave like "well outside" -- re-arm, never prompt (parity with evaluate()).
+        if (Double.isNaN(distToEdge)) {
+            return new PhaseDecision(false, Phase.ARMED);
+        }
+        // The ONE transition that leaves the sticky band: a clean walk-out past the re-arm line re-arms from ANY
+        // phase (and keeps ARMED armed). Distance-only, never gated on terrain.
+        if (distToEdge > rearmAt) {
+            return new PhaseDecision(false, Phase.ARMED);
+        }
+        // Inside the sticky band (distToEdge <= rearmAt): the prompt behaviour is per phase.
+        switch (phase) {
+            case ARMED -> {
+                if (distToEdge <= promptAt) {
+                    if (canOpenPrompt) {
+                        return new PhaseDecision(true, Phase.DISARMED); // open + disarm (one prompt per approach)
+                    }
+                    return new PhaseDecision(false, Phase.ARMED);       // blocked at the prompt line: HOLD armed
+                }
+                return new PhaseDecision(false, Phase.ARMED);           // in band, not yet at the prompt line
+            }
+            case SEEDED_DISARMED -> {
+                if (distToEdge <= edgeRepromptAt) {
+                    if (canOpenPrompt) {
+                        return new PhaseDecision(true, Phase.EDGE_PROMPTED); // the post-arrival edge one-shot
+                    }
+                    return new PhaseDecision(false, Phase.SEEDED_DISARMED); // blocked at the wall: HOLD the seed
+                }
+                return new PhaseDecision(false, Phase.SEEDED_DISARMED);     // arrived, not yet at the wall
+            }
+            default -> {
+                // DISARMED / EDGE_PROMPTED: ordinary disarmed -- no prompt anywhere; only the walk-out above
+                // re-arms.
+                return new PhaseDecision(false, phase);
+            }
+        }
     }
 
     /**
@@ -194,7 +284,7 @@ public final class HemispherePassage {
     // correct and wall-aware. These are the pure, testable curves; the client mixin (FogRendererPassageSetupMixin)
     // does the GL-side FogData mutation + haze-palette tint. The intensity axis is the SAME distance-to-edge the
     // prompt arms on, and the onset/climax are now the PER-WORLD {@code rampStart}/{@code climax} from
-    // EdgeGeometry (rampStart == fog onset (the fog onset) banner cap; climax == the prompt line).
+    // EdgeGeometry (the banner cap is advisoryDist (176 deg) since the staged flow; climax (179 deg) sits one degree poleward of the 178-deg prompt).
     //
     // Curve choice -- "a weather front rolling in": ease-IN (exponent > 1) over the band. At {@code rampStart}
     // the fog is barely-there and distant (a haze on the horizon); it thickens STEEPLY into a near-opaque wall
