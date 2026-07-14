@@ -24,8 +24,9 @@ import net.minecraft.sounds.SoundSource;
  *       when no other screen is open (never stomp a container) and no curtain is up.</li>
  *   <li><b>Curtain</b> ({@link #driveCurtain}): after "Pass through" a full-screen opaque curtain masks the
  *       teleport + chunk load. It fades in, HOLDS opaque until the S2C {@link HemispherePassageClientState}
- *       arrival lands (consumed here), then runs the arrival ceremony (seed the arm state DISARMED-in-band per
- *       A9, fire the E/W arrival title, one-shot whoosh) and fades out. If no arrival lands within
+ *       arrival lands (consumed here), then runs the arrival ceremony (seed the passage state SEEDED_DISARMED --
+ *       disarmed on the prompt line, carrying the one-shot EDGE auto-re-prompt -- fire the E/W arrival title,
+ *       one-shot whoosh) and fades out. If no arrival lands within
  *       {@link #CURTAIN_TIMEOUT_MS} (server rejected the cross) it fades out anyway and leaves the player
  *       disarmed-in-band -- the player is NEVER stuck behind an opaque screen.</li>
  * </ol>
@@ -52,8 +53,10 @@ public final class HemispherePassageClient {
 
     private enum Curtain { NONE, RAISING_HOLD, FADING }
 
-    // Client arm state (mirrors the pure core.HemispherePassage arm). Starts armed; reset on non-globe worlds.
-    private static boolean armed = true;
+    // Client passage state (mirrors the pure core.HemispherePassage.Phase machine). Starts ARMED; reset on
+    // non-globe worlds. The post-arrival phases (SEEDED_DISARMED / EDGE_PROMPTED) carry the edge-flow rework's
+    // one-shot EDGE auto-re-prompt; ARMED/DISARMED are the ordinary approach cycle.
+    private static HemispherePassage.Phase phase = HemispherePassage.Phase.ARMED;
 
     // TEST 92/93 click-at-the-wall re-prompt. Rising-edge detection on the USE key (right-click) AND the ATTACK
     // key (left-click, TEST 93 -- Peetsa) + a shared rate limit so a disarmed player at the wall re-summons the
@@ -83,7 +86,7 @@ public final class HemispherePassageClient {
     /** World-switch hygiene (called from the client DISCONNECT hook): drop any in-flight curtain and re-arm so a
      *  crossing can never leak across worlds. Paired with {@link HemispherePassageClientState#reset()}. */
     public static void reset() {
-        armed = true;
+        phase = HemispherePassage.Phase.ARMED;
         useWasDown = false;
         attackWasDown = false;
         lastRearmGestureMs = 0L; // see field note: MIN_VALUE overflows the rate guard and bricks the gesture
@@ -129,12 +132,12 @@ public final class HemispherePassageClient {
         driveCurtain(mc, now);
 
         if (!GlobeClientState.isGlobeWorld()) {
-            armed = true; // re-arm for the next globe world
+            phase = HemispherePassage.Phase.ARMED; // re-arm for the next globe world
             return;
         }
         // While the curtain is up, a crossing is mid-flight -- do not evaluate the arm or open a prompt.
         if (curtain != Curtain.NONE) {
-            PassageDebug.snapshotCurtainUp(mc, armed, curtain.name());
+            PassageDebug.snapshotCurtainUp(mc, phase, curtain.name());
             return;
         }
 
@@ -163,16 +166,17 @@ public final class HemispherePassageClient {
         // TEST 92/93 click-at-the-wall re-prompt (Peetsa): a DISARMED player standing in the prompt band who
         // presses USE (right-click) OR ATTACK (left-click, TEST 93) while FACING the border re-arms the passage
         // so the prompt re-opens this tick -- no walk-out needed. Gated by the borderRepromptGesture toggle.
-        // Runs BEFORE evaluateGated so the re-arm takes effect the same tick. (When the B-6 evator branch
+        // Runs BEFORE evaluatePhase so the re-arm takes effect the same tick. (When the B-6 evator branch
         // rebases onto this it adds its "&& not an evator world" exclusion here; on an evator world the whole
         // passage machine is suppressed anyway, so the gesture never reaches this point.)
         maybeRearmGesture(mc, distToEdge, geo, canOpenPrompt, now);
 
-        boolean prevArmed = armed;
-        HemispherePassage.Decision d = HemispherePassage.evaluateGated(armed, distToEdge, canOpenPrompt,
-                geo.promptDist(), geo.rearmDist());
-        armed = d.nextArmed(); // persist unconditionally -- open/disarm, sticky-hold, and re-arm are all folded in
-        PassageDebug.snapshot(mc, distToEdge, prevArmed, armed, d, deepUnder, openScreen, curtain.name());
+        HemispherePassage.Phase prevPhase = phase;
+        HemispherePassage.PhaseDecision d = HemispherePassage.evaluatePhase(phase, distToEdge, canOpenPrompt,
+                geo.promptDist(), geo.rearmDist(), geo.edgeRepromptDist());
+        phase = d.nextPhase(); // persist unconditionally -- open/disarm, sticky-hold, re-arm, and the post-
+                               // arrival EDGE one-shot are all folded into the pure phase machine
+        PassageDebug.snapshot(mc, distToEdge, prevPhase, phase, d, deepUnder, openScreen, curtain.name());
 
         if (d.openPrompt()) {
             // Which hemisphere lies BEYOND the fog: the crossing mirrors X (targetX = -x), so from the western
@@ -186,8 +190,8 @@ public final class HemispherePassageClient {
     /**
      * TEST 92/93 re-prompt gesture glue: read the USE key (right-click) AND the ATTACK key (left-click, TEST 93)
      * -- rising edge on EITHER + a shared ~20-tick rate limit -- and the player's facing, and re-arm the passage
-     * when {@link HemispherePassage#rearmGestureArms} approves. Only ever SETS {@code armed=true}; the caller's
-     * {@link HemispherePassage#evaluateGated} then opens the prompt under the usual surface/no-screen gate. BOTH
+     * when {@link HemispherePassage#rearmGestureArms} approves. Only ever sets the phase to ARMED; the caller's
+     * {@link HemispherePassage#evaluatePhase} then opens the prompt under the usual surface/no-screen gate. BOTH
      * rising-edge trackers advance EVERY call so a held button is not a repeat, even on a tick we early-out.
      *
      * <p><b>Config gate.</b> The whole gesture (both buttons) is gated by
@@ -218,7 +222,8 @@ public final class HemispherePassageClient {
         if (!LatitudeConfig.borderRepromptGesture) {
             return; // gesture disabled by the General-tab toggle (both buttons)
         }
-        if (!risingEdge || armed || !canOpenPrompt || mc.player == null || mc.level == null) {
+        boolean alreadyArmed = phase == HemispherePassage.Phase.ARMED;
+        if (!risingEdge || alreadyArmed || !canOpenPrompt || mc.player == null || mc.level == null) {
             return;
         }
         if (now - lastRearmGestureMs < REARM_GESTURE_MIN_INTERVAL_MS) {
@@ -227,10 +232,15 @@ public final class HemispherePassageClient {
         double centerX = mc.level.getWorldBorder().getCenterX();
         boolean facingOut = HemispherePassage.facingOutwardX(mc.player.getX(), centerX, mc.player.getYRot(),
                 HemispherePassage.REARM_GESTURE_FACING_MIN_COS);
-        if (HemispherePassage.rearmGestureArms(armed, distToEdge, facingOut, geo.promptDist())) {
-            armed = true;
+        // rearmGestureArms takes the boolean "armed" (any non-ARMED phase counts as disarmed): a manual re-arm
+        // returns the passage to ARMED so the ordinary approach prompt opens this/next tick. It works from ANY
+        // disarmed phase, including the post-arrival SEEDED_DISARMED (an alternate, click-driven path to the
+        // no-click EDGE auto-re-prompt).
+        if (HemispherePassage.rearmGestureArms(alreadyArmed, distToEdge, facingOut, geo.promptDist())) {
+            HemispherePassage.Phase prevPhase = phase;
+            phase = HemispherePassage.Phase.ARMED;
             lastRearmGestureMs = now;
-            PassageDebug.armTransition(false, true, distToEdge, "rearm-gesture");
+            PassageDebug.armTransition(prevPhase, HemispherePassage.Phase.ARMED, distToEdge, "rearm-gesture");
         }
     }
 
@@ -247,9 +257,11 @@ public final class HemispherePassageClient {
                 // the curtain so they are never stuck behind it.
                 GlobeMod.LOGGER.warn("[Latitude][Passage] Crossing curtain timed out ({}ms) with no arrival; recovering",
                         CURTAIN_TIMEOUT_MS);
-                boolean prevArmed = armed;
-                armed = false;
-                PassageDebug.armTransition(prevArmed, false,
+                // Rejected cross -- there was NO arrival, so this is ordinary DISARMED (not SEEDED_DISARMED): the
+                // player did not cross and earns no post-arrival EDGE one-shot; they re-arm on the normal walk-out.
+                HemispherePassage.Phase prevPhase = phase;
+                phase = HemispherePassage.Phase.DISARMED;
+                PassageDebug.armTransition(prevPhase, HemispherePassage.Phase.DISARMED,
                         mc.player != null ? GlobeClientState.distanceToEwBorderBlocks(mc.player.getX()) : Double.NaN,
                         "curtain-timeout");
                 PassageDebug.onCurtainFadeOut("timeout");
@@ -267,17 +279,18 @@ public final class HemispherePassageClient {
     }
 
     private static void onArrival(Minecraft mc, long now) {
-        // TEST 93: the crossing drops the player at ARRIVAL_DEG (178 deg, 2 deg from the wall -- inside the
-        // thinning fog edge, looking inward). 178 coincides with the re-arm line, so on properly-sized worlds
-        // arrival lands EXACTLY on it and on the tiny Itty-Bitty world the readability floor pulls it strictly
-        // inside the re-arm band. Seeding armed=false here is LOAD-BEARING on EVERY world now -- the sticky band
-        // holds the player disarmed (evaluate() re-arms only on a strict dist>rearm, so an on-the-line/in-band
-        // arrival stays disarmed) and a player who then walks toward the wall is not re-prompted.
-        boolean prevArmed = armed;
-        armed = false;
+        // Edge-flow rework: the crossing drops the player at ARRIVAL_DEG (178 deg, 2 deg from the wall) -- EXACTLY
+        // on the prompt line, inside the thinning fog edge looking inward. Seeding SEEDED_DISARMED here is
+        // LOAD-BEARING: (1) the ordinary prompt requires ARMED, so a disarmed player on the prompt line never
+        // self-prompts, and evaluatePhase re-arms only on a strict walk-out past the 177-deg re-arm line, so the
+        // in-band arrival HOLDS; (2) SEEDED_DISARMED (distinct from ordinary DISARMED) carries the one-shot EDGE
+        // auto-re-prompt -- if the player turns around and walks ALL THE WAY to the wall (~179.6 deg) the crossing
+        // is re-offered once, no click, no walk-out (Peetsa's confirmed post-arrival flow).
+        HemispherePassage.Phase prevPhase = phase;
+        phase = HemispherePassage.Phase.SEEDED_DISARMED;
         boolean east = HemispherePassageClientState.arrivedEast();
         PassageDebug.onArrivalConsumed(HemispherePassageClientState.lastArrivalX(), east);
-        PassageDebug.armTransition(prevArmed, false,
+        PassageDebug.armTransition(prevPhase, HemispherePassage.Phase.SEEDED_DISARMED,
                 mc.player != null ? GlobeClientState.distanceToEwBorderBlocks(mc.player.getX()) : Double.NaN,
                 "arrival");
         PassageDebug.onCurtainFadeOut("arrival");

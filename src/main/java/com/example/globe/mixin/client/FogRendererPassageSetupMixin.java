@@ -32,7 +32,10 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
  * mod's INTENDED X radius (immune to a lerping border). The band is degree-anchored per world by
  * {@link com.example.globe.core.EdgeGeometry}: no effect at/beyond {@code rampStartDist} (~177.5 deg longitude,
  * seam-free -- vanilla fog untouched), thickening on the pure ease-in curves in {@link HemispherePassage}
- * (a weather front rolling in) to near-opaque by the prompt line (the {@code fogClimaxDist}, ~179 deg).
+ * (a weather front rolling in) to near-opaque by the fog climax ({@code fogClimaxDist}, ~179 deg). Edge-flow
+ * rework note: the fog climax (179 deg) is now one degree poleward of the 178-deg crossing prompt line -- the
+ * fog band (onset 177.5, full 179) is unchanged, so a crossing offered at 178 still fires while the fog is
+ * mid-build, and the arrival at 178 emerges in thinning fog rather than a full whiteout.
  *
  * <p><b>Composition with the polar depth fog (A2 note).</b> A corner at high |lat| near the X edge gets BOTH
  * this and {@link FogRendererPolarSetupMixin} (both @Inject at {@code setupFog} RETURN). Both only ever TIGHTEN
@@ -95,7 +98,7 @@ public class FogRendererPassageSetupMixin {
 
         double distToEdge = GlobeClientState.distanceToEwBorderBlocks(mc.player.getX());
         // Per-world fog band, degree-anchored to the intended X radius: onset at rampStartDist (~177.5 deg),
-        // full at the prompt line (climax). Immune to a lerping border; shared with the prompt/banner.
+        // full at the 179-deg climax (one degree poleward of the prompt) (climax). Immune to a lerping border; shared with the prompt/banner.
         com.example.globe.core.EdgeGeometry.Resolved geo =
                 GlobeClientState.edgeGeometry(level.getWorldBorder());
         double rampStart = geo.rampStartDist();

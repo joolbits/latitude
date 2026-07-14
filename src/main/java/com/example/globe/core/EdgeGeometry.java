@@ -19,75 +19,97 @@ package com.example.globe.core;
  * <h2>Degrees, not blocks (Peetsa's directive)</h2>
  * The anchors are LONGITUDE DEGREES from the world center. The antimeridian edge is 180 deg; 1 deg of
  * longitude is {@code xRadiusIntended / 180} blocks. Peetsa asked the whole edge experience to be COMPACT --
- * fog/advisory within ~2.5 deg of the wall (TEST 92: "three degrees or two degrees even"), and a crossing to
- * land ~4 deg in ("not nine"). The anchors (edge = 180):
+ * fog within ~2.5 deg of the wall, a crossing that lands ~2 deg in, and a HEADS-UP advisory that leads the
+ * fog rather than landing on top of it. The edge-flow rework (2026-07-13, this pass) resettled the anchors on
+ * Peetsa's confirmed B-5 flight:
  * <ul>
- *   <li>{@link #RAMP_START_DEG} 177.5 -- fog begins, warning-banner (single white advisory) visibility cap.
- *       NOTHING edge-related is visible equatorward of here (TEST 92: tightened 176.5 -> 177.5 to 2.5 deg).</li>
- *   <li>{@link #REARM_DEG} 178.0 -- the passage arm re-arms once the player walks back out past this line
- *       (TEST 89: raised 177 -> 178 so a player who drifts only a couple of degrees off the wall gets the
- *       crossing prompt again -- 3 deg out was too far to re-prompt; now it sits just 1 deg beyond the
- *       179-deg prompt line, still comfortably past the DEAD_ZONE hysteresis floor).</li>
- *   <li>{@link #PROMPT_DEG} 179.0 -- the crossing prompt opens (closest to the edge).</li>
+ *   <li>{@link #ADVISORY_DEG} 176.0 -- the single white advisory banner fires here (4 deg out), the OUTERMOST
+ *       edge element and a genuine heads-up: it now leads the fog by 0.5 deg instead of arming ON the fog
+ *       onset (Peetsa: the old advisory "lands almost simultaneously" with the fog). Decoupled from
+ *       {@link #RAMP_START_DEG} -- this is the banner-visibility cap now (nothing edge-related shows equatorward
+ *       of here).</li>
+ *   <li>{@link #REARM_DEG} 177.0 -- the passage arm re-arms once the player walks back out past this line
+ *       (3 deg out). Moved 178 -&gt; 177 in lockstep with the prompt so the walk-back distance
+ *       ({@code prompt -> rearm}) stays a modest 1 deg, exactly as before -- the whole cycle shifted 1 deg
+ *       outward, it did not stretch. On real worlds the degree anchor dominates cleanly; on the tiny Itty-Bitty
+ *       world the {@link #DEAD_ZONE_MIN_BLOCKS} anti-machine-gun floor binds (as it does for every line).</li>
+ *   <li>{@link #RAMP_START_DEG} 177.5 -- fog begins (2.5 deg out). UNCHANGED. The fog onset and its inner
+ *       full-opacity {@link #CLIMAX_DEG} are both untouched by this pass, so the fog subsystem
+ *       ({@code FogRendererPassageSetupMixin}, {@code GlobeClientState.ewIntensity01}) is byte-identical ONLY where the 177.5-deg term dominates rampStart (xRadius >= ~8640).</li>
+ *   <li>{@link #PROMPT_DEG} 178.0 -- the crossing prompt opens (2 deg out). Moved 179 -&gt; 178 (Peetsa's
+ *       confirmed flow offers the crossing at 178, not 179). Now sits INSIDE the fog onset (the prompt fires
+ *       while the fog is still building, ~1/3 opacity) and coincides with {@link #ARRIVAL_DEG}.</li>
+ *   <li>{@link #CLIMAX_DEG} 179.0 -- fog reaches FULL opacity here (1 deg out) and holds to the wall. This is
+ *       the OLD prompt position; the edge-flow rework DECOUPLED it from {@link #PROMPT_DEG} (which moved to 178)
+ *       precisely so the fog experience -- onset 177.5, full 179 -- stays exactly as shipped and a crossing at
+ *       178 still emerges into the THINNING fog edge, not a full whiteout. Read by the fog curves as the
+ *       {@code fogClimaxDist}.</li>
  *   <li>{@link #ARRIVAL_DEG} 178.0 -- the longitude the crossing DROPS the player at on the far side, 2 deg
- *       from the wall (TEST 93: pulled in 176 -> 178 so arrival lands 0.5 deg INSIDE the 177.5-deg fog onset --
- *       you emerge "right at the edge of the fog, even slightly inside", looking inward through the thinning
- *       curtain). Coincides with {@link #REARM_DEG} 178 exactly. See the arrival note under the ordering
- *       invariant.</li>
+ *       from the wall. UNCHANGED, and now coincides EXACTLY with {@link #PROMPT_DEG} 178 (arrival lands ON the
+ *       prompt line). Still 0.5 deg poleward of the fog onset (177.5), so you emerge in the thinning fog
+ *       looking inward. Landing on the prompt line is SAFE because the S2C arrival ALWAYS seeds the arm
+ *       disarmed and the prompt requires ARMED -- there is no self-prompt (pinned in {@code HemispherePassage}
+ *       tests).</li>
+ *   <li>{@link #EDGE_REPROMPT_DEG} 179.6 -- the post-arrival EDGE auto-re-prompt line (0.4 deg out, hard by the
+ *       wall). NOT part of the ordinary approach: it only fires for a player who has just ARRIVED (the
+ *       SEEDED_DISARMED state) and then walks all the way to the wall, re-offering the crossing ONCE without a
+ *       click or a walk-out. See {@link HemispherePassage} for the state machine.</li>
  * </ul>
  *
- * <p>(TEST 89: the old {@code SEVERE_DEG} 178 anchor is GONE -- the warning banner's two-tier system was
- * retired for a single white advisory, so there is no longer a severe-tier boundary to anchor. 178 deg is now
- * simply where the passage arm re-arms.)
- *
- * <h2>The nested ordering invariant</h2>
- * In DEGREES the fog/re-arm/prompt anchors nest {@code prompt(179) > rearm(178) > rampStart(177.5)} -- prompt
- * closest to the edge. Translated to DISTANCE-FROM-EDGE (which shrinks toward the edge) that inverts to
- * {@code promptDist < rearmDist < rampStartDist}. {@link #resolve} preserves that strict ordering on EVERY
- * world size. ARRIVAL is NOT part of this nest: TEST 93 moved it to 178 deg (2 deg from the wall), so it now
- * lands INSIDE the fog ({@code arrivalDist < rampStartDist}, 2 deg < 2.5 deg) on EVERY world -- you emerge into
- * the thinning fog edge, not past it. Arrival coincides with the {@code rearm} line (178 deg) on un-floored
- * worlds and is pulled strictly inside it by the {@link #ARRIVAL_MIN_PAST_PROMPT_BLOCKS} floor on tiny worlds,
- * so {@code arrivalDist <= rearmDist} universally -- arrival is never strictly beyond the re-arm line. That is
- * harmless and by design: the S2C arrival ALWAYS seeds the passage arm DISARMED, and because {@link
- * HemispherePassage#evaluate} re-arms only on a STRICT {@code distToEdge > rearmAt}, an arrival at-or-inside the
- * line HOLDS disarmed with no self-reprompt on every world (see {@link HemispherePassage}'s arrival contract).
- * Arrival never lands closer than {@link #ARRIVAL_MIN_PAST_PROMPT_BLOCKS} past the prompt line.
+ * <h2>The nested ordering invariant (edge-flow rework)</h2>
+ * The old nest was {@code prompt(179) > rearm(178) > rampStart(177.5)}. Moving the prompt in to 178 shrank the
+ * prompt-to-fog gap to 0.5 deg -- NARROWER than the 64-block {@link #DEAD_ZONE_MIN_BLOCKS} re-arm floor on
+ * every real world -- so the re-arm line can no longer fit between the prompt and the fog onset; it MUST sit
+ * outside the fog. So the new nest, in DEGREES (edge -&gt; equator), is
+ * {@code climax(179) > prompt(178) > rampStart(177.5) > rearm(177) > advisory(176)}, with
+ * {@code edgeReprompt(179.6)} hard by the wall inside them all. Translated to DISTANCE-FROM-EDGE (which shrinks
+ * toward the wall) that inverts to the chain {@link #resolve} guarantees on EVERY world size:
+ * <pre>
+ *   edgeRepromptDist &lt; climaxDist &lt; promptDist(==arrivalDist) &lt; rampStartDist &lt; rearmDist &lt; advisoryDist
+ * </pre>
+ * ARRIVAL is not a separate rung: it sits EXACTLY on {@code promptDist}. The re-arm line moved OUTSIDE the fog
+ * band this pass (a disarmed player now walks out of the fog to re-arm), which is the honest consequence of the
+ * 64-block floor being wider than the new 0.5-deg fog band. The fog band itself ({@code climaxDist} up to
+ * {@code rampStartDist}) is unchanged.
  *
  * <h2>Block floors for small worlds</h2>
- * On the smallest world (Itty-Bitty Classic, xRadius 3750) one degree is only ~20.8 blocks, so the pure
- * degree spacing would put the whole experience inside a handful of blocks. Three floors keep it readable and
- * keep the hysteresis honest, without ever breaking the ordering:
+ * On the smallest world (Itty-Bitty Classic, xRadius 3750) one degree is only ~20.8 blocks, so the pure degree
+ * spacing would put the whole experience inside a handful of blocks. The floors keep it readable and keep the
+ * hysteresis honest, without ever breaking the ordering:
  * <ul>
- *   <li>{@link #PROMPT_MIN_DIST_BLOCKS} 40 -- the prompt never fires closer than 40 blocks from the wall.</li>
+ *   <li>{@link #PROMPT_MIN_DIST_BLOCKS} 40 -- the prompt (and, coupled to it, arrival and the fog climax) never
+ *       sits closer than 40 blocks from the wall.</li>
  *   <li>{@link #DEAD_ZONE_MIN_BLOCKS} 64 -- the re-arm line stays at least 64 blocks past the prompt line
  *       (the DEAD_ZONE anti-machine-gun discipline; {@code == HemisphereCrossing.DEAD_ZONE_BLOCKS}).</li>
  *   <li>{@link #FOG_BAND_MIN_BLOCKS} 60 -- the fog ramp (onset down to the full-fog climax) is at least
- *       60 blocks wide so the "weather front rolling in" reads instead of snapping on (TEST 92: lowered
- *       120 -> 60 so the compact 2.5-deg onset survives on small worlds instead of the old 120-block floor
- *       dominating and dragging the fog out to ~7 deg).</li>
+ *       60 blocks wide so the "weather front rolling in" reads instead of snapping on.</li>
+ *   <li>{@link #ORDER_MIN_STEP_BLOCKS} 8 -- when a floor pushes a nearer line out, the next line out is kept at
+ *       least this much farther so the chain never inverts or ties.</li>
+ *   <li>{@link #EDGE_REPROMPT_MIN_DIST_BLOCKS} 8 -- the edge auto-re-prompt never sits closer than 8 blocks
+ *       from the wall, comfortably outside the vanilla border's ~5-block warning/damage-safe zone.</li>
  * </ul>
- * On Small/Regular Wide (xRadius 15000/20000) the pure degree values hold un-floored; the floors bind only on
- * the tiny worlds. When a floor engages the ordering is re-tightened with {@link #ORDER_MIN_STEP_BLOCKS} so
- * the invariant never inverts.
  *
- * <p><b>Small-world consequence (TEST 92, documented not "fixed").</b> With rearm floored to
- * {@code prompt + 64 = 104} blocks (~5 deg) on xRadius 3750, the re-arm line sits farther out than the 2.5-deg
- * fog-degree intent; the {@link #FOG_BAND_MIN_BLOCKS}/{@link #ORDER_MIN_STEP_BLOCKS} floors then push rampStart
- * to {@code rearm + 8 = 112} blocks so fog onset is ALWAYS strictly outside re-arm (fog is visible before the
- * re-arm line, never after). We deliberately KEEP the 64-block re-arm floor rather than shrink it: it is the
- * anti-machine-gun hysteresis (~30x per-tick jitter) shared with {@code HemisphereCrossing.DEAD_ZONE_BLOCKS}.
- * TEST 93 moved arrival to 2 deg; on Itty-Bitty its own {@code prompt + 16 = 56} floor lands it strictly inside
- * the {@code 104}-block re-arm band, and the disarmed-arrival seed holds it there; on larger worlds arrival
- * sits exactly on the 178-deg re-arm line and the same seed (plus evaluate()'s strict {@code >} re-arm test)
- * holds it disarmed. Either way the disarmed-arrival seed prevents an immediate re-prompt loop.
+ * <h2>Effective per-world geometry (blocks from the wall)</h2>
+ * On Small/Regular Wide the pure degree values hold un-floored; the floors bind only on Itty-Bitty. Columns are
+ * distance-from-edge (blocks); the ordering chain above reads left-to-right smallest-to-largest.
+ * <pre>
+ *   world (xRadius)     edgeReprompt  climax   prompt   rampStart  rearm    advisory   arrival
+ *   Itty-Bitty (3750)      8.33        40.0     41.67    100.0      108.0    116.0      41.67   (floors bind)
+ *   Small-Wide (15000)    33.33        83.33   166.67    208.33     250.0    333.33    166.67   (pure degrees)
+ *   Regular-Wide (20000)  44.44       111.11   222.22    277.78     333.33   444.44    222.22   (pure degrees)
+ * </pre>
+ * (On Itty: climax floors to 40; prompt = 2 deg = 41.67 &gt; 40 so the degree wins; rampStart is driven by the
+ * 60-block fog-band floor to climax+60 = 100; rearm by the ordering step to rampStart+8 = 108; advisory by the
+ * ordering step to rearm+8 = 116. On Itty the fog climax and arrival both floor to essentially the prompt line,
+ * so an Itty arrival lands at the inner fog -- a documented consequence of that world being ~146 blocks wide
+ * across the whole experience.)
  *
  * <h2>NOT in scope of this class</h2>
  * The polar N/S geometry, the polar warning-ladder degree constants (KEEP-SHARED with the EW axis via
  * {@code LatitudeMath.POLAR_STAGE_*}), and the polar fog are the OTHER axis -- untouched. The
  * {@code EdgeStructureVeto} band is a separate placement-determinism concern; it is ALSO degree-anchored now
- * (TEST 89: its own 173-deg anchor, poleward of this visual ramp plus a fan-out buffer), but it derives its
- * own width and does not read this record.
+ * (its own 173-deg anchor, poleward of this visual ramp plus a fan-out buffer), but it derives its own width
+ * and does not read this record.
  */
 public final class EdgeGeometry {
 
@@ -96,43 +118,54 @@ public final class EdgeGeometry {
 
     // ---- degree anchors (longitude degrees from world center; the antimeridian edge is 180) ----
 
-    /** Fog / banner-visibility onset. TEST 92: 177.5 (2.5 deg) -- nothing edge-related shows equatorward of here. */
+    /** The single white advisory banner fires at/inside this -- 176 deg (4 deg out), the OUTERMOST edge
+     *  element and the banner-visibility cap. Edge-flow rework: decoupled from {@link #RAMP_START_DEG} so the
+     *  advisory LEADS the fog by 0.5 deg (a heads-up before the fog) instead of arming on the fog onset. */
+    public static final double ADVISORY_DEG = 176.0;
+    /** The passage arm re-arms once the player is farther out than this -- 177 deg (3 deg out). Edge-flow
+     *  rework: moved 178 -&gt; 177 in lockstep with the prompt (179 -&gt; 178), so the walk-back gap
+     *  {@code prompt -> rearm} stays a modest 1 deg. Now sits OUTSIDE the fog onset (the 64-block dead-zone floor
+     *  is wider than the new 0.5-deg fog band, so re-arm can no longer fit inside the fog). */
+    public static final double REARM_DEG = 177.0;
+    /** Fog onset (2.5 deg out). UNCHANGED by the edge-flow rework -- nothing terrain-visible shows equatorward
+     *  of here. */
     public static final double RAMP_START_DEG = 177.5;
-    /** The passage arm re-arms once the player is farther out than this. TEST 89: raised 177 -> 178 (just 1 deg
-     *  beyond the 179-deg prompt line) so a small drift off the wall re-prompts the crossing. */
-    public static final double REARM_DEG = 178.0;
-    /** The crossing prompt opens at/inside this -- closest to the edge. */
-    public static final double PROMPT_DEG = 179.0;
-    /** The longitude the crossing drops the arriving player at on the far side: 2 deg from the wall (TEST 93:
-     *  pulled in 176 -> 178 so you emerge "right at the edge of the fog, even slightly inside" -- 0.5 deg
-     *  INSIDE the {@link #RAMP_START_DEG} 177.5 fog onset, looking inward through the thinning curtain). This
-     *  coincides with {@link #REARM_DEG} 178 exactly: on real worlds arrival lands ON the re-arm line, on tiny
-     *  worlds the {@link #ARRIVAL_MIN_PAST_PROMPT_BLOCKS} floor pulls it strictly inside -- so arrival is at-or-
-     *  inside the re-arm band on EVERY world and the arrival ALWAYS seeds the arm DISARMED (the seeded-DISARMED
-     *  contract, formerly load-bearing only on tiny worlds, is now universal). See the class-javadoc arrival
-     *  note and {@link HemispherePassage}'s arrival contract. */
+    /** The crossing prompt opens at/inside this -- 178 deg (2 deg out). Edge-flow rework: moved 179 -&gt; 178
+     *  (Peetsa's confirmed flow). Coincides with {@link #ARRIVAL_DEG}. */
+    public static final double PROMPT_DEG = 178.0;
+    /** Fog reaches FULL opacity at/inside this -- 179 deg (1 deg out) -- and holds to the wall. Edge-flow
+     *  rework: this is the OLD prompt position, now a DEDICATED anchor decoupled from {@link #PROMPT_DEG} so the
+     *  fog band (onset 177.5, full 179) is byte-identical to what shipped and a 178-deg crossing still emerges
+     *  into thinning fog rather than a full whiteout. Read as the {@code fogClimaxDist}. */
+    public static final double CLIMAX_DEG = 179.0;
+    /** The longitude the crossing drops the arriving player at on the far side: 2 deg from the wall (178 deg).
+     *  UNCHANGED, and now coincides EXACTLY with {@link #PROMPT_DEG} -- arrival lands ON the prompt line. Still
+     *  0.5 deg poleward of the fog onset (177.5), so the player emerges in the thinning fog looking inward.
+     *  Landing on the prompt line is safe: the S2C arrival ALWAYS seeds the arm DISARMED and the prompt requires
+     *  ARMED, so there is no self-prompt (see {@link HemispherePassage}'s arrival contract). */
     public static final double ARRIVAL_DEG = 178.0;
+    /** The post-arrival EDGE auto-re-prompt line -- 179.6 deg (0.4 deg out, hard by the wall). Only reachable in
+     *  the SEEDED_DISARMED state: a player who has just arrived and then walks all the way to the wall is
+     *  re-offered the crossing ONCE here (no click, no walk-out). Placed just inside the fog climax and well
+     *  outside the vanilla border's ~5-block warning/damage-safe zone. See {@link HemispherePassage}. */
+    public static final double EDGE_REPROMPT_DEG = 179.6;
 
     // ---- block floors (small-world readability + hysteresis discipline) ----
 
-    /** The prompt line never sits closer than this to the wall (readable approach even on Itty-Bitty). */
+    /** The prompt line (and, coupled to it, arrival and the fog climax) never sits closer than this to the wall
+     *  (readable approach even on Itty-Bitty). */
     public static final double PROMPT_MIN_DIST_BLOCKS = 40.0;
     /** The re-arm line stays at least this far past the prompt line (anti-machine-gun DEAD_ZONE discipline,
      *  == {@link HemisphereCrossing#DEAD_ZONE_BLOCKS}). */
     public static final double DEAD_ZONE_MIN_BLOCKS = 64.0;
-    /** The fog ramp (onset -> full-fog climax) is at least this wide so the front reads as gathering
-     *  (TEST 92: 120 -> 60 so the compact 2.5-deg onset survives on small worlds). */
+    /** The fog ramp (onset -> full-fog climax) is at least this wide so the front reads as gathering. */
     public static final double FOG_BAND_MIN_BLOCKS = 60.0;
     /** Strict-ordering epsilon: when a floor pushes a nearer line out, the next line out is kept at least this
-     *  much farther so {@code prompt < rearm < rampStart} never inverts or ties. */
+     *  much farther so the ordering chain never inverts or ties. */
     public static final double ORDER_MIN_STEP_BLOCKS = 8.0;
-    /** Defensive floor: the arrival never lands closer to the wall than this many blocks past the prompt line.
-     *  TEST 93 (ARRIVAL_DEG 176 -> 178, i.e. 2 deg instead of 4): this now binds on the tiny Itty-Bitty world
-     *  (2 deg = 41.7 blocks < prompt(40) + 16 = 56), pulling arrival strictly inside the re-arm band there; on
-     *  Small/Regular Wide 2 deg (167/222 blocks) still dwarfs prompt + 16, so the floor is inert and arrival
-     *  sits exactly on the 178-deg re-arm line. It also guards degenerate tiny radii from dropping the player
-     *  essentially at the prompt line. */
-    public static final double ARRIVAL_MIN_PAST_PROMPT_BLOCKS = 16.0;
+    /** The edge auto-re-prompt never lands closer than this to the wall (~8 blocks), so it stays outside the
+     *  vanilla border's ~5-block warning/damage-safe zone even on the tiniest world. */
+    public static final double EDGE_REPROMPT_MIN_DIST_BLOCKS = 8.0;
 
     /** Blocks per longitude degree for a given intended X radius: {@code xRadius / 180}. */
     public static double blocksPerDegree(double xRadiusIntended) {
@@ -158,17 +191,21 @@ public final class EdgeGeometry {
     /**
      * The resolved, per-world block geometry: every distance is measured FROM the E/W edge (shrinks toward
      * the wall) and derived purely from the intended X radius, with the small-world floors applied and the
-     * strict ordering {@code promptDist < rearmDist < rampStartDist} guaranteed.
+     * strict ordering chain
+     * {@code edgeRepromptDist < climaxDist < promptDist < rampStartDist < rearmDist < advisoryDist} guaranteed
+     * (arrival sits exactly on {@code promptDist}).
      */
     public record Resolved(double xRadiusIntended,
                            double promptDist,
                            double rearmDist,
                            double rampStartDist,
                            double fogClimaxDist,
-                           double arrivalDist) {
+                           double arrivalDist,
+                           double advisoryDist,
+                           double edgeRepromptDist) {
 
         /** {@code |x - centerX|} at which the crossing drops the arriving player (the ARRIVAL_DEG column:
-         *  178 deg = ~2 deg from the wall, inside the fog onset). Clamped non-negative for degenerate tiny radii. */
+         *  178 deg = ~2 deg from the wall, on the prompt line). Clamped non-negative for degenerate tiny radii. */
         public double arrivalAbsX() {
             return Math.max(0.0, xRadiusIntended - arrivalDist);
         }
@@ -180,28 +217,34 @@ public final class EdgeGeometry {
      * (the old code fed it {@code border.getSize()*0.5}).
      */
     public static Resolved resolve(double xRadiusIntended) {
-        // Nearest-to-edge first, flooring and then re-tightening the ordering outward so no floor can invert it.
+        // Nearest-to-edge first, flooring and then re-tightening the ordering OUTWARD so no floor can invert it.
+        // The fog full-opacity point (179 deg) is the innermost of the visible lines; it shares the prompt's
+        // 40-block floor so it stays byte-identical to the old climax(==prompt@179).
+        double climax = Math.max(distForDeg(CLIMAX_DEG, xRadiusIntended), PROMPT_MIN_DIST_BLOCKS);
+        // The prompt (178 deg) -- one degree poleward of the climax. arrival lands exactly on it.
         double prompt = Math.max(distForDeg(PROMPT_DEG, xRadiusIntended), PROMPT_MIN_DIST_BLOCKS);
-        // Re-arm sits at 178 deg but never closer than DEAD_ZONE_MIN (64) past the prompt line -- the
-        // anti-machine-gun hysteresis floor still wins on tiny worlds (Itty: distForDeg(178)=41.7 < 104).
-        double rearm = Math.max(distForDeg(REARM_DEG, xRadiusIntended), prompt + DEAD_ZONE_MIN_BLOCKS);
-        double climax = prompt; // fog reaches full opacity at the prompt line and holds to the wall
+        // Sweep hardening: the climax<prompt chain link was the only ORDER_STEP-unprotected adjacency
+        // (a tie is unreachable on shipping radii >= 3750, but defend it anyway).
+        prompt = Math.max(prompt, climax + ORDER_MIN_STEP_BLOCKS);
+        // Fog onset (177.5 deg): at least FOG_BAND_MIN past the climax so the front reads, and strictly outside
+        // the prompt line by ORDER_STEP.
         double rampStart = Math.max(
                 Math.max(distForDeg(RAMP_START_DEG, xRadiusIntended), climax + FOG_BAND_MIN_BLOCKS),
-                rearm + ORDER_MIN_STEP_BLOCKS);
+                prompt + ORDER_MIN_STEP_BLOCKS);
+        // Re-arm (177 deg): at least DEAD_ZONE past the prompt line (the anti-machine-gun hysteresis), and
+        // strictly OUTSIDE the fog onset by ORDER_STEP (re-arm sits equatorward of the fog now).
+        double rearm = Math.max(
+                Math.max(distForDeg(REARM_DEG, xRadiusIntended), prompt + DEAD_ZONE_MIN_BLOCKS),
+                rampStart + ORDER_MIN_STEP_BLOCKS);
+        // Advisory banner (176 deg): the outermost element, strictly outside the re-arm line by ORDER_STEP.
+        double advisory = Math.max(distForDeg(ADVISORY_DEG, xRadiusIntended), rearm + ORDER_MIN_STEP_BLOCKS);
+        // Arrival lands EXACTLY on the prompt line (ARRIVAL_DEG == PROMPT_DEG). The disarmed-arrival seed makes
+        // this self-prompt-free on every world (evaluate/evaluatePhase open only when ARMED).
+        double arrival = prompt;
+        // The post-arrival edge auto-re-prompt (179.6 deg), hard by the wall, floored clear of the vanilla
+        // border warning/damage-safe zone.
+        double edgeReprompt = Math.max(distForDeg(EDGE_REPROMPT_DEG, xRadiusIntended), EDGE_REPROMPT_MIN_DIST_BLOCKS);
 
-        // Arrival: the crossing drops the player at ARRIVAL_DEG (TEST 93: 178 deg, 2 deg from the wall -- 0.5 deg
-        // INSIDE the 177.5-deg fog onset), resolved from the intended radius like every other line, with only a
-        // defensive floor a few blocks past the prompt line for degenerate tiny radii. 178 deg coincides with
-        // REARM_DEG, so on Small/Regular Wide arrival lands EXACTLY on the re-arm line (distForDeg(178) dominates
-        // both floors identically -> arrivalDist == rearmDist bit-for-bit); on Itty-Bitty the prompt+16 floor
-        // (56) exceeds distForDeg(178) (41.7), pulling arrival strictly INSIDE the band. Either way arrival is at-
-        // or-inside the re-arm line and INSIDE the fog, and the S2C arrival seeds the arm DISARMED; evaluate()
-        // re-arms only on a STRICT dist > rearm, so an on-the-line/in-band arrival HOLDS disarmed (no self-
-        // reprompt). NOTE this is deliberately NOT floored to sit past rampStart/rearm; arrival is its own axis.
-        double arrival = Math.max(distForDeg(ARRIVAL_DEG, xRadiusIntended),
-                prompt + ARRIVAL_MIN_PAST_PROMPT_BLOCKS);
-
-        return new Resolved(xRadiusIntended, prompt, rearm, rampStart, climax, arrival);
+        return new Resolved(xRadiusIntended, prompt, rearm, rampStart, climax, arrival, advisory, edgeReprompt);
     }
 }

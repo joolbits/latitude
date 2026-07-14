@@ -24,11 +24,12 @@ import java.util.EnumSet;
  * <p><b>What it does (in order), per the design:</b>
  * <ol>
  *   <li>Mirror to the far hemisphere ({@link HemispherePassage#mirrorX}) to pick the SIDE, then pull the
- *       arrival INLAND to {@code EdgeGeometry.arrivalDist} -- 178 deg since TEST 93, half a degree POLEWARD
- *       of the fog onset, so the player emerges in the THINNING FOG EDGE (Peetsa: "right at the edge of the
- *       fog, even slightly inside"). Z is kept. This is the X border-half geometry
- *       (border centered at 0,0), NEVER the Z latitude radius, and is IDENTICAL in Classic and Mercator --
- *       only the intended X radius (hence {@code |arrivalX|}) differs.</li>
+ *       arrival INLAND to {@code EdgeGeometry.arrivalDist} -- 178 deg, half a degree POLEWARD of the fog onset,
+ *       so the player emerges in the THINNING FOG EDGE (Peetsa: "right at the edge of the fog, even slightly
+ *       inside"). Edge-flow rework: 178 deg now coincides EXACTLY with the crossing PROMPT line -- arrival lands
+ *       on the prompt line, disarmed (the seeded state carries the post-arrival EDGE auto-re-prompt). Z is kept.
+ *       This is the X border-half geometry (border centered at 0,0), NEVER the Z latitude radius, and is
+ *       IDENTICAL in Classic and Mercator -- only the intended X radius (hence {@code |arrivalX|}) differs.</li>
  *   <li>3x3 FULL chunk ring + target safety: {@link GlobeMod#placeSafeY} force-loads the 3x3 ring around the
  *       target ({@code ChunkStatus.FULL}) and returns null on fluid/non-air, so we never arrive in water or
  *       void. On null we search outward along +/-Z at the mirrored X for the nearest safe column (latitude as
@@ -79,13 +80,13 @@ public final class HemispherePassageService {
     static BlockPos resolveArrival(ServerLevel world, double playerX, double playerZ) {
         WorldBorder border = world.getWorldBorder();
         double centerX = border.getCenterX();
-        // Mirror to the far hemisphere, then PULL INLAND to the arrival column (Peetsa's teleport ask; TEST 92
-// arrival = EdgeGeometry.ARRIVAL_DEG (178 deg since TEST 93 -- ~2 deg from the wall, just INSIDE the fog onset;
-        // is taken from the mirror; the inland depth comes from the resolved geometry (EdgeGeometry.arrivalDist).
-        // |arrivalX| is the same in both hemispheres, so the far-side border distance is deterministic. The
-        // arrival lands in the thinning fog edge on every world (178 deg; ON the re-arm line on large worlds,
-        // strictly inside it on floored tiny worlds) -- harmless because the S2C
-        // arrival seeds the arm DISARMED and the sticky band holds it there (no self-reprompt; see HemispherePassage).
+        // Mirror to the far hemisphere, then PULL INLAND to the arrival column (Peetsa's teleport ask). The SIDE
+        // is taken from the mirror; the inland depth comes from the resolved geometry (EdgeGeometry.arrivalDist =
+        // ARRIVAL_DEG 178 deg, ~2 deg from the wall, just INSIDE the fog onset). |arrivalX| is the same in both
+        // hemispheres, so the far-side border distance is deterministic. Edge-flow rework: the arrival lands in
+        // the thinning fog edge and EXACTLY on the crossing prompt line (ARRIVAL_DEG == PROMPT_DEG == 178) --
+        // harmless because the S2C arrival seeds the arm DISARMED (SEEDED_DISARMED) and the prompt requires ARMED,
+        // so there is no self-reprompt (see HemispherePassage).
         double mirroredX = HemispherePassage.mirrorX(playerX, centerX);
         double sign = mirroredX >= centerX ? 1.0 : -1.0;
         double xRadiusIntended = LatitudeMath.intendedXRadius(border);

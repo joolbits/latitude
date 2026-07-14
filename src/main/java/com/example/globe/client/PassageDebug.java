@@ -15,10 +15,11 @@ import net.minecraft.client.gui.screens.Screen;
  * <p><b>What a log reader gets.</b> One grep-able prefix, {@code [LatPassage]}:
  * <ul>
  *   <li>{@code SNAP} -- once per second while in a globe world: the COMPLETE state vector this tick
- *       (distToEdge, armed, this tick's {@link HemispherePassage#evaluateGated} openPrompt/nextArmed, the
- *       {@code canOpenPrompt} gate + its two components, curtain state, the pending-arrival flag) plus the last
- *       3 arm transitions with wall-clock timestamps.</li>
- *   <li>{@code EVENT} -- as they happen: every arm/disarm transition, every prompt open, every answer sent,
+ *       (distToEdge, the passage {@link HemispherePassage.Phase}, this tick's
+ *       {@link HemispherePassage#evaluatePhase} openPrompt/nextPhase, the {@code canOpenPrompt} gate + its two
+ *       components, curtain state, the pending-arrival flag) plus the last 3 phase transitions with wall-clock
+ *       timestamps.</li>
+ *   <li>{@code EVENT} -- as they happen: every phase transition, every prompt open, every answer sent,
  *       every arrival consumed, every curtain raise/fade. Enough to reconstruct exactly why the machine did or
  *       did not prompt at every moment of a decline -&gt; walk-out -&gt; return session.</li>
  * </ul>
@@ -28,7 +29,7 @@ final class PassageDebug {
 
     private static final String PREFIX = "[LatPassage]";
 
-    /** Ring buffer of the last 3 arm transitions (index cycles 0..2), rendered into every SNAP line. */
+    /** Ring buffer of the last 3 phase transitions (index cycles 0..2), rendered into every SNAP line. */
     private static final String[] ARM_RING = new String[3];
     private static int armRingCount;
     private static int armRingHead;
@@ -56,18 +57,19 @@ final class PassageDebug {
     }
 
     /**
-     * Normal-path per-tick observation (curtain down, arm evaluated this tick): record any arm transition
+     * Normal-path per-tick observation (curtain down, arm evaluated this tick): record any phase transition
      * immediately, then emit the throttled SNAP line. {@code deepUnder} / {@code openScreen} are the exact two
      * components that formed {@code canOpenPrompt} at the call site.
      */
-    static void snapshot(Minecraft mc, double distToEdge, boolean prevArmed, boolean armed,
-                         HemispherePassage.Decision d, boolean deepUnder, Screen openScreen, String curtainState) {
+    static void snapshot(Minecraft mc, double distToEdge, HemispherePassage.Phase prevPhase,
+                         HemispherePassage.Phase phase, HemispherePassage.PhaseDecision d, boolean deepUnder,
+                         Screen openScreen, String curtainState) {
         if (!enabled()) {
             return;
         }
         long now = System.currentTimeMillis();
-        if (prevArmed != armed) {
-            recordArm(prevArmed, armed, distToEdge, "eval", now);
+        if (prevPhase != phase) {
+            recordArm(prevPhase, phase, distToEdge, "eval", now);
         }
         if (now - lastSnapshotMs < 1000L) {
             return;
@@ -75,9 +77,9 @@ final class PassageDebug {
         lastSnapshotMs = now;
         boolean canOpen = !deepUnder && openScreen == null;
         GlobeMod.LOGGER.info(
-                "{} SNAP dist={} armed={} openPrompt={} nextArmed={} canOpen={} deepUnder={} screen={} "
+                "{} SNAP dist={} phase={} openPrompt={} nextPhase={} canOpen={} deepUnder={} screen={} "
                         + "curtain={} pendingArrival={} | {}",
-                PREFIX, fmt(distToEdge), armed, d.openPrompt(), d.nextArmed(), canOpen, deepUnder,
+                PREFIX, fmt(distToEdge), phase, d.openPrompt(), d.nextPhase(), canOpen, deepUnder,
                 screenName(openScreen), curtainState,
                 HemispherePassageClientState.peekPendingArrival(), renderRing());
     }
@@ -87,7 +89,7 @@ final class PassageDebug {
      * the throttled SNAP line with the eval fields marked N/A. Computes distToEdge itself (debug-only) since the
      * caller returns before it would otherwise be read.
      */
-    static void snapshotCurtainUp(Minecraft mc, boolean armed, String curtainState) {
+    static void snapshotCurtainUp(Minecraft mc, HemispherePassage.Phase phase, String curtainState) {
         if (!enabled() || mc.player == null) {
             return;
         }
@@ -99,15 +101,16 @@ final class PassageDebug {
         double distToEdge = GlobeClientState.distanceToEwBorderBlocks(mc.player.getX());
         Screen openScreen = mc.gui != null ? mc.gui.screen() : null;
         GlobeMod.LOGGER.info(
-                "{} SNAP dist={} armed={} openPrompt=NA nextArmed=NA canOpen=NA deepUnder=NA screen={} "
+                "{} SNAP dist={} phase={} openPrompt=NA nextPhase=NA canOpen=NA deepUnder=NA screen={} "
                         + "curtain={} pendingArrival={} | {} (curtain-up: arm not evaluated this tick)",
-                PREFIX, fmt(distToEdge), armed, screenName(openScreen), curtainState,
+                PREFIX, fmt(distToEdge), phase, screenName(openScreen), curtainState,
                 HemispherePassageClientState.peekPendingArrival(), renderRing());
     }
 
-    /** An arm/disarm transition that happens OUTSIDE the clientTick eval (arrival disarm, curtain-timeout
-     *  disarm): log it + push it into the ring, so the SNAP transition history is complete. */
-    static void armTransition(boolean from, boolean to, double distToEdge, String reason) {
+    /** A phase transition that happens OUTSIDE the clientTick eval (arrival seed, curtain-timeout disarm,
+     *  re-arm gesture): log it + push it into the ring, so the SNAP transition history is complete. */
+    static void armTransition(HemispherePassage.Phase from, HemispherePassage.Phase to, double distToEdge,
+                              String reason) {
         if (!enabled() || from == to) {
             return;
         }
@@ -160,8 +163,9 @@ final class PassageDebug {
 
     // ---- internals -------------------------------------------------------------------------------
 
-    private static void recordArm(boolean from, boolean to, double distToEdge, String reason, long now) {
-        String entry = "armed " + from + "->" + to + " @dist " + fmt(distToEdge) + " t=" + now + " (" + reason + ")";
+    private static void recordArm(HemispherePassage.Phase from, HemispherePassage.Phase to, double distToEdge,
+                                  String reason, long now) {
+        String entry = "phase " + from + "->" + to + " @dist " + fmt(distToEdge) + " t=" + now + " (" + reason + ")";
         ARM_RING[armRingHead] = entry;
         armRingHead = (armRingHead + 1) % ARM_RING.length;
         if (armRingCount < ARM_RING.length) {
@@ -170,7 +174,7 @@ final class PassageDebug {
         GlobeMod.LOGGER.info("{} EVENT {}", PREFIX, entry);
     }
 
-    /** Render the last up-to-3 arm transitions oldest-first, e.g. {@code transitions:[armed false->true ...; ...]}. */
+    /** Render the last up-to-3 phase transitions oldest-first, e.g. {@code transitions:[phase ARMED->DISARMED ...; ...]}. */
     private static String renderRing() {
         if (armRingCount == 0) {
             return "transitions:[]";
