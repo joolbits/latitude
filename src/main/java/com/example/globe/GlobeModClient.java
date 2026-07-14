@@ -115,10 +115,17 @@ public class GlobeModClient implements ClientModInitializer {
             });
         });
 
-        // B-5 Hemisphere Passage arrival (S2C, per-crossing-player only). P1 STUB: log + record the arrival for
-        // P2 to consume (arrival title + disarmed-in-band seed). No presentation here by design.
+        // B-5/B-7 Hemisphere Passage arrival (S2C, per-crossing-player only). EW routes to the B-5 client seed/
+        // title stub exactly as shipped. POLE is a documented P2 stub: P1 builds no pole client arm, and a P1
+        // client never SENDS a pole answer, so a pole arrival is unreachable in P1 -- logged + ignored here; P2
+        // wires the pole arm seed + "Beyond the North Pole" title off this same payload.
         ClientPlayNetworking.registerGlobalReceiver(GlobeNet.PassageArrivalPayload.ID, (payload, context) -> {
             context.client().execute(() -> {
+                if (payload.axis() == com.example.globe.core.PassageAxis.POLE) {
+                    GlobeMod.LOGGER.info("S2C pole passage arrival: x={} z={} (P1 client stub -- P2 wires the pole arm/title)",
+                            payload.arrivalX(), payload.arrivalZ());
+                    return;
+                }
                 com.example.globe.client.HemispherePassageClientState.onArrival(payload.arrivalX());
                 GlobeMod.LOGGER.info("S2C passage arrival: arrivalX={} (east={})",
                         payload.arrivalX(),

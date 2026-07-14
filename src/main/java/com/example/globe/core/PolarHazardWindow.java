@@ -24,9 +24,10 @@ package com.example.globe.core;
  *       builds visibly from 87.5, bites from ~88, and gets worse and worse to a lethal pole, instead of the
  *       old near-binary flip at the doorstep. (B-4 removed the Blindness
  *       effect: the smooth whiteout overlay now carries vision loss without a hard snap.)</li>
- *   <li><b>B-3b AMBIENT window {@code [85,90]}</b> -- atmosphere BEFORE danger. Snow begins at 85 deg
- *       (2 deg ahead of the hazard onset) and the fixed per-tick particle budget + screen-fog
- *       intensity ramp smoothly to VERY heavy at 90 deg over {@code clamp01((|lat|-85)/5)}.</li>
+ *   <li><b>B-3b AMBIENT window {@code [AMBIENT_ONSET_DEG,90]}</b> -- atmosphere BEFORE danger. Snow begins at
+ *       the ambient onset (82 deg since B-7 S3; was 85) and the fixed per-tick particle budget + screen-fog
+ *       intensity ramp smoothly to VERY heavy at 90 deg. B-7 S3 also added the FROSTBITE damage band
+ *       {@code [85,88)} (its own section below) between the atmosphere and the lethal core.</li>
  * </ul>
  */
 public final class PolarHazardWindow {
@@ -187,13 +188,122 @@ public final class PolarHazardWindow {
         return (float) (FREEZE_DAMAGE_MIN_HP + (FREEZE_DAMAGE_MAX_HP - FREEZE_DAMAGE_MIN_HP) * d);
     }
 
-    // ---- B-3b: ambient snow + fog window [85,90] (client particles + screen fog) ----
+    // ---- B-7 S3: the FROSTBITE band [85,88) -- a gentle two-stage lead-in to the lethal core ----
+    //
+    // Peetsa's two-stage-cold decision (2026-07-13): freeze damage should start EARLIER, as a gentle
+    // "frostbite" nibble well ahead of the lethal core, so the pole has a graduated bite instead of a hard
+    // doorstep at 88 deg. This band is a SEPARATE, self-contained curve that sits ENTIRELY equatorward of the
+    // existing lethal core: it applies ONLY on [FROSTBITE_ONSET_DEG, FROSTBITE_END_DEG) = [85,88), and hands off
+    // EXACTLY at 88.0 deg to the untouched [88,90] lethal curve (which begins at its own 0.33 HP/s and ramps to
+    // 6 HP/s at the pole). NOTHING at or above 88 deg changes -- HAZARD_ONSET_DEG (87.5), DAMAGE_ONSET_PROGRESS,
+    // the interval/amount curve, slowness/weakness/mining-fatigue staging and the frost visual are all as
+    // shipped, so the B-7 prompt-zone survival table (89.2 deg = 1.47 HP/s, etc.) is bit-for-bit unchanged
+    // (pinned by test).
+    //
+    // Curve (interval-based, existing style -- fixed HP per hit, latitude-scaled interval):
+    //   85.0 deg -> 1.0 HP / 80 ticks = 0.25 HP/s (a distant nibble)
+    //   ~88.0 deg (just under) -> 1.0 HP / 20 ticks = 1.0 HP/s (a real bite, the "last warning")
+    // DELIBERATE HANDOFF STEP: frostbite peaks at ~1.0 HP/s just below 88, then the lethal core RESTARTS its own
+    // ramp at 0.33 HP/s at 88.0 before climbing to 6 HP/s -- i.e. there is a small DPS dip at the 88 boundary by
+    // design (frostbite is the escalating pre-warning; the lethal core is the separate, catastrophic engine). If
+    // P3 feel says the dip reads wrong, the two curves can be re-blended without touching this class's callers.
+    // ColdProtection scales this amount at the SAME single computed-amount point as the lethal core, so full
+    // freeze-immune armor negates frostbite too.
 
-    /** Latitude (deg) at which ambient snow/fog begins -- 2 deg ahead of the hazard onset. */
-    public static final double AMBIENT_ONSET_DEG = 85.0;
+    /** Latitude (deg) at which the gentle frostbite damage band opens (== the water-freeze line, S3). Below this
+     *  there is no freeze damage (only the client snow/fog atmosphere, which now begins at
+     *  {@link #AMBIENT_ONSET_DEG}). */
+    public static final double FROSTBITE_ONSET_DEG = 85.0;
+    /** Latitude (deg) at which the frostbite band ENDS and the untouched lethal core takes over -- exactly
+     *  {@link #DAMAGE_ONSET_PROGRESS}'s 88.0 deg. Frostbite applies on {@code [85,88)}; the lethal curve on
+     *  {@code [88,90]}; they never overlap. */
+    public static final double FROSTBITE_END_DEG = 88.0;
+    /** Ticks between frostbite hits at the 85 deg onset: 80 ticks == 4 s. With {@link #FROSTBITE_DAMAGE_HP} that
+     *  is 0.25 HP/s. */
+    public static final int FROSTBITE_INTERVAL_FAR = 80;
+    /** Ticks between frostbite hits just under 88 deg: 20 ticks == 1 s. With {@link #FROSTBITE_DAMAGE_HP} that is
+     *  1.0 HP/s -- the escalating "last warning" before the lethal core. */
+    public static final int FROSTBITE_INTERVAL_NEAR = 20;
+    /** HP per frostbite hit (fixed; the latitude scaling lives in the interval). 1.0 == half a heart. */
+    public static final float FROSTBITE_DAMAGE_HP = 1.0f;
+
+    /** Continuous frostbite progress in {@code [0,1]}: 0 at/below 85 deg, 1 at/above 88 deg (the handoff). */
+    public static double frostbiteProgress(double absLatDeg) {
+        return clamp01((absLatDeg - FROSTBITE_ONSET_DEG) / (FROSTBITE_END_DEG - FROSTBITE_ONSET_DEG));
+    }
+
+    /** True iff the player is in the frostbite band {@code [85,88)} -- gentle damage applies and the lethal core
+     *  does NOT (they are mutually exclusive at the 88 deg boundary). At/above 88 deg this is false and the
+     *  {@link #appliesFreezeDamage} lethal core owns the damage. */
+    public static boolean appliesFrostbiteDamage(double absLatDeg) {
+        return absLatDeg >= FROSTBITE_ONSET_DEG && absLatDeg < FROSTBITE_END_DEG;
+    }
+
+    /** Server-ticks between frostbite hits for a latitude: {@link #FROSTBITE_INTERVAL_FAR} at 85 deg shrinking
+     *  linearly to {@link #FROSTBITE_INTERVAL_NEAR} just under 88 deg. Never below 1. Callers gate on
+     *  {@link #appliesFrostbiteDamage} first. */
+    public static int frostbiteIntervalTicks(double absLatDeg) {
+        double p = frostbiteProgress(absLatDeg);
+        double interval = FROSTBITE_INTERVAL_FAR + (FROSTBITE_INTERVAL_NEAR - FROSTBITE_INTERVAL_FAR) * p;
+        return Math.max(1, (int) Math.round(interval));
+    }
+
+    /** HP dealt per frostbite hit (fixed {@link #FROSTBITE_DAMAGE_HP}; a future reshape can vary it without
+     *  touching the GlobeMod wiring, which multiplies the returned amount by the cold-protection factor). */
+    public static float frostbiteDamageAmount(double absLatDeg) {
+        return FROSTBITE_DAMAGE_HP;
+    }
+
+    // ---- B-7 F3: the frostbite FROST CUE (honesty: no silent damage) ----
+    //
+    // The owner's live-feedback class this guards against is EXACTLY "the hearts aren't turning blue while I'm
+    // taking damage" (TEST 77). The frostbite band [85,87.5) deals damage BELOW the lethal core's frost-visual
+    // onset (87.5), so without a cue the nibble would be invisible. Fix: while frostbite is actually biting (or
+    // the S6 heal-lock holds), the server maintains a gentle ticksFrozen FLOOR that ramps across the band and
+    // meets the lethal path's own ramp continuously: vanilla's creeping frost vignette (percentFrozen =
+    // ticks/140) thickens with the bite, and the ramp reaches the 140 fully-frozen threshold (blue hearts)
+    // exactly as the band hands off to the lethal core at 88. FLOOR semantics -- the caller only ever RAISES
+    // ticksFrozen to this value (max with the current / lethal-set value), never lowers it, so vanilla
+    // powder-snow freezing and the lethal path's own frostVisualTicks are never decreased (pinned by test).
+    // The S4 shelter pause and the S5 post-crossing grace pause this cue WITH the damage (no bite = no cue) --
+    // EXCEPT while the S6 heal-lock holds, where the cue is KEPT so hearts look frozen while wounds cannot mend
+    // (the caller's cue-active rule: (biting && !paused) || healLocked -- see PolarWounds.frostCueActive).
+
+    /** Minimum cue floor (ticksFrozen) whenever the frostbite cue is active: a visible first frost creep
+     *  (~14% vignette) at the 85 deg onset rather than an invisible 0-tick nibble. */
+    public static final int FROSTBITE_CUE_MIN_TICKS = 20;
+
+    /**
+     * The frostbite frost-cue floor (ticksFrozen) for a latitude: 0 outside the frostbite band; inside
+     * {@code [85,88)}, a linear ramp from {@link #FROSTBITE_CUE_MIN_TICKS} up to the 140 fully-frozen threshold
+     * at the hand-off (monotonic; continuous with the lethal path, whose {@link #frostVisualTicks} is exactly
+     * 140 at 88 deg and holds at/above it poleward -- so the composite {@code max(lethalVisual, cue)} can never
+     * pop DOWN across either boundary). At/above 88 deg this returns 0: the lethal path owns the visual there.
+     */
+    public static int frostbiteFrostCueTicks(double absLatDeg) {
+        if (!appliesFrostbiteDamage(absLatDeg)) {
+            return 0;
+        }
+        int ramp = (int) Math.round(frostbiteProgress(absLatDeg) * FROZEN_THRESHOLD_TICKS);
+        return Math.max(FROSTBITE_CUE_MIN_TICKS, ramp);
+    }
+
+    // ---- B-3b: ambient snow + fog window [AMBIENT_ONSET_DEG,90] (client particles + screen fog) ----
+
+    /** Latitude (deg) at which the CLIENT ambient snow/fog atmosphere begins. Moved 85 -> 82 (B-7 S3, Peetsa
+     *  2026-07-13) so the whiteout leads the danger by a wider margin. This is a PURE CLIENT-ATMOSPHERE onset:
+     *  its only readers are {@link #ambientProgress} (driving snow particle budget + render-distance fog) on the
+     *  client. It is DELIBERATELY DECOUPLED from the two world-modifying polar rules, which keep their own
+     *  anchors and DO NOT move (moving them would be a worldgen seam, forbidden in B-7):
+     *  {@code PolarWaterFreezeRule.FREEZE_ALL_DEG} stays 85 (the ice sheet is world-visible / places ice) and
+     *  {@code PolarPrecipitationRule.FORCE_SNOW_DEG} stays 75 (its own client anchor). The frostbite DAMAGE band
+     *  also keeps its own {@link #FROSTBITE_ONSET_DEG} = 85, so snow (82) leads frostbite (85) leads slowness/frost
+     *  (87.5) leads the lethal core (88). */
+    public static final double AMBIENT_ONSET_DEG = 82.0;
     /** Latitude (deg) at which ambient snow/fog is at its VERY-heavy ceiling (the pole). */
     public static final double AMBIENT_FULL_DEG = 90.0;
-    /** Gentle-flurry per-tick snow budget at the 85 deg onset. */
+    /** Gentle-flurry per-tick snow budget at the ambient onset ({@link #AMBIENT_ONSET_DEG}, 82 deg since B-7
+     *  S3 -- F4 comment fix; was "85 deg onset"). */
     public static final int SNOW_MIN_COUNT = 2;
     /** Per-tick snow budget at 90 deg. FIXED budget -- never a catch-up accumulator. History: 80 -> 30 (B-4
      *  round 2, when the flakes spawned in a thin ~6-block band above the head and mostly read as a single
@@ -204,16 +314,17 @@ public final class PolarHazardWindow {
      *  (ClientLevelStormSkyMixin) -- not the whole blizzard by itself. */
     public static final int SNOW_MAX_COUNT = 60;
 
-    /** Continuous ambient progress in {@code [0,1]}: 0 at/below 85 deg, 1 at/above 90 deg. */
+    /** Continuous ambient progress in {@code [0,1]}: 0 at/below {@link #AMBIENT_ONSET_DEG} (82), 1 at/above
+     *  90 deg. */
     public static double ambientProgress(double absLatDeg) {
         return clamp01((absLatDeg - AMBIENT_ONSET_DEG) / (AMBIENT_FULL_DEG - AMBIENT_ONSET_DEG));
     }
 
     /**
-     * FIXED per-tick snow particle budget from the ambient ramp: 0 below 85 deg, {@link #SNOW_MIN_COUNT}
-     * at onset, ramping to {@link #SNOW_MAX_COUNT} at 90 deg. This is a per-tick BUDGET, not an amount
-     * owed since the last spawn -- the caller spawns exactly this many and no more, so a paused/lagging
-     * client never accrues a backlog to dump on resume.
+     * FIXED per-tick snow particle budget from the ambient ramp: 0 below {@link #AMBIENT_ONSET_DEG} (82),
+     * {@link #SNOW_MIN_COUNT} at onset, ramping to {@link #SNOW_MAX_COUNT} at 90 deg. This is a per-tick
+     * BUDGET, not an amount owed since the last spawn -- the caller spawns exactly this many and no more, so a
+     * paused/lagging client never accrues a backlog to dump on resume.
      */
     public static int snowCount(double absLatDeg) {
         double p = ambientProgress(absLatDeg);
@@ -224,9 +335,9 @@ public final class PolarHazardWindow {
     }
 
     /**
-     * Screen-fog / whiteout intensity in {@code [0,1]} over the ambient window -- the SAME 85->90
-     * progress the snow budget uses, so fog density and snowfall thicken together. 1.0 at 90 deg
-     * preserves the deep-end whiteout magnitude the stage ladder produced at the pole.
+     * Screen-fog / whiteout intensity in {@code [0,1]} over the ambient window -- the SAME
+     * {@code AMBIENT_ONSET_DEG->90} progress the snow budget uses, so fog density and snowfall thicken
+     * together. 1.0 at 90 deg preserves the deep-end whiteout magnitude the stage ladder produced at the pole.
      */
     public static float fogIntensity(double absLatDeg) {
         return (float) ambientProgress(absLatDeg);
@@ -304,8 +415,10 @@ public final class PolarHazardWindow {
 
     // ---- B-4 round 3 item 3: STORM-SKY level (steepened so the sun is gone well before the pole) ----
 
-    /** Latitude (deg) at which the storm sky begins to lift (same 85 deg onset as ambient snow, so the
-     *  overcast, the snowfall and the screen fog all start together with no seam). */
+    /** Latitude (deg) at which the storm sky begins to lift. Its OWN 85 anchor, UNCHANGED by B-7 S3 (which
+     *  moved the ambient snow/fog onset to 82): the near-field flurry and depth haze now LEAD the overcast by
+     *  3 deg (a greying approach), and from 85 the sky lift joins on its original steep 85-&gt;87.5 ramp so the
+     *  sun is still fully gone by 87.5 (the Peetsa sun-at-86 fix is preserved bit-for-bit). */
     public static final double STORM_ONSET_DEG = 85.0;
     /** Latitude (deg) at which the storm sky is FULLY overcast (rain level 1.0, sun fully faded). Reached
      *  by ~87.5 deg -- deliberately much steeper than the 85->90 ambient ramp: Peetsa saw the sun still

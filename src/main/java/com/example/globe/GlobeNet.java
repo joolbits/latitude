@@ -1,5 +1,6 @@
 package com.example.globe;
 
+import com.example.globe.core.PassageAxis;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.ByteBufCodecs;
@@ -73,16 +74,23 @@ public final class GlobeNet {
 
     /**
      * C2S: the player's answer to the hemisphere-passage prompt. {@code cross=true} = "pass through" (server
-     * re-validates the edge distance, then teleports); {@code cross=false} = "turn back" (server applies a
-     * one-shot inland nudge). The client is trusted for NOTHING beyond delivering the boolean -- the server
-     * re-derives the player's authoritative edge distance and rejects a spoofed {@code cross} from inland.
+     * re-validates the edge distance for the given {@link PassageAxis}, then teleports); {@code cross=false} =
+     * "turn back" (server applies a one-shot nudge back toward the equator/center on that axis). The client is
+     * trusted for NOTHING beyond delivering {@code (cross, axis)} -- the server re-derives the player's
+     * authoritative distance to that edge and rejects a spoofed {@code cross} from out of band.
+     *
+     * <p><b>B-7 axis extension.</b> {@code axis} (0 = EW, 1 = POLE) selects the edge; one registered payload,
+     * one server receiver, one guard chain with an axis branch (design §5.2). Field order: {@code (cross, axis)}.
+     * Client+server ship in the same jar, so widening the codec is lockstep-safe.
      */
-    public record PassageAnswerPayload(boolean cross) implements CustomPacketPayload {
+    public record PassageAnswerPayload(boolean cross, PassageAxis axis) implements CustomPacketPayload {
         public static final Type<PassageAnswerPayload> ID = new Type<>(Identifier.fromNamespaceAndPath("globe", "c2s_passage_answer"));
         public static final StreamCodec<RegistryFriendlyByteBuf, PassageAnswerPayload> CODEC = StreamCodec.composite(
                 ByteBufCodecs.BOOL,
                 PassageAnswerPayload::cross,
-                PassageAnswerPayload::new
+                ByteBufCodecs.VAR_INT,
+                p -> p.axis().id(),
+                (cross, axisId) -> new PassageAnswerPayload(cross, PassageAxis.fromId(axisId))
         );
 
         @Override
@@ -92,17 +100,27 @@ public final class GlobeNet {
     }
 
     /**
-     * S2C: sent ONLY to the crossing player after a successful teleport (never broadcast). Carries the arrival
-     * X so P2 can derive the arrived hemisphere ({@code arrivalX >= centerX} = East) for the arrival title and
-     * seed the client passage arm state DISARMED-in-band (the mirror lands at the identical border distance, so
-     * without this the client would self-reprompt forever). P1's client receiver is a minimal stub.
+     * S2C: sent ONLY to the crossing player after a successful teleport (never broadcast). Carries the
+     * {@link PassageAxis} and the arrival {@code (X, Z)} so P2 can (a) derive the arrived hemisphere for the
+     * arrival title -- EW reads {@code arrivalX >= centerX} = East, POLE flips the E/W hemisphere too via the
+     * mirrored X -- and (b) seed the RIGHT client passage arm DISARMED-in-band (the mirror lands at the
+     * identical edge distance on that axis, so without this the client would self-reprompt forever). P1's client
+     * receiver routes EW as B-5 shipped and treats POLE as a documented stub (P2 builds the pole arm/title).
+     *
+     * <p><b>B-7 axis extension.</b> Field order: {@code (axis, arrivalX, arrivalZ)} (design §5.2). {@code arrivalZ}
+     * is new -- the pole arrival changes latitude (lands at the 89.5 deg S5 arrival line) where the EW arrival barely does; both are
+     * VAR_INT and round-trip signed coordinates exactly as the original {@code arrivalX} did.
      */
-    public record PassageArrivalPayload(int arrivalX) implements CustomPacketPayload {
+    public record PassageArrivalPayload(PassageAxis axis, int arrivalX, int arrivalZ) implements CustomPacketPayload {
         public static final Type<PassageArrivalPayload> ID = new Type<>(Identifier.fromNamespaceAndPath("globe", "s2c_passage_arrival"));
         public static final StreamCodec<RegistryFriendlyByteBuf, PassageArrivalPayload> CODEC = StreamCodec.composite(
                 ByteBufCodecs.VAR_INT,
+                p -> p.axis().id(),
+                ByteBufCodecs.VAR_INT,
                 PassageArrivalPayload::arrivalX,
-                PassageArrivalPayload::new
+                ByteBufCodecs.VAR_INT,
+                PassageArrivalPayload::arrivalZ,
+                (axisId, x, z) -> new PassageArrivalPayload(PassageAxis.fromId(axisId), x, z)
         );
 
         @Override

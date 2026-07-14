@@ -27,13 +27,17 @@ package com.example.globe.core;
  * freezing, and it inherits vanilla's edge-inward, over-time freeze cadence (so this needs no latitude
  * fade -- the spread is a property of vanilla's tick loop, not of latitude).
  *
- * <p><b>Threshold = 85 deg.</b> Matches {@code PolarHazardWindow.AMBIENT_ONSET_DEG} (85), so "the water is
- * frozen" turns on at exactly the latitude where the blizzard/snow/fog ambience begins -- the visible
- * storm and the frozen ground read as one coherent polar cap. It also sits poleward of the naturally-cold
- * bands (subpolar taiga / snowy) whose water vanilla ALREADY freezes on its own, so those are untouched and
- * only the latitude-blind warm columns carried into the deep polar cap are corrected. This is deliberately
- * poleward of {@link PolarPrecipitationRule#FORCE_SNOW_DEG} (75): the precipitation clamp wants to sit a
- * safe margin BELOW the ambient window, whereas frozen water is meant to coincide WITH it.
+ * <p><b>Threshold = 85 deg (its OWN anchor -- DECOUPLED from the ambient onset, B-7 S3).</b> This forces
+ * exposed water to freeze into ice, which MODIFIES THE WORLD (places ice blocks) and is therefore a
+ * WORLDGEN-facing seam that must NOT move. When B-7 S3 shifted the pure-client ambient snow/fog onset
+ * {@code PolarHazardWindow.AMBIENT_ONSET_DEG} 85 -> 82 (2026-07-13), this constant deliberately STAYED at 85
+ * on its own literal anchor: the frozen ice sheet is world-visible and moving it would re-freeze different
+ * columns in existing worlds. 85 still coincides with the B-7 frostbite DAMAGE onset
+ * ({@code PolarHazardWindow.FROSTBITE_ONSET_DEG}, also 85), so "the water is frozen" and "the cold starts to
+ * bite" read as one line, just now inside a whiteout that began a few degrees earlier. It also sits poleward of
+ * the naturally-cold bands (subpolar taiga / snowy) whose water vanilla ALREADY freezes on its own, so those
+ * are untouched and only the latitude-blind warm columns carried into the deep polar cap are corrected. It
+ * stays poleward of {@link PolarPrecipitationRule#FORCE_SNOW_DEG} (75).
  */
 public final class PolarWaterFreezeRule {
 
@@ -42,8 +46,10 @@ public final class PolarWaterFreezeRule {
 
     /**
      * Latitude (deg) at/above which any exposed, genuinely-freezable water column is forced eligible to
-     * freeze into ice regardless of its (possibly latitude-blind) biome temperature. 85 deg mirrors
-     * {@code PolarHazardWindow.AMBIENT_ONSET_DEG}, aligning frozen water with the snow/fog/wind onset.
+     * freeze into ice regardless of its (possibly latitude-blind) biome temperature. 85 deg is this rule's OWN
+     * literal anchor -- it is NOT derived from {@code PolarHazardWindow.AMBIENT_ONSET_DEG} (which B-7 S3 moved to
+     * 82). Because freezing water places ice (a world modification), this worldgen-facing threshold must never
+     * move under a client-atmosphere change; see the class javadoc.
      */
     public static final double FREEZE_ALL_DEG = 85.0;
 

@@ -1,6 +1,7 @@
 package com.example.globe;
 
 import net.fabricmc.api.ModInitializer;
+import com.example.globe.core.PassageAxis;
 import com.example.globe.world.LatitudeBiomes;
 import com.example.globe.world.BiomeFeatureStripping;
 import com.example.globe.world.LatitudeWorldState;
@@ -23,18 +24,25 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.level.progress.LevelLoadListener;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.sounds.SoundSource;
 import net.minecraft.tags.BiomeTags;
+import net.minecraft.tags.ItemTags;
 import net.minecraft.util.Mth;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
+import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.Relative;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.component.BundleContents;
 import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.LightLayer;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.biome.Climate;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.level.border.WorldBorder;
 import net.minecraft.world.level.chunk.ChunkGenerator;
 import net.minecraft.world.level.chunk.status.ChunkStatus;
@@ -87,14 +95,40 @@ public class GlobeMod implements ModInitializer {
 
     private static final boolean ENABLE_POLAR_SCRUBBER = false;
 
-    // B-5 Hemisphere Passage: players who answered the prompt "turn back" and are owed a ONE-SHOT inland
-    // nudge, applied (and cleared) on the next server tick in {@link #borderUxTick}. Thread-confined to the
-    // server thread: the C2S receiver schedules onto it via {@code context.server().execute(...)}, and
-    // END_SERVER_TICK runs on it too, so a plain HashSet needs no synchronization.
-    private static final java.util.Set<java.util.UUID> PENDING_PASSAGE_TURN_BACK = new java.util.HashSet<>();
-    // B-5 turn-back nudge strength (blocks/tick added toward center-X). Gentle single impulse, then the player
+    // B-5/B-7 Hemisphere Passage: players who answered a prompt "turn back" and are owed a ONE-SHOT nudge back
+    // toward center, applied (and cleared) on the next server tick in {@link #borderUxTick}. B-7 (A3): axis-keyed
+    // -- the value is which edge the decline was for (EW pushes back along X toward center; POLE pushes
+    // equatorward along Z). Thread-confined to the server thread: the C2S receiver schedules onto it via
+    // {@code context.server().execute(...)}, and END_SERVER_TICK runs on it too, so a plain HashMap needs no
+    // synchronization.
+    private static final java.util.Map<java.util.UUID, PassageAxis> PENDING_PASSAGE_TURN_BACK = new java.util.HashMap<>();
+    // B-5 turn-back nudge strength (blocks/tick added toward center). Gentle single impulse, then the player
     // is free -- a per-tick push would fight input (the vetoed "hard yank"). Live-tunable feel is P3's call.
     private static final double PASSAGE_TURN_BACK_IMPULSE = 0.45;
+
+    // B-7 S2: the Wide-world pole hard-stop clamp bookkeeping. POLE_CLAMP_LAST_CONTACT_TICK rate-limits the
+    // "presentable contact" chime/action-bar (~2s, tick-counter, never wall-clock); POLE_CLAMP_LOGGED gates the
+    // once-per-session server log. Both thread-confined to the server thread and cleared on disconnect. (The
+    // clamp MATH -- engagement epsilon, clamped Z, outward-velocity kill -- is the pure core PoleHardStop.)
+    private static final java.util.Map<java.util.UUID, Long> POLE_CLAMP_LAST_CONTACT_TICK = new java.util.HashMap<>();
+    private static final java.util.Set<java.util.UUID> POLE_CLAMP_LOGGED = new java.util.HashSet<>();
+    // B-7 S1 cold-protection: the four armor slots consulted for freeze-immune-wearable pieces (leather by
+    // default, datapack-extensible). A full set of freeze-immune pieces here negates freeze DAMAGE.
+    private static final EquipmentSlot[] COLD_ARMOR_SLOTS =
+            {EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS, EquipmentSlot.FEET};
+    // B-7 S5(c): post-pole-crossing cold-grace end tick per player (PoleCrossingGrace.graceUntil), stamped on a
+    // successful pole crossing so a low-health crosser cannot die inside the arrival-curtain ceremony. Read in
+    // borderUxTick; suppresses BOTH cold-damage bands + the F3 frost cue while active; NOT wired into the S6
+    // heal lock. Thread-confined to the server thread; cleared on disconnect; stale entries lazily dropped.
+    private static final java.util.Map<java.util.UUID, Long> POLE_CROSS_COLD_GRACE_UNTIL = new java.util.HashMap<>();
+    // B-7 S6: cached warmth-scan verdicts (PolarWarmth 9x5x9 box scan is 405 block reads -- cached per player
+    // on a WARMTH_RESCAN_TICKS cadence so heal-time checks and the per-tick cue share one scan). Value = the
+    // game-time tick the verdict was computed at + the verdict. Thread-confined; cleared on disconnect.
+    private static final java.util.Map<java.util.UUID, long[]> POLE_WARMTH_CACHE = new java.util.HashMap<>();
+    private static final long WARMTH_RESCAN_TICKS = 20L;
+    // The S6 warmth-scan box half-extents: a ~4-block box around the player (9 x 5 x 9).
+    private static final int WARMTH_SCAN_RADIUS_XZ = 4;
+    private static final int WARMTH_SCAN_RADIUS_Y = 2;
     // P1 sweep HIGH-2: server-side per-player cross cooldown (idempotency guard). Two cross=true payloads
     // arriving in the same tick would otherwise BOTH pass validation -- the mirror preserves border distance,
     // so after the first teleport the second re-validates true and bounces the player straight back (double
@@ -216,15 +250,21 @@ public class GlobeMod implements ModInitializer {
             context.server().execute(() -> applySpawnChoice(context.player(), payload.zoneId()));
         });
 
-        // B-5 Hemisphere Passage answer. Runs on the server thread; NEVER trusts the client.
+        // B-5/B-7 Hemisphere Passage answer. Runs on the server thread; NEVER trusts the client. Routes by axis.
         ServerPlayNetworking.registerGlobalReceiver(GlobeNet.PassageAnswerPayload.ID, (payload, context) -> {
-            context.server().execute(() -> handlePassageAnswer(context.player(), payload.cross()));
+            context.server().execute(() -> handlePassageAnswer(context.player(), payload.cross(), payload.axis()));
         });
 
-        // B-5: drop any pending turn-back nudge + cross-cooldown entry for a player who leaves.
+        // B-5/B-7: drop any pending turn-back nudge, cross-cooldown, pole-clamp, cold-grace and warmth-cache
+        // bookkeeping for a leaver.
         ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
-            PENDING_PASSAGE_TURN_BACK.remove(handler.player.getUUID());
-            PASSAGE_LAST_CROSS_TICK.remove(handler.player.getUUID());
+            java.util.UUID uuid = handler.player.getUUID();
+            PENDING_PASSAGE_TURN_BACK.remove(uuid);
+            PASSAGE_LAST_CROSS_TICK.remove(uuid);
+            POLE_CLAMP_LAST_CONTACT_TICK.remove(uuid);
+            POLE_CLAMP_LOGGED.remove(uuid);
+            POLE_CROSS_COLD_GRACE_UNTIL.remove(uuid);
+            POLE_WARMTH_CACHE.remove(uuid);
         });
 
         ServerTickEvents.END_SERVER_TICK.register(GlobeMod::borderUxTick);
@@ -457,25 +497,86 @@ public class GlobeMod implements ModInitializer {
                 continue;
             }
 
-            // B-5: a pending "turn back" gets its ONE-SHOT inland nudge here (not in the polar-hazard section
-            // below -- this is an E/W-edge concern, unrelated to latitude, so it must run BEFORE the
-            // HAZARD_ONSET_DEG continue). Skips creative/spectator inside the helper.
-            if (com.example.globe.core.LatitudeV2Flags.PASSAGE_V2_ENABLED && !PENDING_PASSAGE_TURN_BACK.isEmpty()) {
+            // B-5/B-7: a pending "turn back" gets its ONE-SHOT nudge back toward center here (an EDGE concern,
+            // not a latitude one, so it runs BEFORE the HAZARD_ONSET_DEG continue). The helper reads the axis,
+            // gates on the matching feature flag, and skips creative/spectator.
+            if (!PENDING_PASSAGE_TURN_BACK.isEmpty()) {
                 applyPendingPassageTurnBack(player, border);
             }
 
-            // B-3a: continuous player-affecting hazard window [87.5,90]. The ONLY player-affecting hazardous
-            // band -- everything below 87.5 deg stays fully explorable. Onset moved 88.5 -> 87.5 (TEST 76:
-            // Peetsa took ZERO freeze damage at 89 because the old curve only crossed vanilla's fully-frozen
-            // threshold in the last fractional degree). Slowness ramps in at 87.5; the frost visual builds
-            // from here; freeze DAMAGE begins ~88 and intensifies (shorter interval + bigger amount) to a
-            // lethal pole -- worse and worse, not a doorstep flip.
+            // B-7 S2: the Wide-world pole hard stop -- a server-side motion clamp at the |z| = zRadius pole line
+            // (Classic worlds already wall it with the vanilla square border). Pure movement logic: it clamps
+            // position/velocity back to the line and is NOT a teleport wrap and NOT worldgen. Flag-gated so
+            // flag-off leaves the Wide pole the unmarked endless plain it is today; creative/spectator fly past.
+            if (com.example.globe.core.LatitudeV2Flags.POLE_PASSAGE_V2_ENABLED) {
+                applyPoleHardStop(player, border, worldTime);
+            }
+
             double latDeg = com.example.globe.util.LatitudeMath.absLatDegExact(border, player.getZ());
+            boolean unaffected = player.isCreative() || player.isSpectator();
+
+            // B-7 S4/S5(c)/S6: the cold-pause + heal-lock inputs, computed once per tick for survival players in
+            // the cold zone (|lat| >= 85). S4: genuine shelter (raw sky light <= 3 at the eye, ColdShelter)
+            // pauses cold DAMAGE -- walls stop the bleeding; slowness/fatigue/atmosphere unchanged. S5(c): the
+            // post-crossing grace (PoleCrossingGrace) pauses it for the arrival-curtain window. S6: sheltered
+            // without a warmth source freezes WOUNDS (heal lock, enforced at the LivingEntity.heal chokepoint by
+            // LivingEntityHealLockMixin via isPolarHealLocked) and HOLDS the F3 frost cue. Short-circuit order:
+            // zone -> grace -> shelter -> warmth scan (the 405-block scan runs only for sheltered polar players,
+            // cached ~20t in POLE_WARMTH_CACHE).
+            boolean inColdZone = !unaffected
+                    && latDeg >= com.example.globe.core.PolarHazardWindow.FROSTBITE_ONSET_DEG;
+            boolean coldSheltered = false;
+            boolean coldGrace = false;
+            boolean healLocked = false;
+            if (inColdZone) {
+                coldGrace = isPoleCrossColdGraceActive(player, worldTime);
+                coldSheltered = isColdSheltered(overworld, player);
+                boolean nearWarmth = coldSheltered && isNearWarmthCached(overworld, player, worldTime);
+                healLocked = com.example.globe.core.PolarWounds.healLocked(true, coldSheltered, nearWarmth);
+            }
+            boolean coldDamagePaused = coldSheltered || coldGrace;
+
+            // B-7 S3: the FROSTBITE band [85,88) -- gentle freeze damage equatorward of the lethal core, handing
+            // off EXACTLY at 88 deg to the untouched [88,90] curve. Runs BEFORE the 87.5 continue (onset 85 is
+            // below the hazard onset). ColdProtection scales the amount at the SAME single computed-amount point
+            // as the lethal core, so a full freeze-immune set negates it; a zeroed amount skips the hurt call.
+            // S4/S5(c): paused while sheltered or in the post-crossing grace.
+            boolean frostbiteBiting = inColdZone && !coldDamagePaused
+                    && com.example.globe.core.PolarHazardWindow.appliesFrostbiteDamage(latDeg);
+            if (frostbiteBiting) {
+                int fInterval = com.example.globe.core.PolarHazardWindow.frostbiteIntervalTicks(latDeg);
+                if (worldTime % (long) fInterval == 0L) {
+                    float fAmount = com.example.globe.core.PolarHazardWindow.frostbiteDamageAmount(latDeg)
+                            * (float) com.example.globe.core.ColdProtection.damageMultiplier(coldProtectionPieceCount(player));
+                    if (fAmount > 0.0f) {
+                        player.hurtServer(overworld, overworld.damageSources().freeze(), fAmount);
+                    }
+                }
+            }
+
+            // B-7 F3 (+S6 amendment): the frostbite FROST-CUE floor -- no silent damage. Active iff frostbite is
+            // actually biting this tick OR the S6 heal-lock holds (frozen wounds LOOK frozen); paused with the
+            // damage under S4 shelter / S5 grace otherwise (PolarWounds.frostCueActive is the single rule).
+            // FLOOR semantics: only ever RAISES ticksFrozen (vanilla powder-snow freezing and the lethal path's
+            // own frost visual are never decreased). Below the 87.5 hazard onset this is the only writer; in
+            // [87.5,88) the lethal frost-visual writer below composites via max().
+            int frostCueFloor = com.example.globe.core.PolarWounds.frostCueActive(frostbiteBiting, healLocked)
+                    ? com.example.globe.core.PolarHazardWindow.frostbiteFrostCueTicks(latDeg)
+                    : 0;
+            if (frostCueFloor > 0
+                    && latDeg < com.example.globe.core.PolarHazardWindow.HAZARD_ONSET_DEG
+                    && player.getTicksFrozen() < frostCueFloor) {
+                player.setTicksFrozen(frostCueFloor);
+            }
+
+            // B-3a: the LETHAL polar hazard core [87.5,90], UNCHANGED by B-7 (frost visual from 87.5, freeze
+            // DAMAGE from ~88 intensifying to a lethal pole, slowness/weakness/mining fatigue). Everything below
+            // 87.5 deg stays explorable apart from the frostbite band above (from 85). The B-7 prompt-zone
+            // survival numbers depend on this curve staying exactly as shipped.
             if (latDeg < com.example.globe.core.PolarHazardWindow.HAZARD_ONSET_DEG) {
                 continue;
             }
             double progress = com.example.globe.core.PolarHazardWindow.hazardProgress(latDeg);
-            boolean unaffected = player.isCreative() || player.isSpectator();
 
             // FROST VISUAL every tick. frostVisualTicks builds 0 -> 140 across 87.5 -> ~88 and holds at/above
             // 140 to the pole, so it CROSSES vanilla's fully-frozen threshold at the ~88 deg damage onset --
@@ -487,18 +588,30 @@ public class GlobeMod implements ModInitializer {
             // writer each tick (the entity-tracker broadcast reads it before aiStep's decay), so the client
             // reliably sees our value and the blue hearts don't flicker.
             if (!unaffected) {
-                player.setTicksFrozen(com.example.globe.core.PolarHazardWindow.frostVisualTicks(progress));
+                // F3 composite: never set BELOW the active frostbite cue floor (relevant only in [87.5,88),
+                // where the lethal ramp is still climbing 0->140 and the cue floor is at ~117-140; max() keeps
+                // the frost monotone across the hand-off instead of popping down at 87.5).
+                player.setTicksFrozen(Math.max(
+                        com.example.globe.core.PolarHazardWindow.frostVisualTicks(progress), frostCueFloor));
             }
 
             // Scaled freeze DAMAGE: begins ~88 deg and gets worse toward the pole. The interval shrinks
             // (60 -> 10 ticks) and the amount grows (1 -> 3 HP) with latitude, applied on the server's own
             // cadence (worldTime % interval) -- stateless, no per-player accumulator. Same freeze damage
             // type/death as vanilla; only the timing is ours.
-            if (!unaffected && com.example.globe.core.PolarHazardWindow.appliesFreezeDamage(progress)) {
+            // S4/S5(c): the lethal core pauses while genuinely sheltered or inside the post-crossing grace
+            // window -- same pause law as the frostbite band (one rule, one story: walls stop the bleeding).
+            if (!unaffected && !coldDamagePaused
+                    && com.example.globe.core.PolarHazardWindow.appliesFreezeDamage(progress)) {
                 int interval = com.example.globe.core.PolarHazardWindow.freezeDamageIntervalTicks(progress);
                 if (worldTime % (long) interval == 0L) {
-                    float amount = com.example.globe.core.PolarHazardWindow.freezeDamageAmount(progress);
-                    player.hurtServer(overworld, overworld.damageSources().freeze(), amount);
+                    // B-7 S1: scale the lethal-core amount by the cold-protection multiplier at this single
+                    // computed-amount point (interval unchanged, per the design). Full freeze-immune set -> 0.
+                    float amount = com.example.globe.core.PolarHazardWindow.freezeDamageAmount(progress)
+                            * (float) com.example.globe.core.ColdProtection.damageMultiplier(coldProtectionPieceCount(player));
+                    if (amount > 0.0f) {
+                        player.hurtServer(overworld, overworld.damageSources().freeze(), amount);
+                    }
                 }
             }
 
@@ -526,16 +639,20 @@ public class GlobeMod implements ModInitializer {
     }
 
     /**
-     * B-5 Hemisphere Passage: handle a player's answer to the crossing prompt, on the server thread. NEVER
-     * trusts the client -- re-derives the authoritative edge distance and rejects anything not in the prompt
-     * band. Guards (in order): feature flag on; player alive + not removed (died/disconnected between answer
-     * and processing); in the globe overworld; within the prompt band; per-player cross cooldown
-     * ({@link #PASSAGE_CROSS_COOLDOWN_TICKS}, HIGH-2 idempotency). Creative/spectator MAY cross (crossing
-     * is allowed for everyone), but are EXEMPT from the turn-back push.
+     * B-5/B-7 Hemisphere Passage: handle a player's answer to a crossing prompt, on the server thread, ROUTED
+     * BY AXIS. NEVER trusts the client -- re-derives the authoritative distance to that edge and rejects
+     * anything not in the prompt band. Guards (in order): the axis's feature flag on ({@code PASSAGE_V2_ENABLED}
+     * for EW, {@code POLE_PASSAGE_V2_ENABLED} for POLE); player alive + not removed; in the globe overworld;
+     * within the prompt band for that axis; the axis surface gate (EW: not deep-underground; POLE: not
+     * in-water/no-sky, S2 groundwork); the SHARED per-player cross cooldown ({@link #PASSAGE_CROSS_COOLDOWN_TICKS},
+     * HIGH-2 idempotency). Creative/spectator MAY cross, but are EXEMPT from the turn-back push.
      */
-    private static void handlePassageAnswer(ServerPlayer player, boolean cross) {
-        if (!com.example.globe.core.LatitudeV2Flags.PASSAGE_V2_ENABLED) {
-            return; // feature off: every answer ignored, live edge behavior untouched.
+    private static void handlePassageAnswer(ServerPlayer player, boolean cross, PassageAxis axis) {
+        boolean flagOn = axis == PassageAxis.POLE
+                ? com.example.globe.core.LatitudeV2Flags.POLE_PASSAGE_V2_ENABLED
+                : com.example.globe.core.LatitudeV2Flags.PASSAGE_V2_ENABLED;
+        if (!flagOn) {
+            return; // this axis is off: every answer ignored, live behavior untouched.
         }
         if (player == null || player.isRemoved() || !player.isAlive()) {
             return; // no-op cleanly if the player died/left between answering and this tick.
@@ -546,68 +663,314 @@ public class GlobeMod implements ModInitializer {
             return; // must be standing in the globe overworld.
         }
         WorldBorder answerBorder = world.getWorldBorder();
-        double distToEdge = distanceToEwEdgeBlocks(answerBorder, player.getX());
-        // Re-derive the prompt distance from the SAME intended X radius the client armed on (never the live
-        // border half), so client and server agree even mid-lerp. serverAcceptsCross adds its own inland slack.
-        double xRadiusIntended = com.example.globe.util.LatitudeMath.intendedXRadius(answerBorder);
-        double promptAt = com.example.globe.core.EdgeGeometry.resolve(xRadiusIntended).promptDist();
+        // Distance + prompt line for THIS axis, both anchored to the mod's synced intended radius (never the
+        // live/lerping border half), so client and server agree even mid-lerp. serverAcceptsCross adds slack.
+        double distToEdge;
+        double promptAt;
+        if (axis == PassageAxis.POLE) {
+            int zRadius = LatitudeBiomes.getActiveRadiusBlocks();
+            if (zRadius <= 0) {
+                zRadius = (int) Math.round(com.example.globe.util.LatitudeMath.latitudeRadius(answerBorder));
+            }
+            distToEdge = com.example.globe.core.PoleGeometry.distanceToPole(zRadius, answerBorder.getCenterZ(), player.getZ());
+            promptAt = com.example.globe.core.PoleGeometry.resolve(zRadius).promptDist();
+        } else {
+            distToEdge = distanceToEwEdgeBlocks(answerBorder, player.getX());
+            double xRadiusIntended = com.example.globe.util.LatitudeMath.intendedXRadius(answerBorder);
+            promptAt = com.example.globe.core.EdgeGeometry.resolve(xRadiusIntended).promptDist();
+        }
         if (!com.example.globe.core.HemispherePassage.serverAcceptsCross(distToEdge, promptAt)) {
-            LOGGER.warn("[Latitude][Passage] Rejected answer from {} cross={} distToEdge={} promptAt={} (not in prompt band; possible spoof)",
-                    player.getName().getString(), cross, distToEdge, promptAt);
+            LOGGER.warn("[Latitude][Passage] Rejected {} answer from {} cross={} distToEdge={} promptAt={} (not in prompt band; possible spoof)",
+                    axis, player.getName().getString(), cross, distToEdge, promptAt);
             return;
         }
-        // Item 2 (surface-only), belt-and-suspenders: the client freezes the prompt underground, but a STALE
-        // client prompt (armed at the surface, then answered after descending) could still send an answer from
-        // below ground. Re-derive "deep underground" server-side (same seaLevel-2 + no-sky test) and reject it,
-        // so a cross can never fire from a cave -- underground there is only the vanilla border wall.
-        if (isDeepUnderground(world, player)) {
+        // Surface gate (belt-and-suspenders; the client also freezes the prompt). EW rejects a deep-underground
+        // sender; POLE rejects an in-water OR no-sky sender (S2 groundwork) -- an under-ice swimmer or cave
+        // explorer must not cross; the pole crossing is a surface act.
+        if (axis == PassageAxis.POLE) {
+            if (isInWaterOrNoSky(world, player)) {
+                LOGGER.warn("[Latitude][PolePassage] Rejected answer from {} cross={} (in-water/no-sky; pole crossing is surface-only)",
+                        player.getName().getString(), cross);
+                return;
+            }
+        } else if (isDeepUnderground(world, player)) {
             LOGGER.warn("[Latitude][Passage] Rejected answer from {} cross={} (underground; passage is surface-only)",
                     player.getName().getString(), cross);
             return;
         }
         if (cross) {
-            // HIGH-2 idempotency guard: reject a repeat cross inside the cooldown window. Without this, two
-            // cross=true payloads in one tick both validate (the mirror preserves border distance) and the
-            // player teleports there-and-back with a double ring-load + double S2C.
+            // HIGH-2 idempotency guard (SHARED across axes): reject a repeat cross inside the cooldown window.
             long now = world.getGameTime();
             Long lastCross = PASSAGE_LAST_CROSS_TICK.get(player.getUUID());
             if (lastCross != null && (now - lastCross) < PASSAGE_CROSS_COOLDOWN_TICKS) {
-                LOGGER.warn("[Latitude][Passage] Rejected repeat cross from {} within cooldown ({} of {} ticks)",
-                        player.getName().getString(), now - lastCross, PASSAGE_CROSS_COOLDOWN_TICKS);
+                LOGGER.warn("[Latitude][Passage] Rejected repeat {} cross from {} within cooldown ({} of {} ticks)",
+                        axis, player.getName().getString(), now - lastCross, PASSAGE_CROSS_COOLDOWN_TICKS);
                 return;
             }
-            BlockPos arrival = HemispherePassageService.crossHemisphere(player);
+            BlockPos arrival = axis == PassageAxis.POLE
+                    ? HemispherePassageService.crossPole(player)
+                    : HemispherePassageService.crossHemisphere(player);
             if (arrival != null) {
                 PASSAGE_LAST_CROSS_TICK.put(player.getUUID(), now);
-                // Per-player S2C ONLY (never broadcast). P2 consumes it for the arrival ceremony and to seed
-                // the client arm state disarmed-in-band (mirror lands at the identical border distance).
-                ServerPlayNetworking.send(player, new GlobeNet.PassageArrivalPayload(arrival.getX()));
+                if (axis == PassageAxis.POLE) {
+                    // S5(c): stamp the one-shot post-crossing cold grace -- the S5 arrival lands at 89.5 deg
+                    // (~2.27 HP/s) behind the opaque arrival curtain, so cold damage (both bands) + the F3 cue
+                    // are suppressed for the ceremony window only. Re-stamped only by a NEW successful crossing.
+                    POLE_CROSS_COLD_GRACE_UNTIL.put(player.getUUID(),
+                            com.example.globe.core.PoleCrossingGrace.graceUntil(now));
+                }
+                // Per-player S2C ONLY (never broadcast). P2 consumes it for the arrival ceremony + to seed the
+                // right client arm disarmed-in-band. Carries the axis and the arrival (X,Z).
+                ServerPlayNetworking.send(player, new GlobeNet.PassageArrivalPayload(axis, arrival.getX(), arrival.getZ()));
             }
         } else {
             if (player.isCreative() || player.isSpectator()) {
                 return; // exempt from push-back.
             }
-            PENDING_PASSAGE_TURN_BACK.add(player.getUUID()); // one-shot nudge, applied next tick in borderUxTick.
+            PENDING_PASSAGE_TURN_BACK.put(player.getUUID(), axis); // one-shot nudge, applied next tick.
         }
     }
 
     /**
-     * Apply (and consume) a pending B-5 turn-back nudge for {@code player}: a SINGLE gentle velocity impulse
-     * toward center-X, then the player is free. A per-tick push would fight input (the vetoed hard yank), so
-     * this fires exactly once. Skips creative/spectator (belt + suspenders; also filtered at enqueue time).
+     * Apply (and consume) a pending B-5/B-7 turn-back nudge for {@code player}: a SINGLE gentle velocity impulse
+     * back toward center on the DECLINED axis (EW: toward center-X; POLE: equatorward toward center-Z), then the
+     * player is free. A per-tick push would fight input (the vetoed hard yank), so this fires exactly once. Gates
+     * on the declined axis's feature flag and skips creative/spectator (belt + suspenders; also filtered at
+     * enqueue time).
      */
     private static void applyPendingPassageTurnBack(ServerPlayer player, WorldBorder border) {
-        if (!PENDING_PASSAGE_TURN_BACK.remove(player.getUUID())) {
+        PassageAxis axis = PENDING_PASSAGE_TURN_BACK.remove(player.getUUID());
+        if (axis == null) {
+            return;
+        }
+        boolean flagOn = axis == PassageAxis.POLE
+                ? com.example.globe.core.LatitudeV2Flags.POLE_PASSAGE_V2_ENABLED
+                : com.example.globe.core.LatitudeV2Flags.PASSAGE_V2_ENABLED;
+        if (!flagOn) {
             return;
         }
         if (player.isCreative() || player.isSpectator()) {
             return;
         }
-        double centerX = border.getCenterX();
-        double dir = player.getX() >= centerX ? -1.0 : 1.0; // steer back toward the world center.
         net.minecraft.world.phys.Vec3 v = player.getDeltaMovement();
-        player.setDeltaMovement(v.x + dir * PASSAGE_TURN_BACK_IMPULSE, v.y, v.z);
+        if (axis == PassageAxis.POLE) {
+            double centerZ = border.getCenterZ();
+            double dir = player.getZ() >= centerZ ? -1.0 : 1.0; // steer equatorward (toward center Z).
+            player.setDeltaMovement(v.x, v.y, v.z + dir * PASSAGE_TURN_BACK_IMPULSE);
+        } else {
+            double centerX = border.getCenterX();
+            double dir = player.getX() >= centerX ? -1.0 : 1.0; // steer back toward center X.
+            player.setDeltaMovement(v.x + dir * PASSAGE_TURN_BACK_IMPULSE, v.y, v.z);
+        }
         player.hurtMarked = true; // force the velocity to broadcast to the client (vanilla knockback idiom).
+    }
+
+    /**
+     * B-7 S1 cold protection: count how many of the player's four armor slots ({@link #COLD_ARMOR_SLOTS}) carry
+     * an item in the vanilla {@code freeze_immune_wearables} tag (leather by default, datapack-extensible per the
+     * vanilla-first law). The thin MC shim feeding {@link com.example.globe.core.ColdProtection}; 0..4.
+     */
+    private static int coldProtectionPieceCount(ServerPlayer player) {
+        int count = 0;
+        for (EquipmentSlot slot : COLD_ARMOR_SLOTS) {
+            ItemStack stack = player.getItemBySlot(slot);
+            if (!stack.isEmpty() && stack.is(holder -> holder.is(ItemTags.FREEZE_IMMUNE_WEARABLES))) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    /**
+     * B-7 S2/item 8: the pole surface gate -- true if the player is in water OR has no sky overhead. Broader than
+     * {@link #isDeepUnderground} (the EW gate) by design: an under-ice swimmer (in water) and a cave explorer (no
+     * sky) must BOTH be denied the pole crossing (the belt-and-suspenders sibling of B-5's underground reject;
+     * the primary client-side suppression is P2's). Binary {@code canSeeSky} is CORRECT here -- prompt gates want
+     * conservative-deny -- unlike the S4 shelter rule, which needs the graded {@link #isColdSheltered} read.
+     */
+    private static boolean isInWaterOrNoSky(ServerLevel world, ServerPlayer player) {
+        return player.isInWater() || !world.canSeeSky(player.blockPosition().above());
+    }
+
+    /**
+     * B-7 S4 shelter shim: RAW SKY LIGHT at the player's eye position, fed to the pure
+     * {@link com.example.globe.core.ColdShelter} classifier (sheltered iff {@code <= 3}). Raw sky light is
+     * graded and trap-proof where binary {@code canSeeSky} is not: the single-overhead-log trap reads ~11-13
+     * (side-lit, still exposed) while a sealed hut/cave/snow burrow reads 0-2 -- and it is time-of-day
+     * independent (night darkness lives in skyDarken, not the stored light).
+     */
+    private static boolean isColdSheltered(ServerLevel world, ServerPlayer player) {
+        BlockPos eye = BlockPos.containing(player.getX(), player.getEyeY(), player.getZ());
+        int rawSkyLight = world.getLightEngine().getLayerListener(LightLayer.SKY).getLightValue(eye);
+        return com.example.globe.core.ColdShelter.isSheltered(rawSkyLight);
+    }
+
+    /** B-7 S5(c) shim: is the post-pole-crossing cold-grace window still open for this player? Lazily drops the
+     *  map entry once it lapses (the one-shot can only be re-opened by a NEW successful crossing). */
+    private static boolean isPoleCrossColdGraceActive(ServerPlayer player, long worldTime) {
+        Long until = POLE_CROSS_COLD_GRACE_UNTIL.get(player.getUUID());
+        if (until == null) {
+            return false;
+        }
+        if (!com.example.globe.core.PoleCrossingGrace.isActive(until, worldTime)) {
+            POLE_CROSS_COLD_GRACE_UNTIL.remove(player.getUUID());
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * B-7 S6 warmth shim: is a {@link com.example.globe.core.PolarWarmth} source within the ~4-block box
+     * (9x5x9) around the player? The 405-block scan is cached per player for {@link #WARMTH_RESCAN_TICKS}
+     * (~1 s) so the per-tick cold section and heal-time lock checks share one scan; callers only invoke this
+     * for SHELTERED polar players (the short-circuit order zone -&gt; shelter -&gt; scan), so the cost is a
+     * campfire-hut nicety, not a world tax.
+     */
+    private static boolean isNearWarmthCached(ServerLevel world, ServerPlayer player, long worldTime) {
+        long[] cached = POLE_WARMTH_CACHE.get(player.getUUID());
+        if (cached != null && (worldTime - cached[0]) < WARMTH_RESCAN_TICKS && worldTime >= cached[0]) {
+            return cached[1] != 0L;
+        }
+        boolean warm = scanForWarmth(world, player.blockPosition());
+        POLE_WARMTH_CACHE.put(player.getUUID(), new long[]{worldTime, warm ? 1L : 0L});
+        return warm;
+    }
+
+    /** The raw S6 box scan: feed every block state in the 9x5x9 box through the pure
+     *  {@link com.example.globe.core.PolarWarmth#isWarmBlock} classifier (registry id + LIT; blocks without a
+     *  LIT property pass {@code lit=true}, which the classifier ignores for anything outside the warm set). */
+    private static boolean scanForWarmth(ServerLevel world, BlockPos center) {
+        BlockPos.MutableBlockPos m = new BlockPos.MutableBlockPos();
+        for (int dy = -WARMTH_SCAN_RADIUS_Y; dy <= WARMTH_SCAN_RADIUS_Y; dy++) {
+            for (int dx = -WARMTH_SCAN_RADIUS_XZ; dx <= WARMTH_SCAN_RADIUS_XZ; dx++) {
+                for (int dz = -WARMTH_SCAN_RADIUS_XZ; dz <= WARMTH_SCAN_RADIUS_XZ; dz++) {
+                    m.set(center.getX() + dx, center.getY() + dy, center.getZ() + dz);
+                    BlockState state = world.getBlockState(m);
+                    if (state.isAir()) {
+                        continue;
+                    }
+                    Identifier id = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(state.getBlock());
+                    boolean lit = !state.hasProperty(BlockStateProperties.LIT)
+                            || state.getValue(BlockStateProperties.LIT);
+                    if (com.example.globe.core.PolarWarmth.isWarmBlock(id.getNamespace(), id.getPath(), lit)) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * B-7 S6 (FROZEN WOUNDS): the heal-lock gate, called by {@code LivingEntityHealLockMixin} at the single
+     * {@code LivingEntity.heal} chokepoint. TRUE cancels the heal. Pure predicate applied AT HEAL TIME -- no
+     * cumulative pool, no persistent state ({@link com.example.globe.core.PolarWounds#healLocked}): locked iff
+     * a survival/adventure player in a globe overworld is inside the polar cold zone
+     * ({@code |lat| >= 85}), genuinely sheltered (S4 {@link #isColdSheltered}), and NOT near a
+     * {@link com.example.globe.core.PolarWarmth} source ("only the warmth of a fire mends them"). Everything
+     * else -- other mobs, other dimensions, non-globe worlds, sub-85 latitudes, exposed players, players by a
+     * fire -- heals 100% vanilla. The S5 post-crossing grace is deliberately NOT consulted (grace suppresses
+     * damage + cue only; an arriving crosser is exposed, so the lock is off anyway). Accepted v1 edges:
+     * golden-apple ABSORPTION is not a heal() and passes; dev setHealth writes bypass heal().
+     */
+    public static boolean isPolarHealLocked(net.minecraft.world.entity.LivingEntity entity) {
+        if (!(entity instanceof ServerPlayer player)) {
+            return false;
+        }
+        if (player.isCreative() || player.isSpectator()) {
+            return false;
+        }
+        if (!(player.level() instanceof ServerLevel level) || !isGlobeOverworld(level)) {
+            return false;
+        }
+        double latDeg = com.example.globe.util.LatitudeMath.absLatDegExact(level.getWorldBorder(), player.getZ());
+        boolean inColdZone = latDeg >= com.example.globe.core.PolarHazardWindow.FROSTBITE_ONSET_DEG;
+        if (!inColdZone) {
+            return false;
+        }
+        boolean sheltered = isColdSheltered(level, player);
+        if (!sheltered) {
+            return false;
+        }
+        boolean nearWarmth = isNearWarmthCached(level, player, level.getGameTime());
+        return com.example.globe.core.PolarWounds.healLocked(true, true, nearWarmth);
+    }
+
+    /**
+     * B-7 S2: the Wide-world pole hard stop. On a Wide (Mercator) world the square vanilla border is sized to the
+     * WIDER X axis, so the pole line at {@code |z| = zRadius} is interior and unwalled -- an endless death plain.
+     * This clamps a survival/adventure player's position/velocity back to that line (a lightweight
+     * position-correction packet -- NOT an entity teleport, NOT a wrap, NOT worldgen). Classic worlds already
+     * wall the pole with the vanilla border, so this no-ops there. Creative/spectator fly past. Skips the tick a
+     * crossing fired for this player (the crossing owns the position that tick). Fires the presentable
+     * rate-limited contact event on engagement.
+     */
+    private static void applyPoleHardStop(ServerPlayer player, WorldBorder border, long worldTime) {
+        if (!LatitudeBiomes.isMercator()) {
+            return; // Classic: the vanilla square border already walls |z| = zRadius.
+        }
+        if (player.isCreative() || player.isSpectator()) {
+            return; // free flight past the pole line.
+        }
+        Long lastCross = PASSAGE_LAST_CROSS_TICK.get(player.getUUID());
+        if (lastCross != null && lastCross == worldTime) {
+            return; // a crossing fired this tick -- it owns the position; don't fight it.
+        }
+        int zRadius = LatitudeBiomes.getActiveRadiusBlocks();
+        // Pure engagement decision (PoleHardStop owns epsilon/clampedZ/outward-sign; zRadius <= 0 never engages).
+        com.example.globe.core.PoleHardStop.Decision d = com.example.globe.core.PoleHardStop.evaluate(
+                player.getZ(), border.getCenterZ(), zRadius, com.example.globe.core.PoleHardStop.CLAMP_EPSILON);
+        if (!d.engaged()) {
+            return;
+        }
+        // F1 (sweep MEDIUM): a MOUNTED player must not ride through the wall -- the vehicle re-derives the
+        // passenger from its own un-clamped position, so correcting only the player is a no-op while riding.
+        // Parity + simplicity: dismount first (the same discipline the crossing uses), then clamp the player;
+        // and kill the vehicle's own outward-Z momentum under the SAME pure law so the horse/boat stops at the
+        // wall beside its rider instead of coasting past it. (Vanilla's border blocks vehicles physically;
+        // dismount-at-the-line is our equivalent -- documented parity choice.)
+        if (player.isPassenger()) {
+            net.minecraft.world.entity.Entity vehicle = player.getVehicle();
+            player.stopRiding();
+            if (vehicle != null) {
+                net.minecraft.world.phys.Vec3 vv = vehicle.getDeltaMovement();
+                vehicle.setDeltaMovement(vv.x, vv.y,
+                        com.example.globe.core.PoleHardStop.killOutwardZ(vv.z, d.outwardSign()));
+            }
+        }
+        // Kill the player's OUTWARD Z velocity (keep inward/lateral motion) so momentum toward the pole dies.
+        net.minecraft.world.phys.Vec3 v = player.getDeltaMovement();
+        player.setDeltaMovement(v.x, v.y, com.example.globe.core.PoleHardStop.killOutwardZ(v.z, d.outwardSign()));
+        // Snap the position back to the line via a position-correction packet (vanilla-border-like rubber-band).
+        player.connection.teleport(player.getX(), player.getY(), d.clampedZ(), player.getYRot(), player.getXRot());
+        player.hurtMarked = true;
+        emitPoleClampContact(player, d.clampedZ(), worldTime);
+    }
+
+    /**
+     * The presentable pole-clamp contact event (owner amendment 2026-07-13): so an invisible wall never confuses
+     * a swimmer or spelunker. Rate-limited to ~2 s per player by TICK COUNTER (never wall-clock,
+     * {@link com.example.globe.core.PoleClampContact}); plays a frost/glass chime at the contact point and sends
+     * an action-bar line whose wording is chosen by whether the player is in water. Logs the FIRST contact once
+     * per session. Richer presentation (particles / a keyline plane) is P2's.
+     */
+    private static void emitPoleClampContact(ServerPlayer player, double contactZ, long worldTime) {
+        long last = POLE_CLAMP_LAST_CONTACT_TICK.getOrDefault(player.getUUID(),
+                com.example.globe.core.PoleClampContact.NEVER);
+        if (!com.example.globe.core.PoleClampContact.shouldEmit(last, worldTime,
+                com.example.globe.core.PoleClampContact.CONTACT_COOLDOWN_TICKS)) {
+            return;
+        }
+        POLE_CLAMP_LAST_CONTACT_TICK.put(player.getUUID(), worldTime);
+        boolean inWater = player.isInWater();
+        ServerLevel world = (ServerLevel) player.level();
+        world.playSound(null, player.getX(), player.getY(), contactZ,
+                SoundEvents.GLASS_HIT, SoundSource.BLOCKS, 0.7f, 0.8f);
+        player.sendSystemMessage(Component.literal(com.example.globe.core.PoleClampContact.message(inWater)), true);
+        if (POLE_CLAMP_LOGGED.add(player.getUUID())) {
+            LOGGER.info("[Latitude][PolePassage] Pole hard-stop first contact for {} at z={} (inWater={})",
+                    player.getName().getString(), contactZ, inWater);
+        }
     }
 
     /** Server-side blocks to the nearest E/W world-border edge ({@code >= 0}), anchored to the mod's INTENDED
@@ -665,6 +1028,13 @@ public class GlobeMod implements ModInitializer {
      * vanilla. Mirrors {@link #borderUxTick}'s own in-band test (isGlobeOverworld + absLatDegExact &gt;=
      * {@link com.example.globe.core.PolarHazardWindow#HAZARD_ONSET_DEG} + not creative/spectator) so the two
      * can never drift apart.
+     *
+     * <p><b>Accepted niche (B-7 F5): powder-snow double-dip in the frostbite band {@code [85,87.5)}.</b> This
+     * gate starts at the HAZARD onset (87.5), so vanilla's own powder-snow auto-freeze damage is NOT suppressed
+     * in the frostbite band -- a player standing fully-buried IN powder snow there can take vanilla's
+     * 1 HP/40t on top of the S3 frostbite nibble. Accepted as-is: it requires deliberate burial in powder snow
+     * (not mere polar presence), reads as "buried in powder snow hurts extra" (true), and widening this gate to
+     * 85 would silently disable REAL powder-snow freezing across the whole frostbite band -- a worse lie.
      */
     public static boolean isInPolarFreezeDamageBand(net.minecraft.world.entity.LivingEntity entity) {
         if (!(entity instanceof ServerPlayer player)) {
@@ -986,8 +1356,12 @@ public class GlobeMod implements ModInitializer {
     /**
      * Pure biome-source probe — no chunk generation. Returns true if the biome
      * at (blockX, blockZ) is land (not ocean or river).
+     *
+     * <p>Package-private (was private): the B-7 pole-crossing arrival search
+     * ({@link HemispherePassageService#resolvePoleArrival}) reuses it for surface-class (land-vs-ocean) arrival
+     * matching -- the same no-chunk-gen idiom, one source of truth.
      */
-    private static boolean isLandBiome(SamplerTemplate template,
+    static boolean isLandBiome(SamplerTemplate template,
                                         Climate.Sampler sampler,
                                         int blockX, int blockZ,
                                         int classifyY, int radiusBlocks) {
