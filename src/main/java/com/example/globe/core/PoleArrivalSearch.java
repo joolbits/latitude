@@ -37,10 +37,35 @@ public final class PoleArrivalSearch {
     public static final int PREFERRED_PROBE_BUDGET = 24;
 
     /**
+     * The ANTIPODAL-MERIDIAN X for the pole crossing [P3 fix 2026-07-14: antipodal meridian, not mirrorX].
+     * Walking over a pole must land you on the meridian 180 degrees of LONGITUDE away: {@code L -> L + 180}.
+     * In block space (longitude = {@code dx / xRadius * 180}) that is
+     * {@code targetX = centerX + dx - sign(dx) * xRadiusIntended} -- NOT {@code mirrorX} ({@code dx -> -dx}),
+     * which is the EAST/WEST antimeridian formula ({@code L -> -L}) and is geographically wrong for a pole
+     * (the owner's TEST 97 flight: crossed at ~13 deg E, mirrorX landed him at 13 deg W instead of 167 deg W).
+     * Properties: the E/W hemisphere still flips (the result's {@code dx} has magnitude
+     * {@code xRadius - |dx|} on the OPPOSITE side); longitude 0 (the prime meridian) maps to the
+     * antimeridian +-180.
+     *
+     * <p><b>Explicit {@code sign(0)} convention + the corner case.</b> {@code dx == 0} takes the {@code >= 0}
+     * (east) branch and maps to the WEST edge ({@code centerX - xRadiusIntended}) -- +180 and -180 are the SAME
+     * meridian, so either edge is geographically correct; we pick one deterministically. That result (and any
+     * near-prime-meridian crossing) lands ON/NEAR the E/W border corner -- the existing A2 corner clamp
+     * ({@link #xClampAbs} via {@link #clampX}, applied to the target AND every search candidate) pulls it
+     * inward, equatorward of the whole EW ceremony band. Callers MUST clamp the result (the service does).
+     */
+    public static double antipodalX(double x, double centerX, double xRadiusIntended) {
+        double dx = x - centerX;
+        double sign = dx >= 0.0 ? 1.0 : -1.0; // sign(0) = +1: the prime meridian maps to the WEST edge.
+        return centerX + dx - sign * xRadiusIntended;
+    }
+
+    /**
      * The corner X-clamp half-extent (A2): {@code xRadiusIntended - EW rearmDist - }{@link #EW_MARGIN_BLOCKS},
-     * clamped {@code >= 0}. Every mirrored target and every ±X search candidate must satisfy
-     * {@code |x - centerX| <= this}, so a pole crossing that mirrors a corner player (high |x| AND high |z|) can
-     * never land them inside the EW passage band. Pure function of the intended X radius (reuses the pure
+     * clamped {@code >= 0}. Every antipodal target and every ±X search candidate must satisfy
+     * {@code |x - centerX| <= this}, so a pole crossing whose antipodal meridian lands near the E/W border
+     * corner (any near-prime-meridian departure -- see {@link #antipodalX}) can never dump the player inside
+     * the EW passage band. Pure function of the intended X radius (reuses the pure
      * {@link EdgeGeometry#resolve}).
      */
     public static double xClampAbs(double xRadiusIntended) {

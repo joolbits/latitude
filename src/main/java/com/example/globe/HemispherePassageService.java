@@ -203,11 +203,14 @@ public final class HemispherePassageService {
      * this trusts them and only does the safe mechanical move. Returns the arrival position, or {@code null} if
      * no safe column was found (in which case the player was NOT moved).
      *
-     * <p><b>Over-the-pole continuity (design §3.3).</b> The player emerges on the FAR MERIDIAN (mirror X), on the
-     * SAME pole side (Z sign kept, pulled to the 89.5 deg S5 arrival line -- deep in the far blizzard), heading REVERSED
-     * ({@code yaw + 180}, wrapped) -- walking north over the pole comes out walking south. This absolute-yaw
-     * override is the ONLY delta vs the EW crossing (which keeps yaw); pitch is preserved and momentum zeroed for
-     * ceremony parity, and the dismount is kept (no vehicle-carry across the seam).
+     * <p><b>Over-the-pole continuity (design §3.3) [P3 fix 2026-07-14: antipodal meridian, not mirrorX].</b>
+     * The player emerges on the ANTIPODAL MERIDIAN -- longitude {@code L -> L + 180}, i.e.
+     * {@code PoleArrivalSearch.antipodalX} -- on the SAME pole side (Z sign kept, pulled to the 89.5 deg S5
+     * arrival line, deep in the far blizzard), heading REVERSED ({@code yaw + 180}, wrapped): walking north
+     * over the pole comes out walking south on the far meridian. NOT {@code mirrorX} ({@code L -> -L}) -- that
+     * is the EAST/WEST antimeridian formula, and the TEST 97 flight proved it wrong here (13 deg E landed at
+     * 13 deg W instead of 167 deg W). Pitch is preserved and momentum zeroed for ceremony parity, and the
+     * dismount is kept (no vehicle-carry across the seam).
      */
     static BlockPos crossPole(ServerPlayer player) {
         ServerLevel world = (ServerLevel) player.level();
@@ -217,9 +220,9 @@ public final class HemispherePassageService {
                     player.getName().getString(), player.getX(), player.getZ(), PROBE_BUDGET);
             return null;
         }
-        // Heading reverses across the pole: a straight line over the pole flips both horizontal components, which
-        // the mirror-X + far-side re-entry realises exactly as yaw+180 (absolute, same mechanism B-5 uses for its
-        // yaw pass-through). Wrapped to [-180,180].
+        // Heading reverses across the pole: a straight line over the pole flips both horizontal components,
+        // which the antipodal-meridian re-entry realises exactly as yaw+180 (absolute, same mechanism B-5 uses
+        // for its yaw pass-through). Wrapped to [-180,180].
         float arrivalYaw = Mth.wrapDegrees(player.getYRot() + 180.0f);
         // Dismount first: no mount-carry across the seam, no ghost vehicle at the origin.
         player.stopRiding();
@@ -234,10 +237,12 @@ public final class HemispherePassageService {
 
     /**
      * Resolve the safe over-the-pole arrival column for a player at ({@code playerX},{@code playerZ}), or
-     * {@code null} if none was found within {@link #PROBE_BUDGET} probes. The target is the far meridian
-     * ({@code mirrorX}) at the SAME pole side pulled to the 89.5 deg S5 arrival latitude; the primary search walks the
-     * arrival PARALLEL (+/-X at the fixed arrival Z), bounded EVERY candidate by the corner X-clamp (A2:
-     * {@link PoleArrivalSearch#xClampAbs}) so a corner crossing can never land in the EW passage band; the
+     * {@code null} if none was found within {@link #PROBE_BUDGET} probes. The target is the ANTIPODAL MERIDIAN
+     * ({@link PoleArrivalSearch#antipodalX}, longitude {@code L -> L+180} -- [P3 fix 2026-07-14: antipodal
+     * meridian, not mirrorX]) at the SAME pole side pulled to the 89.5 deg S5 arrival latitude; the primary
+     * search walks the arrival PARALLEL (+/-X at the fixed arrival Z), bounded EVERY candidate by the corner
+     * X-clamp (A2: {@link PoleArrivalSearch#xClampAbs}) so a corner crossing -- including the prime-meridian
+     * departure whose antipodal target IS the E/W border corner -- can never land in the EW passage band; the
      * last-resort nudge steps equatorward along Z toward center. A best-effort surface-class preference tries
      * SAME-medium (land-vs-ocean) columns first, then any-safe (mismatch beats no-op; safety is law). Every
      * arrival column additionally rejects a powder-snow landing (A4). Total {@code placeSafeY} probes are
@@ -250,16 +255,18 @@ public final class HemispherePassageService {
         int zRadius = poleLatitudeRadius(world);
         double xRadiusIntended = LatitudeMath.intendedXRadius(border);
 
-        // Target: far meridian (mirror X), SAME pole side, pulled to the 89.5 deg S5 arrival line (the escape
-        // trek is the arrival experience; the post-crossing cold grace covers the curtain window).
+        // Target: the ANTIPODAL meridian (L -> L+180, the P3 geographic fix -- mirrorX was the EW antimeridian
+        // formula and landed 13degE at 13degW), SAME pole side, pulled to the 89.5 deg S5 arrival line (the
+        // escape trek is the arrival experience; the post-crossing cold grace covers the curtain window).
         double sign = (playerZ - centerZ) >= 0.0 ? 1.0 : -1.0;
         int arrivalAbsZ = LatitudeMath.zForLatitudeDeg(PoleGeometry.ARRIVAL_DEG_POLE, zRadius);
         int targetZ = (int) Math.round(centerZ) + (int) Math.round(sign * arrivalAbsZ);
 
-        // A2 corner X-clamp: bound the mirrored target AND every +/-X candidate equatorward of the EW band.
+        // A2 corner X-clamp: bound the antipodal target AND every +/-X candidate equatorward of the EW band
+        // (a prime-meridian departure maps exactly onto the +-xRadius border corner; the clamp pulls it in).
         double xClampAbs = PoleArrivalSearch.xClampAbs(xRadiusIntended);
-        int mirroredX = (int) Math.round(HemispherePassage.mirrorX(playerX, centerX));
-        int baseX = PoleArrivalSearch.clampX(mirroredX, centerX, xClampAbs);
+        int antipodalX = (int) Math.round(PoleArrivalSearch.antipodalX(playerX, centerX, xRadiusIntended));
+        int baseX = PoleArrivalSearch.clampX(antipodalX, centerX, xClampAbs);
         int[] xs = PoleArrivalSearch.candidateXs(baseX, centerX, xClampAbs,
                 PoleArrivalSearch.ARRIVAL_SEARCH_STEP, PROBE_BUDGET);
 

@@ -300,6 +300,56 @@ public final class HemispherePassage {
         return distToEdge <= promptAt;
     }
 
+    // ---- B-7 P3 gesture AIM GATE (owner, TEST 97): "I was trying to break ice and kept having the prompt ----
+    // ---- pop up because I was clicking." A click that TARGETS something (a block being mined, an entity ----
+    // ---- being hit) is an ordinary interaction, never a border ask -- only a MISS (air) click may re-arm. ----
+
+    /** Crosshair hit kinds for {@link #rearmGestureArms(boolean, double, boolean, double, int)} -- mirrors
+     *  {@code net.minecraft.world.phys.HitResult.Type} (MISS/BLOCK/ENTITY) without an MC import so the aim
+     *  gate stays pure/unit-testable. The client shim maps {@code Minecraft.hitResult} onto these. */
+    public static final int GESTURE_HIT_MISS = 0;
+    /** The crosshair rests on a block (the player is mining/placing/using it) -- gesture suppressed. */
+    public static final int GESTURE_HIT_BLOCK = 1;
+    /** The crosshair rests on an entity (the player is attacking/using it) -- gesture suppressed. */
+    public static final int GESTURE_HIT_ENTITY = 2;
+
+    /**
+     * The aim-gated re-prompt gesture predicate (B-7 P3, both axes): identical to
+     * {@link #rearmGestureArms(boolean, double, boolean, double)} plus the crosshair AIM GATE -- the gesture
+     * only counts when the click targets NOTHING ({@link #GESTURE_HIT_MISS}: air/out-of-reach). A click whose
+     * crosshair rests on a block or an entity is an ordinary mine/attack/use and is suppressed, so breaking
+     * ice at the wall can never re-summon the prompt. The 4-arg base predicate is untouched (its semantics are
+     * pinned by the existing tests); this wrapper is what the client arms (EW and POLE) call.
+     */
+    public static boolean rearmGestureArms(boolean armed, double distToEdge, boolean facingOutward,
+                                           double promptAt, int crosshairHitKind) {
+        if (crosshairHitKind != GESTURE_HIT_MISS) {
+            return false; // aiming at a block/entity: an ordinary click, never a border ask.
+        }
+        return rearmGestureArms(armed, distToEdge, facingOutward, promptAt);
+    }
+
+    // ---- B-7 P3 arrival legibility (owner, TEST 97): name the far meridian under the pole arrival title ----
+
+    /**
+     * The arrival meridian label for the pole-crossing subtitle, e.g. {@code "167°W"} (or {@code "0°"} at the
+     * prime meridian). Pure twin of {@code LatitudeMath.formatLongitudeDeg} (same conventions: longitude =
+     * {@code |x - centerX| / xRadius * 180} clamped to {@code [0,180]} and rounded; {@code W} = west of center,
+     * matching vanilla F3's "Towards negative X (West)" and the HUD) taking primitives so it is unit-testable
+     * without a {@code WorldBorder}. A degenerate radius or NaN {@code x} degrades to {@code "0°"}.
+     */
+    public static String farMeridianLabel(double x, double centerX, double xRadiusIntended) {
+        if (!(xRadiusIntended > 0.0) || Double.isNaN(x)) {
+            return "0°";
+        }
+        double norm = Math.min(1.0, Math.abs(x - centerX) / xRadiusIntended);
+        int deg = (int) Math.round(norm * 180.0);
+        if (deg == 0) {
+            return "0°";
+        }
+        return deg + "°" + (x < centerX ? 'W' : 'E');
+    }
+
     // ---- B-5-P2 approach fog (A2): pure distance->fog curves for the REAL DEPTH FOG mixin ----
     //
     // The approach to the E/W edge is NOT a flat screen tint (Peetsa vetoed that): it drives Minecraft's OWN

@@ -3,10 +3,11 @@ package com.example.globe.core;
 /**
  * Phase 5 Slice B-7 (Pole Passage) -- the PURE math of the S2 Wide-world pole hard-stop clamp. Zero Minecraft
  * imports (Core Logic layer, unit-testable in a plain JVM). The MC-coupled part ({@code GlobeMod
- * .applyPoleHardStop}: the Mercator/creative/crossing-tick gates, the position-correction packet, the F1
- * dismount, the contact chime) is a thin shim; the engagement decision, the clamped position, and the
- * outward-velocity kill live here so they are provable -- including that the SAME velocity law applies to a
- * dismounted player's VEHICLE (the F1 fix: a horse/boat must not sail on through the wall the rider just hit).
+ * .applyPoleHardStop}: the Mercator/gamemode/crossing-tick gates, the position-correction packet, the F1
+ * dismount, the contact chime) is a thin shim; the engagement decision, the clamped position, the
+ * outward-velocity kill, AND the gamemode exemption rule live here so they are provable -- including that the
+ * SAME velocity law applies to a dismounted player's VEHICLE (the F1 fix: a horse/boat must not sail on
+ * through the wall the rider just hit).
  */
 public final class PoleHardStop {
 
@@ -15,6 +16,19 @@ public final class PoleHardStop {
 
     /** Half-block tolerance so sub-block float jitter exactly at the pole line never triggers a clamp/packet. */
     public static final double CLAMP_EPSILON = 0.5;
+
+    /**
+     * Who may pass the wall [P3 fix 2026-07-14, owner-observed live]: ONLY spectators. The original P1 rule
+     * exempted creative too ("free flight past the pole line") -- WRONG parity: the vanilla world border stops
+     * creative flight cold, and the owner flew past 90 in creative on TEST 97 and found "no wall". True
+     * vanilla-border parity: creative players are clamped like survival (and get the same contact
+     * chime/action-bar); only spectator -- who no-clips through the vanilla border too -- passes. The
+     * CROSSING is unaffected: creative may still take the prompt and cross (that gate lives in
+     * {@code handlePassageAnswer}, not here).
+     */
+    public static boolean exemptFromClamp(boolean creative, boolean spectator) {
+        return spectator;
+    }
 
     /** Outcome of {@link #evaluate}: whether the clamp engages, the Z to snap back to (the pole line), and the
      *  outward sign (+1 south pole, -1 north pole) for velocity kills. */

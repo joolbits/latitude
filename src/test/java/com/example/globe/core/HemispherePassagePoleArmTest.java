@@ -137,4 +137,22 @@ class HemispherePassagePoleArmTest {
         // Sideways (yaw 90, due west) is outside the 60-deg cone on either half.
         assertFalse(HemispherePassage.facingPolewardZ(1000.0, CENTER, 90f, minCos));
     }
+
+    // ---- B-7 P3 gesture AIM GATE, pole flavor (owner, TEST 97: breaking ice at the pole wall kept ----
+    // ---- re-summoning the prompt -- only a MISS/air click may re-arm) ----
+
+    @Test
+    void poleGestureAimGateOnlyAcceptsAMissClick() {
+        PoleGeometry.Resolved g = regular();
+        // A qualifying pole gesture: disarmed, inside the prompt band, facing the nearer (south) pole.
+        boolean facingPole = HemispherePassage.facingPolewardZ(9000.0, CENTER, 0f,
+                HemispherePassage.REARM_GESTURE_FACING_MIN_COS);
+        assertTrue(facingPole, "sanity: south half facing south = poleward");
+        assertTrue(HemispherePassage.rearmGestureArms(false, g.promptDist(), facingPole, g.promptDist(),
+                HemispherePassage.GESTURE_HIT_MISS), "air click at the pole wall asks the border");
+        assertFalse(HemispherePassage.rearmGestureArms(false, g.promptDist(), facingPole, g.promptDist(),
+                HemispherePassage.GESTURE_HIT_BLOCK), "mining ice at the pole wall never re-prompts");
+        assertFalse(HemispherePassage.rearmGestureArms(false, g.promptDist(), facingPole, g.promptDist(),
+                HemispherePassage.GESTURE_HIT_ENTITY), "attacking an entity at the wall never re-prompts");
+    }
 }

@@ -148,6 +148,9 @@ public class GlobeModClient implements ClientModInitializer {
         ClientTickEvents.END_CLIENT_TICK.register(GlobeModClient::polarCapClientTick);
         // B-5-P2 Hemisphere Passage: the approach/prompt + crossing-curtain state machine (flag-gated internally).
         ClientTickEvents.END_CLIENT_TICK.register(com.example.globe.client.HemispherePassageClient::clientTick);
+        // B-7 P3: the vanilla-style forcefield plane at the Wide-world pole line (flag-gated internally --
+        // it presents the S2 hard-stop clamp, so it exists exactly when the clamp does).
+        com.example.globe.client.PoleWallRenderer.register();
         ClientKeybinds.init();
         if (FabricLoader.getInstance().isDevelopmentEnvironment()) {
             DevCaptureKeybind.init();
@@ -335,6 +338,13 @@ public class GlobeModClient implements ClientModInitializer {
 
         // 0 at/below 87 deg (gentle approach flurries), 1 at the pole (driven blizzard).
         double blizz = com.example.globe.core.PolarHazardWindow.blizzardDrive(absLatDeg);
+        // B-7 P3 DEEP-BLIZZARD ramp (owner order, TEST 97): 0 at/below DEEP_BLIZZARD_START_DEG (87), 1 at/past
+        // DEEP_BLIZZARD_FULL_DEG (89) -- steeper than blizzardDrive so the whiteout is FULL by 89, not 90.
+        double deepT = Math.min(1.0, Math.max(0.0,
+                (absLatDeg - DEEP_BLIZZARD_START_DEG) / (DEEP_BLIZZARD_FULL_DEG - DEEP_BLIZZARD_START_DEG)));
+        // The deep band's faster DOWNWARD fall (owner: "greater falling speed"; downward, not sideways -- the
+        // wind terms are untouched). 1.0 below 87, DEEP_BLIZZARD_FALL_MULT by 89+.
+        double fallBoost = 1.0 + deepT * (DEEP_BLIZZARD_FALL_MULT - 1.0);
 
         // Steady wind direction for this spawn burst (sign flips by which side of center the player is on,
         // like the EW storm) so the snowfall has a coherent slant instead of drifting symmetrically. The
@@ -355,8 +365,9 @@ public class GlobeModClient implements ClientModInitializer {
             double oz = (random.nextDouble() - 0.5) * SNOW_ENVELOPE;
 
             // Wind-blown drift: steady horizontal wind (ramped) + per-flake jitter -> visible sideways streaking.
+            // vy carries the P3 deep-band fallBoost (1.0 below 87 -> byte-identical there).
             double vx = windX + (random.nextDouble() - 0.5) * 0.06;
-            double vy = -fall - random.nextDouble() * 0.05;
+            double vy = -fall * fallBoost - random.nextDouble() * 0.05;
             double vz = (random.nextDouble() - 0.5) * 0.10;
 
             client.particleEngine.createParticle(ParticleTypes.SNOWFLAKE, px + ox, py + oy, pz + oz, vx, vy, vz);
@@ -376,6 +387,29 @@ public class GlobeModClient implements ClientModInitializer {
             double vx = windX * SNOW_SECOND_PASS_WIND_MULT + (random.nextDouble() - 0.5) * 0.08;
             double vy = -fall * 0.5 - random.nextDouble() * 0.03;
             double vz = (random.nextDouble() - 0.5) * 0.12;
+            client.particleEngine.createParticle(ParticleTypes.SNOWFLAKE, px + ox, py + oy, pz + oz, vx, vy, vz);
+        }
+
+        // B-7 P3 DEEP-BLIZZARD THIRD pass (owner, TEST 97: "not enough snow. I want more of a whiteout, a VERY
+        // heavy snowfall, like 10x this much, with greater falling speed"). A NEW deep tier layered ON TOP of
+        // the untouched gentle band: zero at/below 87 deg (the 82-87 approach is byte-identical), ramping to a
+        // budget of DEEP_BLIZZARD_EXTRA_MULT x today's TOTAL (main + second pass) by DEEP_BLIZZARD_FULL_DEG
+        // (89) -- so the whole spawn is ~10x the pre-P3 density at 89+. Derived from the already tier+exposure
+        // scaled `count`, so the vanilla Particles setting and the enclosure gate scale it identically (and
+        // isPaused => this method is never called -- the B-3b anti-backlog law holds; still a FIXED per-tick
+        // budget, never an accumulator). DEEP_BLIZZARD_HARD_CAP bounds the worst case (documented below).
+        // Fills the SAME main-pass volume with the boosted DOWNWARD fall -- a wall of falling snow, not more
+        // sideways streaking (the owner rejected sideways drift as the answer before).
+        int deepExtra = (int) Math.min(DEEP_BLIZZARD_HARD_CAP,
+                Math.round(deepT * DEEP_BLIZZARD_EXTRA_MULT * count * (1.0 + blizz)));
+        for (int i = 0; i < deepExtra; i++) {
+            double ox = (random.nextDouble() - 0.5) * SNOW_ENVELOPE;
+            double tv = (random.nextDouble() + random.nextDouble()) * 0.5;
+            double oy = SNOW_VOLUME_LOW + tv * (SNOW_VOLUME_HIGH - SNOW_VOLUME_LOW);
+            double oz = (random.nextDouble() - 0.5) * SNOW_ENVELOPE;
+            double vx = windX + (random.nextDouble() - 0.5) * 0.06;
+            double vy = -fall * fallBoost - random.nextDouble() * 0.08; // the deep tier falls HARD
+            double vz = (random.nextDouble() - 0.5) * 0.10;
             client.particleEngine.createParticle(ParticleTypes.SNOWFLAKE, px + ox, py + oy, pz + oz, vx, vy, vz);
         }
     }
@@ -405,6 +439,32 @@ public class GlobeModClient implements ClientModInitializer {
     // straight-down drift within a second (Peetsa: "slow, falls down, not sideways"). The second (low, hard-
     // driven) pass multiplies that already-larger wind so the pole reads as a wind-whipped ground blizzard.
     private static final double SNOW_SECOND_PASS_WIND_MULT = 1.9;  // low pass streaks even harder sideways
+
+    // ---- B-7 P3 DEEP BLIZZARD (owner order, TEST 97 maiden pole flight): the 87->89 whiteout tier. ----
+    // The 82-87 gentle band is untouched (deepT = 0 there -> byte-identical); from 87 deg a THIRD spawn pass
+    // ramps in, reaching DEEP_BLIZZARD_EXTRA_MULT x the pre-P3 TOTAL (main + second pass) by 89 deg and holding
+    // to the pole -- "a VERY heavy snowfall, like 10x this much" -- with a faster DOWNWARD fall (the wind terms
+    // are untouched; the owner rejected more sideways drift). Every P4 tuning knob is one line here.
+    /** Deep tier onset (deg): matches the blizzardDrive/second-pass onset so the whiteout deepens from the
+     *  same latitude the gale begins. Below this the ambient snow is byte-identical to pre-P3. */
+    private static final double DEEP_BLIZZARD_START_DEG = 87.0;
+    /** Deep tier FULL (deg): the whiteout hits its 10x ceiling here (89, the DANGER rung) and holds to 90 --
+     *  steeper than the blizzardDrive ramp, which reaches 1 only at the pole itself. */
+    private static final double DEEP_BLIZZARD_FULL_DEG = 89.0;
+    /** Deep-pass budget as a multiple of today's TOTAL (main + second pass): total = (1 + this) x pre-P3
+     *  density at full ramp. 9.0 -> ~10x the TEST 97 look at 89+ (the owner's number). */
+    private static final double DEEP_BLIZZARD_EXTRA_MULT = 9.0;
+    /** HARD PERF CAP on the deep pass alone, per spawn-tick (every 4th tick), applied AFTER the vanilla
+     *  Particles-tier and enclosure scaling. Worst case (Particles=All, open sky, 90 deg): ~60 main + ~60
+     *  second + 600 deep = ~720/spawn-tick = ~180 flakes/tick -- heavy by design (a whiteout) but bounded well
+     *  under the engine's particle ceiling; vanilla's Particles setting scales it down two more notches. At
+     *  DECREASED the formula lands under the cap, so the 10x ratio is exact there. */
+    private static final int DEEP_BLIZZARD_HARD_CAP = 600;
+    /** Deep-band DOWNWARD fall-speed multiplier (owner: "greater falling speed"), ramped 1.0 -> this across
+     *  87->89. 1.75 sits mid of the ordered 1.5-2x window; applied to the main + deep passes' vy only (never
+     *  the wind). NB: SnowflakeParticle pins vertical speed toward a terminal ~0.081/tick, so the boost reads
+     *  strongest in the first moments of each flake's fall -- P4 eyeballs whether 1.75 lands. */
+    private static final double DEEP_BLIZZARD_FALL_MULT = 1.75;
 
     // Perf-scaling glue (untested -- a trivial 1:1 mapping, not math; the scaling math is in the pure,
     // tested core.ParticleDensity). Reads the LIVE vanilla Particles video setting and maps it onto our

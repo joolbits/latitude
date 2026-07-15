@@ -289,11 +289,25 @@ public final class HemispherePassageClient {
             facingWall = HemispherePassage.facingOutwardX(mc.player.getX(), border.getCenterX(),
                     mc.player.getYRot(), HemispherePassage.REARM_GESTURE_FACING_MIN_COS);
         }
-        if (HemispherePassage.rearmGestureArms(armed, distToEdge, facingWall, promptDist)) {
+        // B-7 P3 AIM GATE (owner, TEST 97): a click whose crosshair rests on a block (mining ice at the wall)
+        // or an entity is an ordinary interaction, never a border ask -- only a MISS (air) click may re-arm.
+        if (HemispherePassage.rearmGestureArms(armed, distToEdge, facingWall, promptDist, crosshairHitKind(mc))) {
             setPhase(axis, HemispherePassage.Phase.ARMED);
             lastRearmGestureMs = now;
             PassageDebug.armTransition(axis, phase, HemispherePassage.Phase.ARMED, distToEdge, "rearm-gesture");
         }
+    }
+
+    /** Map the client's current crosshair target ({@code Minecraft.hitResult}) onto the pure aim-gate kinds.
+     *  {@code null} (no pick computed this frame) counts as MISS -- there is nothing targeted to interact with,
+     *  so the click still reads as "asking the border". */
+    private static int crosshairHitKind(Minecraft mc) {
+        net.minecraft.world.phys.HitResult hr = mc.hitResult;
+        if (hr == null || hr.getType() == net.minecraft.world.phys.HitResult.Type.MISS) {
+            return HemispherePassage.GESTURE_HIT_MISS;
+        }
+        return hr.getType() == net.minecraft.world.phys.HitResult.Type.BLOCK
+                ? HemispherePassage.GESTURE_HIT_BLOCK : HemispherePassage.GESTURE_HIT_ENTITY;
     }
 
     private static void driveCurtain(Minecraft mc, long now) {
@@ -342,7 +356,7 @@ public final class HemispherePassageClient {
             PassageDebug.onArrivalConsumed(axis, HemispherePassageClientState.lastArrivalX(),
                     HemispherePassageClientState.lastArrivalZ(), north ? "North" : "South");
             PassageDebug.armTransition(axis, prevPhase, HemispherePassage.Phase.SEEDED_DISARMED, dist, "arrival");
-            firePoleArrivalTitle(north);
+            firePoleArrivalTitle(mc, north);
         } else {
             boolean east = HemispherePassageClientState.arrivedEast();
             PassageDebug.onArrivalConsumed(axis, HemispherePassageClientState.lastArrivalX(),
@@ -390,14 +404,26 @@ public final class HemispherePassageClient {
         HemisphereTitleOverlay.trigger(true, line, durationTicks, scale);
     }
 
-    /** Fire the "Beyond the North/South Pole" arrival title (design §7 copy T1). Uses the SAME shared E/W
-     *  hemisphere-title channel B-5 arrivals use -- factually right too, since the over-the-pole mirror flips
-     *  the E/W hemisphere -- so it reuses the arrival slot/timings and needs no new render wiring. */
-    private static void firePoleArrivalTitle(boolean north) {
+    /** Fire the "Beyond the North/South Pole" arrival title (design §7 copy T1) WITH the P3 arrival-legibility
+     *  SUBTITLE naming the far meridian (owner, TEST 97: he couldn't tell the crossing took him to the far side
+     *  -- the server crew is fixing the transform to the true antipodal meridian; this makes the result legible).
+     *  Both lines share the ONE hemisphere-title channel and window: the title rides the N/S slot and the
+     *  meridian line the E/W slot, so {@code HemisphereCrossing.composeLines} stacks them title-over-subtitle in
+     *  the same styling family as B-5 arrivals (the 0-0 stacked-title idiom, no new render wiring). The meridian
+     *  is computed from the ARRIVAL X against the intended X radius ({@code HemispherePassage.farMeridianLabel},
+     *  the pure twin of the HUD's {@code formatLongitudeDeg}). */
+    private static void firePoleArrivalTitle(Minecraft mc, boolean north) {
         String line = "Beyond the " + (north ? "North" : "South") + " Pole";
         int durationTicks = (int) Math.round(clamp(LatitudeConfig.zoneEnterTitleSeconds, 2.0, 10.0) * 20.0);
         double scale = clamp(LatitudeConfig.zoneEnterTitleScale, 1.0, 3.0);
-        HemisphereTitleOverlay.trigger(true, line, durationTicks, scale);
+        HemisphereTitleOverlay.trigger(false, line, durationTicks, scale); // N/S slot: the title (top line)
+        if (mc.level != null) {
+            var border = mc.level.getWorldBorder();
+            String meridian = HemispherePassage.farMeridianLabel(
+                    HemispherePassageClientState.lastArrivalX(), border.getCenterX(),
+                    com.example.globe.util.LatitudeMath.intendedXRadius(border));
+            HemisphereTitleOverlay.trigger(true, "The far meridian — " + meridian, durationTicks, scale);
+        }
     }
 
     private static void playCrossingWhoosh(Minecraft mc) {

@@ -7,13 +7,34 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Pure-JVM tests for {@link PoleHardStop} (B-7 S2 + sweep F1) -- the engagement decision, clamped position,
- * and outward-velocity kill behind the Wide-world pole hard-stop, including the F1 property that the SAME
- * velocity law applies to a dismounted rider's VEHICLE (one law, two bodies).
+ * Pure-JVM tests for {@link PoleHardStop} (B-7 S2 + sweep F1 + P3 gamemode fix) -- the engagement decision,
+ * clamped position, outward-velocity kill, and the gamemode exemption rule behind the Wide-world pole
+ * hard-stop, including the F1 property that the SAME velocity law applies to a dismounted rider's VEHICLE
+ * (one law, two bodies).
  */
 class PoleHardStopTest {
 
     private static final double EPS = 1e-9;
+
+    // ---- P3 fix 2026-07-14: vanilla-border parity -- the wall stops creative too --------------
+
+    @Test
+    void creativeIsClamped() {
+        // The owner flew past 90 in creative on TEST 97 and found "no wall". The vanilla world border stops
+        // creative flight, so creative must be clamped (and gets the same contact presentation).
+        assertFalse(PoleHardStop.exemptFromClamp(true, false),
+                "creative is NOT exempt -- vanilla-border parity");
+        // Survival/adventure obviously clamped too.
+        assertFalse(PoleHardStop.exemptFromClamp(false, false));
+    }
+
+    @Test
+    void spectatorPasses() {
+        // Spectator no-clips through the vanilla border as well -- the ONLY exemption.
+        assertTrue(PoleHardStop.exemptFromClamp(false, true));
+        // A pathological both-flags read still passes on the spectator bit (spectator wins).
+        assertTrue(PoleHardStop.exemptFromClamp(true, true));
+    }
 
     @Test
     void engagementBoundaryRespectsEpsilon() {

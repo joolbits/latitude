@@ -6,12 +6,59 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Pure-JVM tests for {@link PoleArrivalSearch} (B-7) -- the corner X-clamp (A2) and the ordered/clamped
- * arrival-parallel candidate list that the MC-coupled arrival search consumes.
+ * Pure-JVM tests for {@link PoleArrivalSearch} (B-7) -- the ANTIPODAL-meridian transform (P3 fix 2026-07-14),
+ * the corner X-clamp (A2), and the ordered/clamped arrival-parallel candidate list that the MC-coupled
+ * arrival search consumes.
  */
 class PoleArrivalSearchTest {
 
     private static final double EPS = 1e-6;
+
+    // ---- P3 fix 2026-07-14: the ANTIPODAL-meridian transform (not mirrorX) -------------------
+
+    @Test
+    void antipodalMeridianTransform_ownersRepro() {
+        // The owner's TEST 97 repro: crossed at x=+530 on xRadius 7500 (~12.7 degE). mirrorX landed him at
+        // -530 (12.7 degW) -- geographically wrong. The antipodal meridian is L+180: x = 530 - 7500 = -6970
+        // (~167.3 degW).
+        double target = PoleArrivalSearch.antipodalX(530.0, 0.0, 7500.0);
+        assertEquals(-6970.0, target, EPS);
+        // Longitude property: lon(target) == lon(x) - 180 (i.e. +180 wrapped). lon = dx/xRadius*180.
+        double lonBefore = 530.0 / 7500.0 * 180.0;
+        double lonAfter = target / 7500.0 * 180.0;
+        assertEquals(lonBefore - 180.0, lonAfter, 1e-9, "antipodal = L+180 (wrapped)");
+        // And it is NOT the mirrorX answer (mirrorX is the EW antimeridian formula, L -> -L).
+        assertTrue(target != HemispherePassage.mirrorX(530.0, 0.0), "antipodal != mirrorX");
+        // The repro target survives the A2 clamp un-moved (|-6970| < clampAbs(7500) ~= 7288.7).
+        assertEquals(-6970, PoleArrivalSearch.clampX((int) Math.round(target), 0.0,
+                PoleArrivalSearch.xClampAbs(7500.0)));
+    }
+
+    @Test
+    void antipodalTransform_westToEast() {
+        // Westward departure mirrors the law: x = -2000 on xRadius 7500 -> -2000 + 7500 = +5500.
+        assertEquals(5500.0, PoleArrivalSearch.antipodalX(-2000.0, 0.0, 7500.0), EPS);
+        // Off-center border: the transform is centered on centerX.
+        assertEquals(100.0 + 5500.0, PoleArrivalSearch.antipodalX(100.0 - 2000.0, 100.0, 7500.0), EPS);
+    }
+
+    @Test
+    void antipodalCornerPrimeMeridian_mapsToEdgeAndClampPullsInward() {
+        // sign(0) = +1 by convention: the prime meridian (x == centerX) maps to the WEST edge -xRadius --
+        // +-180 are the SAME meridian, either edge is correct. That target IS the E/W border corner, and the
+        // documented path is the existing A2 clamp pulling every target/candidate inward of the EW band.
+        double target = PoleArrivalSearch.antipodalX(0.0, 0.0, 7500.0);
+        assertEquals(-7500.0, target, EPS, "prime meridian -> the west edge (sign(0)=+1)");
+        double clampAbs = PoleArrivalSearch.xClampAbs(7500.0);
+        int clamped = PoleArrivalSearch.clampX((int) Math.round(target), 0.0, clampAbs);
+        assertEquals((int) Math.round(0.0 - clampAbs), clamped, "clamp pulls the corner target to the A2 bound");
+        assertTrue(Math.abs(clamped) < 7500, "clamped strictly inside the border corner");
+        // ...and equatorward of the whole EW ceremony (>= rearm-ish in from the edge; the +-0.5 rounding of
+        // the clamp bound is far inside the 64-block A2 margin).
+        double distFromEwEdge = 7500.0 - Math.abs(clamped);
+        assertTrue(distFromEwEdge >= EdgeGeometry.resolve(7500.0).rearmDist(),
+                "corner arrival stays outside the EW prompt/fog/re-arm band");
+    }
 
     @Test
     void xClampKeepsArrivalsEquatorwardOfTheEwBand() {
