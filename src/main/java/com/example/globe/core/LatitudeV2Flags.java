@@ -299,7 +299,7 @@ public final class LatitudeV2Flags {
      * {@code docs/binder/phase5-b8-snow-barrens-design-20260714.md}.
      */
     public static final boolean POLAR_BARRENS_ENABLED =
-            Boolean.parseBoolean(System.getProperty("latitude.polarBarrens.enabled", "false"));
+            Boolean.parseBoolean(System.getProperty("latitude.polarBarrens.enabled", "true")); // P3 LIVE-TEST STAGING (branch-local, B-6/B-7 precedent): default ON for the TEST 99 flight so a FRESH world generates the Barrens. REVISIT BEFORE MERGE.
 
     /**
      * Absolute latitude (deg) where the Polar Barrens begin to fray in. Default = the vegetation-fade

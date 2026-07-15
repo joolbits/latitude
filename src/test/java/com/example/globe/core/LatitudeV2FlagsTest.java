@@ -49,11 +49,12 @@ class LatitudeV2FlagsTest {
     }
 
     @Test
-    void polarBarrensDefaultsToDisabled() {
-        // Phase 5 B-8 CHANGES WORLDGEN (snowy_plains -> globe:polar_barrens in the deep cap), the highest
-        // risk class, so it must ship default-off + byte-identical flag-off until the atlas proof passes.
-        assertFalse(LatitudeV2Flags.POLAR_BARRENS_ENABLED,
-                "Polar Barrens must ship default-off (byte-identical flag-off) until the atlas proof gate passes");
+    void polarBarrensBranchLocalFlightStaging() {
+        // P3 LIVE-TEST STAGING (branch-local, B-6/B-7 precedent): default ON for the TEST 99 flight.
+        // REVISIT BEFORE MERGE — shipped default is Peetsa's call after the live look; the pre-flight
+        // law was default-OFF byte-identical (atlas gate 1 proved it).
+        assertTrue(LatitudeV2Flags.POLAR_BARRENS_ENABLED,
+                "Branch-local flight staging: Polar Barrens ON for TEST 99; revisit before merge");
     }
 
     @Test
