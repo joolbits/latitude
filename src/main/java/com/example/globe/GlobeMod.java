@@ -507,7 +507,8 @@ public class GlobeMod implements ModInitializer {
             // B-7 S2: the Wide-world pole hard stop -- a server-side motion clamp at the |z| = zRadius pole line
             // (Classic worlds already wall it with the vanilla square border). Pure movement logic: it clamps
             // position/velocity back to the line and is NOT a teleport wrap and NOT worldgen. Flag-gated so
-            // flag-off leaves the Wide pole the unmarked endless plain it is today; creative/spectator fly past.
+            // flag-off leaves the Wide pole the unmarked endless plain it is today. [P3 fix] Vanilla-border
+            // parity: the wall stops creative too; ONLY spectator passes (PoleHardStop.exemptFromClamp).
             if (com.example.globe.core.LatitudeV2Flags.POLE_PASSAGE_V2_ENABLED) {
                 applyPoleHardStop(player, border, worldTime);
             }
@@ -899,18 +900,22 @@ public class GlobeMod implements ModInitializer {
     /**
      * B-7 S2: the Wide-world pole hard stop. On a Wide (Mercator) world the square vanilla border is sized to the
      * WIDER X axis, so the pole line at {@code |z| = zRadius} is interior and unwalled -- an endless death plain.
-     * This clamps a survival/adventure player's position/velocity back to that line (a lightweight
-     * position-correction packet -- NOT an entity teleport, NOT a wrap, NOT worldgen). Classic worlds already
-     * wall the pole with the vanilla border, so this no-ops there. Creative/spectator fly past. Skips the tick a
-     * crossing fired for this player (the crossing owns the position that tick). Fires the presentable
-     * rate-limited contact event on engagement.
+     * This clamps a player's position/velocity back to that line (a lightweight position-correction packet --
+     * NOT an entity teleport, NOT a wrap, NOT worldgen). Classic worlds already wall the pole with the vanilla
+     * border, so this no-ops there. [P3 fix 2026-07-14] Gamemode rule = TRUE vanilla-border parity
+     * ({@link com.example.globe.core.PoleHardStop#exemptFromClamp}): the wall stops survival, adventure AND
+     * CREATIVE (the vanilla border stops creative flight too -- the owner flew past 90 in creative on TEST 97
+     * and rightly found "no wall" wrong); only SPECTATOR passes. Creative gets the same clamp + contact
+     * presentation; the crossing/prompt stays available to creative unchanged. Skips the tick a crossing fired
+     * for this player (the crossing owns the position that tick). Fires the presentable rate-limited contact
+     * event on engagement.
      */
     private static void applyPoleHardStop(ServerPlayer player, WorldBorder border, long worldTime) {
         if (!LatitudeBiomes.isMercator()) {
             return; // Classic: the vanilla square border already walls |z| = zRadius.
         }
-        if (player.isCreative() || player.isSpectator()) {
-            return; // free flight past the pole line.
+        if (com.example.globe.core.PoleHardStop.exemptFromClamp(player.isCreative(), player.isSpectator())) {
+            return; // ONLY spectator no-clips past the line (vanilla-border parity; creative is clamped).
         }
         Long lastCross = PASSAGE_LAST_CROSS_TICK.get(player.getUUID());
         if (lastCross != null && lastCross == worldTime) {

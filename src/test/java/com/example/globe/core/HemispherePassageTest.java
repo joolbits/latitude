@@ -531,6 +531,54 @@ class HemispherePassageTest {
         assertEquals(DISARMED, d.nextPhase(), "and disarms again on open");
     }
 
+    // ---- B-7 P3 gesture AIM GATE (owner, TEST 97: breaking ice at the wall kept re-summoning the prompt) --
+
+    @Test
+    void gestureAimGateOnlyAcceptsAMissClickEw() {
+        // EW arm: a genuinely qualifying gesture (disarmed, in band, facing the E/W wall) ...
+        boolean facingOut = HemispherePassage.facingOutwardX(3000.0, 0.0, -90.0f, // east half facing east
+                HemispherePassage.REARM_GESTURE_FACING_MIN_COS);
+        assertTrue(facingOut, "sanity: facing the east wall");
+        // ... fires on a MISS (air) click,
+        assertTrue(HemispherePassage.rearmGestureArms(false, PROMPT - 10.0, facingOut, PROMPT,
+                HemispherePassage.GESTURE_HIT_MISS), "air click asks the border");
+        // ... is suppressed when the crosshair rests on a BLOCK (mining ice),
+        assertFalse(HemispherePassage.rearmGestureArms(false, PROMPT - 10.0, facingOut, PROMPT,
+                HemispherePassage.GESTURE_HIT_BLOCK), "block target = ordinary mining click");
+        // ... and when it rests on an ENTITY (attacking).
+        assertFalse(HemispherePassage.rearmGestureArms(false, PROMPT - 10.0, facingOut, PROMPT,
+                HemispherePassage.GESTURE_HIT_ENTITY), "entity target = ordinary attack click");
+    }
+
+    @Test
+    void gestureAimGateStillAppliesTheBasePredicateOnAMiss() {
+        // A MISS click does not bypass the base gesture law: armed / out-of-band / not-facing all still deny.
+        assertFalse(HemispherePassage.rearmGestureArms(true, PROMPT - 10.0, true, PROMPT,
+                HemispherePassage.GESTURE_HIT_MISS), "already armed -> no");
+        assertFalse(HemispherePassage.rearmGestureArms(false, PROMPT + 1.0, true, PROMPT,
+                HemispherePassage.GESTURE_HIT_MISS), "outside the band -> no");
+        assertFalse(HemispherePassage.rearmGestureArms(false, PROMPT - 10.0, false, PROMPT,
+                HemispherePassage.GESTURE_HIT_MISS), "not facing the wall -> no");
+    }
+
+    // ---- B-7 P3 arrival legibility: the far-meridian label (pure twin of LatitudeMath.formatLongitudeDeg) --
+
+    @Test
+    void farMeridianLabelFormatsDegreesAndHemisphere() {
+        // The coordinator's pinned case: x=-6970 on xRadius 7500 -> 167.28 deg -> "167°W".
+        assertEquals("167°W", HemispherePassage.farMeridianLabel(-6970.0, 0.0, 7500.0));
+        assertEquals("167°E", HemispherePassage.farMeridianLabel(6970.0, 0.0, 7500.0));
+        assertEquals("0°", HemispherePassage.farMeridianLabel(0.0, 0.0, 7500.0), "prime meridian has no suffix");
+        assertEquals("180°W", HemispherePassage.farMeridianLabel(-7500.0, 0.0, 7500.0));
+        assertEquals("180°E", HemispherePassage.farMeridianLabel(7500.0, 0.0, 7500.0));
+        assertEquals("180°E", HemispherePassage.farMeridianLabel(9000.0, 0.0, 7500.0), "beyond the edge clamps to 180");
+        // Off-center border: measured against |x - centerX| like the distance math, not raw |x|.
+        assertEquals("90°E", HemispherePassage.farMeridianLabel(3850.0, 100.0, 7500.0));
+        // Degenerate inputs degrade to the neutral label rather than garbage.
+        assertEquals("0°", HemispherePassage.farMeridianLabel(Double.NaN, 0.0, 7500.0));
+        assertEquals("0°", HemispherePassage.farMeridianLabel(1000.0, 0.0, 0.0));
+    }
+
     // ---- NaN safety (boolean model) --------------------------------------------------------
 
     @Test

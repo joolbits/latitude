@@ -158,8 +158,9 @@ public final class LatitudeV2Flags {
 
     /**
      * Phase 5 Slice B-7 (Pole Passage). Default false. Gates the opt-in N/S pole CROSSING surface -- the (P2)
-     * approach prompt at 89.2 deg, the two-button "pass through?" screen, the over-the-pole mirror teleport
-     * ({@code mirrorX} + far meridian + yaw+180), the deep 89.5-deg arrival (S5) with its post-crossing cold
+     * approach prompt at 89.2 deg, the two-button "pass through?" screen, the over-the-pole teleport to the
+     * ANTIPODAL meridian (longitude L -> L+180 via {@code PoleArrivalSearch.antipodalX} + yaw+180 -- [P3 fix
+     * 2026-07-14: antipodal meridian, not mirrorX]), the deep 89.5-deg arrival (S5) with its post-crossing cold
      * grace, the turn-back push, the {@code axis=POLE} netcode, AND the Wide-world pole hard-stop clamp (S2).
      * Flag-off is byte-identical FOR THAT SURFACE: no pole prompt/teleport/curtain/title/nudge exists, the
      * server rejects every {@code axis=POLE} answer, and the Wide pole stays the unmarked endless death plain

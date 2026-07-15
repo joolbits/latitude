@@ -103,8 +103,10 @@ public final class GlobeNet {
      * S2C: sent ONLY to the crossing player after a successful teleport (never broadcast). Carries the
      * {@link PassageAxis} and the arrival {@code (X, Z)} so P2 can (a) derive the arrived hemisphere for the
      * arrival title -- EW reads {@code arrivalX >= centerX} = East, POLE flips the E/W hemisphere too via the
-     * mirrored X -- and (b) seed the RIGHT client passage arm DISARMED-in-band (the mirror lands at the
-     * identical edge distance on that axis, so without this the client would self-reprompt forever). P1's client
+     * antipodal X ([P3 fix 2026-07-14: antipodal meridian, not mirrorX]) -- and (b) seed the RIGHT client
+     * passage arm DISARMED-in-band (the arrival lands inside that axis's sticky band -- EW at the identical
+     * edge distance, POLE at the 89.5 deg line inside the prompt band -- so without the seed the client would
+     * self-reprompt). P1's client
      * receiver routes EW as B-5 shipped and treats POLE as a documented stub (P2 builds the pole arm/title).
      *
      * <p><b>B-7 axis extension.</b> Field order: {@code (axis, arrivalX, arrivalZ)} (design §5.2). {@code arrivalZ}

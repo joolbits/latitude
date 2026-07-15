@@ -9,7 +9,8 @@ package com.example.globe.core;
  * <p><b>Two axes, one machine.</b> B-5 shipped the E/W (antimeridian) crossing; B-7 adds the N/S pole
  * crossing. Both drive the SAME pure {@link HemispherePassage} phase machine and the same
  * {@code HemispherePassageService} probe machinery -- they differ only in the geometry class that feeds them
- * ({@link EdgeGeometry} vs {@link PoleGeometry}) and the mirror axis of the teleport. This enum is the single
+ * ({@link EdgeGeometry} vs {@link PoleGeometry}) and the teleport transform (EW: {@code mirrorX}; POLE:
+ * {@code PoleArrivalSearch.antipodalX}). This enum is the single
  * discriminator so a shared server receiver, a shared cooldown, and a shared netcode pair never fork into two
  * drifting copies (design {@code docs/binder/phase5-b7-pole-passage-design-20260713.md} §5.2).
  *
@@ -20,7 +21,8 @@ package com.example.globe.core;
 public enum PassageAxis {
     /** The E/W antimeridian edge (B-5): {@code mirrorX}, kept yaw. */
     EW,
-    /** The N/S pole (B-7): {@code mirrorX} + far-meridian, same pole side, yaw + 180. */
+    /** The N/S pole (B-7): the ANTIPODAL meridian (longitude L -> L+180, {@code PoleArrivalSearch.antipodalX}
+     *  -- [P3 fix 2026-07-14: antipodal meridian, not mirrorX]), same pole side, yaw + 180. */
     POLE;
 
     /** The stable wire id: {@code EW=0}, {@code POLE=1} (the enum ordinal, pinned by test). */
