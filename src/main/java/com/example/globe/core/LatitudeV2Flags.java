@@ -169,7 +169,7 @@ public final class LatitudeV2Flags {
      * <p><b>What this flag does NOT gate (F2 honesty rescope).</b> The B-7 S3/S4/S6 polar-experience rebalances
      * are GLOBAL and deliberately un-gated (cold-pacing/survival corrections, not crossing features -- the same
      * global-vs-gated split B-5 drew for the EW edge presentation): the frostbite band [85,88) + its F3 frost
-     * cue, the ambient snow/fog onset move 85 -&gt; 82, the S4 shelter pause, and the S6 frozen-wounds heal lock
+     * cue, the ambient snow/fog onset move 85 -&gt; 82 -&gt; 80 (S8), the S4 shelter pause, and the S6 frozen-wounds heal lock
      * are live regardless of this flag. "Flag-off = byte-identical" therefore applies to the
      * crossing/clamp/netcode/nudge ONLY; the polar cold PACING is a separate, global change this pass ships.
      *
@@ -250,6 +250,75 @@ public final class LatitudeV2Flags {
      */
     public static final boolean POLAR_WATER_FREEZE_ENABLED =
             Boolean.parseBoolean(System.getProperty("latitude.polarWaterFreeze.enabled", "true"));
+
+    /**
+     * Phase 5 Slice B-8 (Polar Barrens). Default FALSE -- this CHANGES WORLDGEN (rewrites the deep-cap
+     * {@code snowy_plains} monoculture to the first-party {@code globe:polar_barrens} biome), the
+     * highest-risk class, so it ships the disciplined way: off-by-default, proven byte-identical
+     * flag-off, atlas-gated. When on (and the world is an armed globe world,
+     * {@code LatitudeBiomes.ACTIVE_RADIUS_BLOCKS > 0}) the {@code pick()} final override rewrites ONLY
+     * inland {@code minecraft:snowy_plains} to {@code globe:polar_barrens} on the coherent
+     * {@link com.example.globe.core.PolarBarrensBand} fray between {@link #POLAR_BARRENS_ONSET_DEG} and
+     * {@link #POLAR_BARRENS_FULL_DEG}; {@code ice_spikes} accents and real-mountain alpine picks survive
+     * because they are not {@code snowy_plains}; coasts/rivers are untouched. It also (flag-on only)
+     * appends the barrens to the biome-source candidate pool + the custom-feature index so its features
+     * decorate, and drives the {@code PolarBarrensSurfaceMixin} snow/powder/ice ground (surface skin
+     * only -- see below).
+     *
+     * <p><b>Feature list = snowy_plains MINUS surface vegetation (canonical doc -- biome JSON cannot
+     * carry comments).</b> The barrens is a SURFACE identity; the underground must stay alive
+     * (coordinator order 2026-07-14: a player tunneling under the pole -- which the shelter/frozen-wounds
+     * mechanics deliberately reward -- must find ores, lakes, springs and geodes like anywhere else). So
+     * {@code data/globe/worldgen/biome/polar_barrens.json} carries vanilla snowy_plains' feature list
+     * with every ore/lake/spring/geode/disk/underground entry kept in its EXACT step (lava lakes,
+     * amethyst_geode, monster rooms, all 25 ores + underwater_magma + the 3 disks, springs,
+     * glow_lichen -- kept as an underground entry: its own placement is surface-relative
+     * {@code <= -13}, it can never surface -- and freeze_top_layer), DROPPING exactly the eight surface
+     * vegetation entries: {@code trees_snowy}, {@code flower_default}, {@code patch_grass_badlands},
+     * {@code brown_mushroom_normal} + {@code red_mushroom_normal} (near-surface placements:
+     * heightmap MOTION_BLOCKING with a small y-spread -- vegetation, not cave decoration),
+     * {@code patch_pumpkin}, {@code patch_sugar_cane}, {@code patch_firefly_bush_near_water}.
+     * <b>Why the RNG-subset property holds (design A3/A5):</b> a strict subset in identical steps adds
+     * NO new nodes to the FeatureSorter graph (every kept feature is already indexed via snowy_plains, a
+     * possible biome wherever the barrens appears) and -- because no step keeps two entries that were not
+     * already consecutive in snowy_plains (machine-verified at build time) -- NO new ordering edges
+     * either, so the sorted feature index and every decoration salt are unchanged: zero decoration-RNG
+     * shift, flag-on or off. Surface bleakness comes from the {@code PolarBarrensSurfaceMixin} skin
+     * substitution (gated to within {@code PolarBarrensBand.SURFACE_SKIN_MARGIN_BLOCKS} of the world
+     * surface on non-fluid columns, so underground ore_dirt/ore_gravel veins and underwater floors stay
+     * native) plus {@code freeze_top_layer}; near-surface vegetation is additionally stripped by the
+     * polar vegetation fade, which is fully bare at/above the barrens onset.
+     *
+     * <p><b>Byte-identical flag-off</b>: every barrens consumer additionally requires this flag, so
+     * flag-off the override never fires, the pool is the unchanged passthrough, the surface mixin's first
+     * check returns immediately, and the {@code globe:polar_barrens} biome JSON is present-but-unplaced
+     * (it registers UNCONDITIONALLY so a flag-on-then-off world never references a missing biome; its
+     * flag-off visibility in F3/{@code /locate} is inherent and documented, not a bug). Placement-time
+     * only -- existing chunks are never rewritten (legacy-worldgen pin). Born WITH its build.gradle
+     * biomePreview forwarding lines in the SAME pass (L17 discipline). Design
+     * {@code docs/binder/phase5-b8-snow-barrens-design-20260714.md}.
+     */
+    public static final boolean POLAR_BARRENS_ENABLED =
+            Boolean.parseBoolean(System.getProperty("latitude.polarBarrens.enabled", "false"));
+
+    /**
+     * Absolute latitude (deg) where the Polar Barrens begin to fray in. Default = the vegetation-fade
+     * finish ({@link PolarVegetationFade#FULL_DEG}, 86 deg) so the barrens start exactly where the grass
+     * ends -- the owner's chosen invisible seam (KEEP-SHARED: tuning the veg fade's finish moves this
+     * default with it). Live-tunable via {@code -Dlatitude.polarBarrens.onsetDeg}; parsed defensively so
+     * a malformed value degrades to the default rather than throwing at class-init.
+     */
+    public static final double POLAR_BARRENS_ONSET_DEG =
+            parseDoubleOrDefault(System.getProperty("latitude.polarBarrens.onsetDeg"), PolarVegetationFade.FULL_DEG);
+
+    /**
+     * Absolute latitude (deg) at/above which the Polar Barrens are fully dominant. Default 88 deg.
+     * {@link com.example.globe.core.PolarBarrensBand} clamps the effective value to at least
+     * {@code onset + 0.5} so the smoothstep denominator stays positive under any {@code -D} pairing.
+     * Live-tunable via {@code -Dlatitude.polarBarrens.fullDeg}; parsed defensively.
+     */
+    public static final double POLAR_BARRENS_FULL_DEG =
+            parseDoubleOrDefault(System.getProperty("latitude.polarBarrens.fullDeg"), 88.0);
 
     /**
      * Defensive double parse for the Phase 4 knobs: a {@code null} (property unset) or malformed value

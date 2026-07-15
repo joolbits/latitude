@@ -43,6 +43,13 @@ def classes_for(biome_id):
         cls.add("frozen_land")
     if s in ("frozen_river",) or s.endswith("frozen_river"):
         cls.add("frozen_river")
+    # Phase 5 B-8: globe:polar_barrens is the first-party frozen-waste biome the consumer places ONLY in
+    # the deep polar cap (86->88 deg). It is legitimate polar LAND, so it is deliberately left unclassified
+    # here (no "frozen_land"/"arid" contamination class) -- exactly like snowy_plains/snowy_taiga, which are
+    # also correct where they appear. Its id carries no snow/ice substring, so it would fall through anyway;
+    # this note makes the intent explicit (design A6). If it ever shows up equatorward of the polar band,
+    # that is a real placement leak -- but it is caught by band membership (BiomeBandPolicy POLAR-only),
+    # not by a forbidden-class rule here.
     return cls
 
 def is_water(biome_id):

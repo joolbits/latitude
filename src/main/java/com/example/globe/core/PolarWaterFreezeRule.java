@@ -30,7 +30,8 @@ package com.example.globe.core;
  * <p><b>Threshold = 85 deg (its OWN anchor -- DECOUPLED from the ambient onset, B-7 S3).</b> This forces
  * exposed water to freeze into ice, which MODIFIES THE WORLD (places ice blocks) and is therefore a
  * WORLDGEN-facing seam that must NOT move. When B-7 S3 shifted the pure-client ambient snow/fog onset
- * {@code PolarHazardWindow.AMBIENT_ONSET_DEG} 85 -> 82 (2026-07-13), this constant deliberately STAYED at 85
+ * {@code PolarHazardWindow.AMBIENT_ONSET_DEG} 85 -> 82 (2026-07-13; S8 moved it again to 80 on 2026-07-14),
+ * this constant deliberately STAYED at 85
  * on its own literal anchor: the frozen ice sheet is world-visible and moving it would re-freeze different
  * columns in existing worlds. 85 still coincides with the B-7 frostbite DAMAGE onset
  * ({@code PolarHazardWindow.FROSTBITE_ONSET_DEG}, also 85), so "the water is frozen" and "the cold starts to
@@ -47,8 +48,8 @@ public final class PolarWaterFreezeRule {
     /**
      * Latitude (deg) at/above which any exposed, genuinely-freezable water column is forced eligible to
      * freeze into ice regardless of its (possibly latitude-blind) biome temperature. 85 deg is this rule's OWN
-     * literal anchor -- it is NOT derived from {@code PolarHazardWindow.AMBIENT_ONSET_DEG} (which B-7 S3 moved to
-     * 82). Because freezing water places ice (a world modification), this worldgen-facing threshold must never
+     * literal anchor -- it is NOT derived from {@code PolarHazardWindow.AMBIENT_ONSET_DEG} (which B-7 S3 moved
+     * to 82 and S8 to 80). Because freezing water places ice (a world modification), this worldgen-facing threshold must never
      * move under a client-atmosphere change; see the class javadoc.
      */
     public static final double FREEZE_ALL_DEG = 85.0;

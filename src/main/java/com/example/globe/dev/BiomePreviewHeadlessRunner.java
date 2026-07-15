@@ -1035,11 +1035,15 @@ public final class BiomePreviewHeadlessRunner {
 
             Holder<Biome> rawSource = baseSource.getNoiseBiome(noiseX, noiseY, noiseZ, sampler);
             Holder<Biome> base = baseSource.getNoiseBiome(noiseX, LatitudeBiomes.SURFACE_CLASSIFY_Y >> 2, noiseZ, sampler);
-            Collection<Holder<Biome>> sourcePool = baseSource.possibleBiomes();
+            // Phase 5 Slice B-8: expand the source pool AT THE SOURCE so the atlas pool == live registry
+            // reach (globe:polar_barrens included flag-on) -- the wrapped source, the pick candidate pool,
+            // and possibleBiomes all agree. Byte-identical flag-off (expandSourceCandidatePool returns the
+            // same possibleBiomes reference).
+            Collection<Holder<Biome>> sourcePool = LatitudeBiomes.expandSourceCandidatePool(baseSource.possibleBiomes());
             Holder<Biome> wrappedSource = new LatitudeBiomeSource(baseSource, sourcePool, radius)
                     .getNoiseBiome(noiseX, noiseY, noiseZ, sampler);
             Holder<Biome> sourceEquivalent = LatitudeBiomes.pick(
-                    LatitudeBiomes.expandSourceCandidatePool(sourcePool),
+                    sourcePool,
                     base,
                     sourceBlockX,
                     sourceBlockZ,
@@ -1211,7 +1215,10 @@ public final class BiomePreviewHeadlessRunner {
 
         Holder<Biome> rawSource = baseSource.getNoiseBiome(noiseX, noiseY, noiseZ, sampler);
         Holder<Biome> base = baseSource.getNoiseBiome(noiseX, LatitudeBiomes.SURFACE_CLASSIFY_Y >> 2, noiseZ, sampler);
-        Collection<Holder<Biome>> sourcePool = baseSource.possibleBiomes();
+        // Phase 5 Slice B-8: remember the registry + expand the source pool here too (locate-proof path)
+        // so the wrapped source can emit globe:polar_barrens flag-on. Byte-identical flag-off.
+        LatitudeBiomes.rememberSourcePolicyBiomeRegistry(biomes);
+        Collection<Holder<Biome>> sourcePool = LatitudeBiomes.expandSourceCandidatePool(baseSource.possibleBiomes());
         Holder<Biome> wrappedSource = new LatitudeBiomeSource(baseSource, sourcePool, radius)
                 .getNoiseBiome(noiseX, noiseY, noiseZ, sampler);
         int chunkX = Math.floorDiv(pos.getX(), 16);

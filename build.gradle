@@ -128,6 +128,17 @@ loom {
             // was forwarded -- the degree dials silently never reached a gradle dev client).
             vmArg "-Dlatitude.polarVegetationFade.onsetDeg=${System.getProperty('latitude.polarVegetationFade.onsetDeg', '78.0')}"
             vmArg "-Dlatitude.polarVegetationFade.fullDeg=${System.getProperty('latitude.polarVegetationFade.fullDeg', '86.0')}"
+            // Phase 5 B-8 Polar Barrens (default FALSE, byte-identical off). WORLDGEN change -- forwarded
+            // here in the SAME PASS as the flag (L17) so a headless flag-on atlas actually runs with the
+            // barrens on (the L17 forwarding gap has produced silent byte-identical false-greens before).
+            // The onset/full degree dials are advertised as live-tunable, so forward them too.
+            vmArg "-Dlatitude.polarBarrens.enabled=${System.getProperty('latitude.polarBarrens.enabled', 'false')}"
+            // B-8 sweep FIX-1: the onset default NESTS the veg-fade fullDeg sysprop instead of hardcoding
+            // '86.0', so a dev run that retunes -Dlatitude.polarVegetationFade.fullDeg keeps the KEEP-SHARED
+            // coupling (barrens begins exactly where the last vegetation dies) without having to remember the
+            // barrens dial too. An explicit -Dlatitude.polarBarrens.onsetDeg still wins.
+            vmArg "-Dlatitude.polarBarrens.onsetDeg=${System.getProperty('latitude.polarBarrens.onsetDeg', System.getProperty('latitude.polarVegetationFade.fullDeg', '86.0'))}"
+            vmArg "-Dlatitude.polarBarrens.fullDeg=${System.getProperty('latitude.polarBarrens.fullDeg', '88.0')}"
             // Polar water freeze (default TRUE, matching LatitudeV2Flags; byte-identical when explicitly
             // set off). Forwarded on sight this round -- the L17 forwarding class has bitten this repo
             // twice before (climateV2/biomeConsumerV2 2026-07-07); don't let a third flag go unforwarded.

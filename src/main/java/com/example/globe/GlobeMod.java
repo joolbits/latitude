@@ -516,15 +516,31 @@ public class GlobeMod implements ModInitializer {
             double latDeg = com.example.globe.util.LatitudeMath.absLatDegExact(border, player.getZ());
             boolean unaffected = player.isCreative() || player.isSpectator();
 
-            // B-7 S4/S5(c)/S6: the cold-pause + heal-lock inputs, computed once per tick for survival players in
-            // the cold zone (|lat| >= 85). S4: genuine shelter (raw sky light <= 3 at the eye, ColdShelter)
-            // pauses cold DAMAGE -- walls stop the bleeding; slowness/fatigue/atmosphere unchanged. S5(c): the
-            // post-crossing grace (PoleCrossingGrace) pauses it for the arrival-curtain window. S6: sheltered
-            // without a warmth source freezes WOUNDS (heal lock, enforced at the LivingEntity.heal chokepoint by
-            // LivingEntityHealLockMixin via isPolarHealLocked) and HOLDS the F3 frost cue. Short-circuit order:
-            // zone -> grace -> shelter -> warmth scan (the 405-block scan runs only for sheltered polar players,
-            // cached ~20t in POLE_WARMTH_CACHE).
+            // B-7 S7 (POLAR IMMERSION): the SINGLE cold-evaluation latitude. In water (isInWater -- false in a
+            // boat, the free story-true exemption) the existing curves are evaluated at |lat|+3 capped at 90
+            // ("polar water is three degrees colder than the air"), so the open 82-85 liquid sea bites like 85
+            // land and under-ice swimming at 87+ reads like the lethal core. EVERY cold-band read below
+            // (frostbite applies/interval/amount, the F3 cue, the 87.5 lethal gate, hazardProgress -> frost
+            // visual + slowness staging + lethal damage) uses effLatDeg, so damage, cue and blue hearts shift
+            // together (the honesty law); LivingEntityFreezeDamageMixin's gate (isInPolarFreezeDamageBand)
+            // applies the SAME shift so vanilla's auto-freeze can never double-dip an immersed player.
+            boolean inWater = !unaffected && player.isInWater();
+            double effLatDeg = com.example.globe.core.PolarImmersion.effectiveLatDeg(latDeg, inWater);
+
+            // B-7 S4/S5(c)/S6: the cold-pause + heal-lock inputs, computed once per tick for survival players
+            // in the cold zone. The DAMAGE zone reads the S7 effective latitude (a swimmer at 82 is in the
+            // band); the S6 heal-lock zone stays RAW latitude (S7 leaves the lock untouched -- immersion is not
+            // shelter, and this local must mirror isPolarHealLocked exactly). S4: genuine shelter (raw sky
+            // light <= 3 at the eye, ColdShelter) pauses cold DAMAGE -- unless IMMERSED (S7: water conducts
+            // cold; walls do not help in the sea -- PolarImmersion.coldDamagePaused owns the rule). S5(c): the
+            // post-crossing grace pauses it for the arrival-curtain window (grace > immersion). S6: sheltered
+            // without a warmth source freezes WOUNDS (heal lock, enforced at the LivingEntity.heal chokepoint
+            // by LivingEntityHealLockMixin via isPolarHealLocked) and HOLDS the F3 frost cue. Short-circuit
+            // order: zone -> grace -> shelter -> warmth scan (the 405-block scan still runs only for sheltered
+            // RAW-zone polar players, cached ~20t in POLE_WARMTH_CACHE -- S7 does not widen the S6 scan).
             boolean inColdZone = !unaffected
+                    && effLatDeg >= com.example.globe.core.PolarHazardWindow.FROSTBITE_ONSET_DEG;
+            boolean inRawColdZone = !unaffected
                     && latDeg >= com.example.globe.core.PolarHazardWindow.FROSTBITE_ONSET_DEG;
             boolean coldSheltered = false;
             boolean coldGrace = false;
@@ -532,22 +548,25 @@ public class GlobeMod implements ModInitializer {
             if (inColdZone) {
                 coldGrace = isPoleCrossColdGraceActive(player, worldTime);
                 coldSheltered = isColdSheltered(overworld, player);
-                boolean nearWarmth = coldSheltered && isNearWarmthCached(overworld, player, worldTime);
-                healLocked = com.example.globe.core.PolarWounds.healLocked(true, coldSheltered, nearWarmth);
+                if (inRawColdZone) {
+                    boolean nearWarmth = coldSheltered && isNearWarmthCached(overworld, player, worldTime);
+                    healLocked = com.example.globe.core.PolarWounds.healLocked(true, coldSheltered, nearWarmth);
+                }
             }
-            boolean coldDamagePaused = coldSheltered || coldGrace;
+            boolean coldDamagePaused =
+                    com.example.globe.core.PolarImmersion.coldDamagePaused(coldSheltered, inWater, coldGrace);
 
             // B-7 S3: the FROSTBITE band [85,88) -- gentle freeze damage equatorward of the lethal core, handing
-            // off EXACTLY at 88 deg to the untouched [88,90] curve. Runs BEFORE the 87.5 continue (onset 85 is
-            // below the hazard onset). ColdProtection scales the amount at the SAME single computed-amount point
-            // as the lethal core, so a full freeze-immune set negates it; a zeroed amount skips the hurt call.
-            // S4/S5(c): paused while sheltered or in the post-crossing grace.
+            // off EXACTLY at 88 deg to the untouched [88,90] curve (both bands evaluated at the S7 effective
+            // latitude). ColdProtection scales the amount at the SAME single computed-amount point as the
+            // lethal core, so a full freeze-immune set negates it (the leather drysuit, S7); a zeroed amount
+            // skips the hurt call. S4/S5(c)/S7: paused per PolarImmersion.coldDamagePaused.
             boolean frostbiteBiting = inColdZone && !coldDamagePaused
-                    && com.example.globe.core.PolarHazardWindow.appliesFrostbiteDamage(latDeg);
+                    && com.example.globe.core.PolarHazardWindow.appliesFrostbiteDamage(effLatDeg);
             if (frostbiteBiting) {
-                int fInterval = com.example.globe.core.PolarHazardWindow.frostbiteIntervalTicks(latDeg);
+                int fInterval = com.example.globe.core.PolarHazardWindow.frostbiteIntervalTicks(effLatDeg);
                 if (worldTime % (long) fInterval == 0L) {
-                    float fAmount = com.example.globe.core.PolarHazardWindow.frostbiteDamageAmount(latDeg)
+                    float fAmount = com.example.globe.core.PolarHazardWindow.frostbiteDamageAmount(effLatDeg)
                             * (float) com.example.globe.core.ColdProtection.damageMultiplier(coldProtectionPieceCount(player));
                     if (fAmount > 0.0f) {
                         player.hurtServer(overworld, overworld.damageSources().freeze(), fAmount);
@@ -557,27 +576,28 @@ public class GlobeMod implements ModInitializer {
 
             // B-7 F3 (+S6 amendment): the frostbite FROST-CUE floor -- no silent damage. Active iff frostbite is
             // actually biting this tick OR the S6 heal-lock holds (frozen wounds LOOK frozen); paused with the
-            // damage under S4 shelter / S5 grace otherwise (PolarWounds.frostCueActive is the single rule).
-            // FLOOR semantics: only ever RAISES ticksFrozen (vanilla powder-snow freezing and the lethal path's
-            // own frost visual are never decreased). Below the 87.5 hazard onset this is the only writer; in
-            // [87.5,88) the lethal frost-visual writer below composites via max().
+            // damage otherwise (PolarWounds.frostCueActive is the single rule). Reads the SAME S7 effective
+            // latitude as the bite, so cue and damage cannot drift. FLOOR semantics: only ever RAISES
+            // ticksFrozen (vanilla powder-snow freezing and the lethal path's own frost visual are never
+            // decreased). Below the (effective) 87.5 hazard onset this is the only writer; in [87.5,88) the
+            // lethal frost-visual writer below composites via max().
             int frostCueFloor = com.example.globe.core.PolarWounds.frostCueActive(frostbiteBiting, healLocked)
-                    ? com.example.globe.core.PolarHazardWindow.frostbiteFrostCueTicks(latDeg)
+                    ? com.example.globe.core.PolarHazardWindow.frostbiteFrostCueTicks(effLatDeg)
                     : 0;
             if (frostCueFloor > 0
-                    && latDeg < com.example.globe.core.PolarHazardWindow.HAZARD_ONSET_DEG
+                    && effLatDeg < com.example.globe.core.PolarHazardWindow.HAZARD_ONSET_DEG
                     && player.getTicksFrozen() < frostCueFloor) {
                 player.setTicksFrozen(frostCueFloor);
             }
 
-            // B-3a: the LETHAL polar hazard core [87.5,90], UNCHANGED by B-7 (frost visual from 87.5, freeze
-            // DAMAGE from ~88 intensifying to a lethal pole, slowness/weakness/mining fatigue). Everything below
-            // 87.5 deg stays explorable apart from the frostbite band above (from 85). The B-7 prompt-zone
-            // survival numbers depend on this curve staying exactly as shipped.
-            if (latDeg < com.example.globe.core.PolarHazardWindow.HAZARD_ONSET_DEG) {
+            // B-3a: the LETHAL polar hazard core [87.5,90], evaluated at the S7 effective latitude (an immersed
+            // 85-deg swimmer reads 88 -- the lethal onset; a dry 85-deg walker is untouched). The curve itself
+            // is UNCHANGED by B-7 (frost visual from 87.5, freeze DAMAGE from ~88 intensifying to a lethal
+            // pole, slowness/weakness/mining fatigue); the B-7 prompt-zone survival numbers depend on that.
+            if (effLatDeg < com.example.globe.core.PolarHazardWindow.HAZARD_ONSET_DEG) {
                 continue;
             }
-            double progress = com.example.globe.core.PolarHazardWindow.hazardProgress(latDeg);
+            double progress = com.example.globe.core.PolarHazardWindow.hazardProgress(effLatDeg);
 
             // FROST VISUAL every tick. frostVisualTicks builds 0 -> 140 across 87.5 -> ~88 and holds at/above
             // 140 to the pole, so it CROSSES vanilla's fully-frozen threshold at the ~88 deg damage onset --
@@ -1052,7 +1072,13 @@ public class GlobeMod implements ModInitializer {
             return false;
         }
         double latDeg = com.example.globe.util.LatitudeMath.absLatDegExact(level.getWorldBorder(), player.getZ());
-        return latDeg >= com.example.globe.core.PolarHazardWindow.HAZARD_ONSET_DEG;
+        // S7: the SAME immersion shift borderUxTick's chokepoint applies -- an immersed swimmer whose
+        // EFFECTIVE latitude is in the lethal band (e.g. raw 85 in water = 88) gets our curve, so vanilla's
+        // fixed auto-freeze (which keys off the 140 ticksFrozen our shifted frost visual now crosses) must be
+        // suppressed for exactly the same population. Raw-lat here with an immersed 85-deg swimmer would
+        // double-dip; the mirror discipline in this javadoc is the whole point of this method.
+        double effLatDeg = com.example.globe.core.PolarImmersion.effectiveLatDeg(latDeg, player.isInWater());
+        return effLatDeg >= com.example.globe.core.PolarHazardWindow.HAZARD_ONSET_DEG;
     }
 
     /**

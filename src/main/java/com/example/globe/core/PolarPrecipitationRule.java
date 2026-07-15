@@ -25,7 +25,7 @@ package com.example.globe.core;
  * where vanilla rain is plausible: subpolar taiga (the rainiest cold band) ends at {@code SUBPOLAR_MAX_DEG} =
  * 67 deg, so rain at 70 deg is arguably fine and NOT force-converted. 75 deg is well inside the polar cap and
  * still equatorward of the client ambient snow/fog onset (B-7 S3 moved
- * {@code PolarHazardWindow.AMBIENT_ONSET_DEG} 85 -> 82; this rule keeps its own literal 75 and did NOT move
+ * {@code PolarHazardWindow.AMBIENT_ONSET_DEG} 85 -> 82, then S8 to 80; this rule keeps its own literal 75 and did NOT move
  * with it). This rule is PURE CLIENT ATMOSPHERE (it only swaps rain rendering for snow rendering -- it places
  * no blocks), so it carries no worldgen-seam risk; it is decoupled here purely so the two anchors stay legible
  * independently. The clamp simply guarantees that whatever precipitation renders across the cap is snow.

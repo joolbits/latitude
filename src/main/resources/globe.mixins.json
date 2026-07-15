@@ -20,6 +20,7 @@
     "BiomePolarWaterFreezeMixin",
     "TreeLineVegetationGuardMixin",
     "AlpineSurfaceMixin",
+    "PolarBarrensSurfaceMixin",
     "SurfaceDripstoneLawnmowerMixin",
     "ExtremePolarVillageGuardMixin",
     "ExtremePolarVegetationGuardMixin",

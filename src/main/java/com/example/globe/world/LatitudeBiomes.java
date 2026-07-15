@@ -38,6 +38,7 @@ import com.example.globe.adapter.geo.GeoAuthorityProvider;
 import com.example.globe.adapter.geo.GeoSummaryProvider;
 import com.example.globe.adapter.geo.NoOpGeoSummaryProvider;
 import com.example.globe.core.LatitudeV2Flags;
+import com.example.globe.core.PolarBarrensBand;
 import com.example.globe.core.PolarVegetationFade;
 import com.example.globe.core.climate.ClimateAuthority;
 import com.example.globe.core.climate.ClimateAuthorityParams;
@@ -563,12 +564,49 @@ public final class LatitudeBiomes {
         return isBiomeId(entry, id);
     }
 
+    // Phase 5 Slice B-8: the live biome registry, stashed so expandSourceCandidatePool (which only
+    // receives a Holder collection) can resolve globe:polar_barrens. volatile -- read from worldgen
+    // threads, written from the populate/dev/headless entry points before the pool is queried.
+    private static volatile Registry<Biome> SOURCE_POLICY_BIOME_REGISTRY;
+
+    /**
+     * Phase 5 Slice B-8 Polar Barrens: flag-on, append {@code globe:polar_barrens} to the biome-source
+     * candidate pool so the source's {@code possibleBiomes()} (hence vanilla's feature
+     * {@code retainAll(possibleBiomes)} and the headless SOURCE candidate pool) can carry/resolve it --
+     * otherwise the barrens would be stripped from decoration ({@code freeze_top_layer} never runs) and
+     * the Collection-twin final override could not resolve it (a structural atlas false-green). Idempotent
+     * (skips if already present or if no registry has been remembered yet) and byte-identical flag-off
+     * (returns the exact {@code basePool} reference unchanged).
+     */
     public static Collection<Holder<Biome>> expandSourceCandidatePool(Collection<Holder<Biome>> basePool) {
-        return basePool;
+        if (!LatitudeV2Flags.POLAR_BARRENS_ENABLED) {
+            return basePool;
+        }
+        Registry<Biome> registry = SOURCE_POLICY_BIOME_REGISTRY;
+        if (registry == null) {
+            return basePool;
+        }
+        Holder<Biome> barrens = biomeOrNull(registry, POLAR_BARRENS_ID);
+        if (barrens == null) {
+            return basePool;
+        }
+        for (Holder<Biome> entry : basePool) {
+            if (POLAR_BARRENS_ID.equals(biomeId(entry))) {
+                return basePool; // already present -- idempotent (safe to wrap twice)
+            }
+        }
+        List<Holder<Biome>> expanded = new ArrayList<>(basePool);
+        expanded.add(barrens);
+        return expanded;
     }
 
+    /**
+     * Phase 5 Slice B-8: stash the live biome registry for {@link #expandSourceCandidatePool}. Called
+     * from the populate mixin, the dev command, and the headless runner before the source pool is
+     * queried. Harmless flag-off (only read by the flag-gated expansion).
+     */
     public static void rememberSourcePolicyBiomeRegistry(Registry<Biome> biomes) {
-        // no-op: compile gate only
+        SOURCE_POLICY_BIOME_REGISTRY = biomes;
     }
 
     public static void auditSparseJungleExternal(String bucket, int blockX, int blockZ, int landBandIndex, String detail, Holder<Biome> pre, Holder<Biome> post) {
@@ -777,6 +815,53 @@ public final class LatitudeBiomes {
         double noise = ValueNoise2D.sampleBlocks(WORLD_SEED ^ POLAR_VEG_FADE_SALT,
                 blockX, blockZ, POLAR_VEG_FADE_SCALE_BLOCKS);
         return PolarVegetationFade.stripByNoise(keep, noise);
+    }
+
+    // --- Phase 5 Slice B-8 Polar Barrens world-side wiring (latitude.polarBarrens.enabled) ---------
+
+    /**
+     * Coherent barrens-vs-snowy_plains fray sample in {@code [0,1)} at (blockX, blockZ). Shared by the
+     * placement final override ({@code pick()} twins) and the surface mixin so the ground and the biome
+     * agree on where the barrens are. Dedicated salt (Art VI, no cell-hash) at province scale.
+     */
+    public static double polarBarrensFrayNoise(int blockX, int blockZ) {
+        return ValueNoise2D.sampleBlocks(WORLD_SEED ^ POLAR_BARRENS_FRAY_SALT,
+                blockX, blockZ, POLAR_BARRENS_FRAY_SCALE_BLOCKS);
+    }
+
+    /**
+     * Surface-block substitution kind for {@link com.example.globe.mixin.PolarBarrensSurfaceMixin} at
+     * (blockX, blockZ) in an armed globe world of Z radius {@code radius}:
+     * {@link PolarBarrensBand#SURFACE_KIND_NONE} (0, leave unchanged -- flag off, not an armed world, or
+     * not a barrens column), {@code SURFACE_KIND_SNOW_BLOCK} (1), {@code SURFACE_KIND_POWDER_SNOW} (2),
+     * or {@code SURFACE_KIND_ICE} (3). Gated identically to placement (same flag, same latitude+fray
+     * decision) so the ground matches the biome; the powder pockets and ice patches ride independent
+     * coherent fields. Flag-off / below-onset / off-fray all return 0 (byte-identical).
+     *
+     * <p>NB (design A6): this keys on latitude+fray, NOT on the resolved biome, so on the fray it also
+     * whitens the incidental dirt of the rare ice_spikes accent and mountain columns that stayed
+     * non-barrens -- cosmetically harmless (those surfaces are snow/ice/stone anyway) and consistent with
+     * the AlpineSurfaceMixin latitude/height idiom this clones.
+     *
+     * <p>This decision is COLUMN-level (x,z). The VERTICAL confinement -- surface skin only, never the
+     * living underground (ore_dirt/ore_gravel veins) or underwater floors, now that the barrens biome
+     * carries snowy_plains' full underground feature subset -- is the caller's job via
+     * {@link PolarBarrensBand#isSurfaceSkin(int, int, int)} on the chunk's WG heightmaps (see
+     * {@code PolarBarrensSurfaceMixin}).
+     */
+    public static int polarBarrensSurfaceKind(int blockX, int blockZ, int radius) {
+        if (!LatitudeV2Flags.POLAR_BARRENS_ENABLED || radius <= 0) {
+            return PolarBarrensBand.SURFACE_KIND_NONE;
+        }
+        double absLatDeg = Math.abs((double) blockZ) * 90.0 / radius;
+        if (!PolarBarrensBand.isBarrens(absLatDeg, polarBarrensFrayNoise(blockX, blockZ))) {
+            return PolarBarrensBand.SURFACE_KIND_NONE;
+        }
+        double powder = ValueNoise2D.sampleBlocks(WORLD_SEED ^ POLAR_BARRENS_POWDER_SALT,
+                blockX, blockZ, POLAR_BARRENS_POWDER_SCALE_BLOCKS);
+        double ice = ValueNoise2D.sampleBlocks(WORLD_SEED ^ POLAR_BARRENS_ICE_SALT,
+                blockX, blockZ, POLAR_BARRENS_ICE_SCALE_BLOCKS);
+        return PolarBarrensBand.surfaceKind(powder, ice);
     }
 
     // --- Mercator world shape (Phase 1: wider world, more biomes per band) ---
@@ -2722,6 +2807,17 @@ public final class LatitudeBiomes {
     // cap (keeping as much as the cap allows minimizes how much of the converted area piles into the
     // snowy_plains primary). Lower threshold => keep more ice_spikes.
     private static final double POLAR_ICE_KEEP_THRESHOLD = 0.45;
+    // --- Phase 5 Slice B-8 Polar Barrens (latitude.polarBarrens.enabled) ---------------------------
+    // Coherent province-scale frays (Art VI -- no floorDiv/cell-hash, no hard ring), each on a dedicated
+    // salt so the barrens edge, the powder pockets, and the ice patches decorrelate. The barrens id is
+    // resolved by string against the live registry (the consumer already resolves any id this way).
+    public static final String POLAR_BARRENS_ID = "globe:polar_barrens";
+    private static final long POLAR_BARRENS_FRAY_SALT = 0x706F6C62726E6672L;   // "polbrnfr"
+    private static final int POLAR_BARRENS_FRAY_SCALE_BLOCKS = 64;             // chunky barrens blobs
+    private static final long POLAR_BARRENS_POWDER_SALT = 0x706F6C6270776472L; // "polbpwdr"
+    private static final int POLAR_BARRENS_POWDER_SCALE_BLOCKS = 40;           // small hidden pockets
+    private static final long POLAR_BARRENS_ICE_SALT = 0x706F6C6272696365L;    // "polbrice"
+    private static final int POLAR_BARRENS_ICE_SCALE_BLOCKS = 160;             // larger ice sheets
     // Alpine peak smoothing: peak biomes (snowy_slopes/frozen_peaks/jagged_peaks) are emitted on a per-column
     // terrain gate with no spatial coherence, so they salt-and-pepper into many tiny components (the only
     // genuinely-confetti biomes, in every config incl. vanilla). Gate them with a coherent ValueNoise field so
@@ -3783,7 +3879,31 @@ public final class LatitudeBiomes {
             out = applyClimateCompatReroll(biomeRegistry, out, climateV2Summary, blockX, blockZ,
                     preview, seaLevel, hasReliableSurface);
         }
+        out = applyPolarBarrensOverride(biomeRegistry, out, landBandIndex, finalLatDeg, blockX, blockZ);
         debugPick(blockX, blockZ, effectiveRadius, t, band, base, out, false, out != sanitized, mangroveDecision);
+        return out;
+    }
+
+    /**
+     * Phase 5 Slice B-8 Polar Barrens: flag-gated FINAL OVERRIDE (Registry twin). Runs AFTER every land
+     * law + the climate-compat reroll -- genuinely the last word -- so it introduces the barrens only
+     * once quarantine/enforcement can no longer touch it (which is why it needs no lat_* tag membership
+     * and no {@code allowedExtraBiomeIdsForBand} admission -- those would leak barrens equatorward to ~70
+     * deg via the flat-polar-shelf selector). Rewrites ONLY inland {@code minecraft:snowy_plains} to
+     * {@code globe:polar_barrens} on the coherent 86->88 fray; {@code ice_spikes} accents + real-mountain
+     * alpine picks are not snowy_plains and survive by construction; coasts/rivers are untouched.
+     * Byte-identical flag-off / off-fray / non-snowy_plains (returns {@code out} unchanged).
+     */
+    private static Holder<Biome> applyPolarBarrensOverride(Registry<Biome> biomeRegistry, Holder<Biome> out,
+                                                           int landBandIndex, double finalLatDeg, int blockX, int blockZ) {
+        if (LatitudeV2Flags.POLAR_BARRENS_ENABLED
+                && PolarBarrensBand.overridesSnowyPlains(isBiomeId(out, "minecraft:snowy_plains"),
+                        landBandIndex == BAND_POLAR, finalLatDeg, polarBarrensFrayNoise(blockX, blockZ))) {
+            Holder<Biome> barrens = biomeOrNull(biomeRegistry, POLAR_BARRENS_ID);
+            if (barrens != null) {
+                return barrens;
+            }
+        }
         return out;
     }
 
@@ -4495,7 +4615,28 @@ public final class LatitudeBiomes {
             out = applyClimateCompatReroll(biomePool, out, climateV2Summary, blockX, blockZ,
                     preview, seaLevel, hasReliableSurface);
         }
+        out = applyPolarBarrensOverride(biomePool, out, landBandIndex, finalLatDeg, blockX, blockZ);
         debugPick(blockX, blockZ, effectiveRadius, t, band, base, out, false, out != sanitized, mangroveDecision);
+        return out;
+    }
+
+    /**
+     * Phase 5 Slice B-8 Polar Barrens final override (Collection twin -- mirrors the Registry twin).
+     * Resolves the barrens from the (flag-on expanded) candidate {@code biomePool} via {@code entryById}
+     * so the headless atlas SOURCE path agrees with the live registry reach; {@code null} if the pool
+     * lacks it (e.g. flag-on but {@code expandSourceCandidatePool} had no remembered registry yet), in
+     * which case the pick is left unchanged. Same flag + fray gate; byte-identical off.
+     */
+    private static Holder<Biome> applyPolarBarrensOverride(Collection<Holder<Biome>> biomePool, Holder<Biome> out,
+                                                           int landBandIndex, double finalLatDeg, int blockX, int blockZ) {
+        if (LatitudeV2Flags.POLAR_BARRENS_ENABLED
+                && PolarBarrensBand.overridesSnowyPlains(isBiomeId(out, "minecraft:snowy_plains"),
+                        landBandIndex == BAND_POLAR, finalLatDeg, polarBarrensFrayNoise(blockX, blockZ))) {
+            Holder<Biome> barrens = entryById(biomePool, POLAR_BARRENS_ID);
+            if (barrens != null) {
+                return barrens;
+            }
+        }
         return out;
     }
 
@@ -5151,6 +5292,20 @@ public final class LatitudeBiomes {
     private static Holder<Biome> biome(Registry<Biome> biomes, String id) {
         Identifier ident = Identifier.parse(id);
         return biomes.get(ident).orElseThrow();
+    }
+
+    /**
+     * Null-safe registry resolve for optional first-party ids (Phase 5 Slice B-8 Polar Barrens): returns
+     * the holder for {@code id} if present, else {@code null} -- never throws. Used by the flag-gated
+     * final override so a missing biome (should be impossible: registered unconditionally) degrades to
+     * "leave the pick unchanged" rather than crashing worldgen.
+     */
+    private static Holder<Biome> biomeOrNull(Registry<Biome> biomes, String id) {
+        try {
+            return biomes.get(Identifier.parse(id)).orElse(null);
+        } catch (RuntimeException e) {
+            return null;
+        }
     }
 
     private static Holder<Biome> pickFrom(Registry<Biome> biomes, int blockX, int blockZ, int bandIndex, String... options) {
