@@ -2812,6 +2812,17 @@ public final class LatitudeBiomes {
     // salt so the barrens edge, the powder pockets, and the ice patches decorrelate. The barrens id is
     // resolved by string against the live registry (the consumer already resolves any id this way).
     public static final String POLAR_BARRENS_ID = "globe:polar_barrens";
+    // Traversal counters for the pick-twin final override (gate-2 diagnosis 2026-07-14: the atlas proof
+    // once concluded "zero barrens" from a top-20-truncated biomes.txt while the map had 11k barrens
+    // pixels -- these make override traversal provable from the LOG alone, and from a unit test via the
+    // package-private getters). Counted UNCONDITIONALLY (LongAdder, contention-free, ~free next to a
+    // pick() call) so the entry-point test can pin traversal without any flag; the periodic log line is
+    // gated on -Dlatitude.debugBarrens.
+    private static final boolean DEBUG_BARRENS = Boolean.getBoolean("latitude.debugBarrens");
+    private static final java.util.concurrent.atomic.LongAdder POLAR_BARRENS_OVERRIDE_CALLS =
+            new java.util.concurrent.atomic.LongAdder();
+    private static final java.util.concurrent.atomic.LongAdder POLAR_BARRENS_OVERRIDE_REWRITES =
+            new java.util.concurrent.atomic.LongAdder();
     private static final long POLAR_BARRENS_FRAY_SALT = 0x706F6C62726E6672L;   // "polbrnfr"
     private static final int POLAR_BARRENS_FRAY_SCALE_BLOCKS = 64;             // chunky barrens blobs
     private static final long POLAR_BARRENS_POWDER_SALT = 0x706F6C6270776472L; // "polbpwdr"
@@ -3893,18 +3904,71 @@ public final class LatitudeBiomes {
      * {@code globe:polar_barrens} on the coherent 86->88 fray; {@code ice_spikes} accents + real-mountain
      * alpine picks are not snowy_plains and survive by construction; coasts/rivers are untouched.
      * Byte-identical flag-off / off-fray / non-snowy_plains (returns {@code out} unchanged).
+     *
+     * <p><b>One chokepoint, three pipelines (gate-2 diagnosis 2026-07-14):</b> this twin's tail is
+     * traversed by the LIVE game ({@code ChunkGeneratorPopulateBiomesMixin} -> {@code "MIXIN"}), the
+     * atlas MAP sampler ({@code BiomePreviewExporter.ExportJob} -> {@code "ATLAS_SAMPLER"}), and the
+     * atlas INVENTORY sampler ({@code BiomeSamplerTools.sampleBiomeId} -> {@code "ATLAS_SAMPLER"}) --
+     * receipts: flag-on run 20260714-223215 had 11,161 barrens map pixels at 86.26-90.00 deg and
+     * inventory {@code present_in_world:true}. (The "zero cells" scare was the top-20-truncated
+     * {@code biomes.txt}; barrens at 1.43% ranks 21st. Future gates: count pixels in
+     * {@code biome_ids.png} via the palette, or grep {@code world_biome_inventory.json}, or run with
+     * {@code -Dlatitude.debugBarrens} and read the [LAT][BARRENS] counter line.)
      */
     private static Holder<Biome> applyPolarBarrensOverride(Registry<Biome> biomeRegistry, Holder<Biome> out,
                                                            int landBandIndex, double finalLatDeg, int blockX, int blockZ) {
-        if (LatitudeV2Flags.POLAR_BARRENS_ENABLED
+        return applyPolarBarrensOverride(biomeRegistry, out, landBandIndex, finalLatDeg, blockX, blockZ,
+                LatitudeV2Flags.POLAR_BARRENS_ENABLED);
+    }
+
+    /**
+     * Flag-parameterized seam of the Registry-twin override -- the ONE implementation both the
+     * production tail (passing {@link LatitudeV2Flags#POLAR_BARRENS_ENABLED}) and the entry-point test
+     * (passing {@code true}; the flag is static-final and cannot be flipped in the suite JVM, per the
+     * flags class's own testing note) execute. Package-private for the test; identical behavior.
+     */
+    static Holder<Biome> applyPolarBarrensOverride(Registry<Biome> biomeRegistry, Holder<Biome> out,
+                                                   int landBandIndex, double finalLatDeg, int blockX, int blockZ,
+                                                   boolean enabled) {
+        POLAR_BARRENS_OVERRIDE_CALLS.increment();
+        if (enabled
                 && PolarBarrensBand.overridesSnowyPlains(isBiomeId(out, "minecraft:snowy_plains"),
                         landBandIndex == BAND_POLAR, finalLatDeg, polarBarrensFrayNoise(blockX, blockZ))) {
             Holder<Biome> barrens = biomeOrNull(biomeRegistry, POLAR_BARRENS_ID);
             if (barrens != null) {
+                POLAR_BARRENS_OVERRIDE_REWRITES.increment();
+                maybeLogBarrensCounters();
                 return barrens;
             }
         }
+        maybeLogBarrensCounters();
         return out;
+    }
+
+    /** Total pick-twin barrens-override traversals (both twins). Test/diagnostic surface. */
+    public static long polarBarrensOverrideCalls() {
+        return POLAR_BARRENS_OVERRIDE_CALLS.sum();
+    }
+
+    /** Total snowy_plains -> polar_barrens rewrites performed (both twins). Test/diagnostic surface. */
+    public static long polarBarrensOverrideRewrites() {
+        return POLAR_BARRENS_OVERRIDE_REWRITES.sum();
+    }
+
+    /**
+     * -Dlatitude.debugBarrens throwaway-grade traversal proof: once per ~1000 override calls, log the
+     * running call + rewrite totals so an atlas log alone proves (a) the pick twins traverse the
+     * override and (b) how many rewrites actually happened. Zero cost unless the debug prop is set.
+     */
+    private static void maybeLogBarrensCounters() {
+        if (!DEBUG_BARRENS) {
+            return;
+        }
+        long calls = POLAR_BARRENS_OVERRIDE_CALLS.sum();
+        if (calls % 1000L == 0L) {
+            LOGGER.info("[LAT][BARRENS] overrideCalls={} rewrites={} flagEnabled={}",
+                    calls, POLAR_BARRENS_OVERRIDE_REWRITES.sum(), LatitudeV2Flags.POLAR_BARRENS_ENABLED);
+        }
     }
 
     public static Holder<Biome> pick(Collection<Holder<Biome>> biomePool, Holder<Biome> base, int blockX, int blockZ, int blockY, int borderRadiusBlocks,
@@ -4625,18 +4689,31 @@ public final class LatitudeBiomes {
      * Resolves the barrens from the (flag-on expanded) candidate {@code biomePool} via {@code entryById}
      * so the headless atlas SOURCE path agrees with the live registry reach; {@code null} if the pool
      * lacks it (e.g. flag-on but {@code expandSourceCandidatePool} had no remembered registry yet), in
-     * which case the pick is left unchanged. Same flag + fray gate; byte-identical off.
+     * which case the pick is left unchanged. Same flag + fray gate; byte-identical off. Shares the
+     * traversal/rewrite counters with the Registry twin (see {@code maybeLogBarrensCounters}).
      */
     private static Holder<Biome> applyPolarBarrensOverride(Collection<Holder<Biome>> biomePool, Holder<Biome> out,
                                                            int landBandIndex, double finalLatDeg, int blockX, int blockZ) {
-        if (LatitudeV2Flags.POLAR_BARRENS_ENABLED
+        return applyPolarBarrensOverride(biomePool, out, landBandIndex, finalLatDeg, blockX, blockZ,
+                LatitudeV2Flags.POLAR_BARRENS_ENABLED);
+    }
+
+    /** Flag-parameterized seam of the Collection-twin override (see the Registry-twin seam's javadoc). */
+    static Holder<Biome> applyPolarBarrensOverride(Collection<Holder<Biome>> biomePool, Holder<Biome> out,
+                                                   int landBandIndex, double finalLatDeg, int blockX, int blockZ,
+                                                   boolean enabled) {
+        POLAR_BARRENS_OVERRIDE_CALLS.increment();
+        if (enabled
                 && PolarBarrensBand.overridesSnowyPlains(isBiomeId(out, "minecraft:snowy_plains"),
                         landBandIndex == BAND_POLAR, finalLatDeg, polarBarrensFrayNoise(blockX, blockZ))) {
             Holder<Biome> barrens = entryById(biomePool, POLAR_BARRENS_ID);
             if (barrens != null) {
+                POLAR_BARRENS_OVERRIDE_REWRITES.increment();
+                maybeLogBarrensCounters();
                 return barrens;
             }
         }
+        maybeLogBarrensCounters();
         return out;
     }
 
