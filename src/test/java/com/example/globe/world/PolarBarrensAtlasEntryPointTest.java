@@ -131,24 +131,61 @@ class PolarBarrensAtlasEntryPointTest {
         long callsBefore = LatitudeBiomes.polarBarrensOverrideCalls();
         long rewritesBefore = LatitudeBiomes.polarBarrensOverrideRewrites();
 
+        // DEFAULT-INDEPENDENT (branch-local flight staging flips the production default ON, B-6/B-7
+        // precedent): whichever way the flag points, the entry point must traverse the seam AND honor
+        // the matching contract — flag-off: never barrens + zero rewrites (byte-identity); flag-on:
+        // the deep cap emits barrens through the REAL pick() (the live/atlas truth TEST flights ride).
+        boolean enabled = com.example.globe.core.LatitudeV2Flags.POLAR_BARRENS_ENABLED;
+        boolean sawBarrens = false;
         for (int x = -2048; x <= 2048; x += 1024) {
-            Holder<Biome> out = atlasSamplerPick(x, DEEP_CAP_Z);
-            assertNotEquals(LatitudeBiomes.POLAR_BARRENS_ID, id(out),
-                    "default (flag-off) suite JVM must never emit barrens through the atlas entry point");
-            Holder<Biome> south = atlasSamplerPick(x, -DEEP_CAP_Z);
-            assertNotEquals(LatitudeBiomes.POLAR_BARRENS_ID, id(south),
-                    "southern hemisphere flag-off must never emit barrens either");
+            String north = id(atlasSamplerPick(x, DEEP_CAP_Z));
+            String south = id(atlasSamplerPick(x, -DEEP_CAP_Z));
+            if (!enabled) {
+                assertNotEquals(LatitudeBiomes.POLAR_BARRENS_ID, north,
+                        "flag-off must never emit barrens through the atlas entry point");
+                assertNotEquals(LatitudeBiomes.POLAR_BARRENS_ID, south,
+                        "southern hemisphere flag-off must never emit barrens either");
+            } else {
+                sawBarrens |= LatitudeBiomes.POLAR_BARRENS_ID.equals(north)
+                        || LatitudeBiomes.POLAR_BARRENS_ID.equals(south);
+            }
         }
 
         assertTrue(LatitudeBiomes.polarBarrensOverrideCalls() > callsBefore,
                 "the real pick() entry point must traverse the barrens override seam (gate-2 false-green "
                         + "class: a pipeline that dodges the seam would silently drop the feature)");
-        assertEquals(rewritesBefore, LatitudeBiomes.polarBarrensOverrideRewrites(),
-                "flag-off traversals must perform zero rewrites (byte-identity through the entry point)");
+        if (!enabled) {
+            assertEquals(rewritesBefore, LatitudeBiomes.polarBarrensOverrideRewrites(),
+                    "flag-off traversals must perform zero rewrites (byte-identity through the entry point)");
+        } else {
+            assertTrue(sawBarrens,
+                    "flight-staging flag-on: the deep cap must emit barrens through the real pick()");
+            assertTrue(LatitudeBiomes.polarBarrensOverrideRewrites() > rewritesBefore,
+                    "flight-staging flag-on: the rewrite counter must record the deep-cap rewrites");
+        }
     }
 
     @Test
     void enabledSeamRewritesDeepCapSnowyPlainsColumnFromTheEntryPointPipeline() {
+        boolean enabled = com.example.globe.core.LatitudeV2Flags.POLAR_BARRENS_ENABLED;
+        if (enabled) {
+            // Flight staging (production default ON): the pipeline already rewrites at the tail, so a
+            // "snowy_plains column" arrives AS barrens — and since ONLY snowy_plains ever rewrites
+            // (pinned below and in PolarBarrensBandTest), a deep-cap barrens column IS the proof the
+            // pipeline produced snowy_plains beneath and the seam rewrote it. The flag-off identity
+            // half stays pinned directly through the seam.
+            long rewritesBefore = LatitudeBiomes.polarBarrensOverrideRewrites();
+            int x = findDeepCapColumn(DEEP_CAP_Z, LatitudeBiomes.POLAR_BARRENS_ID);
+            assertTrue(LatitudeBiomes.polarBarrensOverrideRewrites() > rewritesBefore,
+                    "the rewrite counter must record the deep-cap rewrites (log-alone proof surface)");
+            int landBandIndex = LatitudeBiomes.authoritativeLandBandIndex(x, DEEP_CAP_Z, RADIUS);
+            double latDeg = Math.abs((double) DEEP_CAP_Z) * 90.0 / RADIUS;
+            assertSame(snowyPlains, LatitudeBiomes.applyPolarBarrensOverride(
+                            registry, snowyPlains, landBandIndex, latDeg, x, DEEP_CAP_Z, false),
+                    "a disabled seam must remain the identity on the same column (byte-identity half)");
+            return;
+        }
+
         int x = findSnowyPlainsColumn(DEEP_CAP_Z);
         Holder<Biome> flagOffOut = atlasSamplerPick(x, DEEP_CAP_Z);
         assertEquals("minecraft:snowy_plains", id(flagOffOut));
@@ -164,6 +201,17 @@ class PolarBarrensAtlasEntryPointTest {
 
         long rewrites = LatitudeBiomes.polarBarrensOverrideRewrites();
         assertTrue(rewrites > 0, "the rewrite counter must record the rewrite (log-alone proof surface)");
+    }
+
+    /** Find a deep-cap column the full pipeline resolves to the given id (flight-staging variant). */
+    private static int findDeepCapColumn(int blockZ, String targetId) {
+        for (int x = -4096; x <= 4096; x += 512) {
+            if (targetId.equals(id(atlasSamplerPick(x, blockZ)))) {
+                return x;
+            }
+        }
+        throw new AssertionError("no " + targetId + " column found at z=" + blockZ
+                + " -- minimal-registry harness drifted from the polar pipeline");
     }
 
     @Test
