@@ -67,7 +67,7 @@ class PolarHazardWindowTest {
 
     @Test
     void ambientProgressAndSnowCountAreZeroBelowAmbientOnset() {
-        // WHY: the ambient window opens at AMBIENT_ONSET_DEG (moved 85 -> 82 in B-7 S3); below it there is no
+        // WHY: the ambient window opens at AMBIENT_ONSET_DEG (85 -> 82 in S3, -> 80 in S8); below it there is no
         // snow and no ambient progress at all. Anchored symbolically so the value move can't silently break it.
         assertEquals(0.0, PolarHazardWindow.ambientProgress(PolarHazardWindow.AMBIENT_ONSET_DEG - 0.001));
         assertEquals(0, PolarHazardWindow.snowCount(PolarHazardWindow.AMBIENT_ONSET_DEG - 0.001));
@@ -417,11 +417,11 @@ class PolarHazardWindowTest {
     void stormLevelKeepsItsOwn85OnsetAndAmbientNowLeadsIt() {
         // WHY: stormLevel keeps its OWN 85 onset (STORM_ONSET_DEG), UNCHANGED by B-7 S3 -- still clearly
         // overcast (0.4) at 86 and full by 87.5 (the sun is gone well before the pole). The client ambient
-        // snow/fog now begins EARLIER (82, S3), so at 86 the whiteout has out-ramped the storm sky (ambient
+        // snow/fog now begins EARLIER (80 since S8), so at 86 the whiteout has out-ramped the storm sky (ambient
         // leads, the sun-fade follows on its own steeper 85->87.5 curve). Documents the decoupled onsets.
         assertEquals(0.4f, PolarHazardWindow.stormLevel(86.0), 1e-4);
         assertTrue(PolarHazardWindow.ambientProgress(86.0) > PolarHazardWindow.stormLevel(86.0),
-                "ambient (82 onset) now leads the storm sky (85 onset) at 86 deg");
+                "ambient (80 onset) now leads the storm sky (85 onset) at 86 deg");
     }
 
     @Test
@@ -470,7 +470,7 @@ class PolarHazardWindowTest {
 
     @Test
     void polarFogFractionsAreExactlyZeroAtAndBelowAmbientOnset() {
-        // WHY: seam-free -- at/below the ambient onset (now 82, B-7 S3) the fog must be vanilla's, bitwise
+        // WHY: seam-free -- at/below the ambient onset (now 80, S8) the fog must be vanilla's, bitwise
         // unchanged (no fog pop at onset). Anchored symbolically to the onset constant.
         assertEquals(0.0f, PolarHazardWindow.polarFogEndFraction(PolarHazardWindow.AMBIENT_ONSET_DEG));
         assertEquals(0.0f, PolarHazardWindow.polarFogEndFraction(PolarHazardWindow.AMBIENT_ONSET_DEG - 0.001));
@@ -481,7 +481,7 @@ class PolarHazardWindowTest {
     @Test
     void polarFogEndAndStartReturnVanillaUnchangedAtAndBelowOnset() {
         // WHY: the seam-free contract at the value level -- callers get their own vanilla distances back at/below
-        // the ambient onset (now 82, B-7 S3). 80 deg is still below the onset.
+        // the ambient onset (now 80, S8). 80.0 is exactly ON the onset (progress 0 -> vanilla); 78 is below it.
         assertEquals(V_END, PolarHazardWindow.polarFogEnd(V_END, PolarHazardWindow.AMBIENT_ONSET_DEG));
         assertEquals(V_END, PolarHazardWindow.polarFogEnd(V_END, 80.0));
         // start clamps below end, but with no tightening end==V_END so start==V_START (< V_END-1).
@@ -542,25 +542,26 @@ class PolarHazardWindowTest {
     @Test
     void polarFogEndIsClearlyHeavyAtEightyEightAndLightNearTheOnset() {
         // WHY: Peetsa's shelter is ~88 deg and must read HEAVY (sight roughly halved from vanilla). The fog now
-        // begins at 82 (B-7 S3), so the LIGHT far haze is the early approach just inside the onset (~83); 86 is
-        // now mid-ramp, no longer "light". Documents the numbers a playtest should observe (12-chunk sample).
-        float end83 = PolarHazardWindow.polarFogEnd(V_END, 83.0);
+        // begins at 80 (S8; 82 under S3), so the LIGHT far haze is the early approach just inside the onset
+        // (~81); 83+ is mid-ramp, no longer "light". Documents the numbers a playtest should observe
+        // (12-chunk sample).
+        float end81 = PolarHazardWindow.polarFogEnd(V_END, 81.0);
         float end88 = PolarHazardWindow.polarFogEnd(V_END, 88.0);
-        assertTrue(end83 > 140.0f, "83 deg should still be a light far haze, was " + end83);
+        assertTrue(end81 > 140.0f, "81 deg should still be a light far haze, was " + end81);
         assertTrue(end88 < 120.0f, "88 deg should read clearly heavy, was " + end88);
     }
 
     @Test
     void test78FogRetuneEndDistances() {
-        // The TEST 78 curve tuning (NEAR 24->16, END_CURVE 0.85->0.80) is UNCHANGED; B-7 S3 moved the ambient
-        // ONSET 85 -> 82, so at any given latitude the fog is now further along its ramp (heavier) than before.
-        // Documents the sight distances (blocks) at a 12-chunk sample (V_END=192) under the new 82 onset: 86 is
-        // now mid-ramp (~91), 88 heavy (~52), 90 the pole floor (16, unchanged).
+        // The TEST 78 curve tuning (NEAR 24->16, END_CURVE 0.85->0.80) is UNCHANGED; the ambient ONSET moved
+        // 85 -> 82 (S3) -> 80 (S8), so at any given latitude the fog is further along its ramp (heavier) than
+        // before. Documents the sight distances (blocks) at a 12-chunk sample (V_END=192) under the 80 onset:
+        // 86 mid-ramp (~75), 88 heavy (~45), 90 the pole floor (16, unchanged).
         float end86 = PolarHazardWindow.polarFogEnd(V_END, 86.0);
         float end88 = PolarHazardWindow.polarFogEnd(V_END, 88.0);
         float end90 = PolarHazardWindow.polarFogEnd(V_END, 90.0);
-        assertEquals(90.9f, end86, 1.5f, "86 deg end distance (now mid-ramp under the 82 onset)");
-        assertEquals(52.2f, end88, 1.5f, "88 deg end distance");
+        assertEquals(75.0f, end86, 1.5f, "86 deg end distance (mid-ramp under the 80 onset)");
+        assertEquals(44.8f, end88, 1.5f, "88 deg end distance");
         assertEquals(16.0f, end90, 1e-3f, "90 deg end distance == pole floor (unchanged)");
         // Still heavier than the pre-TEST-78 tuning at 88 and 90 (the parity band).
         assertTrue(end88 < 83.2f, "88 must be heavier than the old 83, was " + end88);
@@ -659,13 +660,19 @@ class PolarHazardWindowTest {
     }
 
     @Test
-    void ambientOnsetMovedTo82_clientAtmosphereLeadsTheDanger() {
-        // B-7 S3: the pure-client ambient snow/fog onset moved 85 -> 82 so the whiteout leads the danger.
-        assertEquals(82.0, PolarHazardWindow.AMBIENT_ONSET_DEG, 1e-9);
-        // Snow/fog now begin at 82, ahead of the frostbite (85) and lethal (88) bands.
-        assertEquals(0, PolarHazardWindow.snowCount(81.99), "no snow just below the 82 onset");
-        assertTrue(PolarHazardWindow.snowCount(82.5) > 0, "snow present just inside the 82 onset");
+    void ambientOnsetMovedTo80_polarCountryStartsAt80() {
+        // B-7 S3 moved the pure-client ambient snow/fog onset 85 -> 82; S8 (owner, 2026-07-14) moved it again
+        // to 80 -- polar country starts at 80 and the whiteout leads every danger band.
+        assertEquals(80.0, PolarHazardWindow.AMBIENT_ONSET_DEG, 1e-9);
+        // Snow/fog now begin at 80, ahead of the frostbite (85) and lethal (88) bands.
+        assertEquals(0, PolarHazardWindow.snowCount(79.99), "no snow just below the 80 onset");
+        assertTrue(PolarHazardWindow.snowCount(80.5) > 0, "snow present just inside the 80 onset");
         assertTrue(PolarHazardWindow.AMBIENT_ONSET_DEG < PolarHazardWindow.FROSTBITE_ONSET_DEG);
+        // S8 law: the challenge bands did NOT move with it.
+        assertEquals(85.0, PolarHazardWindow.FROSTBITE_ONSET_DEG, 1e-9);
+        assertEquals(85.0, PolarHazardWindow.STORM_ONSET_DEG, 1e-9);
+        assertEquals(87.0, PolarHazardWindow.BLIZZARD_ONSET_DEG, 1e-9);
+        assertEquals(87.5, PolarHazardWindow.HAZARD_ONSET_DEG, 1e-9);
     }
 
     @Test

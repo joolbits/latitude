@@ -2,6 +2,7 @@ package com.example.globe.core;
 
 import org.junit.jupiter.api.Test;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -45,6 +46,23 @@ class LatitudeV2FlagsTest {
         // design (prompt-gated crossing) and was live-approved; the flag remains the kill switch.
         assertTrue(LatitudeV2Flags.PASSAGE_V2_ENABLED,
                 "The Hemisphere Passage ships default-on per Peetsa's post-P3 decision");
+    }
+
+    @Test
+    void polarBarrensDefaultsToDisabled() {
+        // Phase 5 B-8 CHANGES WORLDGEN (snowy_plains -> globe:polar_barrens in the deep cap), the highest
+        // risk class, so it must ship default-off + byte-identical flag-off until the atlas proof passes.
+        assertFalse(LatitudeV2Flags.POLAR_BARRENS_ENABLED,
+                "Polar Barrens must ship default-off (byte-identical flag-off) until the atlas proof gate passes");
+    }
+
+    @Test
+    void polarBarrensDegreeDefaults() {
+        // Onset defaults to the veg-fade finish (the owner's invisible seam); full defaults to 88.
+        assertEquals(PolarVegetationFade.FULL_DEG, LatitudeV2Flags.POLAR_BARRENS_ONSET_DEG, 1e-9,
+                "Barrens onset defaults to the vegetation-fade finish (KEEP-SHARED)");
+        assertEquals(88.0, LatitudeV2Flags.POLAR_BARRENS_FULL_DEG, 1e-9,
+                "Barrens full-dominance latitude defaults to 88 deg");
     }
 
     @Test

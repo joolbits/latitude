@@ -1,6 +1,7 @@
 package com.example.globe.mixin;
 
 import com.example.globe.GlobeMod;
+import com.example.globe.core.LatitudeV2Flags;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
@@ -308,6 +309,21 @@ public class ChunkGeneratorGenerateFeaturesBiomeSetMixin {
                     out.putIfAbsent(id, holder);
                 }
             }
+        }
+        // Phase 5 Slice B-8 Polar Barrens: admit globe:polar_barrens to the retain/index policy set
+        // (flag-on only). It carries NO lat_* tag by design (A1: static tag membership would leak it
+        // equatorward via the flat-polar-shelf selector), so the tag sweep above never sees it -- but the
+        // consumer's final override places it in the deep cap, and without membership here the vanilla
+        // retainAll(possibleBiomes) would strip it from decoration entirely (no ores, no lakes, no snow
+        // carpet). Index safety: the barrens feature list is a STRICT SUBSET of snowy_plains' (surface
+        // vegetation dropped; every ore/lake/spring/geode/disk/underground entry kept in its exact step,
+        // plus freeze_top_layer), and snowy_plains is always a possible biome wherever the barrens can
+        // appear -- so every barrens feature is already in the FeatureSorter index at the same step
+        // (total == inIndex, the "already_safe" path: NO index rebuild, no new sort nodes or edges, no
+        // decoration-RNG shift). The redirect just needs the biome itself in the retain set.
+        if (LatitudeV2Flags.POLAR_BARRENS_ENABLED) {
+            Identifier barrensId = Identifier.fromNamespaceAndPath("globe", "polar_barrens");
+            biomeRegistry.get(barrensId).ifPresent(holder -> out.putIfAbsent(barrensId, holder));
         }
         return new ArrayList<>(out.values());
     }

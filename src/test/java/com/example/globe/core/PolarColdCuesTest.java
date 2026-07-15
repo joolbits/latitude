@@ -23,9 +23,9 @@ class PolarColdCuesTest {
 
     @Test
     void rungDegreesAndTiers() {
-        // 82: owner-revised 2026-07-14 (from the P2 draft's 83) -- the first words land with the first
-        // snowflakes at the AMBIENT_ONSET_DEG snow onset.
-        assertEquals(82.0, PolarColdCues.Rung.APPROACH.deg());
+        // 80 since S8 (2026-07-14; 82 under the earlier owner revision, draft said 83) -- the first words
+        // land with the first snowflakes because the rung is PINNED to the AMBIENT_ONSET_DEG snow onset.
+        assertEquals(80.0, PolarColdCues.Rung.APPROACH.deg());
         assertEquals(PolarHazardWindow.AMBIENT_ONSET_DEG, PolarColdCues.Rung.APPROACH.deg());
         assertEquals(85.0, PolarColdCues.Rung.HYPOTHERMIA.deg());
         assertEquals(87.0, PolarColdCues.Rung.BLIZZARD.deg());
@@ -41,8 +41,8 @@ class PolarColdCuesTest {
 
     @Test
     void tierForLatClimbsThroughEveryRung() {
-        assertEquals(0, PolarColdCues.tierForLat(81.9)); // below the first rung (and below the snow onset)
-        assertEquals(1, PolarColdCues.tierForLat(82.0)); // first words land with the first snowflakes
+        assertEquals(0, PolarColdCues.tierForLat(79.9)); // below the first rung (and below the snow onset)
+        assertEquals(1, PolarColdCues.tierForLat(80.0)); // first words land with the first snowflakes
         assertEquals(1, PolarColdCues.tierForLat(84.9));
         assertEquals(2, PolarColdCues.tierForLat(85.0));
         assertEquals(3, PolarColdCues.tierForLat(87.0));
@@ -56,12 +56,12 @@ class PolarColdCuesTest {
     @Test
     void ladderFiresEachRungOnceOnTheWayIn() {
         int highest = 0;
-        // below the first rung: nothing (81.5 is also inside the 81-82 hysteresis strip: quiet, NOT a re-arm)
-        PolarColdCues.LadderStep s = PolarColdCues.evaluateLadder(81.5, highest, false);
+        // below the first rung: nothing (79.5 is also inside the 79-80 hysteresis strip: quiet, NOT a re-arm)
+        PolarColdCues.LadderStep s = PolarColdCues.evaluateLadder(79.5, highest, false);
         assertNull(s.fire());
         assertEquals(0, s.nextHighestFired());
-        // APPROACH (at the snow onset)
-        s = PolarColdCues.evaluateLadder(82.0, s.nextHighestFired(), false);
+        // APPROACH (at the snow onset, 80 since S8)
+        s = PolarColdCues.evaluateLadder(80.0, s.nextHighestFired(), false);
         assertEquals(PolarColdCues.Rung.APPROACH, s.fire());
         // still APPROACH band: no re-fire
         assertNull(PolarColdCues.evaluateLadder(84.0, s.nextHighestFired(), false).fire());
@@ -89,15 +89,18 @@ class PolarColdCuesTest {
     }
 
     @Test
-    void fullRetreatBelow81ReArmsTheLadder() {
-        // The re-arm line is 81 -- one deg below the 82 first rung (the same 1-deg hysteresis width the
-        // 83/82 draft pairing had): 81.5 lingers (no re-arm, no fire), 80.9 re-arms.
-        assertNull(PolarColdCues.evaluateLadder(81.5, 5, false).fire());
-        assertEquals(5, PolarColdCues.evaluateLadder(81.5, 5, false).nextHighestFired()); // hysteresis holds
-        assertNull(PolarColdCues.evaluateLadder(80.9, 5, false).fire());
-        assertEquals(0, PolarColdCues.evaluateLadder(80.9, 5, false).nextHighestFired());
+    void fullRetreatBelow79ReArmsTheLadder() {
+        // The re-arm line is 79 (S8) -- DERIVED as one deg below the 80 first rung (the same 1-deg hysteresis
+        // width the 83/82 draft pairing had): 79.5 lingers (no re-arm, no fire), 78.9 re-arms.
+        assertEquals(79.0, PolarColdCues.RETREAT_REARM_DEG, 1e-9);
+        assertEquals(PolarHazardWindow.AMBIENT_ONSET_DEG - 1.0, PolarColdCues.RETREAT_REARM_DEG, 1e-9,
+                "re-arm stays exactly one degree under the pinned first rung");
+        assertNull(PolarColdCues.evaluateLadder(79.5, 5, false).fire());
+        assertEquals(5, PolarColdCues.evaluateLadder(79.5, 5, false).nextHighestFired()); // hysteresis holds
+        assertNull(PolarColdCues.evaluateLadder(78.9, 5, false).fire());
+        assertEquals(0, PolarColdCues.evaluateLadder(78.9, 5, false).nextHighestFired());
         // ...and back in fires APPROACH again.
-        assertEquals(PolarColdCues.Rung.APPROACH, PolarColdCues.evaluateLadder(82.0, 0, false).fire());
+        assertEquals(PolarColdCues.Rung.APPROACH, PolarColdCues.evaluateLadder(80.0, 0, false).fire());
     }
 
     // ---- protection suppression of the hypothermia rung ----
@@ -117,7 +120,7 @@ class PolarColdCuesTest {
     @Test
     void approachAndSevereRungsAreNeverProtectionSuppressed() {
         // APPROACH shows even fully protected.
-        assertEquals(PolarColdCues.Rung.APPROACH, PolarColdCues.evaluateLadder(82.0, 0, true).fire());
+        assertEquals(PolarColdCues.Rung.APPROACH, PolarColdCues.evaluateLadder(80.0, 0, true).fire());
         // LETHAL fires regardless of protection (only its TEXT swaps).
         assertEquals(PolarColdCues.Rung.LETHAL, PolarColdCues.evaluateLadder(89.7, 4, true).fire());
     }

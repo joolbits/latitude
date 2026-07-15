@@ -16,10 +16,11 @@ package com.example.globe.core;
  * The B-4 four-rung ladder (85/87/89/89.7 in {@link PolarWarningEpisode}, still used by the vignette) is
  * SUPERSEDED for the pole-warning TEXT by a five-rung ladder that narrates the S3 two-stage cold:
  * <ul>
- *   <li>{@link Rung#APPROACH} 82 deg -- moved 85 -&gt; 82 (owner-revised 2026-07-14 from the P2 draft's 83):
- *       placed AT the {@link PolarHazardWindow#AMBIENT_ONSET_DEG} snow onset so the first words land with the
- *       first snowflakes. Owner-verbatim copy "Entering polar storm country. Proceed with caution." (the old
- *       WARN_1 snow line is retired).</li>
+ *   <li>{@link Rung#APPROACH} -- PINNED symbolically to {@link PolarHazardWindow#AMBIENT_ONSET_DEG} (80 deg
+ *       since S8, 2026-07-14; 82 under the earlier owner revision; the P2 draft said 83): the rung IS the
+ *       snow onset, so the first words land with the first snowflakes wherever the ambient constant moves.
+ *       Owner-verbatim copy "Entering polar storm country. Proceed with caution." (the old WARN_1 snow line
+ *       is retired).</li>
  *   <li>{@link Rung#HYPOTHERMIA} 85 deg -- NEW: the frostbite-DAMAGE onset ({@link PolarHazardWindow#FROSTBITE_ONSET_DEG}),
  *       owner-verbatim copy "The cold begins to bite." (2026-07-14; replaces the draft "Hypothermia sets in.").
  *       SUPPRESSED when the player wears a FULL freeze-immune set (honesty law: full leather = zero frostbite =
@@ -42,9 +43,10 @@ public final class PolarColdCues {
     /** The five warning rungs, equator -&gt; pole. {@link #tier()} is the 1-based ladder index the overlay
      *  persists as {@code highestFired}; {@link #deg()} is the latitude onset. */
     public enum Rung {
-        /** 82 deg -- approach, AT the ambient snow onset ("Entering polar storm country. Proceed with
-         *  caution.", owner verbatim 2026-07-14 -- placed so the first words land with the first snowflakes). */
-        APPROACH(82.0),
+        /** Approach -- PINNED to the ambient snow onset ({@link PolarHazardWindow#AMBIENT_ONSET_DEG}: 80 deg
+         *  since S8) so "Entering polar storm country. Proceed with caution." (owner verbatim 2026-07-14)
+         *  lands with the first snowflakes wherever the onset moves. */
+        APPROACH(PolarHazardWindow.AMBIENT_ONSET_DEG),
         /** 85 deg -- NEW frostbite-onset "The cold begins to bite." (owner verbatim 2026-07-14);
          *  protection-suppressed. */
         HYPOTHERMIA(85.0),
@@ -80,11 +82,12 @@ public final class PolarColdCues {
         }
     }
 
-    /** Below this absolute latitude the whole ladder re-arms -- ONE degree below the first rung (82), keeping
-     *  the same 1-deg hysteresis width the P2 draft's 83/82 pairing (and B-4's 85/84,
+    /** Below this absolute latitude the whole ladder re-arms -- ONE degree below the first rung, DERIVED from
+     *  it ({@code AMBIENT_ONSET_DEG - 1}: 79 since S8 moved the rung to 80; was 81 under the 82 revision),
+     *  keeping the same 1-deg hysteresis width the P2 draft's 83/82 pairing (and B-4's 85/84,
      *  {@link PolarWarningEpisode#RETREAT_REARM_DEG}) had, so jitter on the onset line can never machine-gun
-     *  the APPROACH rung. Moved 82 -&gt; 81 with the rung (owner-revised 2026-07-14). */
-    public static final double RETREAT_REARM_DEG = 81.0;
+     *  the APPROACH rung -- and so the hysteresis moves WITH the rung automatically. */
+    public static final double RETREAT_REARM_DEG = PolarHazardWindow.AMBIENT_ONSET_DEG - 1.0;
 
     /** The removal-reactive whisper (design S1 addendum): shown once when a FULL freeze-immune set is LOST while
      *  in the cold zone -- it REPLACES the (suppressed) hypothermia rung re-fire at that moment. Whisper family,

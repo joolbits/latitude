@@ -135,7 +135,7 @@ public final class GlobeWarningOverlay {
     private static boolean zoneFullArmed = true;
     // B-4 item 3 (B-7 item 4 reworked): EPISODIC polar warning ladder. Each rung fires ONCE when crossed, shows
     // ~10 s, then fades out over ~1 s, and does NOT re-show while the player stays poleward -- the whole ladder
-    // re-arms only on a full retreat below RETREAT_REARM_DEG 81, one deg under the first rung at 82 (pure
+    // re-arms only on a full retreat below RETREAT_REARM_DEG 79, one deg under the first rung at 80 (S8; pure
     // decision in core.PolarColdCues, five rungs). Highest tier fired + the active message and its window.
     private static final long POLE_WARN_HOLD_TICKS = 200L;   // ~10 s at 20 tps
     private static final long POLE_WARN_FADE_TICKS = 20L;    // ~1 s alpha ramp (in and out)

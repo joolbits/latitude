@@ -25,7 +25,7 @@ package com.example.globe.core;
  *       old near-binary flip at the doorstep. (B-4 removed the Blindness
  *       effect: the smooth whiteout overlay now carries vision loss without a hard snap.)</li>
  *   <li><b>B-3b AMBIENT window {@code [AMBIENT_ONSET_DEG,90]}</b> -- atmosphere BEFORE danger. Snow begins at
- *       the ambient onset (82 deg since B-7 S3; was 85) and the fixed per-tick particle budget + screen-fog
+ *       the ambient onset (80 deg since S8; 82 under S3; was 85) and the fixed per-tick particle budget + screen-fog
  *       intensity ramp smoothly to VERY heavy at 90 deg. B-7 S3 also added the FROSTBITE damage band
  *       {@code [85,88)} (its own section below) between the atmosphere and the lethal core.</li>
  * </ul>
@@ -290,20 +290,25 @@ public final class PolarHazardWindow {
 
     // ---- B-3b: ambient snow + fog window [AMBIENT_ONSET_DEG,90] (client particles + screen fog) ----
 
-    /** Latitude (deg) at which the CLIENT ambient snow/fog atmosphere begins. Moved 85 -> 82 (B-7 S3, Peetsa
-     *  2026-07-13) so the whiteout leads the danger by a wider margin. This is a PURE CLIENT-ATMOSPHERE onset:
-     *  its only readers are {@link #ambientProgress} (driving snow particle budget + render-distance fog) on the
-     *  client. It is DELIBERATELY DECOUPLED from the two world-modifying polar rules, which keep their own
-     *  anchors and DO NOT move (moving them would be a worldgen seam, forbidden in B-7):
-     *  {@code PolarWaterFreezeRule.FREEZE_ALL_DEG} stays 85 (the ice sheet is world-visible / places ice) and
-     *  {@code PolarPrecipitationRule.FORCE_SNOW_DEG} stays 75 (its own client anchor). The frostbite DAMAGE band
-     *  also keeps its own {@link #FROSTBITE_ONSET_DEG} = 85, so snow (82) leads frostbite (85) leads slowness/frost
-     *  (87.5) leads the lethal core (88). */
-    public static final double AMBIENT_ONSET_DEG = 82.0;
+    /** Latitude (deg) at which the CLIENT ambient snow/fog atmosphere begins -- where POLAR COUNTRY starts.
+     *  Moved 85 -> 82 (B-7 S3, Peetsa 2026-07-13), then 82 -> 80 (S8, Peetsa 2026-07-14: the "cheap 80%" of
+     *  the dilation idea -- ~2 more degrees of storm-country approach, ~110 blocks on Regular-Wide; geometric
+     *  dilation stays parked). {@code PolarColdCues.Rung#APPROACH} is PINNED to this constant symbolically,
+     *  so "Entering polar storm country." speaks with the first snowflakes wherever this moves. This is a
+     *  PURE CLIENT-ATMOSPHERE onset: its only readers are {@link #ambientProgress} (driving snow particle
+     *  budget + render-distance fog) on the client. It is DELIBERATELY DECOUPLED from the two world-modifying
+     *  polar rules, which keep their own anchors and DO NOT move (moving them would be a worldgen seam,
+     *  forbidden in B-7): {@code PolarWaterFreezeRule.FREEZE_ALL_DEG} stays 85 (the ice sheet is
+     *  world-visible / places ice) and {@code PolarPrecipitationRule.FORCE_SNOW_DEG} stays 75 (its own client
+     *  anchor). Every challenge band also keeps its own dial (S8 law: the flight-tested endgame does not
+     *  move): frostbite {@link #FROSTBITE_ONSET_DEG} 85, blizzard 87, lethal core 88-90, DANGER 89 / LETHAL
+     *  89.7, veg fade 78/86, Barrens 86, storm sky {@link #STORM_ONSET_DEG} 85 -- so snow (80) leads
+     *  frostbite (85) leads slowness/frost (87.5) leads the lethal core (88). */
+    public static final double AMBIENT_ONSET_DEG = 80.0;
     /** Latitude (deg) at which ambient snow/fog is at its VERY-heavy ceiling (the pole). */
     public static final double AMBIENT_FULL_DEG = 90.0;
-    /** Gentle-flurry per-tick snow budget at the ambient onset ({@link #AMBIENT_ONSET_DEG}, 82 deg since B-7
-     *  S3 -- F4 comment fix; was "85 deg onset"). */
+    /** Gentle-flurry per-tick snow budget at the ambient onset ({@link #AMBIENT_ONSET_DEG}, 80 deg since S8;
+     *  82 under S3; was "85 deg onset"). */
     public static final int SNOW_MIN_COUNT = 2;
     /** Per-tick snow budget at 90 deg. FIXED budget -- never a catch-up accumulator. History: 80 -> 30 (B-4
      *  round 2, when the flakes spawned in a thin ~6-block band above the head and mostly read as a single
@@ -314,14 +319,14 @@ public final class PolarHazardWindow {
      *  (ClientLevelStormSkyMixin) -- not the whole blizzard by itself. */
     public static final int SNOW_MAX_COUNT = 60;
 
-    /** Continuous ambient progress in {@code [0,1]}: 0 at/below {@link #AMBIENT_ONSET_DEG} (82), 1 at/above
+    /** Continuous ambient progress in {@code [0,1]}: 0 at/below {@link #AMBIENT_ONSET_DEG} (80), 1 at/above
      *  90 deg. */
     public static double ambientProgress(double absLatDeg) {
         return clamp01((absLatDeg - AMBIENT_ONSET_DEG) / (AMBIENT_FULL_DEG - AMBIENT_ONSET_DEG));
     }
 
     /**
-     * FIXED per-tick snow particle budget from the ambient ramp: 0 below {@link #AMBIENT_ONSET_DEG} (82),
+     * FIXED per-tick snow particle budget from the ambient ramp: 0 below {@link #AMBIENT_ONSET_DEG} (80),
      * {@link #SNOW_MIN_COUNT} at onset, ramping to {@link #SNOW_MAX_COUNT} at 90 deg. This is a per-tick
      * BUDGET, not an amount owed since the last spawn -- the caller spawns exactly this many and no more, so a
      * paused/lagging client never accrues a backlog to dump on resume.
@@ -416,8 +421,8 @@ public final class PolarHazardWindow {
     // ---- B-4 round 3 item 3: STORM-SKY level (steepened so the sun is gone well before the pole) ----
 
     /** Latitude (deg) at which the storm sky begins to lift. Its OWN 85 anchor, UNCHANGED by B-7 S3 (which
-     *  moved the ambient snow/fog onset to 82): the near-field flurry and depth haze now LEAD the overcast by
-     *  3 deg (a greying approach), and from 85 the sky lift joins on its original steep 85-&gt;87.5 ramp so the
+     *  moved the ambient snow/fog onset to 82, S8 to 80): the near-field flurry and depth haze now LEAD the overcast by
+     *  5 deg (a greying approach), and from 85 the sky lift joins on its original steep 85-&gt;87.5 ramp so the
      *  sun is still fully gone by 87.5 (the Peetsa sun-at-86 fix is preserved bit-for-bit). */
     public static final double STORM_ONSET_DEG = 85.0;
     /** Latitude (deg) at which the storm sky is FULLY overcast (rain level 1.0, sun fully faded). Reached
