@@ -249,25 +249,10 @@ public final class HemispherePassageService {
      * hard-capped by the shared {@link #PROBE_BUDGET}, so this can never stall the server thread.
      */
     static BlockPos resolvePoleArrival(ServerLevel world, double playerX, double playerZ) {
-        WorldBorder border = world.getWorldBorder();
-        double centerX = border.getCenterX();
-        double centerZ = border.getCenterZ();
         int zRadius = poleLatitudeRadius(world);
-        double xRadiusIntended = LatitudeMath.intendedXRadius(border);
-
-        // Target: the ANTIPODAL meridian (L -> L+180, the P3 geographic fix -- mirrorX was the EW antimeridian
-        // formula and landed 13degE at 13degW), SAME pole side, pulled to the 89.5 deg S5 arrival line (the
-        // escape trek is the arrival experience; the post-crossing cold grace covers the curtain window).
-        double sign = (playerZ - centerZ) >= 0.0 ? 1.0 : -1.0;
-        int arrivalAbsZ = LatitudeMath.zForLatitudeDeg(PoleGeometry.ARRIVAL_DEG_POLE, zRadius);
-        int targetZ = (int) Math.round(centerZ) + (int) Math.round(sign * arrivalAbsZ);
-
-        // A2 corner X-clamp: bound the antipodal target AND every +/-X candidate equatorward of the EW band
-        // (a prime-meridian departure maps exactly onto the +-xRadius border corner; the clamp pulls it in).
-        double xClampAbs = PoleArrivalSearch.xClampAbs(xRadiusIntended);
-        int antipodalX = (int) Math.round(PoleArrivalSearch.antipodalX(playerX, centerX, xRadiusIntended));
-        int baseX = PoleArrivalSearch.clampX(antipodalX, centerX, xClampAbs);
-        int[] xs = PoleArrivalSearch.candidateXs(baseX, centerX, xClampAbs,
+        PoleArrivalTarget t = poleArrivalTarget(world, playerX, playerZ);
+        int targetZ = t.targetZ();
+        int[] xs = PoleArrivalSearch.candidateXs(t.baseX(), t.centerX(), t.xClampAbs(),
                 PoleArrivalSearch.ARRIVAL_SEARCH_STEP, PROBE_BUDGET);
 
         // Best-effort surface-class preference. If the probe can't be built or a column can't be classified, we
@@ -319,12 +304,12 @@ public final class HemispherePassageService {
         // Pass C -- last resort: nudge equatorward along Z (toward center) at the clamped mirror X, never
         // crossing the center into the far hemisphere.
         for (int nudge = Z_EQUATOR_NUDGE_STEP; nudge <= Z_EQUATOR_NUDGE_MAX && budget > 0; nudge += Z_EQUATOR_NUDGE_STEP) {
-            int zEq = targetZ - (int) Math.round(sign * nudge);
-            if ((sign > 0.0 && zEq < centerZ) || (sign < 0.0 && zEq > centerZ)) {
+            int zEq = targetZ - (int) Math.round(t.poleSign() * nudge);
+            if ((t.poleSign() > 0.0 && zEq < t.centerZ()) || (t.poleSign() < 0.0 && zEq > t.centerZ())) {
                 break;
             }
             budget--;
-            BlockPos safe = placeSafePoleColumn(world, baseX, zEq);
+            BlockPos safe = placeSafePoleColumn(world, t.baseX(), zEq);
             if (safe != null) {
                 return safe;
             }
@@ -332,6 +317,40 @@ public final class HemispherePassageService {
 
         // Budget exhausted (or bounds ran out) with no safe column: no-op the crossing, player stays put.
         return null; // never teleport into fluid/void
+    }
+
+    /**
+     * The ANTIPODAL arrival TARGET COLUMN the pole crossing aims at for a player at
+     * ({@code playerX},{@code playerZ}) -- the SINGLE code path for that math ({@code antipodalX} + the A2
+     * corner clamp + {@code zForLatitudeDeg(ARRIVAL_DEG_POLE)} on the SAME pole side). Extracted (S9) so the
+     * arrival PRE-WARM ticket ({@code GlobeMod.tickPolePrewarm}) anchors on EXACTLY the column
+     * {@link #resolvePoleArrival} will probe at answer time, never a re-derived copy that could drift. Pure
+     * arithmetic -- no chunk access, safe to call every tick.
+     */
+    record PoleArrivalTarget(int baseX, int targetZ, double centerX, double centerZ,
+                             double xClampAbs, double poleSign) {
+    }
+
+    static PoleArrivalTarget poleArrivalTarget(ServerLevel world, double playerX, double playerZ) {
+        WorldBorder border = world.getWorldBorder();
+        double centerX = border.getCenterX();
+        double centerZ = border.getCenterZ();
+        int zRadius = poleLatitudeRadius(world);
+        double xRadiusIntended = LatitudeMath.intendedXRadius(border);
+
+        // Target: the ANTIPODAL meridian (L -> L+180, the P3 geographic fix -- mirrorX was the EW antimeridian
+        // formula and landed 13degE at 13degW), SAME pole side, pulled to the 89.5 deg S5 arrival line (the
+        // escape trek is the arrival experience; the post-crossing cold grace covers the curtain window).
+        double sign = (playerZ - centerZ) >= 0.0 ? 1.0 : -1.0;
+        int arrivalAbsZ = LatitudeMath.zForLatitudeDeg(PoleGeometry.ARRIVAL_DEG_POLE, zRadius);
+        int targetZ = (int) Math.round(centerZ) + (int) Math.round(sign * arrivalAbsZ);
+
+        // A2 corner X-clamp: bound the antipodal target AND every +/-X candidate equatorward of the EW band
+        // (a prime-meridian departure maps exactly onto the +-xRadius border corner; the clamp pulls it in).
+        double xClampAbs = PoleArrivalSearch.xClampAbs(xRadiusIntended);
+        int antipodalX = (int) Math.round(PoleArrivalSearch.antipodalX(playerX, centerX, xRadiusIntended));
+        int baseX = PoleArrivalSearch.clampX(antipodalX, centerX, xClampAbs);
+        return new PoleArrivalTarget(baseX, targetZ, centerX, centerZ, xClampAbs, sign);
     }
 
     /** The Z (latitude) radius for pole geometry: the active radius if armed, else the synced latitude radius

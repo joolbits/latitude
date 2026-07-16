@@ -23,6 +23,7 @@ import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.server.level.TicketType;
 import net.minecraft.server.level.progress.LevelLoadListener;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
@@ -121,6 +122,17 @@ public class GlobeMod implements ModInitializer {
     // borderUxTick; suppresses BOTH cold-damage bands + the F3 frost cue while active; NOT wired into the S6
     // heal lock. Thread-confined to the server thread; cleared on disconnect; stale entries lazily dropped.
     private static final java.util.Map<java.util.UUID, Long> POLE_CROSS_COLD_GRACE_UNTIL = new java.util.HashMap<>();
+    // B-7 S9 (arrival pre-warm, TEST 99 freeze mitigation): the per-player ticketed antipodal anchor -- the
+    // target block column the current PORTAL radius ticket is centered on + the last refresh tick. ONE entry
+    // per player, present ONLY while they are inside the pole prompt band (worst case: N players camped at the
+    // prompt line = N 5x5-chunk tickets -- see PoleArrivalPrewarm's budget javadoc). Thread-confined to the
+    // server thread; dropped on band-exit/crossing/disconnect; the PORTAL ticket's own 300-tick timeout is the
+    // cleanup backstop if a drop is ever missed.
+    private static final java.util.Map<java.util.UUID, PolePrewarmAnchor> POLE_PREWARM = new java.util.HashMap<>();
+
+    /** S9: one player's active pre-warm ticket anchor (target block column) + last ticket-refresh tick. */
+    private record PolePrewarmAnchor(int targetX, int targetZ, long lastRefreshTick) {
+    }
     // B-7 S6: cached warmth-scan verdicts (PolarWarmth 9x5x9 box scan is 405 block reads -- cached per player
     // on a WARMTH_RESCAN_TICKS cadence so heal-time checks and the per-tick cue share one scan). Value = the
     // game-time tick the verdict was computed at + the verdict. Thread-confined; cleared on disconnect.
@@ -255,8 +267,9 @@ public class GlobeMod implements ModInitializer {
             context.server().execute(() -> handlePassageAnswer(context.player(), payload.cross(), payload.axis()));
         });
 
-        // B-5/B-7: drop any pending turn-back nudge, cross-cooldown, pole-clamp, cold-grace and warmth-cache
-        // bookkeeping for a leaver.
+        // B-5/B-7: drop any pending turn-back nudge, cross-cooldown, pole-clamp, cold-grace, warmth-cache and
+        // S9 pre-warm bookkeeping for a leaver (the pre-warm drop also releases the chunk ticket; the PORTAL
+        // timeout would expire it anyway -- belt and suspenders).
         ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
             java.util.UUID uuid = handler.player.getUUID();
             PENDING_PASSAGE_TURN_BACK.remove(uuid);
@@ -265,6 +278,12 @@ public class GlobeMod implements ModInitializer {
             POLE_CLAMP_LOGGED.remove(uuid);
             POLE_CROSS_COLD_GRACE_UNTIL.remove(uuid);
             POLE_WARMTH_CACHE.remove(uuid);
+            ServerLevel overworld = server.overworld();
+            if (overworld != null) {
+                dropPolePrewarm(overworld, uuid);
+            } else {
+                POLE_PREWARM.remove(uuid);
+            }
         });
 
         ServerTickEvents.END_SERVER_TICK.register(GlobeMod::borderUxTick);
@@ -509,8 +528,10 @@ public class GlobeMod implements ModInitializer {
             // position/velocity back to the line and is NOT a teleport wrap and NOT worldgen. Flag-gated so
             // flag-off leaves the Wide pole the unmarked endless plain it is today. [P3 fix] Vanilla-border
             // parity: the wall stops creative too; ONLY spectator passes (PoleHardStop.exemptFromClamp).
+            // S9: the arrival PRE-WARM ticket rides the same flag gate (Wide AND Classic -- unlike the clamp).
             if (com.example.globe.core.LatitudeV2Flags.POLE_PASSAGE_V2_ENABLED) {
                 applyPoleHardStop(player, border, worldTime);
+                tickPolePrewarm(player, overworld, border, worldTime);
             }
 
             double latDeg = com.example.globe.util.LatitudeMath.absLatDegExact(border, player.getZ());
@@ -739,6 +760,11 @@ public class GlobeMod implements ModInitializer {
                     // are suppressed for the ceremony window only. Re-stamped only by a NEW successful crossing.
                     POLE_CROSS_COLD_GRACE_UNTIL.put(player.getUUID(),
                             com.example.globe.core.PoleCrossingGrace.graceUntil(now));
+                    // S9: drop the pre-warm ticket -- the crossing's own synchronous 3x3 FULL load has just
+                    // taken over at this exact target (the ticket did its job getting the terrain generated
+                    // beforehand). If the arriver lingers in the far band, next tick re-arms a fresh ticket
+                    // for their RETURN target as ordinary in-band behavior.
+                    dropPolePrewarm(world, player.getUUID());
                 }
                 // Per-player S2C ONLY (never broadcast). P2 consumes it for the arrival ceremony + to seed the
                 // right client arm disarmed-in-band. Carries the axis and the arrival (X,Z).
@@ -996,6 +1022,100 @@ public class GlobeMod implements ModInitializer {
             LOGGER.info("[Latitude][PolePassage] Pole hard-stop first contact for {} at z={} (inWater={})",
                     player.getName().getString(), contactZ, inWater);
         }
+    }
+
+    /**
+     * B-7 S9 (arrival pre-warm, TEST 99 freeze mitigation): while a could-cross player (survival/adventure/
+     * creative -- spectator excluded like the prompt) is inside the pole PROMPT BAND
+     * ({@code distanceToPole <= promptAt + 32}, Wide AND Classic), keep a {@code TicketType.PORTAL} radius-2
+     * (5x5 chunk) load ticket alive at their CURRENT antipodal arrival target, so the landing terrain is
+     * generated BEFORE they answer the prompt -- killing the virgin-antipode generation cliff that stalled
+     * TEST 99 (60+ tick server debt + a JourneyMap fullmap open = client hard-stall) and the answer-time
+     * density-compile burst ("loadedTeleportChunks=9" right at the cross).
+     *
+     * <p><b>Idiom.</b> The target is computed by the SAME code path the crossing itself uses
+     * ({@link HemispherePassageService#poleArrivalTarget} -- pure arithmetic, no chunk access, never a
+     * re-derived copy). The ticket is the 26.2 {@code ServerChunkCache.addTicketWithRadius(PORTAL, pos, 2)}
+     * -- PORTAL is vanilla's own "pre-load the far side of a portal" type, timeout 300 ticks, so it is
+     * TIMEOUT-STYLE: we re-add it every {@link com.example.globe.core.PoleArrivalPrewarm#REFRESH_CADENCE_TICKS}
+     * (~3 s) while in-band rather than holding a permanent ticket, and any missed drop self-expires within
+     * 15 s. This ASYNC ticket replaces nothing at answer time: the crossing's own synchronous 3x3 FULL ring
+     * ({@code placeSafeY}) still runs -- it just finds the chunks already generated.
+     *
+     * <p><b>Pure vs shim.</b> Every DECISION (band membership incl. the 32-block margin, gamemode
+     * eligibility, the 64-block re-anchor drift, the refresh cadence) is the pure, tested
+     * {@link com.example.globe.core.PoleArrivalPrewarm}; this method is the thin shim that reads
+     * position/gamemode, computes the target, and add/removes the ticket.
+     *
+     * <p><b>Drops:</b> band-exit or gamemode-ineligibility (here), a successful crossing
+     * ({@code handlePassageAnswer} -- the crossing's own load takes over), disconnect (the connection
+     * handler), and an unresolved radius. <b>EW is exempt by design</b>: its arrival is the same-|X| mirror
+     * column at the player's own Z -- terrain at the identical border distance they are already standing at,
+     * never a virgin antipode at this scale, so pre-warming it would ticket chunks the approach already loads.
+     */
+    private static void tickPolePrewarm(ServerPlayer player, ServerLevel world, WorldBorder border, long worldTime) {
+        java.util.UUID uuid = player.getUUID();
+        int zRadius = LatitudeBiomes.getActiveRadiusBlocks();
+        if (zRadius <= 0) {
+            dropPolePrewarm(world, uuid);
+            return; // radius not resolved -- no geometry to anchor on.
+        }
+        double distToPole = com.example.globe.core.PoleGeometry.distanceToPole(zRadius, border.getCenterZ(), player.getZ());
+        double promptAt = com.example.globe.core.PoleGeometry.resolve(zRadius).promptDist();
+        if (!com.example.globe.core.PoleArrivalPrewarm.eligibleGameMode(player.isCreative(), player.isSpectator())
+                || !com.example.globe.core.PoleArrivalPrewarm.inPrewarmBand(distToPole, promptAt)) {
+            dropPolePrewarm(world, uuid);
+            return;
+        }
+        HemispherePassageService.PoleArrivalTarget target =
+                HemispherePassageService.poleArrivalTarget(world, player.getX(), player.getZ());
+        PolePrewarmAnchor prev = POLE_PREWARM.get(uuid);
+        if (prev == null) {
+            addPolePrewarmTicket(world, target.baseX(), target.targetZ());
+            POLE_PREWARM.put(uuid, new PolePrewarmAnchor(target.baseX(), target.targetZ(), worldTime));
+            // The flight-recorder line (one per band-entry): prove pre-warm from a live log.
+            if (Boolean.getBoolean("latitude.debugPassage")) {
+                LOGGER.info("[LatPassage] EVENT axis=POLE prewarm ARM player={} anchor=({},{}) dist={} promptAt={}",
+                        player.getName().getString(), target.baseX(), target.targetZ(),
+                        String.format(java.util.Locale.ROOT, "%.1f", distToPole),
+                        String.format(java.util.Locale.ROOT, "%.1f", promptAt));
+            }
+            return;
+        }
+        if (com.example.globe.core.PoleArrivalPrewarm.needsReanchor(
+                prev.targetX(), prev.targetZ(), target.baseX(), target.targetZ())) {
+            // Drift re-anchor: release the stale square, ticket the new one.
+            removePolePrewarmTicket(world, prev.targetX(), prev.targetZ());
+            addPolePrewarmTicket(world, target.baseX(), target.targetZ());
+            POLE_PREWARM.put(uuid, new PolePrewarmAnchor(target.baseX(), target.targetZ(), worldTime));
+            return;
+        }
+        if (com.example.globe.core.PoleArrivalPrewarm.shouldRefresh(prev.lastRefreshTick(), worldTime)) {
+            // Same anchor: re-add on the slow cadence to reset PORTAL's 300-tick timeout (timeout-style keep-alive).
+            addPolePrewarmTicket(world, prev.targetX(), prev.targetZ());
+            POLE_PREWARM.put(uuid, new PolePrewarmAnchor(prev.targetX(), prev.targetZ(), worldTime));
+        }
+    }
+
+    /** S9 drop: forget the anchor and release its ticket (best-effort -- PORTAL's 300-tick timeout is the
+     *  backstop if the remove ever misses, e.g. after a same-position re-add landed in the same window). */
+    private static void dropPolePrewarm(ServerLevel world, java.util.UUID uuid) {
+        PolePrewarmAnchor prev = POLE_PREWARM.remove(uuid);
+        if (prev != null) {
+            removePolePrewarmTicket(world, prev.targetX(), prev.targetZ());
+        }
+    }
+
+    private static void addPolePrewarmTicket(ServerLevel world, int blockX, int blockZ) {
+        world.getChunkSource().addTicketWithRadius(TicketType.PORTAL,
+                new ChunkPos(Math.floorDiv(blockX, 16), Math.floorDiv(blockZ, 16)),
+                com.example.globe.core.PoleArrivalPrewarm.TICKET_RADIUS_CHUNKS);
+    }
+
+    private static void removePolePrewarmTicket(ServerLevel world, int blockX, int blockZ) {
+        world.getChunkSource().removeTicketWithRadius(TicketType.PORTAL,
+                new ChunkPos(Math.floorDiv(blockX, 16), Math.floorDiv(blockZ, 16)),
+                com.example.globe.core.PoleArrivalPrewarm.TICKET_RADIUS_CHUNKS);
     }
 
     /** Server-side blocks to the nearest E/W world-border edge ({@code >= 0}), anchored to the mod's INTENDED
