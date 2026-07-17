@@ -1,6 +1,6 @@
 # Latitude 1.5 Feature Manifest
 
-`status: Phase 4 locally passed; candidate proof clean; savepoint pending` · `branch: codex/1.5-mini-launch-26.1x` · `base: f26d5f58` · `recorded: 2026-07-17`
+`status: Phase 4 committed; seven bounded post-Phase 4 local-polish commits committed; manual and measured-proof HOLDs remain` · `branch: codex/1.5-mini-launch-26.1x` · `base: f26d5f58` · `recorded: 2026-07-17`
 
 This is the implementation-side allowlist for the Latitude 1.5 pre-2.0 polish campaign. The campaign
 roadmap lives in the docs root at:
@@ -143,8 +143,51 @@ Canonical Phase 4 evidence:
 
 `docs/binder/latitude-1-5-phase4-20260717.md`
 
-This is a local Phase 4 compatibility pass. The frozen jar is artifact-pure, but its manifest
-truthfully records `Build-Dirty: true` because the 26.1.x identity edits and Phase 4 documentation
-are not yet committed. No real profile/world or screen/window was accessed. A savepoint/rebuild
-decision and Phase 5 authorization are separate gates. The 26.2 port, profile staging, tagging,
-pushing, release, upload, and publication remain unauthorized.
+This local Phase 4 compatibility pass was committed as local savepoint
+`858b815002ef82b20d55deadb0ac5ad970a9c823` (`Latitude 1.5: save 26.1.x candidate proof`). The
+earlier frozen candidate correctly recorded `Build-Dirty: true` before that savepoint; that is
+historical candidate metadata, not a current-tree claim. No real profile/world or screen/window was
+accessed for Phase 4. Phase 5 authorization remains a separate gate. The 26.2 port, profile
+staging, tagging, pushing, release, upload, and publication remain unauthorized.
+
+## Post-Phase 4 local-polish record
+
+The following commits are local, bounded follow-up work after the committed Phase 4 savepoint. They
+do not extend the Phase 4 compatibility matrix or authorize Phase 5, a port, a release, a push, or
+any profile/world action.
+
+| Commit | Bounded local change | Current proof boundary |
+| --- | --- | --- |
+| `8fe97d051ca5b1a367916f2200d16c5ec31ad678` | Replaces polar blindness with 85–90° whiteout fog and finite, poleward warning episodes. | Dependency-free policy/integration proof is included in the local build; a polar live-visual check remains HOLD. |
+| `d252770c258f9f4a7da6e8c11e98231cdd84233b` | Adds player-selectable HUD location detail modes: off, biome, zone, or biome plus zone. | Policy/config proof is included in the local build; live-cycle all four Off/Biome/Zone/Biome+Zone modes in digital and analog HUD, Follow and Detach positioning, at intended GUI widths, plus a saved legacy-JSON migration spot-check; this remains HOLD. |
+| `54b62988df85f8fc6ec5c8e882679bb82a6c91db` | Allows village origins through exactly 80° absolute latitude and vetoes only origins beyond it. | Boundary/integration proof is included in the local build; a live village `/locate` check is unrun and remains HOLD. |
+| `bf6e07281bb133977f25992b88136ced30cd6b6f` | Adds a lambda-local populated-biome column cache. | Base output, climate, and disposable create/save/reload proof passed locally; the exact Promenade and combined-provider output gate remains HOLD. |
+| `188b2f52ed170b3c2a57937ea600ccbb10617607` | Caches constant biome IDs and immutable launch flags only. | Structural/fresh-JVM semantics and clean-build proof passed locally; no measured speed claim is made. |
+| `0aacc55aebc1c74d5e71e73652052486ea5be024` | Batches analog-compass disc spans while retaining the existing visible-pixel model. | Exact raster/model parity and clean-build proof passed locally; the analog live visual matrix remains HOLD. |
+| `e6327c5715adc3acb295223d24963e74d682044c` | Rejects mountain-class temperate beach ridges while retaining low and rolling beaches. | Focused policy/model, accepted-output, climate, and build proof passed locally; the same-world 46°S visual retest remains HOLD. |
+
+Pasture decision: rolling and upland terrain remains allowed. No pasture patch was made or is
+implied by the beach-ridge guard.
+
+### Exact partial/manual HOLDs
+
+- Polar whiteout and warning presentation still need a live visual check.
+- HUD Studio still needs a live cycle of all four Off/Biome/Zone/Biome+Zone modes in both digital
+  and analog HUD, in Follow and Detach positioning, at intended GUI widths, plus an actual saved
+  legacy-JSON migration spot-check.
+- The analog compass still needs the live visual matrix across size, theme, transparency, preview,
+  and live placement.
+- The accepted beach scene still needs a same-world 46°S visual retest with the exact candidate jar
+  and world identity frozen first.
+- Village behavior still needs a live `/locate` check; no such manual run is recorded here.
+- Performance Slice A's Promenade and combined-provider same-session exact-output comparisons remain
+  HOLD: their palettes match, but the ID maps and inventories differ in the current harness.
+- Controlled baseline-versus-candidate Spark/JFR measurement remains pending. No FPS, MSPT,
+  frame-time, GPU-time, or full visual claim follows from the local model/build proofs.
+
+### Version and authorization boundary
+
+The only compatibility proof claimed here is the committed Phase 4 matrix for Minecraft 26.1,
+26.1.1, and 26.1.2. Minecraft 26.0 and 26.2 are separate and unperformed; the 26.2 worktree stays
+protected. Nothing in this manifest authorizes Phase 5, a port, profile staging, tagging, pushing,
+release, upload, or publication.
