@@ -373,7 +373,6 @@ public class GlobeMod implements ModInitializer {
             } else if (stage == PolarStage.LETHAL || stage == PolarStage.HOPELESS) {
                 player.addEffect(new MobEffectInstance(MobEffects.SLOWNESS, duration, 2, ambient, showParticles, showIcon));
                 player.addEffect(new MobEffectInstance(MobEffects.WEAKNESS, duration, 1, ambient, showParticles, showIcon));
-                player.addEffect(new MobEffectInstance(MobEffects.BLINDNESS, duration, 0, ambient, showParticles, showIcon));
 
                 int max = 140;
                 int target = (int) Math.floor(max * 0.85);
@@ -382,17 +381,6 @@ public class GlobeMod implements ModInitializer {
                 }
                 player.setTicksFrozen(Math.max(player.getTicksFrozen(), target));
             }
-        }
-    }
-
-    private static void applyContinuousBlindness(ServerPlayer player, boolean inFinalWhiteout) {
-        if (!inFinalWhiteout) {
-            return;
-        }
-
-        MobEffectInstance cur = player.getEffect(MobEffects.BLINDNESS);
-        if (cur == null || cur.getDuration() < 80) {
-            player.addEffect(new MobEffectInstance(MobEffects.BLINDNESS, 200, 0, true, false, false));
         }
     }
 

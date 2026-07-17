@@ -69,6 +69,15 @@ public final class GlobeClientState {
         return radius - Math.abs(coord - center);
     }
 
+    public static double absoluteLatitudeDegrees(WorldBorder border, double z) {
+        if (border == null) {
+            return 0.0;
+        }
+        double radius = com.example.globe.util.LatitudeMath.halfSize(border);
+        double normalized = Math.abs(z - border.getCenterZ()) / radius;
+        return Math.max(0.0, Math.min(90.0, normalized * 90.0));
+    }
+
     private static int borderRadiusBlocks(ClientLevel world) {
         return (int) Math.round(com.example.globe.util.LatitudeMath.halfSize(world.getWorldBorder()));
     }
@@ -484,26 +493,30 @@ public final class GlobeClientState {
         return world.canSeeSky(pos.above());
     }
 
-    public static float computePoleFogEnd(double z) {
-        if (DEBUG_DISABLE_WARNINGS) {
+    public static float computePoleFogEnd(double z, float baselineEnd) {
+        if (DEBUG_DISABLE_WARNINGS || DEBUG_DISABLE_FOG) {
             return -1.0f;
         }
         Minecraft client = Minecraft.getInstance();
-        if (client.player == null || client.level == null) {
+        if (client.level == null) {
             return -1.0f;
         }
 
-        float intensity = polarWhiteoutIntensity(client.level, client.player);
-        intensity = Math.max(0.0f, Math.min(1.0f, intensity));
-        if (intensity <= 0.001f) {
-            return -1.0f;
+        double absoluteLatitude = absoluteLatitudeDegrees(client.level.getWorldBorder(), z);
+        return PolarPresentationPolicy.fogEndDistance(absoluteLatitude, baselineEnd);
+    }
+
+    public static float computePoleFogIntensity(double z) {
+        if (DEBUG_DISABLE_WARNINGS || DEBUG_DISABLE_FOG) {
+            return 0.0f;
+        }
+        Minecraft client = Minecraft.getInstance();
+        if (client.level == null) {
+            return 0.0f;
         }
 
-        float e = intensity * intensity;
-
-        float startEnd = 96.0f;
-        float endEnd = 2.0f;
-        return startEnd + (endEnd - startEnd) * e;
+        double absoluteLatitude = absoluteLatitudeDegrees(client.level.getWorldBorder(), z);
+        return PolarPresentationPolicy.fogIntensity(absoluteLatitude);
     }
 
     public static float computeEdgeFogEnd(double x) {
