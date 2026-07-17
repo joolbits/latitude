@@ -53,6 +53,61 @@ class SolarSkyMoodTest {
     }
 
     @Test
+    void gloomDeepenedTowardFullDark() {
+        // S14(a)(ii): the polar-night gloom ceiling was deepened 0.85 -> 0.97 ("no light on the opposite pole").
+        assertTrue(SolarSkyMood.GLOOM_MAX_BLEND > 0.9, "deep polar-night sky reads full dark at global noon");
+        assertTrue(SolarSkyMood.GLOOM_MAX_BLEND <= 1.0);
+    }
+
+    @Test
+    void twilightHoldCurve() {
+        // S14(a)(i): 0 at global noon (frac 0.25), 1 at global midnight (0.75), 0.5 at sunrise/sunset (0.0/0.5).
+        assertEquals(0.0, SolarSkyMood.twilightHold01(0.25), 1e-9, "global noon: nothing to hold");
+        assertEquals(1.0, SolarSkyMood.twilightHold01(0.75), 1e-9, "global midnight: full dusk hold");
+        assertEquals(0.5, SolarSkyMood.twilightHold01(0.0), 1e-9, "sunrise: half hold");
+        assertEquals(0.5, SolarSkyMood.twilightHold01(0.5), 1e-9, "sunset: half hold");
+        // Periodic + continuous across the dayTime-0 wrap (no dawn pop): frac->1 approaches frac=0's value.
+        assertEquals(SolarSkyMood.twilightHold01(0.0), SolarSkyMood.twilightHold01(0.999999), 1e-4, "wrap-continuous");
+        // Monotone rising noon -> midnight, and flat near midday (smoothstep).
+        assertTrue(SolarSkyMood.twilightHold01(0.35) < SolarSkyMood.twilightHold01(0.6), "rises through the evening");
+        assertTrue(SolarSkyMood.twilightHold01(0.35) < 0.1, "still ~flat in mid-afternoon");
+        assertEquals(0.0, SolarSkyMood.twilightHold01(Double.NaN), 1e-9, "NaN-safe");
+    }
+
+    @Test
+    void starsSuppressedUnderMidnightSun() {
+        assertEquals(0.0f, SolarSkyMood.suppressedStarBrightness(0.9f, 1.0), 1e-6f, "midnight hold: no stars");
+        assertEquals(0.9f, SolarSkyMood.suppressedStarBrightness(0.9f, 0.0), 1e-6f, "noon: vanilla ~0 untouched");
+        assertEquals(0.25f, SolarSkyMood.suppressedStarBrightness(0.5f, 0.5), 1e-6f, "half hold: half stars");
+        assertEquals(0.9f, SolarSkyMood.suppressedStarBrightness(0.9f, Double.NaN), 1e-6f, "NaN-safe (vanilla)");
+    }
+
+    @Test
+    void atmosphereTintFollowsSkyThroughDayNightMidnightSunPolarNight() {
+        // S14(c): the ONE fog/topcoat colour source. Day / sun-up -> base; night/polar-night -> near-black
+        // (NOT storm-damped); midnight-sun global night -> held dusk (storm-damped); equinox/equator passthrough.
+        int base = 0xFF5A6C84; // opaque storm-blue (a mid fog target)
+        // Day (sun up, not midnight sun): untouched.
+        assertEquals(base, SolarSkyMood.atmosphereTint(base, false, 10.0, 0.25, 0.0), "daylight fog = base");
+        // Night / polar night (sun 12deg down): darkens toward the polar-night near-black, and does so REGARDLESS
+        // of the storm (a blizzard at night is a dark-out, not a white wall).
+        int expNight = SolarSkyMood.blendRgb(base, SolarSkyMood.POLAR_NIGHT_SKY_RGB, SolarSkyMood.GLOOM_MAX_BLEND);
+        assertEquals(expNight, SolarSkyMood.atmosphereTint(base, false, -12.0, 0.5, 0.0), "night: near-black");
+        assertEquals(expNight, SolarSkyMood.atmosphereTint(base, false, -12.0, 0.5, 1.0),
+                "night darkening is NOT storm-damped (dark-out, not white wall)");
+        // Midnight-sun global midnight (sun still up): holds the pink-gold dusk; storm-damped (whiteout owns 85+).
+        int expDusk = SolarSkyMood.blendRgb(base, SolarSkyMood.MIDNIGHT_SUN_DUSK_RGB, SolarSkyMood.DUSK_HOLD_MAX_BLEND);
+        assertEquals(expDusk, SolarSkyMood.atmosphereTint(base, true, 5.0, 0.75, 0.0), "midnight-sun midnight: dusk");
+        assertEquals(base, SolarSkyMood.atmosphereTint(base, true, 5.0, 0.75, 1.0),
+                "dusk hold storm-damped to nothing under full overcast");
+        assertEquals(base, SolarSkyMood.atmosphereTint(base, true, 5.0, 0.25, 0.0),
+                "midnight-sun NOON: no hold (the sky is already bright)");
+        // Equinox/equator vanilla passthrough: no band, sun up -> base; NaN elevation -> base (safe).
+        assertEquals(base, SolarSkyMood.atmosphereTint(base, false, 45.0, 0.25, 0.0), "equator noon = base");
+        assertEquals(base, SolarSkyMood.atmosphereTint(base, false, Double.NaN, 0.5, 0.0), "NaN elevation-safe");
+    }
+
+    @Test
     void blendRgbPreservesAlphaAndEndpoints() {
         int base = 0xFF3366CC; // opaque blue-ish
         assertEquals(base, SolarSkyMood.blendRgb(base, SolarSkyMood.POLAR_NIGHT_SKY_RGB, 0.0), "t=0: base");

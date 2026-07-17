@@ -225,6 +225,45 @@ public final class GlobeClientState {
         return com.example.globe.core.PoleGeometry.distanceToPole(zRadius, border.getCenterZ(), z);
     }
 
+    /**
+     * S14(c) — the single client-side applicator of the night/dusk atmosphere tint
+     * ({@link com.example.globe.core.SolarSkyMood#atmosphereTint}). Resolves the solar context from the level +
+     * player Z — the (effective) solar elevation (the tilt's (φ,δ) when {@code SOLAR_TILT_V2_ENABLED}, else the
+     * plain vanilla clock arc so ordinary night still darkens), the midnight-sun band, the storm damp and the
+     * global time-of-day — and pulls {@code baseRgb} toward the SAME night/dusk sky the sky-dome mood paints.
+     * Used by BOTH polar renderers (the depth fog {@code FogRendererPolarSetupMixin} and the whiteout top-coat
+     * {@code PolarWhiteoutOverlayHud}) so distant terrain and the engulfment veil dissolve into the sky's own
+     * colour at every hour — no white wall on a dark night. {@code baseRgb} is a packed {@code 0xRRGGBB}; the
+     * returned int is the tinted {@code 0xRRGGBB} (day / sun-up ⇒ unchanged).
+     */
+    public static int polarSkyTint(int baseRgb, Level level, double playerZ) {
+        long clock = level.getOverworldClockTime();
+        double frac = com.example.globe.core.SolarTilt.timeOfDayFrac(clock);
+        double hourAngle = com.example.globe.core.SolarTilt.hourAngleRadians(frac);
+        double elevation;
+        boolean midnightSun;
+        float storm;
+        if (com.example.globe.core.LatitudeV2Flags.SOLAR_TILT_V2_ENABLED) {
+            double phi = -com.example.globe.util.LatitudeMath.degreesFromZ(level.getWorldBorder(), playerZ);
+            double delta = com.example.globe.core.SolarTilt.deltaDeg(
+                    com.example.globe.core.SolarTilt.dayCount(clock),
+                    com.example.globe.core.LatitudeV2Flags.SOLAR_TILT_DELTA_MAX_DEG,
+                    com.example.globe.core.LatitudeV2Flags.SOLAR_TILT_YEAR_LENGTH_DAYS,
+                    com.example.globe.core.LatitudeV2Flags.SOLAR_TILT_FROZEN_PHASE_DEG);
+            elevation = com.example.globe.core.SolarTilt.solarElevationDeg(phi, delta, hourAngle);
+            midnightSun = com.example.globe.core.SolarTilt.isMidnightSun(phi, delta);
+            storm = com.example.globe.core.PolarHazardWindow.stormLevel(Math.abs(phi));
+        } else {
+            // Solar tilt OFF: the plain vanilla clock arc (φ=0, δ=0) — an ordinary night still darkens the polar
+            // whiteout; no bands exist, so no dusk hold. Elevation is even in H, so H's sign convention is moot.
+            elevation = com.example.globe.core.SolarTilt.solarElevationDeg(0.0, 0.0, hourAngle);
+            midnightSun = false;
+            double absLat = com.example.globe.util.LatitudeMath.absLatDegExact(level.getWorldBorder(), playerZ);
+            storm = com.example.globe.core.PolarHazardWindow.stormLevel(absLat);
+        }
+        return com.example.globe.core.SolarSkyMood.atmosphereTint(baseRgb, midnightSun, elevation, frac, storm);
+    }
+
     /** B-7: the resolved per-world POLE block geometry (prompt / re-arm / arrival / edge-re-prompt distances),
      *  degree-anchored to the synced latitude (Z) radius -- the pole sibling of {@link #edgeGeometry}. The SAME
      *  {@code resolve()} the server uses to re-validate a pole cross, so client and server can never disagree. */

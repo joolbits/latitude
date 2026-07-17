@@ -69,22 +69,8 @@ class PolarFogLawTest {
         assertTrue(PolarFogLaw.fogStartBlocks(40.0f) < 40.0f, "START under END");
     }
 
-    // ---- S11(f): the night fog-darkness law ----
-
-    @Test
-    void nightFogDarknessRidesTheOneGloomCurve() {
-        // Delegates to SolarSkyMood.polarNightGloom01 (one darkness curve for fog, sky gloom and star lift).
-        assertEquals(0.0, PolarFogLaw.nightFogDarkness01(10.0), 1e-9, "sun up: daylight fog palette");
-        assertEquals(0.0, PolarFogLaw.nightFogDarkness01(0.0), 1e-9, "horizon: darkening just begins");
-        assertEquals(0.5, PolarFogLaw.nightFogDarkness01(-6.0), 1e-9, "half dark at -6");
-        assertEquals(1.0, PolarFogLaw.nightFogDarkness01(-12.0), 1e-9, "fully dark by -12 (civil-twilight-ish)");
-        assertEquals(1.0, PolarFogLaw.nightFogDarkness01(-90.0), 1e-9, "vanilla midnight: fully dark");
-        assertEquals(0.0, PolarFogLaw.nightFogDarkness01(Double.NaN), 1e-9, "NaN-safe (day)");
-        assertEquals(SolarSkyMood.polarNightGloom01(-7.3), PolarFogLaw.nightFogDarkness01(-7.3), 1e-12,
-                "identical to the sky-gloom curve at an arbitrary point (one law, three surfaces)");
-        // The blend ceiling leaves a breath of storm tone (never a pure blackout).
-        assertTrue(PolarFogLaw.NIGHT_FOG_MAX_BLEND < 1.0);
-    }
+    // ---- S11(f) -> S14(c): the fog's night/dusk darkening moved to SolarSkyMood.atmosphereTint (pinned by
+    //      SolarSkyMoodTest); PolarFogLaw's duplicated NIGHT_FOG_* palette + nightFogDarkness01 were retired. ----
 
     // ---- whiteout top-coat ----
 

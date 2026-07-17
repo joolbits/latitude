@@ -99,11 +99,13 @@ public abstract class PolarBarrensGlacierMixin {
                 int worldSurfaceY = chunk.getHeight(Heightmap.Types.WORLD_SURFACE_WG, lx, lz);
                 int oceanFloorY = chunk.getHeight(Heightmap.Types.OCEAN_FLOOR_WG, lx, lz);
                 if (worldSurfaceY - oceanFloorY > 1) {
-                    // Fluid column. S11(b): a RIVER column in the full-freeze zone freezes COMPLETE -- surface
-                    // to bed, ice family, no water left (no fish for free). The SEA is exempt (surface-ice-
-                    // over-liquid is load-bearing: under-ice swim / the pole wall / S7 immersion), and
-                    // non-river ponds/lakes wait for B-9's semi-ice lakes.
-                    globe$freezeRiverSolid(chunk, cursor, blockX, blockZ, lx, lz,
+                    // Fluid column. S14(b) UNIVERSAL FREEZE: EVERY non-ocean land-family water column (river,
+                    // lake, pond, aquifer exposure) freezes SOLID -- surface down to the glacier-sole freeze
+                    // floor, ice family, no surface water left (the owner's "liquid under a frozen lake at 89"
+                    // fix). The SEA stays exempt (surface-ice-over-liquid is load-bearing: under-ice swim / the
+                    // pole wall / S7 immersion), and cave water BELOW the floor stays liquid for B-9's semi-ice
+                    // lakes.
+                    globe$freezeLandWaterColumn(chunk, cursor, blockX, blockZ, lx, lz,
                             worldSurfaceY, oceanFloorY, radius);
                     continue;
                 }
@@ -111,16 +113,35 @@ public abstract class PolarBarrensGlacierMixin {
                 if (iceBlocks <= 0) {
                     continue; // not a barrens column (flag/band/fray) -- bitwise untouched.
                 }
+                // S14(b) WATERFALLS: a barrens column is land (never ocean), so its flowing-water freeze
+                // eligibility is ONE per-column decision on the SAME sea-freeze fray front. Every block the
+                // glacier loop scans lies above the sole ((near the 40-block water freeze floor; the sole may sit up to 6 deeper via wobble)), so freezesFlowing's
+                // aboveFreezeFloor arm holds by construction here; deep flowing springs below the sole are
+                // never scanned and stay liquid ("underground springs below the floor untouched").
+                double columnAbsLatDeg = Math.abs((double) blockZ) * 90.0 / radius;
+                boolean columnFlowFreezes = PolarWaterFreezeRule.freezesFlowing(
+                        LatitudeV2Flags.POLAR_BARRENS_ENABLED, false, columnAbsLatDeg,
+                        LatitudeBiomes.polarSeaFreezeFrayNoise(blockX, blockZ),
+                        false, true);
                 int capBottomY = worldSurfaceY - PolarBarrensBand.GLACIER_SNOW_CAP_BLOCKS;
                 int soleY = Math.max(minY + 1, capBottomY - iceBlocks);
                 for (int y = worldSurfaceY; y > soleY; y--) {
                     cursor.set(blockX, y, blockZ);
                     BlockState current = chunk.getBlockState(cursor);
-                    // Never replace air (noise caves thread the glacier = ice caves), fluids (aquifers), or
-                    // bedrock. In the cap, also keep everything already glacier-family so the skin mixin's
-                    // powder pockets / ice patches survive on top.
-                    if (current.isAir() || !current.getFluidState().isEmpty()) {
+                    // Never replace air (noise caves thread the glacier = ice caves) or bedrock. Fluids:
+                    // preserve SOURCE water (aquifer pockets stay liquid), but a FLOWING (non-source) water
+                    // block in the freeze zone freezes to a plain-ice cascade (S14(b) waterfalls). In the cap,
+                    // also keep everything already glacier-family so the skin mixin's powder pockets / ice
+                    // patches survive on top.
+                    if (current.isAir()) {
                         continue;
+                    }
+                    if (!current.getFluidState().isEmpty()) {
+                        if (columnFlowFreezes && current.getBlock() == Blocks.WATER
+                                && !current.getFluidState().isSource()) {
+                            chunk.setBlockState(cursor, GLOBE_RIVER_SURFACE_ICE); // frozen cascade = plain ice
+                        }
+                        continue; // source water (aquifers) / lava / other fluids stay
                     }
                     Block block = current.getBlock();
                     if (block == Blocks.BEDROCK || block == Blocks.PACKED_ICE) {
@@ -141,32 +162,42 @@ public abstract class PolarBarrensGlacierMixin {
     }
 
     /**
-     * S11(b) FROZEN RIVERS -&gt; COMPLETE ICE. Classifies the fluid column by its POPULATED chunk biome (the
+     * S14(b) UNIVERSAL FREEZE -- the generalisation of the S11(b) solid-river pass to ALL land-family water
+     * (river, lake, pond, aquifer exposure). Classifies the fluid column by its POPULATED chunk biome (the
      * biomes stage runs before noise/surface, so {@code chunk.getNoiseBiome} is authoritative here) at the
-     * water-surface quart: {@code BiomeTags.IS_RIVER} freezes, {@code BiomeTags.IS_OCEAN} is exempt (the
-     * decision itself is the pure {@link PolarWaterFreezeRule#freezesRiverSolid}, zone = the SAME
-     * {@code freezesWaterFrayed} front as the surface-ice law, so solid rivers and the frozen-sea edge
-     * agree). Replaces ONLY water blocks in {@code (bed, surface]}: the top block becomes plain {@code ice}
-     * (the familiar frozen-river skin), everything deeper {@code packed_ice}
-     * ({@link PolarWaterFreezeRule#riverIceIsPacked} documents the choice). Non-water states in the column
-     * (gravel bed bumps, air gaps) are untouched; the later vanilla freeze feature finds no water and no-ops.
+     * water-surface quart: only {@code BiomeTags.IS_OCEAN} is EXEMPT now (the sea keeps surface-ice-over-
+     * liquid; every other fluid column freezes). The decision is the pure
+     * {@link PolarWaterFreezeRule#freezesLandWaterSolid} (ocean-wins FIRST), zone = the SAME
+     * {@code freezesWaterFrayed} front as the surface-ice law, so solid lakes/rivers and the frozen-sea edge
+     * agree.
+     *
+     * <p>Replaces ONLY water blocks in {@code (floorY, worldSurfaceY]} where
+     * {@code floorY = }{@link PolarWaterFreezeRule#landWaterFreezeFloorY}: a shallow pond/river freezes to
+     * its bed (bed wins -- IDENTICAL to the S13 river freeze, which ran to {@code oceanFloorY}), a deep
+     * aquifer exposure stops at the glacier-sole depth cap so cave water below stays LIQUID (the B-9
+     * reservation). The top frozen block becomes plain {@code ice} (the familiar frozen-river skin),
+     * everything deeper {@code packed_ice} ({@link PolarWaterFreezeRule#riverIceIsPacked} documents the
+     * shared solid-freeze ice-kind choice). Non-water states (gravel bed bumps, air gaps, the liquid below
+     * the floor) are untouched; the later vanilla freeze feature finds no exposed water and no-ops.
      */
     @Unique
-    private static void globe$freezeRiverSolid(ChunkAccess chunk, BlockPos.MutableBlockPos cursor,
-                                               int blockX, int blockZ, int lx, int lz,
-                                               int worldSurfaceY, int oceanFloorY, int radius) {
+    private static void globe$freezeLandWaterColumn(ChunkAccess chunk, BlockPos.MutableBlockPos cursor,
+                                                    int blockX, int blockZ, int lx, int lz,
+                                                    int worldSurfaceY, int oceanFloorY, int radius) {
         double absLatDeg = Math.abs((double) blockZ) * 90.0 / radius;
         net.minecraft.core.Holder<net.minecraft.world.level.biome.Biome> columnBiome =
                 chunk.getNoiseBiome(blockX >> 2, (worldSurfaceY - 1) >> 2, blockZ >> 2);
-        boolean isRiver = columnBiome.is(net.minecraft.tags.BiomeTags.IS_RIVER);
         boolean isOcean = columnBiome.is(net.minecraft.tags.BiomeTags.IS_OCEAN);
-        if (!PolarWaterFreezeRule.freezesRiverSolid(LatitudeV2Flags.POLAR_BARRENS_ENABLED,
-                isRiver, isOcean, absLatDeg,
+        if (!PolarWaterFreezeRule.freezesLandWaterSolid(LatitudeV2Flags.POLAR_BARRENS_ENABLED,
+                isOcean, absLatDeg,
                 LatitudeBiomes.polarSeaFreezeFrayNoise(blockX, blockZ))) {
             return;
         }
-        // The water body occupies (oceanFloorY, worldSurfaceY]. Solid-freeze it top to bed.
-        for (int y = worldSurfaceY; y > oceanFloorY; y--) {
+        // The water body occupies (oceanFloorY, worldSurfaceY]. Solid-freeze it from the top down to the
+        // freeze floor; water at/below the floor (a deep aquifer exposure past the glacier-sole cap) stays
+        // liquid, reserved for B-9's semi-ice cave lakes.
+        int floorY = PolarWaterFreezeRule.landWaterFreezeFloorY(worldSurfaceY, oceanFloorY);
+        for (int y = worldSurfaceY; y > floorY; y--) {
             cursor.set(blockX, y, blockZ);
             BlockState current = chunk.getBlockState(cursor);
             if (current.getBlock() != Blocks.WATER) {

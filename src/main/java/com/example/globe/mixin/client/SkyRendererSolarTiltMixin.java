@@ -166,21 +166,33 @@ public class SkyRendererSolarTiltMixin {
         double phi = ctx[0];
         double delta = ctx[1];
         // Elevation from the same clock (H's sign convention differs from the render pose's vanilla angle,
-        // but elevation is EVEN in H, so the mood cannot feel it).
-        double hourAngle = SolarTilt.hourAngleRadians(SolarTilt.timeOfDayFrac(level.getOverworldClockTime()));
+        // but elevation is EVEN in H, so the mood cannot feel it). The global time-of-day fraction drives the
+        // midnight-sun twilight hold below (that curve is deliberately CLOCK-driven, not elevation-driven).
+        double frac = SolarTilt.timeOfDayFrac(level.getOverworldClockTime());
+        double hourAngle = SolarTilt.hourAngleRadians(frac);
         double elevation = SolarTilt.solarElevationDeg(phi, delta, hourAngle);
-        // A4: the storm always wins — both moods dissolve into the 85->87.5 overcast (and rainBrightness is
-        // never touched here).
+        // A4: the storm always wins — every mood (gloom, dusk hold, gold) dissolves into the 85->87.5 overcast
+        // (and rainBrightness is never touched here).
         float storm = PolarHazardWindow.stormLevel(Math.abs(phi));
         if (SolarTilt.isPolarNight(phi, delta)) {
+            // S14(a)(ii): gloom deepened to ~1.0 (GLOOM_MAX_BLEND 0.85->0.97) — full-dark deep polar-night sky.
             double gloom = SolarSkyMood.stormDamp(SolarSkyMood.polarNightGloom01(elevation), storm);
             state.skyColor = SolarSkyMood.blendRgb(state.skyColor, SolarSkyMood.POLAR_NIGHT_SKY_RGB,
                     gloom * SolarSkyMood.GLOOM_MAX_BLEND);
             state.starBrightness = SolarSkyMood.liftedStarBrightness(state.starBrightness, gloom);
         } else if (SolarTilt.isMidnightSun(phi, delta)) {
+            // S14(a)(i): HOLD a pink-gold dusk through the vanilla-clock night (the sun never sets, so the sky
+            // must not fall to vanilla night black); the low-sun gold wash then COMPOSES on top, and the stars
+            // are suppressed toward 0 (no stars under a never-setting sun). Hold + gold both storm-damped (a
+            // blizzard scatters the low sun into a bright whiteout, so the dusk cedes above 85° like every mood).
+            double holdRaw = SolarSkyMood.twilightHold01(frac);
+            double hold = SolarSkyMood.stormDamp(holdRaw, storm);
+            state.skyColor = SolarSkyMood.blendRgb(state.skyColor, SolarSkyMood.MIDNIGHT_SUN_DUSK_RGB,
+                    hold * SolarSkyMood.DUSK_HOLD_MAX_BLEND);
             double gold = SolarSkyMood.stormDamp(SolarSkyMood.midnightSunGold01(elevation), storm);
             state.skyColor = SolarSkyMood.blendRgb(state.skyColor, SolarSkyMood.MIDNIGHT_SUN_SKY_RGB,
                     gold * SolarSkyMood.GOLD_MAX_BLEND);
+            state.starBrightness = SolarSkyMood.suppressedStarBrightness(state.starBrightness, holdRaw);
         }
     }
 }

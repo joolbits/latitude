@@ -102,27 +102,14 @@ public final class PolarFogLaw {
         return (float) Math.max(FOG_START_MIN_BLOCKS, cappedEnd * FOG_START_FRACTION);
     }
 
-    // ---- S11(f): the fog colour follows the EFFECTIVE sun (night / polar night darken the fog) ----------
-
-    /** Deep night fog tone the daylight storm/white palette darkens toward when the (effective) sun is down --
-     *  a cold near-black blue, so night polar fog reads as darkness thickened by snow, not a glowing white
-     *  wall (TEST 101: "white fog at a dark sky" wrongness). */
-    public static final int NIGHT_FOG_RGB = 0x121826;
-    /** Max fraction of the fog colour the night darkening may take (1.0 would black out the fog entirely;
-     *  0.85 keeps a breath of the storm tone so the whiteout still reads as WEATHER in the dark). */
-    public static final double NIGHT_FOG_MAX_BLEND = 0.85;
-
-    /**
-     * Fog darkness 0..1 from the (effective) solar elevation: 0 with the sun at/above the horizon, full when
-     * it sits {@code 12°} below -- DELEGATES to {@link SolarSkyMood#polarNightGloom01} so the fog, the
-     * polar-night sky gloom and the star lift all ride ONE darkness curve (one law, three surfaces; the §8
-     * one-evaluator discipline applied to presentation). Callers feed it {@link SolarTilt#solarElevationDeg}
-     * with the tilt's (φ, δ) when solar tilt is enabled, or (0, 0) -- the plain vanilla clock arc -- when it
-     * is not, so ordinary vanilla night darkens the polar fog too. NaN-safe (0 = day).
-     */
-    public static double nightFogDarkness01(double solarElevationDeg) {
-        return SolarSkyMood.polarNightGloom01(solarElevationDeg);
-    }
+    // ---- S11(f) -> S14(c): the fog colour follows the FINAL sky --------------------------------------------
+    //
+    // The night/polar-night darkening AND the midnight-sun dusk hold now live in ONE place —
+    // SolarSkyMood.atmosphereTint (the same POLAR_NIGHT_SKY_RGB / MIDNIGHT_SUN_DUSK_RGB palette + the
+    // polarNightGloom01 / twilightHold01 curves the sky dome paints) — applied client-side by
+    // GlobeClientState.polarSkyTint for BOTH the depth fog and the whiteout top-coat. S11(f)'s dedicated
+    // NIGHT_FOG_RGB / NIGHT_FOG_MAX_BLEND / nightFogDarkness01 were the DUPLICATED night palette the S14(c)
+    // one-source-of-truth mandate retires; the darkness curve is SolarSkyMood.polarNightGloom01 directly.
 
     /** Plain 0..1 progress across the fog window (80 -> 90); the storm->white palette lerp both renderers use. */
     public static float linear01(double absLatDeg) {

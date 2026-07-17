@@ -90,11 +90,15 @@ public final class PolarWhiteoutOverlayHud {
         // Colour follows the plain 80->90 fog-law ramp: grey-blue storm low, white-out high (same palette
         // the depth fog tints toward, so the veil and the fog read as ONE storm).
         float t = com.example.globe.core.PolarFogLaw.linear01(absLatDeg);
-        int r = lerp(STORM_R, WHITE_R, t);
-        int g = lerp(STORM_G, WHITE_G, t);
-        int b = lerp(STORM_B, WHITE_B, t);
+        int rgb = (lerp(STORM_R, WHITE_R, t) << 16) | (lerp(STORM_G, WHITE_G, t) << 8) | lerp(STORM_B, WHITE_B, t);
 
-        int argb = (alpha << 24) | (r << 16) | (g << 8) | b;
+        // S14(c): the SAME night/dusk darkness modulation the depth fog gets (GlobeClientState.polarSkyTint ->
+        // SolarSkyMood.atmosphereTint). The owner's "the topcoat composites pure white at night" fix: the white
+        // scales DOWN toward the gloomed near-black at night / polar night (a DARK-out, not a bright white wall)
+        // and toward the held dusk under the midnight sun -- one source of truth with the sky dome and the fog.
+        rgb = GlobeClientState.polarSkyTint(rgb, mc.level, mc.player.getZ());
+
+        int argb = (alpha << 24) | (rgb & 0xFFFFFF);
         ctx.fill(0, 0, ctx.guiWidth(), ctx.guiHeight(), argb);
     }
 
