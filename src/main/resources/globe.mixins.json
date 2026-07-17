@@ -49,6 +49,7 @@
     "client.LevelLoadingScreenLatitudeOverlayMixin",
     "client.FogRendererPolarSetupMixin",
     "client.FogRendererPassageSetupMixin",
+    "client.SkyRendererSolarTiltMixin",
     "client.compat.sodium.RenderSectionManagerVisibilityMixin"
   ],
   "injectors": {
