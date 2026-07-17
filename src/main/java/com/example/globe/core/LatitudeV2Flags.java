@@ -332,7 +332,7 @@ public final class LatitudeV2Flags {
     /** Master kill-switch for Solar Tilt (sky path tilt + seasons + the effective-sun mob rules). Default
      *  false → byte-identical flag-off. */
     public static final boolean SOLAR_TILT_V2_ENABLED =
-            Boolean.parseBoolean(System.getProperty("latitude.solarTiltV2.enabled", "false"));
+            Boolean.parseBoolean(System.getProperty("latitude.solarTiltV2.enabled", "true")); // P3 LIVE-TEST STAGING (branch-local, precedent x3): default ON for the TEST 101 first sun flight. REVISIT BEFORE MERGE.
 
     /** Axial-tilt amplitude δ_max (deg). Default 30 → midnight-sun / polar-night onset at a round, visible
      *  60° (§11 "delta pick"; real Earth 23.5° → 66.5°, deep in the storm cap; max theatrical ≈ 35). */

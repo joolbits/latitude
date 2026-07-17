@@ -67,12 +67,12 @@ class LatitudeV2FlagsTest {
     }
 
     @Test
-    void solarTiltV2DefaultsToDisabled() {
-        // The master kill-switch (visual + functional + seasons) ships OFF — byte-identical flag-off until
-        // Peetsa flies it (§2). Unlike the branch-local flight-staged flags above, solar tilt P1 is NOT staged
-        // on: it stays default-off and P2 owns the flight.
-        assertFalse(LatitudeV2Flags.SOLAR_TILT_V2_ENABLED,
-                "Solar Tilt must ship default-off (byte-identical) until a live flight flips it");
+    void solarTiltBranchLocalFlightStaging() {
+        // P3 LIVE-TEST STAGING (branch-local): default ON for the TEST 101 first sun flight.
+        // REVISIT BEFORE MERGE — ship default is the owner's post-flight call; pre-flight law was
+        // default-OFF byte-identical (sweep #8 verified all three injection surfaces gated).
+        assertTrue(LatitudeV2Flags.SOLAR_TILT_V2_ENABLED,
+                "Branch-local flight staging: Solar Tilt ON for TEST 101; revisit before merge");
     }
 
     @Test
