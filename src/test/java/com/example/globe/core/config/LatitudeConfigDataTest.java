@@ -254,4 +254,28 @@ class LatitudeConfigDataTest {
         assertEquals(LatitudeConfigData.BORDER_REPROMPT_GESTURE_DEFAULT, absent.borderRepromptGesture,
                 "absent key keeps the ON default");
     }
+
+    /** The "Reduce Polar Snow Particles" comfort toggle (HUD Studio round 10 item i): defaults OFF via the single
+     *  shared constant (duplicated-default-sites law), round-trips under the clean key name, and an absent key
+     *  keeps the OFF default (an existing file that predates this pass stays at the full blizzard). */
+    @Test
+    void reducePolarSnowParticlesDefaultsRoundTripsAndKeepsDefaultWhenAbsent() {
+        assertFalse(LatitudeConfigData.REDUCE_POLAR_SNOW_PARTICLES_DEFAULT, "the shared default constant is OFF");
+        assertEquals(LatitudeConfigData.REDUCE_POLAR_SNOW_PARTICLES_DEFAULT,
+                LatitudeConfigData.fresh().reducePolarSnowParticles, "fresh reads the constant");
+
+        LatitudeConfigData out = LatitudeConfigData.fresh();
+        out.reducePolarSnowParticles = true;
+        String json = GSON.toJson(out);
+        assertTrue(json.contains("\"reducePolarSnowParticles\""), "persists under the clean key name");
+        assertFalse(json.contains("reducePolarSnowParticlesValue"), "not the legacy ...Value name");
+        LatitudeConfigData in = GSON.fromJson(json, LatitudeConfigData.class);
+        in.sanitize();
+        assertTrue(in.reducePolarSnowParticles, "an explicit ON round-trips");
+
+        LatitudeConfigData absent = GSON.fromJson("{\"hudSnapPixels\": 8}", LatitudeConfigData.class);
+        absent.sanitize();
+        assertEquals(LatitudeConfigData.REDUCE_POLAR_SNOW_PARTICLES_DEFAULT, absent.reducePolarSnowParticles,
+                "absent key keeps the OFF default");
+    }
 }

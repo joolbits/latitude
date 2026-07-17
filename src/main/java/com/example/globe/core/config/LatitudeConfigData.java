@@ -226,6 +226,18 @@ public final class LatitudeConfigData {
     @SerializedName(value = "accessibilityMode", alternate = {"accessibilityModeValue"})
     public AccessibilityMode accessibilityMode = AccessibilityMode.STANDARD;
 
+    /** The single source of truth for the "Reduce Polar Snow Particles" default (HUD Studio round 10). Read by the
+     *  field initializer below and the config tests -- the duplicated-default-sites law: one constant, every site
+     *  reads it. Default OFF so the full blizzard is the out-of-box experience; the comfort scale is opt-in. */
+    public static final boolean REDUCE_POLAR_SNOW_PARTICLES_DEFAULT = false;
+
+    /** Accessibility comfort option (HUD Studio round 10, Peetsa): when ON, the polar snow storm's particle budget
+     *  is scaled down hard (a single multiplier in {@code GlobeModClient}'s snow-budget path) for players the
+     *  blizzard might discomfort. A General-tab accessibility toggle like {@link #reduceMotion} -- global-only,
+     *  NOT preset-scoped. Boolean, so no sanitize clamp; the default lives in the constant above. Default OFF. */
+    @SerializedName(value = "reducePolarSnowParticles", alternate = {"reducePolarSnowParticlesValue"})
+    public boolean reducePolarSnowParticles = REDUCE_POLAR_SNOW_PARTICLES_DEFAULT;
+
     /** Defaults + current version — the fresh-install state. */
     public static LatitudeConfigData fresh() {
         LatitudeConfigData d = new LatitudeConfigData();

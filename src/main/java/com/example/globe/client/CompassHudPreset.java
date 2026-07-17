@@ -22,6 +22,13 @@ public final class CompassHudPreset {
      *  null-then-sanitize behavior, not a parse failure (same discipline as every other config here). */
     public int presetFormatVersion = 1;
 
+    /** Owner-editable slot name (HUD Studio round 10, Peetsa: "stop identical unnamed rows"). Null / blank =
+     *  the DEFAULT behavior -- the auto-summary of the look ({@link CompassHudPresetSlots#summarize}). Persisted
+     *  with the preset data (a plain Gson field) so a renamed slot keeps its name across sessions and rides along
+     *  in an Export/Import blob. Not applied to the live HUD by {@link #applyToLive()} -- it names the slot, it is
+     *  not part of the look. */
+    public String name;
+
     public CompassHudConfig compass;
     public TitleFields title = new TitleFields();
 

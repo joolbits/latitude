@@ -321,6 +321,32 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
                 }
             }
             if (caveCurrent) {
+                // S11(a) LUSH-CAVE VETO: a legitimate DEEP cave cell (past the near-surface/too-high clamps
+                // above) resolving to lush_caves inside the polar Barrens band remaps to the COLUMN'S SURFACE
+                // biome -- plain caves until B-9 Glacial Caves takes the slot (owner: lush reads tropical;
+                // dripstone/deep_dark deliberately pass through). Band-gated on the core onset, not the fray
+                // (PolarBarrensBand.vetoesLushCaveCell documents why); the remap reuses the SAME per-column
+                // memoized surface pick the surface cells get, so the cave column inherits exactly the biome
+                // above it (fray-aware: polar_barrens or snowy_plains).
+                if (com.example.globe.core.PolarBarrensBand.vetoesLushCaveCell(
+                        LatitudeV2Flags.POLAR_BARRENS_ENABLED,
+                        biomeIdEquals(biomes, current, LUSH_CAVES_ID),
+                        borderRadiusBlocks > 0 ? Math.abs((double) blockZ) * 90.0 / borderRadiusBlocks : Double.NaN)) {
+                    int lushColDecisionY = columnDecisionYCache.get(colKey);
+                    if (lushColDecisionY == Integer.MIN_VALUE) {
+                        lushColDecisionY = LatitudeBiomes.surfaceDecisionY(generator, noiseConfig, chunk, blockX, blockZ);
+                        columnDecisionYCache.put(colKey, lushColDecisionY);
+                    }
+                    Holder<Biome> cachedSurfacePick = columnPickCache.get(colKey);
+                    if (cachedSurfacePick != null && columnPickBase.get(colKey) == base) {
+                        return cachedSurfacePick;
+                    }
+                    Holder<Biome> surfacePick = globe$pickOrFallback(biomes, base, blockX, blockZ,
+                            lushColDecisionY, borderRadiusBlocks, sampler, generator, noiseConfig, chunk);
+                    columnPickCache.put(colKey, surfacePick);
+                    columnPickBase.put(colKey, base);
+                    return surfacePick;
+                }
                 return current;
             }
 
@@ -383,6 +409,17 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
             return pickSafeFallback(biomes, blockZ);
         }
         return picked;
+    }
+
+    /** S11(a): exact-id test for one biome holder (the lush-cave veto must match ONLY lush_caves --
+     *  dripstone/sulfur/deep_dark pass through). Same id-resolution order as {@link #isCaveBiome}. */
+    @Unique
+    private static boolean biomeIdEquals(Registry<Biome> biomes, Holder<Biome> entry, Identifier id) {
+        Identifier actual = biomes.getKey(entry.value());
+        if (actual == null) {
+            actual = entry.unwrapKey().map(key -> key.identifier()).orElse(null);
+        }
+        return id.equals(actual);
     }
 
     @Unique

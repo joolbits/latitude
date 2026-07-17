@@ -125,6 +125,116 @@ class SolarPoseTest {
         }
     }
 
+    // ---- S11(d): the roll-free billboard pose (the TEST 101 diamond-sun fix) ---------------------------
+
+    /** The mixin's roll-free chain: untouched yaw * rollFreeTiltedBodyPose. */
+    private static Quaternionf rollFreeFull(double phiDeg, double deltaDeg, float vanillaAngleRad) {
+        Quaternionf body = SolarPose.rollFreeTiltedBodyPose(
+                new Quaternionf().rotationX(vanillaAngleRad), phiDeg, deltaDeg);
+        return new Quaternionf().rotationY((float) Math.toRadians(-90)).mul(body);
+    }
+
+    @Test
+    void bareCompositionReallyDidRollTheQuad() {
+        // Document the S11d bug: the bare tilted composition carries in-plane roll — at (φ=80, δ=30) the
+        // quad's X edge leaves the horizon by a large margin (the owner's 45° diamond).
+        Quaternionf full = new Quaternionf().rotationY((float) Math.toRadians(-90))
+                .mul(SolarPose.tiltedBodyPose(new Quaternionf().rotationX(0.9f), 80.0, 30.0));
+        float rolledY = Math.abs(full.transform(new Vector3f(1, 0, 0)).y);
+        assertTrue(rolledY > 0.1f, "the un-fixed composition must exhibit the roll the fix removes (was "
+                + rolledY + ")");
+    }
+
+    @Test
+    void rollFreePoseKeepsTheDirectionGridUnchanged() {
+        // Direction and roll are orthogonal: the roll-free pose must land on the SAME solarDirection grid.
+        double[] phis = {-90, -75, -60, -35, 0, 20, 40, 60, 80, 90};
+        double[] deltas = {-30, -15, 0, 15, 23.5, 30};
+        float[] hours = {-3.0f, -1.7f, -0.6f, 0.0f, 0.9f, 2.2f};
+        for (double phi : phis) {
+            for (double delta : deltas) {
+                for (float h : hours) {
+                    Vector3f d = rollFreeFull(phi, delta, h).transform(new Vector3f(0, 1, 0));
+                    assertDir(d, SolarTilt.solarDirection(phi, delta, -h),
+                            "roll-free dir phi=" + phi + " delta=" + delta + " H=" + h);
+                }
+            }
+        }
+    }
+
+    @Test
+    void rollFreePoseKeepsTheQuadEdgeOnTheHorizon() {
+        // The S11d no-roll invariant: away from the zenith the quad's local X edge stays horizon-parallel
+        // (zero world-Y) for the whole grid.
+        double[] phis = {-90, -75, -60, -35, 0, 20, 40, 60, 80, 90};
+        double[] deltas = {-30, 0, 30};
+        float[] hours = {-3.0f, -1.7f, -0.6f, 0.0f, 0.9f, 2.2f};
+        for (double phi : phis) {
+            for (double delta : deltas) {
+                for (float h : hours) {
+                    Quaternionf full = rollFreeFull(phi, delta, h);
+                    float up = full.transform(new Vector3f(0, 1, 0)).y;
+                    if (Math.abs(up) >= 0.999f) {
+                        continue; // zenith/nadir: horizontal edge undefined (and roll invisible)
+                    }
+                    float xWorldY = Math.abs(full.transform(new Vector3f(1, 0, 0)).y);
+                    assertTrue(xWorldY < 1e-4f, "quad edge off the horizon by " + xWorldY
+                            + " at phi=" + phi + " delta=" + delta + " H=" + h);
+                }
+            }
+        }
+    }
+
+    @Test
+    void rollFreeVanillaIdentityAtEquatorDeltaZero() {
+        // At φ = 0, δ = 0 the roll-free pose must reproduce vanilla's FULL basis (not just the direction):
+        // vanilla's quad X edge is horizon-parallel already, and the branch-follow keeps its exact side.
+        for (float h : new float[] {-2.8f, -1.2f, -0.3f, 0.4f, 1.57f, 3.0f}) {
+            Quaternionf vanilla = new Quaternionf().rotationX(h);
+            Quaternionf rollFree = SolarPose.rollFreeTiltedBodyPose(new Quaternionf().rotationX(h), 0.0, 0.0);
+            for (Vector3f axis : new Vector3f[] {new Vector3f(1, 0, 0), new Vector3f(0, 1, 0),
+                    new Vector3f(0, 0, 1)}) {
+                Vector3f want = vanilla.transform(new Vector3f(axis));
+                Vector3f got = rollFree.transform(new Vector3f(axis));
+                assertTrue(want.distance(got) < 1e-5f, "basis drift @H=" + h + " axis=" + axis);
+            }
+        }
+    }
+
+    @Test
+    void rollFreeZenithFallbackIsFinite() {
+        // Exactly at the zenith (φ=0, δ=0, H=0: s == ŷ) the horizontal edge is undefined; the fallback keeps
+        // the (vanilla-identical) composition — finite, no NaN.
+        Quaternionf q = SolarPose.rollFreeTiltedBodyPose(new Quaternionf().rotationX(0.0f), 0.0, 0.0);
+        assertTrue(Float.isFinite(q.x) && Float.isFinite(q.y) && Float.isFinite(q.z) && Float.isFinite(q.w));
+        Vector3f d = q.transform(new Vector3f(0, 1, 0));
+        assertEquals(1.0f, d.y, EPS, "zenith direction preserved");
+    }
+
+    // ---- S11(e): the moon rides the MIRROR declination (the both-bodies-visible bug) --------------------
+
+    @Test
+    void mirrorDeclinationMoonIsTheExactSunAntipode() {
+        // The bug: the moon's vanilla angle (H+π) survived the wrap, but the SUN's +δ hoisted the moon onto
+        // the sun's never-setting small circle — both visible under the midnight sun. With the mirror −δ the
+        // moon is the sun's EXACT antipode: midnight sun ⇒ moon always below the horizon.
+        double phi = 80.0, delta = 30.0;
+        for (float h : new float[] {-2.5f, -1.0f, 0.0f, 0.9f, 2.0f, 3.14f}) {
+            Vector3f sun = rollFreeFull(phi, delta, h).transform(new Vector3f(0, 1, 0));
+            Vector3f moon = rollFreeFull(phi, -delta, h + (float) Math.PI).transform(new Vector3f(0, 1, 0));
+            assertTrue(sun.y > 0.0f, "midnight sun: the sun never sets (H=" + h + ")");
+            assertTrue(moon.y < 0.0f, "midnight sun: the mirror-declination moon never rises (H=" + h + ")");
+            // Antipode to float precision: the moon's angle is h + (float)π, so near the sin zero-crossing
+            // the components carry ~1e-4 of float-π truncation — the SIGN law above is the invariant.
+            assertEquals(-sun.x, moon.x, 2e-4f, "moon is the antipode (east) @H=" + h);
+            assertEquals(-sun.y, moon.y, 2e-4f, "moon is the antipode (up) @H=" + h);
+            assertEquals(-sun.z, moon.z, 2e-4f, "moon is the antipode (south) @H=" + h);
+        }
+        // And the OLD behaviour is pinned as wrong: with the sun's +δ the "moon" is up whenever the sun is.
+        Vector3f wrongMoon = rollFreeFull(phi, delta, (float) Math.PI).transform(new Vector3f(0, 1, 0));
+        assertTrue(wrongMoon.y > 0.0f, "same-declination moon rides the never-setting circle (the S11e bug)");
+    }
+
     @Test
     void nanInputsDegradeToVanillaPose() {
         Quaternionf vanilla = new Quaternionf().rotationX(0.8f);

@@ -62,6 +62,8 @@ public final class LatitudeConfig {
 
     public static LatitudeConfigData.AccessibilityMode accessibilityMode;
 
+    public static boolean reducePolarSnowParticles;
+
     static {
         applyFrom(LatitudeConfigData.fresh()); // sane values even before load() runs
     }
@@ -165,6 +167,8 @@ public final class LatitudeConfig {
         captureWriteCsv = d.captureWriteCsv;
 
         accessibilityMode = d.accessibilityMode;
+
+        reducePolarSnowParticles = d.reducePolarSnowParticles;
     }
 
     /** Detached snapshot of the live static fields, for snapshot/restore (HUD Studio Cancel). Returns a
@@ -221,6 +225,7 @@ public final class LatitudeConfig {
         d.captureWriteCsv = captureWriteCsv;
 
         d.accessibilityMode = accessibilityMode;
+        d.reducePolarSnowParticles = reducePolarSnowParticles;
         d.sanitize();
         return d;
     }

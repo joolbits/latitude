@@ -93,22 +93,36 @@ public class SkyRendererSolarTiltMixin {
         return new double[] {phi, delta};
     }
 
-    /** Sun (ordinal 1) + moon (ordinal 2): full tilt + declination. Ordinal 0 (the shared yaw) is not
-     *  wrapped, so flag-off/off-globe frames execute vanilla's exact call chain. */
-    @WrapOperation(method = "renderSunMoonAndStars", at = {
-            @At(value = "INVOKE",
-                    target = "Lcom/mojang/blaze3d/vertex/PoseStack;mulPose(Lorg/joml/Quaternionfc;)V",
-                    ordinal = 1),
-            @At(value = "INVOKE",
-                    target = "Lcom/mojang/blaze3d/vertex/PoseStack;mulPose(Lorg/joml/Quaternionfc;)V",
-                    ordinal = 2)})
-    private void globe$tiltSunMoonPose(PoseStack stack, Quaternionfc vanillaRotation, Operation<Void> original) {
+    /** SUN (ordinal 1): full tilt + declination, ROLL-FREE (S11d — the bare composition rolled the quad into
+     *  the TEST 101 "diamond sun"; the horizon-locked rebuild keeps the direction and uprights the billboard).
+     *  Ordinal 0 (the shared yaw) is not wrapped, so flag-off/off-globe frames execute vanilla's exact chain. */
+    @WrapOperation(method = "renderSunMoonAndStars", at = @At(value = "INVOKE",
+            target = "Lcom/mojang/blaze3d/vertex/PoseStack;mulPose(Lorg/joml/Quaternionfc;)V", ordinal = 1))
+    private void globe$tiltSunPose(PoseStack stack, Quaternionfc vanillaRotation, Operation<Void> original) {
         double[] ctx = globe$tiltContext();
         if (ctx == null) {
             original.call(stack, vanillaRotation);
             return;
         }
-        original.call(stack, SolarPose.tiltedBodyPose(vanillaRotation, ctx[0], ctx[1]));
+        original.call(stack, SolarPose.rollFreeTiltedBodyPose(vanillaRotation, ctx[0], ctx[1]));
+    }
+
+    /** MOON (ordinal 2): full tilt + the MIRROR declination −δ (S11e — the TEST 101 "sun AND moon both up
+     *  under the midnight sun" bug). The moon's own vanilla angle (antipodal H+π) always survived the wrap;
+     *  the bug was giving the moon the SUN's +δ, which hoisted it onto the sun's never-setting small circle —
+     *  in the midnight-sun band EVERY point of that circle is above the horizon, so the phase offset no
+     *  longer implied "below it". With −δ (the full-moon-antipode simplification: the moon rides the mirror
+     *  circle) the moon is the sun's EXACT antipode — midnight sun ⇒ moon permanently down, polar night ⇒
+     *  the moon owns the sky — and δ = 0 still reduces to vanilla. Roll-free like the sun (same billboard). */
+    @WrapOperation(method = "renderSunMoonAndStars", at = @At(value = "INVOKE",
+            target = "Lcom/mojang/blaze3d/vertex/PoseStack;mulPose(Lorg/joml/Quaternionfc;)V", ordinal = 2))
+    private void globe$tiltMoonPose(PoseStack stack, Quaternionfc vanillaRotation, Operation<Void> original) {
+        double[] ctx = globe$tiltContext();
+        if (ctx == null) {
+            original.call(stack, vanillaRotation);
+            return;
+        }
+        original.call(stack, SolarPose.rollFreeTiltedBodyPose(vanillaRotation, ctx[0], -ctx[1]));
     }
 
     /** Stars (ordinal 3): tilt only — the sphere wheels around a celestial pole at altitude φ (§5: the δ

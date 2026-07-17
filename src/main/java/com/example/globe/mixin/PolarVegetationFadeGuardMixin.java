@@ -74,6 +74,21 @@ public class PolarVegetationFadeGuardMixin {
             return;
         }
         BlockPos origin = context.origin();
+        // S11(c) FIREFLY BUSH BAN (owner-flagged twice): firefly_bush specifically is banned OUTRIGHT from
+        // 50 deg (SUBPOLAR onset) -- far equatorward of the general 78/86 fade. Identified by the SimpleBlock
+        // config's placed STATE, sampled with a THROWAWAY per-position random so the worldgen RNG sequence is
+        // never consumed (firefly uses a simple provider, which ignores the random entirely). Rides this same
+        // guard + the veg-fade flag family (default ON -- the ban must ship live, not behind the default-off
+        // barrens flag); every non-firefly placement falls through to the ordinary fade below.
+        if (context.config() instanceof net.minecraft.world.level.levelgen.feature.configurations.SimpleBlockConfiguration simpleConfig
+                && LatitudeBiomes.fireflyBanApplies(origin.getX(), origin.getZ())) {
+            net.minecraft.world.level.block.state.BlockState toPlace = simpleConfig.toPlace()
+                    .getState(level, net.minecraft.util.RandomSource.create(origin.asLong()), origin);
+            if (toPlace.getBlock() == net.minecraft.world.level.block.Blocks.FIREFLY_BUSH) {
+                cir.setReturnValue(false);
+                return;
+            }
+        }
         // Latitude + coherent fray. Pays no heightmap lookup below the 78deg onset (returns false there).
         if (!LatitudeBiomes.polarVegetationFadeStrips(origin.getX(), origin.getZ())) {
             return;

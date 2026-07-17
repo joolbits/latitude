@@ -45,6 +45,30 @@ public final class PolarVegetationFade {
             parseDegOrDefault(System.getProperty("latitude.polarVegetationFade.fullDeg"), 86.0),
             ONSET_DEG + 0.5);
 
+    /**
+     * S11(c) FIREFLY BUSH BAN (Peetsa, TEST 101 -- the owner has flagged firefly bushes TWICE with
+     * exclamation marks): {@code firefly_bush} placement is banned OUTRIGHT at/above this absolute latitude
+     * -- 50 deg, the SUBPOLAR onset ({@code LatitudeMath.TEMPERATE_MAX_FRAC} boundary), far equatorward of
+     * the general fade's 78-deg onset, because a glowing summer-evening plant reads absurd anywhere in the
+     * subpolar/polar cold, not just at the cap. A HARD line, deliberately un-frayed: a scattered decorative
+     * plant simply stops appearing -- there is no contiguous visual seam for a fray to soften (unlike the
+     * barrens/sea-freeze edges). FIREFLY-SPECIFIC: every other small-vegetation placement keeps the ordinary
+     * 78/86 fade untouched. Live-tunable via {@code -Dlatitude.polarVegetationFade.fireflyBanDeg} (the
+     * veg-fade dial family; forwarded in build.gradle in the SAME pass, L17 discipline).
+     */
+    public static final double FIREFLY_BAN_DEG =
+            parseDegOrDefault(System.getProperty("latitude.polarVegetationFade.fireflyBanDeg"), 50.0);
+
+    /** True iff {@code firefly_bush} placement is banned at this absolute latitude ({@code |deg| >=}
+     *  {@link #FIREFLY_BAN_DEG}). NaN degrades to false (keep -- the safe, byte-identical direction). */
+    public static boolean bansFirefly(double absLatDeg) {
+        double a = Math.abs(absLatDeg);
+        if (Double.isNaN(a)) {
+            return false;
+        }
+        return a >= FIREFLY_BAN_DEG;
+    }
+
     private static double parseDegOrDefault(String raw, double fallback) {
         if (raw == null) {
             return fallback;

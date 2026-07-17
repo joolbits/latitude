@@ -147,6 +147,36 @@ class PolarVegetationFadeTest {
                 "SURFACE_MARGIN should stay in the tight 4-6 surface band, was " + PolarVegetationFade.SURFACE_MARGIN);
     }
 
+    // ---- S11(c): the firefly bush ban (owner-flagged twice) ----------------------------------
+
+    @Test
+    void fireflyBannedFromSubpolarOnward() {
+        assertEquals(50.0, PolarVegetationFade.FIREFLY_BAN_DEG, 1e-9,
+                "the ban starts at the SUBPOLAR onset -- far equatorward of the 78/86 fade");
+        assertTrue(PolarVegetationFade.bansFirefly(55.0), "banned at 55");
+        assertTrue(PolarVegetationFade.bansFirefly(70.0), "banned at 70");
+        assertTrue(PolarVegetationFade.bansFirefly(85.0), "banned at 85");
+        assertTrue(PolarVegetationFade.bansFirefly(50.0), "inclusive at the 50 line");
+        assertTrue(PolarVegetationFade.bansFirefly(-60.0), "hemisphere-symmetric");
+    }
+
+    @Test
+    void fireflyAllowedEquatorwardOfTheBan() {
+        assertFalse(PolarVegetationFade.bansFirefly(45.0), "allowed at 45 -- temperate evenings keep them");
+        assertFalse(PolarVegetationFade.bansFirefly(0.0));
+        assertFalse(PolarVegetationFade.bansFirefly(Double.NaN), "bad read: keep (byte-identical direction)");
+    }
+
+    @Test
+    void otherVegetationUntouchedAtFiftyFive() {
+        // The firefly gate is consulted ONLY for firefly_bush placements (the mixin's exact-block check);
+        // every other small-vegetation placement rides the ordinary fade, whose keep chance at 55 deg is
+        // exactly 1.0 (the 78-deg onset is far poleward) -- other vegetation at 55 is bitwise-untouched.
+        assertEquals(1.0, PolarVegetationFade.keepChance01(55.0), 1e-9,
+                "the general fade must not strip anything at 55");
+        assertTrue(PolarVegetationFade.bansFirefly(55.0), "...while firefly specifically is banned there");
+    }
+
     @Test
     void expectedSurvivingFractionMatchesKeepChance() {
         // Over a uniform noise sweep the surviving fraction should track the keep chance.

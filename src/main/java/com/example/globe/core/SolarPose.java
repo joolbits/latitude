@@ -1,7 +1,9 @@
 package com.example.globe.core;
 
+import org.joml.Matrix3f;
 import org.joml.Quaternionf;
 import org.joml.Quaternionfc;
+import org.joml.Vector3f;
 
 /**
  * Solar Tilt P2 — the pure CELESTIAL POSE composition (sweep amendment A6, option B: the per-body pose is
@@ -64,8 +66,51 @@ public final class SolarPose {
                 .mul(new Quaternionf().rotationZ((float) Math.toRadians(deltaDeg)));
     }
 
-    /** The tilted star-sphere pose: tilt only, no declination ({@code ZP(−φ) · vanillaBodyRotation}). */
+    /** The tilted star-sphere pose: tilt only, no declination ({@code ZP(−φ) · vanillaBodyRotation}).
+     *  Deliberately NOT roll-freed (S11d applies to the billboard QUADS only): for the star sphere the
+     *  "twist" IS the wheel's spin — stripping it would freeze/misphase the star field. */
     public static Quaternionf tiltedStarPose(Quaternionfc vanillaBodyRotation, double signedLatDeg) {
         return tiltedBodyPose(vanillaBodyRotation, signedLatDeg, 0.0);
+    }
+
+    /**
+     * S11(d) — the ROLL-FREE tilted billboard pose (the TEST 101 "diamond sun" fix). The bare composition
+     * {@link #tiltedBodyPose} points the body correctly but carries a net IN-PLANE roll of the quad (the two
+     * {@code ZP} rotations do not cancel in the quad plane), so away from the equator the square sun renders
+     * as a ~45° diamond. This keeps the composed DIRECTION exactly and rebuilds the in-plane axes
+     * horizon-locked:
+     * <ul>
+     *   <li>{@code s} = the composed pose's body direction (local frame; the outer {@code YP(-90)} yaw maps
+     *       local Y to world Y unchanged, so local horizontality == world horizontality);</li>
+     *   <li>the quad's local-X edge is re-anchored to {@code normalize(cross(ŷ, s))} — horizontal (zero
+     *       world-Y) and perpendicular to the view direction — with the BRANCH chosen to follow the composed
+     *       pose's own X ({@code dot > 0}), i.e. the minimal counter-roll, which at φ = 0, δ = 0 reproduces
+     *       vanilla's basis exactly (probe + {@code SolarPoseTest}: basis error ~2e-7);</li>
+     *   <li>{@code z = x × y} completes the right-handed frame; the quaternion is read off the matrix.</li>
+     * </ul>
+     * Probe-verified across the (φ, δ, H) grid: direction error ~7e-7, residual roll (world-Y of the X edge)
+     * ~1e-7 away from the zenith. AT the zenith/nadir ({@code |up| ≥ ~0.9999}, where "horizontal edge" is
+     * ill-defined and the roll of a square is invisible) it falls back to the bare composition (also NaN-safe:
+     * a NaN input degrades through {@link #tiltedBodyPose} to the vanilla rotation). NOTE (a considered
+     * trade): plain swing-twist stripping was probed first and REJECTED — it preserves direction but leaves a
+     * residual apparent roll equal to the direction's south-component (worst ~1.0), failing the horizon
+     * invariant.
+     */
+    public static Quaternionf rollFreeTiltedBodyPose(Quaternionfc vanillaBodyRotation, double signedLatDeg,
+                                                     double deltaDeg) {
+        Quaternionf composed = tiltedBodyPose(vanillaBodyRotation, signedLatDeg, deltaDeg);
+        Vector3f s = composed.transform(new Vector3f(0, 1, 0)); // body direction in the pre-yaw local frame
+        Vector3f x = new Vector3f(s.z, 0, -s.x);                // cross(ŷ, s): horizontal, perp to the view
+        float n = x.length();
+        if (n < 1e-4f) {
+            return composed; // zenith/nadir: horizontal edge undefined, roll invisible — keep the composition
+        }
+        x.div(n);
+        Vector3f xComposed = composed.transform(new Vector3f(1, 0, 0));
+        if (x.dot(xComposed) < 0.0f) {
+            x.negate(); // minimal counter-roll: stay on the composed pose's own side (vanilla-exact at φ=δ=0)
+        }
+        Vector3f z = new Vector3f(x).cross(s); // right-handed completion (z = x × y)
+        return new Quaternionf().setFromNormalized(new Matrix3f(x, s, z));
     }
 }

@@ -66,6 +66,16 @@ public class FogRendererPolarSetupMixin {
         if (mc.player == null || mc.level != level) {
             return;
         }
+        // S11(f)(ii) UNDERGROUND GATE (TEST 101: "bright whitish fog inside the caves"). The SAME graded
+        // enclosure predicate the whiteout topcoat has always used (PolarWhiteoutOverlayHud's
+        // exposure01 <= 0.001 early-out): genuinely sealed in / deep underground -> the polar depth fog does
+        // not apply at all and vanilla's cave fog returns. A doorway/window shelter reads partial exposure
+        // (> 0), so "heavy exterior seen from indoors" -- the reason this mixin originally had NO gate --
+        // still works; only the fully-enclosed case is released back to vanilla.
+        GlobeClientState.Eval eval = GlobeClientState.evaluate(mc);
+        if (eval.exposure01() <= 0.001f) {
+            return;
+        }
 
         // S10b FOG LAW v2 (owner, TEST 99: "fog is very lacking... at 90 you can't see really anything").
         // The latitude->visibility law is the ABSOLUTE cap table in core.PolarFogLaw (light haze 80, heavy 40
@@ -99,6 +109,34 @@ public class FogRendererPolarSetupMixin {
         float tr = lerp255(STORM_R, WHITE_R, ambient);
         float tg = lerp255(STORM_G, WHITE_G, ambient);
         float tb = lerp255(STORM_B, WHITE_B, ambient);
+
+        // S11(f)(i): the fog colour FOLLOWS the effective sun -- at night (vanilla clock) and in polar night
+        // (solar tilt) the daylight storm/white target darkens toward the deep night-fog tone, on the SAME
+        // darkness curve the sky gloom and star lift use (PolarFogLaw.nightFogDarkness01 -> SolarSkyMood).
+        // Solar tilt ON: elevation from the tilted (φ, δ); OFF: the plain vanilla arc (φ = 0, δ = 0), so an
+        // ordinary night no longer glows white either. Elevation is even in H, so H's sign convention is moot.
+        long clock = level.getOverworldClockTime();
+        double hourAngle = com.example.globe.core.SolarTilt.hourAngleRadians(
+                com.example.globe.core.SolarTilt.timeOfDayFrac(clock));
+        double elevation;
+        if (com.example.globe.core.LatitudeV2Flags.SOLAR_TILT_V2_ENABLED) {
+            double phi = -LatitudeMath.degreesFromZ(level.getWorldBorder(), mc.player.getZ());
+            double delta = com.example.globe.core.SolarTilt.deltaDeg(
+                    com.example.globe.core.SolarTilt.dayCount(clock),
+                    com.example.globe.core.LatitudeV2Flags.SOLAR_TILT_DELTA_MAX_DEG,
+                    com.example.globe.core.LatitudeV2Flags.SOLAR_TILT_YEAR_LENGTH_DAYS,
+                    com.example.globe.core.LatitudeV2Flags.SOLAR_TILT_FROZEN_PHASE_DEG);
+            elevation = com.example.globe.core.SolarTilt.solarElevationDeg(phi, delta, hourAngle);
+        } else {
+            elevation = com.example.globe.core.SolarTilt.solarElevationDeg(0.0, 0.0, hourAngle);
+        }
+        float dark = (float) (com.example.globe.core.PolarFogLaw.nightFogDarkness01(elevation)
+                * com.example.globe.core.PolarFogLaw.NIGHT_FOG_MAX_BLEND);
+        int nightRgb = com.example.globe.core.PolarFogLaw.NIGHT_FOG_RGB;
+        tr += (((nightRgb >> 16) & 0xFF) / 255.0f - tr) * dark;
+        tg += (((nightRgb >> 8) & 0xFF) / 255.0f - tg) * dark;
+        tb += ((nightRgb & 0xFF) / 255.0f - tb) * dark;
+
         Vector4f c = data.color;
         c.x += (tr - c.x) * blend;
         c.y += (tg - c.y) * blend;

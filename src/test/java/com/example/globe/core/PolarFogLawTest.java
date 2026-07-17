@@ -61,9 +61,29 @@ class PolarFogLawTest {
 
     @Test
     void fogStartScalesWithEndAndFloorsAtTwo() {
-        assertEquals(12.0f, PolarFogLaw.fogStartBlocks(40.0f), 1e-4, "0.30 x end");
+        // S11(g): fraction 0.30 -> 0.08 — START hugs the camera so the [START, END] span is nearly the whole
+        // gradient and terrain fades through haze instead of popping at the cap.
+        assertEquals(3.2f, PolarFogLaw.fogStartBlocks(40.0f), 1e-4, "0.08 x end (the softer-gradient dial)");
         assertEquals(2.0f, PolarFogLaw.fogStartBlocks(4.0f), 1e-4, "floored at 2 so your own hands stay clear");
+        assertEquals(2.0f, PolarFogLaw.fogStartBlocks(12.0f), 1e-4, "0.08 x 12 = 0.96 -> the 2-block floor binds");
         assertTrue(PolarFogLaw.fogStartBlocks(40.0f) < 40.0f, "START under END");
+    }
+
+    // ---- S11(f): the night fog-darkness law ----
+
+    @Test
+    void nightFogDarknessRidesTheOneGloomCurve() {
+        // Delegates to SolarSkyMood.polarNightGloom01 (one darkness curve for fog, sky gloom and star lift).
+        assertEquals(0.0, PolarFogLaw.nightFogDarkness01(10.0), 1e-9, "sun up: daylight fog palette");
+        assertEquals(0.0, PolarFogLaw.nightFogDarkness01(0.0), 1e-9, "horizon: darkening just begins");
+        assertEquals(0.5, PolarFogLaw.nightFogDarkness01(-6.0), 1e-9, "half dark at -6");
+        assertEquals(1.0, PolarFogLaw.nightFogDarkness01(-12.0), 1e-9, "fully dark by -12 (civil-twilight-ish)");
+        assertEquals(1.0, PolarFogLaw.nightFogDarkness01(-90.0), 1e-9, "vanilla midnight: fully dark");
+        assertEquals(0.0, PolarFogLaw.nightFogDarkness01(Double.NaN), 1e-9, "NaN-safe (day)");
+        assertEquals(SolarSkyMood.polarNightGloom01(-7.3), PolarFogLaw.nightFogDarkness01(-7.3), 1e-12,
+                "identical to the sky-gloom curve at an arbitrary point (one law, three surfaces)");
+        // The blend ceiling leaves a breath of storm tone (never a pure blackout).
+        assertTrue(PolarFogLaw.NIGHT_FOG_MAX_BLEND < 1.0);
     }
 
     // ---- whiteout top-coat ----
