@@ -42,6 +42,8 @@ public final class GlobeWarningOverlay {
     private static long lastHemisphereTitleAtMs = Long.MIN_VALUE;
     private static long lastWarningDebugWorldTime = Long.MIN_VALUE;
     private static String lastWarningDebugText;
+    private static final PolarPresentationPolicy.PolarWarningEpisode POLAR_WARNING_EPISODE =
+            new PolarPresentationPolicy.PolarWarningEpisode();
 
     private static boolean registered;
 
@@ -180,28 +182,31 @@ public final class GlobeWarningOverlay {
                 maybeTriggerHemisphereTitle(client, client.player.getZ());
             }
 
-            Component bestText = null;
             var state = GlobeClientState.computeWarningState(client.level, client.player);
-            if (state.type() == GlobeClientState.WarningType.NONE) {
-                return;
-            }
+            var polarStage = GlobeClientState.computePolarStage(client.level, client.player);
+            double absoluteLatitude = GlobeClientState.absoluteLatitudeDegrees(
+                    client.level.getWorldBorder(),
+                    client.player.getZ());
+            POLAR_WARNING_EPISODE.update(polarRank(polarStage), absoluteLatitude, worldTime);
 
             // Stable precedence (corners):
             // 1) polar lethal
             // 2) ew level 2
             // 3) polar stage (warn/danger)
             // 4) ew level 1
-            if (state.type() == GlobeClientState.WarningType.POLAR) {
-                GlobeClientState.PolarStage stage = (GlobeClientState.PolarStage) state.stage();
-                bestText = poleTextForStage(stage);
-            } else if (state.type() == GlobeClientState.WarningType.STORM) {
+            Component bestText;
+            if (state.type() == GlobeClientState.WarningType.STORM) {
                 GlobeClientState.EwStormStage stage = (GlobeClientState.EwStormStage) state.stage();
                 String dir = ewDangerDirection(client.level.getWorldBorder(), client.player.getX());
                 String escapeDir = oppositeDirection(dir);
                 Component base = ewTextForStage(stage);
+                bestText = null;
                 if (base != null) {
                     bestText = Component.literal(String.format(base.getString(), dir.toLowerCase(), escapeDir.toLowerCase())).setStyle(base.getStyle());
                 }
+            } else {
+                int episodeStageRank = POLAR_WARNING_EPISODE.activeStageRank(worldTime);
+                bestText = poleTextForStage(polarStageForRank(episodeStageRank));
             }
 
             if (bestText == null) {
@@ -214,8 +219,13 @@ public final class GlobeWarningOverlay {
                 warnY = 18;
             }
             maybeLogWarningRender(client, state, bestText);
-            int color = warningColorWithPulse(bestText, client, tickCounter);
-            drawCenteredWarning(ctx, client.font, bestText, warnY, color);
+            if (state.type() == GlobeClientState.WarningType.STORM) {
+                int color = warningColorWithPulse(bestText, client, tickCounter);
+                drawCenteredWarning(ctx, client.font, bestText, warnY, color);
+            } else {
+                int color = warningColorWithAlpha(bestText, POLAR_WARNING_EPISODE.alpha(worldTime));
+                drawCenteredPolarWarning(ctx, client.font, bestText, warnY, color);
+            }
         } catch (Throwable t) {
             GlobeMod.LOGGER.error("GlobeWarningOverlay.render crashed", t);
         }
@@ -231,11 +241,51 @@ public final class GlobeWarningOverlay {
         return (alpha << 24) | (rgb & 0x00FFFFFF);
     }
 
+    private static int warningColorWithAlpha(Component text, float alpha01) {
+        TextColor styleColor = text.getStyle().getColor();
+        int rgb = styleColor != null ? styleColor.getValue() : 0xFFFFFF;
+        int alpha = (int) Mth.clamp(alpha01 * 255.0f, 0.0f, 255.0f);
+        return (alpha << 24) | (rgb & 0x00FFFFFF);
+    }
+
     private static void drawCenteredWarning(GuiGraphicsExtractor ctx, Font tr, Component text, int y, int argbColor) {
         int screenW = Minecraft.getInstance().getWindow().getGuiScaledWidth();
         int w = tr.width(text);
         int x = Math.max(4, (screenW - w) / 2);
         ctx.text(tr, text, x, y, argbColor);
+    }
+
+    private static void drawCenteredPolarWarning(GuiGraphicsExtractor ctx, Font tr, Component text, int y, int argbColor) {
+        int screenW = Minecraft.getInstance().getWindow().getGuiScaledWidth();
+        int w = tr.width(text);
+        int x = Math.max(4, (screenW - w) / 2);
+        int alpha = argbColor & 0xFF000000;
+        int outlineColor = alpha;
+
+        for (int[] offset : PolarPresentationPolicy.outlineOffsets()) {
+            ctx.text(tr, text, x + offset[0], y + offset[1], outlineColor);
+        }
+        ctx.text(tr, text, x, y, argbColor);
+    }
+
+    private static int polarRank(GlobeClientState.PolarStage stage) {
+        return switch (stage) {
+            case WARN_1 -> 1;
+            case WARN_2 -> 2;
+            case DANGER -> 3;
+            case LETHAL -> 4;
+            default -> 0;
+        };
+    }
+
+    private static GlobeClientState.PolarStage polarStageForRank(int rank) {
+        return switch (rank) {
+            case 1 -> GlobeClientState.PolarStage.WARN_1;
+            case 2 -> GlobeClientState.PolarStage.WARN_2;
+            case 3 -> GlobeClientState.PolarStage.DANGER;
+            case 4 -> GlobeClientState.PolarStage.LETHAL;
+            default -> GlobeClientState.PolarStage.NONE;
+        };
     }
 
     private static String ewDangerDirection(net.minecraft.world.level.border.WorldBorder border, double playerX) {
@@ -258,6 +308,7 @@ public final class GlobeWarningOverlay {
         lastObservedZ = Double.NaN;
         lastWarningDebugWorldTime = Long.MIN_VALUE;
         lastWarningDebugText = null;
+        POLAR_WARNING_EPISODE.reset();
         if (DEBUG_ENTRY_TITLES) {
             GlobeMod.LOGGER.info("[LAT][ENTRY_TITLE] action=reset worldTime={}", worldTime);
         }

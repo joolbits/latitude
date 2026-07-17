@@ -266,6 +266,32 @@ tasks.named('check').configure {
     dependsOn tasks.named('latitudeCreateScreenClipPolicyTest')
 }
 
+def latitudePolarPresentationPolicyTestClasses = layout.buildDirectory.dir('classes/java/latitudePolarPresentationPolicyTest')
+
+tasks.register('compileLatitudePolarPresentationPolicyTest', JavaCompile) {
+    group = 'verification'
+    description = 'Compile the dependency-free polar presentation regression'
+    source = fileTree('src/polarPolicyTest/java') {
+        include '**/*.java'
+    }
+    classpath = sourceSets.main.output
+    destinationDirectory.set(latitudePolarPresentationPolicyTestClasses)
+    options.release = 25
+    dependsOn classes
+}
+
+tasks.register('latitudePolarPresentationPolicyTest', JavaExec) {
+    group = 'verification'
+    description = 'Exercise polar fog and warning presentation policy without launching Minecraft'
+    classpath = files(latitudePolarPresentationPolicyTestClasses) + sourceSets.main.output
+    mainClass = 'com.example.globe.client.PolarPresentationPolicyTest'
+    dependsOn tasks.named('compileLatitudePolarPresentationPolicyTest')
+}
+
+tasks.named('check').configure {
+    dependsOn tasks.named('latitudePolarPresentationPolicyTest')
+}
+
 tasks.register('prepareBiomePreviewRunDir') {
     doLast {
         def dir = file(latitudePreviewRunDir)
