@@ -1400,21 +1400,26 @@ public class GlobeMod implements ModInitializer {
 
         double v = hash01(seed, 1, 0, SPAWN_SALT);
 
+        // S10(a) SPAWN CALM BAND, ZONE-AWARE (owner correction 2026-07-17: an explicit POLAR/SUBPOLAR pick is
+        // CONSENT and lands in that band's SAFEST low-edge window -- POLAR [66.5,70] "only the lowest latitude
+        // of polar", SUBPOLAR [50,55]; RANDOM resolved to its concrete zone above, so a RANDOM->POLAR roll
+        // inherits the polar window). Default/non-polar spawns keep the original flat 50-deg cap, and NOBODY
+        // spawns at/above the 74-deg storm ceiling. SpawnCalmBand owns the whole law (windows + midpoint
+        // targets, replacing the legacy 0.89 POLAR fraction = the now-illegal 80.1 deg).
         double spawnAbsLatFrac = com.example.globe.util.LatitudeMath.spawnFracForZoneKey(zoneId);
-        int z = (int) Math.round(radius * spawnAbsLatFrac);
+        com.example.globe.core.SpawnCalmBand.Window spawnWindow =
+                com.example.globe.core.SpawnCalmBand.spawnWindow(zoneId, radius);
+        int z = com.example.globe.core.SpawnCalmBand.spawnTargetAbsZ(zoneId, spawnAbsLatFrac, radius);
         if (v < 0.5) {
             z = -z;
         }
 
+        // Belt: the pre-S10a block-anchored pole guard (never binds below the 74-deg ceiling on shippable
+        // radii; kept as defense-in-depth), then the zone window as the FINAL word.
         int warnStartZ = Math.max(0, radius - POLE_WARNING_DISTANCE_BLOCKS);
         int maxAbsZ = Math.max(0, warnStartZ - 500);
         z = Mth.clamp(z, -maxAbsZ, maxAbsZ);
-        // S10(a) SPAWN CALM BAND (TEST 99): the block-anchored guard above does not scale with the radius
-        // (83.2 deg on Regular-Wide 10000), and the SUBPOLAR/POLAR zone fractions (65.25/80.1 deg) reach into
-        // or onto the S8 polar-country onset (80). First spawn must never land in storm country -- clamp the
-        // target to |lat| <= 50 deg, degree-anchored so it holds on every shape and size (deep-zone picks
-        // saturate at the calm edge by design; see SpawnCalmBand).
-        z = com.example.globe.core.SpawnCalmBand.clampZ(z, radius);
+        z = com.example.globe.core.SpawnCalmBand.clampToWindow(z, spawnWindow);
 
         int targetZ = z;
         BlockPos spawnPos;
@@ -1423,7 +1428,8 @@ public class GlobeMod implements ModInitializer {
             RandomState noiseConfig = RandomState.create(
                     template.settings().value(), template.noiseParameters(), seed);
             Climate.Sampler sampler = noiseConfig.sampler();
-            spawnPos = findLandSpawn(world, template, sampler, xRadius, radius, targetZ, seed);
+            spawnPos = findLandSpawn(world, template, sampler, xRadius, radius,
+                    spawnWindow, targetZ, seed);
         } catch (Exception e) {
             LOGGER.warn("[Latitude] Biome probe failed, using fallback spawn", e);
             spawnPos = null;
@@ -1491,14 +1497,20 @@ public class GlobeMod implements ModInitializer {
 
     private static BlockPos findLandSpawn(ServerLevel world, SamplerTemplate template,
                                           Climate.Sampler sampler,
-                                          int xRadius, int zRadius, int targetZ, long seed) {
+                                          int xRadius, int zRadius,
+                                          com.example.globe.core.SpawnCalmBand.Window spawnWindow,
+                                          int targetZ, long seed) {
         final int margin = 320;
-        // X is drawn over the (wider, in Mercator) E-W extent; Z-jitter is clamped to the latitude extent --
-        // and (S10a) to the 50-deg SPAWN CALM BAND, so the +-96 jitter can never carry a clamped target back
-        // out of the band (the old zRadius-320 bound alone allowed |lat| up to ~87 on Regular-Wide).
+        // X is drawn over the (wider, in Mercator) E-W extent; Z-jitter is clamped into the ZONE'S spawn
+        // window (S10a zone-aware law): both bounds, so the +-96 jitter can neither carry a POLAR-window
+        // target below the 66.5 band edge nor any target past the window ceiling (the old zRadius-320 bound
+        // alone allowed |lat| up to ~87 on Regular-Wide). The window's hi is additionally belted by the
+        // physical zRadius-320 extent for degenerate tiny radii.
         int maxX = Math.max(0, xRadius - margin);
-        final int maxZ = Math.min(Math.max(0, zRadius - margin),
-                com.example.globe.core.SpawnCalmBand.maxAbsZ(zRadius));
+        final com.example.globe.core.SpawnCalmBand.Window jitterWindow =
+                new com.example.globe.core.SpawnCalmBand.Window(
+                        Math.min(spawnWindow.loAbsZ(), Math.max(0, zRadius - margin)),
+                        Math.min(spawnWindow.hiAbsZ(), Math.max(0, zRadius - margin)));
         // Slice C-2 (TEST 27 finding 1b): when the Phase 4 terrain bias is actively shaping terrain, never
         // even SEARCH for spawn inside the projection edge band (|x| >= EDGE_START * xRadius = outer 20%).
         // Geography deliberately ramps that band to ocean-intent, so its biased terrain is carved -- but
@@ -1529,7 +1541,8 @@ public class GlobeMod implements ModInitializer {
                 int x = rng.nextIntBetweenInclusive(-maxX, maxX);
                 int z = pass == 0
                         ? targetZ
-                        : Mth.clamp(targetZ + rng.nextIntBetweenInclusive(-zJitter, zJitter), -maxZ, maxZ);
+                        : com.example.globe.core.SpawnCalmBand.clampToWindow(
+                                targetZ + rng.nextIntBetweenInclusive(-zJitter, zJitter), jitterWindow);
 
                 if (!isLandBiome(template, sampler, x, z, classifyY, radiusBlocks)) {
                     continue;
