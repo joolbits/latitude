@@ -207,7 +207,7 @@ public final class LatitudeBiomes {
      */
     public static int authoritativeLandBandIndex(int blockX, int blockZ, int borderRadiusBlocks) {
         int activeRadius = ACTIVE_RADIUS_BLOCKS;
-        boolean overrideDisabled = Boolean.getBoolean("latitude.disableRadiusOverride");
+        boolean overrideDisabled = DISABLE_RADIUS_OVERRIDE;
         int effectiveRadius = (!overrideDisabled && activeRadius > 0) ? activeRadius : borderRadiusBlocks;
         if (effectiveRadius <= 0) {
             return BAND_TROPICAL;
@@ -226,7 +226,7 @@ public final class LatitudeBiomes {
      */
     public static int authoritativeChosenBandIndex(int blockX, int blockZ, int borderRadiusBlocks) {
         int activeRadius = ACTIVE_RADIUS_BLOCKS;
-        boolean overrideDisabled = Boolean.getBoolean("latitude.disableRadiusOverride");
+        boolean overrideDisabled = DISABLE_RADIUS_OVERRIDE;
         int effectiveRadius = (!overrideDisabled && activeRadius > 0) ? activeRadius : borderRadiusBlocks;
         if (effectiveRadius <= 0) {
             return BAND_TROPICAL;
@@ -378,6 +378,13 @@ public final class LatitudeBiomes {
     private static final int SAVANNA_GATE_AUDIT_LOG_LIMIT = Integer.getInteger("latitude.savannaGateAudit.maxLogs", 200);
     private static final int SAVANNA_GATE_AUDIT_SUMMARY_EVERY = Integer.getInteger("latitude.savannaGateAudit.summaryEvery", 50000);
     private static final int DEBUG_LIMIT = Integer.getInteger("latitude.debugBiomes.limit", 200);
+    // Immutable launch flags: all callers share the values captured when LatitudeBiomes initializes.
+    private static final boolean DISABLE_RADIUS_OVERRIDE =
+            Boolean.getBoolean("latitude.disableRadiusOverride");
+    private static final boolean SKIP_PREVIEW_HEIGHT_FOR_BIOME_PNG =
+            Boolean.parseBoolean(System.getProperty("latitude.skipPreviewHeightForBiomePng", "true"));
+    private static final boolean SKIP_PREVIEW_HEIGHT_FOR_WORLDGEN =
+            Boolean.parseBoolean(System.getProperty("latitude.skipPreviewHeightForWorldgen", "true"));
     private static volatile long WORLD_SEED = 0L;
     private static volatile WorldgenPolicyVersion ACTIVE_WORLDGEN_POLICY = WorldgenPolicyVersion.MODERN_1_3;
     public static volatile int ACTIVE_RADIUS_BLOCKS = 0;
@@ -542,7 +549,10 @@ public final class LatitudeBiomes {
     }
 
     public static boolean isBiomeIdPublic(Holder<Biome> entry, String id) {
-        return isBiomeId(entry, id);
+        if (entry == null) {
+            return false;
+        }
+        return hasBiomeIdentifier(entry, Identifier.parse(id));
     }
 
     public static Collection<Holder<Biome>> expandSourceCandidatePool(Collection<Holder<Biome>> basePool) {
@@ -860,7 +870,7 @@ public final class LatitudeBiomes {
 
         // --- latitude / band ---
         int activeRadius = ACTIVE_RADIUS_BLOCKS;
-        boolean overrideDisabled = Boolean.getBoolean("latitude.disableRadiusOverride");
+        boolean overrideDisabled = DISABLE_RADIUS_OVERRIDE;
         int effectiveRadius = (!overrideDisabled && activeRadius > 0) ? activeRadius : borderRadius;
         if (effectiveRadius <= 0) effectiveRadius = 1;
 
@@ -1221,10 +1231,10 @@ public final class LatitudeBiomes {
         if ("BIOME_PNG".equals(normalized)
                 || "SOURCE".equals(normalized)
                 || "ATLAS_SAMPLER".equals(normalized)) {
-            return Boolean.parseBoolean(System.getProperty("latitude.skipPreviewHeightForBiomePng", "true"));
+            return SKIP_PREVIEW_HEIGHT_FOR_BIOME_PNG;
         }
         if ("MIXIN".equals(normalized) || "CAVE_CLAMP".equals(normalized)) {
-            return Boolean.parseBoolean(System.getProperty("latitude.skipPreviewHeightForWorldgen", "true"));
+            return SKIP_PREVIEW_HEIGHT_FOR_WORLDGEN;
         }
         return false;
     }
@@ -2591,7 +2601,7 @@ public final class LatitudeBiomes {
         int biomeY = (blockY < columnDecisionY - 16) ? blockY : columnDecisionY;
         assertSurfaceY(biomeY);
         int activeRadius = ACTIVE_RADIUS_BLOCKS;
-        boolean overrideDisabled = Boolean.getBoolean("latitude.disableRadiusOverride");
+        boolean overrideDisabled = DISABLE_RADIUS_OVERRIDE;
 
         if (activeRadius > 0 && borderRadiusBlocks != activeRadius && RADIUS_MISMATCH_LOGGED.compareAndSet(false, true)) {
             LOGGER.warn("[Latitude] RADIUS MISMATCH detected from {}! Arg: {}, Active: {}", callerContext, borderRadiusBlocks, activeRadius);
@@ -3240,7 +3250,7 @@ public final class LatitudeBiomes {
         int biomeY = (blockY < columnDecisionY - 16) ? blockY : columnDecisionY;
         assertSurfaceY(biomeY);
         int activeRadius = ACTIVE_RADIUS_BLOCKS;
-        boolean overrideDisabled = Boolean.getBoolean("latitude.disableRadiusOverride");
+        boolean overrideDisabled = DISABLE_RADIUS_OVERRIDE;
 
         if (activeRadius > 0 && borderRadiusBlocks != activeRadius && RADIUS_MISMATCH_LOGGED.compareAndSet(false, true)) {
             LOGGER.warn("[Latitude] RADIUS MISMATCH detected from {}! Arg: {}, Active: {}", callerContext, borderRadiusBlocks, activeRadius);
@@ -6706,11 +6716,19 @@ public final class LatitudeBiomes {
         return Long.remainderUnsigned(roll, denominator) == 0L;
     }
 
+    // All private callers use literal/static biome IDs. Keep the public dynamic helper uncached.
+    private static final java.util.concurrent.ConcurrentHashMap<String, Identifier> ID_PARSE_CACHE =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
     private static boolean isBiomeId(Holder<Biome> entry, String id) {
         if (entry == null) {
             return false;
         }
-        Identifier target = Identifier.parse(id);
+        Identifier target = ID_PARSE_CACHE.computeIfAbsent(id, Identifier::parse);
+        return hasBiomeIdentifier(entry, target);
+    }
+
+    private static boolean hasBiomeIdentifier(Holder<Biome> entry, Identifier target) {
         return entry.unwrapKey()
                 .map(key -> key.identifier().equals(target))
                 .orElse(false);
