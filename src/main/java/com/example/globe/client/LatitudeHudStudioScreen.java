@@ -304,8 +304,17 @@ public class LatitudeHudStudioScreen extends Screen {
             z = mc.player.getZ();
         }
 
-        String degText = (border != null) ? LatitudeMath.formatLatitudeDeg(z, border) : "0\u00b0";
-        String sampleTitle = "TROPICAL " + degText;
+        // Derive BOTH the degree text and the zone word from the same latitude (Z) radius so the preview
+        // is always climatically consistent. When there is no level (main-menu preview), use a sane sample
+        // whose zone word matches its latitude rather than a hardcoded "TROPICAL <realDeg>" mismatch.
+        String sampleTitle;
+        if (border != null) {
+            String degText = LatitudeMath.formatLatitudeDeg(z, border);
+            String zoneWord = zoneTitleWord(com.example.globe.util.LatitudeMath.zoneKey(border, z));
+            sampleTitle = zoneWord + " " + degText;
+        } else {
+            sampleTitle = "TROPICS 12\u00b0S";
+        }
 
         int titleOffsetX = (dragElement == DragElement.TITLE) ? (int) Math.round(titleOffsetXf) : LatitudeConfig.zoneEnterTitleOffsetX;
         int titleOffsetY = (dragElement == DragElement.TITLE) ? (int) Math.round(titleOffsetYf) : LatitudeConfig.zoneEnterTitleOffsetY;
@@ -687,6 +696,19 @@ public class LatitudeHudStudioScreen extends Screen {
                 && my <= (cy + halfH + pad);
     }
 
+    /** Uppercase zone title word, matching ZoneEntryNotifier's display names (so the preview reads like the real title). */
+    private static String zoneTitleWord(String zoneKey) {
+        String name = switch (zoneKey) {
+            case "EQUATOR", "TROPICAL" -> "Tropics";
+            case "SUBTROPICAL" -> "Subtropics";
+            case "TEMPERATE" -> "Temperate";
+            case "SUBPOLAR" -> "Subpolar";
+            case "POLAR" -> "Polar";
+            default -> zoneKey == null ? "Tropics" : zoneKey;
+        };
+        return name.toUpperCase(java.util.Locale.ROOT);
+    }
+
     private static int snap(int v, int step) {
         if (step <= 1) return v;
         return Math.round(v / (float) step) * step;
@@ -718,6 +740,12 @@ public class LatitudeHudStudioScreen extends Screen {
             case RED_IVORY -> "Red & Ivory";
             case CYAN_STEEL -> "Cyan Steel";
             case MINT_BRASS -> "Mint Brass";
+            case OBSIDIAN_RED -> "Obsidian & Red";
+            case ARCTIC_BLUE -> "Arctic Blue";
+            case EMERALD -> "Emerald";
+            case ROYAL_PURPLE -> "Royal Purple";
+            case SUNSET -> "Sunset";
+            case MONOCHROME -> "Monochrome";
             case CLASSIC_GOLD -> "Classic Gold";
         };
     }

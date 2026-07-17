@@ -58,6 +58,8 @@ public class LatitudeCreateWorldScreen extends Screen {
     private static final int MIN_LEFT_W = 108;   // World: text fields (leftW-8) + padding
     private static final int MIN_RIGHT_W = 130;  // Spawn Zone: zone rows + description
     private static final int MIN_RAIL_W = 130;   // Rules: enough for world-type label (safeWidth = railW-66 >= 64px)
+    private static final int HIGH_GUI_SCALE = 3;
+    private static final int MIN_COMFORTABLE_THREE_COL_WIDTH = 720;
     private static final double[] PREVIEW_LABEL_DEGREES = {0.0, 23.5, 35.0, 50.0, 66.5, 90.0};
 
     private static final GlobeWorldSize DEFAULT_SIZE = GlobeWorldSize.REGULAR;
@@ -95,7 +97,7 @@ public class LatitudeCreateWorldScreen extends Screen {
             "A pocket world. Every horizon feels close.",
             "Compact but complete. Good for focused journeys.",
             "Room to roam. Familiar landmarks within reach.",
-            "The standard expedition. A full planet awaits.",
+            "The standard world. A full planet awaits.",
             "Vast distances. Bring supplies.",
             "A world that could take a lifetime to cross."
     };
@@ -126,6 +128,7 @@ public class LatitudeCreateWorldScreen extends Screen {
     private boolean allowCommands = false;
     private boolean startWithCompass = true;
     private boolean bonusChest = false;
+    private boolean generateStructures = true;
     private int worldTypeIdx = 0;  // 0=Latitude, 1=Vanilla, 2=Vanilla Superflat
     private GameRules gameRules;
 
@@ -135,11 +138,15 @@ public class LatitudeCreateWorldScreen extends Screen {
     private Button sizePrevBtn;
     private Button sizeNextBtn;
     private final List<ZoneRowWidget> zoneRows = new ArrayList<>();
+    // Rules controls participate in input, focus, and narration through Screen.children(), but have one
+    // manual render path inside the Rules scissor so partially visible controls clip instead of popping.
+    private final List<AbstractWidget> settingsScrollWidgets = new ArrayList<>();
 
     // ── Settings rail toggle buttons (need message updates) ──
     private Button commandsBtn;
     private Button compassBtn;
     private Button bonusChestBtn;
+    private Button structuresBtn;
     private Button worldTypePrevBtn;
     private Button worldTypeNextBtn;
     private Button modePrevBtn;
@@ -199,13 +206,17 @@ public class LatitudeCreateWorldScreen extends Screen {
     private int modeRowY;
     private int commandsRowY;
     private int compassRowY;
+    private int structuresRowY;
     private int bonusChestRowY;
     private int gameRulesRowY;
+    private int hudStudioRowY;
+    private int settingsColumnW;
+    private int settingsRightColumnX;
 
     // ── Tabbed fallback mode (activates when 3-col doesn't fit) ──
     private boolean tabbedMode;
-    private int activeTab; // 0=World, 1=Spawn Zone, 2=Rules
-    private static final String[] TAB_LABELS = {"World", "Spawn Zone", "Rules"};
+    private int activeTab; // 0=World + Spawn Zone, 1=Rules
+    private static final String[] TAB_LABELS = {"World", "Rules"};
     private static final int TAB_H = 20;
     private static final int TAB_GAP = 4;
     private int tabStripY;
@@ -214,7 +225,7 @@ public class LatitudeCreateWorldScreen extends Screen {
     private int debugSwitchSeq;
 
     private LatitudeCreateWorldScreen(Runnable onClose, @Nullable Screen parent, WorldCreationContext holder) {
-        super(Component.literal("New Expedition"));
+        super(Component.literal("New World"));
         LOGGER.info("[LAT][CWPATH] LatitudeCreateWorldScreen.<init> parent={} holder={}",
                 parent == null ? "null" : parent.getClass().getName(),
                 holder);
@@ -305,11 +316,18 @@ public class LatitudeCreateWorldScreen extends Screen {
         return this.width < 480;
     }
 
+    private static boolean shouldUseTabbedLayout(int viewportWidth, int guiScale) {
+        return guiScale >= HIGH_GUI_SCALE || viewportWidth < MIN_COMFORTABLE_THREE_COL_WIDTH;
+    }
+
     @Override
     protected void init() {
         LOGGER.info("[LAT][CWPATH] LatitudeCreateWorldScreen.init screen={} holder={}",
                 this.getClass().getName(), this.holder);
         zoneRows.clear();
+        // Screen.rebuildWidgets() clears Screen-owned collections, not this private render registry.
+        // Clear it on every init so resize/sub-screen return cannot leave a frozen ghost layer.
+        settingsScrollWidgets.clear();
         int headerGap = scaledUi(10);
         int headerToPanel = scaledUi(42);
         int bottomMargin = scaledUi(40);
@@ -335,16 +353,23 @@ public class LatitudeCreateWorldScreen extends Screen {
         paneStripScrollbarW = paneStripViewportWidth;
         paneStripScrollbarY = panelBottom + 2;
         paneStripScrollbarH = Math.max(4, Math.min(Math.max(4, scaledUi(6)), Math.max(4, bottomY - paneStripScrollbarY - 2)));
-        int minThreeColWidth = MIN_LEFT_W + MIN_RIGHT_W + MIN_RAIL_W + paneGap * 2;
-        tabbedMode = paneStripViewportWidth < minThreeColWidth;
+        int guiScale = Minecraft.getInstance().getWindow().getGuiScale();
+        // The hard panel minima only prevent outright overlap; they still produce the crammed three-column
+        // layout visible at high GUI scale. High scale therefore always gets one pane per tab, while normal
+        // scales keep three columns only when each pane has genuinely comfortable space.
+        tabbedMode = shouldUseTabbedLayout(paneStripViewportWidth, guiScale);
         threeCol = !tabbedMode;
         if (tabbedMode) {
             tabStripY = panelTop;
             tabPanelTop = tabStripY + TAB_H + TAB_GAP;
             panelTop = tabPanelTop;
-            leftW = paneStripContentWidth;
-            rightW = paneStripContentWidth;
+            int combinedWorldWidth = Math.max(2, paneStripContentWidth - paneGap);
+            leftW = Math.max(1, Math.round(combinedWorldWidth * 0.58f));
+            rightW = Math.max(1, combinedWorldWidth - leftW);
             railW = paneStripContentWidth;
+            if (activeTab < 0 || activeTab >= TAB_LABELS.length) {
+                activeTab = 0;
+            }
         } else {
             tabStripY = 0;
             tabPanelTop = panelTop;
@@ -432,33 +457,39 @@ public class LatitudeCreateWorldScreen extends Screen {
                 allowCommands = !allowCommands;
                 b.setMessage(Component.literal(allowCommands ? "ON" : "OFF"));
             }).bounds(settBtnX, panelTop, settBtnW, btnH).build();
-            this.addRenderableWidget(worldTypePrevBtn);
-            this.addRenderableWidget(worldTypeNextBtn);
-            this.addRenderableWidget(modePrevBtn);
-            this.addRenderableWidget(modeNextBtn);
-            this.addRenderableWidget(commandsBtn);
+            addSettingsScrollWidget(worldTypePrevBtn);
+            addSettingsScrollWidget(worldTypeNextBtn);
+            addSettingsScrollWidget(modePrevBtn);
+            addSettingsScrollWidget(modeNextBtn);
+            addSettingsScrollWidget(commandsBtn);
 
             compassBtn = Button.builder(Component.literal(startWithCompass ? "ON" : "OFF"), b -> {
                 startWithCompass = !startWithCompass;
                 b.setMessage(Component.literal(startWithCompass ? "ON" : "OFF"));
             }).bounds(settBtnX, panelTop, settBtnW, btnH).build();
-            this.addRenderableWidget(compassBtn);
+            addSettingsScrollWidget(compassBtn);
+
+            structuresBtn = Button.builder(Component.literal(generateStructures ? "ON" : "OFF"), b -> {
+                generateStructures = !generateStructures;
+                b.setMessage(Component.literal(generateStructures ? "ON" : "OFF"));
+            }).bounds(settBtnX, panelTop, settBtnW, btnH).build();
+            addSettingsScrollWidget(structuresBtn);
 
             bonusChestBtn = Button.builder(Component.literal(bonusChest ? "ON" : "OFF"), b -> {
                 bonusChest = !bonusChest;
                 b.setMessage(Component.literal(bonusChest ? "ON" : "OFF"));
             }).bounds(settBtnX, panelTop, settBtnW, btnH).build();
-            this.addRenderableWidget(bonusChestBtn);
+            addSettingsScrollWidget(bonusChestBtn);
 
             gameRulesBtn = Button.builder(Component.literal("Game Rules..."), b -> openGameRules())
                     .bounds(settBtnX, panelTop, settBtnW, btnH)
                     .build();
-            this.addRenderableWidget(gameRulesBtn);
+            addSettingsScrollWidget(gameRulesBtn);
 
             hudStudioBtn = Button.builder(Component.literal("HUD Studio"), b -> openHudStudio())
                     .bounds(settBtnX, panelTop, settBtnW, btnH)
                     .build();
-            this.addRenderableWidget(hudStudioBtn);
+            addSettingsScrollWidget(hudStudioBtn);
             updateSettingsLayout();
         }
 
@@ -466,13 +497,13 @@ public class LatitudeCreateWorldScreen extends Screen {
             applyTabbedVisibility();
         }
 
-        // ── 17. Begin Expedition ──
+        // ── 17. Create World ──
         int btnSpacing = scaledUi(8);
-        int beginW = Math.max(120, this.font.width("Begin Expedition") + 20);
+        int beginW = Math.max(120, this.font.width("Create World") + 20);
         int cancelW = Math.max(70, this.font.width("Cancel") + 20);
         int totalBtnW = beginW + btnSpacing + cancelW;
         int btnStartX = cx - totalBtnW / 2;
-        this.addRenderableWidget(Button.builder(Component.literal("Begin Expedition"), b -> beginExpedition())
+        this.addRenderableWidget(Button.builder(Component.literal("Create World"), b -> beginExpedition())
                 .bounds(btnStartX, bottomY, beginW, btnH)
                 .build());
 
@@ -481,11 +512,16 @@ public class LatitudeCreateWorldScreen extends Screen {
                 .bounds(btnStartX + beginW + btnSpacing, bottomY, cancelW, btnH)
                 .build());
 
-        // ── Focus: pre-select world name text for immediate overwrite ──
-        this.worldNameField.setFocused(true);
-        this.setFocused(this.worldNameField);
-        this.worldNameField.moveCursorToEnd(false);
-        this.worldNameField.setHighlightPos(0);
+        // ── Focus: pre-select world name only when the World surface is actually visible. ──
+        if (!tabbedMode || activeTab == 0) {
+            this.worldNameField.setFocused(true);
+            this.setFocused(this.worldNameField);
+            this.worldNameField.moveCursorToEnd(false);
+            this.worldNameField.setHighlightPos(0);
+        } else {
+            this.worldNameField.setFocused(false);
+            this.setFocused(null);
+        }
     }
 
     // ── Size stepper ──
@@ -589,9 +625,8 @@ public class LatitudeCreateWorldScreen extends Screen {
 
     private void updatePaneStripLayout() {
         if (tabbedMode) {
-            // All panels overlap at the same position in tabbed mode
             leftX = paneStripViewportLeft;
-            rightX = paneStripViewportLeft;
+            rightX = leftX + leftW + paneGap;
             railX = paneStripViewportLeft;
             return;
         }
@@ -703,7 +738,8 @@ public class LatitudeCreateWorldScreen extends Screen {
 
     private void updateRightLayout() {
         int contentTop = panelTop + scaledUi(8);
-        int titleBlockHeight = uiFontHeight() + scaledUi(4);
+        // Wide mode reserves a fixed heading strip. In tabbed mode the tab itself is the heading.
+        int titleBlockHeight = threeCol ? (uiFontHeight() + scaledUi(4)) : 0;
         int subtitleWidth = Math.max(80, rightW - scaledUi(28) - SCROLLBAR_GUTTER);
         int subtitleHeight = wrappedTextHeight("Choose the climate where your journey begins", subtitleWidth);
         int descTextWidth = Math.max(60, rightW - 16 - SCROLLBAR_GUTTER);
@@ -737,13 +773,13 @@ public class LatitudeCreateWorldScreen extends Screen {
         for (ZoneRowWidget row : zoneRows) {
             row.setRectangle(rightW - 4 - SCROLLBAR_GUTTER, zoneRowHeight, rightX + 2, zoneY);
             boolean visible = isLatitudeWorld()
-                    && (!tabbedMode || activeTab == 1)
+                    && (!tabbedMode || activeTab == 0)
                     && row.getX() >= paneStripViewportLeft
                     && row.getX() + row.getWidth() <= paneStripViewportRight
-                    && zoneY >= rightViewportTop
-                    && zoneY + zoneRowHeight <= rightViewportBottom;
-            row.visible = visible;
-            row.active = visible;
+                    && intersectsClip(zoneY, zoneY + zoneRowHeight, spawnClipTop(), rightViewportBottom);
+            // Any rendered portion is selectable; the screen-level clip gate consumes clicks against
+            // the off-page portion of the widget rectangle. Fully hidden rows remain inactive.
+            applyScrollWidgetState(row, visible, visible);
             zoneY += zoneRowStep;
         }
     }
@@ -757,9 +793,13 @@ public class LatitudeCreateWorldScreen extends Screen {
             compassBtn.setMessage(Component.literal(startWithCompass ? "ON" : "OFF"));
             compassBtn.active = compassBtn.visible && isLatitudeWorld();
         }
+        if (structuresBtn != null) {
+            structuresBtn.setMessage(Component.literal(generateStructures ? "ON" : "OFF"));
+            structuresBtn.active = structuresBtn.visible;
+        }
         if (bonusChestBtn != null) {
             bonusChestBtn.setMessage(Component.literal(bonusChest ? "ON" : "OFF"));
-            bonusChestBtn.active = !isLatitudeWorld() && bonusChestBtn.visible;
+            bonusChestBtn.active = bonusChestBtn.visible;
         }
         if (gameRulesBtn != null) {
             gameRulesBtn.active = gameRulesBtn.visible;
@@ -770,7 +810,7 @@ public class LatitudeCreateWorldScreen extends Screen {
     }
 
     private void updateSettingsLayout() {
-        if (worldTypePrevBtn == null || worldTypeNextBtn == null || modePrevBtn == null || modeNextBtn == null || commandsBtn == null || compassBtn == null || bonusChestBtn == null || gameRulesBtn == null || hudStudioBtn == null) {
+        if (worldTypePrevBtn == null || worldTypeNextBtn == null || modePrevBtn == null || modeNextBtn == null || commandsBtn == null || compassBtn == null || structuresBtn == null || bonusChestBtn == null || gameRulesBtn == null || hudStudioBtn == null) {
             settingsViewportTop = 0;
             settingsViewportBottom = 0;
             settingsContentHeight = 0;
@@ -782,69 +822,109 @@ public class LatitudeCreateWorldScreen extends Screen {
         int btnH = worldTypePrevBtn.getHeight();
         int labelGap = scaledUi(10);
         int rowGap = scaledUi(10);
-        settingsViewportTop = panelTop + scaledUi(36);
+        int columnGap = scaledUi(8);
+        settingsColumnW = settBtnW;
+        settingsRightColumnX = settBtnX;
+        if (tabbedMode) {
+            settingsColumnW = Math.max(1, (settBtnW - columnGap) / 2);
+            settingsRightColumnX = settBtnX + settingsColumnW + columnGap;
+        }
+        // Wide mode reserves the fixed Rules heading. Tabbed mode already has a tab label, so there is
+        // no internal heading or blank opaque shelf.
+        settingsViewportTop = threeCol ? panelTop + scaledUi(36) : panelTop + scaledUi(8);
         settingsViewportBottom = panelBottom - scaledUi(8);
         int viewportHeight = Math.max(0, settingsViewportBottom - settingsViewportTop);
         int contentTop = settingsViewportTop + scaledUi(4);
         int blockHeight = labelGap + btnH;
+        int rulesRowCount = tabbedMode ? 4 : 8;
         // Leave a little trailing room so the HUD Studio row can scroll fully into view
         // on short windows instead of sitting flush against the viewport edge.
-        settingsContentHeight = blockHeight * 7 + rowGap * 6 + scaledUi(12);
+        settingsContentHeight = blockHeight * rulesRowCount + rowGap * (rulesRowCount - 1) + scaledUi(12);
         int maxScroll = Math.max(0, settingsContentHeight - viewportHeight);
         if (settingsScroll < 0) settingsScroll = 0;
         if (settingsScroll > maxScroll) settingsScroll = maxScroll;
 
         int y = contentTop - settingsScroll + labelGap;
         worldTypeRowY = y;
-        positionSettingsStepper(worldTypePrevBtn, worldTypeNextBtn, settBtnX, settBtnW, y, btnH);
+        if (tabbedMode) {
+            modeRowY = y;
+            positionSettingsStepper(worldTypePrevBtn, worldTypeNextBtn, settBtnX, settingsColumnW, y, btnH);
+            positionSettingsStepper(modePrevBtn, modeNextBtn, settingsRightColumnX, settingsColumnW, y, btnH);
 
-        y += btnH + rowGap + labelGap;
-        modeRowY = y;
-        positionSettingsStepper(modePrevBtn, modeNextBtn, settBtnX, settBtnW, y, btnH);
+            y += btnH + rowGap + labelGap;
+            commandsRowY = y;
+            compassRowY = y;
+            positionSettingsButton(commandsBtn, settBtnX, settingsColumnW, y, btnH);
+            positionSettingsButton(compassBtn, settingsRightColumnX, settingsColumnW, y, btnH);
 
-        y += btnH + rowGap + labelGap;
-        commandsRowY = y;
-        positionSettingsButton(commandsBtn, settBtnX, settBtnW, y, btnH);
+            y += btnH + rowGap + labelGap;
+            structuresRowY = y;
+            bonusChestRowY = y;
+            positionSettingsButton(structuresBtn, settBtnX, settingsColumnW, y, btnH);
+            positionSettingsButton(bonusChestBtn, settingsRightColumnX, settingsColumnW, y, btnH);
 
-        y += btnH + rowGap + labelGap;
-        compassRowY = y;
-        positionSettingsButton(compassBtn, settBtnX, settBtnW, y, btnH);
+            y += btnH + rowGap + labelGap;
+            gameRulesRowY = y;
+            hudStudioRowY = y;
+            positionSettingsButton(gameRulesBtn, settBtnX, settingsColumnW, y, btnH);
+            positionSettingsButton(hudStudioBtn, settingsRightColumnX, settingsColumnW, y, btnH);
+        } else {
+            positionSettingsStepper(worldTypePrevBtn, worldTypeNextBtn, settBtnX, settBtnW, y, btnH);
 
-        y += btnH + rowGap + labelGap;
-        bonusChestRowY = y;
-        positionSettingsButton(bonusChestBtn, settBtnX, settBtnW, y, btnH);
-        y += btnH + rowGap + labelGap;
-        gameRulesRowY = y;
-        positionSettingsButton(gameRulesBtn, settBtnX, settBtnW, y, btnH);
+            y += btnH + rowGap + labelGap;
+            modeRowY = y;
+            positionSettingsStepper(modePrevBtn, modeNextBtn, settBtnX, settBtnW, y, btnH);
 
-        y += btnH + rowGap + labelGap;
-        positionSettingsButton(hudStudioBtn, settBtnX, settBtnW, y, btnH);
+            y += btnH + rowGap + labelGap;
+            commandsRowY = y;
+            positionSettingsButton(commandsBtn, settBtnX, settBtnW, y, btnH);
+
+            y += btnH + rowGap + labelGap;
+            compassRowY = y;
+            positionSettingsButton(compassBtn, settBtnX, settBtnW, y, btnH);
+
+            y += btnH + rowGap + labelGap;
+            structuresRowY = y;
+            positionSettingsButton(structuresBtn, settBtnX, settBtnW, y, btnH);
+
+            y += btnH + rowGap + labelGap;
+            bonusChestRowY = y;
+            positionSettingsButton(bonusChestBtn, settBtnX, settBtnW, y, btnH);
+
+            y += btnH + rowGap + labelGap;
+            gameRulesRowY = y;
+            positionSettingsButton(gameRulesBtn, settBtnX, settBtnW, y, btnH);
+
+            y += btnH + rowGap + labelGap;
+            hudStudioRowY = y;
+            positionSettingsButton(hudStudioBtn, settBtnX, settBtnW, y, btnH);
+        }
 
         updateSettingsButtons();
     }
 
     private void applyTabbedVisibility() {
         if (!tabbedMode) return;
-        // Tab 0 = World (left panel widgets)
+        // Tab 0 = World + Spawn Zone.
         boolean showWorld = activeTab == 0;
         setTabbedWidgetVisible(worldNameField, showWorld);
         setTabbedWidgetVisible(seedField, showWorld);
         setTabbedWidgetVisible(sizePrevBtn, showWorld);
         setTabbedWidgetVisible(sizeNextBtn, showWorld);
-        // Tab 1 = Spawn Zone (right panel widgets)
-        boolean showZone = activeTab == 1 && isLatitudeWorld();
+        boolean showZone = activeTab == 0 && isLatitudeWorld();
         for (ZoneRowWidget row : zoneRows) {
             setTabbedWidgetVisible(row, showZone);
         }
-        // Tab 2 = Rules (settings rail widgets)
-        boolean showRules = activeTab == 2;
+        // Tab 1 = Rules.
+        boolean showRules = activeTab == 1;
         setTabbedWidgetVisible(worldTypePrevBtn, showRules);
         setTabbedWidgetVisible(worldTypeNextBtn, showRules);
         setTabbedWidgetVisible(modePrevBtn, showRules);
         setTabbedWidgetVisible(modeNextBtn, showRules);
         setTabbedWidgetVisible(commandsBtn, showRules);
         setTabbedWidgetVisible(compassBtn, showRules);
-        setTabbedWidgetVisible(bonusChestBtn, showRules && !isLatitudeWorld());
+        setTabbedWidgetVisible(structuresBtn, showRules);
+        setTabbedWidgetVisible(bonusChestBtn, showRules);
         setTabbedWidgetVisible(gameRulesBtn, showRules);
         setTabbedWidgetVisible(hudStudioBtn, showRules);
     }
@@ -853,6 +933,89 @@ public class LatitudeCreateWorldScreen extends Screen {
         if (widget == null) return;
         widget.visible = visible;
         widget.active = visible;
+        if (!visible && widget.isFocused()) {
+            widget.setFocused(false);
+            if (this.getFocused() == widget) {
+                this.setFocused(null);
+            }
+        }
+    }
+
+    private int headerBandBottom() {
+        return panelTop + scaledUi(6) + uiFontHeight() + scaledUi(3);
+    }
+
+    private int settingsClipTop() {
+        return threeCol ? headerBandBottom() : settingsViewportTop;
+    }
+
+    private int spawnClipTop() {
+        return threeCol ? headerBandBottom() : rightViewportTop;
+    }
+
+    private static boolean intersectsClip(int top, int bottom, int clipTop, int clipBottom) {
+        return ViewportClipPolicy.intersects(top, bottom, clipTop, clipBottom);
+    }
+
+    private static boolean pointInsideClip(double x, double y, int left, int top, int right, int bottom) {
+        return ViewportClipPolicy.containsPoint(x, y, left, top, right, bottom);
+    }
+
+    private boolean isInsideRulesPanel(double x, double y) {
+        if (tabbedMode && activeTab != 1) return false;
+        int left = Math.max(railX + 1, paneStripViewportLeft);
+        int right = Math.min(railX + railW - 1, paneStripViewportRight);
+        return pointInsideClip(x, y, left, panelTop, right, panelBottom);
+    }
+
+    private boolean isInsideRulesClip(double x, double y) {
+        int left = Math.max(railX + 1, paneStripViewportLeft);
+        int right = Math.min(railX + railW - 1, paneStripViewportRight);
+        return pointInsideClip(x, y, left, settingsClipTop(), right, settingsViewportBottom);
+    }
+
+    private boolean isInsideSpawnPanel(double x, double y) {
+        if (tabbedMode && activeTab != 0) return false;
+        int left = Math.max(rightX + 1, paneStripViewportLeft);
+        int right = Math.min(rightX + rightW - 1, paneStripViewportRight);
+        return pointInsideClip(x, y, left, panelTop, right, panelBottom);
+    }
+
+    private boolean isInsideSpawnClip(double x, double y) {
+        int left = Math.max(rightX + 1, paneStripViewportLeft);
+        int right = Math.min(rightX + rightW - 1, paneStripViewportRight);
+        return pointInsideClip(x, y, left, spawnClipTop(), right, rightViewportBottom);
+    }
+
+    private boolean handleSpawnZoneClippedClick(MouseButtonEvent click, boolean doubled) {
+        if (!isLatitudeWorld() || (tabbedMode && activeTab != 0)) {
+            return false;
+        }
+        int clipLeft = Math.max(rightX + 1, paneStripViewportLeft);
+        int clipRight = Math.min(rightX + rightW - 1, paneStripViewportRight);
+        int clipTop = spawnClipTop();
+        int clipBottom = rightViewportBottom;
+        for (ZoneRowWidget row : zoneRows) {
+            if (!row.visible || !row.active) {
+                continue;
+            }
+            if (ViewportClipPolicy.acceptsClippedWidgetClick(
+                    click.x(),
+                    click.y(),
+                    row.getX(),
+                    row.getY(),
+                    row.getX() + row.getWidth(),
+                    row.getY() + row.getHeight(),
+                    clipLeft,
+                    clipTop,
+                    clipRight,
+                    clipBottom
+            )) {
+                row.selectFromClippedMouseClick(click, doubled);
+                return true;
+            }
+        }
+        return false;
     }
 
     private void switchTab(int tab) {
@@ -865,26 +1028,46 @@ public class LatitudeCreateWorldScreen extends Screen {
         int stepperW = left.getWidth();
         left.setRectangle(stepperW, height, x, y);
         right.setRectangle(stepperW, height, x + width - stepperW, y);
-        boolean visible = (!tabbedMode || activeTab == 2)
-                && left.getX() >= paneStripViewportLeft
-                && right.getX() + right.getWidth() <= paneStripViewportRight
-                && y >= settingsViewportTop
-                && y + height <= settingsViewportBottom;
-        left.visible = visible;
-        right.visible = visible;
-        left.active = visible;
-        right.active = visible;
+        boolean visible = (!tabbedMode || activeTab == 1)
+                && left.getX() < paneStripViewportRight
+                && right.getX() + right.getWidth() > paneStripViewportLeft
+                && intersectsClip(y, y + height, settingsClipTop(), settingsViewportBottom);
+        applyScrollWidgetState(left, visible, visible);
+        applyScrollWidgetState(right, visible, visible);
     }
 
-    private void positionSettingsButton(Button button, int x, int width, int y, int height) {
+    private void positionSettingsButton(AbstractWidget button, int x, int width, int y, int height) {
         button.setRectangle(width - SCROLLBAR_GUTTER, height, x, y);
-        boolean visible = (!tabbedMode || activeTab == 2)
-                && button.getX() >= paneStripViewportLeft
-                && button.getX() + button.getWidth() <= paneStripViewportRight
-                && y >= settingsViewportTop
-                && y + height <= settingsViewportBottom;
-        button.visible = visible;
-        button.active = visible;
+        boolean visible = (!tabbedMode || activeTab == 1)
+                && button.getX() < paneStripViewportRight
+                && button.getX() + button.getWidth() > paneStripViewportLeft
+                && intersectsClip(y, y + height, settingsClipTop(), settingsViewportBottom);
+        applyScrollWidgetState(button, visible, visible);
+    }
+
+    private void applyScrollWidgetState(AbstractWidget widget, boolean visible, boolean active) {
+        widget.visible = visible;
+        widget.active = active;
+        if (!visible && widget.isFocused()) {
+            widget.setFocused(false);
+            if (this.getFocused() == widget) {
+                this.setFocused(null);
+            }
+        }
+    }
+
+    private void addSettingsScrollWidget(AbstractWidget widget) {
+        if (widget == null) return;
+        this.addWidget(widget);
+        settingsScrollWidgets.add(widget);
+    }
+
+    private void renderSettingsScrollWidgets(GuiGraphicsExtractor context, int mouseX, int mouseY, float delta) {
+        for (AbstractWidget widget : settingsScrollWidgets) {
+            if (widget != null && widget.visible) {
+                widget.extractRenderState(context, mouseX, mouseY, delta);
+            }
+        }
     }
 
     private void openGameRules() {
@@ -915,7 +1098,7 @@ public class LatitudeCreateWorldScreen extends Screen {
         LatitudeWorldLauncher.beginExpedition(this.minecraft, this, this.holder,
                 worldName, seed, this.selectedSize, this.selectedZone,
                 gameMode, hardcore, difficulty, allowCommands, startWithCompass, bonusChest,
-                this.gameRules, this.worldTypeIdx);
+                generateStructures, this.gameRules, this.worldTypeIdx);
     }
 
     public void probeAutoConfirmWorldCreation() {
@@ -982,7 +1165,7 @@ public class LatitudeCreateWorldScreen extends Screen {
                 return true;
             }
         }
-        if ((!tabbedMode || activeTab == 1) && mouseX >= Math.max(rightX, paneStripViewportLeft) && mouseX < Math.min(rightX + rightW, paneStripViewportRight) && mouseY >= panelTop && mouseY < panelBottom) {
+        if ((!tabbedMode || activeTab == 0) && mouseX >= Math.max(rightX, paneStripViewportLeft) && mouseX < Math.min(rightX + rightW, paneStripViewportRight) && mouseY >= panelTop && mouseY < panelBottom) {
             int viewportHeight = Math.max(0, rightViewportBottom - rightViewportTop);
             int maxScroll = Math.max(0, rightContentHeight - viewportHeight);
             if (maxScroll > 0 && verticalAmount != 0.0D) {
@@ -993,7 +1176,7 @@ public class LatitudeCreateWorldScreen extends Screen {
                 return true;
             }
         }
-        if ((!tabbedMode || activeTab == 2) && mouseX >= Math.max(railX, paneStripViewportLeft) && mouseX < Math.min(railX + railW, paneStripViewportRight) && mouseY >= panelTop && mouseY < panelBottom) {
+        if ((!tabbedMode || activeTab == 1) && mouseX >= Math.max(railX, paneStripViewportLeft) && mouseX < Math.min(railX + railW, paneStripViewportRight) && mouseY >= panelTop && mouseY < panelBottom) {
             int viewportHeight = Math.max(0, settingsViewportBottom - settingsViewportTop);
             int maxScroll = Math.max(0, settingsContentHeight - viewportHeight);
             if (maxScroll > 0 && verticalAmount != 0.0D) {
@@ -1031,6 +1214,17 @@ public class LatitudeCreateWorldScreen extends Screen {
             setPaneStripScrollFromMouse(click.x());
             return true;
         }
+        if (click.button() == 0 && handleSpawnZoneClippedClick(click, doubled)) {
+            return true;
+        }
+        // Widgets may intersect the viewport so their visible portion renders continuously. Consume clicks
+        // in the clipped-off heading/footer area before Screen dispatches against the widget's full rectangle.
+        if (isInsideRulesPanel(click.x(), click.y()) && !isInsideRulesClip(click.x(), click.y())) {
+            return true;
+        }
+        if (isInsideSpawnPanel(click.x(), click.y()) && !isInsideSpawnClip(click.x(), click.y())) {
+            return true;
+        }
         return super.mouseClicked(click, doubled);
     }
 
@@ -1058,6 +1252,11 @@ public class LatitudeCreateWorldScreen extends Screen {
 
     @Override
     public void extractRenderState(GuiGraphicsExtractor context, int mouseX, int mouseY, float delta) {
+        // One authoritative layout pass per rendered frame keeps rectangles, culling, focus, and narration
+        // synchronized after scroll, resize, tab changes, world-size changes, or sub-screen return.
+        updateLeftLayout();
+        updateRightLayout();
+        updateSettingsLayout();
         int titlePaneX = threeCol ? rightX : 12;
         int titlePaneW = threeCol ? rightW : Math.max(1, this.width - 24);
         int headerBottom = tabbedMode ? tabStripY - 2 : panelTop;
@@ -1066,7 +1265,7 @@ public class LatitudeCreateWorldScreen extends Screen {
         if (drawCenteredBoundedText(context, "LATITUDE", new UiRect(headerRect.x, headerLineY, headerRect.w, uiFontHeight()), GOLD, true, false)) {
             headerLineY += uiFontHeight() + scaledUi(6);
         }
-        if (drawCenteredBoundedText(context, "New Expedition", new UiRect(headerRect.x, headerLineY, headerRect.w, uiFontHeight()), WARM_WHITE, true, false)) {
+        if (drawCenteredBoundedText(context, "New World", new UiRect(headerRect.x, headerLineY, headerRect.w, uiFontHeight()), WARM_WHITE, true, false)) {
             headerLineY += uiFontHeight() + scaledUi(4);
         }
         drawWrappedTextBlock(context, "Prepare your journey across the globe", new UiRect(headerRect.x, headerLineY, headerRect.w, Math.max(0, headerRect.bottom() - headerLineY)), MUTED, false, 2, true, true);
@@ -1079,11 +1278,12 @@ public class LatitudeCreateWorldScreen extends Screen {
         drawViewportClippedPanel(context, leftX, panelTop, leftW, panelBottom - panelTop);
         int leftClipLeft = Math.max(leftX + 1, paneStripViewportLeft);
         int leftClipRight = Math.min(leftX + leftW - 1, paneStripViewportRight);
-        if (leftClipRight > leftClipLeft) {
-            context.enableScissor(leftClipLeft, leftViewportTop, leftClipRight, leftViewportBottom);
         if (threeCol) {
-            drawInlineHeading(context, leftX, leftW, TAB_LABELS[0], GOLD);
+            drawInlineHeading(context, leftX, leftW, "World", GOLD);
         }
+        int leftClipTop = threeCol ? headerBandBottom() : leftViewportTop;
+        if (leftClipRight > leftClipLeft) {
+            context.enableScissor(leftClipLeft, leftClipTop, leftClipRight, leftViewportBottom);
         int inputX = leftX + 4;
         int stepperBtnW = sizePrevBtn != null ? sizePrevBtn.getWidth() : 20;
         int labelColor = GOLD;
@@ -1115,19 +1315,18 @@ public class LatitudeCreateWorldScreen extends Screen {
         drawPaneScrollbar(context, leftX, leftW, leftViewportTop, leftViewportBottom, leftContentHeight, leftScroll);
         } // end tab 0 (World)
 
-        if (!tabbedMode || activeTab == 1) {
+        if (!tabbedMode || activeTab == 0) {
         drawViewportClippedPanel(context, rightX, panelTop, rightW, panelBottom - panelTop);
-        int paneTitleY = panelTop + scaledUi(8);
-        int rightClipLeft = Math.max(rightX + 1, paneStripViewportLeft);
-        int rightClipRight = Math.min(rightX + rightW - 1, paneStripViewportRight);
-        if (rightClipRight > rightClipLeft) {
-        context.enableScissor(rightClipLeft, rightViewportTop, rightClipRight, rightViewportBottom);
         boolean latWorld = isLatitudeWorld();
         int rightTextWidth = Math.max(40, rightW - 8 - SCROLLBAR_GUTTER);
         if (threeCol) {
-            drawInlineHeading(context, rightX, rightW, TAB_LABELS[1], latWorld ? GOLD : DISABLED_COLOR);
-        } else {
-        drawCenteredBoundedText(context, "Spawn Zone", new UiRect(rightX + 4, paneTitleY, rightTextWidth, uiFontHeight()), latWorld ? GOLD : DISABLED_COLOR, false, false);
+            drawInlineHeading(context, rightX, rightW, "Spawn Zone", latWorld ? GOLD : DISABLED_COLOR);
+        }
+        int rightClipLeft = Math.max(rightX + 1, paneStripViewportLeft);
+        int rightClipRight = Math.min(rightX + rightW - 1, paneStripViewportRight);
+        if (rightClipRight > rightClipLeft) {
+        context.enableScissor(rightClipLeft, spawnClipTop(), rightClipRight, rightViewportBottom);
+        if (!threeCol) {
         drawWrappedTextBlock(context, "Choose the climate where your journey begins", new UiRect(rightX + 4, rightSubtitleY, rightTextWidth, Math.max(uiFontHeight(), rightDividerY - rightSubtitleY - scaledUi(2))), latWorld ? MUTED : DISABLED_COLOR, false, 2, true, true);
         }
         if (latWorld) {
@@ -1174,43 +1373,49 @@ public class LatitudeCreateWorldScreen extends Screen {
         context.disableScissor();
         }
         drawPaneScrollbar(context, rightX, rightW, rightViewportTop, rightViewportBottom, rightContentHeight, rightScroll);
-        } // end tab 1 (Spawn Zone)
+        } // end World-tab Spawn Zone pane
 
-        if (!tabbedMode || activeTab == 2) {
-            updateSettingsLayout();
+        if (!tabbedMode || activeTab == 1) {
             drawViewportClippedPanel(context, railX, panelTop, railW, panelBottom - panelTop);
             int settLabelX = railX + 4;
             int railClipLeft = Math.max(railX + 1, paneStripViewportLeft);
             int railClipRight = Math.min(railX + railW - 1, paneStripViewportRight);
-            if (railClipRight > railClipLeft) {
             if (threeCol) {
-                drawInlineHeading(context, railX, railW, TAB_LABELS[2], GOLD);
+                drawInlineHeading(context, railX, railW, "Rules", GOLD);
             }
-            context.enableScissor(railClipLeft, settingsViewportTop, railClipRight, settingsViewportBottom);
-            int railTextWidth = Math.max(40, railW - 8 - SCROLLBAR_GUTTER);
-            if (!threeCol) {
-                drawCenteredBoundedText(context, "EXPEDITION", new UiRect(railX + 4, panelTop + scaledUi(4), railTextWidth, uiFontHeight()), GOLD, false, true);
-                drawCenteredBoundedText(context, "SETTINGS", new UiRect(railX + 4, panelTop + scaledUi(14), railTextWidth, uiFontHeight()), GOLD, false, true);
+            if (railClipRight > railClipLeft) {
+            context.enableScissor(railClipLeft, settingsClipTop(), railClipRight, settingsViewportBottom);
+            if (tabbedMode) {
+                drawSettingsRowLabel(context, "World Type", settLabelX, settingsColumnW, worldTypeRowY, MUTED);
+                drawSettingsStepperValue(context, WORLD_TYPE_NAMES[worldTypeIdx], WORLD_TYPE_COLORS[worldTypeIdx], worldTypeRowY, settLabelX, settingsColumnW);
+                drawSettingsRowLabel(context, "Game Mode", settingsRightColumnX, settingsColumnW, modeRowY, MUTED);
+                drawSettingsStepperValue(context, MODE_NAMES[selectedModeIdx], MODE_COLORS[selectedModeIdx], modeRowY, settingsRightColumnX, settingsColumnW);
+                drawSettingsRowLabel(context, "Commands", settLabelX, settingsColumnW, commandsRowY, MUTED);
+                drawSettingsRowLabel(context, "Starting Compass", settingsRightColumnX, settingsColumnW, compassRowY, isLatitudeWorld() ? MUTED : DISABLED_COLOR);
+                drawSettingsRowLabel(context, "Generate Structures", settLabelX, settingsColumnW, structuresRowY, MUTED);
+                drawSettingsRowLabel(context, "Bonus Chest", settingsRightColumnX, settingsColumnW, bonusChestRowY, MUTED);
+                drawSettingsRowLabel(context, "Game Rules", settLabelX, settingsColumnW, gameRulesRowY, MUTED);
+                drawSettingsRowLabel(context, "HUD Studio", settingsRightColumnX, settingsColumnW, hudStudioRowY, MUTED);
+            } else {
+                drawSettingsRowLabel(context, "World Type", settLabelX, settingsColumnW, worldTypeRowY, MUTED);
+                drawSettingsStepperValue(context, WORLD_TYPE_NAMES[worldTypeIdx], WORLD_TYPE_COLORS[worldTypeIdx], worldTypeRowY, settLabelX, settingsColumnW);
+                drawSettingsRowLabel(context, "Game Mode", settLabelX, settingsColumnW, modeRowY, MUTED);
+                drawSettingsStepperValue(context, MODE_NAMES[selectedModeIdx], MODE_COLORS[selectedModeIdx], modeRowY, settLabelX, settingsColumnW);
+                drawSettingsRowLabel(context, "Commands", settLabelX, settingsColumnW, commandsRowY, MUTED);
+                drawSettingsRowLabel(context, "Starting Compass", settLabelX, settingsColumnW, compassRowY, isLatitudeWorld() ? MUTED : DISABLED_COLOR);
+                drawSettingsRowLabel(context, "Generate Structures", settLabelX, settingsColumnW, structuresRowY, MUTED);
+                drawSettingsRowLabel(context, "Bonus Chest", settLabelX, settingsColumnW, bonusChestRowY, MUTED);
+                drawSettingsRowLabel(context, "Game Rules", settLabelX, settingsColumnW, gameRulesRowY, MUTED);
+                drawSettingsRowLabel(context, "HUD Studio", settLabelX, settingsColumnW, hudStudioRowY, MUTED);
             }
-            drawSettingsRowLabel(context, "World Type", settLabelX, worldTypeRowY, MUTED);
-            drawSettingsStepperValue(context, WORLD_TYPE_NAMES[worldTypeIdx], WORLD_TYPE_COLORS[worldTypeIdx], worldTypeRowY);
-            drawSettingsRowLabel(context, "Game Mode", settLabelX, modeRowY, MUTED);
-            drawSettingsStepperValue(context, MODE_NAMES[selectedModeIdx], MODE_COLORS[selectedModeIdx], modeRowY);
-            drawSettingsRowLabel(context, "Commands", settLabelX, commandsRowY, MUTED);
-            drawSettingsRowLabel(context, "Starting Compass", settLabelX, compassRowY, isLatitudeWorld() ? MUTED : DISABLED_COLOR);
-            drawSettingsRowLabel(context, "Bonus Chest", settLabelX, bonusChestRowY, isLatitudeWorld() ? DISABLED_COLOR : MUTED);
-            drawSettingsRowLabel(context, "Game Rules", settLabelX, gameRulesRowY, MUTED);
+            renderSettingsScrollWidgets(context, mouseX, mouseY, delta);
             context.disableScissor();
             }
             drawPaneScrollbar(context, railX, railW, settingsViewportTop, settingsViewportBottom, settingsContentHeight, settingsScroll);
-        } // end tab 2 (Rules)
+        } // end Rules tab
 
         if (!tabbedMode) {
             drawHorizontalScrollbar(context);
-        }
-
-        if (isLatitudeWorld() && bonusChestBtn != null && !bonusChestBtn.active && bonusChestBtn.isMouseOver(mouseX, mouseY)) {
-            context.setTooltipForNextFrame(Component.literal("Bonus chest is not available in Latitude."), mouseX, mouseY);
         }
 
         super.extractRenderState(context, mouseX, mouseY, delta);
@@ -1446,21 +1651,21 @@ public class LatitudeCreateWorldScreen extends Screen {
         return Math.max(5, Math.round(this.font.lineHeight * scale));
     }
 
-    private void drawSettingsRowLabel(GuiGraphicsExtractor context, String label, int x, int rowY, int color) {
+    private void drawSettingsRowLabel(GuiGraphicsExtractor context, String label, int x, int width, int rowY, int color) {
         int labelY = rowY - scaledUi(10);
-        if (labelY + uiFontHeight() <= settingsViewportTop || labelY >= settingsViewportBottom) {
+        if (labelY + uiFontHeight() <= settingsClipTop() || labelY >= settingsViewportBottom) {
             return;
         }
-        drawBoundedText(context, label, new UiRect(x, labelY, Math.max(20, railW - 8 - SCROLLBAR_GUTTER), uiFontHeight()), color, false, true);
+        drawBoundedText(context, label, new UiRect(x, labelY, Math.max(20, width - SCROLLBAR_GUTTER), uiFontHeight()), color, false, true);
     }
 
-    private void drawSettingsStepperValue(GuiGraphicsExtractor context, String text, int color, int rowY) {
-        if (rowY + uiFontHeight() <= settingsViewportTop || rowY >= settingsViewportBottom) {
+    private void drawSettingsStepperValue(GuiGraphicsExtractor context, String text, int color, int rowY, int cellX, int cellWidth) {
+        if (rowY + uiFontHeight() <= settingsClipTop() || rowY >= settingsViewportBottom) {
             return;
         }
         int stepperW = worldTypePrevBtn != null ? worldTypePrevBtn.getWidth() : 20;
-        int safeLeft = railX + 4 + stepperW + scaledUi(6);
-        int safeRight = railX + railW - 4 - stepperW - scaledUi(6) - SCROLLBAR_GUTTER;
+        int safeLeft = cellX + stepperW + scaledUi(6);
+        int safeRight = cellX + cellWidth - stepperW - scaledUi(6) - SCROLLBAR_GUTTER;
         int safeWidth = Math.max(20, safeRight - safeLeft);
         String fitted = ellipsizeToWidth(text, safeWidth);
         int textW = uiTextWidth(fitted);
@@ -1865,6 +2070,11 @@ public class LatitudeCreateWorldScreen extends Screen {
             selectedZone = this.band;
         }
 
+        private void selectFromClippedMouseClick(net.minecraft.client.input.MouseButtonEvent click, boolean doubled) {
+            this.playDownSound(Minecraft.getInstance().getSoundManager());
+            this.onClick(click, doubled);
+        }
+
         @Override
         public boolean keyPressed(net.minecraft.client.input.KeyEvent input) {
             if (!this.isActive()) return false;
@@ -1883,6 +2093,13 @@ public class LatitudeCreateWorldScreen extends Screen {
             int y = this.getY();
             int w = this.getWidth();
             int h = this.getHeight();
+
+            int clipLeft = Math.max(rightX + 1, paneStripViewportLeft);
+            int clipRight = Math.min(rightX + rightW - 1, paneStripViewportRight);
+            boolean clipped = clipRight > clipLeft && rightViewportBottom > spawnClipTop();
+            if (clipped) {
+                context.enableScissor(clipLeft, spawnClipTop(), clipRight, rightViewportBottom);
+            }
 
             if (selected) {
                 // Warm gold background highlight
@@ -1919,6 +2136,9 @@ public class LatitudeCreateWorldScreen extends Screen {
                 helperY += uiFontHeight();
             }
 
+            if (clipped) {
+                context.disableScissor();
+            }
             this.handleCursor(context);
         }
 

@@ -4,11 +4,39 @@
     "minecraft:frozen_peaks",
     "minecraft:jagged_peaks",
     {
+      "id": "terralith:wintry_forest",
+      "required": false
+    },
+    {
+      "id": "terralith:wintry_lowlands",
+      "required": false
+    },
+    {
+      "id": "terralith:siberian_grove",
+      "required": false
+    },
+    {
+      "id": "biomesoplenty:snowy_coniferous_forest",
+      "required": false
+    },
+    {
       "id": "byg:shattered_glacier",
       "required": false
     },
     {
       "id": "clifftree:glacier_valley",
+      "required": false
+    },
+    {
+      "id": "clifftree:glacier_cliff",
+      "required": false
+    },
+    {
+      "id": "clifftree:tundra",
+      "required": false
+    },
+    {
+      "id": "clifftree:snowy_old_growth_taiga",
       "required": false
     }
   ]

@@ -229,14 +229,18 @@ public final class BiomePreviewExporter {
         Climate.Sampler sampler = noiseConfig.sampler();
         net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator noiseGen =
                 generator instanceof net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator ng ? ng : null;
-        // Lightweight surface stub for atlas mode: keep sea level from the generator,
-        // but skip expensive height probing by leaving noiseConfig/heightView unset.
+        // Lightweight surface stub for atlas mode: keep sea level from the generator, but skip expensive
+        // height probing by leaving noiseConfig/heightView unset. Opt-in TERRAIN-AWARE mode
+        // (-Dlatitude.atlasTerrainAware=true) feeds the real RandomState + height view so terrain-correlated
+        // gates (e.g. the temperate plains-on-steep gate) actually fire and become map-provable. Slower
+        // (~10 getBaseHeight per sample) — run on a small world. Default off → byte-identical normal runs.
+        boolean terrainAware = Boolean.getBoolean("latitude.atlasTerrainAware");
         net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator gatedNoiseGen = noiseGen;
-        RandomState gatedNoiseConfig = null;
-        net.minecraft.world.level.LevelHeightAccessor gatedHeightView = null;
+        RandomState gatedNoiseConfig = terrainAware ? noiseConfig : null;
+        net.minecraft.world.level.LevelHeightAccessor gatedHeightView = terrainAware ? world : null;
 
         int noiseY = Math.floorDiv(y, 4);
-        final String pickerContext = "ATLAS_SAMPLER";
+        final String pickerContext = terrainAware ? "ATLAS_TERRAIN" : "ATLAS_SAMPLER";
         for (int imageZ = 0, blockZ = zMin; imageZ < height; imageZ++, blockZ += stepBlocks) {
             int noiseZ = Math.floorDiv(blockZ, 4);
             for (int imageX = 0, blockX = xMin; imageX < width; imageX++, blockX += stepBlocks) {
@@ -673,9 +677,12 @@ public final class BiomePreviewExporter {
             this.sampler = noiseConfig.sampler();
             net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator noiseGen =
                     generator instanceof net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator ng ? ng : null;
+            // Opt-in terrain-aware atlas (-Dlatitude.atlasTerrainAware=true): feed real terrain so terrain
+            // gates fire (map-proves plains-on-steep etc.). Default off → byte-identical normal runs.
+            boolean terrainAware = Boolean.getBoolean("latitude.atlasTerrainAware");
             this.gatedNoiseGen = noiseGen;
-            this.gatedNoiseConfig = null;
-            this.gatedHeightView = null;
+            this.gatedNoiseConfig = terrainAware ? this.noiseConfig : null;
+            this.gatedHeightView = terrainAware ? world : null;
             this.noiseY = Math.floorDiv(y, 4);
 
             for (Layer layer : layers) {
@@ -714,7 +721,8 @@ public final class BiomePreviewExporter {
             }
             long budgetNanos = Math.max(1L, budgetMs) * 1_000_000L;
             long deadline = System.nanoTime() + budgetNanos;
-            final String pickerContext = "ATLAS_SAMPLER";
+            final String pickerContext = Boolean.getBoolean("latitude.atlasTerrainAware")
+                    ? "ATLAS_TERRAIN" : "ATLAS_SAMPLER";
 
             if (phase == Phase.SAMPLING) {
                 if (!samplingStartLogged) {

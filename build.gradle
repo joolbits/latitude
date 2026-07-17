@@ -232,6 +232,32 @@ tasks.named('check').configure {
     }
 }
 
+def latitudeCreateScreenClipPolicyTestClasses = layout.buildDirectory.dir('classes/java/latitudeCreateScreenClipPolicyTest')
+
+tasks.register('compileLatitudeCreateScreenClipPolicyTest', JavaCompile) {
+    group = 'verification'
+    description = 'Compile the dependency-free create-world clipped-widget input regression'
+    source = fileTree('src/clipPolicyTest/java') {
+        include '**/*.java'
+    }
+    classpath = sourceSets.main.output
+    destinationDirectory.set(latitudeCreateScreenClipPolicyTestClasses)
+    options.release = 25
+    dependsOn classes
+}
+
+tasks.register('latitudeCreateScreenClipPolicyTest', JavaExec) {
+    group = 'verification'
+    description = 'Exercise the create-world clipped-widget input policy without launching Minecraft'
+    classpath = files(latitudeCreateScreenClipPolicyTestClasses) + sourceSets.main.output
+    mainClass = 'com.example.globe.client.create.ViewportClipPolicyTest'
+    dependsOn tasks.named('compileLatitudeCreateScreenClipPolicyTest')
+}
+
+tasks.named('check').configure {
+    dependsOn tasks.named('latitudeCreateScreenClipPolicyTest')
+}
+
 tasks.register('prepareBiomePreviewRunDir') {
     doLast {
         def dir = file('run-headless')
