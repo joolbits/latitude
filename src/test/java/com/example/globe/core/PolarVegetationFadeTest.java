@@ -25,7 +25,7 @@ class PolarVegetationFadeTest {
         assertEquals(1.0, PolarVegetationFade.keepChance01(0.0), EPS);
         assertEquals(1.0, PolarVegetationFade.keepChance01(45.0), EPS);
         assertEquals(1.0, PolarVegetationFade.keepChance01(70.0), EPS);
-        assertEquals(1.0, PolarVegetationFade.keepChance01(77.999), EPS);
+        assertEquals(1.0, PolarVegetationFade.keepChance01(75.999), EPS);
     }
 
     @Test
@@ -60,7 +60,7 @@ class PolarVegetationFadeTest {
 
     @Test
     void midBandIsRoughlyHalfKept() {
-        // Smoothstep midpoint at (onset+full)/2 == 82deg -> keep == 0.5 exactly.
+        // Smoothstep midpoint at (onset+full)/2 == 79deg (76/82 span) -> keep == 0.5 exactly.
         double mid = (PolarVegetationFade.ONSET_DEG + PolarVegetationFade.FULL_DEG) / 2.0;
         assertEquals(0.5, PolarVegetationFade.keepChance01(mid), EPS);
     }
@@ -152,7 +152,7 @@ class PolarVegetationFadeTest {
     @Test
     void fireflyBannedFromSubpolarOnward() {
         assertEquals(50.0, PolarVegetationFade.FIREFLY_BAN_DEG, 1e-9,
-                "the ban starts at the SUBPOLAR onset -- far equatorward of the 78/86 fade");
+                "the ban starts at the SUBPOLAR onset -- far equatorward of the 76/82 fade");
         assertTrue(PolarVegetationFade.bansFirefly(55.0), "banned at 55");
         assertTrue(PolarVegetationFade.bansFirefly(70.0), "banned at 70");
         assertTrue(PolarVegetationFade.bansFirefly(85.0), "banned at 85");
@@ -171,7 +171,7 @@ class PolarVegetationFadeTest {
     void otherVegetationUntouchedAtFiftyFive() {
         // The firefly gate is consulted ONLY for firefly_bush placements (the mixin's exact-block check);
         // every other small-vegetation placement rides the ordinary fade, whose keep chance at 55 deg is
-        // exactly 1.0 (the 78-deg onset is far poleward) -- other vegetation at 55 is bitwise-untouched.
+        // exactly 1.0 (the 76-deg onset is far poleward) -- other vegetation at 55 is bitwise-untouched.
         assertEquals(1.0, PolarVegetationFade.keepChance01(55.0), 1e-9,
                 "the general fade must not strip anything at 55");
         assertTrue(PolarVegetationFade.bansFirefly(55.0), "...while firefly specifically is banned there");

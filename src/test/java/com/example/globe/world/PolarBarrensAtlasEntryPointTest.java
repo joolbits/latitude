@@ -52,7 +52,7 @@ class PolarBarrensAtlasEntryPointTest {
     private static final long ATLAS_SEED = 20260714L;   // the diagnosed runs' pinned seed
     private static final int RADIUS = 10000;            // --size regular
     private static final int DEEP_CAP_Z = 9889;         // |lat| = 89.00 deg -> barrens fraction 1.0
-    private static final int FRAY_Z = 9667;             // |lat| = 87.00 deg -> barrens fraction ~0.5
+    private static final int FRAY_Z = 9222;             // |lat| = 83.00 deg -> barrens fraction ~0.5 (S13 82->84 band)
 
     private static Registry<Biome> registry;
     private static Holder<Biome> snowyPlains;
@@ -215,7 +215,7 @@ class PolarBarrensAtlasEntryPointTest {
     }
 
     @Test
-    void enabledSeamFraysAtEightySevenDegrees() {
+    void enabledSeamFraysAtEightyThreeDegrees() {
         double latDeg = Math.abs((double) FRAY_Z) * 90.0 / RADIUS;
         int barrensX = Integer.MIN_VALUE;
         int keepX = Integer.MIN_VALUE;
@@ -229,7 +229,7 @@ class PolarBarrensAtlasEntryPointTest {
             }
         }
         assertTrue(barrensX != Integer.MIN_VALUE && keepX != Integer.MIN_VALUE,
-                "87 deg (~50% fray) must contain both barrens and surviving snowy_plains columns");
+                "83 deg (~50% fray) must contain both barrens and surviving snowy_plains columns");
 
         int landBand = LatitudeBiomes.authoritativeLandBandIndex(barrensX, FRAY_Z, RADIUS);
         assertEquals(LatitudeBiomes.POLAR_BARRENS_ID, id(LatitudeBiomes.applyPolarBarrensOverride(

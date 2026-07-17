@@ -303,22 +303,42 @@ public final class LatitudeV2Flags {
 
     /**
      * Absolute latitude (deg) where the Polar Barrens begin to fray in. Default = the vegetation-fade
-     * finish ({@link PolarVegetationFade#FULL_DEG}, 86 deg) so the barrens start exactly where the grass
-     * ends -- the owner's chosen invisible seam (KEEP-SHARED: tuning the veg fade's finish moves this
-     * default with it). Live-tunable via {@code -Dlatitude.polarBarrens.onsetDeg}; parsed defensively so
-     * a malformed value degrades to the default rather than throwing at class-init.
+     * finish ({@link PolarVegetationFade#FULL_DEG}, 82 deg since S13) so the barrens start exactly where
+     * the grass ends -- the owner's chosen invisible seam (KEEP-SHARED: tuning the veg fade's finish moves
+     * this default with it, which is exactly how "Barrens at 82" carried the onset 86->82 automatically).
+     * Live-tunable via {@code -Dlatitude.polarBarrens.onsetDeg}; parsed defensively so a malformed value
+     * degrades to the default rather than throwing at class-init.
      */
     public static final double POLAR_BARRENS_ONSET_DEG =
             parseDoubleOrDefault(System.getProperty("latitude.polarBarrens.onsetDeg"), PolarVegetationFade.FULL_DEG);
 
     /**
-     * Absolute latitude (deg) at/above which the Polar Barrens are fully dominant. Default 88 deg.
-     * {@link com.example.globe.core.PolarBarrensBand} clamps the effective value to at least
-     * {@code onset + 0.5} so the smoothstep denominator stays positive under any {@code -D} pairing.
+     * Absolute latitude (deg) at/above which the Polar Barrens are fully dominant. Default 84 deg
+     * (S13 2026-07-17: 88->84 so the fray stays +2 deg wide as the onset moved 86->82 -- "Barrens at 82"
+     * = fray 82->84). {@link com.example.globe.core.PolarBarrensBand} clamps the effective value to at
+     * least {@code onset + 0.5} so the smoothstep denominator stays positive under any {@code -D} pairing.
      * Live-tunable via {@code -Dlatitude.polarBarrens.fullDeg}; parsed defensively.
      */
     public static final double POLAR_BARRENS_FULL_DEG =
-            parseDoubleOrDefault(System.getProperty("latitude.polarBarrens.fullDeg"), 88.0);
+            parseDoubleOrDefault(System.getProperty("latitude.polarBarrens.fullDeg"), 84.0);
+
+    /**
+     * S13 (e) POLAR SURFACE ALLOWLIST (Peetsa, TEST-103 flight, 2026-07-17). Default TRUE -- a polar-immersion
+     * spawn rule (sibling of the vegetation fade / water freeze), shipped live for the S13 flight; the owner
+     * confirms the ship default post-flight like every prior polar rule. This is NOT worldgen (it filters
+     * per-tick {@code NATURAL} monster spawns), so there is no byte-identity axis to protect -- the flag is a
+     * kill-switch + live dial, and {@code SpawnPlacementsPolarSurfaceMixin}'s first line is gated on it so a
+     * dev can turn it fully off. When on: in polar storm country ({@code |lat| >=}
+     * {@link com.example.globe.core.PolarSurfaceSpawns#ONSET_DEG}, default = the 80-deg storm onset) a
+     * SKY-EXPOSED monster spawn is vetoed unless it is a {@code stray}; caves (no sky) are 100% vanilla, and
+     * the surviving surface strays are additionally thinned 1-in-3 so the non-barrens polar biomes lose the
+     * stray glut too. Composes with the Solar-Tilt polar-night rule (that rule gates darkness, this one gates
+     * type -- documented order in {@code PolarSurfaceSpawns}). The onset dial is owned by
+     * {@link com.example.globe.core.PolarSurfaceSpawns} (its own {@code -D}, coupled to the storm onset);
+     * this flag is forwarded in build.gradle in the SAME pass (L17 discipline).
+     */
+    public static final boolean POLAR_SURFACE_SPAWNS_ENABLED =
+            Boolean.parseBoolean(System.getProperty("latitude.polarSurfaceSpawns.enabled", "true"));
 
     // --- Solar Tilt + Seasons (Phase 5B-adjacent, P1) ---------------------------------------------------
     // ONE master kill-switch (visual + functional + seasons together — the functional layer is DERIVED from
@@ -363,6 +383,19 @@ public final class LatitudeV2Flags {
     public static final double SOLAR_TILT_FROZEN_PHASE_DEG =
             parseDoubleOrDefault(System.getProperty("latitude.solarTilt.frozenPhaseDeg"),
                     com.example.globe.core.SolarTilt.DEFAULT_FROZEN_PHASE_DEG);
+
+    /**
+     * S13(a) AURORA BOREALIS -- the polar-night sky curtains ({@code client.AuroraRenderer} +
+     * {@code core.AuroraLaw}). Default TRUE, but it RIDES INSIDE {@link #SOLAR_TILT_V2_ENABLED}: the aurora keys
+     * on the polar-night / midnight-sun dark-sky signal that only exists with the solar tilt on, so the renderer
+     * requires BOTH flags. Kept as its OWN flag (not folded into the solar master) so the aurora is an
+     * independent kill switch -- a player who wants the tilted sun/seasons but not the aurora sets this off; and
+     * a solar-tilt-off world never draws it regardless. Byte-identical off in EITHER case: the renderer's first
+     * line returns when solar tilt is off OR this is off, so no COLLECT_SUBMITS geometry is ever emitted. Born
+     * WITH its build.gradle client-run forwarding line in the SAME pass (L17 discipline), beside the solar dials.
+     */
+    public static final boolean AURORA_ENABLED =
+            Boolean.parseBoolean(System.getProperty("latitude.aurora.enabled", "true"));
 
     /**
      * Defensive double parse for the Phase 4 knobs: a {@code null} (property unset) or malformed value

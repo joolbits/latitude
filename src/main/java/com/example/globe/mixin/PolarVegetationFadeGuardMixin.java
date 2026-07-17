@@ -42,7 +42,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
  *       feature is generating in a non-overworld dimension.</li>
  *   <li><b>latitude + fray</b> -- {@link LatitudeBiomes#polarVegetationFadeStrips(int, int)}: pure
  *       arithmetic + coherent noise. Returns "keep" (and pays NO heightmap lookup) for every column below
- *       the 78deg onset, so sub-polar columns short-circuit here.</li>
+ *       the 76deg onset, so sub-polar columns short-circuit here.</li>
  *   <li><b>surface proximity</b> -- only reached for a would-strip polar column. Both classes ALSO back
  *       lush-cave features (moss / pale moss / spore blossom / small+big dripleaf / cave vines+glow
  *       berries / cave mushrooms) which generate far below the surface; comparing the placement origin Y
@@ -75,7 +75,7 @@ public class PolarVegetationFadeGuardMixin {
         }
         BlockPos origin = context.origin();
         // S11(c) FIREFLY BUSH BAN (owner-flagged twice): firefly_bush specifically is banned OUTRIGHT from
-        // 50 deg (SUBPOLAR onset) -- far equatorward of the general 78/86 fade. Identified by the SimpleBlock
+        // 50 deg (SUBPOLAR onset) -- far equatorward of the general 76/82 fade. Identified by the SimpleBlock
         // config's placed STATE, sampled with a THROWAWAY per-position random so the worldgen RNG sequence is
         // never consumed (firefly uses a simple provider, which ignores the random entirely). Rides this same
         // guard + the veg-fade flag family (default ON -- the ban must ship live, not behind the default-off
@@ -89,7 +89,7 @@ public class PolarVegetationFadeGuardMixin {
                 return;
             }
         }
-        // Latitude + coherent fray. Pays no heightmap lookup below the 78deg onset (returns false there).
+        // Latitude + coherent fray. Pays no heightmap lookup below the 76deg onset (returns false there).
         if (!LatitudeBiomes.polarVegetationFadeStrips(origin.getX(), origin.getZ())) {
             return;
         }

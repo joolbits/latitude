@@ -19,17 +19,17 @@ package com.example.globe.core;
  * noise, and maps the surface kind onto block states; this class owns the ramp and the thresholds.
  *
  * <h2>Onset / band (owner decision, 2026-07-14)</h2>
- * The barrens ONSET defaults to {@link PolarVegetationFade#FULL_DEG} (86 deg) -- the exact latitude the
- * small-vegetation fade finishes, so the barrens begin where the grass ends and there is no visible
- * double transition (the owner's chosen "invisible seam"). It ramps to fully dominant by
- * {@code FULL_DEG} (88 deg). Both are live-tunable ({@code latitude.polarBarrens.onsetDeg} /
+ * The barrens ONSET defaults to {@link PolarVegetationFade#FULL_DEG} (82 deg since S13) -- the exact
+ * latitude the small-vegetation fade finishes, so the barrens begin where the grass ends and there is no
+ * visible double transition (the owner's chosen "invisible seam"). It ramps to fully dominant by
+ * {@code FULL_DEG} (84 deg). Both are live-tunable ({@code latitude.polarBarrens.onsetDeg} /
  * {@code .fullDeg}); the onset default is KEEP-SHARED with the veg fade's finish so tuning that dial
  * moves the seam coherently.
  *
  * <h2>Honesty notes (design sweep A6)</h2>
  * <ul>
- *   <li>The ramp is a smoothstep on a coherent noise fray, so the band is NOT 100% barrens until 88 deg:
- *       the barrens fraction is 0% at/below 86, ~50% at 87, ~84% at 87.5, and 100% at/above 88. Below 88
+ *   <li>The ramp is a smoothstep on a coherent noise fray, so the band is NOT 100% barrens until 84 deg:
+ *       the barrens fraction is 0% at/below 82, ~50% at 83, ~84% at 83.5, and 100% at/above 84. Below 84
  *       there are still {@code snowy_plains} patches showing through (the owner accepted this as the
  *       price of the invisible seam).</li>
  *   <li>Placement rewrites ONLY inland {@code minecraft:snowy_plains}; coasts stay {@code snowy_beach}
@@ -43,8 +43,8 @@ public final class PolarBarrensBand {
     /**
      * Absolute latitude (deg) at/below which NO barrens appear (barrens fraction exactly 0.0, so those
      * columns are bitwise-untouched by the placement override). Defaults to
-     * {@link PolarVegetationFade#FULL_DEG} (the veg-fade finish, 86 deg) so the barrens begin exactly
-     * where the grass ends -- the owner's invisible seam. Live-tunable via
+     * {@link PolarVegetationFade#FULL_DEG} (the veg-fade finish, 82 deg since S13) so the barrens begin
+     * exactly where the grass ends -- the owner's invisible seam. Live-tunable via
      * {@code -Dlatitude.polarBarrens.onsetDeg}; sourced from {@link LatitudeV2Flags} so the flag class
      * owns the one {@code System.getProperty} read (defensive parse, malformed -> default).
      */
@@ -52,7 +52,8 @@ public final class PolarBarrensBand {
 
     /**
      * Absolute latitude (deg) at/above which the barrens are fully dominant (fraction exactly 1.0 --
-     * every non-mountain, non-ice-spike {@code snowy_plains} column becomes barrens). Defaults to 88 deg.
+     * every non-mountain, non-ice-spike {@code snowy_plains} column becomes barrens). Defaults to 84 deg
+     * (S13: onset+2, the fray held at +2 as the onset moved 86->82).
      * Clamped to at least {@code ONSET_DEG + 0.5} so the smoothstep denominator can never be zero or
      * negative even under a hostile {@code -D} pairing. Live-tunable via
      * {@code -Dlatitude.polarBarrens.fullDeg}.
@@ -138,7 +139,7 @@ public final class PolarBarrensBand {
     // DEPTH LAW (build-crew proposal, per the B-9 family): a barrens column's ground becomes a real glacier
     // sole-down: a fixed SNOW CAP of GLACIER_SNOW_CAP_BLOCKS (10 -- the owner's floor) over a packed-ice
     // BODY whose thickness ramps with the SAME barrensFraction01 smoothstep the band frays on (thin marginal
-    // glacier at the 86-deg frayed edge, full body at/above 88 -- "the glacier thickens in" with the band,
+    // glacier at the 82-deg frayed edge, full body at/above 84 -- "the glacier thickens in" with the band,
     // so the ice never outruns the biome), wobbled by a dedicated coherent ValueNoise2D field (+-6 blocks,
     // Art VI clean) so the glacier SOLE undulates like a real glacier bed instead of a flat slab. Full-band
     // total: 10 snow + 24..36 ice = 34..46 blocks below the surface -- inside the design's "~30-40ish,
@@ -153,7 +154,7 @@ public final class PolarBarrensBand {
     public static final int GLACIER_SNOW_CAP_BLOCKS = 10;
     /** Packed-ice body thickness at the frayed band edge (barrens fraction ~0): a marginal glacier. */
     public static final int GLACIER_ICE_MIN_BLOCKS = 6;
-    /** Packed-ice body thickness at full band (fraction 1.0, at/above 88 deg): the thick body. */
+    /** Packed-ice body thickness at full band (fraction 1.0, at/above 84 deg): the thick body. */
     public static final int GLACIER_ICE_MAX_BLOCKS = 30;
     /** Coherent depth wobble half-amplitude (blocks) on the ice body -- the glacier sole undulates. */
     public static final int GLACIER_DEPTH_WOBBLE_BLOCKS = 6;

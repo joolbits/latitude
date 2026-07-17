@@ -822,7 +822,7 @@ public final class LatitudeBiomes {
      * {@code firefly_bush} placement at (blockX, blockZ) is banned -- armed globe world AND
      * {@code |lat| >= }{@link PolarVegetationFade#FIREFLY_BAN_DEG} (50 deg, SUBPOLAR onset). Deliberately
      * un-frayed (a scattered decorative plant has no contiguous seam to soften) and firefly-SPECIFIC: the
-     * caller only consults this for the firefly block, so every other placement keeps the ordinary 78/86
+     * caller only consults this for the firefly block, so every other placement keeps the ordinary 76/82
      * fade. Non-globe worlds return false (vanilla untouched).
      */
     public static boolean fireflyBanApplies(int blockX, int blockZ) {
@@ -2940,6 +2940,20 @@ public final class LatitudeBiomes {
     private static final double SNOWY_RAMP_FULL_DEG = 68.0;
     private static final double GROVE_MIN_DEG = 54.0;
     private static final double EXTREME_POLAR_CAP_MIN_DEG = 74.5;
+    /**
+     * S13 2026-07-17 ("Villages to 80: civilization ends where the storm begins"). Villages are vetoed
+     * at/beyond THIS latitude -- deliberately DECOUPLED from {@link #EXTREME_POLAR_CAP_MIN_DEG} (74.5).
+     * The old {@code ExtremePolarVillageGuardMixin} keyed the village veto on the 74.5-deg cap constant,
+     * which ALSO drives the deep-cap biome monoculture and the tree/vegetation guards; moving villages to
+     * 80 by editing that shared constant would have dragged the whole polar biome placement 74.5->80 (a
+     * worldgen catastrophe). So the village veto gets its own band anchor at 80 deg -- aligned BY INTENT
+     * (not by reference) with the storm/ambient onset
+     * ({@link com.example.globe.core.PolarHazardWindow#AMBIENT_ONSET_DEG} = 80). Kept a LITERAL, not a
+     * symbolic link, so a future hazard-onset tuning can never silently shift where villages generate
+     * (this is worldgen; it must not chase a runtime hazard dial). Net effect: villages now generate in
+     * the 74.5-80 band (new chunks only); the biome monoculture and the tree/veg guards stay at 74.5.
+     */
+    private static final double EXTREME_POLAR_VILLAGE_VETO_MIN_DEG = 80.0;
     // Earth-like polar tree line. The real Arctic tree line sits ~66-72N, so boreal forest (snowy_taiga)
     // extends INTO the lower polar band before giving way to treeless tundra — a hard taiga ban at 66.5 is
     // NOT Earthlike. Taiga survives with probability 1.0 up to POLAR_TREELINE_FULL_DEG, smoothstep-fading to
@@ -3958,7 +3972,7 @@ public final class LatitudeBiomes {
      * once quarantine/enforcement can no longer touch it (which is why it needs no lat_* tag membership
      * and no {@code allowedExtraBiomeIdsForBand} admission -- those would leak barrens equatorward to ~70
      * deg via the flat-polar-shelf selector). Rewrites ONLY inland {@code minecraft:snowy_plains} to
-     * {@code globe:polar_barrens} on the coherent 86->88 fray; {@code ice_spikes} accents + real-mountain
+     * {@code globe:polar_barrens} on the coherent 82->84 fray; {@code ice_spikes} accents + real-mountain
      * alpine picks are not snowy_plains and survive by construction; coasts/rivers are untouched.
      * Byte-identical flag-off / off-fray / non-snowy_plains (returns {@code out} unchanged).
      *
@@ -7148,6 +7162,20 @@ public final class LatitudeBiomes {
         if (radius <= 0) radius = borderRadiusFallback;
         double latDeg = Math.abs((double) blockZ) * 90.0 / Math.max(1, radius);
         return latDeg >= EXTREME_POLAR_CAP_MIN_DEG;
+    }
+
+    /**
+     * Village-specific polar veto membership (S13 "Villages to 80"): true iff {@code blockZ} sits at or
+     * beyond {@link #EXTREME_POLAR_VILLAGE_VETO_MIN_DEG} (80 deg). A dedicated sibling of
+     * {@link #isBlockInExtremePolarCap(int, int)} so {@code ExtremePolarVillageGuardMixin} can veto villages
+     * at 80 without disturbing the 74.5-deg biome cap / tree / vegetation guards that keep sharing the older
+     * method. Same world-size-safe degree math + {@code ACTIVE_RADIUS_BLOCKS}-or-fallback radius.
+     */
+    public static boolean isBlockInPolarVillageVetoBand(int blockZ, int borderRadiusFallback) {
+        int radius = getActiveRadiusBlocks();
+        if (radius <= 0) radius = borderRadiusFallback;
+        double latDeg = Math.abs((double) blockZ) * 90.0 / Math.max(1, radius);
+        return latDeg >= EXTREME_POLAR_VILLAGE_VETO_MIN_DEG;
     }
 
     private static boolean isFlatPolarShelfBannedMountainPick(Holder<Biome> candidate) {

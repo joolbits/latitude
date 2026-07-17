@@ -25,7 +25,7 @@ package com.example.globe.core;
  *   <li><b>Hard ceiling for EVERYONE</b>: storm country stays unspawnable -- no spawn ever at/above
  *       {@link #STORM_SPAWN_CEILING_DEG} (74). Chosen inside the recommended 72-75 range: a full SIX degrees
  *       of calm approach before the 80-deg polar-country onset (~250 blocks even on Itty, ~667 on
- *       Regular-Wide) and still under the 78-deg veg-fade onset, so even a ceiling-grazing spawn stands in
+ *       Regular-Wide) and still under the 76-deg veg-fade onset, so even a ceiling-grazing spawn stands in
  *       living, green-flecked terrain and WALKS into the storm ("you gotta earn that"). Structurally
  *       enforced: every window's hi is clamped under it.</li>
  * </ul>

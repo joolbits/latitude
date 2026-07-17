@@ -29,7 +29,8 @@ class PolarColdCuesTest {
         assertEquals(PolarHazardWindow.AMBIENT_ONSET_DEG, PolarColdCues.Rung.APPROACH.deg());
         assertEquals(85.0, PolarColdCues.Rung.HYPOTHERMIA.deg());
         assertEquals(87.0, PolarColdCues.Rung.BLIZZARD.deg());
-        assertEquals(89.0, PolarColdCues.Rung.DANGER.deg());
+        // S13c (2026-07-17): DANGER re-timed 89 -> 88 (the lethal-core onset). LETHAL 89.7 unchanged.
+        assertEquals(88.0, PolarColdCues.Rung.DANGER.deg());
         assertEquals(89.7, PolarColdCues.Rung.LETHAL.deg());
         assertEquals(1, PolarColdCues.Rung.APPROACH.tier());
         assertEquals(5, PolarColdCues.Rung.LETHAL.tier());
@@ -46,7 +47,9 @@ class PolarColdCuesTest {
         assertEquals(1, PolarColdCues.tierForLat(84.9));
         assertEquals(2, PolarColdCues.tierForLat(85.0));
         assertEquals(3, PolarColdCues.tierForLat(87.0));
-        assertEquals(4, PolarColdCues.tierForLat(89.0));
+        assertEquals(3, PolarColdCues.tierForLat(87.9)); // S13c: still BLIZZARD just below the new DANGER onset
+        assertEquals(4, PolarColdCues.tierForLat(88.0)); // S13c: DANGER now onsets at 88 (was 89)
+        assertEquals(4, PolarColdCues.tierForLat(89.0)); // still DANGER (below LETHAL 89.7)
         assertEquals(5, PolarColdCues.tierForLat(89.7));
         assertEquals(5, PolarColdCues.tierForLat(90.0));
     }
@@ -71,8 +74,9 @@ class PolarColdCuesTest {
         // BLIZZARD
         s = PolarColdCues.evaluateLadder(87.0, s.nextHighestFired(), false);
         assertEquals(PolarColdCues.Rung.BLIZZARD, s.fire());
-        // DANGER
-        s = PolarColdCues.evaluateLadder(89.0, s.nextHighestFired(), false);
+        // DANGER (S13c: fires at its new 88-deg onset)
+        assertNull(PolarColdCues.evaluateLadder(87.9, s.nextHighestFired(), false).fire()); // not yet at 88
+        s = PolarColdCues.evaluateLadder(88.0, s.nextHighestFired(), false);
         assertEquals(PolarColdCues.Rung.DANGER, s.fire());
         // LETHAL
         s = PolarColdCues.evaluateLadder(89.7, s.nextHighestFired(), false);

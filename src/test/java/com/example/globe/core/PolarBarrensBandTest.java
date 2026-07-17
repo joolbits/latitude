@@ -16,8 +16,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * (snowy_plains-only, polar-only, fray-only), and the
  * {@link PolarBarrensBand#surfaceKind(double, double)} block classifier (thresholds + powder precedence).
  *
- * <p>These run with the DEFAULT onset/full (86/88) -- no {@code -D} is set, and {@link LatitudeV2Flags}
- * is read once at class-init, so the flag class's defaults are what's exercised (per its own testing note).
+ * <p>These run with the DEFAULT onset/full (82/84 since S13) -- no {@code -D} is set, and
+ * {@link LatitudeV2Flags} is read once at class-init, so the flag class's defaults are what's exercised
+ * (per its own testing note).
  */
 class PolarBarrensBandTest {
 
@@ -47,7 +48,7 @@ class PolarBarrensBandTest {
         assertEquals(0.0, PolarBarrensBand.barrensFraction01(0.0), EPS);
         assertEquals(0.0, PolarBarrensBand.barrensFraction01(60.0), EPS);
         assertEquals(0.0, PolarBarrensBand.barrensFraction01(70.0), EPS);
-        assertEquals(0.0, PolarBarrensBand.barrensFraction01(85.999), EPS);
+        assertEquals(0.0, PolarBarrensBand.barrensFraction01(81.999), EPS);
         // The exact onset boundary itself must be fully zero so the placement override never fires there.
         assertEquals(0.0, PolarBarrensBand.barrensFraction01(PolarBarrensBand.ONSET_DEG), EPS);
     }
@@ -61,15 +62,15 @@ class PolarBarrensBandTest {
 
     @Test
     void fractionIsSmoothstepMidBand() {
-        // Defaults 86->88: midpoint 87 -> smoothstep(0.5) = 0.5; 87.5 -> smoothstep(0.75) = 0.84375.
-        assertEquals(0.5, PolarBarrensBand.barrensFraction01(87.0), 1e-6);
-        assertEquals(0.84375, PolarBarrensBand.barrensFraction01(87.5), 1e-6);
+        // Defaults 82->84: midpoint 83 -> smoothstep(0.5) = 0.5; 83.5 -> smoothstep(0.75) = 0.84375.
+        assertEquals(0.5, PolarBarrensBand.barrensFraction01(83.0), 1e-6);
+        assertEquals(0.84375, PolarBarrensBand.barrensFraction01(83.5), 1e-6);
     }
 
     @Test
     void fractionIsBothHemispheres() {
         // The ramp keys on |deg|, so negative (south) latitudes behave identically.
-        assertEquals(PolarBarrensBand.barrensFraction01(87.0), PolarBarrensBand.barrensFraction01(-87.0), EPS);
+        assertEquals(PolarBarrensBand.barrensFraction01(83.0), PolarBarrensBand.barrensFraction01(-83.0), EPS);
         assertEquals(1.0, PolarBarrensBand.barrensFraction01(-90.0), EPS);
     }
 
@@ -109,9 +110,9 @@ class PolarBarrensBandTest {
 
     @Test
     void isBarrensFraysInBand() {
-        // At 87.5 (~84% barrens): a low noise sample is barrens, a high one is the surviving snowy_plains.
-        assertTrue(PolarBarrensBand.isBarrens(87.5, 0.10));
-        assertFalse(PolarBarrensBand.isBarrens(87.5, 0.90));
+        // At 83.5 (~84% barrens): a low noise sample is barrens, a high one is the surviving snowy_plains.
+        assertTrue(PolarBarrensBand.isBarrens(83.5, 0.10));
+        assertFalse(PolarBarrensBand.isBarrens(83.5, 0.90));
     }
 
     // --- overridesSnowyPlains: full placement predicate ------------------------------------------
@@ -137,7 +138,7 @@ class PolarBarrensBandTest {
         // snowy_plains, polar, but below onset: never rewrite (byte-identical region).
         assertFalse(PolarBarrensBand.overridesSnowyPlains(true, true, 80.0, 0.0));
         // snowy_plains, polar, on the fray but the noise says "surviving snowy_plains": not rewritten.
-        assertFalse(PolarBarrensBand.overridesSnowyPlains(true, true, 87.5, 0.90));
+        assertFalse(PolarBarrensBand.overridesSnowyPlains(true, true, 83.5, 0.90));
     }
 
     // --- surfaceKind: block classifier -----------------------------------------------------------
@@ -224,13 +225,13 @@ class PolarBarrensBandTest {
         assertTrue(PolarBarrensBand.vetoesLushCaveCell(true, true, 87.0),
                 "a lush_caves cell inside the barrens band remaps to the column surface biome");
         assertTrue(PolarBarrensBand.vetoesLushCaveCell(true, true, PolarBarrensBand.ONSET_DEG),
-                "band-gated on the core onset (86), inclusive");
+                "band-gated on the core onset (82 since S13), inclusive");
         assertTrue(PolarBarrensBand.vetoesLushCaveCell(true, true, -89.0), "hemisphere-symmetric");
     }
 
     @Test
     void lushCaveCellOutOfBandUntouched() {
-        assertFalse(PolarBarrensBand.vetoesLushCaveCell(true, true, 85.9), "below the onset: untouched");
+        assertFalse(PolarBarrensBand.vetoesLushCaveCell(true, true, 81.9), "below the onset: untouched");
         assertFalse(PolarBarrensBand.vetoesLushCaveCell(true, true, 40.0));
         assertFalse(PolarBarrensBand.vetoesLushCaveCell(true, true, Double.NaN), "bad read: untouched");
     }
@@ -270,7 +271,7 @@ class PolarBarrensBandTest {
         assertTrue(nearEdge >= 1 && nearEdge <= PolarBarrensBand.GLACIER_ICE_MIN_BLOCKS + 2,
                 "marginal glacier at the frayed edge, was " + nearEdge);
         assertTrue(mid > nearEdge, "the body thickens with the band");
-        assertEquals(PolarBarrensBand.GLACIER_ICE_MAX_BLOCKS, full, "full body at/above 88");
+        assertEquals(PolarBarrensBand.GLACIER_ICE_MAX_BLOCKS, full, "full body at/above 84 (S13)");
         assertEquals(full, PolarBarrensBand.glacierIceBodyBlocks(89.5, 0.5), "holds poleward");
     }
 
@@ -288,8 +289,8 @@ class PolarBarrensBandTest {
                 "total glacier depth stays within the underground-stays-alive bound");
         // In-band, the body is never zero (a barrens column always has at least a sliver of ice)...
         assertTrue(PolarBarrensBand.glacierIceBodyBlocks(PolarBarrensBand.ONSET_DEG + 0.05, 0.0) >= 1);
-        // ...and NaN noise degrades to the no-wobble ramp, never to no-glacier.
-        assertEquals(PolarBarrensBand.glacierIceBodyBlocks(87.0, 0.5),
-                PolarBarrensBand.glacierIceBodyBlocks(87.0, Double.NaN));
+        // ...and NaN noise degrades to the no-wobble ramp, never to no-glacier (83 = mid-band since S13).
+        assertEquals(PolarBarrensBand.glacierIceBodyBlocks(83.0, 0.5),
+                PolarBarrensBand.glacierIceBodyBlocks(83.0, Double.NaN));
     }
 }

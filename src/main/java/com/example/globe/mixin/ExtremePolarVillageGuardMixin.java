@@ -20,8 +20,18 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
- * Prevents village structures from being placed past the extreme-polar-cap
- * latitude cutoff. Other structures (igloos, etc.) are not affected.
+ * Prevents village structures from being placed at or beyond the polar VILLAGE-veto latitude
+ * ({@link LatitudeBiomes#isBlockInPolarVillageVetoBand(int, int)} = 80 deg since S13, "civilization
+ * ends where the storm begins"). Gates ONLY structures whose registry id path starts with
+ * {@code "village"} (every {@code minecraft:village_*} variant + any pack village) -- it cancels the
+ * block PLACEMENT at {@code placeInChunk} HEAD; the structure start still exists but stamps no blocks.
+ * Other structures (igloos, outposts, etc.) are untouched, an igloo being a mercy shelter in the death
+ * band rather than an immersion break.
+ *
+ * <p>S13 note: the veto band moved 74.5->80 by switching from {@code isBlockInExtremePolarCap} to the
+ * dedicated {@code isBlockInPolarVillageVetoBand}. The old 74.5 constant ALSO drives the deep-cap biome
+ * monoculture and the tree/vegetation guards, so it stays at 74.5; only this village veto moved. Villages
+ * therefore now generate in the 74.5-80 band (new chunks only).
  */
 @Mixin(StructureStart.class)
 public abstract class ExtremePolarVillageGuardMixin {
@@ -42,7 +52,7 @@ public abstract class ExtremePolarVillageGuardMixin {
                                                     ChunkPos chunkPos,
                                                     CallbackInfo ci) {
         int blockZ = this.getChunkPos().getMiddleBlockZ();
-        if (!LatitudeBiomes.isBlockInExtremePolarCap(blockZ, GlobeMod.BORDER_RADIUS)) {
+        if (!LatitudeBiomes.isBlockInPolarVillageVetoBand(blockZ, GlobeMod.BORDER_RADIUS)) {
             return;
         }
         Structure structure = this.getStructure();
