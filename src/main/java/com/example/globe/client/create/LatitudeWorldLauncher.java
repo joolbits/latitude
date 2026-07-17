@@ -67,6 +67,7 @@ public final class LatitudeWorldLauncher {
                                        GameType gameMode, boolean hardcore,
                                        Difficulty difficulty, boolean allowCommands,
                                        boolean startWithCompass, boolean bonusChest,
+                                       boolean generateStructures,
                                        GameRules gameRules, int worldTypeIdx) {
         LOGGER.info("[LAT][CWPATH] LatitudeWorldLauncher.beginExpedition screen={} worldTypeIdx={} worldName={}",
                 screen.getClass().getName(), worldTypeIdx, worldName);
@@ -127,6 +128,7 @@ public final class LatitudeWorldLauncher {
             wc.setAllowCommands(allowCommands);
             wc.setDifficulty(difficulty);
             wc.setBonusChest(bonusChest);
+            wc.setGenerateStructures(generateStructures);
 
             // ── 6. Sync structures/bonus into holder ──
             wc.onChanged();
@@ -223,7 +225,14 @@ public final class LatitudeWorldLauncher {
                                 .createLevelFromExistingSettings(session, launchHolder.dataPackResources(), launchCombinedDynamicRegistries,
                                         new LevelDataAndDimensions.WorldDataAndGenSettings(
                                                 launchLevelProperties,
-                                                new net.minecraft.world.level.levelgen.WorldGenSettings(launchHolder.options(), launchWorldDimensions)),
+                                                // Build WorldOptions explicitly so the bonus-chest + generate-structures
+                                                // choices actually reach the created world. launchHolder.options() does
+                                                // NOT carry them (they live on the UI state), so using it directly drops
+                                                // both flags — that is why the bonus chest stopped generating.
+                                                new net.minecraft.world.level.levelgen.WorldGenSettings(
+                                                        new net.minecraft.world.level.levelgen.WorldOptions(
+                                                                launchHolder.options().seed(), generateStructures, bonusChest),
+                                                        launchWorldDimensions)),
                                         Optional.ofNullable(launchGameRules));
                     } catch (Exception e) {
                         LOGGER.error("Failed to start new world", e);

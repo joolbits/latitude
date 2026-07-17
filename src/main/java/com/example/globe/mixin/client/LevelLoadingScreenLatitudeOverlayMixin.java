@@ -90,15 +90,15 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
             "Minding the alpine line..."
     };
 
-    // The Latitude-feature splashes are the last FEATURED_PHRASE_COUNT entries of PHRASES. Bias the
-    // starting point into that block most of the time so the newer 1.4 phrases usually lead.
+    // The Latitude-feature splashes are the last FEATURED_PHRASE_COUNT entries of PHRASES.
+    // Always start there so even a fast load shows one player-facing Latitude detail.
     @Unique private static final int FEATURED_PHRASE_COUNT = 14;
 
     @Unique
     private static int globe$pickSeedIndex() {
         int total = PHRASES.length;
         int featuredStart = Math.max(0, total - FEATURED_PHRASE_COUNT);
-        if (Math.random() < 0.70 && featuredStart < total) {
+        if (featuredStart < total) {
             return featuredStart + (int) (Math.random() * (total - featuredStart));
         }
         return (int) (Math.random() * total);

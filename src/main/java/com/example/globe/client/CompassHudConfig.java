@@ -14,7 +14,12 @@ public final class CompassHudConfig {
     public enum ShowMode { ALWAYS, COMPASS_PRESENT, HOLDING_COMPASS }
     public enum DirectionMode { CARDINAL_4, CARDINAL_8, DEGREES }
     public enum CompassStyle { DIGITAL, ANALOG }
-    public enum AnalogCompassTheme { CLASSIC_GOLD, PALE_GOLD, RED_IVORY, CYAN_STEEL, MINT_BRASS }
+    // Append-only: keep CLASSIC_GOLD first (default) and never reorder — themes persist by name
+    // and the cycle button uses declaration order.
+    public enum AnalogCompassTheme {
+        CLASSIC_GOLD, PALE_GOLD, RED_IVORY, CYAN_STEEL, MINT_BRASS,
+        OBSIDIAN_RED, ARCTIC_BLUE, EMERALD, ROYAL_PURPLE, SUNSET, MONOCHROME
+    }
     public enum HAnchor { LEFT, CENTER, RIGHT }
     public enum VAnchor { TOP, CENTER, BOTTOM }
 
