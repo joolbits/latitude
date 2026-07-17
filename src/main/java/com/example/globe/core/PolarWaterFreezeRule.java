@@ -146,4 +146,95 @@ public final class PolarWaterFreezeRule {
     public static boolean riverIceIsPacked(int depthBelowSurface) {
         return depthBelowSurface > 0;
     }
+
+    // --- S14(b) UNIVERSAL FREEZE (Peetsa 2026-07-17, TEST 104) -----------------------------------------
+    // The owner found LIQUID water one block under the surface ice of a frozen LAKE at 89 deg, and
+    // WATERFALLS cascading unfrozen into polar country. S11(b) only solid-froze RIVER-classified columns
+    // (ponds/lakes were explicitly left for B-9). S14(b) generalises the solid freeze to ALL land-family
+    // water and adds the flowing-water (waterfall) rule, all sharing the ONE frayed front the surface ice,
+    // the solid rivers, and the frozen-sea edge already use. Two invariants carry over verbatim:
+    //   * THE SEA IS EXEMPT -- ocean-family columns keep surface-ice-over-liquid (under-ice swim, the pole
+    //     wall's pack-ice reading, and the S7 immersion mechanic all depend on liquid sea under the ice);
+    //     the ocean exemption is checked FIRST, before the flag or the front.
+    //   * CAVE WATER BELOW THE FLOOR STAYS LIQUID -- the solid freeze stops at a freeze floor pinned to the
+    //     glacier body's sole, so B-9's Glacial Caves semi-ice lakes (with fish) have their reservoir.
+
+    /**
+     * S14(b): should a NON-OCEAN land-family water column (river, lake, pond, aquifer exposure) freeze
+     * SOLID -- surface down to the freeze floor -- at this latitude? The generalisation of
+     * {@link #freezesRiverSolid}: it DROPS the river-only requirement (any non-ocean fluid column now
+     * freezes) while sharing the ONE frayed front ({@link #freezesWaterFrayed}), so solid lakes, solid
+     * rivers, and the frozen-sea edge all agree on where winter starts. A river column
+     * ({@code freezesRiverSolid(flag,true,false,lat,fray)}) returns exactly the same answer as
+     * {@code freezesLandWaterSolid(flag,false,lat,fray)}, so S13 river behaviour is unchanged by
+     * construction.
+     *
+     * <p><b>THE OCEAN EXEMPTION IS FIRST IN THE CHAIN (S14b re-pin):</b> an ocean-family column returns
+     * {@code false} before the flag or the front is consulted -- the dual-read ocean-wins pin the
+     * solid-river rule shipped with, re-asserted for the generalised path. The sea keeps
+     * surface-ice-over-liquid.
+     *
+     * @param flagOn        {@code latitude.polarBarrens.enabled} (the S11/S14 worldgen family); off is the
+     *                      untouched razor path (rivers keep today's surface-only freeze), byte-identical.
+     * @param isOceanColumn true iff the column's biome is {@code BiomeTags.IS_OCEAN}; wins over everything.
+     * @param latDeg        signed OR absolute column latitude; magnitude taken internally. NaN -> false.
+     * @param frayNoise01   the SAME coherent sea-freeze fray sample the surface-ice law feeds
+     *                      {@link #freezesWaterFrayed} (NaN -> the razor line).
+     */
+    public static boolean freezesLandWaterSolid(boolean flagOn, boolean isOceanColumn,
+                                                double latDeg, double frayNoise01) {
+        if (isOceanColumn) {
+            return false; // THE SEA IS EXEMPT -- ocean-wins, FIRST in the chain.
+        }
+        if (!flagOn) {
+            return false;
+        }
+        return freezesWaterFrayed(true, latDeg, frayNoise01);
+    }
+
+    /**
+     * S14(b) FREEZE FLOOR DEPTH (blocks below the water surface). The glacier body pass SKIPS fluid columns,
+     * so the glacier is ABSENT over water -- this is the design's "heightmap-minus-N" branch, with N pinned
+     * to the glacier body's FULL-BAND SOLE ({@link PolarBarrensBand#GLACIER_SNOW_CAP_BLOCKS} snow cap +
+     * {@link PolarBarrensBand#GLACIER_ICE_MAX_BLOCKS} ice body = 40) so a frozen lake reaches as deep as the
+     * neighbouring glacier and NO DEEPER: cave water below this floor stays liquid, reserved for B-9's
+     * semi-ice lakes with fish. Derived from the glacier constants (both compile-time literals) so the two
+     * depth laws move together if either constant is retuned.
+     */
+    public static final int LAND_WATER_FREEZE_DEPTH_BLOCKS =
+            PolarBarrensBand.GLACIER_SNOW_CAP_BLOCKS + PolarBarrensBand.GLACIER_ICE_MAX_BLOCKS;
+
+    /**
+     * The lowest world Y a solid land-water freeze reaches for a column, from its two WG heightmaps
+     * ({@code worldSurfaceY} = fluid top, {@code oceanFloorY} = submerged bed). Returns the SHALLOWER
+     * (higher) of the bed and the depth cap {@code worldSurfaceY - }{@link #LAND_WATER_FREEZE_DEPTH_BLOCKS}:
+     * a shallow pond/river freezes to its bed (bed wins -- IDENTICAL to the S13 river freeze, which ran to
+     * {@code oceanFloorY}); a deep aquifer exposure stops at the cap, leaving liquid below (the B-9
+     * reservation). The freeze loop replaces water in {@code (floorY, worldSurfaceY]} -- the floor itself is
+     * the first liquid block left untouched, i.e. EXCLUSIVE, matching the S13 {@code y > oceanFloorY} loop.
+     */
+    public static int landWaterFreezeFloorY(int worldSurfaceY, int oceanFloorY) {
+        return Math.max(oceanFloorY, worldSurfaceY - LAND_WATER_FREEZE_DEPTH_BLOCKS);
+    }
+
+    /**
+     * S14(b) WATERFALLS: should a FLOWING (non-source) water block freeze to a plain-ice cascade? Shares the
+     * ONE frayed front AND the ocean exemption with {@link #freezesLandWaterSolid} (so a flowing block over
+     * the sea, or below the zone, or with the flag off, is left liquid); then a flowing block freezes iff it
+     * is SKY-EXPOSED (a visible waterfall in the open) OR ABOVE THE FREEZE FLOOR (inside the glacier band).
+     * Deep, sky-covered flowing water -- an underground spring below the floor -- stays liquid ("underground
+     * springs below the floor untouched"). The ice kind is always PLAIN {@code ice} (documented look: a thin
+     * translucent frozen cascade, never the glacial packed body), so this predicate answers only WHETHER, not
+     * which-ice.
+     *
+     * @param skyExposed        the flowing block can see the sky (a waterfall in the open).
+     * @param aboveFreezeFloor  the flowing block sits above the column's freeze floor (the glacier band).
+     */
+    public static boolean freezesFlowing(boolean flagOn, boolean isOceanColumn, double latDeg,
+                                         double frayNoise01, boolean skyExposed, boolean aboveFreezeFloor) {
+        if (!freezesLandWaterSolid(flagOn, isOceanColumn, latDeg, frayNoise01)) {
+            return false;
+        }
+        return skyExposed || aboveFreezeFloor;
+    }
 }

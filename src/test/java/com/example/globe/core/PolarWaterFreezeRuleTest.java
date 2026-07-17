@@ -192,4 +192,120 @@ class PolarWaterFreezeRuleTest {
         assertFalse(PolarWaterFreezeRule.freezesWaterFrayed(false, 90.0, 0.5));
         assertFalse(PolarWaterFreezeRule.freezesWaterFrayed(true, Double.NaN, 0.5));
     }
+
+    // ---- S14(b): UNIVERSAL FREEZE (all land-family water, waterfalls) -------------------------
+
+    @Test
+    void landWaterColumnFreezesSolidInZoneAndSubsumesRivers() {
+        // A LAKE/POND column (non-river, non-ocean) now freezes solid in the full-freeze zone -- the owner's
+        // "liquid one block under a frozen lake at 89 deg" fix (S11(b) explicitly left these for B-9).
+        assertTrue(PolarWaterFreezeRule.freezesLandWaterSolid(true, false, 89.0, 0.5),
+                "a non-ocean land-family column in the full-freeze zone freezes surface to the floor");
+        // RIVER BEHAVIOUR UNCHANGED FROM S13: a river column's old answer equals the generalised answer, so
+        // rivers are subsumed, not altered (isRiver was the only dropped requirement; ocean-exempt stands).
+        for (double lat : new double[]{85.0, 86.0, 89.0, -87.5}) {
+            assertEquals(PolarWaterFreezeRule.freezesRiverSolid(true, true, false, lat, 0.5),
+                    PolarWaterFreezeRule.freezesLandWaterSolid(true, false, lat, 0.5),
+                    "generalised land-water freeze must match the S13 river answer for river columns");
+        }
+    }
+
+    @Test
+    void oceanColumnExemptFromUniversalFreeze_sacredPinReasserted() {
+        // THE SEA IS SACRED, re-pinned for the generalised path: ocean-family columns keep surface-ice-over-
+        // liquid (under-ice swim / the pole wall / S7 immersion depend on it). Ocean wins FIRST in the chain,
+        // even at the pole and even with the flag on.
+        assertFalse(PolarWaterFreezeRule.freezesLandWaterSolid(true, true, 90.0, 0.5),
+                "ocean column never solid-freezes, even at 90 deg");
+        assertFalse(PolarWaterFreezeRule.freezesLandWaterSolid(true, true, 85.0, 0.0),
+                "ocean exemption is checked before flag/front");
+        // The flowing rule inherits the same exemption (a cascade over the sea leaves the sea alone).
+        assertFalse(PolarWaterFreezeRule.freezesFlowing(true, true, 89.0, 0.5, true, true));
+    }
+
+    @Test
+    void belowZoneAndFlagOffLeaveLandWaterLiquid() {
+        // Below the frayed zone (threshold 84 at noise 0): liquid.
+        assertFalse(PolarWaterFreezeRule.freezesLandWaterSolid(true, false, 83.9, 0.0));
+        assertFalse(PolarWaterFreezeRule.freezesLandWaterSolid(true, false, 80.0, 0.5));
+        // Barrens flag off: byte-identical, land water keeps today's surface-only freeze.
+        assertFalse(PolarWaterFreezeRule.freezesLandWaterSolid(false, false, 89.0, 0.5));
+        // Flowing likewise: flag-off and below-zone never freeze a cascade.
+        assertFalse(PolarWaterFreezeRule.freezesFlowing(false, false, 89.0, 0.5, true, true));
+        assertFalse(PolarWaterFreezeRule.freezesFlowing(true, false, 83.9, 0.0, true, true));
+    }
+
+    @Test
+    void universalFreezeSharesTheOneFrayedFront() {
+        // Same +-1 deg wander as the surface ice / solid rivers / frozen-sea edge: front dips to 84 at noise 0
+        // and pushes to 86 at noise 1.
+        assertTrue(PolarWaterFreezeRule.freezesLandWaterSolid(true, false, 84.2, 0.0), "front dips to 84");
+        assertFalse(PolarWaterFreezeRule.freezesLandWaterSolid(true, false, 85.5, 1.0), "front pushes to 86");
+        assertEquals(PolarWaterFreezeRule.freezesWaterFrayed(true, 85.5, 1.0),
+                PolarWaterFreezeRule.freezesLandWaterSolid(true, false, 85.5, 1.0),
+                "the land-water decision IS the shared frayed front for non-ocean columns");
+    }
+
+    @Test
+    void hemisphereSymmetryUniversal() {
+        assertTrue(PolarWaterFreezeRule.freezesLandWaterSolid(true, false, -89.0, 0.5),
+                "southern pole freezes identically to northern");
+    }
+
+    // ---- S14(b): the freeze FLOOR (glacier-sole depth; the B-9 reservation) ------------------
+
+    @Test
+    void freezeFloorDepthIsPinnedToTheGlacierSole() {
+        // The freeze floor is "heightmap-minus-N", N = the glacier body's full-band sole (snow cap + ice max),
+        // so a frozen lake reaches as deep as the neighbouring glacier and NO DEEPER -- documented + pinned so
+        // it tracks the glacier constants if they move.
+        assertEquals(40, PolarWaterFreezeRule.LAND_WATER_FREEZE_DEPTH_BLOCKS);
+        assertEquals(PolarBarrensBand.GLACIER_SNOW_CAP_BLOCKS + PolarBarrensBand.GLACIER_ICE_MAX_BLOCKS,
+                PolarWaterFreezeRule.LAND_WATER_FREEZE_DEPTH_BLOCKS,
+                "freeze-floor depth must equal the glacier's full-band sole");
+    }
+
+    @Test
+    void shallowPondFreezesToBed_identicalToTheS13RiverLoop() {
+        // A shallow pond/river: the bed wins, so the whole body freezes surface-to-bed exactly like the S13
+        // river solid-freeze (which ran to oceanFloorY). worldSurface 70, bed 67 -> floor 67 (the bed).
+        assertEquals(67, PolarWaterFreezeRule.landWaterFreezeFloorY(70, 67));
+        assertEquals(64, PolarWaterFreezeRule.landWaterFreezeFloorY(65, 64), "one-block-deep puddle");
+    }
+
+    @Test
+    void deepColumnLeavesLiquidBelowFloor_theB9Reservation() {
+        // A DEEP aquifer exposure: the depth cap wins, freeze stops at surface-40, water below stays LIQUID
+        // (reserved for B-9's semi-ice cave lakes with fish). worldSurface 70, bed 5 -> floor 30 = 70-40.
+        assertEquals(30, PolarWaterFreezeRule.landWaterFreezeFloorY(70, 5));
+        assertEquals(63 - PolarWaterFreezeRule.LAND_WATER_FREEZE_DEPTH_BLOCKS,
+                PolarWaterFreezeRule.landWaterFreezeFloorY(63, -20),
+                "a sea-level deep pool caps 40 below the surface, leaving cave water liquid");
+    }
+
+    // ---- S14(b): WATERFALLS (flowing water) ---------------------------------------------------
+
+    @Test
+    void flowingWaterFreezesWhenExposedOrAboveFloor_liquidWhenDeepAndCovered() {
+        // A flowing (non-source) block in the zone freezes to a plain-ice cascade when SKY-EXPOSED...
+        assertTrue(PolarWaterFreezeRule.freezesFlowing(true, false, 89.0, 0.5, true, false),
+                "an exposed waterfall freezes");
+        // ...or when ABOVE THE FREEZE FLOOR (inside the glacier band)...
+        assertTrue(PolarWaterFreezeRule.freezesFlowing(true, false, 89.0, 0.5, false, true),
+                "flowing water above the freeze floor freezes");
+        // ...but a deep, sky-covered flowing spring BELOW the floor stays liquid ("underground springs
+        // below the floor untouched").
+        assertFalse(PolarWaterFreezeRule.freezesFlowing(true, false, 89.0, 0.5, false, false),
+                "a covered underground spring below the floor stays liquid");
+    }
+
+    @Test
+    void universalFreezeNaNSafe() {
+        // NaN latitude never freezes (solid or flowing); NaN fray degrades to the exact razor line.
+        assertFalse(PolarWaterFreezeRule.freezesLandWaterSolid(true, false, Double.NaN, 0.5));
+        assertFalse(PolarWaterFreezeRule.freezesFlowing(true, false, Double.NaN, 0.5, true, true));
+        assertTrue(PolarWaterFreezeRule.freezesLandWaterSolid(true, false, 85.0, Double.NaN),
+                "NaN fray -> razor line (85), never a hole in the ice on bad data");
+        assertFalse(PolarWaterFreezeRule.freezesLandWaterSolid(true, false, 84.999, Double.NaN));
+    }
 }

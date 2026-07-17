@@ -106,36 +106,19 @@ public class FogRendererPolarSetupMixin {
         // at the low end, near-white at the pole (linear01 palette), blended in on the front-loaded curve.
         float blend = com.example.globe.core.PolarFogLaw.colorBlend01(absLatDeg);
         float ambient = com.example.globe.core.PolarFogLaw.linear01(absLatDeg);
-        float tr = lerp255(STORM_R, WHITE_R, ambient);
-        float tg = lerp255(STORM_G, WHITE_G, ambient);
-        float tb = lerp255(STORM_B, WHITE_B, ambient);
+        int targetRgb = (lerp255i(STORM_R, WHITE_R, ambient) << 16)
+                | (lerp255i(STORM_G, WHITE_G, ambient) << 8)
+                | lerp255i(STORM_B, WHITE_B, ambient);
 
-        // S11(f)(i): the fog colour FOLLOWS the effective sun -- at night (vanilla clock) and in polar night
-        // (solar tilt) the daylight storm/white target darkens toward the deep night-fog tone, on the SAME
-        // darkness curve the sky gloom and star lift use (PolarFogLaw.nightFogDarkness01 -> SolarSkyMood).
-        // Solar tilt ON: elevation from the tilted (φ, δ); OFF: the plain vanilla arc (φ = 0, δ = 0), so an
-        // ordinary night no longer glows white either. Elevation is even in H, so H's sign convention is moot.
-        long clock = level.getOverworldClockTime();
-        double hourAngle = com.example.globe.core.SolarTilt.hourAngleRadians(
-                com.example.globe.core.SolarTilt.timeOfDayFrac(clock));
-        double elevation;
-        if (com.example.globe.core.LatitudeV2Flags.SOLAR_TILT_V2_ENABLED) {
-            double phi = -LatitudeMath.degreesFromZ(level.getWorldBorder(), mc.player.getZ());
-            double delta = com.example.globe.core.SolarTilt.deltaDeg(
-                    com.example.globe.core.SolarTilt.dayCount(clock),
-                    com.example.globe.core.LatitudeV2Flags.SOLAR_TILT_DELTA_MAX_DEG,
-                    com.example.globe.core.LatitudeV2Flags.SOLAR_TILT_YEAR_LENGTH_DAYS,
-                    com.example.globe.core.LatitudeV2Flags.SOLAR_TILT_FROZEN_PHASE_DEG);
-            elevation = com.example.globe.core.SolarTilt.solarElevationDeg(phi, delta, hourAngle);
-        } else {
-            elevation = com.example.globe.core.SolarTilt.solarElevationDeg(0.0, 0.0, hourAngle);
-        }
-        float dark = (float) (com.example.globe.core.PolarFogLaw.nightFogDarkness01(elevation)
-                * com.example.globe.core.PolarFogLaw.NIGHT_FOG_MAX_BLEND);
-        int nightRgb = com.example.globe.core.PolarFogLaw.NIGHT_FOG_RGB;
-        tr += (((nightRgb >> 16) & 0xFF) / 255.0f - tr) * dark;
-        tg += (((nightRgb >> 8) & 0xFF) / 255.0f - tg) * dark;
-        tb += ((nightRgb & 0xFF) / 255.0f - tb) * dark;
+        // S14(c): the fog colour FOLLOWS the FINAL sky — day = this storm/white haze, night/polar-night =
+        // near-black matching the gloomed sky, midnight-sun night = the held pink-gold dusk. ONE source of
+        // truth: GlobeClientState.polarSkyTint -> SolarSkyMood.atmosphereTint (the same palette + curves the
+        // sky dome uses; retires the old duplicated NIGHT_FOG_RGB). Un-storm-damped night darkening, so a
+        // blizzard at night is a DARK-out not a white wall; ordinary (non-tilt) vanilla night darkens too.
+        targetRgb = GlobeClientState.polarSkyTint(targetRgb, level, mc.player.getZ());
+        float tr = ((targetRgb >> 16) & 0xFF) / 255.0f;
+        float tg = ((targetRgb >> 8) & 0xFF) / 255.0f;
+        float tb = (targetRgb & 0xFF) / 255.0f;
 
         Vector4f c = data.color;
         c.x += (tr - c.x) * blend;
@@ -143,7 +126,7 @@ public class FogRendererPolarSetupMixin {
         c.z += (tb - c.z) * blend;
     }
 
-    private static float lerp255(int from, int to, float t) {
-        return (from + (to - from) * t) / 255.0f;
+    private static int lerp255i(int from, int to, float t) {
+        return Math.round(from + (to - from) * t);
     }
 }
