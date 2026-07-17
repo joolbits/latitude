@@ -292,6 +292,32 @@ tasks.named('check').configure {
     dependsOn tasks.named('latitudePolarPresentationPolicyTest')
 }
 
+def latitudeLocationDetailPolicyTestClasses = layout.buildDirectory.dir('classes/java/latitudeLocationDetailPolicyTest')
+
+tasks.register('compileLatitudeLocationDetailPolicyTest', JavaCompile) {
+    group = 'verification'
+    description = 'Compile the dependency-free HUD location-detail regression'
+    source = fileTree('src/locationDetailPolicyTest/java') {
+        include '**/*.java'
+    }
+    classpath = sourceSets.main.output
+    destinationDirectory.set(latitudeLocationDetailPolicyTestClasses)
+    options.release = 25
+    dependsOn classes
+}
+
+tasks.register('latitudeLocationDetailPolicyTest', JavaExec) {
+    group = 'verification'
+    description = 'Exercise HUD location-detail composition and structural integration without launching Minecraft'
+    classpath = files(latitudeLocationDetailPolicyTestClasses) + sourceSets.main.output
+    mainClass = 'com.example.globe.client.LocationDetailPolicyTest'
+    dependsOn tasks.named('compileLatitudeLocationDetailPolicyTest')
+}
+
+tasks.named('check').configure {
+    dependsOn tasks.named('latitudeLocationDetailPolicyTest')
+}
+
 tasks.register('prepareBiomePreviewRunDir') {
     doLast {
         def dir = file(latitudePreviewRunDir)
