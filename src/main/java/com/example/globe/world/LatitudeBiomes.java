@@ -2626,11 +2626,20 @@ public final class LatitudeBiomes {
         LatitudeBands.Band band = bandForAbsLatFraction(t);
         int bandIndex = bandIndexForBand(band);
 
-        if (isBeachLike(base) && allowBeachShortcut(generator, columnDecisionY)) {
-            Holder<Biome> out = pickBeachForBand(biomeRegistry, base, blockX, blockZ, bandIndex);
-            out = quarantineUnknownCustomLandBiome(biomeRegistry, out, base, blockX, blockZ, bandIndex, false);
-            debugPick(blockX, blockZ, effectiveRadius, t, band, base, out, true, false, null);
-            return out;
+        boolean beachLike = isBeachLike(base);
+        boolean beachMountainNoiseSampled = false;
+        boolean beachMountainNoiseLike = false;
+        if (beachLike && allowBeachShortcut(generator, columnDecisionY)) {
+            if (bandIndex == BAND_TEMPERATE) {
+                beachMountainNoiseSampled = true;
+                beachMountainNoiseLike = isMountainLike(sampler, blockX, blockZ);
+            }
+            if (!beachMountainNoiseLike) {
+                Holder<Biome> out = pickBeachForBand(biomeRegistry, base, blockX, blockZ, bandIndex);
+                out = quarantineUnknownCustomLandBiome(biomeRegistry, out, base, blockX, blockZ, bandIndex, false);
+                debugPick(blockX, blockZ, effectiveRadius, t, band, base, out, true, false, null);
+                return out;
+            }
         }
 
         // Compute blended band index once; shared by river, ocean, and land so all three
@@ -2638,7 +2647,10 @@ public final class LatitudeBiomes {
         int blendedBandIndex = latitudeBandIndexWithBlend(blockX, blockZ, effectiveRadius, band, t);
 
         int landBandIndex = blendedBandIndex;
-        boolean mountainNoiseLike = landBandIndex == BAND_TEMPERATE && isMountainLike(sampler, blockX, blockZ);
+        boolean mountainNoiseLike = landBandIndex == BAND_TEMPERATE
+                && (beachMountainNoiseSampled
+                ? beachMountainNoiseLike
+                : isMountainLike(sampler, blockX, blockZ));
         boolean skipPreview = shouldSkipPreviewTerrain(callerContext);
         boolean hasReliableSurface = !skipPreview && generator != null && noiseConfig != null && heightView != null;
         // True only when the caller supplied all three preview probe inputs (MIXIN, CAVE_CLAMP).
@@ -3270,11 +3282,20 @@ public final class LatitudeBiomes {
         LatitudeBands.Band band = bandForAbsLatFraction(t);
         int bandIndex = bandIndexForBand(band);
 
-        if (isBeachLike(base) && allowBeachShortcut(generator, columnDecisionY)) {
-            Holder<Biome> out = pickBeachForBand(biomePool, base, blockX, blockZ, bandIndex);
-            out = quarantineUnknownCustomLandBiome(biomePool, out, base, blockX, blockZ, bandIndex, false);
-            debugPick(blockX, blockZ, effectiveRadius, t, band, base, out, true, false, null);
-            return out;
+        boolean beachLike = isBeachLike(base);
+        boolean beachMountainNoiseSampled = false;
+        boolean beachMountainNoiseLike = false;
+        if (beachLike && allowBeachShortcut(generator, columnDecisionY)) {
+            if (bandIndex == BAND_TEMPERATE) {
+                beachMountainNoiseSampled = true;
+                beachMountainNoiseLike = isMountainLike(sampler, blockX, blockZ);
+            }
+            if (!beachMountainNoiseLike) {
+                Holder<Biome> out = pickBeachForBand(biomePool, base, blockX, blockZ, bandIndex);
+                out = quarantineUnknownCustomLandBiome(biomePool, out, base, blockX, blockZ, bandIndex, false);
+                debugPick(blockX, blockZ, effectiveRadius, t, band, base, out, true, false, null);
+                return out;
+            }
         }
 
         // Compute blended band index once; shared by river, ocean, and land so all three
@@ -3282,7 +3303,10 @@ public final class LatitudeBiomes {
         int blendedBandIndex = latitudeBandIndexWithBlend(blockX, blockZ, effectiveRadius, band, t);
 
         int landBandIndex = blendedBandIndex;
-        boolean mountainNoiseLike = landBandIndex == BAND_TEMPERATE && isMountainLike(sampler, blockX, blockZ);
+        boolean mountainNoiseLike = landBandIndex == BAND_TEMPERATE
+                && (beachMountainNoiseSampled
+                ? beachMountainNoiseLike
+                : isMountainLike(sampler, blockX, blockZ));
         boolean skipPreview = shouldSkipPreviewTerrain(callerContext);
         boolean hasReliableSurface = !skipPreview && generator != null && noiseConfig != null && heightView != null;
         // True only when the caller supplied all three preview probe inputs (MIXIN, CAVE_CLAMP).
