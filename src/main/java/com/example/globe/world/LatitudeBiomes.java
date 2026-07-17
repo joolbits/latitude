@@ -6146,6 +6146,23 @@ public final class LatitudeBiomes {
         return latDeg >= EXTREME_POLAR_CAP_MIN_DEG;
     }
 
+    /**
+     * Village-only polar limit. Origins at exactly 80 degrees remain allowed; only origins
+     * strictly beyond 80 degrees are vetoed. This is deliberately separate from the 74.5-degree
+     * extreme-polar ecology cap used by vegetation and biome policy.
+     *
+     * <p>The active-radius/fallback authority and Z=0 coordinate convention match
+     * {@link #isBlockInExtremePolarCap(int, int)}.
+     */
+    public static boolean isBlockBeyondPolarVillageLimit(
+            int blockZ,
+            int borderRadiusFallback) {
+        return VillageLatitudePolicy.shouldVetoVillageOrigin(
+                blockZ,
+                getActiveRadiusBlocks(),
+                borderRadiusFallback);
+    }
+
     private static boolean isFlatPolarShelfBannedMountainPick(Holder<Biome> candidate) {
         return isBiomeId(candidate, "minecraft:jagged_peaks")
                 || isBiomeId(candidate, "minecraft:frozen_peaks")

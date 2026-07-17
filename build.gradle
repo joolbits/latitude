@@ -318,6 +318,32 @@ tasks.named('check').configure {
     dependsOn tasks.named('latitudeLocationDetailPolicyTest')
 }
 
+def latitudeVillageLatitudePolicyTestClasses = layout.buildDirectory.dir('classes/java/latitudeVillageLatitudePolicyTest')
+
+tasks.register('compileLatitudeVillageLatitudePolicyTest', JavaCompile) {
+    group = 'verification'
+    description = 'Compile the dependency-free village latitude boundary regression'
+    source = fileTree('src/villageLatitudePolicyTest/java') {
+        include '**/*.java'
+    }
+    classpath = sourceSets.main.output
+    destinationDirectory.set(latitudeVillageLatitudePolicyTestClasses)
+    options.release = 25
+    dependsOn classes
+}
+
+tasks.register('latitudeVillageLatitudePolicyTest', JavaExec) {
+    group = 'verification'
+    description = 'Exercise village latitude boundary and structural isolation without launching Minecraft'
+    classpath = files(latitudeVillageLatitudePolicyTestClasses) + sourceSets.main.output
+    mainClass = 'com.example.globe.world.VillageLatitudePolicyTest'
+    dependsOn tasks.named('compileLatitudeVillageLatitudePolicyTest')
+}
+
+tasks.named('check').configure {
+    dependsOn tasks.named('latitudeVillageLatitudePolicyTest')
+}
+
 tasks.register('prepareBiomePreviewRunDir') {
     doLast {
         def dir = file(latitudePreviewRunDir)

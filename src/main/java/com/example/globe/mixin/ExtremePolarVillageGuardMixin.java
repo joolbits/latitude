@@ -20,8 +20,8 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
- * Prevents village structures from being placed past the extreme-polar-cap
- * latitude cutoff. Other structures (igloos, etc.) are not affected.
+ * Prevents village structures from being placed strictly beyond 80 degrees absolute latitude.
+ * Origins at exactly 80 degrees remain allowed. Other structures (igloos, etc.) are not affected.
  */
 @Mixin(StructureStart.class)
 public abstract class ExtremePolarVillageGuardMixin {
@@ -42,7 +42,7 @@ public abstract class ExtremePolarVillageGuardMixin {
                                                     ChunkPos chunkPos,
                                                     CallbackInfo ci) {
         int blockZ = this.getChunkPos().getMiddleBlockZ();
-        if (!LatitudeBiomes.isBlockInExtremePolarCap(blockZ, GlobeMod.BORDER_RADIUS)) {
+        if (!LatitudeBiomes.isBlockBeyondPolarVillageLimit(blockZ, GlobeMod.BORDER_RADIUS)) {
             return;
         }
         Structure structure = this.getStructure();
