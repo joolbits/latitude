@@ -1,6 +1,6 @@
 # Latitude 1.5 Feature Manifest
 
-`status: Phases 0-2 locally passed; local savepoint` · `branch: codex/1.5-mini-launch-26.1x` · `base: f26d5f58` · `recorded: 2026-07-17`
+`status: Phase 3 locally passed; local savepoint` · `branch: codex/1.5-mini-launch-26.1x` · `base: f26d5f58` · `recorded: 2026-07-17`
 
 This is the implementation-side allowlist for the Latitude 1.5 pre-2.0 polish campaign. The campaign
 roadmap lives in the docs root at:
@@ -104,3 +104,24 @@ These phase results are frozen by the single local implementation savepoint with
 `f26d5f586ed7fbf617b81cc366fac3255ab0bf1e`. The resulting commit hash is verified from Git after
 creation rather than embedded in its own contents. No tag, push, profile staging, upload,
 publication, 26.2 port, or release authorization is included.
+
+## Phase 3 result
+
+| Gate | Status |
+| --- | --- |
+| Exact-ID cohesion and climate law | **PASSED** |
+| Fresh/copy-old lifecycle and save policy | **PASSED** |
+| Supported provider absent/present integrity | **PASSED** |
+| Create-world and Re-create state truth | **PASSED** |
+| HUD/HUD Studio truth and config persistence | **PASSED** |
+| Fresh dedicated server and exact public-jar reload | **PASSED** |
+| Public-jar purity and metadata | **PASSED** |
+
+Phase 3 admitted two exact reds only: Re-create/seed state hydration and public-jar dev/debug
+contamination. Their bounded fixes, mandatory proof matrix, conditional HOLD decisions, and evidence
+paths are recorded in:
+
+`docs/binder/latitude-1-5-phase3-20260717.md`
+
+This is a local Phase 3 pass. It does not authorize Phase 4, the 26.2 port, profile staging, tagging,
+pushing, release, upload, or publication.

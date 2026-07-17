@@ -17,6 +17,7 @@ import net.minecraft.client.gui.screens.worldselection.DataPackReloadCookie;
 import net.minecraft.client.gui.screens.worldselection.WorldCreationGameRulesScreen;
 import net.minecraft.client.gui.screens.worldselection.WorldCreationContext;
 import net.minecraft.client.gui.screens.worldselection.WorldCreationContextMapper;
+import net.minecraft.client.gui.screens.worldselection.WorldCreationUiState;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
@@ -133,6 +134,8 @@ public class LatitudeCreateWorldScreen extends Screen {
     private GameRules gameRules;
 
     private String worldNameInput = "New World";
+    private String seedInput = "";
+    private Difficulty selectedDifficulty = Difficulty.NORMAL;
     private EditBox worldNameField;
     private EditBox seedField;
     private Button sizePrevBtn;
@@ -235,11 +238,101 @@ public class LatitudeCreateWorldScreen extends Screen {
         this.gameRules = new GameRules(holder.dataConfiguration().enabledFeatures());
     }
 
-    public static void openLoaded(Minecraft client, Runnable onClose, @Nullable Screen parent, WorldCreationContext holder) {
-        LOGGER.info("[LAT][CWPATH] LatitudeCreateWorldScreen.openLoaded parent={} holder={}",
+    private LatitudeCreateWorldScreen(Runnable onClose, @Nullable Screen parent,
+                                      WorldCreationUiState initialState, boolean recreated) {
+        this(onClose, parent, initialState.getSettings());
+        if (recreated) {
+            hydrateInitialState(initialState);
+        } else {
+            LOGGER.info("[LAT][CWPATH] fresh create state keeps Latitude defaults");
+        }
+    }
+
+    public static boolean canRepresent(WorldCreationUiState initialState, boolean recreated) {
+        return !recreated || (presetKey(initialState) != null && worldTypeIndex(initialState) >= 0);
+    }
+
+    public static void openLoaded(Minecraft client, Runnable onClose, @Nullable Screen parent,
+                                  WorldCreationUiState initialState, boolean recreated) {
+        LOGGER.info("[LAT][CWPATH] LatitudeCreateWorldScreen.openLoaded parent={} recreated={} stateName={} seedSet={} holder={}",
                 parent == null ? "null" : parent.getClass().getName(),
-                holder);
-        client.setScreen(new LatitudeCreateWorldScreen(onClose, parent, holder));
+                recreated,
+                initialState.getName(),
+                initialState.getSeed() != null && !initialState.getSeed().isBlank(),
+                initialState.getSettings());
+        client.setScreen(new LatitudeCreateWorldScreen(onClose, parent, initialState, recreated));
+    }
+
+    private void hydrateInitialState(WorldCreationUiState initialState) {
+        this.worldNameInput = initialState.getName();
+        this.seedInput = initialState.getSeed();
+        this.allowCommands = initialState.isAllowCommands();
+        this.selectedDifficulty = initialState.getDifficulty();
+        this.bonusChest = initialState.isBonusChest();
+        this.generateStructures = initialState.isGenerateStructures();
+        this.gameRules = initialState.getGameRules();
+        this.selectedModeIdx = switch (initialState.getGameMode()) {
+            case HARDCORE -> 1;
+            case CREATIVE -> 2;
+            default -> 0;
+        };
+
+        int loadedWorldType = worldTypeIndex(initialState);
+        if (loadedWorldType < 0) {
+            throw new IllegalArgumentException("Unsupported Re-create world preset: " + presetKey(initialState));
+        }
+        this.worldTypeIdx = loadedWorldType;
+
+        if (loadedWorldType == 0) {
+            var key = presetKey(initialState);
+            for (GlobeWorldSize size : GlobeWorldSize.values()) {
+                if (size.worldPresetId.equals(key.identifier())) {
+                    this.selectedSize = size;
+                    break;
+                }
+            }
+        }
+
+        LOGGER.info(
+                "[LAT][CWPATH] hydrated create state name={} seedSet={} mode={} commands={} difficulty={} bonusChest={} structures={} worldType={} size={}",
+                this.worldNameInput,
+                this.seedInput != null && !this.seedInput.isBlank(),
+                MODE_NAMES[this.selectedModeIdx],
+                this.allowCommands,
+                this.selectedDifficulty,
+                this.bonusChest,
+                this.generateStructures,
+                this.worldTypeIdx,
+                this.selectedSize);
+    }
+
+    @Nullable
+    private static net.minecraft.resources.ResourceKey<net.minecraft.world.level.levelgen.presets.WorldPreset> presetKey(
+            WorldCreationUiState initialState) {
+        if (initialState == null || initialState.getWorldType() == null
+                || initialState.getWorldType().preset() == null) {
+            return null;
+        }
+        return initialState.getWorldType().preset().unwrapKey().orElse(null);
+    }
+
+    private static int worldTypeIndex(WorldCreationUiState initialState) {
+        var key = presetKey(initialState);
+        if (key == null) {
+            return -1;
+        }
+        if (WorldPresets.NORMAL.equals(key)) {
+            return 1;
+        }
+        if (WorldPresets.FLAT.equals(key)) {
+            return 2;
+        }
+        for (GlobeWorldSize size : GlobeWorldSize.values()) {
+            if (size.worldPresetId.equals(key.identifier())) {
+                return 0;
+            }
+        }
+        return -1;
     }
 
     /**
@@ -409,6 +502,8 @@ public class LatitudeCreateWorldScreen extends Screen {
         this.seedField = new EditBox(this.font, inputX, seedFieldY, inputW, fieldH, Component.literal("Seed"));
         this.seedField.setMaxLength(64);
         this.seedField.setHint(Component.literal("Leave blank for random"));
+        this.seedField.setValue(seedInput == null ? "" : seedInput);
+        this.seedField.setResponder(text -> seedInput = text);
         this.addRenderableWidget(this.seedField);
 
         // ── 3. Size ◀ ──
@@ -1093,7 +1188,7 @@ public class LatitudeCreateWorldScreen extends Screen {
 
         GameType gameMode = selectedModeIdx == 2 ? GameType.CREATIVE : GameType.SURVIVAL;
         boolean hardcore = selectedModeIdx == 1;
-        Difficulty difficulty = hardcore ? Difficulty.HARD : Difficulty.NORMAL;
+        Difficulty difficulty = hardcore ? Difficulty.HARD : selectedDifficulty;
 
         LatitudeWorldLauncher.beginExpedition(this.minecraft, this, this.holder,
                 worldName, seed, this.selectedSize, this.selectedZone,
@@ -1114,7 +1209,9 @@ public class LatitudeCreateWorldScreen extends Screen {
             this.worldNameInput = trimmed;
         }
         if (seed != null && !seed.isBlank() && this.seedField != null) {
-            this.seedField.setValue(seed.trim());
+            String trimmed = seed.trim();
+            this.seedField.setValue(trimmed);
+            this.seedInput = trimmed;
         }
         if (size != null) {
             this.selectedSize = size;

@@ -1,7 +1,6 @@
 package com.example.globe.mixin;
 
 import com.example.globe.GlobeMod;
-import com.example.globe.debug.WarmSnowTrapStats;
 import com.example.globe.util.LatitudeBands;
 import com.example.globe.world.LatitudeBiomes;
 import net.minecraft.core.BlockPos;
@@ -33,7 +32,6 @@ public abstract class ChunkRegionWarmSnowTrapMixin {
         index = 2
     )
     private BlockState globe$swapWarmBandSnow(BlockState state, BlockPos pos) {
-        WarmSnowTrapStats.calls++;
         if (state == null) return null;
 
         if (state.getBlock() != Blocks.POWDER_SNOW
@@ -45,25 +43,19 @@ public abstract class ChunkRegionWarmSnowTrapMixin {
             return state;
         }
 
-        WarmSnowTrapStats.snowHits++;
-        WarmSnowTrapStats.lastBlock = state.getBlock().toString();
-        WarmSnowTrapStats.lastPos = pos.immutable();
-
         int radius = LatitudeBiomes.getActiveRadiusBlocks();
         if (radius <= 0) {
             radius = GlobeMod.BORDER_RADIUS;
         }
         double t = Math.abs((double) pos.getZ()) / (double) radius;
-        WarmSnowTrapStats.lastT = t;
 
-        LatitudeBands.Band band = LatitudeBands.fromAbsoluteLatitudeDeg(Math.abs((double) pos.getZ()) * 90.0 / Math.max(1, radius));
+        LatitudeBands.Band band = LatitudeBands.fromAbsoluteLatitudeDeg(t * 90.0);
         boolean warm = band == LatitudeBands.Band.TROPICAL
                 || band == LatitudeBands.Band.SUBTROPICAL
                 || band == LatitudeBands.Band.TEMPERATE;
 
         if (!warm) return state;
 
-        WarmSnowTrapStats.rewrites++;
         if (state.getBlock() == Blocks.SNOW_BLOCK) return STONE;
         return AIR;
     }
