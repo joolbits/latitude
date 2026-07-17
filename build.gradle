@@ -48,6 +48,16 @@ loom {
             vmArg "-Dlatitude.fixSurfaceDripstone=true"
             vmArg "-Dlatitude.fogClampIndex=${System.getProperty('latitude.fogClampIndex', '-1')}"
             vmArg "-Dlatitude.fogClampValue=${System.getProperty('latitude.fogClampValue', '16.0')}"
+            // Solar Tilt + Seasons (P1). Master default OFF (byte-identical) + four live-tuning dials, ALL
+            // born WITH their forwarding line in the SAME pass as the flags (L17 discipline). Forwarded on the
+            // CLIENT run (not just biomePreview) because unlike the worldgen flags this feature runs live here
+            // — P2's sky visuals on the client, P1's mob rules on the integrated server in this same JVM — so
+            // a `-Dlatitude.solarTiltV2.enabled=true` dev client is how it gets flown for P2/P3.
+            vmArg "-Dlatitude.solarTiltV2.enabled=${System.getProperty('latitude.solarTiltV2.enabled', 'false')}"
+            vmArg "-Dlatitude.solarTilt.deltaMaxDeg=${System.getProperty('latitude.solarTilt.deltaMaxDeg', '30.0')}"
+            vmArg "-Dlatitude.solarTilt.yearLengthDays=${System.getProperty('latitude.solarTilt.yearLengthDays', '360.0')}"
+            vmArg "-Dlatitude.solarTilt.functionalMinDeg=${System.getProperty('latitude.solarTilt.functionalMinDeg', '74.5')}"
+            vmArg "-Dlatitude.solarTilt.frozenPhaseDeg=${System.getProperty('latitude.solarTilt.frozenPhaseDeg', '0.0')}"
         }
         clientNoSurfaceDripstoneFix {
             inherit client
@@ -151,6 +161,14 @@ loom {
             vmArg "-Dlatitude.climateV2.enabled=${System.getProperty('latitude.climateV2.enabled', 'false')}"
             vmArg "-Dlatitude.biomeConsumerV2.enabled=${System.getProperty('latitude.biomeConsumerV2.enabled', 'false')}"
             vmArg "-Dlatitude.biomeConsumerV2.oceanAuthority.enabled=${System.getProperty('latitude.biomeConsumerV2.oceanAuthority.enabled', 'false')}"
+            // Solar Tilt + Seasons (P1) — forwarded here too for sibling parity with every other LatitudeV2Flags
+            // enable (so a headless "flag-on" claim is honest), even though solar tilt does NOT touch worldgen
+            // and the real flight is on the client run above. Master default OFF (byte-identical); L17 same-pass.
+            vmArg "-Dlatitude.solarTiltV2.enabled=${System.getProperty('latitude.solarTiltV2.enabled', 'false')}"
+            vmArg "-Dlatitude.solarTilt.deltaMaxDeg=${System.getProperty('latitude.solarTilt.deltaMaxDeg', '30.0')}"
+            vmArg "-Dlatitude.solarTilt.yearLengthDays=${System.getProperty('latitude.solarTilt.yearLengthDays', '360.0')}"
+            vmArg "-Dlatitude.solarTilt.functionalMinDeg=${System.getProperty('latitude.solarTilt.functionalMinDeg', '74.5')}"
+            vmArg "-Dlatitude.solarTilt.frozenPhaseDeg=${System.getProperty('latitude.solarTilt.frozenPhaseDeg', '0.0')}"
         }
         biomeSeedSearch {
             server()

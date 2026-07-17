@@ -320,6 +320,50 @@ public final class LatitudeV2Flags {
     public static final double POLAR_BARRENS_FULL_DEG =
             parseDoubleOrDefault(System.getProperty("latitude.polarBarrens.fullDeg"), 88.0);
 
+    // --- Solar Tilt + Seasons (Phase 5B-adjacent, P1) ---------------------------------------------------
+    // ONE master kill-switch (visual + functional + seasons together — the functional layer is DERIVED from
+    // the same SolarTilt evaluator that drives the visuals, so a split flag would let the sky and the mobs
+    // disagree; §2/§8 one-evaluator law) plus four live-tuning dials. Master default OFF (byte-identical
+    // flag-off: every solar mixin's first line is gated on SOLAR_TILT_V2_ENABLED). The doubles are parsed
+    // defensively (malformed -D degrades to the shipped default rather than throwing at class-init). All are
+    // forwarded in build.gradle in the SAME pass (L17 discipline) so a dev run agrees with a shipped jar the
+    // moment the flag is flipped for a P2/P3 flight. Design: docs/binder/solar-tilt-design-20260716.md.
+
+    /** Master kill-switch for Solar Tilt (sky path tilt + seasons + the effective-sun mob rules). Default
+     *  false → byte-identical flag-off. */
+    public static final boolean SOLAR_TILT_V2_ENABLED =
+            Boolean.parseBoolean(System.getProperty("latitude.solarTiltV2.enabled", "false"));
+
+    /** Axial-tilt amplitude δ_max (deg). Default 30 → midnight-sun / polar-night onset at a round, visible
+     *  60° (§11 "delta pick"; real Earth 23.5° → 66.5°, deep in the storm cap; max theatrical ≈ 35). */
+    public static final double SOLAR_TILT_DELTA_MAX_DEG =
+            parseDoubleOrDefault(System.getProperty("latitude.solarTilt.deltaMaxDeg"),
+                    com.example.globe.core.SolarTilt.DEFAULT_DELTA_MAX_DEG);
+
+    /** Game-year length (days). Default 360 → 180 game-days between solstices (owner's schedule).
+     *  {@code <= 0} ⇒ FROZEN mode (δ constant at {@link #SOLAR_TILT_FROZEN_PHASE_DEG}), which reproduces the
+     *  owner's original "one pole is summer forever" world as a single config value (§4e). */
+    public static final double SOLAR_TILT_YEAR_LENGTH_DAYS =
+            parseDoubleOrDefault(System.getProperty("latitude.solarTilt.yearLengthDays"),
+                    com.example.globe.core.SolarTilt.DEFAULT_YEAR_LENGTH_DAYS);
+
+    /**
+     * Functional-layer latitude floor (deg): the effective-sun mob rules (polar-night dark-spawn, midnight-sun
+     * spawn veto, undead sun-burn) fire ONLY at {@code |φ| >= this} — the visuals keep the 60° onset, but the
+     * mob overrides are held back to the extreme cap. Default 74.5 (sweep A2, BINDING): the "no-villages"
+     * line — a 63° village left under 24/7 winter spawns for weeks would be a siege, not atmosphere. The owner
+     * may WIDEN this dial after flying (toward the 60° visual onset) if the deep-cap-only rule feels too shy.
+     */
+    public static final double SOLAR_TILT_FUNCTIONAL_MIN_DEG =
+            parseDoubleOrDefault(System.getProperty("latitude.solarTilt.functionalMinDeg"), 74.5);
+
+    /** Frozen-mode phase (deg), used only when {@link #SOLAR_TILT_YEAR_LENGTH_DAYS} {@code <= 0}. Default 0 →
+     *  δ = +δ_max → permanent NORTHERN summer (the owner's original ask). A seed-random 0-vs-180 sign is the
+     *  clean future home for "which pole is summer this world" (§9). */
+    public static final double SOLAR_TILT_FROZEN_PHASE_DEG =
+            parseDoubleOrDefault(System.getProperty("latitude.solarTilt.frozenPhaseDeg"),
+                    com.example.globe.core.SolarTilt.DEFAULT_FROZEN_PHASE_DEG);
+
     /**
      * Defensive double parse for the Phase 4 knobs: a {@code null} (property unset) or malformed value
      * degrades to {@code fallback} instead of throwing {@link NumberFormatException} at class-init.

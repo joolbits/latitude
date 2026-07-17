@@ -1202,6 +1202,37 @@ public class GlobeMod implements ModInitializer {
     }
 
     /**
+     * Solar Tilt functional layer (P1) — the SINGLE server-side consumer of the {@link com.example.globe.core.SolarTilt}
+     * evaluator. Both mob-rule mixins ({@code MonsterSolarSpawnMixin} for the polar-night dark-spawn / midnight-sun
+     * spawn veto, {@code MobSolarSunBurnMixin} for undead sun-burn) funnel through here so the "effective sun" they
+     * obey can NEVER drift from what the sky (P2) will draw — the §8 one-evaluator law.
+     *
+     * <p>Reads the vanilla-synced clock ({@link ServerLevel#getOverworldClockTime()} — sweep-verified real,
+     * survived the 26.2 WorldClock rework) and the position's signed latitude ({@code -degreesFromZ}, north = +φ),
+     * derives δ(day) and the current hour angle, and returns which 24-hour polar regime the column is in on the
+     * winter/summer side today. Gated: returns {@link com.example.globe.core.SolarTilt.FunctionalBand#NONE} unless
+     * the master flag is on AND this is a globe overworld. The {@code functionalMinDeg} floor (A2, default 74.5) is
+     * applied inside {@code SolarTilt.functionalBand}. Zero persistent state (§8d): stateless per check.
+     */
+    public static com.example.globe.core.SolarTilt.FunctionalBand solarFunctionalBand(ServerLevel level, double blockZ) {
+        if (!com.example.globe.core.LatitudeV2Flags.SOLAR_TILT_V2_ENABLED) {
+            return com.example.globe.core.SolarTilt.FunctionalBand.NONE;
+        }
+        if (level == null || !isGlobeOverworld(level)) {
+            return com.example.globe.core.SolarTilt.FunctionalBand.NONE;
+        }
+        WorldBorder border = level.getWorldBorder();
+        double signedLatDeg = -com.example.globe.util.LatitudeMath.degreesFromZ(border, blockZ);
+        double day = com.example.globe.core.SolarTilt.dayCount(level.getOverworldClockTime());
+        double delta = com.example.globe.core.SolarTilt.deltaDeg(day,
+                com.example.globe.core.LatitudeV2Flags.SOLAR_TILT_DELTA_MAX_DEG,
+                com.example.globe.core.LatitudeV2Flags.SOLAR_TILT_YEAR_LENGTH_DAYS,
+                com.example.globe.core.LatitudeV2Flags.SOLAR_TILT_FROZEN_PHASE_DEG);
+        return com.example.globe.core.SolarTilt.functionalBand(signedLatDeg, delta,
+                com.example.globe.core.LatitudeV2Flags.SOLAR_TILT_FUNCTIONAL_MIN_DEG);
+    }
+
+    /**
      * Strict, positive globe check: true iff the generator's keyed settings stably resolve to one of the
      * six {@code globe:overworld*} presets, false for vanilla/Terralith/other-mod/non-globe worlds. This
      * is the real positive-and-exclusive gate the Phase 4 terrain-bias mixin

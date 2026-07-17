@@ -67,6 +67,32 @@ class LatitudeV2FlagsTest {
     }
 
     @Test
+    void solarTiltV2DefaultsToDisabled() {
+        // The master kill-switch (visual + functional + seasons) ships OFF — byte-identical flag-off until
+        // Peetsa flies it (§2). Unlike the branch-local flight-staged flags above, solar tilt P1 is NOT staged
+        // on: it stays default-off and P2 owns the flight.
+        assertFalse(LatitudeV2Flags.SOLAR_TILT_V2_ENABLED,
+                "Solar Tilt must ship default-off (byte-identical) until a live flight flips it");
+    }
+
+    @Test
+    void solarTiltDialDefaults() {
+        assertEquals(30.0, LatitudeV2Flags.SOLAR_TILT_DELTA_MAX_DEG, 1e-9,
+                "δ_max defaults to 30° (onset at a visible 60°)");
+        assertEquals(360.0, LatitudeV2Flags.SOLAR_TILT_YEAR_LENGTH_DAYS, 1e-9,
+                "year length defaults to 360 game-days (180 between solstices)");
+        assertEquals(74.5, LatitudeV2Flags.SOLAR_TILT_FUNCTIONAL_MIN_DEG, 1e-9,
+                "functional floor defaults to 74.5° (A2 no-villages line)");
+        assertEquals(0.0, LatitudeV2Flags.SOLAR_TILT_FROZEN_PHASE_DEG, 1e-9,
+                "frozen phase defaults to 0° (permanent northern summer)");
+        // the dials match the pure-kernel constants they mirror
+        assertEquals(SolarTilt.DEFAULT_DELTA_MAX_DEG, LatitudeV2Flags.SOLAR_TILT_DELTA_MAX_DEG, 1e-9,
+                "flag default mirrors SolarTilt.DEFAULT_DELTA_MAX_DEG");
+        assertEquals(SolarTilt.DEFAULT_YEAR_LENGTH_DAYS, LatitudeV2Flags.SOLAR_TILT_YEAR_LENGTH_DAYS, 1e-9,
+                "flag default mirrors SolarTilt.DEFAULT_YEAR_LENGTH_DAYS");
+    }
+
+    @Test
     void polePassageV2BranchLocalFlightStaging() {
         // P3 LIVE-TEST STAGING (branch-local, B-6 precedent): default ON so the TEST 97 maiden pole flight
         // exercises the crossing without profile JVM args. REVISIT BEFORE MERGE -- the shipped default

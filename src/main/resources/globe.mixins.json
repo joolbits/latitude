@@ -30,6 +30,8 @@
     "LivingEntityHealLockMixin",
     "StructureBiomeMatchGuardMixin",
     "EdgeStructureVetoMixin",
+    "MonsterSolarSpawnMixin",
+    "MobSolarSunBurnMixin",
     "terrain.RandomStateAccessor",
     "terrain.RandomStateRouterTerrainMixin"
   ],
