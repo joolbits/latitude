@@ -2,6 +2,7 @@ package com.example.globe.mixin;
 
 import com.example.globe.core.LatitudeV2Flags;
 import com.example.globe.core.PolarBarrensBand;
+import com.example.globe.core.PolarWaterFreezeRule;
 import com.example.globe.world.LatitudeBiomes;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.WorldGenRegion;
@@ -63,6 +64,8 @@ public abstract class PolarBarrensGlacierMixin {
     private static final BlockState GLOBE_GLACIER_SNOW_BLOCK = Blocks.SNOW_BLOCK.defaultBlockState();
     @Unique
     private static final BlockState GLOBE_GLACIER_PACKED_ICE = Blocks.PACKED_ICE.defaultBlockState();
+    @Unique
+    private static final BlockState GLOBE_RIVER_SURFACE_ICE = Blocks.ICE.defaultBlockState();
 
     @Inject(
             method = "buildSurface(Lnet/minecraft/server/level/WorldGenRegion;Lnet/minecraft/world/level/StructureManager;Lnet/minecraft/world/level/levelgen/RandomState;Lnet/minecraft/world/level/chunk/ChunkAccess;)V",
@@ -78,9 +81,12 @@ public abstract class PolarBarrensGlacierMixin {
             return;
         }
         ChunkPos cp = chunk.getPos();
-        // Chunk-level early-out: the chunk's most-poleward row must reach the barrens onset at all.
+        // Chunk-level early-out: the chunk's most-poleward row must reach the NEARER of the two onsets this
+        // pass serves -- the barrens glacier (86) or the S11(b) solid-river zone (85 minus the 1-deg fray).
         int chunkMaxAbsZ = Math.max(Math.abs(cp.getMinBlockZ()), Math.abs(cp.getMaxBlockZ()));
-        if ((double) chunkMaxAbsZ * 90.0 / radius < PolarBarrensBand.ONSET_DEG) {
+        double passOnsetDeg = Math.min(PolarBarrensBand.ONSET_DEG,
+                PolarWaterFreezeRule.FREEZE_ALL_DEG - PolarWaterFreezeRule.FRAY_HALF_WIDTH_DEG);
+        if ((double) chunkMaxAbsZ * 90.0 / radius < passOnsetDeg) {
             return;
         }
 
@@ -90,14 +96,20 @@ public abstract class PolarBarrensGlacierMixin {
             for (int lz = 0; lz < 16; lz++) {
                 int blockX = cp.getMinBlockX() + lx;
                 int blockZ = cp.getMinBlockZ() + lz;
-                int iceBlocks = LatitudeBiomes.polarBarrensGlacierIceBlocks(blockX, blockZ, radius);
-                if (iceBlocks <= 0) {
-                    continue; // not a barrens column (flag/band/fray) -- bitwise untouched.
-                }
                 int worldSurfaceY = chunk.getHeight(Heightmap.Types.WORLD_SURFACE_WG, lx, lz);
                 int oceanFloorY = chunk.getHeight(Heightmap.Types.OCEAN_FLOOR_WG, lx, lz);
                 if (worldSurfaceY - oceanFloorY > 1) {
-                    continue; // fluid column: the frozen sea belongs to the water-freeze law, not the glacier.
+                    // Fluid column. S11(b): a RIVER column in the full-freeze zone freezes COMPLETE -- surface
+                    // to bed, ice family, no water left (no fish for free). The SEA is exempt (surface-ice-
+                    // over-liquid is load-bearing: under-ice swim / the pole wall / S7 immersion), and
+                    // non-river ponds/lakes wait for B-9's semi-ice lakes.
+                    globe$freezeRiverSolid(chunk, cursor, blockX, blockZ, lx, lz,
+                            worldSurfaceY, oceanFloorY, radius);
+                    continue;
+                }
+                int iceBlocks = LatitudeBiomes.polarBarrensGlacierIceBlocks(blockX, blockZ, radius);
+                if (iceBlocks <= 0) {
+                    continue; // not a barrens column (flag/band/fray) -- bitwise untouched.
                 }
                 int capBottomY = worldSurfaceY - PolarBarrensBand.GLACIER_SNOW_CAP_BLOCKS;
                 int soleY = Math.max(minY + 1, capBottomY - iceBlocks);
@@ -125,6 +137,44 @@ public abstract class PolarBarrensGlacierMixin {
                     }
                 }
             }
+        }
+    }
+
+    /**
+     * S11(b) FROZEN RIVERS -&gt; COMPLETE ICE. Classifies the fluid column by its POPULATED chunk biome (the
+     * biomes stage runs before noise/surface, so {@code chunk.getNoiseBiome} is authoritative here) at the
+     * water-surface quart: {@code BiomeTags.IS_RIVER} freezes, {@code BiomeTags.IS_OCEAN} is exempt (the
+     * decision itself is the pure {@link PolarWaterFreezeRule#freezesRiverSolid}, zone = the SAME
+     * {@code freezesWaterFrayed} front as the surface-ice law, so solid rivers and the frozen-sea edge
+     * agree). Replaces ONLY water blocks in {@code (bed, surface]}: the top block becomes plain {@code ice}
+     * (the familiar frozen-river skin), everything deeper {@code packed_ice}
+     * ({@link PolarWaterFreezeRule#riverIceIsPacked} documents the choice). Non-water states in the column
+     * (gravel bed bumps, air gaps) are untouched; the later vanilla freeze feature finds no water and no-ops.
+     */
+    @Unique
+    private static void globe$freezeRiverSolid(ChunkAccess chunk, BlockPos.MutableBlockPos cursor,
+                                               int blockX, int blockZ, int lx, int lz,
+                                               int worldSurfaceY, int oceanFloorY, int radius) {
+        double absLatDeg = Math.abs((double) blockZ) * 90.0 / radius;
+        net.minecraft.core.Holder<net.minecraft.world.level.biome.Biome> columnBiome =
+                chunk.getNoiseBiome(blockX >> 2, (worldSurfaceY - 1) >> 2, blockZ >> 2);
+        boolean isRiver = columnBiome.is(net.minecraft.tags.BiomeTags.IS_RIVER);
+        boolean isOcean = columnBiome.is(net.minecraft.tags.BiomeTags.IS_OCEAN);
+        if (!PolarWaterFreezeRule.freezesRiverSolid(LatitudeV2Flags.POLAR_BARRENS_ENABLED,
+                isRiver, isOcean, absLatDeg,
+                LatitudeBiomes.polarSeaFreezeFrayNoise(blockX, blockZ))) {
+            return;
+        }
+        // The water body occupies (oceanFloorY, worldSurfaceY]. Solid-freeze it top to bed.
+        for (int y = worldSurfaceY; y > oceanFloorY; y--) {
+            cursor.set(blockX, y, blockZ);
+            BlockState current = chunk.getBlockState(cursor);
+            if (current.getBlock() != Blocks.WATER) {
+                continue; // only water becomes ice; bed bumps/air pockets stay native.
+            }
+            chunk.setBlockState(cursor, PolarWaterFreezeRule.riverIceIsPacked(worldSurfaceY - y)
+                    ? GLOBE_GLACIER_PACKED_ICE
+                    : GLOBE_RIVER_SURFACE_ICE);
         }
     }
 }

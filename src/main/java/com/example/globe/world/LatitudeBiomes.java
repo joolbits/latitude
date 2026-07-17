@@ -817,6 +817,22 @@ public final class LatitudeBiomes {
         return PolarVegetationFade.stripByNoise(keep, noise);
     }
 
+    /**
+     * S11(c) FIREFLY BUSH BAN world-side wiring (same guard mixin, same veg-fade flag family): true iff a
+     * {@code firefly_bush} placement at (blockX, blockZ) is banned -- armed globe world AND
+     * {@code |lat| >= }{@link PolarVegetationFade#FIREFLY_BAN_DEG} (50 deg, SUBPOLAR onset). Deliberately
+     * un-frayed (a scattered decorative plant has no contiguous seam to soften) and firefly-SPECIFIC: the
+     * caller only consults this for the firefly block, so every other placement keeps the ordinary 78/86
+     * fade. Non-globe worlds return false (vanilla untouched).
+     */
+    public static boolean fireflyBanApplies(int blockX, int blockZ) {
+        int radius = getActiveRadiusBlocks();
+        if (radius <= 0) {
+            return false;
+        }
+        return PolarVegetationFade.bansFirefly(Math.abs((double) blockZ) * 90.0 / radius);
+    }
+
     // --- Phase 5 Slice B-8 Polar Barrens world-side wiring (latitude.polarBarrens.enabled) ---------
 
     /**

@@ -146,6 +146,43 @@ class PolarWaterFreezeRuleTest {
         assertFalse(PolarWaterFreezeRule.inFreezeFrayBand(Double.NaN), "NaN falls back to the razor path");
     }
 
+    // ---- S11(b): frozen rivers -> complete ice -----------------------------------------------
+
+    @Test
+    void riverColumnFreezesSolidInZone() {
+        assertTrue(PolarWaterFreezeRule.freezesRiverSolid(true, true, false, 86.0, 0.5),
+                "a river column in the full-freeze zone freezes surface to bed");
+        assertTrue(PolarWaterFreezeRule.freezesRiverSolid(true, true, false, -87.5, 0.5), "both hemispheres");
+        // The zone is the SAME frayed front the surface ice uses: 84.2 freezes when the fray dips (noise 0).
+        assertTrue(PolarWaterFreezeRule.freezesRiverSolid(true, true, false, 84.2, 0.0));
+    }
+
+    @Test
+    void oceanColumnStaysSurfaceIceOverLiquid() {
+        // THE SEA IS EXEMPT: under-ice swim / the pole wall / S7 immersion depend on liquid under the ice.
+        assertFalse(PolarWaterFreezeRule.freezesRiverSolid(true, false, true, 89.0, 0.5));
+        assertFalse(PolarWaterFreezeRule.freezesRiverSolid(true, true, true, 89.0, 0.5),
+                "ocean classification WINS over river if a column somehow reads both");
+        // Non-river, non-ocean fluid columns (ponds/lakes) wait for B-9's semi-ice lakes.
+        assertFalse(PolarWaterFreezeRule.freezesRiverSolid(true, false, false, 89.0, 0.5));
+    }
+
+    @Test
+    void belowZoneRiversAndFlagOffUnchanged() {
+        assertFalse(PolarWaterFreezeRule.freezesRiverSolid(true, true, false, 83.9, 0.0),
+                "below the frayed zone (threshold 84 at noise 0): liquid river");
+        assertFalse(PolarWaterFreezeRule.freezesRiverSolid(true, true, false, 80.0, 0.5));
+        assertFalse(PolarWaterFreezeRule.freezesRiverSolid(false, true, false, 89.0, 0.5),
+                "barrens flag off: byte-identical, rivers keep today's surface-only freeze");
+    }
+
+    @Test
+    void riverIceKindPlainSurfacePackedBelow() {
+        assertFalse(PolarWaterFreezeRule.riverIceIsPacked(0), "surface block: plain ice (the familiar skin)");
+        assertTrue(PolarWaterFreezeRule.riverIceIsPacked(1), "below the surface: packed (no melt-back holes)");
+        assertTrue(PolarWaterFreezeRule.riverIceIsPacked(12));
+    }
+
     @Test
     void fraySafetyFallbacks() {
         // NaN noise degrades to the exact razor line (never a hole in the ice sheet on bad data)...

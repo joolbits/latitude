@@ -332,6 +332,13 @@ public class GlobeModClient implements ClientModInitializer {
         // TEST 78: then scale by the graded enclosure estimate -- full out in the open, 0 in a sealed room,
         // proportional at a doorway. Also a pure function (no accumulator); composes with the tier scale.
         count = com.example.globe.core.PolarExposure.particleBudget(count, exposure);
+        // HUD Studio round 10 item (i): the "Reduce Polar Snow Particles" accessibility comfort option scales the
+        // FINAL per-tick budget down hard when the player opts in. A SINGLE pure multiply of the already-scaled
+        // `count`; the second/deep passes and the gust surge all derive from `count`, so this one read reduces the
+        // WHOLE storm (ambient + deep + gust) without touching any spawn curve. Default OFF => *1.0 => byte-identical.
+        if (com.example.globe.client.LatitudeConfig.reducePolarSnowParticles) {
+            count = (int) Math.round(count * REDUCE_POLAR_SNOW_FACTOR);
+        }
 
         RandomSource random = client.player.getRandom();
         double px = client.player.getX();
@@ -458,6 +465,12 @@ public class GlobeModClient implements ClientModInitializer {
     // straight-down drift within a second (Peetsa: "slow, falls down, not sideways"). The second (low, hard-
     // driven) pass multiplies that already-larger wind so the pole reads as a wind-whipped ground blizzard.
     private static final double SNOW_SECOND_PASS_WIND_MULT = 1.9;  // low pass streaks even harder sideways
+
+    // HUD Studio round 10 item (i): the "Reduce Polar Snow Particles" accessibility comfort scale. When the toggle
+    // is ON, the FINAL per-tick snow budget (after the perf-tier + enclosure scaling) is multiplied by this once,
+    // knocking the storm down to ~25% of normal -- the owner's "comfort option for users the blizzard might
+    // discomfort" (~25%). A pure multiplicative scale, no state/accumulator, so the B-3b anti-backlog law holds.
+    private static final double REDUCE_POLAR_SNOW_FACTOR = 0.25;
 
     // ---- B-7 P3 DEEP BLIZZARD (owner order, TEST 97 maiden pole flight): the 87->89 whiteout tier. ----
     // The 82-87 gentle band is untouched (deepT = 0 there -> byte-identical); from 87 deg a THIRD spawn pass

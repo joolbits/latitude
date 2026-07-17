@@ -66,8 +66,18 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
     private int activeTab = TAB_COMPASS;
     private int tabStripY;
 
-    private enum DragElement { NONE, COMPASS, TITLE, ZONE, BIOME, COORDS }
+    private enum DragElement { NONE, COMPASS, TITLE, ZONE, BIOME, COORDS, CLOCK }
     private DragElement dragElement = DragElement.NONE;
+
+    // Direct drag-RESIZE (item k): when true, the active drag maps the corner grip's motion to the element's
+    // text-size field (instead of moving it). Armed by grabbing an element's bottom-right resize grip; the family
+    // is carried in dragElement (ZONE/BIOME/COORDS/CLOCK -- the text-size-scalable label families). The anchor is
+    // the element's opposite (top-left) corner captured at grab, so dragging the grip away enlarges.
+    private boolean resizing = false;
+    private int resizeAnchorX;
+    private int resizeAnchorY;
+    private double resizeStartDist;
+    private float resizeStartScale;
 
     private boolean wasLDown = false;
 
@@ -79,6 +89,8 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
     private int biomeGrabDy;
     private int coordsGrabDx;
     private int coordsGrabDy;
+    private int clockGrabDx;
+    private int clockGrabDy;
 
     private double titleOffsetXf;
     private double titleOffsetYf;
@@ -116,6 +128,8 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
     private AbstractWidget wZoneBiomeOrder;
     private AbstractWidget wCoordsFollow;
     private AbstractWidget wCoordsTextScale;
+    private AbstractWidget wClockDisplay;
+    private AbstractWidget wClockTextScale;
     private AbstractWidget wHudSnap;
     private AbstractWidget wHudSnapPixels;
     private AbstractWidget wTitleDraggable;
@@ -206,6 +220,17 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
     // (ghost-layer lesson: any screen-lifetime state must be cleared when the widget set is torn down).
     private int pendingOverwriteSlot = -1;
 
+    // Preset rename modal (HUD Studio round 10 item j): -1 == closed, otherwise the slot index being renamed. Like
+    // the overwrite dialog it is a MANUAL modal (painted last, swallows all input) rather than a real EditBox
+    // widget -- so it needs no init() rebuild and can't leave a dangling focused widget behind (the overwrite-modal
+    // precedent). renameBuffer holds the in-progress text; a blank commit reverts the slot to its auto-summary.
+    private int renamingSlot = -1;
+    private final StringBuilder renameBuffer = new StringBuilder();
+    private static final int RENAME_MAX_LEN = 24;
+    // The per-slot rename buttons (empty-labelled; a hand-plotted pencil glyph is drawn on top, undo/redo
+    // precedent -- a unicode pencil isn't guaranteed in MC's font). Rebuilt each init(); used by the glyph pass.
+    private final List<AbstractWidget> presetRenameButtons = new ArrayList<>();
+
     public LatitudeHudStudioScreen(Screen parent) {
         super(Component.literal("HUD Studio"));
         this.parent = parent;
@@ -236,6 +261,8 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
         // transition layer re-seeds against the fresh row set and no picker lingers pointing at a dead widget.
         this.openDropdown = null;
         this.pendingOverwriteSlot = -1;   // no overwrite-confirm dialog survives a widget rebuild / tab switch
+        this.renamingSlot = -1;           // nor the rename modal (same ghost-layer discipline)
+        this.presetRenameButtons.clear();
         this.rowAnim = null;
         this.sidebarDispY = null;
         this.sidebarSlotH = null;
@@ -294,6 +321,8 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
         this.wZoneBiomeOrder = null;
         this.wCoordsFollow = null;
         this.wCoordsTextScale = null;
+        this.wClockDisplay = null;
+        this.wClockTextScale = null;
         this.wHudSnap = null;
         this.wHudSnapPixels = null;
         this.wTitleDraggable = null;
@@ -673,6 +702,26 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
             trackSidebarWidget(this.wCoordsTextScale, y);
             y += rowH + rowGap;
 
+            // Clock solar readout (item l): its own toggle + text-size, registered like the other label elements.
+            // Gated on Solar Tilt so flag-off there is no row (and no element) at all -- byte-identical.
+            if (com.example.globe.core.LatitudeV2Flags.SOLAR_TILT_V2_ENABLED) {
+                this.wClockDisplay = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "ON" : "OFF"), () -> cfg.displayClockReadout)
+                        .withValues(true, false)
+                        .create(panelX, y, widgetW, rowH, Component.literal("Clock Readout"), (btn, value) -> {
+                            cfg.displayClockReadout = value;
+                            CompassHudConfig.saveCurrent();
+                            updateSidebarVisibility();
+                        }));
+                tooltip(this.wClockDisplay, "When you're holding or carrying a clock, shows a small line naming what the sun is doing -- \"Midnight Sun\", \"Polar Night\", or which way and how high the sun sits. Drag it to place it; drag its corner grip to resize it.");
+                trackSidebarWidget(this.wClockDisplay, y);
+                y += rowH + rowGap;
+
+                this.wClockTextScale = this.addRenderableWidget(new FloatSlider(panelX, y, widgetW, rowH, Component.literal("Clock Text Size"), 0.5f, 3.0f, cfg.clockTextScale, v -> cfg.clockTextScale = v));
+                tooltip(this.wClockTextScale, "How big the clock's solar-readout text is.");
+                trackSidebarWidget(this.wClockTextScale, y);
+                y += rowH + rowGap;
+            }
+
             var growLabels = new java.util.LinkedHashMap<com.example.globe.core.ui.HudLayoutMath.GrowH, String>();
             growLabels.put(com.example.globe.core.ui.HudLayoutMath.GrowH.LEFT, "Grow Right");
             growLabels.put(com.example.globe.core.ui.HudLayoutMath.GrowH.CENTER, "Grow Both Ways");
@@ -759,13 +808,21 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
                         cfg.coordsGrowH = fresh.coordsGrowH;
                         cfg.coordsGrowV = fresh.coordsGrowV;
                         cfg.coordsTextScale = fresh.coordsTextScale;
+                        cfg.displayClockReadout = fresh.displayClockReadout;
+                        cfg.clockHAnchor = fresh.clockHAnchor;
+                        cfg.clockVAnchor = fresh.clockVAnchor;
+                        cfg.clockOffXFrac = fresh.clockOffXFrac;
+                        cfg.clockOffYFrac = fresh.clockOffYFrac;
+                        cfg.clockGrowH = fresh.clockGrowH;
+                        cfg.clockGrowV = fresh.clockGrowV;
+                        cfg.clockTextScale = fresh.clockTextScale;
                         cfg.reservedTextWidth = fresh.reservedTextWidth;
                         CompassHudConfig.saveCurrent();
                         this.init();
                     })
                     .bounds(panelX, y, widgetW, rowH)
                     .build());
-            tooltip(wResetLabels, "Restore the zone/biome/coords label settings to their defaults.");
+            tooltip(wResetLabels, "Restore the zone/biome/coords/clock label settings to their defaults.");
             trackSidebarWidget(wResetLabels, y);
             y += rowH + rowGap;
         } else if (activeTab == TAB_TITLE) {
@@ -1017,10 +1074,14 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
             trackSidebarWidget(this.wRedoLoad, y);
             y += rowH + rowGap;
 
+            // Row layout gains a rename button (item j): [Load ...............][Save][✎][×]. The rename button
+            // carries a hand-plotted pencil glyph (empty label) drawn in the glyph pass, active only for occupied
+            // slots -- naming an empty slot has nothing to name.
             int slotGap = 3;
-            int clearW = 20;
-            int saveW = 44;
-            int loadW = widgetW - clearW - saveW - slotGap * 2;
+            int clearW = 18;
+            int renameW = 18;
+            int saveW = 40;
+            int loadW = widgetW - clearW - renameW - saveW - slotGap * 3;
             for (int slot = 0; slot < CompassHudPresetSlots.SLOT_COUNT; slot++) {
                 final int s = slot;
                 String label = (s + 1) + ": " + CompassHudPresetSlots.summarize(s);
@@ -1049,11 +1110,28 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
                 tooltip(wSave, "Saves your current HUD look into slot " + (s + 1) + ". If the slot already has a preset, asks you to confirm before overwriting it.");
                 trackSidebarWidget(wSave, y);
 
+                int renameX = panelX + loadW + slotGap + saveW + slotGap;
+                var wRename = this.addRenderableWidget(Button.builder(Component.empty(), b -> {
+                            // Open the manual rename modal, pre-filled with the slot's current custom name (blank
+                            // if it's still on the auto-summary). No init() here -- the modal is a paint layer, not
+                            // widgets; committing/cancelling refreshes the labels.
+                            renamingSlot = s;
+                            renameBuffer.setLength(0);
+                            renameBuffer.append(CompassHudPresetSlots.getName(s));
+                            if (renameBuffer.length() > RENAME_MAX_LEN) renameBuffer.setLength(RENAME_MAX_LEN);
+                        })
+                        .bounds(renameX, y, renameW, rowH)
+                        .build());
+                wRename.active = CompassHudPresetSlots.isOccupied(s);
+                tooltip(wRename, "Give slot " + (s + 1) + " a name of your own, so it's not just \"Rose / Sunset.\" Clearing the name puts it back to the automatic description.");
+                trackSidebarWidget(wRename, y);
+                presetRenameButtons.add(wRename);
+
                 var wClear = this.addRenderableWidget(Button.builder(Component.literal("×"), b -> {
                             CompassHudPresetSlots.clear(s);
                             this.init();
                         })
-                        .bounds(panelX + loadW + slotGap + saveW + slotGap, y, clearW, rowH)
+                        .bounds(renameX + renameW + slotGap, y, clearW, rowH)
                         .build());
                 wClear.active = CompassHudPresetSlots.isOccupied(s);
                 tooltip(wClear, "Empties slot " + (s + 1) + ".");
@@ -1119,7 +1197,10 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
             LatitudeConfigData.AccessibilityMode[] a11yValues = LatitudeConfigData.AccessibilityMode.values();
             List<SwatchDropdown.Entry> a11yEntries = new ArrayList<>();
             for (LatitudeConfigData.AccessibilityMode v : a11yValues) a11yEntries.add(SwatchDropdown.Entry.text(accessibilityLabel(v)));
-            var wAccessibility = this.addRenderableWidget(new SwatchDropdown(panelX, y, widgetW, rowH, this.font, "Accessibility",
+            // Item (h): the dropdown itself is labelled "Color Schemes" (Peetsa: "this dropdown should be called
+            // color schemes") -- it picks the color/contrast scheme (Standard / High Contrast / Colorblind). The
+            // divider-flanked SECTION header above stays "Accessibility".
+            var wAccessibility = this.addRenderableWidget(new SwatchDropdown(panelX, y, widgetW, rowH, this.font, "Color Schemes",
                     a11yEntries, LatitudeConfig.accessibilityMode.ordinal(), idx -> {
                         LatitudeConfig.accessibilityMode = a11yValues[idx];
                         LatitudeConfig.saveCurrent();
@@ -1136,6 +1217,19 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
                     }));
             tooltip(wReduceMotion, "The animation half of accessibility: for motion-sensitive players, turns off the gentle slide when controls appear or disappear in this editor, so rows switch instantly instead. Also flags the rest of the mod's little animations (like the moving zone-title and map shimmers) to hold still where supported.");
             trackSidebarWidget(wReduceMotion, y);
+            y += rowH + rowGap;
+
+            // Item (i): a comfort option for the polar blizzard, grouped WITH accessibility (like Reduce Motion) --
+            // when ON, the pole snowstorm's particle budget is scaled down hard so the whiteout is gentler on
+            // players it might discomfort. Global-only (not preset-scoped), read once in GlobeModClient's snow path.
+            var wReduceSnow = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "ON" : "OFF"), () -> LatitudeConfig.reducePolarSnowParticles)
+                    .withValues(true, false)
+                    .create(panelX, y, widgetW, rowH, Component.literal("Reduce Polar Snow Particles"), (btn, value) -> {
+                        LatitudeConfig.reducePolarSnowParticles = value;
+                        LatitudeConfig.saveCurrent();
+                    }));
+            tooltip(wReduceSnow, "A comfort option for the heavy snow near the poles: turns the blizzard's flurry way down (to about a quarter of the usual amount) so the whiteout is easier on the eyes. The cold, fog, and everything else are unchanged -- only how many snowflakes fly.");
+            trackSidebarWidget(wReduceSnow, y);
             y += rowH + rowGap;
         }
 
@@ -1369,6 +1463,7 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
         if (sidebarVisible && activeTab == TAB_PRESETS) {
             drawButtonGlyph(ctx, wUndoLoad, "↶");
             drawButtonGlyph(ctx, wRedoLoad, "↷");
+            for (AbstractWidget w : presetRenameButtons) drawPencilGlyph(ctx, w);
         }
 
         // Grid glyph over the always-visible canvas snap toggle; bright when snapping, dim when free-move.
@@ -1393,6 +1488,9 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
         // The overwrite-confirm dialog is painted after even the picker so it is the topmost layer (in practice
         // the two can't coexist -- the Presets tab has no swatch pickers -- but "modal paints last" stays true).
         drawOverwriteDialog(ctx, mouseX, mouseY);
+        // The rename modal (item j) is the last paint of all. Only one of overwrite/rename can be open at a time
+        // (both live on the Presets tab and each swallows all input), so their order relative to each other is moot.
+        drawRenameDialog(ctx, mouseX, mouseY);
     }
 
     // ---- Overwrite-confirm modal (Presets tab). Manual paint + hit-test, mirroring the openDropdown modality
@@ -1457,6 +1555,98 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
 
         drawDialogButton(ctx, overwriteButtonRect(true), "Overwrite", mouseX, mouseY);
         drawDialogButton(ctx, overwriteButtonRect(false), "Keep It", mouseX, mouseY);
+    }
+
+    // ---- Preset rename modal (item j). Manual paint + hit-test, mirroring the overwrite dialog (screen-owned
+    //      single slot, painted last, swallows input while open) so it needs no init() rebuild. ----
+
+    /** The centered rename card rect {x, y, w, h}. Single source of truth shared by paint and hit-test. */
+    private int[] renameDialogRect() {
+        int w = 244, h = 104;
+        return new int[]{(this.width - w) / 2, (this.height - h) / 2, w, h};
+    }
+
+    /** Rect {x, y, w, h} of a rename dialog button: {@code ok=true} = left [Save], else right [Cancel]. */
+    private int[] renameButtonRect(boolean ok) {
+        int[] d = renameDialogRect();
+        int btnW = 92, btnH = 20, gap = 14;
+        int bx = d[0] + (d[2] - (btnW * 2 + gap)) / 2;
+        int by = d[1] + d[3] - btnH - 12;
+        return new int[]{ok ? bx : bx + btnW + gap, by, btnW, btnH};
+    }
+
+    /** Commit the rename buffer to the slot (blank reverts to the auto-summary), close the modal, refresh labels. */
+    private void commitRename() {
+        int s = renamingSlot;
+        renamingSlot = -1;
+        if (s >= 0) {
+            CompassHudPresetSlots.setName(s, renameBuffer.toString());
+            this.init();
+        }
+    }
+
+    private void drawRenameDialog(GuiGraphicsExtractor ctx, int mouseX, int mouseY) {
+        if (renamingSlot < 0) return;
+        int s = renamingSlot;
+        int[] d = renameDialogRect();
+        int x = d[0], y = d[1], w = d[2], h = d[3];
+        ctx.fill(0, 0, this.width, this.height, 0x88000000);
+        ctx.fill(x - 1, y - 1, x + w + 1, y + h + 1, a11yMuted(PANEL_BORDER));
+        ctx.fill(x, y, x + w, y + h, a11yBg(PANEL_BG));
+        ctx.fill(x + 2, y + 2, x + w - 2, y + 3, GOLD);
+        ctx.fill(x + 2, y + h - 3, x + w - 2, y + h - 2, GOLD);
+
+        String head = "Name preset " + (s + 1);
+        ctx.text(this.font, head, x + (w - this.font.width(head)) / 2, y + 11, GOLD);
+
+        // The editable text field: a bordered chip with the buffer text and a blinking caret. Text is clipped
+        // to the field width from the LEFT so the caret/tail stays visible as it grows (a hand-rolled EditBox
+        // stand-in, matching the manual-modal idiom instead of hosting a real focused widget).
+        int fx = x + 12, fy = y + 30, fw = w - 24, fh = 18;
+        ctx.fill(fx - 1, fy - 1, fx + fw + 1, fy + fh + 1, a11yMuted(PANEL_BORDER));
+        ctx.fill(fx, fy, fx + fw, fy + fh, a11yBg(0xFF201A16));
+        String text = renameBuffer.toString();
+        String shown = text;
+        int innerW = fw - 8;
+        while (shown.length() > 0 && this.font.width(shown) > innerW - 4) {
+            shown = shown.substring(1); // scroll left so the tail (where you're typing) stays in view
+        }
+        int tx = fx + 4;
+        int ty = fy + (fh - this.font.lineHeight) / 2 + 1;
+        ctx.text(this.font, shown, tx, ty, a11yText(0xFFF3ECDD));
+        // Blinking caret at the end of the shown text.
+        if (((System.currentTimeMillis() / 500L) & 1L) == 0L) {
+            int caretX = tx + this.font.width(shown);
+            ctx.fill(caretX, fy + 3, caretX + 1, fy + fh - 3, a11yText(0xFFF3ECDD));
+        }
+        // A faint hint when empty, so the field doesn't read as broken.
+        if (text.isEmpty()) {
+            ctx.text(this.font, "(auto)", tx + 6, ty, a11yMuted(0xFF7A6F63));
+        }
+
+        drawDialogButton(ctx, renameButtonRect(true), "Save", mouseX, mouseY);
+        drawDialogButton(ctx, renameButtonRect(false), "Cancel", mouseX, mouseY);
+    }
+
+    /** A tiny hand-plotted 7x7 pencil (nib bottom-left, body up-right), drawn on the empty-labelled per-slot
+     *  rename buttons -- MC's font has no reliable pencil glyph, so this follows the lightning/undo glyph
+     *  workaround. Dimmed on a disabled (empty-slot) button so it doesn't read as clickable. */
+    private void drawPencilGlyph(GuiGraphicsExtractor ctx, AbstractWidget w) {
+        if (w == null || !w.visible) return;
+        int[] rows = {
+                0b0000011,
+                0b0000111,
+                0b0001110,
+                0b0011100,
+                0b0111000,
+                0b1110000,
+                0b1100000,
+        };
+        int gw = 7;
+        int lx = w.getX() + (w.getWidth() - gw) / 2;
+        int ly = w.getY() + (w.getHeight() - gw) / 2;
+        int color = w.active ? (highContrast() ? 0xFFFFFFFF : 0xFFE8E0D4) : a11yMuted(0xFF8C8078);
+        GlyphDraw.drawBitmap(ctx, rows, gw, lx, ly, color);
     }
 
     private void drawDialogButton(GuiGraphicsExtractor ctx, int[] r, String label, int mouseX, int mouseY) {
@@ -1619,8 +1809,9 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
         if (mc == null || mc.getWindow() == null) return;
 
         boolean lDown = InputConstants.isKeyDown(mc.getWindow(), InputConstants.KEY_L);
-        // Suppressed while the overwrite-confirm dialog is up so its modality also covers the poll-based L toggle.
-        if (lDown && !wasLDown && pendingOverwriteSlot < 0) {
+        // Suppressed while a modal (overwrite-confirm or rename) is up so its modality also covers the poll-based L
+        // toggle -- and so an 'L' typed into the rename field toggles the sidebar instead of appearing in the name.
+        if (lDown && !wasLDown && pendingOverwriteSlot < 0 && renamingSlot < 0) {
             sidebarVisible = !sidebarVisible;
             updateSidebarVisibility();
         }
@@ -1629,8 +1820,8 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
-        if (pendingOverwriteSlot >= 0) {
-            return true;   // swallow scroll while the overwrite-confirm dialog is up (fully modal)
+        if (pendingOverwriteSlot >= 0 || renamingSlot >= 0) {
+            return true;   // swallow scroll while a modal (overwrite-confirm / rename) is up (fully modal)
         }
         if (openDropdown != null && openDropdown.isOpen()) {
             return openDropdown.handleScroll(verticalAmount);
@@ -1647,6 +1838,20 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
 
     @Override
     public boolean mouseClicked(MouseButtonEvent click, boolean doubleClick) {
+        // The rename modal (item j) is topmost: a left click hits [Save]/[Cancel] or is swallowed, before anything
+        // else. [Save] commits the buffer (blank => auto-summary); [Cancel] discards; elsewhere is consumed.
+        if (renamingSlot >= 0) {
+            if (click.button() == 0) {
+                double mx = click.x(), my = click.y();
+                if (pointInRect(mx, my, renameButtonRect(true))) {
+                    commitRename();
+                } else if (pointInRect(mx, my, renameButtonRect(false))) {
+                    renamingSlot = -1;   // Cancel
+                }
+            }
+            return true;
+        }
+
         // The overwrite-confirm dialog is the topmost modal: while it's open EVERY click either hits one of its two
         // buttons or is swallowed here, before the picker check, the widgets, and super. A left click on [Overwrite]
         // saves + closes; on [Keep It] just closes; anywhere else is consumed (click-through would defeat the point).
@@ -1691,6 +1896,12 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
                 return true;
             }
 
+            // Item (k): a click on a resizable label's corner grip starts a RESIZE (checked before the move
+            // hit-tests, since the grip sits inside the element's box). Only the text-size-scalable label families.
+            if (tryStartResize(mx, my)) {
+                return true;
+            }
+
             if (isMouseOverCompass(mx, my)) {
                 var cfg = CompassHudConfig.get();
                 if (cfg.dockMode == CompassHudConfig.DockMode.HOTBAR_RIGHT) {
@@ -1725,6 +1936,11 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
                 dragElement = DragElement.COORDS;
                 return true;
             }
+
+            if (isMouseOverClock(mx, my)) {
+                dragElement = DragElement.CLOCK;
+                return true;
+            }
         }
 
         return false;
@@ -1741,6 +1957,16 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
 
         if (click.button() != 0) {
             return false;
+        }
+
+        // Item (k): a resize in progress maps the corner grip's distance from the element's fixed (top-left)
+        // anchor to the element's text-size, clamped to the SAME 0.5..3.0 range the sliders enforce. Ratio-based
+        // (newDist / startDist) so dragging the grip outward enlarges, inward shrinks -- like a window corner.
+        if (resizing && dragElement != DragElement.NONE) {
+            double dist = Math.max(1.0, Math.hypot(mx - resizeAnchorX, my - resizeAnchorY));
+            float newScale = clampLabelScale((float) (resizeStartScale * (dist / resizeStartDist)));
+            applyLabelScale(dragElement, newScale);
+            return true;
         }
 
         if (dragElement == DragElement.TITLE) {
@@ -1859,12 +2085,45 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
             return true;
         }
 
+        // Mirrors the COORDS block above, for the detached clock solar readout.
+        if (dragElement == DragElement.CLOCK) {
+            var mc = Minecraft.getInstance();
+            if (mc == null || mc.getWindow() == null) return true;
+            var cfg = CompassHudConfig.get();
+            if (!cfg.displayClockReadout) return true;
+
+            int screenW = mc.getWindow().getGuiScaledWidth();
+            int screenH = mc.getWindow().getGuiScaledHeight();
+            var kb = CompassHud.computeClockBounds(mc, cfg);
+            if (kb == null) return true;
+
+            int targetX = (int) Math.round(mx) - clockGrabDx;
+            int targetY = (int) Math.round(my) - clockGrabDy;
+            int boxW = kb.w();
+            int boxH = kb.h();
+            targetX = clamp(targetX, 0, Math.max(0, screenW - boxW));
+            targetY = clamp(targetY, 0, Math.max(0, screenH - boxH));
+
+            CompassHud.applyClockDrag(mc, cfg, targetX, targetY, boxW, boxH);
+            return true;
+        }
+
         return false;
     }
 
     @Override
     public boolean mouseReleased(MouseButtonEvent click) {
         if (click.button() == 0) {
+            // Item (k): a finished resize persists the new text-size and re-inits so the matching size SLIDER
+            // re-reads the value (the sliders stay authoritative; the grip is just a second way to set the same
+            // field). Handled before the move branches and returns early -- a resize is never also a move.
+            if (resizing) {
+                resizing = false;
+                CompassHudConfig.saveCurrent();
+                dragElement = DragElement.NONE;
+                this.init();
+                return super.mouseReleased(click);
+            }
             if (dragElement == DragElement.TITLE) {
                 // Snap is applied LIVE during the drag (mouseDragged), on the title's absolute center in
                 // screen pixels -- exactly like the compass/labels. So release just persists the already-
@@ -1887,6 +2146,9 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
             if (dragElement == DragElement.COORDS) {
                 CompassHudConfig.saveCurrent();
             }
+            if (dragElement == DragElement.CLOCK) {
+                CompassHudConfig.saveCurrent();
+            }
             dragElement = DragElement.NONE;
         }
         return super.mouseReleased(click);
@@ -1894,6 +2156,19 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
 
     @Override
     public boolean keyPressed(KeyEvent input) {
+        // Rename modal owns the keyboard while open: Esc = Cancel, Enter = Save, Backspace edits the buffer, and
+        // every other key is swallowed (printable characters arrive via charTyped, below). Runs before everything.
+        if (renamingSlot >= 0) {
+            int k = input.key();
+            if (k == InputConstants.KEY_ESCAPE) {
+                renamingSlot = -1;   // Cancel -- keep the Studio open, discard the edit
+            } else if (k == InputConstants.KEY_RETURN || k == InputConstants.KEY_NUMPADENTER) {
+                commitRename();
+            } else if (k == InputConstants.KEY_BACKSPACE) {
+                if (renameBuffer.length() > 0) renameBuffer.setLength(renameBuffer.length() - 1);
+            }
+            return true;
+        }
         // Overwrite-confirm dialog owns the keyboard while open: Esc = Keep It (and does NOT fall through to the
         // vanilla Esc-closes-the-Screen path), Enter = Overwrite, every other key is swallowed so nothing beneath
         // reacts. Runs before the picker + super.
@@ -1911,6 +2186,21 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
             return true;
         }
         return super.keyPressed(input);
+    }
+
+    @Override
+    public boolean charTyped(net.minecraft.client.input.CharacterEvent event) {
+        // Feed printable characters into the rename buffer (the manual EditBox stand-in). Only while the rename
+        // modal is open; otherwise the Studio has no text field and defers to the base routing.
+        if (renamingSlot >= 0) {
+            int cp = event.codepoint();
+            if (cp >= 0x20 && cp != 0x7F && renameBuffer.length() < RENAME_MAX_LEN
+                    && Character.isValidCodePoint(cp)) {
+                renameBuffer.appendCodePoint(cp);
+            }
+            return true;
+        }
+        return super.charTyped(event);
     }
 
     // ---- SwatchDropdown.Host: this screen owns the single open picker, paints its list, and routes input. ----
@@ -2313,6 +2603,7 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
         boolean bothAttached = cfg.displayZoneInHud && cfg.zoneFollowsCompass
                 && cfg.displayBiomeInHud && cfg.biomeFollowsCompass;
         setLogicalShown(wZoneBiomeOrder, bothAttached);
+        setLogicalShown(wClockTextScale, cfg.displayClockReadout);
         setLogicalShown(wHudSnapPixels, LatitudeConfig.hudSnapEnabled);
 
         setVisible(wResetHud, true);
@@ -2362,6 +2653,93 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
         coordsGrabDx = (int) Math.round(mx) - b.x();
         coordsGrabDy = (int) Math.round(my) - b.y();
         return true;
+    }
+
+    // Mirrors isMouseOverZone exactly, for the detached clock solar readout (item l).
+    private boolean isMouseOverClock(double mx, double my) {
+        var mc = Minecraft.getInstance();
+        if (mc == null) return false;
+        var cfg = CompassHudConfig.get();
+        if (!cfg.displayClockReadout) return false;
+        var b = CompassHud.computeClockBounds(mc, cfg);
+        if (b == null) return false;
+        if (mx < b.x() || mx >= (b.x() + b.w()) || my < b.y() || my >= (b.y() + b.h())) return false;
+        clockGrabDx = (int) Math.round(mx) - b.x();
+        clockGrabDy = (int) Math.round(my) - b.y();
+        return true;
+    }
+
+    // ---- Direct drag-resize (item k) helpers ----
+
+    /** The resizable, text-size-scalable label families, in hit-test order. The compass (Analog Size / digital
+     *  Scale) and the zone-enter Title (Title Size) are intentionally NOT here -- their size sliders stay, but the
+     *  corner-grip resize ships for these text-label families first (see the round-10 report). */
+    private static final DragElement[] RESIZABLE = {
+            DragElement.ZONE, DragElement.BIOME, DragElement.COORDS, DragElement.CLOCK };
+
+    /** If {@code (mx,my)} lands on a resizable element's bottom-right corner grip, arm a resize on that family and
+     *  return true (checked before the move hit-tests, since the grip sits inside the element's box). */
+    private boolean tryStartResize(double mx, double my) {
+        var mc = Minecraft.getInstance();
+        if (mc == null) return false;
+        var cfg = CompassHudConfig.get();
+        for (DragElement e : RESIZABLE) {
+            CompassHud.HudBounds b = elementBounds(mc, cfg, e);
+            if (b == null) continue;
+            int g = CompassHud.RESIZE_GRIP_PX;
+            int gx0 = b.x() + b.w() - g;
+            int gy0 = b.y() + b.h() - g;
+            if (mx >= gx0 && mx < b.x() + b.w() && my >= gy0 && my < b.y() + b.h()) {
+                dragElement = e;
+                resizing = true;
+                // Anchor at the element's TOP-LEFT (the corner opposite the grip) so dragging the grip away from it
+                // enlarges. Store the start distance + scale for the ratio mapping.
+                resizeAnchorX = b.x();
+                resizeAnchorY = b.y();
+                resizeStartDist = Math.max(1.0, Math.hypot(mx - resizeAnchorX, my - resizeAnchorY));
+                resizeStartScale = elementScale(cfg, e);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Current on-screen bounds of a resizable label family, or null if it isn't shown. */
+    private static CompassHud.HudBounds elementBounds(Minecraft mc, CompassHudConfig cfg, DragElement e) {
+        return switch (e) {
+            case ZONE -> (cfg.displayZoneInHud && !cfg.zoneFollowsCompass) ? CompassHud.computeZoneBounds(mc, cfg) : null;
+            case BIOME -> (cfg.displayBiomeInHud && !cfg.biomeFollowsCompass) ? CompassHud.computeBiomeBounds(mc, cfg) : null;
+            case COORDS -> (!cfg.coordsFollowsCompass) ? CompassHud.computeCoordsBounds(mc, cfg) : null;
+            case CLOCK -> cfg.displayClockReadout ? CompassHud.computeClockBounds(mc, cfg) : null;
+            default -> null;
+        };
+    }
+
+    private static float elementScale(CompassHudConfig cfg, DragElement e) {
+        return switch (e) {
+            case ZONE -> cfg.zoneTextScale;
+            case BIOME -> cfg.biomeTextScale;
+            case COORDS -> cfg.coordsTextScale;
+            case CLOCK -> cfg.clockTextScale;
+            default -> 1.0f;
+        };
+    }
+
+    private static void applyLabelScale(DragElement e, float scale) {
+        var cfg = CompassHudConfig.get();
+        switch (e) {
+            case ZONE -> cfg.zoneTextScale = scale;
+            case BIOME -> cfg.biomeTextScale = scale;
+            case COORDS -> cfg.coordsTextScale = scale;
+            case CLOCK -> cfg.clockTextScale = scale;
+            default -> { }
+        }
+    }
+
+    /** Clamp to the SAME 0.5..3.0 range the text-size sliders enforce (and CompassHudConfig.sanitize backstops). */
+    private static float clampLabelScale(float v) {
+        if (Float.isNaN(v)) return 1.0f;
+        return Math.max(0.5f, Math.min(3.0f, v));
     }
 
     // Copies every field from a fresh CompassHudConfig instance onto the live (loaded) instance, so "Reset HUD"
@@ -2440,6 +2818,14 @@ public class LatitudeHudStudioScreen extends Screen implements SwatchDropdown.Ho
         cfg.coordsGrowV = fresh.coordsGrowV;
         cfg.coordsOffsetY = fresh.coordsOffsetY;
         cfg.coordsTextScale = fresh.coordsTextScale;
+        cfg.displayClockReadout = fresh.displayClockReadout;
+        cfg.clockHAnchor = fresh.clockHAnchor;
+        cfg.clockVAnchor = fresh.clockVAnchor;
+        cfg.clockOffXFrac = fresh.clockOffXFrac;
+        cfg.clockOffYFrac = fresh.clockOffYFrac;
+        cfg.clockGrowH = fresh.clockGrowH;
+        cfg.clockGrowV = fresh.clockGrowV;
+        cfg.clockTextScale = fresh.clockTextScale;
         cfg.customFaceRgb = fresh.customFaceRgb;
         cfg.customRingArgb = fresh.customRingArgb;
         cfg.customMutedArgb = fresh.customMutedArgb;

@@ -65,8 +65,11 @@ public final class PolarFogLaw {
     };
 
     /** Fog START as a fraction of the (capped) END: the band {@code [START, END]} scales with the fog so the
-     *  whiteout closes in as one front, not a hard wall at a fixed range. */
-    public static final double FOG_START_FRACTION = 0.30;
+     *  whiteout closes in as one front, not a hard wall at a fixed range. S11(g) (TEST 101, owner screenshot:
+     *  "sharp unrendered mountains" popping at the cap): 0.30 -> 0.08 -- START hugs the camera, so nearly the
+     *  whole [START, END] span is a gradient and distant terrain FADES through haze instead of appearing at
+     *  the fog wall. One-line P4 dial (ordered window 0.05-0.1). */
+    public static final double FOG_START_FRACTION = 0.08;
     /** START never below this (blocks): your own hands/the block you stand on stay clear even at the line. */
     public static final double FOG_START_MIN_BLOCKS = 2.0;
 
@@ -93,10 +96,32 @@ public final class PolarFogLaw {
         return (float) c[c.length - 1][1]; // unreachable (loop covers <= last row); defensive.
     }
 
-    /** Fog START (blocks) for an already-capped END: {@code max(2, 0.30 * end)}, and the caller additionally
-     *  clamps below END so {@code START < END} always holds. */
+    /** Fog START (blocks) for an already-capped END: {@code max(2, FOG_START_FRACTION * end)}, and the caller
+     *  additionally clamps below END so {@code START < END} always holds. */
     public static float fogStartBlocks(float cappedEnd) {
         return (float) Math.max(FOG_START_MIN_BLOCKS, cappedEnd * FOG_START_FRACTION);
+    }
+
+    // ---- S11(f): the fog colour follows the EFFECTIVE sun (night / polar night darken the fog) ----------
+
+    /** Deep night fog tone the daylight storm/white palette darkens toward when the (effective) sun is down --
+     *  a cold near-black blue, so night polar fog reads as darkness thickened by snow, not a glowing white
+     *  wall (TEST 101: "white fog at a dark sky" wrongness). */
+    public static final int NIGHT_FOG_RGB = 0x121826;
+    /** Max fraction of the fog colour the night darkening may take (1.0 would black out the fog entirely;
+     *  0.85 keeps a breath of the storm tone so the whiteout still reads as WEATHER in the dark). */
+    public static final double NIGHT_FOG_MAX_BLEND = 0.85;
+
+    /**
+     * Fog darkness 0..1 from the (effective) solar elevation: 0 with the sun at/above the horizon, full when
+     * it sits {@code 12°} below -- DELEGATES to {@link SolarSkyMood#polarNightGloom01} so the fog, the
+     * polar-night sky gloom and the star lift all ride ONE darkness curve (one law, three surfaces; the §8
+     * one-evaluator discipline applied to presentation). Callers feed it {@link SolarTilt#solarElevationDeg}
+     * with the tilt's (φ, δ) when solar tilt is enabled, or (0, 0) -- the plain vanilla clock arc -- when it
+     * is not, so ordinary vanilla night darkens the polar fog too. NaN-safe (0 = day).
+     */
+    public static double nightFogDarkness01(double solarElevationDeg) {
+        return SolarSkyMood.polarNightGloom01(solarElevationDeg);
     }
 
     /** Plain 0..1 progress across the fog window (80 -> 90); the storm->white palette lerp both renderers use. */

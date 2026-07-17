@@ -145,6 +145,9 @@ public final class CompassHud {
             if (!cfg.coordsFollowsCompass) {
                 renderDetachedCoords(ctx, client, cfg, forceVisible);
             }
+            if (clockReadoutVisible(client, cfg, forceVisible)) {
+                renderDetachedClock(ctx, client, cfg, forceVisible);
+            }
         } else {
             String directionText = liveDirection(client, cfg);
 
@@ -163,7 +166,20 @@ public final class CompassHud {
             if (!cfg.coordsFollowsCompass) {
                 renderDetachedCoords(ctx, client, cfg, forceVisible);
             }
+            if (clockReadoutVisible(client, cfg, forceVisible)) {
+                renderDetachedClock(ctx, client, cfg, forceVisible);
+            }
         }
+    }
+
+    /** Whether the clock solar readout should render THIS frame: the element toggle + Solar-Tilt flag (both folded
+     *  into {@link #clockReadoutLabel}) AND -- for the LIVE HUD -- a clock carried somewhere. In the Studio preview
+     *  ({@code forceVisible}) the clock-presence gate is lifted so the element is placeable without holding a clock,
+     *  matching how the zone/biome labels preview regardless of world state. */
+    private static boolean clockReadoutVisible(Minecraft client, CompassHudConfig cfg, boolean forceVisible) {
+        if (clockReadoutLabel(client, cfg) == null) return false;
+        if (forceVisible) return true;
+        return client != null && client.player != null && hasClockAnywhere(client.player);
     }
 
     public static HudBounds computeBounds(Minecraft client, CompassHudConfig cfg) {
@@ -255,6 +271,11 @@ public final class CompassHud {
         if (!cfg.coordsFollowsCompass) {
             renderDetachedCoords(ctx, client, cfg, true);
         }
+        // Clock solar readout preview (item l): shown whenever the element is toggled on (and Solar Tilt is on --
+        // clockReadoutLabel folds in that gate), so it is placeable/resizable in the Studio without holding a clock.
+        if (clockReadoutVisible(client, cfg, true)) {
+            renderDetachedClock(ctx, client, cfg, true);
+        }
         drawPinMarkers(ctx, client, cfg);
     }
 
@@ -294,6 +315,11 @@ public final class CompassHud {
             drawPin(ctx,
                     com.example.globe.core.ui.HudLayoutMath.pinX(gridCol(cfg.coordsHAnchor), cfg.coordsOffXFrac, screenW),
                     com.example.globe.core.ui.HudLayoutMath.pinY(gridRow(cfg.coordsVAnchor), cfg.coordsOffYFrac, screenH));
+        }
+        if (cfg.displayClockReadout && com.example.globe.core.LatitudeV2Flags.SOLAR_TILT_V2_ENABLED) {
+            drawPin(ctx,
+                    com.example.globe.core.ui.HudLayoutMath.pinX(gridCol(cfg.clockHAnchor), cfg.clockOffXFrac, screenW),
+                    com.example.globe.core.ui.HudLayoutMath.pinY(gridRow(cfg.clockVAnchor), cfg.clockOffYFrac, screenH));
         }
     }
 
@@ -720,6 +746,32 @@ public final class CompassHud {
         return false;
     }
 
+    // Clock-presence gate for the solar readout (item l): mirrors hasCompassAnywhere/containsCompass exactly, for a
+    // vanilla CLOCK (hotbar + full inventory + offhand + bundle contents), so the readout appears on the same
+    // "carried anywhere" terms the compass HUD's COMPASS_PRESENT mode uses.
+    private static boolean hasClockAnywhere(Player player) {
+        var inv = player.getInventory();
+        for (int i = 0; i < inv.getContainerSize(); i++) {
+            if (containsClock(inv.getItem(i), 0)) return true;
+        }
+        return containsClock(player.getOffhandItem(), 0);
+    }
+
+    private static boolean containsClock(ItemStack stack, int depth) {
+        if (stack == null || stack.isEmpty()) return false;
+        if (stack.is(Items.CLOCK)) return true;
+        if (depth >= 6) return false;
+        if (stack.is(Items.BUNDLE)) {
+            BundleContents contents = stack.get(DataComponents.BUNDLE_CONTENTS);
+            if (contents != null) {
+                for (var inside : contents.items()) {
+                    if (containsClock(inside.create(), depth + 1)) return true;
+                }
+            }
+        }
+        return false;
+    }
+
 
 
     // ------------------------------------------------------------------------------------------------
@@ -1073,6 +1125,16 @@ public final class CompassHud {
         cfg.coordsOffYFrac = com.example.globe.core.ui.HudLayoutMath.offYFracFor(pinPY, gridRow(cfg.coordsVAnchor), screenH);
     }
 
+    // Clock solar readout drag (item l): mirrors applyCoordsDrag exactly, for the detached clock element.
+    public static void applyClockDrag(Minecraft client, CompassHudConfig cfg, int targetX, int targetY, int boxW, int boxH) {
+        int screenW = client.getWindow().getGuiScaledWidth();
+        int screenH = client.getWindow().getGuiScaledHeight();
+        int pinPX = maybeSnap(com.example.globe.core.ui.HudLayoutMath.alignPointX(targetX, boxW, cfg.clockGrowH));
+        int pinPY = maybeSnap(com.example.globe.core.ui.HudLayoutMath.alignPointY(targetY, boxH, cfg.clockGrowV));
+        cfg.clockOffXFrac = com.example.globe.core.ui.HudLayoutMath.offXFracFor(pinPX, gridCol(cfg.clockHAnchor), screenW);
+        cfg.clockOffYFrac = com.example.globe.core.ui.HudLayoutMath.offYFracFor(pinPY, gridRow(cfg.clockVAnchor), screenH);
+    }
+
     private static int anchoredX(CompassHudConfig cfg, int screenW, int scaledBoxW) {
         return switch (cfg.hAnchor) {
             case LEFT -> 4;
@@ -1407,6 +1469,7 @@ public final class CompassHud {
             ctx.fill(zb.x, zb.y + zb.h - 1, zb.x + zb.w, zb.y + zb.h, border);
             ctx.fill(zb.x, zb.y, zb.x + 1, zb.y + zb.h, border);
             ctx.fill(zb.x + zb.w - 1, zb.y, zb.x + zb.w, zb.y + zb.h, border);
+            drawResizeGrip(ctx, zb);
         }
         int color = accTextArgb(cfg);
         drawTextScaled(ctx, client, cfg, zone, zb.x, zb.y, color, cfg.zoneTextScale);
@@ -1442,6 +1505,7 @@ public final class CompassHud {
             ctx.fill(bb.x, bb.y + bb.h - 1, bb.x + bb.w, bb.y + bb.h, border);
             ctx.fill(bb.x, bb.y, bb.x + 1, bb.y + bb.h, border);
             ctx.fill(bb.x + bb.w - 1, bb.y, bb.x + bb.w, bb.y + bb.h, border);
+            drawResizeGrip(ctx, bb);
         }
         int color = accTextArgb(cfg);
         drawTextScaled(ctx, client, cfg, biome, bb.x, bb.y, color, cfg.biomeTextScale);
@@ -1477,6 +1541,7 @@ public final class CompassHud {
             ctx.fill(cb.x, cb.y + cb.h - 1, cb.x + cb.w, cb.y + cb.h, border);
             ctx.fill(cb.x, cb.y, cb.x + 1, cb.y + cb.h, border);
             ctx.fill(cb.x + cb.w - 1, cb.y, cb.x + cb.w, cb.y + cb.h, border);
+            drawResizeGrip(ctx, cb);
         }
         int color = accTextArgb(cfg);
         drawTextScaled(ctx, client, cfg, coords, cb.x, cb.y, color, cfg.coordsTextScale);
@@ -1500,6 +1565,97 @@ public final class CompassHud {
         x = clamp(x, 0, Math.max(0, screenW - w));
         y = clamp(y, 0, Math.max(0, screenH - h));
         return new HudBounds(x, y, w, h);
+    }
+
+    // ---- Clock solar readout (item l) -- mirrors the detached coords label exactly. ----
+
+    /** Sample copy for the Studio preview / no-world create screen, so the element can be placed before a real
+     *  clock reading exists. A mid-length state keeps the box a representative size. */
+    private static final String CLOCK_READOUT_SAMPLE = "Sun low in the north";
+
+    /** The solar-readout copy for the clock element, or null when it should not exist (Solar Tilt flag off, or the
+     *  element toggled off). Gated on {@code SOLAR_TILT_V2_ENABLED} -- flag-off it returns null so the whole element
+     *  (bounds, drag, render) is byte-identical absent. The CLOCK-PRESENCE gate lives at the render call site
+     *  (renderInternal), like the compass HUD's COMPASS_PRESENT mode; here a live world always yields the real
+     *  reading and a worldless Studio yields the sample, so the Studio can position the element without a clock. */
+    private static String clockReadoutLabel(Minecraft client, CompassHudConfig cfg) {
+        if (!com.example.globe.core.LatitudeV2Flags.SOLAR_TILT_V2_ENABLED) return null;
+        if (!cfg.displayClockReadout) return null;
+        if (client != null && client.player != null && client.level != null) {
+            double phi = -com.example.globe.util.LatitudeMath.degreesFromZ(
+                    client.level.getWorldBorder(), client.player.getZ());
+            long clock = client.level.getOverworldClockTime();
+            double delta = com.example.globe.core.SolarTilt.deltaDeg(
+                    com.example.globe.core.SolarTilt.dayCount(clock),
+                    com.example.globe.core.LatitudeV2Flags.SOLAR_TILT_DELTA_MAX_DEG,
+                    com.example.globe.core.LatitudeV2Flags.SOLAR_TILT_YEAR_LENGTH_DAYS,
+                    com.example.globe.core.LatitudeV2Flags.SOLAR_TILT_FROZEN_PHASE_DEG);
+            double hourAngle = com.example.globe.core.SolarTilt.hourAngleRadians(
+                    com.example.globe.core.SolarTilt.timeOfDayFrac(clock));
+            return com.example.globe.core.ui.SolarReadout.copy(phi, delta, hourAngle);
+        }
+        return CLOCK_READOUT_SAMPLE;
+    }
+
+    private static void renderDetachedClock(GuiGraphicsExtractor ctx, Minecraft client, CompassHudConfig cfg, boolean isPreview) {
+        String readout = clockReadoutLabel(client, cfg);
+        if (readout == null || readout.isEmpty()) return;
+        HudBounds cb = computeClockBounds(client, cfg);
+        if (cb == null) return;
+        if (isPreview) {
+            int border = ANALOG_PREVIEW_BORDER;
+            ctx.fill(cb.x, cb.y, cb.x + cb.w, cb.y + 1, border);
+            ctx.fill(cb.x, cb.y + cb.h - 1, cb.x + cb.w, cb.y + cb.h, border);
+            ctx.fill(cb.x, cb.y, cb.x + 1, cb.y + cb.h, border);
+            ctx.fill(cb.x + cb.w - 1, cb.y, cb.x + cb.w, cb.y + cb.h, border);
+            drawResizeGrip(ctx, cb);
+        }
+        int color = accTextArgb(cfg);
+        drawTextScaled(ctx, client, cfg, readout, cb.x, cb.y, color, cfg.clockTextScale);
+    }
+
+    public static HudBounds computeClockBounds(Minecraft client, CompassHudConfig cfg) {
+        String readout = clockReadoutLabel(client, cfg);
+        if (readout == null || readout.isEmpty()) return null;
+        int screenW = client.getWindow().getGuiScaledWidth();
+        int screenH = client.getWindow().getGuiScaledHeight();
+        int w = Math.round(client.font.width(readout) * cfg.clockTextScale);
+        int h = Math.round(client.font.lineHeight * cfg.clockTextScale);
+        int x = pinPlaceX(cfg.clockHAnchor, cfg.clockOffXFrac, cfg.clockGrowH, w, screenW);
+        int y = pinPlaceY(cfg.clockVAnchor, cfg.clockOffYFrac, cfg.clockGrowV, h, screenH);
+        x = clamp(x, 0, Math.max(0, screenW - w));
+        y = clamp(y, 0, Math.max(0, screenH - h));
+        return new HudBounds(x, y, w, h);
+    }
+
+    // ---- Direct drag-resize (item k) -- a small corner grip on a resizable detached element. ----
+
+    /** Side (px) of the square corner grip at the bottom-right of a resizable element's box. Shared by the paint
+     *  here and the HUD Studio's grip hit-test (single source of truth), so the icon and its grab area agree. */
+    public static final int RESIZE_GRIP_PX = 8;
+
+    /** Draws a little window-resize grip (diagonal hatch) at the bottom-right corner of {@code b} -- the "little
+     *  resize icon like when you're resizing a window" (item k). Preview-only; drawn on top of the element's
+     *  preview border so the corner reads as grabbable. */
+    private static void drawResizeGrip(GuiGraphicsExtractor ctx, HudBounds b) {
+        int g = RESIZE_GRIP_PX;
+        int x1 = b.x + b.w;
+        int y1 = b.y + b.h;
+        int x0 = x1 - g;
+        int y0 = y1 - g;
+        // Faint dark backing so the hatch reads over any world/text behind it.
+        ctx.fill(x0, y0, x1, y1, 0x55000000);
+        // Three short diagonal strokes from bottom-left to top-right of the grip box (the classic corner-grip look).
+        int stroke = 0xC0F3ECDD;
+        for (int d = 2; d <= g; d += 3) {
+            for (int i = 0; i < d; i++) {
+                int px = x0 + i;
+                int py = y1 - d + i;
+                if (px >= x0 && px < x1 && py >= y0 && py < y1) {
+                    ctx.fill(px, py, px + 1, py + 1, stroke);
+                }
+            }
+        }
     }
 
     static CompassDialRenderer.DialColors analogColors(CompassHudConfig cfg) {

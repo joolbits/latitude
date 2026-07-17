@@ -34,11 +34,35 @@ public final class CompassHudPresetSlots {
         return INSTANCE;
     }
 
-    /** Saves the CURRENT live HUD look into a slot (0-based), overwriting whatever was there. */
+    /** Saves the CURRENT live HUD look into a slot (0-based), overwriting whatever was there. A custom NAME the
+     *  slot already carried is preserved (re-saving a look into "My Cold-Weather HUD" keeps that name -- the slot
+     *  is the same slot, only its look changed). An empty slot saves nameless (auto-summary). */
     public static void saveCurrentInto(int slot) {
         if (slot < 0 || slot >= SLOT_COUNT) return;
         CompassHudPresetSlots s = get();
-        s.slots[slot] = CompassHudPreset.captureCurrent();
+        String keepName = s.slots[slot] != null ? s.slots[slot].name : null;
+        CompassHudPreset p = CompassHudPreset.captureCurrent();
+        p.name = keepName;
+        s.slots[slot] = p;
+        save(s);
+    }
+
+    /** The slot's raw custom name, or "" if unnamed/empty (never null -- callers pre-fill a rename field). */
+    public static String getName(int slot) {
+        if (slot < 0 || slot >= SLOT_COUNT) return "";
+        CompassHudPreset p = get().slots[slot];
+        return (p != null && p.name != null) ? p.name : "";
+    }
+
+    /** Sets (or clears, on blank) a slot's custom name and persists. No-op on an empty slot -- a name needs a
+     *  look to belong to. A blank name reverts the slot to the auto-summary (the default behavior). The store rule
+     *  lives in {@link com.example.globe.core.ui.PresetName#normalize} (pure, tested). */
+    public static void setName(int slot, String name) {
+        if (slot < 0 || slot >= SLOT_COUNT) return;
+        CompassHudPresetSlots s = get();
+        CompassHudPreset p = s.slots[slot];
+        if (p == null) return;
+        p.name = com.example.globe.core.ui.PresetName.normalize(name);
         save(s);
     }
 
@@ -68,12 +92,14 @@ public final class CompassHudPresetSlots {
         return p != null && p.compass != null;
     }
 
-    /** A short, human summary for the slot's button label -- the look's style/theme, so slots are
-     *  distinguishable at a glance instead of all reading "Slot 3". */
+    /** A short, human summary for the slot's button label -- the owner's custom NAME when one is set (HUD Studio
+     *  round 10), else the look's style/theme auto-summary, so slots are distinguishable at a glance instead of
+     *  all reading identical unnamed rows. */
     public static String summarize(int slot) {
         if (slot < 0 || slot >= SLOT_COUNT) return "";
         CompassHudPreset p = get().slots[slot];
         if (p == null || p.compass == null) return "(empty)";
+        if (com.example.globe.core.ui.PresetName.isSet(p.name)) return p.name;
         CompassHudConfig c = p.compass;
         if (c.style == CompassHudConfig.CompassStyle.DIGITAL) {
             return "Digital";

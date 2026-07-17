@@ -157,6 +157,20 @@ public final class CompassHudConfig {
     public com.example.globe.core.ui.HudLayoutMath.GrowV coordsGrowV = com.example.globe.core.ui.HudLayoutMath.GrowV.TOP;
     public float coordsTextScale = 1.0f;
 
+    // Clock solar readout (HUD Studio round 10 item l): a small line naming the solar state ("Midnight Sun" /
+    // "Polar Night" / "Sun low in the north" ...) shown when the player holds/carries a vanilla clock AND Solar
+    // Tilt (SOLAR_TILT_V2_ENABLED) is on. A DETACHED-ONLY element -- it never rides the compass line, so it has no
+    // follow toggle; otherwise it mirrors the zone/biome/coords label shape (its own pin/anchor/offset/grow/scale),
+    // draggable + resizable in the HUD Studio. Default OFF (opt-in, like the zone/biome labels).
+    public boolean displayClockReadout = false;
+    public HAnchor clockHAnchor = HAnchor.CENTER;
+    public VAnchor clockVAnchor = VAnchor.TOP;
+    public double clockOffXFrac = 0.0;
+    public double clockOffYFrac = 0.0;
+    public com.example.globe.core.ui.HudLayoutMath.GrowH clockGrowH = com.example.globe.core.ui.HudLayoutMath.GrowH.CENTER;
+    public com.example.globe.core.ui.HudLayoutMath.GrowV clockGrowV = com.example.globe.core.ui.HudLayoutMath.GrowV.TOP;
+    public float clockTextScale = 1.0f;
+
     // Styling
     public boolean showBackground = true;
     public int backgroundRgb = 0x000000;
@@ -324,6 +338,8 @@ public final class CompassHudConfig {
         if (biomeVAnchor == null) biomeVAnchor = VAnchor.TOP;
         if (coordsHAnchor == null) coordsHAnchor = HAnchor.CENTER;
         if (coordsVAnchor == null) coordsVAnchor = VAnchor.TOP;
+        if (clockHAnchor == null) clockHAnchor = HAnchor.CENTER;
+        if (clockVAnchor == null) clockVAnchor = VAnchor.TOP;
         if (padding < 0) padding = 0;
         // Pin & Grow v1 fields (null-safe for hand-edited/legacy JSON; fracs clamped so a pin can never
         // be persisted off-screen — render-time clamping stays as the second belt).
@@ -335,6 +351,8 @@ public final class CompassHudConfig {
         if (biomeGrowV == null) biomeGrowV = com.example.globe.core.ui.HudLayoutMath.GrowV.TOP;
         if (coordsGrowH == null) coordsGrowH = com.example.globe.core.ui.HudLayoutMath.GrowH.CENTER;
         if (coordsGrowV == null) coordsGrowV = com.example.globe.core.ui.HudLayoutMath.GrowV.TOP;
+        if (clockGrowH == null) clockGrowH = com.example.globe.core.ui.HudLayoutMath.GrowH.CENTER;
+        if (clockGrowV == null) clockGrowV = com.example.globe.core.ui.HudLayoutMath.GrowV.TOP;
         if (dockMode == null) dockMode = DockMode.NONE;
         offXFrac = clampFrac(offXFrac);
         offYFrac = clampFrac(offYFrac);
@@ -344,6 +362,8 @@ public final class CompassHudConfig {
         biomeOffYFrac = clampFrac(biomeOffYFrac);
         coordsOffXFrac = clampFrac(coordsOffXFrac);
         coordsOffYFrac = clampFrac(coordsOffYFrac);
+        clockOffXFrac = clampFrac(clockOffXFrac);
+        clockOffYFrac = clampFrac(clockOffYFrac);
         if (layoutVersion < 0) layoutVersion = 0;
         if (layoutVersion > CURRENT_LAYOUT_VERSION) layoutVersion = CURRENT_LAYOUT_VERSION;
         // Legacy boolean attach migrates to the dock enum (position semantics live in HudLayoutMath now).
@@ -358,5 +378,6 @@ public final class CompassHudConfig {
         if (zoneTextScale < 0.5f || zoneTextScale > 3.0f || Float.isNaN(zoneTextScale)) zoneTextScale = 1.0f;
         if (biomeTextScale < 0.5f || biomeTextScale > 3.0f || Float.isNaN(biomeTextScale)) biomeTextScale = 1.0f;
         if (coordsTextScale < 0.5f || coordsTextScale > 3.0f || Float.isNaN(coordsTextScale)) coordsTextScale = 1.0f;
+        if (clockTextScale < 0.5f || clockTextScale > 3.0f || Float.isNaN(clockTextScale)) clockTextScale = 1.0f;
     }
 }

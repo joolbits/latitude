@@ -105,6 +105,33 @@ public final class PolarBarrensBand {
     private PolarBarrensBand() {
     }
 
+    // --- S11(a) LUSH-CAVE VETO (Peetsa 2026-07-16, TEST 101: lush_caves is ILLEGAL in the polar core) ----
+
+    /**
+     * S11(a): should an UNDERGROUND cave-biome cell resolving to {@code minecraft:lush_caves} be remapped to
+     * the column's SURFACE biome (plain caves until B-9 Glacial Caves takes the slot)? True iff the flag is
+     * on, the cell IS lush_caves, and the column sits at/above the Barrens band onset.
+     *
+     * <p><b>Band-gated, deliberately NOT fray-gated (documented decision):</b> the surface fray is invisible
+     * underground -- fray-gating would make lush pockets pop in/out along a line no player can see, for no
+     * story. The CORE BAND ({@code |lat| >= }{@link #ONSET_DEG}) bans lush everywhere the barrens CAN exist,
+     * and the remap target (the column's own surface pick) is itself fray-aware, so a fray-losing
+     * snowy_plains column gets snowy_plains caves and a barrens column gets polar_barrens caves -- "plain
+     * caves" either way. ONLY lush is banned (owner: it reads tropical); dripstone reads stone and deep_dark
+     * is structure-tied -- both pass through untouched, as does everything below the onset and everything
+     * with the flag off (byte-identical).
+     */
+    public static boolean vetoesLushCaveCell(boolean flagOn, boolean cellIsLushCaves, double deg) {
+        if (!flagOn || !cellIsLushCaves) {
+            return false;
+        }
+        double a = Math.abs(deg);
+        if (Double.isNaN(a)) {
+            return false;
+        }
+        return a >= ONSET_DEG;
+    }
+
     // --- B-9a GLACIER BODY (Peetsa 2026-07-16, TEST 99: "a very very very thick layer of ice under like
     // --- 10 blocks at least of snow" -- the Glacial Caves design family pulled forward) -------------------
     //

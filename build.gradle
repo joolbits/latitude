@@ -138,6 +138,9 @@ loom {
             // was forwarded -- the degree dials silently never reached a gradle dev client).
             vmArg "-Dlatitude.polarVegetationFade.onsetDeg=${System.getProperty('latitude.polarVegetationFade.onsetDeg', '78.0')}"
             vmArg "-Dlatitude.polarVegetationFade.fullDeg=${System.getProperty('latitude.polarVegetationFade.fullDeg', '86.0')}"
+            // S11(c) firefly-specific ban dial (default 50 = the SUBPOLAR onset) -- forwarded in the SAME
+            // pass as the constant (L17 discipline), beside its veg-fade dial family.
+            vmArg "-Dlatitude.polarVegetationFade.fireflyBanDeg=${System.getProperty('latitude.polarVegetationFade.fireflyBanDeg', '50.0')}"
             // Phase 5 B-8 Polar Barrens (default FALSE, byte-identical off). WORLDGEN change -- forwarded
             // here in the SAME PASS as the flag (L17) so a headless flag-on atlas actually runs with the
             // barrens on (the L17 forwarding gap has produced silent byte-identical false-greens before).

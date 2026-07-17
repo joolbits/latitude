@@ -110,4 +110,40 @@ public final class PolarWaterFreezeRule {
         double threshold = FREEZE_ALL_DEG + (n * 2.0 - 1.0) * FRAY_HALF_WIDTH_DEG;
         return Math.abs(latDeg) >= threshold;
     }
+
+    // --- S11(b) FROZEN RIVERS -> COMPLETE ICE (Peetsa 2026-07-16, TEST 101) ---------------------------
+
+    /**
+     * S11(b): should a fluid column freeze FULL DEPTH (surface to bed, no water left -- which also kills
+     * fish spawns for free)? True iff the flag is on (the barrens worldgen family -- the TEST-101 round's
+     * flag law; independent of the tick-time {@code POLAR_WATER_FREEZE} kill switch, which governs the
+     * surface-ice correctness fix), the column is RIVER-classified, NOT ocean-classified, and it sits in
+     * the full-freeze zone ({@code >= }the 85 anchor including the fray -- the SAME
+     * {@link #freezesWaterFrayed} front the surface ice uses, so the solid rivers and the frozen sea edge
+     * agree on where winter starts).
+     *
+     * <p><b>THE SEA IS EXEMPT (regression guard):</b> ocean-family columns keep surface-ice-over-liquid --
+     * the under-ice swim, the pole wall's pack-ice reading, and the S7 immersion mechanic all depend on
+     * liquid sea under the ice; {@code isOceanColumn} wins over {@code isRiverColumn} if a column somehow
+     * reads both. Non-river, non-ocean fluid columns (ponds/lakes) are also left alone -- the B-9 Glacial
+     * Caves design owns semi-ice lakes with fish.
+     */
+    public static boolean freezesRiverSolid(boolean flagOn, boolean isRiverColumn, boolean isOceanColumn,
+                                            double latDeg, double frayNoise01) {
+        if (!flagOn || !isRiverColumn || isOceanColumn) {
+            return false;
+        }
+        return freezesWaterFrayed(true, latDeg, frayNoise01);
+    }
+
+    /**
+     * S11(b) ice-kind law for a solid-frozen river (documented choice): the SURFACE block is plain
+     * {@code ice} -- the familiar translucent frozen-river skin, visually continuous with vanilla
+     * frozen_river and the freeze law's own surface ice -- and everything BELOW is {@code packed_ice}
+     * (reads as solid glacial mass, and cannot melt back to water from light updates the way plain ice
+     * can, so a torch on the bank never re-opens a fishable hole in the "complete ice" river).
+     */
+    public static boolean riverIceIsPacked(int depthBelowSurface) {
+        return depthBelowSurface > 0;
+    }
 }

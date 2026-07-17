@@ -217,6 +217,37 @@ class PolarBarrensBandTest {
         assertTrue(PolarBarrensBand.isSurfaceSkin(70, 71, 70));
     }
 
+    // ---- S11(a): the lush-cave veto ----------------------------------------------------------
+
+    @Test
+    void lushCaveCellInBandRemaps() {
+        assertTrue(PolarBarrensBand.vetoesLushCaveCell(true, true, 87.0),
+                "a lush_caves cell inside the barrens band remaps to the column surface biome");
+        assertTrue(PolarBarrensBand.vetoesLushCaveCell(true, true, PolarBarrensBand.ONSET_DEG),
+                "band-gated on the core onset (86), inclusive");
+        assertTrue(PolarBarrensBand.vetoesLushCaveCell(true, true, -89.0), "hemisphere-symmetric");
+    }
+
+    @Test
+    void lushCaveCellOutOfBandUntouched() {
+        assertFalse(PolarBarrensBand.vetoesLushCaveCell(true, true, 85.9), "below the onset: untouched");
+        assertFalse(PolarBarrensBand.vetoesLushCaveCell(true, true, 40.0));
+        assertFalse(PolarBarrensBand.vetoesLushCaveCell(true, true, Double.NaN), "bad read: untouched");
+    }
+
+    @Test
+    void dripstoneAndDeepDarkUntouchedEvenInBand() {
+        // Only lush is owner-banned (reads tropical); dripstone reads stone, deep_dark is structure-tied.
+        // The mixin passes cellIsLushCaves=false for every other cave biome (exact-id match).
+        assertFalse(PolarBarrensBand.vetoesLushCaveCell(true, false, 89.0));
+    }
+
+    @Test
+    void lushCaveVetoFlagOffUntouched() {
+        assertFalse(PolarBarrensBand.vetoesLushCaveCell(false, true, 89.0),
+                "barrens flag off: byte-identical, lush cells pass through");
+    }
+
     // ---- B-9a: the glacier depth law ---------------------------------------------------------
 
     @Test
