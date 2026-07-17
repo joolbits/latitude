@@ -1300,11 +1300,13 @@ public final class LatitudeBiomes {
         return generator == null ? 63 : generator.getSeaLevel();
     }
 
-    private static int surfaceDecisionY(NoiseBasedChunkGenerator generator,
-                                        RandomState noiseConfig,
-                                        LevelHeightAccessor heightView,
-                                        int blockX,
-                                        int blockZ) {
+    // Shared with the populate-biomes mixin so its local column cache uses the exact
+    // same surface/deep decision boundary as pick().
+    public static int surfaceDecisionY(NoiseBasedChunkGenerator generator,
+                                       RandomState noiseConfig,
+                                       LevelHeightAccessor heightView,
+                                       int blockX,
+                                       int blockZ) {
         if (generator == null || noiseConfig == null || heightView == null) {
             // Keep column decisions stable when we cannot resolve a real top surface.
             return SURFACE_CLASSIFY_Y;

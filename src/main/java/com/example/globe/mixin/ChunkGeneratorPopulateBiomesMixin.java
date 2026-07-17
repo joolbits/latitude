@@ -4,7 +4,9 @@ import com.example.globe.GlobeMod;
 import com.example.globe.util.LatitudeBands;
 import com.example.globe.world.LatitudeBiomeSource;
 import com.example.globe.world.LatitudeBiomes;
+import it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap;
 import it.unimi.dsi.fastutil.longs.Long2LongOpenHashMap;
+import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import net.minecraft.core.Holder;
 import net.minecraft.core.Registry;
 import net.minecraft.core.registries.Registries;
@@ -247,6 +249,11 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
         RandomState noiseConfig = globe$noiseConfigTL.get();
         Long2LongOpenHashMap surfaceYCache = new Long2LongOpenHashMap();
         surfaceYCache.defaultReturnValue(Long.MIN_VALUE);
+        Long2IntOpenHashMap columnDecisionYCache = new Long2IntOpenHashMap();
+        columnDecisionYCache.defaultReturnValue(Integer.MIN_VALUE);
+        Long2ObjectOpenHashMap<Holder<Biome>> columnPickCache = new Long2ObjectOpenHashMap<>();
+        Long2ObjectOpenHashMap<Holder<Biome>> columnPickBase = new Long2ObjectOpenHashMap<>();
+        Long2ObjectOpenHashMap<Holder<Biome>> columnBaseCache = new Long2ObjectOpenHashMap<>();
         logWorldgenPathOnce(chunk, borderRadiusBlocks, globe$matchedSettingsLabel());
         BiomeResolver sourceSupplier = originalSupplier instanceof LatitudeBiomeSource latitudeSource
                 ? latitudeSource.original()
@@ -258,9 +265,15 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
             int blockX = (x << 2) + 2;
             int blockZ = (z << 2) + 2;
             int blockY = (y << 2) + 2;
-            
+            long colKey = (((long) x) << 32) ^ (z & 0xFFFF_FFFFL);
+
             Holder<Biome> current = sourceSupplier.getNoiseBiome(x, y, z, sampler);
-            Holder<Biome> base = sourceSupplier.getNoiseBiome(x, LatitudeBiomes.SURFACE_CLASSIFY_Y >> 2, z, sampler);
+            Holder<Biome> base = columnBaseCache.get(colKey);
+            if (base == null) {
+                base = sourceSupplier.getNoiseBiome(
+                        x, LatitudeBiomes.SURFACE_CLASSIFY_Y >> 2, z, sampler);
+                columnBaseCache.put(colKey, base);
+            }
             boolean caveCurrent = isCaveBiome(biomes, current);
 
             if (blockY > HARD_DECK_SURFACE_Y && isCaveBiome(biomes, base)) {
@@ -300,31 +313,75 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
                 return current;
             }
 
-            Holder<Biome> picked = null;
-
-            // BlockY is forwarded so LatitudeBiomes can compute the upland ramp while horizontal selection remains unchanged.
-            try {
-                picked = LatitudeBiomes.pick(biomes, base, blockX, blockZ, blockY, borderRadiusBlocks, sampler, "MIXIN",
-                        generator, noiseConfig, chunk);
-            } catch (Throwable t) {
-                globe$logPopBio("ERROR", t.getClass().getSimpleName() + ": " + t.getMessage());
-                logPickFailOnce(blockX, blockZ, "exception", t.toString());
-                if (DEBUG_BIOME_PICK) {
-                    LOGGER.debug("[Latitude] Biome pick exception", t);
-                }
+            int colDecisionY = columnDecisionYCache.get(colKey);
+            if (colDecisionY == Integer.MIN_VALUE) {
+                colDecisionY = LatitudeBiomes.surfaceDecisionY(
+                        generator, noiseConfig, chunk, blockX, blockZ);
+                columnDecisionYCache.put(colKey, colDecisionY);
             }
-            if (picked == null) {
-                logPickFailOnce(blockX, blockZ, "null", null);
-                if (DEBUG_BIOME_PICK) {
-                    LOGGER.debug("[Latitude] Biome pick returned null at x={} z={}", blockX, blockZ);
+
+            if (blockY >= colDecisionY - 16) {
+                Holder<Biome> cachedPick = columnPickCache.get(colKey);
+                if (cachedPick != null && columnPickBase.get(colKey) == base) {
+                    return cachedPick;
+                }
+                Holder<Biome> picked = globe$pickOrNull(
+                        biomes, base, blockX, blockZ, blockY, borderRadiusBlocks,
+                        sampler, generator, noiseConfig, chunk);
+                if (picked != null) {
+                    columnPickCache.put(colKey, picked);
+                    columnPickBase.put(colKey, base);
+                    return picked;
                 }
                 return pickSafeFallback(biomes, blockZ);
             }
-            return picked;
+
+            return globe$pickOrFallback(
+                    biomes, base, blockX, blockZ, blockY, borderRadiusBlocks,
+                    sampler, generator, noiseConfig, chunk);
         };
 
         globe$logPopBio("ENTER", "installing Latitude resolver chunk=" + pos.x() + "," + pos.z() + " radius=" + borderRadiusBlocks);
         globe$populateBiomes(chunk, wrapped, sampler);
+    }
+
+    @Unique
+    private static Holder<Biome> globe$pickOrNull(
+            Registry<Biome> biomes, Holder<Biome> base,
+            int blockX, int blockZ, int blockY, int borderRadiusBlocks,
+            Climate.Sampler sampler, NoiseBasedChunkGenerator generator,
+            RandomState noiseConfig, ChunkAccess chunk) {
+        Holder<Biome> picked = null;
+        try {
+            picked = LatitudeBiomes.pick(
+                    biomes, base, blockX, blockZ, blockY, borderRadiusBlocks,
+                    sampler, "MIXIN", generator, noiseConfig, chunk);
+        } catch (Throwable t) {
+            globe$logPopBio("ERROR", t.getClass().getSimpleName() + ": " + t.getMessage());
+            logPickFailOnce(blockX, blockZ, "exception", t.toString());
+            if (DEBUG_BIOME_PICK) {
+                LOGGER.debug("[Latitude] Biome pick exception", t);
+            }
+        }
+        if (picked == null) {
+            logPickFailOnce(blockX, blockZ, "null", null);
+            if (DEBUG_BIOME_PICK) {
+                LOGGER.debug("[Latitude] Biome pick returned null at x={} z={}", blockX, blockZ);
+            }
+        }
+        return picked;
+    }
+
+    @Unique
+    private static Holder<Biome> globe$pickOrFallback(
+            Registry<Biome> biomes, Holder<Biome> base,
+            int blockX, int blockZ, int blockY, int borderRadiusBlocks,
+            Climate.Sampler sampler, NoiseBasedChunkGenerator generator,
+            RandomState noiseConfig, ChunkAccess chunk) {
+        Holder<Biome> picked = globe$pickOrNull(
+                biomes, base, blockX, blockZ, blockY, borderRadiusBlocks,
+                sampler, generator, noiseConfig, chunk);
+        return picked != null ? picked : pickSafeFallback(biomes, blockZ);
     }
 
     @Unique
