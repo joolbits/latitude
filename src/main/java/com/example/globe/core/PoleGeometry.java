@@ -31,7 +31,7 @@ package com.example.globe.core;
  *       low-health crosser cannot die inside the ceremony.</li>
  *   <li>{@link #REARM_DEG_POLE} 88.5 -- the strict walk-out re-arm line (1.5 deg out); floored to
  *       {@code prompt + DEAD_ZONE 64}.</li>
- *   <li>{@link #PROMPT_DEG_POLE} 89.2 -- the crossing prompt opens (0.8 deg out), 0.2 deg PAST the 89-deg DANGER
+ *   <li>{@link #PROMPT_DEG_POLE} 89.2 -- the crossing prompt opens (0.8 deg out), 1.2 deg past the 88-deg DANGER (S13c retime)
  *       rung so the ladder line lands FIRST and the prompt is the consensual counter-offer; floored to
  *       {@link EdgeGeometry#PROMPT_MIN_DIST_BLOCKS} 40.</li>
  *   <li>{@link #EDGE_REPROMPT_DEG_POLE} 89.9 -- the SEEDED walk-to-the-pole auto-re-prompt (0.1 deg out, hard by
