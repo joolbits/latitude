@@ -24,15 +24,15 @@ public class LatitudeHudStudioScreen extends Screen {
     private enum Target { COMPASS, TITLE, BOTH }
     private Target target = Target.COMPASS;
 
-    private enum DragElement { NONE, COMPASS, TITLE, ZONE }
+    private enum DragElement { NONE, COMPASS, TITLE, LOCATION_DETAIL }
     private DragElement dragElement = DragElement.NONE;
 
     private boolean wasLDown = false;
 
     private int compassGrabDx;
     private int compassGrabDy;
-    private int zoneGrabDx;
-    private int zoneGrabDy;
+    private int locationDetailGrabDx;
+    private int locationDetailGrabDy;
 
     private double titleOffsetXf;
     private double titleOffsetYf;
@@ -54,8 +54,8 @@ public class LatitudeHudStudioScreen extends Screen {
     private AbstractWidget wCompassAnalogShowLatitude;
     private AbstractWidget wCompassCompact;
     private AbstractWidget wCompassAttachHotbar;
-    private AbstractWidget wZoneDisplay;
-    private AbstractWidget wZoneFollow;
+    private AbstractWidget wLocationDetail;
+    private AbstractWidget wLocationFollow;
 
     private AbstractWidget wTitleScale;
 
@@ -106,8 +106,8 @@ public class LatitudeHudStudioScreen extends Screen {
         this.wCompassAnalogShowLatitude = null;
         this.wCompassCompact = null;
         this.wCompassAttachHotbar = null;
-        this.wZoneDisplay = null;
-        this.wZoneFollow = null;
+        this.wLocationDetail = null;
+        this.wLocationFollow = null;
 
         this.titleOffsetXf = LatitudeConfig.zoneEnterTitleOffsetX;
         this.titleOffsetYf = LatitudeConfig.zoneEnterTitleOffsetY;
@@ -229,26 +229,32 @@ public class LatitudeHudStudioScreen extends Screen {
         trackSidebarWidget(this.wCompassAttachHotbar, y);
         y += rowH + rowGap;
 
-        this.wZoneDisplay = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "ON" : "OFF"), () -> cfg.displayZoneInHud)
-                .withValues(true, false)
-                .create(panelX, y, widgetW, rowH, Component.literal("Display Zone in HUD"), (btn, value) -> {
-                    cfg.displayZoneInHud = value;
+        this.wLocationDetail = this.addRenderableWidget(CycleButton.<LocationDetailPolicy.Mode>builder(
+                        value -> Component.literal(value.label()),
+                        cfg::locationDetailMode)
+                .withValues(LocationDetailPolicy.Mode.values())
+                .create(panelX, y, widgetW, rowH, Component.literal("Location Detail"), (btn, value) -> {
+                    cfg.setLocationDetailMode(value);
                     CompassHudConfig.saveCurrent();
                     updateSidebarVisibility();
                 }));
-        tooltip(this.wZoneDisplay, "Shows the current zone as small HUD text.");
-        trackSidebarWidget(this.wZoneDisplay, y);
+        tooltip(
+                this.wLocationDetail,
+                "Shows the current biome, latitude zone, both together, or neither beside the compass.");
+        trackSidebarWidget(this.wLocationDetail, y);
         y += rowH + rowGap;
 
-        this.wZoneFollow = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "FOLLOW" : "DETACH"), () -> cfg.zoneFollowsCompass)
+        this.wLocationFollow = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "FOLLOW" : "DETACH"), () -> cfg.zoneFollowsCompass)
                 .withValues(true, false)
-                .create(panelX, y, widgetW, rowH, Component.literal("Zone Placement"), (btn, value) -> {
+                .create(panelX, y, widgetW, rowH, Component.literal("Location Placement"), (btn, value) -> {
                     cfg.zoneFollowsCompass = value;
                     CompassHudConfig.saveCurrent();
                     updateSidebarVisibility();
                 }));
-        tooltip(this.wZoneFollow, "Let the zone label ride with the compass or detach it for dragging.");
-        trackSidebarWidget(this.wZoneFollow, y);
+        tooltip(
+                this.wLocationFollow,
+                "Let the selected location detail ride with the compass or detach the whole unit for dragging.");
+        trackSidebarWidget(this.wLocationFollow, y);
         y += rowH + rowGap;
 
         this.wTitleScale = this.addRenderableWidget(new StepSlider(panelX, y, widgetW, rowH, Component.literal("Title Size"), 1.0, 3.0, 0.1, LatitudeConfig.zoneEnterTitleScale, v -> LatitudeConfig.zoneEnterTitleScale = v));
@@ -264,7 +270,7 @@ public class LatitudeHudStudioScreen extends Screen {
                 })
                 .bounds(panelX, resetY, widgetW, rowH)
                 .build());
-        tooltip(this.wResetHud, "Restore compass and zone HUD settings to defaults.");
+        tooltip(this.wResetHud, "Restore compass and location-detail HUD settings to defaults.");
 
         int bw = 200;
         int bh = 20;
@@ -393,8 +399,8 @@ public class LatitudeHudStudioScreen extends Screen {
                 return true;
             }
 
-            if (isMouseOverZone(mx, my)) {
-                dragElement = DragElement.ZONE;
+            if (isMouseOverLocationDetail(mx, my)) {
+                dragElement = DragElement.LOCATION_DETAIL;
                 return true;
             }
         }
@@ -458,21 +464,21 @@ public class LatitudeHudStudioScreen extends Screen {
             return true;
         }
 
-        if (dragElement == DragElement.ZONE) {
+        if (dragElement == DragElement.LOCATION_DETAIL) {
             var mc = Minecraft.getInstance();
             if (mc == null || mc.getWindow() == null) return true;
             var cfg = CompassHudConfig.get();
-            if (!cfg.displayZoneInHud || cfg.zoneFollowsCompass) return true;
+            if (!cfg.hasLocationDetail() || cfg.zoneFollowsCompass) return true;
 
             int screenW = mc.getWindow().getGuiScaledWidth();
             int screenH = mc.getWindow().getGuiScaledHeight();
-            var zb = CompassHud.computeZoneBounds(mc, cfg);
-            if (zb == null) return true;
+            var detailBounds = CompassHud.computeLocationDetailBounds(mc, cfg);
+            if (detailBounds == null) return true;
 
-            int targetX = (int) Math.round(mx) - zoneGrabDx;
-            int targetY = (int) Math.round(my) - zoneGrabDy;
-            int boxW = zb.w();
-            int boxH = zb.h();
+            int targetX = (int) Math.round(mx) - locationDetailGrabDx;
+            int targetY = (int) Math.round(my) - locationDetailGrabDy;
+            int boxW = detailBounds.w();
+            int boxH = detailBounds.h();
             targetX = clamp(targetX, 0, Math.max(0, screenW - boxW));
             targetY = clamp(targetY, 0, Math.max(0, screenH - boxH));
 
@@ -508,7 +514,7 @@ public class LatitudeHudStudioScreen extends Screen {
             if (dragElement == DragElement.COMPASS) {
                 CompassHudConfig.saveCurrent();
             }
-            if (dragElement == DragElement.ZONE) {
+            if (dragElement == DragElement.LOCATION_DETAIL) {
                 CompassHudConfig.saveCurrent();
             }
             dragElement = DragElement.NONE;
@@ -581,8 +587,8 @@ public class LatitudeHudStudioScreen extends Screen {
         setVisible(wCompassAnalogShowLatitude, showCompassControls && analog);
         setVisible(wCompassCompact, showCompassControls && !analog);
         setVisible(wCompassAttachHotbar, showCompassControls && !analog);
-        setVisible(wZoneDisplay, showCompassControls);
-        setVisible(wZoneFollow, showCompassControls && CompassHudConfig.get().displayZoneInHud);
+        setVisible(wLocationDetail, showCompassControls);
+        setVisible(wLocationFollow, showCompassControls && CompassHudConfig.get().hasLocationDetail());
 
         boolean showTitleControls = sidebarVisible && (target == Target.TITLE || target == Target.BOTH);
         setVisible(wTitleScale, showTitleControls);
@@ -590,16 +596,16 @@ public class LatitudeHudStudioScreen extends Screen {
         setVisible(wResetHud, sidebarVisible);
     }
 
-    private boolean isMouseOverZone(double mx, double my) {
+    private boolean isMouseOverLocationDetail(double mx, double my) {
         var mc = Minecraft.getInstance();
         if (mc == null) return false;
         var cfg = CompassHudConfig.get();
-        if (!cfg.displayZoneInHud || cfg.zoneFollowsCompass) return false;
-        var b = CompassHud.computeZoneBounds(mc, cfg);
+        if (!cfg.hasLocationDetail() || cfg.zoneFollowsCompass) return false;
+        var b = CompassHud.computeLocationDetailBounds(mc, cfg);
         if (b == null) return false;
         if (mx < b.x() || mx >= (b.x() + b.w()) || my < b.y() || my >= (b.y() + b.h())) return false;
-        zoneGrabDx = (int) Math.round(mx) - b.x();
-        zoneGrabDy = (int) Math.round(my) - b.y();
+        locationDetailGrabDx = (int) Math.round(mx) - b.x();
+        locationDetailGrabDy = (int) Math.round(my) - b.y();
         return true;
     }
 
@@ -628,7 +634,7 @@ public class LatitudeHudStudioScreen extends Screen {
         cfg.latitudeDecimals = 0;
         cfg.attachToHotbarCompass = false;
         cfg.compactHud = false;
-        cfg.displayZoneInHud = false;
+        cfg.setLocationDetailMode(LocationDetailPolicy.DEFAULT_MODE);
         cfg.zoneFollowsCompass = true;
         cfg.zoneHAnchor = CompassHudConfig.HAnchor.CENTER;
         cfg.zoneVAnchor = CompassHudConfig.VAnchor.TOP;

@@ -47,7 +47,9 @@ public final class CompassHudConfig {
     // Analog styling
     public float analogInnerAlpha = 0.65f; // 0..1
 
-    // Zone label
+    // Location detail. Two booleans preserve the legacy displayZoneInHud JSON field while
+    // representing Off / Biome / Zone / Biome + Zone without a config migration.
+    public boolean displayBiomeInHud = false;
     public boolean displayZoneInHud = false;
     public boolean zoneFollowsCompass = true;
     public HAnchor zoneHAnchor = HAnchor.CENTER;
@@ -101,6 +103,21 @@ public final class CompassHudConfig {
 
     public int backgroundArgb() {
         return ((backgroundAlpha & 0xFF) << 24) | (backgroundRgb & 0xFFFFFF);
+    }
+
+    public LocationDetailPolicy.Mode locationDetailMode() {
+        return LocationDetailPolicy.fromPersistedFlags(displayBiomeInHud, displayZoneInHud);
+    }
+
+    public void setLocationDetailMode(LocationDetailPolicy.Mode mode) {
+        LocationDetailPolicy.Mode selected =
+                mode == null ? LocationDetailPolicy.DEFAULT_MODE : mode;
+        displayBiomeInHud = selected.includesBiome();
+        displayZoneInHud = selected.includesZone();
+    }
+
+    public boolean hasLocationDetail() {
+        return locationDetailMode() != LocationDetailPolicy.Mode.OFF;
     }
 
     private static CompassHudConfig load() {

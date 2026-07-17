@@ -139,10 +139,20 @@ public class LatitudeSettingsScreen extends Screen {
         }
 
         baseY = y;
-        var wDisplayZone = this.addRenderableWidget(CycleButton.<Boolean>builder(v -> Component.literal(v ? "ON" : "OFF"), () -> cfg.displayZoneInHud)
-                .withValues(true, false)
-                .create(columnX, y, w, h, Component.literal("Zone Label"), (btn, value) -> cfg.displayZoneInHud = value));
-        layoutWidgets.add(wDisplayZone);
+        var wLocationDetail = this.addRenderableWidget(CycleButton.<LocationDetailPolicy.Mode>builder(
+                        value -> Component.literal(value.label()),
+                        cfg::locationDetailMode)
+                .withValues(LocationDetailPolicy.Mode.values())
+                .create(
+                        columnX,
+                        y,
+                        w,
+                        h,
+                        Component.literal("Location Detail"),
+                        (btn, value) -> cfg.setLocationDetailMode(value)));
+        wLocationDetail.setTooltip(Tooltip.create(
+                Component.literal("Show biome, latitude zone, both, or neither beside the compass.")));
+        layoutWidgets.add(wLocationDetail);
         layoutBaseYs.add(baseY);
         y += 24;
 
@@ -324,7 +334,7 @@ public class LatitudeSettingsScreen extends Screen {
         cfg.latitudeDecimals = 0;
         cfg.attachToHotbarCompass = false;
         cfg.compactHud = false;
-        cfg.displayZoneInHud = false;
+        cfg.setLocationDetailMode(LocationDetailPolicy.DEFAULT_MODE);
         cfg.zoneFollowsCompass = true;
         cfg.zoneHAnchor = CompassHudConfig.HAnchor.CENTER;
         cfg.zoneVAnchor = CompassHudConfig.VAnchor.TOP;
