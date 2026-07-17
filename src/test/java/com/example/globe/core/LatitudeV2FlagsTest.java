@@ -59,11 +59,11 @@ class LatitudeV2FlagsTest {
 
     @Test
     void polarBarrensDegreeDefaults() {
-        // Onset defaults to the veg-fade finish (the owner's invisible seam); full defaults to 88.
+        // Onset defaults to the veg-fade finish (the owner's invisible seam); full defaults to 84 (S13).
         assertEquals(PolarVegetationFade.FULL_DEG, LatitudeV2Flags.POLAR_BARRENS_ONSET_DEG, 1e-9,
-                "Barrens onset defaults to the vegetation-fade finish (KEEP-SHARED)");
-        assertEquals(88.0, LatitudeV2Flags.POLAR_BARRENS_FULL_DEG, 1e-9,
-                "Barrens full-dominance latitude defaults to 88 deg");
+                "Barrens onset defaults to the vegetation-fade finish (KEEP-SHARED) -- 82 deg since S13");
+        assertEquals(84.0, LatitudeV2Flags.POLAR_BARRENS_FULL_DEG, 1e-9,
+                "Barrens full-dominance latitude defaults to 84 deg (S13: onset+2, fray held at +2)");
     }
 
     @Test

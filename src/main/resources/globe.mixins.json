@@ -31,6 +31,7 @@
     "StructureBiomeMatchGuardMixin",
     "EdgeStructureVetoMixin",
     "MonsterSolarSpawnMixin",
+    "SpawnPlacementsPolarSurfaceMixin",
     "MobSolarSunBurnMixin",
     "terrain.RandomStateAccessor",
     "terrain.RandomStateRouterTerrainMixin"

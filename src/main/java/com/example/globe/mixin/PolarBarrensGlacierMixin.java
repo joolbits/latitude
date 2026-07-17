@@ -33,7 +33,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  *       {@code PolarBarrensSurfaceMixin} surface dressing is preserved on top (A4's powder pockets stay).</li>
  *   <li><b>Ice body</b>: below the cap, {@code packed_ice} down to a noise-varied sole --
  *       {@link LatitudeBiomes#polarBarrensGlacierIceBlocks} = the band-fraction ramp (thin marginal glacier
- *       at the 86-deg frayed edge, 24-36 blocks at/above 88; fray-consistent with the barrens band, same
+ *       at the 82-deg frayed edge, 24-36 blocks at/above 84; fray-consistent with the barrens band, same
  *       latitude+fray decision, so the glacier never outruns the biome) wobbled by a dedicated coherent
  *       depth field.</li>
  *   <li><b>The living underground stays alive</b> (the law that bounds the glacier's floor): below the sole

@@ -302,7 +302,7 @@ public final class PolarHazardWindow {
      *  world-visible / places ice) and {@code PolarPrecipitationRule.FORCE_SNOW_DEG} stays 75 (its own client
      *  anchor). Every challenge band also keeps its own dial (S8 law: the flight-tested endgame does not
      *  move): frostbite {@link #FROSTBITE_ONSET_DEG} 85, blizzard 87, lethal core 88-90, DANGER 89 / LETHAL
-     *  89.7, veg fade 78/86, Barrens 86, storm sky {@link #STORM_ONSET_DEG} 85 -- so snow (80) leads
+     *  89.7, veg fade 76/82, Barrens 82, storm sky {@link #STORM_ONSET_DEG} 85 -- so snow (80) leads
      *  frostbite (85) leads slowness/frost (87.5) leads the lethal core (88). */
     public static final double AMBIENT_ONSET_DEG = 80.0;
     /** Latitude (deg) at which ambient snow/fog is at its VERY-heavy ceiling (the pole). */

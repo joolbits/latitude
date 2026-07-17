@@ -153,6 +153,9 @@ public class GlobeModClient implements ClientModInitializer {
         // fog law v2 (PolarFogLaw) IS the wall's appearance now; the clamp + chime + pack-ice actionbar +
         // frost particles remain as the touch feedback. PoleWallRenderer.register() is intentionally NOT
         // called (the class is kept dead-gated for a cheap revival if the owner ever reverses again).
+        // S13(a) AURORA BOREALIS: the polar-night sky curtains (self-gated on SOLAR_TILT_V2_ENABLED +
+        // AURORA_ENABLED, so byte-identical off). Registers its own COLLECT_SUBMITS sky-geometry hook.
+        com.example.globe.client.AuroraRenderer.register();
         ClientKeybinds.init();
         if (FabricLoader.getInstance().isDevelopmentEnvironment()) {
             DevCaptureKeybind.init();
@@ -310,6 +313,11 @@ public class GlobeModClient implements ClientModInitializer {
             if (snowCount > 0) {
                 spawnAmbientPolarSnow(client, snowCount, absLatDeg, snowTier, exposure);
             }
+            // S13(a) SNOW SPARKLE: calm-cold snowfield glints in the 80-85 band, BELOW the deep-blizzard tier --
+            // the storm's absence made visible. Same spawn-tick cadence + Particles/enclosure/reduce-snow
+            // scaling as the ambient snow; a tiny budget. Pure gate/budget law in core.SnowSparkleLaw; gated OFF
+            // the moment the blizzard builds so it is, by construction, calm-weather jewelry.
+            spawnSnowSparkle(client, absLatDeg, snowTier, exposure);
         }
 
         // TEST 89: the EW border DUST/sand storm particles are REMOVED entirely (Peetsa: "remove the dust
@@ -437,6 +445,54 @@ public class GlobeModClient implements ClientModInitializer {
             double vy = -fall * fallBoost - random.nextDouble() * 0.08; // the deep tier falls HARD
             double vz = (random.nextDouble() - 0.5) * 0.10;
             client.particleEngine.createParticle(ParticleTypes.SNOWFLAKE, px + ox, py + oy, pz + oz, vx, vy, vz);
+        }
+    }
+
+    // ---- S13(a) SNOW SPARKLE (owner order, TEST 103 flight): calm-cold snowfield glints. ----
+    // Peak per-spawn-tick budget BEFORE the shared Particles/enclosure/reduce-snow scaling. At the shared
+    // every-4th-tick cadence (~5 spawn-ticks/s) the default peak of 1 lands as ~a-few-glints/second at full band
+    // strength on ALL particles + open sky, tapering with the band ramp -- a subtle glint, not a particle storm.
+    // P4 dial (bump for a denser shimmer; the pure ramp in SnowSparkleLaw handles the rest).
+    private static final int SPARKLE_PEAK_BUDGET = com.example.globe.core.SnowSparkleLaw.DEFAULT_PEAK_BUDGET;
+    /** Horizontal radius (blocks) around the player over which glints scatter on the nearby snow surface. */
+    private static final double SPARKLE_RADIUS = 10.0;
+    /** Height (blocks) above the sampled snow surface a glint sits -- just clear of the ground so it reads. */
+    private static final double SPARKLE_Y_OFFSET = 0.12;
+
+    // Calm-weather glints on the snowfields near the player (80-85 deg, below the deep-blizzard tier). A tiny,
+    // FIXED per-spawn-tick budget from the pure SnowSparkleLaw (band trapezoid x calm gate), scaled by the SAME
+    // vanilla Particles tier + enclosure estimate + reduce-snow comfort option as the ambient snow, so it honors
+    // every perf/accessibility knob without a second curve. No state/accumulator; the caller's isPaused/spawn-tick
+    // guards (B-3b anti-backlog law) are untouched. Each glint is placed on the sampled surface with near-zero
+    // velocity so it twinkles in place. FIREWORK = the short-lived white spark (twinkle) particle.
+    private static void spawnSnowSparkle(Minecraft client, double absLatDeg,
+                                         com.example.globe.core.ParticleDensity.Tier tier, float exposure) {
+        // The blizzard drive is the storm signal (0 across the calm 80-85 band; belt-and-suspenders per the law).
+        double blizz = com.example.globe.core.PolarHazardWindow.blizzardDrive(absLatDeg);
+        int count = com.example.globe.core.SnowSparkleLaw.sparkleBudget(absLatDeg, blizz, SPARKLE_PEAK_BUDGET);
+        if (count <= 0) {
+            return;
+        }
+        count = com.example.globe.core.ParticleDensity.scale(tier, count);
+        count = com.example.globe.core.PolarExposure.particleBudget(count, exposure);
+        if (com.example.globe.client.LatitudeConfig.reducePolarSnowParticles) {
+            count = (int) Math.round(count * REDUCE_POLAR_SNOW_FACTOR);
+        }
+        if (count <= 0) {
+            return;
+        }
+        RandomSource random = client.player.getRandom();
+        double px = client.player.getX();
+        double pz = client.player.getZ();
+        for (int i = 0; i < count; i++) {
+            int bx = (int) Math.floor(px + (random.nextDouble() - 0.5) * SPARKLE_RADIUS * 2.0);
+            int bz = (int) Math.floor(pz + (random.nextDouble() - 0.5) * SPARKLE_RADIUS * 2.0);
+            int surfaceY = client.level.getHeight(
+                    net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, bx, bz);
+            double gx = bx + random.nextDouble();
+            double gz = bz + random.nextDouble();
+            double gy = surfaceY + SPARKLE_Y_OFFSET;
+            client.particleEngine.createParticle(ParticleTypes.FIREWORK, gx, gy, gz, 0.0, 0.0, 0.0);
         }
     }
 

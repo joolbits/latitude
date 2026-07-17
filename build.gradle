@@ -58,6 +58,16 @@ loom {
             vmArg "-Dlatitude.solarTilt.yearLengthDays=${System.getProperty('latitude.solarTilt.yearLengthDays', '360.0')}"
             vmArg "-Dlatitude.solarTilt.functionalMinDeg=${System.getProperty('latitude.solarTilt.functionalMinDeg', '74.5')}"
             vmArg "-Dlatitude.solarTilt.frozenPhaseDeg=${System.getProperty('latitude.solarTilt.frozenPhaseDeg', '0.0')}"
+            // S13(a) AURORA BOREALIS (default TRUE, rides inside solarTiltV2). Born WITH its forwarding line in
+            // the SAME pass as the flag (L17 discipline) so a dev client agrees with a shipped jar the moment the
+            // aurora is toggled for a P2/P3 flight -- byte-identical when solar tilt OR this is off.
+            vmArg "-Dlatitude.aurora.enabled=${System.getProperty('latitude.aurora.enabled', 'true')}"
+            // S13(e) POLAR SURFACE ALLOWLIST (default TRUE). A server-side per-tick spawn rule that rides the
+            // integrated server in a dev client (like the solar mob rules), so forwarded on the CLIENT run in
+            // the SAME pass as the flag (L17 discipline) -- a dev can `-Dlatitude.polarSurfaceSpawns.enabled=false`
+            // to A/B it. onsetDeg mirrors PolarHazardWindow.AMBIENT_ONSET_DEG (the 80-deg storm onset).
+            vmArg "-Dlatitude.polarSurfaceSpawns.enabled=${System.getProperty('latitude.polarSurfaceSpawns.enabled', 'true')}"
+            vmArg "-Dlatitude.polarSurfaceSpawns.onsetDeg=${System.getProperty('latitude.polarSurfaceSpawns.onsetDeg', '80.0')}"
         }
         clientNoSurfaceDripstoneFix {
             inherit client
@@ -136,8 +146,8 @@ loom {
             // The fade's ramp KNOBS (docs pass 2026-07-12 caught the THIRD instance of the L17
             // forwarding gap: the javadoc advertises these as live-tunable, but only the enable flag
             // was forwarded -- the degree dials silently never reached a gradle dev client).
-            vmArg "-Dlatitude.polarVegetationFade.onsetDeg=${System.getProperty('latitude.polarVegetationFade.onsetDeg', '78.0')}"
-            vmArg "-Dlatitude.polarVegetationFade.fullDeg=${System.getProperty('latitude.polarVegetationFade.fullDeg', '86.0')}"
+            vmArg "-Dlatitude.polarVegetationFade.onsetDeg=${System.getProperty('latitude.polarVegetationFade.onsetDeg', '76.0')}"
+            vmArg "-Dlatitude.polarVegetationFade.fullDeg=${System.getProperty('latitude.polarVegetationFade.fullDeg', '82.0')}"
             // S11(c) firefly-specific ban dial (default 50 = the SUBPOLAR onset) -- forwarded in the SAME
             // pass as the constant (L17 discipline), beside its veg-fade dial family.
             vmArg "-Dlatitude.polarVegetationFade.fireflyBanDeg=${System.getProperty('latitude.polarVegetationFade.fireflyBanDeg', '50.0')}"
@@ -147,11 +157,14 @@ loom {
             // The onset/full degree dials are advertised as live-tunable, so forward them too.
             vmArg "-Dlatitude.polarBarrens.enabled=${System.getProperty('latitude.polarBarrens.enabled', 'false')}"
             // B-8 sweep FIX-1: the onset default NESTS the veg-fade fullDeg sysprop instead of hardcoding
-            // '86.0', so a dev run that retunes -Dlatitude.polarVegetationFade.fullDeg keeps the KEEP-SHARED
+            // it, so a dev run that retunes -Dlatitude.polarVegetationFade.fullDeg keeps the KEEP-SHARED
             // coupling (barrens begins exactly where the last vegetation dies) without having to remember the
-            // barrens dial too. An explicit -Dlatitude.polarBarrens.onsetDeg still wins.
-            vmArg "-Dlatitude.polarBarrens.onsetDeg=${System.getProperty('latitude.polarBarrens.onsetDeg', System.getProperty('latitude.polarVegetationFade.fullDeg', '86.0'))}"
-            vmArg "-Dlatitude.polarBarrens.fullDeg=${System.getProperty('latitude.polarBarrens.fullDeg', '88.0')}"
+            // barrens dial too. An explicit -Dlatitude.polarBarrens.onsetDeg still wins. S13 2026-07-17: the
+            // nested fallback moved 86->82 in lockstep with the Java default (PolarVegetationFade.FULL_DEG)
+            // so the "Barrens at 82" onset coupling is honest on a headless atlas too, and .fullDeg 88->84
+            // holds the fray at +2 deg (82->84).
+            vmArg "-Dlatitude.polarBarrens.onsetDeg=${System.getProperty('latitude.polarBarrens.onsetDeg', System.getProperty('latitude.polarVegetationFade.fullDeg', '82.0'))}"
+            vmArg "-Dlatitude.polarBarrens.fullDeg=${System.getProperty('latitude.polarBarrens.fullDeg', '84.0')}"
             // Polar water freeze (default TRUE, matching LatitudeV2Flags; byte-identical when explicitly
             // set off). Forwarded on sight this round -- the L17 forwarding class has bitten this repo
             // twice before (climateV2/biomeConsumerV2 2026-07-07); don't let a third flag go unforwarded.
@@ -172,6 +185,11 @@ loom {
             vmArg "-Dlatitude.solarTilt.yearLengthDays=${System.getProperty('latitude.solarTilt.yearLengthDays', '360.0')}"
             vmArg "-Dlatitude.solarTilt.functionalMinDeg=${System.getProperty('latitude.solarTilt.functionalMinDeg', '74.5')}"
             vmArg "-Dlatitude.solarTilt.frozenPhaseDeg=${System.getProperty('latitude.solarTilt.frozenPhaseDeg', '0.0')}"
+            // S13(e) POLAR SURFACE ALLOWLIST — forwarded here too for sibling parity with every other
+            // LatitudeV2Flags enable (a headless "flag-on" claim stays honest), even though this spawn rule
+            // does NOT touch worldgen and the real exercise is the client run above. Default TRUE; L17 same-pass.
+            vmArg "-Dlatitude.polarSurfaceSpawns.enabled=${System.getProperty('latitude.polarSurfaceSpawns.enabled', 'true')}"
+            vmArg "-Dlatitude.polarSurfaceSpawns.onsetDeg=${System.getProperty('latitude.polarSurfaceSpawns.onsetDeg', '80.0')}"
         }
         biomeSeedSearch {
             server()

@@ -26,7 +26,9 @@ package com.example.globe.core;
  *       SUPPRESSED when the player wears a FULL freeze-immune set (honesty law: full leather = zero frostbite =
  *       no bite = no warning). Its removal-reactive sibling is {@link #removalWhisperFires}.</li>
  *   <li>{@link Rung#BLIZZARD} 87 deg -- WARN_2, owner-verbatim (do not touch).</li>
- *   <li>{@link Rung#DANGER} 89 deg -- owner-verbatim (do not touch); earns the vignette.</li>
+ *   <li>{@link Rung#DANGER} 88 deg -- S13c re-time (2026-07-17): 89 -&gt; 88 (the lethal-core onset) + reworded
+ *       present-tense "DANGER: Lethal blizzard. Turn back." (owner-approved change to his line); earns the
+ *       vignette.</li>
  *   <li>{@link Rung#LETHAL} 89.7 deg -- earns the vignette; its TEXT swaps to the protected line when a full
  *       freeze-immune set is worn ({@link #lethalTextProtected}) -- a protected player must not be told they
  *       are freezing to death when the damage is negated.</li>
@@ -52,8 +54,12 @@ public final class PolarColdCues {
         HYPOTHERMIA(85.0),
         /** 87 deg -- WARN_2, owner-verbatim. */
         BLIZZARD(87.0),
-        /** 89 deg -- DANGER, owner-verbatim; earns the vignette. */
-        DANGER(89.0),
+        /** 88 deg -- DANGER (S13c re-time 2026-07-17: 89 -&gt; 88, = the lethal-core onset, so "Lethal blizzard"
+         *  is honest instead of two degrees early; earns the vignette). Reworded present-tense (see
+         *  {@code GlobeWarningOverlay.POLE_DANGER_TEXT}). NB: this is the TEXT rung's onset only -- the
+         *  KEEP-SHARED fog/vignette-severity ladder ({@code PolarWarningEpisode.TIER_3_DEG},
+         *  {@code LatitudeMath.POLAR_STAGE_*}) stays at 89. */
+        DANGER(88.0),
         /** 89.7 deg -- LETHAL; earns the vignette; protection-swapped text. */
         LETHAL(89.7);
 

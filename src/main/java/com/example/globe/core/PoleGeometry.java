@@ -88,7 +88,7 @@ public final class PoleGeometry {
     /** The passage arm re-arms once the player walks back out past this -- 88.5 deg (1.5 deg out). Floored to
      *  {@code prompt + }{@link EdgeGeometry#DEAD_ZONE_MIN_BLOCKS} (the anti-machine-gun walk-out). */
     public static final double REARM_DEG_POLE = 88.5;
-    /** The crossing prompt opens at/inside this -- 89.2 deg (0.8 deg out), 0.2 deg past the 89-deg DANGER rung so
+    /** The crossing prompt opens at/inside this -- 89.2 deg (0.8 deg out), 1.2 deg past the 88-deg DANGER rung (S13c retime) so
      *  the ladder line lands first and the prompt is the counter-offer. Floored to
      *  {@link EdgeGeometry#PROMPT_MIN_DIST_BLOCKS}. */
     public static final double PROMPT_DEG_POLE = 89.2;

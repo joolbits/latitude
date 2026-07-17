@@ -3,8 +3,8 @@ package com.example.globe.core;
 /**
  * Pure latitude-driven keep-chance math for the polar small-vegetation fade
  * ({@code latitude.polarVegetationFade.enabled}). Peetsa 2026-07-10: grass / ferns / flowers /
- * sugarcane sprouting at 84-86deg reads as unimmersive, so surface vegetation should THIN with
- * latitude and be essentially gone against the bare snow/ice cap.
+ * sugarcane sprouting in the deep polar low-80s reads as unimmersive, so surface vegetation should
+ * THIN with latitude and be essentially gone against the bare snow/ice cap.
  *
  * <p>This class holds ONLY the decision math, mirroring {@link com.example.globe.core.geo.EdgeOceanRamp}:
  * a {@link #keepChance01(double)} latitude ramp plus a {@link #stripByNoise(double, double)} fray
@@ -28,21 +28,25 @@ public final class PolarVegetationFade {
      * Absolute latitude (deg) at/below which vegetation is fully kept. Below this the keep-chance is
      * exactly 1.0, so those columns are bitwise-untouched. Chosen just inside the subpolar band so
      * mid-latitude meadows are never affected; the visible thinning only begins in the deep polar band.
-     * Live-tunable via {@code -Dlatitude.polarVegetationFade.onsetDeg} (defaults 78) so a polar look
+     * Live-tunable via {@code -Dlatitude.polarVegetationFade.onsetDeg} (defaults 76) so a polar look
      * session can tighten the ramp without a rebuild; malformed values degrade to the default.
+     * (S13 2026-07-17: onset lowered 78->76 as the fade finish moved 86->82 for "Barrens at 82".)
      */
     public static final double ONSET_DEG =
-            parseDegOrDefault(System.getProperty("latitude.polarVegetationFade.onsetDeg"), 78.0);
+            parseDegOrDefault(System.getProperty("latitude.polarVegetationFade.onsetDeg"), 76.0);
 
     /**
      * Absolute latitude (deg) at/above which vegetation is fully gone (keep-chance exactly 0.0) --
-     * the bare snow/ice cap Peetsa asked for. The 78->86 span puts the ~half-stripped point near 82deg,
-     * so grass/flowers are clearly sparse by the low-80s and absent by the mid-80s. Live-tunable via
-     * {@code -Dlatitude.polarVegetationFade.fullDeg} (defaults 86); clamped above {@link #ONSET_DEG}
-     * so the smoothstep denominator can never be zero or negative.
+     * the bare snow/ice cap Peetsa asked for. The 76->82 span puts the ~half-stripped point near 79deg,
+     * so grass/flowers are clearly sparse by the high-70s and absent by 82deg -- exactly the Polar
+     * Barrens onset (the barrens begin where the last vegetation dies; the onset is KEEP-SHARED with
+     * this constant, see {@link LatitudeV2Flags#POLAR_BARRENS_ONSET_DEG}). Live-tunable via
+     * {@code -Dlatitude.polarVegetationFade.fullDeg} (defaults 82; S13 2026-07-17 moved it 86->82 so the
+     * frozen waste has no grass/sugarcane against it); clamped above {@link #ONSET_DEG} so the smoothstep
+     * denominator can never be zero or negative.
      */
     public static final double FULL_DEG = Math.max(
-            parseDegOrDefault(System.getProperty("latitude.polarVegetationFade.fullDeg"), 86.0),
+            parseDegOrDefault(System.getProperty("latitude.polarVegetationFade.fullDeg"), 82.0),
             ONSET_DEG + 0.5);
 
     /**
@@ -53,7 +57,7 @@ public final class PolarVegetationFade {
      * subpolar/polar cold, not just at the cap. A HARD line, deliberately un-frayed: a scattered decorative
      * plant simply stops appearing -- there is no contiguous visual seam for a fray to soften (unlike the
      * barrens/sea-freeze edges). FIREFLY-SPECIFIC: every other small-vegetation placement keeps the ordinary
-     * 78/86 fade untouched. Live-tunable via {@code -Dlatitude.polarVegetationFade.fireflyBanDeg} (the
+     * 76/82 fade untouched. Live-tunable via {@code -Dlatitude.polarVegetationFade.fireflyBanDeg} (the
      * veg-fade dial family; forwarded in build.gradle in the SAME pass, L17 discipline).
      */
     public static final double FIREFLY_BAN_DEG =

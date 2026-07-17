@@ -97,9 +97,9 @@
     "monster": [
       {
         "type": "minecraft:stray",
-        "maxCount": 4,
-        "minCount": 4,
-        "weight": 80
+        "maxCount": 2,
+        "minCount": 1,
+        "weight": 27
       }
     ],
     "underground_water_creature": [],
