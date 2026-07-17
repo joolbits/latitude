@@ -383,19 +383,22 @@ public final class CompassHud {
     }
 
     private static void drawAnalogCompass(GuiGraphicsExtractor ctx, CompassHudConfig cfg, int cx, int cy, int radius, double angle) {
-        int r2 = radius * radius;
         var colors = analogColors(cfg);
+        int innerRadius = radius - 2;
+        int faceColor = analogInnerColor(cfg, colors.face());
         for (int dy = -radius; dy <= radius; dy++) {
-            for (int dx = -radius; dx <= radius; dx++) {
-                int dist2 = dx * dx + dy * dy;
-                if (dist2 > r2) continue;
-                int px = cx + dx;
-                int py = cy + dy;
-                if (dist2 > (radius - 2) * (radius - 2)) {
-                    ctx.fill(px, py, px + 1, py + 1, colors.ring());
-                } else {
-                    ctx.fill(px, py, px + 1, py + 1, analogInnerColor(cfg, colors.face()));
-                }
+            int half = analogSpanHalf(radius, dy);
+            if (half < 0) continue;
+            int py = cy + dy;
+            int halfIn = Math.abs(dy) <= innerRadius
+                    ? analogSpanHalf(innerRadius, dy)
+                    : -1;
+            if (halfIn < 0) {
+                ctx.fill(cx - half, py, cx + half + 1, py + 1, colors.ring());
+            } else {
+                ctx.fill(cx - half, py, cx - halfIn, py + 1, colors.ring());
+                ctx.fill(cx + halfIn + 1, py, cx + half + 1, py + 1, colors.ring());
+                ctx.fill(cx - halfIn, py, cx + halfIn + 1, py + 1, faceColor);
             }
         }
 
@@ -423,6 +426,11 @@ public final class CompassHud {
         drawLine(ctx, cx, cy, sx, sy, colors.ring());
 
         ctx.fill(cx - 1, cy - 1, cx + 2, cy + 2, colors.ring());
+    }
+
+    private static int analogSpanHalf(int radius, int dy) {
+        int remaining = radius * radius - dy * dy;
+        return remaining < 0 ? -1 : (int) Math.sqrt(remaining);
     }
 
     private static int analogInnerColor(CompassHudConfig cfg, int faceRgb) {
