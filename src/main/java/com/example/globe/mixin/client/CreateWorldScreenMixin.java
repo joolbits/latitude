@@ -9,6 +9,7 @@ import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import org.spongepowered.asm.mixin.gen.Accessor;
 
 @Mixin(CreateWorldScreen.class)
 public abstract class CreateWorldScreenMixin {
@@ -16,6 +17,9 @@ public abstract class CreateWorldScreenMixin {
 
     @Shadow
     public abstract WorldCreationUiState getUiState();
+
+    @Accessor("recreated")
+    public abstract boolean globe$isRecreated();
 
     @Inject(method = "init", at = @At("HEAD"))
     private void globe$logCreateWorldInit(CallbackInfo ci) {

@@ -4,6 +4,7 @@ import com.example.globe.client.create.LatitudeCreateWorldScreen;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.worldselection.CreateWorldScreen;
+import net.minecraft.client.gui.screens.worldselection.WorldCreationUiState;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -16,11 +17,12 @@ public abstract class CreateWorldScreenShowMixin {
     private static void globe$redirectToLatitudeScreen(Minecraft client, Runnable onClose, CallbackInfo ci) {
         Screen parent = client.screen;
         if (client.screen instanceof CreateWorldScreen createWorldScreen) {
-            LatitudeCreateWorldScreen.openLoaded(
-                    client,
-                    onClose,
-                    parent,
-                    ((CreateWorldScreenMixin) (Object) createWorldScreen).getUiState().getSettings());
+            WorldCreationUiState initialState =
+                    ((CreateWorldScreenMixin) (Object) createWorldScreen).getUiState();
+            boolean recreated = ((CreateWorldScreenMixin) (Object) createWorldScreen).globe$isRecreated();
+            if (LatitudeCreateWorldScreen.canRepresent(initialState, recreated)) {
+                LatitudeCreateWorldScreen.openLoaded(client, onClose, parent, initialState, recreated);
+            }
         }
     }
 }
