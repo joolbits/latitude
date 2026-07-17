@@ -1,6 +1,6 @@
 # Latitude 1.5 Feature Manifest
 
-`status: Phase 3 locally passed; local savepoint` · `branch: codex/1.5-mini-launch-26.1x` · `base: f26d5f58` · `recorded: 2026-07-17`
+`status: Phase 4 locally passed; candidate proof clean; savepoint pending` · `branch: codex/1.5-mini-launch-26.1x` · `base: f26d5f58` · `recorded: 2026-07-17`
 
 This is the implementation-side allowlist for the Latitude 1.5 pre-2.0 polish campaign. The campaign
 roadmap lives in the docs root at:
@@ -123,5 +123,28 @@ paths are recorded in:
 
 `docs/binder/latitude-1-5-phase3-20260717.md`
 
-This is a local Phase 3 pass. It does not authorize Phase 4, the 26.2 port, profile staging, tagging,
-pushing, release, upload, or publication.
+Phase 3 is frozen in local implementation savepoint
+`3a79b608039c85e0ffca5f4f9a47e2e0935f7fa6`. It did not authorize the 26.2 port, profile staging,
+tagging, pushing, release, upload, or publication.
+
+## Phase 4 result
+
+| Gate | Status | Evidence |
+| --- | --- | --- |
+| Lowest-target 26.1 clean build | **PASSED** | Java 25 clean build, invariant scan, and `9` clip-policy assertions. |
+| Identical jar on 26.1 / 26.1.1 / 26.1.2 | **PASSED** | SHA-256 `c2c001e9a042d02d33b6f5a207ca1b3de35ab5191b8869b17ad1df370c8820a6` in every server, provider, and client row. |
+| Fresh create, save/reload, and clean shutdown | **PASSED** | Three fresh dedicated-server worlds and three reloads; `30` NBT assertions. |
+| Older-save carry-forward | **PASSED** | A disposable 26.1 world loaded under 26.1.1 and 26.1.2; `14` NBT assertions preserve seed, preset, and save policy. |
+| Supported provider stacks | **PASSED** | Terralith/Lithostitched/Promenade/Biolith on all three targets; Biomes O' Plenty/GlitchCore/TerraBlender additionally on its supported 26.1.2 target; `74` assertions. |
+| Exact public-jar client entry | **PASSED** | Three disposable clients joined task-owned servers, reached Latitude's first-safe playable tick, cleared the bespoke loading overlay, and left clean server stops; `42` assertions. |
+| Candidate purity and metadata | **PASSED** | Entry/content denylist, mixin closure, metadata fence `>=26.1 <26.2`, and `12` exact candidate copies audited. |
+
+Canonical Phase 4 evidence:
+
+`docs/binder/latitude-1-5-phase4-20260717.md`
+
+This is a local Phase 4 compatibility pass. The frozen jar is artifact-pure, but its manifest
+truthfully records `Build-Dirty: true` because the 26.1.x identity edits and Phase 4 documentation
+are not yet committed. No real profile/world or screen/window was accessed. A savepoint/rebuild
+decision and Phase 5 authorization are separate gates. The 26.2 port, profile staging, tagging,
+pushing, release, upload, and publication remain unauthorized.
