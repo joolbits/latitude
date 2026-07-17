@@ -108,4 +108,51 @@ class PolarWaterFreezeRuleTest {
     void nanLatitudeDoesNotFreeze() {
         assertFalse(PolarWaterFreezeRule.freezesWater(true, Double.NaN));
     }
+
+    // ---- B-9a: the sea-freeze FRAY (the razor-seam fix) --------------------------------------
+
+    @Test
+    void frayNeutralNoiseReproducesTheRazorLineExactly() {
+        // Noise 0.5 = threshold exactly 85: the anchor constant does not move (its own pin above stays),
+        // and a neutral sample is bit-for-bit the razor predicate.
+        assertFalse(PolarWaterFreezeRule.freezesWaterFrayed(true, 84.999, 0.5));
+        assertTrue(PolarWaterFreezeRule.freezesWaterFrayed(true, 85.0, 0.5));
+        assertTrue(PolarWaterFreezeRule.freezesWaterFrayed(true, -85.0, 0.5), "hemisphere-symmetric");
+    }
+
+    @Test
+    void frayWandersPlusMinusOneDegree() {
+        // Noise 1.0 pushes the front poleward to 86: 85.5 stays liquid there...
+        assertFalse(PolarWaterFreezeRule.freezesWaterFrayed(true, 85.5, 1.0));
+        assertTrue(PolarWaterFreezeRule.freezesWaterFrayed(true, 86.0, 1.0));
+        // ...noise 0.0 pulls it equatorward to 84: 84.0 freezes there.
+        assertTrue(PolarWaterFreezeRule.freezesWaterFrayed(true, 84.0, 0.0));
+        assertFalse(PolarWaterFreezeRule.freezesWaterFrayed(true, 83.9, 0.0));
+        assertEquals(1.0, PolarWaterFreezeRule.FRAY_HALF_WIDTH_DEG, 1e-9);
+    }
+
+    @Test
+    void outsideTheFrayStripFrayedEqualsRazorForEveryNoise() {
+        // The consumer only samples noise inside [84,86]; pin WHY that is sound -- outside the strip every
+        // possible frayed threshold lands on the same side as the razor.
+        for (double noise : new double[]{0.0, 0.25, 0.5, 0.75, 0.999999}) {
+            assertFalse(PolarWaterFreezeRule.freezesWaterFrayed(true, 83.9, noise), "below the strip: liquid");
+            assertTrue(PolarWaterFreezeRule.freezesWaterFrayed(true, 86.1, noise), "above the strip: frozen");
+        }
+        assertTrue(PolarWaterFreezeRule.inFreezeFrayBand(84.0));
+        assertTrue(PolarWaterFreezeRule.inFreezeFrayBand(86.0));
+        assertFalse(PolarWaterFreezeRule.inFreezeFrayBand(83.99));
+        assertFalse(PolarWaterFreezeRule.inFreezeFrayBand(86.01));
+        assertFalse(PolarWaterFreezeRule.inFreezeFrayBand(Double.NaN), "NaN falls back to the razor path");
+    }
+
+    @Test
+    void fraySafetyFallbacks() {
+        // NaN noise degrades to the exact razor line (never a hole in the ice sheet on bad data)...
+        assertTrue(PolarWaterFreezeRule.freezesWaterFrayed(true, 85.0, Double.NaN));
+        assertFalse(PolarWaterFreezeRule.freezesWaterFrayed(true, 84.999, Double.NaN));
+        // ...and non-globe / NaN latitude never freeze, same as the razor predicate.
+        assertFalse(PolarWaterFreezeRule.freezesWaterFrayed(false, 90.0, 0.5));
+        assertFalse(PolarWaterFreezeRule.freezesWaterFrayed(true, Double.NaN, 0.5));
+    }
 }

@@ -69,6 +69,15 @@ public abstract class BiomePolarWaterFreezeMixin {
             return warm;
         }
         double absLatDeg = LatitudeMath.absLatDegExact(level.getWorldBorder(), pos.getZ());
+        // B-9a SEA-FREEZE FRAY (flag-gated in the barrens family): inside the 85 +/- 1 strip the freeze FRONT
+        // wanders on a coherent per-column fray sample instead of the razor line the owner screenshotted.
+        // Outside the strip the frayed predicate equals the razor by construction, so the noise is only
+        // sampled where it can matter; barrens-flag-off (or outside the strip) is the untouched razor path,
+        // byte-identical. Deterministic per column, so worldgen and tick freezing always agree.
+        if (LatitudeV2Flags.POLAR_BARRENS_ENABLED && PolarWaterFreezeRule.inFreezeFrayBand(absLatDeg)) {
+            return !PolarWaterFreezeRule.freezesWaterFrayed(true, absLatDeg,
+                    LatitudeBiomes.polarSeaFreezeFrayNoise(pos.getX(), pos.getZ()));
+        }
         // At/above the polar threshold, report "not warm" so vanilla's own genuine-water/light/edge logic in
         // shouldFreeze runs and freezes this (latitude-blind, warm-biome) exposed water column; below it,
         // freezesWater is false so we return the untouched warm veto.

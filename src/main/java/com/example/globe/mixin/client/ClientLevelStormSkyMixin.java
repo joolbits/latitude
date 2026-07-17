@@ -56,7 +56,13 @@ public abstract class ClientLevelStormSkyMixin {
         // B-4 round 3 item 3: STEEPENED. The old lift used the linear 85->90 ambientProgress, so at 86 deg
         // it was only ~0.2 and the sun still shone (Peetsa's complaint). stormLevel reaches full overcast by
         // ~87.5 deg (0.4 already at 86 deg): the sky reads clearly stormy well before the pole, sun gone by 87.5.
-        float target = com.example.globe.core.PolarHazardWindow.stormLevel(absLatDeg);
+        // S10c (TEST 99 "greyer skies earlier"): an EARLY-OVERCAST floor now leads that ramp -- 0 at 81 deg,
+        // 0.35 by 85 (PolarFogLaw.earlyOvercast01), held poleward until the existing steep 85->87.5 stormLevel
+        // ramp overtakes it (~85.9). max() preserves the flight-tested 85 full-storm anchor bit-for-bit; the
+        // approach just greys in (and light vanilla snowfall joins the ambient flakes) from ~81 instead of the
+        // sky snapping stormy at 85.
+        float target = Math.max(com.example.globe.core.PolarHazardWindow.stormLevel(absLatDeg),
+                com.example.globe.core.PolarFogLaw.earlyOvercast01(absLatDeg));
         if (target <= 0.0f) {
             return;
         }

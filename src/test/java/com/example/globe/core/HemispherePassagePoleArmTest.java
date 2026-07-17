@@ -155,4 +155,20 @@ class HemispherePassagePoleArmTest {
         assertFalse(HemispherePassage.rearmGestureArms(false, g.promptDist(), facingPole, g.promptDist(),
                 HemispherePassage.GESTURE_HIT_ENTITY), "attacking an entity at the wall never re-prompts");
     }
+
+    // ---- S10d crossing legibility: the prompt's destination label rides the SHARED crossing paths ----
+
+    @Test
+    void promptDestinationLabelComposesAntipodalXWithFarMeridianLabel() {
+        // The prompt body computes its destination EXACTLY as the crossing does: antipodalX (L -> L+180),
+        // then the arrival subtitle's formatter -- never re-derived math. Depart at 167 deg E (x=6970 on
+        // xRadius 7500): the far side of the world is 13 deg W (x = 6970 - 7500 = -530 -> 12.72 -> "13°W").
+        double xRadius = 7500.0;
+        double dest = PoleArrivalSearch.antipodalX(6970.0, 0.0, xRadius);
+        assertEquals(-530.0, dest, 1e-9);
+        assertEquals("13°W", HemispherePassage.farMeridianLabel(dest, 0.0, xRadius));
+        // And the TEST 97 canonical case: departing ~13 deg E must promise ~167 deg W.
+        double dest2 = PoleArrivalSearch.antipodalX(541.7, 0.0, xRadius); // ~13 deg E
+        assertEquals("167°W", HemispherePassage.farMeridianLabel(dest2, 0.0, xRadius));
+    }
 }

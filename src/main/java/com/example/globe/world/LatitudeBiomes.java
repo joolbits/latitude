@@ -864,6 +864,39 @@ public final class LatitudeBiomes {
         return PolarBarrensBand.surfaceKind(powder, ice);
     }
 
+    /**
+     * B-9a GLACIER BODY: the packed-ice body thickness (blocks, below the 10-block snow cap) for the column
+     * at (blockX, blockZ), or 0 when the column gets no glacier -- flag off, unarmed world, or not a barrens
+     * column (the SAME latitude+fray decision as {@link #polarBarrensSurfaceKind}, so the glacier never
+     * outruns the barrens ground/biome). The thickness rides {@code PolarBarrensBand.glacierIceBodyBlocks}
+     * (band-fraction ramp 86-&gt;88, "the glacier thickens in") wobbled on a dedicated coherent depth field
+     * (Art VI, no cell-hash). Consumed by {@code PolarBarrensGlacierMixin} at the end of the surface stage.
+     */
+    public static int polarBarrensGlacierIceBlocks(int blockX, int blockZ, int radius) {
+        if (!LatitudeV2Flags.POLAR_BARRENS_ENABLED || radius <= 0) {
+            return 0;
+        }
+        double absLatDeg = Math.abs((double) blockZ) * 90.0 / radius;
+        if (!PolarBarrensBand.isBarrens(absLatDeg, polarBarrensFrayNoise(blockX, blockZ))) {
+            return 0;
+        }
+        double depthNoise = ValueNoise2D.sampleBlocks(WORLD_SEED ^ POLAR_BARRENS_GLACIER_SALT,
+                blockX, blockZ, POLAR_BARRENS_GLACIER_SCALE_BLOCKS);
+        return PolarBarrensBand.glacierIceBodyBlocks(absLatDeg, depthNoise);
+    }
+
+    /**
+     * B-9a SEA-FREEZE FRAY: coherent fray sample in {@code [0,1)} for the 85-deg polar water-freeze line
+     * (dedicated salt, coastline-front scale) -- consumed flag-gated by {@code BiomePolarWaterFreezeMixin}
+     * through {@code PolarWaterFreezeRule.freezesWaterFrayed}, so the razor seam the owner screenshotted
+     * (JourneyMap + in-world) becomes a wandering +-1-deg front. Art VI clean (ValueNoise2D, never
+     * floorDiv/cell-hash).
+     */
+    public static double polarSeaFreezeFrayNoise(int blockX, int blockZ) {
+        return ValueNoise2D.sampleBlocks(WORLD_SEED ^ POLAR_SEA_FREEZE_FRAY_SALT,
+                blockX, blockZ, POLAR_SEA_FREEZE_FRAY_SCALE_BLOCKS);
+    }
+
     // --- Mercator world shape (Phase 1: wider world, more biomes per band) ---
     // CLASSIC = square globe (X radius == Z radius). MERCATOR = 2:1 face: the playable X extent is
     // ASPECT * the Z radius, so each latitude band is twice as long E-W. We deliberately do NOT stretch
@@ -2829,6 +2862,14 @@ public final class LatitudeBiomes {
     private static final int POLAR_BARRENS_POWDER_SCALE_BLOCKS = 40;           // small hidden pockets
     private static final long POLAR_BARRENS_ICE_SALT = 0x706F6C6272696365L;    // "polbrice"
     private static final int POLAR_BARRENS_ICE_SCALE_BLOCKS = 160;             // larger ice sheets
+    // B-9a glacier-body depth wobble: glacier-scale undulation so the packed-ice sole reads like a real
+    // glacier bed, not a flat slab (dedicated salt, Art VI).
+    private static final long POLAR_BARRENS_GLACIER_SALT = 0x706F6C62676C6372L; // "polbglcr"
+    private static final int POLAR_BARRENS_GLACIER_SCALE_BLOCKS = 96;
+    // B-9a sea-freeze fray: the 85-deg freeze line wanders +-1 deg on a coastline-front-scale coherent field
+    // (dedicated salt, Art VI) instead of the razor seam the owner screenshotted.
+    private static final long POLAR_SEA_FREEZE_FRAY_SALT = 0x7365616672657A65L; // "seafreze"
+    private static final int POLAR_SEA_FREEZE_FRAY_SCALE_BLOCKS = 128;
     // Alpine peak smoothing: peak biomes (snowy_slopes/frozen_peaks/jagged_peaks) are emitted on a per-column
     // terrain gate with no spatial coherence, so they salt-and-pepper into many tiny components (the only
     // genuinely-confetti biomes, in every config incl. vanilla). Gate them with a coherent ValueNoise field so

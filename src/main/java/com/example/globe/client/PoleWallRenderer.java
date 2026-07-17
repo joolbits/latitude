@@ -14,11 +14,19 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
 
 /**
- * Phase 5 Slice B-7 P3 (owner order, TEST 97: "There needs to be the diagonal lines like vanilla") -- the
- * vanilla-world-border-style WALL VISUAL at the pole line {@code z = centerZ +- zRadius} on WIDE worlds. On
- * Classic worlds the vanilla square border IS the pole wall and renders itself; on Wide the border is sized to
- * the wider X axis, so the pole clamp (S2, server-side) is an INVISIBLE wall -- this plane is its presentation:
- * a translucent, animated diagonal-stripe forcefield in the vanilla border's visual language.
+ * <b>RETIRED -- S10b, owner decision 2026-07-16 (TEST 99 flight).</b> Built at P3 on the owner's TEST 97 ask
+ * ("There needs to be the diagonal lines like vanilla"), then REVERSED after he flew it: "get rid of the
+ * appearance of this diagonal wall... that's how 90 should feel" -- the S10b fog law's near-total whiteout
+ * ({@code core.PolarFogLaw}: ~4-block visibility at the pole line) IS the wall's appearance now. DEAD-GATED,
+ * not deleted: {@code GlobeModClient} no longer calls {@link #register()} AND register() itself no-ops, so a
+ * future owner reversal is a two-line revival (B-6 taught us reversals happen both ways). The clamp,
+ * ice-chime, pack-ice actionbar and frost particles stay live as the wall's TOUCH feedback.
+ *
+ * <p><i>Original design, kept for that revival:</i> the vanilla-world-border-style WALL VISUAL at the pole
+ * line {@code z = centerZ +- zRadius} on WIDE worlds. On Classic worlds the vanilla square border IS the pole
+ * wall and renders itself; on Wide the border is sized to the wider X axis, so the pole clamp (S2,
+ * server-side) is an INVISIBLE wall -- this plane was its presentation: a translucent, animated
+ * diagonal-stripe forcefield in the vanilla border's visual language.
  *
  * <p><b>Vanilla mimicry, minimally.</b> Vanilla 26.2 draws its border as a GPU-buffered quad wall of the
  * scrolling {@code textures/misc/forcefield.png} ({@link WorldBorderRenderer#FORCEFIELD_LOCATION} -- reused
@@ -66,13 +74,15 @@ public final class PoleWallRenderer {
     private PoleWallRenderer() {
     }
 
-    /** Register the COLLECT_SUBMITS hook (the 26.2 custom-geometry stage). Called once from client init. */
+    /** RETIRED (S10b, owner 2026-07-16): intentionally a NO-OP -- the striped plane must not render; the fog
+     *  law's whiteout is the wall's appearance. To revive: restore the registration line below AND the
+     *  {@code register()} call in {@code GlobeModClient.onInitializeClient}. */
     public static void register() {
         if (registered) {
             return;
         }
         registered = true;
-        LevelRenderEvents.COLLECT_SUBMITS.register(PoleWallRenderer::collectSubmits);
+        // LevelRenderEvents.COLLECT_SUBMITS.register(PoleWallRenderer::collectSubmits); // RETIRED S10b 2026-07-16
     }
 
     private static void collectSubmits(LevelRenderContext ctx) {

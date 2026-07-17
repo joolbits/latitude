@@ -1,7 +1,6 @@
 package com.example.globe.mixin.client;
 
 import com.example.globe.client.GlobeClientState;
-import com.example.globe.core.PolarHazardWindow;
 import com.example.globe.util.LatitudeMath;
 import net.minecraft.client.Camera;
 import net.minecraft.client.DeltaTracker;
@@ -30,13 +29,14 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
  * It is correct exposed OR sheltered-looking-out, so -- unlike the overlay -- it needs no {@code surfaceOk}
  * gate. The whiteout overlay is retuned to a light "engulfed" top-coat that still only paints when exposed.
  *
- * <p><b>Composition / discipline.</b> Envelope = the SAME ambient window {@code [85,90]} as the snow + overlay
- * ({@link PolarHazardWindow#ambientProgress}); the tightening + fog-colour tint are pure, tested curves in
- * {@code PolarHazardWindow}. Only ever TIGHTENS vanilla's fog (min-guarded; NEAR anchors sit far closer than
- * any view distance) and is SEAM-FREE at/below 85 deg. Atmospheric only -- if the camera is in water/lava/
- * powder-snow vanilla owns the fog and we do nothing. Globe worlds only; honours the existing debug fog kill
- * switches. No {@code require = 0}: if {@code setupFog} ever renames this fails loudly at load rather than
- * silently no-opping (the failure mode of the dead {@code applyFog}-targeted fog mixins).
+ * <p><b>Composition / discipline (S10b FOG LAW v2).</b> The latitude->visibility LAW is the single
+ * {@code core.PolarFogLaw} cap table (80 -> 90, absolute blocks -- see its class doc for why absolute replaced
+ * the old eased-from-vanilla form); this mixin only implements it on the depth-fog side. Only ever TIGHTENS
+ * vanilla's fog (min-guarded) and is SEAM-FREE at/below the 80-deg onset (the first table row sits above every
+ * realistic view distance). Atmospheric only -- if the camera is in water/lava/powder-snow vanilla owns the fog
+ * and we do nothing. Globe worlds only; honours the existing debug fog kill switches. No {@code require = 0}:
+ * if {@code setupFog} ever renames this fails loudly at load rather than silently no-opping (the failure mode
+ * of the dead {@code applyFog}-targeted fog mixins).
  */
 @Mixin(FogRenderer.class)
 public class FogRendererPolarSetupMixin {
@@ -67,10 +67,16 @@ public class FogRendererPolarSetupMixin {
             return;
         }
 
+        // S10b FOG LAW v2 (owner, TEST 99: "fog is very lacking... at 90 you can't see really anything").
+        // The latitude->visibility law is the ABSOLUTE cap table in core.PolarFogLaw (light haze 80, heavy 40
+        // blocks by 88, NEAR-TOTAL whiteout -- ~4 blocks -- at the pole line; the fog IS the wall now, replacing
+        // the retired striped plane). ABSOLUTE, not eased-from-vanilla like the superseded
+        // PolarHazardWindow.polarFogEnd: the old form scaled with the video render distance, so long-view
+        // players saw a fraction of the intended fog at every latitude (the TEST 99 "lacking" root).
         double absLatDeg = LatitudeMath.absLatDegExact(level.getWorldBorder(), mc.player.getZ());
-        float endFraction = PolarHazardWindow.polarFogEndFraction(absLatDeg);
-        if (endFraction <= 0.001f) {
-            return; // below ~85 deg -- no polar fog, vanilla untouched
+        float endCap = com.example.globe.core.PolarFogLaw.fogEndCapBlocks(absLatDeg);
+        if (endCap == Float.MAX_VALUE) {
+            return; // below the 80-deg onset -- no polar fog, vanilla untouched (seam-free)
         }
 
         FogData data = cir.getReturnValue();
@@ -78,23 +84,25 @@ public class FogRendererPolarSetupMixin {
             return; // defensive: sweeper note -- this mixin has no live launch yet to prove color is ever set
         }
 
-        // Pull the cylindrical render-distance fog IN toward the pole values (only ever tighter than vanilla).
-        float newEnd = PolarHazardWindow.polarFogEnd(data.renderDistanceEnd, absLatDeg);
-        float newStart = PolarHazardWindow.polarFogStart(data.renderDistanceStart, newEnd, absLatDeg);
-        data.renderDistanceEnd = Math.min(data.renderDistanceEnd, newEnd);
-        data.renderDistanceStart = Math.min(data.renderDistanceStart, newStart);
+        // Cap the cylindrical render-distance fog (only ever tighter than vanilla; min() = seam-free onset).
+        float newEnd = Math.min(data.renderDistanceEnd, endCap);
+        float newStart = Math.min(data.renderDistanceStart,
+                Math.min(com.example.globe.core.PolarFogLaw.fogStartBlocks(newEnd), newEnd - 1.0f));
+        data.renderDistanceEnd = newEnd;
+        data.renderDistanceStart = newStart;
 
         // Tint the fog COLOUR toward the storm->white whiteout palette so the far terrain fades to a white/grey
         // blizzard haze rather than the biome's cold-blue fog. rgb only; leave alpha to vanilla. Grey-blue storm
-        // at the low end, near-white at the pole (raw ambient), blended in on the end curve.
-        float ambient = (float) PolarHazardWindow.ambientProgress(absLatDeg);
+        // at the low end, near-white at the pole (linear01 palette), blended in on the front-loaded curve.
+        float blend = com.example.globe.core.PolarFogLaw.colorBlend01(absLatDeg);
+        float ambient = com.example.globe.core.PolarFogLaw.linear01(absLatDeg);
         float tr = lerp255(STORM_R, WHITE_R, ambient);
         float tg = lerp255(STORM_G, WHITE_G, ambient);
         float tb = lerp255(STORM_B, WHITE_B, ambient);
         Vector4f c = data.color;
-        c.x += (tr - c.x) * endFraction;
-        c.y += (tg - c.y) * endFraction;
-        c.z += (tb - c.z) * endFraction;
+        c.x += (tr - c.x) * blend;
+        c.y += (tg - c.y) * blend;
+        c.z += (tb - c.z) * blend;
     }
 
     private static float lerp255(int from, int to, float t) {
