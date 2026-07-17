@@ -1378,6 +1378,12 @@ public class GlobeMod implements ModInitializer {
         int warnStartZ = Math.max(0, radius - POLE_WARNING_DISTANCE_BLOCKS);
         int maxAbsZ = Math.max(0, warnStartZ - 500);
         z = Mth.clamp(z, -maxAbsZ, maxAbsZ);
+        // S10(a) SPAWN CALM BAND (TEST 99): the block-anchored guard above does not scale with the radius
+        // (83.2 deg on Regular-Wide 10000), and the SUBPOLAR/POLAR zone fractions (65.25/80.1 deg) reach into
+        // or onto the S8 polar-country onset (80). First spawn must never land in storm country -- clamp the
+        // target to |lat| <= 50 deg, degree-anchored so it holds on every shape and size (deep-zone picks
+        // saturate at the calm edge by design; see SpawnCalmBand).
+        z = com.example.globe.core.SpawnCalmBand.clampZ(z, radius);
 
         int targetZ = z;
         BlockPos spawnPos;
@@ -1456,9 +1462,12 @@ public class GlobeMod implements ModInitializer {
                                           Climate.Sampler sampler,
                                           int xRadius, int zRadius, int targetZ, long seed) {
         final int margin = 320;
-        // X is drawn over the (wider, in Mercator) E-W extent; Z-jitter is clamped to the latitude extent.
+        // X is drawn over the (wider, in Mercator) E-W extent; Z-jitter is clamped to the latitude extent --
+        // and (S10a) to the 50-deg SPAWN CALM BAND, so the +-96 jitter can never carry a clamped target back
+        // out of the band (the old zRadius-320 bound alone allowed |lat| up to ~87 on Regular-Wide).
         int maxX = Math.max(0, xRadius - margin);
-        final int maxZ = Math.max(0, zRadius - margin);
+        final int maxZ = Math.min(Math.max(0, zRadius - margin),
+                com.example.globe.core.SpawnCalmBand.maxAbsZ(zRadius));
         // Slice C-2 (TEST 27 finding 1b): when the Phase 4 terrain bias is actively shaping terrain, never
         // even SEARCH for spawn inside the projection edge band (|x| >= EDGE_START * xRadius = outer 20%).
         // Geography deliberately ramps that band to ocean-intent, so its biased terrain is carved -- but

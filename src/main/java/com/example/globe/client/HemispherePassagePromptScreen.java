@@ -67,14 +67,19 @@ public final class HemispherePassagePromptScreen extends Screen {
     }
 
     /**
-     * B-7 pole variant: the "Blizzard advisory" over-the-pole crossing prompt (design §7 copy). The crossing
-     * keeps the same pole side, so {@code north} names the pole the player is at.
+     * B-7 pole variant: the "Blizzard advisory" over-the-pole crossing prompt. S10d (owner, TEST 99 crossing
+     * legibility): the body names the DESTINATION -- the computed far meridian -- instead of the pole itself,
+     * selling the polar-route value ("the far side of the world" is the point of the trip). The label is
+     * computed by the CALLER from the player's current X through the SAME shared paths the crossing itself
+     * uses ({@code PoleArrivalSearch.antipodalX} -> {@code HemispherePassage.farMeridianLabel}) -- never
+     * re-derived math -- so same formula at open-time X; the arrival subtitle names the final truth (sweep #6 LOW: corner-clamp landings can sit ~2-3 deg inward of a promised 180).
      *
-     * @param north true if the crossing is over the NORTH pole ({@code N = -Z}), false for the South pole
+     * @param farMeridianLabel the destination meridian label, e.g. {@code "167°W"}
      */
-    public static HemispherePassagePromptScreen forPole(boolean north) {
+    public static HemispherePassagePromptScreen forPole(String farMeridianLabel) {
+        // S10d copy (design-verbatim shape): "...the far side of the world — {deg}."
         return new HemispherePassagePromptScreen("Blizzard advisory",
-                "Beyond the whiteout lies the far side of the " + (north ? "North" : "South") + " Pole.",
+                "Beyond the whiteout lies the far side of the world — " + farMeridianLabel + ".",
                 PassageAxis.POLE);
     }
 

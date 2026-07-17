@@ -105,6 +105,51 @@ public final class PolarBarrensBand {
     private PolarBarrensBand() {
     }
 
+    // --- B-9a GLACIER BODY (Peetsa 2026-07-16, TEST 99: "a very very very thick layer of ice under like
+    // --- 10 blocks at least of snow" -- the Glacial Caves design family pulled forward) -------------------
+    //
+    // DEPTH LAW (build-crew proposal, per the B-9 family): a barrens column's ground becomes a real glacier
+    // sole-down: a fixed SNOW CAP of GLACIER_SNOW_CAP_BLOCKS (10 -- the owner's floor) over a packed-ice
+    // BODY whose thickness ramps with the SAME barrensFraction01 smoothstep the band frays on (thin marginal
+    // glacier at the 86-deg frayed edge, full body at/above 88 -- "the glacier thickens in" with the band,
+    // so the ice never outruns the biome), wobbled by a dedicated coherent ValueNoise2D field (+-6 blocks,
+    // Art VI clean) so the glacier SOLE undulates like a real glacier bed instead of a flat slab. Full-band
+    // total: 10 snow + 24..36 ice = 34..46 blocks below the surface -- inside the design's "~30-40ish,
+    // tens of blocks" envelope and bounded so the LIVING UNDERGROUND law holds: everything below the sole
+    // stays native stone/dirt (ores generate at the features stage and never target packed_ice, so the ore
+    // column resumes under the ice by construction); noise-stage cave air and aquifer fluids are NEVER
+    // replaced (the writer skips them), so caves carve/thread the ice body = the free ice-caves preview.
+
+    /** The snow cap: at least this many blocks of {@code snow_block} under a barrens surface (owner floor:
+     *  "10 blocks at least of snow"). The surface-skin pockets (powder snow / ice patches) sit ON this cap
+     *  and are preserved -- the cap writer never replaces glacier-family blocks. */
+    public static final int GLACIER_SNOW_CAP_BLOCKS = 10;
+    /** Packed-ice body thickness at the frayed band edge (barrens fraction ~0): a marginal glacier. */
+    public static final int GLACIER_ICE_MIN_BLOCKS = 6;
+    /** Packed-ice body thickness at full band (fraction 1.0, at/above 88 deg): the thick body. */
+    public static final int GLACIER_ICE_MAX_BLOCKS = 30;
+    /** Coherent depth wobble half-amplitude (blocks) on the ice body -- the glacier sole undulates. */
+    public static final int GLACIER_DEPTH_WOBBLE_BLOCKS = 6;
+
+    /**
+     * The packed-ice BODY thickness (blocks, below the snow cap) for a barrens column at {@code deg}, given
+     * a coherent depth-noise sample in {@code [0,1)}: {@code ICE_MIN + fraction*(ICE_MAX-ICE_MIN) +
+     * (noise-0.5)*2*WOBBLE}, clamped to {@code [1, ICE_MAX+WOBBLE]}. Returns 0 at/below the band onset
+     * (fraction 0 -- no glacier outside the band; callers additionally gate on the {@link #isBarrens} fray so
+     * ground and biome agree). NaN noise reads as 0.5 (no wobble, never no-glacier on bad data inside the
+     * band). Monotone in {@code deg} for a fixed noise sample.
+     */
+    public static int glacierIceBodyBlocks(double deg, double depthNoise01) {
+        double f = barrensFraction01(deg);
+        if (f <= 0.0) {
+            return 0;
+        }
+        double n = Double.isNaN(depthNoise01) ? 0.5 : depthNoise01;
+        double wobble = (n - 0.5) * 2.0 * GLACIER_DEPTH_WOBBLE_BLOCKS;
+        int ice = (int) Math.round(GLACIER_ICE_MIN_BLOCKS + f * (GLACIER_ICE_MAX_BLOCKS - GLACIER_ICE_MIN_BLOCKS) + wobble);
+        return Math.max(1, Math.min(GLACIER_ICE_MAX_BLOCKS + GLACIER_DEPTH_WOBBLE_BLOCKS, ice));
+    }
+
     /**
      * True when a block write at {@code y} is part of the column's exposed SURFACE SKIN -- i.e. eligible
      * for the barrens snow/powder/ice substitution -- given the column's two worldgen heightmaps:

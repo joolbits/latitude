@@ -216,4 +216,49 @@ class PolarBarrensBandTest {
         // apart on an ordinary land column; that must still read as land.
         assertTrue(PolarBarrensBand.isSurfaceSkin(70, 71, 70));
     }
+
+    // ---- B-9a: the glacier depth law ---------------------------------------------------------
+
+    @Test
+    void glacierSnowCapIsTheOwnersTenBlockFloor() {
+        assertEquals(10, PolarBarrensBand.GLACIER_SNOW_CAP_BLOCKS,
+                "'10 blocks at least of snow' -- the owner's floor");
+    }
+
+    @Test
+    void glacierIceBodyIsZeroOutsideTheBandAndThickensIn() {
+        // No glacier at/below the onset (fraction 0) -- columns outside the band are bitwise untouched.
+        assertEquals(0, PolarBarrensBand.glacierIceBodyBlocks(PolarBarrensBand.ONSET_DEG, 0.5));
+        assertEquals(0, PolarBarrensBand.glacierIceBodyBlocks(80.0, 0.9));
+        // Neutral noise (0.5 = no wobble): the body rides the band-fraction smoothstep -- a marginal glacier
+        // just inside the onset, the full 30-block body at/above FULL_DEG ("the glacier thickens in").
+        int nearEdge = PolarBarrensBand.glacierIceBodyBlocks(PolarBarrensBand.ONSET_DEG + 0.1, 0.5);
+        int mid = PolarBarrensBand.glacierIceBodyBlocks(
+                (PolarBarrensBand.ONSET_DEG + PolarBarrensBand.FULL_DEG) / 2.0, 0.5);
+        int full = PolarBarrensBand.glacierIceBodyBlocks(PolarBarrensBand.FULL_DEG, 0.5);
+        assertTrue(nearEdge >= 1 && nearEdge <= PolarBarrensBand.GLACIER_ICE_MIN_BLOCKS + 2,
+                "marginal glacier at the frayed edge, was " + nearEdge);
+        assertTrue(mid > nearEdge, "the body thickens with the band");
+        assertEquals(PolarBarrensBand.GLACIER_ICE_MAX_BLOCKS, full, "full body at/above 88");
+        assertEquals(full, PolarBarrensBand.glacierIceBodyBlocks(89.5, 0.5), "holds poleward");
+    }
+
+    @Test
+    void glacierDepthWobbleIsBoundedAndSoleStaysAboveTheLivingUnderground() {
+        // Wobble spans +/- 6 around the fraction ramp; the hard cap keeps the TOTAL glacier (cap + ice)
+        // within 10 + 36 = 46 blocks below the surface, so the ore-rich underground below always survives.
+        int deepest = PolarBarrensBand.glacierIceBodyBlocks(90.0, 0.999999);
+        int shallowest = PolarBarrensBand.glacierIceBodyBlocks(90.0, 0.0);
+        assertEquals(PolarBarrensBand.GLACIER_ICE_MAX_BLOCKS + PolarBarrensBand.GLACIER_DEPTH_WOBBLE_BLOCKS,
+                deepest, "deepest sole = max body + wobble (36)");
+        assertEquals(PolarBarrensBand.GLACIER_ICE_MAX_BLOCKS - PolarBarrensBand.GLACIER_DEPTH_WOBBLE_BLOCKS,
+                shallowest, "shallowest full-band sole = max body - wobble (24)");
+        assertTrue(PolarBarrensBand.GLACIER_SNOW_CAP_BLOCKS + deepest <= 48,
+                "total glacier depth stays within the underground-stays-alive bound");
+        // In-band, the body is never zero (a barrens column always has at least a sliver of ice)...
+        assertTrue(PolarBarrensBand.glacierIceBodyBlocks(PolarBarrensBand.ONSET_DEG + 0.05, 0.0) >= 1);
+        // ...and NaN noise degrades to the no-wobble ramp, never to no-glacier.
+        assertEquals(PolarBarrensBand.glacierIceBodyBlocks(87.0, 0.5),
+                PolarBarrensBand.glacierIceBodyBlocks(87.0, Double.NaN));
+    }
 }

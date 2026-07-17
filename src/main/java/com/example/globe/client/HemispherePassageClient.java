@@ -242,11 +242,17 @@ public final class HemispherePassageClient {
 
         if (d.openPrompt()) {
             if (axis == PassageAxis.POLE) {
-                // The crossing keeps the same pole side, so the prompt names the pole the player is AT
-                // (N = -Z: z < centerZ = North). "Beyond the whiteout lies the far side of the {North|South} Pole."
-                boolean north = mc.player.getZ() < border.getCenterZ();
-                PassageDebug.onPromptOpen(axis, distToEdge, north ? "North" : "South");
-                mc.setScreenAndShow(HemispherePassagePromptScreen.forPole(north));
+                // S10d crossing legibility: the prompt names the DESTINATION meridian, computed from the
+                // player's CURRENT x through the SAME shared paths the crossing will use --
+                // PoleArrivalSearch.antipodalX (longitude L -> L+180) then farMeridianLabel (the arrival
+                // subtitle's formatter) -- so the promise, the teleport and the arrival subtitle agree.
+                double centerX = border.getCenterX();
+                double xRadius = com.example.globe.util.LatitudeMath.intendedXRadius(border);
+                String destination = HemispherePassage.farMeridianLabel(
+                        com.example.globe.core.PoleArrivalSearch.antipodalX(mc.player.getX(), centerX, xRadius),
+                        centerX, xRadius);
+                PassageDebug.onPromptOpen(axis, distToEdge, destination);
+                mc.setScreenAndShow(HemispherePassagePromptScreen.forPole(destination));
             } else {
                 // The crossing mirrors X (targetX = -x), so from the western half (x < 0) you arrive in the East.
                 boolean beyondEast = mc.player.getX() < border.getCenterX();

@@ -73,4 +73,41 @@ public final class PolarWaterFreezeRule {
         }
         return Math.abs(latDeg) >= FREEZE_ALL_DEG;
     }
+
+    // --- B-9a SEA-FREEZE FRAY (Peetsa 2026-07-16, TEST 99 screenshots: the 85-deg freeze line was a harsh
+    // --- razor seam on JourneyMap and in-world) --------------------------------------------------------
+
+    /** Half-width (deg) of the freeze-line fray: the effective threshold wanders {@code 85 +/- 1} deg on a
+     *  coherent noise field (the barrens fray idiom -- ValueNoise2D, dedicated salt, Art VI clean). The 85
+     *  anchor itself ({@link #FREEZE_ALL_DEG}) does NOT move -- a fray sample of exactly 0.5 reproduces the
+     *  razor line bit-for-bit. */
+    public static final double FRAY_HALF_WIDTH_DEG = 1.0;
+
+    /** True iff {@code |lat|} lies inside the frayable strip {@code [85-1, 85+1]}. Outside it the frayed
+     *  predicate ALWAYS equals the razor predicate (every possible threshold is on the same side), so the
+     *  consumer only pays a noise sample -- and can only diverge from the razor -- inside this strip. NaN ->
+     *  false (fall back to the razor path). */
+    public static boolean inFreezeFrayBand(double latDeg) {
+        if (Double.isNaN(latDeg)) {
+            return false;
+        }
+        return Math.abs(Math.abs(latDeg) - FREEZE_ALL_DEG) <= FRAY_HALF_WIDTH_DEG;
+    }
+
+    /**
+     * The FRAYED freeze predicate ({@code latitude.polarBarrens.enabled} family; the flag gate lives in the
+     * consumer -- {@code BiomePolarWaterFreezeMixin} -- so flag-off is the untouched razor
+     * {@link #freezesWater}, byte-identical): the column freezes iff {@code |lat| >= 85 + (noise*2-1) * 1},
+     * i.e. the freeze FRONT wanders +/- 1 deg on the coherent per-column fray sample. Deterministic per
+     * column (seeded world noise), so worldgen-time and ongoing tick-time freezing always agree. A NaN noise
+     * sample degrades to 0.5 = the exact razor line (never a hole in the ice sheet on bad data).
+     */
+    public static boolean freezesWaterFrayed(boolean isGlobeWorld, double latDeg, double frayNoise01) {
+        if (!isGlobeWorld || Double.isNaN(latDeg)) {
+            return false;
+        }
+        double n = Double.isNaN(frayNoise01) ? 0.5 : frayNoise01;
+        double threshold = FREEZE_ALL_DEG + (n * 2.0 - 1.0) * FRAY_HALF_WIDTH_DEG;
+        return Math.abs(latDeg) >= threshold;
+    }
 }

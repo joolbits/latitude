@@ -25,6 +25,7 @@
     "ExtremePolarVillageGuardMixin",
     "ExtremePolarVegetationGuardMixin",
     "PolarVegetationFadeGuardMixin",
+    "PolarBarrensGlacierMixin",
     "LivingEntityFreezeDamageMixin",
     "LivingEntityHealLockMixin",
     "StructureBiomeMatchGuardMixin",
