@@ -214,6 +214,37 @@ public final class LatitudeV2Flags {
             Boolean.parseBoolean(System.getProperty("latitude.edgeStructureVeto.enabled", "true"));
 
     /**
+     * Phase 5 Slice B-10 (Polar Outfitting). Default OFF. The master switch for the whole outfitting family --
+     * the unified weighted {@link com.example.globe.core.ColdProtection} score (suit 0.25 / leather 0.125), the
+     * full-suit warning-silence matrix ({@link com.example.globe.core.PolarColdCues#evaluateLadderFullSuit}),
+     * the leather demotion + its once-per-zone reassurance line, the {@code globe:cold_protection} status
+     * effect, and the goggle-visor vignette removal.
+     *
+     * <p><b>Flag-OFF routes the LEGACY path (sweep A3, the no-gap / sequencing law).</b> Leather keeps today's
+     * full-negation at four pieces (single-count {@link com.example.globe.core.ColdProtection#damageMultiplier(int)}
+     * / {@link com.example.globe.core.ColdProtection#negatesFreezeDamage(int)}), the ladder keeps its
+     * HYPOTHERMIA-only suppression ({@link com.example.globe.core.PolarColdCues#evaluateLadder}), and the new
+     * items are registered-but-inert (no mod cold weight, no matrix, no effect, no recipe). So there is NEVER a
+     * moment where the old leather trick is gone but the suit does not yet protect -- leather demotes ONLY when
+     * the suit ships, atomically, under this one flag.
+     *
+     * <p><b>Items register UNCONDITIONALLY; only BEHAVIOUR/obtainability is gated</b> (mirrors the
+     * {@code polar_barrens} precedent). Registries must be consistent across sessions: if item registration
+     * were flag-gated, a world saved with a suit piece in a chest and reopened flag-off would reference a
+     * missing item. So the {@code Item}s and the {@code MobEffect} register every launch (see
+     * {@code com.example.globe.content.PolarOutfitting}); the flag switches the cold weight, the warning matrix,
+     * the status effect, the leather demotion, and creative-tab/recipe obtainability. Items are not worldgen, so
+     * "flag-off = byte-identical" is trivial on the worldgen axis; flag-off must only preserve today's leather
+     * freeze behaviour, which the legacy {@code ColdProtection} path does.
+     *
+     * <p>Born WITH its {@code build.gradle} client-run forwarding line in the SAME pass (L17 discipline). B-10
+     * is presentation/items (no worldgen), so only the {@code runClient} forwarding is needed. Design
+     * {@code docs/binder/b10-polar-outfitting-design-20260718.md} (incl. the binding A1-A7 sweep tail).
+     */
+    public static final boolean POLAR_OUTFITTING_ENABLED =
+            Boolean.parseBoolean(System.getProperty("latitude.polarOutfitting.enabled", "false"));
+
+    /**
      * Polar small-vegetation fade (Peetsa 2026-07-10). Default TRUE since 2026-07-12: the TEST 75 live
      * look found flowers/grass/sugarcane/firefly bushes thriving at 88+ deg because this shipped off --
      * vanilla 26.2 decorates snowy_plains/frozen_river themselves (flower_default, patch_sugar_cane,

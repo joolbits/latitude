@@ -139,6 +139,10 @@ loom {
             // Phase 5 B-5 edge structure veto (default TRUE, matching LatitudeV2Flags; byte-identical when
             // explicitly set off). Born WITH its forwarding line in the SAME PASS as the flag (L17 discipline).
             vmArg "-Dlatitude.edgeStructureVeto.enabled=${System.getProperty('latitude.edgeStructureVeto.enabled', 'true')}"
+            // Phase 5 B-10 Polar Outfitting master flag (default OFF, matching LatitudeV2Flags; legacy leather
+            // path when off = no protection gap). Born WITH its forwarding line in the SAME PASS (L17 discipline)
+            // so a dev client agrees with a shipped jar the moment the flag is flipped for the P2 flight.
+            vmArg "-Dlatitude.polarOutfitting.enabled=${System.getProperty('latitude.polarOutfitting.enabled', 'false')}"
             // Polar small-vegetation fade (default TRUE since 2026-07-12, matching LatitudeV2Flags after
             // the TEST 75 live look; byte-identical when explicitly set off). Forwarded so dev runs agree
             // with shipped jars.

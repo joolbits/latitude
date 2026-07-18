@@ -494,4 +494,94 @@ class PolarWaterFreezeRuleTest {
                 PolarWaterFreezeRule.freezesFlowing(true, false, 85.5, 1.0, false, true),
                 "the flow-tick decision (non-ocean, above floor) IS the shared frayed front");
     }
+
+    // ---- S18: GRADUAL BOTTOM-UP WATERFALL FREEZE (landed law + chance dial) -------------------
+
+    @Test
+    void s18LandedTruthTable_onlySupportedWaterIsLanded() {
+        // The landed law: a flowing block is LANDED (motion-terminated) iff its below is neither air nor a fluid.
+        // AIR below  -> still falling -> NOT landed (passes to vanilla flow, the fall runs to the ground).
+        assertFalse(PolarWaterFreezeRule.landedOnSupport(true, false), "air below: still falling, not landed");
+        // FLUID below (water/lava/other) -> sitting on more water -> NOT landed.
+        assertFalse(PolarWaterFreezeRule.landedOnSupport(false, true), "water below: not landed (pouring onto water)");
+        // SOLID below (not air, not fluid) -> landed. This is the ground -- and a horizontally-spreading base
+        // block also reads here (its below is solid).
+        assertTrue(PolarWaterFreezeRule.landedOnSupport(false, false), "solid below: landed");
+        // ICE below (not air, not fluid) -> landed. THIS IS THE CLIMB: each frozen block becomes the support the
+        // water above lands on, so the freeze walks bottom-up. Ice is not a fluid, so the same predicate covers it.
+        assertTrue(PolarWaterFreezeRule.landedOnSupport(false, false),
+                "ice below: landed -- the freeze climbs on its own frozen layers");
+    }
+
+    @Test
+    void s18FlowFreezeChanceDialIsConsulted_deterministicRoll() {
+        // The chance dial is FLOW_FREEZE_CHANCE = 0.5, consulted with a strict < against the tick's roll [0,1).
+        assertEquals(0.5, PolarWaterFreezeRule.FLOW_FREEZE_CHANCE, 1e-9, "the documented 50% flow-freeze dial");
+        // Eligible + landed: the roll decides. A roll under the chance locks it; at/above the chance it widens.
+        assertTrue(PolarWaterFreezeRule.flowTickFreezesLanded(true, true, 0.0), "roll 0.0 < 0.5 -> freezes");
+        assertTrue(PolarWaterFreezeRule.flowTickFreezesLanded(true, true, 0.4999), "just under the dial -> freezes");
+        assertFalse(PolarWaterFreezeRule.flowTickFreezesLanded(true, true, 0.5),
+                "exactly at the dial -> does NOT freeze (strict <), the spread widens this tick");
+        assertFalse(PolarWaterFreezeRule.flowTickFreezesLanded(true, true, 0.9999), "well above the dial -> widens");
+    }
+
+    @Test
+    void s18StillFallingAndIneligibleNeverFreeze_regardlessOfRoll() {
+        // Still falling (not landed): never freezes even on a winning roll -- the fall must reach the ground.
+        assertFalse(PolarWaterFreezeRule.flowTickFreezesLanded(true, false, 0.0),
+                "not landed -> passes to vanilla flow regardless of the roll");
+        // Not freeze-eligible (ocean / out-of-zone / below the floor / flag off): never freezes even if landed.
+        assertFalse(PolarWaterFreezeRule.flowTickFreezesLanded(false, true, 0.0),
+                "not eligible -> never freezes even landed on a winning roll");
+        // Both false: false.
+        assertFalse(PolarWaterFreezeRule.flowTickFreezesLanded(false, false, 0.0));
+    }
+
+    @Test
+    void s18LandedFreezeComposesWithFreezesFlowingEligibility() {
+        // End-to-end shape the flow-tick mixin uses: eligibility = freezesFlowing (skyExposed=false, the floor arm
+        // carries it), landed = landedOnSupport, roll = the tick RNG. In-zone, non-ocean, above floor, landed on
+        // solid, winning roll -> freezes.
+        boolean eligible = PolarWaterFreezeRule.freezesFlowing(true, false, 89.0, 0.5, false, true);
+        assertTrue(PolarWaterFreezeRule.flowTickFreezesLanded(eligible, PolarWaterFreezeRule.landedOnSupport(false, false), 0.1),
+                "landed on solid, in-zone, winning roll -> the base of the fall locks");
+        // Same block still FALLING (air below) -> the fall runs on, no freeze.
+        assertFalse(PolarWaterFreezeRule.flowTickFreezesLanded(eligible, PolarWaterFreezeRule.landedOnSupport(true, false), 0.1),
+                "same in-zone block but air below -> still falling, vanilla flow");
+    }
+
+    @Test
+    void s18ExemptionsRePinned_oceanAndOutOfZoneAndFlagOff() {
+        // THE SEA IS EXEMPT (sacred pin, re-asserted for the landed path): an ocean cascade is never eligible, so
+        // even landed on solid with a winning roll it stays liquid.
+        boolean oceanEligible = PolarWaterFreezeRule.freezesFlowing(true, true, 89.0, 0.5, false, true);
+        assertFalse(oceanEligible, "ocean column never flow-eligible");
+        assertFalse(PolarWaterFreezeRule.flowTickFreezesLanded(oceanEligible, true, 0.0), "ocean cascade stays liquid");
+        // Out-of-zone (equatorward of the frayed front) -> not eligible -> landed water still passes to vanilla.
+        boolean belowZoneEligible = PolarWaterFreezeRule.freezesFlowing(true, false, 83.9, 0.0, false, true);
+        assertFalse(belowZoneEligible);
+        assertFalse(PolarWaterFreezeRule.flowTickFreezesLanded(belowZoneEligible, true, 0.0), "below the zone: vanilla");
+        // Flag off (byte-identical) -> not eligible -> vanilla flow even landed.
+        boolean flagOffEligible = PolarWaterFreezeRule.freezesFlowing(false, false, 89.0, 0.5, false, true);
+        assertFalse(flagOffEligible);
+        assertFalse(PolarWaterFreezeRule.flowTickFreezesLanded(flagOffEligible, true, 0.0), "flag off: byte-identical");
+        // Deep-cave floor (covered, below the floor) -> not eligible -> a landed deep spring still stays liquid
+        // (the B-9 reservation is preserved even when the water is technically supported below).
+        boolean deepEligible = PolarWaterFreezeRule.freezesFlowing(true, false, 89.0, 0.5, false, false);
+        assertFalse(deepEligible, "below the freeze floor: not eligible (B-9 reservoir)");
+        assertFalse(PolarWaterFreezeRule.flowTickFreezesLanded(deepEligible, true, 0.0), "deep landed spring stays liquid");
+    }
+
+    @Test
+    void s18UpwardScanClimbsBottomUp_lowestLandedFirst() {
+        // The upward-scan mixin freezes the LOWEST LANDED flowing block one-per-pass. Modelled purely: a fresh
+        // fall's bottom block rests on the solid surface (landed) and freezes; the block above rests on WATER
+        // (that same block, not yet ice) so it is NOT landed this pass -- it waits.
+        assertTrue(PolarWaterFreezeRule.landedOnSupport(false, false), "bottom block on solid: landed, freezes first");
+        assertFalse(PolarWaterFreezeRule.landedOnSupport(false, true), "block above (on flowing water): not yet landed");
+        // Next pass: the bottom block is now ICE, so the block above rests on ice -> landed -> freezes. The climb.
+        assertTrue(PolarWaterFreezeRule.landedOnSupport(false, false), "next pass: now resting on ice -> landed, climbs");
+        // The scan belt bound is unchanged and bounded.
+        assertEquals(24, PolarWaterFreezeRule.WATERFALL_UPWARD_SCAN_BLOCKS, "24-block upward belt (unchanged)");
+    }
 }

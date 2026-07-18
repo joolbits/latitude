@@ -104,6 +104,12 @@ public final class PolarColdCues {
     /** The S6 frozen-wounds whisper (design item 5): shown once when the heal lock first bites while wounded. */
     public static final String FROZEN_WOUNDS_WHISPER_TEXT = "Your wounds are frozen. Only warmth can mend them.";
 
+    /** B-10 leather-line copy (design §4.3, sweep matrix row "Leather"): the once-per-zone-entry reassurance a
+     *  leather-wearing (but not fully-suited) traveller earns. Whisper family, like the removal/frozen-wounds
+     *  lines. Owner-verbatim. */
+    public static final String LEATHER_PROTECTION_TEXT =
+            "Your leather armour provides some protection against the bitter cold.";
+
     /** Outcome of {@link #evaluateLadder}: the rung to FIRE now (or {@code null}) and the next {@code highestFired}
      *  ladder state to persist (which advances even when a fire is suppressed, so a suppressed rung never retries). */
     public record LadderStep(Rung fire, int nextHighestFired) {
@@ -153,9 +159,83 @@ public final class PolarColdCues {
         return new LadderStep(rung, tier);
     }
 
-    /** True iff the LETHAL rung should show the PROTECTED line ("The bitter cold envelops you.") rather than the
-     *  owner-verbatim "you are freezing to death" line -- i.e. a full freeze-immune set is worn. One evaluator,
-     *  one truth: the same {@code protectionFull} that scales the damage to zero swaps the text. */
+    /**
+     * B-10 full-suit total-silence ladder (design §4, sweep A6). Generalizes today's HYPOTHERMIA-only
+     * suppression ({@link #evaluateLadder}) to EVERY rung: when a full polar SUIT is worn ({@code fullSuit})
+     * NO rung FIRES -- the pole is quiet, the owner's "not a single warning message" -- but {@code highestFired}
+     * still advances so nothing retries; losing the suit speaks through {@link #removalWhisperFires}. When
+     * {@code fullSuit} is false (bare / leather / a PARTIAL 1-3 suit) every rung fires HONESTLY, including
+     * HYPOTHERMIA: a partial-suit or leather traveller still feels the bite, they just take less damage. This
+     * is the flag-ON path; the legacy {@link #evaluateLadder(double, int, boolean)} (HYPOTHERMIA-only
+     * suppression under a full freeze-immune leather set) is the flag-OFF path.
+     *
+     * <p><b>Silence boundary (sweep A6).</b> The full-suit silence covers the five-rung ladder here + (via the
+     * vignette earning only on DANGER/LETHAL, both suppressed) the vignette + the leather line
+     * ({@link #leatherLineStep} -- a full-suit player wears no leather-only) + the hypothermia family. Purely
+     * NAVIGATIONAL lines (the pack-ice wall actionbar, clamp feedback) are informational for everyone and are
+     * NOT gated here.
+     *
+     * @param absLatDeg    current absolute latitude in degrees
+     * @param highestFired highest tier (1..5) fired since the last retreat, or 0
+     * @param fullSuit     true iff a full four-piece polar suit is worn ({@link ColdProtection#fullyProtected})
+     */
+    public static LadderStep evaluateLadderFullSuit(double absLatDeg, int highestFired, boolean fullSuit) {
+        if (absLatDeg < RETREAT_REARM_DEG) {
+            return new LadderStep(null, 0); // full retreat: re-arm, never fire on the way out.
+        }
+        int tier = tierForLat(absLatDeg);
+        if (tier <= highestFired) {
+            return new LadderStep(null, highestFired); // nothing deeper than already announced.
+        }
+        Rung rung = Rung.forTier(tier);
+        if (fullSuit) {
+            // Total silence: suppress the FIRE but advance past it so no rung ever retries.
+            return new LadderStep(null, tier);
+        }
+        return new LadderStep(rung, tier);
+    }
+
+    /** Outcome of {@link #leatherLineStep}: fire the leather reassurance now (or not), and the next armed
+     *  state to persist (re-arms on a full retreat, exactly like the ladder). */
+    public record LeatherLineStep(boolean fire, boolean nextFired) {
+    }
+
+    /**
+     * B-10 leather-line decision (design §4.3, sweep matrix). Fire {@link #LEATHER_PROTECTION_TEXT} ONCE on
+     * first crossing the frostbite onset ({@link PolarHazardWindow#FROSTBITE_ONSET_DEG}, where the cold begins
+     * to bite and protection first matters) while wearing at least one leather (other freeze-immune) piece and
+     * NOT fully suited; the whole line re-arms on a full retreat below {@link #RETREAT_REARM_DEG} -- the same
+     * hysteresis the ladder uses, so onset jitter can never machine-gun it. A full-suit traveller (silenced) and
+     * a bare one (nothing to reassure) never see it. It ACCOMPANIES the honest HYPOTHERMIA rung -- a leather
+     * wearer still feels the bite -- it does not replace it. Caller persists {@code alreadyFired}.
+     *
+     * @param absLatDeg    current absolute latitude in degrees
+     * @param wearsLeather true iff at least one worn piece is a leather / other freeze-immune (non-suit) piece
+     * @param fullSuit     true iff a full four-piece polar suit is worn (then this line is silent)
+     * @param alreadyFired the persisted armed state (true = already fired this zone entry)
+     */
+    public static LeatherLineStep leatherLineStep(double absLatDeg, boolean wearsLeather, boolean fullSuit,
+                                                  boolean alreadyFired) {
+        if (absLatDeg < RETREAT_REARM_DEG) {
+            return new LeatherLineStep(false, false); // full retreat: re-arm.
+        }
+        boolean inZone = absLatDeg >= PolarHazardWindow.FROSTBITE_ONSET_DEG;
+        if (inZone && wearsLeather && !fullSuit && !alreadyFired) {
+            return new LeatherLineStep(true, true);
+        }
+        return new LeatherLineStep(false, alreadyFired);
+    }
+
+    /**
+     * @deprecated B-10 (sweep A7): RETIRING. This swapped the LETHAL rung to "The bitter cold envelops you."
+     *     for a player who NEGATED freeze damage yet still saw LETHAL -- a state that, under the B-10 warning
+     *     matrix, no longer exists: the ONLY damage-negating outfit is the full suit, and the full suit
+     *     SILENCES the LETHAL rung entirely ({@link #evaluateLadderFullSuit}). Partial-suit and leather players
+     *     take real damage, so the raw LETHAL line is honest for them. Kept only for the legacy flag-OFF path +
+     *     the existing {@code GlobeWarningOverlay} wiring; the client-string removal is P2. Do not wire into any
+     *     new path. (Owner may instead repurpose the line to a partial-suit deep-end -- their veto.)
+     */
+    @Deprecated
     public static boolean lethalTextProtected(boolean protectionFull) {
         return protectionFull;
     }

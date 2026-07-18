@@ -28,15 +28,20 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * sheltered polar water freeze the way the owner asked ("as soon as there is any shelter, the water is liquid
  * instead of ice") and close the waterfall gap.
  *
- * <p><b>S17(b) UPWARD SCAN -- why the downward descent alone was not enough.</b> An open-air cascade FREE-FALLS
- * above the terrain surface, i.e. ABOVE the {@code MOTION_BLOCKING} heightmap top (water is not motion-blocking
- * terrain), so walking DOWNWARD from that top never reaches the falling column -- the exact two-flight root cause.
- * The FLOW TICK ({@code FlowingFluidWaterfallFreezeMixin}) now freezes moving water at the instant it flows; this
- * mixin adds the complementary net for STANDING fall columns that already reached equilibrium and stopped
- * re-ticking: a belt of {@link PolarWaterFreezeRule#WATERFALL_UPWARD_SCAN_BLOCKS} blocks scanned UPWARD from the
- * surface, freezing any FLOWING water found (stopping early at the first solid block). Every belt block is above
- * the surface, hence far above the surface-40 freeze floor, so {@code aboveFreezeFloor} is true by construction --
- * the frozen ice is always above the B-9 deep-cave reservoir. Bounded, O(1)-ish per tick.
+ * <p><b>S17(b) UPWARD SCAN -- why the downward descent alone was not enough (S18 bottom-up).</b> An open-air
+ * cascade FREE-FALLS above the terrain surface, i.e. ABOVE the {@code MOTION_BLOCKING} heightmap top (water is
+ * not motion-blocking terrain), so walking DOWNWARD from that top never reaches the falling column -- the exact
+ * two-flight root cause. The FLOW TICK ({@code FlowingFluidWaterfallFreezeMixin}) freezes moving water once it
+ * LANDS; this mixin adds the complementary net for STANDING fall columns that already reached equilibrium and
+ * stopped re-ticking: a belt of {@link PolarWaterFreezeRule#WATERFALL_UPWARD_SCAN_BLOCKS} blocks scanned UPWARD
+ * from the surface. Per the S18 landed law it freezes only the LOWEST unfrozen LANDED
+ * ({@link PolarWaterFreezeRule#landedOnSupport}) flowing block -- ONE per column per pass -- so a standing column
+ * ices from the ground UP over successive ticks (the ice laid this pass is the support the block above lands on
+ * next pass) instead of snapping frozen; ice layers from earlier passes are skipped, a genuine solid block caps
+ * the scan. Every belt block is above the surface, hence far above the surface-40 freeze floor, so
+ * {@code aboveFreezeFloor} is true by construction -- the frozen ice is always above the B-9 deep-cave reservoir.
+ * The DOWNWARD roofed descent likewise now freezes only LANDED flowing blocks, so a covered cascade climbs the
+ * same way. Bounded, O(1)-ish per tick.
  *
  * <p><b>Where the sky requirement lives, and why FLOWING water survives.</b> {@code Biome.shouldFreeze} has no
  * sky check -- the "must see the sky" requirement is implicit in the CALLER. {@code
@@ -117,23 +122,39 @@ public abstract class ServerLevelRoofedWaterFreezeMixin {
         // -- both far above the 40-block glacier-sole floor), so the sky/skyExposed arm is irrelevant.
         int flowFreezes = -1; // lazy tri-state: -1 unknown, 0 no, 1 yes
 
-        // S17(b) UPWARD SCAN: an open-air cascade free-falls ABOVE the MOTION_BLOCKING top (water is not
-        // motion-blocking terrain), so the downward roofed descent below never reaches it. Scan a bounded belt
-        // UPWARD from the surface and freeze standing flowing columns the flow tick did not re-visit; stop at the
-        // first solid (non-fluid) block -- nothing of THIS fall lies higher.
+        // S17(b) UPWARD SCAN, S18 BOTTOM-UP: an open-air cascade free-falls ABOVE the MOTION_BLOCKING top (water
+        // is not motion-blocking terrain), so the downward roofed descent below never reaches it. Scan a bounded
+        // belt UPWARD from the surface and freeze the LOWEST unfrozen LANDED (supported below) flowing block --
+        // exactly ONE per column per pass -- so a standing fall column ices from the ground UP over successive
+        // ticks instead of snapping frozen all at once (the S18 climb: the ice laid this pass is the support the
+        // block above lands on next pass). Frozen ice from earlier passes is skipped (it is the growing pile, not
+        // a cap); a genuine solid (non-ice, non-fluid) block caps the cascade and ends the scan.
         int ceilY = Math.min(self.getMaxY(), top.getY() + PolarWaterFreezeRule.WATERFALL_UPWARD_SCAN_BLOCKS);
         BlockPos.MutableBlockPos up = new BlockPos.MutableBlockPos(top.getX(), 0, top.getZ());
+        BlockPos.MutableBlockPos belowUp = new BlockPos.MutableBlockPos(top.getX(), 0, top.getZ());
         for (int y = top.getY() + 1; y <= ceilY; y++) {
             up.setY(y);
             BlockState above = self.getBlockState(up);
             FluidState fs = above.getFluidState();
             if (fs.getType() == Fluids.FLOWING_WATER) {
-                flowFreezes = globe$resolveFlowFreeze(self, top, absLatDeg, fray, flowFreezes);
-                if (flowFreezes == 1) {
-                    self.setBlockAndUpdate(up.immutable(), Blocks.ICE.defaultBlockState()); // frozen standing fall
+                // Only a LANDED (supported below) flowing block freezes. Scanning upward, the FIRST such block is
+                // the lowest one: freeze exactly it and stop (one landed block per pass -> the climb). A flowing
+                // block still FALLING (air/fluid below) means nothing lands this pass -- leave it to the flow tick.
+                belowUp.setY(y - 1);
+                BlockState belowState = self.getBlockState(belowUp);
+                boolean landed = PolarWaterFreezeRule.landedOnSupport(
+                        belowState.isAir(), !belowState.getFluidState().isEmpty());
+                if (landed) {
+                    flowFreezes = globe$resolveFlowFreeze(self, top, absLatDeg, fray, flowFreezes);
+                    if (flowFreezes == 1) {
+                        self.setBlockAndUpdate(up.immutable(), Blocks.ICE.defaultBlockState()); // one frozen layer
+                    }
                 }
+                break; // the lowest flowing block decides this pass (landed -> froze; falling -> nothing lands)
+            } else if (above.is(Blocks.ICE)) {
+                continue; // a frozen cascade layer from an earlier pass -- keep climbing to the next flowing block
             } else if (!above.isAir() && fs.isEmpty()) {
-                break; // a solid (non-fluid) block caps this cascade
+                break; // a genuine solid (non-ice, non-fluid) block caps this cascade
             }
         }
 
@@ -151,6 +172,7 @@ public abstract class ServerLevelRoofedWaterFreezeMixin {
         // claim the rest of the cascade. Water/flow sealed deeper than the reach stays liquid (the B-9 reservoir).
         int floorY = Math.max(self.getMinY(), top.getY() - PolarWaterFreezeRule.ROOFED_FREEZE_REACH_BLOCKS);
         BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos(top.getX(), 0, top.getZ());
+        BlockPos.MutableBlockPos belowCursor = new BlockPos.MutableBlockPos(top.getX(), 0, top.getZ());
         for (int y = surface.getY(); y >= floorY; y--) {
             cursor.setY(y);
             FluidState fs = self.getFluidState(cursor);
@@ -163,9 +185,16 @@ public abstract class ServerLevelRoofedWaterFreezeMixin {
                 return; // topmost water surface handled
             }
             if (fs.getType() == Fluids.FLOWING_WATER) {
-                flowFreezes = globe$resolveFlowFreeze(self, top, absLatDeg, fray, flowFreezes);
-                if (flowFreezes == 1) {
-                    self.setBlockAndUpdate(cursor.immutable(), Blocks.ICE.defaultBlockState()); // frozen cascade
+                // S18: only a LANDED (supported below) flowing block freezes; a still-falling block (air/fluid
+                // below) is left to run, so a covered cascade also ices from the ground UP over successive passes
+                // (only its bottom block is supported this pass; the next up lands on that ice next pass).
+                belowCursor.setY(y - 1);
+                BlockState belowState = self.getBlockState(belowCursor);
+                if (PolarWaterFreezeRule.landedOnSupport(belowState.isAir(), !belowState.getFluidState().isEmpty())) {
+                    flowFreezes = globe$resolveFlowFreeze(self, top, absLatDeg, fray, flowFreezes);
+                    if (flowFreezes == 1) {
+                        self.setBlockAndUpdate(cursor.immutable(), Blocks.ICE.defaultBlockState()); // frozen layer
+                    }
                 }
             }
         }

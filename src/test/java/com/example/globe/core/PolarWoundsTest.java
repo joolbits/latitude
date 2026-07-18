@@ -36,6 +36,30 @@ class PolarWoundsTest {
     }
 
     @Test
+    void threeArgFormIsUnchangedFlagOffBehaviour() {
+        // The legacy 3-arg form == the 4-arg form with fullyProtected=false, for every combo.
+        for (boolean z : new boolean[]{false, true}) {
+            for (boolean s : new boolean[]{false, true}) {
+                for (boolean w : new boolean[]{false, true}) {
+                    assertEquals(PolarWounds.healLocked(z, s, w, false), PolarWounds.healLocked(z, s, w),
+                            "3-arg delegates to 4-arg with fullyProtected=false");
+                }
+            }
+        }
+    }
+
+    @Test
+    void fullSuitLiftsTheHealLock_sweepA1() {
+        // The one locked cell (polar + sheltered + no warmth) UNLOCKS for a fully-suited traveller: a warm body
+        // mends its wounds even in the deep cold, so the frozen-wounds whisper cannot fire under a full suit.
+        assertTrue(PolarWounds.healLocked(true, true, false, false), "no suit: the wounds stay frozen");
+        assertFalse(PolarWounds.healLocked(true, true, false, true), "full suit: the lock LIFTS (A1)");
+        // Non-locked cells stay non-locked regardless of the suit.
+        assertFalse(PolarWounds.healLocked(true, false, false, true), "exposed: still vanilla healing");
+        assertFalse(PolarWounds.healLocked(false, true, false, true), "below 85: still vanilla healing");
+    }
+
+    @Test
     void frostCuePersistsUnderTheHealLock() {
         // S6 amendment to F3: cue active = (biting && !paused) OR healLocked. Sheltered pauses the bite, but a
         // heal-locked player keeps the frozen-hearts floor -- wounds LOOK frozen while they cannot mend.
