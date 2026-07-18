@@ -205,8 +205,8 @@ public final class HemispherePassageService {
      *
      * <p><b>Over-the-pole continuity (design §3.3) [P3 fix 2026-07-14: antipodal meridian, not mirrorX].</b>
      * The player emerges on the ANTIPODAL MERIDIAN -- longitude {@code L -> L + 180}, i.e.
-     * {@code PoleArrivalSearch.antipodalX} -- on the SAME pole side (Z sign kept, pulled to the 89.5 deg S5
-     * arrival line, deep in the far blizzard), heading REVERSED ({@code yaw + 180}, wrapped): walking north
+     * {@code PoleArrivalSearch.antipodalX} -- on the SAME pole side (Z sign kept, pulled to the 90 deg S16(c)
+     * arrival line -- the pole itself, deepest in the far blizzard), heading REVERSED ({@code yaw + 180}, wrapped): walking north
      * over the pole comes out walking south on the far meridian. NOT {@code mirrorX} ({@code L -> -L}) -- that
      * is the EAST/WEST antimeridian formula, and the TEST 97 flight proved it wrong here (13 deg E landed at
      * 13 deg W instead of 167 deg W). Pitch is preserved and momentum zeroed for ceremony parity, and the
@@ -239,7 +239,7 @@ public final class HemispherePassageService {
      * Resolve the safe over-the-pole arrival column for a player at ({@code playerX},{@code playerZ}), or
      * {@code null} if none was found within {@link #PROBE_BUDGET} probes. The target is the ANTIPODAL MERIDIAN
      * ({@link PoleArrivalSearch#antipodalX}, longitude {@code L -> L+180} -- [P3 fix 2026-07-14: antipodal
-     * meridian, not mirrorX]) at the SAME pole side pulled to the 89.5 deg S5 arrival latitude; the primary
+     * meridian, not mirrorX]) at the SAME pole side pulled to the 90 deg S16(c) arrival latitude (the pole line); the primary
      * search walks the arrival PARALLEL (+/-X at the fixed arrival Z), bounded EVERY candidate by the corner
      * X-clamp (A2: {@link PoleArrivalSearch#xClampAbs}) so a corner crossing -- including the prime-meridian
      * departure whose antipodal target IS the E/W border corner -- can never land in the EW passage band; the
@@ -339,8 +339,8 @@ public final class HemispherePassageService {
         double xRadiusIntended = LatitudeMath.intendedXRadius(border);
 
         // Target: the ANTIPODAL meridian (L -> L+180, the P3 geographic fix -- mirrorX was the EW antimeridian
-        // formula and landed 13degE at 13degW), SAME pole side, pulled to the 89.5 deg S5 arrival line (the
-        // escape trek is the arrival experience; the post-crossing cold grace covers the curtain window).
+        // formula and landed 13degE at 13degW), SAME pole side, pulled to the 90 deg S16(c) arrival line -- the pole itself (the
+        // escape trek 90->88 is the arrival experience; the post-crossing cold grace covers the curtain window).
         double sign = (playerZ - centerZ) >= 0.0 ? 1.0 : -1.0;
         int arrivalAbsZ = LatitudeMath.zForLatitudeDeg(PoleGeometry.ARRIVAL_DEG_POLE, zRadius);
         int targetZ = (int) Math.round(centerZ) + (int) Math.round(sign * arrivalAbsZ);

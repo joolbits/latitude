@@ -54,7 +54,13 @@ public final class PolarWindSound {
      * sky-exposed volume: real wind is still clearly audible through walls, just dampened. 0.35 (about a
      * third) keeps the storm present and legible from inside a shelter while reading as distinctly quieter
      * than standing out in the open gale, and it snaps back to full the moment the player is sky-exposed.
-     */
+     *
+     * <p><b>S16(a)(iii) WIND AUDIO (owner, TEST 106 "the storm through a window must read COMPLETE").</b> The
+     * window-completion pass audited this driver ({@link com.example.globe.client.PolarWindSoundInstance#tick}
+     * calls {@link #liveVolume(double, float)} with the live {@code exposure01}) and it already implements the
+     * ask verbatim: the wind is "present but soft -- a storm through walls," muffled to ~0.35x when sheltered
+     * (inside the requested 0.3-0.4 window), with a SMOOTH per-tick transition through partial exposure (never
+     * a snap). No behaviour change was needed; this is the single dial. */
     public static final float SHELTERED_VOLUME_SCALE = 0.35f;
 
     /**

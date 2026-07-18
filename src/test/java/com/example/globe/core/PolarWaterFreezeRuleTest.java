@@ -388,6 +388,33 @@ class PolarWaterFreezeRuleTest {
     }
 
     @Test
+    void s16bTickFreezeV2_flowingWaterFreezesRegardlessOfSky_within_reach() {
+        // S16(b): the tick-time consumer (ServerLevelRoofedWaterFreezeMixin) freezes a FLOWING block found
+        // within the 16-block roof reach by calling freezesFlowing(barrens, ocean, lat, fray, skyExposed=false,
+        // aboveFreezeFloor=true) -- aboveFreezeFloor is true BY CONSTRUCTION inside the reach (16 << the 40-block
+        // glacier-sole floor), so the sky arm is irrelevant and an in-zone waterfall freezes sky OR no sky.
+        final boolean SKY = false; // the mixin never claims the block is sky-exposed; the floor arm carries it.
+        // In-zone, land, barrens on -> freezes (a covered OR open waterfall, same answer).
+        assertTrue(PolarWaterFreezeRule.freezesFlowing(true, false, 89.0, 0.5, SKY, true),
+                "an in-zone flowing block within reach freezes regardless of sky");
+        assertTrue(PolarWaterFreezeRule.freezesFlowing(true, false, 85.0, 0.5, SKY, true),
+                "freezes right at the 85-deg front");
+        // THE SEA IS EXEMPT (the sacred pin): an ocean-family column never flow-freezes.
+        assertFalse(PolarWaterFreezeRule.freezesFlowing(true, true, 89.0, 0.5, SKY, true),
+                "ocean column stays liquid under its ice -- the sacred pin");
+        // Out-of-zone (equatorward of the frayed front) -> vanilla (no flow-freeze).
+        assertFalse(PolarWaterFreezeRule.freezesFlowing(true, false, 83.9, 0.5, SKY, true),
+                "below the zone the flowing water stays liquid (vanilla)");
+        // Barrens flag off -> the flowing freeze is the untouched vanilla path.
+        assertFalse(PolarWaterFreezeRule.freezesFlowing(false, false, 89.0, 0.5, SKY, true),
+                "flag-off leaves flowing water exactly as vanilla");
+        // The DEEP-CAVE flow exemption is the mixin's reach floor (blocks below top-16 are never scanned);
+        // the predicate's own deep exemption (covered AND below the glacier sole) also stays liquid.
+        assertFalse(PolarWaterFreezeRule.freezesFlowing(true, false, 89.0, 0.5, SKY, false),
+                "a covered flowing spring below the freeze floor stays liquid (the B-9 reservation)");
+    }
+
+    @Test
     void roofReachIsShelterScaleNotDeepCave() {
         // The sky-waived freeze reaches shelter/overhang scale, deliberately shallower than the glacier sole:
         // a deep sealed cave lake (below the reach) keeps its liquid surface, the B-9 reservation.

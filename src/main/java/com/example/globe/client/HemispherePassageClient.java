@@ -350,9 +350,11 @@ public final class HemispherePassageClient {
     private static void onArrival(Minecraft mc, long now) {
         // Route by the ARRIVAL payload's axis (authoritative -- the server tells us which arm crossed). Seeding
         // SEEDED_DISARMED is LOAD-BEARING: the ordinary prompt requires ARMED, so a disarmed player on the
-        // arrival line never self-prompts, and re-arm needs a strict walk-out; SEEDED_DISARMED additionally
-        // carries the one-shot walk-to-the-wall EDGE re-prompt. (Pole arrival is at 89.5 deg -- INSIDE both
-        // prompt and re-arm -- so the seed HOLDS on every world size; the uniform S5 regime.)
+        // arrival line never self-prompts, and re-arm needs a strict walk-out. For the EW axis SEEDED_DISARMED
+        // also carries the one-shot walk-to-the-wall EDGE re-prompt; for the POLE axis (S16(c)) that edge
+        // re-prompt COLLAPSED into the wall prompt -- its distance is the disabled sentinel, so the seeded arm
+        // simply HOLDS. (Pole arrival is AT the wall, distance 0 -- INSIDE the wall prompt and re-arm -- so the
+        // seed holds on every world size; the "one wall prompt" regime.)
         PassageAxis axis = HemispherePassageClientState.lastArrivalAxis();
         HemispherePassage.Phase prevPhase = phaseFor(axis);
         setPhase(axis, HemispherePassage.Phase.SEEDED_DISARMED);

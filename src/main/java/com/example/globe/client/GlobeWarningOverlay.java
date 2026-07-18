@@ -21,9 +21,11 @@ public final class GlobeWarningOverlay {
     // core.PolarColdCues; owner copy finalized 2026-07-14): the first rung moved 85 -> 82 (APPROACH, new
     // owner-verbatim line AT the ambient snow onset -- the old WARN_1 snow line is RETIRED), a NEW protection-
     // suppressed HYPOTHERMIA rung landed at 85 (the S3 frostbite-DAMAGE onset, owner-verbatim "The cold begins
-    // to bite."), and the LETHAL text swaps under a full freeze-immune set. WARN_2 (87) / LETHAL (89.7) copy is
-    // owner-verbatim and reused as-is; DANGER (S13c 2026-07-17, owner-approved) moved 89 -> 88 deg (the
-    // lethal-core onset) and was reworded present-tense. The paragraph below is the ORIGINAL four-rung rationale
+    // to bite."), and the LETHAL text swaps under a full freeze-immune set. WARN_2 (87) / DANGER (88) / LETHAL
+    // (89.7) copy was swept by S16d (2026-07-18, owner TEST 106): every "Turn back" scold and every "--" is gone
+    // (exploration is never scolded; "--" reads amateur in the MC font) -- see the constants below; DANGER
+    // (S13c 2026-07-17) had already moved 89 -> 88 deg (the lethal-core onset) and gone present-tense. The
+    // paragraph below is the ORIGINAL four-rung rationale
     // (still governs the WARN_2/DANGER/LETHAL copy; WARN_1's part is historical); the DEGREE mapping is now
     // PolarColdCues.Rung, not POLAR_STAGE_*. The shared hazard/fog constants (LatitudeMath.POLAR_STAGE_*, used
     // for fog severity + the vignette) DID NOT move.
@@ -38,9 +40,10 @@ public final class GlobeWarningOverlay {
     //   WARN_1  (85 deg): snow begins.
     //   WARN_2  (87 deg): "hypothermia is setting in" -- onset.
     //   DANGER  (89 deg): Peetsa's line, verbatim. [SUPERSEDED S13c 2026-07-17: owner-approved re-time to 88 deg
-    //           + present-tense reword "DANGER: Lethal blizzard. Turn back." -- see POLE_DANGER_TEXT. The SHARED
-    //           POLAR_STAGE_* fog/vignette-severity constant stays 89; only the TEXT rung moved.]
-    //   LETHAL  (89.7 deg): "severe hypothermia -- you are freezing to death" -- the same arc, now critical.
+    //           + present-tense reword; S16d 2026-07-18 dropped the trailing "Turn back." -> now "DANGER:
+    //           Lethal blizzard." (see POLE_DANGER_TEXT). The SHARED POLAR_STAGE_* fog/vignette-severity
+    //           constant stays 89; only the TEXT rung moved.]
+    //   LETHAL  (89.7 deg): "Severe hypothermia. You are freezing to death." -- the same arc, now critical.
     // The escalation reads because LETHAL was pushed FURTHER along the arc than WARN_2: if both said
     // "hypothermia sets in" (WARN_2's old wording was "the cold will slow you"; LETHAL's was "Hypothermia sets
     // in.") the 0.7 deg gap would read as a confusing non-escalation. Onset -> critical fixes that.
@@ -61,15 +64,19 @@ public final class GlobeWarningOverlay {
     // names the country ahead rather than re-announcing snowfall the player can already see.
     private static final String POLE_WARN_1_TEXT =
             "Entering polar storm country. Proceed with caution.";
+    // S16(d) COPY SWEEP (owner, TEST 106): dropped the "Turn back while you can." scold (exploration is never
+    // scolded) and the amateur double-dash; two clean present-tense sentences replace it.
     private static final String POLE_WARN_2_TEXT =
-            "The blizzard deepens -- hypothermia is setting in. Turn back while you can.";
+            "The blizzard deepens. Hypothermia is setting in.";
     // S13c (owner-approved change to his verbatim line, 2026-07-17): the DANGER rung moved 89 -> 88 deg (the
     // lethal-core onset) and the copy went PRESENT-TENSE -- "conditions ahead" read as a lie two degrees deep
-    // in the blizzard. Now "DANGER: Lethal blizzard. Turn back." LETHAL (89.7) + its protection swap unchanged.
+    // in the blizzard. S16(d) (owner, TEST 106): dropped the trailing "Turn back." scold; the RED "DANGER:
+    // Lethal blizzard." stands on its own. LETHAL (89.7) + its protection swap unchanged.
     private static final String POLE_DANGER_TEXT =
-            "DANGER: Lethal blizzard. Turn back.";
+            "DANGER: Lethal blizzard.";
+    // S16(d): double-dash retired for a full stop (the owner called "--" amateur in the MC font); words kept.
     private static final String POLE_LETHAL_TEXT =
-            "Severe hypothermia -- you are freezing to death.";
+            "Severe hypothermia. You are freezing to death.";
 
     // B-7 item 4 -- the reworked FIVE-rung ladder (pure decision in core.PolarColdCues; owner copy finalized
     // 2026-07-14). Rungs: APPROACH 82 (POLE_WARN_1_TEXT above, AT the ambient snow onset), HYPOTHERMIA 85

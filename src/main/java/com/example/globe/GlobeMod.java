@@ -755,9 +755,10 @@ public class GlobeMod implements ModInitializer {
             if (arrival != null) {
                 PASSAGE_LAST_CROSS_TICK.put(player.getUUID(), now);
                 if (axis == PassageAxis.POLE) {
-                    // S5(c): stamp the one-shot post-crossing cold grace -- the S5 arrival lands at 89.5 deg
-                    // (~2.27 HP/s) behind the opaque arrival curtain, so cold damage (both bands) + the F3 cue
-                    // are suppressed for the ceremony window only. Re-stamped only by a NEW successful crossing.
+                    // S5(c)/S16(c): stamp the one-shot post-crossing cold grace -- the arrival now lands ON the
+                    // pole line (90 deg, ~6 HP/s raw) behind the opaque arrival curtain, so cold damage (both
+                    // bands) + the F3 cue are suppressed for the ceremony window only, then the blizzard owns
+                    // them for the 90->88 escape trek. Re-stamped only by a NEW successful crossing.
                     POLE_CROSS_COLD_GRACE_UNTIL.put(player.getUUID(),
                             com.example.globe.core.PoleCrossingGrace.graceUntil(now));
                     // S9: drop the pre-warm ticket -- the crossing's own synchronous 3x3 FULL load has just

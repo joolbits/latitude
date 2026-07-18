@@ -53,6 +53,31 @@ public final class PolarExposure {
     }
 
     /**
+     * S16(a)(i) — the WINDOW-COMPLETION floor for the whiteout top-coat (owner, TEST 106: "through a window
+     * the storm must read COMPLETE"; the fog read "somewhat present but very reduced" in shelter because the
+     * plain {@link #whiteoutScale} linear decay dropped the top-coat toward ~0 for a partially-enclosed
+     * player). This variant keeps a partial FLOOR ({@link #WHITEOUT_SHELTERED_FLOOR}) of the exposed value and
+     * lets the graded-exposure law scale linearly ABOVE it: {@code FLOOR + (1 - FLOOR) * exposure01}. So an
+     * open window / doorway (exposure ~0.1–0.5) reads {@code 0.40..0.70} of full engulfment — the view OUT
+     * stays violent — while full open sky (exposure 1) is unchanged at 1.0.
+     *
+     * <p><b>Genuinely sealed columns never reach this method.</b> The composition is: the overlay
+     * early-returns at {@code exposure01 <= 0.001}, and {@link #fraction}/{@code sampleExposure01} return
+     * EXACTLY 0 only when the head is sealed or below the surface layer (a window/doorway always leaves at
+     * least one of the 13 samples seeing sky → {@code exposure01 >= ~0.077}). So a sealed dark room still
+     * releases the top-coat FULLY (the interior stays livable), and only openable shelters carry the floor —
+     * "the interior must stay livable; the view out must stay violent," resolved by the sampler's own
+     * sealed-is-exactly-0 property rather than a second predicate. Same shape as the wind-bed muffle
+     * ({@link PolarWindSound#windMuffleFactor}); ONE dial ({@link #WHITEOUT_SHELTERED_FLOOR}). NaN → floor.
+     */
+    public static final float WHITEOUT_SHELTERED_FLOOR = 0.40f;
+
+    public static float whiteoutShelteredScale(float exposure01) {
+        float e = clamp01(exposure01);
+        return WHITEOUT_SHELTERED_FLOOR + (1.0f - WHITEOUT_SHELTERED_FLOOR) * e;
+    }
+
+    /**
      * Scales a fixed per-tick particle {@code base} budget by an exposure, rounded to the nearest whole
      * particle, clamped {@code >= 0}. Full storm out in the open, nothing in a sealed box, proportional at a
      * doorway. Pure function (no state) -- composes with the {@link ParticleDensity} perf scale without adding

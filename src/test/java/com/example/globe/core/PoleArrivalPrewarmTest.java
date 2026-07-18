@@ -18,16 +18,31 @@ class PoleArrivalPrewarmTest {
     // ---- band membership (prompt band + margin) ------------------------------------------------
 
     @Test
-    void inBandUpToPromptPlusMarginAndNotBeyond() {
-        // Regular-Wide pole geometry: promptDist = 88.89; band edge = 88.89 + 32 = 120.89.
-        double promptAt = PoleGeometry.resolve(10000.0).promptDist();
+    void inBandUpToTheLeadFloorAndNotBeyond() {
+        // S16(c): the prompt collapsed onto the wall (promptDist == 3, the wall epsilon), so promptAt+32 = 35 is
+        // far smaller than the PREWARM_LEAD_FLOOR (128); the lead floor is the real band edge on every size now.
+        double promptAt = PoleGeometry.resolve(10000.0).promptDist(); // == WALL_PROMPT_DIST_BLOCKS (3)
+        double edge = PoleArrivalPrewarm.PREWARM_LEAD_FLOOR_BLOCKS;    // 128 -- the lead floor wins over prompt+32
         assertTrue(PoleArrivalPrewarm.inPrewarmBand(0.0, promptAt), "at the pole line: in-band");
-        assertTrue(PoleArrivalPrewarm.inPrewarmBand(promptAt, promptAt), "on the prompt line: in-band");
+        assertTrue(PoleArrivalPrewarm.inPrewarmBand(promptAt, promptAt), "on the wall prompt line: in-band");
         assertTrue(PoleArrivalPrewarm.inPrewarmBand(promptAt + PoleArrivalPrewarm.BAND_MARGIN_BLOCKS, promptAt),
-                "exactly at prompt+margin: in-band (about to be promptable)");
-        assertFalse(PoleArrivalPrewarm.inPrewarmBand(promptAt + PoleArrivalPrewarm.BAND_MARGIN_BLOCKS + 0.1, promptAt),
-                "just past prompt+margin: out (drop the ticket)");
+                "at prompt+margin (35): still in-band -- the lead floor extends well past it");
+        assertTrue(PoleArrivalPrewarm.inPrewarmBand(edge, promptAt), "exactly at the lead floor: in-band");
+        assertFalse(PoleArrivalPrewarm.inPrewarmBand(edge + 0.1, promptAt),
+                "just past the lead floor: out (drop the ticket)");
         assertFalse(PoleArrivalPrewarm.inPrewarmBand(5000.0, promptAt), "mid-world: out");
+    }
+
+    @Test
+    void leadFloorGivesGenerousLeadDespiteTheWallPrompt() {
+        // The lead floor keeps the pre-warm arming far ahead of the wall on the biggest world (where the virgin
+        // antipode is costliest) even though the prompt itself now fires only at the wall. Pin: the effective
+        // lead never falls below the floor for any shipped radius.
+        for (double zRadius : new double[]{3750.0, 7500.0, 10000.0}) {
+            double promptAt = PoleGeometry.resolve(zRadius).promptDist();
+            assertTrue(PoleArrivalPrewarm.inPrewarmBand(PoleArrivalPrewarm.PREWARM_LEAD_FLOOR_BLOCKS - 1, promptAt),
+                    "a block inside the lead floor is in-band on radius " + zRadius);
+        }
     }
 
     @Test
@@ -88,10 +103,12 @@ class PoleArrivalPrewarmTest {
     void dropConditionsAreTheBandAndModePredicates() {
         // The shim drops the ticket exactly when either predicate goes false (band-exit / gamemode change),
         // plus the two event drops (successful crossing, disconnect) that are shim-side by nature. Pin the
-        // predicate side: a player walking out re-arms nothing until back inside prompt+margin.
-        double promptAt = PoleGeometry.resolve(3750.0).promptDist(); // Itty: floored 40
-        assertTrue(PoleArrivalPrewarm.inPrewarmBand(40.0 + 32.0, promptAt));
-        assertFalse(PoleArrivalPrewarm.inPrewarmBand(40.0 + 32.1, promptAt));
+        // predicate side: a player walking out re-arms nothing until back inside the band (the lead floor edge
+        // post-S16(c)).
+        double promptAt = PoleGeometry.resolve(3750.0).promptDist(); // Itty: the wall epsilon (3)
+        double edge = PoleArrivalPrewarm.PREWARM_LEAD_FLOOR_BLOCKS;   // 128
+        assertTrue(PoleArrivalPrewarm.inPrewarmBand(edge, promptAt));
+        assertFalse(PoleArrivalPrewarm.inPrewarmBand(edge + 0.1, promptAt));
         assertFalse(PoleArrivalPrewarm.eligibleGameMode(false, true),
                 "switching into spectator mid-band drops the ticket");
     }

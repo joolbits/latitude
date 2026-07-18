@@ -62,6 +62,22 @@ class PolarExposureTest {
     }
 
     @Test
+    void whiteoutShelteredScaleKeepsFloorAndScalesAbove() {
+        // S16(a)(i) window completion: a partially-enclosed player (any exposure > 0) keeps a >= 0.40 floor,
+        // scaling linearly to 1.0 in the open. (A GENUINELY sealed column returns exactly 0 from the sampler
+        // and is early-returned by the overlay before this method, so it is not asserted here.)
+        float floor = PolarExposure.WHITEOUT_SHELTERED_FLOOR;
+        assertEquals(floor, PolarExposure.whiteoutShelteredScale(0.0f), EPS, "the floor holds at zero exposure");
+        assertEquals(1.0f, PolarExposure.whiteoutShelteredScale(1.0f), EPS, "full open sky is unchanged");
+        assertEquals(floor + (1.0f - floor) * 0.5f, PolarExposure.whiteoutShelteredScale(0.5f), EPS);
+        assertTrue(PolarExposure.whiteoutShelteredScale(0.1f) >= floor, "a window never drops below the floor");
+        assertTrue(PolarExposure.whiteoutShelteredScale(0.9f) > PolarExposure.whiteoutShelteredScale(0.2f),
+                "still monotonic in exposure above the floor");
+        assertEquals(floor, PolarExposure.whiteoutShelteredScale(-1.0f), EPS, "negative clamps to the floor");
+        assertEquals(1.0f, PolarExposure.whiteoutShelteredScale(2.0f), EPS, "over-unit clamps to full");
+    }
+
+    @Test
     void particleBudgetScalesAndRounds() {
         assertEquals(60, PolarExposure.particleBudget(60, 1.0f), "full exposure keeps the whole budget");
         assertEquals(0, PolarExposure.particleBudget(60, 0.0f), "sealed room spawns nothing");

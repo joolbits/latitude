@@ -96,7 +96,11 @@ public final class HemispherePassagePromptScreen extends Screen {
         int bodyW = this.font.width(this.bodyLine);
 
         int passW = Math.max(96, this.font.width("Pass through") + 24);
-        int turnW = Math.max(84, this.font.width("Turn back") + 24);
+        // S16(d) COPY SWEEP (owner, TEST 106: "remove ALL 'Turn back' phrasing -- exploration is never scolded").
+        // The DECLINE label drops "Turn back" for the neutral "Not now"; the internal axis + one-shot server
+        // NUDGE are still named "turn back" (turnButton / the `false` answer / GlobeNet's turn-back nudge) --
+        // that vocabulary is code-internal, not player-facing, and stays consistent across client + server.
+        int turnW = Math.max(84, this.font.width("Not now") + 24);
         int buttonsW = passW + BTN_GAP + turnW;
 
         int contentW = Math.max(Math.max(titleW, bodyW), buttonsW);
@@ -114,7 +118,7 @@ public final class HemispherePassagePromptScreen extends Screen {
         this.passButton = Button.builder(Component.literal("Pass through"), b -> answer(true))
                 .bounds(buttonsX, buttonsY, passW, BTN_H)
                 .build();
-        this.turnButton = Button.builder(Component.literal("Turn back"), b -> answer(false))
+        this.turnButton = Button.builder(Component.literal("Not now"), b -> answer(false))
                 .bounds(buttonsX + passW + BTN_GAP, buttonsY, turnW, BTN_H)
                 .build();
         this.addRenderableWidget(this.passButton);

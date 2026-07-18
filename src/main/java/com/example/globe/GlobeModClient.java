@@ -329,6 +329,24 @@ public class GlobeModClient implements ClientModInitializer {
     }
 
 
+    // S16(a)(ii) PER-POSITION COVER GATE (owner, TEST 106: "sideways snow penetrating indoors"). The per-tick
+    // budget already scales with the PLAYER's graded enclosure (exposure01), but that is ONE value for the whole
+    // spawn cloud around the player -- individual flake POSITIONS were cover-blind, so through a window / at a
+    // wall (partial exposure) flakes still spawned on the INDOOR side. This gates each candidate POSITION: a
+    // flake spawns only where its own column is sky-open at that height -- spawnY at/above the column's
+    // MOTION_BLOCKING heightmap top (nothing solid -- roof or wall -- above it in that column). Cost: ONE
+    // heightmap read per candidate flake (O(1); the loaded chunk keeps the heightmap live -- no world raycast).
+    // Applied to the ambient MAIN + SECOND + DEEP passes. Outdoors the heightmap top ~ the ground, so the
+    // open-air storm is unchanged apart from the sub-terrain low tail (flakes that would spawn INSIDE the
+    // ground, which vanilla would not render anyway -- correctly dropped). The SPARKLE pass is exempt by
+    // construction (it spawns 0.5-1.5 blocks ABOVE the sampled surface heightmap top, so it can never sit
+    // under a roof -- verified, no gate needed there).
+    private static boolean flakeSkyOpen(net.minecraft.world.level.Level level, double x, double y, double z) {
+        int top = level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING,
+                (int) Math.floor(x), (int) Math.floor(z));
+        return y >= (double) top;
+    }
+
     private static void spawnAmbientPolarSnow(Minecraft client, int count, double absLatDeg,
                                               com.example.globe.core.ParticleDensity.Tier tier, float exposure) {
         // Perf-scaling: reduce the FIXED per-tick budget by the vanilla Particles setting BEFORE any
@@ -397,6 +415,11 @@ public class GlobeModClient implements ClientModInitializer {
 
             // Wind-blown drift: steady horizontal wind (ramped) + per-flake jitter -> visible sideways streaking.
             // vy carries the P3 deep-band fallBoost (1.0 below 87 -> byte-identical there).
+            // S16(a)(ii): skip covered positions -- no flake spawns indoors / under a roof (near a window/wall).
+            if (!flakeSkyOpen(client.level, px + ox, py + oy, pz + oz)) {
+                continue;
+            }
+
             double vx = windX + (random.nextDouble() - 0.5) * 0.06;
             double vy = -fall * fallBoost - random.nextDouble() * 0.05;
             double vz = (random.nextDouble() - 0.5) * 0.10;
@@ -414,6 +437,10 @@ public class GlobeModClient implements ClientModInitializer {
             double ox = (random.nextDouble() - 0.5) * SNOW_ENVELOPE;
             double oy = -1.0 + random.nextDouble() * 7.0;          // near-ground/eye slab: py-1..py+6
             double oz = (random.nextDouble() - 0.5) * SNOW_ENVELOPE;
+            // S16(a)(ii): cover gate -- ground-slab flakes must not blow indoors through a wall/window.
+            if (!flakeSkyOpen(client.level, px + ox, py + oy, pz + oz)) {
+                continue;
+            }
             // Harder sideways drive, flatter trajectory -> reads as wind-whipped ground blizzard.
             double vx = windX * SNOW_SECOND_PASS_WIND_MULT + (random.nextDouble() - 0.5) * 0.08;
             double vy = -fall * 0.5 - random.nextDouble() * 0.03;
@@ -441,6 +468,10 @@ public class GlobeModClient implements ClientModInitializer {
             double tv = (random.nextDouble() + random.nextDouble()) * 0.5;
             double oy = SNOW_VOLUME_LOW + tv * (SNOW_VOLUME_HIGH - SNOW_VOLUME_LOW);
             double oz = (random.nextDouble() - 0.5) * SNOW_ENVELOPE;
+            // S16(a)(ii): cover gate on the deep-blizzard tier too -- the heaviest pass must not penetrate indoors.
+            if (!flakeSkyOpen(client.level, px + ox, py + oy, pz + oz)) {
+                continue;
+            }
             double vx = windX + (random.nextDouble() - 0.5) * 0.06;
             double vy = -fall * fallBoost - random.nextDouble() * 0.08; // the deep tier falls HARD
             double vz = (random.nextDouble() - 0.5) * 0.10;
