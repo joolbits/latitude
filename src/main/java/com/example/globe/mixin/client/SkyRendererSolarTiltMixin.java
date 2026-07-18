@@ -2,11 +2,13 @@ package com.example.globe.mixin.client;
 
 import com.example.globe.client.GlobeClientState;
 import com.example.globe.core.LatitudeV2Flags;
+import com.example.globe.core.PolarFogLaw;
 import com.example.globe.core.PolarHazardWindow;
 import com.example.globe.core.SolarPose;
 import com.example.globe.core.SolarSkyMood;
 import com.example.globe.core.SolarTilt;
 import com.example.globe.util.LatitudeMath;
+import net.minecraft.world.attribute.EnvironmentAttributes;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import com.mojang.blaze3d.vertex.PoseStack;
@@ -194,5 +196,40 @@ public class SkyRendererSolarTiltMixin {
                     gold * SolarSkyMood.GOLD_MAX_BLEND);
             state.starBrightness = SolarSkyMood.suppressedStarBrightness(state.starBrightness, holdRaw);
         }
+    }
+
+    /**
+     * S15(d) CLOUD-GREY OVERCAST (owner, TEST 105: "the snowstorm sky still reads blue-ish"). Its OWN inject,
+     * deliberately NOT gated on the solar tilt: a polar snowstorm should grey the sky whether or not the tilt is
+     * on (the storm-sky rain lift {@code ClientLevelStormSkyMixin} is un-gated the same way). It pulls
+     * {@code skyColor} toward the actual {@code CLOUD_COLOR} by {@link SolarSkyMood#stormOvercastBlend01} of the
+     * SAME storm level the rain lift uses ({@code max(stormLevel, earlyOvercast01)}), so heavy snowfall reads as
+     * a full grey overcast ceiling instead of a blue sky with falling snow. <b>A4-safe:</b> it only ADDS grey to
+     * the sky PASS (never touches {@code rainLevel}/{@code rainBrightness}); it DEEPENS the grey vanilla already
+     * applies from the lifted rain level. Composes with {@code globe$applySkyMood}: the polar-night gloom / dusk
+     * hold there are storm-damped, so as the storm rises the mood cedes and this overcast owns the sky (either
+     * inject order converges). Gated to a globe overworld + the client's own level, so zero effect elsewhere.
+     */
+    @Inject(method = "extractRenderState", at = @At("RETURN"))
+    private void globe$applyStormOvercast(ClientLevel level, float partialTick, Camera camera,
+                                          SkyRenderState state, CallbackInfo ci) {
+        if (!GlobeClientState.isGlobeWorld()) {
+            return;
+        }
+        Minecraft mc = Minecraft.getInstance();
+        if (mc == null || mc.player == null || mc.level != level) {
+            return; // only the level the client player is actually in (the storm-sky mixin's discipline)
+        }
+        if (!level.dimension().identifier().equals(Level.OVERWORLD.identifier())) {
+            return;
+        }
+        double absLatDeg = LatitudeMath.absLatDegExact(level.getWorldBorder(), mc.player.getZ());
+        float storm = Math.max(PolarHazardWindow.stormLevel(absLatDeg), PolarFogLaw.earlyOvercast01(absLatDeg));
+        double t = SolarSkyMood.stormOvercastBlend01(storm);
+        if (t <= 0.0) {
+            return;
+        }
+        int cloudColor = (Integer) camera.attributeProbe().getValue(EnvironmentAttributes.CLOUD_COLOR, partialTick);
+        state.skyColor = SolarSkyMood.blendRgb(state.skyColor, cloudColor, t);
     }
 }

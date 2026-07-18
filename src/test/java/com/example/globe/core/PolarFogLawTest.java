@@ -69,6 +69,29 @@ class PolarFogLawTest {
         assertTrue(PolarFogLaw.fogStartBlocks(40.0f) < 40.0f, "START under END");
     }
 
+    // ---- S15(c) horizon-gloom reach ----
+
+    @Test
+    void horizonGloomReachSeamFreeAtOnsetFullByEightyFive() {
+        // S15(c): the fog-colour night gloom eases in from the 80-deg onset (seam-free -- the fog is untouched
+        // below 80) to FULL by 85, then holds through the pole, so the horizon fog matches the gloomed sky.
+        assertEquals(0.0f, PolarFogLaw.horizonGloomReach01(80.0), 1e-6, "seam-free at the fog onset");
+        assertEquals(0.0f, PolarFogLaw.horizonGloomReach01(79.0), 1e-6, "silent below onset");
+        assertEquals(0.0f, PolarFogLaw.horizonGloomReach01(Double.NaN), 1e-6, "NaN-safe");
+        assertEquals(1.0f, PolarFogLaw.horizonGloomReach01(85.0), 1e-6, "full by 85 (well before the pole)");
+        assertEquals(1.0f, PolarFogLaw.horizonGloomReach01(89.5), 1e-6, "held to the pole");
+        assertEquals(1.0f, PolarFogLaw.horizonGloomReach01(90.5), 1e-6, "held beyond (Wide-world survivor)");
+        // Interior in (0,1), monotone non-decreasing across the 80->85 ease-in.
+        float prev = 0.0f;
+        for (double d = 80.0; d <= 85.0; d += 0.25) {
+            float v = PolarFogLaw.horizonGloomReach01(d);
+            assertTrue(v >= prev, "reach must rise across the ease-in (deg " + d + ")");
+            prev = v;
+        }
+        assertTrue(PolarFogLaw.horizonGloomReach01(82.5) > 0.0f && PolarFogLaw.horizonGloomReach01(82.5) < 1.0f,
+                "mid ease-in strictly interior");
+    }
+
     // ---- S11(f) -> S14(c): the fog's night/dusk darkening moved to SolarSkyMood.atmosphereTint (pinned by
     //      SolarSkyMoodTest); PolarFogLaw's duplicated NIGHT_FOG_* palette + nightFogDarkness01 were retired. ----
 

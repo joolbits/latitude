@@ -26,11 +26,21 @@ import net.minecraft.world.level.border.WorldBorder;
  * custom-geometry idiom in this codebase is the Fabric {@link LevelRenderEvents#COLLECT_SUBMITS} +
  * {@code submitCustomGeometry} path {@link PoleWallRenderer} already ships on -- it hands us an immediate
  * {@code VertexConsumer} for a chosen {@code RenderType} and owns all the pipeline/buffer/pass machinery. So the
- * aurora rides that path, emitting camera-relative strips (like the solar family's camera-relative sky) through
- * {@link RenderTypes#lightning()}: an UNTEXTURED, ADDITIVE, {@code POSITION_COLOR} type -- inherently FULLBRIGHT
- * (no light-texture darkening; the colour IS the emission) and translucent, so the curtains GLOW against the
- * night sky with no shaders and no texture asset. Depth-tested (terrain at the horizon occludes the curtain
- * base, physically right).
+ * aurora rides that path, emitting camera-relative sheets (like the solar family's camera-relative sky).
+ *
+ * <p><b>S15(f) -- render type: {@link RenderTypes#debugQuads()}, NOT {@code lightning()} (the cloud carve-out
+ * fix).</b> The owner (TEST 105) saw the suppressed aurora leave a "strange carve-out over the clouds". Receipt
+ * (decompiled 26.2): {@code RenderTypes.lightning()} rides {@code RenderPipelines.LIGHTNING}, whose depth state
+ * is {@code DepthStencilState.DEFAULT = (GREATER_THAN_OR_EQUAL, writeDepth=TRUE)} -- so every aurora quad, even
+ * a near-invisible additive one, WRITES DEPTH into the shared weather target; clouds drawn behind it then fail
+ * the reversed-Z depth test and vanish, a cloud-shaped hole. The fix is a render type that depth-TESTS (terrain
+ * still occludes the sheet base) but never depth-WRITES: {@code debugQuads()} rides {@code DEBUG_QUADS} whose
+ * {@code DEBUG_FILLED_SNIPPET} is {@code POSITION_COLOR} + QUADS + {@code BlendFunction.TRANSLUCENT} +
+ * {@code DepthStencilState(GREATER_THAN_OR_EQUAL, writeDepth=FALSE)} -- untextured (shader {@code position_color},
+ * no asset), the SAME vertex format the aurora already emits, so nothing downstream (clouds included) is ever
+ * occluded by the sheet. TRANSLUCENT (was additive) also serves S15(e): a soft colour wash reads "ethereal"
+ * where the additive glow read "glitchy". ("It actually draws"/compositing-over-clouds is a P4 live check, same
+ * honesty caveat as every renderer here; the depth receipt is the pinned decision.)
  *
  * <p><b>The one live-tuning caveat (P4).</b> Because this is world-pass (not sky-pass) geometry it is subject to
  * the camera far plane, so at very low render distances a far curtain could clip. The layout constants below
@@ -50,22 +60,27 @@ public final class AuroraRenderer {
 
     // ---- render-space layout (P4 dials; the visual LAW is in AuroraLaw) --------------------------------
 
-    /** Along-arc segments per band. {@code BAND_COUNT(3) x SEGMENTS x (LEVELS-1=2) x 4} verts = a few hundred. */
-    private static final int SEGMENTS = 16;
-    /** Arc width (rad) each curtain sweeps across the poleward sky. */
-    private static final double ARC_SPAN_RAD = Math.toRadians(150.0);
-    /** Horizontal distance (blocks) of the curtains from the camera. Kept conservative for the far plane (see
-     *  class doc); with {@link #BASE_HEIGHT} it sets the apparent elevation of the aurora band. */
+    /** Along-arc segments per sheet. S15(e): 16 -> 24 for a smoother broad wash. {@code BAND_COUNT(2) x SEGMENTS
+     *  x (LEVELS-1=4) x 4} verts = a few hundred. */
+    private static final int SEGMENTS = 24;
+    /** Arc width (rad) each sheet sweeps across the poleward sky. S15(e): 150 -> 168 deg -- broad sheets. */
+    private static final double ARC_SPAN_RAD = Math.toRadians(168.0);
+    /** Horizontal distance (blocks) of the sheets from the camera. Kept conservative for the far plane (see
+     *  class doc); with {@link #BASE_HEIGHT} it sets the apparent elevation of the aurora. */
     private static final double SKY_RADIUS = 96.0;
-    /** Height (blocks) of the lowest curtain's base above the camera -- "high in the sky above the celestial
-     *  bodies' band" without pinning to the zenith (where a curtain reads flat). */
+    /** Height (blocks) of the lowest sheet's base above the camera -- "high in the sky above the celestial
+     *  bodies' band" without pinning to the zenith (where a sheet reads flat). */
     private static final double BASE_HEIGHT = 40.0;
-    /** Vertical extent (blocks) of a curtain from its bright lower edge to its wispy top. */
-    private static final double CURTAIN_HEIGHT = 56.0;
-    /** Master brightness scale (0..1) folded into every vertex's alpha -- the one dial for "how bright is the
-     *  whole aurora". Additive blending means this is a glow strength, not an opacity. */
-    private static final double GLOBAL_ALPHA_SCALE = 0.8;
-    /** Below this master intensity the aurora is not worth drawing (perf early-out). */
+    /** Vertical extent (blocks) of a sheet from its soft lower edge to its soft top. S15(e): 56 -> 72 -- a
+     *  taller sheet spreads the soft vertical gradient so no edge reads as a hard line. */
+    private static final double CURTAIN_HEIGHT = 72.0;
+    /** Master alpha scale (0..1) folded into every vertex's alpha -- the one dial for "how strong is the whole
+     *  aurora". S15(e): 0.8 -> 0.45 (roughly halved) -- with TRANSLUCENT blending this is an opacity, so the
+     *  sheet is a faint colour wash, not a bright glow. */
+    private static final double GLOBAL_ALPHA_SCALE = 0.45;
+    /** Below this master intensity the aurora is not worth drawing (perf early-out AND the S15(f) hard skip:
+     *  this returns BEFORE any {@code submitCustomGeometry}, so a fully-suppressed aurora emits NO geometry at
+     *  all -- nothing to occlude clouds). */
     private static final double MIN_VISIBLE_INTENSITY = 0.02;
 
     private static boolean registered;
@@ -124,7 +139,9 @@ public final class AuroraRenderer {
         final double az0 = AuroraLaw.azimuthDriftRad(t);
         final double finalIntensity = intensity;
 
-        ctx.submitNodeCollector().submitCustomGeometry(ctx.poseStack(), RenderTypes.lightning(),
+        // S15(f): debugQuads() = POSITION_COLOR + TRANSLUCENT + depth-test-but-NO-depth-write, so the sheet is
+        // occluded BY terrain yet never occludes (carves) the clouds behind it. See the class doc for the receipt.
+        ctx.submitNodeCollector().submitCustomGeometry(ctx.poseStack(), RenderTypes.debugQuads(),
                 (pose, vc) -> {
                     for (int b = 0; b < AuroraLaw.BAND_COUNT; b++) {
                         double bandAz = az0 + AuroraLaw.bandAzimuthOffsetRad(b);
@@ -136,7 +153,8 @@ public final class AuroraRenderer {
                             double a1 = bandAz + (u1 - 0.5) * ARC_SPAN_RAD;
                             double w0 = AuroraLaw.verticalWaverBlocks(t, b, u0);
                             double w1 = AuroraLaw.verticalWaverBlocks(t, b, u1);
-                            // Stacked quad rows between adjacent vertical levels (bright green base -> purple top).
+                            // Stacked quad rows between adjacent vertical levels: a soft green-teal->purple wash
+                            // whose per-vertex alpha fades to near-zero at the top AND bottom edges (S15(e)).
                             for (int r = 0; r < AuroraLaw.LEVELS - 1; r++) {
                                 vertex(pose, vc, a0, u0, w0, bandBaseY, r, poleZ, finalIntensity);
                                 vertex(pose, vc, a0, u0, w0, bandBaseY, r + 1, poleZ, finalIntensity);

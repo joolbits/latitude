@@ -18,6 +18,8 @@
     "FreezeTopLayerFeatureGuardMixin",
     "ChunkRegionWarmSnowTrapMixin",
     "BiomePolarWaterFreezeMixin",
+    "ServerLevelRoofedWaterFreezeMixin",
+    "IceBlockPolarNoMeltMixin",
     "TreeLineVegetationGuardMixin",
     "AlpineSurfaceMixin",
     "PolarBarrensSurfaceMixin",

@@ -123,8 +123,14 @@ class AuroraLawTest {
     }
 
     @Test
+    void twoBroadSheets() {
+        // S15(e): 2 wide sheets, not 3 thin strips.
+        assertEquals(2, AuroraLaw.BAND_COUNT, "S15(e) diffuse v2 = 2 broad sheets");
+    }
+
+    @Test
     void colourIsGreenTealCoreToPurpleFringe() {
-        assertEquals(AuroraLaw.CORE_RGB, AuroraLaw.levelColorRgb(0));                 // bright lower edge = core
+        assertEquals(AuroraLaw.CORE_RGB, AuroraLaw.levelColorRgb(0));                 // lower edge = green-teal core
         assertEquals(AuroraLaw.FRINGE_RGB, AuroraLaw.levelColorRgb(AuroraLaw.LEVELS - 1)); // top = purple fringe
         // core is green-teal: green channel dominant; fringe is purple: red+blue over green.
         int core = AuroraLaw.CORE_RGB;
@@ -133,8 +139,26 @@ class AuroraLawTest {
         int fringe = AuroraLaw.FRINGE_RGB;
         assertTrue(((fringe >> 16) & 0xFF) > ((fringe >> 8) & 0xFF) && (fringe & 0xFF) > ((fringe >> 8) & 0xFF),
                 "fringe is purple (R,B over G)");
-        // alpha profile brightest at the base, fading up
-        assertTrue(AuroraLaw.levelAlpha01(0) > AuroraLaw.levelAlpha01(AuroraLaw.LEVELS - 1));
+    }
+
+    @Test
+    void diffuseProfileSoftOnBothEdges() {
+        // S15(e): the v2 sheet is a DIFFUSE glow -- alpha peaks gently in the MIDDLE and fades to near-zero at
+        // BOTH the bottom (level 0) and the top (last level), so no edge reads as a hard "band".
+        int last = AuroraLaw.LEVELS - 1;
+        double bottom = AuroraLaw.levelAlpha01(0);
+        double top = AuroraLaw.levelAlpha01(last);
+        assertTrue(bottom < 0.15, "soft bottom edge (no sharp bright lower line): " + bottom);
+        assertTrue(top < 0.15, "soft top edge: " + top);
+        double peak = 0.0;
+        for (int k = 1; k < last; k++) {
+            peak = Math.max(peak, AuroraLaw.levelAlpha01(k));
+        }
+        assertTrue(peak > bottom && peak > top,
+                "alpha peaks in the interior (bottom " + bottom + ", peak " + peak + ", top " + top + ")");
+        assertTrue(peak <= 0.5, "peak alpha roughly halves the old 0.85 bright edge: " + peak);
+        // Smooth 5-level gradient (was 3) so there are no banding steps.
+        assertTrue(AuroraLaw.LEVELS >= 5, "smoother vertical gradient: " + AuroraLaw.LEVELS);
     }
 
     @Test

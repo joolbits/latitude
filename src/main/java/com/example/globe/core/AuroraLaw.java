@@ -31,12 +31,17 @@ package com.example.globe.core;
  * change or a rejoin. NaN-safe throughout (a NaN time/parameter degrades to 0, never a NaN vertex that would
  * blank the sky pass).
  *
- * <h2>Shape + colour</h2>
- * {@link #BAND_COUNT} ribbon bands (design "2-4"), each a tall thin curtain arced across the poleward sky. A
- * curtain is coloured by a vertical profile ({@link #LEVEL_V}/{@link #LEVEL_ALPHA}): a bright green-teal core
- * at the sharp lower edge ({@link #CORE_RGB}) fading UP through a dim purple fringe ({@link #FRINGE_RGB}) -- the
- * iconic aurora gradient. The renderer supplies the render-space scalars (radius, height, segment count); this
- * class supplies the band count, colours, per-band offsets, the waver, and the along-arc edge fade.
+ * <h2>Shape + colour (S15(e) v2 -- DIFFUSE GLOW, not distinct bands)</h2>
+ * Owner, TEST 105: the ribbon curtains read "glitchy and strange"; he wants a fainter, ethereal COLOUR GLOW,
+ * "more of a colour glow than a distinct band". So v2 is {@link #BAND_COUNT} BROAD soft-edged sheets (was 3
+ * thin strips), each a wide wash across the poleward sky. A sheet is coloured by a vertical profile
+ * ({@link #LEVEL_V}/{@link #LEVEL_ALPHA}) that is SOFT ON EVERY EDGE -- alpha fades to near-nothing at BOTH the
+ * bottom and the top (no sharp bright lower edge, the old "band" tell) and peaks gently in the middle, a
+ * green-teal core ({@link #CORE_RGB}) washing UP through a purple fringe ({@link #FRINGE_RGB}). Combined with
+ * the along-arc edge fade ({@link #arcEdgeFade01}) every boundary is a smooth gradient, so the sheet reads as a
+ * diffuse glow rather than a hard curtain. The renderer draws it TRANSLUCENT (not additive) at a low master
+ * alpha, halving the old brightness. The renderer supplies the render-space scalars (radius, height, segment
+ * count); this class supplies the sheet count, colours, per-sheet offsets, the (slow) waver, and the edge fade.
  */
 public final class AuroraLaw {
 
@@ -92,18 +97,19 @@ public final class AuroraLaw {
         return clamp01(lat * dark * (1.0 - storm));
     }
 
-    // ---- bands (design "2-4 ribbon bands") -------------------------------------------------------------
+    // ---- sheets (S15(e) v2: 2 BROAD sheets, was 3 thin bands) -------------------------------------------
 
-    /** Number of ribbon bands (design "2-4"). Each is a curtain arced across the poleward sky at its own
-     *  azimuth offset, height and wave phase so they read as several independent sheets, not one. */
-    public static final int BAND_COUNT = 3;
+    /** Number of aurora sheets. S15(e): 3 -> 2 (design "2 wide sheets instead of 3 strips") -- fewer, broader
+     *  washes read as a diffuse glow, not several distinct ribbons. Still inside the design "2-4" range. */
+    public static final int BAND_COUNT = 2;
 
-    /** Per-band azimuth offset (rad) from the poleward centre -- spreads the bands across the poleward sky. */
-    private static final double[] BAND_AZIMUTH_OFFSET_RAD = {-0.38, 0.02, 0.40};
-    /** Per-band wave-phase offset (rad) so the bands do not ripple in unison. */
-    private static final double[] BAND_PHASE_RAD = {0.0, 2.10, 4.20};
-    /** Per-band base-height offset (blocks) so the bands stack/recede for parallax depth. */
-    private static final double[] BAND_HEIGHT_OFFSET_BLOCKS = {0.0, 12.0, 24.0};
+    /** Per-sheet azimuth offset (rad) from the poleward centre -- a gentle spread so the two broad sheets
+     *  overlap into one soft wash rather than sitting apart as two ribbons. */
+    private static final double[] BAND_AZIMUTH_OFFSET_RAD = {-0.16, 0.18};
+    /** Per-sheet wave-phase offset (rad) so the two sheets do not undulate in unison. */
+    private static final double[] BAND_PHASE_RAD = {0.0, 3.30};
+    /** Per-sheet base-height offset (blocks) so the sheets recede for a little parallax depth. */
+    private static final double[] BAND_HEIGHT_OFFSET_BLOCKS = {0.0, 18.0};
 
     /** Azimuth offset (rad) for a band, clamped to a valid band index (out-of-range -> band 0). */
     public static double bandAzimuthOffsetRad(int bandIndex) {
@@ -122,19 +128,21 @@ public final class AuroraLaw {
 
     // ---- motion: deterministic over the WORLD CLOCK ----------------------------------------------------
 
-    /** Peak vertical undulation of a curtain (blocks). The waver returns {@code [-this, +this]}. */
-    public static final double WAVER_AMP_BLOCKS = 10.0;
+    /** Peak vertical undulation of a sheet (blocks). The waver returns {@code [-this, +this]}. S15(e): 10 -> 8
+     *  -- a broad soft sheet should drift gently, not billow. */
+    public static final double WAVER_AMP_BLOCKS = 8.0;
 
-    // Traveling-wave rates (radians per world tick). Small -> SLOW: the fastest layer completes a cycle in
-    // ~1600 ticks (~80 s), so the curtains breathe rather than flicker. Incommensurate so the sum never
-    // obviously repeats. One-line P4 dials.
-    private static final double WAVE1_RATE = (2.0 * Math.PI) / 1600.0;
-    private static final double WAVE2_RATE = (2.0 * Math.PI) / 2600.0;
-    private static final double WAVE3_RATE = (2.0 * Math.PI) / 900.0;
-    // Spatial frequencies along the arc (radians per unit u): how many crests span one curtain.
-    private static final double WAVE1_SPATIAL = 2.0 * Math.PI * 1.5;
-    private static final double WAVE2_SPATIAL = 2.0 * Math.PI * 2.7;
-    private static final double WAVE3_SPATIAL = 2.0 * Math.PI * 4.3;
+    // Traveling-wave rates (radians per world tick). S15(e) SLOWER (was 1600/2600/900): the fastest layer now
+    // completes a cycle in ~2000 ticks (~100 s), so the sheets breathe almost imperceptibly rather than ripple
+    // -- the owner's "ethereal", not "glitchy". Incommensurate so the sum never obviously repeats. P4 dials.
+    private static final double WAVE1_RATE = (2.0 * Math.PI) / 3400.0;
+    private static final double WAVE2_RATE = (2.0 * Math.PI) / 5200.0;
+    private static final double WAVE3_RATE = (2.0 * Math.PI) / 2000.0;
+    // Spatial frequencies along the arc (radians per unit u): how many crests span one sheet. S15(e) LOWER (was
+    // 1.5/2.7/4.3) -- fewer, broader undulations so there are no tight ripples that read as distinct bands.
+    private static final double WAVE1_SPATIAL = 2.0 * Math.PI * 0.7;
+    private static final double WAVE2_SPATIAL = 2.0 * Math.PI * 1.3;
+    private static final double WAVE3_SPATIAL = 2.0 * Math.PI * 2.1;
 
     /**
      * Vertical waver (blocks) of a curtain at along-arc parameter {@code u01 in [0,1]} for a band at world time
@@ -173,14 +181,17 @@ public final class AuroraLaw {
     /** Purple upper fringe the curtain fades to at its top. */
     public static final int FRINGE_RGB = 0x9A4BE6;
 
-    /** Vertical levels of a curtain as a fraction of its height (0 = sharp bright lower edge, 1 = wispy top). */
-    public static final double[] LEVEL_V = {0.0, 0.5, 1.0};
-    /** Per-level alpha shape (before the master intensity): brightest at the lower edge, fading to a faint
-     *  purple top so the fringe is just visible, never a hard wall. */
-    public static final double[] LEVEL_ALPHA = {0.85, 0.55, 0.12};
+    /** Vertical levels of a sheet as a fraction of its height (0 = bottom, 1 = top). S15(e): 5 levels (was 3)
+     *  for a smooth vertical gradient with no banding steps. */
+    public static final double[] LEVEL_V = {0.0, 0.25, 0.5, 0.75, 1.0};
+    /** Per-level alpha shape (before the master intensity). S15(e) DIFFUSE profile: near-zero at BOTH the
+     *  bottom and the top (no sharp bright lower edge -- the old distinct-band tell) and peaking gently in the
+     *  middle, so the sheet is a soft glow with every edge fading out. Peak (0.42) roughly halves the old
+     *  bright lower edge (0.85). */
+    public static final double[] LEVEL_ALPHA = {0.05, 0.30, 0.42, 0.28, 0.06};
 
     /** Number of vertical levels ({@link #LEVEL_V}) -> {@code LEVELS-1} stacked quad rows per arc segment. */
-    public static final int LEVELS = 3;
+    public static final int LEVELS = 5;
 
     /** The RGB colour for vertical level index {@code k}: green-teal core lerped toward the purple fringe by
      *  {@link #LEVEL_V}{@code [k]}. Clamped level index. */
@@ -193,8 +204,9 @@ public final class AuroraLaw {
         return LEVEL_ALPHA[clampLevel(levelIndex)];
     }
 
-    /** Fraction of each arc END over which the curtain fades to nothing (so it does not stop abruptly). */
-    public static final double ARC_EDGE_FRAC = 0.2;
+    /** Fraction of each arc END over which the sheet fades to nothing (so it does not stop abruptly). S15(e):
+     *  0.2 -> 0.32 -- a wider, softer taper at both ends of the arc for the diffuse look. */
+    public static final double ARC_EDGE_FRAC = 0.32;
 
     /** Along-arc alpha fade 0..1: smoothstep 0 at the two ends of the arc ({@code u01} 0 and 1) to 1 within
      *  {@link #ARC_EDGE_FRAC} of each end. NaN-safe (0). */

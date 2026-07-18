@@ -108,6 +108,22 @@ class SolarSkyMoodTest {
     }
 
     @Test
+    void stormOvercastBlendScalesWithStorm() {
+        // S15(d): the cloud-grey overcast blend is 0 when calm, OVERCAST_MAX_BLEND at full storm, linear between,
+        // clamped above 1, NaN-safe. (It is a sky-COLOUR blend only -- it never touches rainLevel; A4-safe.)
+        assertEquals(0.0, SolarSkyMood.stormOvercastBlend01(0.0), 1e-9, "calm: no overcast tint");
+        assertEquals(SolarSkyMood.OVERCAST_MAX_BLEND, SolarSkyMood.stormOvercastBlend01(1.0), 1e-9,
+                "full storm: full overcast ceiling");
+        assertEquals(SolarSkyMood.OVERCAST_MAX_BLEND * 0.5, SolarSkyMood.stormOvercastBlend01(0.5), 1e-9,
+                "half storm: half overcast");
+        assertEquals(SolarSkyMood.OVERCAST_MAX_BLEND, SolarSkyMood.stormOvercastBlend01(1.7), 1e-9,
+                "clamped above full storm");
+        assertEquals(0.0, SolarSkyMood.stormOvercastBlend01(Double.NaN), 1e-9, "NaN-safe");
+        assertTrue(SolarSkyMood.OVERCAST_MAX_BLEND > 0.0 && SolarSkyMood.OVERCAST_MAX_BLEND < 1.0,
+                "a deepening toward cloud grey, never a flat repaint");
+    }
+
+    @Test
     void blendRgbPreservesAlphaAndEndpoints() {
         int base = 0xFF3366CC; // opaque blue-ish
         assertEquals(base, SolarSkyMood.blendRgb(base, SolarSkyMood.POLAR_NIGHT_SKY_RGB, 0.0), "t=0: base");
