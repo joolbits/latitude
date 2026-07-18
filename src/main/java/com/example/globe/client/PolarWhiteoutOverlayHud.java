@@ -81,7 +81,13 @@ public final class PolarWhiteoutOverlayHud {
 
         // TEST 78: multiplied by the exposure scale so the engulfment fades with enclosure instead of
         // snapping off a single overhead block (the interior-storm split -- unchanged by S10b).
-        float eased = topcoat * com.example.globe.core.PolarExposure.whiteoutScale(exposure);
+        // S16(a)(i) WINDOW COMPLETION (TEST 106): the scale now keeps a partial FLOOR (whiteoutShelteredScale
+        // = 0.40 + 0.60*exposure) instead of the plain linear decay, so a player looking OUT a window/doorway
+        // still sees the storm read COMPLETE (the owner's "somewhat present but very reduced" fix). A GENUINELY
+        // sealed / below-surface column never reaches this line -- the exposure <= 0.001 early return above
+        // fires there (the sampler returns EXACTLY 0 only when sealed), so a sealed dark room still releases the
+        // top-coat FULLY and the interior stays livable. See PolarExposure.whiteoutShelteredScale.
+        float eased = topcoat * com.example.globe.core.PolarExposure.whiteoutShelteredScale(exposure);
         int alpha = (int) (Math.min(MAX_ALPHA, eased * MAX_ALPHA) * 255.0f);
         if (alpha <= 0) {
             return;

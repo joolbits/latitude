@@ -25,10 +25,11 @@ package com.example.globe.core;
  *       owner-verbatim copy "The cold begins to bite." (2026-07-14; replaces the draft "Hypothermia sets in.").
  *       SUPPRESSED when the player wears a FULL freeze-immune set (honesty law: full leather = zero frostbite =
  *       no bite = no warning). Its removal-reactive sibling is {@link #removalWhisperFires}.</li>
- *   <li>{@link Rung#BLIZZARD} 87 deg -- WARN_2, owner-verbatim (do not touch).</li>
+ *   <li>{@link Rung#BLIZZARD} 87 deg -- WARN_2; S16d (2026-07-18) swept the "Turn back" scold + "--" out of
+ *       its text (see {@code GlobeWarningOverlay.POLE_WARN_2_TEXT}).</li>
  *   <li>{@link Rung#DANGER} 88 deg -- S13c re-time (2026-07-17): 89 -&gt; 88 (the lethal-core onset) + reworded
- *       present-tense "DANGER: Lethal blizzard. Turn back." (owner-approved change to his line); earns the
- *       vignette.</li>
+ *       present-tense; S16d (2026-07-18, owner TEST 106) dropped the trailing "Turn back." -&gt; now
+ *       "DANGER: Lethal blizzard." (exploration is never scolded); earns the vignette.</li>
  *   <li>{@link Rung#LETHAL} 89.7 deg -- earns the vignette; its TEXT swaps to the protected line when a full
  *       freeze-immune set is worn ({@link #lethalTextProtected}) -- a protected player must not be told they
  *       are freezing to death when the damage is negated.</li>
@@ -52,7 +53,7 @@ public final class PolarColdCues {
         /** 85 deg -- NEW frostbite-onset "The cold begins to bite." (owner verbatim 2026-07-14);
          *  protection-suppressed. */
         HYPOTHERMIA(85.0),
-        /** 87 deg -- WARN_2, owner-verbatim. */
+        /** 87 deg -- WARN_2 (S16d swept the "Turn back" scold + "--" out; see {@code POLE_WARN_2_TEXT}). */
         BLIZZARD(87.0),
         /** 88 deg -- DANGER (S13c re-time 2026-07-17: 89 -&gt; 88, = the lethal-core onset, so "Lethal blizzard"
          *  is honest instead of two degrees early; earns the vignette). Reworded present-tense (see

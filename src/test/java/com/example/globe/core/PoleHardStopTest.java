@@ -52,6 +52,23 @@ class PoleHardStopTest {
     }
 
     @Test
+    void s16c_arrivalOnTheLineDoesNotRubberBand() {
+        // S16(c): the crossing drops the arriving player ON the pole line (ARRIVAL_DEG_POLE == 90), standing at
+        // the block whose CENTER is zRadius + 0.5. The clamp must tolerate that -- a fresh arriver standing on
+        // the line, before the 90->88 escape trek, must NOT be rubber-banded. With CLAMP_EPSILON == 1.0 the
+        // arrival block-center clears the tolerance with a 0.5-block margin.
+        int zRadius = 10000;
+        double eps = PoleHardStop.CLAMP_EPSILON;
+        double arrivalBlockCenter = zRadius + 0.5; // targetZ (=zRadius) + 0.5 stand offset
+        assertFalse(PoleHardStop.evaluate(arrivalBlockCenter, 0.0, zRadius, eps).engaged(),
+                "standing ON the arrival line (block center zRadius+0.5) never engages the clamp");
+        assertFalse(PoleHardStop.evaluate(-arrivalBlockCenter, 0.0, zRadius, eps).engaged(),
+                "symmetric at the north pole");
+        // But a genuine overshoot more than a block past the line still walls (outward motion is clamped).
+        assertTrue(PoleHardStop.evaluate(zRadius + eps + 0.01, 0.0, zRadius, eps).engaged());
+    }
+
+    @Test
     void clampedZIsThePoleLineOnTheRightSide() {
         PoleHardStop.Decision south = PoleHardStop.evaluate(10250.0, 0.0, 10000, PoleHardStop.CLAMP_EPSILON);
         assertTrue(south.engaged());

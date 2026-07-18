@@ -14,8 +14,14 @@ public final class PoleHardStop {
     private PoleHardStop() {
     }
 
-    /** Half-block tolerance so sub-block float jitter exactly at the pole line never triggers a clamp/packet. */
-    public static final double CLAMP_EPSILON = 0.5;
+    /** Tolerance (blocks) beyond the pole line before the clamp engages. S16(c): the crossing now drops the
+     *  arriving player ON the pole line ({@code ARRIVAL_DEG_POLE == 90}), i.e. standing at the block whose CENTER
+     *  is {@code zRadius + 0.5} (the +0.5 stand offset). One block of tolerance clears that arrival block-center
+     *  with a 0.5-block margin, so a player standing ON the line -- fresh off a crossing, before they start the
+     *  90 -&gt; 88 escape trek -- is never rubber-banded; only genuine OUTWARD motion more than a block past the
+     *  line is clamped (the outward-velocity kill still fires the instant they push poleward). Was 0.5 (bare
+     *  jitter tolerance) before the arrival moved to the line. */
+    public static final double CLAMP_EPSILON = 1.0;
 
     /**
      * Who may pass the wall [P3 fix 2026-07-14, owner-observed live]: ONLY spectators. The original P1 rule
