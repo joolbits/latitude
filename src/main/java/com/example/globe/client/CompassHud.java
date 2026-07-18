@@ -18,6 +18,7 @@ public final class CompassHud {
     private static final int ANALOG_N_COLOR = 0xFFCC3333;
     private static final int ANALOG_PREVIEW_BORDER = 0x55FFFFFF;
     private static final int ANALOG_LAT_GAP = 6;
+    private static final int DEFAULT_DETACHED_DETAIL_GAP = 4;
     private static final int PREVIEW_HOTBAR_BG = 0x33241814;
     private static final int PREVIEW_HOTBAR_BORDER = 0x66A08972;
     private static final int PREVIEW_HOTBAR_SLOT = 0x22382F26;
@@ -889,7 +890,65 @@ public final class CompassHud {
         y += cfg.zoneOffsetY;
         x = clamp(x, 0, Math.max(0, screenW - w));
         y = clamp(y, 0, Math.max(0, screenH - h));
-        return new HudBounds(x, y, w, h);
+        HudBounds detailBounds = new HudBounds(x, y, w, h);
+        if (!isPristineDefaultDetachedPlacement(cfg)) {
+            return detailBounds;
+        }
+
+        HudBounds compassBounds = computeBounds(client, cfg);
+        return moveDefaultDetachedDetailOutsideCompass(
+                detailBounds,
+                compassBounds,
+                screenH);
+    }
+
+    private static boolean isPristineDefaultDetachedPlacement(CompassHudConfig cfg) {
+        return !cfg.zoneFollowsCompass
+                && cfg.zoneHAnchor == CompassHudConfig.HAnchor.CENTER
+                && cfg.zoneVAnchor == CompassHudConfig.VAnchor.TOP
+                && cfg.zoneOffsetX == 0
+                && cfg.zoneOffsetY == 0;
+    }
+
+    private static HudBounds moveDefaultDetachedDetailOutsideCompass(
+            HudBounds detailBounds,
+            HudBounds compassBounds,
+            int screenH) {
+        if (!intersects(detailBounds, compassBounds)) {
+            return detailBounds;
+        }
+
+        int maxY = Math.max(0, screenH - detailBounds.h());
+        int belowY = clamp(
+                compassBounds.y() + compassBounds.h() + DEFAULT_DETACHED_DETAIL_GAP,
+                0,
+                maxY);
+        HudBounds below = new HudBounds(
+                detailBounds.x(),
+                belowY,
+                detailBounds.w(),
+                detailBounds.h());
+        if (!intersects(below, compassBounds)) {
+            return below;
+        }
+
+        int aboveY = clamp(
+                compassBounds.y() - detailBounds.h() - DEFAULT_DETACHED_DETAIL_GAP,
+                0,
+                maxY);
+        HudBounds above = new HudBounds(
+                detailBounds.x(),
+                aboveY,
+                detailBounds.w(),
+                detailBounds.h());
+        return intersects(above, compassBounds) ? detailBounds : above;
+    }
+
+    private static boolean intersects(HudBounds a, HudBounds b) {
+        return a.x() < b.x() + b.w()
+                && a.x() + a.w() > b.x()
+                && a.y() < b.y() + b.h()
+                && a.y() + a.h() > b.y();
     }
     
     private record AnalogColors(int face, int ring, int muted, int needle) {}

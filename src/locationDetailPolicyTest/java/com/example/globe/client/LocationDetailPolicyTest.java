@@ -10,6 +10,7 @@ public final class LocationDetailPolicyTest {
         persistedFlagsCoverAllModesAndLegacyValues();
         compositionCoversAllModesInBiomeThenZoneOrder();
         biomeIdsBecomePlayerFacingTitleCase();
+        defaultDetachedBoundsStayReachableAtAcceptedGuiSize();
         staticIntegrationProofsHold();
         System.out.println("LOCATION_DETAIL_POLICY_TEST_PASS");
     }
@@ -93,6 +94,43 @@ public final class LocationDetailPolicyTest {
                 "multi-word biome path is title-cased");
     }
 
+    private static void defaultDetachedBoundsStayReachableAtAcceptedGuiSize() {
+        int screenW = 427;
+        int screenH = 240;
+        var detail = centeredTop(screenW, 29, 9);
+        var digital = centeredTop(screenW, 52, 15);
+        var analog = centeredTop(screenW, 68, 48);
+
+        var separatedDigital = moveDetachedDetail(detail, digital, screenH, true);
+        var separatedAnalog = moveDetachedDetail(detail, analog, screenH, true);
+        assertTrue(!intersects(digital, separatedDigital),
+                "default Digital Detach detail does not overlap at accepted 427x240 GUI size");
+        assertTrue(!intersects(analog, separatedAnalog),
+                "default Analog Detach detail does not overlap at accepted 427x240 GUI size");
+        assertEquals(digital.y + digital.h + 4, separatedDigital.y,
+                "default Digital Detach detail uses the fixed four-pixel gap");
+        assertEquals(analog.y + analog.h + 4, separatedAnalog.y,
+                "default Analog Detach detail uses the fixed four-pixel gap");
+        assertEquals(detail, moveDetachedDetail(detail, digital, screenH, false),
+                "Follow or an explicit detached placement remains byte-for-byte unchanged");
+
+        var alreadyClear = new Rect(detail.x, 80, detail.w, detail.h);
+        assertEquals(alreadyClear, moveDetachedDetail(alreadyClear, digital, screenH, true),
+                "a non-intersecting pristine default remains unchanged");
+
+        var nearBottomCompass = new Rect(180, 220, 68, 15);
+        var nearBottomDetail = new Rect(199, 226, 29, 9);
+        var clampedAbove = moveDetachedDetail(
+                nearBottomDetail,
+                nearBottomCompass,
+                screenH,
+                true);
+        assertTrue(!intersects(nearBottomCompass, clampedAbove),
+                "surface clamp falls back above instead of reintroducing an overlap");
+        assertEquals(207, clampedAbove.y,
+                "surface-clamped fallback keeps the fixed four-pixel gap");
+    }
+
     private static void staticIntegrationProofsHold() throws IOException {
         String config = normalize(read("src/main/java/com/example/globe/client/CompassHudConfig.java"));
         assertTrue(
@@ -136,6 +174,19 @@ public final class LocationDetailPolicyTest {
                         && hud.contains("cfg.zoneOffsetX")
                         && hud.contains("cfg.zoneOffsetY"),
                 "the whole selected unit reuses legacy detach anchors and offsets");
+        assertTrue(
+                hud.contains("DEFAULT_DETACHED_DETAIL_GAP = 4")
+                        && hud.contains("isPristineDefaultDetachedPlacement(cfg)")
+                        && hud.contains("moveDefaultDetachedDetailOutsideCompass(")
+                        && hud.contains("HudBounds compassBounds = computeBounds(client, cfg);"),
+                "only pristine default detached placement resolves an actual compass intersection");
+        assertTrue(
+                hud.contains("cfg.zoneHAnchor == CompassHudConfig.HAnchor.CENTER")
+                        && hud.contains("cfg.zoneVAnchor == CompassHudConfig.VAnchor.TOP")
+                        && hud.contains("cfg.zoneOffsetX == 0")
+                        && hud.contains("cfg.zoneOffsetY == 0")
+                        && hud.contains("return !cfg.zoneFollowsCompass"),
+                "Follow and custom detached anchors or offsets bypass the default-only correction");
         assertTrue(
                 !hud.contains("renderDetachedZone") && !hud.contains("computeZoneBounds"),
                 "no parallel zone-only detached render/bounds path remains");
@@ -192,6 +243,42 @@ public final class LocationDetailPolicyTest {
             index += target.length();
         }
         return count;
+    }
+
+    private static Rect centeredTop(int screenW, int w, int h) {
+        return new Rect((screenW - w) / 2, 4, w, h);
+    }
+
+    private static boolean intersects(Rect a, Rect b) {
+        return a.x < b.x + b.w
+                && a.x + a.w > b.x
+                && a.y < b.y + b.h
+                && a.y + a.h > b.y;
+    }
+
+    private static Rect moveDetachedDetail(
+            Rect detail,
+            Rect compass,
+            int screenH,
+            boolean pristineDefaultPlacement) {
+        if (!pristineDefaultPlacement || !intersects(detail, compass)) {
+            return detail;
+        }
+        int belowY = clamp(compass.y + compass.h + 4, 0, Math.max(0, screenH - detail.h));
+        var below = new Rect(detail.x, belowY, detail.w, detail.h);
+        if (!intersects(below, compass)) {
+            return below;
+        }
+        int aboveY = clamp(compass.y - detail.h - 4, 0, Math.max(0, screenH - detail.h));
+        var above = new Rect(detail.x, aboveY, detail.w, detail.h);
+        return intersects(above, compass) ? detail : above;
+    }
+
+    private static int clamp(int value, int min, int max) {
+        return Math.max(min, Math.min(max, value));
+    }
+
+    private record Rect(int x, int y, int w, int h) {
     }
 
     private static void assertEquals(Object expected, Object actual, String message) {
