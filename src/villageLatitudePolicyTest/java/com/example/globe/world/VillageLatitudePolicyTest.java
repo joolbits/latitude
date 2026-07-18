@@ -13,6 +13,7 @@ public final class VillageLatitudePolicyTest {
         boundaryIsStrictAndSymmetricAtGinormousRadius();
         integerChunkCentersMatchProductionForAllSupportedRadii();
         activeRadiusOverridesFallbackAndFallbackCoversEarlyWorldgen();
+        generationGuardRejectsInvalidStartsBeforeStore();
         staticIntegrationProofsHold();
         System.out.println("VILLAGE_LATITUDE_POLICY_TEST_PASS");
     }
@@ -126,6 +127,71 @@ public final class VillageLatitudePolicyTest {
                 "positive active radius overrides fallback beyond 80 degrees in the north");
     }
 
+    private static void generationGuardRejectsInvalidStartsBeforeStore() {
+        int radius = 7_500;
+        double exactBoundary =
+                radius * VillageLatitudePolicy.MAX_ALLOWED_ABSOLUTE_LATITUDE_DEGREES / 90.0;
+        for (int hemisphere : new int[]{-1, 1}) {
+            GenerationResult exact = simulateGenerationGuard(
+                    hemisphere * exactBoundary,
+                    radius,
+                    true);
+            assertTrue(
+                    exact.start() == SimulatedStart.VALID,
+                    "exactly 80 degrees reaches normal generation in hemisphere " + hemisphere);
+            assertEquals(
+                    1,
+                    exact.originalGenerateCalls(),
+                    "exactly 80 degrees invokes Structure.generate in hemisphere " + hemisphere);
+            assertEquals(
+                    1,
+                    exact.storedStarts(),
+                    "exactly 80 degrees can reach the valid/store path in hemisphere " + hemisphere);
+
+            GenerationResult blocked = simulateGenerationGuard(
+                    hemisphere * (exactBoundary + 0.01),
+                    radius,
+                    true);
+            assertTrue(
+                    blocked.start() == SimulatedStart.INVALID,
+                    "beyond 80 degrees returns INVALID_START in hemisphere " + hemisphere);
+            assertEquals(
+                    0,
+                    blocked.originalGenerateCalls(),
+                    "beyond 80 degrees is rejected before Structure.generate in hemisphere " + hemisphere);
+            assertEquals(
+                    0,
+                    blocked.storedStarts(),
+                    "INVALID_START cannot reach the valid/store path in hemisphere " + hemisphere);
+
+            GenerationResult nonVillage = simulateGenerationGuard(
+                    hemisphere * (exactBoundary + 0.01),
+                    radius,
+                    false);
+            assertTrue(
+                    nonVillage.start() == SimulatedStart.VALID,
+                    "non-village structures remain unaffected in hemisphere " + hemisphere);
+            assertEquals(
+                    1,
+                    nonVillage.originalGenerateCalls(),
+                    "non-village structures still invoke Structure.generate in hemisphere " + hemisphere);
+            assertEquals(
+                    1,
+                    nonVillage.storedStarts(),
+                    "valid non-village starts can still be stored in hemisphere " + hemisphere);
+        }
+    }
+
+    private static GenerationResult simulateGenerationGuard(
+            double blockZ,
+            int radius,
+            boolean village) {
+        if (village && VillageLatitudePolicy.shouldVetoVillageOrigin(blockZ, radius, radius)) {
+            return new GenerationResult(SimulatedStart.INVALID, 0, 0);
+        }
+        return new GenerationResult(SimulatedStart.VALID, 1, 1);
+    }
+
     private static void staticIntegrationProofsHold() throws IOException {
         String biomes = normalize(read("src/main/java/com/example/globe/world/LatitudeBiomes.java"));
         assertTrue(
@@ -147,20 +213,89 @@ public final class VillageLatitudePolicyTest {
                 !vegetation.contains("isBlockBeyondPolarVillageLimit"),
                 "village limit cannot alter vegetation");
 
-        String village = normalize(read(
+        String placementGuard = normalize(read(
                 "src/main/java/com/example/globe/mixin/ExtremePolarVillageGuardMixin.java"));
         assertTrue(
-                village.contains("LatitudeBiomes.isBlockBeyondPolarVillageLimit(blockZ, GlobeMod.BORDER_RADIUS)")
-                        && !village.contains("isBlockInExtremePolarCap"),
-                "only the village guard switches to the new predicate");
+                placementGuard.contains("@Mixin(StructureStart.class)")
+                        && placementGuard.contains("@Inject(method = \"placeInChunk(")
+                        && placementGuard.contains("at = @At(\"HEAD\"), cancellable = true")
+                        && placementGuard.contains("CallbackInfo ci"),
+                "legacy village placement guard still intercepts StructureStart.placeInChunk");
         assertTrue(
-                village.contains("structureId != null && structureId.getPath().startsWith(\"village\")"),
-                "village registry prefix remains the sole structure classifier");
+                placementGuard.contains("this.getChunkPos().getMiddleBlockZ()")
+                        && placementGuard.contains(
+                        "LatitudeBiomes.isBlockBeyondPolarVillageLimit(blockZ, GlobeMod.BORDER_RADIUS)")
+                        && !placementGuard.contains("isBlockInExtremePolarCap"),
+                "legacy placement guard retains the strict village-latitude predicate");
         assertTrue(
-                village.contains("catch (Throwable ignored)")
-                        && village.contains("Registry unavailable — fail open (allow placement)."),
-                "registry lookup retains fail-open behavior");
-        assertEquals(1, occurrences(village, "ci.cancel();"), "only one cancellation path remains");
+                placementGuard.contains(
+                        "structureId != null && structureId.getPath().startsWith(\"village\")")
+                        && placementGuard.contains("ci.cancel();"),
+                "legacy placement guard still cancels only village structures");
+        assertTrue(
+                placementGuard.contains("catch (Throwable ignored)")
+                        && placementGuard.contains("Registry unavailable — fail open (allow placement)."),
+                "legacy placement registry lookup retains fail-open behavior");
+        assertTrue(
+                !placementGuard.contains("@WrapOperation")
+                        && !placementGuard.contains("StructureStart.INVALID_START")
+                        && !placementGuard.contains("original.call("),
+                "legacy placement guard remains separate from generation-time invalidation");
+
+        Path startGuardPath = Path.of(
+                "src/main/java/com/example/globe/mixin/ExtremePolarVillageStartGuardMixin.java");
+        assertTrue(
+                Files.exists(startGuardPath),
+                "generation-time village start guard source must exist beside the legacy placement guard");
+        String startGuard = normalize(Files.readString(startGuardPath));
+        assertTrue(
+                startGuard.contains("@Mixin(ChunkGenerator.class)")
+                        && startGuard.contains("@WrapOperation(")
+                        && startGuard.contains("method = \"tryGenerateStructure\"")
+                        && startGuard.contains(
+                        "Lnet/minecraft/world/level/levelgen/structure/Structure;generate("),
+                "new start guard wraps Structure.generate inside ChunkGenerator.tryGenerateStructure");
+        assertTrue(
+                startGuard.contains(
+                        "LatitudeBiomes.isBlockBeyondPolarVillageLimit(blockZ, GlobeMod.BORDER_RADIUS)")
+                        && !startGuard.contains("isBlockInExtremePolarCap"),
+                "new start guard uses only the strict village-latitude predicate");
+        assertTrue(
+                startGuard.contains(
+                        "structureId != null && structureId.getPath().startsWith(\"village\")"),
+                "new start guard uses the same village registry classifier");
+        assertTrue(
+                startGuard.contains("catch (Throwable ignored)")
+                        && startGuard.contains("Registry unavailable — fail open (allow generation)."),
+                "new start registry lookup retains fail-open behavior at generation time");
+        assertTrue(
+                startGuard.contains("return StructureStart.INVALID_START;")
+                        && occurrences(startGuard, "original.call(") == 1,
+                "blocked new starts return the singleton invalid start and normal paths call generate once");
+        assertTrue(
+                startGuard.indexOf("return StructureStart.INVALID_START;")
+                        < startGuard.indexOf("return original.call("),
+                "new invalid start is returned before the normal generate/store path");
+        assertTrue(
+                !startGuard.contains("placeInChunk")
+                        && !startGuard.contains("@Inject")
+                        && !startGuard.contains("CallbackInfo")
+                        && !startGuard.contains("ci.cancel();"),
+                "new generation guard does not replace or duplicate the legacy placement injection");
+
+        String mixins = normalize(read("src/main/resources/globe.mixins.json"));
+        assertTrue(
+                mixins.contains(
+                        "\"ExtremePolarVillageGuardMixin\", \"ExtremePolarVillageStartGuardMixin\", \"ExtremePolarVegetationGuardMixin\""),
+                "legacy placement and new generation guards are both registered adjacently");
+        assertEquals(
+                1,
+                occurrences(mixins, "\"ExtremePolarVillageGuardMixin\""),
+                "legacy placement guard is registered exactly once");
+        assertEquals(
+                1,
+                occurrences(mixins, "\"ExtremePolarVillageStartGuardMixin\""),
+                "new generation guard is registered exactly once");
 
         String globeMod = normalize(read("src/main/java/com/example/globe/GlobeMod.java"));
         assertTrue(
@@ -171,15 +306,26 @@ public final class VillageLatitudePolicyTest {
                 "new policy retains the current blockZ coordinate convention");
 
         assertEquals(
-                2,
+                3,
                 mainSourceOccurrences("isBlockBeyondPolarVillageLimit"),
-                "new village predicate appears only at its declaration and the village mixin call");
+                "village predicate appears only at its declaration and the two complementary guards");
 
         String build = normalize(read("build.gradle"));
         assertTrue(
                 build.contains("tasks.register('latitudeVillageLatitudePolicyTest', JavaExec)")
                         && build.contains("dependsOn tasks.named('latitudeVillageLatitudePolicyTest')"),
                 "village latitude proof is automatically wired into Gradle check/build");
+    }
+
+    private enum SimulatedStart {
+        VALID,
+        INVALID
+    }
+
+    private record GenerationResult(
+            SimulatedStart start,
+            int originalGenerateCalls,
+            int storedStarts) {
     }
 
     private static int mainSourceOccurrences(String target) throws IOException {
