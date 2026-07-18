@@ -3,6 +3,7 @@ package com.example.globe.core;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -162,5 +163,31 @@ class PolarFogLawTest {
         assertEquals(0.25, PolarFogLaw.gustWave01(0L), 1e-6, "phase 0 (sin=0 -> s=0.5) squares to 0.25");
         // Period sits inside the ordered 8-20 s window.
         assertTrue(period >= 8000L && period <= 20000L);
+    }
+
+    // ---- S17(a): entity fog culling ----
+
+    @Test
+    void cullEntityBeyondFogWall() {
+        // Below the 80-deg fog onset: never cull (cap is MAX_VALUE), regardless of distance.
+        assertFalse(PolarFogLaw.cullEntityBeyondFog(70.0, 100000.0));
+        assertFalse(PolarFogLaw.cullEntityBeyondFog(79.9, 1.0e9));
+        // At the 80-deg entry the cap is 512 blocks (beyond any render distance) -> seam-free, nothing culled
+        // until the fog has genuinely closed in.
+        assertFalse(PolarFogLaw.cullEntityBeyondFog(80.0, 400.0));
+        assertTrue(PolarFogLaw.cullEntityBeyondFog(80.0,
+                512.0f + PolarFogLaw.ENTITY_CULL_MARGIN_BLOCKS + 1.0));
+        // Deep in the whiteout (88 deg, cap 40 blocks): an entity just inside the wall renders, one past the
+        // wall + margin is culled.
+        float cap88 = PolarFogLaw.fogEndCapBlocks(88.0);
+        assertEquals(40.0f, cap88, 1e-4);
+        assertFalse(PolarFogLaw.cullEntityBeyondFog(88.0, cap88 - 1.0));            // inside the wall: visible
+        assertFalse(PolarFogLaw.cullEntityBeyondFog(88.0, cap88 + PolarFogLaw.ENTITY_CULL_MARGIN_BLOCKS - 0.1));
+        assertTrue(PolarFogLaw.cullEntityBeyondFog(88.0, cap88 + PolarFogLaw.ENTITY_CULL_MARGIN_BLOCKS + 0.1)); // past it: culled
+        // At the pole line (cap 4 blocks) almost everything beyond arm's reach is gone.
+        assertTrue(PolarFogLaw.cullEntityBeyondFog(90.0, 20.0));
+        // NaN latitude / distance are defensively "do not cull" (never hide an entity on a bad sample).
+        assertFalse(PolarFogLaw.cullEntityBeyondFog(Double.NaN, 1000.0));
+        assertFalse(PolarFogLaw.cullEntityBeyondFog(89.0, Double.NaN));
     }
 }

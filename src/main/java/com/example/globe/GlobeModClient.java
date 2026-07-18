@@ -481,24 +481,28 @@ public class GlobeModClient implements ClientModInitializer {
 
     // ---- S13(a) SNOW SPARKLE (owner order, TEST 103 flight): calm-cold snowfield glints. ----
     // Peak per-spawn-tick budget BEFORE the shared Particles/enclosure/reduce-snow scaling. At the shared
-    // every-4th-tick cadence (~5 spawn-ticks/s) the default peak of 1 lands as ~a-few-glints/second at full band
-    // strength on ALL particles + open sky, tapering with the band ramp -- a subtle glint, not a particle storm.
-    // P4 dial (bump for a denser shimmer; the pure ramp in SnowSparkleLaw handles the rest).
+    // every-4th-tick cadence (~5 spawn-ticks/s) the S17(c)(i) peak of 3 lands as ~15-glints/second at full band
+    // strength on ALL particles + open sky, tapering with the band ramp + the snowfall window -- a livelier
+    // shimmer, still not a particle storm. P4 dial (the pure ramp/window in SnowSparkleLaw handles the rest).
     private static final int SPARKLE_PEAK_BUDGET = com.example.globe.core.SnowSparkleLaw.DEFAULT_PEAK_BUDGET;
     /** Horizontal radius (blocks) around the player over which glints scatter on the nearby snow surface. */
     private static final double SPARKLE_RADIUS = 10.0;
-    // S14(d) SPARKLE v2 (owner, TEST 104: the old on-surface FIREWORK glint "reads like raindrops, unclear").
-    // The glint now FLOATS in the air above the snow (never clipped into it) and drifts gently, so it reads as
-    // frost glittering in the air.
-    /** Min/max height (blocks) ABOVE the sampled snow surface a glint spawns -- clear of the ground so it hangs
-     *  in the air as frost, never a speck stuck in the snow (the "raindrop" look this replaces). */
-    private static final double SPARKLE_Y_MIN = 0.5;
-    private static final double SPARKLE_Y_MAX = 1.5;
-    /** Gentle drift passed as the particle's incoming velocity: a slow upward lift + a little lateral wander so
-     *  the glint shimmers as it hangs. WAX_OFF damps incoming velocity hard (x,z x0.005, y x0.01), so these are
-     *  pre-scaled to land as a whisper (~0.012 b/t up, ~+-0.005 b/t sideways). */
-    private static final double SPARKLE_DRIFT_UP = 1.2;
-    private static final double SPARKLE_DRIFT_LATERAL = 1.0;
+    // S17(c)(ii) SPARKLE v3 NEAR-GROUND (owner, TEST 107: "so you can tell it's the snow, not like it's
+    // floating in the air"). S14(d) had lifted the glint 0.5-1.5 blocks INTO the air to escape the old FIREWORK
+    // "raindrop" look; the owner then read that floating glint as air-motes, not snow-glint. v3 drops it back
+    // DOWN onto the snow (0.05-0.3 blocks above the sampled surface -- hugging the ground, never clipped INTO
+    // it) so it unambiguously reads as THE SNOW glinting.
+    /** Min/max height (blocks) ABOVE the sampled snow surface a glint spawns -- hugging the ground so it reads as
+     *  the snow itself catching the light, not a mote hanging in the air (the S14(d) "floating" look this fixes).
+     *  0.05 keeps it clear of z-fighting with the surface; 0.3 keeps the whole cloud at snow-glint height. */
+    private static final double SPARKLE_Y_MIN = 0.05;
+    private static final double SPARKLE_Y_MAX = 0.3;
+    /** S17(c)(ii): a glint SITS, it does not wander (owner). The drift is removed -- the particle spawns with
+     *  zero incoming velocity so it twinkles in place on the snow (WAX_OFF's own tiny quad + short life carry the
+     *  shimmer). Kept as named 0.0 dials so a P4 pass can reintroduce a whisper of motion without touching the
+     *  spawn loop. */
+    private static final double SPARKLE_DRIFT_UP = 0.0;
+    private static final double SPARKLE_DRIFT_LATERAL = 0.0;
     /**
      * S14(d): the amethyst-family glint particle. PICK = {@code WAX_OFF} (owner asked for "amethyst sparkle").
      * Receipts from the vanilla 26.2 particle defs ({@code GlowParticle} / {@code EndRodParticle}):
@@ -512,10 +516,16 @@ public class GlobeModClient implements ClientModInitializer {
      *       gravity — an ember/fairy mote, not frost.</li>
      * </ul>
      * WAX_OFF wins: amethyst lilac-white + a light-emitting glow that catches the eye under the greying polar
-     * sky + a 0.5-2 s life that LINGERS long enough to read clearly as frost glittering in the air (the fix for
-     * FIREWORK's "raindrop/unclear" complaint), while its near-total velocity damping keeps it twinkling almost
-     * in place. ONE-LINE P4 SWAP: change this to {@code ParticleTypes.ELECTRIC_SPARK} (sharper/briefer) or
-     * {@code ParticleTypes.END_ROD} (warmer/floatier) — nothing else moves. */
+     * sky + a 0.5-2 s life that LINGERS long enough to read clearly as frost glittering (the fix for FIREWORK's
+     * "raindrop/unclear" complaint), while its near-total velocity damping keeps it twinkling almost in place --
+     * exactly what S17(c)(ii)'s near-ground, zero-drift glint wants.
+     *
+     * <p>S17(c)(iv): WAX_OFF stays the PRIMARY glint. The owner floated returning to the FIREWORK spark for a
+     * sharper twinkle -- the FLIGHT decides. ONE-LINE P4 SWAP: change this field to
+     * {@code ParticleTypes.FIREWORK} (the sharper original spark the owner floated),
+     * {@code ParticleTypes.ELECTRIC_SPARK} (sharper/briefer amethyst) or {@code ParticleTypes.END_ROD}
+     * (warmer/floatier) -- nothing else moves (the near-ground spawn + zero drift already read well for a
+     * FIREWORK spark sitting on the snow). */
     private static final net.minecraft.core.particles.SimpleParticleType SPARKLE_PARTICLE = ParticleTypes.WAX_OFF;
 
     // Calm-weather glints on the snowfields near the player (80-85 deg, below the deep-blizzard tier). A tiny,

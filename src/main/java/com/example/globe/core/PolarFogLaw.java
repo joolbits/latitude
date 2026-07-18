@@ -240,6 +240,52 @@ public final class PolarFogLaw {
         return 1.0 + GUST_MAX_BOOST * gustDepth01(absLatDeg) * gustWave01(nowMs);
     }
 
+    // ---- S17(a): ENTITY FOG CULLING -- nothing renders beyond the wall of white ----------------------------
+    //
+    // Owner, TEST 107 (video): entities (mobs, dropped items, boats...) kept rendering PAST the polar fog END,
+    // reading as figures floating in the white void over terrain that had itself faded into fog / gone unloaded.
+    // The fog hides the WORLD past its END but the entity renderer still drew entities out there. This law culls
+    // any entity farther than the fog END (plus a small margin) while the camera is inside the polar fog band --
+    // so nothing is visible beyond the wall of white (and, as a bonus, it is a genuine perf win: those entities
+    // are never submitted). It is the SAME latitude->visibility curve the depth fog uses ({@link
+    // #fogEndCapBlocks}), so the cull edge sits exactly where the world already dissolved -- there is no seam
+    // where an entity pops in ahead of visible terrain.
+    //
+    // Un-gated (no dedicated feature flag), exactly like the fog itself (S11f precedent): the render hook gates
+    // only on isGlobeWorld + the shared debug fog kill switches, never a separate toggle. Below the 80-deg fog
+    // onset {@link #fogEndCapBlocks} returns MAX_VALUE, so this is a provable no-op (never culls) outside polar
+    // country, and even at the 80-deg entry the cap (512) sits beyond every render distance, so the cull only
+    // ever bites once the fog has genuinely closed in.
+
+    /** Small distance past the fog END (blocks) an entity may still render, so the cull edge sits just BEYOND the
+     *  visible fog wall rather than at it (no entity blinking out at the exact fog boundary). ~8 blocks = half a
+     *  chunk. One-line P4 dial. */
+    public static final double ENTITY_CULL_MARGIN_BLOCKS = 8.0;
+
+    /**
+     * Whether an entity at {@code horizontalDistBlocks} from the camera should be CULLED (not rendered) because
+     * it lies beyond the polar fog wall. True iff the camera is in the polar fog band (latitude at/above the
+     * 80-deg onset, where {@link #fogEndCapBlocks} is finite) AND the entity is farther than the fog END plus
+     * {@link #ENTITY_CULL_MARGIN_BLOCKS}. Below the onset (cap {@code == Float.MAX_VALUE}) it always returns
+     * false -- a provable no-op outside polar country. NaN distance / latitude read as "do not cull" (defensive:
+     * the render path must never hide an entity on a bad sample). Horizontal (xz-cylindrical) distance is used to
+     * match how the fog END caps sight along the ground; a void-floating entity sits near the camera's Y, so the
+     * horizontal term is the one that matters.
+     *
+     * @param absLatDeg            camera absolute latitude (deg)
+     * @param horizontalDistBlocks horizontal (xz) distance from the camera to the entity, in blocks
+     */
+    public static boolean cullEntityBeyondFog(double absLatDeg, double horizontalDistBlocks) {
+        if (Double.isNaN(absLatDeg) || Double.isNaN(horizontalDistBlocks)) {
+            return false;
+        }
+        float cap = fogEndCapBlocks(absLatDeg);
+        if (cap == Float.MAX_VALUE) {
+            return false; // below the 80-deg fog onset: never cull (seam-free with the fog)
+        }
+        return horizontalDistBlocks > cap + ENTITY_CULL_MARGIN_BLOCKS;
+    }
+
     private static double clamp01(double v) {
         return v < 0.0 ? 0.0 : (v > 1.0 ? 1.0 : v);
     }

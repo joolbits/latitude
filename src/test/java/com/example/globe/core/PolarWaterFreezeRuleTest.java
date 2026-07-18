@@ -423,4 +423,75 @@ class PolarWaterFreezeRuleTest {
         assertTrue(PolarWaterFreezeRule.ROOFED_FREEZE_REACH_BLOCKS < PolarWaterFreezeRule.LAND_WATER_FREEZE_DEPTH_BLOCKS,
                 "roof reach stays shallower than the glacier-sole depth (deep cave water stays liquid)");
     }
+
+    // ---- S17(b): WATERFALL FREEZE v3 -- the FLOW-TICK seam + the UPWARD SCAN ------------------
+
+    @Test
+    void s17bFlowTick_movingWaterFreezesInZone_thePureDecision() {
+        // The flow-tick consumer (FlowingFluidWaterfallFreezeMixin) calls freezesFlowing(barrens=true, ocean,
+        // lat, fray, skyExposed=FALSE, aboveFreezeFloor) -- skyExposed is always false, the floor arm decides.
+        // A moving (flowing) block in-zone, non-ocean, above the freeze floor -> freezes to plain ice.
+        assertTrue(PolarWaterFreezeRule.freezesFlowing(true, false, 89.0, 0.5, false, true),
+                "a flowing block in-zone above the floor freezes (the fall dies at the moment of motion)");
+        assertTrue(PolarWaterFreezeRule.freezesFlowing(true, false, PolarWaterFreezeRule.FREEZE_ALL_DEG, 0.5, false, true),
+                "freezes right at the 85-deg front");
+        assertTrue(PolarWaterFreezeRule.freezesFlowing(true, false, -88.0, 0.5, false, true), "southern pole too");
+    }
+
+    @Test
+    void s17bFlowTick_newSpringOutflowFreezes_sameAsAnyMovingBlock() {
+        // A new spring's first spread is just FLOWING water above the floor -- the flow tick freezes it exactly
+        // like a fall's descending block, so "new springs freeze immediately" is the same pure decision.
+        assertTrue(PolarWaterFreezeRule.freezesFlowing(true, false, 86.0, 0.5, false, true),
+                "a spring's outflow (flowing, above floor) freezes as it spreads");
+    }
+
+    @Test
+    void s17bUpwardScan_aboveHeightmapFallColumnFreezes() {
+        // The upward scan freezes standing flowing columns that free-fell ABOVE the MOTION_BLOCKING top. Every
+        // belt block is above the surface, hence aboveFreezeFloor is true by construction -> the same freeze.
+        assertTrue(PolarWaterFreezeRule.freezesFlowing(true, false, 89.0, 0.5, false, true),
+                "a standing fall column above the surface is caught by the upward scan");
+        // The scan bound is a documented, bounded belt (cost is O(1)-ish per tick).
+        assertEquals(24, PolarWaterFreezeRule.WATERFALL_UPWARD_SCAN_BLOCKS, "24-block upward belt");
+        assertTrue(PolarWaterFreezeRule.WATERFALL_UPWARD_SCAN_BLOCKS > 0);
+    }
+
+    @Test
+    void s17bDeepCaveFallStaysLiquid_theB9Reservation() {
+        // A deep spring/fall BELOW the freeze floor, covered (skyExposed=false, aboveFreezeFloor=false) stays
+        // liquid -- the flow tick's floor arm is false there, reserving the B-9 semi-ice cave lakes.
+        assertFalse(PolarWaterFreezeRule.freezesFlowing(true, false, 89.0, 0.5, false, false),
+                "a covered flowing spring below the freeze floor stays liquid");
+    }
+
+    @Test
+    void s17bOceanCascadeExempt_sacredPin() {
+        // An ocean-family column never flow-freezes even above the floor (ocean is checked FIRST): the sea keeps
+        // its liquid-under-ice for the under-ice swim / pole wall / S7 immersion.
+        assertFalse(PolarWaterFreezeRule.freezesFlowing(true, true, 89.0, 0.5, false, true),
+                "flowing water over an ocean column stays liquid");
+    }
+
+    @Test
+    void s17bOutOfZoneAndFlagOffLeaveMovingWaterVanilla() {
+        // Equatorward of the frayed front the flow tick never freezes (vanilla flow)...
+        assertFalse(PolarWaterFreezeRule.freezesFlowing(true, false, 83.9, 0.0, false, true),
+                "below the zone (threshold 84 at noise 0): moving water stays liquid");
+        assertFalse(PolarWaterFreezeRule.freezesFlowing(true, false, 80.0, 0.5, false, true));
+        // ...and with the barrens family flag off, the flow tick is the untouched vanilla path.
+        assertFalse(PolarWaterFreezeRule.freezesFlowing(false, false, 89.0, 0.5, false, true),
+                "flag-off leaves moving water exactly as vanilla (byte-identical)");
+    }
+
+    @Test
+    void s17bFlowTickSharesTheOneFrayedFront() {
+        // The flow tick rides the SAME +-1 deg wandering front as the surface ice / roofed descent, so a column's
+        // moving-water freeze and its surface freeze agree: front dips to 84 at noise 0, pushes to 86 at noise 1.
+        assertTrue(PolarWaterFreezeRule.freezesFlowing(true, false, 84.2, 0.0, false, true), "front dips to 84");
+        assertFalse(PolarWaterFreezeRule.freezesFlowing(true, false, 85.5, 1.0, false, true), "front pushes to 86");
+        assertEquals(PolarWaterFreezeRule.freezesWaterFrayed(true, 85.5, 1.0),
+                PolarWaterFreezeRule.freezesFlowing(true, false, 85.5, 1.0, false, true),
+                "the flow-tick decision (non-ocean, above floor) IS the shared frayed front");
+    }
 }

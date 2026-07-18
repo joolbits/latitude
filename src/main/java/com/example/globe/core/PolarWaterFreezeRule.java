@@ -311,4 +311,30 @@ public final class PolarWaterFreezeRule {
      * so this reach never disturbs the deep reservoir even if a near-surface cave is grazed.
      */
     public static final int ROOFED_FREEZE_REACH_BLOCKS = 16;
+
+    // --- S17(b) WATERFALL FREEZE v3 (Peetsa 2026-07-18, TEST 107 video: liquid waterfalls STILL cascade) ---
+    // ROOT CAUSE (two-flight): an open-air cascade free-falls ABOVE the MOTION_BLOCKING heightmap top (water is
+    // not motion-blocking terrain), so the S16 roofed DESCENT -- which walks DOWNWARD from that top -- never
+    // reaches the falling column. v3 adds TWO seams, both riding the ONE frayed front + ocean exemption + freeze
+    // floor the S14/S15/S16 rules already use, so nothing new about WHERE water freezes, only WHEN it is caught:
+    //   * THE FLOW TICK (FlowingFluidWaterfallFreezeMixin on FlowingFluid.tick): the single method every moving
+    //     water block funnels through. In-zone, above the floor, non-ocean, a FLOWING (non-source) block that
+    //     attempts to flow becomes plain ICE and the vanilla spread is cancelled -- the fall dies at the moment
+    //     of motion, a new spring's outflow freezes as it spreads. The decision is {@link #freezesFlowing}.
+    //   * THE UPWARD SCAN (below): a bounded belt scanned UPWARD from the MOTION_BLOCKING top catches STANDING
+    //     cascade columns that reached equilibrium and stopped re-ticking (the flow tick only fires on active
+    //     flow). Same {@link #freezesFlowing} decision, aboveFreezeFloor true by construction (above the surface).
+
+    /**
+     * S17(b) UPWARD-SCAN BOUND (blocks above the MOTION_BLOCKING heightmap top). The tickPrecipitation-driven
+     * pass scans a belt of this height UPWARD from the column's surface, freezing any FLOWING water it finds
+     * (the standing fall columns that free-fell ABOVE the heightmap and so are unreachable by the S16 roofed
+     * DESCENT). Bounded to keep the per-tick cost O(1) and small: 24 = a generous open cascade drop (1.5 chunk
+     * sections), tall enough to claim a typical multi-block fall in one tick while a taller fall is finished off
+     * over subsequent ticks (each frozen block blocks the water above it, so the fall dies from the bottom up as
+     * the belt re-scans). The scan stops early at the first solid (non-fluid) block, so it usually pays far less
+     * than the cap; every block in the belt is above the surface, hence far above the surface-40 freeze floor,
+     * so the frozen ice is always ABOVE the B-9 deep-cave reservoir.
+     */
+    public static final int WATERFALL_UPWARD_SCAN_BLOCKS = 24;
 }

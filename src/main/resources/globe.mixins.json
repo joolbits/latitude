@@ -19,6 +19,7 @@
     "ChunkRegionWarmSnowTrapMixin",
     "BiomePolarWaterFreezeMixin",
     "ServerLevelRoofedWaterFreezeMixin",
+    "FlowingFluidWaterfallFreezeMixin",
     "IceBlockPolarNoMeltMixin",
     "TreeLineVegetationGuardMixin",
     "AlpineSurfaceMixin",
@@ -52,6 +53,7 @@
     "client.LevelLoadingScreenLatitudeOverlayMixin",
     "client.FogRendererPolarSetupMixin",
     "client.FogRendererPassageSetupMixin",
+    "client.EntityRenderDispatcherPolarCullMixin",
     "client.SkyRendererSolarTiltMixin",
     "client.compat.sodium.RenderSectionManagerVisibilityMixin"
   ],
