@@ -308,4 +308,92 @@ class PolarWaterFreezeRuleTest {
                 "NaN fray -> razor line (85), never a hole in the ice on bad data");
         assertFalse(PolarWaterFreezeRule.freezesLandWaterSolid(true, false, 84.999, Double.NaN));
     }
+
+    // ---- S15(b): PERSISTENT ICE -- SKY WAIVER (roofed water still freezes) --------------------
+
+    @Test
+    void skyWaiverIsWaivedExactlyOnTheFreezeFront() {
+        // The sky/cover requirement is waived exactly where open water is forced to freeze -- ONE front.
+        assertFalse(PolarWaterFreezeRule.freezeIgnoresSky(true, 84.999), "just equatorward: sky NOT waived");
+        assertTrue(PolarWaterFreezeRule.freezeIgnoresSky(true, PolarWaterFreezeRule.FREEZE_ALL_DEG),
+                "at 85 the roof no longer saves the water");
+        assertTrue(PolarWaterFreezeRule.freezeIgnoresSky(true, 89.0), "Peetsa's 89 deg shelter");
+        // Pin the deliberate coupling to the open-water front (like FROSTBITE_ONSET_DEG == FREEZE_ALL_DEG).
+        for (double lat : new double[]{60.0, 80.0, 84.999, 85.0, 86.0, 89.0, 90.0, -88.0}) {
+            assertEquals(PolarWaterFreezeRule.freezesWater(true, lat),
+                    PolarWaterFreezeRule.freezeIgnoresSky(true, lat),
+                    "the sky waiver rides the open-water freeze front exactly");
+        }
+    }
+
+    @Test
+    void skyWaiverHemisphereSymmetricNonGlobeAndNaNSafe() {
+        assertTrue(PolarWaterFreezeRule.freezeIgnoresSky(true, -89.0), "southern pole waives the sky too");
+        assertFalse(PolarWaterFreezeRule.freezeIgnoresSky(false, 90.0), "non-globe world untouched at 90 deg");
+        assertFalse(PolarWaterFreezeRule.freezeIgnoresSky(true, Double.NaN), "NaN latitude -> not waived");
+    }
+
+    @Test
+    void skyWaiverFrayedSharesTheOneWanderingFront() {
+        // Neutral noise reproduces the razor line; the front wanders +-1 deg exactly like the frozen-sea edge.
+        assertTrue(PolarWaterFreezeRule.freezeIgnoresSkyFrayed(true, 85.0, 0.5));
+        assertFalse(PolarWaterFreezeRule.freezeIgnoresSkyFrayed(true, 84.999, 0.5));
+        assertTrue(PolarWaterFreezeRule.freezeIgnoresSkyFrayed(true, 84.0, 0.0), "front dips to 84 at noise 0");
+        assertFalse(PolarWaterFreezeRule.freezeIgnoresSkyFrayed(true, 85.5, 1.0), "front pushes to 86 at noise 1");
+        assertTrue(PolarWaterFreezeRule.freezeIgnoresSkyFrayed(true, 85.0, Double.NaN), "NaN fray -> razor line");
+        assertEquals(PolarWaterFreezeRule.freezesWaterFrayed(true, 85.5, 1.0),
+                PolarWaterFreezeRule.freezeIgnoresSkyFrayed(true, 85.5, 1.0),
+                "the frayed sky waiver IS the frayed open-water front");
+    }
+
+    // ---- S15(b): PERSISTENT ICE -- NO MELT ("iceMeltsInZone == false") ------------------------
+
+    @Test
+    void iceMeltCancelledExactlyOnTheFreezeFront() {
+        // In the forced-freeze zone the light-driven melt is cancelled (a torch cannot thaw the pole)...
+        assertTrue(PolarWaterFreezeRule.iceMeltCancelled(true, 89.0), "polar ice never melts");
+        assertTrue(PolarWaterFreezeRule.iceMeltCancelled(true, PolarWaterFreezeRule.FREEZE_ALL_DEG));
+        assertTrue(PolarWaterFreezeRule.iceMeltCancelled(true, -85.0), "southern pole too");
+        // ...but equatorward of the front, ice melts normally (vanilla) -- this is the "iceMeltsInZone == false
+        // only IN the zone" boundary: below it the predicate is false so the consumer never cancels.
+        assertFalse(PolarWaterFreezeRule.iceMeltCancelled(true, 84.999), "just equatorward: vanilla melt stands");
+        assertFalse(PolarWaterFreezeRule.iceMeltCancelled(true, 66.5), "subpolar ice melts by vanilla rules");
+        assertFalse(PolarWaterFreezeRule.iceMeltCancelled(false, 90.0), "non-globe world untouched");
+        assertFalse(PolarWaterFreezeRule.iceMeltCancelled(true, Double.NaN), "NaN latitude -> vanilla melt");
+    }
+
+    @Test
+    void iceMeltCancelledFrayedTracksTheFreezeBoundaryPerColumn() {
+        assertTrue(PolarWaterFreezeRule.iceMeltCancelledFrayed(true, 85.0, 0.5));
+        assertFalse(PolarWaterFreezeRule.iceMeltCancelledFrayed(true, 84.999, 0.5));
+        assertTrue(PolarWaterFreezeRule.iceMeltCancelledFrayed(true, 84.0, 0.0), "no-melt dips to 84 with the freeze");
+        assertFalse(PolarWaterFreezeRule.iceMeltCancelledFrayed(true, 85.5, 1.0), "no-melt pushes to 86 with the freeze");
+        assertTrue(PolarWaterFreezeRule.iceMeltCancelledFrayed(true, 85.0, Double.NaN), "NaN fray -> razor line");
+    }
+
+    @Test
+    void skyWaiverAndNoMeltShareTheExactSameZone() {
+        // Both persistent-ice laws are pinned to the SAME forced-freeze zone, so a column whose roofed water
+        // freezes is exactly a column whose ice will not melt -- proven equal across the boundary and the fray.
+        for (double lat : new double[]{60.0, 80.0, 84.0, 84.999, 85.0, 85.5, 86.0, 89.0, 90.0, -87.5}) {
+            assertEquals(PolarWaterFreezeRule.freezeIgnoresSky(true, lat),
+                    PolarWaterFreezeRule.iceMeltCancelled(true, lat),
+                    "sky-waiver and no-melt share one razor front");
+            for (double noise : new double[]{0.0, 0.5, 1.0}) {
+                assertEquals(PolarWaterFreezeRule.freezeIgnoresSkyFrayed(true, lat, noise),
+                        PolarWaterFreezeRule.iceMeltCancelledFrayed(true, lat, noise),
+                        "sky-waiver and no-melt share one frayed front");
+            }
+        }
+    }
+
+    @Test
+    void roofReachIsShelterScaleNotDeepCave() {
+        // The sky-waived freeze reaches shelter/overhang scale, deliberately shallower than the glacier sole:
+        // a deep sealed cave lake (below the reach) keeps its liquid surface, the B-9 reservation.
+        assertEquals(16, PolarWaterFreezeRule.ROOFED_FREEZE_REACH_BLOCKS, "one chunk section");
+        assertTrue(PolarWaterFreezeRule.ROOFED_FREEZE_REACH_BLOCKS > 0);
+        assertTrue(PolarWaterFreezeRule.ROOFED_FREEZE_REACH_BLOCKS < PolarWaterFreezeRule.LAND_WATER_FREEZE_DEPTH_BLOCKS,
+                "roof reach stays shallower than the glacier-sole depth (deep cave water stays liquid)");
+    }
 }

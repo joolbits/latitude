@@ -118,6 +118,25 @@ public final class SolarSkyMood {
         return clamp01(mood01) * (1.0 - storm);
     }
 
+    /** S15(d) OVERCAST SKYBOX — max fraction of the sky colour the cloud-grey overcast may take at full storm.
+     *  0.62 = heavy snowfall reads as a full overcast ceiling (the sky becomes mostly the cloud colour) while a
+     *  breath of the original sky survives so it is a deepening, not a flat repaint. One-line P4 dial. */
+    public static final double OVERCAST_MAX_BLEND = 0.62;
+
+    /**
+     * S15(d) — how far the sky colour is pulled toward the CLOUD grey for a storm level: {@code storm ×}
+     * {@link #OVERCAST_MAX_BLEND}. Owner, TEST 105: a polar snowstorm sky still read blue-ish; he wants a
+     * cloud-grey OVERCAST. The caller ({@code SkyRendererSolarTiltMixin}) blends {@code skyColor} toward the
+     * actual {@code CLOUD_COLOR} by this amount, DEEPENING vanilla's rain-level grey (A4-safe: only ADDS grey,
+     * never un-greys {@code rainLevel}). 0 when calm; {@link #OVERCAST_MAX_BLEND} at full storm. NaN-safe (0).
+     */
+    public static double stormOvercastBlend01(double stormLevel01) {
+        if (Double.isNaN(stormLevel01)) {
+            return 0.0;
+        }
+        return clamp01(stormLevel01) * OVERCAST_MAX_BLEND;
+    }
+
     /** Star-brightness lift for polar night: stars show in the dark day-hours as the gloom deepens. MAX with
      *  vanilla's own value, never below it (vanilla already brightens stars at real night). */
     public static float liftedStarBrightness(float vanillaStarBrightness, double gloom01) {

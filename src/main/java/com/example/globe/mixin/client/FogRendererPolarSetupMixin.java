@@ -1,6 +1,7 @@
 package com.example.globe.mixin.client;
 
 import com.example.globe.client.GlobeClientState;
+import com.example.globe.client.PolarColdClient;
 import com.example.globe.util.LatitudeMath;
 import net.minecraft.client.Camera;
 import net.minecraft.client.DeltaTracker;
@@ -66,15 +67,19 @@ public class FogRendererPolarSetupMixin {
         if (mc.player == null || mc.level != level) {
             return;
         }
-        // S11(f)(ii) UNDERGROUND GATE (TEST 101: "bright whitish fog inside the caves"). The SAME graded
-        // enclosure predicate the whiteout topcoat has always used (PolarWhiteoutOverlayHud's
-        // exposure01 <= 0.001 early-out): genuinely sealed in / deep underground -> the polar depth fog does
-        // not apply at all and vanilla's cave fog returns. A doorway/window shelter reads partial exposure
-        // (> 0), so "heavy exterior seen from indoors" -- the reason this mixin originally had NO gate --
-        // still works; only the fully-enclosed case is released back to vanilla.
-        GlobeClientState.Eval eval = GlobeClientState.evaluate(mc);
-        if (eval.exposure01() <= 0.001f) {
-            return;
+        // S15(a) FOG LAW SPLIT (owner, TEST 105: "looking OUT a shelter window the depth fog vanishes"). The
+        // depth fog is WEATHER -- it applies UNLESS the player is genuinely SEALED -- so its gate is now the
+        // S4-style raw-sky-light SEALED predicate (PolarColdClient.isSheltered: raw SKY light at the eye <= 3,
+        // ColdShelter), NOT the graded enclosure estimate exposure01. Why the change: exposure01 is 13 canSeeSky
+        // samples around the head, so a WINDOW shelter (a roof overhead, all 13 samples blocked) read exposure
+        // ~0 and the depth fog EARLY-OUT wrongly released it to near-clear vanilla -- the bug. Raw sky light is
+        // graded and side-lit: a window/doorway shelter floods the eye to > 3 (NOT sealed -> the full exterior
+        // fog cap applies, "heavy blizzard seen out the window"), while a deep sealed cave / snow burrow reads
+        // 0-2 (sealed -> vanilla cave fog returns, preserving the TEST 101 "no bright fog in caves" fix). The
+        // screen-space whiteout TOPCOAT keeps its OWN graded exposure01 scaling (frost-on-eyes fades with real
+        // enclosure -- that law was right where it was, and is deliberately NOT touched here).
+        if (PolarColdClient.isSheltered(mc)) {
+            return; // genuinely sealed (raw sky light <= 3): vanilla owns the fog.
         }
 
         // S10b FOG LAW v2 (owner, TEST 99: "fog is very lacking... at 90 you can't see really anything").
@@ -101,32 +106,50 @@ public class FogRendererPolarSetupMixin {
         data.renderDistanceEnd = newEnd;
         data.renderDistanceStart = newStart;
 
-        // Tint the fog COLOUR toward the storm->white whiteout palette so the far terrain fades to a white/grey
-        // blizzard haze rather than the biome's cold-blue fog. rgb only; leave alpha to vanilla. Grey-blue storm
-        // at the low end, near-white at the pole (linear01 palette), blended in on the front-loaded curve.
+        Vector4f c = data.color;
+
+        // (1) STORM HAZE (the DAY blizzard look). Pull the fog COLOUR toward the storm->white whiteout palette
+        // so the far terrain fades to a white/grey blizzard haze rather than the biome's cold-blue fog. rgb only;
+        // leave alpha to vanilla. Grey-blue storm at the low end, near-white at the pole (linear01 palette),
+        // front-loaded (colorBlend01). NO night tint baked in here -- the gloom is applied at full strength in (2).
         float blend = com.example.globe.core.PolarFogLaw.colorBlend01(absLatDeg);
         float ambient = com.example.globe.core.PolarFogLaw.linear01(absLatDeg);
-        int targetRgb = (lerp255i(STORM_R, WHITE_R, ambient) << 16)
-                | (lerp255i(STORM_G, WHITE_G, ambient) << 8)
-                | lerp255i(STORM_B, WHITE_B, ambient);
+        float hr = lerp255i(STORM_R, WHITE_R, ambient) / 255.0f;
+        float hg = lerp255i(STORM_G, WHITE_G, ambient) / 255.0f;
+        float hb = lerp255i(STORM_B, WHITE_B, ambient) / 255.0f;
+        c.x += (hr - c.x) * blend;
+        c.y += (hg - c.y) * blend;
+        c.z += (hb - c.z) * blend;
 
-        // S14(c): the fog colour FOLLOWS the FINAL sky — day = this storm/white haze, night/polar-night =
-        // near-black matching the gloomed sky, midnight-sun night = the held pink-gold dusk. ONE source of
-        // truth: GlobeClientState.polarSkyTint -> SolarSkyMood.atmosphereTint (the same palette + curves the
-        // sky dome uses; retires the old duplicated NIGHT_FOG_RGB). Un-storm-damped night darkening, so a
-        // blizzard at night is a DARK-out not a white wall; ordinary (non-tilt) vanilla night darkens too.
-        targetRgb = GlobeClientState.polarSkyTint(targetRgb, level, mc.player.getZ());
-        float tr = ((targetRgb >> 16) & 0xFF) / 255.0f;
-        float tg = ((targetRgb >> 8) & 0xFF) / 255.0f;
-        float tb = (targetRgb & 0xFF) / 255.0f;
-
-        Vector4f c = data.color;
-        c.x += (tr - c.x) * blend;
-        c.y += (tg - c.y) * blend;
-        c.z += (tb - c.z) * blend;
+        // (2) S15(c) HORIZON GLOOM -- make the horizon fog MATCH the gloomed sky. The fog colour FOLLOWS the
+        // FINAL sky (GlobeClientState.polarSkyTint -> SolarSkyMood.atmosphereTint, the SAME palette + curves the
+        // sky DOME uses): night/polar-night -> gloomed near-black, midnight-sun night -> held pink-gold dusk,
+        // day/sun-up -> ~identity (the (1) haze shows through). Owner, TEST 105: the horizon band stayed LIGHT
+        // under a DARK polar-night sky because this tint used to ride the SLOW colorBlend01 curve (~0.84 even at
+        // 88 deg), under-darkening the fog vs the fully-gloomed dome. Now it is applied at FULL strength, eased in
+        // only by horizonGloomReach01 (0 at the 80-deg onset -> 1 by 85, so the fog colour is seam-free at onset
+        // and fully matches the sky by 85 through the pole). Un-storm-damped night darkening (via atmosphereTint)
+        // keeps a night blizzard a DARK-out, not a white wall.
+        float reach = com.example.globe.core.PolarFogLaw.horizonGloomReach01(absLatDeg);
+        if (reach > 0.0f) {
+            int packed = (to255(c.x) << 16) | (to255(c.y) << 8) | to255(c.z);
+            int gloomed = GlobeClientState.polarSkyTint(packed, level, mc.player.getZ());
+            float gr = ((gloomed >> 16) & 0xFF) / 255.0f;
+            float gg = ((gloomed >> 8) & 0xFF) / 255.0f;
+            float gb = (gloomed & 0xFF) / 255.0f;
+            c.x += (gr - c.x) * reach;
+            c.y += (gg - c.y) * reach;
+            c.z += (gb - c.z) * reach;
+        }
     }
 
     private static int lerp255i(int from, int to, float t) {
         return Math.round(from + (to - from) * t);
+    }
+
+    /** Clamp a 0..1 colour component to a packed 0-255 byte (defensive against float drift before packing). */
+    private static int to255(float v) {
+        int i = Math.round(v * 255.0f);
+        return i < 0 ? 0 : (i > 255 ? 255 : i);
     }
 }

@@ -237,4 +237,78 @@ public final class PolarWaterFreezeRule {
         }
         return skyExposed || aboveFreezeFloor;
     }
+
+    // --- S15(b) PERSISTENT ICE (Peetsa 2026-07-17, TEST 105) -------------------------------------------
+    // Live evidence (video): "as soon as there is any shelter, the water is liquid instead of ice. Ice
+    // needs to be a little more persistent." TWO tick-time causes keep sheltered polar water liquid, each
+    // with its own law + consumer, both riding the SAME forced-freeze front the surface ice uses (>= 85,
+    // frayed) and the SAME kill switch ({@code POLAR_WATER_FREEZE_ENABLED}):
+    //   (1) SKY WAIVER  -- vanilla only tests the MOTION_BLOCKING-heightmap top of each column, so a roof
+    //       shadows the water beneath it and it never freezes. In the forced-freeze zone the consumer
+    //       (ServerLevelRoofedWaterFreezeMixin) reaches under the cover to the water surface and lets
+    //       vanilla's own shouldFreeze freeze it -- "a roof does not save a pond at -30".
+    //   (2) NO MELT     -- vanilla melts plain ice when block light > 11 (a torch beside a pond thaws it).
+    //       In the forced-freeze zone the consumer (IceBlockPolarNoMeltMixin) cancels that light-driven
+    //       melt -- a torch cannot thaw the pole.
+    // These are TICK-TIME rules (not worldgen), so there is no atlas axis. The barrens-fray branch lives in
+    // the consumers, mirroring BiomePolarWaterFreezeMixin, so flag-off / out-of-zone stays byte-identical.
+    // Both laws are pinned to the SAME front the open-water freeze uses -- named as their own predicates so
+    // each is unit-tested independently, and asserted to coincide with {@link #freezesWater} exactly the way
+    // FREEZE_ALL_DEG and PolarHazardWindow.FROSTBITE_ONSET_DEG are separate constants proven to coincide.
+
+    /**
+     * S15(b) SKY WAIVER: in the full-freeze zone, does the tick freeze IGNORE vanilla's sky/cover
+     * requirement, so water under a roof still freezes? The sky is waived EXACTLY where the open-water rule
+     * forces water to freeze ({@link #freezesWater}) -- one front -- named as its own law so it is pinned
+     * independently. NaN latitude / non-globe worlds return {@code false} (vanilla untouched). The frayed
+     * variant is {@link #freezeIgnoresSkyFrayed}.
+     */
+    public static boolean freezeIgnoresSky(boolean isGlobeWorld, double latDeg) {
+        return freezesWater(isGlobeWorld, latDeg);
+    }
+
+    /**
+     * Frayed variant of {@link #freezeIgnoresSky}: the sky is waived on the SAME wandering +/-1 deg front
+     * ({@link #freezesWaterFrayed}) the frozen-sea edge uses, so a column's roofed-water freeze and its
+     * open-water freeze agree. NaN fray degrades to the exact razor line; non-globe / NaN latitude -> false.
+     */
+    public static boolean freezeIgnoresSkyFrayed(boolean isGlobeWorld, double latDeg, double frayNoise01) {
+        return freezesWaterFrayed(isGlobeWorld, latDeg, frayNoise01);
+    }
+
+    /**
+     * S15(b) NO MELT (the "ice does not melt in-zone" law): in the full-freeze zone, is the light-driven
+     * ice melt CANCELLED? Vanilla melts plain {@code ice} when block light &gt; 11 (so a torch beside a
+     * frozen pond re-opens water); at the pole the owner wants ice to persist, so in-zone the consumer
+     * cancels {@code IceBlock}'s random-tick melt -- a torch cannot thaw the pole. Melt is cancelled EXACTLY
+     * on the forced-freeze front ({@link #freezesWater}), so ice thaws normally equatorward of it (vanilla)
+     * and never poleward. <b>Plain ice only</b>: packed/blue ice have no melt tick, and frosted ice keeps
+     * its own scheduled (neighbour-count) melt -- neither is a plain {@code IceBlock} random-tick melt.
+     * NaN latitude / non-globe -> false (melt proceeds, vanilla). Frayed variant: {@link #iceMeltCancelledFrayed}.
+     */
+    public static boolean iceMeltCancelled(boolean isGlobeWorld, double latDeg) {
+        return freezesWater(isGlobeWorld, latDeg);
+    }
+
+    /**
+     * Frayed variant of {@link #iceMeltCancelled}: melt is cancelled on the SAME frayed front the ice
+     * formed on ({@link #freezesWaterFrayed}), so a column that froze (frayed) will not thaw (frayed) --
+     * the no-melt boundary tracks the freeze boundary per column. NaN fray -> the razor line; non-globe /
+     * NaN latitude -> false.
+     */
+    public static boolean iceMeltCancelledFrayed(boolean isGlobeWorld, double latDeg, double frayNoise01) {
+        return freezesWaterFrayed(isGlobeWorld, latDeg, frayNoise01);
+    }
+
+    /**
+     * S15(b) ROOF REACH (blocks): how far below the MOTION_BLOCKING top (the roof) the sky-waived tick
+     * freeze descends looking for the topmost water surface. Bounded to shelter/overhang scale -- a
+     * sheltered pond within this reach freezes at its surface, while water sealed DEEPER than this (a deep
+     * cave lake) keeps its liquid surface, the B-9 Glacial Caves reservoir (the same spirit as the S14
+     * "cave water below the floor stays liquid" invariant). 16 = one chunk section: it comfortably covers
+     * any built shelter, while a rock ceiling thicker than a chunk section reads as "underground", not
+     * "sheltered". The freeze itself is only a SURFACE skin (the water below the frozen block stays liquid),
+     * so this reach never disturbs the deep reservoir even if a near-surface cave is grazed.
+     */
+    public static final int ROOFED_FREEZE_REACH_BLOCKS = 16;
 }

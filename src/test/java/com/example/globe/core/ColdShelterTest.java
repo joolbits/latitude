@@ -52,4 +52,16 @@ class ColdShelterTest {
         assertFalse(ColdShelter.isSheltered(ColdShelter.SHELTERED_MAX_SKY_LIGHT + 1),
                 "4 = the first exposed value");
     }
+
+    @Test
+    void fogLawSplit_windowShelterKeepsFog_sealedFallsToVanilla() {
+        // S15(a): the polar DEPTH FOG (FogRendererPolarSetupMixin) now gates on THIS sealed predicate instead of
+        // the graded exposure01 -- so a WINDOW/doorway shelter (raw sky light > 3, side-lit) is NOT sealed and
+        // keeps the full exterior blizzard fog ("heavy blizzard seen out the window"), while a genuinely SEALED
+        // space (<= 3: deep cave / sealed bunker) IS sealed and the depth fog releases to vanilla cave fog.
+        assertFalse(ColdShelter.isSheltered(8), "window floods the eye ~8 -> NOT sealed -> exterior fog applies");
+        assertFalse(ColdShelter.isSheltered(4), "just above threshold -> fog applies");
+        assertTrue(ColdShelter.isSheltered(3), "sealed (<= 3) -> depth fog releases to vanilla");
+        assertTrue(ColdShelter.isSheltered(0), "deep sealed cave -> vanilla cave fog");
+    }
 }

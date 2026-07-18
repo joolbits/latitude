@@ -126,6 +126,32 @@ public final class PolarFogLaw {
         return p <= 0.0f ? 0.0f : (float) Math.pow(p, 0.8);
     }
 
+    /** Latitude at which the horizon-gloom reach is full (S15(c)). */
+    public static final double HORIZON_GLOOM_FULL_DEG = 85.0;
+
+    /**
+     * S15(c) HORIZON-GLOOM REACH 0..1 -- how strongly the fog COLOUR (the atmospheric {@code FOG_COLOR} that
+     * paints the sky's lower rim / horizon band) is pulled to the FINAL night/dusk sky at a latitude. The owner
+     * (TEST 105) saw a LIGHT horizon band under a DARK polar-night sky: the sky DOME is gloomed to near-black by
+     * {@code SkyRendererSolarTiltMixin} (onset ~60 deg, full deep in the night), but the fog/horizon colour was
+     * only pulled toward the gloom by the slow {@code colorBlend01} blizzard-haze curve (~0.84 even at 88 deg),
+     * so the horizon stayed lighter than the sky. This reach lets {@code FogRendererPolarSetupMixin} apply the
+     * SAME night/dusk gloom the sky uses to the fog colour at FULL strength -- but eased in from the 80-deg fog
+     * onset (0 at 80, smoothstep to 1 by {@link #HORIZON_GLOOM_FULL_DEG}) so there is no colour seam at the onset
+     * (where the fog is untouched below 80) and the horizon fully matches the gloomed sky by 85 deg and through
+     * the pole. 0 at/below the onset; 1 at/beyond {@code HORIZON_GLOOM_FULL_DEG}. NaN-safe (0).
+     */
+    public static float horizonGloomReach01(double absLatDeg) {
+        if (Double.isNaN(absLatDeg) || absLatDeg <= FOG_ONSET_DEG) {
+            return 0.0f;
+        }
+        if (absLatDeg >= HORIZON_GLOOM_FULL_DEG) {
+            return 1.0f;
+        }
+        double t = (absLatDeg - FOG_ONSET_DEG) / (HORIZON_GLOOM_FULL_DEG - FOG_ONSET_DEG);
+        return (float) (t * t * (3.0 - 2.0 * t)); // smoothstep
+    }
+
     // ---- the exposure-gated whiteout TOP-COAT (the "engulfed" flat veil over the depth fog) ----
 
     /** Top-coat envelope rows {@code {deg, strength01}}: quiet through the mid-band (the depth fog carries the
