@@ -166,16 +166,13 @@ any profile/world action.
 | `0aacc55aebc1c74d5e71e73652052486ea5be024` | Batches analog-compass disc spans while retaining the existing visible-pixel model. | Exact raster/model parity, clean-build proof, and the live size/theme/transparency/preview/placement matrix PASSED on the disposable 26.1.2 surface. |
 | `e6327c5715adc3acb295223d24963e74d682044c` | Rejects mountain-class temperate beach ridges while retaining low and rolling beaches. | Focused policy/model, accepted-output, climate, and build proof passed locally; the same-world 46°S visual retest remains HOLD. |
 | `d2cdee02051476e1681b7bb9620eac4aa5acbd80` | Separates pristine-default detached HUD detail from the compass while preserving explicit placement. | The 16-state digital/analog, Follow/Detach, Off/Biome/Zone/Biome+Zone live matrix, bounded-width representatives, real legacy-JSON migration, corrected default captures, and detail-only drag proof passed. |
-| `27327f205f21f2b88625f60e49b614eed99278ee` | Prevents new beyond-80° village starts while retaining the existing placement shield. | The live allowed village at 79.104°, fresh-world `/locate`/bell/NBT checks, and `beyond80=0` passed; executable policy proof separately allows exact 80° and non-village paths. Copied old saves intentionally retain stored-start `/locate` ghosts while physical placement remains suppressed; that legacy case is HOLD. |
+| `27327f205f21f2b88625f60e49b614eed99278ee` | Prevents new beyond-80° village starts while retaining the existing placement shield. | The live allowed village at 79.104°, fresh-world `/locate`/bell/NBT checks, and `beyond80=0` passed; executable policy proof separately allows exact 80° and non-village paths. Copied old saves may retain stored-start `/locate` results while physical placement remains suppressed; Maintainer accepted that legacy compatibility residue for the pre-2.0 1.5 release on 2026-07-18. |
 
 Pasture decision: rolling and upland terrain remains allowed. No pasture patch was made or is
 implied by the beach-ridge guard.
 
 ### Exact partial/manual HOLDs
 
-- Copied old saves may retain beyond-80° stored village starts that `/locate` can return. Physical
-  placement remains suppressed, but deleting or rewriting legacy saved state was intentionally not
-  attempted.
 - Promenade exact parity remains HOLD: `8/55,225` sampled cells differ. Combined-provider exact
   parity also remains HOLD: `23/55,225` cells differ and the frozen environments are not exact
   matches. Matching palettes and stable provider presence do not turn either result into parity.
@@ -186,6 +183,13 @@ implied by the beach-ridge guard.
 - The accepted beach screenshot establishes `minecraft:beach` at 46°S but does not preserve seed,
   coordinates, profile, or jar identity. Exact-scene acceptance therefore remains identity-blocked
   HOLD; no substitute tuning is authorized.
+
+### Accepted legacy behavior
+
+- Copied old saves may retain beyond-80° stored village starts that `/locate` can return. Physical
+  placement remains suppressed, and new worlds do not store new starts beyond 80°. Maintainer accepted
+  this old-save locator residue for the pre-2.0 Latitude 1.5 polish release on 2026-07-18; no saved
+  NBT deletion or migration is required for 1.5.
 
 Polar presentation, the HUD 16-state/width/migration matrix, and the analog
 size/theme/transparency/preview/placement matrix passed on the disposable 26.1.2 live surface.
