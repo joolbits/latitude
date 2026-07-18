@@ -9,6 +9,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.tags.BiomeTags;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.level.material.FluidState;
 import net.minecraft.world.level.material.Fluids;
@@ -18,12 +19,24 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
- * S15(b) PERSISTENT ICE part 1 (the SKY WAIVER) + S16(b) TICK-FREEZE v2 (the FLOWING-water/waterfall freeze).
- * In the polar full-freeze zone, water under a roof freezes too, AND flowing water (waterfalls, post-generation
- * flows) freezes to a plain-ice cascade. Server-side; a sibling of {@code BiomePolarWaterFreezeMixin} (which
- * waives the temperature veto inside {@code Biome.shouldFreeze}). Together they make sheltered polar water freeze
- * the way the owner asked ("as soon as there is any shelter, the water is liquid instead of ice") and close the
- * S16(b) gap ("the owner still sees liquid waterfalls" -- the S14 worldgen pass only froze generation-time flows).
+ * S15(b) PERSISTENT ICE part 1 (the SKY WAIVER) + S16(b) TICK-FREEZE v2 (the FLOWING-water/waterfall freeze) +
+ * S17(b) WATERFALL FREEZE v3 (the UPWARD SCAN). In the polar full-freeze zone, water under a roof freezes too,
+ * flowing water (waterfalls, post-generation flows) freezes to a plain-ice cascade, AND a bounded belt scanned
+ * UPWARD from the surface freezes standing free-fall columns. Server-side; a sibling of
+ * {@code BiomePolarWaterFreezeMixin} (which waives the temperature veto inside {@code Biome.shouldFreeze}) and of
+ * {@code FlowingFluidWaterfallFreezeMixin} (which freezes MOVING water at the flow tick). Together they make
+ * sheltered polar water freeze the way the owner asked ("as soon as there is any shelter, the water is liquid
+ * instead of ice") and close the waterfall gap.
+ *
+ * <p><b>S17(b) UPWARD SCAN -- why the downward descent alone was not enough.</b> An open-air cascade FREE-FALLS
+ * above the terrain surface, i.e. ABOVE the {@code MOTION_BLOCKING} heightmap top (water is not motion-blocking
+ * terrain), so walking DOWNWARD from that top never reaches the falling column -- the exact two-flight root cause.
+ * The FLOW TICK ({@code FlowingFluidWaterfallFreezeMixin}) now freezes moving water at the instant it flows; this
+ * mixin adds the complementary net for STANDING fall columns that already reached equilibrium and stopped
+ * re-ticking: a belt of {@link PolarWaterFreezeRule#WATERFALL_UPWARD_SCAN_BLOCKS} blocks scanned UPWARD from the
+ * surface, freezing any FLOWING water found (stopping early at the first solid block). Every belt block is above
+ * the surface, hence far above the surface-40 freeze floor, so {@code aboveFreezeFloor} is true by construction --
+ * the frozen ice is always above the B-9 deep-cave reservoir. Bounded, O(1)-ish per tick.
  *
  * <p><b>Where the sky requirement lives, and why FLOWING water survives.</b> {@code Biome.shouldFreeze} has no
  * sky check -- the "must see the sky" requirement is implicit in the CALLER. {@code
@@ -97,10 +110,36 @@ public abstract class ServerLevelRoofedWaterFreezeMixin {
         if (!sourceZone) {
             return;
         }
+        BlockPos top = self.getHeightmapPos(Heightmap.Types.MOTION_BLOCKING, columnPos);
+        // Per-column flowing-freeze eligibility (barrens flag + ocean exemption + the frayed front), resolved
+        // once lazily and SHARED by both the upward and downward scans below. aboveFreezeFloor is TRUE by
+        // construction for every block either scan touches (above the surface, or within the 16-block roof reach
+        // -- both far above the 40-block glacier-sole floor), so the sky/skyExposed arm is irrelevant.
+        int flowFreezes = -1; // lazy tri-state: -1 unknown, 0 no, 1 yes
+
+        // S17(b) UPWARD SCAN: an open-air cascade free-falls ABOVE the MOTION_BLOCKING top (water is not
+        // motion-blocking terrain), so the downward roofed descent below never reaches it. Scan a bounded belt
+        // UPWARD from the surface and freeze standing flowing columns the flow tick did not re-visit; stop at the
+        // first solid (non-fluid) block -- nothing of THIS fall lies higher.
+        int ceilY = Math.min(self.getMaxY(), top.getY() + PolarWaterFreezeRule.WATERFALL_UPWARD_SCAN_BLOCKS);
+        BlockPos.MutableBlockPos up = new BlockPos.MutableBlockPos(top.getX(), 0, top.getZ());
+        for (int y = top.getY() + 1; y <= ceilY; y++) {
+            up.setY(y);
+            BlockState above = self.getBlockState(up);
+            FluidState fs = above.getFluidState();
+            if (fs.getType() == Fluids.FLOWING_WATER) {
+                flowFreezes = globe$resolveFlowFreeze(self, top, absLatDeg, fray, flowFreezes);
+                if (flowFreezes == 1) {
+                    self.setBlockAndUpdate(up.immutable(), Blocks.ICE.defaultBlockState()); // frozen standing fall
+                }
+            } else if (!above.isAir() && fs.isEmpty()) {
+                break; // a solid (non-fluid) block caps this cascade
+            }
+        }
+
         // Vanilla freezes the MOTION_BLOCKING top-1. If THAT block is already open (source) water, vanilla
         // handles it byte-identically (edge-inward, same cadence) -- leave that path untouched (and an open
         // source surface means there is no waterfall to freeze in this column).
-        BlockPos top = self.getHeightmapPos(Heightmap.Types.MOTION_BLOCKING, columnPos);
         BlockPos surface = top.below();
         if (self.getFluidState(surface).getType() == Fluids.WATER) {
             return;
@@ -112,7 +151,6 @@ public abstract class ServerLevelRoofedWaterFreezeMixin {
         // claim the rest of the cascade. Water/flow sealed deeper than the reach stays liquid (the B-9 reservoir).
         int floorY = Math.max(self.getMinY(), top.getY() - PolarWaterFreezeRule.ROOFED_FREEZE_REACH_BLOCKS);
         BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos(top.getX(), 0, top.getZ());
-        int flowFreezes = -1; // lazy tri-state: -1 unknown, 0 no, 1 yes (only resolved on the first flowing block)
         for (int y = surface.getY(); y >= floorY; y--) {
             cursor.setY(y);
             FluidState fs = self.getFluidState(cursor);
@@ -125,22 +163,30 @@ public abstract class ServerLevelRoofedWaterFreezeMixin {
                 return; // topmost water surface handled
             }
             if (fs.getType() == Fluids.FLOWING_WATER) {
-                // FLOWING (waterfall) block. Resolve the per-column flowing-freeze eligibility once, lazily: the
-                // barrens family flag + the ocean exemption (freezesFlowing checks ocean FIRST) + the same front.
-                // aboveFreezeFloor is TRUE by construction here -- every block in the 16-block roof reach sits far
-                // above the 40-block glacier-sole freeze floor -- so the sky/skyExposed arm is irrelevant.
-                if (flowFreezes == -1) {
-                    boolean eligible = false;
-                    if (LatitudeV2Flags.POLAR_BARRENS_ENABLED) {
-                        boolean isOcean = self.getBiome(top).is(BiomeTags.IS_OCEAN);
-                        eligible = PolarWaterFreezeRule.freezesFlowing(true, isOcean, absLatDeg, fray, false, true);
-                    }
-                    flowFreezes = eligible ? 1 : 0;
-                }
+                flowFreezes = globe$resolveFlowFreeze(self, top, absLatDeg, fray, flowFreezes);
                 if (flowFreezes == 1) {
                     self.setBlockAndUpdate(cursor.immutable(), Blocks.ICE.defaultBlockState()); // frozen cascade
                 }
             }
         }
+    }
+
+    /**
+     * Per-column flowing-freeze eligibility, resolved once and cached in the tri-state (-1 unknown / 0 no / 1
+     * yes). The barrens-family flag gates it; {@link PolarWaterFreezeRule#freezesFlowing} checks the ocean
+     * exemption FIRST and rides the same frayed front. {@code aboveFreezeFloor} is passed {@code true} -- true by
+     * construction for every block the upward/downward scans touch (all far above the glacier-sole freeze floor).
+     */
+    private static int globe$resolveFlowFreeze(ServerLevel self, BlockPos top, double absLatDeg, double fray,
+                                               int cached) {
+        if (cached != -1) {
+            return cached;
+        }
+        boolean eligible = false;
+        if (LatitudeV2Flags.POLAR_BARRENS_ENABLED) {
+            boolean isOcean = self.getBiome(top).is(BiomeTags.IS_OCEAN);
+            eligible = PolarWaterFreezeRule.freezesFlowing(true, isOcean, absLatDeg, fray, false, true);
+        }
+        return eligible ? 1 : 0;
     }
 }
