@@ -35,9 +35,26 @@ public final class PolarWounds {
      * {@code PolarHazardWindow.FROSTBITE_ONSET_DEG}), genuinely sheltered (S4 {@link ColdShelter}), and NOT
      * near a warmth source ({@link PolarWarmth} box scan). Exposed players, sub-85 players, and players by a
      * fire heal normally.
+     *
+     * <p>This three-arg form is the pre-B-10 / flag-OFF behaviour, UNCHANGED. It delegates to the four-arg
+     * form with {@code fullyProtected=false}, so existing shims that do not yet read the suit compile and
+     * behave exactly as before. B-10's shim wiring (P2) switches to the four-arg form.
      */
     public static boolean healLocked(boolean inColdZone, boolean sheltered, boolean nearWarmth) {
-        return inColdZone && sheltered && !nearWarmth;
+        return healLocked(inColdZone, sheltered, nearWarmth, false);
+    }
+
+    /**
+     * The S6 heal lock with the B-10 full-suit exemption (sweep A1). A fully-suited traveller has a WARM body,
+     * so their wounds MEND even sheltered in the deep cold: the lock LIFTS when {@code fullyProtected} is true.
+     * This is a gameplay upgrade, not just a mute -- because the frozen-wounds whisper
+     * ({@link PolarColdCues#frozenWoundsWhisperFires}) keys on this predicate's rising edge, lifting the lock
+     * also means a full-suit player never hears "Your wounds are frozen." The pure law lands now; the
+     * {@code GlobeMod} heal-chokepoint shim passes {@code fullyProtected} in P2.
+     */
+    public static boolean healLocked(boolean inColdZone, boolean sheltered, boolean nearWarmth,
+                                     boolean fullyProtected) {
+        return inColdZone && sheltered && !nearWarmth && !fullyProtected;
     }
 
     /**

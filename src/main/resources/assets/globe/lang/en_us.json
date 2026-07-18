@@ -13,5 +13,7 @@
   "option.globe.capture_save_disk.tooltip": "Save screenshots to run/Latitude/captures.",
   "option.globe.capture_write_csv": "Capture: Write CSV",
   "option.globe.capture_write_csv.tooltip": "Append capture metadata rows to run/latdev/captures.csv.",
-  "biome.globe.polar_barrens": "Polar Barrens"
+  "biome.globe.polar_barrens": "Polar Barrens",
+  "item.globe.polar_hood": "Polar Hood",
+  "effect.globe.cold_protection": "Cold Protection"
 }

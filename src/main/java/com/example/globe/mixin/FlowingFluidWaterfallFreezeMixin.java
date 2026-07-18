@@ -19,9 +19,12 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
- * S17(b) WATERFALL FREEZE v3 -- THE FLOW-TICK SEAM. Freezes MOVING polar water at the instant it flows, closing
- * the owner's two-flight complaint that liquid waterfalls still cascade despite the S14 worldgen freeze and the
- * S16 tick-descent.
+ * S17(b) WATERFALL FREEZE v3 -- THE FLOW-TICK SEAM, refined by S18 into a GRADUAL BOTTOM-UP freeze. Freezes
+ * MOVING polar water once it LANDS, closing the owner's two-flight complaint that liquid waterfalls still cascade
+ * despite the S14 worldgen freeze and the S16 tick-descent -- without the S17b "wall of ice around the water"
+ * (TEST 108): water now FALLS freely and only LANDED water freezes, so the fall runs to the ground live and the
+ * ice pile grows upward layer by layer. See {@link com.example.globe.core.PolarWaterFreezeRule#landedOnSupport}
+ * and {@link com.example.globe.core.PolarWaterFreezeRule#FLOW_FREEZE_CHANCE}.
  *
  * <p><b>Why the previous fixes missed it (root cause).</b> S16's {@code ServerLevelRoofedWaterFreezeMixin}
  * descends DOWNWARD from a column's {@code MOTION_BLOCKING} heightmap top. An open-air cascade FREE-FALLS above
@@ -35,11 +38,18 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * source's outflow as a new spring spreads. Injected at {@code HEAD} and cancellable, on an armed globe world in
  * the forced-freeze zone (the SAME {@code >= 85} frayed front the surface ice / roofed descent use), above the
  * freeze floor, on a non-ocean column: a FLOWING (non-source) water block that attempts to flow is replaced with
- * plain {@code ice} and the vanilla flow/spread is cancelled. So a fall dies at the moment of motion (its next
- * descending block freezes on tick), a new spring's outflow freezes as it spreads, and STANDING cascade columns
- * that already reached equilibrium (and stopped re-ticking) are swept by the sibling UPWARD SCAN in
- * {@code ServerLevelRoofedWaterFreezeMixin}. Together with the S14 worldgen freeze (gen-time water) and the S15/16
- * roofed descent (still water under any cover), moving water is now covered -- the complete coverage argument.
+ * plain {@code ice} and the vanilla flow/spread is cancelled -- BUT ONLY once it has LANDED (S18). A block still
+ * FALLING (air or another fluid directly below) is left to vanilla, so the fall runs to the ground live; a block
+ * SUPPORTED below (solid or ice -- motion-terminated) is landed and freezes with {@code FLOW_FREEZE_CHANCE} per
+ * flow tick. The freeze then CLIMBS by construction (each frozen block is the floor the water above then lands
+ * on), so the fall ices from the bottom UP into a layered pile instead of snapping to the S17b wall. A new
+ * spring's outflow lands on the ground and freezes as it spreads; STANDING cascade columns that already reached
+ * equilibrium (and stopped re-ticking) are swept by the sibling UPWARD SCAN in
+ * {@code ServerLevelRoofedWaterFreezeMixin} (also lowest-landed-first, same bottom-up direction). The SOURCE at
+ * the top of a fall is {@code Fluids.WATER}, not {@code FLOWING_WATER}, so it is never touched here -- it freezes
+ * LAST, on the existing still-water surface cadence, once its outflow has locked below it. Together with the S14
+ * worldgen freeze (gen-time water) and the S15/16 roofed descent (still water under any cover), moving water is
+ * now covered -- the complete coverage argument.
  *
  * <p><b>Only FLOWING water, only the pure decision.</b> Source water ({@code Fluids.WATER}) is left to the surface
  * freeze ({@code BiomePolarWaterFreezeMixin} via {@code tickPrecipitation}), and lava ({@code FLOWING_LAVA}) is
@@ -105,10 +115,29 @@ public abstract class FlowingFluidWaterfallFreezeMixin {
         // (a visible open fall is above the floor; a covered deep spring below it stays liquid).
         boolean isOcean = level.getBiome(pos).is(BiomeTags.IS_OCEAN);
         if (!PolarWaterFreezeRule.freezesFlowing(true, isOcean, absLatDeg, fray, false, aboveFreezeFloor)) {
+            return; // fast bail before the below-block read: ocean / out-of-zone / below the floor -> vanilla flow
+        }
+        // S18 THE LANDED-WATER LAW (fixes the TEST-108 "wall of ice around the water"): water may FALL freely;
+        // only LANDED water freezes. A flowing block still FALLING -- air or another fluid directly below -- is
+        // left to vanilla so the fall runs to the ground live; only a block SUPPORTED below (solid or ice --
+        // motion-terminated, or a base block spreading horizontally over solid) is landed and eligible. The
+        // freeze then CLIMBS by construction: the base freezes -> the block above now rests on ice -> landed ->
+        // eligible on its next flow tick -> the pile grows upward, layer by layer.
+        BlockState belowState = level.getBlockState(pos.below());
+        boolean landed = PolarWaterFreezeRule.landedOnSupport(
+                belowState.isAir(), !belowState.getFluidState().isEmpty());
+        if (!landed) {
+            return; // still falling / pouring onto water -> vanilla flow (the fall reaches the ground first)
+        }
+        // FLOW_FREEZE_CHANCE per LANDED flow tick, rolled with the TICK's own RandomSource (never worldgen RNG):
+        // the base spread gets a few flow ticks (~0.25 s each) to widen before it locks, so the frozen pile
+        // reads organic instead of snapping to a wall. A failed roll returns to vanilla flow (it re-ticks and
+        // re-rolls); the block above cannot land until this one is ice, so the climb is naturally bottom-up.
+        if (!PolarWaterFreezeRule.flowTickFreezesLanded(true, true, level.getRandom().nextFloat())) {
             return;
         }
-        // The fall dies at the moment of motion: replace this flowing block with a plain-ice cascade and cancel
-        // vanilla's spread. The ice blocks the water above it, so the fall freezes progressively upward.
+        // Landed and the roll locked it: replace this flowing block with a plain-ice cascade and cancel vanilla's
+        // spread. The ice is the support the water above now rests on, so the fall freezes progressively upward.
         level.setBlockAndUpdate(pos, Blocks.ICE.defaultBlockState());
         ci.cancel();
     }

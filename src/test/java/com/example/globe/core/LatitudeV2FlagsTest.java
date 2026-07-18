@@ -93,6 +93,14 @@ class LatitudeV2FlagsTest {
     }
 
     @Test
+    void polarOutfittingDefaultsToDisabled() {
+        // B-10 master flag ships default-OFF: flag-off routes the LEGACY leather path (full negation at 4), so
+        // leather demotes ONLY when the suit ships -- never a protection gap (the sequencing / no-gap law).
+        assertFalse(LatitudeV2Flags.POLAR_OUTFITTING_ENABLED,
+                "Polar Outfitting must ship default-off (legacy leather path, no protection gap)");
+    }
+
+    @Test
     void polePassageV2BranchLocalFlightStaging() {
         // P3 LIVE-TEST STAGING (branch-local, B-6 precedent): default ON so the TEST 97 maiden pole flight
         // exercises the crossing without profile JVM args. REVISIT BEFORE MERGE -- the shipped default

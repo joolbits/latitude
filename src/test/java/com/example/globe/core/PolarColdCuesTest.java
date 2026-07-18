@@ -167,5 +167,77 @@ class PolarColdCuesTest {
     void whisperCopyIsPinned() {
         assertEquals("Hypothermia is imminent.", PolarColdCues.REMOVAL_WHISPER_TEXT);
         assertEquals("Your wounds are frozen. Only warmth can mend them.", PolarColdCues.FROZEN_WOUNDS_WHISPER_TEXT);
+        assertEquals("Your leather armour provides some protection against the bitter cold.",
+                PolarColdCues.LEATHER_PROTECTION_TEXT);
+    }
+
+    // ---- B-10 warning matrix: full-suit total silence (evaluateLadderFullSuit) ----
+
+    @Test
+    void fullSuitSilencesEveryRungButAdvancesState() {
+        // Full suit: walk 80 -> 89.7. NO rung fires, but highestFired advances each step so nothing retries.
+        int highest = 0;
+        for (double lat : new double[]{80.0, 85.0, 87.0, 88.0, 89.7}) {
+            PolarColdCues.LadderStep s = PolarColdCues.evaluateLadderFullSuit(lat, highest, true);
+            assertNull(s.fire(), "full suit is total silence at " + lat);
+            highest = s.nextHighestFired();
+        }
+        assertEquals(5, highest, "state still climbed to LETHAL so nothing back-fires");
+    }
+
+    @Test
+    void notFullSuitFiresEveryRungHonestly_includingHypothermia() {
+        // Partial suit / leather / bare (fullSuit=false): every rung fires, INCLUDING hypothermia (the bite is
+        // honest -- they still take damage). This is the generalization difference vs the legacy ladder, which
+        // suppressed hypothermia under full freeze-immune.
+        int highest = 0;
+        PolarColdCues.LadderStep s = PolarColdCues.evaluateLadderFullSuit(80.0, highest, false);
+        assertEquals(PolarColdCues.Rung.APPROACH, s.fire());
+        s = PolarColdCues.evaluateLadderFullSuit(85.0, s.nextHighestFired(), false);
+        assertEquals(PolarColdCues.Rung.HYPOTHERMIA, s.fire(), "partial/leather still feels the bite");
+        s = PolarColdCues.evaluateLadderFullSuit(87.0, s.nextHighestFired(), false);
+        assertEquals(PolarColdCues.Rung.BLIZZARD, s.fire());
+        s = PolarColdCues.evaluateLadderFullSuit(88.0, s.nextHighestFired(), false);
+        assertEquals(PolarColdCues.Rung.DANGER, s.fire());
+        s = PolarColdCues.evaluateLadderFullSuit(89.7, s.nextHighestFired(), false);
+        assertEquals(PolarColdCues.Rung.LETHAL, s.fire());
+    }
+
+    @Test
+    void fullSuitLadderReArmsOnRetreat() {
+        assertNull(PolarColdCues.evaluateLadderFullSuit(78.9, 5, true).fire());
+        assertEquals(0, PolarColdCues.evaluateLadderFullSuit(78.9, 5, true).nextHighestFired());
+    }
+
+    // ---- B-10 leather line (leatherLineStep) ----
+
+    @Test
+    void leatherLineFiresOncePerZoneEntryForLeatherWearers() {
+        // Below the zone (84 < 85): armed but silent.
+        PolarColdCues.LeatherLineStep s = PolarColdCues.leatherLineStep(84.0, true, false, false);
+        assertFalse(s.fire());
+        // Cross 85 wearing leather, not fully suited: fire once, then latch.
+        s = PolarColdCues.leatherLineStep(85.0, true, false, s.nextFired());
+        assertTrue(s.fire());
+        assertTrue(s.nextFired());
+        // Deeper in, still leather: does not re-fire.
+        assertFalse(PolarColdCues.leatherLineStep(88.0, true, false, s.nextFired()).fire());
+    }
+
+    @Test
+    void leatherLineSilentForFullSuitAndBare() {
+        // Full suit: silenced (the suit owns silence; no leather-only line).
+        assertFalse(PolarColdCues.leatherLineStep(86.0, true, true, false).fire());
+        // Bare (no leather piece): nothing to reassure.
+        assertFalse(PolarColdCues.leatherLineStep(86.0, false, false, false).fire());
+    }
+
+    @Test
+    void leatherLineReArmsOnFullRetreat() {
+        // Fired, then retreat below 79: re-arms (nextFired false), and crossing back in fires again.
+        PolarColdCues.LeatherLineStep s = PolarColdCues.leatherLineStep(78.9, true, false, true);
+        assertFalse(s.fire());
+        assertFalse(s.nextFired(), "full retreat re-arms the leather line");
+        assertTrue(PolarColdCues.leatherLineStep(85.0, true, false, s.nextFired()).fire());
     }
 }

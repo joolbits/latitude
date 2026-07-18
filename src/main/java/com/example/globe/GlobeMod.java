@@ -178,6 +178,11 @@ public class GlobeMod implements ModInitializer {
         GlobeNet.registerPayloads();
         BiomeFeatureStripping.init();
 
+        // Phase 5 B-10 (Polar Outfitting) de-risk spike: register the mod's first Java content objects
+        // (globe:polar_hood + globe:cold_protection) UNCONDITIONALLY, before registry freeze -- registries
+        // must be consistent across sessions; all BEHAVIOUR is flag-gated (POLAR_OUTFITTING_ENABLED).
+        com.example.globe.content.PolarOutfitting.register();
+
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
             dispatcher.register(Commands.literal("flyspeed")
                     .then(Commands.argument("level", IntegerArgumentType.integer(1, 5))

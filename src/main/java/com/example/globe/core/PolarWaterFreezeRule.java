@@ -337,4 +337,62 @@ public final class PolarWaterFreezeRule {
      * so the frozen ice is always ABOVE the B-9 deep-cave reservoir.
      */
     public static final int WATERFALL_UPWARD_SCAN_BLOCKS = 24;
+
+    // --- S18 GRADUAL BOTTOM-UP WATERFALL FREEZE (Peetsa 2026-07-18, TEST 108: pouring a bucket formed "a wall
+    // --- of ice around the water") -------------------------------------------------------------------------
+    // ROOT CAUSE (S17b regression, live): the flow tick froze EVERY moving block on its first tick, so a fall
+    // iced in place mid-air ("a wall of ice forms around the water") instead of running to the ground. NEW LAW:
+    // water may FALL freely; only LANDED water freezes. A flowing block still FALLING (air/water below) passes
+    // to vanilla flow untouched -- the fall reaches the ground live. A flowing block SUPPORTED below (solid or
+    // ice -- motion-terminated) is LANDED and freezes with FLOW_FREEZE_CHANCE per flow tick, so the base spread
+    // gets a few ticks to widen before it locks. THE CLIMB BY CONSTRUCTION: the base freezes -> the block above
+    // now rests on ice -> landed -> eligible next flow tick -> the freeze walks UP the column, leaving the
+    // owner's multi-layered waterfall-ice pile instead of a snap-wall. Gen-time falls still arrive frozen (S14,
+    // unchanged); this law governs LIVE water only. All exemptions carry over verbatim (ocean-family first,
+    // deep-cave freeze floor, flag-off/out-of-zone byte-identical) -- nothing new about WHERE water freezes,
+    // only that a LANDED-and-rolled gate now precedes the freeze.
+
+    /**
+     * S18 FLOW-FREEZE CHANCE (dial): the probability a LANDED, freeze-eligible flowing block turns to ice on any
+     * single flow tick. Rolled with the flow tick's OWN {@code RandomSource} (never worldgen RNG), so a landed
+     * block averages {@code 1 / FLOW_FREEZE_CHANCE} = 2 flow ticks before it locks; water flows every 5 game
+     * ticks (0.25 s), so a block freezes ~0.25 s (min, one tick) to ~0.5 s (mean, two ticks) after it lands --
+     * matching the design's "~0.25-0.5 s per block" climb cadence. Lower this to make the fall visibly run
+     * longer and lock more patchily/organically; raise it toward 1.0 to freeze on landing. The CLIMB rate up a
+     * column is this same cadence per block (the block above lands only once its floor is ice).
+     */
+    public static final double FLOW_FREEZE_CHANCE = 0.5;
+
+    /**
+     * S18 LANDED predicate (pure): is a flowing block SUPPORTED below -- i.e. motion-terminated, resting on
+     * solid or ice -- rather than still falling? Supported iff the block below is NOT air AND NOT a fluid
+     * (water, lava, or any other): "the fall cannot continue and it is not sitting on more water." Ice below
+     * counts as support (this is exactly what makes the freeze CLIMB: each frozen block becomes the floor the
+     * block above lands on). A base block spreading HORIZONTALLY counts too -- its below is solid. Air-below or
+     * fluid-below = still falling / pouring onto water -> NOT landed, so the caller passes it to vanilla flow.
+     *
+     * @param belowIsAir   the block directly below is air (the fall continues) -> not landed.
+     * @param belowIsFluid the block directly below has a non-empty fluid state (water/lava/etc.; sitting on
+     *                     more water) -> not landed.
+     */
+    public static boolean landedOnSupport(boolean belowIsAir, boolean belowIsFluid) {
+        return !belowIsAir && !belowIsFluid;
+    }
+
+    /**
+     * S18 the FLOW-TICK LANDED FREEZE decision (deterministic-roll form, so the chance dial is unit-testable
+     * without a live {@code RandomSource}): a flowing block freezes on this flow tick iff it is freeze-eligible
+     * ({@link #freezesFlowing} -- ocean-exempt, in-zone, above the floor, flag on), LANDED
+     * ({@link #landedOnSupport}), AND the tick's roll is strictly under {@link #FLOW_FREEZE_CHANCE}. A
+     * still-falling or ineligible block never freezes regardless of the roll; a failed roll on a landed block
+     * lets the spread widen and re-rolls next flow tick.
+     *
+     * @param freezeEligible {@link #freezesFlowing} for this column/position (the WHERE decision).
+     * @param landedOnSupport {@link #landedOnSupport} for this block (the WHEN/still-falling decision).
+     * @param roll01         the flow tick's own {@code RandomSource.nextFloat()} in {@code [0,1)} -- NEVER
+     *                       worldgen RNG (that would tie the organic lock pattern to the seed).
+     */
+    public static boolean flowTickFreezesLanded(boolean freezeEligible, boolean landedOnSupport, double roll01) {
+        return freezeEligible && landedOnSupport && roll01 < FLOW_FREEZE_CHANCE;
+    }
 }

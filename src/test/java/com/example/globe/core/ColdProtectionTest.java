@@ -50,4 +50,75 @@ class ColdProtectionTest {
         assertEquals(ColdProtection.MAX_PIECES, ColdProtection.protectionLevel(9));
         assertTrue(ColdProtection.negatesFreezeDamage(9));
     }
+
+    // ---- B-10 unified weighted path (design §3.2 mixing table, sweep A2/A3) ----
+
+    @Test
+    void legacyPathIsBitIdenticalToTodayAcrossTheWholeDomain() {
+        // Sweep A3: the flag-OFF path is the single-count method, and it must be EXACTLY today's contract for
+        // every 0..4 count -- this is the no-protection-gap guarantee. (The multiplier table above pins the
+        // values; this asserts the legacy methods stay the ones the flag-off shim calls.)
+        for (int p = 0; p <= ColdProtection.MAX_PIECES; p++) {
+            assertEquals((4 - p) / 4.0, ColdProtection.damageMultiplier(p), 1e-9);
+            assertEquals(p >= 4, ColdProtection.negatesFreezeDamage(p));
+        }
+    }
+
+    @Test
+    void unifiedMixingTableMatchesTheDesign() {
+        // Design §3.2 worked examples: (suitPieces, leatherPieces) -> freeze-damage multiplier.
+        assertEquals(1.00, ColdProtection.weightedMultiplier(0, 0), 1e-9, "bare = full damage");
+        assertEquals(0.50, ColdProtection.weightedMultiplier(0, 4), 1e-9, "4 leather = 50% (capped)");
+        assertEquals(0.75, ColdProtection.weightedMultiplier(0, 2), 1e-9, "2 leather");
+        assertEquals(0.25, ColdProtection.weightedMultiplier(2, 2), 1e-9, "2 suit + 2 leather");
+        assertEquals(0.125, ColdProtection.weightedMultiplier(3, 1), 1e-9, "3 suit + 1 leather -- still short");
+        assertEquals(0.00, ColdProtection.weightedMultiplier(4, 0), 1e-9, "4 suit = zero damage");
+        // partial suit alone (no leather): straight off the 0.25 weights.
+        assertEquals(0.75, ColdProtection.weightedMultiplier(1, 0), 1e-9);
+        assertEquals(0.50, ColdProtection.weightedMultiplier(2, 0), 1e-9);
+        assertEquals(0.25, ColdProtection.weightedMultiplier(3, 0), 1e-9);
+    }
+
+    @Test
+    void leatherCanNeverReachTotalProtection() {
+        // The whole point of the demotion: even a "full" 4-leather set is capped at 0.5 protection (mult 0.5),
+        // strictly worse than any 4-piece outfit containing a suit piece, and never fully protected.
+        assertEquals(0.50, ColdProtection.weightedMultiplier(0, 4), 1e-9);
+        assertFalse(ColdProtection.fullyProtected(0), "4 leather (0 suit) is NOT fully protected");
+        // even over-reading leather beyond 4 stays capped (belt-and-suspenders cap).
+        assertEquals(0.50, ColdProtection.weightedMultiplier(0, 9), 1e-9);
+    }
+
+    @Test
+    void fullyProtectedIsSuitCountFourOnly_notWeight() {
+        // Sweep: the predicate keys on suitPieces == 4 ALONE, never totalWeight >= 1.0.
+        assertFalse(ColdProtection.fullyProtected(0));
+        assertFalse(ColdProtection.fullyProtected(3), "3 suit + any leather is still not the full SET");
+        assertTrue(ColdProtection.fullyProtected(4));
+        assertTrue(ColdProtection.fullyProtected(9), "clamps, still fully protected");
+        // 3 suit + 1 leather sums to 0.875 weight but is NOT fully protected -- must complete the set.
+        assertFalse(ColdProtection.fullyProtected(3));
+        assertEquals(0.125, ColdProtection.weightedMultiplier(3, 1), 1e-9, "and still takes 12.5% damage");
+    }
+
+    @Test
+    void unifiedPathClampsBadShimReads() {
+        assertEquals(1.0, ColdProtection.weightedMultiplier(-2, -2), 1e-9);
+        assertEquals(0.0, ColdProtection.weightedMultiplier(9, 9), 1e-9);
+    }
+
+    @Test
+    void fullSuitSuppressesColdEffects_sweepA8_partialAndLeatherDoNot() {
+        // A8: the full-suit predicate is the MASTER exemption for the whole hazard-effects family (slowness /
+        // weakness / mining fatigue / immersion staging), not just damage -- and it keys on suit == 4 alone.
+        assertTrue(ColdProtection.suppressesColdEffects(4), "full suit walks freely (effects lifted)");
+        assertFalse(ColdProtection.suppressesColdEffects(3), "3 suit: effects still seep (must complete the set)");
+        assertFalse(ColdProtection.suppressesColdEffects(0), "bare/leather: effects always seep");
+        assertTrue(ColdProtection.suppressesColdEffects(9), "clamps");
+        // It IS the fullyProtected predicate -- one evaluator, one truth across the family.
+        for (int p = 0; p <= 6; p++) {
+            assertEquals(ColdProtection.fullyProtected(p), ColdProtection.suppressesColdEffects(p),
+                    "effects exemption == fullyProtected at suitPieces=" + p);
+        }
+    }
 }
