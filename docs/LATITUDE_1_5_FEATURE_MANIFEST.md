@@ -7,6 +7,17 @@ roadmap lives in the docs root at:
 
 `<home>/CascadeProjects/Latitude (Globe)/docs/LATITUDE_1_5_PRE_2_0_POLISH_ROADMAP.md`
 
+## Post-Phase-7 loading-copy refresh
+
+Maintainer approved a copy-only refresh of loading-overlay entries 36–47. The exact 47-entry phrase
+array remains intact; only those twelve strings changed. The refresh removes direct modpack and
+"guest"/"visiting biome" framing, and uses "Following the contour lines..." rather than claiming
+rain-shadow behavior. It changes neither overlay timing/rendering nor world-generation behavior.
+
+The exact phrase invariant and banned-term check passed, followed by Java 25 `compileJava`.
+This is a local source-copy savepoint only: it does not advance Phase 8 or authorize profiles,
+worlds, tags, pushes, releases, uploads, or publication.
+
 ## Phase 0 safety result
 
 - Implementation uses this clean worktree rather than re-anchoring the historical docs checkout.
