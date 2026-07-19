@@ -77,17 +77,17 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
             "Aligning magnetic north...",
             "Plentifying biomes...",
             "Sorting biomes by latitude...",
-            "Trimming the treeline...",
-            "Talking trees down from the peaks...",
-            "Giving the mountaintops a trim...",
-            "Capping peaks with snow...",
-            "Frosting the summits...",
-            "Dusting the peaks with powder...",
-            "Welcoming guest biomes...",
-            "Inviting Terralith over for tea...",
-            "Finding homes for visiting biomes...",
-            "Making room for everyone's biomes...",
-            "Minding the alpine line..."
+            "Drawing the treeline...",
+            "Settling the alpine line...",
+            "Capping the high peaks with snow...",
+            "Following the contour lines...",
+            "Carving mountain passes...",
+            "Mapping the highlands...",
+            "Balancing warm and cold currents...",
+            "Finding a place for every biome...",
+            "Blending the climate bands...",
+            "Tracing the polar seas...",
+            "Tending the edge of the world..."
     };
 
     // The Latitude-feature splashes are the last FEATURED_PHRASE_COUNT entries of PHRASES.
