@@ -27,7 +27,7 @@ def latitudeBuildTimeUtc = {
 
 def latitudeGitCommit = latitudeGitOutput('rev-parse', 'HEAD')
 def latitudeGitBranch = latitudeGitOutput('branch', '--show-current')
-def latitudeGitDirty = latitudeGitOutput('status', '--porcelain') == '' ? 'false' : 'true'
+def latitudeGitDirty = latitudeGitOutput('status', '--porcelain', '--untracked-files=no') == '' ? 'false' : 'true'
 def latitudeBuildTime = latitudeBuildTimeUtc()
 
 def latitudeClientXms = (findProperty('latitudeClientXms') ?: System.getProperty('latitudeClientXms') ?: '1G').toString()
