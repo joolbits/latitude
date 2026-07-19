@@ -5,9 +5,12 @@ import it.unimi.dsi.fastutil.longs.Long2IntMap;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import it.unimi.dsi.fastutil.longs.LongSet;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.tags.BlockTags;
+import net.minecraft.tags.TagKey;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
@@ -16,6 +19,9 @@ import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.levelgen.Heightmap;
 
 public final class PolarCapScrubber {
+    private static final TagKey<Block> SAPLINGS =
+            TagKey.create(Registries.BLOCK, Identifier.withDefaultNamespace("saplings"));
+
     private final int borderRadius;
     private final int poleBandStartAbsZ;
     private final LongSet scrubbedChunks = new LongOpenHashSet();
@@ -137,7 +143,7 @@ public final class PolarCapScrubber {
     private boolean isVegetation(BlockState state) {
         return state.is(BlockTags.LEAVES)
                 || state.is(BlockTags.LOGS)
-                || state.is(BlockTags.SAPLINGS)
+                || state.is(SAPLINGS)
                 || state.is(BlockTags.FLOWERS)
                 || state.is(BlockTags.CROPS)
                 || state.getBlock() == Blocks.SHORT_GRASS

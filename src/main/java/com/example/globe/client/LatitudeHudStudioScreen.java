@@ -279,7 +279,7 @@ public class LatitudeHudStudioScreen extends Screen {
         this.addRenderableWidget(Button.builder(Component.literal("Done"), btn -> {
                     CompassHudConfig.saveCurrent();
                     LatitudeConfig.saveCurrent();
-                    Minecraft.getInstance().setScreen(parent);
+                    Minecraft.getInstance().gui.setScreen(parent);
                 })
                 .bounds(doneX, doneY, bw, bh)
                 .build());
