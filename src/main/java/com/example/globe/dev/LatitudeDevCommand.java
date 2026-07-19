@@ -208,7 +208,7 @@ public final class LatitudeDevCommand {
             ServerPlayer player = source.getPlayerOrException();
             ServerLevel world = source.getLevel();
             WorldBorder border = world.getWorldBorder();
-            int radius = authoritativeRadius(source);
+            double radius = LatitudeMath.worldRadiusBlocks(border);
             double requestedDegrees = DoubleArgumentType.getDouble(ctx, "signedDegrees");
             double requestedX = hasX ? DoubleArgumentType.getDouble(ctx, "x") : player.getX();
 
@@ -254,7 +254,7 @@ public final class LatitudeDevCommand {
                     radius);
             String biome = biomeId(world.getBiome(new BlockPos(targetX, targetY, targetZ)));
             source.sendSuccess(() -> Component.literal(String.format(Locale.ROOT,
-                    "[latdev] tpLat requested=%+.6f\u00b0 achieved=%+.6f\u00b0 R=%d centerZ=%.3f -> x=%d y=%d z=%d biome=%s",
+                    "[latdev] tpLat requested=%+.6f\u00b0 achieved=%+.6f\u00b0 R=%.3f centerZ=%.3f -> x=%d y=%d z=%d biome=%s",
                     requestedDegrees,
                     achievedDegrees,
                     radius,
@@ -478,7 +478,7 @@ public final class LatitudeDevCommand {
                     DevToolPolicy.signedLatitudeDegrees(
                             player.getZ(),
                             border.getCenterZ(),
-                            authoritativeRadius(source))));
+                            LatitudeMath.worldRadiusBlocks(border))));
             context.put("zone", LatitudeMath.zoneKey(border, player.getZ()));
         }
         return context;

@@ -20,6 +20,76 @@ public final class DevToolPolicy {
         STATIONARY
     }
 
+    public enum TraceContextAction {
+        INITIAL,
+        CONTINUE,
+        CLOCK_RESYNC,
+        DIMENSION_RESET
+    }
+
+    /**
+     * Converts dimension-local game time into a monotonic policy clock for presentation traces.
+     * A raw tick rollback without a dimension change is a clock resync, not a new movement or
+     * warning episode.
+     */
+    public static final class TraceClock {
+        private boolean initialized;
+        private String lastDimension;
+        private long lastRawTick;
+        private long policyTick;
+
+        public Update update(String dimension, long rawTick) {
+            if (dimension == null || dimension.isBlank()) {
+                throw new IllegalArgumentException("dimension is required");
+            }
+
+            String previousDimension = lastDimension;
+            long previousRawTick = lastRawTick;
+            TraceContextAction action;
+            if (!initialized) {
+                initialized = true;
+                policyTick = rawTick;
+                action = TraceContextAction.INITIAL;
+            } else if (!lastDimension.equals(dimension)) {
+                policyTick = rawTick;
+                action = TraceContextAction.DIMENSION_RESET;
+            } else if (rawTick < lastRawTick) {
+                policyTick = saturatingAdd(policyTick, 1L);
+                action = TraceContextAction.CLOCK_RESYNC;
+            } else {
+                policyTick = saturatingAdd(policyTick, rawTick - lastRawTick);
+                action = TraceContextAction.CONTINUE;
+            }
+
+            lastDimension = dimension;
+            lastRawTick = rawTick;
+            return new Update(
+                    action,
+                    previousDimension,
+                    dimension,
+                    previousRawTick,
+                    rawTick,
+                    policyTick);
+        }
+
+        private static long saturatingAdd(long current, long delta) {
+            if (delta > 0L && current > Long.MAX_VALUE - delta) {
+                return Long.MAX_VALUE;
+            }
+            return current + delta;
+        }
+
+        public record Update(
+                TraceContextAction action,
+                String previousDimension,
+                String dimension,
+                long previousRawTick,
+                long rawTick,
+                long policyTick
+        ) {
+        }
+    }
+
     public enum CloseState {
         PASS,
         FAIL,
