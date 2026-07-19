@@ -1,6 +1,6 @@
 # Latitude 1.5 Feature Manifest
 
-`status: Phase 5 clean 26.2 port ACTIVE — foundation` · `branch: codex/1.5-mini-launch-26.2` · `accepted source: 9972d162` · `recorded: 2026-07-18`
+`status: Phase 5 clean 26.2 port PASSED locally` · `branch: codex/1.5-mini-launch-26.2` · `candidate commit: 96c43b452027a2e89e7899b7f60227656dab151d` · `recorded: 2026-07-19`
 
 This is the implementation-side allowlist for the Latitude 1.5 pre-2.0 polish campaign. The campaign
 roadmap lives in the docs root at:
@@ -147,8 +147,9 @@ This local Phase 4 compatibility pass was committed as local savepoint
 `858b815002ef82b20d55deadb0ac5ad970a9c823` (`Latitude 1.5: save 26.1.x candidate proof`). The
 earlier frozen candidate correctly recorded `Build-Dirty: true` before that savepoint; that is
 historical candidate metadata, not a current-tree claim. No real profile/world or screen/window was
-accessed for Phase 4. Phase 5 authorization remains a separate gate. The 26.2 port, profile
-staging, tagging, pushing, release, upload, and publication remain unauthorized.
+accessed for Phase 4. At that historical boundary, Phase 5 authorization was a separate gate and the
+26.2 port remained unauthorized. Profile staging, tagging, pushing, release, upload, and publication
+remain unauthorized now.
 
 ## Post-Phase 4 local-polish record
 
@@ -204,20 +205,32 @@ Current acceptance chronology, exact candidate hashes, QA verdicts, and stop sta
 
 Polar presentation, the HUD 16-state/width/migration matrix, and the analog
 size/theme/transparency/preview/placement matrix passed on the disposable 26.1.2 live surface.
-Those passes do not authorize Phase 5 or a public release.
+The 26.2 port preserves those behaviors through focused policy, structural, config, and disposable
+runtime proof; it does not claim a new 26.2 pixel-by-pixel visual review.
 
-### Version and authorization boundary
+## Phase 5 result
 
-The only compatibility proof claimed here is the committed Phase 4 matrix for Minecraft 26.1,
-26.1.1, and 26.1.2. Minecraft 26.0 and 26.2 are separate. On 2026-07-18 Maintainer accepted the remaining
-26.1.x HOLDs as known Latitude 1.5 limitations and authorized Phase 5, the clean independent 26.2
-port. Those HOLDs remain honest limitations rather than new passes.
+The independent Minecraft 26.2 port passed all thirteen mandatory Phase 5 gates at implementation
+and artifact commit `96c43b452027a2e89e7899b7f60227656dab151d`.
 
-Phase 5 may adopt `<home>/CascadeProjects/Latitude-1.5-26.2` on
-`codex/1.5-mini-launch-26.2` only after proving it is clean and fast-forwardable from the accepted
-26.1.x decision state. Only target-native 26.2 toolchain/API adaptations and the behaviors owned by
-this manifest are authorized. Pivot/2.0 source, profile staging, tagging, pushing, release, upload,
-and publication remain forbidden.
+| Gate family | Status | Evidence boundary |
+| --- | --- | --- |
+| Java 25 build, invariants, and target-native impact audit | **PASSED** | Clean build plus all four executable policy suites. |
+| Three-seed × three-size exact-ID and climate matrix | **PASSED** | Nine rows, no failures; summary SHA-256 `b563e1ef30c414bf70afe89c57b8b7e13250b543c170b3cb330dd49fed08cef7`. |
+| Fresh and copied-old-save lifecycle/policy | **PASSED** | Fresh server/reload and copied 26.1-to-26.2 save migration; migration hash index SHA-256 `c4e4f56737a52ba30928383192bf5d2dcb98a71a185d4095783ffccd0ccc3739`. |
+| Exact-jar client, create-world, HUD/config, and E/W barriers | **PASSED** | Exact candidate bytes loaded; fresh/reload first-safe-frame proof; create matrix `8ac866be…`; HUD matrix `03eab996…`; restart verdict `aee28c84…`; non-crossing barrier runtime proof. |
+| Available providers and Sodium | **PASSED** | Absent, Terralith, Tectonic, and Biomes O' Plenty matrix SHA-256 `81c93856bd6a77eac19924e7247cfe444f185f5d4dbdae5e0ad1ad5a59d773b9`; Sodium `0.9.1+mc26.2` launch/world load. |
+| Dedicated server, sulfur caves, and villages | **PASSED** | Fresh/reloaded server; exact sulfur-cave assertion at Y=2; villages through the allowed band and zero stored starts beyond 80° in the fresh proof world. |
+| Metadata, purity, hash, and 2.0 denylist | **PASSED** | `1.5.0+26.2`, `>=26.2 <26.3`, `Build-Dirty: false`; jar SHA-256 `1753f8d038d3387b4c152a84623d85a2eaa0286a40ff510e2c00c6e30d793cc0`. |
+
+The final docs exit savepoint, created after this text is reconciled, is intentionally distinct from
+the implementation/artifact commit embedded in the proved jar.
+
+### Phase 6 and release boundary
+
+Phase 5 is locally proved and stops here. Phase 6, real profile/world staging, tagging, pushing,
+release packaging, upload, publication, and every Latitude 2.0 behavior require separate Maintainer
+authorization.
 
 Decision record:
 
