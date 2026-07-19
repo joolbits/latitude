@@ -168,6 +168,13 @@ loom {
             // An explicit -Dlatitude.polarBarrens.onsetDeg still wins; .fullDeg 84 holds the fray at +2 (82->84).
             vmArg "-Dlatitude.polarBarrens.onsetDeg=${System.getProperty('latitude.polarBarrens.onsetDeg', '82.0')}"
             vmArg "-Dlatitude.polarBarrens.fullDeg=${System.getProperty('latitude.polarBarrens.fullDeg', '84.0')}"
+            // Phase 5 B-9 Glacial Caves & Crevasses carver append (design default FALSE, byte-identical off;
+            // the Java constant is branch-locally staged ON for the flight -- REVISIT BEFORE MERGE lives
+            // there). Forwarded in the SAME pass as the flag (L17 discipline), default 'false' like the
+            // barrens precedent so headless/atlas runs stay on the design default unless explicitly armed
+            // (gate-1 cannot see the carver seam anyway -- the atlas never executes applyCarvers -- but the
+            // forwarding keeps a -D-armed dev run agreeing with a shipped jar).
+            vmArg "-Dlatitude.glacialCavesV1=${System.getProperty('latitude.glacialCavesV1', 'false')}"
             // Polar water freeze (default TRUE, matching LatitudeV2Flags; byte-identical when explicitly
             // set off). Forwarded on sight this round -- the L17 forwarding class has bitten this repo
             // twice before (climateV2/biomeConsumerV2 2026-07-07); don't let a third flag go unforwarded.
