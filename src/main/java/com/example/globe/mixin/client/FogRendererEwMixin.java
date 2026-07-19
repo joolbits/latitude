@@ -14,52 +14,13 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.ModifyVariable;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 @Mixin(FogRenderer.class)
 public class FogRendererEwMixin {
 
-    // Primary attempt: fogStart ordinal=0, fogEnd ordinal=1.
-    @ModifyVariable(method = "applyFog", at = @At("STORE"), ordinal = 0, require = 0)
-    private static float latitude$ewFogStart(float fogStart) {
-        return latitude$tightenStart(fogStart);
-    }
-
-    @ModifyVariable(method = "applyFog", at = @At("STORE"), ordinal = 1, require = 0)
-    private static float latitude$ewFogEnd(float fogEnd) {
-        return latitude$tightenEnd(fogEnd);
-    }
-
-    @Unique
-    private static float latitude$tightenEnd(float currentEnd) {
-        Minecraft mc = Minecraft.getInstance();
-        if (mc == null || mc.level == null || mc.player == null) return currentEnd;
-
-        double x = mc.player.getX();
-        double i = GlobeClientState.ewIntensity01(x);
-        if (i <= 0.0) return currentEnd;
-
-        double desiredEnd = GlobeClientState.computeEwFogEnd(x);
-        if (desiredEnd < 0.0) return currentEnd;
-
-        return (float) Math.min(currentEnd, desiredEnd);
-    }
-
-    @Unique
-    private static float latitude$tightenStart(float currentStart) {
-        Minecraft mc = Minecraft.getInstance();
-        if (mc == null || mc.level == null || mc.player == null) return currentStart;
-
-        double x = mc.player.getX();
-        double i = GlobeClientState.ewIntensity01(x);
-        if (i <= 0.0) return currentStart;
-
-        // Mild push so start moves forward with intensity; end tightening does the heavy lift.
-        return (float) (currentStart + (currentStart * (i * 0.25)));
-    }
     @Inject(method = "setupFog", at = @At("RETURN"))
-    private void latitude$polarFog(
+    private void latitude$applyFog(
             Camera camera,
             int viewDistance,
             DeltaTracker tickCounter,
@@ -74,6 +35,43 @@ public class FogRendererEwMixin {
             return;
         }
 
+        FogData fog = cir.getReturnValue();
+        latitude$applyEwFog(fog, client.player.getX());
+        latitude$applyPolarFog(fog, client);
+    }
+
+    @Unique
+    private static void latitude$applyEwFog(FogData fog, double x) {
+        fog.environmentalStart = latitude$tightenStart(fog.environmentalStart, x);
+        fog.renderDistanceStart = latitude$tightenStart(fog.renderDistanceStart, x);
+        fog.environmentalEnd = latitude$tightenEnd(fog.environmentalEnd, x);
+        fog.renderDistanceEnd = latitude$tightenEnd(fog.renderDistanceEnd, x);
+        fog.skyEnd = latitude$tightenEnd(fog.skyEnd, x);
+        fog.cloudEnd = latitude$tightenEnd(fog.cloudEnd, x);
+    }
+
+    @Unique
+    private static float latitude$tightenEnd(float currentEnd, double x) {
+        double i = GlobeClientState.ewIntensity01(x);
+        if (i <= 0.0) return currentEnd;
+
+        double desiredEnd = GlobeClientState.computeEwFogEnd(x);
+        if (desiredEnd < 0.0) return currentEnd;
+
+        return (float) Math.min(currentEnd, desiredEnd);
+    }
+
+    @Unique
+    private static float latitude$tightenStart(float currentStart, double x) {
+        double i = GlobeClientState.ewIntensity01(x);
+        if (i <= 0.0) return currentStart;
+
+        // Mild push so start moves forward with intensity; end tightening does the heavy lift.
+        return (float) (currentStart + (currentStart * (i * 0.25)));
+    }
+
+    @Unique
+    private static void latitude$applyPolarFog(FogData fog, Minecraft client) {
         GlobeClientState.Eval eval = GlobeClientState.evaluate(client);
         if (!eval.active() || !eval.surfaceOk()) {
             return;
@@ -85,7 +83,6 @@ public class FogRendererEwMixin {
             return;
         }
 
-        FogData fog = cir.getReturnValue();
         latitude$tightenPolarFogDistances(fog, z, polarIntensity);
         latitude$blendPolarFogColor(fog.color, polarIntensity);
     }

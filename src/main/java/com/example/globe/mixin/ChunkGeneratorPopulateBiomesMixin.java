@@ -123,6 +123,9 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
     private static final Identifier DEEP_DARK_ID = Identifier.fromNamespaceAndPath("minecraft", "deep_dark");
 
     @Unique
+    private static final Identifier SULFUR_CAVES_ID = Identifier.fromNamespaceAndPath("minecraft", "sulfur_caves");
+
+    @Unique
     private static final ResourceKey<NoiseGeneratorSettings> GLOBE_SETTINGS_KEY =
             ResourceKey.create(Registries.NOISE_SETTINGS, GLOBE_SETTINGS_ID);
 
@@ -395,7 +398,8 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
         }
         return actual.equals(LUSH_CAVES_ID)
                 || actual.equals(DRIPSTONE_CAVES_ID)
-                || actual.equals(DEEP_DARK_ID);
+                || actual.equals(DEEP_DARK_ID)
+                || actual.equals(SULFUR_CAVES_ID);
     }
 
     @Unique

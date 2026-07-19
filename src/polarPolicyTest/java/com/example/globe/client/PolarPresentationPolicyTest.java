@@ -162,22 +162,47 @@ public final class PolarPresentationPolicyTest {
                 "east/west fog end range remains 64 to 12 blocks");
 
         String mixin = read("src/main/java/com/example/globe/mixin/client/FogRendererEwMixin.java");
-        assertTrue(mixin.contains("@Inject(method = \"setupFog\""),
-                "registered 26.1 fog hook targets the mapped setupFog method");
+        assertEquals(1, countOccurrences(mixin, "@Inject(method = \"setupFog\""),
+                "exactly one 26.2 fog hook targets the mapped setupFog method");
         assertTrue(mixin.contains("computeEwFogEnd") && mixin.contains("computePoleFogEnd"),
                 "legacy east/west path and isolated polar path both remain present");
         assertTrue(mixin.contains("latitude$polarEnd") && mixin.contains("latitude$blendPolarFogColor"),
                 "polar hook tightens only its own distance and blends the mapped fog color field");
 
-        int polarHookStart = mixin.indexOf("@Inject(method = \"setupFog\"");
-        assertTrue(polarHookStart >= 0, "polar setupFog section is present");
-        String polarSection = mixin.substring(polarHookStart);
+        String injectedHandler = methodSection(mixin, "private void latitude$applyFog(");
+        int ewCall = injectedHandler.indexOf("latitude$applyEwFog(");
+        int polarCall = injectedHandler.indexOf("latitude$applyPolarFog(");
+        assertTrue(ewCall >= 0 && polarCall > ewCall,
+                "single setupFog handler applies east/west fog before polar fog");
+        assertTrue(injectedHandler.contains("client == null || client.level == null || client.player == null")
+                        && injectedHandler.contains("camera.getFluidInCamera() != FogType.NONE"),
+                "single setupFog handler validates the client and atmospheric fog once");
+
+        String ewSection = methodSection(mixin, "private static void latitude$applyEwFog(")
+                + methodSection(mixin, "private static float latitude$tightenStart(")
+                + methodSection(mixin, "private static float latitude$tightenEnd(");
+        assertTrue(ewSection.contains("computeEwFogEnd")
+                        && ewSection.contains("ewIntensity01"),
+                "east/west helper retains the legacy tightening policy");
+        assertTrue(!ewSection.contains("computePoleFogEnd")
+                        && !ewSection.contains("latitude$polarEnd")
+                        && !ewSection.contains("latitude$blendPolarFogColor"),
+                "east/west helper cannot activate or alter polar fog");
+
+        String polarSection = methodSection(mixin, "private static void latitude$applyPolarFog(")
+                + methodSection(mixin, "private static void latitude$tightenPolarFogDistances(")
+                + methodSection(mixin, "private static float latitude$polarEnd(")
+                + methodSection(mixin, "private static void latitude$blendPolarFogColor(");
+        assertTrue(polarSection.contains("computePoleFogEnd")
+                        && polarSection.contains("latitude$polarEnd")
+                        && polarSection.contains("latitude$blendPolarFogColor"),
+                "polar helper retains its distance and color policy");
         assertTrue(!polarSection.contains("computeEwFogEnd")
                         && !polarSection.contains("ewIntensity01"),
-                "new setupFog section cannot activate or alter east/west fog");
+                "polar helper cannot activate or alter east/west fog");
         assertTrue(polarSection.contains("GlobeClientState.evaluate(client)")
                         && polarSection.contains("!eval.active() || !eval.surfaceOk()"),
-                "polar setupFog section is gated to active Latitude surface presentation");
+                "polar helper is gated to active Latitude surface presentation");
 
         String overlay = read("src/main/java/com/example/globe/client/GlobeWarningOverlay.java");
         assertTrue(overlay.contains("POLAR_WARNING_EPISODE.update"),
@@ -194,6 +219,33 @@ public final class PolarPresentationPolicyTest {
 
     private static String normalize(String value) {
         return value.replaceAll("\\s+", " ");
+    }
+
+    private static int countOccurrences(String value, String needle) {
+        int count = 0;
+        int offset = 0;
+        while ((offset = value.indexOf(needle, offset)) >= 0) {
+            count++;
+            offset += needle.length();
+        }
+        return count;
+    }
+
+    private static String methodSection(String source, String signature) {
+        int start = source.indexOf(signature);
+        assertTrue(start >= 0, "method is present: " + signature);
+        int openBrace = source.indexOf('{', start);
+        assertTrue(openBrace >= 0, "method body is present: " + signature);
+        int depth = 0;
+        for (int i = openBrace; i < source.length(); i++) {
+            char c = source.charAt(i);
+            if (c == '{') {
+                depth++;
+            } else if (c == '}' && --depth == 0) {
+                return source.substring(start, i + 1);
+            }
+        }
+        throw new AssertionError("method body is balanced: " + signature);
     }
 
     private static void assertNear(float expected, float actual, String message) {
