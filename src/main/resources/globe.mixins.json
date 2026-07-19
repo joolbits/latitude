@@ -10,6 +10,7 @@
     "ChunkGeneratorPopulateBiomesMixin",
     "ServerLevelFindClosestBiomeMixin",
     "BiomeSourceAccessor",
+    "ChunkGeneratorAccessor",
     "NoiseChunkGeneratorAccessor",
     "NoiseChunkGeneratorCarveMixin",
     "MinecraftServerInitialSpawnMixin",

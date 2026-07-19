@@ -60,6 +60,19 @@ class LatitudeV2FlagsTest {
     }
 
     @Test
+    void glacialCavesV1BranchLocalFlightStaging() {
+        // P3 LIVE-TEST STAGING (branch-local, B-6/B-7/B-8 precedent): default ON for the first B-9
+        // glacial-caves flight so a FRESH world carves the crevasses. REVISIT BEFORE MERGE — the
+        // DESIGN default is OFF (byte-identical: no append, no strip change, vanilla's own carver
+        // Iterable returned untouched -- pinned by GlacialCarverLawTest); the shipped default is
+        // Peetsa's call after the flight. Static-init capture guard per the degree-defaults law below.
+        assertNull(System.getProperty("latitude.glacialCavesV1"),
+                "suite JVM must not carry -Dlatitude.glacialCavesV1 (static-init capture: staging law)");
+        assertTrue(LatitudeV2Flags.GLACIAL_CAVES_V1_ENABLED,
+                "Branch-local flight staging: B-9 Glacial Caves ON for the first flight; revisit before merge");
+    }
+
+    @Test
     void polarBarrensDegreeDefaults() {
         // S21c DECOUPLED the Barrens onset from the veg-fade finish: the onset is now an independent 82 deg
         // (the owner's chosen value) while the vegetation fade finishes at 80 ("veg to 80"). The 80-82 band is

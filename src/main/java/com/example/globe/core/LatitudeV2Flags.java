@@ -358,6 +358,55 @@ public final class LatitudeV2Flags {
             parseDoubleOrDefault(System.getProperty("latitude.polarBarrens.fullDeg"), 84.0);
 
     /**
+     * Phase 5 B-9 P1 GLACIAL CAVES &amp; CREVASSES (Peetsa, TEST-110 flight: polar "caverns are giant
+     * voids" -- the crevasses should be "narrow and winding ice labyrinths"; design
+     * {@code docs/binder/phase5-b9-glacial-caves-design-20260719.md}, swept 2026-07-19). When on, the
+     * carver-list filter in {@code NoiseChunkGeneratorCarveMixin} APPENDS two globe configured carvers
+     * to every seed chunk that is barrens-band LAND (the exact shared
+     * {@link com.example.globe.core.PolarBarrensBand#isBarrens} latitude+fray decision the barrens
+     * biome/glacier use, sampled once per seed chunk at its min corner; sea columns are skipped by a
+     * raw-biome-source ocean probe, and the {@code replaceable} tag is the structural backstop where
+     * the probe misses). Appending AFTER the raw list preserves every vanilla carver's
+     * {@code seed + index} stream, so flag-off is byte-identical by construction (no append, no strip,
+     * vanilla's own Iterable returned untouched). NEW CHUNKS ONLY (legacy-worldgen pin); the biome
+     * JSON is deliberately NOT touched (its carver list is dead wiring at this seam -- see the mixin).
+     *
+     * <p><b>The two carvers (vanilla TYPES, our data configs -- vanilla-first, no custom carver
+     * code), with the P1 parameter decisions ("dev picks" recorded here, the flag being the family
+     * register, like the barrens biome JSON decisions above):</b>
+     * <ul>
+     *   <li>{@code globe:crevasse} (canyon type): open-top narrow slots through the glacier.
+     *       probability 0.14 (owner dial; a deliberately fissured glacier vs vanilla canyon's 0.01 --
+     *       parked question #1), y uniform absolute 66..112 (anchored to the REAL polar surface
+     *       distribution: median 71-78, p95 115-126), lava_level absolute -56 (below anything the
+     *       band can reach -- no lava windows in a glacier). Dev picks: shape thickness trapezoid
+     *       0.0..4.0 plateau 1.0 (vanilla 0.0..6.0 plateau 2.0 -- about two-thirds the width, so the
+     *       cut reads as a slot, not a ravine room) and yScale 4.0 (vanilla 3.0 -- recovers the
+     *       vertical extent the narrower thickness would lose, keeping the design's 20-40 block cut
+     *       envelope, bottoms ~26..92; bottoms below sea level 63 POND via aquifers = the fish-lake
+     *       seed, wanted). All other shape fields verbatim vanilla canyon.</li>
+     *   <li>{@code globe:glacial_tunnels} (cave type): the labyrinth. probability 0.12, y uniform
+     *       absolute 30..90 (glacier body under high terrain + upper stone under median terrain),
+     *       lava_level absolute -56. Dev picks: horizontal_radius_multiplier 0.49..0.98 (exactly
+     *       0.7x vanilla's 0.7..1.4) and vertical_radius_multiplier 0.4..0.65 (exactly 0.5x
+     *       vanilla's 0.8..1.3) so cave-carver branching supplies the maze but the corridors stay
+     *       narrow and winding; yScale + floor_level verbatim vanilla cave convention.</li>
+     * </ul>
+     * Both use {@code replaceable #minecraft:overworld_carver_replaceables} AS-IS (design sweep
+     * finding 3, DECIDED): the tag contains packed_ice + the snow family but NOT plain ice, so the
+     * frozen-sea skin is structurally uncarvable (the sacred under-ice fiction survives) and a
+     * crevasse slicing a frozen river leaves the 1-block ice skin spanning the slot -- an ice bridge,
+     * real glaciology, kept.
+     *
+     * <p><b>Byte-identity honesty (design law):</b> gate-1 CANNOT see this seam (the atlas never
+     * executes {@code applyCarvers}); flag-off identity rests on the pure
+     * {@link com.example.globe.core.GlacialCarverLaw} unit tests + the standing gate-1 re-proof
+     * (class-load side) + the orchestrator self-fly as the end-to-end carve proof.
+     */
+    public static final boolean GLACIAL_CAVES_V1_ENABLED =
+            Boolean.parseBoolean(System.getProperty("latitude.glacialCavesV1", "true")); // P3 LIVE-TEST STAGING (branch-local, B-6/B-7/B-8 precedent): default ON for the first glacial-caves flight so a FRESH world carves the crevasses. REVISIT BEFORE MERGE -- the design default is OFF; the shipped default is Peetsa's call after the flight.
+
+    /**
      * S13 (e) POLAR SURFACE ALLOWLIST (Peetsa, TEST-103 flight, 2026-07-17). Default TRUE -- a polar-immersion
      * spawn rule (sibling of the vegetation fade / water freeze), shipped live for the S13 flight; the owner
      * confirms the ship default post-flight like every prior polar rule. This is NOT worldgen (it filters
