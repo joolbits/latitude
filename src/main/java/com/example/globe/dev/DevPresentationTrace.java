@@ -101,20 +101,28 @@ public final class DevPresentationTrace {
             float fogIntensity = PolarPresentationPolicy.fogIntensity(absoluteDegrees);
             long worldTick = client.level.getGameTime();
             String dimension = client.level.dimension().identifier().toString();
+            DevToolPolicy.TraceClock.Update clockUpdate =
+                    active.traceClock.update(dimension, worldTick);
+            long policyTick = clockUpdate.policyTick();
 
-            if (active.lastDimension != null
-                    && (!active.lastDimension.equals(dimension) || worldTick < active.lastWorldTick)) {
+            if (clockUpdate.action() == DevToolPolicy.TraceContextAction.DIMENSION_RESET) {
                 active.append("context_reset", worldTick, Map.of(
                         "current_dimension", dimension,
-                        "previous_dimension", active.lastDimension,
-                        "reason", worldTick < active.lastWorldTick
-                                ? "world_tick_rollback"
-                                : "dimension_change"));
+                        "policy_tick", Long.toString(policyTick),
+                        "previous_dimension", clockUpdate.previousDimension(),
+                        "previous_world_tick", Long.toString(clockUpdate.previousRawTick()),
+                        "reason", "dimension_change"));
                 active.resetSampleState();
+            } else if (clockUpdate.action() == DevToolPolicy.TraceContextAction.CLOCK_RESYNC) {
+                active.append("clock_resync", worldTick, Map.of(
+                        "dimension", dimension,
+                        "policy_tick", Long.toString(policyTick),
+                        "previous_world_tick", Long.toString(clockUpdate.previousRawTick()),
+                        "reason", "same_dimension_world_tick_rollback"));
             }
 
-            active.warningEpisode.update(stageRank, absoluteDegrees, worldTick);
-            int warningActiveRank = active.warningEpisode.activeStageRank(worldTick);
+            active.warningEpisode.update(stageRank, absoluteDegrees, policyTick);
+            int warningActiveRank = active.warningEpisode.activeStageRank(policyTick);
             int warningHighestRank = active.warningEpisode.highestTriggeredStageRank();
             DevToolPolicy.TraceTransition transition = DevToolPolicy.traceTransition(
                     active.previousAbsoluteDegrees,
@@ -137,6 +145,7 @@ public final class DevPresentationTrace {
                 values.put("fog_render_applicable", Boolean.toString(
                         productionEvaluation.active() && productionEvaluation.surfaceOk()));
                 values.put("latitude_world_active", Boolean.toString(productionEvaluation.active()));
+                values.put("policy_tick", Long.toString(policyTick));
                 values.put("polar_stage", polarStage.name().toLowerCase(Locale.ROOT));
                 values.put("signed_latitude_degrees", format(signedDegrees));
                 values.put("surface_ok", Boolean.toString(productionEvaluation.surfaceOk()));
@@ -162,7 +171,6 @@ public final class DevPresentationTrace {
             active.previousWarningActiveRank = warningActiveRank;
             active.previousWarningHighestRank = warningHighestRank;
             active.lastWorldTick = worldTick;
-            active.lastDimension = dimension;
         } catch (Exception e) {
             GlobeMod.LOGGER.warn("[latdev] presentation trace sample failed", e);
         }
@@ -209,12 +217,12 @@ public final class DevPresentationTrace {
         private final String playerName;
         private final Path runDirectory;
         private final Path path;
+        private final DevToolPolicy.TraceClock traceClock = new DevToolPolicy.TraceClock();
         private PolarPresentationPolicy.PolarWarningEpisode warningEpisode =
                 new PolarPresentationPolicy.PolarWarningEpisode();
         private long sequence;
         private long sampleCount;
         private long lastWorldTick;
-        private String lastDimension;
         private double previousAbsoluteDegrees = Double.NaN;
         private DevToolPolicy.MovementDirection previousDirection;
         private int previousStageRank;

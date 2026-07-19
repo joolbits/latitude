@@ -18,7 +18,9 @@ public final class DevToolPolicyTest {
     public static void main(String[] args) throws Exception {
         sanitizationIsStableAndTraversalSafe();
         latitudeMappingUsesCenterBoundsAndBlockCenters();
+        productionBorderRadiusOwnsCommandAndEvidenceLatitude();
         movementAndTransitionSamplingAreDeterministic();
+        traceClockPreservesSameDimensionContinuity();
         caseSessionIsAppendOnlyOrderedAndExplicitlyClosed();
         System.out.println("DEV_TOOL_POLICY_TEST_PASS assertions=" + assertions);
     }
@@ -151,6 +153,122 @@ public final class DevToolPolicyTest {
                 5,
                 PolarPresentationPolicy.fogIntensity(87.5));
         expectTrue(!noChange.shouldRecord(), "unchanged stationary sample does not spam the trace");
+    }
+
+    private static void productionBorderRadiusOwnsCommandAndEvidenceLatitude() {
+        DevToolPolicy.LatitudeTarget target = DevToolPolicy.latitudeTarget(
+                89.0,
+                0.0,
+                10_000.0,
+                -10_000.0,
+                10_000.0,
+                1.0);
+        expectEquals(9_889, target.blockZ(),
+                "89 degrees uses the production border half-size, not the padded audit radius");
+        expectNear(89.0055, target.actualDegrees(),
+                "command and client evidence agree at the placed block center");
+        expectNear(
+                target.actualDegrees(),
+                DevToolPolicy.signedLatitudeDegrees(
+                        target.blockZ() + 0.5,
+                        0.0,
+                        10_000.0),
+                "case context uses the same production radius as target placement");
+
+        DevToolPolicy.LatitudeTarget centered = DevToolPolicy.latitudeTarget(
+                -89.0,
+                250.0,
+                10_000.0,
+                -9_750.0,
+                10_250.0,
+                1.0);
+        expectEquals(-9_639, centered.blockZ(),
+                "nonzero border center is included in production-radius placement");
+        expectNear(-88.9965, centered.actualDegrees(),
+                "nonzero-center achieved latitude uses block-center placement");
+
+        expectThrows(
+                () -> DevToolPolicy.latitudeTarget(
+                        90.0, 0.0, 10_000.0, -10_000.0, 10_000.0, 1.0),
+                "production-radius +90 target is rejected at the safety margin");
+        expectThrows(
+                () -> DevToolPolicy.latitudeTarget(
+                        -90.0, 0.0, 10_000.0, -10_000.0, 10_000.0, 1.0),
+                "production-radius -90 target is rejected at the safety margin");
+
+        double staleRadiusClaim = DevToolPolicy.signedLatitudeDegrees(
+                9_873.5,
+                0.0,
+                9_984.0);
+        double productionClaim = DevToolPolicy.signedLatitudeDegrees(
+                9_873.5,
+                0.0,
+                10_000.0);
+        expectNear(89.00390625, staleRadiusClaim,
+                "preserved Phase 7 command-side RED is reproducible");
+        expectNear(88.8615, productionClaim,
+                "preserved Phase 7 production-client value is reproducible");
+        expectTrue(Math.abs(staleRadiusClaim - productionClaim) > 0.1,
+                "the stale radius disagreement is materially visible");
+    }
+
+    private static void traceClockPreservesSameDimensionContinuity() {
+        DevToolPolicy.TraceClock clock = new DevToolPolicy.TraceClock();
+        DevToolPolicy.TraceClock.Update initial = clock.update("minecraft:overworld", 4_179L);
+        expectEquals(DevToolPolicy.TraceContextAction.INITIAL, initial.action(),
+                "first trace clock sample establishes context");
+        expectEquals(4_179L, initial.policyTick(),
+                "first policy tick starts from raw game time");
+
+        DevToolPolicy.TraceClock.Update forward = clock.update("minecraft:overworld", 4_180L);
+        expectEquals(DevToolPolicy.TraceContextAction.CONTINUE, forward.action(),
+                "forward same-dimension time continues normally");
+        expectEquals(4_180L, forward.policyTick(),
+                "forward raw tick advances policy time");
+
+        PolarPresentationPolicy.PolarWarningEpisode warning =
+                new PolarPresentationPolicy.PolarWarningEpisode();
+        warning.update(3, 89.0, initial.policyTick());
+        warning.update(4, 89.8, forward.policyTick());
+        expectEquals(4, warning.highestTriggeredStageRank(),
+                "poleward warning episode triggers before rollback");
+
+        DevToolPolicy.TraceClock.Update rollback = clock.update("minecraft:overworld", 4_134L);
+        expectEquals(DevToolPolicy.TraceContextAction.CLOCK_RESYNC, rollback.action(),
+                "same-dimension raw rollback is a clock resync, not a context reset");
+        expectEquals(4_181L, rollback.policyTick(),
+                "rollback advances monotonic warning policy time by one client tick");
+        warning.update(4, 89.8, rollback.policyTick());
+        expectEquals(4, warning.highestTriggeredStageRank(),
+                "clock resync preserves warning episode rank");
+        float alphaAfterRollback = warning.alpha(rollback.policyTick());
+        expectTrue(alphaAfterRollback > 0.0f,
+                "clock resync does not make warning age negative or invisible");
+
+        DevToolPolicy.TraceClock.Update afterRollback = clock.update("minecraft:overworld", 4_135L);
+        expectEquals(4_182L, afterRollback.policyTick(),
+                "post-resync raw progress continues monotonic policy time");
+        warning.update(4, 89.8, afterRollback.policyTick());
+        expectTrue(warning.alpha(afterRollback.policyTick()) >= alphaAfterRollback,
+                "warning timing progresses monotonically after rollback");
+
+        DevToolPolicy.TraceTransition movement = DevToolPolicy.traceTransition(
+                89.8,
+                89.9,
+                DevToolPolicy.MovementDirection.STATIONARY,
+                4,
+                4,
+                10,
+                PolarPresentationPolicy.fogIntensity(89.9));
+        expectEquals(DevToolPolicy.MovementDirection.POLEWARD, movement.direction(),
+                "same-dimension clock resync does not force movement back to initial");
+
+        DevToolPolicy.TraceClock.Update dimensionChange =
+                clock.update("minecraft:the_nether", 50L);
+        expectEquals(DevToolPolicy.TraceContextAction.DIMENSION_RESET, dimensionChange.action(),
+                "real dimension change explicitly requests sample and warning reset");
+        expectEquals(50L, dimensionChange.policyTick(),
+                "new dimension receives a fresh policy clock epoch");
     }
 
     private static void caseSessionIsAppendOnlyOrderedAndExplicitlyClosed() throws Exception {

@@ -65,6 +65,32 @@ def verify_sources(failures: list[str]) -> None:
     require(command, "DoubleArgumentType.doubleArg(-90.0, 90.0)", "bounded latitude parser", failures)
     require(command, "DevToolPolicy.latitudeTarget(", "center/border teleport policy", failures)
     require(command, "targetZ + 0.5", "achieved block-center latitude report", failures)
+    tp_lat_method = method_body(command, "private static int tpLat(")
+    case_context_method = method_body(command, "private static Map<String, String> caseContext(")
+    require(
+        tp_lat_method,
+        "LatitudeMath.worldRadiusBlocks(border)",
+        "tpLat production border-half-size authority",
+        failures,
+    )
+    require(
+        case_context_method,
+        "LatitudeMath.worldRadiusBlocks(border)",
+        "case context production border-half-size authority",
+        failures,
+    )
+    forbid(
+        tp_lat_method,
+        "authoritativeRadius(source)",
+        "tpLat padded audit-radius authority",
+        failures,
+    )
+    forbid(
+        case_context_method,
+        "authoritativeRadius(source)",
+        "case context padded audit-radius authority",
+        failures,
+    )
     require(command, "source.getServer().isDedicatedServer()", "integrated-client boundary", failures)
     require(command, '"coordinate_policy_only"', "dedicated trace truth label", failures)
 
@@ -116,6 +142,26 @@ def verify_sources(failures: list[str]) -> None:
     require(trace, "GlobeClientState.evaluate(client)", "production applicability evaluation", failures)
     require(trace, "LatitudeConfig.showWarningMessages", "warning config applicability", failures)
     require(trace, '"context_reset"', "world/dimension trace reset marker", failures)
+    require(trace, '"clock_resync"', "same-dimension clock resync marker", failures)
+    require(
+        trace,
+        "TraceContextAction.CLOCK_RESYNC",
+        "same-dimension rollback continuity branch",
+        failures,
+    )
+    require(
+        trace,
+        "TraceContextAction.DIMENSION_RESET",
+        "real dimension reset branch",
+        failures,
+    )
+    require(trace, '"policy_tick"', "monotonic warning policy tick evidence", failures)
+    forbid(
+        trace,
+        "!active.lastDimension.equals(dimension) || worldTick < active.lastWorldTick",
+        "rollback folded into context reset",
+        failures,
+    )
     require(trace, "Trace candidate = new Trace(", "write-before-activate trace start", failures)
 
     for event in ('"capture_requested"', '"capture_completed"', '"capture_failed"'):
