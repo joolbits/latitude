@@ -150,8 +150,8 @@ loom {
             // The fade's ramp KNOBS (docs pass 2026-07-12 caught the THIRD instance of the L17
             // forwarding gap: the javadoc advertises these as live-tunable, but only the enable flag
             // was forwarded -- the degree dials silently never reached a gradle dev client).
-            vmArg "-Dlatitude.polarVegetationFade.onsetDeg=${System.getProperty('latitude.polarVegetationFade.onsetDeg', '76.0')}"
-            vmArg "-Dlatitude.polarVegetationFade.fullDeg=${System.getProperty('latitude.polarVegetationFade.fullDeg', '82.0')}"
+            vmArg "-Dlatitude.polarVegetationFade.onsetDeg=${System.getProperty('latitude.polarVegetationFade.onsetDeg', '72.0')}"
+            vmArg "-Dlatitude.polarVegetationFade.fullDeg=${System.getProperty('latitude.polarVegetationFade.fullDeg', '80.0')}"
             // S11(c) firefly-specific ban dial (default 50 = the SUBPOLAR onset) -- forwarded in the SAME
             // pass as the constant (L17 discipline), beside its veg-fade dial family.
             vmArg "-Dlatitude.polarVegetationFade.fireflyBanDeg=${System.getProperty('latitude.polarVegetationFade.fireflyBanDeg', '50.0')}"
@@ -160,14 +160,13 @@ loom {
             // barrens on (the L17 forwarding gap has produced silent byte-identical false-greens before).
             // The onset/full degree dials are advertised as live-tunable, so forward them too.
             vmArg "-Dlatitude.polarBarrens.enabled=${System.getProperty('latitude.polarBarrens.enabled', 'false')}"
-            // B-8 sweep FIX-1: the onset default NESTS the veg-fade fullDeg sysprop instead of hardcoding
-            // it, so a dev run that retunes -Dlatitude.polarVegetationFade.fullDeg keeps the KEEP-SHARED
-            // coupling (barrens begins exactly where the last vegetation dies) without having to remember the
-            // barrens dial too. An explicit -Dlatitude.polarBarrens.onsetDeg still wins. S13 2026-07-17: the
-            // nested fallback moved 86->82 in lockstep with the Java default (PolarVegetationFade.FULL_DEG)
-            // so the "Barrens at 82" onset coupling is honest on a headless atlas too, and .fullDeg 88->84
-            // holds the fray at +2 deg (82->84).
-            vmArg "-Dlatitude.polarBarrens.onsetDeg=${System.getProperty('latitude.polarBarrens.onsetDeg', System.getProperty('latitude.polarVegetationFade.fullDeg', '82.0'))}"
+            // S21c 2026-07-19: the veg-fade/Barrens COUPLING IS BROKEN (deliberately). The onset default used
+            // to NEST the veg-fade fullDeg sysprop (barrens began exactly where the grass died); the owner moved
+            // the veg fade's finish down to 80 ("veg to 80") but wants the Barrens BIOME to stay at 82, so the
+            // nested fallback is now a LITERAL 82.0, matching the decoupled Java default
+            // (LatitudeV2Flags.POLAR_BARRENS_ONSET_DEG). The 80-82 band is bare tundra before the barrens claim.
+            // An explicit -Dlatitude.polarBarrens.onsetDeg still wins; .fullDeg 84 holds the fray at +2 (82->84).
+            vmArg "-Dlatitude.polarBarrens.onsetDeg=${System.getProperty('latitude.polarBarrens.onsetDeg', '82.0')}"
             vmArg "-Dlatitude.polarBarrens.fullDeg=${System.getProperty('latitude.polarBarrens.fullDeg', '84.0')}"
             // Polar water freeze (default TRUE, matching LatitudeV2Flags; byte-identical when explicitly
             // set off). Forwarded on sight this round -- the L17 forwarding class has bitten this repo

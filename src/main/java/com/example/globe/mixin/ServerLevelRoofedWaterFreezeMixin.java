@@ -34,9 +34,15 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * then never ticked again -- "the water is not freezing" (TEST 108/109/110, live). {@code tickPrecipitation},
  * however, keeps visiting a column at random every tick regardless of whether its water still ticks. So S20 moves
  * ALL at-rest freezing here: this sweep freezes SETTLED + LANDED flowing blocks -- CERTAIN, no dice -- bottom-up,
- * one-or-two per column per pass, and a pool freezes over seconds ring by ring as its cells come to rest.
- * Still-SPREADING water (a pending fluid tick, under EITHER water key) is NEVER swept -- it is left to the flow
- * tick (falls run free; the ice-touch hunter locks reroutes) until it settles, then the sweep claims it.
+ * and a pool freezes over seconds ring by ring as its cells come to rest. <b>S21(d) SWEEP 5x:</b> the upward scan
+ * now freezes a contiguous BOTTOM-UP RUN of up to {@link PolarWaterFreezeRule#SWEEP_MAX_PER_COLUMN} (8) settled
+ * blocks per column per pass (was ~1-2), a shared per-column budget the roofed descent also draws from -- ~5x the
+ * old pace for deep standing columns (the owner's TEST-111 "still ~5x too slow"). The run is found READ-ONLY
+ * first (PHASE 1) so no {@code settled} read is polluted by this sweep's own {@code setBlock} reschedule, then
+ * frozen bottom-up (PHASE 2). Still-SPREADING water (a pending fluid tick, under EITHER water key) is NEVER swept
+ * -- it is left to the flow tick (falls run free; the ice-touch hunter locks reroutes) until it settles, then the
+ * sweep claims it. Sources are frozen LAST by {@code BiomePolarWaterFreezeMixin} (S21(d) source-freezes-last),
+ * never here.
  *
  * <p><b>S17(b) UPWARD SCAN -- why the downward descent alone was not enough (S18 bottom-up).</b> An open-air
  * cascade FREE-FALLS above the terrain surface, i.e. ABOVE the {@code MOTION_BLOCKING} heightmap top (water is
@@ -143,47 +149,73 @@ public abstract class ServerLevelRoofedWaterFreezeMixin {
         // construction for every block either scan touches (above the surface, or within the 16-block roof reach
         // -- both far above the 40-block glacier-sole floor), so the sky/skyExposed arm is irrelevant.
         int flowFreezes = -1; // lazy tri-state: -1 unknown, 0 no, 1 yes
+        int frozen = 0;       // S21(d): blocks this column has frozen this pass, capped at SWEEP_MAX_PER_COLUMN
 
-        // S17(b) UPWARD SCAN, S18 BOTTOM-UP: an open-air cascade free-falls ABOVE the MOTION_BLOCKING top (water
-        // is not motion-blocking terrain), so the downward roofed descent below never reaches it. Scan a bounded
-        // belt UPWARD from the surface and freeze the LOWEST unfrozen LANDED (supported below) flowing block --
-        // exactly ONE per column per pass -- so a standing fall column ices from the ground UP over successive
-        // ticks instead of snapping frozen all at once (the S18 climb: the ice laid this pass is the support the
-        // block above lands on next pass). Frozen ice from earlier passes is skipped (it is the growing pile, not
-        // a cap); a genuine solid (non-ice, non-fluid) block caps the cascade and ends the scan.
+        // S17(b) UPWARD SCAN, S18 BOTTOM-UP, S21(d) 5x RUN: an open-air cascade free-falls ABOVE the
+        // MOTION_BLOCKING top (water is not motion-blocking terrain), so the downward roofed descent below never
+        // reaches it. Scan a bounded belt UPWARD and freeze a CONTIGUOUS BOTTOM-UP RUN of LANDED + SETTLED flowing
+        // blocks -- up to SWEEP_MAX_PER_COLUMN (8) per pass, the owner's "SWEEP 5x" -- so a standing fall column
+        // ices from the ground UP ~5x faster while still stopping at the first still-falling / still-spreading
+        // block. TWO PHASES so the sweep never reads a SETTLED state it just polluted: our own setBlockAndUpdate
+        // reschedules a fluid tick on the block above (making it read "not settled"), so PHASE 1 finds the whole
+        // run read-only on the pristine pre-freeze state, then PHASE 2 freezes it. The run BASE must be genuinely
+        // landed (below solid/ice) now; each block ABOVE it in the run rests on the run member below (which we
+        // freeze first, making it landed by construction), so an extension member only needs to be SETTLED.
         int ceilY = Math.min(self.getMaxY(), top.getY() + PolarWaterFreezeRule.WATERFALL_UPWARD_SCAN_BLOCKS);
         BlockPos.MutableBlockPos up = new BlockPos.MutableBlockPos(top.getX(), 0, top.getZ());
         BlockPos.MutableBlockPos belowUp = new BlockPos.MutableBlockPos(top.getX(), 0, top.getZ());
-        for (int y = top.getY() + 1; y <= ceilY; y++) {
+        int runBaseY = Integer.MIN_VALUE; // lowest y of the contiguous freezable run (unset until a base is found)
+        int runLen = 0;
+        for (int y = top.getY() + 1; y <= ceilY && runLen < PolarWaterFreezeRule.SWEEP_MAX_PER_COLUMN; y++) {
             up.setY(y);
             BlockState above = self.getBlockState(up);
             FluidState fs = above.getFluidState();
             if (fs.getType() == Fluids.FLOWING_WATER) {
-                // S20: only a LANDED (supported below) AND SETTLED (no pending fluid tick) flowing block is swept.
-                // Scanning upward, the FIRST such block is the lowest one: freeze exactly it and stop (one per pass
-                // -> the climb). A still-FALLING block (air/fluid below) or a still-SPREADING one (pending tick) is
-                // left to the flow tick; the sweep claims it next pass once it lands and settles. Certain, no dice.
-                belowUp.setY(y - 1);
-                BlockState belowState = self.getBlockState(belowUp);
-                boolean landed = PolarWaterFreezeRule.landedOnSupport(
-                        belowState.isAir(), !belowState.getFluidState().isEmpty());
-                if (landed && globe$settled(self, up)) {
-                    if (PolarInstrument.FREEZE) {
-                        PolarInstrument.freezeSweptSettled();
+                if (runLen == 0) {
+                    // RUN BASE: must be LANDED (below solid/ice, not air/fluid) AND SETTLED now; else the lowest
+                    // flowing block is still falling/spreading and nothing is swept this pass.
+                    belowUp.setY(y - 1);
+                    BlockState belowState = self.getBlockState(belowUp);
+                    boolean landed = PolarWaterFreezeRule.landedOnSupport(
+                            belowState.isAir(), !belowState.getFluidState().isEmpty());
+                    if (!landed || !globe$settled(self, up)) {
+                        break;
                     }
-                    flowFreezes = globe$resolveFlowFreeze(self, top, absLatDeg, fray, flowFreezes);
-                    if (PolarWaterFreezeRule.sweepFreezesSettled(flowFreezes == 1, true, true)) {
-                        self.setBlockAndUpdate(up.immutable(), Blocks.ICE.defaultBlockState()); // one frozen layer
-                        if (PolarInstrument.FREEZE) {
-                            PolarInstrument.freezeSweptFroze();
-                        }
+                    runBaseY = y;
+                    runLen = 1;
+                } else {
+                    // EXTEND: rests on the run member below (frozen first -> landed by construction); only the
+                    // SETTLED gate remains. A still-SPREADING (pending tick) block terminates the run.
+                    if (!globe$settled(self, up)) {
+                        break;
                     }
+                    runLen++;
                 }
-                break; // the lowest flowing block decides this pass (landed+settled -> froze; else nothing this pass)
+                if (PolarInstrument.FREEZE) {
+                    PolarInstrument.freezeSweptSettled();
+                }
             } else if (above.is(Blocks.ICE)) {
-                continue; // a frozen cascade layer from an earlier pass -- keep climbing to the next flowing block
+                if (runLen > 0) break; // ice caps the run (already frozen higher up)
+                // else: climb past earlier-frozen layers to reach the run base
             } else if (!above.isAir() && fs.isEmpty()) {
                 break; // a genuine solid (non-ice, non-fluid) block caps this cascade
+            } else if (runLen > 0) {
+                break; // an air gap above the run ends it (the run must be contiguous)
+            }
+            // air below the base (runLen == 0): implicit continue, keep climbing to the base
+        }
+        // PHASE 2: freeze the run bottom-up (certain, no dice) if the column is flow-eligible.
+        if (runLen > 0) {
+            flowFreezes = globe$resolveFlowFreeze(self, top, absLatDeg, fray, flowFreezes);
+            if (PolarWaterFreezeRule.sweepFreezesSettled(flowFreezes == 1, true, true)) {
+                for (int k = 0; k < runLen; k++) {
+                    up.setY(runBaseY + k);
+                    self.setBlockAndUpdate(up.immutable(), Blocks.ICE.defaultBlockState()); // one climbing layer
+                    frozen++;
+                    if (PolarInstrument.FREEZE) {
+                        PolarInstrument.freezeSweptFroze();
+                    }
+                }
             }
         }
 
@@ -202,11 +234,13 @@ public abstract class ServerLevelRoofedWaterFreezeMixin {
         int floorY = Math.max(self.getMinY(), top.getY() - PolarWaterFreezeRule.ROOFED_FREEZE_REACH_BLOCKS);
         BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos(top.getX(), 0, top.getZ());
         BlockPos.MutableBlockPos belowCursor = new BlockPos.MutableBlockPos(top.getX(), 0, top.getZ());
-        for (int y = surface.getY(); y >= floorY; y--) {
+        for (int y = surface.getY(); y >= floorY && frozen < PolarWaterFreezeRule.SWEEP_MAX_PER_COLUMN; y--) {
             cursor.setY(y);
             FluidState fs = self.getFluidState(cursor);
             if (fs.getType() == Fluids.WATER) {
-                // SOURCE water surface under a roof (sky-waiver): let vanilla's own shouldFreeze decide.
+                // SOURCE water surface under a roof (sky-waiver): let vanilla's own shouldFreeze decide -- which
+                // now also carries the S21(d) SOURCE-FREEZES-LAST veto (BiomePolarWaterFreezeMixin), so a source
+                // still touching live flowing water postpones here too, for free.
                 Biome biome = self.getBiome(cursor).value();
                 if (biome.shouldFreeze(self, cursor)) {
                     self.setBlockAndUpdate(cursor.immutable(), Blocks.ICE.defaultBlockState());
@@ -218,6 +252,7 @@ public abstract class ServerLevelRoofedWaterFreezeMixin {
                 // block (air/fluid below) or a still-spreading one (pending tick) is left to run, so a covered
                 // cascade also ices from the ground UP over successive passes (only its bottom block is supported
                 // and at-rest this pass; the next up lands on that ice and settles next pass). Certain, no dice.
+                // S21(d): counted against the shared SWEEP_MAX_PER_COLUMN budget the upward run already spent from.
                 belowCursor.setY(y - 1);
                 BlockState belowState = self.getBlockState(belowCursor);
                 boolean landed = PolarWaterFreezeRule.landedOnSupport(
@@ -229,6 +264,7 @@ public abstract class ServerLevelRoofedWaterFreezeMixin {
                     flowFreezes = globe$resolveFlowFreeze(self, top, absLatDeg, fray, flowFreezes);
                     if (PolarWaterFreezeRule.sweepFreezesSettled(flowFreezes == 1, true, true)) {
                         self.setBlockAndUpdate(cursor.immutable(), Blocks.ICE.defaultBlockState()); // frozen layer
+                        frozen++;
                         if (PolarInstrument.FREEZE) {
                             PolarInstrument.freezeSweptFroze();
                         }

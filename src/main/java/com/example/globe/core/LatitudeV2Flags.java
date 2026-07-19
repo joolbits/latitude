@@ -333,15 +333,19 @@ public final class LatitudeV2Flags {
             Boolean.parseBoolean(System.getProperty("latitude.polarBarrens.enabled", "true")); // P3 LIVE-TEST STAGING (branch-local, B-6/B-7 precedent): default ON for the TEST 99 flight so a FRESH world generates the Barrens. REVISIT BEFORE MERGE.
 
     /**
-     * Absolute latitude (deg) where the Polar Barrens begin to fray in. Default = the vegetation-fade
-     * finish ({@link PolarVegetationFade#FULL_DEG}, 82 deg since S13) so the barrens start exactly where
-     * the grass ends -- the owner's chosen invisible seam (KEEP-SHARED: tuning the veg fade's finish moves
-     * this default with it, which is exactly how "Barrens at 82" carried the onset 86->82 automatically).
-     * Live-tunable via {@code -Dlatitude.polarBarrens.onsetDeg}; parsed defensively so a malformed value
-     * degrades to the default rather than throwing at class-init.
+     * Absolute latitude (deg) where the Polar Barrens begin to fray in. Default 82 deg -- the owner's chosen
+     * value, now an INDEPENDENT constant (S21c 2026-07-19).
+     *
+     * <p><b>Coupling BROKEN (S21c, deliberate).</b> This USED to nest {@link PolarVegetationFade#FULL_DEG}
+     * so the barrens began exactly where the last vegetation died (the "invisible seam"; that is how
+     * "Barrens at 82" once carried the onset 86->82 automatically). S21c dropped the vegetation fade's finish
+     * to 80 ("veg to 80"), but the owner wants the Barrens BIOME to stay at 82, so the two are now decoupled:
+     * the fade strips grass by 80, and the 80-82 band reads as BARE TUNDRA before the barrens claim the land
+     * at 82. Live-tunable via {@code -Dlatitude.polarBarrens.onsetDeg}; parsed defensively so a malformed
+     * value degrades to the default rather than throwing at class-init.
      */
     public static final double POLAR_BARRENS_ONSET_DEG =
-            parseDoubleOrDefault(System.getProperty("latitude.polarBarrens.onsetDeg"), PolarVegetationFade.FULL_DEG);
+            parseDoubleOrDefault(System.getProperty("latitude.polarBarrens.onsetDeg"), 82.0);
 
     /**
      * Absolute latitude (deg) at/above which the Polar Barrens are fully dominant. Default 84 deg

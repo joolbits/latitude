@@ -7,6 +7,7 @@ import com.example.globe.world.LatitudeBiomes;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.LevelReader;
 import net.minecraft.world.level.biome.Biome;
+import net.minecraft.world.level.material.Fluids;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Redirect;
@@ -48,6 +49,15 @@ import org.spongepowered.asm.mixin.injection.Redirect;
  * Mercator worlds. {@code warmEnoughToRain} elsewhere ({@code coldEnoughToSnow}/{@code getPrecipitationAt}/
  * {@code shouldSnow}) is untouched -- a {@code Redirect} only rewrites this one call site inside
  * {@code shouldFreeze}, so snow behaviour is unchanged; this fix is scoped to liquid-water freezing only.
+ *
+ * <p><b>S21(d) SOURCE-FREEZES-LAST.</b> This one redirect is the seam every source freeze funnels through, so it
+ * also carries the source-last veto: when the column WOULD freeze but this source block still touches live
+ * {@code FLOWING_WATER} (any of its six neighbours), it reports "warm" to POSTPONE the freeze -- the source
+ * outlives its fall and freezes only once the connected flow has all iced (or drained). This stops the still-water
+ * surface from claiming the source first and beheading a running waterfall (the owner's TEST-111 finding). The
+ * postpone is inside the same in-zone/flag/globe gate, so flag-off / non-globe / below-front stay byte-identical;
+ * see {@link PolarWaterFreezeRule#sourceFreezePostponed}. The roofed descent's source branch inherits it for free
+ * (it calls {@code biome.shouldFreeze}).
  */
 @Mixin(Biome.class)
 public abstract class BiomePolarWaterFreezeMixin {
@@ -74,13 +84,62 @@ public abstract class BiomePolarWaterFreezeMixin {
         // Outside the strip the frayed predicate equals the razor by construction, so the noise is only
         // sampled where it can matter; barrens-flag-off (or outside the strip) is the untouched razor path,
         // byte-identical. Deterministic per column, so worldgen and tick freezing always agree.
+        boolean wouldFreeze;
         if (LatitudeV2Flags.POLAR_BARRENS_ENABLED && PolarWaterFreezeRule.inFreezeFrayBand(absLatDeg)) {
-            return !PolarWaterFreezeRule.freezesWaterFrayed(true, absLatDeg,
+            wouldFreeze = PolarWaterFreezeRule.freezesWaterFrayed(true, absLatDeg,
                     LatitudeBiomes.polarSeaFreezeFrayNoise(pos.getX(), pos.getZ()));
+        } else {
+            // At/above the polar threshold freezesWater is true; below it, false so we keep the warm veto.
+            wouldFreeze = PolarWaterFreezeRule.freezesWater(true, absLatDeg);
         }
-        // At/above the polar threshold, report "not warm" so vanilla's own genuine-water/light/edge logic in
-        // shouldFreeze runs and freezes this (latitude-blind, warm-biome) exposed water column; below it,
-        // freezesWater is false so we return the untouched warm veto.
-        return !PolarWaterFreezeRule.freezesWater(true, absLatDeg);
+        if (!wouldFreeze) {
+            return warm; // equatorward of the front: the untouched warm veto (byte-identical; warm is true here)
+        }
+        // S21(d) SOURCE-FREEZES-LAST: this column WOULD freeze, but a SOURCE block that still touches live
+        // flowing water must not freeze yet -- the owner watched the still-water surface claim his SOURCE first
+        // and behead a running waterfall. Report "warm" (postpone) so vanilla's shouldFreeze returns false and
+        // the source stays liquid this pass; it freezes only once its connected flow is all ice (no adjacent
+        // flowing left). This ONE seam covers both source-freeze paths -- ongoing tickPrecipitation AND the
+        // roofed descent's source branch (ServerLevelRoofedWaterFreezeMixin calls biome.shouldFreeze).
+        if (globe$sourceFreezePostponed(level, pos)) {
+            return true; // pretend warm -> shouldFreeze returns false -> the source outlives its fall
+        }
+        // In-zone and not postponed: report "not warm" so vanilla's own genuine-water/light/edge logic in
+        // shouldFreeze runs and freezes this (latitude-blind, warm-biome) exposed source water column.
+        return false;
+    }
+
+    /**
+     * S21(d): is {@code pos} a SOURCE water block with at least one adjacent live flowing-water neighbour, so its
+     * freeze must be postponed (source-freezes-last)? Gated on {@code pos} actually being a {@code Fluids.WATER}
+     * source -- vanilla's {@code shouldFreeze} only ever freezes sources, so a non-source {@code pos} needs no
+     * postpone (and pays no neighbour scan). The touch set is all SIX neighbours (below + four horizontals +
+     * ABOVE): ABOVE is included because a source directly under a live fall is the beheading case too (see
+     * {@link PolarWaterFreezeRule#sourceFreezePostponed}). Reads only fluid states (no chunk gen); {@code below()}
+     * etc. on a mutable {@code pos} return fresh immutable positions, so the caller's cursor is never disturbed.
+     */
+    private static boolean globe$sourceFreezePostponed(LevelReader level, BlockPos pos) {
+        // S21 sweep REQUIRED FIX: source-freezes-last is a TICK-time law only — at worldgen the
+        // neighbor reads would break byte-identity (and chunk-order determinism) on the always-on
+        // freeze family. Both tick consumers pass a real ServerLevel; worldgen paths do not.
+        if (!(level instanceof net.minecraft.server.level.ServerLevel)) {
+            return false;
+        }
+        if (level.getFluidState(pos).getType() != Fluids.WATER) {
+            return false; // not a source -> shouldFreeze wouldn't freeze it anyway; no postpone, no scan
+        }
+        boolean adjacentHasFlowing =
+                globe$isFlowingWater(level, pos.below())
+                || globe$isFlowingWater(level, pos.above())
+                || globe$isFlowingWater(level, pos.north())
+                || globe$isFlowingWater(level, pos.south())
+                || globe$isFlowingWater(level, pos.east())
+                || globe$isFlowingWater(level, pos.west());
+        return PolarWaterFreezeRule.sourceFreezePostponed(adjacentHasFlowing);
+    }
+
+    /** True iff {@code pos} holds live flowing (non-source) water. Lava/other fluids and source water are not. */
+    private static boolean globe$isFlowingWater(LevelReader level, BlockPos pos) {
+        return level.getFluidState(pos).getType() == Fluids.FLOWING_WATER;
     }
 }

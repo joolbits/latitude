@@ -1,117 +1,117 @@
 package com.example.globe.core;
 
 /**
- * Phase 5 Slice S13(a) -- SNOW SPARKLE: the pure BUDGET LAW for the calm-cold snowfield glints. Pure Java,
- * ZERO Minecraft imports (Core Logic layer, plain-JVM unit-testable) -- same discipline as
+ * Phase 5 Slice S13(a) -> S21(b) GLINT v4 -- SNOW SPARKLE: the pure BUDGET LAW for the calm-cold snowfield
+ * glints. Pure Java, ZERO Minecraft imports (Core Logic layer, plain-JVM unit-testable) -- same discipline as
  * {@link ParticleDensity} / {@link PolarExposure}. The tiny white twinkles on the snow are the calm cold's
- * JEWELRY: they exist in the gentle approach band (80-85 deg) BELOW the frostbite/blizzard tiers, and are
- * gated OFF the moment the storm builds -- "the storm's absence made visible" (design S12(2)/S13(a)).
+ * JEWELRY: they exist in the gentle approach band BELOW the frostbite/blizzard tiers, and they hand OFF to the
+ * ambient snowfall as the snow builds -- "the storm's absence made visible" (design S12(2)/S13(a)/S21(b)).
  *
- * <p><b>The band (design "80-85").</b> A trapezoid over absolute latitude: fades in at
- * {@link #ONSET_DEG} (the ambient snow onset -- snow is on the ground from here), full across the calm
- * mid-band, fades back out approaching {@link #END_DEG} (the frostbite-DAMAGE onset,
- * {@link PolarHazardWindow#FROSTBITE_ONSET_DEG} -- where the cold begins to bite and the calm is over).
- * Zero outside {@code [ONSET_DEG, END_DEG]}.
+ * <p><b>The GLINT v4 CROSSFADE (design S21(b), owner TEST 111).</b> Earlier rounds ran the glint band as a
+ * trapezoid over 80-85 deg (the ambient-snow band) and gated its upper edge off the literal flakes/tick snow
+ * budget, which let the glint and the falling snow visibly COEXIST -- "two competing effects" on the same
+ * snowfield. v4 moves the glint DOWNWARD, into the band just BELOW the snow onset, and cross-fades it against the
+ * snow so the two particle systems never both stand at full:
+ * <ul>
+ *   <li>the glint RISES from {@link #ONSET_DEG} (75), full by {@link #FULL_DEG} (76) -- {@link #bandRamp01};</li>
+ *   <li>the ambient snowfall fades IN across {@link #SNOWFALL_ONSET_DEG} (80, the real snow onset) to
+ *       {@link #SNOWFALL_FULL_DEG} (82) -- {@link #snowfallRamp01};</li>
+ *   <li>the glint fades OUT on exactly that same 80->82 span as the snow rises, because the weight is the
+ *       CROSSFADE {@link #glintWeight}{@code  = bandRamp01 x (1 - snowfallRamp01)}. At 80 the glint is still
+ *       full and the snow is only just onset; by 82 the glint is gone and the snow has taken over. The visual
+ *       story: veg thins from 72, glints begin 75, snowfall starts 80, the Barrens claim the land at 82.</li>
+ * </ul>
+ * This REPLACES the old {@code bandIntensity01} trapezoid + {@code snowfallWindow01(snowCount)} flakes/tick gate
+ * with the single latitude-driven crossfade -- one clean handoff, no coexistence.
  *
  * <p><b>The calm gate (design "gated on the deep-blizzard tier being ~0").</b> The budget is additionally
- * multiplied by {@code (1 - stormOrBlizzard01)}, so any storm/blizzard signal snuffs the sparkle. In the
- * 80-85 band the blizzard drive ({@link PolarHazardWindow#blizzardDrive}, onset 87) is already 0, so this is
- * belt-and-suspenders today -- but it keeps the law self-documenting and robust if the band constants ever
- * move: sparkle is, by construction, the calm-weather jewelry.
- *
- * <p><b>The SNOWFALL WINDOW (owner, TEST 107 -> S19b, TEST 109).</b> The calm gate above only cuts at BLIZZARD
- * (blizzardDrive, onset 87) -- useless across the 80-85 band where it is always 0. The real signal the owner
- * asked for is the ambient SNOWFALL itself: the sparkle is the calm pole's RESTING state, so it must be ON
- * across clear skies and light snow alike and OFF only once the snow builds to medium or heavier.
- * {@link #snowfallWindow01} expresses that as a HALF-trapezoid over the literal ambient snow budget
- * ({@link PolarHazardWindow#snowCount} flakes/tick): FULL from zero snowfall through the very-light-to-light
- * range ({@code <= }{@link #SNOWFALL_LIGHT_MAX}), then fading out to 0 by {@link #SNOWFALL_MEDIUM} (medium+).
- * <b>S19b dropped the old lower bound</b> (TEST 107 had gated OFF below one flake, so a clear-sky snowfield in
- * the 80-band went dark) -- there is no minimum-snow floor now, so clear weather glitters too. It multiplies
- * into {@link #sparkleBudget}, so the sparkle lives from the ambient onset through the light-snow shoulder
- * (~80-83.4 deg on today's snow curve) and cuts only where the snow reads as a real fall -- the band trapezoid
- * shapes the latitude fade-IN, the snowfall window governs only the upper (medium+) cutoff.
+ * multiplied by {@code (1 - stormOrBlizzard01)} ({@link #calmFactor01}), so any storm/blizzard signal snuffs the
+ * sparkle. Across the 75-82 glint band the blizzard drive ({@link PolarHazardWindow#blizzardDrive}, onset 87) is
+ * already 0, so this is belt-and-suspenders today -- but it keeps the law self-documenting and robust if the
+ * band constants ever move: sparkle is, by construction, the calm-weather jewelry.
  *
  * <p><b>No state / no accumulator.</b> {@link #sparkleBudget} is a pure function of its arguments -- a FIXED
  * per-spawn-tick budget the caller then scales by the vanilla Particles setting / enclosure / reduce-snow
  * comfort option exactly like the ambient snow, so the B-3b anti-backlog law and the {@code isPaused} guard
- * are untouched.
+ * are untouched. The budget counts GLINT CLUSTERS; the caller spawns a twin-particle micro-cluster per unit
+ * (design S21(b)(iii)), which is a spawn-loop detail this pure law never sees.
  */
 public final class SnowSparkleLaw {
 
     private SnowSparkleLaw() {
     }
 
-    /** Absolute latitude (deg) where the sparkle fades in -- the ambient snow onset
-     *  ({@link PolarHazardWindow#AMBIENT_ONSET_DEG}, 80): glints appear once snow is on the ground. */
-    public static final double ONSET_DEG = PolarHazardWindow.AMBIENT_ONSET_DEG;
-    /** Absolute latitude (deg) at/above which the sparkle is at full band-strength (the calm mid-band start). */
-    public static final double FULL_DEG = 81.5;
-    /** Absolute latitude (deg) where the sparkle begins to fade back out (the calm band's shoulder). */
-    public static final double FADE_DEG = 84.0;
-    /** Absolute latitude (deg) at/above which the sparkle is gone -- the frostbite-DAMAGE onset
-     *  ({@link PolarHazardWindow#FROSTBITE_ONSET_DEG}, 85): the cold bites, the calm is over, no more jewelry. */
-    public static final double END_DEG = PolarHazardWindow.FROSTBITE_ONSET_DEG;
+    /** Absolute latitude (deg) where the glint begins to RISE. GLINT v4 (S21b) dropped this from the 80-deg
+     *  snow onset to 75 -- the glint now lives in the bare-to-lightly-dusted band just BELOW the snowfall, and
+     *  hands off to the falling snow above 80. Sits just above the vegetation fade-start (72), so the visual
+     *  order reads veg-thin (72) -> glints (75) -> snowfall (80). */
+    public static final double ONSET_DEG = 75.0;
+    /** Absolute latitude (deg) at/above which the glint is at full band strength (the rise is complete). The
+     *  band then HOLDS at full until the snowfall crossfade takes it down from 80 -- there is no upper band
+     *  fade of its own; {@link #snowfallRamp01} owns the upper edge. */
+    public static final double FULL_DEG = 76.0;
+
+    /** Absolute latitude (deg) where the ambient snowfall begins and the glint STARTS to cross-fade out --
+     *  pinned to the real snow onset ({@link PolarHazardWindow#AMBIENT_ONSET_DEG}, 80). At/below this the glint
+     *  is unshuttered (snowfall term = 1). */
+    public static final double SNOWFALL_ONSET_DEG = PolarHazardWindow.AMBIENT_ONSET_DEG;
+    /** Absolute latitude (deg) at/above which the ambient snowfall has fully faded in and the glint is GONE --
+     *  the top of the 80->82 crossfade. Above this the snow owns the snowfield; the jewelry has handed off.
+     *  82 is also the Polar Barrens onset (now an independent constant, see
+     *  {@link LatitudeV2Flags#POLAR_BARRENS_ONSET_DEG}) -- the glint dies exactly where the barren cap begins. */
+    public static final double SNOWFALL_FULL_DEG = 82.0;
 
     /** Default peak sparkle budget per spawn-tick BEFORE the caller's Particles/enclosure/reduce-snow scaling.
-     *  History: 1 -> 3 (S17(c)(i), TEST 107 "more sparkle overall") -> 4 (S19b, TEST 109 "density up a notch" --
-     *  the glitter is the calm pole's resting state, so it earns a fuller peak). At the shared every-4th-tick
-     *  cadence (~5 spawn-ticks/s) full band + open sky + all-particles now lands as ~20 glints/s, still tapering
-     *  with the band ramp, the snowfall window and every perf/enclosure/reduce-snow scale -- a livelier shimmer
-     *  on the snow, not a particle storm. One-line P4 dial (raise for denser). */
+     *  History: 1 -> 3 (S17(c)(i), TEST 107 "more sparkle overall") -> 4 (S19b, TEST 109 "density up a notch").
+     *  Each budget unit is a twin-particle CLUSTER (S21b(iii)), so at the shared every-4th-tick cadence
+     *  (~5 spawn-ticks/s) full band + open sky + all-particles lands as ~20 clusters/s = ~40 glint particles/s,
+     *  still tapering with the band ramp, the snowfall crossfade, and every perf/enclosure/reduce-snow scale --
+     *  a livelier shimmer on the snow, not a particle storm. One-line P4 dial (raise for denser). */
     public static final int DEFAULT_PEAK_BUDGET = 4;
 
-    // ---- the SNOWFALL WINDOW -- sparkle across clear-to-light ambient snow, OFF at medium+ (S17c(iii) -> S19b) --
-    // The window is expressed in the LITERAL ambient snow budget (PolarHazardWindow.snowCount, flakes/tick):
-    // SNOW_MIN_COUNT (2) at the 80-deg onset ramping to SNOW_MAX_COUNT (60) at the pole. "Light" is the gentle
-    // shoulder just past the onset; "medium+" is where the snow starts to read as a real fall. P4 dials.
-    // S19b REMOVED the old SNOWFALL_MIN lower bound: the glitter is the calm pole's resting state, so a clear-sky
-    // (zero-flake) snowfield in the band now sparkles too -- only the medium+ UPPER cutoff remains.
-    /** Ambient snowfall (flakes/tick) at/below which snow is still "clear to very-light-to-light" and the sparkle
-     *  is at FULL window strength. There is NO lower bound (S19b): zero snowfall through this ceiling is full.
-     *  14 flakes/tick ~ 82 deg on today's curve -- the gentle glittering shoulder. */
-    public static final double SNOWFALL_LIGHT_MAX = 14.0;
-    /** Ambient snowfall (flakes/tick) at/above which snow reads as "medium or heavier" and the sparkle is fully
-     *  OFF. 22 flakes/tick ~ 83.4 deg -- the snow is now a fall, not a glitter, so the jewelry is gone. */
-    public static final double SNOWFALL_MEDIUM = 22.0;
-
     /**
-     * The snowfall window 0..1: a HALF-trapezoid over the ambient snow budget ({@link PolarHazardWindow#snowCount},
-     * flakes/tick). FULL (1) from zero snowfall through the very-light-to-light range
-     * ({@code <= }{@link #SNOWFALL_LIGHT_MAX}) -- <b>no lower bound (S19b)</b>: clear skies glitter -- then a
-     * linear fade to 0 as the snow builds to {@link #SNOWFALL_MEDIUM} (medium+), and 0 at/above it. NaN-safe (0,
-     * the conservative side on bad data). This is the S19b gate: sparkle is the calm pole's resting state, cut
-     * only when the snow reads as a real fall.
+     * The GLINT band ramp 0..1: 0 at/below {@link #ONSET_DEG} (75), smoothstep up to 1 at {@link #FULL_DEG}
+     * (76), then held at 1 above (the upper edge is owned by the snowfall crossfade, not this ramp). Symmetric
+     * about the equator (caller passes {@code |lat|}). NaN-safe (0, the conservative side on bad data).
      */
-    public static double snowfallWindow01(double snowCount) {
-        if (Double.isNaN(snowCount)) {
-            return 0.0; // bad data -> no glint (conservative)
+    public static double bandRamp01(double absLatDeg) {
+        if (Double.isNaN(absLatDeg) || absLatDeg <= ONSET_DEG) {
+            return 0.0;
         }
-        if (snowCount <= SNOWFALL_LIGHT_MAX) {
-            return 1.0; // clear through very-light-to-light -> full sparkle (S19b: no lower bound)
+        if (absLatDeg >= FULL_DEG) {
+            return 1.0;
         }
-        if (snowCount >= SNOWFALL_MEDIUM) {
-            return 0.0; // medium or heavier -> no sparkle
-        }
-        return (SNOWFALL_MEDIUM - snowCount) / (SNOWFALL_MEDIUM - SNOWFALL_LIGHT_MAX);
+        return smoothstep01((absLatDeg - ONSET_DEG) / (FULL_DEG - ONSET_DEG));
     }
 
     /**
-     * Band intensity 0..1 across the calm snow band -- a trapezoid: 0 at/below {@link #ONSET_DEG}, smoothstep up
-     * to 1 at {@link #FULL_DEG}, held to {@link #FADE_DEG}, smoothstep back down to 0 at {@link #END_DEG}, and 0
-     * at/above {@link #END_DEG}. Symmetric about the equator (caller passes {@code |lat|}). NaN-safe (0).
+     * The ambient-snowfall fade-in 0..1: 0 at/below {@link #SNOWFALL_ONSET_DEG} (80, the real snow onset),
+     * smoothstep up to 1 at {@link #SNOWFALL_FULL_DEG} (82), and 1 above. This is the snowfall side of the
+     * crossfade: as it rises 0->1 the glint's {@code (1 - snowfallRamp01)} term falls 1->0, so the falling snow
+     * takes over exactly as the glint hands off. NaN-safe (1 -> glint fully shuttered, the conservative side).
      */
-    public static double bandIntensity01(double absLatDeg) {
-        if (Double.isNaN(absLatDeg) || absLatDeg <= ONSET_DEG || absLatDeg >= END_DEG) {
+    public static double snowfallRamp01(double absLatDeg) {
+        if (Double.isNaN(absLatDeg)) {
+            return 1.0; // bad data -> treat as full snow -> no glint (conservative)
+        }
+        if (absLatDeg <= SNOWFALL_ONSET_DEG) {
             return 0.0;
         }
-        if (absLatDeg < FULL_DEG) {
-            return smoothstep01((absLatDeg - ONSET_DEG) / (FULL_DEG - ONSET_DEG));
-        }
-        if (absLatDeg <= FADE_DEG) {
+        if (absLatDeg >= SNOWFALL_FULL_DEG) {
             return 1.0;
         }
-        return smoothstep01((END_DEG - absLatDeg) / (END_DEG - FADE_DEG));
+        return smoothstep01((absLatDeg - SNOWFALL_ONSET_DEG) / (SNOWFALL_FULL_DEG - SNOWFALL_ONSET_DEG));
+    }
+
+    /**
+     * The GLINT v4 crossfade weight 0..1: {@code bandRamp01(|lat|) x (1 - snowfallRamp01(|lat|))}. Zero below
+     * the glint onset (75), rising to full by 76, HELD across the calm 76-80 band, then cross-fading back to 0
+     * across 80->82 as the ambient snowfall fades in -- so the glint and the falling snow never both stand at
+     * full (the structural fix for the "two competing effects" the owner saw). Pure function of latitude; the
+     * caller multiplies by {@link #calmFactor01} and the peak budget. NaN-safe (0).
+     */
+    public static double glintWeight(double absLatDeg) {
+        return bandRamp01(absLatDeg) * (1.0 - snowfallRamp01(absLatDeg));
     }
 
     /** The calm factor 0..1: {@code 1 - clamp(stormOrBlizzard01)} -- any storm/blizzard signal snuffs the
@@ -122,27 +122,23 @@ public final class SnowSparkleLaw {
     }
 
     /**
-     * The FIXED per-spawn-tick sparkle budget:
-     * {@code round(bandIntensity01 x calmFactor01 x snowfallWindow01 x peakBudget)}, clamped {@code >= 0}. Zero
-     * outside the calm band, in any storm, outside the very-light-to-light SNOWFALL window
-     * ({@link #snowfallWindow01}, S17(c)(iii)), or with a non-positive peak. A pure function of its arguments
-     * (the snowfall level is read from the same {@link PolarHazardWindow#snowCount} ambient curve the falling
-     * snow uses, so the two can never disagree) -- no state / no accumulator; the caller scales this by the live
-     * Particles setting, the enclosure estimate and the reduce-snow comfort option before spawning, exactly like
-     * the ambient snow.
+     * The FIXED per-spawn-tick sparkle budget (in glint CLUSTERS):
+     * {@code round(glintWeight x calmFactor01 x peakBudget)}, clamped {@code >= 0}. Zero outside the calm glint
+     * band, in any storm, once the ambient snowfall has fully faded in (>= 82 deg), or with a non-positive peak.
+     * A pure function of its arguments -- no state / no accumulator; the caller scales this by the live Particles
+     * setting, the enclosure estimate and the reduce-snow comfort option before spawning (and spawns a twin
+     * micro-cluster per unit, S21b(iii)), exactly like the ambient snow.
      *
      * @param absLatDeg          current absolute latitude (deg)
      * @param stormOrBlizzard01  the storm/blizzard signal 0..1 (e.g. {@link PolarHazardWindow#blizzardDrive})
-     * @param peakBudget         the peak per-spawn-tick budget at full calm-band strength (see
+     * @param peakBudget         the peak per-spawn-tick cluster budget at full calm-band strength (see
      *                           {@link #DEFAULT_PEAK_BUDGET})
      */
     public static int sparkleBudget(double absLatDeg, double stormOrBlizzard01, int peakBudget) {
         if (peakBudget <= 0) {
             return 0;
         }
-        double snowfall = PolarHazardWindow.snowCount(absLatDeg); // the literal ambient snowfall at this latitude
-        double v = bandIntensity01(absLatDeg) * calmFactor01(stormOrBlizzard01)
-                * snowfallWindow01(snowfall) * peakBudget;
+        double v = glintWeight(absLatDeg) * calmFactor01(stormOrBlizzard01) * peakBudget;
         long n = Math.round(v);
         return n < 0L ? 0 : (int) n;
     }

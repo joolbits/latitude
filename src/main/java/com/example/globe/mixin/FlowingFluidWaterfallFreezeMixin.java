@@ -80,6 +80,20 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * frayable strip, vanilla fluid flow runs untouched. This method ticks for every flowing fluid block worldwide,
  * so it fast-bails cheapest-first (flags, then fluid type, then the column-Z latitude gate) and only the deep
  * polar cap ever pays for the heightmap reads.
+ *
+ * <p><b>S21(d) SPREAD-STOPPER coverage argument (verified, unchanged code).</b> The owner's intent is "respread
+ * around fresh ice must die at ONE block". The touch set is orthogonal only (BELOW + the 4 horizontals; ABOVE and
+ * the DIAGONALS are excluded). That is SUFFICIENT: Minecraft water spreads only orthogonally, one cell per flow
+ * tick, so to reach a cell that is merely DIAGONAL to an ice block, water must FIRST occupy a cell ORTHOGONALLY
+ * adjacent to that ice -- and that orthogonal cell, on its own flow tick (this HEAD inject, before vanilla's
+ * spread runs), is landed + touching-ice -> frozen + cancelled, so it never spreads onward to the diagonal. Thus
+ * a spreading EDGE block that touches ice orthogonally is always caught (dies at one block), and a purely-diagonal
+ * contact is never reached with live water. The freeze then propagates ring-by-ring via orthogonal contact: once
+ * an orthogonal neighbour freezes, the former-diagonal cell becomes orthogonally-adjacent to ice and is caught on
+ * ITS next tick. No flowing cell can outrun the ice -- every actively-spreading front cell has a scheduled tick
+ * (this hunter) and every at-rest cell is claimed by the SETTLED SWEEP; between the two, all in-zone water is
+ * covered. (A cell touching ice only DIAGONALLY with no orthogonal ice and no scheduled tick is, by definition,
+ * settled -> the sweep owns it -- so nothing falls through.)
  */
 @Mixin(FlowingFluid.class)
 public abstract class FlowingFluidWaterfallFreezeMixin {

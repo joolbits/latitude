@@ -458,16 +458,21 @@ public final class GlobeWarningOverlay {
                         lastZoneKey = canonicalZoneKey;
                         if (LatitudeConfig.zoneEnterTitleEnabled) {
                             String titleText = buildZoneEnterTitle(client, canonicalZoneKey);
-                            if (zoneEval.fire() == com.example.globe.core.ZoneTitleBanding.Fire.FULL) {
-                                int durationTicks = (int) Math.round(clamp(LatitudeConfig.zoneEnterTitleSeconds, 2.0, 10.0) * 20.0);
-                                double scale = clamp(LatitudeConfig.zoneEnterTitleScale, 1.0, 3.0);
-                                logEntryTitle("zone_trigger", titleText, client, client.player.getX(), client.player.getZ());
-                                ZoneEnterTitleOverlay.trigger(titleText, durationTicks, scale);
-                            } else {
-                                // Lingering near the boundary just crossed: unobtrusive action-bar message, no big title.
-                                showActionBarMessage(client, titleText);
-                                logEntryTitle("zone_actionbar", titleText, client, client.player.getX(), client.player.getZ());
-                            }
+                            // S21a ZONE-TITLE WHISPERS (owner, TEST 111): the climate-band ("Polar 66N" etc.)
+                            // pop-up was "too high ... should be whispers closer to the health bar, same area as
+                            // the polar warnings." The ZONE-BOUNDARY family now presents through
+                            // LatitudeWhisperOverlay -- the established whisper channel the polar cold cues use
+                            // (its rendering idiom + position constant reused unchanged) -- in BOTH a fresh
+                            // crossing (FULL) and a linger re-straddle. ONLY the presentation moved: the
+                            // ZoneTitleBanding re-fire hysteresis is untouched (it still advances zoneFullArmed
+                            // below), and the FULL/linger log labels are kept for diagnostics. THE SPLIT
+                            // (design S21a): the HEMISPHERE crossings (N/S, E/W) and the arrival/passage titles
+                            // stay BIG in HemisphereTitleOverlay -- they are ceremony; only the zone-boundary
+                            // murmurs move down to the whisper.
+                            boolean full = zoneEval.fire() == com.example.globe.core.ZoneTitleBanding.Fire.FULL;
+                            logEntryTitle(full ? "zone_whisper_full" : "zone_whisper_linger",
+                                    titleText, client, client.player.getX(), client.player.getZ());
+                            LatitudeWhisperOverlay.trigger(titleText);
                         }
                     }
                     // Advance the armed state every throttled sample (even when unchanged / disabled) so the
@@ -821,15 +826,14 @@ public final class GlobeWarningOverlay {
     }
 
     /**
-     * Dev/test convenience (fired by {@code /latdev title}): shows the real big zone-enter title overlay for
-     * the zone the player is CURRENTLY standing in, on demand, without walking across a zone boundary.
+     * Dev/test convenience (fired by {@code /latdev title}): shows the zone-enter WHISPER for the zone the
+     * player is CURRENTLY standing in, on demand, without walking across a zone boundary. S21a moved the
+     * zone-boundary presentation from the big center title to the {@link LatitudeWhisperOverlay} murmur near the
+     * health bar, so this command now fires that whisper -- the preview matches what a real crossing shows.
      *
-     * <p>This DELIBERATELY bypasses the {@link com.example.globe.core.ZoneTitleBanding} anti-spam / hysteresis
-     * that governs real gameplay crossings -- an explicit request to see the title should always show the FULL
-     * big title, never the quiet action-bar fallback. It uses the SAME duration/scale derivation as the real
-     * crossing-trigger site ({@code render()}), so the preview matches what a real crossing would show. It does
-     * NOT touch {@code lastZoneKey} / {@code zoneFullArmed} (the real crossing-detection state machine is left
-     * completely alone), so this command has no side effect on subsequent real crossings.
+     * <p>It bypasses the {@link com.example.globe.core.ZoneTitleBanding} hysteresis (an explicit request always
+     * fires) and does NOT touch {@code lastZoneKey} / {@code zoneFullArmed} (the real crossing-detection state
+     * machine is left completely alone), so this command has no side effect on subsequent real crossings.
      *
      * @return the rendered title text (for command feedback), or {@code null} if player/level are unavailable.
      */
@@ -840,10 +844,8 @@ public final class GlobeWarningOverlay {
         var border = client.level.getWorldBorder();
         String canonicalZoneKey = canonicalTitleZoneKey(border, client.player.getZ());
         String titleText = buildZoneEnterTitle(client, canonicalZoneKey);
-        int durationTicks = (int) Math.round(clamp(LatitudeConfig.zoneEnterTitleSeconds, 2.0, 10.0) * 20.0);
-        double scale = clamp(LatitudeConfig.zoneEnterTitleScale, 1.0, 3.0);
         logEntryTitle("zone_debug_command", titleText, client, client.player.getX(), client.player.getZ());
-        ZoneEnterTitleOverlay.trigger(titleText, durationTicks, scale);
+        LatitudeWhisperOverlay.trigger(titleText);
         return titleText;
     }
 

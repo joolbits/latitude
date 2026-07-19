@@ -448,4 +448,54 @@ public final class PolarWaterFreezeRule {
     public static boolean sweepFreezesSettled(boolean freezeEligible, boolean landedOnSupport, boolean settled) {
         return freezeEligible && landedOnSupport && settled;
     }
+
+    // --- S21(d) WATER v5 (Peetsa 2026-07-19, TEST 111: "still ~5x too slow", and the source froze FIRST and
+    // --- beheaded the fall) -------------------------------------------------------------------------------
+    // Two pacing/ordering fixes on top of the S20 division of labour; NO new RNG, all exemptions verbatim.
+
+    /**
+     * S21(d) SWEEP PACING CAP: the maximum number of SETTLED + LANDED flowing blocks the settled sweep
+     * ({@code ServerLevelRoofedWaterFreezeMixin}, consumer (A)) claims for ONE column in ONE weather-tick pass.
+     * Raised from the S20 effective ~1-2 to <b>8</b> -- the owner's "SWEEP 5x" (TEST 111: "still ~5x too slow").
+     *
+     * <p><b>The pacing math (~5x).</b> The sweep freezes a contiguous BOTTOM-UP RUN of at-rest flowing blocks per
+     * column per {@code tickPrecipitation} visit. Prior: the upward scan froze the lowest ONE per pass and the
+     * roofed descent the cascade's single landed base -- effectively ~1-2 blocks/column/pass. Now up to 8, so a
+     * standing fall / deep flowing column of freezable depth {@code D} ices in {@code ceil(D/8)} sweep passes
+     * instead of {@code ceil(D/~1.6)}: D=16 -> 2 passes (was ~10), D=40 (the glacier-sole floor) -> 5 passes
+     * (was ~25) = ~5x fewer {@code tickPrecipitation} visits to full ice for deep columns. A single-layer sheet
+     * (D=1) is unchanged -- the cap never binds there; its pace is the (untouched) per-column visit cadence. The
+     * S20 ICE-TOUCH HUNTER's ~4 blocks/s vertical zipper is unchanged; the 8-cap accelerates the base-laying and
+     * the conversion of already-SETTLED standing columns that the hunter (which only fires on active flow ticks)
+     * cannot climb on its own. Still bottom-up, still CERTAIN (no dice), still "stop at the first still-falling /
+     * still-spreading block" -- the run terminator; only the per-pass yield changed.
+     */
+    public static final int SWEEP_MAX_PER_COLUMN = 8;
+
+    /**
+     * S21(d) SOURCE-FREEZES-LAST decision (pure): should a SOURCE water block POSTPONE its surface freeze because
+     * it still touches LIVE flowing water? The owner watched the still-water surface freeze claim his SOURCE
+     * FIRST, "beheading" a running waterfall so the body below (cut off from its supply) could never finish
+     * freezing. The fix: a source with ANY adjacent live flowing water REFUSES to freeze this pass; it freezes
+     * only once its connected flow has all become ice (or drained), i.e. once no adjacent flowing water remains.
+     *
+     * <p>The consumer ({@code BiomePolarWaterFreezeMixin}, which feeds every {@code Biome.shouldFreeze} source
+     * freeze -- ongoing {@code tickPrecipitation} AND the roofed descent's source branch) reads the SIX neighbours
+     * -- the block BELOW, the four HORIZONTALS, and ABOVE -- and passes {@code true} iff any is live
+     * {@code FLOWING_WATER}. <b>ABOVE is INCLUDED here</b> (unlike the flow-tick {@link #touchingIce} set, which
+     * excludes it): a source sitting directly UNDER a live fall is exactly the beheading case -- freezing it caps
+     * the fall from below -- so it too must wait. The predicate is a pure pass-through so the "connected flow is
+     * fully ice" semantics are EMERGENT (no adjacent flowing left -> not postponed -> the source freezes, last),
+     * keeping the shim's neighbour scan the only Minecraft-touching part. Because the flow itself is frozen by the
+     * SETTLED SWEEP and the ICE-TOUCH HUNTER (which never depend on the source freezing), a stable fall settles and
+     * ices bottom-up, then this postpone lifts -- no deadlock. Accepted edge: a source whose only flowing neighbour
+     * is permanently NON-eligible (e.g. flowing sea at a shoreline, or a below-floor B-9 spring) stays liquid -- a
+     * 1-block natural water edge, not ice, which reads correctly.
+     *
+     * @param adjacentHasFlowing true iff at least one of the source's six neighbours is live flowing water.
+     * @return true iff the source's freeze must be postponed this pass (there is still live flow to outlive).
+     */
+    public static boolean sourceFreezePostponed(boolean adjacentHasFlowing) {
+        return adjacentHasFlowing;
+    }
 }
