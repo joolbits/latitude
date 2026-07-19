@@ -12,7 +12,6 @@ import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLevelEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
-import net.minecraft.commands.Commands;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
 import net.minecraft.core.component.DataComponents;
@@ -48,8 +47,6 @@ import net.fabricmc.loader.api.FabricLoader;
 import net.fabricmc.loader.api.ModContainer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import com.mojang.brigadier.arguments.IntegerArgumentType;
 
 import java.util.EnumSet;
 import java.util.Optional;
@@ -119,18 +116,6 @@ public class GlobeMod implements ModInitializer {
         BiomeFeatureStripping.init();
 
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
-            dispatcher.register(Commands.literal("flyspeed")
-                    .then(Commands.argument("level", IntegerArgumentType.integer(1, 5))
-                            .executes(ctx -> {
-                                ServerPlayer player = ctx.getSource().getPlayerOrException();
-                                int level = IntegerArgumentType.getInteger(ctx, "level");
-                                float speed = 0.05f * (float) level;
-                                player.getAbilities().setFlyingSpeed(speed);
-                                player.onUpdateAbilities();
-                                ctx.getSource().sendSuccess(() -> Component.literal("Fly speed set to " + level), false);
-                                return 1;
-                            })));
-
             registerDevOnlyCommand(dispatcher);
         });
 

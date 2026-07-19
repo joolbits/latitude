@@ -7,6 +7,7 @@ import com.example.globe.world.LatitudeBiomeSource;
 import com.example.globe.world.LatitudeBiomes;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.BoolArgumentType;
+import com.mojang.brigadier.arguments.DoubleArgumentType;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.LongArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
@@ -24,11 +25,13 @@ import java.util.Comparator;
 import java.util.EnumMap;
 import java.util.EnumSet;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.OptionalLong;
 import java.util.Random;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
@@ -66,8 +69,42 @@ public final class LatitudeDevCommand {
     public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
         dispatcher.register(
                 Commands.literal("latdev")
+                        .requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS))
                         .executes(LatitudeDevCommand::help)
                         .then(Commands.literal("help").executes(LatitudeDevCommand::help))
+                        .then(Commands.literal("flyspeed")
+                                .then(Commands.argument("level", IntegerArgumentType.integer(1, 5))
+                                        .executes(LatitudeDevCommand::setFlySpeed)))
+                        .then(Commands.literal("tpLat")
+                                .then(Commands.argument("signedDegrees", DoubleArgumentType.doubleArg(-90.0, 90.0))
+                                        .executes(ctx -> tpLat(ctx, false))
+                                        .then(Commands.argument("x", DoubleArgumentType.doubleArg())
+                                                .executes(ctx -> tpLat(ctx, true)))))
+                        .then(Commands.literal("case")
+                                .then(Commands.literal("start")
+                                        .then(Commands.argument("name", StringArgumentType.word())
+                                                .executes(LatitudeDevCommand::caseStart)))
+                                .then(Commands.literal("mark")
+                                        .then(Commands.argument("label", StringArgumentType.greedyString())
+                                                .executes(LatitudeDevCommand::caseMark)))
+                                .then(Commands.literal("capture")
+                                        .executes(ctx -> caseCapture(ctx, "capture"))
+                                        .then(Commands.argument("label", StringArgumentType.word())
+                                                .executes(ctx -> caseCapture(
+                                                        ctx,
+                                                        StringArgumentType.getString(ctx, "label")))))
+                                .then(Commands.literal("finish")
+                                        .then(Commands.argument("result", StringArgumentType.word())
+                                                .suggests((context, builder) ->
+                                                        SharedSuggestionProvider.suggest(
+                                                                List.of("pass", "fail", "hold"),
+                                                                builder))
+                                                .executes(LatitudeDevCommand::caseFinish))))
+                        .then(Commands.literal("presentationTrace")
+                                .then(Commands.literal("start")
+                                        .executes(LatitudeDevCommand::presentationTraceStart))
+                                .then(Commands.literal("stop")
+                                        .executes(LatitudeDevCommand::presentationTraceStop)))
                         .then(Commands.literal("transect")
                                 .then(Commands.argument("zStart", IntegerArgumentType.integer())
                                         .then(Commands.argument("zEnd", IntegerArgumentType.integer())
@@ -140,13 +177,350 @@ public final class LatitudeDevCommand {
 
     private static int help(CommandContext<CommandSourceStack> ctx) {
         CommandSourceStack source = ctx.getSource();
-        source.sendSuccess(() -> Component.literal("[latdev] commands: here | explainHere | tpBand <tropical|subtropical|temperate|subpolar|polar> [center|low|high] | probe <radiusBlocks> <samples> | seamAudit <bandA> <bandB> [center|low|high] [samples] [waitTicks] | biomePng [stepBlocks] [y] | biomePngY [y] | regen|regenChunk [radiusChunks] [biomes] [seed] | transect | transectDeg | slicePoleNS | pause | resume | stop | status | budgetMs | budgetAuto <on|off>"), false);
+        source.sendSuccess(() -> Component.literal("[latdev] commands: flyspeed <1..5> | tpLat <signedDegrees> [x] | case start|mark|capture|finish | presentationTrace start|stop | here | explainHere | tpBand <tropical|subtropical|temperate|subpolar|polar> [center|low|high] | probe <radiusBlocks> <samples> | seamAudit <bandA> <bandB> [center|low|high] [samples] [waitTicks] | biomePng [stepBlocks] [y] | biomePngY [y] | regen|regenChunk [radiusChunks] [biomes] [seed] | transect | transectDeg | slicePoleNS | pause | resume | stop | status | budgetMs | budgetAuto <on|off>"), false);
         return 1;
     }
 
     private static void sendLatdevInfo(CommandSourceStack source, String message, boolean broadcast) {
         GlobeMod.LOGGER.info(message);
         source.sendSuccess(() -> Component.literal(message), broadcast);
+    }
+
+    private static int setFlySpeed(CommandContext<CommandSourceStack> ctx) {
+        try {
+            ServerPlayer player = ctx.getSource().getPlayerOrException();
+            int level = IntegerArgumentType.getInteger(ctx, "level");
+            player.getAbilities().setFlyingSpeed(0.05f * (float) level);
+            player.onUpdateAbilities();
+            ctx.getSource().sendSuccess(
+                    () -> Component.literal("[latdev] Fly speed set to " + level),
+                    false);
+            return 1;
+        } catch (Exception e) {
+            ctx.getSource().sendFailure(Component.literal("[latdev] flyspeed error: " + e.getMessage()));
+            return 0;
+        }
+    }
+
+    private static int tpLat(CommandContext<CommandSourceStack> ctx, boolean hasX) {
+        CommandSourceStack source = ctx.getSource();
+        try {
+            ServerPlayer player = source.getPlayerOrException();
+            ServerLevel world = source.getLevel();
+            WorldBorder border = world.getWorldBorder();
+            int radius = authoritativeRadius(source);
+            double requestedDegrees = DoubleArgumentType.getDouble(ctx, "signedDegrees");
+            double requestedX = hasX ? DoubleArgumentType.getDouble(ctx, "x") : player.getX();
+
+            DevToolPolicy.LatitudeTarget target = DevToolPolicy.latitudeTarget(
+                    requestedDegrees,
+                    border.getCenterZ(),
+                    radius,
+                    border.getMinZ(),
+                    border.getMaxZ(),
+                    1.0);
+            int targetX = DevToolPolicy.safeHorizontalBlock(
+                    requestedX,
+                    border.getMinX(),
+                    border.getMaxX(),
+                    1.0);
+            int targetZ = target.blockZ();
+
+            world.getChunkSource().getChunk(
+                    Math.floorDiv(targetX, 16),
+                    Math.floorDiv(targetZ, 16),
+                    ChunkStatus.FULL,
+                    true);
+            int topY = world.getHeight(
+                    Heightmap.Types.MOTION_BLOCKING_NO_LEAVES,
+                    targetX,
+                    targetZ);
+            int worldMaxY = world.getMinY() + world.getHeight() - 1;
+            int targetY = Mth.clamp(topY + 1, world.getMinY() + 1, worldMaxY);
+
+            player.teleportTo(
+                    world,
+                    targetX + 0.5,
+                    targetY,
+                    targetZ + 0.5,
+                    EnumSet.noneOf(Relative.class),
+                    player.getYRot(),
+                    player.getXRot(),
+                    true);
+
+            double achievedDegrees = DevToolPolicy.signedLatitudeDegrees(
+                    targetZ + 0.5,
+                    border.getCenterZ(),
+                    radius);
+            String biome = biomeId(world.getBiome(new BlockPos(targetX, targetY, targetZ)));
+            source.sendSuccess(() -> Component.literal(String.format(Locale.ROOT,
+                    "[latdev] tpLat requested=%+.6f\u00b0 achieved=%+.6f\u00b0 R=%d centerZ=%.3f -> x=%d y=%d z=%d biome=%s",
+                    requestedDegrees,
+                    achievedDegrees,
+                    radius,
+                    border.getCenterZ(),
+                    targetX,
+                    targetY,
+                    targetZ,
+                    biome)), false);
+            return 1;
+        } catch (IllegalArgumentException e) {
+            source.sendFailure(Component.literal("[latdev] tpLat rejected: " + e.getMessage()));
+            return 0;
+        } catch (Exception e) {
+            source.sendFailure(Component.literal("[latdev] tpLat error: " + e.getMessage()));
+            GlobeMod.LOGGER.warn("[latdev] tpLat failed", e);
+            return 0;
+        }
+    }
+
+    private static int caseStart(CommandContext<CommandSourceStack> ctx) {
+        CommandSourceStack source = ctx.getSource();
+        try {
+            String rawName = StringArgumentType.getString(ctx, "name");
+            long tick = source.getLevel().getGameTime();
+            Path casesRoot = source.getServer().getServerDirectory()
+                    .resolve("latdev")
+                    .resolve("cases");
+            DevTestSession session = DevTestSession.startActive(
+                    casesRoot,
+                    rawName,
+                    tick,
+                    caseContext(source));
+            source.sendSuccess(() -> Component.literal(
+                    "[latdev] case started id=" + session.sessionId()
+                            + " events=latdev/cases/" + session.sessionId() + "/events.jsonl"),
+                    false);
+            return 1;
+        } catch (Exception e) {
+            source.sendFailure(Component.literal("[latdev] case start error: " + e.getMessage()));
+            return 0;
+        }
+    }
+
+    private static int caseMark(CommandContext<CommandSourceStack> ctx) {
+        CommandSourceStack source = ctx.getSource();
+        try {
+            String label = StringArgumentType.getString(ctx, "label");
+            long sequence = DevTestSession.markActive(
+                    label,
+                    source.getLevel().getGameTime(),
+                    caseContext(source));
+            source.sendSuccess(() -> Component.literal(
+                    "[latdev] case mark sequence=" + sequence
+                            + " label=" + DevToolPolicy.sanitizeToken(label, "mark")),
+                    false);
+            return 1;
+        } catch (Exception e) {
+            source.sendFailure(Component.literal("[latdev] case mark error: " + e.getMessage()));
+            return 0;
+        }
+    }
+
+    private static int caseCapture(CommandContext<CommandSourceStack> ctx, String label) {
+        CommandSourceStack source = ctx.getSource();
+        long worldTick = source.getLevel().getGameTime();
+        boolean integratedClient = !source.getServer().isDedicatedServer();
+        boolean requestRecorded = false;
+        try {
+            if (!integratedClient) {
+                long markerSequence = DevTestSession.appendActive(
+                        "capture_marker",
+                        worldTick,
+                        mergeContext(
+                                caseContext(source),
+                                Map.of(
+                                        "capture_mode", "marker_only",
+                                        "image_status", "not_attempted",
+                                        "label", DevToolPolicy.sanitizeToken(label, "capture"),
+                                        "reason", "dedicated_server_has_no_integrated_client")));
+                source.sendSuccess(() -> Component.literal(
+                        "[latdev] case capture recorded marker only sequence="
+                                + markerSequence
+                                + " (dedicated server cannot capture a client image)"),
+                        false);
+                return 1;
+            }
+
+            long requestSequence = DevTestSession.requestCaptureActive(
+                    label,
+                    true,
+                    worldTick,
+                    caseContext(source));
+            requestRecorded = true;
+
+            invokeIntegratedClientMethod("requestCaseCapture", new Class<?>[0]);
+            source.sendSuccess(() -> Component.literal(
+                    "[latdev] case capture requested sequence=" + requestSequence
+                            + "; completion or failure will be appended after the frozen client snapshot"),
+                    false);
+            return 1;
+        } catch (Exception e) {
+            try {
+                if (requestRecorded && DevTestSession.active().isPresent()) {
+                    DevTestSession.recordCaptureFailedActive(
+                            e.getClass().getSimpleName() + ": " + e.getMessage(),
+                            worldTick,
+                            Map.of("capture_mode", integratedClient
+                                    ? "integrated_client_auto"
+                                    : "marker_only"));
+                }
+            } catch (Exception recordFailure) {
+                GlobeMod.LOGGER.warn("[latdev] could not record case capture failure", recordFailure);
+            }
+            source.sendFailure(Component.literal("[latdev] case capture error: " + e.getMessage()));
+            return 0;
+        }
+    }
+
+    private static int caseFinish(CommandContext<CommandSourceStack> ctx) {
+        CommandSourceStack source = ctx.getSource();
+        try {
+            DevToolPolicy.CloseState result = DevToolPolicy.CloseState.parse(
+                    StringArgumentType.getString(ctx, "result"));
+            DevTestSession session = DevTestSession.finishActive(
+                    result,
+                    source.getLevel().getGameTime(),
+                    caseContext(source));
+            source.sendSuccess(() -> Component.literal(
+                    "[latdev] case finished id=" + session.sessionId()
+                            + " result=" + result.id()
+                            + " events=" + session.sequence()),
+                    false);
+            return 1;
+        } catch (Exception e) {
+            source.sendFailure(Component.literal("[latdev] case finish error: " + e.getMessage()));
+            return 0;
+        }
+    }
+
+    private static int presentationTraceStart(CommandContext<CommandSourceStack> ctx) {
+        return presentationTraceCommand(ctx, true);
+    }
+
+    private static int presentationTraceStop(CommandContext<CommandSourceStack> ctx) {
+        return presentationTraceCommand(ctx, false);
+    }
+
+    private static int presentationTraceCommand(
+            CommandContext<CommandSourceStack> ctx,
+            boolean start
+    ) {
+        CommandSourceStack source = ctx.getSource();
+        try {
+            if (source.getServer().isDedicatedServer()) {
+                if (DevTestSession.active().isPresent()) {
+                    DevTestSession.appendActive(
+                            "presentation_trace_unavailable",
+                            source.getLevel().getGameTime(),
+                            Map.of(
+                                    "mode", "coordinate_policy_only",
+                                    "reason", "dedicated_server_has_no_rendered_client_state"));
+                }
+                source.sendFailure(Component.literal(
+                        "[latdev] presentationTrace requires an integrated dev client; "
+                                + "dedicated-server coordinates are not rendered-presentation evidence"));
+                return 0;
+            }
+            ServerPlayer player = source.getPlayerOrException();
+            String method = start
+                    ? "startFromIntegratedCommand"
+                    : "stopFromIntegratedCommand";
+            String path;
+            if (start) {
+                path = (String) invokeIntegratedClientMethod(
+                        method,
+                        new Class<?>[]{Path.class, UUID.class, String.class, long.class},
+                        source.getServer().getServerDirectory(),
+                        player.getUUID(),
+                        player.getName().getString(),
+                        source.getLevel().getGameTime());
+            } else {
+                path = (String) invokeIntegratedClientMethod(
+                        method,
+                        new Class<?>[]{UUID.class},
+                        player.getUUID());
+            }
+            source.sendSuccess(() -> Component.literal(
+                    "[latdev] presentationTrace " + (start ? "started" : "stopped")
+                            + " file=" + path),
+                    false);
+            return 1;
+        } catch (Exception e) {
+            source.sendFailure(Component.literal(
+                    "[latdev] presentationTrace " + (start ? "start" : "stop")
+                            + " error: " + rootMessage(e)));
+            return 0;
+        }
+    }
+
+    private static Map<String, String> caseContext(CommandSourceStack source) {
+        LinkedHashMap<String, String> context = new LinkedHashMap<>();
+        ServerLevel world = source.getLevel();
+        WorldBorder border = world.getWorldBorder();
+        context.put("build_dirty", System.getProperty("latitude.dev.buildDirty", "unknown"));
+        context.put("dimension", world.dimension().identifier().toString());
+        context.put("git_branch", System.getProperty("latitude.dev.gitBranch", "unknown"));
+        context.put("git_commit", System.getProperty("latitude.dev.gitCommit", "unknown"));
+        context.put("run_mode", source.getServer().isDedicatedServer()
+                ? "dedicated_server"
+                : "integrated_client_server");
+        context.put("seed", Long.toString(world.getSeed()));
+        ServerPlayer player = source.getPlayer();
+        if (player != null) {
+            context.put("player", player.getName().getString());
+            context.put("x", String.format(Locale.ROOT, "%.3f", player.getX()));
+            context.put("y", String.format(Locale.ROOT, "%.3f", player.getY()));
+            context.put("z", String.format(Locale.ROOT, "%.3f", player.getZ()));
+            context.put("signed_latitude_degrees", String.format(
+                    Locale.ROOT,
+                    "%.6f",
+                    DevToolPolicy.signedLatitudeDegrees(
+                            player.getZ(),
+                            border.getCenterZ(),
+                            authoritativeRadius(source))));
+            context.put("zone", LatitudeMath.zoneKey(border, player.getZ()));
+        }
+        return context;
+    }
+
+    private static Map<String, String> mergeContext(
+            Map<String, String> base,
+            Map<String, String> additions
+    ) {
+        LinkedHashMap<String, String> merged = new LinkedHashMap<>(base);
+        merged.putAll(additions);
+        return merged;
+    }
+
+    private static Object invokeIntegratedClientMethod(
+            String methodName,
+            Class<?>[] parameterTypes,
+            Object... args
+    ) throws Exception {
+        Class<?> clazz = Class.forName("com.example.globe.dev.DevPresentationTrace");
+        if ("requestCaseCapture".equals(methodName)) {
+            clazz = Class.forName("com.example.globe.dev.DevCaptureKeybind");
+        }
+        try {
+            return clazz.getMethod(methodName, parameterTypes).invoke(null, args);
+        } catch (java.lang.reflect.InvocationTargetException e) {
+            Throwable cause = e.getCause();
+            if (cause instanceof Exception exception) {
+                throw exception;
+            }
+            throw e;
+        }
+    }
+
+    private static String rootMessage(Exception error) {
+        Throwable current = error;
+        while (current.getCause() != null) {
+            current = current.getCause();
+        }
+        return current.getMessage() == null
+                ? current.getClass().getSimpleName()
+                : current.getMessage();
     }
 
     private static int here(CommandContext<CommandSourceStack> ctx) {
