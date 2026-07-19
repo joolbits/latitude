@@ -9,7 +9,6 @@ import com.example.globe.util.LatitudeMath;
 import com.example.globe.world.GlobeWorldSizeRuntime;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
-import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.PauseScreen;
 import net.minecraft.client.gui.screens.Screen;
@@ -343,16 +342,11 @@ public final class AutoCreateWorldProbe {
     }
 
     private static boolean isAutoCreateWorldProbeEnabled() {
-        if (!FabricLoader.getInstance().isDevelopmentEnvironment()) {
-            return false;
-        }
-
-        String explicit = System.getProperty("latitude.debug.autoCreateWorldProbe");
-        if (explicit != null) {
-            return Boolean.parseBoolean(explicit);
-        }
-
-        return !Boolean.getBoolean("latitude.debug.autoCreateWorldProbe.disable");
+        return DevToolPolicy.autoCreateWorldProbeEnabled(
+                LatitudeDevRuntime.isDevelopmentEnvironment(),
+                LatitudeDevRuntime.isPackagedTestArtifact(),
+                System.getProperty("latitude.debug.autoCreateWorldProbe"),
+                Boolean.getBoolean("latitude.debug.autoCreateWorldProbe.disable"));
     }
 
     private static long getAutoCreateWorldProbeTimeoutMs() {

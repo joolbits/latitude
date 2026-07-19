@@ -458,14 +458,19 @@ public final class LatitudeDevCommand {
         LinkedHashMap<String, String> context = new LinkedHashMap<>();
         ServerLevel world = source.getLevel();
         WorldBorder border = world.getWorldBorder();
-        context.put("build_dirty", System.getProperty("latitude.dev.buildDirty", "unknown"));
+        LatitudeDevRuntime.BuildIdentity identity = LatitudeDevRuntime.identity();
+        context.put("artifact_role", identity.role());
+        context.put("build_dirty", identity.dirty());
+        context.put("build_time", identity.time());
         context.put("dimension", world.dimension().identifier().toString());
-        context.put("git_branch", System.getProperty("latitude.dev.gitBranch", "unknown"));
-        context.put("git_commit", System.getProperty("latitude.dev.gitCommit", "unknown"));
+        context.put("git_branch", identity.branch());
+        context.put("git_commit", identity.commit());
+        context.put("mod_version", identity.version());
         context.put("run_mode", source.getServer().isDedicatedServer()
                 ? "dedicated_server"
                 : "integrated_client_server");
         context.put("seed", Long.toString(world.getSeed()));
+        context.put("test_sequence", Integer.toString(identity.sequence()));
         ServerPlayer player = source.getPlayer();
         if (player != null) {
             context.put("player", player.getName().getString());

@@ -17,12 +17,91 @@ public final class DevToolPolicyTest {
 
     public static void main(String[] args) throws Exception {
         sanitizationIsStableAndTraversalSafe();
+        packagedTestIdentityAndProbePolicyFailClosed();
         latitudeMappingUsesCenterBoundsAndBlockCenters();
         productionBorderRadiusOwnsCommandAndEvidenceLatitude();
         movementAndTransitionSamplingAreDeterministic();
         traceClockPreservesSameDimensionContinuity();
         caseSessionIsAppendOnlyOrderedAndExplicitlyClosed();
         System.out.println("DEV_TOOL_POLICY_TEST_PASS assertions=" + assertions);
+    }
+
+    private static void packagedTestIdentityAndProbePolicyFailClosed() {
+        String version = "1.5.0+26.2-test.2";
+        String commit = "f9add4b9ac569faf0424fa08c1f5f5d4ecd99aae";
+        String branch = "codex/1.5-mini-launch-26.2";
+        String time = "2026-07-19T21:30:00Z";
+        expectTrue(
+                DevToolPolicy.packagedTestIdentityValid(
+                        true, version, "TEST", 2, version, version,
+                        commit, branch, "false", time),
+                "matching packaged TEST identity is accepted");
+        expectTrue(
+                !DevToolPolicy.packagedTestIdentityValid(
+                        false, version, "TEST", 2, version, version,
+                        commit, branch, "false", time),
+                "missing Fabric TEST marker is rejected");
+        expectTrue(
+                !DevToolPolicy.packagedTestIdentityValid(
+                        true, version, "PUBLIC", 2, version, version,
+                        commit, branch, "false", time),
+                "forged artifact role is rejected");
+        expectTrue(
+                !DevToolPolicy.packagedTestIdentityValid(
+                        true, version, "TEST", 3, version, version,
+                        commit, branch, "false", time),
+                "version and sequence disagreement is rejected");
+        expectTrue(
+                !DevToolPolicy.packagedTestIdentityValid(
+                        true, version, "TEST", 2, version, "1.5.0+26.2-test.3",
+                        commit, branch, "false", time),
+                "manifest artifact-version disagreement is rejected");
+        expectTrue(
+                !DevToolPolicy.packagedTestIdentityValid(
+                        true, version, "TEST", 2, version, version,
+                        "unknown", branch, "false", time),
+                "unknown commit is rejected");
+        expectTrue(
+                !DevToolPolicy.packagedTestIdentityValid(
+                        true, version, "TEST", 2, version, version,
+                        commit, "unknown", "false", time),
+                "unknown branch is rejected");
+        expectTrue(
+                !DevToolPolicy.packagedTestIdentityValid(
+                        true, version, "TEST", 2, version, version,
+                        commit, branch, "maybe", time),
+                "non-boolean dirty state is rejected");
+        expectTrue(
+                !DevToolPolicy.packagedTestIdentityValid(
+                        true, version, "TEST", 2, version, version,
+                        commit, branch, "false", "not-a-time"),
+                "non-ISO build time is rejected");
+
+        expectTrue(DevToolPolicy.devToolingAllowed(true, false),
+                "Loom development enables tooling");
+        expectTrue(DevToolPolicy.devToolingAllowed(false, true),
+                "valid packaged TEST identity enables tooling");
+        expectTrue(!DevToolPolicy.devToolingAllowed(false, false),
+                "ordinary packaged runtime fails closed");
+
+        expectTrue(
+                DevToolPolicy.autoCreateWorldProbeEnabled(true, false, null, false),
+                "Loom development preserves default-on auto-create behavior");
+        expectTrue(
+                !DevToolPolicy.autoCreateWorldProbeEnabled(true, false, null, true),
+                "Loom disable switch remains effective");
+        expectTrue(
+                !DevToolPolicy.autoCreateWorldProbeEnabled(true, false, "false", false),
+                "Loom explicit false remains effective");
+        expectTrue(
+                !DevToolPolicy.autoCreateWorldProbeEnabled(false, true, null, false),
+                "packaged TEST auto-create defaults off");
+        expectTrue(
+                DevToolPolicy.autoCreateWorldProbeEnabled(false, true, "true", false),
+                "packaged TEST auto-create requires explicit opt-in");
+        expectTrue(
+                !DevToolPolicy.autoCreateWorldProbeEnabled(false, false, "true", false),
+                "invalid packaged identity cannot activate auto-create");
     }
 
     private static void sanitizationIsStableAndTraversalSafe() throws Exception {

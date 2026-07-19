@@ -1,6 +1,6 @@
 package com.example.globe.dev.audit;
 
-import net.fabricmc.loader.api.FabricLoader;
+import com.example.globe.dev.LatitudeDevRuntime;
 
 /**
  * JVM-flag surface for the autonomous seam-audit harness.
@@ -10,7 +10,7 @@ import net.fabricmc.loader.api.FabricLoader;
  * deliberately exposes no mutators to keep audit mode an immutable, deterministic
  * boot switch rather than a runtime-toggled system.
  *
- * <p>Audit mode is dev-only: gated by {@link FabricLoader#isDevelopmentEnvironment()}.
+ * <p>Audit mode is available only through Latitude's validated development runtime.
  */
 public final class SeamAuditMode {
     /** Master switch: {@code -Dlatitude.audit.seam=true} enables the harness. */
@@ -56,7 +56,7 @@ public final class SeamAuditMode {
     }
 
     public static boolean isEnabled() {
-        return ENABLED && FabricLoader.getInstance().isDevelopmentEnvironment();
+        return ENABLED && LatitudeDevRuntime.isToolingEnabled();
     }
 
     private static double parseDouble(String key, double fallback) {
