@@ -1,6 +1,6 @@
 # Latitude 1.5 Feature Manifest
 
-`status: Phase 5 clean 26.2 port PASSED locally` · `branch: codex/1.5-mini-launch-26.2` · `candidate commit: 96c43b452027a2e89e7899b7f60227656dab151d` · `recorded: 2026-07-19`
+`status: Phase 6 dev-only testing toolkit PASSED locally` · `branch: codex/1.5-mini-launch-26.2` · `Phase 6 base: 51277a3467ddba69fde516b7969f5a6034238b81` · `recorded: 2026-07-19`
 
 This is the implementation-side allowlist for the Latitude 1.5 pre-2.0 polish campaign. The campaign
 roadmap lives in the docs root at:
@@ -226,9 +226,38 @@ and artifact commit `96c43b452027a2e89e7899b7f60227656dab151d`.
 The final docs exit savepoint, created after this text is reconciled, is intentionally distinct from
 the implementation/artifact commit embedded in the proved jar.
 
-### Phase 6 and release boundary
+## Phase 6 dev-only human-testing toolkit
 
-Phase 5 is locally proved and stops here. Phase 6, real profile/world staging, tagging, pushing,
+Maintainer authorized a bounded Phase 6 tooling slice after the clean 26.2 port. It adds development-
+environment-only commands for structured test cases, safe signed-latitude positioning, computed
+polar-presentation policy traces, provenance-rich screenshots, and flight-speed control.
+
+The public `/flyspeed` command was removed. Its replacement and every new Phase 6 command live
+under permission-level-2 `/latdev`, whose implementation is excluded from the distributable jar.
+The only production-source change is deletion of that public command and its unused imports.
+
+Local proof passed:
+
+- `55` dependency-free assertions cover path containment, nonzero border centers, representable
+  latitude targets, unsafe ±90° rejection, movement transitions, append-only case ordering,
+  overlapping-capture rejection, failed-I/O state preservation, and idempotent finish-summary
+  recovery with no post-finish events.
+- A disposable development dedicated server produced ordered case evidence, reported itself as
+  `dedicated_server`, carried exact branch/commit/dirty identity, recorded marker-only capture
+  semantics, and explicitly refused to call server coordinates rendered-presentation evidence.
+- The Java 25 clean build, invariant scan, create-screen, polar, HUD-detail, and village policy
+  suites passed.
+- The public-jar verifier found no `com/example/globe/dev/**`, Phase 6 action payload, task
+  evidence, or local absolute path.
+
+The integrated-client screenshot and computed-policy trace paths are compiled, structurally
+audited, request-time frozen, and development-gated, but were not driven in a live client during
+this slice. No screenshot pixels, visible fog, warning rendering, or human aesthetic acceptance
+is claimed by the tooling savepoint.
+
+### Phase 7 and release boundary
+
+Phase 6 stops at its local tooling savepoint. Real profile/world staging, tagging, pushing,
 release packaging, upload, publication, and every Latitude 2.0 behavior require separate Maintainer
 authorization.
 
@@ -243,3 +272,7 @@ Phase 5 target manifest:
 Phase 5 chronology:
 
 `docs/binder/latitude-1-5-phase5-20260718.md`
+
+Phase 6 tooling chronology:
+
+`docs/binder/latitude-1-5-phase6-tooling-20260719.md`

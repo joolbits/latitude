@@ -46,12 +46,20 @@ loom {
             runDir latitudeRunDir
             vmArg "-Xms${latitudeClientXms}"
             vmArg "-Xmx${latitudeClientXmx}"
+            vmArg "-Dlatitude.dev.gitCommit=${latitudeGitCommit}"
+            vmArg "-Dlatitude.dev.gitBranch=${latitudeGitBranch}"
+            vmArg "-Dlatitude.dev.buildDirty=${latitudeGitDirty}"
+            vmArg "-Dlatitude.dev.buildTime=${latitudeBuildTime}"
             vmArg "-Dlatitude.fixSurfaceDripstone=true"
             vmArg "-Dlatitude.fogClampIndex=${System.getProperty('latitude.fogClampIndex', '-1')}"
             vmArg "-Dlatitude.fogClampValue=${System.getProperty('latitude.fogClampValue', '16.0')}"
         }
         server {
             runDir latitudeRunDir
+            vmArg "-Dlatitude.dev.gitCommit=${latitudeGitCommit}"
+            vmArg "-Dlatitude.dev.gitBranch=${latitudeGitBranch}"
+            vmArg "-Dlatitude.dev.buildDirty=${latitudeGitDirty}"
+            vmArg "-Dlatitude.dev.buildTime=${latitudeBuildTime}"
         }
         clientNoSurfaceDripstoneFix {
             inherit client
@@ -342,6 +350,32 @@ tasks.register('latitudeVillageLatitudePolicyTest', JavaExec) {
 
 tasks.named('check').configure {
     dependsOn tasks.named('latitudeVillageLatitudePolicyTest')
+}
+
+def latitudeDevToolPolicyTestClasses = layout.buildDirectory.dir('classes/java/latitudeDevToolPolicyTest')
+
+tasks.register('compileLatitudeDevToolPolicyTest', JavaCompile) {
+    group = 'verification'
+    description = 'Compile the dependency-free Phase 6 development-tool policy regression'
+    source = fileTree('src/devToolPolicyTest/java') {
+        include '**/*.java'
+    }
+    classpath = sourceSets.main.output
+    destinationDirectory.set(latitudeDevToolPolicyTestClasses)
+    options.release = 25
+    dependsOn classes
+}
+
+tasks.register('latitudeDevToolPolicyTest', JavaExec) {
+    group = 'verification'
+    description = 'Exercise Phase 6 sanitization, latitude, transition, and evidence-session policy'
+    classpath = files(latitudeDevToolPolicyTestClasses) + sourceSets.main.output
+    mainClass = 'com.example.globe.dev.DevToolPolicyTest'
+    dependsOn tasks.named('compileLatitudeDevToolPolicyTest')
+}
+
+tasks.named('check').configure {
+    dependsOn tasks.named('latitudeDevToolPolicyTest')
 }
 
 tasks.register('prepareBiomePreviewRunDir') {
