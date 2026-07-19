@@ -1,6 +1,6 @@
 # Latitude 1.5 Feature Manifest
 
-`status: Phase 4 committed; July 18 acceptance refresh partial with explicit HOLDs` · `branch: codex/1.5-mini-launch-26.1x` · `base: f26d5f58` · `recorded: 2026-07-18`
+`status: 26.1.x HOLDs accepted; Phase 5 clean 26.2 port authorized` · `branch: codex/1.5-mini-launch-26.1x` · `base: f26d5f58` · `recorded: 2026-07-18`
 
 This is the implementation-side allowlist for the Latitude 1.5 pre-2.0 polish campaign. The campaign
 roadmap lives in the docs root at:
@@ -209,7 +209,16 @@ Those passes do not authorize Phase 5 or a public release.
 ### Version and authorization boundary
 
 The only compatibility proof claimed here is the committed Phase 4 matrix for Minecraft 26.1,
-26.1.1, and 26.1.2. Minecraft 26.0 and 26.2 are separate and unperformed. Phase 5 and 26.2 remain
-forbidden; the accidentally created 26.2 worktree/control-packet residue is quarantined and
-untouched. Nothing in this manifest authorizes Phase 5, a port, profile staging, tagging, pushing,
-release, upload, or publication.
+26.1.1, and 26.1.2. Minecraft 26.0 and 26.2 are separate. On 2026-07-18 Maintainer accepted the remaining
+26.1.x HOLDs as known Latitude 1.5 limitations and authorized Phase 5, the clean independent 26.2
+port. Those HOLDs remain honest limitations rather than new passes.
+
+Phase 5 may adopt `<home>/CascadeProjects/Latitude-1.5-26.2` on
+`codex/1.5-mini-launch-26.2` only after proving it is clean and fast-forwardable from the accepted
+26.1.x decision state. Only target-native 26.2 toolchain/API adaptations and the behaviors owned by
+this manifest are authorized. Pivot/2.0 source, profile staging, tagging, pushing, release, upload,
+and publication remain forbidden.
+
+Decision record:
+
+`docs/binder/latitude-1-5-holds-accepted-phase5-authorized-20260718.md`
