@@ -338,54 +338,40 @@ public final class PolarWaterFreezeRule {
      */
     public static final int WATERFALL_UPWARD_SCAN_BLOCKS = 24;
 
-    // --- S18 GRADUAL BOTTOM-UP WATERFALL FREEZE (Peetsa 2026-07-18, TEST 108: pouring a bucket formed "a wall
-    // --- of ice around the water") + S19 TWO-SPEED FREEZE (TEST 109) ---------------------------------------
-    // S18 ROOT CAUSE (S17b regression, live): the flow tick froze EVERY moving block on its first tick, so a fall
-    // iced in place mid-air ("a wall of ice forms around the water") instead of running to the ground. S18 LAW:
-    // water may FALL freely; only LANDED water freezes. A flowing block still FALLING (air/water below) passes to
-    // vanilla flow untouched; a flowing block SUPPORTED below (solid or ice) is LANDED and freezes with a chance
-    // per flow tick, so the base spread widens before it locks. THE CLIMB BY CONSTRUCTION: the base freezes ->
-    // the block above now rests on ice -> landed -> eligible next flow tick -> the freeze walks UP the column.
+    // --- S18/S19 (history) -> S20 SETTLED-WATER FREEZE (Peetsa 2026-07-19, TEST 110: the THIRD failed water
+    // --- round -> the LIVE-INSTRUMENT LAW) -----------------------------------------------------------------
+    // THE ROOT MECHANISM (finally understood, recon + owner verified): a FLOWING water block only receives fluid
+    // TICKS while it is actively SPREADING. Once the fluid reaches equilibrium (fully spread) the game STOPS
+    // scheduling its tick, so any tick-hosted freeze CHANCE stops rolling. S18/S19 hosted the whole ground/pool
+    // freeze on the flow tick with a per-tick chance (S19: 0.2 on solid); most blocks SETTLED before a roll ever
+    // landed and then never ticked again -> "the water is not freezing" (TEST 108/109/110, live).
     //
-    // S19 ROOT CAUSE (TEST 109, live): a SINGLE 50%-everywhere chance let the water's PATHFINDING OUTRUN the
-    // freeze -- the spread rerouted horizontally over each new ice patch faster than the roll locked it, so the
-    // pour sprawled into a speckled mess and the fall column never fully locked. S19 splits the one chance into
-    // TWO SPEEDS keyed on whether the landed block is TOUCHING ICE:
-    //   * FREEZE_CHANCE_ON_SOLID (0.2) -- landed on ORDINARY (non-ice) support: the pour lives ~1-2.5 s and pools
-    //     wide before it starts to lock. Slow, so the base spread reads as real flowing water first.
-    //   * FREEZE_CHANCE_ON_ICE (1.0) -- landed AND TOUCHING ICE (touch set = BELOW is ice OR any of the 4
-    //     horizontal neighbours is ice-family): CERTAIN freeze next flow tick, the "reroute-hunter" clause. Two
-    //     consequences by construction: (1) once ANY base ice exists, the block resting on it is touching-ice ->
-    //     certain -> its own freeze makes the next block up touching-ice -> a DETERMINISTIC ~4 blocks/s vertical
-    //     ZIPPER (one block per flow tick; a flow tick = 5 game ticks = 0.25 s -> 4 blocks/s); (2) a horizontal
-    //     reroute that escapes ONTO or BESIDE fresh ice is itself touching-ice -> locks ONE block out, so the ice
-    //     HUNTS the escaping water and the speckle heals into a sheet as trapped pockets touch it.
-    // The block ABOVE is deliberately EXCLUDED from the touch set: water flows DOWN and OUT, so ice above is the
-    // water's SOURCE direction, not a landing surface or a reroute contact -- counting it would freeze
-    // still-falling water beneath a frozen cap and defeat the "water falls freely" law.
-    // Gen-time falls still arrive frozen (S14, unchanged); this law governs LIVE water only. All exemptions carry
-    // over verbatim (WATER-only, ocean-family FIRST, deep-cave freeze floor, flag-off/out-of-zone byte-identical,
-    // tick RNG only) -- and the on-ice CERTAIN branch draws NO random at all (it never consults the roll).
-
-    /**
-     * S19 FREEZE-ON-SOLID CHANCE (dial): the probability a LANDED, freeze-eligible flowing block resting on
-     * ORDINARY (non-ice) support turns to ice on any single flow tick. Rolled with the flow tick's OWN
-     * {@code RandomSource} (never worldgen RNG). At 0.2 a landed block averages {@code 1 / 0.2} = 5 flow ticks
-     * before it locks; water flows every 5 game ticks (0.25 s), so the base pour lives ~1-2.5 s and pools wide
-     * before it starts to freeze -- slow enough that its pathfinding no longer outruns the lock (the TEST-109
-     * speckle fix). Lower for an even wider/longer pour; raise toward {@link #FREEZE_CHANCE_ON_ICE} to lock sooner.
-     */
-    public static final double FREEZE_CHANCE_ON_SOLID = 0.2;
-
-    /**
-     * S19 FREEZE-ON-ICE CHANCE: a LANDED, freeze-eligible flowing block that is TOUCHING ICE
-     * ({@link #touchingIce}) freezes with CERTAINTY (1.0) on its next flow tick -- the "reroute-hunter" clause.
-     * This is what makes the climb a deterministic ~4 blocks/s vertical zipper once a base ice block exists, and
-     * what locks a horizontal reroute one block out so the speckle heals. Because it is certain, the on-ice branch
-     * DRAWS NO RANDOM (the caller skips the RNG entirely when touching ice); it is expressed as a 1.0 dial only so
-     * the decision reads uniformly and stays a pure, testable function.
-     */
-    public static final double FREEZE_CHANCE_ON_ICE = 1.0;
+    // S20 THE DIVISION OF LABOUR (the owner's spec: water spreads fully; once SETTLED, it converts). Three
+    // consumers, each owning one lifecycle stage, NONE using any randomness at all:
+    //   (A) THE SETTLED SWEEP (ServerLevelRoofedWaterFreezeMixin, on tickPrecipitation -- the weather tick).
+    //       The PRIMARY ground/pool freezer. Per chunk-tick it sweeps a column belt (heightmap top +24 up /
+    //       roof descent 16 down) and freezes SETTLED + LANDED flowing blocks -- CERTAIN, no dice -- bottom-up,
+    //       one-or-two per column per pass, so a pool freezes over seconds ring by ring. "SETTLED" is the game's
+    //       OWN at-rest definition: the fluid block has NO pending scheduled fluid tick (read at the call site
+    //       from {@code level.getFluidTicks().hasScheduledTick}). Still-SPREADING water (a pending tick) is NEVER
+    //       swept -- the sweep only ever claims water that has come to rest. Decision: {@link #sweepFreezesSettled}.
+    //   (B) THE ICE-TOUCH HUNTER (FlowingFluidWaterfallFreezeMixin, on FlowingFluid.tick -- the flow tick).
+    //       After S20 the flow tick's ONLY freeze job. A LANDED flowing block that is TOUCHING ICE converts to
+    //       ice -- CERTAIN, no dice. The on-solid CHANCE is GONE (the settled sweep owns ground freezing), so
+    //       there is NO RNG in the flow path at all. This clause exists only to LOCK reroutes and drive the
+    //       vertical zipper the instant water contacts existing ice, so the spread can never outrun the freeze:
+    //       once any base ice exists, the block resting on it is touching-ice -> certain -> a deterministic
+    //       ~4 blocks/s vertical zipper, and a horizontal reroute onto/beside fresh ice locks one block out (the
+    //       ice HUNTS the escaping water; the speckle heals). Decision: {@link #flowTickHunterFreezes}.
+    //   (C) FALLS RUN FREE (same flow-tick mixin): a flowing block still FALLING (air/fluid below -- NOT landed)
+    //       passes to vanilla flow untouched, so the fall reaches the ground live before anything freezes (the
+    //       S18 law, unchanged). Source water at the top of a fall (Fluids.WATER) is left to the surface freeze
+    //       (BiomePolarWaterFreezeMixin via tickPrecipitation), unchanged.
+    // TOUCH SET: the block BELOW plus the 4 horizontal neighbours (ABOVE excluded -- water's source direction).
+    // Gen-time falls still arrive frozen (S14, unchanged); these laws govern LIVE water only. All exemptions carry
+    // over verbatim (WATER-only, ocean-family FIRST, deep-cave freeze floor, flag-off/out-of-zone byte-identical)
+    // -- and S20 removes the last RNG: NO random is drawn anywhere in the freeze paths now (both freeze decisions
+    // are certain booleans).
 
     /**
      * S18 LANDED predicate (pure): is a flowing block SUPPORTED below -- i.e. motion-terminated, resting on
@@ -410,8 +396,8 @@ public final class PolarWaterFreezeRule {
      * counting it would freeze still-falling water beneath a frozen cap and defeat the "water falls freely" law.
      * BELOW-ice is the vertical-climb contact (a block resting on the frozen base); a HORIZONTAL-neighbour ice is
      * the reroute-hunter contact (water spreading around a fresh ice patch). Any single touch -> certain freeze
-     * ({@link #FREEZE_CHANCE_ON_ICE}). The caller decides what counts as "ice-family" from the live block states
-     * (this pure form takes the five booleans so it stays Minecraft-free and unit-testable).
+     * (the S20 {@link #flowTickHunterFreezes} clause). The caller decides what counts as "ice-family" from the
+     * live block states (this pure form takes the five booleans so it stays Minecraft-free and unit-testable).
      *
      * @param belowIsIce the block directly below is ice-family (the vertical-climb support).
      * @param northIsIce a horizontal neighbour is ice-family (a reroute-hunter contact) -- any true -> touching.
@@ -422,32 +408,44 @@ public final class PolarWaterFreezeRule {
     }
 
     /**
-     * S19 the TWO-SPEED FLOW-TICK LANDED FREEZE decision (deterministic-roll form, so both chance dials are
-     * unit-testable without a live {@code RandomSource}). A flowing block freezes on this flow tick iff it is
-     * freeze-eligible ({@link #freezesFlowing} -- ocean-exempt, in-zone, above the floor, flag on) AND LANDED
-     * ({@link #landedOnSupport}), and then:
-     * <ul>
-     *   <li>if it is TOUCHING ICE ({@link #touchingIce}) -> CERTAIN ({@link #FREEZE_CHANCE_ON_ICE} = 1.0); the
-     *       {@code roll01} is IGNORED (the caller should not even draw the RNG on this branch), else</li>
-     *   <li>(landed on ordinary solid) -> the roll must be strictly under {@link #FREEZE_CHANCE_ON_SOLID} (0.2);
-     *       a failed roll lets the spread widen and re-rolls next flow tick.</li>
-     * </ul>
-     * A still-falling or ineligible block never freezes regardless of the roll.
+     * S20 the FLOW-TICK ICE-TOUCH HUNTER decision (pure, CERTAIN -- no RNG). Consumer (B) in the S20 division of
+     * labour: after S20 this is the flow tick's ONLY freeze job. A flowing block converts to ice on its flow tick
+     * iff it is freeze-eligible ({@link #freezesFlowing} -- ocean-exempt, in-zone, above the floor, flag on) AND
+     * LANDED ({@link #landedOnSupport}) AND TOUCHING ICE ({@link #touchingIce}). The S18/S19 on-solid CHANCE is
+     * GONE (the settled sweep, consumer (A), now owns all ground/pool freezing), so a landed block on ORDINARY
+     * support is left to keep spreading and is later claimed by the sweep once it SETTLES -- there is no roll and
+     * no RNG in the flow path at all. This clause exists purely to LOCK reroutes and drive the vertical zipper the
+     * instant water contacts existing ice: once any base ice exists, the block resting on it is touching-ice ->
+     * certain -> a deterministic ~4 blocks/s climb, and a horizontal reroute onto/beside fresh ice locks one block
+     * out (the ice hunts the escaping water; the speckle heals). A still-falling, ineligible, or
+     * not-touching-ice block never freezes here.
      *
      * @param freezeEligible  {@link #freezesFlowing} for this column/position (the WHERE decision).
-     * @param landedOnSupport {@link #landedOnSupport} for this block (the WHEN/still-falling decision).
-     * @param touchingIce     {@link #touchingIce} for this block (on-ice CERTAIN vs on-solid ROLL).
-     * @param roll01          the flow tick's own {@code RandomSource.nextFloat()} in {@code [0,1)} -- consulted
-     *                        ONLY on the on-solid branch; NEVER worldgen RNG.
+     * @param landedOnSupport {@link #landedOnSupport} for this block (the WHEN / still-falling decision).
+     * @param touchingIce     {@link #touchingIce} for this block (the reroute/zipper contact).
      */
-    public static boolean flowTickFreezesLanded(boolean freezeEligible, boolean landedOnSupport,
-                                                boolean touchingIce, double roll01) {
-        if (!freezeEligible || !landedOnSupport) {
-            return false;
-        }
-        if (touchingIce) {
-            return true; // FREEZE_CHANCE_ON_ICE = 1.0 -- certain; the roll is never consulted
-        }
-        return roll01 < FREEZE_CHANCE_ON_SOLID;
+    public static boolean flowTickHunterFreezes(boolean freezeEligible, boolean landedOnSupport,
+                                                boolean touchingIce) {
+        return freezeEligible && landedOnSupport && touchingIce;
+    }
+
+    /**
+     * S20 the SETTLED-SWEEP freeze decision (pure, CERTAIN -- no RNG). Consumer (A) in the S20 division of
+     * labour, and the PRIMARY ground/pool freezer: the weather-tick sweep converts a flowing block to ice iff it
+     * is freeze-eligible ({@link #freezesFlowing}) AND LANDED ({@link #landedOnSupport}) AND SETTLED. "SETTLED" is
+     * the game's own at-rest definition -- the fluid block has NO pending scheduled fluid tick, i.e. it stopped
+     * spreading -- read at the call site from {@code level.getFluidTicks().hasScheduledTick(pos, fluid)} (see
+     * {@code ServerLevelRoofedWaterFreezeMixin}; the 26.2 tick container matches the scheduled fluid type by
+     * reference identity, so the caller checks BOTH water keys -- {@code FLOWING_WATER} from
+     * {@code FlowingFluid.spreadTo} and {@code WATER} from {@code LiquidBlock.onPlace}). Still-SPREADING water (a
+     * pending tick under either key) is NEVER swept, so the sweep only ever claims water that has come to rest --
+     * a pool freezes over seconds, ring by ring, as its outer cells settle. Certain, so the caller draws no random.
+     *
+     * @param freezeEligible  {@link #freezesFlowing} for this column/position (the WHERE decision).
+     * @param landedOnSupport {@link #landedOnSupport} for this block (rests on solid or ice, not falling).
+     * @param settled         true iff the fluid block has NO pending scheduled fluid tick (the at-rest gate).
+     */
+    public static boolean sweepFreezesSettled(boolean freezeEligible, boolean landedOnSupport, boolean settled) {
+        return freezeEligible && landedOnSupport && settled;
     }
 }
