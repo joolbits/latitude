@@ -1,13 +1,14 @@
 package com.example.globe.mixin;
 
+import com.example.globe.GlobeMod;
 import com.example.globe.core.LatitudeV2Flags;
+import com.example.globe.core.PolarInstrument;
 import com.example.globe.core.PolarWaterFreezeRule;
 import com.example.globe.util.LatitudeMath;
 import com.example.globe.world.LatitudeBiomes;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.tags.BiomeTags;
-import net.minecraft.tags.BlockTags;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
@@ -20,14 +21,22 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
- * S15(b) PERSISTENT ICE part 1 (the SKY WAIVER) + S16(b) TICK-FREEZE v2 (the FLOWING-water/waterfall freeze) +
- * S17(b) WATERFALL FREEZE v3 (the UPWARD SCAN). In the polar full-freeze zone, water under a roof freezes too,
- * flowing water (waterfalls, post-generation flows) freezes to a plain-ice cascade, AND a bounded belt scanned
- * UPWARD from the surface freezes standing free-fall columns. Server-side; a sibling of
+ * S15(b) PERSISTENT ICE part 1 (the SKY WAIVER) + S16(b) TICK-FREEZE v2 + S17(b) UPWARD SCAN, and now S20 THE
+ * SETTLED SWEEP -- the PRIMARY polar water-freezer. In the full-freeze zone, water under a roof freezes, and any
+ * flowing water (pools, post-generation flows, standing cascades) freezes to plain ice ONCE IT HAS SETTLED --
+ * the game's own at-rest definition (no pending scheduled fluid tick). Server-side; a sibling of
  * {@code BiomePolarWaterFreezeMixin} (which waives the temperature veto inside {@code Biome.shouldFreeze}) and of
- * {@code FlowingFluidWaterfallFreezeMixin} (which freezes MOVING water at the flow tick). Together they make
- * sheltered polar water freeze the way the owner asked ("as soon as there is any shelter, the water is liquid
- * instead of ice") and close the waterfall gap.
+ * {@code FlowingFluidWaterfallFreezeMixin} (which now only runs the ICE-TOUCH HUNTER at the flow tick).
+ *
+ * <p><b>S20 -- why the sweep, not the flow tick, owns ground/pool freezing (the THIRD failed water round).</b> A
+ * flowing block only receives flow TICKS while it is actively SPREADING; at equilibrium the ticks STOP. The
+ * S18/S19 attempt hosted the pool freeze on a per-flow-tick chance, so most water SETTLED before a roll landed and
+ * then never ticked again -- "the water is not freezing" (TEST 108/109/110, live). {@code tickPrecipitation},
+ * however, keeps visiting a column at random every tick regardless of whether its water still ticks. So S20 moves
+ * ALL at-rest freezing here: this sweep freezes SETTLED + LANDED flowing blocks -- CERTAIN, no dice -- bottom-up,
+ * one-or-two per column per pass, and a pool freezes over seconds ring by ring as its cells come to rest.
+ * Still-SPREADING water (a pending fluid tick, under EITHER water key) is NEVER swept -- it is left to the flow
+ * tick (falls run free; the ice-touch hunter locks reroutes) until it settles, then the sweep claims it.
  *
  * <p><b>S17(b) UPWARD SCAN -- why the downward descent alone was not enough (S18 bottom-up).</b> An open-air
  * cascade FREE-FALLS above the terrain surface, i.e. ABOVE the {@code MOTION_BLOCKING} heightmap top (water is
@@ -61,13 +70,15 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * source water, descend up to {@link PolarWaterFreezeRule#ROOFED_FREEZE_REACH_BLOCKS} blocks and, for each block
  * in reach: a SOURCE water surface is left to vanilla's OWN {@code Biome.shouldFreeze} (genuine-water / light
  * &lt; 10 / edge checks intact, temperature veto already waived in-zone) and ends the descent (a surface skin);
- * a LANDED FLOWING water block freezes to plain {@code ice} at the S19 TWO SPEEDS (certain when touching ice,
- * else the slow {@code FREEZE_CHANCE_ON_SOLID} roll -- the pure {@link PolarWaterFreezeRule#freezesFlowing}
- * eligibility + {@link PolarWaterFreezeRule#flowTickFreezesLanded} decision, barrens-family flag, ocean-EXEMPT,
- * same frayed front) and the descent CONTINUES to claim the rest of the cascade in reach. So a roofed pond freezes on vanilla's edge-inward
- * cadence; a waterfall's exposed cascade dies to ice over seconds as random columns are ticked; open source water
- * is left entirely to vanilla (byte-identical); the deep cave reservoir below the reach stays liquid (B-9), and
- * the ocean's under-ice liquid is never touched (the sacred pin -- {@code freezesFlowing} checks ocean FIRST).
+ * a LANDED FLOWING water block that is SETTLED (no pending fluid tick) freezes to plain {@code ice} -- CERTAIN, no
+ * dice (the S20 {@link PolarWaterFreezeRule#sweepFreezesSettled} decision + the {@link PolarWaterFreezeRule#freezesFlowing}
+ * eligibility, barrens-family flag, ocean-EXEMPT, same frayed front) -- and the descent CONTINUES to claim the rest
+ * of the cascade in reach. A still-SPREADING flowing block (a pending fluid tick) is skipped, so the sweep never
+ * touches water the flow tick still owns. The UPWARD SCAN is identical: it freezes the LOWEST landed+settled
+ * flowing block per pass, bottom-up. So a roofed/settled pond freezes ring by ring on the tickPrecipitation
+ * cadence; open source water is left entirely to vanilla (byte-identical); the deep cave reservoir below the reach
+ * stays liquid (B-9), and the ocean's under-ice liquid is never touched (the sacred pin -- {@code freezesFlowing}
+ * checks ocean FIRST).
  *
  * <p><b>Byte-identical off-path.</b> Non-globe worlds and {@code POLAR_WATER_FREEZE_ENABLED == false} bail at the
  * head before any work; columns equatorward of the frayable strip bail after a single latitude read (no heightmap,
@@ -98,6 +109,15 @@ public abstract class ServerLevelRoofedWaterFreezeMixin {
         if (Double.isNaN(absLatDeg)
                 || absLatDeg < PolarWaterFreezeRule.FREEZE_ALL_DEG - PolarWaterFreezeRule.FRAY_HALF_WIDTH_DEG) {
             return;
+        }
+        // S20 FREEZE recorder heartbeat (default off, static-final gate -> dead-code when unset). tickPrecipitation
+        // runs weather-independently for random polar columns every tick, so this is the reliable ~5s-window driver:
+        // it flushes the accumulated flow-tick + sweep counts even when no water is present in this column.
+        if (PolarInstrument.FREEZE) {
+            String line = PolarInstrument.pollFreezeLine(self.getGameTime());
+            if (line != null) {
+                GlobeMod.LOGGER.info(line);
+            }
         }
         // In the forced-freeze zone? Mirror BiomePolarWaterFreezeMixin's razor/frayed selection so the roofed
         // water freeze and the open-water freeze share ONE front per column (barrens-fray branch flag-gated).
@@ -139,20 +159,27 @@ public abstract class ServerLevelRoofedWaterFreezeMixin {
             BlockState above = self.getBlockState(up);
             FluidState fs = above.getFluidState();
             if (fs.getType() == Fluids.FLOWING_WATER) {
-                // Only a LANDED (supported below) flowing block freezes. Scanning upward, the FIRST such block is
-                // the lowest one: freeze exactly it and stop (one landed block per pass -> the climb). A flowing
-                // block still FALLING (air/fluid below) means nothing lands this pass -- leave it to the flow tick.
+                // S20: only a LANDED (supported below) AND SETTLED (no pending fluid tick) flowing block is swept.
+                // Scanning upward, the FIRST such block is the lowest one: freeze exactly it and stop (one per pass
+                // -> the climb). A still-FALLING block (air/fluid below) or a still-SPREADING one (pending tick) is
+                // left to the flow tick; the sweep claims it next pass once it lands and settles. Certain, no dice.
                 belowUp.setY(y - 1);
                 BlockState belowState = self.getBlockState(belowUp);
                 boolean landed = PolarWaterFreezeRule.landedOnSupport(
                         belowState.isAir(), !belowState.getFluidState().isEmpty());
-                if (landed) {
+                if (landed && globe$settled(self, up)) {
+                    if (PolarInstrument.FREEZE) {
+                        PolarInstrument.freezeSweptSettled();
+                    }
                     flowFreezes = globe$resolveFlowFreeze(self, top, absLatDeg, fray, flowFreezes);
-                    if (flowFreezes == 1 && globe$twoSpeedLocks(self, up, belowState)) {
+                    if (PolarWaterFreezeRule.sweepFreezesSettled(flowFreezes == 1, true, true)) {
                         self.setBlockAndUpdate(up.immutable(), Blocks.ICE.defaultBlockState()); // one frozen layer
+                        if (PolarInstrument.FREEZE) {
+                            PolarInstrument.freezeSweptFroze();
+                        }
                     }
                 }
-                break; // the lowest flowing block decides this pass (landed -> froze; falling -> nothing lands)
+                break; // the lowest flowing block decides this pass (landed+settled -> froze; else nothing this pass)
             } else if (above.is(Blocks.ICE)) {
                 continue; // a frozen cascade layer from an earlier pass -- keep climbing to the next flowing block
             } else if (!above.isAir() && fs.isEmpty()) {
@@ -169,9 +196,9 @@ public abstract class ServerLevelRoofedWaterFreezeMixin {
         }
         // Covered/dry column: reach under the roof (and down any waterfall) within the shelter reach. A SOURCE
         // water surface is left to vanilla's OWN shouldFreeze (genuine-water / light / edge, temperature veto
-        // already waived in-zone) and ends the descent (a surface skin). A LANDED FLOWING block freezes to a
-        // plain-ice cascade at the S19 two speeds (S16(b); vanilla's tickPrecipitation never tests it) and the
-        // descent CONTINUES to claim the rest. Water/flow sealed deeper than the reach stays liquid (the B-9 reservoir).
+        // already waived in-zone) and ends the descent (a surface skin). A LANDED, SETTLED FLOWING block freezes
+        // to plain ice (S20 -- certain; vanilla's tickPrecipitation never tests it) and the descent CONTINUES to
+        // claim the rest. Water/flow sealed deeper than the reach stays liquid (the B-9 reservoir).
         int floorY = Math.max(self.getMinY(), top.getY() - PolarWaterFreezeRule.ROOFED_FREEZE_REACH_BLOCKS);
         BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos(top.getX(), 0, top.getZ());
         BlockPos.MutableBlockPos belowCursor = new BlockPos.MutableBlockPos(top.getX(), 0, top.getZ());
@@ -187,15 +214,24 @@ public abstract class ServerLevelRoofedWaterFreezeMixin {
                 return; // topmost water surface handled
             }
             if (fs.getType() == Fluids.FLOWING_WATER) {
-                // S18: only a LANDED (supported below) flowing block freezes; a still-falling block (air/fluid
-                // below) is left to run, so a covered cascade also ices from the ground UP over successive passes
-                // (only its bottom block is supported this pass; the next up lands on that ice next pass).
+                // S20: only a LANDED and SETTLED (no pending fluid tick) flowing block is swept; a still-falling
+                // block (air/fluid below) or a still-spreading one (pending tick) is left to run, so a covered
+                // cascade also ices from the ground UP over successive passes (only its bottom block is supported
+                // and at-rest this pass; the next up lands on that ice and settles next pass). Certain, no dice.
                 belowCursor.setY(y - 1);
                 BlockState belowState = self.getBlockState(belowCursor);
-                if (PolarWaterFreezeRule.landedOnSupport(belowState.isAir(), !belowState.getFluidState().isEmpty())) {
+                boolean landed = PolarWaterFreezeRule.landedOnSupport(
+                        belowState.isAir(), !belowState.getFluidState().isEmpty());
+                if (landed && globe$settled(self, cursor)) {
+                    if (PolarInstrument.FREEZE) {
+                        PolarInstrument.freezeSweptSettled();
+                    }
                     flowFreezes = globe$resolveFlowFreeze(self, top, absLatDeg, fray, flowFreezes);
-                    if (flowFreezes == 1 && globe$twoSpeedLocks(self, cursor, belowState)) {
+                    if (PolarWaterFreezeRule.sweepFreezesSettled(flowFreezes == 1, true, true)) {
                         self.setBlockAndUpdate(cursor.immutable(), Blocks.ICE.defaultBlockState()); // frozen layer
+                        if (PolarInstrument.FREEZE) {
+                            PolarInstrument.freezeSweptFroze();
+                        }
                     }
                 }
             }
@@ -222,21 +258,17 @@ public abstract class ServerLevelRoofedWaterFreezeMixin {
     }
 
     /**
-     * S19 TWO-SPEED gate for a LANDED, eligible flowing block found by either scan: CERTAIN when TOUCHING ICE
-     * ({@link PolarWaterFreezeRule#touchingIce} -- the block BELOW or any of the 4 horizontal neighbours is
-     * #minecraft:ice; the block ABOVE is excluded), else the slow {@link PolarWaterFreezeRule#FREEZE_CHANCE_ON_SOLID}
-     * roll on ordinary support. The on-ice branch draws NO random (the ternary skips the RNG); only the on-solid
-     * path consults {@code getRandom()} (the tick's own {@code RandomSource}, never worldgen RNG). Same law the
-     * flow-tick mixin uses, so a covered cascade climbs the same deterministic zipper once a base ice block exists.
+     * S20 SETTLED gate: is this fluid block at rest -- i.e. has the game stopped scheduling its fluid tick? A
+     * still-spreading fluid keeps RESCHEDULING its tick, so a pending tick means "still moving" and the sweep must
+     * leave it alone. The 26.2 tick container matches a scheduled tick's fluid type by REFERENCE IDENTITY
+     * ({@code ScheduledTick.UNIQUE_TICK_HASH}), and flowing water is scheduled under TWO different singletons
+     * depending on the path: {@code Fluids.FLOWING_WATER} via {@code FlowingFluid.spreadTo}, and {@code Fluids.WATER}
+     * via {@code LiquidBlock.onPlace} (the water {@code LiquidBlock} holds {@code Fluids.WATER}). So we probe BOTH
+     * keys; SETTLED iff NEITHER has a pending tick. This can only ever make the sweep MORE conservative about
+     * declaring a block at-rest, so it never freezes actively-spreading water. Both probes are O(1) hash lookups.
      */
-    private static boolean globe$twoSpeedLocks(ServerLevel self, BlockPos pos, BlockState below) {
-        boolean touchingIce = PolarWaterFreezeRule.touchingIce(
-                below.is(BlockTags.ICE),
-                self.getBlockState(pos.north()).is(BlockTags.ICE),
-                self.getBlockState(pos.east()).is(BlockTags.ICE),
-                self.getBlockState(pos.south()).is(BlockTags.ICE),
-                self.getBlockState(pos.west()).is(BlockTags.ICE));
-        double roll01 = touchingIce ? 0.0 : self.getRandom().nextFloat();
-        return PolarWaterFreezeRule.flowTickFreezesLanded(true, true, touchingIce, roll01);
+    private static boolean globe$settled(ServerLevel self, BlockPos pos) {
+        return !self.getFluidTicks().hasScheduledTick(pos, Fluids.FLOWING_WATER)
+                && !self.getFluidTicks().hasScheduledTick(pos, Fluids.WATER);
     }
 }

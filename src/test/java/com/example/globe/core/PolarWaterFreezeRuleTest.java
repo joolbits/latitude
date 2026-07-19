@@ -514,20 +514,31 @@ class PolarWaterFreezeRuleTest {
     }
 
     @Test
-    void s19TwoSpeedDials_onSolidRolls_onIceCertain() {
-        // S19 replaced the single 0.5 dial with TWO speeds. The on-solid dial is consulted with a strict < roll.
-        assertEquals(0.2, PolarWaterFreezeRule.FREEZE_CHANCE_ON_SOLID, 1e-9, "the slow on-solid dial");
-        assertEquals(1.0, PolarWaterFreezeRule.FREEZE_CHANCE_ON_ICE, 1e-9, "the certain on-ice dial");
-        // ON SOLID (touchingIce=false): the roll decides against 0.2. Under -> locks; at/above -> the spread widens.
-        assertTrue(PolarWaterFreezeRule.flowTickFreezesLanded(true, true, false, 0.0), "roll 0.0 < 0.2 -> freezes");
-        assertTrue(PolarWaterFreezeRule.flowTickFreezesLanded(true, true, false, 0.1999), "just under 0.2 -> freezes");
-        assertFalse(PolarWaterFreezeRule.flowTickFreezesLanded(true, true, false, 0.2),
-                "exactly at the dial -> does NOT freeze (strict <), the base pour widens this tick");
-        assertFalse(PolarWaterFreezeRule.flowTickFreezesLanded(true, true, false, 0.5), "above 0.2 -> widens");
-        // TOUCHING ICE (touchingIce=true): CERTAIN -- freezes for ANY roll, even a losing 0.9999/1.0 (the roll is
-        // never consulted). This is the reroute-hunter certainty + the deterministic vertical zipper.
-        assertTrue(PolarWaterFreezeRule.flowTickFreezesLanded(true, true, true, 0.9999), "touching ice -> certain");
-        assertTrue(PolarWaterFreezeRule.flowTickFreezesLanded(true, true, true, 1.0), "touching ice -> certain (roll ignored)");
+    void s20HunterCertainOnIce_noOnSolidChanceRemains() {
+        // S20 dropped the S18/S19 on-solid CHANCE entirely: the flow tick freezes ONLY when landed AND touching
+        // ice, and then with CERTAINTY -- there is no RNG anywhere in the freeze path now (the FREEZE_CHANCE dials
+        // are gone). TOUCHING ICE + landed + eligible -> certain freeze.
+        assertTrue(PolarWaterFreezeRule.flowTickHunterFreezes(true, true, true),
+                "eligible + landed + touching ice -> certain lock (the reroute-hunter / zipper)");
+        // LANDED ON ORDINARY SOLID (not touching ice) -> the hunter does NOT freeze: the water keeps spreading and
+        // is claimed later by the SETTLED SWEEP. This is the whole S20 shift -- ground freezing left the flow tick.
+        assertFalse(PolarWaterFreezeRule.flowTickHunterFreezes(true, true, false),
+                "landed on bare solid, not touching ice -> the flow tick leaves it (the sweep owns it once settled)");
+    }
+
+    @Test
+    void s20SweepFreezesSettledLandedOnly_certainNoDice() {
+        // THE SETTLED SWEEP (consumer A, the primary freezer): freezes iff eligible + landed + SETTLED, certain.
+        assertTrue(PolarWaterFreezeRule.sweepFreezesSettled(true, true, true),
+                "eligible + landed + settled -> certain freeze (a pool ring)");
+        // STILL SPREADING (not settled = has a pending fluid tick) -> the sweep NEVER touches it (the core S20 law:
+        // "still-spreading water is never swept").
+        assertFalse(PolarWaterFreezeRule.sweepFreezesSettled(true, true, false),
+                "not settled (still spreading) -> the sweep leaves it (never freezes moving water)");
+        // STILL FALLING (not landed) -> not swept even if settled.
+        assertFalse(PolarWaterFreezeRule.sweepFreezesSettled(true, false, true), "not landed -> not swept");
+        // Not eligible (ocean / out-of-zone / flag off / below floor) -> never, even landed and settled.
+        assertFalse(PolarWaterFreezeRule.sweepFreezesSettled(false, true, true), "not eligible -> never swept");
     }
 
     @Test
@@ -543,63 +554,77 @@ class PolarWaterFreezeRuleTest {
     }
 
     @Test
-    void s19StillFallingAndIneligibleNeverFreeze_evenTouchingIce() {
-        // The landed AND eligible gate PRECEDES the ice branch: touching ice can never freeze a still-falling or
-        // an ineligible block. Still falling (not landed) beside ice -> the fall must reach the ground.
-        assertFalse(PolarWaterFreezeRule.flowTickFreezesLanded(true, false, true, 0.0),
-                "not landed -> vanilla flow even touching ice");
-        // Not freeze-eligible (ocean / out-of-zone / below the floor / flag off) -> never, even landed and touching ice.
-        assertFalse(PolarWaterFreezeRule.flowTickFreezesLanded(false, true, true, 0.0),
-                "not eligible -> never freezes even landed and touching ice");
-        assertFalse(PolarWaterFreezeRule.flowTickFreezesLanded(false, false, false, 0.0));
+    void s20StillFallingAndIneligibleNeverFreeze_bothConsumers() {
+        // The landed AND eligible gates PRECEDE the ice/settled contact: touching ice (hunter) or settled (sweep)
+        // can never freeze a still-falling or an ineligible block. Still falling (not landed) beside ice / at rest.
+        assertFalse(PolarWaterFreezeRule.flowTickHunterFreezes(true, false, true),
+                "not landed -> vanilla flow even touching ice (hunter)");
+        assertFalse(PolarWaterFreezeRule.sweepFreezesSettled(true, false, true),
+                "not landed -> not swept even if settled (sweep)");
+        // Not freeze-eligible (ocean / out-of-zone / below the floor / flag off) -> never, even landed + touching/settled.
+        assertFalse(PolarWaterFreezeRule.flowTickHunterFreezes(false, true, true), "not eligible -> hunter never");
+        assertFalse(PolarWaterFreezeRule.sweepFreezesSettled(false, true, true), "not eligible -> sweep never");
+        assertFalse(PolarWaterFreezeRule.flowTickHunterFreezes(false, false, false));
+        assertFalse(PolarWaterFreezeRule.sweepFreezesSettled(false, false, false));
     }
 
     @Test
-    void s19ClimbAndRerouteHeal_certainOnIce() {
-        // THE ZIPPER: a fresh base landed on solid rolls slowly (0.2); once it is ice, the block above rests on ice
-        // (below-ice = touching + landed) -> CERTAIN, so the climb is a deterministic 1-block-per-flow-tick zipper.
-        assertFalse(PolarWaterFreezeRule.flowTickFreezesLanded(true, true, false, 0.5), "base on bare solid: slow roll may miss");
-        assertTrue(PolarWaterFreezeRule.flowTickFreezesLanded(true, true, true, 0.5),
-                "next block resting on the frozen base (below-ice) -> certain -> the zipper climbs");
+    void s20HunterZipperAndRerouteHeal_certainOnIce() {
+        // THE ZIPPER: a fresh base on bare solid is NOT frozen by the flow tick (the sweep freezes it once settled);
+        // but once ANY base ice exists, the block resting on it (below-ice = touching + landed) is CERTAIN, so the
+        // climb is a deterministic 1-block-per-flow-tick zipper -- the freeze cannot be outrun.
+        assertFalse(PolarWaterFreezeRule.flowTickHunterFreezes(true, true, false),
+                "base on bare solid: the flow tick does not lock it (left to the settled sweep)");
+        assertTrue(PolarWaterFreezeRule.flowTickHunterFreezes(true, true, true),
+                "block resting on the frozen base (below-ice) -> certain -> the zipper climbs");
         // THE REROUTE-HUNTER: water that reroutes horizontally onto/beside fresh ice is touching-ice -> locks one
-        // block out, so the speckle heals even for a rerouting spread that a slow roll would have let escape.
-        assertTrue(PolarWaterFreezeRule.flowTickFreezesLanded(true, true, true, 0.9),
+        // block out, so the speckle can never escape the growing ice.
+        assertTrue(PolarWaterFreezeRule.flowTickHunterFreezes(true, true, true),
                 "reroute beside ice -> certain lock (the ice hunts the escaping water)");
     }
 
     @Test
-    void s19LandedFreezeComposesWithFreezesFlowingEligibility() {
-        // End-to-end shape the flow-tick mixin uses: eligibility = freezesFlowing (skyExposed=false, the floor arm
-        // carries it), landed = landedOnSupport, touchingIce from the block states, roll = the tick RNG. In-zone,
-        // non-ocean, above floor, landed on solid, winning on-solid roll -> freezes.
+    void s20BothConsumersComposeWithFreezesFlowingEligibility() {
+        // End-to-end shape both mixins use: eligibility = freezesFlowing (skyExposed=false, the floor arm carries
+        // it), landed = landedOnSupport, then EITHER the flow-tick hunter (touchingIce) OR the settled sweep (settled).
         boolean eligible = PolarWaterFreezeRule.freezesFlowing(true, false, 89.0, 0.5, false, true);
-        assertTrue(PolarWaterFreezeRule.flowTickFreezesLanded(eligible, PolarWaterFreezeRule.landedOnSupport(false, false), false, 0.1),
-                "landed on solid, in-zone, winning roll -> the base of the fall locks");
-        // Same block still FALLING (air below) -> the fall runs on, no freeze.
-        assertFalse(PolarWaterFreezeRule.flowTickFreezesLanded(eligible, PolarWaterFreezeRule.landedOnSupport(true, false), false, 0.1),
-                "same in-zone block but air below -> still falling, vanilla flow");
+        assertTrue(eligible, "in-zone, non-ocean, above floor -> eligible");
+        boolean landed = PolarWaterFreezeRule.landedOnSupport(false, false);
+        // Flow-tick hunter: landed on ice-contact -> certain.
+        assertTrue(PolarWaterFreezeRule.flowTickHunterFreezes(eligible, landed, true),
+                "landed + touching ice -> the hunter locks it");
+        // Settled sweep: landed + settled -> certain (this is what actually freezes a settled pool).
+        assertTrue(PolarWaterFreezeRule.sweepFreezesSettled(eligible, landed, true),
+                "landed + settled -> the sweep freezes it");
+        // Same block still FALLING (air below) -> neither consumer acts (the fall runs on).
+        boolean falling = PolarWaterFreezeRule.landedOnSupport(true, false);
+        assertFalse(PolarWaterFreezeRule.flowTickHunterFreezes(eligible, falling, true), "air below -> hunter waits");
+        assertFalse(PolarWaterFreezeRule.sweepFreezesSettled(eligible, falling, true), "air below -> sweep waits");
     }
 
     @Test
-    void s19ExemptionsRePinned_oceanAndOutOfZoneAndFlagOff() {
-        // THE SEA IS EXEMPT (sacred pin, re-asserted for the two-speed path): an ocean cascade is never eligible, so
-        // even landed on solid AND touching ice with a winning roll it stays liquid.
+    void s20ExemptionsRePinned_oceanAndOutOfZoneAndFlagOffAndDeepFloor() {
+        // THE SEA IS EXEMPT (sacred pin, re-asserted for BOTH S20 consumers): an ocean column is never eligible, so
+        // neither the hunter nor the sweep ever freezes it, however landed/settled/ice-touching.
         boolean oceanEligible = PolarWaterFreezeRule.freezesFlowing(true, true, 89.0, 0.5, false, true);
         assertFalse(oceanEligible, "ocean column never flow-eligible");
-        assertFalse(PolarWaterFreezeRule.flowTickFreezesLanded(oceanEligible, true, true, 0.0), "ocean cascade stays liquid");
-        // Out-of-zone (equatorward of the frayed front) -> not eligible -> landed water still passes to vanilla.
+        assertFalse(PolarWaterFreezeRule.flowTickHunterFreezes(oceanEligible, true, true), "ocean cascade: hunter never");
+        assertFalse(PolarWaterFreezeRule.sweepFreezesSettled(oceanEligible, true, true), "ocean pool: sweep never");
+        // Out-of-zone (equatorward of the frayed front) -> not eligible -> both consumers pass to vanilla.
         boolean belowZoneEligible = PolarWaterFreezeRule.freezesFlowing(true, false, 83.9, 0.0, false, true);
         assertFalse(belowZoneEligible);
-        assertFalse(PolarWaterFreezeRule.flowTickFreezesLanded(belowZoneEligible, true, true, 0.0), "below the zone: vanilla");
-        // Flag off (byte-identical) -> not eligible -> vanilla flow even landed and touching ice.
+        assertFalse(PolarWaterFreezeRule.flowTickHunterFreezes(belowZoneEligible, true, true), "below zone: hunter never");
+        assertFalse(PolarWaterFreezeRule.sweepFreezesSettled(belowZoneEligible, true, true), "below zone: sweep never");
+        // Flag off (byte-identical) -> not eligible -> both pass to vanilla.
         boolean flagOffEligible = PolarWaterFreezeRule.freezesFlowing(false, false, 89.0, 0.5, false, true);
         assertFalse(flagOffEligible);
-        assertFalse(PolarWaterFreezeRule.flowTickFreezesLanded(flagOffEligible, true, true, 0.0), "flag off: byte-identical");
-        // Deep-cave floor (covered, below the floor) -> not eligible -> a landed deep spring still stays liquid
-        // (the B-9 reservation is preserved even when the water is technically supported below and beside ice).
+        assertFalse(PolarWaterFreezeRule.flowTickHunterFreezes(flagOffEligible, true, true), "flag off: hunter never");
+        assertFalse(PolarWaterFreezeRule.sweepFreezesSettled(flagOffEligible, true, true), "flag off: sweep never");
+        // Deep-cave floor (covered, below the floor) -> not eligible -> a deep spring stays liquid (B-9 reservoir).
         boolean deepEligible = PolarWaterFreezeRule.freezesFlowing(true, false, 89.0, 0.5, false, false);
         assertFalse(deepEligible, "below the freeze floor: not eligible (B-9 reservoir)");
-        assertFalse(PolarWaterFreezeRule.flowTickFreezesLanded(deepEligible, true, true, 0.0), "deep landed spring stays liquid");
+        assertFalse(PolarWaterFreezeRule.flowTickHunterFreezes(deepEligible, true, true), "deep spring: hunter never");
+        assertFalse(PolarWaterFreezeRule.sweepFreezesSettled(deepEligible, true, true), "deep spring: sweep never");
     }
 
     @Test

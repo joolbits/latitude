@@ -1,6 +1,7 @@
 package com.example.globe.mixin;
 
 import com.example.globe.core.LatitudeV2Flags;
+import com.example.globe.core.PolarInstrument;
 import com.example.globe.core.PolarWaterFreezeRule;
 import com.example.globe.util.LatitudeMath;
 import com.example.globe.world.LatitudeBiomes;
@@ -20,15 +21,22 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
- * S17(b) WATERFALL FREEZE v3 -- THE FLOW-TICK SEAM, refined by S18 into a GRADUAL BOTTOM-UP freeze. Freezes
- * MOVING polar water once it LANDS, closing the owner's two-flight complaint that liquid waterfalls still cascade
- * despite the S14 worldgen freeze and the S16 tick-descent -- without the S17b "wall of ice around the water"
- * (TEST 108): water now FALLS freely and only LANDED water freezes, so the fall runs to the ground live and the
- * ice pile grows upward layer by layer, and (S19) at TWO SPEEDS keyed on ice-contact so the freeze cannot be
- * outrun. See {@link com.example.globe.core.PolarWaterFreezeRule#landedOnSupport},
- * {@link com.example.globe.core.PolarWaterFreezeRule#touchingIce},
- * {@link com.example.globe.core.PolarWaterFreezeRule#FREEZE_CHANCE_ON_SOLID} and
- * {@link com.example.globe.core.PolarWaterFreezeRule#FREEZE_CHANCE_ON_ICE}.
+ * S17(b) WATERFALL FREEZE v3 -- THE FLOW-TICK SEAM, refined by S18 (bottom-up), S19 (ice-contact), and now S20
+ * into the flow tick's ONLY two jobs: (C) FALLS RUN FREE and (B) THE ICE-TOUCH HUNTER. It freezes MOVING polar
+ * water only where it has LANDED AND is TOUCHING ICE -- a CERTAIN lock, drawing no random. Everything else that
+ * has come to rest (settled pools, standing cascades) is now owned by the SETTLED SWEEP in
+ * {@code ServerLevelRoofedWaterFreezeMixin}. See {@link com.example.globe.core.PolarWaterFreezeRule} for the S20
+ * division of labour, and {@link com.example.globe.core.PolarWaterFreezeRule#landedOnSupport},
+ * {@link com.example.globe.core.PolarWaterFreezeRule#touchingIce} and
+ * {@link com.example.globe.core.PolarWaterFreezeRule#flowTickHunterFreezes}.
+ *
+ * <p><b>S20 ROOT CAUSE (the THIRD failed water round, TEST 110).</b> A flowing block only receives flow TICKS
+ * while it is actively SPREADING; at equilibrium the ticks STOP. Hosting the ground/pool freeze on a per-flow-tick
+ * CHANCE (S19: 0.2 on solid) meant most blocks SETTLED before a roll ever landed and then never ticked again --
+ * "the water is not freezing" live. S20 moves ALL at-rest freezing to the tickPrecipitation SWEEP (which keeps
+ * visiting a column after its water stops ticking) and leaves the flow tick only the certain ice-touch hunter,
+ * which cannot be outrun: the moment water touches ice it locks, so reroutes and the vertical climb are
+ * deterministic.
  *
  * <p><b>Why the previous fixes missed it (root cause).</b> S16's {@code ServerLevelRoofedWaterFreezeMixin}
  * descends DOWNWARD from a column's {@code MOTION_BLOCKING} heightmap top. An open-air cascade FREE-FALLS above
@@ -42,21 +50,20 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * source's outflow as a new spring spreads. Injected at {@code HEAD} and cancellable, on an armed globe world in
  * the forced-freeze zone (the SAME {@code >= 85} frayed front the surface ice / roofed descent use), above the
  * freeze floor, on a non-ocean column: a FLOWING (non-source) water block that attempts to flow is replaced with
- * plain {@code ice} and the vanilla flow/spread is cancelled -- BUT ONLY once it has LANDED (S18). A block still
- * FALLING (air or another fluid directly below) is left to vanilla, so the fall runs to the ground live; a block
- * SUPPORTED below (solid or ice -- motion-terminated) is landed and freezes at the S19 TWO SPEEDS: certain when
- * TOUCHING ICE ({@code FREEZE_CHANCE_ON_ICE}, below-ice or a horizontal ice neighbour -- the reroute-hunter), or
- * a slow {@code FREEZE_CHANCE_ON_SOLID} roll on ordinary support. The freeze then CLIMBS by construction (each
- * frozen block is the floor the water above then lands on, and touching that ice makes the next block certain --
- * a ~4 blocks/s zipper), so the fall ices from the bottom UP into a layered pile instead of snapping to the S17b
- * wall, and a horizontal reroute onto/beside fresh ice locks one block out (the TEST-109 speckle heals). A new
- * spring's outflow lands on the ground and freezes as it spreads; STANDING cascade columns that already reached
- * equilibrium (and stopped re-ticking) are swept by the sibling UPWARD SCAN in
- * {@code ServerLevelRoofedWaterFreezeMixin} (also lowest-landed-first, same bottom-up direction). The SOURCE at
- * the top of a fall is {@code Fluids.WATER}, not {@code FLOWING_WATER}, so it is never touched here -- it freezes
- * LAST, on the existing still-water surface cadence, once its outflow has locked below it. Together with the S14
- * worldgen freeze (gen-time water) and the S15/16 roofed descent (still water under any cover), moving water is
- * now covered -- the complete coverage argument.
+ * plain {@code ice} and the vanilla flow/spread is cancelled -- BUT ONLY once it has LANDED (S18) AND is TOUCHING
+ * ICE (S20 -- the ice-touch hunter). A block still FALLING (air or another fluid directly below) is left to
+ * vanilla, so the fall runs to the ground live; a landed block on ORDINARY support (not touching ice) is ALSO
+ * left to keep spreading -- S20 removed the on-solid chance, so the flow tick no longer freezes bare ground at
+ * all; that water is claimed later by the SETTLED SWEEP once it comes to rest. The hunter freeze is CERTAIN and
+ * draws no random. The freeze then CLIMBS by construction (each frozen block is the floor the water above then
+ * lands on, and touching that ice makes the next block certain -- a ~4 blocks/s zipper), so a fall ices from the
+ * bottom UP into a layered pile, and a horizontal reroute onto/beside fresh ice locks one block out (the TEST-109
+ * speckle heals). SETTLED pools and STANDING cascade columns that reached equilibrium (and stopped re-ticking)
+ * are frozen by the sibling SWEEP in {@code ServerLevelRoofedWaterFreezeMixin} (settled + landed, bottom-up). The
+ * SOURCE at the top of a fall is {@code Fluids.WATER}, not {@code FLOWING_WATER}, so it is never touched here --
+ * it freezes LAST, on the existing still-water surface cadence, once its outflow has locked below it. Together
+ * with the S14 worldgen freeze (gen-time water), the S15/16 roofed descent, and the S20 settled sweep, moving and
+ * at-rest water are now both covered -- the complete coverage argument.
  *
  * <p><b>Only FLOWING water, only the pure decision.</b> Source water ({@code Fluids.WATER}) is left to the surface
  * freeze ({@code BiomePolarWaterFreezeMixin} via {@code tickPrecipitation}), and lava ({@code FLOWING_LAVA}) is
@@ -124,40 +131,47 @@ public abstract class FlowingFluidWaterfallFreezeMixin {
         if (!PolarWaterFreezeRule.freezesFlowing(true, isOcean, absLatDeg, fray, false, aboveFreezeFloor)) {
             return; // fast bail before the below-block read: ocean / out-of-zone / below the floor -> vanilla flow
         }
-        // S18 THE LANDED-WATER LAW (fixes the TEST-108 "wall of ice around the water"): water may FALL freely;
-        // only LANDED water freezes. A flowing block still FALLING -- air or another fluid directly below -- is
-        // left to vanilla so the fall runs to the ground live; only a block SUPPORTED below (solid or ice --
-        // motion-terminated, or a base block spreading horizontally over solid) is landed and eligible. The
-        // freeze then CLIMBS by construction: the base freezes -> the block above now rests on ice -> landed ->
-        // eligible on its next flow tick -> the pile grows upward, layer by layer.
+        // S20 instrument (default off): an eligible in-zone flowing-water flow tick -- the denominator the FREEZE
+        // recorder reports, so a live flight can see whether the pour is ticking at all.
+        if (PolarInstrument.FREEZE) {
+            PolarInstrument.freezeFlowTick();
+        }
+        // S18 FALLS RUN FREE (consumer (C)): water may FALL freely; only LANDED water freezes. A flowing block
+        // still FALLING -- air or another fluid directly below -- is left to vanilla so the fall runs to the
+        // ground live; only a block SUPPORTED below (solid or ice -- motion-terminated, or a base spreading
+        // horizontally over solid) is landed and a candidate for the ice-touch hunter.
         BlockState belowState = level.getBlockState(pos.below());
         boolean landed = PolarWaterFreezeRule.landedOnSupport(
                 belowState.isAir(), !belowState.getFluidState().isEmpty());
         if (!landed) {
+            if (PolarInstrument.FREEZE) {
+                PolarInstrument.freezePassedFalling();
+            }
             return; // still falling / pouring onto water -> vanilla flow (the fall reaches the ground first)
         }
-        // S19 TWO-SPEED FREEZE (fixes the TEST-109 speckle: a single 50%-everywhere roll let the water's
-        // pathfinding OUTRUN the freeze). The touch set is the block BELOW plus the 4 horizontal neighbours (ABOVE
-        // excluded -- it is the source direction). Touching ice-family (#minecraft:ice: ice/packed/blue/frosted)
-        // -> CERTAIN (the reroute-hunter clause: the vertical climb + the one-block-out reroute lock, ~4 blocks/s
-        // zipper); ordinary solid support -> the slow FREEZE_CHANCE_ON_SOLID roll so the base pour widens first.
+        // S20 THE ICE-TOUCH HUNTER (consumer (B)) -- the flow tick's ONLY freeze job now. The on-solid chance is
+        // GONE: a landed block on ORDINARY support is left to keep spreading and is claimed later by the SETTLED
+        // SWEEP (ServerLevelRoofedWaterFreezeMixin) once it comes to rest -- so there is NO RNG in the flow path.
+        // This clause only LOCKS reroutes / drives the vertical zipper the instant water touches existing ice. The
+        // touch set is the block BELOW plus the 4 horizontal neighbours (ABOVE excluded -- it is the source
+        // direction); touching ice-family (#minecraft:ice: ice/packed/blue/frosted) -> CERTAIN freeze.
         boolean touchingIce = PolarWaterFreezeRule.touchingIce(
                 belowState.is(BlockTags.ICE),
                 level.getBlockState(pos.north()).is(BlockTags.ICE),
                 level.getBlockState(pos.east()).is(BlockTags.ICE),
                 level.getBlockState(pos.south()).is(BlockTags.ICE),
                 level.getBlockState(pos.west()).is(BlockTags.ICE));
-        // The on-ice branch is CERTAIN and draws NO random -- only the on-solid path rolls the tick's own
-        // RandomSource (never worldgen RNG). A failed on-solid roll returns to vanilla flow (it re-ticks and
-        // re-rolls), and the block above cannot land until this one is ice, so the climb is naturally bottom-up.
-        double roll01 = touchingIce ? 0.0 : level.getRandom().nextFloat();
-        if (!PolarWaterFreezeRule.flowTickFreezesLanded(true, true, touchingIce, roll01)) {
-            return;
+        if (!PolarWaterFreezeRule.flowTickHunterFreezes(true, true, touchingIce)) {
+            return; // landed but not touching ice -> keep spreading; the settled sweep will claim it once at rest
         }
-        // Landed and locked: replace this flowing block with a plain-ice cascade and cancel vanilla's spread. The
-        // ice is the support the water above now rests on -- AND makes it touching-ice -- so the fall freezes
-        // progressively (and, once a base exists, deterministically) upward.
+        // Landed AND touching ice -> lock it (certain, no dice). Replace this flowing block with a plain-ice
+        // cascade and cancel vanilla's spread. The ice is the support the water above now rests on -- AND makes it
+        // touching-ice -- so the fall freezes deterministically upward (the ~4 blocks/s zipper), and a horizontal
+        // reroute onto/beside this ice is itself touching-ice next tick (the speckle heals).
         level.setBlockAndUpdate(pos, Blocks.ICE.defaultBlockState());
+        if (PolarInstrument.FREEZE) {
+            PolarInstrument.freezeHunterFroze();
+        }
         ci.cancel();
     }
 }

@@ -538,14 +538,34 @@ public class GlobeModClient implements ClientModInitializer {
                                          com.example.globe.core.ParticleDensity.Tier tier, float exposure) {
         // The blizzard drive is the storm signal (0 across the calm 80-85 band; belt-and-suspenders per the law).
         double blizz = com.example.globe.core.PolarHazardWindow.blizzardDrive(absLatDeg);
-        int count = com.example.globe.core.SnowSparkleLaw.sparkleBudget(absLatDeg, blizz, SPARKLE_PEAK_BUDGET);
-        if (count <= 0) {
-            return;
+        int budget = com.example.globe.core.SnowSparkleLaw.sparkleBudget(absLatDeg, blizz, SPARKLE_PEAK_BUDGET);
+        // The pure per-tick BUDGET (band trapezoid x calm gate x snowfall window), then scaled to the actual spawn
+        // COUNT by the vanilla Particles tier + enclosure estimate + reduce-snow comfort option (the same knobs the
+        // ambient snow honours). Kept apart so the S20 recorder can report budget-vs-spawned (a budget>0 with a
+        // scaled count of 0 is the diagnostic signal "the perf/enclosure/reduce-snow scaling zeroed it").
+        int count = budget;
+        if (count > 0) {
+            count = com.example.globe.core.ParticleDensity.scale(tier, count);
+            count = com.example.globe.core.PolarExposure.particleBudget(count, exposure);
+            if (com.example.globe.client.LatitudeConfig.reducePolarSnowParticles) {
+                count = (int) Math.round(count * REDUCE_POLAR_SNOW_FACTOR);
+            }
+            if (count < 0) {
+                count = 0;
+            }
         }
-        count = com.example.globe.core.ParticleDensity.scale(tier, count);
-        count = com.example.globe.core.PolarExposure.particleBudget(count, exposure);
-        if (com.example.globe.client.LatitudeConfig.reducePolarSnowParticles) {
-            count = (int) Math.round(count * REDUCE_POLAR_SNOW_FACTOR);
+        // S20 SPARKLE recorder (default off, static-final gate -> dead-code when the prop is unset): sample this
+        // spawn-tick and flush the ~5s window line. Recorded on every path (incl. count == 0) so "sparkle invisible
+        // live" is diagnosable: spawned=0 with budget>0 = scaling; both>0 yet nothing seen = a particle-render issue.
+        if (com.example.globe.core.PolarInstrument.SPARKLE) {
+            double window01 = com.example.globe.core.SnowSparkleLaw.snowfallWindow01(
+                    com.example.globe.core.PolarHazardWindow.snowCount(absLatDeg));
+            double band01 = com.example.globe.core.SnowSparkleLaw.bandIntensity01(absLatDeg);
+            com.example.globe.core.PolarInstrument.sparkleSample(budget, count, window01, band01);
+            String line = com.example.globe.core.PolarInstrument.pollSparkleLine(client.level.getGameTime());
+            if (line != null) {
+                GlobeMod.LOGGER.info(line);
+            }
         }
         if (count <= 0) {
             return;
