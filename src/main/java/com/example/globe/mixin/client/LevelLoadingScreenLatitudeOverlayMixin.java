@@ -1,7 +1,9 @@
 package com.example.globe.mixin.client;
 
+import com.example.globe.GlobeMod;
 import com.example.globe.client.LatitudeClientState;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
+import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.screens.LevelLoadingScreen;
@@ -38,6 +40,10 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
     @Unique private static final int MUTED = 0xFF8C8078;
     @Unique private static final int GRID_COLOR = 0x14504840;
     @Unique private static final int GRID_STEP = 16;
+    @Unique private static final String globe$VERSION_LABEL = FabricLoader.getInstance()
+            .getModContainer(GlobeMod.MOD_ID)
+            .map(container -> "v" + container.getMetadata().getVersion().getFriendlyString())
+            .orElse("");
 
     // ── Loading phrases ──
     @Unique private static final String[] PHRASES = {
@@ -211,6 +217,9 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
         if (fillW > 0) {
             context.fill(barX, barY, barX + fillW, barY + 3, GOLD);
         }
+
+        // Small, quiet build identity in the pane's bottom-right corner.
+        globe$drawVersionLabel(context, paneX, paneY, paneW, paneH);
     }
 
     @Inject(method = "onClose", at = @At("HEAD"), cancellable = true)
@@ -251,6 +260,17 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
     private void globe$drawCentered(GuiGraphicsExtractor context, String text, int cx, int y, int color, boolean shadow) {
         int w = this.font.width(text);
         context.text(this.font, text, cx - w / 2, y, color, shadow);
+    }
+
+    @Unique
+    private void globe$drawVersionLabel(GuiGraphicsExtractor context, int paneX, int paneY, int paneW, int paneH) {
+        if (globe$VERSION_LABEL.isEmpty()) {
+            return;
+        }
+        int margin = 4;
+        int x = paneX + paneW - this.font.width(globe$VERSION_LABEL) - margin;
+        int y = paneY + paneH - this.font.lineHeight - margin;
+        context.text(this.font, globe$VERSION_LABEL, x, y, MUTED, false);
     }
 
     @Unique
