@@ -2496,7 +2496,6 @@ public final class LatitudeBiomes {
     private static final String[] TEMPERATE_WARM_EDGE_TRANSITION_BIOMES = {
             "minecraft:plains",
             "minecraft:sunflower_plains",
-            "minecraft:meadow",
             "minecraft:flower_forest",
             "minecraft:birch_forest",
             "minecraft:old_growth_birch_forest"
@@ -6924,7 +6923,6 @@ public final class LatitudeBiomes {
         }
         return isBiomeId(biome, "minecraft:plains")
                 || isBiomeId(biome, "minecraft:sunflower_plains")
-                || isBiomeId(biome, "minecraft:meadow")
                 || isBiomeId(biome, "minecraft:flower_forest")
                 || isBiomeId(biome, "minecraft:birch_forest")
                 || isBiomeId(biome, "minecraft:old_growth_birch_forest");
