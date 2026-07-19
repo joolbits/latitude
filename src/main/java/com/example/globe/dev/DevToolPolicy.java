@@ -1,6 +1,8 @@
 package com.example.globe.dev;
 
 import java.nio.file.Path;
+import java.time.Instant;
+import java.time.format.DateTimeParseException;
 import java.util.Locale;
 
 /**
@@ -300,6 +302,69 @@ public final class DevToolPolicy {
                 first || direction != previousDirection,
                 first || Math.max(0, currentStageRank) != Math.max(0, previousStageRank),
                 first || bucket != previousFogBucket);
+    }
+
+    public static boolean devToolingAllowed(
+            boolean developmentEnvironment,
+            boolean validPackagedTestIdentity
+    ) {
+        return developmentEnvironment || validPackagedTestIdentity;
+    }
+
+    public static boolean packagedTestIdentityValid(
+            boolean fabricTestMarker,
+            String metadataVersion,
+            String manifestRole,
+            int manifestSequence,
+            String manifestVersion,
+            String artifactVersion,
+            String gitCommit,
+            String gitBranch,
+            String buildDirty,
+            String buildTime
+    ) {
+        if (!fabricTestMarker
+                || !"TEST".equals(manifestRole)
+                || manifestSequence <= 0
+                || isBlank(metadataVersion)
+                || isBlank(manifestVersion)
+                || isBlank(artifactVersion)
+                || !metadataVersion.equals(manifestVersion)
+                || !metadataVersion.equals(artifactVersion)
+                || !metadataVersion.endsWith("-test." + manifestSequence)
+                || gitCommit == null
+                || !gitCommit.matches("[0-9a-f]{40}")
+                || isBlank(gitBranch)
+                || "unknown".equalsIgnoreCase(gitBranch)
+                || (!"true".equals(buildDirty) && !"false".equals(buildDirty))
+                || isBlank(buildTime)) {
+            return false;
+        }
+        try {
+            Instant.parse(buildTime);
+            return true;
+        } catch (DateTimeParseException ignored) {
+            return false;
+        }
+    }
+
+    public static boolean autoCreateWorldProbeEnabled(
+            boolean developmentEnvironment,
+            boolean validPackagedTestIdentity,
+            String explicitSetting,
+            boolean disabled
+    ) {
+        if (!devToolingAllowed(developmentEnvironment, validPackagedTestIdentity)) {
+            return false;
+        }
+        if (explicitSetting != null) {
+            return Boolean.parseBoolean(explicitSetting);
+        }
+        return developmentEnvironment && !disabled;
+    }
+
+    private static boolean isBlank(String value) {
+        return value == null || value.isBlank();
     }
 
     private static boolean isSafelyInside(double coordinate, double min, double max, double padding) {

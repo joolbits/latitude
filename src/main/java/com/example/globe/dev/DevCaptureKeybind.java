@@ -11,8 +11,6 @@ import com.mojang.blaze3d.platform.InputConstants;
 import com.mojang.blaze3d.platform.NativeImage;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
-import net.fabricmc.loader.api.FabricLoader;
-import net.fabricmc.loader.api.ModContainer;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.Screenshot;
@@ -21,11 +19,11 @@ import net.minecraft.util.Util;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
-import java.io.InputStream;
 import java.security.MessageDigest;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
@@ -33,16 +31,15 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
-import java.util.jar.Attributes;
-import java.util.jar.Manifest;
 
 public final class DevCaptureKeybind {
     private static final long DEBOUNCE_MS = 300L;
     private static final String CAPTURE_CSV_HEADER =
             "timestamp,file,screenshot_sha256,case_id,session_id,session_sequence,world_tick,"
                     + "dimension,seed,biome,signed_latitude_degrees,zone,x,y,z,yaw,pitch,"
-                    + "gui_scale,mod_version,git_commit,git_branch,build_dirty,build_time\n";
-    private static final String CAPTURE_CSV_FILE = "captures-v2.csv";
+                    + "gui_scale,artifact_role,test_sequence,mod_version,git_commit,git_branch,"
+                    + "build_dirty,build_time\n";
+    private static final String CAPTURE_CSV_FILE = "captures-v3.csv";
     private static final String CAPTURE_DIR_HINT = "run/Latitude/captures/";
 
     private static KeyMapping captureKey;
@@ -54,7 +51,7 @@ public final class DevCaptureKeybind {
     }
 
     public static void init() {
-        if (initialized || !FabricLoader.getInstance().isDevelopmentEnvironment()) {
+        if (initialized || !LatitudeDevRuntime.isToolingEnabled()) {
             return;
         }
 
@@ -307,6 +304,8 @@ public final class DevCaptureKeybind {
                 + "," + snapshot.yaw()
                 + "," + snapshot.pitch()
                 + "," + snapshot.guiScale()
+                + "," + escapeCsv(snapshot.build().role())
+                + "," + snapshot.build().sequence()
                 + "," + escapeCsv(snapshot.build().version())
                 + "," + escapeCsv(snapshot.build().commit())
                 + "," + escapeCsv(snapshot.build().branch())
@@ -419,42 +418,8 @@ public final class DevCaptureKeybind {
         }
     }
 
-    private static BuildIdentity buildIdentity() {
-        Optional<ModContainer> mod = FabricLoader.getInstance().getModContainer(GlobeMod.MOD_ID);
-        String version = mod.map(container ->
-                container.getMetadata().getVersion().getFriendlyString()).orElse("unknown");
-        String commit = System.getProperty("latitude.dev.gitCommit", "unknown");
-        String branch = System.getProperty("latitude.dev.gitBranch", "unknown");
-        String dirty = System.getProperty("latitude.dev.buildDirty", "unknown");
-        String time = System.getProperty("latitude.dev.buildTime", "unknown");
-
-        if (mod.isPresent()) {
-            try (InputStream input = mod.get().findPath("META-INF/MANIFEST.MF")
-                    .map(path -> {
-                        try {
-                            return Files.newInputStream(path);
-                        } catch (IOException e) {
-                            return null;
-                        }
-                    })
-                    .orElse(null)) {
-                if (input != null) {
-                    Attributes attributes = new Manifest(input).getMainAttributes();
-                    commit = attribute(attributes, "Git-Commit", commit);
-                    branch = attribute(attributes, "Git-Branch", branch);
-                    dirty = attribute(attributes, "Build-Dirty", dirty);
-                    time = attribute(attributes, "Build-Time", time);
-                }
-            } catch (IOException e) {
-                GlobeMod.LOGGER.debug("[latdev] capture build manifest unavailable", e);
-            }
-        }
-        return new BuildIdentity(version, commit, branch, dirty, time);
-    }
-
-    private static String attribute(Attributes attributes, String key, String fallback) {
-        String value = attributes.getValue(key);
-        return value == null || value.isBlank() ? fallback : value;
+    private static LatitudeDevRuntime.BuildIdentity buildIdentity() {
+        return LatitudeDevRuntime.identity();
     }
 
     private static String sha256(Path path) throws IOException {
@@ -494,15 +459,6 @@ public final class DevCaptureKeybind {
         }
     }
 
-    private record BuildIdentity(
-            String version,
-            String commit,
-            String branch,
-            String dirty,
-            String time
-    ) {
-    }
-
     private record CaptureSnapshot(
             Path gameDirectory,
             String timestamp,
@@ -521,10 +477,11 @@ public final class DevCaptureKeybind {
             String yaw,
             String pitch,
             int guiScale,
-            BuildIdentity build
+            LatitudeDevRuntime.BuildIdentity build
     ) {
         private LinkedHashMap<String, String> metadata() {
             LinkedHashMap<String, String> values = new LinkedHashMap<>();
+            values.put("artifact_role", build.role());
             values.put("biome", biome);
             values.put("build_dirty", build.dirty());
             values.put("build_time", build.time());
@@ -539,6 +496,7 @@ public final class DevCaptureKeybind {
             values.put("seed", seed);
             values.put("session_id", orUnknown(sessionId));
             values.put("signed_latitude_degrees", signedLatitudeDegrees);
+            values.put("test_sequence", Integer.toString(build.sequence()));
             values.put("x", x);
             values.put("y", y);
             values.put("yaw", yaw);

@@ -4,8 +4,8 @@ import com.example.globe.GlobeMod;
 import com.example.globe.dev.audit.AutonomousSeamAuditJob;
 import com.example.globe.dev.audit.SeamAuditMode;
 import com.example.globe.dev.client.SeamAuditClientBridge;
+import com.example.globe.dev.LatitudeDevRuntime;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
-import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.Options;
 import net.minecraft.client.server.IntegratedServer;
@@ -38,7 +38,7 @@ public final class SeamAuditHarness {
 
     public static void init() {
         if (initialized) return;
-        if (!FabricLoader.getInstance().isDevelopmentEnvironment()) return;
+        if (!LatitudeDevRuntime.isToolingEnabled()) return;
         if (!SeamAuditMode.ENABLED) return;
         initialized = true;
 

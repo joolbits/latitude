@@ -1,11 +1,11 @@
 package com.example.globe.dev.client;
 
 import com.example.globe.GlobeMod;
+import com.example.globe.dev.LatitudeDevRuntime;
 import com.example.globe.dev.SeamAuditCoordinator;
 import com.example.globe.dev.audit.AutonomousSeamAuditJob;
 import com.mojang.blaze3d.pipeline.RenderTarget;
 import com.mojang.blaze3d.platform.NativeImage;
-import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.Screenshot;
 import java.io.File;
@@ -18,8 +18,8 @@ import java.nio.file.Path;
  * and pipeline; this bridge's single responsibility is to save a framebuffer
  * screenshot to the requested audit PNG path.
  *
- * <p>Guarded by {@link FabricLoader#isDevelopmentEnvironment()} so it is a no-op
- * in shipped builds.
+ * <p>Guarded by Latitude's validated development runtime, so it is a no-op in
+ * public builds.
  */
 public final class SeamAuditClientBridge {
     private static boolean initialized;
@@ -29,7 +29,7 @@ public final class SeamAuditClientBridge {
 
     public static void init() {
         if (initialized) return;
-        if (!FabricLoader.getInstance().isDevelopmentEnvironment()) {
+        if (!LatitudeDevRuntime.isToolingEnabled()) {
             return;
         }
         SeamAuditCoordinator.setScreenshotHandler(SeamAuditClientBridge::captureToPath);

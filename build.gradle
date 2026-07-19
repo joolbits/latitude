@@ -30,6 +30,38 @@ def latitudeGitBranch = latitudeGitOutput('branch', '--show-current')
 def latitudeGitDirty = latitudeGitOutput('status', '--porcelain', '--untracked-files=no') == '' ? 'false' : 'true'
 def latitudeBuildTime = latitudeBuildTimeUtc()
 
+def latitudeTestSequenceValue = {
+    def raw = findProperty('latitudeTestSequence')
+    if (raw == null || raw.toString().isBlank()) {
+        throw new GradleException('latitudeTestSequence is required for TEST artifact tasks')
+    }
+    try {
+        int parsed = Integer.parseInt(raw.toString())
+        if (parsed <= 0) {
+            throw new GradleException('latitudeTestSequence must be a positive integer')
+        }
+        return parsed
+    } catch (NumberFormatException ignored) {
+        throw new GradleException('latitudeTestSequence must be a positive integer')
+    }
+}
+
+def latitudeTestVersionValue = { int sequence ->
+    "${project.version}-test.${sequence}"
+}
+
+def latitudeTestSequenceOrZero = {
+    def raw = findProperty('latitudeTestSequence')
+    if (raw == null || raw.toString().isBlank()) {
+        return 0
+    }
+    try {
+        return Integer.parseInt(raw.toString())
+    } catch (NumberFormatException ignored) {
+        return 0
+    }
+}
+
 def latitudeClientXms = (findProperty('latitudeClientXms') ?: System.getProperty('latitudeClientXms') ?: '1G').toString()
 def latitudeClientXmx = (findProperty('latitudeClientXmx') ?: System.getProperty('latitudeClientXmx') ?: '2G').toString()
 def latitudeRunDir = (findProperty('latitude.runDir') ?: 'run').toString()
@@ -138,11 +170,68 @@ dependencies {
     runtimeOnly "maven.modrinth:placeholder-api:${project.placeholder_api_version}"
 }
 
+sourceSets {
+    latitudeTest {
+        java.srcDir 'src/latitudeTest/java'
+        resources.setSrcDirs([])
+        compileClasspath += sourceSets.main.output + sourceSets.main.compileClasspath
+        runtimeClasspath += sourceSets.main.output + sourceSets.main.runtimeClasspath
+    }
+}
+
+configurations {
+    latitudeTestImplementation.extendsFrom implementation
+    latitudeTestRuntimeOnly.extendsFrom runtimeOnly
+}
+
 processResources {
     inputs.property "version", project.version
 
     filesMatching("fabric.mod.json") {
         expand "version": project.version
+    }
+}
+
+def latitudeTestGeneratedResources = layout.buildDirectory.dir('generated/latitudeTest/resources')
+def latitudeTestSequenceInput = providers.gradleProperty('latitudeTestSequence').orElse('missing')
+def latitudeTestVersionInput = latitudeTestSequenceInput.map { raw ->
+    "${project.version}-test.${raw}"
+}
+
+tasks.register('generateLatitudeTestMetadata') {
+    group = 'latitude test artifact'
+    description = 'Generate isolated TEST-only Fabric metadata; requires -PlatitudeTestSequence=N'
+    dependsOn tasks.named('jar')
+    inputs.file(tasks.named('jar', Jar).flatMap { it.archiveFile })
+    inputs.property('latitudeTestSequence', latitudeTestSequenceInput)
+    inputs.property('latitudeTestVersion', latitudeTestVersionInput)
+    outputs.file(latitudeTestGeneratedResources.map { it.file('fabric.mod.json') })
+    doLast {
+        int sequence = latitudeTestSequenceValue()
+        String testVersion = latitudeTestVersionValue(sequence)
+        def publicJar = tasks.named('jar', Jar).get().archiveFile.get().asFile
+        def zip = new java.util.zip.ZipFile(publicJar)
+        def metadata
+        try {
+            def metadataEntry = zip.getEntry('fabric.mod.json')
+            if (metadataEntry == null) {
+                throw new GradleException("Public jar is missing fabric.mod.json: ${publicJar}")
+            }
+            metadata = new groovy.json.JsonSlurper().parse(zip.getInputStream(metadataEntry))
+        } finally {
+            zip.close()
+        }
+        metadata.version = testVersion
+        metadata.entrypoints = new LinkedHashMap(metadata.entrypoints as Map)
+        metadata.entrypoints.main = new ArrayList(metadata.entrypoints.main as List)
+        metadata.entrypoints.main.add('com.example.globe.dev.LatitudeDevTestEntrypoint')
+        metadata.entrypoints.client = new ArrayList(metadata.entrypoints.client as List)
+        metadata.entrypoints.client.add('com.example.globe.dev.LatitudeDevTestClientEntrypoint')
+        metadata.custom = ['latitude:test_artifact': true]
+
+        def outputFile = latitudeTestGeneratedResources.get().file('fabric.mod.json').asFile
+        outputFile.parentFile.mkdirs()
+        outputFile.text = groovy.json.JsonOutput.toJson(metadata)
     }
 }
 
@@ -218,6 +307,93 @@ tasks.named('jar', Jar).configure {
 tasks.matching { it.name == 'remapJar' }.configureEach {
     exclude(releaseArtifactExcludeSpec)
     exclude(releaseArtifactPatternExcludes)
+}
+
+tasks.named(sourceSets.latitudeTest.compileJavaTaskName, JavaCompile).configure {
+    dependsOn tasks.named('classes')
+}
+
+tasks.register('latitudeTestJar', Jar) {
+    group = 'latitude test artifact'
+    description = 'Build the isolated official-namespace dev-enabled TEST jar; requires -PlatitudeTestSequence=N'
+
+    int sequence = latitudeTestSequenceOrZero()
+    String testVersion = latitudeTestVersionValue(sequence)
+    archiveFileName.set("latitude-${testVersion}.jar")
+    destinationDirectory.set(layout.buildDirectory.dir('latitude-test-libs'))
+    inputs.property('latitudeTestSequence', latitudeTestSequenceInput)
+    inputs.property('latitudeTestVersion', latitudeTestVersionInput)
+    duplicatesStrategy = DuplicatesStrategy.FAIL
+    preserveFileTimestamps = false
+    reproducibleFileOrder = true
+
+    dependsOn tasks.named('jar')
+    dependsOn tasks.named(sourceSets.latitudeTest.classesTaskName)
+    dependsOn tasks.named('generateLatitudeTestMetadata')
+    doFirst {
+        int validatedSequence = latitudeTestSequenceValue()
+        String validatedVersion = latitudeTestVersionValue(validatedSequence)
+        def publicJar = tasks.named('jar', Jar).get().archiveFile.get().asFile
+        def zip = new java.util.zip.ZipFile(publicJar)
+        def publicManifest
+        try {
+            def manifestEntry = zip.getEntry('META-INF/MANIFEST.MF')
+            if (manifestEntry == null) {
+                throw new GradleException("Public jar is missing META-INF/MANIFEST.MF: ${publicJar}")
+            }
+            publicManifest = new java.util.jar.Manifest(zip.getInputStream(manifestEntry))
+        } finally {
+            zip.close()
+        }
+        def publicAttributes = publicManifest.mainAttributes
+        manifest.attributes(
+                'Implementation-Title': publicAttributes.getValue('Implementation-Title'),
+                'Implementation-Version': validatedVersion,
+                'Minecraft-Version': publicAttributes.getValue('Minecraft-Version'),
+                'Git-Commit': publicAttributes.getValue('Git-Commit'),
+                'Git-Branch': publicAttributes.getValue('Git-Branch'),
+                'Build-Time': publicAttributes.getValue('Build-Time'),
+                'Build-Dirty': publicAttributes.getValue('Build-Dirty'),
+                'Latitude-Artifact-Role': 'TEST',
+                'Latitude-Test-Sequence': Integer.toString(validatedSequence),
+                'Latitude-Artifact-Version': validatedVersion,
+                'Fabric-Mapping-Namespace': 'official'
+        )
+    }
+
+    from({
+        zipTree(tasks.named('jar', Jar).get().archiveFile.get().asFile)
+    }) {
+        exclude 'META-INF/MANIFEST.MF'
+        exclude 'fabric.mod.json'
+    }
+
+    from(sourceSets.main.output) {
+        include 'com/example/globe/dev/**'
+        include 'com/example/globe/debug/**'
+        include 'com/example/globe/client/ClipboardImageWriter.class'
+        include 'com/example/globe/client/ClipboardImageWriter$*.class'
+    }
+    from(sourceSets.latitudeTest.output)
+    from(latitudeTestGeneratedResources) {
+        include 'fabric.mod.json'
+    }
+
+    manifest {
+        attributes(
+                'Implementation-Title': project.base.archivesName.get(),
+                'Implementation-Version': testVersion,
+                'Minecraft-Version': project.minecraft_version,
+                'Git-Commit': latitudeGitCommit,
+                'Git-Branch': latitudeGitBranch,
+                'Build-Time': latitudeBuildTime,
+                'Build-Dirty': latitudeGitDirty,
+                'Latitude-Artifact-Role': 'TEST',
+                'Latitude-Test-Sequence': Integer.toString(sequence),
+                'Latitude-Artifact-Version': testVersion,
+                'Fabric-Mapping-Namespace': 'official'
+        )
+    }
 }
 
 publishing {
