@@ -1,6 +1,6 @@
 # Latitude 1.5 Feature Manifest
 
-`status: Phase 6 dev-only testing toolkit PASSED locally` · `branch: codex/1.5-mini-launch-26.2` · `Phase 6 base: 51277a3467ddba69fde516b7969f5a6034238b81` · `recorded: 2026-07-19`
+`status: Phase 7 integrated tooling validation HOLD` · `branch: codex/1.5-mini-launch-26.2` · `Phase 7 HEAD: e243d5bc6ee92bfcf7c4d39bf52c8107806c21ba` · `recorded: 2026-07-19`
 
 This is the implementation-side allowlist for the Latitude 1.5 pre-2.0 polish campaign. The campaign
 roadmap lives in the docs root at:
@@ -255,11 +255,32 @@ audited, request-time frozen, and development-gated, but were not driven in a li
 this slice. No screenshot pixels, visible fog, warning rendering, or human aesthetic acceptance
 is claimed by the tooling savepoint.
 
-### Phase 7 and release boundary
+## Phase 7 integrated-client tooling validation
 
-Phase 6 stops at its local tooling savepoint. Real profile/world staging, tagging, pushing,
-release packaging, upload, publication, and every Latitude 2.0 behavior require separate Maintainer
-authorization.
+The Phase 6 toolkit was exercised in a new disposable Minecraft 26.2 integrated client and fresh
+Latitude world at exact commit `e243d5bc6ee92bfcf7c4d39bf52c8107806c21ba`.
+
+The case lifecycle, exact dev-build identity, gamemaster-source flight-speed command
+acknowledgement, screenshot save and SHA-256, and computed fog/stage trace all produced usable
+evidence. The screenshot SHA-256
+is `fe97105a5760256c7efa546f86484dcd80884a86de88dfe3caeb558cb030cc9f`; its frozen row identifies
+seed `26071915`, world position, biome, GUI scale, Latitude version, commit, branch, and clean build.
+
+Phase 7 is **HOLD**, not passed. The live evidence exposed a developer-tool radius-authority
+mismatch: at Z `9873.5`, `/latdev tpLat 89` reported `+89.003906°` using radius `9984`, while the
+client presentation trace and screenshot context reported `+88.861500°` using the production
+client radius. The presentation trace also recorded repeated same-dimension
+`world_tick_rollback` resets around teleports, which interrupts longitudinal direction and
+warning-episode evidence; the cause of those observed rollbacks is not yet established. These are
+developer-tool evidence-integrity defects; no product behavior or source was changed in Phase 7.
+
+No screenshot was treated as human aesthetic acceptance, and the computed trace still does not
+prove final rendered pixels.
+
+### Release boundary
+
+Real profile/world staging, source fixes, tagging, pushing, release packaging, upload,
+publication, and every Latitude 2.0 behavior require separate Maintainer authorization.
 
 Decision record:
 
@@ -276,3 +297,7 @@ Phase 5 chronology:
 Phase 6 tooling chronology:
 
 `docs/binder/latitude-1-5-phase6-tooling-20260719.md`
+
+Phase 7 integrated tooling chronology:
+
+`docs/binder/latitude-1-5-phase7-live-tooling-20260719.md`
