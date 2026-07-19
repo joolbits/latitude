@@ -145,18 +145,18 @@ public class GlobeModClient implements ClientModInitializer {
         }
 
         while (ClientKeybinds.OPEN_SETTINGS.consumeClick()) {
-            if (client.screen == null) {
-                client.setScreen(new LatitudeSettingsScreen(null));
+            if (client.gui.screen() == null) {
+                client.gui.setScreen(new LatitudeSettingsScreen(null));
             } else {
-                client.setScreen(new LatitudeSettingsScreen(client.screen));
+                client.gui.setScreen(new LatitudeSettingsScreen(client.gui.screen()));
             }
         }
     }
 
     private static void polarCapClientTick(Minecraft client) {
-        if (pendingSpawnPickerOpen && client.player != null && client.level != null && client.screen == null) {
+        if (pendingSpawnPickerOpen && client.player != null && client.level != null && client.gui.screen() == null) {
             pendingSpawnPickerOpen = false;
-            client.setScreen(new SpawnZoneScreen());
+            client.gui.setScreen(new SpawnZoneScreen());
             GlobeMod.LOGGER.info("Opened SpawnZoneScreen");
         }
 

@@ -20,8 +20,8 @@ public class InGameHudMixin {
     private void globe$renderEwHazeBeforeHotbar(GuiGraphicsExtractor context, DeltaTracker tickCounter, CallbackInfo ci) {
         Minecraft client = Minecraft.getInstance();
         if (client != null
-                && client.screen != null
-                && !(client.screen instanceof LatitudeHudStudioScreen)) {
+                && client.gui.screen() != null
+                && !(client.gui.screen() instanceof LatitudeHudStudioScreen)) {
             return;
         }
         EwSandstormOverlayHud.render(context, tickCounter);
@@ -31,8 +31,8 @@ public class InGameHudMixin {
     private void globe$renderOverlay(GuiGraphicsExtractor context, DeltaTracker tickCounter, CallbackInfo ci) {
         Minecraft client = Minecraft.getInstance();
         if (client != null
-                && client.screen != null
-                && !(client.screen instanceof LatitudeHudStudioScreen)) {
+                && client.gui.screen() != null
+                && !(client.gui.screen() instanceof LatitudeHudStudioScreen)) {
             return;
         }
         GlobeWarningOverlay.render(context, tickCounter);

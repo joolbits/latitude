@@ -2,7 +2,6 @@ package com.example.globe.client;
 
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
-import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.resources.Identifier;
 
 public final class EwStormWallRenderer {
@@ -80,11 +79,4 @@ public final class EwStormWallRenderer {
         }
     }
 
-    public static void render(PoseStack matrices, MultiBufferSource consumers) {
-        var mc = net.minecraft.client.Minecraft.getInstance();
-        if (mc == null || mc.level == null || mc.gameRenderer == null) return;
-        if (!GlobeClientState.DEBUG_EW_WALL) return;
-        // TEMP: fog-only verification (wall disabled)
-        return;
-    }
 }

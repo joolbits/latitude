@@ -3,10 +3,10 @@ package com.example.globe.mixin;
 import it.unimi.dsi.fastutil.longs.Long2LongOpenHashMap;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.levelgen.Heightmap;
-import net.minecraft.world.level.levelgen.feature.DripstoneClusterFeature;
 import net.minecraft.world.level.levelgen.feature.FeaturePlaceContext;
 import net.minecraft.world.level.levelgen.feature.LargeDripstoneFeature;
-import net.minecraft.world.level.levelgen.feature.PointedDripstoneFeature;
+import net.minecraft.world.level.levelgen.feature.SpeleothemClusterFeature;
+import net.minecraft.world.level.levelgen.feature.SpeleothemFeature;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.spongepowered.asm.mixin.Mixin;
@@ -15,7 +15,7 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
-@Mixin({LargeDripstoneFeature.class, DripstoneClusterFeature.class, PointedDripstoneFeature.class})
+@Mixin({LargeDripstoneFeature.class, SpeleothemClusterFeature.class, SpeleothemFeature.class})
 public class SurfaceDripstoneLawnmowerMixin {
 
     @Unique
