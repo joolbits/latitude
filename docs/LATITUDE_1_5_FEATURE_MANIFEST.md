@@ -18,6 +18,25 @@ The exact phrase invariant and banned-term check passed, followed by Java 25 `co
 This is a local source-copy savepoint only: it does not advance Phase 8 or authorize profiles,
 worlds, tags, pushes, releases, uploads, or publication.
 
+## Post-Phase-7 loading-version label and runtime findings
+
+Maintainer approved a small, unobtrusive version label in the bespoke loading pane. The label resolves
+`v<version>` from the active `globe` Fabric metadata and is right-aligned four pixels inside the
+pane's bottom-right corner using the existing muted color and no shadow. Phrase cadence, featured
+selection, compass, progress, and lifecycle behavior are unchanged. Structural proof and the Java
+25 clean build passed; live pixel review remains pending a separately authorized restage.
+
+The `/latdev` commands remain in source. The staged `L1.5-TEST-1.jar` is the production artifact,
+which intentionally excludes `com/example/globe/dev/**` and registers dev commands only in a
+Fabric development environment. A dev-enabled manual-test artifact is a separate packaging
+decision; public-jar purity was not changed here.
+
+the maintainer's screenshots also expose a separate low-elevation Meadow finding around 36–39°S. Source
+inspection confirms Meadow is correctly present in the temperate upland pool but is also broadly
+admitted by the general temperate tag and the non-mountain warm-edge transition fallback. Latitude
+should treat Meadow as upland/mountain terrain; this exact worldgen red is recorded but intentionally
+unpatched in the loading-version slice.
+
 ## Phase 0 safety result
 
 - Implementation uses this clean worktree rather than re-anchoring the historical docs checkout.
