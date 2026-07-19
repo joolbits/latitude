@@ -1,6 +1,6 @@
 # Latitude 1.5 Feature Manifest
 
-`status: 26.1.x HOLDs accepted; Phase 5 clean 26.2 port authorized` · `branch: codex/1.5-mini-launch-26.1x` · `base: f26d5f58` · `recorded: 2026-07-18`
+`status: Phase 5 clean 26.2 port ACTIVE — foundation` · `branch: codex/1.5-mini-launch-26.2` · `accepted source: 9972d162` · `recorded: 2026-07-18`
 
 This is the implementation-side allowlist for the Latitude 1.5 pre-2.0 polish campaign. The campaign
 roadmap lives in the docs root at:
@@ -222,3 +222,11 @@ and publication remain forbidden.
 Decision record:
 
 `docs/binder/latitude-1-5-holds-accepted-phase5-authorized-20260718.md`
+
+Phase 5 target manifest:
+
+`docs/LATITUDE_1_5_PHASE5_PORT_MANIFEST.md`
+
+Phase 5 chronology:
+
+`docs/binder/latitude-1-5-phase5-20260718.md`
