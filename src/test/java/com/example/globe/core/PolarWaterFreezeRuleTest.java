@@ -639,4 +639,97 @@ class PolarWaterFreezeRuleTest {
         // The scan belt bound is unchanged and bounded.
         assertEquals(24, PolarWaterFreezeRule.WATERFALL_UPWARD_SCAN_BLOCKS, "24-block upward belt (unchanged)");
     }
+
+    // ---- S21(d): WATER v5 -- SOURCE-FREEZES-LAST + SWEEP 5x + the SPREAD-STOPPER coverage ------
+
+    @Test
+    void s21dSourceFreezePostponedTruthTable() {
+        // The pure source-last decision (owner TEST-111: the still-water surface froze his SOURCE first and
+        // beheaded the fall). A source touching ANY live flowing water REFUSES to freeze this pass (postpone =
+        // true); with no flowing neighbour it freezes (postpone = false). Pass-through of the shim's six-neighbour
+        // OR (below + 4 horizontals + ABOVE).
+        assertTrue(PolarWaterFreezeRule.sourceFreezePostponed(true),
+                "adjacent live flowing water -> the source outlives its fall (postpone)");
+        assertFalse(PolarWaterFreezeRule.sourceFreezePostponed(false),
+                "no adjacent flowing water -> the source freezes (last, once its flow is all ice/air)");
+    }
+
+    @Test
+    void s21dSourceFreezesLastEmergentSemantics() {
+        // The shim ORs the SIX neighbours (below + 4 horizontals + ABOVE) into adjacentHasFlowing; ABOVE is in
+        // the set because a source directly UNDER a live fall is the beheading case too. "Freezes only when the
+        // connected flow is fully ice" is then EMERGENT: the OR goes false exactly when no neighbour is flowing.
+        boolean aboveFlowing = false || false || false || false || false || true; // only the ABOVE neighbour flows
+        assertTrue(PolarWaterFreezeRule.sourceFreezePostponed(aboveFlowing),
+                "a source under a live fall (ABOVE flowing) postpones -- above is in the touch set");
+        boolean noneFlowing = false || false || false || false || false || false; // fully iced / drained
+        assertFalse(PolarWaterFreezeRule.sourceFreezePostponed(noneFlowing),
+                "no flowing neighbour (connected flow fully ice) -> the source freezes, last");
+    }
+
+    @Test
+    void s21dSweepCapIsEight_theFiveXPacing() {
+        // SWEEP 5x: the per-column-per-pass cap rises from the S20 effective ~1-2 to 8 (owner's "still ~5x too
+        // slow"). 8 / ~1.6 ~= 5, and a deep freezable column of depth D ices in ceil(D/8) passes vs ceil(D/~1.6).
+        assertEquals(8, PolarWaterFreezeRule.SWEEP_MAX_PER_COLUMN, "the SWEEP 5x cap");
+        assertTrue(PolarWaterFreezeRule.SWEEP_MAX_PER_COLUMN > 2, "strictly faster than the old ~1-2 per pass");
+        // D=40 (the glacier-sole floor depth) ices in 5 sweep passes now (was ~25 at ~1.6/pass) = the ~5x.
+        assertEquals(5, (int) Math.ceil(
+                        (double) PolarWaterFreezeRule.LAND_WATER_FREEZE_DEPTH_BLOCKS / PolarWaterFreezeRule.SWEEP_MAX_PER_COLUMN),
+                "a glacier-sole-deep (40) column freezes in 5 sweep passes");
+    }
+
+    @Test
+    void s21dSweepCapDoesNotAlterTheSettledDecision() {
+        // The 5x is a PACING cap only -- the certain settled-sweep decision is unchanged: still eligible + landed
+        // + settled, still no RNG. The cap governs how MANY such blocks a pass claims, not WHICH freeze.
+        assertTrue(PolarWaterFreezeRule.sweepFreezesSettled(true, true, true));
+        assertFalse(PolarWaterFreezeRule.sweepFreezesSettled(true, true, false), "still-spreading never swept");
+        assertFalse(PolarWaterFreezeRule.sweepFreezesSettled(true, false, true), "still-falling never swept");
+        assertFalse(PolarWaterFreezeRule.sweepFreezesSettled(false, true, true), "ineligible never swept");
+    }
+
+    @Test
+    void s21dSpreadStopper_orthogonalIceCaughtDiagonalReliesOnRings() {
+        // The SPREAD-STOPPER: a landed flowing block TOUCHING ICE freezes (certain) rather than spreading. The
+        // touch set is orthogonal (below + 4 horizontals); a spreading edge block touching ice ORTHOGONALLY is
+        // caught (dies at one block)...
+        assertTrue(PolarWaterFreezeRule.flowTickHunterFreezes(true, true,
+                        PolarWaterFreezeRule.touchingIce(false, true, false, false, false)),
+                "ice orthogonally north of a landed edge block -> caught");
+        assertTrue(PolarWaterFreezeRule.flowTickHunterFreezes(true, true,
+                        PolarWaterFreezeRule.touchingIce(true, false, false, false, false)),
+                "ice directly below (the vertical zipper contact) -> caught");
+        // ...while a PURELY-DIAGONAL contact is NOT in the touch set (all five orthogonal args false) -> not
+        // caught this tick. Per the coverage argument this is sound: water cannot reach a diagonal-only cell
+        // without first occupying (and freezing) an orthogonal neighbour of that ice, so the diagonal cell never
+        // holds live water; when its orthogonal neighbour freezes it becomes an orthogonal contact next ring.
+        assertFalse(PolarWaterFreezeRule.flowTickHunterFreezes(true, true,
+                        PolarWaterFreezeRule.touchingIce(false, false, false, false, false)),
+                "diagonal-only ice (no orthogonal member) -> not caught this tick; the ring catches it next");
+    }
+
+    @Test
+    void s21dSpreadStopperStillRequiresLanded_fallsRunFreePastIce() {
+        // The spread-stopper never freezes a still-FALLING block even beside ice -- falls run free (S18), so an
+        // ice wall beside a fall does not behead it mid-air; it freezes only after it LANDS (the same law that,
+        // on the source side, keeps the source from beheading its own fall).
+        assertFalse(PolarWaterFreezeRule.flowTickHunterFreezes(true, false,
+                        PolarWaterFreezeRule.touchingIce(false, true, false, false, false)),
+                "falling water beside an ice wall (not landed) -> keeps falling, not frozen");
+    }
+
+    @Test
+    void s21dSourceVetoIsIndependentOfFreezeEligibility_sacredExemptionsHold() {
+        // The source-last postpone is a SEPARATE gate layered above the freeze decision: a pure boolean of the
+        // neighbour scan, it does not consult ocean/zone/floor eligibility, so it can only ever DELAY a freeze the
+        // column already qualifies for, never create or move one. Re-pin the sacred exemptions are untouched by
+        // S21(d): the sea stays liquid-under-ice, flag-off stays byte-identical.
+        assertFalse(PolarWaterFreezeRule.freezesFlowing(true, true, 89.0, 0.5, false, true), "ocean still exempt");
+        assertFalse(PolarWaterFreezeRule.freezesLandWaterSolid(true, true, 90.0, 0.5), "sea sacred pin holds");
+        assertFalse(PolarWaterFreezeRule.freezesFlowing(false, false, 89.0, 0.5, false, true), "flag-off unchanged");
+        // The postpone answer is orthogonal to any freeze-eligibility context.
+        assertTrue(PolarWaterFreezeRule.sourceFreezePostponed(true));
+        assertFalse(PolarWaterFreezeRule.sourceFreezePostponed(false));
+    }
 }

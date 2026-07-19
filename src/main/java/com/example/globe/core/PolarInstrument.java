@@ -16,9 +16,10 @@ import java.util.Locale;
  *       flow ticks = the pour never enters the zone/eligibility.</li>
  *   <li><b>SPARKLE</b> ({@code -Dlatitude.debugSparkle}, default OFF): the client snow-sparkle spawn path --
  *       {@code [LAT][SPARKLE] budget=N spawned=N window=X band=X}. {@code budget}/{@code spawned} are the
- *       per-window SUMS of the pure {@link SnowSparkleLaw#sparkleBudget} and the actually-created particle
- *       count; {@code window}/{@code band} are the latest {@link SnowSparkleLaw#snowfallWindow01} /
- *       {@link SnowSparkleLaw#bandIntensity01} samples. Diagnoses "sparkle invisible live": budget&gt;0 with
+ *       per-window SUMS of the pure {@link SnowSparkleLaw#sparkleBudget} (glint CLUSTERS) and the actually-created
+ *       particle count; {@code band} is the latest {@link SnowSparkleLaw#bandRamp01} sample and {@code window}
+ *       the snowfall-gate factor {@code 1 - }{@link SnowSparkleLaw#snowfallRamp01} (their product is the GLINT v4
+ *       {@link SnowSparkleLaw#glintWeight} crossfade). Diagnoses "sparkle invisible live": budget&gt;0 with
  *       spawned=0 = the perf/enclosure/reduce-snow scaling zeroed it; both&gt;0 yet nothing seen = a
  *       particle/height/brightness problem, not a budget one.</li>
  * </ul>

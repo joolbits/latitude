@@ -25,11 +25,14 @@ import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderEvents;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.color.block.BlockTintSources;
+import net.minecraft.core.BlockPos;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.Identifier;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.state.BlockState;
 
 public class GlobeModClient implements ClientModInitializer {
 
@@ -313,10 +316,11 @@ public class GlobeModClient implements ClientModInitializer {
             if (snowCount > 0) {
                 spawnAmbientPolarSnow(client, snowCount, absLatDeg, snowTier, exposure);
             }
-            // S13(a) SNOW SPARKLE: calm-cold snowfield glints in the 80-85 band, BELOW the deep-blizzard tier --
-            // the storm's absence made visible. Same spawn-tick cadence + Particles/enclosure/reduce-snow
-            // scaling as the ambient snow; a tiny budget. Pure gate/budget law in core.SnowSparkleLaw; gated OFF
-            // the moment the blizzard builds so it is, by construction, calm-weather jewelry.
+            // S13(a) -> S21(b) SNOW SPARKLE (GLINT v4): calm-cold snowfield glints in the 75-82 band, BELOW the
+            // snowfall -- the storm's absence made visible. The glint cross-fades OUT across 80->82 exactly as the
+            // ambient snow above crossfades IN, so the two never compete. Same spawn-tick cadence +
+            // Particles/enclosure/reduce-snow scaling as the ambient snow; a tiny CLUSTER budget. Pure gate/budget
+            // law in core.SnowSparkleLaw; also gated OFF the moment the blizzard builds (calm-weather jewelry).
             spawnSnowSparkle(client, absLatDeg, snowTier, exposure);
         }
 
@@ -528,15 +532,43 @@ public class GlobeModClient implements ClientModInitializer {
      * FIREWORK spark sitting on the snow). */
     private static final net.minecraft.core.particles.SimpleParticleType SPARKLE_PARTICLE = ParticleTypes.WAX_OFF;
 
-    // Calm-weather glints on the snowfields near the player (80-85 deg, below the deep-blizzard tier). A tiny,
-    // FIXED per-spawn-tick budget from the pure SnowSparkleLaw (band trapezoid x calm gate), scaled by the SAME
-    // vanilla Particles tier + enclosure estimate + reduce-snow comfort option as the ambient snow, so it honors
-    // every perf/accessibility knob without a second curve. No state/accumulator; the caller's isPaused/spawn-tick
-    // guards (B-3b anti-backlog law) are untouched. S14(d): each glint FLOATS 0.5-1.5 blocks above the sampled
-    // surface (never clipped in) with a gentle upward/lateral drift, using the amethyst-family SPARKLE_PARTICLE.
+    /**
+     * S21(b)(iii) SPARKLIER -- a twin-particle micro-cluster per glint point: {@link #SPARKLE_TWIN_COUNT}
+     * particles spawned the SAME tick at a tiny random offset ({@link #SPARKLE_TWIN_OFFSET} blocks) read as one
+     * BRIGHTER flash than a lone spark. The pure {@link com.example.globe.core.SnowSparkleLaw} budget counts
+     * CLUSTERS (one per accepted loop unit), so the peak (~20 clusters/s) lands as ~40 particles/s -- the budget
+     * ACCOUNTING is unchanged (clusters, not particles); the twin just fattens each accepted point. P4 dials.
+     */
+    private static final int SPARKLE_TWIN_COUNT = 2;
+    private static final double SPARKLE_TWIN_OFFSET = 0.12;
+
+    /**
+     * S21(b)(ii) SURFACE CHECK -- the snow/ice block family a glint may land on. The owner saw bare STONE
+     * glinting on a Stony Shore inside the glint band; v4 samples the actual surface block and only glints when
+     * it is snow or ice (a full snow block or a thin snow LAYER dusting the ground, powder snow, or any ice
+     * family member). Anything else -- stone, gravel, dirt, sand -- is skipped, so the glint reads unambiguously
+     * as the SNOW catching the light, never bare rock. (A skipped point costs a cluster from the per-tick budget,
+     * which is intended: the budget is the MAX clusters; bare-ground points thin it naturally.)
+     */
+    private static final java.util.Set<Block> GLINT_SURFACE_BLOCKS = java.util.Set.of(
+            Blocks.SNOW_BLOCK, Blocks.SNOW, Blocks.POWDER_SNOW,
+            Blocks.ICE, Blocks.PACKED_ICE, Blocks.BLUE_ICE, Blocks.FROSTED_ICE);
+
+    /** True iff {@code state} is a snow/ice-family block a glint may sit on (see {@link #GLINT_SURFACE_BLOCKS}). */
+    private static boolean isGlintSurface(BlockState state) {
+        return GLINT_SURFACE_BLOCKS.contains(state.getBlock());
+    }
+
+    // Calm-weather glints on the snowfields near the player (GLINT v4: the 75-82 band, crossfading OUT as the
+    // ambient snowfall crossfades IN at 80-82 -- SnowSparkleLaw.glintWeight). A tiny, FIXED per-spawn-tick CLUSTER
+    // budget from the pure SnowSparkleLaw (band ramp x snowfall crossfade x calm gate), scaled by the SAME vanilla
+    // Particles tier + enclosure estimate + reduce-snow comfort option as the ambient snow, so it honors every
+    // perf/accessibility knob without a second curve. No state/accumulator; the caller's isPaused/spawn-tick
+    // guards (B-3b anti-backlog law) are untouched. S17(c)(ii): each glint hugs the sampled surface (0.05-0.3
+    // above it) with zero drift; S21(b): only snow/ice surfaces glint, and each accepted point spawns a twin.
     private static void spawnSnowSparkle(Minecraft client, double absLatDeg,
                                          com.example.globe.core.ParticleDensity.Tier tier, float exposure) {
-        // The blizzard drive is the storm signal (0 across the calm 80-85 band; belt-and-suspenders per the law).
+        // The blizzard drive is the storm signal (0 across the calm 75-82 glint band; belt-and-suspenders per the law).
         double blizz = com.example.globe.core.PolarHazardWindow.blizzardDrive(absLatDeg);
         int budget = com.example.globe.core.SnowSparkleLaw.sparkleBudget(absLatDeg, blizz, SPARKLE_PEAK_BUDGET);
         // The pure per-tick BUDGET (band trapezoid x calm gate x snowfall window), then scaled to the actual spawn
@@ -558,9 +590,11 @@ public class GlobeModClient implements ClientModInitializer {
         // spawn-tick and flush the ~5s window line. Recorded on every path (incl. count == 0) so "sparkle invisible
         // live" is diagnosable: spawned=0 with budget>0 = scaling; both>0 yet nothing seen = a particle-render issue.
         if (com.example.globe.core.PolarInstrument.SPARKLE) {
-            double window01 = com.example.globe.core.SnowSparkleLaw.snowfallWindow01(
-                    com.example.globe.core.PolarHazardWindow.snowCount(absLatDeg));
-            double band01 = com.example.globe.core.SnowSparkleLaw.bandIntensity01(absLatDeg);
+            // GLINT v4 (S21b): band01 = the glint band ramp (75->76); window01 = the snowfall-gate factor
+            // (1 - snowfallRamp01), the (1 - snow) side of the 80->82 crossfade (1 below the snow onset, 0 once
+            // the snow has fully taken over). Their product is SnowSparkleLaw.glintWeight.
+            double band01 = com.example.globe.core.SnowSparkleLaw.bandRamp01(absLatDeg);
+            double window01 = 1.0 - com.example.globe.core.SnowSparkleLaw.snowfallRamp01(absLatDeg);
             com.example.globe.core.PolarInstrument.sparkleSample(budget, count, window01, band01);
             String line = com.example.globe.core.PolarInstrument.pollSparkleLine(client.level.getGameTime());
             if (line != null) {
@@ -578,15 +612,31 @@ public class GlobeModClient implements ClientModInitializer {
             int bz = (int) Math.floor(pz + (random.nextDouble() - 0.5) * SPARKLE_RADIUS * 2.0);
             int surfaceY = client.level.getHeight(
                     net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, bx, bz);
+            // S21(b)(ii) SURFACE CHECK: glint ONLY on snow/ice. The heightmap top is the block at surfaceY-1;
+            // a thin snow LAYER dusting grass often sits ABOVE the motion-blocking top (at surfaceY), so accept
+            // either. Bare stone/gravel (the Stony Shore the owner saw glinting) matches neither -> skip.
+            BlockPos topPos = new BlockPos(bx, surfaceY - 1, bz);
+            if (!isGlintSurface(client.level.getBlockState(topPos))
+                    && !isGlintSurface(client.level.getBlockState(topPos.above()))) {
+                continue;
+            }
             double gx = bx + random.nextDouble();
             double gz = bz + random.nextDouble();
-            // S14(d): hang the glint in the AIR above the snow (0.5-1.5 blocks up), not clipped on the surface.
+            // S17(c)(ii): hug the snow (0.05-0.3 above the sampled surface) so it reads as the snow glinting.
             double gy = surfaceY + SPARKLE_Y_MIN + random.nextDouble() * (SPARKLE_Y_MAX - SPARKLE_Y_MIN);
-            // Gentle drift: slow upward lift + a little lateral wander (WAX_OFF damps these to a whisper).
+            // Zero incoming velocity -- the glint twinkles in place (WAX_OFF's own quad + short life carry it).
             double vx = (random.nextDouble() - 0.5) * 2.0 * SPARKLE_DRIFT_LATERAL;
             double vy = SPARKLE_DRIFT_UP;
             double vz = (random.nextDouble() - 0.5) * 2.0 * SPARKLE_DRIFT_LATERAL;
-            client.particleEngine.createParticle(SPARKLE_PARTICLE, gx, gy, gz, vx, vy, vz);
+            // S21(b)(iii) TWIN CLUSTER: SPARKLE_TWIN_COUNT particles at a tiny offset = one brighter flash per
+            // point. The cluster is ONE budget unit (the count loop already spent it), so budget accounting is
+            // unchanged -- this only fattens each accepted glint.
+            for (int j = 0; j < SPARKLE_TWIN_COUNT; j++) {
+                double ox = (random.nextDouble() - 0.5) * SPARKLE_TWIN_OFFSET;
+                double oy = (random.nextDouble() - 0.5) * SPARKLE_TWIN_OFFSET;
+                double oz = (random.nextDouble() - 0.5) * SPARKLE_TWIN_OFFSET;
+                client.particleEngine.createParticle(SPARKLE_PARTICLE, gx + ox, gy + oy, gz + oz, vx, vy, vz);
+            }
         }
     }
 

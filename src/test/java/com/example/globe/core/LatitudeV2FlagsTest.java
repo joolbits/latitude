@@ -4,6 +4,8 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class LatitudeV2FlagsTest {
@@ -59,9 +61,28 @@ class LatitudeV2FlagsTest {
 
     @Test
     void polarBarrensDegreeDefaults() {
-        // Onset defaults to the veg-fade finish (the owner's invisible seam); full defaults to 84 (S13).
-        assertEquals(PolarVegetationFade.FULL_DEG, LatitudeV2Flags.POLAR_BARRENS_ONSET_DEG, 1e-9,
-                "Barrens onset defaults to the vegetation-fade finish (KEEP-SHARED) -- 82 deg since S13");
+        // S21c DECOUPLED the Barrens onset from the veg-fade finish: the onset is now an independent 82 deg
+        // (the owner's chosen value) while the vegetation fade finishes at 80 ("veg to 80"). The 80-82 band is
+        // bare tundra before the Barrens biome claims the land. Full-dominance defaults to 84 (fray 82->84).
+        //
+        // INIT-ORDER-PROOF (S21c small-fix round): the constants below are static-final, captured from
+        // System.getProperty ONCE at class-init (the LatitudeV2Flags testing note) -- so this test asserts
+        // the CAPTURED CONSTANTS directly, never a re-read sysprop. That is order-independent as long as the
+        // suite JVM never carries these -D keys; the guards below make any future pollution (a gradle test-JVM
+        // -D, or a test that setProperty's mid-suite -- both forbidden) fail LOUDLY with the cause named,
+        // instead of flaking the literal assertions by class-load order.
+        assertNull(System.getProperty("latitude.polarBarrens.onsetDeg"),
+                "suite JVM must not carry -Dlatitude.polarBarrens.onsetDeg (static-init capture: defaults law)");
+        assertNull(System.getProperty("latitude.polarBarrens.fullDeg"),
+                "suite JVM must not carry -Dlatitude.polarBarrens.fullDeg (static-init capture: defaults law)");
+        assertNull(System.getProperty("latitude.polarVegetationFade.fullDeg"),
+                "suite JVM must not carry -Dlatitude.polarVegetationFade.fullDeg (static-init capture: defaults law)");
+        assertEquals(82.0, LatitudeV2Flags.POLAR_BARRENS_ONSET_DEG, 1e-9,
+                "Barrens onset is an independent literal 82 deg (S21c decoupled it from the veg-fade finish)");
+        assertNotEquals(PolarVegetationFade.FULL_DEG, LatitudeV2Flags.POLAR_BARRENS_ONSET_DEG,
+                "S21c: the coupling is BROKEN -- the veg fade finishes at 80, the Barrens onset stays 82");
+        assertEquals(80.0, PolarVegetationFade.FULL_DEG, 1e-9,
+                "veg fade now finishes at 80 (S21c 'veg to 80')");
         assertEquals(84.0, LatitudeV2Flags.POLAR_BARRENS_FULL_DEG, 1e-9,
                 "Barrens full-dominance latitude defaults to 84 deg (S13: onset+2, fray held at +2)");
     }

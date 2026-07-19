@@ -4,6 +4,8 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -36,9 +38,24 @@ class PolarBarrensBandTest {
     }
 
     @Test
-    void onsetDefaultsToVegetationFadeFinish() {
-        assertEquals(PolarVegetationFade.FULL_DEG, PolarBarrensBand.ONSET_DEG, EPS,
-                "The barrens onset is KEEP-SHARED with the vegetation-fade finish (the invisible seam)");
+    void onsetIsDecoupledFromVegetationFadeFinish() {
+        // S21c BROKE the KEEP-SHARED coupling: the barrens onset is now an INDEPENDENT 82 deg, while the
+        // vegetation fade finishes at 80 ("veg to 80"). The 80-82 band is bare tundra before the barrens claim.
+        //
+        // INIT-ORDER-PROOF (S21c small-fix round): PolarBarrensBand.ONSET_DEG mirrors
+        // LatitudeV2Flags.POLAR_BARRENS_ONSET_DEG, a static-final captured from System.getProperty ONCE at
+        // class-init -- so this test asserts the CAPTURED CONSTANTS directly, never a re-read sysprop. Order-
+        // independent as long as the suite JVM never carries these -D keys; the guards make any future pollution
+        // (gradle test-JVM -D, or a mid-suite setProperty -- both forbidden per the LatitudeV2Flags testing
+        // note) fail LOUDLY with the cause named, instead of flaking the literals by class-load order.
+        assertNull(System.getProperty("latitude.polarBarrens.onsetDeg"),
+                "suite JVM must not carry -Dlatitude.polarBarrens.onsetDeg (static-init capture: defaults law)");
+        assertNull(System.getProperty("latitude.polarVegetationFade.fullDeg"),
+                "suite JVM must not carry -Dlatitude.polarVegetationFade.fullDeg (static-init capture: defaults law)");
+        assertEquals(82.0, PolarBarrensBand.ONSET_DEG, EPS,
+                "The barrens onset is an independent literal 82 deg (S21c)");
+        assertNotEquals(PolarVegetationFade.FULL_DEG, PolarBarrensBand.ONSET_DEG,
+                "S21c: barrens onset (82) is decoupled from the veg-fade finish (now 80)");
     }
 
     // --- barrensFraction01: containment below onset (byte-identical region) -----------------------

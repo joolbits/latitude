@@ -6,102 +6,113 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Pure-JVM tests for {@link SnowSparkleLaw} -- the S13(a) snow-sparkle budget law: the calm-band trapezoid
- * (80-85), the storm/blizzard calm-gate, and the fixed per-spawn-tick budget (NaN-safe, no state).
+ * Pure-JVM tests for {@link SnowSparkleLaw} -- the GLINT v4 (S21b) snow-sparkle budget law: the glint band
+ * ramp (75->76), the ambient-snowfall crossfade (80->82) that hands the snowfield off from glint to falling
+ * snow, the storm/blizzard calm-gate, and the fixed per-spawn-tick CLUSTER budget (NaN-safe, no state).
  */
 class SnowSparkleLawTest {
 
     private static final double EPS = 1e-9;
 
-    // ---- the calm band (80-85) ----
+    // ---- the band constants (GLINT v4 moved the glint BELOW the snowfall) ----
 
     @Test
-    void bandIntensityTrapezoidOverEightyToEightyFive() {
-        assertEquals(0.0, SnowSparkleLaw.bandIntensity01(79.9), EPS);  // below the snow onset
-        assertEquals(0.0, SnowSparkleLaw.bandIntensity01(80.0), EPS);  // at the onset: still 0
-        assertEquals(1.0, SnowSparkleLaw.bandIntensity01(81.5), EPS);  // full by the calm mid-band start
-        assertEquals(1.0, SnowSparkleLaw.bandIntensity01(82.5), EPS);  // held across the calm plateau
-        assertEquals(1.0, SnowSparkleLaw.bandIntensity01(84.0), EPS);  // held to the shoulder
-        assertEquals(0.0, SnowSparkleLaw.bandIntensity01(85.0), EPS);  // gone at the frostbite onset
-        assertEquals(0.0, SnowSparkleLaw.bandIntensity01(88.0), EPS);  // deep in the blizzard: nothing
-        // ramps
-        double up = SnowSparkleLaw.bandIntensity01(80.75); // halfway 80->81.5
-        assertTrue(up > 0.0 && up < 1.0, "fade-in interior: " + up);
-        double down = SnowSparkleLaw.bandIntensity01(84.5); // halfway 84->85
-        assertTrue(down > 0.0 && down < 1.0, "fade-out interior: " + down);
+    void bandConstantsAreTheGlintV4Values() {
+        assertEquals(75.0, SnowSparkleLaw.ONSET_DEG, EPS);          // glint rises from 75
+        assertEquals(76.0, SnowSparkleLaw.FULL_DEG, EPS);           // full by 76
+        assertEquals(PolarHazardWindow.AMBIENT_ONSET_DEG, SnowSparkleLaw.SNOWFALL_ONSET_DEG, EPS); // 80 (snow onset)
+        assertEquals(82.0, SnowSparkleLaw.SNOWFALL_FULL_DEG, EPS);  // glint gone by 82 (== the Barrens onset)
+    }
+
+    // ---- the glint band ramp (75 -> 76, then held at 1; the crossfade owns the upper edge) ----
+
+    @Test
+    void bandRampRisesFrom75ToFullAt76ThenHolds() {
+        assertEquals(0.0, SnowSparkleLaw.bandRamp01(74.0), EPS);    // below onset
+        assertEquals(0.0, SnowSparkleLaw.bandRamp01(75.0), EPS);    // at onset: still 0
+        assertEquals(0.5, SnowSparkleLaw.bandRamp01(75.5), EPS);    // smoothstep midpoint
+        assertEquals(1.0, SnowSparkleLaw.bandRamp01(76.0), EPS);    // full by 76
+        assertEquals(1.0, SnowSparkleLaw.bandRamp01(79.0), EPS);    // held full
+        assertEquals(1.0, SnowSparkleLaw.bandRamp01(85.0), EPS);    // ramp never falls (snowfall crossfade cuts it)
+        assertEquals(0.0, SnowSparkleLaw.bandRamp01(Double.NaN), EPS); // NaN-safe
+    }
+
+    // ---- the ambient-snowfall fade-in (80 -> 82) ----
+
+    @Test
+    void snowfallRampFadesInFrom80ToFullAt82() {
+        assertEquals(0.0, SnowSparkleLaw.snowfallRamp01(79.0), EPS);  // below the snow onset
+        assertEquals(0.0, SnowSparkleLaw.snowfallRamp01(80.0), EPS);  // at the snow onset: still 0
+        assertEquals(0.5, SnowSparkleLaw.snowfallRamp01(81.0), EPS);  // smoothstep midpoint
+        assertEquals(1.0, SnowSparkleLaw.snowfallRamp01(82.0), EPS);  // full snow by 82
+        assertEquals(1.0, SnowSparkleLaw.snowfallRamp01(85.0), EPS);  // held full
+        assertEquals(1.0, SnowSparkleLaw.snowfallRamp01(Double.NaN), EPS); // NaN -> full snow (conservative)
+    }
+
+    // ---- the crossfade: glint fades OUT exactly as snow fades IN (never both at full) ----
+
+    @Test
+    void glintWeightCrossfadesAgainstSnowfall() {
+        assertEquals(0.0, SnowSparkleLaw.glintWeight(74.0), EPS);   // below the glint band
+        assertEquals(1.0, SnowSparkleLaw.glintWeight(76.0), EPS);   // full glint, no snow
+        assertEquals(1.0, SnowSparkleLaw.glintWeight(79.0), EPS);   // held across the calm 76-80 band
+        assertEquals(1.0, SnowSparkleLaw.glintWeight(80.0), EPS);   // still full at the snow onset...
+        assertEquals(0.5, SnowSparkleLaw.glintWeight(81.0), EPS);   // ...crossfading out as the snow rises
+        assertEquals(0.0, SnowSparkleLaw.glintWeight(82.0), EPS);   // gone: the snow has fully taken over
+        assertEquals(0.0, SnowSparkleLaw.glintWeight(85.0), EPS);   // deep snow: nothing
     }
 
     @Test
-    void bandBoundariesPinnedToTheHazardConstants() {
-        assertEquals(PolarHazardWindow.AMBIENT_ONSET_DEG, SnowSparkleLaw.ONSET_DEG, EPS);   // snow onset (80)
-        assertEquals(PolarHazardWindow.FROSTBITE_ONSET_DEG, SnowSparkleLaw.END_DEG, EPS);   // frostbite (85)
+    void glintAndSnowfallHandOffCleanlyAcrossTheCrossfade() {
+        // The structural fix for "two competing effects": across the 80->82 crossfade the band ramp is at 1,
+        // so glintWeight == 1 - snowfallRamp01 -> the two ALWAYS sum to exactly 1 (a pure handoff, never both
+        // at full at once).
+        for (double deg : new double[] {80.0, 80.5, 81.0, 81.5, 82.0}) {
+            assertEquals(1.0, SnowSparkleLaw.glintWeight(deg) + SnowSparkleLaw.snowfallRamp01(deg), EPS,
+                    "glint + snowfall must hand off (sum 1) at " + deg);
+        }
     }
 
     // ---- the calm gate ----
 
     @Test
     void calmFactorFallsWithStorm() {
-        assertEquals(1.0, SnowSparkleLaw.calmFactor01(0.0), EPS);  // dead calm -> full
+        assertEquals(1.0, SnowSparkleLaw.calmFactor01(0.0), EPS);   // dead calm -> full
         assertEquals(0.5, SnowSparkleLaw.calmFactor01(0.5), EPS);
-        assertEquals(0.0, SnowSparkleLaw.calmFactor01(1.0), EPS);  // full storm -> none
+        assertEquals(0.0, SnowSparkleLaw.calmFactor01(1.0), EPS);   // full storm -> none
         assertEquals(0.0, SnowSparkleLaw.calmFactor01(Double.NaN), EPS); // NaN -> fully stormy -> none
     }
 
-    // ---- S19b: the snowfall window (sparkle across clear-to-light snow, OFF at medium+; NO lower bound) ----
+    // ---- the cluster budget ----
 
     @Test
-    void snowfallWindowHalfTrapezoidNoLowerBound() {
-        // S19b DROPPED the lower bound: zero/clear snowfall now sparkles (the calm pole's resting state).
-        assertEquals(1.0, SnowSparkleLaw.snowfallWindow01(0.0), EPS);   // CLEAR (no snow) -> full glint (S19b)
-        assertEquals(1.0, SnowSparkleLaw.snowfallWindow01(0.5), EPS);   // a stray flake -> still full
-        assertEquals(1.0, SnowSparkleLaw.snowfallWindow01(2.0), EPS);   // very light -> full
-        assertEquals(1.0, SnowSparkleLaw.snowfallWindow01(SnowSparkleLaw.SNOWFALL_LIGHT_MAX), EPS); // light ceiling
-        assertEquals(0.0, SnowSparkleLaw.snowfallWindow01(SnowSparkleLaw.SNOWFALL_MEDIUM), EPS);    // medium+ -> off
-        assertEquals(0.0, SnowSparkleLaw.snowfallWindow01(40.0), EPS);  // heavy -> off
-        double mid = SnowSparkleLaw.snowfallWindow01(18.0);             // between light (14) and medium (22)
-        assertTrue(mid > 0.0 && mid < 1.0, "light->medium fade: " + mid);
-        assertEquals(0.5, SnowSparkleLaw.snowfallWindow01(18.0), EPS);  // exactly halfway 14->22 (upper edge unchanged)
-        assertEquals(0.0, SnowSparkleLaw.snowfallWindow01(Double.NaN), EPS); // NaN-safe (conservative 0)
-    }
-
-    // ---- the budget ----
-
-    @Test
-    void sparkleBudgetIsBandTimesCalmTimesWindowTimesPeak() {
-        assertEquals(4, SnowSparkleLaw.sparkleBudget(81.5, 0.0, 4)); // full band + full window, dead calm
-        assertEquals(0, SnowSparkleLaw.sparkleBudget(81.5, 1.0, 4)); // full storm snuffs it
-        assertEquals(0, SnowSparkleLaw.sparkleBudget(79.0, 0.0, 4)); // below the band (and below the snow onset)
-        assertEquals(0, SnowSparkleLaw.sparkleBudget(86.0, 0.0, 4)); // above the band (in the blizzard)
-        assertEquals(2, SnowSparkleLaw.sparkleBudget(80.75, 0.0, 4)); // half band-ramp, still light snow -> round(0.5*4)
+    void sparkleBudgetIsGlintWeightTimesCalmTimesPeak() {
+        assertEquals(4, SnowSparkleLaw.sparkleBudget(76.0, 0.0, 4)); // full glint, dead calm
+        assertEquals(4, SnowSparkleLaw.sparkleBudget(79.0, 0.0, 4)); // full band
+        assertEquals(4, SnowSparkleLaw.sparkleBudget(80.0, 0.0, 4)); // still full at the snow onset
+        assertEquals(2, SnowSparkleLaw.sparkleBudget(81.0, 0.0, 4)); // mid crossfade -> round(0.5*4)
+        assertEquals(0, SnowSparkleLaw.sparkleBudget(82.0, 0.0, 4)); // gone: snow taken over
+        assertEquals(0, SnowSparkleLaw.sparkleBudget(74.0, 0.0, 4)); // below the glint band
+        assertEquals(2, SnowSparkleLaw.sparkleBudget(75.5, 0.0, 4)); // half band-ramp -> round(0.5*4)
+        assertEquals(0, SnowSparkleLaw.sparkleBudget(76.0, 1.0, 4)); // full storm snuffs it
     }
 
     @Test
-    void sparkleGatedOffAtMediumSnowEvenInsideTheLatitudeBand() {
-        // 84 deg is INSIDE the latitude band (bandIntensity01 == 1.0 there) but the ambient snow is medium+ at
-        // that latitude, so the S17(c)(iii) snowfall window snuffs the sparkle -- "only during light snow".
-        assertEquals(1.0, SnowSparkleLaw.bandIntensity01(84.0), EPS);
+    void sparkleGoneOnceSnowHasTakenOver() {
+        // The structural fix: at/above 82 the ambient snow owns the snowfield, so no glint competes with it.
+        assertEquals(0, SnowSparkleLaw.sparkleBudget(82.0, 0.0, 4));
         assertEquals(0, SnowSparkleLaw.sparkleBudget(84.0, 0.0, 4));
-        // ...and it is alive in the light-snow shoulder near the onset.
-        assertTrue(SnowSparkleLaw.sparkleBudget(81.5, 0.0, 4) > 0, "sparkle alive in light snow");
+        assertEquals(0, SnowSparkleLaw.sparkleBudget(88.0, 0.0, 4));
+        // ...and it is alive across the calm sub-snow band.
+        assertTrue(SnowSparkleLaw.sparkleBudget(78.0, 0.0, 4) > 0, "glint alive in the calm 76-80 band");
     }
 
     @Test
     void sparkleBudgetNonPositivePeakAndNaNSafe() {
-        assertEquals(0, SnowSparkleLaw.sparkleBudget(82.5, 0.0, 0));
-        assertEquals(0, SnowSparkleLaw.sparkleBudget(82.5, 0.0, -3));
+        assertEquals(0, SnowSparkleLaw.sparkleBudget(78.0, 0.0, 0));
+        assertEquals(0, SnowSparkleLaw.sparkleBudget(78.0, 0.0, -3));
         assertEquals(0, SnowSparkleLaw.sparkleBudget(Double.NaN, 0.0, 4));
-        assertEquals(0, SnowSparkleLaw.sparkleBudget(82.5, Double.NaN, 4)); // NaN storm -> calm 0 -> 0
+        assertEquals(0, SnowSparkleLaw.sparkleBudget(78.0, Double.NaN, 4)); // NaN storm -> calm 0 -> 0
         assertEquals(4, SnowSparkleLaw.DEFAULT_PEAK_BUDGET, "S19b density-up peak"); // 3 -> 4
-    }
-
-    @Test
-    void sparkleFullInClearToLightSnowAcrossTheLowerBand() {
-        // S19b: the calm pole's resting state -- the light-snow shoulder near the onset (snowCount <= 14, i.e.
-        // ~80-82 deg on today's curve) sparkles at FULL window strength on the default peak, no lower bound.
-        assertEquals(1.0, SnowSparkleLaw.snowfallWindow01(PolarHazardWindow.snowCount(80.0)), EPS); // clear onset
-        assertEquals(1.0, SnowSparkleLaw.snowfallWindow01(PolarHazardWindow.snowCount(81.5)), EPS); // light shoulder
-        assertEquals(SnowSparkleLaw.DEFAULT_PEAK_BUDGET,
-                SnowSparkleLaw.sparkleBudget(81.5, 0.0, SnowSparkleLaw.DEFAULT_PEAK_BUDGET),
-                "full band + light snow + dead calm -> full default peak");
     }
 }
