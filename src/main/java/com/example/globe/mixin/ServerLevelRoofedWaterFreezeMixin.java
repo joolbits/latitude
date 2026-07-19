@@ -7,6 +7,7 @@ import com.example.globe.world.LatitudeBiomes;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.tags.BiomeTags;
+import net.minecraft.tags.BlockTags;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
@@ -60,9 +61,10 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * source water, descend up to {@link PolarWaterFreezeRule#ROOFED_FREEZE_REACH_BLOCKS} blocks and, for each block
  * in reach: a SOURCE water surface is left to vanilla's OWN {@code Biome.shouldFreeze} (genuine-water / light
  * &lt; 10 / edge checks intact, temperature veto already waived in-zone) and ends the descent (a surface skin);
- * a FLOWING water block freezes DIRECTLY to plain {@code ice} (the pure {@link
- * PolarWaterFreezeRule#freezesFlowing} decision -- barrens-family flag, ocean-EXEMPT, same frayed front) and the
- * descent CONTINUES to claim the rest of the cascade in reach. So a roofed pond freezes on vanilla's edge-inward
+ * a LANDED FLOWING water block freezes to plain {@code ice} at the S19 TWO SPEEDS (certain when touching ice,
+ * else the slow {@code FREEZE_CHANCE_ON_SOLID} roll -- the pure {@link PolarWaterFreezeRule#freezesFlowing}
+ * eligibility + {@link PolarWaterFreezeRule#flowTickFreezesLanded} decision, barrens-family flag, ocean-EXEMPT,
+ * same frayed front) and the descent CONTINUES to claim the rest of the cascade in reach. So a roofed pond freezes on vanilla's edge-inward
  * cadence; a waterfall's exposed cascade dies to ice over seconds as random columns are ticked; open source water
  * is left entirely to vanilla (byte-identical); the deep cave reservoir below the reach stays liquid (B-9), and
  * the ocean's under-ice liquid is never touched (the sacred pin -- {@code freezesFlowing} checks ocean FIRST).
@@ -146,7 +148,7 @@ public abstract class ServerLevelRoofedWaterFreezeMixin {
                         belowState.isAir(), !belowState.getFluidState().isEmpty());
                 if (landed) {
                     flowFreezes = globe$resolveFlowFreeze(self, top, absLatDeg, fray, flowFreezes);
-                    if (flowFreezes == 1) {
+                    if (flowFreezes == 1 && globe$twoSpeedLocks(self, up, belowState)) {
                         self.setBlockAndUpdate(up.immutable(), Blocks.ICE.defaultBlockState()); // one frozen layer
                     }
                 }
@@ -167,9 +169,9 @@ public abstract class ServerLevelRoofedWaterFreezeMixin {
         }
         // Covered/dry column: reach under the roof (and down any waterfall) within the shelter reach. A SOURCE
         // water surface is left to vanilla's OWN shouldFreeze (genuine-water / light / edge, temperature veto
-        // already waived in-zone) and ends the descent (a surface skin). A FLOWING block freezes DIRECTLY to a
-        // plain-ice cascade (S16(b); vanilla's tickPrecipitation never tests it) and the descent CONTINUES to
-        // claim the rest of the cascade. Water/flow sealed deeper than the reach stays liquid (the B-9 reservoir).
+        // already waived in-zone) and ends the descent (a surface skin). A LANDED FLOWING block freezes to a
+        // plain-ice cascade at the S19 two speeds (S16(b); vanilla's tickPrecipitation never tests it) and the
+        // descent CONTINUES to claim the rest. Water/flow sealed deeper than the reach stays liquid (the B-9 reservoir).
         int floorY = Math.max(self.getMinY(), top.getY() - PolarWaterFreezeRule.ROOFED_FREEZE_REACH_BLOCKS);
         BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos(top.getX(), 0, top.getZ());
         BlockPos.MutableBlockPos belowCursor = new BlockPos.MutableBlockPos(top.getX(), 0, top.getZ());
@@ -192,7 +194,7 @@ public abstract class ServerLevelRoofedWaterFreezeMixin {
                 BlockState belowState = self.getBlockState(belowCursor);
                 if (PolarWaterFreezeRule.landedOnSupport(belowState.isAir(), !belowState.getFluidState().isEmpty())) {
                     flowFreezes = globe$resolveFlowFreeze(self, top, absLatDeg, fray, flowFreezes);
-                    if (flowFreezes == 1) {
+                    if (flowFreezes == 1 && globe$twoSpeedLocks(self, cursor, belowState)) {
                         self.setBlockAndUpdate(cursor.immutable(), Blocks.ICE.defaultBlockState()); // frozen layer
                     }
                 }
@@ -217,5 +219,24 @@ public abstract class ServerLevelRoofedWaterFreezeMixin {
             eligible = PolarWaterFreezeRule.freezesFlowing(true, isOcean, absLatDeg, fray, false, true);
         }
         return eligible ? 1 : 0;
+    }
+
+    /**
+     * S19 TWO-SPEED gate for a LANDED, eligible flowing block found by either scan: CERTAIN when TOUCHING ICE
+     * ({@link PolarWaterFreezeRule#touchingIce} -- the block BELOW or any of the 4 horizontal neighbours is
+     * #minecraft:ice; the block ABOVE is excluded), else the slow {@link PolarWaterFreezeRule#FREEZE_CHANCE_ON_SOLID}
+     * roll on ordinary support. The on-ice branch draws NO random (the ternary skips the RNG); only the on-solid
+     * path consults {@code getRandom()} (the tick's own {@code RandomSource}, never worldgen RNG). Same law the
+     * flow-tick mixin uses, so a covered cascade climbs the same deterministic zipper once a base ice block exists.
+     */
+    private static boolean globe$twoSpeedLocks(ServerLevel self, BlockPos pos, BlockState below) {
+        boolean touchingIce = PolarWaterFreezeRule.touchingIce(
+                below.is(BlockTags.ICE),
+                self.getBlockState(pos.north()).is(BlockTags.ICE),
+                self.getBlockState(pos.east()).is(BlockTags.ICE),
+                self.getBlockState(pos.south()).is(BlockTags.ICE),
+                self.getBlockState(pos.west()).is(BlockTags.ICE));
+        double roll01 = touchingIce ? 0.0 : self.getRandom().nextFloat();
+        return PolarWaterFreezeRule.flowTickFreezesLanded(true, true, touchingIce, roll01);
     }
 }

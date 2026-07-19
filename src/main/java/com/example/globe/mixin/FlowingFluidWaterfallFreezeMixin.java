@@ -7,6 +7,7 @@ import com.example.globe.world.LatitudeBiomes;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.tags.BiomeTags;
+import net.minecraft.tags.BlockTags;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.levelgen.Heightmap;
@@ -23,8 +24,11 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * MOVING polar water once it LANDS, closing the owner's two-flight complaint that liquid waterfalls still cascade
  * despite the S14 worldgen freeze and the S16 tick-descent -- without the S17b "wall of ice around the water"
  * (TEST 108): water now FALLS freely and only LANDED water freezes, so the fall runs to the ground live and the
- * ice pile grows upward layer by layer. See {@link com.example.globe.core.PolarWaterFreezeRule#landedOnSupport}
- * and {@link com.example.globe.core.PolarWaterFreezeRule#FLOW_FREEZE_CHANCE}.
+ * ice pile grows upward layer by layer, and (S19) at TWO SPEEDS keyed on ice-contact so the freeze cannot be
+ * outrun. See {@link com.example.globe.core.PolarWaterFreezeRule#landedOnSupport},
+ * {@link com.example.globe.core.PolarWaterFreezeRule#touchingIce},
+ * {@link com.example.globe.core.PolarWaterFreezeRule#FREEZE_CHANCE_ON_SOLID} and
+ * {@link com.example.globe.core.PolarWaterFreezeRule#FREEZE_CHANCE_ON_ICE}.
  *
  * <p><b>Why the previous fixes missed it (root cause).</b> S16's {@code ServerLevelRoofedWaterFreezeMixin}
  * descends DOWNWARD from a column's {@code MOTION_BLOCKING} heightmap top. An open-air cascade FREE-FALLS above
@@ -40,9 +44,12 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * freeze floor, on a non-ocean column: a FLOWING (non-source) water block that attempts to flow is replaced with
  * plain {@code ice} and the vanilla flow/spread is cancelled -- BUT ONLY once it has LANDED (S18). A block still
  * FALLING (air or another fluid directly below) is left to vanilla, so the fall runs to the ground live; a block
- * SUPPORTED below (solid or ice -- motion-terminated) is landed and freezes with {@code FLOW_FREEZE_CHANCE} per
- * flow tick. The freeze then CLIMBS by construction (each frozen block is the floor the water above then lands
- * on), so the fall ices from the bottom UP into a layered pile instead of snapping to the S17b wall. A new
+ * SUPPORTED below (solid or ice -- motion-terminated) is landed and freezes at the S19 TWO SPEEDS: certain when
+ * TOUCHING ICE ({@code FREEZE_CHANCE_ON_ICE}, below-ice or a horizontal ice neighbour -- the reroute-hunter), or
+ * a slow {@code FREEZE_CHANCE_ON_SOLID} roll on ordinary support. The freeze then CLIMBS by construction (each
+ * frozen block is the floor the water above then lands on, and touching that ice makes the next block certain --
+ * a ~4 blocks/s zipper), so the fall ices from the bottom UP into a layered pile instead of snapping to the S17b
+ * wall, and a horizontal reroute onto/beside fresh ice locks one block out (the TEST-109 speckle heals). A new
  * spring's outflow lands on the ground and freezes as it spreads; STANDING cascade columns that already reached
  * equilibrium (and stopped re-ticking) are swept by the sibling UPWARD SCAN in
  * {@code ServerLevelRoofedWaterFreezeMixin} (also lowest-landed-first, same bottom-up direction). The SOURCE at
@@ -129,15 +136,27 @@ public abstract class FlowingFluidWaterfallFreezeMixin {
         if (!landed) {
             return; // still falling / pouring onto water -> vanilla flow (the fall reaches the ground first)
         }
-        // FLOW_FREEZE_CHANCE per LANDED flow tick, rolled with the TICK's own RandomSource (never worldgen RNG):
-        // the base spread gets a few flow ticks (~0.25 s each) to widen before it locks, so the frozen pile
-        // reads organic instead of snapping to a wall. A failed roll returns to vanilla flow (it re-ticks and
-        // re-rolls); the block above cannot land until this one is ice, so the climb is naturally bottom-up.
-        if (!PolarWaterFreezeRule.flowTickFreezesLanded(true, true, level.getRandom().nextFloat())) {
+        // S19 TWO-SPEED FREEZE (fixes the TEST-109 speckle: a single 50%-everywhere roll let the water's
+        // pathfinding OUTRUN the freeze). The touch set is the block BELOW plus the 4 horizontal neighbours (ABOVE
+        // excluded -- it is the source direction). Touching ice-family (#minecraft:ice: ice/packed/blue/frosted)
+        // -> CERTAIN (the reroute-hunter clause: the vertical climb + the one-block-out reroute lock, ~4 blocks/s
+        // zipper); ordinary solid support -> the slow FREEZE_CHANCE_ON_SOLID roll so the base pour widens first.
+        boolean touchingIce = PolarWaterFreezeRule.touchingIce(
+                belowState.is(BlockTags.ICE),
+                level.getBlockState(pos.north()).is(BlockTags.ICE),
+                level.getBlockState(pos.east()).is(BlockTags.ICE),
+                level.getBlockState(pos.south()).is(BlockTags.ICE),
+                level.getBlockState(pos.west()).is(BlockTags.ICE));
+        // The on-ice branch is CERTAIN and draws NO random -- only the on-solid path rolls the tick's own
+        // RandomSource (never worldgen RNG). A failed on-solid roll returns to vanilla flow (it re-ticks and
+        // re-rolls), and the block above cannot land until this one is ice, so the climb is naturally bottom-up.
+        double roll01 = touchingIce ? 0.0 : level.getRandom().nextFloat();
+        if (!PolarWaterFreezeRule.flowTickFreezesLanded(true, true, touchingIce, roll01)) {
             return;
         }
-        // Landed and the roll locked it: replace this flowing block with a plain-ice cascade and cancel vanilla's
-        // spread. The ice is the support the water above now rests on, so the fall freezes progressively upward.
+        // Landed and locked: replace this flowing block with a plain-ice cascade and cancel vanilla's spread. The
+        // ice is the support the water above now rests on -- AND makes it touching-ice -- so the fall freezes
+        // progressively (and, once a base exists, deterministically) upward.
         level.setBlockAndUpdate(pos, Blocks.ICE.defaultBlockState());
         ci.cancel();
     }
