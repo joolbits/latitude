@@ -68,13 +68,13 @@ public final class BiomeFeatureStripping {
             return keys;
         }
         try {
-            Object features = generationSettings.getClass().getMethod("getFeatures").invoke(generationSettings);
+            Object features = generationSettings.getClass().getMethod("features").invoke(generationSettings);
             if (features instanceof List<?> steps) {
                 int idx = step.ordinal();
                 if (idx >= 0 && idx < steps.size()) {
                     Object stepList = steps.get(idx);
-                    if (stepList instanceof List<?> placedList) {
-                        for (Object entry : placedList) {
+                    if (stepList instanceof Iterable<?> holders) {
+                        for (Object entry : holders) {
                             if (entry instanceof Holder<?> registryEntry) {
                                 Optional<? extends ResourceKey<?>> key = registryEntry.unwrapKey();
                                 if (key.isPresent()) {
