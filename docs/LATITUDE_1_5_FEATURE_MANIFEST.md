@@ -1,6 +1,6 @@
 # Latitude 1.5 Feature Manifest
 
-`status: Phase 7 repair PASSED locally` · `branch: codex/1.5-mini-launch-26.2` · `repair source commit: c6b0131c93b4f6cc321caa5608ce84637c836a1a` · `recorded: 2026-07-19`
+`status: post-Phase-7 Meadow/TEST 2 acceptance PASSED locally` · `branch: codex/1.5-mini-launch-26.2` · `implementation source commit: 211d8109617b3e68703347162153ef19e948e4fd` · `recorded: 2026-07-19`
 
 This is the implementation-side allowlist for the Latitude 1.5 pre-2.0 polish campaign. The campaign
 roadmap lives in the docs root at:
@@ -18,24 +18,46 @@ The exact phrase invariant and banned-term check passed, followed by Java 25 `co
 This is a local source-copy savepoint only: it does not advance Phase 8 or authorize profiles,
 worlds, tags, pushes, releases, uploads, or publication.
 
-## Post-Phase-7 loading-version label and runtime findings
+## Post-Phase-7 Meadow and TEST 2 acceptance
 
-Maintainer approved a small, unobtrusive version label in the bespoke loading pane. The label resolves
-`v<version>` from the active `globe` Fabric metadata and is right-aligned four pixels inside the
-pane's bottom-right corner using the existing muted color and no shadow. Phrase cadence, featured
-selection, compass, progress, and lifecycle behavior are unchanged. Structural proof and the Java
-25 clean build passed; live pixel review remains pending a separately authorized restage.
+Maintainer approved a small, unobtrusive version label in the bespoke loading pane. Commit `cebd4732`
+resolves `v<version>` from the active `globe` Fabric metadata and right-aligns it four pixels inside
+the pane's bottom-right corner using the existing muted color and no shadow. Phrase cadence,
+featured selection, compass, progress, and lifecycle behavior are unchanged. Structural proof,
+the Java 25 clean build, and disposable TEST 2 live screenshots passed; the label displays
+`v1.5.0+26.2-test.2` correctly anchored without competing with the pane content.
 
-The `/latdev` commands remain in source. The staged `L1.5-TEST-1.jar` is the production artifact,
-which intentionally excludes `com/example/globe/dev/**` and registers dev commands only in a
-Fabric development environment. A dev-enabled manual-test artifact is a separate packaging
-decision; public-jar purity was not changed here.
+Meadow remains an upland/mountain biome. Commit `f9add4b9` removes exact `minecraft:meadow` only
+from the late temperate warm-edge fallback pool and its validator, which were able to re-admit it
+after the ordinary non-mountain filter. The Y>112 upland ramp, mountain tag, Registry/Collection
+parity, and independent mountain promotion remain intact. The parent RED failed the two exact
+fallback checks; the candidate passed 13 focused checks, Java 25 clean build/invariants,
+provider-absent and Terralith strict climate, and a 55,225-cell impact scan. The scan changed 110
+cells away from Meadow and zero into Meadow. Another 138 warm-edge Meadow cells remained; the
+verifier separately confirms that independent upland/mountain routes remain wired, so latitude
+alone cannot classify those cells as invalid. This does not import terrain shaping or any Latitude
+2.0 system.
 
-the maintainer's screenshots also expose a separate low-elevation Meadow finding around 36–39°S. Source
-inspection confirms Meadow is correctly present in the temperate upland pool but is also broadly
-admitted by the general temperate tag and the non-mountain warm-edge transition fallback. Latitude
-should treat Meadow as upland/mountain terrain; this exact worldgen red is recorded but intentionally
-unpatched in the loading-version slice.
+The `/latdev` commands were never removed from source. `L1.5-TEST-1.jar` was the normal dev-free
+production artifact renamed for testing. Commit `211d8109` adds an explicit positive-sequence TEST
+artifact that packages the Phase 6/7 developer toolkit separately while ordinary build, assemble,
+sources, and publication paths remain dev-free. Post-commit artifacts:
+
+- public `latitude-1.5.0+26.2.jar`:
+  `0757762ec7dd08fd7c0fbaf773a83873dff747f5a516a96d6f305a894323cad1`;
+- TEST `latitude-1.5.0+26.2-test.2.jar` and staged `L1.5-TEST-2.jar`:
+  `73ca619f387d799e77e1f49c2e90cf5bb98bfdbc27cc3da01d4b2c8af26b9c33`.
+
+The exact staged TEST 2 runtime reported version `1.5.0+26.2-test.2`, clean commit `211d8109…`,
+the correct branch, and one common plus one client TEST initialization. In a disposable world
+created with Latitude's `Commands: ON` rule, `/latdev help`, case, trace, marker, capture, and
+finish all succeeded; the manifest-backed case closed `result=pass` with nine contiguous events.
+The earlier unknown-command response occurred in a separate disposable world created with commands
+off and is expected permission behavior.
+
+Canonical evidence:
+
+`docs/binder/latitude-1-5-meadow-test2-acceptance-20260719.md`
 
 ## Phase 0 safety result
 
