@@ -16,7 +16,7 @@ public class RenderSectionManagerVisibilityMixin {
 
     @Unique private static long latitude$lastLogMs = 0L;
 
-    @Inject(method = "isSectionVisible(III)Z", at = @At("RETURN"), cancellable = true)
+    @Inject(method = "isSectionVisible(III)Z", at = @At("RETURN"), cancellable = true, require = 0)
     private void globe$ewCullSections(int sectionX, int sectionY, int sectionZ, CallbackInfoReturnable<Boolean> cir) {
         if (!cir.getReturnValueZ()) return;
         if (!FabricLoader.getInstance().isModLoaded("sodium")) return;
