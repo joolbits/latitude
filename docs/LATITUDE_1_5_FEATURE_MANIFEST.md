@@ -1,6 +1,6 @@
 # Latitude 1.5 Feature Manifest
 
-`status: Phase 4 committed; local post-Phase-4 acceptance packet frozen with explicit HOLDs` · `branch: codex/1.5-mini-launch-26.1x` · `base: f26d5f58` · `recorded: 2026-07-17`
+`status: Phase 4 committed; July 18 acceptance refresh partial with explicit HOLDs` · `branch: codex/1.5-mini-launch-26.1x` · `base: f26d5f58` · `recorded: 2026-07-18`
 
 This is the implementation-side allowlist for the Latitude 1.5 pre-2.0 polish campaign. The campaign
 roadmap lives in the docs root at:
@@ -164,7 +164,7 @@ any profile/world action.
 | `bf6e07281bb133977f25992b88136ced30cd6b6f` | Adds a lambda-local populated-biome column cache. | Base output, climate, and disposable create/save/reload proof passed locally; the exact Promenade and combined-provider output gate remains HOLD. |
 | `188b2f52ed170b3c2a57937ea600ccbb10617607` | Caches constant biome IDs and immutable launch flags only. | Structural/fresh-JVM semantics and clean-build proof passed locally; no measured speed claim is made. |
 | `0aacc55aebc1c74d5e71e73652052486ea5be024` | Batches analog-compass disc spans while retaining the existing visible-pixel model. | Exact raster/model parity, clean-build proof, and the live size/theme/transparency/preview/placement matrix PASSED on the disposable 26.1.2 surface. |
-| `e6327c5715adc3acb295223d24963e74d682044c` | Rejects mountain-class temperate beach ridges while retaining low and rolling beaches. | Focused policy/model, accepted-output, climate, and build proof passed locally; the same-world 46°S visual retest remains HOLD. |
+| `e6327c5715adc3acb295223d24963e74d682044c` | Rejects mountain-class temperate beach ridges while retaining low and rolling beaches. | Existing focused policy/model, accepted-output, climate, and build proof remains valid. Exact 46°S identity is irrecoverable, and three replacement proof harnesses were withheld from runtime after fresh QA false-green/safety findings; exact new BEACH runtime remains HOLD. |
 | `d2cdee02051476e1681b7bb9620eac4aa5acbd80` | Separates pristine-default detached HUD detail from the compass while preserving explicit placement. | The 16-state digital/analog, Follow/Detach, Off/Biome/Zone/Biome+Zone live matrix, bounded-width representatives, real legacy-JSON migration, corrected default captures, and detail-only drag proof passed. |
 | `27327f205f21f2b88625f60e49b614eed99278ee` | Prevents new beyond-80° village starts while retaining the existing placement shield. | The live allowed village at 79.104°, fresh-world `/locate`/bell/NBT checks, and `beyond80=0` passed; executable policy proof separately allows exact 80° and non-village paths. Copied old saves may retain stored-start `/locate` results while physical placement remains suppressed; Maintainer accepted that legacy compatibility residue for the pre-2.0 1.5 release on 2026-07-18. |
 
@@ -176,13 +176,24 @@ implied by the beach-ridge guard.
 - Promenade exact parity remains HOLD: `8/55,225` sampled cells differ. Combined-provider exact
   parity also remains HOLD: `23/55,225` cells differ and the frozen environments are not exact
   matches. Matching palettes and stable provider presence do not turn either result into parity.
-- Controlled JFR supports a bounded base-stack result: paired wall time was `20.3%` faster with a
-  95% interval of `7.6–33.0%` faster, and sampled `LatitudeBiomes.pick` stacks fell `83.7%`.
-  Terralith's `2.5%` mean is inconclusive because its interval crosses zero, so Terralith remains
-  HOLD. No FPS or MSPT claim is made.
+- The committed Phase 3/4 Terralith provider-compatibility matrix remains the authoritative pass.
+  The July 18 correctness refresh is HOLD after three tooling candidates; the final closed-world
+  candidate passed 56 pure tests but fresh QA found three remaining false-green paths. This does
+  not revoke Phase 3/4 support and does not turn Promenade or combined-provider exact parity green.
+- The controlled 56-pair Terralith performance harness/design is adversarially green, but execution
+  has not started: fresh normalized non-benchmark CPU samples of `12.53%`, `14.47%`, `12.64%`,
+  and `13.62%` exceeded the
+  frozen `10.00%` ceiling. Protected Creative Cloud, WindowServer, Codex, OBS, and external Gradle
+  activity remained untouched. The only Terralith performance result remains the prior
+  inconclusive `2.5%` mean whose interval crosses zero. No FPS or MSPT claim is made.
 - The accepted beach screenshot establishes `minecraft:beach` at 46°S but does not preserve seed,
   coordinates, profile, or jar identity. Exact-scene acceptance therefore remains identity-blocked
-  HOLD; no substitute tuning is authorized.
+  HOLD. Three candidate/replacement harnesses were kept out of a new runtime after fresh QA found
+  safety/provenance false-green paths; no substitute tuning is authorized.
+
+Current acceptance chronology, exact candidate hashes, QA verdicts, and stop state:
+
+`docs/binder/latitude-1-5-beach-terralith-acceptance-20260718.md`
 
 ### Accepted legacy behavior
 
@@ -198,6 +209,7 @@ Those passes do not authorize Phase 5 or a public release.
 ### Version and authorization boundary
 
 The only compatibility proof claimed here is the committed Phase 4 matrix for Minecraft 26.1,
-26.1.1, and 26.1.2. Minecraft 26.0 and 26.2 are separate and unperformed; the 26.2 worktree stays
-protected. Nothing in this manifest authorizes Phase 5, a port, profile staging, tagging, pushing,
+26.1.1, and 26.1.2. Minecraft 26.0 and 26.2 are separate and unperformed. Phase 5 and 26.2 remain
+forbidden; the accidentally created 26.2 worktree/control-packet residue is quarantined and
+untouched. Nothing in this manifest authorizes Phase 5, a port, profile staging, tagging, pushing,
 release, upload, or publication.
