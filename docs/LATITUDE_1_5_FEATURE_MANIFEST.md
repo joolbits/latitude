@@ -1,6 +1,6 @@
 # Latitude 1.5 Feature Manifest
 
-`status: Phase 7 integrated tooling validation HOLD` · `branch: codex/1.5-mini-launch-26.2` · `Phase 7 HEAD: e243d5bc6ee92bfcf7c4d39bf52c8107806c21ba` · `recorded: 2026-07-19`
+`status: Phase 7 repair PASSED locally` · `branch: codex/1.5-mini-launch-26.2` · `repair source commit: c6b0131c93b4f6cc321caa5608ce84637c836a1a` · `recorded: 2026-07-19`
 
 This is the implementation-side allowlist for the Latitude 1.5 pre-2.0 polish campaign. The campaign
 roadmap lives in the docs root at:
@@ -277,10 +277,42 @@ developer-tool evidence-integrity defects; no product behavior or source was cha
 No screenshot was treated as human aesthetic acceptance, and the computed trace still does not
 prove final rendered pixels.
 
+## Phase 7 repair result
+
+Maintainer authorized one bounded repair for the two developer-tool evidence-integrity reds. The source
+repair is frozen at local commit `c6b0131c93b4f6cc321caa5608ce84637c836a1a`.
+
+- `/latdev tpLat` and its case context now use the same
+  `LatitudeMath.worldRadiusBlocks(border)` authority as the production presentation path. In a
+  fresh disposable 26.2 world, the command, trace, case marker, and captured screenshot context all
+  agreed on `+89.005500°` at Z `9889.5` with radius `10000.000`. Exact `+90°` and `-90°` requests
+  were honestly rejected by the existing border-safety margin.
+- Same-dimension client game-time rollback now emits `clock_resync` and advances a monotonic private
+  policy clock without clearing movement or warning-episode state. The live trace exercised seven
+  such resynchronizations. The return from `+89.005500°` to `-88.996500°` remained
+  `equatorward` with highest warning rank `2`; returning below 85° rearmed the episode.
+- A real Overworld-to-Nether and Nether-to-Overworld transition produced exactly two
+  `context_reset` rows with `reason=dimension_change`, each followed by an `initial` transition.
+  This proves the repair preserved the reset that is actually required.
+- `79` focused dev-policy assertions, all existing policy suites, the Java 25 clean build,
+  structural verifier, public-jar purity audit, exact artifact identity, and a fresh adversarial
+  review passed. Minecraft then saved all three dimensions and exited `BUILD SUCCESSFUL`.
+
+The live replay ran Gradle's development client classpath from clean commit `c6b0131c…`; it did not
+execute the distributable jar. The separately built public jar has SHA-256
+`f8372dc84a650ef0445c4cd8966f1a7cd99ecc1c6526add849144996578c75df`, manifest
+`Build-Dirty: false`, embedded commit `c6b0131c…`, and no developer payload. The identity-bound
+case is `phase7repair`, seed `26071971`, under
+`tmp/latitude-1.5-phase7-repair-20260719/`.
+
+This closes the two Phase 7 tooling defects. It does not claim screenshot aesthetic acceptance or
+final rendered-pixel equivalence, and it does not authorize a real profile/world, Phase 8, tag,
+push, release, upload, or publication.
+
 ### Release boundary
 
-Real profile/world staging, source fixes, tagging, pushing, release packaging, upload,
-publication, and every Latitude 2.0 behavior require separate Maintainer authorization.
+Real profile/world staging, Phase 8, tagging, pushing, release packaging, upload, publication, and
+every Latitude 2.0 behavior require separate Maintainer authorization.
 
 Decision record:
 
@@ -301,3 +333,7 @@ Phase 6 tooling chronology:
 Phase 7 integrated tooling chronology:
 
 `docs/binder/latitude-1-5-phase7-live-tooling-20260719.md`
+
+Phase 7 repair closure:
+
+`docs/binder/latitude-1-5-phase7-repair-20260719.md`
