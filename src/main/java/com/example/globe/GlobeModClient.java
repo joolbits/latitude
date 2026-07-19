@@ -481,7 +481,7 @@ public class GlobeModClient implements ClientModInitializer {
 
     // ---- S13(a) SNOW SPARKLE (owner order, TEST 103 flight): calm-cold snowfield glints. ----
     // Peak per-spawn-tick budget BEFORE the shared Particles/enclosure/reduce-snow scaling. At the shared
-    // every-4th-tick cadence (~5 spawn-ticks/s) the S17(c)(i) peak of 3 lands as ~15-glints/second at full band
+    // every-4th-tick cadence (~5 spawn-ticks/s) the S19b peak of 4 lands as ~20-glints/second at full band
     // strength on ALL particles + open sky, tapering with the band ramp + the snowfall window -- a livelier
     // shimmer, still not a particle storm. P4 dial (the pure ramp/window in SnowSparkleLaw handles the rest).
     private static final int SPARKLE_PEAK_BUDGET = com.example.globe.core.SnowSparkleLaw.DEFAULT_PEAK_BUDGET;

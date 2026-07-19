@@ -19,17 +19,18 @@ package com.example.globe.core;
  * belt-and-suspenders today -- but it keeps the law self-documenting and robust if the band constants ever
  * move: sparkle is, by construction, the calm-weather jewelry.
  *
- * <p><b>S17(c)(iii) the SNOWFALL WINDOW (owner, TEST 107: "only during very light to light snow").</b> The
- * calm gate above only cuts at BLIZZARD (blizzardDrive, onset 87) -- useless across the 80-85 band where it is
- * always 0. The real signal the owner asked for is the ambient SNOWFALL itself: sparkle is the glint of light
- * snow catching the low sun, so it must be ON only while snow is falling GENTLY, and OFF both when there is no
- * snow at all AND once the snow builds to medium or heavier. {@link #snowfallWindow01} expresses that as a
- * trapezoid over the literal ambient snow budget ({@link PolarHazardWindow#snowCount} flakes/tick): 0 below
- * {@link #SNOWFALL_MIN} (no snow -> no glint), full through the very-light-to-light range
- * ({@code <= }{@link #SNOWFALL_LIGHT_MAX}), fading out to 0 by {@link #SNOWFALL_MEDIUM} (medium+). It multiplies
- * into {@link #sparkleBudget}, so the sparkle now lives ONLY in the light-snow shoulder near the ambient onset
- * (~80-83.4 deg on today's snow curve), not across the whole latitude band -- the band trapezoid still shapes
- * the fade-IN at the onset, but the snowfall window governs the upper cutoff.
+ * <p><b>The SNOWFALL WINDOW (owner, TEST 107 -> S19b, TEST 109).</b> The calm gate above only cuts at BLIZZARD
+ * (blizzardDrive, onset 87) -- useless across the 80-85 band where it is always 0. The real signal the owner
+ * asked for is the ambient SNOWFALL itself: the sparkle is the calm pole's RESTING state, so it must be ON
+ * across clear skies and light snow alike and OFF only once the snow builds to medium or heavier.
+ * {@link #snowfallWindow01} expresses that as a HALF-trapezoid over the literal ambient snow budget
+ * ({@link PolarHazardWindow#snowCount} flakes/tick): FULL from zero snowfall through the very-light-to-light
+ * range ({@code <= }{@link #SNOWFALL_LIGHT_MAX}), then fading out to 0 by {@link #SNOWFALL_MEDIUM} (medium+).
+ * <b>S19b dropped the old lower bound</b> (TEST 107 had gated OFF below one flake, so a clear-sky snowfield in
+ * the 80-band went dark) -- there is no minimum-snow floor now, so clear weather glitters too. It multiplies
+ * into {@link #sparkleBudget}, so the sparkle lives from the ambient onset through the light-snow shoulder
+ * (~80-83.4 deg on today's snow curve) and cuts only where the snow reads as a real fall -- the band trapezoid
+ * shapes the latitude fade-IN, the snowfall window governs only the upper (medium+) cutoff.
  *
  * <p><b>No state / no accumulator.</b> {@link #sparkleBudget} is a pure function of its arguments -- a FIXED
  * per-spawn-tick budget the caller then scales by the vanilla Particles setting / enclosure / reduce-snow
@@ -53,40 +54,41 @@ public final class SnowSparkleLaw {
     public static final double END_DEG = PolarHazardWindow.FROSTBITE_ONSET_DEG;
 
     /** Default peak sparkle budget per spawn-tick BEFORE the caller's Particles/enclosure/reduce-snow scaling.
-     *  S17(c)(i) DENSITY UP (owner, TEST 107: "more sparkle overall"): 1 -> 3 (~3x), so at the shared
-     *  every-4th-tick cadence (~5 spawn-ticks/s) full band + open sky + all-particles lands as ~15 glints/s
-     *  instead of ~5, still tapering with the band ramp, the snowfall window and every perf/enclosure/reduce-snow
-     *  scale -- a livelier shimmer on the snow, not a particle storm. One-line P4 dial (raise for denser). */
-    public static final int DEFAULT_PEAK_BUDGET = 3;
+     *  History: 1 -> 3 (S17(c)(i), TEST 107 "more sparkle overall") -> 4 (S19b, TEST 109 "density up a notch" --
+     *  the glitter is the calm pole's resting state, so it earns a fuller peak). At the shared every-4th-tick
+     *  cadence (~5 spawn-ticks/s) full band + open sky + all-particles now lands as ~20 glints/s, still tapering
+     *  with the band ramp, the snowfall window and every perf/enclosure/reduce-snow scale -- a livelier shimmer
+     *  on the snow, not a particle storm. One-line P4 dial (raise for denser). */
+    public static final int DEFAULT_PEAK_BUDGET = 4;
 
-    // ---- S17(c)(iii): the SNOWFALL WINDOW -- sparkle only during very-light-to-light ambient snow ----
+    // ---- the SNOWFALL WINDOW -- sparkle across clear-to-light ambient snow, OFF at medium+ (S17c(iii) -> S19b) --
     // The window is expressed in the LITERAL ambient snow budget (PolarHazardWindow.snowCount, flakes/tick):
     // SNOW_MIN_COUNT (2) at the 80-deg onset ramping to SNOW_MAX_COUNT (60) at the pole. "Light" is the gentle
     // shoulder just past the onset; "medium+" is where the snow starts to read as a real fall. P4 dials.
-    /** Minimum ambient snowfall (flakes/tick) for ANY sparkle. At/below this there is effectively no snow, so no
-     *  glint -- this is what makes the sparkle vanish below the 80-deg snow onset (snowCount 0) as well as any
-     *  future calm-with-no-snow case. 1.0 = "at least one flake is falling". */
-    public static final double SNOWFALL_MIN = 1.0;
-    /** Ambient snowfall (flakes/tick) at/below which snow is still "very light to light" and the sparkle is at
-     *  FULL window strength. 14 flakes/tick ~ 82 deg on today's curve -- the gentle glittering shoulder. */
+    // S19b REMOVED the old SNOWFALL_MIN lower bound: the glitter is the calm pole's resting state, so a clear-sky
+    // (zero-flake) snowfield in the band now sparkles too -- only the medium+ UPPER cutoff remains.
+    /** Ambient snowfall (flakes/tick) at/below which snow is still "clear to very-light-to-light" and the sparkle
+     *  is at FULL window strength. There is NO lower bound (S19b): zero snowfall through this ceiling is full.
+     *  14 flakes/tick ~ 82 deg on today's curve -- the gentle glittering shoulder. */
     public static final double SNOWFALL_LIGHT_MAX = 14.0;
     /** Ambient snowfall (flakes/tick) at/above which snow reads as "medium or heavier" and the sparkle is fully
      *  OFF. 22 flakes/tick ~ 83.4 deg -- the snow is now a fall, not a glitter, so the jewelry is gone. */
     public static final double SNOWFALL_MEDIUM = 22.0;
 
     /**
-     * The snowfall window 0..1: a trapezoid over the ambient snow budget ({@link PolarHazardWindow#snowCount},
-     * flakes/tick). 0 below {@link #SNOWFALL_MIN} (no snow -> no glint), 1 through the very-light-to-light range
-     * ({@code <= }{@link #SNOWFALL_LIGHT_MAX}), a linear fade to 0 as the snow builds to {@link #SNOWFALL_MEDIUM}
-     * (medium+), and 0 at/above it. NaN-safe (0). This is the S17(c)(iii) gate the owner asked for: sparkle only
-     * while snow is falling GENTLY.
+     * The snowfall window 0..1: a HALF-trapezoid over the ambient snow budget ({@link PolarHazardWindow#snowCount},
+     * flakes/tick). FULL (1) from zero snowfall through the very-light-to-light range
+     * ({@code <= }{@link #SNOWFALL_LIGHT_MAX}) -- <b>no lower bound (S19b)</b>: clear skies glitter -- then a
+     * linear fade to 0 as the snow builds to {@link #SNOWFALL_MEDIUM} (medium+), and 0 at/above it. NaN-safe (0,
+     * the conservative side on bad data). This is the S19b gate: sparkle is the calm pole's resting state, cut
+     * only when the snow reads as a real fall.
      */
     public static double snowfallWindow01(double snowCount) {
-        if (Double.isNaN(snowCount) || snowCount < SNOWFALL_MIN) {
-            return 0.0; // no snow at all -> no glint
+        if (Double.isNaN(snowCount)) {
+            return 0.0; // bad data -> no glint (conservative)
         }
         if (snowCount <= SNOWFALL_LIGHT_MAX) {
-            return 1.0; // very light to light -> full sparkle
+            return 1.0; // clear through very-light-to-light -> full sparkle (S19b: no lower bound)
         }
         if (snowCount >= SNOWFALL_MEDIUM) {
             return 0.0; // medium or heavier -> no sparkle

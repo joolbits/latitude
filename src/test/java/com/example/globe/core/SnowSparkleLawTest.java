@@ -47,20 +47,21 @@ class SnowSparkleLawTest {
         assertEquals(0.0, SnowSparkleLaw.calmFactor01(Double.NaN), EPS); // NaN -> fully stormy -> none
     }
 
-    // ---- S17(c)(iii): the snowfall window (sparkle only during very-light-to-light snow) ----
+    // ---- S19b: the snowfall window (sparkle across clear-to-light snow, OFF at medium+; NO lower bound) ----
 
     @Test
-    void snowfallWindowTrapezoid() {
-        assertEquals(0.0, SnowSparkleLaw.snowfallWindow01(0.0), EPS);   // no snow -> no glint
-        assertEquals(0.0, SnowSparkleLaw.snowfallWindow01(0.5), EPS);   // below the min-flake floor
+    void snowfallWindowHalfTrapezoidNoLowerBound() {
+        // S19b DROPPED the lower bound: zero/clear snowfall now sparkles (the calm pole's resting state).
+        assertEquals(1.0, SnowSparkleLaw.snowfallWindow01(0.0), EPS);   // CLEAR (no snow) -> full glint (S19b)
+        assertEquals(1.0, SnowSparkleLaw.snowfallWindow01(0.5), EPS);   // a stray flake -> still full
         assertEquals(1.0, SnowSparkleLaw.snowfallWindow01(2.0), EPS);   // very light -> full
         assertEquals(1.0, SnowSparkleLaw.snowfallWindow01(SnowSparkleLaw.SNOWFALL_LIGHT_MAX), EPS); // light ceiling
         assertEquals(0.0, SnowSparkleLaw.snowfallWindow01(SnowSparkleLaw.SNOWFALL_MEDIUM), EPS);    // medium+ -> off
         assertEquals(0.0, SnowSparkleLaw.snowfallWindow01(40.0), EPS);  // heavy -> off
         double mid = SnowSparkleLaw.snowfallWindow01(18.0);             // between light (14) and medium (22)
         assertTrue(mid > 0.0 && mid < 1.0, "light->medium fade: " + mid);
-        assertEquals(0.5, SnowSparkleLaw.snowfallWindow01(18.0), EPS);  // exactly halfway 14->22
-        assertEquals(0.0, SnowSparkleLaw.snowfallWindow01(Double.NaN), EPS); // NaN-safe
+        assertEquals(0.5, SnowSparkleLaw.snowfallWindow01(18.0), EPS);  // exactly halfway 14->22 (upper edge unchanged)
+        assertEquals(0.0, SnowSparkleLaw.snowfallWindow01(Double.NaN), EPS); // NaN-safe (conservative 0)
     }
 
     // ---- the budget ----
@@ -90,6 +91,17 @@ class SnowSparkleLawTest {
         assertEquals(0, SnowSparkleLaw.sparkleBudget(82.5, 0.0, -3));
         assertEquals(0, SnowSparkleLaw.sparkleBudget(Double.NaN, 0.0, 4));
         assertEquals(0, SnowSparkleLaw.sparkleBudget(82.5, Double.NaN, 4)); // NaN storm -> calm 0 -> 0
-        assertTrue(SnowSparkleLaw.DEFAULT_PEAK_BUDGET > 0, "a sane default peak");
+        assertEquals(4, SnowSparkleLaw.DEFAULT_PEAK_BUDGET, "S19b density-up peak"); // 3 -> 4
+    }
+
+    @Test
+    void sparkleFullInClearToLightSnowAcrossTheLowerBand() {
+        // S19b: the calm pole's resting state -- the light-snow shoulder near the onset (snowCount <= 14, i.e.
+        // ~80-82 deg on today's curve) sparkles at FULL window strength on the default peak, no lower bound.
+        assertEquals(1.0, SnowSparkleLaw.snowfallWindow01(PolarHazardWindow.snowCount(80.0)), EPS); // clear onset
+        assertEquals(1.0, SnowSparkleLaw.snowfallWindow01(PolarHazardWindow.snowCount(81.5)), EPS); // light shoulder
+        assertEquals(SnowSparkleLaw.DEFAULT_PEAK_BUDGET,
+                SnowSparkleLaw.sparkleBudget(81.5, 0.0, SnowSparkleLaw.DEFAULT_PEAK_BUDGET),
+                "full band + light snow + dead calm -> full default peak");
     }
 }
