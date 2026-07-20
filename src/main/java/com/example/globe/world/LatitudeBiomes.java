@@ -328,7 +328,10 @@ public final class LatitudeBiomes {
     }
 
     private static boolean allowBeachShortcut(NoiseBasedChunkGenerator generator,
-                                              int surfaceY) {
+                                              int surfaceY,
+                                              Climate.Sampler sampler,
+                                              int blockX,
+                                              int blockZ) {
         int seaLevel = previewSeaLevel(generator);
         int seaLevelDelta = surfaceY - seaLevel;
         if (seaLevelDelta > BEACH_SHORTCUT_MAX_SEA_LEVEL_DELTA) {
@@ -337,7 +340,11 @@ public final class LatitudeBiomes {
         if (uplandT(surfaceY) > BEACH_SHORTCUT_MAX_UPLAND_T) {
             return false;
         }
-        return true;
+        if (sampler == null) {
+            return false;
+        }
+        int oceanDistance = oceanDistanceBlocks(blockX, blockZ, sampler);
+        return oceanDistance <= MANGROVE_COASTAL_MAX_BLOCKS;
     }
 
     private static Holder<Biome> applyLandOverrides(Registry<Biome> biomes, Holder<Biome> pick, int blockX, int blockZ, int bandIndex) {
@@ -2625,18 +2632,20 @@ public final class LatitudeBiomes {
         double t = applyBoundaryJitter(blockX, blockZ, effectiveRadius, tBase);
         LatitudeBands.Band band = bandForAbsLatFraction(t);
         int bandIndex = bandIndexForBand(band);
+        int canonicalBandIndex = crispBandIndex((double) lat / (double) effectiveRadius);
+        int beachBandIndex = enforceTemperateSubpolarOwnership(canonicalBandIndex, bandIndex);
 
         boolean beachLike = isBeachLike(base);
         boolean beachMountainNoiseSampled = false;
         boolean beachMountainNoiseLike = false;
-        if (beachLike && allowBeachShortcut(generator, columnDecisionY)) {
-            if (bandIndex == BAND_TEMPERATE) {
+        if (beachLike && allowBeachShortcut(generator, columnDecisionY, sampler, blockX, blockZ)) {
+            if (beachBandIndex == BAND_TEMPERATE) {
                 beachMountainNoiseSampled = true;
                 beachMountainNoiseLike = isMountainLike(sampler, blockX, blockZ);
             }
             if (!beachMountainNoiseLike) {
-                Holder<Biome> out = pickBeachForBand(biomeRegistry, base, blockX, blockZ, bandIndex);
-                out = quarantineUnknownCustomLandBiome(biomeRegistry, out, base, blockX, blockZ, bandIndex, false);
+                Holder<Biome> out = pickBeachForBand(biomeRegistry, base, blockX, blockZ, beachBandIndex);
+                out = quarantineUnknownCustomLandBiome(biomeRegistry, out, base, blockX, blockZ, beachBandIndex, false);
                 debugPick(blockX, blockZ, effectiveRadius, t, band, base, out, true, false, null);
                 return out;
             }
@@ -3281,18 +3290,20 @@ public final class LatitudeBiomes {
         double t = applyBoundaryJitter(blockX, blockZ, effectiveRadius, tBase);
         LatitudeBands.Band band = bandForAbsLatFraction(t);
         int bandIndex = bandIndexForBand(band);
+        int canonicalBandIndex = crispBandIndex((double) lat / (double) effectiveRadius);
+        int beachBandIndex = enforceTemperateSubpolarOwnership(canonicalBandIndex, bandIndex);
 
         boolean beachLike = isBeachLike(base);
         boolean beachMountainNoiseSampled = false;
         boolean beachMountainNoiseLike = false;
-        if (beachLike && allowBeachShortcut(generator, columnDecisionY)) {
-            if (bandIndex == BAND_TEMPERATE) {
+        if (beachLike && allowBeachShortcut(generator, columnDecisionY, sampler, blockX, blockZ)) {
+            if (beachBandIndex == BAND_TEMPERATE) {
                 beachMountainNoiseSampled = true;
                 beachMountainNoiseLike = isMountainLike(sampler, blockX, blockZ);
             }
             if (!beachMountainNoiseLike) {
-                Holder<Biome> out = pickBeachForBand(biomePool, base, blockX, blockZ, bandIndex);
-                out = quarantineUnknownCustomLandBiome(biomePool, out, base, blockX, blockZ, bandIndex, false);
+                Holder<Biome> out = pickBeachForBand(biomePool, base, blockX, blockZ, beachBandIndex);
+                out = quarantineUnknownCustomLandBiome(biomePool, out, base, blockX, blockZ, beachBandIndex, false);
                 debugPick(blockX, blockZ, effectiveRadius, t, band, base, out, true, false, null);
                 return out;
             }
@@ -4262,12 +4273,13 @@ public final class LatitudeBiomes {
 
         double latNorm = clamp(t, 0.0, 1.0);
         int bandIndex = crispBandIndex(latNorm);
+        int absZ = Math.abs(blockZ);
+        int canonicalBandIndex = crispBandIndex((double) absZ / (double) radius);
 
         if (TRANSITION_MODE == TransitionMode.OFF) {
-            return bandIndex;
+            return enforceTemperateSubpolarOwnership(canonicalBandIndex, bandIndex);
         }
 
-        int absZ = Math.abs(blockZ);
         int lowerBandIndex;
         int upperBandIndex;
         int boundaryBlocks;
@@ -4297,7 +4309,7 @@ public final class LatitudeBiomes {
 
         double halfWidthBlocks = BLEND_TRANSITION_WIDTH_BLOCKS * 0.5;
         if (!(halfWidthBlocks > 0.0)) {
-            return bandIndex;
+            return enforceTemperateSubpolarOwnership(canonicalBandIndex, bandIndex);
         }
 
         double diameter = radius * 2.0;
@@ -4312,7 +4324,7 @@ public final class LatitudeBiomes {
 
         double delta = absZ - effectiveBoundary;
         if (Math.abs(delta) > halfWidthBlocks) {
-            return bandIndex;
+            return enforceTemperateSubpolarOwnership(canonicalBandIndex, bandIndex);
         }
 
         double blendT = (delta + halfWidthBlocks) / (2.0 * halfWidthBlocks);
@@ -4337,6 +4349,8 @@ public final class LatitudeBiomes {
                 resolvedBandIndex = BAND_TEMPERATE;
             }
         }
+
+        resolvedBandIndex = enforceTemperateSubpolarOwnership(canonicalBandIndex, resolvedBandIndex);
 
         if (DEBUG_BLEND
                 && (blockX & 15) == 0
@@ -4363,6 +4377,17 @@ public final class LatitudeBiomes {
                     String.format(java.util.Locale.ROOT, "%.3f", blendNoise));
         }
 
+        return resolvedBandIndex;
+    }
+
+    private static int enforceTemperateSubpolarOwnership(int canonicalBandIndex, int resolvedBandIndex) {
+        if (canonicalBandIndex == BAND_TEMPERATE
+                && resolvedBandIndex == BAND_SUBPOLAR) {
+            // The 50-degree boundary is a hard poleward ownership limit for Subpolar.
+            // Preserve the raw comparator for diagnostics and preserve Temperate ecotone
+            // picks on the 50+ side, but never import the Subpolar pool below 50 degrees.
+            return BAND_TEMPERATE;
+        }
         return resolvedBandIndex;
     }
 

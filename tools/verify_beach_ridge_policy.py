@@ -86,6 +86,8 @@ def modeled_shortcut(
     is_beach_candidate: bool,
     sea_level_delta: int,
     upland_t: float,
+    sampler_available: bool,
+    ocean_distance: int,
     temperate_band: bool,
     mountain_signal: bool | None,
 ) -> tuple[str, int]:
@@ -93,6 +95,8 @@ def modeled_shortcut(
     if not is_beach_candidate:
         return "ordinary_land_path", sampler_calls
     if sea_level_delta > 16 or upland_t > 0.25:
+        return "ordinary_land_path", sampler_calls
+    if not sampler_available or ocean_distance > 384:
         return "ordinary_land_path", sampler_calls
     mountain_like = False
     if temperate_band:
@@ -176,7 +180,15 @@ def main() -> int:
             "sea+16 and upland gates remain",
         )
         check(
-            "cheap_gate_contains_no_expensive_probe",
+            "coast_authority_required",
+            "if (sampler == null)" in helper
+            and "oceanDistanceBlocks(blockX, blockZ, sampler)" in helper
+            and "oceanDistance <= MANGROVE_COASTAL_MAX_BLOCKS" in helper
+            and "private static final int MANGROVE_COASTAL_MAX_BLOCKS = 384;" in source,
+            "cached ODF authority is required at the existing 384-block near-ocean threshold",
+        )
+        check(
+            "coast_gate_contains_no_generator_reentry",
             not any(
                 token in helper
                 for token in (
@@ -184,22 +196,24 @@ def main() -> int:
                     "previewHeight",
                     "getBaseHeight",
                     "ValueNoise",
-                    "cache",
                     "sampler.sample",
                 )
             ),
-            "no terrain re-entry, new noise, cache, or sampler inside cheap helper",
+            "cached ODF work is allowed; no terrain preview, generator re-entry, new noise, or direct sampler probe",
         )
         check(
             "cheap_gate_order_preserved",
             helper_norm.index("seaLevelDelta > BEACH_SHORTCUT_MAX_SEA_LEVEL_DELTA")
             < helper_norm.index("uplandT(surfaceY) > BEACH_SHORTCUT_MAX_UPLAND_T")
-            < helper_norm.index("return true;"),
-            "height then upland then allow",
+            < helper_norm.index("if (sampler == null)")
+            < helper_norm.index("oceanDistanceBlocks(blockX, blockZ, sampler)")
+            < helper_norm.index("return oceanDistance <= MANGROVE_COASTAL_MAX_BLOCKS;"),
+            "height then upland then coast authority then allow",
         )
     except (ValueError, IndexError) as error:
         check("cheap_surface_gate_unchanged", False, str(error))
-        check("cheap_gate_contains_no_expensive_probe", False, str(error))
+        check("coast_authority_required", False, str(error))
+        check("coast_gate_contains_no_generator_reentry", False, str(error))
         check("cheap_gate_order_preserved", False, str(error))
 
     expected_shortcut = normalized(
@@ -207,8 +221,8 @@ def main() -> int:
         boolean beachLike = isBeachLike(base);
         boolean beachMountainNoiseSampled = false;
         boolean beachMountainNoiseLike = false;
-        if (beachLike && allowBeachShortcut(generator, columnDecisionY)) {
-            if (bandIndex == BAND_TEMPERATE) {
+        if (beachLike && allowBeachShortcut(generator, columnDecisionY, sampler, blockX, blockZ)) {
+            if (beachBandIndex == BAND_TEMPERATE) {
                 beachMountainNoiseSampled = true;
                 beachMountainNoiseLike = isMountainLike(sampler, blockX, blockZ);
             }
@@ -253,7 +267,7 @@ def main() -> int:
             )
             early_section = method_norm[shortcut_index:blended_index] if shortcut_index >= 0 else ""
             check(
-                f"{name}_no_expensive_early_probe",
+                f"{name}_no_generator_reentry",
                 shortcut_index >= 0
                 and not any(
                     token in early_section
@@ -262,10 +276,9 @@ def main() -> int:
                         "previewHeight",
                         "getBaseHeight",
                         "ValueNoise",
-                        "CACHE",
                     )
                 ),
-                "shortcut contains no preview, height re-entry, noise, or cache",
+                "shortcut may use cached ODF authority but contains no preview, height re-entry, or new noise",
             )
             check(
                 f"{name}_single_new_sampler_call",
@@ -277,28 +290,44 @@ def main() -> int:
                 "shortcut_samples_after_cheap_gate",
                 "mountain_reject_falls_through",
                 "sample_reused",
-                "no_expensive_early_probe",
+                "no_generator_reentry",
                 "single_new_sampler_call",
             ):
                 check(f"{name}_{suffix}", False, str(error))
 
     model_cases = [
-        ("low_beach", True, 2, 0.02, True, False, "beach_shortcut", 1),
-        ("rolling_foredune", True, 12, 0.20, True, False, "beach_shortcut", 1),
-        ("inclusive_height_edge", True, 16, 0.24, True, False, "beach_shortcut", 1),
-        ("inclusive_upland_edge", True, 15, 0.25, True, False, "beach_shortcut", 1),
-        ("mountain_class_ridge", True, 12, 0.20, True, True, "ordinary_land_path", 1),
-        ("null_sampler_preserves_beach", True, 12, 0.20, True, None, "beach_shortcut", 0),
-        ("height_reject_before_sampler", True, 17, 0.20, True, True, "ordinary_land_path", 0),
-        ("upland_reject_before_sampler", True, 12, 0.26, True, True, "ordinary_land_path", 0),
-        ("non_temperate_unchanged", True, 12, 0.20, False, True, "beach_shortcut", 0),
-        ("non_beach_unchanged", False, 12, 0.20, True, True, "ordinary_land_path", 0),
+        ("low_beach", True, 2, 0.02, True, 0, True, False, "beach_shortcut", 1),
+        ("rolling_foredune", True, 12, 0.20, True, 64, True, False, "beach_shortcut", 1),
+        ("near_ocean_edge", True, 12, 0.20, True, 384, True, False, "beach_shortcut", 1),
+        ("inclusive_height_edge", True, 16, 0.24, True, 32, True, False, "beach_shortcut", 1),
+        ("inclusive_upland_edge", True, 15, 0.25, True, 32, True, False, "beach_shortcut", 1),
+        ("mountain_class_ridge", True, 12, 0.20, True, 32, True, True, "ordinary_land_path", 1),
+        ("null_sampler_rejects_unknown_coast", True, 12, 0.20, False, 0, True, None, "ordinary_land_path", 0),
+        ("reported_area_inland_608_rejected", True, 12, 0.20, True, 608, True, False, "ordinary_land_path", 0),
+        ("first_inland_block_rejected", True, 12, 0.20, True, 385, True, False, "ordinary_land_path", 0),
+        ("height_reject_before_sampler", True, 17, 0.20, True, 0, True, True, "ordinary_land_path", 0),
+        ("upland_reject_before_sampler", True, 12, 0.26, True, 0, True, True, "ordinary_land_path", 0),
+        ("non_temperate_unchanged", True, 12, 0.20, True, 32, False, True, "beach_shortcut", 0),
+        ("non_beach_unchanged", False, 12, 0.20, True, 0, True, True, "ordinary_land_path", 0),
     ]
-    for case, beach, delta, upland, temperate, mountain, expected_path, expected_calls in model_cases:
+    for (
+        case,
+        beach,
+        delta,
+        upland,
+        sampler_available,
+        ocean_distance,
+        temperate,
+        mountain,
+        expected_path,
+        expected_calls,
+    ) in model_cases:
         actual_path, actual_calls = modeled_shortcut(
             is_beach_candidate=beach,
             sea_level_delta=delta,
             upland_t=upland,
+            sampler_available=sampler_available,
+            ocean_distance=ocean_distance,
             temperate_band=temperate,
             mountain_signal=mountain,
         )
