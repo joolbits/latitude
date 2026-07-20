@@ -25,10 +25,10 @@ public final class GlobeWarningOverlay {
             "The cold overwhelms you.";
     private static final int POLAR_KEYLINE_RGB = 0x080609;
 
-    private static final String EW_SAND_WARN_TEMPLATE =
-            "Sandstorms to the %s. Head %s to turn back.";
-    private static final String EW_SAND_DANGER_TEMPLATE =
-            "Extreme danger to the %s. Head %s immediately.";
+    private static final String EW_VISIBILITY_WARN_TEXT =
+            "Visibility is dropping ahead. Consider turning around.";
+    private static final String EW_VISIBILITY_DANGER_TEXT =
+            "Zero visibility ahead. Turn around.";
 
     private static final boolean DEBUG_ENTRY_TITLES = Boolean.getBoolean("latitude.debugEntryTitles");
     private static final int EQUATOR_STABLE_DIST = 64;
@@ -116,8 +116,8 @@ public final class GlobeWarningOverlay {
     private static Component ewTextForStage(GlobeClientState.EwStormStage stage) {
         if (stage == null) return null;
         return switch (stage) {
-            case LEVEL_1 -> Component.literal(EW_SAND_WARN_TEMPLATE);
-            case LEVEL_2 -> Component.literal(EW_SAND_DANGER_TEMPLATE).withStyle(ChatFormatting.RED, ChatFormatting.BOLD);
+            case LEVEL_1 -> Component.literal(EW_VISIBILITY_WARN_TEXT);
+            case LEVEL_2 -> Component.literal(EW_VISIBILITY_DANGER_TEXT).withStyle(ChatFormatting.RED, ChatFormatting.BOLD);
             default -> null;
         };
     }
@@ -130,6 +130,10 @@ public final class GlobeWarningOverlay {
         }
 
         if (!LatitudeConfig.showWarningMessages) {
+            return;
+        }
+
+        if (GlobeClientState.DEBUG_DISABLE_WARNINGS) {
             return;
         }
 
@@ -183,31 +187,26 @@ public final class GlobeWarningOverlay {
                 maybeTriggerHemisphereTitle(client, client.player.getZ());
             }
 
-            var state = GlobeClientState.computeWarningState(client.level, client.player);
             var polarStage = GlobeClientState.computePolarStage(client.level, client.player);
             double absoluteLatitude = GlobeClientState.absoluteLatitudeDegrees(
                     client.level.getWorldBorder(),
                     client.player.getZ());
             POLAR_WARNING_EPISODE.update(polarRank(polarStage), absoluteLatitude, worldTime);
+            var activePolarStage = polarStageForRank(POLAR_WARNING_EPISODE.activeStageRank(worldTime));
+            var ewTextStage = GlobeClientState.computeEwTextStage(client.level, client.player);
+            var state = GlobeClientState.arbitrateWarning(activePolarStage, ewTextStage);
 
             // Stable precedence (corners):
-            // 1) polar lethal
+            // 1) active polar lethal
             // 2) ew level 2
-            // 3) polar stage (warn/danger)
+            // 3) active polar stage (warn/danger)
             // 4) ew level 1
             Component bestText;
             if (state.type() == GlobeClientState.WarningType.STORM) {
                 GlobeClientState.EwStormStage stage = (GlobeClientState.EwStormStage) state.stage();
-                String dir = ewDangerDirection(client.level.getWorldBorder(), client.player.getX());
-                String escapeDir = oppositeDirection(dir);
-                Component base = ewTextForStage(stage);
-                bestText = null;
-                if (base != null) {
-                    bestText = Component.literal(String.format(base.getString(), dir.toLowerCase(), escapeDir.toLowerCase())).setStyle(base.getStyle());
-                }
+                bestText = ewTextForStage(stage);
             } else {
-                int episodeStageRank = POLAR_WARNING_EPISODE.activeStageRank(worldTime);
-                bestText = poleTextForStage(polarStageForRank(episodeStageRank));
+                bestText = poleTextForStage(activePolarStage);
             }
 
             if (bestText == null) {
@@ -288,16 +287,6 @@ public final class GlobeWarningOverlay {
             case 4 -> GlobeClientState.PolarStage.LETHAL;
             default -> GlobeClientState.PolarStage.NONE;
         };
-    }
-
-    private static String ewDangerDirection(net.minecraft.world.level.border.WorldBorder border, double playerX) {
-        double distWest = Math.abs(playerX - border.getMinX());
-        double distEast = Math.abs(border.getMaxX() - playerX);
-        return distWest <= distEast ? "West" : "East";
-    }
-
-    private static String oppositeDirection(String direction) {
-        return "West".equals(direction) ? "East" : "West";
     }
 
     private static void resetWorldEntryState(long worldTime) {

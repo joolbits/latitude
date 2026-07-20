@@ -30,6 +30,39 @@ public final class PolarPresentationPolicy {
     private PolarPresentationPolicy() {
     }
 
+    public record WarningSelection(boolean polar, int stageRank) {
+        public static final WarningSelection NONE = new WarningSelection(false, 0);
+    }
+
+    public static int ewTextStageRank(double distanceToBorder) {
+        if (distanceToBorder <= 100.0) {
+            return 2;
+        }
+        if (distanceToBorder <= 500.0) {
+            return 1;
+        }
+        return 0;
+    }
+
+    public static WarningSelection arbitrateWarning(int activePolarStageRank, int ewStageRank) {
+        int polar = Math.max(0, Math.min(4, activePolarStageRank));
+        int ew = Math.max(0, Math.min(2, ewStageRank));
+
+        if (polar == 4) {
+            return new WarningSelection(true, polar);
+        }
+        if (ew == 2) {
+            return new WarningSelection(false, ew);
+        }
+        if (polar > 0) {
+            return new WarningSelection(true, polar);
+        }
+        if (ew == 1) {
+            return new WarningSelection(false, ew);
+        }
+        return WarningSelection.NONE;
+    }
+
     public static float fogIntensity(double absoluteLatitudeDegrees) {
         double t = (absoluteLatitudeDegrees - FOG_START_LATITUDE_DEGREES)
                 / (FOG_FULL_LATITUDE_DEGREES - FOG_START_LATITUDE_DEGREES);
