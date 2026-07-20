@@ -33,8 +33,9 @@ package com.example.globe.core;
  * <p><b>No state / no accumulator.</b> {@link #sparkleBudget} is a pure function of its arguments -- a FIXED
  * per-spawn-tick budget the caller then scales by the vanilla Particles setting / enclosure / reduce-snow
  * comfort option exactly like the ambient snow, so the B-3b anti-backlog law and the {@code isPaused} guard
- * are untouched. The budget counts GLINT CLUSTERS; the caller spawns a twin-particle micro-cluster per unit
- * (design S21(b)(iii)), which is a spawn-loop detail this pure law never sees.
+ * are untouched. The budget counts GLINT CLUSTERS; how many particles the caller spawns per unit is a
+ * spawn-loop detail this pure law never sees (S21(b)(iii) spawned a twin per unit; GLINT v5 / TEST 113
+ * retired the twin -- one bright FIREWORK spark per unit).
  */
 public final class SnowSparkleLaw {
 
@@ -62,12 +63,15 @@ public final class SnowSparkleLaw {
     public static final double SNOWFALL_FULL_DEG = 82.0;
 
     /** Default peak sparkle budget per spawn-tick BEFORE the caller's Particles/enclosure/reduce-snow scaling.
-     *  History: 1 -> 3 (S17(c)(i), TEST 107 "more sparkle overall") -> 4 (S19b, TEST 109 "density up a notch").
-     *  Each budget unit is a twin-particle CLUSTER (S21b(iii)), so at the shared every-4th-tick cadence
-     *  (~5 spawn-ticks/s) full band + open sky + all-particles lands as ~20 clusters/s = ~40 glint particles/s,
-     *  still tapering with the band ramp, the snowfall crossfade, and every perf/enclosure/reduce-snow scale --
-     *  a livelier shimmer on the snow, not a particle storm. One-line P4 dial (raise for denser). */
-    public static final int DEFAULT_PEAK_BUDGET = 4;
+     *  History: 1 -> 3 (S17(c)(i), TEST 107 "more sparkle overall") -> 4 (S19b, TEST 109 "density up a notch")
+     *  -> 2 (GLINT v5, owner flight TEST 113, 2026-07-19). WHY the halving: the 3/4-era escalation was
+     *  compensating for the DIM lilac WAX_OFF quad; v5 swapped the particle to the bright white FIREWORK spark
+     *  and retired the twin cluster (caller's SPARKLE_TWIN_COUNT 2 -> 1), so per-spark brightness now carries
+     *  the shimmer and the old density read as noise (TEST 113: "worst in a village", one oversized blob). At
+     *  the shared every-4th-tick cadence (~5 spawn-ticks/s) peak 2 x single-spark clusters lands as ~10 glint
+     *  particles/s at full band strength (vs the old ~40), still tapering with the band ramp, the snowfall
+     *  crossfade, and every perf/enclosure/reduce-snow scale. One-line P4 dial (raise for denser). */
+    public static final int DEFAULT_PEAK_BUDGET = 2;
 
     /**
      * The GLINT band ramp 0..1: 0 at/below {@link #ONSET_DEG} (75), smoothstep up to 1 at {@link #FULL_DEG}
@@ -126,8 +130,8 @@ public final class SnowSparkleLaw {
      * {@code round(glintWeight x calmFactor01 x peakBudget)}, clamped {@code >= 0}. Zero outside the calm glint
      * band, in any storm, once the ambient snowfall has fully faded in (>= 82 deg), or with a non-positive peak.
      * A pure function of its arguments -- no state / no accumulator; the caller scales this by the live Particles
-     * setting, the enclosure estimate and the reduce-snow comfort option before spawning (and spawns a twin
-     * micro-cluster per unit, S21b(iii)), exactly like the ambient snow.
+     * setting, the enclosure estimate and the reduce-snow comfort option before spawning (one spark per unit
+     * since GLINT v5 retired the S21b(iii) twin), exactly like the ambient snow.
      *
      * @param absLatDeg          current absolute latitude (deg)
      * @param stormOrBlizzard01  the storm/blizzard signal 0..1 (e.g. {@link PolarHazardWindow#blizzardDrive})

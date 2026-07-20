@@ -113,6 +113,8 @@ class SnowSparkleLawTest {
         assertEquals(0, SnowSparkleLaw.sparkleBudget(78.0, 0.0, -3));
         assertEquals(0, SnowSparkleLaw.sparkleBudget(Double.NaN, 0.0, 4));
         assertEquals(0, SnowSparkleLaw.sparkleBudget(78.0, Double.NaN, 4)); // NaN storm -> calm 0 -> 0
-        assertEquals(4, SnowSparkleLaw.DEFAULT_PEAK_BUDGET, "S19b density-up peak"); // 3 -> 4
+        // History: 1 -> 3 (S17c(i)) -> 4 (S19b density-up) -> 2 (GLINT v5, owner flight TEST 113 2026-07-19:
+        // WAX_OFF -> bright white FIREWORK + twin cluster retired, so the peak halves -- ~10 sparks/s, not ~40).
+        assertEquals(2, SnowSparkleLaw.DEFAULT_PEAK_BUDGET, "GLINT v5 de-purple peak");
     }
 }

@@ -14,7 +14,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *   <li>START derivation ({@code max(2, 0.30*end)}, always under END),</li>
  *   <li>the whiteout top-coat envelope (0 at/below 86, 1 at the line, monotone),</li>
  *   <li>the S10c early-overcast floor (0 at 81 -> 0.35 at 85, held; never touches the full-storm ramp),</li>
- *   <li>the S10c gust law (bounds [1, 1.5], latitude-depth scaling, period, surge shape).</li>
+ *   <li>the S10c gust law (bounds [1, 1.5], latitude-depth scaling, period, surge shape),</li>
+ *   <li>the TEST 113 season-aware band gloom reach (ramps [onset, onset+5] inside a solar 24-hour band;
+ *       hard 0 outside; composes with the S15(c) reach as a max -- the below-80 bright-horizon fix).</li>
  * </ul>
  */
 class PolarFogLawTest {
@@ -91,6 +93,67 @@ class PolarFogLawTest {
         }
         assertTrue(PolarFogLaw.horizonGloomReach01(82.5) > 0.0f && PolarFogLaw.horizonGloomReach01(82.5) < 1.0f,
                 "mid ease-in strictly interior");
+    }
+
+    // ---- TEST 113: the season-aware solar-band horizon-gloom reach (closes the 60-80 bright-horizon gap) ----
+
+    @Test
+    void bandGloomReachRampsFromTheSeasonalOnset() {
+        // At solstice delta=30 the band onset is 60; the ramp spans [60, 65] (BAND_GLOOM_RAMP_DEG = 5,
+        // mirroring the 80->85 horizonGloomReach01 ease) and holds 1 poleward.
+        assertEquals(5.0, PolarFogLaw.BAND_GLOOM_RAMP_DEG, 1e-9, "band ramp mirrors the 5-deg S15c ease-in");
+        assertEquals(0.0f, PolarFogLaw.bandGloomReach01(true, 59.0, 60.0), 1e-6, "silent below the band onset");
+        assertEquals(0.0f, PolarFogLaw.bandGloomReach01(true, 60.0, 60.0), 1e-6, "seam-free AT the onset");
+        assertEquals(0.5f, PolarFogLaw.bandGloomReach01(true, 62.5, 60.0), 1e-6, "smoothstep midpoint at onset+2.5");
+        assertEquals(1.0f, PolarFogLaw.bandGloomReach01(true, 65.0, 60.0), 1e-6, "full by onset+5");
+        assertEquals(1.0f, PolarFogLaw.bandGloomReach01(true, 79.0, 60.0), 1e-6,
+                "held full across the 65-80 gap the owner flew (TEST 113: constant bright horizon 73-80S)");
+        assertEquals(1.0f, PolarFogLaw.bandGloomReach01(true, 90.0, 60.0), 1e-6, "held to the pole");
+        // Monotone non-decreasing across the ramp.
+        float prev = 0.0f;
+        for (double d = 60.0; d <= 65.0; d += 0.25) {
+            float v = PolarFogLaw.bandGloomReach01(true, d, 60.0);
+            assertTrue(v >= prev, "band reach must rise across the ramp (deg " + d + ")");
+            prev = v;
+        }
+    }
+
+    @Test
+    void bandGloomReachIsSeasonAware() {
+        // The onset is the CALLER's SolarTilt.onsetLatDeg for the current declination -- e.g. an Earth-like
+        // delta 23.5 puts the onset at 66.5, and the ramp follows it: [66.5, 71.5].
+        assertEquals(0.0f, PolarFogLaw.bandGloomReach01(true, 66.5, 66.5), 1e-6, "seam-free at a shifted onset");
+        assertEquals(0.5f, PolarFogLaw.bandGloomReach01(true, 69.0, 66.5), 1e-6, "midpoint tracks the onset");
+        assertEquals(1.0f, PolarFogLaw.bandGloomReach01(true, 71.5, 66.5), 1e-6, "full at shifted onset+5");
+        // A latitude that is deep in-band at solstice is NOT gloomed near equinox (onset ~90): the horizon
+        // gloom follows the sky dome's own seasonal onset, never a hardcoded latitude.
+        assertEquals(0.0f, PolarFogLaw.bandGloomReach01(true, 70.0, 89.0), 1e-6, "near-equinox: band nearly gone");
+    }
+
+    @Test
+    void bandGloomReachZeroOutsideTheBandAndNaNSafe() {
+        // inPolarBand=false (mid-latitudes, tilt off, or the sun rises/sets today) => hard 0: the below-80
+        // fog path stays byte-identical to pre-TEST-113 outside the 24-hour bands.
+        assertEquals(0.0f, PolarFogLaw.bandGloomReach01(false, 75.0, 60.0), 1e-6, "no band -> no reach");
+        assertEquals(0.0f, PolarFogLaw.bandGloomReach01(false, 90.0, 60.0), 1e-6, "even at the pole");
+        assertEquals(0.0f, PolarFogLaw.bandGloomReach01(true, Double.NaN, 60.0), 1e-6, "NaN latitude -> 0");
+        assertEquals(0.0f, PolarFogLaw.bandGloomReach01(true, 75.0, Double.NaN), 1e-6, "NaN onset -> 0");
+    }
+
+    @Test
+    void bandGloomComposesWithHorizonGloomAsAMax() {
+        // The mixin composes reach = max(horizonGloomReach01, bandGloomReach01): inside the band the >=80
+        // behaviour can only DEEPEN (band reach is already 1 by 65 < 80's own ramp), never weaken, and below
+        // 80 the band reach alone carries the gloom.
+        for (double d : new double[] {60.0, 62.5, 70.0, 80.0, 82.5, 85.0, 90.0}) {
+            float composed = Math.max(PolarFogLaw.horizonGloomReach01(d),
+                    PolarFogLaw.bandGloomReach01(true, d, 60.0));
+            assertTrue(composed >= PolarFogLaw.horizonGloomReach01(d),
+                    "composition never weakens the S15c reach (deg " + d + ")");
+        }
+        assertEquals(1.0f, Math.max(PolarFogLaw.horizonGloomReach01(82.0),
+                PolarFogLaw.bandGloomReach01(true, 82.0, 60.0)), 1e-6,
+                "in-band 82 deg: full gloom (band reach) even though the 80->85 ease is only partial");
     }
 
     // ---- S11(f) -> S14(c): the fog's night/dusk darkening moved to SolarSkyMood.atmosphereTint (pinned by

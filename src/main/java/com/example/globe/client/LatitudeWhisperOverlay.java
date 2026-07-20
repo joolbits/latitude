@@ -28,15 +28,24 @@ public final class LatitudeWhisperOverlay {
     /** Never full opacity -- a whisper, not a shout. Peak alpha cap (~70%). */
     private static final float MAX_ALPHA = 0.70f;
     /**
-     * Vertical offset below screen center; unobtrusive, clear of the center-screen titles above it.
-     * Creative-director verdict 2026-07-11 (delegated by Peetsa — "a little too high, lower it"):
-     * 34 -> 42, an 8px drop into the lower-third read. HARD FLOOR: do NOT go below 42. The hazard-warning
-     * band draws at screenH-68 and the whisper is triggered from that same warning file, so a boundary
-     * murmur and a hazard warning can share the screen at a pole; +42 keeps a safe gap above the warning
-     * band even on a small (~240px) window, while a larger offset would let the two overlays stack.
-     * See docs/binder/loading-text-and-whisper-review-20260711.md Part 2.
+     * BOTTOM-ANCHORED offset (owner flight TEST 113, 2026-07-19): the whisper draws at
+     * {@code y = screenH - 82}, i.e. anchored to the BOTTOM of the screen, near the health bar / hotbar
+     * cluster where the owner asked the zone murmurs to live (S21a: "whispers closer to the health bar, same
+     * area as the polar warnings").
+     *
+     * <p>HISTORY / why this replaced the center anchor: the previous anchor was {@code screenH/2 + 42} --
+     * CENTER-relative (a lower-third read from the 2026-07-11 creative-director pass, see
+     * docs/binder/loading-text-and-whisper-review-20260711.md Part 2). When S21a rerouted the zone titles into
+     * this channel, its comment claimed the whisper already sat "near the health bar" -- that claim was WRONG
+     * (center + 42px is mid-screen on any tall window), which is exactly what the owner saw on TEST 113. The
+     * fix is a true bottom anchor: 82px up from the bottom edge sits ~14px ABOVE the polar hazard-warning band
+     * (which draws at {@code screenH - 68} and stays the element closest to the hotbar), so a boundary murmur
+     * and a hazard warning stack cleanly -- whisper one line above the warning, NO suppression of either.
      */
-    private static final int ANCHOR_OFFSET_Y = 42;
+    private static final int BOTTOM_OFFSET_Y = 82;
+    /** Hard top floor for the whisper line on absurdly small windows (matches the warning band's own
+     *  {@code warnY < 18} floor in GlobeWarningOverlay, so the two floors agree). */
+    private static final int MIN_Y = 18;
 
     // Whisper keyline (Peetsa TEST 83 "blurry!! outline it in black"): the warnings' near-black
     // (GlobeWarningOverlay.POLE_KEYLINE_RGB sibling) + the standard 1px 8-offset ring.
@@ -120,7 +129,9 @@ public final class LatitudeWhisperOverlay {
         int color = (alphaByte << 24) | 0x00FFFFFF; // translucent white
         int w = font.width(line);
         int x = Math.max(2, (screenW - w) / 2);
-        int y = (screenH / 2) + ANCHOR_OFFSET_Y;
+        // TEST 113: bottom-anchored near the hotbar/health cluster (one line above the screenH-68 warning
+        // band), floored so a tiny window can't push the line off the top.
+        int y = Math.max(screenH - BOTTOM_OFFSET_Y, MIN_Y);
         // Peetsa (TEST 83): "the whisper message is blurry!! outline it in black." Same disease the
         // warnings had — the 5-arg text() defaults dropShadow=TRUE, so the faded italic line dragged a
         // misregistered shadow smear. Same cure: 1px 8-offset near-black keyline (italic is safe to keep

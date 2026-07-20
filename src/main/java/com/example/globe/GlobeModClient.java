@@ -343,8 +343,8 @@ public class GlobeModClient implements ClientModInitializer {
     // Applied to the ambient MAIN + SECOND + DEEP passes. Outdoors the heightmap top ~ the ground, so the
     // open-air storm is unchanged apart from the sub-terrain low tail (flakes that would spawn INSIDE the
     // ground, which vanilla would not render anyway -- correctly dropped). The SPARKLE pass is exempt by
-    // construction (it spawns 0.5-1.5 blocks ABOVE the sampled surface heightmap top, so it can never sit
-    // under a roof -- verified, no gate needed there).
+    // construction (it spawns 0.05-0.3 blocks ABOVE the sampled surface heightmap top -- the v3 near-ground
+    // numbers -- so it can never sit under a roof; verified, no gate needed there).
     private static boolean flakeSkyOpen(net.minecraft.world.level.Level level, double x, double y, double z) {
         int top = level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING,
                 (int) Math.floor(x), (int) Math.floor(z));
@@ -484,10 +484,12 @@ public class GlobeModClient implements ClientModInitializer {
     }
 
     // ---- S13(a) SNOW SPARKLE (owner order, TEST 103 flight): calm-cold snowfield glints. ----
-    // Peak per-spawn-tick budget BEFORE the shared Particles/enclosure/reduce-snow scaling. At the shared
-    // every-4th-tick cadence (~5 spawn-ticks/s) the S19b peak of 4 lands as ~20-glints/second at full band
-    // strength on ALL particles + open sky, tapering with the band ramp + the snowfall window -- a livelier
-    // shimmer, still not a particle storm. P4 dial (the pure ramp/window in SnowSparkleLaw handles the rest).
+    // Peak per-spawn-tick budget BEFORE the shared Particles/enclosure/reduce-snow scaling. GLINT v5 (TEST 113)
+    // halved the peak to 2 alongside the WAX_OFF -> FIREWORK swap and the twin retirement: at the shared
+    // every-4th-tick cadence (~5 spawn-ticks/s) peak 2 x single-particle clusters lands as ~10 bright white
+    // sparks/second at full band strength on ALL particles + open sky (vs the old ~40 dim lilac particles/s),
+    // tapering with the band ramp + the snowfall window -- FIREWORK carries per-spark brightness, so fewer
+    // sparks read cleaner, not dimmer. P4 dial (the pure ramp/window in SnowSparkleLaw handles the rest).
     private static final int SPARKLE_PEAK_BUDGET = com.example.globe.core.SnowSparkleLaw.DEFAULT_PEAK_BUDGET;
     /** Horizontal radius (blocks) around the player over which glints scatter on the nearby snow surface. */
     private static final double SPARKLE_RADIUS = 10.0;
@@ -502,44 +504,43 @@ public class GlobeModClient implements ClientModInitializer {
     private static final double SPARKLE_Y_MIN = 0.05;
     private static final double SPARKLE_Y_MAX = 0.3;
     /** S17(c)(ii): a glint SITS, it does not wander (owner). The drift is removed -- the particle spawns with
-     *  zero incoming velocity so it twinkles in place on the snow (WAX_OFF's own tiny quad + short life carry the
-     *  shimmer). Kept as named 0.0 dials so a P4 pass can reintroduce a whisper of motion without touching the
-     *  spawn loop. */
+     *  zero incoming velocity so it twinkles in place on the snow (the spark's own flicker + short life carry
+     *  the shimmer; GLINT v5 note -- this zero-drift spawn is exactly what makes the FIREWORK spark safe from
+     *  its old "raindrop" read). Kept as named 0.0 dials so a P4 pass can reintroduce a whisper of motion
+     *  without touching the spawn loop. */
     private static final double SPARKLE_DRIFT_UP = 0.0;
     private static final double SPARKLE_DRIFT_LATERAL = 0.0;
     /**
-     * S14(d): the amethyst-family glint particle. PICK = {@code WAX_OFF} (owner asked for "amethyst sparkle").
-     * Receipts from the vanilla 26.2 particle defs ({@code GlowParticle} / {@code EndRodParticle}):
-     * <ul>
-     *   <li><b>WAX_OFF</b> — {@code GlowParticle}, colour {@code (1.0, 0.9, 1.0)} = pale lilac-white (the
-     *       "amethyst" tint), GLOWS (light-emitting), quad x0.75 (small), lifetime 10-39 t (~0.5-2 s),
-     *       incoming velocity x0.005.</li>
-     *   <li><b>ELECTRIC_SPARK</b> — the SAME lilac-white glow + size, BUT lifetime only 2-3 t (~0.13 s): a
-     *       blink that vanishes before it reads as "hanging in the air" (would re-introduce the "unclear" miss).</li>
-     *   <li><b>END_ROD</b> — warm CREAM (fades to {@code 0xF2E9C9}), NOT amethyst; floats ~3 s under slight
-     *       gravity — an ember/fairy mote, not frost.</li>
-     * </ul>
-     * WAX_OFF wins: amethyst lilac-white + a light-emitting glow that catches the eye under the greying polar
-     * sky + a 0.5-2 s life that LINGERS long enough to read clearly as frost glittering (the fix for FIREWORK's
-     * "raindrop/unclear" complaint), while its near-total velocity damping keeps it twinkling almost in place --
-     * exactly what S17(c)(ii)'s near-ground, zero-drift glint wants.
+     * GLINT v5 DE-PURPLE (owner flight TEST 113, 2026-07-19): the glint particle is {@code FIREWORK} -- a pure
+     * WHITE flickering spark with NO colour tint.
      *
-     * <p>S17(c)(iv): WAX_OFF stays the PRIMARY glint. The owner floated returning to the FIREWORK spark for a
-     * sharper twinkle -- the FLIGHT decides. ONE-LINE P4 SWAP: change this field to
-     * {@code ParticleTypes.FIREWORK} (the sharper original spark the owner floated),
-     * {@code ParticleTypes.ELECTRIC_SPARK} (sharper/briefer amethyst) or {@code ParticleTypes.END_ROD}
-     * (warmer/floatier) -- nothing else moves (the near-ground spawn + zero drift already read well for a
-     * FIREWORK spark sitting on the snow). */
-    private static final net.minecraft.core.particles.SimpleParticleType SPARKLE_PARTICLE = ParticleTypes.WAX_OFF;
+     * <p><b>Why WAX_OFF lost.</b> S14(d) picked {@code WAX_OFF} for its "amethyst sparkle" -- but its baked
+     * colour {@code setColor(1.0, 0.9, 1.0)} + emissive glow (bytecode-verified against the 26.2
+     * {@code GlowParticle} defs) is a LILAC, and on a white snowfield under the greying polar sky the owner read
+     * exactly that lilac as "purple" (TEST 113 video: lavender stars, worst in the 76S village, one oversized
+     * blob). The snow must glint WHITE; any tinted particle will always read as a foreign colour on it.
+     *
+     * <p><b>Why FIREWORK is safe now.</b> The original S14(d) complaint against FIREWORK ("raindrop/unclear")
+     * was the AIRBORNE DRIFT of the old spawn -- glints floating 0.5-1.5 blocks up in the air, falling like
+     * drizzle. The S17(c)(ii) v3 spawn already fixed that independently: glints now hug the sampled snow surface
+     * (0.05-0.3 blocks) with ZERO incoming velocity, so a FIREWORK spark sits ON the snow and twinkles in place
+     * -- it cannot read as rain any more. The S17(c)(iv) block on the old field pre-approved this exact one-line
+     * swap ("the sharper original spark the owner floated"); TEST 113 is the flight verdict it was waiting for.
+     *
+     * <p>Alternatives on file for a future P4 pass: {@code ELECTRIC_SPARK} (lilac again -- now known-rejected
+     * on snow), {@code END_ROD} (warm cream, floaty -- an ember, not frost). */
+    private static final net.minecraft.core.particles.SimpleParticleType SPARKLE_PARTICLE = ParticleTypes.FIREWORK;
 
     /**
-     * S21(b)(iii) SPARKLIER -- a twin-particle micro-cluster per glint point: {@link #SPARKLE_TWIN_COUNT}
-     * particles spawned the SAME tick at a tiny random offset ({@link #SPARKLE_TWIN_OFFSET} blocks) read as one
-     * BRIGHTER flash than a lone spark. The pure {@link com.example.globe.core.SnowSparkleLaw} budget counts
-     * CLUSTERS (one per accepted loop unit), so the peak (~20 clusters/s) lands as ~40 particles/s -- the budget
-     * ACCOUNTING is unchanged (clusters, not particles); the twin just fattens each accepted point. P4 dials.
+     * S21(b)(iii) -> GLINT v5: the twin micro-cluster is RETIRED (count 2 -> 1; owner flight TEST 113,
+     * 2026-07-19). The twin existed for one reason only -- to FATTEN the dim WAX_OFF quad into a visible flash
+     * (two lilac quads at a {@link #SPARKLE_TWIN_OFFSET} offset read as one brighter point). FIREWORK is a
+     * bright flickering spark on its own; doubling it reads as NOISE (and helped build TEST 113's "oversized
+     * blob"). The cluster loop + offset dial are kept in place (count 1 = a single spawn per accepted point,
+     * offset inert) so a P4 pass can re-fatten a future dim particle without touching the spawn loop; the pure
+     * {@link com.example.globe.core.SnowSparkleLaw} budget still counts CLUSTERS, unchanged.
      */
-    private static final int SPARKLE_TWIN_COUNT = 2;
+    private static final int SPARKLE_TWIN_COUNT = 1;
     private static final double SPARKLE_TWIN_OFFSET = 0.12;
 
     /**
@@ -549,14 +550,28 @@ public class GlobeModClient implements ClientModInitializer {
      * family member). Anything else -- stone, gravel, dirt, sand -- is skipped, so the glint reads unambiguously
      * as the SNOW catching the light, never bare rock. (A skipped point costs a cluster from the per-tick budget,
      * which is intended: the budget is the MAX clusters; bare-ground points thin it naturally.)
+     *
+     * <p><b>GLINT v5 WATER AUDIT (owner flight TEST 113, 2026-07-19: glints "apparently over open water" at
+     * 75-76S).</b> Audited against water-top columns: the sampled {@code MOTION_BLOCKING_NO_LEAVES} heightmap
+     * DOES include fluids (26.2 predicate: blocks-motion OR non-empty fluid), so over open ocean/lake the
+     * heightmap top at {@code surfaceY-1} IS the surface water block -- but {@code WATER} is not in this
+     * ALLOWLIST (nor is kelp/seagrass, whose states carry water), and no member of the list is waterloggable,
+     * so a liquid column cannot pass the v4 check as written. The likeliest reading of the video is legitimate
+     * sea-ICE glints (ICE/PACKED_ICE are in-list by design -- frozen ocean SHOULD glint) plus WAX_OFF's 2 s
+     * lilac linger making shoreline points read as floating; still, "snow/ice only, never fluid" is now made
+     * STRUCTURAL rather than incidental: {@link #isGlintSurface} rejects any state carrying a fluid, so a
+     * future edit that adds a waterloggable block to this set cannot silently re-open the water hole.
      */
     private static final java.util.Set<Block> GLINT_SURFACE_BLOCKS = java.util.Set.of(
             Blocks.SNOW_BLOCK, Blocks.SNOW, Blocks.POWDER_SNOW,
             Blocks.ICE, Blocks.PACKED_ICE, Blocks.BLUE_ICE, Blocks.FROSTED_ICE);
 
-    /** True iff {@code state} is a snow/ice-family block a glint may sit on (see {@link #GLINT_SURFACE_BLOCKS}). */
+    /** True iff {@code state} is a snow/ice-family block a glint may sit on (see {@link #GLINT_SURFACE_BLOCKS}).
+     *  GLINT v5: additionally rejects ANY state with a non-empty fluid (water, lava, waterlogged anything) --
+     *  the structural "never fluid" backstop from the TEST 113 water audit above. Today no in-list block can
+     *  carry a fluid, so this is belt-and-suspenders by construction, not a behaviour change. */
     private static boolean isGlintSurface(BlockState state) {
-        return GLINT_SURFACE_BLOCKS.contains(state.getBlock());
+        return GLINT_SURFACE_BLOCKS.contains(state.getBlock()) && state.getFluidState().isEmpty();
     }
 
     // Calm-weather glints on the snowfields near the player (GLINT v4: the 75-82 band, crossfading OUT as the
@@ -565,7 +580,8 @@ public class GlobeModClient implements ClientModInitializer {
     // Particles tier + enclosure estimate + reduce-snow comfort option as the ambient snow, so it honors every
     // perf/accessibility knob without a second curve. No state/accumulator; the caller's isPaused/spawn-tick
     // guards (B-3b anti-backlog law) are untouched. S17(c)(ii): each glint hugs the sampled surface (0.05-0.3
-    // above it) with zero drift; S21(b): only snow/ice surfaces glint, and each accepted point spawns a twin.
+    // above it) with zero drift; S21(b): only snow/ice surfaces glint (v5: never a fluid column); GLINT v5
+    // (TEST 113): one bright FIREWORK spark per accepted point -- the twin cluster is retired.
     private static void spawnSnowSparkle(Minecraft client, double absLatDeg,
                                          com.example.globe.core.ParticleDensity.Tier tier, float exposure) {
         // The blizzard drive is the storm signal (0 across the calm 75-82 glint band; belt-and-suspenders per the law).
@@ -624,13 +640,14 @@ public class GlobeModClient implements ClientModInitializer {
             double gz = bz + random.nextDouble();
             // S17(c)(ii): hug the snow (0.05-0.3 above the sampled surface) so it reads as the snow glinting.
             double gy = surfaceY + SPARKLE_Y_MIN + random.nextDouble() * (SPARKLE_Y_MAX - SPARKLE_Y_MIN);
-            // Zero incoming velocity -- the glint twinkles in place (WAX_OFF's own quad + short life carry it).
+            // Zero incoming velocity -- the glint twinkles in place (the spark's own flicker + short life carry it).
             double vx = (random.nextDouble() - 0.5) * 2.0 * SPARKLE_DRIFT_LATERAL;
             double vy = SPARKLE_DRIFT_UP;
             double vz = (random.nextDouble() - 0.5) * 2.0 * SPARKLE_DRIFT_LATERAL;
-            // S21(b)(iii) TWIN CLUSTER: SPARKLE_TWIN_COUNT particles at a tiny offset = one brighter flash per
-            // point. The cluster is ONE budget unit (the count loop already spent it), so budget accounting is
-            // unchanged -- this only fattens each accepted glint.
+            // S21(b)(iii) cluster loop -- GLINT v5 (TEST 113): SPARKLE_TWIN_COUNT is 1, so this spawns a single
+            // bright FIREWORK spark per accepted point (the WAX_OFF-era twin fattening is retired; the loop +
+            // offset dial stay so a future dim particle can be re-fattened without touching the spawn shape).
+            // The cluster is ONE budget unit (the count loop already spent it) -- budget accounting unchanged.
             for (int j = 0; j < SPARKLE_TWIN_COUNT; j++) {
                 double ox = (random.nextDouble() - 0.5) * SPARKLE_TWIN_OFFSET;
                 double oy = (random.nextDouble() - 0.5) * SPARKLE_TWIN_OFFSET;

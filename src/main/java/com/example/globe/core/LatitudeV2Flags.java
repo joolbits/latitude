@@ -453,13 +453,23 @@ public final class LatitudeV2Flags {
 
     /**
      * Functional-layer latitude floor (deg): the effective-sun mob rules (polar-night dark-spawn, midnight-sun
-     * spawn veto, undead sun-burn) fire ONLY at {@code |φ| >= this} — the visuals keep the 60° onset, but the
-     * mob overrides are held back to the extreme cap. Default 74.5 (sweep A2, BINDING): the "no-villages"
-     * line — a 63° village left under 24/7 winter spawns for weeks would be a siege, not atmosphere. The owner
-     * may WIDEN this dial after flying (toward the 60° visual onset) if the deep-cap-only rule feels too shy.
+     * spawn veto, undead sun-burn) fire ONLY at {@code |φ| >= this}.
+     *
+     * <p><b>Default 60.0 — the OWNER-VERDICT widening to the visual onset (TEST 113, 2026-07-19).</b>
+     * History: shipped at 74.5 (sweep A2, BINDING at the time): the "no-villages" line — the worry was a 63°
+     * village left under 24/7 winter spawns for weeks would be a siege, not atmosphere — with the explicit
+     * reservation that "the owner may WIDEN this dial after flying (toward the 60° visual onset) if the
+     * deep-cap-only rule feels too shy." That flight verdict has now landed: the owner flew TEST 113 through
+     * the 66.5-74° polar-night country under a dark sky with NO monsters and called it wrong — "monsters
+     * should spawn." So the functional floor moves 74.5 -> 60.0, aligning the mob rules with the solar-tilt
+     * VISUAL onset (δ_max 30 ⇒ band onset 60°): where the sky says polar night, the night rules apply. The A2
+     * village-siege concern is retired by the same owner verdict (villages were independently pulled back to
+     * ≤ 80's habitable band anyway; the S13e strays-only surface law ≥ 80 is untouched by this dial). REVISIT
+     * only via a new owner verdict; the {@code -Dlatitude.solarTilt.functionalMinDeg} dial remains live for
+     * in-flight tuning.
      */
     public static final double SOLAR_TILT_FUNCTIONAL_MIN_DEG =
-            parseDoubleOrDefault(System.getProperty("latitude.solarTilt.functionalMinDeg"), 74.5);
+            parseDoubleOrDefault(System.getProperty("latitude.solarTilt.functionalMinDeg"), 60.0);
 
     /** Frozen-mode phase (deg), used only when {@link #SOLAR_TILT_YEAR_LENGTH_DAYS} {@code <= 0}. Default 0 →
      *  δ = +δ_max → permanent NORTHERN summer (the owner's original ask). A seed-random 0-vs-180 sign is the

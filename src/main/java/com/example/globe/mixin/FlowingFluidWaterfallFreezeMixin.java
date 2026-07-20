@@ -1,6 +1,7 @@
 package com.example.globe.mixin;
 
 import com.example.globe.core.LatitudeV2Flags;
+import com.example.globe.core.PolarBarrensBand;
 import com.example.globe.core.PolarInstrument;
 import com.example.globe.core.PolarWaterFreezeRule;
 import com.example.globe.util.LatitudeMath;
@@ -38,17 +39,22 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * which cannot be outrun: the moment water touches ice it locks, so reroutes and the vertical climb are
  * deterministic.
  *
- * <p><b>Why the previous fixes missed it (root cause).</b> S16's {@code ServerLevelRoofedWaterFreezeMixin}
- * descends DOWNWARD from a column's {@code MOTION_BLOCKING} heightmap top. An open-air cascade FREE-FALLS above
- * the terrain surface, i.e. ABOVE that heightmap top, so the downward descent never reaches the falling column;
- * S14 only froze GENERATION-time flows. Neither catches a fall that starts (a bucket poured, a spring uncovered)
- * AFTER worldgen.
+ * <p><b>Why the previous fixes missed it (root cause -- CORRECTED in v6).</b> S14 only froze GENERATION-time
+ * flows, so nothing caught a fall that starts (a bucket poured, a spring uncovered) AFTER worldgen -- that part
+ * stands. The S17 claim that a cascade free-falls "above the MOTION_BLOCKING heightmap top (water is not
+ * motion-blocking terrain)" was FALSE: the 26.2 MOTION_BLOCKING predicate is javap-verified as
+ * {@code blocksMotion() || !getFluidState().isEmpty()} -- fluids COUNT, the heightmap top sits one block above
+ * the topmost water, and the S17 upward scan only ever walked air (deleted in v6). The real reason live falls
+ * survived was the S22 cadence + coverage holes fixed by the v6 round (see
+ * {@code ServerLevelRoofedWaterFreezeMixin} and {@code FlowingFluidSpreadConvertMixin}).
  *
  * <p><b>The seam.</b> {@code FlowingFluid.tick(ServerLevel, BlockPos, BlockState, FluidState)} (verified by
  * javap: its body opens {@code if (!fluidState.isSource()) { ...getNewLiquid/spread... }}) is the SINGLE method
  * every moving water block funnels through -- it is scheduled for each flowing block as a fall descends and for a
  * source's outflow as a new spring spreads. Injected at {@code HEAD} and cancellable, on an armed globe world in
- * the forced-freeze zone (the SAME {@code >= 85} frayed front the surface ice / roofed descent use), above the
+ * the S22 TICK FRONT (the SHARED barrens band decision, ONSET 82 -> FULL 84 on the coherent barrens fray --
+ * v6 widened this consumer from the old {@code >= 85} frayed front so the 82-84 Barrens/crevasse band the
+ * owner's 84S pour proved uncovered now has machinery; one decision with the biome/glacier/carvers), above the
  * freeze floor, on a non-ocean column: a FLOWING (non-source) water block that attempts to flow is replaced with
  * plain {@code ice} and the vanilla flow/spread is cancelled -- BUT ONLY once it has LANDED (S18) AND is TOUCHING
  * ICE (S20 -- the ice-touch hunter). A block still FALLING (air or another fluid directly below) is left to
@@ -68,32 +74,29 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * <p><b>Only FLOWING water, only the pure decision.</b> Source water ({@code Fluids.WATER}) is left to the surface
  * freeze ({@code BiomePolarWaterFreezeMixin} via {@code tickPrecipitation}), and lava ({@code FLOWING_LAVA}) is
  * excluded, by gating on {@code fluidState.getType() == Fluids.FLOWING_WATER}. The freeze/exempt call is the pure
- * {@link PolarWaterFreezeRule#freezesFlowing}: ocean-family columns are EXEMPT (checked first inside it -- the sea
- * keeps liquid-under-ice), and {@code skyExposed} is passed {@code false} so the {@code aboveFreezeFloor} arm is
- * the sole discriminator -- a flowing block above the surface-40 freeze floor freezes; a deep spring below it
- * (both arms false) stays liquid (the B-9 Glacial Caves reservoir). Nothing touches worldgen RNG: only the flow
- * tick's own block is rewritten.
+ * {@link PolarWaterFreezeRule#tickFreezesFlowing} (v6): ocean-family columns are EXEMPT (checked first inside it
+ * -- the sea keeps liquid-under-ice), and {@code aboveFreezeFloor} is the sole depth discriminator -- a flowing
+ * block above the surface-40 freeze floor freezes; a deep spring below it stays liquid (the B-9 Glacial Caves
+ * reservoir). Nothing touches worldgen RNG: only the flow tick's own block is rewritten.
  *
  * <p><b>Byte-identical off-path.</b> The kill switch {@code POLAR_WATER_FREEZE_ENABLED}, the worldgen-family flag
- * {@code POLAR_BARRENS_ENABLED} (which {@code freezesFlowing} also requires), and the globe-world check all bail
+ * {@code POLAR_BARRENS_ENABLED} (which {@code tickFreezesFlowing} also requires), and the globe-world check all bail
  * at the head before any latitude math -- so with either flag off, on a non-globe world, or equatorward of the
- * frayable strip, vanilla fluid flow runs untouched. This method ticks for every flowing fluid block worldwide,
+ * 82-deg tick-front onset, vanilla fluid flow runs untouched. This method ticks for every flowing fluid block worldwide,
  * so it fast-bails cheapest-first (flags, then fluid type, then the column-Z latitude gate) and only the deep
  * polar cap ever pays for the heightmap reads.
  *
- * <p><b>S21(d) SPREAD-STOPPER coverage argument (verified, unchanged code).</b> The owner's intent is "respread
- * around fresh ice must die at ONE block". The touch set is orthogonal only (BELOW + the 4 horizontals; ABOVE and
- * the DIAGONALS are excluded). That is SUFFICIENT: Minecraft water spreads only orthogonally, one cell per flow
- * tick, so to reach a cell that is merely DIAGONAL to an ice block, water must FIRST occupy a cell ORTHOGONALLY
- * adjacent to that ice -- and that orthogonal cell, on its own flow tick (this HEAD inject, before vanilla's
- * spread runs), is landed + touching-ice -> frozen + cancelled, so it never spreads onward to the diagonal. Thus
- * a spreading EDGE block that touches ice orthogonally is always caught (dies at one block), and a purely-diagonal
- * contact is never reached with live water. The freeze then propagates ring-by-ring via orthogonal contact: once
- * an orthogonal neighbour freezes, the former-diagonal cell becomes orthogonally-adjacent to ice and is caught on
- * ITS next tick. No flowing cell can outrun the ice -- every actively-spreading front cell has a scheduled tick
- * (this hunter) and every at-rest cell is claimed by the SETTLED SWEEP; between the two, all in-zone water is
- * covered. (A cell touching ice only DIAGONALLY with no orthogonal ice and no scheduled tick is, by definition,
- * settled -> the sweep owns it -- so nothing falls through.)
+ * <p><b>S22 v6: the S21(d) "spread-stopper coverage argument" was WRONG (owner flight TEST 113).</b> The old
+ * paragraph here argued the hunter + sweep alone made a spread-stopper unnecessary. Forensics found its three
+ * holes, live: (1) a flowing block whose BELOW is water (not-landed-over-water -- e.g. the second layer riding a
+ * frozen sheet's meltwater film or pooled supply) is invisible to the hunter (not landed) AND to the sweep (not
+ * landed), so it spreads freely; (2) every freeze's neighbour updates schedule FRESH fluid ticks on the adjacent
+ * supply, which re-spreads a NEW water layer ON TOP of the fresh ice -- the RATCHET: the ice never gains ground;
+ * (3) source-freezes-last (correct in itself) + the ratchet keeps the supply alive indefinitely, so the pour the
+ * owner filmed reached 20-30% checkerboard at 36 s and never terminated. The fix is a REAL spread-stopper --
+ * {@code FlowingFluidSpreadConvertMixin} on {@code FlowingFluid.spreadTo}, CONVERTING an ice-adjacent spread
+ * destination to ice at the moment of spread (see {@code PolarWaterFreezeRule#spreadConvertsToIce}) -- while
+ * this hunter keeps its zipper/reroute-lock role for water that already exists.
  */
 @Mixin(FlowingFluid.class)
 public abstract class FlowingFluidWaterfallFreezeMixin {
@@ -107,7 +110,7 @@ public abstract class FlowingFluidWaterfallFreezeMixin {
     private void globe$freezeFlowingPolarWater(ServerLevel level, BlockPos pos, BlockState state,
                                                FluidState fluidState, CallbackInfo ci) {
         // Byte-identical fast bail: kill switch off, the S14 worldgen-freeze family off, or a non-globe world ->
-        // vanilla fluid flow, no latitude math. (freezesFlowing also requires POLAR_BARRENS_ENABLED; requiring it
+        // vanilla fluid flow, no latitude math. (tickFreezesFlowing also requires POLAR_BARRENS_ENABLED; requiring it
         // here too lets the whole method short-circuit before the fluid-type and latitude checks.)
         if (!LatitudeV2Flags.POLAR_WATER_FREEZE_ENABLED || !LatitudeV2Flags.POLAR_BARRENS_ENABLED
                 || LatitudeBiomes.getActiveRadiusBlocks() <= 0) {
@@ -118,32 +121,33 @@ public abstract class FlowingFluidWaterfallFreezeMixin {
         if (fluidState.getType() != Fluids.FLOWING_WATER) {
             return;
         }
-        // Cheap latitude gate from the block's Z: everything equatorward of the frayable strip is left entirely to
-        // vanilla, so only the deep polar cap pays for the heightmap reads below.
+        // Cheap latitude gate from the block's Z: everything equatorward of the S22 tick-front onset (82, the
+        // Barrens band onset) is left entirely to vanilla, so only the polar band pays for the reads below.
+        // v6 (owner flight TEST 113): this gate was FREEZE_ALL-FRAY (84) and left the 82-84 Barrens/crevasse
+        // band with no flow machinery -- the owner's 84S pour froze nothing.
         double absLatDeg = LatitudeMath.absLatDegExact(level.getWorldBorder(), pos.getZ());
-        if (Double.isNaN(absLatDeg)
-                || absLatDeg < PolarWaterFreezeRule.FREEZE_ALL_DEG - PolarWaterFreezeRule.FRAY_HALF_WIDTH_DEG) {
+        if (Double.isNaN(absLatDeg) || absLatDeg < PolarWaterFreezeRule.TICK_FRONT_ONSET_DEG) {
             return;
         }
-        // The SAME frayed front the surface ice / solid rivers / roofed descent use (barrens-fray branch): sample
-        // the coherent per-column noise only inside the +-1 strip, so the flow-freeze edge matches the frozen-sea
-        // edge exactly; outside the strip the frayed predicate equals the razor by construction (fray stays NaN).
-        double fray = Double.NaN;
-        if (PolarWaterFreezeRule.inFreezeFrayBand(absLatDeg)) {
-            fray = LatitudeBiomes.polarSeaFreezeFrayNoise(pos.getX(), pos.getZ());
-        }
+        // S22 TICK FRONT: the SAME shared barrens band decision (ONSET 82 -> FULL 84 on the coherent barrens
+        // fray noise) the biome placement / glacier body / crevasse carvers use -- one decision, Art VI, so the
+        // flow-freeze edge matches the barrens ground exactly. At/above FULL_DEG the band fraction is 1.0 and
+        // any sample passes, so the noise is only paid inside the 82-84 fray strip.
+        double barrensFray = absLatDeg < PolarBarrensBand.FULL_DEG
+                ? LatitudeBiomes.polarBarrensFrayNoise(pos.getX(), pos.getZ())
+                : 0.0;
         // Freeze floor (the surface-40 idiom, reused): above it the moving water freezes; a deep spring below it
         // stays liquid (the B-9 reservoir). worldSurface = fluid top, oceanFloor = submerged bed (same two WG
         // heightmaps landWaterFreezeFloorY consumes for the solid-lake freeze).
         int worldSurfaceY = level.getHeight(Heightmap.Types.WORLD_SURFACE, pos.getX(), pos.getZ());
         int oceanFloorY = level.getHeight(Heightmap.Types.OCEAN_FLOOR, pos.getX(), pos.getZ());
         boolean aboveFreezeFloor = pos.getY() > PolarWaterFreezeRule.landWaterFreezeFloorY(worldSurfaceY, oceanFloorY);
-        // Ocean-family columns are EXEMPT -- freezesFlowing checks ocean FIRST (the sacred pin: liquid under the
-        // pack ice, the S7 immersion mechanic). skyExposed=false: aboveFreezeFloor is the sole discriminator here
-        // (a visible open fall is above the floor; a covered deep spring below it stays liquid).
+        // Ocean-family columns are EXEMPT -- tickFreezesFlowing checks ocean FIRST (the sacred pin: liquid under
+        // the pack ice, the S7 immersion mechanic). aboveFreezeFloor is the sole depth discriminator (a visible
+        // open fall is above the floor; a covered deep spring below it stays liquid).
         boolean isOcean = level.getBiome(pos).is(BiomeTags.IS_OCEAN);
-        if (!PolarWaterFreezeRule.freezesFlowing(true, isOcean, absLatDeg, fray, false, aboveFreezeFloor)) {
-            return; // fast bail before the below-block read: ocean / out-of-zone / below the floor -> vanilla flow
+        if (!PolarWaterFreezeRule.tickFreezesFlowing(true, isOcean, absLatDeg, barrensFray, aboveFreezeFloor)) {
+            return; // fast bail before the below-block read: ocean / off-front / below the floor -> vanilla flow
         }
         // S20 instrument (default off): an eligible in-zone flowing-water flow tick -- the denominator the FREEZE
         // recorder reports, so a live flight can see whether the pour is ticking at all.

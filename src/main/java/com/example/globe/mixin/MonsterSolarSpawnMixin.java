@@ -36,7 +36,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
  * </ul>
  *
  * <p><b>Gate.</b> The band is {@link SolarTilt.FunctionalBand#NONE} (→ this mixin no-ops) unless the master
- * flag is on, the world is a globe overworld, AND {@code |φ| >= functionalMinDeg} (A2, default 74.5 — the
+ * flag is on, the world is a globe overworld, AND {@code |φ| >= functionalMinDeg} (A2; default 60 since TEST 114 — the owner's "monsters should spawn" verdict widened the floor to the visual onset; was 74.5 — the
  * extreme cap only; livable mid-latitude country is never sieged). Byte-identical flag-off: the very first
  * line returns when {@link LatitudeV2Flags#SOLAR_TILT_V2_ENABLED} is false. Static handler because the target
  * is static. No persistent state (§8d) — stateless per spawn attempt (already rate-limited).

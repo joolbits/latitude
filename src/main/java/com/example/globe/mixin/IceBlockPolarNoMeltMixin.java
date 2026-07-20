@@ -49,15 +49,27 @@ public abstract class IceBlockPolarNoMeltMixin {
             return;
         }
         double absLatDeg = LatitudeMath.absLatDegExact(level.getWorldBorder(), pos.getZ());
-        // Equatorward of the frayable strip ice melts normally (vanilla); NaN degrades to vanilla too.
-        if (Double.isNaN(absLatDeg)
-                || absLatDeg < PolarWaterFreezeRule.FREEZE_ALL_DEG - PolarWaterFreezeRule.FRAY_HALF_WIDTH_DEG) {
+        // Equatorward of BOTH fronts ice melts normally (vanilla); NaN degrades to vanilla too. The cheap
+        // bail must use the WIDEST front v6 can freeze on: with the barrens on, land ice now forms from the
+        // 82-deg tick front (TEST 114 sweep REQUIRED-FIX — v6 ice at 82-84 must not torch-melt into a
+        // melt/re-freeze flicker against the 1.6 s sweep), so the bail floor follows suit.
+        double bailFloorDeg = LatitudeV2Flags.POLAR_BARRENS_ENABLED
+                ? PolarWaterFreezeRule.TICK_FRONT_ONSET_DEG
+                : PolarWaterFreezeRule.FREEZE_ALL_DEG - PolarWaterFreezeRule.FRAY_HALF_WIDTH_DEG;
+        if (Double.isNaN(absLatDeg) || absLatDeg < bailFloorDeg) {
             return;
         }
-        // Cancel the melt exactly on the front the ice formed on (barrens-fray branch flag-gated, mirroring the
-        // freeze consumers), so the no-melt boundary tracks the freeze boundary per column.
+        // Cancel the melt exactly on the front the ice formed on, so the no-melt boundary tracks the freeze
+        // boundary per column: NON-OCEAN columns with the barrens on ride the SHARED 82->84 barrens-band
+        // decision (the same tickFrontFreezes the v6 freeze consumers use — "where ice forms, ice does not
+        // melt" holds on ONE front); ocean columns and barrens-off keep the razor/frayed 85 law (the approved
+        // sea-ice line), exactly mirroring BiomePolarWaterFreezeMixin's branch structure.
         boolean cancelled;
-        if (LatitudeV2Flags.POLAR_BARRENS_ENABLED && PolarWaterFreezeRule.inFreezeFrayBand(absLatDeg)) {
+        if (LatitudeV2Flags.POLAR_BARRENS_ENABLED
+                && !level.getBiome(pos).is(net.minecraft.tags.BiomeTags.IS_OCEAN)) {
+            cancelled = PolarWaterFreezeRule.tickFrontFreezes(true, absLatDeg,
+                    LatitudeBiomes.polarBarrensFrayNoise(pos.getX(), pos.getZ()));
+        } else if (LatitudeV2Flags.POLAR_BARRENS_ENABLED && PolarWaterFreezeRule.inFreezeFrayBand(absLatDeg)) {
             cancelled = PolarWaterFreezeRule.iceMeltCancelledFrayed(true, absLatDeg,
                     LatitudeBiomes.polarSeaFreezeFrayNoise(pos.getX(), pos.getZ()));
         } else {

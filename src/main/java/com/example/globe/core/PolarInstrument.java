@@ -9,11 +9,13 @@ import java.util.Locale;
  *
  * <ul>
  *   <li><b>FREEZE</b> ({@code -Dlatitude.debugFreeze}, default OFF): the server water-freeze pipeline --
- *       {@code [LAT][FREEZE] flowTicks=N passedFalling=N hunterFroze=N sweptSettled=N sweptFroze=N}. Fed by
- *       the flow-tick mixin (flow ticks seen / falls passed to vanilla / the ice-touch hunter's certain
- *       locks) and the weather-tick sweep (settled-landed candidates found / frozen). Diagnoses "water is not
- *       freezing": flow ticks happening but nothing swept = the settled sweep is not reaching the pool; zero
- *       flow ticks = the pour never enters the zone/eligibility.</li>
+ *       {@code [LAT][FREEZE] flowTicks=N passedFalling=N hunterFroze=N sweptSettled=N sweptFroze=N
+ *       spreadFroze=N}. Fed by the flow-tick mixin (flow ticks seen / falls passed to vanilla / the
+ *       ice-touch hunter's certain locks), the v6 tickChunk sweep driver (settled-landed candidates found /
+ *       frozen), and the v6 spread-converter ({@code spreadFroze} = water spreads converted to ice at the
+ *       destination -- the proof channel for the next self-fly that the TEST-113 respread ratchet is dead).
+ *       Diagnoses "water is not freezing": flow ticks happening but nothing swept = the settled sweep is not
+ *       reaching the pool; zero flow ticks = the pour never enters the zone/eligibility.</li>
  *   <li><b>SPARKLE</b> ({@code -Dlatitude.debugSparkle}, default OFF): the client snow-sparkle spawn path --
  *       {@code [LAT][SPARKLE] budget=N spawned=N window=X band=X}. {@code budget}/{@code spawned} are the
  *       per-window SUMS of the pure {@link SnowSparkleLaw#sparkleBudget} (glint CLUSTERS) and the actually-created
@@ -66,6 +68,7 @@ public final class PolarInstrument {
     private static long hunterFroze;
     private static long sweptSettled;
     private static long sweptFroze;
+    private static long spreadFroze;
 
     /** A flow tick seen for an eligible in-zone flowing-water block (the denominator). */
     public static void freezeFlowTick() {
@@ -92,8 +95,17 @@ public final class PolarInstrument {
         sweptFroze++;
     }
 
+    /** S22 (WATER v6): the spread-converter turned a water spread into ice at the destination (certain, no
+     *  dice) -- the CONVERT-AT-SPREAD counter that lets the next self-fly prove the respread ratchet is dead
+     *  ({@code spreadFroze=} climbing while a pour meets ice, then falling to 0 as the path terminates). */
+    public static void freezeSpreadFroze() {
+        spreadFroze++;
+    }
+
     /**
-     * Poll the FREEZE channel once per server tick from the in-zone sweep (its reliable per-tick heartbeat).
+     * Poll the FREEZE channel from the sweep driver's heartbeat (v6: the {@code ServerLevel.tickChunk} inject,
+     * which fires every tick for every in-band chunk -- multiple polls per tick are fine, the window flushes at
+     * most once).
      * Returns the formatted {@code [LAT][FREEZE] ...} line and RESETS the counters when the ~5 s window has
      * elapsed, else {@code null}. {@code gameTime} is {@code ServerLevel.getGameTime()} (a tick counter). The
      * first poll seeds the window and returns {@code null}.
@@ -106,22 +118,25 @@ public final class PolarInstrument {
         if (gameTime - freezeWindowStart < WINDOW_TICKS) {
             return null;
         }
-        String line = formatFreezeLine(flowTicks, passedFalling, hunterFroze, sweptSettled, sweptFroze);
+        String line = formatFreezeLine(flowTicks, passedFalling, hunterFroze, sweptSettled, sweptFroze,
+                spreadFroze);
         flowTicks = 0;
         passedFalling = 0;
         hunterFroze = 0;
         sweptSettled = 0;
         sweptFroze = 0;
+        spreadFroze = 0;
         freezeWindowStart = gameTime;
         return line;
     }
 
     /** The exact FREEZE line format (extracted pure so the format is unit-testable without touching the gate). */
     static String formatFreezeLine(long flowTicks, long passedFalling, long hunterFroze, long sweptSettled,
-                                   long sweptFroze) {
+                                   long sweptFroze, long spreadFroze) {
         return String.format(Locale.ROOT,
-                "[LAT][FREEZE] flowTicks=%d passedFalling=%d hunterFroze=%d sweptSettled=%d sweptFroze=%d",
-                flowTicks, passedFalling, hunterFroze, sweptSettled, sweptFroze);
+                "[LAT][FREEZE] flowTicks=%d passedFalling=%d hunterFroze=%d sweptSettled=%d sweptFroze=%d"
+                        + " spreadFroze=%d",
+                flowTicks, passedFalling, hunterFroze, sweptSettled, sweptFroze, spreadFroze);
     }
 
     // ---- SPARKLE channel (client thread) -------------------------------------------------------------------
@@ -179,6 +194,7 @@ public final class PolarInstrument {
         hunterFroze = 0;
         sweptSettled = 0;
         sweptFroze = 0;
+        spreadFroze = 0;
         sparkleWindowStart = Long.MIN_VALUE;
         budgetSum = 0;
         spawnedSum = 0;

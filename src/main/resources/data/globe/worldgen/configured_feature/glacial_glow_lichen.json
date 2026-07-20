@@ -1,0 +1,20 @@
+{
+  "type": "minecraft:multiface_growth",
+  "config": {
+    "block": "minecraft:glow_lichen",
+    "can_be_placed_on": [
+      "minecraft:packed_ice",
+      "minecraft:blue_ice",
+      "minecraft:stone",
+      "minecraft:deepslate",
+      "minecraft:andesite",
+      "minecraft:diorite",
+      "minecraft:granite",
+      "minecraft:tuff",
+      "minecraft:calcite"
+    ],
+    "can_place_on_ceiling": true,
+    "can_place_on_wall": true,
+    "search_range": 20
+  }
+}

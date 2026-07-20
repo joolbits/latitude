@@ -29,8 +29,10 @@ class PolarInstrumentTest {
 
     @Test
     void freezeLineFormat_exact() {
-        assertEquals("[LAT][FREEZE] flowTicks=1 passedFalling=2 hunterFroze=3 sweptSettled=4 sweptFroze=5",
-                PolarInstrument.formatFreezeLine(1, 2, 3, 4, 5));
+        // v6 added spreadFroze -- the convert-at-spread proof channel for the next self-fly.
+        assertEquals("[LAT][FREEZE] flowTicks=1 passedFalling=2 hunterFroze=3 sweptSettled=4 sweptFroze=5"
+                        + " spreadFroze=6",
+                PolarInstrument.formatFreezeLine(1, 2, 3, 4, 5, 6));
     }
 
     @Test
@@ -53,17 +55,21 @@ class PolarInstrumentTest {
         PolarInstrument.freezeSweptSettled();
         PolarInstrument.freezeSweptSettled();
         PolarInstrument.freezeSweptFroze();
+        PolarInstrument.freezeSpreadFroze();
+        PolarInstrument.freezeSpreadFroze();
         // Before the window elapses (< WINDOW_TICKS since the seed) -> no line.
         assertNull(PolarInstrument.pollFreezeLine(1000L + PolarInstrument.WINDOW_TICKS - 1),
                 "still inside the window -> no flush");
         // At/after the window -> flush the accumulated counts.
         String line = PolarInstrument.pollFreezeLine(1000L + PolarInstrument.WINDOW_TICKS);
-        assertEquals("[LAT][FREEZE] flowTicks=2 passedFalling=1 hunterFroze=1 sweptSettled=3 sweptFroze=1", line);
+        assertEquals("[LAT][FREEZE] flowTicks=2 passedFalling=1 hunterFroze=1 sweptSettled=3 sweptFroze=1"
+                + " spreadFroze=2", line);
         // Counters reset + window re-anchored: the NEXT window (no events) reports all zeros.
         assertNull(PolarInstrument.pollFreezeLine(1000L + PolarInstrument.WINDOW_TICKS + PolarInstrument.WINDOW_TICKS - 1),
                 "new window, still inside -> no flush");
         String zeros = PolarInstrument.pollFreezeLine(1000L + 2 * PolarInstrument.WINDOW_TICKS);
-        assertEquals("[LAT][FREEZE] flowTicks=0 passedFalling=0 hunterFroze=0 sweptSettled=0 sweptFroze=0", zeros,
+        assertEquals("[LAT][FREEZE] flowTicks=0 passedFalling=0 hunterFroze=0 sweptSettled=0 sweptFroze=0"
+                        + " spreadFroze=0", zeros,
                 "counters reset after the flush");
     }
 

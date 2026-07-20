@@ -455,24 +455,42 @@ public final class GlobeWarningOverlay {
                                     zoneChanged, zoneFullArmed, distBlocksToBoundary, zoneBand);
 
                     if (zoneChanged) {
+                        // TEST 113 (owner): the SPAWN-IN announcement is just the lastZoneKey == null case of
+                        // this same zoneChanged branch (resetWorldEntryState nulls the key on world entry), so
+                        // when S21a collapsed "zone titles" into the whisper it silently demoted the join
+                        // announcement too -- and the owner missed it ("where did my arrival title go?").
+                        // Capture the join-ness BEFORE the key is overwritten; it drives the split below.
+                        boolean firstAnnounceSinceJoin = lastZoneKey == null;
                         lastZoneKey = canonicalZoneKey;
                         if (LatitudeConfig.zoneEnterTitleEnabled) {
                             String titleText = buildZoneEnterTitle(client, canonicalZoneKey);
-                            // S21a ZONE-TITLE WHISPERS (owner, TEST 111): the climate-band ("Polar 66N" etc.)
-                            // pop-up was "too high ... should be whispers closer to the health bar, same area as
-                            // the polar warnings." The ZONE-BOUNDARY family now presents through
-                            // LatitudeWhisperOverlay -- the established whisper channel the polar cold cues use
-                            // (its rendering idiom + position constant reused unchanged) -- in BOTH a fresh
-                            // crossing (FULL) and a linger re-straddle. ONLY the presentation moved: the
-                            // ZoneTitleBanding re-fire hysteresis is untouched (it still advances zoneFullArmed
-                            // below), and the FULL/linger log labels are kept for diagnostics. THE SPLIT
-                            // (design S21a): the HEMISPHERE crossings (N/S, E/W) and the arrival/passage titles
-                            // stay BIG in HemisphereTitleOverlay -- they are ceremony; only the zone-boundary
-                            // murmurs move down to the whisper.
-                            boolean full = zoneEval.fire() == com.example.globe.core.ZoneTitleBanding.Fire.FULL;
-                            logEntryTitle(full ? "zone_whisper_full" : "zone_whisper_linger",
-                                    titleText, client, client.player.getX(), client.player.getZ());
-                            LatitudeWhisperOverlay.trigger(titleText);
+                            // S21a ZONE-TITLE WHISPERS (owner, TEST 111) + the TEST 113 JOIN SPLIT. The
+                            // climate-band ("Polar 66N" etc.) pop-up was "too high ... should be whispers
+                            // closer to the health bar, same area as the polar warnings," so BOUNDARY
+                            // CROSSINGS present through LatitudeWhisperOverlay (now genuinely bottom-anchored
+                            // -- see its TEST 113 anchor note; the original S21a claim that the channel already
+                            // sat near the health bar was wrong). The ZoneTitleBanding re-fire hysteresis is
+                            // untouched (it still advances zoneFullArmed below) and the FULL/linger log labels
+                            // are kept for diagnostics.
+                            //   THE SPLIT (S21a + TEST 113): ceremony stays BIG, murmurs stay small --
+                            //   - SPAWN-IN (first announce since join): the full ZoneEnterTitleOverlay center
+                            //     title, exactly the fireHemisphereLine idiom/config (owner: entering the world
+                            //     deserves the announcement; it is not a boundary murmur).
+                            //   - real boundary crossings: the whisper (owner's S21a ask -- unchanged here).
+                            //   - hemisphere crossings + arrival/passage titles: HemisphereTitleOverlay (big).
+                            if (firstAnnounceSinceJoin) {
+                                int durationTicks = (int) Math.round(
+                                        clamp(LatitudeConfig.zoneEnterTitleSeconds, 2.0, 10.0) * 20.0);
+                                double scale = clamp(LatitudeConfig.zoneEnterTitleScale, 1.0, 3.0);
+                                ZoneEnterTitleOverlay.trigger(titleText, durationTicks, scale);
+                                logEntryTitle("zone_full_join", titleText,
+                                        client, client.player.getX(), client.player.getZ());
+                            } else {
+                                boolean full = zoneEval.fire() == com.example.globe.core.ZoneTitleBanding.Fire.FULL;
+                                logEntryTitle(full ? "zone_whisper_full" : "zone_whisper_linger",
+                                        titleText, client, client.player.getX(), client.player.getZ());
+                                LatitudeWhisperOverlay.trigger(titleText);
+                            }
                         }
                     }
                     // Advance the armed state every throttled sample (even when unchanged / disabled) so the
@@ -826,14 +844,18 @@ public final class GlobeWarningOverlay {
     }
 
     /**
-     * Dev/test convenience (fired by {@code /latdev title}): shows the zone-enter WHISPER for the zone the
+     * Dev/test convenience (fired by {@code /latdev title}): shows the zone-boundary WHISPER for the zone the
      * player is CURRENTLY standing in, on demand, without walking across a zone boundary. S21a moved the
-     * zone-boundary presentation from the big center title to the {@link LatitudeWhisperOverlay} murmur near the
-     * health bar, so this command now fires that whisper -- the preview matches what a real crossing shows.
+     * zone-BOUNDARY presentation to the {@link LatitudeWhisperOverlay} murmur (bottom-anchored near the health
+     * bar since the TEST 113 anchor fix), so this preview fires that whisper -- it matches what a real
+     * CROSSING shows. Deliberately NOT the spawn-in path: the TEST 113 join split fires the big
+     * {@link ZoneEnterTitleOverlay} center title only for the first announce after world entry
+     * ({@code lastZoneKey == null}), which is a one-shot ceremony this repeatable preview must not imitate.
      *
      * <p>It bypasses the {@link com.example.globe.core.ZoneTitleBanding} hysteresis (an explicit request always
      * fires) and does NOT touch {@code lastZoneKey} / {@code zoneFullArmed} (the real crossing-detection state
-     * machine is left completely alone), so this command has no side effect on subsequent real crossings.
+     * machine is left completely alone), so this command has no side effect on subsequent real crossings --
+     * and cannot make the NEXT real zone change look like a join.
      *
      * @return the rendered title text (for command feedback), or {@code null} if player/level are unavailable.
      */
