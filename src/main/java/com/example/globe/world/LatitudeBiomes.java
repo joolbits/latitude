@@ -941,6 +941,29 @@ public final class LatitudeBiomes {
     }
 
     /**
+     * S24 PERMAFROST STRATUM (Peetsa 2026-07-20, TEST 115: "the ice doesn't extend down very far. It just
+     * becomes regular cave"): how many blocks BELOW the glacier sole this column's packed-ice permafrost
+     * veining reaches (0..{@link PolarBarrensBand#PERMAFROST_BAND_BLOCKS}). REUSES the exact glacier
+     * depth-wobble field ({@code POLAR_BARRENS_GLACIER_SALT} -- the same sample that undulates the sole and
+     * warps the blue-ice line, per Art VI's no-new-noise discipline), so the permafrost fingers plunge
+     * deepest precisely where the glacier body is thickest, reading as one coherent ice mass. Consumed
+     * flag-gated by {@code PolarBarrensGlacierMixin} at the end of the surface stage, immediately below the
+     * body loop; worldgen-stage, deterministic, NEW CHUNKS ONLY. Callers ANDs the barrens-column decision
+     * (this is only invoked once {@link #polarBarrensGlacierIceBlocks} has confirmed the column is barrens),
+     * so a non-barrens column is never given permafrost.
+     */
+    public static int polarBarrensPermafrostDepthBelowSole(int blockX, int blockZ) {
+        double depthNoise = ValueNoise2D.sampleBlocks(WORLD_SEED ^ POLAR_BARRENS_GLACIER_SALT,
+                blockX, blockZ, POLAR_BARRENS_GLACIER_SCALE_BLOCKS);
+        // S24 sweep REQUIRED-FIX: the curve's reach is non-increasing in its input while the glacier BODY
+        // is thickest at HIGH noise -- passing the raw sample made fingers plunge deepest under the
+        // THINNEST glacier, inverting the stated law ("more overburden, deeper cementing"). Inverting the
+        // sample at this seam aligns the two: thick body (high noise) -> deep permafrost. Same field, same
+        // determinism; areal density unchanged by symmetry; NaN still degrades inside the pure curve.
+        return PolarBarrensBand.permafrostIceDepthBelowSole(1.0 - depthNoise);
+    }
+
+    /**
      * B-9a SEA-FREEZE FRAY: coherent fray sample in {@code [0,1)} for the 85-deg polar water-freeze line
      * (dedicated salt, coastline-front scale) -- consumed flag-gated by {@code BiomePolarWaterFreezeMixin}
      * through {@code PolarWaterFreezeRule.freezesWaterFrayed}, so the razor seam the owner screenshotted

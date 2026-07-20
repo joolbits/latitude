@@ -178,6 +178,64 @@ public final class PolarBarrensBand {
         return Math.max(1, Math.min(GLACIER_ICE_MAX_BLOCKS + GLACIER_DEPTH_WOBBLE_BLOCKS, ice));
     }
 
+    // --- S24 PERMAFROST STRATUM (Peetsa 2026-07-20, TEST 115 video: "the ice doesn't extend down very far.
+    // --- It just becomes regular cave") -------------------------------------------------------------------
+    //
+    // Below the glacier SOLE (where {@code glacierIceBodyBlocks} ends and native stone resumes) the owner's
+    // frames showed the "Glacial Caves" biome as plain stone/dirt caverns -- the identity layer shipped but
+    // the rock matrix didn't. This transition band grafts packed-ice VEINING onto the stone just under the
+    // sole: a per-column reach that fades from a ~60% areal fraction AT the sole to 0 at the band bottom,
+    // driven by the SAME coherent glacier depth-wobble field that already undulates the sole
+    // ({@code POLAR_BARRENS_GLACIER_SALT}, Art VI -- no new noise). Because the reach is a coherent per-column
+    // function (not a per-block cell-hash, which Art VI bans), the permafrost reads as irregular ice fingers
+    // of varying depth threading the stone -- deepest exactly where the glacier is thickest (more overburden),
+    // shallowest at the marginal edge -- rather than a flat slab. Combined with the S24 glacial ice BLOBS
+    // (data-side ore-type features across the whole cave band) the deep caverns finally read glacial in every
+    // wall. ORE-HOME TRADE (stated for the javadoc): packed_ice is NOT in {@code #base_stone_overworld}, so
+    // ore features (which run later, at the features stage, and target base stone) cannot home inside the ice.
+    // The band leaves native stone for them THREE ways: (a) ~40% of columns get ZERO permafrost ice at the
+    // sole (their noise sample sits at/above the top density), (b) every ice column has native stone below its
+    // reach, and (c) the whole ore Y-range below the ~14-block band is untouched -- so ores still generate
+    // everywhere the glacier does, just not inside the ice, which is realistic (glaciers have no ore).
+
+    /**
+     * Thickness (blocks) of the permafrost transition band under the glacier sole within which stone-family
+     * blocks may be replaced by packed-ice veining. 14 sits in the design's 10-16 window: a real
+     * ice-cemented stratum, bounded well above bedrock so the living underground (ores/lakes/geodes) keeps
+     * the whole column below it.
+     */
+    public static final int PERMAFROST_BAND_BLOCKS = 14;
+
+    /**
+     * Areal packed-ice fraction AT the sole (permafrost band depth 0): the share of barrens columns whose
+     * permafrost ice reaches the very top of the band. 0.60 -> ~60% ice / ~40% bare stone at the sole
+     * (the "partial density so ore homes survive" floor), fading linearly to 0 at the band bottom.
+     */
+    public static final double PERMAFROST_TOP_DENSITY = 0.60;
+
+    /**
+     * The permafrost REACH for one barrens column: how many blocks BELOW the glacier sole this column's
+     * packed-ice veining extends (0..{@link #PERMAFROST_BAND_BLOCKS}), given the column's coherent glacier
+     * depth-wobble sample in {@code [0,1)}. Derivation: the band's ice DENSITY at depth {@code d} fades
+     * linearly, {@code density(d) = }{@link #PERMAFROST_TOP_DENSITY}{@code * (1 - d/BAND)}; a column with
+     * noise {@code n} is ice exactly where {@code density(d) > n}, i.e. for {@code d < BAND*(1 - n/TOP)}.
+     * So low-noise columns push ice fingers deep, columns with {@code n >= }{@link #PERMAFROST_TOP_DENSITY}
+     * get NO permafrost ice at all (the bare-stone 40% that keeps ore homes), and the expected ice fraction
+     * over a neighbourhood at depth {@code d} equals {@code density(d)} -- 60% at the sole, 0 at the bottom.
+     *
+     * <p>Monotonically NON-INCREASING in {@code depthNoise01}. Out-of-range input clamps to {@code [0,1]};
+     * {@code NaN} reads as 0.5 (mid-reach, never a hard slab and never zero-on-bad-data past the density
+     * point -- mirroring {@link #glacierIceBodyBlocks}' NaN law). Pure integer result, unit-testable.
+     */
+    public static int permafrostIceDepthBelowSole(double depthNoise01) {
+        double n = Double.isNaN(depthNoise01) ? 0.5 : Math.max(0.0, Math.min(depthNoise01, 1.0));
+        if (n >= PERMAFROST_TOP_DENSITY) {
+            return 0;
+        }
+        int reach = (int) Math.round(PERMAFROST_BAND_BLOCKS * (1.0 - n / PERMAFROST_TOP_DENSITY));
+        return Math.max(0, Math.min(PERMAFROST_BAND_BLOCKS, reach));
+    }
+
     /**
      * True when a block write at {@code y} is part of the column's exposed SURFACE SKIN -- i.e. eligible
      * for the barrens snow/powder/ice substitution -- given the column's two worldgen heightmaps:

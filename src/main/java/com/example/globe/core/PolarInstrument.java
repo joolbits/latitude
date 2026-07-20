@@ -17,13 +17,16 @@ import java.util.Locale;
  *       Diagnoses "water is not freezing": flow ticks happening but nothing swept = the settled sweep is not
  *       reaching the pool; zero flow ticks = the pour never enters the zone/eligibility.</li>
  *   <li><b>SPARKLE</b> ({@code -Dlatitude.debugSparkle}, default OFF): the client snow-sparkle spawn path --
- *       {@code [LAT][SPARKLE] budget=N spawned=N window=X band=X}. {@code budget}/{@code spawned} are the
+ *       {@code [LAT][SPARKLE] budget=N spawned=N window=X band=X clock=X}. {@code budget}/{@code spawned} are the
  *       per-window SUMS of the pure {@link SnowSparkleLaw#sparkleBudget} (glint CLUSTERS) and the actually-created
- *       particle count; {@code band} is the latest {@link SnowSparkleLaw#bandRamp01} sample and {@code window}
- *       the snowfall-gate factor {@code 1 - }{@link SnowSparkleLaw#snowfallRamp01} (their product is the GLINT v4
- *       {@link SnowSparkleLaw#glintWeight} crossfade). Diagnoses "sparkle invisible live": budget&gt;0 with
- *       spawned=0 = the perf/enclosure/reduce-snow scaling zeroed it; both&gt;0 yet nothing seen = a
- *       particle/height/brightness problem, not a budget one.</li>
+ *       particle count; {@code band} is the latest EFFECTIVE {@link SnowSparkleLaw#bandRamp01} sample (75->76, or
+ *       the extended 60->61 in a polar-night/midnight-sun band), {@code window} the snowfall-gate factor
+ *       {@code 1 - }{@link SnowSparkleLaw#snowfallRamp01}, and {@code clock} the GLINT CLOCK day curve
+ *       {@link SnowSparkleLaw#clockDayCurve01} (1 at noon, 0 at clock-night). The PRODUCT band x window x clock
+ *       is the {@link SnowSparkleLaw#glintWeight} the budget rides on -- so a flight can prove exactly which term
+ *       shuttered the pulse (S24). Diagnoses "sparkle invisible live": budget&gt;0 with spawned=0 = the
+ *       perf/enclosure/reduce-snow scaling zeroed it; both&gt;0 yet nothing seen = a particle/height/brightness
+ *       problem; clock=0.00 at midday under a dark sky = the clock read is wrong, not the glint.</li>
  * </ul>
  *
  * <p><b>Pure, MC-free, unit-testable.</b> This class holds only primitive counters + tick-window arithmetic
@@ -154,18 +157,21 @@ public final class PolarInstrument {
     private static long spawnedSum;
     private static double lastWindow01;
     private static double lastBand01;
+    private static double lastClock01;
 
     /**
      * Record one sparkle spawn-tick sample: the pure per-tick {@code budget} ({@link SnowSparkleLaw#sparkleBudget}),
      * the {@code spawned} particle count actually created (post perf/enclosure/reduce-snow scaling), and the
-     * current {@code window01} / {@code band01} gate values. Budget and spawned accumulate into the window sums;
-     * window/band keep the latest sample.
+     * current {@code window01} / {@code band01} / {@code clock01} gate values (the three GLINT CLOCK factors whose
+     * product is {@link SnowSparkleLaw#glintWeight}). Budget and spawned accumulate into the window sums;
+     * window/band/clock keep the latest sample.
      */
-    public static void sparkleSample(int budget, int spawned, double window01, double band01) {
+    public static void sparkleSample(int budget, int spawned, double window01, double band01, double clock01) {
         budgetSum += budget;
         spawnedSum += spawned;
         lastWindow01 = window01;
         lastBand01 = band01;
+        lastClock01 = clock01;
     }
 
     /**
@@ -181,18 +187,19 @@ public final class PolarInstrument {
         if (gameTime - sparkleWindowStart < WINDOW_TICKS) {
             return null;
         }
-        String line = formatSparkleLine(budgetSum, spawnedSum, lastWindow01, lastBand01);
+        String line = formatSparkleLine(budgetSum, spawnedSum, lastWindow01, lastBand01, lastClock01);
         budgetSum = 0;
         spawnedSum = 0;
         sparkleWindowStart = gameTime;
         return line;
     }
 
-    /** The exact SPARKLE line format (extracted pure so the format is unit-testable without touching the gate). */
-    static String formatSparkleLine(long budget, long spawned, double window01, double band01) {
+    /** The exact SPARKLE line format (extracted pure so the format is unit-testable without touching the gate).
+     *  S24 appended {@code clock=%.2f} (the GLINT CLOCK day curve) so a flight can read band x window x clock. */
+    static String formatSparkleLine(long budget, long spawned, double window01, double band01, double clock01) {
         return String.format(Locale.ROOT,
-                "[LAT][SPARKLE] budget=%d spawned=%d window=%.2f band=%.2f",
-                budget, spawned, window01, band01);
+                "[LAT][SPARKLE] budget=%d spawned=%d window=%.2f band=%.2f clock=%.2f",
+                budget, spawned, window01, band01, clock01);
     }
 
     /** Test-only: clear both channels' counters + window anchors so each test starts from a known state. */
@@ -209,5 +216,6 @@ public final class PolarInstrument {
         spawnedSum = 0;
         lastWindow01 = 0.0;
         lastBand01 = 0.0;
+        lastClock01 = 0.0;
     }
 }

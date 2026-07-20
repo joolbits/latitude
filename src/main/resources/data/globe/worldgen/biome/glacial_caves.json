@@ -73,12 +73,15 @@
       "minecraft:underwater_magma",
       "minecraft:disk_sand",
       "minecraft:disk_clay",
-      "minecraft:disk_gravel"
+      "minecraft:disk_gravel",
+      "globe:glacial_ice_blob",
+      "globe:glacial_blue_ice_blob"
     ],
     [
       "globe:hanging_icicles",
       "globe:glacial_snow_drift",
-      "globe:glacial_powder_pocket"
+      "globe:glacial_powder_pocket",
+      "globe:glacial_frost_carpet"
     ],
     [
       "minecraft:spring_water",

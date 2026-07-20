@@ -38,9 +38,10 @@ class PolarInstrumentTest {
 
     @Test
     void sparkleLineFormat_exact() {
-        // window/band are fractions rendered %.2f under Locale.ROOT (so a '.' decimal always, never a locale comma).
-        assertEquals("[LAT][SPARKLE] budget=8 spawned=5 window=0.50 band=0.80",
-                PolarInstrument.formatSparkleLine(8, 5, 0.5, 0.8));
+        // window/band/clock are fractions rendered %.2f under Locale.ROOT (a '.' decimal always, never a locale comma).
+        // S24 appended clock= (the GLINT CLOCK day curve) after band=.
+        assertEquals("[LAT][SPARKLE] budget=8 spawned=5 window=0.50 band=0.80 clock=1.00",
+                PolarInstrument.formatSparkleLine(8, 5, 0.5, 0.8, 1.0));
     }
 
     @Test
@@ -76,17 +77,18 @@ class PolarInstrumentTest {
     }
 
     @Test
-    void sparkleWindowSumsBudgetSpawned_keepsLatestWindowBand() {
+    void sparkleWindowSumsBudgetSpawned_keepsLatestWindowBandClock() {
         assertNull(PolarInstrument.pollSparkleLine(500L), "first poll seeds the window (no line)");
-        PolarInstrument.sparkleSample(4, 2, 1.0, 0.8);
-        PolarInstrument.sparkleSample(4, 3, 0.5, 0.6); // budget/spawned SUM (8/5); window/band = LATEST (0.5/0.6)
+        PolarInstrument.sparkleSample(4, 2, 1.0, 0.8, 1.0);
+        PolarInstrument.sparkleSample(4, 3, 0.5, 0.6, 0.5); // budget/spawned SUM (8/5); window/band/clock = LATEST
         assertNull(PolarInstrument.pollSparkleLine(500L + PolarInstrument.WINDOW_TICKS - 1), "inside the window");
         String line = PolarInstrument.pollSparkleLine(500L + PolarInstrument.WINDOW_TICKS);
-        assertEquals("[LAT][SPARKLE] budget=8 spawned=5 window=0.50 band=0.60", line);
-        // Sums reset; a fresh window with a single sample reports just that sample.
-        PolarInstrument.sparkleSample(4, 0, 1.0, 0.0); // budget>0 but spawned=0 (the "scaling zeroed it" signal)
+        assertEquals("[LAT][SPARKLE] budget=8 spawned=5 window=0.50 band=0.60 clock=0.50", line);
+        // Sums reset; a fresh window with a single sample reports just that sample. clock=0.00 here is the
+        // "midday-bright band but clock read as night" diagnostic (S24).
+        PolarInstrument.sparkleSample(4, 0, 1.0, 0.0, 0.0); // budget>0 but spawned=0 (the "scaling zeroed it" signal)
         String next = PolarInstrument.pollSparkleLine(500L + 2 * PolarInstrument.WINDOW_TICKS);
-        assertEquals("[LAT][SPARKLE] budget=4 spawned=0 window=1.00 band=0.00", next,
+        assertEquals("[LAT][SPARKLE] budget=4 spawned=0 window=1.00 band=0.00 clock=0.00", next,
                 "sums reset after the flush; budget>0 with spawned=0 is diagnosable");
     }
 
