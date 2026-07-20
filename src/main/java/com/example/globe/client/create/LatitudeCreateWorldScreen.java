@@ -2581,6 +2581,29 @@ public class LatitudeCreateWorldScreen extends Screen {
             if (this.band != null) {
                 selectedZone = this.band;
             }
+            // Peetsa (2026-07-20): "click on Polar, which is just barely off the screen -- have the panel
+            // automatically scroll smoothly so that Polar is centered, and AT THE SAME TIME the first panel
+            // smoothly scrolls so the ATLAS map is centered." Both panels glide together on every select.
+            centerZoneRowAndAtlas();
+        }
+
+        /** Recenters the Spawn Zone list on THIS row and, in lockstep, the World panel on the ATLAS preview.
+         *  Sets only the int scroll TARGETS (rightScroll / leftScroll) -- advanceScrollAnimation()'s existing
+         *  per-frame ease glides the float *Display* values there next frame, so this rides the same smooth
+         *  mechanism the scrollbar drag already uses; no new animation code needed. Each target is derived by
+         *  undoing the CURRENT display offset (row/preview Y + round(*ScrollDisplay)) to recover the row's
+         *  position in unscrolled content space, rather than duplicating updateRightLayout/updateLeftLayout's
+         *  full formula -- correct whether or not a previous ease is still in flight. */
+        private void centerZoneRowAndAtlas() {
+            int visRight = Math.round(rightScrollDisplay);
+            int rowBaseCenter = this.getY() + visRight + this.getHeight() / 2;
+            int rightViewportCenter = (rightViewportTop + rightViewportBottom) / 2;
+            rightScroll = Math.max(0, Math.min(rowBaseCenter - rightViewportCenter, rightMaxScroll));
+
+            int visLeft = Math.round(leftScrollDisplay);
+            int atlasBaseCenter = (leftPreviewTopY + leftPreviewBottomY) / 2 + visLeft;
+            int leftViewportCenter = (leftViewportTop + leftViewportBottom) / 2;
+            leftScroll = Math.max(0, Math.min(atlasBaseCenter - leftViewportCenter, leftMaxScroll));
         }
 
         @Override
