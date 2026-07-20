@@ -195,7 +195,8 @@ public class LatitudeSettingsScreen extends Screen {
                 .build());
 
         this.resetButton = this.addRenderableWidget(Button.builder(Component.literal("Reset"), b -> {
-                    applyDefaults(cfg);
+                    cfg.resetToDefaults();
+                    cfg.setLocationDetailMode(LocationDetailPolicy.DEFAULT_MODE);
                     applyDefaults(latCfg);
                     CompassHudConfig.saveCurrent();
                     LatitudeConfig.saveCurrent();
@@ -309,38 +310,6 @@ public class LatitudeSettingsScreen extends Screen {
         return Math.max(36, bounds.h() + 12);
     }
 
-
-    private static void applyDefaults(CompassHudConfig cfg) {
-        cfg.enabled = true;
-        cfg.showMode = CompassHudConfig.ShowMode.COMPASS_PRESENT;
-        cfg.style = CompassHudConfig.CompassStyle.DIGITAL;
-        cfg.directionMode = CompassHudConfig.DirectionMode.CARDINAL_8;
-        cfg.hAnchor = CompassHudConfig.HAnchor.CENTER;
-        cfg.vAnchor = CompassHudConfig.VAnchor.TOP;
-        cfg.offsetX = 0;
-        cfg.offsetY = 0;
-        cfg.scale = 1.0f;
-        cfg.analogSize = 48.0f;
-        cfg.analogInnerAlpha = 0.65f;
-        cfg.padding = 3;
-        cfg.showBackground = true;
-        cfg.backgroundRgb = 0x000000;
-        cfg.backgroundAlpha = 64;
-        cfg.textRgb = 0xFFFFFF;
-        cfg.textAlpha = 255;
-        cfg.shadow = true;
-        cfg.showLatitude = true;
-        cfg.analogShowLatitude = true;
-        cfg.latitudeDecimals = 0;
-        cfg.attachToHotbarCompass = false;
-        cfg.compactHud = false;
-        cfg.setLocationDetailMode(LocationDetailPolicy.DEFAULT_MODE);
-        cfg.zoneFollowsCompass = true;
-        cfg.zoneHAnchor = CompassHudConfig.HAnchor.CENTER;
-        cfg.zoneVAnchor = CompassHudConfig.VAnchor.TOP;
-        cfg.zoneOffsetX = 0;
-        cfg.zoneOffsetY = 0;
-    }
 
     private static void applyDefaults(LatitudeConfig cfg) {
         LatitudeConfig.zoneEnterTitleEnabled = true;

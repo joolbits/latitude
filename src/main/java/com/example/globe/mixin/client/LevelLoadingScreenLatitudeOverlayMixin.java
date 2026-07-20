@@ -40,6 +40,7 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
     @Unique private static final int MUTED = 0xFF8C8078;
     @Unique private static final int GRID_COLOR = 0x14504840;
     @Unique private static final int GRID_STEP = 16;
+    @Unique private static final float globe$VERSION_LABEL_SCALE = 0.9f;
     @Unique private static final String globe$VERSION_LABEL = FabricLoader.getInstance()
             .getModContainer(GlobeMod.MOD_ID)
             .map(container -> "v" + container.getMetadata().getVersion().getFriendlyString())
@@ -268,9 +269,17 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
             return;
         }
         int margin = 4;
-        int x = paneX + paneW - this.font.width(globe$VERSION_LABEL) - margin;
-        int y = paneY + paneH - this.font.lineHeight - margin;
-        context.text(this.font, globe$VERSION_LABEL, x, y, MUTED, false);
+        float scaledWidth = this.font.width(globe$VERSION_LABEL) * globe$VERSION_LABEL_SCALE;
+        float scaledHeight = this.font.lineHeight * globe$VERSION_LABEL_SCALE;
+        float x = paneX + paneW - scaledWidth - margin;
+        float y = paneY + paneH - scaledHeight - margin;
+        float drawX = x / globe$VERSION_LABEL_SCALE;
+        float drawY = y / globe$VERSION_LABEL_SCALE;
+        var matrices = context.pose();
+        matrices.pushMatrix();
+        matrices.scale(globe$VERSION_LABEL_SCALE, globe$VERSION_LABEL_SCALE);
+        context.text(this.font, globe$VERSION_LABEL, Math.round(drawX), Math.round(drawY), MUTED, false);
+        matrices.popMatrix();
     }
 
     @Unique

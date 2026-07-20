@@ -146,8 +146,20 @@ public class LatitudeHudStudioScreen extends Screen {
         y += rowH + rowGap;
 
         if (analog) {
-            this.wCompassAnalogSize = this.addRenderableWidget(new FloatSlider(panelX, y, widgetW, rowH, Component.literal("Analog Size"), 32.0f, 128.0f, cfg.analogSize, v -> cfg.analogSize = v));
-            tooltip(this.wCompassAnalogSize, "Sets the analog compass diameter.");
+            this.wCompassAnalogSize = this.addRenderableWidget(new IntSlider(
+                    panelX,
+                    y,
+                    widgetW,
+                    rowH,
+                    Component.literal("Compass Size"),
+                    CompassHudConfig.ANALOG_SIZE_STUDIO_MIN,
+                    CompassHudConfig.ANALOG_SIZE_STUDIO_MAX,
+                    Math.round(cfg.analogSize),
+                    " px",
+                    v -> cfg.analogSize = v));
+            tooltip(
+                    this.wCompassAnalogSize,
+                    "Sets the analog compass diameter. Older saved sizes stay unchanged until you adjust this control.");
             trackSidebarWidget(this.wCompassAnalogSize, y);
             y += rowH + rowGap;
             this.wCompassAnalogInnerAlpha = this.addRenderableWidget(new FloatSlider(panelX, y, widgetW, rowH, Component.literal("Inner Transparency"), 0.0f, 1.0f, cfg.analogInnerAlpha, v -> cfg.analogInnerAlpha = v));
@@ -524,7 +536,8 @@ public class LatitudeHudStudioScreen extends Screen {
 
     private static void resetHudDefaults() {
         var cfg = CompassHudConfig.get();
-        applyDefaults(cfg);
+        cfg.resetToDefaults();
+        cfg.setLocationDetailMode(LocationDetailPolicy.DEFAULT_MODE);
         CompassHudConfig.saveCurrent();
 
         LatitudeConfig.zoneEnterTitleScale = 1.8;
@@ -607,39 +620,6 @@ public class LatitudeHudStudioScreen extends Screen {
         locationDetailGrabDx = (int) Math.round(mx) - b.x();
         locationDetailGrabDy = (int) Math.round(my) - b.y();
         return true;
-    }
-
-    private static void applyDefaults(CompassHudConfig cfg) {
-        cfg.enabled = true;
-        cfg.showMode = CompassHudConfig.ShowMode.COMPASS_PRESENT;
-        cfg.directionMode = CompassHudConfig.DirectionMode.CARDINAL_8;
-        cfg.style = CompassHudConfig.CompassStyle.DIGITAL;
-        cfg.hAnchor = CompassHudConfig.HAnchor.CENTER;
-        cfg.vAnchor = CompassHudConfig.VAnchor.TOP;
-        cfg.offsetX = 0;
-        cfg.offsetY = 0;
-        cfg.scale = 1.0f;
-        cfg.analogSize = 48.0f;
-        cfg.analogInnerAlpha = 0.65f;
-        cfg.analogTheme = CompassHudConfig.AnalogCompassTheme.CLASSIC_GOLD;
-        cfg.padding = 3;
-        cfg.showBackground = true;
-        cfg.backgroundRgb = 0x000000;
-        cfg.backgroundAlpha = 64;
-        cfg.textRgb = 0xFFFFFF;
-        cfg.textAlpha = 255;
-        cfg.shadow = true;
-        cfg.showLatitude = true;
-        cfg.analogShowLatitude = true;
-        cfg.latitudeDecimals = 0;
-        cfg.attachToHotbarCompass = false;
-        cfg.compactHud = false;
-        cfg.setLocationDetailMode(LocationDetailPolicy.DEFAULT_MODE);
-        cfg.zoneFollowsCompass = true;
-        cfg.zoneHAnchor = CompassHudConfig.HAnchor.CENTER;
-        cfg.zoneVAnchor = CompassHudConfig.VAnchor.TOP;
-        cfg.zoneOffsetX = 0;
-        cfg.zoneOffsetY = 0;
     }
 
     private static void setVisible(AbstractWidget w, boolean v) {
@@ -814,25 +794,36 @@ public class LatitudeHudStudioScreen extends Screen {
         private final Component label;
         private final int min;
         private final int max;
+        private final String suffix;
         private final IntConsumer onChange;
+        private Integer legacyDisplayValue;
 
         private IntSlider(int x, int y, int width, int height, Component label, int min, int max, int initial, IntConsumer onChange) {
+            this(x, y, width, height, label, min, max, initial, "", onChange);
+        }
+
+        private IntSlider(int x, int y, int width, int height, Component label, int min, int max, int initial, String suffix, IntConsumer onChange) {
             super(x, y, width, height, Component.empty(), toNorm(initial, min, max));
             this.label = label;
             this.min = min;
             this.max = max;
+            this.suffix = suffix;
             this.onChange = onChange;
+            this.legacyDisplayValue = initial > max ? initial : null;
             updateMessage();
         }
 
         @Override
         protected void updateMessage() {
-            this.setMessage(Component.literal(label.getString() + ": " + getValue()));
+            int displayedValue = legacyDisplayValue != null ? legacyDisplayValue : getValue();
+            this.setMessage(Component.literal(label.getString() + ": " + displayedValue + suffix));
         }
 
         @Override
         protected void applyValue() {
+            legacyDisplayValue = null;
             onChange.accept(getValue());
+            updateMessage();
         }
 
         private int getValue() {
@@ -841,7 +832,7 @@ public class LatitudeHudStudioScreen extends Screen {
 
         private static double toNorm(int v, int min, int max) {
             if (max == min) return 0.0;
-            return (double) (v - min) / (double) (max - min);
+            return Mth.clamp((double) (v - min) / (double) (max - min), 0.0, 1.0);
         }
     }
 
