@@ -1,11 +1,45 @@
 # Latitude 1.5 Feature Manifest
 
-`status: post-Phase-7 Meadow/TEST 2 acceptance PASSED locally` · `branch: codex/1.5-mini-launch-26.2` · `implementation source commit: 211d8109617b3e68703347162153ef19e948e4fd` · `recorded: 2026-07-19`
+`status: post-TEST 2 findings source/model acceptance PASSED locally; fresh replay pending` · `branch: codex/1.5-mini-launch-26.2` · `implementation source tip: 78a09e2da89b581111d10858c43dad1d6f8ff2e7` · `recorded: 2026-07-20`
 
 This is the implementation-side allowlist for the Latitude 1.5 pre-2.0 polish campaign. The campaign
 roadmap lives in the docs root at:
 
 `<home>/CascadeProjects/Latitude (Globe)/docs/LATITUDE_1_5_PRE_2_0_POLISH_ROADMAP.md`
+
+## Post-TEST 2 findings acceptance
+
+the maintainer's TEST 2 screenshots and `/latdev explain` evidence admitted five bounded
+source corrections. Commits `3e195d7f`, `58bd9519`, and `78a09e2d` now:
+
+- default fresh/reset HUD state to Analog at 32 px and expose a 16–72 px
+  whole-pixel Studio range without rewriting explicit older saved sizes;
+- render the loading-pane version label at 90% of its prior size while
+  preserving the bottom-right inset;
+- prevent the Subpolar pool, including BOP tundra, from owning canonical
+  Temperate land below 50°;
+- require established near-ocean authority before the base-biome beach
+  shortcut can preserve a beach inland;
+- cancel newly placed climate-named village variants in incompatible Latitude
+  bands while failing open for neutral, non-village, non-Latitude, or
+  unavailable-authority paths.
+
+Focused RED/GREEN policy proofs, Java 25 compilation and invariants, existing
+HUD/village regressions, impact scans, exact 26.2 descriptor inspection, and a
+fresh adversarial review passed. The adversarial passes caught and repaired
+three defects before savepoint: dishonest legacy slider display/geometry, an
+early beach-path boundary bypass plus unsupported coast threshold, and a
+small-border non-Latitude false positive.
+
+This is a local source/model pass. Already-generated village buildings are not
+rewritten, accepted old-save `/locate` ghosts remain accepted, the exact beach
+screenshot coordinate is unavailable, and no new rendered-pixel claim is
+made. The next numbered TEST staging and fresh disposable replay require
+separate authorization.
+
+Canonical evidence:
+
+`docs/binder/latitude-1-5-test2-findings-20260720.md`
 
 ## Post-Phase-7 loading-copy refresh
 
