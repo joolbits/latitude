@@ -217,6 +217,21 @@ loom {
             vmArg "-Xmx8G"
             vmArg "-Dlatdev.bandAudit=${System.getProperty('latdev.bandAudit', 'enabled')}"
         }
+        // TEMP-DIAG (2026-07-20): settled-sweep zero-claims reproduction rig (FreezeSweepProofHarness).
+        // DELETE this run config when the diagnosis round closes.
+        freezeProof {
+            server()
+            name "Freeze Sweep Proof (Headless)"
+            runDir "run-headless"
+            vmArg "-Xms2G"
+            vmArg "-Xmx4G"
+            vmArg "-Dlatdev.freezeProof=true"
+            vmArg "-Dlatdev.freezeProof.radius=${System.getProperty('latdev.freezeProof.radius', '10000')}"
+            vmArg "-Dlatdev.freezeProof.realWorld=${System.getProperty('latdev.freezeProof.realWorld', 'false')}"
+            vmArg "-Dlatitude.debugFreeze=true"
+            vmArg "-Dlatitude.polarWaterFreeze.enabled=true"
+            vmArg "-Dlatitude.polarBarrens.enabled=true"
+        }
     }
 }
 
