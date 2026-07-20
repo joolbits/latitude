@@ -75,6 +75,15 @@ public class GlobeModClient implements ClientModInitializer {
     public void onInitializeClient() {
         GlobeNet.registerPayloads();
         GlobeMod.LOGGER.info("Globe client init OK");
+
+        // S27: the CLIENT render factory for globe:frost_glint (type registered common-side in
+        // content.GlobeParticles). Fabric's ParticleProviderRegistry hands the factory the loaded sprite set
+        // (from assets/globe/particles/frost_glint.json -> the vanilla minecraft:glow sprite), so the desaturated
+        // ice glint reuses the vanilla glow star with no custom art. FrostGlintParticle.Provider::new matches the
+        // PendingParticleProvider(FabricSpriteSet -> ParticleProvider) overload.
+        net.fabricmc.fabric.api.client.particle.v1.ParticleProviderRegistry.getInstance().register(
+                com.example.globe.content.GlobeParticles.FROST_GLINT,
+                com.example.globe.client.FrostGlintParticle.Provider::new);
         if (GlobeClientState.DEBUG_EW_FOG) {
             GlobeMod.LOGGER.info("[Latitude] debugEwFog=true");
         }
@@ -517,25 +526,24 @@ public class GlobeModClient implements ClientModInitializer {
     private static final double SPARKLE_DRIFT_UP = 0.0;
     private static final double SPARKLE_DRIFT_LATERAL = 0.0;
     /**
-     * GLINT v5 DE-PURPLE (owner flight TEST 113, 2026-07-19): the glint particle is {@code FIREWORK} -- a pure
-     * WHITE flickering spark with NO colour tint.
+     * S27 FROST-GLINT (owner flight TEST 118, 2026-07-20): the glint particle is the mod's own
+     * {@code globe:frost_glint} -- the vanilla {@code GlowParticle} glow-STAR (the "amethyst sparkle" shape the
+     * owner asked to return to) rebuilt with a DESATURATED near-white ICE tint instead of lilac.
      *
-     * <p><b>Why WAX_OFF lost.</b> S14(d) picked {@code WAX_OFF} for its "amethyst sparkle" -- but its baked
-     * colour {@code setColor(1.0, 0.9, 1.0)} + emissive glow (bytecode-verified against the 26.2
-     * {@code GlowParticle} defs) is a LILAC, and on a white snowfield under the greying polar sky the owner read
-     * exactly that lilac as "purple" (TEST 113 video: lavender stars, worst in the 76S village, one oversized
-     * blob). The snow must glint WHITE; any tinted particle will always read as a foreign colour on it.
+     * <p><b>Particle history:</b> WAX_OFF (S14d, the lilac amethyst sparkle -- read as "purple" on white snow,
+     * TEST 113) -> FIREWORK (S24/GLINT v5, a pure-white spark -- but the owner wanted the glow-STAR sparkle
+     * BACK, just not purple) -> {@code frost_glint} (S27, TEST 118: "go back to the amethyst sparkle, but
+     * instead desaturate it so it's not purple"). WAX_OFF's lilac is HARDCODED in the vanilla provider
+     * ({@code setColor(1.0, 0.9, 1.0)} + emissive glow, bytecode-verified against 26.2 {@code GlowParticle}), so
+     * a vanilla type can't be re-tinted -- {@code content.GlobeParticles} + {@code client.FrostGlintParticle}
+     * re-create the glow-star verbatim with the ice tint (0.94, 0.97, 1.0), reusing the {@code minecraft:glow}
+     * sprite (no custom art). Same spawn shape (zero drift, snow-hugging, one spark per accepted point) --
+     * only the particle TYPE changed.
      *
-     * <p><b>Why FIREWORK is safe now.</b> The original S14(d) complaint against FIREWORK ("raindrop/unclear")
-     * was the AIRBORNE DRIFT of the old spawn -- glints floating 0.5-1.5 blocks up in the air, falling like
-     * drizzle. The S17(c)(ii) v3 spawn already fixed that independently: glints now hug the sampled snow surface
-     * (0.05-0.3 blocks) with ZERO incoming velocity, so a FIREWORK spark sits ON the snow and twinkles in place
-     * -- it cannot read as rain any more. The S17(c)(iv) block on the old field pre-approved this exact one-line
-     * swap ("the sharper original spark the owner floated"); TEST 113 is the flight verdict it was waiting for.
-     *
-     * <p>Alternatives on file for a future P4 pass: {@code ELECTRIC_SPARK} (lilac again -- now known-rejected
-     * on snow), {@code END_ROD} (warm cream, floaty -- an ember, not frost). */
-    private static final net.minecraft.core.particles.SimpleParticleType SPARKLE_PARTICLE = ParticleTypes.FIREWORK;
+     * <p>Alternatives on file for a future P4 pass: {@code ELECTRIC_SPARK} / vanilla {@code WAX_OFF} (both lilac
+     * -- now known-rejected on snow), {@code END_ROD} (warm cream, floaty -- an ember, not frost). */
+    private static final net.minecraft.core.particles.SimpleParticleType SPARKLE_PARTICLE =
+            com.example.globe.content.GlobeParticles.FROST_GLINT;
 
     /**
      * S21(b)(iii) -> GLINT v5: the twin micro-cluster is RETIRED (count 2 -> 1; owner flight TEST 113,

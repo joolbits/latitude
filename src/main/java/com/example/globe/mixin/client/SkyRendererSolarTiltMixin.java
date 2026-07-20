@@ -185,12 +185,19 @@ public class SkyRendererSolarTiltMixin {
         } else if (SolarTilt.isMidnightSun(phi, delta)) {
             // S14(a)(i): HOLD a pink-gold dusk through the vanilla-clock night (the sun never sets, so the sky
             // must not fall to vanilla night black); the low-sun gold wash then COMPOSES on top, and the stars
-            // are suppressed toward 0 (no stars under a never-setting sun). Hold + gold both storm-damped (a
-            // blizzard scatters the low sun into a bright whiteout, so the dusk cedes above 85° like every mood).
+            // are suppressed toward 0 (no stars under a never-setting sun). Gold storm-damped (a blizzard
+            // scatters the low sun into a bright whiteout, so the mood cedes above 85° like every mood).
+            // S27 TWILIGHT FLOOR (owner, TEST 118: "still a night sky at midnight with the sun out"): the dusk
+            // hold is now the FLOORED blend (midnightSunDuskBlend01) — the artistic 0.80 hold raised to the
+            // seasonally-gated twilight floor so the dome never darkens past dusk, then storm-damped (A4). The
+            // seasonal edge is the floor reach (0 at the band onset 90−|δ|, smoothstep +5° poleward), so the
+            // onset ring is smooth; below the storm the floor lifts the old 0.80 hold to ~0.86 dusk. Star
+            // suppression still keys off the RAW clock hold (stars gone at midnight regardless of the floor).
             double holdRaw = SolarSkyMood.twilightHold01(frac);
-            double hold = SolarSkyMood.stormDamp(holdRaw, storm);
-            state.skyColor = SolarSkyMood.blendRgb(state.skyColor, SolarSkyMood.MIDNIGHT_SUN_DUSK_RGB,
-                    hold * SolarSkyMood.DUSK_HOLD_MAX_BLEND);
+            double floorReach = SolarSkyMood.midnightSunFloorReach01(true, Math.abs(phi),
+                    SolarTilt.onsetLatDeg(delta));
+            double duskBlend = SolarSkyMood.midnightSunDuskBlend01(frac, storm, floorReach);
+            state.skyColor = SolarSkyMood.blendRgb(state.skyColor, SolarSkyMood.MIDNIGHT_SUN_DUSK_RGB, duskBlend);
             double gold = SolarSkyMood.stormDamp(SolarSkyMood.midnightSunGold01(elevation), storm);
             state.skyColor = SolarSkyMood.blendRgb(state.skyColor, SolarSkyMood.MIDNIGHT_SUN_SKY_RGB,
                     gold * SolarSkyMood.GOLD_MAX_BLEND);
