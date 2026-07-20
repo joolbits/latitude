@@ -35,7 +35,11 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  *       {@link LatitudeBiomes#polarBarrensGlacierIceBlocks} = the band-fraction ramp (thin marginal glacier
  *       at the 82-deg frayed edge, 24-36 blocks at/above 84; fray-consistent with the barrens band, same
  *       latitude+fray decision, so the glacier never outruns the biome) wobbled by a dedicated coherent
- *       depth field.</li>
+ *       depth field. <b>B-9 P2 (Crew C, TEST 113):</b> below a noise-warped line 12-18 blocks into the
+ *       body ({@link LatitudeBiomes#polarBarrensBlueIceStartDepthBlocks}, riding the SAME depth-wobble
+ *       field as the sole) the body is {@code blue_ice} -- depth strata, thick glacier hearts only (the
+ *       marginal 6-block body never reaches the line). Flag-ON output only, new chunks only; see the
+ *       in-method comment for the carver-interaction consequences (blue ice is structurally uncarvable).</li>
  *   <li><b>The living underground stays alive</b> (the law that bounds the glacier's floor): below the sole
  *       nothing is touched -- native stone/dirt resumes, and ore features (which run AFTER this, at the
  *       features stage, and never target packed_ice) populate the column under the ice exactly as anywhere
@@ -66,6 +70,8 @@ public abstract class PolarBarrensGlacierMixin {
     private static final BlockState GLOBE_GLACIER_PACKED_ICE = Blocks.PACKED_ICE.defaultBlockState();
     @Unique
     private static final BlockState GLOBE_RIVER_SURFACE_ICE = Blocks.ICE.defaultBlockState();
+    @Unique
+    private static final BlockState GLOBE_GLACIER_BLUE_ICE = Blocks.BLUE_ICE.defaultBlockState();
 
     @Inject(
             method = "buildSurface(Lnet/minecraft/server/level/WorldGenRegion;Lnet/minecraft/world/level/StructureManager;Lnet/minecraft/world/level/levelgen/RandomState;Lnet/minecraft/world/level/chunk/ChunkAccess;)V",
@@ -113,6 +119,26 @@ public abstract class PolarBarrensGlacierMixin {
                 if (iceBlocks <= 0) {
                     continue; // not a barrens column (flag/band/fray) -- bitwise untouched.
                 }
+                // B-9 P2 BLUE-ICE DEPTH STRATA (Crew C, owner TEST 113: the underground read as generic
+                // stone -- the glacier body gets depth strata): below a noise-warped line 12-18 blocks
+                // INTO the packed-ice body the body becomes blue_ice, so a crevasse/tunnel wall reads
+                // snow cap -> packed ice -> blue-ice heart top-down, like real compression banding. The
+                // line REUSES the exact glacier depth-wobble field that already undulates the sole
+                // (LatitudeBiomes.polarBarrensBlueIceStartDepthBlocks -- no new noise, Art VI), so both
+                // strata warp together. BYTE-IDENTITY HONESTY: this changes FLAG-ON output only (the
+                // latitude.polarBarrens family, same as the glacier body itself) -- flag-off exits at the
+                // top of this method untouched; flag-on worlds get blue ice in NEW CHUNKS ONLY.
+                // CARVER INTERACTION (verified against the 26.2 jar's tag JSON): blue_ice is NOT in
+                // #minecraft:overworld_carver_replaceables (the tag lists packed_ice + #minecraft:snow;
+                // plain ice AND blue ice are both absent), so the B-9 carvers cannot cut the blue heart:
+                // a crevasse descending past the blue line gets a BLUE-ICE FLOOR (real glaciology --
+                // wanted) and glacial tunnels wind through the packed-ice upper body and the stone below
+                // the sole but deflect off the heart. Noise-stage caves are UNAFFECTED (they are air
+                // before this pass runs, and air is never replaced), so hollows still thread the blue
+                // band. Accepted + flagged as owner taste at the P2 flight; the alternative (appending
+                // blue_ice to the minecraft tag) would make every vanilla carver cut iceberg blue ice
+                // world-wide, a vanilla-behavior change this pass must not smuggle in.
+                int blueIceStartDepth = LatitudeBiomes.polarBarrensBlueIceStartDepthBlocks(blockX, blockZ);
                 // S14(b) WATERFALLS: a barrens column is land (never ocean), so its flowing-water freeze
                 // eligibility is ONE per-column decision on the SAME sea-freeze fray front. Every block the
                 // glacier loop scans lies above the sole ((near the 40-block water freeze floor; the sole may sit up to 6 deeper via wobble)), so freezesFlowing's
@@ -144,7 +170,7 @@ public abstract class PolarBarrensGlacierMixin {
                         continue; // source water (aquifers) / lava / other fluids stay
                     }
                     Block block = current.getBlock();
-                    if (block == Blocks.BEDROCK || block == Blocks.PACKED_ICE) {
+                    if (block == Blocks.BEDROCK || block == Blocks.PACKED_ICE || block == Blocks.BLUE_ICE) {
                         continue;
                     }
                     if (y > capBottomY) {
@@ -154,7 +180,13 @@ public abstract class PolarBarrensGlacierMixin {
                         }
                         chunk.setBlockState(cursor, GLOBE_GLACIER_SNOW_BLOCK);
                     } else {
-                        chunk.setBlockState(cursor, GLOBE_GLACIER_PACKED_ICE);
+                        // B-9 P2 depth strata: packed ice down to the noise-warped blue line, blue_ice
+                        // below it (depth is 0-based at the first body block under the cap). A
+                        // pre-existing packed_ice/blue_ice block was skipped above -- idempotent either
+                        // way, and vanishingly rare at these depths (features run after this stage).
+                        chunk.setBlockState(cursor, (capBottomY - y) >= blueIceStartDepth
+                                ? GLOBE_GLACIER_BLUE_ICE
+                                : GLOBE_GLACIER_PACKED_ICE);
                     }
                 }
             }

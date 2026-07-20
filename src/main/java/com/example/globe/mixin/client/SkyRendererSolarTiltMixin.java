@@ -54,7 +54,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * </ol>
  *
  * <p><b>Visual onset vs functional floor:</b> everything here keys on the VISUAL band geometry (onset
- * {@code 90 − |δ|}, 60° at full tilt). The narrower {@code functionalMinDeg} floor (74.5, sweep A2) belongs
+ * {@code 90 − |δ|}, 60° at full tilt). The {@code functionalMinDeg} floor (60 since TEST 114, was 74.5; sweep A2) belongs
  * to the P1 MOB rules only and is deliberately not consulted.
  *
  * <p><b>Honesty line (mixin application).</b> Like the P1 mob mixins and {@code FogRendererPolarSetupMixin},

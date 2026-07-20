@@ -255,7 +255,7 @@ public final class SolarTilt {
      * The functional-layer band classifier — the single thing both server mob rules consume. Returns
      * {@link FunctionalBand#NONE} below the {@code functionalMinDeg} floor (sweep A2: the functional layer is
      * NARROWER than the visuals — visuals onset at 60°, but the spawn/burn overrides are gated to
-     * {@code |φ| >= functionalMinDeg}, default 74.5°, so the 60–74.5° winter weeks don't besiege livable,
+     * {@code |φ| >= functionalMinDeg}, default 60° since TEST 114 (the owner's polar-night verdict; was 74.5°, which left a gap band where the sky said night but the rules said noon), so latitudes below the visual onset never
      * village-eligible country), and otherwise midnight-sun / polar-night per {@link #isMidnightSun} /
      * {@link #isPolarNight}. NaN-safe. A NaN floor is treated as 0 (no extra gate).
      */

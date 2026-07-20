@@ -152,6 +152,52 @@ public final class PolarFogLaw {
         return (float) (t * t * (3.0 - 2.0 * t)); // smoothstep
     }
 
+    /** Degrees of latitude over which the solar-band horizon gloom ramps from 0 to full past the band onset
+     *  (see {@link #bandGloomReach01}). 5° mirrors the 80->85 ramp of {@link #horizonGloomReach01}, so the two
+     *  reaches deepen at the same felt rate. */
+    public static final double BAND_GLOOM_RAMP_DEG = 5.0;
+
+    /**
+     * TEST 113 (owner flight, 2026-07-19) BAND-GLOOM REACH 0..1 -- closes the 60-80° "bright horizon under a
+     * dark sky" gap. The sky DOME gloom starts at the solar-tilt VISUAL onset ({@code 90 − |δ|}, 60° at
+     * δ=30: {@code SkyRendererSolarTiltMixin} + {@link SolarSkyMood#polarNightGloom01}), but the fog/HORIZON
+     * tint previously existed only at/above the 80° fog onset -- {@code FogRendererPolarSetupMixin} early-
+     * returned when {@link #fogEndCapBlocks} was {@code MAX_VALUE}, and {@link #horizonGloomReach01} itself
+     * ramps 80->85. Between the band onset and 80° the vanilla clock-driven BRIGHT horizon shipped untouched
+     * under the gloomed dome (the owner's TEST 113 video: constant at 73-80S). This curve is the horizon's
+     * band-aware sibling: it ramps 0 -> 1 (smoothstep) across {@code [onsetLatDeg, onsetLatDeg +
+     * }{@link #BAND_GLOOM_RAMP_DEG}{@code ]} -- SEASON-AWARE, because the caller passes
+     * {@link SolarTilt#onsetLatDeg} for the CURRENT declination, so the horizon gloom onset tracks the sky
+     * dome's own onset through the year -- and holds 1 poleward.
+     *
+     * <p>{@code inPolarBand} must be true ONLY when the solar tilt is enabled AND the position is inside a
+     * 24-hour band ({@link SolarTilt#isPolarNight} or {@link SolarTilt#isMidnightSun}); false ⇒ 0, so
+     * outside the bands (or tilt-off) this curve contributes nothing and the pre-TEST-113 behaviour is
+     * byte-identical. The gloom itself is applied through the sky-following atmosphere tint
+     * ({@code GlobeClientState.polarSkyTint} -> {@link SolarSkyMood#atmosphereTint}), which is ~identity while
+     * the sun is up -- so even in the midnight-sun band a bright day horizon is untouched by construction; the
+     * reach only decides HOW FAR the fog colour follows the sky when the sky has a mood to follow. The caller
+     * composes {@code max(horizonGloomReach01, bandGloomReach01)} so the ≥ 80° behaviour can only deepen,
+     * never weaken. NaN-safe (0).
+     *
+     * @param inPolarBand true iff solar tilt is on and the position is in the polar-night or midnight-sun band
+     * @param absLatDeg   absolute latitude (deg)
+     * @param onsetLatDeg the band onset latitude for the CURRENT season ({@link SolarTilt#onsetLatDeg})
+     */
+    public static float bandGloomReach01(boolean inPolarBand, double absLatDeg, double onsetLatDeg) {
+        if (!inPolarBand || Double.isNaN(absLatDeg) || Double.isNaN(onsetLatDeg)) {
+            return 0.0f;
+        }
+        double t = (absLatDeg - onsetLatDeg) / BAND_GLOOM_RAMP_DEG;
+        if (t <= 0.0) {
+            return 0.0f;
+        }
+        if (t >= 1.0) {
+            return 1.0f;
+        }
+        return (float) (t * t * (3.0 - 2.0 * t)); // smoothstep
+    }
+
     // ---- the exposure-gated whiteout TOP-COAT (the "engulfed" flat veil over the depth fog) ----
 
     /** Top-coat envelope rows {@code {deg, strength01}}: quiet through the mid-band (the depth fog carries the

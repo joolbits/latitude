@@ -115,8 +115,10 @@ class LatitudeV2FlagsTest {
                 "δ_max defaults to 30° (onset at a visible 60°)");
         assertEquals(360.0, LatitudeV2Flags.SOLAR_TILT_YEAR_LENGTH_DAYS, 1e-9,
                 "year length defaults to 360 game-days (180 between solstices)");
-        assertEquals(74.5, LatitudeV2Flags.SOLAR_TILT_FUNCTIONAL_MIN_DEG, 1e-9,
-                "functional floor defaults to 74.5° (A2 no-villages line)");
+        // History: 74.5 (sweep A2 no-villages line) -> 60.0 (owner verdict TEST 113, 2026-07-19: "monsters
+        // should spawn" in the 66.5-74° polar-night band -- the widening A2 explicitly reserved for the owner).
+        assertEquals(60.0, LatitudeV2Flags.SOLAR_TILT_FUNCTIONAL_MIN_DEG, 1e-9,
+                "functional floor widened to the 60° visual onset (owner verdict TEST 113)");
         assertEquals(0.0, LatitudeV2Flags.SOLAR_TILT_FROZEN_PHASE_DEG, 1e-9,
                 "frozen phase defaults to 0° (permanent northern summer)");
         // the dials match the pure-kernel constants they mirror

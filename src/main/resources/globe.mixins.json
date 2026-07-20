@@ -38,7 +38,8 @@
     "SpawnPlacementsPolarSurfaceMixin",
     "MobSolarSunBurnMixin",
     "terrain.RandomStateAccessor",
-    "terrain.RandomStateRouterTerrainMixin"
+    "terrain.RandomStateRouterTerrainMixin",
+    "FlowingFluidSpreadConvertMixin"
   ],
   "client": [
     "client.CreateWorldScreenMixin",

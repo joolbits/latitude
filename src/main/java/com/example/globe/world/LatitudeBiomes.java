@@ -579,24 +579,63 @@ public final class LatitudeBiomes {
      * (returns the exact {@code basePool} reference unchanged).
      */
     public static Collection<Holder<Biome>> expandSourceCandidatePool(Collection<Holder<Biome>> basePool) {
-        if (!LatitudeV2Flags.POLAR_BARRENS_ENABLED) {
+        return expandSourceCandidatePool(basePool,
+                LatitudeV2Flags.POLAR_BARRENS_ENABLED, LatitudeV2Flags.GLACIAL_CAVES_V1_ENABLED);
+    }
+
+    /**
+     * Flag-parameterized twin of {@link #expandSourceCandidatePool(Collection)} (house pattern: the
+     * static-final flags cannot be flipped inside the suite JVM, so tests pin every combo through the
+     * same single implementation the production overload folds the real flags into).
+     *
+     * <p><b>B-9 P2 amendment (Crew C):</b> {@code latitude.glacialCavesV1} additionally appends
+     * {@code globe:glacial_caves} -- same mechanism, same idempotence, same missing-entry degrade --
+     * so the underground biome's dressing features (icicles/drifts/pockets/lichen) enter the
+     * FeatureSorter graph and actually decorate. HONESTY NOTE: unlike the barrens append (a
+     * feature-list strict SUBSET, zero decoration-RNG shift by construction), glacial_caves carries
+     * NEW placed features, so flipping {@code glacialCavesV1} ON changes the sorted feature index
+     * (decoration salts) for newly generated chunks -- declared, accepted, NEW CHUNKS ONLY, and the
+     * flag's whole point. Every flag combo NOT involving glacialCavesV1-on is bitwise-unchanged from
+     * the pre-P2 behavior: barrens-off+glacial-off returns the exact {@code basePool} reference;
+     * barrens-on+glacial-off appends exactly the barrens as before.
+     */
+    static Collection<Holder<Biome>> expandSourceCandidatePool(Collection<Holder<Biome>> basePool,
+                                                               boolean barrensEnabled,
+                                                               boolean glacialCavesEnabled) {
+        if (!barrensEnabled && !glacialCavesEnabled) {
             return basePool;
         }
         Registry<Biome> registry = SOURCE_POLICY_BIOME_REGISTRY;
         if (registry == null) {
             return basePool;
         }
-        Holder<Biome> barrens = biomeOrNull(registry, POLAR_BARRENS_ID);
-        if (barrens == null) {
-            return basePool;
+        Collection<Holder<Biome>> pool = basePool;
+        if (barrensEnabled) {
+            pool = appendCandidateIfAbsent(pool, registry, POLAR_BARRENS_ID);
         }
-        for (Holder<Biome> entry : basePool) {
-            if (POLAR_BARRENS_ID.equals(biomeId(entry))) {
-                return basePool; // already present -- idempotent (safe to wrap twice)
+        if (glacialCavesEnabled) {
+            pool = appendCandidateIfAbsent(pool, registry, GLACIAL_CAVES_ID);
+        }
+        return pool;
+    }
+
+    /** Append the registry's holder for {@code id} to the pool unless it is already present (idempotent
+     *  -- safe to wrap twice) or the registry lacks it (degrade to the unchanged pool, never throw --
+     *  the JSON schema tests + the boot-time datapack parse gate own that failure class). Returns the
+     *  SAME collection reference when nothing is appended, preserving the byte-identity contract. */
+    private static Collection<Holder<Biome>> appendCandidateIfAbsent(Collection<Holder<Biome>> pool,
+                                                                     Registry<Biome> registry, String id) {
+        Holder<Biome> holder = biomeOrNull(registry, id);
+        if (holder == null) {
+            return pool;
+        }
+        for (Holder<Biome> entry : pool) {
+            if (id.equals(biomeId(entry))) {
+                return pool;
             }
         }
-        List<Holder<Biome>> expanded = new ArrayList<>(basePool);
-        expanded.add(barrens);
+        List<Holder<Biome>> expanded = new ArrayList<>(pool);
+        expanded.add(holder);
         return expanded;
     }
 
@@ -911,6 +950,122 @@ public final class LatitudeBiomes {
     public static double polarSeaFreezeFrayNoise(int blockX, int blockZ) {
         return ValueNoise2D.sampleBlocks(WORLD_SEED ^ POLAR_SEA_FREEZE_FRAY_SALT,
                 blockX, blockZ, POLAR_SEA_FREEZE_FRAY_SCALE_BLOCKS);
+    }
+
+    // --- B-9 P2 GLACIAL CAVES KEYSTONE (Crew C, owner flight TEST 113, 2026-07-19: caves "a little
+    // --- underwhelming" -- the reserved underground slot gets its identity) ---------------------------
+
+    /**
+     * B-9 P2: the {@code globe:glacial_caves} underground biome id -- the datapack biome at
+     * {@code data/globe/worldgen/biome/glacial_caves.json}, placed EXCLUSIVELY by the depth-conditioned
+     * per-quart swap in {@code ChunkGeneratorPopulateBiomesMixin} (never by {@code pick()}, never by the
+     * atlas samplers -- the atlas is depth-blind by design, so this biome is invisible to gate-1/gate-2
+     * maps; the flight is its proof surface). Registers UNCONDITIONALLY like {@link #POLAR_BARRENS_ID}
+     * (a flag-on-then-off world must never reference a missing biome).
+     */
+    public static final String GLACIAL_CAVES_ID = "globe:glacial_caves";
+
+    /**
+     * B-9 P2: the fixed absolute-Y ceiling (EXCLUSIVE) of the glacial-caves depth band. Quart cells whose
+     * center block-Y sits BELOW this line on a barrens-band land column resolve to
+     * {@code globe:glacial_caves}; everything at/above it keeps today's surface pick order bitwise
+     * (the surface-quart identity pin). 48 is the design-duo pick: below the barrens glacier's snow cap
+     * everywhere (cap bottom = surface-10, median polar land surface Y 71-78 per the B-9 atlas ground
+     * truth) and quart-aligned (48 = quart 12, so a quart cell -- center Y = (q&lt;&lt;2)+2 -- is wholly on one
+     * side and the biome boundary never dithers inside a quart). Populate runs PRE-NOISE, so this line is
+     * deliberately pure lat/Y math -- NO heightmaps, NO block reads (the same constraint the carver seam
+     * documents); the rare land column whose surface dips below 48 (none observed in the 82-90 deg atlas
+     * distribution; sea columns are excluded by the ocean gate) would show the cave biome at its floor,
+     * accepted as the price of determinism.
+     */
+    public static final int GLACIAL_CAVES_CEILING_Y = 48;
+
+    /**
+     * B-9 P2: the pure per-cell Y prefilter of the glacial-caves swap -- true iff the quart cell's block-Y
+     * lies below {@link #GLACIAL_CAVES_CEILING_Y}. Split out (rather than inlined in the mixin) so the
+     * unit suite can PIN the surface-quart identity law: any cell at/above the ceiling can NEVER swap,
+     * whatever the flag/band/noise say, so the surface pick order is untouched by construction.
+     */
+    public static boolean isBelowGlacialCaveCeiling(int blockY) {
+        return blockY < GLACIAL_CAVES_CEILING_Y;
+    }
+
+    /**
+     * B-9 P2: the COLUMN half of the glacial-caves swap decision -- the production entry (reads the
+     * static {@code latitude.glacialCavesV1} flag; {@code ChunkGeneratorPopulateBiomesMixin} calls this
+     * once per quart column and memoizes). The full cell decision is
+     * {@code isBelowGlacialCaveCeiling(blockY) && glacialCaveColumnApplies(...)} minus the mixin's
+     * deep-dark exemption (deep_dark cells pass through untouched -- ancient-city/sculk placement is
+     * biome-tied and the "underground stays alive" law forbids stripping a vanilla underground landmark
+     * from the pole; documented deviation from the flat prescription).
+     */
+    public static boolean glacialCaveColumnApplies(int blockX, int blockZ, int radius,
+                                                   boolean columnIsOceanFamily) {
+        return glacialCaveColumnApplies(blockX, blockZ, radius, columnIsOceanFamily,
+                LatitudeV2Flags.GLACIAL_CAVES_V1_ENABLED);
+    }
+
+    /**
+     * B-9 P2: flag-parameterized twin of {@link #glacialCaveColumnApplies(int, int, int, boolean)} (the
+     * house pattern -- {@code applyPolarBarrensOverride} precedent: the static-final flag cannot be
+     * flipped inside the suite JVM, so tests pin BOTH halves through the same single implementation).
+     * True iff: enabled, armed radius, NOT an ocean-family column (the sacred sea keeps its vanilla
+     * underground -- the caller answers ocean-ness from the SAME per-column source sample
+     * ({@code base} at {@link #SURFACE_CLASSIFY_Y}) the resolver already caches, the populate seam's
+     * established column-identity idiom; the carver seam's probe reads Y63 instead, both accepted forms
+     * of one shared question), and the column lands barrens-side of the EXACT shared band+fray decision
+     * the barrens biome/glacier/carvers use ({@link PolarBarrensBand#barrensFraction01} cheap early-out,
+     * then {@link PolarBarrensBand#isBarrens} on {@link #polarBarrensFrayNoise} -- one coherent field,
+     * Art VI clean, no new noise). So biome, glacier, crevasses and cave identity all fray on the same
+     * front and none outruns another.
+     */
+    public static boolean glacialCaveColumnApplies(int blockX, int blockZ, int radius,
+                                                   boolean columnIsOceanFamily, boolean enabled) {
+        if (!enabled || radius <= 0 || columnIsOceanFamily) {
+            return false;
+        }
+        double absLatDeg = Math.abs((double) blockZ) * 90.0 / radius;
+        if (PolarBarrensBand.barrensFraction01(absLatDeg) <= 0.0) {
+            return false; // below the band onset: pure-math exit, no noise sample.
+        }
+        return PolarBarrensBand.isBarrens(absLatDeg, polarBarrensFrayNoise(blockX, blockZ));
+    }
+
+    // --- B-9 P2 BLUE-ICE DEPTH STRATA (Crew C: the glacier body gets real depth reading) ---------------
+
+    /** Shallowest depth (blocks INTO the packed-ice body, 0-based below the snow cap) at which the
+     *  blue-ice stratum can begin. */
+    public static final int GLACIER_BLUE_ICE_MIN_DEPTH_BLOCKS = 12;
+    /** Deepest depth (blocks into the body) at which the blue-ice stratum begins. Because the body is
+     *  only {@code 6 + wobble} thick at the frayed band edge, depths 12-18 mean blue ice appears ONLY
+     *  inside thick glacier hearts (full-band bodies, 24-36 blocks) -- the marginal glacier stays all
+     *  packed ice, which is real glaciology (compression banding needs overburden). */
+    public static final int GLACIER_BLUE_ICE_MAX_DEPTH_BLOCKS = 18;
+
+    /**
+     * B-9 P2: the noise-warped blue-ice depth line for the column at (blockX, blockZ) -- how many blocks
+     * INTO the packed-ice body the {@code blue_ice} stratum starts (12..18). REUSES the existing B-9a
+     * glacier depth-wobble field ({@code POLAR_BARRENS_GLACIER_SALT} -- the same sample that already
+     * undulates the glacier sole), per Art VI's no-new-noise discipline: the sole and the blue line warp
+     * together, so the strata read as one body. Consumed flag-gated by
+     * {@code PolarBarrensGlacierMixin}; worldgen-stage, deterministic, NEW CHUNKS ONLY.
+     */
+    public static int polarBarrensBlueIceStartDepthBlocks(int blockX, int blockZ) {
+        return blueIceStartDepthFromNoise(ValueNoise2D.sampleBlocks(WORLD_SEED ^ POLAR_BARRENS_GLACIER_SALT,
+                blockX, blockZ, POLAR_BARRENS_GLACIER_SCALE_BLOCKS));
+    }
+
+    /**
+     * Pure mapping of a depth-noise sample in {@code [0,1)} onto the blue-ice start depth
+     * {@code [}{@link #GLACIER_BLUE_ICE_MIN_DEPTH_BLOCKS}{@code ..}{@link #GLACIER_BLUE_ICE_MAX_DEPTH_BLOCKS}{@code ]}
+     * (monotone non-decreasing; out-of-range input clamps; NaN reads as 0.5 -- mid-line, never
+     * no-stratum on bad data, mirroring {@code glacierIceBodyBlocks}' NaN law).
+     */
+    public static int blueIceStartDepthFromNoise(double depthNoise01) {
+        double n = Double.isNaN(depthNoise01) ? 0.5 : Math.max(0.0, Math.min(depthNoise01, 1.0));
+        int span = GLACIER_BLUE_ICE_MAX_DEPTH_BLOCKS - GLACIER_BLUE_ICE_MIN_DEPTH_BLOCKS;
+        return Math.min(GLACIER_BLUE_ICE_MAX_DEPTH_BLOCKS,
+                GLACIER_BLUE_ICE_MIN_DEPTH_BLOCKS + (int) Math.floor(n * (span + 1)));
     }
 
     // --- Mercator world shape (Phase 1: wider world, more biomes per band) ---

@@ -313,30 +313,20 @@ public final class PolarWaterFreezeRule {
     public static final int ROOFED_FREEZE_REACH_BLOCKS = 16;
 
     // --- S17(b) WATERFALL FREEZE v3 (Peetsa 2026-07-18, TEST 107 video: liquid waterfalls STILL cascade) ---
-    // ROOT CAUSE (two-flight): an open-air cascade free-falls ABOVE the MOTION_BLOCKING heightmap top (water is
-    // not motion-blocking terrain), so the S16 roofed DESCENT -- which walks DOWNWARD from that top -- never
-    // reaches the falling column. v3 adds TWO seams, both riding the ONE frayed front + ocean exemption + freeze
-    // floor the S14/S15/S16 rules already use, so nothing new about WHERE water freezes, only WHEN it is caught:
-    //   * THE FLOW TICK (FlowingFluidWaterfallFreezeMixin on FlowingFluid.tick): the single method every moving
-    //     water block funnels through. In-zone, above the floor, non-ocean, a FLOWING (non-source) block that
-    //     attempts to flow becomes plain ICE and the vanilla spread is cancelled -- the fall dies at the moment
-    //     of motion, a new spring's outflow freezes as it spreads. The decision is {@link #freezesFlowing}.
-    //   * THE UPWARD SCAN (below): a bounded belt scanned UPWARD from the MOTION_BLOCKING top catches STANDING
-    //     cascade columns that reached equilibrium and stopped re-ticking (the flow tick only fires on active
-    //     flow). Same {@link #freezesFlowing} decision, aboveFreezeFloor true by construction (above the surface).
-
-    /**
-     * S17(b) UPWARD-SCAN BOUND (blocks above the MOTION_BLOCKING heightmap top). The tickPrecipitation-driven
-     * pass scans a belt of this height UPWARD from the column's surface, freezing any FLOWING water it finds
-     * (the standing fall columns that free-fell ABOVE the heightmap and so are unreachable by the S16 roofed
-     * DESCENT). Bounded to keep the per-tick cost O(1) and small: 24 = a generous open cascade drop (1.5 chunk
-     * sections), tall enough to claim a typical multi-block fall in one tick while a taller fall is finished off
-     * over subsequent ticks (each frozen block blocks the water above it, so the fall dies from the bottom up as
-     * the belt re-scans). The scan stops early at the first solid (non-fluid) block, so it usually pays far less
-     * than the cap; every block in the belt is above the surface, hence far above the surface-40 freeze floor,
-     * so the frozen ice is always ABOVE the B-9 deep-cave reservoir.
-     */
-    public static final int WATERFALL_UPWARD_SCAN_BLOCKS = 24;
+    // v3 added the FLOW-TICK seam (FlowingFluidWaterfallFreezeMixin on FlowingFluid.tick -- the single method
+    // every moving water block funnels through: in-zone, above the floor, non-ocean, a FLOWING block is a freeze
+    // candidate at the moment of motion; decision {@link #freezesFlowing}) plus an "upward scan" companion.
+    //
+    // v6 CORRECTION (TEST 113 forensics, 2026-07-19, bytecode-verified): the S17 "upward scan" was DEAD CODE and
+    // has been DELETED (its WATERFALL_UPWARD_SCAN_BLOCKS bound with it). S17's premise -- "water is not
+    // motion-blocking terrain, so a cascade free-falls ABOVE the MOTION_BLOCKING heightmap top" -- was FALSE:
+    // the 26.2 MOTION_BLOCKING heightmap predicate is javap-verified as
+    // {@code blocksMotion() || !getFluidState().isEmpty()}, i.e. FLUIDS COUNT, so getHeightmapPos(MOTION_BLOCKING)
+    // sits exactly ONE block above the topmost water (cascade or pool alike). A scan that starts one ABOVE that
+    // top therefore starts TWO above the topmost water and walks pure air -- it never froze a block in any
+    // flight. The standing-cascade job the scan claimed is really the DOWNWARD descent's (the surface IS the
+    // cascade top); the v6 sweep in ServerLevelRoofedWaterFreezeMixin descends the flowing column to its landed
+    // base instead (see {@link #FLOWING_DESCENT_CAP_BLOCKS}).
 
     // --- S18/S19 (history) -> S20 SETTLED-WATER FREEZE (Peetsa 2026-07-19, TEST 110: the THIRD failed water
     // --- round -> the LIVE-INSTRUMENT LAW) -----------------------------------------------------------------
@@ -348,10 +338,11 @@ public final class PolarWaterFreezeRule {
     //
     // S20 THE DIVISION OF LABOUR (the owner's spec: water spreads fully; once SETTLED, it converts). Three
     // consumers, each owning one lifecycle stage, NONE using any randomness at all:
-    //   (A) THE SETTLED SWEEP (ServerLevelRoofedWaterFreezeMixin, on tickPrecipitation -- the weather tick).
-    //       The PRIMARY ground/pool freezer. Per chunk-tick it sweeps a column belt (heightmap top +24 up /
-    //       roof descent 16 down) and freezes SETTLED + LANDED flowing blocks -- CERTAIN, no dice -- bottom-up,
-    //       one-or-two per column per pass, so a pool freezes over seconds ring by ring. "SETTLED" is the game's
+    //   (A) THE SETTLED SWEEP (ServerLevelRoofedWaterFreezeMixin; v6 re-hosted it from tickPrecipitation onto a
+    //       deterministic ServerLevel.tickChunk round-robin driver -- see the v6 section below for the cadence
+    //       math). The PRIMARY ground/pool freezer. Per visit it descends the column (roof reach 16, extended
+    //       down a flowing column to its landed base) and freezes SETTLED + LANDED flowing blocks -- CERTAIN,
+    //       no dice -- bottom-up, so a pool freezes ring by ring. "SETTLED" is the game's
     //       OWN at-rest definition: the fluid block has NO pending scheduled fluid tick (read at the call site
     //       from {@code level.getFluidTicks().hasScheduledTick}). Still-SPREADING water (a pending tick) is NEVER
     //       swept -- the sweep only ever claims water that has come to rest. Decision: {@link #sweepFreezesSettled}.
@@ -431,7 +422,8 @@ public final class PolarWaterFreezeRule {
 
     /**
      * S20 the SETTLED-SWEEP freeze decision (pure, CERTAIN -- no RNG). Consumer (A) in the S20 division of
-     * labour, and the PRIMARY ground/pool freezer: the weather-tick sweep converts a flowing block to ice iff it
+     * labour, and the PRIMARY ground/pool freezer: the sweep (v6: driven from the deterministic
+     * {@code ServerLevel.tickChunk} round-robin) converts a flowing block to ice iff it
      * is freeze-eligible ({@link #freezesFlowing}) AND LANDED ({@link #landedOnSupport}) AND SETTLED. "SETTLED" is
      * the game's own at-rest definition -- the fluid block has NO pending scheduled fluid tick, i.e. it stopped
      * spreading -- read at the call site from {@code level.getFluidTicks().hasScheduledTick(pos, fluid)} (see
@@ -459,12 +451,14 @@ public final class PolarWaterFreezeRule {
      * Raised from the S20 effective ~1-2 to <b>8</b> -- the owner's "SWEEP 5x" (TEST 111: "still ~5x too slow").
      *
      * <p><b>The pacing math (~5x).</b> The sweep freezes a contiguous BOTTOM-UP RUN of at-rest flowing blocks per
-     * column per {@code tickPrecipitation} visit. Prior: the upward scan froze the lowest ONE per pass and the
-     * roofed descent the cascade's single landed base -- effectively ~1-2 blocks/column/pass. Now up to 8, so a
+     * column per sweep visit (v6: a visit is a deterministic tickChunk round-robin slot, every
+     * {@link #SWEEP_FULL_COVERAGE_TICKS} ticks per column -- no longer a rare random tickPrecipitation column).
+     * Prior: effectively ~1-2 blocks/column/pass. Now up to 8, so a
      * standing fall / deep flowing column of freezable depth {@code D} ices in {@code ceil(D/8)} sweep passes
      * instead of {@code ceil(D/~1.6)}: D=16 -> 2 passes (was ~10), D=40 (the glacier-sole floor) -> 5 passes
-     * (was ~25) = ~5x fewer {@code tickPrecipitation} visits to full ice for deep columns. A single-layer sheet
-     * (D=1) is unchanged -- the cap never binds there; its pace is the (untouched) per-column visit cadence. The
+     * (was ~25) = ~5x fewer sweep visits to full ice for deep columns. A single-layer sheet
+     * (D=1) is unchanged -- the cap never binds there; its pace is the per-column visit cadence (v6: fixed at
+     * one visit per {@link #SWEEP_FULL_COVERAGE_TICKS} ticks by the deterministic driver). The
      * S20 ICE-TOUCH HUNTER's ~4 blocks/s vertical zipper is unchanged; the 8-cap accelerates the base-laying and
      * the conversion of already-SETTLED standing columns that the hunter (which only fires on active flow ticks)
      * cannot climb on its own. Still bottom-up, still CERTAIN (no dice), still "stop at the first still-falling /
@@ -497,5 +491,189 @@ public final class PolarWaterFreezeRule {
      */
     public static boolean sourceFreezePostponed(boolean adjacentHasFlowing) {
         return adjacentHasFlowing;
+    }
+
+    // --- S22 WATER v6 (Peetsa 2026-07-19, TEST 113: the FOURTH live water failure) -----------------------
+    // Owner flight: an 84S pour froze NOTHING (outside the 85 front while the Barrens/crevasses start at 82);
+    // at exactly 85S the pour flooded tens of blocks in 12 s, reached only 20-30% checkerboard ice at 36 s,
+    // and the supply kept re-spreading fresh water ON TOP of fresh ice. Forensics (bytecode-verified) found
+    // FOUR stacked causes; v6 is their four prescribed fixes, all TICK-TIME-ONLY (worldgen byte-identity; the
+    // 85 {@link #FREEZE_ALL_DEG} law stays untouched for every worldgen-facing path) and RNG-free:
+    //   (a) COVERAGE: every tick consumer bailed below 84 (FREEZE_ALL-FRAY) while the Barrens band -- and the
+    //       B-9 crevasses that expose water -- start at PolarBarrensBand.ONSET_DEG (82). The 82-84 band had NO
+    //       freeze machinery at all. Fix: the TICK FRONT below -- the tick consumers now ride the SAME shared
+    //       barrens band decision (ONSET 82 -> FULL 84, the barrens fray noise; one decision, Art VI) the
+    //       biome placement / glacier body / crevasse carvers already use.
+    //   (a2) DEAD SCAN: the S17 upward scan never ran (MOTION_BLOCKING counts fluids -- see the v6 correction
+    //       at the S17 section) and the roofed descent capped at 16 and froze only landed blocks, so falls
+    //       taller than 16 were unreachable. Fix: scan deleted; descent extended ({@link #FLOWING_DESCENT_CAP_BLOCKS}).
+    //   (b) CADENCE: the sweep rode tickPrecipitation, which vanilla calls with probability randomTickSpeed/48
+    //       (= 1/16 per chunk-tick at default 3) on ONE random column of 256 -- a SPECIFIC column is visited
+    //       every ~205 s on average, while spread runs ~4 cells/s per front cell. Orders of magnitude behind.
+    //       Fix: the deterministic round-robin driver below (every column visited every 32 ticks, no RNG).
+    //   (c) NO SPREAD-STOPPER: the old coverage ARGUMENT ("the hunter catches every spreading edge cell") had
+    //       three real holes -- not-landed-over-water blocks are invisible to both consumers; every freeze's
+    //       neighbour updates schedule fresh fluid ticks so the supply re-spreads a NEW layer ON TOP of fresh
+    //       ice (the ratchet); and source-freezes-last + the ratchet keeps the supply alive indefinitely.
+    //       Fix: CONVERT-AT-SPREAD ({@link #spreadConvertsToIce} + FlowingFluidSpreadConvertMixin) -- ice at
+    //       the destination instead of water, which ADVANCES the freeze and terminates the path (denial would
+    //       leave the supply recomputing forever).
+
+    /**
+     * S22 the TICK FRONT's equatorward-most possible onset (deg) -- {@link PolarBarrensBand#ONSET_DEG} (82),
+     * KEEP-SHARED with the Barrens band so the freeze machinery switches on exactly where the barrens (and the
+     * B-9 crevasses that expose water) begin. This is the tick consumers' CHEAP pre-gate: below it no noise is
+     * ever sampled and vanilla runs untouched, byte-identical. It deliberately does NOT touch
+     * {@link #FREEZE_ALL_DEG} (85), which remains the worldgen-facing sea-ice/solid-freeze anchor.
+     */
+    public static final double TICK_FRONT_ONSET_DEG = PolarBarrensBand.ONSET_DEG;
+
+    /**
+     * S22 TICK FRONT decision (pure): is this column inside the tick-time freeze front? TRUE iff the barrens
+     * family flag is on AND the column lands on the barrens side of the SAME shared band decision
+     * ({@link PolarBarrensBand#isBarrens}: smoothstep ONSET 82 -> FULL 84 against the coherent barrens fray
+     * noise) that places the {@code globe:polar_barrens} biome, builds the glacier body, and carves the B-9
+     * crevasses. ONE decision (Art VI): wherever barrens ground/crevasse country exists, the freeze machinery
+     * is live -- the 82-84 band the owner flew over with a liquid pour is now covered by construction, and at/
+     * above FULL_DEG (84) the front is unconditionally on (fraction 1.0), so the whole old >= 85 zone remains
+     * covered. TICK-TIME-ONLY by contract: no worldgen path may call this (they keep the 85 law); the
+     * consumers gate it on {@code level instanceof ServerLevel}.
+     *
+     * <p>NaN handling follows the family idiom: NaN latitude -> false ({@code isBarrens}'s fraction is 0.0 on
+     * bad data -- never freeze on bad data); a NaN noise sample degrades to 0.5 (the band's median -- at/above
+     * FULL_DEG the front stays unconditionally on, never a hole in deep-cap coverage on bad data).
+     *
+     * @param flagOn            {@code latitude.polarBarrens.enabled} (the shared worldgen-family flag; off is
+     *                          the untouched pre-v6 tick behaviour for the 82-84 band).
+     * @param latDeg            signed OR absolute column latitude; magnitude taken inside {@code isBarrens}.
+     * @param barrensFrayNoise01 the SAME coherent barrens fray sample ({@code LatitudeBiomes
+     *                          .polarBarrensFrayNoise}) the biome/glacier/carvers consume. Callers may skip
+     *                          the sample at/above {@link PolarBarrensBand#FULL_DEG} (fraction 1.0 -- any
+     *                          value passes) and feed any constant.
+     */
+    public static boolean tickFrontFreezes(boolean flagOn, double latDeg, double barrensFrayNoise01) {
+        if (!flagOn) {
+            return false;
+        }
+        double n = Double.isNaN(barrensFrayNoise01) ? 0.5 : barrensFrayNoise01;
+        return PolarBarrensBand.isBarrens(latDeg, n);
+    }
+
+    /**
+     * S22 tick-time flowing-water eligibility -- the v6 WHERE decision for the flow-tick hunter, the settled
+     * sweep, and the spread-converter. The tick-time analogue of {@link #freezesFlowing} with the WHERE swapped
+     * from the worldgen 85-frayed front to the {@link #tickFrontFreezes TICK FRONT} (82->84 barrens band); the
+     * sacred exemptions carry over verbatim and in the same order: <b>ocean FIRST</b> (the sea keeps
+     * liquid-under-ice -- under-ice swim, pack-ice wall, S7 immersion), then the flag, then the front, then the
+     * freeze floor ({@code aboveFreezeFloor} -- the B-9 deep-cave reservoir below the glacier sole stays
+     * liquid). For a column at/above 85 this is a superset of the old behaviour (the front is unconditionally
+     * on there); for 82-84 it is the NEW coverage. Pure function of its inputs, no RNG.
+     *
+     * @param aboveFreezeFloor the candidate block sits above {@link #landWaterFreezeFloorY} for its column.
+     */
+    public static boolean tickFreezesFlowing(boolean flagOn, boolean isOceanColumn, double latDeg,
+                                             double barrensFrayNoise01, boolean aboveFreezeFloor) {
+        if (isOceanColumn) {
+            return false; // THE SEA IS EXEMPT -- ocean-wins, FIRST in the chain (same order as freezesLandWaterSolid)
+        }
+        if (!tickFrontFreezes(flagOn, latDeg, barrensFrayNoise01)) {
+            return false;
+        }
+        return aboveFreezeFloor;
+    }
+
+    /**
+     * S22(a2) FLOWING-COLUMN DESCENT CAP (blocks below the MOTION_BLOCKING top). The v6 sweep starts at the
+     * column surface (which, fluids counting, IS the cascade top) and -- once it has found flowing water within
+     * the ordinary {@link #ROOFED_FREEZE_REACH_BLOCKS} (16) roof reach -- keeps descending WHILE the blocks are
+     * flowing water, down to the fall's LANDED BASE, capped at this many blocks total. 48 replaces the old
+     * 16-block wall that made falls taller than 16 unreachable (the TEST-113 (a2) finding): it covers a
+     * three-chunk-section drop (a very tall natural cascade) while keeping the per-visit worst case bounded.
+     * The FREEZE floor is unchanged -- blocks at/below {@link #landWaterFreezeFloorY} are never frozen however
+     * deep the descent walks (the walk may pass the floor; the freeze may not), so the B-9 reservoir holds.
+     */
+    public static final int FLOWING_DESCENT_CAP_BLOCKS = 48;
+
+    // --- S22(b) THE DETERMINISTIC SWEEP DRIVER (ServerLevel.tickChunk round-robin) ----------------------
+    // The sweep no longer rides tickPrecipitation's coin flips. ServerLevelRoofedWaterFreezeMixin injects at
+    // ServerLevel.tickChunk (javap-verified: public void tickChunk(LevelChunk, int)), bails on out-of-band
+    // chunks with one cheap latitude compare, then sweeps K columns per chunk per tick, chosen round-robin by
+    // (gameTime*K + i) mod 256 -- pure tick arithmetic, NO RNG, full 16x16 coverage every 256/K ticks. Cost is
+    // bounded and flat: K column visits per in-band chunk per tick, each a heightmap read + a short descent.
+
+    /** S22(b) K: columns swept per in-band chunk per tick. 8 -> with 256 columns per chunk, every column is
+     *  visited exactly once every {@link #SWEEP_FULL_COVERAGE_TICKS} (32) ticks = 1.6 s -- ~128x the old
+     *  ~205 s/column random cadence, comfortably ahead of the ~4 cells/s spread front, while costing only 8
+     *  bounded column visits per chunk-tick. */
+    public static final int SWEEP_COLUMNS_PER_CHUNK_TICK = 8;
+
+    /** Columns in a chunk layer (16 x 16) -- the round-robin modulus. */
+    public static final int SWEEP_COLUMN_COUNT = 256;
+
+    /** S22(b) full-coverage period: every column of an in-band chunk is visited once per this many ticks
+     *  (256 / 8 = 32 ticks = 1.6 s at 20 tps). Deterministic -- a consequence of the round-robin index math,
+     *  pinned by {@code sweepColumnIndex}'s coverage test. */
+    public static final int SWEEP_FULL_COVERAGE_TICKS = SWEEP_COLUMN_COUNT / SWEEP_COLUMNS_PER_CHUNK_TICK;
+
+    /**
+     * S22(b) the round-robin column selector (pure): the packed column index in {@code [0, 256)} for slot
+     * {@code i} of this tick's K-column sweep -- {@code (gameTime*K + i) mod 256}. Unpack with
+     * {@code x = idx & 15, z = idx >> 4}. Because K divides 256, consecutive ticks tile the index space with
+     * no overlap and no gap: all 256 columns are hit exactly once every {@link #SWEEP_FULL_COVERAGE_TICKS}
+     * ticks, for ANY gameTime origin (floorMod handles negative/overflowing gameTime arithmetic). Pure tick
+     * math -- no RNG, save/load-stable, identical on every chunk (chunk-local column index; the world-space
+     * column differs per chunk).
+     *
+     * @param gameTime {@code ServerLevel.getGameTime()} (a tick counter).
+     * @param i        slot in {@code [0, }{@link #SWEEP_COLUMNS_PER_CHUNK_TICK}{@code )}.
+     */
+    public static int sweepColumnIndex(long gameTime, int i) {
+        return (int) Math.floorMod(gameTime * SWEEP_COLUMNS_PER_CHUNK_TICK + i, (long) SWEEP_COLUMN_COUNT);
+    }
+
+    /**
+     * S22(c) CONVERT-AT-SPREAD decision (pure, CERTAIN -- no RNG): should a water spread INTO {@code dest} be
+     * converted to plain ICE at the destination instead of placing water? This is the spread-STOPPER the three
+     * TEST-113 ratchet holes demanded -- and it CONVERTS rather than denies: denial leaves the supply
+     * recomputing the same spread forever, conversion advances the freeze one cell and TERMINATES the path
+     * (the fluid engine sees a solid neighbour and stops scheduling). Consumed by
+     * {@code FlowingFluidSpreadConvertMixin} at {@code FlowingFluid.spreadTo} (javap-verified:
+     * {@code protected void spreadTo(LevelAccessor, BlockPos, BlockState, Direction, FluidState)}).
+     *
+     * <p>Clauses, in order:
+     * <ul>
+     *   <li><b>Eligibility</b> ({@code freezeEligible} = {@link #tickFreezesFlowing} at the DESTINATION):
+     *       carries the whole sacred set -- ocean-family exempt (checked first inside it), tick front (the
+     *       82->84 barrens band), barrens flag, freeze floor (B-9 reservoir). Not eligible -> water spreads
+     *       exactly as vanilla.</li>
+     *   <li><b>FALLS RUN FREE</b> (the S18 law, preserved at the spread seam): a STRAIGHT-DOWN spread
+     *       ({@code spreadIsDown}) converts ONLY when the block below the destination is already ice
+     *       ({@code belowIsIce} -- the fall is landing ON the frozen pile: the zipper's terminal contact, one
+     *       tick earlier than the hunter would catch it). A fall dropping past an ice wall into open air stays
+     *       WATER -- the cascade reaches the ground live, never beheaded mid-air.</li>
+     *   <li><b>Ice-adjacency</b> for horizontal spread: the destination must be TOUCHING ICE per the existing
+     *       hunter touch set ({@link #touchingIce}: BELOW + the 4 horizontals, ABOVE excluded). This is the
+     *       ratchet-breaker: the re-spread layer that used to ride ON TOP of fresh ice (below-ice contact) or
+     *       reroute AROUND it (horizontal contact) now becomes ice AT the moment of spread, before the water
+     *       ever exists to schedule ticks.</li>
+     * </ul>
+     * Source-freezes-last is untouched by construction: only a SPREAD (always a flowing destination) converts;
+     * source blocks are never a spread destination, and starving a source's outflow is exactly how it comes to
+     * freeze LAST via {@link #sourceFreezePostponed}. Pure function of blockstate-derived booleans, tick-only.
+     *
+     * @param freezeEligible {@link #tickFreezesFlowing} evaluated at the spread DESTINATION.
+     * @param spreadIsDown   the spread direction is straight DOWN (a fall extending), not horizontal.
+     * @param belowIsIce     the block directly below the destination is ice-family ({@code BlockTags.ICE}).
+     * @param touchingIce    {@link #touchingIce} over the destination's below + 4 horizontal neighbours.
+     */
+    public static boolean spreadConvertsToIce(boolean freezeEligible, boolean spreadIsDown,
+                                              boolean belowIsIce, boolean touchingIce) {
+        if (!freezeEligible) {
+            return false;
+        }
+        if (spreadIsDown) {
+            return belowIsIce; // falls run free: mid-air past an ice wall stays water; landing ON ice locks
+        }
+        return touchingIce;
     }
 }

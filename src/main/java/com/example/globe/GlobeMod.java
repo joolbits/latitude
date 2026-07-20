@@ -1217,7 +1217,7 @@ public class GlobeMod implements ModInitializer {
      * survived the 26.2 WorldClock rework) and the position's signed latitude ({@code -degreesFromZ}, north = +φ),
      * derives δ(day) and the current hour angle, and returns which 24-hour polar regime the column is in on the
      * winter/summer side today. Gated: returns {@link com.example.globe.core.SolarTilt.FunctionalBand#NONE} unless
-     * the master flag is on AND this is a globe overworld. The {@code functionalMinDeg} floor (A2, default 74.5) is
+     * the master flag is on AND this is a globe overworld. The {@code functionalMinDeg} floor (A2; default 60 since TEST 114, was 74.5) is
      * applied inside {@code SolarTilt.functionalBand}. Zero persistent state (§8d): stateless per check.
      */
     public static com.example.globe.core.SolarTilt.FunctionalBand solarFunctionalBand(ServerLevel level, double blockZ) {
