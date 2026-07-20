@@ -10,7 +10,7 @@ import com.example.globe.client.CompassHudConfig;
 import com.example.globe.client.ClientKeybinds;
 import com.example.globe.client.GlobeWarningOverlay;
 import com.example.globe.client.LatitudeClientState;
-import com.example.globe.client.LatitudeSettingsScreen;
+import com.example.globe.client.LatitudeHudStudioScreen;
 import com.example.globe.client.SpawnZoneScreen;
 import com.example.globe.client.EwSandstormOverlayRenderer;
 import com.example.globe.client.EwStormWallRenderer;
@@ -145,10 +145,13 @@ public class GlobeModClient implements ClientModInitializer {
         }
 
         while (ClientKeybinds.OPEN_SETTINGS.consumeClick()) {
+            if (client.gui.screen() instanceof LatitudeHudStudioScreen) {
+                continue;
+            }
             if (client.gui.screen() == null) {
-                client.gui.setScreen(new LatitudeSettingsScreen(null));
+                client.gui.setScreen(new LatitudeHudStudioScreen(null));
             } else {
-                client.gui.setScreen(new LatitudeSettingsScreen(client.gui.screen()));
+                client.gui.setScreen(new LatitudeHudStudioScreen(client.gui.screen()));
             }
         }
     }

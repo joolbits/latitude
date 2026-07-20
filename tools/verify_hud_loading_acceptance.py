@@ -9,7 +9,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG = ROOT / "src/main/java/com/example/globe/client/CompassHudConfig.java"
 STUDIO = ROOT / "src/main/java/com/example/globe/client/LatitudeHudStudioScreen.java"
-SETTINGS = ROOT / "src/main/java/com/example/globe/client/LatitudeSettingsScreen.java"
+LEGACY_SETTINGS = ROOT / "src/main/java/com/example/globe/client/LatitudeSettingsScreen.java"
 LOADING = ROOT / (
     "src/main/java/com/example/globe/mixin/client/"
     "LevelLoadingScreenLatitudeOverlayMixin.java"
@@ -24,7 +24,6 @@ def require(condition: bool, message: str, failures: list[str]) -> None:
 def main() -> int:
     config = CONFIG.read_text()
     studio = STUDIO.read_text()
-    settings = SETTINGS.read_text()
     loading = LOADING.read_text()
     failures: list[str] = []
 
@@ -67,9 +66,16 @@ def main() -> int:
         failures,
     )
     require(
-        settings.count("cfg.resetToDefaults();") == 1
-        and "private static void applyDefaults(CompassHudConfig cfg)" not in settings,
-        "Settings reset must use the centralized defaults",
+        not LEGACY_SETTINGS.exists(),
+        "the superseded standalone settings screen must stay removed",
+        failures,
+    )
+    require(
+        'TAB_NAMES = {"Compass", "Title", "Settings"}' in studio
+        and 'Component.literal("Show HUD")' in studio
+        and 'Component.literal("Display When")' in studio
+        and 'Component.literal("Warning Messages")' in studio,
+        "the consolidated Studio Settings tab must own the former first-screen controls",
         failures,
     )
     require(

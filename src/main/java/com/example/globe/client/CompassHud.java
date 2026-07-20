@@ -347,6 +347,11 @@ public final class CompassHud {
         float yaw = client.player != null ? client.player.getYRot() : -180.0f;
         double angle = Math.toRadians(Mth.wrapDegrees(yaw + 180.0f));
 
+        if (isPreview
+                && client.gui.screen() instanceof LatitudeHudStudioScreen studio
+                && studio.faceOpacityAdjustActive()) {
+            drawTransparencyCheckerboard(ctx, x, y, diameter, diameter);
+        }
         drawAnalogCompass(ctx, cfg, cx, cy, radius, angle);
 
         if (isPreview) {
@@ -437,6 +442,22 @@ public final class CompassHud {
     private static int analogInnerColor(CompassHudConfig cfg, int faceRgb) {
         int a = Mth.clamp((int) Math.round(cfg.analogInnerAlpha * 255.0f), 0, 255);
         return (a << 24) | (faceRgb & 0xFFFFFF);
+    }
+
+    private static void drawTransparencyCheckerboard(GuiGraphicsExtractor ctx, int x, int y, int w, int h) {
+        int cell = Math.max(3, Math.min(w, h) / 6);
+        int light = 0xFFBFBFBF;
+        int dark = 0xFF6E6E6E;
+        for (int gy = 0; gy < h; gy += cell) {
+            for (int gx = 0; gx < w; gx += cell) {
+                boolean isLight = (((gx / cell) + (gy / cell)) & 1) == 0;
+                int x0 = x + gx;
+                int y0 = y + gy;
+                int x1 = Math.min(x + w, x0 + cell);
+                int y1 = Math.min(y + h, y0 + cell);
+                ctx.fill(x0, y0, x1, y1, isLight ? light : dark);
+            }
+        }
     }
 
     private static void drawLine(GuiGraphicsExtractor ctx, int x0, int y0, int x1, int y1, int color) {
