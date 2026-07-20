@@ -189,6 +189,12 @@ public class GlobeMod implements ModInitializer {
         // All BEHAVIOUR is flag-gated (POLAR_BARRENS_ENABLED) inside the feature.
         com.example.globe.world.PowderCrevasseRoofFeature.register();
 
+        // Phase 5 S27: register the mod's first custom PARTICLE type (globe:frost_glint) into
+        // BuiltInRegistries.PARTICLE_TYPE UNCONDITIONALLY, before registry freeze (same registry-consistency law
+        // as the item/feature registrations above). The CLIENT render factory is registered separately in
+        // GlobeModClient; the type only spawns from the flag-gated snow-sparkle path.
+        com.example.globe.content.GlobeParticles.register();
+
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
             dispatcher.register(Commands.literal("flyspeed")
                     .then(Commands.argument("level", IntegerArgumentType.integer(1, 5))

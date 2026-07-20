@@ -54,6 +54,30 @@ public final class SolarSkyMood {
      *  dusk is a held twilight, not a flat repaint. One-line P4 dial. */
     public static final double DUSK_HOLD_MAX_BLEND = 0.80;
 
+    /**
+     * S27 (Peetsa, TEST 118 flight, 2026-07-20) — the MIDNIGHT-SUN TWILIGHT FLOOR. Owner: "it still becomes a
+     * night sky at midnight with the sun out... should be a true midnight sun where the sun only goes into a
+     * twilight dusky state." The vanilla clock still drags the sky DOME + horizon FOG to full night at
+     * clock-midnight while the tilted sun hangs above the horizon; the twilight floor CAPS how dark they may go.
+     *
+     * <p>{@code MIDNIGHT_SUN_TWILIGHT_FLOOR} = the max fraction of full night the midnight-sun sky/fog may
+     * reach — {@code 0.40} reads as a civil-twilight dusk, never the clock's full night. Owner-tunable P4 dial:
+     * lower it (0.30 / 0.25) for a brighter midnight, raise it for a deeper dusk. The value is a DARKNESS target
+     * that {@link #twilightFloorHold01} converts into the minimum dusk-hold needed to hit it, using the dusk
+     * palette's own luminance so the constant means exactly "0.40 of full night" against the colour painted.
+     *
+     * <p><b>A4 still binds.</b> The floor is a MINIMUM dusk-hold, then storm-damped like every other mood
+     * ({@link #midnightSunDuskBlend01}): the 85°+ overcast storm always wins (a summer-pole blizzard is a bright
+     * whiteout, not a held dusk), so near the pole the floor cedes exactly as the artistic hold does today.
+     */
+    public static final double MIDNIGHT_SUN_TWILIGHT_FLOOR = 0.40;
+
+    /** S27 — degrees of latitude over which the twilight FLOOR eases in past the midnight-sun band onset
+     *  ({@code 90 − |δ|}). Mirrors {@code PolarFogLaw.BAND_GLOOM_RAMP_DEG} (5°) so the floor's seasonal edge
+     *  ({@link #midnightSunFloorReach01}) deepens at the same felt rate as the polar-night horizon gloom — the
+     *  INVERSE twin of {@code bandGloomReach01} (that ramp ADDS gloom; this one gates the darkness CAP). */
+    public static final double FLOOR_REACH_RAMP_DEG = 5.0;
+
     // ---- the curves ------------------------------------------------------------------------------------
 
     /**
@@ -97,6 +121,85 @@ public final class SolarSkyMood {
         }
         double nightness = 0.5 * (1.0 - Math.sin(2.0 * Math.PI * globalTimeFrac));
         return smoothstep01(nightness);
+    }
+
+    /**
+     * S27 — the MIDNIGHT-SUN TWILIGHT-FLOOR seasonal reach 0..1. 0 equatorward of the band onset
+     * ({@code 90 − |δ|}), smoothstep to 1 over the next {@link #FLOOR_REACH_RAMP_DEG} degrees poleward, held 1
+     * beyond. The INVERSE-USAGE twin of {@code PolarFogLaw.bandGloomReach01} (identical smoothstep window): that
+     * curve ramps in ADDED horizon gloom; this one ramps in the darkness CAP. Nonzero ONLY when the caller is
+     * genuinely in the midnight-sun band ({@code inMidnightSunBand}) — false ⇒ 0, so non-band latitudes and
+     * flag-off are byte-identical. The caller passes {@link SolarTilt#onsetLatDeg} for the CURRENT declination,
+     * so the floor's onset tracks the season exactly like the sky-dome mood's own onset. NaN-safe (0).
+     *
+     * @param inMidnightSunBand true iff solar tilt is on and the position is in the midnight-sun band
+     * @param absLatDeg         absolute latitude (deg)
+     * @param onsetLatDeg       the band onset latitude for the current season ({@link SolarTilt#onsetLatDeg})
+     */
+    public static double midnightSunFloorReach01(boolean inMidnightSunBand, double absLatDeg, double onsetLatDeg) {
+        if (!inMidnightSunBand || Double.isNaN(absLatDeg) || Double.isNaN(onsetLatDeg)) {
+            return 0.0;
+        }
+        return smoothstep01((absLatDeg - onsetLatDeg) / FLOOR_REACH_RAMP_DEG);
+    }
+
+    /**
+     * S27 — the MINIMUM blend-toward-{@link #MIDNIGHT_SUN_DUSK_RGB} that holds the midnight-sun sky/fog at or
+     * above the twilight floor (i.e. keeps its darkness ≤ {@link #MIDNIGHT_SUN_TWILIGHT_FLOOR} of full night),
+     * eased by the seasonal {@code floorReach}. Zero until the vanilla clock has darkened the sky PAST the floor
+     * ({@link #twilightHold01} raw night progression above the floor), then the exact hold that lands the
+     * blended sky back at the floor darkness.
+     *
+     * <p><b>Darkness model (honest approximation).</b> Treating the clock-darkened base's darkness as the raw
+     * night progression {@code raw} and the dusk palette's darkness as {@code 1 − luminance(dusk)}, a blend
+     * {@code b} toward dusk yields {@code raw·(1−b) + b·duskDark}; solving {@code = FLOOR} gives
+     * {@code b = (raw − FLOOR)/(raw − duskDark)}. Exact vanilla luminance-vs-clock coupling is not modelled (the
+     * light engine is the documented untouched seam), so {@link #MIDNIGHT_SUN_TWILIGHT_FLOOR} is the owner's
+     * live dial. NaN {@code floorReach} ⇒ 0 (degrades to the pure artistic hold); {@code raw ≤ FLOOR} ⇒ 0.
+     */
+    public static double twilightFloorHold01(double frac, double floorReach) {
+        double reach = Double.isNaN(floorReach) ? 0.0 : clamp01(floorReach);
+        if (reach <= 0.0) {
+            return 0.0;
+        }
+        double raw = twilightHold01(frac); // 0 (noon) → 1 (midnight); NaN frac already degrades to 0.
+        if (raw <= MIDNIGHT_SUN_TWILIGHT_FLOOR) {
+            return 0.0; // the sky is not yet darker than the floor — nothing to hold up.
+        }
+        double duskDark = 1.0 - luminance01(MIDNIGHT_SUN_DUSK_RGB);
+        double denom = raw - duskDark;
+        if (denom <= 1e-6) {
+            return reach; // dusk ~ as dark as the base (can't happen with this palette): pull fully.
+        }
+        double needed = (raw - MIDNIGHT_SUN_TWILIGHT_FLOOR) / denom;
+        return clamp01(needed) * reach;
+    }
+
+    /**
+     * S27 — the FINAL blend-toward-{@link #MIDNIGHT_SUN_DUSK_RGB} the midnight-sun sky DOME and fog HORIZON use:
+     * the artistic dusk hold ({@link #twilightHold01} × {@link #DUSK_HOLD_MAX_BLEND}) raised to the seasonally-
+     * gated twilight FLOOR ({@link #twilightFloorHold01}), then storm-damped so A4 still holds (the storm always
+     * wins). {@code max()} ⇒ it can only ever brighten vs the pre-S27 hold; {@code floorReach = 0} (non-band /
+     * flag-off) ⇒ the pure artistic value, so those paths are byte-identical. NaN-safe.
+     *
+     * @param frac         the global time-of-day fraction (drives {@link #twilightHold01})
+     * @param stormLevel01 the polar storm level 0..1 (A4 damp — the storm always wins)
+     * @param floorReach   the seasonal floor reach ({@link #midnightSunFloorReach01}); the fog passes 1.0 and
+     *                     smooths the latitude edge with its own external reach, the sky dome passes the reach
+     */
+    public static double midnightSunDuskBlend01(double frac, double stormLevel01, double floorReach) {
+        double artistic = twilightHold01(frac) * DUSK_HOLD_MAX_BLEND;
+        double floored = Math.max(artistic, twilightFloorHold01(frac, floorReach));
+        return stormDamp(floored, stormLevel01); // A4: 85°+ overcast wins; both terms cede together.
+    }
+
+    /** Rec.601 relative luminance 0..1 of a packed {@code 0xRRGGBB}. Used by {@link #twilightFloorHold01} to make
+     *  the twilight-floor constant mean "0.40 of full night" against the dusk colour actually painted. */
+    private static double luminance01(int rgb) {
+        double r = ((rgb >> 16) & 0xFF) / 255.0;
+        double g = ((rgb >> 8) & 0xFF) / 255.0;
+        double b = (rgb & 0xFF) / 255.0;
+        return 0.299 * r + 0.587 * g + 0.114 * b;
     }
 
     /** Star brightness UNDER the midnight sun: suppressed toward 0 as the twilight hold deepens — no stars
@@ -188,8 +291,14 @@ public final class SolarSkyMood {
     public static int atmosphereTint(int baseArgb, boolean midnightSun, double solarElevationDeg,
                                      double globalTimeFrac, double stormLevel01) {
         if (midnightSun) {
-            double hold = stormDamp(twilightHold01(globalTimeFrac), stormLevel01);
-            return blendRgb(baseArgb, MIDNIGHT_SUN_DUSK_RGB, hold * DUSK_HOLD_MAX_BLEND);
+            // S27 twilight FLOOR: the fog/whiteout dusk hold is floored so the HORIZON never reads darker than
+            // the twilight floor under the never-setting sun. floorReach = 1.0 here — the fog applies its OWN
+            // latitude reach (bandGloomReach01) and the whiteout its own exposure, so the season/latitude edge
+            // is smoothed by the caller; the floor is storm-damped inside midnightSunDuskBlend01, so at full
+            // overcast (85°+) it still cedes to base exactly as the pre-S27 hold did (A4). Below the storm the
+            // floor lifts the horizon from the artistic 0.80 to ~0.86 dusk — the same lift the sky dome gets.
+            return blendRgb(baseArgb, MIDNIGHT_SUN_DUSK_RGB,
+                    midnightSunDuskBlend01(globalTimeFrac, stormLevel01, 1.0));
         }
         double gloom = polarNightGloom01(solarElevationDeg);
         return blendRgb(baseArgb, POLAR_NIGHT_SKY_RGB, gloom * GLOOM_MAX_BLEND);
