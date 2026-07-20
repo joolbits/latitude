@@ -8,10 +8,15 @@ package com.example.globe.core;
  * sound instance's lifecycle.
  *
  * <p><b>The wind bed.</b> A single looping vanilla wind sound ({@code ELYTRA_FLYING}, the classic wind
- * rush) whose volume rises from a breath at 85 deg to a howl near the pole, tracking the SAME 85->90 ramp
- * the ambient snow + whiteout fog use, so the storm you SEE and the storm you HEAR thicken together. The
- * volume envelope is eased (a squared ramp) so 85-87 deg is only a whisper and the gale is concentrated in
- * the last few degrees toward 90.
+ * rush) whose volume rises from a breath at {@link #START_DEG} to a howl near the pole. The volume
+ * envelope is eased (a squared ramp) so the first couple degrees past onset are only a whisper and the
+ * gale is concentrated in the last few degrees toward {@link #FULL_DEG}.
+ *
+ * <p><b>S29 (Peetsa 2026-07-20, TEST 120 flight): "ramp up the wind noise a little bit earlier -- maybe
+ * 83? And just a little more intense at 90 (a little)."</b> {@link #START_DEG} moved 85 -&gt; 83 (onset no
+ * longer literally matches the ambient-snow/whiteout-fog onset, which has itself drifted to 80 across
+ * earlier rounds -- this bed is now tuned on its own dial, not chained to that other constant) and
+ * {@link #MAX_VOLUME} nudged 0.8 -&gt; 0.88 (a small lift, per "a little").
  *
  * <p><b>Hysteresis.</b> The instance is (re)started once {@code |lat| >= START_DEG} and stops itself only
  * once {@code |lat| < STOP_DEG} -- a 0.5 deg dead band so a player walking the 85 deg line never stutters
@@ -32,15 +37,16 @@ public final class PolarWindSound {
     private PolarWindSound() {
     }
 
-    /** Absolute latitude (deg) at/above which the wind loop is (re)started. Matches the ambient snow onset. */
-    public static final double START_DEG = 85.0;
+    /** Absolute latitude (deg) at/above which the wind loop is (re)started. S29: 85 -> 83 (owner dial). */
+    public static final double START_DEG = 83.0;
     /** Absolute latitude (deg) below which the running loop stops. Below START by a 0.5 deg hysteresis band. */
-    public static final double STOP_DEG = 84.5;
+    public static final double STOP_DEG = 82.5;
     /** Absolute latitude (deg) at which the wind is at its full howl. Matches the ambient full ceiling. */
     public static final double FULL_DEG = 90.0;
 
-    /** Volume of the howl at the pole (fraction of the source's category volume). Below 1.0 -- a bed, not a blast. */
-    public static final float MAX_VOLUME = 0.8f;
+    /** Volume of the howl at the pole (fraction of the source's category volume). S29: 0.8 -> 0.88 (owner:
+     *  "a little more intense at 90 -- a little"). Still below 1.0 -- a bed, not a blast. */
+    public static final float MAX_VOLUME = 0.88f;
     /** Pitch of the loop -- slightly lowered from 1.0 for a lower, more menacing wind than the elytra rush. */
     public static final float PITCH = 0.85f;
     /** Easing exponent for the 85->90 volume ramp. >1 concentrates the loudness near the pole so 85-87 is a whisper. */
@@ -76,7 +82,7 @@ public final class PolarWindSound {
         return SHELTERED_VOLUME_SCALE + (1.0f - SHELTERED_VOLUME_SCALE) * e;
     }
 
-    /** Linear 85->90 progress in {@code [0,1]}: 0 at/below {@link #START_DEG}, 1 at/above {@link #FULL_DEG}. */
+    /** Linear START->FULL progress in {@code [0,1]}: 0 at/below {@link #START_DEG}, 1 at/above {@link #FULL_DEG}. */
     public static double progress(double absLatDeg) {
         double p = (absLatDeg - START_DEG) / (FULL_DEG - START_DEG);
         if (Double.isNaN(p) || p < 0.0) {
@@ -87,7 +93,8 @@ public final class PolarWindSound {
 
     /**
      * Eased volume of the wind bed in {@code [0, MAX_VOLUME]}: {@code MAX_VOLUME * progress^EASE_EXP}. 0 at
-     * or below 85 deg, a whisper through 85-87 deg (progress 0..0.4, squared to 0..0.16), the full howl at 90.
+     * or below {@link #START_DEG}, a whisper through the first ~2 deg past onset (progress^2 stays small),
+     * the full howl at {@link #FULL_DEG}.
      */
     public static float volume(double absLatDeg) {
         double p = progress(absLatDeg);
