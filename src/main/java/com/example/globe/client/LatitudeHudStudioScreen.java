@@ -137,7 +137,7 @@ public class LatitudeHudStudioScreen extends Screen {
         this.sidebarScrollWidgets.clear();
         this.sidebarScrollBaseYs.clear();
         this.sidebarViewportTop = panelY;
-        this.sidebarViewportBottom = Math.max(panelY + 24, this.height - 60);
+        this.sidebarViewportBottom = Math.max(panelY + 24, this.height - 70);
 
         int tabGap = 3;
         int tabW = (widgetW - tabGap * 2) / 3;
@@ -462,9 +462,11 @@ public class LatitudeHudStudioScreen extends Screen {
         drawActiveTabUnderline(ctx);
 
         if (sidebarVisible) {
-            ctx.text(this.font, "Press L to hide panel", sidebarWidth + 18, 8, 0xAAFFFFFF);
+            int helperY = this.height - 66;
+            ctx.text(this.font, "Press L to hide panel", 8, helperY, 0xAA8C8078);
         } else {
-            ctx.text(this.font, "Press L to show panel", 8, 8, 0xFFFFFFFF);
+            int hiddenHelperY = this.height - this.font.lineHeight - 6;
+            ctx.text(this.font, "Press L to show panel", 8, hiddenHelperY, 0x888C8078);
         }
     }
 

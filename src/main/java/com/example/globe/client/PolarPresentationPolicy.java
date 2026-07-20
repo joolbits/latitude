@@ -15,9 +15,9 @@ public final class PolarPresentationPolicy {
     public static final float FOG_TARGET_GREEN = 0.96f;
     public static final float FOG_TARGET_BLUE = 1.0f;
 
-    public static final int WARNING_FADE_IN_TICKS = 5;
-    public static final int WARNING_HOLD_TICKS = 20;
-    public static final int WARNING_FADE_OUT_TICKS = 15;
+    public static final int WARNING_FADE_IN_TICKS = 10;
+    public static final int WARNING_HOLD_TICKS = 70;
+    public static final int WARNING_FADE_OUT_TICKS = 20;
     public static final int WARNING_TOTAL_TICKS =
             WARNING_FADE_IN_TICKS + WARNING_HOLD_TICKS + WARNING_FADE_OUT_TICKS;
 

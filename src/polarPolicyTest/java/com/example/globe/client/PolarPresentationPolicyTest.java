@@ -87,32 +87,41 @@ public final class PolarPresentationPolicyTest {
     }
 
     private static void warningEpisodeIsPolewardFiniteAndRearmable() {
+        assertEquals(10, PolarPresentationPolicy.WARNING_FADE_IN_TICKS,
+                "warning fades in over half a second");
+        assertEquals(70, PolarPresentationPolicy.WARNING_HOLD_TICKS,
+                "warning holds fully readable for three and a half seconds");
+        assertEquals(20, PolarPresentationPolicy.WARNING_FADE_OUT_TICKS,
+                "warning fades out over one second");
+        assertEquals(100, PolarPresentationPolicy.WARNING_TOTAL_TICKS,
+                "warning remains available for exactly five seconds");
+
         var episode = new PolarPresentationPolicy.PolarWarningEpisode();
         episode.update(0, 84.9, 0L);
         episode.update(1, 85.0, 1L);
         assertEquals(1, episode.highestTriggeredStageRank(), "first poleward stage entry triggers once");
         assertNear(0.0f, episode.alpha(1L), "episode starts at zero alpha");
-        assertNear(1.0f, episode.alpha(6L), "episode reaches full alpha after fade-in");
+        assertNear(1.0f, episode.alpha(11L), "episode reaches full alpha after fade-in");
 
-        episode.update(1, 85.5, 6L);
-        assertNear(1.0f, episode.alpha(7L), "same-stage movement does not restart fade-in");
+        episode.update(1, 85.5, 11L);
+        assertNear(1.0f, episode.alpha(12L), "same-stage movement does not restart fade-in");
 
-        episode.update(2, 85.4, 8L);
+        episode.update(2, 85.4, 13L);
         assertEquals(1, episode.highestTriggeredStageRank(), "equatorward escalation is suppressed");
-        episode.update(2, 86.0, 9L);
+        episode.update(2, 86.0, 14L);
         assertEquals(1, episode.highestTriggeredStageRank(), "suppressed stage does not retrigger without a new escalation");
 
-        episode.update(3, 89.2, 10L);
+        episode.update(3, 89.2, 15L);
         assertEquals(3, episode.highestTriggeredStageRank(), "new higher poleward stage triggers");
-        episode.update(2, 88.0, 12L);
-        episode.update(3, 89.2, 13L);
+        episode.update(2, 88.0, 17L);
+        episode.update(3, 89.2, 18L);
         assertEquals(3, episode.highestTriggeredStageRank(), "retreat and re-entry do not replay a seen stage");
-        assertNear(1.0f, episode.alpha(15L), "retreat re-entry did not restart the episode");
+        assertNear(1.0f, episode.alpha(25L), "retreat re-entry did not restart the episode");
 
-        episode.update(0, 84.9, 20L);
+        episode.update(0, 84.9, 30L);
         assertEquals(0, episode.highestTriggeredStageRank(), "below 85 rearms the warning family");
-        assertNear(0.0f, episode.alpha(20L), "below 85 cancels the prior episode");
-        episode.update(1, 85.0, 21L);
+        assertNear(0.0f, episode.alpha(30L), "below 85 cancels the prior episode");
+        episode.update(1, 85.0, 31L);
         assertEquals(1, episode.highestTriggeredStageRank(), "rearmed family triggers on next poleward entry");
 
         var finite = new PolarPresentationPolicy.PolarWarningEpisode();
@@ -127,7 +136,7 @@ public final class PolarPresentationPolicyTest {
         assertTrue(finite.alpha(101L + PolarPresentationPolicy.WARNING_TOTAL_TICKS - 1L) > 0.0f,
                 "final fade tick remains visible");
         assertNear(0.0f, finite.alpha(101L + PolarPresentationPolicy.WARNING_TOTAL_TICKS),
-                "episode reaches exact zero after about two seconds");
+                "episode reaches exact zero after five seconds");
         assertEquals(0, finite.activeStageRank(101L + PolarPresentationPolicy.WARNING_TOTAL_TICKS),
                 "expired episode has no active warning stage");
     }
@@ -209,6 +218,16 @@ public final class PolarPresentationPolicyTest {
                 "overlay updates the polar episode gate");
         assertTrue(overlay.contains("drawCenteredPolarWarning") && overlay.contains("outlineOffsets()"),
                 "polar text uses explicit outline draws");
+        String poleTextSection = methodSection(overlay, "private static Component poleTextForStage(");
+        assertTrue(!poleTextSection.contains("ChatFormatting.BOLD"),
+                "danger and lethal polar warnings use a non-bold red fill");
+        String polarDrawSection = methodSection(overlay, "private static void drawCenteredPolarWarning(");
+        assertTrue(polarDrawSection.contains("Component.literal(text.getString())")
+                        && polarDrawSection.contains("POLAR_KEYLINE_RGB")
+                        && polarDrawSection.contains("keylineText"),
+                "polar warning keyline is a styleless dark component");
+        assertTrue(countOccurrences(polarDrawSection, ", false);") >= 2,
+                "polar keyline and fill both render without drop shadows");
         assertTrue(overlay.contains("warningColorWithPulse") && overlay.contains("drawCenteredWarning"),
                 "east/west warning pulse and draw path remain present");
     }

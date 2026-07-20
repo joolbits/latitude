@@ -114,6 +114,19 @@ def main() -> int:
         "L-key helper copy must distinguish the panel from the Settings tab",
         failures,
     )
+    require(
+        "int helperY = this.height - 66;" in studio
+        and 'ctx.text(this.font, "Press L to hide panel", 8, helperY, 0xAA8C8078);' in studio
+        and "int hiddenHelperY = this.height - this.font.lineHeight - 6;" in studio
+        and 'ctx.text(this.font, "Press L to show panel", 8, hiddenHelperY, 0x888C8078);' in studio,
+        "L-key helper must use muted bottom placement above Reset All HUD or at bottom-left",
+        failures,
+    )
+    require(
+        "this.sidebarViewportBottom = Math.max(panelY + 24, this.height - 70);" in studio,
+        "the sidebar scroll viewport must reserve a footer lane above the L-key helper",
+        failures,
+    )
 
     require(
         'Component.literal("Face Opacity")' in studio,
@@ -191,6 +204,12 @@ def main() -> int:
         "legacy JSON without a style field must retain the donor compatibility fallback",
         failures,
     )
+    require(
+        "float nScale = Mth.clamp(radius / 24.0f, 0.4f, 1.0f);" in hud
+        and "pose.scale(nScale, nScale);" in hud,
+        "analog north label must scale with the dial using the 2.0 clamp",
+        failures,
+    )
 
     if failures:
         print("HUD Studio consolidation verifier: FAIL")
@@ -205,7 +224,10 @@ def main() -> int:
     print("- legacy settings are folded without duplicate or semantically reactivated controls")
     print("- hidden and clipped controls release keyboard focus")
     print("- selected tab has a persistent visual marker")
+    print("- L-key helper is muted and bottom-aligned")
+    print("- sidebar scrolling reserves a non-overlapping helper footer")
     print("- Face Opacity uses percentage copy and a hover/drag-only checkerboard")
+    print("- analog north label scales with the dial")
     print("- Done and Esc share the same save-and-return path")
     print("- fresh/reset analog baseline: 32 px; legacy null fallback preserved")
     return 0
