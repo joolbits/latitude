@@ -29,10 +29,11 @@ class PolarInstrumentTest {
 
     @Test
     void freezeLineFormat_exact() {
-        // v6 added spreadFroze -- the convert-at-spread proof channel for the next self-fly.
+        // v6 added spreadFroze (convert-at-spread proof); S23 added sourceFroze (the LAST-law completion
+        // claim -- the TEST 115 owner ask "the source water always stays liquid" made it a proof channel).
         assertEquals("[LAT][FREEZE] flowTicks=1 passedFalling=2 hunterFroze=3 sweptSettled=4 sweptFroze=5"
-                        + " spreadFroze=6",
-                PolarInstrument.formatFreezeLine(1, 2, 3, 4, 5, 6));
+                        + " spreadFroze=6 sourceFroze=7",
+                PolarInstrument.formatFreezeLine(1, 2, 3, 4, 5, 6, 7));
     }
 
     @Test
@@ -57,19 +58,20 @@ class PolarInstrumentTest {
         PolarInstrument.freezeSweptFroze();
         PolarInstrument.freezeSpreadFroze();
         PolarInstrument.freezeSpreadFroze();
+        PolarInstrument.freezeSourceFroze();
         // Before the window elapses (< WINDOW_TICKS since the seed) -> no line.
         assertNull(PolarInstrument.pollFreezeLine(1000L + PolarInstrument.WINDOW_TICKS - 1),
                 "still inside the window -> no flush");
         // At/after the window -> flush the accumulated counts.
         String line = PolarInstrument.pollFreezeLine(1000L + PolarInstrument.WINDOW_TICKS);
         assertEquals("[LAT][FREEZE] flowTicks=2 passedFalling=1 hunterFroze=1 sweptSettled=3 sweptFroze=1"
-                + " spreadFroze=2", line);
+                + " spreadFroze=2 sourceFroze=1", line);
         // Counters reset + window re-anchored: the NEXT window (no events) reports all zeros.
         assertNull(PolarInstrument.pollFreezeLine(1000L + PolarInstrument.WINDOW_TICKS + PolarInstrument.WINDOW_TICKS - 1),
                 "new window, still inside -> no flush");
         String zeros = PolarInstrument.pollFreezeLine(1000L + 2 * PolarInstrument.WINDOW_TICKS);
         assertEquals("[LAT][FREEZE] flowTicks=0 passedFalling=0 hunterFroze=0 sweptSettled=0 sweptFroze=0"
-                        + " spreadFroze=0", zeros,
+                        + " spreadFroze=0 sourceFroze=0", zeros,
                 "counters reset after the flush");
     }
 
