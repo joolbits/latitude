@@ -88,7 +88,11 @@ public final class EwPresentationPolicyTest {
         assertNear(0.0f, EwPresentationPolicy.particleIntensity(50.0, 0.0f),
                 "shared shelter visibility suppresses particles");
         assertEquals(0, EwPresentationPolicy.particleBudget(20, 400.0, 1.0f),
-                "particle budget is zero at 400 blocks");
+                "particle budget is zero at the exact continuous envelope endpoint");
+        assertEquals(1, EwPresentationPolicy.leadingSandParticleBudget(20, 399.999, 1.0f),
+                "the first in-envelope sample emits one sparse sand particle");
+        assertEquals(0, EwPresentationPolicy.particleBudget(7, 399.999, 1.0f),
+                "haze does not double the sparse leading particle");
         assertEquals(20, EwPresentationPolicy.particleBudget(20, 50.0, 1.0f),
                 "particle budget reaches its maximum at full fog intensity");
 
@@ -127,26 +131,26 @@ public final class EwPresentationPolicyTest {
         assertEquals(140, EwPresentationPolicy.WARNING_TOTAL_TICKS,
                 "warning episode lasts exactly seven seconds");
 
-        assertEquals(0, EwPresentationPolicy.warningStageRank(500.0001),
-                "advisory is inactive outside 500");
-        assertEquals(1, EwPresentationPolicy.warningStageRank(500.0),
-                "advisory begins at 500");
+        assertEquals(0, EwPresentationPolicy.warningStageRank(400.0),
+                "advisory is inactive before particles begin");
+        assertEquals(1, EwPresentationPolicy.warningStageRank(399.999),
+                "advisory begins with the first storm particles");
         assertEquals(1, EwPresentationPolicy.warningStageRank(100.0001),
                 "advisory remains selected just outside 100");
         assertEquals(2, EwPresentationPolicy.warningStageRank(100.0),
                 "danger begins at 100");
 
         var episode = new EwPresentationPolicy.WarningEpisode();
-        episode.update(0, 501.0, 0L, false);
-        episode.update(1, 500.0, 1L, false);
+        episode.update(0, 400.0, 0L, false);
+        episode.update(1, 399.999, 1L, false);
         assertEquals(1, episode.highestTriggeredStageRank(),
                 "borderward entry triggers the advisory once");
         assertNear(0.0f, episode.alpha(1L), "episode begins at zero alpha");
         assertNear(1.0f, episode.alpha(21L), "episode reaches full alpha");
 
-        episode.update(1, 450.0, 22L, false);
-        episode.update(1, 475.0, 23L, false);
-        episode.update(1, 450.0, 24L, false);
+        episode.update(1, 350.0, 22L, false);
+        episode.update(1, 375.0, 23L, false);
+        episode.update(1, 350.0, 24L, false);
         assertEquals(1, episode.highestTriggeredStageRank(),
                 "retreat and same-stage re-entry do not retrigger");
         assertNear(1.0f, episode.alpha(24L),
@@ -162,10 +166,10 @@ public final class EwPresentationPolicyTest {
         assertNear(0.1f, episode.alpha(27L),
                 "retreat and danger re-entry do not restart danger");
 
-        episode.update(0, 500.0001, 28L, false);
+        episode.update(0, 400.0, 28L, false);
         assertEquals(0, episode.highestTriggeredStageRank(),
-                "moving beyond 500 rearms the warning family");
-        episode.update(1, 500.0, 29L, false);
+                "moving beyond the particle threshold rearms the warning family");
+        episode.update(1, 399.999, 29L, false);
         assertEquals(1, episode.highestTriggeredStageRank(),
                 "rearmed advisory triggers on the next borderward entry");
 
@@ -177,11 +181,11 @@ public final class EwPresentationPolicyTest {
 
     private static void pausedCrossingAndDirectEntryFollowStrictApproachSemantics() {
         var shelteredCrossing = new EwPresentationPolicy.WarningEpisode();
-        shelteredCrossing.update(0, 501.0, 0L, false);
-        shelteredCrossing.update(1, 500.0, 1L, true);
+        shelteredCrossing.update(0, 400.0, 0L, false);
+        shelteredCrossing.update(1, 399.999, 1L, true);
         assertEquals(0, shelteredCrossing.highestTriggeredStageRank(),
                 "a crossing while confirmed hidden does not burn the warning");
-        shelteredCrossing.update(1, 499.0, 2L, false);
+        shelteredCrossing.update(1, 399.0, 2L, false);
         assertEquals(1, shelteredCrossing.highestTriggeredStageRank(),
                 "surface return resumes and consumes the pending borderward crossing");
 
@@ -249,16 +253,16 @@ public final class EwPresentationPolicyTest {
 
     private static void confirmedShelterPausesEpisodeTime() {
         var episode = new EwPresentationPolicy.WarningEpisode();
-        episode.update(0, 501.0, 0L, false);
-        episode.update(1, 500.0, 1L, false);
-        episode.update(1, 499.0, 21L, false);
+        episode.update(0, 400.0, 0L, false);
+        episode.update(1, 399.999, 1L, false);
+        episode.update(1, 399.0, 21L, false);
         assertNear(1.0f, episode.alpha(21L), "episode is fully visible before shelter");
 
-        episode.update(1, 499.0, 121L, true);
-        episode.update(1, 499.0, 221L, true);
+        episode.update(1, 399.0, 121L, true);
+        episode.update(1, 399.0, 221L, true);
         assertNear(1.0f, episode.alpha(221L),
                 "confirmed shelter pauses rather than burns the episode");
-        episode.update(1, 498.0, 222L, false);
+        episode.update(1, 399.0, 222L, false);
         assertNear(1.0f, episode.alpha(222L), "episode resumes after shelter");
     }
 
@@ -289,6 +293,9 @@ public final class EwPresentationPolicyTest {
         assertTrue(overlay.contains("drawCenteredEwWarning")
                         && overlay.contains("EwPresentationPolicy.outlineOffsets()"),
                 "east/west warnings use the explicit keyline path");
+        assertTrue(client.contains("leadingSandParticleBudget(20, distanceToBorder, presentationVisibility)")
+                        && client.contains("particleBudget(7, distanceToBorder, presentationVisibility)"),
+                "the live path emits one leading sand particle without matching haze");
         String draw = methodSection(overlay, "private static void drawCenteredEwWarning(");
         assertTrue(countOccurrences(draw, ", false);") >= 2,
                 "keyline and fill both render without shadows");

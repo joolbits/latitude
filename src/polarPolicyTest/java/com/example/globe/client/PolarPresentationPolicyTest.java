@@ -176,10 +176,10 @@ public final class PolarPresentationPolicyTest {
     }
 
     private static void warningArbitrationFallsThroughToCanonicalEwText() throws IOException {
-        assertEquals(0, EwPresentationPolicy.warningStageRank(500.0001),
-                "east/west text is inactive just outside 500 blocks");
-        assertEquals(1, EwPresentationPolicy.warningStageRank(500.0),
-                "east/west level 1 begins at exactly 500 blocks");
+        assertEquals(0, EwPresentationPolicy.warningStageRank(400.0),
+                "east/west text is inactive before particles begin");
+        assertEquals(1, EwPresentationPolicy.warningStageRank(399.999),
+                "east/west level 1 begins with the first particles");
         assertEquals(1, EwPresentationPolicy.warningStageRank(100.0001),
                 "east/west level 1 remains active just outside 100 blocks");
         assertEquals(2, EwPresentationPolicy.warningStageRank(100.0),
