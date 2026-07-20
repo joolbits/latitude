@@ -420,7 +420,13 @@ public final class CompassHud {
 
         String nLabel = "N";
         int nW = Minecraft.getInstance().font.width(nLabel);
-        ctx.text(Minecraft.getInstance().font, nLabel, cx - nW / 2 + 1, cy - radius + 2 + tickLen + 1, colors.needle(), true);
+        float nScale = Mth.clamp(radius / 24.0f, 0.4f, 1.0f);
+        var pose = ctx.pose();
+        pose.pushMatrix();
+        pose.translate((float) (cx + 1), (float) (cy - radius + 2 + tickLen + 1));
+        pose.scale(nScale, nScale);
+        ctx.text(Minecraft.getInstance().font, nLabel, -nW / 2, 0, colors.needle(), true);
+        pose.popMatrix();
 
         int needleLen = radius - 4;
         int nx = cx + (int) Math.round(Math.sin(angle) * needleLen);

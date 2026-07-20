@@ -23,6 +23,7 @@ public final class GlobeWarningOverlay {
             "DANGER! You are entering a lethal cold zone. Turn back immediately.";
     private static final String POLE_LETHAL_TEXT =
             "The cold overwhelms you.";
+    private static final int POLAR_KEYLINE_RGB = 0x080609;
 
     private static final String EW_SAND_WARN_TEMPLATE =
             "Sandstorms to the %s. Head %s to turn back.";
@@ -106,8 +107,8 @@ public final class GlobeWarningOverlay {
         return switch (stage) {
             case WARN_1 -> Component.literal(POLE_WARN_1_TEXT);
             case WARN_2 -> Component.literal(POLE_WARN_2_TEXT);
-            case DANGER -> Component.literal(POLE_DANGER_TEXT).withStyle(ChatFormatting.RED, ChatFormatting.BOLD);
-            case LETHAL -> Component.literal(POLE_LETHAL_TEXT).withStyle(ChatFormatting.RED, ChatFormatting.BOLD);
+            case DANGER -> Component.literal(POLE_DANGER_TEXT).withStyle(ChatFormatting.RED);
+            case LETHAL -> Component.literal(POLE_LETHAL_TEXT).withStyle(ChatFormatting.RED);
             default -> null;
         };
     }
@@ -260,12 +261,13 @@ public final class GlobeWarningOverlay {
         int w = tr.width(text);
         int x = Math.max(4, (screenW - w) / 2);
         int alpha = argbColor & 0xFF000000;
-        int outlineColor = alpha;
+        int keylineColor = alpha | POLAR_KEYLINE_RGB;
+        Component keylineText = Component.literal(text.getString());
 
         for (int[] offset : PolarPresentationPolicy.outlineOffsets()) {
-            ctx.text(tr, text, x + offset[0], y + offset[1], outlineColor);
+            ctx.text(tr, keylineText, x + offset[0], y + offset[1], keylineColor, false);
         }
-        ctx.text(tr, text, x, y, argbColor);
+        ctx.text(tr, text, x, y, argbColor, false);
     }
 
     private static int polarRank(GlobeClientState.PolarStage stage) {
