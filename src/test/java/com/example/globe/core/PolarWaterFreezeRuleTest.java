@@ -879,4 +879,20 @@ class PolarWaterFreezeRuleTest {
         // The ROOF reach itself is unchanged (shelter scale; deep sealed lakes keep their liquid surface).
         assertEquals(16, PolarWaterFreezeRule.ROOFED_FREEZE_REACH_BLOCKS, "roof reach unchanged");
     }
+
+    @Test
+    void s22TickFloorIsBedInclusive_theTest114PadFencepost() {
+        // TEST 114 self-fly finding: OCEAN_FLOOR heightmap sits ONE ABOVE the topmost solid, so a
+        // one-deep water sheet resting on the bed (pad: snow@141, water@142 -> worldSurfaceY=143,
+        // oceanFloorY=142) sat exactly AT the exclusive worldgen floor and the settled sweep claimed
+        // ZERO live. The tick floor's bed term is oceanFloorY-1: the bottom layer becomes eligible.
+        assertEquals(142, PolarWaterFreezeRule.landWaterFreezeFloorY(143, 142),
+                "worldgen floor UNCHANGED (glacier pass byte-identity)");
+        assertEquals(141, PolarWaterFreezeRule.tickLandWaterFreezeFloorY(143, 142),
+                "tick floor is bed-inclusive: the pad's water@142 > 141 is now eligible");
+        // The B-9 deep reservoir is untouched: when the depth cap (worldSurface-40) wins, both agree.
+        assertEquals(PolarWaterFreezeRule.landWaterFreezeFloorY(200, 100),
+                PolarWaterFreezeRule.tickLandWaterFreezeFloorY(200, 100),
+                "deep-cap regime identical: the reservoir keeps its liquid depth at tick time too");
+    }
 }

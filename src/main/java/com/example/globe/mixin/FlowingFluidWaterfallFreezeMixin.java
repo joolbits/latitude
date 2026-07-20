@@ -141,7 +141,7 @@ public abstract class FlowingFluidWaterfallFreezeMixin {
         // heightmaps landWaterFreezeFloorY consumes for the solid-lake freeze).
         int worldSurfaceY = level.getHeight(Heightmap.Types.WORLD_SURFACE, pos.getX(), pos.getZ());
         int oceanFloorY = level.getHeight(Heightmap.Types.OCEAN_FLOOR, pos.getX(), pos.getZ());
-        boolean aboveFreezeFloor = pos.getY() > PolarWaterFreezeRule.landWaterFreezeFloorY(worldSurfaceY, oceanFloorY);
+        boolean aboveFreezeFloor = pos.getY() > PolarWaterFreezeRule.tickLandWaterFreezeFloorY(worldSurfaceY, oceanFloorY);
         // Ocean-family columns are EXEMPT -- tickFreezesFlowing checks ocean FIRST (the sacred pin: liquid under
         // the pack ice, the S7 immersion mechanic). aboveFreezeFloor is the sole depth discriminator (a visible
         // open fall is above the floor; a covered deep spring below it stays liquid).

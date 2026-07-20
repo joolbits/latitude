@@ -253,7 +253,7 @@ public abstract class ServerLevelRoofedWaterFreezeMixin {
         int worldSurfaceY = self.getHeight(Heightmap.Types.WORLD_SURFACE, blockX, blockZ);
         int oceanFloorY = self.getHeight(Heightmap.Types.OCEAN_FLOOR, blockX, blockZ);
         boolean aboveFreezeFloor =
-                baseY > PolarWaterFreezeRule.landWaterFreezeFloorY(worldSurfaceY, oceanFloorY);
+                baseY > PolarWaterFreezeRule.tickLandWaterFreezeFloorY(worldSurfaceY, oceanFloorY);
         boolean isOcean = self.getBiome(top).is(BiomeTags.IS_OCEAN);
         if (!PolarWaterFreezeRule.tickFreezesFlowing(true, isOcean, absLatDeg, barrensFray, aboveFreezeFloor)) {
             return; // ocean cascade / below-floor spring: liquid, verbatim exemptions

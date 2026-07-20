@@ -218,6 +218,20 @@ public final class PolarWaterFreezeRule {
     }
 
     /**
+     * S22 v6 TICK-TIME freeze floor (TEST 114 self-fly finding: the settled sweep claimed ZERO live).
+     * Identical to {@link #landWaterFreezeFloorY} except the BED term is {@code oceanFloorY - 1}: the
+     * OCEAN_FLOOR heightmap sits ONE ABOVE the topmost solid, so a water layer resting directly on the
+     * bed has {@code blockY == oceanFloorY} — exactly AT the exclusive floor — and the worldgen-shared
+     * floor rejected every one-deep landed sheet (the flat-pour/doorway-puddle case; taller pours' upper
+     * layers passed, which is why the hunter/converter still fired on cascades). The bed-inclusive tick
+     * floor makes the bottom layer eligible. The deep-cap term is UNTOUCHED, so the B-9 deep reservoir
+     * is byte-identical; worldgen callers (the glacier pass) keep {@link #landWaterFreezeFloorY} verbatim.
+     */
+    public static int tickLandWaterFreezeFloorY(int worldSurfaceY, int oceanFloorY) {
+        return Math.max(oceanFloorY - 1, worldSurfaceY - LAND_WATER_FREEZE_DEPTH_BLOCKS);
+    }
+
+    /**
      * S14(b) WATERFALLS: should a FLOWING (non-source) water block freeze to a plain-ice cascade? Shares the
      * ONE frayed front AND the ocean exemption with {@link #freezesLandWaterSolid} (so a flowing block over
      * the sea, or below the zone, or with the flag off, is left liquid); then a flowing block freezes iff it
