@@ -131,14 +131,29 @@ final class CompassDialRenderer {
         int len = radius - 4;
         int baseHalf = Math.max(1, radius / 8);
         // Cardinal diamonds: vertical pair (N/S) filled by row, horizontal pair (E/W) by column.
+        // TEST 117 round (Peetsa: "very flatly colored"): each arm is split lengthwise into a LIT half and
+        // a SHADED half — the classic engraved-rose treatment — with both tones derived from the theme's
+        // own muted color (lighten/darken), so every theme (and Custom) gains depth with zero new config.
+        // Light reads from the upper-left: N and W take lit-left/lit-top, S and E the mirrored shade.
+        int roseLit = lighten(colors.muted(), 0.30f);
+        int roseShade = darken(colors.muted(), 0.35f);
         for (int i = 0; i <= len; i++) {
             int half = Math.max(0, Math.round(baseHalf * (1.0f - i / (float) len)));
-            ctx.fill(cx - half, cy - i, cx + half + 1, cy - i + 1, colors.muted()); // N
-            ctx.fill(cx - half, cy + i, cx + half + 1, cy + i + 1, colors.muted()); // S
-            ctx.fill(cx - i, cy - half, cx - i + 1, cy + half + 1, colors.muted()); // W
-            ctx.fill(cx + i, cy - half, cx + i + 1, cy + half + 1, colors.muted()); // E
+            // N arm: left flank lit, right flank shaded.
+            ctx.fill(cx - half, cy - i, cx + 1, cy - i + 1, roseLit);
+            ctx.fill(cx + 1, cy - i, cx + half + 1, cy - i + 1, roseShade);
+            // S arm: mirrored (right flank lit reads wrong under top-left light — shade left, lit right).
+            ctx.fill(cx - half, cy + i, cx + 1, cy + i + 1, roseShade);
+            ctx.fill(cx + 1, cy + i, cx + half + 1, cy + i + 1, roseLit);
+            // W arm: top flank lit, bottom shaded.
+            ctx.fill(cx - i, cy - half, cx - i + 1, cy + 1, roseLit);
+            ctx.fill(cx - i, cy + 1, cx - i + 1, cy + half + 1, roseShade);
+            // E arm: mirrored.
+            ctx.fill(cx + i, cy - half, cx + i + 1, cy + 1, roseShade);
+            ctx.fill(cx + i, cy + 1, cx + i + 1, cy + half + 1, roseLit);
         }
-        // Intercardinal strokes at 45°, ~55% length.
+        // Intercardinal strokes at 45°, ~55% length — kept in the plain muted tone so they sit visually
+        // BEHIND the two-tone cardinal diamonds (depth by contrast, not just length).
         int diag = (int) Math.round((radius - 4) * 0.55 / Math.sqrt(2));
         for (int s = -1; s <= 1; s += 2) {
             for (int t = -1; t <= 1; t += 2) {
@@ -152,21 +167,35 @@ final class CompassDialRenderer {
         drawCenterDot(ctx, cx, cy, colors);
     }
 
-    /** Face + ring, span-batched: one fill per row segment instead of one per pixel. */
+    /** Face + ring, span-batched: one fill per row segment instead of one per pixel.
+     *  TEST 117 round ("very flatly colored"): the 2px ring is now TWO-TONE — the outer 1px keeps the
+     *  theme's ring color, the inner 1px is a darkened rim of the same color — reading as a bevel/inner
+     *  shadow where the ring meets the face. Derived, so all themes + Custom gain the depth for free. */
     private static void drawDiscBase(GuiGraphicsExtractor ctx, CompassHudConfig cfg,
                                      int cx, int cy, int radius, DialColors colors, boolean face) {
         int rIn = radius - 2; // ring thickness 2px, matching the old dial
+        int rMid = radius - 1; // boundary between the lit outer ring pixel and the shaded inner ring pixel
+        int ringShade = darken(colors.ring(), 0.35f);
         int faceColor = innerColor(cfg, colors.face());
         for (int dy = -radius; dy <= radius; dy++) {
             int half = spanHalf(radius, dy);
             if (half < 0) continue;
             int y = cy + dy;
+            int halfMid = Math.abs(dy) <= rMid ? spanHalf(rMid, dy) : -1;
             int halfIn = Math.abs(dy) <= rIn ? spanHalf(rIn, dy) : -1;
-            if (halfIn < 0) {
+            if (halfMid < 0) {
+                // Row crosses only the outermost ring pixel band.
                 ctx.fill(cx - half, y, cx + half + 1, y + 1, colors.ring());
+            } else if (halfIn < 0) {
+                // Row crosses the outer lit band and the inner shaded band, but not the face.
+                ctx.fill(cx - half, y, cx - halfMid, y + 1, colors.ring());
+                ctx.fill(cx + halfMid + 1, y, cx + half + 1, y + 1, colors.ring());
+                ctx.fill(cx - halfMid, y, cx + halfMid + 1, y + 1, ringShade);
             } else {
-                ctx.fill(cx - half, y, cx - halfIn, y + 1, colors.ring());
-                ctx.fill(cx + halfIn + 1, y, cx + half + 1, y + 1, colors.ring());
+                ctx.fill(cx - half, y, cx - halfMid, y + 1, colors.ring());
+                ctx.fill(cx + halfMid + 1, y, cx + half + 1, y + 1, colors.ring());
+                ctx.fill(cx - halfMid, y, cx - halfIn, y + 1, ringShade);
+                ctx.fill(cx + halfIn + 1, y, cx + halfMid + 1, y + 1, ringShade);
                 if (face) {
                     ctx.fill(cx - halfIn, y, cx + halfIn + 1, y + 1, faceColor);
                 }
@@ -317,17 +346,27 @@ final class CompassDialRenderer {
         ctx.fill(cx - radius + 2, cy, cx - radius + 2 + tickLen, cy + 1, colors.muted());         // W
     }
 
-    /** The radius-scaled "N" glyph (see the sizing rationale comment history in CompassHud @ U-A). */
+    /** The radius-scaled "N" glyph (see the sizing rationale comment history in CompassHud @ U-A).
+     *  TEST 117 round (Peetsa: "the 'N' is sort of washed out"): the glyph now draws in a LIGHTENED
+     *  needle tone over a full dark outline (four offset passes in a face-derived shadow tone, replacing
+     *  the single baked-in drop shadow), so it pops off the face at every scale and in every theme. */
     private static void drawNorthLabel(GuiGraphicsExtractor ctx, Font font, int cx, int cy, int radius, DialColors colors) {
         int tickLen = Math.max(2, radius / 6);
         String nLabel = "N";
         int nW = font.width(nLabel);
         float nScale = Mth.clamp(radius / 24.0f, 0.4f, 1.0f);
+        int nBright = lighten(colors.needle(), 0.35f);
+        int nOutline = darken(colors.face() | 0xFF000000, 0.55f);
         var pose = ctx.pose();
         pose.pushMatrix();
         pose.translate((float) (cx + 1), (float) (cy - radius + 2 + tickLen + 1));
         pose.scale(nScale, nScale);
-        ctx.text(font, nLabel, -nW / 2, 0, colors.needle(), true);
+        // Outline: four cardinal offsets, no vanilla drop shadow (it reads as smear at sub-1.0 scales).
+        ctx.text(font, nLabel, -nW / 2 - 1, 0, nOutline, false);
+        ctx.text(font, nLabel, -nW / 2 + 1, 0, nOutline, false);
+        ctx.text(font, nLabel, -nW / 2, -1, nOutline, false);
+        ctx.text(font, nLabel, -nW / 2, 1, nOutline, false);
+        ctx.text(font, nLabel, -nW / 2, 0, nBright, false);
         pose.popMatrix();
     }
 
@@ -349,6 +388,27 @@ final class CompassDialRenderer {
     private static int innerColor(CompassHudConfig cfg, int faceRgb) {
         int a = Mth.clamp((int) Math.round(cfg.analogInnerAlpha * 255.0f), 0, 255);
         return (a << 24) | (faceRgb & 0xFFFFFF);
+    }
+
+    /** Mix an ARGB color toward white by {@code f} (0..1), alpha preserved — the derived "lit" tone the
+     *  TEST-117 depth pass uses so every theme's shading comes from its own palette (no new config). */
+    private static int lighten(int argb, float f) {
+        int a = (argb >>> 24) & 0xFF;
+        int r = (argb >>> 16) & 0xFF, g = (argb >>> 8) & 0xFF, b = argb & 0xFF;
+        r += Math.round((255 - r) * f);
+        g += Math.round((255 - g) * f);
+        b += Math.round((255 - b) * f);
+        return (a << 24) | (r << 16) | (g << 8) | b;
+    }
+
+    /** Mix an ARGB color toward black by {@code f} (0..1), alpha preserved — the derived "shade" tone. */
+    private static int darken(int argb, float f) {
+        int a = (argb >>> 24) & 0xFF;
+        int r = (argb >>> 16) & 0xFF, g = (argb >>> 8) & 0xFF, b = argb & 0xFF;
+        r = Math.round(r * (1f - f));
+        g = Math.round(g * (1f - f));
+        b = Math.round(b * (1f - f));
+        return (a << 24) | (r << 16) | (g << 8) | b;
     }
 
     private static void drawLine(GuiGraphicsExtractor ctx, int x0, int y0, int x1, int y1, int color) {
