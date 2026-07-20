@@ -207,8 +207,8 @@ public final class VillageLatitudePolicyTest {
         String vegetation = normalize(read(
                 "src/main/java/com/example/globe/mixin/ExtremePolarVegetationGuardMixin.java"));
         assertTrue(
-                vegetation.contains("LatitudeBiomes.isBlockInExtremePolarCap(origin.getZ(), GlobeMod.BORDER_RADIUS)"),
-                "vegetation remains on the shared 74.5 ecology predicate");
+                vegetation.contains("LatitudeBiomes.isBlockBeyondPolarFoliageLimit(origin.getZ(), GlobeMod.BORDER_RADIUS)"),
+                "tree foliage uses its dedicated strict-80 predicate");
         assertTrue(
                 !vegetation.contains("isBlockBeyondPolarVillageLimit"),
                 "village limit cannot alter vegetation");

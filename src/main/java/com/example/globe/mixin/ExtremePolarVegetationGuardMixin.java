@@ -5,16 +5,16 @@ import com.example.globe.world.LatitudeBiomes;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.levelgen.feature.FeaturePlaceContext;
 import net.minecraft.world.level.levelgen.feature.TreeFeature;
+import net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 /**
- * Prevents trees and grass/flower patches from generating past the
- * extreme-polar-cap latitude cutoff, enforcing a dead barren cap.
+ * Prevents trees from generating strictly beyond 80 degrees absolute latitude.
+ * Smaller foliage is handled separately after SimpleBlockFeature samples its state.
  */
-// RandomPatchFeature removed in 26.1; vegetation patch guard requires separate research
 @Mixin(TreeFeature.class)
 public class ExtremePolarVegetationGuardMixin {
 
@@ -22,8 +22,13 @@ public class ExtremePolarVegetationGuardMixin {
             at = @At("HEAD"), cancellable = true)
     private void globe$blockVegetationInExtremePolar(FeaturePlaceContext<?> context,
                                                       CallbackInfoReturnable<Boolean> cir) {
+        if (!(context.chunkGenerator() instanceof NoiseBasedChunkGenerator noise)
+                || !GlobeMod.shouldApplyLatitudeWorldgen(noise)) {
+            return;
+        }
+
         BlockPos origin = context.origin();
-        if (LatitudeBiomes.isBlockInExtremePolarCap(origin.getZ(), GlobeMod.BORDER_RADIUS)) {
+        if (LatitudeBiomes.isBlockBeyondPolarFoliageLimit(origin.getZ(), GlobeMod.BORDER_RADIUS)) {
             cir.setReturnValue(false);
         }
     }
