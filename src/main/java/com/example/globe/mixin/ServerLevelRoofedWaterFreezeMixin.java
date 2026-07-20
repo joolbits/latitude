@@ -4,6 +4,7 @@ import com.example.globe.GlobeMod;
 import com.example.globe.core.LatitudeV2Flags;
 import com.example.globe.core.PolarBarrensBand;
 import com.example.globe.core.PolarInstrument;
+import com.example.globe.core.PolarSweepProbe;
 import com.example.globe.core.PolarWaterFreezeRule;
 import com.example.globe.util.LatitudeMath;
 import com.example.globe.world.LatitudeBiomes;
@@ -142,6 +143,10 @@ public abstract class ServerLevelRoofedWaterFreezeMixin {
             if (line != null) {
                 GlobeMod.LOGGER.info(line);
             }
+            String probeLine = PolarSweepProbe.poll(self.getGameTime()); // TEMP-DIAG (zero-claims round)
+            if (probeLine != null) {
+                GlobeMod.LOGGER.info(probeLine);
+            }
         }
         // v6 (b) THE ROUND-ROBIN: K=8 columns per chunk per tick, index (gameTime*K + i) mod 256 -- pure tick
         // arithmetic (no RNG), full 16x16 coverage every 32 ticks (1.6 s), save/load-stable. Unpack the packed
@@ -167,10 +172,16 @@ public abstract class ServerLevelRoofedWaterFreezeMixin {
         // passes). Barrens OFF: the pre-v6 razor 85 sky-waiver front (freezeIgnoresSky), roofed-SOURCE only.
         boolean barrensOn = LatitudeV2Flags.POLAR_BARRENS_ENABLED;
         double absLatDeg = LatitudeMath.absLatDegExact(self.getWorldBorder(), blockZ);
+        if (PolarInstrument.FREEZE) {
+            PolarSweepProbe.visit(); // TEMP-DIAG
+        }
         double barrensFray = 0.0;
         boolean frontActive;
         if (barrensOn) {
             if (Double.isNaN(absLatDeg) || absLatDeg < PolarWaterFreezeRule.TICK_FRONT_ONSET_DEG) {
+                if (PolarInstrument.FREEZE) {
+                    PolarSweepProbe.rejectFront(); // TEMP-DIAG
+                }
                 return;
             }
             barrensFray = absLatDeg < PolarBarrensBand.FULL_DEG
@@ -181,6 +192,9 @@ public abstract class ServerLevelRoofedWaterFreezeMixin {
             frontActive = PolarWaterFreezeRule.freezeIgnoresSky(true, absLatDeg);
         }
         if (!frontActive) {
+            if (PolarInstrument.FREEZE) {
+                PolarSweepProbe.rejectFront(); // TEMP-DIAG
+            }
             return; // fray-losing 82-84 column (barrens on) or equatorward of 85 (barrens off): no machinery
         }
         // MOTION_BLOCKING counts fluids (v6-verified), so top.below() IS the topmost water block when the
@@ -191,6 +205,9 @@ public abstract class ServerLevelRoofedWaterFreezeMixin {
             // Open SOURCE water surface: vanilla's own tickPrecipitation freeze owns the open still-water skin
             // (edge-inward, its own cadence, the S21(d) source-freezes-last veto riding its shouldFreeze call).
             // Leaving it means the open sea/pond skin behaviour is byte-identical to pre-v6.
+            if (PolarInstrument.FREEZE) {
+                PolarSweepProbe.returnSurfaceSource(); // TEMP-DIAG
+            }
             return;
         }
         int minY = self.getMinY();
@@ -210,6 +227,9 @@ public abstract class ServerLevelRoofedWaterFreezeMixin {
                 if (biome.shouldFreeze(self, cursor)) {
                     self.setBlockAndUpdate(cursor.immutable(), Blocks.ICE.defaultBlockState());
                 }
+                if (PolarInstrument.FREEZE) {
+                    PolarSweepProbe.returnRoofedSource(); // TEMP-DIAG
+                }
                 return; // topmost water surface handled (a surface skin; the body below is S14/worldgen's job)
             }
             if (fs.getType() == Fluids.FLOWING_WATER) {
@@ -218,6 +238,9 @@ public abstract class ServerLevelRoofedWaterFreezeMixin {
             }
         }
         if (flowTopY == Integer.MIN_VALUE) {
+            if (PolarInstrument.FREEZE) {
+                PolarSweepProbe.rejectDry(); // TEMP-DIAG
+            }
             return; // dry column (or water sealed below the roof reach -- the B-9 reservoir)
         }
         // v6 (a2) PHASE 2 -- THE EXTENDED DESCENT: from the flowing top, keep walking down WHILE the blocks are
@@ -240,6 +263,9 @@ public abstract class ServerLevelRoofedWaterFreezeMixin {
         cursor.setY(baseY - 1);
         BlockState belowBase = self.getBlockState(cursor);
         if (!PolarWaterFreezeRule.landedOnSupport(belowBase.isAir(), !belowBase.getFluidState().isEmpty())) {
+            if (PolarInstrument.FREEZE) {
+                PolarSweepProbe.rejectNotLanded(); // TEMP-DIAG
+            }
             return;
         }
         // Per-column FLOWING eligibility -- barrens-gated (with barrens off, flowing water is exactly as
@@ -248,6 +274,9 @@ public abstract class ServerLevelRoofedWaterFreezeMixin {
         // the BASE must sit above the floor or the whole run is the B-9 deep reservoir's (run members are
         // higher than the base, so base-above-floor covers the run).
         if (!barrensOn) {
+            if (PolarInstrument.FREEZE) {
+                PolarSweepProbe.rejectBarrensOff(); // TEMP-DIAG
+            }
             return; // flowing machinery is the barrens family's; flag-off leaves moving water to vanilla
         }
         int worldSurfaceY = self.getHeight(Heightmap.Types.WORLD_SURFACE, blockX, blockZ);
@@ -256,7 +285,17 @@ public abstract class ServerLevelRoofedWaterFreezeMixin {
                 baseY > PolarWaterFreezeRule.tickLandWaterFreezeFloorY(worldSurfaceY, oceanFloorY);
         boolean isOcean = self.getBiome(top).is(BiomeTags.IS_OCEAN);
         if (!PolarWaterFreezeRule.tickFreezesFlowing(true, isOcean, absLatDeg, barrensFray, aboveFreezeFloor)) {
+            if (PolarInstrument.FREEZE) { // TEMP-DIAG: which exemption fired
+                if (isOcean) {
+                    PolarSweepProbe.rejectOcean();
+                } else {
+                    PolarSweepProbe.rejectFloor(blockX, blockZ, baseY, worldSurfaceY, oceanFloorY);
+                }
+            }
             return; // ocean cascade / below-floor spring: liquid, verbatim exemptions
+        }
+        if (PolarInstrument.FREEZE) {
+            PolarSweepProbe.probedColumn(); // TEMP-DIAG: all WHERE gates passed, phase 3 starts
         }
         // PHASE 3 -- READ-ONLY run discovery (the S21 settled-purity rule): find the contiguous bottom-up run
         // of SETTLED flowing blocks BEFORE any write, because our own setBlockAndUpdate below reschedules fluid
@@ -268,6 +307,15 @@ public abstract class ServerLevelRoofedWaterFreezeMixin {
              y++) {
             cursor.setY(y);
             if (self.getFluidState(cursor).getType() != Fluids.FLOWING_WATER || !globe$settled(self, cursor)) {
+                if (PolarInstrument.FREEZE && runLen == 0) { // TEMP-DIAG: why did the run die at its base?
+                    if (self.getFluidState(cursor).getType() != Fluids.FLOWING_WATER) {
+                        PolarSweepProbe.baseNotFlowing();
+                    } else {
+                        PolarSweepProbe.basePending(blockX, y, blockZ,
+                                self.getFluidTicks().hasScheduledTick(cursor, Fluids.FLOWING_WATER),
+                                self.getFluidTicks().hasScheduledTick(cursor, Fluids.WATER));
+                    }
+                }
                 break;
             }
             if (PolarInstrument.FREEZE) {
