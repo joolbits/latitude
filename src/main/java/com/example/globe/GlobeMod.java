@@ -528,6 +528,10 @@ public class GlobeMod implements ModInitializer {
         // packet; when it does fire, setSize snaps the server border and broadcasts the correction to clients.
         enforceGlobeBorderSnapped(border);
 
+        // Crew 9 / S30 THE REAL SNOW COLLAPSE: drain the staggered collapse queue once per tick (no-op when
+        // empty, i.e. flag-off / no active collapse). The per-player trigger check is inside the loop below.
+        com.example.globe.world.SnowCollapseRuntime.processScheduled(overworld, worldTime);
+
         for (ServerPlayer player : server.getPlayerList().getPlayers()) {
             if (player.level() != overworld) {
                 continue;
@@ -553,6 +557,11 @@ public class GlobeMod implements ModInitializer {
 
             double latDeg = com.example.globe.util.LatitudeMath.absLatDegExact(border, player.getZ());
             boolean unaffected = player.isCreative() || player.isSpectator();
+
+            // Crew 9 / S30 THE REAL SNOW COLLAPSE: does this survival/adventure player stand on the hidden
+            // snow_block/powder/void SANDWICH? If so, claim + telegraph + schedule the staggered collapse. Cheap-
+            // first gated inside (flag, armed world, barrens band) so this is a no-op for non-polar players.
+            com.example.globe.world.SnowCollapseRuntime.tickPlayer(overworld, player, latDeg, unaffected, worldTime);
 
             // B-7 S7 (POLAR IMMERSION): the SINGLE cold-evaluation latitude. In water (isInWater -- false in a
             // boat, the free story-true exemption) the existing curves are evaluated at |lat|+3 capped at 90

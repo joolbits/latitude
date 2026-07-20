@@ -691,10 +691,11 @@ public final class LatitudeDevCommands {
      * ground-truth signals, partitioned by each column's WORLD_SURFACE depth so a column is counted at most
      * once:
      * <ol>
-     *   <li><b>Trap roofs</b> -- a SHALLOW column (surface at/near the local snowfield) whose top block is
-     *       {@code minecraft:powder_snow}: exactly what {@code world.PowderCrevasseRoofFeature} bridges a
-     *       narrow slot with (it places powder_snow flush at the snowfield surface). A green beacon rises from
-     *       the hidden roof, plus a chat line with its coordinates.</li>
+     *   <li><b>Trap roofs</b> -- a SHALLOW column (surface at/near the local snowfield) carrying the S30 collapse
+     *       SANDWICH: a {@code minecraft:snow_block} top (flush with the snowfield, indistinguishable) directly
+     *       over a hidden {@code minecraft:powder_snow} marker, over air -- exactly what {@code
+     *       world.PowderCrevasseRoofFeature} now lays (the pre-S30 exposed powder lid is superseded). A green
+     *       beacon rises from the hidden roof, plus a chat line with its coordinates.</li>
      *   <li><b>Open slots</b> -- a DEEP column: its WORLD_SURFACE sits {@link
      *       PowderRoofTrap#MIN_SHAFT_DEPTH_BLOCKS}+ below the local snowfield reference ({@link
      *       GlacialMarkScan#windowedMax} over the feature's own {@link PowderRoofTrap#REFERENCE_WINDOW_RADIUS}
@@ -800,12 +801,22 @@ public final class LatitudeDevCommands {
                             slotLines++;
                         }
                     } else {
-                        // SHALLOW: could be a flush powder-snow roof. Probe the top block(s). Signal 1.
+                        // SHALLOW: could carry the S30 collapse SANDWICH. Scan the top block(s) for a snow_block
+                        // cap DIRECTLY over a powder_snow marker DIRECTLY over air -- the exact gen signature the
+                        // runtime collapse keys off (a bare snowfield is snow over snow/dirt; a lone powder pocket
+                        // has no snow_block cap; so this three-block probe never false-positives). Signal 1.
                         int topBlockY = own - 1;
                         int foundRoofY = Integer.MIN_VALUE;
                         for (int y = topBlockY; y >= topBlockY - MARK_ROOF_PROBE_DEPTH; y--) {
                             cursor.set(wx, y, wz);
-                            if (world.getBlockState(cursor).getBlock() == Blocks.POWDER_SNOW) {
+                            if (world.getBlockState(cursor).getBlock() != Blocks.SNOW_BLOCK) {
+                                continue;
+                            }
+                            cursor.set(wx, y - 1, wz);
+                            boolean powderBelow = world.getBlockState(cursor).getBlock() == Blocks.POWDER_SNOW;
+                            cursor.set(wx, y - 2, wz);
+                            boolean airBelow = world.getBlockState(cursor).isAir();
+                            if (powderBelow && airBelow) {
                                 foundRoofY = y;
                                 break;
                             }
@@ -819,7 +830,7 @@ public final class LatitudeDevCommands {
                             }
                             if (roofLines < MARK_CHAT_CAP) {
                                 src.sendSuccess(() -> Component.literal(String.format(Locale.ROOT,
-                                        "[latdev]   TRAP roof: powder_snow at x=%d y=%d z=%d", wx, roofY, wz)), false);
+                                        "[latdev]   TRAP roof: snow over powder at x=%d y=%d z=%d", wx, roofY, wz)), false);
                                 roofLines++;
                             }
                         }

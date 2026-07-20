@@ -25,6 +25,32 @@ class PowderRoofTrapTest {
         assertEquals(0.40f, PowderRoofTrap.ROOF_FRACTION, 1e-9f, "a minority of slots are trapped -- fair");
     }
 
+    // --- S30 deep-drop pins + gates ----------------------------------------------------------------------
+
+    @Test
+    void deepDropConstantsPinnedToDesign() {
+        assertEquals(0.30f, PowderRoofTrap.DEEP_DROP_FRACTION, 1e-9f, "a minority of roofed spans drop deep");
+        assertEquals(16, PowderRoofTrap.DEEP_DROP_PROBE_DEPTH, "probe <= 16 blocks below the crevasse floor");
+        assertEquals(4, PowderRoofTrap.MIN_DEEP_VOID_AIR, ">= 4 contiguous air counts as a connectable cave");
+    }
+
+    @Test
+    void deepDropFractionGateBounds() {
+        assertTrue(PowderRoofTrap.shouldDeepDrop(0.0f), "roll 0 deep-drops");
+        assertTrue(PowderRoofTrap.shouldDeepDrop(0.299f), "just under 0.30 deep-drops");
+        assertFalse(PowderRoofTrap.shouldDeepDrop(0.30f), "exactly 0.30 does NOT (half-open interval)");
+        assertFalse(PowderRoofTrap.shouldDeepDrop(0.95f), "high roll stays a shallow crevasse trap");
+        assertFalse(PowderRoofTrap.shouldDeepDrop(-0.01f), "a negative/out-of-range roll never deep-drops");
+    }
+
+    @Test
+    void deepVoidQualifiesAtFourContiguousAir() {
+        assertFalse(PowderRoofTrap.qualifiesDeepDrop(3), "3 air is a seam, not a cave");
+        assertTrue(PowderRoofTrap.qualifiesDeepDrop(4), "exactly 4 air qualifies (inclusive floor)");
+        assertTrue(PowderRoofTrap.qualifiesDeepDrop(12), "a tall void qualifies");
+        assertFalse(PowderRoofTrap.qualifiesDeepDrop(0), "no air -> no connectable cave");
+    }
+
     // --- isTrapCandidate: shaft-depth gate ---------------------------------------------------------------
 
     @Test

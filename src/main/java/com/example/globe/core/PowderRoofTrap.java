@@ -135,4 +135,47 @@ public final class PowderRoofTrap {
     public static boolean shouldRoofSpan(float roll01) {
         return roll01 >= 0.0f && roll01 < ROOF_FRACTION;
     }
+
+    // --- S30 DEEP DROP (Peetsa 2026-07-20 sketch: "sometimes you can drop down into a deep glacial cave") -----
+
+    /**
+     * Deterministic fraction of ROOFED spans that additionally probe downward for a connecting deep-cave void
+     * (per-span roll {@code < } this, via the feature's own vanilla-seeded RandomSource -- Art VI: no new noise).
+     * 0.30 -> most roofed slots simply drop the victim into their own crevasse; a minority punch through to a
+     * deeper glacial cave below, the sketch's rare "drop into a deep glacial cave". Rolled independently of {@link
+     * #ROOF_FRACTION}, AFTER a span has already won the roof roll.
+     */
+    public static final float DEEP_DROP_FRACTION = 0.30f;
+
+    /**
+     * How far (blocks) straight down from a roofed span's crevasse floor the deep-drop probe looks for pre-carved
+     * cave/void air. 16 keeps the connecting shaft short (bounded, chunk-local work) while still reaching the
+     * glacial-tunnel labyrinth that commonly threads just under the crevasse floor.
+     */
+    public static final int DEEP_DROP_PROBE_DEPTH = 16;
+
+    /**
+     * Minimum run of contiguous AIR blocks (within {@link #DEEP_DROP_PROBE_DEPTH}) that counts as a genuine cave
+     * to connect to -- never a 1-block seam or an aquifer bubble. 4 clears a player plus a landing gap, so the
+     * cushion at the true bottom is a real survivable arrival.
+     */
+    public static final int MIN_DEEP_VOID_AIR = 4;
+
+    /**
+     * The deep-drop span gate: should a roofed span punch a connecting shaft, given a uniform roll in {@code
+     * [0,1)}? True iff {@code 0 <= roll01 < }{@link #DEEP_DROP_FRACTION}. A negative/out-of-range roll never
+     * deep-drops (defensive -- the safe direction is "leave the span as a shallow crevasse trap").
+     */
+    public static boolean shouldDeepDrop(float roll01) {
+        return roll01 >= 0.0f && roll01 < DEEP_DROP_FRACTION;
+    }
+
+    /**
+     * Does a probed contiguous-air run qualify as a connectable deep void? True iff {@code contiguousAirRun >= }
+     * {@link #MIN_DEEP_VOID_AIR}. Pure integer compare (the feature supplies the run length it measured beneath
+     * the crevasse floor).
+     */
+    public static boolean qualifiesDeepDrop(int contiguousAirRun) {
+        return contiguousAirRun >= MIN_DEEP_VOID_AIR;
+    }
 }
