@@ -23,11 +23,17 @@ public final class CompassHudConfig {
     public enum HAnchor { LEFT, CENTER, RIGHT }
     public enum VAnchor { TOP, CENTER, BOTTOM }
 
+    public static final CompassStyle DEFAULT_COMPASS_STYLE = CompassStyle.ANALOG;
+    public static final float DEFAULT_ANALOG_SIZE = 32.0f;
+    public static final int ANALOG_SIZE_STUDIO_MIN = 16;
+    public static final int ANALOG_SIZE_STUDIO_MAX = 72;
+    public static final float ANALOG_SIZE_SAVED_MAX = 128.0f;
+
     // Master toggle
     public boolean enabled = true;
 
     public ShowMode showMode = ShowMode.COMPASS_PRESENT;
-    public CompassStyle style = CompassStyle.DIGITAL;
+    public CompassStyle style = DEFAULT_COMPASS_STYLE;
     public AnalogCompassTheme analogTheme = AnalogCompassTheme.CLASSIC_GOLD;
     public DirectionMode directionMode = DirectionMode.CARDINAL_8;
 
@@ -42,7 +48,7 @@ public final class CompassHudConfig {
     public int padding = 3;
 
     // Sizing (analog disc diameter, unscaled)
-    public float analogSize = 48.0f; // pixels
+    public float analogSize = DEFAULT_ANALOG_SIZE; // pixels
 
     // Analog styling
     public float analogInnerAlpha = 0.65f; // 0..1
@@ -120,6 +126,39 @@ public final class CompassHudConfig {
         return locationDetailMode() != LocationDetailPolicy.Mode.OFF;
     }
 
+    public void resetToDefaults() {
+        enabled = true;
+        showMode = ShowMode.COMPASS_PRESENT;
+        style = DEFAULT_COMPASS_STYLE;
+        analogTheme = AnalogCompassTheme.CLASSIC_GOLD;
+        directionMode = DirectionMode.CARDINAL_8;
+        hAnchor = HAnchor.CENTER;
+        vAnchor = VAnchor.TOP;
+        offsetX = 0;
+        offsetY = 0;
+        scale = 1.0f;
+        padding = 3;
+        analogSize = DEFAULT_ANALOG_SIZE;
+        analogInnerAlpha = 0.65f;
+        setLocationDetailMode(LocationDetailPolicy.DEFAULT_MODE);
+        zoneFollowsCompass = true;
+        zoneHAnchor = HAnchor.CENTER;
+        zoneVAnchor = VAnchor.TOP;
+        zoneOffsetX = 0;
+        zoneOffsetY = 0;
+        showBackground = true;
+        backgroundRgb = 0x000000;
+        backgroundAlpha = 64;
+        textRgb = 0xFFFFFF;
+        textAlpha = 255;
+        shadow = true;
+        showLatitude = true;
+        analogShowLatitude = true;
+        latitudeDecimals = 0;
+        compactHud = false;
+        attachToHotbarCompass = false;
+    }
+
     private static CompassHudConfig load() {
         try {
             if (Files.exists(PATH)) {
@@ -165,8 +204,8 @@ public final class CompassHudConfig {
         if (latitudeDecimals > 3) latitudeDecimals = 3;
         if (scale < 0.25f) scale = 0.25f;
         if (scale > 4.0f) scale = 4.0f;
-        if (analogSize < 24.0f) analogSize = 24.0f;
-        if (analogSize > 128.0f) analogSize = 128.0f;
+        if (analogSize < ANALOG_SIZE_STUDIO_MIN) analogSize = ANALOG_SIZE_STUDIO_MIN;
+        if (analogSize > ANALOG_SIZE_SAVED_MAX) analogSize = ANALOG_SIZE_SAVED_MAX;
         if (analogInnerAlpha < 0.0f) analogInnerAlpha = 0.0f;
         if (analogInnerAlpha > 1.0f) analogInnerAlpha = 1.0f;
         if (zoneHAnchor == null) zoneHAnchor = HAnchor.CENTER;
