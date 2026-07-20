@@ -183,6 +183,12 @@ public class GlobeMod implements ModInitializer {
         // must be consistent across sessions; all BEHAVIOUR is flag-gated (POLAR_OUTFITTING_ENABLED).
         com.example.globe.content.PolarOutfitting.register();
 
+        // Phase 5 S25b: register the mod's first custom worldgen Feature (globe:powder_crevasse_roof, the
+        // powder-snow roofed crevasse trap) into BuiltInRegistries.FEATURE UNCONDITIONALLY, before registry
+        // freeze -- a datapack configured_feature referencing an unregistered type would hard-fail at load.
+        // All BEHAVIOUR is flag-gated (POLAR_BARRENS_ENABLED) inside the feature.
+        com.example.globe.world.PowderCrevasseRoofFeature.register();
+
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
             dispatcher.register(Commands.literal("flyspeed")
                     .then(Commands.argument("level", IntegerArgumentType.integer(1, 5))
@@ -1407,15 +1413,20 @@ public class GlobeMod implements ModInitializer {
         double v = hash01(seed, 1, 0, SPAWN_SALT);
 
         // S10(a) SPAWN CALM BAND, ZONE-AWARE (owner correction 2026-07-17: an explicit POLAR/SUBPOLAR pick is
-        // CONSENT and lands in that band's SAFEST low-edge window -- POLAR [66.5,70] "only the lowest latitude
-        // of polar", SUBPOLAR [50,55]; RANDOM resolved to its concrete zone above, so a RANDOM->POLAR roll
-        // inherits the polar window). Default/non-polar spawns keep the original flat 50-deg cap, and NOBODY
-        // spawns at/above the 74-deg storm ceiling. SpawnCalmBand owns the whole law (windows + midpoint
-        // targets, replacing the legacy 0.89 POLAR fraction = the now-illegal 80.1 deg).
+        // CONSENT and lands in that band's approach window -- SUBPOLAR [50,55], POLAR [66.5,79]; RANDOM
+        // resolved to its concrete zone above, so a RANDOM->POLAR roll inherits the polar window). Default/
+        // non-polar spawns keep the original flat 50-deg cap under the 74-deg everyone-ceiling; only the
+        // explicit POLAR pick reaches its own 79-deg expedition ceiling. SpawnCalmBand owns the whole law.
+        // S25 (owner TEST 117 2026-07-20: "random for polar between the boundary of polar and subpolar and...
+        // maybe seventy nine"): the POLAR target is now a UNIFORM pick across [66.5,79] driven by a second
+        // draw from the SAME deterministic hash01 spawn idiom (coordinate 2 vs the sign's coordinate 1 -- not
+        // a new RNG channel), so each seed lands at a different point on the long approach walk. Non-polar
+        // zones ignore polarFrac and keep byte-identical placement.
         double spawnAbsLatFrac = com.example.globe.util.LatitudeMath.spawnFracForZoneKey(zoneId);
+        double polarFrac = hash01(seed, 2, 0, SPAWN_SALT);
         com.example.globe.core.SpawnCalmBand.Window spawnWindow =
                 com.example.globe.core.SpawnCalmBand.spawnWindow(zoneId, radius);
-        int z = com.example.globe.core.SpawnCalmBand.spawnTargetAbsZ(zoneId, spawnAbsLatFrac, radius);
+        int z = com.example.globe.core.SpawnCalmBand.spawnTargetAbsZ(zoneId, spawnAbsLatFrac, radius, polarFrac);
         if (v < 0.5) {
             z = -z;
         }

@@ -521,11 +521,11 @@ class PolarWaterFreezeRuleTest {
         // S20 dropped the S18/S19 on-solid CHANCE entirely: the flow tick freezes ONLY when landed AND touching
         // ice, and then with CERTAINTY -- there is no RNG anywhere in the freeze path now (the FREEZE_CHANCE dials
         // are gone). TOUCHING ICE + landed + eligible -> certain freeze.
-        assertTrue(PolarWaterFreezeRule.flowTickHunterFreezes(true, true, true),
+        assertTrue(PolarWaterFreezeRule.flowTickHunterFreezes(true, true, true, 3 /* far-ring amount: claimable (S25 grace) */),
                 "eligible + landed + touching ice -> certain lock (the reroute-hunter / zipper)");
         // LANDED ON ORDINARY SOLID (not touching ice) -> the hunter does NOT freeze: the water keeps spreading and
         // is claimed later by the SETTLED SWEEP. This is the whole S20 shift -- ground freezing left the flow tick.
-        assertFalse(PolarWaterFreezeRule.flowTickHunterFreezes(true, true, false),
+        assertFalse(PolarWaterFreezeRule.flowTickHunterFreezes(true, true, false, 3 /* far-ring amount: claimable (S25 grace) */),
                 "landed on bare solid, not touching ice -> the flow tick leaves it (the sweep owns it once settled)");
     }
 
@@ -560,14 +560,14 @@ class PolarWaterFreezeRuleTest {
     void s20StillFallingAndIneligibleNeverFreeze_bothConsumers() {
         // The landed AND eligible gates PRECEDE the ice/settled contact: touching ice (hunter) or settled (sweep)
         // can never freeze a still-falling or an ineligible block. Still falling (not landed) beside ice / at rest.
-        assertFalse(PolarWaterFreezeRule.flowTickHunterFreezes(true, false, true),
+        assertFalse(PolarWaterFreezeRule.flowTickHunterFreezes(true, false, true, 3 /* far-ring amount: claimable (S25 grace) */),
                 "not landed -> vanilla flow even touching ice (hunter)");
         assertFalse(PolarWaterFreezeRule.sweepFreezesSettled(true, false, true),
                 "not landed -> not swept even if settled (sweep)");
         // Not freeze-eligible (ocean / out-of-zone / below the floor / flag off) -> never, even landed + touching/settled.
-        assertFalse(PolarWaterFreezeRule.flowTickHunterFreezes(false, true, true), "not eligible -> hunter never");
+        assertFalse(PolarWaterFreezeRule.flowTickHunterFreezes(false, true, true, 3 /* far-ring amount: claimable (S25 grace) */), "not eligible -> hunter never");
         assertFalse(PolarWaterFreezeRule.sweepFreezesSettled(false, true, true), "not eligible -> sweep never");
-        assertFalse(PolarWaterFreezeRule.flowTickHunterFreezes(false, false, false));
+        assertFalse(PolarWaterFreezeRule.flowTickHunterFreezes(false, false, false, 3 /* far-ring amount: claimable (S25 grace) */));
         assertFalse(PolarWaterFreezeRule.sweepFreezesSettled(false, false, false));
     }
 
@@ -576,13 +576,13 @@ class PolarWaterFreezeRuleTest {
         // THE ZIPPER: a fresh base on bare solid is NOT frozen by the flow tick (the sweep freezes it once settled);
         // but once ANY base ice exists, the block resting on it (below-ice = touching + landed) is CERTAIN, so the
         // climb is a deterministic 1-block-per-flow-tick zipper -- the freeze cannot be outrun.
-        assertFalse(PolarWaterFreezeRule.flowTickHunterFreezes(true, true, false),
+        assertFalse(PolarWaterFreezeRule.flowTickHunterFreezes(true, true, false, 3 /* far-ring amount: claimable (S25 grace) */),
                 "base on bare solid: the flow tick does not lock it (left to the settled sweep)");
-        assertTrue(PolarWaterFreezeRule.flowTickHunterFreezes(true, true, true),
+        assertTrue(PolarWaterFreezeRule.flowTickHunterFreezes(true, true, true, 3 /* far-ring amount: claimable (S25 grace) */),
                 "block resting on the frozen base (below-ice) -> certain -> the zipper climbs");
         // THE REROUTE-HUNTER: water that reroutes horizontally onto/beside fresh ice is touching-ice -> locks one
         // block out, so the speckle can never escape the growing ice.
-        assertTrue(PolarWaterFreezeRule.flowTickHunterFreezes(true, true, true),
+        assertTrue(PolarWaterFreezeRule.flowTickHunterFreezes(true, true, true, 3 /* far-ring amount: claimable (S25 grace) */),
                 "reroute beside ice -> certain lock (the ice hunts the escaping water)");
     }
 
@@ -594,14 +594,14 @@ class PolarWaterFreezeRuleTest {
         assertTrue(eligible, "in-zone, non-ocean, above floor -> eligible");
         boolean landed = PolarWaterFreezeRule.landedOnSupport(false, false);
         // Flow-tick hunter: landed on ice-contact -> certain.
-        assertTrue(PolarWaterFreezeRule.flowTickHunterFreezes(eligible, landed, true),
+        assertTrue(PolarWaterFreezeRule.flowTickHunterFreezes(eligible, landed, true, 3 /* far-ring amount: claimable (S25 grace) */),
                 "landed + touching ice -> the hunter locks it");
         // Settled sweep: landed + settled -> certain (this is what actually freezes a settled pool).
         assertTrue(PolarWaterFreezeRule.sweepFreezesSettled(eligible, landed, true),
                 "landed + settled -> the sweep freezes it");
         // Same block still FALLING (air below) -> neither consumer acts (the fall runs on).
         boolean falling = PolarWaterFreezeRule.landedOnSupport(true, false);
-        assertFalse(PolarWaterFreezeRule.flowTickHunterFreezes(eligible, falling, true), "air below -> hunter waits");
+        assertFalse(PolarWaterFreezeRule.flowTickHunterFreezes(eligible, falling, true, 3 /* far-ring amount: claimable (S25 grace) */), "air below -> hunter waits");
         assertFalse(PolarWaterFreezeRule.sweepFreezesSettled(eligible, falling, true), "air below -> sweep waits");
     }
 
@@ -611,22 +611,22 @@ class PolarWaterFreezeRuleTest {
         // neither the hunter nor the sweep ever freezes it, however landed/settled/ice-touching.
         boolean oceanEligible = PolarWaterFreezeRule.freezesFlowing(true, true, 89.0, 0.5, false, true);
         assertFalse(oceanEligible, "ocean column never flow-eligible");
-        assertFalse(PolarWaterFreezeRule.flowTickHunterFreezes(oceanEligible, true, true), "ocean cascade: hunter never");
+        assertFalse(PolarWaterFreezeRule.flowTickHunterFreezes(oceanEligible, true, true, 3 /* far-ring amount: claimable (S25 grace) */), "ocean cascade: hunter never");
         assertFalse(PolarWaterFreezeRule.sweepFreezesSettled(oceanEligible, true, true), "ocean pool: sweep never");
         // Out-of-zone (equatorward of the frayed front) -> not eligible -> both consumers pass to vanilla.
         boolean belowZoneEligible = PolarWaterFreezeRule.freezesFlowing(true, false, 83.9, 0.0, false, true);
         assertFalse(belowZoneEligible);
-        assertFalse(PolarWaterFreezeRule.flowTickHunterFreezes(belowZoneEligible, true, true), "below zone: hunter never");
+        assertFalse(PolarWaterFreezeRule.flowTickHunterFreezes(belowZoneEligible, true, true, 3 /* far-ring amount: claimable (S25 grace) */), "below zone: hunter never");
         assertFalse(PolarWaterFreezeRule.sweepFreezesSettled(belowZoneEligible, true, true), "below zone: sweep never");
         // Flag off (byte-identical) -> not eligible -> both pass to vanilla.
         boolean flagOffEligible = PolarWaterFreezeRule.freezesFlowing(false, false, 89.0, 0.5, false, true);
         assertFalse(flagOffEligible);
-        assertFalse(PolarWaterFreezeRule.flowTickHunterFreezes(flagOffEligible, true, true), "flag off: hunter never");
+        assertFalse(PolarWaterFreezeRule.flowTickHunterFreezes(flagOffEligible, true, true, 3 /* far-ring amount: claimable (S25 grace) */), "flag off: hunter never");
         assertFalse(PolarWaterFreezeRule.sweepFreezesSettled(flagOffEligible, true, true), "flag off: sweep never");
         // Deep-cave floor (covered, below the floor) -> not eligible -> a deep spring stays liquid (B-9 reservoir).
         boolean deepEligible = PolarWaterFreezeRule.freezesFlowing(true, false, 89.0, 0.5, false, false);
         assertFalse(deepEligible, "below the freeze floor: not eligible (B-9 reservoir)");
-        assertFalse(PolarWaterFreezeRule.flowTickHunterFreezes(deepEligible, true, true), "deep spring: hunter never");
+        assertFalse(PolarWaterFreezeRule.flowTickHunterFreezes(deepEligible, true, true, 3 /* far-ring amount: claimable (S25 grace) */), "deep spring: hunter never");
         assertFalse(PolarWaterFreezeRule.sweepFreezesSettled(deepEligible, true, true), "deep spring: sweep never");
     }
 
@@ -696,17 +696,17 @@ class PolarWaterFreezeRuleTest {
         // touch set is orthogonal (below + 4 horizontals); a spreading edge block touching ice ORTHOGONALLY is
         // caught (dies at one block)...
         assertTrue(PolarWaterFreezeRule.flowTickHunterFreezes(true, true,
-                        PolarWaterFreezeRule.touchingIce(false, true, false, false, false)),
+                        PolarWaterFreezeRule.touchingIce(false, true, false, false, false), 3 /* far-ring amount: claimable (S25 grace) */),
                 "ice orthogonally north of a landed edge block -> caught");
         assertTrue(PolarWaterFreezeRule.flowTickHunterFreezes(true, true,
-                        PolarWaterFreezeRule.touchingIce(true, false, false, false, false)),
+                        PolarWaterFreezeRule.touchingIce(true, false, false, false, false), 3 /* far-ring amount: claimable (S25 grace) */),
                 "ice directly below (the vertical zipper contact) -> caught");
         // ...while a PURELY-DIAGONAL contact is NOT in the touch set (all five orthogonal args false) -> not
         // caught this tick. Per the coverage argument this is sound: water cannot reach a diagonal-only cell
         // without first occupying (and freezing) an orthogonal neighbour of that ice, so the diagonal cell never
         // holds live water; when its orthogonal neighbour freezes it becomes an orthogonal contact next ring.
         assertFalse(PolarWaterFreezeRule.flowTickHunterFreezes(true, true,
-                        PolarWaterFreezeRule.touchingIce(false, false, false, false, false)),
+                        PolarWaterFreezeRule.touchingIce(false, false, false, false, false), 3 /* far-ring amount: claimable (S25 grace) */),
                 "diagonal-only ice (no orthogonal member) -> not caught this tick; the ring catches it next");
     }
 
@@ -716,7 +716,7 @@ class PolarWaterFreezeRuleTest {
         // ice wall beside a fall does not behead it mid-air; it freezes only after it LANDS (the same law that,
         // on the source side, keeps the source from beheading its own fall).
         assertFalse(PolarWaterFreezeRule.flowTickHunterFreezes(true, false,
-                        PolarWaterFreezeRule.touchingIce(false, true, false, false, false)),
+                        PolarWaterFreezeRule.touchingIce(false, true, false, false, false), 3 /* far-ring amount: claimable (S25 grace) */),
                 "falling water beside an ice wall (not landed) -> keeps falling, not frozen");
     }
 
@@ -737,35 +737,48 @@ class PolarWaterFreezeRuleTest {
     // ---- S22 WATER v6 (TEST 113, the FOURTH live failure): tick front / cadence / spread-convert ------
 
     @Test
-    void s22TickFrontRidesTheBarrensBand_82to84() {
-        // (a) The tick front IS the shared barrens band decision (ONSET 82 -> FULL 84, smoothstep on the
-        // coherent barrens fray) -- one decision with the biome/glacier/crevasse carvers. Pin the anchors this
-        // build assumed (defaults; live-tunable dials would move the band AND the front together, by design).
-        assertEquals(82.0, PolarBarrensBand.ONSET_DEG, 1e-9, "barrens onset (and so the tick-front onset)");
-        assertEquals(84.0, PolarBarrensBand.FULL_DEG, 1e-9, "barrens full (tick front unconditionally on)");
-        assertEquals(PolarBarrensBand.ONSET_DEG, PolarWaterFreezeRule.TICK_FRONT_ONSET_DEG, 1e-9,
-                "the tick-front cheap gate is KEEP-SHARED with the barrens onset");
-        // At/below the onset: never (the owner's 84S pour was ABOVE this; 82 itself is fraction 0).
-        assertFalse(PolarWaterFreezeRule.tickFrontFreezes(true, 82.0, 0.0), "exactly 82: fraction 0, no front");
+    void s25TickFrontOnsetsAt80_fullAtTheBarrensOnset82() {
+        // S25(C) HISTORY: S22 (TEST 113/114) made the tick front the barrens band itself (82 -> 84); the
+        // owner's TEST 117 call ("should at least start from eighty degrees") re-anchored it on a DEDICATED
+        // ramp -- ONSET 80 (the polar-country rung, = PolarHazardWindow.AMBIENT_ONSET_DEG) rising to FULL at
+        // the barrens ONSET (82, KEEP-SHARED: the front finishes fraying exactly where barrens/crevasse
+        // country begins, so that country keeps blanket coverage). Pin the anchors this build assumed.
+        assertEquals(80.0, PolarWaterFreezeRule.TICK_FRONT_ONSET_DEG, 1e-9,
+                "the S25 dedicated onset: the 80-deg polar-country rung");
+        assertEquals(80.0, PolarHazardWindow.AMBIENT_ONSET_DEG, 1e-9,
+                "the rung the onset re-joins (ambient snowfall onset -- one coherent line)");
+        assertEquals(82.0, PolarBarrensBand.ONSET_DEG, 1e-9, "barrens onset (default)");
+        assertEquals(PolarBarrensBand.ONSET_DEG, PolarWaterFreezeRule.TICK_FRONT_FULL_DEG, 1e-9,
+                "the tick-front FULL line is KEEP-SHARED with the barrens onset");
+        // At/below the onset: never (80 itself is fraction 0 -- bitwise-untouched equatorward).
+        assertFalse(PolarWaterFreezeRule.tickFrontFreezes(true, 80.0, 0.0), "exactly 80: fraction 0, no front");
         assertFalse(PolarWaterFreezeRule.tickFrontFreezes(true, 60.0, 0.0));
-        // Inside the fray strip the front follows the band fraction: at 83.0 the smoothstep is exactly 0.5,
-        // so a fray sample below 0.5 is barrens (front on) and one at/above 0.5 is not (front off).
-        assertTrue(PolarWaterFreezeRule.tickFrontFreezes(true, 83.0, 0.4), "83 deg, fray-winning column");
-        assertFalse(PolarWaterFreezeRule.tickFrontFreezes(true, 83.0, 0.6), "83 deg, fray-losing column");
-        // At/above FULL the front is unconditionally on -- INCLUDING the owner's exactly-85S pour and the
-        // whole old >= 85 zone (superset: no live column loses machinery). Any noise sample passes.
+        // Inside the 80-82 fray strip the front follows the ramp: at 81.0 the smoothstep is exactly 0.5,
+        // so a fray sample below 0.5 freezes (front on) and one at/above 0.5 does not (front off).
+        assertTrue(PolarWaterFreezeRule.tickFrontFreezes(true, 81.0, 0.4), "81 deg, fray-winning column");
+        assertFalse(PolarWaterFreezeRule.tickFrontFreezes(true, 81.0, 0.6), "81 deg, fray-losing column");
+        // At/above FULL (82) the front is unconditionally on -- the ENTIRE old S22 82->84 frayed band plus
+        // the deep cap (strict superset: no live column loses machinery). Any noise sample passes.
         for (double noise : new double[]{0.0, 0.5, 0.999999}) {
-            assertTrue(PolarWaterFreezeRule.tickFrontFreezes(true, 84.0, noise), "84: fraction 1.0");
+            assertTrue(PolarWaterFreezeRule.tickFrontFreezes(true, 82.0, noise),
+                    "82: fraction 1.0 (S22's frayed 82 is now always-on)");
+            assertTrue(PolarWaterFreezeRule.tickFrontFreezes(true, 83.0, noise),
+                    "83: an S22 fray-losing column now freezes -- the superset");
             assertTrue(PolarWaterFreezeRule.tickFrontFreezes(true, 85.0, noise), "85: the owner's pour");
             assertTrue(PolarWaterFreezeRule.tickFrontFreezes(true, 90.0, noise), "the pole");
         }
+        // The ramp function itself (the smoothstep idiom, pinned at the quarter points).
+        assertEquals(0.0, PolarWaterFreezeRule.tickFrontFraction01(80.0), 1e-9);
+        assertEquals(0.5, PolarWaterFreezeRule.tickFrontFraction01(81.0), 1e-9, "midpoint smoothstep = 0.5");
+        assertEquals(1.0, PolarWaterFreezeRule.tickFrontFraction01(82.0), 1e-9);
+        assertEquals(0.0, PolarWaterFreezeRule.tickFrontFraction01(Double.NaN), 1e-9, "NaN -> 0, never freeze");
         // Hemisphere symmetry + flag/NaN safety (family idioms).
-        assertTrue(PolarWaterFreezeRule.tickFrontFreezes(true, -84.5, 0.5), "southern hemisphere identical");
+        assertTrue(PolarWaterFreezeRule.tickFrontFreezes(true, -81.0, 0.4), "southern hemisphere identical");
         assertFalse(PolarWaterFreezeRule.tickFrontFreezes(false, 89.0, 0.5), "flag off: no tick front");
         assertFalse(PolarWaterFreezeRule.tickFrontFreezes(true, Double.NaN, 0.5), "NaN latitude: never");
         // NaN noise degrades to 0.5 -- deep-cap coverage never opens a hole on bad data.
         assertTrue(PolarWaterFreezeRule.tickFrontFreezes(true, 86.0, Double.NaN), "NaN noise at 86: still on");
-        assertFalse(PolarWaterFreezeRule.tickFrontFreezes(true, 83.0, Double.NaN), "NaN noise at 83 = 0.5: off");
+        assertFalse(PolarWaterFreezeRule.tickFrontFreezes(true, 81.0, Double.NaN), "NaN noise at 81 = 0.5: off");
     }
 
     @Test
@@ -787,8 +800,10 @@ class PolarWaterFreezeRuleTest {
     void s22TickFlowingEligibility_sacredExemptionsVerbatim() {
         // tickFreezesFlowing = the v6 WHERE for hunter/sweep/spread-converter. Ocean FIRST, then flag, then
         // the front, then the freeze floor -- the same order and the same exemptions as freezesLandWaterSolid.
-        assertTrue(PolarWaterFreezeRule.tickFreezesFlowing(true, false, 83.0, 0.4, true),
-                "83-deg fray-winning land column above the floor: the NEW 82-84 coverage");
+        assertTrue(PolarWaterFreezeRule.tickFreezesFlowing(true, false, 81.0, 0.4, true),
+                "81-deg fray-winning land column above the floor: the NEW S25 80-82 coverage");
+        assertTrue(PolarWaterFreezeRule.tickFreezesFlowing(true, false, 83.0, 0.6, true),
+                "an S22 fray-losing 82-84 column is now unconditionally covered (S25 superset)");
         assertTrue(PolarWaterFreezeRule.tickFreezesFlowing(true, false, 89.0, 0.5, true),
                 "deep cap unchanged");
         assertFalse(PolarWaterFreezeRule.tickFreezesFlowing(true, true, 89.0, 0.5, true),
@@ -797,8 +812,8 @@ class PolarWaterFreezeRuleTest {
                 "below the freeze floor: the B-9 reservoir stays liquid");
         assertFalse(PolarWaterFreezeRule.tickFreezesFlowing(false, false, 89.0, 0.5, true),
                 "barrens flag off: byte-identical");
-        assertFalse(PolarWaterFreezeRule.tickFreezesFlowing(true, false, 83.0, 0.6, true),
-                "fray-losing 82-84 column: no machinery (one decision with the barrens ground)");
+        assertFalse(PolarWaterFreezeRule.tickFreezesFlowing(true, false, 81.0, 0.6, true),
+                "fray-losing 80-82 column: no machinery (the front frays on the shared noise grain)");
         assertFalse(PolarWaterFreezeRule.tickFreezesFlowing(true, false, Double.NaN, 0.5, true), "NaN: never");
     }
 
@@ -836,30 +851,30 @@ class PolarWaterFreezeRuleTest {
         // HORIZONTAL spread beside/onto ice -> convert (the ratchet-breaker: the re-spread layer dies at the
         // moment of spread, before it ever exists to schedule ticks).
         assertTrue(PolarWaterFreezeRule.spreadConvertsToIce(eligible, false, false,
-                        PolarWaterFreezeRule.touchingIce(false, true, false, false, false)),
+                        PolarWaterFreezeRule.touchingIce(false, true, false, false, false), 4 /* far ring: claimable */),
                 "horizontal spread with a horizontal ice contact -> ice at the destination");
         assertTrue(PolarWaterFreezeRule.spreadConvertsToIce(eligible, false, true,
-                        PolarWaterFreezeRule.touchingIce(true, false, false, false, false)),
+                        PolarWaterFreezeRule.touchingIce(true, false, false, false, false), 4 /* far ring: claimable */),
                 "horizontal spread onto ice (below-contact) -> ice");
         // DOWN spread: FALLS RUN FREE -- converts ONLY when landing ON ice; an ice wall BESIDE the falling
         // stream never beheads it mid-air.
-        assertTrue(PolarWaterFreezeRule.spreadConvertsToIce(eligible, true, true, true),
+        assertTrue(PolarWaterFreezeRule.spreadConvertsToIce(eligible, true, true, true, 8 /* falling: claimable */),
                 "fall landing on the frozen pile -> locks (the zipper's contact, one tick early)");
         assertFalse(PolarWaterFreezeRule.spreadConvertsToIce(eligible, true, false,
-                        PolarWaterFreezeRule.touchingIce(false, true, false, false, false)),
+                        PolarWaterFreezeRule.touchingIce(false, true, false, false, false), 8 /* falling: claimable */),
                 "fall dropping PAST an ice wall (horizontal contact only) stays water -- falls run free");
         // No ice contact at all -> ordinary spread, water places as vanilla.
-        assertFalse(PolarWaterFreezeRule.spreadConvertsToIce(eligible, false, false, false),
+        assertFalse(PolarWaterFreezeRule.spreadConvertsToIce(eligible, false, false, false, 4 /* far ring: claimable */),
                 "not ice-adjacent: vanilla spread");
         // Ineligible destinations never convert, whatever the adjacency: the sacred exemptions ride inside
         // tickFreezesFlowing (ocean / below-floor / flag-off / off-front).
         boolean ocean = PolarWaterFreezeRule.tickFreezesFlowing(true, true, 89.0, 0.5, true);
         boolean deep = PolarWaterFreezeRule.tickFreezesFlowing(true, false, 89.0, 0.5, false);
         boolean flagOff = PolarWaterFreezeRule.tickFreezesFlowing(false, false, 89.0, 0.5, true);
-        boolean offFront = PolarWaterFreezeRule.tickFreezesFlowing(true, false, 81.0, 0.0, true);
+        boolean offFront = PolarWaterFreezeRule.tickFreezesFlowing(true, false, 80.0, 0.0, true); // S25: 80 = fraction 0
         for (boolean e : new boolean[]{ocean, deep, flagOff, offFront}) {
             assertFalse(e);
-            assertFalse(PolarWaterFreezeRule.spreadConvertsToIce(e, false, true, true),
+            assertFalse(PolarWaterFreezeRule.spreadConvertsToIce(e, false, true, true, 4 /* far ring: claimable */),
                     "ineligible destination (ocean/deep/flag-off/off-front): water spreads as vanilla");
         }
     }
@@ -894,5 +909,51 @@ class PolarWaterFreezeRuleTest {
         assertEquals(PolarWaterFreezeRule.landWaterFreezeFloorY(200, 100),
                 PolarWaterFreezeRule.tickLandWaterFreezeFloorY(200, 100),
                 "deep-cap regime identical: the reservoir keeps its liquid depth at tick time too");
+    }
+
+    // ---- S25 LEVEL GRACE (TEST 117 addendum: the pour "just becomes a pillar" -- it must spread first) ----
+
+    @Test
+    void s25LevelGrace_nearSourceRingsAreProtectedFromTheCertainClaims() {
+        // The grace predicate itself: amounts 6-7 (the two rings nearest the source -- flowing LEVEL falls
+        // from 7 beside the source outward, 26.2 javap: Flowing.getAmount = the LEVEL property) are
+        // protected; 1-5 (far rings) are claimable; 8 (the FALLING encoding, also sources -- which never
+        // reach the consumers) is deliberately claimable so the S21 zipper and the falls-land-on-ice lock
+        // survive the grace.
+        assertEquals(5, PolarWaterFreezeRule.FREEZE_LEVEL_GRACE_MAX_CLAIMABLE);
+        for (int amount = 1; amount <= 5; amount++) {
+            assertFalse(PolarWaterFreezeRule.levelGraceProtects(amount), "far ring " + amount + ": claimable");
+        }
+        assertTrue(PolarWaterFreezeRule.levelGraceProtects(6), "ring 6: protected during active flow");
+        assertTrue(PolarWaterFreezeRule.levelGraceProtects(7), "ring 7 (beside the source): protected");
+        assertFalse(PolarWaterFreezeRule.levelGraceProtects(8), "falling (8): claimable -- the zipper lives");
+
+        // HUNTER row: a landed, ice-touching, eligible block -- the exact instant-pillar shape -- is spared
+        // at amounts 6-7 and claimed at <= 5 and at 8 (the fall base / standing column).
+        assertFalse(PolarWaterFreezeRule.flowTickHunterFreezes(true, true, true, 7),
+                "first ring beside the source spreads instead of freezing (the owner's fix)");
+        assertFalse(PolarWaterFreezeRule.flowTickHunterFreezes(true, true, true, 6), "second ring too");
+        assertTrue(PolarWaterFreezeRule.flowTickHunterFreezes(true, true, true, 5),
+                "third ring out: the hunter bites again");
+        assertTrue(PolarWaterFreezeRule.flowTickHunterFreezes(true, true, true, 8),
+                "falling water on ice: the vertical zipper is untouched by the grace");
+
+        // SPREAD-CONVERTER row: an ice-adjacent horizontal destination placing a near-source ring places
+        // WATER (no convert); far rings still convert; DOWN spreads place falling (8) and keep the
+        // falls-land-on-ice lock.
+        assertFalse(PolarWaterFreezeRule.spreadConvertsToIce(true, false, false, true, 7),
+                "ring-7 destination beside ice: water places and keeps spreading");
+        assertFalse(PolarWaterFreezeRule.spreadConvertsToIce(true, false, true, true, 6),
+                "ring-6 destination onto ice: water places and keeps spreading");
+        assertTrue(PolarWaterFreezeRule.spreadConvertsToIce(true, false, false, true, 5),
+                "ring-5 destination beside ice: converts (the ratchet-breaker stands beyond the grace)");
+        assertTrue(PolarWaterFreezeRule.spreadConvertsToIce(true, true, true, true, 8),
+                "a fall landing ON the frozen pile still locks (falling = 8, claimable)");
+
+        // SWEEP row is deliberately grace-free: sweepFreezesSettled has no amount input -- once the pour is
+        // at rest the sweep claims near rings too (pour -> spread -> settle -> close inward -> source last,
+        // the owner's TEST 110 model).
+        assertTrue(PolarWaterFreezeRule.sweepFreezesSettled(true, true, true),
+                "the settled sweep closes the protected rings once the flow is at rest");
     }
 }

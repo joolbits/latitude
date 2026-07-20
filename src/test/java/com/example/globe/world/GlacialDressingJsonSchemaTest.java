@@ -230,8 +230,71 @@ class GlacialDressingJsonSchemaTest {
                         "placed feature " + featureId + " needs its configured_feature JSON");
             }
         }
-        assertEquals(7, globeFeatures, "the seven globe features (4 dressing + frost carpet + 2 ice blobs), "
-                + "no silent drops");
+        assertEquals(8, globeFeatures, "the eight globe features (4 dressing + frost carpet + 2 ice blobs "
+                + "+ S25 slush floe), no silent drops");
+    }
+
+    /** S25 SLUSH FLOES (owner TEST 117, 2026-07-20: "very small ice blocks clustered together in the water
+     *  to really show that it's cold"): a {@code simple_block} of plain {@code minecraft:ice} speckled onto
+     *  cave-pool SURFACES. {@code SimpleBlockFeature} places only into an EMPTY (air) cell (verified via
+     *  javap on the 26.2 merged-deobf jar: it gates on {@code WorldGenLevel.isEmptyBlock}), so the floe
+     *  cannot overwrite the pool water -- it rides the air cell directly above the surface, reached by an
+     *  environment-scan DOWN to the water then a +1 offset, gated to "air here, water directly below". That
+     *  keeps the pool fully liquid: the tick freeze hunter claims only LANDED water (fluid-below = not
+     *  landed, so a pool surface is never claimed) and the spread-converter only claims SPREADING water
+     *  (settled pool sources sit at equilibrium and never spread), so a floe cannot zip a pool shut.
+     *  Grammar verbatim-mirrored from vanilla 26.2: {@code simple_block} config from {@code bush}/
+     *  {@code dead_bush}; {@code all_of}+{@code offset} predicate from {@code bamboo_vegetation}; the
+     *  {@code matching_fluids} water form + {@code offset} from {@code disk_grass}. */
+    @Test
+    void slushFloesSpeckleWaterSurfacesWithoutFreezingThePool() {
+        JsonObject config = configured("glacial_slush_floe");
+        assertEquals("minecraft:simple_block", config.get("type").getAsString(),
+                "the floe is a single-block placement, not a patch (small chunks in the water)");
+        assertEquals("minecraft:ice", config.getAsJsonObject("config").getAsJsonObject("to_place")
+                        .getAsJsonObject("state").get("Name").getAsString(),
+                "plain ice reads as a floe -- NOT packed/blue ice (those are the glacier body strata)");
+
+        JsonObject placedJson = placed("glacial_slush_floe");
+        assertEquals("globe:glacial_slush_floe", placedJson.get("feature").getAsString());
+        List<JsonObject> chain = placementChain(placedJson);
+        assertCaveBandPlacement("glacial_slush_floe", chain);
+
+        // Sparse: the pool must stay swimmable/liquid, so the floe is count-based and low.
+        assertTrue(modifier(chain, "minecraft:count").get("count").getAsInt() <= 6,
+                "floes are SPARSE -- little ice chunks dotting the surface, never a lid over the pool");
+
+        // The mechanism: scan DOWN to the pool surface, step +1 into the air cell above it, then require
+        // "air here, water directly below" -- the only cell SimpleBlockFeature will accept (isEmptyBlock).
+        JsonObject scan = modifier(chain, "minecraft:environment_scan");
+        assertEquals("down", scan.get("direction_of_search").getAsString(), "scan DOWN to the pool surface");
+        assertEquals("minecraft:matching_fluids", scan.getAsJsonObject("target_condition").get("type").getAsString(),
+                "the scan lands on the water surface");
+        assertEquals("minecraft:water", scan.getAsJsonObject("target_condition").get("fluids").getAsString());
+        assertEquals(1, modifier(chain, "minecraft:random_offset").get("y_spread").getAsInt(),
+                "step +1 into the air cell above the water (SimpleBlockFeature places only into air)");
+        JsonObject predicate = modifier(chain, "minecraft:block_predicate_filter").getAsJsonObject("predicate");
+        assertEquals("minecraft:all_of", predicate.get("type").getAsString());
+        JsonArray preds = predicate.getAsJsonArray("predicates");
+        boolean airHere = false;
+        boolean waterBelow = false;
+        for (JsonElement pe : preds) {
+            JsonObject p = pe.getAsJsonObject();
+            if ("minecraft:matching_block_tag".equals(p.get("type").getAsString())
+                    && "minecraft:air".equals(p.get("tag").getAsString())) {
+                airHere = true;
+            }
+            if ("minecraft:matching_fluids".equals(p.get("type").getAsString())
+                    && "minecraft:water".equals(p.get("fluids").getAsString())) {
+                JsonArray offset = p.getAsJsonArray("offset");
+                assertEquals(0, offset.get(0).getAsInt());
+                assertEquals(-1, offset.get(1).getAsInt(), "water must be DIRECTLY BELOW the floe cell");
+                assertEquals(0, offset.get(2).getAsInt());
+                waterBelow = true;
+            }
+        }
+        assertTrue(airHere, "floe cell must be air (the only cell SimpleBlockFeature accepts)");
+        assertTrue(waterBelow, "floe cell must sit directly over water (a real pool surface)");
     }
 
     /** S24 GLACIAL ICE BLOBS: ore-type blobs of packed_ice (common, big) and blue_ice (rarer, small)

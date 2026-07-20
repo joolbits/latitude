@@ -1,7 +1,6 @@
 package com.example.globe.mixin;
 
 import com.example.globe.core.LatitudeV2Flags;
-import com.example.globe.core.PolarBarrensBand;
 import com.example.globe.core.PolarInstrument;
 import com.example.globe.core.PolarWaterFreezeRule;
 import com.example.globe.util.LatitudeMath;
@@ -121,19 +120,20 @@ public abstract class FlowingFluidWaterfallFreezeMixin {
         if (fluidState.getType() != Fluids.FLOWING_WATER) {
             return;
         }
-        // Cheap latitude gate from the block's Z: everything equatorward of the S22 tick-front onset (82, the
-        // Barrens band onset) is left entirely to vanilla, so only the polar band pays for the reads below.
-        // v6 (owner flight TEST 113): this gate was FREEZE_ALL-FRAY (84) and left the 82-84 Barrens/crevasse
-        // band with no flow machinery -- the owner's 84S pour froze nothing.
+        // Cheap latitude gate from the block's Z: everything equatorward of the S25 tick-front onset (80, the
+        // polar-country rung -- owner TEST 117: "should at least start from eighty degrees") is left entirely
+        // to vanilla, so only the polar band pays for the reads below. History: v6 (TEST 113) moved this gate
+        // FREEZE_ALL-FRAY (84) -> the barrens onset (82); S25 decouples it two degrees further to 80.
         double absLatDeg = LatitudeMath.absLatDegExact(level.getWorldBorder(), pos.getZ());
         if (Double.isNaN(absLatDeg) || absLatDeg < PolarWaterFreezeRule.TICK_FRONT_ONSET_DEG) {
             return;
         }
-        // S22 TICK FRONT: the SAME shared barrens band decision (ONSET 82 -> FULL 84 on the coherent barrens
-        // fray noise) the biome placement / glacier body / crevasse carvers use -- one decision, Art VI, so the
-        // flow-freeze edge matches the barrens ground exactly. At/above FULL_DEG the band fraction is 1.0 and
-        // any sample passes, so the noise is only paid inside the 82-84 fray strip.
-        double barrensFray = absLatDeg < PolarBarrensBand.FULL_DEG
+        // S25 TICK FRONT: the dedicated ONSET 80 -> FULL 82 ramp (full = the barrens onset, KEEP-SHARED) on
+        // the SAME coherent barrens fray noise field the biome placement / glacier body / crevasse carvers
+        // use -- one noise field, Art VI, so the flow-freeze edge frays on the same organic grain as the
+        // country it precedes. At/above TICK_FRONT_FULL_DEG the ramp is 1.0 and any sample passes, so the
+        // noise is only paid inside the 80-82 fray strip.
+        double barrensFray = absLatDeg < PolarWaterFreezeRule.TICK_FRONT_FULL_DEG
                 ? LatitudeBiomes.polarBarrensFrayNoise(pos.getX(), pos.getZ())
                 : 0.0;
         // Freeze floor (the surface-40 idiom, reused): above it the moving water freezes; a deep spring below it
@@ -179,8 +179,12 @@ public abstract class FlowingFluidWaterfallFreezeMixin {
                 level.getBlockState(pos.east()).is(BlockTags.ICE),
                 level.getBlockState(pos.south()).is(BlockTags.ICE),
                 level.getBlockState(pos.west()).is(BlockTags.ICE));
-        if (!PolarWaterFreezeRule.flowTickHunterFreezes(true, true, touchingIce)) {
-            return; // landed but not touching ice -> keep spreading; the settled sweep will claim it once at rest
+        // S25 LEVEL GRACE (owner TEST 117 addendum: the pour "just becomes a pillar"): the near-source rings
+        // (getAmount 6-7; javap: Flowing.getAmount = the LEVEL property, falling/source = 8) are protected
+        // from the certain hunter claim so a fresh pour spreads before the ice hunts it; the settled sweep
+        // still closes them once the pour is at rest. Falling water (8) stays claimable -- the zipper lives.
+        if (!PolarWaterFreezeRule.flowTickHunterFreezes(true, true, touchingIce, fluidState.getAmount())) {
+            return; // not touching ice, or a grace-protected near-source ring -> keep spreading; the sweep closes it
         }
         // Landed AND touching ice -> lock it (certain, no dice). Replace this flowing block with a plain-ice
         // cascade and cancel vanilla's spread. The ice is the support the water above now rests on -- AND makes it

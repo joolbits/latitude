@@ -39,7 +39,8 @@
     "MobSolarSunBurnMixin",
     "terrain.RandomStateAccessor",
     "terrain.RandomStateRouterTerrainMixin",
-    "FlowingFluidSpreadConvertMixin"
+    "FlowingFluidSpreadConvertMixin",
+    "PolarBearHungryAggroMixin"
   ],
   "client": [
     "client.CreateWorldScreenMixin",
@@ -57,6 +58,7 @@
     "client.FogRendererPassageSetupMixin",
     "client.EntityRenderDispatcherPolarCullMixin",
     "client.SkyRendererSolarTiltMixin",
+    "client.MusicFadeVolumeMixin",
     "client.compat.sodium.RenderSectionManagerVisibilityMixin"
   ],
   "injectors": {

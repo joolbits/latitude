@@ -1008,6 +1008,19 @@ public final class LatitudeBiomes {
      * lies below {@link #GLACIAL_CAVES_CEILING_Y}. Split out (rather than inlined in the mixin) so the
      * unit suite can PIN the surface-quart identity law: any cell at/above the ceiling can NEVER swap,
      * whatever the flag/band/noise say, so the surface pick order is untouched by construction.
+     *
+     * <p><b>S25 (owner TEST 117, 2026-07-20: caves "should extend down further into the sub y zero zone...
+     * it still seems like it ends pretty abruptly"):</b> this prefilter has <b>NO lower bound</b> -- the
+     * swap already reaches the WORLD BOTTOM ({@code isBelowGlacialCaveCeiling(-64) == true}), so under a
+     * true barrens-band land column EVERY quart below Y48 (deepslate zone included) resolves to
+     * {@code globe:glacial_caves}, with only the mixin's {@code deep_dark} quart exemption carved out (and
+     * {@code dripstone_caves}/{@code lush_caves} quarts ARE swapped, not merely stone-biome quarts -- the
+     * swap runs BEFORE the lush veto and its sole exemption is {@code !isDeepDark(current)}). The owner's
+     * "abrupt end" is therefore NOT a swap floor (the biome identity is full-depth already) but the ice
+     * DRESSING thinning out: the permafrost stratum ({@code PolarBarrensGlacierMixin}, glacier scope --
+     * not this pass) fades to 0 within {@code PolarBarrensBand.PERMAFROST_BAND_BLOCKS} (24) of the sole,
+     * below which only the ice blobs seam the walls. S25 answers data-side by carrying the blob density
+     * to full depth (see {@code placed_feature/glacial_ice_blob.json}); the swap itself needs no change.
      */
     public static boolean isBelowGlacialCaveCeiling(int blockY) {
         return blockY < GLACIAL_CAVES_CEILING_Y;

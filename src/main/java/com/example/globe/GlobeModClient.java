@@ -322,6 +322,11 @@ public class GlobeModClient implements ClientModInitializer {
             // Particles/enclosure/reduce-snow scaling as the ambient snow; a tiny CLUSTER budget. Pure gate/budget
             // law in core.SnowSparkleLaw; also gated OFF the moment the blizzard builds (calm-weather jewelry).
             spawnSnowSparkle(client, absLatDeg, snowTier, exposure);
+            // S25 SLUSH v1 (client half): frost motes over glacial-caves water. Independent of the polar-snow
+            // latitude band -- gates on the glacialCavesV1 flag + the globe:glacial_caves biome + a water
+            // surface (FrostMoteLaw), so it is a cheap biome-check no-op everywhere else. Shares the spawn-tick
+            // cadence + the vanilla Particles tier; the ONE Latitude particle that spawns underground BY DESIGN.
+            spawnFrostMotes(client, snowTier);
         }
 
         // TEST 89: the EW border DUST/sand storm particles are REMOVED entirely (Peetsa: "remove the dust
@@ -342,9 +347,10 @@ public class GlobeModClient implements ClientModInitializer {
     // heightmap read per candidate flake (O(1); the loaded chunk keeps the heightmap live -- no world raycast).
     // Applied to the ambient MAIN + SECOND + DEEP passes. Outdoors the heightmap top ~ the ground, so the
     // open-air storm is unchanged apart from the sub-terrain low tail (flakes that would spawn INSIDE the
-    // ground, which vanilla would not render anyway -- correctly dropped). The SPARKLE pass is exempt by
-    // construction (it spawns 0.05-0.3 blocks ABOVE the sampled surface heightmap top -- the v3 near-ground
-    // numbers -- so it can never sit under a roof; verified, no gate needed there).
+    // ground, which vanilla would not render anyway -- correctly dropped). S25 (owner TEST 117 video): the
+    // SPARKLE pass is NO LONGER exempt -- the "spawns above the surface top so it can never be roofed"
+    // assumption failed live (glints inside 83N caves / on ice under water, via 26.2 fluid-counting
+    // heightmaps + glacial terrain), so spawnSnowSparkle now applies this SAME flakeSkyOpen gate per glint.
     private static boolean flakeSkyOpen(net.minecraft.world.level.Level level, double x, double y, double z) {
         int top = level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING,
                 (int) Math.floor(x), (int) Math.floor(z));
@@ -651,6 +657,18 @@ public class GlobeModClient implements ClientModInitializer {
             double gz = bz + random.nextDouble();
             // S17(c)(ii): hug the snow (0.05-0.3 above the sampled surface) so it reads as the snow glinting.
             double gy = surfaceY + SPARKLE_Y_MIN + random.nextDouble() * (SPARKLE_Y_MAX - SPARKLE_Y_MIN);
+            // S25 SKY GATE (owner TEST 117 VIDEO: white glints falling INSIDE caves at 83N, "no sky above").
+            // The sparkle was once "sky-open by construction" -- it spawns just above the MOTION_BLOCKING_NO_
+            // LEAVES surface top, so nothing solid could be above it. But 26.2's fluid-counting heightmaps plus
+            // glacial-cave / ice-under-water terrain let it sample a snow/ice block that sits UNDER a fluid (or
+            // solid) column, so a roofed block glinted. Reuse the EXACT per-position cover gate the ambient
+            // snow uses (flakeSkyOpen -> the MOTION_BLOCKING heightmap top): a glint spawns ONLY where its own
+            // column is sky-open at the spawn height. Byte-identical on an open snowfield (gy sits at/above the
+            // top); rejects any roofed / under-water snow-ice. (Frost motes are the ONE intentional underground
+            // particle -- water-surface-gated -- and are deliberately exempt from this gate; see FrostMoteLaw.)
+            if (!flakeSkyOpen(client.level, gx, gy, gz)) {
+                continue;
+            }
             // Zero incoming velocity -- the glint twinkles in place (the spark's own flicker + short life carry it).
             double vx = (random.nextDouble() - 0.5) * 2.0 * SPARKLE_DRIFT_LATERAL;
             double vy = SPARKLE_DRIFT_UP;
@@ -665,6 +683,78 @@ public class GlobeModClient implements ClientModInitializer {
                 double oz = (random.nextDouble() - 0.5) * SPARKLE_TWIN_OFFSET;
                 client.particleEngine.createParticle(SPARKLE_PARTICLE, gx + ox, gy + oy, gz + oz, vx, vy, vz);
             }
+        }
+    }
+
+    // ---- S25 SLUSH v1 (client half): FROST MOTES over glacial-caves water (owner TEST 117 flight). ----
+    // A subtle, SPARSE per-spawn-tick cloud of near-white SNOWFLAKE motes drifting just above globe:glacial_
+    // caves cave-pool surfaces -- "barely liquid" slush atmosphere (owner: "very small ice blocks clustered
+    // together in the water to really show that it's cold"). The ONE intentional underground Latitude particle:
+    // gated on the glacialCavesV1 flag + the globe:glacial_caves biome + a WATER-surface predicate (never the
+    // ice floes Crew 1 speckles on, never the cave air), so it never reads as the "snow indoors" the sky gates
+    // on the snow/sparkle paths exist to prevent. Pure budget/gate law in core.FrostMoteLaw; the client owns
+    // only the MC biome/water sampling + the spawn. SNOWFLAKE (not the glint's FIREWORK): near-white non-
+    // emissive reads as delicate frost on DARK cave water -- the mirror of the glint's white-on-white problem.
+    private static final int FROST_MOTE_PEAK_BUDGET = com.example.globe.core.FrostMoteLaw.DEFAULT_PEAK_BUDGET;
+    private static final net.minecraft.core.particles.SimpleParticleType FROST_MOTE_PARTICLE =
+            ParticleTypes.SNOWFLAKE;
+
+    private static void spawnFrostMotes(Minecraft client, com.example.globe.core.ParticleDensity.Tier tier) {
+        boolean flagOn = com.example.globe.core.FrostMoteLaw.glacialCavesV1Enabled();
+        if (!flagOn) {
+            return; // flag-off there are no caves, so no motes (fast-out before any biome/registry read).
+        }
+        // Resolve the observer's biome id once (Holder -> ResourceKey -> Identifier string); a foreign/absent
+        // biome zeroes the budget via the pure gate -- the fast-out for every non-cave tick.
+        BlockPos playerPos = client.player.blockPosition();
+        String biomeId = client.level.getBiome(playerPos).unwrapKey()
+                .map(k -> k.identifier().toString()).orElse(null);
+        boolean inCaves = com.example.globe.core.FrostMoteLaw.isGlacialCavesBiome(biomeId);
+        int budget = com.example.globe.core.FrostMoteLaw.moteBudget(flagOn, inCaves, FROST_MOTE_PEAK_BUDGET);
+        if (budget <= 0) {
+            return;
+        }
+        // Perf scale by the vanilla Particles tier ONLY -- NOT the enclosure/exposure estimate (motes are
+        // cave-interior BY DESIGN; exposure would zero them in a sealed cave), and not the reduce-snow comfort
+        // option (this is ambient decoration, not the snow-comfort path). isPaused already guards the caller.
+        int count = com.example.globe.core.ParticleDensity.scale(tier, budget);
+        if (count <= 0) {
+            return;
+        }
+        RandomSource random = client.player.getRandom();
+        double px = client.player.getX();
+        double py = client.player.getY();
+        double pz = client.player.getZ();
+        double radius = com.example.globe.core.FrostMoteLaw.SAMPLE_RADIUS;
+        int yBelow = com.example.globe.core.FrostMoteLaw.SAMPLE_Y_BELOW;
+        int ySpan = yBelow + com.example.globe.core.FrostMoteLaw.SAMPLE_Y_ABOVE + 1;
+        int feetY = (int) Math.floor(py);
+        for (int i = 0; i < count; i++) {
+            int bx = (int) Math.floor(px + (random.nextDouble() - 0.5) * radius * 2.0);
+            int bz = (int) Math.floor(pz + (random.nextDouble() - 0.5) * radius * 2.0);
+            int by = feetY - yBelow + random.nextInt(ySpan);
+            // A water SURFACE cell: a water-family block (pure table) with AIR directly above -- the top of a
+            // cave pool. Rejects submerged mid-column water and the ice floes (which are ICE, not in the table).
+            BlockPos here = new BlockPos(bx, by, bz);
+            BlockState hereState = client.level.getBlockState(here);
+            String blockId = BuiltInRegistries.BLOCK.getKey(hereState.getBlock()).toString();
+            if (!com.example.globe.core.FrostMoteLaw.isWaterMoteBlock(blockId)) {
+                continue;
+            }
+            if (!client.level.getBlockState(here.above()).isAir()) {
+                continue;
+            }
+            double mx = bx + random.nextDouble();
+            double mz = bz + random.nextDouble();
+            // Hug the pool surface (the water block's top face is at by+1) so the mote drifts ON the water.
+            double my = by + 1 + com.example.globe.core.FrostMoteLaw.MOTE_Y_MIN
+                    + random.nextDouble() * (com.example.globe.core.FrostMoteLaw.MOTE_Y_MAX
+                            - com.example.globe.core.FrostMoteLaw.MOTE_Y_MIN);
+            double drift = com.example.globe.core.FrostMoteLaw.MOTE_DRIFT_LATERAL;
+            double vx = (random.nextDouble() - 0.5) * 2.0 * drift;
+            double vz = (random.nextDouble() - 0.5) * 2.0 * drift;
+            // No upward term -- the SNOWFLAKE's own faint gravity settles it gently onto the water.
+            client.particleEngine.createParticle(FROST_MOTE_PARTICLE, mx, my, mz, vx, 0.0, vz);
         }
     }
 

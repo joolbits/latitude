@@ -15,7 +15,8 @@
       "com.example.globe.GlobeMod"
     ],
     "client": [
-      "com.example.globe.GlobeModClient"
+      "com.example.globe.GlobeModClient",
+      "com.example.globe.client.PolarMusicClient"
     ]
   },
   "mixins": [

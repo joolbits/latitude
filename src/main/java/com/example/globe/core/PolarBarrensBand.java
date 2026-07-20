@@ -195,16 +195,19 @@ public final class PolarBarrensBand {
     // ore features (which run later, at the features stage, and target base stone) cannot home inside the ice.
     // The band leaves native stone for them THREE ways: (a) ~40% of columns get ZERO permafrost ice at the
     // sole (their noise sample sits at/above the top density), (b) every ice column has native stone below its
-    // reach, and (c) the whole ore Y-range below the ~14-block band is untouched -- so ores still generate
+    // reach, and (c) the whole ore Y-range below the ~24-block band is untouched -- so ores still generate
     // everywhere the glacier does, just not inside the ice, which is realistic (glaciers have no ore).
 
     /**
      * Thickness (blocks) of the permafrost transition band under the glacier sole within which stone-family
-     * blocks may be replaced by packed-ice veining. 14 sits in the design's 10-16 window: a real
-     * ice-cemented stratum, bounded well above bedrock so the living underground (ores/lakes/geodes) keeps
-     * the whole column below it.
+     * blocks may be replaced by packed-ice veining. STRETCHED 14 -> 24 in S25b (Peetsa 2026-07-20, TEST 117:
+     * caves "still seem like they end pretty abruptly"; the S25 crew-1 finding was that the felt "ice ends"
+     * is this fade dying just 14 below the sole). 24 makes the descent transition over ~24 blocks -- a real
+     * ice-cemented stratum, still bounded well above bedrock so the living underground (ores/lakes/geodes)
+     * keeps the whole column below it. Only the band LENGTH changes: {@link #PERMAFROST_TOP_DENSITY} (0.60)
+     * and the inverted-noise thick-glacier correlation are untouched.
      */
-    public static final int PERMAFROST_BAND_BLOCKS = 14;
+    public static final int PERMAFROST_BAND_BLOCKS = 24;
 
     /**
      * Areal packed-ice fraction AT the sole (permafrost band depth 0): the share of barrens columns whose

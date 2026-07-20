@@ -1,0 +1,11 @@
+{
+  "feature": "globe:powder_crevasse_roof",
+  "placement": [
+    {
+      "type": "minecraft:in_square"
+    },
+    {
+      "type": "minecraft:biome"
+    }
+  ]
+}

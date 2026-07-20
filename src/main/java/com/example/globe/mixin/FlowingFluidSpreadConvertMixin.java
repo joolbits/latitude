@@ -1,7 +1,6 @@
 package com.example.globe.mixin;
 
 import com.example.globe.core.LatitudeV2Flags;
-import com.example.globe.core.PolarBarrensBand;
 import com.example.globe.core.PolarInstrument;
 import com.example.globe.core.PolarWaterFreezeRule;
 import com.example.globe.util.LatitudeMath;
@@ -124,14 +123,15 @@ public abstract class FlowingFluidSpreadConvertMixin {
         if (!destState.isAir() && destState.getFluidState().isEmpty()) {
             return;
         }
-        // Cheap latitude gate at the DESTINATION's Z, then the S22 TICK FRONT -- the SAME shared barrens band
-        // decision (ONSET 82 -> FULL 84 on the coherent barrens fray) as the hunter/sweep/biome/glacier/
-        // carvers; the fray sample is skipped at/above FULL_DEG (fraction 1.0, any sample passes).
+        // Cheap latitude gate at the DESTINATION's Z, then the S25 TICK FRONT -- the dedicated ONSET 80 ->
+        // FULL 82 ramp (full = the barrens onset, KEEP-SHARED) on the SAME coherent barrens fray field as the
+        // hunter/sweep/biome/glacier/carvers; the fray sample is skipped at/above TICK_FRONT_FULL_DEG
+        // (ramp 1.0, any sample passes).
         double absLatDeg = LatitudeMath.absLatDegExact(server.getWorldBorder(), pos.getZ());
         if (Double.isNaN(absLatDeg) || absLatDeg < PolarWaterFreezeRule.TICK_FRONT_ONSET_DEG) {
             return;
         }
-        double barrensFray = absLatDeg < PolarBarrensBand.FULL_DEG
+        double barrensFray = absLatDeg < PolarWaterFreezeRule.TICK_FRONT_FULL_DEG
                 ? LatitudeBiomes.polarBarrensFrayNoise(pos.getX(), pos.getZ())
                 : 0.0;
         // Ice-adjacency FIRST among the world reads: most in-front spreads are nowhere near ice, and the
@@ -161,8 +161,13 @@ public abstract class FlowingFluidSpreadConvertMixin {
         boolean isOcean = server.getBiome(pos).is(BiomeTags.IS_OCEAN);
         boolean eligible = PolarWaterFreezeRule.tickFreezesFlowing(
                 true, isOcean, absLatDeg, barrensFray, aboveFreezeFloor);
-        if (!PolarWaterFreezeRule.spreadConvertsToIce(eligible, spreadIsDown, belowIsIce, touchingIce)) {
-            return; // ocean / below-floor / mid-air fall past an ice wall: water spreads exactly as vanilla
+        // S25 LEVEL GRACE: the to-be-placed state's own amount is the distance encoding (7 beside the source,
+        // 6 next; DOWN spreads place falling water = 8, claimable). Near-source destinations place as WATER
+        // and keep spreading -- the owner's "doesn't even get a chance to spread" fix; the settled sweep
+        // closes them at rest.
+        if (!PolarWaterFreezeRule.spreadConvertsToIce(eligible, spreadIsDown, belowIsIce, touchingIce,
+                fluidState.getAmount())) {
+            return; // ocean / below-floor / mid-air fall / grace-protected ring: water spreads exactly as vanilla
         }
         // CONVERT: plain ice at the destination instead of water, vanilla placement + its tick scheduling
         // cancelled. The freeze advances one cell; the path terminates; the ratchet is dead.

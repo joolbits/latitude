@@ -12,6 +12,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -27,8 +28,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * <ul>
  *   <li><b>Underground stays alive</b> (reskin-plus, never a strip): the lake/geode/monster-room/ore/
  *       spring steps are EXACTLY polar_barrens' (which are exactly snowy_plains' underground subset).</li>
- *   <li><b>TEST 103 spawn law</b>: caves keep the NORMAL monster set -- strays-only is a SURFACE rule;
- *       stray is merely ADDED at moderate weight for flavor.</li>
+ *   <li><b>S25b frozen-dead roster</b> (owner TEST 117 override, 2026-07-20: "Monsters inside glacial
+ *       caves should be strays"): the underground monster list is strays + a few skeletons ONLY -- nothing
+ *       warm-blooded (the frozen-dead fiction + the doomed-expedition register). This SUPERSEDES the earlier
+ *       TEST 103 "caves keep the normal set" reading for THIS biome; the surface strays-only law
+ *       (polar_barrens, TEST 103/104) is a separate, untouched rule.</li>
  *   <li><b>Semi-ice lakes WITH FISH</b> (owner-locked idea): salmon + cod water creatures.</li>
  * </ul>
  */
@@ -73,13 +77,19 @@ class GlacialCavesBiomeJsonSchemaTest {
         JsonObject caves = glacialCaves();
         JsonObject barrens = polarBarrens();
         // Steps by 26.2 index: 1 lakes, 2 local_modifications (geode), 3 underground_structures
-        // (monster rooms), 8 fluid_springs, 10 top_layer_modification. These carry the "underground stays
-        // alive" law and must match the barrens (itself pinned as snowy_plains' underground subset)
-        // entry-for-entry, in order.
-        for (int step : new int[]{1, 2, 3, 8, 10}) {
+        // (monster rooms), 8 fluid_springs. These carry the "underground stays alive" law and must match the
+        // barrens (itself pinned as snowy_plains' underground subset) entry-for-entry, in order.
+        for (int step : new int[]{1, 2, 3, 8}) {
             assertEquals(featureStep(barrens, step), featureStep(caves, step),
                     "underground step " + step + " must be exactly the barrens/snowy_plains subset");
         }
+        // Step 10 (top_layer_modification) DIVERGES since S25b: the barrens surface biome appended the
+        // barrens-only powder-roof crevasse trap AFTER freeze_top_layer; the underground caves keep only the
+        // bare freeze pass. The shared "underground stays alive" law is unaffected (it lives in steps 1-8).
+        assertEquals(List.of("minecraft:freeze_top_layer"), featureStep(caves, 10),
+                "glacial_caves top-layer step stays the bare freeze pass (the surface trap is barrens-only)");
+        assertEquals("minecraft:freeze_top_layer", featureStep(barrens, 10).get(0),
+                "barrens top-layer step still leads with the freeze pass, then the surface trap");
         // Step 6 (underground_ores): S24 APPENDS the two glacial ice BLOBS after the barrens ore run so the
         // deep caverns read glacial in every wall. The "underground stays alive" law still binds: the barrens
         // ore run must be present, IN ORDER, as the exact PREFIX (no ore dropped or reordered) -- and because
@@ -100,22 +110,22 @@ class GlacialCavesBiomeJsonSchemaTest {
     void dressingStepsCarryTheGlacialFeatures() {
         JsonObject caves = glacialCaves();
         assertEquals(List.of("globe:hanging_icicles", "globe:glacial_snow_drift", "globe:glacial_powder_pocket",
-                        "globe:glacial_frost_carpet"),
+                        "globe:glacial_frost_carpet", "globe:glacial_slush_floe"),
                 featureStep(caves, 7),
                 "underground_decoration (step 7) = the glacial dressing features, in authored order "
-                        + "(S24 appended the frost-floor carpet)");
+                        + "(S24 appended the frost-floor carpet; S25 appended the slush floe)");
         assertEquals(List.of("globe:glacial_glow_lichen"), featureStep(caves, 9),
                 "vegetal step replaces vanilla glow_lichen (count 104-157) with the sparse glacial one "
                         + "-- punctuation, not illumination");
     }
 
     @Test
-    void monsterSetIsTheVanillaCaveSetPlusStray() {
+    void monsterRosterIsTheFrozenDeadStraysAndSkeletonsOnly() {
         JsonObject caves = glacialCaves();
         JsonArray monsters = caves.getAsJsonObject("spawners").getAsJsonArray("monster");
         List<String> types = new ArrayList<>();
         int strayWeight = -1;
-        int maxOtherWeight = 0;
+        int skeletonWeight = -1;
         for (var e : monsters) {
             JsonObject entry = e.getAsJsonObject();
             String type = entry.get("type").getAsString();
@@ -123,19 +133,25 @@ class GlacialCavesBiomeJsonSchemaTest {
             int weight = entry.get("weight").getAsInt();
             if ("minecraft:stray".equals(type)) {
                 strayWeight = weight;
-            } else {
-                maxOtherWeight = Math.max(maxOtherWeight, weight);
+            }
+            if ("minecraft:skeleton".equals(type)) {
+                skeletonWeight = weight;
             }
         }
-        // TEST 103 owner law: caves are OK for normal monsters -- strays-only is a SURFACE rule.
-        for (String required : new String[]{"minecraft:spider", "minecraft:zombie", "minecraft:skeleton",
+        // S25b owner override (TEST 117): "Monsters inside glacial caves should be strays." The frozen-dead
+        // roster is strays + a few skeletons ONLY -- nothing warm-blooded underground.
+        assertEquals(List.of("minecraft:stray", "minecraft:skeleton"), types,
+                "the glacial-caves monster list is exactly [stray, skeleton], in that order");
+        assertEquals(85, strayWeight, "strays dominate the frozen-dead roster (weight 85)");
+        assertEquals(15, skeletonWeight, "a few skeletons join at low weight (15)");
+        assertTrue(strayWeight > skeletonWeight, "strays are the dominant undead in the ice");
+        // Nothing warm-blooded (or otherwise off-fiction) may appear underground.
+        for (String banned : new String[]{"minecraft:zombie", "minecraft:zombie_villager", "minecraft:spider",
                 "minecraft:creeper", "minecraft:slime", "minecraft:enderman", "minecraft:witch",
                 "minecraft:drowned"}) {
-            assertTrue(types.contains(required), "vanilla cave monster set must keep " + required);
+            assertFalse(types.contains(banned),
+                    "the frozen-dead roster excludes warm-blooded/off-fiction mob " + banned);
         }
-        assertTrue(types.contains("minecraft:stray"), "stray joins for polar flavor");
-        assertTrue(strayWeight > 0 && strayWeight < maxOtherWeight,
-                "stray is MODERATE flavor weight, not dominant (owner law: never strays-only underground)");
     }
 
     @Test
@@ -158,6 +174,56 @@ class GlacialCavesBiomeJsonSchemaTest {
         JsonArray underground = caves.getAsJsonObject("spawners").getAsJsonArray("underground_water_creature");
         assertTrue(underground.toString().contains("minecraft:glow_squid"),
                 "glow squid stays -- the vanilla cave water baseline");
+    }
+
+    private static int creatureWeight(JsonObject biome, String type) {
+        for (var e : biome.getAsJsonObject("spawners").getAsJsonArray("creature")) {
+            JsonObject entry = e.getAsJsonObject();
+            if (type.equals(entry.get("type").getAsString())) {
+                return entry.get("weight").getAsInt();
+            }
+        }
+        return -1;
+    }
+
+    /**
+     * S25 POLAR LIFE &amp; PERIL fauna (owner TEST 117, 2026-07-20: "I don't see any polar bears or Arctic
+     * foxes in polar storm country"). Polar bears LURK at low weight (vanilla frozen_ocean uses weight 1);
+     * foxes join at a modest weight and hunt the barrens' own rabbits (vanilla behavior, no code). The
+     * WHITE/snow fox variant is biome-tag-driven in 26.2 -- {@code Fox.Variant.byBiome} returns SNOW iff the
+     * biome is in {@code #minecraft:spawns_snow_foxes} (verified via javap on the merged-deobf jar:
+     * {@code Holder.is(BiomeTags.SPAWNS_SNOW_FOXES)}) -- so both globe biomes must join that tag (the same
+     * merge pattern as the repo's existing {@code spawns_white_rabbits.json}) or the foxes render red.
+     */
+    @Test
+    void polarFaunaLurkAndTheSnowFoxVariantTagIsWired() {
+        JsonObject caves = glacialCaves();
+        JsonObject barrens = polarBarrens();
+
+        // Both biomes carry the lurking bear + the fox; the bear stays a LOW-weight lurker, never a herd.
+        for (JsonObject biome : new JsonObject[]{caves, barrens}) {
+            int bear = creatureWeight(biome, "minecraft:polar_bear");
+            int fox = creatureWeight(biome, "minecraft:fox");
+            assertTrue(bear > 0, "polar bear must lurk in the polar fauna");
+            assertTrue(fox > 0, "arctic fox must join the polar fauna");
+            assertTrue(bear <= 2, "the bear is a LOW-weight lurking risk, not a herd (owner law)");
+            assertTrue(fox > bear, "foxes are a more common sight than the lurking bear");
+        }
+        // The barrens keeps its rabbits -- the fox's native prey (a real predator-prey loop, no behavior code).
+        assertTrue(creatureWeight(barrens, "minecraft:rabbit") > 0,
+                "the barrens rabbits stay -- the arctic fox's own prey");
+
+        // The snow-fox variant tag: BOTH globe biomes must be in #minecraft:spawns_snow_foxes or foxes render
+        // red (Fox.Variant.byBiome reads exactly this tag). replace:false so we MERGE with vanilla's snowy list.
+        JsonObject tag = load("/data/minecraft/tags/worldgen/biome/spawns_snow_foxes.json");
+        assertFalse(tag.has("replace") && tag.get("replace").getAsBoolean(),
+                "must MERGE with vanilla's snowy biomes, never replace them");
+        List<String> values = new ArrayList<>();
+        tag.getAsJsonArray("values").forEach(v -> values.add(v.getAsString()));
+        assertTrue(values.contains("globe:polar_barrens"),
+                "polar_barrens must join #spawns_snow_foxes so its foxes are the white variant");
+        assertTrue(values.contains("globe:glacial_caves"),
+                "glacial_caves must join #spawns_snow_foxes so its foxes are the white variant");
     }
 
     @Test

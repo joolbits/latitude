@@ -1,7 +1,6 @@
 package com.example.globe.mixin;
 
 import com.example.globe.core.LatitudeV2Flags;
-import com.example.globe.core.PolarBarrensBand;
 import com.example.globe.core.PolarWaterFreezeRule;
 import com.example.globe.util.LatitudeMath;
 import com.example.globe.world.LatitudeBiomes;
@@ -95,22 +94,23 @@ public abstract class BiomePolarWaterFreezeMixin {
                 && LatitudeV2Flags.POLAR_BARRENS_ENABLED
                 && absLatDeg >= PolarWaterFreezeRule.TICK_FRONT_ONSET_DEG
                 && !level.getBiome(pos).is(BiomeTags.IS_OCEAN)) {
-            // S22 WATER v6 (a) -- the WIDENED TICK FRONT, TICK-TIME + LAND ONLY (owner flight TEST 113,
-            // 2026-07-19: an 84S pour froze NOTHING -- the 82-84 Barrens/crevasse band had no machinery).
-            // On the live server, a NON-OCEAN column's freeze front is the SAME shared barrens band decision
-            // (ONSET 82 -> FULL 84 on the coherent barrens fray noise -- one decision with the biome placement,
-            // glacier body, and B-9 crevasse carvers; Art VI) instead of the 85 law. This is a strict SUPERSET
-            // of the 85-frayed front for land columns (at/above 84 the band fraction is 1.0, so everything the
-            // old front froze still freezes), so no live column loses its ice.
+            // S22 WATER v6 (a) -> S25(C) -- the WIDENED TICK FRONT, TICK-TIME + LAND ONLY (owner flight
+            // TEST 113, 2026-07-19: an 84S pour froze NOTHING; owner TEST 117, 2026-07-20: "should at least
+            // start from eighty degrees" -- the architect call is EXACTLY 80, the polar-country rung).
+            // On the live server, a NON-OCEAN column's freeze front is the dedicated S25 ramp
+            // (ONSET 80 -> FULL 82 = the barrens onset, KEEP-SHARED; frayed on the SAME coherent barrens fray
+            // noise field the biome placement, glacier body, and B-9 crevasse carvers consume; Art VI) instead
+            // of the 85 law. Strict SUPERSET of the S22 front (at/above 82 the ramp is 1.0, so everything the
+            // old 82->84 band front froze still freezes), so no live column loses its ice.
             //   * ServerLevel gate (the S21-sweep precedent, see globe$sourceFreezePostponed below): WORLDGEN
             //     paths (LakeFeature/SnowAndFreezeFeature pass a WorldGenLevel, never a ServerLevel) fall to
             //     the else-branches and still see the UNMODIFIED 85 law -- gen output byte-identical.
             //   * OCEAN columns keep the 85 law even at tick time: the sea-ice line at 85 is the APPROVED
-            //     worldgen seam, and letting the live tick creep pack ice to 82 would visibly split the frozen
-            //     sea from what gen produced. Land water is the TEST-113 complaint; the sea already works.
-            //   * The fray sample is skipped at/above FULL_DEG (84) where the band fraction is 1.0 and any
-            //     sample passes -- only the 82-84 fray strip pays for noise.
-            double barrensFray = absLatDeg < PolarBarrensBand.FULL_DEG
+            //     worldgen seam, and letting the live tick creep pack ice to 80 would visibly split the frozen
+            //     sea from what gen produced. Land water is the TEST-113/117 complaint; the sea already works.
+            //   * The fray sample is skipped at/above TICK_FRONT_FULL_DEG (82) where the ramp is 1.0 and any
+            //     sample passes -- only the 80-82 fray strip pays for noise.
+            double barrensFray = absLatDeg < PolarWaterFreezeRule.TICK_FRONT_FULL_DEG
                     ? LatitudeBiomes.polarBarrensFrayNoise(pos.getX(), pos.getZ())
                     : 0.0;
             wouldFreeze = PolarWaterFreezeRule.tickFrontFreezes(true, absLatDeg, barrensFray);

@@ -210,7 +210,7 @@ public abstract class PolarBarrensGlacierMixin {
                 // is not #minecraft:base_stone_overworld, so ore features (features stage, later, target base
                 // stone) cannot home in the ice; the band leaves them native stone three ways -- ~40% of
                 // columns get zero permafrost (their noise >= the top density), every ice column has stone
-                // below its reach, and the whole ore Y-range under the ~14-block band is untouched. AIR
+                // below its reach, and the whole ore Y-range under the ~24-block band (S25b) is untouched. AIR
                 // (noise caves thread the permafrost = ice-walled caverns) and FLUIDS (aquifer pockets /
                 // the B-9 semi-ice cave-lake reservoir) are NEVER replaced; bedrock is not in the block set.
                 // Flag-ON output only (same latitude.polarBarrens family + isBarrens gate as the body, via

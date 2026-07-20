@@ -412,26 +412,66 @@ public final class PolarWaterFreezeRule {
         return belowIsIce || northIsIce || eastIsIce || southIsIce || westIsIce;
     }
 
+    // --- S25 LEVEL GRACE (Peetsa 2026-07-20, TEST 117 addendum: "Water sometimes freezes so fast that when
+    // --- pouring, it doesn't even get a chance to spread and just becomes a pillar.") ---------------------
+    // ROOT CAUSE: when a pour lands on/beside existing ice, the flow-tick HUNTER (landed + ice-touch =
+    // certain) and the SPREAD-CONVERTER (ice-adjacent destination converts at the moment of spread) claim the
+    // FIRST ring immediately -- the water never spreads. FIX: a STATELESS grace using the fluid's own distance
+    // encoding. Flowing water's amount (26.2 javap: FluidState.getAmount -> WaterFluid$Flowing.getAmount =
+    // the LEVEL blockstate property, 1..8) falls from 7 (beside the source) outward; 8 is the FALLING flag
+    // value (and sources, which never reach these predicates). The two rings nearest the source (amounts 7
+    // and 6) are PROTECTED from the hunter and the converter during active flow, so a pour always spreads
+    // 2-3+ blocks before anything certain can bite. The SETTLED SWEEP is deliberately UNCHANGED (level-
+    // agnostic): once the pour reaches equilibrium and its ticks stop, the sweep claims the near rings too --
+    // pour -> spreads -> settles -> closes inward -> source last, which is EXACTLY the owner's original
+    // TEST 110 model ("once they've reached their full spread, the spreading should STOP and it should begin
+    // freezing"). No deadlock is possible: the sweep is the guaranteed closer for every protected block.
+    // FALLING water (amount 8) stays CLAIMABLE by design: 8 encodes "falling", not source-distance, and
+    // exempting it would kill the live-proven S21 vertical zipper (the frozen-fall pillar) and the
+    // falls-land-on-ice lock -- the grace protects the horizontal near-SOURCE rings only.
+
+    /**
+     * S25 LEVEL GRACE: the highest flowing-water amount the hunter/converter may claim. Amounts ABOVE this
+     * (6, 7 -- the two rings nearest the source) are protected while flowing; amount 8 (the FALLING encoding)
+     * is deliberately claimable (see the section comment). The settled sweep ignores this entirely.
+     */
+    public static final int FREEZE_LEVEL_GRACE_MAX_CLAIMABLE = 5;
+
+    /**
+     * S25 LEVEL GRACE predicate (pure): is a flowing block of this {@code FluidState.getAmount()} protected
+     * from the CERTAIN claims (hunter + spread-converter) during active flow? True exactly for the near-source
+     * distance rings {@code (FREEZE_LEVEL_GRACE_MAX_CLAIMABLE, 8)} -- i.e. amounts 6 and 7. Amounts 1..5
+     * (the far rings) and 8 (falling -- the zipper/fall-lock encoding, plus sources which never reach the
+     * consumers) are not protected.
+     */
+    public static boolean levelGraceProtects(int fluidAmount) {
+        return fluidAmount > FREEZE_LEVEL_GRACE_MAX_CLAIMABLE && fluidAmount < 8;
+    }
+
     /**
      * S20 the FLOW-TICK ICE-TOUCH HUNTER decision (pure, CERTAIN -- no RNG). Consumer (B) in the S20 division of
      * labour: after S20 this is the flow tick's ONLY freeze job. A flowing block converts to ice on its flow tick
      * iff it is freeze-eligible ({@link #freezesFlowing} -- ocean-exempt, in-zone, above the floor, flag on) AND
-     * LANDED ({@link #landedOnSupport}) AND TOUCHING ICE ({@link #touchingIce}). The S18/S19 on-solid CHANCE is
-     * GONE (the settled sweep, consumer (A), now owns all ground/pool freezing), so a landed block on ORDINARY
-     * support is left to keep spreading and is later claimed by the sweep once it SETTLES -- there is no roll and
-     * no RNG in the flow path at all. This clause exists purely to LOCK reroutes and drive the vertical zipper the
-     * instant water contacts existing ice: once any base ice exists, the block resting on it is touching-ice ->
-     * certain -> a deterministic ~4 blocks/s climb, and a horizontal reroute onto/beside fresh ice locks one block
-     * out (the ice hunts the escaping water; the speckle heals). A still-falling, ineligible, or
-     * not-touching-ice block never freezes here.
+     * LANDED ({@link #landedOnSupport}) AND TOUCHING ICE ({@link #touchingIce}) AND -- since the S25 level grace
+     * -- NOT a near-source ring ({@link #levelGraceProtects}: amounts 6-7 stay liquid during active flow, so a
+     * pour spreads before the ice hunts it; the settled sweep still claims them at rest). The S18/S19 on-solid
+     * CHANCE is GONE (the settled sweep, consumer (A), now owns all ground/pool freezing), so a landed block on
+     * ORDINARY support is left to keep spreading and is later claimed by the sweep once it SETTLES -- there is no
+     * roll and no RNG in the flow path at all. This clause exists purely to LOCK reroutes and drive the vertical
+     * zipper the instant water contacts existing ice: once any base ice exists, the block resting on it is
+     * touching-ice -> certain -> a deterministic ~4 blocks/s climb (fall columns carry amount 8 = claimable, so
+     * the zipper survives the grace), and a horizontal reroute onto/beside fresh ice locks one block out (the ice
+     * hunts the escaping water; the speckle heals). A still-falling, ineligible, not-touching-ice, or
+     * grace-protected block never freezes here.
      *
      * @param freezeEligible  {@link #freezesFlowing} for this column/position (the WHERE decision).
      * @param landedOnSupport {@link #landedOnSupport} for this block (the WHEN / still-falling decision).
      * @param touchingIce     {@link #touchingIce} for this block (the reroute/zipper contact).
+     * @param fluidAmount     {@code FluidState.getAmount()} for this flowing block (the S25 grace input).
      */
     public static boolean flowTickHunterFreezes(boolean freezeEligible, boolean landedOnSupport,
-                                                boolean touchingIce) {
-        return freezeEligible && landedOnSupport && touchingIce;
+                                                boolean touchingIce, int fluidAmount) {
+        return freezeEligible && landedOnSupport && touchingIce && !levelGraceProtects(fluidAmount);
     }
 
     /**
@@ -534,54 +574,94 @@ public final class PolarWaterFreezeRule {
     //       leave the supply recomputing forever).
 
     /**
-     * S22 the TICK FRONT's equatorward-most possible onset (deg) -- {@link PolarBarrensBand#ONSET_DEG} (82),
-     * KEEP-SHARED with the Barrens band so the freeze machinery switches on exactly where the barrens (and the
-     * B-9 crevasses that expose water) begin. This is the tick consumers' CHEAP pre-gate: below it no noise is
-     * ever sampled and vanilla runs untouched, byte-identical. It deliberately does NOT touch
-     * {@link #FREEZE_ALL_DEG} (85), which remains the worldgen-facing sea-ice/solid-freeze anchor.
+     * S25(C) the TICK FRONT's equatorward-most possible onset (deg) -- a DEDICATED 80 anchor (Peetsa
+     * 2026-07-20, TEST 117: "freezing water is a bit inconsistent... should at least start from eighty
+     * degrees, if not a little sooner depending on what you think"; the architect call is EXACTLY 80, the
+     * polar-country rung: the ambient snowfall onset ({@code PolarHazardWindow.AMBIENT_ONSET_DEG}, 80 since
+     * S8), villages end, strays-only -- one coherent line the player already feels; hungry bears (S25 B) join
+     * it). HISTORY: S22 (TEST 113/114) rode {@link PolarBarrensBand#ONSET_DEG} (82) here so the front was the
+     * barrens band itself; S25 DECOUPLES the onset two degrees equatorward while the front still reaches full
+     * exactly at the barrens onset ({@link #TICK_FRONT_FULL_DEG}), so the frayed strip is 80->82 and
+     * everything the S22 front froze still freezes (strict superset -- no live column loses its ice). This is
+     * the tick consumers' CHEAP pre-gate: below it no noise is ever sampled and vanilla runs untouched,
+     * byte-identical. It deliberately does NOT touch {@link #FREEZE_ALL_DEG} (85), which remains the
+     * worldgen-facing sea-ice/solid-freeze anchor.
      */
-    public static final double TICK_FRONT_ONSET_DEG = PolarBarrensBand.ONSET_DEG;
+    public static final double TICK_FRONT_ONSET_DEG = 80.0;
 
     /**
-     * S22 TICK FRONT decision (pure): is this column inside the tick-time freeze front? TRUE iff the barrens
-     * family flag is on AND the column lands on the barrens side of the SAME shared band decision
-     * ({@link PolarBarrensBand#isBarrens}: smoothstep ONSET 82 -> FULL 84 against the coherent barrens fray
-     * noise) that places the {@code globe:polar_barrens} biome, builds the glacier body, and carves the B-9
-     * crevasses. ONE decision (Art VI): wherever barrens ground/crevasse country exists, the freeze machinery
-     * is live -- the 82-84 band the owner flew over with a liquid pour is now covered by construction, and at/
-     * above FULL_DEG (84) the front is unconditionally on (fraction 1.0), so the whole old >= 85 zone remains
-     * covered. TICK-TIME-ONLY by contract: no worldgen path may call this (they keep the 85 law); the
+     * S25(C) the latitude at/above which the tick front is unconditionally ON (fraction 1.0, no noise needed)
+     * -- KEEP-SHARED with {@link PolarBarrensBand#ONSET_DEG} (82, live-tunable): the front finishes fraying
+     * exactly where the barrens (and the B-9 crevasses that expose water) BEGIN, so wherever barrens ground or
+     * crevasse country exists the freeze machinery is always-on by construction, and tuning the barrens onset
+     * dial moves the front's full line coherently. Clamped at least half a degree above
+     * {@link #TICK_FRONT_ONSET_DEG} so the smoothstep denominator survives a hostile {@code -D} pairing
+     * (mirroring {@link PolarBarrensBand#FULL_DEG}'s clamp).
+     */
+    public static final double TICK_FRONT_FULL_DEG =
+            Math.max(PolarBarrensBand.ONSET_DEG, TICK_FRONT_ONSET_DEG + 0.5);
+
+    /**
+     * S25(C) the tick front's fraction ramp (pure): 0.0 at/below {@link #TICK_FRONT_ONSET_DEG} (80 --
+     * bitwise-untouched equatorward, including the exact boundary), smoothstep-rising to exactly 1.0 at/above
+     * {@link #TICK_FRONT_FULL_DEG} (82). The SAME smoothstep-vs-coherent-fray idiom as
+     * {@link PolarBarrensBand#barrensFraction01} (Art VI -- the front stays an organic frayed line, never a
+     * razor ring), just anchored 80->82 instead of 82->84. NaN -> 0.0 (never freeze on bad data).
+     */
+    public static double tickFrontFraction01(double latDeg) {
+        double a = Math.abs(latDeg);
+        if (Double.isNaN(a) || a <= TICK_FRONT_ONSET_DEG) {
+            return 0.0;
+        }
+        if (a >= TICK_FRONT_FULL_DEG) {
+            return 1.0;
+        }
+        double t = (a - TICK_FRONT_ONSET_DEG) / (TICK_FRONT_FULL_DEG - TICK_FRONT_ONSET_DEG);
+        return t * t * (3.0 - 2.0 * t); // smoothstep 0->1
+    }
+
+    /**
+     * S22->S25 TICK FRONT decision (pure): is this column inside the tick-time freeze front? TRUE iff the
+     * barrens family flag is on AND the column's coherent fray sample lands under the
+     * {@link #tickFrontFraction01} ramp (onset 80 -> full 82) -- fed by the SAME coherent barrens fray field
+     * ({@code LatitudeBiomes.polarBarrensFrayNoise}) the biome placement / glacier body / crevasse carvers
+     * consume, so the front frays on the same organic grain as the country it precedes (one noise field, Art
+     * VI; S25 note: the RAMP is no longer the barrens band's own 82->84 ramp -- the owner asked the freeze to
+     * begin at the 80 polar-country rung, two degrees BEFORE the barrens -- but at/above 82 the front is
+     * unconditionally on, so barrens/crevasse country retains blanket coverage and the whole old S22 front is
+     * a subset). TICK-TIME-ONLY by contract: no worldgen path may call this (they keep the 85 law); the
      * consumers gate it on {@code level instanceof ServerLevel}.
      *
-     * <p>NaN handling follows the family idiom: NaN latitude -> false ({@code isBarrens}'s fraction is 0.0 on
-     * bad data -- never freeze on bad data); a NaN noise sample degrades to 0.5 (the band's median -- at/above
-     * FULL_DEG the front stays unconditionally on, never a hole in deep-cap coverage on bad data).
+     * <p>NaN handling follows the family idiom: NaN latitude -> false (fraction 0.0 on bad data -- never
+     * freeze on bad data); a NaN noise sample degrades to 0.5 (the band's median -- at/above
+     * {@link #TICK_FRONT_FULL_DEG} the front stays unconditionally on, never a hole in deep-cap coverage on
+     * bad data).
      *
      * @param flagOn            {@code latitude.polarBarrens.enabled} (the shared worldgen-family flag; off is
-     *                          the untouched pre-v6 tick behaviour for the 82-84 band).
-     * @param latDeg            signed OR absolute column latitude; magnitude taken inside {@code isBarrens}.
+     *                          the untouched pre-v6 tick behaviour).
+     * @param latDeg            signed OR absolute column latitude; magnitude taken inside the ramp.
      * @param barrensFrayNoise01 the SAME coherent barrens fray sample ({@code LatitudeBiomes
      *                          .polarBarrensFrayNoise}) the biome/glacier/carvers consume. Callers may skip
-     *                          the sample at/above {@link PolarBarrensBand#FULL_DEG} (fraction 1.0 -- any
-     *                          value passes) and feed any constant.
+     *                          the sample at/above {@link #TICK_FRONT_FULL_DEG} (fraction 1.0 -- any value
+     *                          passes) and feed any constant.
      */
     public static boolean tickFrontFreezes(boolean flagOn, double latDeg, double barrensFrayNoise01) {
         if (!flagOn) {
             return false;
         }
         double n = Double.isNaN(barrensFrayNoise01) ? 0.5 : barrensFrayNoise01;
-        return PolarBarrensBand.isBarrens(latDeg, n);
+        return n < tickFrontFraction01(latDeg);
     }
 
     /**
      * S22 tick-time flowing-water eligibility -- the v6 WHERE decision for the flow-tick hunter, the settled
      * sweep, and the spread-converter. The tick-time analogue of {@link #freezesFlowing} with the WHERE swapped
-     * from the worldgen 85-frayed front to the {@link #tickFrontFreezes TICK FRONT} (82->84 barrens band); the
+     * from the worldgen 85-frayed front to the {@link #tickFrontFreezes TICK FRONT} (80->82 ramp since S25); the
      * sacred exemptions carry over verbatim and in the same order: <b>ocean FIRST</b> (the sea keeps
      * liquid-under-ice -- under-ice swim, pack-ice wall, S7 immersion), then the flag, then the front, then the
      * freeze floor ({@code aboveFreezeFloor} -- the B-9 deep-cave reservoir below the glacier sole stays
      * liquid). For a column at/above 85 this is a superset of the old behaviour (the front is unconditionally
-     * on there); for 82-84 it is the NEW coverage. Pure function of its inputs, no RNG.
+     * on there); for the 80-82 frayed strip it is the NEW S25 coverage. Pure function of its inputs, no RNG.
      *
      * @param aboveFreezeFloor the candidate block sits above {@link #landWaterFreezeFloorY} for its column.
      */
@@ -675,14 +755,22 @@ public final class PolarWaterFreezeRule {
      * source blocks are never a spread destination, and starving a source's outflow is exactly how it comes to
      * freeze LAST via {@link #sourceFreezePostponed}. Pure function of blockstate-derived booleans, tick-only.
      *
-     * @param freezeEligible {@link #tickFreezesFlowing} evaluated at the spread DESTINATION.
-     * @param spreadIsDown   the spread direction is straight DOWN (a fall extending), not horizontal.
-     * @param belowIsIce     the block directly below the destination is ice-family ({@code BlockTags.ICE}).
-     * @param touchingIce    {@link #touchingIce} over the destination's below + 4 horizontal neighbours.
+     * <p><b>S25 LEVEL GRACE:</b> a destination whose to-be-placed fluid amount is a near-source ring
+     * ({@link #levelGraceProtects}: 6-7) is never converted -- the first ring beside a fresh pour places as
+     * WATER and keeps spreading (the owner's "it doesn't even get a chance to spread" fix); the settled sweep
+     * claims it at rest. DOWN spreads place FALLING water (amount 8, claimable), so the falls-land-on-ice lock
+     * is untouched by the grace.
+     *
+     * @param freezeEligible  {@link #tickFreezesFlowing} evaluated at the spread DESTINATION.
+     * @param spreadIsDown    the spread direction is straight DOWN (a fall extending), not horizontal.
+     * @param belowIsIce      the block directly below the destination is ice-family ({@code BlockTags.ICE}).
+     * @param touchingIce     {@link #touchingIce} over the destination's below + 4 horizontal neighbours.
+     * @param destFluidAmount {@code getAmount()} of the fluid state being placed at the destination (the S25
+     *                        grace input -- the spread carries its own distance encoding).
      */
     public static boolean spreadConvertsToIce(boolean freezeEligible, boolean spreadIsDown,
-                                              boolean belowIsIce, boolean touchingIce) {
-        if (!freezeEligible) {
+                                              boolean belowIsIce, boolean touchingIce, int destFluidAmount) {
+        if (!freezeEligible || levelGraceProtects(destFluidAmount)) {
             return false;
         }
         if (spreadIsDown) {
