@@ -952,8 +952,15 @@ public class LatitudeCreateWorldScreen extends Screen {
                     && zoneY + zoneRowHeight > rightViewportTop
                     && zoneY < rightViewportBottom;
             row.visible = visible;
-            // Only fully-visible rows are click-active, so a sliver at the clipped edge isn't a stray click target.
-            row.active = visible && zoneY >= rightViewportTop && zoneY + zoneRowHeight <= rightViewportBottom;
+            // H-fix (2026-07-19, Peetsa live report): active must match the render gate (intersect), not a
+            // fully-contained gate -- a row scrolled partway past the top/bottom edge still draws its visible
+            // sliver (see extractWidgetRenderState's scissor) and must accept clicks on that sliver. The old
+            // fully-contained gate silently dropped clicks on any row not ENTIRELY inside the viewport, which
+            // read as "can't select Polar until it's fully scrolled into view" -- reproducible on any row, top
+            // or bottom edge alike. ZoneRowWidget#isMouseOver clamps the actual click point to the same clip
+            // rect used for rendering, so a click landing in the row's off-screen (unclipped, undrawn) half is
+            // still correctly rejected.
+            row.active = visible;
             zoneY += zoneRowStep;
         }
     }
@@ -2556,6 +2563,17 @@ public class LatitudeCreateWorldScreen extends Screen {
         ZoneRowWidget(int x, int y, int w, int h, LatitudeBands.Band band) {
             super(x, y, w, h, Component.literal(band == null ? "Random" : band.displayName()));
             this.band = band;
+        }
+
+        @Override
+        public boolean isMouseOver(double mouseX, double mouseY) {
+            // Clamp the click point to the same vertical clip rect extractWidgetRenderState scissors to (see
+            // there for the threeCol heading-band note), so a click only registers where the row is actually
+            // drawn -- the row's full un-clipped bounding box (checked by super) can extend above/below that
+            // into the title or the panel edge once it's mid-scroll.
+            if (!super.isMouseOver(mouseX, mouseY)) return false;
+            int rowClipTop = threeCol ? headerBandBottom() : rightViewportTop;
+            return mouseY >= rowClipTop && mouseY < rightViewportBottom;
         }
 
         private void select() {
