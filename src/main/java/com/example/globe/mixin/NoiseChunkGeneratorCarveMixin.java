@@ -2,6 +2,7 @@ package com.example.globe.mixin;
 
 import com.example.globe.GlobeMod;
 import com.example.globe.GlobeRegions;
+import com.example.globe.core.GlacialBlend;
 import com.example.globe.core.GlacialCarverLaw;
 import com.example.globe.core.LatitudeV2Flags;
 import com.example.globe.core.PolarBarrensBand;
@@ -68,10 +69,10 @@ import java.util.function.Predicate;
  * block level, the only residue being an empty serialized carving_mask in mid-generation proto-chunk
  * NBT, invisible at FULL status). Full reasoning in {@link GlacialCarverLaw}'s javadoc.
  *
- * <h2>B-9 LEG -- seed-chunk barrens-band LAND append</h2>
+ * <h2>B-9 LEG -- seed-chunk glacial-BLEND LAND append (S28)</h2>
  * When {@link LatitudeV2Flags#GLACIAL_CAVES_V1_ENABLED} is on and the SEED chunk (the chunk whose
  * carver list is being resolved -- carver placement is seed-chunk-owned, arcs reach +-8 chunks) is
- * barrens-band LAND, the {@code globe:crevasse} + {@code globe:glacial_tunnels} holders are appended
+ * glacial-blend LAND, the {@code globe:crevasse} + {@code globe:glacial_tunnels} holders are appended
  * AFTER the raw list. Appending preserves vanilla's per-carver seeding ({@code setLargeFeatureSeed}
  * with {@code seed + listIndex}): vanilla carvers keep indices 0..n-1 and their exact streams; the
  * glacial pair take n, n+1. Decisions, in cheap-first order, all deterministic (same inputs, same
@@ -79,13 +80,16 @@ import java.util.function.Predicate;
  * <ul>
  *   <li><b>Flag + armed radius</b>: static-final flag; {@code LatitudeBiomes.getActiveRadiusBlocks()}
  *       (0 on unarmed JVMs -- headless tools, non-globe sessions).</li>
- *   <li><b>Band</b>: {@code |lat| = |minBlockZ| * 90 / radius} at the seed chunk's MIN CORNER -- the
- *       same fixed deterministic position vanilla's carverBiome resolution samples -- against the
- *       EXACT shared decision the barrens biome/glacier use:
- *       {@link PolarBarrensBand#barrensFraction01} as the cheap early-out (whole world below 82 deg
- *       exits on pure math, no noise sample), then {@link PolarBarrensBand#isBarrens} fed by
- *       {@link LatitudeBiomes#polarBarrensFrayNoise} (one shared coherent fray field, Art VI clean,
- *       no new noise). One sample per seed chunk.</li>
+ *   <li><b>Blend band (S28, Peetsa 2026-07-20 "a transition, not a hard switch")</b>:
+ *       {@code |lat| = |minBlockZ| * 90 / radius} at the seed chunk's MIN CORNER -- the same fixed
+ *       deterministic position vanilla's carverBiome resolution samples -- against the EXACT shared
+ *       decision the glacial-caves biome swap and the {@code /latdev} locator ride:
+ *       {@link GlacialBlend#BLEND_ONSET_DEG} (78) as the cheap early-out (whole world below 78 deg exits
+ *       on pure math, no region sample), then {@link LatitudeBiomes#glacialBlendColumnApplies}
+ *       ({@link GlacialBlend#undergroundGlacial} on the 640-block region field, wide 78-86 deg blend).
+ *       Swapped OFF the old 64-block surface barrens fray ({@link PolarBarrensBand#isBarrens}) so the
+ *       underground transitions gradually as coherent geography, not chunk-confetti (the S27 fray
+ *       diagnosis). One region sample per seed chunk; the SURFACE barrens keeps its own fray.</li>
  *   <li><b>Globe OVERWORLD generator only</b>: {@code getBiomeSource() instanceof LatitudeBiomeSource}
  *       reuses the wrap gate of {@code ChunkGeneratorBiomeSourceMixin} (settings-key checked there,
  *       single source of truth) -- the nether/end of a globe world run this same
@@ -199,14 +203,19 @@ public class NoiseChunkGeneratorCarveMixin {
         int minBlockX = seedChunkPos.getMinBlockX();
         int minBlockZ = seedChunkPos.getMinBlockZ();
         double absLatDeg = Math.abs((double) minBlockZ) * 90.0 / radius;
-        if (PolarBarrensBand.barrensFraction01(absLatDeg) <= 0.0) {
-            return List.of(); // below the band onset: pure-math exit, no noise sample, no probe.
+        if (absLatDeg <= GlacialBlend.BLEND_ONSET_DEG) {
+            return List.of(); // below the blend onset: pure-math exit, no region sample, no probe.
         }
         if (!(self.getBiomeSource() instanceof LatitudeBiomeSource)) {
             return List.of(); // nether/end (or a non-globe generator with a stale armed radius).
         }
-        if (!PolarBarrensBand.isBarrens(absLatDeg, LatitudeBiomes.polarBarrensFrayNoise(minBlockX, minBlockZ))) {
-            return List.of(); // the shared fray decision said this seed chunk stays non-barrens.
+        // S28 UNDERGROUND GLACIAL BLEND: the crevasse/tunnel append rides the EXACT shared blend decision
+        // the glacial-caves biome swap and the /latdev locator use (LatitudeBiomes.glacialBlendColumnApplies
+        // -> GlacialBlend.undergroundGlacial on the 640-block region field, wide 78-86 deg band). Swapped OFF
+        // the 64-block surface barrens fray (PolarBarrensBand.isBarrens) so the underground transitions
+        // gradually and none of biome/crevasse/locator outruns another (Peetsa 2026-07-20).
+        if (!LatitudeBiomes.glacialBlendColumnApplies(minBlockX, minBlockZ, radius)) {
+            return List.of(); // the shared blend decision said this seed chunk stays non-glacial.
         }
         Holder<Biome> seaProbe = ((ChunkGeneratorAccessor) (Object) self).globe$getRawBiomeSource().getNoiseBiome(
                 QuartPos.fromBlock(minBlockX),
