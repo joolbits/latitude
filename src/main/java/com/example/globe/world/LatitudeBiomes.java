@@ -6224,6 +6224,39 @@ public final class LatitudeBiomes {
                 borderRadiusFallback);
     }
 
+    /**
+     * Returns true only for a village variant whose declared climate clearly conflicts with
+     * Latitude's canonical band. This is deliberately band-first: placement-time biome reads can
+     * still expose the raw source biome that selected the variant before Latitude repaints the
+     * chunk. Neutral village variants and all non-village structures fail open.
+     */
+    public static boolean villageClimateVsBandMismatch(
+            String structurePath,
+            LatitudeBands.Band band) {
+        if (structurePath == null || band == null) {
+            return false;
+        }
+        String p = structurePath.toLowerCase(java.util.Locale.ROOT);
+        if (!p.contains("village")) {
+            return false;
+        }
+        boolean warmDeclared = p.contains("desert")
+                || p.contains("savanna")
+                || p.contains("badlands")
+                || p.contains("mesa")
+                || p.contains("jungle");
+        boolean coldDeclared = p.contains("snowy")
+                || p.contains("frozen")
+                || p.contains("glacier")
+                || p.contains("taiga");
+        boolean warmBand = band == LatitudeBands.Band.TROPICAL
+                || band == LatitudeBands.Band.SUBTROPICAL;
+        boolean coldBand = band == LatitudeBands.Band.TEMPERATE
+                || band == LatitudeBands.Band.SUBPOLAR
+                || band == LatitudeBands.Band.POLAR;
+        return (warmDeclared && coldBand) || (coldDeclared && warmBand);
+    }
+
     private static boolean isFlatPolarShelfBannedMountainPick(Holder<Biome> candidate) {
         return isBiomeId(candidate, "minecraft:jagged_peaks")
                 || isBiomeId(candidate, "minecraft:frozen_peaks")
