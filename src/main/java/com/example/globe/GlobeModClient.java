@@ -586,7 +586,15 @@ public class GlobeModClient implements ClientModInitializer {
                                          com.example.globe.core.ParticleDensity.Tier tier, float exposure) {
         // The blizzard drive is the storm signal (0 across the calm 75-82 glint band; belt-and-suspenders per the law).
         double blizz = com.example.globe.core.PolarHazardWindow.blizzardDrive(absLatDeg);
-        int budget = com.example.globe.core.SnowSparkleLaw.sparkleBudget(absLatDeg, blizz, SPARKLE_PEAK_BUDGET);
+        // GLINT CLOCK (S24): gather the two PURE inputs the law now needs -- the vanilla-synced overworld clock
+        // (the day/night pulse; §7 zero-netcode -- MC already replicates it to every client) and whether this
+        // latitude is in an around-the-clock solar band (polar night / midnight sun), which extends the glint's
+        // equatorward onset from 75 to 60 so the day/night TELL exists everywhere the day-bright-under-dark-sky
+        // confusion does. The law stays MC-free; this adapter reads MC and hands it primitives.
+        long clock = client.level.getOverworldClockTime();
+        boolean functionalBandActive = sparkleFunctionalBandActive(client, absLatDeg);
+        int budget = com.example.globe.core.SnowSparkleLaw.sparkleBudget(
+                absLatDeg, functionalBandActive, (double) clock, blizz, SPARKLE_PEAK_BUDGET);
         // The pure per-tick BUDGET (band trapezoid x calm gate x snowfall window), then scaled to the actual spawn
         // COUNT by the vanilla Particles tier + enclosure estimate + reduce-snow comfort option (the same knobs the
         // ambient snow honours). Kept apart so the S20 recorder can report budget-vs-spawned (a budget>0 with a
@@ -606,12 +614,15 @@ public class GlobeModClient implements ClientModInitializer {
         // spawn-tick and flush the ~5s window line. Recorded on every path (incl. count == 0) so "sparkle invisible
         // live" is diagnosable: spawned=0 with budget>0 = scaling; both>0 yet nothing seen = a particle-render issue.
         if (com.example.globe.core.PolarInstrument.SPARKLE) {
-            // GLINT v4 (S21b): band01 = the glint band ramp (75->76); window01 = the snowfall-gate factor
-            // (1 - snowfallRamp01), the (1 - snow) side of the 80->82 crossfade (1 below the snow onset, 0 once
-            // the snow has fully taken over). Their product is SnowSparkleLaw.glintWeight.
-            double band01 = com.example.globe.core.SnowSparkleLaw.bandRamp01(absLatDeg);
+            // GLINT v4 (S21b) + GLINT CLOCK (S24): band01 = the EFFECTIVE glint band ramp (75->76, or the
+            // extended 60->61 when this latitude is in a polar-night/midnight-sun band); window01 = the
+            // snowfall-gate factor (1 - snowfallRamp01), the (1 - snow) side of the 80->82 crossfade; clock01 =
+            // the GLINT CLOCK day curve (1 at noon, 0 at clock-night). Their PRODUCT is SnowSparkleLaw.glintWeight
+            // -- so a flight can read band x window x clock and prove exactly which term shuttered the pulse.
+            double band01 = com.example.globe.core.SnowSparkleLaw.bandRamp01(absLatDeg, functionalBandActive);
             double window01 = 1.0 - com.example.globe.core.SnowSparkleLaw.snowfallRamp01(absLatDeg);
-            com.example.globe.core.PolarInstrument.sparkleSample(budget, count, window01, band01);
+            double clock01 = com.example.globe.core.SnowSparkleLaw.clockDayCurve01((double) clock);
+            com.example.globe.core.PolarInstrument.sparkleSample(budget, count, window01, band01, clock01);
             String line = com.example.globe.core.PolarInstrument.pollSparkleLine(client.level.getGameTime());
             if (line != null) {
                 GlobeMod.LOGGER.info(line);
@@ -655,6 +666,41 @@ public class GlobeModClient implements ClientModInitializer {
                 client.particleEngine.createParticle(SPARKLE_PARTICLE, gx + ox, gy + oy, gz + oz, vx, vy, vz);
             }
         }
+    }
+
+    // GLINT CLOCK (S24) client adapter: is the observer's latitude in an around-the-clock solar band (polar
+    // night / midnight sun) right now? Mirrors the established client evaluators (AuroraRenderer /
+    // SkyRendererSolarTiltMixin): north-positive signed latitude from the border, the vanilla-synced clock's
+    // declination, then the ONE SolarTilt.functionalBand evaluator -- the same one GlobeMod.solarFunctionalBand
+    // runs server-side, with the 60-deg functional floor -- so the sky, the mob rules and this glint band can
+    // never disagree (the one-evaluator law). Gated on the solar-tilt master flag + globe overworld: with tilt
+    // off (or off-overworld) there is no polar night to confuse the clock, so the glint keeps its normal 75
+    // onset (the clock day/night PULSE still applies planet-wide -- that is threaded separately, always).
+    private static boolean sparkleFunctionalBandActive(Minecraft client, double absLatDeg) {
+        // Cheap early-out: the extended onset (== the functional floor) is 60 deg; below that no band can be
+        // active and the extension is a no-op, so skip the border/clock trig for the equatorial majority of ticks.
+        if (Double.isNaN(absLatDeg)
+                || absLatDeg < com.example.globe.core.SnowSparkleLaw.FUNCTIONAL_EXTENDED_ONSET_DEG) {
+            return false;
+        }
+        if (!com.example.globe.core.LatitudeV2Flags.SOLAR_TILT_V2_ENABLED) {
+            return false;
+        }
+        if (!client.level.dimension().identifier()
+                .equals(net.minecraft.world.level.Level.OVERWORLD.identifier())) {
+            return false; // the polar sky (and thus the day-bright confusion) exists only in the globe overworld.
+        }
+        double phi = -com.example.globe.util.LatitudeMath.degreesFromZ(
+                client.level.getWorldBorder(), client.player.getZ());
+        long clock = client.level.getOverworldClockTime();
+        double delta = com.example.globe.core.SolarTilt.deltaDeg(
+                com.example.globe.core.SolarTilt.dayCount(clock),
+                com.example.globe.core.LatitudeV2Flags.SOLAR_TILT_DELTA_MAX_DEG,
+                com.example.globe.core.LatitudeV2Flags.SOLAR_TILT_YEAR_LENGTH_DAYS,
+                com.example.globe.core.LatitudeV2Flags.SOLAR_TILT_FROZEN_PHASE_DEG);
+        return com.example.globe.core.SolarTilt.functionalBand(phi, delta,
+                com.example.globe.core.LatitudeV2Flags.SOLAR_TILT_FUNCTIONAL_MIN_DEG)
+                != com.example.globe.core.SolarTilt.FunctionalBand.NONE;
     }
 
     // B-4 storm-snow: widened envelope (10->16) + a steady horizontal wind drift so the flakes streak

@@ -310,4 +310,47 @@ class PolarBarrensBandTest {
         assertEquals(PolarBarrensBand.glacierIceBodyBlocks(83.0, 0.5),
                 PolarBarrensBand.glacierIceBodyBlocks(83.0, Double.NaN));
     }
+
+    // --- S24 permafrost stratum: reach curve below the glacier sole -------------------------------
+
+    @Test
+    void permafrostReachFadesFromFullBandAtTheSoleToNoneAtTheDensityPoint() {
+        // density(d) = TOP_DENSITY * (1 - d/BAND); a column with noise n is ice for d < BAND*(1 - n/TOP).
+        // Lowest-noise columns push ice fingers to the very bottom of the band...
+        assertEquals(PolarBarrensBand.PERMAFROST_BAND_BLOCKS,
+                PolarBarrensBand.permafrostIceDepthBelowSole(0.0),
+                "the deepest-permafrost column reaches the full band under the sole");
+        // ...noise = half the top density reaches half the band...
+        assertEquals(PolarBarrensBand.PERMAFROST_BAND_BLOCKS / 2,
+                PolarBarrensBand.permafrostIceDepthBelowSole(PolarBarrensBand.PERMAFROST_TOP_DENSITY / 2.0),
+                "half the top density -> half the band");
+        // ...and any column at/above the top density gets NO permafrost ice at all -- the bare-stone ~40%
+        // that keeps ore homes and the "partial density" guarantee.
+        assertEquals(0, PolarBarrensBand.permafrostIceDepthBelowSole(PolarBarrensBand.PERMAFROST_TOP_DENSITY),
+                "at the top density the reach is exactly zero (continuous, no slab)");
+        assertEquals(0, PolarBarrensBand.permafrostIceDepthBelowSole(0.90),
+                "high-noise columns are bare stone straight from the sole -- ore homes survive");
+    }
+
+    @Test
+    void permafrostReachIsBoundedMonotoneAndNaNSafe() {
+        int prev = Integer.MAX_VALUE;
+        for (int i = 0; i <= 100; i++) {
+            double n = i / 100.0;
+            int reach = PolarBarrensBand.permafrostIceDepthBelowSole(n);
+            assertTrue(reach >= 0 && reach <= PolarBarrensBand.PERMAFROST_BAND_BLOCKS,
+                    "reach stays within [0, BAND] for noise " + n);
+            assertTrue(reach <= prev, "reach is non-increasing in noise (was " + prev + ", now " + reach
+                    + " at " + n + ")");
+            prev = reach;
+        }
+        // Out-of-range clamps; NaN reads as 0.5 (mid, never a slab and never zero-on-bad-data past density).
+        assertEquals(PolarBarrensBand.PERMAFROST_BAND_BLOCKS, PolarBarrensBand.permafrostIceDepthBelowSole(-1.0),
+                "negative noise clamps to the deepest reach");
+        assertEquals(0, PolarBarrensBand.permafrostIceDepthBelowSole(2.0),
+                "noise above 1 clamps above the density point -> no permafrost");
+        assertEquals(PolarBarrensBand.permafrostIceDepthBelowSole(0.5),
+                PolarBarrensBand.permafrostIceDepthBelowSole(Double.NaN),
+                "NaN degrades to the 0.5 reach, never to a hard slab");
+    }
 }

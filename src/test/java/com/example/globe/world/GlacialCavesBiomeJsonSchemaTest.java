@@ -73,23 +73,37 @@ class GlacialCavesBiomeJsonSchemaTest {
         JsonObject caves = glacialCaves();
         JsonObject barrens = polarBarrens();
         // Steps by 26.2 index: 1 lakes, 2 local_modifications (geode), 3 underground_structures
-        // (monster rooms), 6 underground_ores (all 25 ores + magma + 3 disks), 8 fluid_springs,
-        // 10 top_layer_modification. These carry the "underground stays alive" law and must match the
-        // barrens (itself pinned as snowy_plains' underground subset) entry-for-entry, in order.
-        for (int step : new int[]{1, 2, 3, 6, 8, 10}) {
+        // (monster rooms), 8 fluid_springs, 10 top_layer_modification. These carry the "underground stays
+        // alive" law and must match the barrens (itself pinned as snowy_plains' underground subset)
+        // entry-for-entry, in order.
+        for (int step : new int[]{1, 2, 3, 8, 10}) {
             assertEquals(featureStep(barrens, step), featureStep(caves, step),
                     "underground step " + step + " must be exactly the barrens/snowy_plains subset");
         }
-        assertTrue(featureStep(caves, 6).contains("minecraft:ore_diamond"),
+        // Step 6 (underground_ores): S24 APPENDS the two glacial ice BLOBS after the barrens ore run so the
+        // deep caverns read glacial in every wall. The "underground stays alive" law still binds: the barrens
+        // ore run must be present, IN ORDER, as the exact PREFIX (no ore dropped or reordered) -- and because
+        // packed_ice/blue_ice are not #base_stone_overworld and the blobs run LAST, they cement leftover base
+        // stone without ever eating an ore. The only allowed addition is those two globe blobs, appended.
+        List<String> barrensOres = featureStep(barrens, 6);
+        List<String> cavesOres = featureStep(caves, 6);
+        assertEquals(barrensOres, cavesOres.subList(0, barrensOres.size()),
+                "the barrens ore run must be the exact ordered PREFIX of the caves ore step");
+        assertEquals(List.of("globe:glacial_ice_blob", "globe:glacial_blue_ice_blob"),
+                cavesOres.subList(barrensOres.size(), cavesOres.size()),
+                "only the two S24 glacial ice blobs may be appended, packed then blue, after the ores");
+        assertTrue(cavesOres.contains("minecraft:ore_diamond"),
                 "sanity: the ore step really is the full ore run");
     }
 
     @Test
     void dressingStepsCarryTheGlacialFeatures() {
         JsonObject caves = glacialCaves();
-        assertEquals(List.of("globe:hanging_icicles", "globe:glacial_snow_drift", "globe:glacial_powder_pocket"),
+        assertEquals(List.of("globe:hanging_icicles", "globe:glacial_snow_drift", "globe:glacial_powder_pocket",
+                        "globe:glacial_frost_carpet"),
                 featureStep(caves, 7),
-                "underground_decoration (step 7) = the three glacial dressing features, in authored order");
+                "underground_decoration (step 7) = the glacial dressing features, in authored order "
+                        + "(S24 appended the frost-floor carpet)");
         assertEquals(List.of("globe:glacial_glow_lichen"), featureStep(caves, 9),
                 "vegetal step replaces vanilla glow_lichen (count 104-157) with the sparse glacial one "
                         + "-- punctuation, not illumination");

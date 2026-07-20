@@ -40,11 +40,20 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  *       field as the sole) the body is {@code blue_ice} -- depth strata, thick glacier hearts only (the
  *       marginal 6-block body never reaches the line). Flag-ON output only, new chunks only; see the
  *       in-method comment for the carver-interaction consequences (blue ice is structurally uncarvable).</li>
- *   <li><b>The living underground stays alive</b> (the law that bounds the glacier's floor): below the sole
- *       nothing is touched -- native stone/dirt resumes, and ore features (which run AFTER this, at the
- *       features stage, and never target packed_ice) populate the column under the ice exactly as anywhere
- *       else. AIR is never replaced (noise-stage caves thread the ice body = the free Glacial-Caves preview)
- *       and FLUIDS are never replaced (aquifer water/lava pockets stay), bedrock untouched.</li>
+ *   <li><b>Permafrost stratum</b> (S24, Peetsa 2026-07-20, TEST 115: "the ice doesn't extend down very
+ *       far. It just becomes regular cave"): a transition band ~{@link PolarBarrensBand#PERMAFROST_BAND_BLOCKS}
+ *       blocks below the sole where stone-family blocks are partially cemented to {@code packed_ice} veining
+ *       -- a per-column reach ({@link LatitudeBiomes#polarBarrensPermafrostDepthBelowSole}, riding the SAME
+ *       glacier depth-wobble field, Art VI) that fades from ~60% areal density at the sole to 0 at the band
+ *       bottom, so the Glacial-Caves biome reads glacial in its deep walls rather than resuming plain stone.
+ *       The band leaves native stone (partial density) so ore features keep homes -- see the in-method
+ *       comment for the ore-home trade.</li>
+ *   <li><b>The living underground stays alive</b> (the law that bounds the glacier's floor): below the
+ *       permafrost band nothing is touched -- native stone/dirt resumes, and ore features (which run AFTER
+ *       this, at the features stage, and never target packed_ice) populate the column under the ice exactly
+ *       as anywhere else. AIR is never replaced (noise-stage caves thread the ice body = the free
+ *       Glacial-Caves preview) and FLUIDS are never replaced (aquifer water/lava pockets stay), bedrock
+ *       untouched.</li>
  *   <li><b>Fluid columns skipped</b> entirely (the {@code isSurfaceSkin} land-column clause: WORLD_SURFACE
  *       vs OCEAN_FLOOR split &gt; 1): the frozen SEA is the water-freeze law's domain, not the glacier's.</li>
  * </ul>
@@ -189,8 +198,55 @@ public abstract class PolarBarrensGlacierMixin {
                                 : GLOBE_GLACIER_PACKED_ICE);
                     }
                 }
+                // S24 PERMAFROST STRATUM (Peetsa 2026-07-20, TEST 115 video: "the ice doesn't extend down
+                // very far. It just becomes regular cave"): below the glacier sole (the body loop above
+                // stopped at soleY+1; soleY is the first native block) graft packed-ice VEINING onto the
+                // stone matrix for a transition band, so the Glacial-Caves biome reads glacial well below
+                // the body instead of resuming plain stone/dirt. The per-column REACH rides the SAME
+                // glacier depth-wobble field (LatitudeBiomes.polarBarrensPermafrostDepthBelowSole -> the
+                // POLAR_BARRENS_GLACIER_SALT sample, Art VI: NO new noise), faded from a ~60% areal density
+                // AT the sole to 0 at the band bottom -- so the ice extends as irregular fingers of varying
+                // depth (deepest where the glacier is thickest), never a flat slab. ORE-HOME TRADE: packed_ice
+                // is not #minecraft:base_stone_overworld, so ore features (features stage, later, target base
+                // stone) cannot home in the ice; the band leaves them native stone three ways -- ~40% of
+                // columns get zero permafrost (their noise >= the top density), every ice column has stone
+                // below its reach, and the whole ore Y-range under the ~14-block band is untouched. AIR
+                // (noise caves thread the permafrost = ice-walled caverns) and FLUIDS (aquifer pockets /
+                // the B-9 semi-ice cave-lake reservoir) are NEVER replaced; bedrock is not in the block set.
+                // Flag-ON output only (same latitude.polarBarrens family + isBarrens gate as the body, via
+                // polarBarrensPermafrostDepthBelowSole's shared decision), NEW CHUNKS ONLY; flag-off exits at
+                // the top of the method, byte-identical.
+                int permafrostReach = LatitudeBiomes.polarBarrensPermafrostDepthBelowSole(blockX, blockZ);
+                if (permafrostReach > 0) {
+                    int permafrostBottomY = Math.max(minY + 1, soleY - permafrostReach + 1);
+                    for (int y = soleY; y >= permafrostBottomY; y--) {
+                        cursor.set(blockX, y, blockZ);
+                        BlockState current = chunk.getBlockState(cursor);
+                        if (current.isAir() || !current.getFluidState().isEmpty()) {
+                            continue; // caves thread the permafrost; aquifer/reservoir water stays liquid
+                        }
+                        if (globe$isPermafrostReplaceable(current.getBlock())) {
+                            chunk.setBlockState(cursor, GLOBE_GLACIER_PACKED_ICE);
+                        }
+                    }
+                }
             }
         }
+    }
+
+    /**
+     * S24: is {@code block} a native stone-family matrix block the permafrost stratum may cement into
+     * packed ice? The {@code #minecraft:base_stone_overworld} set the noise router fills at these depths
+     * (stone / deepslate / the three igneous variants / tuff) plus the surface rule's dirt and gravel that
+     * can poke just below a barrens sole. Deliberately EXCLUDES bedrock, glacier ice ({@code packed_ice} /
+     * {@code blue_ice}, already the body), and everything else -- and ores are not yet present at this
+     * (surface-tail) stage, so none are ever overwritten.
+     */
+    @Unique
+    private static boolean globe$isPermafrostReplaceable(Block block) {
+        return block == Blocks.STONE || block == Blocks.DEEPSLATE || block == Blocks.GRANITE
+                || block == Blocks.DIORITE || block == Blocks.ANDESITE || block == Blocks.TUFF
+                || block == Blocks.DIRT || block == Blocks.GRAVEL;
     }
 
     /**
