@@ -528,6 +528,32 @@ tasks.named('check').configure {
     dependsOn tasks.named('latitudeVillageLatitudePolicyTest')
 }
 
+def latitudePolarFoliagePolicyTestClasses = layout.buildDirectory.dir('classes/java/latitudePolarFoliagePolicyTest')
+
+tasks.register('compileLatitudePolarFoliagePolicyTest', JavaCompile) {
+    group = 'verification'
+    description = 'Compile the dependency-free strict-80 polar foliage boundary regression'
+    source = fileTree('src/polarFoliagePolicyTest/java') {
+        include '**/*.java'
+    }
+    classpath = sourceSets.main.output
+    destinationDirectory.set(latitudePolarFoliagePolicyTestClasses)
+    options.release = 25
+    dependsOn classes
+}
+
+tasks.register('latitudePolarFoliagePolicyTest', JavaExec) {
+    group = 'verification'
+    description = 'Exercise the strict-80 foliage boundary and berry exemption without launching Minecraft'
+    classpath = files(latitudePolarFoliagePolicyTestClasses) + sourceSets.main.output
+    mainClass = 'com.example.globe.world.PolarFoliagePolicyTest'
+    dependsOn tasks.named('compileLatitudePolarFoliagePolicyTest')
+}
+
+tasks.named('check').configure {
+    dependsOn tasks.named('latitudePolarFoliagePolicyTest')
+}
+
 def latitudeDevToolPolicyTestClasses = layout.buildDirectory.dir('classes/java/latitudeDevToolPolicyTest')
 
 tasks.register('compileLatitudeDevToolPolicyTest', JavaCompile) {

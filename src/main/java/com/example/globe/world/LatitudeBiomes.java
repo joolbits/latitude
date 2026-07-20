@@ -6208,9 +6208,23 @@ public final class LatitudeBiomes {
     }
 
     /**
+     * Foliage-only polar limit. Foliage remains eligible at exactly 80 degrees and is suppressed
+     * only beyond it. This stays independent from both the 74.5-degree biome ecology clamp and the
+     * village placement policy.
+     */
+    public static boolean isBlockBeyondPolarFoliageLimit(
+            int blockZ,
+            int borderRadiusFallback) {
+        return PolarFoliagePolicy.isBeyondLimit(
+                blockZ,
+                getActiveRadiusBlocks(),
+                borderRadiusFallback);
+    }
+
+    /**
      * Village-only polar limit. Origins at exactly 80 degrees remain allowed; only origins
-     * strictly beyond 80 degrees are vetoed. This is deliberately separate from the 74.5-degree
-     * extreme-polar ecology cap used by vegetation and biome policy.
+     * strictly beyond 80 degrees are vetoed. This remains separate from the 74.5-degree biome
+     * ecology cap; vegetation uses its own independent strict-80 policy.
      *
      * <p>The active-radius/fallback authority and Z=0 coordinate convention match
      * {@link #isBlockInExtremePolarCap(int, int)}.
