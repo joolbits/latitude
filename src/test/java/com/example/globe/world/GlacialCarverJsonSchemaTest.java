@@ -105,10 +105,13 @@ class GlacialCarverJsonSchemaTest {
             assertTrue(config.has(key), "glacial_tunnels.json: required cave codec field missing: " + key);
         }
 
-        // The design's Y band: absolute uniform 30..90.
+        // The design's Y band, S25b DEEPENED: absolute uniform -40..90 (owner TEST 117: caves "should extend
+        // down further into the sub y zero zone... it still seems like it ends pretty abruptly"). The floor
+        // dropped 30 -> -40 into the deepslate labyrinth; the top stays 90; lava_level -56 stays BELOW the new
+        // floor (checked by requireConfig above -- no lava windows open in the glacier).
         JsonObject y = config.getAsJsonObject("y");
         assertEquals("minecraft:uniform", y.get("type").getAsString(), "glacial_tunnels.json: y provider type");
-        assertAbsoluteHeightProviderBound(y, "min_inclusive", 30, "glacial_tunnels.json y");
+        assertAbsoluteHeightProviderBound(y, "min_inclusive", -40, "glacial_tunnels.json y");
         assertAbsoluteHeightProviderBound(y, "max_inclusive", 90, "glacial_tunnels.json y");
 
         // The tightened-radii design intent (horizontal ~0.7x, vertical ~0.5x of vanilla) -- pin the

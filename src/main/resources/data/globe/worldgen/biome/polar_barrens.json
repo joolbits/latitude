@@ -71,7 +71,8 @@
       "minecraft:glow_lichen"
     ],
     [
-      "minecraft:freeze_top_layer"
+      "minecraft:freeze_top_layer",
+      "globe:powder_crevasse_roof"
     ]
   ],
   "has_precipitation": true,
@@ -91,6 +92,12 @@
         "maxCount": 3,
         "minCount": 2,
         "weight": 10
+      },
+      {
+        "type": "minecraft:fox",
+        "maxCount": 3,
+        "minCount": 2,
+        "weight": 4
       }
     ],
     "misc": [],

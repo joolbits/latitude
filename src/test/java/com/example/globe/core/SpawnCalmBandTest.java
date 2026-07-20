@@ -6,12 +6,14 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Pure-JVM tests for {@link SpawnCalmBand} (S10a, ZONE-AWARE since the 2026-07-17 owner correction: an
- * explicit POLAR pick spawns "at the lowest latitude of polar" instead of being neutered to 50 deg). Pins:
- * the per-zone windows on the three canonical radii, the band-constant alignment (windows sit on the REAL
- * {@code LatitudeBands} onsets), the everyone-ceiling (nothing at/above 74, ever), the default/non-polar
- * flat-50 law, the jitter clamp (cannot escape a window on either bound), and the retirement of the illegal
- * legacy POLAR fraction (0.89 = 80.1 deg, which sat exactly ON the S8 storm-country onset).
+ * Pure-JVM tests for {@link SpawnCalmBand} (S10a ZONE-AWARE; S25 owner TEST 117: the explicit POLAR pick is
+ * now UNIFORM across the widened [66.5, 79] approach band, driven by a seeded fraction, instead of a fixed
+ * low-edge midpoint). Pins: the per-zone windows on the three canonical radii, the band-constant alignment
+ * (windows sit on the REAL {@code LatitudeBands} onsets), the CEILING SPLIT (non-polar zones under the 74
+ * everyone-ceiling; POLAR under its own 79 expedition ceiling, still below the 80 onset), the seeded POLAR
+ * pick (uniform + monotonic + clamped), the default/non-polar flat-50 law, and the jitter clamp (cannot
+ * escape a window on either bound). The illegal legacy POLAR fraction (0.89 = 80.1 deg, ON the S8 onset)
+ * stays retired -- even the 79-ceiling pick is one degree under it.
  */
 class SpawnCalmBandTest {
 
@@ -21,21 +23,48 @@ class SpawnCalmBandTest {
         return (double) absZ * 90.0 / zRadius;
     }
 
-    // ---- explicit POLAR pick: the lowest latitudes of polar, on every radius ---------------------
+    // ---- explicit POLAR pick: UNIFORM across the widened [66.5, 79] approach band (S25) ----------
 
     @Test
-    void polarPickLandsInTheLowestLatitudesOfPolar() {
+    void polarWindowIsTheWidenedApproachBand() {
         for (int r : RADII) {
             SpawnCalmBand.Window w = SpawnCalmBand.spawnWindow("POLAR", r);
-            int target = SpawnCalmBand.spawnTargetAbsZ("POLAR", 0.89, r);
             assertTrue(deg(w.loAbsZ(), r) >= 66.4 && deg(w.loAbsZ(), r) <= 66.5,
                     "polar window floor sits on the 66.5 band onset @" + r);
-            assertTrue(deg(w.hiAbsZ(), r) <= 70.0, "polar window ceiling <= 70 @" + r);
-            assertTrue(target >= w.loAbsZ() && target <= w.hiAbsZ(),
-                    "polar target inside [66.5, 70] @" + r);
-            assertEquals((w.loAbsZ() + w.hiAbsZ()) / 2, target, "target = window midpoint (~68.25 deg)");
-            // The owner's original complaint can never recur: the legacy 0.89 fraction (80.1 deg) is ignored.
-            assertTrue(deg(target, r) < 70.1, "the illegal 80.1-deg legacy fraction is retired @" + r);
+            assertTrue(deg(w.hiAbsZ(), r) >= 78.9 && deg(w.hiAbsZ(), r) <= 79.0,
+                    "polar window ceiling sits at the 79-deg expedition ceiling @" + r);
+        }
+    }
+
+    @Test
+    void polarSeededPickIsUniformAcrossTheBand() {
+        for (int r : RADII) {
+            SpawnCalmBand.Window w = SpawnCalmBand.spawnWindow("POLAR", r);
+            // frac 0 -> floor, frac 1 -> ceiling, frac 0.5 -> midpoint; monotonic non-decreasing between.
+            assertEquals(w.loAbsZ(), SpawnCalmBand.spawnTargetAbsZ("POLAR", 0.89, r, 0.0),
+                    "frac 0 lands at the 66.5 floor @" + r);
+            assertEquals(w.hiAbsZ(), SpawnCalmBand.spawnTargetAbsZ("POLAR", 0.89, r, 1.0),
+                    "frac 1 lands at the 79 ceiling @" + r);
+            assertEquals((w.loAbsZ() + w.hiAbsZ()) / 2,
+                    SpawnCalmBand.spawnTargetAbsZ("POLAR", 0.89, r, 0.5), 1.0,
+                    "frac 0.5 lands at the window midpoint @" + r);
+            int prev = Integer.MIN_VALUE;
+            for (int k = 0; k <= 10; k++) {
+                int t = SpawnCalmBand.spawnTargetAbsZ("POLAR", 0.89, r, k / 10.0);
+                assertTrue(t >= w.loAbsZ() && t <= w.hiAbsZ(), "seeded pick stays in the window @" + r);
+                assertTrue(t >= prev, "seeded pick is monotonic in frac @" + r);
+                prev = t;
+            }
+            // Out-of-range / NaN fracs are conservative: clamped to the window (NaN -> midpoint).
+            assertEquals(w.loAbsZ(), SpawnCalmBand.spawnTargetAbsZ("POLAR", 0.89, r, -3.0), "frac<0 clamps to floor");
+            assertEquals(w.hiAbsZ(), SpawnCalmBand.spawnTargetAbsZ("POLAR", 0.89, r, 9.0), "frac>1 clamps to ceiling");
+            assertEquals((w.loAbsZ() + w.hiAbsZ()) / 2,
+                    SpawnCalmBand.spawnTargetAbsZ("POLAR", 0.89, r, Double.NaN), 1.0, "NaN frac -> midpoint");
+            // The 3-arg (legacy/SUBPOLAR) form still returns the midpoint, and the illegal 80.1-deg fraction
+            // stays retired: even the ceiling-grazing pick is one degree under the 80-deg storm onset.
+            assertEquals((w.loAbsZ() + w.hiAbsZ()) / 2, SpawnCalmBand.spawnTargetAbsZ("POLAR", 0.89, r),
+                    "3-arg polar target = window midpoint");
+            assertTrue(deg(w.hiAbsZ(), r) < 80.0, "even the ceiling pick stays under the 80-deg onset @" + r);
         }
     }
 
@@ -82,22 +111,43 @@ class SpawnCalmBandTest {
         assertEquals(11111, SpawnCalmBand.maxAbsZ(20000));
     }
 
-    // ---- the everyone-ceiling: storm country is unspawnable for ALL zones -----------------------
+    // ---- the ceilings: 74 for everyone, 79 for the POLAR expedition (S25 split) ------------------
 
     @Test
-    void nothingEverSpawnsAtOrAboveTheStormCeiling() {
+    void nonPolarZonesStayUnderThe74EveryoneCeiling() {
         assertEquals(74.0, SpawnCalmBand.STORM_SPAWN_CEILING_DEG, 1e-9,
-                "ceiling pick: 74 (inside the recommended 72-75; 6 deg of calm before the 80 onset)");
+                "everyone-ceiling: 74 (inside the recommended 72-75; 6 deg of calm before the 80 onset)");
         assertTrue(SpawnCalmBand.STORM_SPAWN_CEILING_DEG <= 80.0 - 5.0,
                 "a comfortable margin under the S8 polar-country onset");
         for (int r : RADII) {
-            for (String zone : new String[]{"POLAR", "SUBPOLAR", "TEMPERATE", "EQUATOR", null, "JUNK", "RANDOM"}) {
+            // POLAR is deliberately EXCLUDED -- it has its own 79 ceiling (asserted below).
+            for (String zone : new String[]{"SUBPOLAR", "TEMPERATE", "EQUATOR", null, "JUNK"}) {
                 SpawnCalmBand.Window w = SpawnCalmBand.spawnWindow(zone, r);
                 int target = SpawnCalmBand.spawnTargetAbsZ(zone, 0.89, r);
                 assertTrue(deg(w.hiAbsZ(), r) < SpawnCalmBand.STORM_SPAWN_CEILING_DEG + 1e-9,
-                        "window ceiling under the storm ceiling: " + zone + " @" + r);
+                        "window ceiling under the everyone-ceiling: " + zone + " @" + r);
                 assertTrue(deg(target, r) < SpawnCalmBand.STORM_SPAWN_CEILING_DEG,
-                        "target under the storm ceiling: " + zone + " @" + r);
+                        "target under the everyone-ceiling: " + zone + " @" + r);
+            }
+        }
+    }
+
+    @Test
+    void polarHasItsOwn79ExpeditionCeilingUnderTheOnset() {
+        assertEquals(79.0, SpawnCalmBand.POLAR_SPAWN_CEILING_DEG, 1e-9,
+                "the POLAR expedition ceiling is 79 (owner S25) -- above the 74 everyone-ceiling");
+        assertEquals(SpawnCalmBand.POLAR_WINDOW_HI_DEG, SpawnCalmBand.POLAR_SPAWN_CEILING_DEG, 1e-9,
+                "the POLAR window hi and its own ceiling are the same 79");
+        assertTrue(SpawnCalmBand.POLAR_SPAWN_CEILING_DEG > SpawnCalmBand.STORM_SPAWN_CEILING_DEG,
+                "POLAR is the ONE zone allowed above the everyone-ceiling");
+        assertTrue(SpawnCalmBand.POLAR_SPAWN_CEILING_DEG < 80.0,
+                "even the POLAR ceiling stays under the 80-deg polar-country onset");
+        for (int r : RADII) {
+            SpawnCalmBand.Window w = SpawnCalmBand.spawnWindow("POLAR", r);
+            for (double frac = 0.0; frac <= 1.0; frac += 0.1) {
+                int target = SpawnCalmBand.spawnTargetAbsZ("POLAR", 0.89, r, frac);
+                assertTrue(deg(target, r) < 80.0, "every seeded POLAR pick stays under the 80 onset @" + r);
+                assertTrue(target <= w.hiAbsZ(), "seeded POLAR pick under its own 79 ceiling @" + r);
             }
         }
     }
@@ -129,6 +179,7 @@ class SpawnCalmBandTest {
         assertEquals(0, SpawnCalmBand.maxAbsZ(0));
         assertEquals(0, SpawnCalmBand.maxAbsZ(-5));
         assertEquals(0, SpawnCalmBand.spawnTargetAbsZ("POLAR", 0.89, 0));
+        assertEquals(0, SpawnCalmBand.spawnTargetAbsZ("POLAR", 0.89, 0, 1.0), "4-arg seeded pick no-band @ r<=0");
         SpawnCalmBand.Window w = SpawnCalmBand.spawnWindow("POLAR", 0);
         assertEquals(0, w.loAbsZ());
         assertEquals(0, w.hiAbsZ());

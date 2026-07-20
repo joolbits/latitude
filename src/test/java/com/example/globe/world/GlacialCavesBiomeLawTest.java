@@ -61,6 +61,18 @@ class GlacialCavesBiomeLawTest {
                 "AT the line: surface side -- never swaps (surface-quart identity)");
         assertFalse(LatitudeBiomes.isBelowGlacialCaveCeiling(66), "median polar surface: never swaps");
         assertFalse(LatitudeBiomes.isBelowGlacialCaveCeiling(320), "build ceiling: never swaps");
+
+        // S25 (owner TEST 117, 2026-07-20: caves "should extend down further into the sub y zero zone... it
+        // still seems like it ends pretty abruptly"): the prefilter has NO LOWER BOUND -- the swap reaches
+        // the WORLD BOTTOM, so the deepslate zone is glacial-caves too (the "abrupt end" was the ice DRESSING
+        // thinning below the permafrost band, addressed data-side; the biome identity was already full-depth).
+        // A future edit that re-introduces a floor here must fail this pin. (The deep_dark quart exemption and
+        // the swap running BEFORE the lush veto -- so dripstone_caves/lush_caves quarts DO swap -- live in the
+        // mixin resolver, not this pure helper; the shared-front fray is pinned separately below.)
+        for (int y = -64; y < 48; y += 4) {
+            assertTrue(LatitudeBiomes.isBelowGlacialCaveCeiling(y),
+                    "every sub-ceiling quart down to the world floor stays swappable (no floor) at y=" + y);
+        }
     }
 
     // --- flag-off identity + gate order (the column twin) -------------------------------------------

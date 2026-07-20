@@ -2,7 +2,6 @@ package com.example.globe.mixin;
 
 import com.example.globe.GlobeMod;
 import com.example.globe.core.LatitudeV2Flags;
-import com.example.globe.core.PolarBarrensBand;
 import com.example.globe.core.PolarInstrument;
 import com.example.globe.core.PolarWaterFreezeRule;
 import com.example.globe.util.LatitudeMath;
@@ -62,11 +61,13 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * that base (up to {@link PolarWaterFreezeRule#SWEEP_MAX_PER_COLUMN 8} blocks) then freezes bottom-up --
  * CERTAIN, no dice.
  *
- * <p><b>v6 (a) -- THE TICK FRONT (82, not 84).</b> The old gate ({@code FREEZE_ALL_DEG - FRAY = 84}) left the
- * 82-84 Barrens/crevasse band -- where the B-9 crevasses expose water -- with NO machinery (the owner's 84S
- * pour froze nothing). The driver now rides {@link PolarWaterFreezeRule#tickFrontFreezes}: the SAME shared
- * barrens band decision (ONSET 82 -> FULL 84 on the coherent barrens fray noise) the biome placement, glacier
- * body, and crevasse carvers use -- one decision, Art VI. Tick-time only; worldgen keeps the 85 law.
+ * <p><b>v6 (a) -- THE TICK FRONT (82 then, 80 since S25).</b> The old gate ({@code FREEZE_ALL_DEG - FRAY = 84})
+ * left the 82-84 Barrens/crevasse band -- where the B-9 crevasses expose water -- with NO machinery (the
+ * owner's 84S pour froze nothing); v6 moved the front to the barrens band (82->84). S25 (owner TEST 117:
+ * "should at least start from eighty degrees") decoupled it onto its own ramp: the driver rides
+ * {@link PolarWaterFreezeRule#tickFrontFreezes} -- ONSET 80 -> FULL 82 (= the barrens onset, KEEP-SHARED) on
+ * the SAME coherent barrens fray noise field the biome placement, glacier body, and crevasse carvers use --
+ * one noise field, Art VI. Tick-time only; worldgen keeps the 85 law.
  *
  * <p><b>What one column visit does.</b> Only in the tick front, per round-robin slot:
  * <ol>
@@ -93,7 +94,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * (glacier sole, surface-40) are never frozen however deep the walk goes (the B-9 semi-ice cave reservoir);
  * source blocks are never frozen here (vanilla's {@code shouldFreeze} + the source-last veto own them).
  * {@code POLAR_WATER_FREEZE_ENABLED} off, a non-globe world, or an out-of-band chunk: this injector does
- * nothing. {@code POLAR_BARRENS_ENABLED} off: the FLOWING machinery and the 82 tick front are dormant (moving
+ * nothing. {@code POLAR_BARRENS_ENABLED} off: the FLOWING machinery and the 80 tick front are dormant (moving
  * water is vanilla's, the pre-v6 barrens-off behaviour) but the S15 roofed-SOURCE sky waiver still runs on
  * the razor 85 front, exactly as it always did. The injector NEVER cancels vanilla; it only adds ice.
  *
@@ -123,7 +124,7 @@ public abstract class ServerLevelRoofedWaterFreezeMixin {
         int minBlockX = chunkPos.getMinBlockX();
         int minBlockZ = chunkPos.getMinBlockZ();
         // CHEAP CHUNK GATE: the chunk's poleward-most edge decides whether any of its 256 columns can possibly
-        // reach the active onset -- the 82 tick front with barrens on, the razor 85 with barrens off (the
+        // reach the active onset -- the 80 tick front (S25) with barrens on, the razor 85 with barrens off (the
         // pre-v6 sky-waiver front). tickChunk runs for every naturally-ticking chunk in the world every tick,
         // so everything equatorward pays exactly this one compare and nothing else.
         double chunkOnsetDeg = LatitudeV2Flags.POLAR_BARRENS_ENABLED
@@ -161,9 +162,10 @@ public abstract class ServerLevelRoofedWaterFreezeMixin {
      */
     private static void globe$sweepColumn(ServerLevel self, int blockX, int blockZ) {
         // Per-COLUMN latitude gate: the chunk gate above used the poleward edge, so a band-straddling chunk
-        // still filters its equatorward columns here. Barrens ON: the S22 TICK FRONT -- the SAME shared
-        // barrens band decision (ONSET 82 -> FULL 84 on the coherent barrens fray) the biome/glacier/carvers
-        // use; the fray sample is skipped at/above FULL_DEG where the band fraction is 1.0 (any sample
+        // still filters its equatorward columns here. Barrens ON: the S25 TICK FRONT -- the dedicated
+        // ONSET 80 -> FULL 82 ramp (full = the barrens onset, KEEP-SHARED; owner TEST 117 "should at least
+        // start from eighty degrees") on the SAME coherent barrens fray field the biome/glacier/carvers use;
+        // the fray sample is skipped at/above TICK_FRONT_FULL_DEG where the ramp is 1.0 (any sample
         // passes). Barrens OFF: the pre-v6 razor 85 sky-waiver front (freezeIgnoresSky), roofed-SOURCE only.
         boolean barrensOn = LatitudeV2Flags.POLAR_BARRENS_ENABLED;
         double absLatDeg = LatitudeMath.absLatDegExact(self.getWorldBorder(), blockZ);
@@ -173,7 +175,7 @@ public abstract class ServerLevelRoofedWaterFreezeMixin {
             if (Double.isNaN(absLatDeg) || absLatDeg < PolarWaterFreezeRule.TICK_FRONT_ONSET_DEG) {
                 return;
             }
-            barrensFray = absLatDeg < PolarBarrensBand.FULL_DEG
+            barrensFray = absLatDeg < PolarWaterFreezeRule.TICK_FRONT_FULL_DEG
                     ? LatitudeBiomes.polarBarrensFrayNoise(blockX, blockZ)
                     : 0.0;
             frontActive = PolarWaterFreezeRule.tickFrontFreezes(true, absLatDeg, barrensFray);

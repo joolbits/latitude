@@ -50,9 +50,10 @@ public abstract class IceBlockPolarNoMeltMixin {
         }
         double absLatDeg = LatitudeMath.absLatDegExact(level.getWorldBorder(), pos.getZ());
         // Equatorward of BOTH fronts ice melts normally (vanilla); NaN degrades to vanilla too. The cheap
-        // bail must use the WIDEST front v6 can freeze on: with the barrens on, land ice now forms from the
-        // 82-deg tick front (TEST 114 sweep REQUIRED-FIX — v6 ice at 82-84 must not torch-melt into a
-        // melt/re-freeze flicker against the 1.6 s sweep), so the bail floor follows suit.
+        // bail must use the WIDEST front the tick machinery can freeze on: with the barrens on, land ice now
+        // forms from the 80-deg tick front (TEST 114 sweep REQUIRED-FIX at 82, re-anchored by S25's 80->82
+        // ramp — tick ice must not torch-melt into a melt/re-freeze flicker against the 1.6 s sweep), so the
+        // bail floor rides TICK_FRONT_ONSET_DEG and follows it automatically.
         double bailFloorDeg = LatitudeV2Flags.POLAR_BARRENS_ENABLED
                 ? PolarWaterFreezeRule.TICK_FRONT_ONSET_DEG
                 : PolarWaterFreezeRule.FREEZE_ALL_DEG - PolarWaterFreezeRule.FRAY_HALF_WIDTH_DEG;
@@ -60,10 +61,11 @@ public abstract class IceBlockPolarNoMeltMixin {
             return;
         }
         // Cancel the melt exactly on the front the ice formed on, so the no-melt boundary tracks the freeze
-        // boundary per column: NON-OCEAN columns with the barrens on ride the SHARED 82->84 barrens-band
-        // decision (the same tickFrontFreezes the v6 freeze consumers use — "where ice forms, ice does not
-        // melt" holds on ONE front); ocean columns and barrens-off keep the razor/frayed 85 law (the approved
-        // sea-ice line), exactly mirroring BiomePolarWaterFreezeMixin's branch structure.
+        // boundary per column: NON-OCEAN columns with the barrens on ride the SAME S25 80->82 tick-front ramp
+        // (the same tickFrontFreezes the freeze consumers use — "where ice forms, ice does not melt" holds on
+        // ONE front; the fray sample is cheap enough here that no skip-at-full branch is taken); ocean columns
+        // and barrens-off keep the razor/frayed 85 law (the approved sea-ice line), exactly mirroring
+        // BiomePolarWaterFreezeMixin's branch structure.
         boolean cancelled;
         if (LatitudeV2Flags.POLAR_BARRENS_ENABLED
                 && !level.getBiome(pos).is(net.minecraft.tags.BiomeTags.IS_OCEAN)) {

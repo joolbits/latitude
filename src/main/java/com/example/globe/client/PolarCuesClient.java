@@ -31,7 +31,11 @@ public final class PolarCuesClient {
     }
 
     // --- S6 frozen-wounds whisper one-shot state ---
-    private static boolean healLockWhisperPrevActive = false;
+    /** S25(F): the frozen-wounds whisper hysteresis state (see PolarWounds.WhisperGate — fires once per
+     *  lock episode; re-arms only after 100 consecutive released ticks, so the underground boundary flicker
+     *  the owner reported (TEST 117: "it'll re-trigger") can never re-fire it). */
+    private static com.example.globe.core.PolarWounds.WhisperGate healLockWhisperGate =
+            com.example.globe.core.PolarWounds.WhisperGate.ARMED;
 
     // --- S2 pole-clamp frost ---
     /** Within this many blocks of the pole line the player counts as pressed against the wall. */
@@ -44,7 +48,7 @@ public final class PolarCuesClient {
 
     /** World-switch hygiene. */
     public static void reset() {
-        healLockWhisperPrevActive = false;
+        healLockWhisperGate = com.example.globe.core.PolarWounds.WhisperGate.ARMED;
         lastPoleClampFrostTick = Long.MIN_VALUE;
     }
 
@@ -54,15 +58,16 @@ public final class PolarCuesClient {
      */
     public static void frozenWoundsWhisperTick(Minecraft client) {
         if (client.player == null) {
-            healLockWhisperPrevActive = false;
+            healLockWhisperGate = com.example.globe.core.PolarWounds.WhisperGate.ARMED;
             return;
         }
         boolean wounded = client.player.getHealth() < client.player.getMaxHealth();
         boolean active = wounded && PolarColdClient.isHealLocked(client);
-        if (PolarColdCues.frozenWoundsWhisperFires(active, healLockWhisperPrevActive)) {
+        var step = com.example.globe.core.PolarWounds.whisperStep(healLockWhisperGate, active);
+        if (step.fired()) {
             LatitudeWhisperOverlay.trigger(PolarColdCues.FROZEN_WOUNDS_WHISPER_TEXT);
         }
-        healLockWhisperPrevActive = active;
+        healLockWhisperGate = step.next();
     }
 
     /**

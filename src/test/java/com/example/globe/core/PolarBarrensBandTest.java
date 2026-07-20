@@ -315,6 +315,12 @@ class PolarBarrensBandTest {
 
     @Test
     void permafrostReachFadesFromFullBandAtTheSoleToNoneAtTheDensityPoint() {
+        // S25b: the band was STRETCHED 14 -> 24 (owner TEST 117: caves "end pretty abruptly"). Pin the new
+        // length + top density; only the length changed (the 0.60 density + inverted-noise curve are intact).
+        assertEquals(24, PolarBarrensBand.PERMAFROST_BAND_BLOCKS,
+                "S25b stretched the permafrost fade to 24 blocks below the sole");
+        assertEquals(0.60, PolarBarrensBand.PERMAFROST_TOP_DENSITY, 1e-9,
+                "the top areal density is UNCHANGED by the S25b stretch");
         // density(d) = TOP_DENSITY * (1 - d/BAND); a column with noise n is ice for d < BAND*(1 - n/TOP).
         // Lowest-noise columns push ice fingers to the very bottom of the band...
         assertEquals(PolarBarrensBand.PERMAFROST_BAND_BLOCKS,

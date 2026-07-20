@@ -79,4 +79,82 @@ class PolarWoundsTest {
         assertTrue(cueAt86 > 0);
         assertEquals(cueAt86, PolarHazardWindow.frostbiteFrostCueTicks(86.0));
     }
+
+    // ---- S25(F) whisper hysteresis (TEST 117: "it'll re-trigger" in the glacial caves) ----
+
+    /** Drive the gate through a tick sequence; returns how many ticks FIRED. */
+    private static int fires(PolarWounds.WhisperGate[] gate, boolean... actives) {
+        int fired = 0;
+        for (boolean active : actives) {
+            PolarWounds.WhisperStep step = PolarWounds.whisperStep(gate[0], active);
+            if (step.fired()) {
+                fired++;
+            }
+            gate[0] = step.next();
+        }
+        return fired;
+    }
+
+    @Test
+    void whisperFiresOnceOnTheRisingEdge() {
+        PolarWounds.WhisperGate[] gate = {PolarWounds.WhisperGate.ARMED};
+        // idle, then the lock bites: exactly one fire, and holding the lock never re-fires.
+        assertEquals(1, fires(gate, false, false, true, true, true, true));
+        // Fresh-login edge case: armed + immediately active fires once too (same as today's behaviour).
+        PolarWounds.WhisperGate[] fresh = {PolarWounds.WhisperGate.ARMED};
+        assertEquals(1, fires(fresh, true, true));
+    }
+
+    @Test
+    void whisperNeverRefiresOnOscillation_theGlacialCavesBug() {
+        // The TEST 117 failure shape: skylight shafts / the 85-line / the warmth-cache beat flip "active"
+        // for a tick or three, then the lock re-engages. Under the old bare rising-edge every re-engage
+        // re-fired; under the hysteresis a short release grants NO re-arm and the counter resets on re-lock.
+        PolarWounds.WhisperGate[] gate = {PolarWounds.WhisperGate.ARMED};
+        assertEquals(1, fires(gate, true), "the genuine first fire");
+        // 200 ticks of pathological 3-off/5-on flicker (each release far below the 100-tick window): silent.
+        boolean[] flicker = new boolean[200];
+        for (int t = 0; t < flicker.length; t++) {
+            flicker[t] = (t % 8) >= 3; // 3 released, 5 locked, repeating
+        }
+        assertEquals(0, fires(gate, flicker), "boundary flicker can never re-fire the whisper");
+        // Even a NEAR-window release (99 ticks) followed by a re-lock stays silent: the counter reset.
+        boolean[] nearMiss = new boolean[PolarWounds.WHISPER_REARM_RELEASE_TICKS]; // 100 ticks: 99 off + 1 on
+        nearMiss[nearMiss.length - 1] = true;
+        assertEquals(0, fires(gate, nearMiss), "a 99-tick release is not a sustained release");
+    }
+
+    @Test
+    void whisperRearmsOnlyAfterSustainedRelease() {
+        PolarWounds.WhisperGate[] gate = {PolarWounds.WhisperGate.ARMED};
+        assertEquals(1, fires(gate, true), "fire and disarm");
+        // A full sustained release (100 consecutive inactive ticks) re-arms the gate...
+        boolean[] release = new boolean[PolarWounds.WHISPER_REARM_RELEASE_TICKS];
+        assertEquals(0, fires(gate, release), "the release itself never fires");
+        assertTrue(gate[0].armed(), "re-armed after WHISPER_REARM_RELEASE_TICKS of full release");
+        // ...so a genuine SECOND episode whispers again -- once.
+        assertEquals(1, fires(gate, true, true, true), "the second episode's single fire");
+        // And the constant itself is pinned (5 s at 20 tps -- the S25(F) design value).
+        assertEquals(100, PolarWounds.WHISPER_REARM_RELEASE_TICKS);
+    }
+
+    @Test
+    void whisperGateStateMachineInvariants() {
+        // Armed + inactive: stays armed, no counting.
+        PolarWounds.WhisperStep idle = PolarWounds.whisperStep(PolarWounds.WhisperGate.ARMED, false);
+        assertFalse(idle.fired());
+        assertEquals(PolarWounds.WhisperGate.ARMED, idle.next());
+        // Disarmed + active with accumulated release credit: the credit is thrown away (reset to 0).
+        PolarWounds.WhisperStep reset = PolarWounds.whisperStep(new PolarWounds.WhisperGate(false, 57), true);
+        assertFalse(reset.fired());
+        assertEquals(new PolarWounds.WhisperGate(false, 0), reset.next());
+        // Disarmed + active with zero credit: state object unchanged (no churn on the steady locked state).
+        PolarWounds.WhisperGate steady = new PolarWounds.WhisperGate(false, 0);
+        assertEquals(steady, PolarWounds.whisperStep(steady, true).next());
+        // The re-arm TICK itself never fires (active is false on it, by construction).
+        PolarWounds.WhisperStep rearm = PolarWounds.whisperStep(
+                new PolarWounds.WhisperGate(false, PolarWounds.WHISPER_REARM_RELEASE_TICKS - 1), false);
+        assertFalse(rearm.fired());
+        assertTrue(rearm.next().armed());
+    }
 }
