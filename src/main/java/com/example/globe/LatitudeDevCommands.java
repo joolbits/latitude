@@ -5,7 +5,9 @@ import com.example.globe.adapter.geo.GeoSummaryProvider;
 import com.example.globe.core.CrevasseLocator;
 import com.example.globe.core.GeoSurveyNarrator;
 import com.example.globe.core.GlacialBlend;
+import com.example.globe.core.GlacialMarkScan;
 import com.example.globe.core.LatitudeV2Flags;
+import com.example.globe.core.PowderRoofTrap;
 import com.example.globe.core.SurveyGroundTruth;
 import com.example.globe.core.climate.ClimateAuthority;
 import com.example.globe.core.climate.ClimateSummary;
@@ -30,6 +32,7 @@ import net.minecraft.commands.SharedSuggestionProvider;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
 import net.minecraft.core.QuartPos;
+import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Component;
@@ -44,6 +47,8 @@ import net.minecraft.world.entity.Relative;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.biome.BiomeSource;
 import net.minecraft.world.level.biome.Climate;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.chunk.status.ChunkStatus;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator;
@@ -136,6 +141,10 @@ public final class LatitudeDevCommands {
                         .executes(ctx -> locateGlacialCarver(ctx, true, CrevasseLocator.DEFAULT_SEARCH_RADIUS_CHUNKS))
                         .then(Commands.argument("radiusChunks", IntegerArgumentType.integer(1, CrevasseLocator.DEFAULT_SEARCH_RADIUS_CHUNKS))
                                 .executes(ctx -> locateGlacialCarver(ctx, true, IntegerArgumentType.getInteger(ctx, "radiusChunks")))))
+                .then(Commands.literal("markGlacial")
+                        .executes(ctx -> markGlacial(ctx, DEFAULT_MARK_RADIUS_CHUNKS))
+                        .then(Commands.argument("radiusChunks", IntegerArgumentType.integer(1, MAX_MARK_RADIUS_CHUNKS))
+                                .executes(ctx -> markGlacial(ctx, IntegerArgumentType.getInteger(ctx, "radiusChunks")))))
                 .then(Commands.literal("tpxz")
                         .then(Commands.argument("x", IntegerArgumentType.integer())
                                 .then(Commands.argument("z", IntegerArgumentType.integer())
@@ -155,7 +164,8 @@ public final class LatitudeDevCommands {
         ctx.getSource().sendSuccess(() -> Component.literal(
                 "[latdev] here | probe | survey | tpband <band> [center|low|high] | tpedge <west|east> [frac]"
                         + " | tphemi <ns|ew|zero> [n|s|e|w] | tppole <n|s> [deg]"
-                        + " | locateCrevasse [radiusChunks] | locateTunnel [radiusChunks] | tpxz <x> <z>"), false);
+                        + " | locateCrevasse [radiusChunks] | locateTunnel [radiusChunks]"
+                        + " | markGlacial [radiusChunks] | tpxz <x> <z>"), false);
         return 1;
     }
 
@@ -651,5 +661,231 @@ public final class LatitudeDevCommands {
 
     private static String biomeId(ServerLevel world, BlockPos pos) {
         return world.getBiome(pos).unwrapKey().map(k -> k.identifier().toString()).orElse("?");
+    }
+
+    // --- S29 /latdev markGlacial (Peetsa 2026-07-20, verbatim: "None of this is working. Locate crevasse and
+    // --- teleport just puts me in the same spot... there is no falling through the snow... To make it easier
+    // --- just for dev, can you turn on a simple color filter for the trap crevasses -- maybe typing a command
+    // --- causes them to glow green?") -------------------------------------------------------------------------
+
+    /** Default scan radius (chunks) -- ~64 blocks each way, a comfortable look around the player. */
+    private static final int DEFAULT_MARK_RADIUS_CHUNKS = 4;
+    /** Hard cap on the scan radius (chunks) -- ~128 blocks each way (17x17 chunks) to bound the column count. */
+    private static final int MAX_MARK_RADIUS_CHUNKS = 8;
+    /** Cap on green beacons drawn PER SIGNAL, so a big crevasse field is not a particle storm -- the reported
+     *  counts stay the true totals; beyond this we still count but stop drawing. */
+    private static final int MARK_MARKER_CAP = 200;
+    /** Cap on per-column coordinate chat lines PER SIGNAL (the summary always carries the real totals). */
+    private static final int MARK_CHAT_CAP = 10;
+    /** How far (blocks) below a shallow column's top to probe for a flush powder-snow roof block. */
+    private static final int MARK_ROOF_PROBE_DEPTH = 3;
+    /** Tallest open-slot beacon (blocks) -- a deep canyon's green plume is clipped here to bound particles. */
+    private static final int MARK_BEACON_MAX_HEIGHT = 24;
+
+    /**
+     * S29 GROUND-TRUTH glow-mark: scans REAL generated blocks in a chunk radius and spawns bright-green {@code
+     * HAPPY_VILLAGER} beacons at what is ACTUALLY there -- zero seed math, zero prediction. This is the tool
+     * to answer "do crevasses/traps exist here at all", after {@link #locateGlacialCarver} (which predicts a
+     * carver's seeded START chunk, and so can teleport the tester to a column the carved arc -- reaching up to
+     * {@link CrevasseLocator#CARVER_ARC_REACH_CHUNKS} chunks away -- never breached). Two INDEPENDENT
+     * ground-truth signals, partitioned by each column's WORLD_SURFACE depth so a column is counted at most
+     * once:
+     * <ol>
+     *   <li><b>Trap roofs</b> -- a SHALLOW column (surface at/near the local snowfield) whose top block is
+     *       {@code minecraft:powder_snow}: exactly what {@code world.PowderCrevasseRoofFeature} bridges a
+     *       narrow slot with (it places powder_snow flush at the snowfield surface). A green beacon rises from
+     *       the hidden roof, plus a chat line with its coordinates.</li>
+     *   <li><b>Open slots</b> -- a DEEP column: its WORLD_SURFACE sits {@link
+     *       PowderRoofTrap#MIN_SHAFT_DEPTH_BLOCKS}+ below the local snowfield reference ({@link
+     *       GlacialMarkScan#windowedMax} over the feature's own {@link PowderRoofTrap#REFERENCE_WINDOW_RADIUS}
+     *       window). Because WORLD_SURFACE is the highest NON-AIR block, a deep read PROVES air continues up to
+     *       the sky -- a genuine unroofed opening (a ponded slot reads its water top, so it is shallow and
+     *       excluded, matching the feature). A green plume pours up out of the shaft, plus a chat line with
+     *       coordinates and depth.</li>
+     * </ol>
+     * Reads ONLY already-loaded chunks ({@code ServerChunkCache.getChunkNow} -- never force-generates, which
+     * would change the very world the tester is checking); unloaded chunks are skipped and counted, so "found
+     * nothing" is distinguishable from "nothing was loaded". Uses the runtime WORLD_SURFACE heightmap (the
+     * runtime twin of the feature's worldgen WORLD_SURFACE_WG) and the already-tested {@link
+     * PowderRoofTrap#isTrapCandidate} depth gate; the only new pure math (the sentinel-aware windowed max) is
+     * {@link GlacialMarkScan}.
+     */
+    private static int markGlacial(CommandContext<CommandSourceStack> ctx, int radiusChunks) {
+        CommandSourceStack src = ctx.getSource();
+        try {
+            ServerPlayer player = src.getPlayerOrException();
+            ServerLevel world = src.getLevel();
+            if (!LatitudeV2Flags.GLACIAL_CAVES_V1_ENABLED) {
+                src.sendFailure(Component.literal(
+                        "[latdev] glacial caves are OFF in this session (-Dlatitude.glacialCavesV1=true to arm) — nothing to mark."));
+                return 0;
+            }
+            final int radius = LatitudeBiomes.getActiveRadiusBlocks();
+            if (radius <= 0) {
+                src.sendFailure(Component.literal("[latdev] not an armed globe world — no latitude to scan for glacial features."));
+                return 0;
+            }
+            int r = Mth.clamp(radiusChunks, 1, MAX_MARK_RADIUS_CHUNKS);
+            int centerChunkX = Math.floorDiv(Mth.floor(player.getX()), 16);
+            int centerChunkZ = Math.floorDiv(Mth.floor(player.getZ()), 16);
+            int minChunkX = centerChunkX - r;
+            int minChunkZ = centerChunkZ - r;
+            int chunksPerSide = 2 * r + 1;
+            int originBlockX = minChunkX << 4;
+            int originBlockZ = minChunkZ << 4;
+            int span = chunksPerSide * 16;
+
+            // Pass 1: read WORLD_SURFACE off already-loaded chunks into a continuous grid (UNLOADED elsewhere).
+            int[][] surface = new int[span][span];
+            for (int[] row : surface) {
+                java.util.Arrays.fill(row, GlacialMarkScan.UNLOADED);
+            }
+            var chunkSource = world.getChunkSource();
+            long scannedColumns = 0L;
+            long skippedColumns = 0L;
+            int loadedChunks = 0;
+            int unloadedChunks = 0;
+            for (int ccx = minChunkX; ccx < minChunkX + chunksPerSide; ccx++) {
+                for (int ccz = minChunkZ; ccz < minChunkZ + chunksPerSide; ccz++) {
+                    LevelChunk chunk = chunkSource.getChunkNow(ccx, ccz);
+                    if (chunk == null) {
+                        unloadedChunks++;
+                        skippedColumns += 256L; // the 16x16 columns we deliberately did NOT force-generate
+                        continue;
+                    }
+                    loadedChunks++;
+                    scannedColumns += 256L;
+                    for (int lx = 0; lx < 16; lx++) {
+                        for (int lz = 0; lz < 16; lz++) {
+                            int wx = (ccx << 4) + lx;
+                            int wz = (ccz << 4) + lz;
+                            surface[wx - originBlockX][wz - originBlockZ] =
+                                    chunk.getHeight(Heightmap.Types.WORLD_SURFACE, wx, wz);
+                        }
+                    }
+                }
+            }
+
+            // Pass 2: partition each loaded column by depth and mark the ground truth.
+            int refRadius = PowderRoofTrap.REFERENCE_WINDOW_RADIUS;
+            int trapRoofCount = 0;
+            int openSlotCount = 0;
+            int roofMarkers = 0;
+            int slotMarkers = 0;
+            int roofLines = 0;
+            int slotLines = 0;
+            BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
+            for (int gx = 0; gx < span; gx++) {
+                for (int gz = 0; gz < span; gz++) {
+                    int own = surface[gx][gz];
+                    if (own == GlacialMarkScan.UNLOADED) {
+                        continue;
+                    }
+                    final int wx = originBlockX + gx;
+                    final int wz = originBlockZ + gz;
+                    int reference = GlacialMarkScan.windowedMax(surface, gx, gz, refRadius);
+                    if (PowderRoofTrap.isTrapCandidate(own, reference)) {
+                        // DEEP: WORLD_SURFACE far below the snowfield => air to the sky => open shaft. Signal 2.
+                        openSlotCount++;
+                        final int depth = reference - own;
+                        final int floorY = own - 1; // the crevasse floor's top solid block (firstAir - 1)
+                        if (slotMarkers < MARK_MARKER_CAP) {
+                            int top = Math.min(reference + 2, own + MARK_BEACON_MAX_HEIGHT);
+                            greenBeacon(world, wx, own, top, wz);
+                            slotMarkers++;
+                        }
+                        if (slotLines < MARK_CHAT_CAP) {
+                            src.sendSuccess(() -> Component.literal(String.format(Locale.ROOT,
+                                    "[latdev]   open slot: x=%d y=%d z=%d (%d deep)", wx, floorY, wz, depth)), false);
+                            slotLines++;
+                        }
+                    } else {
+                        // SHALLOW: could be a flush powder-snow roof. Probe the top block(s). Signal 1.
+                        int topBlockY = own - 1;
+                        int foundRoofY = Integer.MIN_VALUE;
+                        for (int y = topBlockY; y >= topBlockY - MARK_ROOF_PROBE_DEPTH; y--) {
+                            cursor.set(wx, y, wz);
+                            if (world.getBlockState(cursor).getBlock() == Blocks.POWDER_SNOW) {
+                                foundRoofY = y;
+                                break;
+                            }
+                        }
+                        if (foundRoofY != Integer.MIN_VALUE) {
+                            trapRoofCount++;
+                            final int roofY = foundRoofY;
+                            if (roofMarkers < MARK_MARKER_CAP) {
+                                greenBeacon(world, wx, roofY, roofY + 3, wz);
+                                roofMarkers++;
+                            }
+                            if (roofLines < MARK_CHAT_CAP) {
+                                src.sendSuccess(() -> Component.literal(String.format(Locale.ROOT,
+                                        "[latdev]   TRAP roof: powder_snow at x=%d y=%d z=%d", wx, roofY, wz)), false);
+                                roofLines++;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Summary (always) + an explanation when a loaded, in-band scan still finds nothing.
+            final int fTrap = trapRoofCount;
+            final int fSlot = openSlotCount;
+            final long fScanned = scannedColumns;
+            final long fSkipped = skippedColumns;
+            final int fLoaded = loadedChunks;
+            final int fUnloaded = unloadedChunks;
+            final int fr = r;
+            src.sendSuccess(() -> Component.literal(String.format(Locale.ROOT,
+                    "[latdev] markGlacial (r=%d chunks): trap roofs=%d, open slots=%d | scanned %d cols (%d chunks), "
+                            + "skipped %d cols (%d unloaded)",
+                    fr, fTrap, fSlot, fScanned, fLoaded, fSkipped, fUnloaded)), false);
+            if (roofMarkers >= MARK_MARKER_CAP || slotMarkers >= MARK_MARKER_CAP) {
+                src.sendSuccess(() -> Component.literal(String.format(Locale.ROOT,
+                        "[latdev] (drew the first %d markers per signal — the counts above are the real totals)",
+                        MARK_MARKER_CAP)), false);
+            }
+            if (trapRoofCount == 0 && openSlotCount == 0) {
+                double absDeg = Mth.clamp(Math.abs(player.getZ()) / radius * 90.0, 0.0, 90.0);
+                if (scannedColumns == 0L) {
+                    src.sendFailure(Component.literal(
+                            "[latdev] nothing was LOADED to scan here — walk/fly the area to load chunks, then run markGlacial again."));
+                } else if (absDeg <= GlacialBlend.BLEND_ONSET_DEG) {
+                    src.sendSuccess(() -> Component.literal(String.format(Locale.ROOT,
+                            "[latdev] you're at %.1f° — equatorward of the glacial blend onset (%.0f°); the underground only "
+                                    + "turns glacial poleward of there (full by %.0f°). Try /latdev tppole n|s, then markGlacial.",
+                            absDeg, GlacialBlend.BLEND_ONSET_DEG, GlacialBlend.BLEND_FULL_DEG)), false);
+                } else {
+                    src.sendSuccess(() -> Component.literal(String.format(Locale.ROOT,
+                            "[latdev] you're at %.1f° (in-band; the blend threshold rises %.0f°->%.0f°) — likely an unlucky "
+                                    + "low-probability patch. Try a larger radius, or move poleward toward %.0f°.",
+                            absDeg, GlacialBlend.BLEND_ONSET_DEG, GlacialBlend.BLEND_FULL_DEG, GlacialBlend.BLEND_FULL_DEG)), false);
+                }
+            }
+            return 1;
+        } catch (Exception e) {
+            src.sendFailure(Component.literal("[latdev] markGlacial failed: " + e.getMessage()));
+            return 0;
+        }
+    }
+
+    /**
+     * Spawns a short vertical stack of bright-green {@code ParticleTypes.HAPPY_VILLAGER} particles (at the low,
+     * mid, and high Y) centred on a column -- the "glow green" marker the owner asked for (Peetsa 2026-07-20).
+     * {@link ServerLevel#sendParticles} (the {@code <T extends ParticleOptions> int sendParticles(T, double,
+     * double, double, int, double, double, double, double)} overload, javap-verified on the 26.2 merged jar)
+     * broadcasts to every player tracking the position; {@code HAPPY_VILLAGER} is a {@code SimpleParticleType}
+     * (which implements {@code ParticleOptions}), inherently green, so there is no colour argument to get
+     * wrong. Bounded to three points regardless of shaft depth, so a deep canyon never becomes a particle
+     * fountain.
+     */
+    private static void greenBeacon(ServerLevel world, int x, int yLo, int yHi, int z) {
+        int lo = Math.min(yLo, yHi);
+        int hi = Math.max(yLo, yHi);
+        int mid = (lo + hi) / 2;
+        double cx = x + 0.5;
+        double cz = z + 0.5;
+        for (int y : new int[]{lo, mid, hi}) {
+            world.sendParticles(ParticleTypes.HAPPY_VILLAGER, cx, y + 0.5, cz, 6, 0.2, 0.2, 0.2, 0.0);
+        }
     }
 }

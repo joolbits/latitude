@@ -19,18 +19,22 @@ class PolarWindSoundTest {
     void silentBelowOnset() {
         assertEquals(0f, PolarWindSound.volume(0.0), EPS);
         assertEquals(0f, PolarWindSound.volume(80.0), EPS);
-        assertEquals(0f, PolarWindSound.volume(84.9), EPS);
+        // S29: START_DEG moved 85 -> 83; probe just under the NEW onset, not the old one.
+        assertEquals(0f, PolarWindSound.volume(PolarWindSound.START_DEG - 0.1), EPS);
         assertEquals(0f, PolarWindSound.volume(PolarWindSound.START_DEG), EPS);
     }
 
     @Test
     void whisperThroughApproachBand() {
-        // 87 deg: progress 0.4, squared -> 0.16 of MAX -> ~0.128. Clearly a whisper (< a quarter of max).
-        float v87 = PolarWindSound.volume(87.0);
-        assertEquals(PolarWindSound.MAX_VOLUME * 0.16f, v87, EPS);
-        assertTrue(v87 < PolarWindSound.MAX_VOLUME * 0.25f, "85-87 must be a whisper");
-        // 85.5 deg: barely audible.
-        assertTrue(PolarWindSound.volume(85.5) < 0.02f);
+        // S29: probes re-anchored to the SAME relative progress (not the same absolute degrees) so the
+        // test still means "40% of the way from onset to full" / "10% of the way" after the 85->83 retune.
+        double whisperCheckpoint = PolarWindSound.START_DEG + 0.4 * (PolarWindSound.FULL_DEG - PolarWindSound.START_DEG);
+        float vCheckpoint = PolarWindSound.volume(whisperCheckpoint);
+        assertEquals(PolarWindSound.MAX_VOLUME * 0.16f, vCheckpoint, EPS);
+        assertTrue(vCheckpoint < PolarWindSound.MAX_VOLUME * 0.25f, "just past onset must be a whisper");
+        // Barely past onset: barely audible.
+        double barelyPastOnset = PolarWindSound.START_DEG + 0.1 * (PolarWindSound.FULL_DEG - PolarWindSound.START_DEG);
+        assertTrue(PolarWindSound.volume(barelyPastOnset) < 0.02f);
     }
 
     @Test
@@ -52,24 +56,29 @@ class PolarWindSoundTest {
 
     @Test
     void hysteresisThresholdsOrdered() {
+        // S29: rewritten to read the thresholds symbolically (not hardcoded degrees) so a future retune of
+        // START_DEG/STOP_DEG never desyncs this test from the constants again.
         assertTrue(PolarWindSound.STOP_DEG < PolarWindSound.START_DEG, "STOP must be below START (dead band)");
-        assertTrue(PolarWindSound.shouldStart(85.0));
-        assertTrue(PolarWindSound.shouldStart(90.0));
-        assertTrue(!PolarWindSound.shouldStart(84.9));
-        assertTrue(PolarWindSound.shouldStop(84.4));
-        assertTrue(!PolarWindSound.shouldStop(84.5));
-        assertTrue(!PolarWindSound.shouldStop(85.0));
-        // In the dead band [84.5, 85): neither a fresh start nor a stop -- the loop just carries.
-        assertTrue(!PolarWindSound.shouldStart(84.7) && !PolarWindSound.shouldStop(84.7));
+        assertTrue(PolarWindSound.shouldStart(PolarWindSound.START_DEG));
+        assertTrue(PolarWindSound.shouldStart(PolarWindSound.FULL_DEG));
+        assertTrue(!PolarWindSound.shouldStart(PolarWindSound.START_DEG - 0.1));
+        assertTrue(PolarWindSound.shouldStop(PolarWindSound.STOP_DEG - 0.1));
+        assertTrue(!PolarWindSound.shouldStop(PolarWindSound.STOP_DEG));
+        assertTrue(!PolarWindSound.shouldStop(PolarWindSound.START_DEG));
+        // In the dead band [STOP_DEG, START_DEG): neither a fresh start nor a stop -- the loop just carries.
+        double midBand = (PolarWindSound.STOP_DEG + PolarWindSound.START_DEG) / 2.0;
+        assertTrue(!PolarWindSound.shouldStart(midBand) && !PolarWindSound.shouldStop(midBand));
     }
 
     @Test
     void liveVolumeFloorsInsideBandButZeroBelow() {
         // In the hysteresis band the alive loop is floored to the inaudible MIN so the channel is not culled.
-        assertEquals(PolarWindSound.MIN_ALIVE_VOLUME, PolarWindSound.liveVolume(84.7), EPS);
-        assertEquals(PolarWindSound.MIN_ALIVE_VOLUME, PolarWindSound.liveVolume(85.0), EPS);
+        // S29: probes re-anchored to the (retuned) STOP_DEG/START_DEG band, symbolically.
+        double midBand = (PolarWindSound.STOP_DEG + PolarWindSound.START_DEG) / 2.0;
+        assertEquals(PolarWindSound.MIN_ALIVE_VOLUME, PolarWindSound.liveVolume(midBand), EPS);
+        assertEquals(PolarWindSound.MIN_ALIVE_VOLUME, PolarWindSound.liveVolume(PolarWindSound.START_DEG), EPS);
         // Below STOP the loop stops, so no floor is applied here.
-        assertEquals(0f, PolarWindSound.liveVolume(84.0), EPS);
+        assertEquals(0f, PolarWindSound.liveVolume(PolarWindSound.STOP_DEG - 0.5), EPS);
         // Well into the storm the real envelope is above the floor.
         assertTrue(PolarWindSound.liveVolume(89.0) > PolarWindSound.MIN_ALIVE_VOLUME);
     }
@@ -161,9 +170,11 @@ class PolarWindSoundTest {
     void shelteredStillFlooredAliveInHysteresisBand() {
         // Even sheltered, a live loop in the dead band keeps the MIN_ALIVE floor so the channel is not culled
         // (0.35 * 0 is still 0, which would otherwise let the engine reclaim the channel and defeat hysteresis).
-        assertEquals(PolarWindSound.MIN_ALIVE_VOLUME, PolarWindSound.liveVolume(84.7, false), EPS);
-        assertEquals(PolarWindSound.MIN_ALIVE_VOLUME, PolarWindSound.liveVolume(85.0, false), EPS);
+        // S29: probes re-anchored to the (retuned) STOP_DEG/START_DEG band, symbolically.
+        double midBand = (PolarWindSound.STOP_DEG + PolarWindSound.START_DEG) / 2.0;
+        assertEquals(PolarWindSound.MIN_ALIVE_VOLUME, PolarWindSound.liveVolume(midBand, false), EPS);
+        assertEquals(PolarWindSound.MIN_ALIVE_VOLUME, PolarWindSound.liveVolume(PolarWindSound.START_DEG, false), EPS);
         // Below STOP the loop is meant to stop, so no floor even when sheltered.
-        assertEquals(0f, PolarWindSound.liveVolume(84.0, false), EPS);
+        assertEquals(0f, PolarWindSound.liveVolume(PolarWindSound.STOP_DEG - 0.5, false), EPS);
     }
 }
