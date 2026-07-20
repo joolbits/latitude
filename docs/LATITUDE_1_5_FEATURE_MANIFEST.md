@@ -1,6 +1,6 @@
 # Latitude 1.5 Feature Manifest
 
-`status: TEST 4 feedback repairs PASSED locally and staged; rendered interaction and polar-boundary replay pending` · `branch: codex/1.5-mini-launch-26.2` · `implementation code savepoint: b064089b065c396b5e4db0484a2bc75f318ef5a8` · `recorded: 2026-07-20`
+`status: TEST 5 staged; polar damage cadence, east/west warning ladder, and prior rendered gates pending live replay` · `branch: codex/1.5-mini-launch-26.2` · `implementation code savepoint: 4f920096969ada9a4602207691992160d7bf4fa8` · `recorded: 2026-07-20`
 
 This is the implementation-side allowlist for the Latitude 1.5 pre-2.0 polish campaign. The campaign
 roadmap lives in the docs root at:
@@ -72,6 +72,50 @@ guarded live replay and the maintainer's visual review remain the next gate.
 Canonical evidence:
 
 `docs/binder/latitude-1-5-hud-studio-consolidation-20260720.md`
+
+## TEST 4 boundary-feedback repairs and TEST 5 staging
+
+Commits `a2babc2b` and `4f920096` close the two source/model failures reported
+from the maintainer's TEST 4 polar and east/west boundary replay:
+
+- the final polar zone now maintains vanilla freezing at 143 ticks every server
+  tick for survival players, above the 140-tick vanilla damage threshold,
+  instead of restoring 119 ticks every ten ticks and producing a no-damage
+  thaw/refreeze sawtooth;
+- east/west text selection now falls through from an expired finite polar
+  episode to the first visibility warning, while preserving the order active
+  polar lethal, east/west final, active nonlethal polar, east/west first;
+- the first east/west copy is `Visibility is dropping ahead. Consider turning
+  around.` and the final copy is exactly `Zero visibility ahead. Turn around.`;
+- no third warning level, longitude/crossing system, direct damage call, or
+  damage rebalance was added.
+
+The prior strict foliage contract remains active without a duplicate patch:
+ordinary tree and tagged simple-foliage origins strictly beyond 80 degrees are
+suppressed in Latitude worlds, exactly 80 degrees remains eligible, and sweet
+berry bushes remain exempt.
+
+The focused frost and warning policy proofs, fresh foliage and village policy
+reruns, all existing policy suites, invariant scan, and the Java 25 clean build
+with 22 tasks passed. A fresh adversarial review independently checked the
+vanilla freeze threshold/cadence and both east/west sides at the 500- and
+100-block boundaries.
+
+The exact TEST 5 artifact is staged as the authorized profile's only Latitude
+jar with SHA-256
+`aff403cc189d82aa5e41c451ce30be3e1b1eaf5a0d3d27ecf7ec0ca69063f9d0`.
+It identifies version `1.5.0+26.2-test.5`, clean source commit
+`4f920096969ada9a4602207691992160d7bf4fa8`, the correct branch, TEST role, and
+Minecraft dependency `>=26.2 <26.3`.
+
+No live-runtime claim follows from source, bytecode, or artifact proof. the maintainer's
+next guarded replay must verify steady final-zone frost plus real vanilla
+damage cadence, the first and final east/west messages, and the previously
+pending TEST 4 rendered and fresh-terrain checks.
+
+Canonical evidence:
+
+`docs/binder/latitude-1-5-test4-boundary-feedback-20260720.md`
 
 ## TEST 3 live-feedback repairs and TEST 4 staging
 
