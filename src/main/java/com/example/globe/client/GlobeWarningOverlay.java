@@ -5,6 +5,7 @@ import com.example.globe.util.LatitudeBands;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.network.chat.Component;
@@ -13,6 +14,8 @@ import net.minecraft.util.Mth;
 
 public final class GlobeWarningOverlay {
     private static long debugStartWorldTime = -1L;
+    private static ClientLevel lastWarningLevel;
+    private static long lastWarningWorldTime = Long.MIN_VALUE;
     private static String lastZoneKey;
 
     private static final String POLE_WARN_1_TEXT =
@@ -26,9 +29,10 @@ public final class GlobeWarningOverlay {
     private static final int POLAR_KEYLINE_RGB = 0x080609;
 
     private static final String EW_VISIBILITY_WARN_TEXT =
-            "Visibility is dropping ahead. Consider turning around.";
+            "Sandstorm on the horizon, consider turning back.";
     private static final String EW_VISIBILITY_DANGER_TEXT =
             "Zero visibility ahead. Turn around.";
+    private static final int EW_KEYLINE_RGB = 0x080609;
 
     private static final boolean DEBUG_ENTRY_TITLES = Boolean.getBoolean("latitude.debugEntryTitles");
     private static final int EQUATOR_STABLE_DIST = 64;
@@ -45,6 +49,8 @@ public final class GlobeWarningOverlay {
     private static String lastWarningDebugText;
     private static final PolarPresentationPolicy.PolarWarningEpisode POLAR_WARNING_EPISODE =
             new PolarPresentationPolicy.PolarWarningEpisode();
+    private static final EwPresentationPolicy.WarningEpisode EW_WARNING_EPISODE =
+            new EwPresentationPolicy.WarningEpisode();
 
     private static boolean registered;
 
@@ -117,7 +123,7 @@ public final class GlobeWarningOverlay {
         if (stage == null) return null;
         return switch (stage) {
             case LEVEL_1 -> Component.literal(EW_VISIBILITY_WARN_TEXT);
-            case LEVEL_2 -> Component.literal(EW_VISIBILITY_DANGER_TEXT).withStyle(ChatFormatting.RED, ChatFormatting.BOLD);
+            case LEVEL_2 -> Component.literal(EW_VISIBILITY_DANGER_TEXT);
             default -> null;
         };
     }
@@ -126,10 +132,12 @@ public final class GlobeWarningOverlay {
         Minecraft client = Minecraft.getInstance();
 
         if (client == null) {
+            clearWarningWorldState();
             return;
         }
 
-        if (!LatitudeConfig.showWarningMessages) {
+        if (client.player == null || client.level == null) {
+            clearWarningWorldState();
             return;
         }
 
@@ -137,25 +145,22 @@ public final class GlobeWarningOverlay {
             return;
         }
 
-        if (client.player == null || client.level == null) {
-            return;
-        }
-
         try {
             long worldTime = client.level.getGameTime();
-            if (debugStartWorldTime < 0L || worldTime < debugStartWorldTime) {
+            boolean levelChanged = lastWarningLevel != client.level;
+            boolean timeRolledBack = lastWarningWorldTime != Long.MIN_VALUE
+                    && worldTime < lastWarningWorldTime;
+            if (levelChanged || timeRolledBack) {
                 resetWorldEntryState(worldTime);
             }
+            lastWarningLevel = client.level;
+            lastWarningWorldTime = worldTime;
 
             var eval = GlobeClientState.evaluate(client);
 
             int screenW = client.getWindow().getGuiScaledWidth();
 
             if (!eval.active()) {
-                return;
-            }
-
-            if (!eval.surfaceOk()) {
                 return;
             }
 
@@ -166,7 +171,8 @@ public final class GlobeWarningOverlay {
                     || Math.abs(px - lastZoneUpdateX) > 16
                     || Math.abs(pz - lastZoneUpdateZ) > 16;
 
-            if (lastZoneUpdateWorldTime == Long.MIN_VALUE || movedFar || (worldTime % 10L) == 0L) {
+            if (eval.surfaceOk()
+                    && (lastZoneUpdateWorldTime == Long.MIN_VALUE || movedFar || (worldTime % 10L) == 0L)) {
                 lastZoneUpdateWorldTime = worldTime;
                 lastZoneUpdateX = px;
                 lastZoneUpdateZ = pz;
@@ -191,10 +197,19 @@ public final class GlobeWarningOverlay {
             double absoluteLatitude = GlobeClientState.absoluteLatitudeDegrees(
                     client.level.getWorldBorder(),
                     client.player.getZ());
-            POLAR_WARNING_EPISODE.update(polarRank(polarStage), absoluteLatitude, worldTime);
+            if (eval.surfaceOk()) {
+                POLAR_WARNING_EPISODE.update(polarRank(polarStage), absoluteLatitude, worldTime);
+            }
             var activePolarStage = polarStageForRank(POLAR_WARNING_EPISODE.activeStageRank(worldTime));
+            double distanceToEwBorder = GlobeClientState.distanceToEwBorderBlocks(client.player.getX());
             var ewTextStage = GlobeClientState.computeEwTextStage(client.level, client.player);
-            var state = GlobeClientState.arbitrateWarning(activePolarStage, ewTextStage);
+            EW_WARNING_EPISODE.update(
+                    ewRank(ewTextStage),
+                    distanceToEwBorder,
+                    worldTime,
+                    GlobeClientState.ewEpisodePaused());
+            var activeEwStage = ewStageForRank(EW_WARNING_EPISODE.activeStageRank(worldTime));
+            var state = GlobeClientState.arbitrateWarning(activePolarStage, activeEwStage);
 
             // Stable precedence (corners):
             // 1) active polar lethal
@@ -213,6 +228,10 @@ public final class GlobeWarningOverlay {
                 return;
             }
 
+            if (!LatitudeConfig.showWarningMessages) {
+                return;
+            }
+
             // Draw final warning (no scaling for now to avoid compilation issues)
             int warnY = client.getWindow().getGuiScaledHeight() - 68;
             if (warnY < 18) {
@@ -220,8 +239,10 @@ public final class GlobeWarningOverlay {
             }
             maybeLogWarningRender(client, state, bestText);
             if (state.type() == GlobeClientState.WarningType.STORM) {
-                int color = warningColorWithPulse(bestText, client, tickCounter);
-                drawCenteredWarning(ctx, client.font, bestText, warnY, color);
+                float alpha = EW_WARNING_EPISODE.alpha(worldTime)
+                        * GlobeClientState.ewPresentationVisibility();
+                int color = warningColorWithAlpha(bestText, alpha);
+                drawCenteredEwWarning(ctx, client.font, bestText, warnY, color);
             } else {
                 int color = warningColorWithAlpha(bestText, POLAR_WARNING_EPISODE.alpha(worldTime));
                 drawCenteredPolarWarning(ctx, client.font, bestText, warnY, color);
@@ -231,16 +252,6 @@ public final class GlobeWarningOverlay {
         }
     }
 
-    private static int warningColorWithPulse(Component text, Minecraft client, DeltaTracker tickCounter) {
-        TextColor styleColor = text.getStyle().getColor();
-        int rgb = styleColor != null ? styleColor.getValue() : 0xFFFFFF;
-        long worldTime = client.level != null ? client.level.getGameTime() : 0L;
-        double phase = worldTime * 0.04; // gentle ~7.8s period
-        float pulse = 0.55f + 0.45f * (float) ((Math.sin(phase) + 1.0) * 0.5);
-        int alpha = (int) Mth.clamp(pulse * 255.0f, 0.0f, 255.0f);
-        return (alpha << 24) | (rgb & 0x00FFFFFF);
-    }
-
     private static int warningColorWithAlpha(Component text, float alpha01) {
         TextColor styleColor = text.getStyle().getColor();
         int rgb = styleColor != null ? styleColor.getValue() : 0xFFFFFF;
@@ -248,11 +259,18 @@ public final class GlobeWarningOverlay {
         return (alpha << 24) | (rgb & 0x00FFFFFF);
     }
 
-    private static void drawCenteredWarning(GuiGraphicsExtractor ctx, Font tr, Component text, int y, int argbColor) {
+    private static void drawCenteredEwWarning(GuiGraphicsExtractor ctx, Font tr, Component text, int y, int argbColor) {
         int screenW = Minecraft.getInstance().getWindow().getGuiScaledWidth();
         int w = tr.width(text);
         int x = Math.max(4, (screenW - w) / 2);
-        ctx.text(tr, text, x, y, argbColor);
+        int alpha = argbColor & 0xFF000000;
+        int keylineColor = alpha | EW_KEYLINE_RGB;
+        Component keylineText = Component.literal(text.getString());
+
+        for (int[] offset : EwPresentationPolicy.outlineOffsets()) {
+            ctx.text(tr, keylineText, x + offset[0], y + offset[1], keylineColor, false);
+        }
+        ctx.text(tr, text, x, y, argbColor, false);
     }
 
     private static void drawCenteredPolarWarning(GuiGraphicsExtractor ctx, Font tr, Component text, int y, int argbColor) {
@@ -289,6 +307,22 @@ public final class GlobeWarningOverlay {
         };
     }
 
+    private static int ewRank(GlobeClientState.EwStormStage stage) {
+        return switch (stage) {
+            case LEVEL_1 -> 1;
+            case LEVEL_2 -> 2;
+            default -> 0;
+        };
+    }
+
+    private static GlobeClientState.EwStormStage ewStageForRank(int rank) {
+        return switch (rank) {
+            case 1 -> GlobeClientState.EwStormStage.LEVEL_1;
+            case 2 -> GlobeClientState.EwStormStage.LEVEL_2;
+            default -> GlobeClientState.EwStormStage.NONE;
+        };
+    }
+
     private static void resetWorldEntryState(long worldTime) {
         debugStartWorldTime = worldTime;
         lastZoneKey = null;
@@ -300,9 +334,24 @@ public final class GlobeWarningOverlay {
         lastWarningDebugWorldTime = Long.MIN_VALUE;
         lastWarningDebugText = null;
         POLAR_WARNING_EPISODE.reset();
+        EW_WARNING_EPISODE.reset();
+        GlobeClientState.resetEwPresentationState();
         if (DEBUG_ENTRY_TITLES) {
             GlobeMod.LOGGER.info("[LAT][ENTRY_TITLE] action=reset worldTime={}", worldTime);
         }
+    }
+
+    private static void clearWarningWorldState() {
+        if (lastWarningLevel == null && lastWarningWorldTime == Long.MIN_VALUE) {
+            return;
+        }
+        resetForDisconnect();
+    }
+
+    public static void resetForDisconnect() {
+        lastWarningLevel = null;
+        lastWarningWorldTime = Long.MIN_VALUE;
+        resetWorldEntryState(-1L);
     }
 
     private static void maybeTriggerHemisphereTitle(Minecraft client, double playerZ) {

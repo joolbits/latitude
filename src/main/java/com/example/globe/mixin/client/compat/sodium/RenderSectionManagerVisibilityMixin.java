@@ -23,6 +23,11 @@ public class RenderSectionManagerVisibilityMixin {
 
         Minecraft mc = Minecraft.getInstance();
         if (mc == null || mc.level == null || mc.player == null) return;
+        if (GlobeClientState.DEBUG_DISABLE_WARNINGS || GlobeClientState.DEBUG_DISABLE_FOG) return;
+        if (!GlobeClientState.isGlobeWorld()) return;
+
+        GlobeClientState.Eval eval = GlobeClientState.evaluate(mc);
+        if (!eval.active()) return;
 
         double sectionCenterX = (sectionX << 4) + 8.0;
         double sectionCenterZ = (sectionZ << 4) + 8.0;
@@ -36,7 +41,10 @@ public class RenderSectionManagerVisibilityMixin {
 
         double px = mc.player.getX();
         double pz = mc.player.getZ();
-        int cappedChunks = GlobeClientState.ewRenderDistanceChunks(baseChunks, px);
+        int cappedChunks = GlobeClientState.ewRenderDistanceChunks(
+                baseChunks,
+                px,
+                GlobeClientState.ewPresentationVisibility());
         int cappedBlocks = Math.max(0, cappedChunks * 16);
 
         double dx = sectionCenterX - px;

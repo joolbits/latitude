@@ -38,6 +38,18 @@ public final class GlobeClientState {
 
     private static long cachedEvalWorldTime = Long.MIN_VALUE;
     private static Eval cachedEval;
+    private static final EwPresentationPolicy.ShelterState EW_SHELTER_STATE =
+            new EwPresentationPolicy.ShelterState();
+    private static long cachedExposureTick = Long.MIN_VALUE;
+    private static long cachedExposurePos = Long.MIN_VALUE;
+    private static int cachedVisibleSkySamples = EwPresentationPolicy.SKY_SAMPLE_COUNT;
+    private static final int EXPOSURE_RECOMPUTE_TICKS = 5;
+    private static final int[][] EXPOSURE_OFFSETS = {
+            {0, 0},
+            {3, 0}, {-3, 0}, {0, 3}, {0, -3},
+            {3, 3}, {3, -3}, {-3, 3}, {-3, -3},
+            {5, 0}, {-5, 0}, {0, 5}, {0, -5}
+    };
 
     public enum WarningType {
         NONE,
@@ -182,7 +194,7 @@ public final class GlobeClientState {
     }
 
     public static EwStormStage ewTextStageForDistance(double distanceToBorder) {
-        return switch (PolarPresentationPolicy.ewTextStageRank(distanceToBorder)) {
+        return switch (EwPresentationPolicy.warningStageRank(distanceToBorder)) {
             case 2 -> EwStormStage.LEVEL_2;
             case 1 -> EwStormStage.LEVEL_1;
             default -> EwStormStage.NONE;
@@ -244,9 +256,10 @@ public final class GlobeClientState {
     }
 
     private static double distanceToEwBorderBlocks(WorldBorder border, double camX) {
-        double center = border.getCenterX();
-        double radius = border.getSize() * 0.5;
-        return Math.max(0.0, radius - Math.abs(camX - center));
+        return EwPresentationPolicy.distanceToNearestBorder(
+                border.getMinX(),
+                border.getMaxX(),
+                camX);
     }
 
     public static double ewWestX() {
@@ -284,14 +297,7 @@ public final class GlobeClientState {
 
     public static int ewWarningStage(double x) {
         double d = distanceToEwBorderBlocks(x);
-        int stage;
-        if (d <= 100.0) {
-            stage = 2;
-        } else if (d <= 175.0) {
-            stage = 1;
-        } else {
-            stage = 0;
-        }
+        int stage = EwPresentationPolicy.warningStageRank(d);
 
         if (Boolean.getBoolean("latitude.debugEwWarn")) {
             GlobeMod.LOGGER.info("[LAT_EW_WARN] stage={} d={}", stage, d);
@@ -301,21 +307,22 @@ public final class GlobeClientState {
 
     public static float ewIntensity01(double x) {
         double d = distanceToEwBorderBlocks(x);
-        if (d > 500.0) return 0.0f;
-
-        float t = (float) ((500.0 - d) / 500.0); // 0..1
-        if (t < 0f) t = 0f;
-        if (t > 1f) t = 1f;
-
-        // steeper right after level-1 threshold
-        return (float) Math.pow(t, 0.55);
+        return EwPresentationPolicy.fogIntensity(d);
     }
 
     public static int ewRenderDistanceChunks(int originalChunks, double playerX) {
-        double i = ewIntensity01(playerX);
+        return ewRenderDistanceChunks(originalChunks, playerX, ewPresentationVisibility());
+    }
+
+    public static int ewRenderDistanceChunks(
+            int originalChunks,
+            double playerX,
+            float presentationVisibility) {
+        double visibility = Math.max(0.0, Math.min(1.0, presentationVisibility));
+        double i = ewIntensity01(playerX) * visibility;
         if (i <= 0.0) return originalChunks;
 
-        int minChunks = 3;
+        int minChunks = Math.min(3, originalChunks);
         int target = (int) Math.round(originalChunks + (minChunks - originalChunks) * i);
         return Math.max(minChunks, Math.min(originalChunks, target));
     }
@@ -336,15 +343,27 @@ public final class GlobeClientState {
     }
 
     public static float computeEwFogEnd(double camX) {
-        if (DEBUG_DISABLE_WARNINGS) {
+        return computeEwFogEnd(camX, 64.0f);
+    }
+
+    public static float computeEwFogEnd(double camX, float baselineEnd) {
+        if (DEBUG_DISABLE_WARNINGS || DEBUG_DISABLE_FOG) {
             return -1.0f;
         }
-        float a = ewIntensity01(camX);
-        if (a <= 0.0f) return -1.0f;
+        return EwPresentationPolicy.fogEndDistance(
+                distanceToEwBorderBlocks(camX),
+                baselineEnd,
+                ewPresentationVisibility());
+    }
 
-        float endFar = 64f;
-        float endNear = 12f;
-        return endFar + (endNear - endFar) * a;
+    public static float computeEwFogStart(double camX, float baselineStart) {
+        if (DEBUG_DISABLE_WARNINGS || DEBUG_DISABLE_FOG) {
+            return baselineStart;
+        }
+        return EwPresentationPolicy.fogStartDistance(
+                distanceToEwBorderBlocks(camX),
+                baselineStart,
+                ewPresentationVisibility());
     }
 
     private static float polarWhiteoutIntensity(ClientLevel world, Player player) {
@@ -379,7 +398,15 @@ public final class GlobeClientState {
             globeWorld = value;
             cachedEvalWorldTime = Long.MIN_VALUE;
             cachedEval = null;
+            resetEwPresentationState();
         }
+    }
+
+    public static void resetForDisconnect() {
+        globeWorld = false;
+        cachedEvalWorldTime = Long.MIN_VALUE;
+        cachedEval = null;
+        resetEwPresentationState();
     }
 
     public record Eval(boolean active, boolean surfaceOk, int absX, int absZ,
@@ -408,6 +435,7 @@ public final class GlobeClientState {
         int absZ = (int) Math.floor(Math.abs(client.player.getZ()));
 
         boolean surfaceOk = isSurfaceOk(client, pos);
+        updateEwShelterState(client, pos, worldTime);
 
         boolean active = globeWorld;
         if (!active) {
@@ -483,6 +511,64 @@ public final class GlobeClientState {
         // Reliable surface check: must be exposed to the sky.
         // Using sky visibility avoids false-negatives from nearby blocks and is stable across time-of-day.
         return world.canSeeSky(pos.above());
+    }
+
+    private static void updateEwShelterState(Minecraft client, BlockPos pos, long worldTime) {
+        var world = client.level;
+        if (world == null) {
+            resetEwPresentationState();
+            return;
+        }
+        if (distanceToEwBorderBlocks(world.getWorldBorder(), client.player.getX())
+                > EwPresentationPolicy.ADVISORY_DISTANCE_BLOCKS) {
+            resetEwPresentationState();
+            return;
+        }
+
+        if (cachedExposureTick != Long.MIN_VALUE && worldTime < cachedExposureTick) {
+            resetEwPresentationState();
+        }
+
+        long packed = pos.asLong();
+        if (cachedExposureTick == Long.MIN_VALUE
+                || packed != cachedExposurePos
+                || worldTime - cachedExposureTick >= EXPOSURE_RECOMPUTE_TICKS) {
+            cachedExposureTick = worldTime;
+            cachedExposurePos = packed;
+            cachedVisibleSkySamples = sampleVisibleSky(client, pos);
+        }
+
+        EW_SHELTER_STATE.update(pos.getY(), world.getSeaLevel(), cachedVisibleSkySamples);
+    }
+
+    private static int sampleVisibleSky(Minecraft client, BlockPos pos) {
+        var world = client.level;
+        if (world == null) {
+            return EwPresentationPolicy.SKY_SAMPLE_COUNT;
+        }
+        BlockPos head = pos.above();
+        int seen = 0;
+        for (int[] offset : EXPOSURE_OFFSETS) {
+            if (world.canSeeSky(head.offset(offset[0], 0, offset[1]))) {
+                seen++;
+            }
+        }
+        return seen;
+    }
+
+    public static float ewPresentationVisibility() {
+        return EW_SHELTER_STATE.visibility();
+    }
+
+    public static boolean ewEpisodePaused() {
+        return EW_SHELTER_STATE.pauseEpisode();
+    }
+
+    public static void resetEwPresentationState() {
+        EW_SHELTER_STATE.reset();
+        cachedExposureTick = Long.MIN_VALUE;
+        cachedExposurePos = Long.MIN_VALUE;
+        cachedVisibleSkySamples = EwPresentationPolicy.SKY_SAMPLE_COUNT;
     }
 
     public static float computePoleFogEnd(double z, float baselineEnd) {

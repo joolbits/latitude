@@ -127,6 +127,11 @@ public final class PolarPresentationPolicy {
             }
 
             boolean hasPreviousSample = !Double.isNaN(previousAbsoluteLatitude);
+            if (!hasPreviousSample && boundedStageRank == 4) {
+                highestTriggeredStageRank = boundedStageRank;
+                activeStageRank = boundedStageRank;
+                activeStartTick = worldTick;
+            }
             boolean movingPoleward = hasPreviousSample
                     && absoluteLatitudeDegrees > previousAbsoluteLatitude + 1.0e-6;
             boolean escalating = boundedStageRank > previousStageRank;

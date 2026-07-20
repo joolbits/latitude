@@ -13,9 +13,11 @@ public final class PolarPresentationPolicyTest {
         fogEnvelopeIsContinuousAndMonotonic();
         fogColorReachesCoolOffWhite();
         warningEpisodeIsPolewardFiniteAndRearmable();
+        directLethalEntryArmsWithoutChangingNormalApproach();
         warningArbitrationFallsThroughToCanonicalEwText();
         outlineIsAnExplicitOnePixelRing();
         staticIntegrationProofsHold();
+        EwPresentationPolicyTest.runAll();
         System.out.println("POLAR_PRESENTATION_POLICY_TEST_PASS");
     }
 
@@ -142,6 +144,21 @@ public final class PolarPresentationPolicyTest {
                 "expired episode has no active warning stage");
     }
 
+    private static void directLethalEntryArmsWithoutChangingNormalApproach() {
+        var directLethal = new PolarPresentationPolicy.PolarWarningEpisode();
+        directLethal.update(4, 89.55, 500L);
+        assertEquals(4, directLethal.highestTriggeredStageRank(),
+                "direct load at any stage-four latitude arms the lethal warning");
+
+        var directWarning = new PolarPresentationPolicy.PolarWarningEpisode();
+        directWarning.update(1, 85.2, 600L);
+        assertEquals(0, directWarning.highestTriggeredStageRank(),
+                "ordinary direct load does not bypass approach-only warning semantics");
+        directWarning.update(1, 85.3, 601L);
+        assertEquals(0, directWarning.highestTriggeredStageRank(),
+                "movement within the same stage still does not synthesize an entry");
+    }
+
     private static void outlineIsAnExplicitOnePixelRing() {
         int[][] offsets = PolarPresentationPolicy.outlineOffsets();
         assertEquals(8, offsets.length, "outline has all eight neighboring pixels");
@@ -159,13 +176,13 @@ public final class PolarPresentationPolicyTest {
     }
 
     private static void warningArbitrationFallsThroughToCanonicalEwText() throws IOException {
-        assertEquals(0, PolarPresentationPolicy.ewTextStageRank(500.0001),
+        assertEquals(0, EwPresentationPolicy.warningStageRank(500.0001),
                 "east/west text is inactive just outside 500 blocks");
-        assertEquals(1, PolarPresentationPolicy.ewTextStageRank(500.0),
+        assertEquals(1, EwPresentationPolicy.warningStageRank(500.0),
                 "east/west level 1 begins at exactly 500 blocks");
-        assertEquals(1, PolarPresentationPolicy.ewTextStageRank(100.0001),
+        assertEquals(1, EwPresentationPolicy.warningStageRank(100.0001),
                 "east/west level 1 remains active just outside 100 blocks");
-        assertEquals(2, PolarPresentationPolicy.ewTextStageRank(100.0),
+        assertEquals(2, EwPresentationPolicy.warningStageRank(100.0),
                 "east/west level 2 begins at exactly 100 blocks");
 
         var polarLethal = PolarPresentationPolicy.arbitrateWarning(4, 2);
@@ -191,14 +208,14 @@ public final class PolarPresentationPolicyTest {
                 "fixed-distance east/west text stage has one exposed canonical owner");
         assertTrue(state.contains("public static WarningState arbitrateWarning(PolarStage activePolar, EwStormStage ewStage)"),
                 "warning precedence has one exposed canonical arbitration policy");
-        assertTrue(state.contains("PolarPresentationPolicy.ewTextStageRank(distanceToBorder)")
+        assertTrue(state.contains("EwPresentationPolicy.warningStageRank(distanceToBorder)")
                         && state.contains("PolarPresentationPolicy.arbitrateWarning(polarRank(polar), ewRank(ew))"),
                 "Minecraft-facing warning state maps the executable dependency-free policy");
-        assertTrue(overlay.contains("GlobeClientState.arbitrateWarning(activePolarStage, ewTextStage)"),
+        assertTrue(overlay.contains("GlobeClientState.arbitrateWarning(activePolarStage, activeEwStage)"),
                 "overlay arbitrates from the finite active polar episode and canonical east/west text stage");
-        assertTrue(overlay.contains("Visibility is dropping ahead. Consider turning around.")
+        assertTrue(overlay.contains("Sandstorm on the horizon, consider turning back.")
                         && overlay.contains("Zero visibility ahead. Turn around."),
-                "east/west warning copy is exact and direction-neutral");
+                "east/west warning copy is exact");
         assertTrue(!overlay.contains("EW_SAND_WARN_TEMPLATE")
                         && !overlay.contains("EW_SAND_DANGER_TEMPLATE")
                         && !overlay.contains("String.format(base.getString()"),
@@ -211,12 +228,15 @@ public final class PolarPresentationPolicyTest {
                 "server polar effects no longer apply blindness");
 
         String state = normalize(read("src/main/java/com/example/globe/client/GlobeClientState.java"));
-        assertTrue(state.contains("if (d > 500.0) return 0.0f;"),
-                "east/west activation threshold remains 500 blocks");
-        assertTrue(state.contains("Math.pow(t, 0.55)"),
-                "east/west intensity curve remains unchanged");
-        assertTrue(state.contains("float endFar = 64f; float endNear = 12f;"),
-                "east/west fog end range remains 64 to 12 blocks");
+        String ewPolicy = normalize(read("src/main/java/com/example/globe/client/EwPresentationPolicy.java"));
+        assertTrue(ewPolicy.contains("FOG_START_DISTANCE_BLOCKS = 400.0")
+                        && ewPolicy.contains("FOG_FULL_DISTANCE_BLOCKS = 50.0"),
+                "east/west fog now uses the approved 400-to-50 envelope");
+        assertTrue(ewPolicy.contains("t * t * (3.0 - 2.0 * t)"),
+                "east/west intensity uses the approved smoothstep");
+        assertTrue(ewPolicy.contains("FOG_NEAR_START_BLOCKS = 0.5f")
+                        && ewPolicy.contains("FOG_NEAR_END_BLOCKS = 12.0f"),
+                "east/west fog converges on the approved near-whiteout distances");
 
         String mixin = read("src/main/java/com/example/globe/mixin/client/FogRendererEwMixin.java");
         assertEquals(1, countOccurrences(mixin, "@Inject(method = \"setupFog\""),
@@ -239,8 +259,8 @@ public final class PolarPresentationPolicyTest {
                 + methodSection(mixin, "private static float latitude$tightenStart(")
                 + methodSection(mixin, "private static float latitude$tightenEnd(");
         assertTrue(ewSection.contains("computeEwFogEnd")
-                        && ewSection.contains("ewIntensity01"),
-                "east/west helper retains the legacy tightening policy");
+                        && ewSection.contains("computeEwFogStart"),
+                "east/west helper consumes the approved start and end tightening policy");
         assertTrue(!ewSection.contains("computePoleFogEnd")
                         && !ewSection.contains("latitude$polarEnd")
                         && !ewSection.contains("latitude$blendPolarFogColor"),
@@ -257,9 +277,11 @@ public final class PolarPresentationPolicyTest {
         assertTrue(!polarSection.contains("computeEwFogEnd")
                         && !polarSection.contains("ewIntensity01"),
                 "polar helper cannot activate or alter east/west fog");
-        assertTrue(polarSection.contains("GlobeClientState.evaluate(client)")
-                        && polarSection.contains("!eval.active() || !eval.surfaceOk()"),
-                "polar helper is gated to active Latitude surface presentation");
+        assertTrue(injectedHandler.contains("GlobeClientState.evaluate(client)")
+                        && injectedHandler.contains("if (!eval.active())")
+                        && polarSection.contains("GlobeClientState.Eval eval")
+                        && polarSection.contains("if (!eval.surfaceOk())"),
+                "one shared evaluation gates Latitude fog before the polar surface check");
 
         String overlay = read("src/main/java/com/example/globe/client/GlobeWarningOverlay.java");
         assertTrue(overlay.contains("POLAR_WARNING_EPISODE.update"),
@@ -276,8 +298,9 @@ public final class PolarPresentationPolicyTest {
                 "polar warning keyline is a styleless dark component");
         assertTrue(countOccurrences(polarDrawSection, ", false);") >= 2,
                 "polar keyline and fill both render without drop shadows");
-        assertTrue(overlay.contains("warningColorWithPulse") && overlay.contains("drawCenteredWarning"),
-                "east/west warning pulse and draw path remain present");
+        assertTrue(overlay.contains("EW_WARNING_EPISODE.alpha")
+                        && overlay.contains("drawCenteredEwWarning"),
+                "east/west warning uses its finite fade and explicit keyline path");
     }
 
     private static String read(String relativePath) throws IOException {

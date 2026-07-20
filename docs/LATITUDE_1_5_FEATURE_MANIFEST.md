@@ -1,6 +1,6 @@
 # Latitude 1.5 Feature Manifest
 
-`status: TEST 5 staged; polar damage cadence, east/west warning ladder, and prior rendered gates pending live replay` · `branch: codex/1.5-mini-launch-26.2` · `implementation code savepoint: 4f920096969ada9a4602207691992160d7bf4fa8` · `recorded: 2026-07-20`
+`status: post-TEST 5 east/west presentation source candidate accepted; successor TEST and rendered replay pending` · `branch: codex/1.5-mini-launch-26.2` · `implementation savepoint: this manifest-bearing commit` · `recorded: 2026-07-20`
 
 This is the implementation-side allowlist for the Latitude 1.5 pre-2.0 polish campaign. The campaign
 roadmap lives in the docs root at:
@@ -72,6 +72,48 @@ guarded live replay and the maintainer's visual review remain the next gate.
 Canonical evidence:
 
 `docs/binder/latitude-1-5-hud-studio-consolidation-20260720.md`
+
+## Post-TEST 5 east/west presentation acceptance
+
+the maintainer's TEST 5 recording admitted a bounded repair for early/abrupt east-west
+fog, canopy-driven warning interruption, retreat replay, and inconsistent
+presentation owners.
+
+The accepted source candidate now:
+
+- shows one non-bold, black-keylined seven-second advisory at the 500-block
+  borderward crossing: `Sandstorm on the horizon, consider turning back.`;
+- preserves the final 100-block escalation
+  `Zero visibility ahead. Turn around.` without downgrade or retreat replay;
+- leaves live fog untouched through 400 blocks, then smoothsteps depth fog,
+  particles, and Sodium culling to full strength at 50 blocks;
+- removes the flat full-screen tan veil;
+- shares one 13-sample confirmed-underground state across warning, fog,
+  particles, and culling, so trees and arches do not interrupt presentation;
+- requires authoritative synced Latitude-world identity before fog or Sodium
+  changes, uses actual border geometry on both sides, and clears warning/world
+  state directly on disconnect;
+- arms direct initial polar lethal presentation at the actual stage-four
+  threshold without replaying missed lower stages.
+
+The Java 25 19-task clean build/invariant scan, structure-climate guard,
+focused boundary/lifecycle tests, impact/diff/denylist audit, and repeated
+fresh adversarial review passed. The reviewers blocked and forced repairs for
+legacy percentage particle thresholds, non-authoritative world gates,
+shifted-border wind, Sodium bypass, and disconnect lifecycle wiring before
+returning final ACCEPT.
+
+No village patch was admitted. Jungle and bamboo jungle are valid warm-zone
+biomes, and the recording does not establish a fresh climate-wrong stored
+structure start. A fresh desert village in BOP tundra remains an exact-ID
+evidence gate. Accepted old-save `/locate` ghosts remain unchanged.
+
+This is local source/model acceptance. No successor artifact was staged and no
+new rendered-pixel claim is made.
+
+Canonical evidence:
+
+`docs/binder/latitude-1-5-test5-ew-presentation-20260720.md`
 
 ## TEST 4 boundary-feedback repairs and TEST 5 staging
 
