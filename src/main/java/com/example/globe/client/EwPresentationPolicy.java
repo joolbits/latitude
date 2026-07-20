@@ -4,8 +4,12 @@ package com.example.globe.client;
  * Dependency-free presentation policy for the east/west sandstorm approach.
  */
 public final class EwPresentationPolicy {
-    public static final double ADVISORY_DISTANCE_BLOCKS = 500.0;
     public static final double FOG_START_DISTANCE_BLOCKS = 400.0;
+    // A smoothstep is zero at its endpoint. Use the first representable
+    // in-envelope distance so the advisory and the first actually emitted
+    // particle share the same crossing rather than creating a clear-air lead.
+    public static final double FIRST_VISIBLE_PARTICLE_DISTANCE_BLOCKS = Math.nextDown(FOG_START_DISTANCE_BLOCKS);
+    public static final double ADVISORY_DISTANCE_BLOCKS = FIRST_VISIBLE_PARTICLE_DISTANCE_BLOCKS;
     public static final double DANGER_DISTANCE_BLOCKS = 100.0;
     public static final double FOG_FULL_DISTANCE_BLOCKS = 50.0;
 
@@ -116,6 +120,21 @@ public final class EwPresentationPolicy {
                 maximumBudget * particleIntensity(distanceToBorder, presentationVisibility)));
     }
 
+    /**
+     * The visible storm begins with one sparse falling-sand particle. Haze
+     * remains rounded normally so the leading edge does not double-emit.
+     */
+    public static int leadingSandParticleBudget(
+            int maximumBudget,
+            double distanceToBorder,
+            float presentationVisibility) {
+        int roundedBudget = particleBudget(maximumBudget, distanceToBorder, presentationVisibility);
+        if (roundedBudget > 0 || particleIntensity(distanceToBorder, presentationVisibility) <= 0.0f) {
+            return roundedBudget;
+        }
+        return 1;
+    }
+
     public static double windTowardInterior(
             double westBorder,
             double eastBorder,
@@ -196,7 +215,8 @@ public final class EwPresentationPolicy {
 
     /**
      * One episode per border visit and stage. Only borderward entry or escalation can trigger;
-     * retreat cannot replay a lower or already-seen stage. Moving beyond 500 blocks rearms both.
+     * retreat cannot replay a lower or already-seen stage. Moving beyond the
+     * shared particle/advisory threshold rearms both.
      */
     public static final class WarningEpisode {
         private double previousDistance = Double.NaN;

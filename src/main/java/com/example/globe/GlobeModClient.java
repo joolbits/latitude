@@ -268,7 +268,7 @@ public class GlobeModClient implements ClientModInitializer {
                 0.10);
 
         // Use falling sand dust for a visible sandstorm wall, plus some haze.
-        int sandCount = EwPresentationPolicy.particleBudget(20, distanceToBorder, presentationVisibility);
+        int sandCount = EwPresentationPolicy.leadingSandParticleBudget(20, distanceToBorder, presentationVisibility);
         int hazeCount = EwPresentationPolicy.particleBudget(7, distanceToBorder, presentationVisibility);
         if (sandCount <= 0 && hazeCount <= 0) {
             return;

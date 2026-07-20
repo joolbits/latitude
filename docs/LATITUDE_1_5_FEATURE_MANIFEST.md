@@ -1,6 +1,6 @@
 # Latitude 1.5 Feature Manifest
 
-`status: post-TEST 5 east/west presentation source candidate accepted; successor TEST and rendered replay pending` · `branch: codex/1.5-mini-launch-26.2` · `implementation savepoint: this manifest-bearing commit` · `recorded: 2026-07-20`
+`status: TEST 6 surfaced an east/west advisory-to-visible-particle mismatch; corrected source candidate awaits TEST 7 rendered replay` · `branch: codex/1.5-mini-launch-26.2` · `implementation savepoint: this manifest-bearing commit` · `recorded: 2026-07-20`
 
 This is the implementation-side allowlist for the Latitude 1.5 pre-2.0 polish campaign. The campaign
 roadmap lives in the docs root at:
@@ -73,6 +73,34 @@ Canonical evidence:
 
 `docs/binder/latitude-1-5-hud-studio-consolidation-20260720.md`
 
+## TEST 6 east/west advisory-to-particle correction
+
+TEST 6 was the exact staged artifact from commit `76215c428bfc0bef850c029d462cfb2f6e4c328a`,
+SHA-256 `37458a5a024d998c77ccf4ba640e12d533e6f4138bf195c7491817f294beece8`.
+the maintainer's live report established that the seven-second first advisory was not encountered before the
+final `Zero visibility ahead. Turn around.` message.
+
+The initial TEST 6 source assumption was wrong: it tied the advisory to the 400-block smoothstep
+endpoint, but that endpoint has zero intensity and integer particle rounding emitted no particle
+there. The actual first emitted particle appeared only much later, allowing a slow approach to
+consume the advisory before any visible storm cue.
+
+The replacement policy defines the first visible-particle crossing as the first representable
+distance inside the 400-block envelope and emits one sparse falling-sand particle there, without
+also emitting haze. The first advisory is tied to that same crossing. This keeps the 400-to-50 fog ramp,
+the 100-block final warning, the seven-second message episode, canopy/underground behavior, and
+retreat semantics unchanged. Focused policy proof, Java 25 19-task clean build, and the
+structure-climate guard passed. A fresh adversarial review specifically verified that the earlier
+rounding gap had been closed.
+
+This is source/model evidence only. TEST 6 remains a historic failing artifact for this exact
+timing condition. TEST 7 must prove on both borders that one visible leading particle and the
+first advisory begin on the same approach crossing, before the existing 100-block final message.
+
+Canonical evidence:
+
+`docs/binder/latitude-1-5-test6-advisory-particle-onset-20260720.md`
+
 ## Post-TEST 5 east/west presentation acceptance
 
 the maintainer's TEST 5 recording admitted a bounded repair for early/abrupt east-west
@@ -81,8 +109,8 @@ presentation owners.
 
 The accepted source candidate now:
 
-- shows one non-bold, black-keylined seven-second advisory at the 500-block
-  borderward crossing: `Sandstorm on the horizon, consider turning back.`;
+- historically showed one non-bold, black-keylined seven-second advisory at the
+  500-block borderward crossing: `Sandstorm on the horizon, consider turning back.`;
 - preserves the final 100-block escalation
   `Zero visibility ahead. Turn around.` without downgrade or retreat replay;
 - leaves live fog untouched through 400 blocks, then smoothsteps depth fog,
@@ -108,8 +136,9 @@ biomes, and the recording does not establish a fresh climate-wrong stored
 structure start. A fresh desert village in BOP tundra remains an exact-ID
 evidence gate. Accepted old-save `/locate` ghosts remain unchanged.
 
-This is local source/model acceptance. No successor artifact was staged and no
-new rendered-pixel claim is made.
+This is historical local source/model acceptance. TEST 6 exposed the later
+advisory-to-visible-particle gap; the superseding TEST 6 correction above
+controls the successor artifact and rendered replay.
 
 Canonical evidence:
 
