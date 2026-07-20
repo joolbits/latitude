@@ -211,14 +211,13 @@ public final class LocationDetailPolicyTest {
                 studio.contains("cfg.setLocationDetailMode(LocationDetailPolicy.DEFAULT_MODE)"),
                 "HUD Studio reset returns location detail to Off");
 
-        String settings = normalize(read("src/main/java/com/example/globe/client/LatitudeSettingsScreen.java"));
         assertTrue(
-                settings.contains("CycleButton.<LocationDetailPolicy.Mode>builder")
-                        && settings.contains("cfg.setLocationDetailMode(value)"),
-                "simple settings cannot overwrite the four-state mode with a Boolean zone control");
+                studio.contains("TAB_NAMES = {\"Compass\", \"Title\", \"Settings\"}")
+                        && occurrences(studio, "CycleButton.<LocationDetailPolicy.Mode>builder") == 1,
+                "the consolidated Studio keeps one authoritative four-state location-detail control");
         assertTrue(
-                settings.contains("cfg.setLocationDetailMode(LocationDetailPolicy.DEFAULT_MODE)"),
-                "simple settings reset also returns location detail to Off");
+                !Files.exists(Path.of("src/main/java/com/example/globe/client/LatitudeSettingsScreen.java")),
+                "the retired standalone settings screen cannot retain a parallel Boolean or reset path");
 
         String build = normalize(read("build.gradle"));
         assertTrue(

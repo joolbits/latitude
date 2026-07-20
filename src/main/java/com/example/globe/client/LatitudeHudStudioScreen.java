@@ -16,13 +16,18 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.util.Mth;
 
 public class LatitudeHudStudioScreen extends Screen {
+    private static final String[] TAB_NAMES = {"Compass", "Title", "Settings"};
+    private static final int TAB_COMPASS = 0;
+    private static final int TAB_TITLE = 1;
+    private static final int TAB_SETTINGS = 2;
+
     private final Screen parent;
 
     private boolean sidebarVisible = true;
     private int sidebarWidth = 180;
-
-    private enum Target { COMPASS, TITLE, BOTH }
-    private Target target = Target.COMPASS;
+    private int activeTab = TAB_COMPASS;
+    private int lastMouseX = -1;
+    private int lastMouseY = -1;
 
     private enum DragElement { NONE, COMPASS, TITLE, LOCATION_DETAIL }
     private DragElement dragElement = DragElement.NONE;
@@ -39,7 +44,9 @@ public class LatitudeHudStudioScreen extends Screen {
     private double titleGrabDx;
     private double titleGrabDy;
 
-    private AbstractWidget wTarget;
+    private AbstractWidget wTabCompass;
+    private AbstractWidget wTabTitle;
+    private AbstractWidget wTabSettings;
 
     private AbstractWidget wCompassStyle;
     private AbstractWidget wCompassScale;
@@ -58,6 +65,11 @@ public class LatitudeHudStudioScreen extends Screen {
     private AbstractWidget wLocationFollow;
 
     private AbstractWidget wTitleScale;
+    private AbstractWidget wZoneEnterTitle;
+    private AbstractWidget wTitleDuration;
+    private AbstractWidget wShowHud;
+    private AbstractWidget wDisplayWhen;
+    private AbstractWidget wWarningMessages;
 
     private AbstractWidget wResetHud;
 
@@ -79,20 +91,23 @@ public class LatitudeHudStudioScreen extends Screen {
     protected void init() {
         this.clearWidgets();
 
-        int hintLaneH = 20;         // 8px padding + ~9px font + 3px bottom margin
+        int hintLaneH = 28;
         int panelX = 8;
-        int panelY = hintLaneH + 8;  // 28 — first widget top
+        int panelY = hintLaneH + 8;
         int panelW = sidebarWidth;
         int scrollGutter = 7;        // 2px gap + 3px bar + 2px right pad
         int widgetW = panelW - scrollGutter;
         this.sidebarWidgetW = widgetW;
-        this.sidebarBgY = hintLaneH + 2; // 22 — sidebar bg rect top
+        this.sidebarBgY = hintLaneH + 2;
         int rowH = 20;
         int rowGap = 4;
 
         var cfg = CompassHudConfig.get();
         boolean analog = cfg.style == CompassHudConfig.CompassStyle.ANALOG;
 
+        this.wTabCompass = null;
+        this.wTabTitle = null;
+        this.wTabSettings = null;
         this.wCompassStyle = null;
         this.wCompassScale = null;
         this.wCompassAnalogSize = null;
@@ -108,6 +123,13 @@ public class LatitudeHudStudioScreen extends Screen {
         this.wCompassAttachHotbar = null;
         this.wLocationDetail = null;
         this.wLocationFollow = null;
+        this.wTitleScale = null;
+        this.wZoneEnterTitle = null;
+        this.wTitleDuration = null;
+        this.wShowHud = null;
+        this.wDisplayWhen = null;
+        this.wWarningMessages = null;
+        this.wResetHud = null;
 
         this.titleOffsetXf = LatitudeConfig.zoneEnterTitleOffsetX;
         this.titleOffsetYf = LatitudeConfig.zoneEnterTitleOffsetY;
@@ -117,22 +139,27 @@ public class LatitudeHudStudioScreen extends Screen {
         this.sidebarViewportTop = panelY;
         this.sidebarViewportBottom = Math.max(panelY + 24, this.height - 60);
 
+        int tabGap = 3;
+        int tabW = (widgetW - tabGap * 2) / 3;
+        this.wTabCompass = this.addRenderableWidget(Button.builder(
+                        Component.literal(TAB_NAMES[TAB_COMPASS]),
+                        b -> switchTab(TAB_COMPASS))
+                .bounds(panelX, 4, tabW, rowH)
+                .build());
+        this.wTabTitle = this.addRenderableWidget(Button.builder(
+                        Component.literal(TAB_NAMES[TAB_TITLE]),
+                        b -> switchTab(TAB_TITLE))
+                .bounds(panelX + tabW + tabGap, 4, tabW, rowH)
+                .build());
+        this.wTabSettings = this.addRenderableWidget(Button.builder(
+                        Component.literal(TAB_NAMES[TAB_SETTINGS]),
+                        b -> switchTab(TAB_SETTINGS))
+                .bounds(panelX + (tabW + tabGap) * 2, 4, widgetW - tabW * 2 - tabGap * 2, rowH)
+                .build());
+
         int y = panelY;
 
-        this.wTarget = this.addRenderableWidget(Button.builder(targetLabel(), b -> {
-                    this.target = switch (this.target) {
-                        case COMPASS -> Target.TITLE;
-                        case TITLE -> Target.BOTH;
-                        case BOTH -> Target.COMPASS;
-                    };
-                    b.setMessage(targetLabel());
-                    updateSidebarVisibility();
-                })
-                .bounds(panelX, y, widgetW, rowH)
-                .build());
-        tooltip(this.wTarget, "Choose whether to adjust the compass, zone title, or both.");
-        trackSidebarWidget(this.wTarget, y);
-        y += rowH + rowGap;
+        if (activeTab == TAB_COMPASS) {
 
         this.wCompassStyle = this.addRenderableWidget(CycleButton.<CompassHudConfig.CompassStyle>builder(v -> Component.literal(v == CompassHudConfig.CompassStyle.ANALOG ? "Analog" : "Digital"), () -> cfg.style)
                 .withValues(CompassHudConfig.CompassStyle.values())
@@ -162,8 +189,8 @@ public class LatitudeHudStudioScreen extends Screen {
                     "Sets the analog compass diameter. Older saved sizes stay unchanged until you adjust this control.");
             trackSidebarWidget(this.wCompassAnalogSize, y);
             y += rowH + rowGap;
-            this.wCompassAnalogInnerAlpha = this.addRenderableWidget(new FloatSlider(panelX, y, widgetW, rowH, Component.literal("Inner Transparency"), 0.0f, 1.0f, cfg.analogInnerAlpha, v -> cfg.analogInnerAlpha = v));
-            tooltip(this.wCompassAnalogInnerAlpha, "Controls how transparent the analog inner disc is.");
+            this.wCompassAnalogInnerAlpha = this.addRenderableWidget(new FloatSlider(panelX, y, widgetW, rowH, Component.literal("Face Opacity"), 0.0f, 1.0f, cfg.analogInnerAlpha, true, v -> cfg.analogInnerAlpha = v));
+            tooltip(this.wCompassAnalogInnerAlpha, "Controls how solid the compass face is. Lower values show more of the world behind it.");
             trackSidebarWidget(this.wCompassAnalogInnerAlpha, y);
             y += rowH + rowGap;
             this.wCompassAnalogTheme = this.addRenderableWidget(CycleButton.<CompassHudConfig.AnalogCompassTheme>builder(v -> Component.literal(themeLabel(v)), () -> cfg.analogTheme)
@@ -269,30 +296,100 @@ public class LatitudeHudStudioScreen extends Screen {
         trackSidebarWidget(this.wLocationFollow, y);
         y += rowH + rowGap;
 
-        this.wTitleScale = this.addRenderableWidget(new StepSlider(panelX, y, widgetW, rowH, Component.literal("Title Size"), 1.0, 3.0, 0.1, LatitudeConfig.zoneEnterTitleScale, v -> LatitudeConfig.zoneEnterTitleScale = v));
-        tooltip(this.wTitleScale, "Scales the zone enter title preview.");
-        trackSidebarWidget(this.wTitleScale, y);
+        } else if (activeTab == TAB_TITLE) {
+            this.wZoneEnterTitle = this.addRenderableWidget(CycleButton.<Boolean>builder(
+                            v -> Component.literal(v ? "ON" : "OFF"),
+                            () -> LatitudeConfig.zoneEnterTitleEnabled)
+                    .withValues(true, false)
+                    .create(panelX, y, widgetW, rowH, Component.literal("Zone Enter Title"), (btn, value) -> {
+                        LatitudeConfig.zoneEnterTitleEnabled = value;
+                        LatitudeConfig.saveCurrent();
+                    }));
+            tooltip(this.wZoneEnterTitle, "Show a short title when you enter a new latitude zone.");
+            trackSidebarWidget(this.wZoneEnterTitle, y);
+            y += rowH + rowGap;
+
+            this.wTitleDuration = this.addRenderableWidget(new StepSlider(
+                    panelX,
+                    y,
+                    widgetW,
+                    rowH,
+                    Component.literal("Title Duration (seconds)"),
+                    2.0,
+                    10.0,
+                    0.5,
+                    LatitudeConfig.zoneEnterTitleSeconds,
+                    v -> LatitudeConfig.zoneEnterTitleSeconds = v));
+            tooltip(this.wTitleDuration, "Set how long zone-entry titles remain on screen.");
+            trackSidebarWidget(this.wTitleDuration, y);
+            y += rowH + rowGap;
+
+            this.wTitleScale = this.addRenderableWidget(new StepSlider(
+                    panelX,
+                    y,
+                    widgetW,
+                    rowH,
+                    Component.literal("Title Size"),
+                    1.0,
+                    3.0,
+                    0.1,
+                    LatitudeConfig.zoneEnterTitleScale,
+                    v -> LatitudeConfig.zoneEnterTitleScale = v));
+            tooltip(this.wTitleScale, "Scales the zone enter title preview.");
+            trackSidebarWidget(this.wTitleScale, y);
+        } else {
+            this.wShowHud = this.addRenderableWidget(CycleButton.<Boolean>builder(
+                            v -> Component.literal(v ? "ON" : "OFF"),
+                            () -> cfg.enabled)
+                    .withValues(true, false)
+                    .create(panelX, y, widgetW, rowH, Component.literal("Show HUD"), (btn, value) -> {
+                        cfg.enabled = value;
+                        CompassHudConfig.saveCurrent();
+                    }));
+            tooltip(this.wShowHud, "Turn the Latitude HUD on or off.");
+            trackSidebarWidget(this.wShowHud, y);
+            y += rowH + rowGap;
+
+            this.wDisplayWhen = this.addRenderableWidget(CycleButton.<CompassHudConfig.ShowMode>builder(
+                            LatitudeHudStudioScreen::showModeLabel,
+                            () -> cfg.showMode)
+                    .withValues(CompassHudConfig.ShowMode.values())
+                    .create(panelX, y, widgetW, rowH, Component.literal("Display When"), (btn, value) -> {
+                        cfg.showMode = value;
+                        CompassHudConfig.saveCurrent();
+                    }));
+            tooltip(this.wDisplayWhen, "Choose when the Latitude HUD is visible.");
+            trackSidebarWidget(this.wDisplayWhen, y);
+            y += rowH + rowGap;
+
+            this.wWarningMessages = this.addRenderableWidget(CycleButton.<Boolean>builder(
+                            v -> Component.literal(v ? "ON" : "OFF"),
+                            () -> LatitudeConfig.showWarningMessages)
+                    .withValues(true, false)
+                    .create(panelX, y, widgetW, rowH, Component.literal("Warning Messages"), (btn, value) -> {
+                        LatitudeConfig.showWarningMessages = value;
+                        LatitudeConfig.saveCurrent();
+                    }));
+            tooltip(this.wWarningMessages, "Show warning text near dangerous latitude boundaries.");
+            trackSidebarWidget(this.wWarningMessages, y);
+        }
         this.sidebarContentHeight = y + rowH - panelY;
 
         int resetY = this.height - 52;
-        this.wResetHud = this.addRenderableWidget(Button.builder(Component.literal("Reset HUD"), b -> {
+        this.wResetHud = this.addRenderableWidget(Button.builder(Component.literal("Reset All HUD"), b -> {
                     resetHudDefaults();
                     dragElement = DragElement.NONE;
                     this.init();
                 })
                 .bounds(panelX, resetY, widgetW, rowH)
                 .build());
-        tooltip(this.wResetHud, "Restore compass and location-detail HUD settings to defaults.");
+        tooltip(this.wResetHud, "Restore the visible HUD, title, and warning settings to defaults.");
 
         int bw = 200;
         int bh = 20;
         int doneX = (this.width - bw) / 2;
         int doneY = this.height - 28;
-        this.addRenderableWidget(Button.builder(Component.literal("Done"), btn -> {
-                    CompassHudConfig.saveCurrent();
-                    LatitudeConfig.saveCurrent();
-                    Minecraft.getInstance().gui.setScreen(parent);
-                })
+        this.addRenderableWidget(Button.builder(Component.literal("Done"), btn -> this.onClose())
                 .bounds(doneX, doneY, bw, bh)
                 .build());
 
@@ -300,7 +397,18 @@ public class LatitudeHudStudioScreen extends Screen {
     }
 
     @Override
+    public void onClose() {
+        CompassHudConfig.saveCurrent();
+        LatitudeConfig.saveCurrent();
+        if (this.minecraft != null) {
+            this.minecraft.gui.setScreen(this.parent);
+        }
+    }
+
+    @Override
     public void extractRenderState(GuiGraphicsExtractor ctx, int mouseX, int mouseY, float delta) {
+        this.lastMouseX = mouseX;
+        this.lastMouseY = mouseY;
         this.extractTransparentBackground(ctx);
         ctx.fill(0, 0, this.width, this.height, 0x66000000);
 
@@ -351,12 +459,28 @@ public class LatitudeHudStudioScreen extends Screen {
         applySidebarScroll();
         drawSidebarScrollbar(ctx);
         super.extractRenderState(ctx, mouseX, mouseY, delta);
+        drawActiveTabUnderline(ctx);
 
         if (sidebarVisible) {
-            ctx.text(this.font, "Press L to hide settings", 8, 8, 0xAAFFFFFF);
+            ctx.text(this.font, "Press L to hide panel", sidebarWidth + 18, 8, 0xAAFFFFFF);
         } else {
-            ctx.text(this.font, "Press L to show settings", 8, 8, 0xFFFFFFFF);
+            ctx.text(this.font, "Press L to show panel", 8, 8, 0xFFFFFFFF);
         }
+    }
+
+    private void drawActiveTabUnderline(GuiGraphicsExtractor ctx) {
+        if (!sidebarVisible) {
+            return;
+        }
+        int panelX = 8;
+        int widgetW = sidebarWidth - 7;
+        int tabGap = 3;
+        int tabW = (widgetW - tabGap * 2) / 3;
+        int tabX = panelX + activeTab * (tabW + tabGap);
+        int activeWidth = activeTab == TAB_SETTINGS
+                ? widgetW - tabW * 2 - tabGap * 2
+                : tabW;
+        ctx.fill(tabX + 3, 22, tabX + activeWidth - 3, 24, 0xFFD4A74A);
     }
 
     @Override
@@ -391,11 +515,17 @@ public class LatitudeHudStudioScreen extends Screen {
             return true;
         }
 
+        if (activeTab == TAB_SETTINGS) {
+            return false;
+        }
+
         double mx = click.x();
         double my = click.y();
 
         if (click.button() == 0) {
-            if (LatitudeConfig.zoneEnterTitleDraggable && isMouseOverTitle(mx, my)) {
+            if (activeTab == TAB_TITLE
+                    && LatitudeConfig.zoneEnterTitleDraggable
+                    && isMouseOverTitle(mx, my)) {
                 dragElement = DragElement.TITLE;
                 int cx = (this.width / 2) + LatitudeConfig.zoneEnterTitleOffsetX;
                 int cy = (this.height / 2) + LatitudeConfig.zoneEnterTitleOffsetY;
@@ -406,12 +536,12 @@ public class LatitudeHudStudioScreen extends Screen {
                 return true;
             }
 
-            if (isMouseOverCompass(mx, my)) {
+            if (activeTab == TAB_COMPASS && isMouseOverCompass(mx, my)) {
                 dragElement = DragElement.COMPASS;
                 return true;
             }
 
-            if (isMouseOverLocationDetail(mx, my)) {
+            if (activeTab == TAB_COMPASS && isMouseOverLocationDetail(mx, my)) {
                 dragElement = DragElement.LOCATION_DETAIL;
                 return true;
             }
@@ -543,7 +673,41 @@ public class LatitudeHudStudioScreen extends Screen {
         LatitudeConfig.zoneEnterTitleScale = 1.8;
         LatitudeConfig.zoneEnterTitleOffsetX = 0;
         LatitudeConfig.zoneEnterTitleOffsetY = -40;
+        LatitudeConfig.zoneEnterTitleEnabled = true;
+        LatitudeConfig.zoneEnterTitleSeconds = 6.0;
+        LatitudeConfig.showWarningMessages = true;
         LatitudeConfig.saveCurrent();
+    }
+
+    private static Component showModeLabel(CompassHudConfig.ShowMode mode) {
+        if (mode == null) {
+            return Component.literal("When compass is in inventory");
+        }
+        return switch (mode) {
+            case COMPASS_PRESENT -> Component.literal("When compass is in inventory");
+            case HOLDING_COMPASS -> Component.literal("When holding compass");
+            case ALWAYS -> Component.literal("Always");
+        };
+    }
+
+    private void switchTab(int tab) {
+        int next = Mth.clamp(tab, TAB_COMPASS, TAB_SETTINGS);
+        if (activeTab == next) {
+            return;
+        }
+        activeTab = next;
+        sidebarScrollY = 0;
+        dragElement = DragElement.NONE;
+        this.setFocused(null);
+        this.init();
+    }
+
+    public boolean faceOpacityAdjustActive() {
+        if (wCompassAnalogInnerAlpha == null || !wCompassAnalogInnerAlpha.visible) {
+            return false;
+        }
+        boolean dragging = wCompassAnalogInnerAlpha instanceof FloatSlider fs && fs.isDragging();
+        return dragging || wCompassAnalogInnerAlpha.isMouseOver(lastMouseX, lastMouseY);
     }
 
     private void trackSidebarWidget(AbstractWidget w, int baseY) {
@@ -562,8 +726,29 @@ public class LatitudeHudStudioScreen extends Screen {
             int baseY = sidebarScrollBaseYs.get(i);
             int drawY = baseY - sidebarScrollY;
             w.setY(drawY);
-            w.visible = w.active && drawY >= sidebarViewportTop && drawY + w.getHeight() <= sidebarViewportBottom;
+            boolean visible = isSidebarWidgetEligible(w)
+                    && drawY >= sidebarViewportTop
+                    && drawY + w.getHeight() <= sidebarViewportBottom;
+            if (!visible && this.getFocused() == w) {
+                this.setFocused(null);
+            }
+            w.visible = visible;
+            w.active = visible;
         }
+    }
+
+    private boolean isSidebarWidgetEligible(AbstractWidget w) {
+        if (!sidebarVisible) {
+            return false;
+        }
+        var cfg = CompassHudConfig.get();
+        if (w == wCompassAttachHotbar) {
+            return cfg.style != CompassHudConfig.CompassStyle.ANALOG;
+        }
+        if (w == wLocationFollow) {
+            return cfg.hasLocationDetail();
+        }
+        return true;
     }
 
     private void drawSidebarScrollbar(GuiGraphicsExtractor ctx) {
@@ -583,10 +768,12 @@ public class LatitudeHudStudioScreen extends Screen {
     }
 
     private void updateSidebarVisibility() {
-        setVisible(wTarget, sidebarVisible);
+        setVisible(wTabCompass, sidebarVisible);
+        setVisible(wTabTitle, sidebarVisible);
+        setVisible(wTabSettings, sidebarVisible);
 
         boolean analog = CompassHudConfig.get().style == CompassHudConfig.CompassStyle.ANALOG;
-        boolean showCompassControls = sidebarVisible && (target == Target.COMPASS || target == Target.BOTH);
+        boolean showCompassControls = sidebarVisible && activeTab == TAB_COMPASS;
         setVisible(wCompassStyle, showCompassControls);
         setVisible(wCompassScale, showCompassControls && !analog);
         setVisible(wCompassAnalogSize, showCompassControls && analog);
@@ -603,9 +790,15 @@ public class LatitudeHudStudioScreen extends Screen {
         setVisible(wLocationDetail, showCompassControls);
         setVisible(wLocationFollow, showCompassControls && CompassHudConfig.get().hasLocationDetail());
 
-        boolean showTitleControls = sidebarVisible && (target == Target.TITLE || target == Target.BOTH);
+        boolean showTitleControls = sidebarVisible && activeTab == TAB_TITLE;
+        setVisible(wZoneEnterTitle, showTitleControls);
+        setVisible(wTitleDuration, showTitleControls);
         setVisible(wTitleScale, showTitleControls);
 
+        boolean showSettingsControls = sidebarVisible && activeTab == TAB_SETTINGS;
+        setVisible(wShowHud, showSettingsControls);
+        setVisible(wDisplayWhen, showSettingsControls);
+        setVisible(wWarningMessages, showSettingsControls);
         setVisible(wResetHud, sidebarVisible);
     }
 
@@ -622,18 +815,13 @@ public class LatitudeHudStudioScreen extends Screen {
         return true;
     }
 
-    private static void setVisible(AbstractWidget w, boolean v) {
+    private void setVisible(AbstractWidget w, boolean visible) {
         if (w == null) return;
-        w.visible = v;
-        w.active = v;
-    }
-
-    private Component targetLabel() {
-        return switch (target) {
-            case COMPASS -> Component.literal("Target: Compass");
-            case TITLE -> Component.literal("Target: Title");
-            case BOTH -> Component.literal("Target: Both");
-        };
+        if (!visible && this.getFocused() == w) {
+            this.setFocused(null);
+        }
+        w.visible = visible;
+        w.active = visible;
     }
 
     private boolean isMouseOverCompass(double mx, double my) {
@@ -840,20 +1028,46 @@ public class LatitudeHudStudioScreen extends Screen {
         private final Component label;
         private final float min;
         private final float max;
+        private final boolean percentage;
         private final FloatConsumer onChange;
+        private boolean dragging;
 
         private FloatSlider(int x, int y, int width, int height, Component label, float min, float max, float initial, FloatConsumer onChange) {
+            this(x, y, width, height, label, min, max, initial, false, onChange);
+        }
+
+        private FloatSlider(int x, int y, int width, int height, Component label, float min, float max, float initial, boolean percentage, FloatConsumer onChange) {
             super(x, y, width, height, Component.empty(), toNorm(initial, min, max));
             this.label = label;
             this.min = min;
             this.max = max;
+            this.percentage = percentage;
             this.onChange = onChange;
             updateMessage();
         }
 
+        boolean isDragging() {
+            return dragging;
+        }
+
+        @Override
+        public void onClick(MouseButtonEvent click, boolean doubled) {
+            dragging = true;
+            super.onClick(click, doubled);
+        }
+
+        @Override
+        public void onRelease(MouseButtonEvent click) {
+            dragging = false;
+            super.onRelease(click);
+        }
+
         @Override
         protected void updateMessage() {
-            this.setMessage(Component.literal(label.getString() + ": " + format(getValue())));
+            String valueText = percentage
+                    ? Math.round(getValue() * 100.0f) + "%"
+                    : format(getValue());
+            this.setMessage(Component.literal(label.getString() + ": " + valueText));
         }
 
         @Override

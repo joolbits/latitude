@@ -1,6 +1,6 @@
 # Latitude 1.5 Feature Manifest
 
-`status: post-TEST 2 findings source/model acceptance PASSED locally; fresh replay pending` · `branch: codex/1.5-mini-launch-26.2` · `implementation source tip: 78a09e2da89b581111d10858c43dad1d6f8ff2e7` · `recorded: 2026-07-20`
+`status: post-TEST 2 HUD Studio consolidation PASSED locally; exact TEST 3 replay pending` · `branch: codex/1.5-mini-launch-26.2` · `implementation base: 4e79dd07a885e0e3671082fba09e7db37d244f81` · `recorded: 2026-07-20`
 
 This is the implementation-side allowlist for the Latitude 1.5 pre-2.0 polish campaign. The campaign
 roadmap lives in the docs root at:
@@ -40,6 +40,37 @@ separate authorization.
 Canonical evidence:
 
 `docs/binder/latitude-1-5-test2-findings-20260720.md`
+
+## Post-TEST 2 HUD Studio consolidation
+
+The F9 settings flow is now one HUD Studio rather than a settings screen that
+opens a second editor. The consolidated screen uses real focusable/narratable
+top buttons for `Compass`, `Title`, and `Settings`; the selected tab keeps a
+restrained gold underline. It preserves the existing analog fresh/reset
+baseline of 32 px and the 16–72 px editing range without rewriting explicit
+older saved sizes.
+
+`Face Opacity` is shown as a percentage. The checkerboard preview is drawn
+behind the analog face only while the slider is hovered or actively dragged;
+it is not tied to sticky focus. Done and Esc share the same save-and-return
+path, repeated F9 cannot nest another Studio, and clipped or semantically
+hidden controls are inactive and release keyboard focus.
+
+The retired standalone `LatitudeSettingsScreen` and its parallel reset path
+are removed. `Reset All HUD` is deliberately limited to visible HUD, title,
+location-detail, and warning settings; it does not change hidden capture,
+debug, blending, or world-generation configuration.
+
+The focused verifier recorded two explicit RED rounds before the final GREEN.
+A fresh adversarial sweep found and closed scroll reactivation, stale focus,
+and repeated-F9 nesting. Both focused verifiers and the Java 25 clean build
+with all 17 build/check tasks passed. This is source-structure and build proof,
+not yet rendered-pixel, narration, or mouse-interaction acceptance. The exact
+TEST 3 profile replay remains the next gate.
+
+Canonical evidence:
+
+`docs/binder/latitude-1-5-hud-studio-consolidation-20260720.md`
 
 ## Post-Phase-7 loading-copy refresh
 
