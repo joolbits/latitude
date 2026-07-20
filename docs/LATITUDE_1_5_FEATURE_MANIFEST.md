@@ -1,6 +1,6 @@
 # Latitude 1.5 Feature Manifest
 
-`status: post-TEST 2 HUD Studio consolidation and TEST 3 profile staging PASSED locally; rendered interaction pending` · `branch: codex/1.5-mini-launch-26.2` · `implementation code savepoint: 1395f5c260212a1fb11a0b657a003cfaa1640b22` · `recorded: 2026-07-20`
+`status: TEST 4 feedback repairs PASSED locally and staged; rendered interaction and polar-boundary replay pending` · `branch: codex/1.5-mini-launch-26.2` · `implementation code savepoint: b064089b065c396b5e4db0484a2bc75f318ef5a8` · `recorded: 2026-07-20`
 
 This is the implementation-side allowlist for the Latitude 1.5 pre-2.0 polish campaign. The campaign
 roadmap lives in the docs root at:
@@ -72,6 +72,38 @@ guarded live replay and the maintainer's visual review remain the next gate.
 Canonical evidence:
 
 `docs/binder/latitude-1-5-hud-studio-consolidation-20260720.md`
+
+## TEST 3 live-feedback repairs and TEST 4 staging
+
+Commits `d752477c` and `b064089b` close the bounded source/model findings from
+the maintainer's TEST 3 replay:
+
+- polar warnings use one non-bold, shadow-free fill over a styleless near-black
+  keyline and remain visible for five seconds (`10 + 70 + 20` ticks);
+- the `Press L...` helper occupies a reserved footer below the HUD Studio
+  scroll viewport;
+- the analog north label uses the Latitude 2.0 scale law
+  `clamp(radius / 24, 0.4, 1.0)`;
+- tree and simple-block foliage feature origins strictly beyond 80 degrees are
+  rejected only in Latitude worlds, while sweet berry bushes remain allowed.
+
+The foliage limit is independent of the 74.5-degree biome ecology cap and the
+village policy. Both feature guards fail open in non-Latitude worlds. The
+simple-block guard reuses the provider's existing sampled state rather than
+consuming random state twice. Tree enforcement is origin-based: a canopy
+rooted just inside 80 degrees may fringe across the line, and no per-block
+canopy rewrite is claimed.
+
+Focused RED/GREEN proofs, HUD verifiers, tag/registry validation, adversarial
+review, and the Java 25 clean build with 22 tasks passed. The exact TEST 4
+artifact is staged as the profile's only Latitude jar with SHA-256
+`472a0a7271fdf3360f4619bd1cf320570a7dd9bf217971213e2919fcb3de10ae`.
+Rendered warning weight/timing, HUD placement, compass scaling, and fresh
+79.9/80/80.1-degree terrain remain live acceptance rather than inferred passes.
+
+Canonical evidence:
+
+`docs/binder/latitude-1-5-test3-live-feedback-20260720.md`
 
 ## Post-Phase-7 loading-copy refresh
 
