@@ -316,9 +316,7 @@ public class GlobeMod implements ModInitializer {
         }
 
         long worldTime = overworld.getGameTime();
-        if ((worldTime % 10L) != 0L) {
-            return;
-        }
+        boolean effectsTick = (worldTime % 10L) == 0L;
 
         WorldBorder border = overworld.getWorldBorder();
 
@@ -348,6 +346,20 @@ public class GlobeMod implements ModInitializer {
             boolean showParticles = false;
             boolean showIcon = false;
 
+            // Vanilla thaws ticksFrozen every tick outside powder snow. Maintain the
+            // final-zone freeze every server tick, with a small decay margin, so its
+            // frost stays steady and vanilla's fully-frozen damage can actually land.
+            if ((stage == PolarStage.LETHAL || stage == PolarStage.HOPELESS)
+                    && !(player.isCreative() || player.isSpectator())) {
+                int max = 140;
+                int target = max + 3;
+                player.setTicksFrozen(Math.max(player.getTicksFrozen(), target));
+            }
+
+            if (!effectsTick) {
+                continue;
+            }
+
             if (stage == PolarStage.IMPAIR) {
                 player.addEffect(new MobEffectInstance(MobEffects.SLOWNESS, duration, 0, ambient, showParticles, showIcon));
                 player.addEffect(new MobEffectInstance(MobEffects.WEAKNESS, duration, 0, ambient, showParticles, showIcon));
@@ -358,13 +370,6 @@ public class GlobeMod implements ModInitializer {
             } else if (stage == PolarStage.LETHAL || stage == PolarStage.HOPELESS) {
                 player.addEffect(new MobEffectInstance(MobEffects.SLOWNESS, duration, 2, ambient, showParticles, showIcon));
                 player.addEffect(new MobEffectInstance(MobEffects.WEAKNESS, duration, 1, ambient, showParticles, showIcon));
-
-                int max = 140;
-                int target = (int) Math.floor(max * 0.85);
-                if (target < 1) {
-                    target = 1;
-                }
-                player.setTicksFrozen(Math.max(player.getTicksFrozen(), target));
             }
         }
     }
