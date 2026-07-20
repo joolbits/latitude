@@ -97,11 +97,6 @@ public final class BiomePreviewHeadlessRunner {
             return;
         }
 
-        if (FreezeSweepProofHarness.isTriggered()) { // TEMP-DIAG (settled-sweep zero-claims round)
-            FreezeSweepProofHarness.start(server);
-            return;
-        }
-
         if (TerrainProofHarness.isTriggered()) {
             server.execute(() -> TerrainProofHarness.runAndStop(server));
             return;
