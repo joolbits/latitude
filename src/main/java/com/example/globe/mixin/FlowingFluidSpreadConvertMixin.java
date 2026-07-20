@@ -157,7 +157,7 @@ public abstract class FlowingFluidSpreadConvertMixin {
         int worldSurfaceY = server.getHeight(Heightmap.Types.WORLD_SURFACE, pos.getX(), pos.getZ());
         int oceanFloorY = server.getHeight(Heightmap.Types.OCEAN_FLOOR, pos.getX(), pos.getZ());
         boolean aboveFreezeFloor =
-                pos.getY() > PolarWaterFreezeRule.landWaterFreezeFloorY(worldSurfaceY, oceanFloorY);
+                pos.getY() > PolarWaterFreezeRule.tickLandWaterFreezeFloorY(worldSurfaceY, oceanFloorY);
         boolean isOcean = server.getBiome(pos).is(BiomeTags.IS_OCEAN);
         boolean eligible = PolarWaterFreezeRule.tickFreezesFlowing(
                 true, isOcean, absLatDeg, barrensFray, aboveFreezeFloor);
