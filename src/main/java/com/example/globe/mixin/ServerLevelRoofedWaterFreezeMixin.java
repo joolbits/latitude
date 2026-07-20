@@ -188,10 +188,21 @@ public abstract class ServerLevelRoofedWaterFreezeMixin {
         BlockPos top = self.getHeightmapPos(Heightmap.Types.MOTION_BLOCKING, new BlockPos(blockX, 0, blockZ));
         BlockPos surface = top.below();
         if (self.getFluidState(surface).getType() == Fluids.WATER) {
-            // Open SOURCE water surface: vanilla's own tickPrecipitation freeze owns the open still-water skin
-            // (edge-inward, its own cadence, the S21(d) source-freezes-last veto riding its shouldFreeze call).
-            // Leaving it means the open sea/pond skin behaviour is byte-identical to pre-v6.
-            return;
+            // Open SOURCE water surface. Pre-TEST-115 this deferred entirely to vanilla's tickPrecipitation
+            // cadence (~205 s/column average) -- which read live as "the source NEVER freezes" (owner,
+            // TEST 115 flight: "the source water always stays liquid. Can we make the source freeze after
+            // all the other children of the source freeze?"). S23: the driver now CLAIMS an eligible open
+            // source on its own 32-tick cadence -- but strictly LAST: the S21(d) postpone veto stands, so
+            // while ANY of the six neighbours is live flowing water (children still unfrozen) the source
+            // waits. Ocean columns never reach here (eligibility is ocean-exempt: the sea skin keeps
+            // vanilla's cadence and the sacred under-ice liquid), and the settled probe keeps the claim
+            // off actively-refilling sources. Vanilla's own edge-inward freeze continues in parallel --
+            // same plain-ice outcome, ours is just deterministic and prompt.
+            if (barrensOn && globe$openSourceFreezes(self, top, surface, absLatDeg, barrensFray)) {
+                self.setBlockAndUpdate(surface.immutable(), Blocks.ICE.defaultBlockState());
+                PolarInstrument.freezeSourceFroze();
+            }
+            return; // barrens off: open still-water skin stays vanilla's, byte-identical to pre-v6
         }
         int minY = self.getMinY();
         int reachFloorY = Math.max(minY, top.getY() - PolarWaterFreezeRule.ROOFED_FREEZE_REACH_BLOCKS);
@@ -307,5 +318,46 @@ public abstract class ServerLevelRoofedWaterFreezeMixin {
     private static boolean globe$settled(ServerLevel self, BlockPos pos) {
         return !self.getFluidTicks().hasScheduledTick(pos, Fluids.FLOWING_WATER)
                 && !self.getFluidTicks().hasScheduledTick(pos, Fluids.WATER);
+    }
+
+    /**
+     * S23 OPEN-SOURCE claim eligibility (owner, TEST 115: "make the source freeze after all the other
+     * children of the source freeze — so that it happens last"). The caller has already established: the
+     * tick front is active, the flag family is on, and {@code surface} holds SOURCE water at the column's
+     * MOTION_BLOCKING top. Three gates, in cheap-first order:
+     * <ol>
+     *   <li><b>Eligibility</b> — the same ocean-first + freeze-floor predicate the flowing machinery uses
+     *       ({@link PolarWaterFreezeRule#tickFreezesFlowing}): the sacred SEA skin keeps vanilla's cadence
+     *       (under-ice liquid untouched), and a source deeper than the tick floor is the B-9 reservoir's.</li>
+     *   <li><b>The S21(d) LAST law</b> — the six-neighbour live-flowing scan (mirrors
+     *       {@code BiomePolarWaterFreezeMixin#globe$sourceFreezePostponed}, the shared pure veto
+     *       {@link PolarWaterFreezeRule#sourceFreezePostponed}): while ANY child still flows, the source
+     *       waits. This is what makes the freeze read as "the fall dies from the bottom up, source last."</li>
+     *   <li><b>Settled</b> — the dual-key pending-tick probe: an actively-refilling source (bucket play,
+     *       re-route) is left alone until it rests.</li>
+     * </ol>
+     */
+    private static boolean globe$openSourceFreezes(ServerLevel self, BlockPos top, BlockPos surface,
+                                                   double absLatDeg, double barrensFray) {
+        int worldSurfaceY = self.getHeight(Heightmap.Types.WORLD_SURFACE, surface.getX(), surface.getZ());
+        int oceanFloorY = self.getHeight(Heightmap.Types.OCEAN_FLOOR, surface.getX(), surface.getZ());
+        boolean aboveFreezeFloor =
+                surface.getY() > PolarWaterFreezeRule.tickLandWaterFreezeFloorY(worldSurfaceY, oceanFloorY);
+        boolean isOcean = self.getBiome(top).is(BiomeTags.IS_OCEAN);
+        if (!PolarWaterFreezeRule.tickFreezesFlowing(true, isOcean, absLatDeg, barrensFray, aboveFreezeFloor)) {
+            return false;
+        }
+        boolean adjacentHasFlowing = false;
+        for (net.minecraft.core.Direction dir : net.minecraft.core.Direction.values()) {
+            FluidState neighbour = self.getFluidState(surface.relative(dir));
+            if (neighbour.getType() == Fluids.FLOWING_WATER) {
+                adjacentHasFlowing = true;
+                break;
+            }
+        }
+        if (PolarWaterFreezeRule.sourceFreezePostponed(adjacentHasFlowing)) {
+            return false;
+        }
+        return globe$settled(self, surface);
     }
 }

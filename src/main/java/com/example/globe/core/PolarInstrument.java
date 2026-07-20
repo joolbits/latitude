@@ -69,6 +69,7 @@ public final class PolarInstrument {
     private static long sweptSettled;
     private static long sweptFroze;
     private static long spreadFroze;
+    private static long sourceFroze;
 
     /** A flow tick seen for an eligible in-zone flowing-water block (the denominator). */
     public static void freezeFlowTick() {
@@ -102,6 +103,13 @@ public final class PolarInstrument {
         spreadFroze++;
     }
 
+    /** S23 (TEST 115): the sweep driver claimed an OPEN SOURCE whose children had all frozen (the LAST law
+     *  completing on our cadence instead of vanilla's ~205 s lottery) -- {@code sourceFroze=} ticking is the
+     *  live proof that "the fall dies bottom-up, source last" now finishes. */
+    public static void freezeSourceFroze() {
+        sourceFroze++;
+    }
+
     /**
      * Poll the FREEZE channel from the sweep driver's heartbeat (v6: the {@code ServerLevel.tickChunk} inject,
      * which fires every tick for every in-band chunk -- multiple polls per tick are fine, the window flushes at
@@ -119,24 +127,25 @@ public final class PolarInstrument {
             return null;
         }
         String line = formatFreezeLine(flowTicks, passedFalling, hunterFroze, sweptSettled, sweptFroze,
-                spreadFroze);
+                spreadFroze, sourceFroze);
         flowTicks = 0;
         passedFalling = 0;
         hunterFroze = 0;
         sweptSettled = 0;
         sweptFroze = 0;
         spreadFroze = 0;
+        sourceFroze = 0;
         freezeWindowStart = gameTime;
         return line;
     }
 
     /** The exact FREEZE line format (extracted pure so the format is unit-testable without touching the gate). */
     static String formatFreezeLine(long flowTicks, long passedFalling, long hunterFroze, long sweptSettled,
-                                   long sweptFroze, long spreadFroze) {
+                                   long sweptFroze, long spreadFroze, long sourceFroze) {
         return String.format(Locale.ROOT,
                 "[LAT][FREEZE] flowTicks=%d passedFalling=%d hunterFroze=%d sweptSettled=%d sweptFroze=%d"
-                        + " spreadFroze=%d",
-                flowTicks, passedFalling, hunterFroze, sweptSettled, sweptFroze, spreadFroze);
+                        + " spreadFroze=%d sourceFroze=%d",
+                flowTicks, passedFalling, hunterFroze, sweptSettled, sweptFroze, spreadFroze, sourceFroze);
     }
 
     // ---- SPARKLE channel (client thread) -------------------------------------------------------------------
