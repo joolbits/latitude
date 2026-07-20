@@ -14,6 +14,7 @@ import com.example.globe.client.LatitudeHudStudioScreen;
 import com.example.globe.client.SpawnZoneScreen;
 import com.example.globe.client.EwSandstormOverlayRenderer;
 import com.example.globe.client.EwStormWallRenderer;
+import com.example.globe.client.EwPresentationPolicy;
 import com.example.globe.dev.DevCaptureKeybind;
 import com.example.globe.dev.client.SeamAuditClientBridge;
 import com.example.globe.dev.client.audit.SeamAuditHarness;
@@ -57,7 +58,8 @@ public class GlobeModClient implements ClientModInitializer {
         ClientLifecycleEvents.CLIENT_STARTED.register(GlobeModClient::registerPromenadePalmTintCompat);
 
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
-            GlobeClientState.setGlobeWorld(false);
+            GlobeWarningOverlay.resetForDisconnect();
+            GlobeClientState.resetForDisconnect();
             pendingSpawnPickerOpen = false;
         });
 
@@ -185,19 +187,18 @@ public class GlobeModClient implements ClientModInitializer {
             return;
         }
 
-        if (!eval.surfaceOk()) {
-            return;
-        }
-
         if (!LatitudeConfig.enableWarningParticles) {
             return;
         }
 
         GlobeClientState.PolarStage polarStage = GlobeClientState.computePolarStage(client.level, client.player);
-        GlobeClientState.EwStormStage ewStage = GlobeClientState.computeEwStormStage(client.level, client.player);
+        double ewDistanceToBorder = GlobeClientState.distanceToEwBorderBlocks(client.player.getX());
+        float ewParticleIntensity = EwPresentationPolicy.particleIntensity(
+                ewDistanceToBorder,
+                GlobeClientState.ewPresentationVisibility());
 
         boolean polarActive = polarStage != GlobeClientState.PolarStage.NONE;
-        boolean ewActive = ewStage != GlobeClientState.EwStormStage.NONE;
+        boolean ewActive = ewParticleIntensity > 0.0f;
 
         if (!polarActive && !ewActive) {
             return;
@@ -208,10 +209,13 @@ public class GlobeModClient implements ClientModInitializer {
         }
 
         if (ewActive) {
-            ewSandstormClientTick(client, ewStage);
+            ewSandstormClientTick(
+                    client,
+                    ewDistanceToBorder,
+                    GlobeClientState.ewPresentationVisibility());
         }
 
-        if (polarActive) {
+        if (polarActive && eval.surfaceOk()) {
             float intensity = switch (polarStage) {
                 case WARN_1 -> 0.12f;
                 case WARN_2 -> 0.22f;
@@ -247,26 +251,28 @@ public class GlobeModClient implements ClientModInitializer {
         }
     }
 
-    private static void ewSandstormClientTick(Minecraft client, GlobeClientState.EwStormStage stage) {
-        int base = switch (stage) {
-            case LEVEL_1 -> 6;
-            case LEVEL_2 -> 20;
-            default -> 0;
-        };
-        if (base <= 0) {
-            return;
-        }
-
+    private static void ewSandstormClientTick(
+            Minecraft client,
+            double distanceToBorder,
+            float presentationVisibility) {
         RandomSource random = client.player.getRandom();
         double px = client.player.getX();
         double py = client.player.getY();
         double pz = client.player.getZ();
 
-        double vx = client.player.getX() >= 0.0 ? -0.10 : 0.10;
+        var border = client.level.getWorldBorder();
+        double vx = EwPresentationPolicy.windTowardInterior(
+                border.getMinX(),
+                border.getMaxX(),
+                px,
+                0.10);
 
         // Use falling sand dust for a visible sandstorm wall, plus some haze.
-        int sandCount = base;
-        int hazeCount = Math.max(1, base / 3);
+        int sandCount = EwPresentationPolicy.particleBudget(20, distanceToBorder, presentationVisibility);
+        int hazeCount = EwPresentationPolicy.particleBudget(7, distanceToBorder, presentationVisibility);
+        if (sandCount <= 0 && hazeCount <= 0) {
+            return;
+        }
         BlockParticleOption sand = new BlockParticleOption(ParticleTypes.FALLING_DUST, Blocks.SAND.defaultBlockState());
         spawnCloudRing(client, sand, sandCount, random, px, py, pz, vx);
         spawnCloudRing(client, ParticleTypes.CLOUD, hazeCount, random, px, py, pz, vx * 0.6);
@@ -282,13 +288,4 @@ public class GlobeModClient implements ClientModInitializer {
         }
     }
 
-    private static boolean isWarningParticleActive(Minecraft client) {
-        if (client.player == null || client.level == null) {
-            return false;
-        }
-
-        GlobeClientState.PolarStage polarStage = GlobeClientState.computePolarStage(client.level, client.player);
-        GlobeClientState.EwStormStage ewStage = GlobeClientState.computeEwStormStage(client.level, client.player);
-        return polarStage != GlobeClientState.PolarStage.NONE || ewStage != GlobeClientState.EwStormStage.NONE;
-    }
 }

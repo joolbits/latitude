@@ -1,0 +1,431 @@
+package com.example.globe.client;
+
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.HashSet;
+import java.util.Set;
+
+public final class EwPresentationPolicyTest {
+    private static final float EPSILON = 0.0001f;
+
+    private EwPresentationPolicyTest() {
+    }
+
+    public static void main(String[] args) throws Exception {
+        runAll();
+        System.out.println("EW_PRESENTATION_POLICY_TEST_PASS");
+    }
+
+    public static void runAll() throws Exception {
+        fogEnvelopeUsesThe400To50Smoothstep();
+        borderDistanceIsSymmetricThroughTheCanonicalMinFormula();
+        particlesUseTheFixedFogEnvelopeAndActualBorder();
+        warningEpisodesAreFiniteDirectionalAndRearmable();
+        pausedCrossingAndDirectEntryFollowStrictApproachSemantics();
+        outlineIsAnExplicitOnePixelRing();
+        shelterRequiresDeepContinuousZeroSky();
+        confirmedShelterPausesEpisodeTime();
+        staticIntegrationProofsHold();
+    }
+
+    private static void borderDistanceIsSymmetricThroughTheCanonicalMinFormula() {
+        assertNear(500.0f, (float) EwPresentationPolicy.distanceToNearestBorder(-3750.0, 3750.0, -3250.0),
+                "west approach uses the nearest-border distance");
+        assertNear(500.0f, (float) EwPresentationPolicy.distanceToNearestBorder(-3750.0, 3750.0, 3250.0),
+                "east approach mirrors west exactly");
+        assertNear(100.0f, (float) EwPresentationPolicy.distanceToNearestBorder(1250.0, 8750.0, 1350.0),
+                "shifted west border uses the canonical min formula");
+        assertNear(100.0f, (float) EwPresentationPolicy.distanceToNearestBorder(1250.0, 8750.0, 8650.0),
+                "shifted east border remains symmetric");
+    }
+
+    private static void fogEnvelopeUsesThe400To50Smoothstep() {
+        assertNear(0.0f, EwPresentationPolicy.fogIntensity(400.0001),
+                "fog is untouched outside 400 blocks");
+        assertNear(0.0f, EwPresentationPolicy.fogIntensity(400.0),
+                "fog joins the live baseline continuously at 400");
+        assertNear(0.5f, EwPresentationPolicy.fogIntensity(225.0),
+                "fog uses smoothstep at the 400-to-50 midpoint");
+        assertTrue(EwPresentationPolicy.fogIntensity(100.0) > 0.5f,
+                "fog is already dense at the level-two warning");
+        assertNear(1.0f, EwPresentationPolicy.fogIntensity(50.0),
+                "fog reaches full intensity at 50");
+        assertNear(1.0f, EwPresentationPolicy.fogIntensity(0.0),
+                "fog remains full inside 50");
+
+        assertNear(-1.0f, EwPresentationPolicy.fogEndDistance(400.0, 256.0f),
+                "400 leaves the live fog end untouched");
+        assertNear(134.0f, EwPresentationPolicy.fogEndDistance(225.0, 256.0f),
+                "midpoint blends from the live fog end to 12");
+        assertNear(12.0f, EwPresentationPolicy.fogEndDistance(50.0, 256.0f),
+                "full fog tightens end to 12");
+        assertNear(240.0f, EwPresentationPolicy.fogStartDistance(400.0, 240.0f),
+                "400 leaves the live fog start untouched");
+        assertNear(120.25f, EwPresentationPolicy.fogStartDistance(225.0, 240.0f),
+                "midpoint blends start toward 0.5");
+        assertNear(0.5f, EwPresentationPolicy.fogStartDistance(50.0, 240.0f),
+                "full fog tightens start to 0.5");
+        assertNear(-1.0f, EwPresentationPolicy.fogEndDistance(50.0, 256.0f, 0.0f),
+                "confirmed fully hidden shelter restores the live fog end");
+        assertNear(240.0f, EwPresentationPolicy.fogStartDistance(50.0, 240.0f, 0.0f),
+                "confirmed fully hidden shelter restores the live fog start");
+
+        float previous = 0.0f;
+        for (int distance = 400; distance >= 0; distance--) {
+            float intensity = EwPresentationPolicy.fogIntensity(distance);
+            assertTrue(intensity + EPSILON >= previous,
+                    "fog intensity is monotonic toward the border at " + distance);
+            previous = intensity;
+        }
+    }
+
+    private static void particlesUseTheFixedFogEnvelopeAndActualBorder() {
+        assertNear(0.0f, EwPresentationPolicy.particleIntensity(400.0, 1.0f),
+                "particles begin strictly inside the fixed 400-block envelope");
+        assertNear(0.0f, EwPresentationPolicy.particleIntensity(500.0, 1.0f),
+                "warning distance does not create particles outside the fog envelope");
+        assertNear(0.0f, EwPresentationPolicy.particleIntensity(50.0, 0.0f),
+                "shared shelter visibility suppresses particles");
+        assertEquals(0, EwPresentationPolicy.particleBudget(20, 400.0, 1.0f),
+                "particle budget is zero at 400 blocks");
+        assertEquals(20, EwPresentationPolicy.particleBudget(20, 50.0, 1.0f),
+                "particle budget reaches its maximum at full fog intensity");
+
+        float previousIntensity = 0.0f;
+        int previousBudget = 0;
+        for (int distance = 400; distance >= 0; distance--) {
+            float intensity = EwPresentationPolicy.particleIntensity(distance, 1.0f);
+            int budget = EwPresentationPolicy.particleBudget(20, distance, 1.0f);
+            assertTrue(intensity + EPSILON >= previousIntensity,
+                    "particle intensity is monotonic toward the border at " + distance);
+            assertTrue(budget >= previousBudget,
+                    "particle budget is monotonic toward the border at " + distance);
+            previousIntensity = intensity;
+            previousBudget = budget;
+        }
+
+        assertNear(0.1f, (float) EwPresentationPolicy.windTowardInterior(-3750.0, 3750.0, -3700.0, 0.1),
+                "west-border wind blows east toward the interior");
+        assertNear(-0.1f, (float) EwPresentationPolicy.windTowardInterior(-3750.0, 3750.0, 3700.0, 0.1),
+                "east-border wind blows west toward the interior");
+        assertNear(0.1f, (float) EwPresentationPolicy.windTowardInterior(1250.0, 8750.0, 1300.0, 0.1),
+                "shifted west border retains inward wind");
+        assertNear(-0.1f, (float) EwPresentationPolicy.windTowardInterior(1250.0, 8750.0, 8700.0, 0.1),
+                "shifted east border retains inward wind");
+        assertNear(0.0f, (float) EwPresentationPolicy.windTowardInterior(1250.0, 8750.0, 5000.0, 0.1),
+                "border-center tie has no arbitrary sign-biased wind");
+    }
+
+    private static void warningEpisodesAreFiniteDirectionalAndRearmable() {
+        assertEquals(20, EwPresentationPolicy.WARNING_FADE_IN_TICKS,
+                "warning fades in for one second");
+        assertEquals(100, EwPresentationPolicy.WARNING_HOLD_TICKS,
+                "warning holds for five seconds");
+        assertEquals(20, EwPresentationPolicy.WARNING_FADE_OUT_TICKS,
+                "warning fades out for one second");
+        assertEquals(140, EwPresentationPolicy.WARNING_TOTAL_TICKS,
+                "warning episode lasts exactly seven seconds");
+
+        assertEquals(0, EwPresentationPolicy.warningStageRank(500.0001),
+                "advisory is inactive outside 500");
+        assertEquals(1, EwPresentationPolicy.warningStageRank(500.0),
+                "advisory begins at 500");
+        assertEquals(1, EwPresentationPolicy.warningStageRank(100.0001),
+                "advisory remains selected just outside 100");
+        assertEquals(2, EwPresentationPolicy.warningStageRank(100.0),
+                "danger begins at 100");
+
+        var episode = new EwPresentationPolicy.WarningEpisode();
+        episode.update(0, 501.0, 0L, false);
+        episode.update(1, 500.0, 1L, false);
+        assertEquals(1, episode.highestTriggeredStageRank(),
+                "borderward entry triggers the advisory once");
+        assertNear(0.0f, episode.alpha(1L), "episode begins at zero alpha");
+        assertNear(1.0f, episode.alpha(21L), "episode reaches full alpha");
+
+        episode.update(1, 450.0, 22L, false);
+        episode.update(1, 475.0, 23L, false);
+        episode.update(1, 450.0, 24L, false);
+        assertEquals(1, episode.highestTriggeredStageRank(),
+                "retreat and same-stage re-entry do not retrigger");
+        assertNear(1.0f, episode.alpha(24L),
+                "retreat did not restart the advisory clock");
+
+        episode.update(2, 99.0, 25L, false);
+        assertEquals(2, episode.highestTriggeredStageRank(),
+                "borderward escalation triggers danger");
+        assertEquals(2, episode.activeStageRank(26L),
+                "danger replaces the advisory episode");
+        episode.update(1, 101.0, 26L, false);
+        episode.update(2, 99.0, 27L, false);
+        assertNear(0.1f, episode.alpha(27L),
+                "retreat and danger re-entry do not restart danger");
+
+        episode.update(0, 500.0001, 28L, false);
+        assertEquals(0, episode.highestTriggeredStageRank(),
+                "moving beyond 500 rearms the warning family");
+        episode.update(1, 500.0, 29L, false);
+        assertEquals(1, episode.highestTriggeredStageRank(),
+                "rearmed advisory triggers on the next borderward entry");
+
+        assertTrue(episode.alpha(29L + EwPresentationPolicy.WARNING_TOTAL_TICKS - 1L) > 0.0f,
+                "last fade tick remains visible");
+        assertNear(0.0f, episode.alpha(29L + EwPresentationPolicy.WARNING_TOTAL_TICKS),
+                "episode ends exactly after seven seconds");
+    }
+
+    private static void pausedCrossingAndDirectEntryFollowStrictApproachSemantics() {
+        var shelteredCrossing = new EwPresentationPolicy.WarningEpisode();
+        shelteredCrossing.update(0, 501.0, 0L, false);
+        shelteredCrossing.update(1, 500.0, 1L, true);
+        assertEquals(0, shelteredCrossing.highestTriggeredStageRank(),
+                "a crossing while confirmed hidden does not burn the warning");
+        shelteredCrossing.update(1, 499.0, 2L, false);
+        assertEquals(1, shelteredCrossing.highestTriggeredStageRank(),
+                "surface return resumes and consumes the pending borderward crossing");
+
+        var directDanger = new EwPresentationPolicy.WarningEpisode();
+        directDanger.update(2, 99.0, 100L, false);
+        assertEquals(0, directDanger.highestTriggeredStageRank(),
+                "direct initial level-two entry is intentionally silent");
+        directDanger.update(2, 98.0, 101L, false);
+        assertEquals(0, directDanger.highestTriggeredStageRank(),
+                "same-stage motion cannot synthesize a missed approach crossing");
+    }
+
+    private static void outlineIsAnExplicitOnePixelRing() {
+        int[][] offsets = EwPresentationPolicy.outlineOffsets();
+        assertEquals(8, offsets.length, "outline has all eight neighbors");
+        Set<String> unique = new HashSet<>();
+        for (int[] offset : offsets) {
+            assertEquals(2, offset.length, "outline entry has x and y");
+            assertTrue(Math.abs(offset[0]) <= 1 && Math.abs(offset[1]) <= 1,
+                    "outline remains one pixel from the glyph");
+            assertTrue(offset[0] != 0 || offset[1] != 0,
+                    "outline does not replace the glyph");
+            unique.add(offset[0] + "," + offset[1]);
+        }
+        assertEquals(8, unique.size(), "outline offsets are unique");
+    }
+
+    private static void shelterRequiresDeepContinuousZeroSky() {
+        assertNear(10.0f / 13.0f, EwPresentationPolicy.exposureFraction(10, 13),
+                "13-sample exposure preserves the committed concept");
+        assertTrue(!EwPresentationPolicy.isHiddenCandidate(62, 63, 0),
+                "surface tree or arch remains fully presented even with a blocked center");
+        assertTrue(!EwPresentationPolicy.isHiddenCandidate(60, 63, 1),
+                "deep space with any sky sample is not sealed");
+        assertTrue(EwPresentationPolicy.isHiddenCandidate(60, 63, 0),
+                "only deep zero-sky space is a hidden candidate");
+
+        var shelter = new EwPresentationPolicy.ShelterState();
+        for (int tick = 1; tick < EwPresentationPolicy.HIDDEN_CONFIRM_TICKS; tick++) {
+            shelter.update(60, 63, 0);
+            assertNear(1.0f, shelter.visibility(),
+                    "candidate shelter does not fade before 20 continuous ticks");
+            assertTrue(!shelter.pauseEpisode(),
+                    "candidate shelter does not pause warnings before confirmation");
+        }
+
+        shelter.update(60, 63, 0);
+        assertTrue(shelter.pauseEpisode(), "twentieth hidden tick confirms shelter");
+        assertNear(1.0f, shelter.visibility(), "fade begins from full visibility");
+        for (int tick = 0; tick < EwPresentationPolicy.HIDDEN_FADE_TICKS; tick++) {
+            shelter.update(60, 63, 0);
+        }
+        assertNear(0.0f, shelter.visibility(), "confirmed shelter fades fully over 20 ticks");
+        assertEquals(0, EwPresentationPolicy.particleBudget(20, shelter.visibility()),
+                "particle budget uses the same hidden state");
+
+        for (int tick = 0; tick < EwPresentationPolicy.VISIBLE_RESTORE_TICKS; tick++) {
+            shelter.update(62, 63, 0);
+        }
+        assertNear(1.0f, shelter.visibility(), "presentation restores fully within five ticks");
+        assertTrue(!shelter.pauseEpisode(), "leaving confirmed shelter resumes the episode");
+        assertEquals(20, EwPresentationPolicy.particleBudget(20, shelter.visibility()),
+                "particles restore from the same state");
+    }
+
+    private static void confirmedShelterPausesEpisodeTime() {
+        var episode = new EwPresentationPolicy.WarningEpisode();
+        episode.update(0, 501.0, 0L, false);
+        episode.update(1, 500.0, 1L, false);
+        episode.update(1, 499.0, 21L, false);
+        assertNear(1.0f, episode.alpha(21L), "episode is fully visible before shelter");
+
+        episode.update(1, 499.0, 121L, true);
+        episode.update(1, 499.0, 221L, true);
+        assertNear(1.0f, episode.alpha(221L),
+                "confirmed shelter pauses rather than burns the episode");
+        episode.update(1, 498.0, 222L, false);
+        assertNear(1.0f, episode.alpha(222L), "episode resumes after shelter");
+    }
+
+    private static void staticIntegrationProofsHold() throws IOException {
+        String state = normalize(read("src/main/java/com/example/globe/client/GlobeClientState.java"));
+        String overlay = read("src/main/java/com/example/globe/client/GlobeWarningOverlay.java");
+        String haze = read("src/main/java/com/example/globe/client/EwSandstormOverlayHud.java");
+        String fog = read("src/main/java/com/example/globe/mixin/client/FogRendererEwMixin.java");
+        String client = read("src/main/java/com/example/globe/GlobeModClient.java");
+        String sodium = read("src/main/java/com/example/globe/mixin/client/compat/sodium/RenderSectionManagerVisibilityMixin.java");
+        String mixins = read("src/main/resources/globe.mixins.json");
+
+        assertTrue(state.contains("EwPresentationPolicy.fogIntensity")
+                        && state.contains("EwPresentationPolicy.ShelterState"),
+                "Minecraft state delegates fog and shelter policy to the pure owner");
+        assertTrue(state.contains("EXPOSURE_OFFSETS")
+                        && state.contains("EwPresentationPolicy.SKY_SAMPLE_COUNT")
+                        && state.contains("EXPOSURE_RECOMPUTE_TICKS = 5"),
+                "live exposure shim uses the exact 13-sample five-tick cache policy");
+        assertTrue(overlay.contains("Sandstorm on the horizon, consider turning back.")
+                        && overlay.contains("Zero visibility ahead. Turn around."),
+                "warning copy is exact");
+        assertTrue(!overlay.contains("ChatFormatting.BOLD"),
+                "east/west warnings are explicitly non-bold");
+        assertTrue(overlay.contains("EW_WARNING_EPISODE.update")
+                        && overlay.contains("ewPresentationVisibility"),
+                "overlay consumes the finite episode and shared shelter state");
+        assertTrue(overlay.contains("drawCenteredEwWarning")
+                        && overlay.contains("EwPresentationPolicy.outlineOffsets()"),
+                "east/west warnings use the explicit keyline path");
+        String draw = methodSection(overlay, "private static void drawCenteredEwWarning(");
+        assertTrue(countOccurrences(draw, ", false);") >= 2,
+                "keyline and fill both render without shadows");
+
+        assertTrue(!haze.contains(".fill("),
+                "flat tan full-screen haze owner is neutralized");
+        assertTrue(fog.contains("computeEwFogStart")
+                        && fog.contains("computeEwFogEnd"),
+                "depth fog tightens start and end from the live baseline");
+        String fogHandler = methodSection(fog, "private void latitude$applyFog(");
+        assertEquals(1, countOccurrences(fogHandler, "GlobeClientState.evaluate(client)"),
+                "fog handler evaluates Latitude identity exactly once");
+        assertTrue(fogHandler.contains("if (!GlobeClientState.isGlobeWorld())")
+                        && fogHandler.indexOf("if (!GlobeClientState.isGlobeWorld())")
+                        < fogHandler.indexOf("GlobeClientState.evaluate(client)"),
+                "fog requires authoritative Latitude world identity before evaluation");
+        assertTrue(fogHandler.indexOf("if (!eval.active())")
+                        < fogHandler.indexOf("latitude$applyEwFog("),
+                "non-Latitude worlds fail open before east/west fog is applied");
+        String polarFog = methodSection(fog, "private static void latitude$applyPolarFog(");
+        assertTrue(!polarFog.contains("GlobeClientState.evaluate(client)")
+                        && polarFog.contains("GlobeClientState.Eval eval"),
+                "polar fog consumes the same evaluation without a contradictory second gate");
+        assertTrue(client.contains("ewPresentationVisibility")
+                        && client.contains("EwPresentationPolicy.particleBudget"),
+                "storm particles consume the same shelter visibility");
+        String particleTick = methodSection(client, "private static void polarCapClientTick(");
+        String ewParticleTick = methodSection(client, "private static void ewSandstormClientTick(");
+        assertTrue(!particleTick.contains("computeEwStormStage")
+                        && !ewParticleTick.contains("computeEwStormStage")
+                        && particleTick.contains("EwPresentationPolicy.particleIntensity")
+                        && ewParticleTick.contains("EwPresentationPolicy.particleBudget")
+                        && ewParticleTick.contains("border.getMinX()")
+                        && ewParticleTick.contains("border.getMaxX()")
+                        && ewParticleTick.contains("EwPresentationPolicy.windTowardInterior"),
+                "EW particles use the fixed fog envelope, shared shelter, and actual-border wind");
+
+        int updateIndex = overlay.indexOf("EW_WARNING_EPISODE.update(");
+        int visibilityConfigIndex = overlay.indexOf("if (!LatitudeConfig.showWarningMessages)");
+        assertTrue(updateIndex >= 0 && visibilityConfigIndex > updateIndex,
+                "warning config off still advances and consumes the episode before suppressing drawing");
+        assertTrue(overlay.contains("lastWarningLevel != client.level")
+                        && overlay.contains("worldTime < lastWarningWorldTime")
+                        && overlay.contains("resetWorldEntryState(worldTime)"),
+                "warning episodes reset on level identity changes and ordinary clock rollback");
+        String overlayRender = methodSection(overlay, "public static void render(");
+        String clearWarningState = methodSection(overlay, "private static void clearWarningWorldState(");
+        String disconnectReset = methodSection(overlay, "public static void resetForDisconnect(");
+        assertEquals(2, countOccurrences(overlayRender, "clearWarningWorldState();"),
+                "null client and disconnected player or level both clear warning state");
+        assertTrue(overlayRender.indexOf("client.player == null || client.level == null")
+                        < overlayRender.indexOf("GlobeClientState.DEBUG_DISABLE_WARNINGS"),
+                "disconnect cleanup cannot be skipped by the warning debug switch");
+        assertTrue(clearWarningState.contains("resetForDisconnect()"),
+                "render-time null cleanup delegates to the explicit lifecycle reset");
+        assertTrue(disconnectReset.contains("lastWarningLevel = null")
+                        && disconnectReset.contains("lastWarningWorldTime = Long.MIN_VALUE")
+                        && disconnectReset.contains("resetWorldEntryState(-1L)"),
+                "explicit disconnect reset clears static level identity, clock, episodes, and zone state");
+        String disconnectEvent = methodSection(client,
+                "ClientPlayConnectionEvents.DISCONNECT.register((handler, client) ->");
+        assertTrue(disconnectEvent.contains("GlobeWarningOverlay.resetForDisconnect()")
+                        && disconnectEvent.contains("GlobeClientState.resetForDisconnect()")
+                        && disconnectEvent.indexOf("GlobeWarningOverlay.resetForDisconnect()")
+                        < disconnectEvent.indexOf("GlobeClientState.resetForDisconnect()")
+                        && !disconnectEvent.contains("GlobeWarningOverlay.render("),
+                "disconnect event directly resets overlay and shared state without requiring render");
+
+        assertEquals(1, countOccurrences(
+                        mixins,
+                        "client.compat.sodium.RenderSectionManagerVisibilityMixin"),
+                "active Sodium visibility mixin remains registered exactly once");
+        assertTrue(sodium.contains("GlobeClientState.DEBUG_DISABLE_WARNINGS")
+                        && sodium.contains("GlobeClientState.DEBUG_DISABLE_FOG")
+                        && sodium.contains("GlobeClientState.isGlobeWorld()")
+                        && sodium.contains("GlobeClientState.evaluate(mc)")
+                        && sodium.contains("if (!eval.active()) return")
+                        && sodium.contains("GlobeClientState.ewPresentationVisibility()"),
+                "Sodium culling fails open outside active Latitude presentation and uses shared shelter visibility");
+        assertTrue(sodium.indexOf("GlobeClientState.isGlobeWorld()")
+                        < sodium.indexOf("GlobeClientState.evaluate(mc)"),
+                "Sodium culling requires authoritative Latitude world identity before evaluation");
+        assertTrue(state.contains("ewIntensity01(playerX) * visibility")
+                        && state.contains("return ewRenderDistanceChunks(originalChunks, playerX, ewPresentationVisibility())"),
+                "Sodium cull intensity restores through the shared presentation visibility");
+    }
+
+    private static String read(String relativePath) throws IOException {
+        return Files.readString(Path.of(relativePath));
+    }
+
+    private static String normalize(String value) {
+        return value.replaceAll("\\s+", " ");
+    }
+
+    private static int countOccurrences(String value, String needle) {
+        int count = 0;
+        int offset = 0;
+        while ((offset = value.indexOf(needle, offset)) >= 0) {
+            count++;
+            offset += needle.length();
+        }
+        return count;
+    }
+
+    private static String methodSection(String source, String signature) {
+        int start = source.indexOf(signature);
+        assertTrue(start >= 0, "method is present: " + signature);
+        int openBrace = source.indexOf('{', start);
+        assertTrue(openBrace >= 0, "method body is present: " + signature);
+        int depth = 0;
+        for (int i = openBrace; i < source.length(); i++) {
+            char c = source.charAt(i);
+            if (c == '{') {
+                depth++;
+            } else if (c == '}' && --depth == 0) {
+                return source.substring(start, i + 1);
+            }
+        }
+        throw new AssertionError("method body is balanced: " + signature);
+    }
+
+    private static void assertNear(float expected, float actual, String message) {
+        if (Math.abs(expected - actual) > EPSILON) {
+            throw new AssertionError(message + ": expected=" + expected + " actual=" + actual);
+        }
+    }
+
+    private static void assertEquals(int expected, int actual, String message) {
+        if (expected != actual) {
+            throw new AssertionError(message + ": expected=" + expected + " actual=" + actual);
+        }
+    }
+
+    private static void assertTrue(boolean condition, String message) {
+        if (!condition) {
+            throw new AssertionError(message);
+        }
+    }
+}

@@ -34,10 +34,18 @@ public class FogRendererEwMixin {
         if (camera.getFluidInCamera() != FogType.NONE) {
             return;
         }
+        if (!GlobeClientState.isGlobeWorld()) {
+            return;
+        }
+
+        GlobeClientState.Eval eval = GlobeClientState.evaluate(client);
+        if (!eval.active()) {
+            return;
+        }
 
         FogData fog = cir.getReturnValue();
         latitude$applyEwFog(fog, client.player.getX());
-        latitude$applyPolarFog(fog, client);
+        latitude$applyPolarFog(fog, client, eval);
     }
 
     @Unique
@@ -52,10 +60,7 @@ public class FogRendererEwMixin {
 
     @Unique
     private static float latitude$tightenEnd(float currentEnd, double x) {
-        double i = GlobeClientState.ewIntensity01(x);
-        if (i <= 0.0) return currentEnd;
-
-        double desiredEnd = GlobeClientState.computeEwFogEnd(x);
+        double desiredEnd = GlobeClientState.computeEwFogEnd(x, currentEnd);
         if (desiredEnd < 0.0) return currentEnd;
 
         return (float) Math.min(currentEnd, desiredEnd);
@@ -63,17 +68,15 @@ public class FogRendererEwMixin {
 
     @Unique
     private static float latitude$tightenStart(float currentStart, double x) {
-        double i = GlobeClientState.ewIntensity01(x);
-        if (i <= 0.0) return currentStart;
-
-        // Mild push so start moves forward with intensity; end tightening does the heavy lift.
-        return (float) (currentStart + (currentStart * (i * 0.25)));
+        return Math.min(currentStart, GlobeClientState.computeEwFogStart(x, currentStart));
     }
 
     @Unique
-    private static void latitude$applyPolarFog(FogData fog, Minecraft client) {
-        GlobeClientState.Eval eval = GlobeClientState.evaluate(client);
-        if (!eval.active() || !eval.surfaceOk()) {
+    private static void latitude$applyPolarFog(
+            FogData fog,
+            Minecraft client,
+            GlobeClientState.Eval eval) {
+        if (!eval.surfaceOk()) {
             return;
         }
 
