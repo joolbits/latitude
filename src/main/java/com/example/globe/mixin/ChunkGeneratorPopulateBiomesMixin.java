@@ -357,9 +357,12 @@ public abstract class ChunkGeneratorPopulateBiomesMixin {
             // path, so deep dripstone/sulfur/lush cells and deep non-cave cells all take the glacial
             // identity while ALL surface/upper quarts (blockY >= 48) keep today's pick order exactly
             // (the surface-quart identity pin, enforced by isBelowGlacialCaveCeiling). The column
-            // decision is the EXACT shared band+fray law the barrens biome/glacier/carvers use
-            // (LatitudeBiomes.glacialCaveColumnApplies -- pure lat + one coherent fray sample; populate
-            // runs PRE-NOISE, so no heightmaps/blocks); ocean-family columns (judged from the SAME
+            // decision is the EXACT shared UNDERGROUND BLEND law the crevasse/tunnel carvers and the
+            // /latdev locator ride (S28, Peetsa 2026-07-20 "a transition, not a hard switch":
+            // LatitudeBiomes.glacialCaveColumnApplies -> glacialBlendColumnApplies, a wide 78-86 deg band on
+            // ONE 640-block coherent region field -- swapped OFF the old 64-block surface barrens fray so the
+            // underground glacial identity onsets equatorward of the surface barrens and blends in gradually;
+            // populate runs PRE-NOISE, so no heightmaps/blocks); ocean-family columns (judged from the SAME
             // memoized per-column source sample `base` the resolver classifies everything with) are
             // excluded -- the sacred sea keeps its vanilla underground. deep_dark cells pass through
             // untouched (ancient cities/sculk are biome-tied; "underground stays alive" means

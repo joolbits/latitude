@@ -4,8 +4,8 @@ import com.example.globe.adapter.geo.GeoAuthorityProvider;
 import com.example.globe.adapter.geo.GeoSummaryProvider;
 import com.example.globe.core.CrevasseLocator;
 import com.example.globe.core.GeoSurveyNarrator;
+import com.example.globe.core.GlacialBlend;
 import com.example.globe.core.LatitudeV2Flags;
-import com.example.globe.core.PolarBarrensBand;
 import com.example.globe.core.SurveyGroundTruth;
 import com.example.globe.core.climate.ClimateAuthority;
 import com.example.globe.core.climate.ClimateSummary;
@@ -552,14 +552,17 @@ public final class LatitudeDevCommands {
             CrevasseLocator.StartChunkPredicate predicate = (cx, cz) -> {
                 int minBlockX = cx << 4;
                 int minBlockZ = cz << 4;
-                // Gate order = cheap first, exactly the seam's decisions: pure-math band exit, the SHARED
-                // barrens fray (one coherent field with biome/glacier/carvers), then the seeded roll, and the
-                // (priciest) raw-source sea probe only for roll-winning chunks. AND-chain, order-independent.
+                // Gate order = cheap first, exactly the seam's decisions: pure-math blend-onset exit, the
+                // SHARED underground glacial blend (S28 -- the exact LatitudeBiomes.glacialBlendColumnApplies
+                // the biome swap and carver append ride, one 640-block region field), then the seeded roll,
+                // and the (priciest) raw-source sea probe only for roll-winning chunks. AND-chain,
+                // order-independent. Swapped OFF the old 64-block surface barrens fray so the locator agrees
+                // with the seam the crevasses actually append on (Peetsa 2026-07-20 "a transition").
                 double absLatDeg = Math.abs((double) minBlockZ) * 90.0 / radius;
-                if (PolarBarrensBand.barrensFraction01(absLatDeg) <= 0.0) {
+                if (absLatDeg <= GlacialBlend.BLEND_ONSET_DEG) {
                     return false;
                 }
-                if (!PolarBarrensBand.isBarrens(absLatDeg, LatitudeBiomes.polarBarrensFrayNoise(minBlockX, minBlockZ))) {
+                if (!LatitudeBiomes.glacialBlendColumnApplies(minBlockX, minBlockZ, radius)) {
                     return false;
                 }
                 // The carver-biome lambda's exact sample: raw source field, min-corner quart, quart-Y 0.

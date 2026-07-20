@@ -1,12 +1,16 @@
 package com.example.globe.world;
 
+import com.example.globe.core.GlacialBlend;
 import com.example.globe.core.PolarBarrensBand;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
+import java.lang.reflect.Field;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -32,9 +36,13 @@ class GlacialCavesBiomeLawTest {
 
     private static final long ATLAS_SEED = 20260714L; // the pinned seed of the diagnosed atlas runs
     private static final int RADIUS = 10000;          // --size regular
-    private static final int DEEP_CAP_Z = 9889;       // |lat| = 89.00 deg -> barrens fraction 1.0
-    private static final int FRAY_Z = 9222;           // |lat| = 83.00 deg -> fraction ~0.5 (82->84 band)
-    private static final int BELOW_ONSET_Z = 9000;    // |lat| = 81.00 deg -> fraction exactly 0.0
+    private static final int DEEP_CAP_Z = 9889;       // |lat| = 89.00 deg -> blend threshold 1.0 (always)
+    private static final int BLEND_Z = 9222;          // |lat| = 83.00 deg -> threshold ~0.68 (78->86 band)
+    // S28: the underground blend onset is 78 deg (far equatorward of the OLD 82 barrens onset). 80 deg now
+    // sits INSIDE the blend lead-in (~16% glacial) where the old barrens-fray gate said "nothing" -- the
+    // equatorward extension the owner asked for. 76.5 deg is genuinely below the blend onset (nothing).
+    private static final int LEAD_IN_Z = 8888;        // |lat| = 79.99 deg -> threshold ~0.156 (old gate: 0)
+    private static final int BELOW_BLEND_ONSET_Z = 8500; // |lat| = 76.50 deg -> threshold exactly 0.0
 
     @BeforeAll
     static void armWorldSeed() {
@@ -68,7 +76,7 @@ class GlacialCavesBiomeLawTest {
         // thinning below the permafrost band, addressed data-side; the biome identity was already full-depth).
         // A future edit that re-introduces a floor here must fail this pin. (The deep_dark quart exemption and
         // the swap running BEFORE the lush veto -- so dripstone_caves/lush_caves quarts DO swap -- live in the
-        // mixin resolver, not this pure helper; the shared-front fray is pinned separately below.)
+        // mixin resolver, not this pure helper; the shared underground blend front is pinned separately below.)
         for (int y = -64; y < 48; y += 4) {
             assertTrue(LatitudeBiomes.isBelowGlacialCaveCeiling(y),
                     "every sub-ceiling quart down to the world floor stays swappable (no floor) at y=" + y);
@@ -106,30 +114,124 @@ class GlacialCavesBiomeLawTest {
     }
 
     @Test
-    void belowTheBandOnsetNothingApplies() {
+    void belowTheBlendOnsetNothingApplies() {
         for (int x = -4096; x <= 4096; x += 512) {
-            assertFalse(LatitudeBiomes.glacialCaveColumnApplies(x, BELOW_ONSET_Z, RADIUS, false, true),
-                    "81 deg (fraction 0.0, pure-math exit) must refuse at x=" + x);
+            assertFalse(LatitudeBiomes.glacialCaveColumnApplies(x, BELOW_BLEND_ONSET_Z, RADIUS, false, true),
+                    "76.5 deg (below the 78 blend onset, threshold 0.0, pure-math exit) must refuse at x=" + x);
         }
     }
 
     @Test
-    void frayAtEightyThreeDegreesSplitsAndMatchesTheSharedBarrensFront() {
-        double latDeg = Math.abs((double) FRAY_Z) * 90.0 / RADIUS;
+    void s28UndergroundNowExtendsEquatorwardOfTheOldBarrensOnset() {
+        // The whole point of S28: the underground glacial identity onsets at 78 deg, so the 78-82 lead-in
+        // (where the OLD barrens-fray gate said "nothing", barrens onset 82) now has glacial columns. At
+        // 80 deg the blend threshold is ~0.156, so a wide x-sweep must contain BOTH glacial and non-glacial
+        // columns -- the gradual transition, not a hard switch.
+        double latDeg = Math.abs((double) LEAD_IN_Z) * 90.0 / RADIUS;
+        assertTrue(PolarBarrensBand.barrensFraction01(latDeg) <= 0.0,
+                "sanity: 80 deg is below the OLD barrens onset (the old gate would refuse the whole band)");
+        boolean sawApply = false;
+        boolean sawRefuse = false;
+        for (int x = -16384; x <= 16384; x += 64) {
+            if (LatitudeBiomes.glacialCaveColumnApplies(x, LEAD_IN_Z, RADIUS, false, true)) {
+                sawApply = true;
+            } else {
+                sawRefuse = true;
+            }
+        }
+        assertTrue(sawApply,
+                "80 deg must now contain glacial columns (equatorward extension the old fray gate lacked)");
+        assertTrue(sawRefuse, "80 deg (~16% blend) must still be mostly non-glacial -- a lead-in, not the cap");
+    }
+
+    @Test
+    void blendAtEightyThreeDegreesSplitsAndMatchesTheSharedUndergroundBlendFront() {
+        double latDeg = Math.abs((double) BLEND_Z) * 90.0 / RADIUS;
         boolean sawApply = false;
         boolean sawRefuse = false;
         for (int x = -8192; x <= 8192; x += 64) {
-            boolean applies = LatitudeBiomes.glacialCaveColumnApplies(x, FRAY_Z, RADIUS, false, true);
-            // THE shared-front pin: the cave column decision must agree EXACTLY with the barrens
-            // band+fray law the biome/glacier/carvers ride (one coherent field, one decision -- so
-            // biome, glacier, crevasses and cave identity all fray together and none outruns another).
-            assertEquals(PolarBarrensBand.isBarrens(latDeg, LatitudeBiomes.polarBarrensFrayNoise(x, FRAY_Z)),
-                    applies, "cave column must ride the exact shared barrens fray at x=" + x);
+            boolean applies = LatitudeBiomes.glacialCaveColumnApplies(x, BLEND_Z, RADIUS, false, true);
+            // THE shared-front pin (S28): the cave column decision must agree EXACTLY with the underground
+            // BLEND law the crevasses/tunnels/locator ride (GlacialBlend.undergroundGlacial on the 640-block
+            // region field, ONE decision -- so biome, crevasses and cave identity all blend together and
+            // none outruns another). Deliberately NOT the surface barrens fray any more.
+            assertEquals(GlacialBlend.undergroundGlacial(latDeg, LatitudeBiomes.glacialBlendRegionNoise(x, BLEND_Z)),
+                    applies, "cave column must ride the exact shared underground blend at x=" + x);
             sawApply |= applies;
             sawRefuse |= !applies;
         }
         assertTrue(sawApply && sawRefuse,
-                "83 deg (~50% fray) must contain both applying and refusing columns");
+                "83 deg (~68% blend) must contain both applying and refusing columns");
+    }
+
+    // --- S28 cross-pin: all three underground consumers ride ONE law --------------------------------
+
+    @Test
+    void allThreeUndergroundConsumersShareTheExactBlendLaw() {
+        // The biome swap (glacialCaveColumnApplies), the crevasse/tunnel carver append and the /latdev
+        // locator all delegate their lat+region decision to glacialBlendColumnApplies -> undergroundGlacial
+        // on the SAME 640-block region field. This pins that single shared law across a table of latitudes
+        // (below-onset, lead-in, mid-blend, deep-cap) and x positions, so a future edit that split any one
+        // consumer off the seam fails here.
+        int[] zs = { BELOW_BLEND_ONSET_Z, LEAD_IN_Z, BLEND_Z, DEEP_CAP_Z };
+        for (int z : zs) {
+            double absLat = Math.abs((double) z) * 90.0 / RADIUS;
+            for (int x = -6144; x <= 6144; x += 96) {
+                boolean seamLaw = GlacialBlend.undergroundGlacial(absLat, LatitudeBiomes.glacialBlendRegionNoise(x, z));
+                // the shared column decision equals the pure law (with the pure-math onset cheap-out folded in)
+                assertEquals(seamLaw, LatitudeBiomes.glacialBlendColumnApplies(x, z, RADIUS),
+                        "glacialBlendColumnApplies == undergroundGlacial(regionNoise) at x=" + x + " z=" + z);
+                // the biome-swap consumer (non-ocean land, flag on) rides the exact same shared law
+                assertEquals(LatitudeBiomes.glacialBlendColumnApplies(x, z, RADIUS),
+                        LatitudeBiomes.glacialCaveColumnApplies(x, z, RADIUS, false, true),
+                        "glacialCaveColumnApplies (non-ocean, flag on) == the shared blend at x=" + x + " z=" + z);
+            }
+        }
+    }
+
+    // --- S28 tuning-constant pins (the region field is dedicated + region-scale, not the surface fray) ---
+
+    @Test
+    void blendRegionFieldUsesADedicated640BlockFieldDistinctFromTheSurfaceFray() throws Exception {
+        // Pin the private tuning literals so a future edit cannot silently shrink the region cells back to
+        // chunk scale (which would re-introduce the S27 fray flicker) or collide the field with the surface
+        // barrens fray. Reflection reads the private static-final constants directly.
+        int blendScale = intField("GLACIAL_BLEND_REGION_SCALE_BLOCKS");
+        int fraySurfaceScale = intField("POLAR_BARRENS_FRAY_SCALE_BLOCKS");
+        assertEquals(640, blendScale, "the underground blend cells are 640 blocks (geography, not confetti)");
+        assertEquals(64, fraySurfaceScale, "the SURFACE barrens fray stays chunk-scale (64) -- untouched by S28");
+        assertTrue(blendScale >= 8 * fraySurfaceScale,
+                "the blend field must be an order of magnitude coarser than the surface fray");
+
+        long blendSalt = longField("GLACIAL_BLEND_REGION_SALT");
+        long fraySalt = longField("POLAR_BARRENS_FRAY_SALT");
+        assertNotEquals(fraySalt, blendSalt,
+                "the blend field must use its OWN dedicated salt, never the surface barrens fray salt");
+
+        // Behavioral corollary: the two fields disagree at sampled columns (dedicated salt+scale), and the
+        // blend field is deterministic.
+        boolean sawDisagreement = false;
+        for (int x = -2048; x <= 2048; x += 128) {
+            double blend = LatitudeBiomes.glacialBlendRegionNoise(x, BLEND_Z);
+            assertEquals(blend, LatitudeBiomes.glacialBlendRegionNoise(x, BLEND_Z), 0.0,
+                    "the blend region field is deterministic at x=" + x);
+            if (Math.abs(blend - LatitudeBiomes.polarBarrensFrayNoise(x, BLEND_Z)) > 1e-6) {
+                sawDisagreement = true;
+            }
+        }
+        assertTrue(sawDisagreement, "the blend field is a genuinely different field from the surface fray");
+    }
+
+    private static int intField(String name) throws Exception {
+        Field f = LatitudeBiomes.class.getDeclaredField(name);
+        f.setAccessible(true);
+        return f.getInt(null);
+    }
+
+    private static long longField(String name) throws Exception {
+        Field f = LatitudeBiomes.class.getDeclaredField(name);
+        f.setAccessible(true);
+        return f.getLong(null);
     }
 
     // --- blue-ice depth strata law ------------------------------------------------------------------

@@ -37,6 +37,7 @@ import com.example.globe.adapter.climate.NoOpClimateSummaryProvider;
 import com.example.globe.adapter.geo.GeoAuthorityProvider;
 import com.example.globe.adapter.geo.GeoSummaryProvider;
 import com.example.globe.adapter.geo.NoOpGeoSummaryProvider;
+import com.example.globe.core.GlacialBlend;
 import com.example.globe.core.LatitudeV2Flags;
 import com.example.globe.core.PolarBarrensBand;
 import com.example.globe.core.PolarVegetationFade;
@@ -1026,6 +1027,50 @@ public final class LatitudeBiomes {
         return blockY < GLACIAL_CAVES_CEILING_Y;
     }
 
+    // --- S28 UNDERGROUND GLACIAL BLEND world-side wiring (Peetsa 2026-07-20: "a transition, not a hard
+    // --- switch") -- the ONE shared seam the glacial-caves biome swap, the crevasse/tunnel carver append
+    // --- and the /latdev locator all ride, so none outruns another and the underground blends coherently.
+
+    /**
+     * S28: coherent glacial-blend REGION sample in {@code [0,1)} at (blockX, blockZ) -- a NEW dedicated
+     * salted field at REGION scale (640-block cells), NOT the 64-block surface barrens fray. The wide cells
+     * make the underground-glacial transition read as long natural stretches of geography rather than
+     * chunk-confetti (the S27 fray diagnosis). Follows the salted-field idiom exactly
+     * ({@link #polarBarrensFrayNoise} precedent); Art VI clean (ValueNoise2D, no floorDiv/cell-hash).
+     */
+    public static double glacialBlendRegionNoise(int blockX, int blockZ) {
+        return ValueNoise2D.sampleBlocks(WORLD_SEED ^ GLACIAL_BLEND_REGION_SALT,
+                blockX, blockZ, GLACIAL_BLEND_REGION_SCALE_BLOCKS);
+    }
+
+    /**
+     * S28: the SHARED underground-glacial column decision (latitude + blend region field), independent of
+     * flag and ocean-family. This is THE law the three underground consumers ride identically:
+     * <ul>
+     *   <li>the {@code globe:glacial_caves} biome swap (via {@link #glacialCaveColumnApplies}, which ANDs
+     *       the flag + ocean gate in front),</li>
+     *   <li>the {@code globe:crevasse}/{@code globe:glacial_tunnels} carver append
+     *       ({@code NoiseChunkGeneratorCarveMixin}), and</li>
+     *   <li>the {@code /latdev locateCrevasse|locateTunnel} predicate ({@code LatitudeDevCommands}).</li>
+     * </ul>
+     * so biome, crevasses and locator agree on the exact same seam (the {@code GlacialCavesBiomeLawTest}
+     * cross-pin asserts this equivalence). True iff armed radius AND
+     * {@link GlacialBlend#undergroundGlacial} says the column is glacial for its {@code |lat|} and the
+     * region-noise sample. Cheap-out: at/below {@link GlacialBlend#BLEND_ONSET_DEG} the threshold is 0, so
+     * the whole non-polar world exits on pure math with NO noise sample (mirrors the old barrens-band
+     * pure-math exit that this replaces). Radius {@code <= 0} (unarmed JVM) returns false.
+     */
+    public static boolean glacialBlendColumnApplies(int blockX, int blockZ, int radius) {
+        if (radius <= 0) {
+            return false;
+        }
+        double absLatDeg = Math.abs((double) blockZ) * 90.0 / radius;
+        if (absLatDeg <= GlacialBlend.BLEND_ONSET_DEG) {
+            return false; // below the blend onset: pure-math exit, no region sample.
+        }
+        return GlacialBlend.undergroundGlacial(absLatDeg, glacialBlendRegionNoise(blockX, blockZ));
+    }
+
     /**
      * B-9 P2: the COLUMN half of the glacial-caves swap decision -- the production entry (reads the
      * static {@code latitude.glacialCavesV1} flag; {@code ChunkGeneratorPopulateBiomesMixin} calls this
@@ -1049,22 +1094,24 @@ public final class LatitudeBiomes {
      * underground -- the caller answers ocean-ness from the SAME per-column source sample
      * ({@code base} at {@link #SURFACE_CLASSIFY_Y}) the resolver already caches, the populate seam's
      * established column-identity idiom; the carver seam's probe reads Y63 instead, both accepted forms
-     * of one shared question), and the column lands barrens-side of the EXACT shared band+fray decision
-     * the barrens biome/glacier/carvers use ({@link PolarBarrensBand#barrensFraction01} cheap early-out,
-     * then {@link PolarBarrensBand#isBarrens} on {@link #polarBarrensFrayNoise} -- one coherent field,
-     * Art VI clean, no new noise). So biome, glacier, crevasses and cave identity all fray on the same
-     * front and none outruns another.
+     * of one shared question), and the column lands glacial-side of the EXACT shared underground blend
+     * decision the crevasses and locator ride ({@link #glacialBlendColumnApplies} ->
+     * {@link GlacialBlend#undergroundGlacial} on the 640-block region field, wide 78-86 deg band).
+     *
+     * <p><b>S28 SWAP (Peetsa 2026-07-20, "a transition, not a hard switch"):</b> the underground family
+     * moved OFF the 64-block surface barrens fray ({@link PolarBarrensBand#isBarrens}, chunk-scale coin
+     * flips at the 82-84 test latitudes -- the S27 fray diagnosis) and ONTO the wide, coherent-region
+     * blend. The SURFACE barrens (biome id, glacier body, veg fade, water freeze) is deliberately NOT
+     * swapped -- it keeps its 82-84 fray. So a column can be glacial UNDERGROUND (78-86 blend) while its
+     * SURFACE is still {@code snowy_plains} in the 78-82 lead-in; the underground identity onsets first and
+     * blends in, exactly the owner's gradual transition.
      */
     public static boolean glacialCaveColumnApplies(int blockX, int blockZ, int radius,
                                                    boolean columnIsOceanFamily, boolean enabled) {
         if (!enabled || radius <= 0 || columnIsOceanFamily) {
             return false;
         }
-        double absLatDeg = Math.abs((double) blockZ) * 90.0 / radius;
-        if (PolarBarrensBand.barrensFraction01(absLatDeg) <= 0.0) {
-            return false; // below the band onset: pure-math exit, no noise sample.
-        }
-        return PolarBarrensBand.isBarrens(absLatDeg, polarBarrensFrayNoise(blockX, blockZ));
+        return glacialBlendColumnApplies(blockX, blockZ, radius);
     }
 
     // --- B-9 P2 BLUE-ICE DEPTH STRATA (Crew C: the glacier body gets real depth reading) ---------------
@@ -3077,6 +3124,13 @@ public final class LatitudeBiomes {
     // (dedicated salt, Art VI) instead of the razor seam the owner screenshotted.
     private static final long POLAR_SEA_FREEZE_FRAY_SALT = 0x7365616672657A65L; // "seafreze"
     private static final int POLAR_SEA_FREEZE_FRAY_SCALE_BLOCKS = 128;
+    // S28 UNDERGROUND GLACIAL BLEND (Peetsa 2026-07-20: "a transition, not a hard switch"): a NEW dedicated
+    // salted field at REGION scale (640-block cells) drives the wide 78-86 deg underground-glacial blend
+    // (GlacialBlend). Deliberately its OWN field, NOT the 64-block barrens fray -- the fray is chunk-scale by
+    // design and stays for the SURFACE; large cells make the underground transition read as geography, not
+    // noise. Art VI clean (ValueNoise2D, no floorDiv/cell-hash).
+    private static final long GLACIAL_BLEND_REGION_SALT = 0x676C626C6E647267L; // "glblndrg"
+    private static final int GLACIAL_BLEND_REGION_SCALE_BLOCKS = 640;
     // Alpine peak smoothing: peak biomes (snowy_slopes/frozen_peaks/jagged_peaks) are emitted on a per-column
     // terrain gate with no spatial coherence, so they salt-and-pepper into many tiny components (the only
     // genuinely-confetti biomes, in every config incl. vanilla). Gate them with a coherent ValueNoise field so
