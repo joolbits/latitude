@@ -1,6 +1,6 @@
 # Latitude 1.5 Feature Manifest
 
-`status: post-TEST 2 HUD Studio consolidation PASSED locally; exact TEST 3 replay pending` · `branch: codex/1.5-mini-launch-26.2` · `implementation base: 4e79dd07a885e0e3671082fba09e7db37d244f81` · `recorded: 2026-07-20`
+`status: post-TEST 2 HUD Studio consolidation and TEST 3 profile staging PASSED locally; rendered interaction pending` · `branch: codex/1.5-mini-launch-26.2` · `implementation code savepoint: 1395f5c260212a1fb11a0b657a003cfaa1640b22` · `recorded: 2026-07-20`
 
 This is the implementation-side allowlist for the Latitude 1.5 pre-2.0 polish campaign. The campaign
 roadmap lives in the docs root at:
@@ -64,9 +64,10 @@ debug, blending, or world-generation configuration.
 The focused verifier recorded two explicit RED rounds before the final GREEN.
 A fresh adversarial sweep found and closed scroll reactivation, stale focus,
 and repeated-F9 nesting. Both focused verifiers and the Java 25 clean build
-with all 17 build/check tasks passed. This is source-structure and build proof,
-not yet rendered-pixel, narration, or mouse-interaction acceptance. The exact
-TEST 3 profile replay remains the next gate.
+with all 17 build/check tasks passed. The exact TEST 3 artifact was certified
+and staged as the only Latitude jar in the authorized 26.2 TEST profile. This
+is not yet rendered-pixel, narration, or mouse-interaction acceptance; the
+guarded live replay and the maintainer's visual review remain the next gate.
 
 Canonical evidence:
 
