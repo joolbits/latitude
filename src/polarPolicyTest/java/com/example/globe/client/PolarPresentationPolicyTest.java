@@ -13,6 +13,7 @@ public final class PolarPresentationPolicyTest {
         fogEnvelopeIsContinuousAndMonotonic();
         fogColorReachesCoolOffWhite();
         warningEpisodeIsPolewardFiniteAndRearmable();
+        warningArbitrationFallsThroughToCanonicalEwText();
         outlineIsAnExplicitOnePixelRing();
         staticIntegrationProofsHold();
         System.out.println("POLAR_PRESENTATION_POLICY_TEST_PASS");
@@ -155,6 +156,53 @@ public final class PolarPresentationPolicyTest {
             unique.add(offset[0] + "," + offset[1]);
         }
         assertEquals(8, unique.size(), "outline offsets are unique");
+    }
+
+    private static void warningArbitrationFallsThroughToCanonicalEwText() throws IOException {
+        assertEquals(0, PolarPresentationPolicy.ewTextStageRank(500.0001),
+                "east/west text is inactive just outside 500 blocks");
+        assertEquals(1, PolarPresentationPolicy.ewTextStageRank(500.0),
+                "east/west level 1 begins at exactly 500 blocks");
+        assertEquals(1, PolarPresentationPolicy.ewTextStageRank(100.0001),
+                "east/west level 1 remains active just outside 100 blocks");
+        assertEquals(2, PolarPresentationPolicy.ewTextStageRank(100.0),
+                "east/west level 2 begins at exactly 100 blocks");
+
+        var polarLethal = PolarPresentationPolicy.arbitrateWarning(4, 2);
+        assertTrue(polarLethal.polar() && polarLethal.stageRank() == 4,
+                "active polar lethal outranks east/west level 2");
+
+        var ewCritical = PolarPresentationPolicy.arbitrateWarning(3, 2);
+        assertTrue(!ewCritical.polar() && ewCritical.stageRank() == 2,
+                "east/west level 2 outranks active nonlethal polar");
+
+        var polarActive = PolarPresentationPolicy.arbitrateWarning(1, 1);
+        assertTrue(polarActive.polar() && polarActive.stageRank() == 1,
+                "active nonlethal polar outranks east/west level 1");
+
+        var expiredPolar = PolarPresentationPolicy.arbitrateWarning(0, 1);
+        assertTrue(!expiredPolar.polar() && expiredPolar.stageRank() == 1,
+                "expired polar episode falls through to east/west level 1");
+
+        String state = normalize(read("src/main/java/com/example/globe/client/GlobeClientState.java"));
+        String overlay = read("src/main/java/com/example/globe/client/GlobeWarningOverlay.java");
+
+        assertTrue(state.contains("public static EwStormStage ewTextStageForDistance(double distanceToBorder)"),
+                "fixed-distance east/west text stage has one exposed canonical owner");
+        assertTrue(state.contains("public static WarningState arbitrateWarning(PolarStage activePolar, EwStormStage ewStage)"),
+                "warning precedence has one exposed canonical arbitration policy");
+        assertTrue(state.contains("PolarPresentationPolicy.ewTextStageRank(distanceToBorder)")
+                        && state.contains("PolarPresentationPolicy.arbitrateWarning(polarRank(polar), ewRank(ew))"),
+                "Minecraft-facing warning state maps the executable dependency-free policy");
+        assertTrue(overlay.contains("GlobeClientState.arbitrateWarning(activePolarStage, ewTextStage)"),
+                "overlay arbitrates from the finite active polar episode and canonical east/west text stage");
+        assertTrue(overlay.contains("Visibility is dropping ahead. Consider turning around.")
+                        && overlay.contains("Zero visibility ahead. Turn around."),
+                "east/west warning copy is exact and direction-neutral");
+        assertTrue(!overlay.contains("EW_SAND_WARN_TEMPLATE")
+                        && !overlay.contains("EW_SAND_DANGER_TEMPLATE")
+                        && !overlay.contains("String.format(base.getString()"),
+                "east/west warning rendering has no unresolved direction placeholders");
     }
 
     private static void staticIntegrationProofsHold() throws IOException {

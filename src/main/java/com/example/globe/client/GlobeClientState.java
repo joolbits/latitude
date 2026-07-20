@@ -181,6 +181,30 @@ public final class GlobeClientState {
         };
     }
 
+    public static EwStormStage ewTextStageForDistance(double distanceToBorder) {
+        return switch (PolarPresentationPolicy.ewTextStageRank(distanceToBorder)) {
+            case 2 -> EwStormStage.LEVEL_2;
+            case 1 -> EwStormStage.LEVEL_1;
+            default -> EwStormStage.NONE;
+        };
+    }
+
+    public static EwStormStage computeEwTextStage(ClientLevel world, Player player) {
+        return ewTextStageForDistance(distanceToEwBorderBlocks(world.getWorldBorder(), player.getX()));
+    }
+
+    public static WarningState arbitrateWarning(PolarStage activePolar, EwStormStage ewStage) {
+        PolarStage polar = activePolar != null ? activePolar : PolarStage.NONE;
+        EwStormStage ew = ewStage != null ? ewStage : EwStormStage.NONE;
+        var selection = PolarPresentationPolicy.arbitrateWarning(polarRank(polar), ewRank(ew));
+        if (selection.stageRank() <= 0) {
+            return WarningState.NONE;
+        }
+        return selection.polar()
+                ? new WarningState(WarningType.POLAR, polar, selection.stageRank())
+                : new WarningState(WarningType.STORM, ew, selection.stageRank());
+    }
+
     public static WarningState computeWarningState(ClientLevel world, Player player) {
         if (DEBUG_DISABLE_WARNINGS) {
             return WarningState.NONE;
@@ -203,40 +227,8 @@ public final class GlobeClientState {
             }
         }
 
-        boolean ewTextWarn = distToBorder <= 500.0;
-        boolean ewTextDanger = distToBorder <= 100.0;
-        EwStormStage ewTextStage = ewTextDanger ? EwStormStage.LEVEL_2 : (ewTextWarn ? EwStormStage.LEVEL_1 : EwStormStage.NONE);
-
-        // Visual stage (fog/particles) mirrors text stage for now
-        EwStormStage ewVisual = ewTextStage;
-
-        int pr = polarRank(polar);
-        int er = ewRank(ewTextStage);
-
-        if (pr <= 0 && er <= 0) {
-            return WarningState.NONE;
-        }
-
-        // Corner precedence (stable):
-        // 1) polar lethal
-        // 2) ew level 2
-        // 3) polar warn/danger
-        // 4) ew level 1
-        if (polar == PolarStage.LETHAL) {
-            return new WarningState(WarningType.POLAR, polar, pr);
-        }
-        if (ewTextDanger) {
-            return new WarningState(WarningType.STORM, ewTextStage, er);
-        }
-        if (polar != PolarStage.NONE) {
-            return new WarningState(WarningType.POLAR, polar, pr);
-        }
-
-        if (ewTextWarn) {
-            return new WarningState(WarningType.STORM, ewTextStage, er);
-        }
-
-        return new WarningState(WarningType.STORM, ewTextStage, er);
+        EwStormStage ewTextStage = ewTextStageForDistance(distToBorder);
+        return arbitrateWarning(polar, ewTextStage);
     }
 
     public static PolarStage computePolarStage(ClientLevel world, Player player) {
