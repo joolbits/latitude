@@ -135,22 +135,16 @@ final class CompassDialRenderer {
         // a SHADED half — the classic engraved-rose treatment — with both tones derived from the theme's
         // own muted color (lighten/darken), so every theme (and Custom) gains depth with zero new config.
         // Light reads from the upper-left: N and W take lit-left/lit-top, S and E the mirrored shade.
-        int roseLit = lighten(colors.muted(), 0.30f);
-        int roseShade = darken(colors.muted(), 0.35f);
+        // TEST 119 revert (owner: "busy and messy... I was hoping for a subtle shading"):
+        // the lengthwise lit/shade facets read as dither noise at real HUD scale (arms are ~4-11 px). Arms
+        // return to the flat muted fill; the SUBTLE shading that survives is the 1px ring bevel in
+        // drawDiscBase -- visible depth, zero busy-ness. (The faceted experiment lives in git history.)
         for (int i = 0; i <= len; i++) {
             int half = Math.max(0, Math.round(baseHalf * (1.0f - i / (float) len)));
-            // N arm: left flank lit, right flank shaded.
-            ctx.fill(cx - half, cy - i, cx + 1, cy - i + 1, roseLit);
-            ctx.fill(cx + 1, cy - i, cx + half + 1, cy - i + 1, roseShade);
-            // S arm: mirrored (right flank lit reads wrong under top-left light — shade left, lit right).
-            ctx.fill(cx - half, cy + i, cx + 1, cy + i + 1, roseShade);
-            ctx.fill(cx + 1, cy + i, cx + half + 1, cy + i + 1, roseLit);
-            // W arm: top flank lit, bottom shaded.
-            ctx.fill(cx - i, cy - half, cx - i + 1, cy + 1, roseLit);
-            ctx.fill(cx - i, cy + 1, cx - i + 1, cy + half + 1, roseShade);
-            // E arm: mirrored.
-            ctx.fill(cx + i, cy - half, cx + i + 1, cy + 1, roseShade);
-            ctx.fill(cx + i, cy + 1, cx + i + 1, cy + half + 1, roseLit);
+            ctx.fill(cx - half, cy - i, cx + half + 1, cy - i + 1, colors.muted()); // N
+            ctx.fill(cx - half, cy + i, cx + half + 1, cy + i + 1, colors.muted()); // S
+            ctx.fill(cx - i, cy - half, cx - i + 1, cy + half + 1, colors.muted()); // W
+            ctx.fill(cx + i, cy - half, cx + i + 1, cy + half + 1, colors.muted()); // E
         }
         // Intercardinal strokes at 45°, ~55% length — kept in the plain muted tone so they sit visually
         // BEHIND the two-tone cardinal diamonds (depth by contrast, not just length).
@@ -355,18 +349,14 @@ final class CompassDialRenderer {
         String nLabel = "N";
         int nW = font.width(nLabel);
         float nScale = Mth.clamp(radius / 24.0f, 0.4f, 1.0f);
+        // TEST 119 revert (owner: "busy and messy"): the four-way outline blobbed at small scales. Back to
+        // the vanilla drop shadow, keeping only the brightness lift so the N still pops without the bulk.
         int nBright = lighten(colors.needle(), 0.35f);
-        int nOutline = darken(colors.face() | 0xFF000000, 0.55f);
         var pose = ctx.pose();
         pose.pushMatrix();
         pose.translate((float) (cx + 1), (float) (cy - radius + 2 + tickLen + 1));
         pose.scale(nScale, nScale);
-        // Outline: four cardinal offsets, no vanilla drop shadow (it reads as smear at sub-1.0 scales).
-        ctx.text(font, nLabel, -nW / 2 - 1, 0, nOutline, false);
-        ctx.text(font, nLabel, -nW / 2 + 1, 0, nOutline, false);
-        ctx.text(font, nLabel, -nW / 2, -1, nOutline, false);
-        ctx.text(font, nLabel, -nW / 2, 1, nOutline, false);
-        ctx.text(font, nLabel, -nW / 2, 0, nBright, false);
+        ctx.text(font, nLabel, -nW / 2, 0, nBright, true);
         pose.popMatrix();
     }
 
