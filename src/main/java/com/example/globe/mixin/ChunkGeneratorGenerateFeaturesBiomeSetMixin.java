@@ -1,6 +1,7 @@
 package com.example.globe.mixin;
 
 import com.example.globe.GlobeMod;
+import com.example.globe.world.LatitudeWorldgenScope;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
@@ -124,6 +125,9 @@ public class ChunkGeneratorGenerateFeaturesBiomeSetMixin {
     )
     private void globe$indexLatitudeTaggedCustomBiomeFeatures(
             WorldGenLevel world, ChunkAccess chunk, StructureManager structureAccessor, CallbackInfo ci) {
+        if (!LatitudeWorldgenScope.isActive()) {
+            return;
+        }
         if (this.globe$customBiomeFeaturesIndexed) {
             return;
         }
@@ -188,6 +192,9 @@ public class ChunkGeneratorGenerateFeaturesBiomeSetMixin {
             )
     )
     private boolean globe$logRetainAll(Set<?> biomes, Collection<?> retainSet) {
+        if (!LatitudeWorldgenScope.isActive()) {
+            return biomes.retainAll(retainSet);
+        }
         Set<Identifier> retainIds = latitude$customBiomeRetainIds();
         List<Holder<Biome>> beforePolicyHolders = latitude$policyCustomHoldersInSet(biomes, retainIds);
         boolean before = !beforePolicyHolders.isEmpty();

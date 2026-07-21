@@ -2,6 +2,7 @@ package com.example.globe.mixin;
 
 import com.example.globe.GlobeMod;
 import com.example.globe.world.LatitudeBiomes;
+import com.example.globe.world.LatitudeWorldgenScope;
 import net.minecraft.core.Registry;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.Identifier;
@@ -10,6 +11,7 @@ import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.StructureManager;
 import net.minecraft.world.level.WorldGenLevel;
 import net.minecraft.world.level.chunk.ChunkGenerator;
+import net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator;
 import net.minecraft.world.level.levelgen.structure.BoundingBox;
 import net.minecraft.world.level.levelgen.structure.Structure;
 import net.minecraft.world.level.levelgen.structure.StructureStart;
@@ -41,6 +43,11 @@ public abstract class ExtremePolarVillageGuardMixin {
                                                     BoundingBox chunkBox,
                                                     ChunkPos chunkPos,
                                                     CallbackInfo ci) {
+        if (!LatitudeWorldgenScope.isActive()
+                || !(chunkGenerator instanceof NoiseBasedChunkGenerator noise)
+                || !GlobeMod.shouldApplyLatitudeWorldgen(noise)) {
+            return;
+        }
         int blockZ = this.getChunkPos().getMiddleBlockZ();
         if (!LatitudeBiomes.isBlockBeyondPolarVillageLimit(blockZ, GlobeMod.BORDER_RADIUS)) {
             return;

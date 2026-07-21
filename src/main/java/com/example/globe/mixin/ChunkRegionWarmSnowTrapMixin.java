@@ -3,6 +3,7 @@ package com.example.globe.mixin;
 import com.example.globe.GlobeMod;
 import com.example.globe.util.LatitudeBands;
 import com.example.globe.world.LatitudeBiomes;
+import com.example.globe.world.LatitudeWorldgenScope;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.WorldGenRegion;
 import net.minecraft.world.level.block.Blocks;
@@ -33,6 +34,7 @@ public abstract class ChunkRegionWarmSnowTrapMixin {
     )
     private BlockState globe$swapWarmBandSnow(BlockState state, BlockPos pos) {
         if (state == null) return null;
+        if (!LatitudeWorldgenScope.isActive()) return state;
 
         if (state.getBlock() != Blocks.POWDER_SNOW
             && state.getBlock() != Blocks.SNOW_BLOCK

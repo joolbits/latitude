@@ -126,6 +126,7 @@ public class GlobeMod implements ModInitializer {
         registerDevOnlyHeadlessRunner();
         ServerLifecycleEvents.SERVER_STOPPED.register(server -> {
             POLAR_SCRUBBER = null;
+            LatitudeBiomes.clearWorldgenContext();
         });
 
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
@@ -247,13 +248,12 @@ public class GlobeMod implements ModInitializer {
         }
 
         if (!isGlobeOverworld(world)) {
+            LatitudeBiomes.clearWorldgenContext();
             return;
         }
         long seed = server.getWorldGenSettings().options().seed();
         int radius = borderRadiusForGlobeOverworld(world);
-        // Radius first: ensures rebuildProvinceAuthority() has a valid radius when the seed fires.
-        LatitudeBiomes.setRadius(radius);
-        LatitudeBiomes.setWorldSeed(seed);
+        LatitudeBiomes.activateWorldgenContext(radius, seed);
         LOGGER.info("[Latitude] Early init: province authority seeded before spawn-chunk generation (seed={} radius={})", seed, radius);
         setGlobeBorder(world, radius);
     }
@@ -271,12 +271,8 @@ public class GlobeMod implements ModInitializer {
         LatitudeWorldState.get(overworld);
 
         int borderRadiusBlocks = borderRadiusForGlobeOverworld(overworld);
-        // Radius must be set before seed so rebuildProvinceAuthority() builds the authority
-        // atomically the moment the seed is available (not on the next setRadius call).
-        LatitudeBiomes.setRadius(borderRadiusBlocks);
-
         long seed = overworld.getServer().getWorldGenSettings().options().seed();
-        LatitudeBiomes.setWorldSeed(seed);
+        LatitudeBiomes.activateWorldgenContext(borderRadiusBlocks, seed);
 
         setGlobeBorder(overworld, borderRadiusBlocks);
     }
@@ -402,7 +398,7 @@ public class GlobeMod implements ModInitializer {
         if (isGlobeNoiseGenerator(noise)) {
             return true;
         }
-        return LatitudeBiomes.getActiveRadiusBlocks() > 0 && hasInlineSettings(noise);
+        return LatitudeBiomes.hasActiveWorldgenAuthority() && hasInlineSettings(noise);
     }
 
     private static int borderRadiusForGlobeOverworld(ServerLevel world) {
@@ -423,7 +419,7 @@ public class GlobeMod implements ModInitializer {
         if (noise.stable(GLOBE_SETTINGS_REGULAR_KEY)) return BORDER_RADIUS;
         if (noise.stable(GLOBE_SETTINGS_LARGE_KEY)) return 10000;
         if (noise.stable(GLOBE_SETTINGS_MASSIVE_KEY)) return 20000;
-        if (hasInlineSettings(noise) && LatitudeBiomes.getActiveRadiusBlocks() > 0) {
+        if (hasInlineSettings(noise) && LatitudeBiomes.hasActiveWorldgenAuthority()) {
             return LatitudeBiomes.getActiveRadiusBlocks();
         }
 

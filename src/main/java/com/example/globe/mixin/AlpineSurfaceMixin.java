@@ -1,6 +1,7 @@
 package com.example.globe.mixin;
 
 import com.example.globe.world.LatitudeBiomes;
+import com.example.globe.world.LatitudeWorldgenScope;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
@@ -35,6 +36,9 @@ public abstract class AlpineSurfaceMixin {
     )
     private BlockState globe$alpineSurface(BlockState state, BlockPos pos) {
         if (state == null) {
+            return state;
+        }
+        if (!LatitudeWorldgenScope.isActive()) {
             return state;
         }
         int radius = LatitudeBiomes.ACTIVE_RADIUS_BLOCKS;

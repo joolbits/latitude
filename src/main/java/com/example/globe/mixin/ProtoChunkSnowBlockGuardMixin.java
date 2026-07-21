@@ -3,6 +3,7 @@ package com.example.globe.mixin;
 import com.example.globe.GlobeMod;
 import com.example.globe.util.LatitudeBands;
 import com.example.globe.world.LatitudeBiomes;
+import com.example.globe.world.LatitudeWorldgenScope;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
 import net.minecraft.tags.BiomeTags;
@@ -72,6 +73,7 @@ public class ProtoChunkSnowBlockGuardMixin {
     @Inject(method = "setBlockState", at = @At("HEAD"), cancellable = true)
     private void globe$blockSnowInWarmBands(BlockPos pos, BlockState state, int flags, CallbackInfoReturnable<BlockState> cir) {
         if (state == null) return;
+        if (!LatitudeWorldgenScope.isActive()) return;
 
         // Ocean-surface coherence: prevent grass_block in ocean-family biome cells.
         // Biome data is already populated (BIOMES phase) by the time surface rules
