@@ -842,22 +842,23 @@ public final class LatitudeDevCommands {
                             slotLines++;
                         }
                     } else {
-                        // SHALLOW: could carry the S30 collapse SANDWICH. Scan the top block(s) for a snow_block
-                        // cap DIRECTLY over a powder_snow marker DIRECTLY over air -- the exact gen signature the
-                        // runtime collapse keys off (a bare snowfield is snow over snow/dirt; a lone powder pocket
-                        // has no snow_block cap; so this three-block probe never false-positives). Signal 1.
+                        // SHALLOW: could carry the S35 POWDER COVER. Scan the top block(s) for a powder_snow
+                        // cap DIRECTLY over at least TWO air -- the gen signature (a cover always spans a
+                        // 12+ shaft). A cushion or a powder drift sits ON solid ground (0-1 air below) and a
+                        // roofed cave powder pocket hangs under solid rock, so this probe never false-positives
+                        // on the other powder placements. Signal 1.
                         int topBlockY = own - 1;
                         int foundRoofY = Integer.MIN_VALUE;
                         for (int y = topBlockY; y >= topBlockY - MARK_ROOF_PROBE_DEPTH; y--) {
                             cursor.set(wx, y, wz);
-                            if (world.getBlockState(cursor).getBlock() != Blocks.SNOW_BLOCK) {
+                            if (world.getBlockState(cursor).getBlock() != Blocks.POWDER_SNOW) {
                                 continue;
                             }
                             cursor.set(wx, y - 1, wz);
-                            boolean powderBelow = world.getBlockState(cursor).getBlock() == Blocks.POWDER_SNOW;
-                            cursor.set(wx, y - 2, wz);
                             boolean airBelow = world.getBlockState(cursor).isAir();
-                            if (powderBelow && airBelow) {
+                            cursor.set(wx, y - 2, wz);
+                            boolean airBelow2 = world.getBlockState(cursor).isAir();
+                            if (airBelow && airBelow2) {
                                 foundRoofY = y;
                                 break;
                             }
@@ -903,7 +904,7 @@ public final class LatitudeDevCommands {
                     fr, fTrap, fSlot, fScanned, fLoaded, fSkipped, fUnloaded)), false);
             if (trapRoofCount > 0) {
                 src.sendSuccess(() -> Component.literal(
-                        "[latdev] walk onto a GREEN pillar in survival — that column is snow over hidden powder."), false);
+                        "[latdev] walk onto a GREEN pillar in survival — that powder cover drops the full shaft (cushion at the base)."), false);
             } else if (openSlotCount > 0) {
                 // The exact TEST 123 confusion: markers everywhere, none of them traps.
                 src.sendSuccess(() -> Component.literal(

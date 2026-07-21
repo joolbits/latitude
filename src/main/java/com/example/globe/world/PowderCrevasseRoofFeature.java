@@ -10,7 +10,6 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.Identifier;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.level.WorldGenLevel;
-import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.levelgen.Heightmap;
@@ -38,24 +37,27 @@ import java.util.List;
  *       max; the surrounding snowfield does), then mark it a candidate via {@link
  *       PowderRoofTrap#isTrapCandidate(int, int)} (window max at least {@link
  *       PowderRoofTrap#MIN_SHAFT_DEPTH_BLOCKS} above the column's own surface).</li>
- *   <li>Detect roofable spans ({@link PowderRoofTrap#roofableSpans(boolean[])}, width &le; {@link
- *       PowderRoofTrap#MAX_ROOF_SPAN_WIDTH}) along BOTH chunk axes; each span rolls the {@link
- *       PowderRoofTrap#shouldRoofSpan(float)} fraction gate (the feature's own vanilla-seeded RandomSource --
- *       deterministic per seed+chunk, Art VI: no new noise).</li>
- *   <li>S32 RIM-BRIDGE LAW (TEST 122 "fragmented hanging blocks" fix): a winning span roofs ONLY when both
- *       its bounding rim columns are inside the chunk line and within {@link PowderRoofTrap#BRIDGE_RIM_MAX_DIFF}
- *       of each other -- a genuine slot through continuous snowfield, never a slope. The whole span then roofs
- *       FLAT at {@link PowderRoofTrap#bridgeRoofY} (the lower rim's top-block Y), flush with both rims by
- *       construction, and only over columns passing {@link PowderRoofTrap#columnDeepEnoughForRoof}. Each roofed
- *       column gets the S30 SANDWICH -- {@code snow_block} over one hidden {@code powder_snow} marker, both only
- *       into air -- and a {@code powder_snow} cushion on a bare stone/ice floor (the fall costs warmth/position,
- *       rarely the run). The runtime collapse event keys off this exact sandwich.</li>
- *   <li>DEEP DROP (Peetsa 2026-07-20 sketch: "sometimes you can drop down into a deep glacial cave"): a
- *       deterministic {@link PowderRoofTrap#DEEP_DROP_FRACTION} of roofed spans (the feature's own seeded
- *       RandomSource) probe straight down from the span-centre floor; if a contiguous cave void of at least
- *       {@link PowderRoofTrap#MIN_DEEP_VOID_AIR} air opens within {@link PowderRoofTrap#DEEP_DROP_PROBE_DEPTH}
- *       blocks, a narrow 2x2 shaft is punched connecting the crevasse floor to that void and the powder cushion
- *       is relocated to the true bottom -- the rare drop into the glacial-tunnel labyrinth below.</li>
+ *   <li>S35 PATCH PASS (owner spec + level-designer spec, 2026-07-21): flood-fill candidates into
+ *       4-connected components ({@link PowderRoofTrap#floodFillPatches}), clip to the chunk-interior box
+ *       (trimmed cells stay open -- the cover ends flush at the trim line, the deliberate partial-snow-bridge
+ *       edge), gate on {@link PowderRoofTrap#patchEligible} (wide PATCHES, not strips: minor dimension &le; 7,
+ *       area &le; 48), roll {@link PowderRoofTrap#shouldRoofPatch} once per eligible patch (deterministic
+ *       seeded RandomSource, Art VI: no new noise).</li>
+ *   <li>2D RIM-RING LAW (the anti-floating invariant, generalized from S32): the ring of non-candidate
+ *       neighbours must exist and span &le; {@link PowderRoofTrap#PATCH_RIM_MAX_SPREAD} in height; the whole
+ *       patch covers FLAT at {@link PowderRoofTrap#patchRoofY} (the LOWEST rim's top-block Y -- flush with
+ *       every rim, floating impossible). Columns failing {@link PowderRoofTrap#columnDeepEnoughForRoof} stay
+ *       open windows; a patch below {@link PowderRoofTrap#PATCH_MIN_DEEP_FRACTION} deep columns is abandoned.</li>
+ *   <li>S35 COVER + CUSHION (owner verbatim: "snow blocks are solid. You must cover traps with POWDER snow,
+ *       and there must be a powder snow block directly vertically down at the base"): the cover is exactly ONE
+ *       layer of {@code powder_snow} -- vanilla sink-through IS the trigger, no scripted event -- and EVERY
+ *       covered column gets one powder cushion at its own landing point, whatever the floor material (except
+ *       water, which already negates the fall and would float a fake shelf).</li>
+ *   <li>DEEP DROP ("a trap over a deep crevasse into a cave"): {@link PowderRoofTrap#DEEP_DROP_FRACTION} of
+ *       roofed patches probe {@link PowderRoofTrap#DEEP_DROP_PROBE_DEPTH} below their DEEPEST column's floor;
+ *       on a {@link PowderRoofTrap#MIN_DEEP_VOID_AIR}+ void hit, a {@link PowderRoofTrap#shaftSide}-square
+ *       shaft (2x2, or 3x3 under wide patches) is punched through, cushions at the void's true bottom -- the
+ *       signature drop into the glacial-cave labyrinth.</li>
  * </ol>
  *
  * <p><b>Vanilla-first / flag honesty.</b> The feature is REGISTERED unconditionally at mod-init (registries
@@ -71,20 +73,8 @@ public final class PowderCrevasseRoofFeature extends Feature<NoneFeatureConfigur
     public static Feature<NoneFeatureConfiguration> INSTANCE;
 
     private static final BlockState POWDER_SNOW = Blocks.POWDER_SNOW.defaultBlockState();
-    /** S30 (Peetsa 2026-07-20 eve sketch: snow_block flush with the snowfield = "normal-looking snow", the
-     *  unsuspecting part) -- the TOP of the roof SANDWICH. Indistinguishable from the surrounding snowfield;
-     *  directly beneath it sits the hidden {@link #POWDER_SNOW} marker, then the open void. The runtime collapse
-     *  event ({@code world.SnowCollapseRuntime}) reads exactly this shape as its trigger signature. */
-    private static final BlockState SNOW_BLOCK = Blocks.SNOW_BLOCK.defaultBlockState();
-    /** Used to carve the S30 deep-drop connecting shaft (open a roofed span's floor down to a pre-carved cave). */
+    /** Used to carve the deep-drop connecting shaft (open a roofed patch's floor down to a pre-carved cave). */
     private static final BlockState AIR = Blocks.AIR.defaultBlockState();
-    /** S25b post-crew fix (Crew 4's own risk flag): the cushion is POWDER SNOW, not snow_block —
-     *  snow_block does NOT reduce vanilla fall damage, so a 20-40 deep roofed drop could kill outright,
-     *  violating the trap law ("costs warmth/position, rarely the run"). Powder snow fully negates fall
-     *  damage, the victim sinks into it, and then the COLD is the price — exactly the design. Leather
-     *  boots let them climb back out. S30: the cushion also lands at the TRUE BOTTOM of a deep-drop shaft so
-     *  the sketch's "drop down into a deep glacial cave (onto powder snow so you don't take fall damage)" holds. */
-    private static final BlockState CUSHION = Blocks.POWDER_SNOW.defaultBlockState();
 
     /** S31 flight recorder ({@code -Dlatitude.debugCollapse=true}): the TEST 121 flight reported "0 matches /
      *  never encountered a trap", so the feature now can NAME what it did per chunk — candidates seen, spans
@@ -143,7 +133,7 @@ public final class PowderCrevasseRoofFeature extends Feature<NoneFeatureConfigur
             }
         }
 
-        // Per-column snowfield reference (windowed local max) + candidate mask.
+        // Per-column snowfield reference (windowed local max) + candidate mask (unchanged since V1).
         int[][] reference = new int[16][16];
         boolean[][] candidate = new boolean[16][16];
         int r = PowderRoofTrap.REFERENCE_WINDOW_RADIUS;
@@ -162,221 +152,247 @@ public final class PowderCrevasseRoofFeature extends Feature<NoneFeatureConfigur
             }
         }
 
-        // S32 RIM-BRIDGE span pass along BOTH axes (see PowderRoofTrap's rim-bridge law -- the TEST 122
-        // "fragmented hanging blocks" fix). A span may roof ONLY when it sits fully interior to the chunk
-        // line (both bounding rim columns known) and its two rims are within BRIDGE_RIM_MAX_DIFF of each
-        // other; the whole span then roofs FLAT at bridgeRoofY (the lower rim's top-block Y), flush with
-        // both rims by construction -- floating roofs are impossible. RandomSource draw ORDER is unchanged
-        // (one roof roll per detected span, one deep-drop roll per roofed span) => deterministic per
-        // seed+chunk, Art VI. roofAt holds the span's bridge Y per column (MIN_VALUE = not roofed); the
-        // first span to claim a column wins (a crossing's second claim is skipped, never double-roofed).
-        int[][] roofAt = new int[16][16];
-        for (int[] row : roofAt) {
-            java.util.Arrays.fill(row, Integer.MIN_VALUE);
-        }
-        List<int[]> deepDropCenters = new ArrayList<>();
-        boolean[] line = new boolean[16];
-        // X-rows (fixed lz, run over lx).
-        for (int lz = 0; lz < 16; lz++) {
-            for (int lx = 0; lx < 16; lx++) {
-                line[lx] = candidate[lx][lz];
-            }
-            for (int[] span : PowderRoofTrap.roofableSpans(line)) {
-                if (!PowderRoofTrap.shouldRoofSpan(random.nextFloat())) {
-                    continue;
-                }
-                boolean deepDrop = PowderRoofTrap.shouldDeepDrop(random.nextFloat());
-                int b0 = span[0] - 1;
-                int b1 = span[0] + span[1];
-                if (b0 < 0 || b1 > 15) {
-                    continue; // span touches the chunk edge: a bounding rim is unknown -- leave it open.
-                }
-                int rimA = surfaceFirstAir[b0][lz];
-                int rimB = surfaceFirstAir[b1][lz];
-                if (!PowderRoofTrap.rimsBridgeable(rimA, rimB)) {
-                    continue; // slope, not slot: the rims disagree -- no bridge (the fragmentation killer).
-                }
-                int roofY = PowderRoofTrap.bridgeRoofY(rimA, rimB);
-                for (int lx = span[0]; lx < span[0] + span[1]; lx++) {
-                    if (roofAt[lx][lz] == Integer.MIN_VALUE
-                            && PowderRoofTrap.columnDeepEnoughForRoof(surfaceFirstAir[lx][lz], roofY)) {
-                        roofAt[lx][lz] = roofY;
-                    }
-                }
-                if (deepDrop) {
-                    deepDropCenters.add(new int[]{span[0] + span[1] / 2, lz});
-                }
-            }
-        }
-        // Z-columns (fixed lx, run over lz).
-        for (int lx = 0; lx < 16; lx++) {
-            for (int lz = 0; lz < 16; lz++) {
-                line[lz] = candidate[lx][lz];
-            }
-            for (int[] span : PowderRoofTrap.roofableSpans(line)) {
-                if (!PowderRoofTrap.shouldRoofSpan(random.nextFloat())) {
-                    continue;
-                }
-                boolean deepDrop = PowderRoofTrap.shouldDeepDrop(random.nextFloat());
-                int b0 = span[0] - 1;
-                int b1 = span[0] + span[1];
-                if (b0 < 0 || b1 > 15) {
-                    continue;
-                }
-                int rimA = surfaceFirstAir[lx][b0];
-                int rimB = surfaceFirstAir[lx][b1];
-                if (!PowderRoofTrap.rimsBridgeable(rimA, rimB)) {
-                    continue;
-                }
-                int roofY = PowderRoofTrap.bridgeRoofY(rimA, rimB);
-                for (int lz2 = span[0]; lz2 < span[0] + span[1]; lz2++) {
-                    if (roofAt[lx][lz2] == Integer.MIN_VALUE
-                            && PowderRoofTrap.columnDeepEnoughForRoof(surfaceFirstAir[lx][lz2], roofY)) {
-                        roofAt[lx][lz2] = roofY;
-                    }
-                }
-                if (deepDrop) {
-                    deepDropCenters.add(new int[]{lx, span[0] + span[1] / 2});
-                }
-            }
-        }
-
+        // S35 PATCH PASS (level-designer spec 2026-07-21; supersedes the 1-D span pass). Components in
+        // deterministic flood order; one roof roll per ELIGIBLE patch and one deep-drop roll per WON roof
+        // roll, drawn back-to-back so the random stream is a pure function of the eligible-patch sequence.
         boolean placedAny = false;
-        int placedRoofs = 0; // S31 recorder: sandwiches ACTUALLY written (air-guard survivors), not just roofed-mask size
+        int patchesRoofed = 0;
+        int placedCovers = 0;
+        int shaftsPunched = 0;
+        int firstCoverX = Integer.MIN_VALUE;
+        int firstCoverY = 0;
+        int firstCoverZ = 0;
         BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
-        for (int lx = 0; lx < 16; lx++) {
-            for (int lz = 0; lz < 16; lz++) {
-                if (roofAt[lx][lz] == Integer.MIN_VALUE) {
-                    continue;
+        for (List<int[]> component : PowderRoofTrap.floodFillPatches(candidate)) {
+            // Clip to the chunk-interior box so every surviving cell has all four neighbours readable
+            // in-chunk; trimmed cells stay open slot (the cover ends flush at the trim line -- the
+            // deliberate partial-snow-bridge edge, INTENTIONAL).
+            List<int[]> clipped = new ArrayList<>();
+            for (int[] c : component) {
+                if (PowderRoofTrap.isInteriorCell(c[0], c[1])) {
+                    clipped.add(c);
+                }
+            }
+            if (!PowderRoofTrap.patchEligible(clipped)) {
+                continue; // no roll consumed: the eligible-patch sequence defines the stream
+            }
+            if (!PowderRoofTrap.shouldRoofPatch(random.nextFloat())) {
+                continue;
+            }
+            boolean tryDeep = PowderRoofTrap.shouldDeepDrop(random.nextFloat());
+
+            // 2D rim ring: in-chunk 4-neighbours of patch cells that are NOT candidates. (Neighbours that
+            // are candidates -- in-patch, clipped-out, or a separate slot -- are the slot continuing, not
+            // rim.) The ring must exist and read as continuous snowfield.
+            int minRim = Integer.MAX_VALUE;
+            int maxRim = Integer.MIN_VALUE;
+            for (int[] c : clipped) {
+                for (int d = 0; d < 4; d++) {
+                    int nx = c[0] + (d == 0 ? 1 : d == 1 ? -1 : 0);
+                    int nz = c[1] + (d == 2 ? 1 : d == 3 ? -1 : 0);
+                    if (candidate[nx][nz]) {
+                        continue;
+                    }
+                    int rim = surfaceFirstAir[nx][nz];
+                    minRim = Math.min(minRim, rim);
+                    maxRim = Math.max(maxRim, rim);
+                }
+            }
+            if (minRim == Integer.MAX_VALUE || !PowderRoofTrap.rimRingBridgeable(minRim, maxRim)) {
+                continue; // no anchoring rim, or slope-not-slot: leave the whole component open.
+            }
+            int roofY = PowderRoofTrap.patchRoofY(minRim);
+
+            // Patch-level depth vote against the REAL cover height; failing columns become open windows,
+            // and a mostly-shallow component is abandoned outright (a scoop, not a trap).
+            int deepCells = 0;
+            for (int[] c : clipped) {
+                if (PowderRoofTrap.columnDeepEnoughForRoof(surfaceFirstAir[c[0]][c[1]], roofY)) {
+                    deepCells++;
+                }
+            }
+            if (!PowderRoofTrap.patchDeepEnough(deepCells, clipped.size())) {
+                continue;
+            }
+
+            // Deep-drop shaft: sited at the DEEPEST passing cell (shortest remaining rock, most
+            // crevasse-like read; ties broken by flood order), footprint 2x2 or 3x3 by patch width,
+            // clamped in-chunk. Probe below the site's floor for a qualifying cave void.
+            int shaftSide = PowderRoofTrap.shaftSide(PowderRoofTrap.patchMinorDimension(clipped));
+            int shaftMinX = Integer.MIN_VALUE;
+            int shaftMinZ = Integer.MIN_VALUE;
+            int voidTop = Integer.MIN_VALUE;
+            int voidBottom = Integer.MIN_VALUE;
+            int siteFloorY = Integer.MIN_VALUE;
+            if (tryDeep) {
+                int bestDepth = -1;
+                int siteX = -1;
+                int siteZ = -1;
+                for (int[] c : clipped) {
+                    int own = surfaceFirstAir[c[0]][c[1]];
+                    if (!PowderRoofTrap.columnDeepEnoughForRoof(own, roofY)) {
+                        continue;
+                    }
+                    int depth = (roofY + 1) - own;
+                    if (depth > bestDepth) {
+                        bestDepth = depth;
+                        siteX = c[0];
+                        siteZ = c[1];
+                    }
+                }
+                if (siteX >= 0) {
+                    siteFloorY = surfaceFirstAir[siteX][siteZ] - 1;
+                    int run = 0;
+                    for (int y = siteFloorY - 1; y >= siteFloorY - PowderRoofTrap.DEEP_DROP_PROBE_DEPTH; y--) {
+                        cursor.set(baseX + siteX, y, baseZ + siteZ);
+                        if (level.getBlockState(cursor).isAir()) {
+                            if (run == 0) {
+                                voidTop = y;
+                            }
+                            run++;
+                            voidBottom = y;
+                        } else if (PowderRoofTrap.qualifiesDeepDrop(run)) {
+                            break;
+                        } else {
+                            run = 0;
+                        }
+                    }
+                    // STRATEGIST MUST-FIX (S35 risk 2, "closet-void entombment"): a 4-air VERTICAL pocket is
+                    // not a cave -- a bootless player dropped 25 blocks into a sealed closet has only
+                    // die-and-respawn as counterplay, the one unacceptable outcome. Punch only when the void
+                    // is horizontally TRAVERSABLE: some cardinal column 2 blocks out (just beyond any shaft
+                    // footprint) has standing room (2 air) at the landing level -- i.e. the void goes
+                    // somewhere. Otherwise the patch stays a floor trap; no shaft.
+                    if (PowderRoofTrap.qualifiesDeepDrop(run) && globe$voidTraversable(
+                            level, cursor, baseX + siteX, baseZ + siteZ, voidBottom)) {
+                        shaftMinX = Math.min(Math.max(siteX - (shaftSide - 1) / 2, 0), 16 - shaftSide);
+                        shaftMinZ = Math.min(Math.max(siteZ - (shaftSide - 1) / 2, 0), 16 - shaftSide);
+                    }
+                }
+            }
+            boolean shaftQualified = shaftMinX != Integer.MIN_VALUE;
+
+            // COVER + CUSHIONS. Cover = exactly ONE layer of powder_snow at roofY (owner law: solid snow
+            // was "the mistake"; vanilla sink-through IS the trigger). Cushion = one powder at EVERY covered
+            // column's own landing point (owner law: "directly vertically down at the base"), whatever the
+            // floor material -- except water, which already negates the fall and would float a fake shelf.
+            int patchCovers = 0;
+            for (int[] c : clipped) {
+                int lx = c[0];
+                int lz = c[1];
+                int own = surfaceFirstAir[lx][lz];
+                if (!PowderRoofTrap.columnDeepEnoughForRoof(own, roofY)) {
+                    continue; // natural window in the cover
                 }
                 int worldX = baseX + lx;
                 int worldZ = baseZ + lz;
-                int roofY = roofAt[lx][lz]; // the span's bridge Y -- flush with BOTH rims, never floating.
-                int floorY = surfaceFirstAir[lx][lz] - 1; // this column's crevasse-floor top-solid block.
-
-                // Cushion first (below), so a later heightmap-touched read of the roof is not needed. Only if
-                // the floor is bare stone/ice: place a powder-snow cushion on the floor's first air block.
-                cursor.set(worldX, floorY, worldZ);
-                if (isBareLandingFloor(level.getBlockState(cursor).getBlock())) {
-                    cursor.set(worldX, floorY + 1, worldZ);
-                    safeSetBlock(level, cursor, CUSHION, BlockState::isAir);
+                // STRATEGIST MUST-FIX (S35 risk 1, "skinned-pond landing"): a water floor gets no cushion
+                // (powder would float a fake shelf), and gen-time "safe water" is a lie later -- the tick
+                // freeze law can grow an ice SKIN on a roofed pond, turning a 30-block drop into a landing
+                // on ice with NO cushion. A column whose floor is fluid is therefore never COVERED at all
+                // (it stays an open window); the cushion guarantee is absolute over every covered column.
+                cursor.set(worldX, own - 1, worldZ);
+                if (!level.getBlockState(cursor).getFluidState().isEmpty()) {
+                    continue;
                 }
-
-                // S30 SANDWICH: snow_block flush with the bridge Y over a hidden powder_snow marker, both ONLY
-                // into air and ONLY when BOTH slots are air (never overwrite a wall/ledge, and never leave a
-                // half-sandwich the runtime signature would misread).
+                boolean inShaft = shaftQualified
+                        && lx >= shaftMinX && lx < shaftMinX + shaftSide
+                        && lz >= shaftMinZ && lz < shaftMinZ + shaftSide;
+                if (!inShaft) {
+                    // Floor cushion at this column's first-air landing point (own), only into air.
+                    cursor.set(worldX, own, worldZ);
+                    safeSetBlock(level, cursor, POWDER_SNOW, BlockState::isAir);
+                }
+                // The cover itself: only into air, and only with air directly beneath (never seal a column
+                // whose shaft is blocked at the throat -- a cover over solid is the outlawed stepping-stone).
                 cursor.set(worldX, roofY, worldZ);
                 boolean roofAir = level.getBlockState(cursor).isAir();
                 cursor.set(worldX, roofY - 1, worldZ);
-                boolean markerAir = level.getBlockState(cursor).isAir();
-                if (roofAir && markerAir) {
-                    cursor.set(worldX, roofY - 1, worldZ);
-                    setBlock(level, cursor, POWDER_SNOW);
+                boolean underAir = level.getBlockState(cursor).isAir();
+                if (roofAir && underAir) {
                     cursor.set(worldX, roofY, worldZ);
-                    setBlock(level, cursor, SNOW_BLOCK);
+                    setBlock(level, cursor, POWDER_SNOW);
                     placedAny = true;
-                    placedRoofs++;
+                    placedCovers++;
+                    patchCovers++;
+                    if (firstCoverX == Integer.MIN_VALUE) {
+                        firstCoverX = worldX;
+                        firstCoverY = roofY;
+                        firstCoverZ = worldZ;
+                    }
                 }
+            }
+
+            // Punch the shaft AFTER covers so its columns read their own guards cleanly: carve sub-floor
+            // rock from the SITE's floor down to the void (solid only -- the snowfield above and the flush
+            // cover are untouched), then one powder cushion per shaft column at the void's true bottom.
+            if (shaftQualified && patchCovers > 0) {
+                for (int cx = shaftMinX; cx < shaftMinX + shaftSide; cx++) {
+                    for (int cz = shaftMinZ; cz < shaftMinZ + shaftSide; cz++) {
+                        int wx2 = baseX + cx;
+                        int wz2 = baseZ + cz;
+                        // Remove any floor cushion or floating shelf in the throat so the victim passes through.
+                        cursor.set(wx2, siteFloorY + 1, wz2);
+                        if (level.getBlockState(cursor).getBlock() == Blocks.POWDER_SNOW) {
+                            setBlock(level, cursor, AIR);
+                        }
+                        for (int y = siteFloorY; y > voidTop; y--) {
+                            cursor.set(wx2, y, wz2);
+                            safeSetBlock(level, cursor, AIR, st -> !st.isAir()); // carve solid only, sub-floor only
+                        }
+                        cursor.set(wx2, voidBottom - 1, wz2);
+                        boolean waterBottom = !level.getBlockState(cursor).getFluidState().isEmpty();
+                        if (!waterBottom) {
+                            cursor.set(wx2, voidBottom, wz2);
+                            safeSetBlock(level, cursor, POWDER_SNOW, BlockState::isAir);
+                        }
+                    }
+                }
+                shaftsPunched++;
+                placedAny = true;
+            }
+            if (patchCovers > 0) {
+                patchesRoofed++;
             }
         }
 
-        // S30 DEEP DROP: connect a fraction of roofed spans to a pre-carved cave below. Bounded (per centre:
-        // one downward probe of <= DEEP_DROP_PROBE_DEPTH, then a 2x2 x <=depth carve + 4 cushion writes), and
-        // chunk-local (the 2x2 base is clamped to [0,14] so both columns stay inside this 16x16 decorating chunk).
-        for (int[] c : deepDropCenters) {
-            int lx = c[0];
-            int lz = c[1];
-            if (lx < 0 || lx > 15 || lz < 0 || lz > 15 || roofAt[lx][lz] == Integer.MIN_VALUE) {
-                continue; // only where a sandwich actually placed
-            }
-            int worldX = baseX + lx;
-            int worldZ = baseZ + lz;
-            int floorY = surfaceFirstAir[lx][lz] - 1; // centre column's crevasse-floor top-solid block
-
-            // Probe straight down through the floor for the first contiguous AIR run that qualifies as a cave.
-            int voidTop = Integer.MIN_VALUE;
-            int voidBottom = Integer.MIN_VALUE;
-            int run = 0;
-            for (int y = floorY - 1; y >= floorY - PowderRoofTrap.DEEP_DROP_PROBE_DEPTH; y--) {
-                cursor.set(worldX, y, worldZ);
-                if (level.getBlockState(cursor).isAir()) {
-                    if (run == 0) {
-                        voidTop = y;
-                    }
-                    run++;
-                    voidBottom = y;
-                } else if (PowderRoofTrap.qualifiesDeepDrop(run)) {
-                    break; // a qualifying void already found above this solid block -- stop
-                } else {
-                    run = 0; // reset: too-shallow air pocket, keep probing deeper
-                }
-            }
-            if (!PowderRoofTrap.qualifiesDeepDrop(run)) {
-                continue; // no connectable cave within reach -- leave this span a shallow crevasse trap
-            }
-
-            int bx = Math.min(lx, 14);
-            int bz = Math.min(lz, 14);
-            // Remove the centre's floating floor cushion so the victim actually drops through. Carving starts at
-            // the crevasse FLOOR (never at the snowfield surface), so a 2x2 whose neighbours are slot WALLS only
-            // cuts sub-floor rock/ice -- the snowfield above floorY, and the flush sandwich, stay intact/hidden.
-            cursor.set(worldX, floorY + 1, worldZ);
-            if (level.getBlockState(cursor).getBlock() == Blocks.POWDER_SNOW) {
-                setBlock(level, cursor, AIR);
-            }
-            for (int cx = bx; cx <= bx + 1; cx++) {
-                for (int cz = bz; cz <= bz + 1; cz++) {
-                    int wx2 = baseX + cx;
-                    int wz2 = baseZ + cz;
-                    for (int y = floorY; y > voidTop; y--) {
-                        cursor.set(wx2, y, wz2);
-                        safeSetBlock(level, cursor, AIR, st -> !st.isAir()); // carve solid only, sub-floor only
-                    }
-                    cursor.set(wx2, voidBottom, wz2);
-                    safeSetBlock(level, cursor, CUSHION, BlockState::isAir); // deep cushion at the true bottom
-                }
-            }
-            placedAny = true;
-        }
         if (DEBUG) {
             int candidates = 0;
-            int sandwiches = 0;
-            int firstX = Integer.MIN_VALUE;
-            int firstY = 0;
-            int firstZ = 0;
             for (int lx = 0; lx < 16; lx++) {
                 for (int lz = 0; lz < 16; lz++) {
                     if (candidate[lx][lz]) {
                         candidates++;
                     }
-                    if (roofAt[lx][lz] != Integer.MIN_VALUE) {
-                        sandwiches++;
-                        if (firstX == Integer.MIN_VALUE) {
-                            firstX = baseX + lx;
-                            firstY = roofAt[lx][lz];
-                            firstZ = baseZ + lz;
-                        }
-                    }
                 }
             }
             if (candidates > 0 || placedAny) {
-                GlobeMod.LOGGER.info("[LAT][COLLAPSE] chunk=({},{}) candidates={} roofedCols={} placedRoofs={} deepDrops={} firstRoof={},{},{}",
-                        baseX >> 4, baseZ >> 4, candidates, sandwiches, placedRoofs, deepDropCenters.size(),
-                        firstX, firstY, firstZ);
+                GlobeMod.LOGGER.info("[LAT][COLLAPSE] chunk=({},{}) candidates={} patchesRoofed={} covers={} shafts={} firstCover={},{},{}",
+                        baseX >> 4, baseZ >> 4, candidates, patchesRoofed, placedCovers, shaftsPunched,
+                        firstCoverX, firstCoverY, firstCoverZ);
             }
         }
         return placedAny;
     }
 
     /**
-     * Is {@code block} a bare stone/ice-family crevasse floor that warrants a {@code snow_block} cushion? The
-     * carver cuts through the glacier body (packed_ice / blue_ice), the permafrost stratum, and native stone
-     * below the sole; a dry slot bottoms on one of those. Dirt/gravel/snow floors already read soft, so they
-     * are left as-is (no cushion needed, and the design scopes the cushion to "bare stone/ice").
+     * Is the probed void HORIZONTALLY TRAVERSABLE at the landing level -- a cave that goes somewhere, not a
+     * sealed pocket? True when any cardinal column 2 blocks from the shaft site (just beyond a 2x2/3x3
+     * footprint) has standing room ({@code voidBottom} and {@code voidBottom+1} both air). WorldGenLevel
+     * exposes the 3x3-chunk decoration region, so the +/-2 reads are always in range.
      */
-    private static boolean isBareLandingFloor(Block block) {
-        return block == Blocks.STONE || block == Blocks.DEEPSLATE || block == Blocks.GRANITE
-                || block == Blocks.DIORITE || block == Blocks.ANDESITE || block == Blocks.TUFF
-                || block == Blocks.PACKED_ICE || block == Blocks.BLUE_ICE || block == Blocks.ICE;
+    private static boolean globe$voidTraversable(WorldGenLevel level, BlockPos.MutableBlockPos cursor,
+            int siteWorldX, int siteWorldZ, int voidBottom) {
+        int[][] probes = {{2, 0}, {-2, 0}, {0, 2}, {0, -2}};
+        for (int[] p : probes) {
+            cursor.set(siteWorldX + p[0], voidBottom, siteWorldZ + p[1]);
+            if (!level.getBlockState(cursor).isAir()) {
+                continue;
+            }
+            cursor.set(siteWorldX + p[0], voidBottom + 1, siteWorldZ + p[1]);
+            if (level.getBlockState(cursor).isAir()) {
+                return true;
+            }
+        }
+        return false;
     }
 }
