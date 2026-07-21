@@ -827,14 +827,18 @@ public final class LatitudeDevCommands {
                         openSlotCount++;
                         final int depth = reference - own;
                         final int floorY = own - 1; // the crevasse floor's top solid block (firstAir - 1)
-                        if (slotMarkers < MARK_MARKER_CAP) {
-                            int top = Math.min(reference + 2, own + MARK_BEACON_MAX_HEIGHT);
-                            greenBeacon(world, wx, own, top, wz);
+                        // S33 (Peetsa 2026-07-21: "there is no roof in the trap -- it's just an empty space"):
+                        // open slots outnumber trap roofs ~1000:1 and USED to draw the same green as traps, so
+                        // every marker the owner walked to was an open crevasse behaving exactly as designed.
+                        // Slots now draw BLUE and sparsely (SLOT_MARKER_CAP); green means trap, always.
+                        if (slotMarkers < SLOT_MARKER_CAP) {
+                            blueSlotMark(world, wx, own, wz);
                             slotMarkers++;
                         }
                         if (slotLines < MARK_CHAT_CAP) {
                             src.sendSuccess(() -> Component.literal(String.format(Locale.ROOT,
-                                    "[latdev]   open slot: x=%d y=%d z=%d (%d deep)", wx, floorY, wz, depth)), false);
+                                    "[latdev]   BLUE open crevasse (no roof, by design): x=%d y=%d z=%d (%d deep)",
+                                    wx, floorY, wz, depth)), false);
                             slotLines++;
                         }
                     } else {
@@ -861,13 +865,16 @@ public final class LatitudeDevCommands {
                         if (foundRoofY != Integer.MIN_VALUE) {
                             trapRoofCount++;
                             final int roofY = foundRoofY;
+                            // S33: the trap is the PRIZE and it is rare, so it gets the TALL green pillar
+                            // (visible across a snowfield) -- the old 3-block stub was shorter than the slot
+                            // columns drowning it. Green pillar = walk here.
                             if (roofMarkers < MARK_MARKER_CAP) {
-                                greenBeacon(world, wx, roofY, roofY + 3, wz);
+                                greenBeacon(world, wx, roofY, roofY + TRAP_PILLAR_HEIGHT, wz);
                                 roofMarkers++;
                             }
                             if (roofLines < MARK_CHAT_CAP) {
                                 src.sendSuccess(() -> Component.literal(String.format(Locale.ROOT,
-                                        "[latdev]   TRAP roof: snow over powder at x=%d y=%d z=%d", wx, roofY, wz)), false);
+                                        "[latdev]   GREEN TRAP roof (walk onto this): x=%d y=%d z=%d", wx, roofY, wz)), false);
                                 roofLines++;
                             }
                         }
@@ -884,9 +891,19 @@ public final class LatitudeDevCommands {
             final int fUnloaded = unloadedChunks;
             final int fr = r;
             src.sendSuccess(() -> Component.literal(String.format(Locale.ROOT,
-                    "[latdev] markGlacial (r=%d chunks): trap roofs=%d, open slots=%d | scanned %d cols (%d chunks), "
-                            + "skipped %d cols (%d unloaded)",
+                    "[latdev] markGlacial (r=%d chunks): GREEN trap roofs=%d | BLUE open crevasses=%d (no roof, "
+                            + "by design) | scanned %d cols (%d chunks), skipped %d cols (%d unloaded)",
                     fr, fTrap, fSlot, fScanned, fLoaded, fSkipped, fUnloaded)), false);
+            if (trapRoofCount > 0) {
+                src.sendSuccess(() -> Component.literal(
+                        "[latdev] walk onto a GREEN pillar in survival — that column is snow over hidden powder."), false);
+            } else if (openSlotCount > 0) {
+                // The exact TEST 123 confusion: markers everywhere, none of them traps.
+                src.sendSuccess(() -> Component.literal(
+                        "[latdev] no traps in range — every marker here is a BLUE open crevasse (a hole, no roof). "
+                                + "Traps only generate in NEW chunks, and only on true Polar Barrens land "
+                                + "(glacier over frozen OCEAN is excluded). Explore fresh ground and rescan."), false);
+            }
             if (roofMarkers >= MARK_MARKER_CAP || slotMarkers >= MARK_MARKER_CAP) {
                 src.sendSuccess(() -> Component.literal(String.format(Locale.ROOT,
                         "[latdev] (drew the first %d markers per signal — the counts above are the real totals)",
@@ -926,6 +943,21 @@ public final class LatitudeDevCommands {
      * wrong. Bounded to three points regardless of shaft depth, so a deep canyon never becomes a particle
      * fountain.
      */
+    /** S33: height (blocks) of the GREEN trap pillar -- tall enough to spot across a snowfield. */
+    private static final int TRAP_PILLAR_HEIGHT = 8;
+    /** S33: open crevasses outnumber traps ~1000:1, so they are marked sparsely; they are context, not the goal. */
+    private static final int SLOT_MARKER_CAP = 40;
+
+    /** S33: a BLUE (soul-flame) short mark for an open crevasse -- unmistakably not the green trap pillar. */
+    private static void blueSlotMark(ServerLevel world, int x, int surfaceY, int z) {
+        synchronized (GREEN_MARKS) {
+            if (GREEN_MARKS.size() < MARKER_QUEUE_CAP) {
+                GREEN_MARKS.add(new int[]{x, surfaceY, surfaceY + 2, z, 0, MARK_KIND_SLOT});
+            }
+        }
+        emitMark(world, x, surfaceY, surfaceY + 2, z, MARK_KIND_SLOT);
+    }
+
     private static void greenBeacon(ServerLevel world, int x, int yLo, int yHi, int z) {
         int lo = Math.min(yLo, yHi);
         int hi = Math.max(yLo, yHi);
@@ -935,13 +967,17 @@ public final class LatitudeDevCommands {
         // green glow LINGERS long enough to walk toward. Emit once immediately for instant feedback.
         synchronized (GREEN_MARKS) {
             if (GREEN_MARKS.size() < MARKER_QUEUE_CAP) {
-                GREEN_MARKS.add(new int[]{x, lo, hi, z, 0});
+                GREEN_MARKS.add(new int[]{x, lo, hi, z, 0, MARK_KIND_TRAP});
             }
         }
-        emitBeacon(world, x, lo, hi, z);
+        emitMark(world, x, lo, hi, z, MARK_KIND_TRAP);
     }
 
-    /** Live green markers: {x, yLo, yHi, z, ageTicks}. Bounded by {@link #MARKER_QUEUE_CAP}; a new markGlacial
+    /** Marker kinds: GREEN = a real trap roof (the goal), BLUE = an open crevasse (context). */
+    private static final int MARK_KIND_TRAP = 0;
+    private static final int MARK_KIND_SLOT = 1;
+
+    /** Live markers: {x, yLo, yHi, z, ageTicks, kind}. Bounded by {@link #MARKER_QUEUE_CAP}; a new markGlacial
      *  run clears the previous set (see {@code markGlacialCore}) so stale marks never mislead. */
     private static final java.util.List<int[]> GREEN_MARKS = new java.util.ArrayList<>();
     private static final int MARKER_QUEUE_CAP = 400;
@@ -970,7 +1006,7 @@ public final class LatitudeDevCommands {
                     continue;
                 }
                 if (emit) {
-                    emitBeacon(world, m[0], m[1], m[2], m[3]);
+                    emitMark(world, m[0], m[1], m[2], m[3], m[5]);
                 }
             }
         }
@@ -983,12 +1019,17 @@ public final class LatitudeDevCommands {
         }
     }
 
-    private static void emitBeacon(ServerLevel world, int x, int lo, int hi, int z) {
-        int mid = (lo + hi) / 2;
+    private static void emitMark(ServerLevel world, int x, int lo, int hi, int z, int kind) {
         double cx = x + 0.5;
         double cz = z + 0.5;
-        for (int y : new int[]{lo, mid, hi}) {
-            world.sendParticles(ParticleTypes.HAPPY_VILLAGER, cx, y + 0.5, cz, 6, 0.2, 0.2, 0.2, 0.0);
+        if (kind == MARK_KIND_SLOT) {
+            // Open crevasse: a short BLUE soul-flame mark at the rim. Sparse and low -- context, not a target.
+            world.sendParticles(ParticleTypes.SOUL_FIRE_FLAME, cx, lo + 0.5, cz, 2, 0.2, 0.2, 0.2, 0.0);
+            return;
+        }
+        // Trap roof: a solid GREEN pillar every block from the roof up, so it reads as one column from afar.
+        for (int y = lo; y <= hi; y++) {
+            world.sendParticles(ParticleTypes.HAPPY_VILLAGER, cx, y + 0.5, cz, 4, 0.15, 0.15, 0.15, 0.0);
         }
     }
 }
