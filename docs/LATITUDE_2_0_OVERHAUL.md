@@ -947,7 +947,7 @@ DELIVERABLE: a dated binder note recording the integration-boundary decision, wh
 vanilla-only + flag-off proof results, and (once Peetsa has done a live pass) the live-eyeball findings
 and any tuning-knob adjustments made. Local commits only — ask before tagging or pushing. End by stating
 plainly whether this slice is ready for a live session with Peetsa at the keyboard, or whether something
-needs his input first.
+needs her input first.
 ```
 
 ## Kickoff Slice Prompt (Phase 4 only)

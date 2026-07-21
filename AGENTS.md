@@ -64,7 +64,7 @@ PROFILE, not prestige (repetitive/well-specified → cheaper tier; novel/logic-h
   role — dispatch when a surface LOOKS done and the question is beauty/readability/coherence ("is this
   a signature moment?"), typically before a big UI round or after Peetsa reacts lukewarmly to a look.
   Findings that conflict with Peetsa's explicit taste decisions are reported with data but flagged as
-  HIS call — the review never overrides the owner.
+  HER call — the review never overrides the owner.
 - **Creative Understudy** (Sonnet-tier, read-only, no deliverable doc — defined at
   `.claude/agents/creative-understudy.md`; locked in 2026-07-11 at Peetsa's request): the fresh-eyes
   junior. Skims ALL player-facing surfaces at once (where the Creative Director deep-dives one) and
