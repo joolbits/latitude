@@ -194,19 +194,23 @@ public class NoiseChunkGeneratorCarveMixin {
     private List<Holder<ConfiguredWorldCarver<?>>> globe$glacialCarversForSeedChunk(
             NoiseBasedChunkGenerator self, WorldGenRegion region, RandomState randomState, ChunkPos seedChunkPos) {
         if (!LatitudeV2Flags.GLACIAL_CAVES_V1_ENABLED) {
+            globe$debugExit("flagOff", seedChunkPos);
             return List.of();
         }
         int radius = LatitudeBiomes.getActiveRadiusBlocks();
         if (radius <= 0) {
+            globe$debugExit("noRadius", seedChunkPos);
             return List.of();
         }
         int minBlockX = seedChunkPos.getMinBlockX();
         int minBlockZ = seedChunkPos.getMinBlockZ();
         double absLatDeg = Math.abs((double) minBlockZ) * 90.0 / radius;
         if (absLatDeg <= GlacialBlend.BLEND_ONSET_DEG) {
-            return List.of(); // below the blend onset: pure-math exit, no region sample, no probe.
+            return List.of(); // below the blend onset: pure-math exit, no region sample, no probe. (Not
+                              // debug-counted: this is the whole equatorward world, it would drown the log.)
         }
         if (!(self.getBiomeSource() instanceof LatitudeBiomeSource)) {
+            globe$debugExit("notLatitudeSource", seedChunkPos);
             return List.of(); // nether/end (or a non-globe generator with a stale armed radius).
         }
         // S28 UNDERGROUND GLACIAL BLEND: the crevasse/tunnel append rides the EXACT shared blend decision
@@ -215,6 +219,7 @@ public class NoiseChunkGeneratorCarveMixin {
         // the 64-block surface barrens fray (PolarBarrensBand.isBarrens) so the underground transitions
         // gradually and none of biome/crevasse/locator outruns another (Peetsa 2026-07-20).
         if (!LatitudeBiomes.glacialBlendColumnApplies(minBlockX, minBlockZ, radius)) {
+            globe$debugExit("blendSaysNo", seedChunkPos);
             return List.of(); // the shared blend decision said this seed chunk stays non-glacial.
         }
         Holder<Biome> seaProbe = ((ChunkGeneratorAccessor) (Object) self).globe$getRawBiomeSource().getNoiseBiome(
@@ -223,6 +228,7 @@ public class NoiseChunkGeneratorCarveMixin {
                 QuartPos.fromBlock(minBlockZ),
                 randomState.sampler());
         if (seaProbe.is(BiomeTags.IS_OCEAN)) {
+            globe$debugExit("seaChunk", seedChunkPos);
             return List.of(); // sea seed chunk: the frozen sea is sacred (and structurally uncarvable anyway).
         }
         Registry<ConfiguredWorldCarver<?>> carvers =
@@ -238,6 +244,16 @@ public class NoiseChunkGeneratorCarveMixin {
             }
             return List.of();
         }
+        globe$debugExit("APPEND", seedChunkPos);
         return List.of(crevasse.get(), tunnels.get());
+    }
+
+    /** S31 diagnosis instrument ({@code -Dlatitude.debugCollapse=true}): name the exit every glacial-band seed
+     *  chunk takes through the append decision, so a "no crevasses live" report can be traced to its gate. */
+    @Unique
+    private static void globe$debugExit(String reason, ChunkPos pos) {
+        if (Boolean.getBoolean("latitude.debugCollapse")) {
+            GlobeMod.LOGGER.info("[LAT][CARVEGATE] {} chunk=({},{})", reason, pos.x(), pos.z());
+        }
     }
 }

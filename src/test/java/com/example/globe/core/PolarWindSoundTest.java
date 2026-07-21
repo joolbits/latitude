@@ -26,15 +26,22 @@ class PolarWindSoundTest {
 
     @Test
     void whisperThroughApproachBand() {
-        // S29: probes re-anchored to the SAME relative progress (not the same absolute degrees) so the
-        // test still means "40% of the way from onset to full" / "10% of the way" after the 85->83 retune.
-        double whisperCheckpoint = PolarWindSound.START_DEG + 0.4 * (PolarWindSound.FULL_DEG - PolarWindSound.START_DEG);
-        float vCheckpoint = PolarWindSound.volume(whisperCheckpoint);
-        assertEquals(PolarWindSound.MAX_VOLUME * 0.16f, vCheckpoint, EPS);
-        assertTrue(vCheckpoint < PolarWindSound.MAX_VOLUME * 0.25f, "just past onset must be a whisper");
-        // Barely past onset: barely audible.
-        double barelyPastOnset = PolarWindSound.START_DEG + 0.1 * (PolarWindSound.FULL_DEG - PolarWindSound.START_DEG);
-        assertTrue(PolarWindSound.volume(barelyPastOnset) < 0.02f);
+        // S31 (TEST 121 verdict "wind did not start sooner"): the onset must be AUDIBLE, not merely playing.
+        // The attack completes at WHISPER_DEG with exactly WHISPER_VOLUME -- a real whisper (>= 0.08).
+        assertEquals(PolarWindSound.WHISPER_VOLUME, PolarWindSound.volume(PolarWindSound.WHISPER_DEG), EPS);
+        assertTrue(PolarWindSound.WHISPER_VOLUME >= 0.08f, "onset whisper must be humanly audible");
+        // Half-attack: exactly half the whisper (linear fade-in, no pop at the START line).
+        double halfAttack = (PolarWindSound.START_DEG + PolarWindSound.WHISPER_DEG) / 2.0;
+        assertEquals(PolarWindSound.WHISPER_VOLUME * 0.5f, PolarWindSound.volume(halfAttack), EPS);
+        // Past the attack the eased leg rides ON the whisper floor: never below WHISPER, and still a
+        // whisper-class level (< 25% of max) through the first stretch of the approach band.
+        double approach = PolarWindSound.WHISPER_DEG + 0.3 * (PolarWindSound.FULL_DEG - PolarWindSound.WHISPER_DEG);
+        float vApproach = PolarWindSound.volume(approach);
+        assertTrue(vApproach >= PolarWindSound.WHISPER_VOLUME - EPS, "ease leg must ride on the whisper floor");
+        assertTrue(vApproach < PolarWindSound.MAX_VOLUME * 0.25f, "the approach band must still read as a whisper");
+        // Continuity at the attack->ease joint: q=0 contributes nothing beyond the floor.
+        assertEquals(PolarWindSound.volume(PolarWindSound.WHISPER_DEG),
+                PolarWindSound.volume(PolarWindSound.WHISPER_DEG + 1e-9), 1e-3f);
     }
 
     @Test
@@ -47,7 +54,8 @@ class PolarWindSoundTest {
     @Test
     void monotonicNonDecreasing() {
         float prev = -1f;
-        for (double lat = 84.0; lat <= 90.0; lat += 0.1) {
+        // S31: sweep from below onset so the attack leg and both joints are inside the monotonic check.
+        for (double lat = 82.5; lat <= 90.0; lat += 0.1) {
             float v = PolarWindSound.volume(lat);
             assertTrue(v >= prev - EPS, "volume must not decrease with latitude at lat=" + lat);
             prev = v;

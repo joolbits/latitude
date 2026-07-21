@@ -76,12 +76,16 @@ public final class LatitudeDevCommands {
 
     public static void registerIfEnabled(CommandDispatcher<CommandSourceStack> dispatcher) {
         if (FabricLoader.getInstance().isDevelopmentEnvironment()) {
-            return; // the full dev.LatitudeDevCommand already owns /latdev in dev
+            // S31 (dev/shippable split fix, logged S27 finding (c)): the full dev.LatitudeDevCommand owns
+            // /latdev in dev, but the shippable tree carries tools the dev tree lacks (locateCrevasse,
+            // markGlacial, tpxz...) that dev-lane/headless diagnosis needs. Register it under /latdev2.
+            register(dispatcher, "latdev2");
+            return;
         }
         if (!devCommandsEnabled()) {
             return;
         }
-        register(dispatcher);
+        register(dispatcher, "latdev");
     }
 
     private static boolean devCommandsEnabled() {
@@ -100,8 +104,8 @@ public final class LatitudeDevCommands {
                 .orElse(false);
     }
 
-    private static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
-        dispatcher.register(Commands.literal("latdev")
+    private static void register(CommandDispatcher<CommandSourceStack> dispatcher, String rootName) {
+        dispatcher.register(Commands.literal(rootName)
                 .executes(LatitudeDevCommands::here)
                 .then(Commands.literal("help").executes(LatitudeDevCommands::help))
                 .then(Commands.literal("here").executes(LatitudeDevCommands::here))
@@ -144,7 +148,15 @@ public final class LatitudeDevCommands {
                 .then(Commands.literal("markGlacial")
                         .executes(ctx -> markGlacial(ctx, DEFAULT_MARK_RADIUS_CHUNKS))
                         .then(Commands.argument("radiusChunks", IntegerArgumentType.integer(1, MAX_MARK_RADIUS_CHUNKS))
-                                .executes(ctx -> markGlacial(ctx, IntegerArgumentType.getInteger(ctx, "radiusChunks")))))
+                                .executes(ctx -> markGlacial(ctx, IntegerArgumentType.getInteger(ctx, "radiusChunks")))
+                                // S31 coordinate form: scan around explicit block coords instead of the caller --
+                                // works from the DEDICATED-SERVER CONSOLE (no player) and for remote spot checks.
+                                .then(Commands.argument("x", IntegerArgumentType.integer())
+                                        .then(Commands.argument("z", IntegerArgumentType.integer())
+                                                .executes(ctx -> markGlacialAt(ctx,
+                                                        IntegerArgumentType.getInteger(ctx, "radiusChunks"),
+                                                        IntegerArgumentType.getInteger(ctx, "x"),
+                                                        IntegerArgumentType.getInteger(ctx, "z")))))))
                 .then(Commands.literal("tpxz")
                         .then(Commands.argument("x", IntegerArgumentType.integer())
                                 .then(Commands.argument("z", IntegerArgumentType.integer())
@@ -165,7 +177,7 @@ public final class LatitudeDevCommands {
                 "[latdev] here | probe | survey | tpband <band> [center|low|high] | tpedge <west|east> [frac]"
                         + " | tphemi <ns|ew|zero> [n|s|e|w] | tppole <n|s> [deg]"
                         + " | locateCrevasse [radiusChunks] | locateTunnel [radiusChunks]"
-                        + " | markGlacial [radiusChunks] | tpxz <x> <z>"), false);
+                        + " | markGlacial [radiusChunks [x z]] | tpxz <x> <z>"), false);
         return 1;
     }
 
@@ -715,7 +727,27 @@ public final class LatitudeDevCommands {
         CommandSourceStack src = ctx.getSource();
         try {
             ServerPlayer player = src.getPlayerOrException();
-            ServerLevel world = src.getLevel();
+            return markGlacialCore(src, src.getLevel(), player.getX(), player.getZ(), radiusChunks);
+        } catch (Exception e) {
+            src.sendFailure(Component.literal("[latdev] markGlacial failed: " + e.getMessage()));
+            return 0;
+        }
+    }
+
+    /** S31 coordinate form -- no player needed, so the dedicated-server CONSOLE can run ground-truth scans. */
+    private static int markGlacialAt(CommandContext<CommandSourceStack> ctx, int radiusChunks, int x, int z) {
+        CommandSourceStack src = ctx.getSource();
+        try {
+            return markGlacialCore(src, src.getLevel(), x, z, radiusChunks);
+        } catch (Exception e) {
+            src.sendFailure(Component.literal("[latdev] markGlacial failed: " + e.getMessage()));
+            return 0;
+        }
+    }
+
+    private static int markGlacialCore(CommandSourceStack src, ServerLevel world, double centerX, double centerZ,
+            int radiusChunks) {
+        try {
             if (!LatitudeV2Flags.GLACIAL_CAVES_V1_ENABLED) {
                 src.sendFailure(Component.literal(
                         "[latdev] glacial caves are OFF in this session (-Dlatitude.glacialCavesV1=true to arm) — nothing to mark."));
@@ -727,8 +759,8 @@ public final class LatitudeDevCommands {
                 return 0;
             }
             int r = Mth.clamp(radiusChunks, 1, MAX_MARK_RADIUS_CHUNKS);
-            int centerChunkX = Math.floorDiv(Mth.floor(player.getX()), 16);
-            int centerChunkZ = Math.floorDiv(Mth.floor(player.getZ()), 16);
+            int centerChunkX = Math.floorDiv(Mth.floor(centerX), 16);
+            int centerChunkZ = Math.floorDiv(Mth.floor(centerZ), 16);
             int minChunkX = centerChunkX - r;
             int minChunkZ = centerChunkZ - r;
             int chunksPerSide = 2 * r + 1;
@@ -760,8 +792,12 @@ public final class LatitudeDevCommands {
                         for (int lz = 0; lz < 16; lz++) {
                             int wx = (ccx << 4) + lx;
                             int wz = (ccz << 4) + lz;
+                            // S31 off-by-one fix (headless-proven on real sandwiches): ChunkAccess.getHeight
+                            // returns the TOP BLOCK Y, one below Level.getHeight's first-air convention this
+                            // grid documents -- +1 restores firstAir, so the roof probe starts AT the snow cap
+                            // (it used to start on the powder marker below it and walk away downward).
                             surface[wx - originBlockX][wz - originBlockZ] =
-                                    chunk.getHeight(Heightmap.Types.WORLD_SURFACE, wx, wz);
+                                    chunk.getHeight(Heightmap.Types.WORLD_SURFACE, wx, wz) + 1;
                         }
                     }
                 }
@@ -856,7 +892,7 @@ public final class LatitudeDevCommands {
                         MARK_MARKER_CAP)), false);
             }
             if (trapRoofCount == 0 && openSlotCount == 0) {
-                double absDeg = Mth.clamp(Math.abs(player.getZ()) / radius * 90.0, 0.0, 90.0);
+                double absDeg = Mth.clamp(Math.abs(centerZ) / radius * 90.0, 0.0, 90.0);
                 if (scannedColumns == 0L) {
                     src.sendFailure(Component.literal(
                             "[latdev] nothing was LOADED to scan here — walk/fly the area to load chunks, then run markGlacial again."));
