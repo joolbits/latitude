@@ -532,6 +532,9 @@ public class GlobeMod implements ModInitializer {
         // empty, i.e. flag-off / no active collapse). The per-player trigger check is inside the loop below.
         com.example.globe.world.SnowCollapseRuntime.processScheduled(overworld, worldTime);
 
+        // S32: /latdev markGlacial's lingering green markers (60 s re-emit; no-op when no scan has run).
+        com.example.globe.LatitudeDevCommands.tickGreenMarkers(overworld, worldTime);
+
         for (ServerPlayer player : server.getPlayerList().getPlayers()) {
             if (player.level() != overworld) {
                 continue;

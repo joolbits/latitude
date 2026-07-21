@@ -759,6 +759,7 @@ public final class LatitudeDevCommands {
                 return 0;
             }
             int r = Mth.clamp(radiusChunks, 1, MAX_MARK_RADIUS_CHUNKS);
+            clearGreenMarkers(); // each scan starts a fresh 60 s marker set -- stale glows never mislead
             int centerChunkX = Math.floorDiv(Mth.floor(centerX), 16);
             int centerChunkZ = Math.floorDiv(Mth.floor(centerZ), 16);
             int minChunkX = centerChunkX - r;
@@ -928,6 +929,61 @@ public final class LatitudeDevCommands {
     private static void greenBeacon(ServerLevel world, int x, int yLo, int yHi, int z) {
         int lo = Math.min(yLo, yHi);
         int hi = Math.max(yLo, yHi);
+        // S32 (Peetsa 2026-07-21, TEST 122: markGlacial "located" roofs but "not showing on the world"): a
+        // one-shot particle burst fades in ~1 s -- gone before the chat is even closed. Enqueue the column
+        // instead; tickGreenMarkers re-emits it every MARKER_REEMIT_TICKS for MARKER_LIFETIME_TICKS, so the
+        // green glow LINGERS long enough to walk toward. Emit once immediately for instant feedback.
+        synchronized (GREEN_MARKS) {
+            if (GREEN_MARKS.size() < MARKER_QUEUE_CAP) {
+                GREEN_MARKS.add(new int[]{x, lo, hi, z, 0});
+            }
+        }
+        emitBeacon(world, x, lo, hi, z);
+    }
+
+    /** Live green markers: {x, yLo, yHi, z, ageTicks}. Bounded by {@link #MARKER_QUEUE_CAP}; a new markGlacial
+     *  run clears the previous set (see {@code markGlacialCore}) so stale marks never mislead. */
+    private static final java.util.List<int[]> GREEN_MARKS = new java.util.ArrayList<>();
+    private static final int MARKER_QUEUE_CAP = 400;
+    /** How long a marker keeps re-emitting: 1200 ticks = 60 s -- time to close chat, look around, and walk. */
+    private static final int MARKER_LIFETIME_TICKS = 1200;
+    /** Re-emit cadence. 10 ticks = twice a second -- a steady glow without a particle storm. */
+    private static final int MARKER_REEMIT_TICKS = 10;
+
+    /**
+     * S32 marker heartbeat -- called from {@code GlobeMod}'s END_SERVER_TICK path (beside the collapse
+     * scheduler). Re-emits every live green marker on the {@link #MARKER_REEMIT_TICKS} cadence and retires it
+     * after {@link #MARKER_LIFETIME_TICKS}. No-op (one synchronized isEmpty) when no scan has run.
+     */
+    public static void tickGreenMarkers(ServerLevel world, long gameTime) {
+        synchronized (GREEN_MARKS) {
+            if (GREEN_MARKS.isEmpty()) {
+                return;
+            }
+            boolean emit = gameTime % MARKER_REEMIT_TICKS == 0L;
+            var it = GREEN_MARKS.iterator();
+            while (it.hasNext()) {
+                int[] m = it.next();
+                m[4] += 1;
+                if (m[4] > MARKER_LIFETIME_TICKS) {
+                    it.remove();
+                    continue;
+                }
+                if (emit) {
+                    emitBeacon(world, m[0], m[1], m[2], m[3]);
+                }
+            }
+        }
+    }
+
+    /** Clear all live markers (each fresh markGlacial run starts clean). */
+    private static void clearGreenMarkers() {
+        synchronized (GREEN_MARKS) {
+            GREEN_MARKS.clear();
+        }
+    }
+
+    private static void emitBeacon(ServerLevel world, int x, int lo, int hi, int z) {
         int mid = (lo + hi) / 2;
         double cx = x + 0.5;
         double cz = z + 0.5;
