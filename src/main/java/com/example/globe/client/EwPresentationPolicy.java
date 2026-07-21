@@ -16,6 +16,13 @@ public final class EwPresentationPolicy {
     public static final float FOG_NEAR_START_BLOCKS = 0.5f;
     public static final float FOG_NEAR_END_BLOCKS = 12.0f;
 
+    // The sand-colored atmosphere belongs to the tropical, subtropical, and
+    // temperate bands only. The canonical subpolar boundary begins at 50°.
+    public static final double SAND_HAZE_MAX_LATITUDE_EXCLUSIVE = 50.0;
+    public static final float SAND_HAZE_TARGET_RED = 0.58f;
+    public static final float SAND_HAZE_TARGET_GREEN = 0.41f;
+    public static final float SAND_HAZE_TARGET_BLUE = 0.22f;
+
     public static final int WARNING_FADE_IN_TICKS = 20;
     public static final int WARNING_HOLD_TICKS = 100;
     public static final int WARNING_FADE_OUT_TICKS = 20;
@@ -84,6 +91,26 @@ public final class EwPresentationPolicy {
         float intensity = fogIntensity(distanceToBorder)
                 * (float) clamp01(presentationVisibility);
         return lerp(baselineStart, FOG_NEAR_START_BLOCKS, intensity);
+    }
+
+    public static boolean usesWarmSandHaze(double absoluteLatitudeDegrees) {
+        return Double.isFinite(absoluteLatitudeDegrees)
+                && absoluteLatitudeDegrees >= 0.0
+                && absoluteLatitudeDegrees < SAND_HAZE_MAX_LATITUDE_EXCLUSIVE;
+    }
+
+    public static float sandHazeColorIntensity(
+            double distanceToBorder,
+            float presentationVisibility,
+            double absoluteLatitudeDegrees) {
+        if (!usesWarmSandHaze(absoluteLatitudeDegrees)) {
+            return 0.0f;
+        }
+        return fogIntensity(distanceToBorder) * (float) clamp01(presentationVisibility);
+    }
+
+    public static float blendFogColorChannel(float current, float target, float intensity) {
+        return lerp(current, target, (float) clamp01(intensity));
     }
 
     public static float exposureFraction(int visibleSkySamples, int totalSamples) {
@@ -287,6 +314,19 @@ public final class EwPresentationPolicy {
 
         public int highestTriggeredStageRank() {
             return highestTriggeredStageRank;
+        }
+
+        /**
+         * Keeps the episode at the same visual age when the same client level
+         * resynchronizes its raw game clock backwards.
+         */
+        public void shiftClock(long deltaTicks) {
+            if (activeStartTick != Long.MIN_VALUE) {
+                activeStartTick += deltaTicks;
+            }
+            if (lastUpdateTick != Long.MIN_VALUE) {
+                lastUpdateTick += deltaTicks;
+            }
         }
 
         public void reset() {

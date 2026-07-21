@@ -41,6 +41,25 @@ public final class ZoneEnterTitleOverlay {
         return now >= startWorldTime && now < endWorldTime;
     }
 
+    /**
+     * Preserves an active title's age when the same client level resynchronizes
+     * its raw game clock. This must not create or retrigger a title.
+     */
+    public static void shiftClock(long deltaTicks) {
+        if (startWorldTime != Long.MIN_VALUE) {
+            startWorldTime += deltaTicks;
+        }
+        if (endWorldTime != Long.MIN_VALUE) {
+            endWorldTime += deltaTicks;
+        }
+    }
+
+    public static void reset() {
+        title = null;
+        startWorldTime = Long.MIN_VALUE;
+        endWorldTime = Long.MIN_VALUE;
+    }
+
     public static void render(GuiGraphicsExtractor ctx, int screenW, int screenH) {
         Minecraft client = Minecraft.getInstance();
         if (client == null || client.level == null || title == null) {

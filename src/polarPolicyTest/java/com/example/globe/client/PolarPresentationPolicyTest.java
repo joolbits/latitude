@@ -13,6 +13,7 @@ public final class PolarPresentationPolicyTest {
         fogEnvelopeIsContinuousAndMonotonic();
         fogColorReachesCoolOffWhite();
         warningEpisodeIsPolewardFiniteAndRearmable();
+        warningClockResyncPreservesEpisodeAge();
         directLethalEntryArmsWithoutChangingNormalApproach();
         warningArbitrationFallsThroughToCanonicalEwText();
         outlineIsAnExplicitOnePixelRing();
@@ -157,6 +158,18 @@ public final class PolarPresentationPolicyTest {
         directWarning.update(1, 85.3, 601L);
         assertEquals(0, directWarning.highestTriggeredStageRank(),
                 "movement within the same stage still does not synthesize an entry");
+    }
+
+    private static void warningClockResyncPreservesEpisodeAge() {
+        var episode = new PolarPresentationPolicy.PolarWarningEpisode();
+        episode.update(0, 84.9, 100L);
+        episode.update(1, 85.0, 101L);
+        float beforeRollback = episode.alpha(111L);
+        episode.shiftClock(-80L);
+        assertNear(beforeRollback, episode.alpha(31L),
+                "same-level clock rollback preserves the active polar warning age");
+        assertEquals(1, episode.highestTriggeredStageRank(),
+                "clock resync does not rearm the polar warning family");
     }
 
     private static void outlineIsAnExplicitOnePixelRing() {

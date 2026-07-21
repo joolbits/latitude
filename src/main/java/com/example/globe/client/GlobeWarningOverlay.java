@@ -150,8 +150,10 @@ public final class GlobeWarningOverlay {
             boolean levelChanged = lastWarningLevel != client.level;
             boolean timeRolledBack = lastWarningWorldTime != Long.MIN_VALUE
                     && worldTime < lastWarningWorldTime;
-            if (levelChanged || timeRolledBack) {
+            if (levelChanged) {
                 resetWorldEntryState(worldTime);
+            } else if (timeRolledBack) {
+                resyncWorldClock(worldTime);
             }
             lastWarningLevel = client.level;
             lastWarningWorldTime = worldTime;
@@ -335,9 +337,32 @@ public final class GlobeWarningOverlay {
         lastWarningDebugText = null;
         POLAR_WARNING_EPISODE.reset();
         EW_WARNING_EPISODE.reset();
+        ZoneEnterTitleOverlay.reset();
         GlobeClientState.resetEwPresentationState();
         if (DEBUG_ENTRY_TITLES) {
             GlobeMod.LOGGER.info("[LAT][ENTRY_TITLE] action=reset worldTime={}", worldTime);
+        }
+    }
+
+    private static void resyncWorldClock(long worldTime) {
+        long deltaTicks = worldTime - lastWarningWorldTime;
+        POLAR_WARNING_EPISODE.shiftClock(deltaTicks);
+        EW_WARNING_EPISODE.shiftClock(deltaTicks);
+        ZoneEnterTitleOverlay.shiftClock(deltaTicks);
+        if (debugStartWorldTime >= 0L) {
+            debugStartWorldTime += deltaTicks;
+        }
+        if (lastZoneUpdateWorldTime != Long.MIN_VALUE) {
+            lastZoneUpdateWorldTime += deltaTicks;
+        }
+        if (lastWarningDebugWorldTime != Long.MIN_VALUE) {
+            lastWarningDebugWorldTime += deltaTicks;
+        }
+        if (DEBUG_ENTRY_TITLES) {
+            GlobeMod.LOGGER.info(
+                    "[LAT][ENTRY_TITLE] action=clock_resync worldTime={} deltaTicks={}",
+                    worldTime,
+                    deltaTicks);
         }
     }
 

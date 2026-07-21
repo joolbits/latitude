@@ -19,6 +19,7 @@ public final class EwPresentationPolicyTest {
 
     public static void runAll() throws Exception {
         fogEnvelopeUsesThe400To50Smoothstep();
+        warmSandHazeStopsAtTheSubpolarBoundary();
         borderDistanceIsSymmetricThroughTheCanonicalMinFormula();
         particlesUseTheFixedFogEnvelopeAndActualBorder();
         warningEpisodesAreFiniteDirectionalAndRearmable();
@@ -26,7 +27,38 @@ public final class EwPresentationPolicyTest {
         outlineIsAnExplicitOnePixelRing();
         shelterRequiresDeepContinuousZeroSky();
         confirmedShelterPausesEpisodeTime();
+        warningClockResyncPreservesEpisodeAge();
         staticIntegrationProofsHold();
+    }
+
+    private static void warmSandHazeStopsAtTheSubpolarBoundary() {
+        assertTrue(EwPresentationPolicy.usesWarmSandHaze(0.0),
+                "tropical storms use the warm sand haze");
+        assertTrue(EwPresentationPolicy.usesWarmSandHaze(49.999),
+                "temperate storms retain the warm sand haze below 50 degrees");
+        assertTrue(!EwPresentationPolicy.usesWarmSandHaze(50.0),
+                "subpolar storms do not inherit the warm sand color at 50 degrees");
+        assertTrue(!EwPresentationPolicy.usesWarmSandHaze(85.0),
+                "polar presentation retains its independent fog color");
+        assertTrue(!EwPresentationPolicy.usesWarmSandHaze(Double.NaN),
+                "unknown latitude fails open to the live fog color");
+
+        assertNear(0.0f, EwPresentationPolicy.sandHazeColorIntensity(400.0, 1.0f, 25.0),
+                "the haze color joins the live baseline continuously at 400 blocks");
+        assertNear(1.0f, EwPresentationPolicy.sandHazeColorIntensity(50.0, 1.0f, 49.999),
+                "full temperate storm reaches the brown target color");
+        assertNear(0.0f, EwPresentationPolicy.sandHazeColorIntensity(50.0, 1.0f, 50.0),
+                "subpolar latitude disables the brown color even at full EW fog");
+        assertNear(0.0f, EwPresentationPolicy.sandHazeColorIntensity(50.0, 0.0f, 25.0),
+                "confirmed shelter removes the brown haze with the shared presentation visibility");
+        assertNear(EwPresentationPolicy.SAND_HAZE_TARGET_RED,
+                EwPresentationPolicy.blendFogColorChannel(
+                        0.2f, EwPresentationPolicy.SAND_HAZE_TARGET_RED, 1.0f),
+                "full intensity reaches the brown target red");
+        assertNear(0.2f,
+                EwPresentationPolicy.blendFogColorChannel(
+                        0.2f, EwPresentationPolicy.SAND_HAZE_TARGET_BLUE, 0.0f),
+                "zero intensity preserves the live fog color");
     }
 
     private static void borderDistanceIsSymmetricThroughTheCanonicalMinFormula() {
@@ -266,9 +298,22 @@ public final class EwPresentationPolicyTest {
         assertNear(1.0f, episode.alpha(222L), "episode resumes after shelter");
     }
 
+    private static void warningClockResyncPreservesEpisodeAge() {
+        var episode = new EwPresentationPolicy.WarningEpisode();
+        episode.update(0, 400.0, 100L, false);
+        episode.update(1, 399.999, 101L, false);
+        float beforeRollback = episode.alpha(121L);
+        episode.shiftClock(-80L);
+        assertNear(beforeRollback, episode.alpha(41L),
+                "same-level clock rollback preserves the active warning age");
+        assertEquals(1, episode.highestTriggeredStageRank(),
+                "clock resync does not rearm a warning episode");
+    }
+
     private static void staticIntegrationProofsHold() throws IOException {
         String state = normalize(read("src/main/java/com/example/globe/client/GlobeClientState.java"));
         String overlay = read("src/main/java/com/example/globe/client/GlobeWarningOverlay.java");
+        String zoneTitle = read("src/main/java/com/example/globe/client/ZoneEnterTitleOverlay.java");
         String haze = read("src/main/java/com/example/globe/client/EwSandstormOverlayHud.java");
         String fog = read("src/main/java/com/example/globe/mixin/client/FogRendererEwMixin.java");
         String client = read("src/main/java/com/example/globe/GlobeModClient.java");
@@ -303,8 +348,10 @@ public final class EwPresentationPolicyTest {
         assertTrue(!haze.contains(".fill("),
                 "flat tan full-screen haze owner is neutralized");
         assertTrue(fog.contains("computeEwFogStart")
-                        && fog.contains("computeEwFogEnd"),
-                "depth fog tightens start and end from the live baseline");
+                        && fog.contains("computeEwFogEnd")
+                        && fog.contains("sandHazeColorIntensity")
+                        && fog.contains("SAND_HAZE_TARGET_RED"),
+                "depth fog tightens from the live baseline and uses the bounded brown-color policy");
         String fogHandler = methodSection(fog, "private void latitude$applyFog(");
         assertEquals(1, countOccurrences(fogHandler, "GlobeClientState.evaluate(client)"),
                 "fog handler evaluates Latitude identity exactly once");
@@ -339,9 +386,11 @@ public final class EwPresentationPolicyTest {
                 "warning config off still advances and consumes the episode before suppressing drawing");
         assertTrue(overlay.contains("lastWarningLevel != client.level")
                         && overlay.contains("worldTime < lastWarningWorldTime")
-                        && overlay.contains("resetWorldEntryState(worldTime)"),
-                "warning episodes reset on level identity changes and ordinary clock rollback");
+                        && overlay.contains("resyncWorldClock(worldTime)"),
+                "same-level clock rollback uses a timeline resync instead of a world-entry reset");
         String overlayRender = methodSection(overlay, "public static void render(");
+        String resyncWorldClock = methodSection(overlay, "private static void resyncWorldClock(");
+        String resetWorldEntry = methodSection(overlay, "private static void resetWorldEntryState(");
         String clearWarningState = methodSection(overlay, "private static void clearWarningWorldState(");
         String disconnectReset = methodSection(overlay, "public static void resetForDisconnect(");
         assertEquals(2, countOccurrences(overlayRender, "clearWarningWorldState();"),
@@ -355,6 +404,26 @@ public final class EwPresentationPolicyTest {
                         && disconnectReset.contains("lastWarningWorldTime = Long.MIN_VALUE")
                         && disconnectReset.contains("resetWorldEntryState(-1L)"),
                 "explicit disconnect reset clears static level identity, clock, episodes, and zone state");
+        assertTrue(resyncWorldClock.contains("POLAR_WARNING_EPISODE.shiftClock")
+                        && resyncWorldClock.contains("EW_WARNING_EPISODE.shiftClock")
+                        && resyncWorldClock.contains("ZoneEnterTitleOverlay.shiftClock")
+                        && !resyncWorldClock.contains("lastZoneKey = null")
+                        && !resyncWorldClock.contains("resetWorldEntryState"),
+                "clock resync shifts presentation timelines without forgetting the active zone");
+        assertTrue(resetWorldEntry.contains("lastZoneKey = null")
+                        && resetWorldEntry.contains("POLAR_WARNING_EPISODE.reset()")
+                        && resetWorldEntry.contains("EW_WARNING_EPISODE.reset()")
+                        && resetWorldEntry.contains("ZoneEnterTitleOverlay.reset()"),
+                "true world-entry reset clears the zone, warning families, and active title");
+        assertTrue(zoneTitle.contains("public static void shiftClock(long deltaTicks)")
+                        && zoneTitle.contains("startWorldTime += deltaTicks")
+                        && zoneTitle.contains("endWorldTime += deltaTicks"),
+                "active zone-title timing follows the resynchronized world clock");
+        String resetTitle = methodSection(zoneTitle, "public static void reset(");
+        assertTrue(resetTitle.contains("title = null")
+                        && resetTitle.contains("startWorldTime = Long.MIN_VALUE")
+                        && resetTitle.contains("endWorldTime = Long.MIN_VALUE"),
+                "true world changes and disconnects discard any title from the prior level");
         String disconnectEvent = methodSection(client,
                 "ClientPlayConnectionEvents.DISCONNECT.register((handler, client) ->");
         assertTrue(disconnectEvent.contains("GlobeWarningOverlay.resetForDisconnect()")

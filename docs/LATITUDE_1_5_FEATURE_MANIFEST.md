@@ -1,6 +1,6 @@
 # Latitude 1.5 Feature Manifest
 
-`status: TEST 6 surfaced an east/west advisory-to-visible-particle mismatch; corrected source candidate awaits TEST 7 rendered replay` · `branch: codex/1.5-mini-launch-26.2` · `implementation savepoint: this manifest-bearing commit` · `recorded: 2026-07-20`
+`status: TEST 7 presentation feedback repaired locally; TEST 8 rendered replay pending` · `branch: codex/1.5-mini-launch-26.2` · `implementation savepoint: this manifest-bearing commit` · `recorded: 2026-07-20`
 
 This is the implementation-side allowlist for the Latitude 1.5 pre-2.0 polish campaign. The campaign
 roadmap lives in the docs root at:
@@ -72,6 +72,42 @@ guarded live replay and the maintainer's visual review remain the next gate.
 Canonical evidence:
 
 `docs/binder/latitude-1-5-hud-studio-consolidation-20260720.md`
+
+## TEST 7 zone-title and sand-haze presentation correction
+
+the maintainer's TEST 7 replay accepted the improved storm-particle onset but exposed two
+presentation failures: `POLAR` could fade in again without a true zone exit,
+and east/west depth fog retained the ordinary atmospheric color instead of
+reading as a sandstorm.
+
+The repeated title shared a lifecycle cause. An ordinary backwards correction
+of the same client level's raw game clock was treated as a new world entry,
+clearing the already-shown zone key. The corrected path now shifts the active
+zone-title and warning timelines across same-level clock resyncs without
+forgetting the zone. A genuine level change or disconnect still clears the
+zone, both warning episodes, and any title inherited from the prior level.
+
+East/west depth fog now blends toward a restrained brown sand color through the
+Tropical, Subtropical, and Temperate bands (`absolute latitude < 50°`). At the
+canonical 50° Subpolar boundary and poleward, that warm blend is exactly zero,
+leaving subpolar and polar atmosphere colors independent. The existing
+400-to-50 distance ramp and shared shelter visibility drive the blend. TEST 7
+particle budgets/types, warning copy/timing, wind, and shelter rules are
+unchanged.
+
+The initial candidate was adversarially rejected because a true world change
+did not yet clear the active title payload. A symptom-specific RED proved that
+hole; the corrected candidate received fresh adversarial ACCEPT. Focused clock,
+latitude-boundary, color, and integration tests pass, as do the Java 25
+19-task clean build/invariant scan and structure-climate guard.
+
+This is source/model evidence. TEST 8 must still prove in the disposable profile
+that `POLAR` appears once per genuine entry and that east/west storms look brown
+below 50° without tinting Subpolar or Polar fog.
+
+Canonical evidence:
+
+`docs/binder/latitude-1-5-test7-presentation-feedback-20260720.md`
 
 ## TEST 6 east/west advisory-to-particle correction
 
