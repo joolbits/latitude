@@ -75,8 +75,8 @@ flooding + C-3 grip. Because the pipeline downstream of `Y*` is untouched, the s
 
 **Map where the trenches would fall on Peetsa's seed.** Add `islandArc01` (and `seamProx`,
 `typeContrast`, `coastDistanceBlocks`) to the TerrainProofHarness coherence probe output, run the 81-grid
-on his seed, and render/print where the subduction seams and arcs actually are. This (a) confirms the
-signal is non-trivial on his world before we build on it, and (b) IS the "here's where your world's
+on her seed, and render/print where the subduction seams and arcs actually are. This (a) confirms the
+signal is non-trivial on her world before we build on it, and (b) IS the "here's where your world's
 Mariana Trench would be" preview Peetsa wanted. Bounded, read-only, no worldgen change.
 
 ## Sequencing / relationship to other open work
