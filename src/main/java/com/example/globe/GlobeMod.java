@@ -528,10 +528,6 @@ public class GlobeMod implements ModInitializer {
         // packet; when it does fire, setSize snaps the server border and broadcasts the correction to clients.
         enforceGlobeBorderSnapped(border);
 
-        // Crew 9 / S30 THE REAL SNOW COLLAPSE: drain the staggered collapse queue once per tick (no-op when
-        // empty, i.e. flag-off / no active collapse). The per-player trigger check is inside the loop below.
-        com.example.globe.world.SnowCollapseRuntime.processScheduled(overworld, worldTime);
-
         // S32: /latdev markGlacial's lingering green markers (60 s re-emit; no-op when no scan has run).
         com.example.globe.LatitudeDevCommands.tickGreenMarkers(overworld, worldTime);
 
@@ -561,10 +557,9 @@ public class GlobeMod implements ModInitializer {
             double latDeg = com.example.globe.util.LatitudeMath.absLatDegExact(border, player.getZ());
             boolean unaffected = player.isCreative() || player.isSpectator();
 
-            // Crew 9 / S30 THE REAL SNOW COLLAPSE: does this survival/adventure player stand on the hidden
-            // snow_block/powder/void SANDWICH? If so, claim + telegraph + schedule the staggered collapse. Cheap-
-            // first gated inside (flag, armed world, barrens band) so this is a no-op for non-polar players.
-            com.example.globe.world.SnowCollapseRuntime.tickPlayer(overworld, player, latDeg, unaffected, worldTime);
+            // S35: the S30 scripted snow-collapse event is RETIRED (owner verbatim: solid snow covers were
+            // "the mistake"; and its falling blocks BACKFILLED the very shaft they revealed). The trap is now
+            // pure vanilla powder physics -- the cover itself sinks the victim; nothing to tick here.
 
             // B-7 S7 (POLAR IMMERSION): the SINGLE cold-evaluation latitude. In water (isInWater -- false in a
             // boat, the free story-true exemption) the existing curves are evaluated at |lat|+3 capped at 90
