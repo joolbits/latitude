@@ -136,6 +136,44 @@ public final class PowderRoofTrap {
         return roll01 >= 0.0f && roll01 < ROOF_FRACTION;
     }
 
+    // --- S32 RIM BRIDGE LAW (Peetsa 2026-07-21, TEST 122 screenshots: "fragmented hanging blocks of snow ...
+    // attempts at a snow roof that got corrupted") ---------------------------------------------------------
+    //
+    // The V2 sandwich placed each roofed COLUMN at its own windowed-max reference minus one. On flat snowfield
+    // that is flush; on the rough/sloped glacier the owner photographed, the windowed max is an UPHILL surface,
+    // so roofs floated in mid-air at the uphill height over downhill columns -- exactly the fragmentation in
+    // the TEST 122 shots. Worse, the depth candidacy (>= 10 below windowed max) is TRUE on any steep slope, so
+    // floating blocks sprayed across ordinary hillsides, not just slots. The rim-bridge law replaces the
+    // per-column reference with a per-SPAN bridge: a span may be roofed ONLY when the two columns bounding it
+    // (the rims) sit within {@link #BRIDGE_RIM_MAX_DIFF} of each other -- a genuine narrow slot cut through
+    // continuous snowfield -- and the whole span roofs FLAT at the LOWER rim's top-block Y, flush with both
+    // rims by construction. A slope's fake "slot" has rims ~10 blocks apart and is rejected outright.
+
+    /** Maximum height difference (blocks) between a span's two bounding rim surfaces for the span to read as a
+     *  slot through continuous snowfield (bridgeable). 2 absorbs normal snowfield undulation; a slope's
+     *  downhill-vs-uphill bound differs by ~the slot depth and fails immediately. */
+    public static final int BRIDGE_RIM_MAX_DIFF = 2;
+
+    /** Are two rim surfaces (first-air Y of the columns bounding a candidate span) close enough in height that
+     *  a flat roof can bridge them flush? Pure integer compare. */
+    public static boolean rimsBridgeable(int rimAFirstAir, int rimBFirstAir) {
+        return Math.abs(rimAFirstAir - rimBFirstAir) <= BRIDGE_RIM_MAX_DIFF;
+    }
+
+    /** The single flat roof Y for a bridgeable span: the LOWER rim's top-block Y ({@code min(firstAir)-1}), so
+     *  the bridge is flush with (never above) both rims -- a floating roof is impossible by construction. */
+    public static int bridgeRoofY(int rimAFirstAir, int rimBFirstAir) {
+        return Math.min(rimAFirstAir, rimBFirstAir) - 1;
+    }
+
+    /** May a span column actually carry a sandwich at {@code roofY}: is the drop from the roof surface to the
+     *  column's floor at least {@link #MIN_SHAFT_DEPTH_BLOCKS} (the same "genuine fall" cut as candidacy, now
+     *  measured against the REAL bridge height)? Guarantees the runtime trigger's >= 6-air requirement below
+     *  the marker with room to spare ({@code roofY - own >= 9} air run {@code >= 8}). */
+    public static boolean columnDeepEnoughForRoof(int columnFirstAir, int roofY) {
+        return (roofY + 1) - columnFirstAir >= MIN_SHAFT_DEPTH_BLOCKS;
+    }
+
     // --- S30 DEEP DROP (Peetsa 2026-07-20 sketch: "sometimes you can drop down into a deep glacial cave") -----
 
     /**

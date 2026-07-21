@@ -115,4 +115,38 @@ class PowderRoofTrapTest {
         assertFalse(PowderRoofTrap.shouldRoofSpan(0.99f), "high roll leaves the slot open");
         assertFalse(PowderRoofTrap.shouldRoofSpan(-0.01f), "a negative/out-of-range roll never roofs");
     }
+
+    // --- S32 rim-bridge law (TEST 122 "fragmented hanging blocks" fix) ---------------------------------
+
+    @Test
+    void rimsBridgeableWithinTolerance() {
+        assertTrue(PowderRoofTrap.rimsBridgeable(100, 100), "equal rims bridge");
+        assertTrue(PowderRoofTrap.rimsBridgeable(100, 102), "rims within BRIDGE_RIM_MAX_DIFF bridge");
+        assertTrue(PowderRoofTrap.rimsBridgeable(102, 100), "order-independent");
+        assertFalse(PowderRoofTrap.rimsBridgeable(100, 103), "one past the tolerance does not bridge");
+        // The fragmentation scenario: a slope's downhill bound ~a slot-depth below the uphill bound.
+        assertFalse(PowderRoofTrap.rimsBridgeable(100, 100 + PowderRoofTrap.MIN_SHAFT_DEPTH_BLOCKS),
+                "a slope's fake slot (rims a full shaft-depth apart) must NEVER bridge");
+    }
+
+    @Test
+    void bridgeRoofYIsTheLowerRimTopBlock() {
+        // firstAir 100 -> top block 99; the bridge sits flush with the LOWER rim, so it can never float
+        // above either rim (the TEST 122 hanging-block failure is impossible by construction).
+        assertEquals(99, PowderRoofTrap.bridgeRoofY(100, 100));
+        assertEquals(99, PowderRoofTrap.bridgeRoofY(100, 102), "higher rim never lifts the bridge");
+        assertEquals(99, PowderRoofTrap.bridgeRoofY(102, 100), "order-independent");
+    }
+
+    @Test
+    void columnDepthIsMeasuredAgainstTheBridgeNotTheWindowMax() {
+        int roofY = 99; // bridge surface at 99 -> a fall to floor top at (own-1)
+        // own firstAir 90: drop = (99+1) - 90 = 10 -> exactly MIN_SHAFT_DEPTH_BLOCKS -> deep enough.
+        assertTrue(PowderRoofTrap.columnDeepEnoughForRoof(90, roofY));
+        // own firstAir 91: drop 9 -> too shallow; the sandwich would violate the trigger's air budget.
+        assertFalse(PowderRoofTrap.columnDeepEnoughForRoof(91, roofY));
+        // The deep-enough guarantee covers the runtime trigger: air run below the marker is
+        // roofY-1-own >= 8 >= the trigger's 6 whenever this passes.
+        assertTrue(roofY - 1 - 90 >= 6);
+    }
 }

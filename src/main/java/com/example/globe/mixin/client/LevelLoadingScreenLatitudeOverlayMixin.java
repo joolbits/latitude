@@ -525,10 +525,14 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
         context.fill(cx + radius - 2 - tickLen, cy, cx + radius - 2, cy + 1, SUNSET_MUTED);        // E
         context.fill(cx - radius + 2, cy, cx - radius + 2 + tickLen, cy + 1, SUNSET_MUTED);        // W
 
-        // Coral 'N' label at north
+        // Coral 'N' label at north. S32 (Peetsa 2026-07-21: "how do we make the N look like it's not in the
+        // way?"): moved OUTSIDE the ring, floating just above the dial's top edge -- the rose star, ticks and
+        // wandering needle keep the whole face to themselves, and the N reads as a cartouche label on the map
+        // rather than an obstacle on the glass. (Was: inside the face under the N tick, where the needle's
+        // sweep ran straight through it.)
         String nLabel = "N";
         int nW = this.font.width(nLabel);
-        context.text(this.font, nLabel, cx - nW / 2 + 1, cy - radius + 2 + tickLen + 1, SUNSET_NEEDLE, true);
+        context.text(this.font, nLabel, cx - nW / 2 + 1, cy - radius - this.font.lineHeight - 1, SUNSET_NEEDLE, true);
 
         // Wandering needle (animation KEPT — globe$updateNeedle still drives it; only the colours change)
         double angle = globe$needleAngle;

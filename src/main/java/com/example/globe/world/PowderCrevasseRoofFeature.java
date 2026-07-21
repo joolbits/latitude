@@ -39,15 +39,17 @@ import java.util.List;
  *       PowderRoofTrap#isTrapCandidate(int, int)} (window max at least {@link
  *       PowderRoofTrap#MIN_SHAFT_DEPTH_BLOCKS} above the column's own surface).</li>
  *   <li>Detect roofable spans ({@link PowderRoofTrap#roofableSpans(boolean[])}, width &le; {@link
- *       PowderRoofTrap#MAX_ROOF_SPAN_WIDTH}) along BOTH chunk axes and, for each span that wins the {@link
- *       PowderRoofTrap#shouldRoofSpan(float)} fraction roll (the feature's own vanilla-seeded RandomSource --
- *       deterministic per seed+chunk, Art VI: no new noise), union its columns into the roofed mask.</li>
- *   <li>For each roofed column: build the S30 roof SANDWICH -- {@code snow_block} flush at the reference
- *       surface Y (indistinguishable from the snowfield: the "unsuspecting" tell is gone) directly over one
- *       hidden {@code powder_snow} marker, both only into air -- and give the crevasse floor a {@code
- *       powder_snow} cushion when that floor is bare stone/ice (the fall costs warmth/position, rarely the
- *       run). The runtime collapse event keys off this exact sandwich; the old EXPOSED powder lid (a visible
- *       sink-through) is superseded.</li>
+ *       PowderRoofTrap#MAX_ROOF_SPAN_WIDTH}) along BOTH chunk axes; each span rolls the {@link
+ *       PowderRoofTrap#shouldRoofSpan(float)} fraction gate (the feature's own vanilla-seeded RandomSource --
+ *       deterministic per seed+chunk, Art VI: no new noise).</li>
+ *   <li>S32 RIM-BRIDGE LAW (TEST 122 "fragmented hanging blocks" fix): a winning span roofs ONLY when both
+ *       its bounding rim columns are inside the chunk line and within {@link PowderRoofTrap#BRIDGE_RIM_MAX_DIFF}
+ *       of each other -- a genuine slot through continuous snowfield, never a slope. The whole span then roofs
+ *       FLAT at {@link PowderRoofTrap#bridgeRoofY} (the lower rim's top-block Y), flush with both rims by
+ *       construction, and only over columns passing {@link PowderRoofTrap#columnDeepEnoughForRoof}. Each roofed
+ *       column gets the S30 SANDWICH -- {@code snow_block} over one hidden {@code powder_snow} marker, both only
+ *       into air -- and a {@code powder_snow} cushion on a bare stone/ice floor (the fall costs warmth/position,
+ *       rarely the run). The runtime collapse event keys off this exact sandwich.</li>
  *   <li>DEEP DROP (Peetsa 2026-07-20 sketch: "sometimes you can drop down into a deep glacial cave"): a
  *       deterministic {@link PowderRoofTrap#DEEP_DROP_FRACTION} of roofed spans (the feature's own seeded
  *       RandomSource) probe straight down from the span-centre floor; if a contiguous cave void of at least
@@ -160,12 +162,18 @@ public final class PowderCrevasseRoofFeature extends Feature<NoneFeatureConfigur
             }
         }
 
-        // Span pass along BOTH axes; union the winning spans into the roofed mask (a slot of either
-        // orientation is caught; double-marking a column is idempotent at placement time). A roofed span
-        // additionally rolls the S30 deep-drop fraction and, if it wins, records its centre column for the
-        // downward connect-to-cave pass below (order of RandomSource draws is fixed => deterministic per
-        // seed+chunk, Art VI; there is no flag-ON byte-identity axis -- the whole place() is barrens-gated).
-        boolean[][] roofed = new boolean[16][16];
+        // S32 RIM-BRIDGE span pass along BOTH axes (see PowderRoofTrap's rim-bridge law -- the TEST 122
+        // "fragmented hanging blocks" fix). A span may roof ONLY when it sits fully interior to the chunk
+        // line (both bounding rim columns known) and its two rims are within BRIDGE_RIM_MAX_DIFF of each
+        // other; the whole span then roofs FLAT at bridgeRoofY (the lower rim's top-block Y), flush with
+        // both rims by construction -- floating roofs are impossible. RandomSource draw ORDER is unchanged
+        // (one roof roll per detected span, one deep-drop roll per roofed span) => deterministic per
+        // seed+chunk, Art VI. roofAt holds the span's bridge Y per column (MIN_VALUE = not roofed); the
+        // first span to claim a column wins (a crossing's second claim is skipped, never double-roofed).
+        int[][] roofAt = new int[16][16];
+        for (int[] row : roofAt) {
+            java.util.Arrays.fill(row, Integer.MIN_VALUE);
+        }
         List<int[]> deepDropCenters = new ArrayList<>();
         boolean[] line = new boolean[16];
         // X-rows (fixed lz, run over lx).
@@ -174,13 +182,29 @@ public final class PowderCrevasseRoofFeature extends Feature<NoneFeatureConfigur
                 line[lx] = candidate[lx][lz];
             }
             for (int[] span : PowderRoofTrap.roofableSpans(line)) {
-                if (PowderRoofTrap.shouldRoofSpan(random.nextFloat())) {
-                    for (int lx = span[0]; lx < span[0] + span[1]; lx++) {
-                        roofed[lx][lz] = true;
+                if (!PowderRoofTrap.shouldRoofSpan(random.nextFloat())) {
+                    continue;
+                }
+                boolean deepDrop = PowderRoofTrap.shouldDeepDrop(random.nextFloat());
+                int b0 = span[0] - 1;
+                int b1 = span[0] + span[1];
+                if (b0 < 0 || b1 > 15) {
+                    continue; // span touches the chunk edge: a bounding rim is unknown -- leave it open.
+                }
+                int rimA = surfaceFirstAir[b0][lz];
+                int rimB = surfaceFirstAir[b1][lz];
+                if (!PowderRoofTrap.rimsBridgeable(rimA, rimB)) {
+                    continue; // slope, not slot: the rims disagree -- no bridge (the fragmentation killer).
+                }
+                int roofY = PowderRoofTrap.bridgeRoofY(rimA, rimB);
+                for (int lx = span[0]; lx < span[0] + span[1]; lx++) {
+                    if (roofAt[lx][lz] == Integer.MIN_VALUE
+                            && PowderRoofTrap.columnDeepEnoughForRoof(surfaceFirstAir[lx][lz], roofY)) {
+                        roofAt[lx][lz] = roofY;
                     }
-                    if (PowderRoofTrap.shouldDeepDrop(random.nextFloat())) {
-                        deepDropCenters.add(new int[]{span[0] + span[1] / 2, lz});
-                    }
+                }
+                if (deepDrop) {
+                    deepDropCenters.add(new int[]{span[0] + span[1] / 2, lz});
                 }
             }
         }
@@ -190,13 +214,29 @@ public final class PowderCrevasseRoofFeature extends Feature<NoneFeatureConfigur
                 line[lz] = candidate[lx][lz];
             }
             for (int[] span : PowderRoofTrap.roofableSpans(line)) {
-                if (PowderRoofTrap.shouldRoofSpan(random.nextFloat())) {
-                    for (int lz = span[0]; lz < span[0] + span[1]; lz++) {
-                        roofed[lx][lz] = true;
+                if (!PowderRoofTrap.shouldRoofSpan(random.nextFloat())) {
+                    continue;
+                }
+                boolean deepDrop = PowderRoofTrap.shouldDeepDrop(random.nextFloat());
+                int b0 = span[0] - 1;
+                int b1 = span[0] + span[1];
+                if (b0 < 0 || b1 > 15) {
+                    continue;
+                }
+                int rimA = surfaceFirstAir[lx][b0];
+                int rimB = surfaceFirstAir[lx][b1];
+                if (!PowderRoofTrap.rimsBridgeable(rimA, rimB)) {
+                    continue;
+                }
+                int roofY = PowderRoofTrap.bridgeRoofY(rimA, rimB);
+                for (int lz2 = span[0]; lz2 < span[0] + span[1]; lz2++) {
+                    if (roofAt[lx][lz2] == Integer.MIN_VALUE
+                            && PowderRoofTrap.columnDeepEnoughForRoof(surfaceFirstAir[lx][lz2], roofY)) {
+                        roofAt[lx][lz2] = roofY;
                     }
-                    if (PowderRoofTrap.shouldDeepDrop(random.nextFloat())) {
-                        deepDropCenters.add(new int[]{lx, span[0] + span[1] / 2});
-                    }
+                }
+                if (deepDrop) {
+                    deepDropCenters.add(new int[]{lx, span[0] + span[1] / 2});
                 }
             }
         }
@@ -206,12 +246,12 @@ public final class PowderCrevasseRoofFeature extends Feature<NoneFeatureConfigur
         BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
         for (int lx = 0; lx < 16; lx++) {
             for (int lz = 0; lz < 16; lz++) {
-                if (!roofed[lx][lz]) {
+                if (roofAt[lx][lz] == Integer.MIN_VALUE) {
                     continue;
                 }
                 int worldX = baseX + lx;
                 int worldZ = baseZ + lz;
-                int roofY = reference[lx][lz] - 1; // the snowfield's own top-block Y -> flush sandwich top.
+                int roofY = roofAt[lx][lz]; // the span's bridge Y -- flush with BOTH rims, never floating.
                 int floorY = surfaceFirstAir[lx][lz] - 1; // this column's crevasse-floor top-solid block.
 
                 // Cushion first (below), so a later heightmap-touched read of the roof is not needed. Only if
@@ -222,10 +262,9 @@ public final class PowderCrevasseRoofFeature extends Feature<NoneFeatureConfigur
                     safeSetBlock(level, cursor, CUSHION, BlockState::isAir);
                 }
 
-                // S30 SANDWICH: snow_block flush with the snowfield over a hidden powder_snow marker, both ONLY
+                // S30 SANDWICH: snow_block flush with the bridge Y over a hidden powder_snow marker, both ONLY
                 // into air and ONLY when BOTH slots are air (never overwrite a wall/ledge, and never leave a
-                // half-sandwich the runtime signature would misread). roofY-1 is one block into the open slot
-                // below the flush surface, so in a genuine cut it is air; a column where it is NOT is skipped.
+                // half-sandwich the runtime signature would misread).
                 cursor.set(worldX, roofY, worldZ);
                 boolean roofAir = level.getBlockState(cursor).isAir();
                 cursor.set(worldX, roofY - 1, worldZ);
@@ -247,7 +286,7 @@ public final class PowderCrevasseRoofFeature extends Feature<NoneFeatureConfigur
         for (int[] c : deepDropCenters) {
             int lx = c[0];
             int lz = c[1];
-            if (lx < 0 || lx > 15 || lz < 0 || lz > 15 || !roofed[lx][lz]) {
+            if (lx < 0 || lx > 15 || lz < 0 || lz > 15 || roofAt[lx][lz] == Integer.MIN_VALUE) {
                 continue; // only where a sandwich actually placed
             }
             int worldX = baseX + lx;
@@ -310,11 +349,11 @@ public final class PowderCrevasseRoofFeature extends Feature<NoneFeatureConfigur
                     if (candidate[lx][lz]) {
                         candidates++;
                     }
-                    if (roofed[lx][lz]) {
+                    if (roofAt[lx][lz] != Integer.MIN_VALUE) {
                         sandwiches++;
                         if (firstX == Integer.MIN_VALUE) {
                             firstX = baseX + lx;
-                            firstY = reference[lx][lz] - 1;
+                            firstY = roofAt[lx][lz];
                             firstZ = baseZ + lz;
                         }
                     }
