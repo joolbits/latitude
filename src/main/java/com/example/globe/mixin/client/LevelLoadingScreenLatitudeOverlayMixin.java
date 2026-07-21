@@ -502,9 +502,17 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
         int starLen = radius - 4;
         if (starLen > 0) {
             int baseHalf = Math.max(1, radius / 8);
+            // S33 (Peetsa 2026-07-21): NORTH arm shortened to stop just below the N and point at it -- the same
+            // rule the in-game dial uses (com.example.globe.core.ui.CompassNorth, shared so the two hand-drawn
+            // roses cannot drift). The glyph is unscaled here, so its bottom is one lineHeight below its top.
+            int tickLenN = Math.max(2, radius / 6);
+            int glyphBottom = radius - 2 - tickLenN - 1 - this.font.lineHeight;
+            int northLen = com.example.globe.core.ui.CompassNorth.northArmLength(starLen, glyphBottom);
             for (int i = 0; i <= starLen; i++) {
                 int h = Math.max(0, Math.round(baseHalf * (1.0f - i / (float) starLen)));
-                context.fill(cx - h, cy - i, cx + h + 1, cy - i + 1, SUNSET_MUTED); // N
+                if (i <= northLen) {
+                    context.fill(cx - h, cy - i, cx + h + 1, cy - i + 1, SUNSET_MUTED); // N (shortened)
+                }
                 context.fill(cx - h, cy + i, cx + h + 1, cy + i + 1, SUNSET_MUTED); // S
                 context.fill(cx - i, cy - h, cx - i + 1, cy + h + 1, SUNSET_MUTED); // W
                 context.fill(cx + i, cy - h, cx + i + 1, cy + h + 1, SUNSET_MUTED); // E
@@ -525,14 +533,22 @@ public abstract class LevelLoadingScreenLatitudeOverlayMixin extends Screen {
         context.fill(cx + radius - 2 - tickLen, cy, cx + radius - 2, cy + 1, SUNSET_MUTED);        // E
         context.fill(cx - radius + 2, cy, cx - radius + 2 + tickLen, cy + 1, SUNSET_MUTED);        // W
 
-        // Coral 'N' label at north. S32 (Peetsa 2026-07-21: "how do we make the N look like it's not in the
-        // way?"): moved OUTSIDE the ring, floating just above the dial's top edge -- the rose star, ticks and
-        // wandering needle keep the whole face to themselves, and the N reads as a cartouche label on the map
-        // rather than an obstacle on the glass. (Was: inside the face under the N tick, where the needle's
-        // sweep ran straight through it.)
+        // S33 (Peetsa 2026-07-21, on the S32 above-the-ring N: "I'm not sure I necessarily want it above"):
+        // the N returns INSIDE the dial, under the north tick, now RED with a shade-darker outline and with
+        // the shortened north arm pointing up at it -- the same rule as the in-game dial (CompassNorth).
         String nLabel = "N";
         int nW = this.font.width(nLabel);
-        context.text(this.font, nLabel, cx - nW / 2 + 1, cy - radius - this.font.lineHeight - 1, SUNSET_NEEDLE, true);
+        int nX = cx - nW / 2 + 1;
+        int nY = cy - radius + 2 + tickLen + 1;
+        int nOutline = com.example.globe.core.ui.CompassNorth.outlineColor();
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dy = -1; dy <= 1; dy++) {
+                if (dx != 0 || dy != 0) {
+                    context.text(this.font, nLabel, nX + dx, nY + dy, nOutline, false);
+                }
+            }
+        }
+        context.text(this.font, nLabel, nX, nY, com.example.globe.core.ui.CompassNorth.RED, false);
 
         // Wandering needle (animation KEPT — globe$updateNeedle still drives it; only the colours change)
         double angle = globe$needleAngle;

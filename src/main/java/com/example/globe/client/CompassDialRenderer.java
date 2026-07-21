@@ -139,9 +139,16 @@ final class CompassDialRenderer {
         // the lengthwise lit/shade facets read as dither noise at real HUD scale (arms are ~4-11 px). Arms
         // return to the flat muted fill; the SUBTLE shading that survives is the 1px ring bevel in
         // drawDiscBase -- visible depth, zero busy-ness. (The faceted experiment lives in git history.)
+        // S33 (Peetsa 2026-07-21): the NORTH arm is SHORTENED so it stops just below the N glyph and POINTS AT
+        // it, instead of running up behind the letter (which is what made the N read as "in the way"). The
+        // other three arms are unchanged. Taper is still computed against the FULL length so the shortened
+        // point keeps the same profile as its siblings -- it is the same arrow, just cut short.
+        int northLen = com.example.globe.core.ui.CompassNorth.northArmLength(len, northGlyphBottom(font, radius));
         for (int i = 0; i <= len; i++) {
             int half = Math.max(0, Math.round(baseHalf * (1.0f - i / (float) len)));
-            ctx.fill(cx - half, cy - i, cx + half + 1, cy - i + 1, colors.muted()); // N
+            if (i <= northLen) {
+                ctx.fill(cx - half, cy - i, cx + half + 1, cy - i + 1, colors.muted()); // N (shortened)
+            }
             ctx.fill(cx - half, cy + i, cx + half + 1, cy + i + 1, colors.muted()); // S
             ctx.fill(cx - i, cy - half, cx - i + 1, cy + half + 1, colors.muted()); // W
             ctx.fill(cx + i, cy - half, cx + i + 1, cy + half + 1, colors.muted()); // E
@@ -348,16 +355,45 @@ final class CompassDialRenderer {
         int tickLen = Math.max(2, radius / 6);
         String nLabel = "N";
         int nW = font.width(nLabel);
-        float nScale = Mth.clamp(radius / 24.0f, 0.4f, 1.0f);
-        // TEST 119 revert (owner: "busy and messy"): the four-way outline blobbed at small scales. Back to
-        // the vanilla drop shadow, keeping only the brightness lift so the N still pops without the bulk.
-        int nBright = lighten(colors.needle(), 0.35f);
+        float nScale = northGlyphScale(radius);
+        // S33 (Peetsa 2026-07-21): "a red N outlined in a shade-darker color". The red is fixed across themes
+        // (cartographic convention -- see CompassNorth), the outline is that red darkened. The 4-way outline is
+        // only drawn where the glyph is big enough to keep its counters open; below that scale it would blob
+        // (the TEST 119 complaint), so a small dial gets a single drop shadow in the same darker tone.
+        int outline = com.example.globe.core.ui.CompassNorth.outlineColor();
+        boolean fullOutline = com.example.globe.core.ui.CompassNorth.shouldOutline(nScale);
         var pose = ctx.pose();
         pose.pushMatrix();
         pose.translate((float) (cx + 1), (float) (cy - radius + 2 + tickLen + 1));
         pose.scale(nScale, nScale);
-        ctx.text(font, nLabel, -nW / 2, 0, nBright, true);
+        if (fullOutline) {
+            for (int dx = -1; dx <= 1; dx++) {
+                for (int dy = -1; dy <= 1; dy++) {
+                    if (dx != 0 || dy != 0) {
+                        ctx.text(font, nLabel, -nW / 2 + dx, dy, outline, false);
+                    }
+                }
+            }
+            ctx.text(font, nLabel, -nW / 2, 0, com.example.globe.core.ui.CompassNorth.RED, false);
+        } else {
+            ctx.text(font, nLabel, -nW / 2 + 1, 1, outline, false);
+            ctx.text(font, nLabel, -nW / 2, 0, com.example.globe.core.ui.CompassNorth.RED, false);
+        }
         pose.popMatrix();
+    }
+
+    /** The N glyph's scale for a dial of this radius (shared by the label draw and the north-arm shortening). */
+    private static float northGlyphScale(int radius) {
+        return Mth.clamp(radius / 24.0f, 0.4f, 1.0f);
+    }
+
+    /** Distance from the dial centre DOWN to the lowest pixel of the N glyph -- where the shortened north arm
+     *  must stop (minus the gap). The glyph is drawn from {@code cy - radius + 2 + tickLen + 1} downward for
+     *  {@code lineHeight * scale} px, so its bottom sits this far above centre. */
+    private static int northGlyphBottom(Font font, int radius) {
+        int tickLen = Math.max(2, radius / 6);
+        int glyphH = Math.round(font.lineHeight * northGlyphScale(radius));
+        return radius - 2 - tickLen - 1 - glyphH;
     }
 
     private static void drawNeedles(GuiGraphicsExtractor ctx, int cx, int cy, int radius, double angle, DialColors colors) {
