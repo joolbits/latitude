@@ -1,6 +1,9 @@
 package com.example.globe.mixin;
 
+import com.example.globe.GlobeMod;
 import com.example.globe.world.LatitudeBiomes;
+import com.example.globe.world.LatitudeWorldgenScope;
+import net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator;
 import net.minecraft.world.level.levelgen.feature.FeaturePlaceContext;
 import net.minecraft.world.level.levelgen.feature.TreeFeature;
 import org.spongepowered.asm.mixin.Mixin;
@@ -22,7 +25,9 @@ public class TreeLineVegetationGuardMixin {
     )
     private void globe$treeLineGuard(FeaturePlaceContext<?> context,
                                      CallbackInfoReturnable<Boolean> cir) {
-        if (LatitudeBiomes.ACTIVE_RADIUS_BLOCKS <= 0) {
+        if (!LatitudeWorldgenScope.isActive()
+                || !(context.chunkGenerator() instanceof NoiseBasedChunkGenerator noise)
+                || !GlobeMod.shouldApplyLatitudeWorldgen(noise)) {
             return;
         }
 

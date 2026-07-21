@@ -554,6 +554,32 @@ tasks.named('check').configure {
     dependsOn tasks.named('latitudePolarFoliagePolicyTest')
 }
 
+def latitudeWorldgenAuthorityPolicyTestClasses = layout.buildDirectory.dir('classes/java/latitudeWorldgenAuthorityPolicyTest')
+
+tasks.register('compileLatitudeWorldgenAuthorityPolicyTest', JavaCompile) {
+    group = 'verification'
+    description = 'Compile the dependency-free worldgen authority lifecycle regression'
+    source = fileTree('src/worldgenAuthorityPolicyTest/java') {
+        include '**/*.java'
+    }
+    classpath = sourceSets.main.runtimeClasspath
+    destinationDirectory.set(latitudeWorldgenAuthorityPolicyTestClasses)
+    options.release = 25
+    dependsOn classes
+}
+
+tasks.register('latitudeWorldgenAuthorityPolicyTest', JavaExec) {
+    group = 'verification'
+    description = 'Prove ordinary worlds fail open and Globe worldgen context clears across servers'
+    classpath = files(latitudeWorldgenAuthorityPolicyTestClasses) + sourceSets.main.runtimeClasspath
+    mainClass = 'com.example.globe.world.WorldgenAuthorityPolicyTest'
+    dependsOn tasks.named('compileLatitudeWorldgenAuthorityPolicyTest')
+}
+
+tasks.named('check').configure {
+    dependsOn tasks.named('latitudeWorldgenAuthorityPolicyTest')
+}
+
 def latitudeDevToolPolicyTestClasses = layout.buildDirectory.dir('classes/java/latitudeDevToolPolicyTest')
 
 tasks.register('compileLatitudeDevToolPolicyTest', JavaCompile) {

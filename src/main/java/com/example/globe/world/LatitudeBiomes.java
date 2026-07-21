@@ -395,6 +395,7 @@ public final class LatitudeBiomes {
     private static volatile long WORLD_SEED = 0L;
     private static volatile WorldgenPolicyVersion ACTIVE_WORLDGEN_POLICY = WorldgenPolicyVersion.MODERN_1_3;
     public static volatile int ACTIVE_RADIUS_BLOCKS = 0;
+    private static volatile boolean ACTIVE_WORLDGEN_AUTHORITY = false;
     private static OceanDistanceField OCEAN_DISTANCE_FIELD = null;
     private static final AtomicInteger DEBUG_COUNT = new AtomicInteger();
     private static final AtomicInteger BLEND_DEBUG_COUNT = new AtomicInteger();
@@ -621,6 +622,39 @@ public final class LatitudeBiomes {
         WORLD_SEED = seed;
         OCEAN_DISTANCE_FIELD = new OceanDistanceField(seed);
         rebuildProvinceAuthority();
+    }
+
+    /**
+     * Atomically publishes the server-scoped Latitude worldgen context. The active flag is
+     * deliberately written last so globally registered mixins cannot observe a half-updated
+     * radius/seed pair while an overworld is starting.
+     */
+    public static synchronized void activateWorldgenContext(int radiusBlocks, long seed) {
+        ACTIVE_WORLDGEN_AUTHORITY = false;
+        ACTIVE_RADIUS_BLOCKS = Math.max(0, radiusBlocks);
+        WORLD_SEED = seed;
+        OCEAN_DISTANCE_FIELD = new OceanDistanceField(seed);
+        PROVINCE_AUTHORITY = null;
+        rebuildProvinceAuthority();
+        ACTIVE_WORLDGEN_AUTHORITY = ACTIVE_RADIUS_BLOCKS > 0;
+    }
+
+    /**
+     * Clears process-global worldgen state when the active overworld is not Latitude or when its
+     * server stops. This prevents a later ordinary inline-noise world from inheriting the prior
+     * Globe world's radius, seed, province authority, or policy.
+     */
+    public static synchronized void clearWorldgenContext() {
+        ACTIVE_WORLDGEN_AUTHORITY = false;
+        ACTIVE_RADIUS_BLOCKS = 0;
+        WORLD_SEED = 0L;
+        OCEAN_DISTANCE_FIELD = null;
+        PROVINCE_AUTHORITY = null;
+        ACTIVE_WORLDGEN_POLICY = WorldgenPolicyVersion.MODERN_1_3;
+    }
+
+    public static boolean hasActiveWorldgenAuthority() {
+        return ACTIVE_WORLDGEN_AUTHORITY && ACTIVE_RADIUS_BLOCKS > 0;
     }
 
     public static void setRadius(int radius) {

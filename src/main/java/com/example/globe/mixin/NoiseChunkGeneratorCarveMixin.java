@@ -1,6 +1,7 @@
 package com.example.globe.mixin;
 
 import com.example.globe.GlobeRegions;
+import com.example.globe.world.LatitudeWorldgenScope;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;
@@ -30,6 +31,9 @@ public class NoiseChunkGeneratorCarveMixin {
     )
     private void globe$disableCarversInPolarCap(WorldGenRegion chunkRegion, long seed, RandomState noiseConfig, BiomeManager biomeAccess,
                                                StructureManager structureAccessor, ChunkAccess chunk, CallbackInfo ci) {
+        if (!LatitudeWorldgenScope.isActive()) {
+            return;
+        }
         NoiseBasedChunkGenerator self = (NoiseBasedChunkGenerator) (Object) this;
         if (!self.stable(GLOBE_SETTINGS_KEY)) {
             return;

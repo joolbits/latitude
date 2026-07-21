@@ -1,7 +1,10 @@
 package com.example.globe.mixin;
 
+import com.example.globe.GlobeMod;
+import com.example.globe.world.LatitudeWorldgenScope;
 import it.unimi.dsi.fastutil.longs.Long2LongOpenHashMap;
 import net.minecraft.core.BlockPos;
+import net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.level.levelgen.feature.FeaturePlaceContext;
 import net.minecraft.world.level.levelgen.feature.LargeDripstoneFeature;
@@ -44,6 +47,11 @@ public class SurfaceDripstoneLawnmowerMixin {
     @Inject(method = "place(Lnet/minecraft/world/level/levelgen/feature/FeaturePlaceContext;)Z", at = @At("HEAD"), cancellable = true)
     private void latitude$cancelSurfaceDripstone(FeaturePlaceContext<?> context, CallbackInfoReturnable<Boolean> cir) {
         if (!LATITUDE_FIX_SURFACE_DRIPSTONE) {
+            return;
+        }
+        if (!LatitudeWorldgenScope.isActive()
+                || !(context.chunkGenerator() instanceof NoiseBasedChunkGenerator noise)
+                || !GlobeMod.shouldApplyLatitudeWorldgen(noise)) {
             return;
         }
 

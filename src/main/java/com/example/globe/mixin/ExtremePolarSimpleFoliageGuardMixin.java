@@ -2,6 +2,7 @@ package com.example.globe.mixin;
 
 import com.example.globe.GlobeMod;
 import com.example.globe.world.LatitudeBiomes;
+import com.example.globe.world.LatitudeWorldgenScope;
 import com.example.globe.world.PolarFoliagePolicy;
 import com.llamalad7.mixinextras.injector.ModifyExpressionValue;
 import net.minecraft.core.registries.Registries;
@@ -38,7 +39,8 @@ public class ExtremePolarSimpleFoliageGuardMixin {
             return null;
         }
 
-        if (!(context.chunkGenerator() instanceof NoiseBasedChunkGenerator noise)
+        if (!LatitudeWorldgenScope.isActive()
+                || !(context.chunkGenerator() instanceof NoiseBasedChunkGenerator noise)
                 || !GlobeMod.shouldApplyLatitudeWorldgen(noise)) {
             return sampledState;
         }

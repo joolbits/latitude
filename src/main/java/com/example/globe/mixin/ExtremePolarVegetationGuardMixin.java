@@ -2,6 +2,7 @@ package com.example.globe.mixin;
 
 import com.example.globe.GlobeMod;
 import com.example.globe.world.LatitudeBiomes;
+import com.example.globe.world.LatitudeWorldgenScope;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.levelgen.feature.FeaturePlaceContext;
 import net.minecraft.world.level.levelgen.feature.TreeFeature;
@@ -22,7 +23,8 @@ public class ExtremePolarVegetationGuardMixin {
             at = @At("HEAD"), cancellable = true)
     private void globe$blockVegetationInExtremePolar(FeaturePlaceContext<?> context,
                                                       CallbackInfoReturnable<Boolean> cir) {
-        if (!(context.chunkGenerator() instanceof NoiseBasedChunkGenerator noise)
+        if (!LatitudeWorldgenScope.isActive()
+                || !(context.chunkGenerator() instanceof NoiseBasedChunkGenerator noise)
                 || !GlobeMod.shouldApplyLatitudeWorldgen(noise)) {
             return;
         }

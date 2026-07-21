@@ -4,6 +4,7 @@ import com.example.globe.GlobeMod;
 import com.example.globe.util.LatitudeBands;
 import com.example.globe.util.LatitudeMath;
 import com.example.globe.world.LatitudeBiomes;
+import com.example.globe.world.LatitudeWorldgenScope;
 import net.minecraft.core.Registry;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.Identifier;
@@ -46,7 +47,8 @@ public abstract class StructureBiomeMatchGuardMixin {
             ChunkPos chunkPos,
             CallbackInfo ci) {
         try {
-            if (!(chunkGenerator instanceof NoiseBasedChunkGenerator noise)
+            if (!LatitudeWorldgenScope.isActive()
+                    || !(chunkGenerator instanceof NoiseBasedChunkGenerator noise)
                     || !GlobeMod.shouldApplyLatitudeWorldgen(noise)) {
                 return;
             }

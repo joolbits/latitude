@@ -4,6 +4,7 @@ import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import com.example.globe.GlobeMod;
 import com.example.globe.world.LatitudeBiomes;
+import com.example.globe.world.LatitudeWorldgenScope;
 import net.minecraft.core.Holder;
 import net.minecraft.core.Registry;
 import net.minecraft.core.RegistryAccess;
@@ -17,6 +18,7 @@ import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.biome.BiomeSource;
 import net.minecraft.world.level.chunk.ChunkGenerator;
 import net.minecraft.world.level.levelgen.RandomState;
+import net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator;
 import net.minecraft.world.level.levelgen.structure.Structure;
 import net.minecraft.world.level.levelgen.structure.StructureStart;
 import net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplateManager;
@@ -53,7 +55,10 @@ public abstract class ExtremePolarVillageStartGuardMixin {
             Predicate<Holder<Biome>> validBiome,
             Operation<StructureStart> original) {
         int blockZ = chunkPos.getMiddleBlockZ();
-        if (LatitudeBiomes.isBlockBeyondPolarVillageLimit(blockZ, GlobeMod.BORDER_RADIUS)) {
+        if (LatitudeWorldgenScope.isActive()
+                && chunkGenerator instanceof NoiseBasedChunkGenerator noise
+                && GlobeMod.shouldApplyLatitudeWorldgen(noise)
+                && LatitudeBiomes.isBlockBeyondPolarVillageLimit(blockZ, GlobeMod.BORDER_RADIUS)) {
             try {
                 Registry<Structure> registry =
                         registryAccess.lookupOrThrow(Registries.STRUCTURE);
