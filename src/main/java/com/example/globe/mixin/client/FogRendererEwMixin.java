@@ -1,6 +1,7 @@
 package com.example.globe.mixin.client;
 
 import com.example.globe.client.GlobeClientState;
+import com.example.globe.client.EwPresentationPolicy;
 import com.example.globe.client.PolarPresentationPolicy;
 import net.minecraft.client.Camera;
 import net.minecraft.client.DeltaTracker;
@@ -44,18 +45,41 @@ public class FogRendererEwMixin {
         }
 
         FogData fog = cir.getReturnValue();
-        latitude$applyEwFog(fog, client.player.getX());
+        double absoluteLatitude = GlobeClientState.absoluteLatitudeDegrees(
+                level.getWorldBorder(),
+                client.player.getZ());
+        latitude$applyEwFog(fog, client.player.getX(), absoluteLatitude);
         latitude$applyPolarFog(fog, client, eval);
     }
 
     @Unique
-    private static void latitude$applyEwFog(FogData fog, double x) {
+    private static void latitude$applyEwFog(FogData fog, double x, double absoluteLatitude) {
         fog.environmentalStart = latitude$tightenStart(fog.environmentalStart, x);
         fog.renderDistanceStart = latitude$tightenStart(fog.renderDistanceStart, x);
         fog.environmentalEnd = latitude$tightenEnd(fog.environmentalEnd, x);
         fog.renderDistanceEnd = latitude$tightenEnd(fog.renderDistanceEnd, x);
         fog.skyEnd = latitude$tightenEnd(fog.skyEnd, x);
         fog.cloudEnd = latitude$tightenEnd(fog.cloudEnd, x);
+
+        float colorIntensity = EwPresentationPolicy.sandHazeColorIntensity(
+                GlobeClientState.distanceToEwBorderBlocks(x),
+                GlobeClientState.ewPresentationVisibility(),
+                absoluteLatitude);
+        if (colorIntensity > 0.0f) {
+            latitude$blendSandHazeColor(fog.color, colorIntensity);
+        }
+    }
+
+    @Unique
+    private static void latitude$blendSandHazeColor(Vector4f color, float intensity) {
+        color.set(
+                EwPresentationPolicy.blendFogColorChannel(
+                        color.x(), EwPresentationPolicy.SAND_HAZE_TARGET_RED, intensity),
+                EwPresentationPolicy.blendFogColorChannel(
+                        color.y(), EwPresentationPolicy.SAND_HAZE_TARGET_GREEN, intensity),
+                EwPresentationPolicy.blendFogColorChannel(
+                        color.z(), EwPresentationPolicy.SAND_HAZE_TARGET_BLUE, intensity),
+                color.w());
     }
 
     @Unique

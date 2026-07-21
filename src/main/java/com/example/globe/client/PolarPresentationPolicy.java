@@ -178,6 +178,16 @@ public final class PolarPresentationPolicy {
             return highestTriggeredStageRank;
         }
 
+        /**
+         * Keeps the episode at the same visual age when the same client level
+         * resynchronizes its raw game clock backwards.
+         */
+        public void shiftClock(long deltaTicks) {
+            if (activeStartTick != Long.MIN_VALUE) {
+                activeStartTick += deltaTicks;
+            }
+        }
+
         public void reset() {
             previousAbsoluteLatitude = Double.NaN;
             previousStageRank = 0;
