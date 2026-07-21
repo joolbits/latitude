@@ -1,6 +1,6 @@
 # Latitude 1.5 Feature Manifest
 
-`status: TEST 7 presentation feedback repaired locally; TEST 8 rendered replay pending` · `branch: codex/1.5-mini-launch-26.2` · `implementation savepoint: this manifest-bearing commit` · `recorded: 2026-07-20`
+`status: Phase 8 release-candidate gauntlet ACTIVE; Maintainer reports TEST 8 in good shape, exact proof reconciliation pending` · `branch: codex/1.5-mini-launch-26.2` · `implementation savepoint: this manifest-bearing commit` · `recorded: 2026-07-21`
 
 This is the implementation-side allowlist for the Latitude 1.5 pre-2.0 polish campaign. The campaign
 roadmap lives in the docs root at:
@@ -108,6 +108,24 @@ below 50° without tinting Subpolar or Polar fog.
 Canonical evidence:
 
 `docs/binder/latitude-1-5-test7-presentation-feedback-20260720.md`
+
+## Phase 8 release-candidate gauntlet
+
+Maintainer reported that TEST 8 is now in good shape and authorized a final bounded release-candidate
+gauntlet at High reasoning. Phase 8 begins from clean tracked commit
+`7df70c596251c72d9b960de684ad4e965142a4f7`. It audits and proves the full post-Phase-5 production
+range, artifact purity/provenance, disposable lifecycle and compatibility rows, worldgen and
+structure invariants, HUD/config/UI behavior, and current performance risk. Only an exact,
+release-blocking red that survives contradiction review may enter source.
+
+Canonical contract and chronology:
+
+- `docs/LATITUDE_1_5_PHASE8_RELEASE_CANDIDATE_GAUNTLET.md`
+- `docs/binder/latitude-1-5-phase8-release-candidate-gauntlet-20260721.md`
+
+The campaign checkout, Latitude 2.0/Pivot, real worlds, tag, push, upload, publication, and release
+remain forbidden. The canonical campaign roadmap is protected concurrent dirt and is not reconciled
+from this implementation lane.
 
 ## TEST 6 east/west advisory-to-particle correction
 
