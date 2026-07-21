@@ -873,8 +873,15 @@ public final class LatitudeDevCommands {
                                 roofMarkers++;
                             }
                             if (roofLines < MARK_CHAT_CAP) {
-                                src.sendSuccess(() -> Component.literal(String.format(Locale.ROOT,
-                                        "[latdev]   GREEN TRAP roof (walk onto this): x=%d y=%d z=%d", wx, roofY, wz)), false);
+                                // S34: clickable [teleport], same pattern as locateCrevasse -- the coords are
+                                // often 100+ blocks out, and clicking beats reading numbers off the screen.
+                                String tpCommand = "/latdev tpxz " + wx + " " + wz;
+                                MutableComponent trapLine = Component.literal(String.format(Locale.ROOT,
+                                        "[latdev]   GREEN TRAP roof (walk onto this): x=%d y=%d z=%d ", wx, roofY, wz))
+                                        .append(Component.literal("[teleport]").withStyle(style -> style
+                                                .withClickEvent(new ClickEvent.RunCommand(tpCommand))
+                                                .withUnderlined(true)));
+                                src.sendSuccess(() -> trapLine, false);
                                 roofLines++;
                             }
                         }
@@ -1022,14 +1029,19 @@ public final class LatitudeDevCommands {
     private static void emitMark(ServerLevel world, int x, int lo, int hi, int z, int kind) {
         double cx = x + 0.5;
         double cz = z + 0.5;
+        // S34 (Peetsa 2026-07-21, TEST 124: "I'm not seeing any green sparkles" while the scan CHAT listed 66
+        // roofs): the plain sendParticles overload only renders to players within ~32 blocks, but an r=8 scan
+        // finds traps up to ~136 blocks out — so the rare green pillars were real and invisible. The
+        // (overrideLimiter=true, alwaysVisible=true) overload broadcasts at long range like vanilla's
+        // force-rendered particles; markers now carry to the whole scan radius.
         if (kind == MARK_KIND_SLOT) {
             // Open crevasse: a short BLUE soul-flame mark at the rim. Sparse and low -- context, not a target.
-            world.sendParticles(ParticleTypes.SOUL_FIRE_FLAME, cx, lo + 0.5, cz, 2, 0.2, 0.2, 0.2, 0.0);
+            world.sendParticles(ParticleTypes.SOUL_FIRE_FLAME, true, true, cx, lo + 0.5, cz, 2, 0.2, 0.2, 0.2, 0.0);
             return;
         }
         // Trap roof: a solid GREEN pillar every block from the roof up, so it reads as one column from afar.
         for (int y = lo; y <= hi; y++) {
-            world.sendParticles(ParticleTypes.HAPPY_VILLAGER, cx, y + 0.5, cz, 4, 0.15, 0.15, 0.15, 0.0);
+            world.sendParticles(ParticleTypes.HAPPY_VILLAGER, true, true, cx, y + 0.5, cz, 4, 0.15, 0.15, 0.15, 0.0);
         }
     }
 }
