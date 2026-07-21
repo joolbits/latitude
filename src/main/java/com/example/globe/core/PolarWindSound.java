@@ -44,9 +44,21 @@ public final class PolarWindSound {
     /** Absolute latitude (deg) at which the wind is at its full howl. Matches the ambient full ceiling. */
     public static final double FULL_DEG = 90.0;
 
-    /** Volume of the howl at the pole (fraction of the source's category volume). S29: 0.8 -> 0.88 (owner:
-     *  "a little more intense at 90 -- a little"). Still below 1.0 -- a bed, not a blast. */
-    public static final float MAX_VOLUME = 0.88f;
+    /** Volume of the howl at the pole (fraction of the source's category volume). S29 set 0.88 (0.8 + "a
+     *  little"), but the TEST 121 flight verdict was "did not increase in volume at 90" -- a 10% lift is
+     *  under 1 dB, below what a player can notice across days. S31: full 1.0 (+~2 dB over the original 0.8
+     *  -- clearly audible, still just the ambient-category ceiling, not a blast). */
+    public static final float MAX_VOLUME = 1.0f;
+    /** S31 AUDIBLE ONSET (TEST 121 verdict: "wind did not start sooner"). S29 moved START_DEG to 83 but kept
+     *  the squared ease anchored at START, so the volume at 84 deg was MAX*(1/7)^2 = 0.018 -- physically
+     *  playing, humanly inaudible; the owner correctly heard "no change". Fix: a fast linear ATTACK from 0
+     *  at {@link #START_DEG} to this clearly-audible whisper by {@link #WHISPER_DEG}, then the squared ease
+     *  carries WHISPER -> MAX over {@link #WHISPER_DEG}..{@link #FULL_DEG}. 0.10 is a real whisper: you
+     *  notice it arrive, it does not yet read as a storm. */
+    public static final float WHISPER_VOLUME = 0.10f;
+    /** Absolute latitude (deg) where the onset attack completes at {@link #WHISPER_VOLUME}: one degree past
+     *  {@link #START_DEG}, so crossing 83 is a fade-in you can hear finish by 84, never a pop at the line. */
+    public static final double WHISPER_DEG = START_DEG + 1.0;
     /** Pitch of the loop -- slightly lowered from 1.0 for a lower, more menacing wind than the elytra rush. */
     public static final float PITCH = 0.85f;
     /** Easing exponent for the 85->90 volume ramp. >1 concentrates the loudness near the pole so 85-87 is a whisper. */
@@ -92,13 +104,27 @@ public final class PolarWindSound {
     }
 
     /**
-     * Eased volume of the wind bed in {@code [0, MAX_VOLUME]}: {@code MAX_VOLUME * progress^EASE_EXP}. 0 at
-     * or below {@link #START_DEG}, a whisper through the first ~2 deg past onset (progress^2 stays small),
-     * the full howl at {@link #FULL_DEG}.
+     * Volume of the wind bed in {@code [0, MAX_VOLUME]}. S31 two-piece envelope (see {@link #WHISPER_VOLUME}):
+     * <ul>
+     *   <li>{@code <= START_DEG}: 0 (silence; hysteresis governs the loop lifecycle as before).</li>
+     *   <li>{@code START_DEG..WHISPER_DEG}: linear attack 0 -> {@code WHISPER_VOLUME} -- the owner's "wind
+     *       starts at 83" is AUDIBLE by 84, not merely technically playing.</li>
+     *   <li>{@code WHISPER_DEG..FULL_DEG}: {@code WHISPER + (MAX - WHISPER) * q^EASE_EXP} -- the same squared
+     *       ease as before, now riding on the whisper floor, so the gale still concentrates near the pole.</li>
+     * </ul>
+     * Continuous and monotonic non-decreasing across both joints (attack ends exactly where the ease begins,
+     * at {@code q=0} -> WHISPER).
      */
     public static float volume(double absLatDeg) {
-        double p = progress(absLatDeg);
-        return (float) (MAX_VOLUME * Math.pow(p, EASE_EXP));
+        if (Double.isNaN(absLatDeg) || absLatDeg <= START_DEG) {
+            return 0f;
+        }
+        if (absLatDeg < WHISPER_DEG) {
+            double a = (absLatDeg - START_DEG) / (WHISPER_DEG - START_DEG);
+            return (float) (WHISPER_VOLUME * a);
+        }
+        double q = Math.min(1.0, (absLatDeg - WHISPER_DEG) / (FULL_DEG - WHISPER_DEG));
+        return (float) (WHISPER_VOLUME + (MAX_VOLUME - WHISPER_VOLUME) * Math.pow(q, EASE_EXP));
     }
 
     /**

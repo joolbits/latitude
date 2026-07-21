@@ -84,6 +84,15 @@ public final class PowderCrevasseRoofFeature extends Feature<NoneFeatureConfigur
      *  the sketch's "drop down into a deep glacial cave (onto powder snow so you don't take fall damage)" holds. */
     private static final BlockState CUSHION = Blocks.POWDER_SNOW.defaultBlockState();
 
+    /** S31 flight recorder ({@code -Dlatitude.debugCollapse=true}): the TEST 121 flight reported "0 matches /
+     *  never encountered a trap", so the feature now can NAME what it did per chunk — candidates seen, spans
+     *  rolled, sandwiches placed, deep drops punched — the same instrument-before-reclaiming law as debugFreeze. */
+    private static final boolean DEBUG = Boolean.getBoolean("latitude.debugCollapse");
+    /** S31: with DEBUG on, prove the feature RUNS at all (a candidates=0 chunk logs nothing, which is
+     *  indistinguishable from "never invoked" — this heartbeat names the difference every 64th call). */
+    private static final java.util.concurrent.atomic.AtomicLong DEBUG_CALLS =
+            new java.util.concurrent.atomic.AtomicLong();
+
     public PowderCrevasseRoofFeature(Codec<NoneFeatureConfiguration> codec) {
         super(codec);
     }
@@ -105,6 +114,13 @@ public final class PowderCrevasseRoofFeature extends Feature<NoneFeatureConfigur
     public boolean place(FeaturePlaceContext<NoneFeatureConfiguration> ctx) {
         if (!LatitudeV2Flags.POLAR_BARRENS_ENABLED) {
             return false; // barrens biome never generates flag-off; defensive parity with the glacier mixin.
+        }
+        if (DEBUG) {
+            long n = DEBUG_CALLS.incrementAndGet();
+            if (n == 1L || n % 64L == 0L) {
+                GlobeMod.LOGGER.info("[LAT][COLLAPSE] alive calls={} at chunk=({},{})",
+                        n, ctx.origin().getX() >> 4, ctx.origin().getZ() >> 4);
+            }
         }
         WorldGenLevel level = ctx.level();
         RandomSource random = ctx.random();
@@ -186,6 +202,7 @@ public final class PowderCrevasseRoofFeature extends Feature<NoneFeatureConfigur
         }
 
         boolean placedAny = false;
+        int placedRoofs = 0; // S31 recorder: sandwiches ACTUALLY written (air-guard survivors), not just roofed-mask size
         BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
         for (int lx = 0; lx < 16; lx++) {
             for (int lz = 0; lz < 16; lz++) {
@@ -219,6 +236,7 @@ public final class PowderCrevasseRoofFeature extends Feature<NoneFeatureConfigur
                     cursor.set(worldX, roofY, worldZ);
                     setBlock(level, cursor, SNOW_BLOCK);
                     placedAny = true;
+                    placedRoofs++;
                 }
             }
         }
@@ -280,6 +298,33 @@ public final class PowderCrevasseRoofFeature extends Feature<NoneFeatureConfigur
                 }
             }
             placedAny = true;
+        }
+        if (DEBUG) {
+            int candidates = 0;
+            int sandwiches = 0;
+            int firstX = Integer.MIN_VALUE;
+            int firstY = 0;
+            int firstZ = 0;
+            for (int lx = 0; lx < 16; lx++) {
+                for (int lz = 0; lz < 16; lz++) {
+                    if (candidate[lx][lz]) {
+                        candidates++;
+                    }
+                    if (roofed[lx][lz]) {
+                        sandwiches++;
+                        if (firstX == Integer.MIN_VALUE) {
+                            firstX = baseX + lx;
+                            firstY = reference[lx][lz] - 1;
+                            firstZ = baseZ + lz;
+                        }
+                    }
+                }
+            }
+            if (candidates > 0 || placedAny) {
+                GlobeMod.LOGGER.info("[LAT][COLLAPSE] chunk=({},{}) candidates={} roofedCols={} placedRoofs={} deepDrops={} firstRoof={},{},{}",
+                        baseX >> 4, baseZ >> 4, candidates, sandwiches, placedRoofs, deepDropCenters.size(),
+                        firstX, firstY, firstZ);
+            }
         }
         return placedAny;
     }
