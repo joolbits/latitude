@@ -406,6 +406,44 @@ public final class LatitudeV2Flags {
     public static final boolean GLACIAL_CAVES_V1_ENABLED =
             Boolean.parseBoolean(System.getProperty("latitude.glacialCavesV1", "true")); // P3 LIVE-TEST STAGING (branch-local, B-6/B-7/B-8 precedent): default ON for the first glacial-caves flight so a FRESH world carves the crevasses. REVISIT BEFORE MERGE -- the design default is OFF; the shipped default is Peetsa's call after the flight.
 
+    // ── S36 VOID TAMING (owner 2026-07-21: mechanism C / onset 82 / tame-not-eliminate) ──────────────────
+    //
+    // Caps the SKY-BREACHING noise voids of the polar underground by wrapping finalDensity on the Phase 4
+    // terrain-wrapper rails (see terrain.VoidTamingFunction + core.VoidTamingLaw). EVERY knob is a sysprop
+    // so the owner's tuning session needs no rebuild. Flag honesty: ENABLED=false (the default) never
+    // installs; ENABLED=true with STRENGTH<=0 ALSO never installs (sweep REQUIRED-FIX 3: identity by
+    // construction beats identity by proof) -- the wrapper only exists in the router when it can act.
+    // The fill BITES (converts air to solid) only where STRENGTH * gates > 1, so the usable tuning range
+    // is ~[1..2]: 1.0 caps necks right at the iso-surface, higher makes the cap firmly solid (sweep 8).
+
+    /** Master switch. Default OFF -- the owner's tuning session flips it with -Dlatitude.voidTaming.enabled=true. */
+    public static final boolean VOID_TAMING_ENABLED =
+            Boolean.parseBoolean(System.getProperty("latitude.voidTaming.enabled", "false"));
+
+    /** The K. 0.0 (default) = not installed at all; ~1.0 = cap at the iso-surface; ~1.5 = firm; sane max ~2. */
+    public static final double VOID_TAMING_STRENGTH =
+            parseDoubleOrDefault(System.getProperty("latitude.voidTaming.strength"), 0.0);
+
+    /** Absolute latitude (deg) where taming begins to feather in. Owner decision: 82 (the barrens line). */
+    public static final double VOID_TAMING_ONSET_DEG =
+            parseDoubleOrDefault(System.getProperty("latitude.voidTaming.onsetDeg"), 82.0);
+
+    /** Absolute latitude (deg) of full taming strength (smoothstep from onset -- the S28 GlacialBlend
+     *  precedent: geography, never a dead-straight wall). */
+    public static final double VOID_TAMING_FULL_DEG =
+            parseDoubleOrDefault(System.getProperty("latitude.voidTaming.fullDeg"), 85.0);
+
+    /** HARD protect floor (block Y): at/below this the fill NEVER acts -- the glacial-cave labyrinth and
+     *  the S35 trap deep-drop voids live below it. */
+    public static final int VOID_TAMING_PROTECT_FLOOR_Y =
+            (int) Math.round(parseDoubleOrDefault(System.getProperty("latitude.voidTaming.protectFloorY"), 48.0));
+
+    /** Feather (blocks) above the protect floor over which the fill fades out (sweep REQUIRED-FIX 4 -- no
+     *  horizontal stone shelf at floor+1). */
+    public static final int VOID_TAMING_FLOOR_FEATHER_BLOCKS =
+            (int) Math.round(parseDoubleOrDefault(System.getProperty("latitude.voidTaming.floorFeatherBlocks"),
+                    (double) VoidTamingLaw.FLOOR_FEATHER_BLOCKS));
+
     /**
      * S13 (e) POLAR SURFACE ALLOWLIST (Peetsa, TEST-103 flight, 2026-07-17). Default TRUE -- a polar-immersion
      * spawn rule (sibling of the vegetation fade / water freeze), shipped live for the S13 flight; the owner

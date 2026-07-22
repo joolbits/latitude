@@ -71,7 +71,11 @@ public abstract class RandomStateRouterTerrainMixin {
         // Cheap flag gates first, before touching any Minecraft object. (TerrainRouterWrapping re-checks
         // these too; the early return here just avoids an unnecessary instanceof/field read on the hot
         // world-load path when the feature is off, which is the default.)
-        if (!LatitudeV2Flags.TERRAIN_V2_ENABLED || !LatitudeV2Flags.GEO_V2_ENABLED) {
+        // S36: the void-taming layer arms independently of terrain/geo (it reads only router #9 depth +
+        // the armed radius), and only with strength > 0 (sweep REQUIRED-FIX 2/3).
+        boolean terrainArmed = LatitudeV2Flags.TERRAIN_V2_ENABLED && LatitudeV2Flags.GEO_V2_ENABLED;
+        boolean voidArmed = LatitudeV2Flags.VOID_TAMING_ENABLED && LatitudeV2Flags.VOID_TAMING_STRENGTH > 0.0;
+        if (!terrainArmed && !voidArmed) {
             return;
         }
         RandomState rs = this.randomState;
