@@ -1,5 +1,6 @@
 package com.example.globe.world;
 
+import com.example.globe.util.LatitudeBands;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -14,6 +15,8 @@ public final class VillageLatitudePolicyTest {
         integerChunkCentersMatchProductionForAllSupportedRadii();
         activeRadiusOverridesFallbackAndFallbackCoversEarlyWorldgen();
         generationGuardRejectsInvalidStartsBeforeStore();
+        climatePolicyClassifiesRepresentativeVillageIds();
+        climateMismatchRejectsInvalidStartsBeforeStore();
         staticIntegrationProofsHold();
         System.out.println("VILLAGE_LATITUDE_POLICY_TEST_PASS");
     }
@@ -186,10 +189,110 @@ public final class VillageLatitudePolicyTest {
             double blockZ,
             int radius,
             boolean village) {
-        if (village && VillageLatitudePolicy.shouldVetoVillageOrigin(blockZ, radius, radius)) {
-            return new GenerationResult(SimulatedStart.INVALID, 0, 0);
+        return simulateGenerationGuard(
+                blockZ,
+                radius,
+                village ? "village_plains" : "igloo",
+                true);
+    }
+
+    private static void climatePolicyClassifiesRepresentativeVillageIds() {
+        assertTrue(
+                LatitudeBiomes.villageClimateVsBandMismatch(
+                        "village_desert", LatitudeBands.Band.TEMPERATE),
+                "warm-declared village conflicts with a cold band");
+        assertTrue(
+                LatitudeBiomes.villageClimateVsBandMismatch(
+                        "village_snowy", LatitudeBands.Band.TROPICAL),
+                "cold-declared village conflicts with a warm band");
+        assertFalse(
+                LatitudeBiomes.villageClimateVsBandMismatch(
+                        "village_desert", LatitudeBands.Band.TROPICAL),
+                "warm-declared village remains compatible with a warm band");
+        assertFalse(
+                LatitudeBiomes.villageClimateVsBandMismatch(
+                        "village_plains", LatitudeBands.Band.TEMPERATE),
+                "neutral village remains fail-open");
+        assertFalse(
+                LatitudeBiomes.villageClimateVsBandMismatch(
+                        "desert_pyramid", LatitudeBands.Band.TEMPERATE),
+                "non-village structure remains fail-open");
+    }
+
+    private static void climateMismatchRejectsInvalidStartsBeforeStore() {
+        int radius = 7_500;
+        double coldBlockZ = radius * 52.0 / 90.0;
+        double warmBlockZ = radius * 20.0 / 90.0;
+
+        GenerationResult mismatch = simulateGenerationGuard(
+                coldBlockZ,
+                radius,
+                "village_desert",
+                true);
+        assertTrue(mismatch.start() == SimulatedStart.INVALID,
+                "fresh authoritative climate mismatch returns INVALID_START");
+        assertEquals(0, mismatch.originalGenerateCalls(),
+                "fresh authoritative climate mismatch rejects before Structure.generate");
+        assertEquals(0, mismatch.storedStarts(),
+                "fresh authoritative climate mismatch cannot register a valid start");
+        assertEquals(0, mismatch.serializedValidStarts(),
+                "fresh authoritative climate mismatch cannot serialize a valid start");
+        assertEquals(0, mismatch.locatableStartsAfterReload(),
+                "fresh authoritative climate mismatch cannot become locate-visible after reload");
+
+        GenerationResult compatible = simulateGenerationGuard(
+                warmBlockZ,
+                radius,
+                "village_desert",
+                true);
+        assertValidNormalPath(compatible, "climate-compatible village");
+
+        GenerationResult neutral = simulateGenerationGuard(
+                coldBlockZ,
+                radius,
+                "village_plains",
+                true);
+        assertValidNormalPath(neutral, "climate-neutral village");
+
+        GenerationResult nonVillage = simulateGenerationGuard(
+                coldBlockZ,
+                radius,
+                "desert_pyramid",
+                true);
+        assertValidNormalPath(nonVillage, "non-village structure");
+
+        GenerationResult nonAuthoritative = simulateGenerationGuard(
+                coldBlockZ,
+                radius,
+                "village_desert",
+                false);
+        assertValidNormalPath(nonAuthoritative, "non-authoritative generator");
+    }
+
+    private static GenerationResult simulateGenerationGuard(
+            double blockZ,
+            int radius,
+            String structurePath,
+            boolean authoritative) {
+        boolean village = structurePath != null && structurePath.startsWith("village");
+        double absDeg = Math.abs(blockZ) * 90.0 / Math.max(1, radius);
+        LatitudeBands.Band band = LatitudeBands.fromAbsoluteLatitudeDeg(absDeg);
+        boolean climateMismatch = LatitudeBiomes.villageClimateVsBandMismatch(structurePath, band);
+        if (authoritative
+                && village
+                && (VillageLatitudePolicy.shouldVetoVillageOrigin(blockZ, radius, radius)
+                || climateMismatch)) {
+            return new GenerationResult(SimulatedStart.INVALID, 0, 0, 0, 0);
         }
-        return new GenerationResult(SimulatedStart.VALID, 1, 1);
+        return new GenerationResult(SimulatedStart.VALID, 1, 1, 1, 1);
+    }
+
+    private static void assertValidNormalPath(GenerationResult result, String message) {
+        assertTrue(result.start() == SimulatedStart.VALID, message + " remains valid");
+        assertEquals(1, result.originalGenerateCalls(), message + " invokes Structure.generate once");
+        assertEquals(1, result.storedStarts(), message + " registers one valid start");
+        assertEquals(1, result.serializedValidStarts(), message + " serializes one valid start");
+        assertEquals(1, result.locatableStartsAfterReload(), message + " remains locate-visible after reload");
     }
 
     private static void staticIntegrationProofsHold() throws IOException {
@@ -257,13 +360,20 @@ public final class VillageLatitudePolicyTest {
                 "new start guard wraps Structure.generate inside ChunkGenerator.tryGenerateStructure");
         assertTrue(
                 startGuard.contains(
-                        "LatitudeBiomes.isBlockBeyondPolarVillageLimit(blockZ, GlobeMod.BORDER_RADIUS)")
+                        "GlobeMod.borderRadiusForNoiseGenerator(noise)")
+                        && startGuard.contains(
+                        "LatitudeBiomes.isBlockBeyondPolarVillageLimit(blockZ, radius)")
                         && !startGuard.contains("isBlockInExtremePolarCap"),
-                "new start guard uses only the strict village-latitude predicate");
+                "new start guard applies the strict village-latitude predicate with generator-specific radius authority");
         assertTrue(
                 startGuard.contains(
                         "structureId != null && structureId.getPath().startsWith(\"village\")"),
                 "new start guard uses the same village registry classifier");
+        assertTrue(
+                startGuard.contains("LatitudeBands.fromAbsoluteLatitudeDeg(absDeg)")
+                        && startGuard.contains(
+                        "LatitudeBiomes.villageClimateVsBandMismatch(structureId.getPath(), band)"),
+                "generation-time owner applies the existing climate policy before start registration");
         assertTrue(
                 startGuard.contains("catch (Throwable ignored)")
                         && startGuard.contains("Registry unavailable — fail open (allow generation)."),
@@ -282,6 +392,16 @@ public final class VillageLatitudePolicyTest {
                         && !startGuard.contains("CallbackInfo")
                         && !startGuard.contains("ci.cancel();"),
                 "new generation guard does not replace or duplicate the legacy placement injection");
+
+        String climatePlacementGuard = normalize(read(
+                "src/main/java/com/example/globe/mixin/StructureBiomeMatchGuardMixin.java"));
+        assertTrue(
+                climatePlacementGuard.contains("@Mixin(StructureStart.class)")
+                        && climatePlacementGuard.contains("@Inject(method = \"placeInChunk(")
+                        && climatePlacementGuard.contains(
+                        "LatitudeBiomes.villageClimateVsBandMismatch(structureId.getPath(), band)")
+                        && climatePlacementGuard.contains("ci.cancel();"),
+                "historical stored climate-mismatched starts retain the late placement defense");
 
         String mixins = normalize(read("src/main/resources/globe.mixins.json"));
         assertTrue(
@@ -325,7 +445,12 @@ public final class VillageLatitudePolicyTest {
     private record GenerationResult(
             SimulatedStart start,
             int originalGenerateCalls,
-            int storedStarts) {
+            int storedStarts,
+            int serializedValidStarts,
+            int locatableStartsAfterReload) {
+        private GenerationResult(SimulatedStart start, int originalGenerateCalls, int storedStarts) {
+            this(start, originalGenerateCalls, storedStarts, storedStarts, storedStarts);
+        }
     }
 
     private static int mainSourceOccurrences(String target) throws IOException {

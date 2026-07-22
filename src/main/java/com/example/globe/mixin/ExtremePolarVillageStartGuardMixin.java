@@ -3,6 +3,7 @@ package com.example.globe.mixin;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import com.example.globe.GlobeMod;
+import com.example.globe.util.LatitudeBands;
 import com.example.globe.world.LatitudeBiomes;
 import com.example.globe.world.LatitudeWorldgenScope;
 import net.minecraft.core.Holder;
@@ -28,8 +29,9 @@ import org.spongepowered.asm.mixin.injection.At;
 import java.util.function.Predicate;
 
 /**
- * Prevents village starts from being generated strictly beyond 80 degrees absolute latitude.
- * Origins at exactly 80 degrees remain allowed. Other structures (igloos, etc.) are not affected.
+ * Rejects invalid fresh village starts before vanilla can register them. Villages are rejected
+ * strictly beyond 80 degrees absolute latitude or when their declared climate conflicts with the
+ * canonical Latitude band. Compatible/neutral villages and other structures are not affected.
  */
 @Mixin(ChunkGenerator.class)
 public abstract class ExtremePolarVillageStartGuardMixin {
@@ -57,14 +59,19 @@ public abstract class ExtremePolarVillageStartGuardMixin {
         int blockZ = chunkPos.getMiddleBlockZ();
         if (LatitudeWorldgenScope.isActive()
                 && chunkGenerator instanceof NoiseBasedChunkGenerator noise
-                && GlobeMod.shouldApplyLatitudeWorldgen(noise)
-                && LatitudeBiomes.isBlockBeyondPolarVillageLimit(blockZ, GlobeMod.BORDER_RADIUS)) {
+                && GlobeMod.shouldApplyLatitudeWorldgen(noise)) {
             try {
                 Registry<Structure> registry =
                         registryAccess.lookupOrThrow(Registries.STRUCTURE);
                 Identifier structureId = registry.getKey(structure);
                 if (structureId != null && structureId.getPath().startsWith("village")) {
-                    return StructureStart.INVALID_START;
+                    int radius = GlobeMod.borderRadiusForNoiseGenerator(noise);
+                    double absDeg = Math.abs((double) blockZ) * 90.0 / Math.max(1, radius);
+                    LatitudeBands.Band band = LatitudeBands.fromAbsoluteLatitudeDeg(absDeg);
+                    if (LatitudeBiomes.isBlockBeyondPolarVillageLimit(blockZ, radius)
+                            || LatitudeBiomes.villageClimateVsBandMismatch(structureId.getPath(), band)) {
+                        return StructureStart.INVALID_START;
+                    }
                 }
             } catch (Throwable ignored) {
                 // Registry unavailable — fail open (allow generation).
