@@ -17,7 +17,7 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
-@Mixin(FogRenderer.class)
+@Mixin(value = FogRenderer.class, priority = 900)
 public class FogRendererEwMixin {
 
     @Inject(method = "setupFog", at = @At("RETURN"))

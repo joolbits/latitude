@@ -36,8 +36,7 @@
     "client.InGameHudMixin",
     "client.LatitudeLoadingClientTickMixin",
     "client.LevelLoadingScreenLatitudeOverlayMixin",
-    "client.FogRendererEwMixin",
-    "client.compat.sodium.RenderSectionManagerVisibilityMixin"
+    "client.FogRendererEwMixin"
   ],
   "injectors": {
     "defaultRequire": 1

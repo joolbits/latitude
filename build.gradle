@@ -142,13 +142,23 @@ loom {
 }
 
 repositories {
+    exclusiveContent {
+        forRepository {
+            maven {
+                name = "Modrinth"
+                url = "https://api.modrinth.com/maven"
+            }
+        }
+        filter {
+            includeGroup "maven.modrinth"
+        }
+    }
     maven { url 'https://maven.fabricmc.net/' }
     maven { url 'https://maven.terraformersmc.com/releases/' }
     maven { url 'https://maven.blamejared.com/' }
     maven { url 'https://maven.shedaniel.me/' }
     maven { url 'https://maven.ladysnake.org/releases' }
     mavenCentral()
-    maven { url 'https://api.modrinth.com/maven' }
     maven { url 'https://cursemaven.com' }
     maven { url 'https://jitpack.io' }
 }
@@ -182,6 +192,11 @@ sourceSets {
 configurations {
     latitudeTestImplementation.extendsFrom implementation
     latitudeTestRuntimeOnly.extendsFrom runtimeOnly
+    latitudeSodiumFogVerifier
+}
+
+dependencies {
+    latitudeSodiumFogVerifier "maven.modrinth:AANobbMI:2Yom1N68"
 }
 
 processResources {
@@ -474,6 +489,28 @@ tasks.register('latitudePolarPresentationPolicyTest', JavaExec) {
 
 tasks.named('check').configure {
     dependsOn tasks.named('latitudePolarPresentationPolicyTest')
+}
+
+tasks.register('latitudeSodiumFogReachabilityTest', Exec) {
+    group = 'verification'
+    description = 'Verify the exact Sodium 0.9.1 FogData-to-culling bytecode chain and Latitude mixin order'
+    inputs.file('tools/verify_sodium_fog_reachability.py')
+    inputs.file('src/main/java/com/example/globe/mixin/client/FogRendererEwMixin.java')
+    inputs.file('src/main/resources/globe.mixins.json')
+    inputs.files(configurations.latitudeSodiumFogVerifier)
+
+    doFirst {
+        File sodiumJar = configurations.latitudeSodiumFogVerifier.singleFile
+        commandLine(
+                'python3',
+                file('tools/verify_sodium_fog_reachability.py'),
+                '--sodium-jar', sodiumJar,
+                '--source-root', rootDir)
+    }
+}
+
+tasks.named('check').configure {
+    dependsOn tasks.named('latitudeSodiumFogReachabilityTest')
 }
 
 def latitudeLocationDetailPolicyTestClasses = layout.buildDirectory.dir('classes/java/latitudeLocationDetailPolicyTest')
