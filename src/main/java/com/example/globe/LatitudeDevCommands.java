@@ -22,9 +22,13 @@ import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.context.CommandContext;
+import java.util.ArrayList;
 import java.util.EnumSet;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.Set;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
@@ -806,12 +810,13 @@ public final class LatitudeDevCommands {
 
             // Pass 2: partition each loaded column by depth and mark the ground truth.
             int refRadius = PowderRoofTrap.REFERENCE_WINDOW_RADIUS;
-            int trapRoofCount = 0;
             int openSlotCount = 0;
             int roofMarkers = 0;
             int slotMarkers = 0;
             int roofLines = 0;
             int slotLines = 0;
+            boolean[][] roofMask = new boolean[span][span];
+            int[][] roofYByColumn = new int[span][span];
             BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
             for (int gx = 0; gx < span; gx++) {
                 for (int gz = 0; gz < span; gz++) {
@@ -822,7 +827,31 @@ public final class LatitudeDevCommands {
                     final int wx = originBlockX + gx;
                     final int wz = originBlockZ + gz;
                     int reference = GlacialMarkScan.windowedMax(surface, gx, gz, refRadius);
-                    if (PowderRoofTrap.isTrapCandidate(own, reference)) {
+                    // Actual blocks outrank the inferred heightmap class. The command's reference crosses chunk
+                    // borders (intentionally broader than the feature's local 16x16 window), so classifying
+                    // "deep" first could call a low-but-real powder cap an open slot and shred it into an
+                    // invalid partial component. Probe the physical roof first; infer OPEN only when no roof is
+                    // present at all.
+                    int topBlockY = own - 1;
+                    int foundRoofY = Integer.MIN_VALUE;
+                    for (int y = topBlockY; y >= topBlockY - MARK_ROOF_PROBE_DEPTH; y--) {
+                        cursor.set(wx, y, wz);
+                        if (world.getBlockState(cursor).getBlock() != Blocks.POWDER_SNOW) {
+                            continue;
+                        }
+                        cursor.set(wx, y - 1, wz);
+                        boolean airBelow = world.getBlockState(cursor).isAir();
+                        cursor.set(wx, y - 2, wz);
+                        boolean airBelow2 = world.getBlockState(cursor).isAir();
+                        if (airBelow && airBelow2) {
+                            foundRoofY = y;
+                            break;
+                        }
+                    }
+                    if (foundRoofY != Integer.MIN_VALUE) {
+                        roofMask[gx][gz] = true;
+                        roofYByColumn[gx][gz] = foundRoofY;
+                    } else if (PowderRoofTrap.isTrapCandidate(own, reference)) {
                         // DEEP: WORLD_SURFACE far below the snowfield => air to the sky => open shaft. Signal 2.
                         openSlotCount++;
                         final int depth = reference - own;
@@ -841,57 +870,68 @@ public final class LatitudeDevCommands {
                                     wx, floorY, wz, depth)), false);
                             slotLines++;
                         }
-                    } else {
-                        // SHALLOW: could carry the S35 POWDER COVER. Scan the top block(s) for a powder_snow
-                        // cap DIRECTLY over at least TWO air -- the gen signature (a cover always spans a
-                        // 12+ shaft). A cushion or a powder drift sits ON solid ground (0-1 air below) and a
-                        // roofed cave powder pocket hangs under solid rock, so this probe never false-positives
-                        // on the other powder placements. Signal 1.
-                        int topBlockY = own - 1;
-                        int foundRoofY = Integer.MIN_VALUE;
-                        for (int y = topBlockY; y >= topBlockY - MARK_ROOF_PROBE_DEPTH; y--) {
-                            cursor.set(wx, y, wz);
-                            if (world.getBlockState(cursor).getBlock() != Blocks.POWDER_SNOW) {
-                                continue;
-                            }
-                            cursor.set(wx, y - 1, wz);
-                            boolean airBelow = world.getBlockState(cursor).isAir();
-                            cursor.set(wx, y - 2, wz);
-                            boolean airBelow2 = world.getBlockState(cursor).isAir();
-                            if (airBelow && airBelow2) {
-                                foundRoofY = y;
-                                break;
-                            }
-                        }
-                        if (foundRoofY != Integer.MIN_VALUE) {
-                            trapRoofCount++;
-                            final int roofY = foundRoofY;
-                            // S33: the trap is the PRIZE and it is rare, so it gets the TALL green pillar
-                            // (visible across a snowfield) -- the old 3-block stub was shorter than the slot
-                            // columns drowning it. Green pillar = walk here.
-                            if (roofMarkers < MARK_MARKER_CAP) {
-                                greenBeacon(world, wx, roofY, roofY + TRAP_PILLAR_HEIGHT, wz);
-                                roofMarkers++;
-                            }
-                            if (roofLines < MARK_CHAT_CAP) {
-                                // S34: clickable [teleport], same pattern as locateCrevasse -- the coords are
-                                // often 100+ blocks out, and clicking beats reading numbers off the screen.
-                                String tpCommand = "/latdev tpxz " + wx + " " + wz;
-                                MutableComponent trapLine = Component.literal(String.format(Locale.ROOT,
-                                        "[latdev]   GREEN TRAP roof (walk onto this): x=%d y=%d z=%d ", wx, roofY, wz))
-                                        .append(Component.literal("[teleport]").withStyle(style -> style
-                                                .withClickEvent(new ClickEvent.RunCommand(tpCommand))
-                                                .withUnderlined(true)));
-                                src.sendSuccess(() -> trapLine, false);
-                                roofLines++;
-                            }
-                        }
                     }
                 }
             }
 
+            // One connected, single-plane powder cap is one encounter. Neighbouring caps at different Y are
+            // separate crossings, while the old per-column count made a broad 32-block cap report 32 traps.
+            List<List<int[]>> trapComponents = new ArrayList<>();
+            List<String> rejectedRoofDetails = new ArrayList<>();
+            int rejectedRoofComponents = 0;
+            int[] roofRejectReasons = new int[9];
+            for (List<int[]> component : GlacialMarkScan.connectedComponentsByValue(roofMask, roofYByColumn)) {
+                int rejection = s36TrapRejection(world, component, roofYByColumn, originBlockX, originBlockZ);
+                if (rejection == S36_TRAP_VALID) {
+                    trapComponents.add(component);
+                } else {
+                    rejectedRoofComponents++;
+                    roofRejectReasons[rejection]++;
+                    if (rejectedRoofDetails.size() < MARK_CHAT_CAP) {
+                        int[] representative = GlacialMarkScan.centreRepresentative(component);
+                        int minRoofY = component.stream()
+                                .mapToInt(c -> roofYByColumn[c[0]][c[1]]).min().orElse(Integer.MIN_VALUE);
+                        int maxRoofY = component.stream()
+                                .mapToInt(c -> roofYByColumn[c[0]][c[1]]).max().orElse(Integer.MIN_VALUE);
+                        rejectedRoofDetails.add(String.format(Locale.ROOT,
+                                "%s size=%d roofY=%d..%d x=%d z=%d",
+                                s36TrapRejectionLabel(rejection), component.size(), minRoofY, maxRoofY,
+                                originBlockX + representative[0], originBlockZ + representative[1]));
+                    }
+                }
+            }
+            int trapEncounterCount = trapComponents.size();
+            int trapRoofColumnCount = trapComponents.stream().mapToInt(List::size).sum();
+            for (List<int[]> trap : trapComponents) {
+                int[] representative = GlacialMarkScan.centreRepresentative(trap);
+                if (representative == null) {
+                    continue;
+                }
+                final int wx = originBlockX + representative[0];
+                final int wz = originBlockZ + representative[1];
+                final int roofY = roofYByColumn[representative[0]][representative[1]];
+                final int coveredColumns = trap.size();
+                if (roofMarkers < MARK_MARKER_CAP) {
+                    greenBeacon(world, wx, roofY, roofY + TRAP_PILLAR_HEIGHT, wz);
+                    roofMarkers++;
+                }
+                if (roofLines < MARK_CHAT_CAP) {
+                    String tpCommand = "/latdev tpxz " + wx + " " + wz;
+                    MutableComponent trapLine = Component.literal(String.format(Locale.ROOT,
+                            "[latdev]   GREEN TRAP encounter (%d covered blocks): x=%d y=%d z=%d ",
+                            coveredColumns, wx, roofY, wz))
+                            .append(Component.literal("[teleport]").withStyle(style -> style
+                                    .withClickEvent(new ClickEvent.RunCommand(tpCommand))
+                                    .withUnderlined(true)));
+                    src.sendSuccess(() -> trapLine, false);
+                    roofLines++;
+                }
+            }
+
             // Summary (always) + an explanation when a loaded, in-band scan still finds nothing.
-            final int fTrap = trapRoofCount;
+            final int fTrap = trapEncounterCount;
+            final int fTrapColumns = trapRoofColumnCount;
+            final int fRejectedRoofs = rejectedRoofComponents;
             final int fSlot = openSlotCount;
             final long fScanned = scannedColumns;
             final long fSkipped = skippedColumns;
@@ -899,10 +939,12 @@ public final class LatitudeDevCommands {
             final int fUnloaded = unloadedChunks;
             final int fr = r;
             src.sendSuccess(() -> Component.literal(String.format(Locale.ROOT,
-                    "[latdev] markGlacial (r=%d chunks): GREEN trap roofs=%d | BLUE open crevasses=%d (no roof, "
-                            + "by design) | scanned %d cols (%d chunks), skipped %d cols (%d unloaded)",
-                    fr, fTrap, fSlot, fScanned, fLoaded, fSkipped, fUnloaded)), false);
-            if (trapRoofCount > 0) {
+                    "[latdev] markGlacial (r=%d chunks): GREEN trap encounters=%d (%d covered blocks) | "
+                            + "BLUE open crevasses=%d (no roof, by design) | scanned %d cols (%d chunks), "
+                            + "skipped %d cols (%d unloaded) | unverified/legacy powder caps skipped=%d",
+                    fr, fTrap, fTrapColumns, fSlot, fScanned, fLoaded, fSkipped, fUnloaded,
+                    fRejectedRoofs)), false);
+            if (trapEncounterCount > 0) {
                 src.sendSuccess(() -> Component.literal(
                         "[latdev] walk onto a GREEN pillar in survival — that powder cover drops the full shaft (cushion at the base)."), false);
             } else if (openSlotCount > 0) {
@@ -912,12 +954,26 @@ public final class LatitudeDevCommands {
                                 + "Traps only generate in NEW chunks, and only on true Polar Barrens land "
                                 + "(glacier over frozen OCEAN is excluded). Explore fresh ground and rescan."), false);
             }
+            if (rejectedRoofComponents > 0) {
+                final String rejectDetail = String.format(Locale.ROOT,
+                        "shape=%d mixedPlane=%d noLanding=%d depthRange=%d noCushion=%d unsafeSupport=%d "
+                                + "wrongBiome=%d noApproach=%d",
+                        roofRejectReasons[S36_TRAP_REJECT_SHAPE], roofRejectReasons[S36_TRAP_REJECT_PLANE],
+                        roofRejectReasons[S36_TRAP_REJECT_NO_LANDING], roofRejectReasons[S36_TRAP_REJECT_SHALLOW],
+                        roofRejectReasons[S36_TRAP_REJECT_NO_CUSHION], roofRejectReasons[S36_TRAP_REJECT_SUPPORT],
+                        roofRejectReasons[S36_TRAP_REJECT_BIOME], roofRejectReasons[S36_TRAP_REJECT_APPROACH]);
+                src.sendSuccess(() -> Component.literal(
+                        "[latdev] skipped-cap reasons: " + rejectDetail), false);
+                for (String detail : rejectedRoofDetails) {
+                    src.sendSuccess(() -> Component.literal("[latdev]   skipped cap: " + detail), false);
+                }
+            }
             if (roofMarkers >= MARK_MARKER_CAP || slotMarkers >= MARK_MARKER_CAP) {
                 src.sendSuccess(() -> Component.literal(String.format(Locale.ROOT,
                         "[latdev] (drew the first %d markers per signal — the counts above are the real totals)",
                         MARK_MARKER_CAP)), false);
             }
-            if (trapRoofCount == 0 && openSlotCount == 0) {
+            if (trapEncounterCount == 0 && openSlotCount == 0) {
                 double absDeg = Mth.clamp(Math.abs(centerZ) / radius * 90.0, 0.0, 90.0);
                 if (scannedColumns == 0L) {
                     src.sendFailure(Component.literal(
@@ -939,6 +995,131 @@ public final class LatitudeDevCommands {
             src.sendFailure(Component.literal("[latdev] markGlacial failed: " + e.getMessage()));
             return 0;
         }
+    }
+
+    /**
+     * Reject legacy or lookalike powder roofs before calling them S36 encounters. Geometry must match the
+     * authored bridge law, every roof block must share one plane, and every fall column must remain empty down
+     * to a sufficiently deep powder cushion on dry support. This is deliberately stricter than the cheap
+     * powder-over-two-air discovery probe above; false negatives at a scan boundary are safer than directing
+     * the owner to an old two-block lid as if it proved the new design.
+     */
+    private static final int S36_TRAP_VALID = 0;
+    private static final int S36_TRAP_REJECT_SHAPE = 1;
+    private static final int S36_TRAP_REJECT_PLANE = 2;
+    private static final int S36_TRAP_REJECT_NO_LANDING = 3;
+    private static final int S36_TRAP_REJECT_SHALLOW = 4;
+    private static final int S36_TRAP_REJECT_NO_CUSHION = 5;
+    private static final int S36_TRAP_REJECT_SUPPORT = 6;
+    private static final int S36_TRAP_REJECT_BIOME = 7;
+    private static final int S36_TRAP_REJECT_APPROACH = 8;
+    private static final Identifier S36_POLAR_BARRENS_ID =
+            Identifier.fromNamespaceAndPath(GlobeMod.MOD_ID, "polar_barrens");
+
+    private static int s36TrapRejection(ServerLevel world, List<int[]> component,
+            int[][] roofYByColumn, int originBlockX, int originBlockZ) {
+        if (!PowderRoofTrap.patchEligible(component)) {
+            return S36_TRAP_REJECT_SHAPE;
+        }
+        int roofY = roofYByColumn[component.get(0)[0]][component.get(0)[1]];
+        BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
+        Set<Long> occupied = new HashSet<>();
+        for (int[] cell : component) {
+            occupied.add(s36Pack(cell[0], cell[1]));
+        }
+        List<Integer> northBank = new ArrayList<>();
+        List<Integer> southBank = new ArrayList<>();
+        List<Integer> westBank = new ArrayList<>();
+        List<Integer> eastBank = new ArrayList<>();
+        for (int[] cell : component) {
+            if (roofYByColumn[cell[0]][cell[1]] != roofY) {
+                GlobeMod.LOGGER.info("[LAT][MARK_S36_REJECT] reason=mixedPlane x={} z={} expectedRoofY={} actualRoofY={}",
+                        originBlockX + cell[0], originBlockZ + cell[1], roofY,
+                        roofYByColumn[cell[0]][cell[1]]);
+                return S36_TRAP_REJECT_PLANE;
+            }
+            int worldX = originBlockX + cell[0];
+            int worldZ = originBlockZ + cell[1];
+            cursor.set(worldX, roofY + 1, worldZ);
+            if (!world.getBiome(cursor).unwrapKey()
+                    .map(key -> key.identifier().equals(S36_POLAR_BARRENS_ID))
+                    .orElse(false)) {
+                return S36_TRAP_REJECT_BIOME;
+            }
+            s36AddBankHeight(world, occupied, northBank, cell[0], cell[1] - 1,
+                    originBlockX, originBlockZ, roofYByColumn);
+            s36AddBankHeight(world, occupied, southBank, cell[0], cell[1] + 1,
+                    originBlockX, originBlockZ, roofYByColumn);
+            s36AddBankHeight(world, occupied, westBank, cell[0] - 1, cell[1],
+                    originBlockX, originBlockZ, roofYByColumn);
+            s36AddBankHeight(world, occupied, eastBank, cell[0] + 1, cell[1],
+                    originBlockX, originBlockZ, roofYByColumn);
+            int cushionY = Integer.MIN_VALUE;
+            for (int y = roofY - 1; y >= world.getMinY(); y--) {
+                cursor.set(worldX, y, worldZ);
+                if (!world.getBlockState(cursor).isAir()) {
+                    cushionY = y;
+                    break;
+                }
+            }
+            if (cushionY == Integer.MIN_VALUE) {
+                return S36_TRAP_REJECT_NO_LANDING;
+            }
+            if (!PowderRoofTrap.columnDepthEligible(cushionY, roofY)) {
+                GlobeMod.LOGGER.info("[LAT][MARK_S36_REJECT] reason=depthRange x={} z={} roofY={} firstBlockY={} depth={}",
+                        worldX, worldZ, roofY, cushionY, (roofY + 1) - cushionY);
+                return S36_TRAP_REJECT_SHALLOW;
+            }
+            cursor.set(worldX, cushionY, worldZ);
+            if (world.getBlockState(cursor).getBlock() != Blocks.POWDER_SNOW) {
+                GlobeMod.LOGGER.info("[LAT][MARK_S36_REJECT] reason=noCushion x={} z={} roofY={} firstBlockY={} block={}",
+                        worldX, worldZ, roofY, cushionY, world.getBlockState(cursor));
+                return S36_TRAP_REJECT_NO_CUSHION;
+            }
+            cursor.set(worldX, cushionY - 1, worldZ);
+            var support = world.getBlockState(cursor);
+            if (support.isAir() || !support.getFluidState().isEmpty()) {
+                GlobeMod.LOGGER.info("[LAT][MARK_S36_REJECT] reason=unsafeSupport x={} z={} cushionY={} support={}",
+                        worldX, worldZ, cushionY, support);
+                return S36_TRAP_REJECT_SUPPORT;
+            }
+        }
+        int verifiedRoofY = PowderRoofTrap.selectSnowfieldRoofY(
+                List.of(roofY + 1), northBank, southBank, westBank, eastBank);
+        if (verifiedRoofY != roofY) {
+            return S36_TRAP_REJECT_APPROACH;
+        }
+        return S36_TRAP_VALID;
+    }
+
+    private static long s36Pack(int x, int z) {
+        return ((long) x << 32) ^ (z & 0xffffffffL);
+    }
+
+    private static void s36AddBankHeight(ServerLevel world, Set<Long> occupied, List<Integer> destination,
+            int gridX, int gridZ, int originBlockX, int originBlockZ, int[][] roofYByColumn) {
+        if (gridX < 0 || gridX >= roofYByColumn.length
+                || roofYByColumn[gridX] == null
+                || gridZ < 0 || gridZ >= roofYByColumn[gridX].length
+                || occupied.contains(s36Pack(gridX, gridZ))) {
+            return;
+        }
+        destination.add(world.getHeight(
+                Heightmap.Types.WORLD_SURFACE, originBlockX + gridX, originBlockZ + gridZ));
+    }
+
+    private static String s36TrapRejectionLabel(int rejection) {
+        return switch (rejection) {
+            case S36_TRAP_REJECT_SHAPE -> "shape";
+            case S36_TRAP_REJECT_PLANE -> "mixedPlane";
+            case S36_TRAP_REJECT_NO_LANDING -> "noLanding";
+            case S36_TRAP_REJECT_SHALLOW -> "shallow";
+            case S36_TRAP_REJECT_NO_CUSHION -> "noCushion";
+            case S36_TRAP_REJECT_SUPPORT -> "unsafeSupport";
+            case S36_TRAP_REJECT_BIOME -> "wrongBiome";
+            case S36_TRAP_REJECT_APPROACH -> "noApproach";
+            default -> "valid";
+        };
     }
 
     /**
