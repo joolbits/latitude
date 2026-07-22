@@ -317,7 +317,6 @@ public final class EwPresentationPolicyTest {
         String haze = read("src/main/java/com/example/globe/client/EwSandstormOverlayHud.java");
         String fog = read("src/main/java/com/example/globe/mixin/client/FogRendererEwMixin.java");
         String client = read("src/main/java/com/example/globe/GlobeModClient.java");
-        String sodium = read("src/main/java/com/example/globe/mixin/client/compat/sodium/RenderSectionManagerVisibilityMixin.java");
         String mixins = read("src/main/resources/globe.mixins.json");
 
         assertTrue(state.contains("EwPresentationPolicy.fogIntensity")
@@ -433,23 +432,15 @@ public final class EwPresentationPolicyTest {
                         && !disconnectEvent.contains("GlobeWarningOverlay.render("),
                 "disconnect event directly resets overlay and shared state without requiring render");
 
-        assertEquals(1, countOccurrences(
+        assertEquals(0, countOccurrences(
                         mixins,
                         "client.compat.sodium.RenderSectionManagerVisibilityMixin"),
-                "active Sodium visibility mixin remains registered exactly once");
-        assertTrue(sodium.contains("GlobeClientState.DEBUG_DISABLE_WARNINGS")
-                        && sodium.contains("GlobeClientState.DEBUG_DISABLE_FOG")
-                        && sodium.contains("GlobeClientState.isGlobeWorld()")
-                        && sodium.contains("GlobeClientState.evaluate(mc)")
-                        && sodium.contains("if (!eval.active()) return")
-                        && sodium.contains("GlobeClientState.ewPresentationVisibility()"),
-                "Sodium culling fails open outside active Latitude presentation and uses shared shelter visibility");
-        assertTrue(sodium.indexOf("GlobeClientState.isGlobeWorld()")
-                        < sodium.indexOf("GlobeClientState.evaluate(mc)"),
-                "Sodium culling requires authoritative Latitude world identity before evaluation");
-        assertTrue(state.contains("ewIntensity01(playerX) * visibility")
-                        && state.contains("return ewRenderDistanceChunks(originalChunks, playerX, ewPresentationVisibility())"),
-                "Sodium cull intensity restores through the shared presentation visibility");
+                "dead Sodium isSectionVisible compatibility mixin is not registered");
+        assertTrue(Files.notExists(Path.of(
+                        "src/main/java/com/example/globe/mixin/client/compat/sodium/RenderSectionManagerVisibilityMixin.java")),
+                "dead Sodium isSectionVisible compatibility source is removed");
+        assertTrue(fog.contains("@Mixin(value = FogRenderer.class, priority = 900)"),
+                "Latitude mutates FogData before Sodium's default-priority snapshot");
     }
 
     private static String read(String relativePath) throws IOException {
