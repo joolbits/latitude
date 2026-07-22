@@ -175,14 +175,21 @@ public final class TerrainRouterWrapping {
      * {@link GeoTerrainBiasFunction#compute} is the inner one).
      */
     private static InstallResult installIfArmedCore(RandomState randomState, BooleanSupplier globeCheck) {
-        if (!LatitudeV2Flags.TERRAIN_V2_ENABLED || !LatitudeV2Flags.GEO_V2_ENABLED) {
-            if (LatitudeV2Flags.TERRAIN_V2_ENABLED && !LatitudeV2Flags.GEO_V2_ENABLED
-                    && TERRAINV2_WITHOUT_GEOV2_WARNED.compareAndSet(false, true)) {
-                GlobeMod.LOGGER.warn(
-                        "[Latitude] latitude.terrainV2.enabled=true but latitude.geoV2.enabled is OFF -- the "
-                                + "terrain wrapper reads GeoAuthority's geography and will NEVER install in this "
-                                + "configuration. Add -Dlatitude.geoV2.enabled=true (or drop the terrainV2 flag).");
-            }
+        // S36: the ONE router rebuild now serves two independent layers. terrainArmed keeps its original
+        // double gate (the bias reads GeoAuthority, useless without geoV2 -- warn preserved verbatim).
+        // voidArmed needs NEITHER terrain nor geo (it reads only router #9 depth + the armed radius; sweep
+        // REQUIRED-FIX 2), and per sweep REQUIRED-FIX 3 it arms ONLY with strength > 0 -- "strength 0 =
+        // exact no-op" holds by construction because the layer is simply never built.
+        boolean terrainArmed = LatitudeV2Flags.TERRAIN_V2_ENABLED && LatitudeV2Flags.GEO_V2_ENABLED;
+        boolean voidArmed = LatitudeV2Flags.VOID_TAMING_ENABLED && LatitudeV2Flags.VOID_TAMING_STRENGTH > 0.0;
+        if (LatitudeV2Flags.TERRAIN_V2_ENABLED && !LatitudeV2Flags.GEO_V2_ENABLED
+                && TERRAINV2_WITHOUT_GEOV2_WARNED.compareAndSet(false, true)) {
+            GlobeMod.LOGGER.warn(
+                    "[Latitude] latitude.terrainV2.enabled=true but latitude.geoV2.enabled is OFF -- the "
+                            + "terrain wrapper reads GeoAuthority's geography and will NEVER install in this "
+                            + "configuration. Add -Dlatitude.geoV2.enabled=true (or drop the terrainV2 flag).");
+        }
+        if (!terrainArmed && !voidArmed) {
             return InstallResult.SKIPPED_FLAG_OFF;
         }
         try {
@@ -215,8 +222,30 @@ public final class TerrainRouterWrapping {
             }
             DensityFunction originalFinalDensity = original.finalDensity();
 
-            // Rebuild the 15-field canonical NoiseRouter, wrapping ONLY finalDensity (#12) and passing every
-            // other field through by identity. Field order verified against the 26.2 deobf jar this session.
+            // S36 composition (sweep REQUIRED-FIX 1: each layer gates on ITS OWN armed flag, never the
+            // other's -- a void-only world must not wake the terrain bias via a stray terrainV2.strength,
+            // and #11's bathymetry clamp belongs to the terrain feature alone). Void wraps OUTERMOST
+            // (architect (d)): it reads the ORIGINAL #9 depth field as its sky/underground discriminator,
+            // so composition order cannot change its gate; both layers independently no-op per their own
+            // strength discipline.
+            DensityFunction f12 = originalFinalDensity;
+            if (terrainArmed) {
+                f12 = new GeoTerrainBiasFunction(f12);
+            }
+            if (voidArmed) {
+                f12 = new VoidTamingFunction(f12, original.depth());
+            }
+            DensityFunction f11 = terrainArmed
+                    // 11: Slice C-2 — wrapped with the block-unit-correct bathymetry ceiling clamp
+                    // (min(prelim, carveCeilY)); exact pass-through whenever no carve applies. See
+                    // GeoTerrainPrelimSurfaceFunction's javadoc for why the locked design's refusal to
+                    // touch #11 (an additive DENSITY term — a unit mismatch, L16) does not apply to a
+                    // block-Y clamp, and why the fluid/aquifer system requires it once real carving exists.
+                    ? new GeoTerrainPrelimSurfaceFunction(original.preliminarySurfaceLevel())
+                    : original.preliminarySurfaceLevel();
+
+            // Rebuild the 15-field canonical NoiseRouter, wrapping ONLY #11/#12 as armed above and passing
+            // every other field through by identity. Field order verified against the 26.2 deobf jar.
             NoiseRouter rebuilt = new NoiseRouter(
                     original.barrierNoise(),               // 1
                     original.fluidLevelFloodednessNoise(), // 2
@@ -228,13 +257,8 @@ public final class TerrainRouterWrapping {
                     original.erosion(),                    // 8
                     original.depth(),                      // 9
                     original.ridges(),                     // 10
-                    // 11: Slice C-2 — wrapped with the block-unit-correct bathymetry ceiling clamp
-                    // (min(prelim, carveCeilY)); exact pass-through whenever no carve applies. See
-                    // GeoTerrainPrelimSurfaceFunction's javadoc for why the locked design's refusal to
-                    // touch #11 (an additive DENSITY term — a unit mismatch, L16) does not apply to a
-                    // block-Y clamp, and why the fluid/aquifer system requires it once real carving exists.
-                    new GeoTerrainPrelimSurfaceFunction(original.preliminarySurfaceLevel()),
-                    new GeoTerrainBiasFunction(originalFinalDensity), // 12
+                    f11,                                   // 11
+                    f12,                                   // 12
                     original.veinToggle(),                 // 13
                     original.veinRidged(),                 // 14
                     original.veinGap());                   // 15
@@ -243,10 +267,16 @@ public final class TerrainRouterWrapping {
 
             if (INSTALL_LOGGED.compareAndSet(false, true)) {
                 GlobeMod.LOGGER.info(
-                        "[Latitude] Phase 4 terrain bias installed: wrapped NoiseRouter.finalDensity for a globe world "
-                                + "(strength={}, oceanStrengthRatio={}).",
+                        "[Latitude] Router wrap installed for a globe world: terrain={} (strength={}, "
+                                + "oceanStrengthRatio={}), voidTaming={} (strength={}, onset={}, full={}, floorY={}).",
+                        terrainArmed,
                         LatitudeV2Flags.TERRAIN_V2_STRENGTH,
-                        LatitudeV2Flags.TERRAIN_V2_OCEAN_STRENGTH_RATIO);
+                        LatitudeV2Flags.TERRAIN_V2_OCEAN_STRENGTH_RATIO,
+                        voidArmed,
+                        LatitudeV2Flags.VOID_TAMING_STRENGTH,
+                        LatitudeV2Flags.VOID_TAMING_ONSET_DEG,
+                        LatitudeV2Flags.VOID_TAMING_FULL_DEG,
+                        LatitudeV2Flags.VOID_TAMING_PROTECT_FLOOR_Y);
             }
             return InstallResult.INSTALLED;
         } catch (Throwable t) {
@@ -270,6 +300,7 @@ public final class TerrainRouterWrapping {
         // Slice B: the per-call wrapper's own one-shots (not-ready / engaged / bias-failure) and the
         // "authorities inert for this world" warn re-arm per world too, so a second world's story is told.
         GeoTerrainBiasFunction.resetLogLatchesForNewWorld();
+        VoidTamingFunction.resetLogLatchesForNewWorld();
         LatitudeBiomes.resetV2InertWarnLatchForNewWorld();
     }
 }

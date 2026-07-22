@@ -128,6 +128,14 @@ loom {
             vmArg "-Dlatitude.terrainV2.floorSightedVeto=${System.getProperty('latitude.terrainV2.floorSightedVeto', 'false')}"
             // Phase 5 carve-aware ocean labels (default false, byte-identical off).
             vmArg "-Dlatitude.terrainV2.carveAwareLabels=${System.getProperty('latitude.terrainV2.carveAwareLabels', 'false')}"
+            // S36 void taming (born with its forwarding lines, L17 discipline). Default OFF/0.0 = never
+            // installed; the owner's tuning session passes these as real launch args.
+            vmArg "-Dlatitude.voidTaming.enabled=${System.getProperty('latitude.voidTaming.enabled', 'false')}"
+            vmArg "-Dlatitude.voidTaming.strength=${System.getProperty('latitude.voidTaming.strength', '0.0')}"
+            vmArg "-Dlatitude.voidTaming.onsetDeg=${System.getProperty('latitude.voidTaming.onsetDeg', '82.0')}"
+            vmArg "-Dlatitude.voidTaming.fullDeg=${System.getProperty('latitude.voidTaming.fullDeg', '85.0')}"
+            vmArg "-Dlatitude.voidTaming.protectFloorY=${System.getProperty('latitude.voidTaming.protectFloorY', '48')}"
+            vmArg "-Dlatitude.voidTaming.floorFeatherBlocks=${System.getProperty('latitude.voidTaming.floorFeatherBlocks', '10')}"
             vmArg "-Dlatitude.boundaryV2.enabled=${System.getProperty('latitude.boundaryV2.enabled', 'false')}"
             // Phase 5 B-5 Hemisphere Passage — DEFAULT ON since 2026-07-12 (Peetsa's post-P3 decision,
             // matching LatitudeV2Flags; the flag is the kill switch, crossing is prompt-consensual).
