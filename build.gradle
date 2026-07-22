@@ -543,11 +543,11 @@ def latitudeVillageLatitudePolicyTestClasses = layout.buildDirectory.dir('classe
 
 tasks.register('compileLatitudeVillageLatitudePolicyTest', JavaCompile) {
     group = 'verification'
-    description = 'Compile the dependency-free village latitude boundary regression'
+    description = 'Compile the village latitude and climate-start regression'
     source = fileTree('src/villageLatitudePolicyTest/java') {
         include '**/*.java'
     }
-    classpath = sourceSets.main.output
+    classpath = sourceSets.main.runtimeClasspath
     destinationDirectory.set(latitudeVillageLatitudePolicyTestClasses)
     options.release = 25
     dependsOn classes
@@ -556,7 +556,7 @@ tasks.register('compileLatitudeVillageLatitudePolicyTest', JavaCompile) {
 tasks.register('latitudeVillageLatitudePolicyTest', JavaExec) {
     group = 'verification'
     description = 'Exercise village latitude boundary and structural isolation without launching Minecraft'
-    classpath = files(latitudeVillageLatitudePolicyTestClasses) + sourceSets.main.output
+    classpath = files(latitudeVillageLatitudePolicyTestClasses) + sourceSets.main.runtimeClasspath
     mainClass = 'com.example.globe.world.VillageLatitudePolicyTest'
     dependsOn tasks.named('compileLatitudeVillageLatitudePolicyTest')
 }
