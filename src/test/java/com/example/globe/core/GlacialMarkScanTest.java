@@ -3,6 +3,7 @@ package com.example.globe.core;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 /**
  * Pure tests for {@link GlacialMarkScan#windowedMax} -- the local snowfield reference behind the ground-truth
@@ -97,5 +98,56 @@ class GlacialMarkScanTest {
         assertEquals(GlacialMarkScan.UNLOADED, GlacialMarkScan.windowedMax(new int[0][0], 0, 0, 1), "empty grid");
         assertEquals(GlacialMarkScan.UNLOADED, GlacialMarkScan.windowedMax(new int[][]{{64}}, 0, 0, -1),
                 "a negative radius yields no reference");
+    }
+
+    @Test
+    void connectedPowderColumnsBecomeHonestEncounterCounts() {
+        boolean[][] mask = new boolean[8][8];
+        mask[1][1] = true;
+        mask[1][2] = true;
+        mask[2][2] = true;
+        mask[5][5] = true;
+        mask[6][5] = true;
+        var components = GlacialMarkScan.connectedComponents(mask);
+        assertEquals(2, components.size(), "five roof columns form two physical trap encounters");
+        assertEquals(3, components.get(0).size());
+        assertEquals(2, components.get(1).size());
+    }
+
+    @Test
+    void touchingPowderCapsAtDifferentHeightsRemainSeparateEncounters() {
+        boolean[][] mask = new boolean[5][5];
+        int[][] roofY = new int[5][5];
+        mask[1][1] = true;
+        mask[1][2] = true;
+        roofY[1][1] = 90;
+        roofY[1][2] = 90;
+        mask[2][2] = true; // cardinally touches the first cap, but sits one block higher
+        mask[2][3] = true;
+        roofY[2][2] = 91;
+        roofY[2][3] = 91;
+
+        var components = GlacialMarkScan.connectedComponentsByValue(mask, roofY);
+        assertEquals(2, components.size(), "touching roof planes are two physical trap encounters");
+        assertEquals(2, components.get(0).size());
+        assertEquals(2, components.get(1).size());
+    }
+
+    @Test
+    void missingOrUnloadedRoofHeightsAreNotInventedAsEncounters() {
+        boolean[][] mask = {{true, true, true}};
+        int[][] roofY = {{90, GlacialMarkScan.UNLOADED}}; // third mask cell has no value entry
+        var components = GlacialMarkScan.connectedComponentsByValue(mask, roofY);
+        assertEquals(1, components.size());
+        assertEquals(1, components.get(0).size(), "only the physically measured roof cell is eligible");
+    }
+
+    @Test
+    void centreRepresentativeStaysInsideTheActualCap() {
+        var component = java.util.List.of(new int[]{1, 1}, new int[]{1, 2}, new int[]{2, 2});
+        int[] representative = GlacialMarkScan.centreRepresentative(component);
+        assertEquals(1, representative[0]);
+        assertEquals(2, representative[1]);
+        assertNull(GlacialMarkScan.centreRepresentative(java.util.List.of()));
     }
 }

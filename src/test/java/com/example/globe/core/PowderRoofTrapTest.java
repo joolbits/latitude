@@ -10,10 +10,10 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Pure-JVM tests for the S35 {@link PowderRoofTrap} patch law (Peetsa 2026-07-21 verbatim spec + the
- * level-designer placement spec): powder covers over 2D candidate PATCHES (not 1-D strips), the 2D rim-ring
- * flushness invariant, the 12-block depth floor ("not just a drop of like three blocks"), the patch depth
- * vote, and the widened deep-drop pipeline.
+ * Pure-JVM tests for the S36 {@link PowderRoofTrap} hidden-bridge law (Peetsa 2026-07-21 video correction +
+ * independent level-design review): a trap must read as an ordinary, walk-on continuation of the snowfield,
+ * not a tiny lid down inside an already-visible hole. Covers are meaningful contiguous patches, align to two
+ * opposing banks, contain no holes, and keep the deep-drop/cushion safety contract.
  */
 class PowderRoofTrapTest {
 
@@ -21,9 +21,12 @@ class PowderRoofTrapTest {
 
     @Test
     void candidacyRequiresTheFullShaftDepth() {
-        assertEquals(12, PowderRoofTrap.MIN_SHAFT_DEPTH_BLOCKS, "S35 depth floor: 10 -> 12 (owner mocked 3-block scoops)");
-        assertTrue(PowderRoofTrap.isTrapCandidate(88, 100), "exactly 12 below the reference qualifies");
-        assertFalse(PowderRoofTrap.isTrapCandidate(89, 100), "11 below is the scoop band -- excluded");
+        assertEquals(10, PowderRoofTrap.MIN_CANDIDATE_DEPTH_BLOCKS,
+                "S36 may admit a real 10-block natural opening, but never intact ground");
+        assertEquals(18, PowderRoofTrap.MIN_SHAFT_DEPTH_BLOCKS,
+                "S36 drama floor: a hidden bridge must span a real crevasse, not a shallow scoop");
+        assertTrue(PowderRoofTrap.isTrapCandidate(90, 100), "a 10-deep natural mouth enters planning");
+        assertFalse(PowderRoofTrap.isTrapCandidate(91, 100), "a 9-deep shelf never enters planning");
         assertFalse(PowderRoofTrap.isTrapCandidate(100, 100), "flat snowfield is never a candidate");
     }
 
@@ -59,19 +62,14 @@ class PowderRoofTrapTest {
         assertTrue(PowderRoofTrap.floodFillPatches(new boolean[16][16]).isEmpty());
     }
 
-    // --- interior clip + eligibility -------------------------------------------------------------------
+    // --- hidden-bridge footprint -----------------------------------------------------------------------
 
     @Test
-    void interiorBoxExcludesTheChunkBorderRing() {
-        assertTrue(PowderRoofTrap.isInteriorCell(1, 1));
-        assertTrue(PowderRoofTrap.isInteriorCell(14, 14));
-        assertFalse(PowderRoofTrap.isInteriorCell(0, 7), "border cells have unreadable neighbours -- clipped");
-        assertFalse(PowderRoofTrap.isInteriorCell(7, 15));
-    }
-
-    @Test
-    void patchEligibilityCapsMinorDimensionAndArea() {
+    void patchEligibilityRequiresMeaningfulWidthAndArea() {
+        assertEquals(3, PowderRoofTrap.PATCH_MIN_MINOR_DIMENSION);
         assertEquals(7, PowderRoofTrap.PATCH_MAX_MINOR_DIMENSION, "one under the 9x9 window's 8-wide certification");
+        assertEquals(12, PowderRoofTrap.PATCH_MIN_AREA,
+                "minimum is a contiguous 3x4 crossing, never S35's one/two-block lid");
         assertEquals(48, PowderRoofTrap.PATCH_MAX_AREA);
         // The signature bridge: 4 wide x 12 long = 48 cells -- eligible at both caps.
         List<int[]> bridge = new ArrayList<>();
@@ -89,10 +87,23 @@ class PowderRoofTrapTest {
             }
         }
         assertFalse(PowderRoofTrap.patchEligible(basin));
-        // A 1x1 pinhole chimney stays legal.
+        // S35's 1x1/two-cell lids are the reported bug, not valid encounters.
         List<int[]> pinhole = new ArrayList<>();
         pinhole.add(new int[]{7, 7});
-        assertTrue(PowderRoofTrap.patchEligible(pinhole));
+        assertFalse(PowderRoofTrap.patchEligible(pinhole));
+        List<int[]> narrowStrip = new ArrayList<>();
+        for (int lx = 1; lx <= 14; lx++) {
+            narrowStrip.add(new int[]{lx, 7});
+        }
+        assertFalse(PowderRoofTrap.patchEligible(narrowStrip), "a long one-wide strip still is not a field");
+
+        List<int[]> minimumBridge = new ArrayList<>();
+        for (int lx = 1; lx <= 4; lx++) {
+            for (int lz = 1; lz <= 3; lz++) {
+                minimumBridge.add(new int[]{lx, lz});
+            }
+        }
+        assertTrue(PowderRoofTrap.patchEligible(minimumBridge), "3x4 is the smallest accepted hidden bridge");
         // Empty (fully clipped) and null are ineligible.
         assertFalse(PowderRoofTrap.patchEligible(new ArrayList<>()));
         assertFalse(PowderRoofTrap.patchEligible(null));
@@ -108,6 +119,92 @@ class PowderRoofTrapTest {
     }
 
     @Test
+    void patchEligibilityRejectsAnInteriorHole() {
+        List<int[]> holed = new ArrayList<>();
+        for (int lx = 1; lx <= 5; lx++) {
+            for (int lz = 1; lz <= 5; lz++) {
+                if (lx != 3 || lz != 3) {
+                    holed.add(new int[]{lx, lz});
+                }
+            }
+        }
+        assertFalse(PowderRoofTrap.patchEligible(holed), "an accepted cover cannot have a visible hole inside it");
+    }
+
+    @Test
+    void largeCrevasseProducesOneAuthoredBridgeSegmentInsteadOfBeingRejectedOrChunkClipped() {
+        List<int[]> throughRunningCrevasse = new ArrayList<>();
+        for (int lx = 0; lx <= 15; lx++) {
+            for (int lz = 5; lz <= 8; lz++) {
+                throughRunningCrevasse.add(new int[]{lx, lz});
+            }
+        }
+        List<int[]> bridge = PowderRoofTrap.selectBridgeFootprint(throughRunningCrevasse);
+        assertEquals(PowderRoofTrap.PATCH_TARGET_AREA, bridge.size(),
+                "the planner selects a deliberate 4x8 bridge from a larger fissure");
+        assertTrue(PowderRoofTrap.patchEligible(bridge));
+        assertTrue(bridge.stream().allMatch(c -> PowderRoofTrap.isInteriorCell(c[0], c[1])),
+                "the atomic local bridge never writes a chunk-border cell");
+    }
+
+    @Test
+    void footprintPlannerCannotSliceAWideBasinIntoAFakeNarrowBridge() {
+        for (int side : new int[]{7, 8, 9, 14}) {
+            List<int[]> basin = new ArrayList<>();
+            for (int lx = 1; lx <= side; lx++) {
+                for (int lz = 1; lz <= side; lz++) {
+                    basin.add(new int[]{lx, lz});
+                }
+            }
+            assertTrue(PowderRoofTrap.bridgeFootprintCandidates(basin).isEmpty(),
+                    side + "x" + side + " basin must stay open rather than receiving a sliced partial lid");
+        }
+        for (int[] dimensions : new int[][]{{7, 8}, {8, 7}}) {
+            List<int[]> nearSquareBasin = new ArrayList<>();
+            for (int lx = 1; lx <= dimensions[0]; lx++) {
+                for (int lz = 1; lz <= dimensions[1]; lz++) {
+                    nearSquareBasin.add(new int[]{lx, lz});
+                }
+            }
+            assertTrue(PowderRoofTrap.bridgeFootprintCandidates(nearSquareBasin).isEmpty(),
+                    dimensions[0] + "x" + dimensions[1]
+                            + " basin must stay open rather than receiving a sliced partial lid");
+        }
+    }
+
+    @Test
+    void footprintPlannerTriesBothAxesForCurvingCrevasses() {
+        List<int[]> bent = new ArrayList<>();
+        for (int lx = 1; lx <= 12; lx++) {
+            for (int lz = 5; lz <= 8; lz++) {
+                bent.add(new int[]{lx, lz});
+            }
+        }
+        for (int lx = 9; lx <= 12; lx++) {
+            for (int lz = 9; lz <= 14; lz++) {
+                bent.add(new int[]{lx, lz});
+            }
+        }
+        List<List<int[]>> candidates = PowderRoofTrap.bridgeFootprintCandidates(bent);
+        assertTrue(candidates.stream().anyMatch(cells -> {
+            int minZ = cells.stream().mapToInt(c -> c[1]).min().orElseThrow();
+            int maxZ = cells.stream().mapToInt(c -> c[1]).max().orElseThrow();
+            return maxZ - minZ + 1 >= 6;
+        }), "a bend can supply a viable segment along the secondary axis");
+    }
+
+    @Test
+    void footprintPlannerStillRejectsTinyAndOneWideOpenings() {
+        List<int[]> pinhole = List.of(new int[]{7, 7});
+        assertTrue(PowderRoofTrap.selectBridgeFootprint(pinhole).isEmpty());
+        List<int[]> strip = new ArrayList<>();
+        for (int lx = 0; lx <= 15; lx++) {
+            strip.add(new int[]{lx, 7});
+        }
+        assertTrue(PowderRoofTrap.selectBridgeFootprint(strip).isEmpty());
+    }
+
+    @Test
     void minorDimensionMeasuresTheNarrowAxis() {
         List<int[]> strip = new ArrayList<>();
         for (int lx = 2; lx <= 9; lx++) {
@@ -120,59 +217,66 @@ class PowderRoofTrapTest {
         assertEquals(0, PowderRoofTrap.patchMinorDimension(null));
     }
 
-    // --- rim ring + flushness --------------------------------------------------------------------------
+    // --- approach-bank flushness -----------------------------------------------------------------------
 
     @Test
-    void rimRingSpreadGateIsThreeBlocks() {
-        assertEquals(4, PowderRoofTrap.PATCH_RIM_MAX_SPREAD, "census-calibrated: real ring undulation is ~4");
-        assertTrue(PowderRoofTrap.rimRingBridgeable(100, 104), "natural snowfield undulation bridges");
-        assertFalse(PowderRoofTrap.rimRingBridgeable(100, 105), "one past the band does not");
-        // The fragmentation killer: a slope's ring spread is ~the slot depth.
-        assertFalse(PowderRoofTrap.rimRingBridgeable(100, 100 + PowderRoofTrap.MIN_SHAFT_DEPTH_BLOCKS));
+    void walkOnRoofUsesASupportedSnowfieldPlaneInsteadOfALowShelf() {
+        List<Integer> references = List.of(100, 100, 101, 102);
+        List<Integer> north = List.of(100, 100, 100);
+        List<Integer> south = List.of(100, 100, 101);
+        assertEquals(100, PowderRoofTrap.selectSnowfieldRoofY(
+                references, north, south, List.of(), List.of()),
+                "the supported plane nearest the footprint's median snowfield reference wins");
+        assertEquals(Integer.MIN_VALUE, PowderRoofTrap.selectSnowfieldRoofY(
+                references, List.of(90, 90), List.of(90, 90), List.of(), List.of()),
+                "a low shelf is not in the snowfield reference set and cannot become the cover");
+        assertEquals(Integer.MIN_VALUE, PowderRoofTrap.selectSnowfieldRoofY(
+                List.of(), north, south, List.of(), List.of()));
     }
 
     @Test
-    void patchRoofYIsTheLowestRimTopBlock() {
-        // firstAir 100 -> top block 99: flush with the LOWEST rim, never above ANY rim -- the anti-floating
-        // invariant that killed the TEST 122 fragmentation, in its 2D form.
-        assertEquals(99, PowderRoofTrap.patchRoofY(100));
+    void diagonalCrevasseMayUseEitherMatchedOpposingBankPair() {
+        List<Integer> tooFewNorth = List.of(100);
+        List<Integer> tooFewSouth = List.of(100);
+        List<Integer> west = List.of(101, 101, 101, 101);
+        List<Integer> east = List.of(100, 101, 101, 101);
+        assertEquals(100, PowderRoofTrap.selectSnowfieldRoofY(
+                List.of(101), tooFewNorth, tooFewSouth, west, east),
+                "the credible east/west approaches win when a diagonal only brushes north/south");
+        assertEquals(Integer.MIN_VALUE, PowderRoofTrap.selectSnowfieldRoofY(
+                List.of(101), tooFewNorth, tooFewSouth, List.of(98, 98, 98), List.of(103, 103, 103)),
+                "banks away from the snowfield plane leave the crevasse visibly open");
+        assertEquals(100, PowderRoofTrap.selectSnowfieldRoofY(
+                List.of(101), List.of(101), List.of(101), List.of(101), List.of(101)),
+                "diagonal north+west versus south+east contacts form a real opposing crossing");
     }
 
     @Test
     void columnDepthIsMeasuredAgainstTheRealCoverHeight() {
         int roofY = 99;
-        assertTrue(PowderRoofTrap.columnDeepEnoughForRoof(88, roofY), "drop of exactly 12 places");
-        assertFalse(PowderRoofTrap.columnDeepEnoughForRoof(89, roofY), "drop of 11 stays an open window");
+        assertTrue(PowderRoofTrap.columnDeepEnoughForRoof(82, roofY), "drop of exactly 18 places");
+        assertFalse(PowderRoofTrap.columnDeepEnoughForRoof(83, roofY), "drop of 17 rejects the whole bridge");
+        assertTrue(PowderRoofTrap.columnDepthEligible(-28, roofY), "drop of exactly 128 stays protectable");
+        assertFalse(PowderRoofTrap.columnDepthEligible(-29, roofY),
+                "a 129-block natural fall exceeds the runtime safety identity bound");
     }
 
     @Test
-    void patchDepthVoteRequiresSixtyPercent() {
-        assertEquals(0.50f, PowderRoofTrap.PATCH_MIN_DEEP_FRACTION, 1e-6f, "census-calibrated majority vote");
-        assertTrue(PowderRoofTrap.patchDeepEnough(3, 5), "3/5 -- places");
-        assertTrue(PowderRoofTrap.patchDeepEnough(3, 6), "half exactly -- places");
-        assertFalse(PowderRoofTrap.patchDeepEnough(2, 5), "2/5 -- a scoop with pores, abandoned");
-        assertTrue(PowderRoofTrap.patchDeepEnough(1, 1), "the pinhole trap votes with itself");
-        assertFalse(PowderRoofTrap.patchDeepEnough(0, 0), "empty never places");
-    }
-
-    // --- fraction gates --------------------------------------------------------------------------------
-
-    @Test
-    void roofFractionGateIsHalfOpenAtTheNewRate() {
-        assertEquals(0.50f, PowderRoofTrap.ROOF_FRACTION, 1e-6f, "S35: 0.40 -> 0.50, the single calibration dial");
-        assertTrue(PowderRoofTrap.shouldRoofPatch(0.0f));
-        assertTrue(PowderRoofTrap.shouldRoofPatch(0.49f));
-        assertFalse(PowderRoofTrap.shouldRoofPatch(0.50f), "exactly the fraction does NOT roof (half-open)");
-        assertFalse(PowderRoofTrap.shouldRoofPatch(-0.01f), "out-of-range never roofs (safe direction: open)");
+    void shallowCrevasseShouldersMayDeepenButIntactGroundMayNotBecomeATrap() {
+        int roofY = 99;
+        assertEquals(82, PowderRoofTrap.plannedLandingFirstAir(82, roofY),
+                "an already-deep crevasse floor stays where worldgen put it");
+        assertEquals(82, PowderRoofTrap.plannedLandingFirstAir(88, roofY),
+                "a six-block terrace may deepen to the full 18-block fall");
+        assertEquals(Integer.MIN_VALUE, PowderRoofTrap.plannedLandingFirstAir(91, roofY),
+                "nine blocks of excavation would be a new shaft, not a covered crevasse");
+        assertEquals(Integer.MIN_VALUE, PowderRoofTrap.plannedLandingFirstAir(-29, roofY),
+                "an extreme natural floor outside the runtime protection bound stays visibly open");
     }
 
     @Test
-    void deepDropGateAndProbeWidenedForTheCaveStory() {
-        assertEquals(0.50f, PowderRoofTrap.DEEP_DROP_FRACTION, 1e-6f, "S35: half of roofed patches attempt the punch");
-        assertEquals(24, PowderRoofTrap.DEEP_DROP_PROBE_DEPTH, "S35: 16 -> 24, reaching glacial-caves country");
-        assertTrue(PowderRoofTrap.shouldDeepDrop(0.49f));
-        assertFalse(PowderRoofTrap.shouldDeepDrop(0.50f));
-        assertFalse(PowderRoofTrap.shouldDeepDrop(1.01f));
+    void deepDropProbeReachesTheCaveStory() {
+        assertEquals(48, PowderRoofTrap.DEEP_DROP_PROBE_DEPTH, "S36 reaches the intended glacial-cave country");
     }
 
     @Test
@@ -183,11 +287,30 @@ class PowderRoofTrapTest {
     }
 
     @Test
+    void optionalCaveThroatRejectsShallowAndLavaTierExtremeDrops() {
+        assertFalse(PowderRoofTrap.deepDropDepthEligible(17));
+        assertTrue(PowderRoofTrap.deepDropDepthEligible(18));
+        assertTrue(PowderRoofTrap.deepDropDepthEligible(96));
+        assertFalse(PowderRoofTrap.deepDropDepthEligible(97));
+    }
+
+    @Test
     void shaftWidensUnderWidePatches() {
-        assertEquals(2, PowderRoofTrap.shaftSide(1), "narrow slot -> 2x2 throat");
-        assertEquals(2, PowderRoofTrap.shaftSide(3));
-        assertEquals(3, PowderRoofTrap.shaftSide(PowderRoofTrap.SHAFT_WIDE_MINOR_DIM),
-                "a wide cover gets a 3x3 throat that can actually swallow its centre mass");
+        assertEquals(2, PowderRoofTrap.shaftSide(1), "invalid narrow inputs retain a bounded fallback");
+        assertEquals(3, PowderRoofTrap.shaftSide(3), "the narrowest legal bridge gets a meaningful 3x3 throat");
+        assertEquals(3, PowderRoofTrap.shaftSide(PowderRoofTrap.SHAFT_WIDE_MINOR_DIM));
         assertEquals(3, PowderRoofTrap.shaftSide(7));
+    }
+
+    @Test
+    void deepShaftMustStayInsideTheCoveredFootprint() {
+        List<int[]> bridge = new ArrayList<>();
+        for (int lx = 2; lx <= 6; lx++) {
+            for (int lz = 3; lz <= 6; lz++) {
+                bridge.add(new int[]{lx, lz});
+            }
+        }
+        assertTrue(PowderRoofTrap.containsSquare(bridge, 3, 3, 3), "central 3x3 is covered above");
+        assertFalse(PowderRoofTrap.containsSquare(bridge, 1, 3, 3), "a shaft may not overhang the cover");
     }
 }

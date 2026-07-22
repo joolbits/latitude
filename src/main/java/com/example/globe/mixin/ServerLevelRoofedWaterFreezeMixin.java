@@ -6,6 +6,7 @@ import com.example.globe.core.PolarInstrument;
 import com.example.globe.core.PolarWaterFreezeRule;
 import com.example.globe.util.LatitudeMath;
 import com.example.globe.world.LatitudeBiomes;
+import com.example.globe.world.GlacialTrapRuntimeGuard;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.tags.BiomeTags;
@@ -105,6 +106,25 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  */
 @Mixin(ServerLevel.class)
 public abstract class ServerLevelRoofedWaterFreezeMixin {
+
+    /**
+     * Vanilla precipitation targets MOTION_BLOCKING, which can see through both S36 powder blocks and place a
+     * snow layer inside the fall column or directly over the landing cushion. Cancel only a column whose full
+     * authored roof/fall/cushion signature is currently intact; ordinary polar snowfall remains untouched.
+     */
+    @Inject(
+            method = "tickPrecipitation(Lnet/minecraft/core/BlockPos;)V",
+            at = @At("HEAD"),
+            cancellable = true,
+            require = 1
+    )
+    private void globe$protectGlacialTrapFromPrecipitation(BlockPos pos, CallbackInfo ci) {
+        ServerLevel self = (ServerLevel) (Object) this;
+        BlockPos target = self.getHeightmapPos(Heightmap.Types.MOTION_BLOCKING, pos);
+        if (GlacialTrapRuntimeGuard.protectsAuthoredCushion(self, target)) {
+            ci.cancel();
+        }
+    }
 
     @Inject(
             method = "tickChunk(Lnet/minecraft/world/level/chunk/LevelChunk;I)V",

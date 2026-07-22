@@ -1,5 +1,9 @@
 package com.example.globe.core;
 
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.List;
+
 /**
  * Phase 5 Crew 8 / S29 -- the one piece of non-trivial pure math behind the ground-truth {@code /latdev
  * markGlacial} command (Peetsa 2026-07-20, verbatim: "None of this is working. Locate crevasse and teleport
@@ -77,5 +81,133 @@ public final class GlacialMarkScan {
             }
         }
         return max;
+    }
+
+    /**
+     * Four-connected components in an arbitrary rectangular/ragged mask. This turns powder ROOF COLUMNS into
+     * honest trap ENCOUNTERS for {@code markGlacial}; counting every block in a 32-block cap as 32 traps made
+     * the incidence readout useless. Components and cells use deterministic x-major discovery order.
+     */
+    public static List<List<int[]>> connectedComponents(boolean[][] mask) {
+        List<List<int[]>> components = new ArrayList<>();
+        if (mask == null || mask.length == 0) {
+            return components;
+        }
+        boolean[][] seen = new boolean[mask.length][];
+        for (int x = 0; x < mask.length; x++) {
+            seen[x] = mask[x] == null ? new boolean[0] : new boolean[mask[x].length];
+        }
+        int[][] directions = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
+        for (int x = 0; x < mask.length; x++) {
+            if (mask[x] == null) {
+                continue;
+            }
+            for (int z = 0; z < mask[x].length; z++) {
+                if (!mask[x][z] || seen[x][z]) {
+                    continue;
+                }
+                List<int[]> component = new ArrayList<>();
+                ArrayDeque<int[]> queue = new ArrayDeque<>();
+                queue.addLast(new int[]{x, z});
+                seen[x][z] = true;
+                while (!queue.isEmpty()) {
+                    int[] cell = queue.removeFirst();
+                    component.add(cell);
+                    for (int[] direction : directions) {
+                        int nx = cell[0] + direction[0];
+                        int nz = cell[1] + direction[1];
+                        if (nx >= 0 && nx < mask.length && mask[nx] != null
+                                && nz >= 0 && nz < mask[nx].length
+                                && mask[nx][nz] && !seen[nx][nz]) {
+                            seen[nx][nz] = true;
+                            queue.addLast(new int[]{nx, nz});
+                        }
+                    }
+                }
+                components.add(component);
+            }
+        }
+        return components;
+    }
+
+    /**
+     * Four-connected components whose cells must also share one integer value. A powder roof at Y=90 that
+     * touches another roof at Y=91 is two physical caps, not one malformed mixed-height cap; this keeps the
+     * S36 verifier honest without allowing a single encounter to step between planes. Cells with no matching
+     * value-grid entry, or the {@link #UNLOADED} sentinel, are ignored. Discovery remains deterministic and
+     * x-major, like {@link #connectedComponents(boolean[][])}.
+     */
+    public static List<List<int[]>> connectedComponentsByValue(boolean[][] mask, int[][] values) {
+        List<List<int[]>> components = new ArrayList<>();
+        if (mask == null || values == null || mask.length == 0) {
+            return components;
+        }
+        boolean[][] seen = new boolean[mask.length][];
+        for (int x = 0; x < mask.length; x++) {
+            seen[x] = mask[x] == null ? new boolean[0] : new boolean[mask[x].length];
+        }
+        int[][] directions = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
+        for (int x = 0; x < mask.length; x++) {
+            if (mask[x] == null) {
+                continue;
+            }
+            for (int z = 0; z < mask[x].length; z++) {
+                if (!mask[x][z] || seen[x][z] || !hasValue(values, x, z)
+                        || values[x][z] == UNLOADED) {
+                    continue;
+                }
+                int componentValue = values[x][z];
+                List<int[]> component = new ArrayList<>();
+                ArrayDeque<int[]> queue = new ArrayDeque<>();
+                queue.addLast(new int[]{x, z});
+                seen[x][z] = true;
+                while (!queue.isEmpty()) {
+                    int[] cell = queue.removeFirst();
+                    component.add(cell);
+                    for (int[] direction : directions) {
+                        int nx = cell[0] + direction[0];
+                        int nz = cell[1] + direction[1];
+                        if (nx >= 0 && nx < mask.length && mask[nx] != null
+                                && nz >= 0 && nz < mask[nx].length
+                                && mask[nx][nz] && !seen[nx][nz]
+                                && hasValue(values, nx, nz) && values[nx][nz] == componentValue) {
+                            seen[nx][nz] = true;
+                            queue.addLast(new int[]{nx, nz});
+                        }
+                    }
+                }
+                components.add(component);
+            }
+        }
+        return components;
+    }
+
+    private static boolean hasValue(int[][] values, int x, int z) {
+        return x < values.length && values[x] != null && z < values[x].length;
+    }
+
+    /** Cell nearest a component's arithmetic centre; null/empty components return {@code null}. */
+    public static int[] centreRepresentative(List<int[]> component) {
+        if (component == null || component.isEmpty()) {
+            return null;
+        }
+        long sumX = 0L;
+        long sumZ = 0L;
+        for (int[] cell : component) {
+            sumX += cell[0];
+            sumZ += cell[1];
+        }
+        int[] best = component.get(0);
+        long bestDistance = Long.MAX_VALUE;
+        for (int[] cell : component) {
+            long dx = (long) cell[0] * component.size() - sumX;
+            long dz = (long) cell[1] * component.size() - sumZ;
+            long distance = dx * dx + dz * dz;
+            if (distance < bestDistance) {
+                best = cell;
+                bestDistance = distance;
+            }
+        }
+        return new int[]{best[0], best[1]};
     }
 }
