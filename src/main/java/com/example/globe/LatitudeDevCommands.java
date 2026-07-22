@@ -157,6 +157,19 @@ public final class LatitudeDevCommands {
                                                         IntegerArgumentType.getInteger(ctx, "radiusChunks"),
                                                         IntegerArgumentType.getInteger(ctx, "x"),
                                                         IntegerArgumentType.getInteger(ctx, "z")))))))
+                .then(Commands.literal("voidCensus")
+                        .executes(ctx -> voidCensus(ctx, DEFAULT_VOID_RADIUS_CHUNKS))
+                        .then(Commands.argument("radiusChunks", IntegerArgumentType.integer(1, MAX_VOID_RADIUS_CHUNKS))
+                                .executes(ctx -> voidCensus(ctx, IntegerArgumentType.getInteger(ctx, "radiusChunks")))
+                                // Coordinate form, mirroring markGlacial's S31 pattern: scan around explicit
+                                // block coords instead of the caller -- this is how the before/after taming
+                                // proof actually runs, via RCON on a dedicated server with no player present.
+                                .then(Commands.argument("x", IntegerArgumentType.integer())
+                                        .then(Commands.argument("z", IntegerArgumentType.integer())
+                                                .executes(ctx -> voidCensusAt(ctx,
+                                                        IntegerArgumentType.getInteger(ctx, "radiusChunks"),
+                                                        IntegerArgumentType.getInteger(ctx, "x"),
+                                                        IntegerArgumentType.getInteger(ctx, "z")))))))
                 .then(Commands.literal("tpxz")
                         .then(Commands.argument("x", IntegerArgumentType.integer())
                                 .then(Commands.argument("z", IntegerArgumentType.integer())
@@ -177,7 +190,7 @@ public final class LatitudeDevCommands {
                 "[latdev] here | probe | survey | tpband <band> [center|low|high] | tpedge <west|east> [frac]"
                         + " | tphemi <ns|ew|zero> [n|s|e|w] | tppole <n|s> [deg]"
                         + " | locateCrevasse [radiusChunks] | locateTunnel [radiusChunks]"
-                        + " | markGlacial [radiusChunks [x z]] | tpxz <x> <z>"), false);
+                        + " | markGlacial [radiusChunks [x z]] | voidCensus [radiusChunks [x z]] | tpxz <x> <z>"), false);
         return 1;
     }
 
@@ -1044,5 +1057,306 @@ public final class LatitudeDevCommands {
         for (int y = lo; y <= hi; y++) {
             world.sendParticles(ParticleTypes.HAPPY_VILLAGER, true, true, cx, y + 0.5, cz, 4, 0.15, 0.15, 0.15, 0.0);
         }
+    }
+
+    // --- /latdev voidCensus -- the void-taming measurement instrument (S27 diagnostic: "VOID-TAMING
+    // --- un-parked (83S Y35 = sky-breached mega-void, THE experience killer)") -- NUMBERS for the before/after
+    // --- taming proof, runnable via RCON on a dedicated server with no player present. Deliberately carries NO
+    // --- particles and touches NO markers -- this is a counter, not a beacon (contrast markGlacial above). ---
+
+    /** Default scan radius (chunks), mirroring {@link #DEFAULT_MARK_RADIUS_CHUNKS} -- a comfortable look around
+     *  a column. */
+    private static final int DEFAULT_VOID_RADIUS_CHUNKS = 4;
+    /** Hard cap on the scan radius (chunks), mirroring {@link #MAX_MARK_RADIUS_CHUNKS}, to bound the column and
+     *  BFS cost. */
+    private static final int MAX_VOID_RADIUS_CHUNKS = 8;
+    /** Sky-breach MOUTH window: the Chebyshev radius, in blocks, the local terrain-max reference is taken over
+     *  (fed straight into {@link GlacialMarkScan#windowedMax}). Three times {@code PowderRoofTrap}'s own
+     *  {@code REFERENCE_WINDOW_RADIUS} (4) -- deliberately WIDE. The trap system's 9x9 candidacy is tuned to
+     *  find ONE narrow, deep, roofed slot at a time; a census instead has to catch the WHOLE mouth of a wide,
+     *  open mega-void (the S27 83S Y35 hollow), so its reference window has to see past a much bigger footprint
+     *  before it can tell "this column is deep" from "this column sits in a genuinely sunken hollow". */
+    private static final int VOID_MOUTH_WINDOW_RADIUS = 12;
+    /** Sky-breach MOUTH depth gate: a column counts as a mouth once its surface sits this many blocks below the
+     *  {@link #VOID_MOUTH_WINDOW_RADIUS}-windowed local terrain max. This intentionally also catches ordinary
+     *  crevasse mouths, not only true mega-voids -- the summary's "largest" component (see {@link
+     *  #labelMouthComponents}) is what tells the two apart: a mega-void is hundreds of connected columns, a lone
+     *  crevasse is a handful. */
+    private static final int VOID_MOUTH_MIN_DEPTH = 15;
+    /** How many of the largest mouth components get their own reported line (with a clickable teleport); the
+     *  summary line always carries the true totals regardless of this cap. */
+    private static final int VOID_TOP_BREACH_COUNT = 5;
+
+    /** Player form -- scans centred on the caller. Mirrors {@link #markGlacial}'s bare/radius forms. */
+    private static int voidCensus(CommandContext<CommandSourceStack> ctx, int radiusChunks) {
+        CommandSourceStack src = ctx.getSource();
+        try {
+            ServerPlayer player = src.getPlayerOrException();
+            return voidCensusCore(src, src.getLevel(), player.getX(), player.getZ(), radiusChunks);
+        } catch (Exception e) {
+            src.sendFailure(Component.literal("[latdev] voidCensus failed: " + e.getMessage()));
+            return 0;
+        }
+    }
+
+    /** Coordinate form -- no player needed, so the dedicated-server CONSOLE (RCON) can run the measurement the
+     *  before/after taming proof actually needs. Mirrors {@link #markGlacialAt}. */
+    private static int voidCensusAt(CommandContext<CommandSourceStack> ctx, int radiusChunks, int x, int z) {
+        CommandSourceStack src = ctx.getSource();
+        try {
+            return voidCensusCore(src, src.getLevel(), x, z, radiusChunks);
+        } catch (Exception e) {
+            src.sendFailure(Component.literal("[latdev] voidCensus failed: " + e.getMessage()));
+            return 0;
+        }
+    }
+
+    /**
+     * Ground-truth VOID CENSUS -- the measurement instrument for the void-taming pass (S27 diagnostic: giant
+     * noise-cave hollows sometimes breach the polar surface outright, leaving a sky-visible pit at, e.g., 83S
+     * Y35). A taming pass is being designed to close/soften these; the before/after proof needs NUMBERS, not a
+     * screenshot. This reads REAL generated blocks -- never force-generates a chunk, exactly {@link
+     * #markGlacialCore}'s discipline -- and reports three independent counts:
+     * <ol>
+     *   <li><b>Sky-breach mouths</b> -- 4-connected components (see {@link #labelMouthComponents}) of columns
+     *       whose surface sits {@link #VOID_MOUTH_MIN_DEPTH}+ blocks below the {@link #VOID_MOUTH_WINDOW_RADIUS}
+     *       windowed local terrain max. The "largest" component is the number a correct taming pass drives
+     *       toward ~0; a scatter of small components are ordinary crevasses and are expected to remain.</li>
+     *   <li><b>subAir48</b> -- the LABYRINTH-PRESERVATION guarantee, the protect-floor number. A sparse sample
+     *       (every 4th column, Y 47 down to 8) of air below the surface cave network. Taming must make the
+     *       sky-visible mouths disappear WITHOUT hollowing out the underground labyrinth those same caves feed
+     *       into, so a correct pass moves this number by ~0 (or up, if it adds traversable space) -- never
+     *       down.</li>
+     *   <li><b>nearAir</b> -- the volume taming SHOULD shrink. A sparse sample of air strictly below each
+     *       column's top-solid block (so the open sky above the surface is never counted) down to at most 40
+     *       blocks below the surface, floored at Y 48 so it never overlaps {@code subAir48}'s domain -- the
+     *       near-surface hollowness a taming pass closes.</li>
+     * </ol>
+     * Reads ONLY already-loaded chunks ({@code ServerChunkCache.getChunkNow}) -- unloaded chunks are skipped and
+     * counted, exactly {@link #markGlacialCore}'s "found nothing" vs "nothing was loaded" discipline. Draws NO
+     * particles and leaves NO markers -- a counter, not a beacon; the only output is the summary line plus up to
+     * {@link #VOID_TOP_BREACH_COUNT} of the largest breach centroids (each with a clickable {@code [teleport]},
+     * exactly {@link #markGlacialCore}'s trap-roof lines).
+     */
+    private static int voidCensusCore(CommandSourceStack src, ServerLevel world, double centerX, double centerZ,
+            int radiusChunks) {
+        try {
+            int r = Mth.clamp(radiusChunks, 1, MAX_VOID_RADIUS_CHUNKS);
+            int centerChunkX = Math.floorDiv(Mth.floor(centerX), 16);
+            int centerChunkZ = Math.floorDiv(Mth.floor(centerZ), 16);
+            int minChunkX = centerChunkX - r;
+            int minChunkZ = centerChunkZ - r;
+            int chunksPerSide = 2 * r + 1;
+            int originBlockX = minChunkX << 4;
+            int originBlockZ = minChunkZ << 4;
+            int span = chunksPerSide * 16;
+
+            // Pass 1: read WORLD_SURFACE off already-loaded chunks into a continuous grid (UNLOADED elsewhere)
+            // -- identical in shape to markGlacialCore's own pass 1 (same firstAir "+1" convention, same
+            // getChunkNow-only discipline), so the two commands' grids are directly comparable.
+            int[][] surface = new int[span][span];
+            for (int[] row : surface) {
+                java.util.Arrays.fill(row, GlacialMarkScan.UNLOADED);
+            }
+            var chunkSource = world.getChunkSource();
+            long scannedColumns = 0L;
+            long skippedColumns = 0L;
+            int loadedChunks = 0;
+            int unloadedChunks = 0;
+            for (int ccx = minChunkX; ccx < minChunkX + chunksPerSide; ccx++) {
+                for (int ccz = minChunkZ; ccz < minChunkZ + chunksPerSide; ccz++) {
+                    LevelChunk chunk = chunkSource.getChunkNow(ccx, ccz);
+                    if (chunk == null) {
+                        unloadedChunks++;
+                        skippedColumns += 256L; // the 16x16 columns we deliberately did NOT force-generate
+                        continue;
+                    }
+                    loadedChunks++;
+                    scannedColumns += 256L;
+                    for (int lx = 0; lx < 16; lx++) {
+                        for (int lz = 0; lz < 16; lz++) {
+                            int wx = (ccx << 4) + lx;
+                            int wz = (ccz << 4) + lz;
+                            surface[wx - originBlockX][wz - originBlockZ] =
+                                    chunk.getHeight(Heightmap.Types.WORLD_SURFACE, wx, wz) + 1;
+                        }
+                    }
+                }
+            }
+
+            // Pass 2: SKY-BREACH MOUTH mask, then 4-connected component labeling (VOID_MOUTH_* javadoc above
+            // explains the window-radius contrast with the trap system's own reference window).
+            boolean[][] mouthMask = new boolean[span][span];
+            for (int gx = 0; gx < span; gx++) {
+                for (int gz = 0; gz < span; gz++) {
+                    int own = surface[gx][gz];
+                    if (own == GlacialMarkScan.UNLOADED) {
+                        continue;
+                    }
+                    int reference = GlacialMarkScan.windowedMax(surface, gx, gz, VOID_MOUTH_WINDOW_RADIUS);
+                    // reference is guaranteed real here (the window always includes this own loaded cell), but
+                    // the check costs nothing and keeps this branch honest if that ever stops being true.
+                    mouthMask[gx][gz] = reference != GlacialMarkScan.UNLOADED
+                            && (reference - own) >= VOID_MOUTH_MIN_DEPTH;
+                }
+            }
+            java.util.List<int[]> components = labelMouthComponents(mouthMask);
+            int mouthColumns = 0;
+            int largestArea = 0;
+            for (int[] c : components) {
+                mouthColumns += c[0];
+                largestArea = Math.max(largestArea, c[0]);
+            }
+
+            // Pass 3: LABYRINTH (subAir48) + NEAR-SURFACE HOLLOWNESS (nearAir) -- every 4th column of every
+            // loaded chunk, re-fetched via getChunkNow (still loaded, so this is a cheap map lookup, not a
+            // second load). Both walks are guarded against the world's real build-height bounds.
+            long subAir48 = 0L;
+            long nearAir = 0L;
+            int worldMinY = world.getMinY();
+            int worldMaxY = world.getMaxY();
+            BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
+            for (int ccx = minChunkX; ccx < minChunkX + chunksPerSide; ccx++) {
+                for (int ccz = minChunkZ; ccz < minChunkZ + chunksPerSide; ccz++) {
+                    LevelChunk chunk = chunkSource.getChunkNow(ccx, ccz);
+                    if (chunk == null) {
+                        continue;
+                    }
+                    for (int lx = 0; lx < 16; lx += 4) {
+                        for (int lz = 0; lz < 16; lz += 4) {
+                            int wx = (ccx << 4) + lx;
+                            int wz = (ccz << 4) + lz;
+                            int ownFirstAir = surface[wx - originBlockX][wz - originBlockZ];
+                            if (ownFirstAir == GlacialMarkScan.UNLOADED) {
+                                continue; // can't happen for a chunk just confirmed loaded -- never trust it blindly
+                            }
+
+                            // LABYRINTH: fixed Y 47..8, the protect-floor sample -- untouched by where the
+                            // surface itself sits.
+                            int subHiY = Math.min(47, worldMaxY);
+                            int subLoY = Math.max(8, worldMinY);
+                            for (int y = subHiY; y >= subLoY; y--) {
+                                cursor.set(wx, y, wz);
+                                if (chunk.getBlockState(cursor).isAir()) {
+                                    subAir48++;
+                                }
+                            }
+
+                            // NEAR-SURFACE HOLLOWNESS: from just below the top-solid block (firstAir - 2, so
+                            // open sky above the surface is never counted) down at most 40 blocks, floored at
+                            // Y 48 so this never overlaps subAir48's domain.
+                            int nearHiY = Math.min(ownFirstAir - 2, worldMaxY);
+                            int nearLoY = Math.max(48, Math.max(ownFirstAir - 40, worldMinY));
+                            for (int y = nearHiY; y >= nearLoY; y--) {
+                                cursor.set(wx, y, wz);
+                                if (chunk.getBlockState(cursor).isAir()) {
+                                    nearAir++;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Summary (always) -- the same "scanned/skipped" tail markGlacial reports, so the two commands read
+            // as one family in the console log.
+            final int fr = r;
+            final int fComponents = components.size();
+            final int fMouthColumns = mouthColumns;
+            final int fLargest = largestArea;
+            final long fNearAir = nearAir;
+            final long fSubAir = subAir48;
+            final long fScanned = scannedColumns;
+            final long fSkipped = skippedColumns;
+            final int fLoaded = loadedChunks;
+            final int fUnloaded = unloadedChunks;
+            src.sendSuccess(() -> Component.literal(String.format(Locale.ROOT,
+                    "[latdev] voidCensus (r=%d chunks): sky-breach mouths=%d components, columns=%d, largest=%d"
+                            + " | nearAir(48..surf)=%d | subAir(<48)=%d"
+                            + " | scanned %d cols (%d chunks), skipped %d cols (%d unloaded)",
+                    fr, fComponents, fMouthColumns, fLargest, fNearAir, fSubAir,
+                    fScanned, fLoaded, fSkipped, fUnloaded)), false);
+
+            components.sort((a, b) -> Integer.compare(b[0], a[0]));
+            int topCount = Math.min(VOID_TOP_BREACH_COUNT, components.size());
+            for (int i = 0; i < topCount; i++) {
+                int[] c = components.get(i);
+                int area = c[0];
+                int worldCx = originBlockX + c[1];
+                int worldCz = originBlockZ + c[2];
+                String tpCommand = "/latdev tpxz " + worldCx + " " + worldCz;
+                MutableComponent line = Component.literal(String.format(Locale.ROOT,
+                        "[latdev]   breach: ~x=%d z=%d area=%d columns ", worldCx, worldCz, area))
+                        .append(Component.literal("[teleport]").withStyle(style -> style
+                                .withClickEvent(new ClickEvent.RunCommand(tpCommand))
+                                .withUnderlined(true)));
+                src.sendSuccess(() -> line, false);
+            }
+            if (components.isEmpty() && scannedColumns > 0L) {
+                src.sendSuccess(() -> Component.literal(
+                        "[latdev] no sky-breach mouths found in this range -- either none generated here, or "
+                                + "they're in unloaded chunks (fly the area, then rescan)."), false);
+            }
+            return 1;
+        } catch (Exception e) {
+            src.sendFailure(Component.literal("[latdev] voidCensus failed: " + e.getMessage()));
+            return 0;
+        }
+    }
+
+    /**
+     * 4-connected component labeling over a boolean mask (row-major {@code mask[x][z]}), via breadth-first
+     * flood fill in deterministic row-major scan order -- the same order every run, so two scans of the same
+     * (unchanged) world produce byte-identical component ordering, which the before/after taming proof depends
+     * on. Returns one entry per component as {@code {areaColumns, centroidGx, centroidGz}} (the centroid
+     * already averaged and rounded, so the caller does no further math); components are returned in discovery
+     * order, NOT sorted by area -- the caller ranks them. Pure int/boolean-array math, no Minecraft types --
+     * kept here rather than in {@link GlacialMarkScan} because it is single-purpose to this one command.
+     */
+    private static java.util.List<int[]> labelMouthComponents(boolean[][] mask) {
+        int sizeX = mask.length;
+        if (sizeX == 0) {
+            return java.util.List.of();
+        }
+        int sizeZ = mask[0].length;
+        boolean[][] visited = new boolean[sizeX][sizeZ];
+        java.util.List<int[]> components = new java.util.ArrayList<>();
+        int[] dx = {1, -1, 0, 0};
+        int[] dz = {0, 0, 1, -1};
+        java.util.ArrayDeque<int[]> queue = new java.util.ArrayDeque<>();
+        for (int x = 0; x < sizeX; x++) {
+            for (int z = 0; z < sizeZ; z++) {
+                if (!mask[x][z] || visited[x][z]) {
+                    continue;
+                }
+                int area = 0;
+                long sumX = 0L;
+                long sumZ = 0L;
+                visited[x][z] = true;
+                queue.add(new int[]{x, z});
+                while (!queue.isEmpty()) {
+                    int[] cell = queue.poll();
+                    area++;
+                    sumX += cell[0];
+                    sumZ += cell[1];
+                    for (int d = 0; d < 4; d++) {
+                        int nx = cell[0] + dx[d];
+                        int nz = cell[1] + dz[d];
+                        if (nx < 0 || nx >= sizeX || nz < 0 || nz >= sizeZ) {
+                            continue;
+                        }
+                        if (!mask[nx][nz] || visited[nx][nz]) {
+                            continue;
+                        }
+                        visited[nx][nz] = true;
+                        queue.add(new int[]{nx, nz});
+                    }
+                }
+                int centroidGx = (int) Math.round((double) sumX / area);
+                int centroidGz = (int) Math.round((double) sumZ / area);
+                components.add(new int[]{area, centroidGx, centroidGz});
+            }
+        }
+        return components;
     }
 }
