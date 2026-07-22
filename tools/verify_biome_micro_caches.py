@@ -11,6 +11,9 @@ from pathlib import Path
 
 SOURCE_REL = Path("src/main/java/com/example/globe/world/LatitudeBiomes.java")
 CONSTANT_ID_NAMES = {"SWAMP_ID", "MANGROVE_ID"}
+# Structural tripwire for the current production callsite inventory. The lowland-Meadow
+# correction removed one constant predicate call; future changes require source provenance.
+EXPECTED_ACTIVE_CONSTANT_ID_CALLS = 205
 
 
 def extract_method(source: str, signature: str) -> str:
@@ -114,7 +117,7 @@ def main() -> int:
     dynamic_active = [argument for argument in active_ids if not is_constant_id(argument)]
     check(
         "active_identifier_keys_constant",
-        len(active_ids) == 206 and not dynamic_active,
+        len(active_ids) == EXPECTED_ACTIVE_CONSTANT_ID_CALLS and not dynamic_active,
         f"active_calls={len(active_ids)} dynamic={dynamic_active}",
     )
     check(
